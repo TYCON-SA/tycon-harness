@@ -26,6 +26,11 @@ tiene un ID con el prefijo del revisor (`FASTAPI-C1` es crítica, `FASTAPI-W1` e
 `- [FASTAPI-C1] archivo:línea …`. Copiá uno de los dos del ejemplo y cambiale el nombre, el prefijo y las reglas. Dos
 paquetes no pueden declarar el mismo agente.
 
+**Las instrucciones de un revisor viven en su paquete**: en `packs/<paquete>/agents/<revisor>.md`, o en la carpeta que
+declare `agents` en el `pack.json`. Uno que sólo está en `agents/` de la raíz del perfil es un problema, y el pipeline lo
+dice en llano: «las instrucciones de X tienen que estar en packs/<paquete>/agents/X.md (hoy están en agents/X.md)».
+Para mudarlo, se mueve el archivo a la carpeta de su paquete; en los dos lugares a la vez también es un problema.
+
 ## Cuándo corre un revisor
 
 Lo decide `when` en `pack.json`. El vocabulario es cerrado (`detection`, `files`, `added`, `all`, `any`, `no`): una clave

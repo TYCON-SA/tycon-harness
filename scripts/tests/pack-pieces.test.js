@@ -85,13 +85,14 @@ test('PacksDefault_AcceptsList_SameInBothReaders', () => {
   assert.match(mv.packs.error, /TYCON_PACKS_DEFAULT/);
 });
 
-/** Paquetes instalados de juguete (`{ nombre }` con un revisor cada uno) y su carpeta de agentes. */
+/** Paquetes instalados de juguete (`{ nombre }` con un revisor cada uno, en la carpeta de agentes del paquete) y la
+ *  carpeta de agentes de la raíz, vacía. */
 function instalados(...nombres) {
   const dir = tmp('pp-packs-');
   const agentes = tmp('pp-agents-');
   for (const n of nombres) {
     W(path.join(dir, n, 'pack.json'), JSON.stringify({ name: n, description: n, reviewers: [{ agent: `rev-${n}`, group: 'base', when: { detection: 'csModified' }, surface: { paths: ['**/*.cs'] }, depth: 'standard', prefixes: [n.toUpperCase().replace(/[^A-Z]/g, '') || 'P'] }] }));
-    W(path.join(agentes, `rev-${n}.md`), `# rev-${n}\n`);
+    W(path.join(dir, n, 'agents', `rev-${n}.md`), `# rev-${n}\n`);
   }
   return { dir, agentes };
 }
@@ -201,10 +202,10 @@ test('T46 PackManifest_PathsStayInTree_BrokenPackNotAbsent · AgentDirInPacks', 
 test('Agents_PackFirstThenRoot_DuplicateBreaks', () => {
   // en el paquete, sin copia en la raíz: se encuentra
   assert.deepEqual(validar(paqueteConCarpetas({ agentes: ['rev-propio'] })), []);
-  // un revisor del paquete que vive en la raíz (el paquete trae agents/ pero no a ése): se encuentra después
+  // un revisor del paquete que sólo vive en la raíz: un problema que dice adónde va
   const enRaiz = paqueteConCarpetas({ agentes: [], raiz: ['rev-raiz'], manifiesto: { reviewers: [{ agent: 'rev-raiz', group: 'base', when: { detection: 'csModified' }, surface: { paths: ['**/*.cs'] }, depth: 'standard', prefixes: ['RR'] }] } });
   fs.mkdirSync(path.join(enRaiz.dir, 'agents'), { recursive: true });
-  assert.deepEqual(validar(enRaiz), []);
+  assert.match(validar(enRaiz).map((e) => e.motivo).join(' · '), /las instrucciones de rev-raiz tienen que estar en packs\/[^/]+\/agents\/rev-raiz\.md \(hoy están en agents\/rev-raiz\.md\)/);
   // el mismo nombre en los dos lugares: roto
   const doble = validar(paqueteConCarpetas({ agentes: ['rev-doble'], raiz: ['rev-doble'] }));
   assert.equal(doble.length, 1, JSON.stringify(doble));

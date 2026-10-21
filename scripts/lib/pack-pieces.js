@@ -61,6 +61,8 @@ function listPacks(packsDir) {
       const m = folderProblem(json[clave], dir);
       if (m) { out.errores.push({ archivo: file, motivo: `«${clave}»: ${m}` }); roto = true; } else p[campo] = path.join(dir, json[clave]);
     }
+    // sin «agents» declarado, los revisores del paquete viven en su carpeta agents/ (la misma regla que el validador)
+    if (!p.agentsDir) p.agentsDir = path.join(dir, 'agents');
     if (!roto) out.packs.push(p);
   }
   return out;

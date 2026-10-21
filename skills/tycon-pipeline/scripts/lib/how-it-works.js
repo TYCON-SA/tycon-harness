@@ -325,25 +325,11 @@ function agentsFolderOf(json) {
 }
 
 /**
- * Los lugares donde el validador busca el `.md` de un revisor, relativos a `baseDir` (la raíz del árbol o del perfil),
- * en su orden: la carpeta de agentes que declara el paquete (si declara una) y la de respaldo (`agentsDir`, la
- * `agents/` de la raíz).
+ * Dónde tiene que estar el `.md` de un revisor, relativo a la raíz del árbol o del perfil: la carpeta de agentes de su
+ * paquete (la declarada, o `agents`). Es la única casa que acepta el validador.
  */
-function agentPlacesOf({ baseDir, pack, json, agent, agentsDir }) {
-  const declarada = json && typeof json.agents === 'string' && json.agents ? agentsFolderOf(json) : null;
-  return [
-    ...(declarada ? [rel(path.join('packs', pack, declarada, `${agent}.md`))] : []),
-    ...(agentsDir ? [rel(path.relative(baseDir, path.join(agentsDir, `${agent}.md`)))] : []),
-  ];
-}
-
-/**
- * Dónde está el `.md` de un revisor: el primero de sus lugares donde existe. Si no está en ninguno, el primero: ahí
- * nace uno nuevo (la carpeta del paquete si declara una; si no, la de la raíz).
- */
-function agentFileOf({ baseDir, pack, json, agent, agentsDir }) {
-  const lugares = agentPlacesOf({ baseDir, pack, json, agent, agentsDir });
-  return lugares.find((l) => fs.existsSync(path.join(baseDir, l))) || lugares[0] || rel(path.join('packs', pack, 'agents', `${agent}.md`));
+function agentFileOf({ pack, json, agent }) {
+  return rel(path.join('packs', pack, agentsFolderOf(json) || 'agents', `${agent}.md`));
 }
 
 /** El texto con las rutas absolutas de estas carpetas pasadas a relativas: la pantalla no muestra rutas de la máquina. */
@@ -383,7 +369,7 @@ function readPacks({ treeDir, packsDir, origin, agentsDir = path.join(treeDir, '
         const texto = `${e.revisor ? `${e.revisor}: ` : ''}${withoutAbsolutePaths(e.motivo, [baseDir, treeDir])}`;
         if (!problems.includes(texto)) problems.push(texto);
         if (e.revisor && /^no existe el agente /.test(e.motivo) && !missing.some((x) => x.agent === e.revisor)) {
-          missing.push({ agent: e.revisor, expected: agentPlacesOf({ baseDir, pack: n, json, agent: e.revisor, agentsDir }) });
+          missing.push({ agent: e.revisor, expected: [agentFileOf({ pack: n, json, agent: e.revisor })] });
         }
       }
       for (const r of Array.isArray(json.reviewers) ? json.reviewers : []) {
@@ -395,7 +381,7 @@ function readPacks({ treeDir, packsDir, origin, agentsDir = path.join(treeDir, '
     const reviewers = json && Array.isArray(json.reviewers) ? json.reviewers.filter((r) => r && typeof r === 'object' && typeof r.agent === 'string').map((r) => ({
       agent: r.agent, group: r.group, when: r.when || null, surface: r.surface || null, prefixes: r.prefixes || [],
       file: carpeta ? rel(path.join(n, carpeta, `${r.agent}.md`)) : rel(path.join(n, 'pack.json')),
-      md: carpeta ? agentFileOf({ baseDir, pack: n, json, agent: r.agent, agentsDir }) : null,
+      md: carpeta ? agentFileOf({ pack: n, json, agent: r.agent }) : null,
     })) : [];
     out.push({ name: n, origin, dir: path.join(packsDir, n), reviewers, problems, missing });
   }
@@ -465,9 +451,11 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
     const core = (grupo) => (s.id === '5' || s.id === '7b' ? PIPE.CORE_REVIEWERS.filter((r) => r.group === grupo).map((r) => ({ agent: r.agent, whenKey: r.whenKey, file: `agents/${r.agent}.md` })) : []);
     const grupos = s.id === '1' ? ['validacion'] : (s.id === '5' || s.id === '7b') ? ['base', 'condicional'] : [];
     const dePaquetes = packs.flatMap((p) => p.reviewers.filter((r) => grupos.includes(r.group)).map((r) => ({
-      ...r, pack: p.name, origin: p.origin, active: activos === null ? null : activos.includes(p.name), editable: p.origin === 'organization' && !p.problems.length && r.group !== 'validacion',
-      // por qué no se edita un revisor de la organización: su paquete roto (con el primer problema) o un uso que valida
-      notEditable: p.origin !== 'organization' ? null : p.problems.length ? { reason: 'broken', detail: p.problems[0] } : r.group === 'validacion' ? { reason: 'validation' } : null,
+      ...r, pack: p.name, origin: p.origin, active: activos === null ? null : activos.includes(p.name), editable: p.origin === 'organization' && !p.problems.length,
+      // el uso que abre «Editar»: la solapa que revisa el cambio o la que valida la historia
+      use: r.group === 'validacion' ? 'validacion' : 'cambio',
+      // por qué no se edita un revisor de la organización: sólo con su paquete roto, con el primer problema
+      notEditable: p.origin === 'organization' && p.problems.length ? { reason: 'broken', detail: p.problems[0] } : null,
     })));
     const bloque = {
       always: core('always'),

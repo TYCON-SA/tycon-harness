@@ -34,7 +34,7 @@ const escribir = (base, rel, txt) => { const f = path.join(base, rel); fs.mkdirS
 function paqueteDeJuguete(hermanos) {
   const packs = tmp('packs');
   const agents = tmp('agents');
-  escribir(agents, 'revisor-de-prueba.md', '---\nname: revisor-de-prueba\ndescription: prueba\ntools: Read\n---\n# prueba\n');
+  escribir(packs, 'prueba/agents/revisor-de-prueba.md', '---\nname: revisor-de-prueba\ndescription: prueba\ntools: Read\n---\n# prueba\n');
   escribir(packs, 'prueba/pack.json', JSON.stringify({
     name: 'prueba', description: 'de prueba', guides: [],
     reviewers: [{ agent: 'revisor-de-prueba', group: 'validacion', when: { files: '\\.cs$' }, prompt: 'Story {story_path} en {repo_path}. Hermanos:\n{siblings}', prefixes: ['PRB'] }],
@@ -43,11 +43,13 @@ function paqueteDeJuguete(hermanos) {
   return { packs, agents };
 }
 
-/** El paquete de clientes REAL del perfil, copiado a una carpeta de paquetes propia (sin el de bizuit). */
+/** El paquete de clientes REAL del perfil, con las instrucciones de su revisor, copiado a una carpeta de paquetes
+ *  propia (sin el de bizuit). */
 function paqueteDeClientes() {
   const packs = tmp('packs-clients');
   escribir(packs, 'clients/pack.json', fs.readFileSync(path.join(PERFIL, 'packs', 'clients', 'pack.json'), 'utf8'));
-  return { packs, agents: path.join(PERFIL, 'agents') };
+  escribir(packs, `clients/agents/${REVISOR}.md`, fs.readFileSync(path.join(PERFIL, 'packs', 'clients', 'agents', `${REVISOR}.md`), 'utf8'));
+  return { packs, agents: tmp('agents-raiz') };
 }
 
 function raizConHermanos(rutas) {
@@ -171,7 +173,7 @@ test('DeclaredSiblings_CondicionalSinClasePlugin @story-8.81 @ac-3', { skip: SIN
 });
 
 test('DeclaredSiblings_AgenteSinDiscovery @story-8.81 @ac-7', { skip: SIN_PERFIL }, () => {
-  const agente = fs.readFileSync(path.join(PERFIL, 'agents', `${REVISOR}.md`), 'utf8');
+  const agente = fs.readFileSync(path.join(PERFIL, 'packs', 'clients', 'agents', `${REVISOR}.md`), 'utf8');
   for (const re of [/maxdepth/i, /full-depth/i, /\bfind\s+"\$RAIZ"/, /grep\s+-r[l]?\b[^\n]*"\$RAIZ"/]) assert.doesNotMatch(agente, re, String(re));
   assert.match(agente, /hermanos declarados/i);
   assert.match(agente, /pipeline\.js siblings/);

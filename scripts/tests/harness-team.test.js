@@ -838,7 +838,9 @@ function toyVersion(lab, { agents = [], skills = [], packs = {}, thirdParty = []
   const v = path.join(lab, 'version');
   const files = [];
   const put = (p, txt) => { const f = path.join(v, ...p.split('/')); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, txt); files.push({ path: p, blob: TEAM.blobOf(Buffer.from(txt)) }); };
-  for (const a of agents) put(`agents/${a}.md`, `---\nname: ${a}\ndescription: núcleo\n---\n`);
+  // un revisor de un paquete vive en la carpeta de agentes de su paquete; los demás, en agents/ de la raíz
+  const deUnPaquete = new Map(Object.entries(packs).flatMap(([n, revs]) => revs.map((r) => [r, n])));
+  for (const a of agents) put(deUnPaquete.has(a) ? `packs/${deUnPaquete.get(a)}/agents/${a}.md` : `agents/${a}.md`, `---\nname: ${a}\ndescription: núcleo\n---\n`);
   for (const s of skills) put(`skills/${s}/SKILL.md`, `---\nname: ${path.posix.basename(s)}\ndescription: pública\n---\n`);
   for (const [n, revs] of Object.entries(packs)) put(`packs/${n}/pack.json`, JSON.stringify({ name: n, description: 'paquete público de juguete', reviewers: revs.map((r) => ({ agent: r, group: 'base', when: { detection: 'csModified' }, surface: { paths: ['**/*.cs'] }, depth: 'standard', prefixes: ['PUB'] })) }));
   put('scripts/publishing/third-party-skills.json', JSON.stringify({ thirdParty: thirdParty.map((t) => ({ target: t, install: 'download', commit: SHA(9) })) }));
@@ -963,7 +965,7 @@ test('A2a validateTree_AndCheckAgainstVersion_PackLoaderOfVersion_EnvIgnored_NoV
     assert.ok(r.problems.some((x) => /equipo-juguete/.test(`${x.path} ${x.reason}`) && /rev-fantasma/.test(x.reason)), JSON.stringify(r.problems));
     // sana: el paquete con su revisor
     fs.rmSync(path.join(lab, 'layer'), { recursive: true, force: true });
-    const sane = toyLayer(lab, [['packs/equipo-juguete/pack.json', packJson('equipo-juguete', [['rev-a', 'base']])], ['agents/rev-a.md', agentMd('rev-a')]]);
+    const sane = toyLayer(lab, [['packs/equipo-juguete/pack.json', packJson('equipo-juguete', [['rev-a', 'base']])], ['packs/equipo-juguete/agents/rev-a.md', agentMd('rev-a')]]);
     const ok = TEAM.checkAgainstVersion(sane.dir, sane.files, v, { env: {} });
     assert.equal(ok.ok, true, JSON.stringify(ok.problems));
     // directo: validateTree con carpetas explícitas no lee las variables
@@ -976,7 +978,7 @@ test('A2a validateTree_AndCheckAgainstVersion_PackLoaderOfVersion_EnvIgnored_NoV
   // una versión sin validateTree (anterior a la A2a) no acepta una capa con paquetes, y lo dice
   fs.writeFileSync(path.join(v, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'packs.js'), "'use strict';\nmodule.exports = { cargarPaquetes() { return []; } };\n");
   fs.rmSync(path.join(lab, 'layer'), { recursive: true, force: true });
-  const withPack = toyLayer(lab, [['packs/equipo-juguete/pack.json', packJson('equipo-juguete', [['rev-a', 'base']])], ['agents/rev-a.md', agentMd('rev-a')]]);
+  const withPack = toyLayer(lab, [['packs/equipo-juguete/pack.json', packJson('equipo-juguete', [['rev-a', 'base']])], ['packs/equipo-juguete/agents/rev-a.md', agentMd('rev-a')]]);
   const old = TEAM.checkAgainstVersion(withPack.dir, withPack.files, v, { env: {} });
   assert.equal(old.ok, false);
   assert.ok(old.problems.some((x) => /validar paquetes|validateTree/.test(x.reason)), JSON.stringify(old.problems));
@@ -1046,13 +1048,14 @@ test('A2a Review_HooksAnyForm_McpServers_TrailingDotAndReservedNames_ThirdPartyU
   assert.equal(rc.ok, false); assert.ok(rc.problems.some((x) => /caja/.test(x.reason)), JSON.stringify(rc.problems));
   // un paquete PÚBLICO de la versión con sus claves viejas (`revisores`/`agente`): su agente no
   // es del núcleo, y una capa sana no choca falsamente con él
-  const vOld = toyVersion(path.join(lab, 'vold'), { agents: ['tycon-core', 'pub-viejo'] });
+  const vOld = toyVersion(path.join(lab, 'vold'), { agents: ['tycon-core', 'pub-viejo'], packs: { publico: ['pub-viejo'] } });
   const oldPack = JSON.stringify({ nombre: 'publico', descripcion: 'público con claves viejas', revisores: [{ agente: 'pub-viejo', grupo: 'base', cuando: { deteccion: 'csModified' }, superficie: { paths: ['**/*.cs'] }, profundidad: 'standard', prefijos: ['PUB'] }] });
-  fs.mkdirSync(path.join(vOld, 'packs', 'publico'), { recursive: true }); fs.writeFileSync(path.join(vOld, 'packs', 'publico', 'pack.json'), oldPack);
-  const relmOld = JSON.parse(fs.readFileSync(path.join(vOld, '.tycon-release.json'), 'utf8')); relmOld.files.push({ path: 'packs/publico/pack.json', blob: TEAM.blobOf(Buffer.from(oldPack)) });
+  fs.writeFileSync(path.join(vOld, 'packs', 'publico', 'pack.json'), oldPack);
+  const relmOld = JSON.parse(fs.readFileSync(path.join(vOld, '.tycon-release.json'), 'utf8'));
+  relmOld.files.find((f) => f.path === 'packs/publico/pack.json').blob = TEAM.blobOf(Buffer.from(oldPack));
   fs.writeFileSync(path.join(vOld, '.tycon-release.json'), JSON.stringify(relmOld));
   fs.rmSync(path.join(lab, 'layer'), { recursive: true, force: true });
-  const saneL = toyLayer(lab, [['packs/eq/pack.json', packJson('eq', [['rev-a', 'base']])], ['agents/rev-a.md', agentMd('rev-a')]]);
+  const saneL = toyLayer(lab, [['packs/eq/pack.json', packJson('eq', [['rev-a', 'base']])], ['packs/eq/agents/rev-a.md', agentMd('rev-a')]]);
   const ro = TEAM.checkAgainstVersion(saneL.dir, saneL.files, vOld, { env: {} });
   assert.equal(ro.ok, true, `un paquete público con claves viejas no vuelve núcleo a su agente: ${JSON.stringify(ro.problems)}`);
   // un tramo con punto final o un nombre reservado de Windows pisaría otro archivo en ese disco
