@@ -35,11 +35,11 @@ Para quien usa el arnés en su máquina: de instalarlo a sumar las reglas de tu 
 
 **0. Qué es y qué ganás**
 
-https://github.com/user-attachments/assets/7a578d6b-d16c-4919-acf8-7a1f235d0c5b
+https://github.com/user-attachments/assets/1340479f-1da3-4716-8bd5-7c5b1ae05b4a
 
 **1. Instalarlo**
 
-https://github.com/user-attachments/assets/70773273-5886-48ed-b150-5431c67a9cc7
+https://github.com/user-attachments/assets/74a74b69-856e-4367-95bb-52159325c8af
 
 **2. De la idea a las historias**
 
@@ -47,15 +47,15 @@ https://github.com/user-attachments/assets/24124d87-ebca-4069-8d82-d0b498f09518
 
 **3. Tu primera historia**
 
-https://github.com/user-attachments/assets/921015b9-b305-4d93-ad0b-df5a582b7a3a
+https://github.com/user-attachments/assets/e7504a1b-a65e-4956-919f-25753cf64e18
 
 **4. Una historia con pantalla**
 
-https://github.com/user-attachments/assets/c7de96c4-91c3-4aeb-b4ba-d588e9475550
+https://github.com/user-attachments/assets/8aa2c03a-03d7-42ab-b4ae-daf90a53e3c9
 
 **5. Las reglas de tu proyecto**
 
-https://github.com/user-attachments/assets/f299ebd1-5423-4d53-aee9-6de9c876fd3f
+https://github.com/user-attachments/assets/1ef473c6-f088-413f-8560-9d801e6a0c75
 
 ### Si armás un equipo
 
@@ -71,15 +71,15 @@ https://github.com/user-attachments/assets/fa77d543-85b8-4564-8530-d583679b15c5
 
 **2. Un recorrido por el sitio**
 
-https://github.com/user-attachments/assets/4a3eb7fa-b206-4699-a123-8ca00a84bba9
+https://github.com/user-attachments/assets/9cc321d7-9410-43ef-a842-9d27f98e4dc5
 
 **3. Configurar desde el sitio**
 
-https://github.com/user-attachments/assets/eac2bff8-1849-492a-8cff-79d16e689965
+https://github.com/user-attachments/assets/61438ad4-9f29-4719-b298-c74dddb19d93
 
 **4. Del commit a producción**
 
-https://github.com/user-attachments/assets/4aa334f2-b000-42ff-a5d2-603c2b213d87
+https://github.com/user-attachments/assets/41082543-3c5e-4e25-9e64-3e0c48fd985c
 
 **5. Lo que corre de noche**
 
@@ -91,7 +91,7 @@ Para todos: el resumen de los dos caminos.
 
 **Del dev solo al equipo**
 
-https://github.com/user-attachments/assets/8e9c21c1-3fda-4724-9340-d998c2cf14a7
+https://github.com/user-attachments/assets/75368083-6788-405d-8cde-8bc3d8557e51
 
 ## Empezá solo
 
@@ -102,7 +102,7 @@ pruebas hasta que tu equipo la declara en su configuración («Tu tecnología»,
 Antes de instalar necesitás tu agente de código (Claude Code o Codex) con tu sesión iniciada, y Node 22 o posterior.
 La lista completa está en [Qué necesitás](#qué-necesitás).
 
-Para que tu agente siga el ciclo, instalá el arnés en tu máquina ([▶ video](https://github.com/user-attachments/assets/70773273-5886-48ed-b150-5431c67a9cc7)). Abrí la terminal (en Windows, PowerShell 7) y
+Para que tu agente siga el ciclo, instalá el arnés en tu máquina ([▶ video](https://github.com/user-attachments/assets/74a74b69-856e-4367-95bb-52159325c8af)). Abrí la terminal (en Windows, PowerShell 7) y
 escribí:
 
 ```bash
@@ -124,7 +124,7 @@ La instalación completa suma los frenos en los repos que trabajan con el arnés
 
 ## Tu primera historia
 
-Una historia es tu pedido escrito, con sus criterios y sus pruebas: el agente la sigue y los revisores la controlan. Que la primera sea chica, como una función nueva en un archivo: una así tarda unos 10 minutos. · [▶ video](https://github.com/user-attachments/assets/921015b9-b305-4d93-ad0b-df5a582b7a3a)
+Una historia es tu pedido escrito, con sus criterios y sus pruebas: el agente la sigue y los revisores la controlan. Que la primera sea chica, como una función nueva en un archivo: una así tarda unos 10 minutos. · [▶ video](https://github.com/user-attachments/assets/e7504a1b-a65e-4956-919f-25753cf64e18)
 
 1. **Abrí tu agente de código en la carpeta de tu repo**: ahí escribe la historia, crea la rama y guarda los cambios. Si lo tenías abierto desde antes de instalar, cerralo y abrilo de nuevo: las reglas del arnés entran al abrirlo.
 2. **Decí que confiás en la carpeta**: la primera vez que abrís tu agente en esa carpeta, te pregunta si confiás en ella: contestá que sí.
@@ -133,8 +133,8 @@ Una historia es tu pedido escrito, con sus criterios y sus pruebas: el agente la
 5. **Revisá la historia.** El agente la arma con lo que le pediste, contestando tres preguntas en llano (qué tiene que hacer, cómo se ve que anda y qué no tiene que tocar), y te marca lo que supuso. Te la muestra y la escribe con tu «sí». Si tu repo ya trae la carpeta `_bmad/`, la arma con lo que hay ahí.
 6. **Pedí «implementemos la story»**, para arrancar el recorrido: la frase va así. Si no hay git, lo inicia; si estás en `main`, crea la rama. Valida la historia y, si le falta algo, te pregunta si la arregla. En una historia chica te muestra el plan y lo aprueba solo; en las demás, lo aprobás vos. Después escribe las pruebas y el código, corre las pruebas y los revisores, y prueba cada criterio corriéndolo.
 7. **Revisá el resumen y decí «commitealo».** Te deja el mensaje armado y nunca commitea ni sube cambios sin tu permiso. Al cerrar la primera historia te ofrece la instalación completa.
-8. **Una historia con pantalla.** El agente arma una maqueta para que la apruebes antes de programar; si tu repo no tiene cómo probar en un navegador, te ofrece prepararlo; y te deja una guía para probarla a mano. · [▶ video](https://github.com/user-attachments/assets/c7de96c4-91c3-4aeb-b4ba-d588e9475550)
-9. **Las reglas propias de tu proyecto.** Pedile a tu agente un revisor que controle una regla tuya (por ejemplo, «el email de un cliente nunca se muestra completo»): queda en tu repo de reglas y revisa cada historia junto con los del arnés. · [▶ video](https://github.com/user-attachments/assets/f299ebd1-5423-4d53-aee9-6de9c876fd3f)
+8. **Una historia con pantalla.** El agente arma una maqueta para que la apruebes antes de programar; si tu repo no tiene cómo probar en un navegador, te ofrece prepararlo; y te deja una guía para probarla a mano. · [▶ video](https://github.com/user-attachments/assets/8aa2c03a-03d7-42ab-b4ae-daf90a53e3c9)
+9. **Las reglas propias de tu proyecto.** Pedile a tu agente un revisor que controle una regla tuya (por ejemplo, «el email de un cliente nunca se muestra completo»): queda en tu repo de reglas y revisa cada historia junto con los del arnés. · [▶ video](https://github.com/user-attachments/assets/1ef473c6-f088-413f-8560-9d801e6a0c75)
 
 Si algo no anda, `/tycon-harness` (en Claude Code) o `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor` dicen qué falta, sin tocar nada.
 
@@ -220,9 +220,9 @@ repo de cada producto: [cómo darlos de alta](pipelines/operations/github/README
 
 1. **Entendé las tres capas.** Este repo, el arnés, igual para todos; el repo del equipo, con lo que llega a cada máquina; y las operaciones del equipo, con lo que corre de noche. La tabla de arriba dice qué guarda cada uno. · [▶ video](https://github.com/user-attachments/assets/582a4581-141c-486e-a19d-1f5eb01d6129)
 2. **Da de alta tu equipo.** `npx @tyconsa/harness@latest --audience org` instala tu máquina y sigue con `harness.js team-init`, que arma los tres archivos del repo del equipo y los valida. Creá el repo vacío, con acceso sólo para el equipo, y subilos. Cada dev instala con `npx @tyconsa/harness@latest --team <repo del equipo>`. · [▶ video](https://github.com/user-attachments/assets/fa77d543-85b8-4564-8530-d583679b15c5)
-3. **Mirá el sitio de la organización.** Cada persona entra con la cuenta de la organización y ve lo suyo: sus corridas, sus pedidos de cambio, lo que tiene asignado; quien mantiene el arnés ve todo. Es opcional: el arnés funciona entero sin él. [Levantar el sitio: guía paso a paso](guides/organization-site.md#qué-hace-falta-antes) (probarlo con Docker, Azure Container Apps, Render o una máquina propia). · [▶ video](https://github.com/user-attachments/assets/4a3eb7fa-b206-4699-a123-8ca00a84bba9)
-4. **Configurá desde el sitio.** La pestaña **Configuración** (sólo para quien mantiene) personaliza la organización: quién es responsable de qué, el canal del aviso, los umbrales. Valida cada cambio y lo propone con un pedido de cambio; nunca escribe `main`. Sin sitio, el mismo cambio va con un pedido de cambio al repo que corresponde. · [▶ video](https://github.com/user-attachments/assets/eac2bff8-1849-492a-8cff-79d16e689965)
-5. **Del commit a producción.** El commit y el merge pasan por controles en cada máquina, y [el portón de CI](guides/ci-gate.md) vuelve a verificar en el servidor lo que llegó a `main`. Si declarás en `operations.json → deployments` los pipelines de staging y de producción de cada producto, el tablero muestra sus despliegues ([cómo](pipelines/operations/README.md)). · [▶ video](https://github.com/user-attachments/assets/4aa334f2-b000-42ff-a5d2-603c2b213d87)
+3. **Mirá el sitio de la organización.** Cada persona entra con la cuenta de la organización y ve lo suyo: sus corridas, sus pedidos de cambio, lo que tiene asignado; quien mantiene el arnés ve todo. Es opcional: el arnés funciona entero sin él. [Levantar el sitio: guía paso a paso](guides/organization-site.md#qué-hace-falta-antes) (probarlo con Docker, Azure Container Apps, Render o una máquina propia). · [▶ video](https://github.com/user-attachments/assets/9cc321d7-9410-43ef-a842-9d27f98e4dc5)
+4. **Configurá desde el sitio.** La pestaña **Configuración** (sólo para quien mantiene) personaliza la organización: quién es responsable de qué, el canal del aviso, los umbrales. Valida cada cambio y lo propone con un pedido de cambio; nunca escribe `main`. Sin sitio, el mismo cambio va con un pedido de cambio al repo que corresponde. · [▶ video](https://github.com/user-attachments/assets/61438ad4-9f29-4719-b298-c74dddb19d93)
+5. **Del commit a producción.** El commit y el merge pasan por controles en cada máquina, y [el portón de CI](guides/ci-gate.md) vuelve a verificar en el servidor lo que llegó a `main`. Si declarás en `operations.json → deployments` los pipelines de staging y de producción de cada producto, el tablero muestra sus despliegues ([cómo](pipelines/operations/README.md)). · [▶ video](https://github.com/user-attachments/assets/41082543-3c5e-4e25-9e64-3e0c48fd985c)
 6. **Lo que corre de noche.** La revisión de dependencias, las métricas del ciclo y el tablero corren en tu organización con tu repo de operaciones, y a la mañana llega el aviso (Telegram, Slack o Teams) con cantidades y el enlace al sitio. Cómo darlos de alta: en [Azure DevOps](pipelines/operations/README.md) o en [GitHub](pipelines/operations/github/README.md). · [▶ video](https://github.com/user-attachments/assets/0fc6e458-74d8-4338-b997-3e87841680c6)
 
 ## Qué más hace
