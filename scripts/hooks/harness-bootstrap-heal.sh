@@ -2,18 +2,18 @@
 #
 # harness-bootstrap-heal.sh — repara la LÍNEA DE ARRANQUE del arnés (SessionStart).
 #
-# El problema que resuelve, medido el 2026-08-27 en una máquina del equipo:
+# El problema que resuelve:
 #
 #   Todo el arnés se propaga por `git pull` + `install-tycon-hooks.sh`, y esa segunda mitad la
 #   dispara UNA línea del settings.json de cada dev. Las instalaciones viejas tienen una variante
 #   de esa línea que hace los `git pull` pero NO llama al instalador. Consecuencia: esa máquina
-#   BAJA todo el código nuevo del arnés y no ENCHUFA nada. Nunca. El dev del caso tenía 9 controles
-#   menos que la máquina de referencia, con el clon al día y los archivos presentes en el disco.
+#   BAJA todo el código nuevo del arnés y no ENCHUFA nada. Nunca. Esa máquina queda con
+#   controles de menos, con el clon al día y los archivos presentes en el disco.
 #
-#   Y no había forma de que se arreglara solo: el arreglo de un hook viaja por el pull, pero el
+#   Y no hay forma de que se arregle solo: el arreglo de un hook viaja por el pull, pero el
 #   arreglo de "no se llama al instalador" NO puede viajar por el instalador que no se llama. El
-#   INSTALL.md ya documentaba el caso y proponía "corré esto una vez a mano" — que es exactamente
-#   lo que nadie hace. La deuda quedó escrita y sin cerrar.
+#   INSTALL.md propone "corré esto una vez a mano" — que es exactamente
+#   lo que nadie hace.
 #
 # La salida es entrar por una puerta que esas máquinas SÍ tienen abierta: los hooks que ya están
 # registrados y viven en este repo (los llama por path), porque su código sí se actualiza con el
@@ -23,7 +23,7 @@
 #   1. Si alguna línea de arranque ya llama al instalador → sale en silencio (caso sano, un grep).
 #   2. Si no: le AGREGA la llamada a la línea que ya tiene (no la reescribe — respeta lo que el dev
 #      haya puesto ahí), con backup previo y escritura atómica (bajo harness.js el backup es la copia del mecanismo:
-#      con TYCON_HARNESS_SNAPSHOT_DIR puesta no deja `.bak` propio — story 8.13, AC 18).
+#      con TYCON_HARNESS_SNAPSHOT_DIR puesta no deja `.bak` propio).
 #   3. Corre el instalador una vez, para que la sesión actual no tenga que esperar a la siguiente.
 #
 # Fail-open TOTAL: cualquier error sale 0. Nunca rompe el arranque de una sesión.
@@ -39,9 +39,9 @@ INSTALLER="$TCG_ROOT/scripts/install-tycon-hooks.sh"
 
 SETTINGS="${TYCON_SETTINGS_PATH:-$HOME/.claude/settings.json}"
 [ -f "$SETTINGS" ] || exit 0
-# una máquina cuyo estado dice que NO enchufa a Claude Code (story 8.23, tanda C: tools sin «claude») no recibe su línea
-# de arranque desde el hook de Codex: antes la primera sesión de Codex re-enchufaba a Claude Code (pase adversarial, clase 10)
-# (con el Node del arnés si está —story 8.39—; si no, el del PATH)
+# una máquina cuyo estado dice que NO enchufa a Claude Code (tools sin «claude») no recibe su línea
+# de arranque desde el hook de Codex: si no, la primera sesión de Codex re-enchufaría a Claude Code
+# (con el Node del arnés si está; si no, el del PATH)
 # con el bash de la Mac (3.2) y `set -e`, un `.` que no encuentra el archivo corta el guion aunque lleve `||`: se mira antes
 _hn="$TCG_ROOT/scripts/lib/harness-node.sh"
 { [ -f "$_hn" ] && . "$_hn" 2>/dev/null; } || harness_node_bin() { echo node; }
@@ -51,9 +51,9 @@ if command -v "$HNODE" >/dev/null 2>&1; then
   case ",${_TOOLS}," in *,claude,*) ;; ,,) ;; *) exit 0 ;; esac
 fi
 
-# Sin guarda por grep (hallazgo A4 de la revisión adversarial 2026-08-27): "install-tycon-hooks"
+# Sin guarda por grep: "install-tycon-hooks"
 # puede aparecer en el settings SIN estar en la línea de arranque — p.ej. como permiso Bash en
-# permissions.allow tras correr el instalador a mano — y el grep daba esa máquina por sana PARA
+# permissions.allow tras correr el instalador a mano — y el grep daría esa máquina por sana PARA
 # SIEMPRE. El único juez es el JSON: qué hay en los hooks de SessionStart. El costo es levantar
 # python en cada arranque (~40 ms), y la corrección lo vale.
 
@@ -128,7 +128,7 @@ PY
 
 [ -z "$RESULT" ] && exit 0
 
-# El instalador corre ANTES del anuncio (A7): anunciar "se corrió" y que después falle es mentir.
+# El instalador corre ANTES del anuncio: anunciar "se corrió" y que después falle es mentir.
 if [ "${TYCON_NO_AUTOINSTALL:-}" = "1" ]; then
   CORRIDA="el instalador corre en el próximo arranque (TYCON_NO_AUTOINSTALL=1)"
 elif bash "$INSTALLER" 2>/dev/null; then

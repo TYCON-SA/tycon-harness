@@ -1,65 +1,62 @@
 #!/usr/bin/env node
 'use strict';
-// unpushed-work-notice.js — "trabajo commiteado que no está en origin" (2026-08-25, caso de un producto del equipo,
-// Story 1.1: el commit del backend quedó SOLO local — el push nunca se ejecutó — y el frontend
-// que lo consume se promovió a main; el smoke de DoD dio verde contra ese backend local, así que
-// ningún control preguntó "¿esto existe en el remoto?").
+// unpushed-work-notice.js — "trabajo commiteado que no está en origin". Cubre el caso en que el commit del backend
+// queda SOLO local (el push nunca se ejecuta) y el frontend que lo consume se promueve a main: el smoke da verde
+// contra ese backend local, así que ningún control pregunta "¿esto existe en el remoto?".
 //
 // QUÉ HACE (un script, tres eventos + un modo CLI — patrón retro-pending.js):
 //   record (PostToolUse Bash):
 //     · un `git ... commit` deja constancia del repo tocado (incluye `git -C <path>`) en el
 //       ledger de sesión — es lo que el Stop-check consulta (el mtime del cwd NO ve commits
-//       hechos con -C ni en worktrees; hallazgo EF-H4 de la ronda adversarial del plan).
+//       hechos con -C ni en worktrees).
 //     · un `git push` que menciona main/master en un repo bajo el arnés → escanea el GRUPO de
 //       repos EN ESE MOMENTO y grita si un hermano tiene trabajo sin subir — caza la promoción
-//       hecha a mano, sin pasar por /tycon-merge-to-main (EF-H1).
+//       hecha a mano, sin pasar por /tycon-merge-to-main.
 //   stop (Stop): si esta sesión commiteó en algún repo (ledger) y ese repo quedó con commits no
 //       alcanzables desde origin → decision:block UNA vez por repo+rama por sesión ("quedó sin
-//       subir — ¿es WIP a propósito?"). La segunda vez deja pasar: un WIP legítimo no come spam
-//       (RU-F2). Si la sesión pusheó a main, el chequeo cubre el grupo entero, no solo el cwd.
-//       🔴 ATRIBUCIÓN POR SHA (2026-08-31): el ledger guarda el sha de cada commit hecho por la
+//       subir — ¿es WIP a propósito?"). La segunda vez deja pasar: un WIP legítimo no come spam.
+//       Si la sesión pusheó a main, el chequeo cubre el grupo entero, no solo el cwd.
+//       🔴 ATRIBUCIÓN POR SHA: el ledger guarda el sha de cada commit hecho por la
 //       sesión (solo si el asunto del commit aparece en el comando — un `git commit` que no
 //       commiteó no adopta el HEAD ajeno) y los shas reescritos por rebase/pull/cherry-pick/merge
 //       en repos donde ya commiteó; el `cd X && git …` se sigue por segmento. Un commit sin subir
 //       que no es de la sesión se reporta como AJENO ("NO lo toques"), nunca como "esta sesión
-//       commiteó"; si git no responde, "autoría indeterminada". Caso: el escaneo del grupo (tras
-//       un push a main) encontró el commit local de OTRA sesión y el agente lo revirtió y pusheó
-//       (incident-log#revert-cruzado-entre-sesiones-2026-08-31). Pase adversarial: hallazgos A-H
-//       cerrados con caso rojo-previo en el banco (23-unpushed-notice.json).
+//       commiteó"; si git no responde, "autoría indeterminada". Sin esto, el escaneo del grupo (tras
+//       un push a main) puede encontrar el commit local de OTRA sesión y el agente lo revierte y pushea.
+//       Casos: 23-unpushed-notice.json del banco.
 //   notice (SessionStart): escanea el repo del cwd + su grupo. Lo NUEVO (repo+rama+tip nuevo) se
 //       lista expandido; lo ya-gritado se comprime a UNA línea de conteo — la memoria de lo
 //       avisado es por (repo,rama,sha): un commit NUEVO en una rama vieja re-grita SIEMPRE
-//       (EF-H3: el throttle por rama tapaba justo el aviso que importaba). Silencio total en verde.
+//       (un throttle por rama taparía justo el aviso que importa). Silencio total en verde.
 //   --scan <repo> [--json] (CLI): mismo análisis, para el step-00 de /tycon-merge-to-main y para
-//       humanos. IGNORA el kill-switch a propósito (RU-F5: apagar el reminder ambiental no puede
+//       humanos. IGNORA el kill-switch a propósito (apagar el reminder ambiental no puede
 //       apagar el control del merge en silencio); el JSON lleva `scanned:true` para que "verde"
 //       sea distinguible de "no corrió".
 //
 // GRUPO DE REPOS: `.tycon/advisors.yaml → repo_group:` (lista, relativa al parent del repo o
 // absoluta) manda. Fallback: hermanos (mismo parent, depth 1) que sean repos git con `.tycon/` o
 // `.advisors/` — pero SOLO si el parent tiene ≤12 repos git (un contenedor general tipo
-// una raíz de repos con ~70 repos acoplaría productos ajenos — RU-F3; FRESNO/ tiene ~9 y agrupa bien).
+// una raíz de repos con ~70 repos acoplaría productos ajenos; una carpeta de ~9 repos agrupa bien).
 // Lo descartado se lista con motivo: un repo excluido en silencio es invisible justo cuando
-// importa (EF-H2). Se excluyen agent-skills y el arnés (drift permanente por diseño) y
+// importa. Se excluyen agent-skills y el arnés (drift permanente por diseño) y
 // los worktrees duplicados (dedup por git-common-dir). Quién es un repo del arnés lo dice su remoto
-// `origin`, no la carpeta (2026-09-17, scripts/lib/harness-repo.js): por nombre de carpeta, un
-// clon descartable del arnés NO quedaba excluido, y un repo de producto bajo una carpeta llamada
-// el arnés quedaba afuera de este aviso sin que nada lo dijera.
+// `origin`, no la carpeta (scripts/lib/harness-repo.js): por nombre de carpeta, un
+// clon descartable del arnés NO quedaría excluido, y un repo de producto bajo una carpeta llamada
+// como el arnés quedaría afuera de este aviso sin que nada lo dijera.
 //
 // CRITERIO "SIN SUBIR": commits alcanzables desde ramas locales pero NO desde ningún ref de
-// `origin` (el remoto canónico — un push a un remoto secundario/backup NO cuenta como subido,
-// EF-H5). Sin fetch (barato y offline): los refs remotos locales pueden estar viejos — para el
-// aviso alcanza; el gate del merge corre después del fetch del step 0.4. Repo sin remoto → quiet.
+// `origin` (el remoto canónico — un push a un remoto secundario/backup NO cuenta como subido). Sin fetch (barato y offline): los refs remotos locales pueden estar viejos — para el
+// aviso alcanza; el gate del merge corre después de un fetch. Repo sin remoto → quiet.
 //
 // LÍMITES HONESTOS (declarados, no silenciosos):
 //   · Multi-máquina: un commit local en la máquina A es invisible desde la máquina B — este hook
-//     solo protege donde el trabajo vive. El caso disparador ocurrió en UNA máquina.
+//     solo protege donde el trabajo vive.
 //   · Commits en detached HEAD / rebase a medias no aparecen (se enumeran ramas).
-//   · Un repo que excede el timeout se reporta como "no escaneado" — nunca se omite mudo (EF-H7).
-// CARRIL (story 2.7): cada commit registrado anota además POR QUÉ CARRIL entró — `pipeline` si la
+//   · Un repo que excede el timeout se reporta como "no escaneado" — nunca se omite mudo.
+// CARRIL: cada commit registrado anota además POR QUÉ CARRIL entró — `pipeline` si la
 // sesión tiene una corrida viva (active/<sesión>.json, con su story), `adhoc` si declaró un atajo
 // (adhoc/<sesión>.json), `ninguno` si no hay ninguno de los dos — en el registro de la sesión y en una
-// constancia DURABLE, `carriles.jsonl`, que sube al buzón (story 2.5). Esa línea lleva {ts, carril,
+// constancia DURABLE, `carriles.jsonl`, que sube al buzón. Esa línea lleva {ts, carril,
 // story} y nada más: ni ruta, ni sha, ni mensaje. Un commit hecho fuera de toda sesión no pasa por
 // acá: no se ve, y la página lo dice como «no medido», nunca como cero. Sólo se anota un commit que
 // de verdad se creó (sha conocido): «el comando dijo commit» no alcanza — por eso un commit cuyo
@@ -70,7 +67,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -108,11 +105,11 @@ function saveState(s) {
 }
 const FORMA_STORY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,24}$/;
 // Vencimientos: los MISMOS que usa el portón de carril (story-gate-io.js → STALE_HOURS) y la purga de
-// marker.js. Si el portón da por vencido un atajo, para el carril tampoco existe (pase adversarial 2.7).
+// marker.js. Si el portón da por vencido un atajo, para el carril tampoco existe.
 const ADHOC_VENCE_H = 6;
 const MARKER_VENCE_H = 24;
 // Un commit que llega poco después de CERRAR una corrida es de esa corrida: el paso 8 cierra el marker
-// antes de que el dev apruebe el commit (pase adversarial 2.7, hallazgo 12).
+// antes de que el dev apruebe el commit.
 const CIERRE_RECIENTE_H = 3;
 const vencido = (o, horas) => {
   const t = Date.parse((o && (o.lastTouch || o.declaredAt)) || '');
@@ -140,7 +137,7 @@ function corridaRecienCerrada(sid, key) {
     return mejor;
   } catch { return null; }
 }
-/** El carril de la sesión al momento del commit (story 2.7). Nunca tira. */
+/** El carril de la sesión al momento del commit. Nunca tira. */
 function carrilDeSesion(sid) {
   const key = String(sid).replace(/[/\\]/g, '_');
   // «No existe» y «existe pero no se pudo leer» NO son lo mismo: el segundo no dice nada del carril, y
@@ -233,7 +230,7 @@ function scanRepo(repoPath) {
     if (!remotes.length) { out.scanned = true; out.noRemote = true; return out; }
     const remote = remotes.includes('origin') ? 'origin' : remotes[0];
     out.remote = remote;
-    // 1 invocación para el "¿hay algo?"; el detalle por rama solo si dio positivo (EF-H7).
+    // 1 invocación para el "¿hay algo?"; el detalle por rama solo si dio positivo.
     const any = git(repoPath, ['log', '--branches', '--not', `--remotes=${remote}`, '--max-count=1', '--format=%H']);
     out.scanned = true;
     if (!any) return out;
@@ -311,8 +308,8 @@ function notice(event) {
 // opciones globales de git para que `-C <path>` (repo target) no se confunda con el `-C <sha>`
 // de `git commit` (reuse-message) ni `git config commit.x` cuente como commit.
 // Además lleva el cwd EFECTIVO por segmento: `cd X && git commit` es el patrón más común de los
-// agentes (el cwd se resetea entre llamadas) y resolverlo con el cwd del evento anotaba el sha
-// del repo EQUIVOCADO (hallazgo B de la revisión adversarial 2026-08-31).
+// agentes (el cwd se resetea entre llamadas) y resolverlo con el cwd del evento anotaría el sha
+// del repo EQUIVOCADO.
 function gitInvocations(cmd, baseCwd) {
   const out = [];
   let cur = baseCwd || process.cwd(); let prev = cur; const stack = [];
@@ -349,8 +346,8 @@ function gitInvocations(cmd, baseCwd) {
 // por el CONTENIDO: el asunto del commit de HEAD tiene que aparecer en el comando (`-m "…"`,
 // heredoc `$(cat <<'EOF' …)`), o la última entrada del reflog es un `commit (amend)` reciente.
 // Un `git commit` que NO commiteó (nada que commitear, pre-commit rechazado, exit enmascarado por
-// `| tail`) NO puede anotar el HEAD actual: puede ser el commit AJENO del incidente — y "reciente"
-// no alcanza para distinguirlo (en el incidente el commit ajeno tenía 3 minutos) — hallazgo A.
+// `| tail`) NO puede anotar el HEAD actual: puede ser un commit AJENO — y "reciente"
+// no alcanza para distinguirlo.
 function freshCommitSha(root, cmd) {
   try {
     const what = git(root, ['reflog', '-1', '--format=%gs']);
@@ -384,10 +381,9 @@ function record(event) {
     if (inv.sub === 'commit') {
       try {
         fs.mkdirSync(STATE_DIR, { recursive: true });
-        // El sha del commit recién hecho es lo que permite ATRIBUIR en el Stop (2026-08-31,
-        // incident-log#revert-cruzado-entre-sesiones-2026-08-31): anotar solo el repo hacía que
-        // un commit local de OTRA sesión en el mismo grupo se reportara como "esta sesión
-        // commiteó" — y el agente lo revirtió y pusheó. `sha: null` = el comando dijo commit pero
+        // El sha del commit recién hecho es lo que permite ATRIBUIR en el Stop: anotar solo el repo
+        // haría que un commit local de OTRA sesión en el mismo grupo se reportara como "esta sesión
+        // commiteó" y el agente lo revirtiera. `sha: null` = el comando dijo commit pero
         // no creó ninguno (distinto de una entrada legacy sin la clave, que se trata como propia).
         const ts = new Date().toISOString();
         const sha = freshCommitSha(root, cmd);
@@ -400,7 +396,7 @@ function record(event) {
     }
     if (REWRITE_SUBS.has(inv.sub)) {
       // rebase/pull --rebase/cherry-pick/merge REESCRIBEN los shas: el commit propio pasaría a
-      // "ajeno" justo antes del push (hallazgo C). Solo si la sesión ya commiteó en ese repo, los
+      // "ajeno" justo antes del push. Solo si la sesión ya commiteó en ese repo, los
       // commits sin subir de HEAD siguen siendo suyos con otro sha.
       try {
         const mineHere = readJsonl(ledgerFile(sid)).some((e) => e.kind === 'commit' && real(e.repo) === real(root));
@@ -418,20 +414,20 @@ function record(event) {
       || (/^(main|master)$/.test(branch) && !/\bpush\b[^\n]*\b(dev|develop|feat|feature|fix|hotfix|release)\b/.test(inv.seg));
     if (!pushMain) continue;
     try { fs.appendFileSync(ledgerFile(sid), JSON.stringify({ ts: new Date().toISOString(), repo: root, kind: 'push-main' }) + '\n'); } catch { /* fail-open */ }
-    // Promoción en curso: escanear el grupo YA — este es el momento del incidente (EF-H1).
+    // Promoción en curso: escanear el grupo YA — es el momento en que una entrega a medias se puede frenar.
     const scan = scanGroup(root);
     const bad = scan.repos.filter((r) => (r.branches || []).length);
     const probs = scan.repos.filter((r) => r.error);
     if (!bad.length && !probs.length) continue;
-    // Misma atribución que el Stop (hallazgo F): este aviso llega ANTES y es el que el agente lee
+    // Misma atribución que el Stop: este aviso llega ANTES y es el que el agente lee
     // mientras todavía opera — sin la marca, el commit ajeno se presenta como "de la entrega".
     const ctx = mineContext(sid);
     const lines = bad.flatMap((r) => r.branches.slice(0, MAX_BRANCH_LINES).map((b) => `  - ${short(r.path)} → ${b.branch} @ ${b.tip}: ${b.count} commit(s) solo locales${b.wip ? ' (wip)' : ''} ${ownerTag(classifyBranch(r.path, b.branch, r.remote, ctx))}`))
       .concat(probs.map((r) => `  - ⚠ ${short(r.path)}: no escaneado (${r.error})`));
-    // stderr + exit 2, no stdout (2026-08-27): en PostToolUse el stdout va SOLO al debug log — el
-  // agente jamás lo veía. Canal documentado que sí llega al modelo: stderr con exit 2 (la
-  // herramienta ya corrió; no bloquea nada, sólo hace visible el aviso). Mismo arreglo que
-  // missing-path-notice; el hallazgo fue de la revisión adversarial del 35737a8.
+    // stderr + exit 2, no stdout: en PostToolUse el stdout va SOLO al debug log y el agente
+  // jamás lo vería. Canal documentado que sí llega al modelo: stderr con exit 2 (la
+  // herramienta ya corrió; no bloquea nada, sólo hace visible el aviso). Mismo canal que
+  // missing-path-notice.
   process.stderr.write(`🔴 estás promoviendo a main y hay trabajo SIN SUBIR en el grupo de repos (${scan.groupSource}) — ¿la entrega está completa? (caso FRESNO 2026-08-25: se promovió el front con el backend solo local):\n${lines.join('\n')}\nMostrale esto al dev ANTES de seguir.\n`);
     process.exit(2); // un aviso por comando alcanza — y por el único canal que el agente LEE
   }
@@ -456,15 +452,14 @@ function stop(event) {
   const repos = new Map();
   for (const e of entries) if (e.repo) repos.set(real(e.repo), e.repo);
   // Si la sesión pusheó a main, el chequeo cubre el grupo de ese repo (la sesión que solo mergea
-  // no commitea — EF-H4.1).
+  // no commitea).
   for (const e of entries.filter((x) => x.kind === 'push-main')) {
     for (const r of groupOf(e.repo).repos) repos.set(real(r.path), r.path);
   }
-  // Atribución por sha (2026-08-31): los commits que ESTA sesión hizo son los del ledger. Un
+  // Atribución por sha: los commits que ESTA sesión hizo son los del ledger. Un
   // commit sin subir que no está ahí es de otra sesión (o anterior al ledger): se avisa con otras
-  // palabras y con la prohibición explícita de tocarlo —
-  // incident-log#revert-cruzado-entre-sesiones-2026-08-31: el aviso decía "esta sesión commiteó" sobre un commit ajeno y el agente
-  // lo revirtió y pusheó.
+  // palabras y con la prohibición explícita de tocarlo; decir "esta sesión commiteó" sobre un commit ajeno
+  // llevaría al agente a revertirlo y pushearlo.
   const ctx = mineContext(sid);
   const state = loadState();
   const seen = state.stopSeen || {};
@@ -474,7 +469,7 @@ function stop(event) {
     if (scan.error) { problems.push(`  - ⚠ ${short(repoPath)}: no escaneado (${scan.error}) — no se pudo mirar; correr --scan a mano`); continue; }
     for (const b of scan.branches || []) {
       const cls = classifyBranch(repoPath, b.branch, scan.remote, ctx);
-      // 1 aviso por repo+rama+CLASE por sesión (hallazgo E): un WIP legítimo no come spam, pero si
+      // 1 aviso por repo+rama+CLASE por sesión: un WIP legítimo no come spam, pero si
       // la rama pasa de "ajena" a "propia" (la sesión commiteó encima) el aviso propio SÍ sale.
       const key = `${sid}|${real(repoPath)}|${b.branch}|${cls}`;
       if (seen[key]) continue;
@@ -497,11 +492,11 @@ function stop(event) {
 // ── atribución propio/ajeno (compartida por el Stop y el aviso del push a main) ─────────────────
 // ctx = { mine: Set<sha>, legacyRepos: Set<realpath>, committedRepos: Set<realpath> }
 //   mine: shas anotados por esta sesión (commits + reescrituras).
-//   legacyRepos: repos con entradas `commit` SIN la clave `sha` (formato anterior al 2026-08-31,
+//   legacyRepos: repos con entradas `commit` SIN la clave `sha` (formato anterior,
 //     ledger vivo 7 días) → se tratan como propias: la transición no puede convertir "pusheá" en
-//     "no pushees" (hallazgo D).
+//     "no pushees".
 //   committedRepos: repos donde la sesión commiteó de verdad → criterio de respaldo para la rama
-//     ACTUAL de ese repo cuando ningún sha matchea (rebase fuera de este registro, hallazgo C).
+//     ACTUAL de ese repo cuando ningún sha matchea (rebase fuera de este registro).
 function mineContext(sid) {
   const entries = readJsonl(ledgerFile(sid));
   const mine = new Set(); const legacyRepos = new Set(); const committedRepos = new Set();
@@ -559,7 +554,7 @@ function scanCli(argv) {
 
 function main() {
   const argv = process.argv.slice(2);
-  if (argv.includes('--scan')) return scanCli(argv); // el CLI ignora el kill-switch a propósito (RU-F5)
+  if (argv.includes('--scan')) return scanCli(argv); // el CLI ignora el kill-switch a propósito
   if (process.env.TYCON_UNPUSHED_NOTICE === '0') return;
   let event = {};
   try { const s = fs.readFileSync(0, 'utf8'); event = s ? JSON.parse(s) : {}; } catch { event = {}; }

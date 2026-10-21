@@ -1,8 +1,7 @@
 'use strict';
-// shared.js — las piezas COMPARTIDAS: las que hace quien corra, el aplicador suelto o `harness.js` (story 8.13, tanda D ·
-// AC 28).
+// shared.js — las piezas COMPARTIDAS: las que hace quien corra, el aplicador suelto o `harness.js`.
 //
-// Tres cosas las escribía sólo `install-tycon-hooks.sh`, y en Windows (`.ps1`) no las hacía nadie:
+// Tres cosas que tienen que quedar escritas igual desde `install-tycon-hooks.sh` y desde Windows (`.ps1`):
 //   · `cleanupPeriodDays: 365` en settings.json        (bloque `TOP_CANONICAL` del `.sh`)
 //   · `env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: "1"`  (bloque `ENV_CANONICAL`)
 //   · la copia de `<árbol>/commands/*.md` a `~/.claude/commands/`  (bloque «Los comandos de barra del equipo»)
@@ -26,7 +25,7 @@
 //     final, y las claves en su orden de inserción (`hooks` si faltaba, las de raíz, `env`). Por eso `hooks: {}` se
 //     crea acá también: así el resultado es el mismo se llame a esto antes o después del aplicador.
 //   · La copia previa: suelto, `settings.json.bak.<ts>` como siempre; con la copia del mecanismo ya tomada
-//     (`TYCON_HARNESS_SNAPSHOT_DIR`, o `backup: false`), ninguna (AC 18).
+//     (`TYCON_HARNESS_SNAPSHOT_DIR`, o `backup: false`), ninguna.
 //
 // Lo que NO iguala al python (viene de `JSON.stringify`, igual que startup-line.js y remove.js): un número escrito con
 // decimales o exponente (`1.0`, `1e3`) sale como entero; un entero de más de 2^53 pierde dígitos; una clave que es un
@@ -44,7 +43,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const PD = require('./plugin-dirs.js');   // story 7.27: la carpeta de los mods del arnés en CLAUDE_CODE_PLUGIN_DIRS
+const PD = require('./plugin-dirs.js');   // la carpeta de los mods del arnés en CLAUDE_CODE_PLUGIN_DIRS
 const RP = require('./read-permissions.js');   // las reglas de lectura de las carpetas del arnés
 
 /** La clase de estas piezas: el `when` de la lista declarada (scripts/tests/fixtures/harness-managed-pieces.json). */
@@ -137,7 +136,7 @@ function applySettings(file, { withBackup, home = os.homedir(), platform = proce
   // `canon: false` (perfil mínimo): ni las claves de raíz, ni la variable, ni la carpeta de los mods
   const needTop = canon ? Object.keys(TOP_CANONICAL).filter((k) => !has(s, k)) : [];
   const needEnv = canon ? Object.keys(ENV_CANONICAL).filter((k) => !has(s, 'env') || !has(s.env, k)) : [];
-  // la carpeta de los mods del arnés se SUMA a la variable (story 7.27): las carpetas del dev quedan
+  // la carpeta de los mods del arnés se SUMA a la variable: las carpetas del dev quedan
   const sep = PD.separator(platform);
   const modsDir = PD.ourDir(home);
   // con TYCON_NO_MODS=1 (`mods: false`) no se toca la variable ni se anota la pieza
@@ -246,7 +245,7 @@ function applyShared({ home = os.homedir(), env = process.env, tree = null, back
     const withBackup = backup === undefined ? !env.TYCON_HARNESS_SNAPSHOT_DIR : Boolean(backup);
     const P = require('./place.js');
     const where = tree || P.resolvePlace({ home }).dir || P.placePath(home);
-    // `settings: false` (story 8.16, tanda C): fuera del perfil full los dos ajustes no se escriben ni se anotan; los
+    // `settings: false`: fuera del perfil full los dos ajustes no se escriben ni se anotan; los
     // comandos sí (están en los dos perfiles). Si estaban, los saca el cambio de perfil de harness.js, con su copia.
     // Las reglas de lectura del arnés van en los dos perfiles; `TYCON_NO_READ_PERMISSIONS=1` las apaga.
     // `previous`: las piezas del registro, para sacar una regla anotada que ya no es del arnés.

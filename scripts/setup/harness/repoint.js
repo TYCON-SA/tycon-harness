@@ -1,11 +1,11 @@
 'use strict';
 // repoint.js — la llave `update.skills_source`: re-apuntar el clon viejo de agent-skills al repo unificado, deshacerlo,
-// y la pregunta «¿esta versión trae las skills?» (story 8.18, AC 31 a 35).
+// y la pregunta «¿esta versión trae las skills?».
 //
-// El caso (2026-10-04): los dos repos internos —el arnés y agent-skills— se unieron en uno, con las dos historias
-// enteras. Cada máquina del equipo sigue con sus DOS clones: el del arnés, que desde el corte trae `skills/` y `agents/`,
+// Los dos repos internos —el arnés y agent-skills— se unieron en uno, con las dos historias
+// enteras. Cada máquina del equipo sigue con sus DOS clones: el del arnés, que trae `skills/` y `agents/`,
 // y `~/.claude/agent-skills`, del que la máquina lee las skills. Mudar cada máquina a un solo árbol es mover miles de
-// archivos sin versionar (lo propio del dev, las skills de terceros, los stash): otra story. Re-apuntar es un cambio de
+// archivos sin versionar (lo propio del dev, las skills de terceros, los stash): queda fuera de esto. Re-apuntar es un cambio de
 // configuración: como la historia está unida, el clon viejo avanza EN LÍNEA RECTA al repo unificado y nada se mueve en
 // el disco. Es el único paso que el equipo nota, y se deshace con uno: la llave de vuelta en `separate`.
 //
@@ -24,10 +24,10 @@
 //      de lo traído. Si un paso falla se deshace lo hecho; si la sesión muere en el medio, el arranque siguiente
 //      encuentra la mudanza «en curso» y la deshace antes de decidir nada.
 //
-// La vista reducida (AC 31 d): el clon re-apuntado muestra sólo `agents/`, `skills/`, `packs/` y los archivos de la
+// La vista reducida: el clon re-apuntado muestra sólo `agents/`, `skills/`, `packs/` y los archivos de la
 // raíz, así nadie corre el instalador desde ahí (duplicaría los hooks). Es `sparse-checkout` SIN «cono», puesto por
 // configuración y aplicado con `git sparse-checkout reapply`, y se pone ANTES del merge. Las tres decisiones salen de
-// medirlo (git 2.50, 2026-10-04): (a) en modo cono, la próxima vez que la vista se vuelve a aplicar sobre el clon ya
+// medirlo (git 2.50): (a) en modo cono, la próxima vez que la vista se vuelve a aplicar sobre el clon ya
 // re-apuntado (`git sparse-checkout reapply`, o `set`), git BORRA las carpetas de afuera de la vista que el repo sigue y
 // que sólo tienen archivos ignorados —el `.advisors/` de un dev, entero—; sin cono sólo saca lo que sigue; (b) `git
 // sparse-checkout set` y `disable` prenden `extensions.worktreeConfig` y escriben `.git/config.worktree`, y `disable` no
@@ -37,10 +37,10 @@
 // los comandos estándar. Por eso «¿hay una vista prendida?» se contesta con el valor EFECTIVO (`git config --get`), nunca
 // con el de `.git/config` solo; y la llave se escribe en el alcance que manda —`config.worktree` si el clon ya tiene ahí
 // esa clave, `.git/config` si no—, guardando lo que había en cada uno para dejarlo igual a la vuelta. Leerla y escribirla
-// sólo en `.git/config` dejaba tres agujeros (pase adversarial del tramo 3, clases 7, 8, 10 y 11): una vista propia hecha
-// con `git sparse-checkout set` no se detectaba y se pisaba; con `core.sparseCheckout=false` en `config.worktree` (lo
-// que deja cualquier `sparse-checkout disable`) `reapply` moría en la ida y al deshacer, y la mudanza quedaba «en curso»
-// para siempre; y el remedio que nombraba el aviso (`git sparse-checkout disable`) no destrababa.
+// sólo en `.git/config` deja tres agujeros: una vista propia hecha
+// con `git sparse-checkout set` no se detecta y se pisa; con `core.sparseCheckout=false` en `config.worktree` (lo
+// que deja cualquier `sparse-checkout disable`) `reapply` muere en la ida y al deshacer, y la mudanza queda «en curso»
+// para siempre; y el remedio que nombra el aviso (`git sparse-checkout disable`) no destraba.
 //
 // La vuelta (`back`), con la llave en `separate` y la mudanza registrada: mira que el remoto viejo CONTESTE (si no, no
 // toca nada y lo dice: se reintenta en el arranque siguiente) y que nada del dev esté en una ruta que vuelve —sin
@@ -50,10 +50,10 @@
 // dejan la máquina byte a byte como estaba. `undo` no deshace nada sobre otra rama que `main` ni encima de un archivo
 // del dev: es el mismo `undo` de una ida que falló a mitad de camino y de una mudanza que quedó «en curso».
 //
-// Sobre QUÉ clon (pase adversarial del tramo 3, clases 1 y 4): que el estado liste la fuente `agent_skills` no prueba
+// Sobre QUÉ clon: que el estado liste la fuente `agent_skills` no prueba
 // que haya un clon aparte. Si `~/.claude/agent-skills` pasó a ser un enlace al clon del arnés (el dev borró el clon viejo
-// y el aplicador lo enlazó), la ida le ponía la vista reducida AL CLON DEL ARNÉS —desaparecía `scripts/`, con este
-// programa adentro— y la vuelta le hacía `reset --hard` al commit viejo de agent-skills. Antes de decidir nada se
+// y el aplicador lo enlazó), la ida le pondría la vista reducida AL CLON DEL ARNÉS —desaparecería `scripts/`, con este
+// programa adentro— y la vuelta le haría `reset --hard` al commit viejo de agent-skills. Antes de decidir nada se
 // compara ese clon con el del arnés (`sameClone`: la ruta real y el `.git` de cada uno): si es el mismo, no se toca, se
 // dice, y el remedio es `harness.js install`, que vuelve a detectar las fuentes. Y el estado se contrasta con el clon de
 // verdad en cada pasada: una mudanza «aplicada» cuyo clon ya no sigue al repo unificado (lo volvieron a clonar del repo
@@ -85,7 +85,7 @@ const UPSTREAM_REF = `${NS}/upstream`;
 const CLONE_RECORD = 'tycon-repoint.json';                       // la constancia de la mudanza, dentro del .git del clon
 const SEED_TIMEOUT_MS = 10 * 60 * 1000;
 const TREE_TIMEOUT_MS = 5 * 60 * 1000;
-const HARNESS_JS = `node ~/.claude/${require('./place.js').PLACE_NAME}/scripts/setup/harness.js`;   // el lugar (story 8.19)
+const HARNESS_JS = `node ~/.claude/${require('./place.js').PLACE_NAME}/scripts/setup/harness.js`;   // el lugar
 const UPDATE_CMD = `${HARNESS_JS} update`;
 const INSTALL_CMD = `${HARNESS_JS} install`;
 const OLD_URL = '<URL-del-repo-viejo>';                         // lo que la persona reemplaza en un remedio a mano
@@ -111,16 +111,16 @@ const isSha = (s) => typeof s === 'string' && /^[0-9a-f]{40,64}$/.test(s);
 // Un valor que va a git como argumento suelto (una URL, una carpeta) y empieza con «-» se leería como una OPCIÓN:
 // `git ls-remote --upload-pack=<comando> …` corre ese comando (medido). Esos valores salen del estado y de la constancia
 // del clon —archivos que cualquiera puede editar—: van detrás del separador `--` y, además, uno que empieza con «-» se
-// rechaza con su causa antes de llegar a git (revisor de seguridad del tramo 3)
+// rechaza con su causa antes de llegar a git
 const dashed = (v) => typeof v === 'string' && v.trim().startsWith('-');
 const dashedText = (what, v) => `${what} («${v}») empieza con «-»: git la leería como una opción — no la uso`;
 
-// ── ¿trae las skills? (la guarda del AC 34) ──────────────────────────────────────────────────────────────────────────
+// ── ¿trae las skills? (la guarda) ──────────────────────────────────────────────────────────────────────────
 // Las dos preguntas de la guarda contestan en TRES estados, con los mismos nombres que sus mellizas de los respaldos de
 // arranque (`skills_at` de `bootstrap-fallback.sh` y `.ps1`): `yes` (las trae) · `no` (git contestó que no) · `unknown`
-// (no se pudo mirar; `reason` dice por qué). «No pude mirar» nunca es «no»: quien pregunta no avanza y lo dice (revisor
-// de fallos silenciosos del tramo 3: antes «no pude leer el árbol de lo instalado» se leía como «de acá no salen las
-// skills», la guarda se salteaba, y una punta sin skills seguía su camino). `hasSkills` y `providesSkills` son la misma
+// (no se pudo mirar; `reason` dice por qué). «No pude mirar» nunca es «no»: quien pregunta no avanza y lo dice (si
+// «no pude leer el árbol de lo instalado» se leyera como «de acá no salen las
+// skills», la guarda se saltearía y una punta sin skills seguiría su camino). `hasSkills` y `providesSkills` son la misma
 // respuesta en `true` / `false` / `null`, como `brings` en `guides-heal.js`.
 
 /** ¿El árbol de ese commit trae `skills/tycon-pipeline`? @returns {{ status: 'yes'|'no'|'unknown', reason: string|null }} */
@@ -138,8 +138,8 @@ function hasSkills(dir, rev, opts) {
 /**
  * ¿De esa fuente salen las skills de esta máquina? La de agent-skills, siempre (el clon viejo, re-apuntado o no). La
  * del arnés, sólo cuando no hay un clon aparte —la máquina de un solo árbol— y lo instalado trae las skills. En la
- * máquina de dos clones el arnés NO lo es: tiene que poder seguir a `main` aunque `main` vuelva a un árbol de antes de
- * la unión (es el retorno de antes de la llave), y las skills siguen en el otro clon.
+ * máquina de dos clones el arnés NO lo es: tiene que poder seguir a `main` aunque `main` vuelva a un árbol anterior a
+ * la unión (el retorno previo a la llave), y las skills siguen en el otro clon.
  * @returns {{ status: 'yes'|'no'|'unknown', reason: string|null }}  `unknown`: no se pudo leer el árbol de lo instalado
  */
 function skillsFrom(state, src, { env } = {}) {
@@ -158,10 +158,9 @@ function providesSkills(state, src, opts) {
 // ── ¿qué clon es? ────────────────────────────────────────────────────────────────────────────────────────────────────
 
 // Cada pregunta de esta sección contesta en TRES estados, y «no pude mirar» nunca es «no»: con `sameClone` en dos, si
-// git no contestaba a tiempo (o un `.git` no se dejaba leer) la respuesta era «no es el mismo clon», y con
+// git no contesta a tiempo (o un `.git` no se deja leer) la respuesta sería «no es el mismo clon», y con
 // `~/.claude/agent-skills` enlazado al clon del arnés por una ruta que no es letra por letra la misma (otra caja) la
-// vuelta le hacía `reset --hard` al clon del arnés, al commit viejo de agent-skills (medido en el laboratorio; segunda
-// vuelta del revisor de fallos silenciosos del tramo 3, 2026-10-04).
+// vuelta le haría `reset --hard` al clon del arnés, al commit viejo de agent-skills.
 
 /** La ruta real de una carpeta: `{ status: 'ok', path }` · `absent` (no existe) · `unknown` (no se pudo resolver:
  *  permisos, un disco que no responde; `reason` dice cuál y por qué). Un ENOENT es una respuesta; un EACCES, no. */
@@ -328,10 +327,10 @@ function sparseOn(dir, env) {
  * El clon vuelve a mostrar todo, y la configuración y el archivo de la vista quedan como en `before`. Se puede correr
  * sobre un clon que ya muestra todo —también si alguien apagó la vista a mano en el clon re-apuntado (`git
  * sparse-checkout disable` deja `.git/config` en `true` y `config.worktree` en `false`: ahí no hay nada que volver a
- * mostrar, y pedir `reapply` moría)—. Lo que decide es el valor efectivo y lo que el clon tiene oculto, no `.git/config`.
+ * mostrar, y pedir `reapply` muere)—. Lo que decide es el valor efectivo y lo que el clon tiene oculto, no `.git/config`.
  * `hidden`: cuántos archivos quedaron sin mostrarse (git no pisa uno que el dev creó en ese lugar): se dice, no es una falla.
- * Si no se pudo CONTAR lo oculto es una falla, con su causa: antes se contaba como cero, se salteaba volver a mostrar y
- * la vuelta decía «muestra todo» sin saberlo (segunda vuelta del revisor de fallos silenciosos del tramo 3).
+ * Si no se pudo CONTAR lo oculto es una falla, con su causa: contarlo como cero saltearía volver a mostrar y
+ * la vuelta diría «muestra todo» sin saberlo.
  */
 function sparseOff(dir, env, before) {
   const no = (reason) => ({ ok: false, reason, hidden: 0 });
@@ -394,7 +393,7 @@ function notTracked(dir, env) {
  *  `null` si git no pudo compararlos. */
 function pathsBetween(dir, from, to, env) {
   if (from === to) return { added: [], changed: [] };
-  // los dos commits salen del estado: nunca llegan a git como opción (`--output=<archivo>` le hacía pisar un archivo)
+  // los dos commits salen del estado: nunca llegan a git como opción (`--output=<archivo>` le haría pisar un archivo)
   if (!isSha(from) || !isSha(to)) return null;
   const r = SRC.git(dir, ['diff', '--no-renames', '--name-status', '-z', '--end-of-options', from, to, '--'], { env, timeout: TREE_TIMEOUT_MS });
   if (!r.ok) return null;
@@ -408,8 +407,8 @@ function pathsBetween(dir, from, to, env) {
 }
 /** Lo modificado sin commitear en lo que git sigue (contra HEAD); `null` si no se pudo mirar. Con `--no-renames`: un
  *  renombre en el índice (`git mv README.md LEEME.md`) se lista como la ruta que se va MÁS la que llega; sin eso git
- *  nombra sólo la nueva, la vieja no aparecía entre lo modificado, y el control «tenés cambios en algo que la versión
- *  nueva también cambia» no la veía: la frenaba el merge, con la mudanza ya arrancada (pase adversarial, clase 18). */
+ *  nombra sólo la nueva, la vieja no aparece entre lo modificado, y el control «tenés cambios en algo que la versión
+ *  nueva también cambia» no la ve: la frenaría el merge, con la mudanza ya arrancada. */
 function dirtyPaths(dir, env) {
   const r = SRC.git(dir, ['diff', '--no-renames', '--name-only', '-z', 'HEAD'], { env, timeout: TREE_TIMEOUT_MS });
   return r.ok ? zlist(r.raw) : null;
@@ -421,8 +420,8 @@ function named(hits) {
 /**
  * Lo del dev que quedaría PISADO al llevar el clon de `head` al commit `target` con `reset --hard` (la vuelta, y deshacer
  * una mudanza en curso): un archivo sin versionar, o ignorado, en una ruta que `target` trae y `head` no. `reset --hard`
- * lo reemplaza sin avisar y sin copia —igual que el merge de la ida, que por eso lo frena—: la ida lo miraba y la vuelta
- * no (pase adversarial, clases 3 y 9). Hace falta que el repo unificado haya retirado o movido, después de la ida, una
+ * lo reemplaza sin avisar y sin copia —igual que el merge de la ida, que por eso lo frena—: la ida lo mira y la vuelta
+ * también. Hace falta que el repo unificado haya retirado o movido, después de la ida, una
  * ruta que el commit viejo sigue. `null` = nada en el camino; si no, la causa lista para `block`.
  */
 function inTheWayBack(dir, head, target, env) {
@@ -480,8 +479,8 @@ function restoreRef(dir, ref, sha, env) {
 // De dónde venía el clon (URL, commit, lo que había en su configuración) se guarda en el estado del mecanismo — y el
 // estado se pierde: `uninstall` lo borra y NO toca el clon, que queda re-apuntado; y ante un estado ilegible el consejo
 // es borrarlo y reinstalar. Sin otra constancia, la máquina reinstalada tendría un clon re-apuntado que nadie sabe
-// deshacer; y con la llave prendida el arranque lo encontraba «con una vista reducida propia», no podía pasar y —por la
-// regla «ninguna fuente se mueve»— la máquina dejaba de actualizarse. Por eso la ida deja la misma constancia DENTRO del
+// deshacer; y con la llave prendida el arranque lo encontraría «con una vista reducida propia», no podría pasar y —por la
+// regla «ninguna fuente se mueve»— la máquina dejaría de actualizarse. Por eso la ida deja la misma constancia DENTRO del
 // `.git` del clon (un archivo que git no mira), la vuelta la saca, y `adopt` la lee cuando el estado no sabe nada.
 
 function recordFile(dir, env) {
@@ -570,15 +569,13 @@ function tidy(state) {
  * hoy difieren de HEAD y tienen el contenido de la versión nueva (o faltan); y las que la versión nueva agrega y quedaron
  * en el disco con su contenido. Lo que el dev tocó no entra: esas rutas estaban limpias (se miró antes de mover).
  * «El commit nuevo no está en el clon» (el merge ni empezó) lo dice git, en sus tres estados: si no se pudo mirar, o no
- * se pudo listar lo que cambia o lo modificado, es una falla con su causa — antes cualquiera de las tres se leía como
- * «nada que limpiar» y la mudanza se daba por deshecha (la misma clase que la segunda vuelta del revisor de fallos
- * silenciosos encontró en `sameClone` y en lo oculto).
+ * se pudo listar lo que cambia o lo modificado, es una falla con su causa — leer cualquiera de las tres como
+ * «nada que limpiar» daría la mudanza por deshecha (la misma clase de falla que en `sameClone` y en lo oculto).
  * Cada archivo se compara con la versión nueva también en tres estados (`fileVsTarget`): si no se pudo mirar si está en el
- * disco, leerlo, o leer su versión nueva, no se toca NINGÚN archivo y es una falla con la causa. Antes una lectura que
- * fallaba daba vacío: con las dos vacías, «vacío == vacío» se tomaba como «es de la versión nueva» y la limpieza pisaba
- * (`checkout -f`) o borraba un archivo que no se pudo leer; con una sola, «distinto», y la ida se daba por deshecha con
- * lo de la versión nueva todavía en el disco; y `existsSync` contestaba «no está» ante un error de permisos (tercera
- * vuelta del revisor de fallos silenciosos del tramo 3).
+ * disco, leerlo, o leer su versión nueva, no se toca NINGÚN archivo y es una falla con la causa. Una lectura que
+ * falla y da vacío es peligrosa: con las dos vacías, «vacío == vacío» se tomaría como «es de la versión nueva» y la limpieza pisaría
+ * (`checkout -f`) o borraría un archivo que no se pudo leer; con una sola, «distinto», y la ida se daría por deshecha con
+ * lo de la versión nueva todavía en el disco; y `existsSync` contesta «no está» ante un error de permisos.
  */
 function restorePartial(dir, from, to, env) {
   const there = SRC.commitState(dir, to, { env });
@@ -651,8 +648,7 @@ function recordProblem(from) {
  * Deja el clon como estaba antes de la ida. Mira cada paso antes de tocarlo: se puede correr dos veces, y sobre una ida
  * que quedó a medias. `to`: el commit al que iba la ida (para limpiar un merge que murió en el medio).
  * Lo que NO deshace, y devuelve por qué con su comando: sobre otra rama que `main` —el `reset --hard` movería la rama en
- * la que esté parado el dev, y su commit quedaría sólo en el reflog (clase 17: el camino de la mudanza «en curso» no lo
- * miraba)—, y encima de un archivo del dev en una ruta que vuelve (clases 3 y 9).
+ * la que esté parado el dev, y su commit quedaría sólo en el reflog—, y encima de un archivo del dev en una ruta que vuelve.
  * @returns {{ ok: boolean, reason: string|null, notes: string[] }}
  */
 function undo(skills, from, { env, to = null } = {}) {
@@ -661,8 +657,8 @@ function undo(skills, from, { env, to = null } = {}) {
   const no = (reason) => ({ ok: false, reason, notes });
   const bad = recordProblem(from);
   if (bad) return no(bad);
-  // el commit al que iba la ida también sale del estado: si no es un commit, no se usa para nada (segunda vuelta del
-  // revisor de seguridad: llegaba a `git diff` y un `--output=<archivo>` hacía que git pisara ese archivo)
+  // el commit al que iba la ida también sale del estado: si no es un commit, no se usa para nada (si llegara a `git diff`,
+  // un `--output=<archivo>` haría que git pisara ese archivo)
   if (to !== null && to !== undefined && !isSha(to)) return no('la mudanza en curso guardó como destino algo que no es un commit: no lo uso');
   const head = SRC.head(dir, { env });
   if (!head) return no(`no pude leer HEAD de ${dir}`);
@@ -776,9 +772,9 @@ function forward(ctx, state, o) {
   const straight = SRC.ancestor(dir, from, target, env);
   if (straight === null) return cleanStop({ cause: 'unreadable', reason: `git no pudo comparar ${sha7(from)} con ${sha7(target)}`, transient: true });
   // El destino sale del clon LOCAL del arnés, y mientras este clon no pase el arranque no actualiza ninguna fuente
-  // (AC 32): si el repo unificado arregla la causa (mergea el commit que faltaba), el arranque solo no se entera nunca.
+  // Si el repo unificado arregla la causa (mergea el commit que faltaba), el arranque solo no se entera nunca.
   // La salida es el comando que el aviso nombra: `update` pedido a mano trae primero el arnés —sólo si lo publicado ya
-  // contiene este commit— y reintenta la mudanza en el mismo comando (harness.js; pase adversarial, clase 2)
+  // contiene este commit— y reintenta la mudanza en el mismo comando (harness.js)
   if (!straight) {
     return cleanStop({
       cause: 'not-fast-forward', fix: `${g} log -3`,
@@ -873,8 +869,8 @@ function back(ctx, state, o) {
   if (!from || !from.url || !from.commit) {
     // Sin constancia no hay vuelta que hacer; se dice (doctor, en rojo) y NO frena a nadie, en NINGÚN arranque: el clon
     // sigue al repo unificado, igual que el arnés, y la máquina se sigue actualizando. Va ANTES del atajo «nada cambió»:
-    // ese atajo devuelve «no se mueve ninguna fuente» para cualquier causa anotada, y desde el segundo arranque congelaba
-    // la máquina (pase adversarial, clases 5 y 12). El remedio es el comando entero, en orden: fijar el origen ANTES de
+    // ese atajo devuelve «no se mueve ninguna fuente» para cualquier causa anotada, y desde el segundo arranque congelaría
+    // la máquina. El remedio es el comando entero, en orden: fijar el origen ANTES de
     // mover el clon (así la comprobación de salud de `install` lo encuentra en el commit registrado), traer el repo viejo
     // y llevar `main` a lo publicado sin pisar lo modificado (`reset --keep`). Hecho eso, el estado suelta la mudanza
     // solo: ya no sigue al repo unificado (`strayed`)
@@ -905,7 +901,7 @@ function back(ctx, state, o) {
   if (own > 0) return stop({ cause: 'own-commits', reason: `tiene ${own} commit(s) propios que origin no tiene`, fix: `guardalos en una rama tuya (${g} branch <nombre>) y volvé ${MAIN} a lo publicado (${g} reset --keep origin/${MAIN})` });
   const there = SRC.commitState(dir, from.commit, { env });
   if (there.status !== 'ok') return stop({ cause: 'commit-missing', reason: there.status === 'absent' ? `el commit guardado ${sha7(from.commit)} no está en el clon` : `no pude mirar el commit guardado ${sha7(from.commit)} (${there.reason})`, transient: there.status !== 'absent' });
-  // nada del dev en una ruta que vuelve: la ida lo frena, y la vuelta lo pisaba sin aviso y sin copia (clases 3 y 9)
+  // nada del dev en una ruta que vuelve: la ida lo frena, y la vuelta lo pisaría sin aviso y sin copia
   const here = SRC.head(dir, { env });
   if (!here) return stop({ cause: 'unreadable', reason: `no pude leer HEAD de ${dir}`, transient: true });
   const way = here === from.commit ? null : inTheWayBack(dir, here, from.commit, env);
@@ -952,13 +948,13 @@ function back(ctx, state, o) {
  * toma la copia de seguridad y devuelve algo, o `null`; `finish(copia)` la cierra; `write()` graba el estado.
  * Cambia `state` en memoria (y lo graba con `write` en los dos puntos que importan si la sesión muere).
  * @returns {{ status: string, proceed: boolean, lines: string[], notice: string|null }}  `proceed: false` = ninguna
- *   fuente se mueve en esta corrida (AC 32)
+ *   fuente se mueve en esta corrida
  */
 function run(ctx, state, o = {}) {
   if (!o.dryRun) return decide(ctx, state, o);
   // `--dry-run` dice qué haría y NO deja nada: lo que la decisión anota en el estado en memoria (reconocer un clon ya
   // re-apuntado, soltar una constancia vieja) se saca antes de volver, porque quien llama graba el estado al terminar.
-  // Antes un `update --dry-run` con la llave de una sola vez dejaba grabada una adopción sin origen (clase 13)
+  // Sin esto, un `update --dry-run` con la llave de una sola vez deja grabada una adopción sin origen
   const skills = sourceOf(state, 'agent_skills');
   const had = Object.prototype.hasOwnProperty.call(state, 'repoint');
   const kept = had && state.repoint ? JSON.parse(JSON.stringify(state.repoint)) : state.repoint;
@@ -973,7 +969,7 @@ function run(ctx, state, o = {}) {
  * ¿El clon dejó de seguir al repo al que el estado dice que se re-apuntó? Devuelve su `origin` de ahora, o `null` si lo
  * sigue —o si no se pudo mirar: sin saberlo no se suelta nada—. «Lo sigue» = su origin es el repo unificado de ahora o
  * el que quedó anotado al re-apuntar. El caso al revés del que cubre `adopt`: el clon se volvió a clonar del repo viejo,
- * o alguien le devolvió el `origin` a mano, y el estado seguía diciendo «re-apuntado» (clases 4, 6 y 13).
+ * o alguien le devolvió el `origin` a mano, y el estado seguiría diciendo «re-apuntado».
  */
 function strayed(state, skills, harness, env) {
   const applied = state.repoint && state.repoint.applied;
@@ -1072,7 +1068,7 @@ function decide(ctx, state, o) {
  * salud de este árbol, y baja de rojo a aviso (como `failed`). `when`: quién va a hacer la mudanza pendiente, dicho por
  * quien conoce la política (en modo desarrollador o con la actualización apagada no la hace nadie; con `ask`, la persona).
  * Lo que dice del clon lo CONTRASTA con el clon (sólo lecturas, con `env`): «re-apuntado» se dice si su `origin` es de
- * verdad el del repo unificado, no porque el estado lo diga (clase 4: un clon vuelto a clonar del repo viejo salía con
+ * verdad el del repo unificado, no porque el estado lo diga (un clon vuelto a clonar del repo viejo saldría con
  * un ✓). Si no se pudo mirar el clon, vale lo que dice el estado.
  */
 function doctorItems(state, want, { health = false, when = null, env } = {}) {
@@ -1120,11 +1116,11 @@ function doctorItems(state, want, { health = false, when = null, env } = {}) {
 }
 
 /**
- * Lo que `doctor` dice de una fuente de la que salen las skills cuando lo último traído no las trae (AC 34): el texto,
+ * Lo que `doctor` dice de una fuente de la que salen las skills cuando lo último traído no las trae: el texto,
  * o `null`. Sólo lecturas del clon.
  */
 function withoutSkillsNote(state, src, { env } = {}) {
-  // «no pude leer» se DICE: callarlo era darlo por «de acá no salen las skills» (revisor de fallos silenciosos)
+  // «no pude leer» se DICE: callarlo sería darlo por «de acá no salen las skills»
   const from = skillsFrom(state, src, { env });
   if (from.status === 'unknown') return `fuente ${src.name}: no pude mirar si de acá salen las skills de esta máquina — ${from.reason}: update no avanza esta fuente hasta poder leerlo`;
   if (from.status !== 'yes') return null;

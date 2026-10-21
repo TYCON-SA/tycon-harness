@@ -1,23 +1,23 @@
 'use strict';
-// team.js — la capa del equipo sobre la versión bajada (story 8.25, tanda A1a).
+// team.js — la capa del equipo sobre la versión bajada.
 //
 // Qué resuelve: la versión publicada es la copia pública y no trae lo que es del equipo —el perfil (team-profile.json; el
-// nombre de antes, perfil-equipo.json, sigue valiendo)
-// y la llave del buzón (scripts/metrics/corridas-buzon.json)—; la primera máquina mudada (2026-10-08) quedó con las
+// nombre anterior, perfil-equipo.json, sigue valiendo)
+// y la llave del buzón (scripts/metrics/corridas-buzon.json)—; sin ellos, una máquina quedaría con las
 // integraciones, el paquete por defecto y la política de fábrica. Acá vive la capa: un segundo repo privado (GitHub o Azure),
 // chico, con esos dos archivos y su declaración (team-layer.json), que `install --version … --team <org>/<repo>`, `update` y
 // `migrate --to-home` bajan con el mismo permiso que el arnés, verifican contra el commit SEGÚN GITHUB y apilan sobre la
 // versión pública en `incoming/<versión>/` ANTES del cambio. Nada se funde en `~/.tycon/config.json`: los valores quedan
 // con origen «perfil» y un cambio futuro del repo del equipo le llega a cada máquina.
 //
-// Dos momentos, a propósito (revisión adversarial de la spec, W1): `resolveTeam` RESUELVE y valida —ref, commit, lista del
+// Dos momentos, a propósito: `resolveTeam` RESUELVE y valida —ref, commit, lista del
 // árbol, lista cerrada, declaración, perfil— sin escribir ni registrar (así `install` y `migrate` pueden salir 1 con la HOME
 // idéntica); `fetchTeam` + `stackTeam` bajan y apilan, después del «¿Instalo?» y de las skills de terceros.
 //
 // La lista cerrada se juzga sobre la lista del árbol de GitHub (`git/trees/<tree>?recursive=1`), que trae el MODO de cada
 // ruta: un enlace (120000) o un submódulo (160000) se nombran ahí; del comprimido no se puede saber que una ruta es un
-// submódulo (W/C3). Nada ejecutable entra: ni hooks, ni `scripts/**` salvo dos rutas exactas de datos —la llave y el mapa de
-// renombres (AC 33), que se valida contra la versión que va a quedar con el lector de ESA versión (`renamesProblems`)—.
+// submódulo. Nada ejecutable entra: ni hooks, ni `scripts/**` salvo dos rutas exactas de datos —la llave y el mapa de
+// renombres, que se valida contra la versión que va a quedar con el lector de ESA versión (`renamesProblems`)—.
 //
 // Sólo `require` dentro de scripts/setup/harness/ al cargar (la copia fija de arranque copia la carpeta entera); el lector
 // de comprimidos y el hash de árbol se cargan al usarlos, y release.js (que a su vez carga este archivo) también.
@@ -33,20 +33,20 @@ const GA = require('./github-auth.js');
 const lib = (name) => require(path.join(__dirname, '..', '..', 'lib', name));
 // release.js carga este archivo y este archivo usa release.js (readManifest, explainFailure): la vuelta se resuelve al usarlo,
 // y se nombra por ruta armada para que la copia fija de arranque (que ordena los módulos por sus `require('./…')`) no vea un
-// ciclo: team.js va antes que release.js en esa copia (170 #12506, tycon-home T2b)
+// ciclo: team.js va antes que release.js en esa copia
 const rel = () => require(path.join(__dirname, 'release.js'));
 
 /**
  * El perfil del equipo se llama `team-profile.json` (lo que lee la máquina se nombra en inglés: guides/maintaining/nombres-en-ingles.md).
- * El nombre de antes, `perfil-equipo.json`, sigue valiendo sin fecha de retiro: vive en repos del equipo que el arnés no
- * controla, y una máquina con una versión anterior sólo conoce ése. Se busca primero el nuevo; si no está, el de antes, con
- * un aviso de una línea que dice cómo renombrarlo. Con los dos, gana el nuevo, el de antes no se apila y se avisa.
+ * El nombre anterior, `perfil-equipo.json`, sigue valiendo sin fecha de retiro: vive en repos del equipo que el arnés no
+ * controla, y una máquina con una versión anterior sólo conoce ése. Se busca primero el nuevo; si no está, el anterior, con
+ * un aviso de una línea que dice cómo renombrarlo. Con los dos, gana el nuevo, el anterior no se apila y se avisa.
  */
 const PROFILE_PATH = 'team-profile.json';
 const LEGACY_PROFILE_PATH = 'perfil-equipo.json';
 const PROFILE_PATHS = Object.freeze([PROFILE_PATH, LEGACY_PROFILE_PATH]);
 const isProfilePath = (p) => PROFILE_PATHS.includes(p);
-/** El perfil entre los archivos de una lista (`[{ path }]`): el del nombre nuevo si está; si no, el de antes; o undefined. */
+/** El perfil entre los archivos de una lista (`[{ path }]`): el del nombre nuevo si está; si no, el anterior; o undefined. */
 const profileFileOf = (files) => (files || []).find((f) => f && f.path === PROFILE_PATH) || (files || []).find((f) => f && f.path === LEGACY_PROFILE_PATH);
 /**
  * El perfil del equipo en la raíz de un árbol: `{ file, name, exists, legacy, both }`. Sin ninguno, `file` es la ruta del
@@ -69,22 +69,22 @@ function profileNameNotice({ legacy = false, both = false } = {}, where = 'tree'
   const gate = where === 'layer' ? ' en el repo del equipo, y en el mismo commit subí requires.harness de team-layer.json a la versión de este arnés' : '';
   return `el perfil del equipo usa el nombre de antes (${LEGACY_PROFILE_PATH}): sigue andando; para pasarlo al nuevo, git mv ${LEGACY_PROFILE_PATH} ${PROFILE_PATH}${gate}`;
 }
-/** Los archivos de la A1, por su ruta exacta (D3): se aceptan aunque la versión no traiga su manifiesto. El perfil, con sus dos nombres. */
+/** Los archivos básicos de la capa (perfil y llave), por su ruta exacta: se aceptan aunque la versión no traiga su manifiesto. El perfil, con sus dos nombres. */
 const A1_PATHS = Object.freeze([PROFILE_PATH, LEGACY_PROFILE_PATH, 'scripts/metrics/corridas-buzon.json']);
-/** El mapa de renombres (tanda A2b-AC33, AC 33): un dato que lee scripts/lib/legacy-names.js, validado contra la versión. */
+/** El mapa de renombres: un dato que lee scripts/lib/legacy-names.js, validado contra la versión. */
 const RENAMES_PATH = 'scripts/lib/renames.json';
-/** Dónde vive cada repo del arnés de la organización (story 8.26, tanda J): la escribe la página de configuración y la valida
+/** Dónde vive cada repo del arnés de la organización: la escribe la página de configuración y la valida
  * el lector de la versión que va a quedar (scripts/lib/team-repos.js). */
 const TEAM_REPOS_PATH = 'team-repos.json';
 /** Las rutas exactas de la lista cerrada. La copia que leen las personas y las pruebas vive junto a harness-team.test.js (que comprueba que coinciden). */
 const CLOSED_PATHS = Object.freeze([...A1_PATHS, RENAMES_PATH, TEAM_REPOS_PATH]);
 /**
- * Tanda A2a (AC 17): además, por patrón —el manifiesto de un paquete, un agente y los `.md` de una skill—; sólo texto, nunca
+ * Además, por patrón —el manifiesto de un paquete, un agente y los `.md` de una skill—; sólo texto, nunca
  * un guion, un hook, un comando ni una traducción a Codex. Es la regla POR RUTA; la del conjunto (cada archivo de skills/
  * con su SKILL.md a una, dos o tres carpetas, nada dentro de una skill de la versión, rutas iguales sin caja, los topes) la
  * aplica `planTeam`. La copia que leen las personas: scripts/tests/fixtures/team-layer-paths.json (T17 compara las dos).
  *
- * Y el texto del alta del equipo (story 8.26, tanda H1c · AC 66): los `.md` de la RAÍZ de onboarding/ —lo que un dev nuevo le
+ * Y el texto del alta del equipo: los `.md` de la RAÍZ de onboarding/ —lo que un dev nuevo le
  * pega al asistente—, que con la versión pública ya no llegan a ninguna máquina. Un solo nivel y sólo `.md`: la charla
  * (onboarding/mini-class/, con HTML) y cualquier otra cosa bajo onboarding/ siguen afuera y rechazan la capa. Nadie lo ejecuta
  * ni lo carga como agente o skill, así que no se juzga por su contenido; la versión no trae esa carpeta (`TEAM_ONLY_TOPS`).
@@ -94,12 +94,12 @@ const SEG = '[A-Za-z0-9._-]+';
 const SEG_NO_DOT = '[A-Za-z0-9_-][A-Za-z0-9._-]*';
 // En onboarding/ no entran los nombres que un asistente carga SOLO como instrucciones cuando alguien abre una sesión
 // parada en esa carpeta (`CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md`, `GEMINI.md`…), se escriban
-// con la caja que se escriban: el texto del alta se lee, no se obedece (revisor de seguridad de la tanda H1c). Va en el
+// con la caja que se escriban: el texto del alta se lee, no se obedece. Va en el
 // patrón, sin banderas, para que la copia que leen las personas (team-layer-paths.json) diga exactamente lo mismo.
 // (`agents?`: `AGENTS.md` y el singular `AGENT.md`, que cargan otras herramientas; el `?` va tal cual al patrón)
 const LOADED_ALONE = Object.freeze(['claude', 'agents?', 'gemini', 'qwen', 'crush', 'warp']);
 const anyCase = (word) => [...word].map((c) => (/[a-z]/i.test(c) ? `[${c.toUpperCase()}${c.toLowerCase()}]` : c)).join('');
-/** Las extensiones que puede traer la carpeta `templates/` de un paquete (decisión 11 de la story 8.41): texto, nunca algo
+/** Las extensiones que puede traer la carpeta `templates/` de un paquete: texto, nunca algo
  *  que la máquina ejecute (el modo 100644 lo exige la regla de toda la capa). */
 const TEMPLATE_EXTENSIONS = Object.freeze(['md', 'yml', 'yaml', 'json', 'runsettings', 'template']);
 const LAYER_PATTERNS = Object.freeze([
@@ -107,13 +107,13 @@ const LAYER_PATTERNS = Object.freeze([
   new RegExp(`^agents/${SEG}\\.md$`),
   new RegExp(`^skills/(?:${SEG}/){1,5}${SEG}\\.md$`),
   new RegExp(`^onboarding/(?!(?:${LOADED_ALONE.map(anyCase).join('|')})(?:\\.[A-Za-z0-9_-]+)*\\.md$)${SEG}\\.md$`),
-  // un paquete ENTERO, en texto (story 8.41, AC 46): los agentes de su carpeta, los .md de sus skills y sus guías
+  // un paquete ENTERO, en texto: los agentes de su carpeta, los .md de sus skills y sus guías
   new RegExp(`^packs/${SEG}/agents/${SEG}\\.md$`),
   new RegExp(`^packs/${SEG}/skills/(?:${SEG}/){1,5}${SEG}\\.md$`),
   // (en las guías de un paquete tampoco entran los nombres que un asistente carga solo como instrucciones, ni un tramo que
   // empiece con punto: `guides/.claude/skills/…` lo descubre un asistente solo)
   new RegExp(`^packs/${SEG}/guides/(?:${SEG_NO_DOT}/){0,5}(?!(?:${LOADED_ALONE.map(anyCase).join('|')})(?:\\.[A-Za-z0-9_-]+)*\\.md$)${SEG_NO_DOT}\\.md$`),
-  // las plantillas de un paquete, como DATOS (decisión 11 de la story 8.41): las lee y las copia la skill que las usa, nada las
+  // las plantillas de un paquete, como DATOS: las lee y las copia la skill que las usa, nada las
   // ejecuta. Lista cerrada de extensiones; un nombre que un asistente carga solo como instrucciones viaja con `.template`, y
   // ningún tramo empieza con punto (`.claude/skills/…`, `.mcp.json`: un asistente los descubre solo)
   new RegExp(`^packs/${SEG}/templates/(?:${SEG_NO_DOT}/){0,5}(?!(?:${LOADED_ALONE.map(anyCase).join('|')})(?:\\.[A-Za-z0-9_-]+)*\\.md$)${SEG_NO_DOT}\\.(?:${TEMPLATE_EXTENSIONS.join('|')})$`),
@@ -146,13 +146,13 @@ const NAME_RE = /^[A-Za-z0-9._-]{1,40}$/;
 const SHA40 = /^[0-9a-f]{40}$/;
 const REQUIRES_RE = /^>=\s*(\d{4}\.\d{2}\.\d{2}\.\d+)$/;
 // (.gitattributes NO: `git archive` —el comprimido que GitHub arma— aplica export-ignore, export-subst y eol, y entonces el
-// árbol calculado de lo bajado nunca da el del commit: la capa se rechazaría siempre. Pase adversarial, clases 9 y 10)
+// árbol calculado de lo bajado nunca da el del commit: la capa se rechazaría siempre)
 const ROOT_NOT_STACKED = /^(?:team-layer\.json|README[^/]*|LICENSE[^/]*|\.gitignore)$/;
-/** Las tres llaves que no viajan en la capa hasta la A2: dos describen la transición de los clones; la otra muda solo a todo el equipo. */
+/** Las tres llaves que no viajan en la capa: dos describen la transición de los clones; la otra muda solo a todo el equipo. */
 const FORBIDDEN_PROFILE_KEYS = Object.freeze(['update.source', 'update.skills_source', 'install.home']);
 const CACHE_DIR_NAME = 'team';
 
-// ── la lista FIJA de skills con algo más que texto (tanda A2c · AC 31) ───────────────────────────────────────────────
+// ── la lista FIJA de skills con algo más que texto ───────────────────────────────────────────────
 /** Un dato de la versión, al lado de este archivo: la capa no lo trae ni lo puede cambiar. */
 const EXTRAS_FILE = path.join(__dirname, 'team-skill-extras.json');
 const MAX_EXTRAS = 3;
@@ -171,7 +171,6 @@ function validateExtras(j) {
     else if (seen.has(foldPath(e.skill))) out.push(`${at}: ${e.skill} está dos veces`); else seen.add(foldPath(e.skill));
     if (typeof e.reason !== 'string' || e.reason.trim().length < 10) out.push(`${at}: falta su motivo (reason)`);
     // una fecha que no existe (`2027-13-45`) dejaría el aviso de la revisión apagado para siempre: se valida que sea un día real
-    // (pase adversarial de la A2c, clases 6 y 12)
     const realDay = (s) => DATE_RE.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`)) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
     if (!isObject(e.review) || !Number.isInteger(e.review.every_months) || e.review.every_months < 1 || typeof e.review.next !== 'string' || !realDay(e.review.next)) out.push(`${at}: review tiene que traer every_months y next (YYYY-MM-DD, un día que exista)`);
     const rels = (k, need) => { const v = e[k] === undefined && !need ? [] : e[k]; if (!Array.isArray(v) || !v.every((x) => typeof x === 'string' && REL_RE.test(x) && !x.split('/').some((s) => /^\.+$/.test(s)))) out.push(`${at}: ${k} tiene que ser una lista de rutas relativas a la skill`); };
@@ -206,11 +205,11 @@ function extrasEntryFor(p, entries = loadExtras().entries) {
 const EXTRAS_PATH_RE = new RegExp(`^skills/(?:${SEG}/){1,5}${SEG}$`);
 function extrasPathProblem(p, e) {
   const why = `${e.skill} es de la lista fija de la versión (team-skill-extras.json): sólo entran los .md de su raíz y de ${e.folders.join('/, ')}/${(e.except || []).length ? ` (salvo ${e.except.join('/, ')}/)` : ''} y sus datos ${(e.data || []).join(', ')}`;
-  // el mismo juego de caracteres y la misma profundidad que las demás skills (pase adversarial de la A2c, clase 10): lo que
+  // el mismo juego de caracteres y la misma profundidad que las demás skills: lo que
   // Windows no puede escribir (`?`, `<`, `|`, un salto de línea, una letra fuera de ASCII) o más de 5 carpetas, no entra
   if (!EXTRAS_PATH_RE.test(String(p))) return `${why} — la ruta trae caracteres o carpetas que la capa no admite ([A-Za-z0-9._-], hasta 5 carpetas): en Windows no se podría escribir igual`;
   // todo SIN caja y sin puntos ni espacios finales por tramo (foldPath), como lo compara un disco de Mac o Windows: una carpeta
-  // excluida escrita con otra caja (`rules/Custom/`) cae en la misma carpeta (pase adversarial de la A2c, clases 1, 11 y 14)
+  // excluida escrita con otra caja (`rules/Custom/`) cae en la misma carpeta
   const rel = foldPath(String(p).slice(e.skill.length + 1));
   const F = (xs) => (xs || []).map(foldPath);
   const inDir = (d) => rel === d || rel.startsWith(`${d}/`);
@@ -247,11 +246,11 @@ function dataHomeOf(e, { home = os.homedir(), env = process.env } = {}) {
 const WINDOWS_RESERVED = /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\..*)?$/i;
 function layerPathProblem(p) {
   const s = String(p || '');
-  // dentro de una skill de la lista fija, manda SU lista blanca (tanda A2c · AC 31)
+  // dentro de una skill de la lista fija, manda SU lista blanca
   const ex = s.startsWith('skills/') ? extrasEntryFor(s) : null;
   if (ex) { const why = extrasPathProblem(s, ex); if (why) return why; }
   else if (!CLOSED_PATHS.includes(s) && !LAYER_PATTERNS.some((re) => re.test(s))) return `fuera de la lista cerrada de la capa (${CLOSED_PATHS.join(', ')}; packs/<paquete>/pack.json con los .md de sus agents/, skills/, guides/ y claude-md-blocks/ y sus templates/ (${TEMPLATE_EXTENSIONS.map((x) => `.${x}`).join(', ')}), agents/<nombre>.md, onboarding/<nombre>.md y los .md de una skill bajo skills/)`;
-  // en Windows `x.` es la carpeta `x` y `con.md` es un dispositivo: una ruta así pisaría otra sin que nada lo vea (revisor de seguridad, A2a)
+  // en Windows `x.` es la carpeta `x` y `con.md` es un dispositivo: una ruta así pisaría otra sin que nada lo vea
   const bad = s.split('/').find((seg) => seg.endsWith('.') || WINDOWS_RESERVED.test(seg));
   if (bad) return `el tramo «${bad}» termina en punto o es un nombre reservado de Windows: en ese disco sería otro archivo`;
   return null;
@@ -269,8 +268,8 @@ const exists = (p) => { try { fs.lstatSync(p); return true; } catch (_) { return
 const isSafe = (p) => require('./layer.js').isSafeLayerPath(p);
 /**
  * El blob de git de unos bytes (`sha1("blob <n>\0" + bytes)`), calculado ACÁ y no con scripts/lib/git-tree-hash.js: `uninstall` y
- * `rollback` también corren desde la copia fija de arranque, que trae scripts/setup/harness/ y no scripts/lib/ (A1b, revisión
- * adversarial C2: el `require` del hash tiraba con la máquina desinstalada a medias).
+ * `rollback` también corren desde la copia fija de arranque, que trae scripts/setup/harness/ y no scripts/lib/ (un `require` del hash
+ * tiraría con la máquina desinstalada a medias).
  */
 const blobOf = (buf) => crypto.createHash('sha1').update(`blob ${buf.length}\0`).update(buf).digest('hex');
 /** El prefijo de los temporales del refresco en el lugar: `doctor` no los cuenta «de más» y el refresco siguiente los borra. */
@@ -298,7 +297,7 @@ function parseTeam(option, { home = os.homedir() } = {}) {
     return a.ok ? { ok: true, host: 'azure', org: a.org, project: a.project, name: a.name, repo: a.url, url: a.url } : { ok: false, problem: a.problem };
   }
   const m = /^https:\/\/(?:[^@/]+@)?github\.com\/([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?\/?$/i.exec(s) || /^([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)$/.exec(s);
-  // «.» y «..» pasan la forma pero no son nombres: en la URL del pedido cambiarían de endpoint (pase adversarial, clase 7)
+  // «.» y «..» pasan la forma pero no son nombres: en la URL del pedido cambiarían de endpoint
   if (!m || [m[1], m[2]].some((x) => /^\.+$/.test(x))) return { ok: false, problem: `--team tiene que ser org/nombre, la URL del repo del equipo (https://github.com/<org>/<repo>, o https://dev.azure.com/<org>/<proyecto>/_git/<repo>) o la ruta completa de un repo de esta máquina (/…, ~/…); dice «${s.replace(/^(https?:\/\/)[^@/]+@/, '$1')}»` };
   return { ok: true, host: 'github', org: m[1], name: m[2], repo: `${m[1]}/${m[2]}`, url: `https://github.com/${m[1]}/${m[2]}` };
 }
@@ -319,7 +318,7 @@ function openSource(ident, { ctx, deadlineAt = null, publicRepo = null } = {}) {
     return { ok: true, host: 'local', src, resolve: (opts) => LO.resolve(o.c, opts), fetch: (r, opts) => LO.fetch(o.c, r, opts) };
   }
   // `deadlineAt` es el reloj de MIRAR (`resolve`). La BAJADA (`fetch`) arranca el suyo cuando empieza: no hereda lo que sobró de
-  // la mirada ni de lo que quien llama hizo antes con el mismo reloj (2026-10-09: 113 archivos de Azure con el reloj de mirar)
+  // la mirada ni de lo que quien llama hizo antes con el mismo reloj (113 archivos de Azure no alcanzan con el reloj de mirar)
   if (src.host === 'azure') {
     const AZ = require('./team-azure.js');
     const cred = AZ.credential(src, { env: ctx.env });
@@ -329,7 +328,7 @@ function openSource(ident, { ctx, deadlineAt = null, publicRepo = null } = {}) {
     return { ok: true, host: 'azure', src, credentialSource: cred.source, resolve: (o) => AZ.resolve(c, o), fetch: (r, o) => AZ.fetch(c, r, Object.assign({}, down, o)) };
   }
   // `keepToken`: el repo del equipo puede ser privado y el permiso sí hacer falta; un 401 acá se dice como siempre (explain401),
-  // aunque el permiso ya haya vencido contra el repo público del arnés en este mismo proceso (release.js, 2026-10-14)
+  // aunque el permiso ya haya vencido contra el repo público del arnés en este mismo proceso (release.js)
   const c = rel().client(ctx, { deadlineAt, keepToken: true });
   if (c.tokenProblem) return { ok: false, code: 2, host: 'github', src, reason: c.tokenProblem };
   c.repos = publicRepo ? [publicRepo, src.repo] : [src.repo];
@@ -342,7 +341,7 @@ function lookBudgetS(env) { const n = Number((env || {}).TYCON_UPDATE_NETWORK_BU
 /**
  * Hasta cuándo puede correr la BAJADA de la capa, contado desde ahora. Con `TYCON_RELEASE_DOWNLOAD_BUDGET_S` puesta, eso (nunca
  * menos que el de mirar). Sin ella: 120 s, o más si la fuente baja archivo por archivo (Azure) y faltan muchos — 3 s por cada
- * uno: medido contra el Azure real, 113 archivos llevaron unos 65 s (0,6 s por archivo, un proceso y una conexión por pedido).
+ * uno: 113 archivos de Azure llevan unos 65 s (0,6 s por archivo, un proceso y una conexión por pedido).
  */
 function downloadDeadline(env, pending = 0) {
   const set = Number((env || {}).TYCON_RELEASE_DOWNLOAD_BUDGET_S);
@@ -365,7 +364,7 @@ function teamOf({ option = undefined, state = null, cloneTree = null } = {}) {
     const file = path.join(cloneTree, 'scripts', 'publishing', 'public-repos.json');
     let j = null;
     if (exists(file)) {
-      // un archivo que está pero no se lee NO es «sin equipo»: es una precondición fallida (cazador de fallos silenciosos)
+      // un archivo que está pero no se lee NO es «sin equipo»: es una precondición fallida
       // (el archivo del clon que no se lee es una precondición fallida: 1, no 2)
       try { j = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return { problem: `${file} del clon no se lee como JSON (${e.message}): no sé si esta máquina tiene repo del equipo; arreglalo antes de mudar`, code: 1 }; }
       if (!isObject(j)) return { problem: `${file} del clon no es un objeto: no sé si esta máquina tiene repo del equipo`, code: 1 };
@@ -407,14 +406,14 @@ function planTeam(entries, { publicPaths = [], thirdPartyRoots = [], truncated =
       if (e.path === DECLARATION) declaration = { sha: e.sha, size: Number(e.size) || 0 };
       continue;   // del repo del equipo, no de la máquina
     }
-    // sin caja ni forma Unicode: en Mac y Windows `Skills/x` cae sobre `skills/x` (AC 17)
+    // sin caja ni forma Unicode: en Mac y Windows `Skills/x` cae sobre `skills/x`
     if (publicFolded.has(foldPath(e.path))) { problems.push({ path: e.path, reason: 'la versión pública que va a quedar instalada ya la trae: la capa no pisa nada de la copia' }); continue; }
     const why = layerPathProblem(e.path);
     if (why) { problems.push({ path: e.path, reason: why }); continue; }
     if (e.mode && e.mode !== '100644') { problems.push({ path: e.path, reason: `tiene modo ${e.mode}: la capa trae sólo archivos de texto comunes (100644), nada que la máquina ejecute` }); continue; }
     const size = Number(e.size) || 0;
     files.push({ path: e.path, mode: e.mode || '100644', sha: e.sha, size });
-    // una skill de la lista fija cuenta contra SU presupuesto, no contra el tope del resto (MAX_TOTAL_BYTES) (AC 31)
+    // una skill de la lista fija cuenta contra SU presupuesto, no contra el tope del resto (MAX_TOTAL_BYTES)
     const ex = e.path.startsWith('skills/') ? extrasEntryFor(e.path) : null;
     if (ex) byExtra.set(ex.skill, (byExtra.get(ex.skill) || 0) + size); else total += size;
   }
@@ -441,7 +440,7 @@ function planTeam(entries, { publicPaths = [], thirdPartyRoots = [], truncated =
 }
 
 /**
- * La regla del CONJUNTO de la lista cerrada (tanda A2a · AC 17), sobre rutas que ya pasaron la regla por ruta: dos rutas de la
+ * La regla del CONJUNTO de la lista cerrada, sobre rutas que ya pasaron la regla por ruta: dos rutas de la
  * capa que difieren sólo en la caja; cada archivo de skills/ con su SKILL.md más cercano a una, dos o tres carpetas de skills/
  * y sin otro SKILL.md de la capa más arriba; la carpeta de la skill no existe en la versión que va a quedar, no está dentro de
  * una skill suya ni de una de terceros. `[{ path, reason }]`.
@@ -451,7 +450,7 @@ function setProblems(paths, { publicPaths = [], thirdPartyRoots = [] } = {}) {
   const byFold = new Map();
   for (const p of paths) { const k = foldPath(p); byFold.set(k, [...(byFold.get(k) || []), p]); }
   for (const same of byFold.values()) if (same.length > 1) for (const p of same) problems.push({ path: p, reason: `otra ruta de la capa difiere sólo en la caja (${same.filter((x) => x !== p).join(', ')}): en Mac y Windows son el mismo archivo` });
-  // las skills de la raíz y las de cada paquete (`packs/<p>/skills/…`, story 8.41) con la misma regla, cada una contra su base
+  // las skills de la raíz y las de cada paquete (`packs/<p>/skills/…`) con la misma regla, cada una contra su base
   const roots = new Set(paths.filter(isSkillMd).map((p) => path.posix.dirname(p)));
   const publicDirs = new Set();
   const publicSkills = new Set();
@@ -484,7 +483,7 @@ function setProblems(paths, { publicPaths = [], thirdPartyRoots = [] } = {}) {
   return problems;
 }
 
-// ── el contenido de la capa (tanda A2a · AC 17, 18, 19, 26) ───────────────────────────────────────────────────────────────
+// ── el contenido de la capa ───────────────────────────────────────────────────────────────
 
 /** Los saltos de línea de Unicode que un lector de YAML 1.1 corta: NEL, LS y PS (armados por código: escritos crudos romperían la expresión). */
 const UNICODE_BREAKS = new RegExp(`[${String.fromCharCode(0x85, 0x2028, 0x2029)}]`);
@@ -497,13 +496,13 @@ function closingQuote(s, q, from = 1) {
   return -1;
 }
 /**
- * Las claves de PRIMER NIVEL del frontmatter YAML de un `.md`, leídas como las lee un lector de YAML en lo que importa acá
- * (pase adversarial de la A2a, clases 4, 8, 10 y 11): una clave entre comillas o con espacios antes de los dos puntos es la
+ * Las claves de PRIMER NIVEL del frontmatter YAML de un `.md`, leídas como las lee un lector de YAML en lo que importa acá.
+ * Una clave entre comillas o con espacios antes de los dos puntos es la
  * misma clave; lo indentado (un mapa anidado, un texto en bloque `|`/`>`) y lo que sigue a una comilla que abre y no cierra en
  * la línea (un texto de varias líneas) es VALOR, no clave; el comentario `# …` de un valor sin comillas no es parte de él; el
  * `---` de cierre admite espacios al final. `{ keys: { clave: valor | null }, dupes: [claves repetidas], flow }` (`flow`: el
  * bloque entero en forma de flujo `{…}`, que no se juzga) o null si no hay frontmatter. `valor` es null si es de varias líneas.
- * Exportado: build/generate.js lee con ESTE lector los agentes que traduce a Codex (tanda A2b · AC 30 b), así un agente que pasó
+ * Exportado: build/generate.js lee con ESTE lector los agentes que traduce a Codex, así un agente que pasó
  * la validación de la máquina no se cae al generarse por leerse distinto.
  */
 function frontmatterKeys(text) {
@@ -515,9 +514,9 @@ function frontmatterKeys(text) {
   const dupes = [];
   const exotic = [];
   // un retorno de carro SUELTO (sin \n) es salto de línea para un lector de YAML y no para este: lo que siga podría ser una clave
-  // de primer nivel escondida en un valor o un comentario (revisor de seguridad, A2a, vuelta 3)
+  // de primer nivel escondida en un valor o un comentario
   if (/\r(?!\n)/.test(m[1])) exotic.push('retorno de carro suelto (\\r sin \\n)');
-  // y los saltos de línea de Unicode (NEL, LS, PS) que un lector de YAML 1.1 también corta (vuelta 4)
+  // y los saltos de línea de Unicode (NEL, LS, PS) que un lector de YAML 1.1 también corta
   if (UNICODE_BREAKS.test(m[1])) exotic.push('salto de línea Unicode (U+0085, U+2028 o U+2029)');
   let openQuote = null;
   for (const line of lines) {
@@ -525,7 +524,7 @@ function frontmatterKeys(text) {
     if (!line.trim() || /^\s/.test(line) || line.startsWith('#')) continue;                    // anidado, bloque o comentario
     // lo que un lector de YAML convierte en una clave de primer nivel sin que se vea acá —una clave compleja (`? k` / `: v`), un
     // ancla, tag o alias delante de la clave, la fusión `<<`, un escape dentro de una clave entre comillas—: el frontmatter no se
-    // juzga (revisor de seguridad, A2a, vuelta 2: `&a hooks:`, `"\x68ooks":`, `? hooks`, `<<: *a`)
+    // juzga
     if (/^[?:]/.test(line) || /^[&!*]/.test(line) || /^(?:"[^"]*\\|<<\s*:)/.test(line)) { exotic.push(line.trim().slice(0, 40)); continue; }
     const k = /^(?:"((?:[^"\\]|\\.)*)"|'((?:[^']|'')*)'|([^\s:#'"][^:#]*?))\s*:(?:[ \t]+(.*)|$)/.exec(line);
     if (!k) continue;   // un ítem de lista u otra cosa que no es una clave de primer nivel
@@ -535,8 +534,8 @@ function frontmatterKeys(text) {
     let value;
     if (raw[0] === '"' || raw[0] === "'") {
       const end = closingQuote(raw, raw[0]);
-      // el valor, sin sus escapes (como lo lee un lector de YAML): '' en comillas simples; \" \\ \n \t en dobles (pase
-      // adversarial de la A2b: la description llegaba a Codex con las barras)
+      // el valor, sin sus escapes (como lo lee un lector de YAML): '' en comillas simples; \" \\ \n \t en dobles (sin esto,
+      // la description llegaría a Codex con las barras)
       const SIMPLE = { n: '\n', t: '\t', r: '\r', 0: '\0', b: '\b', f: '\f' };
       const unescape = (v, q) => (q === "'" ? v.replace(/''/g, "'")
         : v.replace(/\\(?:u([0-9a-fA-F]{4})|x([0-9a-fA-F]{2})|(["\\\/ntr0bf]))/g, (_, u, x, c) => (u ? String.fromCharCode(parseInt(u, 16)) : x ? String.fromCharCode(parseInt(x, 16)) : (SIMPLE[c] !== undefined ? SIMPLE[c] : c))));
@@ -549,9 +548,9 @@ function frontmatterKeys(text) {
 }
 
 /**
- * Lo que se juzga de la capa SOLA, sobre lo bajado (momento 1 del AC 26): el `name:` de cada agente coincide con su archivo,
- * el de cada SKILL.md con su carpeta y el de cada pack.json con la suya (AC 18), y ningún agente ni SKILL.md trae `hooks:` en
- * su frontmatter (Claude Code los corre: AC 17). `[{ path, reason }]`, vacía si todo vale. Nunca tira.
+ * Lo que se juzga de la capa SOLA, sobre lo bajado (momento 1): el `name:` de cada agente coincide con su archivo,
+ * el de cada SKILL.md con su carpeta y el de cada pack.json con la suya, y ningún agente ni SKILL.md trae `hooks:` en
+ * su frontmatter (Claude Code los corre). `[{ path, reason }]`, vacía si todo vale. Nunca tira.
  */
 function contentProblems(dir, files) {
   const problems = [];
@@ -568,7 +567,7 @@ function contentProblems(dir, files) {
     if (isPack) {
       let j = null;
       try { j = JSON.parse(text.replace(/^﻿/, '')); } catch (e) { problems.push({ path: p, reason: `el manifiesto del paquete es ilegible (${e.message})` }); continue; }
-      // el nombre con su clave vieja (`nombre`) también vale: el cargador la traduce (pase adversarial de la A2a, a verificar aparte)
+      // el nombre con su clave vieja (`nombre`) también vale: el cargador la traduce
       const nm = isObject(j) ? (j.name !== undefined ? j.name : j.nombre) : null;
       if (isObject(j) && j.name !== undefined && j.nombre !== undefined && j.name !== j.nombre) problems.push({ path: p, reason: `el paquete trae name (${JSON.stringify(j.name)}) y su nombre viejo nombre (${JSON.stringify(j.nombre)}) distintos: dejá uno` });
       else if (nm !== want) problems.push({ path: p, reason: `el name del paquete (${JSON.stringify(nm)}) tiene que ser el de su carpeta (${want})` });
@@ -579,8 +578,7 @@ function contentProblems(dir, files) {
     if (fm.flow) { problems.push({ path: p, reason: 'su frontmatter está en forma de flujo ({…}): no se juzga y la capa no lo trae' }); continue; }
     if (fm.exotic.length) { problems.push({ path: p, reason: `su frontmatter usa claves complejas, anclas, tags, alias, fusión (<<) o escapes en una clave (${fm.exotic.slice(0, 3).join(' · ')}): no se juzga y la capa no lo trae` }); continue; }
     // lo que Claude Code ejecuta desde un frontmatter (`hooks`, `mcpServers` con su comando) como clave de PRIMER NIVEL, escrita
-    // como sea (entre comillas, con espacios, en otra caja); el mismo texto dentro de un valor no es la clave (revisor de
-    // seguridad y pase adversarial de la A2a)
+    // como sea (entre comillas, con espacios, en otra caja); el mismo texto dentro de un valor no es la clave
     const runs = Object.keys(fm.keys).filter((k) => /^(?:hooks|mcpservers)$/i.test(k));
     if (runs.length) problems.push({ path: p, reason: `trae ${runs.join(' y ')} en su frontmatter: Claude Code los corre, y la capa no trae nada que la máquina ejecute` });
     if (fm.dupes.length) problems.push({ path: p, reason: `su frontmatter repite ${[...new Set(fm.dupes)].join(', ')}: un lector de YAML lo rechaza o se queda con uno; la capa no adivina cuál` });
@@ -606,10 +604,10 @@ function versionIndex(versionDir) {
     const raw = JSON.parse(fs.readFileSync(path.join(versionDir, 'scripts', 'publishing', 'third-party-skills.json'), 'utf8'));
     thirdPartyRoots = (raw.thirdParty || raw.third_party || []).filter((e) => isObject(e) && typeof e.target === 'string' && e.target).map((e) => e.target);
   } catch (e) {
-    // sin el archivo, la versión no trae skills de terceros; uno ilegible es «no sé dónde caen», que se dice (fallos silenciosos, A2a)
+    // sin el archivo, la versión no trae skills de terceros; uno ilegible es «no sé dónde caen», que se dice
     if (!e || e.code !== 'ENOENT') thirdPartyError = `scripts/publishing/third-party-skills.json de la versión no se puede leer (${(e && (e.code || e.message)) || e}): no sé dónde caen sus skills de terceros`;
   }
-  // los de la raíz y los de las carpetas de sus paquetes (story 8.41): todos se enlazan con su nombre en la misma carpeta
+  // los de la raíz y los de las carpetas de sus paquetes: todos se enlazan con su nombre en la misma carpeta
   const agents = paths.filter((p) => AGENT_RE.test(p)).map((p) => path.posix.basename(p, '.md'));
   const skills = [...paths.filter(isSkillMd).map((p) => path.posix.basename(path.posix.dirname(p))), ...thirdPartyRoots.map((t) => path.posix.basename(t))];
   const packs = paths.filter((p) => /^packs\/[^/]+\/pack\.json$/.test(p)).map((p) => p.split('/')[1]);
@@ -617,16 +615,16 @@ function versionIndex(versionDir) {
 }
 
 /**
- * Lo que se juzga de la capa CONTRA la versión que va a quedar (momento 2 del AC 26): la regla del conjunto con su lista (una
- * skill en una carpeta suya o de terceros), los nombres contra los de la versión sin caja ni acentos (AC 18; un revisor del
+ * Lo que se juzga de la capa CONTRA la versión que va a quedar (momento 2): la regla del conjunto con su lista (una
+ * skill en una carpeta suya o de terceros), los nombres contra los de la versión sin caja ni acentos (un revisor del
  * núcleo es un agente de la versión) y, si la capa trae paquetes, el cargador DE ESA VERSIÓN (`validateTree`) sobre el árbol
- * armado: los paquetes y agentes de su lista más los de la capa, en una temporal (AC 19). `{ ok, problems }`; nunca tira.
+ * armado: los paquetes y agentes de su lista más los de la capa, en una temporal. `{ ok, problems }`; nunca tira.
  */
 function checkAgainstVersion(layerDir, files, versionDir, { env = process.env } = {}) {
   void env;   // a propósito: el cargador corre con carpetas explícitas, ninguna variable decide qué se valida
   const paths = files.map((f) => f.path);
   const idx = versionIndex(versionDir);
-  // sin la lista de la versión no hay contra qué comparar nombres ni paquetes: una capa de la A1 (perfil y llave) no los tiene
+  // sin la lista de la versión no hay contra qué comparar nombres ni paquetes: una capa básica (perfil y llave) no los tiene
   if (!idx) return paths.every((p) => A1_PATHS.includes(p)) ? { ok: true, problems: [] } : { ok: false, problems: [{ path: '(versión)', reason: `${versionDir} no trae el manifiesto de su versión: no hay contra qué validar los revisores, las skills ni el mapa de renombres de la capa` }] };
   const problems = setProblems(paths, { publicPaths: idx.paths, thirdPartyRoots: idx.thirdPartyRoots }).filter((x) => /versión|terceros/.test(x.reason));
   if (idx.thirdPartyError && paths.some((p) => p.startsWith('skills/'))) problems.push({ path: '(versión)', reason: idx.thirdPartyError });
@@ -648,7 +646,7 @@ function checkAgainstVersion(layerDir, files, versionDir, { env = process.env } 
   }
   const layerPacks = paths.filter((p) => /^packs\/[^/]+\/pack\.json$/.test(p));
   // el revisor que nombra un paquete de la capa y su agente, con la MISMA caja: en Mac y Windows el cargador lo encuentra igual
-  // (el disco no distingue) y en Linux no; y en ejecución el pipeline lo pide por su nombre exacto (pase adversarial, clase 7)
+  // (el disco no distingue) y en Linux no; y en ejecución el pipeline lo pide por su nombre exacto
   const exactAgents = new Set([...idx.agents, ...paths.filter((p) => AGENT_RE.test(p)).map((p) => path.posix.basename(p, '.md'))]);
   for (const pp of layerPacks) {
     let j = null;
@@ -667,7 +665,7 @@ function checkAgainstVersion(layerDir, files, versionDir, { env = process.env } 
 }
 
 /**
- * El mapa de renombres de la capa contra la versión que va a quedar (tanda A2b-AC33, AC 33), con el lector DE ESA versión
+ * El mapa de renombres de la capa contra la versión que va a quedar, con el lector DE ESA versión
  * (`scripts/lib/legacy-names.js`: sus tipos y su regla de rutas). (a) La forma del mapa; (b) la de cada entrada; (c) el nombre
  * nuevo presente en la versión, para lo que la versión lista: un `file` o `folder` cuyo nuevo no está entra sólo si el viejo
  * tampoco (una herramienta del mantenedor que no viaja), y una opción, subcomando, valor o clave cuyo `where` es un archivo
@@ -675,7 +673,7 @@ function checkAgainstVersion(layerDir, files, versionDir, { env = process.env } 
  * un archivo que no es de la versión: sólo la forma (esos nombres viven en el entorno y la HOME). `[{ path, reason }]`; nunca tira.
  */
 const PATH_KINDS_MAP = Object.freeze(['file', 'folder', 'config-file', 'state-file']);
-/** La forma de cada tipo de nombre del mapa (revisor de seguridad de la tanda A2b-AC33; el mapa real las cumple, medido). */
+/** La forma de cada tipo de nombre del mapa. */
 const NAME_SHAPES = Object.freeze({
   env: /^[A-Z][A-Z0-9_]*$/,
   option: /^-{0,2}[A-Za-z0-9][A-Za-z0-9._-]*$/,
@@ -687,7 +685,7 @@ const NAME_SHAPES = Object.freeze({
 const MAP_HOME_PREFIX = `~/${path.basename(TH.claudeDir(path.sep))}/`;
 /** Lo que el mapa de la capa no puede nombrar aunque el lector lo acepte: un tramo `.git`, o una ruta de la HOME fuera de la carpeta de Claude Code. */
 function mapPathProblem(p) {
-  // como lo compara un disco de Mac o Windows (sin caja, sin puntos ni espacios finales): `.git.` y `.GIT` son `.git` (pase adversarial)
+  // como lo compara un disco de Mac o Windows (sin caja, sin puntos ni espacios finales): `.git.` y `.GIT` son `.git`
   if (String(p).split('/').some((seg) => foldPath(seg) === '.git')) return 'tiene un tramo .git';
   if (String(p).startsWith('~') && !String(p).startsWith(MAP_HOME_PREFIX)) return `es de la HOME y no cuelga de ${MAP_HOME_PREFIX} (un mapa no lleva un estado a otra carpeta de la persona)`;
   return null;
@@ -704,7 +702,7 @@ function renamesProblems(layerDir, versionDir, idx) {
   let text;
   try { text = fs.readFileSync(path.join(layerDir, ...RENAMES_PATH.split('/')), 'utf8'); } catch (e) { return [at(`el mapa no se pudo leer (${e.code || e.message})`)]; }
   // se lee como lo lee el lector (loadMap: JSON.parse sin quitar nada): un BOM que acá se tolerara dejaría en la máquina un mapa
-  // que el lector da por roto, y ningún nombre viejo se traduciría (pase adversarial)
+  // que el lector da por roto, y ningún nombre viejo se traduciría
   if (text.charCodeAt(0) === 0xFEFF) return [at('el mapa empieza con un BOM: el lector de la versión no lo lee (guardalo como UTF-8 sin BOM)')];
   try { map = JSON.parse(text); } catch (e) { return [at(`el mapa es ilegible (no es JSON: ${e.message})`)]; }
   if (!isObject(map)) return [at('el mapa tiene que ser un objeto con entries y retire_after')];
@@ -721,16 +719,16 @@ function renamesProblems(layerDir, versionDir, idx) {
     if (!texts.has(p)) { try { texts.set(p, fs.readFileSync(path.join(versionDir, ...p.split('/')), 'utf8')); } catch (e) { texts.set(p, { error: (e && (e.code || e.message)) || String(e) }); } }
     return texts.get(p);
   };
-  // la regla de rutas del lector, envuelta: es código de la versión y esta función nunca tira (fallos silenciosos de la tanda)
+  // la regla de rutas del lector, envuelta: es código de la versión y esta función nunca tira
   const pathWhy = (p, kind) => { try { return LN.pathProblem(p, kind); } catch (err) { return `no se pudo juzgar con el lector de la versión (${(err && err.message) || err})`; } };
   map.entries.forEach((e, i) => {
     const who = `entries[${i}]${isObject(e) && typeof e.old === 'string' ? ` (${e.old})` : ''}`;
     if (!isObject(e)) { problems.push(at(`${who}: no es un objeto`)); return; }
     if (!LN.KINDS.includes(e.kind)) { problems.push(at(`${who}: kind ${JSON.stringify(e.kind)} desconocido para el lector de la versión (${LN.KINDS.join(', ')})`)); return; }
-    // un tipo que el lector conoce y este instalador no sabe juzgar (una versión más nueva) no entra sin sus frenos (pase adversarial)
+    // un tipo que el lector conoce y este instalador no sabe juzgar (una versión más nueva) no entra sin sus frenos
     if (!PATH_KINDS_MAP.includes(e.kind) && !NAME_SHAPES[e.kind]) { problems.push(at(`${who}: kind ${JSON.stringify(e.kind)}: este instalador no sabe validarlo (lo conoce una versión más nueva del lector)`)); return; }
     if (typeof e.old !== 'string' || !e.old || typeof e.new !== 'string' || !e.new) { problems.push(at(`${who}: old y new tienen que ser texto no vacío`)); return; }
-    // una opción se compara sin sus guiones, como la compara el lector (`bare`): `--type` → `type` es la misma (pase adversarial)
+    // una opción se compara sin sus guiones, como la compara el lector (`bare`): `--type` → `type` es la misma
     const same = e.kind === 'option' ? e.old.replace(/^-+/, '') === e.new.replace(/^-+/, '') : e.old === e.new;
     if (same) { problems.push(at(`${who}: old y new son iguales${e.kind === 'option' ? ' (sin los guiones)' : ''}`)); return; }
     if (e.repo !== undefined && !['arnes', 'agent-skills'].includes(e.repo)) { problems.push(at(`${who}: repo es arnes o agent-skills (no ${JSON.stringify(e.repo)})`)); return; }
@@ -756,7 +754,7 @@ function renamesProblems(layerDir, versionDir, idx) {
   return problems;
 }
 
-/** El cargador de paquetes de la versión que va a quedar sobre el árbol armado (AC 19). `[{ path, reason }]`. */
+/** El cargador de paquetes de la versión que va a quedar sobre el árbol armado. `[{ path, reason }]`. */
 function packProblems(layerDir, layerPaths, versionDir, idx) {
   const loader = path.join(versionDir, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'packs.js');
   let PK = null;
@@ -837,8 +835,8 @@ function validateProfile(text, { readerTree, home = os.homedir(), env = process.
   try { parsed = JSON.parse(String(text).replace(/^﻿/, '')); } catch (e) { return { ok: false, reason: `${name} es ilegible (no es JSON: ${e.message})` }; }
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-team-profile-'));
   try {
-    // en la temporal va con el nombre de antes A PROPÓSITO: el lector de una versión anterior (el de `readerTree`) sólo busca
-    // ése, y el de hoy lee los dos
+    // en la temporal va con el nombre anterior A PROPÓSITO: el lector de una versión anterior (el de `readerTree`) sólo busca
+    // ése, y el actual lee los dos
     fs.writeFileSync(path.join(tmp, LEGACY_PROFILE_PATH), `${JSON.stringify(parsed, null, 2)}\n`);
     const r = TC.leerPerfil({ arnes: tmp, home, env: {} });
     if (r.estado !== 'leido') {
@@ -894,7 +892,7 @@ function contentsAt(c, repo, file, sha) {
   return { ok: true, text: buf.toString('utf8'), buf, sha: r.json.sha || null };
 }
 
-/** Los archivos que se juzgan por su CONTENIDO antes de escribir nada (momento 1 del AC 26): el perfil, los agentes, los SKILL.md y los manifiestos de paquete. */
+/** Los archivos que se juzgan por su CONTENIDO antes de escribir nada (momento 1): el perfil, los agentes, los SKILL.md y los manifiestos de paquete. */
 const isContentChecked = (p) => isProfilePath(p) || p === TEAM_REPOS_PATH || AGENT_RE.test(p)
   || isSkillMd(p) || /^packs\/[^/]+\/pack\.json$/.test(p);
 const rmQuiet = (d) => { try { fs.rmSync(d, { recursive: true, force: true }); } catch (_) { /* queda en la temporal del sistema */ } };
@@ -909,16 +907,16 @@ function trackStaged(dir) {
 function dropStaged(dir) { if (dir) { STAGED.delete(dir); rmQuiet(dir); } }
 
 /**
- * El momento 1 del AC 26, igual para las dos fuentes: lee (con `read(path, sha)` → `{ ok, buf }`) la declaración y los archivos
+ * El momento 1, igual para las dos fuentes: lee (con `read(path, sha)` → `{ ok, buf }`) la declaración y los archivos
  * que se juzgan por su contenido, cada uno verificado por el blob que la lista del árbol declara, a una carpeta temporal FUERA
- * del HOME, y ahí juzga la declaración (contra `version`), el perfil (con el lector de `readerTree`) y los nombres y `hooks:`
- * (AC 17, 18). `{ ok: true, dir, declaration, profileEntries }` —quien llama se queda con `dir` (Azure la reusa al bajar) o la
+ * del HOME, y ahí juzga la declaración (contra `version`), el perfil (con el lector de `readerTree`) y los nombres y `hooks:`.
+ * `{ ok: true, dir, declaration, profileEntries }` —quien llama se queda con `dir` (Azure la reusa al bajar) o la
  * borra— o el rechazo, sin dejar nada.
  */
 function judgeContent(plan, read, opts) {
   let dir = null;
   try { dir = trackStaged(fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-team-check-'))); } catch (e) { return { ok: false, status: 'blocked', reason: `${opts.head}: no pude armar la carpeta temporal para revisar la capa (${e.code || e.message})` }; }
-  // nunca tira: un error del disco al escribir lo leído es un motivo, y la temporal se borra (fallos silenciosos, A2a vuelta 2)
+  // nunca tira: un error del disco al escribir lo leído es un motivo, y la temporal se borra
   try { return judgeContentIn(dir, plan, read, opts); } catch (e) { dropStaged(dir); return { ok: false, status: 'blocked', reason: `${opts.head}: no pude revisar la capa (${e.code || e.message})` }; }
 }
 function judgeContentIn(dir, plan, read, { version, readerTree, deferReaders = false, home, env, head, commit }) {
@@ -974,10 +972,10 @@ function resolveTeam(c, repo, { version, readerTree, deferReaders = false, home 
   }
   const commit = ref.json.object.sha;
   // lo que GitHub contesta se usa en la URL del pedido siguiente y en una ruta del disco (la caché): sólo un sha de 40
-  // hexadecimales pasa (revisor de seguridad de la A1a: una respuesta manipulada no sale de la caché ni cambia el pedido)
+  // hexadecimales pasa
   if (!SHA40.test(commit)) return { ok: false, status: 'blocked', reason: `${head}: la ref ${TEAM_REF} apunta a algo que no tiene forma de commit (${JSON.stringify(String(commit).slice(0, 48))}): no se usa` };
   const etag = ref.headers && ref.headers.etag ? ref.headers.etag : null;
-  // el refresco en el lugar (A1b, AC 10 (a) y W10): si la punta es un commit que quien llama ya conoce —el de harness/, o uno
+  // el refresco en el lugar: si la punta es un commit que quien llama ya conoce —el de harness/, o uno
   // rechazado antes—, la ref sola alcanza: una mirada cuesta un pedido
   if (Array.isArray(knownCommits) && knownCommits.includes(commit)) return { ok: true, unchanged: true, repo, host: 'github', commit, etag };
   const meta = c.get(`/repos/${repo}/git/commits/${commit}`);
@@ -993,10 +991,10 @@ function resolveTeam(c, repo, { version, readerTree, deferReaders = false, home 
     return Object.assign(f, { reason: `${head}: ${f.reason}` });
   }
   const plan = planTeam(list.json.tree, { publicPaths, truncated: Boolean(list.json.truncated) });
-  // `invalid` (A1b, W10): una punta que no pasa la validación no se vuelve a validar hasta que cambie (un fallo de red, sí)
+  // `invalid`: una punta que no pasa la validación no se vuelve a validar hasta que cambie (un fallo de red, sí)
   if (!plan.ok) return { ok: false, status: 'blocked', invalid: true, commit, reason: `${head} @ ${sha7(commit)}: no se apila — ${plan.problems.map((p) => `${p.path}: ${p.reason}`).join(' · ')}` };
-  // el momento 1 (AC 26): lo que se juzga por su contenido, leído por la API (sin el comprimido: el choque con la versión se mira
-  // antes de bajarlo, AC 3) y verificado por blob; la temporal no se reusa (el comprimido trae todo)
+  // el momento 1: lo que se juzga por su contenido, leído por la API (sin el comprimido: el choque con la versión se mira
+  // antes de bajarlo) y verificado por blob; la temporal no se reusa (el comprimido trae todo)
   const judged = judgeContent(plan, (p) => {
     const r = contentsAt(c, repo, p, commit);
     return r.ok ? { ok: true, buf: r.text === null ? null : r.buf } : r;
@@ -1013,7 +1011,7 @@ function resolveTeam(c, repo, { version, readerTree, deferReaders = false, home 
 function collisionWith(resolved, incomingDir) {
   return foldedCollision(resolved.files.map((f) => f.path), rel().readManifest(incomingDir));
 }
-/** Las rutas de la capa que la versión (su manifiesto) ya trae, sin caja ni forma Unicode (AC 17: en Mac y Windows son el mismo archivo). */
+/** Las rutas de la capa que la versión (su manifiesto) ya trae, sin caja ni forma Unicode. */
 function foldedCollision(layerPaths, relm) {
   const pub = new Set(relm && Array.isArray(relm.files) ? relm.files.map((f) => foldPath(f.path)) : []);
   return layerPaths.filter((p) => pub.has(foldPath(p)));
@@ -1037,8 +1035,8 @@ function cacheDirOf(env, commit) {
 
 /**
  * El manifiesto de una carpeta (la caché, `incoming/<v>/`, `harness/`), o null. Una entrada sin forma (no es objeto, sin ruta, sin
- * blob de 40 hexadecimales) hace que el manifiesto entero no sirva: «sin capa», nunca un volcado (A1b, W5: `doctor` corre
- * dentro de la salud). `kept` (A1b) son rutas editadas a mano que el refresco conservó aunque el commit ya no las traiga.
+ * blob de 40 hexadecimales) hace que el manifiesto entero no sirva: «sin capa», nunca un volcado (`doctor` corre
+ * dentro de la salud). `kept` son rutas editadas a mano que el refresco conservó aunque el commit ya no las traiga.
  */
 function readTeamManifest(dir) {
   try {
@@ -1051,7 +1049,7 @@ function readTeamManifest(dir) {
 }
 
 /**
- * Lo que la máquina ya tiene, por blob (tanda A2c · AC 39): los archivos de la capa en `harness/` y en cada caché
+ * Lo que la máquina ya tiene, por blob: los archivos de la capa en `harness/` y en cada caché
  * `~/.tycon/team/*` (por sus manifiestos), y la declaración que guardó cada caché. `get(sha)` → los bytes, recalculados y
  * verificados por su blob (un archivo editado a mano no se usa), o null. Sólo lee; nunca tira.
  */
@@ -1101,7 +1099,7 @@ function fetchTeam(c, resolved, { env = process.env, log = null, deadlineFor = n
   if (!SHA40.test(String(resolved.commit)) || !SHA40.test(String(resolved.tree))) return { ok: false, status: 'blocked', reason: `capa del equipo (${resolved.repo}): el commit o el árbol resueltos no tienen forma de sha: no se baja nada` };
   const cacheDir = cacheDirOf(env, resolved.commit);
   const m = readTeamManifest(cacheDir);
-  // la caché sirve si es de ESTE repo y este commit (dos repos con el mismo commit12 no se confunden; clase 3 del pase adversarial)
+  // la caché sirve si es de ESTE repo y este commit (dos repos con el mismo commit12 no se confunden)
   if (m && m.commit === resolved.commit && m.repo === resolved.repo && m.tree === resolved.tree) {
     const intact = filesIntact(cacheDir, resolved.files);
     if (intact) { if (log) log(`team: ${resolved.repo} @ ${sha7(resolved.commit)} desde la caché (${intact.length} archivo(s))`); return { ok: true, cacheDir, files: intact, fromCache: true, resolved }; }
@@ -1172,14 +1170,14 @@ function stackTeam(fetched, incomingDir, { home = os.homedir(), env = process.en
     const v = validateProfile(text, { readerTree: incomingDir, home, env, name: pf.path });
     if (!v.ok) return { ok: false, invalid: true, reason: `capa del equipo (${resolved.repo}): ${v.reason} — la capa no se apila` };
   }
-  // el momento 2 (AC 26): los nombres y los paquetes contra la versión que va a quedar
+  // el momento 2: los nombres y los paquetes contra la versión que va a quedar
   const cv = checkAgainstVersion(fetched.cacheDir, fetched.files, incomingDir, { env });
   if (!cv.ok) return { ok: false, invalid: true, reason: `capa del equipo (${resolved.repo}) @ ${sha7(resolved.commit)}: no vale para la versión que va a quedar — ${cv.problems.map((x) => `${x.path}: ${x.reason}`).join(' · ')} — la capa no se apila` };
   for (const f of fetched.files) {
     const buf = fs.readFileSync(path.join(fetched.cacheDir, ...f.path.split('/')));
     writeAtomic(path.join(incomingDir, ...f.path.split('/')), buf);
   }
-  // el manifiesto apilado dice lo RESUELTO ahora (repo, etag, declaración); de la caché sólo cuándo se bajó (clase 3: la caché no
+  // el manifiesto apilado dice lo RESUELTO ahora (repo, etag, declaración); de la caché sólo cuándo se bajó (la caché no
   // puede pisar lo resuelto, o el estado dependería de corridas anteriores)
   const cached = readTeamManifest(fetched.cacheDir) || {};
   const manifest = { schema: 1, repo: resolved.repo, host: resolved.host || 'github', ref: resolved.ref, commit: resolved.commit, tree: resolved.tree, etag: resolved.etag || null, name: resolved.declaration.name, requires: resolved.declaration.requires, files: fetched.files, fetched_at: cached.fetched_at || nowIso(), applied_at: nowIso() };
@@ -1197,8 +1195,8 @@ function carryTeam(harnessDir, incomingDir, { home = os.homedir(), env = process
   if (!m) return { ok: false, reason: `${harnessDir} no trae ${MANIFEST_NAME}: no hay capa que arrastrar` };
   const intact = filesIntact(harnessDir, m.files);
   if (!intact) return { ok: false, reason: `la capa del equipo instalada (${m.repo} @ ${sha7(m.commit)}) no está entera en ${harnessDir}: no se arrastra una capa editada o incompleta` };
-  // lo arrastrado se valida como lo apilado (AC 6, D4): la lista cerrada y el perfil con el lector de la versión que va a quedar
-  // —un vocabulario más chico en la versión nueva vuelve «roto» un perfil que hoy vale— (pase adversarial, clases 1, 4 y 12)
+  // lo arrastrado se valida como lo apilado: la lista cerrada y el perfil con el lector de la versión que va a quedar
+  // —un vocabulario más chico en la versión nueva vuelve «roto» un perfil que hoy vale—
   const outside = intact.map((f) => f.path).filter((p) => !isLayerPath(p));
   if (outside.length) return { ok: false, reason: `la capa del equipo instalada trae ${outside.join(', ')}, fuera de la lista cerrada: no se arrastra` };
   const setBad = setProblems(intact.map((f) => f.path)).filter((x) => !/versión|terceros/.test(x.reason));
@@ -1208,7 +1206,7 @@ function carryTeam(harnessDir, incomingDir, { home = os.homedir(), env = process
     const v = validateProfile(fs.readFileSync(path.join(harnessDir, ...pf.path.split('/')), 'utf8'), { readerTree: incomingDir, home, env, name: pf.path });
     if (!v.ok) return { ok: false, invalid: true, reason: `la capa del equipo instalada (${m.repo} @ ${sha7(m.commit)}) no vale para la versión que va a quedar: ${v.reason} — no se arrastra` };
   }
-  // los nombres y los paquetes contra la versión nueva (AC 19): una versión cuyo cargador no acepta la capa instalada tampoco la recibe
+  // los nombres y los paquetes contra la versión nueva: una versión cuyo cargador no acepta la capa instalada tampoco la recibe
   const cv = checkAgainstVersion(harnessDir, intact, incomingDir, { env });
   if (!cv.ok) return { ok: false, invalid: true, reason: `la capa del equipo instalada (${m.repo} @ ${sha7(m.commit)}) no vale para la versión que va a quedar: ${cv.problems.map((x) => `${x.path}: ${x.reason}`).join(' · ')} — no se arrastra` };
   const relm = rel().readManifest(incomingDir);
@@ -1225,7 +1223,7 @@ function carryTeam(harnessDir, incomingDir, { home = os.homedir(), env = process
   return { ok: true, files: intact.length, manifest };
 }
 
-// ── el refresco EN EL LUGAR (tanda A1b · AC 10) ─────────────────────────────────────────────────────────────────────
+// ── el refresco EN EL LUGAR ─────────────────────────────────────────────────────────────────────
 
 /** Renombrar con un reintento corto: en Windows un archivo recién escrito o abierto por otro proceso traba el rename un rato. */
 function renameRetry(from, to) {
@@ -1237,7 +1235,7 @@ function renameRetry(from, to) {
 }
 /**
  * ¿Puede la carpeta `dir` (relativa, con «/»; '' es la raíz) tener un archivo de la capa? Lo decide la MISMA regla de
- * pertenencia (`layerPathProblem`), probada con un archivo de cada forma que la lista admite: una sola fuente (AC 17).
+ * pertenencia (`layerPathProblem`), probada con un archivo de cada forma que la lista admite: una sola fuente.
  */
 function dirCanHoldLayer(dir) {
   if (dir === '') return true;
@@ -1245,7 +1243,7 @@ function dirCanHoldLayer(dir) {
 }
 /**
  * ¿Es `rel` (relativa al árbol, con «/») un temporal del refresco? Sólo un ARCHIVO con el prefijo, directamente en una carpeta
- * que puede tener un archivo de la capa: nada más se le esconde a `doctor` (pase adversarial de la A1b, S-1).
+ * que puede tener un archivo de la capa: nada más se le esconde a `doctor`.
  */
 function isLayerTemp(rel) {
   const s = String(rel || '');
@@ -1271,7 +1269,7 @@ function dropTemps(harnessDir, extra = []) {
   }
 }
 /**
- * El refresco EN CURSO (pase adversarial de la A1b, FP-1): antes de los renames se escribe `.tycon-team.pending.json` con el commit
+ * El refresco EN CURSO: antes de los renames se escribe `.tycon-team.pending.json` con el commit
  * y los blobs nuevos, y se borra después del manifiesto. Si el proceso muere en el medio (o el deshacer no pudo reponer algo), un
  * archivo con el blob del pendiente es «del arnés, a medio refrescar», nunca «editado a mano»: el refresco siguiente lo completa,
  * `doctor` lo dice como tal y `uninstall` no lo conserva como edición.
@@ -1295,12 +1293,12 @@ const tmpFor = (file) => path.join(path.dirname(file), `${TMP_PREFIX}${path.base
 
 /**
  * La capa bajada (`fetched`: la caché de un commit nuevo) reemplaza a la de `harnessDir` —la versión que corre—, como una
- * transacción chica (revisión adversarial de la A1b, C1): cada archivo se arma en un temporal al lado de su destino y se verifica
+ * transacción chica: cada archivo se arma en un temporal al lado de su destino y se verifica
  * por su blob; recién entonces se renombra cada uno (con reintento corto); si uno no se puede, se repone lo ya cambiado, se borran
  * los temporales y se dice; el manifiesto se escribe ÚLTIMO. Reglas: un archivo cuyo blob en disco no es ni el del manifiesto
  * instalado ni el nuevo (editado a mano) no se pisa; lo que el commit nuevo ya no trae se borra sólo si conserva su blob (si no,
  * se conserva y queda en `kept`); sólo se escribe o borra una ruta de la lista cerrada que pasa `saneTarget` y que la versión
- * pública instalada NO trae (W7: el manifiesto viejo es un archivo local); tras un corte, «blob = el del commit nuevo» es bien
+ * pública instalada NO trae (el manifiesto viejo es un archivo local); tras un corte, «blob = el del commit nuevo» es bien
  * puesto. El perfil se valida con el lector de `harnessDir` antes de tocar nada.
  * `{ ok, manifest, written, removed, kept, keptRemoved, from }` o `{ ok: false, reason, collision? }`. Nunca tira.
  */
@@ -1321,7 +1319,7 @@ function refreshInPlace(fetched, harnessDir, { home = os.homedir(), env = proces
       const v = validateProfile(text, { readerTree: harnessDir, home, env, name: pf.path });
       if (!v.ok) return { ok: false, invalid: true, reason: `capa del equipo (${resolved.repo}): ${v.reason} — la capa no se refresca` };
     }
-    // el momento 2 (AC 26) contra la versión INSTALADA, por su lista: la capa vieja que ya está en harnessDir no cuenta (AC 18)
+    // el momento 2 contra la versión INSTALADA, por su lista: la capa vieja que ya está en harnessDir no cuenta
     const cv = checkAgainstVersion(fetched.cacheDir, fetched.files, harnessDir, { env });
     if (!cv.ok) return { ok: false, invalid: true, reason: `capa del equipo (${resolved.repo}) @ ${sha7(resolved.commit)}: no vale para la versión instalada — ${cv.problems.map((x) => `${x.path}: ${x.reason}`).join(' · ')} — la capa no se refresca` };
     const old = readTeamManifest(harnessDir);
@@ -1404,9 +1402,9 @@ function refreshInPlace(fetched, harnessDir, { home = os.homedir(), env = proces
 
 /**
  * Las carpetas que el refresco dejó vacías al sacar archivos de la capa (una skill que el commit nuevo ya no trae), borradas de
- * abajo hacia arriba (tanda A2a · AC 27): sólo debajo de skills/, agents/ o packs/, nunca esas tres, nunca una carpeta que la
+ * abajo hacia arriba: sólo debajo de skills/, agents/ o packs/, nunca esas tres, nunca una carpeta que la
  * versión pública trae, y sólo si está VACÍA (un archivo editado a mano que quedó la sostiene). Nunca tira.
- * La carpeta del texto del alta (`TEAM_ONLY_TOPS`, story 8.26 · AC 66) sí se borra ELLA: la versión no la trae, existe sólo
+ * La carpeta del texto del alta (`TEAM_ONLY_TOPS`) sí se borra ELLA: la versión no la trae, existe sólo
  * mientras la capa trae sus archivos, y vacía quedaría en el árbol sin dueño. Las mismas dos defensas: vacía, y no de la versión.
  */
 function pruneEmptyDirs(harnessDir, removedPaths, relm) {
@@ -1423,7 +1421,7 @@ function pruneEmptyDirs(harnessDir, removedPaths, relm) {
 }
 
 /**
- * Lo que `doctor` dice de la capa de un árbol (A1b · AC 11), sin red y sin tirar nunca: `{ present, manifest, edited, missing,
+ * Lo que `doctor` dice de la capa de un árbol, sin red y sin tirar nunca: `{ present, manifest, edited, missing,
  * kept }`; `{ present: false, broken }` si hay un `.tycon-team.json` que no sirve; `{ present: false, error }` si algo tiró.
  */
 function teamStatus(tree) {
@@ -1449,7 +1447,7 @@ function teamStatus(tree) {
 }
 
 /**
- * Antes de que `uninstall` quite los árboles (A1b · AC 12): cada archivo de la capa editado a mano —blob distinto del de su
+ * Antes de que `uninstall` quite los árboles: cada archivo de la capa editado a mano —blob distinto del de su
  * manifiesto— se copia a `<keepRoot>/kept-YYYYMMDD-HHMMSS/<rótulo>/<ruta>` (sin «:», que Windows no admite; la misma ruta en
  * dos árboles no se pisa; nunca se pisa una carpeta que ya existe). Sólo rutas de la lista cerrada que pasan `saneTarget`. Nunca
  * tira: `{ ok, dir, copied: ['<rótulo>/<ruta>'], failedTrees: ['<rótulo>'], problems }` — un árbol con algo que no se pudo
@@ -1457,10 +1455,10 @@ function teamStatus(tree) {
  */
 /**
  * Lo que está dentro de la carpeta de una skill de la lista fija en un árbol y no es de la versión (su `.tycon-release.json`)
- * ni de la capa (su `.tycon-team.json`, con lo conservado y un refresco a medias): una conexión, una spec escrita ahí por error
- * (tanda A2c · AC 36). `[{ entry, path }]` (ruta relativa al árbol, con «/»). Nunca tira. Una carpeta que está y no se puede
+ * ni de la capa (su `.tycon-team.json`, con lo conservado y un refresco a medias): una conexión, una spec escrita ahí por error.
+ * `[{ entry, path }]` (ruta relativa al árbol, con «/»). Nunca tira. Una carpeta que está y no se puede
  * listar NO es «nada ajeno»: queda en `out.unreadable` (`['<ruta> (<código>)']`) para que quien llama lo diga y no descarte
- * a ciegas (cazador de fallos silenciosos, A2c); una que no está (ENOENT) sí es «nada».
+ * a ciegas; una que no está (ENOENT) sí es «nada».
  */
 function extrasForeign(tree, { entries = loadExtras().entries } = {}) {
   const out = [];
@@ -1507,7 +1505,7 @@ function userStuffIn(dir, e, layerSet) {
   return out;
 }
 /**
- * Lo que `doctor` dice de las skills de la lista fija que la capa de `tree` trae (tanda A2c · AC 36), siempre `warn` u `ok`, nunca
+ * Lo que `doctor` dice de las skills de la lista fija que la capa de `tree` trae, siempre `warn` u `ok`, nunca
  * `fail` y nunca tira: lo ajeno dentro de su carpeta (con su lugar), la carpeta propia del dev que la tapa en ~/.claude/skills y
  * —con Codex enchufado— en $CODEX_HOME/skills (con las dos VERSION y lo ajeno que trae), el original que la mudanza ya copió, la
  * casa que se resolvió, y la revisión vencida. `{ items, foreign: Set<ruta> }` (las rutas que reemplazan la línea «de más»).
@@ -1549,7 +1547,7 @@ function skillDataDoctor({ home = os.homedir(), env = process.env, tree, team = 
         try { if (exists(dh.file) && !fs.readFileSync(dh.file).equals(fs.readFileSync(moved.from))) cmp = '; las dos difieren y gana la casa nueva'; } catch (err) { cmp = `; no pude compararlas (${err.code || err.message})`; }
         items.push({ level: 'warn', text: `${name}: su conexión vieja sigue en ${moved.from}${moved.copied === false ? ` (no se copió: ${moved.reason || 'ver la salida de la actualización'})` : ` y ya está en ${dh.file}`}${cmp} — borrala de ahí cuando confirmes que anda` });
       }
-      // la casa que se resolvió, como `warn` (AC 36: «avisa, con warn y nunca fail»): así una diferencia entre lo que mira el arnés
+      // la casa que se resolvió, como `warn`: así una diferencia entre lo que mira el arnés
       // y lo que mira la skill —otra BIZUIT_SDD_HOME en la sesión— se ve en cada doctor
       items.push({ level: 'warn', text: `${name}: la casa de sus datos es ${dh.file} (${exists(dh.file) ? 'existe' : 'todavía no existe'}${dh.from === 'env' ? `, por ${e.dataHome.env}` : ''})${dh.ignored ? ` — ${dh.ignored}` : ''}` });
       if (extrasReviewDue(e, now)) items.push({ level: 'warn', text: `la skill ${name} tiene su revisión vencida (${e.review.next}): quien la revisa corre la fecha ${e.review.every_months} meses o decide el retiro (primero el repo del equipo, después la versión)` });
@@ -1575,10 +1573,9 @@ function keepEdited(pairs, keepRoot, { now = new Date(), edited = true, foreign 
   for (const [label, tree] of pairs) {
     let m = null;
     try { m = readTeamManifest(tree); } catch (_) { m = null; }
-    // lo ajeno dentro de una skill de la lista fija (tanda A2c · AC 36): se guarda con las mismas reglas que lo editado; una
+    // lo ajeno dentro de una skill de la lista fija: se guarda con las mismas reglas que lo editado; una
     // carpeta de esas que no se pudo listar es un problema de ESE árbol (no se quita), nunca «nada ajeno»
-    // sólo las skills de la lista que la capa DE ESE ÁRBOL trae: un árbol sin capa no se recorre (AC 16; pase adversarial de la
-    // A2c, clase 13 — antes recorría la lista entera y podía negarse a quitar un árbol sin capa)
+    // sólo las skills de la lista que la capa DE ESE ÁRBOL trae: un árbol sin capa no se recorre (recorrer la lista entera podría negarse a quitar un árbol sin capa)
     const found = foreign ? extrasForeign(tree, { entries: extrasInLayer(layerFilesOf(tree)) }) : null;
     const strays = found ? found.map((x) => ({ path: x.path, blob: null, stray: true, max: x.entry.maxBytes })) : [];
     if (found && found.unreadable.length) {
@@ -1590,12 +1587,11 @@ function keepEdited(pairs, keepRoot, { now = new Date(), edited = true, foreign 
     const entries = [...(m && edited ? [...m.files.map((f) => ({ path: f.path, blob: f.blob || f.sha })), ...(m.kept || []).map((p) => ({ path: p, blob: null }))] : []), ...strays];
     for (const f of entries) {
       // un ajeno con un nombre que saneTarget no admite (`:` o `\`, válidos en Mac y Linux) no se saltea callado: se dice y ese
-      // árbol no se quita (pase adversarial de la A2c, clase 2 — una spec «notas 10:00.md» se perdía sin aviso)
+      // árbol no se quita
       if (f.stray && !saneTarget(tree, f.path)) { problems.push(`${label}/${f.path}: su nombre no se puede copiar a ${keepRoot} — no se guardó; copialo a mano`); if (!failedTrees.includes(label)) failedTrees.push(label); continue; }
       if ((!f.stray && !isLayerPath(f.path)) || !saneTarget(tree, f.path)) continue;
       // lo ajeno puede ser la conexión de un dev o una spec: un enlace no se sigue (copiaría el contenido de OTRO archivo), lo que
-      // no es un archivo regular no se lee, y nada pasa del presupuesto de la skill; se dice y ese árbol no se quita (revisor de
-      // seguridad, A2c)
+      // no es un archivo regular no se lee, y nada pasa del presupuesto de la skill; se dice y ese árbol no se quita
       if (f.stray) {
         let st = null;
         try { st = fs.lstatSync(path.join(tree, ...f.path.split('/'))); } catch (e) { if (e && e.code === 'ENOENT') continue; st = null; }
@@ -1604,7 +1600,7 @@ function keepEdited(pairs, keepRoot, { now = new Date(), edited = true, foreign 
       }
       let buf;
       // un archivo que ya no está no hay que conservarlo; uno que está y no se puede leer puede ser una edición: ese árbol no se
-      // quita (fallos silenciosos, A2a vuelta 3 — antes se salteaba callado y `uninstall` lo borraba)
+      // quita
       try { buf = fs.readFileSync(path.join(tree, ...f.path.split('/'))); } catch (e) {
         if (e && e.code === 'ENOENT') continue;
         problems.push(`${label}/${f.path}: ${(e && (e.code || e.message)) || e}`);
@@ -1632,7 +1628,7 @@ function keepEdited(pairs, keepRoot, { now = new Date(), edited = true, foreign 
 
 /**
  * Lo que el estado guarda (`state.team`). `previous` (la entrada que reemplaza): lo que la máquina ya mudó de las skills de la
- * lista fija (`data_moved`, tanda A2c · AC 35) se conserva, así una capa nueva no repite la mudanza.
+ * lista fija (`data_moved`) se conserva, así una capa nueva no repite la mudanza.
  */
 function stateEntry(manifest, previous = null) {
   const host = manifest.host || (/^https:\/\/dev\.azure\.com\//i.test(String(manifest.repo || '')) ? 'azure' : 'github');
@@ -1641,7 +1637,7 @@ function stateEntry(manifest, previous = null) {
   return out;
 }
 
-// ── los datos de una skill de la lista, fuera de su carpeta (tanda A2c · AC 35) ───────────────────────────────────────
+// ── los datos de una skill de la lista, fuera de su carpeta ───────────────────────────────────────
 const LEGACY_MAX_BYTES = 64 * 1024;
 const realOrNull = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
 const isUnderDir = (p, d) => Boolean(p && d) && (p === d || p.startsWith(d.endsWith(path.sep) ? d : d + path.sep));
@@ -1653,7 +1649,7 @@ function extrasInLayer(layerPaths, entries = loadExtras().entries) {
 /** Las rutas de la capa instalada en un árbol (su `.tycon-team.json`), o []. */
 const layerFilesOf = (tree) => { const m = tree ? readTeamManifest(tree) : null; return m ? m.files.map((f) => f.path) : []; };
 /**
- * Dónde puede estar lo que la skill escribía en su carpeta, en el ORDEN FIJO del AC 35: la carpeta propia del dev en
+ * Dónde puede estar lo que la skill escribía en su carpeta, en este ORDEN FIJO: la carpeta propia del dev en
  * `~/.claude/skills/<s>` (carpeta real, o enlace cuya ruta real no cae bajo la casa del arnés); la carpeta apartada por la
  * mudanza (`aside`, y las `<carpeta de skills>.before-migrate-*`, la más nueva primero); el clon que la máquina dejó; y
  * `previous/`. `[{ file, where }]`, sólo lo que existe, sin repetir el mismo archivo real. Sólo lee.
@@ -1668,7 +1664,7 @@ function findLegacyData(e, { home, env, migrateHome = null, previousDir = null }
   const skillsDir = TH.installedSkillsDir(home);
   const asides = [];
   const out = [];
-  // lo que está y no se pudo mirar NO es «no está» (cazador de fallos silenciosos, A2c): se junta en `out.unreadable` y se dice
+  // lo que está y no se pudo mirar NO es «no está»: se junta en `out.unreadable` y se dice
   out.unreadable = [];
   if (migrateHome && typeof migrateHome.aside === 'string' && migrateHome.aside) asides.push(migrateHome.aside);
   try {
@@ -1697,10 +1693,10 @@ function findLegacyData(e, { home, env, migrateHome = null, previousDir = null }
   return out;
 }
 /** ¿Trae una clave de primer nivel sensible? (sin caja; nunca se devuelve el valor) */
-// (con o sin BOM al principio del archivo: pase adversarial de la A2c, clase 8)
+// (con o sin BOM al principio del archivo)
 const SENSITIVE_RE = /^(?:﻿)?["']?(password|secret|token)["']?\s*:/im;
 /**
- * La mudanza de los datos de las skills de la lista que la capa trae (AC 35): por skill, UNA vez (`team.data_moved[<s>] =
+ * La mudanza de los datos de las skills de la lista que la capa trae: por skill, UNA vez (`team.data_moved[<s>] =
  * { at, from }`), el primer archivo viejo del orden fijo va a la casa nueva —sólo si la casa no tiene uno; sólo un archivo
  * regular de hasta 64 KB (un enlace no se sigue); carpeta 700 y archivo 600; el original queda—. El CONTENIDO nunca va a una
  * línea, al registro ni al estado. Lo que no se pudo escribir se dice y no se registra (se reintenta); lo que no se copia por
@@ -1713,7 +1709,7 @@ function moveSkillData({ home = os.homedir(), env = process.env, team, layerPath
   if (!isObject(team)) return { lines, changed };
   let entries = [];
   // «no pude leer la lista fija» no es «no hay skills con datos»: se dice, y la próxima actualización vuelve a intentar (no se
-  // registra nada) — cazador de fallos silenciosos, A2c vuelta 2
+  // registra nada)
   try { entries = extrasInLayer(layerPaths || layerFilesOf(harnessDir)); } catch (err) { lines.push(`skills de la lista fija: no pude leer qué trae la capa (${(err && err.message) || err}): la conexión vieja no se revisó; se vuelve a intentar en la próxima actualización`); return { lines, changed }; }
   const ext = loadExtras();
   if (!ext.ok && (layerPaths || layerFilesOf(harnessDir)).some((p) => String(p).startsWith('skills/'))) lines.push(`skills de la lista fija: ${ext.problem}: la conexión vieja no se revisó; se vuelve a intentar en la próxima actualización`);
@@ -1742,7 +1738,7 @@ function moveSkillData({ home = os.homedir(), env = process.env, team, layerPath
         let same = null;
         let cmpErr = null;
         try { same = fs.readFileSync(dh.file).equals(fs.readFileSync(first.file)); } catch (err) { cmpErr = err.code || err.message; }
-        // sin poder comparar no se afirma que difieren (cazador de fallos silenciosos, A2c): se dice que no se pudo, y gana la casa
+        // sin poder comparar no se afirma que difieren: se dice que no se pudo, y gana la casa
         lines.push(cmpErr ? `${head}: ${dh.file} ya existe y no pude compararla con ${first.file} (${cmpErr}): gana la casa nueva (no se pisa)${restLine}`
           : same ? `${head} ya está en ${dh.file}: el original en ${first.file} se puede borrar${restLine}` : `${head}: ${dh.file} ya existe y es distinta de ${first.file}: gana la casa nueva (no se pisa); revisá la vieja y borrala${restLine}`);
         record(first.file, { copied: false, reason: cmpErr ? 'la casa ya tenía una (no se pudo comparar)' : same ? 'ya estaba' : 'la casa ya tenía otra' });
@@ -1779,7 +1775,7 @@ function moveSkillData({ home = os.homedir(), env = process.env, team, layerPath
  */
 function syncStateWithTree(state, harnessDir, { adopt = false } = {}) {
   if (!isObject(state)) return false;
-  // `adopt` (A1b, rollback): un estado SIN team y un árbol que quedó CON capa la toma (la capa la apiló alguien que la registró)
+  // `adopt` (rollback): un estado SIN team y un árbol que quedó CON capa la toma (la capa la apiló alguien que la registró)
   if (!isObject(state.team)) {
     const m0 = adopt ? readTeamManifest(harnessDir) : null;
     if (!m0) return false;
@@ -1801,7 +1797,7 @@ function syncStateWithTree(state, harnessDir, { adopt = false } = {}) {
 /**
  * Las rutas del árbol que son de la capa (para que `doctor` no las cuente «de más»): el manifiesto, el pendiente de un refresco a
  * medias, y las del manifiesto y las conservadas QUE SON DE LA LISTA CERRADA — el manifiesto es un archivo local en el que no se
- * confía: `kept: ["scripts"]` no puede esconder una carpeta entera (pase adversarial de la A1b, S-1).
+ * confía: `kept: ["scripts"]` no puede esconder una carpeta entera.
  */
 function layerPaths(tree) {
   const m = readTeamManifest(tree);

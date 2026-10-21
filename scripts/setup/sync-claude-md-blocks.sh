@@ -2,7 +2,7 @@
 #
 # sync-claude-md-blocks.sh — sincroniza los bloques team-wide de `~/.claude/CLAUDE.md`
 # desde `claude-md-blocks/*.md` de este repo — y, en una máquina que usa Codex, llama a
-# `agents-md-blocks.js`, que deja los mismos bloques en `~/.codex/AGENTS.md` (story 8.23, tanda C).
+# `agents-md-blocks.js`, que deja los mismos bloques en `~/.codex/AGENTS.md`.
 #
 # Por qué existe: `~/.claude/CLAUDE.md` NO está versionado — es un archivo suelto en el
 # home de cada dev. Las guías de este repo son lectura *on-demand* (Claude las abre cuando
@@ -10,12 +10,11 @@
 # respuesta, convenciones de comunicación — no puede vivir en `guides/`: tiene que estar
 # en el `CLAUDE.md`. Este script es el puente.
 #
-# Lado Codex (2026-08-20; cambiado en la story 8.23, tanda C): dos copias de la misma regla se
-# separan solas — la copia manual de julio en `~/.codex/AGENTS.md` driftó 48 líneas sin que
-# nadie se entere (caso disparador de codex-migration.md). Hasta la tanda C este script escribía
-# AGENTS.md como COPIA ENTERA del CLAUDE.md; desde entonces AGENTS.md lleva los BLOQUES entre sus
-# marcas, escritos por `agents-md-blocks.js` sin leer el CLAUDE.md (un dev que sólo usa Codex no
-# tiene CLAUDE.md que copiar, y lo que la persona escribe en AGENTS.md ya no se pisa). Los bloques
+# Lado Codex: dos copias de la misma regla se separan solas — una copia manual en
+# `~/.codex/AGENTS.md` puede driftar decenas de líneas sin que nadie se entere. Por eso
+# AGENTS.md lleva los BLOQUES entre sus marcas, escritos por `agents-md-blocks.js` sin leer el
+# CLAUDE.md (un dev que sólo usa Codex no tiene CLAUDE.md que copiar, y lo que la persona escribe
+# en AGENTS.md no se pisa). Los bloques
 # con variante por lado en `claude-md-blocks/names/<bloque>.codex.md` (hoy: `tool-names`) llevan el
 # cuerpo de la variante: las reglas refieren a las tools por lo que hacen, y los nombres exactos
 # viven en la sección de nombres-por-herramienta, distinta por lado.
@@ -25,16 +24,15 @@
 #   - Quirúrgico (lado Claude): SOLO reemplaza lo que está entre sus propios marcadores.
 #     Todo lo que el dev escribió a mano queda intacto (incluido el bloque CODEGRAPH).
 #   - Backup automático `<target>.bak.<timestamp>` ANTES del primer cambio — salvo lanzado por `harness.js`
-#     (`TYCON_HARNESS_SNAPSHOT_DIR` puesta, story 8.13 AC 18): ahí la copia ya la tomó el mecanismo.
+#     (`TYCON_HARNESS_SNAPSHOT_DIR` puesta): ahí la copia ya la tomó el mecanismo.
 #   - Con `TYCON_REPORT_PIECES=<archivo>` (se la deja el aplicador con `--report-json`) anota ahí, una por línea, los
-#     bloques que quedaron en su lugar (story 8.13, AC 15); el AGENTS.md de Codex lo anota `agents-md-blocks.js`. Con
+#     bloques que quedaron en su lugar; el AGENTS.md de Codex lo anota `agents-md-blocks.js`. Con
 #     `--check` no anota nada.
 #   - Atomic write (tmp + mv).
 #   - Silencioso si no hubo cambios; 1 línea por bloque/target actualizado.
 #   - Fail-open total: cualquier problema → exit 0 sin romper el arranque de la sesión.
 #   - Opt-out: `TYCON_NO_CLAUDEMD_SYNC=1`. Lado Codex: opt-IN con `TYCON_CODEX=1`.
-#   - Cross-platform: bash + python3 (sin jq). Contraparte Windows: sync-claude-md-blocks.ps1
-#     (⚠ al 2026-08-20 la .ps1 NO tiene el lado Codex — se nivela en la Etapa F, que es por OS).
+#   - Cross-platform: bash + python3 (sin jq). Contraparte Windows: sync-claude-md-blocks.ps1.
 #
 # Cómo llega a las demás máquinas: el hook `SessionStart` hace `git pull` de este repo y
 # después corre `install-tycon-hooks.sh`, que invoca este script. O sea, el dev no hace nada:
@@ -44,7 +42,7 @@
 # archivo es el nombre del bloque; los marcadores se generan solos. Si el bloque necesita
 # contenido distinto en Codex, crear además `claude-md-blocks/names/<nombre>.codex.md`.
 #
-# Un bloque que requiere una integración (story 8.7, AC 25): si la PRIMERA línea del archivo es exactamente
+# Un bloque que requiere una integración: si la PRIMERA línea del archivo es exactamente
 # `<!-- requires-integration: <integración> -->`, el bloque se escribe sólo con esa integración prendida según
 # `scripts/lib/tycon-config.js integrations --json` (se pregunta una vez, y sólo si algún bloque lo declara):
 #   - prendida → se agrega o se actualiza, como cualquier otro. Esa primera línea NO se copia: el CLAUDE.md de una
@@ -54,7 +52,7 @@
 #   - no se pudo saber (configuración rota, sin `node`, integración que el lector no conoce) → no se agrega si falta;
 #     si está, queda y se actualiza; una línea lo dice. No saber no es «apagada».
 #
-# Un bloque que requiere un perfil de instalación (story 8.16, tanda C · AC 24): `<!-- requires-profile: full -->` en sus
+# Un bloque que requiere un perfil de instalación: `<!-- requires-profile: full -->` en sus
 # primeras líneas, solo o junto a `requires-integration` (uno de cada uno como mucho, en cualquier orden; ninguno se copia).
 # El perfil sale de `tycon-config.js get install.profile` (sin valor es `full`, lo de siempre). Con el perfil activo fuera
 # de la lista, el bloque se trata como con su integración apagada (no se agrega; si estaba, se quita entre sus marcadores;
@@ -82,16 +80,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BLOCKS_DIR="$SCRIPT_DIR/../../claude-md-blocks"
 TARGET="${CLAUDE_MD_PATH:-$HOME/.claude/CLAUDE.md}"
 CODEX_TARGET="${CODEX_AGENTS_MD_PATH:-$HOME/.codex/AGENTS.md}"
-# 🔴 LA SEÑAL NO PUEDE VIVIR SÓLO EN EL ENTORNO (2026-09-04).
+# 🔴 LA SEÑAL NO PUEDE VIVIR SÓLO EN EL ENTORNO.
 #
-# El espejo de Codex se mantenía únicamente con TYCON_CODEX=1, una variable del rc del shell del
-# dev. Este guion corre desde el arranque de sesión, que NO lee ese rc: la llave existía para el
-# dev y no para el proceso que hace el trabajo. Medido ese día: la variable estaba puesta (línea
-# 162 del .zshrc) y el AGENTS.md llevaba CINCO DÍAS sin actualizar, con el bloque de estilo viejo
-# de 16.833 caracteres mientras el de Claude ya tenía 6.352. Nada avisaba: el espejo se congeló en
-# silencio, que es la forma en que mueren estas piezas.
+# Si el espejo de Codex se mantuviera únicamente con TYCON_CODEX=1, una variable del rc del shell
+# del dev, quedaría congelado: este guion corre desde el arranque de sesión, que NO lee ese rc, así
+# que la llave existiría para el dev y no para el proceso que hace el trabajo. Nada avisaría: el
+# espejo se congelaría en silencio, que es la forma en que mueren estas piezas.
 #
-# Ahora la señal es el DISCO, que sí ve el proceso: si el AGENTS.md ya existe CON bloques del
+# La señal es el DISCO, que sí ve el proceso: si el AGENTS.md ya existe CON bloques del
 # arnés, esta máquina usa Codex y su espejo se mantiene, haya o no variable. La variable sigue
 # sirviendo para ESTRENAR el espejo donde todavía no existe — a una máquina que no usa Codex no se
 # le impone uno.
@@ -622,9 +618,9 @@ except Exception:
 PYEOF
 
 # ============================================================
-# Lado Codex: los bloques en ~/.codex/AGENTS.md, entre sus marcas (story 8.23, tanda C · AC 22).
+# Lado Codex: los bloques en ~/.codex/AGENTS.md, entre sus marcas.
 #
-# Hasta la tanda C esto era una COPIA ENTERA del CLAUDE.md, hecha acá adentro. Ahora AGENTS.md se arma desde los
+# AGENTS.md se arma desde los
 # bloques, sin leer el CLAUDE.md, con `agents-md-blocks.js` (Node: el mismo en Mac, Linux y Windows): lo de la persona
 # fuera de las marcas no se toca, y una máquina sin Claude Code recibe las reglas igual. Este guion sólo lo LLAMA
 # cuando corre suelto y la máquina usa Codex (la señal de arriba: la variable, o un AGENTS.md que ya tiene bloques).

@@ -7,7 +7,7 @@
 // secciones de esos clones: las mismas del sitio de la organización (scripts/lib/org-config.js), con los problemas que
 // encuentran los MISMOS lectores que usa el arnés (acá no hay un validador propio). La configuración se edita en el sitio
 // de la organización; sin sitio, con un pedido al repo de operaciones: la página lo dice arriba, con la dirección si
-// operations.json la declara (`site.url`). Las rutas que antes guardaban o proponían contestan 410.
+// operations.json la declara (`site.url`). Las rutas de edición contestan 410.
 //
 // Es una página LOCAL: un servidor en 127.0.0.1, en un puerto al azar, que sólo contesta a quien trae la llave de un solo
 // uso de la dirección que abre el navegador. No carga nada de afuera, no guarda credenciales, no escribe en ningún repo y
@@ -96,7 +96,7 @@ function readTarget(target, clone, reader) {
     return { ...out, state: 'unreadable', message: `no pude leer ${file} (${(e && e.code) || e})` };
   }
   const r = reader.parse(text);
-  // un problema que el lector da aparte (un modelo mal escrito, decisión 13 de la 7.29) viene con `data` sin esa clave:
+  // un problema que el lector da aparte (un modelo mal escrito) viene con `data` sin esa clave:
   // el borrador sale del archivo, para que guardar no la borre en silencio, y el problema se muestra
   const aparte = r.sectionProblems ? Object.values(r.sectionProblems).flat() : [];
   return { ...out, state: 'loaded', data: r.ok && !aparte.length ? r.data : safeJson(text), problems: [...(r.problems || []), ...aparte] };
@@ -107,8 +107,8 @@ function safeJson(text) { try { const v = JSON.parse(text); return v && typeof v
 const REPO_OF = Object.freeze({ repos: 'perfil', operations: 'operaciones' });
 
 /**
- * Lee el archivo de una sección del clon. `{ doc }` si es un objeto JSON; `{ doc: null }` si no existe (ni el nombre de
- * antes); `{ problem }` si existe y no se puede leer o no es un objeto JSON. Si existen los dos nombres gana el nuevo,
+ * Lee el archivo de una sección del clon. `{ doc }` si es un objeto JSON; `{ doc: null }` si no existe (ni con el nombre
+ * viejo); `{ problem }` si existe y no se puede leer o no es un objeto JSON. Si existen los dos nombres gana el nuevo,
  * esté sano o no (la misma regla que el arnés): un archivo nuevo roto no se cambia en silencio por el viejo.
  */
 function readSectionFile(clone, section) {
@@ -229,7 +229,7 @@ function start(opts = {}) {
     if (req.method !== 'POST') return send(res, 405, { ok: false, message: 'método no permitido' });
     if (req.headers.origin && req.headers.origin !== `http://${self}`) return send(res, 403, { ok: false, message: 'pedido desde otra página' });
     if (!/^application\/json\b/.test(String(req.headers['content-type'] || ''))) return send(res, 415, { ok: false, message: 'se espera JSON' });
-    // lo que antes guardaba o proponía se mudó al sitio: se contesta sin leer el cuerpo y sin tocar nada
+    // la edición vive en el sitio: se contesta sin leer el cuerpo y sin tocar nada
     if (RETIRED.has(u.pathname)) return send(res, 410, { ok: false, message: 'la configuración se mudó al sitio: esta página es de sólo lectura' });
     let body;
     try { body = await readBody(req); } catch (e) { return send(res, 400, { ok: false, message: e.message }); }
@@ -351,7 +351,7 @@ load().catch((e) => app.replaceChildren(el('p', { class: 'err', text: 'No pude c
 }
 
 /**
- * El buzón de corridas de la organización, para mostrar (story 2.24, AC 23): una PROYECCIÓN de la llave
+ * El buzón de corridas de la organización, para mostrar: una PROYECCIÓN de la llave
  * (`scripts/metrics/corridas-buzon.json` de la capa del equipo, leída con `leerConfig` del árbol) — cuenta, contenedor,
  * política, vencimiento, los permisos propios de la firma si los trae, y los NOMBRES de sus parámetros. La firma no
  * sale de acá: la llave es una credencial y la página no guarda credenciales. Sin el archivo: `{ hay: false }`.

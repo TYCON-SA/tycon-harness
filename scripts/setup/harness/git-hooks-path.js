@@ -2,13 +2,12 @@
 /**
  * git-hooks-path.js — la carpeta GLOBAL de hooks de git (`core.hooksPath`) que hace correr los hooks del arnés.
  *
- * El caso (2026-10-14): una máquina instalada desde la versión bajada, o mudada desde un clon, quedaba con los hooks de
+ * El caso que cubre: una máquina instalada desde la versión bajada, o mudada desde un clon, queda con los hooks de
  * git en `~/.git-hooks/` —entre ellos el pre-push, el freno antes de publicar— y git sin carpeta global de hooks: ningún
- * hook corría. `doctor` lo decía y mandaba a `harness.js apply`, pero el aplicador sólo AVISA (nunca toca esa clave), así
- * que el aviso seguía igual después de correrlo. Las máquinas que no avisaban tenían la clave puesta a mano, de cuando
- * se instalaba desde un clon y el alta lo pedía como un paso aparte.
+ * hook corre. `doctor` lo dice y manda a `harness.js apply`, pero el aplicador sólo AVISA (nunca toca esa clave), así
+ * que el aviso seguiría igual después de correrlo.
  *
- * Lo que hace ahora en `install`, `apply` y la mudanza, y —desde que el dueño pidió que sea transparente— también en el
+ * Lo que hace en `install`, `apply` y la mudanza, y de forma transparente también en el
  * arranque y en `update` de una máquina ya instalada: con la política de aplicación `auto` (la del perfil del equipo: el
  * equipo decidió que el arnés cambie cosas solo) la pone el arranque y lo dice una vez en el aviso; con `ask`, el aviso
  * lo pide y la pone `update --yes`. Si la puso el arnés y la persona la sacó, ni el arranque ni `update` la vuelven a

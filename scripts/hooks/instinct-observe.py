@@ -35,7 +35,7 @@ def main():
 
     # Project = la carpeta de primer nivel bajo la raíz de repos. Este hook corre en CADA tool use, así
     # que no llama a nada: si hay TYCON_REPOS_ROOT, es <raíz>/<proj>; si no, <home>/<carpeta>/<proj>
-    # (cualquier carpeta de primer nivel bajo el home, no una escrita a mano — story 8.3); sino basename(cwd).
+    # (cualquier carpeta de primer nivel bajo el home, no una escrita a mano); sino basename(cwd).
     raiz = os.path.expanduser(os.environ.get('TYCON_REPOS_ROOT', '')).rstrip('/')
     if raiz:
         m = re.match(r'^' + re.escape(raiz) + r'/([^/]+)', cwd)

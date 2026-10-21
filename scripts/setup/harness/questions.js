@@ -1,9 +1,9 @@
 'use strict';
 /**
- * questions.js — lo que `install` pregunta en una primera instalación (story 8.16, tanda D · AC 30 a 33).
+ * questions.js — lo que `install` pregunta en una primera instalación.
  *
- * El dueño decidió «que elija al instalar»: el perfil no tiene valor por defecto, y las integraciones y el paquete del
- * stack, que antes se prendían editando `~/.claude/tycon.json` a mano, se contestan con una pregunta. Acá vive lo que no
+ * Quien instala elige: el perfil no tiene valor por defecto, y las integraciones y el paquete del
+ * stack se contestan con una pregunta, sin editar `~/.claude/tycon.json` a mano. Acá vive lo que no
  * depende de la máquina —el texto de cada pregunta, cómo se lee una respuesta, cómo se validan las opciones que las
  * contestan (`--integrations`, `--packs`) y cómo se dicen los valores con su origen—; quién pregunta y cuándo lo decide
  * `harness.js` (`installQuestions`):
@@ -18,11 +18,11 @@
  * Con `--defaults` (lo que pasa `npx`) `harness.js` no pregunta ninguna: lo que nadie fijó queda en su valor por defecto,
  * y el plan es el corto de `shortPlan`, contado desde la lista de efectos.
  *
- * Las mismas preguntas en cualquier sistema: nada de esto mira la plataforma (T52). La lectura y la escritura se
+ * Las mismas preguntas en cualquier sistema: nada de esto mira la plataforma. La lectura y la escritura se
  * inyectan (las da `prompt.js`), así se prueba sin una terminal de verdad. No lee ni escribe archivos.
  */
 
-// el lugar del arnés (story 8.19): su nombre sale de place.js
+// el lugar del arnés: su nombre sale de place.js
 const path = require('path');
 const PLACE = require('./place.js');
 const PROFILES = Object.freeze(['minimal', 'full']);
@@ -114,7 +114,7 @@ function parseIntegrations(text, keys) {
 /**
  * Pregunta qué integraciones prender, de las `offered` (las que la lista ofrece y nadie fijó todavía). Ninguna marcada:
  * Enter es «ninguna». Un nombre que no se ofrece vuelve a preguntar; a la tercera, `{ names: null }`. Fin de entrada es
- * «ninguna», como cualquier respuesta que no es un sí (AC 2), y se avisa con `eof` para no seguir leyendo.
+ * «ninguna», como cualquier respuesta que no es un sí, y se avisa con `eof` para no seguir leyendo.
  */
 function askIntegrations({ offered, read, write }) {
   const keys = offered.map((x) => x.key);
@@ -159,14 +159,14 @@ const samePacks = (a, b) => (Array.isArray(a) && Array.isArray(b)
   ? a.length === b.length && a.every((n) => b.includes(n))
   : packsText(a) === packsText(b));
 
-/** La línea que `install` deja cuando no preguntó las integraciones (decisión del dueño, 2026-10-05): cómo cambiar el perfil
+/** La línea que `install` deja cuando no preguntó las integraciones: cómo cambiar el perfil
  *  y las integraciones después. Una sola línea. */
 const CHANGE_HINT = `para cambiar el perfil o las integraciones: node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install --profile minimal|full --integrations <lista|none> --packs all|none|<a,b> (o tycon-config.js set <clave> <valor>)`;
 
 /** Cómo se dice el origen de un valor de la configuración, para una persona. */
 /**
- * El origen de un valor, para una persona. `machineFile` es el archivo de la máquina COMO SE LE DICE (story 8.23, tanda
- * G · AC 44 c): `~/.tycon/config.json` donde la máquina vive ahí, el de siempre donde no; sin él, el nombre genérico.
+ * El origen de un valor, para una persona. `machineFile` es el archivo de la máquina COMO SE LE DICE:
+ * `~/.tycon/config.json` donde la máquina vive ahí, el de siempre donde no; sin él, el nombre genérico.
  */
 function originLabel(origin, variable, machineFile = null) {
   return ({

@@ -11,7 +11,7 @@
 #   2. La credencial, ANTES de bajar: el repo es público y no hace falta. Usa el permiso de lectura de GitHub si lo hay
 #      (TYCON_GITHUB_TOKEN, o el guardado en ~/.tycon/config.json); lo pide —sin eco; sin terminal sale 1— sólo ante 401 o 404.
 #   3. Baja el comprimido de la versión a una carpeta temporal y lo desempaqueta con tar. No escribe nada fuera de esa
-#      carpeta. SIN permiso (story 8.34) no usa la API de GitHub, que sin permiso tiene un tope de 60 consultas por hora
+#      carpeta. SIN permiso no usa la API de GitHub, que sin permiso tiene un tope de 60 consultas por hora
 #      por conexión: lee el commit de main de la página pública `info/refs` (la que lee `git ls-remote`, sin git) y baja
 #      de codeload. Si github.com no contesta, cae a la API. CON permiso, por la API (la credencial viaja sólo al host de
 #      la API; la redirección a codeload va sin ella). Al tope de la API, dice hasta qué hora.
@@ -24,7 +24,7 @@
 
 $Repo = 'TYCON-SA/tycon-harness'
 $Api = if ($env:TYCON_RELEASE_API) { $env:TYCON_RELEASE_API } else { 'https://api.github.com' }   # TYCON_RELEASE_API: sólo pruebas
-# las rutas públicas (story 8.34; sólo pruebas: TYCON_RELEASE_GIT / _ARCHIVE). Con la API apuntada a un juguete y sin
+# las rutas públicas (sólo pruebas: TYCON_RELEASE_GIT / _ARCHIVE). Con la API apuntada a un juguete y sin
 # TYCON_RELEASE_GIT, no hay rutas públicas: un laboratorio no sale al GitHub de verdad (la regla de public-git.js)
 $GitBase = if ($env:TYCON_RELEASE_GIT) { $env:TYCON_RELEASE_GIT } else { 'https://github.com' }
 $Codeload = if ($env:TYCON_RELEASE_ARCHIVE) { $env:TYCON_RELEASE_ARCHIVE } else { 'https://codeload.github.com' }
@@ -82,7 +82,7 @@ while ($i -lt $args.Count) {
 $Tools = @('node', 'tar')
 # bash y python3 los pide el aplicador de Claude Code: con `--tool codex` (sólo Codex) no hacen falta
 $codexOnly = $false
-# `--tool` se lee como lo lee install (repetida, con comas, sin mayúsculas ni espacios: tools.parseOption; story 8.40, AC 46)
+# `--tool` se lee como lo lee install (repetida, con comas, sin mayúsculas ni espacios: tools.parseOption)
 $asked = @()
 for ($k = 0; $k -lt $Rest.Count; $k++) {
   $a = [string]$Rest[$k]
@@ -140,7 +140,7 @@ function Fetch([string]$Url, [string]$Out) {
       if ($auth -and $script:Token) { $req.Headers.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $script:Token) }
       $resp = $client.SendAsync($req).GetAwaiter().GetResult()
       $code = [int]$resp.StatusCode
-      # el tope de la API (story 8.34): lo que quedó y la hora de renovación del último pedido
+      # el tope de la API: lo que quedó y la hora de renovación del último pedido
       $script:RateRemaining = $null; $script:RateReset = $null
       $vals = $null
       if ($resp.Headers.TryGetValues('X-RateLimit-Remaining', [ref]$vals)) { $script:RateRemaining = [string]($vals | Select-Object -First 1) }
@@ -168,7 +168,7 @@ function Fetch([string]$Url, [string]$Out) {
   }
   return 0
 }
-function Limited {   # si el último 403 fue el tope de la API: hasta qué hora (hora local), y sale 1 (story 8.34)
+function Limited {   # si el último 403 fue el tope de la API: hasta qué hora (hora local), y sale 1
   if ($script:RateRemaining -ne '0') { return }
   $n = 0; [void][long]::TryParse([string]$script:RateReset, [ref]$n)
   $when = if ($n -gt 0) { [DateTimeOffset]::FromUnixTimeSeconds($n).LocalDateTime } else { (Get-Date).AddHours(1) }
@@ -191,7 +191,7 @@ function Ask {   # sin permiso y el repo no se lee: en la terminal se pide sin e
 }
 try {
   # sin permiso, el commit de main sale de info/refs (0 consultas a la API); un 401/404 es un repo que no se ve sin permiso
-  # (se pide); sin red, un 5xx o algo que no es git → la API, como antes
+  # (se pide); sin red, un 5xx o algo que no es git → la API
   $Sha = ''
   $Refs = Join-Path $Tmp 'refs'
   # el commit de main de info/refs, o '' si lo que contestó no es la lista de ramas

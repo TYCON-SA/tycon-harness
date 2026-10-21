@@ -1,36 +1,36 @@
 'use strict';
-// tycon-home.js — dónde vive el arnés en la máquina: la única pieza que lo sabe (story 8.23, tanda A1).
+// tycon-home.js — dónde vive el arnés en la máquina: la única pieza que lo sabe.
 //
-// ── EL CASO (2026-10-06) ──────────────────────────────────────────────────────────────────────────────────────────
-// El dueño decidió que el arnés viva en `~/.tycon`, fuera de la carpeta de cualquier herramienta. Hasta acá cinco piezas
-// resolvían cada una un pedazo de la ruta (place.js, harness-path.js, state.js, skills-dir.js, tycon-config.js), todas con
-// `.claude` adentro. Antes de mover nada, la ruta se pide a UN lugar: este archivo.
+// ── EL CASO ──────────────────────────────────────────────────────────────────────────────────────────────────────
+// El arnés puede vivir en `~/.tycon`, fuera de la carpeta de cualquier herramienta. Para que cinco piezas (place.js,
+// harness-path.js, state.js, skills-dir.js, tycon-config.js) no resuelvan cada una su pedazo de la ruta, con `.claude`
+// adentro, la ruta se pide a UN lugar: este archivo.
 //
 // ── QUÉ HAY ACÁ ───────────────────────────────────────────────────────────────────────────────────────────────────
-// Una función por ruta. En las tandas A1 y A2 cada una vale LO DE HOY (nada se mueve en ninguna máquina):
+// Una función por ruta. En una máquina sin casa propia cada una vale lo de siempre, bajo `~/.claude`:
 //   · harnessDir(home)          el arnés: lo que resuelve el lugar (resolvePlace: primero el lugar, después el nombre viejo)
 //   · stateDir(home)            el estado del mecanismo y del pipeline: ~/.claude/.tycon-pipeline
 //   · configFile(home)          la configuración de la máquina: ~/.claude/tycon.json
-//   · backupsDir(home)          las copias de seguridad de la 8.13: ~/.claude/.tycon-pipeline/harness/backups
+//   · backupsDir(home)          las copias de seguridad: ~/.claude/.tycon-pipeline/harness/backups
 //   · installedSkillsDir(home)  las skills instaladas: ~/.claude/agent-skills
-//   · home({ env })             la carpeta propia del arnés, ~/.tycon (o TYCON_HOME): la usan las tandas B en adelante
+//   · home({ env })             la carpeta propia del arnés, ~/.tycon (o TYCON_HOME): la usan las instalaciones `release`
 //
-// ── LA MÁQUINA QUE VIVE EN ~/.tycon (tanda C, 2026-10-07) ─────────────────────────────────────────────────────────
-// Una máquina SIN Claude Code no puede guardar nada en la carpeta de Claude Code (AC 22): su estado nace en
+// ── LA MÁQUINA QUE VIVE EN ~/.tycon ──────────────────────────────────────────────────────────────────────────────────
+// Una máquina SIN Claude Code no puede guardar nada en la carpeta de Claude Code: su estado nace en
 // `~/.tycon/state`. La regla es una sola y la lee el disco: **si existe `~/.tycon/state`, el estado, las copias y la
-// configuración son los de `~/.tycon`; si no, los de hoy**. La crea `install --version` en una máquina que no enchufa a
-// Claude Code (`adoptOwnHome`), y es la misma regla con que la tanda D muda a las demás (mover y crear esa carpeta). Una
-// máquina sin esa carpeta —todas las de hoy— contesta lo de siempre, byte a byte.
-// Y lo del lugar de la 8.19, que se mudó acá desde place.js (que queda como fachada): los dos nombres, sus rutas y
-// resolvePlace. Las variables parciales de hoy (TYCON_GUIDES_DIR, TYCON_SKILLS_DIR, TYCON_HARNESS_SNAPSHOT_DIR, …) las
+// configuración son los de `~/.tycon`; si no, los de `~/.claude`**. La crea `install --version` en una máquina que no enchufa a
+// Claude Code (`adoptOwnHome`), y es la misma regla con que la mudanza pasa a las demás (mover y crear esa carpeta). Una
+// máquina sin esa carpeta contesta lo de siempre, byte a byte.
+// Acá vive también el lugar del arnés (place.js queda como fachada): los dos nombres, sus rutas y
+// resolvePlace. Las variables parciales (TYCON_GUIDES_DIR, TYCON_SKILLS_DIR, TYCON_HARNESS_SNAPSHOT_DIR, …) las
 // sigue leyendo cada pieza ANTES de pedir acá: ganan en su pedazo, como siempre.
 //
 // ── POR QUÉ VIVE ACÁ Y NO EN scripts/lib/ ─────────────────────────────────────────────────────────────────────────
 // La copia fija del programa (`~/.claude/.tycon-pipeline/harness/program/harness/`) se refresca copiando esta carpeta
 // entera, y la copia la hace el código VIEJO en memoria. Un archivo de otra carpeta no llegaría a la copia en la primera
 // actualización y `rollback`/`uninstall` de emergencia quedarían rotos hasta la versión siguiente. Acá viaja solo.
-// Al freno de producción lo va a copiar su instalador a /opt/tycon/setup/harness/ desde la tanda D (AC 30), cuando
-// skills-dir.js y tycon-config.js le pidan su ruta; en las tandas A1-C el freno no la usa.
+// El instalador del freno de producción copia esta pieza a /opt/tycon/setup/harness/, para cuando
+// skills-dir.js y tycon-config.js le pidan su ruta.
 //
 // Sin dependencias: sólo módulos de Node. Corre suelto desde la copia fija y desde la del freno.
 const fs = require('fs');
@@ -45,13 +45,13 @@ class TyconHomeError extends Error {
   constructor(message) { super(message); this.name = 'TyconHomeError'; }
 }
 
-// la carpeta de Claude Code bajo el HOME: en las tandas A1 y A2, el arnés vive todavía adentro
+// la carpeta de Claude Code bajo el HOME: el arnés vive adentro, salvo en una máquina con casa propia
 function claudeDir(home) { return path.join(home || os.homedir(), '.claude'); }
 
 function placePath(home) { return path.join(claudeDir(home), PLACE_NAME); }
 function legacyPlacePath(home) { return path.join(claudeDir(home), LEGACY_PLACE_NAME); }
 
-/** «Clon válido del arnés» = existe y tiene el instalador (el criterio de la 8.3, AC 4). */
+/** «Clon válido del arnés» = existe y tiene el instalador. */
 function isHarnessClone(dir) { return !!dir && fs.existsSync(path.join(dir, 'scripts', 'install-tycon-hooks.sh')); }
 
 function realOrNull(p) { try { return fs.realpathSync(p); } catch (_) { return null; } }
@@ -92,11 +92,11 @@ function livesInOwnHome(home) {
 }
 /**
  * La máquina pasa a vivir en la casa propia: crea `~/.tycon/state`. Lo llama `install --version` en una máquina que no
- * enchufa a Claude Code y no tiene estado donde siempre (tanda C), y la mudanza (tanda D). Devuelve la carpeta. Tira si
+ * enchufa a Claude Code y no tiene estado donde siempre, y la mudanza. Devuelve la carpeta. Tira si
  * no la puede crear: sin ella el estado caería en la carpeta de Claude Code.
  */
 /** ¿`~/.tycon/state` existe pero no tiene estado? Es el resto de una instalación cortada (Ctrl-C en «¿Instalo?»): la
- *  máquina NO vive ahí (pase adversarial de la C, clase 7: esa carpeta vacía la marcaba para siempre). */
+ *  máquina NO vive ahí. */
 function ownHomeStale(home) {
   return livesInOwnHome(home) && !fs.existsSync(path.join(ownStateDir(home), 'harness-state.json'));
 }
@@ -123,7 +123,7 @@ function installedSkillsDir(home) { return path.join(claudeDir(home), 'agent-ski
 /** Las carpetas del estado que el arnés puede estar usando o va a usar: la vigente y la de la casa propia (sin repetir). */
 function stateDirs(home) { return [...new Set([stateDir(home), ownStateDir(home)])]; }
 /**
- * ¿La máquina instaló una versión BAJADA (story 8.23, tanda B)? Se lee del estado del mecanismo (una fuente `kind:
+ * ¿La máquina instaló una versión BAJADA? Se lee del estado del mecanismo (una fuente `kind:
  * release`), sin cargar state.js (que carga este archivo). Un estado ilegible o ausente es «no» (un clon, o nada).
  */
 function isReleaseMachine(home) {
@@ -143,8 +143,7 @@ function maintainedPath({ env = process.env } = {}) {
 }
 
 /**
- * `paths.maintainers` de `~/.tycon/config.json`: el clon del repo PRIVADO de mantenimiento que la máquina declara (story
- * 8.26, tanda H1c · AC 65). → `{ declared, path, problem }`. A diferencia de `maintainedPath`, distingue «no declara
+ * `paths.maintainers` de `~/.tycon/config.json`: el clon del repo PRIVADO de mantenimiento que la máquina declara. → `{ declared, path, problem }`. A diferencia de `maintainedPath`, distingue «no declara
  * ninguno» (`declared: false`, sin `problem`) de «declara uno que no sirve» (`problem` dice por qué, sin citar nada del
  * archivo): quien reconoce los repos del arnés o lee de ahí la configuración del merge tiene que poder DECIRLO, no
  * callar. Una configuración que no se deja leer es `declared: false` con `problem` (no se sabe si declaraba). Nunca
@@ -171,9 +170,9 @@ function maintainersClone({ env = process.env } = {}) {
 }
 
 /**
- * El árbol que se MANTIENE (story 8.23, tanda A2, AC 6): de ahí leen los avisos de la máquina lo que escriben los
+ * El árbol que se MANTIENE: de ahí leen los avisos de la máquina lo que escriben los
  * nocturnos en el repo (`.dashboard/…`). En un clon es el árbol de quien pregunta (`ownTree`), como siempre; en una
- * instalación `release` (tanda B, AC 18) es el clon que la máquina declara como el que mantiene (`paths.maintained`), o
+ * instalación `release` es el clon que la máquina declara como el que mantiene (`paths.maintained`), o
  * null: ningún aviso corre git sobre `~/.tycon`, y sin clon declarado calla.
  */
 function maintainedDir(home, ownTree) {
@@ -182,15 +181,14 @@ function maintainedDir(home, ownTree) {
 }
 
 /**
- * Dónde se escribe y se lee `.dashboard` (lo de los nocturnos y las corridas) en esta máquina (story 8.23, tanda D ·
- * AC 28): en un clon, adentro del árbol de quien pregunta (`<tree>/.dashboard`, como siempre); en una instalación
+ * Dónde se escribe y se lee `.dashboard` (lo de los nocturnos y las corridas) en esta máquina: en un clon, adentro del árbol de quien pregunta (`<tree>/.dashboard`, como siempre); en una instalación
  * `release` —que vive en `~/.tycon` y cuyo árbol se reemplaza entero en cada actualización—, `~/.tycon/state/dashboard`
  * (la mudanza copia ahí lo que el clon traía).
  */
 function dashboardDir(home, ownTree) {
   if (isReleaseMachine(home)) {
     // con un clon declarado como el que se mantiene, lo escrito va AHÍ (de ahí se commitea y de ahí leen los avisos:
-    // retro-pending.js); sin clon declarado, en el estado propio (pase adversarial de la D, clase 3)
+    // retro-pending.js); sin clon declarado, en el estado propio
     const m = maintainedPath();
     return m ? path.join(m, '.dashboard') : path.join(stateDir(home), 'dashboard');
   }
@@ -212,7 +210,7 @@ function home({ env = process.env } = {}) {
 }
 
 /**
- * Las carpetas de la casa propia del arnés (story 8.23, tanda B): lo que una instalación `release` escribe adentro de
+ * Las carpetas de la casa propia del arnés: lo que una instalación `release` escribe adentro de
  * `~/.tycon`. `harness` es la versión activa (siempre la misma ruta real), `previous` la anterior, `incoming` donde se
  * arma una nueva, `trash` lo que se borra en el arranque siguiente, `thirdParty` la caché de las skills de terceros,
  * `config` el permiso de GitHub y `paths.maintained`, `journal` el diario del cambio de versión.
@@ -228,14 +226,14 @@ function ownPaths({ env = process.env } = {}) {
     thirdParty: path.join(root, 'third-party'),
     config: path.join(root, 'config.json'),
     journal: path.join(root, 'swap.json'),
-    // la forma con enlaces (story 8.33): las versiones, cada una en su carpeta numerada, y el diario del cambio de enlaces
+    // la forma con enlaces: las versiones, cada una en su carpeta numerada, y el diario del cambio de enlaces
     versions: path.join(root, 'versions'),
     linkJournal: path.join(root, 'link-swap.json'),
   };
 }
 
 /**
- * El Node propio del arnés (story 8.39): `<casa>/node/` con cada versión en `versions/<v>/` y el enlace `current` a la
+ * El Node propio del arnés: `<casa>/node/` con cada versión en `versions/<v>/` y el enlace `current` a la
  * que está en uso (simbólico en Mac y Linux, unión en Windows). Lo que dura escrito —el comando de un hook, el plist del
  * examen— nombra `current`, nunca la carpeta numerada: cambiar de versión de Node no cambia ningún comando. `bin` es el
  * binario por `current` (`bin/node`, o `node.exe` en Windows, que se baja suelto). Esta regla está escrita también en
@@ -255,12 +253,11 @@ function harnessNode({ env = process.env, platform = process.platform } = {}) {
   };
 }
 
-// ── LA FORMA CON ENLACES (story 8.33, 2026-10-14) ─────────────────────────────────────────────────────────────────
+// ── LA FORMA CON ENLACES ─────────────────────────────────────────────────────────────────
 // En Windows renombrar una carpeta con un archivo abierto, con un proceso parado adentro o con un vigilante falla: con
-// otra sesión o un VS Code abiertos, el cambio de versión por `rename` esperaba para siempre. En Windows `harness` y
-// `previous` son UNIONES a `versions/<v>/`, y cambiar de versión es cambiar la unión: medido en el agente de Windows
-// (182 #13451), anda con la carpeta vieja tomada de las tres formas. Mac y Linux siguen con carpetas reales y `rename`
-// (decisión 2 del dueño); las pruebas de Mac ejercitan esta forma con `TYCON_RELEASE_LINKS=1` (sólo de pruebas), con
+// otra sesión o un VS Code abiertos, el cambio de versión por `rename` esperaría para siempre. En Windows `harness` y
+// `previous` son UNIONES a `versions/<v>/`, y cambiar de versión es cambiar la unión, que anda con la carpeta vieja tomada de las tres formas.
+// Mac y Linux siguen con carpetas reales y `rename`; las pruebas de Mac ejercitan esta forma con `TYCON_RELEASE_LINKS=1` (sólo de pruebas), con
 // enlaces simbólicos. Las funciones viven acá porque viajan con la copia fija del programa (ver la cabecera).
 
 /** ¿Esta máquina usa la forma con enlaces? Windows siempre; en otra plataforma, sólo la variable de pruebas. */
@@ -314,7 +311,7 @@ function pointLink(at, target, { platform = process.platform } = {}) {
 }
 /**
  * El ambiente para los procesos que ESCRIBEN rutas del árbol (el aplicador, el enchufe de Codex) en la forma con
- * enlaces: Node resuelve el enlace en `__dirname` (182 #13451: da `versions/<v>`), y una ruta así escrita en un archivo
+ * enlaces: Node resuelve el enlace en `__dirname`, y una ruta así escrita en un archivo
  * ataría la máquina a esa versión. Con `--preserve-symlinks` y `--preserve-symlinks-main` en `NODE_OPTIONS` (los
  * heredan todos los Node que se lancen abajo), `__dirname` queda en `~/.tycon/harness`. Fuera de esa forma, `env` tal cual.
  */

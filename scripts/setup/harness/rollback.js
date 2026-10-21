@@ -1,31 +1,31 @@
 'use strict';
-// rollback.js — la vuelta atrás por piezas (story 8.13, tanda C · AC 19-21): a qué copia se vuelve y cómo se restaura.
-// Lo comparten `harness.js rollback` y la comprobación de salud que falla después de una actualización (AC 21).
+// rollback.js — la vuelta atrás por piezas: a qué copia se vuelve y cómo se restaura.
+// Lo comparten `harness.js rollback` y la comprobación de salud que falla después de una actualización.
 //
 // El destino (`pickTarget`): sin `--to`, la copia más nueva (mayor `seq`) cuyos `sources` difieren de los HEAD actuales —la
 // que se tomó antes de mover los árboles—; las copias de `startup`/`apply` posteriores, de la misma versión, no cuentan. Así
 // un segundo `rollback` vuelve a la copia `before-rollback` del primero: un rollback se deshace con otro. Basta con que
 // difiera UNA fuente: un hook nuevo de agent-skills no cambia el número de versión (sale del arnés) y también se deshace.
-// Si ninguna copia tiene `sources` (anteriores a la C), la más nueva y sólo archivos, y se dice.
+// Si ninguna copia tiene `sources` (sin ese dato), la más nueva y sólo archivos, y se dice.
 //
-// La restauración (`restore`), en este orden (Precisiones de la tanda C):
+// La restauración (`restore`), en este orden:
 //   (1) cada archivo de la copia cuyo hash actual es su `sha256_after` (nadie lo tocó desde el cambio) vuelve ENTERO a como
 //       estaba; si cambió después (un permiso que agregó Claude Code, una línea propia) se avisa y se deja: de él se quitan
 //       sólo las piezas, en (4). `existed: false` → se borra sólo si sigue siendo pieza registrada del arnés.
 //   (2) en `managed`, cada fuente a los `sources` de la copia con `sources.revert` (stash propio + `reset --hard` sobre su
-//       rama: `main` interno o `tycon/installed`); NUNCA `checkout <commit>` —la rama queda en `main`, atrás de origin
-//       (decisión 8 del dueño)—. Antes de tocar nada se mira que cada fuente esté en su rama y que el commit esté en el
+//       rama: `main` interno o `tycon/installed`); NUNCA `checkout <commit>` —la rama queda en `main`, atrás de origin—.
+//       Antes de tocar nada se mira que cada fuente esté en su rama y que el commit esté en el
 //       clon: si una no se puede mover no se toca nada, y se dice. Un árbol sucio: el stash propio de `revert`; si no pudo
 //       apartarlo, no se mueve y se dice. En `developer` este paso no existe: el árbol es el clon del dev.
 //   (3) el aplicador de ese árbol con `--report-json` (el `runApplier` de harness.js: así no se duplica). Su reporte se
-//       suma a las piezas compartidas que `runApplier` hizo antes de lanzarlo (tanda D, AC 28): las dos son «lo que esta
+//       suma a las piezas compartidas que `runApplier` hizo antes de lanzarlo: las dos son «lo que esta
 //       versión deja», y sin las compartidas el paso (4) las quitaría recién hechas.
-//   (4) se quita lo registrado que ese reporte ya no trae (decisión 3: no se usa `managed[].version`), salvo las piezas
+//   (4) se quita lo registrado que ese reporte ya no trae (no se usa `managed[].version`), salvo las piezas
 //       propias de harness.js (el `@import`, la línea de arranque, la copia fija) — con `remove.js`. Un bloque que se va
 //       de CLAUDE.md se va también del espejo ~/.codex/AGENTS.md si es pieza registrada (el espejo es copia entera). Lo
 //       que el paso (1) volvió ENTERO y sigue así no se quita: son los bytes de antes del cambio.
 //   (5) `managed` sale de ese reporte (la unión de managed.js, sin lo quitado ni lo que volvió entero).
-// Story 8.13.1 (la capa privada): una fuente `layer` no es un árbol —su clon de lectura es --bare— y (2) no la mueve. Quien
+// Capa privada: una fuente `layer` no es un árbol —su clon de lectura es --bare— y (2) no la mueve. Quien
 // llama pasa `beforeTrees()` (corre justo antes de mover los árboles: lo pisado por la capa vuelve al público) y
 // `afterTrees(copia | null)` (después de (2) y antes del aplicador: re-apila la capa en el commit de la copia, o donde
 // estaba con `null` si los árboles no se pudieron mover; devuelve lo que movió). Sin capa no se pasan y nada cambia.
@@ -53,7 +53,7 @@ const pieceKey = (p) => `${p.kind}\u0000${p.where}\u0000${p.id}`;
 const seqOf = (c) => (c && c.manifest && Number.isInteger(c.manifest.seq) && c.manifest.seq > 0 ? c.manifest.seq : null);
 const hasSources = (c) => Boolean(c && c.manifest && isObject(c.manifest.sources) && Object.keys(c.manifest.sources).length);
 
-/** Más nueva primero por `seq`; las que no lo tienen (anteriores a la tanda B) van debajo, en el orden en que vinieron. */
+/** Más nueva primero por `seq`; las que no lo tienen (sin ese dato) van debajo, en el orden en que vinieron. */
 function newestFirst(copies) {
   return copies.map((c, i) => ({ c, i })).sort((a, b) => {
     const sa = seqOf(a.c); const sb = seqOf(b.c);
@@ -122,7 +122,7 @@ function defaultIsOwnPiece(home) {
   return (p) => p.kind === 'import' || p.kind === 'startup-line' || (p.kind === 'file' && path.resolve(String(p.where)).startsWith(dir + path.sep));
 }
 
-/** `remove.js` (el agente «quitar», misma tanda). Sin él, la restauración no puede quitar piezas: lo dice, no lo inventa. */
+/** `remove.js` (el agente «quitar»). Sin él, la restauración no puede quitar piezas: lo dice, no lo inventa. */
 function loadRemove() {
   try { return require('./remove.js'); } catch (e) {
     if (e && e.code === 'MODULE_NOT_FOUND' && /remove\.js/.test(String(e.message))) return null;
@@ -219,9 +219,8 @@ function mirrorBlocks(prev, reportList, reported, own, untouchedKeys, intact) {
  * Mira, sin mover nada, si cada fuente puede ir al commit de la copia. `{ moves: [{ st, from, to }], blockers: [] }`
  * Una fuente que se reescribe se mueve sólo desde `tycon/installed`; el motivo, si no está ahí, lo arma
  * `sources.offInstalledBranch` —el mismo de `update` y de `doctor`—: antes de la primera actualización esa rama todavía
- * no existe, y mandar a `checkout tycon/installed` era aconsejar un comando que falla (pase adversarial de la tanda D,
- * causa B).
- * «No está» y «no se pudo leer» no se confunden (segunda vuelta de revisores de la tanda D): un HEAD ilegible no es «no es
+ * no existe, y aconsejar `checkout tycon/installed` mandaría a un comando que falla.
+ * «No está» y «no se pudo leer» no se confunden: un HEAD ilegible no es «no es
  * un clon», una rama del mecanismo ilegible no es «todavía no existe» (lo contesta `offInstalledBranch`), y un commit de
  * la copia que no se pudo mirar no es «no está en el clon». En los tres casos no se mueve nada y se dice qué no se leyó.
  */
@@ -329,7 +328,7 @@ function restore(ctx, state, copy, { why = 'rollback', runApplier = null, log = 
       else if (dirty) say(`${m.st.name}: lo que tenías sin commitear se apartó en un stash propio (${sources.STASH_MSG}) y se volvió a aplicar`);
     }
     if (treesFailed) result.ok = false;
-    // la capa (story 8.13.1): en el commit de la copia, o donde estaba si los árboles no se movieron
+    // la capa: en el commit de la copia, o donde estaba si los árboles no se movieron
     if (typeof afterTrees === 'function') {
       try {
         for (const m of afterTrees(treesFailed ? null : copy) || []) {
@@ -350,8 +349,8 @@ function restore(ctx, state, copy, { why = 'rollback', runApplier = null, log = 
     return result;
   }
   // lo que esa versión deja en la máquina: el reporte del aplicador MÁS las piezas compartidas que `runApplier` hizo antes
-  // de lanzarlo (tanda D, AC 28: `a.shared`). Sin sumarlas, el paso (4) las tomaría por «lo que esta versión ya no trae» y
-  // las quitaría recién hechas. Con `union`: un aplicador de antes de la tanda D las reporta él también, y no se repiten
+  // de lanzarlo (`a.shared`). Sin sumarlas, el paso (4) las tomaría por «lo que esta versión ya no trae» y
+  // las quitaría recién hechas. Con `union`: un aplicador viejo las reporta él también, y no se repiten
   result.report = Array.isArray(a.report) ? shared.union(a.report, a.shared) : null;
   const derived = report.derive(state, { env });
   result.version = derived && derived.number ? derived.number : null;

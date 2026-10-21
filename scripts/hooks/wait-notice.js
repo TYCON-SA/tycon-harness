@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * wait-notice.js — la corrida avisa por Telegram cuando queda esperando a una persona (story 7.20, 2026-10-17).
+ * wait-notice.js — la corrida avisa por Telegram cuando queda esperando a una persona.
  *
  * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────────────────────────
- * La espera por una persona es el 38 % del reloj de las corridas medidas (el 48 % en producto) y ningún control
- * avisaba: quien deja corriendo una story se entera una hora después de que había una pregunta sin contestar.
+ * La espera por una persona es buena parte del reloj de una corrida y sin aviso nadie se entera: quien deja
+ * corriendo una story descubre una hora después que había una pregunta sin contestar.
  *
  * ── QUÉ HACE ─────────────────────────────────────────────────────────────────────────────────────────────────────
  * Abre una ESPERA por sesión cuando una corrida del pipeline queda parada esperando a la persona, y la cierra cuando
@@ -99,7 +99,7 @@ function readMarker(sid) {
 // ── el hilo de la sesión ─────────────────────────────────────────────────────────────────────────────────────────
 // Dos formatos: el de Claude Code ({type, message:{role, content}}) y el de Codex ({type:'response_item', payload:{type,
 // role, content:[{type:'input_text'|'output_text'}]}}). Sin el segundo, del lado Codex (sólo Stop) el plazo nunca veía
-// que la persona contestó y avisaba igual (pase adversarial de la 7.20).
+// que la persona contestó y avisaría igual.
 // Lo que Codex inyecta como mensaje de la persona y no lo escribió nadie: las instrucciones y el contexto del entorno.
 const CODEX_INJECTED = /^\s*(?:#\s*AGENTS\.md instructions|<(?:environment_context|user_instructions|INSTRUCTIONS|permissions instructions|turn_aborted)\b)/;
 function codexItem(rec) { return rec && rec.type === 'response_item' && rec.payload && typeof rec.payload === 'object' ? rec.payload : null; }
@@ -171,7 +171,7 @@ function lastAgentLine(tp) {
 
 /**
  * ¿Quedó una tarea de fondo sin terminar? Un cierre de turno con una tarea de fondo corriendo es el agente esperando su
- * tarea, no a la persona: cuando termina, el arnés lo despierta (pase adversarial de la 7.20). Se lanza → su resultado
+ * tarea, no a la persona: cuando termina, el arnés lo despierta. Se lanza → su resultado
  * dice «Command running in background with ID: X» / «agentId: X» / «Task ID: X»; termina → llega «<task-id>X</task-id>».
  */
 function backgroundPending(tp) {
@@ -258,7 +258,7 @@ function dropFromShared(sid) {
 }
 /**
  * El archivo compartido se lee, se manda y se escribe con un candado (una carpeta, que se crea de forma atómica): dos
- * plazos casi juntos leían los dos el mismo estado y el segundo pisaba al primero (pase adversarial de la 7.20). Un
+ * plazos casi juntos leían los dos el mismo estado y el segundo pisaba al primero. Un
  * candado de más de 2 minutos es de un proceso que murió y se saca. Sin candado en 90 s, se sigue igual: avisar mal
  * ordenado es mejor que no avisar.
  */

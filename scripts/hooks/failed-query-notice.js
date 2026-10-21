@@ -1,16 +1,14 @@
 #!/usr/bin/env node
 /**
  * failed-query-notice.js — «no lo veo» no es «no hay»: una consulta a un servicio que devolvió
- * VACÍO con el código de salida ENMASCARADO no se puede leer como «no hay nada» (2026-09-06).
+ * VACÍO con el código de salida ENMASCARADO no se puede leer como «no hay nada».
  *
- * ── POR QUÉ EXISTE (pipeline-debt SALIDA-VACIA-DE-COMANDO-FALLADO, decidido por el dev el 2026-09-06)
- * El 2026-09-04 se afirmó dos veces «ese repo no tiene pull request abierto» con un `az` que había
- * FALLADO: el proyecto no se llama `Acme`, se llama `Acme Logistica`. El error se lo comió el `| sed`
- * del final y la salida quedó vacía — idéntica a «no hay ninguno». Sobre esa premisa se dio por
- * cerrada una tanda con un PR abierto sin ver y se fusionó main en dev en cinco backends. Es el mismo
- * defecto que `incident-log#listado-vacio-2026-08-27` (un `ls` a la carpeta equivocada leído como
- * «no hay documentación»), una capa más arriba: allá el silenciador era un `| head`, acá un `| sed`.
- * Caso: `incident-log#comando-fallado-leido-como-vacio-2026-09-04`.
+ * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────
+ * Un `az` puede FALLAR (el proyecto no se llama `Acme`, se llama `Acme Logistica`) y su error se lo come el `| sed`
+ * del final: la salida queda vacía — idéntica a «no hay ninguno». Sobre esa premisa se afirma
+ * «ese repo no tiene pull request abierto» y se da por cerrado un trabajo con un PR abierto sin ver.
+ * Es el mismo defecto que un `ls` a la carpeta equivocada leído como
+ * «no hay documentación», una capa más arriba: allá el silenciador es un `| head`, acá un `| sed`.
  *
  * ── QUÉ HACE ─────────────────────────────────────────────────────────────────────────────────────
  * PostToolUse de Bash y de PowerShell (la herramienta de Claude Code en Windows). Dos miradas, las dos por stderr + exit 2 (el canal que llega al modelo):
@@ -25,7 +23,7 @@
  *     comando falla, el modelo ve «Exit code N» igual (el harness lo devuelve así); sólo pierde el
  *     mensaje. Y si la respuesta ya dice que falló, el hook calla — el modelo lo está viendo.
  *     La salida se ATRIBUYE: las líneas que imprimió un `echo`/`printf` del mismo comando (los
- *     encabezados «== SR ==» del caso real) se descuentan antes de decidir si quedó vacío.
+ *     encabezados «== SR ==» de ejemplo) se descuentan antes de decidir si quedó vacío.
  *  2. «Ese proyecto no existe». En los segmentos `az repos|pipelines|boards|artifacts|devops …` (y
  *     SÓLO ahí: `az login -p` es una contraseña, `mkdir -p` no es az) compara el `--project`/`-p`
  *     contra la lista de proyectos de la organización cacheada por `--refresh` (el instalador la
@@ -33,7 +31,7 @@
  *     esta mirada calla). Un GUID se acepta (az lo admite), una variable no se juzga. El aviso
  *     sugiere hasta 3 parecidos y NO vuelca la lista: los nombres de clientes no van al contexto.
  *
- * En PowerShell (2026-10-16, al pagar la deuda): `Invoke-RestMethod`/`irm`/`Invoke-WebRequest`/`iwr` sin método
+ * En PowerShell: `Invoke-RestMethod`/`irm`/`Invoke-WebRequest`/`iwr` sin método
  * de escritura son consultas; tapan el fallo un `-ErrorAction SilentlyContinue` (o `-EA 0`, `Ignore`), un
  * `try { … } catch { }` y una tubería a un cmdlet (`Select-String`, `Where-Object`, `ForEach-Object`…). El consejo
  * del aviso nombra `$LASTEXITCODE` en vez de `rc=$?`. `2>$null` solo no cuenta, por lo mismo que `2>/dev/null`.
@@ -47,13 +45,12 @@
  * hook ve, no el texto renderizado): ver el número en `install-tycon-hooks.sh`, al registrar el hook.
  * Off: TYCON_FAILED_QUERY_NOTICE=0. Red: controls-bench/cases/hooks/39-consulta-fallida-notice.json.
  *
- * 🔴 Revisión adversarial del 2026-09-06 (51 hallazgos confirmados sobre la primera versión, ~13
- * defectos distintos): la segunda mirada leía CUALQUIER `-p` de CUALQUIER comando con «az» en el
- * texto (imprimía contraseñas de `az login -p`, marcaba `mkdir -p`, y se disparó sobre una tabla
- * markdown dentro de un heredoc volcando los 69 proyectos al contexto); la primera no veía la
- * consulta si no arrancaba el comando (segunda línea, `cd … &&`, `for … do`), llamaba consulta a
- * escrituras y descargas, no callaba en segundo plano, y el caso real del 04-09 no disparaba por el
- * `echo` de cabecera. Cada uno tiene su caso en el banco.
+ * 🔴 Lo que el hook cuida, cada uno con su caso en el banco: la segunda mirada lee SÓLO el `-p` de un comando
+ * `az` de verdad (no imprime contraseñas de `az login -p`, no marca `mkdir -p`, ni vuelca los proyectos
+ * al contexto desde una tabla markdown dentro de un heredoc); la primera ve la
+ * consulta aunque no arranque el comando (segunda línea, `cd … &&`, `for … do`), no llama consulta a
+ * escrituras y descargas, calla en segundo plano y dispara aunque un `echo` de cabecera
+ * imprima algo.
  */
 'use strict';
 
@@ -61,7 +58,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -69,15 +66,15 @@ const CACHE = path.join(stateDirOf(os.homedir()), 'az-projects.json');
 const CACHE_MAX_DIAS = 30;
 
 // ── 1. cortar el comando en segmentos ─────────────────────────────────────────────────────────
-// Vivían acá; desde el 2026-09-15 la definición es una sola y la comparten este hook, el freno de
-// sesiones y el freno de producción (story 6.1). Ver scripts/lib/shell-parse.js.
+// La definición es una sola y la comparten este hook, el freno de
+// sesiones y el freno de producción: ver scripts/lib/shell-parse.js.
 const { sinHeredocs, segmentos, tokens, PREFIJOS } = require(require('path').join(__dirname, '..', 'lib', 'shell-parse.js'));
 
 const AZ_LEE = new Set(['list', 'show', 'ls', 'get', 'query', 'search', 'check', 'status', 'diff', 'version', 'validate']);
 const AZ_ESCRIBE = new Set(['login', 'logout', 'configure', 'create', 'delete', 'update', 'set', 'add', 'remove', 'import', 'upload', 'push', 'publish', 'queue', 'cancel', 'approve', 'vote', 'complete', 'merge', 'install', 'run', 'rerun', 'reject', 'abandon', 'reactivate', 'download']);
 const GH_LEE = new Set(['list', 'view', 'status', 'checks', 'diff', 'watch', 'search']);
 const FILTROS = /^(?:sed|grep|egrep|fgrep|head|tail|jq|python3?|awk|cut|tr|sort|uniq|wc|xargs|column|tee|less|cat|yq|fold|nl|paste)\b/;
-// Los filtros de PowerShell (2026-10-16): en la herramienta PowerShell de Windows la tubería típica no pasa por sed
+// Los filtros de PowerShell: en la herramienta PowerShell de Windows la tubería típica no pasa por sed
 // sino por un cmdlet. No hay pipefail que valga ahí: lo que se ve al final es lo del último de la cadena.
 const FILTROS_PS = /^(?:Select-String|sls|Select-Object|select|Where-Object|where|\?|ForEach-Object|foreach|%|Sort-Object|Format-Table|ft|Format-List|fl|Out-String|ConvertFrom-Json|ConvertTo-Json|Measure-Object|measure|Group-Object|findstr)(?=\s|$)/i;
 // La consulta de PowerShell que no escribe: Invoke-RestMethod / Invoke-WebRequest y sus alias
@@ -334,7 +331,7 @@ function refrescar(org) {
 }
 
 if (require.main === module) {
-  // Los nombres viejos siguen andando (story 8.9, tanda B3a). Sólo a mano: como hook corre sin argumentos, y ahí ni se mira.
+  // Los nombres viejos siguen andando. Sólo a mano: como hook corre sin argumentos, y ahí ni se mira.
   if (process.argv.length > 2) require('../lib/legacy-names.js').aliasArgv('scripts/hooks/failed-query-notice.js', { exitCode: 2, prefix: 'consulta-fallida-notice: ' });
   const args = process.argv.slice(2);
   if (args[0] === '--measure') { medir(args.slice(1)); process.exit(0); }
@@ -345,7 +342,7 @@ if (require.main === module) {
   try { payload = fs.readFileSync(0, 'utf8'); } catch { process.exit(0); }
   try {
     const d = JSON.parse(payload || '{}');
-    // Bash o la herramienta PowerShell de Claude Code en Windows (misma entrada; 2026-10-04)
+    // Bash o la herramienta PowerShell de Claude Code en Windows (misma entrada)
     if (d.tool_name && !['Bash', 'PowerShell'].includes(d.tool_name)) process.exit(0);
     const ti = d.tool_input || {};
     const cmd = String(ti.command || '');

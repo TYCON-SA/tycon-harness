@@ -3,14 +3,11 @@
 /**
  * session-collision-guard.js — dos sesiones sobre el MISMO checkout no tocan git a la vez.
  *
- * ── EL CASO (2026-09-05, el arnés) ───────────────────────────────────────────────────
- * Dos sesiones de chat trabajaban en el mismo clon. La primera hizo `git add <sus archivos>` +
- * `git commit`, y el commit se llevó una DELECIÓN que la segunda había dejado en el índice (491
- * líneas de un archivo ajeno). Al intentar corregirlo con `--amend`, la segunda ya había commiteado
- * encima: el amend cayó sobre el commit de la otra. Más tarde la segunda cambió de rama
- * (`checkout -b story/...`) y el siguiente commit de la primera cayó en ESA rama, no en main. Nada
- * dio error: git hizo exactamente lo que se le pidió, sobre un estado que otra sesión estaba
- * cambiando. Hubo que reconstruir a mano con commit-tree y update-ref.
+ * ── EL CASO QUE CUBRE ────────────────────────────────────────────────────────────────
+ * Dos sesiones de chat trabajan en el mismo clon. Una hace `git add <sus archivos>` + `git commit`, y el commit se
+ * lleva una DELECIÓN que la otra dejó en el índice. Si la otra ya commiteó encima, un `--amend` cae sobre el commit
+ * ajeno. Si la otra cambia de rama (`checkout -b story/...`), el siguiente commit de la primera cae en ESA rama, no
+ * en main. Nada da error: git hace exactamente lo que se le pide, sobre un estado que otra sesión está cambiando.
  *
  * ── POR QUÉ UN FRENO Y NO UNA REGLA ─────────────────────────────────────────────────────────────
  * Ninguna sesión sabe de la otra ni puede saberlo: cada chat arranca sin historia de los demás, y
@@ -32,32 +29,30 @@
  *
  * El freno es sobre el repo DESTINO de cada git que escribe —su `-C`, o el `cd` que lo precede en la
  * cadena, con las variables definidas en el mismo comando—, no sobre el repo de la sesión: un comando
- * sobre otro repo no "ve" las sesiones de éste (2026-09-05, misma tarde; ver "qué repo toca…").
+ * sobre otro repo no "ve" las sesiones de éste (ver "qué repo toca…").
  *
  * Escape puntual: `TYCON_SESSION_GUARD_OK=1 git ...` como prefijo pegado al comando — deja
  * constancia en stderr y en ~/.claude/.tycon-pipeline/bypass.log. Ventana: TYCON_SESSION_GUARD_MIN
- * (10 minutos). Off: TYCON_SESSION_GUARD=0. Fail-open ante todo lo que no pueda leer.
+ * (3 minutos). Off: TYCON_SESSION_GUARD=0. Fail-open ante todo lo que no pueda leer.
  */
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const { spawnSync } = require('child_process');
 
 const TAG = '[session-guard]';
-// 🔴 3 minutos, no 10 (2026-09-06, pedido del dev tras un falso positivo): la señal es la fecha de
-// la transcripción de la otra sesión, y una sesión CERRADA deja su archivo igual de fresco que una
-// viva — abrir otra ventana, escribir «hola» y cerrarla frenaba el commit propio durante 10 minutos.
-// Un freno que molesta sin motivo se apaga, y con él se pierde donde sí importaba. Tres minutos
-// siguen cubriendo el incidente que lo motivó (dos sesiones trabajando a la vez escriben todo el
-// tiempo) y acortan la cola de las cerradas. La señal exacta —¿hay un proceso de Claude Code con ese
-// repo abierto?— quedó anotada como mejora: distingue viva de cerrada sin depender del reloj.
+// 🔴 La ventana es de 3 minutos: la señal es la fecha de la transcripción de la otra sesión, y una sesión CERRADA
+// deja su archivo igual de fresco que una viva. Con una ventana larga, abrir otra ventana, escribir «hola» y cerrarla
+// frenaría el commit propio durante todo ese rato, y un freno que molesta sin motivo se apaga. Tres minutos siguen
+// cubriendo dos sesiones trabajando a la vez (escriben todo el tiempo) y acortan la cola de las cerradas. La señal
+// exacta —¿hay un proceso de Claude Code con ese repo abierto?— distinguiría viva de cerrada sin depender del reloj.
 const VENTANA_MS = (Number(process.env.TYCON_SESSION_GUARD_MIN) || 3) * 60 * 1000;
 // Repos donde el worktree está PROHIBIDO (guides/git-worktrees.md): el consejo cambia.
-// (los dos nombres del arnés, el interno y el público, como segmento de ruta: story 8.19, AC 12. Escritos acá: el banco
+// (los dos nombres del arnés, el interno y el público, como segmento de ruta. Escritos acá: el banco
 // copia este hook suelto a un árbol de juguete — reconocedor declarado en scripts/tests/fixtures/harness-place-names.json)
 const SIN_WORKTREE = /(^|\/)(tycon-claude-guides|tycon-harness|agent-skills)$/;
 // git que cambia índice / árbol / rama. `merge-base`, `stash list`, `commit-tree` no cuentan.
@@ -90,7 +85,7 @@ function raizDelRepo(dir) {
 
 // El repo de la SESIÓN (donde arrancó el chat). Las sesiones vivas se buscan por el repo DESTINO del
 // comando; el cwd de la sesión entra en las claves SÓLO si el destino es su propio repo — si no, un
-// comando sobre otro repo "vería" las sesiones de éste (el falso positivo del 2026-09-05).
+// comando sobre otro repo "vería" las sesiones de éste (un falso positivo).
 let _raizSesion;
 const raizDeLaSesion = () => (_raizSesion === undefined ? (_raizSesion = raizDelRepo(cwd)) : _raizSesion);
 const esElRepoDeLaSesion = (raiz) => { const r = raizDeLaSesion(); return !!r && real(r) === real(raiz); };
@@ -211,7 +206,7 @@ if (evento === 'SessionStart') {
 
 // ── PreToolUse Bash|PowerShell: freno ───────────────────────────────────────────────────────────
 // En Windows Claude Code corre los comandos con su herramienta PowerShell: misma entrada
-// (tool_input.command), otro tool_name (2026-10-04, medido en una sesión real; ver safety-guard-pre.sh).
+// (tool_input.command), otro tool_name (ver safety-guard-pre.sh).
 
 if (evento !== 'PreToolUse' || !['Bash', 'PowerShell'].includes(payload.tool_name)) process.exit(0);
 const cmd = payload.tool_input && payload.tool_input.command;
@@ -219,9 +214,8 @@ if (typeof cmd !== 'string' || !GIT_ESCRIBE.test(cmd)) process.exit(0);
 
 // ── qué repo toca cada git que escribe ───────────────────────────────────────────────────────────
 //
-// 🔴 EL FALSO POSITIVO (2026-09-05, misma tarde del incidente). Una sesión trabajaba en un CLON
-// descartable precisamente para NO tocar el checkout compartido, que tenía tres sesiones vivas — y
-// este freno la paró igual, tres veces. Tres causas: (1) `cd "$D" || exit 9` no contaba como `cd`
+// 🔴 EL FALSO POSITIVO QUE EVITA. Una sesión que trabaja en un CLON descartable, precisamente para NO tocar el
+// checkout compartido (que tiene sesiones vivas), no debe frenarse. Tres causas lo provocarían: (1) `cd "$D" || exit 9` no contaba como `cd`
 // (sólo se aceptaban `&&` y `;`); (2) `$D` no se resolvía, y un destino irresoluble caía en "no es
 // un repo" → exit 0 — o sea que el mismo defecto era un AGUJERO en la otra dirección: `git -C "$VAR"
 // commit` sobre ESTE checkout pasaba sin mirar; (3) aun con el destino bien resuelto, las sesiones
@@ -231,13 +225,10 @@ if (typeof cmd !== 'string' || !GIT_ESCRIBE.test(cmd)) process.exit(0);
 // comando— y se buscan las sesiones vivas de ESE repo. Lo que no se puede resolver se asume que es
 // el checkout de la sesión: fail-closed hacia el repo que el freno existe para proteger, con el
 // escape de siempre. Casos: 38-session-collision-guard.json (los seis últimos).
-// 🔴 EL CRITERIO VIVE EN UN SOLO LADO (2026-09-15, RETRO-PENDING-CD-MISATTR-1). Esto que sigue
-// —seguir el `cd` de la cadena y el `-C` del git, expandiendo las variables que el propio comando
-// define— nació acá, y el mismo día que se descubrió que `retro-pending.js` lo necesitaba (anotaba
-// los push contra el repo de la sesión, no contra el repo al que se empujó) se extrajo a
-// `scripts/lib/git-target.js`. Dos copias de este criterio divergen igual que las 8 copias de
-// `release-notes.sh`. El regex de los verbos se genera del mismo constructor: se verificó que sale
-// byte a byte idéntico al que estaba escrito acá.
+// 🔴 EL CRITERIO VIVE EN UN SOLO LADO: seguir el `cd` de la cadena y el `-C` del git, expandiendo las variables que
+// el propio comando define, está en `scripts/lib/git-target.js`, porque `retro-pending.js` lo necesita igual (anota
+// los push contra el repo al que se empujó, no contra el de la sesión). Dos copias de este criterio divergen. El
+// regex de los verbos se genera del mismo constructor.
 const destinoGit = require(path.join(__dirname, '..', 'lib', 'git-target.js'));
 const GIT_QUE_ESCRIBE = destinoGit.regexDeGit(destinoGit.VERBOS_QUE_ESCRIBEN);
 /**

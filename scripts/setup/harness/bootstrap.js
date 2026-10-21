@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 'use strict';
-// bootstrap.js — la COPIA FIJA de arranque del arnés (story 8.13, AC 13). Vive en ~/.claude/.tycon-pipeline/harness/,
+// bootstrap.js — la COPIA FIJA de arranque del arnés. Vive en ~/.claude/.tycon-pipeline/harness/,
 // FUERA del árbol que actualiza; la línea de arranque de cada sesión llama a esta copia, no al árbol.
 //
-// Por qué: una máquina del equipo quedó 272 commits atrás durante 6 días con el instalador viejo diciendo «todo bien»
-// (incident-log#arnes-que-se-bloquea-a-si-mismo-2026-09-03). La doctrina que dejó: lo durable no puede viajar por el
-// camino roto. Si el `harness.js` del árbol está roto, el enlace colgado o la versión no arranca, esta copia sale ≠ 0 y
+// Por qué: una máquina puede quedar muchos commits atrás durante días con el instalador diciendo «todo bien» si el
+// arnés se bloquea a sí mismo. Doctrina: lo durable no puede viajar por el camino roto. Si el `harness.js` del árbol está roto, el enlace colgado o la versión no arranca, esta copia sale ≠ 0 y
 // la línea de arranque cae al respaldo en shell (`bootstrap-fallback.sh` / `.ps1`): el `git pull --ff-only --autostash`
 // de siempre en los dos repos y el aplicador. Nada deja una máquina quieta, y `rollback` siempre tiene desde dónde correr.
 //
@@ -16,11 +15,11 @@
 //      con `canonical-path.js --ensure-link --clone <tree_before> --link <tree_before>` de ese árbol, escribe el estado
 //      bajo el mismo candado por `mkdir` del programa (`harness/harness.lock`) y deja el aviso en `notice`.
 //   3. Resuelve el lugar del arnés: ~/.claude/tycon-harness y, si no resuelve, el nombre viejo ~/.claude/tycon-claude-guides
-//      (story 8.19); ninguno → sale 1. Comprueba que exista <tree>/scripts/setup/harness.js (si no → sale 1).
+//      ninguno → sale 1. Comprueba que exista <tree>/scripts/setup/harness.js (si no → sale 1).
 //      Los dos nombres van ESCRITOS acá (copia declarada en scripts/tests/fixtures/harness-place-names.json): esta copia
 //      no carga nada del árbol, tampoco scripts/setup/harness/place.js.
 //   4. Lanza `node <tree>/scripts/setup/harness.js <argv, o startup>` con el mismo PATH y devuelve su exit code.
-//   (Tanda C) `rollback` y `uninstall` van ANTES de todo esto por `program/harness.js` de esta misma carpeta —la copia
+//   `rollback` y `uninstall` van ANTES de todo esto por `program/harness.js` de esta misma carpeta —la copia
 //   del programa que pasó la salud—: no dependen de que el árbol arranque ni de que exista.
 //   Cualquier fallo → exit ≠ 0 (y una línea en startup.log con el motivo), para que la línea caiga al respaldo.
 //
@@ -42,7 +41,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const HOME = os.homedir();
-// Dónde vive el estado (story 8.23, tanda C): una máquina sin Claude Code vive entera en la casa propia del arnés, y su
+// Dónde vive el estado: una máquina sin Claude Code vive entera en la casa propia del arnés, y su
 // estado es `~/.tycon/state` (o `TYCON_HOME/state`). La regla es la de scripts/setup/harness/tycon-home.js —si esa
 // carpeta existe, es ésa; si no, la de siempre—, ESCRITA acá: esta copia no carga nada del árbol.
 const OWN_HOME = process.env.TYCON_HOME && path.isAbsolute(process.env.TYCON_HOME) ? process.env.TYCON_HOME : path.join(HOME, '.tycon');
@@ -81,8 +80,8 @@ function writeStateAtomic(state) {
 }
 
 /**
- * ¿El dueño del candado ya no existe? El mismo criterio que lock.js (story 8.23, AC 37), escrito acá porque esta copia no
- * carga nada del árbol: sólo en esta máquina (el formato de antes, sin máquina, es de ésta) y sólo con `ESRCH`.
+ * ¿El dueño del candado ya no existe? El mismo criterio que lock.js, escrito acá porque esta copia no
+ * carga nada del árbol: sólo en esta máquina (el formato sin máquina es de ésta) y sólo con `ESRCH`.
  */
 function lockOwnerDead() {
   try {
@@ -98,9 +97,8 @@ function mkdirExclusive(p) { try { fs.mkdirSync(p); return true; } catch (e) { i
 function lockOrphan() { return olderThan(LOCK_DIR, LOCK_STALE_MS) || lockOwnerDead(); }
 /**
  * El candado del programa, por `mkdir` (el método del aplicador): tomado y vivo → false; huérfano → se pisa con el mismo
- * mutex de takeover que lock.js, re-verificando ADENTRO (pase de revisores de la tanda L de la 8.23: sin el mutex, dos
- * arranques que veían el mismo dueño muerto se quedaban los dos con el candado — antes la ventana pedía 10 minutos de
- * candado viejo; con el dueño muerto, se abría enseguida).
+ * mutex de takeover que lock.js, re-verificando ADENTRO: sin el mutex, dos
+ * arranques que ven el mismo dueño muerto se quedarían los dos con el candado.
  */
 function acquireLock() {
   if (process.env.TYCON_HARNESS_LOCK_HELD === '1') return { ok: true, held: true };
@@ -153,8 +151,8 @@ function recoverDeveloper(state) {
     fresh.mode = 'managed';
     fresh.tree = before;
     fresh.tree_before = null;
-    // la fuente harness vuelve al árbol también (como `link --managed`): si quedaba apuntando al clon borrado, update la
-    // daba por «origin cambiado» en cada arranque y la máquina no se actualizaba nunca más (pase adversarial, clase 26)
+    // la fuente harness vuelve al árbol también (como `link --managed`): si quedara apuntando al clon borrado, update la
+    // daría por «origin cambiado» en cada arranque y la máquina no se actualizaría nunca más
     if (Array.isArray(fresh.sources)) for (const s of fresh.sources) if (s && s.name === 'harness') s.dir = before;
     fresh.notice = `el árbol del modo desarrollador (${gone}) desapareció: el arranque volvió solo a managed sobre ${before} y re-apuntó el enlace. Si querés seguir en modo desarrollador: harness.js link --local <clon>`;
     writeStateAtomic(fresh);
@@ -167,9 +165,9 @@ function recoverDeveloper(state) {
 
 /**
  * `rollback` y `uninstall` corren el PROGRAMA de la copia fija (`program/harness.js` y `program/harness/*.js`, la última
- * versión que pasó la comprobación de salud; tanda C, decisión 7 del dueño): son los que tienen que andar con el árbol
- * roto (una actualización que no arranca) o sin árbol (el dev borró el clon). Sin esa copia (una máquina de antes de la
- * C), el `harness.js` del árbol, como siempre. Devuelve el exit code, o null si no hay copia del programa.
+ * versión que pasó la comprobación de salud): son los que tienen que andar con el árbol
+ * roto (una actualización que no arranca) o sin árbol (el dev borró el clon). Sin esa copia (una máquina anterior a
+ * ella), el `harness.js` del árbol. Devuelve el exit code, o null si no hay copia del programa.
  */
 const PROGRAM = path.join(HARNESS_DIR, 'program', 'harness.js');
 const FROM_FIXED_COPY = new Set(['rollback', 'uninstall']);
@@ -183,10 +181,10 @@ function runFixedProgram(args) {
 }
 
 /**
- * La versión bajada (story 8.23, tanda B · AC 13): un cambio de versión cortado a mitad (entre los dos `rename`) se
+ * La versión bajada: un cambio de versión cortado a mitad (entre los dos `rename`) se
  * repara desde su diario (`~/.tycon/swap.json`) ANTES de resolver el lugar —sin reparar, el lugar no resuelve—. Lo
- * hace `release.js` de la copia fija del programa; sin esa copia (una máquina de antes de la B) no hay nada que reparar.
- * En la forma con enlaces (story 8.33, Windows) el diario es `~/.tycon/link-swap.json`: un corte puede dejar `harness`
+ * hace `release.js` de la copia fija del programa; sin esa copia no hay nada que reparar.
+ * En la forma con enlaces (Windows) el diario es `~/.tycon/link-swap.json`: un corte puede dejar `harness`
  * sin enlace, y sin repararlo el lugar tampoco resuelve.
  */
 function repairRelease() {
@@ -202,9 +200,8 @@ function repairRelease() {
 }
 
 /**
- * El Node con que se lanza harness.js (story 8.39, decisión 24): el propio del arnés, `<casa>/node/current`, sólo si
- * `--version` contesta `v<n>` con n ≥ 20 en menos de 5 s; si no (no está, no arranca, se cuelga), el que corre esta copia,
- * como siempre. Un `current` roto nunca hace caer la línea al respaldo, que volvería atrás una versión sana. La ruta es la
+ * El Node con que se lanza harness.js: el propio del arnés, `<casa>/node/current`, sólo si
+ * `--version` contesta `v<n>` con n ≥ 20 en menos de 5 s; si no (no está, no arranca, se cuelga), el que corre esta copia. Un `current` roto nunca hace caer la línea al respaldo, que volvería atrás una versión sana. La ruta es la
  * regla de scripts/setup/harness/tycon-home.js#harnessNode ESCRITA acá (esta copia no carga nada del árbol; copia
  * declarada en scripts/tests/fixtures/harness-node-copies.json). TYCON_HARNESS_NODE=0 lo apaga.
  */
@@ -230,13 +227,13 @@ function main(argv) {
   // primero el lugar, después el nombre viejo: el primero que resuelve a un árbol con el programa
   const named = [LINK, LEGACY_LINK].map(realDir).filter(Boolean);
   let tree = named.find((d) => fs.existsSync(path.join(d, 'scripts', 'setup', 'harness.js'))) || named[0] || null;
-  // una máquina que NO enchufa a Claude Code (tanda C) corre el árbol de su estado ANTES que lo que haya en la carpeta de
-  // Claude Code: un clon viejo que quedó ahí no es el programa de esta máquina (pase adversarial, clase 13)
+  // una máquina que NO enchufa a Claude Code corre el árbol de su estado ANTES que lo que haya en la carpeta de
+  // Claude Code: un clon viejo que quedó ahí no es el programa de esta máquina
   if (state && Array.isArray(state.tools) && !state.tools.includes('claude') && typeof state.tree === 'string') {
     const own = realDir(state.tree);
     if (own && fs.existsSync(path.join(own, 'scripts', 'setup', 'harness.js'))) tree = own;
   }
-  // una versión bajada en una máquina SIN Claude Code (story 8.23, tanda C) no tiene el lugar (es un enlace en la carpeta
+  // una versión bajada en una máquina SIN Claude Code no tiene el lugar (es un enlace en la carpeta
   // de Claude Code): su árbol es el que nombra el estado, la casa propia del arnés
   if (!tree && state && Array.isArray(state.sources) && state.sources.some((s) => s && s.kind === 'release') && typeof state.tree === 'string') {
     const own = realDir(state.tree);

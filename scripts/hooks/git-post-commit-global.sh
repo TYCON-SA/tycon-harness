@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# git-post-commit-global.sh — después de CADA commit, UNA línea si quedó algo afuera (2026-09-06).
+# git-post-commit-global.sh — después de CADA commit, UNA línea si quedó algo afuera.
 #
-# ── POR QUÉ EXISTE (COMMIT-DEJA-AFUERA-1, aprobado por el dev el 2026-09-06) ─────────────────────
-# Tres veces en 24 horas quedó trabajo sin commitear en un checkout, sin que nadie lo dijera: la
-# evidencia de cierre de dos stories (era lo que trababa el portón), un archivo del inbox modificado
-# por el capturador de retrospectivas —que bloqueó el `pull` del arranque seis días seguidos—, y un
-# párrafo escrito de madrugada y olvidado al pasar a un clon. En los tres casos hubo commits DESPUÉS
-# en ese mismo repo, con staging selectivo (la regla de la casa), y el commit no dijo nada de lo que
-# dejaba atrás. El dev lo notó dos días seguidos: «quedan cosas sin commitear constantemente».
+# ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────
+# Puede quedar trabajo sin commitear en un checkout, sin que nadie lo diga: la
+# evidencia de cierre de una story (que traba el portón), un archivo del inbox modificado
+# por el capturador de retrospectivas —que bloquea el `pull` del arranque días seguidos—, o un
+# párrafo escrito de madrugada y olvidado al pasar a un clon. Con commits DESPUÉS
+# en ese mismo repo, con staging selectivo (la regla de la casa), el commit no dice nada de lo que
+# deja atrás.
 #
 # ── QUÉ HACE ─────────────────────────────────────────────────────────────────────────────────────
 # Lo instala `install-tycon-hooks.sh` en `~/.git-hooks/post-commit` (la carpeta del `core.hooksPath`
@@ -36,7 +36,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 
 # ── 0. el post-commit que el dev ya tenía en la carpeta global sigue corriendo ─────────────────
 # El instalador no lo pisa: lo deja en `post-commit.local` al lado de éste, y se invoca primero.
-# (revisión con Fable 2026-09-06, #56: la primera versión lo mandaba a un .bak y dejaba de correr)
+# (mandarlo a un .bak lo dejaría de correr)
 LOCAL_HOOK="$(dirname "$0")/post-commit.local"
 if [ -x "$LOCAL_HOOK" ]; then "$LOCAL_HOOK" "$@" || true; fi
 
@@ -97,8 +97,8 @@ fi
 # 🔴 La guarda del rebase va DESPUÉS de las dos delegaciones y silencia SÓLO el aviso propio: un
 # rebase o un cherry-pick de N commits dispara el post-commit N veces con el mismo árbol, y una línea
 # alcanza — pero el hook previo del dev y el del repo (git-lfs, por ejemplo) tienen que correr en cada
-# commit, como corren sin nosotros. Ponerla arriba los salteaba a los tres (crítico del 2do pase con
-# Fable, #3 ancho: en el flujo diario del dev, con pull.rebase=true, eso es TODO `git pull`).
+# commit, como corren sin nosotros. Ponerla arriba los saltearía a los tres (en el flujo diario del dev,
+# con pull.rebase=true, eso es TODO `git pull`).
 # Se mira el ESTADO de git, no GIT_REFLOG_ACTION: esa variable no llega a los hooks en un rebase real.
 # El apagado silencia sólo este aviso: los ganchos de la persona y del repo corrieron igual.
 [ "${TYCON_POST_COMMIT_NOTICE:-1}" = "0" ] && exit 0

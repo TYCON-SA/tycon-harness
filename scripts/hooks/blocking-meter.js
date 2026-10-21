@@ -5,9 +5,8 @@
  *
  * Por qué existe: la regla de ejecución en segundo plano ("pasos ≥2 min van de fondo, se anuncia
  * la duración, y al volver se contesta al dev primero" — bloque TYCON_BLOCK:background-execution
- * de ~/.claude/CLAUDE.md) nació del caso Story 3.34 (un repo del equipo, 2026-07-29): el dev preguntó
- * "¿cómo vas?" tres veces durante tool calls bloqueantes largas y recibió respuesta con minutos de
- * lag. Sin gate, esa regla es la única de su familia que depende de la memoria del modelo — y la
+ * de ~/.claude/CLAUDE.md) existe porque, durante tool calls bloqueantes largas, los mensajes del dev esperan
+ * minutos sin respuesta. Sin gate, esa regla es la única de su familia que depende de la memoria del modelo — y la
  * lección medida del arnés es que la regla que nada verifica se degrada. Esto la vuelve un número.
  *
  * Qué NO hace, a propósito: NO bloquea el fin de turno (mismo criterio que response-style-meter:
@@ -45,8 +44,7 @@ const PROBE_PATH = path.join(STATE_DIR, 'input-shape.json');
 const MAX_MS = Number(process.env.TYCON_BLOCKING_MAX_MS || 120000);
 const LONG_MS = 60000; // "llamada larga" para el conteo informativo (1 min)
 // Herramientas que esperan la respuesta del dev: su demora es la del dev y no se pueden mandar de
-// fondo. Contarlas producía avisos falsos (2026-09-23: 233 de 615 veredictos «bloqueado» eran
-// AskUserQuestion — el aviso le pedía al modelo correr de fondo una pregunta).
+// fondo. Contarlas produce avisos falsos: el aviso le pediría al modelo correr de fondo una pregunta.
 const ESPERAN_AL_DEV = new Set(['AskUserQuestion', 'ExitPlanMode', 'mcp__spokenly__ask_user_dictation']);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -89,8 +87,8 @@ function tsOf(rec) {
  * Mide una VENTANA del transcript (los registros desde el Stop anterior — el cursor lo maneja
  * main). El PRIMER prompt real del dev en la ventana es el que abrió el turno; cualquier otro es
  * un mensaje que quedó ENCOLADO a mitad de la espera — no se puede distinguir por contenido, solo
- * por posición (lección del propio selftest: buscar "el último prompt" cortaba el turno en el
- * mensaje encolado y la espera larga quedaba afuera de la ventana).
+ * por posición (buscar "el último prompt" cortaría el turno en el mensaje encolado y dejaría la
+ * espera larga afuera de la ventana).
  * Devuelve null si no hay nada medible (ventana sin prompt, sin tools, timestamps ausentes).
  */
 function measure(lines) {
@@ -228,7 +226,7 @@ function selftest() {
     [v.over === true, 'over=true con el default de 2 min'],
     [v.reasons.length === 2, `2 razones (espera + encolado) — dio ${v.reasons.length}`],
   ];
-  // Una pregunta al dev que tarda 10 min NO es un bloqueo: la demora es del dev (2026-09-23).
+  // Una pregunta al dev que tarda 10 min NO es un bloqueo: la demora es del dev.
   const soloPregunta = measure(parseLines([
     rec('user', 'decidí vos', 0),
     rec('assistant', [{ type: 'tool_use', id: 'q1', name: 'AskUserQuestion', input: { questions: [] } }], 1000),

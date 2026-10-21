@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * owner-email-notice.js — «tu máquina le informa al equipo tu correo de git», dicho UNA vez (story 2.28, decisión 1 · AC 30).
+ * owner-email-notice.js — «tu máquina le informa al equipo tu correo de git», dicho UNA vez.
  *
  * Hook SessionStart. Una máquina que sube al buzón manda en `place.json` el correo global de git de quien la usa
  * (`owner`, lo arma `upload-runs.js`), para que un mantenedor confirme de quién es cada máquina y la persona vea sus
  * corridas en el sitio de la organización. Este aviso se lo dice al dev en UN renglón, con cómo verlo y cómo cambiarlo,
  * y deja un sello por máquina (`owner-email-notice.json` en la carpeta de estado) con la HUELLA sha256 del correo
- * normalizado (minúsculas, sin espacios: decisión 7). Con el sello de ese correo calla; si el correo cambia, lo dice otra
+ * normalizado (minúsculas, sin espacios). Con el sello de ese correo calla; si el correo cambia, lo dice otra
  * vez con el nuevo y renueva el sello.
  *
  * 🔴 EL SELLO NUNCA GUARDA EL CORREO: sólo su huella. Es un dato de la persona y la carpeta de estado no es su lugar.

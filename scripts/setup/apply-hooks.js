@@ -1,15 +1,13 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * apply-hooks.js — registra en `settings.json` los hooks de `scripts/setup/hooks-list.json` (story 8.17, tanda W3 ·
- * AC 24 a 28; tanda W4 · AC 29). Módulo y comando. Lo llaman los dos instaladores: `install-tycon-hooks.sh` (Mac y
+ * apply-hooks.js — registra en `settings.json` los hooks de `scripts/setup/hooks-list.json`. Módulo y comando. Lo llaman los dos instaladores: `install-tycon-hooks.sh` (Mac y
  * Linux) y `install-tycon-hooks.ps1` (Windows). Ninguno de los dos lleva una lista propia.
  *
  * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────────────────────────────────
- * Hasta la W3 cada instalador tenía su lista y su código para escribir `settings.json`: un bloque de Python en el
- * `.sh` y uno de PowerShell en el `.ps1`, escritos por separado. Se desfasaron sin que nada lo dijera: medido en un
- * agente Windows el 2026-10-04, el `.ps1` registraba 29 de los 42 controles del `.sh`, entre los que faltaban los dos
- * frenos de comandos. Una lista y un aplicador no se pueden desfasar de sí mismos.
+ * Con una lista y un código propios en cada instalador (un bloque de Python en el `.sh` y uno de PowerShell en el
+ * `.ps1`), los dos se desfasan sin que nada lo diga: el `.ps1` registraría menos controles que el `.sh`, entre los
+ * que faltarían los frenos de comandos. Una lista y un aplicador no se pueden desfasar de sí mismos.
  *
  * ── QUÉ HACE ────────────────────────────────────────────────────────────────────────────────────────────────────
  *   1. decide qué hooks van (`decide`): cada uno por su `when` y la configuración del arnés (integraciones y perfil de
@@ -20,26 +18,26 @@
  *   4. no reescribe el archivo si no hay nada que cambiar; si escribe, lo hace atómico y con copia (salvo bajo
  *      `harness.js`, que ya tomó la suya: `TYCON_HARNESS_SNAPSHOT_DIR`).
  * Una lista rota o un `settings.json` que no es JSON NO se leen como «no hay hooks»: sale 1 nombrando el archivo y el
- * motivo, y no escribe nada (AC 28). Un guion de la lista que no está en el disco se nombra; no se saltea callado.
+ * motivo, y no escribe nada. Un guion de la lista que no está en el disco se nombra; no se saltea callado.
  *
  * ── LAS DOS PLATAFORMAS (`--platform posix|windows`; sin la opción, la de la máquina) ───────────────────────────
- * Se conservan las dos reglas que cada instalador ya tenía, medidas y probadas por separado:
+ * Se conservan las dos reglas propias de cada plataforma, probadas por separado:
  *   · posix (el bloque de Python del `.sh`): un hook es «el mismo» si su comando nombra el MISMO ARCHIVO —por la ruta,
- *     por el enlace o con otra caja en un disco que no la distingue (story 8.18, AC 36)—; otra carpeta es otro hook.
+ *     por el enlace o con otra caja en un disco que no la distingue—; otra carpeta es otro hook.
  *     Normaliza el `git pull` de la línea de arranque y escribe `cleanupPeriodDays` y la variable de `env` del arnés.
- *   · windows (el bloque de PowerShell del `.ps1`, tanda W3a): un hook es «el mismo» si su comando invoca la ruta del
+ *   · windows (el bloque de PowerShell del `.ps1`): un hook es «el mismo» si su comando invoca la ruta del
  *     guion DENTRO DE SU REPO (`scripts/hooks/…` o `skills/…`), con cualquier raíz y cualquier intérprete (la carpeta
- *     se nombra por el clon, por el enlace o como `/c/…`). Un `.sh` va con `bash` a secas, como en la W3a (desvío
- *     medido del AC 29: la ruta absoluta del bash de Git entre comillas es un error de sintaxis si lo lanza PowerShell,
- *     y Claude Code lanza los hooks con el bash de Git). Un `.sh` con `\r\n` en el disco, o que no se pudo leer, no se
- *     registra (AC 67). Lo que `platforms.windows: false` excluye no se toca.
+ *     se nombra por el clon, por el enlace o como `/c/…`). Un `.sh` va con `bash` a secas (la ruta absoluta del
+ *     bash de Git entre comillas es un error de sintaxis si lo lanza PowerShell, y Claude Code lanza los hooks con el
+ *     bash de Git). Un `.sh` con `\r\n` en el disco, o que no se pudo leer, no se
+ *     registra. Lo que `platforms.windows: false` excluye no se toca.
  *   · las dos: una ruta con `$`, acento grave o comilla doble no se escribe en un comando (lo lee un shell) y se dice.
  *
  * ── SALIDAS ─────────────────────────────────────────────────────────────────────────────────────────────────────
  *   --report-out <archivo>   el informe de texto que imprime el `.sh` (ADDED/EXISTED/REMOVED/MISSING/NORMALIZED/BACKUP)
  *   --json-out <archivo>     el mismo informe en JSON (lo lee el `.ps1`)
- *   TYCON_REPORT_PIECES      (variable) cada pieza que queda: `hook<TAB>settings<TAB><EVENTO>:<spec>` (story 8.13)
- *   TYCON_PLAN_PIECES        (variable, sólo con --check) el plan: lo mismo con la acción (story 8.16)
+ *   TYCON_REPORT_PIECES      (variable) cada pieza que queda: `hook<TAB>settings<TAB><EVENTO>:<spec>`
+ *   TYCON_PLAN_PIECES        (variable, sólo con --check) el plan: lo mismo con la acción
  *
  * Uso:  node scripts/setup/apply-hooks.js --skills <carpeta skills> [--settings <archivo>] [--check]
  *         [--platform posix|windows] [--hooks-dir <scripts/hooks>] [--list <hooks-list.json>]
@@ -51,7 +49,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-// story 7.27: la carpeta de los mods del arnés en CLAUDE_CODE_PLUGIN_DIRS. Se carga recién al escribir settings.json:
+// La carpeta de los mods del arnés en CLAUDE_CODE_PLUGIN_DIRS. Se carga recién al escribir settings.json:
 // hay quien carga este archivo solo, sin su carpeta, para usar sus funciones (count-hooks.js, los laboratorios).
 let pluginDirs = null;
 const PDmod = () => pluginDirs || (pluginDirs = require('./harness/plugin-dirs.js'));
@@ -59,7 +57,7 @@ const PDmod = () => pluginDirs || (pluginDirs = require('./harness/plugin-dirs.j
 const SETUP_DIR = __dirname;
 const SCRIPTS_DIR = path.dirname(SETUP_DIR);
 
-// `Notification` y `SessionEnd` los suma la story 7.20 (el aviso de espera: el pedido de permiso y la sesión que se cierra)
+// `Notification` y `SessionEnd` sirven al aviso de espera: el pedido de permiso y la sesión que se cierra
 const EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd'];
 const WHEN_RE = /^(always|integration:[a-z]+|optin:TYCON_[A-Z_]+)$/;
 const NEEDS = new Set(['telegram-plugin']);
@@ -98,7 +96,7 @@ function validateList(list) {
     if (!optin && (h.default !== undefined || h.profile !== undefined || h.brake !== undefined || h.needs !== undefined)) out.push(`${who}: default/profile/brake/needs son sólo de un opt-in`);
     if (h.profile !== undefined && h.profile !== 'full-only') out.push(`${who}: profile sólo puede ser full-only`);
     // full-only describe un opt-in que nace PRENDIDO en full (en minimal, sólo con su variable en 1): con default off
-    // `decide` no tendría qué hacer y lo prendería igual (pase adversarial de la W3W4, clase 5)
+    // `decide` no tendría qué hacer y lo prendería igual
     if (h.profile === 'full-only' && h.default !== 'on') out.push(`${who}: profile full-only va con default on (un opt-in que nace apagado no depende del perfil)`);
     if (h.brake !== undefined && h.brake !== true) out.push(`${who}: brake sólo puede ser true`);
     if (h.needs !== undefined && !NEEDS.has(h.needs)) out.push(`${who}: needs «${h.needs}» fuera del vocabulario (${[...NEEDS].join(', ')})`);
@@ -144,9 +142,9 @@ function loadMinimalIds(file) {
 
 /**
  * Integraciones y perfil, como los lee el instalador: con el comando de tycon-config.js (sus códigos de salida).
- * `runConfig(args)` (opcional, story 8.36): con qué correr ese comando. Lo pasa la tanda del aplicador
+ * `runConfig(args)` (opcional): con qué correr ese comando. Lo pasa la tanda del aplicador
  * (scripts/setup/applier-batch.js), que lo corre en su mismo proceso; devuelve `{ status, stdout }` como `spawnSync`.
- * Sin él, un proceso de Node por pregunta, como siempre.
+ * Sin él, un proceso de Node por pregunta.
  */
 function readConfig({ env = process.env, libDir = path.join(SCRIPTS_DIR, 'lib'), runConfig = null } = {}) {
   const cfg = path.join(libDir, 'tycon-config.js');
@@ -170,7 +168,7 @@ function readConfig({ env = process.env, libDir = path.join(SCRIPTS_DIR, 'lib'),
   return { integ, profile };
 }
 
-// ── Qué hooks van (la lógica que hacía el bash: integraciones, perfil, opt-in) ────────────────────────────────────
+// ── Qué hooks van (integraciones, perfil, opt-in) ────────────────────────────────────
 
 /**
  * @param {{hooks: object[]}} list
@@ -321,7 +319,7 @@ function runnerFor(spec) {
   if (spec.endsWith('.py')) return 'python3';
   return 'node';
 }
-// Un hook `.js` en cualquiera de sus dos formas (story 8.39, AC 6): `node "<guion>"` o la ruta del Node del arnés,
+// Un hook `.js` en cualquiera de sus dos formas: `node "<guion>"` o la ruta del Node del arnés,
 // sin comillas (`…/node/current/bin/node "<guion>"`, `C:/…/node.exe "<guion>"`) o con comillas (`"…/node" "<guion>"`).
 const JS_RUNNER = /(?:^|[\s/"])node(?:\.exe)?"?\s+"/i;
 /** El intérprete escrito al principio de un comando: lo que va antes de ` "<guion>"` (con sus comillas si las trae). */
@@ -352,7 +350,7 @@ function lugarCanonico(indices, mio) {
 
 /**
  * El lugar en el orden del arnés de un hook ya registrado (`null` = es ajeno). Por la INVOCACIÓN, no por un pedazo del
- * texto (pase adversarial 8.3.1): un comando ajeno que sólo menciona la ruta no es ese hook, y `retro-pending.js` no es
+ * texto: un comando ajeno que sólo menciona la ruta no es ese hook, y `retro-pending.js` no es
  * `pending.js`.
  *   posix   `orden`: Map `${evento}\0${ruta absoluta}` → índice; cuenta si el comando trae `"<ruta>"` y no es `bash -c`/`sh -c`.
  *   windows `ordenWin`: [{ ev, repoPath, idx }]; cuenta si el comando invoca la ruta del guion en su repo (invokesRepoPath).
@@ -402,8 +400,8 @@ function applyToSettings(settings, o) {
   if (!settings.hooks || typeof settings.hooks !== 'object' || Array.isArray(settings.hooks)) settings.hooks = settings.hooks && typeof settings.hooks === 'object' && !Array.isArray(settings.hooks) ? settings.hooks : {};
   const hooks = settings.hooks;
   const r = { added: [], existed: [], removed: [], missing: [], notInstalled: [], deferred: [], normalized: [], reformed: [], present: [], topAdded: [], envAdded: [] };
-  // con qué se escribe un hook `.js` (story 8.39, AC 5): lo decide harness-node.js#interpreter mirando el disco; quien no
-  // lo pasa (una prueba, un llamador viejo) queda con `node`, como antes
+  // con qué se escribe un hook `.js`: lo decide harness-node.js#interpreter mirando el disco; quien no
+  // lo pasa (una prueba, un llamador viejo) queda con `node`
   const jsPrefix = (o.interp && o.interp.prefix) || 'node';
   const active = o.decision.active;
   const activeSpecs = new Set(active.map((h) => h.spec));
@@ -466,7 +464,7 @@ function applyToSettings(settings, o) {
     wanted.get(k).add(normMatcher(h.matcher));
   }
   const isStrictSubset = (a, b) => { const A = a.split('|').filter(Boolean); const B = new Set(b.split('|').filter(Boolean)); return A.length > 0 && A.length < B.size && A.every((x) => B.has(x)); };
-  // un `.js` es el mismo hook en las dos formas del intérprete (story 8.39, AC 6): se reconoce y se reescribe en su lugar
+  // un `.js` es el mismo hook en las dos formas del intérprete: se reconoce y se reescribe en su lugar
   const sameHook = (cmd, h, abs, runner) => (windows ? invokesRepoPath(cmd, repoPathOf(h.spec)) : namesFile(cmd, abs) && (runner === 'node' ? JS_RUNNER.test(cmd) : cmd.includes(`${runner} "`)));
   // el comando con el intérprete que corresponde, si el de hoy es otro: sólo se cambia el intérprete (el guion queda escrito
   // como estaba); null si ya está bien o no es un `.js`
@@ -510,11 +508,10 @@ function applyToSettings(settings, o) {
       return;
     }
     const absCmd = windows ? fwd(abs) : abs;
-    // En Windows un .sh también va con `bash` a secas, como lo dejó la W3a. Desvío medido del AC 29 (2026-10-05): con la
-    // ruta absoluta del bash de Git entre comillas, el comando lanzado por PowerShell es un error de sintaxis y sale 1
-    // aun con una entrada legítima (pipeline 182 #11979, paso fire-registered); y Claude Code en Windows lanza cada hook con
-    // el bash de Git (sesión real del 2026-10-04), donde `bash` es ese mismo bash: la ruta absoluta no sumaba nada.
-    // un `.js` con el Node del arnés si está (story 8.39, AC 5: sin comillas, o con comillas en Mac y Linux si la ruta trae
+    // En Windows un .sh también va con `bash` a secas: con la ruta absoluta del bash de Git entre comillas, el comando
+    // lanzado por PowerShell es un error de sintaxis y sale 1 aun con una entrada legítima; y Claude Code en Windows
+    // lanza cada hook con el bash de Git, donde `bash` es ese mismo bash: la ruta absoluta no suma nada.
+    // un `.js` con el Node del arnés si está (sin comillas, o con comillas en Mac y Linux si la ruta trae
     // espacios); si no, `node`. La ruta del intérprete nunca deja un hook sin registrar: lo decide sólo la del guion
     const command = `${runner === 'node' ? jsPrefix : runner} "${absCmd}"`;
     const eol = windows && isSh ? crlfOnDisk(abs) : null;
@@ -544,7 +541,7 @@ function applyToSettings(settings, o) {
     };
     if (found) {
       // el mismo hook en la otra forma del intérprete: se reescribe ESE comando, en su lugar (misma posición, matcher y
-      // `async`), y se informa como cambio de forma (story 8.39, AC 6)
+      // `async`), y se informa como cambio de forma
       const next = reform(cmdOf(found), runner);
       if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(found)), to: jsPrefix }); found.command = next; }
       r.existed.push({ event: h.event, relpath: h.spec });
@@ -558,7 +555,7 @@ function applyToSettings(settings, o) {
     if (unverified && !carried) { r.notInstalled.push({ kind: 'unverified', event: h.event, relpath: nameOf(h.spec), repo, path: fwd(abs), reason: eol.reason }); return; }
     if (!carried) {
       // una ruta con `$`, acento grave o comilla doble: el comando lo lee un shell, que leería otra ruta. No se escribe un
-      // comando roto, en ninguna plataforma (en Mac y Linux, desde el revisor de seguridad de la W3W4)
+      // comando roto, en ninguna plataforma
       const ch = unsafeChar(absCmd);
       if (ch) { r.notInstalled.push({ kind: 'unsafe-path', event: h.event, relpath: nameOf(h.spec), repo, path: absCmd, char: ch }); return; }
     }
@@ -654,8 +651,8 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
     if (e.code !== 'ENOENT') throw new ApplyError(`${settingsPath}: no pude leer settings.json (${e.message}) — no lo toco`);
     existed = false;
   }
-  // un BOM al principio es válido en Windows y no lo hace ilegible (como harness/shared.js, managed.js y remove.js): hasta
-  // la W3 ConvertFrom-Json lo aceptaba, y sin esto el instalador de Windows entero se caía (pase adversarial, clase 7)
+  // un BOM al principio es válido en Windows y no lo hace ilegible (como harness/shared.js, managed.js y remove.js):
+  // ConvertFrom-Json lo acepta, y sin esto el instalador de Windows entero se caería
   raw = raw.replace(/^﻿/, '');
   let settings;
   try { settings = raw.trim() ? JSON.parse(raw) : {}; } catch (e) {
@@ -667,13 +664,13 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   const minimalIds = loadMinimalIds(a.effects || path.join(SETUP_DIR, 'install-effects.json'));
   const has = (need) => need === 'telegram-plugin' && fs.existsSync(path.join(home, '.claude', 'plugins', 'cache', 'claude-plugins-official', 'telegram'));
   const decision = decide(list, { env, integ, profile, minimalIds, platform, has });
-  // el intérprete de los hooks `.js` (story 8.39): mirando el disco, también si este instalador corre suelto
+  // el intérprete de los hooks `.js`: mirando el disco, también si este instalador corre suelto
   const interp = require('./harness/harness-node.js').interpreter({ env, platform: windows ? 'win32' : (process.platform === 'win32' ? 'linux' : process.platform) });
   const r = applyToSettings(settings, { list, decision, platform, hooksDir, skills, check: a.check, env, settingsPath, interp });
 
   // las dos claves del arnés (posix): como el .sh, salvo que las haya hecho harness.js o el perfil no sea full
-  // fuera de full (minimal, o el perfil sin saber: story 8.16) las dos claves tampoco se escriben ni se anotan; en
-  // Windows las hace harness.js (scripts/setup/harness/shared.js), como antes de la W3
+  // fuera de full (minimal, o el perfil sin saber) las dos claves tampoco se escriben ni se anotan; en
+  // Windows las hace harness.js (scripts/setup/harness/shared.js)
   const sharedDone = windows || env.TYCON_HARNESS_SHARED_DONE === '1' || !decision.full;
   const added = r.added.map((x) => [x.event, x.matcher, x.relpath, x.label]);
   if (!sharedDone) {
@@ -688,13 +685,13 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   if (r.existed.length) lines.push(`EXISTED:${r.existed.length}`);
   if (removed.length) { lines.push(`REMOVED:${removed.length}`); for (const [e, p, w] of removed) lines.push(`  - ${e} → ${p}  [${w}]`); }
   if (r.missing.length) { lines.push(`MISSING:${r.missing.length}`); for (const x of r.missing) lines.push(`  ! ${x.event} (matcher='${x.matcher || '*'}') → ${x.relpath}`); }
-  // las rutas que un shell leería mal (en Mac y Linux, desde la W3W4; en Windows lo imprime el .ps1 desde el JSON)
+  // las rutas que un shell leería mal (en Windows lo imprime el .ps1 desde el JSON)
   const unsafe = r.notInstalled.filter((n) => n.kind === 'unsafe-path');
   if (!windows && unsafe.length) { lines.push(`UNSAFE:${unsafe.length}`); for (const n of unsafe) lines.push(`  !! ${n.event} → ${n.relpath}  [la ruta trae «${n.char}»: ${n.path}]`); }
 
   // la variable de `env` (después del informe, como en el .sh: escribe el archivo pero no tiene línea propia)
   const envObj = sharedDone ? {} : (settings.env && typeof settings.env === 'object' ? settings.env : (settings.env = {}));
-  // la carpeta de los mods del arnés (story 7.27; la misma unión que shared.js): con TYCON_NO_MODS=1 no se toca
+  // la carpeta de los mods del arnés (la misma unión que shared.js): con TYCON_NO_MODS=1 no se toca
   const PD = sharedDone || env.TYCON_NO_MODS === '1' ? null : PDmod();
   if (!sharedDone) {
     for (const [k, v] of Object.entries(ENV_CANONICAL)) if (!(k in envObj)) { envObj[k] = v; r.envAdded.push(k); }
@@ -717,7 +714,6 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
     const fresh = new Set(r.added.filter((x) => !x.rewritten).map((x) => `${x.event}:${x.relpath}`));
     const rewritten = new Set([...r.added.filter((x) => x.rewritten), ...r.reformed].map((x) => `${x.event}:${x.relpath}`));
     // un plan al que le falta algo no se muestra: si no se pudo anotar, sale distinto de 0 y el instalador no arma el plan
-    // (la regla del plan de la 8.16 B; pase adversarial de la W3W4, clase 16)
     const planOk = appendLines(env.TYCON_PLAN_PIECES, [
       ...r.present.map((id) => `hook\t${where}\t${id}\t${fresh.has(id) ? 'add' : rewritten.has(id) ? 'update' : 'keep'}`),
       ...(r.planKeep || []).map((id) => `hook\t${where}\t${id}\tkeep`),
@@ -745,8 +741,7 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
     }
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
     const tmp = path.join(path.dirname(settingsPath), `.settings.${process.pid}.${Date.now()}.tmp`);
-    // los permisos: los del archivo que estaba; uno nuevo nace 0600 (settings.json suele guardar tokens en `env`; el
-    // bloque de Python lo dejaba 0600 por mkstemp) — pase adversarial de la W3W4, clases 8 y 13
+    // los permisos: los del archivo que estaba; uno nuevo nace 0600 (settings.json suele guardar tokens en `env`)
     let mode = 0o600;
     try { if (existed) mode = fs.statSync(settingsPath).mode & 0o777; } catch (_) { mode = 0o600; }
     try {
@@ -771,7 +766,7 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
 }
 
 /**
- * La línea de comandos entera, como función (story 8.36): lo mismo que corre el arranque de este archivo como programa,
+ * La línea de comandos entera, como función: lo mismo que corre el arranque de este archivo como programa,
  * con su `try/catch`. Devuelve el código de salida. La llama la tanda del aplicador (scripts/setup/applier-batch.js),
  * que le pasa `runConfig` para leer la configuración en su mismo proceso.
  */

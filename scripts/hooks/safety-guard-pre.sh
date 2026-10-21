@@ -5,14 +5,13 @@
 # y los BLOQUEA (exit 2) antes de que se ejecuten. Inspirado en ECC safety-guard
 # pero adaptado al stack TYCON (.NET, SQL Server, monorepos, multi-tenant).
 #
-# 🔴 PowerShell (2026-10-04): en Windows Claude Code corre los comandos con su herramienta PowerShell
+# 🔴 PowerShell: en Windows Claude Code corre los comandos con su herramienta PowerShell
 # (`tool_name: "PowerShell"`, la misma entrada `tool_input.command`; fuente: code.claude.com/docs/en/
-# tools-reference §«PowerShell tool»). Registrado sólo con matcher `Bash`, este freno no se disparaba:
-# medido ese día en una sesión real (Claude Code 2.1.289, Windows 11), pasaron `git add -A` en
-# agent-skills y un commit que saltea los hooks de git. Ahora se registra con `Bash|PowerShell`, y
-# cada regla que tiene una forma obvia en PowerShell la frena también (Remove-Item, irm | iex,
-# Get-Content, setx…), con el MISMO id de regla: es la misma regla, escrita en otro shell. No hay
-# reglas nuevas. El `cwd` de Windows llega con barras invertidas: GIT-C4 lo compara normalizado.
+# tools-reference §«PowerShell tool»). Registrado sólo con matcher `Bash`, este freno no se dispararía:
+# pasarían `git add -A` en agent-skills y un commit que saltea los hooks de git. Se registra con
+# `Bash|PowerShell`, y cada regla que tiene una forma obvia en PowerShell la frena también (Remove-Item,
+# irm | iex, Get-Content, setx…), con el MISMO id de regla: es la misma regla, escrita en otro shell.
+# No hay reglas aparte. El `cwd` de Windows llega con barras invertidas: GIT-C4 lo compara normalizado.
 #
 # Diseño:
 #   - Solo BLOCK (exit 2) — no hay WARN para evitar ruido.
@@ -32,17 +31,16 @@
 #   - exit 0: comando OK, dejar pasar.
 #   - exit 2: BLOCK + mensaje al stderr (Claude lo ve y reconsidera).
 #   - exit 1: NO PUDE LEER la entrada; el comando pasa SIN revisar y se dice (ver abajo). También sale 1,
-#     con su línea, cuando GIT-C4 no pudo mirar el árbol de las skills instaladas (story 8.18): el
+#     con su línea, cuando GIT-C4 no pudo mirar el árbol de las skills instaladas: el
 #     comando pasa, porque sin árbol resuelto no se sabe si es el lugar, y se dice.
 #
-# 🔴 La entrada se lee SIN depender de `jq` (2026-10-03). Hasta ese día el freno hacía
-# `command -v jq || exit 0`: en una máquina sin `jq` dejaba pasar TODO —el `rm -rf /` incluido— sin
-# una palabra. Y `jq` no es un requisito declarado del arnés (`node` sí). Lo cazó un ensayo de
-# instalación desde cero. Ahora se lee con `jq` si está y, si no está o no pudo, con `node`; el
+# 🔴 La entrada se lee SIN depender de `jq`: con `command -v jq || exit 0`, una máquina sin `jq` dejaría
+# pasar TODO —el `rm -rf /` incluido— sin una palabra, y `jq` no es un requisito declarado del arnés
+# (`node` sí). Se lee con `jq` si está y, si no está o no pudo, con `node`; el
 # resultado es el mismo con los dos (casos `sin-jq-…` del banco, que corren el hook con un PATH sin
 # `jq`).
 #
-# 🟡 DECISIÓN A CONFIRMAR — qué hace si no hay NI `jq` NI `node` (o la entrada llega vacía, no se
+# 🟡 Qué hace si no hay NI `jq` NI `node` (o la entrada llega vacía, no se
 # pudo leer o no es JSON):
 # deja pasar, AVISANDO en cada llamada, y sale 1. Por qué así y no de las otras dos formas:
 #   - Frenar (exit 2) frenaría TODOS los comandos, también un `ls`: sin `node` el agente no podría
@@ -53,13 +51,12 @@
 #     stderr de un PreToolUse al registro de depuración, y el silencio es justo el defecto.
 #   - Con exit 1 la herramienta lo trata como error que NO bloquea: el comando corre y a la persona
 #     le aparece el error del hook con la PRIMERA línea de stderr. Por eso el aviso es una sola línea.
-# 🔴 FALTA CONFIRMARLO CON UNA SESIÓN REAL: que con exit 1 el comando corre y el aviso se ve sale
-# de la documentación de hooks de Claude Code; no se midió en vivo, ni en Claude Code ni en Codex.
-# Lo único medido en las dos es que `exit 2` frena y llega al modelo
-# (guides/maintaining/codex-divergence-inventory.md). Hay que correr `scripts/controls-bench/live-fire.js`
-# contra un `PreToolUse` real. Deuda anotada: `[FUP-frenos-sin-jq-live-fire]` en tasks/todo.md.
-# El costo, dicho: mientras dure, nada frena un comando destructivo, y el agente no se entera (sólo
-# `exit 2` le llega al modelo). Si el dueño prefiere frenar, es cambiar el `exit 1` de
+# 🔴 Límite conocido: que con exit 1 el comando corre y el aviso se ve sale de la documentación de hooks de Claude
+# Code; no está medido en vivo, ni en Claude Code ni en Codex. Lo único medido en las dos es que `exit 2` frena y
+# llega al modelo (guides/maintaining/codex-divergence-inventory.md). Se mediría con
+# `scripts/controls-bench/live-fire.js` contra un `PreToolUse` real.
+# El costo, dicho: sin `jq` ni `node`, nada frena un comando destructivo, y el agente no se entera (sólo
+# `exit 2` le llega al modelo). Para frenar en ese caso, se cambia el `exit 1` de
 # `cannot_read` por `exit 2` y los dos casos `sin-jq-ni-node-…` del banco.
 #
 # Límite conocido de «el mismo resultado con `jq` y con `node`»: vale para toda entrada que sea JSON
@@ -78,7 +75,7 @@ set -u
 trap 'exit 0' ERR
 
 # Override de emergencia. NO se sale acá: se marca y se sigue evaluando, para que la
-# constancia (story 2.6) pueda anotar QUÉ regla se esquivó. El comportamiento no cambia:
+# constancia pueda anotar QUÉ regla se esquivó. El comportamiento no cambia:
 # con el override puesto, block() sale 0 en vez de 2.
 SAFETY_OFF=0
 if [[ "${TYCON_SAFETY_OFF:-0}" == "1" ]]; then
@@ -89,14 +86,14 @@ fi
 # Leer input
 # ============================================================
 # 🔴 Una entrada VACÍA o que no se pudo leer NO es «nada que frenar»: es «no pude leer», y va por
-# `cannot_read` como el resto (más abajo, cuando ya está definida). Antes salía 0 acá mismo, mudo:
-# la misma familia que el `exit 0` sin `jq` (revisor de fallos silenciosos, 2026-10-03). Lo que sí
+# `cannot_read` como el resto (más abajo, cuando ya está definida). Salir 0 acá, mudo, sería la misma
+# familia que el `exit 0` sin `jq`: un fallo silencioso. Lo que sí
 # es «nada que frenar» es una entrada que se lee y no trae comando: ésa sigue saliendo 0 callada.
 INPUT="$(cat 2>/dev/null)" || INPUT=""
 
 # Con qué se lee: `jq` si está (es más rápido y este hook corre en cada comando) y `node`, que es
 # requisito del arnés, si `jq` no está O no pudo. Ninguno de los dos → `cannot_read`.
-# El Node del arnés (story 8.39): el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH.
+# El Node del arnés: el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH.
 # con el bash de la Mac (3.2) y `set -e`, un `.` que no encuentra el archivo corta el guion aunque lleve `||`: se mira antes
 _hn="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/harness-node.sh"
 { [ -f "$_hn" ] && . "$_hn" 2>/dev/null; } || harness_node_bin() { echo node; }
@@ -111,7 +108,7 @@ if command -v "$HNODE" >/dev/null 2>&1; then HAS_NODE=1; fi
 # con `-s` exige un solo documento, que es lo que `JSON.parse` acepta; con `-s` `jq` no imprime
 # nada si falla, así que probar después con `node` no duplica la salida.
 # Por qué se prueba con `node` cuando `jq` falla: hay JSON válido que `jq` rechaza (un `\ud800`
-# suelto), y antes eso era otra forma de pasar sin revisión — y en silencio.
+# suelto), y eso sería otra forma de pasar sin revisión, en silencio.
 # 🔴 Si tocás una rama, tocá la otra: este bloque está copiado igual en test-scope-guard-pre.sh.
 read_field() {
   if [[ "$HAS_JQ" == "1" ]]; then
@@ -184,7 +181,7 @@ tool_is_ps() {
 
 # La forma de PowerShell del override: `$env:TYCON_SAFETY_OFF=1; <cmd>` (el prefijo de bash ahí no es
 # sintaxis válida). Igual que el de bash, sólo pegado al PRINCIPIO del comando. Y sólo por la herramienta
-# PowerShell (segunda vuelta, MENOR 1): por Bash ese prefijo no asigna nada y no puede apagar el freno.
+# PowerShell: por Bash ese prefijo no asigna nada y no puede apagar el freno.
 if ps_match '^[[:space:]]*\$env:TYCON_SAFETY_OFF[[:space:]]*=[[:space:]]*["'"'"']?1["'"'"']?[[:space:]]*;' && tool_is_ps; then
   SAFETY_OFF=1
 fi
@@ -196,8 +193,8 @@ CWD="${CWD//\\//}"
 
 # Dónde empieza un comando de PowerShell: al principio, o después de `;`, `|`, `&`, `(`, `{`, `=` (`$x = …`)
 # o de un salto de línea. Por POSICIÓN y no por cualquier espacio, como el freno de push: `git rm -r -q .`
-# no es un Remove-Item. (Segunda vuelta, B1: sin el salto de línea y el `=`, un Remove-Item en la segunda
-# línea del comando o asignado pasaba; en bash `echo a⏎rm -rf ~` sí frena.)
+# no es un Remove-Item. (Sin el salto de línea y el `=`, un Remove-Item en la segunda
+# línea del comando o asignado pasaría; en bash `echo a⏎rm -rf ~` sí frena.)
 _PS_NL=$'\n'
 _PS_CR=$'\r'
 _PS_AT="(^|[;&|({=${_PS_NL}])[[:space:]]*"
@@ -205,7 +202,7 @@ _PS_AT="(^|[;&|({=${_PS_NL}])[[:space:]]*"
 _PS_SP="([[:blank:]]|\`${_PS_CR}?${_PS_NL})+"
 # Remove-Item y sus alias (o con el nombre del módulo delante); entre el cmdlet y el destino, cualquier
 # palabra del mismo comando: banderas abreviadas (-r, -fo) y parámetros CON valor (-ErrorAction
-# SilentlyContinue, -ea 0). Segunda vuelta, B2: sólo se aceptaban banderas sueltas y eso lo esquivaba. El
+# SilentlyContinue, -ea 0). Aceptar sólo banderas sueltas lo esquivaría. El
 # destino puede ir como `-Path:<destino>`, entre comillas, y seguido de más banderas.
 _PS_DEL="${_PS_AT}"'(microsoft\.powershell\.management\\)?(remove-item|ri|rm|del|erase|rd|rmdir)('"${_PS_SP}"'[^;|&[:space:]]+)*'"${_PS_SP}"'(-[a-z]+:)?["'"'"']?'
 _PS_END='["'"'"']?([[:space:]]|[;|)]|$)'
@@ -216,7 +213,7 @@ _PS_END='["'"'"']?([[:space:]]|[;|)]|$)'
 LOGFILE="$HOME/.claude/safety-guard.log"
 mkdir -p "$(dirname "$LOGFILE")" 2>/dev/null || true
 
-# Constancia de la decisión (story 2.6). Es AYUDA, NO EVIDENCIA: nunca cambia el código de
+# Constancia de la decisión. Es AYUDA, NO EVIDENCIA: nunca cambia el código de
 # salida ni lo que este freno decide. El comando va por STDIN — por argv lo vería cualquier
 # `ps` — y de él sólo se guarda la huella.
 constancia() { # $1 = regla (id del catálogo)  $2 = veredicto
@@ -232,8 +229,8 @@ block() {
   local reason="$2"
   local alt="${3:-}"
 
-  # Override puesto: se sale 0 SIN mensaje y SIN escribir el registro propio —igual que antes—,
-  # pero dejando constancia de QUÉ regla se esquivó (story 2.6).
+  # Override puesto: se sale 0 SIN mensaje y SIN escribir el registro propio,
+  # pero dejando constancia de QUÉ regla se esquivó.
   if [[ "${SAFETY_OFF:-0}" == "1" ]]; then
     constancia "$rule" escape
     exit 0
@@ -300,10 +297,9 @@ if ps_match "${_PS_DEL}"'(/|\\|[a-z]:[\\/]?|\$env:SystemDrive[\\/]?|\$\{env:Syst
 fi
 
 # `rm -rf ~` / `rm -rf $HOME` (raíz del home).
-# Fix 2026-06-18: el target debe ser EXACTAMENTE `~` / `~/` / `$HOME` / `$HOME/`
-# (la raíz del home, nada después). Antes `(\~|\$HOME)([[:space:]]|/|$)` matcheaba
-# `~/` y daba falso positivo en `rm -f ~/.cache/foo` (archivo puntual bajo $HOME).
-# Ahora `/?([[:space:]]|$)` exige que tras `~`/`$HOME` venga fin-de-token, no un path.
+# El target debe ser EXACTAMENTE `~` / `~/` / `$HOME` / `$HOME/` (la raíz del home, nada después):
+# `/?([[:space:]]|$)` exige que tras `~`/`$HOME` venga fin-de-token, no un path. Sin esto, un
+# `rm -f ~/.cache/foo` (archivo puntual bajo $HOME) daría falso positivo.
 if [[ "$CMD" =~ (^|[[:space:]])rm[[:space:]]+(-[rRfF]+[[:space:]]+)*(\~|\$HOME)/?([[:space:]]|$) ]]; then
   block "FS-C3" \
     "rm -rf sobre \$HOME. Te borra todo el laburo, ssh keys, .zshrc, etc." \
@@ -338,10 +334,9 @@ fi
 
 # --- Git destructivo ---------------------------------------------------------
 
-# Las OPCIONES DE GIT que pueden ir entre `git` y el subcomando (2026-10-05). Las reglas de abajo buscaban
-# el subcomando pegado a `git` (`git commit`, `git clean`; la de push admitía un solo `-C` sin espacios),
-# y `git -C <carpeta> commit …` —la forma que Claude usa normalmente— dejaba pasar el salteo de hooks con
-# exit 0, por Bash y por PowerShell (medido en Windows y reproducido en Mac). Ahora se admite cualquier
+# Las OPCIONES DE GIT que pueden ir entre `git` y el subcomando. Buscar el subcomando pegado a `git`
+# (`git commit`, `git clean`) dejaría pasar con exit 0 el salteo de hooks de `git -C <carpeta> commit …`
+# —la forma que Claude usa normalmente—, por Bash y por PowerShell. Se admite cualquier
 # cantidad de opciones, con o sin valor: `-C <ruta>`, `-c clave=valor`, `--git-dir=…`, `--work-tree …`,
 # `-P`, `--no-pager`. Una ruta puede ir entre comillas simples o dobles (con espacios), con barras
 # invertidas de Windows (también una al final: en PowerShell no escapan nada) o como `$(…)`.
@@ -354,25 +349,23 @@ _GIT_OPTS="(-[-A-Za-z]+(=|[[:space:]]+)${_GIT_WORD}[[:space:]]+|-[-A-Za-z]+[[:sp
 
 # git push --force / -f a branches protegidas (main, master, dev, release/*).
 # NO bloqueamos --force-with-lease a feature branches propias (caso legítimo).
-# Fix 2026-06-18: el force-flag Y la branch se chequean SOLO dentro de cada segmento
-# `git push ...` (hasta el próximo separador ; && || |), NO sobre todo el comando.
-# Antes un `-f` de OTRO subcomando en la misma cadena (ej: `git add -f x && git push
-# origin dev`) disparaba el block aunque el push fuera un fast-forward normal sin force.
-# 🔴 Por POSICIÓN, no por substring (SAFETY-GIT-C1-FALSO-POSITIVO-1, 2026-09-06). El segmentador
-# viejo era `git[[:space:]]+push[^;&|]*`: cualquier MENCIÓN de un push —en un echo, en el cuerpo de
-# un heredoc, en un grep— abría un segmento que se comía párrafos enteros hasta el próximo `;`,
-# y ahí alcanzaba un `-f` de un `[ -f ]` y la palabra `main` para bloquear. Pasó tres veces
-# seguidas el 2026-08-31, una de ellas sobre el comando que intentaba reproducirlo. Y este freno
-# BLOQUEA: cada falsa alarma enseña `TYCON_SAFETY_OFF=1`, que apaga también el `rm -rf /`.
-# Ahora un `git push` cuenta sólo si ARRANCA un comando: al principio, o después de `;`, `&&`,
-# `||`, `|`, `(`, con o sin `command`/ruta. Es el mismo criterio que engram-pre-commit.sh (`_GIT`)
-# usa desde el 2026-08-25 por el mismo error. Un push real tras `&&`, `;` o `(` sigue frenando
+# El force-flag Y la branch se chequean SOLO dentro de cada segmento
+# `git push ...` (hasta el próximo separador ; && || |), NO sobre todo el comando: un `-f` de OTRO
+# subcomando en la misma cadena (ej: `git add -f x && git push origin dev`) no debe disparar el block
+# si el push es un fast-forward normal sin force.
+# 🔴 Por POSICIÓN, no por substring. Un segmentador `git[[:space:]]+push[^;&|]*` haría que cualquier
+# MENCIÓN de un push —en un echo, en el cuerpo de un heredoc, en un grep— abriera un segmento que se
+# come párrafos enteros hasta el próximo `;`, y ahí alcanzaría un `-f` de un `[ -f ]` y la palabra
+# `main` para bloquear. Y este freno BLOQUEA: cada falsa alarma enseña `TYCON_SAFETY_OFF=1`, que
+# apaga también el `rm -rf /`.
+# Un `git push` cuenta sólo si ARRANCA un comando: al principio, o después de `;`, `&&`,
+# `||`, `|`, `(`, con o sin `command`/ruta. Es el mismo criterio que engram-pre-commit.sh (`_GIT`).
+# Un push real tras `&&`, `;` o `(` sigue frenando
 # (casos block-force-push-main-encadenado / -tras-cd / -en-subshell del banco).
-# 🔴 Y el comando puede tener PREFIJO (revisión adversarial 2026-09-06, hallazgo BLOQUEA): la primera
-# versión posicional sólo admitía `command` o una ruta antes de `git`, así que `VAR=1 git push -f`,
-# `sudo git push -f`, `if …; then git push -f`, `{ git push -f; }`, `bash -c "git push -f …"`,
-# `git -C /x push -f` y `HEAD:main` pasaban (exit 0) donde antes frenaban — 22 formas medidas. La
-# peor: `TYCON_SESSION_GUARD_OK=1 git push --force origin main`, que es exactamente la forma que el
+# 🔴 Y el comando puede tener PREFIJO: admitir sólo `command` o una ruta antes de `git` dejaría pasar
+# (exit 0) `VAR=1 git push -f`, `sudo git push -f`, `if …; then git push -f`, `{ git push -f; }`,
+# `bash -c "git push -f …"`, `git -C /x push -f` y `HEAD:main`. La peor:
+# `TYCON_SESSION_GUARD_OK=1 git push --force origin main`, que es exactamente la forma que el
 # session-collision-guard exige como escape. Lo que se admite antes de `git`: asignaciones
 # `VAR=valor`, las palabras que envuelven un comando (sudo, env, time, nohup, exec, command,
 # timeout, nice, y sus banderas/números), y como separador también `{`, el backtick, `!`, las
@@ -399,10 +392,9 @@ done < <(printf '%s\n' "$CMD" | grep -oiE "${_GIT_POS}push[^;&|]*" || true)
 # `--no-verify` en git commit / push / merge. Saltea hooks (pre-commit, etc).
 if [[ "$CMD" =~ git[[:space:]]+${_GIT_OPTS}(commit|push|merge|rebase)[[:space:]] ]] && \
    [[ "$CMD" =~ --no-verify([[:space:]]|$) ]]; then
-  # 🔴 FALSO POSITIVO CONOCIDO, y por qué NO se arregla matcheando más fino (2026-09-01): el
+  # 🔴 FALSO POSITIVO CONOCIDO, y por qué NO se arregla matcheando más fino: el
   # match mira TODO el comando, así que también salta cuando la bandera aparece dentro del MENSAJE
-  # de un commit — un heredoc, o un `-m "..."`. Pasó dos veces la misma noche, escribiendo el
-  # commit de un control que habla de ella (la segunda, editando ESTE archivo).
+  # de un commit — un heredoc, o un `-m "..."` (por ejemplo, el commit de un control que habla de ella).
   #
   # Y NO se arregla enseñándole a ignorar "el cuerpo de un heredoc": eso es spoofeable — alcanza
   # con envolver el comando real entre dos líneas que parezcan las marcas del heredoc para que el
@@ -420,7 +412,7 @@ if [[ "$CMD" =~ git[[:space:]]+${_GIT_OPTS}(commit|push|merge|rebase)[[:space:]]
    texto deja de estar en el comando y el freno deja de verlo."
 fi
 
-# Las otras dos formas de saltear los hooks de git (GIT-C2, 2026-10-05):
+# Las otras dos formas de saltear los hooks de git (GIT-C2):
 # 1. `git commit -n`, la forma corta. SÓLO en `commit`: en `push` es «simular» y en `merge` «sin estadísticas».
 #    Suelta o agrupada (`-nm "x"`, `-an`), pero antes de una letra que lleva valor: en `-mn` la `n` ES el mensaje.
 #    Mira sólo los `git commit` que ARRANCAN un comando (como el freno de push), y el texto entre comillas no cuenta:
@@ -466,17 +458,17 @@ if [[ "$CMD" =~ git[[:space:]]+${_GIT_OPTS}clean[[:space:]] ]] && \
     "Sin -x: git clean -fd. Para inspeccionar primero: git clean -ndx."
 fi
 
-# GIT-C4 (2026-06-10, hallazgo H20 #5): staging masivo en el repo AgentSkills.
+# GIT-C4: staging masivo en el repo AgentSkills.
 # ~/.claude/agent-skills mezcla lo propio del equipo (tycon-*) con ~100 archivos
 # bmad-* en drift permanente (M esperado, NUNCA se commitea). `git add -A`/`.`
 # ahí stagea el drift entero → commits que pisan BMAD. Staging selectivo SIEMPRE.
 #
-# 🔴 El árbol del que salen las skills instaladas, sea cual sea su carpeta (story 8.18, 2026-10-04).
-# Con el arnés y agent-skills en UN repo, las skills de la máquina ya no salen por fuerza de
+# 🔴 El árbol del que salen las skills instaladas, sea cual sea su carpeta.
+# Con el arnés y agent-skills en UN repo, las skills de la máquina no salen por fuerza de
 # ~/.claude/agent-skills: salen del árbol al que resuelve ~/.claude/skills, que puede ser el clon
-# del repo unido en cualquier carpeta. La regla miraba sólo si la ruta decía `/.claude/agent-skills`:
-# parado en ese clon, `git add -A` pasaba, con todo lo ajeno que vive en ese árbol. Ahora frena:
-#   · donde frenaba siempre (la ruta dice `/.claude/agent-skills`: no se le saca nada), y
+# del repo unido en cualquier carpeta. Mirar sólo si la ruta dice `/.claude/agent-skills` dejaría pasar
+# `git add -A` parado en ese clon, con todo lo ajeno que vive en ese árbol. Frena:
+#   · donde la ruta dice `/.claude/agent-skills` (no se le saca nada), y
 #   · en el árbol de las skills instaladas: ~/.claude/skills enlazada a <árbol>/skills, o una carpeta
 #     real con un enlace por skill (ahí decide la entrada tycon-pipeline). Tiene que ser un clon
 #     (trae .git) y no ~/.claude mismo: skills que son una carpeta real de la HOME no tienen «árbol».
@@ -485,72 +477,71 @@ fi
 # y comparación de texto. Sin `jq`, sin `node`, sin ninguna herramienta del PATH; corre en el bash 3.2 de Mac.
 # Casos: `git-c4-…` en scripts/controls-bench/cases/hooks/01-frenos-duros.json.
 #
-# 🔴 Dos huecos que encontró la revisión de esa misma story (2026-10-04), los dos acá adentro:
+# 🔴 Dos huecos que la regla cierra, los dos acá adentro:
 #
-# 1. SE ESQUIVABA CON UN `cd` EN EL MISMO COMANDO. La regla decidía sólo por el `cwd` que reporta el
-#    hook: `cd ~/.claude/agent-skills && git add -A` corrido desde otra carpeta pasaba, y lo mismo
+# 1. EL `cd` EN EL MISMO COMANDO. Decidir sólo por el `cwd` que reporta el hook dejaría pasar
+#    `cd ~/.claude/agent-skills && git add -A` corrido desde otra carpeta, y lo mismo
 #    `cd <árbol>; git add --all`, `(cd <árbol> && git add .)` y `git -C <árbol> add -A`. Las dos
-#    últimas ni siquiera se reconocían como un `git add` masivo: la expresión pedía `git add` pegados
-#    (el `-C` va en el medio) y un espacio o el final después del `.` (en el subshell viene un `)`).
-#    Ahora, además del `cwd`, se mira CADA carpeta que el propio comando nombra con `cd <dir>`,
+#    últimas exigen reconocer el `git add` masivo con el `-C` en el medio, y con un espacio o el
+#    final después del `.` (en el subshell viene un `)`).
+#    Además del `cwd`, se mira CADA carpeta que el propio comando nombra con `cd <dir>`,
 #    `pushd <dir>` o `git -C <dir>`: con comillas simples o dobles, con `~`, `$HOME` o `${HOME}`
 #    literales al principio, y relativa al `cwd` (y a la del `cd` anterior) si no es absoluta. Si
 #    CUALQUIERA cae en un árbol frenado, frena. Conservador a propósito: es un freno, y un falso
-#    positivo acá cuesta poco (se stagea por nombre). Lo que NO cambia, medido antes de tocar:
+#    positivo acá cuesta poco (se stagea por nombre). Lo que pasa a propósito:
 #      · un `cd` a un clon de trabajo cualquiera + `git add -A` pasa (ahí no hay nada ajeno);
-#      · `echo "git add -A"` parado en el árbol pasa, como pasaba (tras `-A` viene una comilla);
-#      · `echo "git add -A ya"` parado en el árbol frena, como frenaba: esta regla mira el comando
+#      · `echo "git add -A"` parado en el árbol pasa (tras `-A` viene una comilla);
+#      · `echo "git add -A ya"` parado en el árbol frena: esta regla mira el comando
 #        entero y no distingue usar el `git add` de escribir sobre él. El mismo falso positivo vale
-#        ahora para un comando que NOMBRA el árbol con `cd` y menciona el `git add` masivo.
+#        para un comando que NOMBRA el árbol con `cd` y menciona el `git add` masivo.
 #    Lo que no ve, dicho: una carpeta que llega por una variable que el comando NO asigna a la vista
 #    (viene del ambiente, de un `for`, de un argumento `$1`; la que el mismo comando asigna una sola vez
 #    sí se lee: punto e de más abajo), por una sustitución (`cd "$(…)"`) o por `--git-dir`/`--work-tree`.
 #    El freno no ejecuta el comando: sólo lee su texto.
 #
-# 2. CALLABA CUANDO NO PODÍA MIRAR. Si ~/.claude/skills (o su entrada tycon-pipeline) EXISTE pero no
+# 2. CALLAR CUANDO NO PUEDE MIRAR. Si ~/.claude/skills (o su entrada tycon-pipeline) EXISTE pero no
 #    se puede resolver —un enlace colgado, una carpeta sin permiso de entrada— la regla no sabe cuál
-#    es el árbol de las skills instaladas, y dejaba pasar el `git add -A` sin una palabra. Ahora lo
+#    es el árbol de las skills instaladas, y dejar pasar el `git add -A` sin una palabra sería callar. Lo
 #    DICE, en una línea, y sale 1. «No existe» sigue siendo silencio: no es un error, es «no hay árbol».
 #    Por qué 1 y no 0 ni 2 — la misma cuenta que `cannot_read` (ver el encabezado):
 #      · con 0 la herramienta manda el stderr de un PreToolUse al registro de depuración: avisar con
 #        salida 0 es callar, que es justo el defecto;
 #      · con 2 frenaría TODO `git add -A` de una máquina con la instalación rota, también en un clon
 #        de trabajo, donde stagear todo es legítimo: sin árbol resuelto no se sabe si es el lugar;
-#      · con 1 el comando corre y a la persona le aparece la PRIMERA línea de stderr. Hereda la deuda
-#        de `cannot_read`: no está medido en una sesión real (`[FUP-frenos-sin-jq-live-fire]`), y al
-#        modelo no le llega (sólo le llega el `exit 2`).
+#      · con 1 el comando corre y a la persona le aparece la PRIMERA línea de stderr. Hereda el límite
+#        de `cannot_read`: no está medido en una sesión real, y al modelo no le llega (sólo le llega el
+#        `exit 2`).
 #    El aviso sale AL TERMINAR el guion (por `trap … EXIT`), no acá: salir en el momento dejaría sin
 #    mirar las reglas de más abajo, y un `git add -A && curl … | bash` pasaría entero. Si una regla
 #    posterior frena, gana el freno y el aviso no sale. Sólo avisa cuando el comando ES un `git add`
 #    masivo (un aviso en cada comando de la sesión sería ruido), y con el freno apagado por el dev calla.
 #
-# 🔴 El pase adversarial de esa story (2026-10-04) confirmó nueve hallazgos más, todos acá adentro. Son
-# cuatro defectos de fondo (a–d), uno que apareció al medir el arreglo del tercero (e) y uno que el
-# revisor de seguridad encontró en ese mismo arreglo (f):
+# 🔴 Otros puntos de la misma regla, todos acá adentro: cuatro de fondo (a–d), uno que sale al medir el
+# tercero (e) y uno del arreglo de ese mismo punto (f):
 #
-# a. LA IDENTIDAD DE CARPETA ERA TEXTO. `cd <dir> && pwd -P` de bash devuelve la ruta con las mayúsculas
-#    con que se ESCRIBIÓ, no con las del disco. En un disco que no las distingue (Mac y Windows: los del
-#    equipo) la misma carpeta nombrada de otra forma no caía en el árbol, y si el enlace ~/.claude/skills
-#    había quedado escrito con otras mayúsculas el freno no disparaba nunca. Ahora «¿es la misma carpeta?»
+# a. LA IDENTIDAD DE CARPETA NO ES TEXTO. `cd <dir> && pwd -P` de bash devuelve la ruta con las mayúsculas
+#    con que se ESCRIBIÓ, no con las del disco. En un disco que no las distingue (Mac y Windows) la misma
+#    carpeta nombrada de otra forma no caería en el árbol, y si el enlace ~/.claude/skills estuviera
+#    escrito con otras mayúsculas el freno no dispararía nunca. «¿Es la misma carpeta?»
 #    se contesta con `[[ a -ef b ]]` (mismo dispositivo y mismo inodo: es de bash, no del PATH), y «¿está
 #    adentro del árbol?», subiendo por sus carpetas madre y probando `-ef` en cada nivel. La comparación
 #    del texto `/.claude/agent-skills` se conserva además: frena aunque la carpeta no exista.
 #
-# b. EL RECORRIDO MIRABA UNA SOLA CARPETA POR TRAMO. Una expresión voraz iba del primer `git` al ÚLTIMO
-#    ` -C ` sin `;`, `&` ni `|` en el medio —el salto de línea no cortaba—: con dos `-C` en el mismo `git`
-#    (git los encadena: `-C a -C b` es a/b), o en un guion de varias líneas, todo `cd`/`-C` del medio no
-#    se miraba. Y «la carpeta del `cd` anterior» era una sola cadena: tras un `cd` que no deja al shell
-#    ahí (subshell, `pushd`/`popd`, `cd -`), dos `cd` relativos no se probaban contra el `cwd`. Ahora se
+# b. EL RECORRIDO MIRA TODAS LAS CARPETAS DE CADA TRAMO. Una expresión voraz que fuera del primer `git` al ÚLTIMO
+#    ` -C ` sin `;`, `&` ni `|` en el medio —el salto de línea no cortaría— dejaría sin mirar todo `cd`/`-C` del
+#    medio cuando hay dos `-C` en el mismo `git` (git los encadena: `-C a -C b` es a/b) o un guion de varias
+#    líneas. Y «la carpeta del `cd` anterior» como una sola cadena no alcanza: tras un `cd` que no deja al shell
+#    ahí (subshell, `pushd`/`popd`, `cd -`), dos `cd` relativos tienen que probarse contra el `cwd`. Se
 #    saca CADA `cd <dir>`, `pushd <dir>` y `-C <dir>`, uno por vuelta, de izquierda a derecha. Como leyendo
 #    el texto no se puede saber en qué carpeta queda el shell, las candidatas son un SUPERCONJUNTO: una
 #    ruta absoluta, tal cual; una relativa, contra el `cwd` del hook y contra cada carpeta nombrada antes.
 #    Con que UNA caiga en el árbol, frena. Cuenta todo ` -C <palabra>`, sea de git o no (`tar -C`, `grep
 #    -C 3`): de más, nunca de menos.
 #
-# c. FRENABA POR EL `cwd` AUNQUE EL COMANDO SE LLEVARA EL `git add` A OTRO REPO (el único marcado como bug).
+# c. NO FRENAR POR EL `cwd` SI EL COMANDO SE LLEVA EL `git add` A OTRO REPO.
 #    En una máquina de un solo árbol el `cwd` de toda sesión del arnés es el checkout del que salen las
-#    skills: `cd <clon de trabajo> && git add -A` y `git -C <clon de trabajo> add -A` frenaban siempre
-#    (179 de 180 comandos reales medidos). Ahora el `cwd` cuenta sólo si algún `git add` masivo del
+#    skills: `cd <clon de trabajo> && git add -A` y `git -C <clon de trabajo> add -A` frenarían siempre.
+#    El `cwd` cuenta sólo si algún `git add` masivo del
 #    comando corre «donde está»: sin un `-C` propio y sin un `cd`/`pushd` ANTES de él, en el texto, a
 #    una carpeta que se pudo leer. Un `cd` que viene después, o el `-C` de otro comando, no lo sueltan.
 #    Tampoco un `cd` que sólo está escrito: tiene que ARRANCAR un comando (una comilla no abre uno:
@@ -560,7 +551,7 @@ fi
 #    y el propio comando crea antes (`mkdir -p <dir> && cd <dir>`, `git clone … <dir>; cd <dir>`). Un
 #    `cd "$D"` sin valor a la vista no prueba que el comando se vaya, y un `cd` a una carpeta que NO existe
 #    tampoco: es el clon descartable que se borró (o que se llevó un reinicio), el `cd` falla y, si el
-#    comando sigue con `;`, el `git add -A` corre en el árbol. Parado en el árbol, frena igual que antes.
+#    comando sigue con `;`, el `git add -A` corre en el árbol. Parado en el árbol, frena.
 #    🟡 LÍMITE QUE QUEDA, a propósito: parado en el árbol, pasa un comando cuyo texto dice que se va y
 #    cuyo shell NO se va, o vuelve sin nombrar el árbol: `cd <otro>; cd -; git add -A`, `(cd <otro> && …);
 #    git add -A`, `pushd <otro>; …; popd; git add -A`, un `cd <otro>` que no llega a correr (`cd <no
@@ -571,37 +562,33 @@ fi
 #    árbol en cualquier parte, aunque sea después del `git add`; y parado en el árbol, `cd <otro> &&
 #    cd <sub>` frena si <sub> existe también adentro del árbol.
 #
-# d. FORMAS DEL `git add` MASIVO QUE NO SE RECONOCÍAN: `git add ./`, y `-A`/`--all`/`.` pegados a una
+# d. FORMAS DEL `git add` MASIVO QUE TAMBIÉN SE RECONOCEN: `git add ./`, y `-A`/`--all`/`.` pegados a una
 #    redirección (`git add -A>/dev/null`) o al acento grave que cierra una sustitución.
 #
-# e. LA CARPETA QUE LLEGA POR UNA VARIABLE DEL MISMO COMANDO. Arreglar el punto c sólo para rutas escritas
-#    a mano no arreglaba casi nada: medido sobre unos 180 comandos reales con `git add` masivo, 123 seguían
-#    frenados, y 122 de ésos empezaban con `S=<ruta>; cd $S/<clon>`. Ahora una variable con UNA sola
+# e. LA CARPETA QUE LLEGA POR UNA VARIABLE DEL MISMO COMANDO. Aplicar el punto c sólo a rutas escritas
+#    a mano no alcanza: la forma habitual es `S=<ruta>; cd $S/<clon>`. Una variable con UNA sola
 #    asignación escrita antes en el mismo comando se reemplaza por su valor (git_c4_expand), para los dos
 #    lados: `D=<árbol>; cd "$D" && git add -A` frena desde cualquier carpeta, y `S=<otro>; cd $S/<clon>`
 #    cuenta como irse. Y de una ruta absoluta con un final que no se lee (`$S/foto-$r` en un lazo) alcanza
 #    con su carpeta madre, si existe y no está en el árbol ni lo tiene adentro (y el comando no trae
-#    ningún `..`). Con todo, de 181 comandos reales quedan frenados 11 (antes 176): funciones con `$1`,
-#    guiones escritos con un heredoc que traen su propio `git add`, `bash -c '…'`, lazos con `cd`, y uno
-#    que de verdad nombra ~/.claude/agent-skills. (Medido parado en el árbol y con las carpetas temporales
-#    de aquellas sesiones recreadas: hoy ya no existen. Parado en un clon de trabajo: 1, igual que antes.)
+#    ningún `..`). Siguen frenados: funciones con `$1`, guiones escritos con un heredoc que traen su
+#    propio `git add`, `bash -c '…'`, lazos con `cd`, y el que de verdad nombra ~/.claude/agent-skills.
 #
-# f. EL RECORRIDO ERA CIEGO A LAS COMILLAS (revisor de seguridad, vuelta 2, 2026-10-04: un esquive real de lo
-#    que agregó el punto c). Para decidir si un `cd` arranca un comando se miraba el carácter anterior, sin
-#    saber si estaba dentro de una comilla abierta. Parado en el árbol pasaban `echo "; cd /tmp" >/dev/null;
-#    git add -A` (el `cd` es texto del `echo`) y `git -c x=" -C /tmp" add -A` (el `-C` es el valor de otra
-#    opción). Ahora hay dos lecturas del mismo comando:
-#      · para FRENAR, el comando crudo, como antes: toda carpeta nombrada cuenta, aunque esté entre
+# f. EL RECORRIDO TIENE QUE VER LAS COMILLAS (es un esquive posible del punto c). Para decidir si un `cd`
+#    arranca un comando, mirar sólo el carácter anterior no sabe si está dentro de una comilla abierta.
+#    Parado en el árbol pasarían `echo "; cd /tmp" >/dev/null; git add -A` (el `cd` es texto del `echo`)
+#    y `git -c x=" -C /tmp" add -A` (el `-C` es el valor de otra opción). Hay dos lecturas del mismo comando:
+#      · para FRENAR, el comando crudo: toda carpeta nombrada cuenta, aunque esté entre
 #        comillas (frena de más, a propósito);
 #      · para DESCONTAR la carpeta de la sesión, una copia enmascarada (git_c4_mask): sólo cuenta el `cd`,
 #        el `pushd`, el `-C`, la asignación `S=<ruta>` y el `mkdir` que están FUERA de toda comilla
 #        (simples, dobles, `$'…'`), de todo comentario y del cuerpo de todo heredoc. La comilla que
 #        envuelve el ARGUMENTO no molesta: `cd "<ruta con espacios>/clon" && git add -A` sigue descontando.
-#    🟡 DECISIÓN: `bash -c "cd <otro> && git add -A"` (y `sh -c`, `eval "…"`) NO descuenta. Ese `cd` sí
+#    🟡 `bash -c "cd <otro> && git add -A"` (y `sh -c`, `eval "…"`) NO descuenta. Ese `cd` sí
 #    correría, pero leer el texto de un `-c` como comando es reabrir este mismo esquive. Parado en el
 #    árbol frena; se sale escribiendo el `cd` afuera. Caso: `git-c4-block-shell-dash-c-string-with-cd-…`.
-#    Para que eso valga hizo falta cerrar un hueco viejo: `bash -c "git add -A"` parado en el árbol pasaba
-#    desde siempre (tras `-A` viene la comilla que cierra, y eso no se tomaba por un `git add` masivo). Con
+#    Para que eso valga, `bash -c "git add -A"` parado en el árbol también frena: tras `-A` viene la comilla
+#    que cierra, y eso no se tomaría por un `git add` masivo. Con
 #    un shell `-c` o un `eval` en el comando, la comilla que cierra también cierra el `git add`.
 #    Lo que sigue sin verse, de la familia del límite del punto c: `$(…; cd <otro>)` y los acentos graves
 #    son subshells que no se enmascaran.
@@ -655,9 +642,9 @@ GIT_C4_MASK_MAX=12000
 # posición de la otra), con lo que el shell NO va a ejecutar acá reemplazado por un relleno sin espacios ni
 # separadores (`x`): el contenido de las comillas simples, de las dobles y de `$'…'`, el carácter que sigue
 # a una barra invertida, los comentarios y el cuerpo de los heredocs. Las comillas mismas quedan.
-# Por qué (revisor de seguridad, vuelta 2 de la story 8.18): el recorrido era ciego a las comillas. Parado en
-# el árbol, `echo "; cd /tmp" >/dev/null; git add -A` pasaba: el `cd` del texto se tomaba por un movimiento
-# real y descontaba la carpeta de la sesión. Lo mismo `git -c x=" -C /tmp" add -A`. Ahora, para DESCONTAR
+# Por qué: un recorrido ciego a las comillas dejaría pasar, parado en el árbol, `echo "; cd /tmp" >/dev/null;
+# git add -A`: el `cd` del texto se tomaría por un movimiento real y descontaría la carpeta de la sesión. Lo
+# mismo `git -c x=" -C /tmp" add -A`. Para DESCONTAR
 # (lo que deja pasar) sólo cuenta lo que en esta copia sigue a la vista; para FRENAR se sigue mirando el
 # comando crudo, que es de más y nunca de menos.
 # Una comilla que queda abierta tapa todo lo que sigue; un heredoc cuya palabra de cierre no se puede leer
@@ -993,9 +980,9 @@ git_c4_blind_notice() {
   exit 1
 }
 
-# ── PowerShell (segunda vuelta, B3): las carpetas como las escribe Windows ─────────────────────────────────
+# ── PowerShell: las carpetas como las escribe Windows ─────────────────────────────────
 # Por la herramienta PowerShell, `cd ~\.claude\agent-skills; git add -A`, `cd $env:USERPROFILE\…`,
-# `Set-Location …`, `sl …`, `Push-Location …` y `git -C ~\… add -A` pasaban: el recorrido de abajo lee la
+# `Set-Location …`, `sl …`, `Push-Location …` y `git -C ~\… add -A` pasarían sin esto: el recorrido de abajo lee la
 # barra invertida como un escape de bash y sólo conoce `cd`, `pushd` y `-C`. Para esa herramienta GIT-C4 mira una
 # copia del comando con las barras hacia adelante (en PowerShell la `\` no escapa nada: el escape es el acento
 # grave), `$env:USERPROFILE`/`$env:HOME` (también entre llaves) como `$HOME`, y Set-Location / sl / chdir como `cd`
@@ -1209,7 +1196,7 @@ fi
 # …y sus formas de PowerShell. SUP-C1: una descarga (Invoke-WebRequest / Invoke-RestMethod y sus alias,
 # o WebClient) entubada a Invoke-Expression (`irm https://x | iex`). SUP-C2: Invoke-Expression sobre una
 # descarga (`iex (iwr https://x).Content`, `iex ((New-Object Net.WebClient).DownloadString('…'))`).
-# Segunda vuelta, C2: también `curl.exe`/`wget.exe` (en PowerShell `curl` es un alias de Invoke-WebRequest y
+# También `curl.exe`/`wget.exe` (en PowerShell `curl` es un alias de Invoke-WebRequest y
 # el programa se escribe con su .exe) y la descarga entubada a otro PowerShell (`| powershell -`, `| pwsh`) o
 # a bash.
 _PS_GET='(invoke-webrequest|iwr|invoke-restmethod|irm|curl(\.exe)?|wget(\.exe)?|downloadstring)'
@@ -1220,7 +1207,7 @@ if ps_match "(^|[^a-z-])${_PS_GET}([[:space:]]|\()" && ps_match "\|[[:space:]]*&
     "Bajá el guion primero (Invoke-WebRequest URL -OutFile \$env:TEMP\\x.ps1), inspeccionalo, después corrélo."
 fi
 # SUP-C2: Invoke-Expression con una descarga en su argumento, escrito como sea: `iex (iwr …)`, `iex $(irm …)`,
-# `Invoke-Expression -Command (irm …)`, `iex "& { $(irm …) }"` (segunda vuelta, C2). Hasta el `;` o `|`.
+# `Invoke-Expression -Command (irm …)`, `iex "& { $(irm …) }"` Hasta el `;` o `|`.
 if ps_match "(^|[^a-z-])${_PS_IEX}([[:space:]]|\()[^;|]*(^|[^a-z.-])(invoke-webrequest|iwr|invoke-restmethod|irm|curl|wget|downloadstring|new-object)([^a-z-]|$)"; then
   block "SUP-C2" \
     "Invoke-Expression sobre una descarga. Ejecuta código no auditado en tu sesión actual." \
@@ -1267,7 +1254,7 @@ fi
 
 # --- El arnés no se apaga a sí mismo -----------------------------------------
 
-# HARNESS-C1 (2026-08-25, §5.3 del plan de controles apagables): PERSISTIR un kill-switch del
+# HARNESS-C1: PERSISTIR un kill-switch del
 # arnés en el archivo de arranque del shell. Los interruptores TYCON_* son la escotilla del DEV
 # —por sesión y a la vista—; escribirlos al rc los vuelve permanentes, invisibles y heredados por
 # TODAS las sesiones futuras, incluido TYCON_NO_AUTOINSTALL=1, que apaga al instalador que re-sana

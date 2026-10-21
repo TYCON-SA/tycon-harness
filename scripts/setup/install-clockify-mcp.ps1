@@ -16,7 +16,7 @@
 
 $ErrorActionPreference = "Stop"
 
-# PowerShell 7 es un requisito (story 8.17, W3W4): lanzado con Windows PowerShell 5.1, lo dice en una línea y sale 1 antes
+# PowerShell 7 es un requisito: lanzado con Windows PowerShell 5.1, lo dice en una línea y sale 1 antes
 # de pedir la llave, escribir o lanzar nada. Mismo criterio y misma variable de prueba que install-tycon-hooks.ps1 (sólo
 # simula una versión más vieja; el texto, sin tildes: ver allá).
 $TyconPsMajor = $PSVersionTable.PSVersion.Major

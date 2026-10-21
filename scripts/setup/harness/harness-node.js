@@ -1,33 +1,32 @@
 #!/usr/bin/env node
 'use strict';
-// harness-node.js — el Node propio del arnés (story 8.39): bajarlo, verificarlo, enlazarlo, decidir con qué intérprete
+// harness-node.js — el Node propio del arnés: bajarlo, verificarlo, enlazarlo, decidir con qué intérprete
 // se escriben los hooks y decirlo en `doctor`.
 //
 // ── POR QUÉ ──────────────────────────────────────────────────────────────────────────────────────────────────────────
-// Cada hook del arnés se registraba como `node "<guion>"` y arrancaba con el primer `node` del PATH de la herramienta:
-// el que tuviera la máquina (una del equipo corría con Node 20, que la CI pública no prueba) y que nadie miraba. Decisión
-// del dueño (2026-10-15): el arnés baja y mantiene su propio Node 24, en Mac, Linux y Windows, y lo usan sus hooks y sus
+// Un hook registrado como `node "<guion>"` arranca con el primer `node` del PATH de la herramienta:
+// el que tenga la máquina (una versión que la CI pública puede no probar) y que nadie mira. El arnés
+// baja y mantiene su propio Node 24, en Mac, Linux y Windows, y lo usan sus hooks y sus
 // guiones; los proyectos del dev siguen con el suyo. Por eso este módulo NUNCA toca el PATH: escribe la ruta del Node en
 // el comando de cada hook.
 //
 // ── QUÉ HACE ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 //   · La lista: scripts/production/node-official.json DEL ÁRBOL QUE CORRE (la misma del freno de producción). La huella del
-//     comprimido (o del .exe) y la del binario que trae (`node_sha256`) salen de ahí, nunca del servidor (decisiones 5 y
-//     25 de la story).
+//     comprimido (o del .exe) y la del binario que trae (`node_sha256`) salen de ahí, nunca del servidor.
 //   · `ensure` baja la versión de la lista si `current` no la tiene: un HIJO (`--fetch`) la baja con http-get.js
 //     (respeta HTTPS_PROXY/NO_PROXY) directo a un archivo, con su tope (180 s, el del freno); se comparan las dos huellas,
 //     se corre `<binario> --version`, todo en `<casa>/node/.incoming-<pid>/`, que recién al final pasa a
 //     `versions/<v>/` por cambio de nombre; una versión rota que ya estaba ahí se aparta a `trash/`. Después `current`
 //     pasa a ella con `pointLink` (en Windows un node.exe en uso no se pisa: se baja al lado y se cambia la unión).
 //     Se guardan la de `current` y la anterior; las más viejas se borran en la corrida siguiente.
-//   · Cuando no puede, nunca deja la máquina sin arnés: anota el motivo y el arnés sigue con el `node` del PATH
-//     (decisión 6). En el arranque, tras una falla de red espera 6 horas; un binario que no arranca en la máquina queda
-//     «incompatible» con esa versión y el arranque no la vuelve a bajar (decisión 14). A mano (`install`, `update`,
-//     `apply`) se intenta siempre. El arranque que corre en el lugar (dentro del tope del hook) no baja nada (AC 4).
-//   · `interpreter` decide, MIRANDO EL DISCO, con qué se escribe cada hook `.js` (decisión 26): la ruta de `current` si
-//     arranca y dice la versión de la lista, en la forma del AC 5; si no, `node`. La usan el aplicador de Claude Code,
+//   · Cuando no puede, nunca deja la máquina sin arnés: anota el motivo y el arnés sigue con el `node` del PATH.
+//     En el arranque, tras una falla de red espera 6 horas; un binario que no arranca en la máquina queda
+//     «incompatible» con esa versión y el arranque no la vuelve a bajar. A mano (`install`, `update`,
+//     `apply`) se intenta siempre. El arranque que corre en el lugar (dentro del tope del hook) no baja nada.
+//   · `interpreter` decide, MIRANDO EL DISCO, con qué se escribe cada hook `.js`: la ruta de `current` si
+//     arranca y dice la versión de la lista, en la forma de `formFor`; si no, `node`. La usan el aplicador de Claude Code,
 //     el de Codex y la paridad: si decidiera una variable, cada corrida sin ella devolvería los hooks a `node`.
-//   · `doctorFacts` arma la línea y la clave `harness_node` de `doctor`: nunca un rojo (decisión 19).
+//   · `doctorFacts` arma la línea y la clave `harness_node` de `doctor`: nunca un rojo.
 //
 // El registro (último intento, última falla, incompatible, la versión anterior) vive en `<estado>/harness/
 // harness-node.json`, aparte de harness-state.json: lo escribe `runApplierOnly`, que corre dentro de comandos que ya
@@ -46,19 +45,19 @@ const TH = require('./tycon-home.js');
 const DEFAULT_TREE = path.resolve(__dirname, '..', '..', '..');
 const LIST_REL = ['scripts', 'production', 'node-official.json'];
 const FETCH_BUDGET_S = 180;                     // el tope del freno (`curl --max-time 180`), aparte del de la actualización
-const MAX_BYTES = 160 * 1024 * 1024;            // el node.exe de win-x64 pesa ~94 MB (medido 2026-10-16)
+const MAX_BYTES = 160 * 1024 * 1024;            // el node.exe de win-x64 pesa ~94 MB
 const RETRY_AFTER_MS = 6 * 60 * 60 * 1000;      // en el arranque, tras una falla de red
 const PROBE_MS = 5000;
 const MANIFEST = '.tycon-node.json';
 const RECORD = 'harness-node.json';
-// la forma sin comillas del AC 5 (decisión 10)
+// la forma sin comillas
 const BARE_POSIX = /^[A-Za-z0-9._/+-]+$/;
 const BARE_WIN = /^[A-Za-z]:\/[A-Za-z0-9._/+-]+$/;
 const UNSAFE = /[$`"]/;
-// La medición de la forma en Windows (Task 1.1 · E1): la forma sin comillas por los cinco lanzadores de la 182
-// (`bash-c`, `bash-file`, `pwsh-command`, `pwsh-file`, `default-shell`). Medida en verde en la 182 #13608 (2026-10-16,
-// scripts/tests/windows/node-form-spike.js): los cinco salen igual que con `node "<guion>"` y corren con el node.exe de
-// la ruta. Si una medición futura sale mal, `measured: false` deja a toda Windows con `node "<guion>"` (decisión 22).
+// La medición de la forma en Windows: la forma sin comillas por los cinco lanzadores (`bash-c`, `bash-file`,
+// `pwsh-command`, `pwsh-file`, `default-shell`). Medida en verde con scripts/tests/windows/node-form-spike.js: los
+// cinco salen igual que con `node "<guion>"` y corren con el node.exe de la ruta. Si una medición futura sale mal,
+// `measured: false` deja a toda Windows con `node "<guion>"`.
 const WINDOWS_FORM = Object.freeze({ measured: true, run: 13608 });
 
 const fwd = (p) => String(p).replace(/\\/g, '/');
@@ -67,7 +66,7 @@ const sha256File = (f) => crypto.createHash('sha256').update(fs.readFileSync(f))
 const isOff = (env) => String((env || process.env).TYCON_HARNESS_NODE || '') === '0';
 
 // ── la lista ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-/** `{ ok, list }` o `{ ok: false, reason }`. Ilegible nunca es «no hace falta» (AC 14). */
+/** `{ ok, list }` o `{ ok: false, reason }`. Ilegible nunca es «no hace falta». */
 function readList(tree = DEFAULT_TREE) {
   const file = path.join(tree, ...LIST_REL);
   let j;
@@ -128,8 +127,8 @@ function probe(bin, { cache = true } = {}) {
   return out;
 }
 
-// ── el intérprete de los hooks (decisión 26) ─────────────────────────────────────────────────────────────────────────
-/** La forma del comando para esa ruta (AC 5): `{ prefix, form, reason }`. `prefix` es lo que va antes de `"<guion>"`. */
+// ── el intérprete de los hooks ─────────────────────────────────────────────────────────────────────────
+/** La forma del comando para esa ruta: `{ prefix, form, reason }`. `prefix` es lo que va antes de `"<guion>"`. */
 function formFor(bin, platform = process.platform) {
   const b = fwd(bin);
   if (platform === 'win32') {
@@ -152,7 +151,7 @@ function interpreter({ tree = DEFAULT_TREE, env = process.env, platform = proces
   const out = { own: false, present: false, prefix: 'node', form: 'path', bin: null, version: null, expected: null, switch: isOff(env) ? 'off' : 'on', reason: null };
   if (out.switch === 'off') return Object.assign(out, { reason: 'apagado (TYCON_HARNESS_NODE=0)' });
   // una TYCON_HOME vacía o relativa no tiene casa: el Node del PATH, con el motivo (como harness-node.sh y bootstrap.js);
-  // nunca tumba al aplicador, que antes de esta story no miraba la casa
+  // nunca tumba al aplicador, que no tiene por qué mirar la casa
   let p;
   try { p = TH.harnessNode({ env, platform }); } catch (e) { return Object.assign(out, { reason: `sin casa del arnés (${e.message})` }); }
   out.bin = fwd(p.bin);
@@ -266,11 +265,11 @@ function ensure({ tree = DEFAULT_TREE, env = process.env, platform = process.pla
       if (rec.last_failure || rec.incompatible) { delete rec.last_failure; delete rec.incompatible; writeRecord(null, rec); }
       return { status: 'ok', reason: null, version: cur.version, notice: null };
     }
-    // un `current` que no arranca: se saca el ENLACE, nunca la carpeta (AC 16); los hooks vuelven a `node`
+    // un `current` que no arranca: se saca el ENLACE, nunca la carpeta; los hooks vuelven a `node`
     if (!cur.ok && TH.isLink(p.current)) { TH.removeLink(p.current); log(`node del arnés: current no arranca (${cur.reason}): saqué el enlace, la carpeta queda`); }
     // la versión de la lista ya está en versions/ y sana (la huella del binario es la de la lista y dice su versión): se
-    // vuelve a enlazar sin bajar nada — es la anterior que se guarda para volver atrás (decisión 21). Si no está sana, la
-    // bajada la aparta a trash/ (AC 2)
+    // vuelve a enlazar sin bajar nada — es la anterior que se guarda para volver atrás. Si no está sana, la
+    // bajada la aparta a trash/
     const kept = path.join(p.versions, list.version);
     if (fs.existsSync(kept)) {
       const kb = p.binIn(kept);
@@ -395,7 +394,7 @@ function install({ tree, env, platform, list, entry, pk, p, log, rec }) {
   return { ok: true };
 }
 
-// ── doctor (decisiones 4, 19 y 25) ───────────────────────────────────────────────────────────────────────────────────
+// ── doctor ───────────────────────────────────────────────────────────────────────────────────
 const HOOK_JS = /"([^"]+\.js)"\s*$/;
 /** Las rutas en su repo de los guiones `.js` de hooks-list.json (`scripts/hooks/x.js`, `skills/…/y.js`), o null. */
 function listedHookPaths(tree = DEFAULT_TREE) {
@@ -445,7 +444,7 @@ function doctorLevel(json, hooks) {
 }
 
 /**
- * Lo que `doctor` dice del Node del arnés: `{ level: ok|warn|info, line, json }`. Nunca `fail` (decisión 19). Con
+ * Lo que `doctor` dice del Node del arnés: `{ level: ok|warn|info, line, json }`. Nunca `fail`. Con
  * `health` (la comprobación de salud de una actualización) no recalcula la huella del binario: `verified: null`.
  */
 function doctorFacts({ tree = DEFAULT_TREE, env = process.env, platform = process.platform, arch = process.arch, health = false, settingsFile = null } = {}) {

@@ -1,6 +1,5 @@
 'use strict';
-// managed.js — el registro de lo que el arnés instaló en la máquina: `managed` en harness-state.json (story 8.13, tanda B,
-// AC 15-16).
+// managed.js — el registro de lo que el arnés instaló en la máquina: `managed` en harness-state.json.
 //
 // De dónde sale: el aplicador (`install-tycon-hooks.sh` / `.ps1`) corrido con `--report-json <archivo>` escribe un arreglo
 // `[{ kind, where, id }]` con cada pieza registrable que dejó en la máquina —la que escribió y la que ya estaba y es suya—;
@@ -13,7 +12,7 @@
 //
 // Las tres reglas:
 //   · `managed` es la UNIÓN de los reportes. Cada pieza conserva la `version` de la primera corrida que la reportó: es la
-//     que la vuelta atrás (tanda C) deshace.
+//     que la vuelta atrás deshace.
 //   · Una pieza registrada que, después de una corrida EXITOSA del aplicador, ya no está en la máquina se cae del registro:
 //     la sacó el aplicador (una integración apagada, un hook retirado). Si quedara, `doctor` pediría `apply` por algo que
 //     `apply` ya no repone. Una corrida fallida no se funde.
@@ -24,7 +23,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const PD = require('./plugin-dirs.js');   // story 7.27
+const PD = require('./plugin-dirs.js');
 const RP = require('./read-permissions.js');
 
 const KINDS = ['hook', 'setting', 'block', 'import', 'startup-line', 'link', 'command', 'git-hook', 'launch-agent', 'codex', 'third-party', 'file'];
@@ -69,7 +68,7 @@ function hookNeedle(relpath) {
   return relpath.startsWith('@tcg:') ? `/scripts/hooks/${relpath.slice(5)}` : `/${relpath.replace(/^\/+/, '')}`;
 }
 
-/** Barras normales: el `.ps1` escribe los commands con `/` y las rutas de Windows vienen con `\` (pase adversarial). */
+/** Barras normales: el `.ps1` escribe los commands con `/` y las rutas de Windows vienen con `\`. */
 const slash = (s) => String(s).replace(/\\/g, '/');
 
 /** Los `command` de settings.json, por evento: `[{ event, command }]` (con barras normales). */
@@ -91,7 +90,7 @@ const PATH_TOKEN = /^(@tcg:[\w.-]+|[\w.-]+(?:\/[\w.-]+)+\.(?:js|sh|py|mjs|cjs))$
  * Los hooks que el aplicador del árbol conoce —su lista canónica y sus opt-in, escritos como
  * `"EVENTO|matcher|ruta|etiqueta"`—: `[{ event, relpath, needle }]`, o `null` si no se puede leer. Es la frontera de
  * «del arnés»: un hook del árbol que registró otro instalador opcional (CodeGraph, instinct-mining…) no es del aplicador,
- * y `apply` nunca lo registraría (pase adversarial, iteración 2).
+ * y `apply` nunca lo registraría.
  */
 function applierHooks(tree) {
   if (!tree) return null;
@@ -114,10 +113,10 @@ function applierHooks(tree) {
   return out.length ? out : null;
 }
 /**
- * La lista única de hooks (story 8.17, tanda W3): `scripts/setup/hooks-list.json` del árbol, la que leen los dos
+ * La lista única de hooks: `scripts/setup/hooks-list.json` del árbol, la que leen los dos
  * aplicadores. Devuelve las filas (con la forma de `applierHooks`) de los registros que `keep` acepta; `null` si la
- * lista está pero no se puede leer (rota no es «no hay hooks»); `undefined` si el árbol no la trae — un clon de antes
- * de la W3 (una versión vuelta atrás): ahí la lista sigue en el texto de cada instalador y se lee de ahí, como antes.
+ * lista está pero no se puede leer (rota no es «no hay hooks»); `undefined` si el árbol no la trae — un clon de una
+ * versión que no la tiene (una versión vuelta atrás): ahí la lista sigue en el texto de cada instalador y se lee de ahí.
  */
 function hooksListRows(tree, keep) {
   const file = path.join(tree, 'scripts', 'setup', 'hooks-list.json');
@@ -175,7 +174,7 @@ function present(piece, { home = os.homedir(), env = process.env, isStartupLine 
       if (RP.isRuleId(piece.id)) return Boolean(s) && RP.hasRule(s, RP.ruleOf(piece.id));
       const v = s ? getPath(s, piece.id) : undefined;
       if (v === undefined) return false;
-      // la carpeta de los mods (story 7.27) es un elemento de una lista que también tiene las carpetas del dev
+      // la carpeta de los mods es un elemento de una lista que también tiene las carpetas del dev
       if (piece.id === PD.PLUGIN_DIRS_ID) return PD.hasDir(v, piece.value, { home });
       // con el valor que puso el arnés: si el dev lo cambió, el ajuste es suyo (el aplicador tampoco lo reporta)
       return 'value' in piece ? JSON.stringify(v) === JSON.stringify(piece.value) : true;
@@ -187,8 +186,8 @@ function present(piece, { home = os.homedir(), env = process.env, isStartupLine 
       return t !== null && new RegExp(`<!--\\s*TYCON_BLOCK:${name}\\s+START[\\s\\S]*?<!--\\s*TYCON_BLOCK:${name}\\s+END`).test(t);
     }
     case 'import': {
-      // con cualquiera de sus formas — los dos nombres del lugar (story 8.19, AC 20) y el README.md que era el índice
-      // hasta que pasó a INDEX.md: una vuelta atrás deja la línea vieja y la pieza con el id nuevo, y la línea está
+      // con cualquiera de sus formas — los dos nombres del lugar y el README.md que era el índice
+      // antes de INDEX.md: una vuelta atrás deja la línea vieja y la pieza con el id nuevo, y la línea está
       const forms = require('./import-line.js').ALL_FORMS;
       const ids = forms.includes(piece.id) ? forms : [piece.id];
       const t = text(piece.where);
@@ -283,9 +282,9 @@ function describe(p) {
   return `${p.kind} ${p.id} (${p.where})`;
 }
 
-// ── la lista de efectos (story 8.16, AC 4) ──────────────────────────────────────────────────────────────────────────
+// ── la lista de efectos ──────────────────────────────────────────────────────────────────────────
 // `scripts/setup/install-effects.json` es LA lista declarada de lo que la instalación cambia en la máquina y en cómo
-// trabaja el asistente: la leen la portada (por su prueba), el cierre de `install` y, desde la tanda B, el plan. Acá vive
+// trabaja el asistente: la leen la portada (por su prueba), el cierre de `install` y el plan. Acá vive
 // su lector y su validación; el cruce con el instalador (una pieza sin entrada, una entrada sin pieza) es de su prueba,
 // scripts/tests/install-effects.test.js. Una lista que falta, ilegible o inválida NO se lee como «no cambia nada»:
 // `readEffects` devuelve `ok: false` con el archivo y el motivo, y quien la usa lo dice.
@@ -301,7 +300,7 @@ const switchVariable = (s) => String(s).trim().split(' ')[0];
 const EFFECT_GROUPS = ['safety', 'assistant', 'notices', 'memory', 'time', 'install', 'pipeline', 'codex'];
 const EFFECT_DEFAULTS = ['on', 'off'];
 const TITLE_MAX = 70;
-// en qué perfil de instalación existe cada pieza (story 8.16, tanda C · AC 22): todo lo de `minimal` está en `full`
+// en qué perfil de instalación existe cada pieza: todo lo de `minimal` está en `full`
 const PROFILES = ['minimal', 'full'];
 // dónde frena: en ningún lado, en cualquier repo, sólo en un repo bajo el arnés, o sólo con el pipeline en modo autónomo
 const EFFECT_BLOCKS = ['no', 'any-repo', 'harness-repos', 'autonomous-only'];
@@ -376,8 +375,8 @@ function effectProblems(doc) {
   return out;
 }
 
-// Las integraciones que `install` ofrece en su pregunta (story 8.16, tanda D · AC 31): `integrations` es opcional (una
-// lista de antes de la tanda D no la trae, y entonces no se ofrece ninguna); si está, nombra las ocho llaves una vez cada
+// Las integraciones que `install` ofrece en su pregunta : `integrations` es opcional (sin ella no
+// se ofrece ninguna); si está, nombra las ocho llaves una vez cada
 // una. Una ofrecida (`offered: true`) dice qué hace y qué pide tener instalado; una que no se ofrece dice por qué (`why`)
 // y, si se prende con un dato, cómo (`how`).
 const INTEGRATION_KEYS = ['key', 'offered', 'does', 'needs', 'why', 'how'];
@@ -428,17 +427,17 @@ function brakes(effects) {
   return (Array.isArray(effects) ? effects : []).filter((e) => isObject(e) && e.kind === 'hook' && e.blocks !== 'no');
 }
 
-// ── los controles ESPERADOS (story 8.17, tanda W3a · AC 70) ─────────────────────────────────────────────────────────
+// ── los controles ESPERADOS ─────────────────────────────────────────────────────────
 // `missing` y `unregistered` comparan lo que el aplicador REPORTÓ contra la máquina: un control que el aplicador nunca
-// registró no está en el registro y `doctor` decía «todas en su lugar» (pipeline 182: al instalador de Windows le
-// faltaban 15 controles, los dos frenos de comandos entre ellos, y nada lo decía). `expectedControls` cuenta contra la
+// registró no está en el registro y `doctor` diría «todas en su lugar» aunque faltaran controles
+// (los dos frenos de comandos, por ejemplo). `expectedControls` cuenta contra la
 // LISTA del aplicador de esta plataforma, para esta configuración. Cuatro fuentes, todas archivos del árbol:
 //   · la lista: `install-tycon-hooks.sh` (Mac y Linux, `applierHooks`) o `install-tycon-hooks.ps1` (Windows, `ps1Hooks`);
 //   · la condición de cada control (`when`): scripts/tests/fixtures/harness-managed-pieces.json, que viaja en la copia
 //     pública y cuya coincidencia con las dos listas la frena scripts/tests/hooks-lists-parity.test.js;
 //   · lo que queda afuera en Windows, con su motivo: scripts/setup/windows-support.json → `excluded`;
 //   · si está: `controlState()` — mismo evento, mismo matcher, el intérprete de su extensión y el guion en el disco
-//     (pase adversarial de la W3a, B5); no depende de la forma de la ruta. Un control es evento + matcher + guion.
+//     no depende de la forma de la ruta. Un control es evento + matcher + guion.
 // Las integraciones las pasa quien llama (este módulo viaja en la copia fija y no puede cargar `scripts/lib/`).
 const APPLIER_SH = 'install-tycon-hooks.sh';
 const APPLIER_PS1 = 'install-tycon-hooks.ps1';
@@ -446,7 +445,7 @@ const CONDITIONS_FILE = path.join('scripts', 'tests', 'fixtures', 'harness-manag
 const WINDOWS_SUPPORT_FILE = path.join('scripts', 'setup', 'windows-support.json');
 // los opt-in por variable: `true` = nace prendido (lo apaga `VAR=0`); `false` = nace apagado (lo prende `VAR=1`)
 const OPT_IN_DEFAULT = { TYCON_SAFETY_GUARD: true, TYCON_TEST_SCOPE_GUARD: true, TYCON_SESSION_GUARD: false };
-// el interruptor por control que, PUESTO, manda sobre la llave de su integración en los dos sentidos (story 8.3)
+// el interruptor por control que, PUESTO, manda sobre la llave de su integración en los dos sentidos
 const SWITCH_OVER_INTEGRATION = { 'PreToolUse:@tcg:engram-pre-commit.sh': 'TYCON_ENGRAM_HOOK' };
 const TELEGRAM_PLUGIN_DIR = path.join('.claude', 'plugins', 'cache', 'claude-plugins-official', 'telegram');
 const PLATFORM_NAMES = { windows: 'win32', win32: 'win32', darwin: 'darwin', linux: 'linux' };
@@ -463,7 +462,7 @@ const ps1Field = (row, name) => { const m = new RegExp(`\\b${name}\\s*=\\s*'([^'
  */
 function ps1Hooks(tree) {
   if (!tree) return null;
-  // desde la W3, la lista única menos lo que excluye de Windows (`platforms.windows: false`)
+  // la lista única menos lo que excluye de Windows (`platforms.windows: false`)
   const listed = hooksListRows(tree, (h) => !(isObject(h.platforms) && h.platforms.windows === false));
   if (listed !== undefined) return listed;
   const text = readText(path.join(tree, 'scripts', APPLIER_PS1));
@@ -559,7 +558,7 @@ function expectedControls({ platform = process.platform, tree = null, integratio
   // un excluido se nombra por su guion (`x.sh`), por la ruta de su spec o por su id entero
   const isExcluded = (h) => [`${h.event}:${h.relpath}`, h.relpath, h.relpath.replace(/^@tcg:/, ''), path.posix.basename(h.relpath.replace(/^@tcg:/, ''))].some((k) => excluded.has(k));
   out.listed = list.reduce((n, h) => n + h.matchers.length, 0);   // filas: evento + matcher + guion, como el aplicador
-  // en qué perfil existe cada control (story 8.16): de la lista de efectos del árbol; sin ella, todo se espera como en full
+  // en qué perfil existe cada control: de la lista de efectos del árbol; sin ella, todo se espera como en full
   const effectsById = new Map();
   if (profile !== 'full') {
     const eff = readEffects(tree);
@@ -574,15 +573,15 @@ function expectedControls({ platform = process.platform, tree = null, integratio
     const when = conditions.get(id);
     if (when === undefined && !out.caveat) out.undeclared.push(id);
     let state = when === undefined ? { on: true, why: null } : conditionState(id, when, { platform, integrations, env, home });
-    // el perfil de instalación (story 8.16, tanda C · AC 28): fuera de full, lo que la lista de efectos no marca `minimal`
+    // el perfil de instalación: fuera de full, lo que la lista de efectos no marca `minimal`
     // no se espera (salvo un opt-in prendido a mano con su variable en `1`); con el perfil sin saber, no se decide
     if (state.on === true && profile !== 'full') {
       const eff = effectsById.get(id);
       // la variable que lo prende a mano: la de `optin:<VARIABLE>`, y la del barrido de Telegram, que se declara por su
-      // plugin (pase adversarial de la tanda C, clases 3 y 4)
+      // plugin
       const optVar = eff && /^optin:([A-Z][A-Z0-9_]*)$/.test(eff.when) ? eff.when.slice('optin:'.length)
         : (eff && eff.when === 'optin:telegram-plugin' ? 'TYCON_TG_ZOMBIE_SWEEP' : null);
-      // con el perfil sin saber, los dos frenos que nacen prendidos se registran igual (decisión del dueño, 2026-10-04):
+      // con el perfil sin saber, los dos frenos que nacen prendidos se registran igual:
       // se esperan, como en full
       const brakeWhenUnknown = profile === null && optVar && OPT_IN_DEFAULT[optVar] === true;
       if (eff && Array.isArray(eff.profiles) && !eff.profiles.includes('minimal') && !(optVar && env[optVar] === '1') && !brakeWhenUnknown) {

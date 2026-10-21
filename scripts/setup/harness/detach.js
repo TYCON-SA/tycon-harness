@@ -1,19 +1,19 @@
 'use strict';
-// detach.js — la actualización del arranque, fuera del tope del hook (story 8.23, tanda L, AC 38).
+// detach.js — la actualización del arranque, fuera del tope del hook.
 //
-// ── EL CASO (2026-10-06) ──────────────────────────────────────────────────────────────────────────────────────────
-// La línea de arranque es un hook de Claude Code, y Claude Code lo corta cuando pasa su tope. En una máquina Windows del
-// equipo, con 240 commits de atraso, la actualización (fetch, merge, aplicador, salud) tardaba más que eso: el hook moría
-// con el candado tomado, el arranque siguiente lo veía «ocupado» y se iba, y la máquina no se actualizaba nunca.
+// ── POR QUÉ ───────────────────────────────────────────────────────────────────────────────────────────────────────
+// La línea de arranque es un hook de Claude Code, y Claude Code lo corta cuando pasa su tope. En una máquina con mucho
+// atraso, la actualización (fetch, merge, aplicador, salud) tarda más que eso: el hook muere
+// con el candado tomado, el arranque siguiente lo ve «ocupado» y se iba, y la máquina no se actualiza nunca.
 //
 // ── QUÉ HACE ──────────────────────────────────────────────────────────────────────────────────────────────────────
 // `runDetached` lanza el mismo programa como proceso APARTE (desprendido del hook: otro grupo de procesos, sin ventana en
 // Windows) y espera hasta `waitMs` a que termine:
 //   · si termina a tiempo, devuelve su código y sus líneas — así un error temprano (una versión rota) sigue saliendo ≠ 0 y
-//     la línea de arranque cae al respaldo en shell, como siempre;
+//     la línea de arranque cae al respaldo en shell;
 //   · si no, vuelve con `detached: true` y código 0: el hook termina y la actualización sigue sola, con su candado y su
 //     registro (startup.log). Si después la cortan igual, el candado queda con un PID muerto y el arranque siguiente lo
-//     pisa en el acto (lock.js, AC 37).
+//     pisa en el acto (lock.js).
 // El hijo anota su resultado en `resultFile` (escritura atómica) con `writeResult`, o al salir por cualquier motivo con el
 // manejador que instala `adoptDetachedRun`. La espera es por ese archivo y no por el proceso: mientras el hook espera no corre su
 // bucle de eventos y el hijo terminado no se recoge (en POSIX un hijo sin recoger sigue «existiendo»).
@@ -25,11 +25,11 @@ const { spawn, spawnSync } = require('child_process');
 
 const DETACHED_VAR = 'TYCON_STARTUP_DETACHED';   // marca la corrida desprendida: no se vuelve a desprender
 const RESULT_VAR = 'TYCON_STARTUP_RESULT';       // dónde anota su resultado
-// ── EL RELEVO EN WINDOWS (2026-10-07, reporte de un dev del equipo: 20 o más ventanas de consola por arranque) ────────
+// ── EL RELEVO EN WINDOWS ─────────────────────────────────────────────────────────────────────────────────────────
 // En Windows el proceso desprendido (`detached: true` = DETACHED_PROCESS) queda SIN consola, y cada programa de consola
-// que lanza sin `windowsHide` (git, pwsh, node) recibe una consola nueva y VISIBLE. Antes de la tanda L todo corría dentro
-// del hook, con la consola oculta que le da Claude Code; por eso nunca se vio. Arreglo (variante E del reporte, medida en
-// la máquina del dev): el desprendido NO hace el trabajo. Lanza al que lo hace SIN desprender y con `windowsHide: true`
+// que lanza sin `windowsHide` (git, pwsh, node) recibe una consola nueva y VISIBLE (decenas de ventanas por arranque). Dentro
+// del hook corre con la consola oculta que le da Claude Code; desprendido, no. Por eso el desprendido NO hace el
+// trabajo. Lanza al que lo hace SIN desprender y con `windowsHide: true`
 // —ese hijo recibe una consola propia sin ventana, y todo lo que él lance la hereda— y se queda vivo esperándolo (un hijo
 // sin desprender muere con quien lo lanzó). El candado, la marca de arranque y el resultado son del que trabaja; para el
 // hook no cambia nada. `TYCON_STARTUP_SHIM=1` lo fuerza en cualquier sistema (las pruebas); `0` lo apaga.
@@ -68,10 +68,9 @@ function runDetached({ script, args = [], env = process.env, resultFile, waitMs 
       return { detached: false, code: r.code, lines: Array.isArray(r.lines) ? r.lines.map(String) : [], pid: child.pid };
     }
     // sin la marca de arranque a los pocos segundos, el hijo no arrancó (el programa no está, Node no lo carga): no es
-    // «sigue aparte» (revisor de fallos silenciosos de la tanda L) — sale ≠ 0 y la línea cae al respaldo en shell
+    // «sigue aparte» — sale ≠ 0 y la línea cae al respaldo en shell
     if (Date.now() - t0 >= startWaitMs && !fs.existsSync(resultFile + STARTED_SUFFIX)) {
       // y se corta: uno que sólo era LENTO para arrancar no puede quedar actualizando a la vez que el respaldo en shell
-      // (pase adversarial de la tanda L)
       try { process.kill(child.pid, 'SIGKILL'); } catch (_) { /* ya no está */ }
       try { fs.writeFileSync(resultFile + GONE_SUFFIX, `${child.pid}\n`); } catch (_) { /* nada */ }
       return { detached: false, notStarted: true, code: 1, lines: [`la actualización aparte no arrancó en ${startWaitMs / 1000} s (pid ${child.pid}, ${script})`], pid: child.pid };

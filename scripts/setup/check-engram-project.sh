@@ -2,17 +2,14 @@
 # =============================================================================
 # check-engram-project.sh — el nombre de proyecto de engram tiene que ser UNO por repo
 # =============================================================================
-# Por qué (ENGRAM-PROJECT-NAME-DRIFT-1, 2026-08-25): la memoria persistente guarda todo por
+# Por qué: la memoria persistente guarda todo por
 # nombre de proyecto, y ese nombre vive en DOS archivos que nadie obliga a coincidir:
 #   · .engram/config.json → project_name   (lo lee el MCP / la CLI en la sesión)
 #   · .engram-project                       (lo lee engram-pre-commit.sh en cada commit)
 # Cuando desacuerdan, la falla es SILENCIOSA: lo que se guarda cae en un cajón y lo que se
-# busca mira otro, y "sin resultados" se lee igual que "todavía no hay historia". Caso real:
-# los 6 repos de un producto del equipo se consolidaron a `totora` el 2026-08-20 editando config.json y el
-# CLAUDE.md — y `.engram-project` quedó con los nombres viejos (TotoraBackend,
-# TotoraCustomForms…) durante días, sincronizando cada commit bajo el cajón equivocado
-# — guides/maintaining/incident-log.md#case-engram-project-name-drift-2026-08-20.
-# Mismo día, otro cliente (el repo del framework): 74 observaciones repartidas en 6 nombres.
+# busca mira otro, y "sin resultados" se lee igual que "todavía no hay historia". Ejemplo: si se
+# renombra el proyecto en config.json y en el CLAUDE.md pero `.engram-project` conserva los nombres
+# viejos, cada commit sincroniza bajo el cajón equivocado.
 #
 # Qué hace: para el repo dado (arg 1, default $PWD) AVISA —nunca bloquea— si
 #   (a) hay `.engram/` pero ningún archivo declara el nombre, o

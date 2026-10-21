@@ -1,23 +1,21 @@
 'use strict';
-// snapshot.js — la copia de seguridad que el mecanismo de instalación toma ANTES de cada cambio en la máquina
-// (story 8.13, tanda B · AC 17 y 18).
+// snapshot.js — la copia de seguridad que el mecanismo de instalación toma ANTES de cada cambio en la máquina.
 //
 // Qué guarda: antes de `install`, `update`, `apply`, `rollback`, `uninstall`, la migración de la línea de arranque y el
 // aplicador de cada `startup`, una carpeta `~/.claude/.tycon-pipeline/harness/backups/<YYYYMMDD-HHMMSS>/` (hora UTC; si
 // ya existe, sufijo `-2`, `-3`…) con los archivos tal cual (en `files/`) y un `manifest.json`: `schema`, `seq` (la
 // secuencia que ordena las copias: la mayor + 1, nunca el reloj), `from` y `to` (las versiones), `reason`, `at`, `hash`
-// del conjunto, `sources` (tanda C: los commits completos de cada fuente, a dónde `rollback` lleva los árboles; null en
+// del conjunto, `sources` (los commits completos de cada fuente, a dónde `rollback` lleva los árboles; null en
 // las copias que no los saben) y, por archivo, `path`, `existed`, `sha256`, `copy` (dónde quedó
 // dentro de la carpeta) y `sha256_after`, que escribe `finish` cuando el cambio terminó. Se escribe en `<carpeta>.tmp`
 // y se renombra: una copia a medias nunca parece una copia.
 //
-// Por qué la lista es FIJA y declarada acá (y no «lo que el aplicador diga que tocó»): es la tabla de la medición §2
-// (`tasks/measurement-8.13-un-solo-mecanismo/medicion-2026-09-30.md`) — los archivos del dev que el arnés modifica y
-// que, si quedan mal, dejan la máquina sin trabajar: `settings.json`, `CLAUDE.md`, `tycon.json`, el espejo y el
+// Por qué la lista es FIJA y declarada acá (y no «lo que el aplicador diga que tocó»): es la tabla de los archivos del dev que el arnés
+// modifica y que, si quedan mal, dejan la máquina sin trabajar: `settings.json`, `CLAUDE.md`, `tycon.json`, el espejo y el
 // despliegue de Codex (`AGENTS.md`, `hooks.json`, `config.toml`), los git hooks globales y sus `.local`, los
 // `~/.claude/commands/*.md` DEL ARNÉS (los que trae `<árbol>/commands/`) y los dos LaunchAgents. Una lista que se arma
-// en cada corrida no se puede comparar con nada; ésta la compara una prueba (T20) con la medición. Lo regenerable
-// (sellos, logs, candados, los perfiles de Codex por agente) no entra. Va un poco MÁS allá de la medición en dos
+// en cada corrida no se puede comparar con nada; ésta la verifica una prueba (T20). Lo regenerable
+// (sellos, logs, candados, los perfiles de Codex por agente) no entra. Va un poco MÁS allá de esos archivos en dos
 // puntos, a propósito (ver `files`): el `AGENTS.md` que escribe el espejo y los comandos propios del dev.
 //
 // Retención: si el conjunto tiene el mismo `hash` que la copia más reciente, no se crea otra (el aplicador corre en cada
@@ -35,7 +33,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { writeAtomic } = require('./state');
-const { backupsDir } = require('./tycon-home.js');   // story 8.23: la ruta de las copias la sabe una sola pieza
+const { backupsDir } = require('./tycon-home.js');   // la ruta de las copias la sabe una sola pieza
 
 const SCHEMA = 1;
 const KEEP = 5;
@@ -71,7 +69,7 @@ function mdNames(dir) {
  * Respeta `TYCON_SETTINGS_PATH`, `CLAUDE_MD_PATH`, `CODEX_HOME`, `CODEX_AGENTS_MD_PATH` y `TYCON_GIT_HOOKS_DIR`
  * (vacías = sin poner, como el `${VAR:-…}` de los scripts).
  *
- * Dos casos donde la lista va más allá de la medición, a propósito (pase adversarial, F7 y F8):
+ * Dos casos donde la lista va más allá de la medición, a propósito:
  *   · El espejo `AGENTS.md` lo escribe `sync-claude-md-blocks.sh/.ps1` en `CODEX_AGENTS_MD_PATH` o en
  *     `~/.codex/AGENTS.md` — no mira `CODEX_HOME`. Se copia ése; el de `$CODEX_HOME/AGENTS.md`, si es otro, también.
  *   · Los comandos son la unión de `<tree>/commands/*.md` (los del arnés; `tree` por defecto es el enlace
@@ -97,7 +95,7 @@ function files({ home = os.homedir(), env = process.env, tree } = {}) {
     path.join(codex, 'config.toml'),
     path.join(gitHooks, 'pre-commit'),
     path.join(gitHooks, 'post-commit'),
-    path.join(gitHooks, 'pre-push'),          // story 8.26, tanda F1: el freno antes de publicar
+    path.join(gitHooks, 'pre-push'),          // el freno antes de publicar
     path.join(gitHooks, 'pre-commit.local'),
     path.join(gitHooks, 'post-commit.local'),
     path.join(gitHooks, 'pre-push.local'),
@@ -135,7 +133,7 @@ const seqOf = (manifest) => (Number.isInteger(manifest.seq) && manifest.seq > 0 
 
 /**
  * Más nueva primero. Manda la secuencia del manifiesto (`seq`), que no depende del reloj: con el reloj corregido hacia
- * atrás, la copia recién tomada sigue siendo la más nueva (pase adversarial, F9). Las copias sin `seq` (anteriores a
+ * atrás, la copia recién tomada sigue siendo la más nueva. Las copias sin `seq` (anteriores a
  * ella) van debajo, por nombre: fecha y, dentro del mismo segundo, sufijo numérico.
  */
 function newestFirst(a, b) {
@@ -188,8 +186,7 @@ function prune(home = os.homedir(), { protect = null } = {}) {
   const installs = all.filter((b) => b.manifest.reason === 'install');
   if (installs.length) keep.add(installs[installs.length - 1].dir);
   // la copia de ANTES de la versión instalada (la más nueva cuyos `sources` difieren de los de la copia más nueva) es a
-  // dónde vuelve `rollback` sin opciones: cinco arranques que cambian settings.json no la pueden podar (tanda C, pase
-  // adversarial H5)
+  // dónde vuelve `rollback` sin opciones: cinco arranques que cambian settings.json no la pueden podar
   const newest = all.find((b) => b.manifest.sources);
   if (newest) {
     const cur = JSON.stringify(newest.manifest.sources);
@@ -220,13 +217,13 @@ function checkSources(sources) {
 
 /**
  * Toma la copia. Si el conjunto es igual al de la copia más reciente, no crea otra y devuelve ésa (`created: false`),
- * salvo con `force` (tanda C, decisión 1 del dueño: cuando el mecanismo mueve árboles, en `rollback` y en `uninstall` la
+ * salvo con `force` (cuando el mecanismo mueve árboles, en `rollback` y en `uninstall` la
  * copia es SIEMPRE nueva, así su `sha256_after` es el de ESE cambio). `sources` (`{ harness, agent_skills }`, commits
- * completos; decisión 2) queda en el manifiesto: es a dónde `rollback --to` lleva los árboles.
+ * completos) queda en el manifiesto: es a dónde `rollback --to` lleva los árboles.
  * Después de crear, aplica la retención. `now` (Date o milisegundos) es el reloj: por defecto, el de la máquina.
  * @returns {{ dir: string, created: boolean, pruned: string[] }}
  */
-// `protect`: carpetas de copia que la retención de ESTA toma no puede borrar (el destino de un rollback: pase adversarial H9)
+// `protect`: carpetas de copia que la retención de ESTA toma no puede borrar (el destino de un rollback)
 function take({ home = os.homedir(), env = process.env, tree, reason, from = null, to = null, force = false, sources = null, protect = [], now = new Date() } = {}) {
   if (typeof reason !== 'string' || !reason) throw new TypeError('snapshot.take: falta `reason` (install, update, apply, startup, before-rollback, uninstall…)');
   const commits = checkSources(sources);

@@ -9,9 +9,8 @@
  * no hay error, no hay rojo, simplemente no aparece nada nuevo. Y "no corrió" se ve exactamente
  * igual que "corrió y no había nada", que es la peor confusión posible para una pieza de vigilancia.
  *
- * Es el mismo agujero que ya se midió con el examen de revisores: el aviso del arranque mostró
- * SIETE DÍAS SEGUIDOS la foto del 24-08 mientras el calendario decía 31, y nadie lo notó porque un
- * número viejo se lee igual que uno fresco (`incident-log#examen-de-revisores-detenido-2026-08-31`).
+ * Es el mismo agujero del examen de revisores: un aviso que muestra una foto de hace días
+ * sin decirlo no se nota, porque un número viejo se lee igual que uno fresco.
  *
  * ── LAS DOS REGLAS ──────────────────────────────────────────────────────────────────────────────
  * · **HABLA AUNQUE ESTÉ TODO BIEN.** Una línea. Si sólo hablara en rojo, el silencio de una noche
@@ -20,28 +19,26 @@
  *   quizá ya se arreglaron, o —peor— tranquiliza con un "limpio" de hace nueve días. Se denuncia la
  *   ausencia y NO se muestran los números.
  *
- * · **UNA NOCHE QUE CORRIÓ PERO NO LE CONTÓ A NADIE ES ROJA** (story 4.3). El snapshot se commitea
+ * · **UNA NOCHE QUE CORRIÓ PERO NO LE CONTÓ A NADIE ES ROJA**. El snapshot se commitea
  *   ANTES de hablar con nadie, así que una noche que midió perfecto y no pudo entregar el resumen
- *   diario deja un snapshot fresco y completo — que sin esta regla salía «✅ no hay nada esperando
+ *   diario deja un snapshot fresco y completo — que sin esta regla saldría «✅ no hay nada esperando
  *   decisión». La constancia es la clave `resumen` que deja `daily-summary.js` DESPUÉS de intentar:
  *   sin la clave, «NO consta»; con la clave y sin entrega, «NO se entregó: <motivo>»; entregado, la
  *   línea de siempre suma « · resumen entregado (Telegram)» sin agregar una línea.
- * · **EL VIGILANTE TIENE LA MISMA RED** (story 4.3). No nace un hook nuevo: un hook nuevo viaja por el
- *   instalador y una máquina con la línea vieja de arranque lo baja sin enchufarlo
- *   (incident-log#hook-no-instalado-en-silencio-2026-08-27); éste ya está registrado en todas.
+ * · **EL VIGILANTE TIENE LA MISMA RED**. No nace un hook nuevo: un hook nuevo viaja por el
+ *   instalador y una máquina con la línea vieja de arranque lo baja sin enchufarlo; éste ya está registrado en todas.
  *
- * · **LEE LO PUBLICADO, NO EL DISCO** (2026-09-15). La pregunta es qué dejó la noche en `main`, y el
- *   checkout del arnés puede estar en otra rama: ese día estaba en una rama de story —otra sesión
- *   trabajando— y el aviso leyó la foto del día anterior que había en el disco. Gritó «pedidos en modo
- *   simulado» y «NO cruzó», mientras el `origin/main` que ya estaba en la copia tenía los Bugs creados
+ * · **LEE LO PUBLICADO, NO EL DISCO**. La pregunta es qué dejó la noche en `main`, y el
+ *   checkout del arnés puede estar en otra rama —otra sesión trabajando—: leer el disco daría la foto del día
+ *   anterior y gritaría «pedidos en modo simulado» y «NO cruzó», mientras el `origin/main` que ya está en la copia tiene los Bugs creados
  *   de verdad, el cruce hecho y el resumen entregado. (Es lo del último fetch: el pull del arranque
- *   corre en paralelo con este aviso, así que puede llegar una sesión tarde.) Tres rojos falsos en un arranque son la vía rápida a que el aviso deje de leerse. Ahora
+ *   corre en paralelo con este aviso, así que puede llegar una sesión tarde.) Tres rojos falsos en un arranque son la vía rápida a que el aviso deje de leerse. Por eso
  *   snapshots y fichas se leen de `origin/main` (sin red: sólo el ref que ya está); si esta copia no lo
  *   tiene, cae al disco **y lo dice** — «leí lo publicado» y «no pude» no son lo mismo. Las carpetas
  *   pasadas por variable (banco, suites) se leen del disco a propósito y sin nota.
  *
- * · **LAS FICHAS SE BUSCAN EN DOS CARPETAS HASTA EL RETIRO** (story 8.9, tanda F). Las fichas se mudaron a
- *   `inbox/dependencies/`. Una copia que todavía las tiene en la carpeta de antes —una rama sin mergear, un
+ * · **LAS FICHAS SE BUSCAN EN DOS CARPETAS HASTA EL RETIRO**. Las fichas viven en
+ *   `inbox/dependencies/`. Una copia que todavía las tiene en la carpeta anterior —una rama sin mergear, un
  *   `origin/main` atrasado— no encuentra la nueva, y un aviso que mirara sólo ahí diría «✅ no hay nada
  *   esperando decisión» con hallazgos esperando: un verde falso fabricado por la mudanza. Por eso busca primero
  *   en la nueva y, si NO ESTÁ, en la vieja, en lo publicado y en el disco. El nombre de la vieja no está escrito
@@ -55,7 +52,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-// Las variables renombradas a inglés (story 8.9): el nombre viejo sigue valiendo hasta el retiro. Sin la biblioteca al
+// Las variables renombradas a inglés: el nombre viejo sigue valiendo hasta el retiro. Sin la biblioteca al
 // lado (el hook copiado a un arnés de mentira, como hace el banco): paso directo con el nombre nuevo, fail-open.
 const leerVariable = (() => {
   try {
@@ -69,12 +66,10 @@ const leerVariable = (() => {
 // corre dos veces por semana) ni el `STALE_MS` de paridad. Tres preguntas distintas, tres dueños.
 const VEJEZ_MS = 3 * 24 * 60 * 60 * 1000;
 const TOPE_A_MOSTRAR = 2;   // el mismo presupuesto de ruido del nocturno
-// Cuántos días antes de que VENZA una deuda declarada hay que avisar (2026-09-29). Nace de un caso
-// real: cinco declaraciones de cuatro repos vencían el 1 y el 6 de octubre —18 vulnerabilidades, 3
-// de ellas críticas— y NADIE lo estaba mirando. Cuando una deuda vence, el análisis deja de
+// Cuántos días antes de que VENZA una deuda declarada hay que avisar. Cuando una deuda vence, el análisis deja de
 // ampararla y el repo empieza a frenar sus propios pull requests: el equipo se entera cuando ya
-// está trabado, y a nadie le queda claro por qué. El snapshot tenía el dato desde siempre; lo que
-// faltaba era decirlo. Dos semanas alcanzan para pagarla o para decidir renovarla a conciencia.
+// está trabado, y a nadie le queda claro por qué. El snapshot trae el dato; este aviso lo dice.
+// Dos semanas alcanzan para pagarla o para decidir renovarla a conciencia.
 const AVISO_DEUDA_DIAS = 14;
 
 // ── De dónde se lee ──────────────────────────────────────────────────────────────────────────────
@@ -82,7 +77,7 @@ const AVISO_DEUDA_DIAS = 14;
 // si no puede mirar (los llamadores ya tratan eso como «sin historia»); `leer` tira si no puede leer
 // («ilegible»); `exists` contesta «no» SÓLO cuando la carpeta no está, y tira si no pudo preguntar.
 // 🔴 «No está» es ENOENT y nada más. Un permiso negado, o un archivo donde debería haber una carpeta, es «no
-// pude mirar»: se tira, y quien llama lo dice (revisor de fallos silenciosos, tanda F de la 8.9).
+// pude mirar»: se tira, y quien llama lo dice.
 const DISCO = {
   listar: (dir) => fs.readdirSync(dir),
   leer: (dir, nombre) => fs.readFileSync(path.join(dir, nombre), 'utf8'),
@@ -95,11 +90,11 @@ const DISCO = {
   },
 };
 
-// ── La carpeta de las fichas, y la de antes de la mudanza (story 8.9, tanda F) ──────────────────────
+// ── La carpeta de las fichas, y la anterior ──────────────────────
 const CARDS_FOLDER = ['inbox', 'dependencies'];
 
 /**
- * La carpeta donde vivían las fichas antes de mudarse, como partes de una ruta relativa a la raíz del arnés;
+ * La carpeta anterior de las fichas, como partes de una ruta relativa a la raíz del arnés;
  * `null` si no se puede saber. Sale del mapa de renombres que el hook tiene al lado: la entrada `kind: folder`
  * cuyo `new` es la carpeta de hoy. Nunca escrita acá, así el día del retiro se va con el mapa.
  *
@@ -107,7 +102,7 @@ const CARDS_FOLDER = ['inbox', 'dependencies'];
  * que no es una ruta relativa limpia: `null`, y el aviso mira sólo la carpeta nueva. Lo que sale de un archivo
  * no se usa a ciegas como ruta: nada absoluto, nada que suba con `..`.
  *
- * No pasa por `legacy-names.js` a propósito: leer la carpeta de antes es el respaldo previsto de la mudanza,
+ * No pasa por `legacy-names.js` a propósito: leer la carpeta anterior es el respaldo previsto,
  * no un «uso de nombre viejo» que haya que anotar, y este hook tiene que andar copiado solo.
  */
 function legacyCardsFolder(mapFile = path.join(__dirname, '..', 'lib', 'renames.json')) {
@@ -136,10 +131,10 @@ const unaLinea = (t, max) => String(t === undefined || t === null ? '' : t).repl
  * Lo publicado: el árbol de `origin/main` de la copia del arnés, sin salir a la red. Devuelve
  * `{ fuente, fallo }` o `{ motivo }` cuando no se puede (git ausente, no es la raíz de un repo, sin ese ref).
  *
- * 🔴 UN GIT QUE FALLA NO ES UNA CARPETA VACÍA (revisión adversarial, 2026-09-15). Los llamadores tratan
+ * 🔴 UN GIT QUE FALLA NO ES UNA CARPETA VACÍA. Los llamadores tratan
  * «`listar` tiró» como «sin historia» y «no pude leer una ficha» como «no hay pendientes»: con el disco
- * eso era cierto, con git no — un `ls-tree` que se pasa de los 5 s dejaba el aviso MUDO, y un `show` de
- * una ficha que falla daba «✅ no hay nada esperando decisión». Por eso la fuente anota el PRIMER fallo
+ * eso es cierto, con git no — un `ls-tree` que se pasa de los 5 s deja el aviso MUDO, y un `show` de
+ * una ficha que falla da «✅ no hay nada esperando decisión». Por eso la fuente anota el PRIMER fallo
  * (y después falla al instante, sin sumar esperas), y `main` vuelve a evaluar desde el disco diciéndolo.
  */
 function fuentePublicada(raiz, gitCmd = 'git') {
@@ -150,7 +145,7 @@ function fuentePublicada(raiz, gitCmd = 'git') {
   try {
     const top = git(['rev-parse', '--show-toplevel']).trim();
     // `.native`: en macOS y Windows normaliza las mayúsculas; la versión JS conserva las de la ruta
-    // escrita y una línea de arranque con otra caja leía del disco en cada sesión.
+    // escrita y una línea de arranque con otra caja leería del disco en cada sesión.
     if (fs.realpathSync.native(top) !== fs.realpathSync.native(raiz)) return { motivo: 'la carpeta del arnés no es la raíz de un repo git' };
   } catch (e) { return { motivo: e && e.code === 'ENOENT' ? 'no se pudo ejecutar git' : 'la carpeta del arnés no es un repo git' }; }
   try { git(['rev-parse', '--verify', '--quiet', `${PUBLICADO}^{commit}`]); }
@@ -174,8 +169,8 @@ function fuentePublicada(raiz, gitCmd = 'git') {
           .map((x) => x.slice(r.length + 1));
       }),
       leer: anotado('leer', (dir, nombre) => git(['show', `${PUBLICADO}:${rel(dir)}/${nombre}`])),
-      // 🔴 Se mira el TIPO, no el nombre (pase adversarial de la tanda F): un archivo llamado como la carpeta
-      // contaba como «está», y el aviso ni caía a la carpeta de antes ni decía error — imprimía el ✅. La misma
+      // 🔴 Se mira el TIPO, no el nombre: un archivo llamado como la carpeta
+      // contaría como «está», y el aviso ni caería a la carpeta anterior ni diría error: imprimiría el ✅. La misma
       // regla que el disco: algo que está y no es una carpeta se tira. Y se tira FUERA de `anotado`: git anduvo,
       // así que no es un fallo de lo publicado que mande a leer el disco; lo dice quien llama.
       exists: (dir) => {
@@ -218,10 +213,10 @@ function reasonOf(e) {
 /**
  * Las fichas que esperan decisión: `{ cards, error }`.
  *
- * 🔴 «NO ESTÁ» Y «NO PUDE LEER» NO SON LO MISMO (revisor de fallos silenciosos, tanda F de la 8.9). Esta función
- * envolvía todo en un `catch` que devolvía la lista vacía: una carpeta sin permiso, un archivo donde debería
- * haber una carpeta o una ficha que no se deja leer salían «✅ no hay nada esperando decisión» — una noche
- * tranquila fabricada por un error de lectura. Ahora:
+ * 🔴 «NO ESTÁ» Y «NO PUDE LEER» NO SON LO MISMO. Un `catch` que devolviera la lista vacía
+ * haría que una carpeta sin permiso, un archivo donde debería
+ * haber una carpeta o una ficha que no se deja leer salieran «✅ no hay nada esperando decisión» — una noche
+ * tranquila fabricada por un error de lectura. Por eso:
  *   · la carpeta no está (ENOENT al listar o al preguntar) → sin fichas y sin error: es legítimo;
  *   · cualquier otro error, o una ficha listada que no se pudo leer → `error` con el motivo, y `cards` vacío:
  *     si una no se leyó, no se sabe cuántas esperan, y un número a medias se leería como el total.
@@ -284,8 +279,8 @@ function evaluar({ outDir, pendingDir, ahora, fuente = DISCO, legacyPendingDir =
 
   const ultimo = files[files.length - 1];
   const fecha = ultimo.slice('dependencias-'.length, -'.json'.length);
-  // Fecha ilegible = vieja. Fail-closed: un NaN comparaba false y dejaba la foto "fresca" para
-  // siempre — el mismo defecto que ya se corrigió en bench-notice.
+  // Fecha ilegible = vieja. Fail-closed: un NaN compara false y dejaría la foto "fresca" para
+  // siempre.
   const t = Date.parse(`${fecha}T12:00:00Z`);
   const dias = isNaN(t) ? Infinity : Math.floor((ahora - t) / 86400000);
   if (isNaN(t) || (ahora - t) > VEJEZ_MS) return { estado: 'detenida', fecha, dias };
@@ -294,7 +289,7 @@ function evaluar({ outDir, pendingDir, ahora, fuente = DISCO, legacyPendingDir =
   try { snap = JSON.parse(fuente.leer(outDir, ultimo)); }
   catch { return { estado: 'ilegible', fecha }; }
   // 🔴 JSON válido que no es un objeto (`null`, un número, una lista) también es ilegible: sin esta guarda
-  // `snap.corrida_completa` tiraba y el catch fail-open del main callaba el aviso ENTERO (story 4.3, ADV-F).
+  // `snap.corrida_completa` tiraba y el catch fail-open del main callaba el aviso ENTERO.
   if (!snap || typeof snap !== 'object' || Array.isArray(snap)) return { estado: 'ilegible', fecha };
 
   const queue = pendientes(pendingDir, fuente, legacyPendingDir);
@@ -311,11 +306,11 @@ function evaluar({ outDir, pendingDir, ahora, fuente = DISCO, legacyPendingDir =
     // `pendientes` vacío NO quiere decir «no hay nada esperando».
     pendingError: queue.error,
     // `undefined` y `null` NO son lo mismo que una sección vacía: la clave ausente quiere decir que
-    // la noche no intentó crear pedidos (story 4.4). Se conserva la diferencia hasta `redactar`.
+    // la noche no intentó crear pedidos. Se conserva la diferencia hasta `redactar`.
     pedidos: Object.prototype.hasOwnProperty.call(snap, 'pedidos') ? snap.pedidos : undefined,
-    // Ídem para el resumen diario (story 4.3): la clave ausente es «el paso no dejó constancia».
+    // Ídem para el resumen diario: la clave ausente es «el paso no dejó constancia».
     resumen: Object.prototype.hasOwnProperty.call(snap, 'resumen') ? snap.resumen : undefined,
-    // Ídem para el cruce «pedido cerrado, vulnerabilidad viva» (story 4.5): ausente = la noche no cruzó.
+    // Ídem para el cruce «pedido cerrado, vulnerabilidad viva»: ausente = la noche no cruzó.
     cruce: Object.prototype.hasOwnProperty.call(snap, 'cruce') ? snap.cruce : undefined,
   };
 }
@@ -323,8 +318,8 @@ function evaluar({ outDir, pendingDir, ahora, fuente = DISCO, legacyPendingDir =
 /**
  * ¿El resumen consta como entregado? 🔴 LA MISMA REGLA que `entregado()` de
  * scripts/nightly/dependencies/daily-summary.js — no se requiere de allá a propósito: el banco copia
- * este hook solo a su sandbox y un `require` de un hermano lo rompería (reporte-desde-otra-maquina,
- * 2026-09-05). La suite `daily-summary.test.sh` compara las dos con la misma tabla de casos.
+ * este hook solo a su sandbox y un `require` de un hermano lo rompería.
+ * La suite `daily-summary.test.sh` compara las dos con la misma tabla de casos.
  */
 function constaEntregado(r) {
   if (!r || typeof r !== 'object') return false;
@@ -380,7 +375,7 @@ function redactarVigilante(w, o = {}) {
 }
 
 /**
- * Las líneas de los pedidos de trabajo del líder (story 4.4, AC 10b).
+ * Las líneas de los pedidos de trabajo del líder.
  *
  * 🔴 LA AUSENCIA DE LA SECCIÓN NO SE LEE COMO «NO HABÍA NADA QUE PEDIR». El guion de pedidos escribe
  * `pedidos` SIEMPRE que pudo hablar con Azure, aunque no haya creado nada; si la clave falta, ese paso
@@ -400,9 +395,9 @@ function lineasPedidos(v) {
   // segundos; callarlos escondería justo el permiso de leer grupos, que nadie verificó todavía.
   // 🔴 Se cuentan PEDIDOS (pares ficha+proyecto), no entradas: un par con la lectura de administradores
   // fallida Y el `crear` fallido no existe y no puede figurar también como «creado con fallos»; y un
-  // pedido con dos fallos posteriores es uno, no dos (pase adversarial en Fable, vuelta 2).
-  // El paso que resuelve la identidad del líder se llama `lead-identity` desde la story 8.10 (AC 23); lo que el nocturno
-  // escribió antes lo llamaba `identidad-` más un nombre de persona, y se sigue reconociendo por el prefijo mientras
+  // pedido con dos fallos posteriores es uno, no dos.
+  // El paso que resuelve la identidad del líder se llama `lead-identity`; los registros anteriores lo llaman
+  // `identidad-` más un nombre de persona, y se siguen reconociendo por el prefijo mientras
   // esos registros existan.
   const PASOS_DE_CREACION = ['lead-identity', 'duplicados', 'crear'];
   const esDeCreacion = (paso) => PASOS_DE_CREACION.includes(paso) || /^identidad-/.test(String(paso || ''));
@@ -412,7 +407,7 @@ function lineasPedidos(v) {
   const noSalieron = new Set(deCreacion.map(par));
   const posteriores = validos.filter((x) => !esDeCreacion(x.paso) && !noSalieron.has(par(x)));
   const conFallos = new Set(posteriores.map(par));
-  // el paso viejo lleva el nombre de una persona: se muestra con el nombre nuevo (revisor de seguridad, tanda B)
+  // el paso viejo lleva el nombre de una persona: se muestra con el nombre nuevo
   const pasoVisible = (paso) => (/^identidad-/.test(String(paso || '')) ? 'lead-identity' : paso);
   if (noSalieron.size) L.push(`🟠 ${cab}: ${noSalieron.size} pedido(s) no se pudieron crear — ${pasoVisible(deCreacion[0].paso)}: ${deCreacion[0].motivo}`);
   if (conFallos.size) L.push(`🟠 ${cab}: ${conFallos.size} pedido(s) con fallos que no impidieron crearlos — ${posteriores[0].paso}: ${posteriores[0].motivo}`);
@@ -421,7 +416,7 @@ function lineasPedidos(v) {
 }
 
 /**
- * Las líneas del cruce «pedido cerrado, vulnerabilidad viva» (story 4.5, AC 8 y 14d).
+ * Las líneas del cruce «pedido cerrado, vulnerabilidad viva».
  *
  * 🔴 LA AUSENCIA DE LA CLAVE NO SE LEE COMO «TODO COINCIDE». El nocturno escribe `cruce` SIEMPRE; si
  * falta, la noche corrió con un guion que no cruza (o se rompió antes), y eso tiene que decirse. Y un
@@ -430,8 +425,8 @@ function lineasPedidos(v) {
 function lineasCruce(v) {
   const cab = `pedidos de trabajo (${v.fecha})`;
   if (v.cruce === undefined) return [`🔴 ${cab}: la noche corrió pero NO cruzó el estado de los pedidos con la medición — no se puede decir que coincidan.`];
-  // 🔴 Presente pero no un objeto (`null`, una lista, un texto): ILEGIBLE, no «todo coincide» (pase
-  // adversarial de la 4.5 — la misma clase que el snapshot `null` que callaba el aviso en la 4.3).
+  // 🔴 Presente pero no un objeto (`null`, una lista, un texto): ILEGIBLE, no «todo coincide» (misma clase
+  // que el snapshot `null`, que callaría el aviso).
   if (!v.cruce || typeof v.cruce !== 'object' || Array.isArray(v.cruce)) {
     return [`🔴 ${cab}: el cruce del estado de los pedidos está ILEGIBLE en el snapshot — no se puede decir que coincidan.`];
   }
@@ -513,7 +508,7 @@ function redactar(v, o = {}) {
     L.push('   Se deciden en su pull request.');
   } else if (!L.length && !noEntregado) {
     // Habla igual. Es la única forma de que "corrió y no había nada" no se confunda con "no corrió".
-    // 🔴 Pero NO al lado de un resumen que no llegó: el lector se queda con el verde (story 4.3).
+    // 🔴 Pero NO al lado de un resumen que no llegó: el lector se queda con el verde.
     L.push(`✅ ${cab}: miró${v.linea_base ? ' (línea base)' : ''} y no hay nada esperando decisión.`);
   }
   if (noEntregado) L.push(noEntregado);
@@ -526,9 +521,9 @@ function redactar(v, o = {}) {
 function main() {
   if (process.env.TYCON_DEPS_NOTICE === '0' || process.env.TYCON_EVAL_SANDBOX === '1') return 0;
   // de qué árbol se leen los .dashboard del nocturno: la variable manda; si no, lo decide scripts/lib/night-data.js —en un
-  // clon, éste; en una versión bajada, el clon del repo de operaciones que la máquina declara (`paths.operations`): desde
-  // las stories 8.30 y 8.31 dependencias, vigilante y el resumen diario guardan ahí (2026-10-14: leídos del clon de
-  // mantenimiento, decían la noche del 13 con la del 14 ya guardada), o ninguno—. Sin esa biblioteca al lado, lo de antes
+  // clon, éste; en una versión bajada, el clon del repo de operaciones que la máquina declara (`paths.operations`):
+  // dependencias, vigilante y el resumen diario guardan ahí (leídos del clon de
+  // mantenimiento, dirían la noche anterior), o ninguno—. Sin esa biblioteca al lado, se usa
   // (tycon-home.js); si este archivo viaja suelto, este árbol.
   const own = path.resolve(__dirname, '..', '..');
   const homeLib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
@@ -620,7 +615,7 @@ function main() {
 
 // 🔴 `process.exitCode`, NO `process.exit()`: las escrituras a una tubería son asincrónicas y
 // `process.exit()` se lleva puesto lo que falte escribir. Acá el aviso es corto, pero la forma es
-// la misma que cortó un informe de 41 KB en 8192 (incident-log#informe-cortado-por-la-tuberia-2026-09-28).
+// la misma que corta un informe largo en 8192 bytes.
 // El fail-open se conserva tal cual: un aviso roto no puede impedir arrancar una sesión.
 if (require.main === module) {
   try { process.exitCode = main(); }
