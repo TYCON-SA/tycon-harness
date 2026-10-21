@@ -1317,7 +1317,7 @@ test('Probe_NoClone_DeclaresTeamA2Scenario_T28', () => {
     assert.deepEqual(TEAM.contentProblems(dir, pt.files), [], 'y contentProblems');
     assert.ok(files.some((p) => /^skills\/[^/]+\/[^/]+\/[^/]+\/SKILL\.md$/.test(p)), 'trae una skill anidada a tres');
     assert.ok(files.some((p) => /^skills\/[^/]+\/SKILL\.md$/.test(p)), 'y una de una carpeta');
-    const pack = JSON.parse(fs.readFileSync(path.join(dir, files.find((p) => p.startsWith('packs/'))), 'utf8'));
+    const pack = JSON.parse(fs.readFileSync(path.join(dir, files.find((p) => p.startsWith('packs/') && p.endsWith('/pack.json'))), 'utf8'));
     assert.deepEqual(pack.reviewers.map((r) => r.group).sort(), ['base', 'condicional']);
     const without = TL.writeTeamLayerA2(fs.mkdtempSync(path.join(os.tmpdir(), 'probe-a2-b-')), { second: false });
     assert.equal(without.length, files.length - 2, 'el commit siguiente saca un revisor y una skill');

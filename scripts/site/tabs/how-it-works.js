@@ -137,8 +137,7 @@ function renderPage(model, { idioma, publicRepo, version }) {
       ...((p && p.problems) || []).filter((t) => !faltan.some((x) => t.startsWith(`${x.agent}: no existe el agente`))),
     ];
   };
-  const porque = (r) => (r.notEditable && r.notEditable.reason === 'validation' ? T('comoTrabaja.noEditableValidacion')
-    : T('comoTrabaja.noEditableRoto', { motivo: enLlano(orgPacks.find((p) => p.name === r.pack))[0] || (r.notEditable && r.notEditable.detail) || '' }));
+  const porque = (r) => T('comoTrabaja.noEditableRoto', { motivo: enLlano(orgPacks.find((p) => p.name === r.pack))[0] || (r.notEditable && r.notEditable.detail) || '' });
   const pasos = model.steps.map((s) => {
     const paso = nombrePaso(s);
     const goal = (() => { try { return T(`paso.${s.id}.objetivo`); } catch { return s.goal; } })();
@@ -160,7 +159,7 @@ function renderPage(model, { idioma, publicRepo, version }) {
         const cuando = r.when && typeof r.when.detection === 'string' && Object.keys(r.when).length === 1 ? (() => { try { return T(`bandera.${r.when.detection}`); } catch { return r.when.detection; } })() : (r.group === 'base' && !r.when ? T('comoTrabaja.grupoBase') : T('comoTrabaja.condicionEscrita'));
         const chips = [r.origin === 'organization' ? deLaOrg : delArnes, r.active === false ? chip('off', T('comoTrabaja.noActivo')) : ''];
         const acciones = r.origin === 'organization'
-          ? (r.editable ? `<button type="button" class="btn" data-action="edit" data-pack="${esc(pack)}" data-agent="${esc(r.agent)}" aria-expanded="false">${esc(T('comoTrabaja.editar'))}</button>` : `<span class="ct-nota">${esc(porque(r))}</span>`)
+          ? (r.editable ? `<button type="button" class="btn" data-action="edit" data-pack="${esc(pack)}" data-agent="${esc(r.agent)}" data-use="${esc(r.use)}" aria-expanded="false">${esc(T('comoTrabaja.editar'))}</button>` : `<span class="ct-nota">${esc(porque(r))}</span>`)
           : ver(`packs/${pack}/${r.file.split('/').slice(1).join('/')}`) + mejorar(`packs/${pack}/pack.json`, paso);
         return pieza({ origin: r.origin, nombre: r.agent, cuando, chips, acciones, extra: r.active === false ? ' apagada' : '' });
       }).join('');
@@ -342,15 +341,18 @@ function problemasDeCabecera(c, { agente, profileDir, idioma }) {
   if (NAME_RE.test(agente) && c.nombre !== agente) out.push(E('nombre', { revisor: agente }));
   if (!String(c.descripcion || '').trim()) out.push(E('falta', { clave: 'description' }));
   if (!(c.herramientas || []).length && !(c.otrasHerramientas || []).length) out.push(E('sinHerramientas'));
-  if (c.modelo && !c.modeloTalCual) {
-    const op = modelosDe(profileDir, idioma).find((m) => m.valor === c.modelo);
-    const aviso = avisoDeModelos(profileDir, idioma);
-    if (!op) out.push(E('modelo', { modelo: c.modelo }));
-    else if (op.apagado) out.push(op.motivo);
-    // sin saber el techo no se puede asegurar que el modelo elegido no lo pase: vale «el que use la organización»
-    else if (aviso) out.push(aviso);
-  }
+  if (c.modelo && !c.modeloTalCual) out.push(...problemasDeModelo(c.modelo, { profileDir, idioma }));
   return out;
+}
+
+/** Los problemas de un nivel de modelo elegido: que no sea un nivel, que pase el techo, o que el techo no se sepa. */
+function problemasDeModelo(modelo, { profileDir, idioma }) {
+  const op = modelosDe(profileDir, idioma).find((m) => m.valor === modelo);
+  const aviso = avisoDeModelos(profileDir, idioma);
+  if (!op) return [TX.t(idioma, 'comoTrabaja.err.modelo', { modelo })];
+  if (op.apagado) return [op.motivo];
+  // sin saber el techo no se puede asegurar que el modelo elegido no lo pase: vale «el que use la organización»
+  return aviso ? [aviso] : [];
 }
 
 /**
@@ -369,6 +371,26 @@ function entradaDe(draft, original) {
   else { e.surface = { ...antes, paths: rutas }; delete e.surface.always; }
   const prefijo = typeof draft.prefix === 'string' ? draft.prefix.trim() : '';
   e.prefixes = prefijo ? [prefijo, ...(Array.isArray(e.prefixes) ? e.prefixes.slice(1) : [])] : [];
+  if (typeof draft.depth === 'string' && draft.depth) e.depth = draft.depth;
+  return e;
+}
+
+/**
+ * El uso que valida la historia con lo que cambió el borrador: cuándo entra, el modelo y lo que le pide. El nivel se
+ * guarda como el nombre que entiende quien corre el revisor (`modelOf`); un modelo que no se traduce y no se tocó, tal
+ * cual; sin modelo, sin la clave (el que use la organización). Lo que le pide, vacío, queda vacío: lo dice el validador.
+ * El resto de la entrada (el código de sus hallazgos, la nota) viaja igual.
+ */
+function entradaValidacion(uso, original, agente) {
+  const e = JSON.parse(JSON.stringify(original));
+  e.agent = agente;
+  if (typeof uso.detection === 'string' && uso.detection) e.when = { detection: uso.detection };
+  const crudo = typeof original.model === 'string' ? original.model : '';
+  const modelo = typeof uso.modelo === 'string' ? uso.modelo : '';
+  if (!modelo) delete e.model;
+  else if (modelo === crudo) e.model = crudo;
+  else e.model = MODELOS().modelOf(modelo) || modelo;
+  e.prompt = typeof uso.prompt === 'string' && uso.prompt.trim() ? uso.prompt : '';
   return e;
 }
 
@@ -419,11 +441,32 @@ function reviewDraft({ profileDir, draft, treeDir = TREE, idioma = 'es' }) {
   const carpetaAgentes = HIW().agentsFolderOf(json);
   if (!carpetaAgentes) return { ok: false, problems: [E('carpetaAgentes')], files: [] };
   const agente = typeof draft.agent === 'string' ? draft.agent : '';
-  const original = draft.original ? json.reviewers.find((r) => r && r.agent === draft.original) : null;
-  if (draft.original && !original) return { ok: false, problems: [E('yaNoEsta', { revisor: draft.original })], files: [] };
-  if (!['base', 'condicional'].includes(draft.group)) problems.push(E('grupo'));
-  if (!(typeof draft.detection === 'string' && draft.detection) && !(original && original.when)) problems.push(E('condicion'));
-  const nuevo = { ...json, reviewers: original ? json.reviewers.map((r) => (r === original ? entradaDe(draft, original) : r)) : [...json.reviewers, entradaDe(draft, null)] };
+  // los usos de hoy del revisor (sus entradas en reviewers[]), en el orden del manifiesto
+  const originales = draft.original ? json.reviewers.filter((r) => r && r.agent === draft.original) : [];
+  if (draft.original && !originales.length) return { ok: false, problems: [E('yaNoEsta', { revisor: draft.original })], files: [] };
+  // el editor manda un uso por cada uno de hoy; un borrador sin `uses` (un revisor nuevo) trae los campos de su único uso
+  const usos = Array.isArray(draft.uses) ? draft.uses : [{ group: draft.group, detection: draft.detection, paths: draft.paths, prefix: draft.prefix, depth: draft.depth }];
+  // los usos no se suman ni se quitan desde el sitio, ni uno pasa de un paso al otro: se pide a mano
+  if (usos.length !== Math.max(originales.length, 1) || usos.some((u) => !u || typeof u !== 'object')) return { ok: false, problems: [E('usos')], files: [] };
+  // un nombre nuevo (renombrar o un revisor nuevo) que ya usa otro revisor del paquete: pisaría sus instrucciones
+  if (agente !== draft.original && json.reviewers.some((r) => r && r.agent === agente && !originales.includes(r))) return { ok: false, problems: [E('nombreEnUso', { revisor: agente })], files: [] };
+  // un uso que cambia de paso se rechaza y su entrada queda como estaba (uno nuevo, sin entrada)
+  const entradas = usos.map((u, i) => {
+    const original = originales[i] || null;
+    const valida = Boolean(original && original.group === 'validacion');
+    if ((u.group === 'validacion') !== valida) { problems.push(E('usoCambiado')); return original; }
+    if (!(typeof u.detection === 'string' && u.detection) && !(original && original.when)) problems.push(E('condicion'));
+    if (valida) {
+      const e = entradaValidacion(u, original, agente);
+      if (u.modelo && e.model !== original.model) problems.push(...problemasDeModelo(u.modelo, { profileDir, idioma }));
+      return e;
+    }
+    if (!['base', 'condicional'].includes(u.group)) problems.push(E('grupo'));
+    if (u.depth != null && u.depth !== '' && !PACKS().VOCABULARIO.profundidades.includes(u.depth)) problems.push(E('profundidad'));
+    return entradaDe({ ...u, agent: agente }, original);
+  });
+  let k = 0;
+  const nuevo = { ...json, reviewers: originales.length ? json.reviewers.map((r) => (originales.includes(r) ? entradas[k++] : r)) : [...json.reviewers, ...entradas.filter(Boolean)] };
   // la cabecera y el cuerpo del agente. El editor los manda en campos; un borrador con el .md entero (el de antes del
   // editor en campos) se pasa a campos y sigue el mismo camino: así nada entra a la cabecera sin los mismos controles
   let nombreEscrito = agente;
@@ -448,13 +491,12 @@ function reviewDraft({ profileDir, draft, treeDir = TREE, idioma = 'es' }) {
     if (!String(draft.cuerpo || '').trim()) problems.push(E('vacias'));
     draft = { ...draft, instructions: armarAgente({ ...c, nombre: agente }, draft.cuerpo) };
   }
-  // el validador del pipeline, sobre una copia del paquete con el borrador puesto
-  // dónde va el .md del borrador: donde está hoy (la carpeta del paquete o agents/ del perfil); uno nuevo, en el paquete
-  const destino = NAME_RE.test(agente) ? HIW().agentFileOf({ baseDir: profileDir, pack: draft.pack, json, agent: agente, agentsDir: path.join(profileDir, 'agents') }) : null;
+  // el validador del pipeline, sobre una copia del paquete con el borrador puesto; el .md va en la carpeta de agentes
+  // del paquete, la única que acepta el validador
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'how-it-works-pack-'));
   try {
     const copia = path.join(tmp, draft.pack);
-    // agents/ del perfil, copiada aparte: es la carpeta de respaldo con que se valida, como al instalar
+    // agents/ del perfil, copiada aparte, como al instalar: un revisor que también está ahí se dice
     const raiz = path.join(tmp, '.agents-del-perfil');
     // la copia no trae ningún enlace simbólico del perfil (ni de archivos ni de carpetas): así nada de lo que se escribe
     // en ella puede caer afuera de la carpeta temporal. Un revisor cuyo .md era un enlace queda sin él, y el lector lo dice
@@ -465,8 +507,7 @@ function reviewDraft({ profileDir, draft, treeDir = TREE, idioma = 'es' }) {
       const agentesPerfil = path.join(profileDir, 'agents');
       if (fs.existsSync(agentesPerfil) && !fs.lstatSync(agentesPerfil).isSymbolicLink()) fs.cpSync(agentesPerfil, raiz, { recursive: true, filter: (origen) => !fs.lstatSync(origen).isSymbolicLink() });
       escribir(path.join(copia, 'pack.json'), ORG.formatJson(nuevo));
-      if (destino === `agents/${agente}.md`) escribir(path.join(raiz, `${agente}.md`), String(draft.instructions || ''));
-      else if (destino) { fs.mkdirSync(path.join(copia, carpetaAgentes), { recursive: true }); escribir(path.join(copia, carpetaAgentes, `${agente}.md`), String(draft.instructions || '')); }
+      if (NAME_RE.test(agente)) { fs.mkdirSync(path.join(copia, carpetaAgentes), { recursive: true }); escribir(path.join(copia, carpetaAgentes, `${agente}.md`), String(draft.instructions || '')); }
     } catch (e) { return { ok: false, problems: [...problems, E('copia', { codigo: (e && e.code) || 'error' })], files: [] }; }
     const P = PACKS();
     const otros = declaradosEnOtros({ treeDir, profileDir, pack: draft.pack });
@@ -477,7 +518,7 @@ function reviewDraft({ profileDir, draft, treeDir = TREE, idioma = 'es' }) {
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
   const files = NAME_RE.test(agente) ? [
     { archivo: `packs/${draft.pack}/pack.json`, contenido: ORG.formatJson(nuevo) },
-    { archivo: destino === `agents/${agente}.md` ? destino : `packs/${draft.pack}/${carpetaAgentes}/${agente}.md`, contenido: String(draft.instructions || '') },
+    { archivo: `packs/${draft.pack}/${carpetaAgentes}/${agente}.md`, contenido: String(draft.instructions || '') },
   ] : [];
   return { ok: !problems.length, problems, files, pack: draft.pack };
 }
@@ -529,8 +570,8 @@ function draftOf(profileDir, pack, agent) {
   const carpeta = HIW().agentsFolderOf(json);
   if (!carpeta) return { error: `packs/${pack}/pack.json: «agents» sale de la carpeta del paquete` };
   let instructions = '';
-  // donde está el .md: en la carpeta del paquete o, si no, en agents/ del perfil (la que mira el instalador)
-  const relMd = HIW().agentFileOf({ baseDir: profileDir, pack, json, agent, agentsDir: path.join(profileDir, 'agents') });
+  // el .md vive en la carpeta de agentes de su paquete
+  const relMd = HIW().agentFileOf({ pack, json, agent });
   const md = path.join(profileDir, relMd);
   try {
     // un enlace simbólico se rechaza: el editor mostraría el archivo al que apunta, que puede estar fuera del perfil
@@ -542,14 +583,29 @@ function draftOf(profileDir, pack, agent) {
     // sin su .md el editor lo arma de nuevo y la cabecera lo pide; cualquier otro error se dice
     if (!e || e.code !== 'ENOENT') return { error: `${relMd} (${(e && e.code) || 'error'})` };
   }
-  const simple = r.when && typeof r.when.detection === 'string' && Object.keys(r.when).length === 1;
   // la cabecera en campos y el cuerpo aparte (el editor); sin .md, el revisor arranca con su nombre
   const { cabecera, cuerpo } = camposDe(instructions);
   if (!cabecera.nombre) cabecera.nombre = agent;
-  return { md: relMd, draft: {
-    pack, original: agent, agent, group: r.group, detection: simple ? r.when.detection : '', whenWritten: Boolean(r.when && !simple),
-    paths: (r.surface && r.surface.paths) || [], always: Boolean(r.surface && r.surface.always === true), prefix: (r.prefixes || [])[0] || '', cabecera, cuerpo,
-  } };
+  // cada uso del revisor (una entrada de reviewers[] con su nombre), en el orden del manifiesto
+  const uses = json.reviewers.filter((x) => x && x.agent === agent).map(usoDe);
+  return { md: relMd, draft: { pack, original: agent, agent, uses, cabecera, cuerpo } };
+}
+
+/**
+ * Un uso del revisor para el editor. Los dos llevan cuándo entra (`detection`, o `whenWritten` con la condición propia
+ * en `whenText`, que se muestra y no se edita) y el código de sus hallazgos; «revisa el cambio», además, los archivos
+ * que mira y la profundidad; «valida la historia», su modelo (como nivel; uno que no se traduce, tal cual) y lo que le
+ * pide.
+ */
+function usoDe(r) {
+  const simple = r.when && typeof r.when.detection === 'string' && Object.keys(r.when).length === 1;
+  const comun = { group: r.group, detection: simple ? r.when.detection : '', whenWritten: Boolean(r.when && !simple), whenText: r.when && !simple ? JSON.stringify(r.when, null, 2) : '' };
+  if (r.group === 'validacion') {
+    const crudo = typeof r.model === 'string' ? r.model : '';
+    const nivel = crudo ? MODELOS().levelOf(crudo) : '';
+    return { ...comun, modelo: nivel || crudo, modeloTalCual: Boolean(crudo && !nivel), prompt: typeof r.prompt === 'string' ? r.prompt : '', prefix: (r.prefixes || [])[0] || '' };
+  }
+  return { ...comun, paths: (r.surface && r.surface.paths) || [], always: Boolean(r.surface && r.surface.always === true), prefix: (r.prefixes || [])[0] || '', depth: r.depth || '' };
 }
 
 // ── el guion del navegador ──
@@ -569,6 +625,7 @@ function guion(idioma) {
 var TXT = ${JSON.stringify(textosDelGuion(idioma))};
 var BANDERAS = ${JSON.stringify(banderas)};
 var HERRAMIENTAS = ${JSON.stringify(HERRAMIENTAS)};
+var PROFUNDIDADES = ${JSON.stringify(PACKS().VOCABULARIO.profundidades)};
 var MAX = ${ISSUE_URL_MAX};
 var buildIssueUrl = ${buildIssueUrl.toString()};
 function T(k, v) { var s = TXT[k] || k; return s.replace(/\\{([A-Za-z][A-Za-z0-9_]*)\\}/g, function (m, n) { return v && Object.prototype.hasOwnProperty.call(v, n) ? String(v[n]) : m; }); }
@@ -624,15 +681,19 @@ function editor(boton, draft, firmadas, modelos) {
     if (revisado) { revisado = false; motivo.textContent = T('comoTrabaja.motivoCambiaste'); motivo.setAttribute('data-motivo', 'cambiaste'); }
   }
   var nombre = el('input', { value: draft.agent, 'data-field': 'agent', 'aria-label': T('comoTrabaja.campoNombre'), oninput: cambio });
-  // el modelo: el de la organización o un nivel; los que pasan el techo, apagados con su motivo; uno que no se
-  // traduce a un nivel se muestra y se conserva tal cual
-  var modelo = el('select', { 'data-field': 'model', 'aria-label': T('comoTrabaja.campoModelo'), onchange: cambio });
-  (modelos || [{ valor: '' }]).forEach(function (m) {
-    var texto = m.valor ? T('pantalla.nivel.' + m.valor) : T('comoTrabaja.modeloDeLaOrganizacion');
-    modelo.appendChild(el('option', { value: m.valor, disabled: m.apagado ? 'disabled' : null, title: m.motivo || null, text: m.apagado ? texto + ' — ' + m.motivo : texto }));
-  });
-  if (cab.modeloTalCual) modelo.appendChild(el('option', { value: cab.modelo, text: T('comoTrabaja.modeloTalCual', { modelo: cab.modelo }) }));
-  modelo.value = cab.modelo || '';
+  // un selector de modelo: el de la organización o un nivel; los que pasan el techo, apagados con su motivo; uno que no
+  // se traduce a un nivel se muestra y se conserva tal cual
+  function selectorDeModelo(valor, talCual, campo, etiqueta) {
+    var s = el('select', { 'data-field': campo, 'aria-label': etiqueta, onchange: cambio });
+    (modelos || [{ valor: '' }]).forEach(function (m) {
+      var texto = m.valor ? T('pantalla.nivel.' + m.valor) : T('comoTrabaja.modeloDeLaOrganizacion');
+      s.appendChild(el('option', { value: m.valor, disabled: m.apagado ? 'disabled' : null, title: m.motivo || null, text: m.apagado ? texto + ' — ' + m.motivo : texto }));
+    });
+    if (talCual) s.appendChild(el('option', { value: valor, text: T('comoTrabaja.modeloTalCual', { modelo: valor }) }));
+    s.value = valor || '';
+    return s;
+  }
+  var modelo = selectorDeModelo(cab.modelo, cab.modeloTalCual, 'model', T('comoTrabaja.campoModelo'));
   // las herramientas: una casilla por cada una, con su explicación; las que no están en la lista, como etiquetas
   var casillas = el('div', { class: 'ct-herramientas' });
   HERRAMIENTAS.forEach(function (h) {
@@ -644,18 +705,82 @@ function editor(boton, draft, firmadas, modelos) {
   (cab.otrasHerramientas || []).forEach(function (h) { otras.appendChild(el('span', { class: 'ct-etiqueta', text: h })); });
   var descripcion = el('input', { value: cab.descripcion || '', 'data-field': 'description', 'aria-label': T('comoTrabaja.campoDescripcion'), oninput: cambio });
   var texto = el('textarea', { rows: '8', class: 'mono', 'data-field': 'instructions', 'aria-label': T('comoTrabaja.susInstrucciones') }); texto.value = draft.cuerpo || '';
-  var grupo = el('select', { 'data-field': 'group', onchange: cambio }, el('option', { value: 'base', text: T('comoTrabaja.grupoBase') }), el('option', { value: 'condicional', text: T('comoTrabaja.grupoCondicional') }));
-  grupo.value = draft.group === 'base' ? 'base' : 'condicional';
-  // «la condición escrita en el paquete» sólo existe para un revisor que ya la tiene; uno nuevo elige una bandera
-  var cuando = el('select', { 'data-field': 'detection', onchange: cambio }, draft.whenWritten ? el('option', { value: '', text: T('comoTrabaja.condicionEscrita') }) : null);
-  BANDERAS.forEach(function (b) { cuando.appendChild(el('option', { value: b[0], text: b[1] })); });
-  cuando.value = draft.detection || (draft.whenWritten ? '' : 'codeModified');
-  var rutas = el('textarea', { rows: '2', 'data-field': 'paths', oninput: cambio }); rutas.value = (draft.paths || []).join('\\n');
-  var prefijo = el('input', { value: draft.prefix || '', 'data-field': 'prefix', oninput: cambio });
+  var campo = function (clave, control) { return el('label', {}, el('span', { text: T(clave) }), control); };
+  // los archivos que mira, como etiquetas: se agrega uno escribiéndolo y con Enter; se quita con la x
+  function etiquetas(valores) {
+    var lista = (valores || []).slice();
+    var caja = el('div', { class: 'ct-etiquetas ct-rutas' });
+    var entrada = el('input', { 'data-field': 'paths', 'aria-label': T('comoTrabaja.campoRutas'), placeholder: '**/*.cs' });
+    function dibujar() {
+      caja.querySelectorAll('.ct-etiqueta').forEach(function (x) { x.remove(); });
+      lista.forEach(function (r, i) {
+        caja.insertBefore(el('span', { class: 'ct-etiqueta' }, document.createTextNode(r), el('button', { type: 'button', class: 'ct-x', 'aria-label': T('comoTrabaja.quitarRuta', { ruta: r }), text: '×', onclick: function () { lista.splice(i, 1); dibujar(); cambio(); } })), entrada);
+      });
+    }
+    entrada.addEventListener('keydown', function (ev) {
+      if (ev.key !== 'Enter') return;
+      ev.preventDefault();
+      var v = entrada.value.trim();
+      if (v && lista.indexOf(v) < 0) { lista.push(v); dibujar(); cambio(); }
+      entrada.value = '';
+    });
+    // escribir una ruta ya cambia el borrador (cuenta aunque no se apriete Enter): apaga «Proponer» como cualquier campo
+    entrada.addEventListener('input', cambio);
+    caja.appendChild(entrada); dibujar();
+    // lo escrito y sin Enter también cuenta: nadie pierde una ruta por no apretarlo
+    return { caja: caja, valores: function () { var v = entrada.value.trim(); return v && lista.indexOf(v) < 0 ? lista.concat([v]) : lista.slice(); } };
+  }
+  // una solapa por uso del revisor; «Editar» abre la del uso de su renglón. Un revisor nuevo trae su único uso suelto
+  var usos = draft.uses || [{ group: draft.group || 'condicional', detection: draft.detection || '', paths: draft.paths || [], prefix: draft.prefix || '', depth: draft.depth || 'lean' }];
+  var leerUsos = [];
+  var solapas = el('div', { class: 'ct-solapas', role: 'tablist', 'aria-label': T('comoTrabaja.usosAyuda') });
+  var paneles = el('div', { class: 'ct-usos' });
+  function elegir(i) {
+    Array.prototype.forEach.call(solapas.children, function (s, j) { s.setAttribute('aria-selected', j === i ? 'true' : 'false'); });
+    Array.prototype.forEach.call(paneles.children, function (p, j) { p.hidden = j !== i; });
+  }
+  usos.forEach(function (u, i) {
+    var valida = u.group === 'validacion';
+    solapas.appendChild(el('button', { type: 'button', role: 'tab', class: 'ct-solapa', 'data-use': valida ? 'validacion' : 'cambio', 'aria-selected': 'false', text: T(valida ? 'comoTrabaja.usoValidacion' : 'comoTrabaja.usoCambio'), onclick: function () { elegir(i); } }));
+    // cuándo entra: una bandera, o la condición propia del paquete, que se muestra y viaja tal cual
+    var cuando = el('select', { 'data-field': 'detection', onchange: cambio }, u.whenWritten ? el('option', { value: '', text: T('comoTrabaja.condicionPropia') }) : null);
+    BANDERAS.forEach(function (b) { cuando.appendChild(el('option', { value: b[0], text: b[1] })); });
+    cuando.value = u.detection || (u.whenWritten ? '' : 'codeModified');
+    var propia = u.whenWritten ? el('details', { class: 'ct-propia' }, el('summary', { text: T('comoTrabaja.verComoEsta') }), el('pre', { class: 'mono', text: u.whenText || '' })) : null;
+    var panel = el('div', { class: 'ct-uso', role: 'tabpanel' });
+    if (valida) {
+      var modeloV = selectorDeModelo(u.modelo, u.modeloTalCual, 'validation-model', T('comoTrabaja.campoModeloValidacion'));
+      var pide = el('textarea', { rows: '4', class: 'mono', 'data-field': 'prompt', 'aria-label': T('comoTrabaja.campoPrompt'), oninput: cambio }); pide.value = u.prompt || '';
+      panel.appendChild(campo('comoTrabaja.campoEntraCuando', cuando)); if (propia) panel.appendChild(propia);
+      panel.appendChild(campo('comoTrabaja.campoModeloValidacion', modeloV));
+      panel.appendChild(campo('comoTrabaja.campoPrompt', pide));
+      panel.appendChild(el('p', { class: 'ct-nota', text: T('comoTrabaja.promptAyuda') }));
+      leerUsos.push(function () { return { group: 'validacion', detection: cuando.value, modelo: modeloV.value, prompt: pide.value }; });
+    } else {
+      var grupo = el('select', { 'data-field': 'group', onchange: cambio }, el('option', { value: 'base', text: T('comoTrabaja.grupoBase') }), el('option', { value: 'condicional', text: T('comoTrabaja.grupoCondicional') }));
+      grupo.value = u.group === 'base' ? 'base' : 'condicional';
+      var rutas = etiquetas(u.paths);
+      var prefijo = el('input', { value: u.prefix || '', 'data-field': 'prefix', 'aria-label': T('comoTrabaja.campoPrefijo') });
+      var ejemplo = el('p', { class: 'ct-nota' });
+      var verEjemplo = function () { ejemplo.textContent = T('comoTrabaja.prefijoEjemplo', { prefijo: prefijo.value.trim() || 'XPAT' }); };
+      prefijo.addEventListener('input', function () { verEjemplo(); cambio(); }); verEjemplo();
+      var prof = el('select', { 'data-field': 'depth', onchange: cambio });
+      PROFUNDIDADES.forEach(function (p) { prof.appendChild(el('option', { value: p, text: T('comoTrabaja.profundidad.' + p) })); });
+      prof.value = u.depth || 'lean';
+      panel.appendChild(el('div', { class: 'ct-dos' }, campo('comoTrabaja.campoEntra', grupo), campo('comoTrabaja.campoCuando', cuando))); if (propia) panel.appendChild(propia);
+      panel.appendChild(el('div', { class: 'ct-campo' }, el('span', { text: T('comoTrabaja.campoRutas') }), rutas.caja, el('p', { class: 'ct-nota', text: T('comoTrabaja.rutasAyuda') })));
+      panel.appendChild(el('div', { class: 'ct-dos' }, el('label', {}, el('span', { text: T('comoTrabaja.campoPrefijo') }), prefijo, ejemplo), campo('comoTrabaja.campoProfundidad', prof)));
+      leerUsos.push(function () { return { group: grupo.value, detection: cuando.value, paths: rutas.valores(), prefix: prefijo.value.trim(), depth: prof.value }; });
+    }
+    paneles.appendChild(panel);
+  });
+  var inicial = 0;
+  usos.forEach(function (u, i) { if ((u.group === 'validacion' ? 'validacion' : 'cambio') === boton.getAttribute('data-use')) inicial = i; });
+  elegir(inicial);
   function borrador() {
     var herramientas = []; casillas.querySelectorAll('input[data-tool]').forEach(function (c) { if (c.checked) herramientas.push(c.value); });
     var agente = nombre.value.trim();
-    return { pack: draft.pack, original: draft.original, agent: agente, group: grupo.value, detection: cuando.value, paths: rutas.value.split('\\n'), prefix: prefijo.value.trim(),
+    return { pack: draft.pack, original: draft.original, agent: agente, uses: leerUsos.map(function (f) { return f(); }),
       cabecera: { nombre: agente, descripcion: descripcion.value, modelo: modelo.value, herramientas: herramientas }, cuerpo: texto.value };
   }
   var revisar = el('button', { type: 'button', class: 'btn', 'data-action': 'check', text: T('comoTrabaja.revisar'), onclick: function () {
@@ -677,7 +802,6 @@ function editor(boton, draft, firmadas, modelos) {
       else estado.appendChild(el('p', { class: 'ct-error', text: r.codigo === 'cambio' ? T('comoTrabaja.cambioEnMain') : T('comoTrabaja.noSePudo', { motivo: (r.problems || [r.message]).join(' · ') }) }));
     });
   };
-  var campo = function (clave, control) { return el('label', {}, el('span', { text: T(clave) }), control); };
   var panel = el('li', { class: 'ct-panel ct-editor' },
     el('p', { class: 'ct-sub', text: T('comoTrabaja.elRevisor') }),
     el('div', { class: 'ct-dos' }, campo('comoTrabaja.campoNombre', nombre), campo('comoTrabaja.campoModelo', modelo)),
@@ -688,8 +812,7 @@ function editor(boton, draft, firmadas, modelos) {
     campo('comoTrabaja.campoDescripcion', descripcion),
     el('p', { class: 'ct-sub', text: T('comoTrabaja.susInstrucciones') }), texto,
     el('p', { class: 'ct-nota', text: T('comoTrabaja.instruccionesNota') }),
-    el('div', { class: 'ct-dos' }, campo('comoTrabaja.campoGrupo', grupo), campo('comoTrabaja.campoCuando', cuando)),
-    campo('comoTrabaja.campoRutas', rutas), campo('comoTrabaja.campoPrefijo', prefijo), estado,
+    solapas, el('p', { class: 'ct-nota', text: T('comoTrabaja.usosAyuda') }), paneles, estado,
     el('div', { class: 'ct-pie' }, revisar, proponer, el('button', { type: 'button', class: 'btn', text: T('comoTrabaja.cerrar'), onclick: cerrarPaneles })), motivo);
   despuesDe(boton, panel);
   // el editor de texto largo, compartido con el resto del sitio: vista previa y qué cambió contra lo que se abrió
@@ -815,4 +938,4 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, fetc
   ];
 }
 
-module.exports = { crearRutas, renderPage, issueUrl, buildIssueUrl, reviewDraft, draftOf, publicRepoOf, ISSUE_URL_MAX, HERRAMIENTAS, modelosDe, avisoDeModelos, armarAgente, cabeceraDe, camposDe, guion };
+module.exports = { crearRutas, renderPage, issueUrl, buildIssueUrl, reviewDraft, draftOf, publicRepoOf, ISSUE_URL_MAX, HERRAMIENTAS, modelosDe, avisoDeModelos, armarAgente, cabeceraDe, camposDe, guion, textosDelGuion };

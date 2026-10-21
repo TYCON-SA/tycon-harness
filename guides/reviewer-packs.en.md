@@ -26,6 +26,11 @@ has an ID with the reviewer's prefix (`FASTAPI-C1` is critical, `FASTAPI-W1` is 
 as `- [FASTAPI-C1] file:line …`. Copy one of the two in the example and change its name, prefix and rules. Two packs
 cannot declare the same agent.
 
+**A reviewer's instructions live in its pack**: at `packs/<pack>/agents/<reviewer>.md`, or in the folder that `agents`
+declares in `pack.json`. One that is only in `agents/` at the root of the profile is a problem, and the pipeline says
+so, in Spanish: «las instrucciones de X tienen que estar en packs/<pack>/agents/X.md (hoy están en agents/X.md)». To
+move it, put the file in its pack's folder; having it in both places at once is also a problem.
+
 ## When a reviewer runs
 
 `when` in `pack.json` decides. The vocabulary is closed (`detection`, `files`, `added`, `all`, `any`, `no`): an unknown
