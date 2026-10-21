@@ -265,6 +265,11 @@ test('@story-7.51 @ac-7 T8 RepoArgs_ByRemote_DefaultAndEmpty', () => {
   assert.match(runners.resolve(suyo, { results: '/r', stack }).command, /"TestCategory=Unit&TestCategory!=PendingSeed"/);
   assert.match(runners.resolve(otro, { results: '/r', stack }).command, /"TestCategory!=Slow"/);
   assert.match(runners.resolve(sinRemoto, { results: '/r', stack }).command, /"TestCategory!=Slow"/);
+  // el mismo repo con el host viejo de Azure, el nuevo y otras mayúsculas: cada máquina puede tener su forma del remoto
+  for (const url of ['https://acme.visualstudio.com/Prod/_git/api', 'https://dev.azure.com/acme/PROD/_git/API', 'https://dev.azure.com/Acme/prod/_git/Api']) {
+    const otraForma = repo({ 'X/packages.config': '' }, { remote: url });
+    assert.match(runners.resolve(otraForma, { results: '/r', stack }).command, /"TestCategory=Unit&TestCategory!=PendingSeed"/, url);
+  }
   // sin args_default, vacío
   const sinDefault = { test_runners: [netfx({ repos: conRepos.repos })] };
   assert.match(runners.resolve(otro, { results: '/r', stack: sinDefault }).command, /vstestf "\/r" ""/);
