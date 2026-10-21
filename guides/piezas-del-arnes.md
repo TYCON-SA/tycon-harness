@@ -436,6 +436,18 @@ _(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)_
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsciaffected-formsjs)
 
+## scripts/ci/typecheck-forms.js
+
+**Qué es:** El chequeo de tipos (`tsc --noEmit`) de cada formulario que se prueba. Dice limpio, con errores, sin tsconfig o no medido.
+
+**Por qué existe:** El empaquetado de los formularios no chequea tipos, así que un error de tipos podía vivir meses en `main` con las pruebas en verde. Un paquete que tsc no encuentra sale «no medido», nunca como error; por eso instala antes los formularios de los que importa cada uno.
+
+**Quién la usa:** La etapa de pruebas de los pipelines de formularios, en modo aviso con fecha de revisión.
+
+**Dónde se prueba:** `scripts/tests/typecheck-forms.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscitypecheck-formsjs)
+
 ## scripts/ci/forms-to-version.sh
 
 **Qué es:** El cálculo de a qué formularios subirles la versión en una corrida.
@@ -447,6 +459,18 @@ _(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)_
 **Dónde se prueba:** su propia suite de pruebas, bajo `scripts/tests/`
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsciforms-to-versionsh)
+
+## scripts/ci/backend-to-version.sh
+
+**Qué es:** La decisión de si una corrida del backend trae algo nuevo desde la última versión.
+
+**Por qué existe:** Sin ella, repetir una corrida o probar el arnés dejaba una versión vacía en staging, el bump del bot en `main` y un pedido de producción. Ante la duda versiona y avisa; la casilla `versionarYDesplegar` fuerza el camino de siempre.
+
+**Quién la usa:** El pipeline de backend de cada producto y el canónico del paquete bizuit.
+
+**Dónde se prueba:** `scripts/tests/backend-to-version.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscibackend-to-versionsh)
 
 ## scripts/ci/label-prs.sh
 
@@ -802,7 +826,7 @@ Render y una máquina propia), la prueba sin sesión (`scripts/site/check-deploy
 
 **La copia de operaciones**: con `SITE_OPERATIONS_SOURCE=copy`, `pipelines/operations/site-copy.yml` sube a
 un contenedor sólo lo que el sitio lee (`RUTAS` de `scripts/site/operations-copy.js`, más el logo de `site.brand.logo`)
-y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo ignora; lo peligroso rechaza la foto). «Al día» es el mismo commit con la misma lista de archivos: si la foto cambia sin commit nuevo, se re-sube con otro nombre (sin pisar la que nombra el índice), y el sitio la reabre por su huella; la edad de la copia frena como `operations.json`. Red: `site-operations-copy.test.js`. **Al día con `stable`**: la imagen llega a `stable` sólo escaneada y firmada; `scripts/site/deploy/update-site.js` la instala por huella, prueba y vuelve atrás (`site.update`). Red: `site-latest-release.test.js` y `site-update.test.js`.
+y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo ignora; lo peligroso rechaza la foto). «Al día» es el mismo commit con la misma lista de archivos: si la foto cambia sin commit nuevo, se re-sube con otro nombre (sin pisar la que nombra el índice), y el sitio la reabre por su huella; la edad de la copia frena como `operations.json`. Red: `site-operations-copy.test.js`. **Al día con `stable`**: la imagen llega a `stable` sólo escaneada y firmada; `scripts/site/deploy/update-site.js` la instala por huella, prueba y vuelve atrás (`site.update`). Red: `site-latest-release.test.js` y `site-update.test.js`. **Las fichas del tablero**: llegan a Arnés, Proyectos y Corridas por `scripts/site/tabs/cards.js`, que llama al mismo cálculo que arma la página del tablero (`colectar()` de `scripts/nightly/dashboard/dashboard.js`), toma de cada ficha sólo lo de su lista blanca y oculta las que la organización destildó en Configuración (`site.hidden_cards`); la página del tablero ya no se sirve en el sitio, sólo su sello. Red: `site-cards.test.js`.
 
 ## guides/integrations/ado-cola-y-listados.md
 

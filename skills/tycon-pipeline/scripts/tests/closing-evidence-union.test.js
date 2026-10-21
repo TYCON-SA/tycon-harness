@@ -106,7 +106,7 @@ function armar(t, opts = {}) {
   // 2. gate E2E PASS con su copia run-check: cubre la fila E1 → AC 2. El texto del gate no nombra criterios.
   fs.writeFileSync(path.join(dod, `9.9-e2e-gate-${COMPACTO(ahora)}.md`), [
     '# DoD Runtime Evidence — Story 9.9 — Playwright Gate (scoped)',
-    '**Spec filter**: story-9-9.spec.ts', '```', 'verdict=PASS', 'total=1', 'passed=1', '```', '',
+    '**Spec filter**: story-9-9.spec.ts', '```', 'verdict=PASS', 'total=1', 'passed=1', '```', '- skipped: 0', '',
   ].join('\n'));
   fs.appendFileSync(gatesLog, JSON.stringify({ ts: new Date().toISOString(), check: 'dod', status: 'green',
     provenance: 'run-check', cmd: 'bash e2e-gate.sh /fe 9.9 /dir story-9-9.spec.ts', exit: 0 }) + '\n');

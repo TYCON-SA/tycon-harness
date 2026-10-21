@@ -287,6 +287,53 @@ test('T10 1.31-SitioYTablero_MismoNumeroSinNombres @story-1.31 @ac-7: la ficha d
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('2.36-Proyectos_GrillaArribaDeLaTabla: quien mantiene ve las siete fichas de la organización en una grilla antes de la tabla; una persona no; la oculta no sale', () => {
+  const clon = clonDeJuguete();
+  // un producto declarado, para que la página arme su tabla
+  const repos = path.join(clon, 'scripts', 'nightly', 'dependencies', 'repos.json');
+  fs.mkdirSync(path.dirname(repos), { recursive: true });
+  fs.writeFileSync(repos, JSON.stringify({ repos: [{ producto: 'Producto X', ruta: 'X/repo', ado: 'Proyecto X/Repo X', tipo: 'npm', activo: true }] }));
+  const m = construirModelo(clon);
+  const pagina = (modelo, quien) => views.paginaProyectos({ modelo, quien, pestanas: [], ahora: Date.parse(`${HOY}T12:00:00Z`) });
+  const html = pagina(access.filtrar(m, { rol: 'maintainer' }, access.crearReglas({})), { rol: 'maintainer', email: LEAD });
+  const deProyectos = fichas.FICHAS.filter((f) => f.pestana === 'proyectos');
+  assert.strictEqual(deProyectos.length, 7);
+  for (const f of deProyectos) assert.match(html, new RegExp(`data-ficha="${f.id}"`), `${f.id} sale en Proyectos`);
+  for (const f of fichas.FICHAS.filter((x) => x.pestana !== 'proyectos')) assert.ok(!html.includes(`data-ficha="${f.id}"`), `${f.id} no es de Proyectos`);
+  // una sola grilla, arriba de la tabla de productos
+  const ultima = Math.max(...deProyectos.map((f) => html.indexOf(`data-ficha="${f.id}"`)));
+  assert.ok(html.includes('<table class="tabla" id="proyectos">'), 'la foto de juguete arma la tabla de productos');
+  assert.ok(ultima < html.indexOf('<table'), 'las fichas van antes de la tabla');
+  // cada ficha dice lo que dice el modelo: con su número, o «no medida» (nunca cero)
+  for (const f of m.fichas.lista.filter((x) => x.pestana === 'proyectos')) {
+    const desde = html.indexOf(`data-ficha="${f.id}"`);
+    const trozo = html.slice(html.lastIndexOf('<div class="tile', desde), desde + 600);
+    if (f.estado === 'no_medido') { assert.match(trozo, /^<div class="tile blind"/, `${f.id} no medida`); assert.doesNotMatch(trozo.split('</div></div>')[0], /t-val">0</); }
+    else assert.ok(trozo.includes(`t-val">${fichas.formatear(f)}<`), `${f.id} con su número`);
+  }
+  // una persona ve su Proyectos sin las fichas de la organización
+  const persona = access.filtrar(m, { rol: 'person', email: PERSONA }, access.crearReglas({}));
+  const dePersona = pagina(persona, { rol: 'person', email: PERSONA });
+  assert.doesNotMatch(dePersona, /data-ficha=|id="fichas-proyectos"|id="fichas-calculando"/);
+  assert.ok(!dePersona.includes('Cómo va la organización'), 'una persona no ve la sección de la organización');
+  // sin la lista de productos (o sin poder leerla), las fichas de la organización siguen arriba
+  for (const sinLista of [{ ...m, proyectos: { ...(m.proyectos || {}), lista: null } }, { ...m, productosFuente: { estado: 'no_medido', motivo: 'sin_foto' } }]) {
+    const h = pagina(access.filtrar(sinLista, { rol: 'maintainer' }, access.crearReglas({})), { rol: 'maintainer', email: LEAD });
+    assert.match(h, /id="fichas-proyectos"[\s\S]*data-ficha="bus_factor"/, 'la grilla sale aunque falte la lista de productos');
+  }
+  // la oculta desde Configuración no sale
+  const conOculta = construirModelo(clon, { ocultas: ['backlog'] });
+  const html2 = pagina(access.filtrar(conOculta, { rol: 'maintainer' }, access.crearReglas({})), { rol: 'maintainer', email: LEAD });
+  assert.doesNotMatch(html2, /data-ficha="backlog"/);
+  assert.match(html2, /data-ficha="bus_factor"/);
+  // mientras el sitio no las calculó, lo dice; sin ninguna ficha de Proyectos visible, no hay grilla vacía
+  assert.match(pagina({ ...m, fichas: null }, { rol: 'maintainer', email: LEAD }), /id="fichas-calculando"/);
+  const sinNinguna = construirModelo(clon, { ocultas: deProyectos.map((f) => f.id) });
+  assert.doesNotMatch(pagina(sinNinguna, { rol: 'maintainer', email: LEAD }), /id="fichas-proyectos"/);
+  // ningún texto libre de las fotos llega a la página
+  for (const marca of LIBRE) assert.ok(!html.includes(marca), `${marca} llegó a Proyectos`);
+});
+
 test('2.36-Fuga_ConLasFichas: ningún texto libre de las fotos llega al modelo ni a la página de Arnés', () => {
   const clon = clonDeJuguete();
   const m = construirModelo(clon);
@@ -358,4 +405,62 @@ test('2.36-Medida_SinNumeroEsNoMedida: una métrica «medida» sin un número v�
   assert.strictEqual(p.estado, 'no_medido');
   assert.strictEqual(p.valor, null);
   assert.ok(fichas.MOTIVOS.includes(p.motivo));
+});
+
+test('2.36-CalculoCaido_MotivoPropio: si el cálculo de las fichas se cae, cada una lo dice con su motivo, no como una foto ilegible', () => {
+  const clon = tmp('fichas-caido-');
+  // un sources.json que se lee pero no tiene la forma: el cálculo común del tablero tira al recorrerlo
+  fs.mkdirSync(path.join(clon, 'scripts', 'nightly', 'dashboard'), { recursive: true });
+  fs.writeFileSync(path.join(clon, 'scripts', 'nightly', 'dashboard', 'sources.json'), 'null');
+  const logs = [];
+  const m = fichas.fichasDelClon({ clon, ahora: AHORA, ocultas: ['dod'], log: (l) => logs.push(l) });
+  assert.ok(fichas.MOTIVOS.includes('calculo_caido'), 'el motivo está en la lista cerrada');
+  assert.strictEqual(m.ocultas, 1);
+  assert.ok(m.lista.length && m.lista.every((f) => f.estado === 'no_medido' && f.motivo === 'calculo_caido'));
+  assert.ok(logs.some((l) => /no se pudieron calcular/.test(l)), 'el detalle va al registro');
+  // la pantalla lo dice en cada idioma
+  const f = m.lista[0];
+  assert.match(fichas.tile(f, 'es'), /el cálculo de las fichas se cayó/);
+  assert.match(fichas.tile(f, 'en'), /the card calculation failed/);
+  // y lo mismo cuando falla el hilo que las calcula (sources.js): la lista de todas no medidas trae este motivo
+  assert.ok(fichas.fichasNoMedidas([]).lista.every((x) => x.motivo === 'calculo_caido'));
+});
+
+test('2.36-Sello_CompletoComoElAviso: el sello de Arnés dice «completa» con la misma regla que el aviso de la mañana', () => {
+  const seal = require(path.join(RAIZ, 'scripts', 'nightly', 'dashboard', 'seal.js'));
+  const base = { esquema: 1, generado: `${HOY}T06:00:00Z`, snapshot: HOY, modo: 'nocturno', corrida: '4242', fuentes: { esperadas: 3, al_dia: 3 }, buzon: { estado: 'leido', maquinas: 2 } };
+  const conSello = (s) => {
+    const clon = tmp('fichas-sello-');
+    fs.mkdirSync(path.join(clon, 'artifacts'), { recursive: true });
+    fs.writeFileSync(path.join(clon, 'artifacts', 'tablero-del-arnes.html'), `<!doctype html><html><head>${seal.escribir(s)}</head><body></body></html>`);
+    const m = sources.construirDesdeClon(clon, { ahora: AHORA });
+    return views.filasArnes(m, { ahora: AHORA }).find((l) => l.clave === 'sello').texto;
+  };
+  assert.strictEqual(conSello(base), `${HOY} · completa`);
+  assert.match(conSello({ ...base, fuentes: { esperadas: 3, al_dia: 2 } }), /incompleta/, 'una fuente atrasada');
+  assert.match(conSello({ ...base, buzon: { estado: 'no_leido', motivo: 'sin buzón' } }), /incompleta/, 'el buzón sin leer');
+  assert.match(conSello({ ...base, modo: 'local', corrida: null, buzon: { estado: 'no_aplica' } }), /incompleta/, 'una página local');
+  // la página entera no se guarda en el modelo: el sitio no la sirve
+  const clon = tmp('fichas-sello-');
+  fs.mkdirSync(path.join(clon, 'artifacts'), { recursive: true });
+  fs.writeFileSync(path.join(clon, 'artifacts', 'tablero-del-arnes.html'), `<!doctype html><html><head>${seal.escribir(base)}</head><body>Seis preguntas</body></html>`);
+  assert.ok(!JSON.stringify(sources.construirDesdeClon(clon, { ahora: AHORA }).tablero).includes('Seis preguntas'));
+});
+
+test('2.36-Guia_ListaYComoOcultar: la guía, en los dos idiomas, trae las 26 con su para qué, cómo se oculta una y lo que todavía no se mide', () => {
+  const { t } = require(path.join(H.SITE, 'texts.js'));
+  const guias = { es: fs.readFileSync(path.join(RAIZ, 'guides', 'organization-site.md'), 'utf8'), en: fs.readFileSync(path.join(RAIZ, 'guides', 'organization-site.en.md'), 'utf8') };
+  assert.strictEqual(fichas.FICHAS.length, 26);
+  for (const [idioma, guia] of Object.entries(guias)) {
+    for (const f of fichas.FICHAS) {
+      assert.ok(guia.includes(t(idioma, `ficha.${f.id}.titulo`)), `${idioma}: falta el título de ${f.id}`);
+      assert.ok(guia.includes(t(idioma, `ficha.${f.id}.paraQue`)), `${idioma}: falta el para qué de ${f.id}`);
+    }
+    assert.ok(guia.includes('site.hidden_cards'), `${idioma}: cómo se oculta una`);
+    assert.doesNotMatch(guia, /\/arnes\/tablero/, `${idioma}: la ruta vieja ya no existe`);
+  }
+  assert.match(guias.es, /^#### Lo que todavía no se mide$/m);
+  assert.match(guias.en, /^#### What is not measured yet$/m);
+  assert.match(guias.es, /^### Las fichas del tablero$/m);
+  assert.match(guias.en, /^### The dashboard cards$/m);
 });

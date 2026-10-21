@@ -1577,6 +1577,10 @@
     {
       "words": ["solidtime"],
       "reason": "nombre propio del producto de horas, como clockify: la integración integrations/solidtime/ y sus variables (TYCON_SOLIDTIME_TOKEN). Aprobada por la coordinadora, por delegación del dueño, el 2026-10-21 (story 7.40, tanda A)."
+    },
+    {
+      "words": ["typecheck"],
+      "reason": "nombre del paso en npm, inglés técnico (`npm run typecheck`; el arnés ya la reconoce en runtime-matrix.js): nombra el guion scripts/ci/typecheck-forms.js y su variable de pruebas TYCON_TYPECHECK_NPM. Aprobada por la coordinadora, por delegación del dueño, el 2026-10-21 (story 1.10)."
     }
   ],
   "schemaFiles": [

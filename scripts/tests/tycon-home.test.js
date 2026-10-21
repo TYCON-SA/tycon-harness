@@ -364,7 +364,7 @@ it('T78 (story 8.26) · maintainersClone: distingue «no declara» de «declara 
   }
 });
 
-const SWEEP_DIRS = ['scripts', 'skills', 'agents', 'build', 'adapters'];
+const SWEEP_DIRS = ['scripts', 'skills', 'agents', 'build', 'adapters', 'integrations'];
 const NOT_CODE = /\.(md|txt|png|jpe?g|gif|svg|ico|pdf|woff2?|ttf|trx|bpmn|vdw|xlsx|docx|pptx)$/i;
 const IS_TEST = (f) => /(^|\/)(tests?|__tests__|fixtures)\//.test(f) || /\.test\.[a-z0-9]+$/.test(f) || /controls-bench\/cases\//.test(f);
 // clase B: los enchufes de Claude Code, que se quedan en ~/.claude aunque el arnés se mude (AC 4)

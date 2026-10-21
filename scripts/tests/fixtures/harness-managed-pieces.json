@@ -28,9 +28,9 @@
     { "kind": "link", "id_pattern": "^(agent-skills|agents|skills)(/[^/]+)?$", "where_pattern": "/\\.claude/(agent-skills|agents|skills)(/[^/]+)?$", "when": "single-repo", "windows": true },
     { "kind": "third-party", "id_pattern": "^[A-Za-z0-9._-]+$", "where_pattern": "/\\.claude/agent-skills/.+", "when": "always", "windows": true, "source": "publishing/install-third-party.js (third-party-state.json: entradas completas cuyo destino existe)" },
 
-    { "kind": "hook", "id": "UserPromptSubmit:clocki/scripts/on-prompt.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "integration:clockify", "windows": true },
+    { "kind": "hook", "id": "UserPromptSubmit:@int:clockify/scripts/on-prompt.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "time:clockify", "windows": true },
     { "kind": "hook", "id": "UserPromptSubmit:tycon-pipeline/scripts/on-prompt.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
-    { "kind": "hook", "id": "PostToolUse:clocki/scripts/touch-activity.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "integration:clockify", "windows": true },
+    { "kind": "hook", "id": "PostToolUse:@int:clockify/scripts/touch-activity.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "time:clockify", "windows": true },
     { "kind": "hook", "id": "PostToolUse:tycon-pipeline/scripts/hook-post-edit.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PreToolUse:tycon-pipeline/scripts/hook-pre-edit.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PostToolUse:tycon-pipeline/scripts/on-skill-invoke.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },

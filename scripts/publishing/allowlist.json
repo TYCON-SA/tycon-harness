@@ -57,7 +57,6 @@
           "agents/*.md",
           "skills/tycon-*/**",
           "skills/check-story-drift/**",
-          "skills/clocki/**",
           "skills/tycon-create-story/**",
           "packs/README.md"
         ],

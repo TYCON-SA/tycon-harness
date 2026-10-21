@@ -474,6 +474,23 @@ if [ -f "$INSTALADOR" ]; then
   done
   [ -z "$faltan" ] && ok "T19g · las huellas cubren puerta, intérprete, cliente, freno y plantilla" || no "T19g · faltan huellas válidas para:$faltan"
 
+  # 6.2-T33 · el hook que cierra las reglas de firewall se instala de root, con su huella, y la configuración
+  # administrada lo registra en el fin de sesión y en el arranque
+  if [ -f "$TMP/sys2/opt/tycon/hooks/prod-firewall-close.js" ] \
+     && grep -qE '"/opt/tycon/hooks/prod-firewall-close.js"[[:space:]]*:[[:space:]]*"[a-f0-9]{64}"' "$H" 2>/dev/null \
+     && grep -q 'prod-firewall-close.js' "$MANAGED_D/tycon-production.json" 2>/dev/null; then
+    ok "6.2-T33 · el hook del firewall queda instalado, con huella, y registrado en la configuración administrada"
+  else no "6.2-T33 · falta el hook del firewall, su huella o su registro en la configuración administrada"; fi
+
+  # 6.2-T34 · reinstalar con una regla de firewall abierta: el instalador la cierra antes de reemplazar la
+  # puerta o, si no puede (acá no hay az), lo dice en rojo con el comando de cierre, y la instalación sigue
+  CASA34="$TMP/casa34"; rm -rf "$CASA34"; mkdir -p "$CASA34/.claude/.tycon-pipeline"
+  printf '{"reglas":[{"host":"acme-sql.database.windows.net","regla":"tycon-gate-0a1b2c3d","ip":"203.0.113.25","abierta":"2026-10-21T00:00:00Z","sesiones":[]}]}\n' > "$CASA34/.claude/.tycon-pipeline/production-firewall.json"
+  HOME="$CASA34" PATH="$TMP/bin:$PATH" TYCON_ADO_ORG="$ORG_T19" TYCON_PROD_TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_ROOT="$TMP/sys2" TYCON_PROD_HARNESS="$HARNESS_T19" TYCON_PROD_ACCEPT_ORIGIN=1 bash "$INSTALADOR" --no-sudo >"$TMP/inst34" 2>&1; rc34=$?
+  if [ "$rc34" = 0 ] && grep -q -- "--close-firewall acme-sql.database.windows.net" "$TMP/inst34" && grep -q "🔴" "$TMP/inst34"; then
+    ok "6.2-T34 · con una regla abierta y sin poder cerrarla, el instalador lo dice en rojo con el comando y termina"
+  else no "6.2-T34 · rc=$rc34 · $(grep -i firewall "$TMP/inst34" | head -2)"; fi
+
   # --no-sudo corriendo como root: se niega
   rm -rf "$TMP/sys3"; mkdir -p "$TMP/sys3"
   TYCON_PROD_AS_ROOT=1 TYCON_PROD_ROOT="$TMP/sys3" TYCON_PROD_HARNESS="$AQUI" TYCON_PROD_ACCEPT_ORIGIN=1 bash "$INSTALADOR" --no-sudo >/dev/null 2>&1; rc=$?

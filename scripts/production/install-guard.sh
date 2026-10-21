@@ -144,6 +144,7 @@ HOME_LEIDA="${HOME_USUARIO:-${HOME:-}}"; CLAUDE_LEIDA="$HOME_LEIDA/.claude"
 # freno instalado las encuentra por las mismas rutas relativas.
 ARCHIVOS=(
   scripts/hooks/prod-access-guard.js
+  scripts/hooks/prod-firewall-close.js
   scripts/production/guard-libs/lib/shell-parse.js
   scripts/production/guard-libs/lib/repos-root.js
   scripts/production/guard-libs/lib/tycon-config.js
@@ -579,7 +580,54 @@ instalar(){ # $1 = relativo en ORIGEN, $2 = destino, $3 = modo
   chmod "$3" "$2" || muere "no pude poner permisos $3 a $2"
   if [ "$SIN_SUDO" = 0 ]; then chown root:wheel "$2" || muere "no pude dejar $2 como root:wheel"; fi
 }
+
+# Las reglas de firewall que abrió la puerta se cierran ANTES de reemplazarla: una regla abierta por una
+# puerta que se reemplaza no puede quedar sin quién la cierre. La cierra la puerta instalada, como el dev (su cuenta de
+# Azure, no la de root). Si no puede, lo dice en rojo con el comando, y la instalación sigue: el barrido de arranque del
+# hook la vuelve a intentar.
+cerrar_reglas_abiertas(){
+  local casa="${HOME_USUARIO:-${HOME:-}}" puerta_vieja="$DESTINO/bin/tycon-prod-sql" f h hosts salida
+  for d in "$casa/.tycon/state" "$casa/.claude/.tycon-pipeline"; do
+    [ -f "$d/production-firewall.json" ] || [ -f "$d/production.log" ] || continue
+    # la unión del estado y de las aperturas del registro sin un cierre posterior, como el barrido del hook
+    if ! hosts="$(/usr/bin/python3 -c 'import json,sys,os
+estado, registro = sys.argv[1], sys.argv[2]
+hosts = []
+if os.path.exists(estado):
+    try:
+        hosts += [r.get("host", "") for r in json.load(open(estado)).get("reglas", [])]
+    except Exception:
+        print("ILEGIBLE")
+abiertas = {}
+if os.path.exists(registro):
+    for l in open(registro, encoding="utf-8", errors="replace"):
+        try: j = json.loads(l)
+        except Exception: continue
+        h = j.get("host") if isinstance(j, dict) else None
+        if not isinstance(h, str): continue
+        if j.get("accion") == "open-firewall" and j.get("regla"): abiertas[h] = True
+        elif j.get("accion") == "close-firewall" and j.get("exit") == 0: abiertas.pop(h, None)
+for h in dict.fromkeys(hosts + list(abiertas)): print(h)' "$d/production-firewall.json" "$d/production.log")"; then
+      printf '   🔴 no pude leer qué reglas de firewall quedaron abiertas en %s. Mirá en el portal de Azure las reglas tycon-gate-*.\n' "$d"; continue
+    fi
+    for h in $hosts; do
+      if [ "$h" = ILEGIBLE ]; then printf '   🔴 no pude leer %s/production-firewall.json: sigo con lo que dice el registro. Mirá también en el portal de Azure las reglas tycon-gate-*.\n' "$d"; continue; fi
+      [[ "$h" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { printf '   🔴 hay una regla anotada con un host que no tiene forma de host («%s»): no la cierro desde acá. Mirá en el portal de Azure las reglas tycon-gate-*.\n' "$h"; continue; }
+      if [ ! -x "$puerta_vieja" ] || ! grep -q -- '--close-firewall' "$puerta_vieja" 2>/dev/null; then
+        printf '   🔴 hay una regla de firewall abierta en %s y la puerta instalada no sabe cerrarla. Cerrala después con: /opt/tycon/bin/tycon-prod-sql --close-firewall %s\n' "$h" "$h"; continue
+      fi
+      if [ "$SIN_SUDO" = 1 ]; then salida="$(/usr/bin/env HOME="$casa" "$puerta_vieja" --close-firewall "$h" 2>&1)"
+      else salida="$(sudo -u "$USUARIO" /usr/bin/env -i HOME="$HOME_USUARIO" PATH=/usr/bin:/bin "$puerta_vieja" --close-firewall "$h" 2>&1)"; fi
+      if [ $? = 0 ]; then ok "regla de firewall de $h cerrada antes de reinstalar"
+      else printf '   🔴 no pude cerrar la regla de firewall de %s (%s). Cerrala con: /opt/tycon/bin/tycon-prod-sql --close-firewall %s\n' "$h" "$(printf '%s' "$salida" | tail -1)" "$h"; fi
+    done
+  done
+}
+cerrar_reglas_abiertas
+
 instalar scripts/hooks/prod-access-guard.js       "$DESTINO/hooks/prod-access-guard.js" 644
+# el hook que cierra las reglas de firewall de la puerta, en el fin de sesión y en el barrido de arranque
+instalar scripts/hooks/prod-firewall-close.js     "$DESTINO/hooks/prod-firewall-close.js" 644
 # las bibliotecas, de la copia propia del freno (scripts/production/guard-libs/, ver ARCHIVOS)
 instalar scripts/production/guard-libs/lib/shell-parse.js "$DESTINO/lib/shell-parse.js" 644
 instalar scripts/production/guard-libs/lib/repos-root.js  "$DESTINO/lib/repos-root.js" 644
@@ -708,8 +756,9 @@ H_NODE="$(huella "$DESTINO/bin/node")" || exit 1
 H_SQLCMD="$(huella "$DESTINO/bin/sqlcmd")" || exit 1
 H_HOOK="$(huella "$DESTINO/hooks/prod-access-guard.js")" || exit 1
 H_PLANTILLA="$(huella "$DESTINO/production/load-key.command.template")" || exit 1
-NUEVAS="$(printf '{\n  "__doc": "Huellas de lo instalado por install-guard.sh. El freno, el lanzador y la puerta las reverifican antes de ejecutar: si no coinciden, no corren.",\n  "/opt/tycon/bin/tycon-prod-sql": "%s",\n  "/opt/tycon/bin/node": "%s",\n  "/opt/tycon/bin/sqlcmd": "%s",\n  "/opt/tycon/hooks/prod-access-guard.js": "%s",\n  "/opt/tycon/production/load-key.command.template": "%s"\n}' \
-  "$H_PUERTA" "$H_NODE" "$H_SQLCMD" "$H_HOOK" "$H_PLANTILLA")"
+H_CIERRE="$(huella "$DESTINO/hooks/prod-firewall-close.js")" || exit 1
+NUEVAS="$(printf '{\n  "__doc": "Huellas de lo instalado por install-guard.sh. El freno, el lanzador y la puerta las reverifican antes de ejecutar: si no coinciden, no corren.",\n  "/opt/tycon/bin/tycon-prod-sql": "%s",\n  "/opt/tycon/bin/node": "%s",\n  "/opt/tycon/bin/sqlcmd": "%s",\n  "/opt/tycon/hooks/prod-access-guard.js": "%s",\n  "/opt/tycon/hooks/prod-firewall-close.js": "%s",\n  "/opt/tycon/production/load-key.command.template": "%s"\n}' \
+  "$H_PUERTA" "$H_NODE" "$H_SQLCMD" "$H_HOOK" "$H_CIERRE" "$H_PLANTILLA")"
 if [ -f "$DESTINO/huellas.json" ] && [ "$(cat "$DESTINO/huellas.json")" = "$NUEVAS" ]; then
   ok "huellas sin cambios"
 else

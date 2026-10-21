@@ -451,14 +451,16 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
     })).filter((x) => x.ruta) });
   }
 
-  // la página de las seis preguntas y su sello
+  // el sello de la página de las seis preguntas: dice si el nocturno corrió. La página no se guarda: el sitio no la sirve
   let html = null;
   const rutaTablero = delClon('artifacts', 'tablero-del-arnes.html');
   if (rutaTablero) { try { if (fs.lstatSync(rutaTablero).isFile()) html = fs.readFileSync(rutaTablero, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') log(`la página de las seis preguntas no se pudo leer (${e.code || e.message})`); } }
   if (html === null) m.tablero = noMedida(fs.existsSync(path.join(clon, 'artifacts', 'tablero-del-arnes.html')) ? 'ilegible' : 'sin_foto');
   else {
-    const s = require('../nightly/dashboard/seal.js').leer(html);
-    m.tablero = fuente('medido', null, s.sello ? texto(s.sello.generado, 10) : null, { html, sello: s.sello ? { generado: texto(s.sello.generado, 30), completo: s.sello.completo === true } : null });
+    const seal = require('../nightly/dashboard/seal.js');
+    const s = seal.leer(html);
+    // «completa» con la regla del aviso de la mañana: el sello no trae el campo, lo dicen sus partes
+    m.tablero = fuente('medido', null, s.sello ? texto(s.sello.generado, 10) : null, { sello: s.sello ? { generado: texto(s.sello.generado, 30), completo: seal.completo(s.sello) } : null });
   }
 
   // cada fuente de sources.json, al día o no (la misma lectura de antigüedad que el tablero)
@@ -778,6 +780,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       return await calcularFichasEn({ clon, dirBuzon, buzonLeido: Boolean(corridas && corridas.estado === 'medido'), ocultas, ahora: t, log: (l) => log(`fichas: ${l}`) });
     } catch (e) {
       log(`las fichas del tablero no se pudieron calcular (${(e && e.code) || (e && e.name) || 'error'}): ${st.fichas ? 'queda la última lista buena' : 'salen no medidas'}`);
+      // la última lista buena no se presenta como de hoy: cada ficha lleva la fecha de su fuente y la pantalla la muestra
       return st.fichas || require('./tabs/cards.js').fichasNoMedidas(ocultas);
     }
   }

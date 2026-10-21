@@ -162,7 +162,8 @@ mediana, **n=** dice de cuántas corridas sale el número.
 
 Debajo hay un **filtro** (fechas, producto, máquina, sólo las que tienen consumo medido, sólo las que llegaron al último
 paso) y fichas con los números del filtro: cuántas llegaron al final, cuánto dura una corrida, en cuántas un control
-encontró un error, cuántos agentes se lanzaron y cuánto se consumió.
+encontró un error, cuántos agentes se lanzaron y cuánto se consumió. Quien mantiene ve después las tres fichas de Corridas
+del tablero de la noche: la duración y los pasos de una corrida (medianas) y las veces que un control bloqueó.
 
 ![Corridas: el alcance, «Lo que se mira primero» y las fichas del filtro](sitio-de-la-organizacion/capturas/corridas-tabla.png)
 
@@ -198,6 +199,9 @@ ve los productos en los que trabaja. La **paridad** compara cada producto con lo
 
 ![Proyectos: una fila por producto](sitio-de-la-organizacion/capturas/proyectos.png)
 
+Quien mantiene ve además, arriba de la tabla, «Cómo va la organización»: las fichas del tablero de la noche que son de
+toda la organización (ver «Las fichas del tablero»).
+
 **Qué hacer:** una story parada o bloqueada se destraba en su repo, con su equipo; el sitio sólo la muestra.
 
 ### Arnés
@@ -207,12 +211,72 @@ ve los productos en los que trabaja. La **paridad** compara cada producto con lo
 Muestra si cada foto de la noche llegó al día, cuántos casos del **banco de controles** (unas pruebas que confirman que
 cada freno del arnés frena lo que tiene que frenar) y cuántas **suites de prueba** (las pruebas del propio arnés) dieron
 rojo, el **examen de los revisores** (si los revisores automáticos siguen encontrando lo que tienen que encontrar), y la
-versión del arnés que corre el sitio. El
-enlace de abajo abre el tablero del arnés en seis preguntas.
+versión del arnés que corre el sitio. Abajo, las fichas del tablero de la noche, agrupadas por sus preguntas (ver «Las
+fichas del tablero»).
 
 ![Arnés: las fotos de la noche, el banco de controles, las suites y la versión del sitio](sitio-de-la-organizacion/capturas/arnes.png)
 
 **Qué hacer:** una foto que no llegó o un rojo nuevo se mira en el proceso de la noche que lo produjo.
+
+### Las fichas del tablero
+
+El tablero de la noche mide el arnés y los proyectos en seis preguntas. El sitio muestra esas fichas en su pestaña, con
+el mismo número que el tablero: Arnés las agrupa por pregunta, y Proyectos y Corridas las ponen en una grilla arriba de su
+tabla. Son 26, todas de la organización: sólo las ve quien mantiene. Una persona ve sus pestañas como antes.
+
+**En Arnés:**
+
+- **Registros por merge que cumplen el contrato de formato** (`contrato_v2`). Dice si los registros que se escriben al cerrar cada merge se pueden leer por máquina.
+- **Registros por merge con fecha declarada adentro** (`fechas_declaradas`). Una fecha inferida del nombre del archivo ordena, pero no sirve para dibujar una tendencia.
+- **Cierres que dejaron prueba de que la cosa anda corriendo** (`dod`). De las stories cerradas, cuántas dejaron evidencia de que se probó en vivo.
+- **Lo que vuelve: stories con un seguimiento posterior** (`rework`). Qué parte de lo entregado hubo que volver a tocar.
+- **Por qué volvió: defecto nuestro contra cambio de requisito** (`rework_por_causa`). Separa lo que volvió por un error nuestro de lo que volvió porque cambió lo que se pedía.
+- **¿Vuelve menos lo que pasó por el pipeline?** (`rework_por_carril`). Compara, por repo, lo que volvió con constancia del pipeline contra lo que no la tiene.
+- **Puntaje de mutación: proporción de mutantes que las pruebas matan** (`mutacion`). Si las pruebas se rompen cuando se rompe el código a propósito.
+- **Corridas de pruebas que evaluaron el umbral del 75 % sobre las líneas tocadas** (`cobertura_tocada_evaluo`). Cuántas veces la cobertura de lo que se tocó se midió de verdad.
+- **Cierres que necesitaban guía para probar a mano, y la tenían** (`qa_guia`). El puente entre las pruebas automáticas y una persona que prueba.
+- **Cuánto tarda verificar: duración de la suite de pruebas** (`gates_dur`). Una suite que tarda horas no se corre antes de commitear: se saltea.
+- **Los frenos previos a la herramienta: cuántas veces frenaron y cuántas los saltearon** (`frenos`). Los dos números de la misma regla juntos: sin el primero, un freno que funcionó parece que no sirvió.
+- **Los hooks del cierre: decisiones sobre una evidencia que la rechazaron** (`evidencia_cierre`). Cuántas veces los frenos que impiden cerrar sin evidencia la rechazaron.
+- **Escapes concentrados en una sola regla** (`escapes_regla_dominante`). Si lo que se escapa de los controles viene casi todo de una sola regla.
+- **Reglas candidatas a retiro: probadas, que nunca encontraron nada** (`reglas_candidatas`). Reglas que saben ponerse rojas y nunca encontraron nada con recorrido de sobra.
+- **Reglas que el banco de pruebas probó de verdad** (`reglas_probadas`). Una regla sin prueba que la obligue a marcar no se juzga: sale «sin probar», nunca candidata.
+- **Commits por carril: pipeline, atajo declarado o ninguno** (`carriles`). Cuántos commits pasaron por el pipeline, cuántos por un atajo declarado y cuántos por ninguno.
+
+**En Proyectos:**
+
+- **En el backlog: escritas y todavía sin arrancar** (`backlog`). Cuántas stories hay escritas sin empezar.
+- **Con un estado que el diccionario no reconoce** (`estados_sin_diccionario`). Los estados que nadie tradujo: son la lista de trabajo del próximo diccionario.
+- **Tiempo por etapa: de listo para desarrollar a cerrado** (`tiempo_por_etapa`). Dónde se queda parado el trabajo entre una etapa y la siguiente.
+- **Stories empezadas que llevan mucho en su estado** (`edad_estado`). El trabajo empezado que no se mueve hace días.
+- **Cambios de código sin historia** (`sin_historia`). Las entradas a main de los últimos 28 días que no nombran su historia. Sólo se mide: no frena a nadie.
+- **Productos donde una sola persona hizo el 75 % o más de los commits del último año** (`bus_factor`). El riesgo de ingeniería no es el código: es quién es la única persona que sabe tocarlo.
+- **Productos sin pipeline de producción** (`sin_pipeline_de_prod`). No es calidad: es exposición. Para ellos «despliegues» es cero porque no hay a dónde mirar.
+
+**En Corridas:**
+
+- **Veces que un control del pipeline bloqueó una acción** (`bloqueos`). Cuántas veces un control frenó de verdad algo del trabajo.
+- **Una corrida del pipeline, de punta a punta (mediana, horas)** (`corridas`). Cuánto dura una corrida completa.
+- **Pasos de una corrida del pipeline (mediana)** (`pasos`). Una corrida consume según cuántos pasos da: la variable que explica lo que cuesta.
+
+**Cómo se oculta una.** En Configuración, sección «Avisos y la noche», «Fichas que muestra el sitio» tiene una casilla
+por ficha. Destildá las que no uses y proponé el cambio: queda en `operations.json` del repo de operaciones
+(`site.hidden_cards`). Una ficha oculta no se arma ni llega a la pantalla, y Arnés dice cuántas hay ocultas.
+
+#### Lo que todavía no se mide
+
+Una ficha sin su fuente sale **no medido**, con el motivo y la fecha de la última foto; nunca en cero. Hoy dependen de
+fuentes que no siempre están:
+
+- Las del contrato de las historias y las fechas declaradas necesitan los registros del capturador de la noche.
+- Las de la mejora del proceso, el retrabajo, el backlog y el tiempo por etapa necesitan la foto de etapas de la noche; la
+  edad en el estado, además, las fotos por proyecto.
+- Las de calidad y control (mutantes, cobertura, guía del tester, frenos, escapes, carriles) y las tres de Corridas salen
+  del buzón de corridas: sin buzón leído, quedan no medidas.
+- El bus factor necesita los productos declarados (`repos.json`), y los productos sin pipeline de producción, la deuda
+  declarada de pipelines.
+
+Si el cálculo de las fichas se cae, todas lo dicen con su propio motivo: «el cálculo de las fichas se cayó».
 
 ### Cómo trabaja
 
@@ -392,15 +456,21 @@ en su repo.
   Proyectos y Corridas. Destildá las que no uses: dejan de armarse y de mostrarse, y Arnés dice cuántas hay ocultas.
   Queda en `operations.json`, en el repo de operaciones (`site.hidden_cards`). Lo revisa quien mantiene.
 - **Pedidos de vulnerabilidades**: con qué tipo y qué campos crea la revisión de la noche el pedido de trabajo de una
-  vulnerabilidad en cada proyecto de Azure DevOps. Tiene tres partes: el **tipo** (vacío, cada proyecto usa su elemento
-  de backlog), los **campos fijos**, que van en todos los pedidos, y una fila **por gravedad** (crítica, alta, media y
-  baja), cuyos campos ganan sobre los fijos si coinciden. Cada campo se escribe con su referencia en Azure DevOps (como
-  `Microsoft.VSTS.Common.Priority`) y su valor. El título, el texto, las etiquetas y la asignación los pone el arnés y no
-  se cambian acá. «Revisar cambios» lo valida con el mismo lector que usa la noche: un campo que el arnés fija, un valor
-  que empieza con «@» o con un salto de línea, o una gravedad que no es una de las cuatro, se marcan en su campo y no se
-  proponen. Un proyecto que no tiene el tipo elegido usa el suyo, y el resumen de la mañana lo dice. Queda en
-  `operations.json`, en el repo de operaciones (`work_items`). Lo revisa quien mantiene. Los tipos y los campos se
-  escriben: elegirlos de una lista leída de Azure DevOps pediría un permiso de lectura de work items que el sitio no tiene.
+  vulnerabilidad en cada proyecto de Azure DevOps. Arriba, en un recuadro, el **tipo** (vacío, cada proyecto usa su
+  elemento de backlog) y los **campos fijos**, que van en todos los pedidos. Abajo, **según la gravedad**, una tabla con
+  una fila por campo y una columna por gravedad (crítica, alta, media y baja); sus valores ganan sobre los fijos si el
+  campo coincide. El sitio lee de los proyectos de los productos los tipos, los campos de cada tipo y sus valores
+  permitidos: cada campo se ve con su nombre (y su referencia, como `Microsoft.VSTS.Common.Priority`, debajo) y cada
+  valor se elige de un desplegable. Los valores que traen un símbolo adelante, como un círculo de color, se ven sin él y
+  se guardan tal cual los acepta Azure DevOps. Un campo sin valores fijos se escribe. Sin permiso de lectura de work
+  items, o si Azure DevOps no contesta, un aviso dice por qué y todo se escribe con su referencia. La ✕ de un campo lo
+  quita (de las cuatro gravedades, en la tabla) y se puede deshacer hasta guardar. El título, el texto, las etiquetas y la
+  asignación los pone el arnés y no se cambian acá. «Revisar cambios» lo valida con el mismo lector que usa la noche: un
+  campo que el arnés fija, un valor vacío, que empieza con «@» o con un salto de línea, o una gravedad que no es una de
+  las cuatro, se marcan en su campo y no se proponen. Un proyecto que no tiene el tipo elegido usa el suyo, y el resumen
+  de la mañana lo dice. Queda en `operations.json`, en el repo de operaciones (`work_items`). Lo revisa quien mantiene.
+
+![Pedidos de vulnerabilidades](sitio-de-la-organizacion/capturas/configuracion-pedidos.png)
 
 ![Avisos y la noche](sitio-de-la-organizacion/capturas/configuracion-avisos.png)
 

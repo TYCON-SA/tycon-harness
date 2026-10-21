@@ -166,7 +166,8 @@ control doing its job, not a problem. Next to each median, **n=** says how many 
 
 Below there is a **filter** (dates, product, machine, only runs with measured usage, only runs that reached the last
 step) and cards with the filter's numbers: how many reached the end, how long a run takes, in how many a control found an
-error, how many agents were launched and how much was used.
+error, how many agents were launched and how much was used. Maintainers then see the three Runs cards from the night
+dashboard: how long a run takes and how many steps it has (medians), and how many times a control blocked.
 
 ![Runs: the scope, "What to look at first" and the filter cards](sitio-de-la-organizacion/capturas/corridas-tabla.png)
 
@@ -203,6 +204,9 @@ others: what one does and the rest do not.
 
 ![Projects: one row per product](sitio-de-la-organizacion/capturas/proyectos.png)
 
+Maintainers also see, above the table, «How the organization is doing»: the night dashboard cards that are about the
+whole organization (see «The dashboard cards»).
+
 **What to do:** a stopped or blocked story gets unstuck in its repo, with its team; the site only shows it.
 
 ### Harness (Arnés)
@@ -212,12 +216,72 @@ others: what one does and the rest do not.
 It shows whether each night snapshot arrived on time, how many cases of the **controls bench** (tests that confirm each
 harness brake stops what it has to stop) and how many **test suites** (the harness's own tests) came out red, the
 **reviewers' exam** (whether the automatic reviewers keep finding what they have to find), and the harness version the
-site runs. The link at the bottom opens
-the harness dashboard in six questions.
+site runs. Below, the night dashboard cards, grouped by their questions (see «The dashboard cards»).
 
 ![Harness: the night snapshots, the controls bench, the suites and the site version](sitio-de-la-organizacion/capturas/arnes.png)
 
 **What to do:** a snapshot that did not arrive or a new red is looked at in the night process that produced it.
+
+### The dashboard cards
+
+The night dashboard measures the harness and the projects in six questions. The site shows those cards in their tab,
+with the same number as the dashboard: Harness groups them by question, and Projects and Runs put them in a grid above
+their table. There are 26, all of them about the organization: only maintainers see them. A person sees
+their tabs as before.
+
+**In Harness (Arnés):**
+
+- **Per-merge records that meet the format contract** (`contrato_v2`). Whether the records written when each merge closes are machine-readable.
+- **Per-merge records with a date declared inside** (`fechas_declaradas`). A date inferred from the file name sorts, but it can't be used to draw a trend.
+- **Closed stories that left proof it works at runtime** (`dod`). Of the closed stories, how many left evidence that they were tested live.
+- **What comes back: stories with a later follow-up** (`rework`). How much of what was delivered had to be touched again.
+- **Why it came back: our defect vs. a requirement change** (`rework_por_causa`). Separates what came back because of our mistake from what came back because what was asked changed.
+- **Does what went through the pipeline come back less?** (`rework_por_carril`). Compares, per repo, rework with a pipeline record against rework without one.
+- **Mutation score: share of mutants the tests kill** (`mutacion`). Whether the tests break when the code is broken on purpose.
+- **Test runs that evaluated the 75% threshold on the changed lines** (`cobertura_tocada_evaluo`). How many times the coverage of what was touched was actually measured.
+- **Closed stories that needed a manual testing guide, and had one** (`qa_guia`). The bridge between automated tests and a person who tests.
+- **How long verifying takes: duration of the test suite** (`gates_dur`). A suite that takes hours is not run before committing: it gets skipped.
+- **Pre-tool brakes: how many times they stopped something and how many times they were skipped** (`frenos`). The two numbers of the same rule together: without the first, a brake that worked looks useless.
+- **Closing hooks: decisions that rejected a piece of evidence** (`evidencia_cierre`). How many times the brakes that prevent closing without evidence rejected it.
+- **Escapes concentrated in a single rule** (`escapes_regla_dominante`). Whether what escapes the controls comes almost entirely from a single rule.
+- **Rules that are candidates for retirement: tested, never found anything** (`reglas_candidatas`). Rules that can turn red but never found anything, despite plenty of mileage.
+- **Rules the test bench actually tested** (`reglas_probadas`). A rule without a test that forces it to fire is not judged: it shows as "not tested", never as a candidate.
+- **Commits per lane: pipeline, declared shortcut or none** (`carriles`). How many commits went through the pipeline, how many through a declared shortcut and how many through none.
+
+**In Projects (Proyectos):**
+
+- **In the backlog: written and not started yet** (`backlog`). How many stories are written and not started.
+- **With a status the dictionary does not recognize** (`estados_sin_diccionario`). The statuses nobody translated: they are the work list for the next dictionary.
+- **Time per stage: from ready for development to closed** (`tiempo_por_etapa`). Where work stalls between one stage and the next.
+- **Started stories stuck in the same status for a long time** (`edad_estado`). Started work that has not moved for days.
+- **Code changes without a story** (`sin_historia`). Changes that reached main in the last 28 days without naming their story. Only measured: it blocks no one.
+- **Products where a single person made 75% or more of last year's commits** (`bus_factor`). The engineering risk is not the code: it is the only person who knows how to change it.
+- **Products without a production pipeline** (`sin_pipeline_de_prod`). It is not quality: it is exposure. For them "deployments" is zero because there is nowhere to look.
+
+**In Runs (Corridas):**
+
+- **Times a pipeline control blocked an action** (`bloqueos`). How many times a control actually stopped something.
+- **A pipeline run, end to end (median, hours)** (`corridas`). How long a full run lasts.
+- **Steps of a pipeline run (median)** (`pasos`). A run's cost depends on how many steps it takes: that is the variable that explains it.
+
+**How to hide one.** In Configuration, section «Notices and night runs», «Cards the site shows» has one checkbox per
+card. Uncheck the ones you do not use and propose the change: it goes to `operations.json` in the operations repo
+(`site.hidden_cards`). A hidden card is not built and does not reach the screen, and Harness says how many are hidden.
+
+#### What is not measured yet
+
+A card without its source shows **not measured**, with the reason and the date of the last snapshot; never zero. Today
+they depend on sources that are not always there:
+
+- The story contract and declared dates need the records of the night capturer.
+- Process improvement, rework, backlog and time per stage need the night stages snapshot; age in status also needs the
+  per-project snapshots.
+- The quality and control ones (mutants, coverage, tester guide, brakes, escapes, lanes) and the three in Runs come from
+  the runs mailbox: without a read mailbox, they stay not measured.
+- Bus factor needs the declared products (`repos.json`), and products without a production pipeline need the declared
+  pipeline debt.
+
+If the card calculation fails, every card says so with its own reason: «the card calculation failed».
 
 ### How it works (Cómo trabaja)
 
@@ -410,16 +474,22 @@ only: they are changed with a request in their repo.
   says how many are hidden. It lives in `operations.json`, in the operations repo (`site.hidden_cards`). A maintainer
   reviews it.
 - **Vulnerability work items** (*Pedidos de vulnerabilidades*): the type and fields the night review uses to create
-  the work item for a vulnerability in each Azure DevOps project. It has three parts: the **type** (empty, each project
-  uses its backlog item), the **fixed fields**, which go on every work item, and one row **per severity** (critical,
-  high, moderate and low), whose fields win over the fixed ones when they match. Each field is written with its Azure
-  DevOps reference name (like `Microsoft.VSTS.Common.Priority`) and its value. The title, text, tags and assignment are
-  set by the harness and cannot be changed here. "Review changes" validates it with the same reader the night uses: a
-  field the harness sets, a value that starts with "@" or has a line break, or a severity that is not one of the four,
-  is marked on its field and not proposed. A project without the chosen type uses its own, and the morning summary
-  says so. It lives in `operations.json`, in the operations repo (`work_items`). A maintainer reviews it. Types and
-  fields are typed in: picking them from a list read from Azure DevOps would need a work item read permission the site
-  does not have.
+  the work item for a vulnerability in each Azure DevOps project. At the top, in a box, the **type** (empty, each
+  project uses its backlog item) and the **fixed fields**, which go on every work item. Below, **by severity**, a table
+  with one row per field and one column per severity (critical, high, moderate and low); its values win over the fixed
+  ones when the field matches. The site reads the types, each type's fields and their allowed values from the products'
+  projects: each field shows its name (with its reference name, like `Microsoft.VSTS.Common.Priority`, underneath) and
+  each value is picked from a dropdown. Values that start with a symbol, such as a colored circle, are shown without it
+  and saved exactly as Azure DevOps accepts them. A field without fixed values is typed in. Without the work item read
+  permission, or if Azure DevOps does not answer, a notice says why and everything is typed in by its reference name. A
+  field's ✕ removes it (from all four severities, in the table) and can be undone until you save. The title, text, tags
+  and assignment are set by the harness and cannot be changed here. "Review changes" validates it with the same reader
+  the night uses: a field the harness sets, a value that is empty, starts with "@" or has a line break, or a severity
+  that is not one of the four, is marked on its field and not proposed. A project without the chosen type uses its own,
+  and the morning summary says so. It lives in `operations.json`, in the operations repo (`work_items`). A maintainer
+  reviews it.
+
+![Vulnerability work items](sitio-de-la-organizacion/capturas/configuracion-pedidos.png)
 
 ![Notices and night runs](sitio-de-la-organizacion/capturas/configuracion-avisos.png)
 

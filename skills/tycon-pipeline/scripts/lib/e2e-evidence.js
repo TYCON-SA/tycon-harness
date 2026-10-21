@@ -124,6 +124,19 @@ function filtrosNoEncontrados(frontendDir, filtros) {
 }
 
 /**
+ * Las pruebas apagadas que anota una constancia, o null si no lo dice. Los gates las escriben de tres formas:
+ * `- skipped: N` (el del arnés), `skipped: N` (línea suelta) y `skipped=N` dentro de otra línea. Sin la línea no se
+ * supone un cero: la matriz la trata como «no informado» y no da la evidencia por completa.
+ * Se lee sólo la cabecera, hasta la salida pegada o los títulos: ahí abajo un «skipped=0» es texto de Playwright o de un
+ * test, no lo que el gate contó.
+ */
+function skippedOf(texto) {
+  const cabecera = String(texto || '').split(/^##\s+(?:Salida|Tests corridos)/m)[0];
+  const m = cabecera.match(/(?:^|[\s(])skipped\s*[:=]\s*(\d+)/m);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+/**
  * Contrato de la evidencia. Cada entrada dice qué se busca y por qué hace falta —
  * el "por qué" viaja con la validación para que el mensaje de error sea accionable.
  */
@@ -230,7 +243,7 @@ function sealCaptures(index, destDir, home) {
   return null;
 }
 
-module.exports = { passedTitles, totals, veredicto, filtrosNoEncontrados, verify, imageAttachments, copyCaptures, sealCaptures, CONTRATO };
+module.exports = { passedTitles, totals, veredicto, skippedOf, filtrosNoEncontrados, verify, imageAttachments, copyCaptures, sealCaptures, CONTRATO };
 
 if (require.main === module) {
   const [cmd, file] = process.argv.slice(2);

@@ -115,7 +115,7 @@ const compactNow = () => compact(60 * 1000);
 /** El gate E2E con su copia en gates.log, como lo deja `marker.js run-check dod -- bash e2e-gate.sh …`. */
 function writeGate(f, tsCompact, specFilter, titulos, verdict = 'PASS') {
   fs.writeFileSync(path.join(f.dodDir, `9.9-e2e-gate-${tsCompact}.md`), [
-    '# E2E Gate — 9.9', '', `verdict=${verdict}`, `**Spec filter**: ${specFilter}`, '',
+    '# E2E Gate — 9.9', '', `verdict=${verdict}`, `**Spec filter**: ${specFilter}`, '- skipped: 0', '',
     '## Tests corridos (títulos completos — contrato DODRT-C8)', ...titulos.map((t) => `- ${t}`), '',
   ].join('\n'));
   fs.appendFileSync(f.gatesLog, JSON.stringify({

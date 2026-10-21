@@ -859,6 +859,8 @@ function pantalla(idioma = 'es') {
   // (harness.js team-config) la pide sin idioma y sale en castellano, como siempre
   const { textosCon } = require('../site/texts.js');
   const textos = JSON.stringify(textosCon(idioma, 'pantalla.')).replace(/</g, '\\u003c');
+  // los campos que fija el pedido (título, etiquetas, asignación, gravedad…): el lector los rechaza, así que no se ofrecen
+  const reservados = JSON.stringify([...require('./operations-config.js').WORK_ITEM_RESERVED]);
   return String.raw`'use strict';
 // config.js — la pestaña Configuración del sitio de la organización (story 2.29). Lo sirve scripts/lib/org-config.js.
 // Sólo usa setAttribute, appendChild, addEventListener, textContent y replaceChildren: las pruebas lo corren sobre un
@@ -1696,7 +1698,7 @@ function pantalla(idioma = 'es') {
   // ── los nombres en lugar de los números: los pipelines de un proyecto y los nombres de los pasos, pedidos una vez ──
   var PIPES = {}; var PASOS = {};
   // los tipos de pedido y los campos de cada tipo, pedidos una vez por página: { estado: 'cargando' | 'listo', r }
-  var TIPOS_PEDIDO = null; var CAMPOS_PEDIDO = {}; var OPCIONES_N = 0;
+  var TIPOS_PEDIDO = null; var CAMPOS_PEDIDO = {};
   function tiposDePedidoLeidos() {
     if (!TIPOS_PEDIDO) { TIPOS_PEDIDO = { estado: 'cargando' }; api('/tipos-de-pedido', {}).then(function (r) { TIPOS_PEDIDO = { estado: 'listo', r: r }; render(); }); }
     return TIPOS_PEDIDO;
@@ -1968,64 +1970,181 @@ function pantalla(idioma = 'es') {
       d.wait_notice.minutes = numOTexto(v);
     }, 'wait_notice.minutes', pr, { inputmode: 'numeric' }));
   }
-  // los pedidos de vulnerabilidades: el tipo, los campos fijos y una fila por gravedad, cada campo con su
-  // nombre (la referencia, como «Microsoft.VSTS.Common.Priority») y su valor. Todo lo escrito lo valida el lector al
-  // revisar; los comentarios «__…» del archivo se conservan y no se muestran
+  // los pedidos de vulnerabilidades, según la maqueta que aprobó el dueño: arriba el tipo y los campos fijos, abajo una
+  // sola tabla con una fila por campo y una columna por gravedad. Con las listas que leyó el sitio, cada campo se ve con
+  // su nombre para personas y cada valor se elige; sin ellas se escribe, y lo valida el lector al revisar. Los
+  // comentarios «_…» del archivo se conservan y no se muestran
   var GRAVEDADES = [['critical', T('pantalla.gravedadCritica')], ['high', T('pantalla.gravedadAlta')], ['moderate', T('pantalla.gravedadMedia')], ['low', T('pantalla.gravedadBaja')]];
-  // la lista que leyó el sitio, si la hay: los nombres de los campos del tipo y los valores permitidos de cada uno se
-  // ofrecen para elegir; escribir otra cosa sigue valiendo (lo valida el lector)
-  function opciones(id, valores) { var d = el('datalist', { id: id }); (valores || []).forEach(function (v) { d.appendChild(el('option', { value: v })); }); return d; }
-  function camposDePedido(titulo, ayuda, mapa, set, p, pr, catalogo) {
-    var m = esObjeto(mapa) ? mapa : {};
-    var porRef = {}; (catalogo || []).forEach(function (c) { porRef[c.referencia] = c; });
-    var box = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: titulo }), ayuda ? el('p', { class: 'sub-d', text: ayuda }) : null);
-    var nombres = Object.keys(m).filter(function (k) { return k.indexOf('__') !== 0; });
-    if (!nombres.length) box.appendChild(el('p', { class: 'muted', text: T('pantalla.pedidosSinCampos') }));
-    // renombrar un campo arma el mapa de nuevo, en el mismo orden: el nombre vigente vive en ref
-    // un nombre que ya tiene otro campo de la lista no se aplica (pisaría su valor): se dice junto al campo
-    var reArmar = function (viejo, nuevo, valor) { if (nuevo !== viejo && Object.prototype.hasOwnProperty.call(m, nuevo)) return false; var out = {}; Object.keys(m).forEach(function (k) { if (k === viejo) out[nuevo] = valor; else out[k] = m[k]; }); m = out; set(m); return true; };
-    nombres.forEach(function (k) {
-      var ref = { k: k };
-      var aviso = el('div', { class: 'err', 'data-path': p + '.' + k + '.repetido' });
-      var idValores = 'pedidos-valores-' + (++OPCIONES_N);   // único en la página: un nombre de campo no lo arma
-      var valores = porRef[k] && porRef[k].valores.length ? porRef[k].valores : null;
-      if (valores) box.appendChild(opciones(idValores, valores));
-      box.appendChild(el('div', { class: 'fila quitar' },
-        campo(T('pantalla.pedidosCampo'), k, function (v) { var ok = reArmar(ref.k, v, m[ref.k]); if (ok) ref.k = v; aviso.textContent = ok ? '' : T('pantalla.pedidosCampoRepetido'); }, p + '.' + k, pr, { placeholder: 'Microsoft.VSTS.Common.Priority', list: catalogo ? 'pedidos-campos' : null }),
-        campo(T('pantalla.pedidosValor'), m[k], function (v) { m[ref.k] = numOTexto(v); set(m); }, p + '.' + k + '.valor', pr, { list: valores ? idValores : null }),
-        quitar(function () { delete m[ref.k]; set(m); render(); })));
-      box.appendChild(aviso);
-    });
-    box.appendChild(el('button', { class: 'mas', type: 'button', text: '+ ' + T('pantalla.pedidosAgregarCampo'), onclick: function () { var n = ''; while (Object.prototype.hasOwnProperty.call(m, n)) n += ' '; m[n] = ''; set(m); render(); } }));
-    problemasEn(pr, p).forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
+  // lo último que se quitó, para deshacerlo antes de guardar: { d, campo, volver }. Vale para el borrador en que se quitó
+  var PEDIDOS_QUITADO = null;
+  var RESERVADOS = ${reservados};
+  function esComentarioDePedido(k) { return k.charAt(0) === '_'; }
+  // los campos del tipo que se pueden configurar: los que fija el pedido no se ofrecen
+  function configurables(catalogo) { return (catalogo || []).filter(function (c) { return RESERVADOS.indexOf(String(c.referencia).toLowerCase()) < 0; }); }
+  // la etiqueta de un valor, sin el símbolo de adelante («🔴 Crítico (21-25)» se lee «Crítico (21-25)»): sólo símbolos,
+  // emojis y espacios; un signo o una puntuación («-1», «(ninguno)») quedan. Lo que se guarda es el valor tal cual, que
+  // es el que acepta la plataforma. Un valor que es sólo un símbolo se muestra entero
+  function sinSimbolo(v) { var t = String(v); var r = t.replace(/^[\p{So}\p{Sk}\p{Cf}\p{M}\s]+/u, ''); return r || t; }
+  // las etiquetas de una lista: si dos valores se leerían igual sin su símbolo, van enteros
+  function etiquetasDe(lista) {
+    var limpias = lista.map(sinSimbolo);
+    return limpias.map(function (l, i) { return limpias.indexOf(l) !== limpias.lastIndexOf(l) ? lista[i] : l; });
+  }
+  // un valor elegido o escrito: es número sólo si el número se escribe igual («5»); «007» o «1.10» quedan como texto
+  function valorExacto(v) { var n = numOTexto(v); return typeof n === 'number' && String(n) === v ? n : v; }
+  // el control de un valor: un desplegable con los valores permitidos, o un campo de texto si el campo no tiene valores
+  // fijos. Un valor guardado que no está en la lista se ofrece igual, elegido: no se cambia sin que nadie lo vea. «—»
+  // deja el valor vacío: en la tabla saca el campo de esa gravedad; en un campo fijo sólo aparece mientras está vacío
+  function valorDePedido(etiqueta, valor, valores, set, p, pr, vaciable) {
+    var mios = problemasEn(pr, p);
+    var actual = valor == null ? '' : String(valor);
+    var control;
+    if (valores && valores.length) {
+      var lista = valores.map(String);
+      if (actual !== '' && lista.indexOf(actual) < 0) lista = [actual].concat(lista);
+      var etiquetas = etiquetasDe(lista);
+      control = el('select', { 'aria-label': etiqueta, 'data-path': p, onchange: function (e) { set(valorExacto(e.target.value)); } });
+      if (actual === '' || vaciable) control.appendChild(el('option', { value: '', text: '—', selected: actual === '' ? 'selected' : null }));
+      lista.forEach(function (v, i) { control.appendChild(el('option', { value: v, text: etiquetas[i], selected: v === actual ? 'selected' : null })); });
+      control.value = actual;
+    } else control = el('input', { value: actual, 'aria-label': etiqueta, 'data-path': p, oninput: function (e) { set(valorExacto(e.target.value)); } });
+    if (mios.length) control.setAttribute('class', 'bad');
+    var box = el('div', { class: 'celda' }, control);
+    mios.forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
     return box;
+  }
+  // la ✕ chica: quita el campo y deja «Quitaste <campo>. Deshacer». Deshacer vuelve los pedidos a como estaban, en el
+  // mismo orden; cualquier otro cambio en el medio lo apaga (si no, pisaría lo nuevo sin avisar)
+  function quitarDePedido(d, nombre, sacar) {
+    return el('button', { class: 'quitar-fila', type: 'button', text: '✕', title: T('pantalla.quitar'), 'aria-label': T('pantalla.pedidosQuitarCampo', { campo: nombre }), onclick: function () {
+      var antes = esObjeto(d.work_items) ? JSON.parse(JSON.stringify(d.work_items)) : undefined;
+      PEDIDOS_QUITADO = null; sacar();
+      PEDIDOS_QUITADO = { d: d, campo: nombre, antes: antes, nodo: null };
+      render();
+    } });
+  }
+  // un cambio de los pedidos: el deshacer que había ya no vale
+  function apagarDeshacer(d) { var q = PEDIDOS_QUITADO; if (!q || q.d !== d) return; PEDIDOS_QUITADO = null; if (q.nodo) q.nodo.setAttribute('hidden', 'hidden'); }
+  // un mapa con un nombre cambiado, en el mismo lugar
+  function renombrado(m, viejo, nuevo) { var out = {}; Object.keys(m).forEach(function (k) { out[k === viejo ? nuevo : k] = m[k]; }); return out; }
+  // un nombre que todavía no está en el mapa, para el campo recién agregado: se escribe después
+  function nombreLibre(usado) { var n = ''; while (usado(n)) n += ' '; return n; }
+  function camposFijos(d, w, limpiar, porRef, catalogo, pr) {
+    var m = esObjeto(d.work_items) && esObjeto(d.work_items.fixed_fields) ? d.work_items.fixed_fields : {};
+    var fijos = function () { var x = w(); if (!esObjeto(x.fixed_fields)) x.fixed_fields = {}; return x.fixed_fields; };
+    var out = [];
+    Object.keys(m).filter(function (k) { return !esComentarioDePedido(k); }).forEach(function (k) {
+      var c = porRef[k];
+      var nombre = c ? c.nombre : k;
+      var set = function (v) { fijos()[k] = v; limpiar(); };
+      var aviso = el('div', { class: 'err', 'data-path': 'work_items.fijos.' + k + '.repetido' });
+      // un campo recién agregado, sin lista, todavía no tiene nombre: se escribe la referencia
+      var titulo = k.trim() ? el('label', { text: nombre }, el('span', { class: 'nota', text: T('pantalla.pedidosIgualParaTodas') }))
+        : el('input', { class: 'ref', value: '', placeholder: 'Microsoft.VSTS.Common.Priority', 'aria-label': T('pantalla.pedidosCampo'), 'data-path': 'work_items.fijos.' + k, onchange: function (e) { var v = e.target.value.trim(); if (!v) return; if (Object.prototype.hasOwnProperty.call(fijos(), v)) { aviso.textContent = T('pantalla.pedidosCampoRepetido'); return; } w().fixed_fields = renombrado(fijos(), k, v); render(); } });
+      out.push(el('div', { class: 'fijo' }, el('div', { class: 'campo' }, titulo, valorDePedido(nombre, m[k], c ? c.valores : null, set, 'work_items.fixed_fields.' + k, pr), aviso),
+        quitarDePedido(d, nombre, function () { delete fijos()[k]; limpiar(); })));
+    });
+    var agregar = function (k) { fijos()[k] = ''; limpiar(); render(); };
+    if (catalogo) {
+      var sel = el('select', { class: 'mas', 'aria-label': '+ ' + T('pantalla.pedidosCampoFijo'), 'data-path': 'work_items.fijos.nuevo', onchange: function (e) { if (e.target.value) agregar(e.target.value); } }, el('option', { value: '', text: '+ ' + T('pantalla.pedidosCampoFijo') }));
+      configurables(catalogo).forEach(function (c) { if (!Object.prototype.hasOwnProperty.call(m, c.referencia)) sel.appendChild(el('option', { value: c.referencia, text: c.nombre })); });
+      out.push(sel);
+    } else out.push(el('button', { class: 'mas', type: 'button', text: '+ ' + T('pantalla.pedidosCampoFijo'), onclick: function () { agregar(nombreLibre(function (n) { return Object.prototype.hasOwnProperty.call(m, n); })); } }));
+    problemasEn(pr, 'work_items.fixed_fields').forEach(function (x) { out.push(el('div', { class: 'err', text: x.message })); });
+    return out;
+  }
+  function tablaPorGravedad(d, w, limpiar, porRef, catalogo, tipo, pr) {
+    var bs = function () { return esObjeto(d.work_items) && esObjeto(d.work_items.by_severity) ? d.work_items.by_severity : {}; };
+    var gs = bs();
+    var filas = [];
+    GRAVEDADES.forEach(function (g) { if (esObjeto(gs[g[0]])) Object.keys(gs[g[0]]).forEach(function (k) { if (!esComentarioDePedido(k) && filas.indexOf(k) < 0) filas.push(k); }); });
+    var poner = function (g, k, v) { var x = w(); if (!esObjeto(x.by_severity)) x.by_severity = {}; if (!esObjeto(x.by_severity[g])) x.by_severity[g] = {}; x.by_severity[g][k] = v; limpiar(); };
+    var sacar = function (g, k) { var x = bs(); if (!esObjeto(x[g]) || !Object.prototype.hasOwnProperty.call(x[g], k)) return; delete x[g][k]; if (!Object.keys(x[g]).length) delete x[g]; if (!Object.keys(x).length) delete d.work_items.by_severity; limpiar(); };
+    var tiene = function (k) { var x = bs(); return GRAVEDADES.some(function (g) { return esObjeto(x[g[0]]) && Object.prototype.hasOwnProperty.call(x[g[0]], k); }); };
+    var t = tabla('pedidos', T('pantalla.pedidosPorGravedad'), [T('pantalla.pedidosCampo')].concat(GRAVEDADES.map(function (g) { return g[1]; })).concat(['']));
+    filas.forEach(function (k) {
+      var c = porRef[k];
+      var nombre = c ? c.nombre : k;
+      var ref = { k: k };
+      var aviso = el('div', { class: 'err', 'data-path': 'work_items.campos.' + k + '.repetido' });
+      // sin la lista, el campo es su referencia y se escribe; renombrarlo lo cambia en las cuatro gravedades, y un nombre
+      // que ya tiene otra fila no se aplica (pisaría sus valores): se dice junto al campo
+      var celdaNombre = c ? el('div', { class: 'nombre' }, el('strong', { text: c.nombre }), el('small', { class: 'ref', text: k }))
+        : el('div', { class: 'nombre' }, el('input', { class: 'ref', value: k, placeholder: 'Microsoft.VSTS.Common.Priority', 'aria-label': T('pantalla.pedidosCampo'), 'data-path': 'work_items.campos.' + k, oninput: function (e) {
+          var v = e.target.value;
+          if (v !== ref.k && tiene(v)) { aviso.textContent = T('pantalla.pedidosCampoRepetido'); return; }
+          var x = bs(); GRAVEDADES.forEach(function (g) { if (esObjeto(x[g[0]])) x[g[0]] = renombrado(x[g[0]], ref.k, v); });
+          ref.k = v; aviso.textContent = ''; limpiar();
+        } }), aviso);
+      var celdas = [celdaNombre];
+      GRAVEDADES.forEach(function (g) {
+        var m = esObjeto(gs[g[0]]) ? gs[g[0]] : {};
+        celdas.push(valorDePedido(nombre + ', ' + g[1], m[k], c ? c.valores : null, function (v) { if (v === '') sacar(g[0], ref.k); else poner(g[0], ref.k, v); }, 'work_items.by_severity.' + g[0] + '.' + k, pr, true));
+      });
+      celdas.push(el('div', { class: 'acc' }, quitarDePedido(d, nombre, function () { GRAVEDADES.forEach(function (g) { sacar(g[0], ref.k); }); })));
+      var fila = renglon(celdas, [], null); fila.setAttribute('data-fila', k);
+      t.appendChild(fila);
+    });
+    // «+ campo»: con la lista, los campos del tipo que todavía no están; sin ella, una fila nueva para escribir
+    var agregar = function (k) { GRAVEDADES.forEach(function (g) { poner(g[0], k, ''); }); render(); };
+    var nuevo;
+    if (catalogo) {
+      nuevo = el('select', { class: 'mas', 'aria-label': '+ ' + T('pantalla.pedidosAgregarCampo'), 'data-path': 'work_items.campos.nuevo', onchange: function (e) { if (e.target.value) agregar(e.target.value); } }, el('option', { value: '', text: T('pantalla.pedidosElegiCampo', { tipo: tipo }) }));
+      configurables(catalogo).forEach(function (c) { if (filas.indexOf(c.referencia) < 0) nuevo.appendChild(el('option', { value: c.referencia, text: c.nombre })); });
+      nuevo = el('div', { class: 'nuevo' }, el('span', { text: '+ ' + T('pantalla.pedidosAgregarCampo') }), nuevo);
+    } else nuevo = el('div', { class: 'nuevo' }, el('button', { class: 'mas', type: 'button', text: '+ ' + T('pantalla.pedidosAgregarCampo'), onclick: function () { agregar(nombreLibre(tiene)); } }));
+    t.appendChild(renglon([nuevo], [], 'agregar'));
+    return t;
   }
   function editorPedidos(s, d, pr) {
     var w = function () { if (!esObjeto(d.work_items)) d.work_items = {}; return d.work_items; };
-    // una parte que queda vacía se saca: no se propone un «{}»
-    var limpiar = function () { var x = d.work_items; if (!esObjeto(x)) return; ['fixed_fields', 'by_severity'].forEach(function (k) { if (esObjeto(x[k]) && !Object.keys(x[k]).length) delete x[k]; }); if (!Object.keys(x).length) delete d.work_items; };
+    // una parte que queda vacía se saca: no se propone un «{}». Cada cambio pasa por acá, y apaga el deshacer anterior
+    var limpiar = function () { apagarDeshacer(d); var x = d.work_items; if (!esObjeto(x)) return; ['fixed_fields', 'by_severity'].forEach(function (k) { if (esObjeto(x[k]) && !Object.keys(x[k]).length) delete x[k]; }); if (!Object.keys(x).length) delete d.work_items; };
     var actual = esObjeto(d.work_items) ? d.work_items : {};
     var box = el('div', { class: 'pila' });
     var L = tiposDePedidoLeidos();
     var tipos = L.estado === 'listo' && L.r && L.r.ok && Array.isArray(L.r.tipos) ? L.r.tipos : null;
-    if (tipos) box.appendChild(opciones('pedidos-tipos', tipos));
-    box.appendChild(campo(T('pantalla.pedidosTipo'), actual.type, function (v) { if (v === '') { if (esObjeto(d.work_items)) delete d.work_items.type; } else w().type = v; limpiar(); }, 'work_items.type', pr, { placeholder: T('pantalla.pedidosTipoEjemplo'), list: tipos ? 'pedidos-tipos' : null, onchange: function () { render(); } }));
-    box.appendChild(el('p', { class: 'sub-d', text: T('pantalla.pedidosTipoAyuda') }));
-    // sin la lista se escribe a mano, como siempre; la pantalla dice por qué no hay lista
-    if (L.estado === 'listo' && !tipos) box.appendChild(el('p', { class: 'muted', 'data-path': 'work_items.lista', text: T('pantalla.pedidosSinLista', { motivo: (L.r && L.r.message) || T('pantalla.pedidosSinRespuesta') }) }));
-    if (tipos && L.r.sinLeer && L.r.sinLeer.length) box.appendChild(el('p', { class: 'muted', 'data-path': 'work_items.lista', text: T('pantalla.pedidosListaParcial', { proyectos: L.r.sinLeer.map(function (x) { return x.proyecto; }).join(', ') }) }));
     var C = tipos && typeof actual.type === 'string' && tipos.indexOf(actual.type) >= 0 ? camposDeTipoLeidos(actual.type) : null;
     var catalogo = C && C.estado === 'listo' && C.r && C.r.ok && Array.isArray(C.r.campos) ? C.r.campos : null;
-    if (catalogo) box.appendChild(opciones('pedidos-campos', catalogo.map(function (c) { return c.referencia; })));
-    if (C && C.estado === 'listo' && !catalogo) box.appendChild(el('p', { class: 'muted', 'data-path': 'work_items.campos', text: T('pantalla.pedidosSinCamposLeidos', { motivo: (C.r && C.r.message) || T('pantalla.pedidosSinRespuesta') }) }));
-    box.appendChild(camposDePedido(T('pantalla.pedidosCamposFijos'), T('pantalla.pedidosCamposFijosAyuda'), actual.fixed_fields, function (m) { w().fixed_fields = m; limpiar(); }, 'work_items.fixed_fields', pr, catalogo));
-    var gs = esObjeto(actual.by_severity) ? actual.by_severity : {};
-    var tabla = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.pedidosPorGravedad') }), el('p', { class: 'sub-d', text: T('pantalla.pedidosPorGravedadAyuda') }));
-    GRAVEDADES.forEach(function (g) {
-      tabla.appendChild(camposDePedido(g[1], '', gs[g[0]], function (m) { var x = w(); if (!esObjeto(x.by_severity)) x.by_severity = {}; if (Object.keys(m).length) x.by_severity[g[0]] = m; else delete x.by_severity[g[0]]; limpiar(); }, 'work_items.by_severity.' + g[0], pr, catalogo));
-    });
-    problemasEn(pr, 'work_items.by_severity').forEach(function (x) { tabla.appendChild(el('div', { class: 'err', text: x.message })); });
-    box.appendChild(tabla);
+    var porRef = {}; (catalogo || []).forEach(function (c) { porRef[c.referencia] = c; });
+    // sin la lista se escribe a mano, como siempre; la pantalla dice por qué no hay lista
+    var sinLista = L.estado === 'listo' && !tipos ? T('pantalla.pedidosSinLista', { motivo: (L.r && L.r.message) || T('pantalla.pedidosSinRespuesta') })
+      : C && C.estado === 'listo' && !catalogo ? T('pantalla.pedidosSinCamposLeidos', { motivo: (C.r && C.r.message) || T('pantalla.pedidosSinRespuesta') }) : null;
+    if (sinLista) box.appendChild(el('div', { class: 'aviso-listas', role: 'status', 'data-path': 'work_items.lista' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '!' }), el('span', { text: sinLista })));
+    if (tipos && L.r.sinLeer && L.r.sinLeer.length) box.appendChild(el('p', { class: 'muted', 'data-path': 'work_items.lista', text: T('pantalla.pedidosListaParcial', { proyectos: L.r.sinLeer.map(function (x) { return x.proyecto; }).join(', ') }) }));
+    var q = PEDIDOS_QUITADO && PEDIDOS_QUITADO.d === d ? PEDIDOS_QUITADO : null;
+    if (q) {
+      q.nodo = el('div', { class: 'deshacer', role: 'status' }, el('span', { text: T('pantalla.pedidosQuitaste', { campo: q.campo }) }), el('button', { class: 'sec', type: 'button', text: T('pantalla.pedidosDeshacer'), onclick: function () {
+        // un deshacer apagado por otro cambio no vuelve nada: el aviso ya no se ve
+        if (PEDIDOS_QUITADO !== q) return;
+        PEDIDOS_QUITADO = null;
+        if (q.antes === undefined) delete d.work_items; else d.work_items = q.antes;
+        render();
+      } }));
+      box.appendChild(q.nodo);
+    }
+    // arriba: el tipo y los campos fijos, que van en todos los pedidos
+    var setTipo = function (v) { if (v === '') { if (esObjeto(d.work_items)) delete d.work_items.type; } else w().type = v; limpiar(); };
+    var controlTipo;
+    if (tipos) {
+      var lista = actual.type && tipos.indexOf(actual.type) < 0 ? [actual.type].concat(tipos) : tipos;
+      var sel = el('select', { 'aria-label': T('pantalla.pedidosTipo'), 'data-path': 'work_items.type', onchange: function (e) { setTipo(e.target.value); render(); } }, el('option', { value: '', text: T('pantalla.pedidosTipoEjemplo'), selected: actual.type ? null : 'selected' }));
+      lista.forEach(function (v) { sel.appendChild(el('option', { value: v, text: v, selected: v === actual.type ? 'selected' : null })); });
+      sel.value = actual.type || '';
+      var mios = problemasEn(pr, 'work_items.type');
+      if (mios.length) sel.setAttribute('class', 'bad');
+      controlTipo = el('div', { class: 'campo' }, el('label', { text: T('pantalla.pedidosTipo') }), sel);
+      mios.forEach(function (x) { controlTipo.appendChild(el('div', { class: 'err', text: x.message })); });
+    } else controlTipo = campo(T('pantalla.pedidosTipo'), actual.type, setTipo, 'work_items.type', pr, { placeholder: T('pantalla.pedidosTipoEjemplo'), onchange: function () { render(); } });
+    var arriba = el('div', { class: 'pedidos-arriba' }, controlTipo, el('span', { class: 'sep', 'aria-hidden': 'true' }));
+    camposFijos(d, w, limpiar, porRef, catalogo, pr).forEach(function (n) { arriba.appendChild(n); });
+    box.appendChild(arriba);
+    // abajo: una fila por campo y una columna por gravedad
+    var leidos = catalogo && C.r.proyecto ? el('span', { class: 'muted', text: T('pantalla.pedidosLeidosDe', { proyecto: C.r.proyecto }) }) : null;
+    box.appendChild(el('div', { class: 'pedidos-gravedad' }, el('div', { class: 'pedidos-t' }, el('p', { class: 'sub-t', text: T('pantalla.pedidosPorGravedad') }), leidos),
+      el('div', { class: 'tbl-wrap' }, tablaPorGravedad(d, w, limpiar, porRef, catalogo, actual.type, pr)),
+      el('p', { class: 'pedidos-pie', text: T('pantalla.pedidosCeldasAyuda') })));
+    problemasEn(pr, 'work_items.by_severity').forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
     box.appendChild(restoYTexto(s, d, pr, 'work_items', T('pantalla.pedidosComoTexto')));
     return box;
   }

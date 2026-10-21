@@ -385,9 +385,15 @@ function paginaProyectos(ctx) {
   const T = (k, v) => t(idioma, k, v);
   const titulo = T('pestana.proyectos');
   const m = ctx.modelo || {};
-  if (m.proyectos && m.proyectos.lista === null) return layout(ctx, titulo, seccion(titulo, `<p class="q-note">${esc(fraseDe(m.proyectos, idioma))}</p>`));
+  // las fichas de la organización del tablero nocturno, en una grilla arriba de la tabla; no dependen de la lista de
+  // productos. Sólo las trae el modelo de quien mantiene: el de una persona no tiene `fichas`, y su página no cambia
+  const [grilla] = fichasDelTablero.seccionesDe(m.fichas, 'proyectos', { sinPreguntas: true, idioma });
+  const fichas = m.fichas === null
+    ? `<p class="q-note" id="fichas-calculando">${esc(T('fichas.calculando'))}</p>`
+    : (grilla ? `<div id="fichas-proyectos">${seccion(T('proyectos.fichas'), grilla.html)}</div>` : '');
+  if (m.proyectos && m.proyectos.lista === null) return layout(ctx, titulo, fichas + seccion(titulo, `<p class="q-note">${esc(fraseDe(m.proyectos, idioma))}</p>`));
   // sin repos.json (o ilegible) no se sabe qué productos hay: «no medido», nunca «ningún producto»
-  if (m.productosFuente && m.productosFuente.estado === 'no_medido') return layout(ctx, titulo, seccion(titulo, `<p class="q-note">${esc(T('proyectos.sinLista', { motivo: fraseDe(m.productosFuente, idioma) }))}</p>`));
+  if (m.productosFuente && m.productosFuente.estado === 'no_medido') return layout(ctx, titulo, fichas + seccion(titulo, `<p class="q-note">${esc(T('proyectos.sinLista', { motivo: fraseDe(m.productosFuente, idioma) }))}</p>`));
   const { filas, totales } = filasProyectos(m, { idioma });
   const noMedido = (motivo) => esc(T('vista.noMedidoCon', { motivo }));
   const celdaDep = (d) => {
@@ -403,7 +409,7 @@ function paginaProyectos(ctx) {
   const cab = ['producto', 'enCurso', 'paradas', 'bloqueadas', 'enPrueba', 'enProduccion', 'aprobacion', 'vigilado', 'vivas', 'paridad'].map((k) => `<th>${esc(T(`proyectos.col.${k}`, { dias: PARADA_DIAS }))}</th>`).join('');
   const tabla = `<label class="filtro">${esc(T('proyectos.filtrar'))} <input type="search" data-filtro="proyectos"></label><div class="card tbl-wrap"><table class="tabla" id="proyectos"><thead><tr>${cab}</tr></thead><tbody>${filasHtml}</tbody></table></div>`;
   const pie = `<p class="q-note">${esc(T('proyectos.totales', { enCurso: totales.en_curso_total, paradas: totales.paradas_total, sinMedir: totales.sin_medir_total }))}</p>`;
-  return layout(ctx, titulo, seccion(T('proyectos.comoVa'), filas.length ? tabla + pie : `<p class="q-note">${esc(T('proyectos.ninguno'))}</p>`), T('proyectos.lede'));
+  return layout(ctx, titulo, fichas + seccion(T('proyectos.comoVa'), filas.length ? tabla + pie : `<p class="q-note">${esc(T('proyectos.ninguno'))}</p>`), T('proyectos.lede'));
 }
 
 function paginaArnes(ctx) {
@@ -418,27 +424,7 @@ function paginaArnes(ctx) {
   // `null`: el sitio todavía no las calculó (el primer refresco); aparecen solas
   const calculando = m.fichas === null ? `<p class="q-note" id="fichas-calculando">${esc(T('fichas.calculando'))}</p>` : '';
   const fichas = calculando + porPregunta + (ocultas ? `<p class="q-note" id="fichas-ocultas">${esc(ocultas)}</p>` : '');
-  return layout(ctx, T('pestana.arnes'), seccion(T('arnes.comoEsta'), `<ul class="lista">${li}</ul><a class="enlace-fuerte" href="/arnes/tablero">${esc(T('arnes.enlaceTablero'))}</a>`) + fichas, T('arnes.lede'));
-}
-
-/** La página de las seis preguntas, tal cual pero sin nada de afuera ni scripts en línea. */
-function tableroServido(ctx) {
-  const idioma = idiomaDe(ctx);
-  const tb = ctx.modelo && ctx.modelo.tablero;
-  if (!medida(tb) || typeof tb.html !== 'string') return layout(ctx, t(idioma, 'arnes.sello'), seccion(t(idioma, 'vista.noMedidoTitulo'), `<p class="q-note">${esc(conFecha(tb, idioma))}</p>`));
-  // la página de la noche es de afuera del sitio: se sirve como la armó el nocturno
-  return tb.html
-    .replace(/<link\b[^>]*>/gi, (tag) => (/href\s*=\s*["']?(https?:)?\/\//i.test(tag) ? '' : tag))
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, (tag) => (/^<script\b[^>]*\bsrc\s*=\s*["']\/(?!\/)/i.test(tag) ? tag : ''))
-    // el separador de un atributo puede ser un espacio o una `/` (`<img/src=…>`); el valor, con o sin comillas y con
-    // espacios adelante
-    .replace(/([\s/](?:src|href)\s*=\s*["']\s*)(https?:)?\/\/[^"']*(["'])/gi, '$1#$3')
-    .replace(/([\s/](?:src|href)\s*=\s*)(https?:)?\/\/[^\s>]*/gi, '$1#')
-    // ningún <meta http-equiv>, sin mirar su valor: escrito con entidades («&#114;efresh») también redirige
-    .replace(/<meta\b[^>]*http-equiv[^>]*>/gi, '')
-    // un manejador `on…=` con comillas o sin ellas, pegado con espacio o con `/` (`<img/src=x/onerror=…>`): fuera. La
-    // política de contenido ya bloquea los manejadores en línea; esto es la segunda capa.
-    .replace(/[\s/]on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  return layout(ctx, T('pestana.arnes'), seccion(T('arnes.comoEsta'), `<ul class="lista">${li}</ul>`) + fichas, T('arnes.lede'));
 }
 
 /** Lo mismo que Inicio, como datos (para /api/inicio). */
@@ -487,7 +473,7 @@ const paginaCargando = (ctx = {}) => layout({ ...ctx, recargar: 5 }, t(idiomaDe(
 
 module.exports = {
   hora, FRASES, frasesEn, fraseDe, conFecha, filasInicioMantenedor, inicioDev, filasProyectos, filasArnes,
-  paginaInicio, paginaProyectos, paginaArnes, tableroServido, inicioJson,
+  paginaInicio, paginaProyectos, paginaArnes, inicioJson,
   paginaSimple, paginaEntrar, paginaNoEntro, paginaSinRol, paginaSaliste, paginaSinMantenedores, paginaFrenado, paginaCargando, layout, umbralValido,
   idiomaDe, selectorDeIdioma,
 };

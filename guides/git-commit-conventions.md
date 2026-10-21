@@ -224,8 +224,8 @@ Eso es **ruido esperado** — lo genera el installer de BMAD y otras tools al co
 **NO es trabajo pendiente de commitear.** Ignoralo.
 
 🔴 **Regla**: cuando commitees a `AgentSkills`, hacé `git add` SOLO de los archivos
-de la skill concreta que modificaste (ej: `git add skills/clocki/SKILL.md
-skills/clocki/scripts/lib.js`). NUNCA `git add -A` ni `git add .` — te llevarías
+de la skill concreta que modificaste (ej: `git add skills/tycon-pipeline/SKILL.md
+skills/tycon-pipeline/scripts/marker.js`). NUNCA `git add -A` ni `git add .` — te llevarías
 las ~50 modificaciones BMAD + ~70 carpetas untracked en un commit gigante que no
 es tuyo y ensucia el historial del equipo.
 

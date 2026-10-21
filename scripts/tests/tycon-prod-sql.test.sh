@@ -535,5 +535,79 @@ else no "T26a · antes=$antes intermedio=$intermedio rc=$rc después=$despues (e
 if grep -q "reclasific" "$CASA/.claude/.tycon-pipeline/production.log" 2>/dev/null; then ok "T26b · la reclasificación queda en el registro"
 else no "T26b · reclasificar no dejó constancia"; fi
 
+# ── la consulta desde un archivo (`--file <ruta> --sha256 <sha256>`) ────────────────────────────────────────
+# Una consulta larga en una línea, con cada comilla escapada, no se puede leer en el cuadro de aprobación. Desde un
+# archivo se lee entera; la huella ata lo que la persona vio a lo que corre: la puerta lee el archivo UNA vez y corre
+# esos mismos bytes.
+huella_de(){ shasum -a 256 "$1" | cut -d' ' -f1; }
+consulta_archivo(){ printf 'select top 3 Id,\n       Nombre\nfrom Articulos\n' > "$1"; }
+
+# T38 · el archivo cambió entre el freno y la puerta: sale 2 sin conectarse
+mundo ok; Q="$TMP/consulta.sql"; consulta_archivo "$Q"; H_VIEJA="$(huella_de "$Q")"; printf 'delete from Articulos\n' > "$Q"
+rc="$(puerta "$PROD" --file "$Q" --sha256 "$H_VIEJA")"
+if [ "$rc" = 2 ] && [ ! -s "$TMP/sqlcmd-argv.log" ] && [ ! -s "$TMP/security-argv.log" ]; then
+  ok "T38 Gate_Archivo_ChangedAfterApproval_Exit2NoConnect · un archivo cambiado después del cuadro no corre"
+else no "T38 · archivo cambiado: rc=$rc · $(cat "$TMP/err")"; fi
+
+# T39 · las mismas reglas que la sentencia en línea, y el registro sin la ruta
+for mala in 'select 1
+GO
+select 2' ':r /etc/passwd' '-i /tmp/x.sql'; do
+  mundo ok; Q="$TMP/mala.sql"; printf '%s\n' "$mala" > "$Q"
+  rc="$(puerta "$PROD" --file "$Q" --sha256 "$(huella_de "$Q")")"
+  if [ "$rc" = 2 ] && [ ! -s "$TMP/sqlcmd-argv.log" ]; then ok "T39 Gate_Archivo_SameRulesAsInline · «$(printf '%s' "$mala" | head -1)» desde un archivo sale 2 sin conectarse"
+  else no "T39 · «$(printf '%s' "$mala" | head -1)» rc=$rc"; fi
+done
+mundo ok; Q="$TMP/buena.sql"; consulta_archivo "$Q"; H="$(huella_de "$Q")"
+rc="$(puerta "$PROD" --file "$Q" --sha256 "$H")"
+l="$(grep '"origen":"archivo"' "$CASA/.claude/.tycon-pipeline/production.log" 2>/dev/null | tail -1)"
+if grep "from Articulos" "$TMP/sqlcmd-argv.log" >/dev/null 2>&1 && [[ "$l" == *"\"sha256\":\"$H\""* ]] && [[ "$l" != *"$Q"* ]] && [[ "$l" != *"Articulos"* ]]; then
+  ok "T39 · la válida corre lo que se leyó y el registro anota la huella y el origen, sin la ruta ni el contenido"
+else no "T39 · válida: rc=$rc · registro: ${l} · argv: $(cat "$TMP/sqlcmd-argv.log" 2>/dev/null | head -2)"; fi
+# la puerta NO repite la consulta en su salida: llegaría después del cuadro y le mandaría el contenido al modelo
+if ! grep "consulta desde archivo" "$TMP/out" >/dev/null; then ok "T39 · la puerta no repite el archivo en su salida (eso lo muestra el freno, antes del cuadro)"
+else no "T39 · la puerta repitió el archivo en su salida: $(head -3 "$TMP/out")"; fi
+
+# T38 · una ruta que empieza con «-» no llega al intérprete como una opción suya (cargaría otro código y correría
+# otra consulta que la aprobada); se rechaza antes de leer nada
+mundo ok; ( cd "$TMP" && printf 'select 1\n' > ./-r && mkdir -p "node_modules/$(huella_de ./-r)" && printf 'process.stdout.write("delete from Articulos");process.exit(0)\n' > "node_modules/$(huella_de ./-r)/index.js" )
+rc="$( cd "$TMP" && env HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" PATH="$TMP/impostor:$PATH" SECURITY_MODE=ok bash "$PUERTA" "$PROD" --file -r --sha256 "$(huella_de "$TMP/-r")" >"$TMP/out" 2>"$TMP/err"; echo $?)"
+if [ "$rc" = 2 ] && ! grep "delete" "$TMP/sqlcmd-argv.log" >/dev/null 2>&1; then ok "T38 · una ruta que empieza con «-» se rechaza: no corre otra consulta que la aprobada"
+else no "T38 · ruta con «-»: rc=$rc · argv: $(cat "$TMP/sqlcmd-argv.log" 2>/dev/null)"; fi
+rm -rf "$TMP/-r" "$TMP/node_modules"
+
+# T39 · caracteres que harían ver en pantalla otra cosa que lo que corre: control (ANSI, retorno de carro) e invisibles
+for raro in ansi retorno invisible; do
+  mundo ok; Q="$TMP/raro.sql"
+  case "$raro" in
+    ansi) printf 'select 1 \033[8mdelete from Articulos\033[0m\n' > "$Q" ;;
+    retorno) printf 'select 1\r:r /etc/passwd\n' > "$Q" ;;
+    invisible) printf 'select 1 \342\200\256 from Articulos\n' > "$Q" ;;
+  esac
+  rc="$(puerta "$PROD" --file "$Q" --sha256 "$(huella_de "$Q")")"
+  if [ "$rc" = 2 ] && [ ! -s "$TMP/sqlcmd-argv.log" ]; then ok "T39 · un archivo con caracteres «${raro}» sale 2 sin conectarse"
+  else no "T39 · «${raro}» rc=$rc"; fi
+done
+for args in "--file $TMP/buena.sql" "--file $TMP/buena.sql --sha256" "--file $TMP/buena.sql --sha256 $H --extra"; do
+  mundo ok; consulta_archivo "$TMP/buena.sql"
+  # shellcheck disable=SC2086
+  rc="$(puerta "$PROD" $args)"
+  if [ "$rc" = 2 ] && [ ! -s "$TMP/sqlcmd-argv.log" ]; then ok "T39 · «${args##*/}» sin la forma completa sale 2"
+  else no "T39 · «${args}» rc=$rc"; fi
+done
+for raro in enlace carpeta grande binario; do
+  mundo ok; Q="$TMP/raro-$raro"; rm -rf "$Q"
+  case "$raro" in
+    enlace) consulta_archivo "$TMP/real.sql"; ln -s "$TMP/real.sql" "$Q" ;;
+    carpeta) mkdir -p "$Q" ;;
+    grande) head -c 70000 /dev/zero | tr '\0' 'a' > "$Q" ;;
+    binario) printf 'select \377\376 1\n' > "$Q" ;;
+  esac
+  H="$( [ -f "$Q" ] && huella_de "$Q" || echo 0000000000000000000000000000000000000000000000000000000000000000)"
+  rc="$(puerta "$PROD" --file "$Q" --sha256 "$H")"
+  if [ "$rc" = 2 ] && [ ! -s "$TMP/sqlcmd-argv.log" ]; then ok "T39 · un archivo «${raro}» sale 2 sin conectarse"
+  else no "T39 · «${raro}» rc=$rc"; fi
+done
+
 echo "— prod-sql: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]

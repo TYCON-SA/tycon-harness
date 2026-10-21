@@ -22,8 +22,8 @@
  * ~/.claude/.tycon-pipeline/hook-errors.log y se sigue con el resto — un bug de
  * un handler no debe romper el Edit ni esconder en silencio que un gate no corrió.
  *
- * NOTA: `touch-activity` (clocki, matcher all-tools async) NO se dispatcha acá —
- * tiene matcher distinto (corre en CADA tool, no solo Edit|Write) y es async.
+ * Los hooks de una integración que corren en CADA tool (y de fondo) no pasan por acá: tienen otro matcher, y los
+ * registra el instalador desde el manifiesto de la integración.
  */
 
 const fs = require('fs');
@@ -48,10 +48,8 @@ try {
   else process.stderr.write(r.aviso + '\n');
 } catch { /* fallback: sin normalización, conducta actual */ }
 
-// Clockify: este despachador es un hook COMPARTIDO con el núcleo — no se desregistra;
-// con la llave `integraciones.clockify` apagada saltea `clocki-enforce` (los otros dos hooks de clocki los deja sin
-// registrar el instalador). Configuración ROTA: el aviso en cada edición y sin clocki-enforce. Sin arnés, o
-// con un arnés sin `integracionParaHook`: fail-open.
+// Una llave de integración del arnés. Configuración ROTA: el aviso en cada edición y apagada. Sin arnés, o con un arnés
+// sin `integracionParaHook`: fail-open.
 function integrationOn(key) {
   if (!ARNES_DIR) return true;
   try {
@@ -62,7 +60,28 @@ function integrationOn(key) {
     return c.prendida;
   } catch { return true; }
 }
-const clockifyPrendida = () => integrationOn('clockify');
+
+// Las entradas de la integración de horas elegida para este modo (su manifiesto en integrations/ del arnés):
+// `[{ name, path, steps, effect, integration }]`. Sin arnés, sin elegir o con la configuración rota, ninguna (rota: el
+// aviso, como integrationOn). El despachador no conoce ninguna herramienta por su nombre.
+function integrationEntries(mode) {
+  if (!ARNES_DIR) return [];
+  // cada salida sin entradas que no sea «ninguna elegida» se dice: la herramienta elegida quedaría sin su control
+  const warn = (why) => { process.stderr.write(`dispatch: la integración de horas no suma sus controles (${why})\n`); return []; };
+  try {
+    const TC = require(path.join(ARNES_DIR, 'scripts', 'lib', 'tycon-config.js'));
+    const INT = require(path.join(ARNES_DIR, 'scripts', 'lib', 'integrations.js'));
+    if (typeof TC.timeTracking !== 'function' || typeof TC.leerParaHook !== 'function') return [];
+    const r = TC.leerParaHook();
+    if (!r.ok) { if (r.aviso) process.stderr.write(r.aviso + '\n'); return []; }
+    const chosen = TC.timeTracking(r.config).value;
+    if (chosen === 'none') return [];
+    const m = INT.find(chosen, { kind: 'timeTracking' });
+    if (m) return INT.dispatchEntries(m, mode);
+    const broken = INT.listManifests().problems.find((p) => p.name === chosen);
+    return warn(broken ? `«${chosen}» tiene el manifiesto roto: ${broken.reasons.join('; ')}` : `no encuentro «${chosen}» en integrations/`);
+  } catch (e) { return warn(`falló al leerla: ${(e && (e.code || e.message)) || e}`); }
+}
 
 // Azure DevOps (la copia para un dev de otra organización): la hoja que pide el work item de una story nueva
 // corre sólo si la máquina tiene la integración ado prendida (ado.org o TYCON_ADO_ORG) o si el repo de la story declara
@@ -86,7 +105,6 @@ let nativeEvent = (event) => event;
 try { ({ nativeEvent } = require('./lib/path-shape.js')); } catch { /* sin normalización de rutas: conducta previa */ }
 
 const PIPELINE_SCRIPTS = __dirname;
-const CLOCKI_SCRIPTS = path.join(__dirname, '..', '..', 'clocki', 'scripts');
 const SKILLS_DIR = path.join(__dirname, '..', '..');
 
 // mode → lista ORDENADA de handlers. El blocking (on-dod-evidence-guard +
@@ -154,8 +172,7 @@ const CHAINS = {
     { name: 'on-planning-artifact', path: path.join(PIPELINE_SCRIPTS, 'on-planning-artifact.js'), steps: ['2'], effect: 'warns' },
   ],
   'post-edit': [
-    // sin la integración clockify no corre (`saltarClocki`, más abajo): `integration` lo dice para «Cómo trabaja»
-    { name: 'clocki-enforce', path: path.join(CLOCKI_SCRIPTS, 'clocki-enforce.js'), steps: ['all'], effect: 'warns', integration: 'clockify' },
+    // antes de esta tabla van las entradas de la integración de horas elegida (integrationEntries)
     { name: 'on-edit', path: path.join(PIPELINE_SCRIPTS, 'on-edit.js'), steps: ['all'], effect: 'records' },
     // Lint de la config del repo: `.tycon/advisors.yaml` es la única
     // superficie que puede apagar frenos y NO dispara revisores (un commit que sólo la toca se
@@ -226,10 +243,9 @@ function dispatch(mode) {
   const reminders = [];
   const paraLaPersona = [];
   let escribioAparte = false;
-  const saltarClocki = mode === 'post-edit' && !clockifyPrendida();
+  const fullChain = integrationEntries(mode).concat(chain);
 
-  for (const event of events) for (const h of chain) {
-    if (saltarClocki && h.name === 'clocki-enforce') continue;   // Clockify apagada: el despachador sigue, sin su parte
+  for (const event of events) for (const h of fullChain) {
     // Scripts top-level de otros skills (sin handle()) — spawn condicional por contenido.
     if (h.spawn) {
       try {
@@ -268,8 +284,10 @@ function dispatch(mode) {
 
     let mod;
     try {
-      mod = require(h.path); // skip silencioso si el archivo no existe (ej: clocki no instalado)
-    } catch {
+      mod = require(h.path);
+    } catch (e) {
+      // el control de una integración elegida que no carga se dice: elegida y sin su control es un error a la vista
+      if (h.integration) process.stderr.write(`despachador: el control «${h.name}» de la integración ${h.integration} no carga (${(e && e.code) || 'error'}): ${h.path}\n`);
       continue;
     }
     if (!mod || typeof mod.handle !== 'function') continue;
@@ -316,7 +334,7 @@ function dispatch(mode) {
   process.exit(0);
 }
 
-module.exports = { dispatch, prepareEvents, CHAINS };
+module.exports = { dispatch, prepareEvents, CHAINS, integrationEntries };
 
 // CLI: `node dispatch.js pre-edit|post-edit` (los entry-scripts hook-*.js lo llaman).
 if (require.main === module) {

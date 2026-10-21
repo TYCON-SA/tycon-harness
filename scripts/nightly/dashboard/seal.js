@@ -124,7 +124,15 @@ function verificar({ html, hoy, dashboard, corrida }) {
   return { ok: true };
 }
 
-module.exports = { ID, ESQUEMA, NIGHTLY_RECORDED, isNightly, escribir, leer, validar, verificar, snapshotMasNuevo, fechaValida, instanteValido };
+/**
+ * Si la página salió completa: la generó el nocturno (con su número de corrida), con todas sus fuentes al día y con el
+ * buzón leído. Es la regla del aviso de la mañana (scripts/hooks/dashboard-notice.js), que también nombra lo que falta.
+ */
+function completo(s) {
+  return isNightly(s.modo) && s.corrida !== null && s.fuentes.al_dia >= s.fuentes.esperadas && s.buzon.estado === 'leido';
+}
+
+module.exports = { ID, ESQUEMA, NIGHTLY_RECORDED, isNightly, completo, escribir, leer, validar, verificar, snapshotMasNuevo, fechaValida, instanteValido };
 
 if (require.main === module) {
   require('../../lib/legacy-names.js').aliasArgv('scripts/nightly/dashboard/seal.js', { exitCode: 2 });

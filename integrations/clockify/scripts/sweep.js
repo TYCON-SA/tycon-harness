@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// clocki/scripts/sweep.js
+// integrations/clockify/scripts/sweep.js
 //
 // Invocado por el hook SessionStart. Cierra (vía reminder a Claude) timers idle:
 // el de ESTA sesión, y los HUÉRFANOS de sesiones demostrablemente MUERTAS.

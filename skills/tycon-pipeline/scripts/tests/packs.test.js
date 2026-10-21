@@ -706,7 +706,8 @@ test('T17 Skills_LeavePublic_TravelInTeamLayer (lado público)', (t) => {
 
 test('T19 Clocki_DescriptionNeutral', () => {
   // la descripción de clocki dice qué hace para quien la use, sin el nombre de la organización
-  const clocki = fs.readFileSync(path.join(RAIZ, 'skills', 'clocki', 'SKILL.md'), 'utf8');
+  // la skill vive en su integración (integrations/clockify/skills/clocki)
+  const clocki = fs.readFileSync(path.join(RAIZ, 'integrations', 'clockify', 'skills', 'clocki', 'SKILL.md'), 'utf8');
   const descripcion = (/^description:\s*(.+)$/m.exec(clocki) || [])[1] || '';
   assert.ok(descripcion.length > 40, 'clocki tiene descripción');
   assert.doesNotMatch(descripcion, /\bTYCON\b/, 'el nombre de la organización (las skills del núcleo, como tycon-pipeline, conservan su nombre)');

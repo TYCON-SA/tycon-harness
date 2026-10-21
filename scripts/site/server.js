@@ -215,7 +215,6 @@ const RUTAS = [
   { method: 'GET', path: '/', needs: ['maintainer', 'person'], pestana: { id: 'inicio', titulo: 'Inicio', orden: 10 }, handler: (ctx) => html(views.paginaInicio(ctx)) },
   { method: 'GET', path: '/proyectos', needs: ['maintainer', 'person'], pestana: { id: 'proyectos', titulo: 'Proyectos', orden: 30 }, handler: (ctx) => html(views.paginaProyectos(ctx)) },
   { method: 'GET', path: '/arnes', needs: ['maintainer'], pestana: { id: 'arnes', titulo: 'Arnés', orden: 40 }, handler: (ctx) => html(views.paginaArnes(ctx)) },
-  { method: 'GET', path: '/arnes/tablero', needs: ['maintainer'], handler: (ctx) => html(views.tableroServido(ctx)) },
   { method: 'GET', path: '/api/inicio', needs: ['maintainer', 'person'], handler: (ctx) => ({ status: 200, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(views.inicioJson(ctx)) }) },
 ];
 
@@ -282,6 +281,8 @@ function leerEstatico() {
   return {
     '/static/site.css': { tipo: 'text/css; charset=utf-8', cuerpo: `${CSS_BASE}\n${CSS_CHIPS}\n${fs.readFileSync(path.join(dir, 'site.css'), 'utf8')}` },
     '/static/site.js': { tipo: 'text/javascript; charset=utf-8', cuerpo: fs.readFileSync(path.join(dir, 'site.js'), 'utf8') },
+    // el editor de texto largo, una sola pieza para los cuadros de texto largo de las pestañas
+    '/static/long-text-editor.js': { tipo: 'text/javascript; charset=utf-8', cuerpo: fs.readFileSync(path.join(dir, 'long-text-editor.js'), 'utf8') },
     // la letra del sitio viaja con él: la política no deja cargar nada de afuera
     '/static/fonts/lato-400.woff2': { tipo: 'font/woff2', cuerpo: fs.readFileSync(path.join(dir, 'fonts', 'lato-400.woff2')) },
     '/static/fonts/lato-700.woff2': { tipo: 'font/woff2', cuerpo: fs.readFileSync(path.join(dir, 'fonts', 'lato-700.woff2')) },

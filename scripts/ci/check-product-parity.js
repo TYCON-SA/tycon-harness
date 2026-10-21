@@ -17,6 +17,8 @@
  * 🔴 NO JUZGA CUÁL ES EL COMPORTAMIENTO CORRECTO. Juzga que los cinco hagan lo mismo. Si divergen,
  * decide una persona — y si la diferencia es legítima, se DECLARA en `product-parity.json` con
  * motivo y fecha de revisión. Una diferencia sin motivo no es una decisión: es un descuido.
+ * Un rasgo nuevo que todavía viaja a un repo (un pedido a `dev` que llega a `main` con el merge normal) no es una
+ * diferencia: va en `en_camino`, con su pedido y su fecha de revisión (`leerEnCamino`; casos: scripts/tests/product-parity.test.sh).
  *
  * 🔴 Un repo que no está en esta máquina NO se lee como "todo bien": se cuenta aparte y se dice.
  * "No medido" y "medido y coincide" son cosas distintas, y confundirlas es el modo de falla que
@@ -349,6 +351,33 @@ function leerDeclaradas(cfg, hoy) {
   return out;
 }
 
+/**
+ * La lectura de `en_camino`: un rasgo nuevo que viaja a un repo por un pedido a `dev` y llega a `main` con
+ * el merge normal del equipo. No es una diferencia decidida: es un cambio pendiente de llegar, con su pedido. Cada entrada
+ * exige `grupo`, `rasgo`, `ruta`, `pedido`, `fecha` y `revision` (AAAA-MM-DD, la misma regla que las declaradas: sin fecha
+ * que venza es un permiso). Antes de la revisión, el repo no cuenta como divergencia de ese rasgo; vencida, cuenta y va a
+ * `vencidas`. Devuelve `{ problemas, activos: [entrada], vencidas: [{ grupo, rasgo, revision, ruta }] }`.
+ */
+function leerEnCamino(cfg, hoy) {
+  const out = { problemas: [], activos: [], vencidas: [] };
+  const lista = cfg && Array.isArray(cfg.en_camino) ? cfg.en_camino : [];
+  for (const [i, d] of lista.entries()) {
+    for (const campo of ['grupo', 'rasgo', 'ruta', 'pedido', 'fecha', 'revision']) {
+      if (!d || !d[campo]) {
+        const message = `un cambio en camino no dice "${campo}"`;
+        return { problemas: [{ path: `en_camino.${i}.${campo}`, message, consola: `${message} — sin su pedido y su fecha no es un cambio que viaja, es un permiso` }], activos: [], vencidas: [] };
+      }
+    }
+    if (typeof d.revision !== 'string' || !DIA.test(d.revision)) {
+      const message = `el cambio en camino ${d.grupo}/${d.rasgo} a ${d.ruta} tiene una "revision" que no es AAAA-MM-DD`;
+      return { problemas: [{ path: `en_camino.${i}.revision`, message, consola: `${message} (${JSON.stringify(d.revision)}) — así no vence nunca: es un permiso` }], activos: [], vencidas: [] };
+    }
+    if (d.revision < hoy) out.vencidas.push({ grupo: d.grupo, rasgo: d.rasgo, revision: d.revision, ruta: d.ruta });
+    else out.activos.push(d);
+  }
+  return out;
+}
+
 function main(argv0) {
   let argv;
   // Antes de leer las opciones el resultado no sabe adónde va: se busca `--out` a mano para poder dejarlo igual.
@@ -428,6 +457,25 @@ function main(argv0) {
   for (const v of R.res.vencidas) {
     const g = normalizarGrupo((cfg.grupos || {})[v.grupo]);
     for (const r of new Set(((g && g.repos) || []).map((x) => x && x.ruta))) { const e = R.rutas.get(r); if (e) e.vencidas += 1; }
+  }
+  // los cambios en camino: un repo en camino no diverge en ese rasgo hasta su revisión; vencido, cuenta sólo en su repo
+  const lc = leerEnCamino(cfg, hoy);
+  if (lc.problemas.length) {
+    const p = lc.problemas[0];
+    console.log(`🔴 ${p.consola}`);
+    R.marcarTodas('no_medido', 'declaracion_incompleta');
+    return terminar(o, R, 1, 'no_medido', p.message);
+  }
+  for (const v of lc.vencidas) {
+    console.log(`🔴 el cambio en camino a ${v.ruta} (${v.grupo}/${v.rasgo}) venció el ${v.revision} — o llegó a main y se borra la entrada, o se re-fecha a conciencia`);
+    R.res.vencidas.push({ grupo: v.grupo, rasgo: v.rasgo, revision: v.revision });
+    const e = R.rutas.get(v.ruta); if (e) e.vencidas += 1;
+  }
+  const enCamino = new Map();
+  for (const d of lc.activos) {
+    const k = `${d.grupo}/${d.rasgo}`;
+    if (!enCamino.has(k)) enCamino.set(k, new Map());
+    enCamino.get(k).set(d.ruta, d);
   }
 
   let divergencias = 0, ausentes = 0, comparados = 0;
@@ -532,8 +580,16 @@ function main(argv0) {
       // Con `bloque`, el patrón se evalúa sólo sobre ese bloque de nivel raíz (ausente = no lo tiene).
       const donde = (t) => (rasgo.bloque ? (bloqueRaiz(t, rasgo.bloque) || '') : t);
       const tiene = presentes.filter(([, t]) => rx.test(donde(t))).map(([n]) => n);
-      const noTiene = presentes.filter(([, t]) => !rx.test(donde(t))).map(([n]) => n);
       const clave = `${grupo}/${rasgo.id}`;
+      // los repos en camino salen de «no lo tienen» hasta su revisión; si ya lo tienen, la entrada sobra y se dice
+      const viajan = enCamino.get(clave) || new Map();
+      for (const n of tiene) if (viajan.has(rutaDe[n])) lineas.push(`  ℹ️ ${grupo} · ${rasgo.que}: ${n} ya lo tiene en main — su entrada de en_camino sobra, borrala`);
+      const enViaje = presentes.filter(([n, t]) => !rx.test(donde(t)) && viajan.has(rutaDe[n])).map(([n]) => n);
+      const noTiene = presentes.filter(([n, t]) => !rx.test(donde(t)) && !viajan.has(rutaDe[n])).map(([n]) => n);
+      if (enViaje.length) {
+        const revisiones = [...new Set(enViaje.map((n) => viajan.get(rutaDe[n]).revision))].sort().join(', ');
+        lineas.push(`  ⏳ ${grupo} · ${rasgo.que}: en camino a ${enViaje.join(', ')} (revisar ${revisiones})`);
+      }
 
       // 🔴 UNANIMIDAD NO ES SIEMPRE ACUERDO (2026-09-01). Este control compara los productos
       // ENTRE SÍ, así que si los cinco dejan de hacer lo mismo a la vez, los cinco coinciden y
@@ -542,6 +598,7 @@ function main(argv0) {
       // cumple es un hallazgo, no un acuerdo. Sin esto, borrar el `dotnet restore` de los cinco
       // backends el mismo día dejaría a los cinco escaneando a ciegas, en verde.
       if (rasgo.exigido && !tiene.length) {
+        if (!noTiene.length) continue;                      // todos en camino: ninguno lo hace TODAVÍA, y eso está dicho
         if (declaradas.has(clave)) {
           lineas.push(`  ⚠️ ${grupo} · ${rasgo.que}: NINGUNO lo hace, DECLARADO (revisar ${declaradas.get(clave).revision})`);
           continue;
@@ -598,4 +655,4 @@ function main(argv0) {
 }
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
-module.exports = { main, bloqueRaiz, normalizarGrupo, configPorDefecto, leerDeclaradas };
+module.exports = { main, bloqueRaiz, normalizarGrupo, configPorDefecto, leerDeclaradas, leerEnCamino };

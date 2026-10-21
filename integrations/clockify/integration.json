@@ -1,0 +1,17 @@
+{
+  "__doc": "La integración de horas con Clockify: el reloj lo abre y lo cierra el agente con el MCP de Clockify (guides/integrations/clockify-mcp.md); esta carpeta trae lo que lo acompaña. Sus hooks y su control al editar los registra el instalador sólo si la organización eligió Clockify (integrations.timeTracking, o la llave vieja integrations.clockify). El estado de cada sesión sigue donde lo guardó siempre (scripts/lib.js). Guía: guides/integrations/clocki-tracking.md.",
+  "name": "clockify",
+  "label": "Clockify",
+  "kind": "timeTracking",
+  "onWork": "scripts/on-work.js",
+  "hooks": [
+    { "event": "UserPromptSubmit", "matcher": "", "script": "scripts/on-prompt.js", "platforms": { "windows": true }, "steps": ["0b"], "effect": "warns", "label": "reloj de horas: detecta el arranque y el fin de un trabajo", "tools": ["claude", "codex"] },
+    { "event": "PostToolUse", "matcher": "", "script": "scripts/touch-activity.js", "async": true, "platforms": { "windows": true }, "steps": ["all"], "effect": "records", "label": "reloj de horas: anota la última actividad (de fondo)", "tools": ["claude", "codex"] },
+    { "event": "SessionStart", "matcher": "", "script": "scripts/sweep.js", "platforms": { "windows": true }, "steps": ["all"], "effect": "records", "label": "reloj de horas: cierra lo que quedó sin actividad", "tools": ["codex"] }
+  ],
+  "dispatch": [
+    { "on": "post-edit", "name": "clocki-enforce", "script": "scripts/clocki-enforce.js", "steps": ["all"], "effect": "warns" }
+  ],
+  "skills": ["skills/clocki"],
+  "settings": []
+}

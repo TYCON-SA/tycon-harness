@@ -221,6 +221,35 @@ select.corto.bad{border-color:var(--bad);color:var(--bad-ink)}
 .tabla2 .edit .listo{justify-self:end}
 /* Integraciones: el nombre y qué hace · el selector */
 .tabla2.integ{grid-template-columns:minmax(0,1fr) max-content}
+/* los pedidos de vulnerabilidades (story 4.9): el tipo y los campos fijos en un recuadro, una tabla por gravedad (más ancha que un teléfono: se corre dentro de su caja) y el aviso sin las listas */
+#config-app .pedidos-arriba{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 16px;padding:14px 16px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
+.pedidos-arriba .campo{min-width:140px;flex:0 1 auto}
+.pedidos-arriba .campo select{width:auto;min-width:140px;max-width:100%}
+/* el tipo: su opción vacía es una frase larga y el desplegable tomaría ese ancho */
+.pedidos-arriba > .campo:first-child select{width:200px}
+.pedidos-arriba .sep{width:1px;align-self:stretch;background:var(--line)}
+.pedidos-arriba .fijo{display:flex;align-items:flex-end;gap:2px}
+.pedidos-arriba .nota{margin-left:4px;color:var(--muted)}
+.pedidos-arriba select,.pedidos-arriba input,.tabla2.pedidos select,.tabla2.pedidos input{width:100%;min-width:0;box-sizing:border-box;padding:6px 8px;border-radius:6px;border:1px solid var(--line-strong);background:var(--surface);font-size:14px;color:var(--ink)}
+.pedidos-arriba select.bad,.tabla2.pedidos select.bad,.tabla2.pedidos input.bad{border-color:var(--bad)}
+.pedidos-arriba select.mas,.tabla2.pedidos select.mas{width:auto;border-style:dashed;color:var(--ink-2)}
+.form-block .pedidos-arriba button.mas,.form-block .tabla2.pedidos button.mas{background:transparent;color:var(--ink-2);border:1px dashed var(--line-strong)}
+.form-block .pedidos-arriba button.quitar-fila{width:28px;height:28px;margin-bottom:4px;padding:0;border:0;border-radius:999px;background:transparent;color:var(--muted);font-size:14px;line-height:1;display:inline-flex;align-items:center;justify-content:center}
+.form-block .pedidos-arriba button.quitar-fila:hover{background:var(--wash);color:var(--ink)}
+.pedidos-t{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 12px}
+.pedidos-t .muted{font-size:12px}
+.pedidos-gravedad{display:grid;gap:8px}
+.tabla2.pedidos{grid-template-columns:minmax(160px,1.4fr) repeat(4,minmax(96px,1fr)) 36px;min-width:580px}
+.tabla2.pedidos .r > .nombre{flex-direction:column;align-items:stretch;justify-content:center;gap:0}
+.tabla2.pedidos .ref{font-family:var(--mono);font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+.tabla2.pedidos input.ref{font-size:13px;color:var(--ink)}
+.tabla2.pedidos .celda{width:100%;display:grid;gap:2px}
+.tabla2.pedidos .r.agregar > .nuevo{grid-column:1/-1;gap:8px}
+.pedidos-pie{margin:0;font-size:12px;color:var(--muted)}
+.aviso-listas{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border:1px solid var(--warn);border-radius:8px;background:var(--warn-soft);color:var(--ink);font-size:13px}
+.aviso-listas .ic{flex:none;width:16px;height:16px;margin-top:1px;border:1.5px solid var(--warn-ink);border-radius:999px;color:var(--warn-ink);font:700 11px/13px var(--sans);text-align:center}
+.deshacer{display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-size:13px}
+.deshacer[hidden]{display:none}
 .tabla2.integ .r > .que{display:block}
 .tabla2.integ .r > .que > span{color:var(--ink-2)}
 .k{font-weight:600;font-size:13.5px;align-self:center;overflow-wrap:anywhere}.k small{display:block;font-weight:400;color:var(--muted);font-size:12px}
@@ -311,6 +340,7 @@ pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--surface-2);bo
   .persona > .correos{grid-column:1/-1;padding-top:2px}
   /* las tablas de la 2.59: cada renglón puede bajar a dos líneas; sin títulos de columna y sin scroll lateral */
   .tabla2 .h{display:none}
+  .tabla2.pedidos .h{display:contents}
   .tabla2.modelos{grid-template-columns:minmax(0,1fr) 196px}
   .tabla2.modelos .r > .que{grid-column:1/-1;border-bottom:0;padding-bottom:0}
   .tabla2.repos{display:block}
@@ -337,6 +367,8 @@ table.tabla#proyectos thead th{white-space:normal}
 .shell .corridas *:not(code):not(pre):not(.mono):not(svg *){font-family:var(--sans)}
 .shell .corridas svg{min-width:0 !important;max-width:100%;height:auto}
 .shell .corridas .card{min-width:0;max-width:100%}
+/* el enlace a una sola corrida (?solo=) esconde el resumen; las fichas del tablero, que van entre el resumen y la tabla, también */
+body.solo .corridas #fichas-corridas,body.solo .corridas #fichas-calculando{display:none}
 @media (max-width:640px){.shell .corridas .dos{grid-template-columns:minmax(0,1fr)}.shell .corridas .pfila{grid-template-columns:minmax(0,1fr) 60px 70px}.shell .corridas .pfila .pb{grid-column:1/-1;order:9}}
 .logo-previa{max-height:56px;max-width:240px;width:auto;object-fit:contain;padding:10px;border:1px dashed var(--line-strong);border-radius:8px}
 /* la pestaña Ayuda: la guía del sitio, con lo que le toca a cada rol (help.js) */
@@ -404,6 +436,42 @@ table.tabla#proyectos thead th{white-space:normal}
 .ct-dos{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .ct-pie{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .ct-fuente{font-size:12px;color:var(--muted);margin:0}
+/* el revisor entero (story 2.63): la cabecera en campos, las herramientas explicadas y la línea de revisar y proponer */
+.ct-sub{margin:4px 0 0;font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.ct-grupo{border:0;margin:0;padding:0;display:grid;gap:6px;min-width:0}
+.ct-grupo legend{padding:0;margin-bottom:4px;font-size:12.5px;color:var(--ink-2)}
+.ct-herramientas{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px}
+.ct-panel label.ct-casilla{display:flex;gap:6px;align-items:baseline;font-size:12.5px;color:var(--ink-2)}
+.ct-panel .ct-casilla input{min-width:0;padding:0;margin:0;align-self:center}
+.ct-casilla b{font-family:var(--mono);font-size:12.5px;color:var(--ink)}
+.ct-etiquetas{display:flex;flex-wrap:wrap;gap:6px}
+.ct-etiqueta{font-family:var(--mono);font-size:12px;padding:2px 8px;border-radius:999px;border:1px dashed var(--line-strong);color:var(--ink-2);overflow-wrap:anywhere}
+.ct-editor .ct-nota{max-width:none}
+/* el editor de texto largo (long-text-editor.js): una pieza del sitio, no sólo de esta pestaña */
+.lte{border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);display:grid;min-width:0}
+.lte-barra{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;padding:6px;border-bottom:1px solid var(--line)}
+.lte-solapas,.lte-acciones{display:flex;flex-wrap:wrap;gap:6px}
+.lte-solapas button{padding:5px 10px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--ink-2);font:12.5px var(--sans);cursor:pointer}
+.lte-solapas button[aria-selected="true"]{border-color:var(--line-strong);background:var(--surface-2);color:var(--ink);font-weight:700}
+.lte-acciones .btn{padding:4px 10px;font-size:12.5px}
+.lte-buscar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px;border-bottom:1px solid var(--line)}
+.lte-buscar[hidden],.lte-previa[hidden],.lte-cambios[hidden],.lte-cuerpo[hidden],.lte-renglones[hidden],.lte .btn[hidden]{display:none}
+.lte-cuenta{font-size:12.5px;color:var(--ink-2)}
+.lte-cuerpo{display:flex;min-width:0}
+.ct-panel .lte textarea.lte-texto,.lte textarea.lte-texto{flex:1;border:0;border-radius:0 0 8px 8px;background:transparent;resize:none;overflow:hidden;min-height:120px;font:13px/1.5 var(--mono);color:var(--ink);padding:8px 10px}
+.lte-renglones{margin:0;padding:8px 6px;font:13px/1.5 var(--mono);color:var(--muted);text-align:right;border-right:1px solid var(--line);user-select:none}
+.lte-previa{padding:8px 12px;font-size:13.5px;color:var(--ink);overflow-wrap:anywhere}
+.lte-previa h2{font-size:15px;margin:10px 0 4px}.lte-previa h3{font-size:14px;margin:8px 0 4px}
+.lte-previa ul{margin:4px 0;padding-left:20px}.lte-previa p{margin:4px 0}
+.lte-previa code,.lte-cambios{font-family:var(--mono);font-size:12.5px}
+.lte-cambios{padding:8px 10px;border-top:1px solid var(--line);white-space:pre-wrap;overflow-wrap:anywhere}
+.lte-mas{color:var(--good-ink);background:var(--good-soft)}
+.lte-menos{color:var(--bad-ink);background:var(--crit-soft)}
+.lte-igual{color:var(--muted)}
+/* ampliado: ocupa la pantalla, con números de renglón; «Volver» o Esc lo devuelven */
+.lte.ampliado{position:fixed;inset:12px;z-index:50;grid-template-rows:auto auto minmax(0,1fr) auto auto;box-shadow:var(--shadow)}
+.lte.ampliado .lte-cuerpo{overflow:auto}
+.lte.ampliado textarea.lte-texto{overflow:auto;height:auto}
 .ct:not(.con-guion) .ct-paso{scroll-margin-top:12px}
 .ct.con-guion .ct-paso[hidden]{display:none}
 @container (max-width:700px){
@@ -414,5 +482,7 @@ table.tabla#proyectos thead th{white-space:normal}
   .ct-acc{justify-content:flex-start}
   .ct-dos{grid-template-columns:1fr}
   .ct-fila b{min-width:0;flex-basis:100%}
+  .ct-herramientas{grid-template-columns:1fr}
+  .lte-barra{justify-content:flex-start}
 }
 /* fin de cómo trabaja */

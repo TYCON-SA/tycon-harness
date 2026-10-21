@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// clocki/scripts/on-prompt.js
+// integrations/clockify/scripts/on-prompt.js
 //
 // Invocado por el hook UserPromptSubmit. Hace dos cosas:
 //   1. Sweep — cierra timers idle (>idleTimeoutMinutes) emitiendo reminder a Claude.

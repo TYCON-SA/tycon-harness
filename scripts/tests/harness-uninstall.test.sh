@@ -370,6 +370,15 @@ for fn in ("Record-Piece", "Write-PieceReport"):
 import os
 lst = json.load(open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(sys.argv[2]))), "scripts", "setup", "hooks-list.json"), encoding="utf-8"))
 reg = {"%s:%s" % (h["event"], h["spec"]) for h in lst["hooks"] if h.get("platforms", {}).get("windows") is not False}
+# más los de Claude Code de las integraciones de horas, que el aplicador suma de sus manifiestos (@int:<nombre>/<guion>)
+import glob
+for mf in glob.glob(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(sys.argv[2]))), "integrations", "*", "integration.json")):
+    m = json.load(open(mf, encoding="utf-8"))
+    if m.get("kind") != "timeTracking":
+        continue
+    for h in m.get("hooks", []):
+        if ("claude" in h.get("tools", ["claude"])) and h.get("platforms", {}).get("windows") is not False:
+            reg.add("%s:@int:%s/%s" % (h["event"], m["name"], h["script"]))
 for d in fix["pieces"]:
     if d["kind"] != "hook" or d["when"] == "harness.js":
         continue
