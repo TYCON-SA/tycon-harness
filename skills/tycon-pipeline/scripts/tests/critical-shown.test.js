@@ -130,6 +130,33 @@ test('CriticalShown_OkAnterior_NoExime @story-8.71 @ac-6', () => {
   assert.equal(eximidos(lab).length, 0);
 });
 
+test('CriticalShown_MotivoReescrito_ElOkSigueValiendo @story-8.86 @ac-1', () => {
+  // se muestra el crítico, la persona contesta, y el agente corre waive-critical con el motivo dicho con otras palabras:
+  // la puerta lo vuelve a mostrar, y el ok, que respondió a la primera muestra, sigue valiendo
+  const lab = laboratorio();
+  const esperar = () => { const fin = Date.now() + 30; while (Date.now() < fin) { /* horas distintas */ } };
+  mostrar(lab, REGLA, ARCHIVO, 'tres suites rojas que fallan igual en main sin la story');
+  esperar();
+  const ok = new Date().toISOString();
+  esperar();
+  const corto = 'tres suites rojas previas';
+  assert.match(mostrar(lab, REGLA, ARCHIVO, corto), /tres suites rojas previas/);
+  lab.conversar([delDev('eximo TEST-C1, son previas', ok)]);
+  const r = waive(lab, 'eximo TEST-C1, son previas', { reason: corto });
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.equal(eximidos(lab).length, 1);
+  // un ok de antes de la primera muestra sigue sin valer
+  const b = laboratorio({ sid: 's-cs-mr' });
+  const antes = new Date().toISOString();
+  esperar();
+  mostrar(b, REGLA, ARCHIVO, 'motivo largo');
+  mostrar(b, REGLA, ARCHIVO, 'motivo corto');
+  b.conversar([delDev('eximo TEST-C1, dale', antes)]);
+  const rb = waive(b, 'eximo TEST-C1, dale', { reason: 'motivo corto' });
+  assert.equal(rb.status, 1, `${rb.stdout}${rb.stderr}`);
+  assert.match(rb.stderr, /de antes de que se le mostrara este crítico/);
+});
+
 test('CriticalShown_OkAOtroCritico_NoExime @story-8.71 @ac-7', () => {
   const lab = laboratorio();
   mostrar(lab);

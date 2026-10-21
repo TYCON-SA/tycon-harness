@@ -1575,9 +1575,9 @@ test('T18_MergeSubject_TopicThenNumber_Passes_AndTheOtherServersFormIsInternalHi
 });
 
 // ── T79: el aviso de la lista atrasada ─────────────────────────────────────────────────────
-// El freno lee la lista del disco de un clon (el de mantenimiento, el que la máquina mantiene, el arnés que corre) y
-// no mira por sí solo si ese clon está al día, y una lista atrasada frena a quien mantiene por su propia firma, que una
-// excepción ya publicada dejaría pasar. Lo que se mide acá:
+// El freno lee la lista de un clon (el de mantenimiento, el que la máquina mantiene, el arnés que corre): la de su rama
+// principal remota, como la conoce el clon. Leída del disco, un clon parado atrás frenaría a quien mantiene por su propia
+// firma, que una excepción ya publicada deja pasar. Lo que se mide acá:
 //   · que lo AVISE —al empujar (pase o frene), en `status`—, con tres medidas: el archivo del disco contra el de la rama
 //     principal remota como la conoce el clon, la edad de la última traída, y (sólo al empujar o con `status --fetch`)
 //     lo que contesta el remoto;
@@ -1654,44 +1654,36 @@ test(`${T79} — al día: no avisa, y status lo dice`, (t) => {
   assert.doesNotMatch(guard(fx, branchLine(fx, 'limpia'), { list: null, args: [] }).stderr, WARNING, 'atrás, con la misma lista: no es un aviso');
 });
 
-test(`${T79} — traído sin fusionar: «N atrás, la lista cambió», pase o frene, sin asuntos ni ramas`, (t) => {
+test(`${T79} — traído sin fusionar: lee la lista de la rama remota, y la excepción ya mergeada deja pasar @story-8.86 @ac-3 @ac-4`, (t) => {
+  // el clon compartido, parado atrás de main, no tiene en el disco la excepción ya mergeada: igual tiene que pasar
   const fx = maintLab(t);
   publishToMaint(fx, 3);
   git(fx.maint, ['fetch', '--quiet', 'origin']);
+  // medido sobre el disco, el clon sigue atrás y su lista es otra
   const f = freshnessOf(fx);
   assert.deepStrictEqual([f.measured, f.differs, f.behind], [true, true, 3]);
-  // un empuje que PASA lo dice
-  commitOn(fx, 'limpia', { 'guides/a.md': 'limpio\n' });
-  const pass = guard(fx, branchLine(fx, 'limpia'), { list: null, args: [] });
-  assert.strictEqual(pass.status, 0, pass.all);
-  assert.match(pass.stderr, WARNING);
-  assert.match(pass.stderr, /3 commit\(s\) atrás de su rama principal remota, y la lista cambió/);
-  assert.ok(pass.stderr.includes(fx.maint), 'nombra el clon por su ruta en esta máquina');
-  assert.match(pass.stderr, /git -C .* pull/, 'dice cómo traerlo');
-  // …y uno que FRENA, que es cuando más importa (la excepción que falta puede estar en esos commits)
+  // el empuje que frenaba pasa: la excepción está en la rama principal remota
   commitOn(fx, 'sucia', { 'guides/caso-0.md': `con ${TERM}\n` });
-  const blocked = guard(fx, branchLine(fx, 'sucia'), { list: null, args: [] });
+  const pass = guard(fx, branchLine(fx, 'sucia'), { list: null, args: [] });
+  assert.strictEqual(pass.status, 0, pass.all);
+  assert.doesNotMatch(pass.stderr, WARNING, 'lo que tenga el disco no cambia lo que miró: no es un aviso');
+  const json = guard(fx, branchLine(fx, 'sucia'), { list: null });
+  assert.deepStrictEqual([json.json.verdict, json.json.list.freshness.differs, json.json.list.freshness.behind], ['pass', false, 3]);
+  // lo que la rama remota no exceptúa sigue frenando
+  commitOn(fx, 'otra', { 'guides/otra.md': `con ${TERM}\n` });
+  const blocked = guard(fx, branchLine(fx, 'otra'), { list: null, args: [] });
   assert.strictEqual(blocked.status, 1, blocked.all);
   assert.match(blocked.stderr, /EMPUJE FRENADO/);
-  assert.match(blocked.stderr, WARNING);
-  assert.match(blocked.stderr, /ya tiene su excepción/);
-  const json = guard(fx, branchLine(fx, 'sucia'), { list: null });
-  assert.strictEqual(json.json.list.freshness.behind, 3);
-  // «no pude mirar» con la lista ya elegida: también lo dice
-  const blind = guard(fx, branchLine(fx, 'sucia'), { list: null, args: [], env: { TYCON_PUBLIC_PUSH_LIMIT_MS: '0' } });
-  assert.strictEqual(blind.status, 2, blind.all);
-  assert.match(blind.stderr, WARNING);
-  // status, sin salir a la red, también
+  assert.match(blocked.stderr, /la excepción vale cuando está mergeada/);
   const s = statusOf(fx);
-  assert.match(s.stdout, WARNING);
-  assert.match(s.stdout, /3 commit\(s\) atrás/);
-  // 🔴 sólo cuentas y la ruta del clon: ni el asunto de un commit ni el nombre de una rama del repo privado
-  noMark(pass.all + blocked.all + json.all + blind.all + s.all + JSON.stringify(f), 'el aviso');
+  assert.doesNotMatch(s.stdout, WARNING);
+  noMark(pass.all + blocked.all + json.all + s.all + JSON.stringify(f), 'la salida');
   assert.ok(!(pass.all + blocked.all + s.all).includes(TERM), 'ni un término de la lista');
-  // traído y fusionado: deja de avisar
-  git(fx.maint, ['merge', '--quiet', '--ff-only', `origin/${fx.main}`]);
-  assert.doesNotMatch(guard(fx, branchLine(fx, 'limpia'), { list: null, args: [] }).stderr, WARNING);
-  assert.strictEqual(guard(fx, branchLine(fx, 'sucia'), { list: null }).status, 0, 'y con la lista de hoy, la excepción publicada deja pasar');
+  // una excepción commiteada en el clon y sin subir no vale: la rama remota no la tiene
+  writeList(fx.listFile, TERM, { permitidos: [{ archivo: 'guides/otra.md', patron: TERM, motivo: 'sin subir' }] });
+  git(fx.maint, ['add', '-A']);
+  git(fx.maint, ['commit', '--quiet', '-m', 'una excepción sin subir']);
+  assert.strictEqual(guard(fx, branchLine(fx, 'otra'), { list: null }).status, 1);
 });
 
 test(`${T79} — la lista del clon no se deja leer (un merge a medias): «no pude mirar», y dice que ese clon está atrasado`, (t) => {
@@ -1701,18 +1693,22 @@ test(`${T79} — la lista del clon no se deja leer (un merge a medias): «no pud
   git(fx.maint, ['fetch', '--quiet', 'origin']);
   fs.writeFileSync(fx.listFile, '<<<<<<< HEAD\n{ "terminos": [] }\n=======\n');
   commitOn(fx, 'limpia', { 'guides/a.md': 'limpio\n' });
+  // la lista se lee de la rama principal remota del clon: el disco a medio traer no la rompe
   const r = guard(fx, branchLine(fx, 'limpia'), { list: null });
-  assert.strictEqual(r.status, 2, r.all);
-  assert.strictEqual(r.json.verdict, 'blind');
-  assert.match(r.json.reason, /no se puede leer/);
-  assert.ok(r.json.list && r.json.list.freshness, `con la lista elegida, aunque no se deje leer, se mide su clon: ${JSON.stringify(r.json.list)}`);
-  assert.deepStrictEqual([r.json.list.source, r.json.list.freshness.differs, r.json.list.freshness.behind], ['maintainers', true, 2]);
+  assert.strictEqual(r.status, 0, r.all);
+  assert.deepStrictEqual([r.json.verdict, r.json.list.source, r.json.list.freshness.differs, r.json.list.freshness.behind], ['pass', 'maintainers', false, 2]);
+  // sin rama principal remota, la del disco: ilegible es «no pude mirar», y se mide su clon
+  git(fx.maint, ['update-ref', '-d', `refs/remotes/origin/${fx.main}`]);
+  git(fx.maint, ['update-ref', '-d', 'refs/remotes/origin/HEAD']);
+  const b = guard(fx, branchLine(fx, 'limpia'), { list: null });
+  assert.strictEqual(b.status, 2, b.all);
+  assert.strictEqual(b.json.verdict, 'blind');
+  assert.match(b.json.reason, /no se puede leer/);
+  assert.ok(b.json.list && b.json.list.freshness, `con la lista elegida, aunque no se deje leer, se mide su clon: ${JSON.stringify(b.json.list)}`);
   const plain = guard(fx, branchLine(fx, 'limpia'), { list: null, args: [] });
   assert.strictEqual(plain.status, 2);
   assert.match(plain.stderr, /EMPUJE FRENADO — no pude mirar/);
-  assert.match(plain.stderr, WARNING);
-  assert.match(plain.stderr, /2 commit\(s\) atrás/);
-  noMark(r.all + plain.all, 'el aviso');
+  noMark(r.all + b.all + plain.all, 'el aviso');
   // el gemelo: una lista ilegible que no vive en un clon es «no pude mirar» igual, sin aviso que inventar
   fs.writeFileSync(fx.list, '{ roto');
   const loose = guard(fx, branchLine(fx, 'limpia'), { args: [] });
@@ -1750,12 +1746,12 @@ test(`${T79} — el clon en una rama de trabajo, HEAD suelto o la lista editada 
   git(fx.maint, ['commit', '--quiet', '-m', `${MARK}: la lista de la rama`]);
   let f = freshnessOf(fx);
   assert.deepStrictEqual([f.measured, f.differs, f.behind], [true, true, 0]);
+  // el freno lee la lista de la rama principal remota: lo del disco no es un aviso
   const s = statusOf(fx);
-  assert.match(s.stdout, WARNING);
-  assert.match(s.stdout, /la lista del disco no es la de su rama principal remota/);
+  assert.doesNotMatch(s.stdout, WARNING);
   commitOn(fx, 'limpia', { 'guides/a.md': 'limpio\n' });
   const push = guard(fx, branchLine(fx, 'limpia'), { list: null, args: [] });
-  assert.match(push.stderr, /la lista del disco no es la de su rama principal remota/);
+  assert.doesNotMatch(push.stderr, /la lista del disco no es la de su rama principal remota/);
   noMark(s.all + push.all + JSON.stringify(f), 'el aviso');
   // de vuelta en la principal: al día
   git(fx.maint, ['checkout', '--quiet', fx.main]);
@@ -1773,7 +1769,7 @@ test(`${T79} — el clon en una rama de trabajo, HEAD suelto o la lista editada 
   writeList(fx.listFile, OTHER_TERM);
   f = freshnessOf(fx);
   assert.deepStrictEqual([f.measured, f.differs, f.behind], [true, true, 0]);
-  assert.match(statusOf(fx).stdout, /la lista del disco no es la de su rama principal remota/);
+  assert.doesNotMatch(statusOf(fx).stdout, /la lista del disco no es la de su rama principal remota/);
 });
 
 test(`${T79} — la última traída hace más de tres días: avisa por edad (y no, si el remoto contesta que no hay nada nuevo)`, (t) => {
@@ -1904,7 +1900,8 @@ test(`${T79} — es un aviso: el veredicto y el código de un empuje son los mis
   const at = new Date(Date.now() - 9 * 86400000);
   fs.utimesSync(path.join(fx.maint, '.git', 'FETCH_HEAD'), at, at);
   const stale = picture();
-  assert.strictEqual(stale.warned, true, 'con el clon atrasado, avisa');
+  // la lista sale de la rama principal remota y el remoto no tiene nada nuevo: no hay aviso
+  assert.strictEqual(stale.warned, false, 'el disco atrasado no es un aviso');
   assert.deepStrictEqual({ ...stale, warned: null }, { ...fresh, warned: null }, 'el atraso no cambia ni un veredicto ni un código (ni el de status)');
   // un empuje a un remoto que no es público, o que no es del arnés, no mide nada (no hay lista elegida)
   const local = guard(fx, branchLine(fx, 'limpia'), { list: null, url: fx.localUrl });
@@ -1953,11 +1950,11 @@ test(`${T79} — la lista nombrada con otras mayúsculas (disco que no las disti
   // de punta a punta: la máquina declara su clon con otra caja
   fs.writeFileSync(path.join(fx.home, '.tycon', 'config.json'), JSON.stringify({ paths: { maintainers: upper } }));
   commitOn(fx, 'limpia', { 'guides/a.md': 'limpio\n' });
-  const push = guard(fx, branchLine(fx, 'limpia'), { list: null, args: [] });
+  // la lista sale de la rama principal remota: se mide igual, y lo del disco no es un aviso
+  const push = guard(fx, branchLine(fx, 'limpia'), { list: null });
   assert.strictEqual(push.status, 0, push.all);
-  assert.match(push.stderr, WARNING);
-  assert.match(push.stderr, /2 commit\(s\) atrás/);
-  assert.match(statusOf(fx).stdout, WARNING);
+  assert.deepStrictEqual([push.json.list.freshness.measured, push.json.list.freshness.why, push.json.list.freshness.behind], [true, null, 2]);
+  assert.doesNotMatch(statusOf(fx).stdout, WARNING);
 });
 
 test(`${T79} — la lista nunca sale del árbol que se empuja, lo nombre la máquina con las mayúsculas que sea`, (t) => {
@@ -2061,14 +2058,12 @@ test(`${T79} — el clon de la lista ADELANTE de su remoto (una excepción sin s
   assert.match(text.text, /1 commit\(s\) sin subir/);
   assert.doesNotMatch(text.text, /atrasad/);
   commitOn(fx, 'limpia', { 'guides/b.md': 'limpio\n' });
+  // el freno lee la rama principal remota: la excepción sin subir no la usa, y no hay nada que avisar
   const push = guard(fx, branchLine(fx, 'limpia'), { list: null, args: [] });
   assert.strictEqual(push.status, 0, push.all);
-  assert.match(push.stderr, /tiene cambios que su remoto todavía no tiene/);
-  assert.match(push.stderr, /git -C .* push/, 'la salida que sirve es subirlos');
-  assert.doesNotMatch(push.stderr, /atrasad|pull/, 'ni «atrasado» ni «pull»: traerlo no cambia nada');
+  assert.doesNotMatch(push.stderr, /atrasad|pull|tiene cambios que su remoto/);
   const s = statusOf(fx);
-  assert.match(s.stdout, /tiene cambios que su remoto todavía no tiene/);
-  assert.doesNotMatch(s.stdout, /atrasad|pull/);
+  assert.doesNotMatch(s.stdout, /atrasad|pull|tiene cambios que su remoto/);
   noMark(push.all + s.all + JSON.stringify(f), 'el aviso');
   // adelante Y atrás: las dos cuentas
   publishToMaint(fx, 2);
@@ -2109,11 +2104,12 @@ test(`${T79} — medir no ejecuta nada de lo que el clon de la lista configure, 
   const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8', env: cleanEnv() }).stdout.trim();
   fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log.split(path.sep).join('/')}'\nexec '${realGit}' "$@"\n`, { mode: 0o755 });
   const env = { PATH: `${bin}${path.delimiter}${cleanEnv().PATH}` };
-  const push = guard(fx, branchLine(fx, 'limpia'), { list: null, args: [], env });
+  // leer la lista de la rama remota tampoco corre nada del clon, y la medida sigue saliendo
+  const push = guard(fx, branchLine(fx, 'limpia'), { list: null, env });
   assert.strictEqual(push.status, 0, push.all);
-  assert.match(push.stderr, WARNING, 'y la medida sigue saliendo');
+  assert.deepStrictEqual([push.json.list.freshness.measured, push.json.list.freshness.behind], [true, 1]);
   const s = statusOf(fx, { args: ['--fetch'], env });
-  assert.match(s.stdout, WARNING);
+  assert.match(s.stdout, /la lista está al día/);
   // la medida sola, con el testigo: lo que anota son sólo sus llamadas
   fs.writeFileSync(log, '');
   const G = require(path.join(fx.harness, 'scripts/hooks/public-push-guard.js'));

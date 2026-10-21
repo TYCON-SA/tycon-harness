@@ -29,7 +29,9 @@
 //
 // DE DÓNDE SALE LA LISTA, en orden: TYCON_PUBLISH_DENYLIST (un archivo) · el clon de mantenimiento que declara la máquina
 // (`harness.js config set paths.maintainers <carpeta>`) · el clon que la máquina mantiene (`paths.maintained`) · el arnés
-// desde el que corre este guion. NUNCA el árbol que se empuja: la rama elegiría con qué lista se la mira. Los dos
+// desde el que corre este guion. De un clon se lee la lista de su rama principal remota, como la conoce el clon
+// (`origin/HEAD`, o `origin/main`; sin traer nada): la del disco sólo si el clon no tiene esa rama o la rama no trae la
+// lista. NUNCA el árbol que se empuja: la rama elegiría con qué lista se la mira. Los dos
 // primeros son una declaración: si están declarados y la lista no está, es «no pude mirar». En una máquina con el perfil
 // del equipo (`team-profile.json`, o `perfil-equipo.json`) la lista es obligatoria. Sin perfil y sin lista (alguien de afuera con su copia)
 // corre lo que no necesita lista, y lo dice.
@@ -279,8 +281,9 @@ const isTeamMachine = (top) => hasProfile(ROOT) || (Boolean(top) && hasProfile(t
  *   → { cfg, forbidden, source, label, file, generic, terms, extraForbidden }
  *     source    'env' | 'maintainers' | 'maintained' | 'harness' (el lugar de `listPlaces` que ganó), o null
  *     file      la ruta del archivo de la lista en esta máquina, o null — es lo que se le pasa a `listFreshness`
+ *     readFrom  'remote' (la rama principal remota del clon de `file`) | 'disk' — también se le pasa a `listFreshness`
  *     generic   true = no hay lista: sólo lo que no la necesita (source, label y file en null; terms en 0)
- *     cfg, forbidden   lo que usa el detector; nunca se imprimen
+ *     cfg, forbidden, termList   lo que usa el detector y los términos tal como están escritos; nunca se imprimen
  * Un `Blind` por una lista que está y no se deja leer lleva `listFile` y `listSource` (para poder decir si ese clon
  * está al día: una lista con las marcas de un merge a medias es justo un clon que no se terminó de traer).
  */
@@ -301,20 +304,26 @@ function resolveList(top, env = process.env, { pushing = false, optional = false
       if (place.declared) throw new Blind(`sin la lista: ${place.label} está declarado y ahí no hay lista`);
       continue;
     }
+    // la lista de la rama principal remota del clon, como la conoce el clon: un clon compartido parado atrás (o en otra
+    // rama) frenaba por su propia firma lo que una excepción ya mergeada deja pasar. Sin esa rama, la del disco.
+    // TYCON_PUBLISH_DENYLIST es un archivo, y se lee tal cual.
+    let atRemote = null;
+    try { atRemote = place.source === 'env' ? null : listClone(place.file, env); } catch (_) { atRemote = null; }
+    const readFrom = atRemote && !atRemote.why ? 'remote' : 'disk';
     let raw;
     let cfg;
     try {
-      raw = JSON.parse(fs.readFileSync(place.file, 'utf8'));
+      raw = JSON.parse(readFrom === 'remote' ? atRemote.published : fs.readFileSync(place.file, 'utf8'));
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('no es un objeto');
       if (!Array.isArray(raw.terminos) || raw.terminos.length === 0) throw new Error('no trae términos');
       cfg = D.cargarConfig(place.file, JSON.stringify(raw));
     } catch (_) {
       // el motivo de un error de la lista puede nombrar un término: no se imprime
-      throw unreadable(place, `la lista de ${place.label} no se puede leer (no es una lista válida)`);
+      throw Object.assign(unreadable(place, `la lista de ${place.label} no se puede leer (no es una lista válida)`), { listReadFrom: readFrom });
     }
     const globs = raw.forbiddenPaths === undefined ? [] : raw.forbiddenPaths;
-    if (!Array.isArray(globs) || globs.some((g) => typeof g !== 'string' || !g.trim())) throw unreadable(place, `la lista de ${place.label} trae "forbiddenPaths" mal escritas (es una lista de rutas)`);
-    return { cfg, forbidden: globs.map((g) => D.globARegex(g)), source: place.source, label: place.label, file: place.file, generic: false, terms: raw.terminos.length, extraForbidden: globs.length };
+    if (!Array.isArray(globs) || globs.some((g) => typeof g !== 'string' || !g.trim())) throw Object.assign(unreadable(place, `la lista de ${place.label} trae "forbiddenPaths" mal escritas (es una lista de rutas)`), { listReadFrom: readFrom });
+    return { cfg, forbidden: globs.map((g) => D.globARegex(g)), source: place.source, label: place.label, file: place.file, readFrom, termList: raw.terminos, generic: false, terms: raw.terminos.length, extraForbidden: globs.length };
   }
   // `optional`: quien llama no sabe si lo que mira va al repo público del arnés (un `gh` de destino desconocido). En la
   // máquina de alguien del equipo que no mantiene —tiene el perfil, no tiene la lista— exigirla ahí frenaría un `gh`
@@ -393,6 +402,7 @@ function lastFetch(clone, ask, said) {
  *     askRemote   true = además se le pregunta al remoto del clon por la punta de su rama principal. SALE A LA RED:
  *                 sólo donde ya se sale (un empuje) o donde la persona lo pide (`status --fetch`, `doctor --fetch`)
  *     remoteMs    el tope de esa pregunta
+ *     readFrom    de dónde leyó la lista el freno (el `readFrom` de `resolveList`): con 'remote', `differs` es false
  *   → {
  *       measured,         ¿se pudo medir? Si no, `why` dice por qué y las medidas vienen en null
  *       why,              el motivo (no es un clon · sin rama principal remota conocida · git no contestó · …), o null
@@ -414,44 +424,57 @@ function lastFetch(clone, ask, said) {
  * el asunto de ningún commit —son del repo privado—: sólo cuentas y la ruta del clon. Todo `git` corre sin las variables
  * con que git lanza un hook (`gitElsewhere`), y la pregunta al remoto va SIEMPRE sin interacción.
  */
-function listFreshness(file, { env = process.env, askRemote = false, remoteMs = LIST_REMOTE_ANSWER_MS } = {}) {
+/**
+ * El clon donde vive el archivo de la lista y su rama principal remota, como la conoce el clon: `{ real, clone, rel, ref,
+ * tip, ask, said, blobOf, published }`, o `{ why, clone }` si no se puede ubicar. No trae ni escribe nada en ese clon, ni
+ * ejecuta lo que configure (`LIST_CLONE_GIT`). `published`: la lista de esa rama, leída sin filtros (`cat-file blob`).
+ */
+function listClone(file, env) {
+  if (!file) return { why: 'no hay un archivo de lista que medir', clone: null };
+  // la ruta real NATIVA: con la caja del disco, que es la que devuelve git (ver `realOf`)
+  let real;
+  try { real = fs.realpathSync.native(file); } catch (_) { return { why: 'el archivo de la lista no está', clone: null }; }
+  // a git se le pregunta en inglés (hay que leerle un error) y sin tomar candados: es una lectura
+  const local = { env, timeout: LIST_LOCAL_GIT_MS, extra: { LC_ALL: 'C', LANG: 'C', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } };
+  const ask = (dir, args, more = {}) => gitElsewhere(dir, [...LIST_CLONE_GIT, ...args], { ...local, ...more });
+  const said = (r) => (!r.error && r.status === 0 ? String(r.stdout || '').trim() : null);
+  const where = ask(path.dirname(real), ['rev-parse', '--show-toplevel']);
+  const top = said(where);
+  if (!top) {
+    const notARepo = !where.error && where.status === 128 && /not a git repository/i.test(String(where.stderr || ''));
+    return { why: notARepo ? 'la lista no vive en un clon de git' : 'git no contestó dónde vive la lista', clone: null };
+  }
+  const clone = path.resolve(top);
+  const rel = path.relative(realOf(clone), real).split(path.sep).join('/');
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return { why: 'git no contestó dónde vive la lista', clone };
+  // la rama principal del remoto, como la conoce este clon: la que `origin/HEAD` nombra; sin eso, `origin/main`
+  const tipOf = (name) => { const sha = said(ask(clone, ['rev-parse', '--verify', '--quiet', '--end-of-options', `${name}^{commit}`])); return sha && SHA.test(sha) ? sha : null; };
+  let ref = said(ask(clone, ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD']));
+  let tip = ref && ref.startsWith('refs/remotes/origin/') ? tipOf(ref) : null;
+  if (!tip) { ref = 'refs/remotes/origin/main'; tip = tipOf(ref); }
+  if (!tip) return { why: 'ese clon no tiene una rama principal remota conocida (ni origin/HEAD ni origin/main)', clone };
+  const blobOf = (rev) => { const r = ask(clone, ['cat-file', 'blob', `${rev}:${rel}`], { maxBuffer: LIST_MAX_BYTES }); return !r.error && r.status === 0 ? String(r.stdout) : null; };
+  const published = blobOf(tip);
+  if (published === null) return { why: 'la rama principal remota de ese clon no trae la lista en esa ruta', clone };
+  return { real, clone, rel, ref, tip, ask, said, blobOf, published };
+}
+
+function listFreshness(file, { env = process.env, askRemote = false, remoteMs = LIST_REMOTE_ANSWER_MS, readFrom = 'disk' } = {}) {
   const none = (why, clone = null) => ({ measured: false, why, clone, differs: null, behind: null, ahead: null, edited: null, onMain: null, fetchedDaysAgo: null, fetchFailed: null,
     ...(askRemote ? { remoteAsked: false, remoteAhead: null } : {}) });
   try {
-    if (!file) return none('no hay un archivo de lista que medir');
-    // la ruta real NATIVA: con la caja del disco, que es la que devuelve git (ver `realOf`)
-    let real;
-    try { real = fs.realpathSync.native(file); } catch (_) { return none('el archivo de la lista no está'); }
-    // a git se le pregunta en inglés (hay que leerle un error) y sin tomar candados: es una lectura
-    const local = { env, timeout: LIST_LOCAL_GIT_MS, extra: { LC_ALL: 'C', LANG: 'C', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } };
-    const ask = (dir, args, more = {}) => gitElsewhere(dir, [...LIST_CLONE_GIT, ...args], { ...local, ...more });
-    const said = (r) => (!r.error && r.status === 0 ? String(r.stdout || '').trim() : null);
-    const where = ask(path.dirname(real), ['rev-parse', '--show-toplevel']);
-    const top = said(where);
-    if (!top) {
-      const notARepo = !where.error && where.status === 128 && /not a git repository/i.test(String(where.stderr || ''));
-      return none(notARepo ? 'la lista no vive en un clon de git' : 'git no contestó dónde vive la lista');
-    }
-    const clone = path.resolve(top);
-    const rel = path.relative(realOf(clone), real).split(path.sep).join('/');
-    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return none('git no contestó dónde vive la lista', clone);
-    // la rama principal del remoto, como la conoce este clon: la que `origin/HEAD` nombra; sin eso, `origin/main`
-    const tipOf = (name) => { const sha = said(ask(clone, ['rev-parse', '--verify', '--quiet', '--end-of-options', `${name}^{commit}`])); return sha && SHA.test(sha) ? sha : null; };
-    let ref = said(ask(clone, ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD']));
-    let tip = ref && ref.startsWith('refs/remotes/origin/') ? tipOf(ref) : null;
-    if (!tip) { ref = 'refs/remotes/origin/main'; tip = tipOf(ref); }
-    if (!tip) return none('ese clon no tiene una rama principal remota conocida (ni origin/HEAD ni origin/main)', clone);
+    const c = listClone(file, env);
+    if (c.why) return none(c.why, c.clone);
+    const { real, clone, ref, tip, ask, said, blobOf, published } = c;
     // 1 · el archivo del disco contra el de esa rama, comparados ACÁ como texto: el del disco se lee tal cual y el de la
     //     rama se le pide a git sin pasar por ningún filtro (`cat-file blob`). Ni un filtro del clon corre, ni depende
-    //     de cómo ese clon tenga configurados los fines de línea
-    const blobOf = (rev) => { const r = ask(clone, ['cat-file', 'blob', `${rev}:${rel}`], { maxBuffer: LIST_MAX_BYTES }); return !r.error && r.status === 0 ? String(r.stdout) : null; };
-    const published = blobOf(tip);
-    if (published === null) return none('la rama principal remota de ese clon no trae la lista en esa ruta', clone);
+    //     de cómo ese clon tenga configurados los fines de línea. Si el freno leyó la lista de esa rama (`readFrom:
+    //     'remote'`), lo que tenga el disco no cambia nada de lo que miró: no es un aviso
     const onDisk = fs.readFileSync(real, 'utf8');
     const committed = blobOf('HEAD');
     const countOf = (range) => { const n = said(ask(clone, ['rev-list', '--count', range])); return n !== null && /^\d+$/.test(n) ? Number(n) : null; };
     const branch = ref.slice('refs/remotes/origin/'.length);
-    const out = { measured: true, why: null, clone, differs: !sameList(onDisk, published), behind: countOf(`HEAD..${tip}`), ahead: countOf(`${tip}..HEAD`),
+    const out = { measured: true, why: null, clone, differs: readFrom === 'remote' ? false : !sameList(onDisk, published), behind: countOf(`HEAD..${tip}`), ahead: countOf(`${tip}..HEAD`),
       edited: committed === null ? null : !sameList(onDisk, committed), onMain: said(ask(clone, ['symbolic-ref', '--quiet', 'HEAD'])) === `refs/heads/${branch}`,
       fetchedDaysAgo: null, fetchFailed: false };
     // 2 · la edad de la última traída, sin red (y si el último intento falló)
@@ -1000,7 +1023,7 @@ function prePush({ remoteName, url, input, cwd = process.cwd(), env = process.en
     // ¿esa lista está al día? Recién acá —un empuje del arnés a un remoto público, con algo que publicar y una lista
     // elegida—: un empuje que no es asunto de este freno no espera a nadie. Se le pregunta al remoto del clon de la
     // lista porque este empuje ya sale a la red. Es un dato para el aviso: de acá en más nada lo mira para decidir.
-    if (!list.generic) result.list.freshness = listFreshness(list.file, { env, askRemote: true });
+    if (!list.generic) result.list.freshness = listFreshness(list.file, { env, askRemote: true, readFrom: list.readFrom });
     const limitMs = limitOf(env);
     const r = reviewPush({ top: repo, url: target, lines, list, deadline: Date.now() + limitMs, limitMs });
     result.findings = r.findings;
@@ -1016,7 +1039,7 @@ function prePush({ remoteName, url, input, cwd = process.cwd(), env = process.en
     // un error que no es de los previstos tampoco es verde; se nombra por su clase, no por su texto
     result.reason = e instanceof Blind ? e.message : `el freno falló por dentro (${(e && (e.code || e.name)) || 'error'})`;
     // una lista que está y no se deja leer: si su clon quedó a medio traer, eso es lo que hay que saber
-    if (e instanceof Blind && e.listFile && !result.list) result.list = { source: e.listSource || null, freshness: listFreshness(e.listFile, { env, askRemote: true }) };
+    if (e instanceof Blind && e.listFile && !result.list) result.list = { source: e.listSource || null, freshness: listFreshness(e.listFile, { env, askRemote: true, readFrom: e.listReadFrom }) };
     record('could-not-look', 'bloqueo');
     return { code: 2, result };
   }
@@ -1053,7 +1076,7 @@ function prePushMessage(result) {
     L.push('   Cómo seguir:');
     L.push('     · sacalo de la HISTORIA de la rama, no sólo de la punta (se mira cada commit nuevo): reescribí esos commits y volvé a empujar;');
     L.push('     · un secreto que llegó a un commit se da por comprometido: rotalo, además de sacarlo;');
-    L.push('     · si es un freno falso, la salida es una excepción con motivo en la lista privada (`permitidos`), como en el exportador.');
+    L.push('     · si es un freno falso, la salida es una excepción con motivo en la lista privada (`permitidos`), como en el exportador; el freno la lee de la rama principal remota de su clon, así que la excepción vale cuando está mergeada.');
     // acá es donde más importa: la excepción que falta puede estar en los commits que ese clon no tiene
     L.push(...stale());
   }
@@ -1221,7 +1244,7 @@ function status({ cwd = process.cwd(), env = process.env, fetch = false } = {}) 
     else {
       L.push(`  la lista: ${list.label} — ${list.terms} término(s), ${FORBIDDEN.length + list.extraForbidden} ruta(s) vedada(s)`);
       // ¿está al día? Sin red, salvo que lo pidan. Es un dato: `ok` no se toca
-      const f = listFreshness(list.file, { env, askRemote: fetch });
+      const f = listFreshness(list.file, { env, askRemote: fetch, readFrom: list.readFrom });
       const t = freshnessText(f);
       L.push(`  ${t.level === 'warn' ? '⚠ ' : ''}${t.text}${t.level === 'warn' ? ` — ${t.advice}` : ''}${t.level !== 'unknown' && !fetch ? ' · status --fetch le pregunta además a su remoto' : ''}`);
     }
