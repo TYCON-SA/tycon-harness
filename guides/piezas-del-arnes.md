@@ -460,6 +460,18 @@ _(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)_
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsciforms-to-versionsh)
 
+## scripts/ci/backend-to-version.sh
+
+**Qué es:** La decisión de si una corrida del backend trae algo nuevo desde la última versión.
+
+**Por qué existe:** Sin ella, repetir una corrida o probar el arnés dejaba una versión vacía en staging, el bump del bot en `main` y un pedido de producción. Ante la duda versiona y avisa; la casilla `versionarYDesplegar` fuerza el camino de siempre.
+
+**Quién la usa:** El pipeline de backend de cada producto y el canónico del paquete bizuit.
+
+**Dónde se prueba:** `scripts/tests/backend-to-version.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscibackend-to-versionsh)
+
 ## scripts/ci/label-prs.sh
 
 _scripts/ci/label-prs.sh + scripts/ci/run-base.sh_

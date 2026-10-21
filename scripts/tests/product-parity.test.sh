@@ -509,6 +509,32 @@ else
   else
     ok "NO MEDIDO: sin python3 con yaml no puedo parsear los pipelines de las plantillas — no es un verde"
   fi
+  # T6 · Canonico_VersionPaqueteDespliegueYBumpAtadosAlVeredicto @story-1.14 @ac-2 @ac-4 — una corrida de backend sin
+  # código nuevo no empaqueta, no commitea el bump y no despliega. Si una sola de esas etapas queda con la condición
+  # vieja, la corrida vacía vuelve a dejar algo detrás (el caso real dejó las tres cosas).
+  res=$(node -e '
+const fs=require("fs"); const L=fs.readFileSync(process.argv[1],"utf8").split("\n"); const bad=[];
+const ind=(s)=>s.match(/^\s*/)[0].length;
+function paso(nombre){
+  const i=L.findIndex(l=>l.includes("displayName: \x27"+nombre+"\x27")); if (i<0) return null;
+  let s=i; while (s>0 && !/^\s*- (script|task|bash|pwsh|powershell|checkout|download|publish|template)\b/.test(L[s])) s--;
+  const n=ind(L[s]); let e=s+1; while (e<L.length && !(L[e].trim() && ind(L[e])<=n)) e++;
+  return L.slice(s,e).join("\n");
+}
+if (!/^\s*- name: versionarYDesplegar\b/m.test(L.join("\n"))) bad.push("falta el parámetro versionarYDesplegar");
+if (!L.some(l=>l.includes("backend-to-version.sh"))) bad.push("ningún paso llama a backend-to-version.sh");
+for (const p of ["Create ZIP package with metadata","Publish artifact","Commit version update (main only)"]) {
+  const b=paso(p); if (b===null) bad.push("no encuentro el paso «"+p+"»"); else if (!/condition:.*NuevoCodigo\.versionar/.test(b)) bad.push("«"+p+"» no mira el veredicto");
+}
+const d=L.findIndex(l=>/^\s*- stage: Deploy\b/.test(l));
+if (d<0) bad.push("no encuentro la etapa Deploy"); else {
+  let e=d+1; while (e<L.length && !/^\s*- stage:/.test(L[e])) e++;
+  const c=L.slice(d,e).find(l=>ind(l)===ind(L[d])+2 && /^\s*condition:/.test(l));
+  if (!c || !/versionar/.test(c)) bad.push("la etapa Deploy no mira el veredicto");
+}
+console.log(bad.join(" · "));' "$J/back/azure-pipelines.yml")
+  [ -z "$res" ] && ok "T6 Canonico_VersionPaqueteDespliegueYBumpAtadosAlVeredicto" \
+    || no "🔴 T6 Canonico_VersionPaqueteDespliegueYBumpAtadosAlVeredicto: $res"
 fi
 
 # NewProductTemplates_HonorEveryTrait — con la lista real de productos, cada rasgo que le aplica a un grupo se cumple en
@@ -980,6 +1006,82 @@ node "$AQUI/scripts/ci/check-unreplaced-placeholders.js" "$T41D/copia" >"$TMP/o4
 { [ "$rc41a" -eq 0 ] && [ "$rc41b" -eq 1 ] && grep -q 'templates/b.yml' "$TMP/o41b" && ! grep -q 'stack/templates/a.yml' "$TMP/o41b"; } \
   && ok "plantillas de un paquete: el control de marcadores saltea packs/<paquete>/templates/ y no otra carpeta templates/" \
   || no "🔴 plantillas de un paquete: rc=$rc41a/$rc41b $(head -2 "$TMP/o41b" | tr '\n' ' ')"
+
+# ================================================================ story 1.14 — un cambio que está viajando a los productos
+# Un rasgo nuevo llega a los productos por un pedido a `dev` y entra a `main` con el merge normal del equipo. Mientras
+# viaja, el repo figura en `en_camino` (con su pedido y su fecha de revisión): no cuenta como divergencia antes de la
+# revisión, sí después, y cuando el rasgo ya está en su `main` el control avisa que la entrada sobra.
+W="$TMP/w114"; rm -rf "$W"
+yml "$W/ProdA/Back" 'bash backend-to-version.sh'; yml "$W/ProdB/Back" 'sin el paso'; yml "$W/ProdC/Back" 'sin el paso'
+for p in ProdA ProdB ProdC; do publicado "$W/$p/Back"; done
+R_PASO='[ { "id": "sin-codigo-nuevo", "que": "no versionar sin código nuevo", "patron": "backend-to-version\\.sh", "exigido": true, "criterio": "scripts/ci/backend-to-version.sh" } ]'
+cfg114(){ # <archivo> <en_camino json>
+  cat > "$1" <<CFG
+{ "grupos": { "backend": [
+    { "producto": "ProdA", "ruta": "ProdA/Back" }, { "producto": "ProdB", "ruta": "ProdB/Back" }, { "producto": "ProdC", "ruta": "ProdC/Back" } ] },
+  "rasgos": $R_PASO, "diferencias_declaradas": [], "en_camino": $2 }
+CFG
+}
+camino(){ printf '{ "grupo": "backend", "rasgo": "sin-codigo-nuevo", "ruta": "%s", "pedido": "https://dev.azure.com/acme/_git/x/pullrequest/1", "fecha": "2026-10-20", "revision": "%s" }' "$1" "$2"; }
+
+# ---------------------------------------------------------------- T7 · Paridad_MarcaBackendSinElPaso @story-1.14 @ac-6
+cfg114 "$TMP/t114a.json" '[]'
+rc=$(corre_out "$TMP/t114a.json" "$W" --today 2026-10-21 --out "$TMP/r114a.json")
+res=$(chk "$TMP/r114a.json" "const d=(r.divergencias||[])[0]||{}; if ((d.no_tienen||[]).join(',')!=='ProdB,ProdC') bad.push('divergencia='+JSON.stringify(d));")
+{ [ "$rc" -eq 1 ] && [ -z "$res" ]; } && ok "T7 Paridad_MarcaBackendSinElPaso" || no "🔴 T7 Paridad_MarcaBackendSinElPaso rc=$rc: $res $(tail -3 "$TMP/out.txt")"
+
+# ---------------------------------------------------------------- T8 · Paridad_EnCaminoVenceYAvisaSiLlego @story-1.14 @ac-6
+t8=""
+# antes de la revisión: verde, lo dice, y el archivo del sitio no gana claves
+cfg114 "$TMP/t114b.json" "[ $(camino ProdB/Back 2026-12-20), $(camino ProdC/Back 2026-12-20) ]"
+rc=$(corre_out "$TMP/t114b.json" "$W" --today 2026-10-21 --out "$TMP/r114b.json")
+res=$(chk "$TMP/r114b.json" "const want=$CLAVES; if (JSON.stringify(Object.keys(r).sort())!==JSON.stringify([...want].sort())) bad.push('claves: '+Object.keys(r).join(','));
+if ((r.divergencias||[]).length||r.rc!==0) bad.push('rc='+r.rc+' divergencias='+JSON.stringify(r.divergencias));")
+{ [ "$rc" -eq 0 ] && [ -z "$res" ] && grep -q 'en camino' "$TMP/out.txt"; } || t8="$t8 [en camino antes de la revisión: rc=$rc $res $(tail -2 "$TMP/out.txt" | tr '\n' ' ')]"
+# uno solo en camino no ampara al otro
+cfg114 "$TMP/t114c.json" "[ $(camino ProdB/Back 2026-12-20) ]"
+rc=$(corre_out "$TMP/t114c.json" "$W" --today 2026-10-21 --out "$TMP/r114c.json")
+res=$(chk "$TMP/r114c.json" "const d=(r.divergencias||[])[0]||{}; if ((d.no_tienen||[]).join(',')!=='ProdC') bad.push('divergencia='+JSON.stringify(d));")
+{ [ "$rc" -eq 1 ] && [ -z "$res" ]; } || t8="$t8 [uno en camino y otro no: rc=$rc $res]"
+# vencida: deja de amparar y figura entre las vencidas
+cfg114 "$TMP/t114d.json" "[ $(camino ProdB/Back 2026-12-20), $(camino ProdC/Back 2026-10-01) ]"
+rc=$(corre_out "$TMP/t114d.json" "$W" --today 2026-10-21 --out "$TMP/r114d.json")
+res=$(chk "$TMP/r114d.json" "const d=(r.divergencias||[])[0]||{}; if ((d.no_tienen||[]).join(',')!=='ProdC') bad.push('divergencia='+JSON.stringify(d));
+if ((r.vencidas||[]).length!==1) bad.push('vencidas='+JSON.stringify(r.vencidas));")
+{ [ "$rc" -eq 1 ] && [ -z "$res" ] && grep -q 'venció' "$TMP/out.txt"; } || t8="$t8 [vencida: rc=$rc $res]"
+# ya llegó: avisa que la entrada sobra, sin frenar
+cfg114 "$TMP/t114e.json" "[ $(camino ProdA/Back 2026-12-20), $(camino ProdB/Back 2026-12-20), $(camino ProdC/Back 2026-12-20) ]"
+rc=$(corre_out "$TMP/t114e.json" "$W" --today 2026-10-21)
+{ [ "$rc" -eq 0 ] && grep -q 'ProdA.*sobra' "$TMP/out.txt"; } || t8="$t8 [ya llegó: rc=$rc $(grep -m1 -i sobra "$TMP/out.txt")]"
+# ninguno lo tiene todavía y los tres van en camino: un rasgo exigido no frena por «ninguno lo hace»
+W2="$TMP/w114b"; rm -rf "$W2"; for p in ProdA ProdB ProdC; do yml "$W2/$p/Back" 'sin el paso'; publicado "$W2/$p/Back"; done
+cfg114 "$TMP/t114f.json" "[ $(camino ProdA/Back 2026-12-20), $(camino ProdB/Back 2026-12-20), $(camino ProdC/Back 2026-12-20) ]"
+rc=$(corre_out "$TMP/t114f.json" "$W2" --today 2026-10-21)
+[ "$rc" -eq 0 ] || t8="$t8 [los tres en camino: rc=$rc $(tail -3 "$TMP/out.txt" | tr '\n' ' ')]"
+# una entrada sin pedido es un permiso, no un cambio que viaja
+printf '%s\n' "{ \"grupos\": { \"backend\": [ { \"producto\": \"ProdA\", \"ruta\": \"ProdA/Back\" }, { \"producto\": \"ProdB\", \"ruta\": \"ProdB/Back\" } ] },
+  \"rasgos\": $R_PASO, \"diferencias_declaradas\": [],
+  \"en_camino\": [ { \"grupo\": \"backend\", \"rasgo\": \"sin-codigo-nuevo\", \"ruta\": \"ProdB/Back\", \"fecha\": \"2026-10-20\", \"revision\": \"2026-12-20\" } ] }" > "$TMP/t114g.json"
+rc=$(corre_out "$TMP/t114g.json" "$W" --today 2026-10-21 --out "$TMP/r114g.json")
+res=$(chk "$TMP/r114g.json" "if (r.estado!=='no_medido'||!/pedido/.test(r.motivo||'')) bad.push('estado='+r.estado+' motivo='+r.motivo);")
+{ [ "$rc" -eq 1 ] && [ -z "$res" ]; } || t8="$t8 [sin pedido: rc=$rc $res]"
+# una revisión que no es AAAA-MM-DD no vence nunca: es un permiso, y frena como una entrada incompleta
+for X in '"2026/12/20"' '"permanente"' '20261220'; do
+  printf '%s\n' "{ \"grupos\": { \"backend\": [ { \"producto\": \"ProdA\", \"ruta\": \"ProdA/Back\" }, { \"producto\": \"ProdB\", \"ruta\": \"ProdB/Back\" } ] },
+    \"rasgos\": $R_PASO, \"diferencias_declaradas\": [],
+    \"en_camino\": [ { \"grupo\": \"backend\", \"rasgo\": \"sin-codigo-nuevo\", \"ruta\": \"ProdB/Back\", \"pedido\": \"p\", \"fecha\": \"2026-10-20\", \"revision\": $X } ] }" > "$TMP/t114h.json"
+  rc=$(corre_out "$TMP/t114h.json" "$W" --today 2026-10-21 --out "$TMP/r114h.json")
+  res=$(chk "$TMP/r114h.json" "if (r.estado!=='no_medido'||!/revision/.test(r.motivo||'')) bad.push('estado='+r.estado+' motivo='+r.motivo);")
+  { [ "$rc" -eq 1 ] && [ -z "$res" ]; } || t8="$t8 [revisión $X: rc=$rc $res]"
+done
+# sin la lista, o con la lista vacía, se compara como siempre (el backend sin el paso diverge)
+for L in '' '"en_camino": [],'; do
+  printf '%s\n' "{ \"grupos\": { \"backend\": [ { \"producto\": \"ProdA\", \"ruta\": \"ProdA/Back\" }, { \"producto\": \"ProdB\", \"ruta\": \"ProdB/Back\" } ] },
+    $L \"rasgos\": $R_PASO, \"diferencias_declaradas\": [] }" > "$TMP/t114i.json"
+  rc=$(corre_out "$TMP/t114i.json" "$W" --today 2026-10-21)
+  [ "$rc" -eq 1 ] || t8="$t8 [lista «${L:-ausente}»: rc=$rc]"
+done
+[ -z "$t8" ] && ok "T8 Paridad_EnCaminoVenceYAvisaSiLlego" || no "🔴 T8 Paridad_EnCaminoVenceYAvisaSiLlego:$t8"
 
 echo "─────────────"
 if [ "$fallos" -eq 0 ]; then echo "✅ paridad-entre-productos: todo verde"; exit 0; else echo "❌ paridad-entre-productos: $fallos falla(s)"; exit 1; fi
