@@ -367,6 +367,8 @@ table.tabla#proyectos thead th{white-space:normal}
 .shell .corridas *:not(code):not(pre):not(.mono):not(svg *){font-family:var(--sans)}
 .shell .corridas svg{min-width:0 !important;max-width:100%;height:auto}
 .shell .corridas .card{min-width:0;max-width:100%}
+/* el enlace a una sola corrida (?solo=) esconde el resumen; las fichas del tablero, que van entre el resumen y la tabla, también */
+body.solo .corridas #fichas-corridas,body.solo .corridas #fichas-calculando{display:none}
 @media (max-width:640px){.shell .corridas .dos{grid-template-columns:minmax(0,1fr)}.shell .corridas .pfila{grid-template-columns:minmax(0,1fr) 60px 70px}.shell .corridas .pfila .pb{grid-column:1/-1;order:9}}
 .logo-previa{max-height:56px;max-width:240px;width:auto;object-fit:contain;padding:10px;border:1px dashed var(--line-strong);border-radius:8px}
 /* la pestaña Ayuda: la guía del sitio, con lo que le toca a cada rol (help.js) */

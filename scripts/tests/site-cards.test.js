@@ -406,3 +406,61 @@ test('2.36-Medida_SinNumeroEsNoMedida: una métrica «medida» sin un número v�
   assert.strictEqual(p.valor, null);
   assert.ok(fichas.MOTIVOS.includes(p.motivo));
 });
+
+test('2.36-CalculoCaido_MotivoPropio: si el cálculo de las fichas se cae, cada una lo dice con su motivo, no como una foto ilegible', () => {
+  const clon = tmp('fichas-caido-');
+  // un sources.json que se lee pero no tiene la forma: el cálculo común del tablero tira al recorrerlo
+  fs.mkdirSync(path.join(clon, 'scripts', 'nightly', 'dashboard'), { recursive: true });
+  fs.writeFileSync(path.join(clon, 'scripts', 'nightly', 'dashboard', 'sources.json'), 'null');
+  const logs = [];
+  const m = fichas.fichasDelClon({ clon, ahora: AHORA, ocultas: ['dod'], log: (l) => logs.push(l) });
+  assert.ok(fichas.MOTIVOS.includes('calculo_caido'), 'el motivo está en la lista cerrada');
+  assert.strictEqual(m.ocultas, 1);
+  assert.ok(m.lista.length && m.lista.every((f) => f.estado === 'no_medido' && f.motivo === 'calculo_caido'));
+  assert.ok(logs.some((l) => /no se pudieron calcular/.test(l)), 'el detalle va al registro');
+  // la pantalla lo dice en cada idioma
+  const f = m.lista[0];
+  assert.match(fichas.tile(f, 'es'), /el cálculo de las fichas se cayó/);
+  assert.match(fichas.tile(f, 'en'), /the card calculation failed/);
+  // y lo mismo cuando falla el hilo que las calcula (sources.js): la lista de todas no medidas trae este motivo
+  assert.ok(fichas.fichasNoMedidas([]).lista.every((x) => x.motivo === 'calculo_caido'));
+});
+
+test('2.36-Sello_CompletoComoElAviso: el sello de Arnés dice «completa» con la misma regla que el aviso de la mañana', () => {
+  const seal = require(path.join(RAIZ, 'scripts', 'nightly', 'dashboard', 'seal.js'));
+  const base = { esquema: 1, generado: `${HOY}T06:00:00Z`, snapshot: HOY, modo: 'nocturno', corrida: '4242', fuentes: { esperadas: 3, al_dia: 3 }, buzon: { estado: 'leido', maquinas: 2 } };
+  const conSello = (s) => {
+    const clon = tmp('fichas-sello-');
+    fs.mkdirSync(path.join(clon, 'artifacts'), { recursive: true });
+    fs.writeFileSync(path.join(clon, 'artifacts', 'tablero-del-arnes.html'), `<!doctype html><html><head>${seal.escribir(s)}</head><body></body></html>`);
+    const m = sources.construirDesdeClon(clon, { ahora: AHORA });
+    return views.filasArnes(m, { ahora: AHORA }).find((l) => l.clave === 'sello').texto;
+  };
+  assert.strictEqual(conSello(base), `${HOY} · completa`);
+  assert.match(conSello({ ...base, fuentes: { esperadas: 3, al_dia: 2 } }), /incompleta/, 'una fuente atrasada');
+  assert.match(conSello({ ...base, buzon: { estado: 'no_leido', motivo: 'sin buzón' } }), /incompleta/, 'el buzón sin leer');
+  assert.match(conSello({ ...base, modo: 'local', corrida: null, buzon: { estado: 'no_aplica' } }), /incompleta/, 'una página local');
+  // la página entera no se guarda en el modelo: el sitio no la sirve
+  const clon = tmp('fichas-sello-');
+  fs.mkdirSync(path.join(clon, 'artifacts'), { recursive: true });
+  fs.writeFileSync(path.join(clon, 'artifacts', 'tablero-del-arnes.html'), `<!doctype html><html><head>${seal.escribir(base)}</head><body>Seis preguntas</body></html>`);
+  assert.ok(!JSON.stringify(sources.construirDesdeClon(clon, { ahora: AHORA }).tablero).includes('Seis preguntas'));
+});
+
+test('2.36-Guia_ListaYComoOcultar: la guía, en los dos idiomas, trae las 26 con su para qué, cómo se oculta una y lo que todavía no se mide', () => {
+  const { t } = require(path.join(H.SITE, 'texts.js'));
+  const guias = { es: fs.readFileSync(path.join(RAIZ, 'guides', 'organization-site.md'), 'utf8'), en: fs.readFileSync(path.join(RAIZ, 'guides', 'organization-site.en.md'), 'utf8') };
+  assert.strictEqual(fichas.FICHAS.length, 26);
+  for (const [idioma, guia] of Object.entries(guias)) {
+    for (const f of fichas.FICHAS) {
+      assert.ok(guia.includes(t(idioma, `ficha.${f.id}.titulo`)), `${idioma}: falta el título de ${f.id}`);
+      assert.ok(guia.includes(t(idioma, `ficha.${f.id}.paraQue`)), `${idioma}: falta el para qué de ${f.id}`);
+    }
+    assert.ok(guia.includes('site.hidden_cards'), `${idioma}: cómo se oculta una`);
+    assert.doesNotMatch(guia, /\/arnes\/tablero/, `${idioma}: la ruta vieja ya no existe`);
+  }
+  assert.match(guias.es, /^#### Lo que todavía no se mide$/m);
+  assert.match(guias.en, /^#### What is not measured yet$/m);
+  assert.match(guias.es, /^### Las fichas del tablero$/m);
+  assert.match(guias.en, /^### The dashboard cards$/m);
+});

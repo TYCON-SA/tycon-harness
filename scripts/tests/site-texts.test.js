@@ -125,7 +125,7 @@ test('T8 Textos_NingunaPaginaEnInglesTraeCastellano @story-2.42 @ac-4 @ac-5 @ac-
     const ana = await entrar(PERSONA);
     const fuera = await entrar('nadie@acme.example');
     const en = 'sitio-idioma=en';
-    const paginas = [['/', lead], ['/proyectos', lead], ['/arnes', lead], ['/arnes/tablero', lead], ['/corridas', lead], ['/ayuda', lead], ['/no-existe', lead],
+    const paginas = [['/', lead], ['/proyectos', lead], ['/arnes', lead], ['/corridas', lead], ['/ayuda', lead], ['/no-existe', lead],
       ['/', ana], ['/proyectos', ana], ['/arnes', ana], ['/ayuda', ana], ['/', fuera]];
     const hallazgos = [];
     for (const [ruta, ses] of paginas) {

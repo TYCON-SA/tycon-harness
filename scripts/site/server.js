@@ -215,7 +215,6 @@ const RUTAS = [
   { method: 'GET', path: '/', needs: ['maintainer', 'person'], pestana: { id: 'inicio', titulo: 'Inicio', orden: 10 }, handler: (ctx) => html(views.paginaInicio(ctx)) },
   { method: 'GET', path: '/proyectos', needs: ['maintainer', 'person'], pestana: { id: 'proyectos', titulo: 'Proyectos', orden: 30 }, handler: (ctx) => html(views.paginaProyectos(ctx)) },
   { method: 'GET', path: '/arnes', needs: ['maintainer'], pestana: { id: 'arnes', titulo: 'Arnés', orden: 40 }, handler: (ctx) => html(views.paginaArnes(ctx)) },
-  { method: 'GET', path: '/arnes/tablero', needs: ['maintainer'], handler: (ctx) => html(views.tableroServido(ctx)) },
   { method: 'GET', path: '/api/inicio', needs: ['maintainer', 'person'], handler: (ctx) => ({ status: 200, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(views.inicioJson(ctx)) }) },
 ];
 

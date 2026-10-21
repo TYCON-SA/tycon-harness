@@ -224,7 +224,9 @@ test('T1 Cabecera_SelloYBandas_IgualQueLaVista @story-2.27 @ac-1 @ac-18', async 
     assert.doesNotMatch(p, /Sin registro de corridas propio/, 'el sitio no tiene registro propio y no lo declara como faltante');
     assert.doesNotMatch(p, /~\/\.claude\/\.tycon-pipeline\/timing-history/, 'la nota «De dónde sale» es la del sitio');
     assert.match(p, /del espejo del buzón de corridas que el sitio baja con su identidad de sólo lectura/);
-    assert.match(p, /href="\/arnes\/tablero"/, 'el eyebrow enlaza el tablero para quien mantiene');
+    // la página vieja del tablero ya no se sirve: el eyebrow lleva a Arnés, donde están sus fichas
+    assert.match(p, /href="\/arnes"/, 'el eyebrow enlaza Arnés para quien mantiene');
+    assert.doesNotMatch(p, /href="\/arnes\/tablero"/, 'nada enlaza la página vieja del tablero');
   });
   // el saneado ausente: la banda de rescate aparece (una copia de runs.js sin tokens-digest.js al lado)
   const copia = tmp('site-runs-copia-');
@@ -236,6 +238,49 @@ test('T1 Cabecera_SelloYBandas_IgualQueLaVista @story-2.27 @ac-1 @ac-18', async 
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(r.stdout, /tokens-digest\.js/, 'sin el saneado, la banda lo dice');
   assert.doesNotMatch(r.stdout, /Sin registro de corridas propio/);
+});
+
+test('T9 2.36-Corridas_FichasArribaDeLaTabla @story-2.36 @ac-8 — las tres de Corridas, entre el resumen y la tabla, para quien mantiene', async () => {
+  const cards = require(path.join(H.SITE, 'tabs', 'cards.js'));
+  const f = fuentesCon({ espejo: mundo() });
+  // el modelo de fichas que arma el cálculo común del tablero (la misma cuenta la prueba site-cards: UnaSolaCuenta)
+  f.st.modelo = { ...f.st.modelo, fichas: cards.modeloDeFichas({ local: {
+    corridas: { estado: 'medido', valor: 1.25, medidos: 5, total: 5, unidad: 'conteo', fecha: '2026-08-10' },
+    pasos: { estado: 'medido', valor: 41, medidos: 5, total: 5, unidad: 'conteo', fecha: '2026-08-10' },
+    bloqueos: { estado: 'no_medido', motivo: 'no hay ningún archivo' },
+  } }) };
+  await conPestana({ fuentes: f }, async ({ h, entrar }) => {
+    const p = (await h.pedir('/corridas', { cookie: await entrar(LEAD) })).texto;
+    const deCorridas = cards.FICHAS.filter((x) => x.pestana === 'corridas').map((x) => x.id);
+    assert.deepStrictEqual(deCorridas.sort(), ['bloqueos', 'corridas', 'pasos']);
+    for (const id of deCorridas) assert.match(p, new RegExp(`data-ficha="${id}"`), `${id} sale en Corridas`);
+    for (const x of cards.FICHAS.filter((y) => y.pestana !== 'corridas')) assert.ok(!p.includes(`data-ficha="${x.id}"`), `${x.id} no es de Corridas`);
+    // entre el resumen (las fichas del filtro) y la tabla
+    const grilla = p.indexOf('id="fichas-corridas"');
+    assert.ok(grilla > 0 && grilla > p.indexOf('id="fichas"') && grilla < p.indexOf('<table'), 'la grilla va entre el resumen y la tabla');
+    assert.match(p, /data-ficha="corridas"[\s\S]*?t-val">1,3</, 'la mediana con el número del modelo');
+    assert.match(p, /class="tile blind" data-ficha="bloqueos"/, 'la que no tiene foto sale no medida, nunca cero');
+    // un dev ve su Corridas como antes: las fichas son de la organización
+    const pd = (await h.pedir('/corridas', { cookie: await entrar(DEV_A) })).texto;
+    assert.doesNotMatch(pd, /data-ficha=|id="fichas-corridas"|id="fichas-calculando"/);
+    // de la grilla sólo llegan los títulos fijos y los motivos de la lista cerrada: el motivo libre del tablero no viaja
+    assert.ok(!p.includes('no hay ningún archivo'), 'el motivo libre de la fuente no llega a la página');
+    // el enlace a una sola corrida (?solo=) esconde el resumen y también la grilla (pase adversarial): la hoja del sitio lo dice
+    const css = (await h.pedir('/static/site.css', { cookie: await entrar(LEAD) })).texto;
+    assert.match(css, /body\.solo \.corridas #fichas-corridas[^{]*\{display:none\}/, 'con ?solo= la grilla no se ve');
+    assert.match(p, /<div class="corridas">[\s\S]*id="fichas-corridas"/, 'la grilla queda dentro de la vista, donde la regla la alcanza');
+  });
+  // todavía sin fichas (el primer refresco): lo dice, como Arnés; una oculta desde Configuración no sale
+  const g = fuentesCon({ espejo: mundo() });
+  g.st.modelo = { ...g.st.modelo, fichas: null };
+  await conPestana({ fuentes: g }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    assert.match((await h.pedir('/corridas', { cookie: lead })).texto, /id="fichas-calculando"/);
+    g.st.modelo = { ...g.st.modelo, fichas: cards.modeloDeFichas({ local: { corridas: { estado: 'medido', valor: 2, medidos: 3, total: 3, unidad: 'conteo' } } }, { ocultas: ['pasos'] }) };
+    const p = (await h.pedir('/corridas', { cookie: lead })).texto;
+    assert.match(p, /data-ficha="corridas"/);
+    assert.doesNotMatch(p, /data-ficha="pasos"|id="fichas-calculando"/);
+  });
 });
 
 test('T2 CapaEjecutiva_FiltrosYDiezFichas @story-2.27 @ac-2', async () => {

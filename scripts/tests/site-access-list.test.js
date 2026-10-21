@@ -218,7 +218,7 @@ test('T11 2.40-SinLista_PaginaClaraSinDatos @story-2.40 @ac-9', async () => {
       ['POST', '/api/config/proponer'], ['POST', '/api/config/revisar'], ['GET', '/api/corridas'], ['GET', '/api/corridas/x'], ['GET', '/api/corridas/x/textos'],
       ['GET', '/configuracion'], ['GET', '/corridas'], ['GET', '/static/config.js'], ['GET', '/corridas/cliente.js']].map(([method, ruta]) => ({ method, ruta }));
     const rutas = [...h.sitio.rutas.map((r) => ({ method: r.method, ruta: r.path.replace(/:[a-z]+/g, 'x') })), ...deLasPestanas];
-    assert.ok(h.sitio.rutas.length >= 5, 'se recorrió la tabla entera');
+    assert.ok(['/', '/proyectos', '/arnes', '/api/inicio'].every((p) => h.sitio.rutas.some((r) => r.path === p)), 'se recorrió la tabla entera');
     for (const r of rutas) {
       const res = await h.pedir(r.ruta, { method: r.method, cookie: s, headers: r.method === 'POST' ? { origin: h.base, 'content-type': 'application/json' } : {}, body: r.method === 'POST' ? '{}' : undefined });
       // la API dice el motivo (sólo con la cuenta de la propia sesión), nunca un dato

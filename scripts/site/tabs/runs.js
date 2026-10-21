@@ -376,7 +376,16 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
         if (r.salidas[llave]) return pagina(ctx, r.salidas[llave]);
         const opts = { sitio: { rol: ctx.quien.rol, version } };
         const rearmado = r.error ? `<div class="banda gris"><b>${runsEsc(tx(idioma, 'corridas.rearmado', { desde: hora(r.error.desde), codigo: r.error.codigo }))}</b>${runsEsc(tx(idioma, 'corridas.rearmadoSeMuestra', { generado: hora(V.generado) }))}</div>` : '';
-        const cuerpo = `<link rel="stylesheet" href="/corridas/vista.css"><div class="corridas">${rearmado}${runs.cabecera(V, opts)}\n${runs.ejecutiva(V, { textos: textosFiltro(idioma) })}\n${runs.tabla(V)}\n${runs.pie(V, opts)}</div>`
+        // las fichas de Corridas del tablero nocturno (de la organización: sólo quien mantiene), entre el resumen y la
+        // tabla; salen del mismo modelo de fichas que Arnés y Proyectos. Sin fichas todavía (el primer refresco), lo dice como
+        // Arnés; vacía sólo si se ocultaron todas desde Configuración
+        const modeloFondo = fuentes.modelo() || {};
+        const esQuienMantiene = ctx.quien.rol === 'maintainer';
+        const [grilla] = esQuienMantiene ? require('./cards.js').seccionesDe(modeloFondo.fichas, 'corridas', { sinPreguntas: true, idioma }) : [];
+        const fichasTablero = !esQuienMantiene ? ''
+          : modeloFondo.fichas == null ? `<p class="q-note" id="fichas-calculando">${runsEsc(tx(idioma, 'fichas.calculando'))}</p>`
+            : (grilla ? `<div id="fichas-corridas">${grilla.html}</div>` : '');
+        const cuerpo = `<link rel="stylesheet" href="/corridas/vista.css"><div class="corridas">${rearmado}${runs.cabecera(V, opts)}\n${runs.ejecutiva(V, { textos: textosFiltro(idioma) })}\n${fichasTablero}${runs.tabla(V)}\n${runs.pie(V, opts)}</div>`
           + `<div id="fuente-corridas" data-api="/api/corridas" data-generado="${runsEsc(V.generado)}" hidden></div><script src="/corridas/cliente.js"></script>`;
         r.salidas[llave] = cuerpo;
         return pagina(ctx, cuerpo);

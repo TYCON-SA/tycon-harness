@@ -152,7 +152,7 @@ test('T5 Idioma_SelectorEnTodasLasPaginas @story-2.42 @ac-1', async () => {
     for (const idioma of ['es', 'en']) {
       const ck = `sitio-idioma=${idioma}`;
       const paginas = [
-        ['/', lead], ['/proyectos', lead], ['/arnes', lead], ['/arnes/tablero', lead], ['/ayuda', lead], ['/no-existe', lead],
+        ['/', lead], ['/proyectos', lead], ['/arnes', lead], ['/ayuda', lead], ['/no-existe', lead],
         ['/', ana], ['/arnes', ana], ['/ayuda', ana],
         ['/', fuera],
       ];
