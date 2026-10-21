@@ -141,7 +141,7 @@ sólo el plan, sin instalar, agregá `--dry-run`.
 ### Qué contestar
 
 Las preguntas están en castellano, y usan sus propias palabras: «perfil» es la instalación mínima o completa,
-«integraciones» son las conexiones opcionales y «paquete del stack» son los revisores para tu tecnología. Para «sí»
+las integraciones son las conexiones opcionales y «paquete del stack» son los revisores para tu tecnología. Para «sí»
 vale `s` o `y`.
 
 1. **«¿Qué perfil instalo?»** Contestá `1` (`minimal`, la instalación mínima) o `2` (`full`, la completa): no hay uno
@@ -396,7 +396,7 @@ Si lo ves, el paquete no llegó con lo de tu equipo: actualizá con
 
 ## Qué es opcional
 
-Las conexiones opcionales (en la configuración, «integraciones»), todas **apagadas** por defecto. Cada una se prende
+Las conexiones opcionales (en la configuración, `integrations`), todas **apagadas** por defecto. Cada una se prende
 con una clave en `~/.claude/tycon.json` o con su variable; `node ~/.claude/tycon-harness/scripts/lib/tycon-config.js
 explain` muestra cada valor y de dónde salió.
 

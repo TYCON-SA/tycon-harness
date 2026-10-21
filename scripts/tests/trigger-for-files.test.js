@@ -38,15 +38,15 @@ function repoWith(files) {
 const run = (args) => spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8', input: '' });
 
 test('T1 Changed_SinTrigger_Dispara @story-7.47 @ac-1: sin trigger, Azure dispara con todo', () => {
-  const dir = repoWith({ 'azure-pipelines.yml': 'pool:\n  vmImage: ubuntu-latest\nsteps:\n  - script: echo hola\n', 'specs/story-1.md': 'x\n' });
+  const dir = repoWith({ 'azure-pipelines-ci.yml': 'pool:\n  vmImage: ubuntu-latest\nsteps:\n  - script: echo hola\n', 'specs/story-1.md': 'x\n' });
   const r = run(['--repo', dir, '--changed', 'specs/story-1.md']);
   assert.strictEqual(r.status, 1, r.stdout + r.stderr);
-  assert.match(r.stdout, /azure-pipelines\.yml.*dispara.*\(raíz\)/);
+  assert.match(r.stdout, /azure-pipelines-ci\.yml.*dispara.*\(raíz\)/);
 });
 
 test('T2 Changed_SpecsExcluido_NoDispara @story-7.47 @ac-1: specs/ excluido no dispara; src/ sí, con su patrón', () => {
   const yml = "trigger:\n  branches:\n    include: [main]\n  paths:\n    include:\n      - '*'\n    exclude:\n      - 'specs/**'\n      - '.advisors/**'\n";
-  const dir = repoWith({ 'azure-pipelines.yml': yml });
+  const dir = repoWith({ 'azure-pipelines-ci.yml': yml });
   const docs = run(['--repo', dir, '--changed', 'specs/story-1.md', '.advisors/pipeline-runs/x/findings.json']);
   assert.strictEqual(docs.status, 0, docs.stdout + docs.stderr);
   assert.match(docs.stdout, /no dispara/);
@@ -63,9 +63,9 @@ test('T3 Changed_TriggerNone_NoDispara @story-7.47 @ac-1: trigger: none no se di
 });
 
 test('T4 Changed_LeeOrigin_NoElDisco @story-7.47 @ac-1: contesta con el pipeline de origin/main, no con el del disco', () => {
-  const dir = repoWith({ 'azure-pipelines.yml': "trigger:\n  paths:\n    exclude:\n      - 'specs/**'\n" });
+  const dir = repoWith({ 'azure-pipelines-ci.yml': "trigger:\n  paths:\n    exclude:\n      - 'specs/**'\n" });
   // on disk, someone removed the exclude: the answer is still the published one
-  fs.writeFileSync(path.join(dir, 'azure-pipelines.yml'), 'steps:\n  - script: echo\n');
+  fs.writeFileSync(path.join(dir, 'azure-pipelines-ci.yml'), 'steps:\n  - script: echo\n');
   const r = run(['--repo', dir, '--changed', 'specs/story-1.md']);
   assert.strictEqual(r.status, 0, r.stdout + r.stderr);
 });

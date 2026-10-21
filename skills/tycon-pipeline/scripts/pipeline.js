@@ -5471,7 +5471,7 @@ function writeFindings(args) {
     ...(proyeccion.projected ? { projected_to_story_repo: proyeccion.dest } : {}),
     ...(proyeccion.reason && proyeccion.reason.startsWith('no se pudo') ? { warnings: [...normWarnings, `proyección al repo de la story: ${proyeccion.reason}`] } : (normWarnings.length ? { warnings: normWarnings } : {})),
     note: `findings.json escrito (${records.length} findings: ${counts.critical} CRITICAL / ${counts.warning} WARNING). `
-      + (rethink ? `La corrida lleva ${rethink.rounds} vueltas de revisores y ${rethink.notes_count} ${rethink.notes_count === 1 ? 'nota' : 'notas'} de repensar el enfoque (vueltas ${rethink.notes.map((n) => n.iter).join(', ')}): van al informe de «Hallazgos». ` : '')
+      + (rethink ? `La corrida lleva ${rethink.rounds} vueltas de revisores y ${rethink.notes_count} nota${rethink.notes_count === 1 ? '' : 's'} de repensar el enfoque (vueltas ${rethink.notes.map((n) => n.iter).join(', ')}): van al informe de «Hallazgos». ` : '')
       + `Siguiente: pipeline.js write-followups --story ${args.story} --findings ${outPath} (persiste los no-resueltos EN la story).`,
   };
 }
