@@ -819,18 +819,14 @@ la configuración e instalarlo. Quién entra lo decide sólo la lista `site.acce
 cada rol, los problemas comunes, cómo se instala y cómo está hecho por dentro, en
 [guides/organization-site.md](organization-site.md) (en inglés,
 [guides/organization-site.en.md](organization-site.en.md)). Sus capturas las saca
-`scripts/tools/site-guide-captures.js` del sitio corriendo con una organización de laboratorio. Las fichas del tablero de
-la noche llegan a Arnés, Proyectos y Corridas por `scripts/site/tabs/cards.js`: el sitio llama al mismo cálculo que arma la
-página del tablero (`colectar()` de `scripts/nightly/dashboard/dashboard.js`), toma de cada ficha sólo lo de su lista
-blanca, y oculta las que la organización destildó en Configuración (`site.hidden_cards`); la página del tablero ya no se
-sirve en el sitio, sólo su sello. Red: `site-cards.test.js`. Las piezas que lo acompañan: la imagen
+`scripts/tools/site-guide-captures.js` del sitio corriendo con una organización de laboratorio. Las piezas que lo acompañan: la imagen
 (`.github/workflows/site-image.yml`), las instalaciones (`scripts/site/deploy/`: Azure Container Apps en dos fases,
 Render y una máquina propia), la prueba sin sesión (`scripts/site/check-deploy.js`) y el canal del aviso
 (`scripts/lib/notify.js`). Red: las suites `site-*` y `notify` de `scripts/tests/`.
 
 **La copia de operaciones**: con `SITE_OPERATIONS_SOURCE=copy`, `pipelines/operations/site-copy.yml` sube a
 un contenedor sólo lo que el sitio lee (`RUTAS` de `scripts/site/operations-copy.js`, más el logo de `site.brand.logo`)
-y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo ignora; lo peligroso rechaza la foto). «Al día» es el mismo commit con la misma lista de archivos: si la foto cambia sin commit nuevo, se re-sube con otro nombre (sin pisar la que nombra el índice), y el sitio la reabre por su huella; la edad de la copia frena como `operations.json`. Red: `site-operations-copy.test.js`. **Al día con `stable`**: la imagen llega a `stable` sólo escaneada y firmada; `scripts/site/deploy/update-site.js` la instala por huella, prueba y vuelve atrás (`site.update`). Red: `site-latest-release.test.js` y `site-update.test.js`.
+y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo ignora; lo peligroso rechaza la foto). «Al día» es el mismo commit con la misma lista de archivos: si la foto cambia sin commit nuevo, se re-sube con otro nombre (sin pisar la que nombra el índice), y el sitio la reabre por su huella; la edad de la copia frena como `operations.json`. Red: `site-operations-copy.test.js`. **Al día con `stable`**: la imagen llega a `stable` sólo escaneada y firmada; `scripts/site/deploy/update-site.js` la instala por huella, prueba y vuelve atrás (`site.update`). Red: `site-latest-release.test.js` y `site-update.test.js`. **Las fichas del tablero**: llegan a Arnés, Proyectos y Corridas por `scripts/site/tabs/cards.js`, que llama al mismo cálculo que arma la página del tablero (`colectar()` de `scripts/nightly/dashboard/dashboard.js`), toma de cada ficha sólo lo de su lista blanca y oculta las que la organización destildó en Configuración (`site.hidden_cards`); la página del tablero ya no se sirve en el sitio, sólo su sello. Red: `site-cards.test.js`.
 
 ## guides/integrations/ado-cola-y-listados.md
 
