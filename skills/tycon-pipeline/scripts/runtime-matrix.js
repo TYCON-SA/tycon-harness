@@ -350,7 +350,8 @@ function readTestsResults(paths, fePaths) {
 //
 // Lo que el mecanismo garantiza: anti-forja (nadie inventa una corrida que no ocurrió). Lo que NO
 // garantiza: que la corrida sea la corrida correcta. Eso es lo que agrega esta clasificación.
-const CMD_TEST_RE = /\b(node\s+--test|npm\s+(run\s+)?test|yarn\s+test|pnpm\s+test|vitest|jest|dotnet\s+test|pytest|go\s+test)\b/;
+// `vstest.console` es el corredor de pruebas de .NET Framework (la receta netfx-vstest): lo mismo que `dotnet test`
+const CMD_TEST_RE = /\b(node\s+--test|npm\s+(run\s+)?test|yarn\s+test|pnpm\s+test|vitest|jest|dotnet\s+test|vstest\.console|pytest|go\s+test)\b/;
 const CMD_GATE_RE = /\bnpm\s+run\s+(lint|typecheck|build|audit|tokens|format)|\b(tsc|eslint)\b/;
 
 // 'unit-test' → el código revisándose a sí mismo · 'build-gate' → lint/typecheck/build

@@ -249,6 +249,21 @@ console.log('runtime-matrix — casos:');
     r.perAc[2].verdict !== 'RUNTIME' && r.warnings.some((w) => /NO ejercita la app \(unit-test\)/.test(w)));
 }
 
+// 6b2. vstest (el corredor de pruebas de .NET Framework) es lo mismo que `dotnet test`: código revisándose a sí mismo.
+// Si no se lo reconociera, contaría como «corrida de la app» y daría un verde falso a criterios cubiertos sólo por pruebas.
+for (const cmd of ['vstest.console.exe App.Tests.dll --logger:trx', '"C:/VS/Common7/IDE/Extensions/TestPlatform/vstest.console.exe" a.dll', 'vstest.console a.dll']) {
+  const f = makeWorkspace();
+  const ts = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+  fs.writeFileSync(path.join(f.dodDir, '9.9-smoke-ledger.jsonl'),
+    JSON.stringify({ ts, story: '9.9', acs: [2], cmd, exit: 0, via: 'smoke-run.sh' }) + '\n');
+  const fakeGatesLog = path.join(f.ws, 'gates.log');
+  fs.writeFileSync(fakeGatesLog,
+    JSON.stringify({ type: 'smoke-run', ts, story: '9.9', acs: [2], exit: 0 }) + '\n');
+  const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: fakeGatesLog });
+  check(`smoke \`${cmd}\` NO da RUNTIME (vstest es un corredor de pruebas)`,
+    r.perAc[2].verdict !== 'RUNTIME' && r.warnings.some((w) => /NO ejercita la app \(unit-test\)/.test(w)));
+}
+
 // 6c. Un smoke que corre un gate de build tampoco es evidencia runtime.
 {
   const f = makeWorkspace();
