@@ -11,10 +11,36 @@
       "Edit(//**/.tycon/state/production-memory.json)",
       "Edit(//**/.tycon/produccion.json)",
       "Edit(//**/.claude/.tycon-pipeline/produccion-indice.json)",
-      "Edit(//**/.claude/.tycon-pipeline/produccion-memoria.json)"
+      "Edit(//**/.claude/.tycon-pipeline/produccion-memoria.json)",
+      "Edit(//**/.claude/.tycon-pipeline/production-firewall.json)",
+      "Edit(//**/.tycon/state/production-firewall.json)",
+      "Write(//**/.claude/.tycon-pipeline/production-firewall.json)",
+      "Write(//**/.tycon/state/production-firewall.json)"
     ]
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/tycon/bin/node /opt/tycon/hooks/prod-firewall-close.js",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/tycon/bin/node /opt/tycon/hooks/prod-firewall-close.js",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash|Monitor|PowerShell",

@@ -89,6 +89,9 @@ Ahí cargás usuario y contraseña, y el archivo se borra solo. La entrada queda
 # más filas de las 50 por defecto
 /opt/tycon/bin/tycon-prod-sql <host> 'select …' --max-filas 200
 
+# una consulta larga, desde un archivo (la huella es el sha256 del archivo: shasum -a 256 <ruta>)
+/opt/tycon/bin/tycon-prod-sql <host> --file consulta.sql --sha256 <sha256>
+
 # revisar que la entrada del Llavero siga sana (no lee la contraseña)
 /opt/tycon/bin/tycon-prod-sql --verificar
 
@@ -99,6 +102,15 @@ Ahí cargás usuario y contraseña, y el archivo se borra solo. La entrada queda
 🔴 **En el cuadro: «Permitir», nunca «Permitir siempre».** El punto entero de esto es que cada
 sentencia se mire. Y si te aparece un cuadro del Llavero **sin que vos hayas aprobado una sentencia
 antes**, denegá: algo está leyendo la clave por otro camino.
+
+**Una consulta larga va en un archivo.** En una sola línea, con cada comilla escapada, no se puede leer en
+el cuadro. Con `--file <ruta> --sha256 <sha256>`, el freno lee el archivo antes del cuadro y te muestra
+en pantalla el host, la huella y la consulta tal cual, con sus saltos de línea. Sin la huella, o con una que
+no coincide (el archivo cambió después de que lo leíste), no hay cuadro: el mensaje trae la huella actual y
+el comando listo. La puerta lee el archivo una sola vez y corre esos mismos bytes: cambiarlo después del
+cuadro no cambia lo que corre. El archivo tiene que ser común (no un enlace ni una carpeta), de 64 KB o menos
+y en UTF-8, y valen las mismas reglas que en línea (sin `GO`, sin comandos del cliente). El registro anota la
+huella y que vino de un archivo, nunca la ruta ni el contenido.
 
 La puerta trae **formato fijo** a propósito (junta el error con la salida, corta filas, imprime el
 código de salida): así no hace falta agregarle `| head` ni `2>&1`, que la forma canónica no acepta.
@@ -146,12 +158,53 @@ un número entero en rango.
 no-producción por reescribir un archivo ni por borrar el índice. Lo único que lo baja es
 `--reclasificar`, que pasa por el cuadro.
 
+## El firewall: la IP de tu máquina, por la puerta
+
+Si la IP de tu máquina no está habilitada en el firewall de un Azure SQL de producción, el freno corta
+el comando de Azure que crearía la regla, aunque lo autorices en el chat. El camino es la puerta:
+
+```bash
+/opt/tycon/bin/tycon-prod-sql --open-firewall <host>     # cuadro de aprobación; abre la regla de esta máquina
+/opt/tycon/bin/tycon-prod-sql --close-firewall <host>    # cuadro; la cierra
+```
+
+- **Una sola regla por máquina y por servidor**, con nombre fijo `tycon-gate-<id>` (un hash del
+  identificador del equipo: no dice de quién es la máquina), para una sola IP. Si tu IP cambió, la
+  misma regla se actualiza; nunca hay dos. La puerta no acepta rangos, `0.0.0.0`, «permitir servicios
+  de Azure» ni un nombre de regla.
+- **La IP sale del propio Azure SQL**: la puerta intenta entrar con un usuario que no existe y sin la
+  clave, y lee la IP del rechazo («Client with IP address … is not allowed»). No llama a ningún
+  servicio externo ni lee el Llavero. Si la conexión llega a pedir la clave, ya tenés acceso y no abre
+  nada.
+- **Se cierra sola**: al terminar la sesión del asistente que la abrió, un hook de la configuración
+  administrada (`prod-firewall-close.js`) la cierra, salvo que otra sesión viva la siga usando. Si el
+  fin de sesión no corrió (ventana cerrada de golpe, sesión caída), el mismo hook la cierra al arrancar
+  la próxima sesión y lo dice en una línea. Cerrar no pide cuadro.
+- **Qué quedó abierto** vive en `production-firewall.json` (en la carpeta del estado, al lado de
+  `production.log`), protegido como la memoria de producción; cada apertura y cada cierre quedan en
+  `production.log`.
+- Sólo para Azure SQL (`*.database.windows.net`): un SQL Server propio, con `port`, no pasa por acá.
+
 ## Los límites, dichos antes
 
 - 🔴 **La regla que pregunta por `az sql server firewall-rule` es de CORTESÍA**, no un freno: se
   esquiva partiendo una palabra en dos (`az sql ser''ver …`). Para producción y para lo desconocido
   el control es el **hook**, que corre antes que las reglas y no se esquiva así. No confíes en el
-  cuadro del firewall como si fuera una barrera.
+  cuadro del firewall como si fuera una barrera. Para habilitar tu IP, el camino es la puerta
+  (`--open-firewall`).
+- **`az` es del usuario** (Homebrew o el instalador de Microsoft), no un binario de root con huella:
+  rompe la regla de la puerta y se acepta con tres condiciones: se busca en rutas fijas, nunca en el
+  `PATH`; nunca recibe la clave de la base ni nada del Llavero; y sólo se le piden `account list`,
+  `sql server list` y `sql server firewall-rule show|create|update|delete` sobre `tycon-gate-<id>`. Un
+  `az` reemplazado en una de esas rutas no ve la clave, pero sí puede crear otra regla con tu cuenta:
+  tu cuenta de Azure ya podía hacerlo a mano.
+- **El fin de sesión puede no correr** (ventana cerrada de golpe, sesión caída): la regla queda abierta
+  hasta el próximo arranque en esa máquina, que la cierra. Una máquina que no vuelve a abrir una
+  sesión la deja abierta hasta que alguien lo haga: es el costo de no tener vencimiento por horas.
+- **Una sesión quieta cuenta como terminada**: «viva» es actividad en los últimos 3 minutos. Si se le
+  cierra la regla, la vuelve a abrir con el cuadro.
+- **Codex no abre reglas**: no tiene el cuadro de la configuración administrada ni un evento de fin de
+  sesión.
 - **La contraseña de producción vive también en otras casas** que esto no toca: la configuración del
   App Service, `dotnet user-secrets`, y un `appsettings.Production.json` si alguien lo baja.
 - **Un programa que se conecta por dentro** (Python con `pyodbc`, un `node` propio) no nombra el
