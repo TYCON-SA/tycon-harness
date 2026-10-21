@@ -77,8 +77,8 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 - **H.ii — pase adversarial** (`steps/step-05b-adversarial-verify.md`): reproduce-or-refute que
   EJECUTA el código. Gate `pipeline.js deep-review-gate`: NORMAL → corre; LOW o liviana → skip. Overrides:
   `--no-deep-review`/`TYCON_NO_DEEP_REVIEW=1`, `.tycon/advisors.yaml deep_review: always|off|auto`,
-  `--deep-review`/`--ultracode`. Modelo `sonnet`; story pesada → `opus` (anunciado); **`fable` NUNCA
-  automático** (`fable_upsell` → preguntar; `adversarial.model_question: never` no pregunta). UNA vez por
+  `--deep-review`/`--ultracode`. Modelo `sonnet`; story pesada → `opus` (anunciado); **`fable` no se ofrece ni se
+  pregunta**: corre sólo con `--deep-review-fable`, pedido explícito de quien corre el pipeline. UNA vez por
   corrida. Se lanza temprano al cerrar la implementación (`early_launch`; kill-switch `TYCON_5B_EARLY=0`)
   y su paso es el JOIN. Los CONFIRMED se foldean a «Hallazgos» y disparan D.i. La prueba que confirmó cada hallazgo
   se promueve a la suite: `marker.js promote-probe`; `mark-adversarial-result` exige `--tests k`

@@ -220,9 +220,10 @@ function resolveReviewers({ org, requests, costTier, tierOf, set, fullSet, iter,
 }
 
 /**
- * El modelo del pase adversarial y la pregunta de Fable. opts: org · requests · flags { fable, opus, ultracode } ·
- * heavy · modelQuestion (la clave de la pregunta de modelo: `{ value, origin }`) · warnings.
- * → `{ model, origin, reason, question: { value, origin }, upsell, otherQuestion? }`
+ * El modelo del pase adversarial y la clave de la pregunta de modelo. Fable no se ofrece nunca: sólo corre con el flag.
+ * opts: org · requests · flags { fable, opus, ultracode } · heavy · modelQuestion (la clave de la pregunta de modelo:
+ * `{ value, origin }`) · warnings.
+ * → `{ model, origin, reason, question: { value, origin }, otherQuestion? }`
  */
 function resolveAdversarial({ org, requests, flags = {}, heavy, modelQuestion, warnings = [] }) {
   const o = isObject(org) ? org : {};
@@ -251,8 +252,7 @@ function resolveAdversarial({ org, requests, flags = {}, heavy, modelQuestion, w
     if (modelQuestion && modelQuestion.origin && modelQuestion.origin !== 'default') otherQuestion = modelQuestion;
   } else question = modelQuestion && modelQuestion.value ? { value: modelQuestion.value, origin: modelQuestion.origin } : { value: DEFAULTS.adversarial.fable_question, origin: 'default' };
   if (ceiling && rank(ceiling) < rank(FABLE)) question = { value: 'never', origin: 'ceiling' };
-  const upsell = !!heavy && final !== FABLE && question.value !== 'never';
-  return { model: final, origin, reason, question, upsell, otherQuestion, capped: final !== model, fromFlag: !!(flags.fable || flags.opus || flags.ultracode) };
+  return { model: final, origin, reason, question, otherQuestion, capped: final !== model, fromFlag: !!(flags.fable || flags.opus || flags.ultracode) };
 }
 
 /** El modelo de los ayudantes sueltos (búsqueda/exploración): `{ model, origin }`. */
