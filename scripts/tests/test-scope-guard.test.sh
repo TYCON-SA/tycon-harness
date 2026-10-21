@@ -51,7 +51,7 @@ for cmd in \
   'pwsh -Command "cd app; dotnet test"' \
   "echo \$'it\\'s'; npm test" \
   'echo "$(cd x; dotnet test)"' \
-  'echo "`cd x; npm test`"' \
+  "$(printf 'echo "\140cd x; npm test\140"')" \
   "$(printf "echo hola # don't\ndotnet test")" \
   'echo $(dotnet test)' \
   'x=$(dotnet test) && echo ok' \
