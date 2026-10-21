@@ -38,8 +38,19 @@ const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 // se mide (y se dice una vez por prueba); en el repo interno, todo lo declarado tiene que estar.
 const IN_COPY = !fs.existsSync(path.join(ROOT, 'scripts', 'publishing', 'public-repos.json'));
 const here = (rel) => fs.existsSync(path.join(ROOT, rel));
+// el texto del alta (los .md de la raíz de onboarding/) llega con la capa del equipo (`overlay-harness.js --team-from`),
+// que deja perfil-equipo.json. Sin la capa no se mide; en una corrida de Azure (TF_BUILD) del repo interno la capa
+// siempre se pone, así que ahí que falte es rojo
+const WITH_TEAM_LAYER = here('perfil-equipo.json');
+const fromTeamLayer = (rel) => /^onboarding\/[^/]+\.md$/.test(rel);
 function shipped(entries, label) {
-  const missing = entries.filter((e) => !here(e.path || e));
+  let missing = entries.filter((e) => !here(e.path || e));
+  const layer = missing.filter((e) => fromTeamLayer(e.path || e));
+  if (layer.length && !WITH_TEAM_LAYER && !IN_COPY) {
+    if (process.env.TF_BUILD) assert.deepStrictEqual(layer, [], `${label}: falta la capa del equipo (perfil-equipo.json) en una corrida que siempre la pone`);
+    console.log(`⏭ ${label}: NO MEDIDO sin la capa del equipo — ${layer.length} declarado(s) que llegan con ella`);
+    missing = missing.filter((e) => !fromTeamLayer(e.path || e));
+  }
   if (missing.length && !IN_COPY) assert.deepStrictEqual(missing, [], `${label}: declarado y no está en el repo`);
   if (missing.length) console.log(`⏭ ${label}: NO MEDIDO en la copia — ${missing.length} declarado(s) que no se publican`);
   return entries.filter((e) => here(e.path || e));

@@ -137,15 +137,35 @@ test('WorkSignal_UnknownTool_TreatedAsNone @story-7.40 @ac-14', () => {
 
 // El techo: archivos del núcleo que nombran una herramienta de horas, fuera de las carpetas de integraciones, la vieja
 // carpeta de la skill y las pruebas. Sólo baja: llega a 0 cuando la última integración sale del núcleo.
-const TOOL_NAMES_CEILING = 79;
+// Tampoco cuentan las capturas de la guía del sitio: son la página tal cual la guarda site-guide-captures.js, y la
+// página de Configuración trae la sección de integraciones con sus nombres; no es núcleo escrito
+const TOOL_NAMES_CEILING = 68;
+const TOOL_NAMES_OUTSIDE_CORE = [':!integrations', ':!skills/clocki', ':!guides/integrations', ':!guides/sitio-de-la-organizacion/capturas',
+  ':!**/tests/**', ':!**/*.test.*'];
+/** Los archivos del núcleo que nombran una herramienta de horas en el clon `root`. `--untracked`: un archivo nuevo cuenta desde que existe. */
+function coreFilesNamingTimeTool(root) {
+  const r = spawnSync('git', ['-C', root, 'grep', '--untracked', '-il', '-E', 'clocki|clockify|solidtime', '--', '.', ...TOOL_NAMES_OUTSIDE_CORE], { encoding: 'utf8' });
+  assert.ok(r.status === 0 || r.status === 1, `git grep falló: ${r.stderr}`);
+  return r.stdout.split('\n').filter(Boolean);
+}
+
+test('Core_NamesNoTimeTool_CapturesAreNotCore_NewCoreFileCounts @story-7.40 @ac-1 @story-2.71 — las capturas no cuentan; un archivo nuevo del núcleo sí', () => {
+  // 🔴 rojo: la exclusión de las capturas se come también el núcleo, o una captura nueva vuelve a subir el conteo.
+  const repo = tmp('nucleo-');
+  spawnSync('git', ['-C', repo, 'init', '-q']);
+  fs.mkdirSync(path.join(repo, 'guides', 'sitio-de-la-organizacion', 'capturas'), { recursive: true });
+  fs.mkdirSync(path.join(repo, 'scripts', 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'guides', 'sitio-de-la-organizacion', 'capturas', 'configuracion-x.html'), '<p>Clockify: registra las horas</p>\n');
+  fs.writeFileSync(path.join(repo, 'guides', 'otra.md'), 'sin herramientas\n');
+  assert.deepStrictEqual(coreFilesNamingTimeTool(repo), [], 'una captura de la guía no cuenta');
+  fs.writeFileSync(path.join(repo, 'scripts', 'lib', 'nuevo.js'), "// abre el reloj de clockify\n");
+  fs.writeFileSync(path.join(repo, 'guides', 'sitio-de-la-organizacion', 'nota.md'), 'Clockify, al lado de las capturas\n');
+  assert.deepStrictEqual(coreFilesNamingTimeTool(repo).sort(), ['guides/sitio-de-la-organizacion/nota.md', 'scripts/lib/nuevo.js'], 'un archivo nuevo del núcleo sí cuenta, también junto a la carpeta de capturas');
+});
 
 test('Core_NamesNoTimeTool @story-7.40 @ac-1', (t) => {
   if (!fs.existsSync(path.join(ROOT, '.git'))) { t.skip('sin git: el árbol no es un clon'); return; }
-  // `--untracked`: también lo que todavía no está en git (un archivo nuevo del núcleo cuenta desde que existe)
-  const r = spawnSync('git', ['-C', ROOT, 'grep', '--untracked', '-il', '-E', 'clocki|clockify|solidtime', '--', '.',
-    ':!integrations', ':!skills/clocki', ':!guides/integrations', ':!**/tests/**', ':!**/*.test.*'], { encoding: 'utf8' });
-  assert.ok(r.status === 0 || r.status === 1, `git grep falló: ${r.stderr}`);
-  const files = r.stdout.split('\n').filter(Boolean);
+  const files = coreFilesNamingTimeTool(ROOT);
   assert.ok(files.length <= TOOL_NAMES_CEILING, `el núcleo nombra una herramienta de horas en ${files.length} archivos (techo ${TOOL_NAMES_CEILING}): ${files.join(', ')}`);
   for (const own of ['scripts/lib/work-signal.js', 'scripts/lib/integrations.js']) assert.ok(!files.includes(own), `${own} no nombra ninguna herramienta`);
 });

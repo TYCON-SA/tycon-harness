@@ -224,10 +224,13 @@ if corre T46; then
     ok "T46 segunda corrida: no pregunta nada y dice los valores con su origen"
   else mal "T46 segunda corrida: rc ${RC}; $(grep -e '¿' -e '^perfil' -e '^integraciones' -e '^paquete' "$T/t46-again.out" | head -5 | tr '\n' '|')"; fi
 
-  # con el perfil del equipo (lo que fija el perfil no se pregunta nunca): sólo la conformidad de siempre. La copia
-  # pública no trae el perfil del equipo: ahí NO MEDIDO (en el repo interno, que falte sigue siendo rojo).
-  if [ ! -f "$RAIZ/perfil-equipo.json" ] && [ ! -f "$RAIZ/scripts/publishing/public-repos.json" ]; then
-    echo "  ⏭   — T46 perfil del equipo: NO MEDIDO en la copia — no trae perfil-equipo.json"
+  # con el perfil del equipo (lo que fija el perfil no se pregunta nunca): sólo la conformidad de siempre. El perfil
+  # llega con la capa del equipo (`overlay-harness.js --team-from`), que deja perfil-equipo.json. Sin la capa no se mide;
+  # en una corrida de Azure (TF_BUILD) del repo interno la capa siempre se pone, así que ahí que falte es rojo.
+  if [ ! -f "$RAIZ/perfil-equipo.json" ] && [ -n "${TF_BUILD:-}" ] && [ -f "$RAIZ/scripts/publishing/public-repos.json" ]; then
+    mal "T46 perfil del equipo: falta la capa del equipo (perfil-equipo.json) en una corrida que siempre la pone — revisá el paso del repo del equipo de traer-arnes.yml"
+  elif [ ! -f "$RAIZ/perfil-equipo.json" ]; then
+    echo "  ⏭   — T46 perfil del equipo: NO MEDIDO sin la capa del equipo — no está perfil-equipo.json"
   else
   qlab t46c || true; export TYCON_PROFILE="$RAIZ/perfil-equipo.json"
   RC=0; harness_lab_pty s harness install > "$T/t46-team.out" 2>&1 || RC=$?

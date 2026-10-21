@@ -17,6 +17,8 @@ const read = () => fs.readFileSync(ARCHIVO, 'utf8');
 const codigo = (t) => t.split('\n').filter((l) => l.trim() && !/^\s*#/.test(l));
 // lo que copia scripts/site/Dockerfile: si cambia algo que la imagen trae, la imagen se vuelve a armar
 const RUTAS = ["'scripts/site/**'", "'scripts/lib/**'", "'scripts/metrics/**'", "'scripts/nightly/**'", "'scripts/setup/harness/**'", "'scripts/setup/install-effects.json'",
+  // las equivalencias de cada modelo en Codex: la línea chica de la sección de modelos
+  "'build/equivalences.json'",
   // el repo público: los «Ver el código» de la pestaña Cómo trabaja (2.61.2)
   "'scripts/setup/public-remotes.json'",
   "'scripts/ci/check-product-parity.js'", "'scripts/ci/legacy-options.js'", "'skills/tycon-pipeline/scripts/**'", "'skills/tycon-pipeline/steps/**'",
