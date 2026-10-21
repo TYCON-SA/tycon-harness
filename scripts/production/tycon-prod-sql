@@ -489,8 +489,12 @@ if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
   fi
 
   # abrir: la IP sale del rechazo del propio Azure SQL al intentar entrar, con un usuario que no existe y sin la clave
+  # La clave del intento es el nombre del usuario de prueba, que no es ninguna clave: con la clave vacía sqlcmd la pide por teclado y,
+  # sin teclado, falla antes de conectarse, así que Azure nunca llega a decir la IP. El rechazo 40615 llega antes de
+  # que Azure mire la clave.
   verificar_binario "$CLIENTE" "/opt/tycon/bin/sqlcmd" "el cliente de base"
-  PRUEBA="$(HOME=/var/empty SQLCMDPASSWORD= "$CLIENTE" -x -S "$HOST" -U tycon-gate-probe -Q 'select 1' -l 15 -b 2>&1)"
+  SONDA=tycon-gate-probe
+  PRUEBA="$(HOME=/var/empty SQLCMDPASSWORD="$SONDA" "$CLIENTE" -x -S "$HOST" -U "$SONDA" -Q 'select 1' -l 15 -b 2>&1)"
   IP="$(printf '%s' "$PRUEBA" | sed -n "s/.*Client with IP address '\([^']*\)' is not allowed.*/\1/p" | head -1)"
   if [ -z "$IP" ] && printf '%s' "$PRUEBA" | grep -qi 'Login failed'; then
     # la conexión llegó a la etapa de la clave: esta IP ya tiene acceso (por la regla de la puerta o por otra)
