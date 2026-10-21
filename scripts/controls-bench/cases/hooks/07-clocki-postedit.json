@@ -143,6 +143,78 @@
           }
         },
         {
+          "id": "worktree-por-el-archivo-editado",
+          "type": "must-run",
+          "__doc": "La sesión sigue con el cwd del repo y trabaja en un worktree, donde está abierto el timer: la actividad se encuentra por la ruta del archivo que tocó la tool.",
+          "setup": [
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/clocki/active';fs.mkdirSync(d,{recursive:true});const e={};e[require(process.env.SKILLS+'/skills/clocki/scripts/lib').normalizeCwd(process.env.SANDBOX_HOME+'/wt')]={entryId:'E1',workspaceId:'W1',projectId:'P1',description:'x',startedAt:'2020-01-01T00:00:00',lastActivity:'2020-01-01T00:00:00'};fs.writeFileSync(d+'/bench-s1.json',JSON.stringify(e))\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}",
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${SANDBOX_HOME}/wt/src/a.js"
+            }
+          },
+          "expect": {
+            "file_not_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/clocki/active/bench-s1.json",
+                "re": "\"lastActivity\":\"2020-01-01T00:00:00\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "worktree-por-el-cd-del-comando",
+          "type": "must-run",
+          "__doc": "Lo mismo cuando la tool es el shell: la carpeta sale de lo que sigue a `cd`.",
+          "setup": [
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/clocki/active';fs.mkdirSync(d,{recursive:true});const e={};e[require(process.env.SKILLS+'/skills/clocki/scripts/lib').normalizeCwd(process.env.SANDBOX_HOME+'/wt')]={entryId:'E1',workspaceId:'W1',projectId:'P1',description:'x',startedAt:'2020-01-01T00:00:00',lastActivity:'2020-01-01T00:00:00'};fs.writeFileSync(d+'/bench-s1.json',JSON.stringify(e))\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cd ${SANDBOX_HOME}/wt && git status"
+            }
+          },
+          "expect": {
+            "file_not_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/clocki/active/bench-s1.json",
+                "re": "\"lastActivity\":\"2020-01-01T00:00:00\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "otra-carpeta-no-toca-el-timer-del-worktree",
+          "type": "must-run",
+          "__doc": "Una tool que no nombra la carpeta del worktree no le suma actividad a su timer.",
+          "setup": [
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/clocki/active';fs.mkdirSync(d,{recursive:true});const e={};e[require(process.env.SKILLS+'/skills/clocki/scripts/lib').normalizeCwd(process.env.SANDBOX_HOME+'/wt')]={entryId:'E1',workspaceId:'W1',projectId:'P1',description:'x',startedAt:'2020-01-01T00:00:00',lastActivity:'2020-01-01T00:00:00'};fs.writeFileSync(d+'/bench-s1.json',JSON.stringify(e))\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}",
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${SANDBOX_HOME}/otra/a.js"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/clocki/active/bench-s1.json",
+                "re": "\"lastActivity\":\"2020-01-01T00:00:00\""
+              }
+            ]
+          }
+        },
+        {
           "id": "quiet-sin-timer-solo-heartbeat",
           "type": "must-stay-quiet",
           "stdin": {
@@ -221,7 +293,9 @@
         },
         {
           "id": "ado-detecta-story-nueva",
-          "env": { "TYCON_ADO_ORG": "org-de-prueba" },
+          "env": {
+            "TYCON_ADO_ORG": "org-de-prueba"
+          },
           "__ado": "el aviso del work item sale sólo con Azure DevOps prendido: el caso lo prende explícito (en el repo interno lo prendía el perfil del equipo; en la copia pública nace apagado)",
           "type": "must-emit",
           "timeout_s": 30,
