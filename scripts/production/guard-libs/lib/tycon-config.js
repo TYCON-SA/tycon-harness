@@ -153,6 +153,9 @@ const VOCABULARIO = Object.freeze({
   telegram: Object.freeze({ chat_id: 'texto' }),
   integraciones: Object.freeze({
     clockify: 'llave', engram: 'llave', codegraph: 'llave', mailbox: 'llave', codex: 'llave-o-detectar', nightly: 'llave',
+    // `instincts`: la grabadora de instintos (scripts/hooks/instinct-observe.js). Para el equipo la prende el perfil; la
+    // variable y el archivo de la máquina sirven para apagarla o para probarla en una máquina.
+    instincts: 'llave',
     // `claude` (story 8.23, tanda C · AC 24): la llave de la OTRA herramienta, con el vocabulario de `codex` (true, false o
     // "detect"). No es una de las ocho integraciones (no es un servicio): dice si el arnés enchufa a Claude Code. La leen
     // `toolKeys()` y `install`; `detect` —y nadie diciendo nada— es «si está instalada».
@@ -324,6 +327,7 @@ const COMO_SE_PRENDE = Object.freeze({
   mailbox: 'buzón de corridas apagado en esta máquina: sin la llave — prender: la llave scripts/metrics/corridas-buzon.json del arnés interno (TYCON_MAILBOX_JSON=<ruta>), o integrations.mailbox=true en ~/.claude/tycon.json (TYCON_MAILBOX=1)',
   codex: 'Codex apagado en esta máquina — prender: integrations.codex=true o "detect" en ~/.claude/tycon.json (o TYCON_CODEX=1)',
   nightly: 'nocturnos del equipo apagados en esta máquina — prender: integrations.nightly=true en ~/.claude/tycon.json (o TYCON_NIGHTLY=1)',
+  instincts: 'grabadora de instintos apagada en esta máquina — la prende el perfil del equipo (integrations.instincts=true); para probarla en una máquina: integrations.instincts=true en ~/.claude/tycon.json (o TYCON_INSTINCTS=1)',
   telegram: 'Telegram apagado en esta máquina: sin chat configurado — prender: telegram.chat_id en ~/.claude/tycon.json, TYCON_TELEGRAM_CHAT_ID, o el plugin de Telegram',
 });
 
@@ -341,6 +345,7 @@ const VARIABLES = Object.freeze({
   'integraciones.codex': ['TYCON_CODEX'],
   'integraciones.claude': ['TYCON_CLAUDE'],
   'integraciones.nightly': ['TYCON_NIGHTLY'],
+  'integraciones.instincts': ['TYCON_INSTINCTS'],
   'update.channel': ['TYCON_UPDATE_CHANNEL'],
   'update.apply': ['TYCON_UPDATE_APPLY'],
   'update.skills_source': ['TYCON_UPDATE_SKILLS_SOURCE'],

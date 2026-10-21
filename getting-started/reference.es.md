@@ -410,6 +410,7 @@ explain` muestra cada valor y de dónde salió.
 | `codex` | despliega el lado Codex | `integrations.codex: true` o `"detect"`, o `TYCON_CODEX=1` |
 | `claude` | enchufa Claude Code (hooks, ajustes, el import del índice) | `integrations.claude: true` o `"detect"`, o `TYCON_CLAUDE=1` |
 | `nightly` | los avisos de los procesos de la noche de tu organización (tablero, dependencias, retrospectivas), que corren desde su repo de operaciones: ver [Para equipos](../README.es.md#para-equipos) | `integrations.nightly: true`, o `TYCON_NIGHTLY=1` |
+| `instincts` | la grabadora de instintos: una línea saneada por cada herramienta usada, para encontrar lo que el equipo repite; la prende el perfil del equipo | `integrations.instincts: true` en el perfil del equipo, o `TYCON_INSTINCTS=1` para probarla en una máquina (`TYCON_INSTINCTS=0` la apaga) |
 | `telegram` | avisos de progreso a un chat de Telegram | `telegram.chat_id` en `~/.claude/tycon.json`, o `TYCON_TELEGRAM_CHAT_ID` |
 
 **El lado Codex**: el mismo arnés bajo Codex, traducido y desplegado solo. Pide `codex` en el PATH y logueado, y

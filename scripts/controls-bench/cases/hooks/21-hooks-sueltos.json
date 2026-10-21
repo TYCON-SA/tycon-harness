@@ -142,39 +142,6 @@
       ]
     },
     {
-      "hook": "instinct-observe.py (el grabador del observador)",
-      "script": "${FIXTURE}/wrapper.sh",
-      "event": "PostToolUse",
-      "matcher": "*",
-      "cases": [
-        {
-          "id": "instinct-observe-py-graba-el-evento-en-el-jsonl",
-          "type": "must-run",
-          "__doc": "La parte Python del observador (la .sh ya tenía casos). Recibe el evento por stdin y el directorio por argv → wrapper. El nombre del archivo lleva el mes → se asserta por sufijo.",
-          "setup": [
-            "mkdir -p obs",
-            "printf '#!/bin/sh\\nexec python3 \"$TCG/scripts/hooks/instinct-observe.py\" \"$FIXTURE/obs\"\\n' > wrapper.sh && chmod +x wrapper.sh"
-          ],
-          "stdin": {
-            "session_id": "bench-io1",
-            "tool_name": "Bash",
-            "tool_input": {
-              "command": "git status"
-            }
-          },
-          "expect": {
-            "exit": 0,
-            "dir_has_file": [
-              {
-                "dir": "${FIXTURE}/obs",
-                "suffix": ".jsonl"
-              }
-            ]
-          }
-        }
-      ]
-    },
-    {
       "hook": "git-post-commit-global.sh (lo que quedó afuera del commit)",
       "script": "${TCG}/scripts/hooks/git-post-commit-global.sh",
       "event": "PreToolUse",

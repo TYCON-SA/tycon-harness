@@ -66,8 +66,8 @@ test('Config_LegacyClockifyTrue_ReadsClockify @story-7.40 @ac-5', () => {
   // la variable gana a los archivos; un valor raro no rompe la configuración (lo dice el evento neutro)
   const raro = TC.leer({ home: nada, env: env(nada, { TYCON_TIME_TRACKING: 'harvest' }) });
   assert.strictEqual(TC.timeTracking(raro).value, 'harvest');
-  // las ocho integraciones siguen siendo ocho
-  assert.strictEqual(TC.LAS_OCHO.length, 8);
+  // timeTracking es una elección, no una integración más: las integraciones son nueve, con instincts
+  assert.strictEqual(TC.LAS_OCHO.length, 9);
   assert.ok(!TC.LAS_OCHO.includes('timeTracking'));
 });
 

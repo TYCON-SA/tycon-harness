@@ -4,19 +4,19 @@
 #
 # Qué defiende, MIDIENDO y no leyendo: `scripts/ci/validate-pipeline-in-ado.sh` resuelve las dos
 # variables de la organización en el MISMO orden que el lector (con las dos definidas y distintas consulta
-# la organización que muestra `tycon-config.js explain`), y `scripts/hooks/instinct-observe.py`
+# la organización que muestra `tycon-config.js explain`), y `scripts/hooks/instinct-observe.js`
 # expande una `~` literal en TYCON_REPOS_ROOT (si no, atribuye la observación al último nombre de
 # carpeta del cwd en vez de al repo). Un consumidor que lee la misma variable que el lector tiene que llegar
 # al MISMO valor: si no, «una sola cadena, siempre la misma» es mentira en ese consumidor.
 #
-# Cómo corre: sin red. Un `curl` de mentira anota la URL que le pidieron y contesta como Azure; el hook python
-# escribe su JSONL en un temporal. 🔴 Nada acá toca el HOME real: HOME temporal, PATH con los dobles adelante,
+# Cómo corre: sin red. Un `curl` de mentira anota la URL que le pidieron y contesta como Azure; la grabadora
+# de instintos escribe su JSONL en un temporal. 🔴 Nada acá toca el HOME real: HOME temporal, PATH con los dobles adelante,
 # TYCON_PROFILE=0 (el perfil del equipo no entra en juego).
 # 🔴 Sin pipes sobre el comando medido: el exit code REAL es el veredicto.
 set -u
 TCG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VALIDAR="$TCG/scripts/ci/validate-pipeline-in-ado.sh"
-OBSERVE="$TCG/scripts/hooks/instinct-observe.py"
+OBSERVE="$TCG/scripts/hooks/instinct-observe.js"
 BASE="$(mktemp -d "${TMPDIR:-/tmp}/config-consumidores.XXXXXX")"
 trap 'rm -rf "$BASE"' EXIT
 FALLAS=0
@@ -83,13 +83,14 @@ if [ "$rc" -eq 0 ] && printf '%s' "$salida" | grep -qi 'Azure DevOps apagad' && 
   ok "T3 Azure DevOps apagado: lo dice, sale 0 y no consulta nada"
 else bad "T3 Azure DevOps apagado (rc=$rc): $salida"; fi
 
-# ── T4 · instinct-observe.py: `~` en TYCON_REPOS_ROOT se expande — la observación es del repo ──────
+# ── T4 · instinct-observe.js: `~` en TYCON_REPOS_ROOT se expande — la observación es del repo ──────
 mkdir -p "$BASE/home/Proyectos/miRepo/sub" "$BASE/obs"
 printf '{"session_id":"abcdefgh","tool_name":"Bash","tool_input":{"command":"ls"},"cwd":"%s"}' "$BASE/home/Proyectos/miRepo/sub" \
-  | env -i PATH="$PATH" HOME="$BASE/home" TYCON_REPOS_ROOT='~/Proyectos' python3 "$OBSERVE" "$BASE/obs"
-if cat "$BASE/obs"/*.jsonl 2>/dev/null | grep -q '"project": "miRepo"'; then
-  ok "T4 instinct-observe.py: con TYCON_REPOS_ROOT='~/Proyectos' la observación se atribuye al repo (miRepo), no a «sub»"
-else bad "T4 instinct-observe.py atribuyó mal la observación: $(cat "$BASE/obs"/*.jsonl 2>/dev/null | head -c 300)"; fi
+  | env -i PATH="$PATH" HOME="$BASE/home" TYCON_PROFILE=0 TYCON_INSTINCTS=1 TYCON_INSTINCT_OBS_DIR="$BASE/obs" \
+      TYCON_REPOS_ROOT='~/Proyectos' node "$OBSERVE"
+if cat "$BASE/obs"/*.jsonl 2>/dev/null | grep -q '"project":"miRepo"'; then
+  ok "T4 instinct-observe.js: con TYCON_REPOS_ROOT='~/Proyectos' la observación se atribuye al repo (miRepo), no a «sub»"
+else bad "T4 instinct-observe.js atribuyó mal la observación: $(cat "$BASE/obs"/*.jsonl 2>/dev/null | head -c 300)"; fi
 
 # ── T5 · el resumen de integraciones del instalador PowerShell (reproducible con pwsh 7):
 #         `$true -eq 'detect'` es True en PowerShell (convierte la cadena al tipo del operando izquierdo), así que TODA

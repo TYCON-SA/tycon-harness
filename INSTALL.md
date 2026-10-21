@@ -175,6 +175,7 @@ perfil) y `adversarial.model_question` (no tiene variable). Qué puede pisar cad
 | engram | `integrations.engram` | no se registran el sync de commit ni el aviso diario; los chequeos de versión/proyecto no corren; cada comando de engram lo dice y sale 0 |
 | CodeGraph | `integrations.codegraph` (informativa) | la instala cada dev con `install-codegraph.sh`; el arnés no registra nada de CodeGraph por sí mismo |
 | Buzón de corridas | la llave scripts/metrics/corridas-buzon.json del arnés interno (o `integrations.mailbox`) | no se sube ni se baja nada; la vista de corridas es sólo de esta máquina |
+| Instintos | `integrations.instincts` del perfil del equipo (para apagarla en una máquina: `TYCON_INSTINCTS=0`) | no se registra la grabadora (`instinct-observe.js`) ni se graba nada; el aviso de arranque sólo dice, una vez, si las variables viejas siguen puestas |
 | Codex | `integrations.codex`: `true` · `false` · `"detect"` (`TYCON_CODEX` manda) | no se despliega el lado Codex |
 | Nocturnos del equipo | `integrations.nightly` | no se registran los avisos de tablero, dependencias y retro; `bench-notice` calla lo nocturno y sigue con el banco local |
 | Telegram | `telegram.chat_id` (o el plugin de Telegram) | no se manda ningún aviso, y quien lo iba a mandar lo dice |
@@ -203,6 +204,7 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `integrations/clockify/scripts/touch-activity.js` | PostToolUse | Anota la última actividad, para cerrar el timer de Clockify por inactividad | No | minimal y full | con Clockify como herramienta de horas (`TYCON_TIME_TRACKING=none` lo saca) |
 | `integrations/solidtime/scripts/on-prompt.js` | UserPromptSubmit | Cierra en Solidtime el registro que quedó quince minutos sin actividad, con el fin en la última actividad | No | minimal y full | con Solidtime como herramienta de horas (`TYCON_TIME_TRACKING=none` lo saca) |
 | `integrations/solidtime/scripts/on-activity.js` | PostToolUse | Anota la última actividad, para cerrar el registro de Solidtime por inactividad | No | minimal y full | con Solidtime como herramienta de horas (`TYCON_TIME_TRACKING=none` lo saca) |
+| `instinct-observe.js` | PostToolUse | Graba de fondo una línea saneada por herramienta, con el repo y la organización del remoto, para encontrar lo que el equipo repite | No | minimal y full | integración de instintos (`TYCON_INSTINCTS=0`) |
 | `tycon-pipeline/scripts/hook-post-edit.js` | PostToolUse (Edit\|Write) | Después de editar: registra la edición para el pipeline y el timer; al escribir una story, sus pasos de alta | No | minimal y full | ninguno propio |
 | `tycon-pipeline/scripts/hook-pre-edit.js` | PreToolUse (Edit\|Write) | Antes de editar: el portón de carril (código sin pipeline ni ad-hoc declarado), el frontmatter de la definición de hecho, el orden de las pruebas (ATDD), la story escrita a mano y el choque entre sesiones | Sí: deniega la edición | minimal y full | `TYCON_STORY_GATE=off` (carril) · `TYCON_STORY_SKILL_GATE=off` (story a mano) |
 | `tycon-pipeline/scripts/on-skill-invoke.js` | PostToolUse (Skill) | Deja constancia de que se invocó la skill que crea stories: es la evidencia que pide el freno de la story escrita a mano | No | minimal y full | `TYCON_STORY_SKILL_GATE=off` |
@@ -231,6 +233,7 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `retro-pending.js` | Stop | No deja cerrar el turno si un merge a `main` no tiene su archivo de métricas (tope: tres veces seguidas) | Sí | full | `TYCON_RETRO_PENDING=0` |
 | `retro-pending.js` | SessionStart | Lista los merges a `main` que no tienen su archivo de métricas | No | full | `TYCON_RETRO_PENDING=0` |
 | `retro-staleness-notice.js` | SessionStart | Avisa si el capturador de retrospectivas lleva más de siete días sin correr | No | minimal y full | `TYCON_RETRO_STALENESS=0`; integración de los nocturnos (`TYCON_NIGHTLY=0`) |
+| `instincts-notice.js` | SessionStart | Dice una vez qué graba la grabadora de instintos, adónde sube y cómo bajarse; o que las variables viejas ya no la prenden | No | full | `TYCON_INSTINCTS=0` |
 | `bench-notice.js` | SessionStart | Avisa si la última corrida del banco de controles dejó rojos | No | full | `TYCON_BENCH_NOTICE=0` |
 | `dependencies-notice.js` | SessionStart | Dice si corrió la revisión nocturna de dependencias y qué encontró | No | minimal y full | `TYCON_DEPS_NOTICE=0`; integración de los nocturnos (`TYCON_NIGHTLY=0`) |
 | `dashboard-notice.js` | SessionStart | Dice de cuándo es el tablero del arnés publicado y si está completo | No | minimal y full | `TYCON_DASHBOARD_NOTICE=0`; integración de los nocturnos (`TYCON_NIGHTLY=0`) |

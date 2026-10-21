@@ -319,7 +319,7 @@ const EFFECT_BLOCKS = ['no', 'any-repo', 'harness-repos', 'autonomous-only'];
 // cuándo existe la pieza: el vocabulario de scripts/tests/fixtures/harness-managed-pieces.json
 const EFFECT_WHEN = /^(always|shared|single-repo|legacy-place|harness\.js|integration:[a-z]+|time:[a-z0-9-]+|optin:[A-Za-z][A-Za-z_-]*|platform:(windows|darwin)( & (optin:[A-Z_]+|designated-machine))?)$/;
 // las llaves de integración que existen (las de scripts/lib/tycon-config.js): una mal escrita o vieja da rojo, no pasa
-const EFFECT_INTEGRATIONS = ['ado', 'telegram', 'clockify', 'engram', 'codegraph', 'mailbox', 'codex', 'nightly'];
+const EFFECT_INTEGRATIONS = ['ado', 'telegram', 'clockify', 'engram', 'codegraph', 'mailbox', 'codex', 'nightly', 'instincts'];
 const textOrNull = (v) => v === null || (typeof v === 'string' && v.trim().length > 0);
 
 /** Las reglas que la lista rompe, cada una nombrando la entrada. Vacío = cumple. Nunca tira. */

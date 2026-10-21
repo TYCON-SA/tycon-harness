@@ -510,6 +510,7 @@ test('8.16 D · Effects_Integrations_OfferedAreTheFourWithASwitch_AllEightNamed'
   assert.deepStrictEqual(list.filter((x) => x.offered).map((x) => x.key), ['clockify', 'engram', 'codegraph', 'codex']);
   for (const k of ['ado', 'telegram']) assert.match(list.find((x) => x.key === k).how || '', new RegExp(`tycon-config\\.js set ${k === 'ado' ? 'ado\\.org' : 'telegram\\.chat_id'}`), `${k}: cómo se prende`);
   for (const k of ['mailbox', 'nightly']) assert.match(list.find((x) => x.key === k).why, /del equipo/, `${k}: es del equipo`);
+  assert.match(list.find((x) => x.key === 'instincts').why, /perfil del equipo/, 'instincts: la prende el perfil del equipo, no la pregunta de install');
   // las ofrecidas se prenden con una llave (no piden un dato)
   for (const x of list.filter((y) => y.offered)) assert.ok(['llave', 'llave-o-detectar'].includes(config.VOCABULARIO.integraciones[x.key]), `${x.key} no es una llave`);
   // espejos de la validación

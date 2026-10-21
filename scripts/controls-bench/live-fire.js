@@ -235,12 +235,16 @@ function main() {
     try { evidence[f.replace(/\.json$/, '')] = JSON.parse(fs.readFileSync(path.join(markerDir, f), 'utf8')); }
     catch { evidence[f.replace(/\.json$/, '')] = 'unparseable'; }
   }
+  // cómo llama la herramienta a su shell y qué trae el tool_response: la grabadora de instintos graba el comando sólo
+  // para los nombres que conoce, así que un cambio de nombre en una versión nueva tiene que verse acá
+  const shell = shellToolOf(evidence.PostToolUse);
+  if (shell.tool) console.log(`${shell.tool === 'Bash' ? '✅' : '⚠️'} la herramienta de shell se llama «${shell.tool}»${shell.tool === 'Bash' ? '' : ' — la grabadora de instintos graba el comando sólo de Bash y PowerShell'}`);
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const outPath = path.join(OUT_DIR, `live-fire-${TOOL}${PROVE ? '-prove' : ''}.json`);
   const sessionTail = failures.length
     ? { stdout: String(res.stdout || '').slice(-3000), stderr: String(res.stderr || '').slice(-2000), exit: res.status }
     : undefined;
-  fs.writeFileSync(outPath, JSON.stringify({ ts: new Date().toISOString(), tool: TOOL, prove: PROVE, fired: [...fired], injection, failures, unmeasured: unmeasured || undefined, session: sessionTail, payloads: evidence }, null, 2) + '\n');
+  fs.writeFileSync(outPath, JSON.stringify({ ts: new Date().toISOString(), tool: TOOL, prove: PROVE, fired: [...fired], injection, failures, unmeasured: unmeasured || undefined, shell_tool: shell, session: sessionTail, payloads: evidence }, null, 2) + '\n');
   console.log(`payloads capturados + veredicto: ${outPath}`);
 
   try { fs.rmSync(sandbox, { recursive: true, force: true }); } catch (_) {}
@@ -262,7 +266,14 @@ function main() {
   process.exit(0);
 }
 
+/** `{ tool, response_keys }` del evento PostToolUse capturado: el nombre de la herramienta y las claves de su respuesta. */
+function shellToolOf(payload) {
+  if (!payload || typeof payload !== 'object') return { tool: null, response_keys: null };
+  const resp = payload.tool_response;
+  return { tool: payload.tool_name || null, response_keys: resp && typeof resp === 'object' ? Object.keys(resp).sort() : typeof resp };
+}
+
 // Requerirlo no abre una sesión: el marcador y su registro se prueban sin gastar una (scripts/tests/bench-portable.test.js).
-module.exports = { markScript, hookEntry, buildHooksConfig, sessionDidNotWork };
+module.exports = { markScript, hookEntry, buildHooksConfig, sessionDidNotWork, shellToolOf };
 
 if (require.main === module) main();
