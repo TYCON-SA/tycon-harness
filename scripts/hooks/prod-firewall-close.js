@@ -31,9 +31,12 @@ const HOME = process.env.HOME || os.homedir();
 const INSTALADA = fs.existsSync('/opt/tycon');
 // la puerta: instalada, la de root; sin el freno instalado (pruebas), la que diga la variable
 const PUERTA = INSTALADA ? '/opt/tycon/bin/tycon-prod-sql' : process.env.TYCON_PROD_GATE;
-// la carpeta del estado: la misma regla que la puerta (si existe ~/.tycon/state, la máquina vive ahí)
-const ESTADO_DIR = fs.existsSync(path.join(HOME, '.tycon', 'state'))
-  ? path.join(HOME, '.tycon', 'state') : path.join(HOME, '.claude', '.tycon-pipeline');
+// la carpeta del estado la sabe tycon-home.js (en /opt viaja su copia al lado); sin ella, la misma regla que la puerta:
+// si existe ~/.tycon/state, la máquina vive ahí
+const ESTADO_DIR = (() => {
+  try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(HOME); } catch (_) { /* la regla de la puerta */ }
+  return fs.existsSync(path.join(HOME, '.tycon', 'state')) ? path.join(HOME, '.tycon', 'state') : path.join(HOME, '.claude', '.tycon-pipeline');
+})();
 const ESTADO = path.join(ESTADO_DIR, 'production-firewall.json');
 const REGISTRO = path.join(ESTADO_DIR, 'production.log');
 const SESION_VALIDA = /^[A-Za-z0-9-]{8,64}$/;
