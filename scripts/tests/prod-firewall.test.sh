@@ -34,6 +34,7 @@ CORTO=acme-sql
 STAGING=acme-sql-staging.database.windows.net
 PROPIO=acme-onprem.example.test
 CLAVE_MARCA='M4RC4-DE-L4-CL4VE'
+SONDA=tycon-gate-probe   # el usuario del intento de conexión, que también va como su clave
 IP_PUB=203.0.113.25
 SES_A=11111111-aaaa-4aaa-8aaa-111111111111
 SES_B=22222222-bbbb-4bbb-8bbb-222222222222
@@ -66,6 +67,8 @@ SH
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$TMP/sqlcmd.log"
 printf 'SQLCMDPASSWORD=%s\n' "\${SQLCMDPASSWORD:-}" >> "$TMP/sqlcmd-env.log"
+# como el sqlcmd real: con la clave vacía la pide por teclado y, sin teclado, falla sin conectarse
+[ -n "\${SQLCMDPASSWORD:-}" ] || { echo "liner: function not supported in this terminal"; exit 1; }
 case "\${FAKE_SQLCMD:-rechazo}" in
   rechazo) echo "Sqlcmd: Error: Microsoft ODBC Driver 18 for SQL Server : Cannot open server '$CORTO' requested by the login. Client with IP address '\${FAKE_IP:-$IP_PUB}' is not allowed to access the server.  To enable access, use the Azure Management Portal or run sp_set_firewall_rule on the master database to create a firewall rule for this IP address or address range.  It may take up to five minutes for this change to take effect." ; exit 1 ;;
   acceso)  echo "Sqlcmd: Error: Microsoft ODBC Driver 18 for SQL Server : Login failed for user 'tycon-gate-probe'." ; exit 1 ;;
@@ -161,9 +164,9 @@ if [[ "$l" == *"\"regla\":\"$REGLA\""* ]] && [[ "$l" == *"\"ip\":\"$IP_PUB\""* ]
   ok "T2 OpenFirewall_LogsLineWithoutSecrets · regla, IP, sesión y exit; sin la clave"
 else no "T2 · registro: $(registro)"; fi
 [ ! -s "$TMP/security.log" ] && ok "T2 · abrir no leyó el Llavero" || no "T2 · abrir leyó el Llavero: $(cat "$TMP/security.log")"
-if ! grep -q "$CLAVE_MARCA" "$TMP/az-env.log" 2>/dev/null && ! grep -q '^SQLCMDPASSWORD=.\+' "$TMP/sqlcmd-env.log" 2>/dev/null || grep '^SQLCMDPASSWORD=$' >/dev/null "$TMP/sqlcmd-env.log"; then
-  ok "T30 · ni az ni el intento de conexión reciben la clave de la base"
-else no "T30 · la clave llegó a az o a sqlcmd"; fi
+if ! grep -q "$CLAVE_MARCA" "$TMP/az-env.log" 2>/dev/null && [ "$(sort -u "$TMP/sqlcmd-env.log" 2>/dev/null)" = "SQLCMDPASSWORD=$SONDA" ]; then
+  ok "T30 · ni az ni el intento de conexión reciben la clave de la base: sqlcmd recibe el nombre del usuario de prueba"
+else no "T30 · la clave llegó a az o a sqlcmd, o el intento fue sin clave · $(cat "$TMP/sqlcmd-env.log" 2>/dev/null)"; fi
 
 # ── T3 · sin IP válida en el rechazo: sale 2 y no toca Azure ───────────────────────────────────────────────────
 for caso in "sin-ip:" "rechazo:0.0.0.0" "rechazo:10.1.2.3" "rechazo:172.20.0.1" "rechazo:192.168.1.9" "rechazo:127.0.0.1" "rechazo:203.0.113.0/24" "otro:"; do
