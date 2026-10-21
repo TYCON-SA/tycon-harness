@@ -270,6 +270,45 @@ const CANONICA_CARGA = new RegExp(`^${RUTA_PUERTA} --cargar-clave (${HOST_CANONI
 // el host: `--session <id>` lo pasa el hook de fin de sesión, que no pasa por acá, y cualquier otro argumento (un
 // rango, una IP, un nombre de regla) no es canónico.
 const CANONICA_FIREWALL = new RegExp(`^${RUTA_PUERTA} --(?:open|close)-firewall (${HOST_CANONICO})$`);
+// `<host> --file <ruta> --sha256 <sha256>`: la consulta desde un archivo. Una consulta larga en una línea, con cada
+// comilla escapada, no se puede leer en el cuadro; desde un archivo, el freno la muestra entera antes del cuadro y la
+// huella ata lo que la persona vio a lo que corre la puerta. La ruta sin comillas, espacios ni nada que el shell expanda.
+// sin «-» al principio: en la puerta, una ruta así se tomaría como una opción del intérprete
+const RUTA_ARCHIVO = '[A-Za-z0-9._/~@+][A-Za-z0-9._/~@+-]*';
+// lo que haría ver en pantalla otra cosa que los bytes que corren: controles (salvo salto de línea y tabulador) y
+// caracteres invisibles o de dirección. Los mismos que rechaza la puerta.
+const CONTROL_ARCHIVO = /[\x00-\x08\x0b-\x1f\x7f]/;
+const INVISIBLE_ARCHIVO = /[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\u2028\u2029]/;
+const CANONICA_ARCHIVO = new RegExp(`^${RUTA_PUERTA} (${HOST_CANONICO}) --file (${RUTA_ARCHIVO}) --sha256 ([0-9a-f]{64})(?: --max-filas \\d+)?$`);
+// la misma forma con la huella ausente o mal escrita: no es canónica, pero merece un mensaje con la huella actual
+const FORMA_ARCHIVO = new RegExp(`^${RUTA_PUERTA} (${HOST_CANONICO}) --file (${RUTA_ARCHIVO})(?: --sha256 (\\S*))?(?: --max-filas \\d+)?$`);
+const TOPE_ARCHIVO = 64 * 1024;
+
+/**
+ * El archivo de una consulta: común (no un enlace, una carpeta ni un dispositivo), de 64 KB o menos, texto UTF-8 y no
+ * un archivo protegido por el freno. Devuelve `{ sha, texto }` o `{ error }`.
+ */
+function leerArchivoDeConsulta(ruta) {
+  const fs = require('fs'); const path = require('path'); const crypto = require('crypto');
+  const casa = process.env.HOME || require('os').homedir();
+  const abs = ruta.startsWith('~/') ? path.join(casa, ruta.slice(2)) : path.resolve(carpetaDelComando || process.cwd(), ruta);
+  let st;
+  try { st = fs.lstatSync(abs); } catch (e) { return { error: `no encuentro el archivo ${ruta} (${e.code || e.message})` }; }
+  if (st.isSymbolicLink()) return { error: `${ruta} es un enlace: puede apuntar a otra cosa entre el cuadro y la puerta` };
+  if (!st.isFile()) return { error: `${ruta} no es un archivo común` };
+  if (st.size > TOPE_ARCHIVO) return { error: `${ruta} mide ${st.size} bytes: el tope es ${TOPE_ARCHIVO} (más que eso no se lee entero en pantalla)` };
+  const base = path.basename(abs);
+  if (NOMBRES_PROTEGIDOS.includes(base) || /^(?:production|produccion)\.log$/.test(base)) {
+    return { error: `${ruta} es un archivo protegido por el freno, no una consulta` };
+  }
+  let buf;
+  try { buf = fs.readFileSync(abs); } catch (e) { return { error: `no pude leer ${ruta} (${e.code || e.message})` }; }
+  let texto;
+  try { texto = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (_) { return { error: `${ruta} no es texto UTF-8` }; }
+  if (CONTROL_ARCHIVO.test(texto)) return { error: `${ruta} tiene caracteres de control (como un retorno de carro o una secuencia de la terminal): en pantalla se vería otra cosa que lo que corre` };
+  if (INVISIBLE_ARCHIVO.test(texto)) return { error: `${ruta} tiene caracteres invisibles o de dirección: en pantalla se leería otra cosa que lo que corre` };
+  return { sha: crypto.createHash('sha256').update(buf).digest('hex'), texto };
+}
 
 function decidir(entrada) {
   let payload = {};
@@ -372,7 +411,24 @@ function decidir(entrada) {
     // y `` ` `` — el shell parte ahí y la segunda mitad corría SIN pasar por la puerta (ejecución
     // arbitraria aprobada por el freno; pase adversarial 2026-09-15, el hallazgo más grave).
     const unSoloSegmento = partes.length === 1;
-    const canonica = unSoloSegmento && (CANONICA.test(limpio) || CANONICA_RECLAS.test(limpio) || CANONICA_VERIF.test(limpio) || CANONICA_CARGA.test(limpio) || CANONICA_FIREWALL.test(limpio));
+    // La consulta desde un archivo: antes del cuadro se lee el archivo y se compara su huella. Sin huella, o con una que
+    // no coincide, no hay cuadro: nunca se aprueba algo que la persona no vio en pantalla. En Codex se corta abajo.
+    const fa = unSoloSegmento && !esCodex ? FORMA_ARCHIVO.exec(limpio) : null;
+    let mensajeArchivo = null;
+    if (fa) {
+      const v = leerArchivoDeConsulta(fa[2]);
+      if (v.error) frenar(`la consulta desde un archivo no se puede mostrar: ${v.error}.`, [
+        'El archivo tiene que ser un archivo común (no un enlace ni una carpeta), de 64 KB o menos, en UTF-8,',
+        'y no un archivo protegido por el freno.',
+      ], { cmd });
+      if (fa[3] !== v.sha) frenar(fa[3] ? 'la huella no coincide con el archivo: cambió después de que lo leíste.' : 'falta la huella del archivo (--sha256).', [
+        `La huella actual de ${fa[2]} es: ${v.sha}`,
+        'Leé el archivo de nuevo y, si es lo que querés correr, reintentá con:',
+        `  ${PUERTA} ${fa[1]} --file ${fa[2]} --sha256 ${v.sha}`,
+      ], { cmd });
+      mensajeArchivo = `Consulta a ${fa[1]} desde ${fa[2]} (huella ${v.sha}):\n${v.texto}`;
+    }
+    const canonica = unSoloSegmento && (CANONICA.test(limpio) || CANONICA_RECLAS.test(limpio) || CANONICA_VERIF.test(limpio) || CANONICA_CARGA.test(limpio) || CANONICA_FIREWALL.test(limpio) || CANONICA_ARCHIVO.test(limpio));
     if (!canonica) {
       frenar('la puerta se invocó de una forma que no es la canónica.', [
         'Sólo se acepta la ruta absoluta, sin nada antes ni después, y la sentencia en UN argumento',
@@ -395,6 +451,9 @@ function decidir(entrada) {
       'Sacalo de tu configuración del shell (o de este comando) y volvé a intentar.',
     ], { cmd });
     recordDecision({ freno: 'prod-access-guard', regla: 'puerta-no-canonica', veredicto: 'paso', cmd });
+    // la consulta del archivo, tal cual y con sus saltos de línea, en la pantalla de la persona antes del cuadro. Se sale
+    // recién cuando terminó de escribirse: por una tubería, salir enseguida cortaba el mensaje (y el cuadro aparecía igual)
+    if (mensajeArchivo) { process.stdout.write(JSON.stringify({ systemMessage: mensajeArchivo }), () => process.exit(0)); return; }
     process.exit(0);                                    // forma canónica y limpia: que decida el cuadro
   }
 

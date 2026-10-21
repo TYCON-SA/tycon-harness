@@ -20,7 +20,8 @@
 #
 # Formas aceptadas:
 #   tycon-prod-sql <host> '<sentencia>' [--max-filas N]
-#   tycon-prod-sql --reclasificar <host>      baja un host a no-producción (lo aprobás en el cuadro)
+#   tycon-prod-sql <host> --file <ruta> --sha256 <sha256> [--max-filas N]   la consulta desde un archivo
+#   tycon-prod-sql --reclasificar <host>     baja un host a no-producción (lo aprobás en el cuadro)
 #   tycon-prod-sql --verificar                revisa la instalación y la entrada del Llavero, sin leer el secreto
 #   tycon-prod-sql --cargar-clave <host>      deja el archivo para cargar la clave, sin consultar nada
 #   tycon-prod-sql --open-firewall <host>     abre la regla de firewall de esta máquina en un Azure SQL de producción
@@ -145,7 +146,7 @@ anotar(){ # $1 = json parcial (sólo valores ya validados: host y llavero pasaro
 # ── argumentos ────────────────────────────────────────────────────────────────────────────────
 [ $# -ge 1 ] || muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-filas N]  ·  --cargar-clave <host>  ·  --reclasificar <host>  ·  --verificar  ·  --open-firewall <host>  ·  --close-firewall <host>"
 
-MODO=consulta; HOST=""; SENTENCIA=""; SESION_CIERRE=""
+MODO=consulta; HOST=""; SENTENCIA=""; SESION_CIERRE=""; ARCHIVO=""; ORIGEN=""
 SESION_VALIDA='^[A-Za-z0-9-]{8,64}$'
 case "${1:-}" in
   # Las formas del firewall aceptan SÓLO el host: ni un rango, ni una IP, ni un nombre de regla, ni una suscripción.
@@ -163,7 +164,20 @@ case "${1:-}" in
   -*)             muere "primer argumento inválido: sólo <host>, --cargar-clave, --reclasificar, --verificar, --open-firewall o --close-firewall" ;;
   *)              HOST="$1"; SENTENCIA="${2:-}"
                   [ $# -ge 2 ] || muere "falta la sentencia: tycon-prod-sql <host> 'select …'"
-                  if [ $# -gt 2 ]; then
+                  if [ "${2:-}" = "--file" ]; then
+                    # `<host> --file <ruta> --sha256 <sha256> [--max-filas N]`: la consulta desde un archivo
+                    ARCHIVO="${3:-}"; HUELLA_PEDIDA=""
+                    [ $# -ge 5 ] && [ "${4:-}" = "--sha256" ] || muere "uso: tycon-prod-sql <host> --file <ruta> --sha256 <sha256> [--max-filas N]"
+                    HUELLA_PEDIDA="$5"
+                    case "$ARCHIVO" in (-*|'') muere "la ruta del archivo no puede empezar con «-»";; esac
+                    [[ "$HUELLA_PEDIDA" =~ ^[0-9a-f]{64}$ ]] || muere "la huella tiene que ser un sha256 (64 caracteres hexadecimales)"
+                    if [ $# -gt 5 ]; then
+                      [ $# -eq 7 ] && [ "$6" = "--max-filas" ] || muere "uso: tycon-prod-sql <host> --file <ruta> --sha256 <sha256> [--max-filas N]"
+                      case "$7" in (*[!0-9]*|'') muere "--max-filas necesita un número";; esac
+                      MAX_FILAS="$7"
+                    fi
+                    SENTENCIA=""; ORIGEN=archivo
+                  elif [ $# -gt 2 ]; then
                     [ $# -eq 4 ] && [ "$3" = "--max-filas" ] || muere "sólo se acepta la sentencia en línea y, opcionalmente, --max-filas N (llegaron $# argumentos)"
                     case "$4" in (*[!0-9]*|'') muere "--max-filas necesita un número";; esac
                     MAX_FILAS="$4"
@@ -175,7 +189,8 @@ if [ -n "$HOST" ] && ! [[ "$HOST" =~ $HOST_VALIDO ]]; then
 fi
 
 # ── la sentencia: en línea, un solo lote, sin argumentos de sqlcmd ────────────────────────────
-if [ "$MODO" = consulta ]; then
+# (la de un archivo se lee más abajo, con el intérprete de root ya verificado, y pasa por estas mismas reglas)
+validar_sentencia(){
   case "$SENTENCIA" in
     -*) muere "la sentencia no puede empezar con «-»: no se aceptan argumentos de sqlcmd (ni -i, ni -Q, ni -v)" ;;
   esac
@@ -191,12 +206,45 @@ if [ "$MODO" = consulta ]; then
   if printf '%s\n' "$SENTENCIA" | grep -qE '^[[:space:]]*(:|!!)'; then
     muere "la sentencia tiene un comando del cliente (una línea que empieza con «:» o «!!»): eso lee archivos o abre un shell, no consulta la base"
   fi
-fi
+}
+[ "$MODO" = consulta ] && [ -z "$ORIGEN" ] && validar_sentencia
 
 # ── el intérprete (instalada: el de root, verificado) y el índice ─────────────────────────────
 [ -n "$NODE" ] && [ -x "$NODE" ] || muere "no encuentro el intérprete para leer el índice de servidores"
 [ "$INSTALADO" = 1 ] && verificar_binario "$NODE" "/opt/tycon/bin/node" "el intérprete"
 [ -f "$INDICE_JS" ] || muere "no encuentro el índice de servidores ($INDICE_JS)"
+
+# ── la consulta desde un archivo: se lee UNA vez y se corren esos mismos bytes ───────────────────
+# El freno mostró el archivo y su huella antes del cuadro. Acá se lee una sola vez a memoria y se recalcula la huella
+# sobre esos bytes: si el archivo cambió después del cuadro, no coincide y no se conecta; y como no se vuelve a leer,
+# cambiarlo después tampoco cambia lo que corre. Las mismas condiciones que mira el freno (archivo común, 64 KB, UTF-8).
+if [ "$ORIGEN" = archivo ]; then
+  # el error del intérprete va a un temporal propio (nombre al azar, no uno predecible en la carpeta del estado)
+  ERR_ARCHIVO="$(mktemp "${TMPDIR:-/tmp}/tycon-archivo.XXXXXX")" || muere "no pude crear un temporal para leer el archivo"
+  # `--` antes de los argumentos: una ruta que empezara con «-» sería una opción del intérprete (cargaría otro código)
+  SENTENCIA="$("$NODE" -e '
+    const fs = require("fs"), path = require("path"), crypto = require("crypto");
+    const [ruta, pedida] = process.argv.slice(1);
+    const fuera = (m) => { console.error(m); process.exit(2); };
+    let st; try { st = fs.lstatSync(ruta); } catch (e) { fuera(`no encuentro el archivo (${e.code || e.message})`); }
+    if (st.isSymbolicLink() || !st.isFile()) fuera("no es un archivo común (ni un enlace ni una carpeta)");
+    if (st.size > 64 * 1024) fuera("mide más de 64 KB");
+    const base = path.basename(ruta);
+    if (/^(?:production|produccion)(?:\.json|\.log|-(?:index|memory|firewall)\.json|-(?:indice|memoria)\.json)$/.test(base)) fuera("es un archivo protegido por el freno, no una consulta");
+    const buf = fs.readFileSync(ruta);
+    const sha = crypto.createHash("sha256").update(buf).digest("hex");
+    if (sha !== pedida) fuera(`la huella no coincide: el archivo cambió después del cuadro (ahora es ${sha})`);
+    let texto; try { texto = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch (_) { fuera("no es texto UTF-8"); }
+    if (/[\x00-\x08\x0b-\x1f\x7f]/.test(texto)) fuera("tiene caracteres de control: en pantalla se habría visto otra cosa que lo que corre");
+    if (/[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\u2028\u2029]/.test(texto)) fuera("tiene caracteres invisibles o de dirección");
+    process.stdout.write(texto);
+  ' -- "$ARCHIVO" "$HUELLA_PEDIDA" 2>"$ERR_ARCHIVO")" || {
+    motivo="$(cat "$ERR_ARCHIVO" 2>/dev/null)"; rm -f "$ERR_ARCHIVO"
+    muere "no corro la consulta del archivo: ${motivo:-no pude leerlo}"
+  }
+  rm -f "$ERR_ARCHIVO"
+  validar_sentencia
+fi
 
 if [ "$MODO" = reclasificar ]; then
   "$NODE" -e '
@@ -617,5 +665,10 @@ FILAS="$(printf '%s\n' "$SALIDA" | wc -l | tr -d ' ')"
 printf '%s\n' "$SALIDA" | head -n "$MAX_FILAS"
 [ "$FILAS" -gt "$MAX_FILAS" ] && printf '… (cortado en %s de %s líneas; pedí más con --max-filas N)\n' "$MAX_FILAS" "$FILAS"
 printf 'rc=%s\n' "$RC"
-anotar "\"host\":\"$HOST\",\"accion\":\"consulta\",\"sha256\":\"$(printf '%s' "$SENTENCIA" | shasum -a 256 | cut -d' ' -f1)\",\"exit\":$RC,\"filas\":$FILAS"
+# desde un archivo, la huella es la del archivo (la que se vio en el cuadro) y se anota el origen; nunca la ruta ni el contenido
+if [ "$ORIGEN" = archivo ]; then
+  anotar "\"host\":\"$HOST\",\"accion\":\"consulta\",\"sha256\":\"$HUELLA_PEDIDA\",\"origen\":\"archivo\",\"exit\":$RC,\"filas\":$FILAS"
+else
+  anotar "\"host\":\"$HOST\",\"accion\":\"consulta\",\"sha256\":\"$(printf '%s' "$SENTENCIA" | shasum -a 256 | cut -d' ' -f1)\",\"exit\":$RC,\"filas\":$FILAS"
+fi
 exit "$RC"

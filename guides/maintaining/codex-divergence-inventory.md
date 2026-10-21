@@ -304,7 +304,8 @@ se consulta producción desde Codex». Caso del banco: `codex-frena-tambien-la-p
 Además del cuadro, le falta un evento de fin de sesión (sus hooks son PreToolUse, PostToolUse,
 SessionStart, Stop y UserPromptSubmit, y `Stop` es fin de turno, no de sesión), así que nadie cerraría la
 regla. El freno corta la forma como a toda invocación de la puerta. Caso del banco:
-`codex-frena-abrir-firewall` (`40-prod-access-guard.json`).
+`codex-frena-abrir-firewall` (`40-prod-access-guard.json`). La consulta desde un archivo (`--file`) tampoco: sin el
+cuadro no hay quién mire lo que el freno muestra en pantalla. Caso: `codex-frena-archivo`.
 
 **Windows**: el binario lee `%PROGRAMDATA%\ClaudeCode\managed-settings.json`; el aviso de arranque
 (`produccion-notice.js`) se registra por el `.ps1`, pero el `.ps1` **no instala hooks de git**, así

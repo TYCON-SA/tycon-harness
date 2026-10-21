@@ -89,6 +89,9 @@ Ahí cargás usuario y contraseña, y el archivo se borra solo. La entrada queda
 # más filas de las 50 por defecto
 /opt/tycon/bin/tycon-prod-sql <host> 'select …' --max-filas 200
 
+# una consulta larga, desde un archivo (la huella es el sha256 del archivo: shasum -a 256 <ruta>)
+/opt/tycon/bin/tycon-prod-sql <host> --file consulta.sql --sha256 <sha256>
+
 # revisar que la entrada del Llavero siga sana (no lee la contraseña)
 /opt/tycon/bin/tycon-prod-sql --verificar
 
@@ -99,6 +102,15 @@ Ahí cargás usuario y contraseña, y el archivo se borra solo. La entrada queda
 🔴 **En el cuadro: «Permitir», nunca «Permitir siempre».** El punto entero de esto es que cada
 sentencia se mire. Y si te aparece un cuadro del Llavero **sin que vos hayas aprobado una sentencia
 antes**, denegá: algo está leyendo la clave por otro camino.
+
+**Una consulta larga va en un archivo.** En una sola línea, con cada comilla escapada, no se puede leer en
+el cuadro. Con `--file <ruta> --sha256 <sha256>`, el freno lee el archivo antes del cuadro y te muestra
+en pantalla el host, la huella y la consulta tal cual, con sus saltos de línea. Sin la huella, o con una que
+no coincide (el archivo cambió después de que lo leíste), no hay cuadro: el mensaje trae la huella actual y
+el comando listo. La puerta lee el archivo una sola vez y corre esos mismos bytes: cambiarlo después del
+cuadro no cambia lo que corre. El archivo tiene que ser común (no un enlace ni una carpeta), de 64 KB o menos
+y en UTF-8, y valen las mismas reglas que en línea (sin `GO`, sin comandos del cliente). El registro anota la
+huella y que vino de un archivo, nunca la ruta ni el contenido.
 
 La puerta trae **formato fijo** a propósito (junta el error con la salida, corta filas, imprime el
 código de salida): así no hace falta agregarle `| head` ni `2>&1`, que la forma canónica no acepta.
