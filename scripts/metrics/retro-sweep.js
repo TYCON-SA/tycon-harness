@@ -109,13 +109,21 @@ function obtain(repo, clones) {
   }
   if (!clones) return { motivo: 'no es una carpeta y falta --clone-dir para bajarlo' };
   const dir = path.join(clones, repo.nombre.replace(/[^\w.-]/g, '_'));
-  // la credencial de la corrida, sólo para Azure y sólo en la línea de comando (no queda escrita en el clon)
+  // la credencial, sólo en la línea de comando (no queda escrita en el clon) y sólo hacia su servidor (por el nombre
+  // del host, no por un pedazo de la dirección): en Azure, la de la ejecución (CLONE_TOKEN); en GitHub, un permiso de
+  // lectura aparte (GITHUB_CLONE_TOKEN): la de Azure mandada a GitHub haría fallar el clon de un repo público
+  let host = '';
+  try { const u = new URL(repo.fuente); host = u.protocol === 'https:' ? u.hostname.toLowerCase() : ''; } catch (_) { host = ''; }
   const token = process.env.CLONE_TOKEN;
-  const auth = /dev\.azure\.com/.test(repo.fuente) && token ? ['-c', `http.extraheader=AUTHORIZATION: bearer ${token}`] : [];
+  const tokenGithub = process.env.GITHUB_CLONE_TOKEN;
+  const auth = (host === 'dev.azure.com' || host.endsWith('.visualstudio.com')) && token ? ['-c', `http.extraheader=AUTHORIZATION: bearer ${token}`]
+    : host === 'github.com' && tokenGithub ? ['-c', `http.extraheader=AUTHORIZATION: basic ${Buffer.from(`x-access-token:${tokenGithub}`).toString('base64')}`] : [];
   const r = fs.existsSync(path.join(dir, '.git'))
     ? git(dir, ['fetch', '--quiet', 'origin', '+refs/heads/main:refs/remotes/origin/main'], auth)
     : (fs.mkdirSync(clones, { recursive: true }), spawnSync('git', [...auth, 'clone', '--quiet', '--no-checkout', repo.fuente, dir], { encoding: 'utf8', timeout: 600000 }));
-  if (r.status !== 0) return { motivo: `no se pudo bajar: ${firstLine(r.stderr).replace(/bearer \S+/gi, 'bearer ***')}` };
+  // sin salida de git (un corte por tiempo, una señal), el motivo es el de la falla del proceso
+  const porque = firstLine(r.stderr) || (r.error && (r.error.code || r.error.message)) || (r.signal ? `señal ${r.signal}` : `git salió ${r.status}`);
+  if (r.status !== 0) return { motivo: `no se pudo bajar: ${String(porque).replace(/(bearer|basic) \S+/gi, '$1 ***')}` };
   if (git(dir, ['rev-parse', '--verify', '--quiet', 'origin/main^{commit}']).status !== 0) return { motivo: 'no tiene main' };
   return { dir, ref: 'origin/main' };
 }
@@ -161,7 +169,7 @@ function sinceFor(a, today, nombre, ilegibles = []) {
 
 /** Un motivo que se guarda y viaja: sin credenciales ni rutas de la máquina, en una línea corta. */
 function clean(t) {
-  return String(t || '').replace(/bearer\s+\S+/gi, 'bearer ***').replace(/\/\/[^\s/@]*@/g, '//***@')
+  return String(t || '').replace(/(bearer|basic)\s+\S+/gi, '$1 ***').replace(/\/\/[^\s/@]*@/g, '//***@')
     .replace(/(^|[\s'"(=:])(?:[A-Za-z]:|~|\.{1,2})?[\\/][^\s'"),:]+/g, '$1<ruta>').slice(0, 200);
 }
 

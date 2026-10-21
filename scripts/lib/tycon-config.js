@@ -249,6 +249,8 @@ const PROFILE_WINS = Object.freeze(['packs.default', 'adversarial.model_question
 const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check']);
 /** Los paquetes que activa la organización (tipo `paquetes`): `all`, `none` o una lista de nombres de paquete. */
 const NOMBRE_DE_PAQUETE = /^[a-z0-9][a-z0-9-]*$/;
+// Los canales por los que sale un aviso; la misma lista que `CANALES` del módulo de avisos (lo fija T27).
+const CANALES_DE_AVISO = Object.freeze(['telegram', 'slack', 'teams', 'mail']);
 /** null si el valor es `all`, `none` o una lista no vacía de nombres distintos; si no, el motivo. */
 function motivoPaquetes(valor) {
   if (typeof valor === 'string') return ['all', 'none'].includes(valor.trim()) ? null : `tiene que ser all, none o una lista de nombres de paquete, no ${JSON.stringify(valor)}`;
@@ -656,7 +658,7 @@ function validarAjustes(ajustes, valor, rutaEnArchivo) {
     if (!tiene(ajustes, k)) { errores.push({ clave: `${rutaEnArchivo}.${k}`, motivo: `clave desconocida (válidas: ${Object.keys(ajustes).join(', ') || 'ninguna'})` }); continue; }
     const err = validarTipo(ajustes[k], valor[k]);
     if (err) { errores.push({ clave: `${rutaEnArchivo}.${k}`, motivo: err }); continue; }
-    out[k] = String(valor[k]).trim();
+    out[k] = ajustes[k] === 'canales' ? valor[k].map((c) => c.trim()) : ajustes[k] === 'puerto' ? valor[k] : String(valor[k]).trim();
   }
   return { errores, valor: out };
 }
@@ -773,6 +775,15 @@ function validarTipo(tipo, valor) {
       return (typeof valor === 'string' && valor.trim() && !/\s/.test(valor.trim())) ? null : 'tiene que ser un texto sin espacios (el valor no se muestra)';
     case 'paquetes':
       return motivoPaquetes(valor);
+    case 'canales': {
+      // los canales de aviso: una lista, vacía para ninguno; un canal inventado es un error
+      if (!Array.isArray(valor)) return `tiene que ser una lista de canales (${CANALES_DE_AVISO.join(', ')}; vacía para ninguno), no ${JSON.stringify(valor)}`;
+      const malo = valor.find((c) => typeof c !== 'string' || !CANALES_DE_AVISO.includes(c.trim()));
+      if (malo !== undefined) return `${JSON.stringify(malo)} no es un canal de aviso (${CANALES_DE_AVISO.join(', ')})`;
+      return new Set(valor.map((c) => c.trim())).size === valor.length ? null : `la lista repite un canal: ${JSON.stringify(valor)}`;
+    }
+    case 'puerto':
+      return (Number.isInteger(valor) && valor >= 1 && valor <= 65535) ? null : `tiene que ser un puerto (un entero de 1 a 65535), no ${JSON.stringify(valor)}`;
     case 'ruta-absoluta':
       if (!(typeof valor === 'string' && valor.trim())) return `tiene que ser un texto no vacío, no ${JSON.stringify(valor)}`;
       return esRutaAbsoluta(valor) ? null : `tiene que ser una ruta absoluta (o con ~), no ${JSON.stringify(valor)}: una relativa no se resuelve contra nada`;
@@ -1374,7 +1385,7 @@ function parse(texto) {
 const KEYS = Object.freeze(Object.keys(VOCABULARIO).map((s) => enArchivo(s)));
 
 module.exports = {
-  parse, KEYS, motivoPaquetes, paquetesDeTexto,
+  parse, KEYS, motivoPaquetes, paquetesDeTexto, CANALES_DE_AVISO,
   VOCABULARIO, DEFAULTS, PROFILE_WINS, PROFILE_ONLY, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
   rutaMaquina, nombreArchivoMaquina, comoSePrende, rutaPerfil, leerPerfil, rutaLlaveBuzon, cargar, leer, leerParaHook, avisoParaHook, valor, explicar, estadoEnlace, formaPersonal,
   normalizarOrg, nombreDeOrganizacion, resolverRutaDeArchivo, personalEnComentario,

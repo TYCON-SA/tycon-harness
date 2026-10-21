@@ -7,7 +7,7 @@
 //
 // Los ajustes son de dos clases:
 //   · de la organización (`from: "profile"`): `integrations.<nombre>.<clave>` en el perfil del equipo (la URL de una
-//     instancia, por ejemplo). Tipos: `texto` o `url`.
+//     instancia, por ejemplo). Tipos: `texto`, `url`, `canales` o `puerto`.
 //   · de cada persona (`type: "secreto"`): `<nombre>.<clave>`, en `<casa del arnés>/secrets/<nombre>.json`, carpeta 700 y
 //     archivo 600 (en Windows, sólo la cuenta), o en la variable que declare el manifiesto. Van aparte de `config.json`
 //     porque el freno de producción instalado lee ese archivo con su propia copia del lector de configuración, que no
@@ -25,10 +25,11 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
 const KEY_RE = /^[a-z][A-Za-z0-9_]*$/;
 const ENV_RE = /^TYCON_[A-Z0-9_]+$/;
-const PROFILE_TYPES = Object.freeze(['texto', 'url']);
+// `canales`: una lista de canales de aviso (los del canal único de los avisos); `puerto`: un entero de 1 a 65535
+const PROFILE_TYPES = Object.freeze(['texto', 'url', 'canales', 'puerto']);
 const KIND_RE = /^[a-z][A-Za-z0-9]*$/;
 // los tipos que el núcleo busca por nombre
-const KINDS = Object.freeze(['timeTracking']);
+const KINDS = Object.freeze(['timeTracking', 'notify']);
 const TOOLS = Object.freeze(['claude', 'codex']);
 const DISPATCH_ON = Object.freeze(['post-edit']);
 // Un hook de una integración, en la lista del instalador: `@int:<integración>/<ruta dentro de su carpeta>`.

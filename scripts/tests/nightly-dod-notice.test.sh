@@ -51,8 +51,10 @@ export DOUBLE_DIR="${D}"
 cat > "${BASE}/doble.sh" <<'SH'
 #!/usr/bin/env bash
 n=$(( $(cat "${DOUBLE_DIR}/n" 2>/dev/null || echo 0) + 1 )); echo "${n}" > "${DOUBLE_DIR}/n"
-{ echo "--- llamada ${n}"; printf '%s\n' "$*"; } >> "${DOUBLE_DIR}/llamadas"
-printf '%s' "$1" > "${DOUBLE_DIR}/msg-${n}"
+# el texto llega como argumento (TYCON_NOTICE_NOTIFY) o por la entrada estándar (--stdin: así lo manda notify.js)
+msg="$1"; for a in "$@"; do [ "$a" = "--stdin" ] && msg="$(cat)"; done
+{ echo "--- llamada ${n}"; printf '%s\n' "$msg"; } >> "${DOUBLE_DIR}/llamadas"
+printf '%s' "$msg" > "${DOUBLE_DIR}/msg-${n}"
 rc="$(sed -n "${n}p" "${DOUBLE_DIR}/codigos" 2>/dev/null)"
 [ -n "${rc}" ] || rc="$(tail -n 1 "${DOUBLE_DIR}/codigos" 2>/dev/null)"
 rc="${rc:-0}"
@@ -84,8 +86,12 @@ armar() {
   git init -q "${PUB}"; git -C "${PUB}" checkout -q -b main
   git -C "${PUB}" remote add origin "${F}/origin.git"
   mkdir -p "${PUB}/scripts/lib" "${PUB}/.dashboard"
-  # El doble también vive donde el guion lo busca sin TYCON_NOTICE_NOTIFY: `scripts/lib/`.
-  # T33 lo usa así; sólo ahí (sin el reemplazo de la ruta vieja) se ve si el default apunta a la ruta nueva.
+  # Sin TYCON_NOTICE_NOTIFY el guion manda por notify.js del árbol (T33): ese caso arma el árbol con las bibliotecas
+  # reales (ARMAR_CON_ENVIO=1), y el doble queda en el lugar del cliente de Telegram, que es lo que llama notify.js.
+  if [ "${ARMAR_CON_ENVIO:-0}" = 1 ]; then
+    cp -R "${RAIZ}/scripts/lib/." "${PUB}/scripts/lib/"
+    mkdir -p "${PUB}/scripts/setup"; cp -R "${RAIZ}/scripts/setup/harness" "${PUB}/scripts/setup/harness"; cp -R "${RAIZ}/integrations" "${PUB}/integrations"
+  fi
   printf '#!/usr/bin/env bash\nexec "%s" "$@"\n' "${BASE}/doble.sh" > "${PUB}/scripts/lib/tycon-telegram-notify.sh"
   chmod +x "${PUB}/scripts/lib/tycon-telegram-notify.sh"
   echo "arnés de prueba" > "${PUB}/README.md"
@@ -425,14 +431,26 @@ if [ "${RC}" = 0 ] && [ "$(fetches)" = 100 ] && ! contiene "$(cat "${OUT}")" "in
 else mal "T32 rc=${RC} fetches=$(fetches) salida=[$(tail -3 "${OUT}")]"; fi
 
 # ── T33 ─ R3_TelegramNotify_CallersAndShim ─────────────────────────────────────────────────────
-# Sin TYCON_NOTICE_NOTIFY (el LaunchAgent no la declara) el guion busca el envío en el arnés, en
-# `scripts/lib/`. El arnés de este caso no tiene el reemplazo de la ruta vieja, así que un default viejo no encuentra
-# el envío (exit 3, «falta el script de envío»). Falla si el default apunta a la ruta vieja.
+# Sin TYCON_NOTICE_NOTIFY (el LaunchAgent no la declara) el guion manda por notify.js del arnés, en `scripts/lib/`,
+# que llama al cliente de Telegram de al lado (acá, el doble): sin la lista de canales en el perfil, Telegram.
+# Falla si el default no pasa por notify.js de `scripts/lib/` (sin él, exit 3 y ninguna llamada al doble).
 echo "T33 SinNotifyDeclarado_UsaElEnvioDeScriptsLib (story 8.12 T27)"
-armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
-unset TYCON_NOTICE_NOTIFY; correr; export TYCON_NOTICE_NOTIFY="${BASE}/doble.sh"
+ARMAR_CON_ENVIO=1 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
+unset TYCON_NOTICE_NOTIFY; HOME="${BASE}/home-t33" TYCON_PROFILE=0 correr; export TYCON_NOTICE_NOTIFY="${BASE}/doble.sh"
 if [ "${RC}" = 0 ] && [ "$(llamadas)" = 1 ] && contiene "$(enviado)" "Se movió la evidencia DoD"; then ok "T33 sin TYCON_NOTICE_NOTIFY entrega con el envío de scripts/lib/"
 else mal "T33 rc=${RC} llamadas=$(llamadas) salida=[$(tail -3 "${OUT}")]"; fi
+
+# ── T33b ─ la organización no eligió ningún canal ────────────────────────────────────────────────────────────
+# notify.js sale 0 («no es un error»), pero no se entregó nada: el guion no lo cuenta como entregado ni borra los
+# pendientes que tenía guardados. Falla si los borra, o si llama al envío.
+echo "T33b SinCanalesElegidos_NoBorraLosPendientes (story 7.40 T27)"
+ARMAR_CON_ENVIO=1 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
+mkdir -p "${BASE}/estado"; printf '%s\t%s\n' "${AYER}" "un aviso de ayer" > "${BASE}/estado/pendientes.tsv"
+printf '{"integrations":{"notify":{"channels":[]}}}\n' > "${BASE}/perfil-sin-canales.json"
+unset TYCON_NOTICE_NOTIFY; HOME="${BASE}/home-t33b" TYCON_PROFILE="${BASE}/perfil-sin-canales.json" correr; export TYCON_NOTICE_NOTIFY="${BASE}/doble.sh"
+if [ "$(llamadas)" = 0 ] && grep -q "un aviso de ayer" "${BASE}/estado/pendientes.tsv" 2>/dev/null && contiene "$(cat "${OUT}")" "no eligió ningún canal" && ! contiene "$(cat "${OUT}")" "entregado"; then
+  ok "T33b sin canales elegidos no se manda, no se dice entregado y los pendientes quedan"
+else mal "T33b rc=${RC} llamadas=$(llamadas) pendientes=[$(cat "${BASE}/estado/pendientes.tsv" 2>/dev/null)] salida=[$(tail -3 "${OUT}")]"; fi
 
 # ── T34 ─ R3_TelegramNotify_CallersAndShim ─────────────────────────────────────────────────────
 # El resumen diario (scripts/nightly/dependencies/daily-summary.js) manda con el mismo envío. En su ensayo
@@ -487,7 +505,8 @@ instalada() {
   cp "${GUION}" "${IN}/scripts/ci/"; cp -R "${RAIZ}/scripts/lib" "${IN}/scripts/lib"; cp -R "${RAIZ}/scripts/setup/harness" "${IN}/scripts/setup/harness"
   cp "${RAIZ}/scripts/hooks/public-push-guard.js" "${IN}/scripts/hooks/"
   for f in version.json; do [ -f "${RAIZ}/${f}" ] && cp "${RAIZ}/${f}" "${IN}/"; done
-  printf '#!/usr/bin/env bash\necho "$1" >> "%s/propio"\necho 4242\n' "${D}" > "${IN}/scripts/lib/tycon-telegram-notify.sh"
+  # el texto llega por la entrada estándar (--stdin): así lo manda notify.js
+  printf '#!/usr/bin/env bash\nm="$1"; for a in "$@"; do [ "$a" = --stdin ] && m="$(cat)"; done\necho "$m" >> "%s/propio"\necho 4242\n' "${D}" > "${IN}/scripts/lib/tycon-telegram-notify.sh"
   chmod +x "${IN}/scripts/lib/tycon-telegram-notify.sh"
   printf '{"schema":1,"sources":[{"kind":"release","version":"0.0.0"}]}' > "${BASE}/home/.tycon/state/harness-state.json"
   printf '%s' "$1" > "${BASE}/home/.tycon/config.json"

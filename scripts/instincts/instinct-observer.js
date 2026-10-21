@@ -36,7 +36,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const { execSync, spawnSync } = require('child_process');
+const { spawnSync } = require('child_process');
 
 // ============================================================
 // Config
@@ -978,39 +978,28 @@ function migrarDescartadosViejos(avisar = log) {
 // ============================================================
 // Telegram notify
 // ============================================================
-/** El chat de Telegram según la configuración del arnés (comando: una config rota frena y lo dice). */
-function chatConfigurado() {
-  const c = require(path.join(__dirname, '..', 'lib', 'tycon-config.js')).leer();
-  return c.valores.telegram.chat_id || null;
-}
-function maybeNotify(count, descartados = 0) {
-  if (!notify) return;
-  if (process.env.TYCON_INSTINCT_NOTIFY !== '1') return;
+/**
+ * El aviso de instintos nuevos, por los canales de la organización (scripts/lib/notify.js, del lado de la sesión: las
+ * credenciales de esta máquina). El bot y el chat propios de la grabadora (TYCON_INSTINCT_TELEGRAM_BOT_TOKEN y
+ * TYCON_INSTINCT_TELEGRAM_CHAT_ID), si están, pisan los de la máquina sólo para este aviso. El token viaja en el entorno
+ * del cliente de Telegram, nunca en la línea de comandos.
+ */
+function maybeNotify(count, descartados = 0, { notify: pedido = notify, env = process.env } = {}) {
+  if (!pedido) return;
+  if (env.TYCON_INSTINCT_NOTIFY !== '1') return;
   if (count === 0) return;
-  // Simple notify via curl al bot. El chat sale de la configuración del arnés: variable,
-  // ~/.claude/tycon.json → telegram.chat_id, o el plugin de Telegram — nunca un chat escrito acá.
-  const chatId = process.env.TYCON_INSTINCT_TELEGRAM_CHAT_ID || chatConfigurado();
-  const botToken = process.env.TYCON_INSTINCT_TELEGRAM_BOT_TOKEN;
-  if (!chatId) {
-    log('sin chat de Telegram configurado (TYCON_INSTINCT_TELEGRAM_CHAT_ID, TYCON_TELEGRAM_CHAT_ID, ~/.claude/tycon.json → telegram.chat_id, o el plugin) — no se manda el aviso');
-    return;
-  }
-  if (!botToken) {
-    log('TYCON_INSTINCT_TELEGRAM_BOT_TOKEN no seteada — skip notify');
-    return;
-  }
   const msg = `instinct-observer: ${count} nuevos instincts pending`
     + (descartados ? ` (y ${descartados} descartados por repetir algo que ya existe)` : '')
     + '. Review: /tycon-instincts review';
-  try {
-    execSync(
-      `curl -s -X POST "https://api.telegram.org/bot${botToken}/sendMessage" -d chat_id=${chatId} -d text=${encodeURIComponent(msg)}`,
-      { stdio: 'ignore' }
-    );
-    log(`Telegram notify sent (${count} pending)`);
-  } catch (e) {
-    log(`Telegram notify failed: ${e.message}`);
-  }
+  const envAviso = { ...env };
+  if (String(env.TYCON_INSTINCT_TELEGRAM_BOT_TOKEN || '').trim()) envAviso.TELEGRAM_BOT_TOKEN = env.TYCON_INSTINCT_TELEGRAM_BOT_TOKEN.trim();
+  const N = require(path.join(__dirname, '..', 'lib', 'notify.js'));
+  const s = N.canalesDeLaSesion({ env: envAviso });
+  if (s.problema) { log(`no se manda el aviso: ${s.problema}`); return; }
+  if (!s.canales.length) { log('ningún canal elegido en el perfil del equipo: no se manda el aviso'); return; }
+  const chat = String(env.TYCON_INSTINCT_TELEGRAM_CHAT_ID || '').trim() || s.chat;
+  const r = N.avisar({ canales: s.canales, texto: msg, env: envAviso, lado: 'sesion', mail: s.mail, chat });
+  for (const x of r.resultados) log(x.entregado ? `aviso mandado por ${x.canal} (${count} pendientes)` : `el aviso no salió por ${x.canal}: ${N.limpiar(x.motivo, envAviso)}`);
 }
 
 // ============================================================
@@ -1033,12 +1022,13 @@ function main() {
   for (const n of DIRS.readNotes()) log(`${n} — lo ya decidido ahí puede volver a proponerse`);
   // En --dry-run no se escribe nada, tampoco esta mudanza: la hace la próxima corrida de verdad.
   if (!dryRun) migrarDescartadosViejos();
-  // Telegram: si se pidió avisar y no hay chat configurado, se dice UNA vez y al PRINCIPIO — al final,
-  // con cero instintos nuevos, nunca se llegaría a saber. Configuración rota → un comando frena con archivo, clave y motivo.
-  if (notify && process.env.TYCON_INSTINCT_NOTIFY === '1' && !process.env.TYCON_INSTINCT_TELEGRAM_CHAT_ID) {
-    let chat = null;
-    try { chat = chatConfigurado(); } catch (e) { if (e && e.name === 'ConfigError') { log(e.message); process.exit(2); } throw e; }
-    if (!chat) log('Telegram apagado en esta máquina: sin chat configurado — el aviso de instintos nuevos no se va a mandar (prender: telegram.chat_id en ~/.claude/tycon.json, TYCON_TELEGRAM_CHAT_ID, o el plugin de Telegram)');
+  // Los canales del aviso: si se pidió avisar y no hay por dónde, se dice UNA vez y al PRINCIPIO — al final, con cero
+  // instintos nuevos, nunca se llegaría a saber. Configuración rota → un comando frena con su motivo.
+  if (notify && process.env.TYCON_INSTINCT_NOTIFY === '1') {
+    const s = require(path.join(__dirname, '..', 'lib', 'notify.js')).canalesDeLaSesion({ env: process.env });
+    if (s.problema) { log(s.problema); process.exit(2); }
+    if (!s.canales.length) log('ningún canal de aviso elegido en el perfil del equipo: el aviso de instintos nuevos no se va a mandar');
+    else if (s.origen === 'antes' && !s.chat && !process.env.TYCON_INSTINCT_TELEGRAM_CHAT_ID) log('Telegram apagado en esta máquina: sin chat configurado — el aviso de instintos nuevos no se va a mandar (prender: telegram.chat_id en ~/.claude/tycon.json, TYCON_TELEGRAM_CHAT_ID, o el plugin de Telegram)');
   }
   const executor = resolveExecutor();
   if (!executor) {
@@ -1161,7 +1151,7 @@ function main() {
 // (scripts/tests/instinct-observer-catalog.test.sh); requerir el archivo no corre el observador.
 module.exports = {
   buildPrompt, catalogoDetallado, instintosYaDecididos, topeDecididos, promptDeRevision, leerRevision,
-  citaVerificada, decidirDescarte, contextoOllama, migrarDescartadosViejos,
+  citaVerificada, decidirDescarte, contextoOllama, migrarDescartadosViejos, maybeNotify,
 };
 
 if (require.main === module) main();

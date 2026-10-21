@@ -108,8 +108,11 @@ const BRAND_LOGO = /^(?!\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[A-Za-z0-9._\/-]{1,200}\.(
 const BRAND_NAME_MAX = 80;
 // el canal del aviso. Sin canal por defecto: sin `notify`, no se manda (un canal por defecto sería un valor de
 // una organización en el código). Lo lee scripts/lib/notify.js (`canalDe`).
-const NOTIFY_KEYS = ['channel'];
-const NOTIFY_CHANNELS = ['telegram', 'slack', 'teams'];
+// `channel` es el nombre viejo de la lista de canales: los elige el perfil del equipo (integrations.notify.channels) y la
+// noche usa éste sólo si el perfil no trae la lista. `mail_from` y `mail_to` (destinatarios separados por coma) son el
+// remitente y los destinatarios del correo de la noche: direcciones de la organización, no credenciales.
+const NOTIFY_KEYS = ['channel', 'mail_from', 'mail_to'];
+const NOTIFY_CHANNELS = ['telegram', 'slack', 'teams', 'mail'];
 const MAILBOX_KEYS = ['provider', 'account', 'container', 'threads'];
 const MAILBOX_PROVIDERS = ['azure-blob'];
 const REFRESH_MIN = 5;
@@ -281,7 +284,14 @@ function notifyProblems(notify) {
     if (SECRET_KEY.test(k) || /webhook|chat|url/i.test(k)) problems.push({ path: `notify.${k}`, message: 'clave con forma de secreto: el destino del aviso va en los secretos del pipeline, nunca en operations.json' });
     else problems.push({ path: `notify.${k}`, message: 'clave desconocida' });
   }
-  if (!NOTIFY_CHANNELS.includes(notify.channel)) problems.push({ path: 'notify.channel', message: `tiene que ser uno de: ${NOTIFY_CHANNELS.join(', ')}` });
+  const conCorreo = notify.mail_from !== undefined || notify.mail_to !== undefined;
+  if ((notify.channel !== undefined || !conCorreo) && !NOTIFY_CHANNELS.includes(notify.channel)) problems.push({ path: 'notify.channel', message: `tiene que ser uno de: ${NOTIFY_CHANNELS.join(', ')}` });
+  if (notify.mail_from !== undefined) problems.push(...emailProblems(notify.mail_from, 'notify.mail_from'));
+  if (notify.mail_to !== undefined) {
+    const lista = typeof notify.mail_to === 'string' ? notify.mail_to.split(',').map((x) => x.trim()) : null;
+    if (!lista || !lista.length || lista.some((x) => !x)) problems.push({ path: 'notify.mail_to', message: 'tiene que ser uno o más correos separados por coma' });
+    else for (const x of lista) problems.push(...emailProblems(x, 'notify.mail_to'));
+  }
   return problems;
 }
 

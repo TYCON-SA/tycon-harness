@@ -323,6 +323,8 @@ function evaluar({ outDir, pendingDir, ahora, fuente = DISCO, legacyPendingDir =
  */
 function constaEntregado(r) {
   if (!r || typeof r !== 'object') return false;
+  // la organización eligió no avisar por ningún canal: no hay nada que entregar, y no es un fallo
+  if (r.sin_canales === true) return true;
   return !!r.entregado_el || (r.message_id !== null && r.message_id !== undefined && !r.motivo);
 }
 
