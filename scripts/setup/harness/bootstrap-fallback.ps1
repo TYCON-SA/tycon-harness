@@ -1,13 +1,13 @@
-﻿# bootstrap-fallback.ps1 — el RESPALDO en PowerShell del arranque del arnés (story 8.13, AC 13), gemelo de
+﻿# bootstrap-fallback.ps1 — el RESPALDO en PowerShell del arranque del arnés, gemelo de
 # bootstrap-fallback.sh. Vive en ~/.claude/.tycon-pipeline/harness/, fuera del árbol; la línea de arranque lo corre
 # cuando bootstrap.js no sale 0 (harness.js roto, enlace colgado, árbol ausente, node por debajo del piso, startup fallido).
 #
 # Hace lo de siempre: `git pull --ff-only --autostash --quiet` en el enlace del arnés y en ~/.claude/agent-skills (si
 # existen) y después el aplicador (install-tycon-hooks.ps1). Si el enlace no resuelve, usa el árbol que dice el estado.
 # Silencioso; una línea en startup.log y, si hay node, el aviso en `notice` del estado. Sale 0 siempre, salvo con un
-# PowerShell más viejo que 7 (story 8.17, AC 35): ahí UNA línea y sale 1, antes de escribir nada.
+# PowerShell más viejo que 7: ahí UNA línea y sale 1, antes de escribir nada.
 
-# PowerShell 7 es un requisito (story 8.17): con Windows PowerShell 5.1 lo dice y no escribe nada (ni el log). Misma guarda
+# PowerShell 7 es un requisito: con Windows PowerShell 5.1 lo dice y no escribe nada (ni el log). Misma guarda
 # y misma variable de prueba que install-tycon-hooks.ps1 (sólo simula una versión más vieja; el texto, sin tildes: allá
 # está el porqué).
 $TyconPsMajor = $PSVersionTable.PSVersion.Major
@@ -25,8 +25,8 @@ if ($TyconPsMajor -lt 7) {
     exit 1
 }
 
-# La carpeta de usuario: copia exacta de la función de install-tycon-hooks.ps1 (story 8.17, AC 33; allá está el porqué).
-# Este archivo leía HOME primero: en Windows, con Git Bash, HOME no es la carpeta que usan harness.js y bootstrap.js.
+# La carpeta de usuario: copia exacta de la función de install-tycon-hooks.ps1 (allá está el porqué).
+# Leer HOME primero fallaría: en Windows, con Git Bash, HOME no es la carpeta que usan harness.js y bootstrap.js.
 # Lo mismo que os.homedir() de Node: en Windows USERPROFILE si esta puesta y, si no, la carpeta del perfil; en Linux y
 # Mac HOME y, si no, la del perfil. -Platform es para las pruebas.
 function Get-TyconHome([string]$Platform = [Environment]::OSVersion.Platform) {
@@ -36,12 +36,12 @@ function Get-TyconHome([string]$Platform = [Environment]::OSVersion.Platform) {
 }
 
 $ErrorActionPreference = 'SilentlyContinue'
-# git nunca pregunta nada desde acá: ni la terminal ni el gestor de credenciales (un login invisible dejaba al arranque
-# esperando hasta el tope del hook; story 8.23, tanda L)
+# git nunca pregunta nada desde acá: ni la terminal ni el gestor de credenciales (un login invisible dejaría al arranque
+# esperando hasta el tope del hook)
 $env:GIT_TERMINAL_PROMPT = '0'
 $env:GCM_INTERACTIVE = 'never'
 $H = Get-TyconHome
-# dónde vive el estado (story 8.23, tanda C; gemelo del .sh): una máquina sin Claude Code vive entera en la casa propia
+# dónde vive el estado (gemelo del .sh): una máquina sin Claude Code vive entera en la casa propia
 # del arnés (~/.tycon, o TYCON_HOME) y su estado es <casa>\state. La regla de tycon-home.js, escrita acá: si esa carpeta
 # existe, es ésa; si no, la de siempre.
 $Own = if ($env:TYCON_HOME) { $env:TYCON_HOME } else { Join-Path $H '.tycon' }
@@ -50,12 +50,12 @@ if (Test-Path (Join-Path $Own 'state') -PathType Container) { $Pipe = Join-Path 
 $HDir = Join-Path $Pipe 'harness'
 $Log = Join-Path $HDir 'startup.log'
 $State = Join-Path $Pipe 'harness-state.json'
-# los dos nombres del lugar del arnés (story 8.19, AC 9): primero el lugar, después el viejo; bajo HOME y bajo
+# los dos nombres del lugar del arnés: primero el lugar, después el viejo; bajo HOME y bajo
 # USERPROFILE si difieren. Escritos acá: esta copia fija no carga nada del árbol (copia declarada en
 # scripts/tests/fixtures/harness-place-names.json)
 $Link = Join-Path $H '.claude\tycon-harness'
 $LinkTree = ''
-# las dos carpetas salen de Get-TyconHome (story 8.17, AC 33): la de Linux/Mac es HOME y la de Windows, USERPROFILE
+# las dos carpetas salen de Get-TyconHome: la de Linux/Mac es HOME y la de Windows, USERPROFILE
 foreach ($b in @($H, (Get-TyconHome 'Unix'), (Get-TyconHome 'Win32NT'))) {
     if (-not $b -or $LinkTree) { continue }
     foreach ($n in @('tycon-harness', 'tycon-claude-guides')) {
@@ -67,7 +67,7 @@ $Skills = Join-Path $H '.claude\agent-skills'
 New-Item -ItemType Directory -Force -Path $HDir | Out-Null
 if ((Test-Path $Log) -and ((Get-Item $Log).Length -gt 1048576)) { Move-Item -Force $Log "$Log.1" }
 
-# ── la versión BAJADA (story 8.23, tanda B · AC 13 y 19), gemelo del .sh: sin git y sin Node en este camino ─────────
+# ── la versión BAJADA, gemelo del .sh: sin git y sin Node en este camino ─────────
 # Si el estado dice `kind: release`, el árbol es ~/.tycon/harness (o TYCON_HOME\harness) y no hay pull: un cambio de
 # versión cortado a mitad se repara desde su diario (swap.json), y si harness.js no arranca y hay una versión anterior
 # (previous\), se vuelve a ella (la rota queda apartada en trash\) y se corre su aplicador; sin previous\, el aviso.
@@ -76,7 +76,7 @@ $Release = $false
 if ((Test-Path $State) -and ((Get-Content $State -Raw) -match '"kind"\s*:\s*"release"')) { $Release = $true }
 $Repaired = ''
 
-# ── la forma con ENLACES (story 8.33): en Windows `harness` y `previous` son uniones a `versions\<v>\`. Su diario es
+# ── la forma con ENLACES: en Windows `harness` y `previous` son uniones a `versions\<v>\`. Su diario es
 # link-swap.json; un corte vuelve las dos uniones a donde estaban (la regla de release.js → repairLinks). Una unión se
 # quita con [IO.Directory]::Delete sin recursión: nunca se borra a través de ella. Ninguna carpeta se mueve.
 function Test-Link([string]$P) { try { $i = Get-Item -LiteralPath $P -Force -ErrorAction Stop; return [bool]($i.Attributes -band [IO.FileAttributes]::ReparsePoint) } catch { return $false } }
@@ -137,8 +137,7 @@ if (Test-Path $Journal) {
     try { $J = Get-Content $Journal -Raw | ConvertFrom-Json } catch { $J = $null }
     $OwnHarness = Join-Path $Own 'harness'; $OwnPrevious = Join-Path $Own 'previous'
     $stage = if ($J) { [string]$J.stage } else { '' }
-    # cada mv se comprueba: «completó» sólo si movió de verdad (un archivo tomado lo hace fallar; el aviso no puede mentir —
-    # revisor de fallos silenciosos de la tanda B)
+    # cada mv se comprueba: «completó» sólo si movió de verdad (un archivo tomado lo hace fallar; el aviso no puede mentir)
     function Move-Checked([string]$From, [string]$To, [string]$Done) {
         try { Move-Item $From $To -ErrorAction Stop; return $Done } catch { return "no pude mover $From → $To ($($_.Exception.Message)); queda para el próximo arranque" }
     }
@@ -184,8 +183,8 @@ if ($Release) {
             try { Set-Link $Tree $Prev; Remove-Link $OwnPrevious; $Why = "harness.js no arrancaba: volví a la versión anterior (el enlace harness → $Prev; la rota, $Rota, queda para la limpieza); " }
             catch { $Why = "harness.js no arranca y no pude apuntar harness a la versión anterior ($($_.Exception.Message)); " }
         } elseif ((Test-Link $Tree) -and (Test-Path $OwnPrevious)) {
-            # la conversión a medias (8.33): harness ya es una unión y previous sigue siendo una carpeta tomada. Mover la unión
-            # y después no poder mover previous dejaba la máquina sin harness (pase adversarial, clase 1): acá no se mueve nada
+            # la conversión a medias: harness ya es una unión y previous sigue siendo una carpeta tomada. Mover la unión
+            # y después no poder mover previous dejaría la máquina sin harness: acá no se mueve nada
             $Why = "harness.js no arranca y la versión anterior ($OwnPrevious) todavía es una carpeta en uso: cerrá las otras sesiones de Claude Code y de Codex y VS Code (si sigue, reiniciá) y corré node <copia>\scripts\setup\harness.js install --version latest; "
         } elseif (Test-Path $OwnPrevious) {
             New-Item -ItemType Directory -Force -Path (Join-Path $Own 'trash') | Out-Null
@@ -216,18 +215,18 @@ try { $NodeV = (& node --version 2>$null) } catch {}
 $Pulled = ''
 if ($Mode -eq 'developer') { $Pulled = ' ninguno (modo desarrollador: el git del clon es del dev)' }
 
-# La guarda (story 8.18, AC 34), gemela de la del .sh: el clon del que salen las skills (~/.claude/agent-skills: el clon
+# La guarda, gemela de la del .sh: el clon del que salen las skills (~/.claude/agent-skills: el clon
 # viejo, re-apuntado o no, o el único árbol) NUNCA avanza a una punta que no trae skills/tycon-pipeline (`main` devuelto a
-# un árbol de antes de la unión de los dos repos). Se mira ANTES del pull: se trae sin mover y se mira el árbol de lo
+# un árbol anterior a la unión de los dos repos). Se mira ANTES del pull: se trae sin mover y se mira el árbol de lo
 # traído. Si no las trae no se mueve NINGUNO de los dos clones; el aplicador corre igual, con lo que hay.
 #
-# «No pude mirar» no es «no las trae» (story 8.18, tramo 3 · revisor de fallos silenciosos, 2026-10-04), como en el .sh:
+# «No pude mirar» no es «no las trae», como en el .sh:
 # `git cat-file -e <commit>:skills/tycon-pipeline` contesta lo mismo si el árbol no trae la carpeta que si git no pudo
-# leerlo. Con el árbol de HEAD sin leer el respaldo hacía el pull —a una punta sin skills—; con el de lo traído sin leer
-# frenaba diciendo «no trae las skills», que no era cierto. Tres respuestas: `git ls-tree -d --name-only` sale 0 y nombra
+# leerlo. Con el árbol de HEAD sin leer, el respaldo haría el pull —a una punta sin skills—; con el de lo traído sin leer,
+# frenaría diciendo «no trae las skills», que no sería cierto. Tres respuestas: `git ls-tree -d --name-only` sale 0 y nombra
 # la carpeta (yes) · sale 0 y no la nombra (no) · no sale 0 (unknown). Con «unknown» tampoco se mueve ningún clon, y la
 # línea dice qué no se pudo leer. Un clon sin rama de la que traer (rev-parse sale 1) no tiene a dónde avanzar.
-# Medido con pwsh: scripts/tests/harness-bootstrap.test.sh (T35). En Windows: no medido.
+# Casos: scripts/tests/harness-bootstrap.test.sh (T35), con pwsh. En Windows: no medido.
 function Get-SkillsAt([string]$Rev) {
     $names = @(& git -C $Skills ls-tree -d --name-only "${Rev}^{tree}" -- 'skills/tycon-pipeline' 2>$null)
     if ($LASTEXITCODE -ne 0) { return 'unknown' }
@@ -270,7 +269,7 @@ foreach ($d in @($Tree, $Skills)) {
     if ($LASTEXITCODE -eq 0) { $Pulled += " ${name}:ok" } else { $Pulled += " ${name}:no" }
 }
 $Applier = 'sin aplicador (árbol no encontrado)'
-# el aplicador es el enchufe de Claude Code (story 8.23, tanda C; gemelo del .sh): si el estado dice qué herramientas
+# el aplicador es el enchufe de Claude Code (gemelo del .sh): si el estado dice qué herramientas
 # enchufa la máquina y Claude Code no está entre ellas, no corre. Sin `tools` en el estado, como siempre.
 $NoClaude = $false
 if (Test-Path $State) {

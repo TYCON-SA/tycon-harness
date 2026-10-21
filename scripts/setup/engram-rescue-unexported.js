@@ -13,9 +13,8 @@
  *   · se consolidaron varios cajones en uno — el rename mueve las observaciones pero NO las
  *     re-exporta, porque su `updated_at` sigue siendo el viejo.
  *
- * Medido el 2026-08-25, después de unificar 4 repos: **1016 observaciones varadas** (749 de
- * contenido real, 217 resúmenes de sesión), incluidas decisiones de arquitectura y bugs con su
- * causa raíz. Si se perdía el disco, se perdían: nadie más del equipo las tenía.
+ * Al unificar varios repos pueden quedar cientos de observaciones varadas, incluidas decisiones de
+ * arquitectura y bugs con su causa raíz. Si se pierde el disco, se pierden: nadie más del equipo las tiene.
  *
  * ── CÓMO LO ARREGLA ──────────────────────────────────────────────────────────────────────────
  * Toca `updated_at` de cada observación varada con un PATCH **no-op** contra la API local de
@@ -23,7 +22,7 @@
  * contenido no se toca: sólo se mueve la fecha para que el export la vuelva a ver.
  *
  * 🔴 Por qué la API y no un UPDATE a la DB: `observations` tiene triggers de FTS y una capa de
- * mutaciones de sync; escribir por afuera obliga a replicar todo eso a mano sobre 44 MB de la
+ * mutaciones de sync; escribir por afuera obliga a replicar todo eso a mano sobre la
  * memoria compartida del equipo. La API es el mismo camino que usa `mem_update`.
  *
  * ── USO ──────────────────────────────────────────────────────────────────────────────────────
@@ -38,14 +37,14 @@
  * Después de correrlo hay que **commitear el `.engram/` de cada repo**: el script exporta, no
  * commitea. Lo dice al final, repo por repo.
  *
- * ── LÍMITE CONOCIDO (medido 2026-08-25) ──────────────────────────────────────────────────────
- * En el repo de documentación de procesos quedaron 38 observaciones que NO se pueden rescatar por esta vía: se las tocó, se
- * verificó que el `updated_at` quedó en hoy, y `engram sync` sigue diciendo *"all memories already
- * exported"* — incluso vaciando el índice del manifest, que descarta que el cursor viva ahí. O sea
- * que engram lleva el registro de lo exportado en otro lado, y para esas 38 dice que ya salieron:
- * lo más probable es que se hayan exportado desde OTRO clon del repo, y ese chunk no está en éste.
- * No se forzó nada por afuera de la API a propósito. Si aparecen más casos así, el camino es
- * mirarlo del lado de engram, no seguir empujando desde acá.
+ * ── LÍMITE CONOCIDO ──────────────────────────────────────────────────────────────────────────
+ * Algunas observaciones no se pueden rescatar por esta vía: se las toca, el `updated_at` queda en
+ * hoy, y `engram sync` sigue diciendo *"all memories already exported"* — incluso vaciando el índice
+ * del manifest, que descarta que el cursor viva ahí. O sea que engram lleva el registro de lo
+ * exportado en otro lado y dice que ya salieron: lo más probable es que se hayan exportado desde
+ * OTRO clon del repo, y ese chunk no está en éste. No se fuerza nada por afuera de la API a
+ * propósito. Si aparecen casos así, el camino es mirarlo del lado de engram, no seguir empujando
+ * desde acá.
  */
 
 'use strict';
@@ -55,18 +54,18 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: el
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: el
 // rescate corre también copiado suelto, sin scripts/setup/harness/ al lado (engram-rescue.test.js T28 lo copia así); ahí
 // vale la ruta de siempre, que es la misma (T5 de scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 // (los `require` van adentro de la expresión: T5 de tycon-home.test.js la evalúa suelta, sin el resto del archivo)
 const stateDirOf = (() => { const lib = path.join(__dirname, 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
-// Los nombres viejos de las opciones siguen andando (story 8.9, tanda B3a): antes de la primera lectura de argv.
+// Los nombres viejos de las opciones siguen andando: se resuelven antes de la primera lectura de argv.
 require(path.join(__dirname, '..', 'lib', 'legacy-names.js')).aliasArgv('scripts/setup/engram-rescue-unexported.js', { exitCode: 2 });
 const API = process.env.ENGRAM_API || 'http://127.0.0.1:7437';
 const APPLY = process.argv.includes('--apply');
-// 🔴 Parser ESTRICTO (hallazgo 17): `--repo` sin valor se interpretaba como "sin filtro" y la
-// corrida operaba sobre TODOS los repos — lo contrario de lo que el dev pidió. Y `--repo --apply`
-// tomaba `--apply` como nombre de repo. Un flag mal escrito tiene que frenar, no ampliar el alcance.
+// 🔴 Parser ESTRICTO: `--repo` sin valor no puede leerse como "sin filtro" (la corrida operaría sobre TODOS los
+// repos, lo contrario de lo pedido), ni `--repo --apply` tomar `--apply` como nombre de repo. Un flag mal
+// escrito tiene que frenar, no ampliar el alcance.
 const soloRepo = (() => {
   const i = process.argv.indexOf('--repo');
   if (i < 0) return null;
@@ -77,11 +76,9 @@ const soloRepo = (() => {
   }
   return v;
 })();
-// 🔴 `--target <repo/sub-repo>` (2026-09-06): cuando un CONTENEDOR tiene varios sub-repos con el
-// mismo proyecto, el script abortaba pidiendo «--repo <repo>» — y `--repo` es el FILTRO, no el
-// destino: no había forma de elegir. Lapacho (Backend, FrontEnd y Project declaran `lapacho`)
-// quedó con 11 recuerdos varados por eso. El destino se declara aparte, y se valida igual que un
-// candidato: tiene que existir, ser un repo git y declarar EXACTAMENTE el proyecto.
+// 🔴 `--target <repo/sub-repo>`: cuando un CONTENEDOR tiene varios sub-repos con el mismo proyecto, pedir
+// «--repo <repo>» no alcanza, porque `--repo` es el FILTRO, no el destino. El destino se declara aparte, y se
+// valida igual que un candidato: tiene que existir, ser un repo git y declarar EXACTAMENTE el proyecto.
 const destinoElegido = (() => {
   const i = process.argv.indexOf('--target');
   if (i < 0) return null;
@@ -92,9 +89,8 @@ const destinoElegido = (() => {
   }
   return v;
 })();
-// Presupuesto GLOBAL de tiempo (hallazgo 15): el timeout era POR OBSERVACIÓN (10s) y por repo, así
-// que el peor caso escalaba con N — medido: 1016 observaciones ≈ 2h49m de PATCH secuencial. El
-// tope tiene que ser de la CORRIDA. Al agotarse se corta limpio: el script es idempotente.
+// Presupuesto GLOBAL de tiempo: un timeout POR OBSERVACIÓN (10s) o por repo haría que el peor caso escalara con
+// N. El tope tiene que ser de la CORRIDA. Al agotarse se corta limpio: el script es idempotente.
 const PRESUPUESTO_MS = (() => {
   const i = process.argv.indexOf('--budget');
   const v = i >= 0 ? Number.parseInt(process.argv[i + 1], 10) : NaN;
@@ -104,8 +100,8 @@ const ARRANQUE = Date.now();
 function presupuestoAgotado() { return Date.now() - ARRANQUE > PRESUPUESTO_MS; }
 
 const DB = path.join(os.homedir(), '.engram', 'engram.db');
-// engram (story 8.3, AC 9/10): con la integración apagada no hay nada que rescatar — se dice en UNA línea y sale 0, ANTES
-// de exigir la raíz de repos. Configuración rota → archivo, clave y motivo, exit 2. Sin lector al lado: como hoy.
+// engram: con la integración apagada no hay nada que rescatar — se dice en UNA línea y sale 0, ANTES
+// de exigir la raíz de repos. Configuración rota → archivo, clave y motivo, exit 2. Sin lector al lado: se sigue.
 {
   let integ = null;
   try { integ = require(path.join(__dirname, '..', 'lib', 'tycon-config.js')).integracionParaComando('engram'); }
@@ -117,7 +113,7 @@ const DB = path.join(os.homedir(), '.engram', 'engram.db');
 }
 const audit = require(path.join(__dirname, '..', 'lib', 'harness-audit.js'));
 // Misma raíz que usa el audit — nunca una carpeta escrita a mano (ver lib/repos-root.js). Sin raíz no se
-// rescata nada y se dice (story 8.3, AC 6); un ~/.claude/tycon.json roto tira: un comando frena.
+// rescata nada y se dice; un ~/.claude/tycon.json roto tira: un comando frena.
 // todas las carpetas de repos (puede haber más de una): cada repo se busca en la que lo tiene
 const REPOS_ROOTS = (() => {
   const r = require(path.join(__dirname, '..', 'lib', 'repos-root.js')).resolveReposRoot();
@@ -155,10 +151,8 @@ async function tocar(id, type) {
 // ── --reindex: chunks en disco que el índice no nombra ───────────────────────────────────────
 // `manifest.json` NO es decorativo: `engram sync --import` lo usa para saber qué levantar. Un chunk
 // commiteado sin entrada es memoria que viajó por git y que NADIE puede leer — se ve, desde afuera,
-// exactamente igual que un archivo que no existe. Medido el 2026-08-25: 5 chunks así en 3 repos,
-// uno de ellos con 8 observaciones de otro dev sobre bugs de conciliación, en `main` desde hacía un
-// día. Se abrió en commits NORMALES, sin conflicto de por medio — que es el único caso que la
-// guarda de ENGRAM-MANIFEST-1 cubría.
+// exactamente igual que un archivo que no existe. Pasa en commits NORMALES, sin conflicto de por medio,
+// que es el único caso que la guarda del manifest cubre.
 //
 // La entrada se reconstruye con lo que se puede saber de verdad: el id y el conteo salen del propio
 // chunk; el autor y la fecha, del commit que lo trajo (y si el archivo no está en git todavía, del
@@ -185,9 +179,8 @@ function contarChunk(f) {
 function reindexar(apply) {
   const criterio = require('../lib/manifest-engram.js');
   const todos = audit.scanEngramRepos().pinned;
-  // 🔴 `--repo` vale también acá (story 1.6, 2026-09-17). Antes `soloRepo` filtraba SÓLO el rescate
-  // de varadas y el reindex iteraba todos los repos con nombre fijado: pedir «tocá este» tocaba
-  // veinte. Una etiqueta desconocida sale 2 nombrando los conocidos, igual que el rescate.
+  // 🔴 `--repo` vale también acá: si filtrara SÓLO el rescate de varadas, el reindex iteraría todos los repos con
+  // nombre fijado y pedir «tocá este» tocaría veinte. Una etiqueta desconocida sale 2 nombrando los conocidos, igual que el rescate.
   let pinned = todos;
   if (soloRepo) {
     pinned = todos.filter((x) => x.repo === soloRepo);
@@ -200,9 +193,9 @@ function reindexar(apply) {
   let total = 0;
   let tocadas = 0;
   const desajustes = [];
-  // 🔴 Los manifests ROTOS se acumulan y deciden el exit (hallazgo 17). Antes, un manifest ausente
-  // o con `chunks` que no es lista se salteaba EN SILENCIO y la corrida cerraba con "✅ Todo chunk
-  // está en el índice" — un repo cuya memoria nadie puede importar, reportado como sano.
+  // 🔴 Los manifests ROTOS se acumulan y deciden el exit: un manifest ausente o con `chunks` que no es lista, si
+  // se salteara EN SILENCIO, dejaría cerrar la corrida con "✅ Todo chunk está en el índice" — un repo cuya
+  // memoria nadie puede importar, reportado como sano.
   const rotos = [];
   for (const { repo } of pinned) {
     const base = path.join(raizDe(repo), repo, '.engram');
@@ -227,24 +220,21 @@ function reindexar(apply) {
       .filter((f) => f.endsWith('.jsonl.gz'))
       .map((f) => f.replace('.jsonl.gz', ''))
       .filter((id) => !yaEstan.has(id));
-    // 🔴 NO se saltea el repo cuando no falta ningún chunk (2026-09-06). Ese `continue` hacía que
-    // las entradas que SÍ están no se revisaran nunca: un índice completo se leía como un índice
-    // correcto. Medido en el arnés: 2 de 97 entradas declaraban `sessions:0, memories:1`
-    // con 1/3 y 15/82 adentro — 83 memorias que el censo no contaba — y la corrida imprimía
-    // "✅ Todo chunk en disco está en el índice de su repo". No se pierde memoria (el import lee
-    // los ARCHIVOS, no los contadores): lo que miente es el censo, y un censo que miente es
-    // exactamente lo que este script existe para que no pase.
+    // 🔴 NO se saltea el repo cuando no falta ningún chunk: las entradas que SÍ están también se revisan, porque
+    // un índice completo no es un índice correcto (una entrada puede declarar `sessions:0, memories:1` con más
+    // adentro, y el censo no cuenta esas memorias). No se pierde memoria (el import lee los ARCHIVOS, no los
+    // contadores): lo que miente es el censo, y un censo que miente es exactamente lo que este script existe
+    // para que no pase.
 
-    // 🔴 Las entradas que faltan las arma el CRITERIO (story 1.6): rescata primero la entrada
+    // 🔴 Las entradas que faltan las arma el CRITERIO: rescata primero la entrada
     // EXACTA de la historia de git —de cualquier referencia, incluido el otro lado de un merge y
-    // una rama sin mergear— y sólo reconstruye desde el chunk si nadie la tuvo nunca. Este guion
-    // reconstruía siempre, así que una entrada rescatable volvía con el autor y la fecha del
-    // commit que trajo el archivo en vez de los suyos. Nunca inventa: lo ilegible queda sin tocar.
+    // una rama sin mergear— y sólo reconstruye desde el chunk si nadie la tuvo nunca. Reconstruir siempre
+    // devolvería una entrada rescatable con el autor y la fecha del commit que trajo el archivo en vez de
+    // los suyos. Nunca inventa: lo ilegible queda sin tocar.
     const arreglo = criterio.reparar(path.dirname(base), { apply: false });
-    // 🔴 «No pude medir» NO es «no hay nada que reparar» (2026-09-17, hallazgo del cazador de
-    // fallos silenciosos). Sin este corte, un índice que el criterio no puede leer —por ejemplo con
-    // entradas sin `id` de texto, que el pre-check de arriba no cubre— salía por acá con las listas
-    // vacías y la corrida terminaba imprimiendo «✅ Todo chunk está en el índice» con código 0: un
+    // 🔴 «No pude medir» NO es «no hay nada que reparar». Sin este corte, un índice que el criterio no puede
+    // leer —por ejemplo con entradas sin `id` de texto, que el pre-check de arriba no cubre— saldría por acá con
+    // las listas vacías y la corrida terminaría imprimiendo «✅ Todo chunk está en el índice» con código 0: un
     // verde falso, dentro del comando que existe para reparar justamente eso.
     if (arreglo.estado === 'no-medido') {
       rotos.push(`${repo}: no se pudo medir el índice — ${arreglo.motivo}; NO se toca`);
@@ -283,10 +273,9 @@ function reindexar(apply) {
     }
 
     if (apply && (faltan.length || tocadas)) {
-      // 🔴 Ni reordenar todo ni salto de línea final (story 1.6, 2026-09-17). Este guion hacía las
-      // dos cosas: el `sort` global movía líneas que nadie pidió tocar, y el `+ '\n'` —que engram
-      // no escribe— hacía que el sync siguiente lo sacara, así que el índice aparecía modificado
-      // en cada commit sin que nadie lo hubiera editado. Las nuevas se insertan en su lugar por
+      // 🔴 Ni reordenar todo ni salto de línea final: un `sort` global movería líneas que nadie pidió tocar, y un
+      // `+ '\n'` —que engram no escribe— haría que el sync siguiente lo sacara, así que el índice aparecería
+      // modificado en cada commit sin que nadie lo hubiera editado. Las nuevas se insertan en su lugar por
       // fecha, las existentes quedan donde están, y el formato lo pone el criterio.
       for (const entrada of nuevas) criterio.insertarPorFecha(man.chunks, entrada);
       fs.writeFileSync(fMan, criterio.serializar(man));
@@ -309,7 +298,7 @@ function reindexar(apply) {
  * Las observaciones de este repo que existen en la DB y NO están en ningún chunk suyo.
  *
  * Se calcula MIRANDO LOS CHUNKS, no la fecha: es la única prueba de que la memoria viajó, y es lo
- * que hace posible el post-check del hallazgo 5 (correr esto DESPUÉS del sync y exigir cero).
+ * que hace posible el post-check (correr esto DESPUÉS del sync y exigir cero).
  *
  * @returns {Array<{id:string,type:string}>|null} null si la DB no se pudo leer (≠ "no hay nada").
  */
@@ -324,9 +313,9 @@ function pendientesDe(r) {
   } catch (_e) { return null; }
 
   const zlib = require('zlib');
-  // 🔴 Se escanea el GRUPO entero de repos que comparten el project (hallazgo 17), no sólo el
-  // representante: los 3 de Ceibo sincronizan `ceibo` y una observación exportada por el chunk
-  // de un hermano YA VIAJÓ — contarla como pendiente era volver a tocarla en cada corrida.
+  // 🔴 Se escanea el GRUPO entero de repos que comparten el project, no sólo el representante: si varios
+  // sincronizan el mismo project, una observación exportada por el chunk de un hermano YA VIAJÓ — contarla
+  // como pendiente la volvería a tocar en cada corrida.
   const dirs = [];
   for (const repoDelGrupo of (Array.isArray(r.repos) && r.repos.length ? r.repos : [r.repo])) {
     const base = path.join(raizDe(repoDelGrupo), repoDelGrupo);
@@ -349,7 +338,7 @@ function pendientesDe(r) {
       let txt;
       try { txt = zlib.gunzipSync(fs.readFileSync(path.join(d, f))).toString('utf8'); }
       catch (_e) {
-        // Un chunk ilegible NO se ignora en silencio (hallazgo 17): sus observaciones no cuentan
+        // Un chunk ilegible NO se ignora en silencio: sus observaciones no cuentan
         // como exportadas, así que se re-tocarían en cada corrida — trabajo de más sin aviso.
         corruptos.push(path.join(d, f));
         continue;
@@ -365,9 +354,9 @@ function pendientesDe(r) {
   return todas.filter((x) => !yaExportadas.has(sids.get(x.id)));
 }
 
-// ── El JOURNAL de la corrida (hallazgo 6, 2026-08-25) ────────────────────────────────────────
-// Una falla tardía en el segundo repo dejaba al primero YA mutado y sincronizado, sin rastro de
-// hasta dónde había llegado. Cada paso que muta algo deja una línea acá ANTES de hacerlo y otra
+// ── El JOURNAL de la corrida ─────────────────────────────────────────────────────────────────
+// Una falla tardía en el segundo repo deja al primero YA mutado y sincronizado; el journal conserva el rastro
+// de hasta dónde llegó la corrida. Cada paso que muta algo deja una línea acá ANTES de hacerlo y otra
 // después; si la corrida se corta a la mitad, el journal dice exactamente qué quedó tocado.
 const JOURNAL = path.join(stateDirOf(os.homedir()), 'engram-rescue.jsonl');
 const CORRIDA = `${new Date().toISOString()}#${process.pid}`;
@@ -384,11 +373,11 @@ function pinDe(dir) {
 }
 
 /**
- * ¿Dónde se exporta la memoria de este repo? Resuelto SIN tocar nada (hallazgo 4).
+ * ¿Dónde se exporta la memoria de este repo? Resuelto SIN tocar nada.
  *
- * 🔴 El destino de un CONTENEDOR se elegía por "el sub-repo con más chunks", sin exigir que su pin
- * fuera el proyecto. Reproducido: un proyecto `target` terminó sincronizándose dentro de un repo
- * cuyo pin era `foreign`. Ahora sólo vale un candidato cuyo pin sea EXACTAMENTE el proyecto: con
+ * 🔴 Elegir el destino de un CONTENEDOR por "el sub-repo con más chunks", sin exigir que su pin fuera el
+ * proyecto, podría sincronizar un proyecto `target` dentro de un repo cuyo pin es `foreign`. Sólo vale un
+ * candidato cuyo pin sea EXACTAMENTE el proyecto: con
  * cero o con más de uno, se aborta y se pide `--repo`. Adivinar el destino de una mutación de
  * memoria compartida no es una comodidad, es una forma de perder datos ajenos.
  *
@@ -437,16 +426,15 @@ function resolverDestino(r) {
 }
 
 (async () => {
-  // 🔴 El guard de la base va DESPUÉS de `--reindex` (story 1.6, 2026-09-17). El reindex mira
-  // ARCHIVOS (`.engram/chunks/` y el índice), no la base local, pero el guard estaba arriba de
-  // todo: en un clon recién hecho, en un agente de CI, o en la máquina de alguien que todavía no
-  // corrió engram, el comando salía `1` con «nada que hacer» y no arreglaba nada — justo donde el
-  // aviso diario lo manda a correr. Descubierto al escribir T17 de la suite del criterio.
+  // 🔴 El guard de la base va DESPUÉS de `--reindex`. El reindex mira ARCHIVOS (`.engram/chunks/` y el índice),
+  // no la base local: con el guard arriba de todo, en un clon recién hecho, en un agente de CI, o en la máquina
+  // de alguien que todavía no corrió engram, el comando saldría `1` con «nada que hacer» y no arreglaría
+  // nada — justo donde el aviso diario lo manda a correr.
   if (process.argv.includes('--reindex')) {
     const r = reindexar(APPLY);
     // Un manifest roto es un problema del REPO que este script no puede arreglar: sale ≠0 para que
     // nadie lea "corrí el reindex y dio 0" como "está todo sano".
-    // Un índice que SUB-DECLARA su contenido cuenta igual (2026-09-06): es dato equivocado, no
+    // Un índice que SUB-DECLARA su contenido cuenta igual: es dato equivocado, no
     // dato faltante — la diferencia con un chunk sin entrada, que ya se reporta por otro lado y
     // se ve. Con `--apply` queda corregido en la misma corrida, y ahí sí sale 0.
     process.exit(r.rotos.length || (r.desajustes || []).length ? 1 : 0);
@@ -463,7 +451,7 @@ function resolverDestino(r) {
     : varadas;
   if (!objetivo.length) {
     if (soloRepo) {
-      // 🔴 Un typo en --repo decía "todo viajó" con exit 0 (hallazgo 17). "No matcheó el filtro"
+      // 🔴 Un typo en --repo no puede decir "todo viajó" con exit 0. "No matcheó el filtro"
       // y "no hay nada varado" son respuestas distintas: la primera es un error del comando.
       const { pinned } = audit.scanEngramRepos();
       const conocidos = pinned.map((x) => x.repo);
@@ -495,9 +483,9 @@ function resolverDestino(r) {
     process.exit(1);
   }
 
-  // ── FASE 0 — resolver TODOS los destinos ANTES del primer PATCH (hallazgo 4) ────────────────
-  // Antes los PATCH salían primero y el destino se resolvía después: si el destino no existía o
-  // era el equivocado, la mutación ya estaba hecha. Un dry-run que promete y una fase que muta
+  // ── FASE 0 — resolver TODOS los destinos ANTES del primer PATCH ──────────────────────────────
+  // Si los PATCH salieran primero y el destino se resolviera después, un destino inexistente o equivocado
+  // llegaría con la mutación ya hecha. Un dry-run que promete y una fase que muta
   // tienen que estar de acuerdo ANTES de mutar.
   const destinos = new Map();
   const errores0 = [];
@@ -521,7 +509,7 @@ function resolverDestino(r) {
   anotar({ fase: 'resolucion', ok: true, destinos: [...destinos].map(([repo, d]) => ({ repo, destino: d.destino, pin: d.pin })) });
 
   const paraCommitear = [];
-  const problemas = [];   // 🔴 estado de error GLOBAL (hallazgo 5): cualquier parcial sale no-cero.
+  const problemas = [];   // 🔴 estado de error GLOBAL: cualquier parcial sale no-cero.
 
   for (const r of objetivo) {
     if (presupuestoAgotado()) {
@@ -537,9 +525,9 @@ function resolverDestino(r) {
     console.log(`\n▸ ${r.repo}: tocando ${pendientes.length}…`);
     anotar({ fase: 'tocar', repo: r.repo, project: r.project, destino, pendientes: pendientes.length });
 
-    // Lotes de 8 concurrentes + corte por presupuesto GLOBAL (hallazgo 15). Secuencial con 10s de
-    // timeout por observación, 1016 varadas eran ~2h49m de peor caso; el tope tiene que ser de la
-    // corrida, no multiplicarse por N. Cortar a mitad de repo es seguro: sin fase completa no hay
+    // Lotes de 8 concurrentes + corte por presupuesto GLOBAL: secuencial, con 10s de timeout por observación, el
+    // peor caso crece con N; el tope tiene que ser de la corrida, no multiplicarse por N.
+    // Cortar a mitad de repo es seguro: sin fase completa no hay
     // sync, y el script es idempotente.
     let ok = 0; const fallos = []; let cortadoPorTiempo = false;
     for (let i = 0; i < pendientes.length; i += 8) {
@@ -560,8 +548,8 @@ function resolverDestino(r) {
       continue;
     }
 
-    // 🔴 Una fase PATCH incompleta NO habilita el sync (hallazgo 5). Antes un HTTP 500 o un
-    // timeout seguían derecho al sync y la corrida terminaba en 0: media memoria movida, verde.
+    // 🔴 Una fase PATCH incompleta NO habilita el sync: un HTTP 500 o un timeout que siguieran derecho al sync
+    // terminarían la corrida en 0 con media memoria movida, en verde.
     if (fallos.length) {
       problemas.push(`${r.repo}: ${fallos.length} de ${pendientes.length} PATCH fallaron — NO se sincronizó (sería exportar la mitad y declararlo hecho)`);
       console.error('   ⛔ fase incompleta → sin sync. Arreglá la API y volvé a correr: es idempotente.');
@@ -572,7 +560,7 @@ function resolverDestino(r) {
       continue;
     }
 
-    // ── Revalidación JUSTO antes de mutar (hallazgo 4) ────────────────────────────────────────
+    // ── Revalidación JUSTO antes de mutar ────────────────────────────────────────
     const ahora = resolverDestino(r);
     if (ahora.error || path.resolve(ahora.destino) !== path.resolve(destino) || ahora.pin !== pin) {
       problemas.push(`${r.repo}: el destino cambió entre la resolución y el sync (${ahora.error || ahora.destino}) — no se sincronizó`);
@@ -586,7 +574,7 @@ function resolverDestino(r) {
       salida = execFileSync('engram', ['sync', '--project', r.project],
         { cwd: destino, encoding: 'utf8', timeout: 120000 });
     } catch (e) {
-      // 🔴 Un sync con exit no-cero terminaba la corrida en 0 (hallazgo 5).
+      // 🔴 Un sync con exit no-cero no puede terminar la corrida en 0.
       problemas.push(`${r.repo}: el sync falló (${String(e.message || e).split('\n')[0]})`);
       console.error(`   ⚠ el sync falló en ${r.repo}`);
       anotar({ fase: 'sync', repo: r.repo, ok: false, error: String(e.message || e).slice(0, 300) });
@@ -595,8 +583,8 @@ function resolverDestino(r) {
     const linea = salida.split('\n').find((l) => /Observations:|Nothing new/.test(l)) || '';
     console.log(`   sync: ${linea.trim() || 'sin salida legible'}`);
 
-    // ── POST-CHECK POR IDs (hallazgo 5) ───────────────────────────────────────────────────────
-    // Sin esto, `Nothing new` con observaciones varadas se leía como éxito — y el cierre pedía
+    // ── POST-CHECK POR IDs ────────────────────────────────────────────────────────────────────
+    // Sin esto, `Nothing new` con observaciones varadas se leería como éxito — y el cierre pediría
     // commitear un `.engram/` donde no había entrado nada. Se recalcula lo pendiente MIRANDO LOS
     // CHUNKS, que es la única prueba de que la memoria viajó.
     const despues = pendientesDe(r);
@@ -629,7 +617,7 @@ function resolverDestino(r) {
   if (!paraCommitear.length) console.log('\n✅ Nada quedó pendiente de exportar.');
   anotar({ fase: 'cierre', ok: true, commitear: paraCommitear });
 })().catch((e) => {
-  // Una excepción no atrapada terminaba la corrida sin resumen ni rastro (hallazgo 6).
+  // Una excepción no atrapada no puede terminar la corrida sin resumen ni rastro.
   console.error(`\n⛔ La corrida se cortó: ${String(e && e.message || e)}`);
   console.error(`   Journal: ${JOURNAL} — dice hasta dónde se llegó.`);
   try { anotar({ fase: 'cierre', ok: false, excepcion: String(e && e.message || e).slice(0, 300) }); } catch (_e) { /* ya está */ }

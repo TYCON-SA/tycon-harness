@@ -2,12 +2,11 @@
 'use strict';
 /**
  * profile-equivalence.js — ¿el equipo, con su perfil, sigue teniendo EXACTAMENTE lo mismo que tenía cuando
- * todo estaba escrito a mano? (story 8.3, AC 11 / T11 — la tanda A mide rutas y valores; la B cierra los
- * estados de integración).
+ * todo estaba escrito a mano? (Mide rutas, valores y el estado de cada integración.)
  *
  * ── LA FALLA QUE MIDE ─────────────────────────────────────────────────────────────────────────────
- * La 8.3 saca del código dónde está el arnés, dónde viven los repos, la organización de Azure DevOps y el
- * chat de Telegram. La cara interna de esa falla es que una ruta o un servicio que HOY anda quede distinto
+ * El perfil saca del código dónde está el arnés, dónde viven los repos, la organización de Azure DevOps y el
+ * chat de Telegram. La cara interna de esa falla es que una ruta o un servicio que anda quede distinto
  * —o apagado— después del cambio sin que nadie se entere. Esto compara el código de `main` al sha (la línea
  * base, extraída con `git archive`: nunca una tabla escrita por quien escribe este script) contra el clon
  * actual, en esta máquina, con el perfil del equipo:
@@ -17,14 +16,14 @@
  *      con `TYCON_CODEX=0` y todos los `TYCON_NO_*` (el instalador lanza suites, el refresco de `az`, el
  *      despliegue Codex y sesiones LLM reales aun con HOME temporal). Por nombre y no por comando: cada clon
  *      registra la ruta absoluta de sus hooks;
- *   2. los VALORES que hoy están escritos a mano, resueltos por las dos versiones en esta máquina: la raíz de
+ *   2. los VALORES escritos a mano en la base, resueltos por las dos versiones en esta máquina: la raíz de
  *      repos (`repos-root.js`), el veredicto de la ruta canónica (`canonical-path.js`: la base contra la carpeta
  *      fija de entonces; el nuevo contra el enlace, creado en un HOME temporal como lo haría el instalador),
  *      qué repos son del arnés (`harness-repo.js` sobre el checkout real, agent-skills y hasta tres repos de
  *      producto), la carpeta del arnés (el literal de la base contra el enlace), la organización de Azure
  *      DevOps (los literales de los archivos del censo contra `ado.org` del perfil) y el chat de Telegram (el
  *      literal contra `telegram.chat_id` resuelto);
- *   3. el ESTADO de cada integración (tanda B), por SONDAS mecánicas sobre las dos versiones, nunca una tabla escrita:
+ *   3. el ESTADO de cada integración, por SONDAS mecánicas sobre las dos versiones, nunca una tabla escrita:
  *      clockify, engram y nightly por sus hooks en el reporte `--check` de cada instalador (base vs nuevo con el
  *      perfil); ado por la organización escrita en la base vs `ado.org` resuelto; telegram por el chat escrito vs el
  *      resuelto; buzón por la llave que viene con el código vs `integrations.mailbox`; codex por `TYCON_CODEX` con el
@@ -38,7 +37,7 @@
  *                                 conviene pasar el checkout real: la base compara contra la carpeta fija de entonces
  *        [--agent-skills <dir>]   el repo de agent-skills (por defecto TYCON_SKILLS_DIR o ~/.claude/agent-skills)
  *
- *      node scripts/publishing/profile-equivalence.js --settings <antes.json> <despues.json>   (story 8.13, AC 14)
+ *      node scripts/publishing/profile-equivalence.js --settings <antes.json> <despues.json>
  *        Modo APARTE: compara dos `settings.json` por los hooks DEL ARNÉS (evento → matcher → nombre del script →
  *        comando entero + async). Lo ajeno y su orden no cuentan; la línea de arranque (`git pull` / `bootstrap.js`) se
  *        compara aparte como `startup-line` y se informa pero no decide. Sale 0 iguales · 1 con la lista · 2 si un
@@ -51,7 +50,7 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
-// La línea base es un sha anterior: si es de antes del renombre a inglés (story 8.9), su instalador sólo lee el nombre
+// La línea base es un sha anterior: si es de antes del renombre a inglés, su instalador sólo lee el nombre
 // viejo de cada interruptor. Por eso cada interruptor renombrado se fija con los dos nombres (el viejo sale del mapa).
 const { envNames, usableEntries, loadMap, basenameRenames } = require('../lib/legacy-names.js');
 const conNombresViejos = (vars) => {
@@ -71,17 +70,17 @@ const SIN_EFECTOS = conNombresViejos({
   TYCON_NO_COLLECT_FINDINGS: '1', TYCON_NO_AZ_PROJECTS_REFRESH: '1', TYCON_NO_NIGHTLY_EXAM: '1',
   TYCON_NO_CLAUDEMD_SYNC: '1', TYCON_NO_COMMANDS_SYNC: '1', TYCON_NO_ENGRAM_VERSION_CHECK: '1', TYCON_NO_SQLITE_CHECK: '1',
   TYCON_NO_ENGRAM_PROJECT_CHECK: '1', TYCON_NO_GIT_HOOKS: '1', TYCON_NO_GUI_ENV: '1', TYCON_NO_AGENTSMD_POINTER: '1',
-  TYCON_STAGE_METRICS: '0',   // el barrido de métricas de etapa de fondo no mira --check (pase adversarial, vuelta 1)
+  TYCON_STAGE_METRICS: '0',   // el barrido de métricas de etapa de fondo no mira --check
 });
-// Los archivos donde el censo (story 8.3, §Origen) encontró la organización y el chat escritos a mano.
-// La base es de ANTES de cualquier renombre de la 8.9 (o de después): un archivo renombrado se lee por el nombre que
+// Los archivos de la base donde la organización y el chat están escritos a mano.
+// La base puede ser de antes o de después de los renombres a inglés: un archivo renombrado se lee por el nombre que
 // tenga en esa base (`enLaBase`), y por eso este archivo nombra los viejos a propósito (LEGACY_READERS de spanish-names.js).
 const ARCHIVOS_ORG = [['scripts/ci/validate-pipeline-in-ado.sh', 'scripts/ci/validar-pipeline-en-ado.sh'], 'scripts/install-tycon-hooks.sh', ['scripts/lib/harness-repo.js', 'scripts/lib/repo-del-arnes.js'], 'scripts/production/install-guard.sh'];
 /** La ruta con que existe en la base: la nueva si ya está, si no la vieja. */
 const enLaBase = (dirBase, f) => (Array.isArray(f) ? f.find((x) => fs.existsSync(path.join(dirBase, x))) || f[f.length - 1] : f);
-// El observador pasó a scripts/instincts/ en la story 8.12 (tanda R2) y dejó un reemplazo en la ruta vieja, que no
-// trae el chat: la nueva primero; la vieja sólo si la base es de antes de la mudanza. La vieja sale del mapa —nunca
-// escrita acá—; sin mapa (la copia pública), sólo la nueva.
+// El observador vive en scripts/instincts/; una base vieja lo tiene en la ruta anterior, y el reemplazo que quedó ahí no
+// trae el chat: se prueba la ruta nueva primero y la vieja sólo si la base es anterior a la mudanza. La vieja sale del
+// mapa —nunca escrita acá—; sin mapa (la copia pública), sólo la nueva.
 const CHAT_NEW = 'scripts/instincts/instinct-observer.js';
 const chatOld = (usableEntries(loadMap()).find((x) => x.kind === 'file' && x.new === CHAT_NEW) || {}).old;
 const ARCHIVO_CHAT = [CHAT_NEW, ...(chatOld ? [chatOld] : [])];
@@ -93,9 +92,9 @@ function real(p) { try { return fs.realpathSync(p); } catch (_) { return null; }
 function tmp(p) { return fs.mkdtempSync(path.join(os.tmpdir(), p)); }
 function leer(p) { try { return fs.readFileSync(p, 'utf8'); } catch (_) { return ''; }
 }
-// 🔴 Un proceso que NO llegó a correr (binario ausente, tiempo agotado, señal) no devuelve «vacío»: devuelve
+// Un proceso que NO llegó a correr (binario ausente, tiempo agotado, señal) no devuelve «vacío»: devuelve
 // «no medido», y una medición con un «no medido» adentro es roja — si los dos lados fallan por la misma causa
-// ajena, compararlos como «igual» sería verificarse a sí misma (cazador de fallos silenciosos, vuelta 1).
+// ajena, compararlos como «igual» sería verificarse a sí misma.
 const FALLOS = [];
 function correr(cmd, args, opts = {}) {
   const r = spawnSync(cmd, args, Object.assign({ encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }, opts));
@@ -126,7 +125,7 @@ function parsearHooks(texto) {
   }
   return { hooks: hooks.sort(), settings: settings.sort() };
 }
-/** Un hook renombrado (story 8.9, tanda C1) sale en la base con su nombre viejo: los dos lados pasan por el mapa antes de
+/** Un hook renombrado sale en la base con su nombre viejo: los dos lados pasan por el mapa antes de
  *  comparar, así un renombre no se lee como «falta uno y sobra otro» ni apaga una integración que sigue prendida. */
 function conNombresNuevos(nombres, renombres = basenameRenames(loadMap())) {
   if (!renombres.size) return nombres;
@@ -139,7 +138,7 @@ function hooksDe(clon, home) {
   return { rc: r.rc, nombres: conNombresNuevos(p.hooks).sort(), settings: p.settings, salida: r.out };
 }
 /** Qué falta y qué sobra entre las dos listas. «No pude mirar» no es «coincide»: un reporte sin una sola línea de
- *  hook parseable es una medición fallida (`fallos`), no dos listas iguales (pase adversarial, vuelta 1). */
+ *  hook parseable es una medición fallida (`fallos`), no dos listas iguales. */
 function compararHooks(hBase, hNuevo) {
   const fallos = [];
   if (!hBase.nombres.length) fallos.push('instalador de la base --check: ninguna línea de hook parseable');
@@ -150,7 +149,7 @@ function compararHooks(hBase, hNuevo) {
     fallos,
   };
 }
-// ── el estado de las ocho integraciones (tanda B) ─────────────────────────────────────────────────
+// ── el estado de las ocho integraciones ─────────────────────────────────────────────────
 /** Los hooks que el instalador registra por cada integración (los mismos que gatea por su llave). */
 const HOOKS_DE_INTEGRACION = Object.freeze({
   clockify: ['clocki/scripts/on-prompt.js', 'clocki/scripts/touch-activity.js'],
@@ -166,11 +165,10 @@ function estadoPorHooks(nombres, llave) {
   return n === h.length ? 'prendida' : n === 0 ? 'apagada' : `parcial (${n}/${h.length})`;
 }
 /** Las ocho, base vs nuevo. `conf` es la salida de `tycon-config.js explain --json` con el perfil (sus `integraciones` son
- *  textos como «prendida (perfil)»). Devuelve [{ llave, viejo, nuevo, igual, nota }] en el orden de la tabla de la story. */
+ *  textos como «prendida (perfil)»). Devuelve [{ llave, viejo, nuevo, igual, nota }] en el orden de las integraciones. */
 /** Lo que el informe escribe del chat de Telegram: la IGUALDAD se decide sobre los valores reales y sólo se enmascara el
  *  texto — la base dice «presente» y el nuevo «presente» si es el mismo chat u «OTRO» si cambió, así un chat distinto sale
- *  rojo (AC 11: una diferencia es rojo). La primera versión armaba el mismo texto para los dos lados cuando eran distintos
- *  y el informe daba verde (revisor de cobertura de ACs, tanda B, vuelta 3). */
+ *  rojo (una diferencia es rojo): armar el mismo texto para los dos lados cuando son distintos daría verde. */
 function chatEnmascarado(chatBase, chatNuevo) {
   const viejo = chatBase ? 'chat presente (enmascarado)' : null;
   const nuevo = chatNuevo ? (chatBase && chatBase !== chatNuevo ? 'chat presente (OTRO, enmascarado)' : 'chat presente (enmascarado)') : null;
@@ -195,7 +193,7 @@ function compararIntegraciones({ hooksBase, hooksNuevo, conf, orgBase, chatBase,
 
 /** De dónde sale «lo nuevo»: HEAD, y si el árbol de trabajo tiene cambios sin commitear, se dice — corrido ANTES del
  *  commit (el orden del pipeline) HEAD es el mismo sha que la base, y un informe que dijera «base X · nuevo X» no
- *  sería reproducible (pase adversarial, vuelta 1). Se mira `status --porcelain` (cuenta lo no versionado), no
+ *  sería reproducible. Se mira `status --porcelain` (cuenta lo no versionado), no
  *  `describe --dirty` (que con un archivo nuevo sin agregar no dice nada). */
 function procedenciaDe(raiz) {
   const shaHead = correr('git', ['-C', raiz, 'rev-parse', 'HEAD']).stdout.trim();
@@ -215,14 +213,14 @@ function reposDeProducto(root, n) {
 }
 
 function main() {
-  if (process.argv.includes('--settings')) return settingsMode(process.argv);   // story 8.13 (AC 14): modo aparte, al final del archivo
+  if (process.argv.includes('--settings')) return settingsMode(process.argv);   // modo aparte, al final del archivo
   const base = arg('--base');
   if (!base) { console.error('uso: profile-equivalence.js --base <sha> [--out <md>] [--json] [--real-clone <dir>] [--agent-skills <dir>]'); return 2; }
   const out = arg('--out', path.join(RAIZ, 'tasks', 'medicion-8.3-perfil-del-equipo.md'));
   const clonReal = real(arg('--real-clone', RAIZ)) || RAIZ;
   let skills = arg('--agent-skills');
-  // «No pude preguntar» no es «está en el lugar de siempre» (story 8.18, 2026-10-04): la biblioteca tira cuando su vecina
-  // está y no carga. Seguir con ~/.claude/agent-skills era medir las skills instaladas en vez de las del clon, callado.
+  // «No pude preguntar» no es «está en el lugar de siempre»: la biblioteca tira cuando su vecina está y no carga, y
+  // seguir con ~/.claude/agent-skills mediría en silencio las skills instaladas en vez de las del clon.
   if (!skills) {
     try { skills = require(path.join(RAIZ, 'scripts', 'lib', 'skills-dir.js')).resolveSkillsDirs().repo; } catch (e) {
       console.error(`no pude resolver la carpeta de skills: ${String((e && e.message) || e).split('\n')[0]} (o decila con --agent-skills <dir>)`);
@@ -278,8 +276,8 @@ function main() {
 
   // la carpeta del arnés: el literal de la base (resuelto contra este home) contra el enlace
   const litBase = leer(path.join(dirBase, 'scripts', 'hooks', 'git-pre-commit-global.sh')).match(/TYCON_GUIDES_DIR:-\$HOME\/([^}]+)\}/);
-  // una base posterior a la story 8.19 ya no escribe el literal (busca el lugar y después el viejo, con harness_dir): ahí
-  // la carpeta de la base es la que resuelve esa misma regla en esta máquina (segunda vuelta, M8)
+  // una base reciente ya no escribe el literal (busca el lugar y después el viejo, con harness_dir): ahí
+  // la carpeta de la base es la que resuelve esa misma regla en esta máquina
   const carpetaBase = litBase ? path.join(os.homedir(), litBase[1])
     : (/harness_dir\(\)/.test(leer(path.join(dirBase, 'scripts', 'hooks', 'git-pre-commit-global.sh'))) ? require('../setup/harness/place.js').resolvePlace({ home: os.homedir() }).dir : null);
   item('valores', 'carpeta del arnés que ven los scripts (literal de la base vs el lugar del arnés, o su nombre viejo)',
@@ -302,14 +300,14 @@ function main() {
 
   // chat de Telegram: el literal de la base vs telegram.chat_id resuelto
   const chatLit = leer(path.join(dirBase, chatFileIn(dirBase))).match(/TYCON_INSTINCT_TELEGRAM_CHAT_ID \|\| '(\d+)'/);
-  // 🔒 el chat NUNCA se escribe en el informe (se commitea; revisor de seguridad, tanda B): se compara el valor y se
+  // 🔒 el chat NUNCA se escribe en el informe (se commitea): se compara el valor y se
   // imprime «presente» / «otro» / «ninguno»
   const chatB = chatLit ? chatLit[1] : null, chatN = conf ? conf.valores.telegram.chat_id : null;
   const [chatViejo, chatNuevo] = chatEnmascarado(chatB, chatN);
   item('valores', 'chat de Telegram del observador de instintos (literal de la base vs telegram.chat_id resuelto)', chatViejo, chatNuevo,
     { nota: conf ? `origen: ${conf.origenes['telegram.chat_id']}` : '' });
 
-  // 4. integraciones (tanda B): el estado de cada una en la base y en el nuevo, por sondas mecánicas — no una tabla
+  // 4. integraciones: el estado de cada una en la base y en el nuevo, por sondas mecánicas — no una tabla
   const codexBase = process.env.TYCON_CODEX === '1' ? 'prendida' : process.env.TYCON_CODEX === '0' ? 'apagada' : 'detect';
   const porPresencia = (nombres, re) => (nombres.some((h) => re.test(h)) ? 'prendida' : 'apagada');
   if (!conf) FALLOS.push('tycon-config.js explain --json: ilegible — los estados de integración no se pudieron medir');
@@ -362,27 +360,26 @@ function main() {
 // ASINCRÓNICAS y `process.exit()` mata el proceso con parte de lo escrito en el aire. Medido con
 // la forma de este guión (una escritura grande y salir): a 41 KB llega cortado en 8192 y el JSON
 // se rompe; el consumidor lo lee como «no pude», nunca como un error.
-// Caso: guides/maintaining/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
 if (require.main === module) {
-  // story 8.9: las opciones viejas en castellano siguen andando hasta el retiro
+  // las opciones viejas en castellano siguen andando hasta el retiro
   require('../lib/legacy-names.js').aliasArgv('scripts/publishing/profile-equivalence.js', { exitCode: 2 });
   process.exitCode = main();
 }
 module.exports = { main, parsearHooks, conNombresNuevos, compararHooks, procedenciaDe, SIN_EFECTOS, HOOKS_DE_INTEGRACION, estadoPorHooks, compararIntegraciones, chatEnmascarado, chatFileIn };
 
-// ── story 8.13 (AC 14): `--settings <antes.json> <despues.json>` — dos settings.json, por los hooks del arnés ──────
+// ── `--settings <antes.json> <despues.json>` — dos settings.json, por los hooks del arnés ──────
 // Modo aparte del `--base`: no extrae ninguna línea base ni corre instaladores; mira dos archivos ya escritos (la
-// copia de la noche anterior y el de la mañana, T16) y dice si los hooks DEL ARNÉS son los mismos por nombre y valor.
+// copia de la noche anterior y el de la mañana) y dice si los hooks DEL ARNÉS son los mismos por nombre y valor.
 // Nada de lo de arriba cambia por esto: `parsearHooks`/`compararHooks` leen el reporte `--check` de un instalador,
 // no un settings.json, y comparan sólo nombres; acá hace falta el valor (comando + async), así que son funciones nuevas.
 
 // (funciones, no `const` de módulo: el bloque CLI de arriba llama a `main()` antes de que esta cola se evalúe)
 /** Un hook es «del arnés» si su comando nombra los hooks del clon, una skill de agent-skills o el lugar del arnés (por
- *  cualquiera de sus dos nombres, como segmento de ruta: story 8.19). */
+ *  cualquiera de sus dos nombres, como segmento de ruta). */
 // Un clon del arnés puede vivir en cualquier carpeta y el aplicador escribe su ruta REAL: además de los nombres de
 // siempre, cuenta como del arnés un `<carpeta>/scripts/hooks/<archivo>` cuya carpeta es un clon del arnés (tiene
-// `scripts/install-tycon-hooks.sh`). Antes sólo se reconocía el nombre literal y un clon en otra carpeta quedaba entero
-// afuera, con veredicto verde (pase adversarial de la tanda A, clases 5 y 28).
+// `scripts/install-tycon-hooks.sh`). Reconocer sólo el nombre literal dejaría un clon en otra carpeta entero afuera,
+// con veredicto verde.
 // (la regex va adentro de la función, como las de al lado: el bloque CLI corre `main()` antes de que se evalúe la cola
 // del archivo, y una `const` de acá abajo todavía no existiría)
 function isHarnessClone(dir) { try { return Boolean(dir) && fs.existsSync(path.join(dir, 'scripts', 'install-tycon-hooks.sh')); } catch (_) { return false; } }
@@ -398,7 +395,7 @@ function isStartupLine(cmd) { return /\bgit\s+(?:-C\s+\S+\s+)?pull\b|\.tycon-pip
 /**
  * El nombre del script que corre un hook, con lo que lo distingue: la ruta DENTRO de agent-skills (`clocki/scripts/
  * on-prompt.js` y `tycon-pipeline/scripts/on-prompt.js` son dos hooks distintos: con el nombre suelto la comparación
- * dependía del orden — pase adversarial, clases 3, 6 y 13) o `hooks/<archivo>` para los del arnés.
+ * depende del orden) o `hooks/<archivo>` para los del arnés.
  */
 function scriptName(command) {
   const s = /agent-skills\/skills\/([\w./-]+\.(?:js|sh|ps1|py|command))\b/.exec(command);

@@ -7122,3 +7122,23 @@ status: in-progress
   const c1 = r.findings.filter((x) => x.rule === 'ACCOV-C1');
   assert.deepEqual(c1, [], `sin críticos falsos de ACCOV-C1: ${JSON.stringify(c1)}`);
 });
+
+// ── `set-models` acepta un nivel y guarda el modelo de Claude ───────────────────────────────────────────
+test('T12 SetModels_AceptaNivel @story-2.70 @ac-5', () => {
+  for (const [pedido, guardado] of [['strong', 'opus'], ['opus', 'opus'], ['economy', 'haiku']]) {
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'mk-set-models-270-'));
+    const sid = 'set-models-270';
+    writeFakeMarker(fakeHome, sid, {});
+    execFileSync(process.execPath, [MARKER, 'set-models', `adversarial=${pedido}`], markerEnv(sid, fakeHome));
+    const m = JSON.parse(fs.readFileSync(path.join(fakeHome, '.claude', '.tycon-pipeline', 'active', `${sid}.json`), 'utf8'));
+    assert.deepStrictEqual(m.modelRequests.values, { adversarial: guardado }, pedido);
+    fs.rmSync(fakeHome, { recursive: true, force: true });
+  }
+  // un valor que no es nivel ni nombre sigue rechazado, y el mensaje lista los niveles
+  const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'mk-set-models-270-'));
+  writeFakeMarker(fakeHome, 'set-models-270b', {});
+  const r = require('child_process').spawnSync(process.execPath, [MARKER, 'set-models', 'adversarial=medio'], markerEnv('set-models-270b', fakeHome));
+  assert.strictEqual(r.status, 2);
+  assert.match(r.stderr, /economy, balanced, strong, max/);
+  fs.rmSync(fakeHome, { recursive: true, force: true });
+});

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * work-items.js — el pedido de trabajo del líder (story 4.4).
+ * work-items.js — el pedido de trabajo del líder.
  *
  * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────────────────
  * La revisión nocturna de dependencias avisaba SÓLO por un pull request en el repo del arnés, que ve
@@ -10,7 +10,7 @@
  * administra, con el responsable de respaldo mencionado**, la misma noche en que se detecta, y nunca
  * dos veces.
  *
- * ── QUIÉN RESPONDE (story 8.30, decisión 6) ─────────────────────────────────────────────────────
+ * ── QUIÉN RESPONDE ─────────────────────────────────────────────────────
  * El RESPONSABLE DE RESPALDO cumple tres papeles: (a) se lo excluye al deducir el dueño entre los
  * administradores, (b) se lo menciona en cada comentario del arnés, y (c) recibe el pedido cuando no
  * hay un dueño único. Sin su identidad resuelta no se crea ningún pedido. Es `owners.default` de
@@ -33,14 +33,14 @@
  *    anoche se perdió), se ADOPTA. 🔴 Si la consulta falla o no se puede leer, NO se crea nada:
  *    «no pude preguntar» no es «no hay».
  * 3. **LA WIQL ACOTA POR PROYECTO** con `[System.TeamProject] = @project`: la ruta /{proyecto}/ sola
- *    NO acota (medido el 2026-09-10: 183 work items contra 0). Y `az boards query` no sirve para
+ *    NO acota (devuelve work items de otros proyectos). Y `az boards query` no sirve para
  *    decidir «no existe»: con 0 resultados imprime 0 bytes y sale 0, igual que nada.
- * 4. **EL TEXTO VA A REPRO STEPS, EN HTML, POR ARCHIVO.** Medido el 2026-09-13: el formulario del Bug
+ * 4. **EL TEXTO VA A REPRO STEPS, EN HTML, POR ARCHIVO.** El formulario del Bug
  *    no muestra Descripción. Y `az` 2.79 lee como archivo todo lo que siga a un `=@` o empiece con
  *    `@`, así que un texto libre en línea no es seguro.
  * 5. **NACE APAGADA.** Con `azure.pedidos_activos` distinto de `true` (o `--simulate`) hace las
  *    lecturas y publica lo que HABRÍA creado, sin una sola escritura. Se enciende después de probar
- *    los dos mails y los dos permisos con la identidad del pipeline (AC 12 de la story).
+ *    los dos mails y los dos permisos con la identidad del pipeline.
  * 6. **HABLA CON AZURE SÓLO POR `TYCON_ADO_CMD`** (por defecto `az`), con `--org` y `-o json`
  *    explícitos en cada llamada: el default de `az devops configure` apunta a un proyecto que ya no
  *    existe, y la salida por defecto depende de la máquina. La suite usa un `az` de mentira.
@@ -50,10 +50,10 @@
  *                             [--today <fecha>] [--simulate] [--json]
  *   node work-items.js state  [--config <f>] [--pending <dir>] [--out <dir>] [--today <fecha>]
  *
- * ── `state` (story 4.5): LO QUE AZURE DICE DE CADA PEDIDO, ESCRITO ANTES DE DECIDIR ─────────────
+ * ── `state`: LO QUE AZURE DICE DE CADA PEDIDO, ESCRITO ANTES DE DECIDIR ─────────────
  * Vuelca a `<out>/bugs-<hoy>.json` el estado de cada pedido que nombran las fichas de `pending/` y
  * `promoted/`, y los Bugs del arnés que ninguna ficha nombra. El nocturno decide sobre ese archivo
- * sin tocar la red. Cuatro reglas medidas contra Azure el 2026-09-10:
+ * sin tocar la red. Cuatro reglas de Azure:
  *   · CERRADO SE LEE POR CATEGORÍA (`workItemTypeStates`, una vez por proyecto), nunca por el nombre:
  *     `Closed` (Agile) y `Done` (Scrum) son la misma cosa en dos vocabularios.
  *   · PERSONA = una revisión cuyo `System.ChangedBy.descriptor` no empieza con `svc.`. Un comentario
@@ -62,10 +62,10 @@
  *     los dos son «no leído», nunca «sin pedido».
  *   · LISTA BLANCA DE CAMPOS: el archivo viaja por git, y un comentario o una descripción pueden traer
  *     datos de cliente. Ni títulos, ni descripciones, ni `System.History`.
- * Este guion cambia el estado de un Bug en DOS casos (decisión del dev del 2026-09-15): lo CIERRA cuando el
+ * Este guion cambia el estado de un Bug en DOS casos: lo CIERRA cuando el
  * arreglo llegó a `main` en ese proyecto (`cerrarPedido`) y lo REABRE si la vulnerabilidad vuelve a un Bug
  * que cerró él y nadie tocó después (`reabrirPedido`). Nunca manda un motivo, nunca reabre lo que cerró una
- * persona, y el cruce de la 4.5 sólo comenta.
+ * persona, y el cruce sólo comenta.
  *
  * Exit: 0 = habló con Azure (aunque haya fallos por par: se cobran en el snapshot y en el aviso) ·
  *       2 = no pudo intentar nada (sin `azure.org`, sin snapshot de hoy, sin token, sin `az`) —
@@ -78,7 +78,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-// el nocturno vive en la misma carpeta (story 8.9): por la ruta vieja cargaría el reemplazo, que en Azure DevOps deja
+// el nocturno vive en la misma carpeta: por la ruta vieja cargaría el reemplazo, que en Azure DevOps deja
 // un aviso en la salida
 const noc = require('./nightly-dependencies');
 
@@ -86,9 +86,9 @@ const { listaDe, ponerLista, proyectoDe, proyectoAzureDe, etiqueta, leerTodasLas
 const operaciones = require('../../lib/operations-config.js');
 
 const RAIZ_REPO = path.resolve(__dirname, '..', '..', '..');
-// repos.json vive al lado de este guion desde la tanda F de la story 8.9; las fichas, en inbox/dependencies/
+// repos.json vive al lado de este guion; las fichas, en inbox/dependencies/
 const CONFIG_DEF = path.join(RAIZ_REPO, 'scripts', 'nightly', 'dependencies', 'repos.json');
-// el responsable de cada proyecto (story 8.30): en la raíz del repo de operaciones de la organización
+// el responsable de cada proyecto: en la raíz del repo de operaciones de la organización
 const OPERATIONS_DEF = path.join(RAIZ_REPO, 'operations.json');
 const OUT_DEF = path.join(RAIZ_REPO, '.dashboard', 'dependencias');
 const PENDING_DEF = path.join(RAIZ_REPO, 'inbox', 'dependencies');
@@ -96,9 +96,8 @@ const GRUPO_ADMIN = 'Project Administrators';
 const DIAS_SIN_PEDIDO = 7;                 // el mismo corte que `ignorado` en el nocturno
 const ORDEN_SEV = { critical: 2, high: 1 };
 // 🔴 La severidad del hallazgo va al campo Severity del Bug. Sin esto Azure pone su valor por defecto
-// («3 - Medium») y una crítica se ve en el tablero igual que cualquier otra cosa: pasó con los primeros
-// Bugs reales (una crítica en un proyecto de cliente, 2026-09-15). Medido ese día: los 8 proyectos aceptan estos cuatro valores.
-// Lo que no está en la tabla no se inventa: el campo no se manda.
+// («3 - Medium») y una crítica se ve en el tablero igual que cualquier otra cosa.
+// Los proyectos aceptan estos cuatro valores. Lo que no está en la tabla no se inventa: el campo no se manda.
 const SEVERIDAD_AZURE = { critical: '1 - Critical', high: '2 - High', moderate: '3 - Medium', low: '4 - Low' };
 const CAMPO_SEVERIDAD = 'Microsoft.VSTS.Common.Severity';
 const CAMPO_REPRO = 'Microsoft.VSTS.TCM.ReproSteps';
@@ -211,7 +210,7 @@ class NoSePuedeIntentar extends Error {}
  * 🔴 Se decide por el CÓDIGO DE SALIDA más la LEGIBILIDAD, nunca por «salida vacía»: ≠ 0 es fallo con
  * el stderr crudo; 0 con algo que no es JSON, o JSON sin el campo esperado (`valida` devuelve el
  * motivo), también. Sin `|| true`, sin descartar stderr: «no pude preguntar» y «pregunté y no hay»
- * no pueden salir iguales (incident-log#comando-fallado-leido-como-vacio-2026-09-04).
+ * no pueden salir iguales.
  */
 function crearAz({ cmd, org }) {
   return function az(args, { valida = null } = {}) {
@@ -228,12 +227,12 @@ function crearAz({ cmd, org }) {
   };
 }
 
-// ── piezas puras (exportadas: la 4.5 reusa este mismo guion) ────────────────────────────────────
+// ── piezas puras (exportadas: otros guiones reusan este) ────────────────────────────────────
 
 /** Los proyectos de Azure de una ficha: donde está SIN declarar (`repos:`). `declarada_en:` ya decidió. */
 function proyectosDeFicha(f, cfg) {
   // 🔴 `proyectoAzureDe`, no `proyectoDe`: a un repo que no está en repos.json no se le inventa un
-  // proyecto (el producto no es el proyecto — pase adversarial en Opus). Esos repos se publican aparte.
+  // proyecto (el producto no es el proyecto). Esos repos se publican aparte.
   return [...new Set(f.fi.listas.repos.map((r) => proyectoAzureDe(r, cfg)).filter(Boolean))];
 }
 
@@ -253,7 +252,7 @@ function paresPorPedir(fichas, cfg) {
  * reintentos de anoche primero, después más noches, después severidad; el id desempata para que la
  * corrida sea reproducible.
  *
- * 🔴 Una CRÍTICA no consume cupo y pide la misma noche (pedido del dev, 2026-09-14): el mismo criterio
+ * 🔴 Una CRÍTICA no consume cupo y pide la misma noche: el mismo criterio
  * que el anuncio del nocturno, para que el pull request y el Bug de una crítica salgan juntos.
  */
 function ordenarYTopar(sinPedido, tope, fallidasAnoche) {
@@ -268,7 +267,7 @@ function ordenarYTopar(sinPedido, tope, fallidasAnoche) {
 }
 
 /**
- * El dueño deducido de las PERSONAS de «Project Administrators», sin el responsable de respaldo (AC 4).
+ * El dueño deducido de las PERSONAS de «Project Administrators», sin el responsable de respaldo.
  *
  * El valor asignado es el `principalName` TAL COMO AZURE LO DEVOLVIÓ, y viaja crudo en
  * `--fields System.AssignedTo=…`, no por `--assigned-to`: con esa opción el CLI trata un valor sin
@@ -290,7 +289,7 @@ function deducirDueno(personas, respaldoMail) {
 }
 
 /**
- * La identidad del responsable de respaldo por la API de identidades (AC 4e, medido el 2026-09-13 con el PAT).
+ * La identidad del responsable de respaldo por la API de identidades.
  * `{ ok, id, nombre }` o `{ ok: false, motivo }`. Es el ÚNICO resolvedor de identidad del arnés.
  */
 function resolverIdentidad(az, mail) {
@@ -316,7 +315,7 @@ function responsablesDeRepos(azure) {
 }
 
 /**
- * Quién responde (story 8.30, decisión 6): operations.json si está —el de `--operations`, o el de la raíz
+ * Quién responde: operations.json si está —el de `--operations`, o el de la raíz
  * del repo—, y si no, repos.json. 🔴 Un operations.json que está y no valida no se saltea: el motivo vuelve
  * como `{ ok: false }` y no se crea ningún pedido. Pedido con `--operations` y ausente, tampoco se adivina.
  */
@@ -333,7 +332,7 @@ function responsables(a, azure) {
 }
 
 /**
- * Las PERSONAS de «Project Administrators» de un proyecto (AC 4): `{ ok, personas }` o
+ * Las PERSONAS de «Project Administrators» de un proyecto: `{ ok, personas }` o
  * `{ ok: false, motivo }`. Pagina la lista de grupos hasta encontrarlo (tope de 20 páginas).
  */
 function leerAdministradores(az, proyecto) {
@@ -353,9 +352,9 @@ function leerAdministradores(az, proyecto) {
   if (!m.ok) return { ok: false, motivo: m.motivo };
   const personas = Object.values(m.valor).filter((x) => x && x.subjectKind === 'user')
     .map((x) => ({ nombre: x.displayName || x.principalName, cuenta: x.principalName || x.mailAddress, mail: x.mailAddress || x.principalName }));
-  // 🔴 Una persona SIN cuenta no se puede asignar ni excluir: la respuesta no se pudo leer entera (AC 4d).
-  // Sin esto viajaba literal `System.AssignedTo=undefined` y el comentario decía «Asignado a undefined»
-  // (pase adversarial en Fable, vuelta 2). Azure devuelve `principalName` para todo usuario: si falta,
+  // 🔴 Una persona SIN cuenta no se puede asignar ni excluir: la respuesta no se pudo leer entera.
+  // Sin esto viaja literal `System.AssignedTo=undefined` y el comentario dice «Asignado a undefined».
+  // Azure devuelve `principalName` para todo usuario: si falta,
   // algo raro pasó, y se dice en vez de adivinar.
   const sinCuenta = personas.filter((x) => !x.cuenta);
   if (sinCuenta.length) {
@@ -365,14 +364,14 @@ function leerAdministradores(az, proyecto) {
 }
 
 /** Los pasos que dejan a un par (ficha, proyecto) SIN pedido anotado: los únicos que piden reintento. */
-// El paso que resuelve la identidad del líder se llama `lead-identity` desde la story 8.10 (AC 23: el aviso del arranque,
+// El paso que resuelve la identidad del líder se llama `lead-identity` (el aviso del arranque,
 // que se publica, lo lee y no puede llevar un nombre de persona). Las noches anteriores lo escribieron como `identidad-`
 // más ese nombre: se reconocen por el prefijo, para que su prioridad de reintento no se pierda con el cambio.
 const PASOS_SIN_PEDIDO = ['lead-identity', 'duplicados', 'crear', 'escribir-ficha'];
 const isNoWorkItemStep = (paso) => PASOS_SIN_PEDIDO.includes(paso) || /^identidad-/.test(String(paso || ''));
 
 /**
- * La iteración a la que va el pedido (AC 5): `{ ruta, motivo, fallo }`. `fallo: true` sólo cuando NO SE
+ * La iteración a la que va el pedido: `{ ruta, motivo, fallo }`. `fallo: true` sólo cuando NO SE
  * PUDO LEER (eso es un fallo y va a `pedidos.fallidos`); «sin iteración actual» o «terminó» son hechos
  * del tablero, no fallos. En los tres casos la ruta es la raíz: la iteración nunca frena el pedido.
  */
@@ -416,7 +415,7 @@ function anotarPedido(archivo, proyecto, id) {
 /**
  * Las fichas cuyo pedido falló la última noche que intentó pedir: `{ ids, aviso }`.
  *
- * Se toma el último snapshot ANTERIOR a hoy con sección `pedidos` (los de antes de la 4.4 no la
+ * Se toma el último snapshot ANTERIOR a hoy con sección `pedidos` (los que no la
  * tienen y se saltean: no son un fallo). 🔴 Pero uno ILEGIBLE corta la búsqueda: saltearlo y seguir
  * con uno más viejo priorizaría fichas con datos de otra noche, en silencio. Esa noche no se priorizan
  * reintentos —se crean por antigüedad igual— y el `aviso` sale en la salida del paso.
@@ -447,8 +446,8 @@ function fallidasDeAnoche(outDir, hoy) {
   }
   // 🔴 La prioridad es para un fallo de UNA noche. Una ficha que falló anoche Y anteanoche vuelve a
   // competir por antigüedad: si no, una falla permanente en un proyecto (un permiso que falta, dos
-  // pedidos duplicados que nadie resuelve) acaparaba el cupo todas las noches y postergaba sin fin a
-  // las fichas sanas de los demás proyectos (pase adversarial en Opus).
+  // pedidos duplicados que nadie resuelve) acapararía el cupo todas las noches y postergaría sin fin a
+  // las fichas sanas de los demás proyectos.
   const [anoche = new Set(), anteanoche = new Set()] = noches;
   return { ids: new Set([...anoche].filter((id) => !anteanoche.has(id))), aviso: avisos.join(' · ') || null };
 }
@@ -474,7 +473,7 @@ function hablar(ctx) {
   const textos = [];
   const unaVez = (lista, item) => { if (!lista.some((x) => x.proyecto === item.proyecto)) lista.push(item); };
 
-  // 🔴 El Bug suelto se adopta PRIMERO (story 4.5, AC 14c): si la ficha que nombra está viva, sin esto
+  // 🔴 El Bug suelto se adopta PRIMERO: si la ficha que nombra está viva, sin esto
   // el camino de crear lo buscaría por su etiqueta igual — pero una ficha ya cerrada no la mira nadie.
   adoptarHuerfanos(ctx, res);
 
@@ -484,8 +483,8 @@ function hablar(ctx) {
   const sinPedido = pares.filter((x) => x.faltan.length);
   res.fichas_sin_pedido = sinPedido.length;
   // 🔴 Un Bug por (paquete, proyecto), aunque el nocturno deje DOS fichas vivas para el mismo hecho
-  // (dos huellas la misma noche, o una ficha que se extiende a otro proyecto — pase adversarial en
-  // Opus, bug). La identidad del pedido es por ficha; esto es la red para que la segunda no abra otro.
+  // (dos huellas la misma noche, o una ficha que se extiende a otro proyecto).
+  // La identidad del pedido es por ficha; esto es la red para que la segunda no abra otro.
   const clavePaquete = (f, p) => `${String(f.fi.escalares.paquete || '').toLowerCase()}|${p}`;
   const pedidoDelPaquete = new Map();
   // En orden de id: si dos fichas ya tenían pedido para el mismo paquete (lo pudo dejar el código
@@ -500,11 +499,11 @@ function hablar(ctx) {
   const { elegidas, postergadas } = ordenarYTopar(sinPedido, tope, anoche.ids);
   for (const x of postergadas) res.postergados.push({ ficha: x.ficha.idFicha, proyectos: x.faltan });
 
-  // Quién responde (story 8.30): lo resolvió `correr` desde operations.json o repos.json. Un llamador
-  // directo (la 4.5, las pruebas) que no lo pasa usa el de repos.json.
+  // Quién responde: lo resolvió `correr` desde operations.json o repos.json. Un llamador
+  // directo (las pruebas) que no lo pasa usa el de repos.json.
   const quien = ctx.responsables || responsablesDeRepos(azure);
-  // La identidad del responsable de respaldo: una vez por corrida, y sólo si hay algo que pedir o que avisar (story 4.5:
-  // el aviso de «cerrado con la vulnerabilidad viva» lleva la misma mención que el primer comentario).
+  // La identidad del responsable de respaldo: una vez por corrida, y sólo si hay algo que pedir o que avisar:
+  // el aviso de «cerrado con la vulnerabilidad viva» lleva la misma mención que el primer comentario.
   let respaldo = null, motivoRespaldo = null, respaldoLeido = false;
   const respaldoDe = () => {
     if (!respaldoLeido) {
@@ -580,13 +579,12 @@ function hablar(ctx) {
       if (nuestros.length > 1) { fallo('duplicados', `pedidos duplicados en Azure: ${[...nuestros].sort((a, b) => a - b).join(', ')} — una persona decide cuál queda`); continue; }
       if (nuestros.length === 1) {
         // 🔴 El Bug existe en Azure aunque la ficha no se pueda anotar: se registra ANTES, como en la
-        // rama de crear. Si no, una segunda ficha del mismo paquete abría otro Bug esa misma noche
-        // (pase adversarial en Sonnet).
+        // rama de crear. Si no, una segunda ficha del mismo paquete abriría otro Bug esa misma noche.
         pedidoDelPaquete.set(clavePaquete(f, p), { ficha: idFicha, id: nuestros[0] });
         if (!simulado) {
           try { anotarPedido(f.archivo, p, nuestros[0]); }
           catch (e) { fallo('escribir-ficha', `no pude anotar el pedido adoptado ${nuestros[0]}: ${e.message}`); continue; }
-          // 🔴 El adoptado recibe la mención (pase adversarial en Opus): si `crear` respondió con error
+          // 🔴 El adoptado recibe la mención: si `crear` respondió con error
           // pero Azure sí lo creó, este Bug nunca tuvo su comentario, y «el responsable de respaldo va SIEMPRE». Si el que
           // se perdió fue el push, es un segundo comentario — ruido chico frente a un Bug sin mención.
           const adop = `<p><a href="#" data-vss-mention="version:2.0,${escHtml(respaldo.id)}">@${escHtml(respaldo.nombre)}</a> — este pedido ya existía en Azure con la etiqueta <code>arnes:${escHtml(idFicha)}</code> y la ficha no lo tenía anotado (se perdió el registro de una noche anterior, o la creación respondió con error aunque se hizo): la revisión nocturna lo adopta.</p>`;
@@ -599,7 +597,7 @@ function hablar(ctx) {
 
       // Crear.
       // 🔴 Una lectura que NO SE PUDO HACER (administradores, iteración) no frena el pedido —cae en
-      // el responsable de respaldo o en la raíz, y lo dice— pero SÍ es un fallo (AC 7): el permiso de leer grupos es justo
+      // el responsable de respaldo o en la raíz, y lo dice— pero SÍ es un fallo: el permiso de leer grupos es justo
       // el que nadie verificó con la identidad del pipeline, y si fallara todas las noches el aviso de
       // arranque tiene que decirlo, no esconderlo en `sin_dueno_unico`.
       const dueno = duenoDe(p);
@@ -668,8 +666,8 @@ function hablar(ctx) {
     let faltan = x.faltan;
     if (simulado) {
       // 🔴 Simulado no escribe la ficha: lo que esta corrida habría creado o adoptado sale de lo que ella
-      // misma registró. Si no, el mismo par salía en «habría creado» y en «sin pedido desde hace N días»,
-      // justo en la salida que se lee para decidir si encender los pedidos (pase adversarial en Sonnet).
+      // misma registró. Si no, el mismo par saldría en «habría creado» y en «sin pedido desde hace N días»,
+      // justo en la salida que se lee para decidir si encender los pedidos.
       const saldria = new Set([...res.creados, ...res.adoptados].filter((y) => y.ficha === x.ficha.idFicha).map((y) => y.proyecto));
       faltan = faltan.filter((p) => !saldria.has(p));
     } else {
@@ -683,10 +681,10 @@ function hablar(ctx) {
     if (x.desconocidos.length) partes.push(`repo(s) fuera de repos.json: ${x.desconocidos.join(', ')} — sin proyecto de Azure conocido, no se les pide`);
     if (postergadasIds.has(x.ficha.idFicha)) partes.push('postergada por el tope de la noche');
     // 🔴 El fallo que explica ESTA ausencia: de un proyecto que sigue sin pedido y de un paso que lo
-    // impidió. Con «el primero de la ficha» salía «falló administradores» sobre el proyecto donde el que
-    // falló fue `crear` (pase adversarial en Fable, tres lentes por separado).
-    // Una razón POR PROYECTO: con dos trabados por motivos distintos, una sola razón hacía leer el
-    // problema de uno como si fuera el del otro (pase adversarial en Sonnet).
+    // impidió. Con «el primero de la ficha» saldría «falló administradores» sobre el proyecto donde el que
+    // falló fue `crear`.
+    // Una razón POR PROYECTO: con dos trabados por motivos distintos, una sola razón haría leer el
+    // problema de uno como si fuera el del otro.
     const razones = faltan.map((proy) => {
       const suyo = res.fallidos.find((y) => y.ficha === x.ficha.idFicha && y.proyecto === proy && isNoWorkItemStep(y.paso));
       return suyo ? `${faltan.length > 1 ? `${proy}: ` : ''}falló ${suyo.paso}: ${suyo.motivo}` : null;
@@ -707,23 +705,22 @@ function hablar(ctx) {
  * Cierra un pedido cuya parte se pagó en `main`. `{ ok: true, cerrado: true|false, estado, motivo_azure }`
  * o `{ ok: false, motivo }`.
  *
- * 🔴 DECISIÓN DEL DEV (2026-09-15): «si ya está en main ya está arreglado; cuándo subirlo a prod es una
- * decisión del equipo». Hasta ese día el Bug sólo recibía «ya no aparece» y lo cerraba una persona
- * (story 4.4, regla 5). Lo que NO cambió: la deuda declarada no cierra (no es un arreglo), el cruce de
- * la 4.5 no cambia estados, y nada reabre un Bug.
+ * 🔴 Si el arreglo ya está en `main`, el Bug está arreglado; cuándo subirlo a prod es una decisión del
+ * equipo. Por eso el aviso «ya no aparece» además lo cierra.
+ * La deuda declarada no cierra (no es un arreglo) y el cruce no cambia estados.
  *
  * · El estado de cierre sale de las categorías del proyecto (el único de categoría `Completed`), no de
  *   un nombre fijo: Agile es Closed, Scrum es Done. Cero o más de uno → no se cierra y se dice.
- * · No se manda motivo. Medido con validateOnly el 2026-09-15: Azure pone «Fixed and verified» (New →
+ * · No se manda motivo. Con validateOnly se ve que Azure pone «Fixed and verified» (New →
  *   Closed), «Verified» (Resolved → Closed) y «Work finished» (New → Done) — los tres en
- *   `motivos_arreglado`, así que el cruce de la 4.5 lo lee como arreglado.
+ *   `motivos_arreglado`, así que el cruce lo lee como arreglado.
  * · Un Bug que una persona ya cerró, quitó o resolvió (Completed, Removed, Resolved), o que creó una persona,
  *   no se toca: `cerrado: false`. Uno que no es el Bug de la ficha (otro proyecto, otro tipo, sin su
  *   etiqueta) tampoco, y además no se comenta (`ajeno`).
  */
 /**
  * Lee el work item y verifica que sea SU Bug antes de cambiarle el estado: el proyecto de la línea de
- * `pedidos:`, un Bug, con la etiqueta de la ficha (revisión adversarial: un id mal anotado cerraba un work
+ * `pedidos:`, un Bug, con la etiqueta de la ficha (un id mal anotado cerraría un work
  * item ajeno — los ids son únicos en la organización). `{ ok, fields }` · `{ ok: false, ajeno, motivo }`.
  */
 function leerSuPedido(az, id, proyecto, idFicha) {
@@ -754,7 +751,7 @@ function cerrarPedido(az, id, proyecto, idFicha, categoriasDe) {
 
 function cerrarLeido(az, id, proyecto, f, categoriasDe) {
   // 🔴 Sólo cierra lo que creó el arnés: una COPIA hecha por una persona (con las mismas etiquetas) se adopta
-  // como pedido y se cerraba esa misma noche. Persona = descriptor que no empieza con `svc.` (la regla de la 4.5).
+  // como pedido y se cerraría esa misma noche. Persona = descriptor que no empieza con `svc.` (la regla del cruce).
   const creador = f['System.CreatedBy'];
   const desc = creador && typeof creador === 'object' ? String(creador.descriptor || '') : '';
   if (!desc.startsWith('svc.')) return { ok: true, cerrado: false, porque: 'persona', motivo_azure: null };
@@ -777,13 +774,13 @@ function cerrarLeido(az, id, proyecto, f, categoriasDe) {
 }
 
 /**
- * Reabre un pedido que cerró el ARNÉS y cuya vulnerabilidad volvió a ese proyecto (decisión del dev,
- * 2026-09-15: si no, el tablero del equipo dice «Closed» con la vulnerabilidad viva y sólo el responsable de respaldo se entera).
+ * Reabre un pedido que cerró el ARNÉS y cuya vulnerabilidad volvió a ese proyecto
+ * (si no, el tablero del equipo dice «Closed» con la vulnerabilidad viva y sólo el responsable de respaldo se entera).
  * `{ ok: true, reabierto: true|false, porque }` o `{ ok: false, ajeno?, motivo }`.
  *
  * · Sólo si sigue cerrado (categoría Completed) y NADIE le cambió el estado después del cierre del arnés: la
  *   fecha del último cambio de estado tiene que ser la de la marca (`desde`). Si una persona lo tocó, decide ella.
- * · Al primer estado «Proposed» del proyecto (New), sin motivo. Medido con validateOnly el 2026-09-15:
+ * · Al primer estado «Proposed» del proyecto (New), sin motivo. Con validateOnly:
  *   Closed→New pone «Not fixed» (Agile) y Done→New «Moved to the backlog» (Scrum).
  */
 function reabrirPedido(az, id, proyecto, idFicha, desde, categoriasDe) {
@@ -808,8 +805,8 @@ function reabrirLeido(az, id, proyecto, desde, f, categoriasDe) {
 }
 
 /**
- * «En tu proyecto ya no aparece» y «quedó declarada» (AC 8a, 8b). Un comentario, una vez. Desde el
- * 2026-09-15 el primero además CIERRA el Bug (`cerrarPedido`); el de la deuda lo deja abierto.
+ * «En tu proyecto ya no aparece» y «quedó declarada». Un comentario, una vez. El
+ * primero además CIERRA el Bug (`cerrarPedido`); el de la deuda lo deja abierto.
  *
  * Se miran TODAS las fichas con pedidos, no sólo las vivas: la noche en que una ficha se resuelve es
  * justamente la noche en que ya no aparece en ningún proyecto. Los repos de un proyecto salen de
@@ -818,7 +815,7 @@ function reabrirLeido(az, id, proyecto, desde, f, categoriasDe) {
  */
 /**
  * Las menciones de un aviso del arnés en un Bug: quien lo tiene asignado y el responsable de respaldo, una vez cada uno.
- * 🔴 Decisión del dev (2026-09-15): en esta organización cambiar el estado de un Bug no manda mail a nadie
+ * 🔴 En esta organización cambiar el estado de un Bug no manda mail a nadie
  * (medido: las únicas suscripciones de work items son «asignado» y «reacción»); una mención sí.
  */
 function menciones(respaldo, fields) {
@@ -851,7 +848,7 @@ function avisos(ctx, res, comentar, cerrar, reabrir, respaldoDe, leerBug) {
       const reposP = (cfg.repos || []).filter((r) => proyectoDe(etiqueta(r), cfg) === proyecto);
       if (!reposP.length || !reposP.every((r) => r.activo !== false && medidos.has(etiqueta(r)))) continue;
       // 🔴 Un repo de la ficha que ya no está en repos.json no se mide y su proyecto no se conoce: bloquea, como
-      // en el cruce de la 4.5 (revisión adversarial: se cerraba el Bug con ese repo jamás medido).
+      // en el cruce (si no, se cerraría el Bug con ese repo jamás medido).
       if ([...f.fi.listas.repos, ...(f.fi.listas.declarada_en || []).map(noc.soloRepo)].some((r) => r && !enConfig.has(r))) continue;
       const etiquetas = new Set(reposP.map(etiqueta));
       const presente = [];
@@ -860,14 +857,14 @@ function avisos(ctx, res, comentar, cerrar, reabrir, respaldoDe, leerBug) {
         if (suya) for (const x of p.repos || []) if (etiquetas.has(x.repo)) presente.push(x);
       }
       let clave, linea, html, entrada, lista;
-      // 🔴 (story 4.5) Volvió a aparecer en ESTE proyecto: su «ya no aparece» ya no vale, y el próximo arreglo
+      // 🔴 Volvió a aparecer en ESTE proyecto: su «ya no aparece» ya no vale, y el próximo arreglo
       // tiene que poder avisarse. Se borra sólo el de este proyecto — el de otro proyecto de la misma ficha,
-      // donde nada cambió, se conserva (si no, recibía otro «ya no aparece»).
+      // donde nada cambió, se conserva (si no, recibiría otro «ya no aparece»).
       if (presente.length && !simulado) {
         const txtActual = fs.readFileSync(f.archivo, 'utf8');
         const pagados = listaDe(txtActual, 'pagado_avisado');
         const marca = pagados.find((l) => l.startsWith(`${proyecto} (`));
-        // 🔴 (2026-09-15) Si el que cerró fue el arnés, se reabre. Un Bug ajeno no se toca ni se comenta; si la
+        // 🔴 Si el que cerró fue el arnés, se reabre. Un Bug ajeno no se toca ni se comenta; si la
         // reapertura falla, el aviso sale igual. La marca se borra en todos los casos: la próxima vez que se
         // arregle tiene que poder volver a cerrarse y avisarse.
         const desde = marca && (marca.match(/^.* \((\d{4}-\d{2}-\d{2}), cerrado por el arnés\)$/) || [])[1];
@@ -896,9 +893,9 @@ function avisos(ctx, res, comentar, cerrar, reabrir, respaldoDe, leerBug) {
         if (listaDe(fs.readFileSync(f.archivo, 'utf8'), clave).some((l) => l.startsWith(`${proyecto} (`))) continue;
         entrada = { ficha: f.idFicha, proyecto, id, cerrado: null, motivo_azure: null }; lista = res.pagados_avisados;
         // 🔴 Primero el cierre, después el comentario, después la marca. Un work item AJENO no se cierra ni se
-        // comenta. Si el cierre falla por otra cosa, el aviso sale igual diciendo que no se pudo (revisión
-        // adversarial: un fallo permanente —una regla del proceso, un permiso— dejaba al equipo sin el «ya no
-        // aparece» que antes recibía) y queda marcado. Nunca un «Cierro este Bug» sobre un Bug que quedó abierto.
+        // comenta. Si el cierre falla por otra cosa, el aviso sale igual diciendo que no se pudo
+        // (un fallo permanente —una regla del proceso, un permiso— dejaría al equipo sin el «ya no
+        // aparece») y queda marcado. Nunca un «Cierro este Bug» sobre un Bug que quedó abierto.
         let porque = null;
         let noPude = null;
         let leidos = null;
@@ -946,12 +943,12 @@ function avisos(ctx, res, comentar, cerrar, reabrir, respaldoDe, leerBug) {
   }
 }
 
-// ── el estado de cada pedido (story 4.5) ───────────────────────────────────────────────────────
+// ── el estado de cada pedido ───────────────────────────────────────────────────────
 
 /**
  * La revisión más reciente de una PERSONA: `{ el, nombre }` o `{ el: null, nombre: null }`.
  *
- * 🔴 Persona = `System.ChangedBy.descriptor` que NO empieza con `svc.` (medido el 2026-09-10: el
+ * 🔴 Persona = `System.ChangedBy.descriptor` que NO empieza con `svc.` (el
  * pipeline es `svc.…`, una persona `msa.…` o `aad.…`). No se escribe el id del build service en ningún
  * lado: si Azure cambiara la identidad del pipeline, un id fijo dejaría de excluirla sin error. Una
  * revisión SIN descriptor legible cuenta como persona: ante la duda, «nadie la miró» no se afirma.
@@ -1032,12 +1029,12 @@ function leerPedidoDeAzure(az, id) {
 }
 
 /**
- * Los Bugs del arnés que NINGUNA ficha nombra (AC 14): el caso que dejó escrito la 4.4 — `crear` salió
- * bien, el push con el id se perdió y la ficha se cerró la noche siguiente. La adopción por etiqueta de
- * la 4.4 sólo mira fichas vivas, así que ese Bug no lo encontraba nadie.
+ * Los Bugs del arnés que NINGUNA ficha nombra: el caso es que `crear` sale
+ * bien, el push con el id se pierde y la ficha se cierra la noche siguiente. La adopción por etiqueta
+ * sólo mira fichas vivas, así que ese Bug no lo encuentra nadie.
  *
  * Una WIQL por proyecto declarado, SIEMPRE con `[System.TeamProject] = @project` (la ruta sola no acota:
- * medido 183 contra 0). Un proyecto cuya consulta o cuyo `show` falla va a `no_consultados` y lo que ya
+ * devuelve work items de otros proyectos). Un proyecto cuya consulta o cuyo `show` falla va a `no_consultados` y lo que ya
  * se había encontrado ahí se descarta: «encontré uno» sobre una lectura a medias no es «estos son todos».
  */
 function buscarHuerfanos(az, cfg, nombrados, categoriasDe, archivo) {
@@ -1111,7 +1108,7 @@ function volcar(a) {
     for (const f of todas.filter((x) => x.estado !== 'archived').sort((x, y) => String(x.idFicha).localeCompare(String(y.idFicha)))) {
       for (const { proyecto, id } of leerPedidos(f.txt)) {
         if (Object.prototype.hasOwnProperty.call(pedidos, id)) continue;      // un id es único en la organización
-        // 🔴 LISTA BLANCA: estos campos y ninguno más (AC 9b). Nunca `fields` entero.
+        // 🔴 LISTA BLANCA: estos campos y ninguno más. Nunca `fields` entero.
         const e = { ficha: f.idFicha, proyecto, leido: false, estado: null, categoria: null, motivo: null,
           estado_desde: null, cambiado_por_persona_el: null, cambiado_por_persona: null, motivo_no_leido: null };
         pedidos[id] = e;
@@ -1159,7 +1156,7 @@ function leerVolcadoDeHoy(outDir, hoy) {
   } catch { return null; }
 }
 
-/** El texto del aviso único (AC 6), en HTML — el mismo idioma de los otros comentarios del guion. */
+/** El texto del aviso único, en HTML — el mismo idioma de los otros comentarios del guion. */
 function textoCerradoVivo(x, paquete, respaldo, hoy) {
   const repos = (Array.isArray(x.repos) && x.repos.length ? x.repos : ['(sin repos)']).map(escHtml).join(', ');
   const est = escHtml(x.estado || '?'), mot = escHtml(x.motivo || 'sin motivo'), desde = escHtml(x.visto_cerrado || '?');
@@ -1175,7 +1172,7 @@ function textoCerradoVivo(x, paquete, respaldo, hoy) {
 }
 
 /**
- * «Cerrado con la vulnerabilidad viva» (AC 6): UN comentario por episodio de cierre, sin reabrir.
+ * «Cerrado con la vulnerabilidad viva»: UN comentario por episodio de cierre, sin reabrir.
  * El nocturno decide (`cruce.cerrados_vivos` con `avisar: true`); acá sólo se habla.
  *
  * 🔴 El marcador `avisado_cerrado_vivo:` se escribe DESPUÉS de que el comentario salió: un marcador sin
@@ -1212,7 +1209,7 @@ function avisarCerradosVivos(ctx, res, comentar, respaldoDe, textos) {
 }
 
 /**
- * El Bug suelto se ADOPTA en la ficha que nombra su etiqueta (AC 14c), en cualquiera de las tres
+ * El Bug suelto se ADOPTA en la ficha que nombra su etiqueta, en cualquiera de las tres
  * carpetas. Sin comentario: no es un pedido nuevo, ya tuvo el suyo al crearse. Si la ficha no existe
  * o ya tiene OTRO Bug en ese proyecto, no se escribe nada: dos Bugs para el mismo par los decide una
  * persona.
@@ -1238,7 +1235,7 @@ function adoptarHuerfanos(ctx, res) {
       }
     } else {
       // 🔴 Simulado no escribe, pero lo que sigue en esta corrida tiene que verlo adoptado: si no, el
-      // mismo par salía «habría adoptado» Y «habría creado» (pase adversarial de la 4.5).
+      // mismo par saldría «habría adoptado» Y «habría creado».
       const otros = leerPedidos(f.txt).filter((x) => x.proyecto !== h.proyecto).map((x) => `${x.proyecto}: ${x.id}`);
       f.txt = ponerLista(f.txt, 'pedidos', [...otros, `${h.proyecto}: ${h.id}`]);
     }
@@ -1282,7 +1279,7 @@ function correr(a) {
     tope: Number.isInteger(pres.tope_pr_por_noche) ? pres.tope_pr_por_noche : 2,
     tmp: fs.mkdtempSync(path.join(os.tmpdir(), 'pedidos-de-trabajo-')),
     fichas: leerTodasLasFichas(a.pending),
-    // El volcado de `state` (story 4.5): de acá salen los Bugs sueltos a adoptar. Sin él, o ilegible,
+    // El volcado de `state`: de acá salen los Bugs sueltos a adoptar. Sin él, o ilegible,
     // no se adopta nada esa noche — y eso no es un fallo: el nocturno ya cobra la ausencia del volcado.
     volcado: leerVolcadoDeHoy(a.out, hoy),
   };
@@ -1370,8 +1367,8 @@ Habla con Azure sólo por TYCON_ADO_CMD (por defecto az) y necesita AZURE_DEVOPS
 Exit: 0 habló con Azure (los fallos por par van al snapshot) · 2 no pudo intentar nada.`;
 
 /**
- * La plataforma de los avisos (story 8.31): `operations.platform` de team-repos.json (`--team-repos <f>`, por defecto el
- * de la raíz del árbol, que trae el repo de operaciones). Sin el archivo, Azure, como siempre. Con un archivo que no
+ * La plataforma de los avisos: `operations.platform` de team-repos.json (`--team-repos <f>`, por defecto el
+ * de la raíz del árbol, que trae el repo de operaciones). Sin el archivo, Azure. Con un archivo que no
  * valida, o pedido con `--team-repos` y ausente, no se adivina: `{ error }`.
  * Devuelve `{ plataforma, argv }` con `--team-repos` ya sacado de los argumentos.
  */
@@ -1387,7 +1384,7 @@ function elegirPlataforma(argv) {
   return { plataforma: r.data.operations.platform, argv: out };
 }
 
-/** Una entrada de GitHub en repos.json con la plataforma Azure es una mezcla (decisión 19 de la 8.31): no se adivina. */
+/** Una entrada de GitHub en repos.json con la plataforma Azure es una mezcla: no se adivina. */
 function mezclaEnAzure(configFile) {
   let cfg;
   try { cfg = JSON.parse(fs.readFileSync(configFile, 'utf8')); } catch { return null; }   // lo dice el camino de siempre
@@ -1411,16 +1408,16 @@ function main() {
   return a.cmd === 'help' ? 0 : 2;
 }
 
-// Exportado para la 4.5 (subcomando `state`, `avisarCerradosVivos`): reusa `crearAz`, los tres
+// Exportado para el subcomando `state` (`avisarCerradosVivos`): reusa `crearAz`, los tres
 // lectores de Azure y el patrón de marcadores por proyecto en vez de copiarlos.
 module.exports = { parseArgs, crearAz, proyectosDeFicha, paresPorPedir, ordenarYTopar, deducirDueno,
   resolverIdentidad, leerAdministradores, leerIteracion, iteracionVigente, tokensDeEtiquetas, yaMarcado,
   marcar, anotarPedido, fallidasDeAnoche, hablar, correr,
-  // story 8.31: el programa de los issues de GitHub reusa la regla de reintento
+  // el programa de los issues de GitHub reusa la regla de reintento
   isNoWorkItemStep, elegirPlataforma,
-  // story 8.30
+  // quién responde por cada repo
   responsables, responsablesDeRepos,
-  // story 4.5
+  // el estado de cada pedido y el cruce
   personaMasReciente, leerCategorias, leerPedidoDeAzure, buscarHuerfanos, volcar, avisarCerradosVivos, adoptarHuerfanos,
   textoCerradoVivo,
   // los pedidos asignados del sitio juzgan «abierto» con las mismas categorías
@@ -1428,14 +1425,13 @@ module.exports = { parseArgs, crearAz, proyectosDeFicha, paresPorPedir, ordenarY
 
 // 🔴 `process.exitCode`, NO `process.exit()`. Este guión lo ejecuta otro proceso y le parsea la
 // salida; en Node las escrituras a una tubería son ASINCRÓNICAS y `process.exit()` mata el proceso
-// con parte de lo escrito todavía en el aire. Medido en audit-dependencies.js el 2026-09-28: un
-// informe de 9782 bytes llegaba cortado en 8192 y el consumidor lo leía como «no pude», nunca como
+// con parte de lo escrito todavía en el aire: un
+// informe de 9782 bytes llega cortado en 8192 y el consumidor lo lee como «no pude», nunca como
 // un error. `main` acá es sincrónica y no deja manejadores abiertos, así que con `exitCode` el
 // proceso termina solo, cuando terminó de escribir.
-// Caso: guides/maintaining/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
-// story 8.31: va DESPUÉS de module.exports — github-issues.js (que este main puede cargar) usa lo que exporta este guion.
+// Va DESPUÉS de module.exports — github-issues.js (que este main puede cargar) usa lo que exporta este guion.
 if (require.main === module) {
-  // story 8.9: los nombres viejos (subcomandos y opciones en castellano) siguen andando hasta el retiro
+  // Los nombres viejos (subcomandos y opciones en castellano) siguen andando hasta el retiro
   require('../../lib/legacy-names.js').aliasArgv('scripts/nightly/dependencies/work-items.js', { exitCode: 2, prefix: 'error: ' });
   process.exitCode = main();
 }

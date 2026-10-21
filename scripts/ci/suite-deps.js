@@ -3,14 +3,11 @@
 /**
  * suite-deps.js — de qué archivos y carpetas del repo depende cada suite, leído de su código (sin correrla).
  *
- * POR QUÉ (2026-10-05, decisión del dueño): la validación de cada cambio tiene que durar 15 min o menos, los agentes de
- * Azure tienen 2 núcleos y no se compran más. La validación corría las ~240 suites con cualquier cambio (~40 min de
- * trabajo). Con esto, scripts/ci/suites-for-change.js corre en la validación sólo las suites que dependen de algo que
- * el cambio toca; las demás las corre el banco nocturno, como siempre.
- * Story 8.22, tramo B (2026-10-06): vuelve como entró en `64a5a523`. Se había revertido (`df7d3ba9`) porque la rama
- * validada a mano se calculaba con el último commit; desde `36560371` se compara la rama entera y la 170 ya no cae al
- * último commit en ningún camino. Un solo cambio, del pase adversarial: lo que no se deja leer queda en `unreadable` y
- * la suite corre siempre (antes se leía como texto vacío y se salteaba).
+ * POR QUÉ: la validación de cada cambio tiene que durar 15 min o menos, los agentes de Azure tienen 2 núcleos y no se
+ * compran más. Correr las ~240 suites con cualquier cambio son ~40 min de trabajo. Con esto,
+ * scripts/ci/suites-for-change.js corre en la validación sólo las suites que dependen de algo que el cambio toca; las
+ * demás las corre el banco nocturno. Lo que no se deja leer queda en `unreadable` y la suite corre siempre (leerlo
+ * como texto vacío la haría saltearse).
  *
  * CÓMO: desde el archivo de la suite, un recorrido por lo que nombra su código —las cadenas que son rutas del repo
  * (también las armadas con `path.join(…)` de pedazos literales) y los `require` relativos—. Un archivo de código
@@ -33,7 +30,7 @@ const path = require('path');
 
 const CODE = /\.(c?js|mjs|sh|bash|ps1|py)$/;
 // Carpetas que nombradas enteras no dicen nada: el comienzo de un `path.join` que sigue con variables (`scripts`,
-// `skills`), la carpeta de TODAS las suites (cambiar una suite hacía correr otras 82) y la memoria del equipo, que cambia
+// `skills`), la carpeta de TODAS las suites (cambiar una suite haría correr otras 82) y la memoria del equipo, que cambia
 // en cada commit (126). Un archivo puntual de adentro sigue contando.
 const TOO_BROAD = /^(scripts|skills|\.engram|scripts\/tests|skills\/[^/]+\/scripts\/tests)$/;
 const WHOLE_REPO = /\bls-files\b|\bgit\b[^\n]{0,40}\bgrep\b|['"]grep['"]/;
@@ -89,7 +86,7 @@ function suiteDeps(repoRoot, suiteRel, cache = new Map()) {
   const read = (rel) => {
     if (cache.has(rel)) return cache.get(rel);
     // Lo que no se deja leer (sin permiso, o más grande que MAX_FILE) no es «no nombra nada»: queda anotado y la suite
-    // corre (story 8.22, AC 9 c; pase adversarial del tramo B). Antes se leía como texto vacío y la suite se salteaba.
+    // corre. Leerlo como texto vacío haría que la suite se saltee.
     let text = '';
     let unreadable = null;
     try {
@@ -115,8 +112,8 @@ function suiteDeps(repoRoot, suiteRel, cache = new Map()) {
   const dirs = new Set();
   const add = (r) => { if (r.kind === 'dir') { if (!TOO_BROAD.test(r.rel)) dirs.add(r.rel); } else files.add(r.rel); };
   // Nivel 0, la suite: lo que nombra cuenta, y cada archivo de código que nombra se mira un nivel (es lo que la suite
-  // ejecuta). Desde ahí sólo se sigue el grafo de módulos: seguir cada ruta nombrada por cualquier guion terminaba en
-  // el repo entero (el instalador nombra cien guiones) y no dejaba saltear nada.
+  // ejecuta). Desde ahí sólo se sigue el grafo de módulos: seguir cada ruta nombrada por cualquier guion terminaría en
+  // el repo entero (el instalador nombra cien guiones) y no dejaría saltear nada.
   const suite = read(suiteRel);
   const wholeRepo = suite.whole;
   const unreadable = [];
@@ -169,7 +166,7 @@ function main(argv) {
 }
 
 /**
- * Cuántas líneas de un texto disparan el «depende de todo» (story 8.22, tramo E). Una pesada con `deps: "graph"` anota
+ * Cuántas líneas de un texto disparan el «depende de todo». Una pesada con `deps: "graph"` anota
  * este número en heavy-suites.json cuando alguien revisó que esas líneas recorren un repo de juguete; si cambia, vuelve
  * a depender de todo hasta que la revisen de nuevo.
  */

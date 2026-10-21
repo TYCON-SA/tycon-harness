@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# git-pre-push-global.sh — el pre-push de git que vale para TODOS los repos de la máquina (story 8.26, tanda F1 · AC 52).
+# git-pre-push-global.sh — el pre-push de git que vale para TODOS los repos de la máquina.
 # Se instala en ~/.git-hooks/pre-push (lo hace el instalador); `core.hooksPath` global apunta a esa carpeta.
 #
 # 🔴 POR QUÉ ES GLOBAL, Y NO SÓLO EL `.githooks/pre-push` DEL REPO. Con `core.hooksPath` global git usa SÓLO esa
-# carpeta: el `.githooks/` de cada repo queda ignorado, en silencio (el hallazgo del 2026-08-22, que el pre-commit global
-# documenta). Un `pre-push` del repo, escrito y con sus pruebas en verde, no lo habría llamado nadie — y es el freno
+# carpeta: el `.githooks/` de cada repo queda ignorado, en silencio (como lo documenta el pre-commit global).
+# Un `pre-push` del repo, escrito y con sus pruebas en verde, no lo llamaría nadie — y es el freno
 # antes de publicar: lo único que hay entre un nombre y un repo público. Puesto acá corre en CUALQUIER clon, también
 # uno recién hecho, sin que nadie tenga que acordarse de prepararlo.
 #
@@ -17,7 +17,7 @@
 #   2. Llama al freno (scripts/hooks/public-push-guard.js) del arnés INSTALADO, no al del árbol que se empuja: una rama
 #      no se juzga con su propia versión del freno. El FRENO decide todo: si el remoto es público, si el empuje es del
 #      arnés (por el árbol, por lo que se empuja o por el repo al que va) y qué mira. Este guion no decide nada de eso
-#      mientras el freno se pueda correr: decidirlo acá, mirando sólo si el árbol de trabajo trae un archivo, dejaba
+#      mientras el freno se pueda correr: decidirlo acá, mirando sólo si el árbol de trabajo trae un archivo, dejaría
 #      salir sin mirar una rama del arnés empujada desde otra rama o desde un repo sin árbol.
 #   3. Si el freno no se puede correr (no está el guion, no hay `node`): el empuje sale si el remoto claramente no es
 #      público (Azure DevOps, o una carpeta local cuya cadena de `origin` termina en una carpeta), o si nada dice que
@@ -122,7 +122,7 @@ if [ ! -f "$GUARD" ]; then
     GUARD="$OWN_TREE/scripts/hooks/public-push-guard.js"; WHY=""
   fi
 fi
-# el Node del arnés (story 8.39): el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH.
+# el Node del arnés: el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH.
 # con el bash de la Mac (3.2) y `set -e`, un `.` que no encuentra el archivo corta el guion aunque lleve `||`: se mira antes
 _hn="$(harness_dir)/scripts/lib/harness-node.sh"
 { [ -f "$_hn" ] && . "$_hn" 2>/dev/null; } || harness_node_bin() { echo node; }

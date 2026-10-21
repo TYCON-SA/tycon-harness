@@ -2126,24 +2126,25 @@ function cmdSetSize(args) {
 }
 
 // El pedido para esta corrida: `set-models <trabajo>=<modelo> … | --clear`. `<trabajo>` es
-// reviewers, reviewers_reloop, adversarial, helpers o el nombre de un revisor; `<modelo>`, uno del vocabulario de
-// lib/models.js. Con techo obligatorio, pipeline.js lo recorta y lo dice. Se valida todo antes de escribir nada.
+// reviewers, reviewers_reloop, adversarial, helpers o el nombre de un revisor; `<modelo>`, un nivel o un nombre del
+// vocabulario de lib/models.js, y se guarda el modelo de Claude. Con techo obligatorio, pipeline.js lo recorta y lo
+// dice. Se valida todo antes de escribir nada.
 function cmdSetModels(args) {
   const M = require('./lib/models.js');
   const clear = args.includes('--clear');
   const pares = args.filter((a) => a !== '--clear');
   if (!clear && !pares.length) {
-    console.error('uso: marker.js set-models <trabajo>=<modelo> … | --clear   (trabajos: reviewers, reviewers_reloop, adversarial, helpers o un revisor; modelos: ' + M.MODELS.join(', ') + ')');
+    console.error('uso: marker.js set-models <trabajo>=<nivel> … | --clear   (trabajos: reviewers, reviewers_reloop, adversarial, helpers o un revisor; niveles: ' + M.LEVELS.join(', ') + '; también ' + M.MODELS.join(', ') + ')');
     process.exit(2);
   }
   const values = {};
   for (const p of pares) {
     const [job, model, ...resto] = String(p).split('=');
-    if (resto.length || !M.isJobName(job) || !M.isModel(model)) {
-      console.error(`marker.js set-models: «${p}» no es <trabajo>=<modelo> (trabajos: ${M.JOBS.join(', ')} o un revisor en minúsculas, números y guiones; modelos: ${M.MODELS.join(', ')}) — no escribí nada`);
+    if (resto.length || !M.isJobName(job) || !M.modelOf(model)) {
+      console.error(`marker.js set-models: «${p}» no es <trabajo>=<nivel> (trabajos: ${M.JOBS.join(', ')} o un revisor en minúsculas, números y guiones; niveles: ${M.LEVELS.join(', ')}; también ${M.MODELS.join(', ')}) — no escribí nada`);
       process.exit(2);
     }
-    values[job] = model;
+    values[job] = M.modelOf(model);
   }
   const marker = readMarker();
   if (!marker) {

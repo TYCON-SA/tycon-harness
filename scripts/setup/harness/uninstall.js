@@ -1,16 +1,16 @@
 'use strict';
-// uninstall.js — qué quita `harness.js uninstall`, qué deja y qué hay que revisar (story 8.13, tanda C · AC 22 y 23).
+// uninstall.js — qué quita `harness.js uninstall`, qué deja y qué hay que revisar.
 //
 // La regla del AC 22: se quita SÓLO lo registrado (`managed` del estado, que llenó el aplicador con `--report-json`, más
 // las piezas propias de harness.js), la copia fija de arranque con su programa y el estado. Lo demás se deja y se
 // imprime, para que nadie tenga que adivinar qué quedó: el clon, `~/.claude/tycon.json`, las copias de seguridad, la
 // carpeta de estado (con el comando para borrarla), `.dashboard/` del clon, engram/sqlite3/node, las skills de terceros,
 // el `core.hooksPath` local que el aplicador borró en su día, el freno de producción (se quita con su instalador y
-// `sudo`) y los enlaces que el registro no nombra (`agent-skills`, `agents`, `skills`: decisión 6; en el repo único de la
-// 8.7 el aplicador los crea y los registra, y entonces se quitan como cualquier pieza). Nunca se borra un
+// `sudo`) y los enlaces que el registro no nombra (`agent-skills`, `agents`, `skills`; en el repo único el
+// aplicador los crea y los registra, y entonces se quitan como cualquier pieza). Nunca se borra un
 // archivo versionado en otro repo: los `AGENTS.md` puntero de los repos de producto se listan con su ruta.
 //
-// Funciona sin árbol (el dev borró el clon): trabaja con el registro y lo dice. El byte a byte (AC 23) sale de la copia
+// Funciona sin árbol (el dev borró el clon): trabaja con el registro y lo dice. El byte a byte sale de la copia
 // `reason: install` más vieja (`snapshot.list`): es «cómo estaba la máquina antes del arnés», y `remove.js` vuelve a sus
 // bytes un settings.json / CLAUDE.md que quedó igual a ella.
 //
@@ -36,7 +36,7 @@ const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x)
 const lexists = (p) => { try { fs.lstatSync(p); return true; } catch (_) { return false; } };
 const isLink = (p) => { try { return fs.lstatSync(p).isSymbolicLink(); } catch (_) { return false; } };
 
-// Lo que los hooks del arnés guardan bajo ~/.claude FUERA de la carpeta de estado (story 8.16, AC 6): `uninstall` no lo
+// Lo que los hooks del arnés guardan bajo ~/.claude FUERA de la carpeta de estado: `uninstall` no lo
 // quita (no son piezas registradas) y lo nombra en «deja» cuando existe. `name` es relativo a ~/.claude; `dir`, si es una
 // carpeta. Cada `stores` de un hook de scripts/setup/install-effects.json que caiga acá tiene que estar en esta lista.
 const HOOK_STORES = [
@@ -129,7 +129,7 @@ function plan(ctx, state) {
   const dry = removePieces(managed, { home, env, tree, restoreIfEqual: base.map, afterSha: base.after, platform: (ctx && ctx.platform) || process.platform, dryRun: true });
   const remove = [...dry.removed, ...ownExtras(home, managed)];
   // lo que hoy no se puede ni leer (un settings.json ilegible, un permiso): `run` lo vuelve a intentar y, si sigue
-  // fallando, queda en el estado para otra corrida — nunca se pierde del registro (H1)
+  // fallando, queda en el estado para otra corrida — nunca se pierde del registro
   const failing = dry.kept.filter((k) => k.error);
   const retry = failing.map((k) => k.piece);
 
@@ -145,7 +145,7 @@ function plan(ctx, state) {
   const backups = SN.backupsRoot(home);
   if (lexists(backups)) keep.push(`las copias de seguridad ${backups} (la de antes de instalar incluida)`);
   keep.push(`la carpeta de estado ${paths(home).dir}/ (registros, sellos, copias) — para borrarla: rm -rf "${paths(home).dir}"`);
-  // lo que guardaron los hooks fuera de la carpeta de estado (story 8.16, AC 6): no son piezas registradas, así que
+  // lo que guardaron los hooks fuera de la carpeta de estado: no son piezas registradas, así que
   // quedan. La lista es `HOOK_STORES`; scripts/tests/install-effects.test.js la cruza con el `stores` de cada hook de
   // la lista de efectos, para que un hook nuevo que guarde algo bajo ~/.claude no quede sin nombrar acá
   for (const s of HOOK_STORES) {
@@ -154,14 +154,14 @@ function plan(ctx, state) {
   }
   for (const k of dry.kept) if (!k.error) keep.push(k.why);
   keep.push('engram, sqlite3 y node: herramientas del sistema, cada una con su instalador');
-  // el Node propio del arnés (story 8.39, decisión 18): se deja, como node, engram y sqlite3, con el comando para borrarlo
+  // el Node propio del arnés: se deja, como node, engram y sqlite3, con el comando para borrarlo
   try {
     const hn = require('./tycon-home.js').harnessNode({ env });
     if (lexists(hn.dir)) keep.push(`el Node propio del arnés ${hn.dir}/ — para borrarlo: rm -rf "${hn.dir}"`);
   } catch (_) { /* sin la casa propia no hay Node del arnés que nombrar */ }
   keep.push('el core.hooksPath local que el aplicador haya borrado por vestigial no vuelve: era una configuración rota y no quedó copia');
   for (const g of productionGuard(env)) keep.push(`el freno de producción (${g}): se quita con su propio instalador, con sudo`);
-  // sólo los que el registro no trae: en el repo único de la 8.7 el aplicador los crea y los registra (tanda C)
+  // sólo los que el registro no trae: en el repo único el aplicador los crea y los registra
   const registered = new Set(managed.filter((p) => p.kind === 'link').map((p) => path.resolve(p.where)));
   for (const n of UNREGISTERED_LINKS) {
     const p = path.join(claude, n);

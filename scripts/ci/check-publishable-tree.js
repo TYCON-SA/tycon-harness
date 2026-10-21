@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * check-publishable-tree.js — lo que rompería la verificación de una versión BAJADA no entra al repo (story 8.23,
- * tanda B · AC 20).
+ * check-publishable-tree.js — lo que rompería la verificación de una versión BAJADA no entra al repo.
  *
- * 🔴 POR QUÉ EXISTE (2026-10-06, revisión I3 de la story 8.23). Una máquina sin git instala el arnés bajando el comprimido
+ * 🔴 POR QUÉ EXISTE. Una máquina sin git instala el arnés bajando el comprimido
  * de un commit publicado y lo da por bueno sólo si el árbol que trae es el del commit (scripts/lib/tar-reader.js +
  * scripts/lib/git-tree-hash.js). Tres cosas del repo rompen eso sin que nadie lo note hasta la primera instalación:
  *   · un `export-ignore` o `export-subst` en un `.gitattributes` publicado: el comprimido de GitHub (git archive) no
@@ -39,7 +38,7 @@ const ALLOWLIST = path.resolve(arg('--allowlist', path.join(REPO, 'scripts', 'pu
 const EXPORTER = path.resolve(arg('--exporter', path.join(REPO, 'scripts', 'publishing', 'export.js')));
 const SOURCES = ['arnes', 'agent-skills'];
 const ATTR_RX = /(^|\s)export-(ignore|subst)(\s|$)/;
-// atributos que cambian los BYTES del archivo entre el commit y lo que un clon ve (pase adversarial de la B): el árbol se
+// atributos que cambian los BYTES del archivo entre el commit y lo que un clon ve: el árbol se
 // calcula sobre los bytes del commit y es el que el comprimido trae; un clon con estos atributos vería otra cosa y el
 // aplicador compararía mal. `text`/`eol` sin `=crlf` no cambian lo que el comprimido trae (git archive da los bytes del
 // commit); `eol=crlf` sí fuerza el final de línea al exportar
@@ -75,7 +74,7 @@ function publishedPredicate() {
   // `in` son globs; `out` y los excluidos de siempre son `{ glob, motivo }` (en una lista de juguete, también textos)
   const globOf = (x) => (typeof x === 'string' ? x : x && x.glob);
   const matches = (x, ruta) => { const g = globOf(x); return typeof g === 'string' && exporter.coincide(g, ruta); };
-  // con el `salvo` de cada exclusión fija (story 8.26, tanda C): lo que sale igual no es privado. Una exclusión de una
+  // con el `salvo` de cada exclusión fija: lo que sale igual no es privado. Una exclusión de una
   // lista de juguete (un texto) no tiene `salvo`.
   const excluded = (f, ruta) => exporter.EXCLUIDOS_SIEMPRE.some((x) => x.fuente === f && matches(x, ruta)
     && !(x && Array.isArray(x.salvo) && (typeof exporter.enSalvo === 'function' ? exporter.enSalvo(x, ruta) : x.salvo.includes(ruta))));
@@ -90,8 +89,8 @@ function main() {
   if (!ls.ok) return cannot(`git ls-files en ${REPO}: ${ls.err}`);
   let only = null;
   if (STAGED) {
-    // también lo que cambia de TIPO (T: un archivo que pasa a ser enlace); y si el commit toca la lista blanca, lo que
-    // antes era privado puede publicarse ahora: se mira el índice entero (pase adversarial de la B)
+    // también lo que cambia de TIPO (T: un archivo que pasa a ser enlace); y si el commit toca la lista blanca, una ruta
+    // privada puede pasar a publicarse: se mira el índice entero
     const d = git(['diff', '--cached', '--name-only', '-z', '--diff-filter=AMRCT']);
     if (!d.ok) return cannot(`git diff --cached: ${d.err}`);
     only = new Set(d.out.split('\0').filter(Boolean));

@@ -428,10 +428,15 @@ only: they are changed with a request in their repo.
 - **How Claude answers** (*Cómo contesta Claude*): the language, style and length of the answers on every machine. It
   lives in `team-profile.json`, in the profile repo. A maintainer reviews it.
 - **Which model each pipeline job uses** (*Qué modelo usa cada trabajo del pipeline*): the model of the reviewers, the
-  adversarial pass, the helpers and the session, in one table per group with each job's default next to it; «the
-  default» keeps the one the installed version comes with. With the required ceiling, a job set above the ceiling is
-  marked in red and the change cannot be proposed. It lives in `team-repos.json`, in the profile repo. A maintainer
-  reviews it, looking at the cost.
+  adversarial pass, the helpers and the session, as a level, in one table per group with each job's default next to it;
+  «the default» keeps the one the installed version comes with. There are four levels, written in the file as
+  `economy`, `balanced`, `strong` and `max` (the Spanish page shows económico, equilibrado, potente, máximo). Each tool translates them to its own models,
+  and a small line under each selector says which: «Claude: sonnet · Codex: gpt-5.6-luna». A configuration saved with
+  Claude's names (sonnet, opus) still works: it shows as levels and the next change to the section saves it as levels.
+  With levels, the profile has to require the harness version that reads them; otherwise the site does not let you
+  propose and says which one to require. With the required ceiling, a job set above the ceiling is marked in red and
+  the change cannot be proposed. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it, looking
+  at the cost.
 - **Where the full tests run on merge** (*Dónde corren las pruebas completas al mergear*): on the machine or on the
   server, repo by repo, one row per repo (✎ opens its details). A repo without a full tests pipeline says what happens
   with its rule. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.

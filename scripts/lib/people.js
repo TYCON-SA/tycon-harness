@@ -1,34 +1,34 @@
 'use strict';
 /*
- * people.js — QUIÉN ES QUIÉN (story 2.28): de quién es cada máquina, quién puede ver sus corridas y dónde trabaja cada
- * persona. Es LA regla: el sitio de la organización (2.23) la llama en cada pedido y no la copia.
+ * people.js — QUIÉN ES QUIÉN: de quién es cada máquina, quién puede ver sus corridas y dónde trabaja cada
+ * persona. Es LA regla: el sitio de la organización la llama en cada pedido y no la copia.
  *
  *   · Cada máquina informa en su `place.json` el correo de git de su dev (`owner`, lo arma `upload-runs.js`). Es sólo una
  *     pista: lo que cuenta es lo que confirma un mantenedor en `operations.json` → `people.machines.<carpeta>`
  *     (`person`, y la HUELLA del correo que la máquina informaba al confirmar, `reported_sha256`, nunca el correo).
- *   · Cuatro estados por máquina (AC 7): `confirmada` (sus corridas son de `person`), `sin_confirmar`, `cambio` (informa
- *     otro correo: la confirmación se cae entera, decisión 4) y `sin_correo`; más `compartida` para una carpeta vieja
- *     que no se une a una sola nueva (AC 27-28). Una carpeta vieja `unida` sigue a su nueva: una entrada con su nombre
- *     viejo no confirma nada (AC 26).
+ *   · Cuatro estados por máquina: `confirmada` (sus corridas son de `person`), `sin_confirmar`, `cambio` (informa
+ *     otro correo: la confirmación se cae entera) y `sin_correo`; más `compartida` para una carpeta vieja
+ *     que no se une a una sola nueva. Una carpeta vieja `unida` sigue a su nueva: una entrada con su nombre
+ *     viejo no confirma nada.
  *   · Quién entra y con qué rol lo dice la lista del sitio, `site.access`: una entrada por persona, con su
  *     rol y uno o más correos; sin la lista, se arma con `site.maintainers` y las personas de `people.machines`
  *     (`listaDeAcceso`). Ve una máquina quien mantiene o la persona para la que está confirmada, con cualquiera de sus
  *     correos (`correosDe`). Es persona quien tiene una entrada `dev`.
- *   · «Dónde trabaja» se cuenta en productos de `repos.json` (decisión 8), deducidos de sus corridas confirmadas y de
+ *   · «Dónde trabaja» se cuenta en productos de `repos.json`, deducidos de sus corridas confirmadas y de
  *     sus pedidos asignados, y se corrige con `people.projects.<correo>` (`add`, `remove`). Lo que no da UN solo
  *     producto queda «sin ubicar», con el motivo: no se adivina.
- *   · Una `operations.json` que no se puede releer vale como el último bueno 24 horas; después el sitio se frena (AC 10):
+ *   · Una `operations.json` que no se puede releer vale como el último bueno 24 horas; después el sitio se frena:
  *     la cuenta la hace `estadoDeLaConfiguracion`; guardar el último bueno y la hora del primer refresco fallido es del
  *     sitio.
  *
  * El sitio la llama desde `scripts/site/access.js` (rol, filtro, cuenta de máquinas por confirmar y dónde trabaja) y
  * `scripts/site/sources.js` (la cuenta del freno, y lo informado, que queda FUERA del modelo de las pantallas).
  *
- * TODO(Story-2.28-deferral): todavía no hay ninguna máquina confirmada en la configuración de la organización (Task 8:
- * las primeras confirmaciones, en el repo de operaciones, después de una noche verde con las carpetas nuevas y con la
+ * Pendiente: todavía no hay ninguna máquina confirmada en la configuración de la organización (las primeras
+ * confirmaciones se hacen en el repo de operaciones, después de una noche verde con las carpetas nuevas y con la
  * decisión de quién lee ese repo). Hasta entonces la regla corre, pero cada corrida la ven sólo quienes mantienen.
  *
- * Los correos se comparan sin mayúsculas y sin espacios alrededor (decisión 7). El único disco que toca es el espejo
+ * Los correos se comparan sin mayúsculas y sin espacios alrededor. El único disco que toca es el espejo
  * del buzón (`leerCorreosInformados`): sólo lee, nunca escribe, nunca tira. Lo demás lo recibe ya leído. Sin red. Sin
  * valores de ninguna organización (T19).
  */
@@ -57,7 +57,7 @@ function normalizarCorreo(c) {
 function huellaDeCorreo(c) { return crypto.createHash('sha256').update(normalizarCorreo(c)).digest('hex'); }
 
 /**
- * Lo que informa cada máquina del espejo del buzón (AC 4), en la forma que deja el bajador después de la 2.24 (un
+ * Lo que informa cada máquina del espejo del buzón, en la forma que deja el bajador (un
  * `<espejo>/<carpeta>/registros/place.json` por carpeta). Por carpeta: `{ estado: 'informa', correo, dia, corridas }`,
  * `{ estado: 'no_informa', motivo, dia?, corridas }` o `{ estado: 'ilegible', motivo, corridas }`. Trae también la
  * unión de carpetas viejas (`carpetasDeMaquina` del bajador). Sólo lee; nunca tira.
@@ -101,7 +101,7 @@ function leerCorreosInformados(espejoDir) {
  * El contexto de la regla: la configuración vigente (o el último bueno) y lo informado. `operations` es el objeto de
  * operations.json ya validado; `informados`, lo de `leerCorreosInformados`.
  */
-// las claves `__…` son comentarios para el lector de operations.json: acá tampoco cuentan (pase adversarial)
+// las claves `__…` son comentarios para el lector de operations.json: acá tampoco cuentan
 const sinComentarios = (o) => (o && typeof o === 'object' ? Object.fromEntries(Object.entries(o).filter(([k]) => !k.startsWith('__'))) : {});
 const ROLES_DE_ACCESO = ['maintainer', 'dev'];
 
@@ -186,12 +186,12 @@ function correosDe(sesion, c) {
 
 const uniones = (c) => ((c.informados && c.informados.uniones && c.informados.uniones.carpetas) || {});
 
-/** El estado de una máquina (AC 7, AC 26-28): `{ estado, motivo, person?, antes_de? }`. */
+/** El estado de una máquina: `{ estado, motivo, person?, antes_de? }`. */
 function estadoDeMaquina(maquina, c) {
   const u = uniones(c)[maquina];
   if (u && u.estado === 'unida' && u.nueva) {
     // una vieja se une a UNA carpeta nueva, que no es a su vez una vieja: una cadena (o un ciclo) no la confirma (falla
-    // hacia no mostrar; el bajador ya no la escribe, pero el archivo lo puede traer cualquiera — pase adversarial)
+    // hacia no mostrar; el bajador no la escribe, pero el archivo lo puede traer cualquiera)
     if (uniones(c)[u.nueva]) return { estado: 'compartida', motivo: 'la unión de carpetas encadena dos carpetas viejas: no se une' };
     const nueva = { ...estadoDeMaquina(u.nueva, c), antes_de: u.nueva };
     // la vieja confirmada para OTRA persona que la de su nueva: la unión pasaría sus corridas de una persona a otra — no
@@ -225,7 +225,7 @@ function estadoDeMaquina(maquina, c) {
   return { estado: 'cambio', motivo: 'la máquina informa otro correo que el que se confirmó: hay que reconfirmarla', person };
 }
 
-/** ¿Esta sesión ve las corridas de esa máquina? (AC 8). `maquina: null` = una corrida sin máquina: sólo quien mantiene. */
+/** ¿Esta sesión ve las corridas de esa máquina? `maquina: null` = una corrida sin máquina: sólo quien mantiene. */
 function puedeVer(sesion, maquina, c) {
   const suyos = correosDe(sesion, c);
   if (!suyos.length) return false;
@@ -243,7 +243,7 @@ function esPersona(sesion, c) {
 }
 
 /**
- * La configuración de la organización (AC 10): `vigente` si el último refresco la leyó bien; `ultimo_bueno` (con `desde`
+ * La configuración de la organización: `vigente` si el último refresco la leyó bien; `ultimo_bueno` (con `desde`
  * y el motivo) durante las 24 horas desde el primer refresco fallido; `frenado` pasado el plazo, o enseguida si no hay
  * último bueno. Es la ÚNICA cuenta: el sitio la usa tal cual. Las horas pueden venir en milisegundos o en ISO; `desde`
  * (el primer refresco fallido) y `frenado_desde` (desde cuándo está frenado) salen en ISO. Sin último bueno y sin
@@ -267,7 +267,7 @@ function estadoDeLaConfiguracion({ hayUltimoBueno, fallaDesde, ahora = Date.now(
 }
 
 /**
- * Las máquinas que no están confirmadas (AC 11), para quien mantiene: estado, motivo, correo informado (o null), día de
+ * Las máquinas que no están confirmadas, para quien mantiene: estado, motivo, correo informado (o null), día de
  * su place.json, cuántas corridas, y las otras máquinas ya confirmadas para ese mismo correo (por `person` o por la
  * huella). Trae las carpetas viejas que no se unen y las regeneradas; una vieja unida no aparece (no es una máquina).
  */
@@ -323,7 +323,7 @@ function entradasDeRepos(repos) {
 }
 const unicos = (xs) => [...new Set(xs)].sort();
 
-/** El producto de un repo de Azure (paso 1 del AC 13): `{ producto }` o `{ empate: [...] , paso }`. */
+/** El producto de un repo de Azure (primer paso de ubicar un repo): `{ producto }` o `{ empate: [...] , paso }`. */
 function porRepoDeAzure(ent, proyecto, nombre) {
   if (!nombre) return { empate: [], paso: 'sin repo de Azure' };
   if (proyecto) {
@@ -339,12 +339,12 @@ function porRepoDeAzure(ent, proyecto, nombre) {
   return { empate: porNombre, paso: `el nombre del repo ${nombre} (un cambio sin proyecto)` };
 }
 
-/** El producto de la carpeta del volcado `<padre>/<carpeta>` (paso 2 del AC 13). */
+/** El producto de la carpeta del volcado `<padre>/<carpeta>` (segundo paso de ubicar un repo). */
 function porCarpeta(ent, carpeta) {
   if (!carpeta) return { empate: [], paso: 'sin carpeta' };
   const exacta = unicos(ent.filter((e) => low(e.ruta) === low(carpeta)).map((e) => e.producto));
   if (exacta.length === 1) return { producto: exacta[0] };
-  // la ruta exacta empata: queda sin ubicar, no se sigue buscando por el padre o la hoja (decisión 8 — pase adversarial)
+  // la ruta exacta empata: queda sin ubicar, no se sigue buscando por el padre o la hoja
   if (exacta.length > 1) return { empate: exacta, paso: `la carpeta ${carpeta}` };
   const partes = String(carpeta).split('/');
   const padre = partes.length > 1 ? partes[0] : '';
@@ -358,7 +358,7 @@ function porCarpeta(ent, carpeta) {
   return { empate: exacta.length > 1 ? exacta : porHoja, paso: `la carpeta ${carpeta}` };
 }
 
-/** Las fotos de proyecto (2.20) que traen ese repo, leídas por sus campos. */
+/** Las fotos de proyecto que traen ese repo, leídas por sus campos. */
 function fotosDe(fotos, repo) {
   if (!Array.isArray(fotos) || !repo) return [];
   return unicos(fotos.filter((f) => f && typeof f.repo === 'string' && low(f.repo) === low(repo) && typeof f.proyecto === 'string').map((f) => `${f.proyecto}/${f.repo}`));
@@ -371,7 +371,7 @@ function motivoSinUbicar(intentos, fotos) {
 }
 
 /**
- * Dónde trabaja una persona (AC 13-16), en productos de repos.json. `datos`: `repos` (repos.json o su lista),
+ * Dónde trabaja una persona, en productos de repos.json. `datos`: `repos` (repos.json o su lista),
  * `fotos` (`[{ proyecto, repo }]`, opcional), `corridas` (`[{ maquina, producto: '<padre>/<carpeta>', cambio: { repos:
  * [{ nombre, proyecto, principal }] } | null }]`) y `pedidos` (`[{ proyecto, asignado }]`). Sólo cuentan las corridas de
  * máquinas confirmadas para esa persona. Devuelve `{ estado, motivo?, productos: [{ producto, de, agregado? }],
@@ -440,7 +440,7 @@ function dondeTrabaja(sesion, c, datos = {}) {
   };
 }
 
-/** La vista de una persona (AC 17): sólo sus máquinas, sus productos y sus repos sin ubicar. Nada de otro. */
+/** La vista de una persona: sólo sus máquinas, sus productos y sus repos sin ubicar. Nada de otro. */
 function vistaDePersona(sesion, c, datos = {}) {
   const suyos = correosDe(sesion, c);
   const maquinas = Object.entries(c.machines)

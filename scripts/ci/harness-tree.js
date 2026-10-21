@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 'use strict';
-// harness-tree.js — la huella del código que mide un pipeline de operaciones, y la guarda que la compara (story 8.30).
+// harness-tree.js — la huella del código que mide un pipeline de operaciones, y la guarda que la compara.
 //
 // Uso:  node scripts/ci/harness-tree.js --tree --repo <checkout>
 //       node scripts/ci/harness-tree.js --check-tree [--worktree] --repo <checkout>     (la huella esperada, en HARNESS_TREE)
 //
 // POR QUÉ EXISTE. Los pipelines de operaciones (pipelines/operations/) arman su árbol con el arnés y le ponen encima los
 // datos y la configuración de la organización. Antes de medir y antes de guardar comprueban que el código siga siendo el
-// que se armó: un paso que vuelva el checkout a otra rama dejaría la noche en verde midiendo otro árbol (pasó: un guion
-// hacía `git checkout -B main origin/main` antes de medir). `push-nightly-data.js save` corre esta guarda antes de empujar.
+// que se armó: un paso que vuelva el checkout a otra rama dejaría la noche en verde midiendo otro árbol (por ejemplo, un
+// guion que hace `git checkout -B main origin/main` antes de medir). `push-nightly-data.js save` corre esta guarda antes de empujar.
 //
 // QUÉ ES LA HUELLA: `<sha256>@<commit>`. El sha256 es el del listado del commit (`git ls-tree -r`) SIN los datos de la
 // noche; el commit es el de HEAD. Dos commits que sólo difieren en datos tienen la misma huella: guardar no la mueve.

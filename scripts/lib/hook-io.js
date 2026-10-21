@@ -1,13 +1,10 @@
 #!/usr/bin/env node
 /**
- * scripts/lib/hook-io.js — la ÚNICA función de normalización de eventos de hook que la
- * migración terminó necesitando (Etapa E2, 2026-08-22).
+ * scripts/lib/hook-io.js — la ÚNICA función de normalización de eventos de hook entre Claude y Codex.
  *
- * El plan presupuestaba una "capa de normalización" entera; B1 midió que el payload de Codex
- * usa los mismos nombres de campo que Claude y la capa murió (Registro E1). Lo único que SÍ
- * difiere es la tool de edición: Claude emite Edit/Write con {file_path, ...}; Codex emite
- * `apply_patch` con tool_input.command = TEXTO de patch (sonda E2, payload real; resumido en
- * guides/codex-migration.md, Registro E2):
+ * El payload de Codex usa los mismos nombres de campo que Claude, así que no hace falta una capa de normalización
+ * entera. Lo único que SÍ difiere es la tool de edición: Claude emite Edit/Write con {file_path, ...}; Codex emite
+ * `apply_patch` con tool_input.command = TEXTO de patch (payload real; resumido en guides/codex-migration.md):
  *
  *   *** Begin Patch
  *   *** Update File: /ruta/abs/notas.txt
@@ -24,12 +21,11 @@
  *     original preservado en tool_name_raw. Un patch multi-archivo produce N eventos: el
  *     consumidor decide si corre su lógica por cada uno (dispatch.js lo hace).
  *
- * Consumidores (los 3 registros con matcher de edición + quien lo necesite):
+ * Consumidores (los registros con matcher de edición + quien lo necesite):
  *   - agent-skills/skills/tycon-pipeline/scripts/dispatch.js (pre-edit y post-edit)
  *   - ~/.claude/tycon-harness/scripts/hooks/rebuild-before-verify.js (marca PostToolUse)
  * Todos lo requieren vía TYCON_GUIDES_DIR (default ~/.claude/tycon-harness) CON
- * FALLBACK a la conducta actual si la lib no está: eso hace el rollout cross-repo seguro por
- * orden (agent-skills main se propaga antes de que este branch mergee — sin la lib, nada cambia).
+ * FALLBACK a la conducta sin la lib si ésta no está: así el cambio se propaga seguro entre repos, en cualquier orden.
  *
  * Uso directo: node hook-io.js --selftest
  */
@@ -59,24 +55,21 @@ function patchFiles(text) {
 // ningún lado. Resolverlo acá —donde ya vive el único traductor— arregla a todos los consumidores
 // de una vez, en vez de repetir el `resolve` en cada hoja de la cadena.
 //
-// Caso real (pasada 2 de la corrida dorada, 2026-08-22): con paths relativos, `file-events/<sid>`
-// y `marker.fileEvents` quedaron vacíos y el gate de ATDD salió `warn-unknown` — ciego, aunque el
-// ATDD se había hecho bien. Lo que lo mantuvo invisible hasta acá: el patch que capturó la sonda
-// E2, del que salieron los casos del banco, traía el path ABSOLUTO. El caso de prueba usaba una
-// forma que el sistema real no produce, y por eso pasaba en verde.
+// Sin esto, `file-events/<sid>` y `marker.fileEvents` quedan vacíos y el gate de ATDD sale `warn-unknown` — ciego,
+// aunque el ATDD se haya hecho bien. Un caso de prueba con el path ABSOLUTO no lo ve: usa una forma que el sistema
+// real no produce.
 function resolvePatchPath(p, cwd) {
   if (!p) return p;
   if (path.isAbsolute(p)) return p;
-  // Sin cwd en el payload no hay contra qué resolver: se devuelve tal cual (conducta previa) en
+  // Sin cwd en el payload no hay contra qué resolver: se devuelve tal cual en
   // vez de inventar una raíz — un path mal resuelto registraría ediciones de archivos que no son.
   return cwd ? path.resolve(String(cwd), p) : p;
 }
 
 // Un `Write` claude-shaped lleva `tool_input.content` — y varios consumidores deciden POR ese
 // content (los hooks de story-create leen el frontmatter; on-frontmatter-write toma el content
-// como estado final). Hasta 2026-08-28 los eventos Add File salían SIN content: cada consumidor
-// content-based quedaba MUDO bajo Codex, sin error — el mismo silencio del caso
-// incident-log#story-write-spawn-2026-08-28. En el formato apply_patch el cuerpo de un Add File
+// como estado final). Sin content en los eventos Add File, cada consumidor
+// content-based quedaría MUDO bajo Codex, sin error. En el formato apply_patch el cuerpo de un Add File
 // son sus líneas '+' (sin prefijo); si aparece una línea que no se puede atribuir con certeza,
 // se devuelve null y NO se inventa contenido (peor un consumidor mudo que uno decidiendo sobre
 // un content reconstruido mal).
@@ -98,7 +91,7 @@ function addFileContent(patchText, rawPath) {
     if (line.startsWith('+')) body.push(line.slice(1));
     // Una línea en blanco del archivo viaja como '+' solo; una línea en blanco CRUDA es formato
     // que este parser no atribuye — igual que cualquier otra línea sin '+': null, no se inventa
-    // (la 1ra versión la convertía en línea vacía del archivo — contenido que el patch no dice).
+    // (convertirla en línea vacía del archivo sería contenido que el patch no dice).
     else return null;
   }
   return found ? body.join('\n') : null;
@@ -126,7 +119,7 @@ function editEventsFrom(event) {
 }
 
 function selftest() {
-  // patch REAL capturado por la sonda E2 (2026-08-22) — no fabricado
+  // patch REAL capturado de Codex — no fabricado
   const real = '*** Begin Patch\n*** Update File: /tmp/fx/notas.txt\n@@\n-hola foo mundo\n+hola bar mundo\n*** End Patch';
   const evEdit = { tool_name: 'Edit', tool_input: { file_path: '/a.ts', old_string: 'x', new_string: 'y' } };
   const evPatch = { hook_event_name: 'PreToolUse', tool_name: 'apply_patch', tool_input: { command: real } };
@@ -142,7 +135,7 @@ function selftest() {
     ['los campos comunes del payload se preservan', r2[0].hook_event_name === 'PreToolUse'],
     ['multi-archivo → 3 eventos, Add mapea a Write', r3.length === 3 && r3[0].tool_name === 'Write' && r3[0].tool_input.file_path === '/fx/nuevo.ts'],
     ['Update y Delete mapean a Edit', r3[1].tool_name === 'Edit' && r3[2].tool_name === 'Edit'],
-    // ── content en los Add File (caso story-write-spawn, 2026-08-28) ───────────────────────
+    // ── content en los Add File ───────────────────────────────────────────────────────────
     // Un Write sin content deja mudo a todo consumidor content-based (hooks de story-create,
     // on-frontmatter-write). El cuerpo del Add son sus líneas '+', sin el prefijo.
     ['Add File → el Write lleva content (las líneas + sin prefijo)', r3[0].tool_input.content === 'x'],
@@ -152,8 +145,8 @@ function selftest() {
       const ev = editEventsFrom({ cwd: '/fx/repo', tool_name: 'apply_patch', tool_input: { command: story } })[0];
       const raro = '*** Begin Patch\n*** Add File: /fx/a.md\n+ok\nlinea-sin-prefijo\n*** End Patch';
       const evRaro = editEventsFrom({ tool_name: 'apply_patch', tool_input: { command: raro } })[0];
-      // Hallazgo del review 2026-08-28: un blanco CRUDO dentro del Add se convertía en línea
-      // vacía del archivo — contenido que el patch no atribuye. La línea vacía real viaja '+'.
+      // Un blanco CRUDO dentro del Add no se convierte en línea
+      // vacía del archivo — sería contenido que el patch no atribuye. La línea vacía real viaja '+'.
       const blanco = '*** Begin Patch\n*** Add File: /fx/b.md\n+x\n\n*** End Patch';
       const evBlanco = editEventsFrom({ tool_name: 'apply_patch', tool_input: { command: blanco } })[0];
       const vaciaReal = '*** Begin Patch\n*** Add File: /fx/c.md\n+x\n+\n+y\n*** End Patch';
@@ -167,8 +160,8 @@ function selftest() {
     })(),
     ['patch ilegible → identidad, no crash', editEventsFrom({ tool_name: 'apply_patch', tool_input: { command: 'basura' } }).length === 1],
     ['evento null → [null] sin crash', editEventsFrom(null).length === 1],
-    // ── paths relativos (pasada 2 de la corrida dorada, 2026-08-22) ────────────────────────
-    // Patch REAL de esa corrida: Codex escribe los paths relativos al cwd. Sin resolverlos, la
+    // ── paths relativos ────────────────────────────────────────────────────────────────────
+    // Codex escribe los paths relativos al cwd. Sin resolverlos, la
     // cadena entera los descarta en silencio (`on-edit.js` exige absoluto) y la edición no queda
     // registrada en ningún lado — el gate de ATDD se queda ciego sin que nada se ponga rojo.
     ...(() => {

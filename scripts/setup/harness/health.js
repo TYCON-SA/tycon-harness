@@ -1,5 +1,5 @@
 'use strict';
-// health.js — la comprobación de salud después de aplicar una versión del arnés (story 8.13, tanda C · AC 21).
+// health.js — la comprobación de salud después de aplicar una versión del arnés.
 //
 // Qué mira, en este orden, y qué es falla:
 //   1. La salida del aplicador: su suite rápida de cada arranque (`install-tycon-hooks.sh`, bloque «Suite de tests de la
@@ -8,7 +8,7 @@
 //   2. Cada hook del reporte del aplicador (`[{ kind: 'hook', id: '<EVENTO>:<ruta>' }]`): `node --check` de cada `.js`
 //      (`.mjs`, `.cjs`) y `bash -n` de cada `.sh`, resueltos desde el id —`@tcg:x` → `<árbol>/scripts/hooks/x`; lo demás
 //      → `<agent-skills>/skills/<ruta>`—. Un hook registrado sin su archivo, o que no compila, = falla.
-//      En Windows (story 8.17, AC 72) un `.sh` se revisa con el bash de Git, nunca con `bash` a secas —el primero del
+//      En Windows un `.sh` se revisa con el bash de Git, nunca con `bash` a secas —el primero del
 //      PATH puede ser el lanzador de WSL, que sale distinto de 0 con un guion sano—; sin el bash de Git es un aviso «sin
 //      comprobar», no una falla. Y un `.sh` con finales `\r\n` en disco (`bash -n` lo da por bueno y no corre) = AVISO
 //      con el guion y el remedio, nunca falla: está en el disco del clon, y volver atrás la versión no lo arregla. Uno
@@ -23,7 +23,7 @@
 //      un `harness.js` que no arranca o no devuelve JSON = falla.
 //
 // Por qué existe: el aplicador sale 0 aunque el árbol nuevo traiga un hook que deniega todo, un hook con un error de
-// sintaxis o un `harness.js` roto; dar la versión por buena por el código de salida dejaba la máquina sin trabajar hasta
+// sintaxis o un `harness.js` roto; dar la versión por buena por el código de salida dejaría la máquina sin trabajar hasta
 // que alguien lo notara. Quien llama (`harness.js`, en `update`, `install` y `startup --force`) decide qué hacer con el
 // resultado: restaurar por piezas, anotar `failed`, y refrescar la copia fija sólo en verde.
 //
@@ -56,8 +56,8 @@ const firstLines = (s, n = 2) => String(s || '').trim().split('\n').filter(Boole
 /**
  * El error de lanzar un hook, o null si el hook CORRIÓ. Un hook que sale sin leer su payload (no lo necesita) cierra la
  * entrada antes de que spawnSync termine de escribirla: spawnSync trae EPIPE y, además, el código de salida del hook.
- * Eso no es «no pude lanzarlo»: el hook corrió y su código de salida vale. Pasaba de a ratos con un hook de `exit 0`
- * (public-ci, 2026-10-14: «no pude lanzarlo (spawnSync … EPIPE)» en harness-health T99).
+ * Eso no es «no pude lanzarlo»: el hook corrió y su código de salida vale. Pasa de a ratos con un hook de `exit 0`
+ * («no pude lanzarlo (spawnSync … EPIPE)»).
  */
 function launchError(r) {
   if (!r.error) return null;
@@ -124,7 +124,7 @@ function settingsCommands(home, env) {
   return { file, list: out };
 }
 
-// el hook de arranque de Codex (story 8.23, tanda C): corre la copia fija, como la línea de arranque; nunca se lanza desde acá
+// el hook de arranque de Codex: corre la copia fija, como la línea de arranque; nunca se lanza desde acá
 const STARTUP_HOOK_MARK = 'scripts/hooks/harness-startup.js';
 /** Los `command` del hooks.json de Codex con su evento (barras normales), o null si no se puede leer. */
 function codexCommands(file) {
@@ -152,7 +152,7 @@ function makeSandbox(env, { noGit = false } = {}) {
     fs.mkdirSync(repo);
     fs.writeFileSync(transcript, '');
   } catch (_) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (__) { /* nada */ } return null; }
-  // la versión bajada (story 8.23, tanda B) no invoca git nunca: la caja es una carpeta vacía y los hooks la ven como
+  // la versión bajada no invoca git nunca: la caja es una carpeta vacía y los hooks la ven como
   // «no es un repo», que es lo que tienen que tolerar
   if (noGit) return { dir, repo, transcript, git: null };
   const g = spawnSync('git', ['init', '-q', repo], { windowsHide: true, encoding: 'utf8', env, timeout: CHECK_TIMEOUT_MS });
@@ -200,11 +200,11 @@ function check(ctx = {}, opts = {}) {
       else if (ext === '.sh') { bin = 'bash'; args = ['-n', file]; }
       if (!bin) continue;
       if (ext === '.sh' && platform === 'win32') {
-        // story 8.17 (AC 72). Un `.sh` con \r\n en disco: `bash -n` lo da por bueno, pero al correr sale 255 — un freno así
-        // no frena. Y `bash` a secas puede ser el lanzador de WSL (sale distinto de 0 con un guion sano, y eso hacía
+        // Un `.sh` con \r\n en disco: `bash -n` lo da por bueno, pero al correr sale 255 — un freno así
+        // no frena. Y `bash` a secas puede ser el lanzador de WSL (sale distinto de 0 con un guion sano, y eso haría
         // volver atrás una actualización sana): se revisa con el bash de Git o no se revisa.
         // El \r\n es un AVISO, nunca una falla: está en el disco del clon, no lo trajo la versión que se comprueba. Como
-        // falla hacía volver atrás la actualización, volver atrás no lo arregla, y se repetía en cada `update`. Y un guion
+        // falla haría volver atrás la actualización, volver atrás no lo arregla, y se repetiría en cada `update`. Y un guion
         // que no se pudo leer (tomado por otro programa) es «sin comprobar»: ni un verde callado ni una falla — tampoco
         // se manda a `bash -n`, que fallaría por lo mismo y no por la versión.
         const eol = hasCrlf(file);
@@ -233,7 +233,7 @@ function check(ctx = {}, opts = {}) {
           if (!c) { warn(`hook ${h.id}: no está su command en ${cmds.file}; no lo lancé`); continue; }
           if (c.norm.includes(BOOTSTRAP_MARK)) { log(`hook ${h.id}: es la línea de arranque, no se lanza`); continue; }
           const input = JSON.stringify(payloadFor(h.event, box.repo, box.transcript));
-          // story 8.17 (AC 72): en Windows un hook `.sh` se lanza como lo lanza Claude Code —`"<bash de Git>" -c
+          // en Windows un hook `.sh` se lanza como lo lanza Claude Code —`"<bash de Git>" -c
           // "<command>"`—, no con cmd.exe, que resolvería `bash` por el PATH (puede ser el lanzador de WSL)
           const viaGitBash = platform === 'win32' && path.extname(h.relpath).toLowerCase() === '.sh';
           if (viaGitBash && !gitBash().path) { warn(`hook ${h.id}: sin comprobar, no lo lancé (${gitBash().reason})`); continue; }
@@ -260,8 +260,8 @@ function check(ctx = {}, opts = {}) {
       }
     }
 
-    // 3b. los hooks de Codex (story 8.23, tanda C): con Codex enchufado, lo mismo sobre SU hooks.json —en una máquina
-    // sin Claude Code son los únicos hooks que hay, y sin esto la salud era «doctor no se queja»—. De cada `command` que
+    // 3b. los hooks de Codex: con Codex enchufado, lo mismo sobre SU hooks.json —en una máquina
+    // sin Claude Code son los únicos hooks que hay, y sin esto la salud sería «doctor no se queja»—. De cada `command` que
     // nombra un archivo del árbol: el archivo está y compila; y el primero de cada evento se lanza con su payload mínimo
     // (sale 2 = falla). El hook de arranque nunca se lanza: corre el programa que está corriendo esto.
     if (opts.codexHooks && tree) {
@@ -269,8 +269,8 @@ function check(ctx = {}, opts = {}) {
       if (!cc) warn(`no pude leer ${opts.codexHooks}: no comprobé los hooks de Codex`);
       else {
         // la ruta del árbol en sus dos formas —como la nombra el estado y resuelta—: el desplegador escribe en hooks.json
-        // la resuelta, y con la HOME (o ~/.tycon) detrás de un enlace no coincidían y la comprobación se salteaba ENTERA y
-        // en silencio (pase adversarial de la C, clases 4, 12 y 17). Y los comandos con comillas (una ruta con espacio,
+        // la resuelta, y con la HOME (o ~/.tycon) detrás de un enlace no coincidirían y la comprobación se saltearía ENTERA y
+        // en silencio. Y los comandos con comillas (una ruta con espacio,
         // «Nombre Apellido» en Windows) se leen entre comillas, no partidos por el espacio
         const roots = [...new Set([slash(tree), slash((() => { try { return fs.realpathSync(tree); } catch (_) { return tree; } })())].map((r) => r.replace(/\/+$/, '')))];
         const root = roots[0];
@@ -350,7 +350,7 @@ function check(ctx = {}, opts = {}) {
     if (!harnessJs) warn('sin árbol: no corrí doctor');
     else {
       // TYCON_HARNESS_HEALTH=1: doctor juzga ESTE árbol; un intento fallido registrado de antes es historia, no salud
-      // (sin esto, una reinstalación o un `startup --force` fallaban por su propia marca: pase adversarial H3/H4)
+      // (sin esto, una reinstalación o un `startup --force` fallarían por su propia marca)
       const r = spawnSync(process.execPath, [harnessJs, 'doctor', '--json'], { windowsHide: true, encoding: 'utf8', env: Object.assign({}, env, { TYCON_HARNESS_HEALTH: '1' }), timeout: DOCTOR_TIMEOUT_MS, cwd: tree || undefined });
       let d = null;
       try { d = JSON.parse(String(r.stdout || '')); } catch (_) { d = null; }

@@ -3,11 +3,9 @@
 /**
  * worktree-sweep.js — las carpetas de trabajo (worktrees de git) que ya se mergearon se borran solas.
  *
- * ── EL CASO (2026-10-16) ─────────────────────────────────────────────────────────────────────────────────────────
- * En una máquina del equipo había 30 carpetas `<repo>-wt-*` al lado de los repos, y 28 ya estaban mergeadas a main:
- * cada story y cada arreglo abre la suya, y nadie la cierra. Ocupan disco (cada una trae su `node_modules`), confunden
- * a quien busca dónde está el trabajo vivo, y una rama vieja checkeada en una carpeta olvidada no se deja borrar.
- * Pedido del dueño: «borrá solas las carpetas ya mergeadas».
+ * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────────────────────────
+ * Cada story y cada arreglo abre una carpeta `<repo>-wt-*` al lado de los repos, y nadie la cierra al mergear. Ocupan disco (cada una trae su
+ * `node_modules`), confunden a quien busca dónde está el trabajo vivo, y una rama vieja checkeada en una carpeta olvidada no se deja borrar.
  *
  * ── QUÉ HACE ─────────────────────────────────────────────────────────────────────────────────────────────────────
  * Dos caminos, el mismo criterio:
@@ -36,7 +34,7 @@
  *
  * Uso:
  *   node scripts/hooks/worktree-sweep.js                         ← el hook de arranque
- *   node scripts/hooks/worktree-sweep.js --story 8.41 [--dry-run] [--json]
+ *   node scripts/hooks/worktree-sweep.js --story <N.M> [--dry-run] [--json]
  *   node scripts/hooks/worktree-sweep.js --force [--dry-run]     ← la pasada de arranque, ahora
  */
 const fs = require('fs');
@@ -44,7 +42,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 
@@ -127,7 +125,7 @@ function lastUsedMs(wt) {
   return t;
 }
 
-/** El token de la story en una rama: `8.41` casa con `feat/8.41-a-x` y `story/8-41`, no con `18.41` ni `8.410`. */
+/** El token de la story en una rama: `N.M` casa con `feat/N.M-a-x` y `story/N-M`, no con `1N.M` ni con `N.M0`. */
 function branchNamesStory(branch, story) {
   if (!branch || !story) return false;
   const alt = story.replace(/\./g, '[.-]');

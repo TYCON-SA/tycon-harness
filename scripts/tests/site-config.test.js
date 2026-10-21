@@ -1235,10 +1235,12 @@ test('7.29-T22 Config_Modelos_SeccionPorLosDosTransportes @story-7.29 @ac-5 — 
   const p = await pantallaFalsa([{ id: 'modelos', titulo: 'm', repo: 'perfil', estado: 'cargado', borrador: {}, problems: [], avisos: [], extras: { hoy: MOD.DEFAULTS } }]);
   const porDefecto = Object.fromEntries(p.todo(p.sec('modelos')).filter((n) => String(n.attrs.class || '').split(' ').includes('r'))
     .map((f) => [f.hijos[0].hijos.map((x) => x.textContent).join(''), f.hijos[1].textContent]));
-  assert.strictEqual(porDefecto['Primera vuelta'], MOD.DEFAULTS.reviewers, JSON.stringify(porDefecto));
-  assert.strictEqual(porDefecto['Sesión, historia pesada'], MOD.DEFAULTS.session.heavy, JSON.stringify(porDefecto));
-  // la sesión de una historia pesada dice opus de fábrica; fable sólo si la organización lo declara
-  assert.ok(porDefecto['Sesión, historia pesada'] === 'opus' && !Object.values(porDefecto).includes('fable'), JSON.stringify(porDefecto));
+  // la columna habla en niveles: el valor de hoy, con el nombre de su nivel en el idioma de la página
+  const enPantalla = (m) => require(path.join(ROOT, 'scripts', 'site', 'texts.js')).t('es', `pantalla.nivel.${MOD.levelOf(m)}`);
+  assert.strictEqual(porDefecto['Primera vuelta'], enPantalla(MOD.DEFAULTS.reviewers), JSON.stringify(porDefecto));
+  assert.strictEqual(porDefecto['Sesión, historia pesada'], enPantalla(MOD.DEFAULTS.session.heavy), JSON.stringify(porDefecto));
+  // la sesión de una historia pesada dice opus (potente) de fábrica; fable (máximo) sólo si la organización lo declara
+  assert.ok(porDefecto['Sesión, historia pesada'] === 'potente' && !Object.values(porDefecto).includes('máximo'), JSON.stringify(porDefecto));
   await conPerfil({}, async ({ seccion, revisar, proponer }) => {
     const v = await seccion('modelos');
     assert.strictEqual(v.estado, 'cargado', JSON.stringify(v));
@@ -2733,7 +2735,10 @@ test('T11 Personas_TextosDelDuenoEnIngles @story-2.56 @ac-10', () => {
 });
 
 // ── 2.59: Modelos, Repos e Integraciones en renglones ─────────────────────────────────────────────────────────────────
-const MOD_DEFAULTS = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'models.js')).DEFAULTS;
+const MOD_JS = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'models.js'));
+const MOD_DEFAULTS = MOD_JS.DEFAULTS;
+/** El mismo `models` con cada modelo de Claude pasado a su nivel (lo que la pantalla muestra y propone). */
+const enNiveles = (v) => (typeof v === 'string' ? (MOD_JS.levelOf(v) || v) : v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === 'fable_question' || k === 'mandatory_ceiling' ? x : enNiveles(x)])) : v);
 const AZR = (project, repo) => ({ platform: 'azure', org: 'acme', project, repo });
 const MODELOS_2 = { reviewers_reloop: 'haiku', adversarial: { heavy: 'fable' }, session: { heavy: 'opus' },
   reviewer: { 'tycon-silent-failure-hunter': 'opus', 'tycon-spec-first-checker': 'sonnet' }, mandatory_ceiling: true, ceiling: 'opus' };
@@ -2777,9 +2782,10 @@ test('T1 Modelos_TresTablasUnRenglonPorTrabajo @story-2.59 @ac-1', async () => {
     assert.strictEqual(p.de(fila, 'hoy').length, 1, `${p.texto(fila)}: su valor por defecto`);
     assert.strictEqual(p.todo(fila).filter((n) => n.tag === 'select').length, 1, `${p.texto(fila)}: un selector`);
   }
-  assert.match(p.texto(rev[0]), /Primera vuelta \| sonnet/);
-  assert.match(p.texto(adv[1]), /pesada \| opus/);
-  assert.match(p.texto(ayu[3]), /pesada \| opus/, 'la sesión pesada: opus por defecto (7.35)');
+  // la columna «Por defecto» en niveles
+  assert.match(p.texto(rev[0]), /Primera vuelta \| equilibrado/);
+  assert.match(p.texto(adv[1]), /pesada \| potente/);
+  assert.match(p.texto(ayu[3]), /pesada \| potente/, 'la sesión pesada: opus (potente) por defecto (7.35)');
   // los particulares: su ✕; las vueltas, no
   assert.deepStrictEqual(rev.map((f) => p.de(f, 'quitar-fila').length), [0, 0, 1, 1]);
   assert.match(p.texto(rev[2]) + p.texto(rev[3]), /silent-failure-hunter/);
@@ -2787,7 +2793,7 @@ test('T1 Modelos_TresTablasUnRenglonPorTrabajo @story-2.59 @ac-1', async () => {
   const tope = p.de(p.sec('modelos'), 'tope');
   assert.strictEqual(tope.length, 1);
   assert.ok(p.todo(tope[0]).some((n) => n.tag === 'input' && n.attrs.type === 'checkbox'));
-  assert.ok(p.todo(tope[0]).some((n) => n.tag === 'select' && n.value === 'opus'));
+  assert.ok(p.todo(tope[0]).some((n) => n.tag === 'select' && n.value === 'strong'));
 });
 
 test('T2 Modelos_TextosDelDueno @story-2.59 @ac-2', async () => {
@@ -2809,15 +2815,15 @@ test('T2 Modelos_TextosDelDueno @story-2.59 @ac-2', async () => {
 test('T3 Modelos_CambiarYVolverAlPorDefecto @story-2.59 @ac-3', async () => {
   const sel = (p, tabla, fila) => p.todo(p.renglones(p.tablas()[tabla])[fila]).find((n) => n.tag === 'select');
   let p = await compacta(secModelos(MODELOS_2));
-  sel(p, 2, 0).on.change({ target: { value: 'sonnet' } });   // los ayudantes
-  assert.deepStrictEqual((await p.revisado()).models, { ...clon2(MODELOS_2), helpers: 'sonnet' });
+  sel(p, 2, 0).on.change({ target: { value: 'balanced' } });   // los ayudantes
+  assert.deepStrictEqual((await p.revisado()).models, { ...enNiveles(MODELOS_2), helpers: 'balanced' });
   p = await compacta(secModelos(MODELOS_2));
   sel(p, 1, 1).on.change({ target: { value: '' } });        // la historia pesada vuelve al por defecto: adversarial queda vacío y sale
-  const sinPesada = clon2(MODELOS_2); delete sinPesada.adversarial;
+  const sinPesada = enNiveles(MODELOS_2); delete sinPesada.adversarial;
   assert.deepStrictEqual((await p.revisado()).models, sinPesada);
   p = await compacta(secModelos(MODELOS_2));
   p.de(p.renglones(p.tablas()[0])[2], 'quitar-fila')[0].on.click({}); await p.esperar();
-  const sinUno = clon2(MODELOS_2); delete sinUno.reviewer[Object.keys(MODELOS_2.reviewer)[0]];
+  const sinUno = enNiveles(MODELOS_2); delete sinUno.reviewer[Object.keys(MODELOS_2.reviewer)[0]];
   assert.deepStrictEqual((await p.revisado()).models, sinUno, 'sacar un revisor particular');
 });
 
@@ -2956,7 +2962,8 @@ test('T7 Integraciones_UnRenglonPorIntegracion @story-2.59 @ac-7', async () => {
 });
 
 test('T8 Compacta_SinTocarNadaNoCambia @story-2.59 @ac-8', async () => {
-  for (const [s, k, v] of [[secModelos(MODELOS_2), 'models', MODELOS_2], [secSuites(SUITES_5), 'merge_suites', SUITES_5], [secInteg(INTEG), 'integrations', INTEG]]) {
+  // el servidor carga los modelos en niveles; lo que llega así viaja igual
+  for (const [s, k, v] of [[secModelos(enNiveles(MODELOS_2)), 'models', enNiveles(MODELOS_2)], [secSuites(SUITES_5), 'merge_suites', SUITES_5], [secInteg(INTEG), 'integrations', INTEG]]) {
     const p = await compacta(s);
     const va = (await p.revisado())[k];
     assert.strictEqual(JSON.stringify(va), JSON.stringify(v), `${s.id}: mismo orden y mismas claves`);
@@ -3424,4 +3431,105 @@ test('T20 Pedidos_ElSitioLeeDeLosProyectosDeLosProductos_ConElTokenDeSoloLectura
       assert.match(t.message, /necesita lectura de pedidos de trabajo/);
     });
   } finally { await new Promise((r) => az.close(r)); }
+});
+
+// ── los niveles de modelo en la pantalla ────────────────────────────────────────────────────────────────
+const NIVELES_ES = ['económico', 'equilibrado', 'potente', 'máximo'];
+const EQUIV = JSON.parse(fs.readFileSync(path.join(ROOT, 'build', 'equivalences.json'), 'utf8')).models;
+const secNiveles = (models, extras = {}) => ({ ...secModelos(models), extras: { ...secModelos(models).extras, equivalencias: EQUIV, ...extras } });
+const opcionesDe = (p, n) => p.todo(n).filter((x) => x.tag === 'option');
+
+test('T8 Modelos_SelectoresConNiveles @story-2.70 @ac-6', async () => {
+  const p = await compacta(secNiveles(enNiveles(MODELOS_2)));
+  const selectores = p.todo(p.sec('modelos')).filter((n) => n.tag === 'select' && !/fable_question/.test(String(n.attrs['data-path'] || '')) && n.attrs['aria-label'] !== 'Revisor');
+  assert.ok(selectores.length >= 10, `${selectores.length} selectores de modelo`);
+  for (const sel of selectores) {
+    const ops = opcionesDe(p, sel).filter((o) => o.attrs.value !== '');
+    assert.deepStrictEqual(ops.map((o) => o.attrs.value), MOD_JS.LEVELS, `${sel.attrs['data-path']}: los cuatro niveles, en el archivo sin tilde`);
+    assert.deepStrictEqual(ops.map((o) => o.textContent), NIVELES_ES, `${sel.attrs['data-path']}: en pantalla con tilde`);
+  }
+  assert.ok(selectores.some((s) => s.attrs['data-path'] === 'models.ceiling'), 'el del tope incluido');
+  // «Por defecto» en niveles: ningún renglón muestra un nombre de Claude en esa columna
+  for (const fila of p.tablas().flatMap((t) => p.renglones(t))) {
+    const hoy = p.de(fila, 'hoy')[0].textContent;
+    assert.doesNotMatch(hoy, /^(haiku|sonnet|opus|fable)$/, p.texto(fila));
+  }
+  const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.deepStrictEqual(MOD_JS.LEVELS.map((n) => t('en', `pantalla.nivel.${n}`)), ['economy', 'balanced', 'strong', 'max']);
+});
+
+test('T9 Modelos_EquivalenciasDebajo @story-2.70 @ac-7', async () => {
+  const lineas = (p) => p.de(p.sec('modelos'), 'equiv').map((n) => n.textContent);
+  let p = await compacta(secNiveles({ reviewers: 'balanced' }));
+  assert.ok(lineas(p).includes('Claude: sonnet · Codex: gpt-5.6-luna'), lineas(p).join('\n'));
+  // cambiar el selector cambia la línea
+  const sel = p.todo(p.renglones(p.tablas()[0])[0]).find((n) => n.tag === 'select');
+  sel.on.change({ target: { value: 'max' } }); await p.esperar();
+  assert.ok(lineas(p).includes(`Claude: fable · Codex: ${EQUIV.fable}`), lineas(p).join('\n'));
+  // un árbol sin la equivalencia (o sin el archivo): «sin equivalencia en este árbol»
+  p = await compacta(secNiveles({ reviewers: 'balanced' }, { equivalencias: { opus: 'gpt-x' } }));
+  assert.ok(lineas(p).includes('Claude: sonnet · Codex: sin equivalencia en este árbol'), lineas(p).join('\n'));
+  p = await compacta(secNiveles({ reviewers: 'balanced' }, { equivalencias: null }));
+  assert.ok(lineas(p).includes('Claude: sonnet · Codex: sin equivalencia en este árbol'));
+  // un archivo que está pero no se lee no se confunde con uno que falta: la línea dice por qué (fallas silenciosas)
+  const roto = tmp('site-config-equiv-roto-');
+  fs.mkdirSync(path.join(roto, 'build'), { recursive: true });
+  fs.writeFileSync(path.join(roto, 'build', 'equivalences.json'), '{ roto');
+  const leido = ORG.equivalenciasDe(roto);
+  assert.strictEqual(leido.equivalencias, null);
+  assert.match(leido.motivo, /^no pude leer las equivalencias de este árbol \(/);
+  assert.deepStrictEqual(ORG.equivalenciasDe(tmp('site-config-sin-equiv-')), { equivalencias: null, motivo: null }, 'sin el archivo: sin motivo');
+  p = await compacta(secNiveles({ reviewers: 'balanced' }, { equivalencias: null, motivoEquivalencias: leido.motivo }));
+  assert.ok(lineas(p).some((l) => l.startsWith('Claude: sonnet · Codex: no pude leer las equivalencias de este árbol (')), lineas(p).join('\n'));
+  // el servidor las lee de build/equivalences.json del árbol que sirve el sitio
+  await conPerfil({ repos: { ...TR_BASE, models: { reviewers: 'balanced' } }, layer: capa(ORG.MODEL_LEVELS_SINCE) }, async ({ seccion }) => {
+    const v = await seccion('modelos');
+    assert.deepStrictEqual(v.extras.equivalencias, EQUIV);
+  });
+});
+
+test('T10 Modelos_LoViejoSeProponeComoNivel @story-2.70 @ac-8', async () => {
+  const viejo = { reviewers: 'sonnet', adversarial: { heavy: 'opus', fable_question: 'never' } };
+  await conPerfil({ repos: { ...TR_BASE, models: viejo }, layer: capa(ORG.MODEL_LEVELS_SINCE) }, async ({ seccion, revisar }) => {
+    const v = await seccion('modelos');
+    assert.deepStrictEqual(v.borrador.models, { reviewers: 'balanced', adversarial: { heavy: 'strong', fable_question: 'never' } }, 'se ve en niveles');
+    const p = await compacta(v);
+    const val = (ruta) => p.todo(p.sec('modelos')).find((n) => n.tag === 'select' && n.attrs['data-path'] === ruta).value;
+    assert.deepStrictEqual([val('models.reviewers'), val('models.adversarial.heavy')], ['balanced', 'strong']);
+    // cambiar una clave: las otras viajan como nivel
+    p.todo(p.sec('modelos')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'models.helpers').on.change({ target: { value: 'economy' } });
+    const propuesto = (await p.revisado()).models;
+    assert.deepStrictEqual(propuesto, { reviewers: 'balanced', adversarial: { heavy: 'strong', fable_question: 'never' }, helpers: 'economy' });
+    const r = await revisar('modelos', { models: propuesto });
+    assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+    assert.deepStrictEqual(JSON.parse(r.texto).models, propuesto, 'el archivo propuesto lleva niveles');
+  });
+  // sin tocar nada, lo que viaja es lo cargado, sin cambios (el original del servidor ya está en niveles)
+  const p = await compacta(secNiveles(enNiveles(viejo)));
+  assert.deepStrictEqual((await p.revisado()).models, enNiveles(viejo));
+});
+
+test('T11 Modelos_TopeSigueFrenando @story-2.70 @ac-9', () => {
+  const TEAM = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
+  const r = ORG.revisar({ seccion: 'modelos', texto: ORG.formatJson(TR_BASE), borrador: { models: { mandatory_ceiling: true, ceiling: 'balanced', reviewers: 'strong' } }, lectores: { 'team-repos.js': TEAM } });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.texto, null);
+  assert.deepStrictEqual(r.problems.map((x) => x.path), ['models.reviewers']);
+  assert.match(r.problems[0].message, /balanced/);
+  assert.doesNotMatch(r.problems[0].message, /sonnet|opus/);
+});
+
+test('T13 Modelos_NivelesPidenSuVersion @story-2.70 @ac-11', async () => {
+  assert.ok(ORG.versionAtLeast(ORG.MODEL_LEVELS_SINCE, ORG.MODELS_SINCE), 'la de los niveles es posterior');
+  assert.notStrictEqual(ORG.MODEL_LEVELS_SINCE, ORG.MODELS_SINCE);
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'sonnet' } }).version, ORG.MODELS_SINCE, 'con nombres, la de siempre');
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'balanced' } }).version, ORG.MODEL_LEVELS_SINCE);
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { session: { heavy: 'max' } } }).version, ORG.MODEL_LEVELS_SINCE, 'un nivel adentro de un objeto');
+  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODELS_SINCE)), { ...TR_BASE, models: { reviewers: 'balanced' } })), new RegExp(ORG.MODEL_LEVELS_SINCE.replace(/\./g, '\\.')));
+  assert.strictEqual(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_LEVELS_SINCE)), { ...TR_BASE, models: { reviewers: 'balanced' } }), null);
+  assert.strictEqual(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODELS_SINCE)), { ...TR_BASE, models: { reviewers: 'sonnet' } }), null);
+  // un comentario cuyo texto es un nivel no es un nivel (pase adversarial): ni pide la versión ni se traduce
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { _nota: 'economy', reviewers: 'haiku' } }).version, ORG.MODELS_SINCE);
+  const TEAM = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
+  assert.deepStrictEqual(ORG.modelosEnNiveles({ _nota: 'opus', helpers: 'haiku' }, TEAM), { _nota: 'opus', helpers: 'economy' });
 });

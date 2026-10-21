@@ -1,11 +1,11 @@
 'use strict';
-// place.js — dónde vive el arnés en la máquina: el nombre del lugar, el nombre viejo y cómo se los lee (story 8.19).
+// place.js — dónde vive el arnés en la máquina: el nombre del lugar, el nombre viejo y cómo se los lee.
 //
-// ── EL CASO (2026-10-04) ──────────────────────────────────────────────────────────────────────────────────────────
-// Mirando la portada publicada, el dueño vio que quien clona el repo público lee después `~/.claude/tycon-claude-guides`:
-// el nombre del repo interno, que afuera nadie conoce. Decidió que el lugar se llame como el repo público,
-// `~/.claude/tycon-harness`, y que el nombre viejo siga resolviendo en las máquinas ya instaladas. El inventario de ese
-// día encontró el nombre definido cuatro veces y escrito a mano en unos catorce lugares más: esta es la definición única.
+// ── EL PORQUÉ ─────────────────────────────────────────────────────────────────────────────────────────────────────
+// Quien clona el repo público lee después `~/.claude/tycon-claude-guides`: el nombre del repo interno, que afuera nadie
+// conoce. Por eso el lugar se llama como el repo público,
+// `~/.claude/tycon-harness`, y el nombre viejo sigue resolviendo en las máquinas ya instaladas. Esta es la
+// definición única del nombre: nadie más lo escribe a mano.
 //
 // ── QUÉ HAY ACÁ ───────────────────────────────────────────────────────────────────────────────────────────────────
 //   · PLACE_NAME y LEGACY_PLACE_NAME, placePath(home), legacyPlacePath(home) y resolvePlace({ home }): los de
@@ -15,7 +15,7 @@
 //   · samePath(a, b, platform): compara dos rutas como las compara el sistema: sin la barra final, con `/` y `\` iguales y
 //     sin distinguir mayúsculas en Windows.
 //
-// Desde la story 8.23 (tanda A1) los dos nombres, sus rutas y resolvePlace viven en tycon-home.js, la única pieza que sabe
+// Los dos nombres, sus rutas y resolvePlace viven en tycon-home.js, la única pieza que sabe
 // dónde vive el arnés: este archivo queda como su fachada (la API de siempre, para los que ya lo cargan) más samePath.
 // Vive en scripts/setup/harness/ porque harness.js copia esa carpeta entera a la copia fija del programa: viaja solo,
 // con tycon-home.js al lado, a donde corren `rollback` y `uninstall` con el árbol roto.

@@ -7,11 +7,11 @@
 #
 # Ver el header de sync-claude-md-blocks.sh para el porqué y el flujo de propagación.
 #
-# Story 8.13 (tanda B), como el .sh: lanzado por harness.js (`TYCON_HARNESS_SNAPSHOT_DIR` puesta) no escribe sus `.bak`
+# Como el .sh: lanzado por harness.js (`TYCON_HARNESS_SNAPSHOT_DIR` puesta) no escribe sus `.bak`
 # —la copia ya la tomó el mecanismo—; con `TYCON_REPORT_PIECES=<archivo>` (se la deja el aplicador con -ReportJson)
 # anota ahí los bloques que quedaron en su lugar y el espejo de Codex. Con -Check no anota nada.
 #
-# Story 8.7 (AC 25), como el .sh: un bloque cuya PRIMERA línea es `<!-- requires-integration: <integración> -->` se
+# Como el .sh: un bloque cuya PRIMERA línea es `<!-- requires-integration: <integración> -->` se
 # escribe sólo con esa integración prendida según `scripts/lib/tycon-config.js integrations --json` (una sola pregunta,
 # y sólo si algún bloque lo declara); apagada, no se agrega y, si estaba, se quita (con -Check sólo avisa que sobra); si no
 # se pudo saber (configuración rota, sin node, integración desconocida), no se agrega si falta, queda y se actualiza si
@@ -25,9 +25,9 @@
 #   .\sync-claude-md-blocks.ps1          # sincroniza
 #   .\sync-claude-md-blocks.ps1 -Check   # reporta qué está desactualizado, no modifica
 #
-# -Given (story 8.36; lo pasa install-tycon-hooks.ps1): lo que el lector de configuración ya le contestó al aplicador en
+# -Given (lo pasa install-tycon-hooks.ps1): lo que el lector de configuración ya le contestó al aplicador en
 # esta misma corrida —@{ ProfileRc; ProfileOut; IntegRc; IntegOut; RespRc; RespOut }, el código y la salida de
-# `get install.profile`, de `integrations --json` y de `response --json` (story 2.31)—. Con eso no vuelve a lanzar Node para preguntarlo; lo interpreta igual. Sin -Given (corrido
+# `get install.profile`, de `integrations --json` y de `response --json`—. Con eso no vuelve a lanzar Node para preguntarlo; lo interpreta igual. Sin -Given (corrido
 # suelto), pregunta como siempre.
 
 param([switch]$Check, [hashtable]$Given)
@@ -36,7 +36,7 @@ $ErrorActionPreference = 'Continue'
 
 if ($env:TYCON_NO_CLAUDEMD_SYNC -eq '1') { exit 0 }
 
-# PowerShell 7 es un requisito (story 8.17): lanzado suelto con Windows PowerShell 5.1, lo dice y no toca el CLAUDE.md.
+# PowerShell 7 es un requisito: lanzado suelto con Windows PowerShell 5.1, lo dice y no toca el CLAUDE.md.
 # El instalador ya frena antes de llegar acá; esto cubre a quien lo corre a mano. Mismo criterio y misma variable de
 # prueba que install-tycon-hooks.ps1 (sólo simula una versión más vieja; el texto, sin tildes: ver allá).
 $TyconPsMajor = $PSVersionTable.PSVersion.Major
@@ -54,7 +54,7 @@ if ($TyconPsMajor -lt 7) {
     exit 1
 }
 
-# La carpeta de usuario: copia exacta de la función de install-tycon-hooks.ps1 (story 8.17, AC 33; allá está el porqué).
+# La carpeta de usuario: copia exacta de la función de install-tycon-hooks.ps1 (allá está el porqué).
 # Lo mismo que os.homedir() de Node: en Windows USERPROFILE si esta puesta y, si no, la carpeta del perfil; en Linux y
 # Mac HOME y, si no, la del perfil. -Platform es para las pruebas.
 function Get-TyconHome([string]$Platform = [Environment]::OSVersion.Platform) {
@@ -63,9 +63,9 @@ function Get-TyconHome([string]$Platform = [Environment]::OSVersion.Platform) {
     return $h
 }
 
-# Los finales de línea, como los lee el .sh (story 8.17, AC 36): python abre con saltos universales, así que \r\n y un
-# \r suelto pasan a \n, en los bloques y en el CLAUDE.md. Sin esto, un clon de Windows con autocrlf copiaba los \r al
-# CLAUDE.md y el resultado no era el del .sh.
+# Los finales de línea, como los lee el .sh: python abre con saltos universales, así que \r\n y un
+# \r suelto pasan a \n, en los bloques y en el CLAUDE.md. Sin esto, un clon de Windows con autocrlf copiaría los \r al
+# CLAUDE.md y el resultado no sería el del .sh.
 function ConvertTo-SyncLf([string]$Text) { return (($Text -replace "`r`n", "`n") -replace "`r", "`n") }
 
 # una pieza para el reporte del aplicador: kind<TAB>ruta absoluta<TAB>id, una por línea. Nunca rompe el sync.
@@ -79,7 +79,7 @@ function Record-SyncPiece([string]$Line) {
 # Un marcador CASI bien escrito (otra forma, o fuera de la primera línea) no es un bloque común: sería una regla escrita
 # donde su servicio está apagado, con el comentario copiado al CLAUDE.md y sin una palabra. Es «no se pudo saber».
 # Un BOM delante no cambia nada: ReadAllText ya lo descarta.
-# Story 8.16 (tanda C · AC 24), como el .sh: las primeras líneas pueden traer también `<!-- requires-profile: full -->`,
+# Como el .sh: las primeras líneas pueden traer también `<!-- requires-profile: full -->`,
 # una de cada clase como mucho y en cualquier orden. BadMarker es @{ Kind = 'integration'|'profile'; Line = … } o $null.
 $SyncProfiles = @('minimal', 'full')
 function Read-SyncBlock([string]$Path) {
@@ -172,7 +172,7 @@ function Get-SyncIntegrationState([string]$Name, [string]$Reader) {
     return @{ State = 'on'; Why = $null }
 }
 
-# Story 2.31: on · off · unknown según los marcadores de un bloque (los mismos criterios que el bucle de abajo), para
+# on · off · unknown según los marcadores de un bloque (los mismos criterios que el bucle de abajo), para
 # que un bloque con variantes mire sus condiciones antes de elegir el texto.
 function Get-SyncStubState([hashtable]$Block, [string]$Reader) {
     if ($Block.BadMarker) { return 'unknown' }
@@ -187,7 +187,7 @@ function Get-SyncStubState([hashtable]$Block, [string]$Reader) {
     return 'on'
 }
 
-# Story 2.31, como el .sh: ¿el bloque declara `<!-- variants: response -->` entre sus marcadores de arriba?
+# Como el .sh: ¿el bloque declara `<!-- variants: response -->` entre sus marcadores de arriba?
 function Test-SyncVariants([string]$Path) {
     try { $lines = (ConvertTo-SyncLf ([IO.File]::ReadAllText($Path))).Split([char]10) } catch { return $false }
     foreach ($l in $lines) {
@@ -197,7 +197,7 @@ function Test-SyncVariants([string]$Path) {
     return $false
 }
 
-# Story 2.31, como el .sh: cómo contesta el asistente (idioma, estilo y tope, ya resueltos por el lector), una sola vez:
+# Como el .sh: cómo contesta el asistente (idioma, estilo y tope, ya resueltos por el lector), una sola vez:
 # @{ Data; Why }. Un bloque con variantes es una carpeta `claude-md-blocks/<bloque>/` con `<estilo>.<idioma>.md`.
 $script:SyncResponse = $null
 function Get-SyncResponse([string]$Reader) {
@@ -280,7 +280,7 @@ try {
     if (-not (Test-Path $blocksDir)) { exit 0 }
 
     $files = @(Get-ChildItem -Path $blocksDir -Filter '*.md' -File | Sort-Object Name)
-    # Cada bloque es un `.md` de la raíz; uno que declara `<!-- variants: response -->` (story 2.31) toma su texto de la
+    # Cada bloque es un `.md` de la raíz; uno que declara `<!-- variants: response -->` toma su texto de la
     # carpeta del mismo nombre (como el .sh y agents-md-blocks.js). El orden, por código de carácter, igual que ellos
     # (Sort-Object compara con reglas de idioma y ordenaba distinto)
     $list = New-Object System.Collections.Generic.List[object]
@@ -465,9 +465,9 @@ try {
     # Corre ANTES de los early-exits: el espejo depende del contenido final,
     # no de si el lado Claude cambió (mismo contrato que la versión bash).
     # ============================================================
-    # Desde la tanda C de la story 8.23 AGENTS.md lleva los BLOQUES entre marcas, escritos por agents-md-blocks.js (lo
-    # llama el enchufe de Codex); la copia ENTERA del CLAUDE.md la hace sólo un árbol de antes, sin ese escritor (el .sh
-    # dejó de hacerla; pase adversarial de la C, clase 19: los dos escribían el mismo archivo y se pisaban)
+    # AGENTS.md lleva los BLOQUES entre marcas, escritos por agents-md-blocks.js (lo llama el enchufe de Codex); la copia
+    # ENTERA del CLAUDE.md la hace sólo un árbol viejo, sin ese escritor (el .sh no la hace: los dos escribían el mismo
+    # archivo y se pisaban)
     if ($env:TYCON_CODEX -eq '1' -and -not (Test-Path (Join-Path $PSScriptRoot 'agents-md-blocks.js'))) {
         try {
             $codexTarget = $env:CODEX_AGENTS_MD_PATH

@@ -25,7 +25,7 @@ $ErrorActionPreference = 'SilentlyContinue'
 
 if ($env:TYCON_NO_SQLITE_CHECK -eq '1') { exit 0 }
 
-# PowerShell 7 es un requisito (story 8.17, W3W4): lanzado con Windows PowerShell 5.1, lo dice en una línea y sale 1 antes
+# PowerShell 7 es un requisito: lanzado con Windows PowerShell 5.1, lo dice en una línea y sale 1 antes
 # de escribir su sello o lanzar nada. Mismo criterio y misma variable de prueba que install-tycon-hooks.ps1 (sólo simula
 # una versión más vieja; el texto, sin tildes: ver allá).
 $TyconPsMajor = $PSVersionTable.PSVersion.Major
@@ -85,8 +85,8 @@ else                   { Avisar-Manual 'instala SQLite desde https://sqlite.org/
 
 if ($env:TYCON_SQLITE_AUTO_INSTALL -eq '0') { Avisar-Manual $cmdTxt }
 
-# 🔴 CANDADO entre procesos (2026-08-25, revisión adversarial). Dos sesiones que arrancan juntas
-# pasaban las dos la guarda de arriba y lanzaban DOS instalaciones en paralelo. Se toma el candado
+# 🔴 CANDADO entre procesos. Dos sesiones que arrancan juntas
+# pasarían las dos la guarda de arriba y lanzarían DOS instalaciones en paralelo. Se toma el candado
 # con creación exclusiva del archivo, que es atómica; si otro lo tiene, este proceso se va callado.
 $lockPath = Join-Path $stampDir 'sqlite3-install.lock'
 New-Item -ItemType Directory -Path $stampDir -Force | Out-Null
@@ -127,7 +127,7 @@ try {
 # winget deja el binario en el PATH de la MÁQUINA, que este proceso todavía no ve: se refresca acá
 # para poder VERIFICAR que la instalación funcionó.
 #
-# 🔴 Pero esto NO alcanza para el proceso padre (2026-08-25, revisión adversarial): este script
+# 🔴 Pero esto NO alcanza para el proceso padre: este script
 # corre en un PowerShell hijo, y un hijo no puede modificar el entorno de quien lo lanzó. O sea que
 # la sesión de Claude/Codex que está arrancando AHORA sigue sin ver `sqlite3`, aunque acá diga que
 # se instaló bien. Por eso el mensaje de éxito avisa de reabrir: prometer que ya funciona sería

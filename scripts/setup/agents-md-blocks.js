@@ -1,20 +1,19 @@
 #!/usr/bin/env node
 'use strict';
 // agents-md-blocks.js — las reglas siempre presentes del arnés en el archivo de reglas de Codex (`~/.codex/AGENTS.md`),
-// escritas DESDE LOS BLOQUES (`claude-md-blocks/*.md`), entre sus marcas (story 8.23, tanda C · AC 22).
+// escritas DESDE LOS BLOQUES (`claude-md-blocks/*.md`), entre sus marcas.
 //
-// ── EL CASO (2026-10-06) ──────────────────────────────────────────────────────────────────────────────────────────
-// Hasta acá `AGENTS.md` era una COPIA ENTERA de `~/.claude/CLAUDE.md` (la hacía `sync-claude-md-blocks.sh` al final, y
-// la `.ps1` de Windows no la hacía nunca). Tres consecuencias medidas: un dev que sólo usa Codex no recibía ninguna regla
-// (no hay `CLAUDE.md` que copiar); en Windows tampoco, usara lo que usara; y lo que la persona escribía a mano en
-// `AGENTS.md` se pisaba en cada arranque. Además viajaban los `@import` del `CLAUDE.md`, que Codex no resuelve.
+// ── POR QUÉ NO ES UNA COPIA ───────────────────────────────────────────────────────────────────────────────────────
+// Copiar `~/.claude/CLAUDE.md` entero a `AGENTS.md` tendría tres consecuencias: un dev que sólo usa Codex no recibiría
+// ninguna regla (no hay `CLAUDE.md` que copiar); en Windows tampoco; y lo que la persona escribe a mano en
+// `AGENTS.md` se pisaría en cada arranque. Además viajarían los `@import` del `CLAUDE.md`, que Codex no resuelve.
 //
 // ── QUÉ HACE ──────────────────────────────────────────────────────────────────────────────────────────────────────
 // Lo mismo que el sincronizador hace con `CLAUDE.md`, sobre `AGENTS.md` y sin leer `CLAUDE.md`:
 //   · cada bloque queda entre `<!-- TYCON_BLOCK:<nombre> START … -->` y `<!-- TYCON_BLOCK:<nombre> END -->`; se localiza
-//     por el PREFIJO de la marca (una marca con el texto de antes es el mismo bloque: se actualiza en su lugar);
+//     por el PREFIJO de la marca (una marca con otro texto detrás del prefijo es el mismo bloque: se actualiza en su lugar);
 //   · un bloque con variante por herramienta (`claude-md-blocks/names/<nombre>.codex.md`) lleva el cuerpo de la variante;
-//   · lo que hay FUERA de las marcas es de la persona y no se toca, byte a byte (en un `AGENTS.md` que venía siendo copia
+//   · lo que hay FUERA de las marcas es de la persona y no se toca, byte a byte (en un `AGENTS.md` que ya era copia
 //     del `CLAUDE.md`, eso incluye lo personal que ya estaba copiado: queda, y deja de actualizarse solo);
 //   · un bloque que requiere una integración (`<!-- requires-integration: x -->`) o un perfil (`<!-- requires-profile:
 //     full -->`) se escribe sólo si corresponde; si no, no se agrega y, si estaba, se quita entre sus marcas. «No se pudo
@@ -28,7 +27,7 @@
 //
 // Quién lo llama: el enchufe de Codex del mecanismo (`scripts/setup/harness/tools.js`) y, suelto, el aplicador
 // (`install-tycon-hooks.sh` / `.ps1`) en su bloque de Codex. Con `TYCON_REPORT_PIECES` (o `reportFile`) anota su pieza
-// —`codex <ruta> AGENTS.md`— como la anotaba el sincronizador; con `--check` y `TYCON_PLAN_PIECES`, su acción en el plan.
+// —`codex <ruta> AGENTS.md`— como la anota el sincronizador; con `--check` y `TYCON_PLAN_PIECES`, su acción en el plan.
 // Bajo el mecanismo (`TYCON_HARNESS_SNAPSHOT_DIR` puesta) no deja copia propia: la copia ya la tomó el mecanismo.
 // Corrido suelto, antes de cambiar un archivo que tenía contenido deja `<archivo>.bak.<fecha>`, como el sincronizador.
 //
@@ -89,7 +88,7 @@ function readBlock(file) {
       break;   // la primera línea con texto es otra cosa: el cuerpo
     }
   }
-  // `<!-- variants: response -->` entre los marcadores de arriba (story 2.31): el texto sale de la carpeta del bloque
+  // `<!-- variants: response -->` entre los marcadores de arriba: el texto sale de la carpeta del bloque
   let variants = null;
   for (const line of lines) {
     const v = VARIANTS_RE.exec(line);
@@ -111,7 +110,7 @@ function loadBlocks(blocksDir) {
     const b = readBlock(full);
     const variant = path.join(blocksDir, 'names', `${name}.${TOOL}.md`);
     if (fs.existsSync(variant)) b.body = trimNewlines(fs.readFileSync(variant, 'utf8').replace(/^﻿/, ''));
-    // un bloque que declara `<!-- variants: response -->` (story 2.31) toma su texto de la carpeta del mismo nombre
+    // un bloque que declara `<!-- variants: response -->` toma su texto de la carpeta del mismo nombre
     if (b.variants) b.variantDir = path.join(blocksDir, name);
     out.push(Object.assign({ name }, b));
   }
@@ -120,7 +119,7 @@ function loadBlocks(blocksDir) {
 
 /**
  * Los bloques de los paquetes activos del árbol (`{ blocks, active }`), o `{ blocks: [], active: null, why }` si no se pudo
- * saber qué paquetes activa la organización. Un árbol sin el lector (de antes de los bloques de paquete): ninguno, sin quitar.
+ * saber qué paquetes activa la organización. Un árbol sin el lector (anterior a los bloques de paquete): ninguno, sin quitar.
  */
 function loadPackBlocks({ tree, env, home }) {
   let PP;
@@ -146,8 +145,8 @@ function pickVariant(dir, { response, responseWhy }) {
 /** El tope de prosa en el texto del estilo: {{max_chars}} y {{max_lines}} (≈ cien caracteres por renglón). */
 const fillVariant = (body, n) => body.split('{{max_chars}}').join(String(n)).split('{{max_lines}}').join(String(Math.floor((n + 50) / 100)));
 
-// Una fila de tabla que termina en `<!-- integration: <x> -->` se escribe sólo con esa integración prendida (story 2.31,
-// AC 7-8); el marcador nunca se copia. No se pudo saber: la fila queda como estaba en el destino (si estaba, sigue).
+// Una fila de tabla que termina en `<!-- integration: <x> -->` se escribe sólo con esa integración prendida;
+// el marcador nunca se copia. No se pudo saber: la fila queda como estaba en el destino (si estaba, sigue).
 const ROW_RE = /^(.*\|)[ \t]*<!--\s*integration:\s*([a-z]+)\s*-->\s*$/;
 function filterRows(body, existing, { integrations }) {
   // un AGENTS.md con fines de línea de Windows: la fila que estaba se reconoce igual
@@ -201,7 +200,7 @@ function applyBlocks(original, blocks, facts) {
     if (b0.variantDir && blockState(b0, facts).state === 'on') {
       const v = pickVariant(b0.variantDir, facts);
       if (v.why) {
-        // no se pudo elegir el texto: no se inventa uno; lo que había queda tal cual, sin actualizar (story 2.31, AC 6)
+        // no se pudo elegir el texto: no se inventa uno; lo que había queda tal cual, sin actualizar
         notes.push(`⚠ tycon: bloque AGENTS.md '${b0.name}': no pude saber cómo tiene que contestar el asistente (${v.why}): ${i0 === -1 ? 'no se agrega' : 'queda como estaba'}`);
         if (j0 !== -1) finals[b0.name] = content.slice(i0, j0 + end.length);
         continue;
@@ -235,7 +234,7 @@ function applyBlocks(original, blocks, facts) {
     if (j === -1) {
       // la marca de cierre se perdió (una edición a mano): no se adivina dónde termina
       notes.push(`⚠ tycon: bloque '${b.name}' de AGENTS.md: falta su marca de cierre — no lo toco; revisalo a mano`);
-      unclosed.push(b.name);   // no está al día aunque no se toque (clase 15: la paridad lo daba por verde)
+      unclosed.push(b.name);   // no está al día aunque no se toque (la paridad lo daría por verde)
       continue;
     }
     if (state === 'off') {
@@ -295,7 +294,7 @@ function machineFacts({ tree = TREE, home = os.homedir(), env = process.env } = 
     const read = () => C.leer({ home, env });
     const config = typeof C.sinAnotar === 'function' ? C.sinAnotar(read) : read();
     facts.integrations = C.integraciones(config);
-    // cómo contesta el asistente (story 2.31); un árbol de antes no lo sabe: el bloque con variantes queda como estaba
+    // cómo contesta el asistente; un árbol anterior no lo sabe: el bloque con variantes queda como estaba
     if (typeof C.respuesta === 'function') facts.response = C.respuesta(config);
     else facts.responseWhy = 'este lector de configuración no conoce `response`';
   } catch (e) {
@@ -306,7 +305,7 @@ function machineFacts({ tree = TREE, home = os.homedir(), env = process.env } = 
     const r = require(path.join(tree, 'scripts', 'setup', 'harness', 'profile.js')).resolve({ tree, home, env });
     if (r && r.ok) facts.profile = r.value || 'full'; else facts.profileWhy = (r && r.reason) || 'no pude leer el perfil';
   } catch (e) {
-    // un árbol de antes de los perfiles: lo de siempre, full
+    // un árbol anterior a los perfiles: full
     if (e && e.code === 'MODULE_NOT_FOUND') facts.profile = 'full'; else facts.profileWhy = `no pude leer el perfil (${(e && e.message ? e.message : String(e)).split('\n')[0]})`;
   }
   return facts;
@@ -321,7 +320,7 @@ function machineFacts({ tree = TREE, home = os.homedir(), env = process.env } = 
  */
 function sync(p = {}) {
   const env = p.env || process.env;
-  // el apagado del sincronizador de bloques cubre también AGENTS.md, como siempre (clase 16)
+  // el apagado del sincronizador de bloques cubre también AGENTS.md
   if (env.TYCON_NO_CLAUDEMD_SYNC === '1') return { ok: true, changed: false, pending: false, lines: ['sync opt-out (TYCON_NO_CLAUDEMD_SYNC=1): AGENTS.md no se toca'], present: [], target: p.target || defaultTarget({ env, home: p.home || os.homedir() }) };
   const home = p.home || os.homedir();
   const tree = p.tree || TREE;
@@ -365,7 +364,7 @@ function sync(p = {}) {
     try {
       const snapshot = Boolean(env.TYCON_HARNESS_SNAPSHOT_DIR);
       // corriendo suelto, la copia de siempre (`<archivo>.bak.<fecha>`, como la del sincronizador); bajo el mecanismo
-      // no: la copia ya la tomó él, y otra más es la pila sin tope que la 8.13 vino a cerrar
+      // no: la copia ya la tomó él, y otra más sería una pila sin tope
       if (original && !snapshot && p.backup !== false) {
         const d = new Date(); const two = (n) => String(n).padStart(2, '0');
         const stamp = `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}T${two(d.getHours())}-${two(d.getMinutes())}-${two(d.getSeconds())}`;

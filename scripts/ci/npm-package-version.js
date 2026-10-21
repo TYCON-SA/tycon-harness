@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * npm-package-version.js — la versión del paquete de npm sube cuando cambia lo que el paquete trae (story 8.40, AC 11).
+ * npm-package-version.js — la versión del paquete de npm sube cuando cambia lo que el paquete trae.
  *
  * El paquete `@tyconsa/harness` (scripts/setup/npm/) tiene su propia versión semver, que no es el número del arnés: npm
  * rechaza republicar una versión, y el workflow que publica (.github/workflows/npm-publish.yml) sale rojo si encuentra

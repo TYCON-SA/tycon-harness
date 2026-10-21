@@ -23,12 +23,12 @@ URL="${1:?url}"; USUARIO="${2:?usuario}"; CLAVE="${3:?clave}"; DIR="${4:?directo
 command -v unzip >/dev/null || { echo "[humo] falta unzip" >&2; exit 1; }
 
 # >>> nombre-seguro — SEC-C1. Este bloque es byte a byte el mismo en smoke-plugin.sh y smoke-forms.sh (lo verifica smoke.test.sh)
-# 🔴 UN NOMBRE NO SE METE CRUDO EN UNA CONSULTA AL HOST NI EN UN MENSAJE (2026-09-17). El nombre del
+# 🔴 UN NOMBRE NO SE METE CRUDO EN UNA CONSULTA AL HOST NI EN UN MENSAJE. El nombre del
 # plugin sale del plugin.json del ZIP y el de cada formulario del manifest.json del ZIP: es texto del
-# PAQUETE. Iba tal cual a la URL (`../` cambia la ruta, `?` le agrega parámetros) y a cada línea de
-# salida, donde Azure interpreta `##vso[` esté donde esté. Desde el 03-09 y hasta hoy el humo aprobaba
-# igual. Un nombre que no pasa NO se consulta: el humo sale rojo y lo dice — no verificar nunca es verde.
-# El juego acepta los 9 plugins y los 65 formularios publicados (tasks/medicion-nombres-humo-2026-09-17.md).
+# PAQUETE. Tal cual en la URL (`../` cambia la ruta, `?` le agrega parámetros) o en cada línea de
+# salida (donde Azure interpreta `##vso[` esté donde esté), un nombre armado a propósito se aprobaría igual.
+# Un nombre que no pasa NO se consulta: el humo sale rojo y lo dice — no verificar nunca es verde.
+# El juego acepta todos los nombres de plugins y formularios publicados.
 # Va copiado en los dos humos y no en un tercer archivo a propósito: el artefacto puede llegar incompleto
 # y eso no puede ser un modo nuevo de tumbar un despliegue.
 REGLA_NOMBRE="empieza con letra o dígito, usa sólo letras, dígitos, '.', '_' y '-', no contiene '..' y tiene hasta 100 caracteres"
@@ -41,11 +41,10 @@ nombre_seguro() { # se compara la cadena ENTERA ([[ =~ ]]), no línea por línea
 nombre_visible() { printf '%s' "$1" | LC_ALL=C tr -c 'A-Za-z0-9._-' '?' | cut -c1-60; }
 # segunda barrera: aunque el juego se amplíe, a la URL va codificado (hoy no cambia nada: son caracteres no reservados)
 en_url() { jq -rn --arg s "$1" '$s|@uri' 2>/dev/null; }
-# 🔴 LO DEMÁS QUE TRAE EL PAQUETE TAMBIÉN SE VALIDA, Y LO QUE DICE EL HOST SE MUESTRA SANEADO (segunda parte,
-# mismo día). La versión y el identificador de compilación salen del mismo plugin.json / manifest.json que el
-# nombre e iban a las mismas líneas de salida. Las 74 versiones publicadas hoy son N.N.N; la forma admitida es
-# la que ya exige el registro de despliegues (story 2.10, AC 7), así un humo verde nunca deja una versión que
-# el registro después rechaza.
+# 🔴 LO DEMÁS QUE TRAE EL PAQUETE TAMBIÉN SE VALIDA, Y LO QUE DICE EL HOST SE MUESTRA SANEADO. La versión y el
+# identificador de compilación salen del mismo plugin.json / manifest.json que el nombre e iban a las mismas
+# líneas de salida. Las versiones publicadas son N.N.N; la forma admitida es la que ya exige el registro de
+# despliegues, así un humo verde nunca deja una versión que el registro después rechaza.
 REGLA_VERSION="tiene forma de versión: tres números separados por puntos (1.0.214), con un sufijo opcional de letras, dígitos y puntos detrás de '-' o '.', hasta 60 caracteres"
 version_segura() {
   local LC_ALL=C re='^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.]+)?$'
@@ -59,9 +58,8 @@ es_numero() { local LC_ALL=C re='^[0-9]{1,15}$'; [[ "$1" =~ $re ]]; }
 texto_visible() { printf '%s' "$1" | LC_ALL=C tr '\000-\037\177' ' ' | LC_ALL=C tr -d '#' | cut -c1-200; }
 # <<< nombre-seguro
 
-# 🔴 POR QUÉ FALLÓ (2026-10-14). Cuando un formulario no pasaba, el humo decía «falló» y nada más: un día lo
-# rompía el host de pruebas con su circuit breaker abierto y hubo que averiguarlo a mano. Ahora cada falla al
-# consultar el host muestra lo que contestó —el código HTTP y un recorte del cuerpo, de hasta 500 caracteres—
+# 🔴 POR QUÉ FALLÓ. Si un formulario no pasa, decir sólo «falló» obliga a averiguar a mano la causa (por ejemplo, el host de
+# pruebas con su circuit breaker abierto). Cada falla al consultar el host muestra lo que contestó —el código HTTP y un recorte del cuerpo, de hasta 500 caracteres—
 # y una línea que dice si parece del host (5xx, breaker, tiempo agotado, sin respuesta) o nuestro (404, 401/403,
 # otro 4xx, un formulario que no sirve código). Sólo informa: el veredicto y el código de salida no cambian.
 # Lo que contesta el host no sale tal cual: en una línea, sin '#' ni caracteres de control (como texto_visible),
@@ -111,7 +109,7 @@ decir_respuesta() { # <qué falló> <código HTTP> <salida de curl> <archivo con
   echo "[humo]   $(motivo_del_host "$(nombre_visible "$2")" "$3" "$4" "$5")" >&2
 }
 
-# 🔴 EL REGISTRO DE DESPLIEGUES (story 2.10). Un humo aprobado, dentro de una corrida de Azure, anota
+# 🔴 EL REGISTRO DE DESPLIEGUES. Un humo aprobado, dentro de una corrida de Azure, anota
 # SÓLO los formularios que esta corrida subió — no todos los que verificó: el directorio trae el ZIP de
 # cada formulario y la mayoría ya estaba. Quién se subió lo dice el host: la versión actual de cada
 # formulario guarda el commit con el que se subió, y se compara con el del manifest de este ZIP. Si no
@@ -165,9 +163,8 @@ login() {
       "${URL}/api/auth/login" -H 'Content-Type: application/json' --data-raw "$body" 2>/dev/null) || code="000"
     [ "$code" = "200" ] && break
     # 🔴 El host devuelve su límite de ingresos como 401 con {"error":"Too Many Requests"}, no
-    # como 429 (medido: formularios de un producto en main, 2026-09-01 — guides/maintaining/incident-log.md#case-smoke-login-rate-limited-2026-09-01; el humo era el 6º login del mismo job y el
-    # host lo cortó). Ese 401 es transitorio y se reintenta con espera larga; un 401 sin ese
-    # texto es clave mal y no se reintenta.
+    # como 429 (el humo puede ser uno de varios logins seguidos del mismo job y el host lo corta). Ese 401 es
+    # transitorio y se reintenta con espera larga; un 401 sin ese texto es clave mal y no se reintenta.
     if [ "$code" = "401" ] && grep -qi "too many requests" "$respuesta" 2>/dev/null; then code="429"; fi
     case "$code" in 000|429|5??) [ "$intento" -lt 4 ] && { echo "[humo] login HTTP $code (intento $intento) — reintento en $((intento*15))s" >&2; sleep $((intento*15)); } ;; *) break ;; esac
   done
@@ -180,9 +177,9 @@ login() {
 }
 
 # ── qué espero: nombre y versión de cada ZIP (del manifest, que es lo que el host leyó)
-# 🔴 LISTAS POR ÍNDICE, NO TEXTO SEPARADO POR ESPACIOS (SEC-C1, 2026-09-17). Esto era una cadena
-# "nombre=versión nombre=versión…" recorrida sin comillas: un espacio en un nombre la partía en dos, un
-# comodín se expandía contra los archivos de la carpeta y un '=' corría el corte entre nombre y versión.
+# 🔴 LISTAS POR ÍNDICE, NO TEXTO SEPARADO POR ESPACIOS (SEC-C1). Una cadena
+# "nombre=versión nombre=versión…" recorrida sin comillas se rompe: un espacio en un nombre la parte en dos, un
+# comodín se expande contra los archivos de la carpeta y un '=' corre el corte entre nombre y versión.
 NOMBRES=(); VERSIONES=(); PESOS=(); COMMITS=(); EN_URL=()
 for ZIP in "$DIR"/*.zip; do
   [ -f "$ZIP" ] || continue
@@ -200,11 +197,11 @@ for ZIP in "$DIR"/*.zip; do
   fi
   FU=$(en_url "$FN") || FU=""
   [ -n "$FU" ] || { echo "##vso[task.logissue type=error][humo] no pude codificar el nombre de $FN para la consulta (¿falta jq?) — NO se consultó al host, así que no está verificado"; exit 1; }
-  # 🔴 CUÁNTO DEBERÍA PESAR (2026-09-03). Ver el comentario de abajo, en la comprobación. "" = no lo declara.
+  # 🔴 CUÁNTO DEBERÍA PESAR. Ver el comentario de abajo, en la comprobación. "" = no lo declara.
   TAM=$(printf '%s' "$M" | jq -r '.forms[0].sizeBytes // empty' 2>/dev/null)
-  # 🔴 EL PESO ENTRA A UNA CUENTA `$(( ))`, Y AHÍ BASH EJECUTA LO QUE VENGA ADENTRO (medido 2026-09-17, en bash
-  # 3.2 y 5.2): con `SIZE[$(orden)]` como peso, la orden corría en el agente; con una variable que no existe,
-  # `set -u` cortaba el guion — y en bash 3.2 salía 0, un verde sin haber verificado nada. Un peso declarado
+  # 🔴 EL PESO ENTRA A UNA CUENTA `$(( ))`, Y AHÍ BASH EJECUTA LO QUE VENGA ADENTRO (en bash
+  # 3.2 y 5.2): con `SIZE[$(orden)]` como peso, la orden corre en el agente; con una variable que no existe,
+  # `set -u` corta el guion — y en bash 3.2 sale 0, un verde sin haber verificado nada. Un peso declarado
   # es un número o el manifest no se puede leer. (No declararlo sigue valiendo: no frena por peso.)
   if [ -n "$TAM" ]; then
     if ! es_numero "$TAM"; then
@@ -213,7 +210,7 @@ for ZIP in "$DIR"/*.zip; do
     fi
     TAM=$((10#$TAM))   # en base 10 siempre: un "010" no es octal, y se compara contra lo que cuenta curl
   fi
-  # story 2.10: el commit con el que se construyó este ZIP (sólo si tiene forma de commit). "" = sin constancia.
+  # El commit con el que se construyó este ZIP (sólo si tiene forma de commit). "" = sin constancia.
   CH=$(printf '%s' "$M" | jq -r '.commitHash // empty' 2>/dev/null)
   es_commit "$CH" || CH=""
   NOMBRES+=("$FN"); VERSIONES+=("$FV"); PESOS+=("$TAM"); COMMITS+=("$CH"); EN_URL+=("$FU")
@@ -248,39 +245,29 @@ for intento in 1 2 3; do
     [ -n "$BYTES" ] || BYTES="000 0"
     HTTP="${BYTES%% *}"; SIZE="${BYTES##* }"
     # 🔴 Lo que cuenta `curl` también entra a la cuenta de más abajo. `curl -w` siempre da un número, pero si
-    # un día no lo diera, la resta moría —en bash 3.2 saliendo 0 y sin imprimir nada— y sin peso declarado se
-    # aprobaba «abc bytes». Un tamaño que no es un número es «no pude mirar»: falla, y lo dice.
+    # un día no lo diera, la resta moriría —en bash 3.2 saliendo 0 y sin imprimir nada— y sin peso declarado se
+    # aprobaría «abc bytes». Un tamaño que no es un número es «no pude mirar»: falla, y lo dice.
     if ! es_numero "$SIZE"; then echo "[humo] intento $intento: $F v$V — no pude leer cuántos bytes sirve el host: lo que contó curl no es un número («$(nombre_visible "$SIZE")», HTTP $(nombre_visible "$HTTP"))" >&2; FALLAS=$((FALLAS+1)); continue; fi
     if [ "$HTTP" != "200" ] || [ "${SIZE:-0}" -le 0 ]; then
       echo "[humo] intento $intento: $F v$V — el código no se sirve (HTTP $(nombre_visible "$HTTP"), $SIZE bytes)" >&2
       decir_respuesta "intento $intento: $F v$V" "$HTTP" "$RC_COD" "$TRABAJO/codigo" codigo
       FALLAS=$((FALLAS+1)); continue
     fi
-    # 🔴 ¿SIRVE LO QUE ESTA CORRIDA CONSTRUYÓ? (2026-09-03, todavía AVISANDO, no frenando)
-    #
-    # Este humo compara VERSIÓN contra VERSIÓN, así que toda la familia de fallos de versionado lo
-    # pasa POR CONSTRUCCIÓN: si el número no subió, el host ya tiene "esa versión" —porque nunca se
-    # le subió nada— y sirve el código VIEJO. O sea que el control que debería atrapar el fallo más
-    # caro del circuito es, por diseño, ciego a él.
-    #
-    # 🔴 EL PESO SERVIDO TIENE QUE SER EL DEL PAQUETE DE ESTA CORRIDA (2026-09-03).
+    # 🔴 EL PESO SERVIDO TIENE QUE SER EL DEL PAQUETE DE ESTA CORRIDA.
     #
     # Comparar versión contra versión deja pasar toda la familia de fallos de versionado POR
     # CONSTRUCCIÓN: si el número no subió, el host ya tiene "esa versión" —porque nunca se le subió
     # nada— y sirve el código VIEJO. El peso es la señal más barata de "es otro código".
     #
-    # Entró AVISANDO el mismo día, porque no estaba medido si el host sirve el archivo tal cual o lo
-    # envuelve, y una diferencia constante habría puesto en rojo a los cinco productos el primer día.
-    # Se midió: en 48 formularios de los CINCO productos (Totora 9807, URUTAU 9808, Lapacho 9819,
-    # Ceibo 9820, FRESNO 9793) el host sirve EXACTAMENTE los bytes que declara el paquete. Diferencia
-    # cero, ni siquiera constante: nula. Con esa evidencia el aviso pasa a FRENAR.
+    # El host sirve EXACTAMENTE los bytes que declara el paquete (diferencia nula, ni siquiera constante), así que
+    # cualquier diferencia FRENA.
     #
     # Límite que queda declarado: un cambio que no altere el tamaño del archivo pasaría igual. Cerrar
     # eso pide identidad de contenido —el commitHash de la corrida adentro del propio form.js—, que
     # es trabajo del empaquetado, no de este humo.
     #
-    # Y un paquete que NO declara peso no frena por peso: no hay con qué comparar, y se sigue
-    # verificando la versión como antes.
+    # Y un paquete que NO declara peso no frena por peso: no hay con qué comparar, y la versión
+    # se verifica igual.
     if [ -n "$ESP_TAM" ] && [ "$ESP_TAM" != "$SIZE" ]; then
       D=$(( 10#$SIZE > 10#$ESP_TAM ? 10#$SIZE - 10#$ESP_TAM : 10#$ESP_TAM - 10#$SIZE ))   # los dos ya son números (es_numero)
       echo "[humo] 🔴 $F v$V: el host sirve $SIZE bytes y el paquete de esta corrida declara $ESP_TAM (difieren en $D) — el código servido NO es el que se acaba de instalar" >&2

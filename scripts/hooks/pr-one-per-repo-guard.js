@@ -2,24 +2,21 @@
 /**
  * pr-one-per-repo-guard.js — freno: no disparar dos construcciones del mismo pipeline al mismo tiempo.
  *
- * 🔴 POR QUÉ EXISTE (2026-09-03). En una sola jornada la cola de Azure se llenó CUATRO veces por la
- * misma causa, con dos variantes:
+ * 🔴 POR QUÉ EXISTE. La cola de Azure se llena por una misma causa, con dos variantes:
  *   · empujar de a poco a la misma rama (cada empujón encola una corrida y Azure no cancela la
  *     anterior), y
  *   · abrir una tanda de pull requests y después OTRA sobre los mismos repos, en vez de juntar los
  *     dos cambios en uno.
- * Las dos veces se prometió no repetirlo y se repitió por la otra puerta. Una regla que hay que
- * recordar no es un control: éste no depende de que nadie se acuerde.
+ * Una regla que hay que recordar no es un control: éste no depende de que nadie se acuerde.
  *
  * QUÉ HACE. Antes de que `az repos pr create` se ejecute, pregunta si ese repositorio ya tiene un
  * pull request abierto CON SU CONSTRUCCIÓN EN CURSO. Sólo entonces corta, y explica qué hacer.
  *
- * 🔴 QUÉ NO HACE, y es la corrección más importante: NO impide tener dos pull requests abiertos en
+ * 🔴 QUÉ NO HACE, y es lo más importante: NO impide tener dos pull requests abiertos en
  * el mismo repo. Dos personas trabajando en cosas distintas del mismo repositorio es lo normal en un
  * equipo, y un freno que estorba el trabajo legítimo se apaga — y con él se pierde el caso que sí
- * importa. La primera versión de este hook, escrita el mismo día, bloqueaba ante CUALQUIER pull
- * request abierto; lo corrigió una pregunta del dev: "¿eso significa que ningún dev va a poder hacer
- * más de un PR por repo?". Sí, significaba eso, y estaba mal.
+ * importa. Bloquear ante CUALQUIER pull
+ * request abierto impediría que un dev haga más de un PR por repo.
  *
  * 🔴 FALLA HACIA DEJAR PASAR, a propósito. Si no puede preguntar —sin credencial, sin `az`, la API
  * no contesta— NO bloquea: un freno que corta el trabajo cuando no pudo mirar se apaga en una tarde,
@@ -35,45 +32,43 @@ const fs = require('fs');
 
 // 🔴 SE LEE LA ENTRADA ANTES DE DECIDIR NADA, incluso para apagarse. Salir sin drenar stdin le
 // deja una tubería rota a quien escribe, y su comando falla por una razón que no tiene nada que ver
-// con lo que este freno mira. Lo cazó su propio caso del apagado.
+// con lo que este freno mira.
 let payload; try { payload = fs.readFileSync(0, 'utf8'); } catch { process.exit(0); }
 
-// 🔴 APAGADO POR DEFAULT (2026-09-03, segunda corrección del mismo día). Esto NO es para el día a
+// 🔴 APAGADO POR DEFAULT. Esto NO es para el día a
 // día de nadie: en el trabajo normal, dos pull requests con sus construcciones corriendo en el mismo
 // repo es perfectamente sano, y un freno que estorba eso se apaga y se lleva puesto el caso que sí
 // importa. El caso que sí importa es el trabajo de MUCHOS REPOS A LA VEZ —un cambio del arnés que
 // toca los cinco productos, una tanda de arreglos de CI— donde abrir tandas encima de tandas llena
-// la cola de Azure de la organización entera. Eso pasó cuatro veces el 2026-09-03.
+// la cola de Azure de la organización entera.
 //
 // Entonces: se enciende a propósito para ese tipo de trabajo, con TYCON_PR_ONE_PER_REPO=1, y para
-// todos los demás no existe. La primera versión venía prendida y bloqueaba ante CUALQUIER pull
-// request abierto; la corrigieron dos preguntas seguidas del dev, y las dos tenían razón.
+// todos los demás no existe. Prendido por defecto bloquearía ante CUALQUIER pull request abierto.
 if (require('../lib/legacy-names.js').readEnv('TYCON_PR_ONE_PER_REPO', { where: 'scripts/hooks/pr-one-per-repo-guard.js' }) !== '1') process.exit(0);
 let cmd = '';
 try { cmd = ((JSON.parse(payload || '{}').tool_input) || {}).command || ''; } catch { process.exit(0); }
 
 // Sólo mira la creación de un pull request. Actualizar, listar o abandonar no se tocan.
-// 🔴 Se lee con el lector COMPARTIDO (`lib/az-pr.js`), no con un regex propio (AZ-PR-PARSER-UNICO-1,
-// 2026-09-06). El lector casero no entendía la forma `--org=…`, ni `--project="…"`, ni las formas
-// cortas `-p/-r/-s/-t` (las comillas con espacios SÍ las leía): caía en «sin datos» y salía 0 EN
-// SILENCIO — verde sin haber mirado. El compartido nació
-// justamente porque su primera versión, un regex de una línea, falló doce veces en un día.
+// 🔴 Se lee con el lector COMPARTIDO (`lib/az-pr.js`), no con un regex propio. Un lector
+// casero que no entienda la forma `--org=…`, ni `--project="…"`, ni las formas cortas `-p/-r/-s/-t`
+// cae en «sin datos» y sale 0 EN SILENCIO — verde sin haber mirado. El compartido existe
+// porque un regex de una línea falla con facilidad.
 const az = require('../lib/az-pr.js');
 const constancia = require('../lib/guard-record.js');
 if (!az.pareceAzPr(cmd)) process.exit(0);
-// 🔴 TODOS los `pr create` de la cadena, no el primero (revisión adversarial 2026-09-06): con
-// `az … create -r R1 … && az … create -r R2 …` sólo se miraba R1. Es el patrón que ya usa
-// pr-auto-complete-guard.js, y el motivo por el que nació la lib.
+// 🔴 TODOS los `pr create` de la cadena, no el primero: con
+// `az … create -r R1 … && az … create -r R2 …` sólo se miraría R1. Es el patrón que ya usa
+// pr-auto-complete-guard.js.
 const creates = az.segmentos(cmd).filter((seg) => az.verboDePr(seg) === 'create');
 if (!creates.length) process.exit(0);
 let evCwd = ''; try { evCwd = String(JSON.parse(payload || '{}').cwd || ''); } catch { /* sin cwd */ }
 
-// 🔴 Sin org/proyecto/repo en el comando NO se renuncia a preguntar (2026-09-06): más de la mitad
-// de los `az repos pr create` reales del equipo (28 de 52 en las transcripciones) van sin `--org`,
+// 🔴 Sin org/proyecto/repo en el comando NO se renuncia a preguntar: más de la mitad
+// de los `az repos pr create` reales del equipo van sin `--org`,
 // porque el CLAUDE.md recomienda `az devops configure --defaults` — y `az` resuelve por esos
 // defaults y por el remote del cwd exactamente igual para el `list` que para el `create`. Se le
 // pasan las MISMAS banderas que trae el comando, y que `az` resuelva lo que falta.
-let noPudeMirar = false;   // ¿alguna consulta falló? (story 2.6: «no miré» ≠ «está bien»)
+let noPudeMirar = false;   // ¿alguna consulta falló? («no miré» ≠ «está bien»)
 const bloqueos = [];
 for (const segCreate of creates) {
   const org = az.flagDe(segCreate, 'org') || az.flagDe(segCreate, 'organization');
@@ -100,10 +95,9 @@ for (const segCreate of creates) {
   if (enCurso.length) bloqueos.push({ donde, enCurso });
 }
 if (!bloqueos.length) {
-  // Creaba un pull request y no había otro abierto: `paso` (story 2.6).
+  // Creaba un pull request y no había otro abierto: `paso`.
   // 🔴 Pero si NO se pudo preguntar, eso no es «verifiqué y está bien»: es «no miré», y anotarlo
-  //    como paso mezcla las dos cosas — exactamente la distinción que esta story existe para no
-  //    perder (revisor de fallos silenciosos, 2026-09-16). Sin decisión, no hay línea.
+  //    como paso mezcla las dos cosas. Sin decisión, no hay línea.
   if (!noPudeMirar) constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'paso', cmd });
   process.exit(0);
 }
@@ -115,9 +109,8 @@ function revisar(abiertos, org, rama) {
 const otros = (abiertos || []).filter((p) => !rama || p.sourceRefName !== `refs/heads/${rama}`);
 if (!otros.length) return [];
 
-// 🔴 LO QUE MOLESTA NO SON DOS PULL REQUESTS: SON DOS CORRIDAS A LA VEZ (corregido el 2026-09-03,
-// el mismo día, por una pregunta del dev). La primera versión de este freno bloqueaba ante
-// CUALQUIER pull request abierto en el repo — y eso le impide a dos personas trabajar en cosas
+// 🔴 LO QUE MOLESTA NO SON DOS PULL REQUESTS: SON DOS CORRIDAS A LA VEZ. Bloquear ante
+// CUALQUIER pull request abierto en el repo le impediría a dos personas trabajar en cosas
 // distintas del mismo repositorio, que es lo normal en un equipo. Un freno que estorba el trabajo
 // legítimo se apaga, y con él se pierde el caso que sí importa.
 //

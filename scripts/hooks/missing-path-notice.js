@@ -3,10 +3,9 @@
  * missing-path-notice.js — PostToolUse (Bash|PowerShell): avisa cuando un comando de LECTURA nombró una ruta
  * que NO existe.
  *
- * Caso que lo motiva (un producto del equipo, 2026-08-27 — guides/maintaining/incident-log.md#listado-vacio-2026-08-27): `ls -R TIMBOProyecto/specs TIMBOProyecto/docs 2>/dev/null |
- * head -60` devolvió VACÍO porque el shell estaba parado en otra carpeta. El agente leyó ese vacío
- * como "no hay documentación" y diseñó una funcionalidad entera sobre esa premisa falsa; lo
- * descubrió el dev, varios turnos después.
+ * Caso que cubre: `ls -R proyecto/specs proyecto/docs 2>/dev/null | head -60` devuelve VACÍO cuando el shell está
+ * parado en otra carpeta. Si el agente lee ese vacío como "no hay documentación", diseña sobre una premisa falsa
+ * y nadie se entera hasta varios turnos después.
  *
  * 🔴 Por qué NO es un control sobre "salida vacía". Un vacío es la respuesta CORRECTA en montones de
  * casos (el grep que confirma que algo no está), así que avisar por vacío sería ruido puro y se
@@ -24,10 +23,9 @@
  * Este control no depende de ninguna de esas tres señales: mira el disco.
  *
  * Portable a propósito: los dos eslabones que cubre (silenciar el error, leer el vacío como
- * inexistencia) pasan igual en Claude Code y en Codex. El TERCER eslabón —el `cd` que quedaba
+ * inexistencia) pasan igual en Claude Code y en Codex. El TERCER eslabón —el `cd` que queda
  * pegado entre llamadas— es exclusivo de Claude Code y se cierra aparte, con la variable canónica
- * CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR (Codex ya arranca cada comando en la raíz; verificado
- * en vivo el 2026-08-27).
+ * CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR (Codex ya arranca cada comando en la raíz).
  *
  * Nunca bloquea: exit 0 siempre. Off: TYCON_MISSING_PATH_NOTICE=0
  * Modo medición (no es un hook): `node missing-path-notice.js --measure <archivo.jsonl>…`
@@ -41,11 +39,9 @@ const path = require('path');
 const READ_CMDS = /^(ls|cat|head|tail|wc|less|more|stat|file|diff|source|nl|md5|md5sum|shasum|column|jq|yq)$/;
 // Todo lo que hace que una ruta ausente sea legítima: crear, buscar, chequear, mover.
 const WRITE_OR_PROBE = /\b(mkdir|touch|cp|mv|rm|tee|find|test|install|ln|mktemp|rsync|scp|git|npm|npx|yarn|pnpm|docker|curl|wget|chmod|chown|dd|truncate)\b|\[\s|\[\[|>>?/;
-// 🔴 La redirección de stderr se SACA del segmento ANTES de buscar señales de escritura. La primera
-// versión de este control metía `2>` entre los indicadores de "acá se crea algo" y con eso
-// descartaba el comando del incidente que lo motiva — `2>/dev/null` es exactamente la señal que hay
-// que cazar, no una razón para mirar a otro lado. Lo cazó la prueba contra el caso real; la idea
-// general del control sonaba perfecta igual.
+// 🔴 La redirección de stderr se SACA del segmento ANTES de buscar señales de escritura. Si `2>` contara
+// entre los indicadores de "acá se crea algo", se descartaría el comando que este control existe para
+// atrapar: `2>/dev/null` es exactamente la señal que hay que cazar, no una razón para mirar a otro lado.
 const STDERR_REDIR = /\s*\d?(?:2>&1|2>\s*\/dev\/null|2>\s*&\s*1|&>\s*\/dev\/null)\s*/g;
 
 function looksLikePath(tok) {
@@ -63,7 +59,7 @@ function looksLikePath(tok) {
 function readPaths(cmd) {
   const out = [];
   // La continuación de línea (`\` al final) NO separa comandos: `rm -rf \<nl> "/x"` es UN comando.
-  // Partirlo dejaba la ruta huérfana de su `rm` y el control opinaba sobre un borrado. (Medido.)
+  // Partirlo dejaría la ruta huérfana de su `rm` y el control opinaría sobre un borrado.
   // FP-3: los CUERPOS de heredoc no son comandos — un `cat config/x.json` DENTRO de un script que
   // se está escribiendo no es una lectura de este shell. Se recortan (queda la línea de apertura).
   let texto = String(cmd || '').replace(/(<<-?[ \t]*(['"]?)([A-Za-z_][\w]*)\2[^\n]*\n)[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
@@ -155,7 +151,7 @@ if (require.main === module) {
         if (!abs.length) { sin_absolutas++; continue; }
         // La carpeta de usuario se le pide a `os.homedir()` y no a la variable HOME, que en Windows no existe (ahí la
         // da USERPROFILE). Es higiene, sin efecto en lo que se mide: acá sólo llegan rutas absolutas, y ésas no se
-        // resuelven contra ninguna carpeta (story 8.17, tanda W1).
+        // resuelven contra ninguna carpeta.
         const m = missing(abs, os.homedir(), true);
         if (m.length) { hablaria++; if (ej.length < 5) ej.push(`${m[0]}   ←   ${cmd.slice(0, 70)}`); }
       }
@@ -174,18 +170,16 @@ if (require.main === module) {
   try {
     const d = JSON.parse(payload || '{}');
     const cmd = (d.tool_input || {}).command || '';
-    // FP-1 (el dominante — 40% de los comandos donde el hook opinaba, y me mordió a MÍ en la
-    // primera hora en producción): un comando con `cd` propio resuelve sus rutas relativas contra
+    // Falso positivo dominante (40% de los comandos donde el hook opinaba): un comando con `cd` propio resuelve sus rutas relativas contra
     // OTRA carpeta, y este hook no puede saber cuál. El modo --measure ya descartaba estos casos
-    // por injuzgables; el modo producción opinaba igual — la revisión adversarial lo marcó y el
-    // primer falso positivo real lo confirmó (`cd scripts/x && head -60 archivo.js` → "no existe"
-    // sobre un archivo que se estaba leyendo bien). Ante un cd: callado, como en la medición.
+    // por injuzgables, y el modo producción hace lo mismo: sin esto, `cd scripts/x && head -60 archivo.js`
+    // daría "no existe" sobre un archivo que se lee bien. Ante un cd: callado, como en la medición.
     if (/(^|[;&|]\s*)cd\s/.test(cmd)) process.exit(0);
     const m = missing(readPaths(cmd), (d.cwd && String(d.cwd)) || process.cwd());
     if (m.length) {
-      // 🔴 stderr + exit 2, NO console.log (revisión adversarial 2026-08-27): en PostToolUse el
-      // stdout va SOLO al debug log — el agente jamás lo ve, y este control nació INERTE por eso
-      // (verificado contra la doc oficial de hooks: únicamente UserPromptSubmit/SessionStart/
+      // 🔴 stderr + exit 2, NO console.log: en PostToolUse el
+      // stdout va SOLO al debug log — el agente jamás lo ve, y un control que escribe ahí queda INERTE
+      // (según la doc oficial de hooks, únicamente UserPromptSubmit/SessionStart/
       // UserPromptExpansion inyectan stdout como contexto). El canal documentado que SÍ llega al
       // modelo en PostToolUse es stderr con exit 2 ("shows stderr to the model — tool already
       // ran": no bloquea nada, la herramienta ya corrió; sólo hace visible el aviso).

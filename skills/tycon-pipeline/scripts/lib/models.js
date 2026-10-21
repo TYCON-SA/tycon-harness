@@ -9,7 +9,9 @@
  *     adversarial-verify.workflow.js y el valor por defecto de build/generate.js son copias que verifica una prueba;
  *   - una organización los cambia en `team-repos.json → models` (lector scripts/lib/team-repos.js) y este módulo es el
  *     ÚNICO que la lee (`readOrgModels`): el pipeline, el control de lanzamientos, el despliegue de Codex y la paridad;
- *   - con `mandatory_ceiling: true` el `ceiling` es un techo: nada lo pasa, se baja y se avisa (nunca frena).
+ *   - con `mandatory_ceiling: true` el `ceiling` es un techo: nada lo pasa, se baja y se avisa (nunca frena);
+ *   - la organización escribe niveles neutros (`LEVELS`) o los nombres de Claude; `readOrgModels`
+ *     devuelve siempre modelos de Claude, así lo que decide no cambia. Hacia Codex traduce build/equivalences.json.
  *
  * LA PRECEDENCIA, para un revisor r (y un trabajo t):
  *   base(r)  = pedido(r) ?? pedido(reviewers) ?? org.reviewer[r] ?? org.reviewers ?? defaultFor(r)
@@ -31,6 +33,23 @@ const HAIKU = MODELS[0];
 const SONNET = MODELS[1];
 const OPUS = MODELS[2];
 const FABLE = MODELS[3];
+
+/**
+ * Los niveles que escribe la organización, en el mismo orden que `MODELS`: cada nivel es el modelo de su
+ * posición. `team-repos.js` tiene su copia (T21 las compara).
+ */
+const LEVELS = ['economy', 'balanced', 'strong', 'max'];
+const isLevel = (v) => LEVELS.includes(v);
+/** El modelo de Claude de un nivel; un modelo queda como está; otra cosa, null. */
+const modelOf = (v) => (isLevel(v) ? MODELS[LEVELS.indexOf(v)] : MODELS.includes(v) ? v : null);
+/** El nivel de un modelo de Claude; un nivel queda como está; otra cosa, null. */
+const levelOf = (v) => (MODELS.includes(v) ? LEVELS[MODELS.indexOf(v)] : isLevel(v) ? v : null);
+/** `models` con cada nivel pasado a su modelo de Claude (lo demás, tal cual; un comentario, «_…», no se toca). */
+function toClaudeModels(v) {
+  if (typeof v === 'string') return isLevel(v) ? modelOf(v) : v;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return v;
+  return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k.startsWith('_') ? x : toClaudeModels(x)]));
+}
 
 /** Los valores de hoy: sin configuración, cada trabajo usa éstos. */
 const DEFAULTS = {
@@ -343,14 +362,14 @@ function readOrgModels({ dir, teamRepos } = {}) {
       return nada;   // sin models: un problema ajeno lo reclaman el instalador y los avisos de arranque
     }
     if (!r.data || r.data.models === undefined) return nada;
-    return { declared: true, data: r.data.models, problem: null };
+    return { declared: true, data: toClaudeModels(r.data.models), problem: null };
   } catch (e) {
     return decir(String((e && e.message) || e).split('\n')[0]);
   }
 }
 
 module.exports = {
-  MODELS, DEFAULTS, TIERS, JOBS, rank, isModel, capAt, ceilingOf, frontmatterModel, defaultFor, reviewerExists,
+  MODELS, LEVELS, isLevel, modelOf, levelOf, toClaudeModels, DEFAULTS, TIERS, JOBS, rank, isModel, capAt, ceilingOf, frontmatterModel, defaultFor, reviewerExists,
   resolveReviewers, resolveAdversarial, resolveHelpers, resolveSession, resolveModels, normalizeSessionModel, isJobName,
   readOrgModels, agentsDirDefault,
 };

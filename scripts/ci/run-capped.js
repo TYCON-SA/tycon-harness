@@ -5,11 +5,10 @@
  * run-capped.js — corre un comando con un tope de segundos y, si lo pasa, lo corta entero: el comando y todo lo que
  * lanzó.
  *
- * POR QUÉ (story 8.22, tramo D, 2026-10-06): en la validación de cada rama (pipelines/azure-pipelines-maintainers-pr.yml) una suite
- * colgada se comía el trabajo entero. harness-update tardó 1185 y 1373 s contra los ~161 de siempre (170 #12201 y
- * #12185), y las #12162 y #12177 terminaron con un trabajo cortado a los 45 min, sin veredicto. Con un tope por suite, la
- * colgada se corta, sale «NO se midió» y el trabajo sigue con las demás. El tope de cada suite lo calcula
- * `scripts/ci/suites-shard.js caps`.
+ * POR QUÉ: en la validación de cada rama (pipelines/azure-pipelines-maintainers-pr.yml) una suite colgada se come el
+ * trabajo entero: tardar 1185 s contra los ~161 de siempre, o terminar el trabajo cortado a los 45 min, sin veredicto.
+ * Con un tope por suite, la colgada se corta, sale «NO se midió» y el trabajo sigue con las demás. El tope de cada
+ * suite lo calcula `scripts/ci/suites-shard.js caps`.
  *
  * POR QUÉ NO `timeout`: el agente de Azure es Linux y lo tiene; la Mac del dev, donde corren las pruebas del paso que
  * lo usa, no. Y `timeout` sólo mata al proceso que lanzó: una suite que espera a un `git` o a un `node` hijo los deja

@@ -1,10 +1,9 @@
 'use strict';
 /**
- * validator-verdict.js — el renglón `Veredicto:` con que el validador de stories cierra cada informe
- * (story 7.3 del arnés, 2026-09-17).
+ * validator-verdict.js — el renglón `Veredicto:` con que el validador de stories cierra cada informe.
  *
- * Por qué existe: qué encontró cada lanzamiento de `tycon-story-validator` sólo se sabía leyendo su
- * informe con un modelo (la medición del 2026-09-17 clasificó 336 informes así). Sin un renglón legible
+ * Por qué existe: qué encontró cada lanzamiento de `tycon-story-validator` sólo se sabe leyendo su
+ * informe con un modelo. Sin un renglón legible
  * por una máquina, lo que encuentra en cada fase no deja rastro, y el pipeline no puede saber en el
  * momento si sus dos últimas validaciones salieron limpias.
  *

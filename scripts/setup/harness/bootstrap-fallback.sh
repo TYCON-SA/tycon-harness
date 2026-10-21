@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# bootstrap-fallback.sh — el RESPALDO en shell del arranque del arnés (story 8.13, AC 13). Vive en
+# bootstrap-fallback.sh — el RESPALDO en shell del arranque del arnés. Vive en
 # ~/.claude/.tycon-pipeline/harness/, fuera del árbol; la línea de arranque lo corre cuando bootstrap.js no sale 0
 # (harness.js roto, enlace colgado, árbol ausente, node por debajo del piso, startup que falló).
 #
-# Hace lo de siempre, lo que la línea vieja hacía: `git pull --ff-only --autostash --quiet` en el lugar del arnés y en
+# Hace lo mismo que la línea de arranque de un clon: `git pull --ff-only --autostash --quiet` en el lugar del arnés y en
 # ~/.claude/agent-skills (si existen), y después el aplicador (install-tycon-hooks.sh). Si el enlace no resuelve, usa el
 # árbol que dice el estado. Todo silencioso: una sesión nunca se frena ni se ensucia por el arnés. Deja UNA línea en
 # startup.log y, si hay node, el aviso en `notice` del estado (un `node -e` mínimo que lee y escribe el JSON).
 #
 # Sale 0 siempre. Doctrina: lo durable no viaja por el camino roto — este archivo no depende del árbol para arrancar.
 set +e
-# git nunca pregunta nada desde acá: ni la terminal ni el gestor de credenciales (un login invisible dejaba al arranque
-# esperando hasta el tope del hook; story 8.23, tanda L)
+# git nunca pregunta nada desde acá: ni la terminal ni el gestor de credenciales (un login invisible dejaría al arranque
+# esperando hasta el tope del hook)
 export GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never
 H="${HOME:-$(cd ~ 2>/dev/null && pwd)}"
-# dónde vive el estado (story 8.23, tanda C): una máquina sin Claude Code vive entera en la casa propia del arnés
+# dónde vive el estado: una máquina sin Claude Code vive entera en la casa propia del arnés
 # (~/.tycon, o TYCON_HOME) y su estado es <casa>/state. La regla de tycon-home.js, escrita acá: si esa carpeta existe,
 # es ésa; si no, la de siempre.
 OWN="${TYCON_HOME:-$H/.tycon}"
@@ -22,7 +22,7 @@ PIPE="$H/.claude/.tycon-pipeline"
 [ -d "$OWN/state" ] && PIPE="$OWN/state"
 HDIR="$PIPE/harness"; LOG="$HDIR/startup.log"; STATE="$PIPE/harness-state.json"
 SKILLS="$H/.claude/agent-skills"
-# los dos nombres del lugar del arnés (story 8.19, AC 9): primero el lugar, después el viejo; bajo HOME y, en Windows con
+# los dos nombres del lugar del arnés: primero el lugar, después el viejo; bajo HOME y, en Windows con
 # HOME en otra carpeta, bajo USERPROFILE. Escritos acá: esta copia fija no carga nada del árbol (copia declarada en
 # scripts/tests/fixtures/harness-place-names.json)
 LINK="$H/.claude/tycon-harness"
@@ -37,7 +37,7 @@ done
 mkdir -p "$HDIR" 2>/dev/null
 [ -f "$LOG" ] && [ "$(wc -c < "$LOG" 2>/dev/null | tr -d ' ')" -gt 1048576 ] 2>/dev/null && mv -f "$LOG" "$LOG.1" 2>/dev/null
 
-# ── la versión BAJADA (story 8.23, tanda B · AC 13 y 19): sin git y sin Node en este camino ─────────────────────────
+# ── la versión BAJADA: sin git y sin Node en este camino ─────────────────────────
 # Si el estado dice `kind: release`, el árbol es ~/.tycon/harness (o TYCON_HOME/harness) y acá no hay pull: un cambio
 # de versión cortado a mitad se repara desde su diario (swap.json, leído con sed), y si harness.js no arranca y hay una
 # versión anterior (previous/), se vuelve a ella (la rota queda apartada en trash/) y se corre su aplicador; sin
@@ -78,7 +78,7 @@ TREE=""; why=""
 if [ -n "$RELEASE" ]; then
   TREE="$OWN/harness"
   # harness.js que no arranca (es por lo que corre este respaldo): vuelve a previous/ si la hay. Sin node en el PATH no se
-  # sabe si está roto —y bootstrap.js no corrió por eso—: no se vuelve a nada, se dice (pase adversarial de la B)
+  # sabe si está roto —y bootstrap.js no corrió por eso—: no se vuelve a nada, se dice
   if ! command -v node >/dev/null 2>&1; then
     why="node no está en el PATH: no puedo saber si harness.js arranca; no vuelvo a ninguna versión; "
   elif ! node --check "$TREE/scripts/setup/harness.js" >/dev/null 2>&1 || [ ! -f "$TREE/scripts/setup/harness.js" ]; then
@@ -117,18 +117,18 @@ NODE_V="$(node --version 2>/dev/null)"
 pulled=""
 [ "$MODE" = "developer" ] && pulled=" ninguno (modo desarrollador: el git del clon es del dev)"
 
-# La guarda (story 8.18, AC 34): el clon del que salen las skills —~/.claude/agent-skills: el clon viejo, re-apuntado o no
+# La guarda: el clon del que salen las skills —~/.claude/agent-skills: el clon viejo, re-apuntado o no
 # al repo unificado, o el único árbol de una máquina nueva (ahí es un enlace al clon del arnés)— NUNCA avanza a una punta
-# que no trae skills/tycon-pipeline. Pasa si `main` vuelve a un árbol de antes de la unión de los dos repos: el pull
+# que no trae skills/tycon-pipeline. Pasa si `main` vuelve a un árbol anterior a la unión de los dos repos: el pull
 # dejaría a la máquina sin skills. Se mira ANTES del pull: se trae sin mover (fetch) y se mira el árbol de lo traído. Si
 # no las trae no se mueve NINGUNO de los dos clones (el aplicador corre igual, con lo que hay). Con dos clones sin
-# re-apuntar el clon viejo sigue a su repo de siempre, que las trae: el arnés sigue a `main`, como hoy.
+# re-apuntar el clon viejo sigue a su repo de siempre, que las trae: el arnés sigue a `main`.
 #
-# «No pude mirar» no es «no las trae» (story 8.18, tramo 3 · revisor de fallos silenciosos, 2026-10-04). La guarda
-# preguntaba con `git cat-file -e <commit>:skills/tycon-pipeline`, que contesta lo mismo (≠ 0) si el árbol no trae la
-# carpeta que si git no pudo leerlo (un objeto que falta, un candado). Con el árbol de HEAD sin leer entendía «de este
-# clon no salen las skills» y hacía el pull —a una punta sin skills—; con el de lo traído sin leer frenaba diciendo
-# «no trae las skills», que no era cierto. Ahora son tres respuestas, como `hasSkills()` de repoint.js: `git ls-tree`
+# «No pude mirar» no es «no las trae». Preguntar con `git cat-file -e <commit>:skills/tycon-pipeline` contesta lo
+# mismo (≠ 0) si el árbol no trae la carpeta que si git no pudo leerlo (un objeto que falta, un candado). Con el
+# árbol de HEAD sin leer se entendería «de este clon no salen las skills» y se haría el pull —a una punta sin
+# skills—; con el de lo traído sin leer se frenaría diciendo «no trae las skills», que no sería cierto. Por eso son
+# tres respuestas, como `hasSkills()` de repoint.js: `git ls-tree`
 # sale 0 y nombra la carpeta (las trae) · sale 0 y no la nombra (no las trae) · no sale 0 (no pude mirar). Con «no pude
 # mirar» tampoco se mueve ningún clon, y la línea dice qué no se pudo leer. Un clon sin rama de la que traer no tiene a
 # dónde avanzar (su pull falla solo): ahí no hay nada que cuidar. Lo mide harness-bootstrap.test.sh (T35).
@@ -166,7 +166,7 @@ for d in "$TREE" "$SKILLS"; do
   fi
 done
 applier="sin aplicador (árbol no encontrado)"
-# el aplicador es el enchufe de Claude Code (story 8.23, tanda C): si el estado dice qué herramientas enchufa la máquina
+# el aplicador es el enchufe de Claude Code: si el estado dice qué herramientas enchufa la máquina
 # y Claude Code no está entre ellas, no corre (escribiría en su carpeta). Sin `tools` en el estado, como siempre.
 NO_CLAUDE=""
 if [ -f "$STATE" ]; then

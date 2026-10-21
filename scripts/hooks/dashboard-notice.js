@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * dashboard-notice.js — el tablero del arnés dice de cuándo es y si salió completo (story 2.12).
+ * dashboard-notice.js — el tablero del arnés dice de cuándo es y si salió completo.
  *
  * Hook SessionStart. La página `artifacts/tablero-del-arnes.html` la genera el nocturno de Azure
  * (`pipelines/azure-pipelines-tablero.yml`) y trae adentro un sello con su fecha (`scripts/nightly/dashboard/seal.js`). Este aviso lo lee
@@ -14,7 +14,7 @@
  *
  * 🔴 LA FECHA SALE DEL CONTENIDO, NUNCA DEL MTIME: un `git pull` le pone al archivo la hora del pull, y una página de
  *    hace una semana se vería de hoy.
- * 🔴 LEE LO PUBLICADO, NO EL DISCO (la lección de dependencies-notice, 2026-09-15): el checkout del arnés puede estar
+ * 🔴 LEE LO PUBLICADO, NO EL DISCO (como en dependencies-notice): el checkout del arnés puede estar
  *    en otra rama o atrasado. Se lee `origin/main` sin salir a la red; si esta copia no lo tiene, se lee el disco y la
  *    línea LO DICE — «leí lo publicado» y «no pude» no son lo mismo.
  * 🔴 NINGÚN NÚMERO DE LAS FICHAS sale por acá, ni en verde: la línea habla de la página, no la resume.
@@ -81,9 +81,9 @@ function main() {
   if (readEnv('TYCON_DASHBOARD_NOTICE', { where }) === '0' || process.env.TYCON_EVAL_SANDBOX === '1') return 0;
   const sello = require('../nightly/dashboard/seal.js');  // una copia sin el sello es una copia rota: el wrapper calla
   // de qué árbol se lee: la variable manda; si no, lo decide scripts/lib/night-data.js —en un clon, éste; en una versión
-  // bajada, el clon del repo de operaciones que la máquina declara (`paths.operations`: desde la story 8.30 el tablero se
-  // guarda ahí), o ninguno (y este aviso calla: nunca git sobre ~/.tycon; que el clon falte o no sirva lo dice el aviso
-  // de dependencias, una vez por arranque)—. Sin esa biblioteca al lado, lo de antes (tycon-home.js).
+  // bajada, el clon del repo de operaciones que la máquina declara (`paths.operations`, donde se
+  // guarda el tablero), o ninguno (y este aviso calla: nunca git sobre ~/.tycon; que el clon falte o no sirva lo dice el aviso
+  // de dependencias, una vez por arranque)—. Sin esa biblioteca al lado, se usa tycon-home.js.
   const own = path.resolve(__dirname, '..', '..');
   const homeLib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
   const nightLib = path.join(__dirname, '..', 'lib', 'night-data.js');

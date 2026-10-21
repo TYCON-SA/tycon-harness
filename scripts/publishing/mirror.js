@@ -1,20 +1,17 @@
 #!/usr/bin/env node
 'use strict';
-// mirror.js — la verificación de lo publicado en el repo público (épica 8, story 8.8 · 2026-10-03; story 8.26, AC 36)
+// mirror.js — la verificación de lo publicado en el repo público
 //
-// POR QUÉ EXISTE: hasta el corte a GitHub el arnés se publicaba como ESPEJO —los repos internos eran la fuente y el
-// público una copia que armaba el exportador— y este guion llevaba esa copia a GitHub (`plan`, `first`, `sync`) y
-// absorbía los cambios ajenos. Desde el corte el repo público es la FUENTE: esa mitad no tiene nada que llevar, y se
-// sacó (story 8.26, AC 36). Queda la otra mitad, que sigue haciendo falta: comprobar —con la lista privada— que lo
-// publicado no nombra a nadie ni trae un secreto.
+// POR QUÉ EXISTE: el repo público es la FUENTE del arnés, y nada se lleva desde otro repo. Lo que hace falta es
+// comprobar —con la lista privada— que lo publicado no nombra a nadie ni trae un secreto.
 //
 //   verify  clona lo publicado y lo revisa con el detector y la lista privada. Es el único subcomando: `plan`, `first`
-//           y `sync` salen 2 diciendo que ya no existen.
+//           y `sync` salen 2 diciendo que no existen.
 //
-// Tres partes de antes —los cambios ajenos (f), el número de versión contra su sincronización (i) y la lista de
-// transformados (j)— comparaban lo publicado con lo interno: ya no hay contra qué, y el informe las da como «no aplica».
+// Tres partes del informe —los cambios ajenos (f), el número de versión contra su sincronización (i) y la lista de
+// transformados (j)— compararían lo publicado con lo interno: no hay contra qué, y el informe las da como «no aplica».
 //
-// LO QUE `verify` MIRA ADEMÁS DEL CLON (story 8.26, tanda F2): lo publicado que no es git —las versiones, el título y el
+// LO QUE `verify` MIRA ADEMÁS DEL CLON: lo publicado que no es git —las versiones, el título y el
 // cuerpo de todos los pedidos e issues, el nombre de la rama de cada pedido, lo que conserva su línea de tiempo (el
 // título anterior de uno renombrado), las etiquetas y los hitos, y los comentarios de las cuatro clases—, cada lista
 // leída hasta su última página. Con el arnés mantenido directo en el público, lo que un `gh` tecleado en una terminal
@@ -23,13 +20,13 @@
 // una versión se borra; lo que llegó a `main`, a un pedido, a un issue o a un comentario, además, se pide purgar.
 // Un correo `noreply` de GitHub en la identidad de un commit no es un hallazgo (la regla es del detector, la misma del
 // freno antes de publicar); el nombre y la cuenta de adentro del correo sí se miran.
-//   --direct           se acepta y no cambia nada (lo pasa el pipeline de la verificación diaria): desde el AC 36 de la
-//                      story 8.26 `verify` es siempre directo.
+//   --direct           se acepta y no cambia nada (lo pasa el pipeline de la verificación diaria): `verify` es
+//                      siempre directo.
 //   --report <archivo> deja además el informe —lo mismo que `--json`— en ese archivo, también si frenó antes de mirar:
 //                      de ahí arma su aviso el pipeline (scripts/ci/verify-notice.js). Nunca trae el texto hallado.
 // Quedan afuera, a sabiendas: las discusiones y la wiki del repo (no se usan; se apagan en la configuración del repo).
 //
-// CÓMO FALLA: exit 0 = bien · 1 = hallazgos de `verify` · 2 = no pude (o un subcomando que ya no existe). «No pude
+// CÓMO FALLA: exit 0 = bien · 1 = hallazgos de `verify` · 2 = no pude (o un subcomando que no existe). «No pude
 // leer» nunca es «no hay nada». Este guion no escribe en el público: sólo lee. El repo público
 // se nombra siempre como «el de public-repos.json» —su nombre vive sólo en ese archivo, que se lee con el lector del
 // exportador—, y el token no aparece en ninguna salida.
@@ -61,12 +58,12 @@ const PUBLIC_REPO = 'el repo de public-repos.json';
 
 // ── Constantes, nunca configurables ─────────────────────────────────────────────────────────────────────────────
 const COMMANDS = Object.freeze(['verify']);
-// story 8.26 (AC 36): los subcomandos que llevaban la copia del exportador al público. Con el público como fuente ya no
+// Los subcomandos que llevarían la copia del exportador al público. Con el público como fuente no
 // existen; nombrarlos sale 2 diciéndolo, para que un pipeline o una mano vieja no lo lea como «subcomando mal escrito».
 const RETIRED = Object.freeze(['plan', 'first', 'sync']);
 const RETIRED_WHY = 'ya no existe: el repo público es la fuente y nada se sincroniza desde lo interno (story 8.26, AC 36). Lo que queda es verify';
 const MAIN = 'refs/heads/main';
-// la rama donde la sincronización de antes del corte dejaba su pedido: `verify` sigue mirando el que haya quedado abierto
+// la rama de los pedidos de sincronización: `verify` mira el que haya quedado abierto
 const SYNC_BRANCH = 'mirror/sync';
 const CREDENTIAL_VARIABLE = 'TYCON_MIRROR_TOKEN';
 const API_VARIABLE = 'TYCON_MIRROR_API_URL';
@@ -90,7 +87,7 @@ const ROUTES = Object.freeze({
   identity: '<commit-identity>',
   message: '<commit-message>',
   about: '<repository-about>',
-  release: '<release>',             // el título, la marca, las notas y los adjuntos de una versión (tanda F2 de la 8.26)
+  release: '<release>',             // el título, la marca, las notas y los adjuntos de una versión
   paths: 'rutas-de-la-copia.txt',   // la lista de rutas, con el nombre con que la revisa el exportador
 });
 
@@ -166,8 +163,7 @@ function parseArgs(argv) {
       if (command !== 'verify') throw couldNot('--strict es sólo de verify');
       args.strict = true;
     } else if (x === '--direct') {
-      // story 8.26, tanda F2 (AC 24): el público es la fuente. Desde el AC 36 es lo único que hay: la opción se sigue
-      // aceptando (la pasa el pipeline de la verificación diaria) y no cambia nada.
+      // el público es la fuente y lo único que hay: la opción se acepta (la pasa el pipeline de la verificación diaria) y no cambia nada.
       args.direct = true;
     } else if (x === '--report') {
       if (command !== 'verify') throw couldNot('--report es sólo de verify');
@@ -230,7 +226,7 @@ function readTarget(args) {
 }
 
 // Lo que puede traer una base: nada que dos lectores de URL lean distinto. Con una barra invertida antes de una arroba,
-// el lector de node ve un servidor y el de git, otro: la regla de abajo se validaba contra el primero y el token viajaba
+// el lector de node ve un servidor y el de git, otro: la regla de abajo se validaría contra el primero y el token viajaría
 // al segundo. Por eso la lista es corta —ni «\», ni «@», ni «%», ni espacios, ni «?», ni «#»— y a git se le pasa la URL
 // ya leída y normalizada, la misma que se validó: nunca el texto crudo de la variable.
 const BASE_CHARS = /^[A-Za-z0-9._~:/[\]-]+$/;
@@ -258,7 +254,7 @@ function baseUrl(env, variable, fallback, protocols) {
   return { url, text: url.href.replace(/\/+$/, '') };
 }
 
-/** Lo que toda corrida arma antes de tocar nada: el destino (AC 1) y las dos bases. */
+/** Lo que toda corrida arma antes de tocar nada: el destino y las dos bases. */
 function prepare(args, token) {
   const target = readTarget(args);
   const gitBase = baseUrl(process.env, GIT_BASE_VARIABLE, DEFAULT_GIT_BASE, ['https:', 'http:', 'file:']).text;
@@ -381,7 +377,7 @@ async function apiRead(ctx, rest, what) {
   return r.json;
 }
 
-// Una lista de la API, ENTERA (story 8.26, tanda F2 · AC 24). GitHub la da de a páginas: quedarse con la primera es dar
+// Una lista de la API, ENTERA. GitHub la da de a páginas: quedarse con la primera es dar
 // por limpio lo que no se leyó —y lo viejo, que es donde la lista aprende nombres nuevos, está en las últimas—. Se pide
 // página por página hasta una que venga incompleta. Cualquier página que no se pudo leer, o que no es una lista, es
 // «no pude leer» de la lista entera; y si las páginas no terminan nunca, también (no se corta callado en un tope).
@@ -473,12 +469,12 @@ function readCommits(dir, shas) {
   return shas.map((sha) => parseCommit(sha, objects.get(sha)));
 }
 
-// ── La versión numerada (story 8.13, AC 24) ─────────────────────────────────────────────────────────────────────
+// ── La versión numerada ─────────────────────────────────────────────────────────────────────
 // `version.json` va en la raíz de lo publicado: `YYYY.MM.DD.N` y el commit de cada fuente interna. Lo agrega ESTE guion
 // y no el exportador, porque el número depende de lo que el público tiene y el exportador corre antes de leerlo. La
 // forma del archivo sí es del exportador: su nombre, la forma del número y la función que arma sus bytes salen de ahí.
 //
-// La regla del número (decisión D1): la fecha es la del commit de la sincronización —la mayor fecha de committer de los
+// La regla del número: la fecha es la del commit de la sincronización —la mayor fecha de committer de los
 // commits internos, en UTC—, y `N` es 1 más el mayor `N` entre el de la punta de `main` y el de la punta de la rama de
 // la sincronización, contando sólo los de esa misma fecha; si ninguno es de esa fecha, 1. Nada de esto mira el reloj ni
 // el huso de la máquina: las mismas entradas dan el mismo número, corran cuando corran.
@@ -513,7 +509,7 @@ const PARTS = Object.freeze({
   h: 'el reporte privado de vulnerabilidades',
   i: 'el número de versión (version.json) de main y de la rama de la sincronización',
   j: 'la lista de transformados (version.json) contra el commit interno de cada sincronización',
-  // story 8.26, tanda F2 (AC 24): lo publicado que no es git. Lo que un `gh` tecleado en una terminal, la web de GitHub
+  // lo publicado que no es git. Lo que un `gh` tecleado en una terminal, la web de GitHub
   // u otra herramienta publican sin pasar por ningún freno de la máquina se ve recién acá.
   k: 'las versiones: su título, su marca, sus notas, de dónde se cortaron y sus adjuntos',
   l: 'el título y el cuerpo de cada pedido y de cada issue (abiertos y cerrados), la rama de cada pedido, su línea de tiempo, y las etiquetas y los hitos del repo',
@@ -525,7 +521,7 @@ const IN_THE_CLONE = Object.freeze(['a', "a'", 'b', 'c', 'f', 'i', 'j']);
 const SYNC_PARTS = Object.freeze(['f', 'i', 'j']);
 const DIRECT_REASON = 'el público es la fuente: no hay una sincronización contra la cual comparar';
 
-// QUÉ HACER con cada hallazgo (AC 24). Depende de hasta dónde llegó lo hallado, no de qué es:
+// QUÉ HACER con cada hallazgo. Depende de hasta dónde llegó lo hallado, no de qué es:
 //   · lo que cuelga sólo de una rama, una marca o una versión se borra, y con eso deja de servirse;
 //   · lo que llegó a `main` o a un pedido —o a un issue o a un comentario— no se despublica borrándolo: los commits
 //     siguen alcanzables por la referencia del pedido, y GitHub guarda el historial de ediciones de un texto. Además de
@@ -540,7 +536,7 @@ const REACH = Object.freeze({
   about: { action: 'edit', text: 'se corrige en la configuración del repo' },
   guide: { action: 'see-guide', text: `qué hacer: ${GUIDE}, §«Si \`verify\` da 1»` },
 });
-// Con el repo PRIVADO el consejo es otro (story 8.26, tanda F3 · AC 58; la guía, §«Si `verify` da 1»): nada se purga
+// Con el repo PRIVADO el consejo es otro (la guía, §«Si `verify` da 1»): nada se purga
 // —no hay nada público que despublicar—, lo que se escapó se arregla en el interno y sale con la sincronización
 // siguiente, y lo que queda en la historia se acepta hasta el corte, cuando el repo se recrea sin historia. Sólo
 // cambian los tres alcances cuyo consejo nombra la purga; lo que se borra se sigue borrando y lo del repo se sigue
@@ -572,7 +568,7 @@ function verifyClone(d, cfg, dir, found, looked, cant) {
   const ex = exporter();
   const repo = { dir };
   const review = (text, route) => d.reviewText(cfg, String(text == null ? '' : text), route).hallazgos;
-  // Hasta dónde llegó cada objeto, para decir qué hacer con él (AC 24 de la 8.26): lo alcanzable desde `main`, lo
+  // Hasta dónde llegó cada objeto, para decir qué hacer con él: lo alcanzable desde `main`, lo
   // alcanzable desde la cabeza de algún pedido, y lo demás, que cuelga sólo de una rama o de una marca.
   const reachable = (revs) => new Set(gitOut(dir, ['rev-list', '--objects', ...revs]).split('\n').filter(Boolean).map((l) => l.split(' ')[0]));
   const fromMain = reachable([MAIN]);
@@ -628,10 +624,10 @@ function verifyClone(d, cfg, dir, found, looked, cant) {
     }
   };
   introduced(['--all'], add);
-  // Hasta dónde llegó cada PAR (AC 24): por los commits que lo traen, no por su objeto. El objeto de un submódulo es un
-  // commit de OTRO repo y nunca figura entre los alcanzables de éste —por su objeto, uno que llegó a `main` salía como
+  // Hasta dónde llegó cada PAR: por los commits que lo traen, no por su objeto. El objeto de un submódulo es un
+  // commit de OTRO repo y nunca figura entre los alcanzables de éste —por su objeto, uno que llegó a `main` saldría como
   // «cuelga de una rama»—; y el mismo contenido puede estar en `main` en una ruta permitida y en una rama en otra que
-  // no. Dos pasadas más, sobre lo que alcanza `main` y sobre lo que alcanzan los pedidos (pase adversarial de la F2).
+  // no. Dos pasadas más, sobre lo que alcanza `main` y sobre lo que alcanzan los pedidos.
   const pairsOf = (revs) => { const set = new Set(); introduced(revs, (sha, rel) => set.add(key(sha, rel))); return set; };
   const mainPairs = pairsOf([MAIN]);
   const pullPairs = anyPull ? pairsOf(['--glob=refs/pull/*']) : new Set();
@@ -654,8 +650,8 @@ function verifyClone(d, cfg, dir, found, looked, cant) {
   const before = ex.leerObjetos(repo, outside.filter((p) => p.mode !== GITLINK).map((p) => p.sha));
   // El NOMBRE de una ruta se dice una vez, aunque la ruta haya tenido varios contenidos. Lo que hay que hacer con él
   // sale del par que MÁS lejos llegó —si alguno llegó a `main`, la ruta está en la historia de `main`—, y ése es el
-  // objeto que se cita: con el primero del recorrido, una ruta que estuvo en `main` y además en una rama salía, según
-  // el orden de dos sha, como «se borra la rama» (pase adversarial de la F2).
+  // objeto que se cita: con el primero del recorrido, una ruta que estuvo en `main` y además en una rama saldría, según
+  // el orden de dos sha, como «se borra la rama».
   const RANK = { main: 0, pull: 1, ref: 2 };
   const farthest = new Map();
   for (const p of outside) {
@@ -684,7 +680,7 @@ function verifyClone(d, cfg, dir, found, looked, cant) {
   // (c) la identidad y el mensaje de TODOS los commits y tags alcanzables, y el nombre de cada ref.
   // Los commits que cuelgan SÓLO de la cabeza de un pull request los escribió alguien de afuera, con su identidad de git
   // de siempre, y esa ref no la puede borrar el equipo: con la regla genérica de correos, el primer pull request ajeno
-  // dejaba esto en 1 para siempre. Ahí la identidad se revisa sin esa regla —los términos de la lista sí se buscan,
+  // dejaría esto en 1 para siempre. Ahí la identidad se revisa sin esa regla —los términos de la lista sí se buscan,
   // igual que en el mensaje y en el contenido—; en lo alcanzable desde una rama o una etiqueta no cambia nada.
   const pullOnly = new Set(gitOut(dir, ['rev-list', '--glob=refs/pull/*', '--not', '--exclude=refs/pull/*', '--all']).split('\n').filter(Boolean));
   const genericEmail = (d.PATRONES_GENERICOS || []).find((p) => p.nombre === 'email');
@@ -747,12 +743,12 @@ async function verify(ctx) {
   const cfg = loadList(ctx, 'no pude mirar: lo publicado se revisa con la lista privada');
   const result = { findings: [], notMeasured: [], notApplicable: [], couldNotLook: [] };
   const looked = {};
-  // story 8.26 (AC 36): el público es la FUENTE. La mitad que sincronizaba desde lo interno ya no existe, y con ella
-  // las tres partes atadas a esa sincronización (cambios ajenos, número de versión, transformados): dicen «no aplica».
+  // el público es la FUENTE: no hay sincronización desde lo interno, y las tres partes atadas a ella
+  // (cambios ajenos, número de versión, transformados) dicen «no aplica».
   const direct = true;
   /**
    * Un hallazgo, con lo que hay que hacer: `reach` dice hasta dónde llegó (REACH); un secreto se rota primero. El
-   * alcance queda en el hallazgo (tanda F3): lo lee el aviso, para saber qué está sólo en la historia de `main`.
+   * alcance queda en el hallazgo: lo lee el aviso, para saber qué está sólo en la historia de `main`.
    */
   const found = (part, category, place, reach = 'guide') => {
     const known = Object.prototype.hasOwnProperty.call(REACH, reach) ? reach : 'guide';
@@ -761,8 +757,8 @@ async function verify(ctx) {
     result.findings.push({ part, category, place, reach: known, action: to.action, rotateFirst: rotate, todo: `${rotate ? ROTATE_FIRST : ''}${to.text}` });
   };
   // Lo que la API contesta donde va un texto es un texto, o nada (falta, o nulo). Otra cosa —un objeto, un número, una
-  // lista— no se lee como «[object Object]», que saldría limpio: no se pudo leer, y la parte que lo pidió lo dice
-  // (revisor de fallos silenciosos, quinta vuelta de la F2). Todas las llamadas corren dentro de un `look`.
+  // lista— no se lee como «[object Object]», que saldría limpio: no se pudo leer, y la parte que lo pidió lo dice.
+  // Todas las llamadas corren dentro de un `look`.
   const review = (text, route) => {
     if (text !== undefined && text !== null && typeof text !== 'string') throw couldNot('la API contestó otra cosa donde iba un texto: no lo doy por leído');
     return d.reviewText(cfg, text == null ? '' : text, route).hallazgos;
@@ -825,7 +821,7 @@ async function verify(ctx) {
 
   // (g) y (h): lo que sólo GitHub sabe. Si no se pudieron medir se dice, nunca se calla; en un repo privado no existen.
   // Van ANTES de las listas largas de más abajo: la parte (m) hace una llamada por pedido, y si un día agota el cupo
-  // de la hora, las alertas de secretos —dos llamadas— ya se leyeron (pase adversarial de la tanda F2).
+  // de la hora, las alertas de secretos —dos llamadas— ya se leyeron.
   const isPrivate = Boolean(about && about.private === true);
   const unmeasured = (part, reason) => result.notMeasured.push({ part, reason });
   const ask = async (part, rest, read) => {
@@ -859,7 +855,7 @@ async function verify(ctx) {
     });
   }
 
-  // ── Lo publicado que no es git (story 8.26, tanda F2 · AC 24) ────────────────────────────────────────────────
+  // ── Lo publicado que no es git ────────────────────────────────────────────────
   // Cada lista se lee ENTERA (`apiList`), y cada parte es una mirada aparte: si una no se puede leer queda en «no pude
   // mirar» y las demás se miran igual. El lugar se dice por un NÚMERO que dio la API (el del pedido, el id del
   // comentario): nunca por un texto que la respuesta haya querido poner ahí.
@@ -924,7 +920,7 @@ async function verify(ctx) {
     const events = each(await apiList(ctx, '/issues/events', 'la línea de tiempo de los pedidos y los issues'), 'la línea de tiempo de los pedidos y los issues');
     // Un evento trae o no cada una de estas claves (uno de «cerrado» no trae ninguna): que falte, o que venga nula, es
     // «este evento no tiene ese texto». Que venga y no sea lo que tiene que ser —un objeto, con un texto adentro— no es
-    // «sin texto»: no se pudo leer, y la parte lo dice (revisor de fallos silenciosos, cuarta vuelta de la F2).
+    // «sin texto»: no se pudo leer, y la parte lo dice.
     const inner = (event, key, field) => {
       const holder = event[key];
       if (holder === undefined || holder === null) return null;
@@ -992,7 +988,7 @@ async function verify(ctx) {
     looked.m = count;
   });
 
-  // El consejo del repo privado (AC 58). Sólo cuando GitHub DIJO que es privado: si la parte (d) no se pudo leer, no
+  // El consejo del repo privado. Sólo cuando GitHub DIJO que es privado: si la parte (d) no se pudo leer, no
   // se sabe, y el consejo es el del repo público. Se cambia al final —recién acá se sabe— y sólo el texto.
   if (about && isPrivate) {
     for (const f of result.findings) {
@@ -1032,7 +1028,7 @@ async function verify(ctx) {
 }
 
 /**
- * El informe de `verify` en un archivo (`--report`), para el paso del pipeline que avisa (story 8.26, tanda F2 · AC 24):
+ * El informe de `verify` en un archivo (`--report`), para el paso del pipeline que avisa:
  * el veredicto, cada lugar con lo que hay que hacer, y lo que no se pudo mirar. Lo mismo que dice `--json`, y como todo
  * lo que este guion escribe: nunca el texto hallado. Se escribe SIEMPRE que la corrida pidió el informe, también si
  * `verify` frenó antes de mirar nada (ahí trae el código y el motivo): el paso que avisa no tiene que adivinar por qué
@@ -1063,7 +1059,7 @@ async function main(argv) {
   let report;
   // El archivo del informe se lee ANTES que nada: si la corrida frena al leer el token o las opciones, el informe se
   // escribe igual (con el código y el motivo) — el paso que avisa no tiene que adivinar por qué no hay archivo. Después
-  // manda lo que diga `parseArgs`, que es quien valida la opción (pase adversarial de la tanda F2).
+  // manda lo que diga `parseArgs`, que es quien valida la opción.
   const reportAt = command === 'verify' ? argv.lastIndexOf('--report') : -1;
   const early = reportAt >= 0 ? argv[reportAt + 1] : undefined;
   let reportFile = early !== undefined && early !== '' && !early.startsWith('--') ? early : null;
@@ -1096,7 +1092,7 @@ async function main(argv) {
 
 module.exports = {
   COMMANDS, gitAuth,
-  // story 8.26, tanda F2 (AC 24): qué va al informe de `verify` y qué código queda si no se pudo escribir
+  // qué va al informe de `verify` y qué código queda si no se pudo escribir
   reportForFile, reportUnwritten,
 };
 

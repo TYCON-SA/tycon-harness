@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// github-app-token.js — el token de instalación de la App de GitHub, uno por corrida (épica 8, story 8.8 · 2026-10-03)
+// github-app-token.js — el token de instalación de la App de GitHub, uno por corrida
 //
 // POR QUÉ EXISTE: la sincronización con el repo público (`mirror.js`) escribe en GitHub con la identidad de una GitHub
 // App de la organización, nunca con el token personal de alguien. Una App no tiene un token fijo: tiene una llave
@@ -46,10 +46,10 @@ const DEFAULT_API = 'https://api.github.com';
 // `0:0:0:0:0:0:0:1`); cualquier otro —también `0.0.0.0` o el resto de 127.x— pide `https://`.
 const LOCAL_HOSTS = Object.freeze(['127.0.0.1', 'localhost', '[::1]']);
 const LOCAL_NAMES = '127.0.0.1, localhost, ::1';
-// Los permisos de la instalación (la tarea humana TH2 de la story): los que usa la sincronización. El token los pide
+// Los permisos de la instalación: los que usa la sincronización. El token los pide
 // por nombre, así una App a la que le sumen un permiso no se lo pasa a la corrida.
 // 🔴 La contracara: un permiso que la App YA tiene tampoco llega a la corrida si no está en esta lista. `issues` es de
-// la verificación de lo publicado (story 8.26, tanda F3 · AC 59): la lista de issues y su línea de tiempo no entran
+// la verificación de lo publicado: la lista de issues y su línea de tiempo no entran
 // con ningún otro permiso, y sin él las partes de pedidos, issues y comentarios quedan en «no pude mirar» (un 403).
 // Qué permiso pide cada dirección que `verify` lee lo fija la prueba T72 de scripts/tests/mirror.test.js.
 const PERMISSIONS = Object.freeze({

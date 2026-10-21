@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 /**
- * open-prs.js — los pull requests de la organización que llevan más de N días abiertos
- * (story 4.6, 2026-09-17).
+ * open-prs.js — los pull requests de la organización que llevan más de N días abiertos.
  *
- * Nace de un pull request del backend de un producto (guides/maintaining/incident-log.md#pr-trabado-con-auto-completar-2026-09-17): creado CON auto-completar, su build falló porque `main` estaba
- * roto, el arreglo entró por otro lado y el PR quedó 13 días esperando un verde que nunca iba a
- * llegar. Lo encontró otro dev de casualidad. El freno de auto-completar no alcanza: el hueco es que
+ * Existe por el caso de un pull request creado CON auto-completar cuyo build falla porque `main` está
+ * roto: el arreglo entra por otro lado y el PR queda esperando un verde que nunca va a
+ * llegar. El freno de auto-completar no alcanza: el hueco es que
  * nadie se entera cuando un PR no puede entrar.
  *
  * Arma la línea que el vigilante pega al final del resumen diario (`daily-summary.js deliver --extra <archivo>`).
@@ -22,8 +21,8 @@
  * 4. **El registro (stdout): tope de 10 líneas**, del más nuevo al más viejo; los más viejos se cortan con «(+N más)».
  * 5. 🔴 **No medido no es cero.** Si `az` sale ≠ 0 o contesta algo ilegible, la sección dice
  *    «PR abiertos: no se pudo consultar (<motivo>)», se escribe igual y el guion sale 1. Nunca
- *    «ninguno» ni silencio (incident-log#comando-fallado-leido-como-vacio-2026-09-04).
- * 6. **Paginado:** `$top=100` + `$skip` hasta una página incompleta (medido: el endpoint corta en 101
+ *    «ninguno» ni silencio.
+ * 6. **Paginado:** `$top=100` + `$skip` hasta una página incompleta (el endpoint corta en 101
  *    sin avisar). Tope de seguridad de 50 páginas, que se dice como falla.
  *
  * Habla con Azure sólo por `TYCON_ADO_CMD` (por defecto `az`), siempre con `--org` y `-o json`, sin
@@ -31,7 +30,7 @@
  *
  * USO
  *   node scripts/nightly/open-prs/open-prs.js --today <YYYY-MM-DD> [--days 2] [--out <archivo>] [--json <archivo>] [--org <url>]
- *   --json (story 2.23): además, el archivo para el sitio de la organización (`.dashboard/open-prs/open-prs-<día>.json`):
+ *   --json: además, el archivo para el sitio de la organización (`.dashboard/open-prs/open-prs-<día>.json`):
  *   número, proyecto, repo, días, autor (identidad única) y enlace de cada PR abierto; sin título ni nombre para mostrar.
  *   (--org por defecto: `azure.org` de scripts/nightly/dependencies/repos.json)
  *
@@ -53,8 +52,8 @@ const GITHUB = 'los pull requests y los pedidos de GitHub todavía no se leen';
 const recortar = (t, n = 200) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, n) || '(sin salida)';
 /**
  * 🔴 Texto de afuera (nombre de proyecto, de repo, de autor) antes de imprimirlo. Azure interpreta `##vso[…]` y
- * `##[…]` en CUALQUIER línea de stdout del paso: un display name así fijaba variables o marcaba la corrida
- * (SEC-C5, revisión de la story 4.6). Se rompe el `##` y se aplanan los saltos de línea.
+ * `##[…]` en CUALQUIER línea de stdout del paso: un display name así fijaría variables o marcaría la corrida
+ * (SEC-C5). Se rompe el `##` y se aplanan los saltos de línea.
  */
 const limpio = (t, n) => recortar(String(t || '').replace(/#{2,}/g, '#'), n);
 const esFecha = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
@@ -96,7 +95,7 @@ function seccion(prs, { hoy, dias }) {
   const trabados = prs
     .filter((p) => p && !p.isDraft && !RAMAS_DEL_ARNES.test(String(p.sourceRefName || '')))
     .map((p) => ({ p, d: diasAbierto(p, hoy) }));
-  // 🔴 Un PR sin fecha legible no se descarta en silencio (hallazgo del pase adversarial): no se puede medir su
+  // 🔴 Un PR sin fecha legible no se descarta en silencio: no se puede medir su
   // antigüedad, así que se CUENTA aparte. No medido no es cero, tampoco por registro.
   const sinFecha = trabados.filter((x) => x.d === null).length;
   const medidos = trabados
@@ -130,7 +129,7 @@ function contar(prs, { hoy, dias }) {
 }
 
 /**
- * story 2.23: lo que deja la noche para el sitio de la organización (`--json <archivo>`). Lista blanca: por PR, número,
+ * Lo que deja la noche para el sitio de la organización (`--json <archivo>`). Lista blanca: por PR, número,
  * proyecto, repo, días abierto, la identidad única del autor (`createdBy.uniqueName`, en minúsculas) y el enlace —NUNCA el
  * título ni el nombre para mostrar—. Las mismas exclusiones que la sección (borradores y colas del arnés), sin el corte de
  * antigüedad: el sitio muestra a cada dev todos sus PR abiertos.
@@ -172,10 +171,10 @@ function parseArgs(argv) {
 }
 
 /**
- * La organización sin `--org`: `ado.org` de la configuración del arnés (story 8.3 — TYCON_ADO_ORG, ~/.claude/tycon.json
- * o el perfil del equipo; antes salía de `nightly/dependencies/repos.json`, que es operación interna y no se publica).
+ * La organización sin `--org`: `ado.org` de la configuración del arnés (TYCON_ADO_ORG, ~/.claude/tycon.json
+ * o el perfil del equipo).
  * Sin organización, Azure DevOps está APAGADA en esta máquina: la sección lo dice y el guion sale 0 — nunca «ninguno»
- * sin haber mirado (AC 10). Una configuración rota frena con archivo, clave y motivo (exit 2): un comando no adivina.
+ * sin haber mirado. Una configuración rota frena con archivo, clave y motivo (exit 2): un comando no adivina.
  */
 function organizacionConfigurada() {
   const cfg = require(path.join(__dirname, '..', '..', 'lib', 'tycon-config.js'));
@@ -197,12 +196,12 @@ function main(argv) {
   let lineas;
   let n = null;       // la cantidad que va al aviso; null = no se midió
   let codigo = 0;
-  let sitio = null;   // story 2.23: el archivo para el sitio
+  let sitio = null;   // el archivo para el sitio
   if (a.provider && !['azure', 'github'].includes(a.provider)) { console.error(`--provider tiene que ser azure o github, no «${a.provider}»`); uso(); return 2; }
   try {
     let org = a.org;
     if (a.provider === 'github') {
-      // story 2.23 (AC 16): en GitHub los pull requests todavía no se leen; se declara, nunca «ninguno»
+      // En GitHub los pull requests todavía no se leen; se declara, nunca «ninguno»
       lineas = [`PR abiertos: no medido — ${GITHUB}`];
       sitio = { estado: 'no_medido', motivo: GITHUB, prs: [] };
       n = { noMedido: 'github' };
@@ -249,7 +248,7 @@ function main(argv) {
 }
 
 if (require.main === module) {
-  // story 8.9: las opciones viejas en castellano siguen andando hasta el retiro
+  // Las opciones viejas en castellano siguen andando hasta el retiro
   require('../../lib/legacy-names.js').aliasArgv('scripts/nightly/open-prs/open-prs.js', { exitCode: 2 });
   process.exit(main(process.argv.slice(2)));
 }

@@ -14,7 +14,7 @@
 #       más abajo). Ojo con la diferencia: NO actualiza "a la última", actualiza a la que
 #       el equipo eligió. Saltar a la última cuando a cada uno se le ocurre es lo que
 #       genera versiones distintas conviviendo; converger a un número que decidió una
-#       persona es lo contrario. El juicio ("¿la 1.20 sirve?") queda en el commit del
+#       persona es lo contrario. El juicio ("¿la versión nueva sirve?") queda en el commit del
 #       número; la convergencia es mecánica.
 #
 #   B · ADELANTADO (tu versión > la del equipo) — avisa, **nunca hace downgrade**. Bajar
@@ -158,7 +158,7 @@ except Exception:
 PYEOF
 
 # ============================================================
-# Auto-alineación a la versión del equipo (decisión del dev 2026-07-25).
+# Auto-alineación a la versión del equipo.
 #
 # SOLO corre si tu versión es MENOR que la del equipo. Nunca "actualiza a la última":
 # actualiza a la que el equipo eligió. Esa diferencia es todo el punto — saltar a la
@@ -195,14 +195,13 @@ if command -v go >/dev/null 2>&1 && go env GOPATH >/dev/null 2>&1 \
   METHOD="go"
   CMD="go install $GOPKG@v$TARGET"
 elif command -v brew >/dev/null 2>&1 && brew list --formula engram >/dev/null 2>&1; then
-  # FÓRMULA — es el paquete VIVO. Upstream mantiene `Formula/engram.rb` (v1.20.0 al
-  # 2026-07-25) y ABANDONÓ `Casks/engram.rb`, que quedó clavado en v1.0.0 desde hace
-  # meses. Instalar/actualizar por fórmula es el camino correcto en Mac/Linux, y es el
+  # FÓRMULA — es el paquete VIVO. Upstream mantiene `Formula/engram.rb` y ABANDONÓ
+  # `Casks/engram.rb`, que quedó clavado en v1.0.0. Instalar/actualizar por fórmula es el camino correcto en Mac/Linux, y es el
   # que ya dice el onboarding (`brew install gentleman-programming/tap/engram`).
   METHOD="brew"
   CMD="brew update && brew upgrade gentleman-programming/tap/engram"
 elif command -v brew >/dev/null 2>&1 && brew list --cask engram >/dev/null 2>&1; then
-  # CASK LEGACY — instalaciones viejas (el equipo las tiene desde antes de la migración).
+  # CASK LEGACY — instalaciones viejas.
   # `brew upgrade --cask` NUNCA va a pasar de 1.0.0 porque el cask está abandonado: no
   # es que falle, es que no tiene a dónde ir. Hay que MIGRAR a la fórmula, y eso implica
   # desinstalar — no lo hace un script solo al arrancar la sesión, se le pide al dev.

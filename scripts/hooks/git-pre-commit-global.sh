@@ -3,13 +3,13 @@
 # Se instala en ~/.git-hooks/pre-commit (lo hace install-tycon-hooks.sh); `core.hooksPath` global
 # apunta a ese directorio.
 #
-# 🔴 POR QUÉ EXISTE ESTE ARCHIVO, Y NO SÓLO EL DE CADA REPO (hallazgo 2026-08-22)
+# 🔴 POR QUÉ EXISTE ESTE ARCHIVO, Y NO SÓLO EL DE CADA REPO
 # Varias guías del arnés documentan el patrón "el repo referencia el linter desde su propio
 # `.githooks/pre-commit`" — el lint de frontmatter de stories, el lint de la wiki, el `check.js` de
-# paridad con Codex. **Ninguno estaba corriendo.** Cuando `core.hooksPath` está seteado a nivel
+# paridad con Codex. Sin este archivo, **ninguno corre.** Cuando `core.hooksPath` está seteado a nivel
 # global, git usa SÓLO ese directorio: los `.githooks/` de cada repo quedan ignorados, en silencio y
-# sin un error que lo delate. Los linters estaban escritos, documentados y adoptados — y no se
-# ejecutaban nunca.
+# sin un error que lo delate. Los linters quedan escritos, documentados y adoptados — y no se
+# ejecutan nunca.
 #
 # La solución no es sacar el hooksPath global (rompería el sync de engram, que sí depende de él):
 # es que el hook global **delegue** en el del repo. Con eso el patrón que las guías ya documentan
@@ -24,8 +24,8 @@ set -uo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 
 # El pre-commit global que el dev ya tenía sigue corriendo: el instalador lo conserva como
-# `pre-commit.local` al lado de éste, se invoca PRIMERO, y si rechaza, el commit se rechaza (2026-09-06,
-# segundo pase con Fable: la primera versión lo mandaba a un .bak y dejaba de correr sin aviso).
+# `pre-commit.local` al lado de éste, se invoca PRIMERO, y si rechaza, el commit se rechaza.
+# Mandarlo a un .bak lo dejaría de correr sin aviso.
 LOCAL_HOOK="$(dirname "$0")/pre-commit.local"
 if [ -x "$LOCAL_HOOK" ]; then
   if ! "$LOCAL_HOOK" "$@"; then
@@ -92,16 +92,16 @@ elif [ -f "$REPO_ROOT/.githooks/pre-commit" ]; then
   echo "⚠ $REPO_ROOT/.githooks/pre-commit existe pero NO es ejecutable — no se corrió. Arreglalo con: chmod +x .githooks/pre-commit" >&2
 fi
 
-# ── 1b. Migraciones SQL: compilarlas sin ejecutar, y AVISAR (2026-09-14) ─────────────────────
-# Una migración con un error de sintaxis llegó al commit sin haberse ejecutado nunca y frenó un
-# despliegue entero (el repo del framework, 054). Nunca rechaza el commit: el script sale 0 siempre, y
+# ── 1b. Migraciones SQL: compilarlas sin ejecutar, y AVISAR ─────────────────────
+# Una migración con un error de sintaxis puede llegar al commit sin haberse ejecutado nunca y frenar un
+# despliegue entero. Nunca rechaza el commit: el script sale 0 siempre, y
 # acá tampoco se deja que un fallo propio lo rechace. Lo dispara git, así que corre igual desde la
 # terminal, VS Code, Claude o Codex. Off: TYCON_SQL_COMPILE=0.
 #
-# Las variables renombradas a inglés (story 8.9): el nombre viejo sigue apagando hasta el retiro. Este archivo corre
+# Las variables renombradas a inglés: el nombre viejo sigue apagando hasta el retiro. Este archivo corre
 # COPIADO en ~/.git-hooks, así que la biblioteca se busca en el arnés; sin ella (o si no carga), sólo el nombre nuevo —
-# nunca rompe un commit. Cuesta ~100 ms por commit (medido en la tanda B1 de la 8.9: el hook pasó de ~145 a ~245 ms).
-# El lugar del arnés (story 8.19, AC 9): la variable; si no, el lugar ~/.claude/tycon-harness y después el nombre viejo
+# nunca rompe un commit. Cuesta ~100 ms por commit.
+# El lugar del arnés: la variable; si no, el lugar ~/.claude/tycon-harness y después el nombre viejo
 # ~/.claude/tycon-claude-guides, bajo HOME y —en Windows, con HOME en otra carpeta— bajo USERPROFILE. Una sola función
 # para todas las lecturas. Los dos nombres van escritos: este archivo corre copiado fuera del repo (copia declarada en
 # scripts/tests/fixtures/harness-place-names.json; una prueba frena si se desfasa). Sin `-L` ni `readlink`: preguntar si
@@ -118,7 +118,7 @@ harness_dir() {
   printf '%s' "${HOME:-}/.claude/tycon-harness"
 }
 _TCG_DIR="$(harness_dir)"
-# el Node del arnés (story 8.39): el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH ni exporta
+# el Node del arnés: el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH ni exporta
 # nada: el .githooks/pre-commit del repo del dev sigue corriendo con su Node
 # con el bash de la Mac (3.2) y `set -e`, un `.` que no encuentra el archivo corta el guion aunque lleve `||`: se mira antes
 _hn="$_TCG_DIR/scripts/lib/harness-node.sh"
@@ -134,8 +134,8 @@ SQL_COMPILA="$_TCG_DIR/scripts/ci/sql-compile.js"
 if [ "${TYCON_SQL_COMPILE:-1}" != "0" ] && [ -f "$SQL_COMPILA" ] && command -v "$HNODE" >/dev/null 2>&1; then
   "$HNODE" "$SQL_COMPILA" --staged --repo "$REPO_ROOT" || true
 fi
-# ── 1b'. Reglas del CLAUDE.md fuera de «Reglas para revisores»: AVISAR (2026-09-19, story 7.5) ──
-# Los revisores del pipeline ya no cargan el CLAUDE.md: las reglas propias del repo les llegan sólo
+# ── 1b'. Reglas del CLAUDE.md fuera de «Reglas para revisores»: AVISAR ──
+# Los revisores del pipeline no cargan el CLAUDE.md: las reglas propias del repo les llegan sólo
 # por esa sección. Una regla nueva escrita en otra parte del archivo el revisor no la ve — el aviso
 # lo dice al commitear. Con TYPESAFE_API_KEY filtra por probabilidad (tachando antes de mandar);
 # sin llave avisa toda línea nueva fuera de la sección. Nunca rechaza. Off: TYCON_REVIEWER_RULES=0.
@@ -143,13 +143,12 @@ REGLAS_REV="$_TCG_DIR/scripts/ci/reviewer-rules.js"
 if [ "${TYCON_REVIEWER_RULES:-1}" != "0" ] && [ -f "$REGLAS_REV" ] && command -v "$HNODE" >/dev/null 2>&1; then
   "$HNODE" "$REGLAS_REV" --staged --repo "$REPO_ROOT" || true
 fi
-# ── 1c. El catálogo de producción: forma verificada, y RECHAZA (2026-09-15, story 6.1) ───────
+# ── 1c. El catálogo de producción: forma verificada, y RECHAZA ───────
 # `.tycon/production.json` declara qué servidores de base son de producción; el freno
 # `prod-access-guard.js` decide con eso. Es lista BLANCA: sólo host, environment y keychain — el
 # usuario de la base NO va (vive junto a la contraseña, en el Llavero). A diferencia del bloque
 # 1b, acá el veredicto MANDA: una declaración mal formada deja el freno decidiendo con basura.
-# Con su nombre de antes del renombre a inglés (`.tycon/produccion.json`) también: los productos migran en la story de
-# retiro (story 8.9, tanda P).
+# Con su nombre anterior (`.tycon/produccion.json`) también, hasta que los productos migren.
 LINT_PROD="$_TCG_DIR/scripts/production/lint-production-json.js"
 if [ "${TYCON_PROD_LINT:-1}" != "0" ]; then
   if [ -f "$LINT_PROD" ] && command -v "$HNODE" >/dev/null 2>&1; then
@@ -168,8 +167,8 @@ fi
 [ -d "$REPO_ROOT/.engram" ] || exit 0
 [ -f "$REPO_ROOT/.engram-project" ] || exit 0
 
-# engram (story 8.3, AC 9/10): este repo PIDE el sync (.engram-project). Con la llave `integrations.engram` apagada no se
-# hace y se dice en UNA línea; con la configuración rota, el aviso y sin sync (AC 2); sin lector, como hoy. Este archivo se
+# engram: este repo PIDE el sync (.engram-project). Con la llave `integrations.engram` apagada no se
+# hace y se dice en UNA línea; con la configuración rota, el aviso y sin sync; sin lector, sigue el sync. Este archivo se
 # instala COPIADO a ~/.git-hooks/, así que el lector se busca en el arnés, no al lado. Nunca se rechaza un commit por esto.
 _CFG_JS="$_TCG_DIR/scripts/lib/tycon-config.js"
 if [ -f "$_CFG_JS" ] && command -v "$HNODE" >/dev/null 2>&1; then

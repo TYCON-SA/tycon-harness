@@ -2,15 +2,11 @@
 // retro-staleness-notice.js — SessionStart hook: avisa si el retrospective capturer
 // lleva demasiado sin correr.
 //
-// POR QUÉ EXISTE (2026-08-04): el único trigger del tycon-retrospective-capturer es el
-// step 10b de /tycon-merge-to-main — un paso al FINAL del flujo, después del push, cuando
-// el trabajo "ya terminó". Se salteó en silencio 2 veces: 2026-05-03→06-09 (1 corrida en
-// 37 días) y 2026-07-17→08-04 (17 días, 6 merges a main sin retro en backend y frontend de un producto)
-// — guides/maintaining/incident-log.md#case-retro-capturer-skipped-2026-08-04.
-// El único mecanismo que detectaba la ausencia del capturer era el capturer mismo.
+// POR QUÉ EXISTE: el único trigger del tycon-retrospective-capturer es el step 10b de /tycon-merge-to-main — un paso
+// al FINAL del flujo, después del push, cuando el trabajo "ya terminó". Si se saltea, nada lo dice: el único
+// mecanismo que detectaba la ausencia del capturer era el capturer mismo.
 // Este hook rompe esa circularidad: chequeo independiente en el arranque de sesión.
-// Regla de la casa que implementa: "un control que hay que acordarse de invocar es un
-// control que no corre" (bizuit-bpmn-spec-contract, 2026-08-01).
+// Regla que implementa: "un control que hay que acordarse de invocar es un control que no corre".
 //
 // CÓMO MIDE: fecha de la última corrida = la más nueva entre los archivos del CAPTURER en
 // ~/.claude/tycon-harness/.dashboard/ — sólo los `metrics-*.json`, que es lo que escribe, uno por
@@ -18,13 +14,10 @@
 // porque un clone/pull fresco pisa los mtime y escondería el staleness justo cuando importa.
 // Fallback: mtime.
 //
-// 🔴 POR QUÉ EL PREFIJO (2026-09-05): miraba TODO `.json` de la carpeta. Desde el 2026-08-30 el
-// nocturno escribe ahí `sdlc-stage-<hoy>.json` todos los días, así que "la última corrida del
-// capturer" daba siempre HOY y el aviso no podía disparar nunca más — ciego seis días, con el
-// banco de controles certificándolo en verde porque sus casos sembraban sólo `metrics-*`. El
-// mismo modo de falla que este hook existe para cazar: un control apagado sin que nada lo diga.
-// La carpeta es compartida (etapas, vigilante, dependencias, banco): lo que no es del capturer
-// no dice nada sobre el capturer. Caso: incident-log#aviso-cegado-por-un-vecino-2026-09-05.
+// 🔴 POR QUÉ EL PREFIJO: la carpeta es compartida (etapas, vigilante, dependencias, banco) y el nocturno escribe ahí
+// `sdlc-stage-<hoy>.json` todos los días. Si se mirara todo `.json`, "la última corrida del capturer" daría siempre
+// HOY y el aviso no podría disparar nunca: el mismo modo de falla que este hook existe para cazar, un control apagado
+// sin que nada lo diga. Lo que no es del capturer no dice nada sobre el capturer.
 //
 // RUIDO CONTROLADO: avisa como mucho 1 vez cada 24h por máquina (state file), y solo si
 // se cruzó el threshold. Silencio total en el caso sano.
@@ -42,11 +35,11 @@ try {
 
   const thresholdDays = Number(process.env.TYCON_RETRO_STALENESS_DAYS || 7);
   // El script vive en ~/.claude/tycon-harness/scripts/hooks/ → la raíz del repo es ../../. De qué árbol se leen los
-  // .dashboard del nocturno lo decide tycon-home.js (story 8.23, A2, AC 6: hoy, éste; desde la B, el clon que se
-  // mantiene, o ninguno y el aviso calla); si este archivo viaja suelto, éste
+  // .dashboard del nocturno lo decide tycon-home.js (el clon que se mantiene, o ninguno y el aviso calla); si este
+  // archivo viaja suelto, éste
   const own = path.resolve(__dirname, '..', '..');
   const homeLib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
-  // Desde la story 8.26 (tanda J) los registros de cada merge viven donde dice scripts/lib/night-data.js: en una versión
+  // Los registros de cada merge viven donde dice scripts/lib/night-data.js: en una versión
   // bajada, el clon de mantenimiento que la máquina declara. Sin uno que sirva quedan en la carpeta del estado, que no
   // viaja y trae la copia congelada que dejó la mudanza: ahí este aviso calla (mediría una serie que nadie alimenta).
   const nightLib = path.join(__dirname, '..', 'lib', 'night-data.js');
@@ -54,10 +47,10 @@ try {
   // «no pude saber dónde están» no es «no viajan»: se dice (callar acá se vería igual que una serie al día)
   if (machine && !machine.dir) { console.log(`⚠️ retro capturer: ${machine.why} — no pude mirar si la serie de retrospectivas está al día`); process.exit(0); }
   if (machine && !machine.travels) process.exit(0);
-  const TH = !machine && fs.existsSync(homeLib) ? require(homeLib) : null;   // sin la biblioteca nueva al lado: lo de antes
+  const TH = !machine && fs.existsSync(homeLib) ? require(homeLib) : null;   // sin la biblioteca al lado: el árbol propio
   const tree = machine ? own : (TH ? TH.maintainedDir(os.homedir(), own) : own);
   if (!tree) process.exit(0);
-  // en una instalación bajada (story 8.23, tanda D) el .dashboard vive en ~/.tycon/state/dashboard
+  // en una instalación bajada el .dashboard vive en ~/.tycon/state/dashboard
   const dashboardDir = machine && machine.dir ? machine.dir
     : TH && typeof TH.dashboardDir === 'function' ? TH.dashboardDir(os.homedir(), tree) : path.join(tree, '.dashboard');
   if (!fs.existsSync(dashboardDir)) process.exit(0);

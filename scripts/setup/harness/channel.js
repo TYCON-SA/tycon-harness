@@ -1,13 +1,13 @@
 'use strict';
-// channel.js — la política de actualización: canal (`latest` | `stable`) y aplicación (`auto` | `ask`) (story 8.13, AC 12).
+// channel.js — la política de actualización: canal (`latest` | `stable`) y aplicación (`auto` | `ask`).
 //
 // Vive en la configuración del arnés (`scripts/lib/tycon-config.js`, sección `update`, vocabulario cerrado): variable de
-// entorno (`TYCON_UPDATE_CHANNEL`, `TYCON_UPDATE_APPLY`) › `~/.claude/tycon.json` › `team-profile.json` (o `perfil-equipo.json`, el nombre de antes) › el default.
+// entorno (`TYCON_UPDATE_CHANNEL`, `TYCON_UPDATE_APPLY`) › `~/.claude/tycon.json` › `team-profile.json` (o `perfil-equipo.json`, el nombre anterior) › el default.
 // Sin que nadie diga nada: `stable` + `ask`. El perfil del equipo trae `latest` + `auto`; la copia pública no trae perfil.
-// Un valor fuera del vocabulario es un ERROR (8.3 AC 2), no «apagado». `TYCON_UPDATE=0` apaga la actualización del todo
+// Un valor fuera del vocabulario es un ERROR, no «apagado». `TYCON_UPDATE=0` apaga la actualización del todo
 // (`startup` queda en importar engram + aplicador + salud).
 //
-// Mientras `tycon-config.js` no conozca la sección `update` (la suma otra pieza de esta misma tanda), su ausencia se
+// Mientras `tycon-config.js` no conozca la sección `update` (otra pieza la suma), su ausencia se
 // trata como «sin valor» y se leen las variables y `~/.claude/tycon.json` directamente, con las mismas reglas; cuando la
 // sección exista, manda `tycon-config`. `set` escribe SÓLO `update.channel` en `~/.claude/tycon.json` (atómico, preserva
 // el resto del archivo).
@@ -80,8 +80,8 @@ function readFromConfig(home, env, tree) {
     return out;
   }
   // los errores de la sección `update` y los de ARCHIVO (clave nula: un tycon.json o un perfil ilegible). Un archivo
-  // ilegible no es «sin valor» (8.3 AC 2): descartarlo dejaba caer la política al perfil (`latest` + `auto`) aunque la
-  // persona hubiera escrito `ask` (pase adversarial de la tanda A, clases 10 y 24)
+  // ilegible no es «sin valor»: descartarlo dejaría caer la política al perfil (`latest` + `auto`) aunque la
+  // persona hubiera escrito `ask`
   for (const e of c.errores || []) {
     const key = String(e.clave || '');
     if (!e.clave || /^update\b/.test(key) || /^TYCON_UPDATE/.test(key)) out.errors.push(`${e.archivo}${e.clave ? ` · ${e.clave}` : ''} · ${e.motivo}`);
@@ -94,7 +94,7 @@ function readFromConfig(home, env, tree) {
     if (!ALLOWED[key].includes(val)) { out.errors.push(invalid('configuración', `update.${key}`, val, ALLOWED[key])); continue; }
     out[key] = val; out.origins[key] = origin || 'maquina';
   }
-  // la llave de la transición a un solo repo (story 8.18, AC 30): `unified` sólo si la configuración lo dice y lo dice
+  // la llave de la transición a un solo repo: `unified` sólo si la configuración lo dice y lo dice
   // bien. Un valor fuera del vocabulario ya quedó arriba como error de la política (y con errores nadie mueve nada):
   // acá no se confía en el valor con que el lector rellena lo que está roto
   if (v.skills_source === SKILLS_UNIFIED && !out.errors.length) {
@@ -105,8 +105,8 @@ function readFromConfig(home, env, tree) {
 }
 
 /**
- * La política vigente. `skillsSource` (story 8.18): de dónde lee las skills una máquina con dos clones — `separate`, de
- * su clon viejo de agent-skills (lo de siempre, y lo que vale si nadie dice nada o si el lector de configuración es
+ * La política vigente. `skillsSource`: de dónde lee las skills una máquina con dos clones — `separate`, de
+ * su clon viejo de agent-skills (lo que vale si nadie dice nada o si el lector de configuración es
  * anterior a la llave); `unified`, del repo unificado: `harness.js` re-apunta ese clon (scripts/setup/harness/repoint.js).
  * @returns {{ channel: 'latest'|'stable', apply: 'auto'|'ask', enabled: boolean, origins: {channel, apply}, errors: string[],
  *             skillsSource: 'separate'|'unified', skillsSourceOrigin: string }}
@@ -122,7 +122,7 @@ function read(home = os.homedir(), env = process.env, { tree } = {}) {
 
 // La copia del lector de configuración que instala el freno de producción (con sudo; se actualiza sólo al reinstalarlo)
 // lee el mismo ~/.claude/tycon.json y rechaza una sección que no conoce: si es anterior a la sección `update`, escribirla
-// la deja en «configuración ROTA» hasta reinstalar el freno (pase adversarial de la tanda A, clase 21). Se avisa.
+// la deja en «configuración ROTA» hasta reinstalar el freno. Se avisa.
 const GUARD_LIB = '/opt/tycon/lib/tycon-config.js';
 function guardWarning(guardLib) {
   try {
@@ -136,9 +136,9 @@ function guardWarning(guardLib) {
 function set(home = os.homedir(), value, { guardLib = GUARD_LIB } = {}) {
   const v = value === undefined ? '' : String(value).trim();
   if (!CHANNELS.includes(v)) return { ok: false, reason: `canal «${v}»: tiene que ser ${CHANNELS.join(' o ')}`, file: machineFile(home) };
-  // un solo escritor del archivo (story 8.16, tanda D · AC 34): `setKey` de la configuración, que conserva el resto del
-  // archivo igual que antes. Sin variables (`env: {}`): de la variable que le gana avisa `channel` mismo, con su línea. Un
-  // lector de antes de `setKey` (una vuelta atrás) escribe como siempre, acá abajo.
+  // un solo escritor del archivo: `setKey` de la configuración, que conserva el resto del
+  // archivo igual. Sin variables (`env: {}`): de la variable que le gana avisa `channel` mismo, con su línea. Un
+  // lector anterior a `setKey` escribe acá abajo.
   if (typeof config.setKey === 'function' && vocabularyHasUpdate()) {
     const r = config.setKey(home, 'update.channel', v, { env: {}, guardLib });
     if (!r.ok) return { ok: false, reason: r.reason, file: r.file };

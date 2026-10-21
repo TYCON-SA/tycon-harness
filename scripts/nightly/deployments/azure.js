@@ -1,9 +1,9 @@
 'use strict';
 /**
- * azure.js — el lector de despliegues de Azure DevOps de la foto de despliegues (story 2.22). Lo usa deployments.js;
- * la 2.11 (serie histórica) lo reusa en vez de escribir otro.
+ * azure.js — el lector de despliegues de Azure DevOps de la foto de despliegues. Lo usa deployments.js;
+ * la serie histórica lo reusa en vez de escribir otro.
  *
- * EL CRITERIO (regla ADO 6 del equipo, decisión 4 de la story): una corrida cuenta como despliegue a un entorno SI Y SÓLO
+ * EL CRITERIO (regla ADO 6 del equipo): una corrida cuenta como despliegue a un entorno SI Y SÓLO
  * SI su timeline tiene un registro `type: "Stage"` cuyo `identifier` es EXACTAMENTE uno de los declarados (sin distinguir
  * mayúsculas) y su `result` es `succeeded` o `succeededWithIssues` (éste con `con_avisos`). El nombre visible del stage
  * no se mira nunca, ni se busca un pedazo de texto: buscar «PROD» encuentra NONPROD y PREPROD y pierde Production. Ni el
@@ -14,17 +14,17 @@
  *
  * Por entrada `{ pipeline: "<proyecto>/<nombre exacto>", stages: [...] }`:
  *   1. el id de la definición con `az pipelines list --name` (busca por PREFIJO): se queda con la de nombre igual;
- *      cero → `pipeline_no_encontrado`, más de una → `pipeline_ambiguo` (decisión 18);
+ *      cero → `pipeline_no_encontrado`, más de una → `pipeline_ambiguo`;
  *   2. hasta `ventana` corridas (`az pipelines runs list --top`, sin filtrar por estado: las en curso dicen «pendiente»),
  *      ordenadas por el guion (cola, después id), de la más nueva a la más vieja;
- *   3. el timeline de cada una hasta la primera que cuenta (decisión 16): el corte acota el costo;
+ *   3. el timeline de cada una hasta la primera que cuenta: el corte acota el costo;
  *   4. en producción, la aprobación sale de los timelines ya leídos de las corridas posteriores al último despliegue;
- *   5. en staging, «main» sale de la última corrida TERMINADA de refs/heads/main sin contar las canceladas (decisión 11).
- * El commit de una promoción a mano (decisión 15): si `triggerInfo.pipelineId` nombra la corrida de CI promovida, el
+ *   5. en staging, «main» sale de la última corrida TERMINADA de refs/heads/main sin contar las canceladas.
+ * El commit de una promoción a mano: si `triggerInfo.pipelineId` nombra la corrida de CI promovida, el
  * commit sale de ella (`commit_fuente: "recurso"`, una llamada más); si no y la corrida se encoló a mano, el commit de
  * `sourceVersion` no es confiable.
  *
- * Lista blanca (decisión 13): de cada registro del timeline se leen sólo type, identifier, state, result y fechas.
+ * Lista blanca: de cada registro del timeline se leen sólo type, identifier, state, result y fechas.
  *
  * Fallas: se lanza `{ noMedido: true, motivo, detalle }` con el texto crudo; deployments.js lo sanea. 401/403/TF400813/
  * «not authorized» → `sin_permiso`; otra salida ≠ 0 → `az_fallo`; algo que no es JSON → `respuesta_no_json`; sin tiempo
@@ -52,7 +52,7 @@ function crear({ cmd = process.env.TYCON_ADO_CMD || 'az', org, deadline, ventana
       const t = `${r.stderr || ''} ${r.stdout || ''}`;
       throw noMedido(/\b(401|403)\b|TF400813|not authorized|unauthorized|forbidden/i.test(t) ? 'sin_permiso' : 'az_fallo', t);
     }
-    // medido el 2026-10-16: el timeline de una corrida cancelada antes de correr nada vuelve VACÍO con salida 0 (la API
+    // el timeline de una corrida cancelada antes de correr nada vuelve VACÍO con salida 0 (la API
     // contesta sin cuerpo). Sólo donde el que llama lo dice (`vacio`) eso es «sin registros»; en cualquier otro pedido,
     // una salida vacía sigue siendo «no JSON»
     if (vacio !== undefined && String(r.stdout || '').trim() === '') return vacio;

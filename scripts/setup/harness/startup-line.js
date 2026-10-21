@@ -1,8 +1,8 @@
 'use strict';
-// startup-line.js — la LÍNEA DE ARRANQUE del arnés en settings.json: la nueva (AC 4d) y la migración de las viejas (AC 7).
+// startup-line.js — la LÍNEA DE ARRANQUE del arnés en settings.json: la nueva y la migración de las viejas.
 //
-// Hoy cada dev escribió a mano una variante de la línea que hace `git pull` en los dos repos y llama al instalador
-// (medidas en el equipo: con o sin `engram sync --import`, con o sin la llamada al instalador, con o sin `--ff-only
+// Cada dev puede tener escrita a mano una variante de la línea que hace `git pull` en los dos repos y llama al instalador
+// (variantes conocidas: con o sin `engram sync --import`, con o sin la llamada al instalador, con o sin `--ff-only
 // --autostash`, flags en cualquier orden, clon en `~/.claude` o en otra carpeta, `async` o no, y la forma que deja el
 // `harness-bootstrap-heal.sh` viejo cuando le pega la llamada al instalador a una línea nueva). La nueva llama a la copia
 // fija de arranque (`~/.claude/.tycon-pipeline/harness/bootstrap.js`) y, si no sale 0, al respaldo en shell.
@@ -14,7 +14,7 @@
 // es `pwsh … -Command "…"` con `Set-Location` y `& …install-tycon-hooks.ps1`. Las formas conocidas, una por variante
 // medida, viven en scripts/tests/fixtures/startup-lines.json y la prueba harness-startup-line.test.js las cruza todas.
 //
-// Pasos que la hacen DESCONOCIDA (pase adversarial de la tanda A, clase 15): una segunda llamada a otro instalador, una
+// Pasos que la hacen DESCONOCIDA: una segunda llamada a otro instalador, una
 // redirección a un archivo (sólo se ignoran las que descartan salida) y `engram sync --import` con argumentos propios.
 //
 // Reemplaza UNA sola vez: copia `settings.json.bak.<ts>`, escritura atómica (temporal + rename, 3 reintentos ante EPERM),
@@ -35,15 +35,15 @@ const BOOTSTRAP_MARK = '.tycon-pipeline/harness/bootstrap.js';
 const NEW_LINE = {
   posix: 'node "$HOME/.claude/.tycon-pipeline/harness/bootstrap.js" || bash "$HOME/.claude/.tycon-pipeline/harness/bootstrap-fallback.sh"',
   // Barras normales y comillas como el resto del .ps1 (install-tycon-hooks.ps1:421); adentro de la -Command (comillas
-  // dobles) van comillas simples. Y SIN NINGÚN `$` (story 8.17): en Windows, Claude Code le pasa el comando de un hook a
+  // dobles) van comillas simples. Y SIN NINGÚN `$`: en Windows, Claude Code le pasa el comando de un hook a
   // Git Bash («Git Bash on Windows, or PowerShell when Git Bash isn't installed», documentación de hooks), y bash expande
-  // lo que empieza con `$` dentro de comillas dobles. La forma anterior preguntaba `if ($LASTEXITCODE -ne 0)`: bash se
-  // comía la variable, PowerShell fallaba con «The term '-ne' is not recognized», la línea salía 1 en cada sesión y el
-  // respaldo no se disparaba nunca (medido en un agente Windows, corridas 11686 y 11701, lanzada por `bash -c`).
+  // lo que empieza con `$` dentro de comillas dobles. Con `if ($LASTEXITCODE -ne 0)` bash se
+  // come la variable, PowerShell falla con «The term '-ne' is not recognized», la línea sale 1 en cada sesión y el
+  // respaldo no se dispara nunca.
   // `a || b` es de PowerShell 7 (un requisito del arnés en Windows): corre el respaldo si node no sale 0, o si no está.
   windows: 'pwsh -NoProfile -ExecutionPolicy Bypass -Command "node \'<HOME>/.claude/.tycon-pipeline/harness/bootstrap.js\' || & \'<HOME>/.claude/.tycon-pipeline/harness/bootstrap-fallback.ps1\'"',
 };
-/** La forma ANTERIOR de la línea nueva de Windows (la que escribió la story 8.13): es «nueva» (llama a la copia fija)
+/** La forma ANTERIOR de la línea nueva de Windows: llama a la copia fija
  *  pero no corre bien por Git Bash. Se reconoce entera, con cualquier carpeta de usuario y la misma en los dos lados. */
 const SUPERSEDED_WINDOWS_RX = /^pwsh -NoProfile -ExecutionPolicy Bypass -Command "node '(.+)\/\.claude\/\.tycon-pipeline\/harness\/bootstrap\.js'; if \(\$LASTEXITCODE -ne 0\) \{ & '\1\/\.claude\/\.tycon-pipeline\/harness\/bootstrap-fallback\.ps1' \}"$/;
 function isSuperseded(command) { return typeof command === 'string' && SUPERSEDED_WINDOWS_RX.test(command); }
@@ -70,7 +70,7 @@ function isNew(command) { return typeof command === 'string' && command.includes
 
 const REPO_RX = /(tycon-claude-guides|agent-skills)/;
 // sólo las redirecciones que DESCARTAN salida (a /dev/null, a otro descriptor, $null): una redirección a un archivo es un
-// paso del dev (pase adversarial, clase 15) y hace la forma desconocida
+// paso del dev y hace la forma desconocida
 const REDIR_RX = /\s*(?:\d?>>?\s*(?:\/dev\/null|&\d)|\*>\s*\$null|\|\s*Out-Null)/g;   // >/dev/null · 2>&1 · 2>/dev/null · *> $null
 const PULL_FLAGS_RX = /^((?:\s+--?[\w-]+(?:=\S+)?)*)\s*$/;
 
@@ -88,9 +88,9 @@ function flagsOf(s) { const m = PULL_FLAGS_RX.exec(s || ''); return m ? m[1].tri
  */
 function analyze(command) {
   if (typeof command !== 'string' || !command.trim()) return null;
-  // La línea vieja de Windows empieza con `pwsh` o con `powershell`: el alta mandaba registrarla con el PowerShell que
-  // hubiera, y con sólo el 5.1 quedaba `powershell`. Sin reconocerla, esa máquina se quedaba con la línea vieja para
-  // siempre (medido en una máquina Windows 11: story 8.17). La nueva se escribe siempre con `pwsh`.
+  // La línea vieja de Windows empieza con `pwsh` o con `powershell`: se registra con el PowerShell que haya, y con
+  // sólo el 5.1 queda `powershell`. Sin reconocerla, esa máquina se quedaría con la línea vieja para
+  // siempre. La nueva se escribe siempre con `pwsh`.
   const win = /^\s*(?:pwsh|powershell)(?:\.exe)?\s/.test(command);
   let body = command;
   if (win) {
@@ -140,7 +140,7 @@ function classify(command) {
   const d = analyze(command);
   if (!d) return null;
   if (d.bootstrap > 0) {
-    // lo que deja el bootstrap-heal viejo: la nueva + la llamada al instalador pegada atrás (M7)
+    // lo que deja el bootstrap-heal viejo: la nueva + la llamada al instalador pegada atrás
     return d.bootstrap === 2 && d.installer && d.platform === 'posix' && !d.engram && !Object.keys(d.pulls).length ? 'heal-appended' : null;
   }
   // la que crea harness-bootstrap-heal.sh viejo cuando no había ninguna línea del arnés: sólo la llamada al instalador
@@ -194,7 +194,7 @@ function writeAtomic(file, text) {
  * Opciones: `home`, `platform`, `nodeOk` (si falta se mide con `nodeVersion` o el node de este proceso), `nodeVersion`,
  * `addIfMissing` (sin ninguna línea del arnés, registra la nueva: lo usa `install`), `backup` (la copia `.bak.<ts>` de
  * siempre; bajo `harness.js` —`backup: false` o `TYCON_HARNESS_SNAPSHOT_DIR` puesta— no se hace: el mecanismo ya tomó la
- * suya antes, AC 18).
+ * suya antes).
  */
 function migrate(settingsPath, { home, platform = process.platform, nodeOk, nodeVersion, addIfMissing = false, backup } = {}) {
   const target = newLine(home, platform);
@@ -208,8 +208,8 @@ function migrate(settingsPath, { home, platform = process.platform, nodeOk, node
   }
   if (!fs.existsSync(settingsPath)) {
     if (!addIfMissing) return Object.assign(base, { reason: `${settingsPath} no existe: nada que migrar` });
-    // Una HOME que nunca usó Claude Code (`install` en una máquina limpia: story 8.7, AC 19): el archivo nace con la
-    // línea nueva. Sin esto el aplicador creaba después su esqueleto y la línea no quedaba en ningún lado.
+    // Una HOME que nunca usó Claude Code (`install` en una máquina limpia): el archivo nace con la
+    // línea nueva. Sin esto el aplicador crearía después su esqueleto y la línea no quedaría en ningún lado.
     try { fs.mkdirSync(path.dirname(settingsPath), { recursive: true }); } catch (e) {
       return Object.assign(base, { reason: `no pude crear ${path.dirname(settingsPath)} (${e.message}): la línea de arranque no se registró` });
     }
@@ -220,7 +220,7 @@ function migrate(settingsPath, { home, platform = process.platform, nodeOk, node
   let s;
   if (raw.trim() === '') {
     // Existe pero está VACÍO (una escritura truncada, un `touch`): el aplicador lo lee como `{}` y le escribe sus hooks,
-    // así que acá vale lo mismo. Dado por «ilegible», `install` dejaba la máquina instalada y sin línea de arranque.
+    // así que acá vale lo mismo. Dado por «ilegible», `install` dejaría la máquina instalada y sin línea de arranque.
     if (!addIfMissing) return Object.assign(base, { reason: `${settingsPath} está vacío: nada que migrar` });
     s = {};
   } else {
@@ -262,7 +262,7 @@ function migrate(settingsPath, { home, platform = process.platform, nodeOk, node
       return commit(settingsPath, raw, s, Object.assign(base, { before: alreadyNew[0].command, reason: `${alreadyNew.length - 1} línea(s) de arranque nueva(s) repetida(s) quitada(s): queda una` }));
     }
     if (!addIfMissing) return Object.assign(base, { reason: `sin línea de arranque del arnés en ${settingsPath}: nada que migrar` });
-    // registrarla (install, AC 4d)
+    // registrarla (install)
     if (!s.hooks || typeof s.hooks !== 'object') s.hooks = {};
     if (!Array.isArray(s.hooks.SessionStart)) s.hooks.SessionStart = [];
     s.hooks.SessionStart.push({ hooks: [{ type: 'command', command: target.command, async: true }] });

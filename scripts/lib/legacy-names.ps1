@@ -1,8 +1,8 @@
-﻿# legacy-names.ps1 — que un nombre viejo siga andando en un guion de PowerShell (story 8.9, tanda A2 · 2026-09-30)
+﻿# legacy-names.ps1 — que un nombre viejo siga andando en un guion de PowerShell
 #
 # El par de scripts/lib/legacy-names.js para PowerShell (≥ 6.2, el del instalador .ps1). Lee el mismo mapa
 # (scripts/lib/renames.json) con UNA llamada a node, sólo si el mapa tiene alguna entrada; sin mapa, o vacío, es paso
-# directo. Revisado por lectura (el equipo no tiene Windows para correrlo; ver la pregunta 5 de la story).
+# directo. Revisado por lectura, sin correrlo en Windows.
 #
 # Uso (con dot-source):
 #   . (Join-Path $Arnes 'scripts/lib/legacy-names.ps1')
@@ -39,7 +39,7 @@ function Find-LegacyName([string]$Kind, [string]$Field, [string]$Name) {
     $p = $line -split "`t"
     if ($p.Count -lt 3 -or $p[0] -ne $Kind) { continue }
     if (($Field -eq 'old' -and $p[1] -ceq $Name) -or ($Field -eq 'new' -and $p[2] -ceq $Name)) {
-      # cuarto campo: en una opción, '1' si se repite; en un valor (tanda B3a), la opción de la que es ('' = cualquiera)
+      # cuarto campo: en una opción, '1' si se repite; en un valor, la opción de la que es ('' = cualquiera)
       return [pscustomobject]@{ Old = $p[1]; New = $p[2]; Repeatable = ($p.Count -gt 3 -and $p[3] -eq '1'); Option = $(if ($p.Count -gt 3) { $p[3] } else { '' }) }
     }
   }
@@ -83,7 +83,7 @@ function Get-LegacyArgs {
   if ($script:LegacyNamesLines.Count -eq 0) { return , $in }
   $out = New-Object System.Collections.Generic.List[string]
   $seenOld = [ordered]@{}; $seenNew = @{}; $done = $false   # ordenado: el mensaje nombra siempre el primero del argv
-  # un valor viejo se traduce sólo detrás de su opción (tanda B3a); uno sin opción en el mapa, en cualquier argumento
+  # un valor viejo se traduce sólo detrás de su opción; uno sin opción en el mapa, en cualquier argumento
   $valueOf = {
     param($opt, $val)
     $v = Find-LegacyName 'value' 'old' $val

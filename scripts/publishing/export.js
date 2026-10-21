@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 'use strict';
-// export.js — la clasificación de lo que el arnés publica (épica 8, story 8.4 · 2026-09-27; story 8.26, AC 36)
+// export.js — la clasificación de lo que el arnés publica
 //
-// POR QUÉ EXISTE: hasta el corte a GitHub el arnés se publicaba como ESPEJO. Los repos internos eran la fuente y este
-// guion ARMABA la copia pública: la lista blanca, las exclusiones fijas, las transformaciones con nombre, los
-// reemplazos de nombres reales por inventados, los papeles, las traducciones a Codex y un commit por plomería. Desde el
-// corte el repo público es la fuente: nadie arma una copia, y esa mitad se sacó (story 8.26, AC 36). Pedirle una copia
-// sale 2 diciéndolo.
+// POR QUÉ EXISTE: el repo público es la fuente del arnés y nadie arma una copia. Este guion queda como CONTROL: clasifica
+// qué publicaría cada commit (la lista blanca, las exclusiones fijas, las transformaciones con nombre) y verifica.
+// Pedirle una copia sale 2 diciéndolo.
 //
 // QUEDA EL CONTROL, que sigue haciendo falta mientras exista el repo de mantenimiento del equipo:
 //   · `--explain`: el primer nivel de cada fuente clasificado (qué entra, qué queda afuera y por qué), las exclusiones
@@ -30,10 +28,9 @@ const os = require('os');
 const path = require('path');
 const vm = require('vm');
 const { spawnSync } = require('child_process');
-// el detector, los frenos de nombres y la configuración (lista blanca, tabla, lista de denegación) viven al lado desde
-// la tanda C4 de la story 8.9
+// el detector, los frenos de nombres y la configuración (lista blanca, tabla, lista de denegación) viven al lado de este guion
 const detector = require('./detector.js');
-// las funciones puras de la copia pública (story 8.7): bloques internos, enlaces, rutas del README, atribuciones, el
+// las funciones puras de la copia pública: bloques internos, enlaces, rutas del README, atribuciones, el
 // renombre de una skill y la poda del manifiesto de terceros. Acá se cablean; la lógica vive allá, con su prueba. Se
 // carga recién cuando se usa: quien sólo pide la clasificación o un lector (el freno de nombres en un laboratorio con
 // algunos guiones copiados) no lo necesita.
@@ -42,7 +39,7 @@ const publicCopy = new Proxy({}, { get: (_, k) => (publicCopyModule || (publicCo
 
 const RAIZ_PROPIA = path.resolve(__dirname, '..', '..');
 const FUENTES = Object.freeze(['arnes', 'agent-skills']);
-// story 8.9 (AC 29): los paquetes se llaman en inglés (`core`, `clients`). El nombre viejo de cada uno lo sigue aceptando
+// Los paquetes se llaman en inglés (`core`, `clients`). El nombre viejo de cada uno lo sigue aceptando
 // `--package` (lo traduce el alias al entrar) y lo lee `paquetesConNombresNuevos` en una lista blanca de antes del
 // renombre. Los viejos salen del mapa de renombres, nunca escritos acá; sin mapa (la copia pública), no hay viejos.
 const MAPA_WHERE = 'scripts/publishing/export.js';
@@ -55,12 +52,12 @@ function nombresViejosDePaquete() {
     return [];
   }
 }
-// El privado acepta los dos nombres hasta la B3b de la 8.9: la carpeta de su manifiesto en agent-skills (packs/<nombre>)
+// El privado acepta los dos nombres: la carpeta de su manifiesto en agent-skills (packs/<nombre>)
 // todavía tiene el viejo, y es por esa carpeta que se sabe qué revisores son suyos.
 const PAQUETES_PRIVADOS = Object.freeze(['clients', ...nombresViejosDePaquete().filter((e) => e.new === 'clients').map((e) => e.old)]);
 /** La lista blanca con los paquetes por su nombre nuevo: una de antes del renombre (la foto de antes del freno de nombres
  *  nuevos) nombra el mismo paquete con el viejo, y compararla con la de después tiene que ver UN paquete, no dos. Espera
- *  las claves de hoy (story 8.9, tanda D1): una lista de otra versión del arnés pasa antes por `readKeysDeep`. */
+ *  las claves actuales: una lista de otra versión del arnés pasa antes por `readKeysDeep`. */
 function paquetesConNombresNuevos(lista) {
   if (!lista || typeof lista !== 'object' || !lista.packages || typeof lista.packages !== 'object') return lista;
   const viejos = nombresViejosDePaquete().filter((e) => Object.prototype.hasOwnProperty.call(lista.packages, e.old)
@@ -77,18 +74,17 @@ function paquetesConNombresNuevos(lista) {
 const CATEGORIAS = Object.freeze(['cliente', 'persona', 'host-interno', 'maquina', 'interno']);
 const MARCAS = Object.freeze(['tycon', 'bizuit']);
 // Un anónimo que se aplica fuera de `.md` va a parar a código, claves y variables: sin espacios ni puntuación rara
-// (medido: «Cliente A» rompía 3 `.js` y dos suites). Salvo que su forma tenga esos mismos signos, en el mismo orden
-// (AC 9, decisión del 2026-09-28): `org: 'x'` → `org: 'y'` conserva la forma y no rompe nada; `Totora` → `Cliente A`
+// («Cliente A» rompería 3 `.js` y dos suites). Salvo que su forma tenga esos mismos signos, en el mismo orden:
+// `org: 'x'` → `org: 'y'` conserva la forma y no rompe nada; `Totora` → `Cliente A`
 // agrega un espacio donde no había y sigue rechazado.
 const ANONIMO_SEGURO = /^[A-Za-z0-9._/:@-]+$/;
 const signosRaros = (s) => (s.match(/[^A-Za-z0-9._/:@-]/g) || []).join('');
 const anonimoAceptable = (texto, anonimo) => ANONIMO_SEGURO.test(anonimo) || signosRaros(anonimo) === signosRaros(texto);
 const AUTOR = Object.freeze({ nombre: 'TYCON', email: 'arnes@tycon.com.ar' });
-// story 8.26 (AC 36): desde el corte a GitHub el repo público es la fuente y nadie arma una copia. El exportador quedó
-// como CONTROL: clasifica (`--explain`, y `whatShips` para los frenos y el instalador) y verifica; pedirle una copia
+// El repo público es la fuente y nadie arma una copia. El exportador es un CONTROL: clasifica (`--explain`, y `whatShips` para los frenos y el instalador) y verifica; pedirle una copia
 // sale 2 con este motivo.
 const NO_ARMA = 'ya no arma la copia: el repo público es la fuente (story 8.26, AC 36). Lo que queda es el control: --explain clasifica, y los frenos y el instalador leen la clasificación como biblioteca';
-// story 8.7 (AC 14): el nombre público vive en UN archivo, que lee sólo el exportador (y la sincronización de la 8.8) y
+// El nombre público vive en UN archivo, que lee sólo el exportador (y la sincronización) y
 // que no viaja: la copia lleva el nombre ya puesto en sus papeles
 const PUBLIC_REPOS = 'scripts/publishing/public-repos.json';
 // Los archivos que pueden escribir la dirección del repo público («<org>/<repo>» o su URL de GitHub), cada uno con su
@@ -97,7 +93,7 @@ const PUBLIC_REPOS = 'scripts/publishing/public-repos.json';
 const PUBLIC_NAME_EXCEPTIONS = 'scripts/publishing/public-name-exceptions.json';
 const PUBLIC_NAME_OK = /^[A-Za-z0-9._-]+$/;
 const PUBLIC_MARKER = /\{\{public-[^}]*\}\}/g;
-// story 8.13 (AC 24): la versión numerada de la copia. Es un archivo GENERADO —no sale de ninguna fuente— y la lista
+// La versión numerada de la copia. Es un archivo GENERADO —no sale de ninguna fuente— y la lista
 // blanca lo declara en `generated`. Sus bytes los arma una sola función (`versionFileBytes`): la usan la opción
 // --stamp-version, para una copia suelta, y la sincronización (mirror.js), que lo agrega cuando ya leyó el público.
 const VERSION_FILE = 'version.json';
@@ -111,10 +107,10 @@ const MANIFIESTO_TERCEROS = 'scripts/publishing/third-party-skills.json';
 const CODEX_TOML = /^arnes\/adapters\/codex\/agents(?:-native)?\/[^/]+\.toml$/;
 const MANIFIESTO_CODEX = 'adapters/codex/agents/MANIFEST.json';
 const CATALOGO = 'guides/advisor-rules-catalog.md';
-const REGISTRO_DE_PARTES = 'scripts/tests/suite-parts.json';   // las suites partidas (story 8.22): ver la transformación suite-parts-json
+const REGISTRO_DE_PARTES = 'scripts/tests/suite-parts.json';   // las suites partidas: ver la transformación suite-parts-json
 const LINEA_BASE = /^scripts\/controls-bench\/baseline\/[^/]+\.json$/;
 
-// Lo privado de la publicación con el nombre que tuvo hasta la tanda C4 de la story 8.9 (AC 39): una clase por cada
+// Lo privado de la publicación con el nombre que tuvo antes de la mudanza: una clase por cada
 // nombre viejo del mapa, en las dos fuentes, así una foto de antes de la mudanza (la base de un freno con --range, un
 // --harness viejo) tampoco lo deja salir. Los viejos salen del mapa, nunca escritos acá; sin mapa (la copia pública) no
 // hay viejos, y tampoco archivos privados que proteger.
@@ -139,8 +135,8 @@ function privadosConNombreViejo() {
     return [];
   }
 }
-// El registro de productos (lo lee también el freno de nombres nuevos). Se mudó en la tanda D1 de la story 8.9: una foto de
-// antes (un --harness viejo, la base de un freno) lo tiene en su ruta vieja, que sale del mapa — nunca escrita acá.
+// El registro de productos (lo lee también el freno de nombres nuevos). Una foto de
+// antes de la mudanza (un --harness viejo, la base de un freno) lo tiene en su ruta vieja, que sale del mapa — nunca escrita acá.
 const PARIDAD = 'scripts/ci/product-parity.json';
 /** Las rutas viejas (del mapa) de un archivo del arnés; sin mapa (la copia pública), ninguna. */
 function rutasViejasDe(ruta) {
@@ -152,26 +148,25 @@ function rutasViejasDe(ruta) {
     return [];
   }
 }
-/** Una exclusión fija con el nombre que tuvo antes de la story 8.9, como clase (no se le exige archivo): así una foto de
+/** Una exclusión fija con el nombre que tuvo antes de la mudanza, como clase (no se le exige archivo): así una foto de
  *  antes de la mudanza tampoco lo deja salir. */
 function fijasConNombreViejo(fijas) {
   return fijas.flatMap((x) => rutasViejasDe(x.glob).map((viejo) => ({ fuente: x.fuente, glob: viejo, motivo: `${x.motivo}, con su nombre de antes de la story 8.9`, clase: true })));
 }
-// La carpeta del nocturno de dependencias (se mudó entera en la tanda F de la story 8.9). Su carpeta de antes vivía bajo un
-// «in» (`scripts/**`) y guardaba la lista de repos del equipo: una foto de antes de la mudanza (un --harness viejo, la
-// base de un freno) la trae ahí, y sin una exclusión por esa ruta saldría en la copia. Queda como clase —hoy sólo tiene
-// reemplazos: no se le exige archivo— hasta el retiro del mapa; la ruta vieja sale del mapa, nunca escrita acá.
-// Las otras tres carpetas de la tanda vivían en la raíz, fuera de todo «in»: una foto vieja las trae como entradas del
-// primer nivel sin clasificar y la exportación sale 2 sin escribir nada (no hace falta una clase para ellas).
+// La carpeta del nocturno de dependencias, con su ruta de antes de la mudanza. Esa ruta cae bajo un «in»
+// (`scripts/**`) y guarda la lista de repos del equipo: una foto de antes de la mudanza (un --harness viejo, la base de
+// un freno) la trae ahí, y sin una exclusión por esa ruta saldría en la copia. Queda como clase —sólo tiene reemplazos:
+// no se le exige archivo— hasta el retiro del mapa; la ruta vieja sale del mapa, nunca escrita acá.
+// Las otras carpetas movidas vivían en la raíz, fuera de todo «in»: una foto vieja las trae como entradas del primer
+// nivel sin clasificar y la exportación sale 2 sin escribir nada (no hace falta una clase para ellas).
 const NOCTURNO_DEPENDENCIAS = { fuente: 'arnes', glob: 'scripts/nightly/dependencies/**', motivo: 'la revisión nocturna de dependencias del equipo' };
-// La validación de cada pedido y sus plantillas viajaban en la copia (story 8.26, tanda C, AC 48); desde la story 8.41
-// (tanda F2) son del repo privado y ninguna ruta de `pipelines/` fuera de los modelos de operaciones viaja. Rutas exactas,
+// La validación de cada pedido y sus plantillas son del repo privado, y ninguna ruta de `pipelines/` fuera de los modelos de operaciones viaja. Rutas exactas,
 // nunca un glob: lo que no está nombrado acá sigue bajo la exclusión fija.
 const VALIDACION_PUBLICA = Object.freeze([]);
 // Los modelos de los pipelines de operaciones que el arnés le da a cada organización: la carpeta existe SÓLO en el repo
 // público (el privado no tiene pipelines/operations/; los pipelines vivos del equipo están en su repo de operaciones),
 // así que todo lo que hay ahí ya es público por construcción. Es la única carpeta del `salvo`: sin ella, una guía pública
-// que cita un modelo cuenta como ruta del equipo (medido el 2026-10-15: el rojo de historia interna de la paridad).
+// que cita un modelo cuenta como ruta del equipo (el control de historia interna de la paridad sale rojo).
 const MODELOS_DE_OPERACIONES = 'pipelines/operations/**';
 /** ¿El `salvo` de una exclusión fija nombra esa ruta? Un archivo por su nombre; la carpeta de los modelos, por su glob. */
 const enSalvo = (x, ruta) => (x.salvo || []).some((s) => (s === MODELOS_DE_OPERACIONES ? coincide(s, ruta) : s === ruta));
@@ -187,7 +182,7 @@ function carpetasViejasDe(carpeta) {
     return [];
   }
 }
-/** Una exclusión fija de carpeta (`<carpeta>/**`) con la ruta que tuvo antes de la story 8.9, como clase. */
+/** Una exclusión fija de carpeta (`<carpeta>/**`) con la ruta que tuvo antes de la mudanza, como clase. */
 function carpetasFijasConNombreViejo(fijas) {
   return fijas.flatMap((x) => carpetasViejasDe(x.glob.replace(/\/\*\*$/, '')).map((vieja) => ({ fuente: x.fuente, glob: `${vieja}/**`, motivo: `${x.motivo}, con su nombre de antes de la story 8.9`, clase: true })));
 }
@@ -200,9 +195,8 @@ const EXCLUIDOS_SIEMPRE = Object.freeze([
   { fuente: 'arnes', glob: '.engram/**', motivo: 'la memoria del equipo (engram): decisiones y casos nominados' },
   { fuente: 'arnes', glob: '.dashboard/**', motivo: 'series del medidor y tableros de las máquinas del equipo' },
   { fuente: 'arnes', glob: '.advisors/**', motivo: 'evidencia de las corridas del pipeline sobre este repo' },
-  // el buzón de decisiones del equipo (story 8.12, tanda R2): `inbox/instincts/` y, desde la tanda F de la 8.9,
-  // `inbox/watcher/` (los hallazgos de la mirada nocturna de la producción) e `inbox/dependencies/` (las fichas de
-  // vulnerabilidades de los repos del equipo). Las dos carpetas tenían su propio glob en la raíz: se fueron con la mudanza
+  // el buzón de decisiones del equipo: `inbox/instincts/`, `inbox/watcher/` (los hallazgos de la mirada nocturna de la
+  // producción) e `inbox/dependencies/` (las fichas de vulnerabilidades de los repos del equipo)
   { fuente: 'arnes', glob: 'inbox/**', motivo: 'el buzón de decisiones del equipo: instintos minados de sus sesiones y lo que espera que alguien decida' },
   { fuente: 'arnes', glob: 'tasks/**', motivo: 'planes, auditorías y mediciones internas' },
   { fuente: 'arnes', glob: 'specs/**', motivo: 'las stories del arnés: casos nominados con fecha' },
@@ -210,25 +204,24 @@ const EXCLUIDOS_SIEMPRE = Object.freeze([
   { fuente: 'arnes', glob: '_bmad/**', motivo: 'la configuración de BMAD del equipo' },
   { fuente: 'arnes', glob: 'guides/maintaining/incident-log.md', motivo: 'los incidentes del equipo, con casos nominados' },
   { fuente: 'arnes', glob: 'guides/guide-update-proposals.md', motivo: 'propuestas internas sobre las guías' },
-  // story 8.12, tanda R5: el inventario vive con los documentos fechados de decisiones; la exclusión sigue al archivo (el
+  // el inventario vive con los documentos fechados de decisiones; la exclusión sigue al archivo (el
   // reemplazo que queda en la ruta vieja no la cubre: si la guía se vuelve a mover sin su glob, la exportación sale 2)
   { fuente: 'arnes', glob: 'guides/decisions/telemetria-produccion-inventario-*.md', motivo: 'inventario de la producción de un cliente' },
   { fuente: 'arnes', glob: 'scripts/metrics/censo-*.json', motivo: 'censos fechados de los repos del equipo' },
   { fuente: 'arnes', glob: PARIDAD, motivo: 'los productos de los clientes y dónde viven' },
   { fuente: 'arnes', glob: 'scripts/ci/pipeline-debt.json', motivo: 'la deuda de pipelines por repo de cliente (la copia lleva un sintético)' },
   { fuente: 'arnes', glob: 'scripts/metrics/corridas-buzon.json', motivo: 'la llave del buzón de corridas del equipo' },
-  // el perfil con su nombre de hoy y el de antes, que sigue valiendo: el clon tiene uno de los dos (o, en la transición, los
-  // dos), así que a ninguno se le exige archivo (`clase`)
+  // el perfil con su nombre actual y el anterior, que sigue valiendo: el clon tiene uno de los dos (o, en la transición,
+  // los dos), así que a ninguno se le exige archivo (`clase`)
   { fuente: 'arnes', glob: 'team-profile.json', motivo: 'el perfil del equipo: organización e integraciones', clase: true },
   { fuente: 'arnes', glob: 'perfil-equipo.json', motivo: 'el perfil del equipo, con su nombre de antes (sigue valiendo)', clase: true },
-  // story 8.12 (tanda R6): los seis yml y su plantilla viven en `pipelines/`, una sola exclusión
-  // story 8.26 (tanda C, AC 48): `salvo` la validación y sus plantillas, que después del corte viven en el repo público
-  // (Azure sólo valida un pedido de GitHub si el YAML está en ese repo) y desde ya viajan, así el detector y el freno de
-  // nombres de cada publicación las miran. La lista es cerrada y con nombre: un pipeline nuevo queda afuera solo.
+  // los yml de los pipelines y su plantilla viven en `pipelines/`, una sola exclusión
+  // `salvo` la validación y sus plantillas, que viven en el repo público (Azure sólo valida un pedido de GitHub si el
+  // YAML está en ese repo) y viajan, así el detector y el freno de nombres de cada publicación las miran. La lista es cerrada y con nombre: un pipeline nuevo queda afuera solo.
   { fuente: 'arnes', glob: 'pipelines/**', motivo: 'los pipelines del equipo en Azure DevOps y la plantilla que trae sus repos', salvo: [...VALIDACION_PUBLICA, MODELOS_DE_OPERACIONES], motivoSalvo: 'los modelos de los pipelines de operaciones, que sólo existen en el repo público (la validación de cada pedido y sus plantillas son del repo privado desde la story 8.41)' },
-  // story 8.9: la tanda C1 mudó acá el ejecutable y la F, sus dos .json; la exclusión sigue al archivo. La carpeta vieja
-  // (hoy, sólo reemplazos) queda excluida como clase, al final de esta lista: `carpetasFijasConNombreViejo`
-  // 2026-10-14 (decisión 1 del dueño, story 8.30): el código de los dos nocturnos —dependencias y vigilante— es público.
+  // el ejecutable y sus dos .json viven acá; la exclusión sigue al archivo. La carpeta vieja (sólo reemplazos) queda
+  // excluida como clase, al final de esta lista: `carpetasFijasConNombreViejo`
+  // el código de los dos nocturnos —dependencias y vigilante— es público.
   // Del equipo queda sólo la lista de sus repos, en el repo de mantenimiento: como clase (el público no la trae)
   { fuente: 'arnes', glob: 'scripts/nightly/dependencies/repos.json', motivo: NOCTURNO_DEPENDENCIAS.motivo, clase: true },
   { fuente: 'arnes', glob: 'commands/tycon-vigilante.md', motivo: 'su sujeto (el vigilante) no viaja' },
@@ -255,24 +248,20 @@ const TRANSFORMACIONES = Object.freeze([
   { nombre: 'suite-parts-json', que: `${REGISTRO_DE_PARTES}: se saca la entrada de toda suite partida cuyo archivo entero no sale o que la lista declara en suitesOutside (story 8.22)` },
   { nombre: 'suites-y-casos-fuera', que: 'allowlist.json → suitesOutside / casesOutside: la suite (o el caso del banco) y su entrada salen juntas' },
   { nombre: 'vaciar', que: 'allowlist.json → empty: la clave declarada queda vacía y el resto del archivo igual (una ruta con puntos, «a.b», llega a una clave anidada; story 8.10.3)' },
-  // story 8.10.3, tanda A (AC 5)
   { nombre: 'public-texts', que: 'allowlist.json → publicTexts: en el archivo declarado, el texto EXACTO del repo (puede ocupar varios renglones) pasa a su versión pública, las veces declaradas; si no aparece esas veces, sale 2. Para los textos de código que mandan a una integración del equipo que no viaja: los bloques internos sólo existen en los .md' },
   { nombre: 'sinteticos', que: 'allowlist.json → synthetic: el archivo de la copia es el sintético declarado; con «packages», en las exportaciones que incluyen alguno de ellos; sin él, cuando un «in» del paquete cubre el destino. Nunca pisa algo que ya sale (sale 2)' },
   { nombre: 'gitignore-publico', que: '.gitignore de cada repo: se quitan las líneas «!…» que vuelven a incluir algo de una exclusión fija; con --single-repo, además se ignora cada carpeta de primer nivel del repo fuente en la que la copia no trae ningún archivo (story 8.26); una que sólo difiere en mayúsculas de una que la copia trae, o con un salto de línea en el nombre, frena la copia' },
   { nombre: 'nombres-viejos', que: 'scripts/lib/renames.json (story 8.9): el reemplazo de cada ruta vieja de archivo o carpeta no sale; y un archivo que sale no puede nombrar una ruta vieja (fuera de guides/maintaining/nombres-en-ingles.md)' },
   { nombre: 'rutas-del-otro-repo', que: 'scripts/lib/renames.json (story 8.9, AC 19): la ruta vieja ya mudada que un repo nombra del OTRO se traduce al nombre nuevo (la copia sale de los dos repos juntos); la que un repo nombra de sí mismo frena la copia. Un reemplazo generado sin entrada en el mapa que algo que sale nombra sale 2 (story 8.7, AC 30)' },
   { nombre: 'traducciones-codex', que: 'adapters/codex/agents*/*.toml: se REGENERAN con build/generate.js desde los .md ya reemplazados (no se reemplazan); la que queda distinta de su blob va al listado' },
-  // story 8.7, tanda A
   { nombre: 'skill-rename', que: 'allowlist.json → skillRenames: la skill sale con otro nombre — su carpeta, el name: de su SKILL.md y el identificador en cada archivo de texto que sale —, salvo el NOTICE, el NOTICE.md y el LICENSE de su carpeta y, en el manifiesto de terceros, based_on y license_source (su why pasa al texto fijo de la regla)' },
   { nombre: 'public-third-party', que: `${MANIFIESTO_TERCEROS}: en third_party quedan sólo las «download» con licencia MIT o Apache-2.0 que usa algo que sale (directa o indirectamente) o que traen publish: true; own, derived y el resto, byte a byte` },
-  // story 8.10.3, tanda B (AC 8)
   { nombre: 'not-in-copy', que: 'todo .md que sale (con el núcleo; salvo el README y el INSTALL de la raíz): una ruta entre comillas invertidas, en prosa, que existe en el repo del equipo y no en la copia lleva al lado la marca de public-copy.js (NOT_IN_COPY_MARK). No se marcan las convenciones del repo del lector (allowlist.json → readerConventions), las anclas al registro de incidentes ni lo que está dentro de un cerco. Va después de internal-blocks y antes de los reemplazos y de regenerar las traducciones a Codex' },
   { nombre: 'internal-blocks', que: 'todo .md: sale el bloque interno con sus marcadores y queda visible el sólo-público sin los suyos; un marcador sin par, anidado, en un cerco, entre dos filas de una tabla o fuera de un .md sale 2' },
   { nombre: 'public-name', que: `los sintéticos: {{public-org}} y {{public-repo}} pasan al nombre público de ${PUBLIC_REPOS} (o --public-repos); otro {{public-…}} sale 2` },
   { nombre: 'merged-gitignore', que: '--single-repo: el .gitignore de la copia son las líneas de los dos, primero las del arnés, sin repetir. Desde el repo unido (story 8.18) no hace nada: el .gitignore ya es uno y sale como está' },
-  // story 8.18: el repo unido en la copia de dos repos
+  // el repo unido en la copia de dos repos
   { nombre: 'split-hooks', que: 'sin --single-repo, desde un commit del repo unido que trae el pre-commit partido en dos (pre-commit-harness, pre-commit-skills): cada parte vuelve a ser el .githooks/pre-commit del repo de su fuente, y el despachador no sale (en dos repos llamaría a una parte que quedó en el otro). Con el control único (.githooks/pre-commit-checks) no hay nada que partir: sale como está' },
-  // story 8.13, tanda D
   { nombre: 'generated', que: `allowlist.json → generated: un archivo que no sale de ninguna fuente. Hoy ${VERSION_FILE}: con --stamp-version <YYYY.MM.DD.N> (sólo con --single-repo) la copia lo trae en su raíz, con ese número y el commit de cada fuente; sin la opción la copia no cambia, y en la sincronización lo agrega mirror.js con la misma función. Una fuente o un sintético que ya trae ese destino sale 2` },
 ]);
 
@@ -284,7 +273,7 @@ const COPY_CONTROLS = Object.freeze([
   { nombre: 'nombresViejos', que: 'una ruta vieja del mapa de renombres que un archivo que sale nombra de su propio repo' },
   { nombre: 'links', que: 'un enlace relativo de Markdown (fuera de un cerco o de código en línea) a algo que no está en la copia' },
   { nombre: 'readmePaths', que: 'una ruta entre comillas invertidas del README.md o el INSTALL.md del arnés que empieza con una entrada de primer nivel de las fuentes (salvo .tycon/) y no está en la copia' },
-  // story 8.10.3, tanda B (AC 9): su propia cuenta, sin la función de la marca
+  // su propia cuenta, sin la función de la marca
   { nombre: 'pathsNotInCopy', que: 'una ruta entre comillas invertidas de un .md que sale (fuera de un cerco; salvo el README y el INSTALL de la raíz, las convenciones del repo del lector y las anclas al registro) que existe en el repo del equipo y no en la copia, y no lleva la marca al lado' },
   { nombre: 'attributions', que: `el NOTICE nombra («* <ruta>») cada derived de ${MANIFIESTO_TERCEROS} que sale, y nada que no salga` },
   { nombre: 'skillRenameLeft', que: 'el nombre viejo de una skill renombrada que quedó en la copia, fuera de sus excepciones' },
@@ -317,7 +306,7 @@ const esMarca = (s) => MARCAS.includes(String(s == null ? '' : s).trim().toLower
 const corto = (sha) => String(sha).slice(0, 12);
 
 /**
- * story 8.10.3 (AC 5): aplica a `contenido` (el archivo `clave`, «<fuente>/<ruta>») cada entrada de `publicTexts` que lo
+ * Aplica a `contenido` (el archivo `clave`, «<fuente>/<ruta>») cada entrada de `publicTexts` que lo
  * nombra: el texto exacto pasa a su versión pública. Si una entrada no aparece exactamente `count` veces, tira NoPudo
  * (un texto que cambió en la fuente no se deja pasar en silencio: la copia volvería a decir lo del equipo).
  */
@@ -335,15 +324,15 @@ function applyPublicTexts(clave, contenido, entradas) {
 }
 
 /**
- * Los bytes de `version.json` (story 8.13, AC 24): `{ version, source }`, con `source` un mapa de fuente → commit. Hoy
- * las fuentes son `harness` y `agent_skills`; la función escribe las que le den y no las cuenta. No lleva la fecha de la
+ * Los bytes de `version.json`: `{ version, source }`, con `source` un mapa de fuente → commit. Las
+ * fuentes son `harness` y `agent_skills`; la función escribe las que le den y no las cuenta. No lleva la fecha de la
  * corrida ni el canal: la misma entrada da los mismos bytes en cualquier máquina y cualquier día. Las claves van en
  * orden fijo —las de VERSION_SOURCES primero, el resto por código—, con dos espacios de sangría y un salto de línea al
  * final. Lo que no tiene forma tira (NoPudo): no hay archivo a medias.
  *
- * story 8.13.1 (AC 6): con `transformed` —las rutas PUBLICADAS cuyo blob difiere del interno, cada una con el nombre de
+ * Con `transformed` —las rutas PUBLICADAS cuyo blob difiere del interno, cada una con el nombre de
  * su ajuste (`transformedList`)— la escribe después de `source`, ordenada por ruta, cada entrada sólo con `path` y
- * `transform`. Sin `transformed` no la escribe: los bytes de antes no cambian.
+ * `transform`. Sin `transformed` no la escribe.
  */
 function versionFileBytes({ version, source, transformed } = {}) {
   if (typeof version !== 'string' || !VERSION_SHAPE.test(version)) {
@@ -559,7 +548,7 @@ function validarLista(lista, ruta) {
     else if (!Number.isInteger(e.count) || e.count < 1) errores.push(`publicTexts ${quien}: "count" tiene que ser un entero ≥ 1 (cuántas veces aparece)`);
     else if (!e.reason || !String(e.reason).trim()) errores.push(`publicTexts ${quien}: sin motivo («reason»)`);
   }
-  // story 8.10.3, tanda B (AC 8): las convenciones del repo del lector, que la marca de las rutas que no viajan respeta
+  // las convenciones del repo del lector, que la marca de las rutas que no viajan respeta
   if (lista.readerConventions !== undefined && !Array.isArray(lista.readerConventions)) errores.push('readerConventions: tiene que ser una lista de { "path", "reason" }');
   for (const c of Array.isArray(lista.readerConventions) ? lista.readerConventions : []) {
     const quien = c && c.path ? c.path : JSON.stringify(c);
@@ -571,7 +560,7 @@ function validarLista(lista, ruta) {
     if (!s || !s.target || !s.from) errores.push(`synthetic: cada uno necesita "target" y "from" (${JSON.stringify(s)})`);
     else if (!s.reason || !String(s.reason).trim()) errores.push(`synthetic ${s.target}: sin motivo («reason»)`);
     else if (s.packages !== undefined) {
-      // story 8.7 (AC 9): en qué exportaciones aplica — paquetes públicos que la lista define
+      // en qué exportaciones aplica — paquetes públicos que la lista define
       if (!Array.isArray(s.packages) || !s.packages.length) errores.push(`synthetic ${s.target}: "packages" es una lista de paquetes públicos`);
       else {
         for (const p of s.packages) {
@@ -580,7 +569,7 @@ function validarLista(lista, ruta) {
       }
     }
   }
-  // story 8.7 (AC 10): las skills que la copia publica con otro nombre
+  // las skills que la copia publica con otro nombre
   const valorRuta = (v) => typeof v === 'string' && v.trim() && !globMalo(v) && !/[*?]/.test(v) && !v.endsWith('/');
   for (const r of lista.skillRenames || []) {
     if (!r || !FUENTES.includes(r.source)) errores.push(`skillRenames: cada una necesita "source" (${FUENTES.join(' | ')}) (${JSON.stringify(r)})`);
@@ -589,7 +578,7 @@ function validarLista(lista, ruta) {
     else if (!r.why || !String(r.why).trim()) errores.push(`skillRenames ${r.from}: sin el texto fijo de su «why»`);
     else if (!r.reason || !String(r.reason).trim()) errores.push(`skillRenames ${r.from}: sin motivo («reason»)`);
   }
-  // story 8.13 (AC 24): los archivos que la copia lleva y que no salen de ninguna fuente — los arma el exportador
+  // los archivos que la copia lleva y que no salen de ninguna fuente — los arma el exportador
   if (lista.generated !== undefined && !Array.isArray(lista.generated)) errores.push('generated: tiene que ser una lista de { "target", "reason" }');
   const generados = new Set();
   for (const g of Array.isArray(lista.generated) ? lista.generated : []) {
@@ -603,7 +592,7 @@ function validarLista(lista, ruta) {
   if (errores.length) throw new NoPudo(`la lista blanca ${ruta} no es válida:\n  · ${errores.join('\n  · ')}`);
 }
 
-/** La tabla de reemplazos (AC 9): cualquier problema es un 2 ANTES de escribir nada. */
+/** La tabla de reemplazos: cualquier problema es un 2 ANTES de escribir nada. */
 function validarTabla(tabla, ruta, categorias) {
   if (!tabla || !Array.isArray(tabla.pares)) throw new NoPudo(`la tabla de reemplazos ${ruta} no tiene "pares" (una lista)`);
   const errores = [];
@@ -630,9 +619,9 @@ function validarTabla(tabla, ruta, categorias) {
         errores.push(`${id}: el anónimo «${f.anonimo}» se aplica fuera de .md y tiene espacios o caracteres fuera de [A-Za-z0-9._/:@-] que su forma «${f.texto}» no tiene en el mismo orden`);
       }
       registrar(f.anonimo, par.real);
-      // AC 32: lo que la tabla PRODUCE además de lo declarado — el anónimo en mayúsculas y en minúsculas, que es lo que
-      // dejan la caja de lo encontrado (sin `mayusculas`) y las variantes del AC 30 (medido: sin esto, dos reales
-      // podían terminar en el mismo texto y la tabla pasaba)
+      // lo que la tabla PRODUCE además de lo declarado — el anónimo en mayúsculas y en minúsculas, que es lo que
+      // dejan la caja de lo encontrado (sin `mayusculas`) y las variantes de forma (sin esto, dos reales
+      // podrían terminar en el mismo texto y la tabla pasaría)
       if (!par.mayusculas || variantesDeForma(par, f).length) {
         registrar(f.anonimo.toUpperCase(), par.real);
         registrar(f.anonimo.toLowerCase(), par.real);
@@ -659,11 +648,11 @@ function validarTabla(tabla, ruta, categorias) {
     // lo que quede con OTRA caja (`ACMECORP` cuando sólo se declaró `AcmeCorp`) toma el anónimo de su forma con la caja
     // de lo encontrado —todo mayúsculas, todo minúsculas o tal cual—. Con `mayusculas: true`, sólo las formas.
     sinCaja: par.mayusculas ? [] : par.formas.map((f) => ({ anonimo: f.anonimo, re: regexDeForma(f.texto, par.palabra, 'gi') })),
-    // AC 30: lo que el detector también ve (otra caja en un identificador, todo en mayúsculas, un nombre de varias
+    // lo que el detector también ve (otra caja en un identificador, todo en mayúsculas, un nombre de varias
     // partes separado), armado con SUS funciones: lo que queda es exactamente lo que la tabla no alcanzó
     variantes: par.formas.flatMap((f) => variantesDeForma(par, f)),
   }));
-  // AC 32: un par posterior no puede reescribir el anónimo de uno anterior (los pares se aplican en orden)
+  // un par posterior no puede reescribir el anónimo de uno anterior (los pares se aplican en orden)
   const cadenas = [];
   pares.forEach((par, i) => {
     const producidos = new Set(par.formas.flatMap((f) => (par.sinCaja.length || par.variantes.length
@@ -679,7 +668,7 @@ function validarTabla(tabla, ruta, categorias) {
   return pares;
 }
 
-/** Las variantes de una forma que el exportador reemplaza (AC 30): las mismas que el detector mira para el término. */
+/** Las variantes de una forma que el exportador reemplaza: las mismas que el detector mira para el término. */
 function variantesDeForma(par, f) {
   const v = [];
   if (!f || typeof f.texto !== 'string' || typeof f.anonimo !== 'string') return v;
@@ -712,8 +701,8 @@ function cargarDenegados(ruta) {
 }
 
 // ── Los repos fuente y sus commits ─────────────────────────────────────────────────────────────────────────────
-// El repo unido (story 8.18, tramo 2 · 2026-10-04): el arnés y agent-skills pasaron a ser UN repo, y la copia pública
-// tiene que salir igual. Por eso las FUENTES siguen siendo dos, pero lógicas: la lista blanca, las exclusiones y cada
+// El repo unido: el arnés y agent-skills son UN repo, y la copia pública tiene que salir igual que desde dos repos. Por
+// eso las FUENTES siguen siendo dos, pero lógicas: la lista blanca, las exclusiones y cada
 // transformación siguen partidas por fuente, y lo que cambia es de dónde se leen. Si el commit pedido del arnés es del
 // repo unido, las dos salen de ESE commit, partido por ruta —`agents/`, `skills/`, `packs/`, `.tycon/post-commit-ignore`
 // y `.githooks/pre-commit-skills` son agent-skills; todo lo demás, arnes—, y no se lee ningún otro clon (ni
@@ -743,9 +732,8 @@ function sourceRepo(fuente, dir) {
 function ubicarRepos(args = {}) {
   const env = process.env.TYCON_GUIDES_DIR && process.env.TYCON_GUIDES_DIR.trim();
   const arnes = sourceRepo('arnes', env ? path.resolve(env.replace(/^~(?=$|[\\/])/, os.homedir())) : RAIZ_PROPIA);
-  // el commit del arnés primero (story 8.18, pase adversarial del tramo 2, clase 13): uno que no está no decide si el
-  // repo es unido, y sin esto se iba a buscar el otro clon y el error decía «agent-skills no está en …» — la causa
-  // equivocada. Lo resuelve igual prepararFuentes, después: acá sólo se adelanta su mensaje.
+  // el commit del arnés primero: uno que no está no decide si el repo es unido, y sin esto se buscaría el otro clon y
+  // el error diría «agent-skills no está en …», la causa equivocada. Lo resuelve igual prepararFuentes, después: acá sólo se adelanta su mensaje.
   resolverRef('arnes', arnes, args.arnes || 'origin/main');
   // una fuente física: el otro clon ni se busca (puede no existir, y si existe no es de donde sale la copia)
   if (isUnifiedCommit(arnes, args.arnes || 'origin/main')) return { arnes, 'agent-skills': arnes };
@@ -774,8 +762,8 @@ function listarArbol(repo, sha) {
 }
 
 /** El contenido de muchos objetos en UNA llamada (`git cat-file --batch`), sin pasar por el árbol de trabajo. Un objeto de
- *  git no cambia nunca (su nombre ES su contenido): lo ya leído se recuerda. El freno de nombres nuevos (story 8.10) lee
- *  las mismas guías, manifiestos y catálogo en la foto de antes y en la de después; sin esto eran ~30 procesos por commit. */
+ *  git no cambia nunca (su nombre ES su contenido): lo ya leído se recuerda. El freno de nombres nuevos lee
+ *  las mismas guías, manifiestos y catálogo en la foto de antes y en la de después; sin esto serían ~30 procesos por commit. */
 const OBJETOS_LEIDOS = new Map();
 function leerObjetos(repo, shas) {
   const unicos = [...new Set(shas)];
@@ -806,7 +794,7 @@ function reglasDeFuente(ctx, fuente) {
     if (paq.startsWith('__')) continue;
     const d = (def || {})[fuente];
     if (!d) continue;
-    // `tipo` es un valor de la salida de --explain: no cambia con las claves de la lista (story 8.9, pregunta decidida 2)
+    // `tipo` es un valor de la salida de --explain: no cambia con las claves de la lista
     for (const g of d.in || []) reglas.push({ tipo: 'entra', glob: g, detalle: paq });
     for (const x of d.out || []) reglas.push({ tipo: 'afuera', glob: x.glob, detalle: `${x.reason}${x.until ? ` (hasta la ${x.until})` : ''}` });
   }
@@ -842,7 +830,7 @@ function cubre(glob, nombre, tipo) {
 }
 
 // ── Paquetes de revisores: se leen de packs/*/pack.json DEL SHA, no se escriben a mano ───────────────────────────
-// El SHA puede ser de antes de la D1 de la 8.9 (claves del manifiesto en castellano): se lee con `readKeysDeep`, con el
+// El SHA puede ser de antes del renombre (claves del manifiesto en castellano): se lee con `readKeysDeep`, con el
 // mismo where que el cargador del pipeline. Una vieja y su nueva con valores distintos es «no pude armar», nunca un
 // paquete sin revisores.
 const PACK_KEYS_WHERE = 'packs/pack.json';
@@ -938,7 +926,7 @@ function dejarHijos(t, cont, quedan) {
 }
 
 const miembro = (nodo, clave) => (nodo && nodo.tipo === 'objeto' ? nodo.hijos.find((x) => x.clave === clave) : undefined);
-// story 8.10.3 (AC 2): «a.b» baja de objeto en objeto; devuelve el miembro del último tramo, o undefined si falta uno
+// «a.b» baja de objeto en objeto; devuelve el miembro del último tramo, o undefined si falta uno
 function miembroPorRuta(raiz, ruta) {
   let m;
   let nodo = raiz;
@@ -1011,10 +999,10 @@ function bajoFija(patron, fuente) {
 // Todas las expresiones de un par salen de sus formas (la forma tal cual, en otra caja, en mayúsculas o partida con
 // un separador): ninguna encuentra nada si el texto, en minúsculas, no contiene la primera parte de alguna forma. Con
 // sólo ASCII en la forma, las minúsculas de JS y la `i` de las expresiones coinciden; con otra letra no se atajea.
-// Antes del atajo, los 188 pares sobre cada archivo eran el 22% de cada exportación del núcleo (2026-10-05).
-// Lo que el atajo busca de cada par se calcula UNA vez (story 8.22, tramo F): rehacerlo por cada archivo —mirar si cada
-// forma es ASCII, partirla y pasarla a minúsculas— eran 2,6 s de cada exportación del núcleo. `null` = alguna forma no es
-// ASCII y no se atajea. export.test.js (T45) lo compara con el cálculo de antes, par por par.
+// Sin el atajo, los ~190 pares sobre cada archivo pesarían una parte grande de cada exportación del núcleo.
+// Lo que el atajo busca de cada par se calcula UNA vez: rehacerlo por cada archivo —mirar si cada forma es ASCII,
+// partirla y pasarla a minúsculas— costaría segundos en cada exportación del núcleo. `null` = alguna forma no es
+// ASCII y no se atajea. export.test.js (T45) lo compara con el cálculo sin atajo, par por par.
 const BUSCADO_POR_PAR = new WeakMap();
 function parPuedeEstar(par, minusculas) {
   let buscado = BUSCADO_POR_PAR.get(par);
@@ -1055,8 +1043,8 @@ function conLaCajaDe(encontrado, anonimo) {
 /** El borde de palabra deja pasar `<Término>Project`: el detector y los reemplazos usan el mismo, así que un nombre
  *  pegado pasaría los dos. Prefijo de identificador para todos; cualquier posición para los que no distinguen caja.
  *  Para los que distinguen caja, prefijo es lo que sigue con mayúscula o dígito (`<Término>Project`, `<TÉRMINO>2`): con
- *  una minúscula es otra palabra —`Cam` no es el prefijo de «Camino» (AC 33)—.
- *  (story 8.10.3, AC 12) `permitidos` son las excepciones ya compiladas de la lista de denegación: un pegado deja de ser
+ *  una minúscula es otra palabra —`Cam` no es el prefijo de «Camino»—.
+ *  `permitidos` son las excepciones ya compiladas de la lista de denegación: un pegado deja de ser
  *  hallazgo sólo si una nombra su archivo y su identificador ENTERO (el nombre funcional del sitio de un servidor, que
  *  lleva pegado el de un repo y tiene que quedar). Una excepción sin `patron` —un archivo entero— acá no cuenta, y el
  *  identificador se compara EN SU CAJA: el detector compila los `patron` sin distinguir mayúsculas, pero acá la
@@ -1074,9 +1062,9 @@ function nombresPegados(textos, terminos, permitidos = [], rutasDe = null) {
     const e = esc(t.patron);
     const flags = t.mayusculas ? 'g' : 'gi';
     const res = [t.mayusculas ? new RegExp(`(?<![A-Za-z0-9])${e}(?=[A-Z0-9])`, flags) : new RegExp(`(?<=[A-Za-z0-9])${e}|${e}(?=[A-Za-z0-9])`, flags)];
-    // (story 8.10.2) Un término con tilde, escrito sin ella y pegado (`AlmacenService` de `Almacén`): sólo en el borde de
+    // Un término con tilde, escrito sin ella y pegado (`AlmacenService` de `Almacén`): sólo en el borde de
     // un CamelCase, con la inicial en mayúscula (con caja: Node 20 no tiene `(?-i:…)`). En cualquier posición y sin caja
-    // sería cada palabra que lo empieza («almacenamiento»): con la tilde eso no pasaba, sin ella sí.
+    // sería cada palabra que lo empieza («almacenamiento»): con la tilde eso no pasa, sin ella sí.
     const sinTilde = t.patron.normalize('NFD').replace(/\p{M}/gu, '');
     if (!t.mayusculas && sinTilde !== t.patron && /^[A-Za-z]+$/.test(sinTilde)) {
       const cap = esc(sinTilde[0].toUpperCase() + sinTilde.slice(1).toLowerCase());
@@ -1115,8 +1103,8 @@ function shebangDeShell(abs) {
 // ¿Este .js o .cjs compila como CommonJS? Se mira en este mismo proceso, con la envoltura con que node carga un módulo
 // CommonJS (por eso vale un `return` suelto y no cuenta el `#!`). Sólo contesta «sí»: ante cualquier otra cosa —no
 // compila, no se deja leer, es de un paquete declarado módulo— decide `node --check`, como siempre, y el detalle de la
-// falla es el suyo. Un proceso de node por cada uno de los ~400 .js de la copia eran 9,8 de los 37 s de cada exportación
-// del núcleo (story 8.22, tramo F; export.test.js T44 compara el informe con el de un proceso por archivo).
+// falla es el suyo. Un proceso de node por cada uno de los ~400 .js de la copia sería una parte grande del tiempo de cada
+// exportación del núcleo (export.test.js T44 compara el informe con el de un proceso por archivo).
 const PARAMETROS_COMMONJS = ['exports', 'require', 'module', '__filename', '__dirname'];
 function compilaComoCommonJs(abs, dirCopia, tipoDe) {
   if (!/\.c?js$/.test(abs)) return false;
@@ -1126,7 +1114,7 @@ function compilaComoCommonJs(abs, dirCopia, tipoDe) {
     const conMarca = fuente.charCodeAt(0) === 0xfeff;
     if (conMarca) fuente = fuente.slice(1);
     // node acepta el `#!` sólo en el primer carácter: detrás de una marca de orden de bytes (un editor de Windows la
-    // agrega) el archivo no carga. Acá no se decide: va a `node --check` (pase adversarial del tramo F).
+    // agrega) el archivo no carga. Acá no se decide: va a `node --check`.
     if (conMarca && fuente.startsWith('#!')) return false;
     vm.compileFunction(fuente.replace(/^#!.*/, ''), PARAMETROS_COMMONJS, { filename: abs });
     return true;
@@ -1160,7 +1148,7 @@ function compilan(dirCopia, rutas, aux, opciones = {}) {
     if (/\.[cm]?js$/.test(r)) cmd = [process.execPath, ['--check', abs], 'node --check'];
     else if (r.endsWith('.sh')) cmd = ['bash', ['-O', 'extglob', '-n', abs], 'bash -n'];   // extglob: un script que lo prende es legítimo
     else if (r.endsWith('.py')) cmd = ['python3', ['-m', 'py_compile', abs], 'python3 -m py_compile'];
-    // story 8.10.3 (AC 5): un guion de shell sin extensión (los .githooks, tycon-prod-sql) también, por su shebang —
+    // un guion de shell sin extensión (los .githooks, tycon-prod-sql) también, por su shebang —
     // la transformación public-texts puede sacar un bloque de un pre-commit y tiene que seguir compilando
     else if (!path.basename(r).includes('.') && shebangDeShell(abs)) cmd = ['bash', ['-O', 'extglob', '-n', abs], 'bash -n'];
     else continue;
@@ -1178,7 +1166,7 @@ function compilan(dirCopia, rutas, aux, opciones = {}) {
 }
 
 // Un comando que manda correr un script del arnés o de agent-skills, dicho como lo dicen las guías y las skills. El arnés
-// se nombra por cualquiera de los dos nombres de su lugar (story 8.19: el lugar y el viejo, de setup/harness/place.js).
+// se nombra por cualquiera de los dos nombres de su lugar (el lugar y el viejo, de setup/harness/place.js).
 // Se arma la primera vez que se usa: quien carga este archivo sólo para un lector (el freno de nombres en un laboratorio
 // con algunos guiones copiados) no necesita place.js.
 let commandPrefixesCache = null;
@@ -1195,7 +1183,7 @@ function PREFIJOS_COMANDO() {
   ];
   return commandPrefixesCache;
 }
-// Con opciones entre el ejecutable y la ruta (`node --test x.js`, `bash -x x.sh`, AC 33): antes se escapaban.
+// Con opciones entre el ejecutable y la ruta (`node --test x.js`, `bash -x x.sh`): sin esto se escaparían.
 const COMANDO = /\b(?:node|bash)\s+(?:-{1,2}[A-Za-z][\w-]*(?:=\S+)?\s+)*(["']?)([^\s"'`;|&()]+\.(?:js|sh))\1/g;
 
 function candidatosDeComando(dicha, md) {
@@ -1246,7 +1234,7 @@ function limpiar() {
 }
 
 function parsear(argv) {
-  // la opción (story 8.9, en inglés) → la clave de adentro, que no cambia
+  // la opción (en inglés) → la clave de adentro, que no cambia
   const conValor = new Map([['--package', 'paquete'], ['--output', 'salida'], ['--harness', 'arnes'], ['--agent-skills', 'agent-skills'],
     ['--report', 'informe'], ['--allowlist', 'lista-blanca'], ['--replacements', 'reemplazos'], ['--denied', 'denegados'],
     ['--public-repos', 'publicRepos'], ['--stamp-version', 'stampVersion']]);
@@ -1276,8 +1264,8 @@ function rutasDeConfig(args) {
 }
 
 /**
- * El nombre público del repo (story 8.7, AC 14): `{ org, repo }` de `public-repos.json` (o del archivo dado). Es el único
- * lector de esas claves —lo reusa la sincronización de la 8.8—. Tira (NoPudo: el exportador sale 2) si el archivo falta o
+ * El nombre público del repo: `{ org, repo }` de `public-repos.json` (o del archivo dado). Es el único
+ * lector de esas claves —lo reusa la sincronización—. Tira (NoPudo: el exportador sale 2) si el archivo falta o
  * no se lee, si le falta una de las dos claves o si una trae caracteres fuera de [A-Za-z0-9._-].
  */
 function readPublicRepo(file = path.join(RAIZ_PROPIA, PUBLIC_REPOS)) {
@@ -1322,7 +1310,7 @@ const packageList = (P) => (Array.isArray(P) ? P : String(P).split(','));
 
 /** Lo que comparten --explain y la exportación: configuraciones, repos, commits y árboles. */
 function prepararFuentes(ctx, args, cfg) {
-  ctx.lista = paquetesConNombresNuevos(leerJson(cfg.lista, 'la lista blanca'));   // la del disco: con las claves de hoy
+  ctx.lista = paquetesConNombresNuevos(leerJson(cfg.lista, 'la lista blanca'));   // la del disco: con las claves actuales
   validarLista(ctx.lista, cfg.lista);
   ctx.denegados = cargarDenegados(cfg.denegados);
   ctx.tablaCruda = leerJson(cfg.reemplazos, 'la tabla de reemplazos');
@@ -1333,7 +1321,7 @@ function prepararFuentes(ctx, args, cfg) {
   });
   ctx.fuentes = {};
   ctx.arboles = {};
-  // story 8.18: una fuente física (el repo unido) o dos (como siempre) — lo decide el árbol del commit del arnés
+  // una fuente física (el repo unido) o dos — lo decide el árbol del commit del arnés
   ctx.unified = isUnifiedCommit(ctx.repos.arnes, args.arnes || 'origin/main');
   if (ctx.unified) {
     const repo = ctx.repos.arnes;
@@ -1357,16 +1345,14 @@ function prepararFuentes(ctx, args, cfg) {
   }
 }
 
-// La lista «Productos y clientes» que era un bloque de guides/reglas-para-revisores.md (AC 31 de la 8.4) ya no existe:
-// desde la story 8.10 (AC 24) los nombres a tachar son los términos `cliente` de la lista de denegación, una sola lista.
-// Lo que este control miraba —un cliente sin par— lo mira `termsWithoutPair` (AC 41) sobre esa misma lista, y un
-// producto dado de alta sin término, `unseenProducts` (AC 18).
+// Los nombres a tachar son los términos `cliente` de la lista de denegación, una sola lista. Un cliente sin par lo
+// mira `termsWithoutPair` sobre esa lista, y un producto dado de alta sin término, `unseenProducts`.
 
-// ── La lista al día (story 8.10) ─────────────────────────────────────────────────────────────────────────────────
+// ── La lista al día ─────────────────────────────────────────────────────────────────────────────────
 // (PARIDAD, arriba con las exclusiones fijas)
 
-/** Los productos del registro de paridad que la lista de denegación no ve (AC 18): cada alta trae su término. Un sha de
- *  antes de la tanda D1 lo tiene en su ruta vieja (del mapa). */
+/** Los productos del registro de paridad que la lista de denegación no ve: cada alta trae su término. Un sha de
+ *  antes de la mudanza lo tiene en su ruta vieja (del mapa). */
 function unseenProducts(ctx) {
   const e = [PARIDAD, ...rutasViejasDe(PARIDAD)].map((r) => ctx.arboles.arnes.find((x) => x.ruta === r && x.tipo === 'blob')).find(Boolean);
   if (!e) return [];
@@ -1395,9 +1381,9 @@ function unseenValues(valores, cfg) {
   return [...valores].sort(porCodigo).filter((v) => !detector.reviewText(cfg, v, PARIDAD).hallazgos.some((h) => CATEGORIAS.includes(h.categoria)));
 }
 
-/** ¿El término tiene par? (AC 41) Que la tabla lo tape: el reemplazo de verdad (`pares` compilados por validarTabla)
+/** ¿El término tiene par? Que la tabla lo tape: el reemplazo de verdad (`pares` compilados por validarTabla)
  *  cambia su grafía. Así manda la caja del PAR, que es quien reemplaza: uno sin `mayusculas` tapa cualquier caja, uno con
- *  `mayusculas` sólo sus formas (hallazgo del pase adversarial: comparar con la caja del término daba los dos errores). */
+ *  `mayusculas` sólo sus formas (comparar con la caja del término daría los dos errores). */
 function termHasPair(term, pares) {
   if (!term || typeof term.patron !== 'string') return false;
   return reemplazar(term.patron, pares || [], false).texto !== term.patron;
@@ -1412,7 +1398,7 @@ function termsWithoutPair(terminos, pares) {
 
 /**
  * Cuántos archivos cubre cada exclusión (fija, «out» de la lista, «afuera» privado) en el sha, sin contar los
- * reemplazos que deja una mudanza (story 8.9, AC 60): un reemplazo `.md` en la ruta vieja satisface el glob viejo mientras
+ * reemplazos que deja una mudanza: un reemplazo `.md` en la ruta vieja satisface el glob viejo mientras
  * la guía de verdad sale por su ruta nueva. `relevante` = cae bajo un glob de «in» (si no, sin archivo no deja salir
  * nada). Un «afuera» privado no muestra su glob (es privado): va por su posición. Lee el contenido sólo de lo que puede ser
  * un reemplazo (su extensión tiene forma de reemplazo), en un solo pedido a git por fuente.
@@ -1462,12 +1448,12 @@ function explicar(args, cfg) {
   const filas = FUENTES.flatMap((f) => primerNivel(ctx, f));
   const cobertura = coberturaExclusiones(ctx);
   const sinArchivo = cobertura.filter((x) => x.relevante && x.archivos === 0);
-  // story 8.7 (AC 30): sin el mapa de renombres (la copia pública, o un sha de antes de la 8.9) no hay rutas viejas
+  // sin el mapa de renombres (la copia pública, o un sha de antes del renombre) no hay rutas viejas
   const hayMapa = ctx.arboles.arnes.some((e) => e.ruta === MAPA_RENOMBRES && e.tipo === 'blob');
   const legacyMap = { path: MAPA_RENOMBRES, present: hayMapa, note: hayMapa ? 'las rutas viejas que un repo nombra del otro se reescriben con el mapa' : NO_MAP_NOTE };
-  // story 8.13 (AC 24): lo que la copia lleva sin que salga de ninguna fuente
+  // lo que la copia lleva sin que salga de ninguna fuente
   const generados = (ctx.lista.generated || []).map((g) => ({ target: g.target, reason: g.reason }));
-  // story 8.16 (AC 41): los sintéticos —lo que la copia lleva desde un papel, como los guiones de entrada—, con su origen
+  // los sintéticos —lo que la copia lleva desde un papel, como los guiones de entrada—, con su origen
   const synthetics = (ctx.lista.synthetic || []).map((x) => ({ target: x.target, from: x.from, packages: x.packages || null, reason: x.reason }));
   if (args.json) {
     process.stdout.write(`${JSON.stringify({
@@ -1532,10 +1518,10 @@ function explicar(args, cfg) {
 // Una ruta que llega de las dos fuentes sale 2, salvo el .gitignore, que tiene transformación con nombre (unido).
 const PRE_COMMIT = '.githooks/pre-commit';
 
-// El repo unido, en la copia de DOS repos (story 8.18). Sin --single-repo cada fuente sale como un repo propio. El repo
+// El repo unido, en la copia de DOS repos. Sin --single-repo cada fuente sale como un repo propio. El repo
 // unido trae el pre-commit ya partido —las dos partes y el despachador que las corre en UN repo—: en dos repos el
 // despachador llamaría a una parte que quedó en el otro, y en el repo «arnes» de la copia ningún commit se podría crear
-// (lo encontró export-real.test.sh, T21: «pre-commit-skills: No such file or directory»). Cada parte vuelve a ser el
+// (export-real.test.sh, T21, lo verifica: «pre-commit-skills: No such file or directory»). Cada parte vuelve a ser el
 // `.githooks/pre-commit` del repo de su fuente y el despachador no sale: la forma
 // que la copia de dos repos tuvo siempre. Va sobre las claves de la copia, antes de escribirla en disco.
 // Con UNA sola parte sale 2 nombrando la que falta: la copia saldría con un pre-commit que llama a un archivo que no
@@ -1546,7 +1532,7 @@ function splitHooks(copia, ajustes) {
   const missing = FUENTES.filter((f) => !copia.has(`${f}/${HOOK_PARTS[f]}`)).map((f) => HOOK_PARTS[f]);
   if (missing.length === FUENTES.length) {   // sin las dos partes (el control único, o ningún pre-commit): nada que partir
     // …pero el control único es un envoltorio que ejecuta .githooks/pre-commit-checks: sin él, la copia saldría con un
-    // pre-commit que llama a un archivo que no está (revisión de la F2: antes esto salía callado)
+    // pre-commit que llama a un archivo que no está (sin esto, saldría callado)
     const hook = copia.get(`arnes/${PRE_COMMIT}`);
     if (hook && hook.datos && hook.datos.toString('utf8').includes('pre-commit-checks') && !copia.has(`arnes/${PRE_COMMIT}-checks`)) {
       throw new NoPudo(`split-hooks: sale arnes/${PRE_COMMIT} pero no arnes/${PRE_COMMIT}-checks, que es lo que ejecuta — la copia tendría un pre-commit que llama a un archivo que no está`);
@@ -1567,12 +1553,11 @@ function splitHooks(copia, ajustes) {
   }
 }
 
-// ── story 8.26 (AC 30): el .gitignore del repo único ignora las carpetas de las que no sale nada ────────────────────
-// POR QUÉ: desde el corte a GitHub, quien mantiene el arnés escribe en un clon del repo que nace de esta copia, y sus
-// herramientas siguen dejando ahí la memoria, las historias, los planes y la evidencia de las corridas. El .gitignore
-// salía del repo fuente menos las líneas «!…» (arriba, en la transformación), así que ignoraba sólo lo que el fuente ya
-// ignoraba: medido en el ensayo del corte con `git check-ignore` sobre la copia real, 2 de las 12 carpetas de primer
-// nivel sin nada público. Un `git add` común las subía.
+// ── el .gitignore del repo único ignora las carpetas de las que no sale nada ────────────────────────────────────────
+// POR QUÉ: quien mantiene el arnés escribe en un clon del repo que nace de esta copia, y sus herramientas dejan ahí la
+// memoria, las historias, los planes y la evidencia de las corridas. El .gitignore sale del repo fuente menos las
+// líneas «!…» (arriba, en la transformación), así que ignoraría sólo lo que el fuente ya ignora, y un `git add` común
+// subiría las carpetas de primer nivel sin nada público que el fuente no ignora.
 // QUÉ CARPETAS: las de primer nivel del commit fuente (las dos fuentes lógicas) que no tienen NINGÚN archivo en la forma
 // final. Sale de lo que la lista blanca deja salir, nunca de una lista escrita acá: una carpeta privada nueva entra
 // sola, y una que empieza a publicar algo deja de entrar. Se mira la forma FINAL, con los papeles ya en su destino:
@@ -1603,8 +1588,8 @@ function ignorePrivateFolders(ctx, forma, ajustes) {
   if (clash) throw new NoPudo(`.gitignore: la carpeta ${clash}/ no sale en la copia y sólo difiere en mayúsculas de ${byFold.get(clash.toLowerCase())}/, que sale: en un disco que no distingue la caja, ignorar una ignora la otra`);
   // El bloque va ENTERO y al final, diga lo que diga el .gitignore: en un .gitignore gana la última línea que coincide,
   // así que sólo al final le gana a un «!…» de más arriba (las «!…» se quitan solas sólo bajo una exclusión fija). Una
-  // carpeta que el repo ya ignoraba —con otra línea o con la misma— se escribe igual: saltearla la dejaba a merced de
-  // una negación posterior, y hacía que la copia de dos repos físicos y la del repo unido llevaran bloques distintos.
+  // carpeta que el repo ya ignoraba —con otra línea o con la misma— se escribe igual: saltearla la dejaría a merced de
+  // una negación posterior, y haría que la copia de dos repos físicos y la del repo unido llevaran bloques distintos.
   // Y va pegado a los BYTES que había, sin pasarlos por texto: lo que no es UTF-8 queda como estaba.
   const body = current.datos;
   const glue = body.length === 0 || body[body.length - 1] === 0x0a ? [] : [Buffer.from('\n')];
@@ -1615,12 +1600,12 @@ function ignorePrivateFolders(ctx, forma, ajustes) {
 }
 
 /**
- * El filtrado del paso 4 (story 8.10, AC 7): qué archivos de los árboles salen en el paquete P —«in» − fijas − afuera
+ * El filtrado del paso 4: qué archivos de los árboles salen en el paquete P —«in» − fijas − afuera
  * − afuera privado − revisores de otro paquete − suites y casos fuera— y qué deja en «pendientes». No lee contenidos
  * salvo los manifiestos de los paquetes y los archivos que declaran pendientes. Lo usan el exportador y `whatShips`.
  */
 /**
- * Los nombres viejos del mapa de renombres a inglés (story 8.9, AC 19), leído del árbol del arnés: las rutas viejas de
+ * Los nombres viejos del mapa de renombres a inglés, leído del árbol del arnés: las rutas viejas de
  * archivos y carpetas, por fuente. Sus reemplazos no viajan (la copia nace con los nombres nuevos) y ningún archivo que
  * sale puede nombrarlas. Sin mapa, nada. Un mapa que no se deja leer no es «sin nombres viejos»: no hay copia.
  */
@@ -1628,7 +1613,7 @@ const MAPA_RENOMBRES = 'scripts/lib/renames.json';
 const NO_MAP_NOTE = 'sin mapa: no hay rutas viejas que reescribir';
 function nombresViejos(ctx) {
   if (ctx.nombresViejos) return ctx.nombresViejos;
-  // `todas`: cada ruta vieja de archivo o carpeta que el mapa nombra, movida o no (story 8.7, AC 30: un reemplazo cuya
+  // `todas`: cada ruta vieja de archivo o carpeta que el mapa nombra, movida o no (un reemplazo cuya
   // ruta no está acá no tiene entrada en el mapa)
   const r = { archivos: new Set(), carpetas: [], rutas: [], todas: [] };
   const e = ctx.arboles.arnes.find((x) => x.ruta === MAPA_RENOMBRES);
@@ -1652,7 +1637,7 @@ function nombresViejos(ctx) {
       r.todas.push({ fuente, ruta: viejo, carpeta: x.kind === 'folder' });
       // sólo lo ya movido: el nuevo está en el árbol y el viejo ya no es el de verdad (no está, o es sólo reemplazos). Una
       // entrada todavía no movida nombra el archivo REAL, que sale; y la carpeta nueva puede existir antes de que la vieja
-      // se mude (un archivo renombrado en C1-C3 va directo a su destino final: tanda C0, AC 59)
+      // se mude (un archivo renombrado puede ir directo a su destino final)
       const arbol = ctx.arboles[fuente] || [];
       const hayNuevo = x.kind === 'file' ? arbol.some((a) => a.ruta === nuevo) : arbol.some((a) => a.ruta.startsWith(`${nuevo}/`));
       if (!hayNuevo) continue;
@@ -1664,7 +1649,7 @@ function nombresViejos(ctx) {
       }
       if (x.kind === 'file') r.archivos.add(`${fuente}/${viejo}`);
       else r.carpetas.push(`${fuente}/${viejo}/`);
-      // los archivos de su repo donde el nombre viejo es OTRO archivo que se llama igual (story 8.12, AC 37); su forma la
+      // los archivos de su repo donde el nombre viejo es OTRO archivo que se llama igual; su forma la
       // valida `spanish-names.js --check-map`, acá sólo se usan los globs que son texto
       const homonimos = (Array.isArray(x.homonyms) ? x.homonyms : []).map((h) => h && h.glob).filter((g) => typeof g === 'string' && g);
       // una carpeta de un solo pedazo que el OTRO repo no llama (su `callers` no trae `other-repo`): allá, la palabra con
@@ -1679,22 +1664,21 @@ function nombresViejos(ctx) {
 /** Los archivos que salen y nombran una ruta vieja completa (fuera de la guía de la convención, que la explica). */
 // La ruta vieja completa: delante, o nada que sea parte de una ruta, o la raíz del repo escrita de alguna forma
 // (`tycon-claude-guides/`, `arnes/`, `$TCG/`, `${TCG}/`, `agent-skills/`, el `<arnés>/` con que la nombran las skills, o
-// cualquier variable de shell que se cierra justo antes, `${TYCON_GUIDES_DIR:-…}/` — la prueba real del exportador de la
-// tanda C1 encontró `<arnés>/scripts/metrics/…` sin traducir): otra ruta que TERMINA igual (un archivo de agent-skills)
-// no es la vieja. La `\` vale lo mismo que la `/` (pase adversarial de la story 8.12, R2, clase 6): `scripts\<vieja>\` o la
+// cualquier variable de shell que se cierra justo antes, `${TYCON_GUIDES_DIR:-…}/` — incluida `<arnés>/scripts/metrics/…`): otra ruta que TERMINA igual (un archivo de agent-skills)
+// no es la vieja. La `\` vale lo mismo que la `/`: `scripts\<vieja>\` o la
 // nueva `inbox\<vieja>\` escritas a la Windows son otra ruta que termina igual, y detrás de la raíz (`…\tycon-claude-guides\`,
 // también con `\\` dentro de un string) es la vieja. Con eso el exportador decide como `spanish-names.js --stale-mentions`
 // sin su exención por «otra ruta real del repo» (`completesOtherRealPath`): acá ninguna mención detrás de una barra cuenta,
 // salvo detrás de la raíz, donde el pedazo siguiente es de primer nivel y no completa otra ruta.
-// Los marcadores entre `<…>` (pase adversarial de la story 8.12, R3): las skills y los agentes escriben la raíz como
+// Los marcadores entre `<…>`: las skills y los agentes escriben la raíz como
 // `<arnés>/` y también `<tcg>/` (el capturador de la retro: `node <tcg>/scripts/…`), y por extensión `<TCG>/`, `<arnes>/`,
 // `<tycon-claude-guides>/` y `<agent-skills>/`. Una lista cerrada, no cualquier `<…>/`: `<repo>/`, `<clon>/` o `<árbol>/`
 // pueden ser el repo de un producto con su propio `scripts/`, y traducirlas sería inventar. Un marcador nuevo que nombre
 // al arnés se suma acá, con su caso en export.test.js (T19f).
 const MARCADORES_DE_RAIZ = '<(?:arn[eé]s|tcg|TCG|tycon-claude-guides|agent-skills)>';
-// La raíz del arnés escrita también como el LUGAR (story 8.19, tanda C): `~/.claude/<lugar>/scripts/<viejo>` es la misma
+// La raíz del arnés escrita también como el LUGAR: `~/.claude/<lugar>/scripts/<viejo>` es la misma
 // ruta vieja que detrás del nombre viejo. El nombre sale de place.js, la primera vez que se usa (quien carga este archivo
-// sólo para un lector no la necesita); sin place.js, la raíz es la de antes.
+// sólo para un lector no la necesita); sin place.js, la raíz es el nombre clásico.
 let placeRootAlt = null;
 function PLACE_ROOT() {
   if (placeRootAlt === null) {
@@ -1703,23 +1687,21 @@ function PLACE_ROOT() {
   return placeRootAlt;
 }
 const ANTES_DE_RUTA = () => `(?:(?<![\\w.\\/\\\\-])|(?<=(?:tycon-claude-guides|${PLACE_ROOT()}arnes|\\$TCG|\\$\\{TCG\\}|agent-skills|${MARCADORES_DE_RAIZ}|\\})(?:\\/|\\\\{1,2})))`;
-// Detrás: una carpeta vieja de UN solo pedazo es también una palabra común (la de los instintos, story 8.12, tanda R2:
+// Detrás: una carpeta vieja de UN solo pedazo es también una palabra común (la de los instintos:
 // «propone …», «Revisar y accionar …» en la descripción de una skill), así que cuenta sólo escrita como ruta, con una barra
-// detrás; sin esto la prosa frenaba la copia y, en el otro repo, se «traducía» a `inbox/…`. Las de varios pedazos, como antes.
+// detrás; sin esto la prosa frenaría la copia y, en el otro repo, se «traduciría» a `inbox/…`. Las de varios pedazos cuentan igual.
 // Qué es una barra detrás (una `\` de escape, `\n` o `\t`, no lo es) lo dice una sola regla, la de spanish-names.js.
 const DESPUES_DE_RUTA = (v) => (!v.carpeta ? '(?![\\w.@+~/-])' : v.ruta.includes('/') ? '(?![\\w.@+~-])' : require('./spanish-names.js').PATH_SEP_AHEAD);
 const rutaViejaRe = (v, flags) => new RegExp(`${ANTES_DE_RUTA()}${v.ruta.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${DESPUES_DE_RUTA(v)}`, flags);
 // Entre repos, el nombre suelto de un archivo de la RAÍZ (sin carpeta) cuenta sólo detrás de la raíz del arnés escrita:
 // solo, en el otro repo, es casi siempre otro archivo que se llama igual —el pipeline de cada producto se llama como el
-// nocturno de métricas que la R6 mudó a `pipelines/`; la copia lo «traducía» en un revisor y en una skill (story 8.12,
-// AC 37, re-medido en la R6)—. Detrás de `<arnés>/`, `$TCG/` o `tycon-claude-guides/` sí es el del arnés.
+// nocturno de métricas de `pipelines/`; la copia lo «traduciría» en un revisor y en una skill—. Detrás de `<arnés>/`, `$TCG/` o `tycon-claude-guides/` sí es el del arnés.
 const ANTES_SOLO_RAIZ = () => `(?<=(?:tycon-claude-guides|${PLACE_ROOT()}arnes|\\$TCG|\\$\\{TCG\\}|agent-skills|${MARCADORES_DE_RAIZ}|\\})(?:\\/|\\\\{1,2}))`;
 const deLaRaiz = (v) => !v.carpeta && !v.ruta.includes('/');
 // Lo mismo para una carpeta de UN solo pedazo cuya entrada del mapa no declara al otro repo como llamador (`callers` sin
 // `other-repo`; lo marca `nombresViejos`): con la barra detrás se sigue escribiendo igual que la prosa («regla de <x>/config
-// descartada») y que las ramas de una cola (`<x>/<id>`), y en el otro repo no hay `homonyms` que lo digan. La tanda F de la
-// story 8.9 mudó las dos colas de los nocturnos y la copia salía 0 con la prosa de un revisor reescrita a la carpeta nueva
-// (pase adversarial, clases 1 y 11). Con `other-repo` declarado se traduce como siempre; sin él, sólo detrás de la raíz.
+// descartada») y que las ramas de una cola (`<x>/<id>`), y en el otro repo no hay `homonyms` que lo digan. Sin esto,
+// la prosa de un revisor reescrita a la carpeta nueva pasaría con la copia en 0. Con `other-repo` declarado se traduce como siempre; sin él, sólo detrás de la raíz.
 const rutaViejaAjenaRe = (v, flags) => (deLaRaiz(v) || v.ajenaSoloTrasLaRaiz === true
   ? new RegExp(`${ANTES_SOLO_RAIZ()}${v.ruta.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${DESPUES_DE_RUTA(v)}`, flags)
   : rutaViejaRe(v, flags));
@@ -1729,19 +1711,19 @@ function mencionesViejas(textos, viejos) {
   const hallazgos = [];
   if (!viejos.rutas.length) return hallazgos;
   const res = viejos.rutas.map((v) => ({ ...v, re: rutaViejaRe(v), reAjena: rutaViejaAjenaRe(v) }));
-  // los que leen y protegen los dos nombres a propósito (tanda P, escritura doble): la misma lista que exceptúa
-  // `spanish-names.js --stale-mentions`, leída de ahí para que las dos no se separen (story 8.9, tanda B3b). Sin esto la
-  // copia del núcleo no salía desde el merge de la P.
+  // los que leen y protegen los dos nombres a propósito (escritura doble): la misma lista que exceptúa
+  // `spanish-names.js --stale-mentions`, leída de ahí para que las dos no se separen. Sin esto, la
+  // copia del núcleo no sale.
   const lectores = require('./spanish-names.js').LEGACY_READERS;
   for (const [clave, texto] of textos) {
     if (clave === 'arnes/guides/maintaining/nombres-en-ingles.md') continue;
     if (clave.startsWith('arnes/') && lectores.has(clave.slice('arnes/'.length))) continue;
     // la foto de un pipeline de producto real nombra los guiones viejos a propósito: los productos no se tocan hasta el
-    // retiro y T32 corre esas líneas así (`--stale-mentions` la exceptúa igual, en STALE_ZONES). Sin esto la copia del
-    // núcleo no salía desde la C2, la primera tanda que muda guiones que llaman los productos.
+    // retiro y T32 corre esas líneas así (`--stale-mentions` la exceptúa igual, en STALE_ZONES). Sin esto, la copia del
+    // núcleo no sale mientras se muden guiones que llaman los productos.
     if (FOTOS_DE_PRODUCTO.test(clave)) continue;
     // en su propio repo, una entrada no cuenta en sus archivos `homonyms`; en el otro repo, el nombre suelto de la raíz
-    // cuenta sólo detrás de la raíz del arnés (story 8.12, AC 37)
+    // cuenta sólo detrás de la raíz del arnés
     // la traducción a Codex de un agente de agent-skills es texto de agent-skills (lo regenera build/check.js desde el
     // agente): para la regla entre repos, cuenta como del otro repo
     // dos fuentes distintas: la del ARCHIVO (dónde vive: contra ella se miran los globs de homonyms, que son rutas de su
@@ -1750,11 +1732,10 @@ function mencionesViejas(textos, viejos) {
     const rel = clave.slice(repoDelArchivo.length + 1);
     const fuente = repoDelArchivo === 'agent-skills' || CODEX_TOML.test(clave) ? 'agent-skills' : 'arnes';
     // `homonimos` lo arma nombresViejos(); quien llama a mencionesViejas con sus propias rutas (las pruebas) puede no
-    // traerlo: sin lista, no hay homónimos (el banco 11575 lo encontró roto en dos pruebas, 2026-10-02)
+    // traerlo: sin lista, no hay homónimos
     // Las dos expresiones exigen la ruta vieja escrita tal cual (sin `i`): un archivo o una línea que no la contiene no
-    // puede dar hallazgo. Mirarlo antes evita la expresión en casi todo —era el 48% de cada exportación del núcleo, y la
-    // validación de un cambio hace nueve (2026-10-05: la validación entera tiene que entrar en 15 min)—. Mismo orden de
-    // hallazgos que antes: línea por línea y, en cada una, las rutas en el orden de `aplican`.
+    // puede dar hallazgo. Mirarlo antes evita la expresión en casi todo —sin el atajo pesaría casi la mitad de cada exportación del
+    // núcleo, y la validación de un cambio hace varias—. El orden de los hallazgos no cambia: línea por línea y, en cada una, las rutas en el orden de `aplican`.
     const enTexto = res.filter((v) => texto.includes(v.ruta) && (v.fuente !== repoDelArchivo || !(v.homonimos || []).some((g) => coincide(g, rel))));
     if (!enTexto.length) continue;
     texto.split(/\r?\n/).forEach((linea, i) => {
@@ -1764,9 +1745,9 @@ function mencionesViejas(textos, viejos) {
   return hallazgos;
 }
 
-// `P` es un paquete o una lista (story 8.7, AC 8: la unión). En la unión un archivo sale si sale en alguno de los
+// `P` es un paquete o una lista (la unión). En la unión un archivo sale si sale en alguno de los
 // paquetes pedidos, y los revisores de los pedidos salen ENTEROS (sus superficies del arnés salen con el núcleo); los de un
-// paquete fuera de la lista no salen. Un paquete solo, como antes: el .md de sus revisores y el resto, pendiente de la
+// paquete fuera de la lista no salen. Un paquete solo: el .md de sus revisores y el resto, pendiente de la
 // unión con el núcleo.
 function filterPackage(ctx, P) {
   const pedidos = packageList(P);
@@ -1823,15 +1804,15 @@ function filterPackage(ctx, P) {
       }
       incluidos.push({ fuente: f, ...e, clave });
     }
-    // la salida (los pendientes) conserva sus claves: sólo cambian las de la lista (story 8.9, pregunta decidida 2)
+    // la salida (los pendientes) conserva sus claves: sólo cambian las de la lista
     for (const d of defs) {
       for (const x of d.out || []) {
         if (x.until && !pendientes.some((y) => y.ruta === `${f}/${x.glob}`)) pendientes.push({ ruta: `${f}/${x.glob}`, hasta: String(x.until) });
       }
     }
   }
-  // pendientes: lo de los revisores de un paquete exportado SOLO, que sale entero en la unión con el núcleo (story 8.7,
-  // AC 8: cada pendiente nombra esa unión; antes, la story 8.7)
+  // pendientes: lo de los revisores de un paquete exportado SOLO, que sale entero en la unión con el núcleo
+  // (cada pendiente nombra esa unión)
   const UNTIL_UNION = ['core', ...pedidos.filter((p) => p !== 'core')].join(',');
   if (!union && propios.size) {
     const leerArnes = (ruta) => {
@@ -1936,10 +1917,10 @@ function transformar(ctx, copia, quitarRevisores, ajustes, P = ctx.paquete) {
     }
   }
 
-  // El registro de las suites partidas (story 8.22): scripts/tests/suite-parts.json nombra el archivo ENTERO de cada una.
+  // El registro de las suites partidas: scripts/tests/suite-parts.json nombra el archivo ENTERO de cada una.
   // La entrada de una suite que no viaja se va con ella, igual que su entrada de suites.json: si quedara, dentro de la
-  // copia la suite figuraría «partida» sin estar, y suites-coverage y suite-parts darían rojo (medido el 2026-10-08 con
-  // heavy-suites.test.js; en el repo del equipo todo seguía verde). Un registro que no se deja leer no se publica.
+  // copia la suite figuraría «partida» sin estar, y suites-coverage y suite-parts darían rojo (heavy-suites.test.js lo
+  // ve; en el repo del equipo todo seguiría verde). Un registro que no se deja leer no se publica.
   const registroDePartes = `arnes/${REGISTRO_DE_PARTES}`;
   if (copia.has(registroDePartes)) {
     const fuera = new Set((ctx.lista.suitesOutside || []).filter((s) => s.root === 'arnes').map((s) => s.path));
@@ -1979,7 +1960,7 @@ function transformar(ctx, copia, quitarRevisores, ajustes, P = ctx.paquete) {
     }
   }
 
-  // story 8.10.3 (AC 5): el texto exacto que manda a una integración del equipo pasa a su versión pública. Antes de los
+  // el texto exacto que manda a una integración del equipo pasa a su versión pública. Antes de los
   // reemplazos de nombres: el texto declarado es el del repo, tal cual.
   const publicos = ctx.lista.publicTexts || [];
   for (const clave of new Set(publicos.map((e) => `${e.root}/${e.file}`))) {
@@ -1992,7 +1973,7 @@ function transformar(ctx, copia, quitarRevisores, ajustes, P = ctx.paquete) {
     const clave = `${f}/.gitignore`;
     if (!copia.has(clave)) continue;
     const lineas = texto(clave).split('\n');
-    // en el repo unido (story 8.18) el .gitignore es uno, el de las dos fuentes: se mira contra las fijas de las dos
+    // en el repo unido el .gitignore es uno, el de las dos fuentes: se mira contra las fijas de las dos
     const owners = ctx.unified === true ? FUENTES : [f];
     const dropped = (l) => l.startsWith('!') && owners.some((x) => bajoFija(l.slice(1).trim(), x));
     const quitadas = lineas.filter(dropped);
@@ -2002,20 +1983,19 @@ function transformar(ctx, copia, quitarRevisores, ajustes, P = ctx.paquete) {
     }
   }
 
-  // story 8.18: desde el repo unido, en la copia de dos repos cada parte del pre-commit vuelve a su repo (`splitHooks`).
+  // desde el repo unido, en la copia de dos repos cada parte del pre-commit vuelve a su repo (`splitHooks`).
   // Va acá —y no sólo en la exportación— para que la clasificación (`whatShips`) de un contexto armado por
   // `prepararFuentes` diga lo mismo que la copia de dos repos; los frenos de nombres arman su propio contexto, sin
   // `unified`, y siguen viendo los archivos del repo tal cual.
   if (ctx.unified === true && !ctx.singleRepo) splitHooks(copia, ajustes);
 
-  // story 8.7, en este orden: skill-rename → public-third-party → los sintéticos con sus marcadores → internal-blocks.
+  // en este orden: skill-rename → public-third-party → los sintéticos con sus marcadores → internal-blocks.
   // Todo antes de regenerar las traducciones a Codex (una .toml copia el texto de su .md) y de los controles.
   ctx.renamed = [];
   for (const regla of ctx.lista.skillRenames || []) if (regla.from !== regla.to) renameSkillInCopy(ctx, copia, regla, ajustes);
   const terceros = `arnes/${MANIFIESTO_TERCEROS}`;
   if (copia.has(terceros)) {
     // una skill es la carpeta que tiene su SKILL.md, a cualquier profundidad: `skills/core/<x>/SKILL.md` es «x», no «core»
-    // (pase adversarial de la tanda A, traversal-completeness-2)
     const skills = new Set([...copia.keys()].map((k) => /^agent-skills\/skills\/(?:[^/]+\/)*?([^/]+)\/SKILL\.md$/.exec(k)).filter(Boolean).map((m) => m[1]));
     let r;
     try {
@@ -2029,10 +2009,10 @@ function transformar(ctx, copia, quitarRevisores, ajustes, P = ctx.paquete) {
     }
   }
   // los papeles se ponen ANTES de internal-blocks: un papel .md también pierde sus bloques internos, y un marcador en uno
-  // que no es .md sale 2 (pase adversarial de la tanda A, false-negative-classification-1)
+  // que no es .md sale 2
   placeSynthetics(ctx, copia, ajustes, P);
-  // Para los frenos de nombres (`whatShips`) el .md se mira ENTERO, bloques internos incluidos (AC 5): un nombre real
-  // dentro de un bloque interno sigue en el interno, y el freno lo tiene que ver (pase adversarial, traversal-completeness-1)
+  // Para los frenos de nombres (`whatShips`) el .md se mira ENTERO, bloques internos incluidos: un nombre real
+  // dentro de un bloque interno sigue en el interno, y el freno lo tiene que ver
   if (!ctx.classifying) applyInternalBlocks(copia, ajustes);
 }
 
@@ -2041,7 +2021,7 @@ function transformar(ctx, copia, quitarRevisores, ajustes, P = ctx.paquete) {
  *  las skills), con lo que queda como ruta desde la raíz del repo. Pares `[expresión, prefijo que queda]`. */
 function installPrefixes() {
   // Como PLACE_ROOT: el exportador sacado de OTRO commit (la sincronización, que lo corre desde una carpeta suelta) puede no
-  // tener al lado el módulo del lugar. Sin él no hay prefijos que reconocer —esas rutas quedan como antes de esta marca—;
+  // tener al lado el módulo del lugar. Sin él no hay prefijos que reconocer —esas rutas quedan sin marca—;
   // cualquier otro error sube.
   try {
     return PREFIJOS_COMANDO().map(([re, pre]) => [re, pre.replace(/^(?:arnes|agent-skills)\//, '')]);
@@ -2052,10 +2032,10 @@ function installPrefixes() {
 }
 
 /**
- * pathsNotInCopy (story 8.10.3, AC 9): su propia cuenta de las rutas que tendrían que llevar la marca y no la llevan —no
+ * pathsNotInCopy: su propia cuenta de las rutas que tendrían que llevar la marca y no la llevan —no
  * llama a `markPathsNotInCopy`: decide por su cuenta qué es una ruta del equipo—. Lee el código en línea con el mismo
  * lector que la marca (`proseCodeSpans`, CommonMark): si leyeran distinto, el control frenaría algo que la marca no puede
- * arreglar (pase adversarial de la tanda B). `textos`: pares `[ruta desde la raíz de su repo, texto]`. Devuelve
+ * arreglar. `textos`: pares `[ruta desde la raíz de su repo, texto]`. Devuelve
  * `{ archivo, linea, ruta }`.
  */
 function pathsNotInCopy(textos, { inRepo, inCopy, conventions = [], installPrefixes = [] }) {
@@ -2091,7 +2071,7 @@ function pathsNotInCopy(textos, { inRepo, inCopy, conventions = [], installPrefi
 /** La ruta de origen de un archivo de la copia (`<fuente>/<ruta en su repo>`), aunque haya salido con otro nombre. */
 const sourceKey = (clave, a) => (a && a.fuente && a.ruta ? `${a.fuente}/${a.ruta}` : clave);
 
-/** skill-rename (story 8.7, AC 10): la carpeta a su nombre nuevo y el identificador en cada texto que sale (public-copy.js). */
+/** skill-rename: la carpeta a su nombre nuevo y el identificador en cada texto que sale (public-copy.js). */
 function renameSkillInCopy(ctx, copia, regla, ajustes) {
   const prefijo = `${regla.source}/${regla.from}/`;
   const movidas = [...copia.keys()].filter((k) => k.startsWith(prefijo)).sort(porCodigo);
@@ -2119,14 +2099,14 @@ function renameSkillInCopy(ctx, copia, regla, ajustes) {
   }
 }
 
-/** internal-blocks (story 8.7, AC 5): saca los bloques internos de los .md; un marcador mal puesto, o fuera de un .md, es 2.
- *  Mira todo archivo con un comentario HTML (story 8.10.2, AC 1). */
+/** internal-blocks: saca los bloques internos de los .md; un marcador mal puesto, o fuera de un .md, es 2.
+ *  Mira todo archivo con un comentario HTML. */
 function applyInternalBlocks(copia, ajustes) {
   const errores = [];
   for (const [clave, a] of copia) {
     if (CODEX_TOML.test(clave)) continue;   // se regeneran desde su .md, que sí se mira
     const datos = a.datos;
-    // (story 8.10.2) sin filtro previo por texto: el que pedía «tycon:» dejaba salir un bloque con una errata en la palabra
+    // sin filtro previo por texto: uno que pidiera «tycon:» dejaría salir un bloque con una errata en la palabra
     // del arnés, y un marcador puede quedar suelto, sin su comentario. Se mira todo archivo de texto.
     if (detector.esBinario(datos)) continue;
     const t = datos.toString('utf8');
@@ -2144,7 +2124,7 @@ function applyInternalBlocks(copia, ajustes) {
 }
 
 /**
- * Los sintéticos (story 8.4; `packages` y los marcadores, story 8.7, AC 9 y 14): con `packages`, en las exportaciones que
+ * Los sintéticos: con `packages`, en las exportaciones que
  * incluyen alguno; sin él, cuando un «in» del arnés de un paquete pedido cubre el destino. Nunca pisan algo que ya sale.
  * `{{public-org}}` y `{{public-repo}}` pasan al nombre público (si se conoce: el freno de nombres los mira sin él); otro
  * `{{public-…}}` es 2. Deja en `ctx.papers` el texto de cada `from` (para handWrittenPublicUrl) y en
@@ -2186,7 +2166,7 @@ function placeSynthetics(ctx, copia, ajustes, P) {
   }
 }
 
-// ── Qué sale, y con qué contenido: la clasificación, para el freno de nombres nuevos (story 8.10, AC 7) ─────────
+// ── Qué sale, y con qué contenido: la clasificación, para el freno de nombres nuevos ─────────
 // El freno (new-names.js) no reimplementa qué sale ni cómo se transforma: pregunta acá. Si el freno y la copia dijeran
 // cosas distintas, uno de los dos mentiría (T25 y T27 los comparan). `ctx` trae lo que arma `prepararFuentes` —o lo
 // mismo armado desde el índice de un commit—: lista, afueraPrivado, arboles y repos. No reemplaza nombres ni regenera
@@ -2233,7 +2213,7 @@ function whatShips(ctx) {
   const byPath = (f) => new Map(ctx.arboles[f].map((e) => [e.ruta, e]));
   const trees = Object.fromEntries(FUENTES.map((f) => [f, byPath(f)]));
   const synthetic = new Set((ctx.lista.synthetic || []).map((s) => `arnes/${s.target}`));
-  // los papeles llevan el nombre público puesto (story 8.7, AC 14), leído del MISMO commit que se clasifica. Si el commit
+  // los papeles llevan el nombre público puesto, leído del MISMO commit que se clasifica. Si el commit
   // no trae el archivo (la copia pública no lo lleva), se miran con sus marcadores: no son nombres. Un archivo que está y
   // no se deja leer, o no es válido, sube: «no pude mirar» nunca es «sin nombre público».
   if (ctx.publicRepo === undefined) {
@@ -2250,7 +2230,7 @@ function whatShips(ctx) {
   const packages = publicPackages(ctx).sort(porCodigo).map((P) => {
     const f = filterPackage(ctx, P);
     const copia = new Map(f.incluidos.map((e) => [e.clave, lazyEntry(e, read)]));
-    // transformar lee casi todo desde la story 8.7 (los .md por sus bloques, cada texto por el renombre de una skill):
+    // transformar lee casi todo (los .md por sus bloques, cada texto por el renombre de una skill):
     // todo en un lote por fuente
     for (const fuente of FUENTES) read(fuente, [...copia.values()].filter((a) => a.fuente === fuente).map((a) => a.obj));
     ctx.classifying = true;
@@ -2268,7 +2248,7 @@ function whatShips(ctx) {
       fuente: a.fuente, ruta: a.ruta, modo: a.modo,
       kind: traduccion(clave) ? 'translation' : synthetic.has(clave) ? 'synthetic' : 'copy',
     }]));
-    // story 8.7 (AC 13): el `from` de cada sintético que aplica también sale —con el contenido de su destino—, así los
+    // el `from` de cada sintético que aplica también sale —con el contenido de su destino—, así los
     // frenos de nombres miran un papel de public-files/ aunque esa carpeta no viaje
     const desde = new Map();
     for (const s of ctx.placedSynthetics || []) {
@@ -2329,7 +2309,7 @@ function whatShips(ctx) {
     return out;
   }
 
-  /** Lee de un saque el contenido de muchos archivos (antes de pedirle `ofFile` a cada uno). */
+  /** Lee de un saque el contenido de muchos archivos (en vez de pedirle `ofFile` a cada uno). */
   function preload(pairs) {
     for (const source of FUENTES) {
       const objs = pairs.filter(([s]) => s === source).map(([, r]) => trees[source].get(r)).filter((e) => e && e.tipo === 'blob').map((e) => e.obj);
@@ -2341,7 +2321,7 @@ function whatShips(ctx) {
 }
 
 /**
- * Los nombres en castellano de la copia (story 8.9): el freno los cuenta con su propio extractor. Se carga acá adentro
+ * Los nombres en castellano de la copia: el freno los cuenta con su propio extractor. Se carga acá adentro
  * porque spanish-names.js usa este archivo. Si no se puede contar, el --json lo dice y el termómetro da rojo: la copia
  * igual sale (contar no es armarla).
  */
@@ -2379,7 +2359,7 @@ function main() {
       process.exitCode = explicar(args, cfg);
       return;
     }
-    // story 8.26 (AC 36): el exportador ya no arma la copia. Pedírsela sale 2 diciéndolo, sin escribir nada.
+    // el exportador no arma la copia. Pedírsela sale 2 diciéndolo, sin escribir nada.
     throw new NoPudo(NO_ARMA);
   } catch (e) {
     // Cualquier error —previsto o no— es un 2: el 1 significa «encontré algo» y un 0 sería una mentira.
@@ -2397,52 +2377,52 @@ function main() {
 
 module.exports = {
   EXCLUIDOS_SIEMPRE, TRANSFORMACIONES, intersectan, nombraFija, analizarJson, dejarHijos, quitarSecciones,
-  // story 8.26, tanda C: «¿esta exclusión fija cubre la ruta?» con su `salvo`. Todo el que decide qué se publica la usa
-  // (el freno de nombres, el comparador de copias, el control de lo publicable): con `coincide(x.glob)` a secas, las
-  // rutas del `salvo` se leían como privadas y el freno de nombres no las miraba (pase adversarial de la tanda C).
+  // «¿esta exclusión fija cubre la ruta?» con su `salvo`. Todo el que decide qué se publica la usa (el freno de
+  // nombres, el comparador de copias, el control de lo publicable): con `coincide(x.glob)` a secas, las rutas del
+  // `salvo` se leerían como privadas y el freno de nombres no las miraría.
   cubreFija,
   enSalvo,
-  // story 8.10: la clasificación y lo que la rodea, para el freno de nombres nuevos (new-names.js) y sus pruebas
+  // la clasificación y lo que la rodea, para el freno de nombres nuevos (new-names.js) y sus pruebas
   FUENTES, PAQUETES_PRIVADOS, CODEX_TOML, NoPudo, git, salidaGit, leerObjetos, listarArbol, coincide,
   validarLista, validarTabla, cargarDenegados, prepararFuentes, primerNivel, filterPackage, transformar, whatShips,
   publicPackages, nombresPegados, reemplazar, parPuedeEstar, compilan, unseenProducts, productsOf, unseenValues, termHasPair, termsWithoutPair,
-  // story 8.9, tanda A2: los nombres viejos del mapa de renombres (su prueba fuerza el mapa roto)
+  // los nombres viejos del mapa de renombres (su prueba fuerza el mapa roto)
   nombresViejos, mencionesViejas,
-  // story 8.9: el termómetro de nombres en castellano (su prueba fuerza el camino de error)
+  // el termómetro de nombres en castellano (su prueba fuerza el camino de error)
   contarCastellano,
-  // story 8.26, tanda G1: las formas con que una guía nombra un archivo del arnés instalado (internal-history.js las
+  // las formas con que una guía nombra un archivo del arnés instalado (internal-history.js las
   // reconoce igual que la marca de las rutas que no viajan)
   installPrefixes,
-  // story 8.9 (AC 29): el paquete por su nombre nuevo en una lista blanca de antes del renombre (new-names.js)
+  // el paquete por su nombre nuevo en una lista blanca de antes del renombre (new-names.js)
   paquetesConNombresNuevos,
-  // story 8.7: el lector del nombre público (lo reusa la sincronización de la 8.8) y la lista de controles
+  // el lector del nombre público (lo reusa la sincronización) y la lista de controles
   readPublicRepo, readPublicNameExceptions, COPY_CONTROLS,
-  // story 8.10.3: los textos públicos (public-copy-messages.test.js los aplica a los archivos de verdad)
+  // los textos públicos (public-copy-messages.test.js los aplica a los archivos de verdad)
   applyPublicTexts,
-  // story 8.8: la identidad fija del commit de la copia — la sincronización (mirror.js) firma sus commits con la misma
+  // la identidad fija del commit de la copia — la sincronización (mirror.js) firma sus commits con la misma
   COMMIT_IDENTITY: AUTOR,
-  // story 8.18: la pregunta «¿este commit es del repo unido?» (una fuente física, o dos)
+  // la pregunta «¿este commit es del repo unido?» (una fuente física, o dos)
   isUnifiedCommit, PRIVATE_FOLDERS_NOTE, ignorePrivateFolders,
-  // story 8.18 (pase adversarial del tramo 2, clase 11): el nombre de cada parte del pre-commit del repo unido, para
+  // el nombre de cada parte del pre-commit del repo unido, para
   // que la foto de export-compare.js no anote como excluida una parte que split-hooks publica
   HOOK_PARTS,
-  // revisión del tramo 2 (vuelta 1): la partición del pre-commit, para que su prueba fuerce los dos caminos de error
+  // la partición del pre-commit, para que su prueba fuerce los dos caminos de error
   splitHooks,
-  // story 8.13 (AC 24): la versión numerada — el nombre del archivo, la forma del número y la función que arma sus bytes
+  // la versión numerada — el nombre del archivo, la forma del número y la función que arma sus bytes
   VERSION_FILE, VERSION_SHAPE, versionFileBytes,
-  // story 8.13.1 (AC 6): ruta → blob de los árboles internos, con la regla de la lista de transformados (la usa verify)
+  // ruta → blob de los árboles internos, con la regla de la lista de transformados (la usa verify)
   internalBlobs,
-  // story 8.19 (tanda C, T40): un comando del arnés por cualquiera de los dos nombres de su lugar
+  // un comando del arnés por cualquiera de los dos nombres de su lugar
   candidatosDeComando, comandosColgados,
-  // story 8.10.3, tanda B (T9): el control de las rutas que no viajan, para probarlo directo
+  // el control de las rutas que no viajan, para probarlo directo
   pathsNotInCopy,
 };
 
-// El arranque va DESPUÉS de los exports (story 8.9, tanda B3b): el termómetro de la copia (`spanish-names.js`) se
-// carga a mitad de `main()` y pide `coincide` a este mismo módulo; con el arranque arriba, los exports todavía estaban
-// vacíos y el termómetro salía «exporter.coincide is not a function» (export-real.test.sh rojo desde T20).
+// El arranque va DESPUÉS de los exports: el termómetro de la copia (`spanish-names.js`) se carga a mitad de `main()`
+// y pide `coincide` a este mismo módulo; con el arranque arriba, los exports todavía estarían vacíos y el termómetro
+// saldría «exporter.coincide is not a function» (export-real.test.sh, T20).
 if (require.main === module) {
-  // story 8.9: las opciones y los paquetes con su nombre viejo siguen andando hasta el retiro
+  // las opciones y los paquetes con su nombre viejo siguen andando hasta el retiro
   require('../lib/legacy-names.js').aliasArgv(MAPA_WHERE, { exitCode: 2, prefix: '⛔ exportador: ' });
   main();
 }

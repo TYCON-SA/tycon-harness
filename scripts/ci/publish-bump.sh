@@ -2,35 +2,29 @@
 # publish-bump.sh — commitea y publica el bump de versión de los formularios, SOBREVIVIENDO a la
 # carrera de push y al árbol sucio que deja el build. El canónico ÚNICO para los cinco productos.
 #
-# ── Por qué existe (FORMS-BUMP-REBASE-RETRY-1, 2026-09-06) ──────────────────────────────────
+# ── Por qué existe ──────────────────────────────────────────────────────────────────────────
 # Cuando dos construcciones terminan cerca (dos merges agrupados, o un trigger más un run manual),
-# la segunda encuentra `main` movido y su push rebota. Cada producto lo resolvía distinto — medido
-# leyendo el `azure-pipelines.yml` PUBLICADO (origin/main) de los cinco, el 2026-09-06:
-#   · Totora: fetch + `git checkout -- '*/dist/*'` + `rebase` pelado, tres intentos → sobrevive
-#     sólo si lo único sucio es dist/; cualquier otro trackeado modificado lo mata;
-#   · URUTAU, Lapacho, FRESNO: fetch + `rebase` pelado, tres intentos → mueren con el árbol sucio;
-#   · Ceibo: fetch + «¿lo mío ya está en el remoto?» (buena idea) + `rebase FETCH_HEAD` pelado →
-#     muere igual con el árbol sucio.
-# Cinco copias de la misma lógica en tres conductas; este arnés pagó ese patrón con las 8 copias
-# de release-notes.sh.
+# la segunda encuentra `main` movido y su push rebota. Si cada producto lo resuelve a su manera
+# (un `rebase` pelado, con o sin `git checkout -- '*/dist/*'` antes), sobrevive sólo si el árbol
+# está limpio o lo único sucio es dist/; cualquier otro archivo trackeado modificado lo mata.
+# Cinco copias de esta misma lógica, cada una con su conducta, son el patrón que este arnés ya pagó
+# con las 8 copias de release-notes.sh.
 #
 # Lo que hace, y por qué cada paso:
 #   1. `add` de cada pathspec (uno que no matchea nada AVISA y sigue: un `fatal` de git bajo
-#      `set -e` dejaba el bump sin commitear y sin publicar, rc=128 mudo para el pipeline).
+#      `set -e` dejaría el bump sin commitear y sin publicar, rc=128 mudo para el pipeline).
 #   2. commit con la MARCA `Commit: <sha>` en el cuerpo — el commit del que partió la corrida
 #      (por default `BUILD_SOURCEVERSION`, lo que el pipeline hizo checkout; si no, HEAD; o
-#      `--from <sha>`). 🔴 Es el contrato con `forms-to-version.sh` (2026-09-03): la
+#      `--from <sha>`). 🔴 Es el contrato con `forms-to-version.sh`: la
 #      corrida siguiente mira qué cambió DESDE ese sha, y no desde el commit del bot — con dos
-#      merges agrupados, sin la marca el formulario del primero no se versionaba nunca, en verde.
+#      merges agrupados, sin la marca el formulario del primero no se versionaría nunca, en verde.
 #      Sin cambios → commit VACÍO con la misma marca (si no, la corrida siguiente lee la versión
 #      anterior de un bot viejo, propone la que ya está en el host, y el host deduplica).
-#      La revisión adversarial del 2026-09-06 encontró la primera versión sin ninguna de las dos.
 #   3. push; si rebota: fetch, y si lo que quería publicar YA está en el remoto (lo pusheó un run
-#      concurrente) → OK benigno, sin duplicar (la idea de Ceibo).
+#      concurrente) → OK benigno, sin duplicar.
 #   4. si no: `rebase --autostash` — el `--autostash` es lo que lo hace sobrevivir al árbol sucio;
 #      y el `|| true` del abort es lo que hace que el aviso de abajo se IMPRIMA (bajo `set -e`, un
-#      `git rebase --abort` con «no rebase in progress» sale 128 y mata al shell antes del aviso —
-#      el mismo defecto que tenía el nocturno del arnés, hallazgo #2 del pase del 2026-09-06).
+#      `git rebase --abort` con «no rebase in progress» sale 128 y mata al shell antes del aviso).
 #   5. tres intentos; si igual no entra: `##vso[task.logissue type=error]` y exit 1 — rojo con
 #      motivo, nunca rojo mudo.
 #
@@ -40,7 +34,7 @@
 # Casos: scripts/tests/publish-bump.test.sh (sin red; remoto bare local).
 set -eu
 
-# Las opciones renombradas a inglés (story 8.9, tanda B2): los pipelines de los productos siguen pasando las viejas hasta
+# Las opciones renombradas a inglés: los pipelines de los productos siguen pasando las viejas hasta
 # el retiro. El traductor vive al lado (viaja en el artefacto arnes-ci); lo de después de `--` no lo toca.
 _AQUI_LO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "${_AQUI_LO}/legacy-options.sh" ]; then

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 // pr-texts.js — el título y el cuerpo de un pedido de GitHub, para que el freno de publicación los mire en la
-// validación (story 8.26, tanda F2 · AC 23).
+// validación.
 //
 // POR QUÉ EXISTE. El título y el cuerpo de un pedido se publican con él y no están en git: el freno
 // (scripts/hooks/public-push-guard.js, modo `range`) mira commits, y esos dos textos hay que traérselos. Azure no se los

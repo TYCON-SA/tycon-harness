@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # =============================================================================
-# deploy-record.sh — cada despliegue queda anotado en SU corrida de Azure DevOps (story 2.10)
+# deploy-record.sh — cada despliegue queda anotado en SU corrida de Azure DevOps
 # =============================================================================
-# 🔴 POR QUÉ EXISTE (2026-09-16). El arnés no sabía qué le llegó a cada servidor ni cuándo: el humo
-# aprobaba el despliegue y la corrida terminaba verde sin dejar nada que se pudiera contar. La story
-# 2.11 cuenta despliegues por producto y mide cuánto tarda un commit en llegar a producción; para eso
-# necesita que cada despliegue deje UNA línea legible y una etiqueta que permita encontrar la corrida
-# sin leer su log. Se hace acá, en los guiones que ya corren en los 28 pipelines, porque un paso nuevo
-# en cada YAML son 28 copias que divergen.
+# 🔴 POR QUÉ EXISTE. Sin registro, el arnés no sabe qué le llegó a cada servidor ni cuándo: el humo
+# aprueba el despliegue y la corrida termina verde sin dejar nada que se pueda contar. Contar
+# despliegues por producto y medir cuánto tarda un commit en llegar a producción necesita que cada
+# despliegue deje UNA línea legible y una etiqueta que permita encontrar la corrida sin leer su log.
+# Se hace acá, en los guiones que ya corren en todos los pipelines, porque un paso nuevo en cada
+# YAML son decenas de copias que divergen.
 #
 # Se CARGA con `source` desde smoke-plugin.sh, smoke-forms.sh y deploy-plugin.sh. No se ejecuta solo.
 # Ninguna función sale con `exit`: devuelven, y el guion que llama sigue con su propio veredicto.
 #
-# ── EL CONTRATO QUE LEE LA 2.11 ─────────────────────────────────────────────────────────────────
+# ── EL CONTRATO QUE LEE EL CONTEO DE DESPLIEGUES ─────────────────────────────────────────────────────────────────
 # PREFIJO: [registro-despliegue]
 #   Una línea por despliegue en el log de la corrida: el prefijo, un espacio y un JSON en una línea.
 # CLAVES: v ts estado tipo entorno entorno_fuente proyecto repo destino artefacto version hash build build_ci clave
@@ -22,11 +22,11 @@
 #                   En formularios, desplegado = PUBLICADO POR ESTA CORRIDA: el host vuelve a publicar una
 #                   versión que ya tenía (no da 409; sp_UpsertBZExtForm reemplaza código y commit), así que
 #                   la misma versión subida otra vez también se anota. Un CAMBIO se cuenta por la primera
-#                   aparición de (proyecto, repo, destino, entorno, artefacto, version) — eso es de la 2.11.
+#                   aparición de (proyecto, repo, destino, entorno, artefacto, version) — eso lo hace el lector del registro.
 #   tipo            plugin · formulario
 #   entorno         staging · produccion
 #   entorno_fuente  declarado (--environment de deploy-plugin.sh en el mismo job) · derivado
-#   proyecto        SYSTEM_TEAMPROJECT (crudo; el nombre de producto lo mapea la 2.11 con repos.json)
+#   proyecto        SYSTEM_TEAMPROJECT (crudo; el nombre de producto lo mapea el lector del registro con repos.json)
 #   repo            BUILD_REPOSITORY_NAME (crudo; proyecto+repo es único en los 17 repos)
 #   destino         SYSTEM_STAGENAME/SYSTEM_JOBNAME — distingue los dos stagings de Pacara
 #   artefacto       nombre del plugin o del formulario
@@ -38,7 +38,7 @@
 #   build_ci        RESOURCES_PIPELINE_CI_RUNID si existe (producción: el CI promovido), si no BUILD_BUILDID
 #   clave           d-<16 hex> del SHA-256 de estado|tipo|proyecto|repo|destino|entorno|artefacto|version|hash7
 #                   Identifica el DESPLIEGUE, no la corrida: dos corridas que despliegan lo mismo en el
-#                   mismo destino tienen la misma clave. La 2.11 deduplica por clave.
+#                   mismo destino tienen la misma clave. El lector deduplica por clave.
 #   Un campo sin valor es null, nunca "".
 # ETIQUETAS: desplegado · <artefacto>-<version> · despliegue-intentado
 #   Cada una se emite una vez por job. Una corrida con despliegue-intentado y sin desplegado es un
@@ -95,7 +95,7 @@ _reg_sha256() {
 
 # El entorno: el que deploy-plugin.sh DECLARÓ en este job manda; si no hay, se deriva. Si los dos
 # existen y discrepan, se usa el declarado y se avisa: es la verificación de la regla derivada (sus
-# variables salen de la documentación de Azure y no se habían visto en una corrida real).
+# variables salen de la documentación de Azure).
 registro_entorno() {
   local derivado declarado=""
   if [ -n "${ENVIRONMENT_NAME:-}" ] || [ -n "${RESOURCES_PIPELINE_CI_RUNID:-}" ]; then derivado="produccion"; else derivado="staging"; fi
@@ -115,9 +115,9 @@ registro_entorno() {
 }
 
 # deploy-plugin.sh deja el entorno que recibió por --environment para el humo del mismo job.
-# El entorno de producción se recibe con el nombre de la opción («production», story 8.9 tanda B3a) o con el que se
-# GRABA en el registro, y se graba siempre como REG_PROD_RECORDED: es el valor que leen la 2.11 y los registros ya
-# escritos (pregunta 2 de la 8.9: se acepta el nombre nuevo y se graba el viejo; lo cambia la story de retiro).
+# El entorno de producción se recibe con el nombre de la opción («production») o con el que se
+# GRABA en el registro, y se graba siempre como REG_PROD_RECORDED: es el valor que espera quien lee el registro y el que
+# traen los registros ya escritos (se acepta el nombre nuevo y se graba el viejo).
 REG_PROD_RECORDED="produccion"
 registro_declarar_entorno() {
   registro_activo || return 0
@@ -128,7 +128,7 @@ registro_declarar_entorno() {
     return 1
   fi
   # 🔴 el 2>/dev/null va AFUERA de la redirección: `cmd > archivo 2>/dev/null` imprime el «Permission
-  # denied» igual, porque el `>` falla antes de que el 2>/dev/null tome efecto (pase adversarial 2026-09-17).
+  # denied» igual, porque el `>` falla antes de que el 2>/dev/null tome efecto.
   if ! _reg_dir_job || ! { printf '%s\n' "$entorno" > "$REG_DIR_JOB/entorno"; } 2>/dev/null; then
     registro_aviso "no pude dejar el entorno $entorno para el humo de este job (sin directorio temporal del job o sin permiso): el humo va a derivarlo"
     return 1

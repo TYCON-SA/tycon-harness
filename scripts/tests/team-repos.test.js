@@ -535,6 +535,9 @@ test('T21 TeamRepos_NombresDeModelos_IgualesAModelsJs @story-7.29 @ac-3', () => 
   const { resolveSkillsDirs } = require(path.join(ROOT, 'scripts', 'lib', 'skills-dir.js'));
   const MODELS = require(path.join(resolveSkillsDirs().skills, 'tycon-pipeline', 'scripts', 'lib', 'models.js')).MODELS;
   assert.deepStrictEqual(TEAM.MODEL_NAMES, MODELS);
+  // los niveles también son copia, en el mismo orden
+  const LEVELS = require(path.join(resolveSkillsDirs().skills, 'tycon-pipeline', 'scripts', 'lib', 'models.js')).LEVELS;
+  assert.deepStrictEqual(TEAM.MODEL_LEVELS, LEVELS);
 });
 
 // ── story 2.22: `deployments` (de qué sistema se leen los despliegues de cada producto) ─────────────────────────────
@@ -689,7 +692,8 @@ test('T4 Modelos_PorEncimaDelTope @story-2.59 @ac-4 — el lector dice qué trab
     session: { low: 'sonnet', heavy: 'fable' }, reviewer: { 'tycon-silent-failure-hunter': 'fable', 'tycon-spec-first-checker': 'opus' } };
   assert.deepStrictEqual(TEAM.modelsAboveCeiling(models).map((p) => p.path).sort(),
     ['models.adversarial.heavy', 'models.reviewer.tycon-silent-failure-hunter', 'models.reviewers_reloop', 'models.session.heavy']);
-  for (const p of TEAM.modelsAboveCeiling(models)) assert.match(p.message, /^pasa el tope obligatorio \(opus\)$/, p.path);
+  // el tope se nombra por su nivel
+  for (const p of TEAM.modelsAboveCeiling(models)) assert.match(p.message, /^pasa el tope obligatorio \(strong\)$/, p.path);
   // un trabajo que no se declara (queda el por defecto) no se marca; sin tope, o con el tope apagado, nada
   assert.deepStrictEqual(TEAM.modelsAboveCeiling({ ...conTope }), []);
   assert.deepStrictEqual(TEAM.modelsAboveCeiling({ reviewers: 'fable' }), []);
@@ -714,4 +718,41 @@ test('T13 Repos_SinPipelineQuePasa @story-2.59 @ac-13 — qué pasa sin pipeline
   assert.strictEqual(TEAM.suitesWithoutPipeline(undefined), null);
   // cada regla que el lector acepta tiene su respuesta
   for (const r of TEAM.MERGE_RULES) assert.notStrictEqual(TEAM.suitesWithoutPipeline(r), null, r);
+});
+
+// ── los niveles neutros de modelo ────────────────────────────────────────────────────────────────────────
+const conModels = (models) => TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { models })));
+const problemasDeModels = (models) => ((conModels(models).sectionProblems || {}).models || []);
+
+test('T5 Models_LevelsValid @story-2.70 @ac-1', () => {
+  for (const nivel of ['economy', 'balanced', 'strong', 'max']) {
+    const models = { reviewers: nivel, reviewer: { 'tycon-spec-first-checker': nivel }, reviewers_reloop: nivel,
+      adversarial: { model: nivel, heavy: nivel }, helpers: nivel, session: { low: nivel, normal: nivel, heavy: nivel },
+      mandatory_ceiling: true, ceiling: 'max' };
+    const r = conModels(models);
+    assert.deepStrictEqual(problemasDeModels(models), [], nivel);
+    assert.deepStrictEqual(r.data.models, models, `${nivel}: el lector no lo descarta`);
+  }
+});
+
+test('T6 Models_MixedAndCeilingByLevel @story-2.70 @ac-3', () => {
+  const mezclado = { reviewers: 'balanced', helpers: 'haiku', adversarial: { model: 'sonnet', heavy: 'strong' } };
+  assert.deepStrictEqual(problemasDeModels(mezclado), []);
+  assert.deepStrictEqual(TEAM.modelsAboveCeiling(mezclado), [], 'sin tope, ninguno');
+  // tope en nivel con un nombre declarado arriba, y tope en nombre con un nivel arriba: la misma comparación
+  const arriba = TEAM.modelsAboveCeiling({ mandatory_ceiling: true, ceiling: 'strong', reviewers: 'fable', helpers: 'opus' });
+  assert.deepStrictEqual(arriba.map((p) => p.path), ['models.reviewers']);
+  assert.match(arriba[0].message, /^pasa el tope obligatorio \(strong\)$/);
+  const alReves = TEAM.modelsAboveCeiling({ mandatory_ceiling: true, ceiling: 'opus', reviewers: 'max', helpers: 'strong' });
+  assert.deepStrictEqual(alReves.map((p) => p.path), ['models.reviewers']);
+  assert.match(alReves[0].message, /\(strong\)$/);
+});
+
+test('T7 Models_UnknownValueListsLevels @story-2.70 @ac-4', () => {
+  for (const malo of ['gpt-5.6-luna', 'medio']) {
+    const ps = problemasDeModels({ reviewers: malo });
+    assert.deepStrictEqual(ps.map((p) => p.path), ['models.reviewers'], malo);
+    assert.match(ps[0].message, /«economy», «balanced», «strong», «max»/);
+    assert.ok(ps[0].message.includes(JSON.stringify(malo)), ps[0].message);
+  }
 });

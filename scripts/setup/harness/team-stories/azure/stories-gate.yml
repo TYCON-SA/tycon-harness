@@ -1,19 +1,15 @@
 # Pipeline del repo de ESPECIFICACIONES — una sola etapa: el portón de controles del arnés.
 #
-# 🔴 POR QUÉ EXISTE ESTE ARCHIVO (2026-08-31)
+# 🔴 POR QUÉ EXISTE ESTE ARCHIVO
 #
 # El portón (`tycon-ci-gate.js`) revisa las stories que un cambio declara `review`/`done` y exige
-# su evidencia en el repo. Se había instalado sólo en los repos de CÓDIGO — pero las stories no
-# viven ahí: viven acá. Medido el 2026-08-31 en los repos del equipo que escribió esta
-# plantilla: cientos de stories fuera de alcance, y en un caso el desbalance era TOTAL —más de
-# cien stories en el repo de historias y **0** en sus repos de código. Poner el portón sólo allá
-# habría sido verde permanente vigilando nada.
-# En esos repos el portón corría, no encontraba nada, y salía VERDE — que es el
-# modo de falla exacto contra el que el arnés escribe sus reglas: "0 hallazgos" se lee como
-# "salió limpio" cuando en realidad no había nada que mirar.
+# su evidencia en el repo. Las stories no viven en los repos de CÓDIGO: viven acá. Poner el
+# portón sólo allá sería verde permanente vigilando nada: el portón corre, no encuentra nada,
+# y sale VERDE — que es el modo de falla exacto contra el que el arnés escribe sus reglas:
+# "0 hallazgos" se lee como "salió limpio" cuando en realidad no había nada que mirar.
 #
-# Este repo no compila nada, así que el pipeline no construye ni despliega: sólo el portón y, desde el
-# 2026-10-04, el buscador de secretos sobre lo que trae cada pedido (job SecretScan, al final).
+# Este repo no compila nada, así que el pipeline no construye ni despliega: sólo el portón y el
+# buscador de secretos sobre lo que trae cada pedido (job SecretScan, al final).
 #
 # 🔴 `trigger: none` + `pr: none` A PROPÓSITO. Este pipeline NO se dispara solo: lo encola la
 # política de rama ("Build validation") cuando se abre un Pull Request contra main. Declarar un
@@ -47,8 +43,8 @@ stages:
           # El arnés llega por clon (abajo), no por checkout: el repo propio queda solo en $(Build.SourcesDirectory).
           - checkout: self
             fetchDepth: 0
-            # 🔴 2026-08-31: sin esto, el `git fetch` de abajo NO tiene credenciales y falla con
-            # "could not read Username" — y estaba tapado con `|| true`. El portón funcionaba de
+            # 🔴 Sin esto, el `git fetch` de abajo NO tiene credenciales y falla con
+            # "could not read Username"; taparlo con `|| true` haría que el portón funcionara de
             # casualidad, porque `fetchDepth: 0` ya trae la rama destino.
             persistCredentials: true
           # El arnés se baja de su repo público (variables harnessRepoUrl y harnessRef), por clon y sin credencial.
@@ -73,7 +69,7 @@ stages:
                 echo "##vso[task.logissue type=error]No se encontró el portón en $GATE — un control ausente NO es un control aprobado (¿cambió la ruta en el arnés público?)"
                 exit 1
               fi
-              # 🔴 2026-08-31: el fetch YA NO se tapa con `|| true`. Si no puede actualizar la rama
+              # 🔴 El fetch NO se tapa con `|| true`. Si no puede actualizar la rama
               # destino se DICE, y si la referencia directamente no está en el clon el portón no
               # puede comparar nada — y un control que no puede correr NO está aprobado.
               if ! git -C "$REPO" fetch --no-tags origin "$TARGET"; then
@@ -86,9 +82,8 @@ stages:
               node "$GATE" --repo "$REPO" --base "origin/$TARGET"
             displayName: 'tycon-ci-gate (--base = rama destino del PR)'
 
-      # 🔴 2026-10-04 — BUSCADOR DE SECRETOS (gitleaks). Caso: contraseñas SQL —una, la de la base de producción—
-      # quedaron escritas tal cual en `.advisors/dod-runtime/*-smoke-ledger.jsonl` de un repo de historias, que
-      # sólo tenía el portón del arnés; los repos de código ya corrían gitleaks. Mismo motor y misma versión fija.
+      # 🔴 BUSCADOR DE SECRETOS (gitleaks). Un repo de historias puede traer contraseñas escritas tal cual
+      # en `.advisors/dod-runtime/*-smoke-ledger.jsonl`, y el portón no las ve; los repos de código ya corrían gitleaks. Mismo motor y misma versión fija.
       #
       # 🔴 Escanea SÓLO los commits que trae el pull request (`origin/<destino>..HEAD`), no el árbol entero: el
       # árbol de un repo de historias puede traer secretos viejos (curls de ejemplo, documentos de socios) y un
@@ -116,7 +111,7 @@ stages:
                 echo "##vso[task.logissue type=error]No existe origin/$TARGET en el clon — no se puede saber qué trae el PR"
                 exit 1
               fi
-              # Bajar la imagen ANTES, con reintento: un 502 del registro no es un hallazgo (2026-09-02).
+              # Bajar la imagen ANTES, con reintento: un 502 del registro no es un hallazgo.
               bajar() {
                 for intento in 1 2 3; do
                   docker pull -q "$1" >/dev/null && return 0

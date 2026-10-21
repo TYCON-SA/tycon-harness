@@ -1,12 +1,11 @@
 'use strict';
-// relocate.js — `harness.js relocate [--check]`: muda A MANO lo registrado por el nombre viejo del lugar del arnés
-// (story 8.19, tanda B · AC 17 y 18).
+// relocate.js — `harness.js relocate [--check]`: muda A MANO lo registrado por el nombre viejo del lugar del arnés.
 //
-// ── EL CASO (2026-10-04) ──────────────────────────────────────────────────────────────────────────────────────────
-// El lugar del arnés pasó a llamarse como el repo público (`place.js`) y el nombre viejo sigue resolviendo en las
+// ── EL PORQUÉ ─────────────────────────────────────────────────────────────────────────────────────────────────────
+// El lugar del arnés se llama como el repo público (`place.js`) y el nombre viejo sigue resolviendo en las
 // máquinas ya instaladas. Lo que una máquina registró por el nombre viejo —hooks, permisos, los `.local` de git, Codex,
-// LaunchAgents, comandos y la línea de CLAUDE.md— sigue andando, pero el día que el viejo se retire (8.15) se rompe.
-// El dueño decidió que NINGUNA máquina se mude sola: la mudanza por el perfil es el primer paso del retiro. Esto es el
+// LaunchAgents, comandos y la línea de CLAUDE.md— sigue andando, pero el día que el viejo se retire se rompe.
+// Ninguna máquina se muda sola: la mudanza por el perfil es el primer paso del retiro. Esto es el
 // comando a mano. `startup`, `update` y `apply` nunca lo llaman.
 //
 // ── QUÉ HACE, EN ORDEN ────────────────────────────────────────────────────────────────────────────────────────────
@@ -75,7 +74,7 @@ function preconditions(ctx, state, { bootstrap }) {
     return out;
   }
   // sin el viejo (o colgado) lo que quedó registrado por él está roto, y mudarlo es justo lo que sirve: --reroot es
-  // textual y no necesita que el viejo exista (pase adversarial de la tanda B, C1)
+  // textual y no necesita que el viejo exista
   const rp = real(place); const rl = st ? real(legacy) : null;
   if (!rp) out.problems.push(`el lugar ${place} no resuelve, y sin él no hay a dónde mudar — harness.js install (o install-tycon-hooks.sh) lo crea; después, harness.js relocate`);
   else if (rl && !PLACE.samePath(rp, rl, ctx.platform)) out.problems.push(`el lugar (→ ${rp}) y el nombre viejo (→ ${rl}) son carpetas distintas: elegí una con install-tycon-hooks.sh --link <ruta>; después, harness.js relocate`);

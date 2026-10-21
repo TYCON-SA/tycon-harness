@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * bench-notice.js — destino del reporte del controls-bench (Etapa B del plan codex-migration.md).
+ * bench-notice.js — destino del reporte del controls-bench.
  *
  * Hook SessionStart (mismo mecanismo que los meters de estilo/bloqueo): si la ÚLTIMA corrida
  * del banco dejó rojos —casos fallados, paridad rota o regresiones vs la línea de base— lo
@@ -14,13 +14,13 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
-// Las variables renombradas a inglés (story 8.9): el nombre viejo sigue valiendo hasta el retiro. Sin la biblioteca al
+// Las variables renombradas a inglés: el nombre viejo sigue valiendo hasta el retiro. Sin la biblioteca al
 // lado (el hook copiado a un arnés de mentira, como hace el banco): paso directo con el nombre nuevo, fail-open.
-// Lo mismo con el sello del examen renombrado en la tanda D2: el nombre nuevo y, si falta, el viejo.
+// Lo mismo con el sello del examen renombrado: el nombre nuevo y, si falta, el viejo.
 const { leerVariable, leerEstado } = (() => {
   try {
     const { readEnv, resolveFile } = require(path.join(__dirname, '..', 'lib', 'legacy-names.js'));
@@ -45,13 +45,13 @@ const CONTROL = new RegExp('[' + String.fromCharCode(0) + '-' + String.fromCharC
   + String.fromCharCode(0x2028) + String.fromCharCode(0x2029) + ']+', 'g');
 const limpio = (t, max = 160) => String(t === undefined || t === null ? '' : t).replace(CONTROL, ' ').trim().slice(0, max);
 
-// ── nocturnos (story 8.3, AC 9 — la octava integración) ─────────────────────────────────────────
+// ── nocturnos ─────────────────────────────────────────
 // «Esta máquina espera los resultados de los procesos nocturnos del equipo». Apagada (sin perfil del equipo ni
 // llave), el banco NOCTURNO y las suites NOCTURNAS detenidos no se denuncian: afuera gritarían «NO ESTÁ CORRIENDO»
 // en cada arranque por procesos que esa máquina no tiene. Lo LOCAL (.bench/, sellos) sigue. El examen de revisores
-// también sigue hablando siempre (decisión del dev, 2026-09-26). Con la configuración ROTA: el aviso en cada arranque
-// y lo nocturno no se hace (AC 2). Sin la lib al lado (un hook copiado a un arnés de mentira, como hace el banco):
-// como hoy — fail-open. El perfil del equipo la prende: adentro nada cambia.
+// también sigue hablando siempre. Con la configuración ROTA: el aviso en cada arranque
+// y lo nocturno no se hace. Sin la lib al lado (un hook copiado a un arnés de mentira, como hace el banco):
+// con los nocturnos prendidos — fail-open. El perfil del equipo la prende: adentro nada cambia.
 let NOCTURNOS = true;
 try {
   const cfg = require(path.join(__dirname, '..', 'lib', 'tycon-config.js'));
@@ -61,21 +61,20 @@ try {
     NOCTURNOS = n.prendida;
   }
 } catch (e) {
-  // sin la lib al lado (hook copiado a un arnés de mentira): como hoy. Cualquier OTRO error del lector se dice —
-  // un hook no frena, pero tragarlo dejaría un bug del lector invisible en todos los hooks a la vez (revisor de
-  // fallos silenciosos, tanda B).
+  // sin la lib al lado (hook copiado a un arnés de mentira): con los nocturnos prendidos. Cualquier OTRO error del lector se dice —
+  // un hook no frena, pero tragarlo dejaría un bug del lector invisible en todos los hooks a la vez
   if (!(e && e.code === 'MODULE_NOT_FOUND')) console.log(`bench-notice: el lector de configuración falló (${limpio(e && e.message)}) — sigo como si los nocturnos estuvieran prendidos`);
 }
 
-// TYCON_BENCH_DIR: override PARA EL BANCO (2026-08-25) — sin él, los casos del propio notice no
+// TYCON_BENCH_DIR: override PARA EL BANCO — sin él, los casos del propio notice no
 // pueden aislarse del .bench real y un laboratorio con sello trucho leería los reportes de verdad.
 const BENCH = process.env.TYCON_BENCH_DIR || path.join(__dirname, '..', 'controls-bench', '.bench');
 
 // El umbral de vejez lo define el PRODUCTOR del reporte de paridad (su cadencia); acá sólo se
 // consume. Fallback local si la lib no está (clon viejo). Un ts ilegible cuenta como viejo:
-// fail-closed — NaN comparaba false y el reporte ilegible quedaba eternamente "fresco".
+// fail-closed — NaN compara false y el reporte ilegible quedaría eternamente "fresco".
 let STALE_MS = 3 * 24 * 60 * 60 * 1000;
-// y dónde ESCRIBE el reporte de paridad (story 8.23, tanda G): en una versión bajada va a la carpeta del estado, no a
+// y dónde ESCRIBE el reporte de paridad: en una versión bajada va a la carpeta del estado, no a
 // .bench/ del árbol; la decide el productor, acá sólo se lee. Sin la lib (clon viejo), el de .bench/ de siempre.
 let PARITY_REPORT = null;
 try {
@@ -88,7 +87,7 @@ function esViejo(ts) {
   return isNaN(t) || (Date.now() - t) > STALE_MS;
 }
 
-// ── El examen periódico de revisores (Story 1.1) ───────────────────────────────────────────────
+// ── El examen periódico de revisores ───────────────────────────────────────────────
 // 🔴 Su umbral es OTRO y vive en un solo lugar: `periodic-exam.js`. Son dos preguntas
 // distintas — `STALE_MS` contesta "¿cuán vieja es esta foto de paridad?" y el de allá contesta
 // "¿el examen está corriendo?" —. Unificarlas las rompería a las dos, así que acá se importa,
@@ -96,18 +95,18 @@ function esViejo(ts) {
 // se pudo evaluar, que es lo honesto — un "no sé" callado se lee igual que un verde.
 let EXAMEN = null;
 try { EXAMEN = require(path.join(__dirname, '..', 'controls-bench', 'periodic-exam.js')); } catch { /* clon viejo */ }
-// 🔴 "NO MEDIDO" NO SE PINTA DE CERO (Story 1.1, 2026-09-10). El chequeo de vida hace una corrida
+// 🔴 "NO MEDIDO" NO SE PINTA DE CERO. El chequeo de vida hace una corrida
 // por caso sobre una herramienta, así que la inestabilidad y la paridad son imposibles de medir —
-// y el reporte las publicaba en 0, y este aviso las mostraba así en cada arranque, al lado de los
-// rubros que sí se midieron. El criterio vive en UN archivo (lo usa también el corredor al
-// escribir) y se deriva de `tool`/`runs`, que todo reporte real trae: así el reporte que HOY está
+// y publicarlas en 0 las mostraría en cada arranque al lado de los
+// rubros que sí se midieron, como si fueran un verde. El criterio vive en UN archivo (lo usa también el corredor al
+// escribir) y se deriva de `tool`/`runs`, que todo reporte real trae: así el reporte que ya está
 // en disco se corrige en el arranque siguiente, sin esperar a la próxima corrida. Con un clon
-// viejo (sin el hermano) se muestra como antes — fail-open, como todo en este archivo.
+// viejo (sin el hermano) se muestra tal cual — fail-open, como todo en este archivo.
 let rubrosNoMedidos = () => ({ inestables: null, paridad: null });
 try { ({ rubrosNoMedidos } = require(path.join(__dirname, '..', 'controls-bench', 'unmeasured-categories.js'))); } catch { /* clon viejo */ }
 // 🔴 De dónde se leen la máquina designada y el resultado: lo decide el examen (`lugarDelExamen`), para que el aviso mire
 // lo mismo que el disparador y la corrida. En una versión bajada es el clon de mantenimiento: leer la copia pública
-// (vacía) callaba sobre el examen y dejaba el sello de la corrida sin reporte que lo respalde (2026-10-13).
+// (vacía) callaría sobre el examen y dejaría el sello de la corrida sin reporte que lo respalde.
 let LUGAR_EXAMEN = null;
 try { if (EXAMEN && typeof EXAMEN.lugarDelExamen === 'function') LUGAR_EXAMEN = EXAMEN.lugarDelExamen(); } catch { /* clon viejo */ }
 const RUTA_EXAMEN = leerVariable('TYCON_EXAM_REPORT')
@@ -117,12 +116,12 @@ function readJson(p) {
   try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; }
 }
 
-// ── ¿Alguien corre el examen? (story 8.4, AC 28) ──────────────────────────────────────────────────
+// ── ¿Alguien corre el examen? ──────────────────────────────────────────────────
 // El examen corre sólo en la máquina que designa `exam-config.json`. Con el archivo presente y SIN máquina designada
 // —la copia pública la deja vacía: afuera nadie corre ese examen— el aviso calla sobre él: si no, diría «NO ESTÁ
 // CORRIENDO» en cada arranque, para siempre, por un proceso que nadie tiene. Sin el archivo, o ilegible, no se sabe si
 // alguien lo corre: el aviso sigue como siempre (un «no sé» callado se lee igual que un verde). Con máquina designada
-// —el equipo— nada cambia: sigue la decisión del 2026-09-26 de que el examen avisa siempre.
+// —el equipo— nada cambia: el examen avisa siempre.
 function examenSinMaquinaDesignada() {
   const ruta = leerVariable('TYCON_EXAM_CONFIG') || (LUGAR_EXAMEN && LUGAR_EXAMEN.config)
     || path.join(__dirname, '..', 'controls-bench', 'exam-config.json');
@@ -131,21 +130,21 @@ function examenSinMaquinaDesignada() {
   return !String(cfg.designated_machine == null ? '' : cfg.designated_machine).trim();
 }
 
-// ── El banco de controles NOCTURNO (2026-09-05) ─────────────────────────────────────────────────
-// El banco determinista dejó de correr en las máquinas: corre de noche en Azure DevOps
+// ── El banco de controles NOCTURNO ─────────────────────────────────────────────────
+// El banco determinista corre de noche en Azure DevOps
 // (pipelines/azure-pipelines-banco.yml) y su reporte viaja por git, FUERA de `.bench/` (que git ignora),
-// para que todas las máquinas lean la MISMA foto. Motivo: en la máquina del dev corría dos veces
-// por arranque, la segunda en cada sesión, y dos bancos superpuestos agotaban el tiempo de los
-// casos — el aviso gritó "regresiones" durante días sin un defecto real detrás.
+// para que todas las máquinas lean la MISMA foto. Correrlo también en cada máquina lo ejecutaría dos veces
+// por arranque, y dos bancos superpuestos agotan el tiempo de los
+// casos — el aviso gritaría "regresiones" sin un defecto real detrás.
 // Criterio, el mismo que dependencies-notice: sin reporte = todavía no se estrenó (nada que decir);
 // reporte con más de dos días = NO ESTÁ CORRIENDO, y se callan los números viejos; fresco con
 // rojos o no medidos = se dicen; fresco y limpio = silencio.
 const BANCO_VEJEZ_MS = 2 * 24 * 60 * 60 * 1000; // corre todas las noches: dos sin foto = se detuvo
 
-// ── De dónde se leen las dos fotos nocturnas (story 8.26, tanda J · scripts/lib/night-data.js) ────
+// ── De dónde se leen las dos fotos nocturnas (scripts/lib/night-data.js) ────
 // Una versión bajada no trae `ultimo-banco.json` ni `ultimo-suites.json` al lado de este hook: los nocturnos los dejan
-// en el repo de mantenimiento. Medido el 2026-10-12 en la máquina de quien mantiene: los dos nocturnos sanos y este
-// aviso mudo, igual que si no corrieran. Orden de lectura, uno solo para TODOS los que miran una foto (la fecha con que
+// en el repo de mantenimiento. Con los dos nocturnos sanos, sin leer de ahí este
+// aviso quedaría mudo, igual que si no corrieran. Orden de lectura, uno solo para TODOS los que miran una foto (la fecha con que
 // se tapan los reportes locales viejos, y el estado que se dice):
 //   1. la variable de siempre (`TYCON_BENCH_REPORT`, `TYCON_SUITES_REPORT`): manda, y lee ese disco;
 //   2. en la máquina que declara su clon de mantenimiento, lo PUBLICADO en ese clon (`origin/main`, sin red) y, si git
@@ -221,7 +220,7 @@ const BANCO_TS = (() => {
 })();
 
 // Las SUITES nocturnas juegan el mismo juego que el banco: reporte que viaja, denuncia si
-// envejece, silencio si está fresco y limpio (2026-09-05).
+// envejece, silencio si está fresco y limpio.
 /** La fecha de la foto nocturna de suites, o null (sin foto, ilegible, o nocturnos apagada). */
 function tsSuitesNocturnas() {
   if (!NOCTURNOS) return null;
@@ -247,11 +246,9 @@ function estadoDeLasSuitesNocturnas() {
   }
   if (delFuturo(foto, t)) return [`🟡 suites de prueba nocturnas: la foto dice ser del ${fecha}, posterior a hoy — no se lee como el estado de la noche${foto.nota}`];
   const f = rep.failures || [];
-  // 🔴 La EDAD de la foto va en la línea (2026-09-06, pedido del dev): esto no mide nada, muestra lo
+  // 🔴 La EDAD de la foto va en la línea: esto no mide nada, muestra lo
   // que vio el nocturno de la madrugada. Un rojo que se arregló durante el día se sigue mostrando
-  // hasta la corrida siguiente, y sin la edad se lee como «está roto AHORA»: pasó el 06-09 con
-  // sdlc-transitions-nightly.test.sh, que a las 05:08 UTC estaba roja de verdad (un commit de esa
-  // madrugada aún sin pushear) y a la mañana ya pasaba, con tres sesiones repitiendo el mismo aviso.
+  // hasta la corrida siguiente, y sin la edad se lee como «está roto AHORA».
   const horas = isNaN(t) ? null : Math.floor((Date.now() - t) / 3600000);
   const cuando = horas === null ? '' : horas < 1 ? ', recién' : horas < 24 ? `, hace ${horas} h` : `, hace ${Math.floor(horas / 24)} día(s)`;
   if (!f.length) {
@@ -265,12 +262,12 @@ function estadoDeLasSuitesNocturnas() {
     if (idas) return [`🟡 ${cab}: ninguna en rojo, pero ${idas} suite(s) de la foto anterior no corrieron — la noche no está completa · detalle: scripts/controls-bench/ultimo-suites.json${foto.nota}`];
     return [`✅ ${cab}: ${corridas} corrida(s), ninguna en rojo${foto.nota}`];
   }
-  // El MOTIVO al lado del nombre (2026-09-14, PIPE-DEBT-2.13-b): con el nombre solo, saber por qué
-  // estaba roja exigía volver a correrla. Corto a propósito; el reporte trae hasta tres líneas.
+  // El MOTIVO al lado del nombre: con el nombre solo, saber por qué
+  // está roja exige volver a correrla. Corto a propósito; el reporte trae hasta tres líneas.
   const motivos = rep.motivos && typeof rep.motivos === 'object' ? rep.motivos : {};
-  // 🔴 «No medida» no es «roja» (2026-10-04). Desde que las suites corren en trabajos paralelos, las de un trabajo que
+  // 🔴 «No medida» no es «roja». Desde que las suites corren en trabajos paralelos, las de un trabajo que
   // no terminó viajan en `failures` con su marca y, aparte, en `unmeasured`. Contadas como rojas y listadas una por
-  // una, un solo trabajo cortado eran 108 nombres y 8.328 caracteres en cada arranque de cada máquina. Las rojas se
+  // una, un solo trabajo cortado llenaría de nombres cada arranque de cada máquina. Las rojas se
   // nombran; las no medidas se CUENTAN, agrupadas por su motivo («el trabajo 2 no terminó»). El detalle, en el reporte.
   const noMedidas = Array.isArray(rep.unmeasured) ? f.filter((n) => rep.unmeasured.includes(n)) : [];
   const rojas = f.filter((n) => !noMedidas.includes(n));
@@ -334,10 +331,10 @@ function estadoDelBancoNocturno() {
     + ' · detalle: scripts/controls-bench/ultimo-banco.json' + foto.nota];
 }
 
-// ── ¿El sello diario lo escribió el JOB, o una mano? (§5.3, 2026-08-25) ─────────────────────────
+// ── ¿El sello diario lo escribió el JOB, o una mano? ─────────────────────────
 // Los frenos diarios se gatean por un archivo-sello con la fecha (`*-last-run`): si dice hoy, la
-// suite no corre. Reproducido: `echo 2026-08-25 > ~/.claude/.tycon-pipeline/bash-tests-last-run`
-// saltea la tanda del día sin error y sin rastro — el mismo patrón de C1, sobre el estado local.
+// suite no corre. Con `echo $(date +%F) > ~/.claude/.tycon-pipeline/bash-tests-last-run`
+// se saltea la tanda del día sin error y sin rastro, sobre el estado local.
 // La detección usa lo que el flujo legítimo YA produce: el job escribe SIEMPRE su reporte en
 // .bench/ ANTES del sello, así que un sello de hoy con reporte viejo (o sin reporte) no salió del
 // job. No se bloquea nada: se grita acá, que es el canal donde ya se cobran los rojos del banco.
@@ -357,11 +354,11 @@ function selloSinReporte(stampPath, reportPath, etiqueta) {
 }
 
 /**
- * ¿El examen de los 28 revisores está corriendo? (Story 1.1, AC 5/8/13b/22/23)
+ * ¿El examen de los 28 revisores está corriendo?
  *
- * 🔴 Hasta hoy este aviso hablaba SÓLO si había fallas, y leía SÓLO `.bench/` — que git ignora.
- * O sea: el resultado del examen no salía nunca de la máquina que lo corrió, y "no corrió" y
- * "corrió verde hace nueve días" eran exactamente el mismo silencio. Ése es el bug de fondo: una
+ * 🔴 Este aviso habla aunque no haya fallas, y lee también el reporte que viaja por git (`.bench/` lo ignora git).
+ * Sin eso, el resultado del examen no sale de la máquina que lo corrió, y "no corrió" y
+ * "corrió verde hace nueve días" son el mismo silencio: una
  * foto vieja mostrada sin fecha se lee como el estado de esta semana.
  *
  * Devuelve las líneas a decir. Vacío = hay una medición completa y fresca, y no tenía rojos:
@@ -389,27 +386,27 @@ function estadoDelExamen(benchDir) {
       + ` — sus números no se muestran a propósito: no son el estado de esta semana`
       + ` · diagnóstico: node scripts/controls-bench/periodic-exam.js --dry-run`);
   } else {
-    // 🔴 `erroresDeCorrida` y `skippedMcp` CUENTAN. Los dos los reprodujo el pase adversarial: un
+    // 🔴 `erroresDeCorrida` y `skippedMcp` CUENTAN. Sin contarlos, un
     // reporte fresco y "completo" con 30 casos caídos en error de corrida, y los otros contadores
-    // en cero, no imprimía absolutamente nada — silencio, o sea verde. Y los casos salteados por un
-    // servidor MCP ausente tampoco: el propio examen los llama "constancia, no verde", pero acá se
-    // perdían. La rama hermana de este mismo archivo (la de los reportes locales) ya usaba `failed`,
-    // que sí los incluye: la inconsistencia era sólo del camino nuevo.
+    // en cero, no imprimiría absolutamente nada — silencio, o sea verde. Y los casos salteados por un
+    // servidor MCP ausente tampoco se pueden perder: el propio examen los llama "constancia, no verde".
+    // La rama hermana de este mismo archivo (la de los reportes locales) ya usa `failed`,
+    // que sí los incluye.
     const errores = rep.erroresDeCorrida || 0;
     const salteados = rep.skippedMcp || 0;
-    // 🔴 LAS FUGAS TAMBIÉN SE DENUNCIAN (2026-09-01). Con el desglose nuevo, un examen que se
-    // escapó del corral deja `criterio` en cero — y sin esta línea el aviso se quedaba callado
-    // sobre 99 corridas que NO quedaron aisladas, o sea que cantaba verde una corrida no medida.
+    // 🔴 LAS FUGAS TAMBIÉN SE DENUNCIAN. Con el desglose, un examen que se
+    // escapa del corral deja `criterio` en cero — y sin esta línea el aviso queda callado
+    // sobre corridas que NO quedaron aisladas, o sea que canta verde una corrida no medida.
     // Es el mismo error que la nota de arriba documenta para `erroresDeCorrida`, con otro nombre.
     const fugas = rep.fugas || 0;
     const rojos = (rep.criterio || 0) + (rep.inestables || 0) + (rep.paridadReal || 0)
       + (rep.baselineRegressions || 0) + errores + salteados + fugas;
-    // Lo que esta corrida NO pudo medir se dice con esas palabras, nunca "0" (Story 1.1). No suma
+    // Lo que esta corrida NO pudo medir se dice con esas palabras, nunca "0". No suma
     // rojos —no dice nada del revisor— y NO fuerza la línea: un examen fresco y sin rojos sigue
     // callado (caso `quiet-examen-fresco-y-verde` del banco). Con el chequeo de vida estos dos
     // rubros quedan sin medir en TODA corrida, por diseño; hablar por eso sería una línea en cada
     // arranque para siempre, y un aviso que sale siempre se ignora. El silencio no afirma nada;
-    // lo que afirmaba era el 0 — y ése ya no se imprime ni cuando la línea sale (T50, T54).
+    // lo que afirmaría algo es el 0, y ése no se imprime ni cuando la línea sale (T50, T54).
     const nm = rubrosNoMedidos({ tool: rep.tool, runs: rep.runs });
     const inestables = nm.inestables
       ? `inestables NO MEDIDOS (${nm.inestables})`
@@ -446,8 +443,8 @@ function estadoDelExamen(benchDir) {
 // banco. Todo lo de abajo vive dentro de un único bloque que atrapa cualquier error y se calla
 // (fail-open: un aviso jamás puede romper el arranque de sesión) — así que si la denuncia del
 // examen se computara ahí adentro, un reporte corrupto de OTRO control, o un permiso mal puesto,
-// la borraría sin dejar rastro. Sería reintroducir, por la puerta del arreglo, el mismo fallo
-// silencioso que esta pieza vino a cerrar. Su reporte además vive FUERA de `.bench/`, así que una
+// la borraría sin dejar rastro: un fallo silencioso, justo lo que esta pieza evita.
+// Su reporte además vive FUERA de `.bench/`, así que una
 // máquina que nunca corrió el banco igual tiene que enterarse de que el examen se detuvo.
 try {
   for (const l of estadoDelExamen(BENCH)) console.log(l);
@@ -470,15 +467,15 @@ if (NOCTURNOS) {
 try {
   const problems = [];
   // sin .bench/ no hay nada que cobrar… salvo el reporte de paridad, que en una versión bajada vive en la carpeta del
-  // estado y el árbol bajado no trae .bench/ (git lo ignora): salir acá lo callaba para siempre (pase adversarial, tanda G)
+  // estado y el árbol bajado no trae .bench/ (git lo ignora): salir acá lo callaría para siempre
   const parityElsewhere = Boolean(PARITY_REPORT && path.dirname(PARITY_REPORT) !== BENCH && fs.existsSync(path.dirname(PARITY_REPORT)));
   if (!fs.existsSync(BENCH) && !parityElsewhere) process.exit(0);
   {
     const os = require('os');
     const ST = path.join(stateDirOf(os.homedir()));
     // Los 4 sellos diarios y el reporte que cada job deja. Las dos suites EN LÍNEA (backfill y
-    // matriz) empezaron a dejar reporte el 2026-08-25 para poder entrar acá: sin reporte, un sello
-    // escrito a mano en ésas era indetectable.
+    // matriz) dejan también reporte para poder entrar acá: sin reporte, un sello
+    // escrito a mano en ésas sería indetectable.
     for (const [stamp, rep, tag] of [
       ['bash-tests-last-run', 'bash-tests.json', 'suites bash diarias'],
       ['bash-tests-semanal-last-run', 'bash-tests-semanal.json', 'suites bash semanales (las caras: vacuidad del banco)'],
@@ -502,8 +499,8 @@ try {
     if (i >= 0) reportFiles.splice(i, 1);
     reportFiles.push(['harness-parity.json', PARITY_REPORT]);
   }
-  // …y los del disparo real (live-fire-*.json), que desde el 2026-10-11 se escriben en esa misma carpeta del productor:
-  // en una versión bajada quedaban en .bench/ del árbol, que cada actualización reemplaza entero, y el rojo se iba con él
+  // …y los del disparo real (live-fire-*.json), que se escriben en esa misma carpeta del productor:
+  // en una versión bajada quedarían en .bench/ del árbol, que cada actualización reemplaza entero, y el rojo se iría con él
   if (PARITY_REPORT && path.dirname(PARITY_REPORT) !== BENCH) {
     const dir = path.dirname(PARITY_REPORT);
     let names = [];
@@ -519,17 +516,17 @@ try {
     if (!r) continue;
     if (/^last-run-.*-parcial-.*\.json$/.test(f)) {
       // Corrida ACOTADA del banco determinista (`--only`): NO es el estado general, y muchas son
-      // experimentos de "rojo previo" —el arreglo desactivado a propósito— que dejan rojos
-      // deliberados en el disco (2026-09-05: el arranque mostraba 14, 5 y 3 rojos de tres
-      // corridas así, con días de antigüedad, como si fueran del banco). Mismo criterio que las
+      // experimentos con el arreglo desactivado a propósito, que dejan rojos
+      // deliberados en el disco, con días de antigüedad, y el arranque los mostraría
+      // como si fueran del banco. Mismo criterio que las
       // acotadas del examen: complementarias, no estado.
       continue;
     }
     if (/^advisors-.*-parcial-.*\.json$/.test(f)) {
       // Corrida ACOTADA: la trata `estadoDelExamen()` como información complementaria. Acá se
       // saltea a propósito — si cayera en el brazo de abajo, tres revisores en verde se mostrarían
-      // con la misma cara que la foto de los 28, que es justo el error que la Story 1.1 vino a
-      // cerrar. (Y si cayera en el brazo de "kind desconocido", gritaría en cada arranque.)
+      // con la misma cara que la foto de los 28, que es justo el error a evitar.
+      // (Y si cayera en el brazo de "kind desconocido", gritaría en cada arranque.)
       continue;
     }
     if (r.kind === 'examen-periodico-intento') {
@@ -537,7 +534,7 @@ try {
       if (r.estado === 'no-viajo') {
         // Midió bien, pero el resultado no llegó a nadie. En la máquina que lo corrió el sello y el
         // reporte local quedan frescos, así que sin esta línea el único lugar donde se sabría sería
-        // el log de launchd — el canal invisible que esta pieza vino a reemplazar.
+        // el log de launchd — un canal invisible.
         problems.push(`el examen midió pero el resultado NO VIAJÓ (${String(r.ts || '').slice(0, 16)}): ${r.motivo || 'sin motivo'}`
           + ` — el resto del equipo no lo ve; hay que pushearlo a mano`);
       } else if (r.estado !== 'completo') {
@@ -547,28 +544,28 @@ try {
       continue;
     }
     if (f.startsWith('last-run-') || f.startsWith('advisors-')) {
-      // 🔴 Una foto LOCAL más vieja que el nocturno no se muestra (2026-09-05): desde que el banco
+      // 🔴 Una foto LOCAL más vieja que el nocturno no se muestra: como el banco
       // corre en Azure DevOps, el `last-run-*.json` de esta máquina es lo que quedó de la última
-      // vez que alguien lo corrió a mano — y con el lanzamiento local retirado, ese archivo va a
+      // vez que alguien lo corrió a mano — y sin lanzamiento local, ese archivo va a
       // envejecer para siempre gritando rojos que el nocturno ya dio por arreglados. Sólo se
       // muestra si es MÁS NUEVO que el nocturno (una corrida a mano de hoy sí es información).
       if (f.startsWith('last-run-') && BANCO_TS !== null && r.ts && Date.parse(r.ts) < BANCO_TS) continue;
-      // 🔴 Los NO MEDIDOS también hablan (2026-09-04). Son casos a los que se les agotó el
+      // 🔴 Los NO MEDIDOS también hablan. Son casos a los que se les agotó el
       // tiempo dos veces: no son rojos —no dicen nada del control— pero tampoco son verdes, y
       // una corrida con no medidos NO está completa. Si no se contaran acá, el aviso diría
       // "todo bien" sobre una foto con agujeros, que es el modo de falla que este arnés
       // persigue en todos lados ("no medido nunca es limpio").
       const noMedidos = r.nomedido || 0;
-      // En Windows una corrida también es roja por un hueco viejo de known-gaps.json (`staleGaps`, story 8.17): el
+      // En Windows una corrida también es roja por un hueco viejo de known-gaps.json (`staleGaps`): el
       // banco sale 1 por eso solo, y sin contarlo acá el aviso diría «todo bien».
       const total = (r.failed || 0) + (r.parityBreaks || 0) + (r.baselineRegressions || 0) + (r.staleGaps || 0) + noMedidos;
       if (total > 0) {
-        // 🔴 El aviso distingue CRITERIO de INESTABILIDAD cuando el reporte lo trae (2026-08-25).
-        // "19 rojos" mezclaba dos problemas opuestos —el revisor razona mal vs. el revisor cambia
-        // de opinión entre corridas— y se leía como el peor de los dos. Un aviso que no se puede
-        // usar para decidir es un aviso que se ignora: ese reporte estuvo un día en rojo sin que
-        // nadie lo mirara. Los reportes viejos (sin el desglose) se siguen mostrando como antes.
-        // Y lo que esa corrida NO pudo medir se nombra así, no "0" (Story 1.1) — mismo criterio
+        // 🔴 El aviso distingue CRITERIO de INESTABILIDAD cuando el reporte lo trae.
+        // "19 rojos" mezcla dos problemas opuestos —el revisor razona mal vs. el revisor cambia
+        // de opinión entre corridas— y se lee como el peor de los dos. Un aviso que no se puede
+        // usar para decidir es un aviso que se ignora.
+        // Los reportes sin el desglose se siguen mostrando como antes.
+        // Y lo que esa corrida NO pudo medir se nombra así, no "0" — mismo criterio
         // que la rama del examen que viaja, derivado de `tool`/`runs`.
         const nm = rubrosNoMedidos({ tool: r.tool, runs: r.runs });
         const desglose = typeof r.criterio === 'number'
@@ -581,10 +578,9 @@ try {
           : typeof r.paridadReal === 'number'
             ? `paridad rota ${r.paridadReal}${r.paridadPorInestabilidad ? ` (+${r.paridadPorInestabilidad} por ruido)` : ''}`
             : `paridad rota ${r.parityBreaks || 0}`;
-        // 🔴 La ANTIGÜEDAD va en el aviso (2026-08-28): un reporte de hace 4 días se leía igual
+        // 🔴 La ANTIGÜEDAD va en el aviso: un reporte de hace 4 días se lee igual
         // que uno de recién ("la última corrida"), y esa lectura hace perseguir rojos que quizá
-        // ya arregló lo que vino después. Caso: una corrida de esta suite se canceló a las 5h30
-        // y los rojos mostrados eran fotos anteriores a dos días de arreglos. Si el reporte trae
+        // ya arregló lo que vino después. Si el reporte trae
         // `nota` (cancelación, contexto), se muestra: es la explicación que evita el susto.
         const dias = r.ts ? Math.floor((Date.now() - new Date(r.ts).getTime()) / 86400000) : null;
         const edad = dias === null ? '' : dias >= 1 ? ` — FOTO DE HACE ${dias} DÍA(S), anterior a lo que se arregló después` : '';
@@ -601,18 +597,17 @@ try {
       // cayeran a la rama "sin dueño" de abajo, cada --prove-detection gritaría un falso rojo.
       if (!r.prove && (r.failures || []).length > 0) problems.push(`${f}: ${r.failures.join(' | ')} (${r.ts})`);
     } else if (f === 'harness-parity.json' || r.kind === 'harness-parity') {
-      // Paridad de instalación Claude↔Codex (Etapa H). Dos gritos, INDEPENDIENTES (la 2ª ronda
-      // adversarial cazó que como else-if un reporte viejo CON rojos nunca decía "dejó de
-      // correr"): superficies en rojo, y reporte viejo — pero SÓLO en máquinas con lado Codex
+      // Paridad de instalación Claude↔Codex. Dos gritos, INDEPENDIENTES (como else-if, un reporte viejo CON rojos
+      // nunca diría "dejó de correr"): superficies en rojo, y reporte viejo — pero SÓLO en máquinas con lado Codex
       // (deployed:true): en las demás no hay nada corriendo que pueda "dejar de correr".
       if (r.deployed && (r.reds || 0) > 0)
         problems.push(`${f}: ${r.reds} superficie(s) de paridad en rojo — ${(r.surfaces || []).filter((s) => !s.ok).map((s) => s.name).join(', ')} · correr: node scripts/lib/harness-audit.js --parity (${r.ts})`);
       if (r.deployed && esViejo(r.ts))
         problems.push(`${f}: el reporte de paridad quedó viejo (${r.ts || 'sin fecha'}) — la auditoría dejó de correr; revisá el bloque de paridad del instalador`);
     } else if (r.kind === 'backfill-tests' || r.kind === 'matrix-tests') {
-      // Desde el 2026-09-05 estas dos familias también corren en ADO (job `Suites`): el reporte
+      // Estas dos familias también corren en ADO (job `Suites`): el reporte
       // local es lo que quedó de la última corrida en esta máquina, y si es más viejo que el
-      // nocturno de suites no es el estado de nada (así apareció "11 suites en rojo" en una sesión).
+      // nocturno de suites no es el estado de nada.
       const SUITES_TS3 = tsSuitesNocturnas();
       if (SUITES_TS3 !== null && r.ts && Date.parse(r.ts) < SUITES_TS3) continue;
       // Suites diarias del instalador con el MISMO contrato que bash-tests: {kind, ts, failures[]}.
@@ -622,7 +617,7 @@ try {
       if ((r.failures || []).length > 0)
         problems.push(`${f}: suite(s) en rojo — ${r.failures.join(' · ')} (${r.ts})`);
     } else if (r.kind === 'bash-tests-semanal') {
-      // Las suites SEMANALES (la cara: vacuidad del banco). Desde el 2026-09-05 también corren en
+      // Las suites SEMANALES (la cara: vacuidad del banco). También corren en
       // ADO (job `Suites`, todas las noches — allá los 135 s no le cuestan a nadie); el reporte
       // local es lo que quedó de la última corrida en esta máquina y, si es más viejo que el
       // nocturno de suites, no es el estado de nada.
@@ -630,10 +625,10 @@ try {
       if (SUITES_TS2 !== null && r.ts && Date.parse(r.ts) < SUITES_TS2) continue;
       if ((r.failures || []).length > 0) problems.push(`${f}: suite(s) semanal(es) en rojo — ${r.failures.join(' · ')} (${r.ts})`);
     } else if (r.kind === 'bash-tests') {
-      // 🔴 Con las suites mudadas a ADO (2026-09-05), el bash-tests.json LOCAL es lo que quedó de la
+      // 🔴 Con las suites mudadas a ADO, el bash-tests.json LOCAL es lo que quedó de la
       // última corrida en esta máquina y no se refresca más: si es más viejo que el reporte
       // nocturno, no es el estado de las suites — es una foto vieja, y una foto vieja con rojos
-      // hace perseguir lo que el nocturno ya dio por verde (pasó esa misma madrugada en otra sesión).
+      // hace perseguir lo que el nocturno ya dio por verde.
       const SUITES_TS = tsSuitesNocturnas();
       if (SUITES_TS !== null && r.ts && Date.parse(r.ts) < SUITES_TS) continue;
       // La corrida diaria de suites bash del instalador (que corre DE FONDO: su stdout no llega
@@ -642,9 +637,9 @@ try {
         problems.push(`${f}: suite(s) bash en rojo — ${r.failures.join(' · ')} · diagnóstico: bash <suite> (${r.ts})`);
     } else if (r.kind) {
       // Un reporte con `kind` que ningún brazo reconoce NO se ignora: así un control nuevo no
-      // nace muerto. Los .json SIN kind (scratch de advisor-runner --json, ~45 en esta máquina)
-      // se ignoran como siempre — gritarlos habría sido una pared de 45 falsos rojos por
-      // arranque (2ª ronda adversarial, verificado contra el .bench real).
+      // nace muerto. Los .json SIN kind (scratch de advisor-runner --json)
+      // se ignoran como siempre — gritarlos sería una pared de falsos rojos por
+      // arranque.
       problems.push(`${f}: reporte con kind "${r.kind}" que bench-notice no reconoce — agregale su rama`);
     }
   }

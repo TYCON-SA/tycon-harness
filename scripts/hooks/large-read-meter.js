@@ -3,8 +3,8 @@
  * large-read-meter.js — hook `Stop`: MIDE cuánto se trajo el agente de un solo archivo en el
  * turno que cierra, y si pudo haberlo leído por rango.
  *
- * Por qué existe: medido en el análisis de tokens del 2026-09-19, el 88 % del costo de una corrida
- * es el hilo principal releyendo lo acumulado. Con el piso ya recortado (story 7.7), lo que queda
+ * Por qué existe: medido en el análisis de tokens, el 88 % del costo de una corrida
+ * es el hilo principal releyendo lo acumulado. Con el piso ya recortado, lo que queda
  * arriba es lo que el agente SE TRAE en cada respuesta. Eso no se arregla achicando archivos: se
  * arregla leyendo por rango. Y la lección medida del arnés es que la regla que nada verifica se
  * degrada — los otros dos medidores (estilo de respuesta, pasos largos) ya probaron que la forma
@@ -88,14 +88,13 @@ function archivoDe(cmd) {
  * menor complicación —tubería, encadenado, redirección, sustitución, comillas, varias líneas—
  * devuelve null y NO se cobra.
  *
- * Por qué así, y no un parseo más listo (decisión del dev, 2026-09-20, tras el pase adversarial):
- * la primera versión partía el comando en segmentos y buscaba patrones. El pase encontró 17
- * defectos en ese enfoque, todos de la misma familia, y tres muestran por qué no tiene arreglo por
+ * Por qué así, y no un parseo más listo: partir el comando en segmentos y buscar patrones tiene
+ * defectos de una misma familia, y tres muestran por qué no tiene arreglo por
  * partes:
- *   · `cat > script.sh <<EOF` + una línea `cat /etc/hostname` adentro → cobraba por un archivo que
- *     el comando ESCRIBE, no lee (42 de cada 200 sesiones reales de esta máquina).
- *   · `echo "usa cat aca" x.md` → cobraba, y nombraba un archivo llamado «aca», que no existe.
- *   · `/bin/cat gordo.md` → no cobraba, porque esperaba la palabra pelada.
+ *   · `cat > script.sh <<EOF` + una línea `cat /etc/hostname` adentro → cobraría por un archivo que
+ *     el comando ESCRIBE, no lee.
+ *   · `echo "usa cat aca" x.md` → cobraría, y nombraría un archivo llamado «aca», que no existe.
+ *   · `/bin/cat gordo.md` → no cobraría, porque espera la palabra pelada.
  * Entender comandos de terminal es casi un lenguaje entero (comillas, tuberías, redirecciones,
  * textos embebidos) y con búsqueda de patrones se pierde. **Un medidor que acusa en falso pierde
  * toda su autoridad**, así que el error se elige: se prefiere dejar pasar una lectura real antes
@@ -126,9 +125,9 @@ function lecturaEnteraBash(cmd) {
 /**
  * ¿Este comando fue una lectura ACOTADA? Alimenta el conteo del reporte.
  *
- * 🔴 Sale de `CONFIG` y de ningún otro lado: el AC 3 pide el umbral y las excepciones en UN solo
- * lugar, y una versión previa tenía acá una lista DUPLICADA y más corta — los turnos cuya única
- * lectura pasaba por `wc`, `python3` o `node` desaparecían del reporte sin dejar rastro.
+ * 🔴 Sale de `CONFIG` y de ningún otro lado: el umbral y las excepciones viven en UN solo
+ * lugar. Una segunda lista acá, más corta, haría desaparecer del reporte sin rastro los turnos cuya
+ * única lectura pasa por `wc`, `python3` o `node`.
  *
  * 🔴 Y lleva el MISMO guard de composición que `lecturaEnteraBash`. Sin él, un `cd /repo && cat
  * README.md` —que es una lectura ENTERA que elegimos no cobrar por no arriesgar una acusación
@@ -156,7 +155,7 @@ function lecturaEnteraRead(input) {
   const i = input || {};
   if (i.limit != null) return null;
   // `offset: 0` NO acota: lee desde el principio, igual que no pasar nada. Tratarlo como acotado
-  // era una puerta de escape indistinguible de una lectura entera (pase adversarial 2026-09-20).
+  // sería una puerta de escape indistinguible de una lectura entera.
   if (i.offset != null && Number(i.offset) !== 0) return null;
   return i.file_path || i.filePath || null;
 }
@@ -242,8 +241,8 @@ function measure(lines) {
             chars: texto.length,
             canal: u.name === 'Read' ? 'read' : 'bash',
             // 🔴 NO se guarda el comando: puede traer un token o una credencial tipeada en la
-            // línea, y quedaría en texto plano en disco sin barrido (hallazgo de seguridad
-            // 2026-09-20). Nadie lo usaba: ni el aviso ni el reporte. El archivo y el tamaño
+            // línea, y quedaría en texto plano en disco sin barrido.
+            // Nadie lo usa: ni el aviso ni el reporte. El archivo y el tamaño
             // alcanzan para explicar el cobro.
           });
         } else if (u.name === 'Read' || esLecturaAcotada(u.input.command)) {
@@ -439,9 +438,9 @@ function main() {
   } catch { /* fail-open */ }
 }
 
-// 🔴 El guard: sin él, `main()` corría al REQUERIR el archivo — se quedaba esperando stdin, o
-// mataba con `process.exit(0)` al proceso que lo requería. O sea, los exports de abajo eran
-// inalcanzables (confirmado dos veces en el pase adversarial 2026-09-20). Es el mismo guard que
+// 🔴 El guard: sin él, `main()` correría al REQUERIR el archivo — se quedaría esperando stdin, o
+// mataría con `process.exit(0)` al proceso que lo requería. O sea, los exports de abajo serían
+// inalcanzables. Es el mismo guard que
 // usan los otros hooks de esta carpeta que exportan funciones.
 if (require.main === module) {
   try { main(); } catch { /* fail-open: jamás romper el cierre del turno */ }

@@ -1,24 +1,22 @@
 #!/usr/bin/env bash
-# open-pr-per-finding.sh — el pull request que las dos colas nocturnas RECUERDAN (2026-09-10).
+# open-pr-per-finding.sh — el pull request que las dos colas nocturnas RECUERDAN.
 #
 # ─────────────────────────────────────────────────────────────────────────────────────────────
 # POR QUÉ EXISTE, Y POR QUÉ ES UNO SOLO
 #
-# Los dos nocturnos —dependencias y vigilante— abren un pull request por hallazgo, y desde el
-# 2026-09-05 reintentan cada noche el de toda ficha pendiente que no tenga uno ACTIVO. El reintento
-# nació de un caso real: una ficha se anunció cuando la identidad del pipeline no podía crear
-# ramas, el paso "salió bien" sin abrir nada, y pasó tres noches esperando una decisión sin un
-# lugar donde decidirse.
+# Los dos nocturnos —dependencias y vigilante— abren un pull request por hallazgo, y reintentan
+# cada noche el de toda ficha pendiente que no tenga uno ACTIVO. El reintento existe porque, si una
+# ficha se anuncia cuando la identidad del pipeline no puede crear ramas, el paso "sale bien" sin
+# abrir nada y la ficha espera noches una decisión sin un lugar donde decidirse.
 #
-# Lo que el reintento NO distingue es «no se pudo crear» de «una persona lo cerró». Un pull request
-# rechazado tampoco está activo. Medido contra Azure el 2026-09-10, en el vigilante eso pasó CINCO
-# veces en cuatro días: la rama de un mismo hallazgo (`vigilante/<id>`) recibió un pull request (rechazado a
-# las 4 h), otro (rechazado) y un tercero. Tres pull requests para una decisión ya tomada — guides/maintaining/incident-log.md#case-rejected-pr-retried-2026-09-10.
+# Lo que un reintento ingenuo NO distingue es «no se pudo crear» de «una persona lo cerró». Un pull
+# request rechazado tampoco está activo: la rama de un mismo hallazgo (`vigilante/<id>`) recibiría
+# un pull request tras otro para una decisión ya tomada.
 #
-# 🔴 Y va en UN guion que los dos YAML llaman, no copiado en los dos. Los dos bloques nacieron
-# iguales y en CINCO DÍAS ya se habían separado en tres lugares —entre ellos la guarda del literal
-# `$(…)` de los revisores, que se arregló en una copia y nunca llegó a la otra—. Este repo ya pagó
-# ese patrón con `release-notes.sh` en 8 repos, y lo cerró extrayendo el canónico a `scripts/ci/`.
+# 🔴 Y va en UN guion que los dos YAML llaman, no copiado en los dos. Dos bloques copiados se
+# separan enseguida —por ejemplo, la guarda del literal `$(…)` de los revisores se arreglaría en
+# una copia y nunca llegaría a la otra—. Este repo ya pagó ese patrón con `release-notes.sh` en 8
+# repos, y lo cerró extrayendo el canónico a `scripts/ci/`.
 #
 # ─────────────────────────────────────────────────────────────────────────────────────────────
 # LAS TRES REGLAS QUE ORDENAN EL GUION
@@ -55,10 +53,10 @@
 # sin crear otros.
 #
 # ─────────────────────────────────────────────────────────────────────────────────────────────
-# 🔴 ESTE GUION NO MUEVE EL CHECKOUT (story 8.26, tanda H1a). Corre cuatro veces por noche —dos en
-# cada cola—, y la primera es el primer paso después de traer el arnés. Antes volvía el checkout a
-# `origin/main` (`checkout -B`, `reset --hard`): cuando el arnés sale de GitHub eso reemplaza el
-# código puesto encima por el de `origin/main`, y la noche sigue en verde midiendo otro código. Ahora:
+# 🔴 ESTE GUION NO MUEVE EL CHECKOUT. Corre cuatro veces por noche —dos en cada cola—, y la primera
+# es el primer paso después de traer el arnés. Volver el checkout a `origin/main` (`checkout -B`,
+# `reset --hard`) reemplazaría el código puesto encima por el de `origin/main`, y la noche seguiría
+# en verde midiendo otro código. Por eso:
 #   · la rama de cada pedido se arma SIN copia de trabajo (`commit_de_rama`: la ficha de `main`,
 #     movida a `promoted/`, en un commit hecho con un índice temporal) y se empuja por su sha;
 #   · las anotaciones se escriben en el disco, donde la noche las cuenta, y salen a `main` por
@@ -67,13 +65,13 @@
 #     en el disco y el paso que guarda la noche —que incluye esta carpeta— lo vuelve a llevar.
 #
 # ─────────────────────────────────────────────────────────────────────────────────────────────
-# DOS PASADAS POR NOCHE (2026-09-18, incident-log#decisiones-de-ayer-contadas-tarde-2026-09-18)
+# DOS PASADAS POR NOCHE
 #
 # Con `--record-only` corren A, E y C, y B no abre nada: es la pasada que cada cola hace ANTES de
-# su corrida nocturna. Sin ella, lo que una persona decidía durante el día se registraba recién en el
-# último paso, DESPUÉS de que la noche contara las fichas y de que saliera el resumen: el del 18/09
-# contó como pendientes tres borradores rechazados la tarde anterior, y un cuarto —rechazado con su
-# motivo escrito— la noche lo archivó como «nadie lo miró en 7 días». Esta pasada no abre porque no
+# su corrida nocturna. Sin ella, lo que una persona decide durante el día se registraría recién en el
+# último paso, DESPUÉS de que la noche cuente las fichas y de que salga el resumen: el resumen
+# contaría como pendientes borradores ya rechazados, y uno rechazado con su motivo escrito se
+# archivaría como «nadie lo miró en 7 días». Esta pasada no abre porque no
 # puede: el borrador de esta noche todavía no existe, y B arma la rama desde un `main` que todavía no
 # lo tiene. La pasada completa del final sigue abriendo, y vuelve a preguntar por todo: si Azure no
 # contestó a la mañana, es la que deja la noche en rojo.
@@ -87,7 +85,7 @@
 
 set -uo pipefail
 
-# Las opciones renombradas a inglés (story 8.9, tanda B3a): los pipelines nocturnos pueden seguir pasando las viejas
+# Las opciones renombradas a inglés: los pipelines nocturnos pueden seguir pasando las viejas
 # hasta el retiro. El traductor vive al lado (viaja en el artefacto arnes-ci).
 _AQUI_LO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "${_AQUI_LO}/legacy-options.sh" ]; then
@@ -125,10 +123,10 @@ if [ -n "$falta" ]; then
 fi
 [ -n "$HOY" ] || HOY=$(date -u +%Y-%m-%d)
 
-# 🔴 UNA CARPETA DE COLA QUE NO ESTÁ NO ES «NO HAY FICHAS» (story 8.9, tanda F — 2026-10-03).
+# 🔴 UNA CARPETA DE COLA QUE NO ESTÁ NO ES «NO HAY FICHAS».
 # `--queue` es una RUTA, relativa a donde se corre (`--branch` es el prefijo de las ramas, otro dato).
 # Los `for` de abajo recorren `"$COLA"/pending/*.yaml`: si la carpeta no existe no encuentran nada, el
-# guion decía «Nada que abrir» y salía 0 sin preguntarle nada a Azure — la noche en verde con todas las
+# guion diría «Nada que abrir» y saldría 0 sin preguntarle nada a Azure — la noche en verde con todas las
 # fichas sin mirar. Es el modo de falla de mudar la cola (de `<cola>/` a `inbox/<…>/`) sin que un
 # llamador se entere, y se lee igual que una noche tranquila. Acá es un error de uso: 2, y dicho.
 if [ ! -d "$COLA" ]; then
@@ -136,9 +134,9 @@ if [ ! -d "$COLA" ]; then
   echo "error: la carpeta de la cola no existe: $COLA" >&2
   exit 2
 fi
-# 🔴 …Y UNA COLA SIN SU `pending/` TAMPOCO (misma tanda, hallazgo de la revisión). Mirar sólo que la
-# cola exista dejaba pasar la mudanza a medias: la carpeta llegó con `promoted/` o `archived/` y
-# `pending/` no. El `for` de la fase A no encontraba ninguna ficha y el guion decía «Nada que abrir»:
+# 🔴 …Y UNA COLA SIN SU `pending/` TAMPOCO. Mirar sólo que la cola exista dejaría pasar la mudanza
+# a medias: la carpeta llega con `promoted/` o `archived/` y `pending/` no. El `for` de la fase A
+# no encontraría ninguna ficha y el guion diría «Nada que abrir»:
 # el mismo verde falso, un nivel más adentro. `pending/` viaja SIEMPRE en git (con su `.gitkeep`), así
 # que su ausencia no es una noche sin fichas: una `pending/` que está y no tiene ninguna sí lo es, y
 # ésa sigue saliendo 0. Va antes de hablar con Azure y de escribir nada.
@@ -150,10 +148,10 @@ fi
 
 # 🔴 Si la variable de revisores no está definida, Azure DevOps NO la deja vacía: deja el literal
 # `$(NOMBRE)`, y `--reviewers '$(NOMBRE)'` hace FALLAR la apertura del pull request. O sea que la
-# promesa de "sin revisores se abre igual" era falsa justo en el caso que dice cubrir: una
+# promesa de "sin revisores se abre igual" sería falsa justo en el caso que dice cubrir: una
 # instalación nueva que todavía no configuró la variable. Un hallazgo sin pull request es un
 # hallazgo que nadie va a mirar, así que la ausencia de revisores no puede costar el aviso.
-# Esta guarda existía SÓLO en la copia de dependencias: acá vale para las dos colas.
+# Esta guarda vale para las dos colas.
 case "$REVISORES" in *'$('*) REVISORES="" ;; esac
 
 FALLOS=0
@@ -184,8 +182,8 @@ aviso(){ echo "##vso[task.logissue type=warning]$(sanear "$1")"; }
 #       `note --card <la ficha de OTRA persona> --pr <n>`, que se commitea a `main` con la
 #       identidad del pipeline. Reproducido: una ficha ajena pasó de `pr: 8` a `pr: 999`.
 #
-# Y sin esto se pierde el dato que la story va a buscar: un comentario que arranca con una línea en
-# blanco quedaba ENTERO afuera y la ficha decía «sin motivo escrito» — el hecho opuesto al real.
+# Y sin colapsar los saltos de línea ni recortar los bordes se pierde el dato que se busca: un comentario que arranca con una línea en
+# blanco quedaría ENTERO afuera y la ficha diría «sin motivo escrito» — el hecho opuesto al real.
 sanear(){
   printf '%s' "$1" \
     | sed -e 's/^[[:space:]]*##[vV][sS][oO]\[/(vso) [/' -e 's/##[vV][sS][oO]\[/(vso) [/g' \
@@ -197,8 +195,8 @@ sanear(){
 encolar(){
   printf '%s\t%s\t%s\t%s\n' "$(sanear "$1")" "$(sanear "$2")" "$(sanear "${3:-}")" "$(sanear "${4:-}")" >> "$ACCIONES"
 }
-# 🔴 Sin quitar las comillas, la guarda de «vida anterior» quedaba MUERTA en el vigilante: sus fichas
-# escriben `fecha: "2026-09-06"`, y como `"` (0x22) ordena por debajo de cualquier dígito,
+# 🔴 Sin quitar las comillas, la guarda de «vida anterior» quedaría MUERTA en el vigilante: sus fichas
+# escriben `fecha: "AAAA-MM-DD"`, y como `"` (0x22) ordena por debajo de cualquier dígito,
 # `[[ "$CREADO" < "$DESDE" ]]` no podía ser verdadero nunca — o sea que CUALQUIER pull request
 # abandonado de la rama se adoptaba como rechazo, sin importar de qué vida fuera.
 escalar(){ sed -n "s/^$2:[ \\t]*//p" "$1" | head -1 | awk '{print $1}' | tr -d '"'; }
@@ -208,7 +206,7 @@ escalar(){ sed -n "s/^$2:[ \\t]*//p" "$1" | head -1 | awk '{print $1}' | tr -d '
 # veredicto en `util`. Se arma con un índice temporal: ni HEAD, ni el índice, ni el disco del checkout
 # cambian. Sale != 0 con el motivo en stderr si la ficha no está en <base> o git no pudo.
 # 🔴 El veredicto se cambia ANTES de guardar el contenido: con `git mv` + `sed` sobre el árbol de
-# trabajo, el commit llevaba el archivo movido con el veredicto VIEJO (2026-09-05: rename 100 %, 0 cambios).
+# trabajo, el commit llevaría el archivo movido con el veredicto VIEJO (rename 100 %, 0 cambios).
 commit_de_rama(){ # <base> <id>
   local BASE="$1" ID="$2" INDICE CONTENIDO MODO ARBOL
   INDICE=$(mktemp) || return 1
@@ -227,8 +225,8 @@ commit_de_rama(){ # <base> <id>
   [ "$RC" = 0 ] || return "$RC"
   git commit-tree "$ARBOL" -p "$BASE" -m "$COLA: $ID pasa a trabajo real"
 }
-# La identidad de los commits de esas ramas. La dejaba puesta el paso anterior del pipeline, que ahora
-# guarda por push-nightly-data.js; tocar la configuración del repo no mueve el checkout.
+# La identidad de los commits de esas ramas. El paso anterior del pipeline guarda por
+# push-nightly-data.js y no la deja puesta; tocar la configuración del repo no mueve el checkout.
 git config user.name "Azure Pipelines"
 git config user.email "azure-pipelines@dev.azure.com"
 
@@ -245,11 +243,11 @@ hilos_de(){ az devops invoke --org "$ORG" --area git --resource pullRequestThrea
 
 # 🔴 LOS TRES LECTORES DE JSON SALEN != 0 CUANDO NO PUEDEN LEER, y nunca vacíos.
 #
-# Antes hacían `catch { process.exit(0) }`: salían con ÉXITO y sin imprimir nada, así que el shell no
-# podía distinguir *«az contestó y no hay nada»* de *«no pude leer la respuesta»*. Es EXACTAMENTE el
-# hazard que esta story existe para eliminar, reproducido adentro del propio arreglo — y con las tres
-# consecuencias medidas: se abría un pull request duplicado, se daba por cerrado uno que seguía
-# abierto (y esa ficha no se volvía a mirar NUNCA), y se perdía el motivo del rechazo.
+# Un `catch { process.exit(0) }` saldría con ÉXITO y sin imprimir nada, así que el shell no
+# podría distinguir *«az contestó y no hay nada»* de *«no pude leer la respuesta»*. Es EXACTAMENTE el
+# hazard que este guion existe para evitar, con tres consecuencias: se abriría un pull request
+# duplicado, se daría por cerrado uno que sigue abierto (y esa ficha no se volvería a mirar NUNCA),
+# y se perdería el motivo del rechazo.
 #
 # La lista vacía LEGÍTIMA imprime `SIN_PR`, que sí es distinguible de no imprimir nada.
 mas_reciente(){ node -e '
@@ -275,11 +273,11 @@ campo_pr(){ node -e '
     console.log([p.pullRequestId,p.status,(p.creationDate||"").slice(0,10),(p.closedDate||"").slice(0,10)].join(" "));
   });'; }
 
-# 🔴 EL NÚMERO DE UN PULL REQUEST ES DE TODA LA ORGANIZACIÓN, NO DE ESTE REPO (story 8.26, tanda J — 2026-10-13).
-# `pr_por_id` pregunta por número y Azure contesta el pull request de CUALQUIER repo. Una ficha que llegó con su `pr:`
-# desde otro repo —el caso: la cola se muda a un repo que nace con la historia del anterior— tenía entonces un pull
-# request «propio» que no se puede decidir acá: si seguía activo, la ficha esperaba para siempre en un lugar donde
-# nadie la iba a aceptar; si alguien lo abandonaba para ordenar, se anotaba como un rechazo; y a los 7 días pasaba
+# 🔴 EL NÚMERO DE UN PULL REQUEST ES DE TODA LA ORGANIZACIÓN, NO DE ESTE REPO.
+# `pr_por_id` pregunta por número y Azure contesta el pull request de CUALQUIER repo. Una ficha que llega con su `pr:`
+# desde otro repo —el caso: la cola se muda a un repo que nace con la historia del anterior— tiene entonces un pull
+# request «propio» que no se puede decidir acá: si sigue activo, la ficha espera para siempre en un lugar donde
+# nadie la va a aceptar; si alguien lo abandona para ordenar, se anota como un rechazo; y a los 7 días pasa
 # sola a ignorada. Las tres, en verde. Este lector dice de quién es: `own`, o `foreign <proyecto>/<repo>`.
 # Como los otros: si la respuesta no dice de qué repo es, sale != 0 —«no pude leer» no es «es de acá»—.
 # `--project` y `--repo` pueden venir por nombre o por id: se compara contra los dos, sin distinguir mayúsculas.
@@ -325,10 +323,10 @@ por_abrir(){ # <id> <qué encontró> [<qué se abre>]
 for F in "$COLA"/pending/*.yaml; do
   [ -f "$F" ] || continue
   # 🔴 El MISMO criterio de «está viva» que usa el lector de la cola (`leerFicha`), que descarta el
-  # comentario al final de la línea y las comillas. Con la igualdad exacta anterior, una ficha con una
+  # comentario al final de la línea y las comillas. Con una igualdad exacta, una ficha con una
   # nota humana —`veredicto: pendiente # decision-en-curso`, formato que el nocturno soporta a
-  # propósito y que su propio caso 21 verifica— quedaba fuera de TODO el manejo de pull requests, en
-  # silencio: no se le abría uno, no se le adoptaba, no se le anotaba el rechazo, y terminaba
+  # propósito y que su propio caso 21 verifica— quedaría fuera de TODO el manejo de pull requests, en
+  # silencio: no se le abriría uno, no se le adoptaría, no se le anotaría el rechazo, y terminaría
   # archivada como «ignorado». Dos criterios distintos de «viva» en el mismo sistema se separan solos.
   grep -qE '^veredicto:[ \t]*"?pendiente"?[ \t]*(#.*)?$' "$F" || continue
   ID=$(basename "$F" .yaml)
@@ -422,12 +420,12 @@ done
 # ── Fase E — toda ficha archivada cierra su pull request ───────────────────────────────────────
 # 🔴 El barrido es sobre `archived/*.yaml`, no sobre los ignorados de ESTA noche. Con la lista de
 # la noche, un cierre que falló ayer no se reintenta nunca más y el pull request queda abierto para
-# siempre; y una ficha archivada por deuda declarada —que no pasa por «ignorado»— no la cerraba
+# siempre; y una ficha archivada por deuda declarada —que no pasa por «ignorado»— no la cierra
 # nadie. Un pull request abierto sobre algo que el sistema ya dio por perdido pide una decisión
 # sobre un muerto, y esa clase de pull request es la que enseña a no mirar la lista.
 # 🔴 Y también sobre `promoted/`: una ficha que se resuelve sola por medición se mueve de `pending/`
-# a `promoted/` LLEVÁNDOSE su `pr:`, y desde ahí su pull request no lo cerraba nadie — ni la fase A
-# (ya no está en `pending/`) ni este barrido (sólo miraba `archived/`). Quedaba abierto para siempre.
+# a `promoted/` LLEVÁNDOSE su `pr:`, y desde ahí su pull request no lo cerraría nadie — ni la fase A
+# (ya no está en `pending/`) ni un barrido que sólo mirara `archived/`. Quedaría abierto para siempre.
 for F in "$COLA"/archived/*.yaml "$COLA"/promoted/*.yaml; do
   [ -f "$F" ] || continue
   ID=$(basename "$F" .yaml)
@@ -443,10 +441,10 @@ for F in "$COLA"/archived/*.yaml "$COLA"/promoted/*.yaml; do
     fallo "$ID: no se pudo consultar el PR !$PR de una ficha cerrada — $(cat "$ERR")"; continue
   fi
   if ! LEIDO=$(printf '%s' "$OUT" | campo_pr 2>"$ERR"); then
-    # 🔴 Antes, un JSON ilegible dejaba ESTADO vacío, caía en el `else` de abajo y escribía
-    # `pr_cerrado:` sobre un pull request que podía seguir ABIERTO — y como arriba hay un
-    # `grep -q '^pr_cerrado:' && continue`, esa ficha NO se volvía a mirar nunca. Enterrado, en
-    # verde, sin pasar por `fallo()`. Era el peor de los tres.
+    # 🔴 Con un JSON ilegible, ESTADO quedaría vacío, caería en el `else` de abajo y escribiría
+    # `pr_cerrado:` sobre un pull request que podría seguir ABIERTO — y como arriba hay un
+    # `grep -q '^pr_cerrado:' && continue`, esa ficha NO se volvería a mirar nunca. Enterrado, en
+    # verde, sin pasar por `fallo()`. Es el peor de los tres casos.
     fallo "$ID: no pude leer la respuesta de Azure sobre el PR !$PR — $(cat "$ERR")"; continue
   fi
   read -r _ ESTADO _ CERRADO <<< "$LEIDO"
@@ -496,7 +494,7 @@ fi
 for ID in ${ABRIR:-}; do   # con --record-only viene vacío: `por_abrir` no agrega nada
   RAMA="$PREFIJO/$ID"
   # ¿El borrador está en `main`? «No pude preguntar» no es «no está»: si git falla, es un fallo de la noche
-  # (antes un `cat-file -e` que fallaba por lo que fuera daba sólo un aviso, y el pedido no se abría en verde).
+  # (un `cat-file -e` que fallara por lo que fuera daría sólo un aviso, y el pedido no se abriría en verde).
   if ! EN_MAIN=$(git ls-tree "$MAIN_AL_ABRIR" -- "$COLA/pending/$ID.yaml" 2>"$ERR"); then
     fallo "$ID: no se pudo leer main para buscar el borrador — no se abre el PR — $(cat "$ERR")"; continue
   fi
@@ -517,9 +515,8 @@ for ID in ${ABRIR:-}; do   # con --record-only viene vacío: `por_abrir` no agre
   if ! COMMIT_RAMA=$(commit_de_rama "$MAIN_AL_ABRIR" "$ID" 2>"$ERR"); then
     fallo "$ID: no se pudo armar la rama $RAMA — el borrador sigue en main — $(cat "$ERR")"; continue
   fi
-  # 🔴 Un push rechazado no puede dejar la corrida trabada (corrida 9875, 2026-09-04): sin permiso
-  # de crear ramas el push falló, se intentó igual el pull request (falló), y el paso murió sin
-  # decir QUÉ faltaba.
+  # 🔴 Un push rechazado no puede dejar la corrida trabada: sin permiso de crear ramas el push
+  # falla, se intentaría igual el pull request (falla), y el paso moriría sin decir QUÉ faltaba.
   if ! git push -q origin "$COMMIT_RAMA:refs/heads/$RAMA" --force-with-lease; then
     fallo "$ID: no se pudo publicar la rama $RAMA (¿la identidad del pipeline tiene 'Create branch'?) — el borrador sigue en main"
     continue
@@ -534,8 +531,8 @@ for ID in ${ABRIR:-}; do   # con --record-only viene vacío: `por_abrir` no agre
     continue
   fi
   # 🔴 El CUARTO lector de JSON, con el mismo criterio que los otros tres: leer mal sale != 0 con su
-  # motivo, y nunca vacío. Antes tenía el `catch {}` mudo: el llamador trataba el vacío como fallo
-  # —por eso no mordía— pero se perdía POR QUÉ, que es lo que uno necesita a la mañana siguiente.
+  # motivo, y nunca vacío. Un `catch {}` mudo haría que el llamador tratara el vacío como fallo,
+  # pero se perdería POR QUÉ, que es lo que uno necesita a la mañana siguiente.
   if ! PRID=$(printf '%s' "$NUEVO" | node -e '
     let d=""; process.stdin.on("data",c=>d+=c).on("end",()=>{
       let p; try { p=JSON.parse(d); } catch { process.stderr.write("respuesta ilegible de az\n"); process.exit(1); }
@@ -551,12 +548,11 @@ for ID in ${ABRIR:-}; do   # con --record-only viene vacío: `por_abrir` no agre
   echo "$ID $PRID" >> "$ABIERTOS"
   # 🔴 La ruta que se encola es la de `main`, donde la ficha SIGUE en `pending/`: moverla a
   # `promoted/` es lo que hace el pull request cuando alguien lo mergea, no algo que pase en `main`
-  # esta noche. Encolar la ruta de la rama dejaba la anotación sin archivo que tocar.
+  # esta noche. Encolar la ruta de la rama dejaría la anotación sin archivo que tocar.
   encolar "$COLA/pending/$ID.yaml" pr "$PRID"
 done
-# (Acá había un `git reset --hard HEAD` y un `git checkout main` para volver de las ramas —la defensa
-# venía del vigilante; el `reset` del push fallido, de dependencias—: ya no hay de dónde volver. El
-# checkout queda donde estaba, con lo que la noche dejó en el disco.)
+# (No hace falta volver de las ramas con `git reset --hard HEAD` ni `git checkout main`: las ramas
+# se arman sin copia de trabajo. El checkout queda donde estaba, con lo que la noche dejó en el disco.)
 
 # ── Fase C — anotar todo junto en main ─────────────────────────────────────────────────────────
 # 🔴 Rehacer la rama sobre el `main` ANOTADO es lo que evita el conflicto: el pull request mueve

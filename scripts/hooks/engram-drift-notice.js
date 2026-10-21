@@ -10,14 +10,13 @@
  * devuelve "no memories found", que es EXACTAMENTE lo mismo que devuelve un repo sin historia. Una
  * sesión puede arrancar sin ninguna referencia previa y nadie se entera.
  *
- * Medido el 2026-08-24/25: cuatro repos partidos (el repo del framework 74 obs en 6 nombres,
- * el arnés 135 en 7, Ceibo 1151 en 4, un repo del equipo 507 en 4) y ~1000 observaciones que
- * nunca se exportaron a ningún chunk — o sea que vivían en UNA sola máquina y se perdían con el
+ * Sin este aviso, un repo termina con su memoria partida en varios nombres y con muchas observaciones que
+ * nunca se exportaron a ningún chunk — o sea que viven en UNA sola máquina y se pierden con el
  * disco.
  *
  * 🔴 La razón de que esto sea un HOOK y no sólo un check del scorecard: los tres chequeos ya
  * existían en `harness-audit.js`, pero ese script **sólo corre si alguien se acuerda de correrlo**.
- * Un repo nuevo sin nombre declarado no iba a avisar hasta la próxima revisión manual. Es la misma
+ * Un repo nuevo sin nombre declarado no avisaría hasta la próxima revisión manual. Es la misma
  * regla que el arnés ya tiene escrita: *un control que hay que acordarse de invocar es un control
  * que no corre.* Acá se cobra solo, al arrancar la sesión.
  *
@@ -41,16 +40,16 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 if (process.env.TYCON_ENGRAM_DRIFT === '0' || process.env.TYCON_EVAL_SANDBOX === '1') process.exit(0);
 
-// engram (story 8.3, AC 9/10): con la integración apagada (sin perfil del equipo ni llave) no hay memoria que revisar —
-// se dice en UNA línea y sale 0, nunca «0 repos» en verde. El instalador ya no registra este hook apagada; esto cubre la
-// corrida a mano y la máquina que lo tenía registrado de antes. Configuración ROTA: el aviso en cada arranque, sin revisar
-// (AC 2). Sin la lib al lado (hook copiado a un arnés de mentira): como hoy — fail-open.
+// engram: con la integración apagada (sin perfil del equipo ni llave) no hay memoria que revisar —
+// se dice en UNA línea y sale 0, nunca «0 repos» en verde. El instalador no registra este hook apagada; esto cubre la
+// corrida a mano y la máquina que lo tiene registrado. Configuración ROTA: el aviso en cada arranque, sin revisar
+// Sin la lib al lado (hook copiado a un arnés de mentira): con la integración prendida — fail-open.
 try {
   const cfg = require(path.join(__dirname, '..', 'lib', 'tycon-config.js'));
   if (typeof cfg.integracionParaHook === 'function') {
@@ -89,16 +88,16 @@ try {
 
   const audit = require(path.join(__dirname, '..', 'lib', 'harness-audit.js'));
   const problemas = [];
-  // 🔴 Lo que NO se pudo verificar se rastrea aparte y BLOQUEA el sello del día (2026-08-25,
-  // revisión adversarial). Antes, un error de escaneo o una consulta rota salían por un catch,
-  // el hook no decía nada, Y sellaba igual — con lo que la máquina quedaba 24 h sin chequear y
+  // 🔴 Lo que NO se pudo verificar se rastrea aparte y BLOQUEA el sello del día.
+  // Sin esto, un error de escaneo o una consulta rota saldrían por un catch,
+  // el hook no diría nada, Y sellaría igual — con lo que la máquina quedaría 24 h sin chequear y
   // sin que nadie lo supiera. Un chequeo que no corrió no puede consumir su propia ventana.
   const sinVerificar = [];
 
   // 🔴 "No pude revisar" NO es "está todo bien". Tres de los cuatro chequeos consultan la base de
-  // engram con `sqlite3`, y sin ese binario devuelven null — que el hook antes se tragaba en
+  // engram con `sqlite3`, y sin ese binario devuelven null — que el hook se tragaría en
   // silencio. O sea: en una máquina sin sqlite3 (Windows sin instalarlo, por ejemplo) TODO esto
-  // quedaba inerte y nadie se enteraba. Es exactamente el modo de falla que este hook existe para
+  // quedaría inerte y nadie se enteraría. Es exactamente el modo de falla que este hook existe para
   // cazar, adentro del hook. Se detecta una vez y se dice, con cómo resolverlo.
   // Si NO hay base de engram, no hay nada que verificar: los chequeos que la leen se saltean sin
   // ruido. Distinto de "la base está y no se pudo leer", que sí es no saber.
@@ -121,16 +120,16 @@ try {
 
   // 1. Repos sin el nombre fijado — la CAUSA. Barato, no toca la DB.
   const escaneo = audit.scanEngramRepos();
-  // 🔴 El arreglo se imprime con RUTA ABSOLUTA y por repo (story 1.6, 2026-09-17). Hasta hoy decía
-  // `node scripts/…/engram-rescue-unexported.js --reindex --apply` (relativa), que sólo existe si estás parado
+  // 🔴 El arreglo se imprime con RUTA ABSOLUTA y por repo. Una ruta relativa como
+  // `node scripts/…/engram-rescue-unexported.js --reindex --apply` sólo existe si estás parado
   // en el clon del arnés: desde cualquier otra carpeta —que es donde estás cuando leés este aviso
-  // al abrir una sesión— el comando no corre. Y sin `--repo` tocaba los veinte repos, no el que
+  // al abrir una sesión— el comando no corre. Y sin `--repo` tocaría todos los repos, no el que
   // está roto. `__dirname` lo resuelve para cualquier clon, en cualquier máquina.
   const arregloDe = (r) => `node ${JSON.stringify(path.join(__dirname, '..', 'lib', 'manifest-engram.js'))}`
     + ` repair --apply --repo ${JSON.stringify(r.dir || path.join(escaneo.root, r.repo))}`;   // con varias carpetas de repos, la del propio repo
   const { unpinned } = escaneo;
-  // 🔴 SIN RAÍZ DE REPOS (2026-10-14): el arnés no sabe dónde están los repos de esta máquina. Eso deja sin correr los
-  // chequeos que miran repos —y el de la memoria nunca exportada devolvía null por eso, que este aviso leía como «¿base
+  // 🔴 SIN RAÍZ DE REPOS: el arnés no sabe dónde están los repos de esta máquina. Eso deja sin correr los
+  // chequeos que miran repos —y el de la memoria nunca exportada devuelve null por eso, que este aviso leería como «¿base
   // corrupta?» con la base sana. Se dice UNA vez, con el motivo y cómo declararla, y los chequeos que la necesitan no corren.
   const sinRaiz = !escaneo.root;
   if (sinRaiz) {
@@ -153,8 +152,8 @@ try {
   //
   //    Se une SÓLO lo que no puede estar bien de otra manera — tres guardas por datos, probadas en
   //    `scripts/tests/engram-autoheal.test.js`. Lo ambiguo se reporta con el motivo. La guarda que
-  //    más importa salió de datos reales: en la carpeta de un producto había 359 observaciones de
-  //    OTRO, y un automatismo ingenuo se las llevaba adentro sin vuelta atrás.
+  //    más importa: si la carpeta de un producto guarda observaciones de OTRO, un automatismo ingenuo
+  //    se las lleva adentro sin vuelta atrás.
   try {
     if (sinRaiz) throw Object.assign(new Error('sin raíz de repos'), { sinRaiz: true });
     if (!haySqlite || !HAY_BASE) throw new Error('sin sqlite3 o sin base');
@@ -164,16 +163,15 @@ try {
     const conAuto = plan.filter((r) => r.auto.length);
     const conHumano = plan.filter((r) => r.humano.length);
 
-    // 🔴 EL APPLY AUTOMÁTICO ESTÁ APAGADO (2026-08-25, decisión del dev tras la revisión
-    // adversarial que corrió Codex). Se avisa y se da el comando; NO se ejecuta solo.
+    // 🔴 EL APPLY AUTOMÁTICO ESTÁ APAGADO. Se avisa y se da el comando; NO se ejecuta solo.
     //
-    // Por qué se apagó, en orden de gravedad:
-    //  · La COMPROBACIÓN POSTERIOR no comprobaba lo que decía. Exigía que el cajón de origen
-    //    quedara en cero y que ningún otro DISMINUYERA. Un BORRADO deja el origen en cero, así
-    //    que pasaba como éxito. Un destino EQUIVOCADO hace que ese cajón AUMENTE, y sólo se
-    //    miraban disminuciones: también pasaba. Y nunca se verificaba que el pin correcto
-    //    hubiera recibido nada. O sea: la red que se usó para justificar automatizar algo
-    //    irreversible no atrapaba ni el borrado ni el destino errado.
+    // Por qué está apagado, en orden de gravedad:
+    //  · La COMPROBACIÓN POSTERIOR no comprueba lo que dice. Exige que el cajón de origen
+    //    quede en cero y que ningún otro DISMINUYA. Un BORRADO deja el origen en cero, así
+    //    que pasa como éxito. Un destino EQUIVOCADO hace que ese cajón AUMENTE, y sólo se
+    //    miran disminuciones: también pasa. Y nunca se verifica que el pin correcto
+    //    haya recibido nada. O sea: la red con la que se justificaría automatizar algo
+    //    irreversible no atrapa ni el borrado ni el destino errado.
     //  · CARRERA en la selección. El motor es `engram projects consolidate`, una interfaz
     //    NUMERADA para humanos: el script lee la lista con `--dry-run` y responde el número en
     //    OTRA invocación. Si la oferta cambia en el medio —dos sesiones abiertas a la vez, por
@@ -265,7 +263,7 @@ try {
   console.log('  Detalle y score: node ~/.claude/tycon-harness/scripts/lib/harness-audit.js --verbose');
   console.log('  Silenciar: TYCON_ENGRAM_DRIFT=0');
 } catch (e) {
-  // Fail-open absoluto — ver cabecera. Con UNA excepción que se dice (story 8.3, AC 2): la configuración del
+  // Fail-open absoluto — ver cabecera. Con UNA excepción que se dice: la configuración del
   // arnés rota (~/.claude/tycon.json o el perfil) no se lee como «todo bien» ni como «sin repos»: se avisa en
   // CADA arranque, sin sello, y esta revisión no corre. Nunca sale ≠ 0 por esto.
   if (e && e.name === 'ConfigError') {

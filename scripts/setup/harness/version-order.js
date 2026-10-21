@@ -1,7 +1,7 @@
 'use strict';
-// version-order.js — el orden de dos números de versión publicados (story 8.13, tanda D · AC 25).
+// version-order.js — el orden de dos números de versión publicados.
 //
-// Un número publicado es `YYYY.MM.DD.N` (hoy lo pone la etiqueta `v<número>` de cada merge a `main`; antes, `version.json`:
+// Un número publicado es `YYYY.MM.DD.N` (lo pone la etiqueta `v<número>` de cada merge a `main`;
 // ver «el número por etiqueta», abajo). «No bajar» se
 // decide comparando esos números POR PARTES NUMÉRICAS —`2026.09.30.10` es más nuevo que `2026.09.30.9`; como texto sería
 // al revés—, nunca por ancestría: el commit de una rama que se reescribe deja de ser ancestro de todo.
@@ -88,10 +88,10 @@ function next(date, published) {
 }
 
 // ── el número por etiqueta ───────────────────────────────────────────────────────────────────────────────────────────
-// Desde que el número lo pone el merge (y no cada pedido), cada merge a `main` del repo público recibe una etiqueta
+// El número lo pone el merge (y no cada pedido): cada merge a `main` del repo público recibe una etiqueta
 // `v<número>` (la pone .github/workflows/version-tag.yml con scripts/ci/version-tag.js) y `version.json` queda fijo con
-// `numbering: "merge-tag"`: su número es el PISO, el que ve una máquina con el código de antes. El número de un commit es
-// el de su etiqueta si la tiene; si no, el de su `version.json` (los commits de antes, las copias de laboratorio).
+// `numbering: "merge-tag"`: su número es el PISO, el que ve una máquina con un código anterior. El número de un commit es
+// el de su etiqueta si la tiene; si no, el de su `version.json` (los commits sin etiqueta, las copias de laboratorio).
 
 const TAG_PREFIX = 'v';
 /** La marca de `version.json` que dice «el número lo pone la etiqueta del merge»; el `version` del archivo es el piso. */

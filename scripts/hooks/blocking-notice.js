@@ -21,9 +21,9 @@ function fmt(ms) {
   return `${Math.round(ms / 1000)}s`;
 }
 
-// 🔇 Sandbox de EVALS (2026-07-30): las corridas del banco spawnean `claude -p` y cada hook
+// 🔇 Sandbox de EVALS: las corridas del banco spawnean `claude -p` y cada hook
 // UserPromptSubmit le inyecta su reminder AL PROMPT del agente simulado, que lo lee como parte de
-// la conversación. Eso sesga la medición (Story 3.40: 0-1 menciones en un brazo vs 6-10 en el otro).
+// la conversación. Eso sesga la medición.
 // El arnés setea TYCON_EVAL_SANDBOX=1 al spawnear; acá nos callamos.
 if (process.env.TYCON_EVAL_SANDBOX === '1') process.exit(0);
 

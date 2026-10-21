@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
 # check-bash32-quoting.sh — `$VAR` pegado a un carácter que no es ASCII rompe la variable en bash 3.2.
 #
-# Caso disparador (dos veces, 2026-09-09 story 2.13 y 2026-09-15 story 1.5, y la tercera medida el
-# 2026-09-18): el bash 3.2 de macOS —el único que corre en producción en la máquina del dev, bajo
+# Motivo: el bash 3.2 de macOS —el único que corre en producción en la máquina del dev, bajo
 # LaunchAgent— parsea el nombre de una variable byte a byte, y en una locale UTF-8 se come el primer
 # byte del carácter que sigue. Reproducido con /bin/bash 3.2.57:
 #     X=3; echo "«$X»"   →  «�        echo "$X→"   →  ��        echo "($X,"  →  (3,
 # No es sólo «»: cualquier carácter fuera de ASCII (→ … ⏎ · —) rompe igual. Con `${X}` no pasa. En el
 # bash 5 de Homebrew y en el agente Linux del nocturno no se reproduce, así que la suite sale verde en
-# todos lados menos donde importa. Medido el 2026-09-18 sobre este repo: 16 apariciones en 5 guiones,
-# ninguna cazada por ninguna suite.
+# todos lados menos donde importa.
 #
 # Por qué es un lint y no «correr las suites con /bin/bash»: las suites ya no corren en la máquina
-# del dev (van al nocturno de Azure, Linux, bash 5), así que esa instrucción hoy no cazaría nada. Un
+# del dev (van al nocturno de Azure, Linux, bash 5), así que esa instrucción no cazaría nada. Un
 # control que hay que acordarse de correr con el intérprete viejo es un control que no corre. Esto es
 # un grep: corre en cualquier bash, en el pre-commit sobre lo stageado y a mano sobre el repo.
 #

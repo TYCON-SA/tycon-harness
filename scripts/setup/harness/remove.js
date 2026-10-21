@@ -1,6 +1,6 @@
 'use strict';
-// remove.js — quita de la máquina una pieza registrada del arnés, por tipo, sin tocar lo ajeno (story 8.13, tanda C ·
-// AC 19 y 22). Lo usan `uninstall` (quita todo lo registrado) y la vuelta atrás (quita lo registrado que la versión
+// remove.js — quita de la máquina una pieza registrada del arnés, por tipo, sin tocar lo ajeno.
+// Lo usan `uninstall` (quita todo lo registrado) y la vuelta atrás (quita lo registrado que la versión
 // anterior ya no trae).
 //
 // Por qué un módulo propio: el registro (`managed` en harness-state.json, managed.js) dice QUÉ dejó el aplicador; acá
@@ -19,10 +19,10 @@
 //   · import        la línea (`@~/.claude/<lugar>/INDEX.md`, en cualquiera de sus formas: import-line.js).
 //   · startup-line  el hook de SessionStart que `startup-line.isNew` reconoce.
 //   · link          sólo si es un enlace que resuelve al árbol o adentro de él (o colgado, apuntando al árbol que se borró):
-//                   el del arnés y, en el repo único de la 8.7, agent-skills, skills, agents y los enlaces por entrada.
+//                   el del arnés y, en el repo único, agent-skills, skills, agents y los enlaces por entrada.
 //   · command       el archivo; uno que el dev cambió (distinto del del árbol) queda; uno que pisó uno propio vuelve a la copia.
 //                   Si el árbol ya no lo trae, se quita sólo si sigue como lo dejó la instalación (`afterSha`); si no, queda.
-//   · git-hook      el archivo, si sigue siendo el del arnés; si existe `<hook>.local`, vuelve a `<hook>` (decisión 5).
+//   · git-hook      el archivo, si sigue siendo el del arnés; si existe `<hook>.local`, vuelve a `<hook>`.
 //   · launch-agent  `$LAUNCHCTL_BIN bootout gui/<uid> <plist>` (o `unload`), y se borra el plist.
 //   · codex         sólo bajo CODEX_HOME o el espejo AGENTS.md (afuera: no se toca). `AGENTS.md`: sus bloques;
 //                   `hooks.json`/`config.toml`: se borran sólo si la copia `install` dice que no existían Y siguen byte a
@@ -31,7 +31,7 @@
 //   · third-party   no se toca: vive dentro del árbol.
 //   · file          se borra, sólo si cae bajo la carpeta de la copia fija (~/.claude/.tycon-pipeline/harness/).
 //
-// El byte a byte (AC 23): `restoreIfEqual` = `{ [ruta]: <ruta del archivo en la copia> | null }`. Después de quitar, un
+// El byte a byte: `restoreIfEqual` = `{ [ruta]: <ruta del archivo en la copia> | null }`. Después de quitar, un
 // archivo tocado que es IGUAL a su copia —como JSON (settings.json, sin contar `hooks`/`env` vacíos) o como texto (salvo
 // el final de línea)— se escribe con los bytes de la copia: así vuelve el formato del dev, no el del aplicador. `null` =
 // el archivo no existía antes de instalar: si quedó vacío, se borra. Un comando con copia vuelve a ella. `afterSha` =
@@ -47,12 +47,12 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { stateDir: stateDirOf } = require('./tycon-home.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
+const { stateDir: stateDirOf } = require('./tycon-home.js');   // la carpeta del estado, de una sola pieza
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { writeAtomic, paths: statePaths } = require('./state');
 const M = require('./managed');
-const PD = require('./plugin-dirs.js');   // story 7.27
+const PD = require('./plugin-dirs.js');
 const RP = require('./read-permissions.js');
 const SL = require('./startup-line');
 
@@ -62,18 +62,18 @@ const lexists = (p) => { try { fs.lstatSync(p); return true; } catch (_) { retur
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
 /** Una ruta comparable: barras normales, sin barra final, sin el `/private` con que macOS resuelve /tmp y /var. */
 const norm = (p) => slash(p).replace(/\/+$/, '').replace(/^\/private(?=\/(?:var|tmp|etc)\/)/, '');
-// el intérprete: una palabra (`node`, `bash`, `sh`, `python3`) o, desde la story 8.17 (W4 · AC 29), la ruta del bash de
+// el intérprete: una palabra (`node`, `bash`, `sh`, `python3`) o la ruta del bash de
 // Git entre comillas, como registra un `.sh` el aplicador en Windows (`"C:/…/bash.exe" "<ruta>"`). Otro programa entre
-// comillas no cuenta (pase adversarial de la W3W4, clase 11).
-// Desde la story 8.39 (AC 22), también la ruta del Node propio del arnés, con o sin comillas (`…/node/current/bin/node`,
+// comillas no cuenta.
+// También la ruta del Node propio del arnés, con o sin comillas (`…/node/current/bin/node`,
 // `C:/…/node.exe`), como la escribe el aplicador cuando ese Node está.
 const RUNNER = '(?:node|bash|sh|python3?|"[^"]*/bash(?:\\.exe)?"|[^\\s"]*/node(?:\\.exe)?|"[^"]*/node(?:\\.exe)?")';
 const RUNNER_RE = new RegExp(`^\\s*${RUNNER}\\s+"([^"]+)"\\s*$`, 'i');
 const BOM = /^﻿/;
 
 /**
- * La línea de CLAUDE.md en cualquiera de sus formas: los dos nombres del lugar (story 8.19, tanda B · AC 20) y el
- * README.md que era el índice hasta que pasó a INDEX.md. La pieza pudo quedar registrada con una forma y la línea
+ * La línea de CLAUDE.md en cualquiera de sus formas: los dos nombres del lugar y el
+ * README.md que fue el índice antes de pasar a INDEX.md. La pieza pudo quedar registrada con una forma y la línea
  * escrita con otra (`relocate` y la actualización cambian las dos; una vuelta atrás, una sola).
  * Otra línea queda como es.
  */
@@ -82,7 +82,7 @@ function importForms(id) {
   return new Set(forms.includes(id) ? forms : [id]);
 }
 
-// ── Los enlaces duros que anotó canonical-path.js (story 8.17, W4 · AC 39) ─────────────────────────────────────────
+// ── Los enlaces duros que anotó canonical-path.js ─────────────────────────────────────────
 // Este archivo viaja en la copia fija y no puede cargar scripts/lib/: lee el mismo registro, con la misma regla que
 // `ownHardLink` de canonical-path.js (si cambia uno, cambia el otro). La entrada es del arnés MIENTRAS el archivo siga
 // siendo ése (dispositivo, inodo, fecha y tamaño) y su destino caiga dentro del árbol.
@@ -108,7 +108,7 @@ function forgetHardLinkRecord(home, hl) {
   } catch (_) { /* el registro nunca frena la desinstalación: la entrada queda y la próxima instalación la olvida (ya no coincide) */ }
 }
 
-/** Las carpetas bajo las que viven los hooks del arnés: el árbol, sus dos nombres (el lugar y el viejo, story 8.19) y
+/** Las carpetas bajo las que viven los hooks del arnés: el árbol, sus dos nombres (el lugar y el viejo) y
  *  agent-skills (y sus rutas reales). */
 function hookRoots(home, tree) {
   const claude = path.join(home, '.claude');
@@ -121,7 +121,7 @@ function hookRoots(home, tree) {
 /**
  * ¿Esta ruta de un `command` es la del hook `relpath` del arnés? Termina en la de su spec y lo de delante es una raíz
  * conocida. `$HOME/…`, `${HOME}/…` y `~/…` se expanden con `home` y se comparan enteros: `$HOME/scripts/hooks/x.js` o
- * `~/skills/…` del dev NO son del arnés aunque una raíz termine igual (pase adversarial, H14).
+ * `~/skills/…` del dev NO son del arnés aunque una raíz termine igual.
  */
 function isHarnessPath(raw, relpath, roots, home) {
   const p = norm(raw);
@@ -142,7 +142,7 @@ function isHarnessCommand(command, relpath, roots, home = null) {
   return Boolean(m) && isHarnessPath(m[1], relpath, roots, home);
 }
 
-/** ¿El `command` corre ese hook del arnés con texto alrededor (un argumento al final, un prefijo de env)? (H13) */
+/** ¿El `command` corre ese hook del arnés con texto alrededor (un argumento al final, un prefijo de env)? */
 const RUNNER_ANY_RE = new RegExp(`(?:^|[\\s;&|(])${RUNNER}\\s+"([^"]+)"`, 'gi');
 function mentionsHarnessHook(command, relpath, roots, home) {
   const c = slash(command || ''); let m;
@@ -237,7 +237,7 @@ function removePieces(pieces, { home = os.homedir(), env = process.env, tree = n
   const restoreMap = new Map(Object.entries(isObject(restoreIfEqual) ? restoreIfEqual : {}).map(([k, v]) => [norm(k), v]));
   const copyOf = (file) => (restoreMap.has(norm(file)) ? { has: true, copy: restoreMap.get(norm(file)) } : { has: false, copy: undefined });
   // `afterSha` = `{ [ruta]: sha256 }`: cómo dejó el archivo la instalación (el `sha256_after` de la copia install). Un
-  // archivo que sigue así es del arnés; uno distinto, o sin ese dato, puede tener texto del dev (H6, H15)
+  // archivo que sigue así es del arnés; uno distinto, o sin ese dato, puede tener texto del dev
   const afterMap = new Map(Object.entries(isObject(afterSha) ? afterSha : {}).map(([k, v]) => [norm(k), v]));
   const asInstalled = (file) => { const want = afterMap.get(norm(file)); if (typeof want !== 'string') return false; try { return sha256(fs.readFileSync(file)) === want; } catch (_) { return false; } };
   const roots = hookRoots(home, tree);
@@ -279,7 +279,7 @@ function removePieces(pieces, { home = os.homedir(), env = process.env, tree = n
     try { fs.rmSync(p, { force: true, recursive }); out.removed.push(piece); return true; } catch (e) { keep(piece, `no pude borrar ${p} (${e.code || e.message})`, true); return false; }
   };
   // un ENLACE (un junction en Windows) se borra como nombre: unlink y, si no, rmdir; nunca un borrado recursivo, que en un
-  // junction podría seguir al clon de la persona (story 8.19, AC 13 b)
+  // junction podría seguir al clon de la persona
   const rmName = (piece, p) => {
     if (dryRun) { out.removed.push(piece); return true; }
     try {
@@ -300,7 +300,7 @@ function removePieces(pieces, { home = os.homedir(), env = process.env, tree = n
           const d = json(piece); if (!d) break;
           const { event, relpath } = M.hookId(piece.id);
           const n = dropHooks(d.data, (ev, h) => (!event || ev === event) && isHarnessCommand(h.command, relpath, roots, home));
-          // lo que queda y corre ese mismo hook con texto alrededor lo cambió el dev: no se toca, pero se dice (H13)
+          // lo que queda y corre ese mismo hook con texto alrededor lo cambió el dev: no se toca, pero se dice
           const edited = [];
           if (isObject(d.data.hooks)) {
             for (const [ev, groups] of Object.entries(d.data.hooks)) {
@@ -331,7 +331,7 @@ function removePieces(pieces, { home = os.homedir(), env = process.env, tree = n
           }
           const cur = getPath(d.data, piece.id);
           if (cur === undefined) { out.absent.push(piece); break; }
-          // la carpeta de los mods (story 7.27): se saca sólo esa entrada; si no queda nada, la clave
+          // la carpeta de los mods: se saca sólo esa entrada; si no queda nada, la clave
           if (piece.id === PD.PLUGIN_DIRS_ID && 'value' in piece) {
             const r = PD.removeDir(cur, piece.value, { sep: PD.separator(platform), home });
             if (!r.changed) { out.absent.push(piece); break; }
@@ -371,8 +371,8 @@ function removePieces(pieces, { home = os.homedir(), env = process.env, tree = n
         case 'link': {
           let st; try { st = fs.lstatSync(piece.where); } catch (_) { out.absent.push(piece); break; }
           if (!st.isSymbolicLink()) {
-            // un enlace duro que creó el arnés (canonical-path.js, «LOS ENLACES DUROS QUE CREÓ EL ARNÉS»; story 8.17, W4 ·
-            // AC 39 y pase adversarial de la W3W4): se saca si sigue siendo el anotado y se enlazó a este árbol. Un archivo
+            // un enlace duro que creó el arnés (canonical-path.js, «LOS ENLACES DUROS QUE CREÓ EL ARNÉS»):
+            // se saca si sigue siendo el anotado y se enlazó a este árbol. Un archivo
             // propio con ese nombre no está anotado (o ya no es ése) y queda.
             const hl = ownHardLinkRecord(home, piece.where, treeNorms);
             if (st.isFile() && hl.own) { if (rm(piece, piece.where) && !dryRun) forgetHardLinkRecord(home, hl); break; }
@@ -381,12 +381,12 @@ function removePieces(pieces, { home = os.homedir(), env = process.env, tree = n
           const raw = fs.readlinkSync(piece.where);
           const target = norm(path.resolve(path.dirname(piece.where), raw));
           const resolved = real(piece.where);
-          // al árbol o ADENTRO (8.7, tanda C): en el repo único ~/.claude/skills → <clon>/skills, agents → <clon>/agents y
+          // al árbol o ADENTRO: en el repo único ~/.claude/skills → <clon>/skills, agents → <clon>/agents y
           // los enlaces por entrada apuntan adentro del clon. Por la ruta escrita (vale colgado) o por la real
           const within = (p) => treeNorms.some((t) => p === t || p.startsWith(`${t}/`));
-          // el nombre viejo del lugar apunta AL LUGAR, no al árbol (story 8.19): es del arnés aunque el lugar ya se haya
+          // el nombre viejo del lugar apunta AL LUGAR, no al árbol: es del arnés aunque el lugar ya se haya
           // quitado y él haya quedado colgado. Pero si el lugar sigue y apunta a OTRO clon (un --link de la persona), el
-          // viejo también queda: borrarlo dejaría ese clon fuera de lo que todavía lee por el viejo (segunda vuelta, M1)
+          // viejo también queda: borrarlo dejaría ese clon fuera de lo que todavía lee por el viejo
           const placeNow = require('./place.js').placePath(home);
           const placeReal = real(placeNow);
           const toPlace = target === norm(placeNow) && (!lexists(placeNow) || !placeReal || within(norm(placeReal)));
@@ -402,7 +402,7 @@ function removePieces(pieces, { home = os.homedir(), env = process.env, tree = n
             if (fs.readFileSync(mine, 'utf8') !== fs.readFileSync(piece.where, 'utf8')) { keep(piece, `${piece.where} no es igual al del arnés: lo cambiaste, lo dejo`); break; }
           } else if (!asInstalled(piece.where)) {
             // sin su par en el árbol (vuelta atrás a una versión anterior al comando, clon borrado) sólo se sabe que es del
-            // arnés si sigue como lo dejó la instalación; si no, puede tener texto del dev (H6)
+            // arnés si sigue como lo dejó la instalación; si no, puede tener texto del dev
             keep(piece, `${piece.where}: el árbol no trae commands/${piece.id} para comparar y no sigue como lo dejó la instalación — puede ser tuyo, lo dejo`); break;
           }
           const c = copyOf(piece.where).copy;
@@ -446,7 +446,7 @@ function removePieces(pieces, { home = os.homedir(), env = process.env, tree = n
             const names = blockNames(d.data);
             let t = d.data; let n = 0;
             for (const name of names) { const r = dropBlock(t, name); if (r.found && !r.unclosed) { t = r.text; n++; } }
-            // el espejo es copia del CLAUDE.md entero: si en esta tanda se va el @import de CLAUDE.md, se va también su copia
+            // el espejo es copia del CLAUDE.md entero: si se va el @import de CLAUDE.md, se va también su copia
             const lines = t.split('\n');
             const left = lines.filter((l) => !importIds.has(l.replace(/\r$/, '').trim()));
             if (left.length !== lines.length) { t = left.join('\n'); n++; }
@@ -456,7 +456,7 @@ function removePieces(pieces, { home = os.homedir(), env = process.env, tree = n
           if (!lexists(piece.where)) { out.absent.push(piece); break; }
           if (piece.id === 'hooks.json' || piece.id === 'config.toml') {
             // se borra sólo si no existía antes de instalar Y sigue byte a byte como lo dejó esa instalación: una
-            // reinstalación pudo encontrarlo con contenido del dev (H15). Si no, «revisalo»: nunca se pierde lo suyo
+            // reinstalación pudo encontrarlo con contenido del dev. Si no, «revisalo»: nunca se pierde lo suyo
             const k = copyOf(piece.where);
             if (k.has && k.copy === null && asInstalled(piece.where)) rm(piece, piece.where);
             else out.review.push({ piece, why: `${piece.where}: ya existía antes de instalar, o cambió desde que lo dejó la instalación (o no hay copia que lo diga): el despliegue de Codex le sumó lo suyo, revisalo a mano` });

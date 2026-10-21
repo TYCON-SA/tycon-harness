@@ -4,15 +4,14 @@
  * push-phantom-ref-notice.js — antes de un `git push`, avisar si lo que se sube NOMBRA un archivo
  * que no existe.
  *
- * ── EL INCIDENTE QUE LO MOTIVA (2026-08-31) ─────────────────────────────────────────────────────
- * Una sesión commiteó y pusheó directo a `main` un cambio a `install-tycon-hooks.sh` que invocaba
- * `scripts/controls-bench/periodic-exam.js`. Ese archivo existía SÓLO en la rama de otra sesión,
- * sin mergear. Durante ~27 minutos, cualquier dev que hiciera `git pull` tenía en `main` un
- * instalador llamando a un archivo ausente.
+ * ── EL CASO QUE CUBRE ───────────────────────────────────────────────────────────────────────────
+ * Un push directo a `main` con un cambio a `install-tycon-hooks.sh` que invoca
+ * `scripts/controls-bench/periodic-exam.js`, un archivo que existe SÓLO en la rama de otra sesión,
+ * sin mergear. Mientras tanto, cualquier dev que hace `git pull` tiene en `main` un instalador
+ * llamando a un archivo ausente.
  *
- * No falló ruidosamente: los dos bloques que lo invocan chequean `[ -f ]` antes, así que el
- * instalador degradó en silencio — que es peor. Y se cerró por casualidad, con el merge normal de
- * la otra story; si esa story hubiera tardado un día más, `main` habría quedado así.
+ * No falla ruidosamente: los bloques que lo invocan chequean `[ -f ]` antes, así que el
+ * instalador degrada en silencio — que es peor. Y queda así hasta que la otra rama se mergea.
  *
  * ── QUÉ MIRA, Y POR QUÉ ASÍ ─────────────────────────────────────────────────────────────────────
  * De las líneas AGREGADAS por los commits que se están por subir, saca los fragmentos que parecen
@@ -37,7 +36,7 @@
 const { execFileSync } = require('child_process');
 const constancia = require('../lib/guard-record.js');
 
-// El mismo reconocimiento de `git <sub>` que endureció `engram-pre-commit.sh` el 2026-08-25: por
+// El mismo reconocimiento de `git <sub>` que usa `engram-pre-commit.sh`: por
 // POSICIÓN y no por substring, aceptando `git -C /ruta push`, `command git push`, `/usr/bin/git
 // push`. Un `grep "git push"` o un heredoc que escribe esa frase NO son un push.
 const GIT = '(^|[;&|(]|&&|\\|\\|)\\s*(command\\s+)?([^\\s]*/)?git\\s+([^\\s]+\\s+){0,4}';
@@ -144,8 +143,7 @@ try {
   try { rango = `${git('rev-parse', '--abbrev-ref', `${rama}@{u}`)}..HEAD`; }
   catch (_) { rango = 'origin/main..HEAD'; }
   // Se MIRAN también los archivos que no son código pero sí lo referencian: un YAML de pipeline o
-  // un `.tycon/*.yaml` puede invocar un guion igual que un `.sh` (hallazgo del revisor de fallos
-  // silenciosos: si el incidente real se hubiera escrito en un YAML, este control no lo veía).
+  // un `.tycon/*.yaml` puede invocar un guion igual que un `.sh`.
   // Los lock se excluyen: son miles de rutas de dependencias, puro ruido.
   const diff = git('diff', rango, '--unified=0', '--',
     '*.js', '*.mjs', '*.cjs', '*.sh', '*.py', '*.json', '*.yml', '*.yaml',
@@ -155,7 +153,7 @@ try {
   const tocados = git('diff', '--name-only', rango).split('\n').filter(Boolean);
   const malos = fantasmas(diff, archivos, tocados);
   // Este freno NUNCA bloquea: sus veredictos son `aviso` y `paso`. Medirlo es lo que decide si
-  // algún día tiene que pasar a frenar — «avisó N veces y nadie hizo nada» (story 2.6).
+  // algún día tiene que pasar a frenar: «avisó N veces y nadie hizo nada».
   constancia.anotar({
     freno: 'push-referencia-fantasma', regla: 'referencia-fantasma',
     veredicto: malos.length ? 'aviso' : 'paso', cmd,
@@ -168,10 +166,10 @@ try {
     console.log('   y no falló ruidosamente — degradó en silencio. Off: TYCON_PUSH_GHOST=0');
   }
 } catch (e) {
-  // 🔴 Fail-open SÍ, mudo NO (hallazgo del revisor de fallos silenciosos, 2026-08-31). Un aviso
+  // 🔴 Fail-open SÍ, mudo NO. Un aviso
   // jamás puede romper un push, pero "no pude mirar" y "miré y está limpio" NO pueden verse igual:
   // si mañana cambia el formato del evento, o el repo no tiene `origin/main`, este control queda
-  // callado para siempre sin que nadie se entere — que es EXACTAMENTE el patrón que vino a cerrar.
+  // callado para siempre sin que nadie se entere — que es EXACTAMENTE el patrón que este control cierra.
   console.log(`⚠️  no pude verificar si este push nombra archivos ausentes (${e && e.message}) — asumilo NO verificado`);
 }
 process.exit(0);

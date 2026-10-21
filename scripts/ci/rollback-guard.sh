@@ -2,15 +2,14 @@
 # =============================================================================
 # rollback-guard.sh — ¿el paquete que estoy por promover es MENOR que el instalado?
 # =============================================================================
-# 🔴 POR QUÉ EXISTE (2026-09-02, revisión adversarial de los pipelines, hallazgo 🟠 #9).
+# 🔴 POR QUÉ EXISTE.
 #
 # Encolar a mano el pipeline de producción eligiendo un run de CI VIEJO promueve ESE paquete.
 # Los backends lo suben con `setAsDefault=true` y el humo compara contra la versión del ZIP —no
-# contra la que estaba—, así que el retroceso termina en VERDE. Los formularios de Totora lo
-# saltean como "al día" y después el humo falla en rojo sin haber hecho nada; los de FRESNO lo suben
-# igual. Cuatro pipelines, tres conductas ante el mismo caso, y la única "exitosa" es el retroceso
-# silencioso. Etapa 4 del flujo objetivo: "instala el MISMO paquete" — el que la etapa 3 probó,
-# no uno anterior.
+# contra la que estaba—, así que el retroceso termina en VERDE. Los formularios que se saltean como "al día" hacen
+# fallar el humo en rojo sin haber hecho nada; los que se suben igual retroceden. Tres conductas ante el mismo caso,
+# y la única "exitosa" es el retroceso silencioso. El flujo objetivo es "instala el MISMO paquete" — el que la etapa
+# anterior probó, no uno anterior.
 #
 # Corre ANTES de subir nada: pregunta al host qué versión está instalada y se NIEGA si la del
 # paquete es menor. Igual o mayor pasa (igual = el despliegue lo va a saltear o deduplicar).
@@ -40,8 +39,8 @@ login() {
     code=$(curl -s -D "$headers" -o "$respuesta" -w '%{http_code}' --max-time 25 \
       "${URL}/api/auth/login" -H 'Content-Type: application/json' --data-raw "$body" 2>/dev/null) || code="000"
     [ "$code" = "200" ] && break
-    # El host devuelve su límite de ingresos como 401 {"error":"Too Many Requests"}, no como 429
-    # (medido 2026-09-01). Transitorio: se reintenta con espera larga. Un 401 sin ese texto es
+    # El host devuelve su límite de ingresos como 401 {"error":"Too Many Requests"}, no como 429.
+    # Transitorio: se reintenta con espera larga. Un 401 sin ese texto es
     # clave mal y no se reintenta.
     if [ "$code" = "401" ] && grep -qi "too many requests" "$respuesta" 2>/dev/null; then code="429"; fi
     case "$code" in 000|429|5??) [ "$intento" -lt 4 ] && { echo "[retroceso] login HTTP $code (intento $intento) — reintento en $((intento*15))s" >&2; sleep $((intento*15)); } ;; *) break ;; esac
@@ -65,12 +64,11 @@ case "$MODO" in
     TOKEN=$(login) || exit 1
     LISTA=$(curl -s --max-time 25 "${URL}/api/admin/plugins" -H "Authorization: Bearer $TOKEN" -H "Cookie: admin_token=$TOKEN" -H 'X-Tenant-Id: default' 2>/dev/null) || LISTA=""
     # La versión INSTALADA = la marcada como default para ese nombre (como smoke-plugin.sh).
-# 🔴 LA MISMA LECTURA QUE EL HUMO Y EL DESPLIEGUE (2026-09-03). Este freno leía la lista de
-# plugins con un criterio MÁS ANGOSTO que sus dos hermanos, que leen la MISMA respuesta del
-# MISMO host: ante una respuesta envuelta en `.value` no encontraba el plugin, concluía "no
-# está instalado" y APROBABA — diciendo lo contrario de lo que pasaba. Tres guiones del mismo
-# circuito DISCREPABAN SOBRE EL MISMO HOST, que es el modo más silencioso de fallar: el que
-# frena retrocesos es justo el que no puede equivocarse hacia "pasá".
+# 🔴 LA MISMA LECTURA QUE EL HUMO Y EL DESPLIEGUE. La lista de plugins se lee con el mismo criterio que sus dos
+# hermanos, que leen la MISMA respuesta del MISMO host: con un criterio más angosto, una respuesta envuelta en
+# `.value` no encontraría el plugin, concluiría "no está instalado" y APROBARÍA. Tres guiones del mismo circuito que
+# discrepan sobre el mismo host son el modo más silencioso de fallar: el que frena retrocesos es justo el que no puede
+# equivocarse hacia "pasá".
     INSTALADA=$(printf '%s' "$LISTA" | jq -r --arg n "$PLUGIN" '
       (if type=="array" then . else (.plugins // .data // .items // .value // []) end)
       | map(select((.name // "" | ascii_downcase) == ($n | ascii_downcase)))

@@ -20,7 +20,7 @@
  *
  * Opt-out: TYCON_RESPONSE_METER=0
  * Umbrales:  TYCON_RESPONSE_MAX_PROSE_CHARS (el que importa; sin la variable, `response.max_chars` de la configuración
- *            o el tope del estilo elegido —story 2.31—, y 1300 si no se pudo leer) · TYCON_RESPONSE_MAX_LINES (15)
+ *            o el tope del estilo elegido, y 1300 si no se pudo leer) · TYCON_RESPONSE_MAX_LINES (15)
  *            · TYCON_RESPONSE_MAX_HEADERS (1) · TYCON_RESPONSE_MAX_SENTENCE_WORDS (35)
  */
 
@@ -38,7 +38,7 @@ const PROBE_PATH = path.join(STATE_DIR, 'input-shape.json');
 
 const MAX_LINES = Number(process.env.TYCON_RESPONSE_MAX_LINES || 15);
 const MAX_HEADERS = Number(process.env.TYCON_RESPONSE_MAX_HEADERS || 1);
-// El tope de prosa (story 2.31): la variable › `response.max_chars` de la configuración (el perfil del equipo, o el
+// El tope de prosa: la variable › `response.max_chars` de la configuración (el perfil del equipo, o el
 // tope del estilo elegido si no lo fija) › 1300, el de siempre, si la configuración no se pudo leer.
 function topeDeLaConfiguracion() {
   try {
@@ -121,12 +121,12 @@ function measure(text) {
 }
 
 /**
- * NOTA DE CALIBRACIÓN DEL LARGO DE ORACIÓN (2026-10-02): sobre 6.500 mensajes finales de 30 días,
+ * NOTA DE CALIBRACIÓN DEL LARGO DE ORACIÓN: sobre 6.500 mensajes finales de 30 días,
  * la oración mediana tenía 12 palabras, pero el 56 % de los mensajes traía alguna de más de 25 y el
  * 23 %, alguna de más de 35. El bloque pide ~20 (lo que el modelo apunta al escribir); el medidor
  * cobra desde 35 para avisar las que de verdad cuestan leer sin avisar uno de cada dos turnos.
  *
- * NOTA DE CALIBRACIÓN (medida el 2026-07-26, primera corrida real):
+ * NOTA DE CALIBRACIÓN:
  * contar LÍNEAS de source no alcanza — un párrafo largo sin cortes es 1 línea pero 6 renglones en
  * pantalla, así que un muro pasaba el control con "3 líneas". El gate real es `proseChars`, que sí
  * escala con lo que el lector ve. Referencia empírica: un mensaje ejecutivo correcto midió ~1180

@@ -74,6 +74,12 @@ Lo cerraría otra regla —**un cambio de código tiene que nombrar una historia
 envío en vez del cierre. Antes de escribirla hay que **medir** cuántos cambios reales del equipo
 hoy no nombran ninguna: si son muchos, frena a todos el primer día y termina apagada.
 
+**Se mide cada noche, sin frenar ni avisar a nadie.** El nocturno de métricas corre
+`scripts/metrics/story-reference.js` sobre los repos de código de `repos.json`: cuenta las entradas a
+`main` de los últimos 28 días que no nombran una historia, por repo, por persona y por tipo. El número
+se ve en la ficha «Cambios de código sin historia» del tablero (pestaña Proyectos; al abrirla, las
+tablas) y en la misma ficha del sitio. Con ese número se decide si hace falta la regla que frena.
+
 ## Stories en un repo, código en otro — la evidencia nace en el repo de la STORY (2026-09-05)
 
 **Por qué.** Un producto puede tener las stories en un repo y el código en otros.

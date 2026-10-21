@@ -3,7 +3,7 @@
 #
 # POR QUÉ EXISTE
 # El canal de Telegram del arnés es un plugin de Claude Code: del lado de Codex no hay tool, ni
-# siquiera vía MCP, y hasta hoy eso figuraba como asimetría declarada en el inventario. Esto la
+# siquiera vía MCP: es una asimetría declarada en el inventario. Esto la
 # cierra para la única dirección que el equipo realmente usa desde un agente: **avisar** (Claude o
 # Codex → Telegram) cuando termina una tarea larga, cuando algo queda esperando input, o cuando el
 # dev lo pide. La dirección inversa (Telegram → agente) NO se implementa acá, y no por falta de

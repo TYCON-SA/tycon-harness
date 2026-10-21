@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 # nightly-dod-notice.sh — avisa por Telegram cuando la evidencia DoD que medimos CAMBIA.
 #
-# POR QUÉ EXISTE (2026-09-05)
-# La evidencia de cierre no viajaba por git: `.advisors/` en el .gitignore tapaba también
-# `.advisors/dod-runtime/`, así que el medidor nocturno reportaba 0% en repos con decenas de
-# archivos en el disco. Se arregló en 26 repos y se commitearon 1024 archivos… a `dev`.
-# El nocturno clona la rama por defecto (`main`), o sea que el número NO se mueve hasta que
-# cada producto mergee. Este aviso existe para no tener que acordarse de mirar.
+# POR QUÉ EXISTE
+# La evidencia de cierre viaja por git, pero el nocturno clona la rama por defecto (`main`): el
+# número de evidencia DoD NO se mueve hasta que cada producto mergee la evidencia que está en `dev`.
+# Este aviso existe para no tener que acordarse de mirar.
 #
 # QUÉ HACE
 # Compara el snapshot de hoy con el anterior, LEÍDOS DE LO PUBLICADO (`origin/main`), y avisa SÓLO
@@ -15,29 +13,29 @@
 # (el fetch anduvo y el de hoy no está) no es "no pude mirar" (el fetch falló), y ninguno de los
 # dos es "no corrió" — este guion no mira Azure DevOps.
 #
-# 🔴 POR QUÉ LEE `origin/main` Y NO EL DISCO (story 1.5, 2026-09-15)
-# Leía `.dashboard/` del checkout compartido después de un `merge --ff-only` con el error tapado.
-# A las 03:43 del 15 el checkout estaba en otra rama, el merge falló callado y llegó "el medidor NO
-# corrió hoy" con el snapshot publicado 37 minutos antes. Y cuando el merge SÍ andaba, le metía
-# `main` encima a la rama en la que estuviera el dev. Ahora el único cambio que hace en el repo es
-# traer la referencia `origin/main`; la rama, el índice y el árbol de trabajo no se tocan.
+# 🔴 POR QUÉ LEE `origin/main` Y NO EL DISCO
+# Leer `.dashboard/` del checkout compartido después de un `merge --ff-only` con el error tapado
+# falla en silencio: si el checkout está en otra rama, el merge falla callado y llega "el medidor
+# NO corrió hoy" con el snapshot ya publicado. Y cuando el merge SÍ anda, le mete `main` encima a
+# la rama en la que esté el dev. Por eso el único cambio que hace en el repo es traer la
+# referencia `origin/main`; la rama, el índice y el árbol de trabajo no se tocan.
 #
 # 🔴 UN ENVÍO QUE NO LLEGA QUEDA DICHO
-# El registro mostraba avisos perdidos por DNS (la Mac despertando) con la corrida en exit 0 y sin
-# fecha. Ahora reintenta; si igual no llega, deja una línea "NO SE ENTREGÓ" con motivo y texto,
+# Un aviso perdido por DNS (la Mac despertando) con la corrida en exit 0 y sin fecha queda mudo.
+# Por eso reintenta; si igual no llega, deja una línea "NO SE ENTREGÓ" con motivo y texto,
 # guarda el aviso como pendiente y sale 3. La corrida siguiente que logra entregar manda los
 # pendientes (con su fecha) en el mismo mensaje.
 #
 # VARIABLES
-#   TYCON_GUIDES_DIR        el repo de donde se leen los snapshots y sale el envío (sin ella, ver «DOS COSAS» abajo; antes, ~/.claude/tycon-harness)
+#   TYCON_GUIDES_DIR        el repo de donde se leen los snapshots y sale el envío (sin ella, ver «DOS COSAS» abajo)
 #   TYCON_NOTICE_DRYRUN=1   no manda nada: imprime "[dry-run] <texto>" y no toca los pendientes
 #   TYCON_NOTICE_NOTIFY     script de envío (default <repo>/scripts/lib/tycon-telegram-notify.sh)
 #   TYCON_NOTICE_TODAY      fecha UTC de hoy (AAAA-MM-DD); para las pruebas
 #   TYCON_NOTICE_STATE_DIR  dónde viven los pendientes (default ~/.claude/.tycon-pipeline/aviso-dod)
 #   TYCON_NOTICE_RETRIES    intentos de envío en total (default 3)
 #   TYCON_NOTICE_WAIT_S     segundos entre intentos (default 30)
-#   (los nombres viejos en castellano siguen valiendo hasta el retiro: scripts/lib/renames.json, story 8.9)
-#   TYCON_NOTICE_FETCH_RETRIES  intentos de traer main cuando falla por red (default 3; story 8.3.1)
+#   (los nombres viejos en castellano siguen valiendo hasta el retiro: scripts/lib/renames.json)
+#   TYCON_NOTICE_FETCH_RETRIES  intentos de traer main cuando falla por red (default 3)
 #   TYCON_NOTICE_FETCH_WAIT_S    segundos entre esos intentos (default 60)
 #
 # SALIDA: 0 miró (y avisó o calló) · 2 no pudo mirar o comparar (y lo avisó), o esta máquina no tiene de qué clon
@@ -49,15 +47,15 @@
 # APAGARLO:  launchctl unload ~/Library/LaunchAgents/com.tycon.aviso-dod.plist
 set -u
 
-SELF_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"   # este script vive en el arnés: su ubicación (story 8.3)
-# 🔴 DOS COSAS QUE ANTES ERAN UNA (2026-10-13): de qué repo se LEEN los snapshots, y de qué árbol sale el guion que MANDA.
-# En una versión instalada el árbol de este guion no es un clon: tomarlo como repo hacía fallar el `fetch` todas las
+SELF_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"   # este script vive en el arnés: su ubicación
+# 🔴 DOS COSAS DISTINTAS: de qué repo se LEEN los snapshots, y de qué árbol sale el guion que MANDA.
+# En una versión instalada el árbol de este guion no es un clon: tomarlo como repo haría fallar el `fetch` todas las
 # noches («no pude mirar») con los datos sanos en el clon de mantenimiento de la máquina. Los datos:
 #   · TYCON_GUIDES_DIR, si viene (y entonces también el envío sale de ahí, como siempre);
 #   · si no, y este árbol es un clon: este árbol, como siempre;
 #   · si no es un clon (una versión instalada): lo que diga scripts/lib/night-data.js, que es el clon del repo de
-#     operaciones que la máquina declara (`paths.operations`): desde la story 8.30 las métricas se guardan ahí (2026-10-14:
-#     leídas del clon de mantenimiento, el aviso decía «el de hoy no está publicado» con el de hoy ya en operaciones).
+#     operaciones que la máquina declara (`paths.operations`): las métricas se guardan ahí (leerlas del clon de
+#     mantenimiento haría decir al aviso «el de hoy no está publicado» con el de hoy ya en operaciones).
 #     Sin uno que sirva, o sin `node` para preguntarlo: se dice y se sale 2, sin traer ni mandar nada (lo mismo lo dice
 #     el arranque de cada sesión).
 #   · y de paso trae el clon de mantenimiento (`paths.maintainers`), si la máquina lo declara y es otro: de ahí leen los
@@ -75,7 +73,7 @@ else
   if [ ! -e "$SELF_ROOT/.git" ] && [ -f "$SELF_ROOT/scripts/lib/night-data.js" ]; then
     if command -v node >/dev/null 2>&1; then
       # La ruta sale por la salida y el motivo por la de error, cada una por su lado: mezcladas, un aviso cualquiera de
-      # node quedaba adentro de la ruta. Y una respuesta que no es UNA carpeta que existe no se usa como repo.
+      # node quedaría adentro de la ruta. Y una respuesta que no es UNA carpeta que existe no se usa como repo.
       NIGHT_ERR_FILE="$(mktemp 2>/dev/null || echo "/tmp/tycon-aviso-dod.$$.err")"
       NIGHT_OUT="$(node "$SELF_ROOT/scripts/lib/night-data.js" --plain --operations 2>"$NIGHT_ERR_FILE")"; NIGHT_RC=$?
       NIGHT_ERR="$(head -n 1 "$NIGHT_ERR_FILE" 2>/dev/null)"; rm -f "$NIGHT_ERR_FILE"
@@ -92,7 +90,7 @@ else
     fi
   fi
 fi
-# Las variables renombradas a inglés (story 8.9): la biblioteca, por la ubicación de este script (vive en el arnés).
+# Las variables renombradas a inglés: la biblioteca, por la ubicación de este script (vive en el arnés).
 . "$SELF_ROOT/scripts/lib/legacy-names.sh"
 legacy_env TYCON_NOTICE_DRYRUN; legacy_env TYCON_NOTICE_NOTIFY; legacy_env TYCON_NOTICE_TODAY
 legacy_env TYCON_NOTICE_STATE_DIR; legacy_env TYCON_NOTICE_RETRIES; legacy_env TYCON_NOTICE_WAIT_S
@@ -130,9 +128,8 @@ print(m[:200])' "$1"
 # ── 1. Traer lo publicado, sin tocar la rama del checkout ───────────────────────────────────────
 # El refspec explícito actualiza origin/main aunque el remoto no tenga `fetch` configurado.
 #
-# UN FETCH QUE FALLA POR RED SE REINTENTA (story 8.3.1). Caso disparador, 2026-09-27 03:43: la
-# MacBook despertó sin DNS, el único fetch falló y el aviso dijo «no pude mirar» con el snapshot
-# publicado. El envío ya reintentaba; el fetch no. Red = el texto de git dice que no llegó al
+# UN FETCH QUE FALLA POR RED SE REINTENTA. Si la MacBook despierta sin DNS y el único fetch falla,
+# el aviso diría «no pude mirar» con el snapshot ya publicado. Red = el texto de git dice que no llegó al
 # servidor: `Could not resolve host`, `Connection timed out`, `Connection refused`, `Failed to
 # connect`, `Operation timed out`, `Network is unreachable`. Cualquier otro error (repo roto,
 # permisos, `main` inexistente) se avisa al primer intento: repetirlo no lo arregla y demora el aviso.

@@ -13,12 +13,12 @@
 
 set +e
 
-# ── Reparación de la línea de arranque del arnés (2026-08-27) ────────────────────────────────────
+# ── Reparación de la línea de arranque del arnés ────────────────────────────────────
 # Este hook es uno de los POCOS que una instalación vieja del arnés sí tiene registrados, y su
 # código sí se actualiza con el `git pull` que esas máquinas sí hacen. Por eso entra por acá el
 # reparador: el arreglo de "tu línea de arranque no llama al instalador" no puede viajar por el
 # instalador que no se llama. Sale en silencio y en un grep si ya está sano.
-# Ver incident-log#hook-no-instalado-en-silencio-2026-08-27. Off: TYCON_NO_BOOTSTRAP_HEAL=1
+# Off: TYCON_NO_BOOTSTRAP_HEAL=1
 _heal="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
 for _c in "$_heal/hooks/harness-bootstrap-heal.sh" "$_heal/harness-bootstrap-heal.sh"; do
   [ -f "$_c" ] && { bash "$_c" || true; break; }
@@ -33,14 +33,14 @@ case "$CWD" in
   */node_modules/*|*/.git/*) exit 0 ;;
 esac
 
-# 🔴 Nunca tratar el HOME (ni "/") como proyecto (caso: incident-log#codegraph-indexa-el-home).
+# 🔴 Nunca tratar el HOME (ni "/") como proyecto.
 # Una sesión abierta sin carpeta (VS Code sin workspace) arranca en $HOME; si ahí hay un
 # package.json suelto, la heurística de abajo lo toma por proyecto, `codegraph init` indexa
-# el home ENTERO y registra un MCP con --path $HOME. Caso real 2026-08-24: 2 h y 87 min de
-# CPU indexando, 3.8 GB de índice en ~/.codegraph, en una máquina ya en swap.
+# el home ENTERO y registra un MCP con --path $HOME: horas de CPU y gigas de índice en
+# ~/.codegraph, en una máquina ya en swap.
 # Va ANTES del chequeo de herramientas para que el banco lo pruebe sin depender del PATH.
 # Se comparan rutas FÍSICAS (pwd -P): en macOS /var → /private/var, y $HOME puede venir
-# sin resolver mientras $PWD viene resuelto (el banco lo cazó en la primera corrida).
+# sin resolver mientras $PWD viene resuelto.
 CWD_REAL="$(pwd -P 2>/dev/null || echo "$CWD")"
 HOME_REAL="$(cd "${HOME:-/nonexistent}" 2>/dev/null && pwd -P)"
 if [ "$CWD_REAL" = "/" ] || { [ -n "$HOME_REAL" ] && [ "$CWD_REAL" = "$HOME_REAL" ]; }; then
@@ -49,9 +49,9 @@ fi
 
 # El binario de codegraph es imprescindible (indexa). El CLI `claude` NO: solo hace falta para
 # el registro del MCP del lado Claude. Un dev SOLO-Codex tiene `codegraph` pero puede no tener
-# `claude` — antes el hook salía acá (línea vieja `command -v claude || exit 0`) y NUNCA construía
-# el índice, así que el server codegraph de Codex (registrado en ~/.codex/config.toml) respondía
-# VACÍO en silencio. Ahora el indexado corre igual; el registro Claude queda condicionado abajo.
+# `claude`: salir acá por eso NUNCA construiría el índice, y el server codegraph de Codex
+# (registrado en ~/.codex/config.toml) respondería VACÍO en silencio. Por eso el indexado corre igual;
+# el registro Claude queda condicionado abajo.
 command -v codegraph >/dev/null 2>&1 || exit 0
 
 # ¿cwd es un proyecto?

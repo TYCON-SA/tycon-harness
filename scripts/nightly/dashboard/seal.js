@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /*
- * seal.js — EL SELLO DE LA PÁGINA DEL TABLERO (story 2.12)
+ * seal.js — EL SELLO DE LA PÁGINA DEL TABLERO
  *
  * La página `artifacts/tablero-del-arnes.html` la genera el nocturno de Azure (`pipelines/azure-pipelines-tablero.yml`) y viaja
  * por git a todo el equipo. Para saber DE CUÁNDO ES y SI SALIÓ COMPLETA, trae adentro un sello legible por máquina:
@@ -19,7 +19,7 @@
  *
  * Uso:   node scripts/nightly/dashboard/seal.js --verify <html> [--today AAAA-MM-DD] [--run <id>] --dashboard <dir>
  *         --run: la página tiene que ser de ESA corrida (el pipeline pasa su Build.BuildId). Sin eso, una segunda
- *         corrida del día que no llegó a escribir su página aprobaría la de la corrida anterior (pase adversarial).
+ *         corrida del día que no llegó a escribir su página aprobaría la de la corrida anterior.
  * Salida: 0 la página pasa · 1 la página NO pasa (con el motivo) · 2 no se pudo verificar (sin archivo, argumentos
  *         inválidos, dashboard ilegible). «No pude mirar» nunca sale 0.
  */
@@ -29,10 +29,9 @@ const path = require('path');
 
 const ID = 'tablero-sello';
 const ESQUEMA = 1;
-// El modo de la página del nocturno tiene dos nombres (story 8.9, tanda E): se acepta «nightly», el nuevo, y se sigue
-// GRABANDO «nocturno», el que leen los arneses de antes de la tanda E que todavía estén en alguna máquina (pregunta 2 de
-// la 8.9: un valor grabado se acepta con el nombre nuevo y se graba con el viejo). La story de retiro cambia lo que se
-// graba cuando ya no quede quien lea sólo el viejo.
+// El modo de la página del nocturno tiene dos nombres: se acepta «nightly», el nuevo, y se sigue GRABANDO «nocturno», el
+// que leen los arneses viejos que todavía estén en alguna máquina (un valor grabado se acepta con el nombre nuevo y se
+// graba con el viejo). Lo que se graba cambia cuando ya no quede quien lea sólo el viejo.
 const NIGHTLY_RECORDED = 'nocturno';
 const NIGHTLY_MODES = new Set(['nightly', NIGHTLY_RECORDED]);
 const isNightly = (modo) => NIGHTLY_MODES.has(modo);
