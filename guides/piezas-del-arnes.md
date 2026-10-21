@@ -594,6 +594,18 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscismoke-pluginsh)
 
+## scripts/ci/deploy-plugin.sh
+
+**Qué es:** El guion que despliega un plugin en su servidor: sube sin marcar, pregunta, migra, activa y recién al final marca como actual.
+
+**Por qué existe:** Cada orden distinto dejaba producción rota con la corrida en verde. Frena si a la versión le faltan opciones de configuración, también en la re-corrida; si el servidor no puede decirlo, avisa que no pudo medir en vez de dar verde.
+
+**Quién la usa:** Los pipelines de despliegue de cada producto, que publican `scripts/ci` desde `main`.
+
+**Dónde se prueba:** `scripts/tests/deploy-plugin.test.sh`, `scripts/tests/deploy-plugin-config.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscideploy-pluginsh)
+
 ## scripts/ci/deploy-record.sh
 
 **Qué es:** El ayudante que anota cada despliegue aprobado en su propia corrida, con una línea de registro y etiquetas.

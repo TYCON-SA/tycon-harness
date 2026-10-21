@@ -49,6 +49,15 @@ echo '[{"name":"totorabackend","version":"rara","isActive":true,"isDefault":true
 gp 1.0.215; rc=$?; [ "$rc" -eq 1 ] && ok "plugin: versión instalada sin forma de versión → 1" || no "🔴 plugin: versión rara salió $rc"
 echo '[{"name":"totorabackend","version":"1.0.214","isActive":true,"isDefault":true}]' > "$TMP/plugins.json"
 gp abc; rc=$?; [ "$rc" -eq 1 ] && ok "plugin: versión del paquete sin forma de versión → 1" || no "🔴 plugin: paquete 'abc' salió $rc"
+# Azure ejecuta como comando toda línea que empieza con `##vso[`: una versión del host con un salto de línea no tiene
+# forma de versión, y no puede dejar una línea así en la salida.
+echo '[{"name":"totorabackend","version":"1.0.214\n##vso[task.setvariable variable=inyectado]si","isActive":true,"isDefault":true}]' > "$TMP/plugins.json"
+gp 1.0.213; rc=$?
+if [ "$rc" -eq 1 ] && ! grep -q '^##vso\[task.setvariable' "$TMP/out" "$TMP/err"; then
+  ok "🔴 plugin: una versión instalada con un salto de línea y un comando de Azure → 1, y el comando no llega a la salida"
+else
+  no "🔴 plugin: la versión del host coló un comando de Azure (salió $rc): $(grep -h '^##vso\[task.setvariable' "$TMP/out" "$TMP/err" | head -1)"
+fi
 echo 000 > "$TMP/login.code"
 gp 1.0.215; rc=$?; [ "$rc" -eq 1 ] && ok "plugin: login caído (4 intentos) → 1" || no "🔴 plugin: sin poder entrar salió $rc"
 echo 401 > "$TMP/login.code"
@@ -69,6 +78,13 @@ echo '{"forms":[{"formName":"form-uno","currentVersion":"1.0.10"},{"formName":"f
 gf "$Z"; rc=$?; [ "$rc" -eq 2 ] && ok "forms: lista envuelta en {forms:[…]} también se lee (y caza el retroceso de form-dos)" || no "🔴 forms: lista envuelta salió $rc"
 echo 'no json' > "$TMP/forms.json"
 gf "$Z"; rc=$?; [ "$rc" -eq 1 ] && ok "forms: respuesta ilegible → 1" || no "🔴 forms: respuesta ilegible salió $rc"
+echo '[{"formName":"form-uno","currentVersion":"1.0.11\n##vso[task.complete result=Succeeded]listo"},{"formName":"form-dos","currentVersion":"2.3.0"}]' > "$TMP/forms.json"
+gf "$Z"; rc=$?
+if [ "$rc" -eq 1 ] && ! grep -q '^##vso\[task.complete' "$TMP/out" "$TMP/err"; then
+  ok "🔴 forms: una versión instalada con un salto de línea y un comando de Azure → 1, y el comando no llega a la salida"
+else
+  no "🔴 forms: la versión del host coló un comando de Azure (salió $rc): $(grep -h '^##vso\[task.complete' "$TMP/out" "$TMP/err" | head -1)"
+fi
 mkdir -p "$TMP/vacio"; gf "$TMP/vacio"; rc=$?; [ "$rc" -eq 1 ] && ok "forms: directorio sin ZIPs → 1 (nada que promover no es verde)" || no "🔴 forms: sin ZIPs salió $rc"
 ( cd "$TMP" && echo '{}' > manifest.json && zip -q "$Z/roto.zip" manifest.json && rm manifest.json )
 echo '[]' > "$TMP/forms.json"; gf "$Z"; rc=$?; [ "$rc" -eq 1 ] && ok "forms: un manifest sin formName/version → 1" || no "🔴 forms: manifest roto salió $rc"

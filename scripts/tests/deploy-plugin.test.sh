@@ -15,40 +15,21 @@ OK=0; MAL=0
 ok() { echo "✅ desplegar: $1"; OK=$((OK+1)); }
 no() { echo "❌ desplegar: $1"; MAL=$((MAL+1)); }
 
-ZIP="$TMP/miplugin.1.0.7-abc.zip"; echo "paquete" > "$ZIP"
-
-# Un `curl` falso: lee la ruta pedida y contesta desde $TMP/respuestas/<clave>.
-# Formato de cada archivo: cuerpo en las líneas de arriba, código HTTP en la última.
-mkcurl() {
-  mkdir -p "$TMP/bin"
-  cat > "$TMP/bin/curl" <<'CURL'
-#!/usr/bin/env bash
-# El guion pide el token por la cookie del encabezado (-D), como hace el host de verdad.
-url=""; hdr=""
-while [ $# -gt 0 ]; do case "$1" in -D) hdr="$2"; shift;; http*) url="$1";; esac; shift; done
-ruta="${url#*://*/}"
-clave=$(echo "/$ruta" | sed 's#[^a-zA-Z0-9]#_#g')
-f="$RESP/$clave"
-[ -f "$f" ] || f="$RESP/default"
-case "$url" in
-  */api/auth/login)
-    [ -n "$hdr" ] && printf 'HTTP/1.1 200 OK\r\nSet-Cookie: admin_token=tok; Path=/\r\n\r\n' > "$hdr"
-    ;;
-esac
-if [ -f "$f" ]; then cat "$f"; else printf '{}\n404\n'; fi
-CURL
-  chmod +x "$TMP/bin/curl"
-}
-resp() { mkdir -p "$TMP/respuestas"; printf '%s\n%s\n' "$2" "$3" > "$TMP/respuestas/$(echo "$1" | sed 's#[^a-zA-Z0-9]#_#g')"; }
+# El host simulado vive en un ayudante compartido con la suite del freno de configuración
+# (scripts/tests/lib/fake-plugin-host.sh): distingue el método, guarda lo que se manda y anota las llamadas en orden.
+# El paquete de prueba es un ZIP de verdad, con su plugin.json.
+. "$DIR/lib/fake-plugin-host.sh"
+ZIP="$TMP/miplugin.1.0.7-abc.zip"
+fph_zip "$ZIP" || no "no hay zip ni python3 para armar el paquete de prueba — los casos corren con un archivo que no es un ZIP (no es verde)"
 corre() {
-  rm -rf "$TMP/respuestas"; mkdir -p "$TMP/respuestas"
+  rm -rf "$TMP/respuestas"; mkdir -p "$TMP/respuestas"; : > "$TMP/llamadas.txt"
   printf '{}\n200\n' > "$TMP/respuestas/default"
   "$@"
-  PATH="$TMP/bin:$PATH" RESP="$TMP/respuestas" bash "$GUION" \
+  PATH="$TMP/bin:$PATH" RESP="$TMP/respuestas" LLAMADAS="$TMP/llamadas.txt" bash "$GUION" \
     --url http://host --user u --password c --zip "$ZIP" --endpoint /api/admin/plugins/upload >"$TMP/salida.txt" 2>&1
   echo $?
 }
-mkcurl
+fph_init
 
 # Respuestas del camino feliz, que cada caso pisa donde necesita.
 feliz() {
@@ -109,10 +90,10 @@ grep -q "recupero la anterior" "$TMP/salida.txt" && ok "…y no queda la nueva c
 
 # ── 8. re-corrida: el paquete ya existe ────────────────────────────────────────────────────────
 caso8() { feliz; resp /api/admin/plugins/upload '{"error":"already exists"}' 409
-          resp /api/admin/plugins '[{"pluginId":7,"name":"miplugin","version":"1.0.7","isDefault":false}]' 200
-          resp /api/admin/plugins/7 '{"pluginId":7,"missingSettings":[]}' 200; }
+          resp /api/admin/plugins '[{"pluginId":7,"name":"miplugin","version":"1.0.7","isDefault":false}]' 200; }
 rc=$(corre caso8)
 [ "$rc" = "0" ] && ok "una re-corrida con el paquete ya subido resuelve el identificador y sigue" || no "re-corrida salió $rc — $(tail -3 "$TMP/salida.txt")"
+grep -q "NO PUDO MEDIR" "$TMP/salida.txt" && ok "…y, con un host que no contesta qué opciones faltan, dice que no pudo medir la configuración" || no "🔴 la re-corrida contra un host viejo pasó sin decir que no midió la configuración"
 
 # ── 9. …pero un conflicto de migraciones con el MISMO código es rojo ──────────────────────────
 caso9() { feliz; resp /api/admin/plugins/upload '{"error":"migration 003 was modified after being applied"}' 409; }
@@ -120,11 +101,15 @@ rc=$(corre caso9)
 [ "$rc" = "1" ] && ok "🔴 el otro rechazo con el mismo código (una migración aplicada que cambió) SÍ es rojo" || no "conflicto de migración salió $rc"
 
 # ── 10. la re-corrida NO se saltea el chequeo de configuración ─────────────────────────────────
+# 🔴 El host simulado contesta como el de verdad: `GET /api/admin/plugins/{id}` no trae `missingSettings`, y la lista
+# viene en la vista previa, con su motivo. Simular el campo en esa consulta haría pasar en verde justo el defecto que
+# este caso tiene que cazar.
 caso10() { feliz; resp /api/admin/plugins/upload '{"error":"already exists"}' 409
            resp /api/admin/plugins '[{"pluginId":7,"name":"miplugin","version":"1.0.7","isDefault":false}]' 200
-           resp /api/admin/plugins/7 '{"pluginId":7,"missingSettings":["Voip:PbxId"]}' 200; }
+           resp /api/admin/plugins/7 '{"pluginId":7,"name":"miplugin","version":"1.0.7","isDefault":false}' 200
+           resp /api/admin/plugins/7/set-default/preview '{"pluginId":7,"missingSettings":[{"key":"Voip:PbxId","reason":"vacia-en-ambas"}],"manifestUnreadable":false,"migrationAnalysisFailed":false,"pendingCount":0,"rollbackCount":0}' 200; }
 rc=$(corre caso10)
-[ "$rc" = "1" ] && ok "🔴 en la re-corrida la lista de faltantes NO viaja: se pide aparte, y sigue frenando (hueco que encontró la 6ª revisión)" || no "re-corrida con faltantes salió $rc"
+[ "$rc" = "1" ] && grep -q "Voip:PbxId" "$TMP/salida.txt" && ok "🔴 en la re-corrida la lista de faltantes se lee de la vista previa, y sigue frenando nombrando la opción" || no "re-corrida con faltantes salió $rc"
 
 # ── 🔴 RETROCESO: SE MIRA CUÁLES, NO CUÁNTAS (2026-09-03) ───────────────────────────────────────
 # Un retroceso de base de datos frena, y eso no cambia. Pero hay migraciones que el paquete deja
@@ -330,8 +315,7 @@ rc=$(corre caso11)
 grep -q "vuelta a cargar" "$TMP/salida.txt" && ok "…y recupera la versión anterior igual que con la lista suelta" || no "🔴 con la lista envuelta NO recuperó la anterior — el plugin queda descargado en silencio"
 
 caso12() { feliz; resp /api/admin/plugins/upload '{"error":"already exists"}' 409
-           resp /api/admin/plugins '{"value":[{"pluginId":7,"name":"miplugin","version":"1.0.7","isDefault":false}]}' 200
-           resp /api/admin/plugins/7 '{"pluginId":7,"missingSettings":[]}' 200; }
+           resp /api/admin/plugins '{"value":[{"pluginId":7,"name":"miplugin","version":"1.0.7","isDefault":false}]}' 200; }
 rc=$(corre caso12)
 [ "$rc" = "0" ] && ok "…y en la re-corrida también resuelve el identificador con la lista envuelta" || no "re-corrida con lista envuelta salió $rc"
 
@@ -373,7 +357,8 @@ else
   no "2.10 T12 no hay zip/unzip para armar un paquete real — el caso del hash no se midió (no es verde)"
 fi
 rm -rf "$TMP/respuestas"; mkdir -p "$TMP/respuestas"; printf '{}\n200\n' > "$TMP/respuestas/default"; feliz
-rc=$(corre_reg "$ZIP" http://host u c staging AGENT_TEMPDIRECTORY="$TMP/job-b")
+ZMALO_DIR="$TMP/zipmalo"; mkdir -p "$ZMALO_DIR"; ZMALO="$ZMALO_DIR/miplugin.1.0.7-abc.zip"; echo "paquete" > "$ZMALO"
+rc=$(corre_reg "$ZMALO" http://host u c staging AGENT_TEMPDIRECTORY="$TMP/job-b")
 [ "$rc" = "0" ] && linea_reg | jq -e '.estado=="intentado" and .hash==null' >/dev/null && ok "2.10 T12 un paquete sin plugin.json legible → hash null, sin inventar" || no "2.10 T12 paquete ilegible: rc=$rc línea $(linea_reg)"
 rm -rf "$TMP/respuestas"; mkdir -p "$TMP/respuestas"; printf '{}\n200\n' > "$TMP/respuestas/default"; feliz; resp /api/auth/login '{"error":"Invalid credentials"}' 401
 mkdir -p "$TMP/job-c"; rc=$(corre_reg "$ZIP" http://host u c staging AGENT_TEMPDIRECTORY="$TMP/job-c")

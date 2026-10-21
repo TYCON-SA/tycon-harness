@@ -204,6 +204,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/deploy-plugin-config.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/plugin-manifests.test.sh",
       "requiere": []
     },
