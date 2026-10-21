@@ -33,8 +33,8 @@
  *      `~`, `[]` o sólo una lista de lectura no cuentan. Con archivos declarados, mandan las listas.
  *   5. ESCENARIOS de prueba de navegador en el cuerpo del spec: `tests/e2e/`, «Playwright E2E», o un id `E2E-n` como
  *      id `E2E-n` que encabeza una línea (sola, tras una viñeta o tras «Escenario») o es fila de una tabla bajo un título
- *      de pruebas. Un `E2E-n` citado a mitad de una frase, en el frontmatter o en otra tabla (dependencias,
- *      trazabilidad) puede ser de otra story, y no cuenta.
+ *      de pruebas (o fuera de todo título). Un `E2E-n` citado a mitad de una frase, en el frontmatter o en una tabla
+ *      bajo otro título (dependencias, trazabilidad) puede ser de otra story, y no cuenta.
  *
  * Por qué la prosa queda de respaldo: una story de backend con sólo `.cs` en sus listas y una ruta HTTP
  * terminada en `/frontend` en el `driver` quedaría como de pantalla, y la guía del tester la bloquearía sin
@@ -58,12 +58,15 @@ const UI_FM_PATHS_RE = /front-?end|src\/app\/|src\/components\//i;
 const UI_BODY_RE = /tests\/e2e\/|Playwright E2E/;
 // Un id de escenario de navegador (`E2E-3`, `E2E1`) cuenta cuando la story lo declara: encabezando una línea (sola, tras
 // una viñeta o tras «Escenario») o como fila de una tabla de pruebas. Citado a mitad de una frase, en el frontmatter o en
-// otra tabla (dependencias, trazabilidad) puede ser de otra story.
+// una tabla bajo otro título (dependencias, trazabilidad) puede ser de otra story.
 const UI_BODY_LINE_RE = /^[ \t]*(?:[-*][ \t]+)?(?:\*\*)?(?:escenario[ \t]+)?`?E2E-?\d/im;
 const UI_BODY_ROW_RE = /^[ \t]*\|[ \t]*`?E2E-?\d/m;
 const TESTS_HEADING_RE = /^#{2,6}[^\n]*\btests?\b/i;
+// Lo que queda bajo un título de pruebas, más lo que no está bajo ningún título: una tabla bajo otro título
+// (dependencias, trazabilidad) no declara escenarios de la story.
 function testSections(body) {
-  return String(body || '').split(/^(?=#{1,6}\s)/m).filter((sec) => TESTS_HEADING_RE.test(sec)).join('\n');
+  return String(body || '').split(/^(?=#{1,6}\s)/m)
+    .filter((sec) => !/^#{1,6}\s/.test(sec) || TESTS_HEADING_RE.test(sec)).join('\n');
 }
 // Lo que no puede ser una pantalla: un script por su extensión, o cualquier archivo de una carpeta de scripts o de CI.
 const NOT_SCREEN_RE = /\.(sh|ps1|psm1|bat|cmd|py|ya?ml)$|(^|\/)(scripts|pipelines|\.github|\.azure-pipelines)\//i;
