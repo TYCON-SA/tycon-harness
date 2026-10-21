@@ -159,7 +159,7 @@ test('T1 SetFlag_DeepReviewDone_SeNiega @story-1.8 @ac-1', () => {
 test('T2 SetFlag_OtrasBanderas_SiguenAndando @story-1.8 @ac-2', () => {
   const home = casa(); const SID = 't2';
   writeFakeMarker(home, SID);
-  for (const f of ['clockiStarted', 'adoMarkedActive', 'atddBypass', 'waitingForHuman']) {
+  for (const f of ['workSignalStarted', 'adoMarkedActive', 'atddBypass', 'waitingForHuman']) {
     const r = correr(home, SID, ['set-flag', f, 'true']);
     assert.equal(r.status, 0, `${f}: ${r.stderr}`);
     assert.equal(r.stdout.trim(), `${f}: true`);
