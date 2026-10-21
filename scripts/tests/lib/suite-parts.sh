@@ -1,4 +1,4 @@
-# suite-parts.sh — partir una suite de consola SIN mover sus casos (story 8.22, tramo F, AC 34).
+# suite-parts.sh — partir una suite de consola SIN mover sus casos.
 #
 # Ninguna suite pasa de 45 s en la validación de una rama. Una suite de consola con decenas de casos de un segundo sólo
 # baja partiéndola, y acá se parte sin cortar el archivo: la suite carga esta biblioteca, dice cuántas partes tiene y
@@ -46,8 +46,8 @@ if [ -n "$__suite_part_asked" ]; then
   esac
   __suite_part_k="${__suite_part_asked%%/*}"
   __suite_part_n="${__suite_part_asked##*/}"
-  # Sin ceros adelante: `01` vale 1 como número y no es «1» como texto, y los bloques se comparan como texto. Pasaba la
-  # validación, no corría ningún bloque y salía verde (pase adversarial del tramo F).
+  # Sin ceros adelante: `01` vale 1 como número y no es «1» como texto, y los bloques se comparan como texto. Con `01`
+  # pasaría la validación, no correría ningún bloque y saldría verde.
   case "$__suite_part_k/$__suite_part_n" in
     0*|*/0*) echo "❌ suite-parts: SUITE_PART=${__suite_part_asked} no es <parte>/<partes> (sin ceros adelante; por ejemplo 1/2)" >&2; exit 2 ;;
   esac

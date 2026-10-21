@@ -1,12 +1,11 @@
 'use strict';
 /**
  * windows-support.test.js — lo que el arnés promete en Windows sale de un archivo, y el archivo no puede prometer
- * sin evidencia (story 8.17, tanda W1).
+ * sin evidencia.
  *
- * EL CASO. La portada ofrecía instalar en Windows y el instalador de Windows nunca había corrido en un Windows: la
- * medición del 2026-10-03 encontró hooks sin registrar, entre ellos los dos frenos de comandos. La promesa vivía en
- * una frase, y una frase no se puede cruzar con una medición. Desde esta tanda la promesa es
- * `scripts/setup/windows-support.json`, y estas reglas la atan a su evidencia:
+ * POR QUÉ EXISTE. Un instalador de Windows que no se midió en un Windows puede dejar hooks sin registrar, entre ellos los
+ * dos frenos de comandos. La promesa no puede vivir en una frase, porque una frase no se puede cruzar con una medición:
+ * es `scripts/setup/windows-support.json`, y estas reglas la atan a su evidencia:
  *   · `native` sólo vale `preparing`, `agent-measured` o `supported`; `recommended`, `wsl` o `native`;
  *   · `agent-measured` pide al menos una medición en un agente de Azure, con su número de corrida;
  *   · `supported` pide además una medición en una máquina real;
@@ -89,7 +88,7 @@ const copy = (change) => { const c = real(); change(c); return c; };
 const AGENT = { os: 'Windows Server 2025', arch: 'x64', how: 'azure-agent', date: '2026-10-03', run: 12345 };
 const MACHINE = { os: 'Windows 11', arch: 'x64', how: 'real-machine', date: '2026-10-05', run: null };
 
-// ── T23 · AC 3 ────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T23 ────────────────────────────────────────────────────────────────────────────────────────────────────
 test('T23a WindowsSupport_RealFile — el archivo real cumple, con WSL recomendado', () => {
   const s = real();
   assert.deepStrictEqual(supportProblems(s), []);
@@ -98,9 +97,9 @@ test('T23a WindowsSupport_RealFile — el archivo real cumple, con WSL recomenda
   assert.ok(s.not_measured.length > 0, 'lo que nadie midió está dicho, no callado');
 });
 
-// ── T94 · story 8.17, tanda W3a · AC 68 ───────────────────────────────────────────────────────────────────────────
-// Nació «preparing» (tanda W1). Desde la W3a el instalador de Windows registra los controles que faltaban, lo que queda
-// afuera está acá con su motivo, y el camino nativo pasa a «agent-measured» con la corrida que lo respalda. `recommended`
+// ── T94 · el camino nativo medido por el agente ───────────────────────────────────────────────────────────────────────────
+// El instalador de Windows registra los controles que puede, lo que queda
+// afuera está acá con su motivo, y el camino nativo es «agent-measured» con la corrida que lo respalda. `recommended`
 // no se toca sin una medición en una máquina real.
 test('T94 WindowsSupport_ExcludedWithReasons_AgentMeasured — lo que queda afuera en Windows dice por qué, y «agent-measured» trae su corrida', () => {
   const s = real();

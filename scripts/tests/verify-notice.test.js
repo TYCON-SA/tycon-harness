@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * verify-notice.test.js — el texto del aviso de la verificación de lo publicado (story 8.26, tanda F2 · AC 24 · T66).
+ * verify-notice.test.js — el texto del aviso de la verificación de lo publicado.
  *
  * La verificación de noche (`mirror.js verify`) deja su informe en un archivo; scripts/ci/verify-notice.js arma con él
  * el aviso que el pipeline le manda al dueño. Lo que no puede pasar:
@@ -169,11 +169,11 @@ test('T66_BadArguments_AreTwo', () => {
   }
 });
 
-// ── T68 (story 8.26, tanda F3 · AC 57) ───────────────────────────────────────────────────────────────────────
+// ── T68 · lo aceptado en la historia del repo privado ─────────────────────────────────────────────
 // Con el repo PRIVADO, lo que quedó en la historia de `main` está aceptado hasta el corte (guides/maintaining/publicacion-espejo.md,
 // §«Si `verify` da 1»): el aviso lo cuenta aparte y sale sólo si hay algo más. Es código que calla, así que lo que no
 // puede pasar es que calle de más: cualquier duda —el repo no dice ser privado, un hallazgo que no se deja leer, un
-// código que no cierra— avisa todo, como antes.
+// código que no cierra— avisa todo.
 const QUIET = 3;   // el código con que el guion dice «callé a propósito»: el paso del pipeline lo exige para aceptar el silencio
 const SET_ASIDE = /^Aparte: (\d+) hallazgo\(s\) en la historia del repo privado, aceptados hasta el corte \(no se listan\)\.$/m;
 /** Un hallazgo de la historia de `main`: lo que la parte (a') encuentra en un commit viejo. */
@@ -199,7 +199,7 @@ test('T68_PrivateRepo_SomethingElse_IsSent_WithoutTheAccepted_AndSaysHowManyWere
   const others = [
     ['un secreto en la historia', old({ category: 'secreto', rotateFirst: true, place: 'config/llaves.md:1 (el objeto aaaa11112222, en la historia o en otra ref)' }), /^Rotar PRIMERO/m],
     // 🔴 lo que nadie leyó no es «un nombre aceptado»: en un binario o en un submódulo de la historia puede haber cualquier
-    // cosa, también un secreto. Se avisa (revisor de fallos silenciosos, vuelta 1 de la tanda)
+    // cosa, también un secreto. Se avisa
     ['un binario de la historia que nadie leyó', old({ category: 'sin-leer', place: 'vendor/herramienta.bin (el objeto dddd11112222, en la historia o en otra ref)' }), /^Repo privado, sin purga/m],
     ['algo de la historia que está en un pedido', old({ reach: 'pull', place: 'docs/pedido.md:2 (el objeto bbbb11112222, en la historia o en otra ref)' }), /^Repo privado, sin purga/m],
     ['algo que cuelga sólo de una rama', old({ reach: 'ref', action: 'delete', place: 'docs/rama.md:2 (el objeto cccc11112222, en la historia o en otra ref)' }), /^Borrar \(la rama, la marca o la versión\)/m],
@@ -224,7 +224,7 @@ test('T68_PrivateRepo_SomethingElse_IsSent_WithoutTheAccepted_AndSaysHowManyWere
   assert.match(r.out, /la API contestó 403/);
   assert.match(r.out, SET_ASIDE);
   assert.doesNotMatch(r.out, /hallazgo\(s\)\. Lo publicado/, 'no anuncia hallazgos: lo único que hay está aceptado');
-  // un «no medido» con --strict: hasta esta tanda no se nombraba si además había hallazgos
+  // un «no medido» con --strict: se nombra aunque además haya hallazgos
   r = notice(privateReport({ findings: accepted, notMeasured: [{ part: 'g', reason: 'sin un token que lea alertas' }] }), 1);
   assert.strictEqual(r.code, 0, r.err);
   assert.match(r.out, /quedó sin medir.*\(g\).*sin un token que lea alertas/);

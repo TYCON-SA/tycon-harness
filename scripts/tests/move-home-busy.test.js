@@ -3,9 +3,9 @@
 // apartar (scripts/setup/harness/move-home.js, `renamedDirs` y `busyLine`, que corren dentro de las precondiciones y por eso
 // también con `--dry-run`).
 //
-// El caso: en una máquina Windows la mudanza falló a mitad de camino, en la etapa de los enlaces, con EPERM al apartar
-// `~/.claude/agent-skills` (se deshizo bien, pero la persona se enteró al correrla de verdad). La prueba previa sólo
-// renombraba la carpeta del estado.
+// Por qué: en una máquina Windows la mudanza puede fallar a mitad de camino, en la etapa de los enlaces, con EPERM al
+// apartar `~/.claude/agent-skills` (se deshace bien, pero la persona se entera al correrla de verdad). Por eso se prueba
+// cada carpeta que se va a renombrar, no sólo la del estado.
 //
 //   T48a · una carpeta tomada que NO es el estado (agent-skills, y una skill personal) frena: la línea nombra CADA una con su
 //          código y dice qué cerrar o que se reinicie Windows; las libres vuelven a su nombre.
@@ -47,7 +47,7 @@ function lab(name, { skillsAsLink = false } = {}) {
   const p = places(ctx, tree);
   mk(p.oldStateDir, 'harness');
   if (skillsAsLink) {
-    // la transición de la 8.18: agent-skills es un enlace a un clon viejo que vive aparte
+    // la transición del arnés unificado: agent-skills es un enlace a un clon viejo que vive aparte
     const old = mk(home, 'clon-viejo-de-skills');
     mk(old, 'skills', 'mia');
     mk(old, 'skills', 'tycon-pipeline');

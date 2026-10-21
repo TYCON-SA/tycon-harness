@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# profile-equivalence.test.sh — T15 Equivalence_SettingsMode_TwoFiles (story 8.13, AC 14): el modo
+# profile-equivalence.test.sh — T15 Equivalence_SettingsMode_TwoFiles: el modo
 # `profile-equivalence.js --settings <antes.json> <despues.json>` compara dos settings.json por los hooks DEL ARNÉS
 # (evento → matcher → nombre del script → comando entero + async), aparte del `--base`.
 #
@@ -9,7 +9,7 @@
 # `startup-line` (se informa, no decide); (6) uno de menos → 1; (7) un archivo ilegible o ausente → 2 (un listado que
 # no se pudo leer no es «no hay diferencias»).
 #
-# 🔴 rojo previo verificado: sin el modo, el script pide `--base` y sale 2 en todos los casos.
+# 🔴 Sin el modo, el script pide `--base` y sale 2 en todos los casos.
 # 🔴 Nada acá toca ~/.claude: HOME es de juguete y los settings viven en el temporal. Nombres de laboratorio (Dev-lab, con mayúscula: el detector de publicación toma una carpeta personal en minúscula por una ruta de máquina).
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -139,7 +139,7 @@ rc=$(correr "$T/a1.json" "$T/no-existe.json")
 [ "$rc" = "2" ] && ok "T15 un settings ausente → 2" \
   || mal "T15 un settings ausente → esperaba 2, salió $rc: $(cat "$T/salida.txt")"
 
-# ── Regresiones del pase adversarial (iteración 1, 2026-10-02 · clases 3, 5, 6, 12, 13, 28) ──────────────────────────
+# ── Regresiones del pase adversarial ──────────────────────────
 # REG-D10a · dos hooks del arnés con el MISMO nombre de archivo bajo el mismo evento (clocki y tycon-pipeline tienen cada
 # uno su on-prompt.js) en otro orden → 0: la clave es la ruta relativa, no el nombre suelto ni la posición
 dos() { # dos <archivo> <primero> <segundo>
@@ -169,8 +169,8 @@ rc=$(correr "$T/cl-a.json" "$T/cl-b.json")
 [ "$rc" = "1" ] && grep -q 'retro-pending' "$T/salida.txt" && ok "REG-D10c clon en otra carpeta: falta retro-pending → 1 y lo nombra" \
   || mal "REG-D10c clon en otra carpeta → rc $rc: $(cat "$T/salida.txt")"
 
-# ── T40 (story 8.16, tanda C · AC 43): el modo --settings ve un cambio de perfil ──────────────────────────────────────
-# La prueba de que el perfil del equipo deja los mismos hooks que antes de la tanda C (harness-profile.test.sh, T40) se
+# ── T40: el modo --settings ve un cambio de perfil ──────────────────────────────────────
+# La prueba de que el perfil del equipo deja los mismos hooks que antes de un cambio (harness-profile.test.sh, T40) se
 # apoya en este modo: tiene que ver la diferencia que deja un minimal (sin los frenos ni los medidores) contra un full.
 # Si no la viera, «mismos hooks» no diría nada.
 escribir "$T/p40-full.json" "$LINEA_NUEVA" ""
@@ -188,20 +188,20 @@ rc=$(correr "$T/p40-full.json" "$T/p40-min.json")
   && ok "T40 un full contra un minimal → 1, y nombra los frenos y el medidor que minimal no trae" \
   || mal "T40 full contra minimal → esperaba 1 nombrando safety-guard-pre.sh y response-style-meter.js, salió $rc: $(cat "$T/salida.txt")"
 
-# ── Story 8.18 (2026-10-04) · el modo `--base` no se traga el error de quien ubica las skills ─────────────────────────
-# `skills-dir.js` tira cuando su vecina (canonical-path.js) está y no carga. El modo `--base` envolvía la llamada en un
-# `catch` genérico y seguía con ~/.claude/agent-skills: medía las skills INSTALADAS en vez de las del clon, callado.
+# ── el modo `--base` no se traga el error de quien ubica las skills ─────────────────────────
+# `skills-dir.js` tira cuando su vecina (canonical-path.js) está y no carga. Si el modo `--base` envolviera la llamada en un
+# `catch` genérico y siguiera con ~/.claude/agent-skills, mediría las skills INSTALADAS en vez de las del clon, callado.
 # Un clon de juguete (el script, la biblioteca y sus dos vecinas) fuera de todo repo de git, con una HOME de juguete que
 # SÍ trae algo instalado (adonde caería quien se traga el error). `--base` necesita un commit: acá no lo hay, así que
 # quien pasa de la resolución de las skills llega a «no encuentro el commit» — eso es lo que muestra el espejo.
-# 🔴 rojo previo verificado: con el `catch` genérico, el caso roto llega a «no encuentro el commit» sin decir nada.
+# 🔴 Con un `catch` genérico, el caso roto llegaría a «no encuentro el commit» sin decir nada.
 lab_clone() { # lab_clone <nombre> → arma $T/<nombre>/clone y deja LAB apuntando a $T/<nombre>
   LAB="$T/$1"; mkdir -p "$LAB/clone/scripts/publishing" "$LAB/clone/scripts/lib" "$LAB/clone/skills/tycon-pipeline" "$LAB/clone/agents" \
     "$LAB/home/.claude/agent-skills/skills/tycon-pipeline"
   cp "$SCRIPT" "$LAB/clone/scripts/publishing/profile-equivalence.js"
   for f in skills-dir.js canonical-path.js legacy-names.js; do cp "$RAIZ/scripts/lib/$f" "$LAB/clone/scripts/lib/$f"; done
-  # lo que canonical-path.js importa viaja con ella (story 8.19: el nombre del lugar)
-  # (place.js toma el nombre de tycon-home.js, a su lado: story 8.23)
+  # lo que canonical-path.js importa viaja con ella (el nombre del lugar)
+  # (place.js toma el nombre de tycon-home.js, a su lado)
   mkdir -p "$LAB/clone/scripts/setup/harness" && cp "$RAIZ/scripts/setup/harness/place.js" "$RAIZ/scripts/setup/harness/tycon-home.js" "$LAB/clone/scripts/setup/harness/"
 }
 base_mode() { # base_mode [args…] → corre el modo --base del clon de juguete, sin la variable; imprime el exit
@@ -227,14 +227,14 @@ rc=$(base_mode)
   && ok "8.18 --base con la biblioteca sana pasa de la resolución de las skills" \
   || mal "8.18 --base con la biblioteca sana → esperaba llegar a «no encuentro el commit», salió $rc: $(cat "$T/salida.txt")"
 
-# ── T38 (story 8.17, tanda W3 · AC 26 y 60) · el instalador a través de la lista única deja lo mismo que el de antes ──
-# El instalador de antes de la W3 (el del commit de partida de la tanda, con su lista y su bloque de Python) y el de
-# ahora (que llama a scripts/setup/apply-hooks.js), corridos DESDE LA MISMA COPIA del repo sobre la misma carpeta de
+# ── T38 · el instalador a través de la lista única deja lo mismo que el anterior ──
+# El instalador de referencia (el de un commit fijo, con su lista y su bloque de Python) y el actual
+# (que llama a scripts/setup/apply-hooks.js), corridos DESDE LA MISMA COPIA del repo sobre la misma carpeta de
 # juguete: settings.json byte a byte igual (la carpeta de cada HOME normalizada) y la misma salida, en cuatro casos —la
 # instalación de equipo, la pública, la minimal y una máquina con hooks ajenos, un reemplazado, una forma vieja y un
-# matcher angosto—. Mide el CAMBIO de la W3: vale mientras la lista sea la de ese commit; si la lista cambió después
-# (un hook nuevo), el viejo ya no es la referencia y la prueba lo dice como NO MEDIDO, nunca como verde. Sin ese commit
-# en el clon (uno superficial), también NO MEDIDO. Dev Agent Record de la 8.17: corrida del 2026-10-05, los cuatro iguales.
+# matcher angosto—. Mide el CAMBIO de la lista única: vale mientras la lista sea la de ese commit; si la lista cambia
+# (un hook nuevo), el viejo deja de ser la referencia y la prueba lo dice como NO MEDIDO, nunca como verde. Sin ese commit
+# en el clon (uno superficial), también NO MEDIDO.
 W3_BASE=16b4bfd6961fd585ab2eb39eb5bc6514b8740a49
 RAIZ_REPO="$RAIZ"
 if ! git -C "$RAIZ_REPO" cat-file -e "$W3_BASE:scripts/install-tycon-hooks.sh" 2>/dev/null; then
@@ -248,23 +248,22 @@ else
   EQ="$T/w3eq"; D="$EQ/repo"; mkdir -p "$D"
   rsync -a --exclude .git --exclude .advisors --exclude node_modules "$RAIZ_REPO/" "$D/"
   git -C "$RAIZ_REPO" show "$W3_BASE:scripts/install-tycon-hooks.sh" > "$EQ/old.sh"; cp "$D/scripts/install-tycon-hooks.sh" "$EQ/new.sh"
-  # La 8.19 (tanda E) cambió el texto de dos rótulos de la lista («el arnés» donde nombraba al repo interno). T38 mide el
-  # cambio de la W3, no esos textos: la referencia los toma con el texto de hoy, y todo lo demás se compara igual.
+  # El instalador de referencia trae el texto de dos rótulos de la lista con el nombre del repo interno donde el actual dice «el arnés». T38 mide el
+  # cambio de la lista única, no esos textos: la referencia los toma con el texto actual, y todo lo demás se compara igual.
   OLDN="$(node -p "require(process.argv[1]).LEGACY_PLACE_NAME" "$RAIZ_REPO/scripts/setup/harness/place.js" 2>/dev/null || true)"
   if [ -n "$OLDN" ]; then
     sed -i.bak -e "s#grita en cada arranque si ${OLDN} o agent-skills NO están en main#grita en cada arranque si el arnés o agent-skills NO están en main#" \
       -e "s#tocar git sí\. En ${OLDN} y agent-skills no propone worktree#tocar git sí. En el arnés y agent-skills no propone worktree#" "$EQ/old.sh" && rm -f "$EQ/old.sh.bak"
   fi
-  # La 8.10.3 (tanda C) cambió el texto de un rótulo más: el caso disparador del medidor de pasos bloqueantes nombraba un
-  # repo interno y ahora dice «un repo del equipo». Mismo criterio: la referencia lo toma con el texto de hoy. El nombre
-  # viejo no se escribe acá: se reconoce por su forma (mayúsculas y guiones entre el número de la story y la fecha).
+  # Un rótulo más: el del medidor de pasos bloqueantes nombra en la referencia un repo interno y el actual dice «un repo del
+  # equipo». Mismo criterio: la referencia lo toma con el texto actual. El nombre viejo no se escribe acá: se reconoce
+  # por su forma (mayúsculas y guiones entre el número y la fecha).
   sed -i.bak -E -e "s#Caso disparador: Story 3\.34 [A-Z][A-Z-]+ 2026-07-29#Caso disparador: Story 3.34 de un repo del equipo 2026-07-29#" "$EQ/old.sh" && rm -f "$EQ/old.sh.bak"
-  # …y que se diga si no pudo: sin el rótulo de hoy en la referencia, el rojo de abajo sería «los instaladores difieren»
+  # …y que se diga si no pudo: sin el rótulo actual en la referencia, el rojo de abajo sería «los instaladores difieren»
   # cuando lo que pasó es que esta línea dejó de reconocer el texto viejo.
   grep -q "Caso disparador: Story 3.34 de un repo del equipo 2026-07-29" "$EQ/old.sh" \
     || mal "T38 referencia: no pude llevar al texto de hoy el rótulo del medidor de pasos bloqueantes en el instalador de $W3_BASE (la forma del texto viejo cambió)"
-  # La 8.10.3 (tanda E) cambió el nombre inventado de cuatro productos, y cuatro rótulos los nombran en su caso
-  # disparador. Mismo criterio: la referencia los toma con el texto de hoy. Los nombres viejos no se escriben acá: cada
+  # La referencia trae otro nombre inventado de cuatro productos, y cuatro rótulos los nombran en su caso. Mismo criterio: la referencia los toma con el texto actual. Los nombres viejos no se escriben acá: cada
   # uno se reconoce por la forma de la frase que lo rodea, y si alguna dejó de reconocerse se dice.
   sed -i.bak -E \
     -e "s#Caso: [A-Z][a-z]+ AS-1/PERF-1#Caso: Totora AS-1/PERF-1#" \

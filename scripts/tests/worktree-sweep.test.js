@@ -2,7 +2,7 @@
 
 /**
  * worktree-sweep.test.js — las carpetas de trabajo ya mergeadas se borran solas, y las que tienen trabajo no se tocan
- * (scripts/hooks/worktree-sweep.js, pedido del dueño del 2026-10-16: «borrá solas las carpetas ya mergeadas»).
+ * (scripts/hooks/worktree-sweep.js).
  *
  * Los dos caminos:
  *   · el arranque (una vez por día): borra las limpias y con su HEAD en origin/main, nombra las que tienen cambios o

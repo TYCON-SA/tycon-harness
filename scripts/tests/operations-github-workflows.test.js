@@ -1,6 +1,6 @@
 'use strict';
-// operations-github-workflows.test.js — los workflows modelo de GitHub Actions para los procesos de la noche (story 8.31,
-// T1 a T8; T9: la credencial por GitHub App, 2026-10-14; T10: los privados que ve la credencial, 2026-10-14). Lee los YAML como texto (no hay biblioteca de YAML en el arnés, a propósito), corre de verdad el bloque que
+// operations-github-workflows.test.js — los workflows modelo de GitHub Actions para los procesos de la noche
+// (T1 a T8; T9: la credencial por GitHub App; T10: los privados que ve la credencial). Lee los YAML como texto (no hay biblioteca de YAML en el arnés, a propósito), corre de verdad el bloque que
 // elige el arnés, prepare-tree.sh, operations-auth.sh y clone-repos.sh sobre repos de juguete, y nunca toca la red.
 const test = require('node:test');
 const assert = require('node:assert');
@@ -45,7 +45,7 @@ function runLines(text) {
   return out;
 }
 
-/** Las reglas de la decisión 16 y del AC 2, con su id; [] = cumple. */
+/** Las reglas de los workflows modelo, con su id; [] = cumple. */
 function brokenRules(text) {
   const broken = [];
   // las del ci.yml que valen acá, por el control que ya existe (no se copian)
@@ -75,7 +75,7 @@ function brokenRules(text) {
   // repo de operaciones, con permisos pedidos por nombre (contenido de lectura; issues) y ninguna otra entrada
   const WITH = { 'client-id': /^\$\{\{ vars\.HARNESS_APP_CLIENT_ID \}\}$/, 'private-key': /^\$\{\{ secrets\.HARNESS_APP_PRIVATE_KEY \}\}$/,
     owner: /^\$\{\{ github\.repository_owner \}\}$/, 'permission-contents': /^read$/, 'permission-issues': /^(read|write)$/,
-    'permission-deployments': /^read$/, 'permission-actions': /^read$/, 'skip-token-revoke': /^true$/ };   // story 2.22: la foto de despliegues lee deployments y actions
+    'permission-deployments': /^read$/, 'permission-actions': /^read$/, 'skip-token-revoke': /^true$/ };   // la foto de despliegues lee deployments y actions
   for (const st of appSteps) {
     const cond = (st.match(/^ {8}if: (.*)$/m) || [])[1] || '';
     const w = {};
@@ -294,7 +294,7 @@ test('T7 PrepareTree_And_PickHarness_Red: otro repo de operaciones, un team-repo
   w = runner({ 'team-repos.json': teamRepos('acme/operations', { platform: 'azure', org: 'acme', project: 'P', repo: 'harness' }) });
   r = prepare(w);
   assert.strictEqual(r.code, 1); assert.match(r.out, /public\.platform es «azure»/);
-  // el bloque que elige el arnés (antes de tenerlo): igual en los tres workflows, y corrido de verdad
+  // el bloque que elige el arnés: igual en los tres workflows, y corrido de verdad
   const bloques = WORKFLOWS.map((f) => read(f).match(/node - <<'JS'\n([\s\S]*?)\n {10}JS\n/)[1].replace(/^ {10}/gm, ''));
   assert.ok(bloques.every((b) => b === bloques[0]), 'el bloque que elige el arnés es el mismo en los tres');
   const elegir = (team, env) => {
@@ -369,7 +369,7 @@ test('T8 CloneRepos_DeclaredAndOrg: los declarados con el token sólo en la lín
   r = spawnSync('bash', [sh, '--org', destP, '--team-repos', tr], { encoding: 'utf8', env: { ...env, OWNERS: 'acme', PREFIX: 'extra-', TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: state } });
   assert.strictEqual(r.status, 0, r.stdout);
   assert.deepStrictEqual(fs.readdirSync(destP).sort(), ['acme__extra-0', 'acme__extra-1']);
-  // la copia de mantenimiento SÍ se mide (DEF-8.30-copias-del-arnes-en-team-repos: la regla es la del lector, la misma que
+  // la copia de mantenimiento SÍ se mide (la regla es la del lector, la misma que
   // en Azure); las demás copias no. Y un team-repos.json que no valida es rojo, no «no hay copias».
   const trM = path.join(base, 'team-repos-maintainers.json');
   fs.writeFileSync(trM, JSON.stringify({ ...JSON.parse(fs.readFileSync(tr, 'utf8')), maintainers: { platform: 'github', org: 'ACME', repo: 'Extra-0' },
@@ -397,7 +397,7 @@ test('T9 GhModels_AppToken: la App es el camino recomendado y el usuario de máq
   assert.match(mApp[0], SHA);
   assert.deepStrictEqual([...mApp[0].matchAll(/^ {10}(permission-[a-z-]+): (.*)$/gm)].map((x) => `${x[1]}=${x[2]}`), ['permission-contents=read']);
   assert.match(m.find((x) => /clone-repos\.sh --org/.test(x)), /^ {10}ORG_TOKEN: \$\{\{ steps\.org-token\.outputs\.token \|\| secrets\.HARNESS_ORG_TOKEN \}\}$/m);
-  // el tablero no lee código de los repos de la organización; desde la story 2.22 sí lee sus despliegues: UN token de la
+  // el tablero no lee código de los repos de la organización; sí lee sus despliegues: UN token de la
   // App, sólo de lectura de deployments y actions (nunca contents ni issues), y nunca el usuario de máquina
   const tb = read('team-dashboard.yml');
   assert.doesNotMatch(tb, /HARNESS_ORG_TOKEN/);
@@ -447,8 +447,8 @@ test('T9 GhModels_AppToken: la App es el camino recomendado y el usuario de máq
 });
 
 test('T10 CloneRepos_SeesPrivates: con la App, los repos donde está instalada (privados incluidos); el usuario de máquina suma los privados de una cuenta de usuario; cero repos vistos es un aviso', () => {
-  // DEF-8.31-metricas-no-ven-privados-de-un-usuario: en una cuenta de usuario, users/<dueño>/repos trae sólo los públicos y
-  // la corrida salía verde con «repos vistos: 0»
+  // en una cuenta de usuario, users/<dueño>/repos trae sólo los públicos y
+  // la corrida saldría verde con «repos vistos: 0»
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'clone-privados-')); dirs.push(base);
   const server = path.join(base, 'server');
   for (const full of ['bob/priv', 'bob/pub', 'acme/web', 'acme/api']) {
@@ -526,7 +526,7 @@ test('T10 CloneRepos_SeesPrivates: con la App, los repos donde está instalada (
   estado({ visible: [], repos: { bob: [{ name: 'priv', private: true }] } });
   r = correr({ OWNERS: 'bob' });
   assert.strictEqual(r.status, 0, r.out); assert.match(r.stdout, /::warning::Cero repos vistos/);
-  // sin ORG_TOKEN_KIND (un workflow copiado antes): se averigua; el token de una App lee installation/repositories
+  // sin ORG_TOKEN_KIND (un workflow copiado de una versión anterior): se averigua; el token de una App lee installation/repositories
   estado({ installation: ['bob/priv'] });
   r = correr({ OWNERS: 'bob' });
   assert.strictEqual(r.status, 0, r.out);
@@ -540,7 +540,7 @@ test('T10 CloneRepos_SeesPrivates: con la App, los repos donde está instalada (
   assert.match(paso, /^ {10}ORG_TOKEN_KIND: \$\{\{ steps\.org-token\.outcome == 'success' && 'app' \|\| 'user' \}\}$/m);
 });
 
-// ── story 2.25: la paridad de los productos en el workflow de dependencias (T13-T14) ────────────────────────────
+// ── la paridad de los productos en el workflow de dependencias (T13-T14) ────────────────────────────
 test('T13 GitHub_ClonaAntesDeRevocarYComparaAntesDeCorrer @story-2.25 @ac-8: lo que falta para la paridad se clona en otra invocación, antes de revocar; se compara antes de correr código', () => {
   const all = steps(read('dependency-audit.yml'));
   const at = (name) => all.findIndex((s) => s.startsWith(`      - name: ${name}`));
@@ -592,7 +592,7 @@ test('T14 GitHub_PrepareTreeTraeLaLista @story-2.25 @ac-9: con lista en operacio
   }
 });
 
-// story 2.23 (AC 16, T32): en GitHub los dos productores del sitio declaran «no medido» (los pull requests y los pedidos de
+// T32: en GitHub los dos productores del sitio declaran «no medido» (los pull requests y los pedidos de
 // GitHub todavía no se leen), corren antes de generar la página y se guardan con ella.
 test('T32 TeamDashboard_ProductoresDelSitio', () => {
   const y = read('team-dashboard.yml');
@@ -605,7 +605,7 @@ test('T32 TeamDashboard_ProductoresDelSitio', () => {
   assert.match(y, /-- artifacts\/tablero-del-arnes\.html \.dashboard\/open-prs \.dashboard\/assigned \.dashboard\/deployments \.dashboard\/applied-config\.json 2>&1/, 'se guardan con la página (la marca de la configuración aplicada, tanda C de la 2.29)');
 });
 
-// story 2.22 (AC 13 y 15): la foto de despliegues corre ANTES de la página, tolerante; un paso propio acuña el token de la
+// la foto de despliegues corre ANTES de la página, tolerante; un paso propio acuña el token de la
 // GitHub App (con la llave sólo en su `private-key`) y la foto lo recibe como GH_TOKEN; la carpeta se guarda con la página.
 test('T21 TeamDashboard_PasoDeDesplieguesAntesDelTablero (2.22)', () => {
   const y = read('team-dashboard.yml');

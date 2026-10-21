@@ -1,6 +1,6 @@
 'use strict';
 /*
- * nightly-deployments.test.js — la foto de despliegues de cada noche (story 2.22).
+ * nightly-deployments.test.js — la foto de despliegues de cada noche.
  *
  * Qué llegó a staging y qué a producción en cada producto, leído del STAGE de cada corrida (nunca del resultado global
  * ni de un pedazo de texto), con la aprobación de producción pendiente o vencida y main roto o no. Azure es
@@ -467,7 +467,7 @@ test('T28 Registro_SuiteYPiezas', () => {
   assert.match(g, /nightly-deployments/);
 });
 
-// ── lo que encontraron los revisores (iteración 1) ───────────────────────────────────────────────────────────────
+// ── casos de borde de los revisores ──────────────────────────────────────────────────────────────────────────────
 
 test('R1 Revisores_NumeroDeCorridaSinTextoLibre_ResultadoDesconocidoNoEsRoto', () => {
   const m = mundo({ deployments: { Acme: { staging: [az('Acme CI', ['S'])], production: [az('Acme Prod', ['P'])] } } });
@@ -511,7 +511,7 @@ test('R4 Revisores_GitHubRepoConPuntos_NoSaleDeSuRuta', () => {
   assert.ok(!fs.existsSync(log), 'gh no se llamó: la ruta nunca se armó');
 });
 
-// ── lo que confirmó el pase adversarial (una prueba por clase) ───────────────────────────────────────────────────
+// ── casos de borde (una prueba por clase) ────────────────────────────────────────────────────────────────────────
 
 test('A1 Adversarial_VencidasDeUnProductoSinDespliegue_SeCuentanConSusCuantas', () => {
   const { fichaDespliegues } = require(path.join(ROOT, 'scripts', 'nightly', 'dashboard', 'dashboard.js'));
@@ -586,7 +586,7 @@ test('A9 Adversarial_VariosPipelinesDeProduccion_LaCorridaMasNueva', () => {
   assert.ok(!('_fecha' in a), 'el campo interno no viaja');
 });
 
-// ── lo que encontró la prueba en vivo (2026-10-16) ───────────────────────────────────────────────────────────────
+// ── casos contra datos reales de Azure ───────────────────────────────────────────────────────────────────────────
 
 test('V1 EnVivo_TimelineVacioDeUnaCorridaCancelada_NoEsNoJson', () => {
   const m = mundo({ deployments: { Acme: { staging: [az('Acme CI', ['S'])] } } });

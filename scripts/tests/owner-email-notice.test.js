@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * owner-email-notice.test.js — el aviso de una sola vez «tu máquina informa tu correo» (story 2.28, decisión 1 · AC 30 ·
- * T42-T43).
+ * owner-email-notice.test.js — el aviso de una sola vez «tu máquina informa tu correo»
+ * (T42-T43).
  *
  * La máquina que sube al buzón manda en `place.json` el correo global de git de quien la usa (`owner`). El aviso de
  * arranque `scripts/hooks/owner-email-notice.js` se lo dice al dev UNA vez, con cómo verlo y cambiarlo, y deja un sello

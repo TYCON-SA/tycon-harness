@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# step-times.test.sh — red de la cuenta de tiempos de una corrida (story 2.7).
+# step-times.test.sh — red de la cuenta de tiempos de una corrida.
 #
-# Por qué existe: el agente marca cada paso al TERMINARLO y, hasta la 2.7, nadie anotaba cuándo
-# empezaba. La duración de un paso era «del fin del anterior al fin de éste», así que el tiempo muerto
-# antes de arrancar caía entero en el paso siguiente (208 de 237 corridas con pasos «juntos»).
+# Por qué existe: el agente marca cada paso al TERMINARLO; si nadie anota cuándo empieza, la duración
+# de un paso es «del fin del anterior al fin de éste», y el tiempo muerto antes de arrancar cae
+# entero en el paso siguiente.
 #
 # Lo que prueba:
 #   T3 — la espera del paso 3 no se suma al trabajo
 #   T4 — el hueco entre pasos no se imputa al paso siguiente (el caso SR-1)
 #   T5 — una corrida vieja (sin arranques) sale ESTIMADA, y su espera y su hueco son null con motivo
-#   T6 — las marcas invertidas o empatadas se siguen fusionando (no-regresión de la 2.13/2.14)
+#   T6 — las marcas invertidas o empatadas se siguen fusionando
 #   T6b — un paso de menos de un minuto se marca «junto»; el corte no depende del número de paso
 #   T6c — un arranque ilegible o posterior al fin no se usa: el paso sale estimado
 #
@@ -119,7 +119,7 @@ r=$(calc "$ST6c" "$(H 10:00)" 't.estimados.join(",")')
 r=$(calc "{}" "no-es-fecha" 't.estado')
 [ "$r" = "sin_inicio" ] && ok "T6c sin hora de inicio de la corrida no hay eje" || no "T6c sin inicio: $r"
 
-# ── T6d — el sub-paso 5b es trabajo, no hueco (pase adversarial, hallazgos 1 y 7) ─────────────
+# ── T6d — el sub-paso 5b es trabajo, no hueco ─────────────
 ST6d=$(cat <<EOF
 {"5":{"startedAt":"$(H 10:00)","completedAt":"$(H 11:00)"},
  "5b":{"startedAt":"$(H 11:00)"},
@@ -131,7 +131,7 @@ r=$(calc "$ST6d" "$(H 10:00)" 't.trabajo_ms + "|" + t.entre_pasos_ms')
 r=$(calc "$ST6d" "$(H 10:00)" 't.pasos.map((p) => p.paso).join(",")')
 [ "$r" = "5,5b,6" ] && ok "T6d el sub-paso aparece como tramo propio" || no "T6d pasos: $r"
 
-# ── T6e — vuelta de revisión: pasos que se pisan no se miden (hallazgo 3) ─────────────────────
+# ── T6e — vuelta de revisión: pasos que se pisan no se miden ─────────────────────
 ST6e=$(cat <<EOF
 {"3":{"startedAt":"$(H 09:00)","completedAt":"$(H 09:05)"},
  "4":{"startedAt":"$(H 09:05)","completedAt":"$(H 10:00)"},
@@ -145,7 +145,7 @@ r=$(calc "$ST6e" "$(H 09:00)" 't.estado + "|" + t.trabajo_medido + "|" + t.estim
 r=$(calc "$ST6e" "$(H 09:00)" 'String(t.espera_humana_ms)')
 [ "$r" = "null" ] && ok "T6e con el 7 estimado la espera no se publica (no 10 min)" || no "T6e espera: $r"
 
-# ── T6f — espera con uno solo de los dos pasos medido (hallazgos 4 y 10) ───────────────────────
+# ── T6f — espera con uno solo de los dos pasos medido ───────────────────────
 ST6f=$(cat <<EOF
 {"3":{"startedAt":"$(H 09:00)","completedAt":"$(H 09:10)"},
  "6":{"completedAt":"$(H 10:00)"},
@@ -162,7 +162,7 @@ EOF
 r=$(calc "$ST6g" "$(H 09:00)" 't.trabajo_medido + "|" + (t.sin_repartir_ms > 0)')
 [ "$r" = "false|true" ] && ok "T6f un tramo fusionado con el 3 deja el trabajo como no medido" || no "T6f fusionado: $r"
 
-# ── T6h — un arranque anterior al inicio de la corrida no se usa (hallazgo 9) ──────────────────
+# ── T6h — un arranque anterior al inicio de la corrida no se usa ──────────────────
 ST6h=$(cat <<EOF
 {"1":{"startedAt":"$(H 08:00)","completedAt":"$(H 10:10)"}}
 EOF

@@ -4,8 +4,8 @@
  *
  * T1 Imagen_VolumenNuevoEscribiblePorElSitio: con un volumen con nombre NUEVO montado en /data (el comando que da la
  * guía: `-v sitio-datos:/data -e SITE_DATA_DIR=/data`), el usuario del sitio puede crear ahí la carpeta del clon de
- * operaciones y escribir un archivo. 🔴 rojo previo (2026-10-16): el volumen nacía de root, el sitio corre como `node`,
- * y `git clone` decía «could not create work tree dir '/data/operaciones': Permission denied»: el sitio se frenaba.
+ * operaciones y escribir un archivo. 🔴 rojo: si el volumen nace de root y el sitio corre como `node`,
+ * `git clone` dice «could not create work tree dir '/data/operaciones': Permission denied»: el sitio se frena.
  *
  * Sin Docker (o sin su servicio), la prueba se saltea y lo dice: no es un verde.
  */

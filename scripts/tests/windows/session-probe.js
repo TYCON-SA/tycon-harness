@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * session-probe.js — una sesión REAL del asistente en el agente, con un hook marcador en cada evento (story 8.17,
- * W0 · AC 9). A pedido: cuesta una credencial y un gasto por corrida.
+ * session-probe.js — una sesión REAL del asistente en el agente, con un hook marcador en cada evento.
+ * A pedido: cuesta una credencial y un gasto por corrida.
  *
- * 🔴 NO SE USA (decisión del dueño, 2026-10-05): la sesión real se mide en la máquina virtual con el login del dueño, y
- * ninguna credencial del asistente se carga en Azure (la tarea humana TH2 se retiró). Sin `--real-session` el paso dice
+ * 🔴 NO SE USA: la sesión real se mide en la máquina virtual con el login del dueño, y
+ * ninguna credencial del asistente se carga en Azure. Sin `--real-session` el paso dice
  * «no medido: falta la sesión real» y la corrida no cambia de color. El modo con credencial queda escrito y probado por
  * si alguna vez se decide otra cosa; no se lanza.
  *
@@ -27,7 +27,7 @@
  * LA CREDENCIAL nunca sale: no se imprime, no va al reporte (se tapa en todo texto antes de escribir) y no se pasa por
  * la línea de comandos de nadie: sólo por el ambiente del `claude` que la usa.
  *
- * 🔴 SIN PROBAR CONTRA UNA SESIÓN REAL al escribirse (2026-10-03): la parte con credencial se probó sólo con un
+ * 🔴 SIN PROBAR CONTRA UNA SESIÓN REAL: la parte con credencial se probó sólo con un
  * lanzador de mentira. La primera corrida con `realSession: true` es también su primera prueba.
  *
  * Uso: node scripts/tests/windows/session-probe.js --lab <laboratorio> --out <carpeta del reporte> [--real-session]
@@ -38,7 +38,7 @@ const L = require('./lab.js');
 
 const NAME = 'session-probe';
 const CREDENTIAL_VAR = 'TYCON_WINDOWS_SESSION_CREDENTIAL';
-// la sesión real se mide en la máquina virtual con el login del dueño, no en el agente (decisión del 2026-10-05)
+// la sesión real se mide en la máquina virtual con el login del dueño, no en el agente
 const NOT_REQUESTED = 'falta la sesión real: se mide en la máquina virtual con el login del dueño (story 8.17, AC 9), no en este agente';
 const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop', 'Notification', 'PreCompact', 'SessionEnd'];
 const TOOL_EVENTS = ['PreToolUse', 'PostToolUse'];

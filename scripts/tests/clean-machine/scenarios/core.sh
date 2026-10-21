@@ -4,7 +4,7 @@
 #   T26 (variante 1, HOME vacía) · el bloque `install:core` tal cual: los cuatro enlaces, el estado, la línea de
 #         arranque, la copia fija, version (la estampada), doctor, el @import y los bloques, --check sin faltantes, los
 #         hooks de arranque callados, las ocho integraciones apagadas, la auditoría sin faltantes; una versión nueva
-#         servida por la copia, que `startup` no aplica y avisa (la T34 de la story 8.13); y `uninstall --yes`.
+#         servida por la copia, que `startup` no aplica y avisa (T34); y `uninstall --yes`.
 #   T27 · el esqueleto mecánico del pipeline sobre el repo de ejemplo.
 #   T29 · el núcleo solo frente a un repo que pide el paquete (sólo en modo interno: en la copia pública el paquete está).
 # uso: bash /opt/lab/scenarios/core.sh internal|public
@@ -19,14 +19,14 @@ fakes_setup ${WATCHED} dotnet curl wget launchctl open
 # ── T26 · el bloque de la portada, sobre una HOME vacía ──────────────────────────────────────────────────────
 if [ -z "$(ls -A "${HOME}")" ]; then ok "T26 la HOME del contenedor arranca vacía"; else no "T26 la HOME del contenedor no arranca vacía: $(ls -A "${HOME}" | tr '\n' ' ')"; fi
 serve_copy
-# story 8.16, tanda B (AC 19 · T25) y tanda D (AC 36 · T51): sin terminal, el bloque tal cual sale 2 sin escribir nada bajo
-# ~/.claude — desde la tanda D, antes del plan: pide el perfil (sin terminal no pregunta, y no hay uno por defecto)
+# T25 y T51: sin terminal, el bloque tal cual sale 2 sin escribir nada bajo ~/.claude, antes del plan: pide el perfil
+# (sin terminal no pregunta, y no hay uno por defecto)
 run_block core "${OUT_DIR}/install-notty.out" < /dev/null; RC=$?
 if [ "${RC}" -eq 2 ] && [ ! -e "${HOME}/.claude" ] && grep -q 'elegí el perfil' "${OUT_DIR}/install-notty.out"; then
   ok "T51 el bloque install:core sin terminal: pide el perfil, sale 2 y no escribe nada bajo ~/.claude"
 else no "T25 el bloque install:core sin terminal salió ${RC} ($( [ -e "${HOME}/.claude" ] && echo 'escribió ~/.claude' || echo 'sin ~/.claude' )): $(tail -n 3 "${OUT_DIR}/install-notty.out" | tr '\n' ' ')"; fi
 find_clone && rm -rf "${CLONE}"   # el bloque vuelve a clonar: tal cual, en la carpeta de antes
-# …y en una terminal de juguete, contestando como una persona (tanda D): perfil full, ninguna integración, paquete no, y sí
+# …y en una terminal de juguete, contestando como una persona: perfil full, ninguna integración, paquete no, y sí
 run_block_pty core "${OUT_DIR}/install.out" "${ANSWERS_FULL}"; RC=$?
 if [ "${RC}" -eq 0 ] && find_clone && grep -q '¿Qué perfil instalo?' "${OUT_DIR}/install.out" && grep -q '¿Qué integraciones prendo?' "${OUT_DIR}/install.out" \
    && grep -q 'paquete del stack en todos tus repos' "${OUT_DIR}/install.out" && grep -q '¿Instalo? \[s/N\]' "${OUT_DIR}/install.out"; then
@@ -36,10 +36,9 @@ else
   fakes_check "T26"; scenario_end core; exit 0
 fi
 
-# los cuatro enlaces del AC 18, cada uno a su lugar del clon. El del arnés es el LUGAR (HARNESS_LINK, story 8.19): desde
-# la tanda C de la 8.19 una máquina nueva no recibe el nombre viejo (LEGACY_FOR_NEW_MACHINES en canonical-path.js), y
-# la copia pública publicada el 2026-10-07 ya lo trae así (nocturno 12260: esta prueba pedía el nombre viejo).
-# skills y agents son carpetas reales del dev, con un enlace por cada entrada del clon (story 8.35): lo que Claude Code
+# los cuatro enlaces, cada uno a su lugar del clon. El del arnés es el LUGAR (HARNESS_LINK): una máquina nueva no
+# recibe el nombre viejo (LEGACY_FOR_NEW_MACHINES en canonical-path.js).
+# skills y agents son carpetas reales del dev, con un enlace por cada entrada del clon: lo que Claude Code
 # sincroniza y lo que el dev crea no cae adentro del arnés
 BAD=""
 for name in "$(basename "${HARNESS_LINK}")" agent-skills; do
@@ -80,7 +79,7 @@ if make_example_repo "${R}"; then
   else no "T27 pipeline.js mech-check salió ${RC} con ${V:-?} CRITICAL: $(json "${OUT_DIR}/mech.json" '(d.findings || []).map((f) => f.rule + " " + f.detail).join(" · ")' | head -c 300)"; fi
 
   ( cd "${R}" && node "${PIPE_DIR}/pipeline.js" advisors --repo "${R}" --story "${STORY}" --files src/greeting.js test/greeting.test.js ) > "${OUT_DIR}/advisors.json" 2> "${OUT_DIR}/advisors.err"; RC=$?
-  # `packs` es una lista de objetos (decisión C6). Los revisores del paquete son los `tycon-plugin-*-conventions`:
+  # `packs` es una lista de objetos. Los revisores del paquete son los `tycon-plugin-*-conventions`:
   # `tycon-plugin-tests-coverage` y `tycon-plugin-security-basics` son del núcleo, aunque se llamen parecido.
   V="$(json "${OUT_DIR}/advisors.json" '(d.packs || ["sin-lista"]).length + "|" + (d.all || []).filter((a) => /^tycon-plugin-.*-conventions$/.test(a)).join(",")')"
   if [ "${RC}" -eq 0 ] && [ "${V}" = "0|" ]; then ok "T27 pipeline.js advisors sale 0 con packs vacía y ningún revisor del paquete"
@@ -104,7 +103,7 @@ else
 fi
 
 # ── T29 · el núcleo solo frente a un repo que pide el paquete ────────────────────────────────────────────────
-# (story 8.41: la copia no trae paquetes —llegan con el perfil de cada equipo—, así que se mide en los dos modos)
+# (la copia no trae paquetes —llegan con el perfil de cada equipo—, así que se mide en los dos modos)
 A="${WORK_DIR}/asks-pack"
 FIXED='el repo declara el paquete «bizuit» en `packs:` y no está instalado en '
 DOC='el repo declara el paquete «<nombre>» en `packs:` y no está instalado en '
@@ -118,7 +117,7 @@ else
 fi
 
 # ── T26 · una versión nueva servida por la copia: con la política ask, startup no la aplica y avisa ───────────
-# (La T34 de la story 8.13.) Va DESPUÉS de check_install: ahí los hooks de arranque tienen que callar, y con una versión
+# Es T34. Va DESPUÉS de check_install: ahí los hooks de arranque tienen que callar, y con una versión
 # pendiente `startup` imprime el aviso, que está bien. Mide «ask no aplica y avisa»; el camino del clon público (la rama
 # propia, no bajar de número) lo mide harness-channel.test.sh: acá el remoto que ve el programa es una carpeta local.
 HEAD_BEFORE="$(git -C "${CLONE}" rev-parse HEAD)"; COMMIT_BEFORE="$(json "${STATE_FILE}" 'd.sources[0].commit')"

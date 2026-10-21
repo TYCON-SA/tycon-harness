@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * facts.js — el reporte de una corrida, vuelto HECHOS (story 8.17, W0 · AC 10).
+ * facts.js — el reporte de una corrida, vuelto HECHOS.
  *
- * POR QUÉ EXISTE. El análisis previo de Windows cerró con quince preguntas que no se podían contestar sin una máquina
- * (§8 de `paso-cero`), y la story se apoya en ocho supuestos (S1 a S8). Este guion toma `windows-report.json` y
+ * POR QUÉ EXISTE. El análisis de Windows deja quince preguntas que no se pueden contestar sin una máquina,
+ * y se apoya en ocho supuestos (S1 a S8). Este guion toma `windows-report.json` y
  * contesta cada una: como HECHO, con el número de la corrida que lo midió, o como «no medido», con su motivo y quién
  * lo contesta. Nunca deja una pregunta sin fila, y nunca escribe un hecho que la corrida no trajo.
  *
- * Un supuesto que la corrida CONTRADICE se marca: la story se corrige antes de arrancar la tanda que se apoya en él.
+ * Un supuesto que la corrida CONTRADICE se marca: el supuesto se corrige antes de apoyarse en él.
  *
  * Uso:  node scripts/tests/windows/facts.js <windows-report.json>      (imprime el markdown)
  *       … > tasks/measurement-8.17-windows/facts-w0.md

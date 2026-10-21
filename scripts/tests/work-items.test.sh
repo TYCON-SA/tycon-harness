@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prueba de work-items.js — el pedido de trabajo del líder (story 4.4).
+# Prueba de work-items.js — el pedido de trabajo del líder.
 #
 # La pieza crea Bugs en los proyectos de Azure DevOps de los CLIENTES, asignados a quien administra
 # cada proyecto. Por eso esta suite no toca la red NUNCA: habla con un `az` de mentira
@@ -12,15 +12,15 @@
 #     proyecto leído como duplicado, y el segundo nunca se crea;
 #   · un dueño elegido al azar, o un pedido sin mención que el responsable de respaldo no ve;
 #   · el texto en un campo que el formulario del Bug no muestra (medido: Descripción no aparece);
-#   · un defecto que sólo se ve en la SEGUNDA noche (lección de la 4.1, engram #4118).
+#   · un defecto que sólo se ve en la SEGUNDA noche (una suite de una sola noche no lo ve).
 set -uo pipefail
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PED="$AQUI/scripts/nightly/dependencies/work-items.js"
 NOC="$AQUI/scripts/nightly/dependencies/nightly-dependencies.js"
 NOTICE="$AQUI/scripts/hooks/dependencies-notice.js"
-# el modelo público del pipeline (story 8.30): lo que copia cada organización a su repo de operaciones
+# el modelo público del pipeline: lo que copia cada organización a su repo de operaciones
 YAML="$AQUI/pipelines/operations/dependency-audit.yml"
-# story 8.9: el YAML del pipeline puede pasar la fecha con el nombre nuevo o con el viejo (el alias lo sigue aceptando
+# el YAML del pipeline puede pasar la fecha con el nombre nuevo o con el viejo (el alias lo sigue aceptando
 # hasta el retiro). El chequeo acepta los dos; el viejo sale del mapa de renombres, nunca escrito en la prueba.
 nombres(){ # <kind> <nuevo> <where>... → «nuevo|viejo…» (sólo «nuevo» sin mapa)
   node -e 'const [k, n, f, ...w] = process.argv.slice(1); let v = [];
@@ -154,9 +154,9 @@ rc=$(correr)
   || no "T1: rc=$rc creates=$(cuenta crear) · $(pie)"
 
 # ── T1b. 🔴 un repo que ya no está en repos.json no inventa un proyecto de Azure ───────────────────
-# Pase adversarial en Opus: `proyectoDe` cae en el `producto` cuando la etiqueta no está en la config,
-# y el producto NO es el proyecto (Acme → «Acme Web», Globex → GlobexCore). Salía un par a un proyecto
-# inexistente que fallaba todas las noches, ocupaba cupo como reintento y protegía la ficha de
+# `proyectoDe` cae en el `producto` cuando la etiqueta no está en la config,
+# y el producto NO es el proyecto (Acme → «Acme Web», Globex → GlobexCore). Saldría un par a un proyecto
+# inexistente que fallaría todas las noches, ocuparía cupo como reintento y protegería la ficha de
 # `ignorado` para siempre. Un repo sin proyecto conocido no pide: se dice en `sin_pedido`.
 mundo
 ficha pending abc12345 browserslist high 1 "A/A,Z/Z"
@@ -217,8 +217,8 @@ rc=$(correr)
   || no "T4: rc=$rc creates=$(cuenta crear) · $(pie)"
 
 # ── T4b. 🔴 el pedido ADOPTADO recibe la mención al responsable de respaldo ───────────────────────────────────────────
-# Pase adversarial en Opus: si `crear` falla de forma ambigua (timeout, respuesta cortada) pero Azure
-# sí lo creó, la noche siguiente se adopta — y la adopción no comentaba nada: un Bug asignado sin la
+# Si `crear` falla de forma ambigua (timeout, respuesta cortada) pero Azure
+# sí lo creó, la noche siguiente se adopta — y una adopción sin comentario dejaría un Bug asignado sin la
 # mención al responsable de respaldo («el responsable de respaldo va SIEMPRE») y sin rastro. Adoptar, encendido, comenta; simulado, no.
 mundo
 ficha pending abc12345 browserslist high 1 "A/A"
@@ -243,7 +243,7 @@ rc=$(correr)
   || no "T5: rc=$rc creates=$(cuenta crear) · $(pie)"
 
 # ── T5b. 🔴 la WIQL acota por proyecto: la ruta /{proyecto}/ sola NO acota ────────────────────────
-# El `az` de mentira rechaza toda WIQL sin `[System.TeamProject] = @project` (medido el 2026-09-10:
+# El `az` de mentira rechaza toda WIQL sin `[System.TeamProject] = @project` (medido:
 # 183 work items sin la cláusula, 0 con ella). Sin la cláusula, el pedido de Proy A se leería como
 # duplicado del de ProyB y la segunda mitad de la ficha nunca tendría su pedido.
 mundo
@@ -282,9 +282,9 @@ for modo in FALLA BASURA; do
 done
 
 # ── T6e. 🔴 dos fichas vivas del MISMO paquete en el MISMO proyecto no abren dos Bugs ──────────────
-# Pase adversarial en Opus (bug): el pedido se identifica por ficha, y el nocturno puede dejar dos
+# El pedido se identifica por ficha, y el nocturno puede dejar dos
 # fichas vivas del mismo paquete en un mismo proyecto (dos huellas la misma noche, o una ficha que se
-# extiende a otro proyecto). Salían dos Bugs para el mismo hecho — «nunca dos veces» roto. La segunda
+# extiende a otro proyecto). Saldrían dos Bugs para el mismo hecho — «nunca dos veces» roto. La segunda
 # no crea: queda como fallo `duplicados` que nombra a la otra ficha, y lo decide una persona.
 for variante in "misma-noche" "ya-tenia-pedido"; do
   mundo
@@ -297,7 +297,7 @@ for variante in "misma-noche" "ya-tenia-pedido"; do
   snapshot $HOY "[$(p1 aaa11111 js-yaml A/A),$(p1 bbb22222 js-yaml A/A)]"
   rc=$(correr)
   esperado=1; [ "$variante" = "ya-tenia-pedido" ] && esperado=0
-  # Cuál de las dos gana la misma noche lo decide el orden (una crítica va primero desde el 2026-09-14);
+  # Cuál de las dos gana la misma noche lo decide el orden (una crítica va primero);
   # lo que se exige es que haya UN Bug y que la otra quede frenada nombrando a la que lo tiene.
   if [ "$variante" = "ya-tenia-pedido" ]; then perdedora=bbb22222; ganadora=aaa11111; else perdedora=aaa11111; ganadora=bbb22222; fi
   { [ "$rc" -eq 0 ] && [ "$(cuenta crear)" -eq "$esperado" ] && ! grep -q '^pedidos:' "$TMP/pend/pending/$perdedora.yaml" \
@@ -307,8 +307,8 @@ for variante in "misma-noche" "ya-tenia-pedido"; do
 done
 
 # ── T6f. 🔴 una adopción que no se pudo ANOTAR igual cuenta como el pedido de ese paquete ───────────
-# Pase adversarial en Sonnet sobre b69562d (bug): si `anotarPedido` fallaba al adoptar, el `continue`
-# salteaba el registro del paquete, y la segunda ficha del mismo paquete creaba otro Bug esa noche.
+# Si `anotarPedido` falla al adoptar, el `continue`
+# saltearía el registro del paquete, y la segunda ficha del mismo paquete crearía otro Bug esa noche.
 mundo
 ficha pending aaa11111 browserslist high 5 "A/A"
 ficha pending bbb22222 browserslist high 1 "A/A"
@@ -324,8 +324,8 @@ chmod 0644 "$TMP/pend/pending/aaa11111.yaml"
   || no "T6f: rc=$rc creates=$(cuenta crear) · $(pie)"
 
 # ── T6g. el aviso de duplicado nombra SIEMPRE la misma ficha, lleguen como lleguen ────────────────
-# Pase adversarial en Sonnet: con dos fichas que ya tenían pedido para el mismo paquete (estado que el
-# código anterior pudo dejar), la ficha nombrada dependía del orden del disco.
+# Con dos fichas que ya tienen pedido para el mismo paquete (un estado que el
+# arnés puede traer de una noche anterior), la ficha nombrada dependería del orden del disco.
 orden6g=$(node -e '
 const ped = require(process.argv[1]), noc = require(process.argv[2]), fs = require("fs"), path = require("path");
 const dir = fs.mkdtempSync(path.join(process.argv[3], "t6g-")); fs.mkdirSync(path.join(dir, "pending"));
@@ -419,9 +419,9 @@ rc=$(correr)
   || no "T9c: rc=$rc · $(pie)"
 
 # ── T9d. un administrador que Azure devuelve SIN cuenta no puede ser el dueño ─────────────────────
-# Pase adversarial en Fable: sin principalName ni mail, la cuenta quedaba `undefined` y viajaba
+# Sin principalName ni mail, la cuenta quedaría `undefined` y viajaría
 # literal `System.AssignedTo=undefined`, con «Asignado a undefined» en el comentario. No hay a quién
-# asignar: es «no pude leer los administradores» (AC 4d) — al responsable de respaldo, dicho, y como fallo.
+# asignar: es «no pude leer los administradores» — al responsable de respaldo, dicho, y como fallo.
 mundo
 cat > "$TMP/fixaz/miembros.json" <<'J'
 { "aad.x": { "subjectKind": "user", "displayName": "Sin Cuenta" },
@@ -437,8 +437,8 @@ rc=$(correr)
   || no "T9d: rc=$rc · $(pie)"
 
 # ── T9e. los textos que van al snapshot no dependen del orden en que responde Azure ──────────────
-# Pase adversarial en Fable: los nombres de «N administradores además del responsable de respaldo» y los ids de «pedidos
-# duplicados en Azure» salían en el orden de la respuesta; el snapshot se commitea cada noche.
+# Los nombres de «N administradores además del responsable de respaldo» y los ids de «pedidos
+# duplicados en Azure» saldrían en el orden de la respuesta; el snapshot se commitea cada noche.
 mundo
 cat > "$TMP/fixaz/miembros.json" <<'J'
 { "aad.3": { "subjectKind": "user", "displayName": "Tres Prueba", "principalName": "tres@prueba", "mailAddress": "tres@prueba" },
@@ -498,8 +498,7 @@ rc=$(TYCON_AZ_GARBAGE=identidad correr)
   || no "T10d: rc=$rc creates=$(cuenta crear) · $(pie)"
 
 # ── T10e. WorkItems_Owner_FromOperationsJson: quién responde sale de operations.json ───────────────
-# Story 8.30, decisión 6: el responsable de respaldo era una clave de repos.json con nombre de persona. Ahora es
-# `owners.default` de operations.json (se excluye al deducir, se lo menciona, recibe lo que no tiene dueño único) y
+# El responsable de respaldo es `owners.default` de operations.json (se excluye al deducir, se lo menciona, recibe lo que no tiene dueño único) y
 # `owners.by_project.<proyecto>` asigna directo en ese proyecto, sin leer sus administradores. Sin operations.json,
 # `azure.fallback_owner` de repos.json. Un operations.json que está y no valida no cae en repos.json: no se adivina.
 ops(){ printf '%s' "$1" > "$TMP/operations.json"; }
@@ -593,7 +592,7 @@ rc=$(correr)
   || no "T13: rc=$rc · $(pie)"
 
 # ── T13b. 🔴 el texto va a Repro Steps, en HTML, por archivo, y en UN solo --fields ───────────────
-# Medido el 2026-09-13: el formulario del Bug no muestra Descripción. Y `--fields` repetido pierde
+# El formulario del Bug no muestra Descripción. Y `--fields` repetido pierde
 # el primero (argparse se queda con el último): las etiquetas y el texto van en el MISMO --fields.
 { llamada crear 0 'a.indexOf("--fields") === a.lastIndexOf("--fields")' \
   && llamada crear 0 'a.some((x) => x.startsWith("Microsoft.VSTS.TCM.ReproSteps=@")) && String(arg("--description")).startsWith("@")' \
@@ -602,8 +601,8 @@ rc=$(correr)
   || no "T13b: el create no manda el texto a Repro Steps como HTML por archivo"
 
 # ── T13c. un hallazgo sin enlace de aviso no deja el título «Avisos» vacío en el Bug ─────────────
-# Pase adversarial de la iteración 1: el llamador filtraba el marcador «(el informe no trajo enlace)»
-# que el pull request sí muestra, y el Bug quedaba con un título sin lista debajo.
+# El llamador tiene que filtrar el marcador «(el informe no trajo enlace)»
+# que el pull request sí muestra: sin filtrarlo, el Bug queda con un título sin lista debajo.
 mundo
 ficha pending abc12345 browserslist high 1 "A/A"
 sed -i.bak 's#^  - https://github.com/advisories/GHSA-73wf-abc12345$#  - (el informe no trajo enlace)#' "$TMP/pend/pending/abc12345.yaml"; rm -f "$TMP/pend/pending/abc12345.yaml.bak"
@@ -614,9 +613,9 @@ rc=$(correr)
   || no "T13c: rc=$rc · el cuerpo no trae el marcador bajo «Avisos»"
 
 # ── T13d. 🔴 la severidad del hallazgo llega al campo Severity del Bug ───────────────────────────
-# Caso 2026-09-15: los primeros Bugs reales (un proyecto de cliente, vitest critical) salieron «3 - Medium»,
-# el valor por defecto de Azure — en el tablero, una crítica se veía como cualquier otra cosa.
-# Medido ese día: los 8 proyectos aceptan los mismos cuatro valores. Una severidad que no está en la
+# Sin el campo Severity, un Bug de severidad crítica sale «3 - Medium»,
+# el valor por defecto de Azure — en el tablero, una crítica se ve como cualquier otra cosa.
+# Los 8 proyectos medidos aceptan los mismos cuatro valores. Una severidad que no está en la
 # tabla NO se inventa: el campo no se manda y Azure pone su valor por defecto.
 mundo
 ficha pending aaa11111 vitest critical 1 "A/A"
@@ -664,10 +663,9 @@ rc=$(TYCON_AZ_FAIL=crear:arnes:abc12345 correr)
   || no "T15: rc=$rc · $(pie)"
 
 # ── T15b. 🔴 «sigue sin pedido» explica cada ficha con SU fallo, no con el primero que encuentra ────
-# Pase adversarial en Fable sobre la vuelta 2 (tres lentes lo encontraron por separado): desde que una
-# lectura de administradores fallida también entra en `fallidos`, el motivo de `sin_pedido` tomaba el
-# PRIMER fallo de la ficha sin mirar proyecto ni paso — y decía «falló administradores» sobre el
-# proyecto donde el que falló fue `crear`. Es la lista que el resumen de la 4.3 muestra como fallo.
+# Una lectura de administradores fallida también entra en `fallidos`: sin cuidado, el motivo de `sin_pedido` tomaría el
+# PRIMER fallo de la ficha sin mirar proyecto ni paso — y diría «falló administradores» sobre el
+# proyecto donde el que falló fue `crear`. Es la lista que el resumen muestra como fallo.
 mundo
 ficha pending abc12345 browserslist high 1 "A/A,B/B"
 snapshot $HOY "[$(p1 abc12345 browserslist A/A B/B)]"
@@ -678,8 +676,8 @@ rc=$(TYCON_AZ_FAIL='miembros,crear:"ProyB"' correr)
   || no "T15b: rc=$rc · $(node -e 'try{console.log(JSON.stringify(require(process.argv[1]).pedidos.sin_pedido))}catch(e){console.log(e.message)}' "$TMP/out/dependencias-$HOY.json")"
 
 # ── T15c. 🔴 dos proyectos sin pedido por razones distintas: una razón por proyecto ────────────────
-# Pase adversarial en Sonnet (bug): con dos proyectos trabados, `sin_pedido` decía sólo la razón del
-# primero — el que miraba por qué ProyB no tenía Bug leía el problema de Proy A.
+# Con dos proyectos trabados, `sin_pedido` diría sólo la razón del
+# primero — el que mira por qué ProyB no tiene Bug leería el problema de Proy A.
 mundo
 ficha pending lod12345 lodash high 1 "A/A,B/B"
 snapshot $HOY "[$(p1 lod12345 lodash A/A B/B)]"
@@ -744,9 +742,9 @@ rc2=$(HOYC=2026-09-11 correr)
   || no "T17: rc=$rc/$rc2 hoy=$hoy_ok antigüedad=$antiguedad creates=$(cuenta crear) · $(pie)"
 
 # ── T17b. 🔴 un snapshot de anoche ilegible NO se reemplaza en silencio por uno más viejo ─────────
-# Revisor de fallos silenciosos, iteración 1: la búsqueda de los reintentos salteaba el snapshot
-# corrupto sin decir nada y tomaba los fallos de una noche anterior — datos viejos priorizando fichas
-# que quizá ya no fallaban. Ahora esa noche no se priorizan reintentos, y se dice.
+# La búsqueda de los reintentos saltearía el snapshot
+# corrupto sin decir nada y tomaría los fallos de una noche anterior — datos viejos priorizando fichas
+# que quizá ya no fallan. Por eso esa noche no se priorizan reintentos, y se dice.
 mundo; config true respaldo@prueba https://dev.azure.com/prueba 1
 ficha pending aaa11111 browserslist high 5 "A/A"
 ficha pending bbb22222 handlebars high 1 "A/A"
@@ -761,8 +759,8 @@ rc=$(correr)
   || no "T17b: rc=$rc · $(pie)"
 
 # ── T17c. un fallo que NO impidió el pedido no es un «reintento» ──────────────────────────────────
-# Pase adversarial en Fable: una ficha de 1 noche cuyo grupo de administradores no se pudo leer le
-# ganaba el cupo, todas las noches, a una de 5 noches. Reintento = el par quedó SIN pedido.
+# Una ficha de 1 noche cuyo grupo de administradores no se pudo leer le
+# ganaría el cupo, todas las noches, a una de 5 noches. Reintento = el par quedó SIN pedido.
 mundo; config true respaldo@prueba https://dev.azure.com/prueba 1
 ficha pending aaa11111 browserslist high 5 "A/A"
 ficha pending bbb22222 handlebars high 1 "A/A"
@@ -776,7 +774,7 @@ rc=$(correr)
   || no "T17c: rc=$rc · $(pie)"
 
 # ── T17g. el paso de identidad con su nombre viejo sigue dando prioridad de reintento ─────────────────
-# Story 8.10 (AC 23): el paso se llama `lead-identity` desde la tanda B; las noches anteriores lo escribieron
+# El paso se llama `lead-identity`; los snapshots de noches anteriores lo traen
 # como `identidad-` más un nombre de persona. Un fallo de anoche con la forma vieja sigue siendo un reintento.
 mundo; config true respaldo@prueba https://dev.azure.com/prueba 1
 ficha pending aaa11111 browserslist high 5 "A/A"
@@ -791,9 +789,9 @@ rc=$(correr)
   || no "T17g: rc=$rc · $(pie)"
 
 # ── T17e. 🔴 un fallo que se repite no acapara el cupo para siempre ─────────────────────────────────
-# Pase adversarial en Opus: una falla permanente en un proyecto (sin permiso de crear, duplicados que
-# nadie resuelve) volvía «reintento» a sus fichas todas las noches, y una ficha sana de otro proyecto,
-# más vieja y más grave, quedaba postergada sin fin con la promesa «entra primero mañana». La prioridad
+# Una falla permanente en un proyecto (sin permiso de crear, duplicados que
+# nadie resuelve) volvería «reintento» a sus fichas todas las noches, y una ficha sana de otro proyecto,
+# más vieja y más grave, quedaría postergada sin fin con la promesa «entra primero mañana». La prioridad
 # de reintento es para un fallo de UNA noche: la que falló dos noches seguidas compite por antigüedad.
 mundo; config true respaldo@prueba https://dev.azure.com/prueba 1
 ficha pending bbb22222 handlebars high 1 "B/B"
@@ -810,9 +808,9 @@ rc=$(correr)
   || no "T17e: rc=$rc · $(pie)"
 
 # ── T17f. 🔴 una crítica no espera turno: no consume el tope y pide la misma noche ────────────────
-# Pedido del dev (2026-09-14): con el orden «más noches primero», una crítica recién aparecida quedaba
-# detrás de altas viejas y su Bug podía tardar varias noches. Tope 1, dos críticas de 1 noche y dos altas
-# de 5 y 4 → hoy las dos críticas y la alta de 5; la de 4 queda postergada.
+# Con el orden «más noches primero», una crítica recién aparecida quedaría
+# detrás de altas viejas y su Bug podría tardar varias noches. Tope 1, dos críticas de 1 noche y dos altas
+# de 5 y 4 → entran las dos críticas y la alta de 5; la de 4 queda postergada.
 mundo; config true respaldo@prueba https://dev.azure.com/prueba 1
 ficha pending aaa11111 browserslist high 5 "A/A"
 ficha pending bbb22222 handlebars high 4 "A/A"
@@ -826,8 +824,8 @@ rc=$(correr)
   || no "T17f: rc=$rc · $(pie)"
 
 # ── T17d. 🔴 un snapshot de anoche legible pero con `fallidos` de forma rara no tumba la noche ─────
-# Pase adversarial en Fable: `{"fallidos":{}}` o `[null]` tiraban TypeError sin catch → exit 1, cero
-# pedidos y el snapshot de hoy sin sección — el mismo daño que el snapshot ilegible, que sí se cubría.
+# `{"fallidos":{}}` o `[null]` tirarían TypeError sin catch → exit 1, cero
+# pedidos y el snapshot de hoy sin sección — el mismo daño que el snapshot ilegible, que se cubre aparte.
 for forma in '{}' '[null, "x", 3]'; do
   mundo; config true respaldo@prueba https://dev.azure.com/prueba 1
   ficha pending aaa11111 browserslist high 5 "A/A"
@@ -841,10 +839,9 @@ for forma in '{}' '[null, "x", 3]'; do
 done
 
 # ── T18. «en tu proyecto ya no aparece»: se CIERRA el Bug, una vez, y sólo con todo medido ───────
-# Decisión del dev (2026-09-15): «si ya está en main ya está arreglado; cuándo subirlo a prod es del
-# equipo». Hasta ese día el Bug sólo recibía el comentario y lo cerraba una persona (story 4.4, regla 5).
+# Si el arreglo ya está en main, el Bug se da por arreglado: cuándo subirlo a prod es del equipo.
 # Se cierra al estado de categoría Completed que el proyecto declara (no a un nombre fijo: Agile es
-# Closed, Scrum es Done), sin mandar motivo — medido con validateOnly ese día: Azure pone «Fixed and
+# Closed, Scrum es Done), sin mandar motivo — medido con validateOnly: Azure pone «Fixed and
 # verified»/«Verified» (Agile) y «Work finished» (Scrum), los tres en `motivos_arreglado`.
 estados(){ # <proyecto> <estado de cierre> → fixture de categorías del Bug de ese proyecto
   node -e '
@@ -890,8 +887,8 @@ rc=$(correr)
   || no "T18c: rc=$rc cierres=$(cuenta actualizar) comentarios=$(cuenta comentario) · $(pie)"
 
 # T18d. 🔴 no se pudo cerrar → el aviso sale IGUAL, diciendo que no se pudo cerrar y por qué, y se marca
-# (revisión adversarial del cierre: un fallo permanente —una regla del proceso, un permiso— dejaba al equipo
-# sin el «ya no aparece» que antes sí recibía). El fallo se cobra en `fallidos`.
+# (un fallo permanente —una regla del proceso, un permiso— dejaría al equipo
+# sin el «ya no aparece»). El fallo se cobra en `fallidos`.
 mundo
 ficha pending abc12345 browserslist high 3 "B/B" "pedidos:" "  - Proy A: 301" "  - ProyB: 302"
 wi 301 New "Proy A"
@@ -923,7 +920,7 @@ rc=$(correr)
   || no "T18e: rc=$rc cierres=$(cuenta actualizar) · $(pie)"
 
 # T18f. 🔴 el id de la ficha no es SU pedido (otro proyecto, sin la etiqueta del arnés, sin la de la ficha): no se toca nada
-# (revisión adversarial: un id mal anotado cerraba un work item ajeno; antes, sólo le dejaba un comentario de más).
+# (un id mal anotado cerraría un work item ajeno).
 # El tipo no cuenta: un pedido propio de otro tipo se cierra, y lo prueba work-items-type.test.sh.
 for variante in proyecto hallazgo etiqueta; do
   mundo
@@ -985,10 +982,10 @@ rc=$(correr)
   && ok "T18j: 🔴 sin presencias en el snapshot no se cierra ni se avisa ningún Bug" \
   || no "T18j: rc=$rc cierres=$(cuenta actualizar) comentarios=$(cuenta comentario) · $(pie)"
 
-# ── T18k. 🔴 la vulnerabilidad VUELVE a un Bug que cerró el arnés: se REABRE (decisión del dev, 2026-09-15) ──
+# ── T18k. 🔴 la vulnerabilidad VUELVE a un Bug que cerró el arnés: se REABRE ──
 # Si no, el tablero del equipo dice «Closed» con la vulnerabilidad viva y sólo el responsable de respaldo se entera. Sólo se reabre lo
 # que cerró el arnés (la marca lo dice) y sólo si nadie le cambió el estado después (la fecha del cambio de estado
-# es la de la marca). Se reabre al primer estado «Proposed» del proyecto (New): medido con validateOnly ese día,
+# es la de la marca). Se reabre al primer estado «Proposed» del proyecto (New): medido con validateOnly,
 # Closed→New pone «Not fixed» (Agile) y Done→New «Moved to the backlog» (Scrum).
 reaparece(){ # <cambio de estado del Bug> <línea de la marca>
   mundo
@@ -1014,7 +1011,7 @@ rc=$(correr)
   && ok "T18l: si alguien cambió el estado después del cierre del arnés, no se reabre: la decisión es suya" \
   || no "T18l: rc=$rc reaperturas=$(cuenta actualizar) comentarios=$(cuenta comentario) · $(pie)"
 
-# T18m. un Bug que cerró una PERSONA (marca sin «cerrado por el arnés», o de antes de este cambio) no se reabre
+# T18m. un Bug que cerró una PERSONA (marca sin «cerrado por el arnés», o una marca vieja) no se reabre
 reaparece 2026-09-08T04:03:11Z "Proy A (2026-09-08)"
 rc=$(correr)
 { [ "$rc" -eq 0 ] && [ "$(cuenta actualizar)" -eq 0 ] && [ "$(cuenta comentario)" -eq 0 ]; } \
@@ -1029,7 +1026,7 @@ rc=$(TYCON_AZ_FAIL='actualizar:--state' correr)
   && ok "T18n: 🔴 una reapertura que falla avisa igual en el Bug y cuenta el fallo" \
   || no "T18n: rc=$rc comentarios=$(cuenta comentario) · $(pie)"
 
-# T18o. 🔴 los avisos del arnés en un Bug mencionan a quien lo tiene asignado y al responsable de respaldo (decisión del dev, 2026-09-15:
+# T18o. 🔴 los avisos del arnés en un Bug mencionan a quien lo tiene asignado y al responsable de respaldo (porque
 # en esta organización cambiar el estado de un Bug no manda mail a nadie — medido: las únicas suscripciones de work
 # items son «asignado» y «reacción» —, y una mención sí). Si la identidad del responsable de respaldo no se resuelve, el aviso sale igual
 # con la mención al responsable y el fallo se dice: el cierre ya ocurrió, y callarlo sería peor.
@@ -1110,8 +1107,8 @@ for variante in llave flag; do
 done
 
 # ── T20b. 🔴 en simulado, lo que habría salido NO figura también como «sigue sin pedido» ──────────
-# Pase adversarial en Sonnet (segunda vuelta): como simulado no escribe la ficha, `sin_pedido` repetía
-# todo lo que faltaba al empezar, y el mismo par salía en «habría creado» y en «sin pedido desde hace 9
+# Como simulado no escribe la ficha, `sin_pedido` repetiría
+# todo lo que falta al empezar, y el mismo par saldría en «habría creado» y en «sin pedido desde hace 9
 # días» — justo en la salida que se lee para decidir si encender los pedidos. El espejo: lo que el tope
 # postergó sí sigue sin pedido (sin él, el arreglo podría vaciar la lista entera).
 mundo
@@ -1142,10 +1139,10 @@ rc=$(correr)
 # ── T22. el aviso de arranque cobra la ausencia, los fallos y el modo simulado ───────────────────
 aviso(){ # <json de pedidos, o "" para que no esté la clave>
   rm -rf "$TMP/dash" "$TMP/deps" "$TMP/vig"; mkdir -p "$TMP/dash" "$TMP/deps/pending" "$TMP/vig"
-  # 🔴 Story 4.3: una noche BUENA ahora incluye la constancia de entrega del resumen diario (`resumen`);
+  # 🔴 una noche BUENA incluye la constancia de entrega del resumen diario (`resumen`);
   # sin ella el aviso dice «NO consta» en vez del ✅ que el T22d exige. Y el aviso mira también los
   # snapshots del vigilante: `TYCON_WATCHER_OUT` a una carpeta vacía para no leer los del repo real.
-  # 🔴 Story 4.5: y también el `cruce` — sin la clave el aviso dice, con razón, que la noche NO cruzó.
+  # 🔴 y también el `cruce` — sin la clave el aviso dice, con razón, que la noche NO cruzó.
   # `TYCON_DEPS_REPO` fija el árbol de la noche: sin él, en una máquina con la versión bajada y los nocturnos
   # apagados, el aviso no lee ningún árbol y calla, y estos casos salen rojos por la máquina, no por el aviso.
   node -e '
@@ -1170,7 +1167,7 @@ salida=$(aviso '{"simulado":false,"creados":[{"ficha":"a"}],"fallidos":[{"ficha"
 { echo "$salida" | grep '1 pedido(s) con fallos que no impidieron crearlos' >/dev/null && echo "$salida" | grep 'TF400813' >/dev/null \
   && ! echo "$salida" | grep 'no se pudieron crear' >/dev/null; } \
   && ok "T22e: un fallo que no impidió crear (leer administradores, comentar) se cuenta aparte y con su motivo" || no "T22e: «${salida}»"
-# T22f. 🔴 se cuentan PEDIDOS, no entradas (pase adversarial en Fable): un par con la lectura de
+# T22f. 🔴 se cuentan PEDIDOS, no entradas: un par con la lectura de
 # administradores fallida Y el `crear` fallido no existe — no puede aparecer también como «creado con
 # fallos». Y un pedido con dos fallos posteriores es UN pedido, no dos.
 salida=$(aviso '{"simulado":false,"creados":[{"ficha":"d"}],"fallidos":[{"ficha":"a","proyecto":"P","paso":"administradores","motivo":"leer"},{"ficha":"a","proyecto":"P","paso":"crear","motivo":"TF-crear"},{"ficha":"d","proyecto":"P","paso":"comentario","motivo":"TF-comentar"},{"ficha":"d","proyecto":"P","paso":"escribir-ficha","motivo":"disco"}]}')
@@ -1181,8 +1178,8 @@ salida=$(aviso '{"simulado":false,"creados":[{"ficha":"d"}],"fallidos":[{"ficha"
 
 # ── T25. el orden del pipeline: pedidos DESPUÉS de la revisión y ANTES del commit ─────────────────
 # `pipeline_ok <yaml>` imprime «ok» o qué falta. Es una función para poder correrla contra mutantes
-# (T25b): este chequeo ya se dio por arreglado dos veces verificándolo a mano, y las dos veces un pase
-# adversarial encontró un paso donde quitar `--today` no lo ponía rojo.
+# (T25b): un chequeo verificado a mano puede dar por bueno un paso donde
+# quitar `--today` no lo pone rojo.
 pipeline_ok(){
   local Y="$1" r p c prl d k rev llamada_noc pedi llamada_ped final
   linea(){ grep -nF "displayName: '$1'" "$Y" | head -1 | cut -d: -f1; }
@@ -1195,8 +1192,8 @@ pipeline_ok(){
   # Desde el paso ANTERIOR a la revisión: en este YAML el `script:` va antes de su `displayName`, así
   # que el guion de la revisión (donde nace la fecha de la noche) queda entre el clon y la revisión.
   k=$(linea 'Clonar los repos declarados')
-  # 🔴 Cada chequeo mira SU paso, no un bloque mezclado (pase adversarial en Sonnet): con el bloque
-  # entero, quitar `--today` de la revisión pasaba igual porque el paso de pedidos también lo tiene.
+  # 🔴 Cada chequeo mira SU paso, no un bloque mezclado: con el bloque
+  # entero, quitar `--today` de la revisión pasaría igual porque el paso de pedidos también lo tiene.
   rev=$(sed -n "$(( ${k:-0} + 1 )),${r}p" "$Y")                    # guion de la revisión
   llamada_noc=$(echo "$rev" | sed -n '/nightly-dependencies.js run/,/| tee/p')
   pedi=$(sed -n "$(( r + 1 )),$(( p + 3 ))p" "$Y")                  # guion + env del paso de pedidos
@@ -1219,7 +1216,7 @@ salida=$(pipeline_ok "$YAML")
   || no "T25: $salida"
 
 # ── T25b. 🔴 el chequeo de T25 se pone ROJO si a cualquiera de las dos llamadas le falta `--today` ─
-# Pase adversarial en Sonnet (segunda vuelta, las dos lentes por separado): sin `--today`, el guion de
+# Sin `--today`, el guion de
 # pedidos usa la fecha del reloj, y una corrida que cruza la medianoche busca el snapshot de mañana.
 sin_hoy(){ # <displayName del paso> → copia del YAML con `--today "$HOY"` borrado sólo en ese paso
   local fin; fin=$(grep -nF "displayName: '$1'" "$YAML" | head -1 | cut -d: -f1)
@@ -1229,8 +1226,8 @@ sin_hoy 'Crear los pedidos de trabajo' > "$TMP/yaml-sin-hoy-pedidos.yml"
 sin_hoy 'Correr la revisión de dependencias' > "$TMP/yaml-sin-hoy-revision.yml"
 m1=$(pipeline_ok "$TMP/yaml-sin-hoy-pedidos.yml"); m2=$(pipeline_ok "$TMP/yaml-sin-hoy-revision.yml")
 # Cada mutante tiene que perder UNA línea `--today`, no cero (un mutante igual al original no prueba nada).
-# 🔴 Contra el original y no contra un número fijo (story 4.3): el paso del resumen diario usa la misma
-# fecha con el mismo idioma, y un `2` escrito a mano ponía esta prueba roja sin que ninguna llamada
+# 🔴 Contra el original y no contra un número fijo: el paso del resumen diario usa la misma
+# fecha con el mismo idioma, y un `2` escrito a mano pondría esta prueba roja sin que ninguna llamada
 # hubiera perdido su `--today` — la próxima que la use no tiene por qué romperla.
 orig=$(grep -cE -- "${HOY_OPC} \"[\$]HOY\"" "$YAML")
 quedan=$(grep -cE -- "${HOY_OPC} \"[\$]HOY\"" "$TMP/yaml-sin-hoy-pedidos.yml") quedan2=$(grep -cE -- "${HOY_OPC} \"[\$]HOY\"" "$TMP/yaml-sin-hoy-revision.yml")
@@ -1292,7 +1289,7 @@ if cmp -s "$TMP/dorado.txt" "$TMP/pr-hoy.txt"; then ok "T26: el texto del pull r
 else no "T26: el texto del pull request cambió — $(diff "$TMP/dorado.txt" "$TMP/pr-hoy.txt" | head -6 | tr '\n' ' ')"; fi
 
 # ── T28. las listas del snapshot no dependen del orden en que el disco devuelve las fichas ────────
-# Pase adversarial de la iteración 1: `sin_pedido`, `pagados_avisados` y `deuda_avisada` salían en el
+# `sin_pedido`, `pagados_avisados` y `deuda_avisada` saldrían en el
 # orden de `readdirSync`, que no está garantizado. El snapshot se commitea cada noche: un orden
 # distinto con el mismo contenido es un diff que no dice nada. Se prueba llamando a `hablar` con las
 # mismas fichas en dos órdenes (tope 0 y simulado: no hace falta hablar con ningún `az`).
@@ -1320,7 +1317,7 @@ console.log(a === b && JSON.parse(a).every((l) => l.length >= 2) ? "igual" : `di
   || no "T28: el orden de las listas depende del orden de las fichas — $orden"
 
 # ── T27. 🔴 SEGUNDA NOCHE: el push de anoche se perdió, la ficha no tiene el id, Azure sí ─────────
-# El caso de dos noches que una suite de una sola noche no ve (engram #4118). La ficha vuelve sin
+# El caso de dos noches que una suite de una sola noche no ve. La ficha vuelve sin
 # `pedidos:` —el commit con el id nunca llegó a main— y el `az` de mentira recuerda el Bug que creó.
 mundo
 ficha pending abc12345 browserslist high 1 "A/A"

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# npx.sh — el instalador del paquete de npm en una máquina limpia de Linux (story 8.40, el cierre: AC 39 · T46). Corre
+# npx.sh — el instalador del paquete de npm en una máquina limpia de Linux (T46). Corre
 # DENTRO del contenedor del núcleo, lanzado con `--network none`: el «GitHub» es el de juguete
 # (scripts/tests/fixtures/toy-release-server.js) sirviendo la copia, en el mismo contenedor.
 #   T46 · el paquete armado con `npm pack` y corrido con `npx --package <tgz> tycon-harness … --yes` con un PATH SIN git:
 #         instala (estado `release`, ~/.tycon/harness), `doctor --json` sin rojos, ~/.claude/skills con enlaces reales;
-#         y una segunda corrida sobre la misma HOME dice «al día» sin bajar nada (AC 35).
+#         y una segunda corrida sobre la misma HOME dice «al día» sin bajar nada.
 # uso: bash /opt/lab/scenarios/npx.sh
 set -uo pipefail
 . /opt/lab/lib.sh

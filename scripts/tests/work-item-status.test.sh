@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Prueba del estado de los pedidos de trabajo (story 4.5): el volcado, el aviso único en el Bug, el
+# Prueba del estado de los pedidos de trabajo: el volcado, el aviso único en el Bug, el
 # Bug suelto, el aviso del arranque y el paso del pipeline.
 #
-# La 4.4 crea un Bug por proyecto; desde esa noche hay DOS fuentes que hablan del mismo hecho: el
+# work-items.js crea un Bug por proyecto, y hay DOS fuentes que hablan del mismo hecho: el
 # estado del Bug (lo que una persona decidió) y la medición nocturna (lo que hay en `origin/main`).
 # Esta suite prueba la mitad que habla con Azure —el volcado `bugs-<fecha>.json` y el comentario— contra
-# el `az` de mentira de la 4.4 (scripts/tests/lib/fake-az.sh), que NUNCA toca la red. La mitad que
+# el `az` de mentira (scripts/tests/lib/fake-az.sh), que NUNCA toca la red. La mitad que
 # decide (el cruce) vive en la suite del nocturno, porque el nocturno no habla con Azure: lee el volcado.
 #
 # Los casos giran alrededor de las confusiones que convertirían la pieza en ruido o en silencio:
@@ -15,15 +15,14 @@
 #   · el texto de un comentario de Azure copiado a un archivo que viaja por git;
 #   · un Bug creado que ninguna ficha nombra, que nadie vuelve a mirar.
 #
-# Rojo previo (declarado): el subcomando `state` y el aviso nacen en esta story; antes, la suite entera
-# sale roja.
+# Sin el subcomando `state` y el aviso, la suite entera sale roja.
 set -uo pipefail
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PED="$AQUI/scripts/nightly/dependencies/work-items.js"
 NOTICE="$AQUI/scripts/hooks/dependencies-notice.js"
-# el modelo público del pipeline (story 8.30): lo que copia cada organización a su repo de operaciones
+# el modelo público del pipeline: lo que copia cada organización a su repo de operaciones
 YAML="$AQUI/pipelines/operations/dependency-audit.yml"
-# story 8.9: el YAML del pipeline puede llamar con el nombre nuevo o con el viejo (el alias lo sigue aceptando hasta el
+# el YAML del pipeline puede llamar con el nombre nuevo o con el viejo (el alias lo sigue aceptando hasta el
 # retiro). El chequeo acepta los dos; el viejo sale del mapa de renombres, nunca escrito en la prueba.
 nombres(){ # <kind> <nuevo> <where> → «nuevo|viejo» (sólo «nuevo» sin mapa)
   node -e 'const [k, n, w, f] = process.argv.slice(1); let v = [];
@@ -43,7 +42,7 @@ HOY=2026-09-10
 export BACKUP_OWNER_ID=7bb1c00b-0000-0000-0000-00000000a41e
 BACKUP_OWNER_MAIL=respaldo@prueba   # el fixture de la API de identidades se llama por el mail
 
-# ── el mundo de prueba (el mismo de la suite de la 4.4) ──────────────────────────────────────────
+# ── el mundo de prueba (el mismo de la suite work-items.test.sh) ──────────────────────────────────────────
 mundo(){
   rm -rf "$TMP/pend" "$TMP/out" "$TMP/fixaz"
   mkdir -p "$TMP/pend/pending" "$TMP/pend/promoted" "$TMP/pend/archived" "$TMP/out" "$TMP/fixaz"
@@ -68,7 +67,7 @@ const c = { presupuesto_de_ruido: { tope_pr_por_noche: 2 }, azure, repos: [
 require("fs").writeFileSync(f, JSON.stringify(c, null, 2));' "${1:-true}" "${2:-true}" "$TMP/c.json"
 }
 
-estados_agile(){ # <proyecto> — la forma REAL de `workItemTypeStates` (medido el 2026-09-10)
+estados_agile(){ # <proyecto> — la forma REAL de `workItemTypeStates`
   cat > "$TMP/fixaz/estados-$1.json" <<'J'
 { "count": 4, "value": [ { "name": "New", "color": "b2b2b2", "category": "Proposed" },
   { "name": "Active", "color": "007acc", "category": "InProgress" },
@@ -172,7 +171,7 @@ process.exit(eval(expr) ? 0 : 1);' "$TMP/out/dependencias-$HOY.json" "$1"
 }
 pie(){ tail -5 "$TMP/o.txt" | tr '\n' ' ' | cut -c1-500; }
 
-# ── T1 (AC 1). el volcado lee estado, categoría y motivo, y las categorías UNA vez por proyecto ────
+# ── T1. el volcado lee estado, categoría y motivo, y las categorías UNA vez por proyecto ────
 mundo
 ficha pending abc12345 browserslist "A/A" "pedidos:" "  - Proy A: 101"
 ficha pending def67890 handlebars "A/A2" "pedidos:" "  - Proy A: 102"
@@ -188,19 +187,19 @@ rc=$(estado)
   && ok "T1: el volcado trae estado, categoría, motivo y fecha del estado por pedido (también de la ficha resuelta), y lee las categorías UNA vez para tres pedidos del mismo proyecto" \
   || no "T1: rc=$rc estados=$(cuenta estados) · $(volcj) · $(pie)"
 
-# ── T2 (AC 1b). 🔴 la actividad de una persona NO la mueve un comentario del pipeline ────────────
+# ── T2. 🔴 la actividad de una persona NO la mueve un comentario del pipeline ────────────
 { volc 'v.pedidos["101"].cambiado_por_persona_el === "2026-09-03T15:00:00Z" && v.pedidos["101"].cambiado_por_persona === "Dana"' \
   && volc 'v.pedidos["102"].cambiado_por_persona_el === null && v.pedidos["102"].cambiado_por_persona === null'; } \
   && ok "T2: 🔴 «cambiado por una persona» sale de las revisiones con descriptor que no es svc. — el comentario del pipeline del 09-09 no cuenta, y un pedido que sólo tocó el pipeline da null" \
   || no "T2: $(volcj)"
 
-# ── T26 (AC 9b, 12). 🔴 ni un texto de Azure en el volcado ────────────────────────────────────────
+# ── T26. 🔴 ni un texto de Azure en el volcado ────────────────────────────────────────
 n=$(grep -c CENTINELA "$TMP/out/bugs-$HOY.json" 2>/dev/null); n=${n:-0}
 { [ -f "$TMP/out/bugs-$HOY.json" ] && [ "$n" -eq 0 ]; } \
   && ok "T26: 🔴 el volcado no trae el título, la descripción ni el texto de un comentario (el archivo viaja por git)" \
   || no "T26: existe=$([ -f "$TMP/out/bugs-$HOY.json" ] && echo sí || echo no) · centinelas=$n"
 
-# ── T3 (AC 1c). una lectura que falla es «no leído» POR ID, con cuál falló, y la corrida sigue ────
+# ── T3. una lectura que falla es «no leído» POR ID, con cuál falló, y la corrida sigue ────
 mundo
 ficha pending abc12345 browserslist "A/A" "pedidos:" "  - Proy A: 101"
 ficha pending def67890 handlebars "A/A2" "pedidos:" "  - Proy A: 102"
@@ -217,7 +216,7 @@ d_ok=0; { [ "$rc" -eq 0 ] && volc 'v.pedidos["101"].leido === false && /el estad
   && ok "T3: el work item, las revisiones o las categorías que no se pueden leer (o un estado fuera de las categorías) dejan ESE pedido en «no leído» con el motivo, y la corrida sigue" \
   || no "T3: show=$a_ok revisiones=$b_ok categorías=$c_ok estado-raro=$d_ok · $(volcj)"
 
-# ── T5 (AC 1c). 🔴 un id que no existe (o sin permiso) no es «sin pedido» ────────────────────────
+# ── T5. 🔴 un id que no existe (o sin permiso) no es «sin pedido» ────────────────────────
 mundo
 ficha pending abc12345 browserslist "A/A" "pedidos:" "  - Proy A: 999"
 rc=$(estado)
@@ -225,7 +224,7 @@ rc=$(estado)
   && ok "T5: 🔴 un id que Azure dice que no existe (TF401232) sale «no leído: no existe o sin permiso de lectura», nunca desaparece" \
   || no "T5: rc=$rc · $(volcj)"
 
-# ── T4 (AC 1d, 1e). sin pedidos igual escribe · sin poder intentar nada sale 2 y lo dice ─────────
+# ── T4. sin pedidos igual escribe · sin poder intentar nada sale 2 y lo dice ─────────
 mundo
 ficha pending abc12345 browserslist "A/A"
 rc=$(estado)
@@ -238,7 +237,7 @@ c_ok=0; { [ "$rc3" -eq 2 ] && volc 'v.consultado === false && /token/.test(v.mot
   && ok "T4: sin fichas con pedido el volcado sale igual con «pedidos: {}»; sin az o sin token sale 2 y escribe «consultado: false» con el motivo" \
   || no "T4: vacío=$a_ok (rc=$rc) sin-az=$b_ok (rc=$rc2) sin-token=$c_ok (rc=$rc3) · $(volcj)"
 
-# ── T28 (AC 14a, 14b). 🔴 el Bug suelto se encuentra por su etiqueta ──────────────────────────────
+# ── T28. 🔴 el Bug suelto se encuentra por su etiqueta ──────────────────────────────
 mundo
 ficha pending abc12345 browserslist "A/A" "pedidos:" "  - Proy A: 101"
 ficha archived zzz99999 minimist "A/A" "pedidos:" "  - Proy A: 160"
@@ -255,7 +254,7 @@ b_ok=0; { [ "$rc2" -eq 0 ] && volc 'v.huerfanos_no_consultados.map((x) => x.proy
   && ok "T28: 🔴 un Bug del arnés que ninguna ficha nombra sale en «huerfanos» con su ficha (uno nombrado sólo en archived/ no, y una etiqueta parecida tampoco); una consulta que falla es «no consultado», no «sin huérfanos»" \
   || no "T28: encontrado=$a_ok (rc=$rc wiql=$(cuenta wiql)) falla=$b_ok (rc=$rc2) · $(volcj)"
 
-# ── T29 (AC 14c). el Bug suelto se adopta en SU ficha, sin comentario ─────────────────────────────
+# ── T29. el Bug suelto se adopta en SU ficha, sin comentario ─────────────────────────────
 suelto(){ # <ficha nombrada> → el volcado de HOY con un solo huérfano (150 en Proy A)
   echo "{\"fecha\":\"$HOY\",\"consultado\":true,\"motivo\":null,\"proyectos\":{},\"pedidos\":{},\"huerfanos\":[{\"id\":150,\"proyecto\":\"Proy A\",\"ficha\":\"$1\",\"estado\":\"Active\",\"categoria\":\"InProgress\"}],\"huerfanos_no_consultados\":[]}" > "$TMP/out/bugs-$HOY.json"
 }
@@ -267,8 +266,8 @@ a_ok=0; { [ "$rc" -eq 0 ] && grep -qx '  - Proy A: 150' "$TMP/pend/promoted/abc1
   && ped 'JSON.stringify(p.huerfanos_adoptados) === JSON.stringify([{ ficha: "abc12345", proyecto: "Proy A", id: 150 }])' \
   && [ "$(cuenta crear)" -eq 0 ] && [ "$(cuenta comentario)" -eq 1 ] && llamada comentario 0 'arg("--id") === "150" && b.includes("ya no aparece") && !/adopt/i.test(b)' \
   && [ "$(cuenta actualizar)" -eq 1 ] && llamada actualizar 0 'arg("--id") === "150" && arg("--state") === "Closed"'; } && a_ok=1
-# (la adopción no comenta; el único comentario es el «ya no aparece» de la 4.4, que le llega esa misma
-#  noche porque la ficha está resuelta y el Bug que ahora conoce sigue abierto — y desde el 2026-09-15,
+# (la adopción no comenta; el único comentario es el «ya no aparece» del cruce, que le llega esa misma
+#  noche porque la ficha está resuelta y el Bug que ahora conoce sigue abierto, y
 #  por la misma razón, ese Bug se cierra: el arreglo ya está en main)
 mundo
 ficha promoted abc12345 browserslist "" "resuelto: 2026-09-08" "pedidos:" "  - Proy A: 140" "pagado_avisado:" "  - Proy A (2026-09-08)"
@@ -294,7 +293,7 @@ e_ok=0; { [ "$rc" -eq 0 ] && ped 'Array.isArray(p.huerfanos_adoptados) && p.huer
   && ok "T29: el Bug suelto se anota en la ficha que nombra (aunque esté resuelta), sin comentario propio (sólo el «ya no aparece» de la 4.4); con otro id en el proyecto o sin ficha no se escribe nada; simulado no escribe; sin volcado no pasa nada" \
   || no "T29: adopta=$a_ok otro-id=$b_ok sin-ficha=$c_ok simulado=$d_ok sin-volcado=$e_ok · $(pie)"
 
-# ── T16 (AC 6). el aviso: UN comentario, con la mención, y el marcador DESPUÉS ────────────────────
+# ── T16. el aviso: UN comentario, con la mención, y el marcador DESPUÉS ────────────────────
 mundo
 ficha pending abc12345 browserslist "A/A" "pedidos:" "  - Proy A: 101"
 snapshot "$(presente abc12345 browserslist)" "$(cv arreglado)"
@@ -312,7 +311,7 @@ b_ok=0; { [ "$rc" -eq 0 ] && [ "$(cuenta comentario)" -eq 1 ] && llamada comenta
   && ok "T16: un pedido cerrado con la vulnerabilidad viva recibe UN comentario (paquete, repo, «No lo reabro», mención, dónde declarar la deuda) y la ficha queda marcada; «no aplica» tiene su propio texto" \
   || no "T16: arreglado=$a_ok no-aplica=$b_ok comentarios=$(cuenta comentario) · $(pie)"
 
-# ── T17 (AC 6b, 6d). 🔴 comentario fallido no marca · marcado no repite · avisar:false no comenta ─
+# ── T17. 🔴 comentario fallido no marca · marcado no repite · avisar:false no comenta ─
 mundo
 ficha pending abc12345 browserslist "A/A" "pedidos:" "  - Proy A: 101"
 snapshot "$(presente abc12345 browserslist)" "$(cv arreglado)"
@@ -331,7 +330,7 @@ rc=$(correr); c_ok=0; { [ "$rc" -eq 0 ] && [ "$(cuenta comentario)" -eq 0 ]; } &
   && ok "T17: 🔴 si el comentario falla la ficha NO se marca y el fallo queda (mañana se reintenta); con el marcador puesto o avisar:false no sale ningún comentario" \
   || no "T17: fallido=$a_ok marcado=$b_ok avisar-false=$c_ok · $(pie)"
 
-# ── T13 (AC 4). la resuelta con pedido abierto se LISTA (lo hace el nocturno), no se comenta de nuevo ─
+# ── T13. la resuelta con pedido abierto se LISTA (lo hace el nocturno), no se comenta de nuevo ─
 mundo
 ficha promoted abc12345 browserslist "" "resuelto: 2026-09-05" "pedidos:" "  - Proy A: 101" "pagado_avisado:" "  - Proy A (2026-09-05)"
 snapshot '[]' '{"consultado":true,"cerrados_vivos":[],"resueltas_con_pedido_abierto":[{"ficha":"abc12345","proyecto":"Proy A","pedido":101,"resuelto":"2026-09-05","dias":5}]}'
@@ -340,12 +339,12 @@ rc=$(correr)
   && ok "T13: una ficha resuelta con el pedido abierto no recibe un comentario más (ya tuvo «ya no aparece»)" \
   || no "T13: rc=$rc comentarios=$(cuenta comentario) · $(pie)"
 
-# ── T18 (AC 6c, 6e). 🔴 simulado no escribe · y el guion NUNCA cambia el estado de un Bug ─────────
+# ── T18. 🔴 simulado no escribe · y el guion NUNCA cambia el estado de un Bug ─────────
 mundo; config false
 ficha pending abc12345 browserslist "A/A" "pedidos:" "  - Proy A: 101"
 snapshot "$(presente abc12345 browserslist)" "$(cv arreglado)"; cp "$TMP/pend/pending/abc12345.yaml" "$TMP/antes.yaml"
 rc=$(correr)
-# 2026-09-15 (decisión del dev): el guion SÍ cambia el estado de un Bug en dos lugares — `cerrarPedido` (el
+# el guion SÍ cambia el estado de un Bug en dos lugares — `cerrarPedido` (el
 # arreglo llegó a main) y `reabrirPedido` (volvió a un Bug que cerró él; work-items.test.sh T18/T18k).
 # Lo que sigue prohibido: mandar un motivo, y que el CRUCE toque un estado. Por eso `--state` aparece DOS veces
 # en el guion y ninguna llamada de este caso lo lleva.
@@ -356,7 +355,7 @@ logst=$(grep -cE -- '"--(state|reason)"' "$TMP/fixaz/llamadas.log" 2>/dev/null);
   && ok "T18: 🔴 simulado no comenta ni toca la ficha y muestra el texto que habría salido; el cruce no cambia estados, el guion nunca manda motivo y cambia estados sólo desde cerrar y reabrir" \
   || no "T18: rc=$rc comentarios=$(cuenta comentario) ficha-igual=$(cmp -s "$TMP/antes.yaml" "$TMP/pend/pending/abc12345.yaml" && echo sí || echo no) --state=$st --reason=$re en-llamadas=$logst"
 
-# ── T22 (AC 8, 14d). el aviso del arranque cobra el cruce ─────────────────────────────────────────
+# ── T22. el aviso del arranque cobra el cruce ─────────────────────────────────────────
 aviso(){ # <cruce JSON | AUSENTE> → la salida del hook sobre un .dashboard/ fabricado
   rm -rf "$TMP/dash"; mkdir -p "$TMP/dash/out" "$TMP/dash/pend/pending"
   node -e '
@@ -394,9 +393,9 @@ o6=$(aviso "$(cruce)")
   && ok "T22: el arranque dice «NO cruzó» sin la clave, «no pudo leer» con consultado:false, y cobra cerrados vivos, no leídos y Bugs sueltos; con todo en orden no suma nada" \
   || no "T22: ausente=«$(echo "$o1" | tr '\n' ' ' | cut -c1-160)» · consultado-false=«$(echo "$o2" | tr '\n' ' ' | cut -c1-160)» · cerrado-vivo=«$(echo "$o3" | tr '\n' ' ' | cut -c1-200)» · no-leído=«$(echo "$o4" | tr '\n' ' ' | cut -c1-160)» · suelto=«$(echo "$o5" | tr '\n' ' ' | cut -c1-160)» · limpio=«$(echo "$o6" | tr '\n' ' ' | cut -c1-160)»"
 
-# ── T23 (AC 9). el paso del volcado va entre el clon y la revisión, con el token, y la fecha nace ahí ─
-# Una función para poder correrla contra mutantes (lección de la 4.4: un chequeo de texto verificado a
-# mano falló dos veces). Cada mutante tiene que perder UNA cosa y poner rojo al chequeo.
+# ── T23. el paso del volcado va entre el clon y la revisión, con el token, y la fecha nace ahí ─
+# Una función para poder correrla contra mutantes: un chequeo de texto verificado a
+# mano se equivoca. Cada mutante tiene que perder UNA cosa y poner rojo al chequeo.
 volcado_ok(){
   local Y="$1" k v r paso rev
   linea(){ grep -nF "displayName: '$1'" "$Y" | head -1 | cut -d: -f1; }
@@ -425,14 +424,14 @@ awk "/displayName: 'Volcar el estado de los pedidos de trabajo'/ { \$0 = \"     
   && ok "T23: el volcado va entre el clon y la revisión con el token y pipefail, publica la fecha de la noche que la revisión usa, y cada mutante (sin token, sin guion, fecha propia, sin paso) pone rojo el chequeo" \
   || no "T23: «${salida}» · mutantes: sin-token=«${m1}» sin-guion=«${m2}» fecha-propia=«${m3}» sin-paso=«${m4}»"
 
-# ── T25r (AC 11). 🔴 el repos.json de EJEMPLO del modelo público declara el vocabulario ─────────────────────────────────────
-# Las demás pruebas usan una configuración fabricada. La prueba manual del AC 13 (2026-09-14) encontró
-# que el archivo real no traía la lista: el cruce, con razón, no clasificaba NINGÚN cerrado — en verde en
+# ── T25r. 🔴 el repos.json de EJEMPLO del modelo público declara el vocabulario ─────────────────────────────────────
+# Las demás pruebas usan una configuración fabricada. Sin la lista en el archivo real,
+# el cruce, con razón, no clasificaría NINGÚN cerrado — en verde en
 # todas las suites. En el público se mira el EJEMPLO que copia cada organización (el repos.json de
 # cada equipo vive en su repo de operaciones): un ejemplo sin la lista enseñaría a no ponerla.
 # Se exige PRESENCIA y FORMA (lista de textos no vacía), no los valores: agregar o sacar un motivo a
 # propósito no es una regresión, y un conteo o una lista exacta sobre un archivo compartido se rompe con
-# el cambio legítimo siguiente (lección de T25b en la 4.4). Los valores se prueban en T9/T25, con la
+# el cambio legítimo siguiente. Los valores se prueban en T9/T25, con la
 # configuración armada a mano.
 real=$(node -e 'try { const c = require(process.argv[1]); const m = c.azure && c.azure.motivos_arreglado;
   const ok = Array.isArray(m) && m.length > 0 && m.every((x) => typeof x === "string" && x.trim() !== "");
@@ -441,9 +440,9 @@ real=$(node -e 'try { const c = require(process.argv[1]); const m = c.azure && c
   && ok "T25r: 🔴 el repos.json de ejemplo del modelo declara motivos_arreglado como una lista de textos no vacía (sin ella, el cruce no clasifica nada)" \
   || no "T25r: azure.motivos_arreglado del repos.json de ejemplo = ${real}"
 
-# ════ STORY 4.5 — iter 2: lo que encontró el pase adversarial y los revisores ═════════════════════
+# ════ más casos: ramas de error y de cobertura ═════════════════════
 
-# ── C1 + D1. el arranque dice «no se pudo buscar Bugs sueltos» y un cruce ilegible ───────────────
+# ── el arranque dice «no se pudo buscar Bugs sueltos» y un cruce ilegible ───────────────
 o7=$(aviso "$(cruce huerfanos_no_consultados '[{"proyecto":"ProyB","motivo":"no pude consultar los Bugs del arnés (salió 1)"}]')")
 o8=$(aviso 'null')
 o9=$(aviso '"no soy un objeto"')
@@ -452,7 +451,7 @@ o9=$(aviso '"no soy un objeto"')
   && ok "C1/D1 (story 4.5, 5b): el arranque dice cuando no se pudo buscar Bugs sueltos, y un cruce que no es un objeto se dice ILEGIBLE en vez de callar" \
   || no "C1/D1: no-consultados=«$(echo "$o7" | tr '\n' ' ' | cut -c1-200)» · null=«$(echo "$o8" | tr '\n' ' ' | cut -c1-200)» · string=«$(echo "$o9" | tr '\n' ' ' | cut -c1-160)»"
 
-# ── I1. simulado: un Bug suelto de una ficha VIVA no sale también como «habría creado» ────────────
+# ── simulado: un Bug suelto de una ficha VIVA no sale también como «habría creado» ────────────
 mundo; config false
 ficha pending abc12345 browserslist "A/A"
 snapshot "$(presente abc12345 browserslist)"; suelto abc12345
@@ -489,9 +488,9 @@ rc=$(TYCON_AZ_FAIL='wi:"170"' estado)
   && ok "T5b (story 4.5): si el show de un Bug candidato falla, lo encontrado en ese proyecto se descarta y el proyecto sale «no consultado» (una lectura a medias no es «estos son todos»)" \
   || no "T5b: rc=${rc} · $(volcj)"
 
-# ── P1 (vuelta 2, revisor de fallos silenciosos). 🔴 «ya no aparece» vuelve a poder decirse SÓLO donde volvió ──
-# La primera versión del arreglo borraba `pagado_avisado:` entero al reactivar la ficha: el proyecto donde
-# nada cambió recibía otra vez «ya no aparece». Ahora el marcador de un proyecto se borra la noche en que la
+# ── 🔴 «ya no aparece» vuelve a poder decirse SÓLO donde volvió ──
+# Borrar `pagado_avisado:` entero al reactivar la ficha haría que el proyecto donde
+# nada cambió recibiera otra vez «ya no aparece». Por eso el marcador de un proyecto se borra la noche en que la
 # vulnerabilidad vuelve a aparecer AHÍ, y el otro proyecto lo conserva.
 mundo
 ficha pending abc12345 browserslist "A/A,B/B" "reaparecido: 2026-09-09" "pedidos:" "  - Proy A: 101" "  - ProyB: 201" "pagado_avisado:" "  - Proy A (2026-09-05)" "  - ProyB (2026-09-05)"
@@ -501,7 +500,7 @@ p1=$(node -e 'const n = require(process.argv[1]); console.log(JSON.stringify(n.l
 { [ "$rc" -eq 0 ] && [ "$(cuenta comentario)" -eq 0 ] && [ "$p1" = '["ProyB (2026-09-05)"]' ]; } \
   && ok "P1 (story 4.5, vuelta 2): 🔴 cuando la vulnerabilidad vuelve en Proy A se borra sólo su «ya avisado», y ProyB —donde nada cambió— no recibe otro «ya no aparece»" \
   || no "P1: rc=${rc} comentarios=$(cuenta comentario) pagado_avisado=${p1}"
-# ── P1b/P1c (vuelta 3, cobertura). la rama que rehabilita «ya no aparece»: simulado no escribe; un fallo se dice ──
+# ── la rama que rehabilita «ya no aparece»: simulado no escribe; un fallo se dice ──
 mundo; config false
 ficha pending abc12345 browserslist "A/A" "reaparecido: 2026-09-09" "pedidos:" "  - Proy A: 101" "pagado_avisado:" "  - Proy A (2026-09-05)"
 snapshot "$(presente abc12345 browserslist)"; cp "$TMP/pend/pending/abc12345.yaml" "$TMP/antes.yaml"

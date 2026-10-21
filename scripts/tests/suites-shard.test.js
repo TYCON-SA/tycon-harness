@@ -1,10 +1,10 @@
 'use strict';
 
 /**
- * suites-shard.test.js — el reparto de las suites del nocturno en trabajos paralelos (2026-10-04).
+ * suites-shard.test.js — el reparto de las suites del nocturno en trabajos paralelos.
  *
- * El job de suites del nocturno corría las 213 suites una detrás de otra: 62 minutos en un solo carril
- * (corrida 11738), con un tope de 75. `scripts/ci/suites-shard.js` las reparte en N trabajos por peso.
+ * Las suites del nocturno, una detrás de otra en un solo carril, no entran en el tope del job.
+ * `scripts/ci/suites-shard.js` las reparte en N trabajos por peso.
  *
  * Lo que no puede pasar, y es lo que se mide acá:
  *   · que una suite quede fuera de todos los trabajos, o en dos (la unión es EXACTAMENTE la lista);
@@ -66,7 +66,7 @@ function list(dir, shard, of, extra = []) {
   return run(['list', '--shard', String(shard), '--of', String(of), '--skills', '/S/skills', '--scripts', '/R/scripts',
     '--suites', path.join(dir, 'suites.json'), '--weights', path.join(dir, 'weights.json'), ...extra]);
 }
-/** Lo que hacía el `node -e` del YAML hasta hoy: la lista entera, en el orden de suites.json. */
+/** La lista entera, en el orden de suites.json, como la armaría un `node -e` en el YAML sin repartir: sirve de referencia. */
 function legacyList(suites, skills, scripts) {
   return [...suites.diarias, ...(suites.semanales || [])].map((x) => `${x.raiz === 'agent-skills' ? skills : scripts}/${x.ruta}`);
 }
@@ -290,7 +290,7 @@ test('SuitesShard_RealWeights_AreReadableAndPositive', () => {
   for (const [name, seconds] of Object.entries(w.weights)) assert.ok(Number.isFinite(seconds) && seconds > 0, `${name}: ${seconds}`);
 });
 
-// ── el juego de pesos de la validación (story 8.22, tramo A) ─────────────────────────────────────────────────────────
+// ── el juego de pesos de la validación ─────────────────────────────────────────────────────────
 // El nocturno y la validación de cada rama (la 170) no tardan lo mismo: clean-machine son minutos en el nocturno y ~3 s
 // en la 170, y export-real ~391 s en la 170 contra los 1439 anotados. La 170 pide su juego con --weight-set pr.
 test('SuitesWeights_PrSetHasMeasuredValues', () => {
@@ -299,7 +299,7 @@ test('SuitesWeights_PrSetHasMeasuredValues', () => {
   assert.ok(Array.isArray(pr.runs) && pr.runs.length > 0 && pr.runs.every((n) => Number.isInteger(n) && n > 0),
     `el juego cita las corridas de la 170 de donde salen sus pesos: ${JSON.stringify(pr.runs)}`);
   assert.ok(Number.isFinite(pr.default) && pr.default > 0, 'el juego trae su peso por defecto');
-  // (story 8.26, tanda I: export-real, el caso de ~391 s en la 170 contra 1439 de noche, se retiró con la copia armada;
+  // (export-real, que pesa distinto en la validación y de noche, no está: la copia armada no existe;
   // que cada juego use sus pesos lo mide el caso de juguete de SuitesShard_PrWeightsOnlyInPr)
   for (const [name, seconds] of Object.entries(pr.weights)) assert.ok(Number.isFinite(seconds) && seconds > 0, `${name}: ${seconds}`);
 });
@@ -338,7 +338,7 @@ test('SuitesShard_PrWeightsOnlyInPr', () => {
     /default/, 'un juego sin peso por defecto');
 });
 
-// ── cuántos trabajos (story 8.22, tramo C) ───────────────────────────────────────────────────────────────────────
+// ── cuántos trabajos ───────────────────────────────────────────────────────────────────────
 test('SuitesShard_JobCountFromPlanWeight', () => {
   // El juego de la 170 trae cuánto peso entra en un trabajo. Con 60 s: 4 s → 1, 100 s → 2, 196 s → 4, que el máximo deja en 3.
   const dir = lab({ weights: { ...LAB_WEIGHTS, pr: { runs: [12181], default: 2, job_budget: 60, weights: {} } } });
@@ -377,7 +377,7 @@ test('SuitesShard_JobCountFromPlanWeight', () => {
   }
 });
 
-// ── el tope de cada suite (story 8.22, tramo D) ───────────────────────────────────────────────────────────────────
+// ── el tope de cada suite ───────────────────────────────────────────────────────────────────
 test('SuitesShard_CapsFromWeightWithFloor', () => {
   // El tope es el doble del peso del juego pedido, con un piso. a-slow pesa 100 → 200; d-medium (sólo en el nocturno,
   // 40) → 80, que el piso deja en 90; b-fast (sin peso en ninguno, el default 2) → el piso.
@@ -409,11 +409,9 @@ test('SuitesShard_CapsFromWeightWithFloor', () => {
 });
 
 test('SuitesWeights_NightlySetMeasuredAndCapped', () => {
-  // Story 8.22, AC 32 (decisión del dueño, 2026-10-07): el tope por suite también en el nocturno. Sus pesos se renuevan
-  // con lo medido (harness-update estaba en 96 s y tarda ~869: con el peso viejo, su tope lo cortaría todas las noches),
-  // export-real llevó tope propio (1800 s) mientras de noche corría además la CI pública sobre la copia. Desde el
-  // 2026-10-10 esa parte está apagada en Azure hasta el corte de la 8.26 (112 min medidos en el banco 12720): la suite
-  // tarda lo mismo de noche que a mano y su tope es el de todas, el doble de su peso.
+  // El tope por suite rige también en el nocturno. Sus pesos son lo medido (harness-update tarda ~869 s: con un peso
+  // viejo de 96 s, su tope la cortaría todas las noches). Ninguna suite lleva tope propio en el nocturno: el tope de
+  // todas es el doble de su peso.
   const real = JSON.parse(fs.readFileSync(REAL_WEIGHTS, 'utf8'));
   assert.deepStrictEqual(real.suite_cap, { factor: 2, floor: 180 });
   assert.deepStrictEqual(real.runs, [12240, 12216, 12196], 'el nocturno cita los bancos de donde salen sus pesos');
@@ -436,8 +434,8 @@ test('SuitesWeights_NightlySetMeasuredAndCapped', () => {
     const broken = lab({ weights: { ...LAB_WEIGHTS, suite_cap: { factor: 2, floor: 90, per_suite: perSuite } } });
     refuses(run(['caps', '--suites', path.join(broken, 'suites.json'), '--weights', path.join(broken, 'weights.json')]), /per_suite/, why);
   }
-  // (pase adversarial) un tope propio para una suite que no está en suites.json —un renombre, un error de tipeo— frena:
-  // si no, la suite de verdad volvía en silencio al doble de su peso. También con --only, aunque esa suite no esté en
+  // un tope propio para una suite que no está en suites.json —un renombre, un error de tipeo— frena:
+  // si no, la suite de verdad vuelve en silencio al doble de su peso. También con --only, aunque esa suite no esté en
   // la lista del trabajo.
   const stale = lab({ weights: { ...LAB_WEIGHTS, suite_cap: { factor: 2, floor: 90, per_suite: { 'a-slow-renombrada.test.sh': 1000 } } } });
   refuses(run(['caps', '--suites', path.join(stale, 'suites.json'), '--weights', path.join(stale, 'weights.json')]),
@@ -450,12 +448,12 @@ test('SuitesWeights_PrSetHasTheConfirmedSuiteCap', () => {
   const pr = JSON.parse(fs.readFileSync(REAL_WEIGHTS, 'utf8')).pr;
   const { per_suite: own, ...rule } = pr.suite_cap;
   assert.deepStrictEqual(rule, { factor: 2, floor: 180 }, 'la regla que confirmó el dueño: el doble del peso, con piso de 3 min');
-  // Los únicos topes propios de la validación (decisión del dueño, 2026-10-11): dos suites que corren solas y ahí tardan
-  // 1 y 3 s. Con el piso de 180 s cada una, el trabajo del banco no entraba en sus 40 min (pr-suites-shards, T48). Uno
-  // más acá es otra decisión del dueño, no un atajo para que una suite lenta deje de cortarse.
+  // Los únicos topes propios de la validación: dos suites que corren solas y ahí tardan 1 y 3 s. Con el piso de 180 s
+  // cada una, el trabajo del banco no entra en sus 40 min (pr-suites-shards, T48). Un tope propio más es una decisión
+  // aparte, no un atajo para que una suite lenta deje de cortarse.
   assert.deepStrictEqual(own, { 'clean-machine.test.sh': 60, 'instinct-executor.test.sh': 60 });
-  // Validaciones #12248 y #12276: con los pesos de antes de la 8.13.1-a (161 y 95), su tope cortaba sanas a harness-update
-  // y harness-doctor, que en el nocturno tardan ~870 y ~275 s todas las noches. Su tope tiene que pasar lo que tardan.
+  // Con pesos bajos (161 y 95 s), el tope cortaría sanas a harness-update y harness-doctor, que en el nocturno tardan
+  // ~870 y ~275 s. Su tope tiene que pasar lo que tardan.
   assert.ok(pr.weights['harness-update.test.sh'] * pr.suite_cap.factor > 1373, `harness-update: ${pr.weights['harness-update.test.sh']}`);
   assert.ok(pr.weights['harness-doctor.test.sh'] * pr.suite_cap.factor > 416, `harness-doctor: ${pr.weights['harness-doctor.test.sh']}`);
 });
@@ -522,7 +520,7 @@ test('SuitesShard_Merge_RedAndAbsentSuites_KeepTheirNameAndTheirOutput', () => {
 });
 
 test('SuitesShard_Merge_SuiteCutByItsCap_IsNotMeasuredWithItsMotive', () => {
-  // Story 8.22, tramo D: el trabajo corta una suite que pasó su tope y la anota él mismo como no medida, con el motivo.
+  // El trabajo corta una suite que pasó su tope y la anota él mismo como no medida, con el motivo.
   // Eso no es una bajada a medias: el trabajo terminó y lo demás vale.
   const dir = lab();
   const two = expected(dir, 2, 2);
@@ -589,9 +587,9 @@ test('SuitesShard_Merge_ShardCutHalfway_KeepsWhatItMeasuredAndTheRestIsNotMeasur
 });
 
 test('SuitesShard_Merge_ShardCutWithSeveralRunning_EveryUnfinishedOneIsNotMeasured', () => {
-  // Story 8.22, tramo D (pase adversarial): las suites corren de a varias (xargs -P) y ran.txt se escribe al ARRANCAR
-  // cada una. Al cortar el trabajo, b y d estaban corriendo a la vez: «la última de ran.txt» dejaba a b como verde sin
-  // haber terminado. Con done.txt (cada suite que termina, de cualquier forma) se sabe cuáles no terminaron.
+  // Las suites corren de a varias (xargs -P) y ran.txt se escribe al ARRANCAR cada una. Al cortar el trabajo, b y d
+  // pueden estar corriendo a la vez: «la última de ran.txt» dejaría a b como verde sin haber terminado.
+  // Con done.txt (cada suite que termina, de cualquier forma) se sabe cuáles no terminaron.
   const dir = lab();
   artifact(dir, 1, 2);
   const a = artifact(dir, 2, 2, {
@@ -628,7 +626,7 @@ test('SuitesShard_Merge_ShardSaysFinishedButSkippedSuites_ThoseAreNotMeasured', 
   assert.match(m.out, /##vso\[task\.logissue type=error\]/);
 });
 
-// ── lo que publicó un trabajo no se cree sin mirar (revisión del 2026-10-04, C1) ─────────────────────────────────
+// ── lo que publicó un trabajo no se cree sin mirar ─────────────────────────────────
 /** Todas las suites del trabajo `i` quedaron no medidas, con el motivo «incompleto», y la corrida lo denuncia. */
 function wholeShardUnmeasured(m, dir, i, of, what) {
   assert.strictEqual(m.code, 0, m.err);
@@ -694,7 +692,7 @@ test('SuitesShard_Merge_NamesThatWereNotInItsList_AreNotCounted', () => {
   wholeShardUnmeasured(merge(never, 2), never, 2, 2, 'una roja que no figura entre las corridas');
 });
 
-// ── un trabajo reintentado desde Azure publica otro artefacto (revisión del 2026-10-04, C2) ──────────────────────
+// ── un trabajo reintentado desde Azure publica otro artefacto ──────────────────────
 test('SuitesShard_Merge_RetriedShard_TakesItsLatestAttempt', () => {
   // El intento 1 se cortó; alguien lo reintentó y el intento 2 corrió todo: la noche queda entera.
   const dir = lab();
@@ -831,10 +829,10 @@ test('SuitesShard_Merge_BadRequest_Exits2AndWritesNothing', () => {
   assert.ok(!fs.existsSync(path.join(out, 'ran.txt')) && !fs.existsSync(path.join(out, 'failures.txt')), 'un pedido negado no deja un resultado a medias');
 });
 
-// ── story 8.22, tramo I: las suites que corren solas pasan al trabajo del banco (`--exclusive-apart`) ─────────────────
-// Medido el 2026-10-08: en la validación de una rama, export-real (la copia pública de verdad, `exclusive`) tardaba
-// 370 a 383 s SOLA al final de un trabajo de suites, y el trabajo del banco terminaba a los ~5 min y dejaba su carril
-// ocioso. Con `--exclusive-apart` las exclusivas salen del reparto y forman la lista del trabajo del banco
+// ── las suites que corren solas pasan al trabajo del banco (`--exclusive-apart`) ─────────────────
+// En la validación de una rama, una suite `exclusive` corre SOLA al final de un trabajo de suites, y el trabajo del
+// banco termina antes y deja su carril ocioso. Con `--exclusive-apart` las exclusivas salen del reparto y forman la
+// lista del trabajo del banco
 // (`--shard bench`). El nocturno no pasa la opción: para él no cambia nada.
 const APART = ['--exclusive-apart'];
 const EXCL_SUITES = {

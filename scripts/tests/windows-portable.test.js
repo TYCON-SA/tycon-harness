@@ -2,7 +2,7 @@
 
 /**
  * windows-portable.test.js — los guiones que MIDEN la «base portable» del arnés en un agente Windows: el escenario
- * `portable` de `pipelines/azure-pipelines-windows.yml` (story 8.17; mide lo que trae la tanda W1).
+ * `portable` de `pipelines/azure-pipelines-windows.yml`.
  *
  * Como `windows-probe.test.js` y `windows-rehearsal.test.js`, lo que se mide acá NO es Windows: es que los guiones
  * (`scripts/tests/windows/portable-probe.js` y `portable-report.js`) y el pipeline que los corre hagan lo que dicen. Lo
@@ -127,7 +127,7 @@ test('Portable_ScriptsWithCr_CountsEveryFile_HooksIncluded', { skip: !has('git')
     assert.deepStrictEqual([probe.scriptsWithCr(repo, process.env).total, probe.scriptsWithCr(repo, process.env).unreadable], [4, 1]);
     assert.match(probe.scriptsWithCr(path.join(base, 'no-such-repo'), process.env).problem, /git ls-files/, 'un clon que no está es «no pude contar», no «cero»');
     assert.deepStrictEqual(['x.sh', '.githooks/pre-commit', 'a/.githooks/x', 'x.sh.txt', 'x.ps1'].map(probe.isBashScript), [true, true, false, false, false]);
-    // el paso que normaliza y los caminos que no: los que dice el informe de la tanda, tal cual
+    // el paso que normaliza y los caminos que no: los que dice el informe, tal cual
     assert.deepStrictEqual(probe.NORMALIZE.map((a) => a.join(' ')), ['rm --cached -r -q .', 'reset --hard -q']);
     assert.deepStrictEqual(probe.PLAIN_RESTORE.map((a) => a.join(' ')), ['checkout -- .', 'reset --hard -q']);
   } finally { fs.rmSync(base, { recursive: true, force: true }); }
@@ -276,8 +276,8 @@ test('Portable_ShortRows_ExpectedAgainstMeasured_VerdictRedOnlyWhenItCouldNotMea
 
 // ═══ P6 · nunca fuera de un laboratorio ════════════════════════════════════════════════════════════════════════
 
-// Pase adversarial de la corrida 8.17-W0-20261005T0153 (clases 7 y 13): sin la lista del banco, «faltan 0» no es un
-// sí; y si el «antes» ya trae el .gitattributes (una rama que sale del main de hoy), lo esperado es ningún \r.
+// Sin la lista del banco, «faltan 0» no es un
+// sí; y si el «antes» ya trae el .gitattributes (una rama que sale del main actual), lo esperado es ningún \r.
 test('Portable_ShortRows_NoBenchListIsNotASi_BaseWithGitattributesExpectsNoCr', () => {
   const report = fixture('portable-report.json');
   const stepOf = (x, name) => x.steps.find((s) => s.name === name);
@@ -291,8 +291,8 @@ test('Portable_ShortRows_NoBenchListIsNotASi_BaseWithGitattributesExpectsNoCr', 
   assert.strictEqual(baseRow(attrs(241)).match, false, 'y todos con \\r ya no coincide');
 });
 
-// Corrida 11842 (2026-10-05): con un arnés del repo unido, el banco leído contra el agent-skills de antes de la unión
-// (congelado en el corte) dio 55 rojos que no eran del arnés. Con un arnés unido, las skills son las del propio clon.
+// Con un arnés del repo unido, el banco leído contra el agent-skills de antes de la unión
+// (congelado en el corte) daría rojos que no son del arnés. Con un arnés unido, las skills son las del propio clon.
 test('Portable_UnifiedHarness_SkillsAreTheHarnessClone', () => {
   const base = tmp('unified');
   try {
@@ -339,7 +339,7 @@ test('Portable_RefusesToRunOutsideALab_AndWritesNothing', () => {
   } finally { fs.rmSync(base, { recursive: true, force: true }); }
 });
 
-// ═══ los dos repos de juguete: la rama principal sin la regla, y la rama de la tanda con ella ══════════════════
+// ═══ los dos repos de juguete: la rama principal sin la regla, y la rama del cambio con ella ══════════════════
 
 const TOY_TAG = 'retorno/toy-friday';
 const SCRIPT = '#!/usr/bin/env bash\necho hola\nexit 0\n';
@@ -388,7 +388,7 @@ const TOY_BASE = {
   'README.md': '# Arnés de juguete\n',
   'scripts/hooks/safety-guard-pre.sh': SCRIPT, 'scripts/hooks/toy-untouched.sh': SCRIPT, 'scripts/hooks/toy-touched.sh': SCRIPT, '.githooks/pre-commit': SCRIPT,
 };
-// la tanda: la regla, las piezas que el escenario corre, y un guion de bash tocado (ése llega con \n en el pull)
+// la rama del cambio: la regla, las piezas que el escenario corre, y un guion de bash tocado (ése llega con \n en el pull)
 const TOY_TARGET = Object.assign({}, TOY_BASE, {
   '.gitattributes': '* text=auto eol=lf\n',
   'scripts/hooks/toy-touched.sh': `${SCRIPT}# tocado por la tanda\n`,
@@ -565,7 +565,7 @@ test('Portable_LabRun_ToyRepos_FreshClone_ExistingClone_Bench', { skip: (process
     assert.strictEqual(again.status, 0);
     assert.match(JSON.parse(fs.readFileSync(path.join(out, 'steps', 'fresh-clone.json'), 'utf8')).reason, /ya existe — el laboratorio es de una sola corrida/);
 
-    // ── un commit anterior a la tanda (la rama principal): las piezas que no trae salen «no medido», y sin el banco
+    // ── un commit anterior al cambio (la rama principal): las piezas que no trae salen «no medido», y sin el banco
     // no se pudo medir: la corrida es roja
     const src2 = path.join(base, 'sources-main');
     assert.strictEqual(node([path.join(DIR, 'build-sources.js'), '--output', src2, '--harness', toy.harness, '--skills', toy.skills, '--friday-tag', TOY_TAG]).status, 0);
@@ -574,7 +574,7 @@ test('Portable_LabRun_ToyRepos_FreshClone_ExistingClone_Bench', { skip: (process
     const r2 = JSON.parse(fs.readFileSync(path.join(out2, 'windows-report.json'), 'utf8'));
     const st2 = Object.fromEntries(r2.steps.map((s) => [s.name, s.status]));
     assert.deepStrictEqual([st2['fresh-clone'], st2['git-bash'], st2.suites, st2.bench, st2['path-shapes'], r2.verdict.color, before.status], ['measured', 'not-measured', 'not-measured', 'error', 'error', 'red', 1], JSON.stringify(r2.steps.map((s) => s.reason)));
-    // sin la regla, el clon nuevo llega entero con \r: es el dato que la tanda viene a cambiar
+    // sin la regla, el clon nuevo llega entero con \r: es el dato que el cambio viene a cambiar
     const f2 = r2.steps.find((s) => s.name === 'fresh-clone');
     assert.deepStrictEqual([f2.facts.repos.harness.scripts.with_cr, f2.facts.repos.harness.scripts.total, f2.facts.repos.harness.gitattributes], [4, 4, false]);
     assert.ok(f2.findings.some((x) => x.id === 'fresh-clone:harness:scripts-with-cr'));
@@ -582,14 +582,14 @@ test('Portable_LabRun_ToyRepos_FreshClone_ExistingClone_Bench', { skip: (process
   } finally { fs.rmSync(base, { recursive: true, force: true }); }
 });
 
-// ═══ story 8.26, tanda D (T54) · la base portable sobre UN SOLO REPO ═══════════════════════════════════════════════
+// ═══ T54 · la base portable sobre UN SOLO REPO ═══════════════════════════════════════════════
 // El árbol publicado es un repo, con las skills adentro: el laboratorio trae un solo remoto. La medición clona y cuenta
 // ese repo y nada más —no pide un segundo remoto que no hay—, y el reporte no trae la fila del segundo.
 test('Portable_SingleRepo_MeasuresOnlyTheHarnessClone', { skip: (process.platform === 'win32' && 'el recorrido de juguete es del modo de laboratorio: en Windows corre la medición de verdad') || (!has('git') && 'NO MEDIDO — sin git') || (!has('bash') && 'NO MEDIDO — sin bash') }, () => {
   const base = tmp('single');
   try {
     const toy = toyRepos(base);
-    // el arnés de juguete con las skills adentro, parado en la tanda (como lo trae un agente)
+    // el arnés de juguete con las skills adentro, parado en la rama del cambio (como lo trae un agente)
     git(['checkout', '-q', 'story/toy-portable'], toy.harness);
     write(toy.harness, { 'skills/toy/SKILL.md': '# de juguete\n' });
     git(['add', '-A'], toy.harness);
@@ -625,7 +625,7 @@ test('Portable_SingleRepo_MeasuresOnlyTheHarnessClone', { skip: (process.platfor
     assert.doesNotMatch(md, /\| agent-skills \|/, 'la tabla de lo que se mide no trae la fila de un segundo repo');
     assert.ok(P.shortRows(report).every((row) => !/agent-skills/.test(row.what)), 'ningún renglón del «En corto» es de un segundo repo');
     // también el paso que CLONA dice dónde están las skills después de clonar (antes del clon no se puede saber): con
-    // un solo repo, el propio clon; nunca la carpeta de un segundo repo que no existe (pase adversarial de la tanda)
+    // un solo repo, el propio clon; nunca la carpeta de un segundo repo que no existe
     const freshMeasured = step('fresh-clone').facts.measured;
     assert.deepStrictEqual([freshMeasured.unified, freshMeasured.skills_dir], [true, step('fresh-clone').facts.repos.harness.dir]);
     assert.ok(!fs.existsSync(path.join(lab, 'portable', 'fresh', 'agent-skills')));

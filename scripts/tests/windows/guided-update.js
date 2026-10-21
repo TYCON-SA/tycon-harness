@@ -296,8 +296,8 @@ function runVariant({ ctx, v, facts, save, lab, out, platform, allowTemp, baseEn
   // toda sesión que el ensayo abre se juzga igual (`toy-lab.sessionFindings`). Las de la variante que aplica sola
   // entran además a la comparación de fotos, que usa ese mismo juicio
   const judgeSessions = (list, prefix = '', opts = {}) => { for (const s of list) for (const f of TL.sessionFindings(s, opts)) add(f, prefix); };
-  // la carpeta global de hooks de git (2026-10-14): la máquina del equipo instalada ANTES del arreglo no la tiene (sólo la
-  // ponía la página a mano). Con la capa (política auto) el arranque se la tiene que poner solo: se la saca acá —la clave
+  // la carpeta global de hooks de git: la máquina del equipo instalada antes de que el arranque la pusiera no la tiene (la
+  // página la pone a mano). Con la capa (política auto) el arranque se la tiene que poner solo: se la saca acá —la clave
   // y su anotación en el estado, como en una máquina que el arnés nunca tocó— y se mira después de las sesiones
   if (v.id === 'auto') {
     const un = L.run('git', ['config', '--global', '--unset', 'core.hooksPath'], { env: sessionEnv, timeoutMs: 60000 });

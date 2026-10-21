@@ -1,10 +1,10 @@
 'use strict';
 /**
- * maintainers-sync.test.js — el arranque pone al día el clon de mantenimiento (story 8.37, T1-T19).
+ * maintainers-sync.test.js — el arranque pone al día el clon de mantenimiento (T1-T19).
  *
- * EL CASO (2026-10-14). El clon del repo de mantenimiento que declara la máquina (`paths.maintainers`) es de donde cada
- * sesión carga la portada privada (un `@import` del CLAUDE.md) y de donde los avisos leen la noche. El arranque ponía al
- * día el clon del arnés y no ése: quedaba atrás de `main` días enteros, en silencio.
+ * POR QUÉ. El clon del repo de mantenimiento que declara la máquina (`paths.maintainers`) es de donde cada
+ * sesión carga la portada privada (un `@import` del CLAUDE.md) y de donde los avisos leen la noche. El arranque pone
+ * al día el clon del arnés y tiene que poner al día también ése: si no, quedaría atrás de `main` días enteros, en silencio.
  *
  * QUÉ FIJA. `scripts/lib/maintainers-sync.js run` sobre un clon de laboratorio:
  *   · en `main`, limpio y atrás → avanza con `merge --ff-only`; al día → no cambia nada;
@@ -238,7 +238,7 @@ test('T9 Sync_UntrackedCollision_NamesFiles — un sin seguimiento que lo nuevo 
 
 test('T10 Sync_BadKey_SaysWhy — una clave que no sirve se dice, sin citar la configuración', () => {
   const lab = makeLab({ declare: false });
-  // una relativa rompe la configuración entera para su lector: el perfil queda sin saber y calla (AC 10b); lo dice doctor
+  // una relativa rompe la configuración entera para su lector: el perfil queda sin saber y calla; lo dice doctor
   setConfig(lab, { paths: { maintainers: 'relativa/no-sirve' }, github: { token: 'ghp_SECRETO_DE_PRUEBA' } });
   let r = runPiece(lab);
   assert.strictEqual(r.status, 'perfil');
@@ -433,7 +433,7 @@ test('T22 Catalogs_DeclareThePiece — la lista de efectos, la de hooks, INSTALL
   assert.ok(read('guides/piezas-del-arnes.md').includes('## scripts/lib/maintainers-sync.js'), 'la ficha en la guía de piezas');
 });
 
-// ── los caminos de error, de punta a punta (revisores de la iteración 1) ─────────────────────────────────────────────
+// ── los caminos de error, de punta a punta ─────────────────────────────────────────────
 
 /** Un ssh de mentira: `GIT_SSH_COMMAND` con un origen `ssh://`. Modo: deny · unreach · sleep (N segundos y sale 255). */
 function fakeSsh(lab, mode, secs = 6) {
@@ -559,7 +559,7 @@ test('T30 Notice_SanitizesFields_GitEnvStripped — una línea sin controles; GI
   assert.ok(!red.includes('ab/cd') && !red.includes('SECRETO123'), red);
 });
 
-// ── lo que confirmó el pase adversarial (una prueba por hallazgo) ────────────────────────────────────────────────────
+// ── casos de borde (una prueba por caso) ────────────────────────────────────────────────────
 
 test('T31 Adv_RenameInWorktreeColumn — un renombre en la columna del árbol (add -N) nombra sólo la ruta nueva', () => {
   const lab = makeLab();

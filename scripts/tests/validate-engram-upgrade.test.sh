@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# validate-engram-upgrade.test.sh — un repo que no se pudo validar no cuenta como validado (story 8.12, pendiente SILENT-W2).
+# validate-engram-upgrade.test.sh — un repo que no se pudo validar no cuenta como validado.
 #
 # La falla que caza: `TYCON_ENGRAM_TEST_REPOS` trae un repo extra que no existe (o una carpeta que no es un repo) y el
 # guion igual dice «✓» y «VERDE — se puede propagar». Un repo que no se pudo leer es «no pude validar»: el guion tiene
@@ -9,7 +9,7 @@
 # prende por variable) y un `engram` DE MENTIRA delante de /usr/bin:/bin que contesta la versión pedida y anota cada
 # llamada. Los repos son de laboratorio: uno con git, uno que no existe y una carpeta suelta sin git.
 # 🔴 Nada acá toca el engram real de la máquina ni un repo del equipo: el engram de mentira no escribe nada.
-# Rojo previo (2026-10-02, antes del arreglo): con el repo inexistente el guion salía 0 con «✓ repo-fantasma».
+# Rojo que atrapa: con el repo inexistente el guion sale 0 con «✓ repo-fantasma».
 # Correr: bash scripts/tests/validate-engram-upgrade.test.sh   (~2 s)
 
 set -uo pipefail
@@ -76,13 +76,13 @@ else
   ok "engram no se llamó dentro de lo que no se pudo validar"
 fi
 
-# ── un arnés que no lleva memoria (la copia pública) no exige el índice de la memoria (story 8.7) ──
-# La falla que caza: el paso 4 leía `.engram/manifest.json` del arnés, el índice REAL de la memoria del equipo. La copia
-# pública no lo trae (nace con la memoria apagada), así que ahí el guion terminaba SIEMPRE en ROJO y los tres casos de
-# arriba que esperan «distinto de 0» pasaban por el motivo equivocado. Un arnés sin `.engram-project` ni `.engram/` no
+# ── un arnés que no lleva memoria (la copia pública) no exige el índice de la memoria ──
+# La falla que caza: el paso 4 lee `.engram/manifest.json` del arnés, el índice REAL de la memoria del equipo. La copia
+# pública no lo trae (nace con la memoria apagada), así que ahí el guion terminaría SIEMPRE en ROJO y los tres casos de
+# arriba que esperan «distinto de 0» pasarían por el motivo equivocado. Un arnés sin `.engram-project` ni `.engram/` no
 # lleva memoria: se dice, no se sincroniza nada adentro (eso le crearía una memoria) y no cuenta como rojo.
-# El espejo: un arnés que SÍ declara memoria y no tiene el índice sigue en ROJO, como hoy.
-# Rojo previo (2026-10-03, antes del arreglo): el arnés sin memoria salía 1 con «manifest cambió a version».
+# El espejo: un arnés que SÍ declara memoria y no tiene el índice sigue en ROJO.
+# Rojo que atrapa: el arnés sin memoria sale 1 con «manifest cambió a version».
 lab_harness() { # <carpeta> → un arnés de laboratorio: el guion, sus bibliotecas y un repo git vacío
   mkdir -p "$1/scripts/setup"
   cp "$GUION" "$1/scripts/setup/"; cp -R "$RAIZ/scripts/lib" "$1/scripts/lib"

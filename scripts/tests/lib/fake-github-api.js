@@ -1,6 +1,6 @@
 'use strict';
 /*
- * fake-github-api.js — la API REST de GitHub que usa la propuesta, en un servidor local (story 2.29, T15 a T27).
+ * fake-github-api.js — la API REST de GitHub que usa la propuesta, en un servidor local (T15 a T27).
  *
  * Sirve en http://127.0.0.1:<puerto>/repos/{owner}/{repo}/... lo que la pestaña Configuración llama (API v3): la rama
  * principal, su protección o sus reglas, los pedidos abiertos, y —para la propuesta de stages— los environments. Anota

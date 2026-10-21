@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # release-expired-token.test.sh — un permiso de GitHub guardado que venció no frena la actualización del repo público.
 #
-# El caso (2026-10-14, la máquina de un dev): cargó un permiso (`harness.js config set github.token`) para esquivar el tope
-# de consultas; el permiso venció y el arnés dejó de actualizarse con «el permiso de GitHub guardado venció o se revocó
-# (401). creá un permiso nuevo…». El repo del arnés es público: el permiso no hacía falta. Desde ahora, ante un 401 de un
-# repo que se lee sin permiso, el arnés sigue sin él por las rutas públicas y lo dice en UNA línea, sin frenar.
+# Un dev carga un permiso (`harness.js config set github.token`) para esquivar el tope de consultas; si el permiso vence,
+# el arnés no debe dejar de actualizarse con «el permiso de GitHub guardado venció o se revocó (401). creá un permiso
+# nuevo…». El repo del arnés es público: el permiso no hace falta. Ante un 401 de un repo que se lee sin permiso, el arnés
+# sigue sin él por las rutas públicas y lo dice en UNA línea, sin frenar.
 #
 # El GitHub de juguete contesta 401 a todo pedido a la API con un permiso que no conoce (`reject_unknown_token`), como
 # GitHub con un permiso vencido, y 200 sin permiso.

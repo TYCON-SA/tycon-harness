@@ -1,10 +1,10 @@
 'use strict';
 /**
- * tar-reader.test.js — el lector propio de comprimidos y el hash del árbol de git (story 8.23, tanda B · T10, unidad).
+ * tar-reader.test.js — el lector propio de comprimidos y el hash del árbol de git (T10, unidad).
  *
- * EL CASO (2026-10-06). Instalar sin git baja el comprimido de un commit publicado. Abrirlo con el `tar` del sistema
- * escribe enlaces y rutas con `../` antes de poder rechazarlos (revisión I4), y en Windows el bit de ejecutable no queda
- * en el disco (medición del 2026-10-07: 162 archivos `100755` leídos como `100644`), así que el árbol se calcula con el
+ * Instalar sin git baja el comprimido de un commit publicado. Abrirlo con el `tar` del sistema
+ * escribe enlaces y rutas con `../` antes de poder rechazarlos, y en Windows el bit de ejecutable no queda
+ * en el disco (los archivos `100755` se leerían como `100644`), así que el árbol se calcula con el
  * modo de la CABECERA del tar, nunca del sistema de archivos.
  *
  * Qué fija:
@@ -209,7 +209,7 @@ test('T10 · sin carpeta raíz común no se puede quitar la raíz, y se dice', (
   assert.match(r.reason, /ra[ií]z/, r.reason);
 });
 
-// story 8.39 (T3, caracterización): del comprimido oficial de Node la bajada saca SÓLO bin/node; los tres enlaces que
+// T3, caracterización: del comprimido oficial de Node la bajada saca SÓLO bin/node; los tres enlaces que
 // trae bin/ (npm, npx, corepack) quedan afuera sin rechazar el comprimido, y el binario conserva su modo ejecutable
 test('T3 TarReader_SoloUnArchivo_IgnoraEnlacesDeAlLado @story-8.39 @ac-2', () => {
   const R = require(READER);

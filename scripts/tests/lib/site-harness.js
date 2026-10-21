@@ -1,6 +1,6 @@
 'use strict';
 /*
- * site-harness.js — lo compartido de las suites del sitio de la organización (story 2.23).
+ * site-harness.js — lo compartido de las suites del sitio de la organización.
  *
  *   · `envBase(extra)`        las variables mínimas de un arranque válido (dirección de prueba http://127.0.0.1).
  *   · `fuentesFijas(…)`       unas fuentes de mentira con el contrato de scripts/site/sources.js (estado, config, modelo,

@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * state-age.test.js — la edad de cada story en su estado, sumada por producto y estado (story 2.26).
+ * state-age.test.js — la edad de cada story en su estado, sumada por producto y estado.
  *
- * La auditoría de los tableros del 2026-10-15 encontró más de cien stories en revisión y una página que no decía
- * cuántas llevaban semanas ahí. El dato ya estaba en cada foto por proyecto (`dias_en_estado`, story 2.20): faltaba
- * sumarlo. «No medido» nunca es cero: una story sin dato va aparte, y una foto vieja no suma.
+ * Una página que no dice cuántas stories llevan semanas en revisión no sirve para decidir. El dato está en
+ * cada foto por proyecto (`dias_en_estado`): hay que sumarlo.
+ * «No medido» nunca es cero: una story sin dato va aparte, y una foto vieja no suma.
  *
  *   T1  umbrales estrictos («más de 30» no cuenta los 30)
  *   T2  sin dato aparte, nunca «menos de 30»
@@ -14,7 +14,7 @@
  *   T6  foto vieja, ilegible, sin fotos, producto sin foto: «no medido»
  *   T7  sin los días en params: «no medido», nada escrito en el código
  *   T8  ni ids ni títulos ni rutas en el resultado
- *   T11 el caso de la 2.23 (paradas y compartidos)
+ *   T11 paradas y compartidos
  *
  * Los ejemplos son inventados (Acme, Otro, Comun). Correr: node --test scripts/tests/state-age.test.js < /dev/null
  */
@@ -34,7 +34,7 @@ const HOY = '2026-10-15';
 const DIAS = [30, 60];
 
 let n = 0;
-// una carpeta de fotos con la forma de la 2.20: { v, generated_at, proyecto, repo, stories: [{ grupo, canonico, dias_en_estado, … }] }
+// una carpeta de fotos por proyecto: { v, generated_at, proyecto, repo, stories: [{ grupo, canonico, dias_en_estado, … }] }
 function fotos(lista) {
   const dir = path.join(TMP, `f${++n}`);
   fs.mkdirSync(dir, { recursive: true });
@@ -169,7 +169,7 @@ test('T11 2.26-ElCasoDeLa2_23_ParadasYCompartidos', () => {
   assert.strictEqual(r.titular.con_dato + r.titular.sin_dato, 7);
 });
 
-// ── Lo que encontró el pase adversarial (2026-10-17): regresiones ──────────────────────────────────────────────────
+// ── regresiones ──────────────────────────────────────────────────
 test('2.26-adv FotoViejaAtribuidaASuProducto', () => {
   const dir = fotos([
     { proyecto: 'Acme', repo: 'Front', generated_at: '2026-10-01T06:00:00Z', stories: [enCurso(40)] },
@@ -200,7 +200,7 @@ test('2.26-adv ProyectoSinDeclararConNombreDeProducto_NoSeMezcla', () => {
 });
 
 test('2.26-adv OtrosDias_LasClavesSalenDeLosDias', () => {
-  // las claves de los umbrales salen de params, no de un 30/60 escrito (revisor de criterios, vuelta 3)
+  // las claves de los umbrales salen de params, no de un 30/60 escrito
   const dir = fotos([{ proyecto: 'Acme', stories: [enCurso(5), enCurso(15), enCurso(25)] }]);
   const r = stateAge({ photosDir: dir, products: productos([{ producto: 'Acme', ado: 'Acme/Back' }]), today: HOY, dias: [10, 20] });
   assert.deepStrictEqual(prod(r, 'Acme').por_estado['in-progress'], { total: 3, mas_de_10: 2, mas_de_20: 1, sin_dato: 0 });

@@ -1,13 +1,13 @@
 'use strict';
 /**
- * states-dictionary.test.js — la red del vocabulario de estados de story (Story 2.2).
+ * states-dictionary.test.js — la red del vocabulario de estados de story.
  *
  * Valida el ARCHIVO (`scripts/metrics/states.json`) y su relación con el resto del arnés, sin
  * correr el medidor: son chequeos de forma, baratos y deterministas. Lo que necesita medir de
  * verdad (que el conteo cierre, que el diccionario ilegible no publique cero) vive en
  * `sdlc-transitions.test.js`, que arma repos git efímeros.
  *
- * 🔴 REGLA DE ADMISIÓN (heredada de la 2.1): cada caso trae escrita, en su comentario, la
+ * 🔴 REGLA DE ADMISIÓN: cada caso trae escrita, en su comentario, la
  *    MUTACIÓN que lo pone en rojo. Un caso que no sabe ponerse rojo no vale.
  *
  * Lo que cuida, en una frase: que el diccionario no se contradiga a sí mismo, que ningún estado
@@ -60,7 +60,7 @@ function resolver(valor) {
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 test('T1 · todos los alias apuntan a un canónico, sin duplicados y sin doble rol', () => {
-  // 🔴 rojo previo: un alias a un canónico inexistente (`"foo": "shipped"`) — hoy nadie lo mira.
+  // 🔴 rojo: un alias a un canónico inexistente (`"foo": "shipped"`) — hoy nadie lo mira.
   assert.ok(Array.isArray(dict.canonical) && dict.canonical.length,
     'canonical tiene que ser una lista no vacía');
 
@@ -80,7 +80,7 @@ test('T1 · todos los alias apuntan a un canónico, sin duplicados y sin doble r
 });
 
 test('T2 · las claves están normalizadas (minúscula, sin espacios de más)', () => {
-  // 🔴 rojo previo: guardar la clave cruda (`" Ready-For-Dev "`). `canonEstado` normaliza la
+  // 🔴 rojo: guardar la clave cruda (`" Ready-For-Dev "`). `canonEstado` normaliza la
   //    ENTRADA pero no la CLAVE, así que ese alias no matchearía nunca: falla silenciosa.
   for (const c of dict.canonical) {
     assert.equal(c, norm(c), `el canónico "${c}" no está normalizado (sería "${norm(c)}")`);
@@ -100,12 +100,11 @@ test('T2 · las claves están normalizadas (minúscula, sin espacios de más)', 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 test('T3 · cada estado del censo tiene decisión escrita (y el snapshot AVISA, no frena)', () => {
-  // 🔴 rojo previo: agregar un valor al censo sin decidirlo en `alias` ni en `_decisions`.
+  // 🔴 rojo: agregar un valor al censo sin decidirlo en `alias` ni en `_decisions`.
   //
   // 🔴 El fixture NO se tipea a mano: sale del archivo que produjo el propio medidor
-  //    (`fixtures/states-census.json`, los valores del censo del 2026-09-05). Una lista escrita a mano sólo mide lo que alguien se
-  //    acordó de anotar — es lo que hizo que la primera versión de esta story se perdiera
-  //    `updated` y `redundant`, dos estados vivos en un repo del equipo.
+  //    (`fixtures/states-census.json`, los valores del censo de una corrida real). Una lista escrita a mano sólo mide lo que alguien se
+  //    acordó de anotar: perdería estados vivos como `updated` y `redundant`.
   assert.ok(fs.existsSync(CENSO_PATH),
     `falta el censo commiteado (${CENSO_PATH}): sin él este caso no mide nada`);
   const censo = JSON.parse(fs.readFileSync(CENSO_PATH, 'utf8'));
@@ -135,9 +134,8 @@ test('T3 · cada estado del censo tiene decisión escrita (y el snapshot AVISA, 
   // 🔴 La segunda fuente AVISA y NO frena, a propósito. Se miden ≈3 estados nuevos por mes entre
   //    los 20 repos: assertar contra el snapshot pondría la suite del arnés en rojo una vez por
   //    mes por un repo de OTRO producto, sin que cambie una línea de código, y la salida sería
-  //    editar el diccionario en vez de arreglar nada. Es letra por letra
-  //    `incident-log#veredicto-que-cambia-sin-que-cambie-el-codigo-2026-09-01`. El canal de
-  //    alarma es la ficha del tablero (AC 12), que los nombra con su cuenta.
+  //    editar el diccionario en vez de arreglar nada. Eso es un veredicto que cambia
+  //    sin que cambie el código. El canal de alarma es la ficha del tablero, que los nombra con su cuenta.
   const nuevos = estadosDelUltimoSnapshot();
   if (nuevos === null) {
     console.log('ℹ️  T3: no hay snapshot del nocturno en .dashboard/ — sólo se validó el censo commiteado');
@@ -173,11 +171,11 @@ function estadosDelUltimoSnapshot() {
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 test('T6 · cada canónico está en exactamente un grupo, y todo grupo sólo tiene canónicos', () => {
-  // 🔴 rojo previo (a): un canónico que no figure en ningún grupo → sale del denominador de la
+  // 🔴 rojo (a): un canónico que no figure en ningún grupo → sale del denominador de la
   //    ficha sin que nadie lo note. (b): el mismo canónico en dos grupos → los tres números de la
   //    ficha suman MÁS que su denominador y nada falla. (c): una entrada que sea un alias o un
   //    typo (`["complete"]`, `["dome"]`) → el grupo queda sin efecto con el archivo bien formado,
-  //    que es el camino (e) del AC 18.
+  //    que es el camino de un diccionario mal formado que parece sano.
   assert.ok(dict.groups && typeof dict.groups === 'object',
     'el diccionario tiene que traer `groups` — es donde «en curso» y «cerrado» se definen UNA vez');
 
@@ -210,15 +208,15 @@ test('T6 · cada canónico está en exactamente un grupo, y todo grupo sólo tie
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 test('T17 · el medidor no tiene una lista literal de estados de cierre en el código', () => {
-  // 🔴 rojo previo: reintroducir `const DONE_STATUSES = new Set(['done','completed','closed'])`.
-  //    Es el caso que impide que los DOS diccionarios se vuelvan a separar — que es como nació
-  //    esta story: el código decidía `done` con una lista fija y el diccionario de estados con otra.
+  // 🔴 rojo: reintroducir `const DONE_STATUSES = new Set(['done','completed','closed'])`.
+  //    Es el caso que impide que los DOS diccionarios se vuelvan a separar — que es lo que pasa si
+  //    el código decide `done` con una lista fija y el diccionario de estados con otra.
   //
   // 🔴 Sirve contra el DESCUIDO, no contra la intención: reconstruir la lista sin literal
   //    (`Object.entries(alias).filter(([, v]) => v === 'done')`) pasa este caso. Va escrito acá
   //    para que nadie lo lea como una garantía.
   // 🔴 Se mira el CÓDIGO, no los comentarios. Nombrar la lista para explicar por qué ya no está
-  //    —que es lo que hace el comentario que quedó en su lugar— no es tenerla: marcar por eso es
+  //    —que es lo que hace un comentario sobre ella— no es tenerla: marcar por eso es
   //    un falso positivo, y un control que da falsas alarmas se apaga. Mismo criterio que
   //    `check-artifact-paths.js`: «un comentario que la nombre no es una lectura».
   const src = sinComentarios(fs.readFileSync(FUENTE_MEDIDOR, 'utf8'));
@@ -241,9 +239,9 @@ test('T17 · el medidor no tiene una lista literal de estados de cierre en el c�
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 test('T21 · el diccionario contiene todo VALID_STATUSES de marker.js', (t) => {
-  // 🔴 rojo previo: sacar `blocked` del diccionario → el caso lo nombra. Sin este caso, el
-  //    desfasaje que originó la story (el orquestador escribía `blocked`/`abandoned` desde
-  //    siempre y el diccionario los reportaba como desconocidos) se repite en silencio.
+  // 🔴 rojo: sacar `blocked` del diccionario → el caso lo nombra. Sin este caso, el
+  //    desfasaje entre lo que el orquestador escribe (`blocked`/`abandoned`) y lo que el
+  //    diccionario reporta como desconocido se repite en silencio.
   // Las skills se buscan como en todo el arnés: TYCON_SKILLS_DIR, el propio clon si es unido, o las instaladas.
   const skills = require('../lib/skills-dir.js').resolveSkillsDirs(process.env.TYCON_SKILLS_DIR).skills;
   const marker = path.join(skills, 'tycon-pipeline', 'scripts', 'marker.js');

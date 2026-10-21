@@ -2,12 +2,10 @@
 # Prueba de recompute-zip-notes.sh — el guion que reescribe la nota de cada formulario
 # CONTRA EL SERVIDOR en el momento de publicar.
 #
-# Nace de un incidente (2026-08-31): la v1.0.62 de un formulario de un producto del equipo llegó a producción
-# diciendo "Sin cambios desde el build anterior" con una story entera adentro (la instalada era la
-# v1.0.56). El guion no encontraba a su hermano release-notes.sh (ruta heredada de las copias por
-# repo), lo decía por stderr, salía 0 y el paso quedaba verde. Y debajo de ese defecto había otro:
-# llamaba al guion unificado SIN `--type form`, o sea que preguntaba por plugins.
-# Este archivo existe para que ninguno de los dos pueda volver en silencio.
+# Sin esta prueba, un formulario nuevo podría llegar a producción diciendo "Sin cambios desde el build anterior" con
+# trabajo nuevo adentro. Dos defectos lo provocan: que el guion no encuentre a su hermano release-notes.sh (lo diría
+# por stderr, saldría 0 y el paso quedaría verde), y que llame al guion unificado SIN `--type form`, o sea que
+# pregunte por plugins. Este archivo existe para que ninguno de los dos pueda pasar en silencio.
 set -uo pipefail
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REC_SRC="$AQUI/scripts/ci/recompute-zip-notes.sh"
@@ -89,10 +87,9 @@ grep -c -- ' a-form a-form/src' "$STUB_LOG" | grep -x 1 >/dev/null && grep -c --
   && ok "con dos ZIPs pregunta por cada formulario por su nombre del manifest" || no "no preguntó por cada formulario: $(cat "$STUB_LOG")"
 
 # ---------------------------------------------------------------- 8. UN SOLO INGRESO para todos
-# 🔴 Caso del 2026-09-01, medido en un producto del equipo (build 9280). Antes este guion no entraba al host: dejaba
-# que CADA formulario entrara por su cuenta. Con 4 (Totora) no se nota; con 8 (URUTAU) hubo que
-# meter una pausa entre uno y otro; con 34 (FRESNO) el host corta por límite de velocidad y las 34
-# notas salen calculadas contra el build anterior. Ahora entra UNA vez y pasa el ingreso.
+# 🔴 El guion entra al host UNA sola vez y pasa el ingreso a todos. Si dejara que CADA formulario entrara por su
+# cuenta, con 4 formularios no se notaría; con 8 haría falta una pausa entre uno y otro; con 34 el host corta por
+# límite de velocidad y las 34 notas salen calculadas contra el build anterior.
 STUBC="$TMP/stubc"; mkdir -p "$STUBC"
 cat > "$STUBC/curl" <<'CURL'
 #!/usr/bin/env bash
@@ -129,10 +126,10 @@ formularios=$(grep -c -- '--type form' "$STUB_LOG")
   || no "🔴 el ingreso no les llegó a todos: $(sort -u "$STUB_TOKEN_LOG" | tr '\n' ' ')"
 
 # 🔴 El CUERPO del ingreso tiene que ser el JSON, no el nombre de un archivo.
-# Caso del build 9290: se mandaba `--data-raw "@/tmp/xxx"`, y `--data-raw` NO lee archivos —
-# manda la cadena literal. El host contestó 500, el guion cayó al camino viejo de 34 ingresos y
-# el despliegue de al lado se comió el límite. El caso 8 pasaba igual, porque el servidor
-# simulado aceptaba cualquier cosa: un "un solo ingreso" que manda basura no sirve de nada.
+# Si se mandara `--data-raw "@/tmp/xxx"`, `--data-raw` NO leería el archivo: mandaría la cadena literal. El host
+# contestaría 500, el guion caería al camino de un ingreso por formulario y el límite de velocidad se agotaría. El
+# caso 8 pasaría igual, porque el servidor simulado acepta cualquier cosa: un "un solo ingreso" que manda basura no
+# sirve de nada.
 CUERPO=$(cat "$STUB_BODY" 2>/dev/null | head -1)
 echo "$CUERPO" | grep '^@' >/dev/null && no "🔴 el cuerpo del ingreso es una RUTA, no el JSON: $CUERPO" \
   || ok "el cuerpo del ingreso NO es una ruta de archivo"
@@ -142,7 +139,7 @@ echo "$CUERPO" | jq -e '.username == "u" and .tenant_id == "default"' >/dev/null
 
 # ---------------------------------------------------------------- 9. si el ingreso único falla, NO bloquea
 # El ingreso único es una MEJORA, no el camino obligatorio: si no entra, cada formulario entra por
-# su cuenta como toda la vida — y ese camino ya reintenta solo. Reintentar también acá sumaría 90
+# su cuenta, y ese camino ya reintenta solo. Reintentar también acá sumaría 90
 # segundos de espera antes de caer al camino que igual va a reintentar.
 : > "$STUB_LOG"; : > "$CURL_LOG"; : > "$STUB_TOKEN_LOG"
 INICIO=$(date +%s)

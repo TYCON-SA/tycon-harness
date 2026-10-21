@@ -1,21 +1,18 @@
 #!/usr/bin/env bash
-# publish-bump.test.sh — el guion único que publica el bump de los formularios (2026-09-06).
+# publish-bump.test.sh — el guion único que publica el bump de los formularios.
 # Mismo banco que nightly-publishes-report.test.sh: remoto bare local, un rival que gana la carrera,
 # y el árbol sucio que deja un build. Sin red.
 #
-# 🔴 ROJO PREVIO VERIFICADO por mutación (no hay «versión vieja» del guion: la versión vieja son los
-#    cinco bloques de los pipelines, que este guion reemplaza): quitarle `--autostash` pone rojo el
+# 🔴 Mutaciones que ponen un caso en rojo: quitarle `--autostash` al guion pone rojo el
 #    caso del árbol sucio; quitarle el chequeo de «ya está en el remoto» pone rojo el caso benigno.
-# 🔴 Y la revisión adversarial del 2026-09-06 (hallazgo BLOQUEA) agregó C-05 (rehecho), C-07, C-08 y
-#    C-09: la primera versión del guion NO anotaba `Commit: <sha>` ni dejaba la marca vacía sin
-#    cambios — el contrato que `forms-to-version.sh` lee para saber desde dónde mirar. Sin
-#    eso, con dos merges agrupados el formulario del primero no se versionaba nunca, en verde: el
-#    defecto del 2026-09-03, reintroducido. Rojo previo de los tres: verificado contra el guion de
-#    la tanda 1 (C-05 «nada nuevo», exit 0 sin commit; C-07 cuerpo sin `Commit:`; C-08 rc=128).
+# 🔴 C-05, C-07, C-08 y C-09 cubren el contrato que `forms-to-version.sh` lee para saber desde dónde mirar: el guion
+#    anota `Commit: <sha>` y deja la marca aunque no haya cambios. Sin eso, con dos merges agrupados el
+#    formulario del primero no se versionaría nunca, en verde. Sin el contrato: C-05 «nada nuevo», exit 0 sin
+#    commit; C-07 cuerpo sin `Commit:`; C-08 rc=128.
 set -uo pipefail
 # 🔴 En Azure la suite hereda BUILD_SOURCEVERSION = el commit del ARNÉS (el repo que el nocturno
 # construye), y el guion la lee como «commit de partida» ANTES de mirar HEAD: los repos temporales de
-# estos casos no tienen ese commit y el guion se niega (rojo del nocturno 10502, 2026-09-16). Acá se
+# estos casos no tienen ese commit y el guion se niega (y el nocturno daría rojo). Acá se
 # borra para que los casos ejerciten el camino de HEAD, y C-10/C-11 ejercitan la variable a propósito.
 unset BUILD_SOURCEVERSION
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -30,8 +27,8 @@ montar() {  # remoto bare + clon "job" con un formulario versionado
   git init -q --bare "$T/remoto.git"
   # 🔴 La rama del remoto se fija acá, no se hereda del git de la máquina: el git de macOS trae
   # `init.defaultBranch=main` en su config de sistema y el de Ubuntu arranca en `master`. Con HEAD en
-  # una rama que no existe, el clon del rival sale vacío y su push falla: en Azure C-03 daba rojo
-  # todas las noches desde el 2026-09-07, y C-01/C-02 daban VERDE sin que la carrera ocurriera.
+  # una rama que no existe, el clon del rival sale vacío y su push falla: en Azure C-03 daría rojo
+  # todas las noches, y C-01/C-02 darían VERDE sin que la carrera ocurriera.
   git -C "$T/remoto.git" symbolic-ref HEAD refs/heads/main
   git clone -q "$T/remoto.git" "$T/semilla" 2>/dev/null
   mkdir -p "$T/semilla/pedidos" "$T/semilla/dist"
@@ -85,7 +82,7 @@ RC=$(correr "$T")
 rm -rf "$T"
 
 # 5 · nada que commitear → igual deja la MARCA (commit vacío con `Commit: <sha>`), exit 0
-# 🔴 El contrato del 2026-09-03: si no queda marca, la corrida siguiente lee la versión anterior
+# 🔴 El contrato: si no queda marca, la corrida siguiente lee la versión anterior
 # de un commit del bot viejo y el host deduplica el bump — el formulario nunca llega, en verde.
 T=$(mktemp -d); montar "$T"; BASE=$(git -C "$T/job" rev-parse HEAD)
 RC=$(correr "$T"); N=$(git -C "$T/remoto.git" rev-list --count main); B=$(cuerpo_en_main "$T")
@@ -114,7 +111,7 @@ RC=$( ( cd "$T/job" && bash "$G" main "chore: bump [skip ci]" --from "$BASE" -- 
 rm -rf "$T"
 
 # 8 · un pathspec que no matchea nada (el `'*/upload/'` de FRESNO con los ZIPs ignorados) NO mata al
-# guion: avisa y publica el resto. Rojo previo: `fatal: pathspec … did not match`, rc=128, sin commit.
+# guion: avisa y publica el resto. Sin esto: `fatal: pathspec … did not match`, rc=128, sin commit.
 T=$(mktemp -d); montar "$T"; bump "$T"; echo 'upload/' > "$T/job/.gitignore"; mkdir -p "$T/job/pedidos/upload"; echo 'zip' > "$T/job/pedidos/upload/g.zip"
 RC=$( ( cd "$T/job" && bash "$G" main "chore: bump [skip ci]" -- '*/package.json' '*/upload/' ) > "$T/out.txt" 2>&1; echo $? ); V=$(en_main "$T")
 [ "$RC" = "0" ] && [[ "$V" == *1.0.2* ]] && grep -q "no matchea" "$T/out.txt" && ok "C-08 un pathspec sin match avisa y publica el resto (exit 0)" || { mal "C-08 exit $RC, main tiene «${V}»"; head -5 "$T/out.txt"; }

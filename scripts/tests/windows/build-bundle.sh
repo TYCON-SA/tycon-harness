@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# build-bundle.sh — arma la copia del arnés que se mide en Windows y la entrega como un bundle de git (story 8.17,
-# tanda W0 · AC 4). Corre en el trabajo de Linux de pipelines/azure-pipelines-windows.yml.
+# build-bundle.sh — arma la copia del arnés que se mide en Windows y la entrega como un bundle de git.
+# Corre en el trabajo de Linux de pipelines/azure-pipelines-windows.yml.
 #
 # POR QUÉ UN BUNDLE. Lo que se mide es lo que recibe alguien de afuera: el repo único que arma el exportador (el mismo
 # comando que usa la máquina limpia, scripts/tests/clean-machine.test.sh). El agente de Windows tiene que CLONARLO: si
@@ -17,7 +17,7 @@
 #     --source        no exporta: empaqueta el HEAD de ese repo (un repo público ya clonado, o uno de laboratorio).
 #                     El repo tiene que venir ENTERO: desde un clon recortado (sin su historia) frena, con ese motivo.
 #   Todo bundle se CLONA acá antes de entregarlo (lo que va a hacer el agente): `git bundle verify` solo no alcanza.
-#   Un commit del repo unido (story 8.18: trae agents/, skills/ o packs/) exporta las dos fuentes de sí mismo. Uno de
+#   Un commit del repo unido (trae agents/, skills/ o packs/) exporta las dos fuentes de sí mismo. Uno de
 #   antes de la unión toma agent-skills de TYCON_SKILLS_DIR (la raíz del clon o su carpeta skills/) o de
 #   ~/.claude/agent-skills, que tiene que ser el repo viejo de agent-skills, no un enlace al arnés.
 #
@@ -26,11 +26,11 @@
 # bajo <carpeta> el guion sale en rojo sin entregar el bundle.
 #
 # 🔴 LA COPIA SE ARMA CON EL EXPORTADOR Y LAS LISTAS DEL COMMIT QUE SE MIDE, no con los de la rama del pipeline
-# (corrida 11678, 2026-10-04). El exportador lee su lista blanca (`allowlist.json`) de su propia carpeta y la cruza con
-# el `suites.json` del commit exportado. Corriendo el exportador de ESTA rama contra otro commit, la lista de acá
-# declaraba una suite (`tests/windows-probe.test.js`) que el commit medido todavía no tenía, y el exportador frenaba:
-# el pipeline sólo podía medir commits que ya traían la W0, justo lo contrario de lo que hace falta (medir `main`, la
-# marca del viernes, la rama de otra tanda). Ahora el árbol del commit medido se extrae a la carpeta de trabajo y corre
+# El exportador lee su lista blanca (`allowlist.json`) de su propia carpeta y la cruza con
+# el `suites.json` del commit exportado. Si corriera el exportador de ESTA rama contra otro commit, la lista de acá
+# declararía una suite (`tests/windows-probe.test.js`) que el commit medido todavía no tiene, y el exportador frenaría:
+# el pipeline sólo podría medir commits que ya traen los guiones de medición, justo lo contrario de lo que hace falta (medir `main`, la
+# marca del viernes, la rama de otro trabajo). Por eso el árbol del commit medido se extrae a la carpeta de trabajo y corre
 # SU exportador, con SUS listas. De la rama del pipeline salen sólo los guiones de medición (este archivo entre ellos).
 #
 # SALIDAS: 0 el bundle quedó y se pudo verificar · 1 no pude armarlo (dice por qué) · 2 uso.
@@ -84,10 +84,10 @@ else
   git -C "${REPO}" rev-parse --git-dir > /dev/null 2>&1 || stop "--repo ${REPO} no es un clon de git"
   REPO="$(cd "${REPO}" && pwd)"
   HARNESS_SHA="$(git -C "${REPO}" rev-parse --verify --quiet "${HARNESS_REF:-HEAD}^{commit}")" || stop "el arnés no tiene el commit pedido (${HARNESS_REF:-HEAD}): con una referencia que no sea la de la corrida, el checkout tiene que traer la historia"
-  # 🔴 EL REPO UNIDO (story 8.18). Un commit que trae agents/, skills/ o packs/ en la raíz tiene las dos fuentes
+  # 🔴 EL REPO UNIDO. Un commit que trae agents/, skills/ o packs/ en la raíz tiene las dos fuentes
   # adentro: las dos salen de ESE commit y no se lee otro clon (el exportador sale 2 si --agent-skills es otro commit).
   # Un commit de antes de la unión necesita el agent-skills de entonces, que es OTRO repo: si TYCON_SKILLS_DIR (o
-  # ~/.claude/agent-skills, que desde la 8.18 suele ser un enlace al propio arnés) es el mismo repo, se frena.
+  # ~/.claude/agent-skills, que suele ser un enlace al propio arnés) es el mismo repo, se frena.
   # La raíz del commit se lista una vez: un error de git frena con su motivo, nunca pasa como «no trae la carpeta».
   ROOT_LIST="$(git -C "${REPO}" ls-tree --name-only "${HARNESS_SHA}" 2>&1)" || stop "no pude listar la raíz del commit ${HARNESS_SHA}: ${ROOT_LIST}"
   UNIFIED=""
@@ -154,7 +154,7 @@ CLONE_ERR="$(git clone --quiet --bare "${OUTPUT}/harness.bundle" "${WORK}/clone-
 CLONED_SHA="$(git -C "${WORK}/clone-check.git" rev-parse --verify --quiet 'refs/heads/main^{commit}')" || refuse "el clon del bundle no trae la rama main"
 [ "${CLONED_SHA}" = "${COPY_SHA}" ] || refuse "el clon del bundle quedó en ${CLONED_SHA} y la copia es ${COPY_SHA}"
 rm -rf "${WORK}/clone-check.git"
-# los bloques de instalación: en la referencia desde 2026-10-14; una copia anterior los trae en la portada
+# los bloques de instalación: en la referencia; una copia anterior los trae en la portada
 [ -f "${BRANCH_REPO}/getting-started/reference.md" ] || [ -f "${BRANCH_REPO}/.github/README.md" ] || [ -f "${BRANCH_REPO}/README.md" ] || refuse "la copia no trae ni su referencia (getting-started/reference.md) ni su portada (.github/README.md): el paso de instalación no tendría qué leer"
 
 node -e '

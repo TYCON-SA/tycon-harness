@@ -1,18 +1,18 @@
 'use strict';
 
 /**
- * retirement-story.test.js — T58 de la story 8.9, tanda E (AC 54): la story de retiro existe y trae lo que el cierre le
- * pide, y las filas de seguimiento la registran.
+ * retirement-story.test.js — T58: la story de retiro existe y trae lo que el cierre le pide, y las filas de seguimiento
+ * la registran.
  *
- * La tanda E fija la fecha de retiro y deja los nombres viejos andando hasta entonces; lo que los saca es OTRA story. Si
- * esa story no existe, o no nombra alguna de las cosas que hay que sacar, el retiro llega a la fecha sin plan y los
- * alias quedan para siempre. Lo que exige, leyendo `specs/` y `specs/epics.md`:
- *   · una story con `followup_of` a la 8.9 (y a la 8.12, que dejó su lista en su Dev Agent Record R8);
- *   · que nombre cada pieza del AC 54: reemplazos, alias y lecturas dobles, la carpeta de marcas `legacy-names.d/`, los
+ * El corte de nombres fija la fecha de retiro y deja los nombres viejos andando hasta entonces; lo que los saca es OTRA
+ * story. Si esa story no existe, o no nombra alguna de las cosas que hay que sacar, el retiro llega a la fecha sin plan
+ * y los alias quedan para siempre. Lo que exige, leyendo `specs/` y `specs/epics.md`:
+ *   · una story con `followup_of` a las dos stories padres (la del corte de nombres y la que dejó su lista de retiro);
+ *   · que nombre cada pieza que hay que retirar: reemplazos, alias y lecturas dobles, la carpeta de marcas `legacy-names.d/`, los
  *     pipelines y los cuatro archivos de los productos, el control de paridad, la escritura doble del freno de
  *     producción, la condición (14 días sin usos en el buzón, sin avisos `##vso`, si hay se corre 30) y `retire_after`;
  *   · las dos padres con su `followed_up_by` de vuelta;
- *   · la fila de la story en `epics.md` y la fila 8.9 con los números del termómetro de antes y de ahora.
+ *   · la fila de la story en `epics.md` y la fila de la story padre con los números del termómetro de antes y de ahora.
  *
  * `specs/` no viaja en la copia pública: ahí la prueba no mide y lo dice.
  *
@@ -46,7 +46,7 @@ function listIds(fm, key) {
   }
   return ids;
 }
-/** La story de retiro: la que sigue a la 8.9 y a la 8.12 (puede haber otras que sigan a la 8.9). */
+/** La story de retiro: la que sigue a las dos padres (puede haber otras que sigan sólo a la primera). */
 function findRetirementStory(dir) {
   for (const f of fs.readdirSync(dir).filter((x) => /^story-.*\.md$/.test(x))) {
     const text = fs.readFileSync(path.join(dir, f), 'utf8');
@@ -64,7 +64,7 @@ function productionConfigPattern() {
   } catch { /* sin mapa (copia pública): vale el nombre nuevo */ }
   return new RegExp(names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'));
 }
-/** Lo que el AC 54 le pide a la story: cada pieza con las formas en que puede aparecer escrita. */
+/** Lo que el cierre le pide a la story: cada pieza con las formas en que puede aparecer escrita. */
 const REQUIRED = [
   ['los reemplazos', /reemplazo/i],
   ['los alias', /\balias\b/i],
@@ -102,7 +102,7 @@ test('T58 Close_FollowupStoryAndRows — la story de retiro sigue a la 8.9 y a l
   const epics = fs.readFileSync(path.join(SPECS, 'epics.md'), 'utf8');
   assert.ok(new RegExp(`^\\| ${id.replace('.', '\\.')} \\|`, 'm').test(epics), `epics.md tiene la fila de la ${id}`);
   const row89 = epics.split('\n').find((l) => l.startsWith('| 8.9 |')) || '';
-  // la fila escribe los números en negrita con texto entre medio («**225** en la D1 → **70** al abrir la E → **N** …)
+  // la fila escribe los números en negrita con texto entre medio («**225** → **70** → **N** …)
   assert.match(row89, /\*\*225\*\*[^→]*→\s*\*\*70\*\*[^→]*→\s*\*\*\d+\*\*/,
     'la fila 8.9 de epics.md tiene los números del termómetro de antes y de ahora (225 → 70 → N)');
 });

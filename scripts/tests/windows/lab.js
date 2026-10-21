@@ -1,8 +1,8 @@
 'use strict';
 /**
- * lab.js — lo que comparten los guiones de medición de Windows (story 8.17, tanda W0).
+ * lab.js — lo que comparten los guiones de medición de Windows.
  *
- * POR QUÉ EXISTE. W0 mide el arnés en un agente Windows y no arregla nada. Todos sus guiones necesitan las mismas
+ * POR QUÉ EXISTE. Estos guiones miden el arnés en un agente Windows y no arreglan nada. Todos necesitan las mismas
  * cuatro cosas, y cada una tiene una forma de mentir que acá se cierra una sola vez:
  *   · LA CARPETA DE USUARIO DE LABORATORIO. Ninguna medición corre contra la carpeta de usuario real: se fijan `HOME`,
  *     `USERPROFILE`, `HOMEDRIVE` y `HOMEPATH` a una carpeta del laboratorio, y quien mide se niega si `os.homedir()`
@@ -30,7 +30,7 @@ const REDACTED_URL = '<public-repo-url>';
 const REDACTED_SLUG = '<public-repo>';
 const REDACTED_NAME = '<public-repo-name>';
 const REDACTED_SECRET = '<secret>';
-// Lo que acompaña a toda medición (AC 2): sin examen nocturno, sin entorno gráfico, git sin preguntas y PowerShell sin
+// Lo que acompaña a toda medición: sin examen nocturno, sin entorno gráfico, git sin preguntas y PowerShell sin
 // telemetría ni aviso de versión nueva (escribiría en la carpeta de usuario al arrancar).
 const SAFE_ENV = Object.freeze({
   TYCON_NO_NIGHTLY_EXAM: '1',
@@ -238,13 +238,13 @@ function coverUrl(block) {
   const m = CLONE_URL.exec(String(block || ''));
   return m ? m[1] : null;
 }
-/** Lee la portada de un clon: `{ file, block, url }` o `{ problem }`. Desde la story 8.23 (tanda E) `install:core` es la
+/** Lee la portada de un clon: `{ file, block, url }` o `{ problem }`. `install:core` es la
  *  portada SIN git (baja la versión por la API); el bloque que clona —el modo desarrollador, lo que esta sonda ensaya
  *  en Windows— es `install:clone` (y `install:clone-unattended`). */
 function readCover(clone, { fence, marker = 'install:clone' } = {}) {
-  // los bloques de instalación viven en la referencia desde que la portada se achicó (2026-10-14); un clon que no la trae
-  // (una versión anterior, o un clon de juguete de las pruebas) los tiene en la portada: en .github/ hasta que pasó a la
-  // raíz del repo (2026-10-14)
+  // los bloques de instalación viven en la referencia porque la portada es breve; un clon que no la trae
+  // (una versión anterior, o un clon de juguete de las pruebas) los tiene en la portada: en .github/ o en la
+  // raíz del repo
   const ref = path.join(clone, 'getting-started', 'reference.md');
   const oldCover = path.join(clone, '.github', 'README.md');
   const file = fs.existsSync(ref) ? ref : fs.existsSync(oldCover) ? oldCover : path.join(clone, 'README.md');
@@ -257,8 +257,7 @@ function readCover(clone, { fence, marker = 'install:clone' } = {}) {
   return { file, block, url };
 }
 /**
- * El bloque de la portada que corre una máquina SIN terminal: `install:unattended` si la portada lo trae (story 8.16,
- * tanda B: desde ahí `harness.js install` sin terminal y sin `--yes` muestra el plan y sale 2), y si no `install:core`.
+ * El bloque de la portada que corre una máquina SIN terminal: `install:unattended` si la portada lo trae (`harness.js install` sin terminal y sin `--yes` muestra el plan y sale 2), y si no `install:core`.
  * Devuelve lo mismo que `readCover`, más `marker` (cuál leyó). El ensayo corre sin terminal: con el bloque de siempre
  * mediría un 2 que es de diseño, no un rojo.
  */
@@ -278,7 +277,7 @@ function isWslLauncher(location) {
 /**
  * El `bash.exe` de Git for Windows: el de la variable del asistente, o el que vive junto a cada `git` del PATH.
  * Fuera de Windows, el primer `bash`. Devuelve `{ path, from }` o `{ path: null, reason }`.
- * (W1 trae `scripts/lib/git-bash.js`, la función única; ésta es la mínima que la medición necesita antes.)
+ * (`scripts/lib/git-bash.js` trae la función única; ésta es la mínima que la medición necesita.)
  */
 function findGitBash({ platform = process.platform, env = process.env, gitLocations = [], bashLocations = [], exists = fs.existsSync } = {}) {
   if (!isWin(platform)) {
@@ -340,7 +339,7 @@ function recorder(name, outDir, { redact = (v) => v } = {}) {
     fact(key, value) { step.facts[key] = value; checkpoint(); return value; },
     note(text) { step.notes.push(String(text)); checkpoint(); },
     /**
-     * Un hallazgo: algo que hoy no anda como en Mac y Linux. `id` estable (sin números que cambien entre corridas).
+     * Un hallazgo: algo que no anda como en Mac y Linux. `id` estable (sin números que cambien entre corridas).
      * `extra` suma campos propios del paso (los ensayos del equipo anotan la gravedad: `severity`).
      */
     finding(id, kind, detail, closes, extra) {

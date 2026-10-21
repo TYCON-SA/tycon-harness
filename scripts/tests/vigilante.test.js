@@ -3,7 +3,7 @@
  * Vigilante de producción — las cuatro reglas, la huella y el presupuesto de ruido.
  *
  * Los casos NO son inventados: cada uno reproduce la forma de un incidente real del corpus de los
- * 11 (el inventario de telemetría de producción del equipo, 2026-08-30, §2.2). Si una regla deja de cazar el
+ * 11 (el inventario de telemetría de producción del equipo). Si una regla deja de cazar el
  * incidente que la justifica, la pieza perdió su razón de ser y el test lo dice con ese nombre.
  */
 const test = require('node:test');
@@ -68,7 +68,7 @@ test('goteo: si la línea base ya era alta, 3 errores son normales y no levantan
   assert.equal(hallazgos.length, 0, 'umbral = 3 x 20 = 60');
 });
 
-// ── deriva (incidente #6: excepción NUEVA tras un cambio) ──────────────────────────────────────
+// ── deriva (excepción NUEVA tras un cambio) ──────────────────────────────────────
 
 test('deriva: un tipo de error que nunca se había visto es hallazgo de severidad alta (incidente #6)', () => {
   const filas = [ej({ msg: 'MissingMethodException' }), ej({ msg: 'MissingMethodException' }), ej({ msg: 'MissingMethodException' })];
@@ -78,7 +78,7 @@ test('deriva: un tipo de error que nunca se había visto es hallazgo de severida
   assert.equal(hallazgos[0].severidad, 'alta');
 });
 
-// ── desagregación (incidente #9: una cuenta de servicio perdió un permiso) ─────────────────────
+// ── desagregación (una cuenta de servicio pierde un permiso) ─────────────────────
 
 test('desagregación: el total no llama la atención pero una cuenta concentra los errores (incidente #9)', () => {
   const fp = V.huella('acme', 'P', 'GET /x', 500, 'boom');
@@ -123,7 +123,7 @@ test('desagregación: el borde — 3 de 4 (75%) NO alcanza; hace falta 80%', () 
   assert.equal(correr(filas, { base: { [fp]: 30 } }).hallazgos.length, 0);
 });
 
-// ── salud (incidente #8: el gateway que latía y no atendía) ────────────────────────────────────
+// ── salud (el gateway que late y no atiende) ────────────────────────────────────
 
 test('salud: un plugin caído es hallazgo directo, sin línea base', () => {
   const { hallazgos } = correr([], { salud: { Bueno: 'Running', Roto: 'Failed' } });
@@ -181,11 +181,11 @@ test('pero un producto que no se pudo consultar SÍ avisa, aunque no haya hallaz
   assert.doesNotMatch(a, /acme|login 401/, 'sin el producto ni el motivo (story 2.30)');
 });
 
-// ── Hallazgos del pase adversarial (2026-08-31) ────────────────────────────────────────────────
+// ── Casos de borde ────────────────────────────────────────────────────────────────────────
 
 test('una ráfaga en UN endpoint no silencia los hallazgos de otro (ni la salud)', () => {
-  // Antes la marca "de esto Azure ya avisó" se estampaba a TODOS los hallazgos del producto: una
-  // ráfaga en un endpoint tapaba del aviso a un plugin caído que no tenía nada que ver.
+  // La marca "de esto Azure ya avisó" no se estampa a TODOS los hallazgos del producto: si lo hiciera, una
+  // ráfaga en un endpoint taparía del aviso a un plugin caído que no tiene nada que ver.
   const rafaga = Array.from({ length: 6 }, (_, i) => ej({ endpoint: '/rafaga', ts: `2026-08-31T02:0${i}:00Z`, msg: 'x' }));
   const goteo = [
     ej({ endpoint: '/goteo', ts: '2026-08-31T05:00:00Z', msg: 'y' }),
@@ -200,8 +200,8 @@ test('una ráfaga en UN endpoint no silencia los hallazgos de otro (ni la salud)
 });
 
 test('la línea base cuenta los CEROS de las noches medidas (si no, el goteo sub-detecta)', () => {
-  // Un error esporádico —3 ocurrencias una noche de cada 14— tenía mediana 3 y umbral 9, así que
-  // el goteo del incidente #11 quedaba por debajo. Con los ceros, la mediana es 0 y el umbral el piso.
+  // Un error esporádico —3 ocurrencias una noche de cada 14— tendría mediana 3 y umbral 9, así que
+  // el goteo quedaría por debajo. Con los ceros, la mediana es 0 y el umbral el piso.
   assert.equal(V.mediana([0, 0, 0, 3, 0]), 0);
   assert.equal(V.mediana([3]), 3, 'sin los ceros, la misma huella daba 3');
 });
@@ -215,13 +215,13 @@ test('un hallazgo que sigue vivo NO se auto-archiva por antigüedad', () => {
     'regla: "salud"', 'huella: "abc"', 'veredicto: pendiente',
     'vista_por_ultima_vez: "2026-08-30"', 'noches_seguidas: 30', '',
   ].join('\n'));
-  // Creado hace un mes, pero visto ANOCHE: sigue vivo. Antes se archivaba como "ignorado" y el
-  // dedup lo callaba para siempre — un plugin caído en forma permanente quedaba permanentemente mudo.
+  // Creado hace un mes, pero visto ANOCHE: sigue vivo. No se archiva como "ignorado": si se archivara, el
+  // dedup lo callaría para siempre y un plugin caído en forma permanente quedaría permanentemente mudo.
   assert.deepEqual(V.marcarIgnorados(dir, '2026-08-31'), []);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-// ── Fuente degradada y latido (2026-08-31, probado contra producción) ──────────────────────────
+// ── Fuente degradada y latido ──────────────────────────────────────────────────────────────
 
 test('latido: un plugin vivo que hace horas no recibe un pedido (incidente #8)', () => {
   const salud = {
@@ -235,7 +235,7 @@ test('latido: un plugin vivo que hace horas no recibe un pedido (incidente #8)',
   });
   assert.deepEqual(hallazgos.map((h) => h.plugin), ['Zombie']);
   assert.equal(hallazgos[0].regla, 'latido');
-  // Su salud decía "Running": es justo el caso que ninguna otra señal ve.
+  // Su salud dice "Running": es justo el caso que ninguna otra señal ve.
   assert.match(hallazgos[0].diagnostico, /está vivo y no lo está usando nadie/);
 });
 
@@ -262,9 +262,9 @@ test('con el detalle disponible, la regla fina manda y la gruesa no duplica', ()
   assert.ok(hallazgos[0].evidencia.length, 'y trae la evidencia por pedido');
 });
 
-// ── La cola que envejece (2026-08-31) ──────────────────────────────────────────────────────────
-// El aviso sólo sonaba por hallazgos NUEVOS: un borrador ya abierto no volvía a sonar nunca y se
-// archivaba solo como `ignorado` a los 7 días. El recordatorio cierra ese hueco — una sola vez.
+// ── La cola que envejece ───────────────────────────────────────────────────────────────────
+// El aviso sólo suena por hallazgos NUEVOS: un borrador ya abierto no volvería a sonar nunca y se
+// archivaría solo como `ignorado` a los 7 días. El recordatorio cierra ese hueco — una sola vez.
 
 const _fs = require('fs'); const _os = require('os'); const _path = require('path');
 function colaCon(borradores) {
@@ -312,8 +312,8 @@ test('lo ya decidido no se recuerda: sólo pesa la decisión que falta', () => {
 });
 
 test('una noche SIN hallazgos pero con la casilla pudriéndose SÍ manda mensaje', () => {
-  // El rojo previo: acá el aviso era null y el borrador moría solo a los 7 días, sin que nadie
-  // supiera que había algo que decidir.
+  // Sin el recordatorio, acá el aviso sería null y el borrador moriría solo a los 7 días, sin que nadie
+  // supiera que hay algo que decidir.
   const a = V.construirAviso('2026-08-31', [], [], CFG, [{ edad: 4, campos: { id: '2026-08-27-acme-ee00' } }]);
   assert.ok(a, 'el silencio no puede tapar una casilla que nadie mira');
   assert.match(a, /1 borrador\(es\) esperando/);
@@ -337,7 +337,7 @@ test('T31 Vigilante_AvisoSoloCantidades @story-2.30 @ac-21', () => {
   assert.doesNotMatch(src, /tycon-telegram-notify\.sh/);
 });
 
-// ── El PR con el que se decide (2026-08-31) ────────────────────────────────────────────────────
+// ── El PR con el que se decide ─────────────────────────────────────────────────────────────
 
 const CAMPOS = {
   id: '2026-08-31-acme-ee00fa42', producto: 'acme', plugin: 'acmeutils',
@@ -360,8 +360,8 @@ test('el cuerpo del PR se entiende SIN abrir el YAML', () => {
 });
 
 test('el cuerpo dice que el motivo del rechazo es obligatorio', () => {
-  // Es la razón de ser del canal: el PR obliga a escribir el motivo, que hasta ahora dependía de
-  // que la persona se acordara — y sin motivo, "no servía" y "nadie lo miró" son lo mismo.
+  // Es la razón de ser del canal: el PR obliga a escribir el motivo, que de otro modo depende de
+  // que la persona se acuerde — y sin motivo, "no servía" y "nadie lo miró" son lo mismo.
   const { cuerpo } = V.textoPr(CAMPOS, []);
   assert.match(cuerpo, /comentario del rechazo ES el motivo/);
   assert.match(cuerpo, /nadie lo miró/);
@@ -369,7 +369,7 @@ test('el cuerpo dice que el motivo del rechazo es obligatorio', () => {
 
 test('un diagnóstico con comillas adentro NO deja el PR mocho', () => {
   // El lector escalar del YAML corta en la primera comilla: el nombre del plugin va entrecomillado
-  // dentro del diagnóstico, así que el título salía cortado y el cuerpo decía "(sin diagnóstico)".
+  // dentro del diagnóstico, así que el título saldría cortado y el cuerpo diría "(sin diagnóstico)".
   const fs2 = require('fs'); const os2 = require('os'); const path2 = require('path');
   const d = fs2.mkdtempSync(path2.join(os2.tmpdir(), 'vig-pr-'));
   const f = path2.join(d, 'b.yaml');
@@ -392,13 +392,12 @@ test('lo que se archiva por ignorado devuelve su id, para poder cerrar su PR', (
 });
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-// Story 4.2 — rechazar el pull request ES `/tycon-vigilante reject`.
+// Rechazar el pull request ES `/tycon-vigilante reject`.
 //
-// El caso REAL que esto cierra: la rama de un hallazgo recibió su pull request, una persona lo rechazó
-// horas después, y a la mañana siguiente el pipeline abrió otro —que también se rechazó— y apareció un
-// tercero. Tres pull requests para la
-// misma decisión ya tomada. La única ficha que NO se reabrió es la que el dev, además de rechazar,
-// archivó a mano con `/tycon-vigilante reject`. `note --rejected` automatiza exactamente eso.
+// Lo que cierra: si la rama de un hallazgo recibe su pull request y una persona lo rechaza, a la mañana siguiente
+// el pipeline no abre otro (ni un tercero): serían tres pull requests para la
+// misma decisión ya tomada. Sin esto, la única ficha que NO se reabre es la que el dev, además de rechazar,
+// archiva a mano con `/tycon-vigilante reject`. `note --rejected` automatiza exactamente eso.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
 const _cp = require('child_process');
@@ -439,7 +438,7 @@ test('W1: el borrador recuerda su pull request, y eso no rompe ningún campo que
 
 test('W2: 🔴 rechazar el pull request archiva la ficha como descartada, con el comentario de motivo', () => {
   // Es lo que el README ya promete ("Rechazar = no servía, y el comentario es el motivo") y lo que
-  // el dev hacía a mano. Sin esto la ficha se queda en pending/ con `veredicto: pendiente` y el
+  // el dev haría a mano. Sin esto la ficha se queda en pending/ con `veredicto: pendiente` y el
   // pipeline le abre otro PR cada noche: rechazar no significa nada.
   const dir = _fs.mkdtempSync(_path.join(_os.tmpdir(), 'vig-w2-'));
   const f = borradorReal(dir);
@@ -454,8 +453,8 @@ test('W2: 🔴 rechazar el pull request archiva la ficha como descartada, con el
   assert.match(txt, /^veredicto: descartado$/m);
   assert.match(txt, /^pr: 3061$/m);
   assert.match(txt, /^pr_cerrado: 2026-09-06$/m, 'el PR ya está cerrado y su fecha se conoce');
-  // 🔴 El motivo tiene comillas ADENTRO: sin JSON.stringify, `camposDe` lo devuelve mocho — el
-  // mismo defecto que ya mordió con el diagnóstico y que la primera corrida real destapó.
+  // 🔴 El motivo tiene comillas ADENTRO: sin JSON.stringify, `camposDe` lo devuelve mocho (el
+  // mismo defecto del diagnóstico).
   assert.equal(V.leerTexto(txt, 'motivo'),
     'fue una "caida" de azure (rechazo del PR !3061, 2026-09-06)');
   assert.equal(V.camposDe(txt).veredicto, 'descartado');
@@ -551,9 +550,9 @@ test('W4: 🔴 un motivo con $& o $\' no corrompe la ficha archivada', () => {
 });
 
 test('W3b: 🔴 lo aceptado (promoted/) tampoco vuelve a abrir borrador, y a los 60 días vuelve como reincidente', () => {
-  // El dedup miraba `pending/` y `archived/`, nunca `promoted/`: un hallazgo aceptado que se repetía
-  // dentro de su ventana volvía a escribir la ficha y abría otro borrador y otro pull request por el
-  // mismo hecho, que ya tenía el suyo.
+  // El dedup mira `pending/` y `archived/` y también tiene que mirar `promoted/`: sin eso, un hallazgo aceptado que se repite
+  // dentro de su ventana vuelve a escribir la ficha y abre otro borrador y otro pull request por el
+  // mismo hecho, que ya tiene el suyo.
   const dir = _fs.mkdtempSync(_path.join(_os.tmpdir(), 'vig-w3b-'));
   const out = _path.join(dir, 'out');
   const fixture = _path.join(dir, 'fix');
@@ -599,8 +598,8 @@ test('W3b: 🔴 lo aceptado (promoted/) tampoco vuelve a abrir borrador, y a los
 });
 
 test('W5: con dos vidas archivadas de la misma huella, el dedup mira la MÁS RECIENTE', () => {
-  // `.find()` tomaba la primera que devolviera el sistema de archivos, que no ordena: la ventana de
-  // silencio se evaluaba contra una decisión arbitraria y el `reincidente.desde` señalaba cualquiera.
+  // `.find()` tomaría la primera que devolviera el sistema de archivos, que no ordena: la ventana de
+  // silencio se evaluaría contra una decisión arbitraria y el `reincidente.desde` señalaría cualquiera.
   const dir = _fs.mkdtempSync(_path.join(_os.tmpdir(), 'vig-w5-'));
   _fs.mkdirSync(_path.join(dir, 'archived'), { recursive: true });
   const escribir = (nombre, fecha, visto) => _fs.writeFileSync(_path.join(dir, 'archived', `${nombre}.yaml`), [
@@ -619,9 +618,9 @@ test('W5: con dos vidas archivadas de la misma huella, el dedup mira la MÁS REC
 });
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-// T30 · R4_Watcher_YmlBenchAndDefaults (story 8.12, tanda R4, AC 26)
+// T30 · R4_Watcher_YmlBenchAndDefaults
 //
-// El vigilante pasó a `scripts/nightly/watcher/`, una carpeta más abajo. Lo que se puede romper sin
+// El vigilante vive en `scripts/nightly/watcher/`, una carpeta más abajo. Lo que se puede romper sin
 // que nadie lo vea: la raíz del repo calculada un nivel corta (los borradores y la foto de la noche
 // irían a parar adentro de `scripts/`), el traductor de opciones viejas buscando la ruta de antes
 // (la opción vieja de la fecha dejaría de andar sin error), y el pipeline nocturno o el banco llamando la ruta vieja,
@@ -633,7 +632,7 @@ const R4_RAIZ = _path.resolve(__dirname, '..', '..');
 const R4_MAPA = _path.join(R4_RAIZ, 'scripts', 'lib', 'renames.json');
 const R4_CON_MAPA = _fs.existsSync(R4_MAPA);
 const R4_NUEVA = 'scripts/nightly/watcher';
-/** Las dos entradas de la tanda (carpeta y archivo). Sin ellas el mapa está roto: falla, no se saltea. */
+/** Las dos entradas del mapa (carpeta y archivo). Sin ellas el mapa está roto: falla, no se saltea. */
 function r4Entradas() {
   const R4 = JSON.parse(_fs.readFileSync(R4_MAPA, 'utf8')).entries.filter((e) => e && e.batch === 'R4');
   const carpeta = R4.find((e) => e.kind === 'folder' && e.new === R4_NUEVA);
@@ -668,10 +667,10 @@ test('T30 R4_Watcher_YmlBenchAndDefaults — desde nightly/watcher/ los defaults
   assert.ok(d, 'vigilante.js exporta sus rutas por omisión');
   assert.strictEqual(d.root, R4_RAIZ, 'la raíz es la del repo, no scripts/');
   assert.strictEqual(d.out, _path.join(R4_RAIZ, '.dashboard', 'vigilante'), 'la foto de la noche sigue yendo a .dashboard/vigilante');
-  // story 8.9, tanda F: la cola de borradores se mudó a inbox/watcher/ (la foto de la noche NO se mudó)
+  // la cola de borradores vive en inbox/watcher/ (la foto de la noche no se mudó)
   assert.strictEqual(d.pending, _path.join(R4_RAIZ, 'inbox', 'watcher'), 'la cola de borradores vive en inbox/watcher/ de la raíz');
   // la cola y la configuración son de cada organización (su repo de operaciones): el pipeline las pasa con --pending y
-  // --config. El arnés no trae ninguna de las dos (decisión 1 del dueño, story 8.26): sin configuración, viene apagado.
+  // --config. El arnés no trae ninguna de las dos: sin configuración, viene apagado.
   assert.strictEqual(d.config, _path.join(R4_RAIZ, R4_NUEVA, 'hosts.json'), 'hosts.json se buscaría junto a vigilante.js');
   assert.ok(!_fs.existsSync(d.config), 'y el arnés no lo trae: los hosts de una organización no viajan');
 });
@@ -750,15 +749,15 @@ test('T30 R4_Watcher_YmlBenchAndDefaults — pipelines/azure-pipelines-vigilante
 });
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-// Story 8.9, tanda F — los bloques bash de `commands/tycon-vigilante.md`, EXTRAÍDOS Y CORRIDOS
+// Los bloques bash de `commands/tycon-vigilante.md`, EXTRAÍDOS Y CORRIDOS
 //
-// El comando es una instrucción para el agente, y sus bloques bash son lo que el agente ejecuta. La
-// versión de antes contaba `<cola>/pending/*.yaml` con el error tapado: con la cola mudada daba 0 y la
-// instrucción decía «no hay nada que revisar». La de ahora tiene que distinguir tres cosas: la cola
+// El comando es una instrucción para el agente, y sus bloques bash son lo que el agente ejecuta. Un bloque
+// que contara `<cola>/pending/*.yaml` con el error tapado daría 0 con la cola mudada y la
+// instrucción diría «no hay nada que revisar». El bloque tiene que distinguir tres cosas: la cola
 // está (y cuenta, aunque sea 0), el checkout es anterior a la mudanza, o la cola no está.
 //
 // 🔴 Se corre el bloque REAL, sacado del .md por el título de su sección (no una copia, ni por
-// posición): si alguien edita el bloque, estos casos lo ejercitan editado. La carpeta de antes sale
+// posición): si alguien edita el bloque, estos casos lo ejercitan editado. La carpeta anterior sale
 // del mapa, nunca escrita acá. El repo de juguete vive bajo /tmp/x.XXXXXX, fuera de cualquier repo.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -864,7 +863,7 @@ test('story 8.9, tanda F — /tycon-vigilante: la instrucción manda parar ante 
   }
 });
 
-// ── story 8.26, decisión 1 del dueño — el programa es público y viene APAGADO DE FÁBRICA ─────────────────────────────
+// ── el programa es público y viene APAGADO DE FÁBRICA ─────────────────────────────
 // El arnés publicado no trae ningún hosts.json: qué se mira es un dato de cada organización (su repo de operaciones).
 // Sin --config y sin el archivo al lado del guion, `run` no mira nada, lo dice y sale 0 sin escribir. El espejo: con
 // --config dada y un archivo que no está, sale 1 (quien lo prendió espera que mire).

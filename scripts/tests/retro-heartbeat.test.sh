@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# 🔴 AISLAMIENTO PRIMERO (lección de la 2.16): HOME falso antes de ejecutar cualquier otra cosa. El
+# 🔴 AISLAMIENTO PRIMERO: HOME falso antes de ejecutar cualquier otra cosa. El
 #    latido lee ~/.claude/.tycon-pipeline/timing-history/; acá nunca puede encontrar un volcado real.
 #    Lo único que se toma del HOME de verdad es DÓNDE está agent-skills, para leer dos textos (T8).
 AS_DIR="${TYCON_AGENT_SKILLS_DIR:-${HOME}/.claude/agent-skills}"
 HOME="$(mktemp -d)"; export HOME
-# Esta suite arma sus repos en el temporal del sistema, y retro-pending.js no anota ni reclama los repos de laboratorio
-# (2026-10-14): se declara que no hay carpetas de laboratorio, para medirlos como repos de verdad. El criterio de
+# Esta suite arma sus repos en el temporal del sistema, y retro-pending.js no anota ni reclama los repos de laboratorio:
+# se declara que no hay carpetas de laboratorio, para medirlos como repos de verdad. El criterio de
 # laboratorio se mide en T11c, con su carpeta declarada.
 export TYCON_RETRO_LAB_DIRS=""
 #
-# retro-heartbeat.test.sh — red de `scripts/metrics/retro-heartbeat.js` (story 7.1 del arnés, 2026-09-16).
+# retro-heartbeat.test.sh — red de `scripts/metrics/retro-heartbeat.js`.
 #
 # Lo que cuida, en una frase: que cada merge a main deje, en un segundo y sin modelo, el archivo que
 # da el merge por retrospectivado — con la única métrica que alguien consume (las vueltas de revisión)
@@ -17,9 +17,8 @@ export TYCON_RETRO_LAB_DIRS=""
 #
 # 🔴 REGLA DE ADMISIÓN: cada caso trae escrita la MUTACIÓN que lo pone en rojo.
 #    · T1 — elegir el volcado sólo por número de story (sin mirar el repo) toma el de OTRO repo, o el
-#      del proyecto de prueba armado dentro de una sesión del mismo repo (caso real: 7.1-2026-08-22,
-#      scratchpad/dorada/claude). Comparar sólo la ruta real, sin reconocer el clon, no encuentra
-#      ninguno (15 de las 28 corridas del arnés corrieron en un clon descartable).
+#      del proyecto de prueba armado dentro de una sesión del mismo repo. Comparar sólo la ruta real, sin
+#      reconocer el clon, no encuentra ninguno (muchas corridas del arnés corren en un clon descartable).
 #    · T2 — pintar `0` donde no hubo corrida: el validador lo dejaría pasar (`count` acepta 0) y
 #      `first_pass_ratio` lo descartaría en silencio; la regla la cumple el script.
 #    · T3 — escribir sin validar: un valor inválido llega a la serie.
@@ -111,16 +110,16 @@ if [ "${RC}" = "0" ] && [ -f "${ARCH1}" ]; then
   DET="$(campo "${ARCH1}" 'd.metrics.advisor_rerun_loop_iterations.detail')"
   echo "${DET}" | grep "revisores" >/dev/null && ok "T1 el detalle nombra la fuente (revisores por vuelta)" || bad "T1 detail" "${DET}"
   ID="$(campo "${ARCH1}" '[d.schema_version, d.project, d.captured_at, d.repo, d.merge_commit, d.story, d.run_dir, d.generated_by].join("|")')"
-  # generated_by es un campo del registro: conserva el nombre de antes del renombre (story 8.9, AC 32)
+  # generated_by es un campo del registro: conserva el nombre original del generador
   ESP="2.0|proyecto|${HOY}|${REPO_REAL}|${SHA1}|9.9|.advisors/pipeline-runs/9.9-20260916-1000/|retro-""latido.js"
   [ "${ID}" = "${ESP}" ] && ok "T1 identidad completa (repo real, sha completo, story, run_dir, generated_by)" || bad "T1 identidad" "vino ${ID} · esperaba ${ESP}"
   NULOS="$(campo "${ARCH1}" 'Object.entries(d.metrics).filter(([k]) => k !== "advisor_rerun_loop_iterations").map(([k, m]) => k + "=" + (m.value === null ? "null:" + m.unavailable_reason : m.value)).join("\n")')"
   CINCO="$(printf '%s\n' "${NULOS}" | grep -c '=null:')"
-  # 2026-09-18: son SEIS — entró `deep_review_skipped_then_hotfixed`, que va siempre en null con su
-  # motivo y la señal de carril al lado (DEEP-REVIEW-SKIP-SIN-STORY-1, T9).
+  # son SEIS: incluye `deep_review_skipped_then_hotfixed`, que va siempre en null con su
+  # motivo y la señal de carril al lado (T9).
   [ "${CINCO}" = "6" ] && ok "T1 las otras seis en null con motivo" || bad "T1 seis null" "${NULOS}"
-  # el motivo es texto de registro (story 8.9, AC 32): puede nombrar al recolector con el nombre nuevo o con el de
-  # antes del renombre, que se arma desde el mapa (no se escribe literal)
+  # el motivo es texto de registro: puede nombrar al recolector con el nombre actual o con el nombre viejo que da el
+  # mapa de renombres (no se escribe literal)
   RECOLECTOR_VIEJO="$(node -e 'const e=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).entries.find((x)=>x.kind==="file"&&x.new==="scripts/metrics/collect-findings.js");process.stdout.write(e?e.old.split("/").pop():"collect-findings.js")' "${RAIZ}/scripts/lib/renames.json" 2>/dev/null || echo collect-findings.js)"
   RECOLECTOR_RE="collect-findings\\.js|${RECOLECTOR_VIEJO//./\\.}"
   printf '%s\n' "${NULOS}" | grep '^advisor_warnings_per_story=' | grep -E "${RECOLECTOR_RE}" >/dev/null \
@@ -229,7 +228,7 @@ else
   bad "T6 no escribió" "rc=$(cat "${BASE}/rc") · $(head -c 300 "${BASE}/stderr")"
 fi
 
-# ── AC 6 · default de --out y repo que no es git ─────────────────────────────────────────────────
+# ── default de --out y repo que no es git ─────────────────────────────────────────────────
 TCG="${BASE}/tcg"
 mkdir -p "${TCG}/scripts/metrics" "${TCG}/scripts/lib" "${TCG}/scripts/hooks" "${TCG}/.dashboard"
 cp "${LATIDO}" "${TCG}/scripts/metrics/"
@@ -249,7 +248,7 @@ RC=$?
 [ "${RC}" = "2" ] && grep -qi "merge" "${BASE}/stderr" \
   && ok "AC6 --merge que no resuelve a un commit: exit 2 con el motivo" || bad "AC6 sha inexistente" "rc=${RC} · $(head -c 300 "${BASE}/stderr")"
 
-# ── AC 5 · el archivo cubre el merge para retro-pending, y la serie lo suma ──────────────────────
+# ── el archivo cubre el merge para retro-pending, y la serie lo suma ──────────────────────
 LEDGER_DIR="${HOME}/.claude/.tycon-pipeline"
 printf '{"ts":"2026-09-16T10:00:00.000Z","sessionId":"s-test","repoPath":"%s","sha":"%s","branch":"main"}\n' "${REPO_REAL}" "${SHA1:0:12}" > "${LEDGER_DIR}/retro-pending.jsonl"
 REP="$(node "${TCG}/scripts/hooks/retro-pending.js" --report --days 36500 2>&1)"
@@ -261,9 +260,9 @@ RC=$?
 [ "${RC}" = "0" ] && echo "${SER}" | node -e 'const s = JSON.parse(require("fs").readFileSync(0, "utf8")); process.exit(s.counts.v2ok === 1 && s.series.advisor_rerun_loop_iterations.n === 1 ? 0 : 1)' \
   && ok "T10 dashboard-series.js suma el archivo del latido (v2ok 1, vueltas n=1)" || bad "T10 serie" "rc=${RC} · $(echo "${SER}" | head -c 400)"
 
-# ── Iter 2 · lo que cazaron los revisores y el pase adversarial (2026-09-16) ─────────────────────
-# T1b — worktree del arnés (<Repo>--wt-<slug>, <Repo>--merge; guides/git-worktrees.md). ROJO PREVIO: el
-#       volcado de un worktree no coincidía con el repo y salía «sin volcado» (null con motivo falso).
+# ── Casos de borde de la identidad del repo ──────────────────────────────────────────────────────
+# T1b — worktree del arnés (<Repo>--wt-<slug>, <Repo>--merge; guides/git-worktrees.md). Falla si: el
+#       volcado de un worktree no coincide con el repo y sale «sin volcado» (null con motivo falso).
 volcado "${HIST}/9.7-2026-09-16T1000.json" 9.7 "${REPO_REAL}--wt-9-7-algo" "${REPO_REAL}--wt-9-7-algo/specs/story-9.9.md" '{"1":1,"2":1}' '{}' "2026-09-16T10:00:00.000Z"
 t1x() { # t1x <story> <repo-arg> <esperado JSON de value> <nombre> [cwd]
   local out="${BASE}/out-$1-$RANDOM"; mkdir -p "${out}"
@@ -281,13 +280,13 @@ if [ -d "${REPO}--merge" ]; then
 else
   bad "T1b" "no se pudo armar el worktree <Repo>--merge para la prueba"
 fi
-# T1c — repoPath RELATIVO (volcados viejos: '.', 'mcp', 'MiBackend'). ROJO PREVIO: se resolvía contra la
-#       carpeta desde donde corre el latido; desde adentro del repo tomaba las vueltas de otro proyecto y
-#       desde afuera daba null — el mismo comando, dos archivos distintos.
+# T1c — repoPath RELATIVO ('.', 'mcp', 'MiBackend'). Falla si: se resuelve contra la carpeta desde donde
+#       corre el latido; desde adentro del repo toma las vueltas de otro proyecto y desde afuera da null —
+#       el mismo comando, dos archivos distintos.
 volcado "${HIST}/9.6-2026-09-16T1000.json" 9.6 "." "specs/story-9.9.md" '{"1":1,"2":1}' '{}' "2026-09-16T10:00:00.000Z"
 t1x 9.6 "${REPO}" null "T1c repoPath relativo ('.') NO coincide desde adentro del repo" "${REPO}"
 t1x 9.6 "${REPO}" null "T1c ... ni desde afuera: el resultado no depende de la carpeta"
-# T1d — mayúsculas (macOS/Windows no distinguen). ROJO PREVIO: el volcado propio con otra caja no aparecía.
+# T1d — mayúsculas (macOS/Windows no distinguen). Falla si: el volcado propio con otra caja no aparece.
 if [ "$(uname)" = "Darwin" ]; then
   RP_CAJA="$(printf '%s' "${REPO_REAL}" | sed 's#/proyecto$#/PROYECTO#')"
   volcado "${HIST}/9.5-2026-09-16T1000.json" 9.5 "${RP_CAJA}" "${RP_CAJA}/specs/story-9.9.md" '{"1":1,"2":1}' '{}' "2026-09-16T10:00:00.000Z"
@@ -295,13 +294,13 @@ if [ "$(uname)" = "Darwin" ]; then
 else
   echo "⏭️  T1d salteado: el disco de esta máquina distingue mayúsculas (no es verde: no se midió)"
 fi
-# T5b — otra story cuyo id EXTIENDE a éste con guion (real: 1.3 y 1.3-B-frontend). ROJO PREVIO: su volcado
-#       ilegible, aunque viejo, dejaba la métrica en null «ilegible» porque su sello no era una fecha.
+# T5b — otra story cuyo id EXTIENDE a éste con guion (1.3 y 1.3-B-frontend). Falla si: su volcado
+#       ilegible, aunque viejo, deja la métrica en null «ilegible» porque su sello no es una fecha.
 volcado "${HIST}/1.3-2026-09-16T1000.json" 1.3 "${REPO_REAL}" "${REPO_REAL}/specs/story-9.9.md" '{"1":3,"2":2}' '{}' "2026-09-16T10:00:00.000Z"
 echo '{roto' > "${HIST}/1.3-B-frontend-2026-07-17T1808.json"
 t1x 1.3 "${REPO}" 2 "T5b el volcado ilegible de la story 1.3-B-frontend no anula la 1.3"
-# T5c — un volcado sin archivedAt contra uno con archivedAt (SILENT-W8). ROJO PREVIO: las claves se comparaban
-#       en formatos distintos y el que no traía la fecha perdía siempre, aunque fuera más nuevo.
+# T5c — un volcado sin archivedAt contra uno con archivedAt (SILENT-W8). Falla si: las claves se comparan
+#       en formatos distintos y el que no trae la fecha pierde siempre, aunque sea más nuevo.
 volcado "${HIST}/4.1-2026-09-16T0900.json" 4.1 "${REPO_REAL}" "${REPO_REAL}/specs/story-9.9.md" '{"1":1}' '{}' "2026-09-16T09:00:00.000Z"
 F="${HIST}/4.1-2026-09-16T1500.json" RR="${REPO_REAL}" node -e 'require("fs").writeFileSync(process.env.F, JSON.stringify({ marker: { storyId: "4.1", repoPath: process.env.RR, storyPath: process.env.RR + "/specs/story-9.9.md", iterations: {} }, revisores: { por_vuelta: { "1": 1, "2": 1 } } }))'
 t1x 4.1 "${REPO}" 2 "T5c el volcado de las 15:00 sin archivedAt le gana al de las 09:00 con archivedAt"
@@ -319,13 +318,13 @@ echo "${JZ}" | node -e 'const j = JSON.parse(require("fs").readFileSync(0, "utf8
 JZ="$(node "${RAIZ}/scripts/hooks/retro-pending.js" --judge "${J}/repo" 2>&1)"
 echo "${JZ}" | node -e 'const j = JSON.parse(require("fs").readFileSync(0, "utf8")); process.exit(j.exento === null ? 0 : 1)' \
   && ok "T11 --judge: un push con código NO está exento (exento: null → corre el latido)" || bad "T11 --judge código" "${JZ}"
-# T11b — `--judge` dice también si el repo es DEL ARNÉS, o sea si el hook anotaría ese push (2026-09-17).
-#        Antes sólo decía qué trajo el push. `exento` no cambia: sigue hablando de lo que trajo.
+# T11b — `--judge` dice también si el repo es DEL ARNÉS, o sea si el hook anotaría ese push.
+#        `exento` no cambia: sigue hablando de lo que trajo el push.
 echo "${JZ}" | node -e 'const j = JSON.parse(require("fs").readFileSync(0, "utf8")); process.exit(j.arnes === false && j.registraria === true ? 0 : 1)' \
   && ok "T11b --judge: un repo de producto sale arnes:false y registraria:true" || bad "T11b --judge producto" "${JZ}"
 # El remoto «del arnés» es el que el propio juez reconoce para ESTE checkout, venga de donde venga (el interno, el repo
-# de mantenimiento, una copia de GitHub): escrito a mano, el caso salía rojo apenas el banco corría desde otro repo
-# (2026-10-13, la mudanza al repo de mantenimiento). Con un usuario cualquiera adelante: no cuenta para la identidad.
+# de mantenimiento, una copia de GitHub): escrito a mano, el caso saldría rojo apenas el banco corriera desde otro repo.
+# Con un usuario cualquiera adelante: no cuenta para la identidad.
 ARNES_URL="$(node "${RAIZ}/scripts/lib/harness-repo.js" "${RAIZ}" 2>/dev/null | node -e 'try { const j = JSON.parse(require("fs").readFileSync(0, "utf8")); process.stdout.write(j.arnes && j.por === "remoto" && /^https:\/\//.test(j.url || "") ? j.url.replace(/^https:\/\/[^@/]*@/, "https://otro@").replace(/^https:\/\/(?!otro@)/, "https://otro@") : ""); } catch (_) {}')"
 # un checkout sin remoto legible (un laboratorio): el remoto del arnés se declara, con uno inventado
 ARNES_ENV=""
@@ -336,9 +335,9 @@ else JZ="$(node "${RAIZ}/scripts/hooks/retro-pending.js" --judge "${J}/repo" 2>&
 echo "${JZ}" | node -e 'const j = JSON.parse(require("fs").readFileSync(0, "utf8")); process.exit(j.arnes === true && j.arnes_por === "remoto" && j.registraria === false && j.exento === null ? 0 : 1)' \
   && ok "T11b --judge: un clon del arnés (carpeta «repo», remoto del arnés) sale arnes:true y registraria:false, con exento intacto" || bad "T11b --judge arnés" "${JZ}"
 
-# T11c — `--judge` dice también si el repo es de LABORATORIO (2026-10-14): uno que vive en una carpeta temporal y cuyo
+# T11c — `--judge` dice también si el repo es de LABORATORIO: uno que vive en una carpeta temporal y cuyo
 #        remoto no tiene copia de trabajo fuera de las temporales no se anota (registraria:false). El clon descartable
-#        de un repo con copia de trabajo afuera, sí. Rojo previo: --judge no conocía el campo y decía registraria:true.
+#        de un repo con copia de trabajo afuera, sí. Falla si: --judge no conoce el campo y dice registraria:true.
 L="${BASE}/laboratorio"; mkdir -p "${L}/temporal" "${L}/repos/producto"
 ( cd "${L}/repos/producto" && git init -q -b main . && git remote add origin https://dev.azure.com/acme/Producto/_git/Producto )
 ( cd "${L}/temporal" && git init -q -b main juguete && git -C juguete remote add origin https://github.com/acme-pruebas/juguete.git \
@@ -353,8 +352,8 @@ JZ="$(TYCON_RETRO_LAB_DIRS="${L}/temporal" TYCON_REPOS_ROOT="${L}/repos" node "$
 echo "${JZ}" | node -e 'const j = JSON.parse(require("fs").readFileSync(0, "utf8")); process.exit(j.laboratorio === false && j.laboratorio_por === "mismo-remoto-que-una-copia-de-afuera" && j.registraria === true ? 0 : 1)' \
   && ok "T11c --judge: el clon descartable de un repo con copia de trabajo afuera NO es laboratorio (registraria:true)" || bad "T11c --judge clon" "${JZ}"
 
-# T12 — el archivo se nombra por el REPO (lo que dice su remoto), no por la carpeta del clon (2026-09-17):
-#       un latido lanzado desde un clon descartable salía `metrics-…-tcg-adhoc-…`. El campo `repo` NO
+# T12 — el archivo se nombra por el REPO (lo que dice su remoto), no por la carpeta del clon:
+#       un latido lanzado desde un clon descartable no debe salir `metrics-…-tcg-adhoc-…`. El campo `repo` NO
 #       cambia: es la ruta con la que retro-pending.js empareja el merge con su archivo.
 N="${BASE}/nombre"; mkdir -p "${N}/out"
 ( cd "${N}" && git init -q -b main clon-descartable && cd clon-descartable && echo x > a.txt && git add -A \
@@ -367,7 +366,7 @@ FN="${N}/out/metrics-${HOY}-MiRepo-adhoc-${SHAN:0:7}.json"
 [ -f "${FN}" ] && node -e 'const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.exit(/clon-descartable$/.test(d.repo) ? 0 : 1)' "${FN}" \
   && ok "T12 el campo repo sigue siendo la RUTA del clon (el gate empareja por ella)" || bad "T12 campo repo" "$(head -c 300 "${FN}" 2>/dev/null)"
 
-# T10 — no-regresión (AC 16), la parte que la suite puede sostener todas las noches: la serie del dashboard
+# T10 — no-regresión, la parte que la suite puede sostener todas las noches: la serie del dashboard
 #       REAL del arnés corre con la ventana de la story. El `git diff --stat` de los archivos protegidos se
 #       verifica una vez contra la base de la corrida (evidencia DoD): en main no tiene contra qué comparar.
 node "${RAIZ}/scripts/lib/dashboard-series.js" --since 2026-09-01 --json > "${BASE}/serie-real.json" 2> "${BASE}/serie-real.err"
@@ -404,9 +403,9 @@ else
     || bad "T8 textos de agent-skills" "${R}"
 fi
 
-# ── T9 · la señal de carril de la fila del punto ciego (2026-09-18) ───────────────────────────────
-# DEEP-REVIEW-SKIP-SIN-STORY-1: la fila `deep_review_skipped_then_hotfixed` imprimía `0` cuando la
-# pregunta no se podía hacer (sus dos señales exigen una story). Ahora el latido la publica SIEMPRE en
+# ── T9 · la señal de carril de la fila del punto ciego ────────────────────────────────────────────
+# La fila `deep_review_skipped_then_hotfixed` no puede imprimir `0` cuando la pregunta no se puede hacer
+# (sus dos señales exigen una story). El latido la publica SIEMPRE en
 # null con su motivo, y al lado la señal cruda: cuántos commits del merge entraron fuera del pipeline
 # y cuántos no declaran carril. La mutación que lo pone en rojo: publicar un 0, o contar «sin carril»
 # como «fuera del pipeline» (son cosas distintas: una es medición, la otra es «no lo sé»).
@@ -455,8 +454,8 @@ fi
 }
 
 # ── T20 · un pedido de GitHub hacia la rama principal se anota como uno de Azure, y el latido lo paga ──────────────
-# MUTACIÓN que lo pone en rojo: mirar sólo `az repos pr create` (lo de antes): con un repo en GitHub ningún merge por
-# pedido deja entrada, y la retrospectiva vuelve a depender de que alguien se acuerde. Y la otra: anotar contra el repo
+# MUTACIÓN que lo pone en rojo: mirar sólo `az repos pr create`: con un repo en GitHub ningún merge por
+# pedido deja entrada, y la retrospectiva depende de que alguien se acuerde. Y la otra: anotar contra el repo
 # de la sesión lo que no se sabe a qué repo fue (un pendiente que ninguna retrospectiva puede cerrar).
 {
   T20="${BASE}/t20"; H20="${T20}/arnes"; P20="${T20}/producto"
@@ -535,7 +534,7 @@ fi
   pedir Bash 'gh pr create --repo "$REPO" --base main --title t --body b'
   dicho && ok "T20 con un --repo que arma la terminal no anota y lo dice" || bad "T20 --repo armado" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"
 
-  # ── lo que cazó el pase adversarial ──
+  # ── casos de borde ──
   HEAD20="$(G20 rev-parse HEAD)"
   pedir Bash 'gh pr create --help'
   callado && ok "T20 pedir la ayuda de «gh pr create» no es crear un pedido" || bad "T20 --help" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"
@@ -597,9 +596,9 @@ fi
   rm -f "${H20}/scripts/lib/gh-pr.js"
   pedir Bash 'gh pr create --base main --title t --body b'
   callado && ok "T20 sin el lector de gh al lado, calla (el hook viaja suelto)" || bad "T20 sin la librería" "rc=$(cat "${T20}/rc") · $(head -c 200 "${T20}/stderr")"
-  # D6 de la 7.25 (decisión del dueño, 2026-10-15: «Avisar y no anotar»): la carpeta es un repo de GitHub y el pedido
+  # Regla «avisar y no anotar»: la carpeta es un repo de GitHub y el pedido
   # es de Azure — de OTRO repo, que no está clonado cerca. No se sabe de qué repo es: se dice y no se anota contra este.
-  # MUTACIÓN que lo pone en rojo: tratar un origin de GitHub como «sin identidad» (lo de antes), que deja caer al repo
+  # MUTACIÓN que lo pone en rojo: tratar un origin de GitHub como «sin identidad», que deja caer al repo
   # de la carpeta y anota un pendiente que ninguna retrospectiva cierra.
   pedir Bash 'az repos pr create --org https://x --project P --repository R --source-branch dev --target-branch main'
   dicho && grep -q "no pude saber de qué repo es" "${T20}/stderr" && grep -q "github.com" "${T20}/stderr" \
@@ -626,7 +625,7 @@ fi
     && ok "T20 si git no pudo leer el origin, sin --repository: no anota y lo dice" || bad "T20 origin ilegible, sin --repository" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null) · $(head -c 300 "${T20}/stderr")"
   PATH="${FAKE20}:${PATH}" pedir Bash 'az repos pr create --repository R --source-branch dev --target-branch main'
   dicho && ok "T20 si git no pudo leer el origin, con --repository: no anota y lo dice" || bad "T20 origin ilegible, con --repository" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null) · $(head -c 300 "${T20}/stderr")"
-  # sin origin no hay identidad que contradiga al comando: vale la carpeta, como antes (los casos del banco)
+  # sin origin no hay identidad que contradiga al comando: vale la carpeta (los casos del banco)
   G20 remote remove origin
   pedir Bash 'az repos pr create --org https://x --project P --repository R --source-branch dev --target-branch main'
   anotado main && ok "T20 en un repo sin origin, el pedido de Azure se sigue anotando contra la carpeta" || bad "T20 Azure sin origin" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"

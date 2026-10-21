@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * npm-publish-workflow.test.js — el workflow que publica el instalador en npm (story 8.40, tanda A · T13 a T16).
+ * npm-publish-workflow.test.js — el workflow que publica el instalador en npm (T13 a T16).
  *
  * `.github/workflows/npm-publish.yml` corre en el repo PÚBLICO con un permiso que ningún otro workflow tiene: pedir la
  * identidad de la corrida (`id-token: write`) para publicar en npm sin ningún token guardado (trusted publishing, con
@@ -14,7 +14,7 @@
  *           la integridad mirada antes de publicar; `npm stage publish` desde scripts/setup/npm (nunca `npm publish`).
  *   · T16 — los pasos con un npm de mentira. La publicación se habilita con la VARIABLE de repositorio
  *           `NPM_PUBLISH_ENABLED=true` (no es un secreto): sin ella el job que publica sale salteado, en verde, con un
- *           aviso (::warning::) que dice qué falta configurar —decisión de la coordinadora, 2026-10-16: no es un rojo del
+ *           aviso (::warning::) que dice qué falta configurar —no es un rojo del
  *           repo, es una tarea del dueño— y npm no se llama. Con ella, CUALQUIER error es rojo: la versión ya publicada
  *           con OTRO contenido («subí version»), un npm viejo, el registro que no contesta, la identidad que npm no acepta
  *           (E401/E403/ENEEDAUTH/OIDC). La versión ya publicada con el MISMO contenido sale 0 «ya publicada» sin
@@ -209,7 +209,7 @@ test('T16 NpmPublishWorkflow_ToyRun_SameOrOtherContent', () => {
   // (c) npm viejo: rojo antes de preguntarle nada al registro
   r = runWorkflow(Object.assign({}, base, { NPM_FAKE_VERSION: '11.5.1' }));
   assert.notStrictEqual(r.code, 0, r.log); assert.match(r.log, /npm viejo/); assert.ok(!/^view/m.test(r.calls) && !stage(r));
-  // (d) el paquete todavía no existe en npm (E404): la primera publicación, en etapas (rama A de las tareas del dueño)
+  // (d) el paquete todavía no existe en npm (E404): la primera publicación, en etapas
   r = runWorkflow(Object.assign({}, base, { NPM_FAKE_VERSIONS: 'E404' }));
   assert.strictEqual(r.code, 0, r.log); assert.ok(r.published && /^stage publish$/m.test(r.calls), `publicó en etapas: ${r.calls}`);
   assert.match(r.log, /todavía no existe en npm/);

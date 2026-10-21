@@ -1,6 +1,6 @@
 'use strict';
 /**
- * shell-parse-expand.test.js — el expansor y el partidor de `scripts/lib/shell-parse.js` (story 8.14, tanda A, T1-T6).
+ * shell-parse-expand.test.js — el expansor y el partidor de `scripts/lib/shell-parse.js` (T1-T6).
  *
  * Lo que no se puede perder:
  *   · T1 — las llaves se expanden como las expanden zsh y bash DE VERDAD: la referencia no es una tabla escrita a
@@ -10,7 +10,7 @@
  *     diciéndolo.
  *   · T2 — lo que el shell deja literal queda literal (comillas, `\{`, `{x}`, `{}`, `${X}`, llave sin cerrar), y una
  *     comilla escapada fuera de comillas no abre comillas.
- *   · T3 — los agrupamientos cortan como antes (grupo, función, subshell, `$(…)`, `<(…)`), el `case` no parte en
+ *   · T3 — los agrupamientos cortan por profundidad (grupo, función, subshell, `$(…)`, `<(…)`), el `case` no parte en
  *     sus patrones, y una palabra con llaves o paréntesis queda entera.
  *   · T4-T6 — las formas de zsh, `$'…'`/`$"…"`, y variables/modificadores/arreglos: lo que no se resuelve es
  *     DESCONOCIDO y vale `*`, nunca «nada».
@@ -56,8 +56,8 @@ function shellsDeReferencia() {
 
 // La referencia son los shells de las Mac del equipo: zsh y el bash 3.2 de macOS, que es lo que el expansor modela. Donde
 // /bin/bash es otro (el agente Linux de la CI trae el 5.x, que lee distinto las llaves con paso y con ceros) no hay contra
-// qué comparar: las dos pruebas que miden contra los shells se saltean DICIÉNDOLO, y el resto corre igual (decisión del
-// dueño, 2026-10-03, «por ahora»: [DEF-8.14-A-CI-LINUX]). En la plataforma de referencia, un shell que falta sigue rojo.
+// qué comparar: las dos pruebas que miden contra los shells se saltean DICIÉNDOLO, y el resto corre igual.
+// En la plataforma de referencia, un shell que falta sigue rojo.
 const BASH_VERSION = (() => {
   const r = spawnSync('/bin/bash', ['--version'], { encoding: 'utf8' });
   const m = /version (\d+\.\d+)/.exec(r.stdout || '');
@@ -112,7 +112,7 @@ test('ExpandWord_LiteralAndEscaped_StayLiteral', () => {
 
 // ── T3 · los agrupamientos por profundidad ──────────────────────────────────────────────────────
 test('Segments_GroupingByDepth_WordsStayWhole', () => {
-  // lo que daba el partidor ANTES de la 8.14 para los agrupamientos (capturado de main 24151e89): tiene que seguir igual
+  // lo que da el partidor para los agrupamientos simples: tiene que seguir igual
   const hoy = {
     '{ rm a; }': [{ texto: 'rm a', sep: ')' }],
     '{ echo a }': [{ texto: 'echo a', sep: ')' }],
@@ -248,9 +248,9 @@ test('ParseSimpleCommand_AssignmentsWordsAndAllRedirections', () => {
   assert.deepEqual(expandWord('d/x-{a,b}*', { vars: {} }, { hereString: true }).patterns, ['d/x-{a,b}\\*']);
 });
 
-// ── arreglos de la revisión de la tanda A (2026-10-03) ──────────────────────────────────────────
-// Un arreglo vacío (`a=()`) multiplicaba la palabra por cero: `expandWord` devolvía NINGÚN nombre y el freno no tenía
-// nada que juzgar. Lo tapaba otro defecto: el partidor leía `a=()` como definición de función y cortaba ahí.
+// ── arreglos vacíos y variables sin resolver ────────────────────────────────────────────────────
+// Un arreglo vacío (`a=()`) multiplicaría la palabra por cero: `expandWord` devolvería NINGÚN nombre y el freno no tendría
+// nada que juzgar. Otro defecto lo taparía: leer `a=()` como definición de función y cortar ahí.
 test('ExpandWord_EmptyArray_IsUnknown_NotNothing', () => {
   const r = expandWord('d/x$a.json', { arrays: { a: [] } });
   assert.deepEqual(r.patterns, ['d/x*.json'], 'un arreglo vacío vale `*`, nunca «nada»');
@@ -270,8 +270,8 @@ test('Segments_EmptyArrayAssignment_IsNotAFunction', () => {
   assert.deepEqual(segmentos('mi-fn() { y; }').map((x) => x.texto), ['mi-fn', 'y']);
 });
 
-// Una variable asignada desde algo sin resolver (`F=$(ls …)`) sigue siendo DESCONOCIDA al usarla: antes quedaba como el
-// comodín `*` y quien juzga no podía distinguir «el shell expande un comodín» de «no sé qué vale» (T30, frenos 1-5).
+// Una variable asignada desde algo sin resolver (`F=$(ls …)`) sigue siendo DESCONOCIDA al usarla: si quedara como el
+// comodín `*`, quien juzga no podría distinguir «el shell expande un comodín» de «no sé qué vale».
 test('ExpandWord_VariableFromSubstitution_StaysUnknown', () => {
   // como lo arma el freno: segmento por segmento con la sustitución dentro de su palabra (`keepSubst`)
   const asignar = (texto) => sp.applyAssignments({ vars: {}, arrays: {} }, parseSimpleCommand(texto));
@@ -305,12 +305,12 @@ test('ChangesShellOptions_GlobIgnoreAssignment', () => {
   assert.equal(changesShellOptions(parseSimpleCommand('OTRA=x rm -rf d/*')), false);
 });
 
-// ── arreglos del pase adversarial de la tanda A (2026-10-03, carril G) ───────────────────────────
-// Cada prueba nombra el hallazgo (#N del documento del pase) y estuvo ROJA con el partidor anterior al arreglo.
+// ── casos de borde del partidor y del expansor ───────────────────────────────────────────────────
+// Cada prueba cubre un caso de borde y da ROJO si se vuelve al partidor sin el arreglo.
 // Los nombres son inventados (`d/y`, `h/sub/name.json`): lo que se prueba es cómo se parte y se expande, no el freno.
 
-// #2 (REGRESIÓN) — un `|` seguido de un salto de línea, de un grupo `{` o de una subshell `(` se perdía: el segmento vacío
-// del medio le pisaba el separador al anterior, y el freno vaciaba la tubería antes de llegar al `xargs`.
+// Un `|` seguido de un salto de línea, de un grupo `{` o de una subshell `(` se pierde si el segmento vacío
+// del medio le pisa el separador al anterior: el freno vaciaría la tubería antes de llegar al `xargs`.
 test('Segments_PipeBeforeNewlineGroupOrSubshell_KeepsPipe', () => {
   for (const cmd of ['ls x* |\n  xargs rm', 'ls x* | { xargs rm; }', 'ls x* | ( xargs rm )', 'ls x* |\n\n  ( xargs rm )']) {
     for (const opts of [undefined, { keepSubst: true }]) {
@@ -319,13 +319,13 @@ test('Segments_PipeBeforeNewlineGroupOrSubshell_KeepsPipe', () => {
       assert.equal(s[1].texto, 'xargs rm', JSON.stringify(cmd));
     }
   }
-  // lo que no es tubería sigue como antes (capturado de main en T3)
+  // lo que no es tubería sigue igual (como en T3)
   assert.deepEqual(segmentos('a && (b)')[0], { texto: 'a', sep: '(' });
   assert.deepEqual(segmentos('(a) | b').map((x) => x.sep), ['|', '']);
 });
 
-// #4 (REGRESIÓN) — `>!` y `>>!` de zsh (como `>|`): el partidor los leía como `>` con destino `!`, y el destino real
-// quedaba como argumento del programa.
+// `>!` y `>>!` de zsh (como `>|`): si el partidor los leyera como `>` con destino `!`, el destino real
+// quedaría como argumento del programa.
 test('ParseSimpleCommand_ZshClobberRedirections', () => {
   const casos = { 'echo x >! f': '>!', 'echo x >>! f': '>>!', 'echo x >>| f': '>>|', 'echo x &>! f': '&>!', 'echo x >&! f': '>&!', 'echo x >&| f': '>&|' };
   for (const [cmd, op] of Object.entries(casos)) {
@@ -333,14 +333,14 @@ test('ParseSimpleCommand_ZshClobberRedirections', () => {
     assert.deepEqual(p.words, ['echo', 'x'], cmd);
     assert.deepEqual(p.redirections.map((r) => [r.op, r.target, r.write]), [[op, 'f', true]], cmd);
   }
-  // el `|` de `>|` no es una tubería (venía de antes de la story: el partidor cortaba `echo x >` | `f`)
+  // el `|` de `>|` no es una tubería (el partidor no corta `echo x >` | `f`)
   assert.deepEqual(segmentos('echo x >| f; ls').map((x) => x.texto), ['echo x >| f', 'ls']);
   assert.deepEqual(segmentos('echo x >>| f && ls').map((x) => x.texto), ['echo x >>| f', 'ls']);
   assert.deepEqual(segmentos('echo x \\>| wc').map((x) => [x.texto, x.sep]), [['echo x \\>', '|'], ['wc', '']], 'escapado sí es tubería');
 });
 
-// #11 (REGRESIÓN) — con el presupuesto agotado, la lectura gruesa cambiaba cada lista por UN `*` que no cruza `/`: el
-// nombre entero, con su carpeta, adentro de una alternativa, desaparecía (AC 15).
+// Con el presupuesto agotado, la lectura gruesa no puede cambiar cada lista por UN `*` que no cruza `/`: el
+// nombre entero, con su carpeta, adentro de una alternativa, desaparecería.
 test('ExpandWord_BudgetExhausted_CoarseReadingKeepsSlashAlternatives', () => {
   const r = expandWord('h/{sub/name.json,{1..5000}}', { budget: new ExpansionBudget() });
   assert.equal(r.exhausted, true);
@@ -357,7 +357,7 @@ test('ExpandWord_BudgetExhausted_CoarseReadingKeepsSlashAlternatives', () => {
   assert.ok(r3.patterns.some((p) => sp.patternToLiteral(p).includes('sub/name.json')), 'pasado el tope, la palabra cruda');
 });
 
-// #13 (anterior a la story) — la continuación de línea fuera de comillas se volvía un ESPACIO: el shell la quita y une.
+// La continuación de línea fuera de comillas no es un ESPACIO: el shell la quita y une.
 test('Segments_LineContinuation_JoinsTheWord', () => {
   assert.deepEqual(segmentos('rm -f d/na\\\nme.json').map((x) => x.texto), ['rm -f d/name.json']);
   assert.deepEqual(splitWords('rm -f d/na\\\nme.json'), ['rm', '-f', 'd/name.json']);
@@ -366,8 +366,8 @@ test('Segments_LineContinuation_JoinsTheWord', () => {
   assert.deepEqual(segmentos('ls x |\\\n  xargs rm').map((x) => [x.texto, x.sep]), [['ls x', '|'], ['xargs rm', '']]);
 });
 
-// #15 (REGRESIÓN) y #36 — dentro de `${…}` una `{` (o un `(`) suelta no anida: bash cierra en la primera `}` y ejecuta lo
-// que sigue. El partidor se quedaba en la palabra hasta el final y pegaba el comando siguiente a un `echo`.
+// Dentro de `${…}` una `{` (o un `(`) suelta no anida: bash cierra en la primera `}` y ejecuta lo
+// que sigue. Si el partidor se quedara en la palabra hasta el final, pegaría el comando siguiente a un `echo`.
 test('Segments_UnbalancedBraceInsideParam_ClosesAtFirstBrace', () => {
   assert.deepEqual(segmentos('echo ${x:-{}; rm -f d/y').map((x) => x.texto), ['echo ${x:-{}', 'rm -f d/y']);
   assert.deepEqual(segmentos('cat ${x:-{} && rm -f d/y').map((x) => [x.texto, x.sep]), [['cat ${x:-{}', '&&'], ['rm -f d/y', '']]);
@@ -379,7 +379,7 @@ test('Segments_UnbalancedBraceInsideParam_ClosesAtFirstBrace', () => {
   assert.deepEqual(segmentos('echo ${(j:,:)a} ; ls').map((x) => x.texto), ['echo ${(j:,:)a}', 'ls']);
 });
 
-// #20 (REGRESIÓN) — las opciones pasadas al INVOCAR el shell (`zsh -o braceccl -c`, `zsh --braceccl`, `bash -O extglob`)
+// Las opciones pasadas al INVOCAR el shell (`zsh -o braceccl -c`, `zsh --braceccl`, `bash -O extglob`)
 // cambian cómo lee las palabras, igual que un `setopt`.
 test('ChangesShellOptions_ShellInvokedWithOptions', () => {
   for (const c of ["zsh -o braceccl -c 'x'", "zsh --braceccl -c 'x'", "bash -O extglob -c 'x'", "sudo zsh -o kshglob -c 'x'",
@@ -392,8 +392,8 @@ test('ChangesShellOptions_ShellInvokedWithOptions', () => {
   }
 });
 
-// #26 — llaves anidadas a 1.600 niveles (unos 6 KB) desbordaban la pila del expansor: la falla salía del expansor como una
-// excepción cualquiera y el freno caía en su red de emergencia. Ahora es indecidible, con la palabra cruda como patrón.
+// Llaves anidadas a 1.600 niveles (unos 6 KB) no pueden desbordar la pila del expansor: la falla saldría como una
+// excepción cualquiera y el freno caería en su red de emergencia. Es indecidible, con la palabra cruda como patrón.
 test('ExpandWord_DeepNesting_IsUndecidable_NotACrash', () => {
   const w = 'a/pre-{index,' + '{x,'.repeat(1600) + 'y' + '}'.repeat(1600) + '}.json';
   let r;
@@ -403,7 +403,7 @@ test('ExpandWord_DeepNesting_IsUndecidable_NotACrash', () => {
   assert.doesNotThrow(() => expandWord('a(' + '(x|'.repeat(1600) + 'y' + ')'.repeat(1600) + ')'));
 });
 
-// #28 — una reasignación seguida, sin ramas, REEMPLAZA el valor (como el shell). La unión queda para las ramas (`if`,
+// Una reasignación seguida, sin ramas, REEMPLAZA el valor (como el shell). La unión queda para las ramas (`if`,
 // `case`, lazos), para `&&`/`||` y para lo que corre en una subshell. Quien llama dice qué separador venía antes.
 test('ApplyAssignments_SequentialReassignment_Replaces', () => {
   const ctx = { vars: {}, arrays: {} };
@@ -430,8 +430,8 @@ test('ApplyAssignments_SequentialReassignment_Replaces', () => {
   assert.deepEqual(lits('$a', commandVariables('a=(p q); a=(r)')), ['r'], 'un arreglo también');
 });
 
-// #31 (REGRESIÓN) — una comilla `'` después de un `\$` escapado o de `$$` no es `$'…'`: ahí `\'` no escapa. El partidor
-// abría una comilla que el shell no abre y escondía los comandos de después.
+// Una comilla `'` después de un `\$` escapado o de `$$` no es `$'…'`: ahí `\'` no escapa. Si el partidor
+// abriera una comilla que el shell no abre, escondería los comandos de después.
 test('Segments_EscapedDollarBeforeQuote_IsNotAnsiC', () => {
   for (const pre of ["echo \\$'a\\'", "echo $$'a\\'"]) {
     const cmd = `${pre} ; rm -f d/y ; echo 'x'`;
@@ -443,7 +443,7 @@ test('Segments_EscapedDollarBeforeQuote_IsNotAnsiC', () => {
   assert.deepEqual(lits("$'a\\'b'"), ["a'b"], "en un $'…' de verdad, \\' sigue escapando");
 });
 
-// #32 — `\ #`, `\;#` y `\>&`: lo escapado no es separador ni comentario ni redirección.
+// `\ #`, `\;#` y `\>&`: lo escapado no es separador ni comentario ni redirección.
 test('Segments_EscapedCharBeforeHashOrAmpersand', () => {
   assert.deepEqual(segmentos('echo a\\ #; rm -f d/y').map((x) => x.texto), ['echo a\\ #', 'rm -f d/y']);
   assert.deepEqual(segmentos('echo a\\;#; rm -f d/y').map((x) => x.texto), ['echo a\\;#', 'rm -f d/y']);
@@ -454,8 +454,8 @@ test('Segments_EscapedCharBeforeHashOrAmpersand', () => {
   assert.deepEqual(segmentos('cmd 2>&1 && ls').map((x) => x.texto), ['cmd 2>&1', 'ls']);
 });
 
-// #33 (REGRESIÓN) — los patrones de un `case` adentro de `"$(…)"`: su `)` cerraba la sustitución, y lo que seguía quedaba
-// como texto entre comillas que nadie juzgaba.
+// Los patrones de un `case` adentro de `"$(…)"`: su `)` no cierra la sustitución; si la cerrara, lo que sigue quedaría
+// como texto entre comillas que nadie juzgaría.
 test('Segments_CaseInsideQuotedSubstitution', () => {
   const cmd = 'echo "$(case a in a) echo x;; esac; rm -f d/y)"';
   const k = segmentos(cmd, { keepSubst: true });
@@ -468,7 +468,7 @@ test('Segments_CaseInsideQuotedSubstitution', () => {
   assert.deepEqual(sp.substitutions('x "$(case a in (a) echo x;; esac)" z'), ['case a in (a) echo x;; esac']);
 });
 
-// #34 — `$'…'` en zsh: un escape que no conoce deja la letra (`\p` → `p`), y `\c` deja la `c`. La unión con bash.
+// `$'…'` en zsh: un escape que no conoce deja la letra (`\p` → `p`), y `\c` deja la `c`. Se unen las dos lecturas con bash.
 test('ExpandWord_AnsiC_ZshReading', () => {
   assert.deepEqual(lits("$'\\p'x"), ['\\px', 'px']);
   assert.deepEqual(lits("d/$'pro\\c'du.json"), ['d/pro\\cdu.json', 'd/procdu.json'].sort());
@@ -477,7 +477,7 @@ test('ExpandWord_AnsiC_ZshReading', () => {
   assert.deepEqual(lits("$'\\x41\\101\\t'"), ['AA\t'], 'lo que los dos leen igual, una sola vez');
 });
 
-// #35 — bash 3.2: una `}` sin coma ni rango en su grupo NO cierra la llave; sigue hasta la próxima `}` después de una coma
+// Bash 3.2: una `}` sin coma ni rango en su grupo NO cierra la llave; sigue hasta la próxima `}` después de una coma
 // (`{x},y}` da `x}` y `y`). La referencia son los shells de verdad, como en T1.
 const PALABRAS_BASH_SIN_COMA = ['a{x},y}b', 'p{a}q,r}s', '{x},y}{c,d}', 'p{x\\},y}', 'p{a{x},y}', 'q{x}{a,b}', 'w{x},{a,b}'];
 test('ExpandWord_BashBraceWithoutComma_KeepsScanning', { skip: OFF_REFERENCE }, () => {
@@ -501,7 +501,7 @@ test('ExpandWord_BashBraceWithoutComma_KeepsScanning', { skip: OFF_REFERENCE }, 
   assert.ok(Date.now() - t0 < 500); assert.equal(r.undecidable, true);
 });
 
-// #37 — una barra invertida al final del comando entero: el shell la descarta (continuación contra el fin del texto).
+// Una barra invertida al final del comando entero: el shell la descarta (continuación contra el fin del texto).
 test('Segments_TrailingBackslash_IsDropped', () => {
   assert.deepEqual(segmentos('cd d && rm -f name.json\\').map((x) => x.texto), ['cd d', 'rm -f name.json']);
   assert.deepEqual(splitWords('rm -f name.json\\'), ['rm', '-f', 'name.json']);
@@ -510,9 +510,9 @@ test('Segments_TrailingBackslash_IsDropped', () => {
   assert.deepEqual(lits('a\\\\'), ['a\\'], 'una barra escapada sigue siendo una barra');
 });
 
-// #39 (REGRESIÓN) — una subshell pegada a una palabra reservada (`then(…)`, `do(…)`, `time(…)`, `!(…)`) o detrás de la
-// cabeza de un comando compuesto de zsh (`repeat N (…)`, `for i (…) (…)`, `if [[ … ]] (…)`, `coproc (…)`) se leía como un
-// paréntesis de palabra: el comando de adentro no salía como segmento y TODAS las reglas del freno quedaban ciegas.
+// Una subshell pegada a una palabra reservada (`then(…)`, `do(…)`, `time(…)`, `!(…)`) o detrás de la
+// cabeza de un comando compuesto de zsh (`repeat N (…)`, `for i (…) (…)`, `if [[ … ]] (…)`, `coproc (…)`) se leería como un
+// paréntesis de palabra: el comando de adentro no saldría como segmento y TODAS las reglas del freno quedarían ciegas.
 test('Segments_SubshellAfterReservedWordOrZshHead', () => {
   const casos = ['repeat 1 (rm -f d/y)', 'if false; then :; else(rm -f d/y); fi', 'for i in 1; do(rm -f d/y); done',
     'for i (1) (rm -f d/y)', 'coproc (rm -f d/y)', 'if [[ -n x ]] (rm -f d/y)', 'time(rm -f d/y)', '!(rm -f d/y)',
@@ -522,8 +522,8 @@ test('Segments_SubshellAfterReservedWordOrZshHead', () => {
       assert.ok(segmentos(cmd, opts).some((x) => x.texto === 'rm -f d/y'), `${cmd}: ${JSON.stringify(segmentos(cmd, opts))}`);
     }
   }
-  // la variante del repaso de seguridad: `time` con su bandera y `coproc` con su nombre (y las cabezas `select`/`foreach`
-  // de zsh) también abren una subshell; antes el subshell entero quedaba como UNA palabra, el programa del comando
+  // variantes: `time` con su bandera y `coproc` con su nombre (y las cabezas `select`/`foreach`
+  // de zsh) también abren una subshell; si no, la subshell entera queda como UNA palabra, el programa del comando
   for (const cmd of ['time -p (rm -f d/y)', 'time -p -- (rm -f d/y)', 'coproc p (rm -f d/y)', 'coproc P2 (rm -f d/y)',
     'select x (a b) (rm -f d/y)', 'foreach x (a b) (rm -f d/y)', 'if true; then time -p (rm -f d/y); fi']) {
     for (const opts of [undefined, { keepSubst: true }]) {

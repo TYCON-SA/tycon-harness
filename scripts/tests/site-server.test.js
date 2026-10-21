@@ -1,6 +1,6 @@
 'use strict';
 /*
- * site-server.test.js — el arranque, la tabla de rutas, la vida y la imagen del sitio de la organización (story 2.23).
+ * site-server.test.js — el arranque, la tabla de rutas, la vida y la imagen del sitio de la organización.
  *
  * T1  Arranque_FaltaUnaVariable_NoArranca          T19 Rutas_SinDeclaracion_NoArranca
  * T2  Arranque_RegistroSinSecretos                 T33 PrimerMantenedor_SoloSinLista
@@ -10,9 +10,9 @@
  * T20 Salir_UnaPuerta_NoVuelveAEntrar            T21 Salir_DetrasDelCandado_PasaPorAuthLogout
  * T22 Saliste_SinSesion_SinRedireccion_EnElIdioma
  *
- * Y de la story 2.28: T29 2.28-Healthz_FrenadoSinUltimoBueno.
+ * Y T29 2.28-Healthz_FrenadoSinUltimoBueno.
  * T6b Imagen_TodoLoQueCargaElSitioEstaAdentro: lo que el sitio carga (sus módulos y los lectores de Configuración) está
- *     en lo que copia la imagen (caso 2026-10-16: el lector de la paridad quedó afuera y la sección decía «no sabe leer»).
+ *     en lo que copia la imagen (si un lector queda afuera de la imagen, la sección dice «no sabe leer»).
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -83,7 +83,7 @@ test('T2 Arranque_RegistroSinSecretos', async () => {
     for (const v of ['SITE_SESSION_KEY', 'SITE_OIDC_CLIENT_SECRET', 'SITE_OPERATIONS_TOKEN', 'SITE_MAILBOX_SAS']) assert.match(s, new RegExp(`${v}: presente`), v);
     for (const v of [env.SITE_SESSION_KEY, env.SITE_OIDC_CLIENT_SECRET, env.SITE_OPERATIONS_TOKEN, env.SITE_MAILBOX_SAS, new URLSearchParams(env.SITE_MAILBOX_SAS).get('sig')]) assert.ok(!s.includes(v), 'ningún secreto en el registro');
     // el `git clone` que el sitio lanzó puede seguir escribiendo un instante después de cerrarlo: el borrado reintenta
-    // (cola de merge del 2026-10-16: ENOTEMPTY en operaciones/.git, al azar)
+    // (sin eso, el borrado falla al azar con ENOTEMPTY en operaciones/.git)
   } finally { await p.cerrar(); fs.rmSync(env.SITE_DATA_DIR, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
 });
 
@@ -106,7 +106,7 @@ test('T6 Imagen_DockerfileSinPrivilegiosNiPruebas', () => {
   for (const p of ['scripts/tests', '.git', '**/*.pem', '**/*.key', '**/.env']) assert.ok(ign.split('\n').map((l) => l.trim()).includes(p), `${p} fuera de la imagen`);
   assert.doesNotMatch(df, /ARG\s+\S*(TOKEN|SECRET|KEY|SAS)|ENV\s+\S*(TOKEN|SECRET|SAS)/i, 'ningún secreto en la imagen');
   // /data nace del usuario del sitio ANTES de pasar a él, y es un VOLUME: un volumen con nombre nuevo hereda ese dueño
-  // (2026-10-16: con `-v sitio-datos:/data` el volumen nacía de root y el sitio no podía clonar ni guardar: se frenaba)
+  // (sin eso, con `-v sitio-datos:/data` el volumen nace de root y el sitio no puede clonar ni guardar: se frena)
   const iUser = df.search(/^USER\s+node\b/m);
   const iData = df.search(/^RUN\s+mkdir -p \/data && chown node:node \/data\b/m);
   assert.ok(iData >= 0 && iData < iUser, '/data con dueño node, antes del USER');
@@ -284,10 +284,10 @@ test('T42 Vida_NoDependeDelFreno', async () => {
   }
 });
 
-// La espera POR FUENTE (2026-10-16, pedido del dueño): con el repo de operaciones leído y el buzón todavía bajando, las
+// La espera POR FUENTE: con el repo de operaciones leído y el buzón todavía bajando, las
 // pestañas que no lo necesitan se ven (Inicio, Proyectos, Arnés, Configuración); /readyz sigue esperando todo. Y la página
 // de carga se recarga sola (meta refresh: la política del sitio no deja scripts en línea).
-// 🔴 rojo previo: «Cargando» en todas las pestañas hasta tener todas las fuentes, y sin recargarse
+// 🔴 rojo: «Cargando» en todas las pestañas hasta tener todas las fuentes, y sin recargarse
 test('T43 Carga_PorFuente_YLaPaginaDeCargaSeRecarga', async () => {
   const emisor = await arrancarEmisor();
   const lead = 'lead@acme.example';
@@ -318,7 +318,7 @@ test('T43 Carga_PorFuente_YLaPaginaDeCargaSeRecarga', async () => {
   } finally { await emisor.cerrar(); }
 });
 
-// story 2.28 (AC 10): el sitio que arranca con operations.json roto y sin último bueno se frena enseguida, para todos
+// El sitio que arranca con operations.json roto y sin último bueno se frena enseguida, para todos
 test('T29 2.28-Healthz_FrenadoSinUltimoBueno', { skip: !hayHttpBackend() && !process.env.CI && 'git http-backend no está en esta máquina (en CI no se saltea)' }, async () => {
   const sources = require(path.join(SITE, 'sources.js'));
   const LEAD = 'lead@acme.example';

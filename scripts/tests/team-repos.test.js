@@ -1,11 +1,11 @@
 'use strict';
 
 /**
- * team-repos.test.js — los dos lectores de la configuración de una organización (story 8.26, tanda J):
+ * team-repos.test.js — los dos lectores de la configuración de una organización:
  * scripts/lib/team-repos.js (`team-repos.json`, en el perfil del equipo: dónde vive cada repo del arnés) y
- * scripts/lib/operations-config.js (`operations.json`, en el repo de operaciones: responsables, revisores y, desde la
- * story 2.28, quién es quién — `people`, con la huella del correo informado y nunca el correo en claro). Desde la story
- * 7.28, `team-repos.json` trae además `merge_suites`: dónde corren las suites completas al mergear cada repo. El lector
+ * scripts/lib/operations-config.js (`operations.json`, en el repo de operaciones: responsables, revisores y
+ * quién es quién — `people`, con la huella del correo informado y nunca el correo en claro). `team-repos.json`
+ * trae además `merge_suites`: dónde corren las suites completas al mergear cada repo. El lector
  * dice además qué trabajo declarado pasa el tope obligatorio y qué pasa con un repo sin pipeline.
  *
  * Lo que no se puede perder: un archivo válido da sus datos; uno con problemas no da datos a medias y cada problema
@@ -117,9 +117,8 @@ test('TeamRepos_Url_AndPrivateRepoRef', () => {
 });
 
 test('TeamRepos_HarnessCopies_MeasuresOnlyMaintainers (DEF-8.30-copias-del-arnes-en-team-repos)', () => {
-  // EL CASO: las métricas de la noche sabían qué repos son copias del arnés por una variable de la definición
-  // (HARNESS_COPIES, y HARNESS_MEASURED_COPY la que cuenta). Ahora lo dice este archivo: de las copias se mide sólo la
-  // de mantenimiento, comparada sin mayúsculas y con su organización; las demás se saltean.
+  // Las métricas de la noche saben qué repos son copias del arnés por lo que dice este archivo: de las copias se mide
+  // sólo la de mantenimiento, comparada sin mayúsculas y con su organización; las demás se saltean.
   const d = goodTeam();
   d.harness_copies = [azure('Old-Harness'), { ...azure('MAINTAINERS'), org: 'ACME' }, azure('maintainers', 'Other Project'), github('mirror')];
   assert.deepStrictEqual(TEAM.harnessCopies(d, 'azure'), [
@@ -176,7 +175,7 @@ test('OperationsConfig_Problems_CarryTheKeyPath', () => {
   assert.strictEqual(OPS.load(path.join(os.tmpdir(), 'no-such-operations.json')).couldNotRead, true);
 });
 
-// ── story 2.28: quién es quién. `people` ata cada máquina a una persona (la confirma un mantenedor) y corrige dónde
+// ── quién es quién. `people` ata cada máquina a una persona (la confirma un mantenedor) y corrige dónde
 // trabaja cada una. Guarda la huella del correo que informa la máquina, nunca el correo en claro.
 const HUELLA = (correo) => require('crypto').createHash('sha256').update(String(correo).trim().toLowerCase()).digest('hex');
 const opsWith = (people) => ({ version: 1, owners: { default: 'lead@acme.example' }, ...(people === undefined ? {} : { people }) });
@@ -252,7 +251,7 @@ test('T6 OperationsConfig_People_ProblemasConRuta (2.28, AC 6)', () => {
     'people.projects.no-es-correo',
   ].sort());
   // dos claves de projects que son el mismo correo con otras mayúsculas o espacios: una se perdería en silencio
-  // 🔴 rojo previo (pase adversarial, clase 8): validaba, y `dondeTrabaja` aplicaba una sola de las dos correcciones.
+  // 🔴 Si validara, `dondeTrabaja` aplicaría una sola de las dos correcciones.
   const r2 = goodPeople();
   r2.projects['Dev.Uno@Acme.Example'] = { remove: ['Beta'] };
   assert.deepStrictEqual(paths(OPS.parse(JSON.stringify(opsWith(r2)))), ['people.projects.Dev.Uno@Acme.Example']);
@@ -302,7 +301,7 @@ test('T23 OperationsConfig_FormaMaquina_IgualQueUploadRuns (2.28, AC 5)', () => 
   assert.doesNotMatch(src, /require\(\s*[^'"`\s]/, 'ningún require con una ruta armada');
 });
 
-// story 2.23: la clave `site` (mantenedores, buzón y refresco del sitio de la organización)
+// La clave `site` (mantenedores, buzón y refresco del sitio de la organización)
 const goodSite = () => ({
   maintainers: ['lead@acme.example', 'Second@Acme.Example'],
   mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs', threads: false },
@@ -401,7 +400,7 @@ test('T17 OperationsConfig_NotifySinSecretos @story-2.30 @ac-14', () => {
   assert.doesNotMatch(JSON.stringify(wh.problems), /hooks\.example/, 'el problema no repite el valor');
 });
 
-// ── story 7.28: dónde corren las suites completas al mergear (`merge_suites`) ─────────────────────────────────────────
+// ── dónde corren las suites completas al mergear (`merge_suites`) ─────────────────────────────────────────
 const withSuites = (merge_suites) => Object.assign(goodTeam(), { merge_suites });
 
 test('T17 TeamRepos_MergeSuites_ValidAbsentAndProblemsWithPath @story-7.28 @ac-11', () => {
@@ -419,7 +418,7 @@ test('T17 TeamRepos_MergeSuites_ValidAbsentAndProblemsWithPath @story-7.28 @ac-1
   assert.deepStrictEqual(ok.problems, []);
   assert.strictEqual(ok.data.merge_suites.repos[0].full_tests_pipeline, 94);
   assert.deepStrictEqual(TEAM.MERGE_RULES, ['automatico', 'siempre-en-la-maquina', 'confiar-en-el-servidor']);
-  // vacío y sin la clave: válidos, igual que hoy
+  // vacío y sin la clave: válidos
   assert.strictEqual(TEAM.parse(JSON.stringify(withSuites({}))).ok, true);
   assert.strictEqual(TEAM.parse(JSON.stringify(goodTeam())).ok, true);
 
@@ -438,7 +437,7 @@ test('T17 TeamRepos_MergeSuites_ValidAbsentAndProblemsWithPath @story-7.28 @ac-1
     [{ repos: [{ repo: github('a'), full_tests_pipeline: 7 }] }, ['merge_suites.repos.0.full_tests_pipeline']],
     [{ repos: [{ repo: azure('a'), full_tests_pipeline: 0 }] }, ['merge_suites.repos.0.full_tests_pipeline']],
     [{ repos: [{ repo: azure('a'), full_tests_pipeline: 1.5 }] }, ['merge_suites.repos.0.full_tests_pipeline']],
-    // 🔴 pase adversarial: en Azure un texto de dígitos es un id, y «0» (o «00») no es ninguno
+    // 🔴 En Azure un texto de dígitos es un id, y «0» (o «00») no es ninguno
     [{ repos: [{ repo: azure('a'), full_tests_pipeline: '0' }] }, ['merge_suites.repos.0.full_tests_pipeline']],
     [{ repos: [{ repo: azure('a'), full_tests_pipeline: '00' }] }, ['merge_suites.repos.0.full_tests_pipeline']],
     [{ repos: [{ repo: github('Widgets'), rule: 'automatico' }, { repo: github('widgets'), full_tests_pipeline: 'x' }] }, ['merge_suites.repos.1.repo']],
@@ -472,7 +471,7 @@ test('T18 TeamRepos_MergeSuitesFor_DeclaredEntryDefaultAndMatch @story-7.28 @ac-
   assert.deepStrictEqual(TEAM.mergeSuitesFor(goodTeam(), azureId), { declared: false, rule: null, ruleFrom: null, pipeline: null });
 });
 
-// ── story 7.29: la clave `models` (los modelos de cada trabajo del pipeline) ───────────────────────────────────────
+// ── la clave `models` (los modelos de cada trabajo del pipeline) ───────────────────────────────────────
 const withModels = (models, base = goodTeam()) => Object.assign(base, { models });
 const githubTeam = () => ({ version: 1, public: github('harness'), profile: github('harness-profile'), operations: github('harness-ops') });
 
@@ -489,12 +488,12 @@ test('T20 TeamRepos_Models_ValidoAusenteYProblemasDeSeccion @story-7.29 @ac-3', 
     assert.deepStrictEqual(r.data.models, full);
     assert.equal(r.sectionProblems, undefined, 'sin problemas de sección no hay sectionProblems');
   }
-  // sin `models`: igual que hoy, y la versión no cambia
+  // sin `models`: la versión no cambia
   const sin = TEAM.parse(JSON.stringify(goodTeam()));
   assert.equal(sin.ok, true);
   assert.equal('models' in sin.data, false);
   assert.equal(TEAM.VERSION, 1);
-  // cada problema del AC 3, con su ruta, aparte: ok y data como sin models, y data sin models
+  // cada problema, con su ruta, aparte: ok y data como sin models, y data sin models
   const casos = [
     [[], 'models'],
     [{ ceiling: 'sonnet' }, 'models.ceiling'],
@@ -540,7 +539,7 @@ test('T21 TeamRepos_NombresDeModelos_IgualesAModelsJs @story-7.29 @ac-3', () => 
   assert.deepStrictEqual(TEAM.MODEL_LEVELS, LEVELS);
 });
 
-// ── story 2.22: `deployments` (de qué sistema se leen los despliegues de cada producto) ─────────────────────────────
+// ── `deployments` (de qué sistema se leen los despliegues de cada producto) ─────────────────────────────
 const opsWithDeployments = (deployments) => ({ version: 1, owners: { default: 'lead@acme.example' }, deployments });
 
 test('T1 OperationsConfig_DeploymentsFormaValida (2.22, AC 1)', () => {
@@ -652,19 +651,19 @@ test('T12 OperationsConfig_UnderscoreComment_NotUnknown @story-7.35 @ac-7 — un
   // ni el destino del aviso: un «_webhook» o un «_chat» con texto es una credencial, no un comentario
   const destino = OPS.parse(JSON.stringify({ version: 1, owners: { default: 'octocat' }, notify: { channel: 'telegram', _webhook: 'x', _chat: 'y' } }));
   assert.deepStrictEqual(paths(destino), ['notify._chat', 'notify._webhook']);
-  // un «_» con forma de secreto, o que guarda un objeto, se revisa como cualquier clave (revisor de seguridad, vuelta 1)
+  // un «_» con forma de secreto, o que guarda un objeto, se revisa como cualquier clave
   const tokenEnCampos = OPS.parse(JSON.stringify(opsWithDeployments({ provider: 'github', products: {
     Acme: { _token: 'x', production: [{ repo: 'acme/app', environment: 'prd' }] },
   } })));
   assert.deepStrictEqual(paths(tokenEnCampos), ['deployments.products.Acme._token']);
   const objetoEnSitio = OPS.parse(JSON.stringify({ version: 1, owners: { default: 'octocat' }, site: { _comment: { token: 'x' } } }));
   assert.ok(paths(objetoEnSitio).includes('site._comment.token'), JSON.stringify(objetoEnSitio.problems));
-  // «__» sigue siendo comentario con cualquier valor, como antes (pase adversarial: la primera versión lo rompía)...
+  // «__» sigue siendo comentario con cualquier valor...
   const viejo = OPS.parse(JSON.stringify(opsWithDeployments({ __doc: { a: 1 }, __notas_sobre_tasas: 3, provider: 'github', products: {
     Acme: { __doc: null, production: [{ repo: 'acme/app', environment: 'prd' }] },
   } })));
   assert.deepStrictEqual(paths(viejo), []);
-  // (con «__» un nombre que nombra la palabra sigue siendo un comentario: lo cuida 2.23-T4 de este archivo)
+  // (con «__» un nombre que nombra la palabra sigue siendo un comentario: lo cuida la prueba SiteConSecretoEsProblema de este archivo)
 });
 
 test('T13 TeamRepos_UnderscoreComment_NotUnknown @story-7.35 @ac-8 — un «_» en coverage, wait_notice, stack y la raíz es un comentario', () => {

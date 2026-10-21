@@ -1,6 +1,6 @@
 'use strict';
 /*
- * site-views.test.js — las pestañas Inicio, Proyectos y Arnés del sitio de la organización (story 2.23, AC 17 a 23).
+ * site-views.test.js — las pestañas Inicio, Proyectos y Arnés del sitio de la organización.
  *
  * T28 Inicio_Mantenedor_LeeNoMide            T31 Cabeceras_EnCadaRespuestaConDatos
  * T29 Proyectos_ParadasCompartidosYDespliegues T34 Inicio_Dev_SoloLoSuyo_ConCantidades
@@ -48,7 +48,7 @@ function modeloCompleto(extra = {}) {
     ...extra,
   };
 }
-// lo informado por la máquina del modelo (2.28): no informa correo y nadie la confirmó, así que es una por confirmar
+// lo informado por la máquina del modelo: no informa correo y nadie la confirmó, así que es una por confirmar
 const filasDe = (modelo) => views.filasInicioMantenedor(access.filtrar(modelo, { rol: 'maintainer', email: LEAD }, access.crearReglas({ config: {}, modelo, personas: { informados: H.informados({ 'maq-x-12345678': null }), repos: null } })), { ahora: AHORA });
 const fila = (filas, clave) => filas.find((f) => f.clave === clave);
 
@@ -160,7 +160,7 @@ test('T31 Cabeceras_EnCadaRespuestaConDatos', async () => {
       assert.match(res.headers['strict-transport-security'] || '', /max-age=\d+/, `${r.path}: HSTS con dirección https`);
       if (/html/.test(res.headers['content-type'])) {
         // lo que se CARGA (src, srcset, <link href>, url() de un estilo) nunca viene de afuera; un <a href> a la
-        // plataforma es navegación y la story lo pide (los enlaces de PR, pedidos y «dónde se decide»)
+        // plataforma es navegación y se espera (los enlaces de PR, pedidos y «dónde se decide»)
         const valor = `\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>"']+))`;   // con comillas dobles, simples o sin comillas
         const cargas = [...res.texto.matchAll(new RegExp(`[\\s/](?:src|srcset)${valor}`, 'gi')), ...res.texto.matchAll(new RegExp(`<link\\b[^>]*[\\s/]href${valor}`, 'gi')), ...res.texto.matchAll(/url\(\s*['"]?([^'")]+)/g)]
           .map((m) => [m[0], m[1] ?? m[2] ?? m[3]]);
@@ -199,7 +199,7 @@ test('T34 Inicio_Dev_SoloLoSuyo_ConCantidades', async () => {
       pedidos: leida({ lista: [{ id: 501, proyecto: 'Proyecto X', tipo: 'Bug', estado: 'Active', asignado: A, dias: 3, enlace: 'https://dev.example/wi/501', dependencias: true }] }),
     });
     const quien = access.quienPide({ email: A, sub: 'x' }, { config: CONFIG });
-    // lo informado, leído del mismo espejo con el lector real (2.28)
+    // lo informado, leído del mismo espejo con el lector real
     const personas = { informados: require(path.join(H.SITE, '..', 'lib', 'people.js')).leerCorreosInformados(espejo), repos: null };
     const m = access.filtrar(modelo, quien, access.crearReglas({ config: CONFIG, modelo, personas }));
     const ini = views.inicioDev(m, { ahora: AHORA });
@@ -213,7 +213,7 @@ test('T34 Inicio_Dev_SoloLoSuyo_ConCantidades', async () => {
   } finally { fs.rmSync(espejo, { recursive: true, force: true }); }
 });
 
-// ── Pase adversarial de la story 2.23, vuelta 1: el cruce con datos como los reales ─────────────────────────────
+// ── el cruce con datos como los reales ──────────────────────────────────────────────────────────────────────────
 function modeloDesde(extra, { ahora = AHORA } = {}) {
   const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'site-r6-'));
   const clon = path.join(raiz, 'operaciones');
@@ -247,7 +247,7 @@ test('2.23-R6 Proyectos_CruceConDatosReales', () => {
   assert.strictEqual(viejo.medido, false, 'una foto por proyecto de hace dos semanas no cuenta como al día');
   assert.match(viejo.motivo, /vieja|2026-10-01/);
   // la vista de una persona cruza igual
-  // dónde trabaja A lo da people.js (2.28): acá, el producto agregado en la configuración
+  // dónde trabaja A lo da people.js: acá, el producto agregado en la configuración
   const cfg = { version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD] }, people: { machines: { 'maq-a-11111111': { person: A } }, projects: { [A]: { add: ['Producto Uno'] } } } };
   const persona = access.filtrar(m, access.quienPide({ email: A, sub: 's' }, { config: cfg }), access.crearReglas({ config: cfg, modelo: m, personas: { informados: null, repos: [] } }));
   assert.deepStrictEqual(persona.dependencias.vivas_por_proyecto, { 'Proyecto Uno': 3 });
@@ -284,7 +284,7 @@ test('2.23-R8 Version_LaFilaDelArnes', () => {
   assert.strictEqual(views.filasArnes({}, {}).find((l) => l.clave === 'version').estado, 'no_medido', 'sin version.json, no medido');
 });
 
-// story 2.25, Task 6: la paridad en Proyectos, sólo cantidades por repo. El archivo se lee de un repo de operaciones de
+// La paridad en Proyectos, sólo cantidades por repo. El archivo se lee de un repo de operaciones de
 // verdad (sources.js) para que la lista blanca de la lectura quede probada: `divergencias[]` no llega al modelo.
 test('T45 Proyectos_ParidadSoloCantidades', () => {
   const MARCA = 'RASGO-LIBRE-MARCADOR';
@@ -332,7 +332,7 @@ test('T45 Proyectos_ParidadSoloCantidades', () => {
     const sinProd = views.filasProyectos(access.filtrar(armar({ estado: 'sin_productos', motivo: null, por_ruta: [], divergencias: [] }), { rol: 'maintainer' }, access.crearReglas({}))).filas;
     assert.strictEqual(sinProd[0].paridad.estado, 'no_medido');
     assert.match(sinProd[0].paridad.texto, /sin productos/);
-    // sin el archivo de hoy
+    // sin el archivo
     const sinArchivo = views.filasProyectos(access.filtrar(armar(null), { rol: 'maintainer' }, access.crearReglas({}))).filas;
     assert.strictEqual(sinArchivo[0].paridad.texto, 'no medido: la noche no dejó la paridad');
   } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
@@ -382,7 +382,7 @@ test('T10 Producto_SinFotoDeAnoche_SigueNoMedido', () => {
   const zeta = views.filasProyectos(viejas).filas.find((f) => f.producto === 'Zeta');
   assert.strictEqual(zeta.sin_stories, undefined);
   assert.strictEqual(zeta.motivo, 'sin foto de sus proyectos');
-  // sin ninguna foto (la fuente no medida): la frase de la fuente, como hoy
+  // sin ninguna foto (la fuente no medida): la frase de la fuente, sin cambios
   const nada = views.filasProyectos(modeloSinStories({ estado: 'no_medido', codigo: 'sin_foto', motivo: null, fecha: null, lista: [] })).filas.find((f) => f.producto === 'Zeta');
   assert.ok(!nada.sin_stories);
   assert.notStrictEqual(nada.motivo, 'sus repos no usan stories del arnés');

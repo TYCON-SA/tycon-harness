@@ -1,6 +1,6 @@
 'use strict';
 /*
- * site-oidc.test.js — el inicio de sesión del sitio de la organización (story 2.23, AC 5 a 9).
+ * site-oidc.test.js — el inicio de sesión del sitio de la organización.
  *
  * Contra un emisor OIDC local (lib/fake-oidc.js) y un GitHub local (lib/fake-github-oauth.js): sin red. Cada chequeo
  * del id_token tiene su token armado mal, y cada proveedor su forma de limitarse a la organización.
@@ -166,7 +166,7 @@ test('T11 Callback_StateYNonceDeUnSoloUso', async () => {
   });
 });
 
-// revisión de seguridad (vuelta 1): lo que llega en la dirección de vuelta lo controla cualquiera; al registro va limpio
+// lo que llega en la dirección de vuelta lo controla cualquiera; al registro va limpio
 test('2.23-R9 Callback_ErrorDelEmisorNoEnsuciaElRegistro', async () => {
   await conEmisor({}, async ({ h }) => {
     const it = H.intentoDe(await h.pedir('/'));
@@ -418,7 +418,7 @@ test('T9 2.40-Microsoft_UnInquilino_ComoHoy @story-2.40 @ac-7 @ac-12', () => {
   const { validarConfiguracion } = require(path.join(SITE, 'server.js'));
   const org = UUID();
   const ms = (extra) => validarConfiguracion(H.envBase({ SITE_AUTH_PROVIDER: 'microsoft', ...extra }));
-  // el modo de hoy, explícito o por defecto: los emisores de varios inquilinos no arrancan
+  // el modo por defecto o el explícito: los emisores de varios inquilinos no arrancan
   for (const modo of [undefined, 'organization']) {
     const r = ms({ SITE_OIDC_ISSUER: 'https://login.microsoftonline.com/common/v2.0', ...(modo ? { SITE_AUTH_MICROSOFT_ACCOUNTS: modo } : {}) });
     assert.strictEqual(r.ok, false, String(modo));
@@ -446,7 +446,7 @@ test('T16 2.40-Microsoft_InvitadoDelDirectorio @story-2.40 @ac-7b @ac-12', async
     // la puerta de los invitados va al emisor del inquilino de la organización
     const ida = await h.pedir('/auth/login?via=invitado');
     assert.ok(ida.headers.location.startsWith(`${emisor.deInquilino(org)}/authorize`), ida.headers.location);
-    // un invitado con cuenta personal entra por ahí, con el correo verificado, como hoy
+    // un invitado con cuenta personal entra por ahí, con el correo verificado
     const oid = UUID();
     const r = await ingresarPor(h, emisor, '/auth/login?via=invitado', { sub: 's', oid, tid: org, email: 'Invitada@Personal.example', xms_edov: true, acct: 1 });
     assert.ok(r.sesion, r.res.texto);

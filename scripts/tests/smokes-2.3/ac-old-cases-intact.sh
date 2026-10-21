@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# ac-old-cases-intact.sh — T15 · AC 12 de la story 2.3: los casos que YA existían en las cuatro
-# suites que esta story toca no se editan; sólo se AGREGAN casos.
+# ac-old-cases-intact.sh — T15: los casos que YA existen en las cuatro
+# suites tocadas no se editan; sólo se AGREGAN casos.
 #
-# 🔴 Es smoke y no caso de suite a propósito (mismo criterio que el T15 de la 2.2): sólo se puede
+# 🔴 Es smoke y no caso de suite a propósito: sólo se puede
 #    juzgar comparando contra `origin/main`, y en cuanto la story se mergea el diff se vacía y el
 #    caso pasaría para siempre sin poder ponerse rojo. Un control que no puede fallar es peor que
 #    no tenerlo. Se corre UNA vez antes del merge y su exit code real queda en el registro.
@@ -14,8 +14,7 @@ RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$RAIZ" || exit 1
 
 # 🔴 La base es `origin/main` FIJA, sin variable de entorno que la cambie: apuntada a `HEAD` este
-#    chequeo daría «0 líneas borradas» siempre — un control apagable por config
-#    (`guides/decisions/controles-apagables-por-config-2026-08-25.md`). Lo cazó el revisor de spec-first.
+#    chequeo daría «0 líneas borradas» siempre — un control apagable por config.
 BASE="origin/main"
 ARCHIVOS=(
   scripts/tests/lint-story-detector.test.sh
@@ -37,7 +36,7 @@ git rev-parse --verify --quiet "$BASE" >/dev/null || {
 
 for f in "${ARCHIVOS[@]}"; do
   [ -f "$f" ] || { mal "$f" "no existe"; continue; }
-  # Líneas BORRADAS respecto de la base (las agregadas son el trabajo de esta story).
+  # Líneas BORRADAS respecto de la base (las agregadas son el trabajo nuevo).
   BORRADAS="$(git diff "$BASE" -- "$f" | grep -c '^-[^-]' || true)"
   if [ "${BORRADAS:-0}" -eq 0 ]; then
     ok "$(basename "$f"): 0 líneas borradas"
@@ -50,8 +49,8 @@ done
 echo "  — y las cuatro suites en verde —"
 for f in "${ARCHIVOS[@]}"; do
   # 🔴 El `*)` no es decoración: sin él, un archivo con otra extensión no corre NADA y `RC=$?`
-  #    toma el exit del comando ANTERIOR — o sea «✅ verde» sin haber ejecutado una línea. Lo cazó
-  #    el pase adversarial posterior al merge; es la forma exacta del «verde que significa no miré».
+  #    toma el exit del comando ANTERIOR — o sea «✅ verde» sin haber ejecutado una línea. Es la
+  #    forma exacta del «verde que significa no miré».
   case "$f" in
     *.sh) bash "$f" >/dev/null 2>&1; RC=$? ;;
     *.js) node --test "$f" >/dev/null 2>&1; RC=$? ;;
@@ -60,7 +59,7 @@ for f in "${ARCHIVOS[@]}"; do
   [ "$RC" -eq 0 ] && ok "$(basename "$f") verde" || mal "$(basename "$f") en rojo" "exit $RC"
 done
 # `dashboard.test.sh` regenera el artefacto del tablero (su caso C-11): se restaura, porque el
-# tablero se genera desde el checkout canónico y no desde un clon (gotcha de la 2.2).
+# tablero se genera desde el checkout canónico y no desde un clon.
 git checkout -q -- artifacts/ 2>/dev/null || true
 
 echo

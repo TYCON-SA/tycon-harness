@@ -2,7 +2,7 @@
 'use strict';
 /**
  * update-probe.js — una máquina del equipo instalada con el estado del VIERNES, que el lunes abre una sesión y se
- * actualiza sola a lo de HOY (story 8.17, tanda W0 · escenario `update`).
+ * actualiza sola a lo de HOY (escenario `update`).
  *
  * POR QUÉ EXISTE. Todos los devs del equipo usan Windows, y cada máquina se actualiza sola al abrir una sesión. Lo
  * que entró esta semana nunca corrió en un Windows: carpetas mudadas, archivos renombrados, un mecanismo de
@@ -35,7 +35,7 @@
  *
  * DOS CAMINOS, SEGÚN LO QUE SE ENSAYA. Lo de arriba es la máquina del viernes sobre el ÁRBOL INTERNO (clones, y la
  * marca de la que arranca). Cuando el commit que se ensaya es una COPIA PUBLICADA (trae `version.json` en su raíz) la
- * máquina de antes se instala con la página pública de instalación y la versión nueva se publica en el GitHub de
+ * máquina inicial se instala con la página pública de instalación y la versión nueva se publica en el GitHub de
  * juguete: eso vive en `guided-update.js`, no necesita una marca, y este guion sólo elige.
  *
  * CÓMO FALLA. Una máquina que no se actualiza, que pierde un hook o que queda rota es un HECHO del reporte, con su
@@ -60,7 +60,7 @@ const VARIANTS = Object.freeze([
 ]);
 // en qué orden se abren las sesiones de hoy: [nombre, forma de lanzar]. La cuarta está para `settings:rewritten-every-session`,
 // que compara las dos últimas: la tercera puede ser la primera en que corre el programa nuevo (su escritura de
-// settings.json es una sola vez), y con sólo tres esa primera escritura se leía como «cada arranque lo reescribe».
+// settings.json es una sola vez), y con sólo tres esa primera escritura se leería como «cada arranque lo reescribe».
 const SESSIONS = Object.freeze([['hoy-1', 'bash-c'], ['hoy-2', 'default-shell'], ['hoy-3', 'default-shell'], ['hoy-4', 'default-shell']]);
 
 const short = (sha) => (sha ? String(sha).slice(0, 10) : '—');
@@ -70,7 +70,7 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
   if (!state) return { status: L.STATUS.error, reason: `no pude medir: ${lab} no trae los remotos del laboratorio (${T.STATE_FILE}): los deja «rehearse.js init»` };
   const gitEnv = L.labEnv(path.join(lab, 'users'), { base: baseEnv, platform });
   const { harness, skills } = state.remotes;
-  // SE ELIGE POR LO QUE EL ÁRBOL ES. Sobre una copia publicada (trae `version.json` en su raíz) la máquina de antes se
+  // SE ELIGE POR LO QUE EL ÁRBOL ES. Sobre una copia publicada (trae `version.json` en su raíz) la máquina inicial se
   // instala con la página pública y la versión nueva se publica en el GitHub de juguete (`guided-update.js`): no hace
   // falta una marca. El árbol interno sigue como siempre: la máquina del viernes, con el texto del alta de ese commit.
   const published = T.fileAt(harness.dir, harness.target, PUBLISHED_MARK, gitEnv);
@@ -81,7 +81,7 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
   if (!harness.friday) return { status: L.STATUS.notMeasured, reason: 'sin una marca de la que arrancar no hay un «antes» que instalar: este escenario necesita la marca (una etiqueta o un commit del repo que se ensaya)' };
   const read = T.readTeamDoc(state, harness.friday, gitEnv);
   if (read.problem) return { status: L.STATUS.error, reason: `no pude medir: en el commit del viernes, ${read.problem}` };
-  // el alta sin clon (story 8.23, tanda E): no trae urls ni línea de arranque que ensayar; su ensayo contra el GitHub de
+  // el alta sin clon: no trae urls ni línea de arranque que ensayar; su ensayo contra el GitHub de
   // juguete está pendiente — NO MEDIDO con el motivo, no seguir de largo como si fuera de dos clones. Y una copia
   // publicada no lleva el texto del alta del equipo: tampoco hay qué ensayar
   if (read.not_measured) return { status: L.STATUS.notMeasured, reason: `en el commit del viernes, ${read.not_measured}` };
@@ -187,8 +187,8 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
     try { if (facts.after.settings.exists && !facts.after.settings.problem) L.writeJsonAtomic(path.join(out, `settings-update-${v.id}-today.json`), T.redactor(doc, baseEnv)(T.readJsonLoose(settings).value)); } catch (_) { /* la copia es de cortesía */ }
     facts.differences = T.comparePhotos(facts.before, facts.after, { sessions, smokeBefore: facts.before_smoke, smokeAfter: facts.after_smoke, target });
     for (const d of facts.differences) add(v, d);
-    // el Node propio del arnés (story 8.39, AC 27): después de las sesiones de hoy, los hooks tienen que correr con él,
-    // salvo que esté apagado o que la carpeta no entre en la forma de Windows (decisión 22, con su motivo en doctor)
+    // el Node propio del arnés: después de las sesiones de hoy, los hooks tienen que correr con él,
+    // salvo que esté apagado o que la carpeta no entre en la forma de Windows (con su motivo en doctor)
     const hn = facts.after.doctor && facts.after.doctor.harness_node;
     facts.harness_node = hn || null;
     if (hn && hn.own !== true && hn.switch !== 'off' && !/no se puede escribir en un comando/.test(String(hn.reason || ''))) {

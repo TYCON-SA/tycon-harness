@@ -2,11 +2,11 @@
 
 /**
  * windows-guided-lab.test.js — los ensayos que siguen la página pública de Windows, con EL PROGRAMA DE VERDAD, en modo
- * de laboratorio (story 8.28: T7, T11 y T16).
+ * de laboratorio (T7, T11 y T16).
  *
  * `windows-guided.test.js` prueba las piezas con datos de juguete. Acá se corre el recorrido entero, como lo corre el
  * pipeline de Windows: `rehearse.js init`, `step onboarding`, `step count-hooks` y `step update`, sobre un ÁRBOL
- * PUBLICADO DE JUGUETE armado desde el árbol de trabajo —los archivos versionados (y los nuevos de la story que
+ * PUBLICADO DE JUGUETE armado desde el árbol de trabajo —los archivos versionados (y los nuevos que
  * todavía no lo están), sin los dos archivos de la capa del equipo, con `version.json`, y con la página y el guion de
  * entrada puestos en su destino con el nombre de un repo de juguete—. Lo sirve el GitHub de juguete como repo PÚBLICO,
  * sin permiso (lo declara la ficha, `lab.auth: none`: la página baja el guion sin credencial); la capa del equipo, el
@@ -25,7 +25,7 @@
  * Para leer el reporte que deja: TYCON_WINDOWS_GUIDED_KEEP=<carpeta> env -u NODE_TEST_CONTEXT node --test …
  */
 
-// story 8.39 (decisión 20): esta suite lanza harness.js install: no baja el Node del arnés de nodejs.org (lo heredan)
+// Esta suite lanza harness.js install: no baja el Node del arnés de nodejs.org (lo heredan)
 process.env.TYCON_HARNESS_NODE = '0';
 const test = require('node:test');
 const assert = require('node:assert');
@@ -55,7 +55,7 @@ const git = (args, cwd) => spawnSync('git', ['-c', 'user.name=lab', '-c', 'user.
 const node = (args, opts = {}) => spawnSync(process.execPath, args, Object.assign({ encoding: 'utf8', timeout: 20 * 60 * 1000, maxBuffer: 64 * 1024 * 1024 }, opts));
 const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
 const TOY = Object.freeze({ org: 'acme-lab', repo: 'arnes-lab', version: '2030.06.01.1' });
-// los archivos de la story que todavía pueden no estar versionados, nombrados uno por uno: nada de lo suelto que haya
+// los archivos nuevos que todavía pueden no estar versionados, nombrados uno por uno: nada de lo suelto que haya
 // en la carpeta de quien prueba entra al árbol de juguete
 const NEW_FILES = Object.freeze([
   'scripts/tests/windows/guided-steps.json', 'scripts/tests/windows/guided-page.js', 'scripts/tests/windows/toy-lab.js', 'scripts/tests/windows/release-photo.js',
@@ -66,7 +66,7 @@ const NOT_PUBLISHED = Object.freeze(['perfil-equipo.json', 'scripts/metrics/corr
 
 /**
  * El árbol publicado de juguete, como un repo de git de un commit: `{ tree, commit }`. Es la única imitación del
- * exportador de toda la story, y vive sólo en esta suite.
+ * exportador de todo el recorrido, y vive sólo en esta suite.
  */
 function toyPublishedTree(base) {
   const tree = path.join(base, 'toy-published');
@@ -102,7 +102,7 @@ function toyPublishedTree(base) {
   put('version.json', `{ "version": "${TOY.version}" }\n`);
   put('getting-started/windows.md', named(fs.readFileSync(path.join(source, 'getting-started', 'windows.md'), 'utf8')));
   put('scripts/setup/get-harness.ps1', named(fs.readFileSync(path.join(source, 'scripts', 'setup', 'get-harness.ps1'), 'utf8')));
-  // (story 8.40, AC 43) el instalador del paquete trae el repo público de fábrica: en el árbol de juguete, el de juguete
+  // el instalador del paquete trae el repo público de fábrica: en el árbol de juguete, el de juguete
   if (placed) put('scripts/setup/npm/index.js', named(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'npm', 'index.js'), 'utf8')));
   put('scripts/setup/public-remotes.json', `{ "remotes": ["https://github.com/${TOY.org}/${TOY.repo}"] }\n`);
   assert.strictEqual(git(['init', '-q', '-b', 'main'], tree).status, 0);
@@ -161,8 +161,8 @@ test('GuidedInstall_LabRun_ToyPublishedTree_FollowsThePage', { skip: SKIP }, () 
   for (const c of ran) assert.ok(Number.isInteger(c.exit) && typeof c.seconds === 'number', `${c.step}: «${c.text}» con su código y sus segundos`);
   const by = (id) => v.commands.filter((c) => c.step === id);
   assert.deepStrictEqual([by('plan')[0].exit, by('install')[0].exit], [0, 0], `el plan y la instalación salieron 0: ${by('plan')[0].err} · ${by('install')[0].err}`);
-  // en una máquina limpia la instalación ya puso la carpeta global de hooks de git (2026-10-14: antes no la ponía nadie, y
-  // una máquina instalada o mudada sin este paso quedaba sin el freno antes de publicar): el primero sale 0 con la carpeta
+  // en una máquina limpia la instalación ya puso la carpeta global de hooks de git (sin este paso, una
+  // máquina instalada o mudada queda sin el freno antes de publicar): el primero sale 0 con la carpeta
   // del arnés, y el segundo —el de la página para cuando no devuelve nada— no hace falta
   const gh = by('git-hooks');
   assert.strictEqual(gh[0].exit, 0, `el primero sale 0: la instalación ya la puso (${gh[0].out || gh[0].err})`);
@@ -172,7 +172,7 @@ test('GuidedInstall_LabRun_ToyPublishedTree_FollowsThePage', { skip: SKIP }, () 
   // lo que no se puede comparar fuera de Windows se dice, no se saltea callado
   assert.ok(by('verify').some((c) => /sólo resuelve en Windows/.test(c.not_comparable || '')), 'el diagnóstico por la ruta con barras invertidas: no comparable, con su motivo');
   assert.ok(by('verify').some((c) => (c.expected || []).some((e) => e.comparable === false && /skills de terceros/.test(e.why))), 'la cuenta de skills: no comparable, con su motivo');
-  // los dos cambios del laboratorio (story 8.40, AC 43): el paquete armado del commit que se ensaya en lugar del
+  // los dos cambios del laboratorio: el paquete armado del commit que se ensaya en lugar del
   // publicado, en el plan y en la instalación; y la respuesta de la persona («s» a ¿Instalo?), sólo en la instalación
   for (const id of ['plan', 'install']) {
     assert.strictEqual(by(id)[0].lab_changed.from, 'npx @tyconsa/harness@latest', `${id}: el paquete publicado`);
@@ -215,7 +215,7 @@ test('GuidedInstall_LabRun_ToyPublishedTree_FollowsThePage', { skip: SKIP }, () 
   // tiene un tope de 60 consultas por hora por conexión; nada se pidió al GitHub de verdad (todo pasó por el de juguete)
   assert.ok(requests.length >= 3 && requests.some((r) => r.host === 'git' && /info\/refs/.test(r.path)) && requests.some((r) => r.host === 'codeload'), `el GitHub de juguete atendió la punta y el comprimido (${requests.length} pedidos)`);
   assert.deepStrictEqual(requests.filter((r) => /\/contents\/scripts\/setup\/get-harness\./.test(r.path)).map((r) => r.path), [], 'nadie bajó el guion de entrada');
-  // la línea npx lee la versión del crudo de juguete: sin él, el cliente completaba el crudo con el de verdad y salía a
+  // la línea npx lee la versión del crudo de juguete: sin él, el cliente completaría el crudo con el de verdad y saldría a
   // la red (las sesiones de después preguntan por la API, sin las rutas públicas: ésas no cuentan acá)
   assert.ok(requests.some((r) => r.host === 'raw' && /\/version\.json$/.test(r.path)), 'el crudo de juguete atendió el version.json');
   assert.deepStrictEqual(requests.filter((r) => r.auth).map((r) => r.path), [], 'ningún pedido llevó credencial');
@@ -290,10 +290,10 @@ test('GuidedTeam_LabRun_ToyAzure_StacksTheLayer', { skip: SKIP }, () => {
   assert.match(team.doctor_line, /^capa del equipo equipo-lab /);
   assert.deepStrictEqual(team.doctor.fail, []);
   for (const id of ['guided:team:install-failed', 'guided:team:not-stacked', 'guided:team:version-without-team', 'guided:team:doctor-line']) assert.ok(!s.findings.some((f) => f.id.endsWith(id)), `sin ${id}`);
-  // 8.29 · T15 GuidedTeam_LabRun_PacksComeFromProfile @story-8.29 @ac-13 — los paquetes: la página instala con
-  // `--packs all` y eso queda escrito en la máquina, pero desde la story 8.29 el perfil del equipo gana al leer. Con el
-  // programa de verdad: los paquetes figuran entre lo que sale del perfil y el ensayo ya no informa el hallazgo
-  // (hasta la 8.29 salía en toda corrida con la capa: `guided:team:profile-origin`, «packs.default: maquina»)
+  // T15 GuidedTeam_LabRun_PacksComeFromProfile @story-8.29 @ac-13 — los paquetes: la página instala con
+  // `--packs all` y eso queda escrito en la máquina, pero el perfil del equipo gana al leer. Con el
+  // programa de verdad: los paquetes figuran entre lo que sale del perfil y el ensayo no informa el hallazgo
+  // (sin esa regla saldría en toda corrida con la capa: `guided:team:profile-origin`, «packs.default: maquina»)
   assert.ok(!s.findings.some((f) => f.id.endsWith('guided:team:profile-origin')), 'sin guided:team:profile-origin: los paquetes salen del perfil');
   assert.strictEqual(team.profile_origin['packs.default'], 'perfil', 'los paquetes, con origen en el perfil');
   // y una sesión más, con su espera
@@ -308,7 +308,7 @@ test('GuidedTeam_LabRun_ToyAzure_StacksTheLayer', { skip: SKIP }, () => {
   assert.strictEqual(guided.answers.usable, true);
   // un laboratorio que no se pudo armar se puede volver a intentar (los dos intentos del principio fueron sobre el
   // mismo); uno que YA corrió, no: es de una sola corrida, y repetir el paso —o pedir otra variante— se dice claro
-  // (antes fallaba más adelante, con un motivo vacío). Va al final: pisa el resultado del paso
+  // (sin esa regla, fallaría más adelante, con un motivo vacío). Va al final: pisa el resultado del paso
   const again = step(onboarding, 'onboarding', ['--only', 'guided-ps51']);
   assert.deepStrictEqual([again.status, /ya corrió sobre este laboratorio/.test(again.reason), /init/.test(again.reason)], ['error', true, true], again.reason);
   assert.strictEqual(mainOf(onboarding), toy.commit);
@@ -316,7 +316,7 @@ test('GuidedTeam_LabRun_ToyAzure_StacksTheLayer', { skip: SKIP }, () => {
 
 // ═══ T16 · la máquina con una versión anterior llega sola a la nueva ═══════════════════════════════════════════
 
-// ═══ story 8.41 · la prueba de actualización de los paquetes (T11-T16, T42) ═════════════════════════════════════
+// ═══ la prueba de actualización de los paquetes (T11-T16, T42) ═════════════════════════════════════
 // La versión de antes trae una skill y un agente de juguete en el núcleo; la nueva los trae dentro de un paquete. Con la
 // capa del equipo (perfil en `all`, y un paquete entero que llega por la capa) la lista de piezas de después es la de
 // antes; sin capa (`none`) salen sólo las del paquete, y se dice en una línea. Corre también en el 182 (`update`).
@@ -390,7 +390,7 @@ test('GuidedUpdate_LabRun_Auto_ReachesTheNewVersionByItself', { skip: SKIP }, ()
   assert.ok(s.findings.some((f) => f.id === 'update:auto:version:changed' && f.severity === 'noise'));
   assert.deepStrictEqual([v.answers.updated, v.answers.version.before, v.answers.version.after], [true, before, published]);
   assert.match(s.facts.same_machine_note, /pwsh-missing/);
-  // la máquina instalada sin la carpeta global de hooks de git (2026-10-14): con la capa (política auto) el arranque se la
+  // la máquina instalada sin la carpeta global de hooks de git: con la capa (política auto) el arranque se la
   // pone sola, con el pre-push del arnés adentro — nadie corrió nada
   assert.strictEqual(v.hooks_path_before.value, null, `antes de las sesiones no tenía carpeta global: ${JSON.stringify(v.hooks_path_before)}`);
   assert.ok(v.hooks_path_after.same && v.hooks_path_after.pre_push, `después de las sesiones tiene la del arnés con el pre-push: ${JSON.stringify(v.hooks_path_after)}`);

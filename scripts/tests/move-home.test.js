@@ -1,18 +1,18 @@
 'use strict';
-// move-home.test.js — lo que el pase adversarial de la tanda D de la story 8.23 confirmó sobre la mudanza, como pruebas
+// move-home.test.js — casos de borde de la mudanza, como pruebas
 // unitarias de scripts/setup/harness/move-home.js (sin red, sin instalar nada: un HOME de juguete por caso).
 //
-//   T28u · dropOldHooks: una carpeta del clon CON ESPACIO entre comillas se reconoce igual (clase 1); un hook del clon cuyo
-//          guion la versión nueva no trae se SACA y se dice, no se re-apunta a un archivo inexistente (clase 5).
-//   T28v · stageConfigMoved funde las secciones con su nombre viejo (los del mapa de renombres) con las de hoy sin
-//          dejar las dos formas (clase 12); un tycon.json que es un ENLACE a otro archivo se funde igual (clase 9), y uno
+//   T28u · dropOldHooks: una carpeta del clon CON ESPACIO entre comillas se reconoce igual; un hook del clon cuyo
+//          guion la versión nueva no trae se SACA y se dice, no se re-apunta a un archivo inexistente.
+//   T28v · stageConfigMoved funde las secciones con su nombre viejo (los del mapa de renombres) con las actuales sin
+//          dejar las dos formas; un tycon.json que es un ENLACE a otro archivo se funde igual, y uno
 //          que ya apunta a la configuración propia no cuenta como pendiente.
 //   T28w · advance: una excepción adentro de una etapa vuelve como { ok: false } (quien llama deshace y anota failed), y la
-//          copia de seguridad tomada en la carpeta vieja se sigue en memoria cuando el estado se muda (clases 2, 10, 14, 16).
+//          copia de seguridad tomada en la carpeta vieja se sigue en memoria cuando el estado se muda.
 //
 //   T46  · la casa propia sale del CONTEXTO: con un ambiente sin TYCON_HOME, `places`, el diario, `undo` y
-//          `classifyPersonal` miran `<home pedida>/.tycon`, nunca la de quien corre (2026-10-11: el `undo` de T42, con el
-//          ambiente vacío, borró el arnés instalado de una máquina mudada).
+//          `classifyPersonal` miran `<home pedida>/.tycon`, nunca la de quien corre (sin esto, el `undo` de T42, con el
+//          ambiente vacío, borraría el arnés instalado de una máquina mudada).
 //   T47  · nada de esta suite intentó escribir ni borrar en la casa real (scripts/tests/lib/real-home-guard.js, que
 //          además lo frena). Va última.
 //
@@ -28,7 +28,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const MH = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'move-home.js'));
 const TH = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'));
 // Los nombres viejos de sección (rutas, integraciones) los traduce el mapa de renombres, que es del equipo: la copia pública
-// no lo trae, y ahí nadie tiene una configuración con nombres viejos. Sin el mapa, T28v funde con los nombres de hoy.
+// no lo trae, y ahí nadie tiene una configuración con nombres viejos. Sin el mapa, T28v funde con los nombres actuales.
 const WITH_MAP = fs.existsSync(path.join(ROOT, 'scripts', 'lib', 'renames.json'));
 
 const casa = (name) => {
@@ -81,7 +81,7 @@ test('T28v ConfigMerge_OldSectionNamesNormalized_LinkedConfigMergedUnlessAlready
   const oldConfig = TH.legacyConfigFile(home);
   const newConfig = TH.ownPaths({ env }).config;
   // (a) nombres viejos de sección en la vieja, nuevos en la propia: una sola forma al final, y lo de la propia gana.
-  // Sin el mapa de renombres (copia pública) la vieja usa los nombres de hoy: se mide la fusión, no la traducción
+  // Sin el mapa de renombres (copia pública) la vieja usa los nombres actuales: se mide la fusión, no la traducción
   writeJson(oldConfig, WITH_MAP
     ? { rutas: { repos: '/repos' }, integraciones: { clockify: true, engram: false }, install: { profile: 'full' } }
     : { paths: { repos: '/repos' }, integrations: { clockify: true, engram: false }, install: { profile: 'full' } });
@@ -112,7 +112,7 @@ test('T28v ConfigMerge_OldSectionNamesNormalized_LinkedConfigMergedUnlessAlready
 });
 
 test('T28x CodexReapprovalNote_OnlyWithCodexPlugged_SameTextAsPlan', () => {
-  // AC 28: el aviso que va a la salida de migrate y al aviso del estado (lo que ve el arranque siguiente) — el mismo que
+  // El aviso que va a la salida de migrate y al aviso del estado (lo que ve el arranque siguiente) — el mismo que
   // anticipa el plan (--dry-run, T27 de harness-move-home.test.sh)
   const note = MH.__test.codexReapprovalNote({ tools: ['claude', 'codex'] });
   assert.match(note, /Codex te va a pedir aprobar sus hooks una vez/);
@@ -148,7 +148,7 @@ test('T28w Advance_StageThrows_ReturnsNotOk_SnapshotFollowsMovedState', () => {
   assert.equal(fs.lstatSync(oldState).isSymbolicLink(), true, 'el estado ya se había mudado (un enlace atrás)');
 });
 
-// T42 (story 8.23, tanda F · AC 40): la clasificación de lo que hay en la carpeta vieja de agent-skills — del arnés (está
+// T42: la clasificación de lo que hay en la carpeta vieja de agent-skills — del arnés (está
 // en el clon que corre), de terceros (destino o enlace en third-party-skills.json) o PERSONAL (lo demás: .trash, un archivo
 // suelto, un enlace sano o colgado) — y la línea del plan con N y M.
 test('T42 ClassifyOldEntries_Harness_ThirdParty_Personal_TrashFilesAndLinksArePersonal', () => {
@@ -157,7 +157,7 @@ test('T42 ClassifyOldEntries_Harness_ThirdParty_Personal_TrashFilesAndLinksArePe
   const old = path.join(home, '.claude', 'agent-skills');
   const mk = (...p) => fs.mkdirSync(path.join(...p), { recursive: true });
   const put = (f, t = 'x\n') => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, t); };
-  // el clon que corre hoy: una skill y un revisor del arnés, y el manifiesto de terceros con UN destino y un enlace
+  // el clon que corre: una skill y un revisor del arnés, y el manifiesto de terceros con UN destino y un enlace
   put(path.join(tree, 'skills', 'tycon-pipeline', 'SKILL.md'));
   put(path.join(tree, 'agents', 'tycon-revisor.md'));
   writeJson(path.join(tree, 'scripts', 'publishing', 'third-party-skills.json'), { third_party: [
@@ -264,14 +264,14 @@ test('T42 ClassifyOldEntries_Harness_ThirdParty_Personal_TrashFilesAndLinksArePe
   assert.ok(said.some((l) => /no pude volver lo personal de agents/.test(l) && l.includes(path.join(home7, '.claude', 'agents')) && l.includes(aside)), `el registro dice el lado y dónde mirar: ${said.join(' | ')}`);
   assert.ok(said.some((l) => /1 skills tuyo\(s\) vuelven a/.test(l)), 'y que skills sí volvió');
 
-  // (pase adversarial, clases 2 y 11) ~/.claude/skills es un enlace a una carpeta PROPIA del dev (no pasa por agent-skills):
+  // ~/.claude/skills es un enlace a una carpeta PROPIA del dev (no pasa por agent-skills):
   // no se toca; lo suyo cuenta «ya en su lugar» y lo personal va adentro
   const home8 = casa('t42h');
   const old8 = path.join(home8, '.claude', 'agent-skills');
   put(path.join(old8, 'skills', 'tycon-pipeline', 'SKILL.md'));
   put(path.join(old8, 'skills', 'mia', 'SKILL.md'));
   put(path.join(home8, 'mis-skills', 'propia', 'SKILL.md'));
-  put(path.join(home8, 'mis-skills', 'tycon-pipeline', 'SKILL.md'), 'copia del arnés\n');   // una copia del arnés en la propia no es del dev (clase 8)
+  put(path.join(home8, 'mis-skills', 'tycon-pipeline', 'SKILL.md'), 'copia del arnés\n');   // una copia del arnés en la propia no es del dev
   mk(home8, '.claude');
   fs.symlinkSync(path.join(home8, 'mis-skills'), path.join(home8, '.claude', 'skills'));
   const c8 = MH.__test.classifyPersonal({ home: home8, oldSkillsDir: old8, tree });
@@ -290,7 +290,7 @@ test('T42 ClassifyOldEntries_Harness_ThirdParty_Personal_TrashFilesAndLinksArePe
   assert.ok(fs.existsSync(path.join(home8, 'mis-skills', 'propia', 'SKILL.md')), 'lo tuyo sigue');
   assert.deepEqual(j8.personal.skills.moved, ['mia']);
 
-  // (clase 1) un enlace personal se muda con su SENTIDO: relativo → absoluto resuelto desde la carpeta vieja; adentro de la
+  // un enlace personal se muda con su SENTIDO: relativo → absoluto resuelto desde la carpeta vieja; adentro de la
   // carpeta vieja → la apartada; colgado sigue colgado
   const home9 = casa('t42i');
   const old9 = path.join(home9, '.claude', 'agent-skills');
@@ -324,7 +324,7 @@ test('T42 ClassifyOldEntries_Harness_ThirdParty_Personal_TrashFilesAndLinksArePe
   assert.equal(fs.readlinkSync(path.join(old9, 'skills', 'gsap')), '../../../.agents/skills/gsap');
   assert.equal(fs.readlinkSync(path.join(old9, 'skills', 'al-arnes')), './tycon-pipeline', 'el que apuntaba al arnés vuelve con su texto');
 
-  // (clases 3 y 13) agent-skills es un ENLACE a un clon viejo que vive aparte (la transición de la 8.18): lo personal de ese
+  // agent-skills es un ENLACE a un clon viejo que vive aparte (la transición del arnés unificado): lo personal de ese
   // clon se clasifica igual y la etapa lo ENLAZA (de un clon ajeno no se saca nada)
   const home10 = casa('t42j');
   const sep = path.join(home10, 'clon-viejo-de-skills');
@@ -351,7 +351,7 @@ test('T42 ClassifyOldEntries_Harness_ThirdParty_Personal_TrashFilesAndLinksArePe
   assert.equal(fs.lstatSync(path.join(home10, '.claude', 'skills')).isSymbolicLink(), true, 'skills vuelve a ser el enlace de antes');
   assert.ok(fs.existsSync(path.join(sep, 'skills', 'mia', 'SKILL.md')), 'el clon viejo sigue intacto tras deshacer');
 
-  // (seguridad, iter 3) un enlace a una carpeta FUERA de la carpeta de la persona no cuenta como propia: no se escribe ahí, y se dice
+  // (seguridad) un enlace a una carpeta FUERA de la carpeta de la persona no cuenta como propia: no se escribe ahí, y se dice
   const home12 = casa('t42l');
   const afuera = casa('t42l-afuera');
   put(path.join(afuera, 'ajena', 'SKILL.md'));
@@ -363,7 +363,7 @@ test('T42 ClassifyOldEntries_Harness_ThirdParty_Personal_TrashFilesAndLinksArePe
   assert.equal(c12.skills.own, null, 'fuera de tu carpeta no es «tu carpeta propia»');
   assert.ok(c12.problems.some((w) => /apunta fuera de tu carpeta/.test(w)), 'y el plan lo dice');
 
-  // (clases 4, 5 y 12) reanudada tras un corte a mitad de la etapa: el enlace viejo ya no está y la carpeta vacía quedó; el
+  // reanudada tras un corte a mitad de la etapa: el enlace viejo ya no está y la carpeta vacía quedó; el
   // diario trae el destino del enlace desde el plan, y la carpeta cuenta como creada por la mudanza
   const home11 = casa('t42k');
   const aside11 = path.join(home11, '.claude', 'agent-skills.before-migrate-x');
@@ -378,9 +378,9 @@ test('T42 ClassifyOldEntries_Harness_ThirdParty_Personal_TrashFilesAndLinksArePe
   MH.__test.undo(ctx11, j11, {}, { log: () => {}, why: 'prueba' });
   assert.equal(fs.lstatSync(path.join(home11, '.claude', 'skills')).isSymbolicLink(), true, 'el deshacer repone el enlace viejo aunque la etapa se haya cortado');
 
-  // (iter 4) un destino de enlace que no se puede mirar por PERMISO no es «un archivo» ni «no existe»: la etapa falla (y la
+  // un destino de enlace que no se puede mirar por PERMISO no es «un archivo» ni «no existe»: la etapa falla (y la
   // mudanza se deshace) en vez de inventar un enlace de archivo. El caso «readlink falla» no se puede forzar sin simular el
-  // sistema de archivos (prohibido por la story): queda declarado en el AC 40, sin prueba propia
+  // sistema de archivos (prohibido): queda sin prueba propia
   if (process.platform !== 'win32' && typeof process.getuid === 'function' && process.getuid() !== 0) {
     const home13 = casa('t42m');
     const aside13 = path.join(home13, '.claude', 'agent-skills.before-migrate-x');
@@ -412,9 +412,9 @@ test('T42 ClassifyOldEntries_Harness_ThirdParty_Personal_TrashFilesAndLinksArePe
   }
 });
 
-// T45 (story 8.23, tanda G · AC 41): el perfil del equipo del clon pasa a la configuración propia como valores de la
-// máquina. La primera máquina migrada (2026-10-08) quedó con las integraciones, el paquete por defecto y la política de
-// fábrica: la versión bajada no trae perfil-equipo.json y la mudanza no lo fundía.
+// T45: el perfil del equipo del clon pasa a la configuración propia como valores de la
+// máquina. Sin esto, la máquina migrada queda con las integraciones, el paquete por defecto y la política de
+// fábrica: la versión bajada no trae perfil-equipo.json y la mudanza no lo fundiría.
 test('T45 ProfileFold_Classify_MachineWins_TransitionKeysSkipped_LineText', () => {
   const home = casa('t45');
   const env = { TYCON_HOME: path.join(home, '.tycon'), TYCON_ENGRAM: '0' };   // una variable puesta: gana al leer, pero no se escribe
@@ -523,9 +523,9 @@ test('T45 ProfileFold_Classify_MachineWins_TransitionKeysSkipped_LineText', () =
   }
 });
 
-// T45b (pase adversarial de la tanda G, clases 1/3/4/9): el archivo de la máquina con el NOMBRE VIEJO de una clave de
-// integración (nocturnos → nightly) cuenta como «ya lo tenía» y gana; al fundir, el archivo queda con un solo nombre, el de
-// hoy. Se mide sólo mientras el mapa de renombres conozca ese nombre viejo (cuando se retire, el caso se reescribe o se va)
+// T45b: el archivo de la máquina con el NOMBRE VIEJO de una clave de
+// integración (nocturnos → nightly) cuenta como «ya lo tenía» y gana; al fundir, el archivo queda con un solo nombre, el
+// actual. Se mide sólo mientras el mapa de renombres conozca ese nombre viejo (cuando se retire, el caso se reescribe o se va)
 test('T45b ProfileFold_OldKeyNameInMachineFile_CountsAsHad_MergedFileReadable', (t) => {
   {
     const LN = require(path.join(ROOT, 'scripts', 'lib', 'legacy-names.js'));

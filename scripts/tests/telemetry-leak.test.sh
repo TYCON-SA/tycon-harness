@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# 🔴 AISLAMIENTO PRIMERO (story 2.5): HOME falso ANTES de cualquier otra línea que ejecute algo. En la 2.16
-#    el rojo previo de una suite nueva, corrido contra el guion viejo, leyó la configuración REAL de la
-#    máquina y empujó datos de prueba al buzón de verdad. Acá nada puede encontrar un registro real.
+# 🔴 AISLAMIENTO PRIMERO: HOME falso ANTES de cualquier otra línea que ejecute algo. Sin esto, una suite
+#    corrida contra un guion que todavía no la contempla leería la configuración REAL de la máquina y
+#    empujaría datos de prueba al buzón de verdad. Acá nada puede encontrar un registro real.
 HOME="$(mktemp -d)"; export HOME
 #
-# telemetry-leak.test.sh — LA PRUEBA DE FUGA DEL REDUCTOR (story 2.5, condición de entrega).
+# telemetry-leak.test.sh — LA PRUEBA DE FUGA DEL REDUCTOR.
 #
 # Cada máquina sube sus registros de frenos y escapes al buzón (privado, lo lee sólo quien fue autorizado) y el
 # reductor los cuenta para la página del tablero, que ve todo el equipo. Esos registros traen comandos,
@@ -16,10 +16,10 @@ HOME="$(mktemp -d)"; export HOME
 # 🔴 CONTROL POSITIVO: sin él, un reductor que no publica nada pasaría la prueba de fuga. Se exige que
 #    los frenos y escapes sembrados LLEGUEN a la página con su número (sumadas las dos máquinas).
 #
-# Rojo previo verificado (Dev Agent Record de la 2.5): publicar el valor crudo de la dimensión en vez
-# de «otro» → aparecen el nombre de cliente y el comando. Leer timing-history/ → el espía lo ve.
+# Lo que esta prueba atrapa: publicar el valor crudo de la dimensión en vez de «otro» (aparecen el nombre de
+# cliente y el comando), o leer timing-history/ (el espía lo ve).
 #
-# 🔴 STORY 2.9 amplía la prueba a los HALLAZGOS de los revisores. Se siembran, en `findings.json` de repos
+# 🔴 La prueba cubre también los HALLAZGOS de los revisores. Se siembran, en `findings.json` de repos
 #    fabricados, los campos de texto libre (`reason`, `file`) y los del SEGUNDO esquema (`resumen`,
 #    `los_que_mas_pesan`, `verificacion`) con marcadores, y un identificador de regla con nombre de cliente
 #    que TIENE forma válida (`CLIENTESECRETOSA-C1`): pasa el filtro de forma y sólo lo frena la lista
@@ -58,24 +58,24 @@ M_HILO="MARCA-HILO-4411"
 M_TIMING="MARCA-TIMING-4412"
 M_SAFETY="MARCA-SAFETY-4413"
 M_ESTILO="MARCA-ESTILO-4414"
-# story 2.9 — los hallazgos de los revisores
+# los hallazgos de los revisores
 M_PERSONA_NOMBRE="Devito-FugaPersona"
 M_DECISION="DECISION-DEV-FUGA-2291 arreglarlo ahora"
 M_FILE="/Users/fulano/Clientes/SecretoSA/src/Clave.cs"
 M_REGLA_CLIENTE="CLIENTESECRETOSA-C1"
-# 🔴 Sólo se buscan marcadores ÚNICOS. La primera versión buscaba también «contraseña» y «Llavero» y dio
+# 🔴 Sólo se buscan marcadores ÚNICOS. Buscar también «contraseña» y «Llavero» daría
 #    fuga en falso: el tablero ya publica, sin nada sembrado, una nota del propio arnés que usa esas dos
 #    palabras. Un marcador que aparece solo no prueba nada; por eso el resumen lleva su token propio.
 M_RESUMEN="RESUMEN-FUGA-6610 la contraseña de producción del Llavero"
 M_PESAN="PESAN-FUGA-6611"
 M_VERIF="VERIF-FUGA-6612"
-# story 2.8 — la mutación y la guía de QA
+# la mutación y la guía de QA
 M_MUT="MUT-FUGA-3301"
 M_QA="QA-FUGA-3302"
-# 2026-09-17 — la COLA de la salida que `marker.js run-check` guarda al dar rojo. gates.log viaja al
+# la COLA de la salida que `marker.js run-check` guarda al dar rojo. gates.log viaja al
 # buzón; el reductor no debe leer ese campo (lista blanca). Se siembra con correo, ruta del home y cliente.
 M_COLA="COLA-FUGA-8801"
-# story 2.19 — el cambio de git de cada corrida (`<volcado>.cambio.json.gz`): trae código de cliente. Sólo lo
+# el cambio de git de cada corrida (`<volcado>.cambio.json.gz`): trae código de cliente. Sólo lo
 # abre la vista de corridas (privada), y ahí la clave sale tapada; el tablero, el reductor y la poda no lo abren.
 M_GIT="CAMBIO-GIT-FUGA-5550"
 M_CLAVE_GIT="ClaveFuga9981"
@@ -174,11 +174,11 @@ for (const k of ['readFile', 'open', 'readdir']) {
 }
 JS
 
-# ── máquina A: sus repos dejan hallazgos, y el recolector REAL los proyecta (story 2.9) ─────────────
+# ── máquina A: sus repos dejan hallazgos, y el recolector REAL los proyecta ─────────────
 REPOS="${BASE}/repos"
 mkdir -p "${REPOS}/ClienteSecretoSA/.git" "${REPOS}/grupo/anidado/.git"
 # 🔴 Fechas RELATIVAS a hoy: con fechas fijas, en cuatro meses las corridas salen de la ventana del cruce y
-#    el control positivo se pone rojo solo (vuelta 2).
+#    el control positivo se pone rojo solo.
 dia_hace() { python3 -c "import datetime,sys;print((datetime.date.today()-datetime.timedelta(days=int(sys.argv[1]))).strftime(sys.argv[2]))" "$1" "$2"; }
 R1="${REPOS}/ClienteSecretoSA/.advisors/pipeline-runs/9.1-$(dia_hace 6 %Y%m%d)T101010"
 R2="${REPOS}/grupo/anidado/.advisors/pipeline-runs/9.2-$(dia_hace 5 %Y%m%d)T101010"
@@ -204,8 +204,8 @@ json.dump([
 json.dump({"story": "9.3", "resumen": "${M_RESUMEN}", "los_que_mas_pesan": ["${M_PESAN}"],
            "verificacion": "${M_VERIF}", "criticos_abiertos": 0}, open(f"{r3}/findings.json", "w"))
 PY
-# el volcado de la corrida 9.1 en el registro de A: el recolector lo empareja con su carpeta y lo nombra
-# como corrida leída (vuelta 2 — sin eso no hay denominador). La carpeta lleva la hora LOCAL de la máquina.
+# el volcado de una corrida en el registro de A: el recolector lo empareja con su carpeta y lo nombra
+# como corrida leída (sin eso no hay denominador). La carpeta lleva la hora LOCAL de la máquina.
 python3 - "${HOME_A}/.claude/.tycon-pipeline/timing-history/9.1-a.json" "$(dia_hace 6 %Y-%m-%d)" "${REPOS}/ClienteSecretoSA" <<'PY'
 import datetime, json, sys
 ruta, fecha, repo = sys.argv[1:4]
@@ -227,7 +227,7 @@ NOMBRE_A="$(TYCON_MACHINE="${M_PERSONA}" node -e 'console.log(require(process.ar
 mkdir -p "${BASE}/buzon/${NOMBRE_A}"
 # el volcado viaja al buzón como lo deja la subida (lleva la ruta del repo con el nombre del cliente: no puede salir)
 cp "${HOME_A}/.claude/.tycon-pipeline/timing-history/9.1-a.json" "${BASE}/buzon/${NOMBRE_A}/9.1-a.json"
-# story 2.19: el cambio de git también viaja al buzón, al lado de su volcado
+# el cambio de git también viaja al buzón, al lado de su volcado
 cp "${HOME_A}/.claude/.tycon-pipeline/timing-history/2.5-x.cambio.json.gz" "${BASE}/buzon/${NOMBRE_A}/9.1-a.cambio.json.gz"
 HOME="${HOME_A}" TYCON_LOGS_DIR="${BASE}/buzon/${NOMBRE_A}/registros" SPY_LOG="${BASE}/prep.espia" NODE_OPTIONS="--require ${BASE}/espia.js" \
   node -e 'const r = require(process.argv[1]).prepararRegistros(); console.log(JSON.stringify(r)); process.exitCode = r.estado === "preparado" ? 0 : 1' "${RAIZ}/scripts/metrics/upload-runs.js" > "${BASE}/prep.out" 2> "${BASE}/prep.err"
@@ -237,7 +237,7 @@ RC_P=$?
 if grep -E '/lane(/|$)|/timing-history(/|$)|safety-guard\.log|/response-style(/|$)' "${BASE}/prep.espia" >/dev/null 2>&1; then
   mal "la preparación de la subida abrió algo más que los dos registros: $(grep -E '/lane|/timing-history|safety-guard|/response-style' "${BASE}/prep.espia" | head -2 | tr '\n' ' ')"
 else ok "la preparación de la subida sólo lee los cuatro registros (ni lane/, ni timing-history/, ni safety-guard.log)"; fi
-# story 2.28 (T20): el place.json de la máquina A en el espejo trae el correo de git de su dev (un marcador). Lo leen
+# T20: el place.json de la máquina A en el espejo trae el correo de git de su dev (un marcador). Lo leen
 # sólo quienes mantienen; la página del equipo no. Y una carpeta vieja unida, para que el reductor y la poda lean la unión.
 M_OWNER="ZQX-FUGA-CORREO@ejemplo.test"
 printf '{"schema":1,"day":"2026-10-15","owner":{"email":"%s","source":"git-global"},"folder":{"name":"%s","source":"TYCON_MACHINE"}}\n' "${M_OWNER}" "${NOMBRE_A}" > "${BASE}/buzon/${NOMBRE_A}/registros/place.json"
@@ -281,14 +281,14 @@ PY
 [ $? -eq 0 ] && ok "control positivo: la página cuenta 10 bloqueos (8 del control con nombre de cliente + 2 rojos con cola) y 10 escapes de las dos máquinas" || mal "control positivo: lo sembrado no llegó a la página con su número — $(python3 -c "import sys;t=open(sys.argv[1]).read();print(t[:400])" "${BASE}/tablero.out")"
 python3 -c "import json,sys; d=json.load(open(sys.argv[1])); m=d['metricas']; assert m['bloqueos']['porDim']['otro']['num']==8 and m['escapes']['porDim']['otro']['num']==8, m" "${BASE}/b.out" 2>/dev/null \
   && ok "el control con nombre de cliente y el tipo con un comando se contaron como «otro»" || mal "no se contaron como «otro»: $(head -c 400 "${BASE}/b.out")"
-# 2026-09-17 · control positivo de la cola: el rojo con `cola` SE LEYÓ (cuenta como bloqueo de «tests»);
+# control positivo de la cola: el rojo con `cola` SE LEYÓ (cuenta como bloqueo de «tests»);
 # sin esto, un reductor que saltea la línea entera pasaría la fuga sin haber mirado el campo nuevo.
 python3 -c "import json,sys; m=json.load(open(sys.argv[1]))['metricas']; assert m['bloqueos']['porDim']['tests']['num']==2, m['bloqueos']['porDim']" "${BASE}/b.out" 2>/dev/null \
   && ok "control positivo (cola): los 2 rojos con la cola de su salida se contaron como bloqueos de «tests», sin publicar la cola" || mal "control positivo (cola): el rojo con cola no se contó: $(head -c 400 "${BASE}/b.out")"
-# story 2.7 · control positivo del registro nuevo: sin esto, un carril que no llega se leería como «no fugó»
+# control positivo del registro de carriles: sin esto, un carril que no llega se leería como «no fugó»
 python3 -c "import json,sys; c=json.load(open(sys.argv[1]))['metricas']['carriles']['porDim']; assert c['pipeline']['num']==8 and c['otro']['num']==2, c" "${BASE}/b.out" 2>/dev/null \
   && ok "control positivo (2.7): los carriles sembrados llegaron — 8 «pipeline» y el carril con nombre de cliente como «otro»" || mal "control positivo (2.7): los carriles no llegaron: $(head -c 400 "${BASE}/b.out")"
-# story 2.8 · control positivo: la mutación y la guía LLEGARON — sin esto, una métrica que no cuenta nada pasaría la fuga
+# control positivo: la mutación y la guía LLEGARON — sin esto, una métrica que no cuenta nada pasaría la fuga
 python3 -c "import json,sys; m=json.load(open(sys.argv[1]))['metricas']; assert len(m['mutacion_puntaje']['muestras'])==8 and m['qa_guia_estados']['porDim']['otro']['num']==2 and m['qa_guia_estados']['porDim']['presente']['num']==2, m.get('mutacion_puntaje')" "${BASE}/b.out" 2>/dev/null \
   && ok "control positivo (2.8): 8 puntajes de mutación de las dos máquinas, 2 guías presentes y el estado con nombre de cliente como «otro»" || mal "control positivo (2.8): la mutación o la guía no llegaron: $(head -c 400 "${BASE}/b.out")"
 
@@ -302,7 +302,7 @@ for f in "${BASE}/b.espia"; do
 done
 [ "${PROHIBIDO}" -eq 0 ] && ok "T5 el reductor no abre lane/, timing-history/, safety-guard.log, response-style/ ni advisor-runs/"
 
-# ── story 2.9 · control positivo: los hallazgos LLEGARON al cruce, con su número ───────────────────
+# ── control positivo: los hallazgos LLEGARON al cruce, con su número ───────────────────
 python3 - "${BASE}/tablero.out" <<'PY'
 import json, sys
 t = open(sys.argv[1]).read()
@@ -320,7 +320,7 @@ python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert d['fuera_de_
   && ok "el recolector contó 1 fuera de catálogo y 1 de otro esquema, sin nombrarlos" \
   || mal "el recolector no contó lo descartado: $(head -c 300 "${BASE}/rec.out")"
 
-# ── story 2.9 · T22 · ni el reductor NI el cruce abren los findings.json originales ───────────────
+# ── T22 · ni el reductor NI el cruce abren los findings.json originales ───────────────
 for f in "${BASE}/b.espia" "${BASE}/t.espia"; do
   if [ ! -s "${f}" ]; then mal "T22 el espía no anotó nada (${f#${BASE}/}): no se puede afirmar qué abrió"; continue; fi
   if grep -F "${REPOS}" "${f}" >/dev/null; then
@@ -330,8 +330,8 @@ for f in "${BASE}/b.espia" "${BASE}/t.espia"; do
   fi
 done
 
-# ── story 2.19 · T17 · el cambio de git: nadie más que la vista de corridas lo abre, y ahí la clave sale tapada ──
-# 🔴 rojo previo: sin el caso, el tablero o la poda podrían empezar a leer el .cambio.json.gz (código de cliente)
+# ── T17 · el cambio de git: nadie más que la vista de corridas lo abre, y ahí la clave sale tapada ──
+# 🔴 Sin el caso, el tablero o la poda podrían empezar a leer el .cambio.json.gz (código de cliente)
 #    y publicarlo para todo el equipo sin que nada lo marque. Mutación: que el reductor liste y lea los
 #    *.gz del buzón → el espía lo ve.
 ABRIO_CAMBIO=0
@@ -353,7 +353,7 @@ PYC
   || mal "T17 vista de corridas (rc=${RC_C}): ${R_GIT} — $(head -c 200 "${BASE}/corridas.err")"
 for m in "${M_CLAVE_GIT}"; do grep -F "${m}" "${BASE}/corridas.out" "${BASE}/corridas.err" >/dev/null && mal "T17 «${m}» salió por la pantalla de la vista"; done
 
-# ── story 7.1 · el latido de la retrospectiva no saca nada del volcado ni de los hallazgos ──────────
+# ── el latido de la retrospectiva no saca nada del volcado ni de los hallazgos ──────────
 # El archivo que escribe `retro-heartbeat.js` viaja por git (.dashboard/ del arnés). El volcado de la
 # corrida trae rutas absolutas (filesSnapshot), el prompt del dev y mensajes de error; el findings.json
 # trae prosa y rutas. Se siembran los marcadores de arriba en los dos y se exige que el archivo no
@@ -395,7 +395,7 @@ else
   fi
 fi
 
-# ── story 2.28 · T20 · ElCorreoDePlaceNoLlegaALaPaginaDelEquipo (AC 18) ── 🔴 rojo previo: un reductor que lo lee.
+# ── T20 · ElCorreoDePlaceNoLlegaALaPaginaDelEquipo ── 🔴 Atrapa un reductor que lo lee.
 FUGA=0
 for f in ${SALIDAS}; do
   if grep -qiF -- "${M_OWNER}" "${f}" 2>/dev/null; then mal "2.28-T20 el correo de place.json aparece en ${f#${BASE}/}"; FUGA=1; fi
@@ -408,11 +408,11 @@ else ok "2.28-T20 ni el reductor ni la poda (ni el tablero) abren place.json"; f
 node -e 'const r = require(process.argv[1]).leerCorreosInformados(process.argv[2]); process.exit(Object.values(r.maquinas).some((m) => m.correo === process.argv[3].toLowerCase()) ? 0 : 1)' \
   "${RAIZ}/scripts/lib/people.js" "${BASE}/buzon" "${M_OWNER}" \
   && ok "2.28-T20 control positivo: el correo está en el espejo y people.js lo lee" || mal "2.28-T20 el marcador no llegó al espejo: la prueba sería vacía"
-# ── story 2.21 · T20 · Fuga_VolcadosYDuracionDelBuzon @story-2.21 @ac-14 ─────────────────────────────────────────
-# El nocturno ahora lee del buzón los VOLCADOS de las corridas (duración, agentes, vueltas, trabajo y espera) y la
+# ── T20 · Fuga_VolcadosYDuracionDelBuzon @story-2.21 @ac-14 ─────────────────────────────────────────
+# El nocturno lee del buzón los VOLCADOS de las corridas (duración, agentes, vueltas, trabajo y espera) y la
 # duración de la suite de las líneas `tests` de gates.log. Un volcado trae la story, la ruta del repo y comandos; una
 # línea `tests`, el comando y la ruta. Se siembran marcadores ahí y se corre la página en modo nocturno en la máquina B.
-# 🔴 rojo previo: publicar `marker.storyId` o `repoPath` en el detalle; o leer `timing-history/` del disco del agente.
+# 🔴 Atrapa: publicar `marker.storyId` o `repoPath` en el detalle; o leer `timing-history/` del disco del agente.
 # 🔴 CONTROL POSITIVO: la mediana de la corrida, los agentes, las vueltas y la duración de la suite llegan con su número.
 python3 - "${BASE}/buzon/${NOMBRE_A}/${M_CLIENTE}-x.json" "${AYER}" <<PY
 import json, sys
@@ -450,7 +450,7 @@ assert v['estado'] == 'medido' and v['valor'] == 3, ('vueltas', v)
 assert g['estado'] == 'medido' and g['valor'] == 1 and g['medidos'] == 4, ('gates_dur', g)
 PY
 
-# ── 2.30-T25 · Fuga_AvisoDeLaManana ───────────────────────────────────────────────────────────────────────────
+# ── T25 · Fuga_AvisoDeLaManana ───────────────────────────────────────────────────────────────────────────
 # El aviso de la mañana sale a un servicio de afuera (Telegram, Slack, Teams): lleva sólo cantidades y el enlace. Se
 # siembran marcadores en TODAS sus fuentes —un paquete y un repo en la foto de dependencias, un repo en un no medido,
 # un proyecto sin dueño único, un correo asignado, un id de ficha con el paquete, un motivo de texto libre, un
@@ -534,10 +534,10 @@ for f in "${A}/deps.out" "${A}/vig.out" "${A}/hallazgo.out" "${A}/deps/out/depen
 done
 [ "${FUGA_WH}" -eq 0 ] && ok "2.30-T25 la dirección del webhook no aparece en la salida ni en las constancias" || mal "2.30-T25 🔴 la dirección del webhook se filtró"
 
-# ── 2.26-ConcentracionSinNombres @story-2.26 @ac-15 ──
+# ── ConcentracionSinNombres @story-2.26 @ac-15 ──
 # La concentración por persona se publica por producto, nunca con quién es. Se siembra un autor en los commits, se
 # pasa por el guion del nocturno y por el tablero nocturno, y ni el nombre ni el correo pueden llegar a la página.
-# 🔴 rojo previo: imprimir el autor principal en el detalle de la ficha, o guardarlo en el archivo de concentración.
+# 🔴 Atrapa: imprimir el autor principal en el detalle de la ficha, o guardarlo en el archivo de concentración.
 C26="$(mktemp -d)"; mkdir -p "${C26}/scan/Acme__Back" "${C26}/.dashboard"
 M_AUTOR="Zqx Persona Sembrada"; M_AUTOR_CORREO="zqx-sembrada@ej.test"
 git -c maintenance.auto=false -c gc.auto=0 -C "${C26}/scan/Acme__Back" init -q -b main

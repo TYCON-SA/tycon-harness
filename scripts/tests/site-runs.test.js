@@ -1,14 +1,13 @@
 'use strict';
 /*
- * site-runs.test.js — la pestaña Corridas del sitio de la organización (story 2.27).
+ * site-runs.test.js — la pestaña Corridas del sitio de la organización.
  *
- * El servidor de prueba es el de la 2.23 con una sesión real del emisor local; el buzón es un espejo fabricado en un
+ * El servidor de prueba es el del sitio con una sesión real del emisor local; el buzón es un espejo fabricado en un
  * temporal con tres máquinas (`maq-a` confirmada para dev-a, `maq-b` confirmada para dev-b, `maq-c` sin confirmar) y una
  * corrida suelta sin máquina. El cliente de runs.js corre sobre un DOM mínimo en Node, como en dashboard-runs.test.sh,
  * con un `fetch` que pide al sitio de la prueba. Correos, máquinas y productos inventados: nada habla con la red.
  *
- * T28 (`Armado_Incremental_SoloLoNuevo`) no está: la tabla lo pide «sólo si se hace la mejora de la decisión 8», y la
- * medición de la Task 0 (551 corridas, 34 s, 690 MB de pico) dejó el armado entero.
+ * T28 (`Armado_Incremental_SoloLoNuevo`) no existe: el armado de la pestaña es siempre entero.
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -83,7 +82,7 @@ const SID = { a1: 'aaaaaaaa-0000-4000-8000-000000000001', a2: 'aaaaaaaa-0000-400
 
 /**
  * El mundo de la prueba: el espejo del buzón con sus máquinas. `marcadores` siembra `zqx-fuga-b1`…`b8` en la corrida de
- * `maq-b` y en la suelta (AC 14); `sinB` deja afuera `maq-b` (T11).
+ * `maq-b` y en la suelta; `sinB` deja afuera `maq-b` (T11).
  */
 function mundo({ marcadores = true, conB = true, carpetaSinForma = true } = {}) {
   const espejo = tmp('site-runs-espejo-');
@@ -91,7 +90,7 @@ function mundo({ marcadores = true, conB = true, carpetaSinForma = true } = {}) 
   escribir(A, 'a1.json', volcado(SID.a1, '2026-08-05T09:00:00.000Z', { marker: { storyId: '3.1', repoPath: '/Users/dev/SourceCode/Alfa/FrontEnd' } }));
   escribir(A, 'a1.cambio.json.gz', gz(JSON.stringify(cambioGit('2026-08-05T09:00:00.000Z', 'src/Pago.ts', ['+const PARCHE_DE_A = 1;']))));
   escribir(A, 'a1.hilo.jsonl.gz', gz(hilo('2026-08-05T09:00:00.000Z', '/Users/dev/SourceCode/Alfa/FrontEnd/src/Pago.ts', 'const viejo = 0;', 'const NUEVO_DE_A = 1;')));
-  // la segunda de dev-a, en otra semana, sin consumo medido y en un repo suelto (`<repo>` del AC 14)
+  // la segunda de dev-a, en otra semana, sin consumo medido y en un repo suelto (`<repo>`)
   escribir(A, 'a2.json', volcado(SID.a2, '2026-08-19T09:00:00.000Z', { marker: { storyId: '3.2', repoPath: '/tmp/RepoComun' }, consumo: { estado: 'no_medido', motivo: 'sin hilo', tokens: null, por_paso: null, por_modelo: null } }));
   if (conB) {
     const B = path.join(espejo, 'maq-b');
@@ -117,7 +116,7 @@ const MAQUINAS = {
 const opsCon = (machines = MAQUINAS, extra = {}) => ({ version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD], mailbox: { provider: 'azure-blob', account: 'cuentax', container: 'runs', threads: true } }, people: { machines }, ...extra });
 const INFORMADOS = { 'maq-a': DEV_A, 'maq-b': DEV_B, 'maq-c': 'dev-c@ejemplo.test' };
 
-/** Las fuentes de la 2.23 de mentira, con el espejo, las conversaciones y el aviso de refresco. */
+/** Las fuentes del sitio de mentira, con el espejo, las conversaciones y el aviso de refresco. */
 function fuentesCon({ espejo, config = opsCon(), informados = INFORMADOS, hilos = true, ops = null }) {
   // `informados: null` = todavía no se sabe de quién es cada máquina (antes de la primera bajada entera)
   const f = H.fuentesFijas({ config, personas: { informados: informados === null ? null : H.informados(informados), repos: null } });
@@ -337,7 +336,7 @@ test('T5 Detalle_TodoElInventario_ConMensajeRescatado @story-2.27 @ac-5', async 
     const a1 = lista.corridas.find((x) => x.story === '3.1');
     const det = (await h.pedir(`/api/corridas/${a1.id}`, { cookie: dev })).json;
     const html = c.w.__detalle(det);
-    // los carriles de la línea de tiempo, las minitarjetas y el bloque de archivos (el inventario, §3)
+    // los carriles de la línea de tiempo, las minitarjetas y el bloque de archivos (el inventario)
     for (const rot of ['Archivos tocados', 'Consumo', 'Qué encontraron los controles', '<h4>Controles', '<h4>Revisores', '<h4>Consumo', 'Cómo quedó cada archivo · según git', 'Cada cambio, en orden · según la conversación'])
       assert.ok(html.includes(rot), `el detalle trae «${rot}»`);
     assert.ok((html.match(/class="mini/g) || []).length >= 4, 'las cuatro minitarjetas');
@@ -694,7 +693,7 @@ test('T22 Codigo_SinValoresDeUnaOrganizacion @story-2.27 @ac-22', () => {
   // (los nombres de máquina reales no se escriben acá: el árbol se publica, y su freno los busca en todo lo publicado)
   const t = fs.readFileSync(path.join(H.SITE, 'tabs', 'runs.js'), 'utf8');
   for (const rx of marcas) assert.ok(!rx.test(t), `tabs/runs.js no trae ${rx}`);
-  // lo agregado a runs.js por esta story: sus funciones nuevas
+  // las funciones de runs.js que el sitio usa
   const r = fs.readFileSync(RUNS, 'utf8');
   for (const nombre of ['function idEstable', 'function paraLista', 'function paraDetalle', 'function textosDe', 'function cabecera', 'function tabla', 'function pie']) {
     const i = r.indexOf(nombre);
@@ -721,8 +720,8 @@ test('T25 Pagina_SinScriptNiStyleEnLinea_PasaLaPoliticaDelSitio @story-2.27 @ac-
   });
 });
 
-// La espera por fuente (2026-10-16): el sitio ya se navega con el repo leído; sólo Corridas espera el buzón, lo dice y
-// se recarga sola. 🔴 rojo previo: «no medido: el buzón todavía no se pudo bajar entero» mientras la primera bajada corría
+// La espera por fuente: el sitio ya se navega con el repo leído; sólo Corridas espera el buzón, lo dice y
+// se recarga sola. 🔴 rojo: «no medido: el buzón todavía no se pudo bajar entero» mientras la primera bajada corría
 test('T27b CorridasCargando_LoDiceYSeRecarga @story-2.27 @ac-20', async () => {
   const fuentes = fuentesCon({ espejo: mundo({ marcadores: false }) });
   fuentes.bajada = { completo: false, generacion: 0 };
@@ -799,7 +798,7 @@ test('T30 Pasos_NombresDeLaImagen @story-2.27 @ac-18', () => {
   assert.strictEqual(sinTabla.pasos.fuente, 'numeros', 'sin la tabla en la imagen: por número, y se dice (nunca ~/.claude/agent-skills)');
 });
 
-// ── el pase adversarial (2026-10-16): una prueba por cada clase confirmada ─────────────────────────────────────────
+// ── casos de borde: una prueba por cada clase ─────────────────────────────────────────
 
 test('2.27-A1 QuienEsQuienSinMedir_NoMedidoNuncaVacio @story-2.27 @ac-11 @ac-19', async () => {
   // antes de la primera bajada entera no se sabe de quién es cada máquina: el dev no ve nada (cierra), pero la respuesta
@@ -861,7 +860,7 @@ test('2.27-A3 BajadaAMedias_NoRearma_YDiceQuePuedeFaltar @story-2.27 @ac-19 @ac-
     const dev = await entrar(DEV_A);
     assert.strictEqual((await h.pedir('/api/corridas', { cookie: dev })).json.buzon.parcial, true);
     assert.match((await h.pedir('/corridas', { cookie: dev })).texto, /puede faltar alguna corrida tuya/);
-    // la privacidad (el caso del pase): maq-b pasó a otra persona y su corrida nueva bajó en una bajada A MEDIAS, cuando
+    // la privacidad: maq-b pasó a otra persona y su corrida nueva bajó en una bajada A MEDIAS, cuando
     // lo informado todavía es el de la última entera (dice dev-b). dev-b no la ve: el espejo a medias no se arma
     escribir(path.join(espejo, 'maq-b'), 'b9.json', volcado('bbbbbbbb-0000-4000-8000-000000000009', '2026-08-23T09:00:00.000Z', { marker: { storyId: 'de-la-persona-nueva' } }));
     fuentes.avisar(); await vista.listo();
@@ -990,7 +989,7 @@ test('2.27-A6 Arranque_BorraLosTextosDeArmadosAnteriores @story-2.27 @ac-20', ()
 });
 
 test('2.27-A7 VistaLocal_SelloSinMaquinas_IgualQueAntes @story-2.27 @ac-23', () => {
-  // la vista local con buzón y ninguna corrida dice el alcance como antes; «ninguna máquina» es sólo del sitio
+  // la vista local con buzón y ninguna corrida dice el alcance sin cambios; «ninguna máquina» es sólo del sitio
   const M = runs.modelo(tmp('vacia-'), { buzon: path.join(tmp('site-runs-nada-'), 'no-existe') });
   assert.match(runs.cabecera(M), /<b>Alcance:<\/b> <\/span>/);
   assert.match(runs.cabecera(M, { sitio: { rol: 'maintainer', version: '1' } }), /<b>Alcance:<\/b> ninguna máquina<\/span>/);

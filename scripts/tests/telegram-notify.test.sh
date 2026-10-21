@@ -60,13 +60,13 @@ out="$(TYCON_TELEGRAM_DIR="$FAKE" TYCON_TELEGRAM_API="http://127.0.0.1:9" bash "
 check "envío fallido sale 3" 3 "$rc"
 no_contiene "el token no se filtra en el error de red" "TOKEN-SECRETO-QUE-NO-DEBE-APARECER" "$out"
 
-# ── T23 · R3_Lib_MovedRequires (story 8.12, tanda R3, AC 20) ─────────────────────────────────────────────────────
-# El aviso vive en scripts/lib/: compila desde ahí y, sin red, resuelve token y destinatario igual que antes. En la ruta
-# de siempre queda el reemplazo generado (lo llaman el bloque de Codex de cada máquina y los pasos de agent-skills):
+# ── T23 · R3_Lib_MovedRequires ─────────────────────────────────────────────────────
+# El aviso vive en scripts/lib/: compila desde ahí y, sin red, resuelve token y destinatario igual que la ruta
+# de siempre, donde queda el reemplazo generado (lo llaman el bloque de Codex de cada máquina y los pasos de agent-skills):
 # lanza el de lib/ con los mismos argumentos, así que el `--edit <id>` y el message_id que imprime no se pierden. La
 # ruta de siempre sale del mapa; la copia pública no lo lleva y el caso lo dice. Sólo la falta del mapa saltea: con el
-# mapa presente, ilegible o sin la entrada es un rojo (pase adversarial de la R3: «sin entrada» leído como «copia
-# pública» dejaba pasar en verde un reemplazo que falta).
+# mapa presente, ilegible o sin la entrada es un rojo (si «sin entrada» se leyera como «copia pública», pasaría en
+# verde un reemplazo que falta).
 bash -n "$SCRIPT" 2>/dev/null; check "T23 R3_Lib_MovedRequires — compila desde scripts/lib/" 0 "$?"
 T23_MAP="$RAIZ/scripts/lib/renames.json"
 T23_OLD=""

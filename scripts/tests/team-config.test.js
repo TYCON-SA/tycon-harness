@@ -198,7 +198,7 @@ test('T11 RealReaders_PickedFromTheTree_ExampleLoads_ProblemsCarryTheFieldPath',
   });
 });
 
-// story 2.24 (AC 23): el buzón de corridas de la organización, en un panel de sólo lectura. La llave es una credencial y la
+// El buzón de corridas de la organización, en un panel de sólo lectura. La llave es una credencial y la
 // página no guarda credenciales: el servidor arma una proyección con leerConfig y los NOMBRES de los parámetros de la firma.
 test('T21 2.24-TeamConfig_BuzonSoloLecturaSinFirma', async () => {
   const tree = path.join(__dirname, '..', '..');
@@ -406,7 +406,7 @@ test('2.29-T21b PaginaLocal_LoQueNoSePuedeLeer_SeDice', async () => {
   const ops = cloneWithRemote().dir;
   const gh = (repo) => ({ platform: 'github', org: 'acme', repo });
   fs.writeFileSync(path.join(team, 'team-repos.json'), fmt({ version: 1, public: gh('harness'), profile: gh('profile'), operations: gh('ops') }));
-  // team-profile.json roto y perfil-equipo.json (el nombre de antes) sano: gana el nuevo, y se dice que está roto
+  // team-profile.json roto y perfil-equipo.json (el nombre anterior) sano: gana el nuevo, y se dice que está roto
   fs.writeFileSync(path.join(team, 'team-profile.json'), '{ roto');
   fs.writeFileSync(path.join(team, 'perfil-equipo.json'), fmt({ packs: { default: 'all' } }));
   await withPage({ tree, clones: { repos: team, operations: ops } }, async (p) => {
@@ -414,7 +414,7 @@ test('2.29-T21b PaginaLocal_LoQueNoSePuedeLeer_SeDice', async () => {
     const paquetes = t.sections.find((x) => x.id === 'paquetes');
     assert.strictEqual(paquetes.data, null, 'los datos del archivo viejo no se muestran como vigentes');
     assert.match(paquetes.problems[0].message, /team-profile\.json no es un objeto JSON válido/);
-    // sólo el nombre de antes: se muestra
+    // sólo el nombre anterior: se muestra
     fs.rmSync(path.join(team, 'team-profile.json'));
     const viejo = (await api(p, 'state')).json.targets.find((x) => x.id === 'repos').sections.find((x) => x.id === 'paquetes');
     assert.deepStrictEqual(viejo.data, { packs: { default: 'all' } });

@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 # =============================================================================
-# smokes-2.2.sh — la verificación RUNTIME de la story 2.2, por criterio.
+# smokes-2.2.sh — la verificación RUNTIME del contador del presente y del tablero, por criterio.
 #
 # Por qué existe: el portón de Definición de Terminado exige que cada criterio se ejercite
-# CORRIENDO el producto, no leyendo el código. Esta story no tiene pantalla ni endpoint: su
+# CORRIENDO el producto, no leyendo el código. Acá no hay pantalla ni endpoint: el
 # producto son el medidor y el tablero, y su «runtime» es correrlos contra los repos de verdad
 # y mirar lo que publican. Cada smoke va por `smoke-run.sh`, que captura el EXIT CODE REAL y lo
 # deja en el ledger del repo Y en el registro global — un ledger escrito a mano no sirve.
 #
-# 🔴 El AC 13 es el único declarado `runtime_not_verifiable` en el frontmatter: es una medición
-#    contra los 20 repos reales del disco de un dev, y ninguna suite puede fabricar ese universo
-#    (fabricarlo sería medir el fixture y no la realidad). Los AC 10 y 14 SÍ tienen red en la
-#    suite (dashboard.test.sh y sdlc-transitions.test.js); sus smokes existen porque una cosa es
+# 🔴 La medición real es el único criterio declarado `runtime_not_verifiable` en el frontmatter: es una
+#    medición contra los repos reales del disco de un dev, y ninguna suite puede fabricar ese universo
+#    (fabricarlo sería medir el fixture y no la realidad). Las fichas del tablero y el criterio de «cerrado»
+#    SÍ tienen red en la suite (dashboard.test.sh y sdlc-transitions.test.js); sus smokes existen porque una cosa es
 #    que la mecánica funcione sobre un fixture y otra que la página real salga bien.
 #
 # Uso:  bash scripts/tests/smokes-2.2.sh [<raiz-de-repos>]
-#       (default: ~/SourceCode — 20 repos, 1234 stories)
+#       (default: ~/SourceCode)
 # =============================================================================
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -49,11 +49,10 @@ fi
 echo "== smokes de la story 2.2 · repos reales: $RAIZ_REPOS =="
 
 # 🔴 `corre` ACUMULA el resultado y el guion sale distinto de 0 si alguno falló. Sin esto el
-#    script termina siempre en verde aunque un AC rompa — el portón de Definición de Terminado no
+#    script termina siempre en verde aunque un criterio rompa — el portón de Definición de Terminado no
 #    se engaña (lee el código de salida real de cada smoke desde el ledger que escribe
 #    smoke-run.sh), pero quien lo corra a mano, o cualquier automatización que mire el exit code,
-#    sí. Lo cazó el revisor de fallos silenciosos el 2026-09-05; el mismo defecto está en
-#    `smokes-2.1.sh`, anotado como deuda en el reporte de esta corrida.
+#    sí.
 FALLAS=0
 CORRIDOS=0
 corre() {
@@ -62,19 +61,19 @@ corre() {
   "$SMOKE" "$EVID" "$SID" "$@" || FALLAS=$((FALLAS + 1))
 }
 
-# ── AC 13 · la medición real, con denominador y con el universo nombrado ──
+# ── la medición real, con denominador y con el universo nombrado ──
 corre "AC 13 · en curso / backlog / desconocidas, medido y publicado" --acs 13 -- \
   bash "$AQUI/ac13-real-measurement.sh" "$MEDIDOR" "$RAIZ_REPOS" "$STORY"
 
-# ── AC 10, 11, 12 · las tres fichas del tablero, sobre un snapshot REAL ──
+# ── las tres fichas del tablero, sobre un snapshot REAL ──
 corre "AC 10/11/12 · las tres fichas con denominador, cobertura y desglose" --acs 10,11,12 -- \
   bash "$AQUI/ac10-unknowns-decided.sh" "$MEDIDOR" "$TABLERO" "$RAIZ_REPOS"
 
-# ── AC 14, 17, 18 · el criterio nuevo de «cerrado» mueve exactamente lo esperado ──
+# ── el criterio nuevo de «cerrado» mueve exactamente lo esperado ──
 corre "AC 14/17/18 · el delta de done_total es el esperado y nada más se mueve" --acs 14,17,18 -- \
   bash "$AQUI/ac14-expected-metrics.sh" "$MEDIDOR" "$ESTADOS" "$RAIZ_REPOS"
 
-# ── AC 15 · los casos de la 2.1 siguen ahí, sin retocar, y verdes ──
+# ── los casos de las transiciones siguen ahí, sin retocar, y verdes ──
 corre "AC 15 · los casos viejos intactos (sólo se agregan, salvo el que se nombra)" --acs 15 -- \
   bash "$AQUI/ac15-old-cases-intact.sh" "$RAIZ"
 

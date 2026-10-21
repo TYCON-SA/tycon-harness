@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# run-change.test.sh — el cambio de cada corrida sale de git (story 2.19, T1–T9).
+# run-change.test.sh — el cambio de cada corrida sale de git (T1–T9).
 #
 # Todo en repos efímeros y un HOME falso: nunca se lee ni se toca lo de esta máquina. Lo que la corrida
 # «hizo» pasa con la hora real; lo previo a la corrida (crear el repo, el commit inicial) se fecha en el
 # pasado con GIT_COMMITTER_DATE, que es la hora que git anota también en el reflog.
 #
-# 🔴 REGLA DE ADMISIÓN: cada caso trae escrito su rojo previo (la mutación que lo pone rojo). El exit
+# 🔴 REGLA DE ADMISIÓN: cada caso trae escrito qué lo pone en rojo (la mutación). El exit
 #    code se lee ANTES de cualquier pipe. bash 3.2 (macOS): siempre `${v}`.
 
 set -uo pipefail
@@ -56,7 +56,7 @@ correr() { "${NODE}" "${GUION}" --dump "$1" --state "${BASE}/estado" > "${BASE}/
 mkdir -p "${BASE}/estado"
 
 # ── T1 · commits de la corrida y lo que quedó sin commitear ────────────────────────────────────────
-# rojo previo: sin el guion no hay archivo. Mutaciones: no leer `git diff HEAD` (b.js no sale), olvidar los
+# falla si: sin el guion no hay archivo. Mutaciones: no leer `git diff HEAD` (b.js no sale), olvidar los
 # no trackeados (c.js no sale), o tomar el commit inicial como de la corrida.
 R="${BASE}/t1"; repo "${R}"
 printf 'uno\ndos\n' > "${R}/a.js"; git -C "${R}" commit -qam "feat: la corrida toca a.js"
@@ -79,7 +79,7 @@ else
 fi
 
 # ── T2 · lo que llegó de afuera no es de la corrida ─────────────────────────────────────────────────
-# rojo previo: comparar contra la base (o tomar todo el rango) mete z.js y los commits del otro clon.
+# falla si: comparar contra la base (o tomar todo el rango) mete z.js y los commits del otro clon.
 # Mutaciones: contar `pull:`/`reset:`/fast-forward como acciones que crean commit → rojo.
 O="${BASE}/t2origen"; repo "${O}"; git -C "${O}" config receive.denyCurrentBranch ignore
 R="${BASE}/t2"; GIT_COMMITTER_DATE="${ANTES}" git clone -q "${O}" "${R}"
@@ -96,7 +96,7 @@ EN_RANGO="$(git -C "${R}" rev-list --count "${BASEC}..HEAD")"
 [ "${G}" = "medido|0|false" ] && [ "${EN_RANGO}" = 2 ] && ok "T2 los 2 commits que llegaron por pull y reset no son de la corrida (control: están entre la base y HEAD)" || mal "T2 salió: ${G} · en rango: ${EN_RANGO}"
 
 # ── T3 · amend y rebase: el commit sale una sola vez, el que quedó ──────────────────────────────────
-# rojo previo: tomar todo `commit:` del reflog sin mirar si sigue alcanzable → 3 commits (original,
+# falla si: tomar todo `commit:` del reflog sin mirar si sigue alcanzable → 3 commits (original,
 # enmendado, reubicado). Mutación: sacar el chequeo de alcanzable → rojo.
 O="${BASE}/t3origen"; repo "${O}"; git -C "${O}" config receive.denyCurrentBranch ignore
 R="${BASE}/t3"; GIT_COMMITTER_DATE="${ANTES}" git clone -q "${O}" "${R}"
@@ -111,7 +111,7 @@ G="$(leer "${BASE}/t3v.cambio.json.gz" 'const r=c.repos[0]; [r.commits.length, "
 [ "${G}" = "1|true|propio: enmendado|false" ] && ok "T3 enmendado y reubicado: sale una vez, el commit que quedó, sin lo ajeno" || mal "T3 salió: ${G}"
 
 # ── T4 · lo escrito por consola en otro repo hace que ese repo se mire ─────────────────────────────
-# rojo previo: mirar sólo el repo de la story → «otro» no aparece. Control: sin la línea no entra
+# falla si: mirar sólo el repo de la story → «otro» no aparece. Control: sin la línea no entra
 # (si entrara igual, el caso no probaría que la anotación es la que lo trae).
 R="${BASE}/t4"; repo "${R}"
 OT="${BASE}/t4otro repo"; repo "${OT}"; printf 'uno\nconsola\n' > "${OT}/a.js"
@@ -126,11 +126,11 @@ correr "${V}"
 G2="$(leer "${BASE}/t4v.cambio.json.gz" 'c.repos.length')"
 [ "${G}" = '2|["consola"]|a.js|t4otro repo' ] && [ "${G2}" = 1 ] && ok "T4 el repo donde se escribió por consola entra con por=consola (control: sin la anotación, no entra)" || mal "T4 salió: ${G} · sin anotación: ${G2}"
 
-# ── T4b · mientras dura el renombre (story 8.9, D2) se leen las dos carpetas ───────────────────────
-# Una sesión abierta con el código de antes sigue anotando en la carpeta vieja; la que ya migró, en la nueva. Lo de
+# ── T4b · mientras dura el renombre se leen las dos carpetas ───────────────────────
+# Una sesión abierta con el código anterior sigue anotando en la carpeta vieja; la que ya migró, en la nueva. Lo de
 # las dos cuenta: la propia (un repo sólo en la nueva, otro sólo en la vieja) y la de otra sesión (sólo en la vieja).
-# El nombre viejo sale del mapa (escrito acá, lo contaría el termómetro). Rojo previo, en las dos direcciones: leer
-# sólo la nueva → «t4b viejo» no entra y la otra sesión no se cuenta; sólo la vieja (el código de antes) → «t4otro
+# El nombre viejo sale del mapa (escrito acá, lo contaría el termómetro). Falla si, en las dos direcciones: leer
+# sólo la nueva → «t4b viejo» no entra y la otra sesión no se cuenta; sólo la vieja (el código anterior) → «t4otro
 # repo» no entra.
 VIEJA="$("${NODE}" -e 'try { const e = require(process.argv[1]).entries.find((x) => x.batch === "D2" && /\/console-writes$/.test(x.new)); process.stdout.write(e ? e.old.split("/").pop() : ""); } catch (_) {}' "${RAIZ}/scripts/lib/renames.json")"
 if [ -z "${VIEJA}" ]; then
@@ -148,7 +148,7 @@ else
 fi
 
 # ── T5 · la clave y la ruta salen tapadas; sin el saneado no se publica ────────────────────────────
-# rojo previo: guardar el diff crudo → la clave sale. Mutación: no pasar el parche por sanear → rojo;
+# falla si: guardar el diff crudo → la clave sale. Mutación: no pasar el parche por sanear → rojo;
 # en la copia sin tokens-digest.js, publicar igual los parches → rojo.
 R="${BASE}/t5"; repo "${R}"
 printf '{"Conexion": "Server=x;Password=ClaveSecreta123;", "Ruta": "/Users/dev/cliente/x"}\n' > "${R}/appsettings.json"
@@ -160,7 +160,7 @@ else
   G="$(leer "${BASE}/t5v.cambio.json.gz" 'const p=c.repos[0].sin_commitear[0]; [p.ruta, /appsettings/.test(p.parche), /<oculto>|<ruta>/.test(p.parche)].join("|")')"
   [ "${G}" = "appsettings.json|true|true" ] && ok "T5 el parche existe y trae la clave y la ruta tapadas" || mal "T5 salió: ${G}"
 fi
-# La copia lleva scripts/lib/legacy-names.js (story 8.9: la carga al arrancar y vive siempre al lado); falta sólo tokens-digest.js.
+# La copia lleva scripts/lib/legacy-names.js (la carga al arrancar y vive siempre al lado); falta sólo tokens-digest.js.
 mkdir -p "${BASE}/copia/scripts/metrics" "${BASE}/copia/scripts/lib" && cp "${GUION}" "${BASE}/copia/scripts/metrics/"
 cp "${RAIZ}/scripts/lib/legacy-names.js" "${BASE}/copia/scripts/lib/"
 "${NODE}" "${BASE}/copia/scripts/metrics/run-change.js" --dump "${V}" --state "${BASE}/estado" --output "${BASE}/t5sin.cambio.json.gz" > "${BASE}/out" 2> "${BASE}/err"; rc=$?
@@ -168,7 +168,7 @@ G="$(leer "${BASE}/t5sin.cambio.json.gz" '[c.estado, /tokens-digest/.test(c.moti
 [ "${rc}" = 0 ] && [ "${G}" = "no_publicado|true|true" ] && ok "T5 sin tokens-digest.js: no_publicado, con el motivo y sin parches" || mal "T5 sin saneado (rc=${rc}): ${G}"
 
 # ── T6 · topes por parte y por corrida, binario y .engram ──────────────────────────────────────────
-# rojo previo: sin topes el archivo lleva 6 MB de parches. Mutaciones: no cortar la parte grande, no
+# falla si: sin topes el archivo lleva 6 MB de parches. Mutaciones: no cortar la parte grande, no
 # cortar al pasar el total, dar parche a un binario, o incluir .engram/ → rojo.
 R="${BASE}/t6"; repo "${R}"
 "${NODE}" -e '
@@ -187,7 +187,7 @@ G="$(leer "${BASE}/t6v.cambio.json.gz" '
 [ "${G}" = "true|true|true|true|true|true" ] && ok "T6 la parte grande se corta, pasado el total quedan sólo los números, el png sin parche y .engram fuera" || mal "T6 salió: ${G}"
 
 # ── T7 · otra sesión que escribió en la misma copia se cuenta ──────────────────────────────────────
-# rojo previo: sin mirar las otras sesiones, otras_sesiones no existe. Mutaciones: contar la sesión propia,
+# falla si: sin mirar las otras sesiones, otras_sesiones no existe. Mutaciones: contar la sesión propia,
 # o contar la escritura de fuera de la ventana → 2 → rojo.
 R="${BASE}/t7"; repo "${R}"; printf 'uno\nmio\n' > "${R}/a.js"
 V="${BASE}/t7v.json"; volcado "${V}" "${R}"
@@ -203,7 +203,7 @@ rm -f "${BASE}/estado/file-events/"*.jsonl
 [ "${G}" = '1|1|["story","herramientas"]' ] && ok "T7 una sola otra sesión en la ventana (la vieja y la propia no cuentan)" || mal "T7 salió: ${G}"
 
 # ── T8 · no poder mirar nunca es vacío ─────────────────────────────────────────────────────────────
-# rojo previo: devolver `repos: []`. Mutaciones: escribir `repos` en un no_medido, o abortar todo por un
+# falla si: devolver `repos: []`. Mutaciones: escribir `repos` en un no_medido, o abortar todo por un
 # repo borrado → rojo.
 printf '{ esto no es json' > "${BASE}/t8a.json"
 "${NODE}" "${GUION}" --dump "${BASE}/t8a.json" --state "${BASE}/estado" > "${BASE}/out" 2> "${BASE}/err"; rc1=$?
@@ -224,7 +224,7 @@ G4="$(leer "${BASE}/t8d.cambio.json.gz" 'const b=c.repos.find(r=>r.principal), s
   || mal "T8 rc=${rc1}${rc2}${rc3}${rc4} · ${G1} · ${G2} · ${G3} · ${G4}"
 
 # ── T9 · no cambió nada; y sin reflog no se inventan commits ───────────────────────────────────────
-# rojo previo: sin commits ni cambios, devolver no_medido o listas ausentes. Mutación: leer «reflog vacío»
+# falla si: sin commits ni cambios, devolver no_medido o listas ausentes. Mutación: leer «reflog vacío»
 # como «sin commits» cuando el reflog no existe → commits: [] en vez de null → rojo.
 R="${BASE}/t9"; repo "${R}"
 volcado "${BASE}/t9a.json" "${R}"
@@ -237,11 +237,11 @@ G2="$(leer "${BASE}/t9b.cambio.json.gz" 'const r=c.repos[0]; [c.estado, JSON.str
 [ "${G1}" = "medido|[]|[]" ] && [ "${G2}" = "medido|null|true|1" ] && ok "T9 sin cambios: medido con listas vacías; sin reflog: commits null con motivo y lo no commiteado igual" || mal "T9 salió: ${G1} · ${G2}"
 
 # ── T9b · lo que ya estaba sin commitear antes de la corrida no es de la corrida ─────────────────────
-# rojo previo: tomar todo `git diff HEAD` → la copia sucia de antes se atribuye a la corrida (241 archivos
-# en una corrida real de un repo del equipo). Mutación: no filtrar por fecha de modificación → rojo.
+# falla si: tomar todo `git diff HEAD` → la copia sucia previa a la corrida se le atribuye a la corrida.
+# Mutación: no filtrar por fecha de modificación → rojo.
 # 🔴 La ventana va en el FUTURO a propósito: así lo que existe AHORA es «de antes de la corrida» de verdad
 # (fecha de modificación Y de cambio de estado anteriores), que es lo que pasa con una copia sucia real. Con
-# `touch -t` sólo se mueve la fecha de modificación, y desde el arreglo del renombrado eso ya no alcanza.
+# `touch -t` sólo se mueve la fecha de modificación, y eso no alcanza ante un renombrado.
 R="${BASE}/t9c"; repo "${R}"
 printf 'uno\nsucio de antes\n' > "${R}/a.js"; printf 'viejo sin trackear\n' > "${R}/viejo.txt"
 printf 'base\nde la corrida\n' > "${R}/b.js"
@@ -253,9 +253,9 @@ G="$(leer "${BASE}/t9c.cambio.json.gz" 'const r=c.repos[0]; [r.sin_commitear.map
 [ "${G}" = "b.js|2|1" ] && ok "T9b sólo entra lo modificado durante la corrida; lo sucio de antes se cuenta aparte (2)" || mal "T9b salió: ${G}"
 
 # ── T21 · un rebase que CHOCA y se resuelve sigue siendo trabajo de la corrida ───────────────────────
-# 🔴 rojo previo (pase adversarial, iter 1, reproducido dos veces): al resolver un conflicto, git anota
-# `rebase (continue):` / `commit (cherry-pick):` / `commit (merge):`, formas que la lista blanca no tenía.
-# La corrida perdía TODOS sus commits y se archivaba como «medido, 0 archivos» — «no pude mirar» publicado
+# 🔴 falla si: al resolver un conflicto, git anota
+# `rebase (continue):` / `commit (cherry-pick):` / `commit (merge):`, formas que una lista blanca sin ellas no reconoce.
+# La corrida perdería TODOS sus commits y se archivaría como «medido, 0 archivos» — «no pude mirar» publicado
 # como «no cambió nada», que es lo que esta pieza existe para evitar. Mutación: sacar `continue` de la lista.
 O="${BASE}/t21origen"; repo "${O}"; git -C "${O}" config receive.denyCurrentBranch ignore
 R="${BASE}/t21"; GIT_COMMITTER_DATE="${ANTES}" git clone -q "${O}" "${R}"
@@ -273,8 +273,8 @@ G="$(leer "${BASE}/t21.cambio.json.gz" 'const r=c.repos[0]; [r.commits.length>0,
 [ "${G}" = "true|true|true" ] && ok "T21 el commit que salió de resolver el conflicto es de la corrida, con su cambio" || mal "T21 salió: ${G} (reflog: $(git -C "${R}" reflog --format=%gs -1))"
 
 # ── T19 · si git no puede decir si es alta, baja o renombrado, el repo sale no_medido ────────────────
-# rojo previo (revisor de fallos silenciosos, iter 1): el error de `--name-status` se leía como «vacío» y
-# todos los archivos quedaban «M», con la corrida en `medido` y sin aviso. Mutación: volver a tratar el
+# falla si: el error de `--name-status` se lee como «vacío» y
+# todos los archivos quedan «M», con la corrida en `medido` y sin aviso. Mutación: volver a tratar el
 # error como cadena vacía → el repo sale «medido» con todo M → rojo.
 R="${BASE}/t19"; repo "${R}"
 printf 'uno\nmodificado\n' > "${R}/a.js"; rm "${R}/b.js"; printf 'nuevo\n' > "${R}/n.js"
@@ -292,7 +292,7 @@ G="$(leer "${BASE}/t19.cambio.json.gz" 'const r=c.repos[0]; [c.estado, r.estado,
 [ "${rc}" = 0 ] && [ "${G}" = "no_medido|no_medido|true|true|true" ] && ok "T19 el error de --name-status deja ESE repo no_medido con motivo; sin ningún repo medido, la corrida entera es no_medido" || mal "T19 (rc=${rc}) salió: ${G}"
 
 # ── T20 · el motivo de un repo sin historial sale saneado ─────────────────────────────────────────────
-# rojo previo (revisor de seguridad, iter 1): `commits_motivo` era el único campo que se publicaba sin
+# falla si: `commits_motivo` se publica sin
 # pasar por `sanear`, y el motivo lleva el error crudo de git, que puede traer la ruta del disco.
 R="${BASE}/t20"; repo "${R}"; printf 'uno\nx\n' > "${R}/a.js"
 volcado "${BASE}/t20.json" "${R}"
@@ -309,8 +309,8 @@ G="$(leer "${BASE}/t20.cambio.json.gz" 'const r=c.repos[0]; [typeof r.commits_mo
 [ "${G}" = "string|true|true" ] && ok "T20 el motivo que trae el error de git viaja saneado: la ruta sale tapada" || mal "T20 salió: ${G}"
 
 # ── T23 · un merge con conflicto: estado y parche de cada archivo, no el diff combinado ──────────────
-# 🔴 rojo previo (pase adversarial): en un merge, `git show --numstat` da el diff contra el primer padre pero
-# `--name-status` y el parche por archivo dan el COMBINADO: el borrado y el traído salían «modificado» y sin
+# 🔴 falla si: en un merge, `git show --numstat` da el diff contra el primer padre pero
+# `--name-status` y el parche por archivo dan el COMBINADO: el borrado y el traído salen «modificado» y sin
 # texto. Mutación: volver a `show` en vez de `diff <primer padre>` → rojo.
 R="${BASE}/t23"; repo "${R}"; printf 'borrar\n' > "${R}/borrar.txt"; git -C "${R}" add -A
 GIT_COMMITTER_DATE="${ANTES}" GIT_AUTHOR_DATE="${ANTES}" git -C "${R}" commit -qm "base con borrar.txt"
@@ -331,21 +331,21 @@ G="$(leer "${BASE}/t23.cambio.json.gz" '
 [ "${G}" = "M|D|A|true|true" ] && ok "T23 en el merge con conflicto: el borrado dice borrado, el traído dice nuevo, y los dos traen su cambio" || mal "T23 salió: ${G}"
 
 # ── T24 · un renombrado sin commitear hecho por la corrida NO es «sucio de antes» ─────────────────────
-# 🔴 rojo previo (pase adversarial): `mv` conserva la fecha de modificación, así que el filtro por fecha lo
-# descartaba y la corrida salía «sin cambios». Mutación: volver a mirar sólo `mtime` → rojo.
+# 🔴 falla si: `mv` conserva la fecha de modificación, así que el filtro por fecha lo
+# descarta y la corrida sale «sin cambios». Mutación: volver a mirar sólo `mtime` → rojo.
 R="${BASE}/t24"; repo "${R}"; printf 'contenido de siempre\n' > "${R}/viejo.js"; git -C "${R}" add -A
 GIT_COMMITTER_DATE="${ANTES}" GIT_AUTHOR_DATE="${ANTES}" git -C "${R}" commit -qm "con viejo.js"
 touch -t 202601010000 "${R}/viejo.js"; git -C "${R}" mv viejo.js nuevo.js
 volcado "${BASE}/t24.json" "${R}"
 correr "${BASE}/t24.json"
-# y lo mismo para uno SIN trackear que la corrida movió (revisor de fallos silenciosos, vuelta 2)
+# y lo mismo para uno SIN trackear que la corrida movió
 printf 'suelto de antes\n' > "${R}/suelto.txt"; touch -t 202601010000 "${R}/suelto.txt"; mv "${R}/suelto.txt" "${R}/movido.txt"
 correr "${BASE}/t24.json"
 G="$(leer "${BASE}/t24.cambio.json.gz" 'const r=c.repos[0]; [r.sin_commitear.map(p=>p.estado+":"+p.ruta).sort().join(","), r.sin_commitear_previo].join("|")')"
 [ "${G}" = "A:movido.txt,R:nuevo.js|0" ] && ok "T24 el renombrado entra, trackeado o no (la fecha de modificación no alcanza en ninguno de los dos)" || mal "T24 salió: ${G}"
 
 # ── T25 · un nombre con corchetes es un NOMBRE, no un comodín ─────────────────────────────────────────
-# 🔴 rojo previo (pase adversarial): sin `--literal-pathspecs`, `app/[id]/page.tsx` se lee como patrón y el
+# 🔴 falla si: sin `--literal-pathspecs`, `app/[id]/page.tsx` se lee como patrón y el
 # parche se trae el de otros archivos. Mutación: sacar `--literal-pathspecs` → rojo.
 R="${BASE}/t25"; repo "${R}"; mkdir -p "${R}/app/[id]" "${R}/app/i"
 # los dos ya versionados ANTES de la corrida: el del corchete y el que un comodín `[id]` matchearía («i»)
@@ -362,7 +362,7 @@ G="$(leer "${BASE}/t25.cambio.json.gz" '
 [ "${G}" = "true|true|true" ] && ok "T25 el archivo con corchetes trae SU cambio, no el del que matchearía el comodín" || mal "T25 salió: ${G}"
 
 # ── T26 · un enlace simbólico nuevo entra (git lo versiona) ───────────────────────────────────────────
-# 🔴 rojo previo (pase adversarial): `if (!st2.isFile()) continue;` lo descartaba en silencio. Mutación:
+# 🔴 falla si: `if (!st2.isFile()) continue;` lo descarta en silencio. Mutación:
 # volver a saltear lo que no es archivo → rojo.
 R="${BASE}/t26"; repo "${R}"; ln -s a.js "${R}/atajo.js"
 volcado "${BASE}/t26.json" "${R}"
@@ -371,8 +371,7 @@ G="$(leer "${BASE}/t26.cambio.json.gz" 'const p=c.repos[0].sin_commitear.find(x=
 [ "${G}" = "true|true" ] && ok "T26 el enlace simbólico nuevo entra, con su destino como cambio" || mal "T26 salió: ${G}"
 
 # ── T27 · en una copia compartida, cada commit se atribuye con el hilo de la conversación ──────────────
-# 🔴 rojo previo (2026-09-18, primera corrida real: la 1.6 publicó como propios 6 commits de otras sesiones):
-# sin atribución los tres commits salen como de la corrida. Mutaciones: no mirar la hora (B entra), no pedir
+# 🔴 falla si: sin atribución los tres commits salen como de la corrida. Mutaciones: no mirar la hora (B entra), no pedir
 # que el comando lo nombre (C sale sin marca), o esconder lo ajeno sin listarlo (B desaparece).
 R="${BASE}/t27"; repo "${R}"
 GIT_COMMITTER_DATE="$("${NODE}" -e 'console.log(new Date(Date.now()-300000).toISOString())')" GIT_AUTHOR_DATE="${ANTES}" bash -c 'printf "ajeno\n" > "$1/z.js"; git -C "$1" add z.js; git -C "$1" commit -qm "ajeno: la otra sesión commitea z.js"' _ "${R}"
@@ -404,12 +403,12 @@ rm -f "${BASE}/estado/file-events/"*.jsonl; correr "${V}"
 G="$(leer "${BASE}/t27v.cambio.json.gz" 'const r=c.repos[0]; [r.otras_sesiones, r.commits.length, r.commits.some(k=>"atribucion" in k), "commits_de_otras_sesiones" in r].join("|")')"
 [ "${G}" = "0|3|false|false" ] && ok "T27c en una copia de una sola sesión no se atribuye nada" || mal "T27c salió: ${G}"
 
-# ── 2.28-Cambio_GuardaProyectoDeAzure (story 2.28, T25, AC 13 paso 1) ──────────────────────────────────
+# ── Cambio_GuardaProyectoDeAzure (T25) ──────────────────────────────────
 # Cada repo del cambio guarda también el PROYECTO de Azure de su remoto, para ubicar la corrida en un producto
 # de repos.json por `<proyecto>/<repo>`. Forma elegida: como `nombre`, DECODIFICADO y con la caja que escribe el
 # remoto (`Beta%20Dos` → «Beta Dos»; `identidadAzure` decodifica igual, pero baja a minúsculas: comparar sin
 # distinguir mayúsculas es de quien lee). Un remoto que no es de Azure, o ningún remoto: `proyecto: null`, presente.
-# 🔴 rojo previo: sin el campo, `"proyecto" in r` es false en los cuatro. Mutaciones: tomar la ORG en vez del
+# 🔴 falla si: sin el campo, `"proyecto" in r` es false en los cuatro. Mutaciones: tomar la ORG en vez del
 # proyecto (sale «acme»), no decodificar (sale «Beta%20Dos»), o devolver la forma en minúsculas (sale «beta»).
 for par in "t228az|https://dev.azure.com/acme/Beta/_git/Project" "t228esp|https://dev.azure.com/acme/Beta%20Dos/_git/Back" \
            "t228gh|https://github.com/acme/Front.git" "t228sin|"; do
@@ -429,7 +428,7 @@ G="$(leer "${BASE}/t228gh.cambio.json.gz" 'const r=c.repos[0]; ["proyecto" in r,
 G="$(leer "${BASE}/t228sin.cambio.json.gz" 'const r=c.repos[0]; ["proyecto" in r, JSON.stringify(r.proyecto), r.nombre].join("|")')"
 [ "${G}" = 'true|null|t228sin' ] && ok "2.28-Cambio_GuardaProyectoDeAzure sin remoto, proyecto null y el nombre de la carpeta" || mal "2.28-Cambio_GuardaProyectoDeAzure sin remoto salió: ${G}"
 
-# ── argumentos inválidos (AC 9) ────────────────────────────────────────────────────────────────────
+# ── argumentos inválidos ────────────────────────────────────────────────────────────────────
 "${NODE}" "${GUION}" > "${BASE}/out" 2> "${BASE}/err"; rc=$?
 [ "${rc}" != 0 ] && ok "T10 sin --dump sale ≠ 0" || mal "T10 sin argumentos salió 0"
 

@@ -1,6 +1,6 @@
 'use strict';
 /*
- * fake-ado-api.js — la API REST de Azure DevOps que usa la propuesta, en un servidor local (story 2.29, T15 a T27).
+ * fake-ado-api.js — la API REST de Azure DevOps que usa la propuesta, en un servidor local (T15 a T27).
  *
  * Sirve en http://127.0.0.1:<puerto>/{org}/{project}/_apis/ lo que la pestaña Configuración llama (api-version 7.1):
  * refs y pedidos del repo, las políticas de la rama principal, y —para la propuesta de stages— la definición de un

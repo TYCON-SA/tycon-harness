@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
-# public-ci.test.sh — la CI pública: el guion que corre todos los pasos y el `ci.yml` que lo llama (story 8.7, tanda B).
+# public-ci.test.sh — la CI pública: el guion que corre todos los pasos y el `ci.yml` que lo llama.
 #
-#   T21 · PublicCi_PasoQueNoCorre_EsRojo (AC 15) — `scripts/ci/public-ci.sh` sobre un repo de MENTIRA (un guion mínimo
+#   T21 · PublicCi_PasoQueNoCorre_EsRojo — `scripts/ci/public-ci.sh` sobre un repo de MENTIRA (un guion mínimo
 #         por paso, que anota su llamada en `.calls`): con el archivo de un paso faltando sale 1 con «no pude correr» y el
 #         paso; con un paso que sale distinto de 0 sale 1 con el paso y su exit; con `--range` sin historia sale 1 con «no
 #         pude correr»; con todo verde sale 0, los pasos en orden, sin llamar al detector, y `node --check` sólo sobre lo
 #         versionado (un `.js` roto sin versionar no lo rompe; versionado, sí). No corta en el primer rojo. Las suites
 #         que piden agent-skills corren cada una en su HOME vacía, sin las herramientas del vocabulario en el PATH, y su
 #         veredicto queda en `agent-skills-suites.tsv`. Sirve en los dos layouts: repo único y dos repos.
-#   T22 · PublicCi_Workflow_Seguro (AC 16) — `scripts/ci/check-public-workflow.js` deja pasar el `ci.yml` real (adentro
+#   T22 · PublicCi_Workflow_Seguro — `scripts/ci/check-public-workflow.js` deja pasar el `ci.yml` real (adentro
 #         vive en `scripts/publishing/public-files/.github/workflows/`; en la copia pública, en `.github/workflows/`) y
 #         da rojo, nombrando la regla, con cada copia alterada: una alteración por regla, y una por cada forma de
 #         escribir lo prohibido que las reglas con nombre no ven (ahí la roja es `shape`, la forma exacta del archivo).
-#         Entre ellas, la regla `after-queue` (2026-10-15): cada job se saltea en el push a main de la cola de merge y
+#         Entre ellas, la regla `after-queue`: cada job se saltea en el push a main de la cola de merge y
 #         sólo en ése; una condición que saltea de más, o un job sin ella, es rojo.
 #   T1-T4 · PublicCi_Workflow_SinGuionEnLaBase — sin `scripts/ci/run-base-controls.sh` en la base, el paso de `ci.yml` (su bloque `run`, corrido
-#         de verdad) frena en rojo «no pude correr» sin correr nada; con el guion corre el de la base. La rama que
-#         corría los controles del pedido, de vuelta, es rojo en `base-controls`; la guía de detalle lo dice.
-#   T24 · PublicCi_PartesQueJuntasSonTodo (2026-10-14) — la corrida partida para correr a la vez: con
+#         de verdad) frena en rojo «no pude correr» sin correr nada; con el guion corre el de la base. Una rama que
+#         corra los controles del pedido, de vuelta, es rojo en `base-controls`; la guía de detalle lo dice.
+#   T24 · PublicCi_PartesQueJuntasSonTodo — la corrida partida para correr a la vez: con
 #         TYCON_PUBLIC_CI_PART=checks corren todos los pasos menos las portables; con suites-<i>-of-<n>, sólo las portables
 #         con su parte (TYCON_PORTABLE_SHARD=<i>/<n>); un valor que no es una parte sale 2 sin correr nada. Y
 #         portable-suites.test.sh, sobre un repo de mentira: las <n> partes juntas son todas las portables, ninguna en dos,
@@ -274,7 +274,7 @@ run_ci --range 'HEAD~1...HEAD'
 is "T21 (e) una versión que no sube sale 1" 1 "${RC}"
 has "T21 (e) …con version en rojo" "${R}.out" "❌ public-ci: version — rojo (exit 1)"
 has "T21 (e) …diciendo qué hacer" "${R}.out" "cada pedido sube la versión"
-# el paquete de npm sin su regla (story 8.40): un repo que trae scripts/setup/npm/package.json pero no
+# el paquete de npm sin su regla: un repo que trae scripts/setup/npm/package.json pero no
 # scripts/ci/npm-package-version.js no es «sin nada que exigir»: es «no pude correr», rojo
 variant npmnorule
 ( cd "${R}" && mkdir -p scripts/setup/npm && printf '{ "name": "@acme/paquete", "version": "1.0.0" }\n' > scripts/setup/npm/package.json \
@@ -404,9 +404,9 @@ lacks "T21 sin skills a la vista no corre ninguna suite" "${R}/.calls" "suite-"
 if [ -f "${R}.ci/agent-skills-suites.tsv" ]; then no "T21 sin skills a la vista quedó un agent-skills-suites.tsv (de la corrida anterior): un veredicto viejo no es un veredicto"
 else ok "T21 una corrida no deja en pie el .tsv de la anterior"; fi
 # la biblioteca que ubica las skills NO PUDO contestar (su vecina está y rompe al cargarse): no es «no hay skills». El
-# guion lo dice con la causa, y el paso de las suites es «no pude correr» por ESO (story 8.18, 2026-10-04).
-# 🔴 rojo previo: `2>/dev/null || true` → la carpeta quedaba vacía y el paso decía «no encuentro las skills: ni … ni el
-#    lugar de instalación», mandando a buscar una instalación que no era el problema.
+# guion lo dice con la causa, y el paso de las suites es «no pude correr» por ESO.
+# 🔴 Con `2>/dev/null || true` la carpeta quedaría vacía y el paso diría «no encuentro las skills: ni … ni el
+#    lugar de instalación», mandando a buscar una instalación que no es el problema.
 variant brokenlib
 mkdir -p "${R}/scripts/lib"; rm -rf "${R}/skills"
 cp "${ROOT}/scripts/lib/skills-dir.js" "${R}/scripts/lib/skills-dir.js"
@@ -556,8 +556,8 @@ rm -f "${PS}/scripts/ci/suites-shard.js"; run_ps "1/3"
 if [ "${RC}" -eq 1 ] && grep -qF "no pude repartir las portables para la parte 1 de 3" "${PS}.out" && [ ! -s "${PS}.ran" ]; then ok "T24 (b) sin el repartidor es rojo, no «todas» ni «ninguna» en silencio"
 else no "T24 (b) sin suites-shard.js esperaba exit 1 «no pude repartir», y dio exit ${RC}: $(tail -n 2 "${PS}.out" | tr '\n' ' ')"; fi
 
-# el entorno de git de quien llama: toda la suite corrió con GIT_DIR, GIT_INDEX_FILE, GIT_WORK_TREE y GIT_COMMON_DIR
-# apuntando al repo de afuera (ver la cabecera). El guion miró siempre el repo de --root, y el de afuera quedó como estaba.
+# el entorno de git de quien llama: toda la suite corre con GIT_DIR, GIT_INDEX_FILE, GIT_WORK_TREE y GIT_COMMON_DIR
+# apuntando al repo de afuera (ver la cabecera). El guion mira siempre el repo de --root, y el de afuera queda como estaba.
 lacks "T21 con GIT_DIR y compañía de otro repo el guion revisa el de --root, no el de quien llama" "${T}/green.ci/1-node-check.log" "broken-in-the-outer-repo.js"
 is "T21 el repo de quien llama queda idéntico después de toda la suite (mismo commit, mismas ramas, mismo índice)" "${OUTER_BEFORE}" "$(outer_state)"
 
@@ -604,7 +604,7 @@ else
     if [ "${RC}" -eq 0 ]; then ok "T22 (${name}) sigue verde"
     else no "T22 (${name}) esperaba exit 0 y dio exit ${RC}: $(tr '\n' ' ' < "${T}/alt/${name}.out")"; fi
   }
-  # las seis de la tabla de la story
+  # las seis de la tabla de reglas
   altered "con pull_request_target" "pull-request-target triggers" 'return t.replace(/^  pull_request:/m, "  pull_request_target:");'
   altered "con secrets." "secrets" 'return t.replace(/^(\s*)TYCON_PUBLIC_CI_OUT:.*$/m, (l, s) => l + "\n" + s + "TOKEN: ${{ secrets.GITHUB_TOKEN }}");'
   altered "con un uses por tag" "uses-by-sha" 'return t.replace(/actions\/checkout@[0-9a-f]{40} # v[0-9.]+/, "actions/checkout@v7");'
@@ -624,7 +624,7 @@ else
   altered "con permisos propios en un job" "permissions" 'return t.replace(/^(    runs-on: .*)$/m, "$1\n    permissions:\n      contents: write");'
   altered "con fetch-depth 1" "fetch-depth" 'return t.replace(/^(\s*)fetch-depth: 0$/m, "$1fetch-depth: 1");'
   altered "sin Node 24 en la matriz" "node-matrix" 'return t.replace(/node: \[24\]/, "node: [22]");'
-  # el piso del instalador (2026-10-16): el job installer-floor instala Node 22, una vez y sólo ahí
+  # el piso del instalador: el job installer-floor instala Node 22, una vez y sólo ahí
   altered "el piso del instalador con otro Node" "node-matrix" 'return t.replace(/node-version: 22$/m, "node-version: 20");'
   altered "el piso del instalador fuera de su job" "node-matrix" 'return t.replace(/node-version: \$\{\{ matrix\.node \}\}/, "node-version: 22");'
   altered "el chequeo final no espera al piso del instalador" "aggregate-job" 'return t.replace("needs: [checks, installer-floor]", "needs: [checks]");'
@@ -661,7 +661,7 @@ else
   altered "con el disparador prohibido en un comentario" "=pull-request-target" 'return t.replace(/^name: public-ci$/m, "# nunca pull_request_target\nname: public-ci");'
   altered "con un secreto en un comentario" "=secrets" 'return t.replace(/^name: public-ci$/m, "# TOKEN: ${{ secrets.X }}\nname: public-ci");'
 
-  # ── una copia alterada por cada clase del pase adversarial (2026-10-03): otra forma de escribir lo prohibido que las
+  # ── una copia alterada por cada clase del pase adversarial: otra forma de escribir lo prohibido que las
   #    reglas con nombre no ven. La cierra la forma exacta, no una regla más por cada forma. ──
   altered "clase 1: la opción dentro de un comentario de shell" "" 'return t.replace(/(public-ci\.sh) --clean-machine$/m, "$1 # --clean-machine");'
   altered "clase 2: el token leído por índice" "secrets" 'return t.replace(/^(\s*)TYCON_PUBLIC_CI_OUT:.*$/m, (l, s) => l + "\n" + s + "TOKEN: ${{ github[\x27token\x27] }}");'
@@ -701,7 +701,7 @@ else
   altered "sin pasarle la parte al guion" "parts" 'return t.replace(/^          TYCON_PUBLIC_CI_PART: .*\n/m, "");'
   # otra cuenta de partes, completa, cumple la regla con nombre: la frena sólo la forma exacta (cambiarla es cambiar SHAPE)
   altered "con cuatro partes de las suites, todas" "=shape" 'return t.replace("part: [checks, suites-1-of-5, suites-2-of-5, suites-3-of-5, suites-4-of-5, suites-5-of-5]", "part: [checks, suites-1-of-4, suites-2-of-4, suites-3-of-4, suites-4-of-4]");'
-  # el push a main que hace la cola al entrar un pedido no corre nada (2026-10-15: la cola ya probó ese commit), y sólo
+  # el push a main que hace la cola al entrar un pedido no corre nada (la cola ya probó ese commit), y sólo
   # ése: cualquier otro push a main —el merge directo de un administrador— corre entero, y un pedido o la cola, igual
   altered "sin la condición de la cola en el job de la matriz" "after-queue" 'return t.replace(/^    if: github\.event_name .*\n/m, "");'
   altered "salteando todo push a main" "after-queue" 'return t.replace(/^    if: github\.event_name != \x27push\x27 \|\| .*$/m, "    if: github.event_name != \x27push\x27");'

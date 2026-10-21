@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ac13-real-measurement.sh — el AC 13 de la story 2.2, el ÚNICO que toca la realidad.
+# ac13-real-measurement.sh — la medición real, el ÚNICO criterio que toca la realidad.
 #
 # Corre el medidor sobre los repos REALES del disco y exige que lo que publica sea
 # accionable: los tres números con su DENOMINADOR y con el universo NOMBRADO. Un solo
 # número sin decir de dónde sale es peor que dos números — medir en un universo y
-# publicar el del otro es la falla que el arnés cerró el 2026-09-03.
+# publicar el del otro es una falla que el arnés cierra.
 #
 # 🔴 Falla si falta cualquiera de los tres, si falta el denominador, o si Dev Notes de la
 #    story no trae los números. Publicar sólo el total sin denominador NO alcanza.
@@ -22,9 +22,9 @@ STORY="${3:?falta la ruta de la story}"
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
-# El presupuesto de transiciones se pone al mínimo A PROPÓSITO: este AC mide el contador del
+# El presupuesto de transiciones se pone al mínimo A PROPÓSITO: esta medición usa el contador del
 # PRESENTE, que se lee del frontmatter y NO depende de git. Si el contador saliera `null` acá,
-# sería exactamente el «no medido» falso que el AC 9 prohíbe — así que el smoke lo ejerce.
+# sería exactamente el «no medido» falso que está prohibido — así que el smoke lo ejerce.
 node "$MEDIDOR" --scan "$RAIZ_REPOS" --json --transitions-budget-ms 1 > "$TMP/real.json" 2>/dev/null \
   || { echo "🛑 el medidor no pudo correr sobre los repos reales"; exit 1; }
 

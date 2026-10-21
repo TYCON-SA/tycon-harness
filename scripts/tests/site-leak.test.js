@@ -1,6 +1,6 @@
 'use strict';
 /*
- * site-leak.test.js — LA PRUEBA DE FUGA DEL SITIO DE LA ORGANIZACIÓN (story 2.23, AC 24; T32).
+ * site-leak.test.js — LA PRUEBA DE FUGA DEL SITIO DE LA ORGANIZACIÓN (T32).
  *
  * Siembra marcadores en lo de la persona B (una corrida de su máquina, un PR suyo, un pedido asignado a ella, un producto
  * donde sólo trabaja ella), en una corrida de una máquina sin confirmar, y texto libre en las fuentes (el título de un
@@ -14,9 +14,9 @@
  * Aparte, con las fuentes de verdad (repo por HTTP y buzón local), el nombre de un blob de B en una bajada que falla y
  * la ruta de una foto ilegible no llegan a ninguna pantalla: sólo el estado de lista cerrada.
  *
- * El modelo de la tanda: scripts/tests/telemetry-leak.test.sh (marcadores, control positivo, la cadena real).
+ * El modelo de esta prueba: scripts/tests/telemetry-leak.test.sh (marcadores, control positivo, la cadena real).
  *
- * T28 (story 2.28): el correo que informa la máquina de B en su place.json, y su huella, no salen en ninguna ruta.
+ * T28: el correo que informa la máquina de B en su place.json, y su huella, no salen en ninguna ruta.
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -72,7 +72,7 @@ function fuentesConMarcadores({ noMedidos = {}, pedidosExtra = [] } = {}) {
     [`.dashboard/controls-bench/banco-${HOY}.json`]: { ts: `${HOY}T05:00:00Z`, ran: 2, results: { 'caso-1': { tools: { claude: { pass: false, failures: ['MENSAJE-FRENO-LIBRE'] } } } } },
     [`.dashboard/paridad/paridad-${HOY}.json`]: { estado: 'medido', divergencias: [{ grupo: 'g', que: 'RASGO-LIBRE', tienen: ['Producto Solo B'], no_tienen: ['Producto A'] }], por_ruta: [{ ruta: 'A/repo', estado: 'medido', divergencias: 1, vencidas: 0 }, { ruta: 'B/repo', estado: 'medido', divergencias: 0, vencidas: 0 }] },
     'artifacts/tablero-del-arnes.html': '<!doctype html><html><head><style>b{}</style></head><body>Seis preguntas</body></html>',
-    // texto libre en lugares que no son fotos (revisión de seguridad, vuelta 1): los umbrales y el motivo de un despliegue
+    // texto libre en lugares que no son fotos: los umbrales y el motivo de un despliegue
     'scripts/nightly/dashboard/sources.json': { sources: [], thresholds: { banco_rojos: { direction: 'menor_es_mejor', ok_max: 0, bad_min: 1, nota: 'UMBRAL-LIBRE' } } },
     [`.dashboard/deployments/deployments-${HOY}.json`]: { v: 1, productos: { 'Producto A': { estado: 'no_medido', motivo: 'MOTIVO LIBRE DE DESPLIEGUE', staging: null, produccion: null } } },
   };
@@ -96,7 +96,7 @@ const CONFIG = {
     [MAQ_B]: { person: B, reported_sha256: null, confirmed_by: LEAD, confirmed_on: HOY },
   } },
 };
-// dónde trabaja cada una lo deduce people.js (2.28); acá, por los productos agregados en la configuración
+// dónde trabaja cada una lo deduce people.js; acá, por los productos agregados en la configuración
 CONFIG.people.projects = { [A]: { add: ['Producto A'] }, [B]: { add: ['Producto A', 'Producto Solo B'] } };
 
 test('T32 Fuga_PersonaA_NoVeNadaDeB', async () => {
@@ -105,7 +105,7 @@ test('T32 Fuga_PersonaA_NoVeNadaDeB', async () => {
   let h = null;
   try {
     assert.ok(!LIBRE.some((m) => JSON.stringify(modelo).includes(m)), 'el texto libre no entra ni al modelo');
-    // lo informado, leído del mismo espejo con el lector real (2.28): sin eso, ninguna corrida es de nadie
+    // lo informado, leído del mismo espejo con el lector real: sin eso, ninguna corrida es de nadie
     const informados = require(path.join(H.SITE, '..', 'lib', 'people.js')).leerCorreosInformados(espejo);
     h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes: H.fuentesFijas({ config: CONFIG, modelo, personas: { informados, repos } }), ahora: () => Date.parse(`${HOY}T12:00:00Z`) });
     const ahoraSeg = Math.floor(Date.parse(`${HOY}T12:00:00Z`) / 1000);
@@ -175,7 +175,7 @@ test('T32b Fuga_MotivosCrudosNoLleganALaPantalla', { skip: !hayHttpBackend() && 
   } finally { if (h) await h.cerrar(); fuentes.detener(); await git.cerrar(); await buzon.cerrar(); await emisor.cerrar(); fs.rmSync(raiz, { recursive: true, force: true }); }
 });
 
-// story 2.28 (AC 22): hasta que exista la pantalla de confirmación, ninguna ruta muestra un correo informado; tampoco su
+// Hasta que exista la pantalla de confirmación, ninguna ruta muestra un correo informado; tampoco su
 // huella. Lo informado viaja aparte del modelo (`fuentes.personas()`), porque el modelo va entero a quien mantiene.
 test('T28 2.28-Fuga_CorreoInformadoDeOtraMaquina', async () => {
   const people = require(path.join(H.SITE, '..', 'lib', 'people.js'));

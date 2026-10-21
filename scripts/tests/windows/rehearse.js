@@ -2,8 +2,8 @@
 'use strict';
 /**
  * rehearse.js — los dos ensayos de la instalación DEL EQUIPO en un agente Windows, y la medición de la base portable:
- * arma el laboratorio, corre cada paso bajo su tope, escribe el reporte y da el veredicto (story 8.17 · escenarios
- * `onboarding` y `update` de la tanda W0, y `portable`, que mide la tanda W1).
+ * arma el laboratorio, corre cada paso bajo su tope, escribe el reporte y da el veredicto (escenarios
+ * `onboarding` y `update`, y `portable`, que mide la base portable).
  * Lo llama el trabajo `Rehearsal` de `pipelines/azure-pipelines-windows.yml`. Es el gemelo de `run.js`, que mide la
  * copia pública (escenario `measure`); comparte con él el laboratorio, el tope de cada paso y la forma del reporte.
  *
@@ -12,15 +12,15 @@
  * descartable, sin arreglar nada: dice qué pasa.
  *
  * ESCENARIOS (`--scenario`)
- *   update       una máquina instalada con el estado del viernes que se actualiza a lo de hoy (`update-probe.js`)
- *   onboarding   el alta de un dev nuevo con lo de hoy (`onboarding-probe.js`), y sobre lo que dejó, `count-hooks` y
+ *   update       una máquina instalada con el estado del viernes que se actualiza a lo que se ensaya (`update-probe.js`)
+ *   onboarding   el alta de un dev nuevo con lo que se ensaya (`onboarding-probe.js`), y sobre lo que dejó, `count-hooks` y
  *                `fire-registered` (los mismos del escenario `measure`)
  *   all          los dos: primero `update`, que es lo que le pasa al equipo el lunes
  *   Esos dos eligen por lo que el árbol ES: sobre una COPIA PUBLICADA (trae `version.json`) siguen la página pública de
  *   instalación de Windows (`guided-install.js`, `guided-update.js`) y el reporte es otro (`renderGuided`): sin viernes
  *   ni clones. Ninguna corrida suya pasa de 40 minutos: el tope de cada paso está abajo, en `OWN_STEPS`.
- *   portable     la «base portable» (tanda W1), medida sobre un clon de los dos repos: los finales de línea de un clon
- *                nuevo y de uno que ya existía, el bash de Git, las suites de la tanda, el banco de controles entero y
+ *   portable     la «base portable», medida sobre un clon de los dos repos: los finales de línea de un clon
+ *                nuevo y de uno que ya existía, el bash de Git, las suites de la base portable, el banco de controles entero y
  *                los portones por ruta (`portable-probe.js`, una parte por paso). Va aparte: `all` no lo corre.
  *
  * SUBCOMANDOS
@@ -65,24 +65,24 @@ const SCENARIOS = Object.freeze({
   onboarding: ['inventory', 'onboarding', 'count-hooks', 'fire-registered'],
   all: ['inventory', 'update', 'onboarding', 'count-hooks', 'fire-registered'],
   portable: ['inventory', ...Object.keys(PORTABLE_STEPS)],
-  // story 8.23 (tanda B): la instalación SIN git —una versión bajada— en un Windows, con el archivo tomado (T14). Va
+  // la instalación SIN git —una versión bajada— en un Windows, con el archivo tomado (T14). Va
   // aparte, como `portable`: `all` no lo incluye
   'no-clone': ['inventory', 'no-clone'],
-  // story 8.23 (tanda C): una máquina SÓLO con Codex —instalar, arrancar Codex, diagnosticar y desinstalar sin nada en
+  // una máquina SÓLO con Codex —instalar, arrancar Codex, diagnosticar y desinstalar sin nada en
   // la carpeta de Claude Code—. Va aparte, como `no-clone`
   'codex-only': ['inventory', 'codex-only'],
-  // las ventanas de consola del arranque desprendido (2026-10-07, reporte de un dev): va aparte, `all` no lo incluye
+  // las ventanas de consola del arranque desprendido: va aparte, `all` no lo incluye
   'console-windows': ['inventory', 'console-windows'],
-  // story 8.23 (tanda D): la mudanza de una máquina del clon a ~/.tycon en Windows —el plan, el archivo tomado que frena,
+  // la mudanza de una máquina del clon a ~/.tycon en Windows —el plan, el archivo tomado que frena,
   // la mudanza con uniones y los hooks al árbol nuevo—. Va aparte, como `no-clone`
   migrate: ['inventory', 'migrate'],
-  // la firma del waiver en Windows (decisión del dueño, 2026-10-15): sin persona, desde un proceso como el del agente, no se
+  // la firma del waiver en Windows: sin persona, desde un proceso como el del agente, no se
   // firma. Va aparte, `all` no lo incluye
   waiver: ['inventory', 'waiver'],
-  // story 8.40 (AC 34): el instalador del paquete de npm armado con `npm pack` y corrido con `npx --package` contra el GitHub
+  // el instalador del paquete de npm armado con `npm pack` y corrido con `npx --package` contra el GitHub
   // de juguete, y el aviso de pwsh 7 faltante. Va aparte, `all` no lo incluye
   npx: ['inventory', 'npx'],
-  // story 8.40 (AC 40): el paquete PUBLICADO, `npx @tyconsa/harness@latest` del registro y el GitHub reales; la segunda
+  // el paquete PUBLICADO, `npx @tyconsa/harness@latest` del registro y el GitHub reales; la segunda
   // corrida dice «al día». Sin red, «no medido». Va aparte, `all` no lo incluye
   'npx-published': ['inventory', 'npx-published'],
 });
@@ -416,7 +416,7 @@ function renderGuided(report) {
   if (lab) {
     M.push('## Lo que el laboratorio cambió', '', 'Todo lo que se puso o se cambió respecto de la máquina de una persona. Ningún otro carácter de ningún comando de la página se toca.', '');
     if (lab.download_origin) M.push(`- el origen de la bajada del guion: \`${cell(lab.download_origin.from)}\` → \`${cell(lab.download_origin.to)}\` (en ${cell(lab.download_origin.where)})`);
-    // (story 8.40, AC 43) la línea npx: el paquete armado en lugar del publicado, y la respuesta de la persona, dicha en
+    // la línea npx: el paquete armado en lugar del publicado, y la respuesta de la persona, dicha en
     // una línea para que el verde no se lea como «la persona no tuvo que hacer nada»
     if (lab.package) M.push(`- el paquete de npm: \`${cell(lab.package.from)}\` → \`${cell(lab.package.to)}\` (en ${cell(lab.package.where)}): ${cell(lab.package.why)}`);
     if (lab.answer) M.push(`- la respuesta de la persona: en el paso ${cell(lab.answer.step)} se sumó \`${cell(lab.answer.append)}\` — ${cell(lab.answer.why)}`);

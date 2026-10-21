@@ -2,17 +2,17 @@
 # Prueba de pr-one-per-repo-guard.js — el freno que impide abrir un SEGUNDO pull request en un repo que ya
 # tiene uno abierto.
 #
-# 🔴 Nace de una jornada en la que la cola de Azure se llenó CUATRO veces por la misma causa
-# (2026-09-03), con dos variantes: empujar de a poco a la misma rama, y abrir una tanda de pull
-# requests y después OTRA sobre los mismos repos. Las dos veces se prometió no repetirlo y se
-# repitió por la otra puerta. Una regla que hay que recordar no es un control.
+# 🔴 La cola de Azure se puede llenar por la misma causa, con dos variantes:
+# empujar de a poco a la misma rama, y abrir una tanda de pull
+# requests y después OTRA sobre los mismos repos. Prometer no repetirlo no alcanza: se
+# repite por la otra puerta. Una regla que hay que recordar no es un control.
 #
 # Sin red: un `az` de mentira en PATH contesta lo que cada caso pide.
 set -uo pipefail
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HOOK="$AQUI/scripts/hooks/pr-one-per-repo-guard.js"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-# HOME de la prueba para toda la suite (story 7.16): el freno deja su constancia en frenos.jsonl.
+# HOME de la prueba para toda la suite: el freno deja su constancia en frenos.jsonl.
 source "$AQUI/scripts/tests/lib/fake-home.sh"
 fake_home_create "$TMP/casa" || exit 1
 fallos=0; casos=0
@@ -37,7 +37,7 @@ corre(){ # <comando> ; usa AZ_SALIDA y AZ_EXIT del entorno
 }
 CREAR='az repos pr create --org https://x --project Totora --repository FrontEnd --source-branch ci/nueva --target-branch main --title t'
 
-# ---------------------------------------------------------------- 1. 🔴 EL CASO REAL
+# ---------------------------------------------------------------- 1. 🔴 otro pull request construyendo en el mismo repo
 echo '[{"pullRequestId":2845,"title":"la amnistia","sourceRefName":"refs/heads/ci/otra"}]' > "$TMP/pr.json"
 echo '[{"configuration":{"type":{"displayName":"Build"}},"status":"running"}]' > "$TMP/corriendo.json"
 echo '[{"configuration":{"type":{"displayName":"Build"}},"status":"approved"}]' > "$TMP/terminada.json"
@@ -72,11 +72,9 @@ for otro in "az repos pr update --id 1 --auto-complete true" "az repos pr list -
 done
 [ "$rc" -eq 0 ] && ok "actualizar, listar o consultar corridas no se tocan"
 
-# ---------------------------------------------------------------- 4b. 🔴 EL CASO QUE FALTABA
-# La primera versión de este freno bloqueaba ante CUALQUIER pull request abierto — y eso le impide a
-# dos personas trabajar en cosas distintas del mismo repositorio, que es lo normal en un equipo. Lo
-# corrigió una pregunta del dev: "¿eso significa que ningún dev va a poder hacer más de un PR por
-# repo?". Sí, significaba eso, y estaba mal. Lo que molesta no son dos pull requests: son dos
+# ---------------------------------------------------------------- 4b. 🔴 un pull request ya construido no bloquea
+# Bloquear ante CUALQUIER pull request abierto le impediría a dos personas trabajar en cosas
+# distintas del mismo repositorio, que es lo normal en un equipo. Lo que molesta no son dos pull requests: son dos
 # construcciones del mismo pipeline a la vez.
 rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/terminada.json" corre "$CREAR")
 [ "$rc" -eq 0 ] && ok "🔴 con otro pull request abierto pero YA CONSTRUIDO, deja abrir el segundo" \
@@ -95,10 +93,10 @@ rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$CREAR")
 export TYCON_PR_ONE_PER_REPO=1
 [ "$rc" -eq 0 ] && ok "🔴 SIN encenderlo (el default), no estorba: un dev no lo ve nunca" || no "🔴 estorba por default: eso frena el trabajo diario del equipo ($rc)"
 
-# ---------------------------------------------------------------- 7. T23 (story 7.15) las constancias van a la HOME de la prueba
+# ---------------------------------------------------------------- 7. las constancias van a la HOME de la prueba
 # Cada caso deja «paso» o «bloqueo» en frenos.jsonl, que sube al buzón y alimenta el tablero: en la HOME
-# REAL eran constancias falsas. Evidencia POSITIVA (el real no sirve de control: las sesiones del dev
-# escriben ahí al mismo tiempo). Rojo previo: sin HOME temporal, el archivo de la prueba no existe.
+# REAL serían constancias falsas. Evidencia POSITIVA (el real no sirve de control: las sesiones del dev
+# escriben ahí al mismo tiempo). Falla si, sin HOME temporal, el archivo de la prueba no existe.
 N="$(fake_home_count frenos.jsonl '"freno":"pr-uno-por-repo"')"
 [ "${N:-0}" -gt 0 ] && ok "T23 las constancias de los casos quedaron en la HOME de la prueba ($N), no en la real" \
   || no "T23 🔴 ninguna constancia en la HOME de la prueba: fueron al frenos.jsonl real del dev"

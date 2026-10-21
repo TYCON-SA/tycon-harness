@@ -1,11 +1,11 @@
 'use strict';
 
 /**
- * union-check.test.js — la unión de las dos historias (el arnés y agent-skills), verificada (story 8.18, tramo 0 · 2026-10-03).
+ * union-check.test.js — la unión de las dos historias (el arnés y agent-skills), verificada.
  * T2, T3, T6 y T9, y la mitad de T5 que no necesita un commit con hooks (la otra mitad vive en githook-livefire.test.sh).
  *
- * Qué prueba: `scripts/tools/union-check.js`, la herramienta de sólo lectura que mira si el repo unido es lo que la
- * story dice que es. Cada caso arma DOS repos de juguete sin historia común —con `README.md`, `.gitignore` y
+ * Qué prueba: `scripts/tools/union-check.js`, la herramienta de sólo lectura que mira si el repo unido es lo que debe ser.
+ * Cada caso arma DOS repos de juguete sin historia común —con `README.md`, `.gitignore` y
  * `.githooks/pre-commit` repetidos, y una rama mezclada de cada lado— y los une con los mismos pasos que la unión
  * real: un commit de cada lado que resuelve los tres choques, y un `git merge --allow-unrelated-histories --no-ff`.
  *
@@ -159,7 +159,7 @@ function lab({ exporter = null, dispatcher = null } = {}) {
   fs.mkdirSync(h);
   fs.mkdirSync(s);
 
-  // el arnés: main, una tanda en su rama, y los dos mezclados
+  // el arnés: main, una rama de trabajo, y los dos mezclados
   git(h, 'init', '-q', '-b', 'main');
   write(h, 'README.md', '# El arnés\n');
   // un arnés que trae su propio exportador (con SU texto del despachador), como el de verdad
@@ -179,7 +179,7 @@ function lab({ exporter = null, dispatcher = null } = {}) {
   git(h, 'merge', '-q', '--no-ff', 'batch-d', '-m', 'la base trae la tanda');
   const h0 = git(h, 'rev-parse', 'HEAD');
 
-  // agent-skills: main, una tanda en su rama, y los dos mezclados
+  // agent-skills: main, una rama de trabajo, y los dos mezclados
   git(s, 'init', '-q', '-b', 'main');
   write(s, 'README.md', '# Agent Skills\n\n## Skills que no se cargan\n\nSe mueven a skills-inactivas/.\n');
   write(s, '.gitignore', SKILLS_GITIGNORE);
@@ -232,15 +232,15 @@ test('Dispatcher_TextOfTheUnion — el despachador de la unión, con sus dos par
   assert.match(text, /pre-commit-harness/);
   assert.match(text, /pre-commit-skills/);
   assert.ok(text.endsWith('\n'), 'termina en salto de línea');
-  // el exportador de hoy ya no lo trae (el arnés corre un solo control): el texto de la unión vive en union-check
+  // el exportador actual no trae la constante (el arnés corre un solo control): el texto de la unión vive en union-check
   const source = fs.readFileSync(path.join(ROOT, 'scripts', 'publishing', 'export.js'), 'utf8');
   assert.doesNotMatch(source, /PRE_COMMIT_DISPATCHER/, 'el exportador no trae el despachador');
 });
 
-// 🔴 pase adversarial: con export.js en disco con saltos CRLF (un checkout de Windows con autocrlf) la expresión que lee
-// la constante no la encontraba, `tree` salía 2 culpando al exportador y todo el laboratorio de esta suite caía.
+// 🔴 Con export.js en disco con saltos CRLF (un checkout de Windows con autocrlf), si la expresión que lee
+// la constante no la encontrara, `tree` saldría 2 culpando al exportador y todo el laboratorio de esta suite caería.
 test('Dispatcher_CrlfCheckout_SameText — el fin de línea del checkout no cambia el texto del despachador', () => {
-  // un exportador de la unión, con la constante del despachador (el de hoy ya no la trae)
+  // un exportador de la unión, con la constante del despachador (el exportador actual no la trae)
   const source = `'use strict';\nconst PRE_COMMIT_DISPATCHER = [\n${lib().dispatcherText().split('\n').map((l) => `  ${JSON.stringify(l)},`).join('\n')}\n].join('\\n');\nmodule.exports = {};\n`;
   const dir = tmp('uc-crlf-');
   const crlf = path.join(dir, 'export.js');
@@ -253,18 +253,18 @@ test('Dispatcher_CrlfCheckout_SameText — el fin de línea del checkout no camb
   assert.throws(() => lib().dispatcherText(without), /PRE_COMMIT_DISPATCHER/);
 });
 
-// 🔴 pase adversarial: `tree` comparaba el despachador de un commit de la unión, que no cambia nunca, contra el texto que
-// el exportador genera HOY. Un retoque posterior de esa constante ponía en rojo para siempre la comprobación de la unión.
+// 🔴 `tree` compara el despachador de un commit de la unión, que no cambia nunca, contra el texto del exportador de su lado;
+// si lo comparara contra el texto que genera el exportador actual, un retoque posterior de esa constante pondría en rojo para siempre la comprobación de la unión.
 test('Dispatcher_FromTheHarnessSideExporter — el despachador esperado es el del exportador del lado del arnés, no el de hoy', () => {
   const OTHER = ['#!/usr/bin/env bash', '# el despachador de ese arnés, con otro texto', 'exit 0', ''].join('\n');
   const exporter = `'use strict';\nconst PRE_COMMIT_DISPATCHER = [\n  '#!/usr/bin/env bash',\n  '# el despachador de ese arnés, con otro texto',\n  'exit 0',\n  '',\n].join('\\n');\nmodule.exports = {};\n`;
   const tree = (l) => tool(l.dir, 'tree', '--harness', l.h0, '--skills', l.s0, '--union', l.u);
-  // la unión se armó con el texto del exportador de SU lado del arnés: en orden, aunque el de hoy diga otra cosa
+  // la unión se armó con el texto del exportador de SU lado del arnés: en orden, aunque el actual diga otra cosa
   const own = lab({ exporter, dispatcher: OTHER });
   assert.notEqual(OTHER, lib().dispatcherText(), 'el texto de juguete no es el de hoy');
   const ok = tree(own);
   assert.equal(ok.status, 0, `${ok.stdout}${ok.stderr}`);
-  // y si la unión trae el texto de hoy en vez del de su lado, difiere
+  // y si la unión trae el texto actual en vez del de su lado, difiere
   const today = lab({ exporter });
   const bad = tree(today);
   assert.equal(bad.status, 1, `${bad.stdout}${bad.stderr}`);
@@ -442,8 +442,8 @@ test('T6 Papers_InactiveSkillsGuide_GitignoreCitesIt_PostCommitIgnoreAsIs — ju
   // sin los dos lados sólo mira lo que dura: la guía y la cita
   const short = tool(l.dir, 'papers', '--base', base);
   assert.equal(short.status, 0, `${short.stdout}${short.stderr}`);
-  // 🔴 pase adversarial: un lado que llega VACÍO (una variable de shell sin valor) no es «no me lo pasaron»: antes
-  // salteaba la comparación y salía 0. Con un archivo de .tycon/ cambiado, tiene que salir 2, no verde.
+  // 🔴 Un lado que llega VACÍO (una variable de shell sin valor) no es «no me lo pasaron»: si se salteara
+  // la comparación, saldría 0. Con un archivo de .tycon/ cambiado, tiene que salir 2, no verde.
   const changed = variant(l.dir, l.u, 'p-empty', () => { guide(); cite(); fs.appendFileSync(path.join(l.dir, '.tycon/post-commit-ignore'), 'otra\n'); }, 'papeles: un lado vacío');
   const empty = tool(l.dir, 'papers', '--base', changed, '--harness', '', '--skills', '');
   assert.equal(empty.status, 2, `${empty.stdout}${empty.stderr}`);
@@ -508,7 +508,7 @@ test('T9 Lanes_NoFileInTwoBranches — juguete', () => {
   assert.equal(against.status, 1, `${against.stdout}${against.stderr}`);
   assert.ok(against.stdout.split('\n').some((x) => x.includes('scripts/a.js') && x.includes('lane-3') && x.includes('rama junta')), against.stdout);
 
-  // 🔴 pase adversarial: un carril que avanza rápido sobre la rama junta (lo que `git merge` hace por defecto) no se
+  // 🔴 Un carril que avanza rápido sobre la rama junta (lo que `git merge` hace por defecto) no se
   // lleva como propios los commits de los otros
   git(l.dir, 'checkout', '-q', '-b', 'lane-5', base);
   git(l.dir, 'merge', '-q', 'joined');
@@ -540,8 +540,8 @@ test('T9 Lanes_NoFileInTwoBranches — juguete', () => {
   assert.equal(noJoinedRef.status, 2, 'una rama junta que no existe sale 2');
 });
 
-// 🔴 pase adversarial (el caso tal cual se reprodujo): con un avance rápido el chequeo daba un choque FALSO y además
-// dejaba de ver uno REAL.
+// 🔴 Con un avance rápido, un chequeo ingenuo daría un choque FALSO y además
+// dejaría de ver uno REAL.
 test('T9 Lanes_FastForwardOntoJoined_NoFalseCollision_RealOneStillSeen — juguete', () => {
   const l = lab();
   const base = l.u;

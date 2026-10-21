@@ -1,9 +1,9 @@
 'use strict';
-// response-style-variants.test.js — cómo contesta Claude y la tabla de nombres, según la configuración (story 2.31).
+// response-style-variants.test.js — cómo contesta Claude y la tabla de nombres, según la configuración.
 //
 // Lo que no se puede perder:
 //   · sin `response` en el perfil, cada máquina escribe el bloque NEUTRO (corto, sin el estilo de TYCON) — T3;
-//   · el perfil de TYCON (executive · es · 1300) deja el bloque de antes de la 2.31, salvo el título — T4;
+//   · el perfil de TYCON (executive · es · 1300) deja el bloque idéntico al de la fixture de referencia, salvo el título — T4;
 //   · el medidor usa `response.max_chars`; sin valor, el tope del estilo — T5;
 //   · un estilo fuera del vocabulario es configuración ROTA: el bloque que había queda y se avisa — T7;
 //   · una fila de la tabla de nombres con su integración apagada no se escribe, en CLAUDE.md y en AGENTS.md; al prenderla
@@ -221,7 +221,7 @@ test('T14 Budget_EveryStyleVariantFitsCeiling @story-2.31 @ac-20 —las seis var
   assert.match(stub, /^<!-- requires-profile: full -->\n<!-- variants: response -->\n/, 'response-style.md declara sus variantes');
 });
 
-// ── pase adversarial: las tres implementaciones dan lo mismo en los bordes ───────────────────────────────────────
+// ── las tres implementaciones dan lo mismo en los bordes ───────────────────────────────────────
 /** Un árbol de juguete: los tres sincronizadores y el lector de este repo, con los bloques que se pidan. */
 function arbol(bloques) {
   const t = fs.mkdtempSync(path.join(os.tmpdir(), 'resp-arbol-'));

@@ -1,14 +1,13 @@
 'use strict';
 
 /**
- * tycon-config.test.js — el lector de configuración del arnés (story 8.3, AC 1-3: T1, T2, T3).
+ * tycon-config.test.js — el lector de configuración del arnés (T1, T2, T3).
  *
- * EL AGUJERO QUE CIERRA. Hasta la 8.3 «dónde está el arnés», «dónde viven los repos», «cuál es la
- * organización de Azure DevOps» y «a quién avisar» estaban escritos en el código: valían en la
- * máquina donde se escribieron y en ninguna otra. Ahora salen de UNA sola cadena —variable de
- * entorno › archivo de la máquina (`~/.claude/tycon.json`) › perfil del equipo (`team-profile.json`, o
- * `perfil-equipo.json`, el nombre de antes)
- * › apagado / sin valor— y `explicar` dice de dónde salió cada valor.
+ * POR QUÉ EXISTE. «Dónde está el arnés», «dónde viven los repos», «cuál es la organización de Azure DevOps»
+ * y «a quién avisar» no pueden estar escritos en el código: valdrían en la máquina donde se escribieron y en
+ * ninguna otra. Salen de UNA sola cadena —variable de entorno › archivo de la máquina (`~/.claude/tycon.json`) ›
+ * perfil del equipo (`team-profile.json`, o `perfil-equipo.json`, el nombre anterior) › apagado / sin valor— y
+ * `explicar` dice de dónde salió cada valor.
  *
  * Lo que estas pruebas sostienen:
  *   T1 · la precedencia: la misma clave en los cuatro niveles, quitando uno por vez → gana el más alto
@@ -21,7 +20,7 @@
  *   T3 · el perfil del equipo sólo trae valores del equipo: un chat_id, un email o algo con forma de
  *        token lo hacen inválido con el motivo; lo mismo en el archivo de la máquina se acepta.
  *
- * 🔴 rojo previo verificado: sin `scripts/lib/tycon-config.js` todo falla (no existe el lector).
+ * 🔴 Sin `scripts/lib/tycon-config.js` todo falla (no existe el lector).
  * 🔴 Nada acá toca el HOME real: cada caso arma su HOME y su «arnés» (carpeta con perfil) en el temporal.
  */
 
@@ -233,8 +232,8 @@ test('T2 Config_ArchivoRoto — un hook lo dice en CADA corrida, sale 0 y no hac
   const correrHook = (h) => spawnSync('bash', [HOOK], {
     cwd: repo, encoding: 'utf8',
     input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git commit -m "x"' }, cwd: repo }),
-    // engram PRENDIDA (TYCON_ENGRAM=1): con el perfil apagado viene apagada, y desde DEF-8.23-C-hooks-codex-sin-integracion
-    // el hook no sincroniza con su integración apagada — el caso mide la configuración ROTA, no la llave
+    // engram PRENDIDA (TYCON_ENGRAM=1): con el perfil apagado viene apagada, y el hook no sincroniza con su
+    // integración apagada — el caso mide la configuración ROTA, no la llave
     env: { PATH: `${bin}:${process.env.PATH}`, HOME: h, TYCON_PROFILE: '0', TYCON_ENGRAM: '1' },
   });
   for (let i = 0; i < 2; i++) {
@@ -278,9 +277,9 @@ test('T3 Config_ValorPersonalEnPerfil_Rechazado — lo personal invalida el perf
 });
 
 test('T3 Config_PerfilRealDelEquipo_SinNadaPersonal — el perfil que viaja en el arnés es válido y no trae nada personal (NO MEDIDO sin él)', (t) => {
-  // En la copia pública el perfil del equipo no viaja (story 8.4): sin él esta prueba no tiene qué mirar y lo dice —
+  // En la copia pública el perfil del equipo no viaja: sin él esta prueba no tiene qué mirar y lo dice —
   // NO MEDIDO, nunca un verde—. En el interno mide lo de siempre.
-  const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre de hoy, o el de antes
+  const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre actual, o el anterior
   if (!fs.existsSync(rutaReal)) {
     console.log(`  ℹ NO MEDIDO — el perfil del equipo no está (${rutaReal}): la copia pública no lo trae. No se juzga acá.`);
     t.skip('perfil del equipo ausente: no medido');
@@ -291,7 +290,7 @@ test('T3 Config_PerfilRealDelEquipo_SinNadaPersonal — el perfil que viaja en e
   assert.equal(real.valores.telegram.chat_id, null, 'el perfil real no trae chat');
 });
 
-// ── Valores con FORMA de secreto de un proveedor: armados por partes (story 8.8, AC 3) ──────────────────
+// ── Valores con FORMA de secreto de un proveedor: armados por partes ──────────────────
 // Este archivo sale en la copia pública, y el escaneo de secretos de GitHub no lee las excepciones del equipo: ninguna
 // línea trae uno de estos valores entero. Son todos de mentira, y en ejecución cada caso recibe el texto de siempre.
 const GH_UPPER = 'gh' + 'p_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123';
@@ -304,23 +303,22 @@ const JWT_PARTS = ['eyJhbGciOiJIUzI1NiJ9', 'eyJzdWIiOiJkZXYifQ'];
 const JWT_LONG = [...JWT_PARTS, 'SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'].join('.');
 const JWT_SHORT = [...JWT_PARTS, 'SflKxwRJSM'].join('.');
 
-// ── Pase adversarial (vuelta 1): lo que el lector normaliza y lo que un comentario no puede traer ──
+// ── lo que el lector normaliza y lo que un comentario no puede traer ──
 
 test('T3 Config_ComentarioConDatoPersonal_Rechazado — un email, un token o un chat bajo `__doc`/`__nota` invalidan el perfil; en la máquina se aceptan', () => {
   const casos = [
     [{ __contacto: 'dev.a.bis@example.com', ado: { org: 'https://dev.azure.com/equipo' } }, '__contacto', /email/i],
     [{ integraciones: { __nota: '1234567890:AAFabcdefghijklmnopqrstuvwxyz0123456789', clockify: true } }, 'integraciones.__nota', /token/i],
     [{ __x: { telegram: { chat_id: '1122334455' } } }, '__x', /chat/i],
-    // formas de secreto que el corte de 32 caracteres no atrapaba (revisor de seguridad, vuelta 2)
+    // formas de secreto que un corte de 32 caracteres no atraparía
     [{ __nota: `firmar con ${JWT_LONG}` }, '__nota', /JWT/],
     [{ ado: { org: 'https://dev.azure.com/equipo', __nota: AWS_SHAPE } }, 'ado.__nota', /AWS/],
     [{ __doc: 'password=hunter2 para el buzón' }, '__doc', /credencial/],
     [{ __doc: `usar ${GH_UPPER}` }, '__doc', /GitHub/],
-    // con espacios adentro: la tokenización no las puede partir antes de mirarlas (vuelta 3)
+    // con espacios adentro: la tokenización no las puede partir antes de mirarlas
     [{ __nota: 'el buzón usa token: abcdef123456 hasta que se rote' }, '__nota', /credencial/],
     [{ __doc: `${PEM_BEGIN} MIIEow… -----END RSA PRIVATE KEY-----` }, '__doc', /clave privada/],
-    // escrito como chat_id=… (pase adversarial de la tanda B). Un número suelto («avisar al chat 1122334455.») ya NO se
-    // frena desde la story 8.3.1: sólo lo inequívoco (decisión del dev, 2026-09-29) — ver T4.
+    // escrito como chat_id=…. Un número suelto («avisar al chat 1122334455.») NO se frena: sólo lo inequívoco — ver T4.
     [{ __nota: 'chat_id=1122334455' }, '__nota', /credencial|chat/i],
     [{ __doc: `el token es ${GH_LOWER}.` }, '__doc', /GitHub|token/i],
   ];
@@ -343,7 +341,7 @@ test('T3 Config_ComentarioConDatoPersonal_Rechazado — un email, un token o un 
   assert.equal(lib().leer({ env: {}, home, arnes: arnesCon(null) }).valores.telegram.chat_id, '1122334455');
 });
 
-// ── story 8.3.1 · el detector de lo personal, sin falsos positivos sobre prosa técnica (AC 3-5) ──────────
+// ── el detector de lo personal, sin falsos positivos sobre prosa técnica ──────────
 
 test('T4 Config_ComentarioTecnico_NoEsPersonal — una ruta, una clave del vocabulario, una variable TYCON_* o el número de un build no son datos de una persona (story 8.3.1, AC 3)', () => {
   const comentarios = [
@@ -353,7 +351,7 @@ test('T4 Config_ComentarioTecnico_NoEsPersonal — una ruta, una clave del vocab
     'build 1234567890 salió verde',
     'la corrida 20260926213714 y el PR 3482123456, id de corrida 987654321, sha 1234567890123',
     'clave ado.org; ver guides/integraciones-por-configuracion-del-equipo.md',
-    // pase adversarial (5b): sin espacio después de los dos puntos, y un archivo sin carpeta
+    // sin espacio después de los dos puntos, y un archivo sin carpeta
     'clave:integraciones.engram',
     'llave:scripts/metrics/corridas-buzon.json',
     'clave: tycon.json',
@@ -361,13 +359,13 @@ test('T4 Config_ComentarioTecnico_NoEsPersonal — una ruta, una clave del vocab
     'ver guides/decisions/interruptores-fuera-de-tycon-2026-08-25.md',
     'ver corrida-1234567890.json',
     'ver logs/build_1234567890.log',
-    // sólo lo inequívoco (decisión del dev, 2026-09-29): lo que antes se ADIVINABA ya no rompe el perfil. Se pierde a
-    // propósito el número de chat suelto; queda para quien revisa el pull request.
+    // sólo lo inequívoco: lo que sería una ADIVINANZA no rompe el perfil. El número de chat suelto no se frena a
+    // propósito; queda para quien revisa el pull request.
     'avisar al chat 1122334455.',
     'la clave es correcto-caballo-bateria-grapadora-secreta',
     'a8f3k2m9q7w1e5r6t4y0u2i8o3p7l1z9',
     'ver 1122334455.json',
-    // [DEF-8.3.1-5] (fallas silenciosas, iter 5): una dirección con usuario no es un email, y una palabra no es un secreto
+    // una dirección con usuario no es un email, y una palabra no es un secreto
     'el remoto es git@github.com:org/repo.git',
     'la org se escribe https://usuario@dev.azure.com/org',
     'token: revisar la doc de rotación',
@@ -388,8 +386,8 @@ test('T5 Config_ComentarioConDatoPersonal_SigueRechazado — lo inequívoco (ema
     [{ __doc: 'build dev.a.bis@example.com' }, '__doc', /email/i],
     [{ __nota: `usar {${GH_UPPER}}` }, '__nota', /GitHub/],
     [{ __nota: `[${AWS_SHAPE}]` }, '__nota', /AWS/],
-    // armado en pedazos: escrito entero, el freno de nombres en castellano (8.9) lo lee como una variable; y el pedazo
-    // de la derecha, escrito entero, tiene la forma de una llave de AWS (story 8.8): por eso viene de la constante
+    // armado en pedazos: escrito entero, el freno de nombres en castellano lo lee como una variable; y el pedazo
+    // de la derecha, escrito entero, tiene la forma de una llave de AWS: por eso viene de la constante
     [{ __doc: 'TYCON_' + AWS_SHAPE }, '__doc', /AWS/],
     [{ __doc: 'clave: TYCON_ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123' }, '__doc', /GitHub/],
     [{ __doc: `ver ${SLACK_SHAPE}` }, '__doc', /Slack/],
@@ -397,14 +395,14 @@ test('T5 Config_ComentarioConDatoPersonal_SigueRechazado — lo inequívoco (ema
     [{ __doc: 'la contraseña: password=hunter2' }, '__doc', /credencial/],
     [{ __doc: 'secret: s3cr3t0' }, '__doc', /credencial/],
     [{ __doc: 'chat_id: 1122334455' }, '__doc', /credencial/],
-    // con el nombre de la variable adelante (revisor de seguridad, iter 5): el guion bajo también separa
+    // con el nombre de la variable adelante: el guion bajo también separa
     [{ __doc: 'DB_PASSWORD=hunter2' }, '__doc', /credencial/],
     [{ __doc: 'exportar TYCON_API_KEY=abcd1234' }, '__doc', /credencial/],
-    // [DEF-8.3.1-5]: el ajuste para no confundir direcciones y palabras no afloja lo que sí es un dato
+    // el ajuste para no confundir direcciones y palabras no afloja lo que sí es un dato
     [{ __doc: 'escribir a dev.a.bis@example.com: ahí contesta' }, '__doc', /email/i],
     [{ __doc: 'password=Contraseña!' }, '__doc', /credencial/],
     [{ __doc: 'token: 9f8e7d6c' }, '__doc', /credencial/],
-    // fallas silenciosas, iter 6: la clave viaja también a través de una lista
+    // la clave viaja también a través de una lista
     [{ __nota: { chat_id: ['1122334455'] } }, '__nota', /credencial/],
     [{ __doc: `firmar con ${JWT_SHORT}` }, '__doc', /JWT/],
   ];
@@ -464,12 +462,12 @@ test('T3 Config_RutaRelativaOConEspacios_ResueltaContraElHome — nunca contra e
   assert.equal(lib().leer({ env: {}, home, arnes: arnesCon(null) }).valores.rutas.repos, path.join(home, 'Proyectos'));
   maquina(home, { rutas: { repos: ' ~/x ' } });
   assert.equal(lib().leer({ env: {}, home, arnes: arnesCon(null) }).valores.rutas.repos, path.join(home, 'x'));
-  // desde otro cwd, la CLI da lo mismo (antes: <cwd>/Proyectos, distinto según qué hook leyera)
+  // desde otro cwd, la CLI da lo mismo (no depende de <cwd>/Proyectos)
   maquina(home, { rutas: { repos: 'Proyectos' } });
   const r = spawnSync(process.execPath, [LIB, 'get', 'rutas.repos'], { encoding: 'utf8', cwd: os.tmpdir(), env: Object.assign({}, ENV_LIMPIO, { HOME: home, TYCON_PROFILE: '0' }) });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout.trim(), path.join(home, 'Proyectos'));
-  // por VARIABLE, una ruta relativa también va contra el HOME (el mismo lector no puede tener dos reglas — vuelta 2)
+  // por VARIABLE, una ruta relativa también va contra el HOME (el mismo lector no puede tener dos reglas)
   assert.equal(lib().leer({ env: { TYCON_REPOS_ROOT: 'Proyectos' }, home, arnes: arnesCon(null) }).valores.rutas.repos, path.join(home, 'Proyectos'));
   // `~` en TYCON_PROFILE se expande al HOME dado
   fs.writeFileSync(path.join(home, 'perfil.json'), JSON.stringify({ ado: { org: 'https://dev.azure.com/tilde' } }));
@@ -498,7 +496,7 @@ test('T2 Config_HookConRuidoEnStderr_NoEsConfigRota — un warning de node por s
     `con la config sana y ruido en stderr el hook SÍ sincroniza (stderr: ${r.stderr})`);
 });
 
-// ── tanda B (AC 9): lo que el instalador y las pruebas «sin nada» necesitan del lector ─────────────
+// ── lo que el instalador y las pruebas «sin nada» necesitan del lector ─────────────
 
 test('T9 Config_LlaveDelBuzonPorVariable — TYCON_MAILBOX_JSON dice dónde está la llave (la misma variable que lee upload-runs.js): apuntando a un archivo inexistente, el buzón queda apagado aunque el clon traiga la llave', () => {
   const home = casa();
@@ -556,9 +554,9 @@ test('T9 Config_IntegracionParaHook — integracionParaHook(llave) nunca tira: p
   assert.throws(() => lib().integracionParaHook('jira', { home, arnes, env: {} }), /jira/, 'una llave fuera del vocabulario es un error de programación, no un «apagado»');
 });
 
-// ── story 8.13 (AC 12): la política de actualización — `update.channel` y `update.apply` ─────────────
-// 🔴 rojo previo verificado: sin la sección `update` en el vocabulario, «sin nada» da `undefined` (no `stable`), el
-//    perfil con `update` es «clave desconocida», y `TYCON_UPDATE_CHANNEL=nightly` pasa en silencio.
+// ── la política de actualización — `update.channel` y `update.apply` ─────────────
+// 🔴 Sin la sección `update` en el vocabulario, «sin nada» da `undefined` (no `stable`), el perfil con `update`
+//    es «clave desconocida», y `TYCON_UPDATE_CHANNEL=nightly` pasa en silencio.
 
 test('T13 Config_UpdateKeys_DefaultsProfileErrors_InternalAskWarning — sin nada: stable+ask (default); perfil: latest+auto; valor fuera del vocabulario: error (nunca «apagado»); explain con origen; TYCON_UPDATE=0 es interruptor (la parte de doctor vive en harness-doctor.test.sh)', (t) => {
   const { VOCABULARIO, VARIABLES, INTERRUPTORES_POR_HOOK } = lib();
@@ -585,7 +583,7 @@ test('T13 Config_UpdateKeys_DefaultsProfileErrors_InternalAskWarning — sin nad
   assert.equal(c.origenes['update.channel'], 'perfil');
   assert.equal(c.origenes['update.apply'], 'perfil');
   // …y el perfil REAL del equipo trae latest + auto (NO MEDIDO en la copia pública, que no lo trae)
-  const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre de hoy, o el de antes
+  const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre actual, o el anterior
   if (fs.existsSync(rutaReal)) {
     const real = lib().leer({ env: {}, home: casa() });
     assert.equal(real.valores.update.channel, 'latest', 'el perfil del equipo pide el canal «al día»');
@@ -605,7 +603,7 @@ test('T13 Config_UpdateKeys_DefaultsProfileErrors_InternalAskWarning — sin nad
   assert.equal(c.valores.update.apply, 'ask'); assert.equal(c.origenes['update.apply'], 'env');
   assert.equal(c.variables['update.channel'], 'TYCON_UPDATE_CHANNEL');
 
-  // (d) un valor fuera del vocabulario es un ERROR (8.3 AC 2), nunca «apagado» ni el default
+  // (d) un valor fuera del vocabulario es un ERROR, nunca «apagado» ni el default
   //     · por variable: un comando frena nombrando la variable y los valores válidos…
   const r = cli(['explain'], { home: casa(), env: { TYCON_PROFILE: '0', TYCON_UPDATE_CHANNEL: 'nightly' } });
   assert.equal(r.status, 2, 'un comando con TYCON_UPDATE_CHANNEL=nightly sale 2');
@@ -670,12 +668,12 @@ test('T13 Config_UpdateKeys_DefaultsProfileErrors_InternalAskWarning — sin nad
   t.diagnostic('T13 cubre AC 12 salvo el aviso de doctor (harness-doctor.test.sh)');
 });
 
-// ── story 8.18 (AC 30, T31): la llave de la transición — `update.skills_source` ───────────────────────────────
-// De dónde lee las skills una máquina del equipo con dos clones: `separate` (su clon viejo de agent-skills, como hoy) o
+// ── T31: la llave de la transición — `update.skills_source` ───────────────────────────────
+// De dónde lee las skills una máquina del equipo con dos clones: `separate` (su clon de agent-skills aparte) o
 // `unified` (ese clon re-apuntado al repo unido). La clave vive acá; re-apuntar es de `scripts/setup/harness/repoint.js`.
-// 🔴 rojo previo verificado (2026-10-04, sobre la base): sin la clave en el vocabulario, «sin nada» da `undefined` (no
-//    `separate`), `update.skills_source` en la máquina o en el perfil es «clave desconocida», la variable
-//    `TYCON_UPDATE_SKILLS_SOURCE=both` pasa en silencio y `explain` no la muestra.
+// 🔴 Sin la clave en el vocabulario, «sin nada» da `undefined` (no `separate`), `update.skills_source` en la
+//    máquina o en el perfil es «clave desconocida», la variable `TYCON_UPDATE_SKILLS_SOURCE=both` pasa en
+//    silencio y `explain` no la muestra.
 
 test('T31 Config_SkillsSourceKey_DefaultSeparate_OutOfVocabularyIsError — sin nada: separate (default); variable › máquina › perfil; un valor fuera de separate|unified es error con archivo y clave, nunca el default; explain con valor y origen; el perfil real no la trae hasta el corte', (t) => {
   const { VOCABULARIO, VARIABLES, DEFAULTS } = lib();
@@ -688,7 +686,7 @@ test('T31 Config_SkillsSourceKey_DefaultSeparate_OutOfVocabularyIsError — sin 
   assert.deepEqual(c.errores, []);
   assert.equal(c.valores.update.skills_source, 'separate');
   assert.equal(c.origenes['update.skills_source'], 'default');
-  //     …y no cambió el default de sus vecinas (la clave nueva no arrastra a las de la 8.13)
+  //     …y no cambia el default de sus vecinas (la clave nueva no arrastra a sus vecinas)
   assert.equal(c.valores.update.channel, 'stable'); assert.equal(c.valores.update.apply, 'ask');
 
   // (b) el orden de siempre: perfil → máquina → variable
@@ -696,7 +694,7 @@ test('T31 Config_SkillsSourceKey_DefaultSeparate_OutOfVocabularyIsError — sin 
   c = cargar({ env: {}, home: casa(), arnes });
   assert.deepEqual(c.errores, [], 'la clave en el perfil no es un dato personal ni una clave desconocida');
   assert.equal(c.valores.update.skills_source, 'unified'); assert.equal(c.origenes['update.skills_source'], 'perfil');
-  //     la máquina le gana al perfil: es como una máquina (las de Windows, AC 38) se queda con la llave apagada
+  //     la máquina le gana al perfil: así una máquina (las de Windows, por ejemplo) se queda con la llave apagada
   const home = casa();
   maquina(home, { update: { skills_source: 'separate' } });
   c = cargar({ env: {}, home, arnes });
@@ -760,10 +758,10 @@ test('T31 Config_SkillsSourceKey_DefaultSeparate_OutOfVocabularyIsError — sin 
   const cm = lib().leer({ env: {}, home, arnes });
   assert.equal(lib().valor(cm, 'update.skills_source'), 'separate');
 
-  // (e) el perfil REAL del equipo: la clave se crea en el código y el perfil no la trae hasta el corte (la prende el
-  //     dueño, en su propio pull request). Con el perfil de hoy una máquina del equipo queda en `separate`. Si el
-  //     perfil ya la trae, tiene que ser un valor del vocabulario, y se dice: esta prueba no frena el corte.
-  const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre de hoy, o el de antes
+  // (e) el perfil REAL del equipo: la clave se crea en el código y el perfil puede no traerla todavía (la prende el
+  //     dueño, en su propio pull request). Mientras el perfil no la trae, una máquina del equipo queda en `separate`. Si el
+  //     perfil ya la trae, tiene que ser un valor del vocabulario, y se dice: esta prueba no frena su alta.
+  const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre actual, o el anterior
   if (fs.existsSync(rutaReal)) {
     const real = lib().leer({ env: {}, home: casa() });
     assert.ok(['separate', 'unified'].includes(real.valores.update.skills_source));
@@ -774,9 +772,9 @@ test('T31 Config_SkillsSourceKey_DefaultSeparate_OutOfVocabularyIsError — sin 
   }
 });
 
-// ── story 8.7 (AC 8, T37): el paquete del stack viene apagado por defecto — la clave `packs.default` ─────────
-// 🔴 rojo previo verificado: sin la sección `packs` en el vocabulario, «sin nada» da `undefined` (no `none`), un perfil
-//    con `packs` es «clave desconocida» y `TYCON_PACKS_DEFAULT=algunos` pasa en silencio.
+// ── T37: el paquete del stack viene apagado por defecto — la clave `packs.default` ─────────
+// 🔴 Sin la sección `packs` en el vocabulario, «sin nada» da `undefined` (no `none`), un perfil con `packs` es
+//    «clave desconocida» y `TYCON_PACKS_DEFAULT=algunos` pasa en silencio.
 
 test('T37 Packs_ApagadoPorDefectoSinPerfil (lector) — sin nada: none (default); perfil all; la variable manda; un valor fuera de all|none es error con archivo y clave; explain con valor y origen; el perfil real del equipo dice all', () => {
   const { VOCABULARIO, VARIABLES, DEFAULTS } = lib();
@@ -798,7 +796,7 @@ test('T37 Packs_ApagadoPorDefectoSinPerfil (lector) — sin nada: none (default)
   assert.equal(c.origenes['packs.default'], 'perfil');
 
   // (c) la variable manda sobre el perfil; y SIN perfil, vale lo que diga la máquina (con un perfil que declara los
-  //     paquetes, el perfil le gana a la máquina: story 8.29, sus pruebas están al final de este archivo)
+  //     paquetes, el perfil le gana a la máquina: sus pruebas están al final de este archivo)
   c = cargar({ env: { TYCON_PACKS_DEFAULT: 'none' }, home: casa(), arnes });
   assert.equal(c.valores.packs.default, 'none');
   assert.equal(c.origenes['packs.default'], 'env');
@@ -818,7 +816,7 @@ test('T37 Packs_ApagadoPorDefectoSinPerfil (lector) — sin nada: none (default)
     assert.match(e.errores[0].motivo, /all/); assert.match(e.errores[0].motivo, /none/); assert.match(e.errores[0].motivo, /"todos"/);
     return true;
   });
-  // (story 8.41: un nombre solo es una lista de un paquete —el que no está instalado frena en el pipeline—; inválido es
+  // (un nombre solo es una lista de un paquete —el que no está instalado frena en el pipeline—; inválido es
   // lo que no puede ser un nombre de paquete)
   assert.throws(() => lib().leer({ env: { TYCON_PACKS_DEFAULT: 'Algunos!' }, home: casa(), arnes: arnesCon(null) }), (e) => {
     assert.equal(e.errores[0].archivo, 'entorno');
@@ -843,7 +841,7 @@ test('T37 Packs_ApagadoPorDefectoSinPerfil (lector) — sin nada: none (default)
   assert.equal(g.stdout.trim(), 'none');
 
   // (f) el perfil REAL del equipo prende el paquete para todos: en el equipo nada cambia (NO MEDIDO en la copia pública)
-  const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre de hoy, o el de antes
+  const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre actual, o el anterior
   if (fs.existsSync(rutaReal)) {
     const real = lib().leer({ env: {}, home: casa() });
     assert.equal(real.valores.packs.default, 'all', 'el perfil del equipo dice packs.default: all');
@@ -853,10 +851,10 @@ test('T37 Packs_ApagadoPorDefectoSinPerfil (lector) — sin nada: none (default)
   }
 });
 
-// ── story 8.9, tanda G: las claves y el valor de integración que se escriben y se ven, en inglés ─────────────────────
-// 🔴 rojo previo verificado: con el vocabulario de antes `integrations.mailbox` era «clave desconocida», `"detect"` un tipo
-//    equivocado, `key mailbox` «integración desconocida», y `explain` mostraba las tres con su nombre en castellano.
-//    Que los nombres de antes sigan valiendo lo prueba legacy-names-g.test.js (con el mapa, que la copia no trae).
+// ── las claves y el valor de integración que se escriben y se ven, en inglés ─────────────────────
+// 🔴 Con un vocabulario en castellano, `integrations.mailbox` sería «clave desconocida», `"detect"` un tipo
+//    equivocado, `key mailbox` «integración desconocida», y `explain` mostraría las tres con su nombre en castellano.
+//    Que los nombres anteriores sigan valiendo lo prueba legacy-names-g.test.js (con el mapa, que la copia no trae).
 
 test('T65 Config_IntegrationKeysInEnglish — mailbox, nightly y "detect" se leen del archivo, del perfil y de la variable; explain, get, key, integrations y los mensajes de «apagado» los muestran así', () => {
   const home = casa();
@@ -933,7 +931,7 @@ test('T65 Config_IntegrationKeysInEnglish — mailbox, nightly y "detect" se lee
 });
 
 test('T65 Config_TeamProfile_NewKeys — el perfil del equipo que viaja en el arnés escribe mailbox, nightly y "detect" (NO MEDIDO sin él)', (t) => {
-  const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre de hoy, o el de antes
+  const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre actual, o el anterior
   if (!fs.existsSync(rutaReal)) return t.skip('NO MEDIDO — el perfil del equipo no está: la copia pública no lo trae');
   const perfil = JSON.parse(fs.readFileSync(rutaReal, 'utf8'));
   assert.deepEqual(Object.keys(perfil.integrations).sort(), ['clockify', 'codex', 'engram', 'mailbox', 'nightly']);
@@ -943,7 +941,7 @@ test('T65 Config_TeamProfile_NewKeys — el perfil del equipo que viaja en el ar
   assert.equal(real.origenes['integraciones.mailbox'], 'perfil');
 });
 
-// ── story 8.16, tanda C: el perfil de instalación (AC 21) ─────────────────────────────────────────────────────────
+// ── el perfil de instalación ─────────────────────────────────────────────────────────
 
 test('T29 Config_InstallProfile_ClosedNoDefault_EnvFileProfileOrder_Explain — sin nada: nulo con origen sin-valor (no entra en DEFAULTS); variable › máquina › perfil; explain dice el valor con su origen o «sin elegir»; get sale 3 sin valor; un valor fuera de minimal|full es configuración ROTA en el archivo y en la variable, nunca full', () => {
   const { VOCABULARIO, DEFAULTS, VARIABLES } = lib();
@@ -999,13 +997,13 @@ test('T30 Config_SetKey_ValidatesAtomicPreservesRefusesBroken_Warnings — setKe
   assert.equal(r.file, path.join(home, '.claude', 'tycon.json'));
   assert.deepEqual([r.before, r.after, r.warning], [null, 'minimal', null]);
   assert.deepEqual(JSON.parse(fs.readFileSync(r.file, 'utf8')), { install: { profile: 'minimal' } });
-  // y otra vez, con el valor de antes
+  // y otra vez, con el valor previo
   r = setKey(home, 'install.profile', 'full', sinFreno);
   assert.deepEqual([r.ok, r.before, r.after], [true, 'minimal', 'full']);
 
-  // con otras secciones (una con el nombre de antes del renombre): lo demás queda igual y el nombre de sección también
+  // con otras secciones (una con el nombre anterior de la sección): lo demás queda igual y el nombre de sección también
   home = casa();
-  const VIEJA = 'integra' + 'ciones';   // el nombre de antes de la sección, armado en dos partes (control de menciones viejas)
+  const VIEJA = 'integra' + 'ciones';   // el nombre anterior de la sección, armado en dos partes (control de menciones viejas)
   const antes = { __nota: 'mía', ado: { org: 'https://dev.azure.com/acme' }, [VIEJA]: { engram: true }, update: { channel: 'stable' } };
   maquina(home, antes);
   r = setKey(home, 'integrations.clockify', true, sinFreno);
@@ -1050,7 +1048,7 @@ test('T30 Config_SetKey_ValidatesAtomicPreservesRefusesBroken_Warnings — setKe
   r = setKey(casa(), 'update.channel', 'latest', { guardLib: freno, env: {} });
   assert.equal(r.warning, null, 'una sección que el lector del freno ya conoce no avisa');
   // un tycon.json que es un enlace (la configuración en un repo de dotfiles): se escribe el destino y el enlace sigue
-  // siendo enlace (pase adversarial de la tanda C, clase 10)
+  // siendo enlace
   home = casa();
   const dotfiles = path.join(tmp('tcfg-dotfiles-'), 'tycon.json');
   fs.writeFileSync(dotfiles, JSON.stringify({ ado: { org: 'https://dev.azure.com/acme' } }, null, 2));
@@ -1059,8 +1057,8 @@ test('T30 Config_SetKey_ValidatesAtomicPreservesRefusesBroken_Warnings — setKe
   assert.equal(r.ok, true, r.reason);
   assert.ok(fs.lstatSync(path.join(home, '.claude', 'tycon.json')).isSymbolicLink(), 'el enlace sigue siendo enlace');
   assert.deepEqual(JSON.parse(fs.readFileSync(dotfiles, 'utf8')), { ado: { org: 'https://dev.azure.com/acme' }, install: { profile: 'minimal' } }, 'el destino del enlace tiene la clave nueva');
-  // las dos formas de una sección (la de hoy y la de antes, con el mismo valor: el lector las acepta): se escriben las dos
-  // y el archivo sigue sano (clase 13)
+  // las dos formas de una sección (la actual y la anterior, con el mismo valor: el lector las acepta): se escriben las dos
+  // y el archivo sigue sano
   home = casa();
   maquina(home, { integrations: { engram: true }, [VIEJA]: { engram: true } });
   r = setKey(home, 'integrations.clockify', true, sinFreno);
@@ -1069,18 +1067,17 @@ test('T30 Config_SetKey_ValidatesAtomicPreservesRefusesBroken_Warnings — setKe
   assert.deepEqual([dos.integrations.clockify, dos[VIEJA].clockify], [true, true], 'las dos formas de la sección llevan el valor');
   assert.deepEqual(lib().cargar({ home, env: {}, arnes: arnesCon(null) }).errores, [], 'el archivo sigue sano después de escribir');
   // un freno que está y no se puede leer (acá, una carpeta en su lugar): no poder leerlo no es «lo conoce» — avisa
-  // (revisor de fallos silenciosos, tanda C)
   r = setKey(casa(), 'install.profile', 'full', { guardLib: tmp('tcfg-freno-carpeta-'), env: {} });
   assert.equal(r.ok, true);
   assert.match(r.warning || '', /no pude leerlo/);
 });
 
-// ── story 8.16, tanda D (AC 34 · T47): `tycon-config.js set <clave> <valor>` ─────────────────────────────────────────
-// Lo que antes se editaba a mano en ~/.claude/tycon.json, con el escritor único (`setKey`). Una llave acepta true, false,
+// ── T47: `tycon-config.js set <clave> <valor>` ─────────────────────────────────────────
+// Lo que se edita a mano en ~/.claude/tycon.json, con el escritor único (`setKey`). Una llave acepta true, false,
 // 1 o 0 (`integrations.codex`, además, detect); una opción, sus valores; un texto, uno no vacío. Sale 0 con «antes →
 // después» y cómo se aplica; una clave desconocida sale 2 con las válidas; un valor inválido, 2; un archivo roto, 2 sin
 // escribir; si una variable le gana, lo avisa.
-// 🔴 rojo previo verificado: antes de la tanda D la CLI no tenía `set` (salía 2 con el uso).
+// 🔴 Sin el subcomando `set`, la CLI sale 2 con el uso.
 test('T47 Config_SetCli_EveryType_UnknownKeyBrokenFileEnvWins — set escribe cada tipo con setKey, dice antes → después y cómo se aplica; clave desconocida, valor inválido o archivo roto salen 2 sin escribir; una variable que le gana se avisa', () => {
   const sinFreno = path.join(tmp('tcfg-set-sin-freno-'), 'no-esta.js');
   const base = (home, extra) => ({ home, env: Object.assign({ TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: sinFreno }, extra || {}) });
@@ -1139,13 +1136,13 @@ test('T47 Config_SetCli_EveryType_UnknownKeyBrokenFileEnvWins — set escribe ca
   assert.match(out.stdout, /TYCON_INSTALL_PROFILE=minimal le gana/);
 });
 
-// ── story 8.13.1, tanda A (AC 2 · T2): `update.source` y `paths.tree` ────────────────────────────────────────────────
+// ── T2: `update.source` y `paths.tree` ────────────────────────────────────────────────
 // De dónde instala la máquina (`internal` | `public`, por defecto `public`) y la carpeta del árbol gestionado (por
 // defecto la carpeta del mecanismo, sin el nombre del lugar). Variable › máquina › perfil › default, con su origen en
 // `explain`. Un valor fuera del vocabulario es un error; una ruta relativa también (el árbol no puede depender del cwd ni
 // del HOME de quien lee). `paths.tree` es de la máquina: el perfil no la puede traer. El perfil del equipo trae
-// `update.source: internal` (nada se mueve en la tanda A). La mitad del estado de T2 vive en harness-state.test.js.
-// 🔴 rojo previo verificado: antes de la tanda A `update.source` y `paths.tree` eran «clave desconocida».
+// `update.source: internal`. La mitad del estado de T2 vive en harness-state.test.js.
+// 🔴 Sin esas claves en el vocabulario, `update.source` y `paths.tree` son «clave desconocida».
 
 test('8.13.1 · T2 State_AdditiveFields_OldStateReadsAsInternalNoLayer_ConfigKeysWithOrigin (config) — update.source y paths.tree: vocabulario, variables, defaults, precedencia con origen, errores y explain', () => {
   const { VOCABULARIO, VARIABLES, DEFAULTS } = lib();
@@ -1252,7 +1249,7 @@ test('8.13.1 · T2 State_AdditiveFields_OldStateReadsAsInternalNoLayer_ConfigKey
 });
 
 test('8.13.1 · T2 Config_TeamProfile_UpdateSourceNotInternal — el perfil del equipo que viaja en el arnés no fija la fuente interna de las actualizaciones ni paths.tree (NO MEDIDO sin él)', (t) => {
-  const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre de hoy, o el de antes
+  const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre actual, o el anterior
   if (!fs.existsSync(rutaReal)) {
     console.log(`  ℹ NO MEDIDO — el perfil del equipo no está (${rutaReal}): la copia pública no lo trae.`);
     t.skip('perfil del equipo ausente: no medido');
@@ -1291,11 +1288,11 @@ test('8.13.1 · T2 Config_GuardCopyWithoutNewKeys_Warns — el freno de producci
   assert.equal(r.ok, false);
 });
 
-// ── story 8.23, tanda C · T24 ────────────────────────────────────────────────────────────────────────────────────
-// `integrations.codex: detect` detectaba «ya desplegado» (hay un hooks.json en su carpeta): una máquina con Codex
-// instalado y sin desplegar no recibía nada, y una que lo desinstaló seguía contando. Ahora `detect` sigue a la
-// herramienta INSTALADA —su ejecutable o su configuración propia—, existe `integrations.claude` con el mismo vocabulario,
-// y a la máquina con una herramienta instalada y sin enchufar se le avisa antes de enchufársela.
+// ── T24 ────────────────────────────────────────────────────────────────────────────────────
+// `integrations.codex: detect` sigue a la herramienta INSTALADA —su ejecutable o su configuración propia—. Si siguiera
+// a «ya desplegado» (un hooks.json en su carpeta), una máquina con Codex instalado y sin desplegar no recibiría nada, y
+// una que lo desinstaló seguiría contando. Existe `integrations.claude` con el mismo vocabulario, y a la máquina con una
+// herramienta instalada y sin enchufar se le avisa antes de enchufársela.
 const TOOLS_LIB = path.join(SCRIPTS, 'setup', 'harness', 'tools.js');
 function fakeTool(dir, name) {
   fs.mkdirSync(dir, { recursive: true });
@@ -1384,7 +1381,7 @@ test('8.23 C · T24 — el aviso previo: instalada y sin enchufar se dice (no se
   const home = tmp('tools-home-');
   const env = { CODEX_HOME: path.join(home, '.codex') };
   const detected = { claude: { installed: true, by: 'path', where: '/x/claude' }, codex: { installed: true, by: 'path', where: '/x/codex' } };
-  // una máquina de antes de la tanda C: sin `tools` en el estado, sin despliegue de Codex → lo enchufado es Claude Code
+  // una máquina con un estado anterior: sin `tools` en el estado, sin despliegue de Codex → lo enchufado es Claude Code
   const old = { tree: '/x' };
   assert.deepEqual(T.plugged(old, { home, env }), ['claude']);
   const n = T.unpluggedNotice({ state: old, detected, keys: { codex: { value: 'detect', origin: 'perfil' } }, home, env });
@@ -1400,7 +1397,7 @@ test('8.23 C · T24 — el aviso previo: instalada y sin enchufar se dice (no se
   assert.match(T.unpluggedNotice({ state: { tools: ['codex'] }, detected, keys: {}, home, env }), /Claude Code está instalado.*install --tool claude/);
 });
 
-// ── story 8.23, tanda D: dónde vive el arnés (AC 32) ──────────────────────────────────────────────
+// ── dónde vive el arnés ──────────────────────────────────────────────
 
 test('T40 Config_InstallHome_ClosedNoDefault_TeamProfileKeepsItOff — install.home es opcion claude|tycon sin default (sin valor = claude); la variable es TYCON_INSTALL_HOME; explain lo dice; y el perfil del equipo NO la trae: prenderla es del dueño, después de migrar su máquina', () => {
   const { VOCABULARIO, DEFAULTS, VARIABLES } = lib();
@@ -1430,8 +1427,8 @@ test('T40 Config_InstallHome_ClosedNoDefault_TeamProfileKeepsItOff — install.h
   c = cargar({ home, arnes: arnesCon({ install: { home: 'casa' } }) });
   assert.ok(c.errores.some((e) => /home/.test(`${e.clave || ''} ${e.motivo || ''}`)), `un valor fuera de la lista es configuración ROTA: ${JSON.stringify(c.errores)}`);
 
-  // el interruptor del equipo queda APAGADO hasta que el dueño lo prenda (pedido del coordinador, 2026-10-08): el perfil
-  // real del repo no trae `install.home`; cuando lo traiga, esta prueba se actualiza con esa decisión escrita en la story
+  // el interruptor del equipo está APAGADO hasta que el dueño lo prenda: el perfil real del repo no trae
+  // `install.home`; cuando lo traiga, esta prueba se actualiza con esa decisión escrita
   const perfilReal = path.join(SCRIPTS, '..', 'perfil-equipo.json');
   if (fs.existsSync(perfilReal)) {
     const real = JSON.parse(fs.readFileSync(perfilReal, 'utf8'));
@@ -1439,15 +1436,14 @@ test('T40 Config_InstallHome_ClosedNoDefault_TeamProfileKeepsItOff — install.h
   }
 });
 
-// ── story 8.29: el perfil del equipo gana sobre los paquetes elegidos al instalar ────────────────────────────────────
-// EL CASO. La página pública instala con `--packs all`, el instalador lo escribe en el archivo de la máquina, y después
-// la persona suma la capa del equipo, que trae el perfil. Con el orden de siempre (variable › máquina › perfil) los
-// paquetes quedaban con origen en la máquina: el día que el equipo cambiara el perfil, esas máquinas no se enteraban.
-// El ensayo de Windows lo informaba como `guided:team:profile-origin` en toda máquina con la capa. Decisión del dueño
-// (2026-10-11): para los paquetes, y sólo para los paquetes, el perfil del equipo gana al leer (variable › perfil ›
+// ── el perfil del equipo gana sobre los paquetes elegidos al instalar ────────────────────────────────────
+// La página pública instala con `--packs all`, el instalador lo escribe en el archivo de la máquina, y después la
+// persona suma la capa del equipo, que trae el perfil. Con el orden de siempre (variable › máquina › perfil) los
+// paquetes tendrían origen en la máquina: el día que el equipo cambiara el perfil, esas máquinas no se enterarían.
+// Por eso, para los paquetes, y sólo para los paquetes, el perfil del equipo gana al leer (variable › perfil ›
 // máquina). El archivo de la máquina no se toca nunca.
-// 🔴 rojo previo verificado: con el lector de antes, T1, T5 y T9 fallan (la máquina ganaba, `explain` no decía nada de
-//    lo que quedaba sin usar, y `set` no avisaba).
+// 🔴 Si la máquina ganara, T1, T5 y T9 fallarían (`explain` no diría nada de lo que queda sin usar, y `set` no
+//    avisaría).
 
 test('8.29 · T1 Config_Packs_ProfileBeatsMachine @story-8.29 @ac-1 — con perfil y máquina declarando los paquetes, vale el del perfil y su origen es perfil', () => {
   for (const [delPerfil, deLaMaquina] of [['all', 'none'], ['none', 'all'], ['all', 'all']]) {
@@ -1457,8 +1453,8 @@ test('8.29 · T1 Config_Packs_ProfileBeatsMachine @story-8.29 @ac-1 — con perf
     assert.deepEqual(c.errores, []);
     assert.deepEqual([c.valores.packs.default, c.origenes['packs.default']], [delPerfil, 'perfil'], `perfil ${delPerfil}, máquina ${deLaMaquina}`);
   }
-  // la lista de claves en las que gana el perfil se declara una vez; desde la story 7.19 son dos (la segunda, la pregunta
-  // del modelo mayor en el pase adversarial: decisión del dueño del 2026-10-15)
+  // la lista de claves en las que gana el perfil se declara una vez; son dos (la segunda, la pregunta del modelo
+  // mayor en el pase adversarial)
   assert.deepEqual(lib().PROFILE_WINS, ['packs.default', 'adversarial.model_question']);
 });
 
@@ -1658,7 +1654,7 @@ test('8.29 · T17 Docs_PacksOrderSaidOnce @story-8.29 @ac-18 — donde se descri
   const guias = ['guides/agent-architecture.md', 'guides/maintaining/publicacion-espejo.md', 'guides/maintaining/mecanismo-de-instalacion.md', 'INSTALL.md'];
   // el árbol interno se reconoce por el perfil del equipo, que la copia pública no trae: ahí tienen que estar los seis
   const interno = fs.existsSync(path.join(RAIZ, 'perfil-equipo.json'));
-  // el orden de antes, escrito de corrido: la variable, y enseguida el archivo de la máquina
+  // el orden anterior, escrito de corrido: la variable, y enseguida el archivo de la máquina
   const ordenViejo = /TYCON_PACKS_DEFAULT`? › `?~\/\.claude\/tycon\.json/;
   const ganaElPerfil = /perfil del equipo (le )?gana/;
   const medidos = [];
@@ -1681,7 +1677,7 @@ test('8.29 · T17 Docs_PacksOrderSaidOnce @story-8.29 @ac-18 — donde se descri
   else t.diagnostic(`medidos ${medidos.length} de ${siempre.length + guias.length} (copia sin perfil del equipo)`);
 });
 
-// ── El nombre del perfil: team-profile.json, y el de antes que sigue valiendo ───────────────────────────────────
+// ── El nombre del perfil: team-profile.json, y el anterior que sigue valiendo ───────────────────────────────────
 
 test('TPN Config_PerfilConSusDosNombres_NuevoViejoYLosDos — se busca primero team-profile.json; el de antes vale con un aviso; con los dos gana el nuevo', () => {
   const L = lib();
@@ -1702,7 +1698,7 @@ test('TPN Config_PerfilConSusDosNombres_NuevoViejoYLosDos — se busca primero t
   let r = L.leerPerfil({ arnes: a1, home: casa(), env: {} });
   assert.equal(r.estado, 'leido'); assert.equal(r.ruta, path.join(a1, 'team-profile.json')); assert.equal(r.aviso, null);
 
-  // (2) sólo el de antes: sigue andando, con un aviso de UNA línea que dice cómo renombrarlo
+  // (2) sólo el anterior: sigue andando, con un aviso de UNA línea que dice cómo renombrarlo
   const a2 = arnesCon(VIEJO);
   c = cargar({ home: casa(), arnes: a2 });
   assert.deepEqual(c.errores, []);
@@ -1713,7 +1709,7 @@ test('TPN Config_PerfilConSusDosNombres_NuevoViejoYLosDos — se busca primero t
   r = L.leerPerfil({ arnes: a2, home: casa(), env: {} });
   assert.equal(r.estado, 'leido'); assert.match(r.aviso, /git mv perfil-equipo\.json team-profile\.json/);
 
-  // (3) los dos: gana el nuevo (sus valores, su ruta) y se avisa que el de antes sobra
+  // (3) los dos: gana el nuevo (sus valores, su ruta) y se avisa que el anterior sobra
   const a3 = arnesCon(VIEJO); escribir(a3, 'team-profile.json', NUEVO);
   c = cargar({ home: casa(), arnes: a3 });
   assert.deepEqual(c.errores, []);
@@ -1721,7 +1717,7 @@ test('TPN Config_PerfilConSusDosNombres_NuevoViejoYLosDos — se busca primero t
   assert.equal(c.valores.ado.org, 'https://dev.azure.com/nuevo', 'con los dos gana el nuevo');
   assert.equal(c.valores.integraciones.clockify, false, 'del de antes no se lee nada');
   assert.match(c.archivos.perfil.aviso, /vale team-profile\.json y perfil-equipo\.json no se usa.*git rm perfil-equipo\.json/);
-  // …también cuando el de antes está roto: no se lee, así que no rompe nada
+  // …también cuando el anterior está roto: no se lee, así que no rompe nada
   const a4 = arnesCon('{ roto'); escribir(a4, 'team-profile.json', NUEVO);
   assert.deepEqual(cargar({ home: casa(), arnes: a4 }).errores, [], 'un perfil-equipo.json roto al lado del nuevo no se lee');
 
@@ -1735,13 +1731,13 @@ test('TPN Config_PerfilConSusDosNombres_NuevoViejoYLosDos — se busca primero t
   c = cargar({ env: { TYCON_PROFILE: path.join(a2, 'perfil-equipo.json') }, home: casa(), arnes: a3 });
   assert.equal(c.valores.ado.org, 'https://dev.azure.com/viejo'); assert.equal(c.archivos.perfil.aviso, null);
 
-  // (6) explain lo dice en una línea con el de antes; con el nombre nuevo, no
+  // (6) explain lo dice en una línea con el anterior; con el nombre nuevo, no
   assert.match(L.explicar({ env: {}, home: casa(), arnes: a2 }), /\n  aviso: el perfil usa el nombre de antes \(perfil-equipo\.json\)/);
   assert.doesNotMatch(L.explicar({ env: {}, home: casa(), arnes: a1 }), /aviso: el perfil/);
   assert.equal(L.explicar({ env: {}, home: casa(), arnes: a2, json: true }).archivos.perfil.aviso.length > 0, true, 'explain --json lo trae en archivos.perfil.aviso');
 });
 
-// ── story 7.19 — la pregunta del modelo mayor en el pase adversarial ─────────────────────────────────────────────────
+// ── la pregunta del modelo mayor en el pase adversarial ─────────────────────────────────────────────────
 
 test('7.19 · Config_ModelQuestion_ReaderValidatesAndExplains — default ask, never y ask válidos, un valor inventado es un error, explain la nombra', () => {
   // sin nadie que diga nada: ask, con origen default

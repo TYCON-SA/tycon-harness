@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # plugin-manifests.test.sh — casos del control de los dos manifiestos de un plugin.
 #
-# 🔴 EL CASO QUE DA SENTIDO A TODO: el 2026-09-02 se cableó el flujo de migraciones administradas
-# en URUTAU, FRESNO y Ceibo, copiado de Totora, con sus comentarios y su lógica. Quedó INERTE en los
-# tres, porque la bandera se agregó al `plugin.json` y no al `plugin.json.example`, que es el que
-# el pipeline copia encima y el único que viaja dentro del paquete. Nada dio error. Todo verde.
+# 🔴 EL RIESGO QUE DA SENTIDO A TODO: cablear el flujo de migraciones administradas en un producto, copiado de
+# otro, con sus comentarios y su lógica, puede dejarlo INERTE si la bandera se agrega al `plugin.json` y no al
+# `plugin.json.example`, que es el que el pipeline copia encima y el único que viaja dentro del paquete.
+# Nada da error. Todo verde.
 #
-# Antes había pasado con `hasSignalRHubs` y con `relayHubsOnly`. Tres campos, tres veces, cada una
-# "arreglada" agregando el campo de nuevo. El caso 1 de acá es esa tercera vez, congelada.
+# Vale para `hasSignalRHubs`, para `relayHubsOnly` y para la bandera de migraciones: son tres campos con el
+# mismo riesgo. El caso 1 de acá lo congela.
 set -u
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CTRL="$DIR/../ci/check-plugin-manifests.js"
@@ -24,7 +24,7 @@ corre() { node "$CTRL" --pairs "$1" ${2:+--migrations "$2"} >"$TMP/out.txt" 2>&1
 BASE='{"name":"p","version":"1.0.5","requiresDatabase":true,"migrations":{"enabled":true}}'
 EJ='{"name":"p","version":"1.0.4","requiresDatabase":true,"migrations":{"enabled":true},"defaultSettings":{"A":"1"}}'
 
-# ── 1. EL CASO REAL: la bandera está en el real y falta en el que viaja ────────────────────────
+# ── 1. la bandera está en el real y falta en el que viaja ────────────────────────
 D="$TMP/c1"; par "$D" urutau "$BASE" '{"name":"p","version":"1.0.4","requiresDatabase":true,"defaultSettings":{"A":"1"}}'
 rc=$(corre "$D")
 [ "$rc" = "1" ] && ok "🔴 el caso real: la bandera de migraciones está en plugin.json y NO en el que viaja" || no "no lo detectó (salió $rc)"
@@ -36,7 +36,7 @@ rc=$(corre "$D")
 [ "$rc" = "0" ] && ok "un par que coincide sale limpio (la versión difiere a propósito y no se marca)" || no "falso positivo en el par sano: $(cat "$TMP/out.txt")"
 
 # ── 3. 🔴 mismo campo, distinto VALOR ─────────────────────────────────────────────────────────
-# Comparar sólo nombres dejaba pasar "apagadas" en un archivo y "encendidas" en el otro, con el
+# Comparar sólo nombres dejaría pasar "apagadas" en un archivo y "encendidas" en el otro, con el
 # paquete viajando con el valor del ejemplo: el mismo agujero, en verde.
 D="$TMP/c3"; par "$D" x "$BASE" '{"name":"p","version":"1.0.4","requiresDatabase":true,"migrations":{"enabled":false},"defaultSettings":{}}'
 rc=$(corre "$D")
@@ -78,7 +78,7 @@ D="$TMP/c10"; mkdir -p "$D"; echo '{roto' > "$D/x.plugin.json"; echo '{}' > "$D/
 rc=$(corre "$D")
 [ "$rc" = "2" ] && ok "🔴 un manifiesto ilegible sale 2 — ilegible no es aprobado" || no "manifiesto roto salió $rc"
 
-# ── 11. la evidencia congelada del día: 3 rotos de 5 ─────────────────────────────────────────
+# ── 11. la evidencia congelada: 3 rotos de 5 ─────────────────────────────────────────
 EV="$DIR/../../tasks/evidencia/2026-09-02-antes-de-los-arreglos/manifiestos"
 if [ -d "$EV" ]; then
   node "$CTRL" --pairs "$EV" >"$TMP/ev.txt" 2>&1; rc=$?
@@ -90,12 +90,12 @@ else
 fi
 
 # ---------------------------------------------------------------- 🔴 LA EXPRESIÓN DEL PIPELINE
-# El banco probaba el GUION pasándole --migrations a mano, y nunca la expresión del YAML que calcula
-# ese número. Por eso pasó desapercibido dos semanas que los 5 pipelines contaban SIEMPRE 0:
+# Probar el GUION pasándole --migrations a mano no prueba la expresión del YAML que calcula
+# ese número, y los 5 pipelines podrían contar SIEMPRE 0:
 # `git ls-tree --name-only HEAD database` SIN barra final devuelve la palabra "database" —el árbol—,
 # no su contenido. Con 0, el control nunca evalúa su mitad más importante y un paquete con SQL
 # adentro se despliega sin declararlo: el host ignora la carpeta y la base queda sin tocar, en verde.
-# Medido el 2026-09-03: un producto 50 migraciones, otro 117, y el conteo daba 0 en los cinco.
+# Ejemplo: un producto con 50 migraciones y otro con 117 darían 0 con la expresión sin barra final.
 D="$TMP/expr"; mkdir -p "$D/database"
 ( cd "$D" && git init -q -b main . && git config user.email t@t && git config user.name t
   echo "select 1" > database/001_a.sql && echo "select 2" > database/031_b.sql
@@ -115,8 +115,8 @@ for r in Totora/Backend URUTAU/Backend Lapacho/Backend Ceibo/CeiboBackend FRESNO
   d="$HOME/SourceCode/$r"
   [ -d "$d/.git" ] || continue
   # 🔴 lo PUBLICADO, no el disco: el dev trabaja en `dev` y leer su árbol denuncia al producto
-  # por una rama que no corre. Mismo defecto que el 2026-09-03 se arregló en el control de
-  # paridad y en la suite de "las etapas cortan" — tercera pieza con la misma premisa mala.
+  # por una rama que no corre. Mismo criterio que el control de
+  # paridad y que la suite de "las etapas cortan".
   y=$(git -C "$d" show origin/main:azure-pipelines.yml 2>/dev/null) || { echo "⚠️  manifiestos: no pude leer lo publicado de $r — no se midió"; continue; }
   printf '%s' "$y" | grep -q 'ls-tree --name-only HEAD database/ ' || faltan="$faltan $r"
 done

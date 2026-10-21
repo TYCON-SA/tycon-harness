@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# upload-runs.test.sh — la subida de las corridas al buzón de Azure Storage (story 2.16, rediseño).
+# upload-runs.test.sh — la subida de las corridas al buzón de Azure Storage.
 #
 # Sin red: el «buzón» es un servidor HTTP local (node:http) que imita Blob Storage — recibe PUT de
 # blobs, contesta 201/403/404/500, corta la conexión a mitad o demora, y ANOTA cada pedido (método,
@@ -8,12 +8,12 @@
 # TYCON_MAILBOX_URL_BASE, TYCON_TIMING_HISTORY, TYCON_UPLOADS_LOG, TYCON_MACHINE): nunca se lee
 # ni se toca lo de esta máquina, ni el buzón real.
 #
-# 🔴 REGLA DE ADMISIÓN: cada caso trae escrito su rojo previo. El exit code se lee ANTES de cualquier
+# 🔴 REGLA DE ADMISIÓN: cada caso trae escrito el rojo que atrapa. El exit code se lee ANTES de cualquier
 #    pipe. bash 3.2 (macOS): siempre `${v}`.
 
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-# story 8.3: la integración «buzón» se declara por variable — sin perfil del equipo ni llave, upload-runs.js dice
+# La integración «buzón» se declara por variable — sin perfil del equipo ni llave, upload-runs.js dice
 # «apagado» y sale 0 antes de mirar el archivo de la llave, que es justo lo que esta suite mide (con un buzón de mentira).
 export TYCON_MAILBOX=1
 SUBIR="${RAIZ}/scripts/metrics/upload-runs.js"
@@ -26,9 +26,9 @@ echo "== upload-runs.test.sh =="
 
 BASE="$(mktemp -d)"
 PIDS=""
-# 🔴 AISLAMIENTO: HOME falso para todo lo que corra acá. El rojo previo de este archivo, corrido contra la
-#    versión anterior del guion (la de git), leyó el ~/.claude/.tycon-pipeline/corridas.json REAL y empujó
-#    datos de prueba al repo privado de verdad (2026-09-15). Con HOME falso, ninguna versión del guion
+# 🔴 AISLAMIENTO: HOME falso para todo lo que corra acá. Sin él, un guion que lee el
+#    ~/.claude/.tycon-pipeline/corridas.json REAL empujaría datos de prueba al repo privado de verdad.
+#    Con HOME falso, ninguna versión del guion
 #    —vieja o nueva— puede encontrar una configuración, un registro o un sello de esta máquina.
 mkdir -p "${BASE}/home"; export HOME="${BASE}/home"
 unset TYCON_RUNS_JSON TYCON_MAILBOX_JSON TYCON_MAILBOX_URL_BASE TYCON_UPLOADS_LOG TYCON_MAILBOX_DIR
@@ -115,7 +115,7 @@ corrida() {
   printf '{"archivedAt":"2026-09-14T10:00:00.000Z","marker":{"storyId":"%s","sessionId":"sid-%s"}}\n' "$2" "$2" > "$1/$2.json"
   head -c "${3:-2000}" /dev/urandom | base64 | gzip -c > "$1/$2.hilo.jsonl.gz"
 }
-# La firma de mentira va en su propia variable (story 8.8, AC 3): escrita pegada a su parámetro, la línea tiene la forma
+# La firma de mentira va en su propia variable: escrita pegada a su parámetro, la línea tiene la forma
 # de una llave de Azure Storage, y el escaneo de secretos de GitHub —que no lee las excepciones del equipo— la marcaría
 # en la copia pública. La llave que arma cada caso es la de siempre.
 FAKE_SIGNATURE='FIRMA%2Bdeprueba%3D'
@@ -139,7 +139,7 @@ num() { local v; v="$(campo "$1" "$2")"; case "${v}" in ''|*[!0-9]*) echo -1 ;; 
 puts() { if [ -f "$1/pedidos.jsonl" ]; then grep -c '"metodo":"PUT"' "$1/pedidos.jsonl" || true; else echo 0; fi; }
 pedidos() { if [ -f "$1/pedidos.jsonl" ]; then wc -l < "$1/pedidos.jsonl" | tr -d ' '; else echo 0; fi; }
 en_registro() { python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print('\n'.join(sorted(d.get('archivos',{}).keys())))" "$1/estado/mailbox-uploads.json" 2>/dev/null; }
-# story 2.24: los registros suben como un juego bajo `<maq>/registros/v<versión>/`, y lo que se vuelve a subir bajo
+# Los registros suben como un juego bajo `<maq>/registros/v<versión>/`, y lo que se vuelve a subir bajo
 # `<maq>/v<versión>/`. regdir <caso> [maq] → la carpeta del juego más nuevo en el buzón de mentira (vacío si no hay).
 regdir() { local d="$1/b/blobs/corridas/${2:-maq-a}/registros"; local v; v="$(ls -d "${d}"/v* 2>/dev/null | sort | tail -1)"; echo "${v}"; }
 # versiones <caso> <maq> → las carpetas v… de corridas de esa máquina, una por línea
@@ -148,8 +148,8 @@ versiones() { ls -d "$1/b/blobs/corridas/$2"/v* 2>/dev/null | sort; }
 ultimo() { local v; v="$(ls "$1/b/blobs/corridas/$2"/v*/"$3" 2>/dev/null | sort | tail -1)"; [ -n "${v}" ] && echo "${v}" || echo "$1/b/blobs/corridas/$2/$3"; }
 FORMA_V='v[0-9]{8}T[0-9]{9}Z'
 
-# ── T1 · sube bajo <maquina>/ normalizada, como BlockBlob, con la SAS en la query (AC1) ───────────
-# 🔴 rojo previo: subir a la raíz del contenedor → dos máquinas pisan el mismo nombre.
+# ── T1 · sube bajo <maquina>/ normalizada, como BlockBlob, con la SAS en la query ───────────
+# 🔴 Atrapa: subir a la raíz del contenedor → dos máquinas pisan el mismo nombre.
 T="${BASE}/t1"; buzon "${T}/b"; config "${T}/cfg.json"
 corrida "${T}/h" "2.1-2026-09-01T1000" 3000; corrida "${T}/h" "2.2-2026-09-02T1100" 5000
 subir "${T}" "${T}/h" "Mac-De-Prueba.local"
@@ -171,15 +171,15 @@ BYTES=$(( $(wc -c < "${T}/h/2.1-2026-09-01T1000.json") + $(wc -c < "${T}/h/2.1-2
 [ "$(campo "${T}" bytes)" = "${BYTES}" ] && ok "T1 el resumen dice los bytes subidos (${BYTES})" || mal "T1 bytes=$(campo "${T}" bytes), esperaba ${BYTES}"
 [ "$(campo "${T}" subido)" = "true" ] && [ "$(campo "${T}" maquina)" = "mac-de-prueba" ] && ok "T1 subido=true, máquina mac-de-prueba" || mal "T1 subido=$(campo "${T}" subido) maquina=$(campo "${T}" maquina)"
 
-# ── T2 · la segunda pasada no hace ningún PUT (AC2) ─────────────────────────────────────────────
-# 🔴 rojo previo: sin registro local la llave no deja preguntar qué hay → re-sube todo en cada arranque.
+# ── T2 · la segunda pasada no hace ningún PUT ─────────────────────────────────────────────
+# 🔴 Atrapa: sin registro local la llave no deja preguntar qué hay → re-sube todo en cada arranque.
 ANTES=$(puts "${T}/b")
 subir "${T}" "${T}/h" "Mac-De-Prueba.local"
 [ "${RC}" -eq 0 ] && [ "$(puts "${T}/b")" = "${ANTES}" ] && ok "T2 segunda pasada: exit 0 y ningún PUT" || mal "T2 rc=${RC}, PUTs antes ${ANTES} después $(puts "${T}/b")"
 [ "$(campo "${T}" estado)" = "nada_nuevo" ] && [ "$(campo "${T}" subido)" = "false" ] && ok "T2 lo dice: estado nada_nuevo, subido=false" || mal "T2 estado=$(campo "${T}" estado) subido=$(campo "${T}" subido)"
 
-# ── T3 · sólo lo que creció; un touch sin cambio no sube (AC2) ──────────────────────────────────
-# 🔴 rojo previo: comparar por nombre → el hilo que el barrido de la 2.13 reescribió nunca se actualiza.
+# ── T3 · sólo lo que creció; un touch sin cambio no sube ──────────────────────────────────
+# 🔴 Atrapa: comparar por nombre → el hilo que un barrido de registros reescribe nunca se actualiza.
 ANTES=$(puts "${T}/b")
 cp "${T}/b/blobs/corridas/mac-de-prueba/2.2-2026-09-02T1100.hilo.jsonl.gz" "${T}/hilo-viejo"
 head -c 9000 /dev/urandom | base64 | gzip -c > "${T}/h/2.2-2026-09-02T1100.hilo.jsonl.gz"
@@ -188,14 +188,14 @@ subir "${T}" "${T}/h" "Mac-De-Prueba.local"
 N=$(( $(puts "${T}/b") - ANTES ))
 [ "${RC}" -eq 0 ] && [ "${N}" = "1" ] && ok "T3 sólo el hilo que creció se re-subió (1 PUT)" || mal "T3 rc=${RC}, ${N} PUT(s) (esperaba 1)"
 tail -1 "${T}/b/pedidos.jsonl" | grep -E "/mac-de-prueba/${FORMA_V}/2\.2-2026-09-02T1100\.hilo\.jsonl\.gz\"" >/dev/null && ok "T3 y fue el hilo reescrito, a una versión (story 2.24)" || mal "T3 el PUT fue otro: $(tail -1 "${T}/b/pedidos.jsonl")"
-# story 2.24 (hoy-T3): nada se pisa — el contenido nuevo queda en la versión, el blob del nombre de siempre igual que antes
+# Nada se pisa — el contenido nuevo queda en la versión, el blob del nombre de siempre igual que antes
 cmp -s "${T}/h/2.2-2026-09-02T1100.hilo.jsonl.gz" "$(ultimo "${T}" mac-de-prueba 2.2-2026-09-02T1100.hilo.jsonl.gz)" && cmp -s "${T}/hilo-viejo" "${T}/b/blobs/corridas/mac-de-prueba/2.2-2026-09-02T1100.hilo.jsonl.gz" \
   && ok "T3 el contenido nuevo quedó en la versión y el blob viejo quedó igual" || mal "T3 la versión no tiene lo nuevo, o el blob viejo cambió"
 ANTES=$(puts "${T}/b"); subir "${T}" "${T}/h" "Mac-De-Prueba.local"
 [ "$(puts "${T}/b")" = "${ANTES}" ] && ok "T3 después del touch, la pasada siguiente sigue sin subir (el hash se recordó)" || mal "T3 el touch provocó una subida en la pasada siguiente"
 
-# ── T3b · el archivo se reescribe con el MISMO tamaño mientras sube: la pasada siguiente lo re-sube (AC2) ──
-# 🔴 rojo previo (adversarial): el registro anotaba el mtime de DESPUÉS del PUT con el hash de ANTES → «subido»
+# ── T3b · el archivo se reescribe con el MISMO tamaño mientras sube: la pasada siguiente lo re-sube ──
+# 🔴 Atrapa: anotar en el registro el mtime de DESPUÉS del PUT con el hash de ANTES → «subido»
 #    falso para siempre, con el blob viejo en el buzón.
 T="${BASE}/t3b"; buzon "${T}/b"; config "${T}/cfg.json"; mkdir -p "${T}/h"
 printf '{"marker":{"sessionId":"sid-carrera"},"out":11111}\n' > "${T}/h/2.9-2026-09-09T0900.json"
@@ -209,15 +209,15 @@ echo 0 > "${T}/b/demora"
 subir "${T}" "${T}/h" "maq-a"
 cmp -s "${T}/h/2.9-2026-09-09T0900.json" "$(ultimo "${T}" maq-a 2.9-2026-09-09T0900.json)" && ok "T3b reescrito con el mismo tamaño durante el PUT → la pasada siguiente sube lo nuevo" || mal "T3b el buzón quedó con el contenido viejo (estado $(campo "${T}" estado), subidos $(campo "${T}" subidos))"
 
-# ── T6c · una fecha de vencimiento imposible no deja la llave sin vigilancia (AC4) ──────────────
-# 🔴 rojo previo (adversarial): «2027-13-15» pasaba la forma, diasHasta daba NaN y el aviso no salía nunca.
+# ── T6c · una fecha de vencimiento imposible no deja la llave sin vigilancia ──────────────
+# 🔴 Atrapa: una fecha de vencimiento con mes 13 pasa la forma, diasHasta da NaN y el aviso no sale nunca.
 T="${BASE}/t6c"; buzon "${T}/b"; corrida "${T}/h" "5.3-2026-09-05T0700"
 config "${T}/cfg.json" "2027-13-15"
 subir "${T}" "${T}/h" "maq-a"
 [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "config_ilegible" ] && [ "$(pedidos "${T}/b")" = "0" ] && ok "T6c vence 2027-13-15 → config_ilegible, exit 1, ningún pedido" || mal "T6c fecha imposible → rc=${RC} estado=$(campo "${T}" estado) aviso=$(campo "${T}" aviso_vence)"
 
-# ── T1c · en macOS el nombre no sigue a la red: HostName fijado, o si no LocalHostName (AC1) ───────
-# 🔴 rojo previo (adversarial): sin HostName fijado, os.hostname() cambia con la red (x.lan / x.home) → la misma
+# ── T1c · en macOS el nombre no sigue a la red: HostName fijado, o si no LocalHostName ───────
+# 🔴 Atrapa: sin HostName fijado, os.hostname() cambia con la red (x.lan / x.home) → la misma
 #    máquina escribe en dos carpetas del buzón y re-sube todo.
 if [ "$(uname -s)" = "Darwin" ]; then
   T="${BASE}/t1c"; mkdir -p "${T}/bin"
@@ -231,8 +231,8 @@ else
   ok "T1c (no es macOS: el nombre sale de os.hostname())"
 fi
 
-# ── T4 · un corte a mitad nunca marca «subido» (AC2) ────────────────────────────────────────────
-# 🔴 rojo previo: anotar en el registro antes de la respuesta → «subido» falso para siempre.
+# ── T4 · un corte a mitad nunca marca «subido» ────────────────────────────────────────────
+# 🔴 Atrapa: anotar en el registro antes de la respuesta → «subido» falso para siempre.
 T="${BASE}/t4"; buzon "${T}/b"; config "${T}/cfg.json"
 corrida "${T}/h" "3.1-2026-09-03T0900" 4000
 echo cut > "${T}/b/modo"
@@ -245,8 +245,8 @@ subir "${T}" "${T}/h" "maq-a"
 [ "${RC}" -eq 0 ] && cmp -s "${T}/h/3.1-2026-09-03T0900.hilo.jsonl.gz" "${T}/b/blobs/corridas/maq-a/3.1-2026-09-03T0900.hilo.jsonl.gz" && ok "T4 la pasada siguiente lo sube entero" || mal "T4 la pasada siguiente no lo subió (rc=${RC})"
 [ "$(en_registro "${T}" | wc -l | tr -d ' ')" = "2" ] && ok "T4 y recién ahí queda en el registro (2 archivos)" || mal "T4 registro: $(en_registro "${T}" | tr '\n' ' ')"
 
-# ── T5 · llave vencida/revocada distinta de sin red; ninguna marca nada (AC3) ───────────────────
-# 🔴 rojo previo: un solo motivo genérico → nadie se entera de que hay que rotar la llave.
+# ── T5 · llave vencida/revocada distinta de sin red; ninguna marca nada ───────────────────
+# 🔴 Atrapa: un solo motivo genérico → nadie se entera de que hay que rotar la llave.
 for CODIGO in 403 404; do
   T="${BASE}/t5-${CODIGO}"; buzon "${T}/b"; config "${T}/cfg.json"; corrida "${T}/h" "4.1-2026-09-04T0800"
   echo "${CODIGO}" > "${T}/b/modo"
@@ -265,9 +265,9 @@ T="${BASE}/t5-500"; buzon "${T}/b"; config "${T}/cfg.json"; corrida "${T}/h" "4.
 subir "${T}" "${T}/h" "maq-a"
 [ "${RC}" -ne 0 ] && [ "$(campo "${T}" estado)" != "llave_invalida" ] && [ -z "$(en_registro "${T}")" ] && ok "T5 500 del servicio → exit ${RC}, no se confunde con la llave ($(campo "${T}" estado)), nada anotado" || mal "T5 500 → rc=${RC} estado=$(campo "${T}" estado)"
 
-# ── T5b · 403 a mitad de la pasada: lo que subió queda anotado, el resumen NO dice «subido» (AC3) ──
-# 🔴 rojo previo (tests-coverage + spec-first, iter 1): subido=true con estado llave_invalida, y un motivo
-#    que decía a la vez «no se marcó nada» y «N sí subieron».
+# ── T5b · 403 a mitad de la pasada: lo que subió queda anotado, el resumen NO dice «subido» ──
+# 🔴 Atrapa: subido=true con estado llave_invalida, y un motivo
+#    que dice a la vez «no se marcó nada» y «N sí subieron».
 T="${BASE}/t5b"; buzon "${T}/b"; config "${T}/cfg.json"
 corrida "${T}/h" "4.1-2026-09-04T0800"; corrida "${T}/h" "4.2-2026-09-04T0900"
 echo "2 403" > "${T}/b/despues"
@@ -276,8 +276,8 @@ subir "${T}" "${T}/h" "maq-a"
 [ "$(campo "${T}" subidos)" = "2" ] && [ "$(en_registro "${T}" | wc -l | tr -d ' ')" = "2" ] && ok "T5b los 2 que el servicio confirmó quedan anotados y contados" || mal "T5b subidos=$(campo "${T}" subidos), registro $(en_registro "${T}" | wc -l)"
 campo "${T}" motivo | grep -i 'no se marcó nada más' >/dev/null && ! campo "${T}" motivo | grep -i 'no se marcó nada;' >/dev/null && ok "T5b el motivo no se contradice («no se marcó nada más» + los que sí)" || mal "T5b motivo: $(campo "${T}" motivo)"
 
-# ── T-E · los estados del contrato que no tenían caso (tests-coverage iter 1) ───────────────────
-# 🔴 rojo previo: dry_run, parcial, sin_registro y sin_maquina figuraban en el contrato y ningún caso los ejercía.
+# ── T-E · los estados del contrato que necesitan un caso ───────────────────
+# 🔴 Atrapa: dry_run, parcial, sin_registro y sin_maquina figuran en el contrato y sin caso nadie los ejerce.
 T="${BASE}/te"; buzon "${T}/b"; config "${T}/cfg.json"; corrida "${T}/h" "9.1-2026-09-09T0100"; corrida "${T}/h" "9.2-rechazado-2026-09-09T0200"
 subir "${T}" "${T}/h" "maq-a" --dry-run
 [ "${RC}" -eq 0 ] && [ "$(campo "${T}" estado)" = "dry_run" ] && [ "$(campo "${T}" a_subir)" = "4" ] && [ "$(pedidos "${T}/b")" = "0" ] && [ ! -e "${T}/estado/mailbox-uploads.json" ] && ok "T-E --dry-run → exit 0, a_subir 4, ningún pedido, sin registro" || mal "T-E dry-run rc=${RC} estado=$(campo "${T}" estado) a_subir=$(campo "${T}" a_subir) pedidos=$(pedidos "${T}/b")"
@@ -285,7 +285,7 @@ subir "${T}" "${T}/h" "maq-a"
 [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "parcial" ] && [ "$(campo "${T}" subido)" = "false" ] && [ "$(campo "${T}" subidos)" = "2" ] && ok "T-E un 409 (los dos archivos de la corrida rechazada) → parcial, exit 1, subido=false, los otros 2 sí subieron" || mal "T-E parcial rc=${RC} estado=$(campo "${T}" estado) subido=$(campo "${T}" subido) subidos=$(campo "${T}" subidos)"
 en_registro "${T}" | grep rechazado >/dev/null && mal "T-E el rechazado quedó anotado" || ok "T-E el rechazado no quedó anotado"
 # una máquina que nunca corrió el pipeline NO tiene timing-history: eso es «nada que subir», no un fallo en cada arranque
-# 🔴 rojo previo (adversarial, integración): exit 1 «sin_registro» en TODAS las máquinas nuevas del equipo, cada arranque.
+# 🔴 Atrapa: exit 1 «sin_registro» en TODAS las máquinas nuevas del equipo, cada arranque.
 subir "${T}" "${T}/no-hay-registro" "maq-a"
 [ "${RC}" -eq 0 ] && [ "$(campo "${T}" estado)" = "sin_corridas" ] && [ "$(pedidos "${T}/b")" = "0" ] || true
 [ "${RC}" -eq 0 ] && [ "$(campo "${T}" estado)" = "sin_corridas" ] && ok "T-E sin timing-history (máquina que nunca corrió el pipeline) → exit 0, sin_corridas" || mal "T-E sin timing-history rc=${RC} estado=$(campo "${T}" estado)"
@@ -295,8 +295,8 @@ subir "${T}" "${T}/cerrado" "maq-a"; chmod 755 "${T}/cerrado"
 subir "${T}" "${T}/h" "..."
 [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "sin_maquina" ] && ok "T-E nombre de máquina que queda vacío → sin_maquina, exit 1" || mal "T-E sin máquina rc=${RC} estado=$(campo "${T}" estado)"
 
-# ── T6 · sin llave no sube y lo dice; por vencer, aviso con fecha una vez por día (AC4) ─────────
-# 🔴 rojo previo: vencimiento silencioso → un día todas las máquinas dejan de subir y nadie lo sabe;
+# ── T6 · sin llave no sube y lo dice; por vencer, aviso con fecha una vez por día ─────────
+# 🔴 Atrapa: vencimiento silencioso → un día todas las máquinas dejan de subir y nadie lo sabe;
 #    o aviso en cada sesión → ruido que se aprende a ignorar.
 T="${BASE}/t6"; buzon "${T}/b"; corrida "${T}/h" "5.1-2026-09-05T0700"
 subir "${T}" "${T}/h" "maq-a"          # sin cfg.json
@@ -318,8 +318,8 @@ T="${BASE}/t6b"; buzon "${T}/b"; corrida "${T}/h" "5.1-2026-09-05T0700"; config 
 subir "${T}" "${T}/h" "maq-a"
 [ "$(campo "${T}" aviso_vence)" = "null" ] && ok "T6 vence en 60 días → sin aviso" || mal "T6 vence en 60 → aviso=$(campo "${T}" aviso_vence)"
 
-# ── T7 · nunca lee: sólo PUT; una llave que lee o lista no se acepta (AC5) ──────────────────────
-# 🔴 rojo previo: un GET o un LIST para comparar → la llave necesitaría leer, y leería lo de todos.
+# ── T7 · nunca lee: sólo PUT; una llave que lee o lista no se acepta ──────────────────────
+# 🔴 Atrapa: un GET o un LIST para comparar → la llave necesitaría leer, y leería lo de todos.
 NO_PUT=$(cat "${BASE}"/t*/b/pedidos.jsonl 2>/dev/null | grep -vc '"metodo":"PUT"' || true)
 TOTAL=$(cat "${BASE}"/t*/b/pedidos.jsonl 2>/dev/null | wc -l | tr -d ' ')
 [ "${TOTAL}" -gt 0 ] && [ "${NO_PUT}" = "0" ] && ok "T7 de ${TOTAL} pedidos en todos los casos, ninguno fue otra cosa que PUT" || mal "T7 hubo ${NO_PUT} pedido(s) que no son PUT (de ${TOTAL})"
@@ -332,8 +332,8 @@ subir "${T}" "${T}/h" "maq-a"
 [ "${RC}" -eq 2 ] && [ "$(pedidos "${T}/b")" = "0" ] && ok "T7 SAS de CUENTA (ss/srt) → exit 2, ningún pedido" || mal "T7 SAS de cuenta → rc=${RC} pedidos=$(pedidos "${T}/b")"
 grep -Eq "method: *'(GET|DELETE|HEAD)'|comp=list" "${SUBIR}" && mal "T7 el script tiene una operación de lectura/listado" || ok "T7 el script no tiene GET/HEAD/DELETE ni comp=list"
 
-# ── T8 · presupuesto: lo que no entró queda para después y se cuenta; ningún blob parcial (AC6) ─
-# 🔴 rojo previo: cortar a mitad de un PUT → un hilo truncado queda como la copia del buzón.
+# ── T8 · presupuesto: lo que no entró queda para después y se cuenta; ningún blob parcial ─
+# 🔴 Atrapa: cortar a mitad de un PUT → un hilo truncado queda como la copia del buzón.
 T="${BASE}/t8"; buzon "${T}/b"; config "${T}/cfg.json"; echo 15 > "${T}/b/demora"
 i=0; while [ "${i}" -lt 50 ]; do corrida "${T}/h" "7.$(printf %02d ${i})-2026-09-07T0500" 300; i=$((i+1)); done
 subir "${T}" "${T}/h" "maq-a" --budget-ms 150
@@ -347,8 +347,8 @@ echo 0 > "${T}/b/demora"
 subir "${T}" "${T}/h" "maq-a"
 [ "${RC}" -eq 0 ] && [ "$(campo "${T}" subidos)" = "${ST}" ] && [ "$(ls "${T}/b/blobs/corridas/maq-a" | wc -l | tr -d ' ')" = "100" ] && ok "T8 la pasada siguiente sube los ${ST} que faltaban (100 en total)" || mal "T8 segunda pasada rc=${RC} subidos=$(campo "${T}" subidos), en el buzón $(ls "${T}/b/blobs/corridas/maq-a" | wc -l)"
 
-# ── 2.5 T1 · los registros de frenos y escapes suben una vez por día, comprimidos y PRIMERO (story 2.5, AC1) ──
-# 🔴 rojo previo: subirlos en cada pasada → 2,4 MB en cada arranque; al final de la cola → con un atraso de
+# ── T1 · los registros de frenos y escapes suben una vez por día, comprimidos y PRIMERO ──
+# 🔴 Atrapa: subirlos en cada pasada → 2,4 MB en cada arranque; al final de la cola → con un atraso de
 #    hilos y el presupuesto chico no entran nunca; la cobertura antes que los .gz → un corte deja una
 #    cobertura nueva apuntando a registros viejos.
 registros() {   # <origen> — los dos registros con algo adentro
@@ -364,8 +364,8 @@ T="${BASE}/t1-25"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"
 for i in $(seq 1 20); do corrida "${T}/h" "1.${i}-2026-09-01T1000" 4000; done
 echo 150 > "${T}/b/demora"
 # El presupuesto deja entrar los tres pedidos de registro (3 × 150 = 450 ms) con holgura amplia y corta antes de las 20
-# corridas (otros ~3000 ms): con 400 el margen era de unos 100 ms y en un agente lento la cobertura quedaba afuera (el
-# rojo de a ratos de la fila, 2026-10-17). Lo que se mide es el orden y que algo quede para después, no el tope exacto.
+# corridas (otros ~3000 ms): con 400 el margen sería de unos 100 ms y en un agente lento la cobertura quedaría afuera (rojo
+# de a ratos). Lo que se mide es el orden y que algo quede para después, no el tope exacto.
 subir_reg "${T}" "${T}/h" "${T}/reg" 2026-09-15 "maq-a" --budget-ms 1500
 R="$(regdir "${T}")"
 gunzip -c "${R}/gates.log.gz" 2>/dev/null | cmp -s - "${T}/reg/gates.log" && gunzip -c "${R}/bypass.log.gz" 2>/dev/null | cmp -s - "${T}/reg/bypass.log" \
@@ -387,14 +387,14 @@ subir_reg "${T}" "${T}/h" "${T}/reg" 2026-09-15 "maq-a"
 cp -R "${R}" "${T}/juego-viejo"
 subir_reg "${T}" "${T}/h" "${T}/reg" 2026-09-16 "maq-a"
 R2="$(regdir "${T}")"
-# story 2.24 (hoy-2.5-T1): al día siguiente, otra versión con lo que creció; la de ayer queda igual
+# Al día siguiente, otra versión con lo que creció; la de ayer queda igual
 [ "${R2}" != "${R}" ] && gunzip -c "${R2}/gates.log.gz" 2>/dev/null | cmp -s - "${T}/reg/gates.log" && grep -q '"fecha": *"2026-09-16"' "${R2}/cobertura.json" && diff -r "${T}/juego-viejo" "${R}" >/dev/null \
   && ok "2.5-T1 al día siguiente vuelven a subir, con lo que creció, bajo otra versión (la de ayer, igual)" || mal "2.5-T1 el día siguiente no re-subió bajo otra versión: rc=${RC} ${R} → ${R2} $(cat "${R2}/cobertura.json" 2>&1 | head -c 200)"
 MAQ_A="${T}/b/blobs/corridas/maq-a"
 ! ls "${MAQ_A}/registros" | grep -v '^v' >/dev/null && ok "2.5-T1 nunca más a registros/<archivo> plano" || mal "2.5-T1 algo subió plano: $(ls "${MAQ_A}/registros")"
 
-# ── 2.6 T10 · el TERCER registro (la constancia de los frenos) viaja por el mismo camino (story 2.6, AC7) ──
-# 🔴 rojo previo: dejar `frenos.jsonl` fuera de la lista de registros → el reductor se NIEGA a contarlo
+# ── T10 · el TERCER registro (la constancia de los frenos) viaja por el mismo camino ──
+# 🔴 Atrapa: dejar `frenos.jsonl` fuera de la lista de registros → el reductor se NIEGA a contarlo
 #    (su guarda exige que todo lo que cuenta esté entre lo que se sube), y la constancia no sale de la máquina.
 T="${BASE}/t10-26"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"
 cat > "${T}/reg/frenos.jsonl" <<'JSONL'
@@ -415,8 +415,8 @@ c = json.load(open(sys.argv[2]))
 assert c['fuentes']['frenos']['estado'] == 'medido', c
 PY2
 
-# ── 2.6 T10b · sin constancia todavía (una máquina que no actualizó el arnés) se DECLARA, no se inventa un vacío ──
-# 🔴 rojo previo: subir un .gz vacío → el reductor lo lee como «este freno nunca frenó».
+# ── T10b · sin constancia todavía (una máquina que no actualizó el arnés) se DECLARA, no se inventa un vacío ──
+# 🔴 Atrapa: subir un .gz vacío → el reductor lo lee como «este freno nunca frenó».
 T="${BASE}/t10b-26"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"
 subir_reg "${T}" "${T}/h" "${T}/reg" 2026-09-15 "maq-a"
 R="$(regdir "${T}")"
@@ -428,8 +428,8 @@ assert 'motivo' in c['fuentes']['frenos'] and '/' not in c['fuentes']['frenos'][
 " "${R}/cobertura.json" 2>/dev/null \
   && ok "2.6-T10b sin frenos.jsonl la cobertura lo declara no_medido con motivo y sin rutas, y no sube un vacío" || mal "2.6-T10b $(cat "${R}/cobertura.json" 2>&1 | head -c 250)"
 
-# ── 2.7 T12 · el carril de cada commit viaja como un registro más (story 2.7, AC12) ──────────────
-# 🔴 rojo previo: dejar `carriles.jsonl` fuera de la lista de registros → no sale de la máquina, y el
+# ── T12 · el carril de cada commit viaja como un registro más ──────────────
+# 🔴 Atrapa: dejar `carriles.jsonl` fuera de la lista de registros → no sale de la máquina, y el
 #    reductor se NIEGA a contarlo (su guarda exige que lo que cuenta esté entre lo que se sube).
 T="${BASE}/t12-27"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"
 cat > "${T}/reg/carriles.jsonl" <<'JSONL'
@@ -446,8 +446,8 @@ c=json.load(open(sys.argv[1]))
 assert c['fuentes']['carriles']['estado']=='medido', c
 " "${R}/cobertura.json" 2>/dev/null && ok "2.7-T12 la cobertura declara la fuente «carriles» (el nombre que busca el reductor)" || mal "2.7-T12 cobertura: $(cat "${R}/cobertura.json" 2>&1 | head -c 250)"
 
-# ── 2.5 T2 · un registro ausente se declara, no se sube vacío; nada más sube de la carpeta (story 2.5, AC2, AC3) ──
-# 🔴 rojo previo: tratar el ausente como vacío → sube un .gz vacío que se lee como «0 escapes»; o dejar el .gz de
+# ── T2 · un registro ausente se declara, no se sube vacío; nada más sube de la carpeta ──
+# 🔴 Atrapa: tratar el ausente como vacío → sube un .gz vacío que se lee como «0 escapes»; o dejar el .gz de
 #    ayer en la preparación → la subida vuelve a mandar números viejos.
 T="${BASE}/t2-25"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; rm "${T}/reg/bypass.log"
 mkdir -p "${T}/reg/lane" "${T}/reg/advisor-runs"; echo '{"recentPrompts":["secreto"]}' > "${T}/reg/lane/s.json"; echo '{}' > "${T}/reg/advisor-runs/s.jsonl"; echo "x" > "${T}/reg/safety-guard.log"
@@ -459,14 +459,14 @@ R="$(regdir "${T}")"
 python3 -c "import json,sys; c=json.load(open(sys.argv[1])); b=c['fuentes']['bypass']; assert b['estado']=='no_medido' and b['motivo'] and sys.argv[2] not in b['motivo'], c" "${R}/cobertura.json" "${T}" 2>/dev/null \
   && ok "2.5-T2 la cobertura declara bypass no_medido con motivo, sin la ruta de la máquina" || mal "2.5-T2 cobertura: $(cat "${R}/cobertura.json" 2>&1 | head -c 300)"
 grep -Eq 'lane|advisor-runs|safety-guard|secreto' "${T}/b/pedidos.jsonl" && mal "2.5-T2 subió algo más que los registros: $(grep -E 'lane|advisor-runs|safety' "${T}/b/pedidos.jsonl" | head -2)" || ok "2.5-T2 de la carpeta del pipeline sólo suben los dos registros"
-# 2.5 T1b · si un registro rebota con un 4xx que no es de la llave, la cobertura NO sube (quedaría declarando
-# medido un registro viejo). 🔴 rojo previo: `continue` y seguir con la cola → sube la cobertura igual.
+# T1b · si un registro rebota con un 4xx que no es de la llave, la cobertura NO sube (quedaría declarando
+# medido un registro viejo). 🔴 Atrapa: `continue` y seguir con la cola → sube la cobertura igual.
 T="${BASE}/t1b-25"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; echo "gates.log.gz" > "${T}/b/rechazar"
 subir_reg "${T}" "${T}/no-existe" "${T}/reg" 2026-09-15 "maq-a"
 R="$(regdir "${T}")"
 [ "${RC}" -eq 1 ] && [ -f "${R}/bypass.log.gz" ] && [ ! -e "${R}/cobertura.json" ] \
   && ok "2.5-T1b gates.log.gz rebota (409) → la cobertura queda retenida, sale 1 (parcial) y el otro registro sube" || mal "2.5-T1b rc=${RC} buzón: $(ls "${R}" 2>&1) $(head -c 200 "${T}/err.txt")"
-# story 2.24 (hoy-2.5-T1b, AC 10): un «ya existe» en el juego invalida la preparación y saca sus claves del registro local
+# Un «ya existe» en el juego invalida la preparación y saca sus claves del registro local
 python3 - "${T}/estado/registros-buzon/cobertura.json" "${T}/estado/mailbox-uploads.json" <<'PY' && ok "2.5-T1b la preparación queda invalidada (sin «preparado») y el registro local sin las claves de ese juego" || mal "2.5-T1b preparación: $(head -c 300 "${T}/estado/registros-buzon/cobertura.json" 2>&1)"
 import json, sys
 c = json.load(open(sys.argv[1]))
@@ -479,21 +479,21 @@ subir_reg "${T}" "${T}/no-existe" "${T}/reg" 2026-09-15 "maq-a"
 R2="$(regdir "${T}")"
 [ "${RC}" -eq 0 ] && [ "${R2}" != "${R}" ] && [ -f "${R2}/gates.log.gz" ] && [ -f "${R2}/bypass.log.gz" ] && [ -f "${R2}/cobertura.json" ] \
   && ok "2.5-T1b la pasada siguiente, el mismo día, re-prepara el juego y lo sube entero bajo otra versión" || mal "2.5-T1b re-preparación: rc=${RC} ${R} → ${R2}: $(ls "${R2}" 2>&1 | tr '\n' ' ')"
-# 2.5 T2c · sin corridas, un fallo al preparar los registros no sale 0 «sin corridas».
-# 🔴 rojo previo: el return temprano no mira el error anotado.
+# T2c · sin corridas, un fallo al preparar los registros no sale 0 «sin corridas».
+# 🔴 Atrapa: el return temprano no mira el error anotado.
 T="${BASE}/t2c-25"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; echo x > "${T}/archivo"
 TYCON_LOGS_SOURCE="${T}/reg" TYCON_LOGS_DIR="${T}/archivo/sub" TYCON_TODAY=2026-09-15 subir "${T}" "${T}/no-existe" "maq-a"
 [ "${RC}" -eq 1 ] && grep -q 'registros' "${T}/err.txt" && ok "2.5-T2c no se pudo preparar la carpeta de registros (y no hay corridas) → sale 1 y lo dice" || mal "2.5-T2c rc=${RC} $(head -c 200 "${T}/err.txt")"
-# 2.5 T2d · la carpeta del pipeline que existe pero no se puede mirar NO es «no participa».
-# 🔴 rojo previo: el catch del stat que devuelve «sin carpeta» ante cualquier error → la máquina deja de subir
+# T2d · la carpeta del pipeline que existe pero no se puede mirar NO es «no participa».
+# 🔴 Atrapa: el catch del stat que devuelve «sin carpeta» ante cualquier error → la máquina deja de subir
 #    registros para siempre, en silencio.
 T="${BASE}/t2d-25"; buzon "${T}/b"; config "${T}/cfg.json"; echo x > "${T}/archivo"; corrida "${T}/h" "9.2-2026-09-09T0900"
 TYCON_LOGS_SOURCE="${T}/archivo/sub" TYCON_LOGS_DIR="${T}/estado/registros-buzon" TYCON_TODAY=2026-09-15 subir "${T}" "${T}/h" "maq-a"
 [ "${RC}" -eq 1 ] && grep -q 'registros' "${T}/err.txt" && ok "2.5-T2d la carpeta del pipeline no se puede mirar (ENOTDIR) → sale 1 y lo dice (las corridas igual suben)" || mal "2.5-T2d rc=${RC} $(head -c 200 "${T}/err.txt")"
 TYCON_LOGS_SOURCE="${T}/archivo" TYCON_LOGS_DIR="${T}/estado2/registros-buzon" TYCON_TODAY=2026-09-15 subir "${T}" "${T}/h" "maq-a"
 [ "${RC}" -eq 1 ] && grep -q 'registros' "${T}/err.txt" && ok "2.5-T2d la «carpeta» del pipeline es un archivo → sale 1 y lo dice" || mal "2.5-T2d archivo: rc=${RC} $(head -c 200 "${T}/err.txt")"
-# 2.5 T2e · una cobertura de la preparación que no se puede leer no cuenta como «ya preparado hoy»: se rehace.
-# 🔴 rojo previo: tratar la cobertura ilegible como ya preparada → los registros no vuelven a subir nunca.
+# T2e · una cobertura de la preparación que no se puede leer no cuenta como «ya preparado hoy»: se rehace.
+# 🔴 Atrapa: tratar la cobertura ilegible como ya preparada → los registros no vuelven a subir nunca.
 T="${BASE}/t2e-25"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"
 mkdir -p "${T}/estado/registros-buzon"; echo '{ roto "fecha": "2026-09-15"' > "${T}/estado/registros-buzon/cobertura.json"
 subir_reg "${T}" "${T}/no-existe" "${T}/reg" 2026-09-15 "maq-a"
@@ -505,16 +505,16 @@ subir_reg "${T}" "${T}/h" "${T}/no-hay-carpeta" 2026-09-15 "maq-a"
 [ "${RC}" -eq 0 ] && [ "$(puts "${T}/b")" = "2" ] && ! grep -q registros "${T}/b/pedidos.jsonl" \
   && ok "2.5-T2 una máquina sin carpeta del pipeline no sube registros ni cobertura (sólo sus corridas)" || mal "2.5-T2 sin carpeta: rc=${RC} puts=$(puts "${T}/b")"
 
-# ── T18 (parte subida) · sin rastro de git ni del repo privado (AC17) ───────────────────────────
-# 🔴 rojo previo: dejar el camino de git vivo «por las dudas» → dos vehículos para lo mismo.
+# ── T18 (parte subida) · sin rastro de git ni del repo privado ───────────────────────────
+# 🔴 Atrapa: dejar el camino de git vivo «por las dudas» → dos vehículos para lo mismo.
 T="${BASE}/t18"; buzon "${T}/b"; config "${T}/cfg.json"; corrida "${T}/h" "8.1-2026-09-08T0400"
 mkdir -p "${T}/bin"; printf '#!/bin/sh\necho "$@" >> "%s/git.log"\nexit 0\n' "${T}" > "${T}/bin/git"; chmod +x "${T}/bin/git"
 PATH="${T}/bin:${PATH}" subir "${T}" "${T}/h" "maq-a"
 [ "${RC}" -eq 0 ] && [ ! -s "${T}/git.log" ] && ok "T18 una subida completa no invoca git" || mal "T18 rc=${RC}, git invocado: $(cat "${T}/git.log" 2>/dev/null | head -3)"
 grep -q "corridas\.json\|corridas-remoto\|spawnSync('git'" "${SUBIR}" && mal "T18 el script todavía nombra corridas.json / el clon / git" || ok "T18 el script no nombra corridas.json, el clon ni git"
 
-# ── 2.9 · los hallazgos viajan como un registro más, con UNA sola cobertura ──────────────────────
-# 🔴 rojo previo: en una carpeta hermana `<maquina>/hallazgos/` con cobertura propia, el reductor
+# ── los hallazgos viajan como un registro más, con UNA sola cobertura ──────────────────────
+# 🔴 Atrapa: en una carpeta hermana `<maquina>/hallazgos/` con cobertura propia, el reductor
 #    tendría DOS coberturas por máquina; `coberturaValida()` arma una sola iterando las fuentes que
 #    conoce, así que la fuente nueva quedaría `no_medido` para TODAS las máquinas, en verde y para
 #    siempre. Por eso `hallazgos.jsonl` entra a REGISTROS y no a una carpeta propia.
@@ -530,12 +530,12 @@ sello_hallazgos() {  # <carpeta> <fecha> [hallazgos] — el sello que deja el re
 sello_hallazgos "${T}/reg" 2026-09-15
 for i in $(seq 1 20); do corrida "${T}/h" "2.${i}-2026-09-01T1000" 4000; done
 echo 150 > "${T}/b/demora"
-# 🔴 El presupuesto sube de 400 a 700 ms porque ahora son CUATRO pedidos de registro (3 .gz + la
-#    cobertura) a 150 ms cada uno, no tres. Con 400 quedaban afuera la cobertura y el orden — que es
+# 🔴 El presupuesto es de 1500 ms porque son CUATRO pedidos de registro (3 .gz + la
+#    cobertura) a 150 ms cada uno, no tres. Con 400 quedan afuera la cobertura y el orden — que es
 #    el comportamiento correcto (la cobertura se retiene si su registro no subió), pero no es lo que
 #    este caso mide. El presupuesto REAL por defecto es de 90 s: tres registros entran de sobra.
-#    Y de 700 a 1500 (2026-10-17): con 700 el margen sobre los 600 ms de los registros era de 100 ms, el mismo rojo de a
-#    ratos que el caso 2.5-T1; las 20 corridas (~3000 ms) siguen sin entrar.
+#    Con menos de 1500, el margen sobre los 600 ms de los registros sería de unos 100 ms y daría rojos de a
+#    ratos; las 20 corridas (~3000 ms) siguen sin entrar.
 subir_reg "${T}" "${T}/h" "${T}/reg" 2026-09-15 "maq-a" --budget-ms 1500
 R="$(regdir "${T}")"
 gunzip -c "${R}/hallazgos.jsonl.gz" 2>/dev/null | cmp -s - "${T}/reg/hallazgos.jsonl" \
@@ -579,9 +579,9 @@ assert f['hallazgos']['estado'] == 'no_medido', f['hallazgos']
 assert f['hallazgos'].get('motivo'), 'sin motivo'
 AUS
 
-# ── 2.9 vuelta 2 · la serie se declara medida con LA MISMA regla que usa el cruce ────────────────
-# 🔴 rojo previo (cazador de fallos silenciosos): un hallazgos.jsonl vacío o congelado —el recolector
-#    apagado— se declaraba «medido» todos los días y el cruce lo sumaba como si fuera de hoy.
+# ── la serie se declara medida con LA MISMA regla que usa el cruce ────────────────
+# 🔴 Atrapa: un hallazgos.jsonl vacío o congelado —el recolector
+#    apagado— se declara «medido» todos los días y el cruce lo suma como si fuera de hoy.
 T="${BASE}/t29c"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"
 printf '{"ts":"2026-04-01T10:00:00Z","corrida":"c-000000000001","regla":"SEC-C1","dueno":"x","severidad":"WARNING","disposicion":"fixed"}\n' > "${T}/reg/hallazgos.jsonl"
 sello_hallazgos "${T}/reg" 2026-04-01 1        # un sello de abril: el recolector dejó de correr
@@ -619,7 +619,7 @@ def solo_numeros(x):
 assert solo_numeros(r), r
 RES
 # el .gz que se preparó ayer con la serie medida se SACA el día que la serie deja de estarlo
-# 🔴 rojo previo: sin el borrado, el .gz de ayer quedaba en la preparación y volvía a subir como de hoy.
+# 🔴 Atrapa: sin el borrado, el .gz de ayer queda en la preparación y vuelve a subir como de hoy.
 T="${BASE}/t29f"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"
 printf '{"ts":"2026-09-14T10:00:00Z","corrida":"c-000000000001","regla":"SEC-C1","dueno":"x","severidad":"WARNING","disposicion":"fixed"}\n' > "${T}/reg/hallazgos.jsonl"
 sello_hallazgos "${T}/reg" 2026-09-15 1
@@ -633,7 +633,7 @@ else
     || mal "2.9 el .gz de una serie medida hace cinco días sigue preparado para subir"
 fi
 # una serie que no coincide con su sello (a medio escribir) no se declara medida
-# 🔴 rojo previo: con el sello de 2 hallazgos y la serie vacía, la cobertura decía «medido» y el cruce contaba 0.
+# 🔴 Atrapa: con el sello de 2 hallazgos y la serie vacía, la cobertura dice «medido» y el cruce cuenta 0.
 T="${BASE}/t29g"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"
 : > "${T}/reg/hallazgos.jsonl"
 sello_hallazgos "${T}/reg" 2026-09-15 2
@@ -644,8 +644,8 @@ f = json.load(open(sys.argv[1]))['fuentes']['hallazgos']
 assert f['estado'] == 'no_medido' and 'coincide' in f['motivo'], f
 DESC
 # una falla de lectura de hallazgos.jsonl.gz ANTES de la cola retiene la cobertura; una de una corrida, NO
-# 🔴 rojo previo (pase adversarial): la guarda reconocía sólo «.log.gz », y ampliarla a «.jsonl.gz » a
-#    secas la habría disparado también por un hilo de corrida (`*.hilo.jsonl.gz`).
+# 🔴 Atrapa: una guarda que reconoce sólo «.log.gz », o que se amplía a «.jsonl.gz » a
+#    secas y se dispara también por un hilo de corrida (`*.hilo.jsonl.gz`).
 node - "${SUBIR}" <<'GUARDA' && ok "2.9 la guarda reconoce los tres registros por su NOMBRE, y no se dispara por un hilo de corrida" || mal "2.9 la guarda de registros no distingue un registro de un hilo"
 const s = require('fs').readFileSync(process.argv[2], 'utf8');
 const m = /const esFallaDeRegistro = \(x\) => ([^\n]+);/.exec(s);
@@ -659,8 +659,8 @@ const casos = [
 ];
 for (const [x, esperado] of casos) if (esFallaDeRegistro(x) !== esperado) { console.error(x, '→', !esperado); process.exit(1); }
 GUARDA
-# ── 2.19 T13 · el cambio de git de cada corrida viaja con el volcado y su hilo (story 2.19, AC13) ──
-# 🔴 rojo previo: FORMA_ARCHIVO sólo acepta .json y .hilo.jsonl.gz → el .cambio.json.gz no sube nunca.
+# ── T13 · el cambio de git de cada corrida viaja con el volcado y su hilo ──
+# 🔴 Atrapa: FORMA_ARCHIVO sólo acepta .json y .hilo.jsonl.gz → el .cambio.json.gz no sube nunca.
 #    Mutación: sacar `cambio\.json\.gz` de FORMA_ARCHIVO → rojo acá y en download-runs.test.sh, que la importa.
 T="${BASE}/t219"; buzon "${T}/b"; config "${T}/cfg.json"
 corrida "${T}/h" "2.19-2026-09-17T1300" 1000
@@ -672,10 +672,10 @@ subir "${T}" "${T}/h" "maq-a"
   || mal "2.19-T13 rc=${RC} subidos=$(campo "${T}" subidos) buzón: $(ls "${T}/b/blobs/corridas/maq-a" 2>&1)"
 
 
-# ── 2.12-T13 · SubirEnAgenteDeCi_NoSube (story 2.12) · un agente de CI no es una máquina del equipo: no sube al buzón real (AC 13) ──
-# 🔴 rojo previo: sin la guarda, el banco nocturno (TF_BUILD=True) sube los registros del agente como si fuera una
-#    máquina — así apareció `runnervmg34hb/` en el buzón el 2026-09-17. El caso apunta a una cuenta que NO existe y
-#    no pasa TYCON_MAILBOX_URL_BASE: aunque la guarda falte, nada sale de esta máquina (lección de la 2.16).
+# ── T13 · SubirEnAgenteDeCi_NoSube · un agente de CI no es una máquina del equipo: no sube al buzón real ──
+# 🔴 Atrapa: sin la guarda, el banco nocturno (TF_BUILD=True) sube los registros del agente como si fuera una
+#    máquina y deja una carpeta del agente en el buzón. El caso apunta a una cuenta que NO existe y
+#    no pasa TYCON_MAILBOX_URL_BASE: aunque la guarda falte, nada sale de esta máquina.
 T="${BASE}/t13"; mkdir -p "${T}/estado"
 printf '{"cuenta":"tyconnoexiste0000","contenedor":"corridas","tenant":"00000000-0000-0000-0000-000000000000","politica":"subida-prueba","vence":"2099-01-01","sas":"sv=2022-11-02&si=subida-prueba&sr=c&spr=https&sig=%s"}\n' "${FAKE_SIGNATURE}" > "${T}/cfg.json"
 corrida "${T}/h" "2.1-2026-09-01T1000" 1000
@@ -739,8 +739,8 @@ process.stdout.write(c.filter((x) => !x[1]).map((x) => x[0]).join(" "));' "${SUB
 [ -z "${LAB}" ] && ok "Lab_NoSubeAlBuzonReal: la regla — la HOME del usuario sube; otra HOME, una temporal o una marca de CI, no" \
   || mal "Lab_NoSubeAlBuzonReal: la regla falla en: ${LAB}"
 
-# ── 8.9-D2 · el registro de subidas y el sello de vencimiento con su nombre en inglés; el viejo sigue valiendo ──
-# 🔴 rojo previo: renombrar el registro sin leer el viejo vuelve a subir TODO el historial de la máquina el día del
+# ── el registro de subidas y el sello de vencimiento con su nombre en inglés; el viejo sigue valiendo ──
+# 🔴 Atrapa: renombrar el registro sin leer el viejo vuelve a subir TODO el historial de la máquina el día del
 #    cambio, y renombrar el sello sin leer el viejo repite el aviso de vencimiento. El nombre viejo sale del mapa.
 [ -f "${BASE}/t6/estado/upload-runs-expiry.seal" ] \
   && ok "8.9-D2 con TYCON_UPLOADS_LOG, el sello de vencimiento (upload-runs-expiry.seal) va a la carpeta del registro" \
@@ -788,13 +788,13 @@ N="$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(sum(1 fo
 rm -rf "${HOME}/.claude"
 fi
 
-# ── 8.9-E T56 · el registro de usos de nombres viejos viaja al buzón con los otros registros (story 8.9, AC 52) ──
-# `legacy-names.jsonl` (AC 17: una línea por nombre viejo, script y día) es lo que decide el retiro de los nombres viejos
+# ── T56 · el registro de usos de nombres viejos viaja al buzón con los otros registros ──
+# `legacy-names.jsonl` es lo que decide el retiro de los nombres viejos
 # —«14 días sin usos en el buzón»—, así que sube como un registro más: comprimido, una vez por día, con su cobertura.
 # Sube sólo lo que el registro promete —día, tipo, nombre viejo, nombre nuevo, guion relativo al repo, conflicto—: una
 # línea con un campo de más lo pierde, y una con una ruta de la máquina o un día sin forma no sube. La cobertura lleva sus
 # conteos (números).
-# 🔴 rojo previo: sin la entrada en REGISTROS el archivo se queda en la máquina y el buzón dice «0 usos» por ausencia.
+# 🔴 Atrapa: sin la entrada en REGISTROS el archivo se queda en la máquina y el buzón dice «0 usos» por ausencia.
 T="${BASE}/t56"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"
 cat > "${T}/reg/legacy-names.jsonl" <<'JSONL'
 {"day":"2026-10-01","kind":"env","old":"TYCON_NO_LAB_OLD","new":"TYCON_NO_LAB_NEW","script":"scripts/lab/tool.sh"}
@@ -843,7 +843,7 @@ assert not os.path.exists(os.path.join(d, "legacy-names.jsonl.gz"))
 f = json.load(open(os.path.join(d, "cobertura.json")))["fuentes"]["legacy-names"]
 assert f["estado"] == "no_medido" and f.get("motivo"), f
 PY
-# la fecha de retiro: la fija el commit de la tanda E en el mapa (45 días después del merge); acá sólo se lee
+# la fecha de retiro: la fija el mapa de renombres (45 días después del merge); acá sólo se lee
 if [ ! -f "${RAIZ}/scripts/lib/renames.json" ]; then
   ok "8.9-E T56 (fecha de retiro) se saltea — copia pública, sin el mapa de renombres"
 else
@@ -853,12 +853,12 @@ else
   else mal "8.9-E T56 retire_after todavía no es una fecha (${RETIRO:-null}): lo fija el commit de la tanda E, 45 días después del merge (AC 52)"; fi
 fi
 
-# ── 8.19-B T29 · Mailbox_PlaceJson_CountsAndHashesOnly_NoMeasuredDeclared (story 8.19, tanda B · AC 21) ─────────────
+# ── T29 · Mailbox_PlaceJson_CountsAndHashesOnly_NoMeasuredDeclared ─────────────
 # Una vez por día, con los demás registros, sube `place.json`: en qué nombre vive el arnés, si el nombre viejo existe,
 # cuánto queda registrado por él (por archivo), el sha256 de la copia fija de arranque contra el del árbol, y si las
-# skills salen de un clon aparte y de qué commit. Es la evidencia para retirar el nombre viejo (story 8.15). Sólo
+# skills salen de un clon aparte y de qué commit. Es la evidencia para retirar el nombre viejo. Sólo
 # números, hashes y nombres de archivo: nunca una ruta con la carpeta de la persona. Un dato ilegible: `no_medido`.
-# 🔴 rojo previo: sin esto el retiro se decidiría sin saber cuántas máquinas siguen registradas por el nombre viejo.
+# 🔴 Atrapa: sin esto el retiro se decidiría sin saber cuántas máquinas siguen registradas por el nombre viejo.
 PN="$(node -p "require('${RAIZ}/scripts/setup/harness/place.js').PLACE_NAME")"
 LN="$(node -p "require('${RAIZ}/scripts/setup/harness/place.js').LEGACY_PLACE_NAME")"
 casa29() {  # <casa> <clon> — una máquina con el mecanismo: el lugar → el clon, el viejo → el lugar, un hook por el viejo
@@ -910,11 +910,11 @@ node -e 'const fs=require("fs");const [o,x]=process.argv.slice(1);fs.unlinkSync(
 HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-05 "maq-a" --dry-run
 [ "$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['legacy']['kind'])" "${T}/estado/registros-buzon/place.json" 2>&1)" = dangling ] \
   && ok "8.19-B T29 el viejo colgado con el lugar sano: dangling" || mal "8.19-B T29 colgado: $(cat "${T}/estado/registros-buzon/place.json" 2>&1 | head -c 300)"
-# ── 8.26 T40 · Mailbox_PlaceJson_SaysReleaseVersionAndTeamLayer_NeverTheLayerUrl (story 8.26 · AC 40) ────────────────
+# ── T40 · Mailbox_PlaceJson_SaysReleaseVersionAndTeamLayer_NeverTheLayerUrl ────────────────
 # `install` dice lo que `doctor --json` dice de la instalación —el modo, la versión y la capa del equipo— desde el mismo
-# estado, para juntar el AC 40 de todas las máquinas sin pedirle nada a nadie. La dirección del repo de la capa no viaja;
+# estado, para juntar eso de todas las máquinas sin pedirle nada a nadie. La dirección del repo de la capa no viaja;
 # un campo con otra forma va null; un estado ilegible, no_medido.
-# 🔴 rojo previo: sin esto, saber si cada máquina está en la versión bajada y con la capa pedía a cada dev correr doctor.
+# 🔴 Atrapa: sin esto, saber si cada máquina está en la versión bajada y con la capa exige que cada dev corra doctor.
 T="${BASE}/t40"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa29 "${T}/casa" "${T}/clon"
 printf '{"schema":1,"mode":"managed","tree":"%s","sources":[],"version":{"number":"2026.10.14.51","installed_at":"2026-10-14T21:13:09.465Z"},"team":{"repo":"https://servidor.example/org/_git/capa-secreta","name":"equipo","files":84,"commit":"556dd0f400cb9eedcfed29a4de6313dda547158c"}}\n' "${T}/clon" > "${T}/casa/.claude/.tycon-pipeline/harness-state.json"
 HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-05 "maq-a" --dry-run
@@ -945,10 +945,10 @@ import json, sys
 i = json.load(open(sys.argv[1]))["install"]
 assert i.get("status") == "no_medido" and i.get("reason"), i
 PY
-# ── 8.39 T32 · PlaceJson_NodeDelArnes_SinRutas (story 8.39, AC 24) ──────────────────────────────────────────────────
+# ── T32 · PlaceJson_NodeDelArnes_SinRutas ──────────────────────────────────────────────────
 # @story-8.39 @ac-24  `install.harness_node` dice `{ own, major }`: con el Node propio del arnés, sin él, y nunca una ruta
 # (ni la casa, ni `.tycon/node`). El Node de juguete es un GUION que dice la versión de la lista y si no llama al node
-# real por su ruta: nunca un enlace a un binario real. 🔴 rojo previo: el dato no viajaba.
+# real por su ruta: nunca un enlace a un binario real. 🔴 Atrapa: que el dato no viaje.
 T="${BASE}/t839-32"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa29 "${T}/casa" "${T}/clon"
 NV32="$(node -e 'process.stdout.write(require(process.argv[1]).version)' "${RAIZ}/scripts/production/node-official.json")"
 mkdir -p "${T}/casa/.tycon/node/versions/${NV32}/bin"
@@ -975,12 +975,12 @@ HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 20
 node -e 'const { FORMA_REGISTRO } = require(process.argv[1]); process.exit(FORMA_REGISTRO.test("place.json") ? 0 : 1)' "${SUBIR}" \
   && ok "8.19-B T29 y la bajada reconoce place.json (la misma forma de los registros)" || mal "8.19-B T29 la bajada no reconocería place.json"
 
-# ════ story 2.24 · el buzón sólo crea: nombre nuevo por subida, «ya existe» separado de la llave ════════════════
-# Los códigos del buzón de mentira son los medidos en el laboratorio de la story (Dev Agent Record, Task 0).
+# ════ el buzón sólo crea: nombre nuevo por subida, «ya existe» separado de la llave ════════════════
+# Los códigos del buzón de mentira son los que devuelve Azure de verdad.
 reg_campo() { python3 -c "import json,sys; d=json.load(open(sys.argv[1]))['archivos'].get(sys.argv[2]) or {}; v=d.get(sys.argv[3]); print('' if v is None else v)" "$1/estado/mailbox-uploads.json" "$2" "$3" 2>/dev/null; }
 puts_a() { if [ -f "$1/pedidos.jsonl" ]; then grep '"metodo":"PUT"' "$1/pedidos.jsonl" | grep -c "$2" || true; else echo 0; fi; }
 
-# ── 2.24 T1 · PrimeraSubida_NombreDeSiempre_ConIfNoneMatch (AC 3, 6) ── 🔴 rojo previo: sin la cabecera.
+# ── T1 · PrimeraSubida_NombreDeSiempre_ConIfNoneMatch ── 🔴 Atrapa: sin la cabecera.
 T="${BASE}/t224-1"; buzon "${T}/b"; config "${T}/cfg.json"; corrida "${T}/h" "1.1-2026-10-01T1000"
 subir "${T}" "${T}/h" "mac-de-prueba"
 python3 - "${T}/b/pedidos.jsonl" <<'PY' && [ "${RC}" -eq 0 ] && [ "$(reg_campo "${T}" mac-de-prueba/1.1-2026-10-01T1000.json blob)" = "mac-de-prueba/1.1-2026-10-01T1000.json" ] \
@@ -991,7 +991,7 @@ assert len(ps) == 2 and all(p['inm'] == '*' for p in ps), ps
 assert sorted(p['ruta'] for p in ps) == ['/corridas/mac-de-prueba/1.1-2026-10-01T1000.hilo.jsonl.gz', '/corridas/mac-de-prueba/1.1-2026-10-01T1000.json'], ps
 PY
 
-# ── 2.24 T2 · ArchivoCambiado_SubeAVersion_NoPisa (AC 4, 6) ── 🔴 rojo previo: PUT al nombre viejo (lo de hoy).
+# ── T2 · ArchivoCambiado_SubeAVersion_NoPisa ── 🔴 Atrapa: PUT al nombre viejo.
 cp "${T}/b/blobs/corridas/mac-de-prueba/1.1-2026-10-01T1000.hilo.jsonl.gz" "${T}/hilo-viejo"
 head -c 6000 /dev/urandom | base64 | gzip -c > "${T}/h/1.1-2026-10-01T1000.hilo.jsonl.gz"
 : > "${T}/b/pedidos.jsonl"
@@ -1003,14 +1003,14 @@ CLAVE="mac-de-prueba/1.1-2026-10-01T1000.hilo.jsonl.gz"
   && ok "2.24-T2 lo que cambió sube a <máquina>/v<inicio de la pasada>/, el blob de siempre queda idéntico, y el registro anota blob y versión" \
   || mal "2.24-T2 rc=${RC} puts=$(puts "${T}/b") $(cut -c1-200 "${T}/b/pedidos.jsonl") · blob=$(reg_campo "${T}" "${CLAVE}" blob)"
 
-# ── 2.24 T27 · RelojAtrasado_VersionNuncaRetrocede (AC 4) ── 🔴 rojo previo: una versión menor que la anterior.
+# ── T27 · RelojAtrasado_VersionNuncaRetrocede ── 🔴 Atrapa: una versión menor que la anterior.
 head -c 7000 /dev/urandom | base64 | gzip -c > "${T}/h/1.1-2026-10-01T1000.hilo.jsonl.gz"
 TYCON_NOW=2026-10-20T09:00:00.000Z subir "${T}" "${T}/h" "mac-de-prueba"
 [ "${RC}" -eq 0 ] && [ "$(reg_campo "${T}" "${CLAVE}" version)" = "v20261020T100000001Z" ] && [ -f "${T}/b/blobs/corridas/mac-de-prueba/v20261020T100000001Z/1.1-2026-10-01T1000.hilo.jsonl.gz" ] \
   && ok "2.24-T27 con el reloj una hora atrás, la versión es la anterior + 1 ms (nunca retrocede)" || mal "2.24-T27 rc=${RC} versión=$(reg_campo "${T}" "${CLAVE}" version) · $(versiones "${T}" mac-de-prueba | tr '\n' ' ')"
 
-# ── 2.24 T27b · VersionConFechaImposible_NoEsVersion (AC 14; pase adversarial, vuelta 1) ──
-# 🔴 rojo previo: Date.parse normaliza el desborde del día: «v20260230…» (30 de febrero) se leía como el 2 de marzo.
+# ── T27b · VersionConFechaImposible_NoEsVersion ──
+# 🔴 Atrapa: Date.parse normaliza el desborde del día: «v20260230…» (30 de febrero) se lee como el 2 de marzo.
 node -e '
 const u = require(process.argv[1]);
 const casos = { v20260230T000000000Z: null, v20260229T000000000Z: null, v20261340T000000000Z: null, v20261020T100000000Z: Date.parse("2026-10-20T10:00:00.000Z"), v20280229T235959999Z: Date.parse("2028-02-29T23:59:59.999Z") };
@@ -1018,7 +1018,7 @@ for (const [v, esperado] of Object.entries(casos)) if (u.msDeVersion(v) !== espe
 ' "${SUBIR}" && ok "2.24-T27b una versión con una fecha imposible (30 y 29 de febrero de 2026, mes 13) no es versión; un 29 de febrero bisiesto sí" \
   || mal "2.24-T27b msDeVersion acepta una fecha imposible"
 
-# ── 2.24 T29 · UnaVersionPorPasada (AC 4) ── 🔴 rojo previo: una carpeta por archivo.
+# ── T29 · UnaVersionPorPasada ── 🔴 Atrapa: una carpeta por archivo.
 T="${BASE}/t224-29"; buzon "${T}/b"; config "${T}/cfg.json"
 for i in 1 2 3; do corrida "${T}/h" "2.${i}-2026-10-02T1000"; done
 subir "${T}" "${T}/h" "maq-a"
@@ -1027,7 +1027,7 @@ TYCON_NOW=2026-10-21T08:30:00.250Z subir "${T}" "${T}/h" "maq-a"
 [ "${RC}" -eq 0 ] && [ "$(versiones "${T}" maq-a | wc -l | tr -d ' ')" = "1" ] && [ "$(ls "${T}/b/blobs/corridas/maq-a/v20261021T083000250Z" | wc -l | tr -d ' ')" = "3" ] \
   && ok "2.24-T29 tres corridas que cambiaron en una pasada van bajo la MISMA carpeta v<inicio de la pasada>" || mal "2.24-T29 rc=${RC} versiones: $(versiones "${T}" maq-a | tr '\n' ' ')"
 
-# ── 2.24 T3 · Registros_UnJuegoPorPreparacion_CoberturaUltima (AC 5) ── 🔴 rojo previo: registros/<archivo> plano.
+# ── T3 · Registros_UnJuegoPorPreparacion_CoberturaUltima ── 🔴 Atrapa: registros/<archivo> plano.
 T="${BASE}/t224-3"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"
 TYCON_NOW=2026-10-20T07:00:00.000Z subir_reg "${T}" "${T}/no-existe" "${T}/reg" 2026-10-20 "maq-a"
 python3 - "${T}/b/pedidos.jsonl" <<'PY' && [ "${RC}" -eq 0 ] && ok "2.24-T3 el juego de registros va bajo registros/v<preparación>/, con la cobertura último" || mal "2.24-T3 rc=${RC} $(grep -o '"ruta":"[^"]*"' "${T}/b/pedidos.jsonl" | head -4 | tr '\n' ' ')"
@@ -1037,7 +1037,7 @@ assert ps and all(p.startswith('/corridas/maq-a/registros/v20261020T070000000Z/'
 assert ps[-1].endswith('/cobertura.json') and len(ps) >= 3, ps
 PY
 
-# ── 2.24 T4 · Registros_MismoDiaMismaVersion_DiaSiguienteNueva (AC 5) ── 🔴 rojo previo: versión por pasada, o el idéntico salteado.
+# ── T4 · Registros_MismoDiaMismaVersion_DiaSiguienteNueva ── 🔴 Atrapa: versión por pasada, o el idéntico salteado.
 T="${BASE}/t224-4"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"
 subir_reg "${T}" "${T}/no-existe" "${T}/reg" 2026-10-20 "maq-a"
 V1="$(regdir "${T}")"; N1=$(puts "${T}/b")
@@ -1049,7 +1049,7 @@ V2="$(regdir "${T}")"
 [ "${RC}" -eq 0 ] && [ "${V2}" != "${V1}" ] && [ -f "${V2}/bypass.log.gz" ] && [ -f "${V2}/gates.log.gz" ] && [ -f "${V2}/cobertura.json" ] && cmp -s "${V1}/bypass.log.gz" "${V2}/bypass.log.gz" \
   && ok "2.24-T4 al día siguiente, otra versión con TODOS los archivos del juego (también el bypass.log.gz igual al de ayer)" || mal "2.24-T4 día siguiente: rc=${RC} ${V1} → ${V2}: $(ls "${V2}" 2>&1 | tr '\n' ' ')"
 
-# ── 2.24 T5 · YaExiste409_ReintentaConNombreNuevo_NoCorta (AC 7) ── 🔴 rojo previo: el 409 cae en «no aceptado».
+# ── T5 · YaExiste409_ReintentaConNombreNuevo_NoCorta ── 🔴 Atrapa: el 409 cae en «no aceptado».
 T="${BASE}/t224-5"; buzon "${T}/b"; config "${T}/cfg.json"; corrida "${T}/h" "3.1-2026-10-03T1000"; corrida "${T}/h" "3.2-2026-10-03T1100"
 mkdir -p "${T}/b/blobs/corridas/maq-a"; echo "de otra subida" > "${T}/b/blobs/corridas/maq-a/3.1-2026-10-03T1000.json"   # el registro local se perdió
 TYCON_NOW=2026-10-22T12:00:00.000Z subir "${T}" "${T}/h" "maq-a"
@@ -1059,7 +1059,7 @@ TYCON_NOW=2026-10-22T12:00:00.000Z subir "${T}" "${T}/h" "maq-a"
   && ok "2.24-T5 un 409 BlobAlreadyExists se reintenta UNA vez con versión nueva (201), la pasada sigue, ya_existian 1, nada pisado" \
   || mal "2.24-T5 rc=${RC} estado=$(campo "${T}" estado) ya_existian=$(campo "${T}" ya_existian) subidos=$(campo "${T}" subidos)"
 
-# ── 2.24 T6 · UnauthorizedBlobOverwrite_ReintentaYSigue (AC 7) ── 🔴 rojo previo: corta toda la subida (lo de hoy).
+# ── T6 · UnauthorizedBlobOverwrite_ReintentaYSigue ── 🔴 Atrapa: corta toda la subida.
 T="${BASE}/t224-6"; buzon "${T}/b"; config "${T}/cfg.json"; corrida "${T}/h" "3.1-2026-10-03T1000"
 echo c > "${T}/b/politica"
 mkdir -p "${T}/b/blobs/corridas/maq-a"; echo "de otra subida" > "${T}/b/blobs/corridas/maq-a/3.1-2026-10-03T1000.json"
@@ -1068,7 +1068,7 @@ subir "${T}" "${T}/h" "maq-a"
   && ok "2.24-T6 un 403 UnauthorizedBlobOverwrite (política «sólo crear») al nombre de siempre: reintento con versión, anotado, exit 0" \
   || mal "2.24-T6 rc=${RC} estado=$(campo "${T}" estado) ya_existian=$(campo "${T}" ya_existian) motivo=$(campo "${T}" motivo)"
 
-# ── 2.24 T7 · PermissionMismatch_LlaveSinPermiso_SinReintento (AC 8) ── 🔴 rojo previo: llave_invalida, o un reintento.
+# ── T7 · PermissionMismatch_LlaveSinPermiso_SinReintento ── 🔴 Atrapa: llave_invalida, o un reintento.
 T="${BASE}/t224-7"; buzon "${T}/b"; config "${T}/cfg.json"; corrida "${T}/h" "3.1-2026-10-03T1000"
 echo "AuthorizationPermissionMismatch *" > "${T}/b/codigo403"
 subir "${T}" "${T}/h" "maq-a"
@@ -1077,7 +1077,7 @@ subir "${T}" "${T}/h" "maq-a"
   && ok "2.24-T7 403 AuthorizationPermissionMismatch → llave_sin_permiso, exit 1, un solo PUT, nada anotado, el motivo nombra la política y no dice «vencida»" \
   || mal "2.24-T7 rc=${RC} estado=$(campo "${T}" estado) puts=$(puts "${T}/b") motivo=$(campo "${T}" motivo)"
 
-# ── 2.24 T8 · AuthenticationFailed_LlaveInvalidaComoHoy (AC 9) ── 🔴 rojo previo: confundirlo con «ya existe» y reintentar.
+# ── T8 · AuthenticationFailed_LlaveInvalidaComoHoy ── 🔴 Atrapa: confundirlo con «ya existe» y reintentar.
 for CASO in authfail sincodigo 404; do
   T="${BASE}/t224-8-${CASO}"; buzon "${T}/b"; config "${T}/cfg.json"; corrida "${T}/h" "3.1-2026-10-03T1000"
   case "${CASO}" in authfail) echo "AuthenticationFailed *" > "${T}/b/codigo403" ;; sincodigo) echo "- *" > "${T}/b/codigo403" ;; 404) echo 404 > "${T}/b/modo" ;; esac
@@ -1086,7 +1086,7 @@ for CASO in authfail sincodigo 404; do
     && ok "2.24-T8 (${CASO}) → llave_invalida como hoy, sin reintento" || mal "2.24-T8 (${CASO}) rc=${RC} estado=$(campo "${T}" estado) puts=$(puts "${T}/b")"
 done
 
-# ── 2.24 T28 · SegundoYaExiste_NoSubidosSinMasReintentos (AC 7) ── 🔴 rojo previo: reintentar sin fin, o cortar la pasada.
+# ── T28 · SegundoYaExiste_NoSubidosSinMasReintentos ── 🔴 Atrapa: reintentar sin fin, o cortar la pasada.
 T="${BASE}/t224-28"; buzon "${T}/b"; config "${T}/cfg.json"; corrida "${T}/h" "3.1-2026-10-03T1000"; corrida "${T}/h" "3.2-2026-10-03T1100"
 echo "3.1-2026-10-03T1000.json" > "${T}/b/rechazar"   # 409 BlobAlreadyExists al nombre de siempre y a toda versión
 subir "${T}" "${T}/h" "maq-a"
@@ -1095,7 +1095,7 @@ subir "${T}" "${T}/h" "maq-a"
   && ok "2.24-T28 un segundo «ya existe» no se reintenta más: no_subidos 1, parcial, los demás suben" \
   || mal "2.24-T28 rc=${RC} estado=$(campo "${T}" estado) puts del 3.1=$(puts_a "${T}/b" '3.1-2026-10-03T1000.json') subidos=$(campo "${T}" subidos)"
 
-# ── 2.24 T9 · RegistroYaExiste_CoberturaRetenida_JuegoNuevoDespues (AC 10) ── 🔴 rojo previo: cobertura subida junto a un juego incompleto.
+# ── T9 · RegistroYaExiste_CoberturaRetenida_JuegoNuevoDespues ── 🔴 Atrapa: cobertura subida junto a un juego incompleto.
 T="${BASE}/t224-9"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"
 echo "gates.log.gz" > "${T}/b/rechazar"
 TYCON_NOW=2026-10-20T07:00:00.000Z subir_reg "${T}" "${T}/no-existe" "${T}/reg" 2026-10-20 "maq-a"
@@ -1112,7 +1112,7 @@ V2="$(regdir "${T}")"
   && ok "2.24-T9 la segunda pasada del mismo día (mismo reloj) sube el juego entero bajo otra versión, y nada nuevo en la primera" \
   || mal "2.24-T9 segunda: rc=${RC} ${V1} → ${V2}: $(ls "${V2}" 2>&1 | tr '\n' ' ')"
 
-# ── 2.24 T10 · CheckCreateOnly_403Bien_201DejoEscribir_SinDatoNoMedido (AC 16, 17) ── 🔴 rojo previo: sonda con cuerpo vacío.
+# ── T10 · CheckCreateOnly_403Bien_201DejoEscribir_SinDatoNoMedido ── 🔴 Atrapa: sonda con cuerpo vacío.
 T="${BASE}/t224-10"; buzon "${T}/b"; config "${T}/cfg.json"; corrida "${T}/h" "4.1-2026-10-04T1000" 3000; corrida "${T}/h" "4.2-2026-10-04T1100" 3000
 printf '{"chico":1}\n' > "${T}/h/4.0-2026-10-04T0900.json"
 subir "${T}" "${T}/h" "maq-a"
@@ -1147,14 +1147,14 @@ T="${BASE}/t224-10b"; buzon "${T}/b"; config "${T}/cfg.json"; corrida "${T}/h" "
 subir "${T}" "${T}/h" "maq-a" --check-create-only
 [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "no_medido" ] && [ -n "$(campo "${T}" motivo)" ] && [ "$(pedidos "${T}/b")" = "0" ] \
   && ok "2.24-T10 sin nada confirmado: «no medido» con motivo, exit 1, ningún pedido" || mal "2.24-T10 sin dato: rc=${RC} estado=$(campo "${T}" estado) pedidos=$(pedidos "${T}/b")"
-# cualquier otro código del buzón a la sonda → su código y exit 1 (AC 16; cobertura de pruebas, vuelta 1)
+# cualquier otro código del buzón a la sonda → su código y exit 1
 subir "${T}" "${T}/h" "maq-a"
 echo 500 > "${T}/b/modo"
 subir "${T}" "${T}/h" "maq-a" --check-create-only
 [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "otro" ] && campo "${T}" motivo | grep '500 InternalError' >/dev/null \
   && ok "2.24-T10 otro código a la sonda (500) → lo dice con su código, exit 1" || mal "2.24-T10 500: rc=${RC} estado=$(campo "${T}" estado) motivo=$(campo "${T}" motivo)"
 
-# ── 2.24 T11 · LlaveSpConEscritura_SeNiega (AC 18) ── 🔴 rojo previo: `/[^cwa]/` de hoy deja pasar `cw`.
+# ── T11 · LlaveSpConEscritura_SeNiega ── 🔴 Atrapa: `/[^cwa]/` deja pasar `cw`.
 for SP in cw ca; do
   T="${BASE}/t224-11-${SP}"; buzon "${T}/b"; corrida "${T}/h" "4.1-2026-10-04T1000"
   config "${T}/cfg.json" "2099-01-01" "sv=2022-11-02&si=subida-prueba&sp=${SP}&sr=c&spr=https&sig=${FAKE_SIGNATURE}"
@@ -1169,7 +1169,7 @@ for SP in c ninguno; do
   [ "${RC}" -eq 0 ] && [ "$(campo "${T}" estado)" = "subido" ] && ok "2.24-T11 sp=${SP} → se acepta y sube" || mal "2.24-T11 sp=${SP} → rc=${RC} estado=$(campo "${T}" estado)"
 done
 
-# ── 2.24 T12 · SinBuzon_NoSubeNada (AC 22) ── 🔴 rojo previo: sin llave ni integración, intentar subir.
+# ── T12 · SinBuzon_NoSubeNada ── 🔴 Atrapa: sin llave ni integración, intentar subir.
 # Sin perfil (TYCON_PROFILE=0): en el árbol del equipo el perfil prende el buzón, y eso ya no es «sin integración».
 T="${BASE}/t224-12"; buzon "${T}/b"; corrida "${T}/h" "4.1-2026-10-04T1000"; mkdir -p "${T}/casa"
 HOME="${T}/casa" TYCON_PROFILE=0 TYCON_MAILBOX_JSON="${T}/no-existe.json" TYCON_MAILBOX_URL_BASE="${URL_BUZON}" TYCON_TIMING_HISTORY="${T}/h" \
@@ -1178,11 +1178,11 @@ RC=$?
 [ "${RC}" -eq 0 ] && [ "$(campo "${T}" estado)" = "apagado" ] && [ "$(pedidos "${T}/b")" = "0" ] \
   && ok "2.24-T12 sin llave ni integración: apagado, exit 0, ningún pedido" || mal "2.24-T12 rc=${RC} estado=$(campo "${T}" estado) pedidos=$(pedidos "${T}/b")"
 
-# ── 2.24 T13 · CodigoPublico_SinCuentaDeNingunaOrganizacion (AC 22) ── 🔴 rojo previo: una cuenta escrita en el código.
+# ── T13 · CodigoPublico_SinCuentaDeNingunaOrganizacion ── 🔴 Atrapa: una cuenta escrita en el código.
 FUERA="$(grep -n 'blob\.core\.windows\.net' "${RAIZ}"/scripts/metrics/*.js "${RAIZ}"/scripts/nightly/dashboard/*.js 2>/dev/null | grep -v '\${cfg\.cuenta}\.blob\.core\.windows\.net' || true)"
 [ -z "${FUERA}" ] && ok "2.24-T13 la única dirección del servicio en el código es la plantilla con cfg.cuenta" || mal "2.24-T13 dirección escrita: ${FUERA}"
 
-# ── 2.24 T24 · Piezas_SoloCrearYSinVencimiento (AC 21) ── 🔴 rojo previo: «revisar en 2027-03» y «permisos `cw`».
+# ── T24 · Piezas_SoloCrearYSinVencimiento ── 🔴 Atrapa: «revisar en 2027-03» y «permisos `cw`».
 PIEZAS="${RAIZ}/guides/piezas-del-arnes.md"
 # la ficha corta y su detalle (guides/maintaining/piezas-en-detalle.md, mismo título) se leen juntos
 SECCION="$(for f in "${PIEZAS}" "${RAIZ}/guides/maintaining/piezas-en-detalle.md"; do [ -f "$f" ] && awk '/upload-runs\.js/ && /^#/ {p=1; print; next} p && /^#/ {exit} p' "$f"; done)"
@@ -1195,12 +1195,12 @@ else
   mal "2.24-T24 la guía o la cabecera siguen con el texto viejo (sección: $(echo "${SECCION}" | head -c 120))"
 fi
 
-# ── 2.24 T25 · NoRegresion_SinLecturaEnLaSubida (AC 24) ── el T7 de hoy, que sigue.
+# ── T25 · NoRegresion_SinLecturaEnLaSubida ── la subida no tiene ninguna lectura.
 grep -Eq "method: *'(GET|DELETE|HEAD)'|comp=list" "${SUBIR}" && mal "2.24-T25 la subida tiene una operación de lectura/listado" || ok "2.24-T25 la subida sigue sin GET, HEAD, DELETE ni comp=list (el chequeo de AC 16 es un PUT)"
 NO_PUT=$(cat "${BASE}"/t224-*/b/pedidos.jsonl 2>/dev/null | grep -vc '"metodo":"PUT"' || true)
 [ "${NO_PUT}" = "0" ] && ok "2.24-T25 en los casos 2.24, todos los pedidos fueron PUT" || mal "2.24-T25 ${NO_PUT} pedido(s) que no son PUT"
 
-# ════ story 2.28 · quién es quién: el correo de git en place.json y la carpeta propia de cada máquina (AC 1-3, 23-25) ═
+# ════ quién es quién: el correo de git en place.json y la carpeta propia de cada máquina ═══════════════════════
 # Cada caso con su propia casa (HOME): el correo sale de la configuración global de git de ESA casa, y el código de la
 # máquina vive en su carpeta de estado. Correos y máquinas inventados.
 casa228() {  # <casa> <clon> [contenido de ~/.gitconfig] — una máquina con el mecanismo (place.json sale) y su git global
@@ -1213,7 +1213,7 @@ place_dryrun() {  # <caso> — prepara los registros (con place.json) sin mandar
   HOME="$1/casa" USERPROFILE="$1/casa" subir_reg "$1" "$1/h" "$1/reg" 2026-10-15 "maq-a" --dry-run
 }
 
-# ── 2.28 T1 · Place_OwnerDeGitGlobal_EnMinusculas (AC 1) ── 🔴 rojo previo: sin el campo; el de XDG cuando están los dos.
+# ── T1 · Place_OwnerDeGitGlobal_EnMinusculas ── 🔴 Atrapa: sin el campo; el de XDG cuando están los dos.
 T="${BASE}/t228-1"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa228 "${T}/casa" "${T}/clon" '[user]\n\tname = Dev Uno\n\temail = Dev.Uno@Ejemplo.test\n'
 place_dryrun "${T}"
 [ "${RC}" -eq 0 ] && [ "$(owner_de "${T}")" = '{"email": "dev.uno@ejemplo.test", "source": "git-global"}' ] \
@@ -1235,7 +1235,7 @@ place_dryrun "${T}"
 [ "$(owner_de "${T}")" = '{"email": "personal@ejemplo.test", "source": "git-global"}' ] \
   && ok "2.28-T1 el includeIf no se sigue: informa el personal" || mal "2.28-T1 includeIf: $(owner_de "${T}")"
 
-# ── 2.28 T2 · Place_OwnerNoMedido_CuatroMotivos (AC 2) ── 🔴 rojo previo: un correo vacío en vez de no_medido; seguir el include.
+# ── T2 · Place_OwnerNoMedido_CuatroMotivos ── 🔴 Atrapa: un correo vacío en vez de no_medido; seguir el include.
 MOTIVOS=""
 for caso in sin-email sin-forma solo-include ilegible; do
   T="${BASE}/t228-2-${caso}"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa228 "${T}/casa" "${T}/clon"
@@ -1254,7 +1254,7 @@ done
 [ "$(printf '%s' "${MOTIVOS}" | sort -u | grep -c .)" = "4" ] && ok "2.28-T2 los cuatro motivos son distintos" || mal "2.28-T2 motivos repetidos: ${MOTIVOS}"
 printf '%s' "${MOTIVOS}" | grep 'archivo incluido, que no se sigue' > /dev/null && ok "2.28-T2 el del include dice «archivo incluido, que no se sigue»" || mal "2.28-T2 el motivo del include no lo dice"
 
-# ── 2.28 T3 · Place_SinRutasYSinInvocarGit (AC 3, 21) ── 🔴 rojo previo: spawnSync('git', ['config', …]).
+# ── T3 · Place_SinRutasYSinInvocarGit ── 🔴 Atrapa: spawnSync('git', ['config', …]).
 T="${BASE}/t228-3"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa228 "${T}/casa" "${T}/clon" '[user]\n\temail = dev.uno@ejemplo.test\n'
 mkdir -p "${T}/bin"; printf '#!/bin/sh\necho "$@" >> "%s/git.log"\nexit 0\n' "${T}" > "${T}/bin/git"; chmod +x "${T}/bin/git"
 PATH="${T}/bin:${PATH}" place_dryrun "${T}"
@@ -1269,7 +1269,7 @@ echo "${CAB}" | grep 'correo de git' > /dev/null && echo "${CAB}" | grep -- '--j
   && ok "2.28-T3 la cabecera dice que place.json trae el correo de git y que --json lo imprime" || mal "2.28-T3 la cabecera no nombra el correo de git o --json, o sigue diciendo «Sólo números, hashes»"
 grep -n "SÓLO números, hashes y nombres\|viaja sólo lo que no identifica a nadie" "${SUBIR}" > /dev/null && mal "2.28-T3 los comentarios siguen diciendo «sólo»" || ok "2.28-T3 los comentarios de placeFactsForMailbox e installFacts ya no dicen «sólo»"
 
-# ── la carpeta de cada máquina (AC 23-25): sin TYCON_MACHINE, con TYCON_MACHINE_BASE ──────────────────────────────
+# ── la carpeta de cada máquina: sin TYCON_MACHINE, con TYCON_MACHINE_BASE ──────────────────────────────
 # subir_base <caso> <nombre base> [args...] — como subir, SIN TYCON_MACHINE: la carpeta la arma upload-runs.js
 subir_base() {
   local c="$1" base="$2"; shift 2
@@ -1281,7 +1281,7 @@ subir_base() {
 codigo_de() { python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('folder',''))" "$1/casa/.claude/.tycon-pipeline/machine-code.json" 2>/dev/null; }
 folder_de() { python3 -c "import json,sys; print(json.dumps(json.load(open(sys.argv[1])).get('folder'), sort_keys=True))" "$1/estado/registros-buzon/place.json" 2>&1; }
 
-# ── 2.28 T30 · Carpeta_NombreMasCodigo_SinHardware (AC 23) ── 🔴 rojo previo: la carpeta sin código; un código sacado de la MAC.
+# ── T30 · Carpeta_NombreMasCodigo_SinHardware ── 🔴 Atrapa: la carpeta sin código; un código sacado de la MAC.
 T="${BASE}/t228-30"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; corrida "${T}/h" "9.1-2026-10-15T0900"; casa228 "${T}/casa" "${T}/clon" '[user]\n\temail = Dev.Uno@Ejemplo.test\n'
 mkdir -p "${T}/bin"; for x in ioreg system_profiler wmic; do printf '#!/bin/sh\necho "%s $@" >> "%s/espia.log"\nexit 0\n' "${x}" "${T}" > "${T}/bin/${x}"; chmod +x "${T}/bin/${x}"; done
 printf 'const os=require("os"),fs=require("fs");const o=os.networkInterfaces;os.networkInterfaces=function(){fs.appendFileSync(%s,"networkInterfaces\\n");return o.apply(this,arguments)};\n' "'${T}/espia.log'" > "${T}/espia.js"
@@ -1301,8 +1301,8 @@ PY
   && ok "2.28-T30 place.json trae folder con name, code, previous_folder y moved_on" || mal "2.28-T30 folder=$(folder_de "${T}")"
 [ ! -s "${T}/espia.log" ] && ok "2.28-T30 ningún dato de hardware: ni networkInterfaces, ni ioreg, system_profiler o wmic" || mal "2.28-T30 espías llamados: $(cat "${T}/espia.log")"
 # Contrato: el place.json REAL que deja la subida, puesto en un espejo junto a la carpeta vieja, lo entienden la bajada
-# (la une) y people.js (lee el correo). 🔴 rojo previo (revisor de cobertura, segunda vuelta): las pruebas de los lectores
-# fabricaban el place.json a mano, y un cambio de campos en el escritor no las ponía rojas.
+# (la une) y people.js (lee el correo). 🔴 Atrapa: probar los lectores con un place.json fabricado a mano:
+# un cambio de campos en el escritor no los pondría en rojo.
 mkdir -p "${T}/espejo/macbook-pro" "${T}/espejo/${CARPETA}/registros"
 cp "${T}/estado/registros-buzon/place.json" "${T}/espejo/${CARPETA}/registros/place.json"
 node -e '
@@ -1314,7 +1314,7 @@ if (!ok) { console.error(JSON.stringify({ u, p })); process.exit(1); }' "${RAIZ}
   && ok "2.28-T30 contrato: el place.json real de la subida lo unen la bajada y lo lee people.js" || mal "2.28-T30 contrato: $(head -c 400 "${T}/contrato.err")"
 grep -nE "networkInterfaces|ioreg|system_profiler|wmic|IOPlatform" "${SUBIR}" > /dev/null && mal "2.28-T30 el guion nombra una fuente de hardware" || ok "2.28-T30 el guion no nombra ninguna fuente de hardware"
 
-# ── 2.28 T31 · Carpeta_EstableEntreCorridas (AC 24) ── 🔴 rojo previo: carpeta nueva al cambiar el nombre; dos códigos.
+# ── T31 · Carpeta_EstableEntreCorridas ── 🔴 Atrapa: carpeta nueva al cambiar el nombre; dos códigos.
 corrida "${T}/h" "9.2-2026-10-16T0900"
 DIA=2026-10-16 subir_base "${T}" "Otro-Nombre"
 [ "${RC}" -eq 0 ] && [ "$(campo "${T}" maquina)" = "${CARPETA}" ] && [ "$(codigo_de "${T}")" = "${CARPETA}" ] && [ -f "${T}/b/blobs/corridas/${CARPETA}/9.2-2026-10-16T0900.json" ] \
@@ -1329,7 +1329,7 @@ wait "${P1}"; wait "${P2}"
 M1="$(campo "${T}/u1" maquina)"; M2="$(campo "${T}/u2" maquina)"
 [ -n "${M1}" ] && [ "${M1}" = "${M2}" ] && [ "${M1}" = "$(codigo_de "${T}")" ] && ok "2.28-T31 dos pasadas a la vez: un solo código (${M1})" || mal "2.28-T31 a la vez: «${M1}» y «${M2}», archivo «$(codigo_de "${T}")»"
 
-# ── 2.28 T32 · Carpeta_CodigoIlegibleOBorrado_OtroYLoDice (AC 25) ── 🔴 rojo previo: reusar un código sin forma; regenerar en silencio.
+# ── T32 · Carpeta_CodigoIlegibleOBorrado_OtroYLoDice ── 🔴 Atrapa: reusar un código sin forma; regenerar en silencio.
 MOTIVOS=""
 for caso in borrado roto sin-forma; do
   T="${BASE}/t228-32-${caso}"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; corrida "${T}/h" "9.1-2026-10-15T0900"; casa228 "${T}/casa" "${T}/clon"
@@ -1357,27 +1357,27 @@ T="${BASE}/t228-30"
 python3 -c "import json,sys; assert 'code_regenerated' not in json.load(open(sys.argv[1]))['folder']" "${T}/estado/registros-buzon/place.json" 2>/dev/null \
   && ok "2.28-T32 la primera carpeta de una máquina no es «regenerada»" || mal "2.28-T32 la primera carpeta sale como regenerada"
 
-# ── pase adversarial (2026-10-15) sobre la carpeta y el correo ─────────────────────────────────────────────────────
+# ── la carpeta y el correo, a prueba de bordes ─────────────────────────────────────────────────────
 # El código regenerado declara las carpetas con código anteriores de la máquina (de su registro de subidas), para que la
-# bajada las una a la nueva. 🔴 rojo previo (clase 4): la carpeta del código anterior quedaba como otra máquina.
+# bajada las una a la nueva. 🔴 Atrapa: la carpeta del código anterior queda como otra máquina.
 T="${BASE}/t228-32-borrado"
 python3 -c "import json,sys; f=json.load(open(sys.argv[1]))['folder']; s=f.get('superseded_folders'); assert isinstance(s,list) and len(s)==1 and s[0].startswith('macbook-pro-') and s[0]!=f['name'], f; h=f.get('superseded_runs_sha256') or {}; assert len(h.get(s[0],''))==64, f" "${T}/estado/registros-buzon/place.json" 2>/dev/null \
   && ok "2.28-adv el código regenerado declara la carpeta con código que reemplaza" || mal "2.28-adv sin superseded_folders: $(folder_de "${T}")"
-# Un nombre de máquina que ya termina en 8 hexadecimales no se toma por «ya tuvo código». 🔴 rojo previo (clases 11 y 20).
+# Un nombre de máquina que ya termina en 8 hexadecimales no se toma por «ya tuvo código». 🔴 Atrapa: tomarlo por tal.
 T="${BASE}/t228-adv-hex"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; corrida "${T}/h" "9.1-2026-10-14T0900"; casa228 "${T}/casa" "${T}/clon"
 HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-14 "lap-00012345"
 DIA=2026-10-15 subir_base "${T}" "lap-00012345"
 python3 -c "import json,sys; f=json.load(open(sys.argv[1]))['folder']; assert f['name'].startswith('lap-00012345-') and 'code_regenerated' not in f, f" "${T}/estado/registros-buzon/place.json" 2>/dev/null \
   && ok "2.28-adv un nombre que ya termina en 8 hexadecimales: su primera carpeta con código no es «regenerada»" || mal "2.28-adv nombre hex: $(folder_de "${T}")"
 # Un registro de subidas que existe y no se puede leer: la huella queda null (sin huella no hay unión) y la carpeta se
-# declara regenerada (falla hacia decirlo). 🔴 rojo previo (cobertura, cuarta vuelta): la rama null no tenía caso.
+# declara regenerada (falla hacia decirlo). 🔴 Atrapa: una rama null sin caso.
 T="${BASE}/t228-adv-reg"; mkdir -p "${T}/casa/.claude/.tycon-pipeline" "${T}/registro-es-carpeta"
 HOME="${T}/casa" USERPROFILE="${T}/casa" TYCON_MACHINE_BASE=maq-r env -u TYCON_MACHINE node -e '
 const r = require(process.argv[1]).carpetaDeMaquina({ crear: true, hoy: "2026-10-15", registro: process.argv[2] });
 process.exit(r.folder.previous_runs_sha256 === null && r.folder.code_regenerated ? 0 : 1)' "${SUBIR}" "${T}/registro-es-carpeta" < /dev/null \
   && ok "2.28-adv registro de subidas ilegible: huella null y carpeta declarada regenerada" || mal "2.28-adv registro ilegible: la huella no quedó null o no se declaró"
 # Un machine-code.json que no se puede LEER (permisos, un antivirus) no se pisa: la pasada falla y la carpeta sigue.
-# 🔴 rojo previo (clase 19): cualquier error de lectura regeneraba el código y mudaba la máquina para siempre.
+# 🔴 Atrapa: que cualquier error de lectura regenere el código y mude la máquina para siempre.
 T="${BASE}/t228-adv-ilegible"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; corrida "${T}/h" "9.1-2026-10-15T0900"; casa228 "${T}/casa" "${T}/clon"
 subir_base "${T}" "MacBook-Pro"; ANTES="$(codigo_de "${T}")"
 chmod 000 "${T}/casa/.claude/.tycon-pipeline/machine-code.json"
@@ -1389,21 +1389,21 @@ else
     && ok "2.28-adv un machine-code.json que no se deja leer no se pisa: la pasada falla (rc=${RC}) y la carpeta sigue" || mal "2.28-adv ilegible: rc=${RC} antes ${ANTES} después $(codigo_de "${T}")"
 fi
 # El correo se lee como lo lee git: un comentario pegado al valor, comillas en el medio y una línea continuada.
-# 🔴 rojo previo (clase 9): se informaban «dev@x.test#c», «dev@"x.test"» y «dev@x.\», tres correos que no existen.
+# 🔴 Atrapa: informar «dev@x.test#c», «dev@"x.test"» y «dev@x.\», tres correos que no existen.
 for caso in 'email=dev@x.test#c' 'email=dev@x.test;c' 'email = dev@"x.test"' 'email = dev@x.\\\ntest' 'email = "Dev@X.test" # comentario'; do
   T="${BASE}/t228-adv-git-$(printf '%s' "${caso}" | cksum | cut -d' ' -f1)"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa228 "${T}/casa" "${T}/clon" "[user]\n\t${caso}\n"
   place_dryrun "${T}"
   [ "$(owner_de "${T}")" = '{"email": "dev@x.test", "source": "git-global"}' ] && ok "2.28-adv git: «${caso}» se lee dev@x.test" || mal "2.28-adv git: «${caso}» → $(owner_de "${T}")"
 done
 
-# ── 2.28 T33 · Carpeta_TYCON_MACHINE_SigueValiendo (AC 23) ── 🔴 rojo previo: maq-a-<código>.
+# ── T33 · Carpeta_TYCON_MACHINE_SigueValiendo ── 🔴 Atrapa: maq-a-<código>.
 T="${BASE}/t228-33"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; corrida "${T}/h" "9.1-2026-10-15T0900"; casa228 "${T}/casa" "${T}/clon"
 HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-15 "maq-a"
 [ "${RC}" -eq 0 ] && [ "$(campo "${T}" maquina)" = "maq-a" ] && [ ! -e "${T}/casa/.claude/.tycon-pipeline/machine-code.json" ] && [ -f "${T}/b/blobs/corridas/maq-a/9.1-2026-10-15T0900.json" ] \
   && ok "2.28-T33 con TYCON_MACHINE: carpeta maq-a, sin código y sin machine-code.json" || mal "2.28-T33 rc=${RC} maquina=$(campo "${T}" maquina) $(ls "${T}/casa/.claude/.tycon-pipeline" 2>&1 | tr '\n' ' ')"
 [ "$(folder_de "${T}")" = '{"name": "maq-a", "source": "TYCON_MACHINE"}' ] && ok "2.28-T33 folder dice source TYCON_MACHINE" || mal "2.28-T33 folder=$(folder_de "${T}")"
 
-# ── 2.28 T34 · Carpeta_ResubeLoLocalALaNueva (AC 23, decisión 12) ── 🔴 rojo previo: registro que da todo por subido.
+# ── T34 · Carpeta_ResubeLoLocalALaNueva ── 🔴 Atrapa: registro que da todo por subido.
 T="${BASE}/t228-34"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa228 "${T}/casa" "${T}/clon"
 corrida "${T}/h" "9.1-2026-10-14T0900"; corrida "${T}/h" "9.2-2026-10-14T1000"
 HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-14 "macbook-pro"
@@ -1416,7 +1416,7 @@ for f in 9.1-2026-10-14T0900.json 9.1-2026-10-14T0900.hilo.jsonl.gz 9.2-2026-10-
   cmp -s "${T}/h/${f}" "${T}/b/blobs/corridas/${N}/${f}" && ok "2.28-T34 ${f} se volvió a subir a la carpeta nueva" || mal "2.28-T34 ${f} no está en ${N}/"
 done
 # la carpeta nueva declara la HUELLA de las corridas que la máquina subió a la vieja (de su registro de subidas): es lo
-# que la bajada pide para unirlas (tercera vuelta de seguridad). 🔴 rojo previo: sin huella, cualquiera con la llave podía
+# que la bajada pide para unirlas. 🔴 Atrapa: sin huella, cualquiera con la llave puede
 # declarar como suya la carpeta vieja de otra máquina con el mismo nombre.
 ESPERADA="$(node -e 'console.log(require(process.argv[1]).huellaDeCorridas(["9.1-2026-10-14T0900.json","9.2-2026-10-14T1000.json"]))' "${SUBIR}" 2>&1)"
 [ "$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['folder'].get('previous_runs_sha256'))" "${T}/estado/registros-buzon/place.json" 2>&1)" = "${ESPERADA}" ] \
@@ -1429,10 +1429,10 @@ cor = [i for i, r in enumerate(ps) if "/registros/" not in r]
 assert reg and cor and max(reg) < min(cor), ps
 PY
 
-# ── Windows · Log_AgregaYRota ── el arranque de Windows lanza la subida de fondo con `--log <archivo>` (2026-10-15): un
+# ── Windows · Log_AgregaYRota ── el arranque de Windows lanza la subida de fondo con `--log <archivo>`: un
 # proceso de fondo de PowerShell no puede AGREGAR a un archivo, y sobrescribirlo borraría el aviso de vencimiento de la
 # llave, que sale una vez por día (la razón del `>>` del .sh). Con --log la subida agrega ella misma y rota pasado ~512 KB.
-# 🔴 rojo previo: sin la opción, la salida va a la terminal y el registro no existe.
+# 🔴 Atrapa: sin la opción, la salida va a la terminal y el registro no existe.
 # Sin la marca de una corrida de Azure (TF_BUILD): ahí la subida no sube nada a propósito, y el nocturno corre con ella.
 T="${BASE}/tlog"; mkdir -p "${T}"
 LOG="${T}/sub carpeta/upload-runs.log"

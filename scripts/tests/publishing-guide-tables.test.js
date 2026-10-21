@@ -1,12 +1,12 @@
 'use strict';
 
 /**
- * publishing-guide-tables.test.js — T50 de la story 8.12, tanda R8 (AC 46): las dos tablas de
+ * publishing-guide-tables.test.js — las dos tablas de
  * `guides/maintaining/publicacion-espejo.md` dicen lo mismo que `export.js --explain --json`.
  *
  * La guía es lo que lee una persona antes de decidir si algo sale en la copia pública; `--explain` es lo que el
  * exportador hace de verdad. Una tabla vieja (una carpeta que ya no existe, una exclusión que se mudó, una fecha que
- * dice «ésta es la de tal día») miente sin que nadie lo vea. Lo que esta prueba exige, con la gramática que fija la story:
+ * dice «ésta es la de tal día») miente sin que nadie lo vea. Lo que esta prueba exige, con esta gramática:
  *   · «Qué entra» (`Repo | Entrada | Decisión`): cada entrada de primer nivel de cada repo, exactamente una vez, con la
  *     decisión de su primera regla (`fija`, `entra`, `afuera`); los globs de adentro de la celda cubren toda regla de la
  *     entrada que no es la entrada entera y todo «afuera» de adentro, y cada uno cubre al menos una (nada viejo).
@@ -27,10 +27,9 @@
  * El parser y el comparador son funciones puras: las pruebas de laboratorio de abajo los hacen fallar con tablas y
  * salidas inventadas, así la comparación contra la guía real no puede pasar en vacío.
  *
- * UN SOLO REPO INTERNO (story 8.18): la columna «Repo» es la FUENTE (`arnes` o `agent-skills`). Desde la unión las dos
- * son partes de un mismo repo, que el exportador parte por ruta, y `--explain` sigue dando el primer nivel de cada una:
- * la gramática no cambia. Cambió la tabla: agent-skills ya no trae `.gitignore` ni `README.md` propios. Con un
- * exportador que todavía lee dos repos, el repo único se ve dos veces entero y la comparación da decenas de entradas
+ * UN SOLO REPO INTERNO: la columna «Repo» es la FUENTE (`arnes` o `agent-skills`). Las dos son partes de un mismo
+ * repo, que el exportador parte por ruta, y `--explain` da el primer nivel de cada una. agent-skills no trae
+ * `.gitignore` ni `README.md` propios. Con un exportador que lee dos repos, el repo único se ve dos veces entero y la comparación da decenas de entradas
  * «de más»: ese rojo es del exportador, no de la guía.
  *
  * Correr: TYCON_SKILLS_DIR=<agent-skills>/skills node --test scripts/tests/publishing-guide-tables.test.js
