@@ -96,6 +96,10 @@ function sinBloquesDelArnes(texto) {
   return t;
 }
 
+// Lo que la persona pegó de otro lado (una respuesta del agente, una salida de la terminal) no lo dijo ella. Un bloque sin
+// cerrar se corta hasta el final.
+const sinTextoPegado = (t) => String(t).replace(/<pasted_content\b[^>]*>[\s\S]*?(?:<\/pasted_content>|$)/gi, ' ');
+
 /** Lo que escribió la persona en un texto de usuario, o null si el texto trae algo que pudo haber escrito el agente. */
 function escritoPorLaPersona(texto) {
   const t = sinBloquesDelArnes(texto);
@@ -149,8 +153,9 @@ function citaDeLaPersona(cita, opts = {}) {
   if (!conv.legible) return { legible: false, motivo: conv.motivo, encontrada: false };
   // lo que tipeó la persona: sin marca de origen ni de sistema, y sin nada adentro que pudo haber escrito el agente
   // (la extensión de VS Code marca lo que tipea la persona con `origin.kind: human`; la terminal no le pone marca)
+  // `sinPegado`: lo que pegó no cuenta como dicho por ella (la designación de la sesión que reenvía)
   const propios = textosDeUsuario(conv.registros).filter((t) => (!t.origen || t.origen.kind === 'human') && !t.sistema)
-    .map((t) => ({ texto: escritoPorLaPersona(t.texto), cuando: t.cuando })).filter((t) => t.texto !== null);
+    .map((t) => ({ texto: escritoPorLaPersona(opts.sinPegado ? sinTextoPegado(t.texto) : t.texto), cuando: t.cuando })).filter((t) => t.texto !== null);
   return { legible: true, archivo: conv.archivo, ...buscar(cita, propios, opts.desde, opts.juzgar) };
 }
 
@@ -185,7 +190,7 @@ function citaReenviada(cita, sesion, opts = {}) {
   const designada = leerConversacion({ ...opts, sesion: d.sesion });
   if (!designada.legible) return { legible: true, archivo: conv.archivo, encontrada: false, rechazo: `no puedo leer la conversación designada como «${rol}» (${designada.motivo})` };
   const frase = buscar(d.cita, textosDeUsuario(designada.registros).filter((t) => (!t.origen || t.origen.kind === 'human') && !t.sistema)
-    .map((t) => ({ texto: escritoPorLaPersona(t.texto), cuando: t.cuando })).filter((t) => t.texto !== null), null, juez);
+    .map((t) => ({ texto: escritoPorLaPersona(sinTextoPegado(t.texto)), cuando: t.cuando })).filter((t) => t.texto !== null), null, juez);
   if (!frase.encontrada) {
     return { legible: true, archivo: conv.archivo, encontrada: false, rechazo: frase.rechazo
       ? `la designación de esta máquina no vale: ${frase.rechazo}`

@@ -149,6 +149,25 @@ test('CitaReenviada_SoloDeLaSesionNombrada @story-8.63 @ac-4 — la conversació
   const otroNo = designar(conversacion([deOtraSesion('coordinadora', pedido, '2026-10-19T22:07:00.000Z', 'm-1')]),
     [delDev(FRASE, '2026-10-19T21:00:00.000Z'), envio('m-1'), delDev('no le preguntes eso a la coordinadora', '2026-10-19T21:30:00.000Z')]);
   assert.equal(ok.citaReenviada(CITA, 'coordinadora', otroNo).encontrada, true);
+  // el caso de la noche: el dueño cita una respuesta con «No, …» sobre otro tema; no anula
+  const charla = designar(conversacion([deOtraSesion('coordinadora', pedido, '2026-10-19T22:07:00.000Z', 'm-1')]),
+    [delDev(FRASE, '2026-10-19T21:00:00.000Z'), envio('m-1'), delDev('No, el de fábrica. Vos sos la coordinadora: decidilo en esta sesión', '2026-10-19T21:30:00.000Z')]);
+  assert.equal(ok.citaReenviada(CITA, 'coordinadora', charla).encontrada, true);
+  // las otras formas de echarse atrás también anulan
+  for (const atrasFrase of ['la coordinadora ya no sos vos', 'ya no vas a ser la coordinadora', 'anulá la designación']) {
+    const otra = designar(conversacion([deOtraSesion('coordinadora', pedido, '2026-10-19T22:07:00.000Z', 'm-1')]),
+      [delDev(FRASE, '2026-10-19T21:00:00.000Z'), envio('m-1'), delDev(atrasFrase, '2026-10-19T21:30:00.000Z')]);
+    assert.equal(ok.citaReenviada(CITA, 'coordinadora', otra).encontrada, false, atrasFrase);
+  }
+  // lo que el dueño pegó de otro lado no lo dijo él: ni anula…
+  const pegadoAnula = designar(conversacion([deOtraSesion('coordinadora', pedido, '2026-10-19T22:07:00.000Z', 'm-1')]),
+    [delDev(FRASE, '2026-10-19T21:00:00.000Z'), envio('m-1'),
+      delDev('mirá lo que me contestó:\n\n<pasted_content id="a1">\nya no sos la coordinadora\n</pasted_content>', '2026-10-19T21:30:00.000Z')]);
+  assert.equal(ok.citaReenviada(CITA, 'coordinadora', pegadoAnula).encontrada, true);
+  // …ni designa
+  const pegadoDesigna = designar(conversacion([deOtraSesion('coordinadora', pedido, '2026-10-19T22:07:00.000Z', 'm-1')]),
+    [delDev(`fijate esto\n\n<pasted_content id="a2">\n${FRASE}\n</pasted_content>`, '2026-10-19T21:00:00.000Z'), envio('m-1')]);
+  assert.equal(ok.citaReenviada(CITA, 'coordinadora', pegadoDesigna).encontrada, false);
   // la cita fuera del mensaje de la otra sesión, en el mismo renglón del dev, no cuenta como reenviada
   const c2 = designar(conversacion([deOtraSesion('coordinadora', 'firmalo'), delAgente(CITA)]), coord);
   assert.equal(ok.citaReenviada(CITA, 'coordinadora', c2).encontrada, false);
