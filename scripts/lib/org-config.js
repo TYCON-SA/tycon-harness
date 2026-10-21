@@ -66,7 +66,7 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session']), idCorto: 'profile', necesita: ['approvals'] }),
   Object.freeze({ id: 'pruebaAMano', titulo: 'Prueba a mano de cada criterio', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['qa'], rutas: Object.freeze(['qa.manual_check']), idCorto: 'profile', necesita: ['qa'] }),
   Object.freeze({ id: 'respuesta', titulo: 'Cómo contesta el agente', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['response'], idCorto: 'profile', necesita: ['response'] }),
-  Object.freeze({ id: 'integraciones', titulo: 'Integraciones', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['integrations'], rutas: Object.freeze(['integrations.timeTracking', 'integrations.clockify', 'integrations.engram', 'integrations.mailbox', 'integrations.codex', 'integrations.nightly', 'integrations.codegraph']), idCorto: 'profile', necesita: ['integrations'] }),
+  Object.freeze({ id: 'integraciones', titulo: 'Integraciones', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['integrations'], rutas: Object.freeze(['integrations.timeTracking', 'integrations.notify', 'integrations.clockify', 'integrations.engram', 'integrations.mailbox', 'integrations.codex', 'integrations.nightly', 'integrations.codegraph']), idCorto: 'profile', necesita: ['integrations'] }),
   Object.freeze({ id: 'ado', titulo: 'Azure DevOps', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['ado'], rutas: Object.freeze(['ado.org']), idCorto: 'profile', necesita: ['ado'] }),
   Object.freeze({ id: 'actualizacion', titulo: 'Cómo se actualizan las máquinas', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['update'], rutas: Object.freeze(['update.channel', 'update.apply']), idCorto: 'profile', necesita: ['update'] }),
   Object.freeze({ id: 'instalacion', titulo: 'Perfil de instalación', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['install'], rutas: Object.freeze(['install.profile']), idCorto: 'profile', necesita: ['install'] }),
@@ -268,18 +268,35 @@ const QA_SINCE = '2026.10.20.39';
  * antes hasta actualizarse.
  */
 const TIME_TRACKING_SINCE = '2026.10.21.15';
-/**
- * El team-layer.json que acompaña a un pedido que cambia `integrations.timeTracking`: `{ archivo, contenido }` con
- * `requires.harness` en `>= TIME_TRACKING_SINCE`; null si el pedido no la cambia, si la capa ya pide eso o más, o si el
- * perfil no tiene capa (`layerText` null: sin su declaración ninguna máquina aplica el perfil, así que no hay versión que
- * subir); `{ problema }` si la capa no se puede leer o su `requires.harness` no tiene la forma `>= x` (no se pisa a ciegas).
- */
-const cambiaHoras = ({ actual, doc }) => {
-  const de = (x) => (isObject(x) && isObject(x.integrations) ? x.integrations.timeTracking : undefined);
+/** Si el pedido cambia `integrations.<clave>` del perfil. */
+const cambiaIntegracion = (clave) => ({ actual, doc }) => {
+  const de = (x) => (isObject(x) && isObject(x.integrations) ? x.integrations[clave] : undefined);
   return de(doc) !== undefined && canonico(de(doc)) !== canonico(de(actual));
 };
+const cambiaHoras = cambiaIntegracion('timeTracking');
+/**
+ * 🔴 La primera versión del arnés cuyo lector conoce `integrations.notify` (los canales de aviso): la etiqueta del merge
+ * que trajo ese lector. Una máquina anterior rechazaría el perfil entero con la clave nueva.
+ */
+const NOTIFY_SINCE = '2026.10.21.52';
+const cambiaAvisos = cambiaIntegracion('notify');
+/** La versión que tiene que pedir la capa para el pedido: la mayor de las claves nuevas que cambia, o null. */
+function versionDeLaCapa({ actual, doc }) {
+  const piden = [[cambiaHoras, TIME_TRACKING_SINCE], [cambiaAvisos, NOTIFY_SINCE]].filter(([cambia]) => cambia({ actual, doc })).map(([, v]) => v);
+  return piden.reduce((max, v) => (max === null || versionAtLeast(v, max) ? v : max), null);
+}
+/** Si el pedido cambia una clave del perfil que sólo leen las versiones nuevas (y por eso sube la capa). */
+const cambiaLaCapa = ({ actual, doc }) => versionDeLaCapa({ actual, doc }) !== null;
+/**
+ * El team-layer.json que acompaña a un pedido que cambia `integrations.timeTracking` o `integrations.notify`:
+ * `{ archivo, contenido }` con `requires.harness` en la versión que lee lo que cambia (`versionDeLaCapa`); null si el
+ * pedido no las cambia, si la capa ya pide eso o más, o si el perfil no tiene capa (`layerText` null: sin su declaración
+ * ninguna máquina aplica el perfil, así que no hay versión que subir); `{ problema }` si la capa no se puede leer o su
+ * `requires.harness` no tiene la forma `>= x` (no se pisa a ciegas).
+ */
 function timeTrackingLayer({ layerText, actual, doc }) {
-  if (!cambiaHoras({ actual, doc }) || layerText === null || layerText === undefined) return null;
+  const minima = versionDeLaCapa({ actual, doc });
+  if (minima === null || layerText === null || layerText === undefined) return null;
   let decl;
   // con la marca de orden de bytes, como la lee la máquina (team.js validateDeclaration)
   try { decl = JSON.parse(String(layerText).replace(/^﻿/, '')); } catch (e) {
@@ -288,9 +305,9 @@ function timeTrackingLayer({ layerText, actual, doc }) {
   if (!isObject(decl)) return { problema: M('org.capaIlegible', { error: 'team-layer.json no es un objeto' }) };
   const pide = String((decl.requires || {}).harness || '').trim();
   const m = /^>=\s*(\S+)$/.exec(pide);
-  if (m && versionAtLeast(m[1], TIME_TRACKING_SINCE)) return null;
+  if (m && versionAtLeast(m[1], minima)) return null;
   if (pide && !m) return { problema: M('org.capaIlegible', { error: `requires.harness dice «${pide}», no «>= versión»` }) };
-  const nueva = { ...decl, requires: { ...(isObject(decl.requires) ? decl.requires : {}), harness: `>= ${TIME_TRACKING_SINCE}` } };
+  const nueva = { ...decl, requires: { ...(isObject(decl.requires) ? decl.requires : {}), harness: `>= ${minima}` } };
   return { archivo: 'team-layer.json', contenido: formatJson(nueva) };
 }
 /**
@@ -1600,6 +1617,20 @@ function pantalla(idioma = 'es') {
     // elegir una saca la llave vieja: el perfil queda con una sola fuente de verdad (el pedido sube la versión que lo lee)
     var ch = corto(T('pantalla.registroDeHoras'), elegida, opcionesHoras, function (v) { hoja(d, 'integrations', 'clockify', undefined); hoja(d, 'integrations', 'timeTracking', v); render(); }, 'integrations.timeTracking', pr);
     t.appendChild(renglon([queDe(T('pantalla.registroDeHoras')), el('div', { class: 'sel', role: 'cell' }, ch.sel)], ch.mios));
+    // los canales de aviso: sin declarar es lo de antes (Telegram); «ninguno» es la lista vacía; si no, los tildados
+    var av = esObjeto(i.notify) ? i.notify : null;
+    var canalesAv = av && Array.isArray(av.channels) ? av.channels : null;
+    var modoAv = canalesAv === null ? '' : canalesAv.length ? 'elegir' : 'none';
+    var deAvisos = function () { if (!esObjeto(d.integrations)) d.integrations = {}; if (!esObjeto(d.integrations.notify)) d.integrations.notify = {}; return d.integrations.notify; };
+    var sinCorreo = function (o) { if (!Array.isArray(o.channels) || o.channels.indexOf('mail') < 0) { delete o.mail_host; delete o.mail_port; } };
+    var ca = corto(T('pantalla.avisos'), modoAv, [['', T('pantalla.avisosSinDeclarar')], ['none', T('pantalla.avisosNinguno')], ['elegir', T('pantalla.avisosElegir')]], function (v) {
+      var o = deAvisos();
+      if (v === '') delete o.channels; else if (v === 'none') o.channels = []; else if (!Array.isArray(o.channels) || !o.channels.length) o.channels = ['telegram'];
+      sinCorreo(o);
+      if (!Object.keys(o).length) hoja(d, 'integrations', 'notify', undefined);
+      render();
+    }, 'integrations.notify.channels', pr);
+    t.appendChild(renglon([queDe(T('pantalla.avisos')), el('div', { class: 'sel', role: 'cell' }, ca.sel)], ca.mios));
     INTEGRACIONES.forEach(function (par) {
       var k = par[0];
       var opciones = [['', T('pantalla.sinDeclararApagada')], ['true', T('pantalla.prendida2')], ['false', T('pantalla.apagada2')]].concat(k === 'codex' ? [['detect', T('pantalla.siEstaInstalado')]] : []);
@@ -1620,8 +1651,32 @@ function pantalla(idioma = 'es') {
     }
     if (h && h.token) box.appendChild(el('p', { class: 'muted', text: T('pantalla.tokenEnCadaMaquina', { herramienta: h.label, comando: h.token }) }));
     if (elegida) box.appendChild(el('p', { class: 'muted', text: T('pantalla.registroDeHorasSubeLaCapa') }));
+    // los canales elegidos, para tildar; con el correo, su servidor. Ninguna credencial: cada una va en su máquina o en
+    // las variables secretas de la noche, y la pantalla dice cuál
+    if (canalesAv && canalesAv.length) {
+      var lista = el('div', { class: 'pila' });
+      CANALES_AVISO.concat(canalesAv.filter(function (c) { return !CANALES_AVISO.some(function (p) { return p[0] === c; }); }).map(function (c) { return [c, c]; })).forEach(function (par) {
+        var c = el('input', { type: 'checkbox', 'aria-label': par[1], 'data-path': 'integrations.notify.channels.' + par[0], onchange: function (e) {
+          var o = deAvisos();
+          var l = (Array.isArray(o.channels) ? o.channels : []).filter(function (x) { return x !== par[0]; });
+          o.channels = e.target.checked ? l.concat([par[0]]) : l;
+          sinCorreo(o);
+          render();
+        } });
+        c.checked = canalesAv.indexOf(par[0]) >= 0;
+        lista.appendChild(el('label', {}, c, el('span', { text: ' ' + par[1] })));
+      });
+      box.appendChild(lista);
+      if (canalesAv.indexOf('mail') >= 0) {
+        box.appendChild(campo(T('pantalla.servidorDeCorreo'), av.mail_host, function (v) { var o = deAvisos(); if (v === '') delete o.mail_host; else o.mail_host = v; }, 'integrations.notify.mail_host', pr));
+        box.appendChild(campo(T('pantalla.puertoDelCorreo'), av.mail_port, function (v) { var o = deAvisos(); if (v === '') delete o.mail_port; else o.mail_port = numOTexto(v); }, 'integrations.notify.mail_port', pr, { inputmode: 'numeric' }));
+      }
+      box.appendChild(el('p', { class: 'muted', text: T('pantalla.avisosCredenciales') }));
+    }
+    if (modoAv !== '') box.appendChild(el('p', { class: 'muted', text: T('pantalla.avisosSubeLaCapa') }));
     return box;
   }
+  var CANALES_AVISO = [['telegram', 'Telegram'], ['slack', 'Slack'], ['teams', 'Teams'], ['mail', T('pantalla.canalCorreo')]];
   // ── story 2.59: las tablas de renglones de Modelos, Repos e Integraciones ──
   // cada renglón es «contents» en la hoja: sus celdas caen en la grilla de la tabla y en teléfono bajan a dos líneas
   function tabla(clase, titulo, columnas) {
@@ -2770,7 +2825,7 @@ function pantalla(idioma = 'es') {
 }
 
 module.exports = {
-  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, TIME_TRACKING_SINCE, timeTrackingLayer, cambiaHoras, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, modelosEnNiveles, equivalenciasDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS,

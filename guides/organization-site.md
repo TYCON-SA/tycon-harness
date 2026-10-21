@@ -517,8 +517,13 @@ en su repo.
   máquina. Queda en `team-profile.json` → `qa.manual_check`, en el repo del perfil.
 - **Integraciones**: qué servicios usa cada máquina (el reloj de horas, la memoria, el buzón, la noche, el índice de
   código de CodeGraph); una máquina puede apagar una para ella sola. Con CodeGraph prendido, el instalador se lo instala
-  a cada dev y el arnés avisa si una máquina no lo tiene. Telegram no está acá: es de cada máquina. Queda en
-  `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
+  a cada dev y el arnés avisa si una máquina no lo tiene. Queda en `team-profile.json`, en el repo del perfil. Lo
+  revisa quien mantiene. El renglón **«Avisos»** elige por dónde avisa el arnés (la ejecución que espera a una persona,
+  el resumen de la mañana, el vigilante): uno o más de Telegram, Slack, Teams y correo, o ninguno; sin declarar,
+  Telegram, como hasta ahora. Con el correo, el servidor y su puerto. Nunca pide una credencial: los avisos de la sesión
+  de cada dev usan las suyas (`harness.js config set notify.<clave>`, en su máquina; Telegram, el bot de la máquina) y
+  los de la noche, las variables secretas del servidor (`pipelines/operations/README.md`). Guardar los canales sube
+  también `requires.harness` del perfil a la primera versión que los lee.
 - **Conversaciones de las ejecuciones**: si el sitio baja también lo que se habló en cada ejecución; con eso, el detalle de
   Ejecuciones muestra los archivos que tocó. Queda en `operations.json`, en el repo de operaciones. Lo revisa quien
   mantiene.
