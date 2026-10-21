@@ -213,7 +213,7 @@ c_ok=0; { [ "$rc" -eq 0 ] && volc '["101","102"].every((k) => v.pedidos[k].leido
 estados_agile "Proy A"; wi 101 Raro Verified; rc=$(estado)
 d_ok=0; { [ "$rc" -eq 0 ] && volc 'v.pedidos["101"].leido === false && /el estado Raro no está en las categorías de Proy A/.test(v.pedidos["101"].motivo_no_leido) && v.pedidos["102"].leido === true'; } && d_ok=1
 [ "$a_ok$b_ok$c_ok$d_ok" = 1111 ] \
-  && ok "T3: el work item, las revisiones o las categorías que no se pueden leer (o un estado fuera de las categorías) dejan ESE pedido en «no leído» con el motivo, y la corrida sigue" \
+  && ok "T3: el work item, las revisiones o las categorías que no se pueden leer (o un estado fuera de las categorías) dejan ESE pedido en «no leído» con el motivo, y la ejecución sigue" \
   || no "T3: show=$a_ok revisiones=$b_ok categorías=$c_ok estado-raro=$d_ok · $(volcj)"
 
 # ── T5. 🔴 un id que no existe (o sin permiso) no es «sin pedido» ────────────────────────

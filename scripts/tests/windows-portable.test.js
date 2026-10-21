@@ -250,13 +250,13 @@ test('Portable_ShortRows_ExpectedAgainstMeasured_VerdictRedOnlyWhenItCouldNotMea
   // el veredicto: verde con hallazgos; rojo sólo si no se pudo medir
   const green = rehearse.verdict(report);
   assert.strictEqual(green.color, 'green', JSON.stringify(green));
-  assert.ok(report.steps.reduce((n, s) => n + s.findings.length, 0) >= 8 && rows.some((r) => r.match === false), 'hay hallazgos y filas que no coinciden, y la corrida es verde: se pudo medir');
+  assert.ok(report.steps.reduce((n, s) => n + s.findings.length, 0) >= 8 && rows.some((r) => r.match === false), 'hay hallazgos y filas que no coinciden, y la ejecución es verde: se pudo medir');
   const missing = clone(report); missing.steps = missing.steps.filter((s) => s.name !== 'bench');
   assert.deepStrictEqual([rehearse.verdict(missing).color, rehearse.verdict(missing).missing_steps], ['red', ['bench']]);
   const failed = clone(report); Object.assign(failed.steps.find((s) => s.name === 'bench'), { status: 'error', reason: 'no pude medir: el banco salió 2 y no dejó un reporte legible' });
   assert.strictEqual(rehearse.verdict(failed).color, 'red');
   const skipped = clone(report); Object.assign(skipped.steps.find((s) => s.name === 'git-bash'), { status: 'not-measured', reason: 'el commit que se mide no trae scripts/lib/git-bash.js' });
-  assert.deepStrictEqual([rehearse.verdict(skipped).color, rehearse.verdict(skipped).not_measured.length], ['green', 1], 'un paso no medido se dice y no pone roja la corrida');
+  assert.deepStrictEqual([rehearse.verdict(skipped).color, rehearse.verdict(skipped).not_measured.length], ['green', 1], 'un paso no medido se dice y no pone roja la ejecución');
 
   // el resumen legible: el «En corto» arriba, y cada parte con sus comandos y su salida guardada
   const md = rehearse.renderMarkdown(Object.assign(clone(report), { verdict: green }));
@@ -563,7 +563,7 @@ test('Portable_LabRun_ToyRepos_FreshClone_ExistingClone_Bench', { skip: (process
     // un laboratorio no se usa dos veces
     const again = node([path.join(DIR, 'rehearse.js'), 'step', 'fresh-clone', '--lab', lab, '--out', out, '--allow-temp'], { env });
     assert.strictEqual(again.status, 0);
-    assert.match(JSON.parse(fs.readFileSync(path.join(out, 'steps', 'fresh-clone.json'), 'utf8')).reason, /ya existe — el laboratorio es de una sola corrida/);
+    assert.match(JSON.parse(fs.readFileSync(path.join(out, 'steps', 'fresh-clone.json'), 'utf8')).reason, /ya existe — el laboratorio es de una sola ejecución/);
 
     // ── un commit anterior al cambio (la rama principal): las piezas que no trae salen «no medido», y sin el banco
     // no se pudo medir: la corrida es roja

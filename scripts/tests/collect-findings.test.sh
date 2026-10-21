@@ -117,7 +117,7 @@ print(','.join(sorted(d.keys())))")"
   CORR="$(py "
 import json
 print(json.loads(open('${C}/estado/hallazgos.jsonl').readline())['corrida'])")"
-  case "${CORR}" in c-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ok "T1 · la corrida es una huella opaca (${CORR})" ;;
+  case "${CORR}" in c-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ok "T1 · la ejecución es una huella opaca (${CORR})" ;;
     *) mal "T1 · corrida=${CORR} — tiene que ser una huella que no diga qué repo ni qué story" ;; esac
   if grep -qiE 'fulano|Cliente|App\.tsx|arreglarlo ahora|db-cliente-prod|4\.2M' "${C}/estado/hallazgos.jsonl"; then
     mal "T1 · 🔴 FUGA: prosa o rutas del original en la salida — rojo previo: publicar reason/file filtra rutas del home, nombres de persona y datos de cliente"
@@ -128,7 +128,7 @@ print(json.loads(open('${C}/estado/hallazgos.jsonl').readline())['corrida'])")"
 import json
 print(json.loads(open('${C}/estado/hallazgos.jsonl').readline())['ts'])")"
   case "${TS}" in 2026-09-10*) ok "T1 · el ts sale del nombre del run dir (${TS})" ;;
-    *) mal "T1 · ts=${TS} — rojo previo: usar la hora de la corrida del recolector mete todo en la ventana de hoy y borra la serie" ;; esac
+    *) mal "T1 · ts=${TS} — rojo previo: usar la hora de la ejecución del recolector mete todo en la ventana de hoy y borra la serie" ;; esac
   DUENO="$(py "
 import json
 print(json.loads(open('${C}/estado/hallazgos.jsonl').readline())['dueno'])")"
@@ -325,7 +325,7 @@ import json
 print(sorted(json.loads(l)['ts'][:10] for l in open('${C}/estado/hallazgos.jsonl')))")"
 [ "${TSS}" = "['2026-05-02', '2026-07-27']" ] && ok "T7 las fechas con guiones se entienden (2026-05-02 y 2026-07-27)" \
   || mal "T7 fechas=${TSS} — rojo previo: con guiones no se entendía y quedaba la fecha de hoy"
-[ "$(jq_out sin_fecha)" = "1" ] && ok "T7 la corrida sin fecha se cuenta y NO emite" \
+[ "$(jq_out sin_fecha)" = "1" ] && ok "T7 la ejecución sin fecha se cuenta y NO emite" \
   || mal "T7 sin_fecha=$(jq_out sin_fecha) — rojo previo: se le inventaba la fecha de hoy"
 grep -q "$(date +%Y-%m-%d)" "${C}/estado/hallazgos.jsonl" && mal "T7 un hallazgo quedó con la fecha de hoy" || ok "T7 ningún hallazgo lleva una fecha inventada"
 
@@ -346,7 +346,7 @@ chmod 000 "${C}/raiz/repoB/.advisors/pipeline-runs/1.3-20260903T090000" # una co
 recolectar "${C}" --json; RC=$?
 chmod 755 "${C}/raiz/grupo-cerrado" "${C}/raiz/repoB/.advisors/pipeline-runs/1.3-20260903T090000"
 CI="$(jq_out carpetas_ilegibles)"
-[ "${RC}" = "0" ] && [ "${CI}" = "2" ] && ok "T9 el subárbol y la corrida ilegibles se cuentan (2)" \
+[ "${RC}" = "0" ] && [ "${CI}" = "2" ] && ok "T9 el subárbol y la ejecución ilegibles se cuentan (2)" \
   || mal "T9 rc=${RC} carpetas_ilegibles=${CI} — rojo previo: desaparecían sin sumar a nada"
 
 # ── T10 · los baldes suman el total de corridas ─────────────────────────────────────────────────
@@ -364,8 +364,8 @@ import json
 d=json.load(open('${OUT}'))
 b=d['baldes']
 print(sum(b.values()), d['run_dirs'], sorted(b.items()))")"
-case "${SUMA}" in "7 7 "*) ok "T10 los baldes suman el total (7 corridas, cada una en exactamente uno)" ;;
-  *) mal "T10 ${SUMA} — rojo previo: una corrida sin archivo y sin reportes, o con un archivo roto, no caía en ningún balde" ;; esac
+case "${SUMA}" in "7 7 "*) ok "T10 los baldes suman el total (7 ejecuciones, cada una en exactamente uno)" ;;
+  *) mal "T10 ${SUMA} — rojo previo: una ejecución sin archivo y sin reportes, o con un archivo roto, no caía en ningún balde" ;; esac
 
 # ── T11 · un elemento sin identificador de regla no es «fuera de catálogo» ───────────────────────
 C="$(nuevo t11)"; repo "${C}/raiz/repoA"
@@ -455,7 +455,7 @@ DISP="$(py "
 import json
 print([json.loads(l)['disposicion'] for l in open('${C}/estado/hallazgos.jsonl') if json.loads(l)['ts'].startswith('2026-08-26')])")"
 [ "${DISP}" = "['fixed']" ] && ok "T16 sin findings.json se lee la vuelta más alta, nunca la entrada" \
-  || mal "T16 disposiciones=${DISP} — la foto de ANTES de arreglar no es la verdad de la corrida"
+  || mal "T16 disposiciones=${DISP} — la foto de ANTES de arreglar no es la verdad de la ejecución"
 
 # ── T17 · la identidad de la corrida es la misma en todos los clones ─────────────────────────────
 # 🔴 un findings.json commiteado existe en cada clon; sin identidad, el total del equipo lo
@@ -470,11 +470,11 @@ recolectar "${C}" --json; RC=$?
 IDS="$(py "
 import json
 print(len({json.loads(l)['corrida'] for l in open('${C}/estado/hallazgos.jsonl')}))")"
-[ "${IDS}" = "1" ] && ok "T17 dos clones con carpetas de nombre distinto dan la MISMA huella de corrida" \
-  || mal "T17 huellas distintas=${IDS} — rojo previo: sin identidad estable, el cruce no puede contar una corrida una sola vez"
+[ "${IDS}" = "1" ] && ok "T17 dos clones con carpetas de nombre distinto dan la MISMA huella de ejecución" \
+  || mal "T17 huellas distintas=${IDS} — rojo previo: sin identidad estable, el cruce no puede contar una ejecución una sola vez"
 grep -q 'el-repo\|dev.azure' "${C}/estado/hallazgos.jsonl" && mal "T17 🔴 la dirección del remoto salió en la serie" || ok "T17 la huella no deja ver el remoto"
 NL="$(wc -l < "${C}/estado/hallazgos.jsonl" | tr -d ' ')"; REP="$(py "import json;print(json.load(open('${OUT}'))['baldes']['repetida'])")"
-[ "${NL}" = "1" ] && [ "${REP}" = "1" ] && ok "T17 dos clones en la misma máquina: la corrida se lee UNA vez y la otra es «repetida»" \
+[ "${NL}" = "1" ] && [ "${REP}" = "1" ] && ok "T17 dos clones en la misma máquina: la ejecución se lee UNA vez y la otra es «repetida»" \
   || mal "T17 líneas=${NL} repetida=${REP}, esperaba 1 y 1 — rojo previo: el mismo refutado contado dos veces llevaba una regla a revisión humana"
 
 # ── T18 · «sin evidencia» reconoce las tres formas en que quedan los informes ────────────────────
@@ -487,7 +487,7 @@ recolectar "${C}" --json; RC=$?
   || mal "T18 sin_evidencia=$(jq_out sin_evidencia) — rojo previo: sólo se reconocía la carpeta de informes (105 informes sueltos en disco)"
 [ "$(py "
 import json
-print(json.load(open('${OUT}'))['baldes']['sin_nada'])")" = "1" ] && ok "T18 una corrida sin archivo ni informes es «sin nada»" || mal "T18 sin_nada mal contado"
+print(json.load(open('${OUT}'))['baldes']['sin_nada'])")" = "1" ] && ok "T18 una ejecución sin archivo ni informes es «sin nada»" || mal "T18 sin_nada mal contado"
 
 # ── T19 · un worktree hermano no duplica las corridas ────────────────────────────────────────────
 C="$(nuevo t19)"; repo "${C}/raiz/Repo"
@@ -502,7 +502,7 @@ recolectar "${C}" --json; RC=$?
 C="$(nuevo t20)"; repo "${C}/raiz/mono"
 corrida "${C}/raiz/mono/app-front" "1.1-20260901T090000" '[{"rule_id":"SEC-C1","severity":"WARNING","advisor":"tycon-plugin-security-basics","disposition":"fixed"}]'
 recolectar "${C}" --json; RC=$?
-[ "$(jq_out hallazgos)" = "1" ] && ok "T20 una corrida en <repo>/<subproyecto>/.advisors se recolecta" \
+[ "$(jq_out hallazgos)" = "1" ] && ok "T20 una ejecución en <repo>/<subproyecto>/.advisors se recolecta" \
   || mal "T20 hallazgos=$(jq_out hallazgos) — rojo previo: sólo se miraba donde estaba .git y el subproyecto se salteaba sin decirlo"
 
 # ── T21 · una simulación que falla NO borra la serie real ────────────────────────────────────────
@@ -554,17 +554,17 @@ VOL="$(py "
 import json
 d=json.load(open('${OUT}'))['volcados']
 print(d['leidos'], d['medidos'], d['sin_hallazgos_legibles'], d['sin_repo'], d['sin_corrida'])")"
-[ "${RC}" = "0" ] && [ "${VOL}" = "6 2 1 1 2" ] && ok "T23 6 volcados: 2 con su corrida leída, 1 sin hallazgos legibles, 1 sin repo, 2 sin corrida en su sesión" \
+[ "${RC}" = "0" ] && [ "${VOL}" = "6 2 1 1 2" ] && ok "T23 6 volcados: 2 con su ejecución leída, 1 sin hallazgos legibles, 1 sin repo, 2 sin ejecución en su sesión" \
   || mal "T23 rc=${RC} volcados(leidos medidos sin_legibles sin_repo sin_corrida)=${VOL}, esperaba 6 2 1 1 2"
 MED="$(py "
 import json
 print(sorted((o['volcado'], o['medida']) for o in map(json.loads, open('${C}/estado/hallazgos.jsonl')) if 'volcado' in o))")"
 [ "${MED}" = "[('2.1-2026-08-31T1320.json', 'con_hallazgos'), ('2.2-2026-09-01T1400.json', 'revisado_sin_hallazgos')]" ] \
-  && ok "T23 la serie nombra sólo los volcados cuya corrida se leyó, con cómo se leyó" \
+  && ok "T23 la serie nombra sólo los volcados cuya ejecución se leyó, con cómo se leyó" \
   || mal "T23 volcados en la serie=${MED}"
-if grep -q "${C}" "${C}/estado/hallazgos.jsonl"; then mal "T23 🔴 una ruta del disco llegó a la serie"; else ok "T23 las líneas de corrida no llevan rutas"; fi
+if grep -q "${C}" "${C}/estado/hallazgos.jsonl"; then mal "T23 🔴 una ruta del disco llegó a la serie"; else ok "T23 las líneas de ejecución no llevan rutas"; fi
 E="$(node -e 'const r=require(process.argv[1]).estadoDeLaSerie({salida:process.argv[2],hoy:process.argv[3]});console.log(r.estado)' "${RECOLECTOR}" "${C}/estado/hallazgos.jsonl" "${HOY}")"
-[ "${E}" = "medido" ] && ok "T23 la serie con líneas de corrida sigue medida" || mal "T23 estado=${E}"
+[ "${E}" = "medido" ] && ok "T23 la serie con líneas de ejecución sigue medida" || mal "T23 estado=${E}"
 
 # ── T24 · la serie que no coincide con su sello NO está medida ────────────────────────────────────
 # 🔴 sin esto, una serie vacía (a medio escribir) con un sello bueno se lee «medida, 0 hallazgos» y todo
@@ -578,7 +578,7 @@ cp "${C}/estado/hallazgos.jsonl" "${C}/copia.jsonl"
 case "$(estado_de_serie "${C}/estado/hallazgos.jsonl")" in no_medido*coincide*) ok "T24 serie vacía con sello de 1 hallazgo → no medida" ;;
   *) mal "T24 serie vacía con sello bueno: $(estado_de_serie "${C}/estado/hallazgos.jsonl")" ;; esac
 { cat "${C}/copia.jsonl"; printf '{"ts":"2026-09-01T09:00:00Z","regla":"SEC-C1","dueno":"x","severidad":"WARNING","disposicion":"fixed"}\n'; } > "${C}/estado/hallazgos.jsonl"
-case "$(estado_de_serie "${C}/estado/hallazgos.jsonl")" in no_medido*ilegibles*) ok "T24 una línea sin huella de corrida → no medida" ;;
+case "$(estado_de_serie "${C}/estado/hallazgos.jsonl")" in no_medido*ilegibles*) ok "T24 una línea sin huella de ejecución → no medida" ;;
   *) mal "T24 línea de otro formato: $(estado_de_serie "${C}/estado/hallazgos.jsonl")" ;; esac
 
 # ── T25 · una salida que no es una serie no se pisa ni se borra ──────────────────────────────────
@@ -629,7 +629,7 @@ B="$(py "
 import json
 d=json.load(open('${OUT}')); b=d['baldes']
 print(b['sin_evidencia'], b['ilegible'], b['con_hallazgos'], b['repetida'], sum(b.values()), d['run_dirs'], d['hallazgos'])")"
-[ "${B}" = "1 0 1 2 4 4 1" ] && ok "T28 dos clones: cada corrida una vez; la copia legible cuenta y la ilegible es la repetida" \
+[ "${B}" = "1 0 1 2 4 4 1" ] && ok "T28 dos clones: cada ejecución una vez; la copia legible cuenta y la ilegible es la repetida" \
   || mal "T28 (sin_evidencia ilegible con_hallazgos repetida suma run_dirs hallazgos)=${B}, esperaba 1 0 1 2 4 4 1"
 
 # ── T29 · un subproyecto que es su propio repo se lee UNA vez ─────────────────────────────────────
@@ -637,7 +637,7 @@ C="$(nuevo t29)"; repo "${C}/raiz/mono"; repo "${C}/raiz/mono/app"
 printf '[remote "origin"]\n\turl = https://dev.azure.com/org/proj/_git/app\n' > "${C}/raiz/mono/app/.git/config"
 corrida "${C}/raiz/mono/app" "8.1-20260901T090000" '[{"rule_id":"SEC-C1","severity":"WARNING","advisor":"tycon-plugin-security-basics","disposition":"fixed"}]'
 recolectar "${C}" --json; RC=$?
-[ "$(jq_out hallazgos)" = "1" ] && [ "$(jq_out run_dirs)" = "1" ] && ok "T29 el subproyecto-repo se lee una vez (1 corrida, 1 hallazgo)" \
+[ "$(jq_out hallazgos)" = "1" ] && [ "$(jq_out run_dirs)" = "1" ] && ok "T29 el subproyecto-repo se lee una vez (1 ejecución, 1 hallazgo)" \
   || mal "T29 hallazgos=$(jq_out hallazgos) run_dirs=$(jq_out run_dirs) — rojo previo: se leía como subproyecto del padre y como repo propio, con huellas distintas"
 
 # ── T30 · el sello con su nombre en inglés, y el viejo sigue valiendo ────────

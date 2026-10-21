@@ -116,7 +116,7 @@ test('T23 Relocate_Manual_SnapshotRerootImport_Idempotent_AnyMode', () => {
   const again = harness(h, C, ['relocate']);
   assert.strictEqual(again.rc, 0, again.all);
   assert.match(again.out, /nada que cambiar/, again.out);
-  assert.strictEqual(homeHash(h), hash1, 'la segunda corrida escribió algo');
+  assert.strictEqual(homeHash(h), hash1, 'la segunda ejecución escribió algo');
   // con las dos líneas en CLAUDE.md, queda una
   const both = installed('dos-lineas');
   fs.appendFileSync(both.m.files.claudeMd, `${NEW_IMPORT}\n`);
@@ -225,8 +225,8 @@ test('T25 Relocate_Preconditions_KilledThenPersonEdits_RollbackOlderStillRuns', 
   const fin = harness(k.h, k.C, ['relocate']);
   assert.strictEqual(fin.rc, 0, fin.all);
   assert.ok(readJson(k.m.files.settings).permissions.allow.includes('Bash(npm test -- lab)'), 'se perdió el permiso nuevo');
-  assert.ok(fs.readFileSync(k.m.files.claudeMd, 'utf8').includes(NEW_IMPORT), 'la segunda corrida no terminó CLAUDE.md');
-  assert.ok(registered(k.h, k.C).files.every((f) => f.count === f.permissions), 'la segunda corrida no terminó');
+  assert.ok(fs.readFileSync(k.m.files.claudeMd, 'utf8').includes(NEW_IMPORT), 'la segunda ejecución no terminó CLAUDE.md');
+  assert.ok(registered(k.h, k.C).files.every((f) => f.count === f.permissions), 'la segunda ejecución no terminó');
   // rollback a la copia de antes de relocate: vuelven a nombrar el viejo, el viejo resuelve, doctor lo cuenta
   const v = installed('vuelta');
   assert.strictEqual(harness(v.h, v.C, ['relocate']).rc, 0);

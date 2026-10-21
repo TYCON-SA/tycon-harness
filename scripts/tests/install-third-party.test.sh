@@ -111,7 +111,7 @@ t0=$(ms); out1="$(step "$H" "$R" "$M" 2>&1)"; rc1=$?; t1=$(ms); out2="$(step "$H
 nuevos="$(find "$R/skills/acme-helper" -newer "$BASE/stamp8" | wc -l | tr -d ' ')"
 if [ "$rc1" -eq 0 ] && [ "$rc2" -eq 0 ] && [ "$nuevos" = 0 ] && [ $((t1 - t0)) -lt 1000 ] && [ $((t2 - t1)) -lt 1000 ] \
    && ! grep -qiE 'no pude preguntar|restitu' <<<"$out1$out2"; then
-  ok "T8 al día: dos corridas sin escribir nada ni abrir la red ($((t1 - t0)) ms y $((t2 - t1)) ms)"
+  ok "T8 al día: dos ejecuciones sin escribir nada ni abrir la red ($((t1 - t0)) ms y $((t2 - t1)) ms)"
 else bad "T8 (rc $rc1/$rc2, archivos nuevos $nuevos, $((t1 - t0))/$((t2 - t1)) ms): $out1 | $out2"; fi
 
 # ═══ T10 · sin historia: desde el origen, sin los omitidos y con el árbol verificado ═════════════════════════════════
@@ -200,7 +200,7 @@ done
 out="$(step "$H" "$R" "$M" 2>&1)"; rc=$?
 tmp_sueltos="$(find "$R/skills" -name '*.tycon-tmp*' | wc -l | tr -d ' ')"
 if [ "$n" = 3 ] && [ "$enteros" = 1 ] && [ "$rc" -eq 0 ] && [ "$(tree_of "$R/skills/acme-helper")" = "$T1" ] && [ "$tmp_sueltos" = 0 ]; then
-  ok "T15 cortado después del tercer archivo: 3 archivos enteros; la corrida siguiente completa el árbol, sin temporales"
+  ok "T15 cortado después del tercer archivo: 3 archivos enteros; la ejecución siguiente completa el árbol, sin temporales"
 else bad "T15 (archivos tras el corte $n, enteros $enteros, rc=$rc, temporales $tmp_sueltos): $out"; fi
 
 # ═══ T16 · dos arranques a la vez ════════════════════════════════════════════════════════════════════════════════════

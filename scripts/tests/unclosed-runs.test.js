@@ -176,7 +176,7 @@ test('T4 Upload_LasCuenta @story-2.67 @ac-3: upload-runs deja los volcados antes
   assert.ok(fs.readdirSync(dest).some((f) => /-sin-cerrar\.json$/.test(f)));
 });
 
-test('T5 Vista_DiceSinCerrar @story-2.67 @ac-4: la vista de corridas marca «sin cerrar» en la fila y en el detalle', () => {
+test('T5 Vista_DiceSinCerrar @story-2.67 @ac-4: la vista de ejecuciones marca «sin cerrar» en la fila y en el detalle', () => {
   // the real view, over a folder with one «sin cerrar» volcado built by the collector
   const m = machine();
   const r = repo(m, 'x', { ignored: true });
@@ -204,7 +204,7 @@ test('T6 Aviso_UnaVezPorDia @story-2.67 @ac-5: un renglón al arrancar; después
   const run = (e) => spawnSync(process.execPath, [NOTICE], { env: e, encoding: 'utf8', input: '{}' });
   const first = run(env);
   assert.strictEqual(first.status, 0, first.stderr);
-  assert.match(first.stdout, /1 corrida\(s\) del pipeline quedaron sin cerrar.*5\.1/);
+  assert.match(first.stdout, /1 ejecución\(es\) del pipeline quedaron sin cerrar.*5\.1/);
   assert.match(first.stdout, /se suben al buzón marcadas «sin cerrar»/);
   assert.strictEqual(run(env).stdout.trim(), '', 'el mismo día calla');
   const off = machine();
@@ -215,7 +215,7 @@ test('T6 Aviso_UnaVezPorDia @story-2.67 @ac-5: un renglón al arrancar; después
   assert.strictEqual(run(envOf(off, { TYCON_UNCLOSED_NOTICE: '0' })).stdout.trim(), '');
 });
 
-test('T7 Aviso_SinNadaCalla @story-2.67 @ac-5: sin corridas sin cerrar no dice nada', () => {
+test('T7 Aviso_SinNadaCalla @story-2.67 @ac-5: sin ejecuciones sin cerrar no dice nada', () => {
   const m = machine();
   const r = repo(m, 'x', { ignored: true });
   session(m, r, 's-1');

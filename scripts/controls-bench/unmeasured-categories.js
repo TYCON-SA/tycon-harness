@@ -46,7 +46,7 @@ function rubrosNoMedidos(corrida) {
   // Los motivos van en el aviso de arranque, que se lee todos los días: cortos, y con el comando
   // que sí mediría el rubro — lo accionable, no la explicación.
   const inestables = Number.isFinite(runs) && runs < 2
-    ? `${runs} corrida por caso; hacen falta al menos 2 (--runs 2)`
+    ? `${runs} ejecución por caso; hacen falta al menos 2 (--runs 2)`
     : null;
 
   const paridad = tool !== null && tool !== 'both'

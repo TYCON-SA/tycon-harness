@@ -895,11 +895,11 @@ function motivoDeLaboratorio({ env = process.env, home = os.homedir(), real } = 
 function prepararSinCerrar({ origen, home, stateDir, projectsDir, tmp, now, log = () => {} } = {}) {
   try {
     const r = require('./unclosed-runs.js').materialize({ dest: origen, home, stateDir, projectsDir, tmp, now });
-    if (r.written.length) log(`${r.written.length} corrida(s) sin cerrar: su volcado quedó para subir, marcado «sin cerrar»`);
-    for (const p of r.problems) log(`corridas sin cerrar: ${p}`);
+    if (r.written.length) log(`${r.written.length} ejecución(es) sin cerrar: su volcado quedó para subir, marcado «sin cerrar»`);
+    for (const p of r.problems) log(`ejecuciones sin cerrar: ${p}`);
     return r;
   } catch (e) {
-    log(`no pude buscar corridas sin cerrar: ${e.message}`);
+    log(`no pude buscar ejecuciones sin cerrar: ${e.message}`);
     return { written: [], runs: [], problems: [e.message] };
   }
 }
@@ -922,7 +922,7 @@ async function subir(opts = {}) {
   //    noche en la cuenta del equipo. Dentro de una corrida de Azure DevOps (TF_BUILD) no se prepara ni se sube nada al
   //    buzón REAL. Con un destino de prueba (TYCON_MAILBOX_URL_BASE) la guarda no aplica: las suites siguen probando.
   if (/^true$/i.test(String(process.env.TF_BUILD || '').trim()) && !variable('TYCON_MAILBOX_URL_BASE')) {
-    const motivo = 'esto corre dentro de una corrida de Azure DevOps (TF_BUILD): un agente de CI no es una máquina del equipo y no sube al buzón';
+    const motivo = 'esto corre dentro de una ejecución de Azure DevOps (TF_BUILD): un agente de CI no es una máquina del equipo y no sube al buzón';
     log(motivo);
     return fin(0, 'agente_ci', motivo);
   }
@@ -993,9 +993,9 @@ async function subir(opts = {}) {
   try { for (const f of archivosDelRegistro(origen)) entradas.push({ dir: origen, f, juego: null, clave: `${maquina}/${f}`, blob: `${maquina}/${f}` }); }
   catch (e) {
     // Una máquina que nunca corrió el pipeline no tiene la carpeta: es «nada que subir» de corridas, no un fallo en cada arranque.
-    if (e.code !== 'ENOENT') return fin(1, 'sin_registro', `no se pudo leer el registro de corridas ${origen} (${e.code || e.message})`);
+    if (e.code !== 'ENOENT') return fin(1, 'sin_registro', `no se pudo leer el registro de ejecuciones ${origen} (${e.code || e.message})`);
     // 🔴 «Nada que subir» sólo si tampoco hubo un error con los registros: si no, eso sale 1 al final (parcial).
-    if (!entradas.length && !noLeidos.length) { log(`esta máquina todavía no tiene corridas del pipeline (${origen}): nada que subir`); return fin(0, 'sin_corridas'); }
+    if (!entradas.length && !noLeidos.length) { log(`esta máquina todavía no tiene ejecuciones del pipeline (${origen}): nada que subir`); return fin(0, 'sin_corridas'); }
   }
 
   const destino = `${cfg.cuenta}/${cfg.contenedor}`;

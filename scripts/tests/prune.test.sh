@@ -248,7 +248,7 @@ volcado "${C}/historia" "sin-conteo-3" "2026-09-13T10:00:00Z" '{}' 'parcial'
 leidos "${C}/hallazgos.jsonl" sin-conteo-1 sin-conteo-2 sin-conteo-3; sello "${C}/hallazgos.jsonl" "2026-09-16"
 podar "${C}"; RC=$?
 CON="$(q "d['cobertura']['corridas']['con_denominador']")"; TOTC="$(q "d['cobertura']['corridas']['total']")"
-[ "${CON}" = "31" ] && [ "${TOTC}" = "34" ] && ok "T12 el denominador sale de 31 de 34 corridas, y se dice" \
+[ "${CON}" = "31" ] && [ "${TOTC}" = "34" ] && ok "T12 el denominador sale de 31 de 34 ejecuciones, y se dice" \
   || mal "T12 con_denominador=${CON} total=${TOTC}, esperaba 31 de 34 — rojo previo: contarlas como 0 oportunidades mezcla «no medí» con «no corrió»"
 OPP_A="$(q "next(f['oportunidades'] for f in d['filas'] if f['regla']=='R-C2')")"
 [ "${OPP_A}" = "30" ] && ok "T12 y las oportunidades no cambian por los volcados sin conteo" \
@@ -465,10 +465,10 @@ maquina_buzon "${C}" "equipo-de-fulana" "2026-09-15" "no_medido" "${LINEA_B}"
 volcado "${C}/buzon/equipo-de-fulana" "f-1" "2026-09-05T10:00:00Z" '{"adv-a":100}'
 podar "${C}"; RC=$?
 V="$(q "next(f['oportunidades'] for f in d['filas'] if f['regla']=='R-C2')")"
-[ "${RC}" = "0" ] && [ "${V}" = "30" ] && ok "V2-A las corridas de una máquina sin hallazgos medidos NO suman oportunidades (30)" \
+[ "${RC}" = "0" ] && [ "${V}" = "30" ] && ok "V2-A las ejecuciones de una máquina sin hallazgos medidos NO suman oportunidades (30)" \
   || mal "V2-A rc=${RC} oportunidades=${V}, esperaba 0 y 30 — rojo previo: 130, el denominador de todas las máquinas contra el numerador de una"
 DESC="$(q "d['cobertura']['corridas']['descartadas_sin_hallazgos']")"
-[ "${DESC}" = "1" ] && ok "V2-A lo descartado se cuenta (1 corrida)" \
+[ "${DESC}" = "1" ] && ok "V2-A lo descartado se cuenta (1 ejecución)" \
   || mal "V2-A descartadas_sin_hallazgos=${DESC}, esperaba 1 — sin el número, el recorte es invisible"
 H3="$(q "next(f['hallazgos'] for f in d['filas'] if f['regla']=='R-C3')")"
 [ "${H3}" = "0" ] && ok "V2-A y sus hallazgos tampoco se leen (declaró no medido)" || mal "V2-A R-C3 hallazgos=${H3}, esperaba 0"
@@ -512,7 +512,7 @@ podar "${C}"; RC=$?
 V="$(q "next(f['oportunidades'] for f in d['filas'] if f['regla']=='R-C2')")"
 H1="$(q "next(f['hallazgos'] for f in d['filas'] if f['regla']=='R-C1')")"
 [ "${RC}" = "0" ] && [ "${V}" = "5" ] && [ "${H1}" = "0" ] \
-  && ok "V2-A esta máquina sin medir: ni sus corridas ni sus hallazgos; la del buzón sí (5)" \
+  && ok "V2-A esta máquina sin medir: ni sus ejecuciones ni sus hallazgos; la del buzón sí (5)" \
   || mal "V2-A rc=${RC} oportunidades=${V} hallazgos R-C1=${H1}, esperaba 0, 5 y 0"
 LOC="$(q "[m for m in d['cobertura']['hallazgos']['maquinas_sin_medir'] if m.get('local')]")"
 case "${LOC}" in *sello*) ok "V2-A y dice que esta máquina no entró, con el motivo del recolector" ;;
@@ -525,7 +525,7 @@ maquina_buzon "${C}" "equipo-de-fulana" "2026-09-15" "medido" \
 podar "${C}"; RC=$?
 H1="$(q "next(f['hallazgos'] for f in d['filas'] if f['regla']=='R-C1')")"
 DUP="$(q "d['cobertura']['hallazgos']['duplicados']")"
-[ "${H1}" = "2" ] && [ "${DUP}" = "1" ] && ok "V2 la misma corrida en dos máquinas (la evidencia viaja por git) cuenta una vez, y se dice" \
+[ "${H1}" = "2" ] && [ "${DUP}" = "1" ] && ok "V2 la misma ejecución en dos máquinas (la evidencia viaja por git) cuenta una vez, y se dice" \
   || mal "V2 R-C1 hallazgos=${H1} duplicados=${DUP}, esperaba 2 y 1 — rojo previo: 3, el hallazgo contado por cada clon"
 
 # ── un volcado archivado dos veces cuenta una, el último ─────────────────────────────────────────
@@ -545,7 +545,7 @@ DS="$(q "d['cobertura']['corridas']['duplicadas']")"
 C="$(escenario v2-formato-viejo)"
 printf '{"ts":"2026-08-10T10:00:00Z","regla":"R-C2","dueno":"adv-a","severidad":"WARNING","disposicion":"fixed"}\n' >> "${C}/hallazgos.jsonl"
 podar "${C}"; RC=$?
-[ "${RC}" = "2" ] && grep -q 'ilegibles' "${ERR}" && ok "V2 una línea sin huella de corrida deja a la máquina sin medir (y sola, el cruce se niega)" \
+[ "${RC}" = "2" ] && grep -q 'ilegibles' "${ERR}" && ok "V2 una línea sin huella de ejecución deja a la máquina sin medir (y sola, el cruce se niega)" \
   || mal "V2 serie con una línea de otro formato salió ${RC} (candidatas=$(q "d['resumen']['candidata_a_retiro']")) — rojo previo: se sumaban las legibles y la otra se contaba aparte"
 C="$(escenario v2-formato-viejo-buzon)"
 maquina_buzon "${C}" "equipo-de-fulana" "2026-09-15" "medido" "$(printf '%s\n%s' "${LINEA_B}" '{"ts":"2026-08-21T10:00:00Z","regla":"R-C2","dueno":"adv-a"}')"
@@ -566,7 +566,7 @@ json.dump(d,open(p,'w'))
 PY
 podar "${C}"; RC=$?
 E4="$(estado_de R-C4)"; E2="$(estado_de R-C2)"; NC="$(q "d['cobertura']['banco']['no_concluyentes']")"
-[ "${E4}" = "sin_examinar" ] && ok "V2 un caso que falló por la corrida (no por el criterio) no hace rota a la regla" \
+[ "${E4}" = "sin_examinar" ] && ok "V2 un caso que falló por la ejecución (no por el criterio) no hace rota a la regla" \
   || mal "V2 R-C4 con clase error → ${E4}, esperaba sin_examinar — rojo previo: rota, y una regla sana se manda a arreglar"
 [ "${E2}" = "sin_examinar" ] && ok "V2 y un must-flag inestable tampoco la da por probada" \
   || mal "V2 R-C2 con clase inestable → ${E2}, esperaba sin_examinar"
@@ -586,7 +586,7 @@ C="$(escenario v2-historia-rota)"
 rm -rf "${C}/historia"; printf 'no soy una carpeta' > "${C}/historia"
 podar "${C}"; RC=$?
 [ "${RC}" = "2" ] && grep -q 'denominador' "${ERR}" && ok "V2 una historia que no se puede leer → exit 2 (sin denominador no hay poda)" \
-  || mal "V2 historia ilegible salió ${RC} — rojo previo: 0 corridas, todo «sin recorrido suficiente», publicado como medición"
+  || mal "V2 historia ilegible salió ${RC} — rojo previo: 0 ejecuciones, todo «sin recorrido suficiente», publicado como medición"
 
 C="$(escenario v2-buzon-roto)"
 rm -rf "${C}/buzon"; printf 'x' > "${C}/buzon"
@@ -630,7 +630,7 @@ volcado "${C}/historia" "sin-leer" "2026-09-11T10:00:00Z" '{"adv-a":50}'
 podar "${C}"; RC=$?
 V="$(q "next(f['oportunidades'] for f in d['filas'] if f['regla']=='R-C2')")"
 SL="$(q "d['cobertura']['corridas']['no_leidas']")"
-[ "${V}" = "30" ] && [ "${SL}" = "1" ] && ok "V3 una corrida que el recolector no leyó no suma oportunidades (30), y se cuenta" \
+[ "${V}" = "30" ] && [ "${SL}" = "1" ] && ok "V3 una ejecución que el recolector no leyó no suma oportunidades (30), y se cuenta" \
   || mal "V3 oportunidades=${V} no_leidas=${SL}, esperaba 30 y 1 — rojo previo: 80"
 
 # ── V3 · la edad de una máquina del buzón es la de su serie, no la de su subida ──────────────────
@@ -703,7 +703,7 @@ podar "${C}" --without-local; RC=$?
 MM="$(q "d['cobertura']['hallazgos']['maquinas']")"; SM="$(q "len(d['cobertura']['hallazgos']['maquinas_sin_medir'])")"
 H1="$(q "next(f['hallazgos'] for f in d['filas'] if f['regla']=='R-C1')")"; V2="$(q "next(f['oportunidades'] for f in d['filas'] if f['regla']=='R-C2')")"
 if [ "${RC}" = "0" ] && [ "${MM}" = "1" ] && [ "${SM}" = "0" ] && [ "${H1}" = "0" ] && [ "${V2}" = "5" ]; then
-  ok "2.12-T16 Podar_SinMaquinaLocal: una sola máquina (la del buzón), nadie «sin medir», los 2 hallazgos y las 30 corridas del disco no suman"
+  ok "2.12-T16 Podar_SinMaquinaLocal: una sola máquina (la del buzón), nadie «sin medir», los 2 hallazgos y las 30 ejecuciones del disco no suman"
 else
   mal "2.12-T16 Podar_SinMaquinaLocal rc=${RC} maquinas=${MM} sin_medir=${SM} R-C1 hallazgos=${H1} R-C2 oportunidades=${V2} (esperaba 0, 1, 0, 0 y 5) · $(head -c 200 "${ERR}")"
 fi
@@ -731,7 +731,7 @@ for orden in vieja-primero nueva-primero; do
   podar "${C}" --without-local; RC=$?
   V2="$(q "next(f['oportunidades'] for f in d['filas'] if f['regla']=='R-C2')")"
   if [ "${RC}" = "0" ] && [ "${V2}" = "5" ]; then
-    ok "2.12-T16b ${orden}: la corrida repetida en la carpeta vieja (sin medir) no le quita la suya a la medida (R-C2 con 5 oportunidades)"
+    ok "2.12-T16b ${orden}: la ejecución repetida en la carpeta vieja (sin medir) no le quita la suya a la medida (R-C2 con 5 oportunidades)"
   else
     mal "2.12-T16b ${orden}: rc=${RC} R-C2 oportunidades=${V2} (esperaba 0 y 5) · $(head -c 200 "${ERR}")"
   fi

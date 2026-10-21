@@ -231,7 +231,7 @@ SALIDA="$(lab_git_apply checkout-killed)"; RC=$?
 [ "$(tracked)" = "$N0" ] && [ -z "$(dirty)" ] && ok "git terminado a la fuerza a mitad de la receta: el índice sigue entero ($N0 archivos) y el árbol limpio" || mal "receta matada: el índice quedó con $(tracked) de $N0, sucio «$(dirty)»"
 said "$SALIDA" && case "$SALIDA" in *"no pude"*) true ;; *) false ;; esac && [ "$RC" = 0 ] && ok "…lo dice, y el aplicador corre igual" || mal "receta matada: rc $RC · $SALIDA"
 SALIDA="$(lab_git_apply '')"
-[ "$(crlf_count)" = 0 ] && case "$SALIDA" in *"normalicé"*) true ;; *) false ;; esac && ok "…y la corrida siguiente, con git sano, normaliza (no contesta «limpio» callado)" || mal "tras la receta matada: quedan $(crlf_count) · $SALIDA"
+[ "$(crlf_count)" = 0 ] && case "$SALIDA" in *"normalicé"*) true ;; *) false ;; esac && ok "…y la ejecución siguiente, con git sano, normaliza (no contesta «limpio» callado)" || mal "tras la receta matada: quedan $(crlf_count) · $SALIDA"
 echo "· un índice vacío con HEAD lleno"
 old_clone "$HOOK"
 harness_lab_git "$LAB_TREE" rm --cached -r -q .   # lo que dejaba la receta vieja si moría entre sus dos pasos

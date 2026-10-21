@@ -126,12 +126,12 @@ if [ "$RC" = 0 ] && [ "$(lab_git -C "$DEST" rev-list --count HEAD 2>&1)" = 4 ] &
 else bad "T13a la historia por el enlace no es la entera"; fi
 # el remoto de agent-skills no existe en este laboratorio y no hay credencial: si el paso hubiera querido leer otro
 # repo, habría salido rojo. Es la forma de medir «sin permiso de lectura sobre otro proyecto».
-if [ "$RC" = 0 ] && ! grep -qi 'clon' "$OUT"; then ok "T13a no clona nada ni usa la credencial de la corrida: no lee otro proyecto"
+if [ "$RC" = 0 ] && ! grep -qi 'clon' "$OUT"; then ok "T13a no clona nada ni usa la credencial de la ejecución: no lee otro proyecto"
 else bad "T13a el paso nombra un clon en un checkout del repo unido"; show; fi
 
 # T13a2 — dos veces da lo mismo (el pipeline de pull request incluye la plantilla dos veces en el mismo agente)
 run_step "$HOME_A" "$LAB/full" "$NOWHERE"; RC=$?
-if [ "$RC" = 0 ] && [ -L "$DEST" ] && [ "$(real_of "$DEST")" = "$(real_of "$LAB/full")" ]; then ok "T13a2 una segunda corrida deja el mismo enlace y sale 0"
+if [ "$RC" = 0 ] && [ -L "$DEST" ] && [ "$(real_of "$DEST")" = "$(real_of "$LAB/full")" ]; then ok "T13a2 una segunda ejecución deja el mismo enlace y sale 0"
 else bad "T13a2 la segunda corrida no dejó el enlace (código $RC)"; show; fi
 
 # T13a3 — un enlace de una corrida anterior hacia otro checkout (un agente propio que se reusa) se reemplaza

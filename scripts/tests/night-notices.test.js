@@ -202,7 +202,7 @@ test('T85 NightNotices_MaintainersClone_OneLinePerNightly_DeadIsNeverSilent_Mach
   assert.match(n.dependencias, new RegExp(`^✅ dependencias \\(${d}\\): miró y no hay nada esperando decisión`), s.all);
   assert.match(n.vigilante, new RegExp(`^✅ vigilante \\(${d}\\): corrió y entregó su resumen`), s.all);
   assert.match(n.banco, new RegExp(`^✅ banco de controles nocturno \\(${d}\\): 12 caso\\(s\\), sin rojos`), s.all);
-  assert.match(n.suites, new RegExp(`^✅ suites de prueba nocturnas \\(foto del ${d}[^)]*\\): 3 corrida\\(s\\), ninguna en rojo`), s.all);
+  assert.match(n.suites, new RegExp(`^✅ suites de prueba nocturnas \\(foto del ${d}[^)]*\\): 3 ejecución\\(es\\), ninguna en rojo`), s.all);
   assert.match(n.tablero, new RegExp(`^✅ tablero del arnés \\(${d} [0-9:]+ UTC\\): completo`), s.all);
   assert.strictEqual(s.lines.length, 5, `una línea por nocturno, ni una más:\n${s.all}`);
   assert.doesNotMatch(s.all, /leído del disco/, 'con el clon al día se lee lo publicado, sin nota');
@@ -761,7 +761,7 @@ test('T85 StalenessOfMachineRecords_ReadsWhereTheyAreWritten_SilentWhereTheyDoNo
   write(path.join(withClone.priv, '.dashboard', old), '{}');
   write(path.join(withClone.pub, '.dashboard', `metrics-${day(Date.now())}-un-producto-adhoc-def5678.json`), '{}');   // lo de hoy, en el lugar equivocado
   const a = hook(withClone, 'retro-staleness-notice.js');
-  assert.match(a.out, /retro capturer: última corrida hace \d+ días/, `no leyó los registros del clon de mantenimiento:\n${a.out}${a.err}`);
+  assert.match(a.out, /retro capturer: última ejecución hace \d+ días/, `no leyó los registros del clon de mantenimiento:\n${a.out}${a.err}`);
   // sin clon de mantenimiento los registros quedan en la carpeta del estado, que no viaja: ahí calla
   const alone = machine({ config: 'maintained' });
   write(path.join(alone.tycon, 'state', 'dashboard', old), '{}');

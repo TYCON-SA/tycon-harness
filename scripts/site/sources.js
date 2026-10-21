@@ -719,8 +719,8 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       // pase lo que pase con la bajada: lo que llegó a bajar se resume y se borra (un disco lleno no se espera a la pasada entera)
       try {
         const s = await resumir({ buzon: dirBuzon });
-        if (s.resumidas) log(`buzón: ${s.resumidas} corrida(s) resumida(s); sus conversaciones ya no ocupan el disco`);
-        if (s.fallidas) log(`buzón: ${s.fallidas} corrida(s) no se pudieron resumir y siguen en el disco: ${(s.motivos || []).join(', ')}`);
+        if (s.resumidas) log(`buzón: ${s.resumidas} ejecución(es) resumida(s); sus conversaciones ya no ocupan el disco`);
+        if (s.fallidas) log(`buzón: ${s.fallidas} ejecución(es) no se pudieron resumir y siguen en el disco: ${(s.motivos || []).join(', ')}`);
       } catch (e) { log(`buzón: no se pudieron resumir las conversaciones bajadas (${e.code || e.message}): siguen en el disco`); }
     }
     const est = r.res.estado;

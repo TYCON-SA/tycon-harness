@@ -402,7 +402,7 @@ has "T21 sin skills a la vista el motivo es que no están (la biblioteca contest
 lacks "T21 sin skills a la vista no se dice «no pude resolver»: eso es otra cosa" "${R}.out" "no pude resolver la carpeta de skills"
 lacks "T21 sin skills a la vista no corre ninguna suite" "${R}/.calls" "suite-"
 if [ -f "${R}.ci/agent-skills-suites.tsv" ]; then no "T21 sin skills a la vista quedó un agent-skills-suites.tsv (de la corrida anterior): un veredicto viejo no es un veredicto"
-else ok "T21 una corrida no deja en pie el .tsv de la anterior"; fi
+else ok "T21 una ejecución no deja en pie el .tsv de la anterior"; fi
 # la biblioteca que ubica las skills NO PUDO contestar (su vecina está y rompe al cargarse): no es «no hay skills». El
 # guion lo dice con la causa, y el paso de las suites es «no pude correr» por ESO.
 # 🔴 Con `2>/dev/null || true` la carpeta quedaría vacía y el paso diría «no encuentro las skills: ni … ni el

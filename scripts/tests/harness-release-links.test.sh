@@ -141,7 +141,7 @@ fi
 
 # ───────────────────────────────────────────── T3 ─────────────────────────────────────────────
 if corre T3; then
-  echo "T3 · Swap_ActiveFileHeld_Applies — con la versión activa tomada, la actualización se aplica en esa corrida"
+  echo "T3 · Swap_ActiveFileHeld_Applies — con la versión activa tomada, la actualización se aplica en esa ejecución"
   harness_lab_create "$BASE/lab3"
   harness_lab_release_server
   harness_lab_publish_stable 2026.10.07.1

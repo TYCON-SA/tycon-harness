@@ -156,7 +156,7 @@ correr "${OUT2B}" --repo "${REPO}" --merge "${SHA2}" --story 8.8
 ARCH2B="${OUT2B}/metrics-${HOY}-proyecto-8.8-${SHA2:0:7}.json"
 if [ -f "${ARCH2B}" ]; then
   R="$(campo "${ARCH2B}" 'd.metrics.advisor_rerun_loop_iterations.value === null && /sin volcado/.test(d.metrics.advisor_rerun_loop_iterations.unavailable_reason)')"
-  [ "${R}" = "true" ] && ok "T2 con --story sin volcado: vueltas null «sin volcado de corrida»" || bad "T2 sin volcado" "$(campo "${ARCH2B}" 'd.metrics.advisor_rerun_loop_iterations')"
+  [ "${R}" = "true" ] && ok "T2 con --story sin volcado: vueltas null «sin volcado de ejecución»" || bad "T2 sin volcado" "$(campo "${ARCH2B}" 'd.metrics.advisor_rerun_loop_iterations')"
 else
   bad "T2 --story sin volcado no escribió" "rc=$(cat "${BASE}/rc") · $(head -c 300 "${BASE}/stderr")"
 fi

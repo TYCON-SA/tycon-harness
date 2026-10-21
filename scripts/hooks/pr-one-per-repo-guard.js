@@ -143,7 +143,7 @@ const cabeceras = bloqueos.map(({ donde, enCurso }) => `🔴 ${donde} YA TIENE $
   enCurso.map((p) => `  · PR ${p.pullRequestId} — ${p.title} (rama ${String(p.sourceRefName || '').replace('refs/heads/', '')})`).join('\n')).join('\n\n');
 console.error(`${cabeceras}
 
-Abrir otro AHORA encola una segunda corrida del mismo pipeline en paralelo, y así se llena la cola
+Abrir otro AHORA encola una segunda ejecución del mismo pipeline en paralelo, y así se llena la cola
 de Azure — pasó cuatro veces el 2026-09-03. Dos salidas:
 
   1. Esperá a que esa construcción termine (suele ser cuestión de minutos) y abrí el tuyo.

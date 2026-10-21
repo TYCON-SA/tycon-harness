@@ -644,7 +644,7 @@ test('T14 Textos_RefreshMinutes_YGuia @story-2.46 @ac-11 @ac-12', () => {
   assert.strictEqual(defecto, 15);
   assert.strictEqual(TX.t('es', 'pantalla.cadaCuantoSeActualizaEl'), 'Cada cuánto el sitio relee sus datos');
   assert.strictEqual(TX.t('en', 'pantalla.cadaCuantoSeActualizaEl'), 'How often the site rereads its data');
-  for (const [idioma, rx] of [['es', /configuración.*buzón de corridas.*perfil del equipo.*no instala versiones.*Cómo se actualiza el sitio/is], ['en', /configuration.*runs mailbox.*team profile.*does not install versions.*How the site updates/is]]) {
+  for (const [idioma, rx] of [['es', /configuración.*buzón de ejecuciones.*perfil del equipo.*no instala versiones.*Cómo se actualiza el sitio/is], ['en', /configuration.*runs mailbox.*team profile.*does not install versions.*How the site updates/is]]) {
     assert.match(TX.t(idioma, 'pantalla.queReleeElSitio'), rx, idioma);
   }
   assert.strictEqual(TX.t('es', 'pantalla.siNoLoDeclarasQuinceMinutos'), `Si no lo declarás: ${defecto} minutos`);
@@ -775,7 +775,7 @@ test('T16 CambioAjeno_SinPisarse_SeReaplica @story-2.46 @ac-14', { skip: SIN_BAC
     await sitioConPlataforma({ plataforma, repo: 'perfil', archivos: PERFIL_TANDA2() }, async ({ seccion, post, pedidos, afuera, fuentes }) => {
       const s = await seccion('respuesta');
       assert.ok(s && s.oid, JSON.stringify(s));
-      // mientras se edita «Cómo contesta Claude», otro cambia «update» en el mismo archivo
+      // mientras se edita «Cómo contesta el agente», otro cambia «update» en el mismo archivo
       afuera(ORG.formatJson({ ...PERFIL, update: { ...PERFIL.update, channel: 'stable' } }));
       const borrador = { response: { ...PERFIL.response, max_chars: 1500 } };
       const rev = await post('revisar', { seccion: 'respuesta', borrador, base: s.texto, oid: s.oid });

@@ -222,7 +222,7 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, allo
         fs.symlinkSync(path.join(skillsLink, sub), where, 'junction');
       }
       personalArmed = true;
-    } catch (e) { rec.note(`lo personal no se pudo armar (${e.message}): T43 no medido en esta corrida`); }
+    } catch (e) { rec.note(`lo personal no se pudo armar (${e.message}): T43 no medido en esta ejecución`); }
     rec.fact('personal_before', { armed: personalArmed, old_is_dir: linkKind(skillsLink) === 'directory', skills_link: linkKind(skillsDir), agents_link: linkKind(agentsDir) });
 
     // 2. una versión publicada (el clon NO se actualiza) y el plan. La versión que se publica acá sale del repo INTERNO
@@ -267,7 +267,7 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, allo
       const branch = /sin credencial de Azure DevOps/.test(noOut) ? 'missing' : (/no vale para/.test(noOut) ? 'invalid' : null);
       rec.fact('azure_no_credential', { exit: noCred.exit, branch, said_missing: branch !== null, said_how: /config set azure\.token/.test(noOut) && /gestor de credenciales/.test(noOut), wrote: dirHash(home) !== homeHash0 || fs.existsSync(newTree), kind: kindOf() });
       const anc = rec.step.facts.azure_no_credential;
-      if (branch === 'invalid') rec.note('el gestor de credenciales del agente TENÍA una credencial para dev.azure.com (la rechazó el Azure de juguete): la rama «sin credencial» no se midió en esta corrida; la de «no vale», sí');
+      if (branch === 'invalid') rec.note('el gestor de credenciales del agente TENÍA una credencial para dev.azure.com (la rechazó el Azure de juguete): la rama «sin credencial» no se midió en esta ejecución; la de «no vale», sí');
       if (noCred.exit !== 1 || anc.kind !== 'tree') rec.finding('migrate:azure-no-credential-not-refused', 'team', `sin credencial de Azure DevOps, migrate salió ${noCred.exit} (kind ${anc.kind}): tenía que salir 1 sin escribir (TZ14): ${lastLines(noOut, 3)}`, 'W8', { severity: 'breaks' });
       if (anc.wrote) rec.finding('migrate:azure-no-credential-wrote', 'team', 'sin credencial de Azure DevOps la mudanza escribió algo en la HOME (TZ14)', 'W8', { severity: 'breaks' });
       if (!anc.said_missing) rec.finding('migrate:azure-no-credential-silent', 'team', `sin credencial de Azure DevOps la mudanza no lo dijo (TZ14): ${lastLines(noOut, 3)}`, 'W8', { severity: 'loses-control' });

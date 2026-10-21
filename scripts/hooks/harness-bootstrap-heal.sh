@@ -134,7 +134,7 @@ if [ "${TYCON_NO_AUTOINSTALL:-}" = "1" ]; then
 elif bash "$INSTALLER" 2>/dev/null; then
   CORRIDA="y el instalador ya corrió"
 else
-  CORRIDA="el instalador falló en esta corrida — vuelve a intentar en el próximo arranque"
+  CORRIDA="el instalador falló en esta ejecución — vuelve a intentar en el próximo arranque"
 fi
 
 echo "🔧 TYCON — tu línea de arranque no llamaba al instalador del arnés, así que bajabas las"

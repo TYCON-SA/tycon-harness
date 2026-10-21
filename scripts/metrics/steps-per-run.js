@@ -181,18 +181,18 @@ function medir(opts) {
 function resumen(r) {
   const L = [];
   const p = r.pasos;
-  L.push(`Pasos por corrida — ${r.corridas} corrida(s) con consumo medido` + (r.sin_medir ? ` · ${r.sin_medir} sin medir (no se estiman)` : ''));
+  L.push(`Pasos por ejecución — ${r.corridas} ejecución(es) con consumo medido` + (r.sin_medir ? ` · ${r.sin_medir} sin medir (no se estiman)` : ''));
   if (r.legible === false) L.push(`🔴 La carpeta del buzón no se pudo leer (${r.motivo_ilegible}): no es un buzón vacío.`);
-  if (r.carpetas_ilegibles) L.push(`🔴 ${r.carpetas_ilegibles} carpeta(s) del buzón no se pudieron leer: sus corridas FALTAN en este número, no son cero.`);
+  if (r.carpetas_ilegibles) L.push(`🔴 ${r.carpetas_ilegibles} carpeta(s) del buzón no se pudieron leer: sus ejecuciones FALTAN en este número, no son cero.`);
   if (r.ilegibles) L.push(`🔴 ${r.ilegibles} volcado(s) no se pudieron leer (¿subida cortada?): no están en la mediana.`);
-  if (!r.corridas) { L.push('🔴 Ninguna corrida con consumo medido: no hay línea base que publicar.'); return L.join('\n'); }
+  if (!r.corridas) { L.push('🔴 Ninguna ejecución con consumo medido: no hay línea base que publicar.'); return L.join('\n'); }
   L.push(`  mediana ${Math.round(p.mediana)} · p25 ${Math.round(p.p25)} · p75 ${Math.round(p.p75)} · rango ${p.min}–${p.max}`);
   L.push('');
-  L.push('  mes      corridas   mediana');
+  L.push('  mes      ejecuciones   mediana');
   for (const m of r.por_mes) L.push(`  ${m.mes}     ${String(m.n).padStart(5)}   ${String(Math.round(m.mediana)).padStart(7)}`);
   L.push('');
-  L.push('  🔴 El consumo de una corrida lo explica la cantidad de pasos (correlación 0,99 sobre 146');
-  L.push('     corridas, 2026-09-20) y el 98,9 % son relecturas del contexto. Este número es la palanca;');
+  L.push('  🔴 El consumo de una ejecución lo explica la cantidad de pasos (correlación 0,99 sobre 146');
+  L.push('     ejecuciones, 2026-09-20) y el 98,9 % son relecturas del contexto. Este número es la palanca;');
   L.push('     los tokens son su consecuencia.');
   return L.join('\n');
 }

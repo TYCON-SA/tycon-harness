@@ -1397,12 +1397,12 @@ fi
 #    HOME del agente de Azure haría que el agente subiera sus registros al buzón como si fuera una máquina. Dentro de
 #    una corrida de Azure DevOps (TF_BUILD) la tanda no se lanza.
 if [[ "${TF_BUILD:-}" =~ ^[Tt][Rr][Uu][Ee]$ ]] && [[ "$_RESCATAR" == "1" || "$_SUBIR" == "1" || "$_BAJAR" == "1" || "$_RECOLECTAR" == "1" ]]; then
-  echo "tycon: dentro de una corrida de Azure DevOps (TF_BUILD) — el rescate del hilo, la recolección de hallazgos y la subida/bajada de corridas no se lanzan: un agente de CI no es una máquina del equipo" >&2
+  echo "tycon: dentro de una ejecución de Azure DevOps (TF_BUILD) — el rescate del hilo, la recolección de hallazgos y la subida/bajada de ejecuciones no se lanzan: un agente de CI no es una máquina del equipo" >&2
   _RESCATAR=0; _SUBIR=0; _BAJAR=0; _RECOLECTAR=0
 fi
 if [[ "$_RESCATAR" == "1" || "$_SUBIR" == "1" || "$_BAJAR" == "1" || "$_RECOLECTAR" == "1" ]] && ! mkdir -p "$HOME/.claude/.tycon-pipeline" 2>/dev/null; then
   # 🔴 Sin esa carpeta los registros no se pueden escribir y el fondo no dejaría rastro: se dice acá.
-  echo "⚠ tycon: no se pudo crear $HOME/.claude/.tycon-pipeline — el rescate del hilo, la recolección de hallazgos y la subida/bajada de corridas NO se lanzan en este arranque" >&2
+  echo "⚠ tycon: no se pudo crear $HOME/.claude/.tycon-pipeline — el rescate del hilo, la recolección de hallazgos y la subida/bajada de ejecuciones NO se lanzan en este arranque" >&2
   _RESCATAR=0; _SUBIR=0; _BAJAR=0; _RECOLECTAR=0
 fi
 if [[ "$_RESCATAR" == "1" || "$_SUBIR" == "1" || "$_BAJAR" == "1" || "$_RECOLECTAR" == "1" ]]; then

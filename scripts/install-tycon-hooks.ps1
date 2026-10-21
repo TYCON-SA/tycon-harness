@@ -265,7 +265,7 @@ function Write-NodeChunks($Chunks) {
 # ── fin de la tanda de Node (las pruebas que corren un bloque suelto de este archivo copian hasta acá) ──────────────
 # Sin lock.js (una copia parcial del árbol) sigue sin candado, y lo DICE en una línea, como cuando lock.js no contesta.
 if (-not $Check -and $env:TYCON_HARNESS_LOCK_HELD -ne '1' -and -not (Test-Path $LockJs)) {
-    Write-Host "⚠ tycon: falta $LockJs — sigo sin candado (otra corrida a la vez podría pisar settings.json)"
+    Write-Host "⚠ tycon: falta $LockJs — sigo sin candado (otra ejecución a la vez podría pisar settings.json)"
 }
 if (-not $Check -and $env:TYCON_HARNESS_LOCK_HELD -ne '1' -and (Test-Path $LockJs)) {
     $lockOut = ''
@@ -278,7 +278,7 @@ if (-not $Check -and $env:TYCON_HARNESS_LOCK_HELD -ne '1' -and (Test-Path $LockJ
     if ($null -eq $lock) {
         Write-Host "⚠ tycon: no pude tomar el candado de instalación ($LockJs) — sigo sin candado"
     } elseif (-not $lock.ok) {
-        Write-Host "tycon: otra sesión está instalando ($($lock.reason)) — no escribo nada; esa corrida hace el mismo trabajo"
+        Write-Host "tycon: otra sesión está instalando ($($lock.reason)) — no escribo nada; esa ejecución hace el mismo trabajo"
         exit 0
     } else {
         $TyconLockTaken = $true
@@ -762,7 +762,7 @@ function Invoke-HarnessFromExisting {
     $prev = $env:TYCON_HARNESS_LOCK_HELD
     $env:TYCON_HARNESS_LOCK_HELD = '1'
     try { & node $harnessJs install --from-existing }
-    catch { Write-Host "⚠ tycon: no pude crear el estado del mecanismo de instalación (harness.js install --from-existing: $($_.Exception.Message)); seguís con la línea de arranque vieja y se reintenta en la próxima corrida" }
+    catch { Write-Host "⚠ tycon: no pude crear el estado del mecanismo de instalación (harness.js install --from-existing: $($_.Exception.Message)); seguís con la línea de arranque vieja y se reintenta en la próxima ejecución" }
     finally {
         if ($null -eq $prev) { Remove-Item Env:TYCON_HARNESS_LOCK_HELD -ErrorAction SilentlyContinue } else { $env:TYCON_HARNESS_LOCK_HELD = $prev }
     }
@@ -1048,8 +1048,8 @@ foreach ($n in @($Apply.notInstalled)) {
     $eolFix = "git -C `"$repoFwd`" rm --cached -r -q .   y después   git -C `"$repoFwd`" reset --hard -q"
     switch ($n.kind) {
         'missing' { Write-Host "⚠ tycon: el control $($n.relpath) ($($n.event)) NO corre en esta máquina: su guion no está en el disco — la copia en $repoFwd está atrasada o incompleta: actualizala y volvé a correr el instalador" }
-        'unverified' { Write-Host "⚠ tycon: el control $($n.relpath) ($($n.event)) NO quedó registrado: no pude leer su guion para comprobar sus finales de línea ($($n.path): $($n.reason)). Con finales de Windows (\r\n) sale 255 al correr, y sin leerlo no sé si los tiene: no lo registro como si frenara (¿lo tiene abierto otro programa?); se vuelve a intentar en la próxima corrida" }
-        'unverified-registered' { Write-Host "⚠ tycon: el control $($n.relpath) ($($n.event)) está registrado y no pude leer su guion para comprobar sus finales de línea ($($n.path): $($n.reason)): no sé si funciona. Queda registrado; se vuelve a intentar en la próxima corrida" }
+        'unverified' { Write-Host "⚠ tycon: el control $($n.relpath) ($($n.event)) NO quedó registrado: no pude leer su guion para comprobar sus finales de línea ($($n.path): $($n.reason)). Con finales de Windows (\r\n) sale 255 al correr, y sin leerlo no sé si los tiene: no lo registro como si frenara (¿lo tiene abierto otro programa?); se vuelve a intentar en la próxima ejecución" }
+        'unverified-registered' { Write-Host "⚠ tycon: el control $($n.relpath) ($($n.event)) está registrado y no pude leer su guion para comprobar sus finales de línea ($($n.path): $($n.reason)): no sé si funciona. Queda registrado; se vuelve a intentar en la próxima ejecución" }
         'unsafe-path' { Write-Host "⚠ tycon: el control $($n.relpath) ($($n.event)) NO quedó registrado: su ruta trae «$($n.char)» ($($n.path)), y el comando con que se registra lo lee un shell, que con ese carácter leería otra ruta. No escribo un comando roto. Remedio: que ni la carpeta del clon ni la de usuario traigan `$, acento grave o comilla doble en su nombre" }
         'crlf' { Write-Host "⚠ tycon: el control $($n.relpath) ($($n.event)) NO quedó registrado: en el disco tiene finales de línea de Windows (\r\n) y así sale 255 al correr (un freno así no frena). Remedio, con ese clon sin cambios locales: $eolFix — y volvé a correr el instalador" }
         'crlf-registered' { Write-Host "⚠ tycon: el control $($n.relpath) ($($n.event)) está registrado pero NO funciona: en el disco tiene finales de línea de Windows (\r\n) y así sale 255 al correr (un freno así no frena). Queda registrado. Remedio, con ese clon sin cambios locales: $eolFix" }
@@ -1057,7 +1057,7 @@ foreach ($n in @($Apply.notInstalled)) {
     }
 }
 if (@($Apply.deferred).Count -gt 0) {
-    Write-Host "⚠ tycon: $(@($Apply.deferred).Count) control(es) .sh ($(@($Apply.deferred) -join ', ')) se registran en la corrida siguiente: me lanzó un harness.js de una versión anterior, cuya comprobación de salud no sabe revisar un .sh en Windows y haría volver atrás esta actualización"
+    Write-Host "⚠ tycon: $(@($Apply.deferred).Count) control(es) .sh ($(@($Apply.deferred) -join ', ')) se registran en la ejecución siguiente: me lanzó un harness.js de una versión anterior, cuya comprobación de salud no sabe revisar un .sh en Windows y haría volver atrás esta actualización"
 }
 $Added = @($Apply.added | Where-Object { $_ })
 $Removed = @($Apply.removed | Where-Object { $_ })
@@ -1348,9 +1348,9 @@ if ((Integ-Prendida 'mailbox') -and (Get-LegacyEnv 'TYCON_NO_UPLOAD_RUNS' -Where
         $upStart = @{ FilePath = $script:NodeProgram; ArgumentList = $upLine }
         if ($IsWindows) { $upStart.WindowStyle = 'Hidden' } else { $upStart.RedirectStandardOutput = '/dev/null' }
         # la constancia de que se lanzó, antes de lanzar: si node muere sin escribir nada, el registro igual lo dice
-        Add-Content -LiteralPath $upLog -Value ("[{0}] tycon: el arranque lanza la subida de corridas" -f (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')) -Encoding utf8 -ErrorAction SilentlyContinue
+        Add-Content -LiteralPath $upLog -Value ("[{0}] tycon: el arranque lanza la subida de ejecuciones" -f (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')) -Encoding utf8 -ErrorAction SilentlyContinue
         Start-Process @upStart -ErrorAction Stop
-    } catch { Write-Host "!! tycon: no pude lanzar la subida de corridas al buzón ($($_.Exception.Message))" }
+    } catch { Write-Host "!! tycon: no pude lanzar la subida de ejecuciones al buzón ($($_.Exception.Message))" }
 }
 
 # una linea con el estado de las ocho integraciones

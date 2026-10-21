@@ -249,7 +249,7 @@ test('T22 2.24-TeamConfig_SinBuzon_DiceQueNoSeSube', async () => {
   const tree = path.join(__dirname, '..', '..');
   await withPage({ tree, readers: { repos: toyReader, operations: null }, mailboxFile: path.join(tmp('sin-buzon'), 'corridas-buzon.json') }, async (p) => {
     assert.deepStrictEqual((await api(p, 'state')).json.mailbox, { hay: false });
-    assert.match((await request(p.port, { pathname: `/?k=${p.token}` })).text, /sin buzón: esta organización no sube corridas/);
+    assert.match((await request(p.port, { pathname: `/?k=${p.token}` })).text, /sin buzón: esta organización no sube ejecuciones/);
   });
 });
 

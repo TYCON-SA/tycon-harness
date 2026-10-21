@@ -846,7 +846,7 @@ function forward(ctx, state, o) {
 
   skills.url = harness.url; skills.commit = target; skills.previous = from;
   state.repoint = { applied: { at, from: fromRec, to: toRec } };
-  try { if (o.write) o.write(); } catch (e) { log(`repoint: el clon ya está re-apuntado y no pude grabar el estado ahora (${e.code || e.message}): lo graba el final de esta corrida`); }
+  try { if (o.write) o.write(); } catch (e) { log(`repoint: el clon ya está re-apuntado y no pude grabar el estado ahora (${e.code || e.message}): lo graba el final de esta ejecución`); }
   finish();
   const text = `skills re-apuntadas: ${dir} ahora sigue al repo unificado (${harness.url}) y quedó en el mismo commit que el arnés (${sha7(target)}); venía de ${oldUrl} @ ${sha7(from)}. Lo tuyo —sin versionar, ignorado, stash— no se movió. Se deshace con la llave update.skills_source en «separate»`;
   log(`repoint: ${text}`);
@@ -931,7 +931,7 @@ function back(ctx, state, o) {
   }
   skills.url = from.url; skills.commit = from.commit; skills.previous = from.previous === undefined ? null : from.previous;
   delete state.repoint;
-  try { if (o.write) o.write(); } catch (e) { log(`repoint: el clon ya volvió y no pude grabar el estado ahora (${e.code || e.message}): lo graba el final de esta corrida`); }
+  try { if (o.write) o.write(); } catch (e) { log(`repoint: el clon ya volvió y no pude grabar el estado ahora (${e.code || e.message}): lo graba el final de esta ejecución`); }
   finish();
   for (const n of u.notes) log(`repoint: ${n}`);
   const text = `skills de vuelta en el repo viejo: ${dir} volvió a ${from.url} @ ${sha7(from.commit)} y muestra todo otra vez (la llave update.skills_source está en «separate»)${u.notes.length ? ` — ${u.notes.join('; ')}` : ''}`;

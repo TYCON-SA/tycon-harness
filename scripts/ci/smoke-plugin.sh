@@ -87,7 +87,7 @@ registrar_despliegue() {
   if [ "$REGISTRO_OK" = si ]; then
     registro_despliegue desplegado plugin "$PLUGIN" "$ESPERADA" "$ESPERADO_HASH" || true
   elif [ "${TF_BUILD:-}" = "True" ]; then
-    echo "##vso[task.logissue type=warning]registro-despliegue: no está deploy-record.sh al lado del humo (¿el artefacto arnes-ci llegó incompleto?) — esta corrida queda SIN registro de despliegue"
+    echo "##vso[task.logissue type=warning]registro-despliegue: no está deploy-record.sh al lado del humo (¿el artefacto arnes-ci llegó incompleto?) — esta ejecución queda SIN registro de despliegue"
   fi
 }
 

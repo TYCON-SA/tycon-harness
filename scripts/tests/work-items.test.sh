@@ -360,7 +360,7 @@ correr >/dev/null
 rc=$(correr)
 { [ "$rc" -eq 0 ] && [ "$(cuenta crear)" -eq 1 ] \
   && ped 'p.creados.length === 0 && p.adoptados.length === 0 && p.existentes === 1'; } \
-  && ok "T7: la segunda corrida no crea ni adopta nada y cuenta el pedido como existente" \
+  && ok "T7: la segunda ejecución no crea ni adopta nada y cuenta el pedido como existente" \
   || no "T7: rc=$rc creates=$(cuenta crear) · $(pie)"
 
 # ── T8. el dueño deducido: el único administrador además del responsable de respaldo · grupo leído UNA vez ───────────
@@ -659,7 +659,7 @@ rc=$(TYCON_AZ_FAIL=crear:arnes:abc12345 correr)
 { [ "$rc" -eq 0 ] && ! grep -q '^pedidos:' "$TMP/pend/pending/abc12345.yaml" \
   && grep -Eq '^  - Proy A: [0-9]+$' "$TMP/pend/pending/def67890.yaml" \
   && ped 'p.fallidos.length === 1 && p.fallidos[0].ficha === "abc12345" && p.fallidos[0].paso === "crear" && p.creados.length === 1'; } \
-  && ok "T15: el create que falla para una ficha no impide crear el de la otra, y la corrida sale 0" \
+  && ok "T15: el create que falla para una ficha no impide crear el de la otra, y la ejecución sale 0" \
   || no "T15: rc=$rc · $(pie)"
 
 # ── T15b. 🔴 «sigue sin pedido» explica cada ficha con SU fallo, no con el primero que encuentra ────
@@ -834,7 +834,7 @@ for forma in '{}' '[null, "x", 3]'; do
   snapshot $HOY "[$(p1 aaa11111 browserslist A/A)]"
   rc=$(correr)
   { [ "$rc" -eq 0 ] && [ "$(cuenta crear)" -eq 1 ] && ped 'Array.isArray(p.creados)'; } \
-    && ok "T17d ($forma): 🔴 unos fallos de anoche con forma inesperada no tumban la corrida" \
+    && ok "T17d ($forma): 🔴 unos fallos de anoche con forma inesperada no tumban la ejecución" \
     || no "T17d ($forma): rc=$rc · $(pie)"
 done
 
@@ -1212,7 +1212,7 @@ pipeline_ok(){
 }
 salida=$(pipeline_ok "$YAML")
 [ "$salida" = ok ] \
-  && ok "T25: el paso de pedidos va entre la revisión y el commit, con el token, usa la MISMA fecha que la revisión (una corrida que cruza la medianoche no busca el snapshot de mañana), y el rojo lo pone un paso final" \
+  && ok "T25: el paso de pedidos va entre la revisión y el commit, con el token, usa la MISMA fecha que la revisión (una ejecución que cruza la medianoche no busca el snapshot de mañana), y el rojo lo pone un paso final" \
   || no "T25: $salida"
 
 # ── T25b. 🔴 el chequeo de T25 se pone ROJO si a cualquiera de las dos llamadas le falta `--today` ─

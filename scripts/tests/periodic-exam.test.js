@@ -258,7 +258,7 @@ test('T2 frecuencia_en_un_solo_lugar: el disparador se regenera desde la config'
   assert.notStrictEqual(dosDias, otro, 'cambiar la config cambia el disparador, sin editar código');
 });
 
-test('T24 la_segunda_corrida_de_la_semana_corre: el sello es por corrida, no por semana', () => {
+test('T24 la_segunda_corrida_de_la_semana_corre: el sello es por ejecución, no por semana', () => {
   // Martes corrió; el viernes (3 días después) le vuelve a tocar. Con un sello SEMANAL, no.
   assert.strictEqual(E.periodoCumplido(haceDias(3), new Date(), 3), true, 'viernes tras martes');
   assert.strictEqual(E.periodoCumplido(haceDias(0), new Date(), 3), false, 'el mismo día no');
@@ -290,7 +290,7 @@ test('T24c el_sello_con_nombre_viejo_sigue_valiendo: leerlo no lo migra, sellar 
   fs.writeFileSync(viejo, vencido);
   const r2 = correr(b);
   assert.strictEqual(r2.status, 0, r2.stdout + r2.stderr);
-  assert.ok(fs.existsSync(b.sello), 'la corrida completa sella con el nombre nuevo');
+  assert.ok(fs.existsSync(b.sello), 'la ejecución completa sella con el nombre nuevo');
   assert.strictEqual(E.periodoCumplido(fs.readFileSync(b.sello, 'utf8').trim(), new Date(), 3), false, 'y el sello nuevo es el de recién');
   assert.strictEqual(fs.readFileSync(viejo, 'utf8'), vencido, 'el viejo queda intacto hasta el retiro');
 });
@@ -313,7 +313,7 @@ test('T59 cada_dia_programado_corre_con_la_config_real: el período no se come e
     const sello = new Date(disparo.getTime() + DURACION).toISOString();
     const proximo = new Date(disparo.getTime() + hueco * DIA);
     assert.strictEqual(E.periodoCumplido(sello, proximo, cfg.days_between_runs), true,
-      `la corrida del día ${dia} deja correr la del día ${siguiente} (${hueco} días después)`);
+      `la ejecución del día ${dia} deja correr la del día ${siguiente} (${hueco} días después)`);
   });
 });
 
@@ -347,7 +347,7 @@ test('T4 candado_muerto_no_bloquea: un PID que ya no existe no frena nada', () =
   // ser una corrida en curso (los PIDs se reciclan, así que el plazo tiene que existir).
   escribir(b.lock, { pid: process.pid, ts: haceDias(1), maquina: 'x' });
   assert.strictEqual(E.estadoDelCandado(b.lock, Date.now()).libre, false,
-    'a las 24 h con el proceso VIVO el candado aguanta: una corrida larga no es una corrida muerta');
+    'a las 24 h con el proceso VIVO el candado aguanta: una ejecución larga no es una ejecución muerta');
   escribir(b.lock, { pid: process.pid, ts: haceDias(4), maquina: 'x' });
   assert.strictEqual(E.estadoDelCandado(b.lock, Date.now()).libre, true,
     'pasado el plazo largo sí se roba: si no, un PID reciclado lo dejaría trabado para siempre');
@@ -398,10 +398,10 @@ test('T41 el candado no vence mientras su dueño lo esté refrescando', async ()
     segunda = leer();
   }
   await new Promise((r) => p.on('close', r));
-  assert.ok(segunda && segunda !== primera, 'la marca del candado se refresca mientras la corrida vive');
+  assert.ok(segunda && segunda !== primera, 'la marca del candado se refresca mientras la ejecución vive');
 });
 
-test('T42 al terminar, cada corrida borra SU candado y no el de otro', () => {
+test('T42 al terminar, cada ejecución borra SU candado y no el de otro', () => {
   // Si a una corrida le roban el candado mientras corre, al terminar borraría el del ladrón y
   // dejaría el sistema abierto para una TERCERA. Se borra sólo si sigue siendo el propio.
   const b = banco();
@@ -468,7 +468,7 @@ test('T56 un candado ilegible RECIÉN escrito está ocupado, no libre', () => {
   fs.writeFileSync(b.lock, '');
   const est = E.estadoDelCandado(b.lock, Date.now());
   assert.strictEqual(est.libre, false,
-    '🔴 el rojo previo: contra origin/main esto daba "libre" y arrancaba la segunda corrida encima');
+    '🔴 el rojo previo: contra origin/main esto daba "libre" y arrancaba la segunda ejecución encima');
   assert.strictEqual(est.motivo, 'candado-en-escritura', 'y dice POR QUÉ no está libre');
 
   // Un cuerpo cortado a la mitad es el mismo caso: ilegible y reciente.
@@ -544,7 +544,7 @@ test('T57b liberar: un candado ILEGIBLE tampoco se da por propio', () => {
     '🔴 contra origin/main se borraba: un candado que no se puede leer no es prueba de que sea mío');
 });
 
-test('T58 cinco corridas a la vez, tres tandas: arranca UNA y sólo una', async () => {
+test('T58 cinco ejecuciones a la vez, tres tandas: arranca UNA y sólo una', async () => {
   // 🔴 La forma severa de T39: en vez de repetir 10 veces el par de corridas
   // (2 oportunidades de colisión por tanda y ~30 s de suite), se lanzan CINCO a la vez —10 pares por
   // tanda— y la tanda se repite 3 veces. Más presión sobre la ventana y menos reloj.
@@ -602,14 +602,14 @@ test('T1 el nocturno corre el CHEQUEO DE VIDA completo, sin acotar, y deja su ve
   // número; los dos que NO puede medir con una corrida y una herramienta —inestabilidad y paridad—
   // en null con su motivo, nunca 0. El examen profundo (`--tool both --runs 3`) los mide, a pedido.
   assert.strictEqual(typeof rep.criterio, 'number', 'veredicto de criterio');
-  assert.strictEqual(rep.inestables, null, '🔴 con una corrida, "inestables" no se mide: null, no 0');
+  assert.strictEqual(rep.inestables, null, '🔴 con una ejecución, "inestables" no se mide: null, no 0');
   assert.strictEqual(rep.paridadReal, null, '🔴 con una herramienta, la paridad no se mide: null, no 0');
   assert.ok(rep.no_medido && rep.no_medido.inestables && rep.no_medido.paridad, 'y el motivo viaja en el reporte');
   // Lo que sí tiene que seguir estando es el desglose por causa.
   assert.strictEqual(typeof rep.fugas, 'number', 'las fugas del corral se cuentan aparte del criterio');
   assert.ok(rep.maquina, 'queda dicho qué máquina lo midió');
 
-  assert.ok(fs.existsSync(b.sello), 'una corrida completa SÍ sella');
+  assert.ok(fs.existsSync(b.sello), 'una ejecución completa SÍ sella');
   assert.strictEqual(E.periodoCumplido(fs.readFileSync(b.sello, 'utf8').trim(), new Date(), 3), false,
     'y el sello recién puesto cierra el período');
 });
@@ -637,7 +637,7 @@ test('T26 sin_clave_de_api_ni_credencial_nueva: el corredor no lee ninguna llave
 // T12 / T6 / T7 — lo que pasa cuando NO se pudo medir
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-test('T12 sello_no_se_marca_si_no_termino: una corrida que muere no se come el turno', () => {
+test('T12 sello_no_se_marca_si_no_termino: una ejecución que muere no se come el turno', () => {
   const b = banco({ modoRunner: 'dies' });
   const r = correr(b);
   assert.notStrictEqual(r.status, 0, 'no pudo medir → exit ≠ 0');
@@ -666,7 +666,7 @@ test('T6 corrida_incompleta_no_es_verde: queda registrada con su motivo y no pis
   // Y el aviso la trata como NO MEDIDO, jamás como verde.
   const a = avisar(b);
   assert.match(a.stdout, /incompleto|no termin|no pudo medir/i);
-  assert.ok(!/✅/.test(a.stdout), 'una corrida incompleta nunca se muestra en verde');
+  assert.ok(!/✅/.test(a.stdout), 'una ejecución incompleta nunca se muestra en verde');
 });
 
 test('T6b la sesión que se cae A MITAD del examen tampoco es verde', () => {
@@ -679,14 +679,14 @@ test('T6b la sesión que se cae A MITAD del examen tampoco es verde', () => {
 
   const r = correr(b);
   assert.notStrictEqual(r.status, 0);
-  assert.match(r.stdout + r.stderr, /error de corrida|no pude medir|no midi/i);
+  assert.match(r.stdout + r.stderr, /error de ejecución|no pude medir|no midi/i);
   assert.ok(!fs.existsSync(b.sello), 'no sella');
   assert.strictEqual(JSON.parse(fs.readFileSync(b.reporteQueViaja, 'utf8')).ts.slice(0, 10),
     haceDias(2).slice(0, 10), 'la medición buena anterior sobrevive');
   assert.strictEqual(JSON.parse(fs.readFileSync(b.intento, 'utf8')).estado, 'incompleto');
 });
 
-test('T35 una corrida donde TODO se salteó por falta de un MCP no es una corrida completa', () => {
+test('T35 una ejecución donde TODO se salteó por falta de un MCP no es una ejecución completa', () => {
   // El examen puede terminar con los 97 casos
   // SALTEADOS por un servidor MCP ausente. Cero revisores evaluados de verdad, y sin embargo
   // criterio/inestables/paridad quedan todos en 0 — o sea, indistinguible de un verde perfecto.
@@ -703,7 +703,7 @@ test('T35 una corrida donde TODO se salteó por falta de un MCP no es una corrid
     haceDias(2).slice(0, 10), 'no pisa la última medición buena');
 });
 
-test('T36 si UNA de las dos herramientas se cayó, la corrida SÍ midió — pero se dice', () => {
+test('T36 si UNA de las dos herramientas se cayó, la ejecución SÍ midió — pero se dice', () => {
   // Se cuentan ranuras, no casos: con las dos herramientas hay dos ranuras por caso.
   // Si se compararan errores contra CASOS, una herramienta caída daría "no midió" y tiraría
   // a la basura la medición de la otra. Contar ranuras: media medición es medición, y el
@@ -716,7 +716,7 @@ test('T36 si UNA de las dos herramientas se cayó, la corrida SÍ midió — per
   assert.strictEqual(r.status, 0, r.stdout + r.stderr);
   assert.ok(fs.existsSync(b.reporteQueViaja), 'la mitad que midió se guarda');
   const a = avisar(b);
-  assert.match(a.stdout, /error de corrida|no llegaron a correr/i,
+  assert.match(a.stdout, /error de ejecución|no llegaron a correr/i,
     '🔴 y el aviso lo DICE: un tercio del examen caído no puede leerse como verde');
 });
 
@@ -730,7 +730,7 @@ test('T37 el aviso cuenta los casos que terminaron en error, no sólo los tres t
     erroresDeCorrida: 30, failed: 30, maquina: 'mini' });
   const a = avisar(b);
   assert.match(a.stdout, /30/, 'los 30 casos rotos se ven');
-  assert.match(a.stdout, /error de corrida|no llegaron a correr/i);
+  assert.match(a.stdout, /error de ejecución|no llegaron a correr/i);
 });
 
 test('T38 el aviso deja constancia de los casos salteados por un MCP ausente', () => {
@@ -743,7 +743,7 @@ test('T38 el aviso deja constancia de los casos salteados por un MCP ausente', (
   assert.match(a.stdout, /salte/i, 'constancia, no verde');
 });
 
-test('T39 el candado se toma ANTES de la sonda: dos corridas simultáneas, una sola arranca', async () => {
+test('T39 el candado se toma ANTES de la sonda: dos ejecuciones simultáneas, una sola arranca', async () => {
   // 🔴 Con dos PIDs reales: el candado se toma de forma atómica antes de la sonda de sesión.
   // Si se CHEQUEARA en la decisión y se ESCRIBIERA recién después de la sonda de sesión, que puede tardar hasta dos
   // minutos, dos invocaciones que cayeran en esa ventana pasarían las dos y arrancarían el examen
@@ -930,7 +930,7 @@ test('T11 corrida_acotada_no_pisa_la_completa: el nombre sale del alcance, no de
   const acotada = N.nombreDeReporte({ tool: 'claude', only: ['tycon-story-validator'] });
   assert.strictEqual(acotada.alcance, 'acotado');
   assert.notStrictEqual(acotada.nombre, 'advisors-claude.json',
-    '🔴 una corrida de 3 revisores no puede pisar la foto de los 28');
+    '🔴 una ejecución de 3 revisores no puede pisar la foto de los 28');
   assert.match(acotada.nombre, /parcial/, 'y se ve en el nombre que es parcial');
 
   // Determinista y sin caracteres que rompan una ruta.
@@ -1033,18 +1033,18 @@ test('T50 una_corrida_y_una_herramienta: los rubros imposibles salen NO MEDIDOS,
 
   assert.match(a.stdout, /1 de criterio/, 'lo que SÍ se midió se sigue mostrando con su número');
   assert.ok(!/0 inestables/.test(a.stdout),
-    '🔴 "0 inestables" con una sola corrida es un cero que significa "no miré"');
+    '🔴 "0 inestables" con una sola ejecución es un cero que significa "no miré"');
   assert.ok(!/paridad rota 0/.test(a.stdout),
     '🔴 "paridad rota 0" con una sola herramienta es el mismo cero, con otro nombre');
   assert.match(a.stdout, /no medid[ao]/i,
     'y se dice con todas las letras que esos rubros no se midieron');
-  assert.match(a.stdout, /--runs 2|2 corridas|al menos 2/i,
-    'con el motivo accionable de la inestabilidad: cuántas corridas hacen falta');
+  assert.match(a.stdout, /--runs 2|2 ejecuciones|al menos 2/i,
+    'con el motivo accionable de la inestabilidad: cuántas ejecuciones hacen falta');
   assert.match(a.stdout, /--tool both|las dos herramientas/i,
     'y el de la paridad: hacen falta las dos herramientas');
 });
 
-test('T51 el espejo: con dos herramientas y tres corridas, un cero SÍ es un cero', () => {
+test('T51 el espejo: con dos herramientas y tres ejecuciones, un cero SÍ es un cero', () => {
   const b = banco();
   escribir(b.reporteQueViaja, { kind: 'examen-periodico', estado: 'completo', alcance: 'completo',
     ts: new Date().toISOString(), tool: 'both', runs: 3, maquina: 'mini',
@@ -1069,7 +1069,7 @@ test('T52 un reporte que no declara CÓMO se produjo no se lee como medido ni se
   assert.match(a.stdout, /1 inestables/, 'los números que el reporte trae se respetan');
 });
 
-test('T55 el productor REAL deja null + motivo: --reclassify --write sobre un reporte de una corrida', () => {
+test('T55 el productor REAL deja null + motivo: --reclassify --write sobre un reporte de una ejecución', () => {
   // T50-T54 y el smoke ejercitan el AVISO y el examen,
   // pero el `null` lo fabrica el runner falso. Éste es el único camino de `advisor-runner.js` que
   // escribe un reporte sin llamar a un modelo: reclasificar uno ya escrito. Un reporte con los ceros
@@ -1094,7 +1094,7 @@ test('T55 el productor REAL deja null + motivo: --reclassify --write sobre un re
   assert.strictEqual(d.inestables, null, '🔴 el productor real seguía escribiendo 0 donde no midió');
   assert.strictEqual(d.paridadReal, null);
   assert.strictEqual(d.parityBreaks, null);
-  assert.ok(d.no_medido && /corrida/.test(d.no_medido.inestables) && /herramienta/.test(d.no_medido.paridad), 'con el motivo');
+  assert.ok(d.no_medido && /ejecución/.test(d.no_medido.inestables) && /herramienta/.test(d.no_medido.paridad), 'con el motivo');
   assert.match(r.stdout, /inestables=no medido/, 'y la consola dice lo mismo que el archivo');
 
   // Espejo: con las dos herramientas y tres corridas, los ceros son ceros y `no_medido` no existe.
@@ -1127,13 +1127,13 @@ test('T53 el productor marca los rubros imposibles como no medidos, con el motiv
   const { rubrosNoMedidos } = require(path.join(TCG, 'scripts', 'controls-bench', 'unmeasured-categories.js'));
 
   const vida = rubrosNoMedidos({ tool: 'claude', runs: 1 });
-  assert.ok(vida.inestables, 'con 1 corrida, la inestabilidad no se midió');
-  assert.match(vida.inestables, /corrida/i, 'y el motivo lo dice en castellano');
+  assert.ok(vida.inestables, 'con 1 ejecución, la inestabilidad no se midió');
+  assert.match(vida.inestables, /ejecución/i, 'y el motivo lo dice en castellano');
   assert.ok(vida.paridad, 'con 1 herramienta, la paridad no se midió');
   assert.match(vida.paridad, /herramienta/i);
 
   const completo = rubrosNoMedidos({ tool: 'both', runs: 3 });
-  assert.strictEqual(completo.inestables, null, 'con 3 corridas la inestabilidad SÍ se mide');
+  assert.strictEqual(completo.inestables, null, 'con 3 ejecuciones la inestabilidad SÍ se mide');
   assert.strictEqual(completo.paridad, null, 'con las dos herramientas la paridad SÍ se mide');
 
   // Las dos mitades son independientes: se puede medir una y no la otra.
@@ -1166,7 +1166,7 @@ test('T16 el_aviso_distingue_completa_de_acotada: la parcial no se lee como el e
       failed: 0, criterio: 0, inestables: 0, parityBreaks: 0, paridadReal: 0, baselineRegressions: 0 });
 
   const a = avisar(b);
-  assert.match(a.stdout, /5/, 'el estado general lo sigue dando la corrida completa');
+  assert.match(a.stdout, /5/, 'el estado general lo sigue dando la ejecución completa');
   assert.match(a.stdout, /parcial|acotad/i, 'y la acotada se muestra marcada como parcial');
   assert.ok(!/no est[áa] corriendo/i.test(a.stdout),
     'la completa de hace 2 días sigue siendo fresca: no se denuncia');
@@ -1289,7 +1289,7 @@ test('T34b el_log_de_launchd_pasa_al_nombre_nuevo_al_reescribir_el_plist (story 
   const st = path.join(b.casa, '.claude', '.tycon-pipeline');
   const viejo = path.join(st, viejoD2('periodic-exam.log'));
   const nuevo = path.join(st, 'periodic-exam.log');
-  fs.writeFileSync(viejo, 'corrida del martes: el motivo de la última falla\n');
+  fs.writeFileSync(viejo, 'ejecución del martes: el motivo de la última falla\n');
   const mini = instalarEn(b, 'Devas-Mac-mini');
   assert.strictEqual(mini.r.status, 0, `${mini.r.stdout}\n${mini.r.stderr}`);
   const xml = fs.readFileSync(mini.plist, 'utf8');
@@ -1298,7 +1298,7 @@ test('T34b el_log_de_launchd_pasa_al_nombre_nuevo_al_reescribir_el_plist (story 
   assert.ok(!xml.includes(path.basename(viejo)), 'el plist ya no nombra el log viejo');
   // 🔴 launchd abre el log por su cuenta: si la copia no pasa antes de cargar la tarea, el log nuevo nace vacío y
   //    la historia de las corridas anteriores queda en un archivo que nadie mira.
-  assert.strictEqual(fs.readFileSync(nuevo, 'utf8'), 'corrida del martes: el motivo de la última falla\n',
+  assert.strictEqual(fs.readFileSync(nuevo, 'utf8'), 'ejecución del martes: el motivo de la última falla\n',
     'la historia del log viejo pasa al nuevo');
   assert.ok(fs.existsSync(viejo), 'el viejo queda intacto hasta el retiro');
 
@@ -1309,7 +1309,7 @@ test('T34b el_log_de_launchd_pasa_al_nombre_nuevo_al_reescribir_el_plist (story 
   assert.ok(!fs.existsSync(nuevo), 'idempotente: sin cambio en el plist no se copia nada');
 });
 
-test('T15/T19/T20 el instalador usa la pieza extraída, y no se lleva puestas las otras corridas', () => {
+test('T15/T19/T20 el instalador usa la pieza extraída, y no se lleva puestas las otras ejecuciones', () => {
   const fuente = fs.readFileSync(path.join(TCG, 'scripts', 'install-tycon-hooks.sh'), 'utf8');
 
   // T15: una sola implementación. El lanzador semanal no vive en el instalador.
@@ -1323,7 +1323,7 @@ test('T15/T19/T20 el instalador usa la pieza extraída, y no se lleva puestas la
   // y dos bancos superpuestos fabricarían rojos falsos.
   // El test afirma que live-fire sigue disparándose.
   assert.ok(/live-fire\.js["'\s]+--tool codex/.test(fuente) || fuente.includes("live-fire.js' --tool codex"),
-    'la corrida de live-fire bajo Codex sigue disparándose');
+    'la ejecución de live-fire bajo Codex sigue disparándose');
   // 🔴 Se buscan los LANZAMIENTOS (`nohup …`) que nombren al corredor por su variable o por su
   // archivo: buscar `runner.js` literal daría VERDE contra un instalador que
   // lance `$BENCH_RUNNER` — un test que no puede fallar no es un test.
@@ -1504,7 +1504,7 @@ test('T46b sin las herramientas al lado de node, el PATH mínimo SÍ falla — y
   const i = JSON.parse(fs.readFileSync(b.intento, 'utf8'));
   assert.strictEqual(i.estado, 'incompleto');
   assert.match(i.motivo, /no está o no se pudo lanzar/);
-  assert.ok(!fs.existsSync(b.sello), 'una corrida que no midió no se come el turno');
+  assert.ok(!fs.existsSync(b.sello), 'una ejecución que no midió no se come el turno');
 });
 
 test('T47 --install-task se NIEGA (y sale ≠ 0) si no alcanza a las herramientas', () => {
@@ -1843,7 +1843,7 @@ test('T75 notice_reads_exam_from_maintainers_clone: el aviso de arranque lee el 
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(r.stdout, /examen de revisores \(\d{4}-\d{2}-\d{2}, hace 0 día/, `el aviso habla del examen del clon — «${r.stdout}»`);
   assert.match(r.stdout, /1 de criterio/, 'con sus números');
-  assert.doesNotMatch(r.stdout, /no lo escribió el job/, 'y el sello de la corrida no se toma por uno escrito a mano');
+  assert.doesNotMatch(r.stdout, /no lo escribió el job/, 'y el sello de la ejecución no se toma por uno escrito a mano');
 });
 
 test('T76 exam_own_config_wins: un árbol que designa máquina (un clon completo) se lee a sí mismo, aunque haya clon de mantenimiento', () => {

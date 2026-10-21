@@ -217,12 +217,12 @@ test('T34 Inicio_Dev_SoloLoSuyo_ConCantidades', async () => {
     const personas = { informados: require(path.join(H.SITE, '..', 'lib', 'people.js')).leerCorreosInformados(espejo), repos: null };
     const m = access.filtrar(modelo, quien, access.crearReglas({ config: CONFIG, modelo, personas }));
     const ini = views.inicioDev(m, { ahora: AHORA });
-    assert.strictEqual(ini.corridas.en7dias, 3, '3 corridas en 7 días (la copia cuenta una vez)');
+    assert.strictEqual(ini.corridas.en7dias, 3, '3 ejecuciones en 7 días (la copia cuenta una vez)');
     assert.strictEqual(ini.corridas.ultima, '2026-10-15');
     assert.deepStrictEqual(ini.prs.lista.map((p) => p.numero), [7], 'sus PR');
     assert.deepStrictEqual(ini.pedidos.lista.map((p) => [p.id, p.dependencias]), [[501, true]], 'el Bug de dependencias marcado');
     const html = views.paginaInicio({ modelo: m, quien, pestanas: [], ahora: AHORA });
-    assert.match(html, /3 corridas en 7 días/);
+    assert.match(html, /3 ejecuciones en 7 días/);
     assert.ok(!html.includes('maq-b-22222222') && !html.includes('#8') && !html.includes('/pr/8'), 'nada de B');
   } finally { fs.rmSync(espejo, { recursive: true, force: true }); }
 });

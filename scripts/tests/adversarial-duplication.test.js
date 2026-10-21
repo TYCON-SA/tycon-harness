@@ -121,7 +121,7 @@ t('T1 Ratio_CruzaLasDosFuentes — da hallazgos y causas por pase, con mediana y
   assert.ok(r.estadisticas.ahorro_pct > 0, 'el ahorro sale de los hallazgos que sobran sobre el total medido');
 });
 
-t('story 2.28: la misma corrida en la carpeta vieja y en la nueva cuenta UNA vez, y no se abre registros/', () => {
+t('story 2.28: la misma ejecución en la carpeta vieja y en la nueva cuenta UNA vez, y no se abre registros/', () => {
   // 🔴 cada máquina vuelve a subir lo de su disco a `<nombre>-<código>`; sin esto, el recorrido cuenta cada pase dos veces y
   //    abre `registros/place.json`, que trae el correo de git de la persona.
   const { buzon, repo } = escenario();
@@ -135,7 +135,7 @@ t('story 2.28: la misma corrida en la carpeta vieja y en la nueva cuenta UNA vez
   fs.readFileSync = function (p, ...r) { abiertos.push(String(p)); return orig.call(this, p, ...r); };
   let r;
   try { r = medir({ buzon, repos: [repo] }); } finally { fs.readFileSync = orig; }
-  assert.strictEqual(r.filas.filter((f) => f.story === '1.1').length, 1, `la corrida 1.1 una vez (fueron ${r.filas.filter((f) => f.story === '1.1').length})`);
+  assert.strictEqual(r.filas.filter((f) => f.story === '1.1').length, 1, `la ejecución 1.1 una vez (fueron ${r.filas.filter((f) => f.story === '1.1').length})`);
   assert.ok(!abiertos.some((p) => p.endsWith('place.json')), 'no abre place.json');
   // una copia SIN pases de la misma corrida, recorrida antes, no tapa a la copia que sí los tiene
   // 🔴 la clave se marca vista sólo después de mirar si trae pases; si no, la copia vacía tapa a la completa
@@ -148,7 +148,7 @@ t('story 2.28: la misma corrida en la carpeta vieja y en la nueva cuenta UNA vez
     fs.writeFileSync(path.join(viejaA, f), JSON.stringify(d));
   }
   const r4 = medir({ buzon: b4.buzon, repos: [b4.repo] });
-  assert.strictEqual(r4.filas.filter((f) => f.story === '1.1').length, 1, 'la corrida 1.1 sigue con su pase');
+  assert.strictEqual(r4.filas.filter((f) => f.story === '1.1').length, 1, 'la ejecución 1.1 sigue con su pase');
   // una carpeta de máquina que no se deja listar se dice, no desaparece
   // 🔴 sin esto, el recorrido traga el error y los pases faltan sin rastro
   fs.chmodSync(nueva, 0o000);
@@ -193,7 +193,7 @@ t('T2b — con muestra chica el resumen lo declara en vez de prometer el número
   const r = medir({ buzon: path.join(tmp, 'buzon'), repos: [repo] });
   assert.strictEqual(r.medidos, 1);
   assert.strictEqual(r.muestra_suficiente, false, 'un solo pase no sostiene un porcentaje');
-  assert.ok(/n=1|una sola corrida|no alcanza/i.test(resumen(r)), 'el resumen declara que la muestra no alcanza');
+  assert.ok(/n=1|una sola ejecución|no alcanza/i.test(resumen(r)), 'el resumen declara que la muestra no alcanza');
 });
 
 // --------------------------------------------------- la medición no escribe
@@ -245,7 +245,7 @@ t('un volcado o un findings.json ilegible se cuenta aparte y avisa — no desapa
     'cada ilegible dice qué archivo y por qué');
 
   const f16 = r.filas.find((f) => f.story === '1.6');
-  assert.ok(f16 && !f16.medible, 'la corrida con findings.json roto no se mide');
+  assert.ok(f16 && !f16.medible, 'la ejecución con findings.json roto no se mide');
   assert.ok(/ilegible|no pude leer|roto/i.test(f16.motivo),
     `el motivo tiene que decir que no se pudo LEER, no que no hay datos; decía: ${f16.motivo}`);
 
@@ -277,7 +277,7 @@ t('el motivo no publica la ruta completa de la máquina de otro dev (SEC-W8)', (
   for (const f of r.filas) assert.ok(!/\/Users\/otrodev/.test(String(f.repo)), `la fila de ${f.story} no guarda la ruta completa`);
 });
 
-t('ilegible por el HISTORIAL de git también dice "ilegible" en su fila, y se sabe de qué corrida', () => {
+t('ilegible por el HISTORIAL de git también dice "ilegible" en su fila, y se sabe de qué ejecución', () => {
   // 🔴 El contador global sube, y la FILA de esa
   // story también tiene que decirlo (no «no dejó nada»). Y con el recorte de rutas, dos corridas rotas se ven
   // iguales en el detalle («findings.json» y «findings.json»): hay que saber cuáles, no sólo cuántas.
@@ -304,8 +304,8 @@ t('ilegible por el HISTORIAL de git también dice "ilegible" en su fila, y se sa
   }
   const nombres = new Set(r.ilegibles_detalle.map((x) => x.archivo));
   assert.strictEqual(nombres.size, r.ilegibles_detalle.length,
-    `dos archivos rotos de corridas distintas no pueden verse iguales: ${[...nombres].join(' , ')}`);
-  assert.ok([...nombres].every((x) => /3\.[12]/.test(x)), 'cada ilegible dice a qué corrida pertenece');
+    `dos archivos rotos de ejecuciones distintas no pueden verse iguales: ${[...nombres].join(' , ')}`);
+  assert.ok([...nombres].every((x) => /3\.[12]/.test(x)), 'cada ilegible dice a qué ejecución pertenece');
 });
 
 t('con el criterio real a mano, las causas se miden APLICÁNDOLO — no con la cota por sitio (AC 1)', () => {
@@ -422,7 +422,7 @@ t('con el volcado crudo se usa lo que el pase YA dijo, no se re-agrupa lo ya fil
   assert.strictEqual(f.clases, 4, 'vale el `clases` que el propio pase anotó, no re-agrupar los 2 confirmados');
 });
 
-t('la corrida se busca en el repo DECLARADO, no en cualquiera que tenga una story con ese número', () => {
+t('la ejecución se busca en el repo DECLARADO, no en cualquiera que tenga una story con ese número', () => {
   // 🔴 no se busca en todos los repos vistos en el buzón desempatando por fecha:
   // un id de story repetido en otro repo aportaría las causas de una corrida ajena.
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dup-adv-repo-'));
@@ -439,7 +439,7 @@ t('la corrida se busca en el repo DECLARADO, no en cualquiera que tenga una stor
   const { medir } = require(MOD);
   const r = medir({ buzon: path.join(tmp, 'buzon'), repos: [ajeno, mio] });
   const f = r.filas.find((x) => x.story === '2.1');
-  assert.strictEqual(f.clases, 5, 'las causas salen de la corrida del repo declarado por el pase');
+  assert.strictEqual(f.clases, 5, 'las causas salen de la ejecución del repo declarado por el pase');
 });
 
 t('si el repo declarado no está, la fila DICE que el repo se resolvió por coincidencia de número', () => {

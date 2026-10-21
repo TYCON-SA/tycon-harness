@@ -458,7 +458,7 @@ function layerItems(facts) {
       } else add('fail', `capa${who}: ${f.compat.reason}`);
     }
     for (const t of named(f.missing, (p) => `capa${who}: falta ${p} (del commit ${sha7(f.commit)})`)) add('fail', t);
-    for (const t of named(f.stale, (p) => `capa${who}: ${p} no es el del commit ${sha7(f.commit)} de la capa (lo apiló otra corrida, o no se apiló)`)) add('fail', t);
+    for (const t of named(f.stale, (p) => `capa${who}: ${p} no es el del commit ${sha7(f.commit)} de la capa (lo apiló otra ejecución, o no se apiló)`)) add('fail', t);
     for (const t of named(f.hand, (p) => `capa${who}: ${p} editado a mano — la capa no lo pisa ni lo borra`)) add('warn', t);
     for (const t of named(f.foreign, (p) => `${p}: no viene de ninguna fuente (no es de la copia pública, ni de la capa, ni de lo que escribe la máquina)`)) add('warn', t);
     if (f.listProblem) add('warn', `capa${who}: no pude listar lo que hay en el árbol (${f.listProblem}): lo que no viene de ninguna fuente no se miró`);

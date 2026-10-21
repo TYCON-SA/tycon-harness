@@ -117,7 +117,7 @@ function stopTimerNow(): void {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'pipeline', description: 'Los pasos de la corrida del pipeline de esta sesión' })
+    await $.command.register({ name: 'pipeline', description: 'Los pasos de la ejecución del pipeline de esta sesión' })
     await $.command.register({ name: 'mods', description: 'Los mods del arnés: listarlos, ocultarlos en la sesión o apagarlos' })
     // lo apagado se guarda entre sesiones; si el almacén no contesta, todo queda prendido (lo de fábrica)
     let saved: string[] = []
@@ -144,7 +144,7 @@ export const register: Register = on => {
     // con una corrida en la foto y una falla del último refresco, la tabla se muestra pero se dice que puede estar vieja
     if (snap && snap.run) return { text: snap.error ? `${pipelineTable(snap.run)}\n\n(Puede estar desactualizada: no pude actualizar el cartel: ${snap.error})` : pipelineTable(snap.run) }
     // un marker que está pero no se lee no es «sin corrida», y una falla del cartel tampoco: cada uno se dice así
-    if (snap && snap.readError) return { text: `Hay una corrida en esta sesión, pero no pude leer su archivo: ${snap.readError}` }
+    if (snap && snap.readError) return { text: `Hay una ejecución en esta sesión, pero no pude leer su archivo: ${snap.readError}` }
     if (snap && snap.error) return { text: `No pude actualizar el cartel: ${snap.error}` }
     return { text: NO_RUN_TEXT }
   })

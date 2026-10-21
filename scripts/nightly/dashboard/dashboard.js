@@ -217,7 +217,7 @@ function encuentra(por) {
     return medida(rojas, medidas, total, { unidad: 'conteo', den_etiqueta: 'suites', ...(detalle ? { detalle } : {}) });
   });
   m.deps_hallazgos = desde(por.dependencias, (d) => {
-    if (d.corrida_completa === false) return noMedida(`la corrida quedó incompleta: ${(d.no_medidos || []).length} repos sin medir`);
+    if (d.corrida_completa === false) return noMedida(`la ejecución quedó incompleta: ${(d.no_medidos || []).length} repos sin medir`);
     return medida((d.hallazgos || []).length, d.repos_activos, d.repos_activos, { unidad: 'conteo', den_etiqueta: 'repos' });
   });
   m.vigilante = desde(por.vigilante, (d) => {
@@ -352,7 +352,7 @@ function leerJsonl(ruta, max) {
  * `opts`: `vacio` (el motivo sin ninguna corrida) y `etiqueta(grupos)` (el denominador).
  */
 function leerCorridas(archivos, opts = {}) {
-  const etiqueta = opts.etiqueta || (() => 'corridas');
+  const etiqueta = opts.etiqueta || (() => 'ejecuciones');
   const dur = [], spawns = [], iters = [], trab = [], esp = [];
   const grupos = new Set();
   let ultima = null, tiempos = null, sinTiempos = null, total = 0, ilegibles = 0;
@@ -376,25 +376,25 @@ function leerCorridas(archivos, opts = {}) {
       if (t.espera_humana_ms !== null) esp.push(t.espera_humana_ms / 3600000);
     }
   }
-  if (!total) { const n = noMedida(opts.vacio || 'no hay ninguna corrida'); return { corridas: n, agentes: n, vueltas: n, trabajo_espera: n, maquinas: 0 }; }
+  if (!total) { const n = noMedida(opts.vacio || 'no hay ninguna ejecución'); return { corridas: n, agentes: n, vueltas: n, trabajo_espera: n, maquinas: 0 }; }
   const den = etiqueta(grupos.size);
   const rotos = ilegibles ? ` · ${ilegibles} volcado(s) no se pudieron leer (¿subida cortada?): cuentan en el total, no en la mediana` : '';
   const edad = edadDias(ultima, Date.now());
-  const nota = edad !== null && edad > 2 ? ` · la última corrida es de ${edadTexto(edad)}` : '';
+  const nota = edad !== null && edad > 2 ? ` · la última ejecución es de ${edadTexto(edad)}` : '';
   return {
     maquinas: grupos.size,
     trabajo_espera: sinTiempos ? noMedida(sinTiempos) : (trab.length || esp.length)
       ? { estado: 'medido', trabajo: trab.length ? mediana(trab) : null, n_trabajo: trab.length, espera: esp.length ? mediana(esp) : null, n_espera: esp.length, total }
-      : noMedida('ninguna corrida anotó el arranque de sus pasos (las anteriores a la story 2.7 no lo tienen)'),
+      : noMedida('ninguna ejecución anotó el arranque de sus pasos (las anteriores a la story 2.7 no lo tienen)'),
     corridas: dur.length
       ? medida(mediana(dur), dur.length, total, { unidad: 'conteo', den_etiqueta: den, detalle: `máximo ${num1(Math.max(...dur))} h${nota}${rotos}` })
-      : noMedida('ninguna corrida dejó su duración'),
+      : noMedida('ninguna ejecución dejó su duración'),
     agentes: spawns.length
       ? medida(mediana(spawns), spawns.length, total, { unidad: 'conteo', den_etiqueta: den, detalle: `máximo ${Math.max(...spawns)}${rotos}` })
-      : noMedida('ninguna corrida registró cuántos agentes lanzó'),
+      : noMedida('ninguna ejecución registró cuántos agentes lanzó'),
     vueltas: iters.length
       ? medida(mediana(iters), iters.length, total, { unidad: 'conteo', den_etiqueta: den, detalle: `máximo ${Math.max(...iters)}${rotos}` })
-      : noMedida('ninguna corrida registró sus vueltas de revisión'),
+      : noMedida('ninguna ejecución registró sus vueltas de revisión'),
   };
 }
 
@@ -435,8 +435,8 @@ function corridasDelBuzon(buzon) {
     for (const ruta of jsonsDe(path.join(dir, en.name), malas)) archivos.push({ ruta, grupo: en.name });
   }
   // Sin una máquina, la mediana no es la del equipo — el mismo criterio que los pasos por corrida.
-  if (malas.length) return todas(noMedida(`${malas.length} carpeta(s) del buzón de corridas no se pudieron leer: la mediana saldría sin sus corridas, y eso no es la del equipo`));
-  return leerCorridas(archivos, { vacio: 'el buzón no tiene corridas', etiqueta: (m) => `corridas, de ${m} máquina${m === 1 ? '' : 's'}` });
+  if (malas.length) return todas(noMedida(`${malas.length} carpeta(s) del buzón de ejecuciones no se pudieron leer: la mediana saldría sin sus ejecuciones, y eso no es la del equipo`));
+  return leerCorridas(archivos, { vacio: 'el buzón no tiene ejecuciones', etiqueta: (m) => `ejecuciones, de ${m} máquina${m === 1 ? '' : 's'}` });
 }
 
 function local(buzon = { estado: 'no_aplica' }) {
@@ -471,8 +471,8 @@ function local(buzon = { estado: 'no_aplica' }) {
       for (const x of durTests) if (x > maximo) maximo = x;
       m.gates_dur = durTests.length
         ? medida(mediana(durTests), durTests.length, durTests.length,
-            { unidad: 'conteo', den_etiqueta: 'corridas de la suite', detalle: `máximo ${num1(maximo / 60)} minutos` })
-        : noMedida('ninguna corrida de tests dejó su duración');
+            { unidad: 'conteo', den_etiqueta: 'ejecuciones de la suite', detalle: `máximo ${num1(maximo / 60)} minutos` })
+        : noMedida('ninguna ejecución de tests dejó su duración');
     } catch (e) { m.gates_dur = noMedida(`el registro de frenos no se pudo leer: ${e.code || e.message}`); }
   }
 
@@ -494,12 +494,12 @@ function local(buzon = { estado: 'no_aplica' }) {
   // 4 · Corridas completas del pipeline: duración, agentes y vueltas.
   // (la lectura es leerCorridas(), la misma del nocturno sobre el buzón)
   const th = path.join(stateDirOf(require('os').homedir()), 'timing-history');
-  const vacio = () => { m.corridas = falta('el registro de corridas'); m.agentes = m.corridas; m.vueltas = m.corridas; };
+  const vacio = () => { m.corridas = falta('el registro de ejecuciones'); m.agentes = m.corridas; m.vueltas = m.corridas; };
   if (!fs.existsSync(th)) vacio();
   else {
     try {
       const archivos = fs.readdirSync(th).filter((n) => n.endsWith('.json')).map((n) => path.join(th, n));
-      const r = leerCorridas(archivos, { vacio: 'ninguna corrida dejó su duración' });
+      const r = leerCorridas(archivos, { vacio: 'ninguna ejecución dejó su duración' });
       m.corridas = r.corridas; m.agentes = r.agentes; m.vueltas = r.vueltas; m.trabajo_espera = r.trabajo_espera;
     } catch (e) { vacio(); }
   }
@@ -677,11 +677,11 @@ function equipo(cfg, buzon = { estado: 'no_aplica' }) {
   else {
     const corridas = (ce.porDim['cobertura-tocada'] || { num: 0, den: 0 });
     const frenaria = (cf.porDim['cobertura-tocada'] || { num: 0, den: 0 });
-    if (corridas.den === 0) cobertura_tocada = noMedida('ninguna corrida de test-gate dejó constancia de cobertura de las líneas tocadas en la ventana (la medición empezó con la story 2.4)');
-    else if (corridas.den < piso) cobertura_tocada = noMedida(`por debajo del piso (${corridas.den} corridas en la ventana; hacen falta ${piso})`);
+    if (corridas.den === 0) cobertura_tocada = noMedida('ninguna ejecución de test-gate dejó constancia de cobertura de las líneas tocadas en la ventana (la medición empezó con la story 2.4)');
+    else if (corridas.den < piso) cobertura_tocada = noMedida(`por debajo del piso (${corridas.den} ejecuciones en la ventana; hacen falta ${piso})`);
     else {
       cobertura_tocada = {
-        ...ratio(corridas.num, corridas.den), den_etiqueta: 'corridas de test-gate',
+        ...ratio(corridas.num, corridas.den), den_etiqueta: 'ejecuciones de test-gate',
         detalle: `${ventana} · habría frenado ${frenaria.num} de ${corridas.num} · ${observacion}${parcial(ce, 'cobertura')}`,
       };
     }
@@ -701,7 +701,7 @@ function equipo(cfg, buzon = { estado: 'no_aplica' }) {
     const sinPuntaje = Object.entries(mc.porDim).map(([k, v]) => [k, v.den - v.num]).filter(([, x]) => x > 0).sort(porCantidad)
       .map(([k, x]) => `${k} ${x}`).join(' · ');
     const chequeos = `con puntaje ${mc.num} de ${mc.den} chequeo${mc.den === 1 ? '' : 's'}${sinPuntaje ? ` · no pudieron medir: ${sinPuntaje}` : ''}`;
-    if (mc.den === 0) mutacion = noMedida('ninguna corrida registró un chequeo de mutación en la ventana');
+    if (mc.den === 0) mutacion = noMedida('ninguna ejecución registró un chequeo de mutación en la ventana');
     else if (n === 0) mutacion = noMedida(`ninguno de los ${mc.den} chequeo${mc.den === 1 ? '' : 's'} de mutación de la ventana pudo medir (${sinPuntaje})`);
     else if (n < piso) mutacion = noMedida(`por debajo del piso (${n} chequeo${n === 1 ? '' : 's'} con puntaje en la ventana; hacen falta ${piso}) — ${chequeos}`);
     else {
@@ -725,7 +725,7 @@ function equipo(cfg, buzon = { estado: 'no_aplica' }) {
     const avisos = cuenta('missing') + cuenta('stale');
     const desglose = Object.entries(qe.porDim).map(([k, v]) => [k, v.num]).filter(([, x]) => x > 0).sort(porCantidad).map(([k, x]) => `${k} ${x}`).join(' · ');
     const lista = `${avisos} aviso${avisos === 1 ? '' : 's'} en la ventana${desglose ? ` (${desglose})` : ''}`;
-    if (qe.num === 0) qa_guia = noMedida('ninguna corrida evaluó la guía de QA en la ventana');
+    if (qe.num === 0) qa_guia = noMedida('ninguna ejecución evaluó la guía de QA en la ventana');
     // 🔴 Sin líneas del registro completo NO hay proporción: las viejas sólo anotaban las guías que faltaban o
     //    estaban viejas, así que «presentes» daría 0 por construcción. Se dice, con los avisos contados.
     // Con líneas del registro completo que son TODAS `no-aplica`, el arnés ya está actualizado: lo que pasa es que
@@ -747,14 +747,14 @@ function equipo(cfg, buzon = { estado: 'no_aplica' }) {
   let suite_duracion;
   if (!sd || !Array.isArray(sd.muestras)) suite_duracion = noMedida('la configuración del reductor no declara la duración de la suite');
   else if (sinMaquinas || sd.midieron === 0) suite_duracion = noMedida(sinMaquinas ? 'ninguna máquina reportó sus registros' : 'ninguna máquina pudo leer su registro de controles (gates.log), que es donde queda la duración de la suite');
-  else if (!sd.muestras.length) suite_duracion = noMedida('ninguna corrida de tests dejó su duración');
+  else if (!sd.muestras.length) suite_duracion = noMedida('ninguna ejecución de tests dejó su duración');
   // el piso, como la mutación y todas las fichas del equipo: un corte chico es un evento con su máquina, no una estadística
-  else if (sd.muestras.length < piso) suite_duracion = noMedida(`por debajo del piso (${sd.muestras.length} corrida${sd.muestras.length === 1 ? '' : 's'} de la suite en la ventana; hacen falta ${piso})`);
+  else if (sd.muestras.length < piso) suite_duracion = noMedida(`por debajo del piso (${sd.muestras.length} ejecución${sd.muestras.length === 1 ? '' : 's'} de la suite en la ventana; hacen falta ${piso})`);
   else {
     let maximo = -Infinity;
     for (const x of sd.muestras) if (x > maximo) maximo = x;
     suite_duracion = medida(mediana(sd.muestras), sd.muestras.length, sd.muestras.length, {
-      unidad: 'conteo', den_etiqueta: 'corridas de la suite',
+      unidad: 'conteo', den_etiqueta: 'ejecuciones de la suite',
       detalle: `${ventana} · máximo ${num1(maximo / 60)} minutos · midieron ${sd.midieron} de ${sd.maquinas} máquina${sd.maquinas === 1 ? '' : 's'}`,
     });
   }
@@ -792,36 +792,36 @@ function pasosPorCorrida(cfg, buzon = { estado: 'no_aplica' }, opts = {}) {
   if (!Number.isFinite(fuente.max_age_days) || fuente.max_age_days <= 0) return noMedida('sources.json declara «pasos-corrida» sin una antigüedad máxima válida (max_age_days tiene que ser un número de días mayor que cero): sin ella no se puede saber si el número está al día');
   const dir = path.resolve(opts.dir || AMB.mailbox || path.join(stateDirOf(require('os').homedir()), 'corridas-buzon'));
   // El medidor trata una carpeta que no puede leer como vacía; acá se distingue: «no está» no es «no hay corridas».
-  if (!fs.existsSync(dir)) return noMedida('no está la carpeta bajada del buzón de corridas (la llena download-runs.js en las máquinas con permiso de lectura)');
+  if (!fs.existsSync(dir)) return noMedida('no está la carpeta bajada del buzón de ejecuciones (la llena download-runs.js en las máquinas con permiso de lectura)');
   let r;
   try { r = medidor.medir({ buzon: dir }); }
-  catch (e) { return noMedida(`el medidor de pasos por corrida falló (${e.code || e.name || 'error'})`); }
+  catch (e) { return noMedida(`el medidor de pasos por ejecución falló (${e.code || e.name || 'error'})`); }
   // Lo que el medidor no pudo LEER: «no pude preguntar» no es «pregunté y no hay».
-  if (r.legible === false) return noMedida(`la carpeta bajada del buzón de corridas existe pero no se pudo leer (${r.motivo_ilegible}): no es un buzón vacío`);
+  if (r.legible === false) return noMedida(`la carpeta bajada del buzón de ejecuciones existe pero no se pudo leer (${r.motivo_ilegible}): no es un buzón vacío`);
   // Sin una máquina, la mediana no es la del equipo — el mismo criterio que el nocturno con el buzón a medias.
-  if (r.carpetas_ilegibles) return noMedida(`${r.carpetas_ilegibles} carpeta(s) del buzón de corridas no se pudieron leer: la mediana saldría sin sus corridas, y eso no es la del equipo`);
+  if (r.carpetas_ilegibles) return noMedida(`${r.carpetas_ilegibles} carpeta(s) del buzón de ejecuciones no se pudieron leer: la mediana saldría sin sus ejecuciones, y eso no es la del equipo`);
   // Un volcado cortado puede ser una corrida: se queda en el denominador, como las sin medir.
   const N = r.corridas + r.sin_medir + r.ilegibles;
-  if (!N) return noMedida('el buzón de corridas está vacío: no hay ninguna corrida que contar');
-  if (!r.corridas) return noMedida(`ninguna de las ${N} corrida(s) del buzón tiene su consumo medido: los pasos no se estiman`);
+  if (!N) return noMedida('el buzón de ejecuciones está vacío: no hay ninguna ejecución que contar');
+  if (!r.corridas) return noMedida(`ninguna de las ${N} ejecución(es) del buzón tiene su consumo medido: los pasos no se estiman`);
   // La fecha del número es la de la corrida MEDIDA más nueva (`filas` viene ordenada por inicio).
   const fecha = r.filas[r.filas.length - 1].inicio || null;
   const edad = edadDias(fecha, opts.hoy || Date.now());
   if (edad === null || edad > fuente.max_age_days) {
     return noMedida(fecha
-      ? `sin corridas medidas desde ${fecha} (${edadTexto(edad)}): pasados ${fuente.max_age_days} días el número se calla`
-      : 'las corridas medidas del buzón no traen su fecha: no se puede saber si el número está al día');
+      ? `sin ejecuciones medidas desde ${fecha} (${edadTexto(edad)}): pasados ${fuente.max_age_days} días el número se calla`
+      : 'las ejecuciones medidas del buzón no traen su fecha: no se puede saber si el número está al día');
   }
   const serie = r.por_mes.map((m) => ({ mes: m.mes, n: m.n, mediana: m.mediana }));
   const lb = medidor.LINEA_BASE;
   const detalle = [
-    `última corrida medida: ${fecha || 'sin fecha'}`,
+    `última ejecución medida: ${fecha || 'sin fecha'}`,
     r.sin_medir ? `${r.sin_medir} sin consumo medido: no entran en la mediana ni se estiman` : null,
     r.ilegibles ? `${r.ilegibles} volcado(s) no se pudieron leer (¿subida cortada?): cuentan en el total, no en la mediana` : null,
     `por mes — ${serie.map((m) => `${m.mes}: ${Math.round(m.mediana)} (n=${m.n})`).join(' · ')}`,
     `línea base del ${lb.fecha}: ${lb.mediana} (n=${lb.corridas})`,
   ].filter(Boolean).join(' · ');
-  return medida(r.pasos.mediana, r.corridas, N, { unidad: 'conteo', den_etiqueta: 'corridas', detalle, fecha, serie });
+  return medida(r.pasos.mediana, r.corridas, N, { unidad: 'conteo', den_etiqueta: 'ejecuciones', detalle, fecha, serie });
 }
 
 const ETIQUETA_ESTADO = {
@@ -835,10 +835,10 @@ const ETIQUETA_ESTADO = {
 function denominadorPoda(c) {
   const sinMedir = c.hallazgos.maquinas_sin_medir || [];
   return `hallazgos y oportunidades de ${c.hallazgos.maquinas} máquina(s) con los hallazgos medidos; `
-    + `el denominador sale de ${c.corridas.con_denominador} de ${c.corridas.total} corridas`
-    + (c.corridas.no_leidas ? ` (${c.corridas.no_leidas} corrida(s) más no cuentan: el recolector no pudo leer sus hallazgos)` : '')
+    + `el denominador sale de ${c.corridas.con_denominador} de ${c.corridas.total} ejecuciones`
+    + (c.corridas.no_leidas ? ` (${c.corridas.no_leidas} ejecución(es) más no cuentan: el recolector no pudo leer sus hallazgos)` : '')
     + (sinMedir.length ? `; sin medir: ${sinMedir.map((m) => `${m.alias} (${m.motivo})`).join(' · ')}` : '')
-    + (c.corridas.descartadas_sin_hallazgos ? `; ${c.corridas.descartadas_sin_hallazgos} corrida(s) de las máquinas sin medir no se cuentan` : '');
+    + (c.corridas.descartadas_sin_hallazgos ? `; ${c.corridas.descartadas_sin_hallazgos} ejecución(es) de las máquinas sin medir no se cuentan` : '');
 }
 function podaPanel(buzon = { estado: 'no_aplica' }) {
   if (AMB.nocturno && buzon.estado !== 'leido') {
@@ -870,7 +870,7 @@ function podaPanel(buzon = { estado: 'no_aplica' }) {
   // Sin examen usable no se puede decir cuáles están probadas NI cuáles son candidatas: las dos fichas callan.
   const candidatas = examenOk
     ? medida(r.resumen.candidata_a_retiro, r.total, r.total, { unidad: 'conteo', den_etiqueta: 'reglas del catálogo',
-        detalle: `${ventana} · medido en ${c.hallazgos.maquinas} de ${c.hallazgos.maquinas + (c.hallazgos.maquinas_sin_medir || []).length} máquina(s) · probadas, con cero hallazgos y el recorrido que pide el criterio (${r.umbral.oportunidades} corridas de su revisor en ${r.umbral.meses} meses). Decide una persona.` })
+        detalle: `${ventana} · medido en ${c.hallazgos.maquinas} de ${c.hallazgos.maquinas + (c.hallazgos.maquinas_sin_medir || []).length} máquina(s) · probadas, con cero hallazgos y el recorrido que pide el criterio (${r.umbral.oportunidades} ejecuciones de su revisor en ${r.umbral.meses} meses). Decide una persona.` })
     : noMedida(`sin un examen del banco que se pueda usar no se puede decir cuáles sobran: ${c.examen.motivo}`);
   const probadas = examenOk
     ? { ...ratio(c.banco.examinadas, conRevisor, 'ninguna regla del catálogo tiene un revisor'), den_etiqueta: 'reglas con revisor',
@@ -1220,17 +1220,17 @@ function extra(por, ctx, cfg) {
       // `&lt;b&gt;` y el `--json` llevaría etiquetas.
       if (con.den >= nMin && sin.den >= nMin) {
         comparables += 1;
-        lineas.push(`${nombre(r)}: con corrida volvieron ${con.num} de ${con.den} (${pctDe(con)}) · sin constancia ${sin.num} de ${sin.den} (${pctDe(sin)})`);
+        lineas.push(`${nombre(r)}: con ejecución volvieron ${con.num} de ${con.den} (${pctDe(con)}) · sin constancia ${sin.num} de ${sin.den} (${pctDe(sin)})`);
       } else {
-        const falta = [con.den < nMin ? `${nMin - con.den} con corrida` : null, sin.den < nMin ? `${nMin - sin.den} sin constancia` : null].filter(Boolean).join(' y ');
+        const falta = [con.den < nMin ? `${nMin - con.den} con ejecución` : null, sin.den < nMin ? `${nMin - sin.den} sin constancia` : null].filter(Boolean).join(' y ');
         lineas.push(`${nombre(r)}: todavía no se compara — faltan ${falta} (desde ${String(x.desde || '?')})`);
       }
     }
     const sinCarpeta = rs.length - conCarpeta;
-    if (!conCarpeta) return noMedida(`ningún repo guarda las corridas del pipeline todavía (${rs.length} medidos): no hay con qué separar los carriles`);
-    const detalle = `${lineas.join(' · ')}${sinCarpeta ? ` · ${sinCarpeta} repo(s) no guardan corridas: no se comparan` : ''}`;
+    if (!conCarpeta) return noMedida(`ningún repo guarda las ejecuciones del pipeline todavía (${rs.length} medidos): no hay con qué separar los carriles`);
+    const detalle = `${lineas.join(' · ')}${sinCarpeta ? ` · ${sinCarpeta} repo(s) no guardan ejecuciones: no se comparan` : ''}`;
     if (!comparables) return noMedida(`ningún repo llega al mínimo de ${nMin} stories cerradas por grupo — ${detalle}`, { detalle });
-    return medida(comparables, comparables, conCarpeta, { unidad: 'conteo', den_etiqueta: `repos comparables de ${conCarpeta} que guardan corridas · mínimo ${nMin} por grupo`, detalle });
+    return medida(comparables, comparables, conCarpeta, { unidad: 'conteo', den_etiqueta: `repos comparables de ${conCarpeta} que guardan ejecuciones · mínimo ${nMin} por grupo`, detalle });
   });
 
   m.rework_top = desde(sdlc, (d) => {
@@ -1423,10 +1423,10 @@ function tablaPoda(P) {
     <table><tr><th>Estado</th><th>Reglas</th></tr>
     ${Object.entries(P.resumen).map(([e, n]) => `<tr><td>${esc(ETIQUETA_ESTADO[e] || e)}</td><td>${n}</td></tr>`).join('\n    ')}
     </table>
-    <table><tr><th>Dueño</th><th>Regla</th><th>Estado</th><th>Hallazgos</th><th>Corridas de su revisor</th><th>Meses</th></tr>
+    <table><tr><th>Dueño</th><th>Regla</th><th>Estado</th><th>Hallazgos</th><th>Ejecuciones de su revisor</th><th>Meses</th></tr>
     ${filas.map((f) => `<tr><td>${esc(f.dueno)}</td><td>${esc(f.regla)}</td><td>${esc(ETIQUETA_ESTADO[f.estado] || f.estado)}${f.estado === 'candidata_a_retiro' ? ' · sabe ponerse roja' : ''}</td><td>${f.hallazgos}</td><td>${f.oportunidades === null ? '—' : f.oportunidades}</td><td>${f.meses === null ? '—' : f.meses}</td></tr>`).join('\n    ')}
     </table>
-    <p class="chart-note">${esc(P.denominador)}. ${c.corridas.sin_por_tipo} corridas no dejaron el conteo por revisor y no aportan: no son cero. ${c.banco.huerfanos ? `${c.banco.huerfanos} caso(s) del banco apuntan a una regla que el catálogo le asigna a otro dueño.` : ''}${colision} Se listan sólo los estados que piden una decisión; «activa», «sin probar» y «sin revisor» se cuentan arriba.</p>
+    <p class="chart-note">${esc(P.denominador)}. ${c.corridas.sin_por_tipo} ejecuciones no dejaron el conteo por revisor y no aportan: no son cero. ${c.banco.huerfanos ? `${c.banco.huerfanos} caso(s) del banco apuntan a una regla que el catálogo le asigna a otro dueño.` : ''}${colision} Se listan sólo los estados que piden una decisión; «activa», «sin probar» y «sin revisor» se cuentan arriba.</p>
   </details>`;
 }
 
@@ -1499,12 +1499,12 @@ function render(d) {
   const te = L.trabajo_espera;
   const pieTiempos = !te ? null : te.estado !== 'medido'
     ? `<i>Trabajo y espera: ${esc(te.motivo)}.</i>`
-    : `De punta a punta no es lo mismo que trabajo: <b>${te.trabajo === null ? 'trabajo sin medir' : `${num1(te.trabajo)} h de trabajo`}</b> (n=${te.n_trabajo} de ${te.total}) y <b>${te.espera === null ? 'espera sin medir' : `${num1(te.espera)} h esperando a una persona`}</b> (n=${te.n_espera} de ${te.total}), medianas de las corridas que anotaron el arranque de sus pasos.`;
+    : `De punta a punta no es lo mismo que trabajo: <b>${te.trabajo === null ? 'trabajo sin medir' : `${num1(te.trabajo)} h de trabajo`}</b> (n=${te.n_trabajo} de ${te.total}) y <b>${te.espera === null ? 'espera sin medir' : `${num1(te.espera)} h esperando a una persona`}</b> (n=${te.n_espera} de ${te.total}), medianas de las ejecuciones que anotaron el arranque de sus pasos.`;
 
   // ── en el nocturno, la duración, los agentes y las vueltas salen del buzón — se dice de cuántas máquinas
   const notaCorridasNocturno = Number.isInteger(L.maquinas)
-    ? `La duración, los agentes y las vueltas de una corrida salen del buzón de corridas, de ${L.maquinas} máquina${L.maquinas === 1 ? '' : 's'}, con la misma lectura que la página de una máquina; los pasos, también.`
-    : 'La duración, los agentes y las vueltas de una corrida salen del buzón de corridas, que esta noche no se pudo leer entero; los pasos, también.';
+    ? `La duración, los agentes y las vueltas de una ejecución salen del buzón de ejecuciones, de ${L.maquinas} máquina${L.maquinas === 1 ? '' : 's'}, con la misma lectura que la página de una máquina; los pasos, también.`
+    : 'La duración, los agentes y las vueltas de una ejecución salen del buzón de ejecuciones, que esta noche no se pudo leer entero; los pasos, también.';
 
   // ── pregunta 4: escapes — la regla dominante
   const escapesDom = L.escapes_dom || null;   // se calcula desde los conteos juntados, no parseando el texto del detalle
@@ -1549,10 +1549,10 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
 </style></head><body>
 <div class="wrap">
 <header class="head">
-  <div class="eyebrow">Tablero de comando · arnés TYCON · las corridas del pipeline, una por una: <span class="mono">node scripts/nightly/dashboard/dashboard.js --view runs</span> (se arman en tu máquina)</div>
+  <div class="eyebrow">Tablero de comando · arnés TYCON · las ejecuciones del pipeline, una por una: <span class="mono">node scripts/nightly/dashboard/dashboard.js --view runs</span> (se arman en tu máquina)</div>
   <h1>El arnés en seis preguntas</h1>
   <p class="lede">Un tablero no es una lista de números: es el orden en que alguien decide qué mirar hoy. Éste está armado por <strong>pregunta</strong>, no por fuente de datos, y cada ficha declara su denominador. <strong>Lo que no se mide aparece igual</strong> — con trama en vez de color, porque «no medido» no es «cero» ni es «bien». <strong>Ningún número está escrito a mano</strong>: los produce <span class="mono">scripts/nightly/dashboard/dashboard.js</span> leyendo los registros.</p>
-  <div class="stamp"><span><b>Generado:</b> ${esc(ahora.slice(0, 16).replace('T', ' '))} UTC</span><span><b>Datos del commit:</b> ${esc(commit)}</span><span><b>Fuentes esperadas:</b> ${cob.esperadas} · al día ${cob.vigentes}</span><span><b>Generada:</b> ${require('./seal').isNightly(sello.modo) ? `en el nocturno de Azure DevOps${sello.corrida ? ` (corrida ${esc(sello.corrida)})` : ''}` : 'en una máquina — no es la página del equipo'}</span>${sello.buzon.estado === 'leido' ? `<span><b>Buzón:</b> leído, ${sello.buzon.maquinas} máquina${sello.buzon.maquinas === 1 ? '' : 's'}</span>` : sello.buzon.estado === 'no_leido' ? `<span><b>Buzón:</b> no leído — ${esc(sello.buzon.motivo)}</span>` : ''}</div>
+  <div class="stamp"><span><b>Generado:</b> ${esc(ahora.slice(0, 16).replace('T', ' '))} UTC</span><span><b>Datos del commit:</b> ${esc(commit)}</span><span><b>Fuentes esperadas:</b> ${cob.esperadas} · al día ${cob.vigentes}</span><span><b>Generada:</b> ${require('./seal').isNightly(sello.modo) ? `en el nocturno de Azure DevOps${sello.corrida ? ` (ejecución ${esc(sello.corrida)})` : ''}` : 'en una máquina — no es la página del equipo'}</span>${sello.buzon.estado === 'leido' ? `<span><b>Buzón:</b> leído, ${sello.buzon.maquinas} máquina${sello.buzon.maquinas === 1 ? '' : 's'}</span>` : sello.buzon.estado === 'no_leido' ? `<span><b>Buzón:</b> no leído — ${esc(sello.buzon.motivo)}</span>` : ''}</div>
   ${banda}
 </header>
 
@@ -1594,7 +1594,7 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
     ${F('dod', 'Cierres que dejaron prueba de que la cosa anda corriendo', M.dod, pct, { bad: 'rojo', warn: 'atención', ok: 'bien' }, E.repos_en_cero_dod && E.repos_en_cero_dod.estado === 'medido' && E.repos_en_cero_dod.valor > 0 ? `<b>${E.repos_en_cero_dod.valor} de ${E.repos_en_cero_dod.total} repos en cero</b>: ${esc(E.repos_en_cero_dod.detalle)}. No es que estén rotos: es que de esos cierres no queda constancia.` : null)}
     ${F('rework', 'Lo que vuelve: stories con un seguimiento posterior', M.rework, pct, { bad: 'concentrado', warn: 'atención', ok: 'bien' }, reworkTop ? `Los que más vuelven: ${reworkTop}.` : null)}
     ${F('', 'Por qué volvió: defecto nuestro contra cambio de requisito', E.rework_por_causa, entero, {}, pieCausas)}
-    ${F('', '¿Vuelve menos lo que pasó por el pipeline? Por repo, con corrida contra sin constancia', E.rework_por_carril, entero, {}, `La hipótesis y el mínimo por grupo se escribieron <b>antes</b> de mirar un número (<code>scripts/metrics/lane-hypothesis.json</code>) y el resultado se publica aunque salga en contra del pipeline. «Sin constancia» no quiere decir «a mano»: una corrida que no se guardó en el repo cae ahí. Nunca se suma entre productos.`)}
+    ${F('', '¿Vuelve menos lo que pasó por el pipeline? Por repo, con ejecución contra sin constancia', E.rework_por_carril, entero, {}, `La hipótesis y el mínimo por grupo se escribieron <b>antes</b> de mirar un número (<code>scripts/metrics/lane-hypothesis.json</code>) y el resultado se publica aunque salga en contra del pipeline. «Sin constancia» no quiere decir «a mano»: una ejecución que no se guardó en el repo cae ahí. Nunca se suma entre productos.`)}
     ${F('', dInc && dInc.titulo ? dInc.titulo : 'Incidentes de producción detectados por una máquina', dInc, entero, {}, 'Es un dato <b>declarado</b> por una persona, no producido por un registro: se muestra, no se juzga, y vence.')}
   </div>
 </section>
@@ -1604,7 +1604,7 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
   <p class="q-note">La pregunta que separa un tablero honesto de uno decorativo. Una suite en verde no dice nada por sí sola: lo que dice algo es <strong>si esas pruebas se rompen cuando el código se rompe</strong>. <em>La mutación, la cobertura y la guía de QA cuentan los registros de todas las máquinas que los suben, y cada ficha dice de cuántas sale su número; ${AMB.nocturno ? 'la duración de la suite, también: sale del registro de controles que sube cada máquina' : 'la duración de la suite sale todavía de esta máquina'}.</em></p>
   <div class="grid">
     ${F('mutacion', 'Puntaje de mutación: proporción de mutantes que las pruebas matan (mediana)', L.mutacion, pct, { bad: 'flojo', warn: 'hubo ceros', ok: 'bien' }, 'Un chequeo que <b>no pudo medir</b> —hoy el chequeo sólo sabe correr las pruebas de Node, así que en .NET y React no mide— se cuenta aparte y <b>nunca es un 0 %</b>.')}
-    ${F('cobertura_tocada_evaluo', 'Corridas de pruebas que evaluaron el umbral del 75 % sobre las líneas tocadas', L.cobertura_tocada, pct, { bad: 'casi nunca mide', warn: 'parcial', ok: 'bien' }, 'La cobertura se mide sobre las <b>líneas que la story agregó o modificó</b>, no sólo sobre los archivos que creó (medido: casi ninguna story crea archivos, y el umbral no juzgaba nada). Una corrida no evalúa cuando su herramienta no produce cobertura o no hubo líneas de código tocadas. <b>En observación</b>: el detalle dice hasta cuándo y cuántas habrían frenado, y con ese número se decide si el 75 % pasa a frenar. Cuenta todas las máquinas.')}
+    ${F('cobertura_tocada_evaluo', 'Ejecuciones de pruebas que evaluaron el umbral del 75 % sobre las líneas tocadas', L.cobertura_tocada, pct, { bad: 'casi nunca mide', warn: 'parcial', ok: 'bien' }, 'La cobertura se mide sobre las <b>líneas que la story agregó o modificó</b>, no sólo sobre los archivos que creó (medido: casi ninguna story crea archivos, y el umbral no juzgaba nada). Una ejecución no evalúa cuando su herramienta no produce cobertura o no hubo líneas de código tocadas. <b>En observación</b>: el detalle dice hasta cuándo y cuántas habrían frenado, y con ese número se decide si el 75 % pasa a frenar. Cuenta todas las máquinas.')}
     ${F('qa_guia', 'Cierres que necesitaban la guía para que una persona pruebe a mano, y la tenían', L.qa_guia, pct, { bad: 'casi siempre falta', warn: 'parcial', ok: 'bien' }, 'Es el puente entre «las pruebas pasan» y «alguien lo usó». Hasta septiembre de 2026 sólo quedaba anotada la guía que <b>faltaba</b>, así que la proporción se arma sólo con los cierres que anotan los cuatro resultados; los avisos viejos se cuentan, no se dividen.')}
     ${F('', 'Cuánto tarda verificar: duración de la suite de pruebas (mediana, segundos)', L.gates_dur, num1, {}, 'Una suite que tarda horas no se corre antes de commitear — se saltea.')}
   </div>
@@ -1612,7 +1612,7 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
 
 <section class="q">
   ${cabecera('4', '¿Los controles sirven, o estorban?', q4, q4 === 'bad' ? 'una regla concentra todo' : q4 === 'warn' ? 'atención' : 'bien')}
-  <p class="q-note">Un catálogo de reglas sólo puede crecer si nadie mide cuáles frenan de verdad y cuáles se esquivan todos los días. <strong>Éste es el panel que decide qué regla se retira</strong>. <em>Frenos y escapes, de todas las máquinas: ${esc(L.cobertura_maquinas || 'sin cobertura de máquinas')}. ${AMB.nocturno ? notaCorridasNocturno : 'La duración, los agentes y las vueltas salen de los registros de esta máquina; los pasos, del buzón de corridas de todas.'}</em></p>
+  <p class="q-note">Un catálogo de reglas sólo puede crecer si nadie mide cuáles frenan de verdad y cuáles se esquivan todos los días. <strong>Éste es el panel que decide qué regla se retira</strong>. <em>Frenos y escapes, de todas las máquinas: ${esc(L.cobertura_maquinas || 'sin cobertura de máquinas')}. ${AMB.nocturno ? notaCorridasNocturno : 'La duración, los agentes y las vueltas salen de los registros de esta máquina; los pasos, del buzón de ejecuciones de todas.'}</em></p>
   <div class="grid">
     ${F('', 'Veces que un control del pipeline bloqueó una acción', L.bloqueos, entero, {}, 'Cuenta las evaluaciones de los <b>controles del pipeline</b> (el registro de controles, <code>gates.log</code>) que bloquearon. Los frenos previos a la herramienta —los que corren antes de cada comando— son otra cuenta, de otro registro: están en la ficha siguiente.')}
     ${F('', 'Los frenos previos a la herramienta: cuántas veces frenaron, y cuántas los saltearon', L.frenos, entero, {}, 'Los dos números de la misma regla, juntos: sin el primero, un freno que funcionó todo el mes se ve igual que uno que nunca se disparó. <b>El total es una cuenta, no un porcentaje</b>: los seis no comparten denominador —el freno de comandos peligrosos no cuenta los «dejé pasar», porque corre en cada comando de la terminal—, así que la proporción vive por freno, cada uno con el suyo.')}
@@ -1622,10 +1622,10 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
     ${F('suites_rojas', 'Suites del arnés en rojo', X.suites, entero, { ok: 'verde', bad: 'rojo' })}
     ${F('', 'Reglas candidatas a retiro: probadas, que nunca encontraron nada con recorrido de sobra', P.candidatas, entero, {}, 'Cada una <b>sabe ponerse roja</b>: retirarla pierde disuasión. <b>La tabla marca; decide una persona.</b>')}
     ${F('', 'Reglas que el banco de pruebas probó de verdad', P.probadas, pct, {}, 'Una regla sin prueba que la obligue a marcar <b>no se juzga</b>: sale «sin probar», nunca candidata.')}
-    ${F('', 'Una corrida del pipeline, de punta a punta (mediana, horas)', L.corridas, num1, {}, [L.vueltas && L.vueltas.estado === 'medido' ? `<b>${L.vueltas.valor} vueltas de revisión de mediana</b>${L.agentes && L.agentes.estado === 'medido' ? ` y ${L.agentes.valor} agentes por corrida` : ''}: si los revisores piden en la vuelta 2 y 3 algo que se sabía antes, eso se mueve a la spec.` : null, pieTiempos].filter(Boolean).join(' ') || null)}
-    ${F('', 'Pasos de una corrida del pipeline (mediana): la variable que explica lo que consume', L.pasos, redondo, {}, 'Una corrida consume según cuántos pasos da, porque en cada paso el modelo relee todo lo anterior: <b>los tokens son la consecuencia, esto es la palanca</b>. Sale de las corridas de todas las máquinas que las suben. <b>No tiene tope ni color a propósito</b>: primero la serie, y recién si alguna palanca la mueve se discute un umbral.')}
-    ${F('', 'Commits por carril: pipeline, atajo declarado o ninguno', L.carriles, entero, {}, 'Sale del hook que ya registra cada commit de una sesión. <b>Los commits hechos fuera de una sesión no se ven</b> (desde la terminal o el editor), ni los que toman el mensaje de un archivo o de una variable: no están en este número, y eso es «no medido», no cero. Un commit hasta 3 h después de cerrar una corrida cuenta como de esa corrida; un atajo vencido no es un carril.')}
-    ${F('', 'Despliegues: productos con producción al día', E.despliegues, entero, {}, 'Sale de la foto de despliegues de cada noche, leída del <b>stage</b> de cada corrida: una corrida «succeeded» con la aprobación vencida no cuenta como desplegada. Sobre los productos medidos; el detalle dice cuáles tienen producción atrasada y cuántas aprobaciones vencieron. Duración, cola y frecuencia de despliegues: story 2.11.')}
+    ${F('', 'Una ejecución del pipeline, de punta a punta (mediana, horas)', L.corridas, num1, {}, [L.vueltas && L.vueltas.estado === 'medido' ? `<b>${L.vueltas.valor} vueltas de revisión de mediana</b>${L.agentes && L.agentes.estado === 'medido' ? ` y ${L.agentes.valor} agentes por ejecución` : ''}: si los revisores piden en la vuelta 2 y 3 algo que se sabía antes, eso se mueve a la spec.` : null, pieTiempos].filter(Boolean).join(' ') || null)}
+    ${F('', 'Pasos de una ejecución del pipeline (mediana): la variable que explica lo que consume', L.pasos, redondo, {}, 'Una ejecución consume según cuántos pasos da, porque en cada paso el modelo relee todo lo anterior: <b>los tokens son la consecuencia, esto es la palanca</b>. Sale de las ejecuciones de todas las máquinas que las suben. <b>No tiene tope ni color a propósito</b>: primero la serie, y recién si alguna palanca la mueve se discute un umbral.')}
+    ${F('', 'Commits por carril: pipeline, atajo declarado o ninguno', L.carriles, entero, {}, 'Sale del hook que ya registra cada commit de una sesión. <b>Los commits hechos fuera de una sesión no se ven</b> (desde la terminal o el editor), ni los que toman el mensaje de un archivo o de una variable: no están en este número, y eso es «no medido», no cero. Un commit hasta 3 h después de cerrar una ejecución cuenta como de esa ejecución; un atajo vencido no es un carril.')}
+    ${F('', 'Despliegues: productos con producción al día', E.despliegues, entero, {}, 'Sale de la foto de despliegues de cada noche, leída del <b>stage</b> de cada ejecución: una ejecución «succeeded» con la aprobación vencida no cuenta como desplegada. Sobre los productos medidos; el detalle dice cuáles tienen producción atrasada y cuántas aprobaciones vencieron. Duración, cola y frecuencia de despliegues: story 2.11.')}
   </div>
   ${tablaPoda(P)}
   <details><summary>Detalle: las 6 métricas de revisores del capturador, con su cobertura</summary>

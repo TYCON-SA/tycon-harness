@@ -308,7 +308,7 @@ SH
   antes="$(find "$TMP/sys2" -type f -print0 | sort -z | xargs -0 shasum 2>/dev/null | shasum | cut -d' ' -f1)"
   PATH="$TMP/bin:$PATH" TYCON_ADO_ORG="$ORG_T19" TYCON_PROD_TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_ROOT="$TMP/sys2" TYCON_PROD_HARNESS="$HARNESS_T19" TYCON_PROD_ACCEPT_ORIGIN=1 bash "$INSTALADOR" --no-sudo >"$TMP/inst-out" 2>&1
   despues="$(find "$TMP/sys2" -type f -print0 | sort -z | xargs -0 shasum 2>/dev/null | shasum | cut -d' ' -f1)"
-  [ "$antes" = "$despues" ] && ok "T19d · la segunda corrida no cambia nada (idempotente)" || no "T19d · la segunda corrida cambió archivos"
+  [ "$antes" = "$despues" ] && ok "T19d · la segunda ejecución no cambia nada (idempotente)" || no "T19d · la segunda ejecución cambió archivos"
 
   # T19j · las libs que el freno necesita en /opt/tycon viajan completas: repos-root.js requiere tycon-config.js y
   #        skills-dir.js; sin ellas el freno instalado no puede ni leer el índice

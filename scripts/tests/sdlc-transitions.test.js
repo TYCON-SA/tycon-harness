@@ -1448,7 +1448,7 @@ function fixtureCarril(nombre) {
   commit(repo, 'dos viejas', '2026-05-01T10:00:00-00:00');
   // El repo empieza a guardar corridas.
   escribir(repo, '.advisors/pipeline-runs/RK-3-20260601T1000/findings.json', '[]');
-  commit(repo, 'primera corrida guardada', '2026-06-01T10:00:00-00:00');
+  commit(repo, 'primera ejecución guardada', '2026-06-01T10:00:00-00:00');
   escribir(repo, '.advisors/pipeline-runs/RK-4-20260602T1000/review-roster.json', '{}');
   escribir(repo, '.advisors/pipeline-runs/RK-9-20260602T1000/findings.json', '[]');
   escribir(repo, 'specs/c.md', storyVuelta('RK-3', 'done', true));    // con corrida, volvió
@@ -1460,22 +1460,22 @@ function fixtureCarril(nombre) {
   return { root, repo };
 }
 
-test('T14 (2.7) · rework_por_carril separa con corrida / sin constancia, dentro de la ventana, por repo', () => {
+test('T14 (2.7) · rework_por_carril separa con ejecución / sin constancia, dentro de la ventana, por repo', () => {
   // 🔴 rojo: contar TODO el repo (sin ventana) → las dos viejas entran como «sin constancia»
   //    (den 4 en vez de 2) y el grupo sin corrida parece peor de lo que es por culpa de la historia.
   //    Y el global: sumar entre repos es mezclar productos — el campo NO existe en `global`.
   const { repo } = fixtureCarril('carril-ventana');
   const d = medirJson(repo);
   const x = d.repos[0].rework_por_carril;
-  assert.ok(x, `se mide en un repo que guarda corridas: ${JSON.stringify(d.repos[0].not_measured)}`);
-  assert.equal(x.desde, '2026-06-01', 'la ventana arranca con la primera corrida guardada');
+  assert.ok(x, `se mide en un repo que guarda ejecuciones: ${JSON.stringify(d.repos[0].not_measured)}`);
+  assert.equal(x.desde, '2026-06-01', 'la ventana arranca con la primera ejecución guardada');
   assert.deepStrictEqual(x.con_corrida, { num: 1, den: 2 });
   assert.deepStrictEqual(x.sin_constancia, { num: 1, den: 2 });
   assert.equal(x.fuera_de_ventana, 2, 'las dos cerradas antes de la ventana se cuentan aparte');
   assert.strictEqual(d.global.rework_por_carril, undefined, 'nunca se suma entre productos');
 });
 
-test('T14b (2.7) · un repo que no guarda corridas publica null con motivo, nunca dos ceros', () => {
+test('T14b (2.7) · un repo que no guarda ejecuciones publica null con motivo, nunca dos ceros', () => {
   // 🔴 rojo: devolver {con_corrida:{0,0}, sin_constancia:{num,den}} → «nunca pasó nada por el pipeline».
   const { repo } = nuevoRepo('carril-sin-carpeta');
   escribir(repo, 'specs/a.md', storyVuelta('RK-1', 'done', true));
@@ -1485,7 +1485,7 @@ test('T14b (2.7) · un repo que no guarda corridas publica null con motivo, nunc
   assert.ok((d.repos[0].not_measured || []).some((m) => /carril/i.test(m)), JSON.stringify(d.repos[0].not_measured));
 });
 
-test('T14c (2.7) · una carpeta de corrida de OTRA story con prefijo parecido no cuenta', () => {
+test('T14c (2.7) · una carpeta de ejecución de OTRA story con prefijo parecido no cuenta', () => {
   // 🔴 rojo: `startsWith(id)` sin el guion → la corrida de RK-10 le da constancia a RK-1.
   const { repo } = nuevoRepo('carril-prefijo');
   escribir(repo, '.advisors/pipeline-runs/RK-10-20260601T1000/findings.json', '[]');
@@ -1518,7 +1518,7 @@ test('T14e (2.7) · una story cerrada ANTES de la ventana y editada después sig
   escribir(repo, 'specs/a.md', storyVuelta('RK-1', 'done', false));
   commit(repo, 'se cierra', '2026-05-01T10:00:00-00:00');
   escribir(repo, '.advisors/pipeline-runs/RK-2-20260601T1000/findings.json', '[]');
-  commit(repo, 'primera corrida', '2026-06-01T10:00:00-00:00');
+  commit(repo, 'primera ejecución', '2026-06-01T10:00:00-00:00');
   escribir(repo, 'specs/a.md', storyVuelta('RK-1', 'done', true));   // back-link agregado después
   escribir(repo, 'specs/b.md', storyVuelta('RK-2', 'in-progress', false));
   commit(repo, 'back-link y otra', '2026-06-03T10:00:00-00:00');
@@ -1537,7 +1537,7 @@ test('T14f (2.7) · una story con alguna versión ilegible no se fecha: va a sin
   escribir(repo, 'specs/a.md', '---\nstory: RK-1\nepic: 1\nstatus:\n---\n\n# x\n');   // estado ilegible (vacío)
   commit(repo, 'nace rota', '2026-05-01T10:00:00-00:00');
   escribir(repo, '.advisors/pipeline-runs/RK-1-20260601T1000/findings.json', '[]');
-  commit(repo, 'primera corrida', '2026-06-01T10:00:00-00:00');
+  commit(repo, 'primera ejecución', '2026-06-01T10:00:00-00:00');
   escribir(repo, 'specs/a.md', storyVuelta('RK-1', 'done', false));
   commit(repo, 'se cierra bien', '2026-06-02T10:00:00-00:00');
   const r = medirJson(repo).repos[0];
@@ -1547,13 +1547,13 @@ test('T14f (2.7) · una story con alguna versión ilegible no se fecha: va a sin
   assert.deepStrictEqual(x.con_corrida, { num: 0, den: 0 });
 });
 
-test('T14g (2.7) · la corrida de una story con id más largo NO le da constancia a la de id más corto', () => {
+test('T14g (2.7) · la ejecución de una story con id más largo NO le da constancia a la de id más corto', () => {
   // 🔴 rojo: con `startsWith(id + '-')`, la carpeta
   //    `1.3-B-20260601T1000` le da constancia a la story `1.3`. La carpeta es `<id>-<fecha>`: después del
   //    guion tiene que venir la fecha.
   const { repo } = nuevoRepo('carril-prefijo-largo');
   escribir(repo, '.advisors/pipeline-runs/RK-1-B-20260601T1000/findings.json', '[]');
-  commit(repo, 'corrida de RK-1-B', '2026-06-01T10:00:00-00:00');
+  commit(repo, 'ejecución de RK-1-B', '2026-06-01T10:00:00-00:00');
   escribir(repo, 'specs/a.md', storyVuelta('RK-1', 'done', false));
   escribir(repo, 'specs/b.md', storyVuelta('RK-1-B', 'done', false));
   commit(repo, 'dos', '2026-06-02T10:00:00-00:00');

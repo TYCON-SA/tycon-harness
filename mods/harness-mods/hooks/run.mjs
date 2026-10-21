@@ -5,7 +5,7 @@
 
 import { STEPS, SUBSTEP_FLAG, SUBSTEP_OLD_FLAG, ASKS_DEV, MAIN_TOTAL } from './steps.mjs';
 
-export const NO_RUN_TEXT = 'No hay una corrida del pipeline en esta sesión.';
+export const NO_RUN_TEXT = 'No hay una ejecución del pipeline en esta sesión.';
 
 const isMain = (id) => /^\d$/.test(id);
 const ms = (iso) => {

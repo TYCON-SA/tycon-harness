@@ -291,7 +291,7 @@ test('T19d Bench_Portable_NoGitBash — en Windows sin Git for Windows: «NO MED
   assert.match(r.stdout, /NO MEDIDO: falta Git for Windows/);
   assert.doesNotMatch(r.stdout, /✅/, 'ningún verde');
   assert.doesNotMatch(r.stdout, /would-pass/, 'no corrió ningún caso');
-  assert.ok(!fs.existsSync(report), 'ni escribió un reporte que alguien pueda leer como una corrida');
+  assert.ok(!fs.existsSync(report), 'ni escribió un reporte que alguien pueda leer como una ejecución');
   // sólo con el lanzador de WSL
   r = run("{ platform: 'win32', env: { Path: 'C:\\\\Windows\\\\System32', SystemRoot: 'C:\\\\Windows' }, exists: (p) => /system32\\\\bash\\.exe$/i.test(p) }");
   assert.strictEqual(r.status, 2);

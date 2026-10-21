@@ -647,7 +647,7 @@ function renderReport({ skills, agents, mcps, claudemd, medido }) {
   lines.push('  • Las estimaciones usan chars/4 (precision ±15% vs tokenizer real).');
   lines.push('  • MCP tools por server: hardcoded para servers conocidos; default 8 para unknown.');
   lines.push('  • Esto mide LO QUE SE CARGA SIEMPRE (descripciones, schemas). El body de');
-  lines.push('    las skills solo se carga si Claude las invoca activamente.');
+  lines.push('    las skills solo se carga si el agente las invoca activamente.');
   lines.push('  • Engram observations cargadas en SessionStart no están incluidas (rotan).');
   lines.push('  • Re-correr post-cambio: node ~/.claude/tycon-harness/scripts/tools/context-budget.js');
   lines.push('');

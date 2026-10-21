@@ -228,7 +228,7 @@ T="$(nuevo)"; gancho "$T/repo/.git/hooks/post-commit" post 0
 ( export HOME="$T/casa" TYCON_GUIDES_DIR="$T/arnes" LAB_LOG="$T/log" TYCON_POST_COMMIT_NOTICE=0 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
   cd "$T/repo" && for i in 1 2 3 4 5; do "$T/hooks/post-commit" > "$T/par-$i.txt" 2>&1 & done; wait )
 AVISOS="$(cat "$T"/par-*.txt | grep -c 'Para dejarlo como estaba')"
-if [ "$AVISOS" = 1 ] && [ "$(veces "$T" post)" = 5 ]; then ok "T14 AvisoDeUnaVez_DosCorridasALaVez: cinco corridas a la vez, un solo aviso"
+if [ "$AVISOS" = 1 ] && [ "$(veces "$T" post)" = 5 ]; then ok "T14 AvisoDeUnaVez_DosCorridasALaVez: cinco ejecuciones a la vez, un solo aviso"
 else mal "T14 avisos=$AVISOS corridas=$(veces "$T" post)"; fi
 
 echo "─────────────"

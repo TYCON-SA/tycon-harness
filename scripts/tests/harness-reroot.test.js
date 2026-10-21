@@ -192,8 +192,8 @@ test('T20 Reroot_HooksRewritten_PermissionsAdded_RealPathTwinDropped_Dedupe_Laun
   const hash = homeHash(h);
   const again = reroot(h, ['--reroot', m.legacy, m.place], env);
   assert.strictEqual(again.rc, 0, again.err);
-  assert.strictEqual(again.n, 0, `la segunda corrida cambió ${again.n}: ${again.out}`);
-  assert.strictEqual(homeHash(h), hash, 'la segunda corrida escribió algo');
+  assert.strictEqual(again.n, 0, `la segunda ejecución cambió ${again.n}: ${again.out}`);
+  assert.strictEqual(homeHash(h), hash, 'la segunda ejecución escribió algo');
 });
 
 // ── T21 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────

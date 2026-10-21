@@ -141,7 +141,7 @@ else if (['state', 'set', 'change', 'preset', 'clear'].includes(op)) {
   if (op === 'preset') window.__atajo(arg);
   if (op === 'clear') window.__limpiar();
   const g = (id) => nodos[id] ? nodos[id].value : null;
-  console.log(JSON.stringify({ desde: g('f-desde'), hasta: g('f-hasta'), repo: g('f-repo'), maquina: g('f-maquina'), cuenta: nodos['cuenta'].textContent, vistas: ((/n=(\d+) de (\d+) corridas/.exec(nodos['fichas'].innerHTML) || [])[0] || 'ninguna').replace(/ corridas/, ''), url: global.__url }));
+  console.log(JSON.stringify({ desde: g('f-desde'), hasta: g('f-hasta'), repo: g('f-repo'), maquina: g('f-maquina'), cuenta: nodos['cuenta'].textContent, vistas: ((/n=(\d+) de (\d+) ejecuciones/.exec(nodos['fichas'].innerHTML) || [])[0] || 'ninguna').replace(/ ejecuciones/, ''), url: global.__url }));
 }
 else { console.error('op desconocida'); process.exit(2); }
 JS
@@ -173,7 +173,7 @@ S3="33333333-3333-4333-8333-333333333333"
 T=$(mktemp -d); generar "${T}/no-existe" "${T}/o.html" "${T}/log"
 [ "${RC}" -eq 0 ] && ok "T1 registro ausente → exit 0 (fue ${RC})" || mal "T1 esperaba exit 0, fue ${RC}"
 [ -f "${T}/o.html" ] && ok "T1 la página se escribió igual" || mal "T1 no escribió la página"
-grep -q 'no está el registro de corridas' "${T}/o.html" && ok "T1 la página dice el motivo" || mal "T1 falta el motivo del gris"
+grep -q 'no está el registro de ejecuciones' "${T}/o.html" && ok "T1 la página dice el motivo" || mal "T1 falta el motivo del gris"
 F="$(cliente "${T}/o.html" container fichas)"
 grep -q 'tile blind' <<< "${F}" && ok "T1 las fichas salen con trama" || mal "T1 las fichas no salen con trama"
 grep -q 't-val">0' <<< "${F}" && mal "T1 dibujó un cero donde hubo ausencia" || ok "T1 ningún cero dibujado"
@@ -206,7 +206,7 @@ assert c[0]['story']=='NUEVA', 'tomó la vieja: %s'%c[0]['story']
 assert m['archivos']==2 and m['duplicados']==1, (m['archivos'], m['duplicados'])
 " "${J}" && ok "T3 dos archivos de la misma sesión → una corrida, la del archivedAt mayor" || mal "T3 no deduplica por sessionId"
 generar "${T}/r" "${T}/o.html" "${T}/log"
-grep -q '1 corrida' "${T}/log" && grep -q '2 archivos' "${T}/log" && ok "T3 el resumen dice «1 corrida … 2 archivos»" || mal "T3 el resumen no dice corridas vs archivos: $(cat "${T}/log")"
+grep -q '1 ejecución' "${T}/log" && grep -q '2 archivos' "${T}/log" && ok "T3 el resumen dice «1 ejecución … 2 archivos»" || mal "T3 el resumen no dice ejecuciones vs archivos: $(cat "${T}/log")"
 rm -rf "${T}"
 
 # ── T3b · un JSON roto y uno sin sessionId se CUENTAN y se dicen ───────────────────────────────
@@ -264,7 +264,7 @@ T=$(mktemp -d); volcado "${T}/r" "${S1}"
 volcado "${T}/r" "${S2}" "2026-08-16T05:53:47Z" '{"costo":null}'
 generar "${T}/r" "${T}/o.html" "${T}/log"
 F="$(cliente "${T}/o.html" container fichas)"
-grep -q 'n=1 de 2 corridas' <<< "${F}" && ok "T5 la ficha de agentes dice n=1 de 2" || mal "T5 la ficha de agentes no excluye la corrida sin costo"
+grep -q 'n=1 de 2 ejecuciones' <<< "${F}" && ok "T5 la ficha de agentes dice n=1 de 2" || mal "T5 la ficha de agentes no excluye la ejecución sin costo"
 J="$(modelo_json "${T}/r")"
 IDX="$(python3 -c "import json,sys; c=json.loads(sys.argv[1])['corridas']; print([i for i,x in enumerate(c) if x['costo'] is None][0])" "${J}")"
 D="$(cliente "${T}/o.html" detail "${IDX}")"
@@ -283,7 +283,7 @@ D="$(cliente "${T}/o.html" detail "${IDX}")"
 grep -q 'no registró controles' <<< "${D}" && ok "T6 el detalle dice que no registró controles" || mal "T6 el detalle no declara la ausencia de controles"
 grep -q '0 con error' <<< "${D}" && mal "T6 el detalle pinta «0 con error»" || ok "T6 no dice «0 con error»"
 F="$(cliente "${T}/o.html" container fichas)"
-grep -q 'de 1 corridas con controles' <<< "${F}" && ok "T6 la ficha de errores cuenta sólo la corrida con controles" || mal "T6 la ficha de errores no dice «de 1 corridas con controles»"
+grep -q 'de 1 ejecuciones con controles' <<< "${F}" && ok "T6 la ficha de errores cuenta sólo la ejecución con controles" || mal "T6 la ficha de errores no dice «de 1 ejecuciones con controles»"
 rm -rf "${T}"
 
 # ── T7 · consumo borrado no es «0 tokens» ──────────────────────────────────────────────────────
@@ -292,7 +292,7 @@ T=$(mktemp -d); volcado "${T}/r" "${S1}"
 volcado "${T}/r" "${S2}" "2026-08-16T05:53:47Z" '{"consumo":{"estado":"borrada","motivo":"MOTIVO_DEL_VOLCADO la conversación ya no está","tokens":null,"por_modelo":null,"por_paso":null,"fuera_de_ventana":null,"respuestas":null}}'
 generar "${T}/r" "${T}/o.html" "${T}/log"
 F="$(cliente "${T}/o.html" container fichas)"
-grep -q 'Tokens de una corrida' <<< "${F}" && grep -q 'n=1 de 2 corridas' <<< "${F}" && ok "T7 la mediana de tokens excluye la corrida borrada (n=1 de 2)" || mal "T7 la mediana de tokens no excluye la borrada"
+grep -q 'Tokens de una ejecución' <<< "${F}" && grep -q 'n=1 de 2 ejecuciones' <<< "${F}" && ok "T7 la mediana de tokens excluye la ejecución borrada (n=1 de 2)" || mal "T7 la mediana de tokens no excluye la borrada"
 J="$(modelo_json "${T}/r")"
 IDX="$(python3 -c "import json,sys; c=json.loads(sys.argv[1])['corridas']; print([i for i,x in enumerate(c) if x['consumo']['estado']=='borrada'][0])" "${J}")"
 D="$(cliente "${T}/o.html" detail "${IDX}")"
@@ -319,16 +319,16 @@ volcado "${T}/r" "${S2}" "2026-08-11T05:00:00Z" '{"marker":{"lastTouch":"2026-08
 volcado "${T}/r" "${S3}" "2026-08-25T05:00:00Z" '{"marker":{"lastTouch":"2026-08-25T09:00:00.000Z"}}'
 generar "${T}/r" "${T}/o.html" "${T}/log"
 F="$(cliente "${T}/o.html" container fichas)"
-grep -q '>2 h<' <<< "${F}" && grep -q 'n=3 de 3 corridas' <<< "${F}" && ok "T8 mediana de duración 2 h con n=3 de 3" || mal "T8 la mediana o su denominador no están"
+grep -q '>2 h<' <<< "${F}" && grep -q 'n=3 de 3 ejecuciones' <<< "${F}" && ok "T8 mediana de duración 2 h con n=3 de 3" || mal "T8 la mediana o su denominador no están"
 G="$(cliente "${T}/o.html" container gsem)"
-grep -q 'S34: 0 corridas' <<< "${G}" && ok "T8 la semana vacía del medio (S34) se dibuja con 0" || mal "T8 la semana vacía del medio no aparece"
+grep -q 'S34: 0 ejecuciones' <<< "${G}" && ok "T8 la semana vacía del medio (S34) se dibuja con 0" || mal "T8 la semana vacía del medio no aparece"
 rm -rf "${T}"
 
 # ── T9 · el filtro recalcula: con un rango imposible no quedan números ─────────────────────────
 # 🔴 Falla con: dibujar la capa ejecutiva en el servidor → el filtro no la toca.
 T=$(mktemp -d); volcado "${T}/r" "${S1}"; generar "${T}/r" "${T}/o.html" "${T}/log"
 F="$(cliente "${T}/o.html" impossible-filter)"
-grep -q 'sin corridas' <<< "${F}" && ok "T9 con el filtro imposible dice «sin corridas»" || mal "T9 el filtro imposible no dice «sin corridas»"
+grep -q 'sin ejecuciones' <<< "${F}" && ok "T9 con el filtro imposible dice «sin ejecuciones»" || mal "T9 el filtro imposible no dice «sin ejecuciones»"
 grep -q 'n=1 de 1' <<< "${F}" && mal "T9 la capa ejecutiva siguió mostrando números viejos" || ok "T9 no quedan números viejos"
 # ── T9b · sin red ──
 # 🔴 Falla con: pedir la tipografía a Google → la página depende de la red.
@@ -434,8 +434,8 @@ node "${TABLERO}" --dir "${T}/dash" --output "${T}/seis.html" >/dev/null 2>&1; R
 generar "${T}/r" "${T}/o.html" "${T}/log"
 # La vista de corridas se arma en cada máquina y no vive al lado de la de seis preguntas → se NOMBRAN,
 # no se enlazan (un href relativo quedaría roto en las dos).
-grep -q 'artifacts/tablero-del-arnes.html' "${T}/o.html" && ! grep -q 'href="tablero-del-arnes.html"' "${T}/o.html" && ok "T18 la de corridas nombra a la de seis preguntas sin un enlace roto" || mal "T18 la de corridas no nombra a la de seis preguntas (o la enlaza con una ruta que no existe)"
-grep -q 'dashboard.js --view runs' "${T}/seis.html" && ! grep -q 'href="runs-dashboard.html"' "${T}/seis.html" && ok "T18 la de seis preguntas dice cómo armar la de corridas, sin enlace roto" || mal "T18 la de seis preguntas enlaza a una vista que ya no está en el repo (o no dice cómo armarla)"
+grep -q 'artifacts/tablero-del-arnes.html' "${T}/o.html" && ! grep -q 'href="tablero-del-arnes.html"' "${T}/o.html" && ok "T18 la de ejecuciones nombra a la de seis preguntas sin un enlace roto" || mal "T18 la de ejecuciones no nombra a la de seis preguntas (o la enlaza con una ruta que no existe)"
+grep -q 'dashboard.js --view runs' "${T}/seis.html" && ! grep -q 'href="runs-dashboard.html"' "${T}/seis.html" && ok "T18 la de seis preguntas dice cómo armar la de ejecuciones, sin enlace roto" || mal "T18 la de seis preguntas enlaza a una vista que ya no está en el repo (o no dice cómo armarla)"
 grep -q 'href="/' "${T}/o.html" && mal "T18 hay un enlace con ruta absoluta" || ok "T18 ningún enlace absoluto"
 rm -rf "${T}"
 
@@ -460,7 +460,7 @@ T=$(mktemp -d)
 volcado "${T}/r" "${S1}" "" '{"marker":{"stepTimings":{"5":{"completedAt":"2026-08-15T07:28:47.000Z"},"6":{"completedAt":"2026-08-15T07:20:47.000Z"}}},"consumo":{"por_paso":{"0":10000,"1":10000,"4":10000,"5+6":600000,"8":10000}}}'
 generar "${T}/r" "${T}/o.html" "${T}/log"
 K="$(cliente "${T}/o.html" container ppk)"
-grep -q 'marcas invertidas o empatadas' <<< "${K}" && ok "T21 ppk declara la corrida con tramo fusionado" || mal "T21 ppk calla el tramo fusionado (600 k tokens invisibles)"
+grep -q 'marcas invertidas o empatadas' <<< "${K}" && ok "T21 ppk declara la ejecución con tramo fusionado" || mal "T21 ppk calla el tramo fusionado (600 k tokens invisibles)"
 rm -rf "${T}"
 
 # ── T22 · «quedó en el paso N» con huecos en stepsCompleted ───────────────────────────────────
@@ -538,7 +538,7 @@ volcado "${T}/r" "${S2}" "2026-08-16T05:53:47Z" '{"consumo":{"estado":"borrada",
 generar "${T}/r" "${T}/o.html" "${T}/log"
 F="$(cliente "${T}/o.html" usage-filter)"
 # (el DOM mínimo no tiene filas de tabla, así que el contador «a la vista» no se puede mirar acá: se mira la capa ejecutiva)
-grep -q 'n=1 de 1 corridas' <<< "${F}" && ! grep -q 'de 2 corridas' <<< "${F}" && ok "T9c «sólo con consumo medido» deja la capa ejecutiva en n=1 de 1 (antes 2)" || mal "T9c el filtro por consumo no filtra"
+grep -q 'n=1 de 1 ejecuciones' <<< "${F}" && ! grep -q 'de 2 ejecuciones' <<< "${F}" && ok "T9c «sólo con consumo medido» deja la capa ejecutiva en n=1 de 1 (antes 2)" || mal "T9c el filtro por consumo no filtra"
 rm -rf "${T}"
 
 # ── T28 · sin el saneador, el mensaje del registro se RETIENE y se dice; los tramos no se cortan ──
@@ -582,7 +582,7 @@ import json,sys; p=sys.argv[1]; c=json.load(open(p)); c['thresholds']['corridas_
 PY2
 volcado "${T}/r" "${S1}"; volcado "${T}/r" "${S2}" "2026-08-16T05:53:47Z" '{"marker":{"stepsCompleted":[0,1,2,3,4]}}'
 node "${T}/c/copia/nightly/dashboard/runs.js" --runs-dir "${T}/r" --output "${T}/o.html" >/dev/null 2>&1; F="$(cliente "${T}/o.html" container fichas)"
-grep -q 'mal formado en sources.json' <<< "${F}" && ! grep -q 'tile warn' <<< "${F}" && ok "T31 (corridas) umbral sin sentido → ficha neutra con motivo, no «atención»" || mal "T31 (corridas) el umbral mal formado juzga en silencio"
+grep -q 'mal formado en sources.json' <<< "${F}" && ! grep -q 'tile warn' <<< "${F}" && ok "T31 (ejecuciones) umbral sin sentido → ficha neutra con motivo, no «atención»" || mal "T31 (ejecuciones) el umbral mal formado juzga en silencio"
 R="$(node -e "const c=require('${RAIZ}/scripts/nightly/dashboard/common.js');const cfg={thresholds:{x:{ok_min:0.8}}};const m=c.medida(0.9,9,10);console.log(JSON.stringify(c.juzgar(cfg,'x',m))+'|'+c.motivoUmbral(cfg,'x')+'|'+c.motivoUmbral(cfg,'y'))")"
 [ "${R}" = '""|umbral «x» mal formado en sources.json: sin juicio de color|null' ] && ok "T31 (common.js) juzgar() neutro + motivoUmbral() con la clave; sin fila → sin motivo" || mal "T31 (common.js) dio: ${R}"
 R="$(node -e "const c=require('${RAIZ}/scripts/nightly/dashboard/common.js');console.log(c.ficha({thresholds:{x:{ok_min:0.8}}},'x','Título',c.medida(0.9,9,10),(v)=>String(v)))")"
@@ -668,9 +668,9 @@ grep -q '<th>máquina' "${T}/o.html" && ok "2.16-T14 la tabla tiene la columna �
 grep -q 'class="maq">maq-b<' "${T}/o.html" && ok "2.16-T14 la fila nombra su máquina" || mal "2.16-T14 ninguna fila nombra la máquina"
 grep -q 'id="f-maquina"' "${T}/o.html" && ok "2.16-T14 hay filtro por máquina" || mal "2.16-T14 no hay filtro por máquina"
 FM="$(cliente "${T}/o.html" machine-filter maq-b)"
-grep -q 'n=1 de 1 corridas' <<< "${FM}" && ok "2.16-T14 filtrar por maq-b deja una sola corrida" || mal "2.16-T14 el filtro por máquina no recalcula: $(echo "${FM}" | grep -o 'n=[0-9]* de [0-9]* corridas' | head -2)"
+grep -q 'n=1 de 1 ejecuciones' <<< "${FM}" && ok "2.16-T14 filtrar por maq-b deja una sola ejecución" || mal "2.16-T14 el filtro por máquina no recalcula: $(echo "${FM}" | grep -o 'n=[0-9]* de [0-9]* ejecuciones' | head -2)"
 FM="$(cliente "${T}/o.html" machine-filter '(sin declarar)')"
-grep -q 'n=2 de 2 corridas' <<< "${FM}" && ok "2.16-T14 «sin declarar» también se filtra (2)" || mal "2.16-T14 el filtro no reúne las sin declarar"
+grep -q 'n=2 de 2 ejecuciones' <<< "${FM}" && ok "2.16-T14 «sin declarar» también se filtra (2)" || mal "2.16-T14 el filtro no reúne las sin declarar"
 grep -q "${C}" "${T}/o.html" && mal "2.16-T14 la ruta de la carpeta bajada llegó a la página" || ok "2.16-T14 la ruta de la carpeta bajada no llega a la página"
 SELLO="$(grep -o '<b>Alcance:</b>[^<]*' "${T}/o.html")"
 grep -q 'maq-a 3' <<< "${SELLO}" && grep -q 'maq-b 1' <<< "${SELLO}" && grep -q 'sin declarar 2' <<< "${SELLO}" && ok "2.16-T14 con varias máquinas el sello las nombra con su conteo («${SELLO#*</b>}»)" || mal "2.16-T14 el sello dice: «${SELLO}»"
@@ -690,7 +690,7 @@ volcado "${TS}/buzon/maq-b" "${S3}"; volcado "${TS}/local" "${S6}" "" '{"marker"
 J16="$(node "${TS}/copia/nightly/dashboard/runs.js" --runs-dir "${TS}/local" --mailbox "${TS}/buzon" --json --dry-run 2>/dev/null | python3 -c "
 import json,sys; r=sys.stdin.read(); m=json.loads(r[r.find('{'):]); c=[x for x in m['corridas'] if x['story']=='L6'][0]
 print('ok' if c['maquina'] is None and 'upload-runs.js' in (c['maquina_motivo'] or '') else 'MAL:%r %r'%(c['maquina'],c['maquina_motivo']))")"
-[ "${J16}" = "ok" ] && ok "2.16-T12b sin el módulo de la subida, la corrida local sale «sin declarar» con el motivo" || mal "2.16-T12b ${J16}"
+[ "${J16}" = "ok" ] && ok "2.16-T12b sin el módulo de la subida, la ejecución local sale «sin declarar» con el motivo" || mal "2.16-T12b ${J16}"
 rm -rf "${TS}"
 # Una carpeta de máquina ilegible dentro de una carpeta legible también se dice en la PÁGINA
 # 🔴 Falla con: que sólo lo diga la consola y la página diga «1 de 1 archivos» y «esta máquina».
@@ -774,11 +774,11 @@ multi --output "${RAIZ}/artifacts/otra-cosa-2-16.html" > /dev/null 2>&1; RC=$?
 # de dónde sale la carpeta: la bajada por defecto (~/.claude/.tycon-pipeline/corridas-buzon) sólo sin --runs-dir; --local-only la apaga
 mkdir -p "${T}/casa/.claude/.tycon-pipeline"; cp -R "${R}" "${T}/casa/.claude/.tycon-pipeline/timing-history"; cp -R "${C}" "${T}/casa/.claude/.tycon-pipeline/corridas-buzon"
 N="$(env -u TYCON_MAILBOX_DIR HOME="${T}/casa" TYCON_MACHINE=maq-a node "${TABLERO}" --view runs --json --dry-run 2>/dev/null | python3 -c "import json,sys; r=sys.stdin.read(); print(len(json.loads(r[r.find('{'):])['corridas']))")"
-[ "${N}" = "6" ] && ok "2.16-T16 sin banderas lee la carpeta bajada por defecto (6 corridas)" || mal "2.16-T16 sin banderas leyó ${N} corridas (esperaba 6)"
+[ "${N}" = "6" ] && ok "2.16-T16 sin banderas lee la carpeta bajada por defecto (6 ejecuciones)" || mal "2.16-T16 sin banderas leyó ${N} ejecuciones (esperaba 6)"
 N="$(env -u TYCON_MAILBOX_DIR HOME="${T}/casa" TYCON_MACHINE=maq-a node "${TABLERO}" --view runs --local-only --json --dry-run 2>/dev/null | python3 -c "import json,sys; r=sys.stdin.read(); print(len(json.loads(r[r.find('{'):])['corridas']))")"
-[ "${N}" = "2" ] && ok "2.16-T16 --local-only no lee la carpeta bajada (2 corridas)" || mal "2.16-T16 --local-only leyó ${N} corridas (esperaba 2)"
+[ "${N}" = "2" ] && ok "2.16-T16 --local-only no lee la carpeta bajada (2 ejecuciones)" || mal "2.16-T16 --local-only leyó ${N} ejecuciones (esperaba 2)"
 N="$(env -u TYCON_MAILBOX_DIR HOME="${T}/casa" TYCON_MACHINE=maq-a node "${TABLERO}" --view runs --runs-dir "${R}" --json --dry-run 2>/dev/null | python3 -c "import json,sys; r=sys.stdin.read(); print(len(json.loads(r[r.find('{'):])['corridas']))")"
-[ "${N}" = "2" ] && ok "2.16-T16 con --runs-dir explícito no lee la carpeta bajada de la máquina (así ninguna suite la lee)" || mal "2.16-T16 con --runs-dir leyó ${N} corridas (esperaba 2)"
+[ "${N}" = "2" ] && ok "2.16-T16 con --runs-dir explícito no lee la carpeta bajada de la máquina (así ninguna suite la lee)" || mal "2.16-T16 con --runs-dir leyó ${N} ejecuciones (esperaba 2)"
 
 # ── T18 (parte vista) · el camino del clon git no existe ────────────────────────────
 # 🔴 Falla con: dejar --clone y corridas.json vivos «por las dudas» → dos fuentes para lo mismo.
@@ -824,7 +824,7 @@ assert p4['ms']==20*M, p4
 generar "${T}/r" "${T}/o.html" "${T}/log"
 grep -q '<th>trabajo' "${T}/o.html" && grep -q '<th>espera' "${T}/o.html" && ok "2.7-T7 la tabla tiene las columnas trabajo y espera" || mal "2.7-T7 faltan las columnas trabajo/espera"
 F="$(cliente "${T}/o.html" container fichas)"
-grep -q 'Espera humana' <<< "${F}" && grep -q 'n=1 de 2 corridas' <<< "${F}" && ok "2.7-T7 la capa ejecutiva da la espera con su n (1 de 2)" || mal "2.7-T7 la ficha de espera no está o no dice su n"
+grep -q 'Espera humana' <<< "${F}" && grep -q 'n=1 de 2 ejecuciones' <<< "${F}" && ok "2.7-T7 la capa ejecutiva da la espera con su n (1 de 2)" || mal "2.7-T7 la ficha de espera no está o no dice su n"
 D="$(cliente "${T}/o.html" detail "$(python3 -c "import json,sys; c=json.loads(sys.argv[1])['corridas']; print([i for i,x in enumerate(c) if x['tiempos']['estado']=='medida'][0])" "${J}")")"
 grep -q 'entre pasos' <<< "${D}" && ok "2.7-T7 la línea de tiempo dibuja el hueco como tramo propio" || mal "2.7-T7 el detalle no dibuja el hueco entre pasos"
 rm -rf "${T}"
@@ -835,7 +835,7 @@ T=$(mktemp -d)
 volcado "${T}/r" "${S1}" "" '{"marker":{"stepTimings":{"2":{"completedAt":"2026-08-15T06:03:57.000Z"}}}}'
 generar "${T}/r" "${T}/o.html" "${T}/log"
 D="$(cliente "${T}/o.html" detail 0)"
-grep -q 'estimadas por diferencia' <<< "${D}" && ok "2.7-T8 la corrida vieja dice «estimadas por diferencia»" || mal "2.7-T8 la corrida vieja no lleva el rótulo"
+grep -q 'estimadas por diferencia' <<< "${D}" && ok "2.7-T8 la ejecución vieja dice «estimadas por diferencia»" || mal "2.7-T8 la ejecución vieja no lleva el rótulo"
 grep -q 'marcado junto con el anterior' <<< "${D}" && ok "2.7-T8 el paso de 10 s se dibuja como marca «junto con el anterior»" || mal "2.7-T8 el paso corto no se rotula"
 grep -q 'se arregla con la story 2.7' "${T}/o.html" && mal "2.7-T8 la página sigue diciendo «se arregla con la story 2.7»" || ok "2.7-T8 ninguna nota promete la 2.7"
 F="$(cliente "${T}/o.html" container fichas)"
@@ -879,7 +879,7 @@ D="$(cliente "${T}/o.html" detail 0)"
 grep -q 'en 2 vuelta' <<< "${D}" && ok "7.1-T1 el detalle dice «en 2 vuelta(s)»" || mal "7.1-T1 el detalle no dice 2 vueltas"
 grep -q 'set de revisores calculado 3 veces' <<< "${D}" && ok "7.1-T1 el detalle dice que el set se calculó 3 veces" || mal "7.1-T1 el detalle calla los cálculos del set"
 F="$(cliente "${T}/o.html" container fichas)"
-grep -q 'Vueltas de revisión por corrida' <<< "${F}" && grep -q 'misma cuenta que el latido' <<< "${F}" && ok "7.1-T1 la ficha nombra la fuente (misma cuenta que el latido)" || mal "7.1-T1 la ficha no nombra la fuente"
+grep -q 'Vueltas de revisión por ejecución' <<< "${F}" && grep -q 'misma cuenta que el latido' <<< "${F}" && ok "7.1-T1 la ficha nombra la fuente (misma cuenta que el latido)" || mal "7.1-T1 la ficha no nombra la fuente"
 rm -rf "${T}"
 # sin `revisores` ni fotos: vueltas null con motivo, aunque el conteo viejo tenga un número
 T=$(mktemp -d)
@@ -931,7 +931,7 @@ grep -q '2 de 5 con hallazgos' <<< "${F}" && ok "7.3-T6 la ficha dice «2 de 5 c
 grep -q 'otras stories 1 de 1' <<< "${F}" && grep -q 're-loops 0 de 2' <<< "${F}" && ok "7.3-T6 la ficha desglosa por fase" || mal "7.3-T6 la ficha no desglosa por fase: $(echo "${F}" | grep -o 'validador de stories[^<]*<[^§]\{0,600\}' | head -c 600)"
 grep -q 'no se relanzó en 1 de 2 re-loops' <<< "${F}" && ok "7.3-T6 la ficha cuenta los re-loops sin relanzar" || mal "7.3-T6 la ficha no cuenta los re-loops sin relanzar"
 D="$(cliente "${T}/o.html" detail 0)"
-grep -q 'validador de stories' <<< "${D}" && ok "7.3-T6 el detalle de la corrida dice qué dijo el validador por fase" || mal "7.3-T6 el detalle de la corrida no nombra al validador"
+grep -q 'validador de stories' <<< "${D}" && ok "7.3-T6 el detalle de la ejecución dice qué dijo el validador por fase" || mal "7.3-T6 el detalle de la ejecución no nombra al validador"
 rm -rf "${T}"
 
 # ── T6b · Corridas_Validador_SinResultado_SeCuentan ──────────
@@ -1101,7 +1101,7 @@ PYC
 [ "${R}" = "codigo|clave-tapada|sin-ruta-abs|comprimido" ] && ok "CAMBIOS-T1 la página trae el cambio comprimido aparte, con la clave tapada y sin rutas absolutas" || mal "CAMBIOS-T1 página: ${R}"
 D0="$(cliente "${T}/o.html" all)"
 grep -q 'Archivos que tocó' <<< "${D0}" && grep -q 'src/Pago.ts' <<< "${D0}" && grep -q 'sin hilo' <<< "${D0}" && grep -q 'se muestra <b>entero</b>' <<< "${D0}" && grep -q 'class="balde"' <<< "${D0}" && grep -q 'class="tokbar"' <<< "${D0}" && grep -q 'TITULO SEMBRADO de la story' <<< "${D0}" && grep -q 'sin hilo: no hay consumo minuto a minuto' <<< "${D0}" && grep -q 'a.cs</span> <span class="nd">por consola' <<< "${D0}" && grep -q 'Sus commits llevaron <b>8 archivos</b>' <<< "${D0}" && grep -q 'sin hilo: no se sabe qué archivos tocó' <<< "${D0}" \
-  && ok "CAMBIOS-T1 el detalle dice de qué fue la corrida, lista los archivos enteros, dibuja archivos y consumo en el gráfico y marca «sin hilo» donde no hay" || mal "CAMBIOS-T1 detalle: $(echo "${D0}" | grep -o 'Archivos que tocó.\{0,300\}' | head -2)"
+  && ok "CAMBIOS-T1 el detalle dice de qué fue la ejecución, lista los archivos enteros, dibuja archivos y consumo en el gráfico y marca «sin hilo» donde no hay" || mal "CAMBIOS-T1 detalle: $(echo "${D0}" | grep -o 'Archivos que tocó.\{0,300\}' | head -2)"
 rm -rf "${T}"
 
 # ── ESPERA-T1 · la espera por una persona sale del hilo, no sólo de los pasos 3 y 7 ──
@@ -1146,7 +1146,7 @@ with gzip.open(sys.argv[1], "wt") as f:
 PYP
 generar "${T}/r" "${T}/o.html" "${T}/log"
 F="$(cliente "${T}/o.html" container fichas)"
-grep -q '>44 min<' <<< "${F}" && grep -q 'n=1 de 2 corridas' <<< "${F}" && grep -q 'en otras 1 corridas sin la espera de los pasos medida, la conversación muestra <b>al menos 60 min</b>' <<< "${F}" \
+grep -q '>44 min<' <<< "${F}" && grep -q 'n=1 de 2 ejecuciones' <<< "${F}" && grep -q 'en otras 1 ejecuciones sin la espera de los pasos medida, la conversación muestra <b>al menos 60 min</b>' <<< "${F}" \
   && ok "ESPERA-T1 la ficha: la mediana sólo con la medida (44 min, n=1) y el piso de la otra aparte (al menos 60 min)" || mal "ESPERA-T1 ficha de espera: $(echo "${F}" | grep -o 'Espera humana.\{0,500\}' | head -1)"
 rm -rf "${T}"
 
@@ -1374,7 +1374,7 @@ PYC
 D="$(cliente "${T}/o.html" all)"
 grep -q 'según git' <<< "${D}" && grep -q 'en 2 partes' <<< "${D}" && grep -q 'AgentSkills/skills/x.js' <<< "${D}" \
   && grep -q 'otra sesión' <<< "${D}" && grep -q 'no tiene historial local de git' <<< "${D}" && grep -q 'class="cg-f" data-g="0"' <<< "${D}" \
-  && grep -q 'data-g="0"' <<< "${D}" && grep -q 'UUID salen tapados' <<< "${D}" && grep -q '3 archivos que ya estaban sin commitear antes de la corrida no se muestran' <<< "${D}" \
+  && grep -q 'data-g="0"' <<< "${D}" && grep -q 'UUID salen tapados' <<< "${D}" && grep -q '3 archivos que ya estaban sin commitear antes de la ejecución no se muestran' <<< "${D}" \
   && grep -q '1 commit de otra sesión no se cuenta: <span class="mono">aaaa111</span> ajeno: lo commiteó la otra sesión' <<< "${D}" \
   && grep -q '1 commit no se pudo confirmar como de esta sesión y se muestra marcado' <<< "${D}" \
   && ok "2.19-T14 el detalle: según git arriba, «en 2 partes», el otro repo, aviso de otra sesión y de reflog, el commit ajeno listado y el dudoso avisado, y el filtro por archivo" || mal "2.19-T14 detalle: $(echo "${D}" | grep -o 'según git.\{0,600\}' | head -1)"
@@ -1499,12 +1499,12 @@ F="$(cliente "${T}/o.html" container fichas)"
 P="$(echo "${F}" | python3 -c "
 import sys
 for x in sys.stdin.read().split('<div class=\"tile')[1:]:
-    if 'Pasos de una corrida' in x: print(x)")"
+    if 'Pasos de una ejecución' in x: print(x)")"
 grep -q 't-val">400<' <<< "${P}" && ok "7.12-T1 la vista trae la mediana de pasos (400 de 100/300/500/700)" || mal "7.12-T1 la mediana de pasos no está: ${P:0:200}"
-grep -q 'n=4 de 4 corridas' <<< "${P}" && ok "7.12-T1 con su denominador al lado (n=4 de 4)" || mal "7.12-T1 falta el denominador: ${P:0:300}"
-[ "$(echo "${F}" | distancia_fichas 'Pasos de una corrida' 'Tokens de una corrida')" = "1" ] && ok "7.12-T1 la ficha de pasos está PEGADA a la de tokens" || mal "7.12-T1 la ficha de pasos no está al lado del consumo"
+grep -q 'n=4 de 4 ejecuciones' <<< "${P}" && ok "7.12-T1 con su denominador al lado (n=4 de 4)" || mal "7.12-T1 falta el denominador: ${P:0:300}"
+[ "$(echo "${F}" | distancia_fichas 'Pasos de una ejecución' 'Tokens de una ejecución')" = "1" ] && ok "7.12-T1 la ficha de pasos está PEGADA a la de tokens" || mal "7.12-T1 la ficha de pasos no está al lado del consumo"
 # …y la recalcula el filtro: con «sólo con consumo medido» sigue ahí, con un rango imposible desaparece.
-cliente "${T}/o.html" impossible-filter | grep 'Pasos de una corrida' >/dev/null && mal "7.12-T1 con el filtro imposible la ficha siguió mostrando un número" || ok "7.12-T1 el filtro la recalcula (rango imposible → sin número)"
+cliente "${T}/o.html" impossible-filter | grep 'Pasos de una ejecución' >/dev/null && mal "7.12-T1 con el filtro imposible la ficha siguió mostrando un número" || ok "7.12-T1 el filtro la recalcula (rango imposible → sin número)"
 
 # ── 7.12-T4 · la serie por mes, en el cliente (AC 4) @story-7.12 @ac-4 ──
 # 🔴 Falla con: publicar sólo la mediana global → no hay contra qué comparar la línea base.
@@ -1528,9 +1528,9 @@ generar "${T}/r" "${T}/o.html" "${T}/log"
 P="$(cliente "${T}/o.html" container fichas | python3 -c "
 import sys
 for x in sys.stdin.read().split('<div class=\"tile')[1:]:
-    if 'Pasos de una corrida' in x: print(x)")"
+    if 'Pasos de una ejecución' in x: print(x)")"
 grep -q 't-val">400<' <<< "${P}" && ok "7.12-T2 las no medidas NO entran en la mediana (sigue en 400)" || mal "7.12-T2 la mediana se movió con las no medidas: ${P:0:200}"
-grep -q 'n=4 de 6 corridas' <<< "${P}" && ok "7.12-T2 siguen en el denominador (n=4 de 6)" || mal "7.12-T2 las no medidas desaparecieron del denominador: ${P:0:300}"
+grep -q 'n=4 de 6 ejecuciones' <<< "${P}" && ok "7.12-T2 siguen en el denominador (n=4 de 6)" || mal "7.12-T2 las no medidas desaparecieron del denominador: ${P:0:300}"
 grep -q '<b>2</b> no tienen sus pasos medidos' <<< "${P}" && ok "7.12-T2 y se dicen, aparte" || mal "7.12-T2 no dice cuántas quedaron sin medir"
 rm -rf "${T}"
 
@@ -1542,8 +1542,8 @@ generar "${T}/r" "${T}/o.html" "${T}/log"
 P="$(cliente "${T}/o.html" container fichas | python3 -c "
 import sys
 for x in sys.stdin.read().split('<div class=\"tile')[1:]:
-    if 'Pasos de una corrida' in x: print(x)")"
-grep -q 'blind' <<< "${P}" && grep -q 'ninguna corrida del filtro' <<< "${P}" && ok "7.12-T5 sin ninguna medida: trama y motivo" || mal "7.12-T5 sin medidas no salió «no medido»: ${P:0:200}"
+    if 'Pasos de una ejecución' in x: print(x)")"
+grep -q 'blind' <<< "${P}" && grep -q 'ninguna ejecución del filtro' <<< "${P}" && ok "7.12-T5 sin ninguna medida: trama y motivo" || mal "7.12-T5 sin medidas no salió «no medido»: ${P:0:200}"
 grep -q 't-val">0' <<< "${P}" && mal "7.12-T5 publicó un cero" || ok "7.12-T5 ningún cero publicado"
 G="$(cliente "${T}/o.html" container gpasos)"
 grep -q 'mediana 0' <<< "${G}" && mal "7.12-T5 la serie dibujó un cero" || ok "7.12-T5 la serie tampoco inventa un cero"
@@ -1557,7 +1557,7 @@ volcado "${T}/r" "${S1}" "2026-06-10T05:00:00Z" '{"consumo":{"respuestas":100}}'
 volcado "${T}/r" "${S2}" "2026-08-20T05:00:00Z" '{"consumo":{"respuestas":300}}'
 generar "${T}/r" "${T}/o.html" "${T}/log"
 G="$(cliente "${T}/o.html" container gpasos)"
-grep -q '2026-07: sin corridas medidas' <<< "${G}" && ok "7.12-T4b el mes vacío del medio se dice, sin número" || mal "7.12-T4b el mes vacío del medio no aparece como hueco"
+grep -q '2026-07: sin ejecuciones medidas' <<< "${G}" && ok "7.12-T4b el mes vacío del medio se dice, sin número" || mal "7.12-T4b el mes vacío del medio no aparece como hueco"
 grep -q '2026-07: mediana' <<< "${G}" && mal "7.12-T4b el mes vacío publicó una mediana" || ok "7.12-T4b ninguna mediana inventada para el mes vacío"
 rm -rf "${T}"
 
@@ -1568,9 +1568,9 @@ volcado "${T}/r" "${S1}" "2026-08-10T05:00:00Z" '{"consumo":{"respuestas":100}}'
 volcado "${T}/r" "${S2}" "2026-08-20T05:00:00Z" '{"consumo":{"respuestas":300}}'
 volcado "${T}/r" "${S3}" "2026-09-05T05:00:00Z" '{"consumo":{"respuestas":500},"marker":{"startedAt":null}}'
 generar "${T}/r" "${T}/o.html" "${T}/log"
-cliente "${T}/o.html" container fichas | grep 'n=3 de 3 corridas' >/dev/null && ok "7.12-T4c la ficha cuenta las 3 medidas" || mal "7.12-T4c la ficha no cuenta las 3 medidas"
+cliente "${T}/o.html" container fichas | grep 'n=3 de 3 ejecuciones' >/dev/null && ok "7.12-T4c la ficha cuenta las 3 medidas" || mal "7.12-T4c la ficha no cuenta las 3 medidas"
 G="$(cliente "${T}/o.html" container gpasos)"
-grep -q '1 corrida medida no trae su fecha de arranque' <<< "${G}" && ok "7.12-T4c la serie dice la que quedó afuera por no tener fecha" || mal "7.12-T4c la serie descarta una corrida medida sin decirlo"
+grep -q '1 ejecución medida no trae su fecha de arranque' <<< "${G}" && ok "7.12-T4c la serie dice la que quedó afuera por no tener fecha" || mal "7.12-T4c la serie descarta una ejecución medida sin decirlo"
 
 # ── T4d · la etiqueta de la línea base no se pisa con el número del último mes ──
 # 🔴 Falla con: la etiqueta anclada a la derecha y ARRIBA de la línea — con la serie pegada a la línea base (lo
@@ -1649,7 +1649,7 @@ vista_t38 --output "${T}/o.html" > "${T}/log" 2>&1; RC=$?
   && ! grep -q 'uniones de carpetas no medidas' "${T}/o.html" \
   && ok "2.28-T38 la página muestra «antes, macbook-pro» y la marca de la compartida" || mal "2.28-T38 la página (rc=${RC}) no muestra las marcas: $(grep -o 'class="maq">[^<]*<[^<]*' "${T}/o.html" | head -4)"
 DET="$(cliente "${T}/o.html" all)"
-grep -q 'antes, macbook-pro' <<< "${DET}" && ok "2.28-T38 el detalle de la corrida también lo dice" || mal "2.28-T38 el detalle no dice «antes, macbook-pro»"
+grep -q 'antes, macbook-pro' <<< "${DET}" && ok "2.28-T38 el detalle de la ejecución también lo dice" || mal "2.28-T38 el detalle no dice «antes, macbook-pro»"
 # Sin el archivo del bajador: cada carpeta por separado, sin unir, y la página lo dice.
 # 🔴 Falla con: unir sin el archivo (inventar la regla en la vista), o no decir nada.
 rm -f "${T}/buzon/.carpetas-de-maquina.json"
@@ -1756,7 +1756,7 @@ case "$(campo "${E}" url)" in *hasta=2026-08-19*) ok "2.45-T2 cambiar «hasta» 
 E="$(estado "2026-08-20T15:00:00Z" "" UTC preset hoy)"
 case "$(campo "${E}" url)" in *desde=2026-08-20*hasta=2026-08-20*) ok "2.45-T2 un atajo escribe desde y hasta aunque coincidan con el rango";; *) mal "2.45-T2 el atajo no fijó el rango en la dirección: ${E}";; esac
 E="$(estado "2026-10-14T15:00:00Z" "" UTC change "f-hasta=2026-08-20")"
-case "$(campo "${E}" url)" in *hasta=2026-08-20*) ok "2.45-T2 «hasta» puesto a mano en el último día con corridas se escribe igual";; *) mal "2.45-T2 «hasta» a mano en el borde del rango no llegó: ${E}";; esac
+case "$(campo "${E}" url)" in *hasta=2026-08-20*) ok "2.45-T2 «hasta» puesto a mano en el último día con ejecuciones se escribe igual";; *) mal "2.45-T2 «hasta» a mano en el borde del rango no llegó: ${E}";; esac
 E="$(estado "2026-10-14T15:00:00Z" "?hasta=2026-08-20" UTC set "f-repo=${PROD_B}")"
 case "$(campo "${E}" url)" in *hasta=2026-08-20*) ok "2.45-T2 un «hasta» que vino en la dirección se conserva al cambiar otro filtro";; *) mal "2.45-T2 se perdió el «hasta» de la dirección: ${E}";; esac
 
@@ -1764,7 +1764,7 @@ case "$(campo "${E}" url)" in *hasta=2026-08-20*) ok "2.45-T2 un «hasta» que v
 # 🔴 sale rojo si no lee la dirección (la página sale sin filtrar) o si falla con una fecha mal escrita.
 E="$(estado "2026-10-14T15:00:00Z" "?desde=2026-08-18&hasta=2026-08-30&producto=${PROD_B}" UTC state)"
 [ "$(campo "${E}" desde)|$(campo "${E}" hasta)|$(campo "${E}" repo)" = "2026-08-18|2026-08-30|${PROD_B}" ] && ok "2.45-T3 la dirección pone desde, hasta y producto" || mal "2.45-T3 no leyó la dirección: ${E}"
-case "$(campo "${E}" vistas)" in "n=1 de 1") ok "2.45-T3 la vista carga filtrada (una corrida)";; *) mal "2.45-T3 la vista no quedó filtrada: ${E}";; esac
+case "$(campo "${E}" vistas)" in "n=1 de 1") ok "2.45-T3 la vista carga filtrada (una ejecución)";; *) mal "2.45-T3 la vista no quedó filtrada: ${E}";; esac
 [ -z "$(campo "${E}" url)" ] && ok "2.45-T3 cargar no reescribe la dirección" || mal "2.45-T3 cargar escribió la dirección: ${E}"
 E="$(estado "2026-10-14T15:00:00Z" "?desde=2026-13-45&hasta=abc&producto=NoExiste&maquina=zzz" UTC state)"; RC=$?
 [ "${RC}" -eq 0 ] && [ "$(campo "${E}" desde)|$(campo "${E}" hasta)|$(campo "${E}" repo)" = "2026-08-15|2026-08-20|" ] && ok "2.45-T3 valores inválidos → el filtro queda en todos y la página carga" || mal "2.45-T3 con valores inválidos: rc=${RC} ${E}"
@@ -1778,9 +1778,9 @@ T=$(mktemp -d)
 volcado "${T}/r" "${S1}" "2026-08-16T02:30:00Z" '{"marker":{"storyId":"L1"}}'
 generar "${T}/r" "${T}/o.html" "${T}/log"
 E="$(CL_NOW="2026-08-16T01:00:00Z" CL_SEARCH="?desde=2026-08-15&hasta=2026-08-15" TZ=America/Argentina/Buenos_Aires cliente "${T}/o.html" state)"
-[ "$(campo "${E}" vistas)" = "n=1 de 1" ] && ok "2.45-T5 la corrida de las 23:30 locales entra en su día local (15/08)" || mal "2.45-T5 la corrida de las 23:30 locales quedó fuera de su día: ${E}"
+[ "$(campo "${E}" vistas)" = "n=1 de 1" ] && ok "2.45-T5 la ejecución de las 23:30 locales entra en su día local (15/08)" || mal "2.45-T5 la ejecución de las 23:30 locales quedó fuera de su día: ${E}"
 E="$(CL_NOW="2026-08-16T01:00:00Z" TZ=America/Argentina/Buenos_Aires cliente "${T}/o.html" preset hoy)"
-[ "$(campo "${E}" desde)" = "2026-08-15" ] && [ "$(campo "${E}" vistas)" = "n=1 de 1" ] && ok "2.45-T5 «hoy» a las 22 h locales es el día local y trae la corrida" || mal "2.45-T5 «hoy» usó la fecha UTC: ${E}"
+[ "$(campo "${E}" desde)" = "2026-08-15" ] && [ "$(campo "${E}" vistas)" = "n=1 de 1" ] && ok "2.45-T5 «hoy» a las 22 h locales es el día local y trae la ejecución" || mal "2.45-T5 «hoy» usó la fecha UTC: ${E}"
 rm -rf "${T}"
 
 # ── T6 · SinPasosAnotadosLoDice: sólo el paso 0 pero trabajó → «no anotó sus pasos» ──
@@ -1794,7 +1794,7 @@ generar "${T}/r" "${T}/o.html" "${T}/log"
 CELDA="$(grep -o '<td class="pasos-n">.*</td>' "${T}/o.html")"
 grep -q 'no anotó sus pasos' <<< "${CELDA}" && ok "2.45-T6 la fila dice «no anotó sus pasos»" || mal "2.45-T6 la fila no lo dice: ${CELDA}"
 grep -q 'quedó en el 0' <<< "${CELDA}" && mal "2.45-T6 la fila sigue diciendo «quedó en el 0»" || ok "2.45-T6 ya no dice «quedó en el 0»"
-grep -q 'title="[^"]*no es una corrida abandonada' <<< "${CELDA}" && ok "2.45-T6 la explicación al pasar el mouse está" || mal "2.45-T6 falta la explicación (title)"
+grep -q 'title="[^"]*no es una ejecución abandonada' <<< "${CELDA}" && ok "2.45-T6 la explicación al pasar el mouse está" || mal "2.45-T6 falta la explicación (title)"
 D="$(cliente "${T}/o.html" detail 0)"
 grep -q 'no anotó sus pasos' <<< "${D}" && ! grep -q 'quedó en el paso 0' <<< "${D}" && ok "2.45-T6 el chip del detalle dice «no anotó sus pasos»" || mal "2.45-T6 el detalle: $(echo "${D}" | grep -o 'quedó en el paso [0-9?]*\|no anotó sus pasos' | head -1)"
 grep -q '"sin_pasos_anotados":true' "${T}/o.html" && ok "2.45-T6 el campo está en el modelo que va al cliente" || mal "2.45-T6 falta en el modelo embebido"
@@ -1821,7 +1821,7 @@ assert por['2026-08-15']['sin_pasos_anotados'] is False, por['2026-08-15'].get('
 assert por['2026-08-16']['sin_pasos_anotados'] is False, 'sin ningún paso no es «sólo el paso 0»'" "${J}" && ok "2.45-T7 el 0 sin trabajo y la corrida sin pasos NO se marcan" || mal "2.45-T7 se marcó una corrida que no cumple"
 generar "${T}/r" "${T}/o.html" "${T}/log"
 CELDAS="$(grep -o '<td class="pasos-n">[^/]*</span></td>' "${T}/o.html")"
-grep -q 'quedó en el 0' <<< "${CELDAS}" && ok "2.45-T7 la corrida en el 0 sin trabajo sigue diciendo «quedó en el 0»" || mal "2.45-T7 ya no dice «quedó en el 0»: ${CELDAS}"
+grep -q 'quedó en el 0' <<< "${CELDAS}" && ok "2.45-T7 la ejecución en el 0 sin trabajo sigue diciendo «quedó en el 0»" || mal "2.45-T7 ya no dice «quedó en el 0»: ${CELDAS}"
 grep -q 'no anotó sus pasos' <<< "${CELDAS}" && mal "2.45-T7 dice «no anotó sus pasos» sin que haya trabajado" || ok "2.45-T7 no dice «no anotó sus pasos»"
 rm -rf "${T}"
 

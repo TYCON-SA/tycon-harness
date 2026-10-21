@@ -37,10 +37,10 @@ C4=$(limpio "${CORRIDA[@]}" AGENT_TEMPDIRECTORY="$J4" -- 'registro_despliegue de
 C5=$(limpio "${CORRIDA[@]}" SYSTEM_STAGENAME=DeployAcmeStaging SYSTEM_JOBNAME=DeployToAcmeStaging AGENT_TEMPDIRECTORY="$J5" -- 'registro_despliegue desplegado plugin totorabackend 1.0.214 abc1234' | linea | jq -r .clave)
 C6=$(limpio "${CORRIDA[@]}" ENVIRONMENT_NAME=production AGENT_TEMPDIRECTORY="$J6" -- 'registro_despliegue desplegado plugin totorabackend 1.0.214 abc1234' | linea | jq -r .clave)
 if printf '%s' "$C1" | grep -E '^d-[0-9a-f]{16}$' >/dev/null; then ok "T2 la clave tiene forma d-<16 hexadecimales> ($C1)"; else no "T2 la clave no tiene forma d-<16 hex>: '$C1'"; fi
-[ -n "$C1" ] && [ "$C1" = "$C2" ] && ok "T2 otra corrida (otro build, otro ts, hash largo con el mismo prefijo) → MISMA clave" || no "🔴 T2 dos corridas del mismo despliegue dan claves distintas ($C1 vs $C2) — la 2.11 lo contaría dos veces"
+[ -n "$C1" ] && [ "$C1" = "$C2" ] && ok "T2 otra ejecución (otro build, otro ts, hash largo con el mismo prefijo) → MISMA clave" || no "🔴 T2 dos ejecuciones del mismo despliegue dan claves distintas ($C1 vs $C2) — la 2.11 lo contaría dos veces"
 [ "$C1" != "$C3" ] && ok "T2 otra versión → otra clave" || no "T2 otra versión dio la misma clave"
 [ "$C1" != "$C4" ] && ok "T2 otro hash → otra clave" || no "T2 otro hash dio la misma clave"
-[ "$C1" != "$C5" ] && ok "T2 el otro staging de Pacara (otro stage/job) → otra clave" || no "🔴 T2 los dos stagings de la misma corrida dan la misma clave — uno se come al otro"
+[ "$C1" != "$C5" ] && ok "T2 el otro staging de Pacara (otro stage/job) → otra clave" || no "🔴 T2 los dos stagings de la misma ejecución dan la misma clave — uno se come al otro"
 [ "$C1" != "$C6" ] && ok "T2 otro entorno → otra clave" || no "T2 otro entorno dio la misma clave"
 
 # Sin hash: null en la línea y la clave igual existe (con sin-hash adentro, no con un hash inventado)
@@ -131,7 +131,7 @@ L=$(limpio "${CORRIDA[@]}" AGENT_TEMPDIRECTORY="$D" -- 'registro_despliegue desp
 D=$(nuevo_tmp)
 SAL=$(limpio "${CORRIDA[@]}" AGENT_TEMPDIRECTORY="$D" ENVIRONMENT_NAME=production -- 'mkdir -p "$AGENT_TEMPDIRECTORY/tycon-despliegue"; echo staging > "$AGENT_TEMPDIRECTORY/tycon-despliegue/entorno"; registro_despliegue desplegado plugin totorabackend 1.0.214 abc1234')
 OTROS=$(printf '%s\n' "$SAL" | grep -o '##vso\[[a-z.]*' | grep -v -e '##vso\[build.addbuildtag' -e '##vso\[task.logissue' || true)
-[ -z "$OTROS" ] && ok "T13 los únicos comandos de la corrida son addbuildtag y logissue" || no "T13 apareció otro comando: $OTROS"
+[ -z "$OTROS" ] && ok "T13 los únicos comandos de la ejecución son addbuildtag y logissue" || no "T13 apareció otro comando: $OTROS"
 
 # ── T14 · la línea tiene exactamente las claves que documenta la cabecera ───────────────────────
 DOC=$(grep -m1 '^# CLAVES:' "$AYUDANTE" | sed 's/^# CLAVES://' | tr ' ' '\n' | grep -v '^$' | sort | tr '\n' ' ')

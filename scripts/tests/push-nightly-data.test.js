@@ -170,7 +170,7 @@ test('T73 Nightlies_SaveOnlyWhatTheStepWrote_NeverTheOverlayCommit_FindingsScrip
     'inbox/q/promoted/a.yaml': 'id: a\nveredicto: util\n',
     'scripts/run.sh': '#!/bin/sh\necho lo ensuciaron las suites\n',   // código sucio en el disco: no es del paso
   });
-  const r = save(w, ['--message', 'chore(banco): corrida nocturna [nocturno]', '--', '.dashboard/bench', '.dashboard/otra', 'inbox/q']);
+  const r = save(w, ['--message', 'chore(banco): ejecución nocturna [nocturno]', '--', '.dashboard/bench', '.dashboard/otra', 'inbox/q']);
   assert.strictEqual(r.code, 0, r.out);
 
   assert.strictEqual(mainText(w, '.dashboard/bench/banco-2026-01-02.json'), '{"dia":"2026-01-02"}\n', 'el archivo nuevo, sin seguimiento');
@@ -190,7 +190,7 @@ test('T73 Nightlies_SaveOnlyWhatTheStepWrote_NeverTheOverlayCommit_FindingsScrip
   const tip = mainTip(w);
   assert.strictEqual(git(w.remote, ['rev-parse', `${tip}^`]), rivalTip, 'el commit va sobre la punta recién traída');
   assert.strictEqual(git(w.remote, ['rev-list', '--count', `${rivalTip}..${tip}`]), '1', 'un solo commit: el del paso');
-  assert.strictEqual(git(w.remote, ['log', '-1', '--format=%s', tip]), 'chore(banco): corrida nocturna [nocturno]');
+  assert.strictEqual(git(w.remote, ['log', '-1', '--format=%s', tip]), 'chore(banco): ejecución nocturna [nocturno]');
   for (const f of changedBy(w, tip)) assert.match(f, /^(\.dashboard\/(bench|otra)|inbox\/q)\//, `${f}: fuera de las rutas del paso`);
   assert.ok(!git(w.remote, ['rev-list', tip]).split('\n').includes(w.head), 'el commit local de la superposición no está en la historia de main');
   assertCheckoutUntouched(w);
@@ -202,7 +202,7 @@ test('T73 el otro trabajo del banco escribió la misma carpeta: no se le borra n
   // el trabajo Banco ya subió su foto del día; este trabajo (el reporte de suites) no la tiene en su disco
   rival(w, { '.dashboard/bench/banco-2026-01-02.json': '{"del":"otro trabajo"}\n', 'ultimo.json': '{"ts":"del otro"}\n' });
   writeFiles(w.job, { '.dashboard/bench/suites-2026-01-02.json': '{"suites":1}\n' });
-  const r = save(w, ['--message', 'chore(suites): corrida nocturna [nocturno]', '--', '.dashboard/bench']);
+  const r = save(w, ['--message', 'chore(suites): ejecución nocturna [nocturno]', '--', '.dashboard/bench']);
   assert.strictEqual(r.code, 0, r.out);
   assert.strictEqual(mainText(w, '.dashboard/bench/banco-2026-01-02.json'), '{"del":"otro trabajo"}\n', 'la foto del otro trabajo sigue en main');
   assert.strictEqual(mainText(w, '.dashboard/bench/suites-2026-01-02.json'), '{"suites":1}\n');
@@ -259,7 +259,7 @@ test('T73 tres rechazos: sale 1 diciendo que NO viajó; y el guardado siguiente 
   writeFiles(w.job, { 'inbox/q/pending/a.yaml': 'id: a\nveredicto: pendiente\nrechazado: 2026-01-01\n' });
   let r = save(w, ['--message', 'q: anotados [nocturno]', '--', 'inbox/q']);
   assert.strictEqual(r.code, 1, r.out);
-  assert.match(r.out, /##vso\[task\.logissue type=error\]/, 'lo denuncia como error de la corrida');
+  assert.match(r.out, /##vso\[task\.logissue type=error\]/, 'lo denuncia como error de la ejecución');
   assert.match(r.out, /NO viajó/, 'y dice que no viajó');
   assert.match(r.out, /3 intentos/, 'después de tres intentos');
   assert.match(r.out, /intento 1: el empuje a main fue rechazado[^\n]*rechazado a propósito/, 'muestra lo que dijo el remoto');
@@ -309,7 +309,7 @@ test('T73 en un clon recortado y con HEAD suelto (el checkout de un agente) guar
   rival(w, { 'otro.txt': 'uno\n' });
   const tip = rival(w, { 'otro.txt': 'dos\n', '.dashboard/bench/foto-nueva.json': '{}\n' });
   writeFiles(job, { '.dashboard/bench/banco-2026-01-02.json': '{"dia":2}\n' });
-  let r = save(agent, ['--message', 'chore(banco): corrida nocturna [nocturno]', '--', '.dashboard/bench']);
+  let r = save(agent, ['--message', 'chore(banco): ejecución nocturna [nocturno]', '--', '.dashboard/bench']);
   assert.strictEqual(r.code, 0, r.out);
   assert.strictEqual(mainText(w, '.dashboard/bench/banco-2026-01-02.json'), '{"dia":2}\n');
   assert.strictEqual(git(w.remote, ['rev-parse', 'main^']), tip, 'sobre la punta recién traída');
@@ -324,8 +324,8 @@ test('T73 en un clon recortado y con HEAD suelto (el checkout de un agente) guar
 
 test('T73 un choque de verdad sale rojo nombrando el archivo, sin empujar', () => {
   const w = world('conflict');
-  const tip = rival(w, { 'ultimo.json': '{"ts":"otra corrida"}\n' });
-  writeFiles(w.job, { 'ultimo.json': '{"ts":"esta corrida"}\n' });
+  const tip = rival(w, { 'ultimo.json': '{"ts":"otra ejecución"}\n' });
+  writeFiles(w.job, { 'ultimo.json': '{"ts":"esta ejecución"}\n' });
   const r = save(w, ['--message', 'chore: reporte [nocturno]', '--', 'ultimo.json']);
   assert.strictEqual(r.code, 1, r.out);
   assert.match(r.out, /ultimo\.json/, 'nombra el archivo que chocó');
@@ -561,8 +561,8 @@ test('T73 el archivo del día con acento en el nombre: el de ayer que el paso es
   assert.strictEqual(r.code, 0, r.out);
   assert.strictEqual(mainText(w, '.dashboard/bench/día-2026-01-01.json'), '{"dia":1}\n');
   // …y el que choca se nombra como se llama, no escapado en octal y entre comillas
-  rival(w, { '.dashboard/bench/día-2026-01-01.json': '{"dia":"de otra corrida"}\n' });
-  writeFiles(w.job, { '.dashboard/bench/día-2026-01-01.json': '{"dia":"de esta corrida"}\n' });
+  rival(w, { '.dashboard/bench/día-2026-01-01.json': '{"dia":"de otra ejecución"}\n' });
+  writeFiles(w.job, { '.dashboard/bench/día-2026-01-01.json': '{"dia":"de esta ejecución"}\n' });
   r = save(w, ['--message', 'm', '--', '.dashboard/bench']);
   assert.strictEqual(r.code, 1, r.out);
   assert.match(r.out, /choca con lo que main trae en: \.dashboard\/bench\/día-2026-01-01\.json/);
@@ -773,18 +773,18 @@ test('T73 sync trae de main sólo los datos (lo que main borró, se borra) sin m
   const w = world('sync', { overlay: true });
   // desde que el trabajo hizo su checkout, main cambió: otra página, una foto nueva, una borrada, y código
   const tip = rival(w, {
-    'artifacts/page.html': 'la de otra corrida\n',
+    'artifacts/page.html': 'la de otra ejecución\n',
     '.dashboard/bench/foto-nueva.json': '{"nueva":true}\n',
     '.dashboard/bench/viejo.json': null,
     'scripts/ci/tool.js': 'module.exports = 2; // código nuevo de main\n',
-    'datos/ultimo-banco.json': '{"ts":"de otra corrida"}\n',
+    'datos/ultimo-banco.json': '{"ts":"de otra ejecución"}\n',
   });
   // con un comodín, y con una ruta que no existe en ningún lado (no tiene qué traer: no es un error)
   let r = run(w, ['sync', '--', '.dashboard', 'artifacts/page.html', 'datos/ultimo-*.json', 'no/existe']);
   assert.strictEqual(r.code, 0, r.out);
   const disk = (rel) => (fs.existsSync(path.join(w.job, rel)) ? fs.readFileSync(path.join(w.job, rel), 'utf8') : null);
-  assert.strictEqual(disk('datos/ultimo-banco.json'), '{"ts":"de otra corrida"}\n', 'el comodín también trae lo suyo');
-  assert.strictEqual(disk('artifacts/page.html'), 'la de otra corrida\n', 'los datos de main, al disco');
+  assert.strictEqual(disk('datos/ultimo-banco.json'), '{"ts":"de otra ejecución"}\n', 'el comodín también trae lo suyo');
+  assert.strictEqual(disk('artifacts/page.html'), 'la de otra ejecución\n', 'los datos de main, al disco');
   assert.strictEqual(disk('.dashboard/bench/foto-nueva.json'), '{"nueva":true}\n');
   assert.strictEqual(disk('.dashboard/bench/viejo.json'), null, 'lo que main borró, se borra');
   assert.strictEqual(disk('scripts/ci/tool.js'), SEED['scripts/ci/tool.js'], 'el código NO se trae');
@@ -792,10 +792,10 @@ test('T73 sync trae de main sólo los datos (lo que main borró, se borra) sin m
   assertCheckoutUntouched(w);
 
   // la página se genera sobre esos datos y se guarda: no choca aunque la de main no sea la del checkout
-  writeFiles(w.job, { 'artifacts/page.html': 'la de esta corrida\n' });
+  writeFiles(w.job, { 'artifacts/page.html': 'la de esta ejecución\n' });
   r = save(w, ['--message', 'chore(tablero): página [nocturno]', '--require', 'artifacts/page.html', '--', 'artifacts/page.html']);
   assert.strictEqual(r.code, 0, r.out);
-  assert.strictEqual(mainText(w, 'artifacts/page.html'), 'la de esta corrida\n');
+  assert.strictEqual(mainText(w, 'artifacts/page.html'), 'la de esta ejecución\n');
   assert.deepStrictEqual(changedBy(w, mainTip(w)), ['artifacts/page.html']);
   assert.strictEqual(git(w.remote, ['rev-parse', `${mainTip(w)}^`]), tip);
   assert.strictEqual(mainText(w, 'scripts/old.js'), SEED['scripts/old.js'], 'la superposición no viajó');
@@ -810,9 +810,9 @@ test('T73 sync trae de main sólo los datos (lo que main borró, se borra) sin m
   assert.strictEqual(mainTip(w), before);
 });
 
-test('T73 la constancia de otra corrida no se usa: un checkout vuelto a traer no devuelve en main lo ya guardado', () => {
+test('T73 la constancia de otra ejecución no se usa: un checkout vuelto a traer no devuelve en main lo ya guardado', () => {
   const w = world('stale');
-  writeFiles(w.job, { 'ultimo.json': '{"ts":"corrida 1"}\n' });
+  writeFiles(w.job, { 'ultimo.json': '{"ts":"ejecución 1"}\n' });
   let r = save(w, ['--message', 'uno', '--', 'ultimo.json', '.dashboard/bench'], { BUILD_BUILDID: '1' });
   assert.strictEqual(r.code, 0, r.out);
   // otra corrida reusa la carpeta: el checkout devuelve el disco al commit, y escribe otra cosa
@@ -820,7 +820,7 @@ test('T73 la constancia de otra corrida no se usa: un checkout vuelto a traer no
   writeFiles(w.job, { '.dashboard/bench/banco-2026-01-03.json': '{}\n' });
   r = save(w, ['--message', 'dos', '--', 'ultimo.json', '.dashboard/bench'], { BUILD_BUILDID: '2' });
   assert.strictEqual(r.code, 0, r.out);
-  assert.strictEqual(mainText(w, 'ultimo.json'), '{"ts":"corrida 1"}\n', 'lo que guardó la corrida anterior no se deshace');
+  assert.strictEqual(mainText(w, 'ultimo.json'), '{"ts":"ejecución 1"}\n', 'lo que guardó la ejecución anterior no se deshace');
   assert.deepStrictEqual(changedBy(w, mainTip(w)), ['.dashboard/bench/banco-2026-01-03.json']);
 });
 
@@ -882,13 +882,13 @@ test('T73 la guarda del árbol: se comprueba antes de guardar; si el árbol camb
   log = path.join(w.base, 'check.json');
   const agentTmp = path.join(w.base, 'agent-tmp');
   writeFiles(agentTmp, { 'arnes-guion/overlay-harness.js':
-    'require("fs").writeFileSync(process.env.CHECK_TREE_LOG, JSON.stringify({ from: "la corrida", args: process.argv.slice(2) }));\nprocess.exit(Number(process.env.RUN_GUARD_EXIT || 0));\n' });
+    'require("fs").writeFileSync(process.env.CHECK_TREE_LOG, JSON.stringify({ from: "la ejecución", args: process.argv.slice(2) }));\nprocess.exit(Number(process.env.RUN_GUARD_EXIT || 0));\n' });
   writeFiles(w.job, { 'ultimo.json': '{"ts":"1"}\n' });
   // el del disco diría que el árbol cambió: si se corriera ése, saldría rojo
   r = save(w, ['--message', 'm', '--', 'ultimo.json'], { AGENT_TEMPDIRECTORY: agentTmp, CHECK_TREE_EXIT: '1', CHECK_TREE_LOG: log });
   assert.strictEqual(r.code, 0, r.out);
   let ran = JSON.parse(fs.readFileSync(log, 'utf8'));
-  assert.strictEqual(ran.from, 'la corrida', 'corre el guion que guardó la plantilla, no el del disco');
+  assert.strictEqual(ran.from, 'la ejecución', 'corre el guion que guardó la plantilla, no el del disco');
   assert.deepStrictEqual(ran.args.slice(0, 2), ['--check-tree', '--repo']);
   assert.strictEqual(fs.realpathSync(ran.args[2]), fs.realpathSync(w.job), 'y mira el checkout del trabajo');
   assert.strictEqual(mainText(w, 'ultimo.json'), '{"ts":"1"}\n');
@@ -898,8 +898,8 @@ test('T73 la guarda del árbol: se comprueba antes de guardar; si el árbol camb
   r = save(w, ['--message', 'm', '--', 'ultimo.json'], { AGENT_TEMPDIRECTORY: agentTmp, RUN_GUARD_EXIT: '1', CHECK_TREE_EXIT: '0', CHECK_TREE_LOG: log });
   assert.strictEqual(r.code, 1, r.out);
   assert.match(r.out, /NO viajó/);
-  assert.match(r.out, /el guion de la corrida[^\n]*--check-tree salió 1/, 'el rojo nombra el guion que corrió, no el del checkout');
-  assert.strictEqual(mainTip(w), beforeRun, 'la guarda de la corrida en rojo: nada viaja');
+  assert.match(r.out, /el guion de la ejecución[^\n]*--check-tree salió 1/, 'el rojo nombra el guion que corrió, no el del checkout');
+  assert.strictEqual(mainTip(w), beforeRun, 'la guarda de la ejecución en rojo: nada viaja');
   // sin guion guardado (la fuente azure, o después del corte) corre el del checkout
   fs.rmSync(path.join(agentTmp, 'arnes-guion'), { recursive: true, force: true });
   fs.rmSync(log, { force: true });
@@ -915,7 +915,7 @@ test('T73 la guarda del árbol: se comprueba antes de guardar; si el árbol camb
   writeFiles(w.job, { 'ultimo.json': '{"ts":"3"}\n' });
   r = save(w, ['--message', 'm', '--', 'ultimo.json'], { AGENT_TEMPDIRECTORY: agentTmp, CHECK_TREE_EXIT: '0', CHECK_TREE_LOG: log });
   assert.strictEqual(r.code, 0, r.out);
-  assert.strictEqual(JSON.parse(fs.readFileSync(log, 'utf8')).tree, TREE, 'una carpeta con ese nombre no es el guion de la corrida');
+  assert.strictEqual(JSON.parse(fs.readFileSync(log, 'utf8')).tree, TREE, 'una carpeta con ese nombre no es el guion de la ejecución');
 
   // sin la variable no se sabe contra qué árbol comparar: no se guarda. La plantilla que trae el arnés la deja en
   // todo trabajo que guarda; que falte es que algo cambió ahí, y «guardar igual» sería seguir sin comprobar nada.

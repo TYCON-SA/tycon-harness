@@ -136,7 +136,7 @@ function initLab({ lab, out, bundle, meta = {}, allowTemp = false, env = stepEnv
   if (!bundle || !fs.existsSync(bundle)) return { ok: false, reason: `no encuentro el bundle ${bundle || '(falta --bundle)'}` };
   if (fs.existsSync(lab) && !fs.existsSync(path.join(lab, L.LAB_MARK)) && fs.readdirSync(lab).length) return { ok: false, reason: `${lab} ya existe, tiene cosas y no es un laboratorio (sin ${L.LAB_MARK}): no lo adopto` };
   const source = path.join(lab, 'source');
-  if (fs.existsSync(source)) return { ok: false, reason: `${source} ya existe: el laboratorio es de una sola corrida (borralo, o usá otra carpeta)` };
+  if (fs.existsSync(source)) return { ok: false, reason: `${source} ya existe: el laboratorio es de una sola ejecución (borralo, o usá otra carpeta)` };
   let same = null;
   if (sameTree) {
     let about = null;
@@ -276,10 +276,10 @@ function renderMarkdown(report) {
   const run = report.run || {};
   const M = [];
   M.push('# El arnés en Windows — reporte de la medición (story 8.17, W0)', '');
-  M.push(`Corrida **${run.id === null || run.id === undefined ? 'sin número' : run.id}**${run.number ? ` (${run.number})` : ''} · arnés \`${run.harness_ref || '—'}\` · copia \`${run.copy_commit ? String(run.copy_commit).slice(0, 10) : '—'}\` · ${run.platform || '—'}${run.lab_mode ? ' — **modo de laboratorio: esto NO es un Windows**' : ''} · Node ${run.node || '—'} · sesión real: ${run.real_session ? 'sí' : 'no'}`, '');
+  M.push(`Ejecución **${run.id === null || run.id === undefined ? 'sin número' : run.id}**${run.number ? ` (${run.number})` : ''} · arnés \`${run.harness_ref || '—'}\` · copia \`${run.copy_commit ? String(run.copy_commit).slice(0, 10) : '—'}\` · ${run.platform || '—'}${run.lab_mode ? ' — **modo de laboratorio: esto NO es un Windows**' : ''} · Node ${run.node || '—'} · sesión real: ${run.real_session ? 'sí' : 'no'}`, '');
   M.push(`## Veredicto: ${v.color === 'green' ? 'VERDE' : 'ROJO'}`, '');
   M.push(v.mode === 'first-measurement'
-    ? 'Primera medición (`known-gaps.json` sin línea de base): los hallazgos no ponen roja la corrida; sólo no haber podido medir. La lista de huecos se escribe desde esta corrida: `node scripts/tests/windows/run.js propose-gaps windows-report.json`.'
+    ? 'Primera medición (`known-gaps.json` sin línea de base): los hallazgos no ponen roja la ejecución; sólo no haber podido medir. La lista de huecos se escribe desde esta ejecución: `node scripts/tests/windows/run.js propose-gaps windows-report.json`.'
     : 'Contra `known-gaps.json`: roja si hay un error, un hallazgo que no está en la lista, o un hueco de la lista que ya no se reproduce.', '');
   const bullets = (title, items, fmt = (x) => x) => { if (items && items.length) { M.push(`**${title} (${items.length})**`, ''); for (const i of items) M.push(`- ${fmt(i)}`); M.push(''); } };
   bullets('No pude medir', v.errors);
@@ -354,7 +354,7 @@ function proposeGaps(report, keep = null) {
   for (const s of report.steps || []) for (const f of s.findings || []) gaps.push({ id: f.id, step: s.name, closes: BATCHES.includes(f.closes_hint) ? f.closes_hint : '?', note: f.detail });
   return {
     // con la lista declarada, su explicación se conserva (trae además cómo lee el banco sus huecos)
-    __doc: keep && typeof keep.__doc === 'string' ? keep.__doc : 'Lo que HOY no anda en Windows, medido: un hueco por hallazgo de la corrida de base, con la tanda de la story 8.17 que lo cierra (closes). Lo lee scripts/tests/windows/run.js: la corrida es roja si aparece un hallazgo que no está acá, si un hueco de acá ya no se reproduce (se borra) o si un hueco no dice su tanda. Se escribe desde una corrida (run.js propose-gaps), nunca desde el análisis. W7 la deja vacía.',
+    __doc: keep && typeof keep.__doc === 'string' ? keep.__doc : 'Lo que HOY no anda en Windows, medido: un hueco por hallazgo de la ejecución de base, con la tanda de la story 8.17 que lo cierra (closes). Lo lee scripts/tests/windows/run.js: la ejecución es roja si aparece un hallazgo que no está acá, si un hueco de acá ya no se reproduce (se borra) o si un hueco no dice su tanda. Se escribe desde una ejecución (run.js propose-gaps), nunca desde el análisis. W7 la deja vacía.',
     baseline: { run: report.run ? report.run.id : null, date: report.run ? (report.run.finished || report.run.started || null) : null, harness_ref: report.run ? report.run.harness_ref || null : null },
     gaps,
   };

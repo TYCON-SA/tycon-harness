@@ -220,7 +220,7 @@ RC="$(contar "${C}" --json)"
 C="$(nuevo_caso t8f)"; gates_basicos "${C}/local"; echo "<html>" > "${C}/buzon/runs-dashboard.html"; echo "x" > "${C}/buzon/nota.txt"
 RC="$(contar "${C}" --json)"
 [ "${RC}" = "0" ] && [ "$(j "${C}" "d['cobertura']['carpetas_ilegibles']")" = "0" ] && [ "$(j "${C}" "d['metricas']['bloqueos']['maquinas']")" = "1" ] \
-  && ok "T8f archivos sueltos en la carpeta bajada (la página de corridas) no cuentan como máquinas ilegibles" || mal "T8f rc=${RC} $(j "${C}" "d['cobertura']")"
+  && ok "T8f archivos sueltos en la carpeta bajada (la página de ejecuciones) no cuentan como máquinas ilegibles" || mal "T8f rc=${RC} $(j "${C}" "d['cobertura']")"
 
 # ── T8g · un ENLACE a una carpeta de máquina real se decide por lo que apunta: cuenta la máquina ──────
 # 🔴 falla si: decidir por el tipo de la entrada (un enlace no es carpeta) → esa máquina desaparece callada.
@@ -250,7 +250,7 @@ PY
 echo "corrupto" > "${C}/buzon/maq-esperada"; echo "<html>" > "${C}/buzon/runs-dashboard.html"
 RC="$(contar "${C}" --json)"
 [ "${RC}" = "0" ] && [ "$(j "${C}" "d['cobertura']['carpetas_ilegibles']")" = "1" ] \
-  && ok "T8i una máquina esperada convertida en archivo → 1 carpeta ilegible (la página de corridas sigue sin contar)" || mal "T8i rc=${RC} alias=${AL_ESP} $(j "${C}" "d['cobertura']")"
+  && ok "T8i una máquina esperada convertida en archivo → 1 carpeta ilegible (la página de ejecuciones sigue sin contar)" || mal "T8i rc=${RC} alias=${AL_ESP} $(j "${C}" "d['cobertura']")"
 
 # ── T8j · un enlace que SÍ resuelve pero a un ARCHIVO se trata como archivo suelto ───────────────────
 # 🔴 falla si: dar por carpeta todo enlace que resuelve → el de nombre cualquiera sale ilegible; y sin mirar el alias,
@@ -769,7 +769,7 @@ PY
 RC="$(contar "${C}" --json)"
 N="$(j "${C}" "d['metricas']['hallazgos_por_gravedad']['num']")"; MI="$(j "${C}" "d['metricas']['hallazgos_por_gravedad']['midieron']")"
 LI="$(j "${C}" "d['cobertura']['lineas_ilegibles']")"
-[ "${MI}" = "1" ] && [ "${N}" = "4" ] && [ "${LI}" = "0" ] && ok "T17 con el resumen correcto midió, y la línea de corrida no es ni hallazgo ni línea ilegible (4 · 0)" \
+[ "${MI}" = "1" ] && [ "${N}" = "4" ] && [ "${LI}" = "0" ] && ok "T17 con el resumen correcto midió, y la línea de ejecución no es ni hallazgo ni línea ilegible (4 · 0)" \
   || mal "T17 midieron=${MI} num=${N} ilegibles=${LI}, esperaba 1, 4 y 0"
 
 # ══════════════════════════════════════════════════════════════════════════════════════════════════

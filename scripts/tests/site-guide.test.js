@@ -46,9 +46,9 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // siguiendo sólo la guía: el repo de operaciones mínimo, Node, http en la propia máquina, /readyz frenado y los
 // permisos de GitHub; y que desde una imagen sin versión la primera actualización va a mano; y que con la copia de operaciones
 // SITE_OPERATIONS_REPO sigue siendo obligatoria; y la imagen ya publicada como alternativa a armarla, el emisor de un
-// inquilino como única puerta, la página «Saliste» y las rutas que el candado deja libres para que «Salir» no reabra la sesión; y, en «Por dentro», la tabla de textos en dos idiomas.
+// inquilino como única puerta, la página «Saliste» y las rutas que el candado deja libres para que «Salir» no reabra la sesión; y, en «Por dentro», la tabla de textos en dos idiomas; y «ejecución» donde decía «corrida».
 const HUELLA_INSTALACION = {
-  es: '8e5e1d66fbced5b715e3a20990b98522d2fbfd0456a7953ca7d48526a4beb6b0',
+  es: '5c396e88e27c6c97845da5566d8db66fa18af090800f48e46f3f757ed0b93c99',
   en: '5b501b465e4122206bd5bef9c9fd2d779a5b862a752e09a90083aaac6ad66489',
 };
 
@@ -70,7 +70,7 @@ test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
   for (const x of ['site.url', 'aviso de la mañana', 'sin confirmar']) assert.ok(ing.includes(x), `«El primer ingreso» no dice «${x}»`);
   // cada pestaña, con al menos una captura cada una y lo que significa «no medido»
   const pest = seccion(t, PARTES[2][0]);
-  for (const p of ['Inicio', 'Corridas', 'Proyectos', 'Arnés', 'Configuración']) {
+  for (const p of ['Inicio', 'Ejecuciones', 'Proyectos', 'Arnés', 'Configuración']) {
     const i = pest.indexOf(`\n### ${p}`);
     assert.ok(i >= 0, `la pestaña ${p}`);
     const j = pest.indexOf('\n### ', i + 5);
@@ -84,7 +84,7 @@ test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
   for (const r of ['Quien mantiene', 'Persona confirmada', 'Persona con la máquina sin confirmar', 'Sin rol']) assert.ok(filas.some((l) => l.includes(`**${r}**`)), `la tabla de roles no tiene «${r}»`);
   // los ocho problemas del AC 8, cada uno con lo que se ve, por qué pasa y qué hacer
   const prob = seccion(t, PARTES[5][0]);
-  const PROBLEMAS = [/No puedo entrar/, /Entro y no veo nada/, /No veo mis corridas/, /El sitio está frenado/, /Cargando las corridas/i, /No se pudo actualizar/i, /Proponer.*apagado/, /La primera página tarda/];
+  const PROBLEMAS = [/No puedo entrar/, /Entro y no veo nada/, /No veo mis ejecuciones/, /El sitio está frenado/, /Cargando las ejecuciones/i, /No se pudo actualizar/i, /Proponer.*apagado/, /La primera página tarda/];
   const bloques = prob.split('\n### ').slice(1);
   for (const rx of PROBLEMAS) {
     const b = bloques.find((x) => rx.test(x.split('\n')[0]));
@@ -212,8 +212,8 @@ test('T11 Instalacion_SinCambiosDeContenido @story-2.32 @ac-14', () => {
 // limitadas a su lugar, porque la pestaña Corridas carga su hoja encima de la del sitio
 const COMPARTIDAS = {
   num: 'números de ancho fijo: no cambia el tamaño de nada',
-  card: 'la misma tarjeta; lo que Corridas necesita distinto lo ajusta «.shell .corridas .card»',
-  banda: 'la misma banda de aviso; Corridas sólo suma su variante gris',
+  card: 'la misma tarjeta; lo que Ejecuciones necesita distinto lo ajusta «.shell .corridas .card»',
+  banda: 'la misma banda de aviso; Ejecuciones sólo suma su variante gris',
 };
 /** Las reglas de una hoja: [[selector, cuerpo], …], sin comentarios y con las de @media aplanadas. */
 const reglasDe = (css) => [...css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/@media[^{]*\{/g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => [m[1].trim(), m[2]]);
@@ -241,7 +241,7 @@ test('T13 SitioCss_SinChoquesConCorridas @story-2.32 @ac-15', () => {
       });
     }
   }
-  assert.deepStrictEqual([...new Set(sueltas)], [], 'reglas de site.css con un nombre que también usa Corridas, sin limitar a su lugar');
+  assert.deepStrictEqual([...new Set(sueltas)], [], 'reglas de site.css con un nombre que también usa Ejecuciones, sin limitar a su lugar');
 });
 
 test('Guia_PermisoCandadoYRefresco @story-2.38 @ac-8 — lo que el dueño pidió que quede escrito', () => {

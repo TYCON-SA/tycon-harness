@@ -1551,7 +1551,7 @@ function imprimirCorrida(s, aAnunciar, postergados) {
       console.log(`🆕 ${c.repo}: ${c.nuevas} carpeta(s) nueva(s), ${c.altas_nuevas} alta(s) o crítica(s) que nadie miraba — las altas entran a la cola desde mañana`);
     }
   }
-  if (s.linea_base) console.log('🟡 Primera corrida: esto es la LÍNEA BASE. No se anuncia nada — no hay contra qué comparar.');
+  if (s.linea_base) console.log('🟡 Primera ejecución: esto es la LÍNEA BASE. No se anuncia nada — no hay contra qué comparar.');
   else console.log(`Comparado contra ${s.comparado_contra}.`);
   for (const nm of s.no_medidos) console.log(`🚧 NO MEDIDO — ${nm.ruta}: ${nm.motivo}`);
   // 🔴 Se dice QUÉ se auditó. "Miré lo publicado con lo último traído" y "miré el origin/main que
@@ -1561,7 +1561,7 @@ function imprimirCorrida(s, aAnunciar, postergados) {
     console.log(`Se auditó lo PUBLICADO (origin/main) de cada repo, en un árbol temporal.`);
     if (sinTraer.length) console.log(`   ⚠️ sin poder traer lo último de: ${sinTraer.join(', ')} — se auditó el origin/main que había en el disco.`);
   }
-  if (!s.corrida_completa && !s.linea_base) console.log('⚠️ Corrida INCOMPLETA: no sirve de línea base para mañana.');
+  if (!s.corrida_completa && !s.linea_base) console.log('⚠️ Ejecución INCOMPLETA: no sirve de línea base para mañana.');
 
   const graves = s.hallazgos.length;
   if (!graves) { console.log('✅ Sin altas ni críticas fuera de lo declarado.'); }
@@ -1934,12 +1934,12 @@ Acme, tools/chat-gateway). Si la subcarpeta no está en lo publicado: NO MEDIDO,
 En un repo cuya raíz es una entrada npm, la noche audita además cada carpeta con package-lock.json
 de origin/main, fuera de node_modules (cada formulario, con la etiqueta producto/repo/carpeta). Para
 no mirar una: "exclude": [{ "path": "<carpeta>", "reason": "<motivo>" }] en esa entrada; sin
-"reason" la corrida sale 2.
+"reason" la ejecución sale 2.
 
   --root <dir>     dónde están los repos (por defecto, el de repos.json)
   --out <dir>      dónde va el snapshot (por defecto .dashboard/dependencias)
   --pending <dir>  dónde van los borradores (por defecto inbox/dependencies/)
-  --today <fecha>  fija la fecha de la corrida (sólo para pruebas)
+  --today <fecha>  fija la fecha de la ejecución (sólo para pruebas)
   --dry-run        dice qué haría sin escribir nada
   --json           salida en JSON
 

@@ -1,6 +1,6 @@
 # Los dos rosters de un pull request de un producto del equipo, como dato de prueba (story 7.13)
 
-Son el `review-roster.json` y el `findings.json` REALES de las corridas de las stories AG-2 y AG-3
+Son el `review-roster.json` y el `findings.json` REALES de las ejecuciones de las stories AG-2 y AG-3
 (2026-09-20/21), el caso que frenó cinco stories sanas con `roster-incoherente` y del que cuatro
 hallazgos eran del propio control.
 

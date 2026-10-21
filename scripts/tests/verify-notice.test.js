@@ -61,7 +61,7 @@ test('T66_Findings_AreSent_WithThePlaceAndWhatToDo_GroupedByAction_SecretFirst',
   const lines = r.out.trim().split('\n');
   assert.match(lines[0], /verificación de lo publicado/i);
   assert.match(lines[0], /5 hallazgo\(s\)/);
-  assert.match(lines[0], /corrida 20261010\.3/);
+  assert.match(lines[0], /ejecución 20261010\.3/);
   // el secreto, primero, bajo su propio título; después lo que además se purga, lo que sólo se borra, lo que se corrige
   const titles = lines.filter((l) => /:$/.test(l));
   assert.deepStrictEqual(titles.map((t) => t.replace(/ \(\d+\):$/, '')), ['Rotar PRIMERO (es un secreto), y después borrar y pedir la purga', 'Borrar, y además pedir la purga al soporte de GitHub',
@@ -129,8 +129,8 @@ test('T66_DidNotFinish_TheVerificationHadToRunAndLeftNothing_IsSentAsCouldNotLoo
   const run = (args) => spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8', env: { PATH: process.env.PATH } });
   const r = run(['--did-not-finish', '--run', '20261010.3']);
   assert.strictEqual(r.status, 0, r.stderr);
-  assert.match(r.stdout, /NO PUDO MIRAR — tenía que correr en esta corrida y no llegó a terminar/);
-  assert.match(r.stdout, /corrida 20261010\.3/);
+  assert.match(r.stdout, /NO PUDO MIRAR — tenía que correr en esta ejecución y no llegó a terminar/);
+  assert.match(r.stdout, /ejecución 20261010\.3/);
   assert.match(r.stdout, /NO es «limpio»/);
   assert.match(run(['--did-not-finish']).stdout, /NO PUDO MIRAR/);
   // no se mezcla con un informe o un código: o hay verificación terminada, o no la hay
@@ -149,7 +149,7 @@ test('T66_WhatAThirdPartyWrote_CannotBreakTheMessage_AndLongListsAreCapped', () 
   assert.ok(r.out.length <= 3900, `el aviso entra en un mensaje (${r.out.length} caracteres)`);
   assert.ok(!/[\u0000-\u0009\u000b-\u001f\u007f]/.test(r.out), 'sin caracteres de control');
   assert.ok(!r.out.includes('x'.repeat(301)), 'un lugar largo se corta');
-  assert.match(r.out, /… y \d+ más \(están en el registro de la corrida\)/);
+  assert.match(r.out, /… y \d+ más \(están en el registro de la ejecución\)/);
   assert.match(r.out, /201 hallazgo\(s\)/, 'la cuenta es la de verdad, no la de los que entraron');
   // un campo que no es texto, o un hallazgo que no es un objeto, no rompe el aviso ni se imprime como vino
   const odd = notice(report({ exit: 1, findings: [null, 7, { part: { a: 1 }, category: ['x'], place: { html: '<b>' } }, finding()] }), 1);
@@ -157,7 +157,7 @@ test('T66_WhatAThirdPartyWrote_CannotBreakTheMessage_AndLongListsAreCapped', () 
   assert.match(odd.out, /4 hallazgo\(s\)/);
   assert.ok(!odd.out.includes('[object Object]') && !odd.out.includes('<b>'), odd.out);
   // el número de corrida es un dato de afuera: si no tiene forma de número de corrida, no se imprime
-  assert.ok(!notice(report({ exit: 1, findings: [finding()] }), 1, ['--run', 'una corrida\nrara $(x)']).out.includes('rara'));
+  assert.ok(!notice(report({ exit: 1, findings: [finding()] }), 1, ['--run', 'una ejecución\nrara $(x)']).out.includes('rara'));
 });
 
 test('T66_BadArguments_AreTwo', () => {
@@ -271,7 +271,7 @@ test('T68_FailsClosed_WhenThePrivateFlagTheFindingOrTheExitCodeAreNotExactlyWhat
     assert.strictEqual(Number((SET_ASIDE.exec(r.out) || [])[1]), 2, `${what}\n${r.out}`);
   }
   // el código de la corrida manda: si no es 1, o no es el que dice el informe, nada se da por aceptado
-  for (const [what, said, exit] of [['la corrida salió 2', 1, 2], ['la corrida salió 0', 1, 0], ['el informe dice 2', 2, 1], ['el informe dice 0', 0, 1], ['la cortaron', 1, 137]]) {
+  for (const [what, said, exit] of [['la ejecución salió 2', 1, 2], ['la ejecución salió 0', 1, 0], ['el informe dice 2', 2, 1], ['el informe dice 0', 0, 1], ['la cortaron', 1, 137]]) {
     everything(notice(privateReport({ exit: said, findings: three }), exit), what);
   }
   // un «no medido» que no se puede leer, o un informe que no dice si corrió con --strict: no se calla sobre eso
@@ -297,14 +297,14 @@ test('T68_SetAsideAndCompose_Directly_TheRuleIsPerFinding', () => {
   // la regla es por hallazgo: el que no es exactamente lo aceptado se avisa él, y los demás quedan aparte
   assert.deepStrictEqual(setAside({ exit: 1 }, data, [old(), {}]), { rest: [{}], accepted: 1 });
   // …y las tres condiciones de la corrida son de todo o nada
-  for (const [what, args, report] of [['el repo no dice ser privado', { exit: 1 }, { ...data, private: null }], ['la corrida no salió 1', { exit: 2 }, data], ['el informe no dice 1', { exit: 1 }, { ...data, exit: 0 }]]) {
+  for (const [what, args, report] of [['el repo no dice ser privado', { exit: 1 }, { ...data, private: null }], ['la ejecución no salió 1', { exit: 2 }, data], ['el informe no dice 1', { exit: 1 }, { ...data, exit: 0 }]]) {
     assert.deepStrictEqual(setAside(args, report, data.findings), { rest: data.findings, accepted: 0 }, what);
   }
   const quiet = compose({ exit: 1, run: null }, privateReport({ findings: [old(), old()] }));
   assert.deepStrictEqual(quiet, { text: '', accepted: 2 });
   const sent = compose({ exit: 1, run: '7' }, data);
   assert.strictEqual(sent.accepted, 2);
-  assert.match(sent.text, /\(corrida 7\): 2 hallazgo\(s\)\./);
+  assert.match(sent.text, /\(ejecución 7\): 2 hallazgo\(s\)\./);
   assert.match(sent.text, SET_ASIDE);
 });
 

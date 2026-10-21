@@ -87,7 +87,7 @@ function esElRenglon(out, correo) {
   const l = lineas[0];
   assert.ok(l.includes(`(${correo})`), `el renglón dice el correo informado (${correo}): ${l}`);
   assert.ok(l.includes('Tu máquina le informa al equipo tu correo de git'), l);
-  assert.ok(l.includes('para que veas tus corridas en el sitio de la organización'), l);
+  assert.ok(l.includes('para que veas tus ejecuciones en el sitio de la organización'), l);
   assert.ok(l.includes('`git config --global user.email`'), `dice cómo verlo: ${l}`);
   assert.ok(l.includes('`git config --global user.email <otro>`'), `dice cómo cambiarlo: ${l}`);
 }

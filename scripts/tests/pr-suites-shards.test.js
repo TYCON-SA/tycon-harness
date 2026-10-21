@@ -349,7 +349,7 @@ const SIX = [
 test('PrShards_MatrixAndEveryOfFromSameOutput', () => {
   // cuántos trabajos sale del peso del plan, y la matriz y los cuatro `--of` leen la MISMA
   // salida de Validar. Si dos de ellos leyeran cosas distintas, habría suites que ningún trabajo corre.
-  assert.strictEqual(maxShards(), 2, 'el máximo es 2: a una corrida le tocan dos carriles');
+  assert.strictEqual(maxShards(), 2, 'el máximo es 2: a una ejecución le tocan dos carriles');
   assert.doesNotMatch(code.join('\n'), /length\(parameters\.suiteShards\)|each shard in parameters\.suiteShards/,
     'ningún paso arma la matriz ni pide --of con el parámetro: el parámetro es sólo el máximo');
 
@@ -625,7 +625,7 @@ test('PrShards_ShardThatPublishedNothing_TheVerdictDeclaresItsSuitesNotMeasured'
   assert.ok(lost.length > 0);
 
   const v = runVerdict(dir, plan.matrix);
-  assert.match(v.join.out, new RegExp(`##vso\\[task\\.logissue type=error\\].*trabajo ${missing} de ${shards}`), 'la corrida lo denuncia como error');
+  assert.match(v.join.out, new RegExp(`##vso\\[task\\.logissue type=error\\].*trabajo ${missing} de ${shards}`), 'la ejecución lo denuncia como error');
   assert.deepStrictEqual([...v.report.unmeasured].sort(), lost.map((n) => `${n}(no-medida)`).sort());
   assert.match(v.verdict.out, new RegExp(`${lost.length} suite\\(s\\) NO SE MIDIERON`), 'el veredicto las declara no medidas');
   for (const name of lost) assert.doesNotMatch(v.verdict.out, new RegExp(`ROJO NUEVO[^\\n]*${name.replace(/\./g, '\\.')}`), `${name} no es un rojo nuevo`);
@@ -851,7 +851,7 @@ test('T48 PrShards_BenchJobRunsTheExclusiveSuitesAndTheVerdictJoinsThem — el t
   publishBench(dir);
   const v = runVerdict(dir, plan.matrix);
   assert.strictEqual(v.join.code, 0, v.join.out);
-  assert.match(v.join.out, /trabajo del banco: terminó · 2 corrida\(s\) · 1 en rojo o ausente\(s\)/, 'el veredicto junta lo del trabajo del banco');
+  assert.match(v.join.out, /trabajo del banco: terminó · 2 ejecución\(es\) · 1 en rojo o ausente\(s\)/, 'el veredicto junta lo del trabajo del banco');
   assert.strictEqual(v.report.corridas, SOLO.length, 'entre los trabajos de suites y el del banco corrió el plan entero, cada suite una vez');
   assert.deepStrictEqual(v.report.failures, ['lab-solo-red.test.sh']);
   assert.strictEqual(v.report.complete, true);
@@ -898,7 +898,7 @@ test('T49 PrShards_BenchJobThatDoesNotFinishItsSuites_TheyAreNotMeasured — si 
   };
   for (const [what, cut] of Object.entries(cuts)) {
     const v = upTo(cut);
-    assert.match(v.join.out, /##vso\[task\.logissue type=error\]El trabajo del banco de las suites no terminó: .*2 suite\(s\) quedan como NO MEDIDAS, no como verdes/, `${what}: la corrida lo denuncia\n${v.join.out}`);
+    assert.match(v.join.out, /##vso\[task\.logissue type=error\]El trabajo del banco de las suites no terminó: .*2 suite\(s\) quedan como NO MEDIDAS, no como verdes/, `${what}: la ejecución lo denuncia\n${v.join.out}`);
     assert.deepStrictEqual([...v.report.unmeasured].sort(), notMeasured, `${what}: sus suites son no medidas`);
     assert.strictEqual(v.report.complete, false, what);
     assert.match(v.verdict.out, /2 suite\(s\) NO SE MIDIERON/, what);
@@ -1048,7 +1048,7 @@ test('T33 PrPipeline_SuitesTimeoutBelow45AndFourLanes — el tope del trabajo de
   assert.match(job, /26,0 min[\s\S]*31,4/, 'y lo medido con que se decidió');
   assert.doesNotMatch(pr, /los 2 carriles de toda la organización/, 'ya no dice que la organización tiene 2 carriles');
   assert.match(pr, /4 carriles hospedados/, 'dice que son 4 carriles hospedados');
-  assert.match(pr, /a una corrida le tocan 2 (carriles )?en la práctica/, 'y que a una corrida le tocan 2 en la práctica');
+  assert.match(pr, /a una ejecución le tocan 2 (carriles )?en la práctica/, 'y que a una ejecución le tocan 2 en la práctica');
 });
 
 // ── la validación con un repo de GitHub como propio ────────────────────────────────────────────
@@ -1274,7 +1274,7 @@ test('T23 PrValidation_GuardOnEveryCommitBranchTitleBody_NoListIsRed_PublicNotic
   guardRed(unread, /^##vso\[task\.logissue type=error\]freno de publicación: no pude leer el título y el cuerpo del pedido/, 'el título y el cuerpo no se pudieron leer');
   assert.ok(!/public-push-guard: verdict=/.test(unread.out));
   // una corrida de un pedido sin su número: no se puede saber qué título mirar
-  guardRed(runGuard(lab, clean, { SYSTEM_PULLREQUEST_PULLREQUESTNUMBER: '' }), /la corrida es de un pedido y no sé su número/, 'un pedido sin número');
+  guardRed(runGuard(lab, clean, { SYSTEM_PULLREQUEST_PULLREQUESTNUMBER: '' }), /la ejecución es de un pedido y no sé su número/, 'un pedido sin número');
   // una base que git no conoce no es «un pedido sin commits»
   const temp = path.join(lab.dir, 'temp-guard');
   fs.mkdirSync(path.join(temp, 'private-list'), { recursive: true });
@@ -1371,7 +1371,7 @@ test('T63 PrValidation_WhatTheGuardSays_GoesToTheLogWithoutHashes_AndAVerdictWit
   for (const env of [{ SYSTEM_PULLREQUEST_SOURCECOMMITID: '' }, { SYSTEM_PULLREQUEST_SOURCECOMMITID: '$(System.PullRequest.SourceCommitId)' }, { SYSTEM_PULLREQUEST_SOURCECOMMITID: '', SYSTEM_PULLREQUEST_PULLREQUESTNUMBER: '' }]) {
     const x = runGuard(lab, clean, { ...env, TOY_GUARD_RC: '0', TOY_GUARD_OUT: PASS });
     assert.strictEqual(x.code, 1, `${JSON.stringify(env)}\n${x.out}`);
-    assert.match(x.notices[0], /^##vso\[task\.logissue type=error\]freno de publicación: la corrida es de un pedido y no sé cuál es su commit/);
+    assert.match(x.notices[0], /^##vso\[task\.logissue type=error\]freno de publicación: la ejecución es de un pedido y no sé cuál es su commit/);
     assert.strictEqual(x.texts, null, 'ni pide el título: frena antes');
   }
   // 🔴 un pedido sin el nombre de su rama (la variable vacía, o el literal que Azure deja cuando no existe): tampoco se
@@ -1380,7 +1380,7 @@ test('T63 PrValidation_WhatTheGuardSays_GoesToTheLogWithoutHashes_AndAVerdictWit
   for (const branch of ['', '$(System.PullRequest.SourceBranch)']) {
     const x = runGuard(lab, clean, { SYSTEM_PULLREQUEST_SOURCEBRANCH: branch, TOY_GUARD_RC: '0', TOY_GUARD_OUT: PASS });
     assert.strictEqual(x.code, 1, `un pedido con la rama «${branch}»\n${x.out}`);
-    assert.match(x.notices[0], /^##vso\[task\.logissue type=error\]freno de publicación: la corrida es de un pedido y no sé el nombre de su rama/);
+    assert.match(x.notices[0], /^##vso\[task\.logissue type=error\]freno de publicación: la ejecución es de un pedido y no sé el nombre de su rama/);
     assert.strictEqual(x.texts, null, 'ni pide el título: frena antes');
   }
   // a mano sobre algo que no es una rama (una marca): no hay nombre de rama que mirar, y la línea de cuentas lo dice

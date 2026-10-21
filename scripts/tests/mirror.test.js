@@ -1359,7 +1359,7 @@ test('T65_Verify_ASecretRotatesFirst_AndTheReportFileSaysWhereAndWhatToDo_NeverT
   // la regla, sola: qué va al informe y qué código queda si no se pudo escribir
   const lib = require(MIRROR);
   const crashed = { exit: 2, message: 'error no previsto: TypeError: x is not a function\n    at verify (/una/ruta/privada/mirror.js:1:1)', data: {} };
-  assert.deepStrictEqual(lib.reportForFile(crashed), { exit: 2, message: 'error no previsto (el detalle, en el registro de la corrida)', data: {} }, 'la traza de un error no previsto no va al informe (termina en un aviso)');
+  assert.deepStrictEqual(lib.reportForFile(crashed), { exit: 2, message: 'error no previsto (el detalle, en el registro de la ejecución)', data: {} }, 'la traza de un error no previsto no va al informe (termina en un aviso)');
   const known = { exit: 2, message: 'no pude mirar (k): la API contestó 500', data: { couldNotLook: [] } };
   assert.strictEqual(lib.reportForFile(known), known, 'un motivo previsto va tal cual');
   assert.deepStrictEqual([0, 1, 2].map((exit) => lib.reportUnwritten({ exit, message: '' }, 'no pude escribir').exit), [2, 1, 2]);
@@ -1627,9 +1627,9 @@ test('Mirror_Token_OnlyExplicitNeverInArgsNorDisk', async () => {
     // ni en un archivo: nada de lo que quedó en el disco lo trae, salvo el git de mentira (que lo busca) y lo que anotó
     const holding = (text) => spawnSync('grep', ['-rlF', '--', text, fx.dir], { encoding: 'utf8' }).stdout.trim().split('\n').sort();
     const fake = path.join(fx.dir, 'bin', 'git');
-    assert.deepStrictEqual(holding(WRITER), [fake], `${name}: el token no quedó en ningún archivo de la corrida`);
+    assert.deepStrictEqual(holding(WRITER), [fake], `${name}: el token no quedó en ningún archivo de la ejecución`);
     assert.deepStrictEqual(holding(base64(WRITER)), [fake, github.log].sort(), `${name}: la cabecera tampoco`);
-    assert.deepStrictEqual(fs.readdirSync(tmp), [], `${name}: el temporal de la corrida no queda`);
+    assert.deepStrictEqual(fs.readdirSync(tmp), [], `${name}: el temporal de la ejecución no queda`);
     // la API lo recibe en su cabecera, y nunca la credencial del ambiente
     assert.ok(fx.api.requests.length > 0 && fx.api.requests.every((q) => q.headers.authorization === `Bearer ${WRITER}`), `${name}: a la API le habla con el token`);
     assert.ok(!JSON.stringify(fx.api.requests).includes(AMBIENT), `${name}: la credencial del ambiente no viaja`);
@@ -2123,7 +2123,7 @@ test('Mirror_Bases_PlainHttpOnlyToThisMachine_Exit2BeforeToken', async () => {
     assert.strictEqual(r.code, 2, `el servidor de mentira contesta 404: no pude leer\n${r.all}`);
     assert.match(r.all, /no pude leer/);
     assert.ok(a.seen.length > 0 && a.seen.every((q) => q.url.startsWith(`/${PUBLIC.org}/${PUBLIC.repo}.git/`)), JSON.stringify(a.seen));
-    assert.ok(a.seen.every((q) => String(q.authorization).toLowerCase() === `basic ${base64(WRITER)}`.toLowerCase()), 'con la cabecera de la corrida');
+    assert.ok(a.seen.every((q) => String(q.authorization).toLowerCase() === `basic ${base64(WRITER)}`.toLowerCase()), 'con la cabecera de la ejecución');
     assert.deepStrictEqual(b.seen, []);
     const asked = remoteCalls(github, 'fetch');
     assert.strictEqual(asked.length, 1);

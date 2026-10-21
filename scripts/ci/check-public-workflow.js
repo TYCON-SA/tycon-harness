@@ -624,13 +624,13 @@ const RULES = [
     check(lines) {
       const decl = lines.filter((l) => l.code && /^part\s*:/.test(l.body));
       if (decl.length !== 1) {
-        return decl.length ? `hay más de una lista \`part:\` (línea ${at(decl)})` : 'falta la lista `part:` de la matriz: la corrida no se reparte en partes que juntas sean la entera';
+        return decl.length ? `hay más de una lista \`part:\` (línea ${at(decl)})` : 'falta la lista `part:` de la matriz: la ejecución no se reparte en partes que juntas sean la entera';
       }
       const parts = listAt(lines, lines.indexOf(decl[0]));
       const n = parts.filter((p) => p !== 'checks').length;
       const want = ['checks', ...Array.from({ length: n }, (_, k) => `suites-${k + 1}-of-${n}`)];
       if (!n || parts.join(',') !== want.join(',')) {
-        return `la matriz parte la corrida en \`checks\` y \`suites-1-of-<n>\` … \`suites-<n>-of-<n>\`, todas, en orden y una vez (una que falta deja suites sin correr), y dice: ${parts.join(', ') || 'nada'} (línea ${decl[0].n})`;
+        return `la matriz parte la ejecución en \`checks\` y \`suites-1-of-<n>\` … \`suites-<n>-of-<n>\`, todas, en orden y una vez (una que falta deja suites sin correr), y dice: ${parts.join(', ') || 'nada'} (línea ${decl[0].n})`;
       }
       const all = lines.filter((l) => l.code && /^TYCON_PUBLIC_CI_PART\s*:/.test(l.body));
       // la única parte fija es la del piso del instalador, dentro de su job

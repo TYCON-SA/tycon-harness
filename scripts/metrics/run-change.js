@@ -305,7 +305,7 @@ function commitsDeLaCorrida(top, v) {
   const logs = git(top, ['rev-parse', '--git-path', 'logs/HEAD']);
   if (logs.error) return { commits: null, commits_motivo: `no se pudo ubicar el historial local de git (${logs.error})` };
   if (!fs.existsSync(path.resolve(top, logs.out.trim()))) {
-    return { commits: null, commits_motivo: 'esta copia no tiene historial local de git (reflog): no se puede saber qué commits hizo la corrida' };
+    return { commits: null, commits_motivo: 'esta copia no tiene historial local de git (reflog): no se puede saber qué commits hizo la ejecución' };
   }
   const rl = git(top, ['reflog', 'show', '--format=%H%x09%gd%x09%gs', '--date=iso-strict', 'HEAD']);
   if (rl.error) return { commits: null, commits_motivo: `no se pudo leer el historial local de git (${rl.error})` };
@@ -458,16 +458,16 @@ function noMedido(motivo, extra) {
 function armar({ volcado, estado }) {
   let d;
   try { d = JSON.parse(fs.readFileSync(volcado, 'utf8')); } catch (e) {
-    return noMedido(`el volcado de la corrida no se pudo leer (${e.code || 'no es JSON'}): no se sabe qué repo mirar`);
+    return noMedido(`el volcado de la ejecución no se pudo leer (${e.code || 'no es JSON'}): no se sabe qué repo mirar`);
   }
   const m = (d && d.marker) || {};
   if (!sanear) return { version: VERSION, estado: 'no_publicado', motivo: motivoSinSaneado, medido_en: new Date().toISOString() };
   if (!m.repoPath) return noMedido('el volcado no dice en qué repo corrió (sin repoPath): no se sabe qué mirar');
   // Una ruta relativa se resolvería contra el cwd de ESTE proceso y se mediría otro repo, publicándolo como el
   // de la corrida. No se adivina.
-  if (!path.isAbsolute(String(m.repoPath))) return noMedido(`el volcado trae una ruta relativa del repo («${sanear(String(m.repoPath))}»): resolverla contra otra carpeta mediría un repo que no es el de la corrida`);
+  if (!path.isAbsolute(String(m.repoPath))) return noMedido(`el volcado trae una ruta relativa del repo («${sanear(String(m.repoPath))}»): resolverla contra otra carpeta mediría un repo que no es el de la ejecución`);
   const ini = Date.parse(m.startedAt || '');
-  if (!Number.isFinite(ini)) return noMedido('el volcado no dice cuándo arrancó la corrida (sin startedAt): no se puede saber qué commits son suyos');
+  if (!Number.isFinite(ini)) return noMedido('el volcado no dice cuándo arrancó la ejecución (sin startedAt): no se puede saber qué commits son suyos');
   const finRaw = Date.parse(d.archivedAt || '');
   const v = { desde: ini - MARGEN_MS, hasta: (Number.isFinite(finRaw) ? finRaw : Date.now()) + MARGEN_MS };
   const ventana = { desde: new Date(v.desde).toISOString(), hasta: new Date(v.hasta).toISOString() };
@@ -522,7 +522,7 @@ function armar({ volcado, estado }) {
   if (!topPrincipal || !principalExiste) {
     // `otras_sesiones: null`, no 0: de un repo que no está no se puede saber quién escribió en él
     // (sería la confusión «0 = no medido»).
-    salida.push({ nombre: path.basename(String(m.repoPath)), principal: true, por: ['story'], estado: 'no_medido', motivo: principalExiste ? 'la carpeta de la corrida no es un repo git' : 'la carpeta del repo de la corrida ya no existe en esta máquina', otras_sesiones: null, otras_sesiones_motivo: 'no se pudo mirar este repo: no se puede saber si otra sesión escribió en él' });
+    salida.push({ nombre: path.basename(String(m.repoPath)), principal: true, por: ['story'], estado: 'no_medido', motivo: principalExiste ? 'la carpeta de la ejecución no es un repo git' : 'la carpeta del repo de la ejecución ya no existe en esta máquina', otras_sesiones: null, otras_sesiones_motivo: 'no se pudo mirar este repo: no se puede saber si otra sesión escribió en él' });
   }
   const orden = [...repos.entries()].sort((a, b) => (b[1].principal - a[1].principal));
   for (const [top, info] of orden) {
@@ -575,7 +575,7 @@ function armar({ volcado, estado }) {
   if (salida.length && !medidos.length) {
     return {
       version: VERSION, estado: 'no_medido',
-      motivo: `no se pudo mirar ninguno de los ${salida.length} repo(s) de la corrida: ${salida.map((r) => `${r.nombre} (${r.motivo || 'sin motivo'})`).join(' · ')}`,
+      motivo: `no se pudo mirar ninguno de los ${salida.length} repo(s) de la ejecución: ${salida.map((r) => `${r.nombre} (${r.motivo || 'sin motivo'})`).join(' · ')}`,
       medido_en: new Date().toISOString(), ventana, repos: salida,
     };
   }

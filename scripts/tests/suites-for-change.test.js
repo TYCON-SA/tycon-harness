@@ -195,7 +195,7 @@ test('T11 — la variable gana al propio clon; y --skills, pasado a mano, gana a
   assert.deepStrictEqual(o.root, [['ROOT', 'agent-skills', w.inst, '--skills', 'ok']]);
 });
 
-test('T12 Suites_MissingRoot_NotMeasuredWithReason — la raíz agent-skills no existe: sus suites NO se callan ni se dan por corridas, y se dice el motivo', () => {
+test('T12 Suites_MissingRoot_NotMeasuredWithReason — la raíz agent-skills no existe: sus suites NO se callan ni se dan por ejecuciones, y se dice el motivo', () => {
   // 🔴 Listar igual y callar deja a quien corre la lista viendo sólo «no está»; sacar la suite de la
   //    lista es peor: un salteo en silencio. La suite se lista (quien la corre la marca «NO se midió» y cuenta como falla) y
   //    acá queda dicho POR QUÉ no está: la raíz y de qué regla salió.
