@@ -400,14 +400,20 @@ const HOOK_JS = /"([^"]+\.js)"\s*$/;
  * Las rutas en su repo de los guiones `.js` de hooks-list.json y de los manifiestos de integrations/
  * (`scripts/hooks/x.js`, `integrations/<n>/x.js`, `skills/…/y.js`), o null.
  */
-function listedHookPaths(tree = DEFAULT_TREE) {
+function listedHookPaths(tree = DEFAULT_TREE, problems = null) {
   try {
     const j = JSON.parse(fs.readFileSync(path.join(tree, 'scripts', 'setup', 'hooks-list.json'), 'utf8'));
     const specs = (j.hooks || []).map((h) => String(h.spec || ''));
-    try {
-      const INT = require(path.join(tree, 'scripts', 'lib', 'integrations.js'));
-      for (const m of INT.listManifests({ dir: path.join(tree, 'integrations') }).manifests) specs.push(...INT.hookEntries(m, { tool: 'claude' }).map((h) => h.spec));
-    } catch (_) { /* un árbol sin integraciones: sólo la lista */ }
+    const lib = path.join(tree, 'scripts', 'lib', 'integrations.js');
+    // un manifiesto roto o la biblioteca que no carga se dicen en `problems`; un árbol sin la biblioteca, callado
+    if (fs.existsSync(lib)) {
+      try {
+        const INT = require(lib);
+        const l = INT.listManifests({ dir: path.join(tree, 'integrations') });
+        for (const m of l.manifests) specs.push(...INT.hookEntries(m, { tool: 'claude' }).map((h) => h.spec));
+        if (problems) for (const b of l.problems) problems.push(`el manifiesto de la integración ${b.name} está roto (${b.reasons.join('; ')}): sus hooks no se cuentan`);
+      } catch (e) { if (problems) problems.push(`no pude cargar scripts/lib/integrations.js (${e.code || e.message}): los hooks de las integraciones no se cuentan`); }
+    }
     const repoPath = (s) => (s.startsWith('@tcg:') ? `scripts/hooks/${s.slice(5)}` : (s.startsWith('@int:') ? `integrations/${s.slice(5)}` : `skills/${s}`));
     return [...new Set(specs.filter((s) => s.endsWith('.js')).map(repoPath))];
   } catch (_) { return null; }
@@ -471,7 +477,9 @@ function doctorFacts({ tree = DEFAULT_TREE, env = process.env, platform = proces
     const entry = entryFor(pk, L.list);
     const interp = interpreter({ tree, env: Object.assign({}, env, { TYCON_NODE_BIN: '' }), platform });
     json.own = interp.own; json.version = interp.version; json.form = interp.form;
-    const counted = settingsFile ? countHooks(settingsFile, interp, listedHookPaths(tree)) : null;
+    const deLaLista = [];
+    const counted = settingsFile ? countHooks(settingsFile, interp, listedHookPaths(tree, deLaLista)) : null;
+    if (deLaLista.length) json.problems = deLaLista;
     const hooks = counted && !counted.unreadable ? counted : null;
     if (hooks) json.hooks = { own: hooks.own, path_node: hooks.path_node };
     if (!entry) { json.reason = noEntryReason(pk, L.list); return { level: 'warn', line: `Node del arnés: ${json.reason}: los hooks usan el Node del PATH (${process.version})`, json }; }
@@ -492,10 +500,12 @@ function doctorFacts({ tree = DEFAULT_TREE, env = process.env, platform = proces
     parts.push(json.verified === null ? 'huella del binario sin recalcular (comprobación de salud)' : json.verified ? 'huella del binario igual a la de la lista' : 'la huella del binario NO es la de la lista');
     if (hooks && (hooks.path_node > 0 || hooks.other > 0)) parts.push(`hooks: ${hooks.own} de ${hooks.total} con el Node del arnés${hooks.other ? ` (${hooks.other} con otro Node)` : ''}: el próximo arranque los pasa`);
     else parts.push(`hooks: ${k} con él`);
+    // un manifiesto roto (sus hooks no se cuentan) se dice también en la línea, y la sube a aviso
+    if (deLaLista.length) parts.push(deLaLista.join(' · '));
     if (json.verified === false) json.reason = 'la huella del binario no es la de la lista';
     else if (hooks && hooks.path_node > 0) json.reason = `${hooks.path_node} hooks todavía con el Node del PATH`;
     else if (hooks && hooks.other > 0) json.reason = `${hooks.other} hooks con otro Node (una ruta vieja o que ya no está)`;
-    return { level: doctorLevel(json, hooks), line: parts.join(' · '), json };
+    return { level: deLaLista.length ? 'warn' : doctorLevel(json, hooks), line: parts.join(' · '), json };
   } catch (e) {
     json.reason = `no se pudo mirar (${e.message})`;
     return { level: 'warn', line: `Node del arnés: ${json.reason}`, json };

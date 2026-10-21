@@ -88,11 +88,15 @@ function renderPage(model, { idioma, publicRepo, version }) {
   const deLaOrg = chip('org', T('comoTrabaja.deTuOrganizacion'));
   // lo de una integración de la organización: sólo llega al modelo si no la tiene apagada
   const segunOrg = chip('segun', T('comoTrabaja.segunTuOrganizacionMarca'));
+  // lo de la herramienta de horas que eligió la organización lleva su nombre («Clockify», «Solidtime»); sin perfil no se
+  // sabe cuál, y queda «según tu organización»
+  const horas = model.org && model.org.timeToolLabel ? chip('horas', model.org.timeToolLabel) : null;
+  const marcaDe = (x) => (x.timeTool && horas ? horas : x.integration || x.timeTool ? segunOrg : delArnes);
   // un control: su título es qué hace y el archivo va debajo; de una integración o del arnés; opcional y apagado de
   // fábrica, o con su efecto (frena, avisa, anota)
   const control = (c, paso) => {
     const marca = c.optional ? chip('off', T('comoTrabaja.opcional', { variable: c.optional })) : chip(TAG_EFECTO[c.effect][0], T(TAG_EFECTO[c.effect][1]));
-    return pieza({ origin: 'harness', nombre: T(`control.${c.spec}`), mono: false, cuando: T(`comoTrabaja.evento.${c.event}`), chips: [c.integration ? segunOrg : delArnes, marca], ruta: c.script, archivo: c.script, acciones: ver(c.script) + mejorar(c.script, paso), extra: c.optional ? ' apagada' : '' });
+    return pieza({ origin: 'harness', nombre: T(`control.${c.spec}`), mono: false, cuando: T(`comoTrabaja.evento.${c.event}`), chips: [marcaDe(c), marca], ruta: c.script, archivo: c.script, acciones: ver(c.script) + mejorar(c.script, paso), extra: c.optional ? ' apagada' : '' });
   };
 
   // la franja de la organización
@@ -146,7 +150,7 @@ function renderPage(model, { idioma, publicRepo, version }) {
     const guias = `<ul class="ct-lista">${s.guides.map((g) => pieza({ origin: 'harness', nombre: g, ruta: g, acciones: ver(g) + mejorar(g, paso) })).join('')}</ul>${s.guides.length > 1 ? '' : `<p class="ct-vacio">${esc(T('comoTrabaja.sinGuias'))}</p>`}`;
     // las piezas de las integraciones de la organización que lleva el paso (sólo en los pasos que declaran alguna)
     const deLaOrgPiezas = !s.orgPiecesDeclared ? '' : bloque(T('comoTrabaja.segunTuOrganizacion'), s.orgPieces.length
-      ? `<ul class="ct-lista">${s.orgPieces.map((x) => pieza({ origin: 'harness', nombre: T(x.textKey), mono: false, chips: [segunOrg], ruta: x.code, archivo: x.code, acciones: ver(x.code) + mejorar(x.code, paso) })).join('')}</ul>`
+      ? `<ul class="ct-lista">${s.orgPieces.map((x) => pieza({ origin: 'harness', nombre: T(x.textKey), mono: false, chips: [marcaDe(x)], ruta: x.code, archivo: x.code, acciones: ver(x.code) + mejorar(x.code, paso) })).join('')}</ul>`
       : `<p class="ct-vacio">${esc(T('comoTrabaja.sinPiezasOrg'))}</p>`);
     const segun = s.storyPieces.length ? `<ul class="ct-lista">${s.storyPieces.map((p) => pieza({ origin: 'harness', nombre: T(`${p.textKey}.pieza`), mono: false, cuando: T(p.textKey), chips: [delArnes], ruta: p.code, acciones: ver(p.code) + ver(p.guide, 'comoTrabaja.verGuia') + mejorar(p.code, paso) })).join('')}</ul>` : `<p class="ct-vacio">${esc(T('comoTrabaja.sinSegun'))}</p>`;
     // los revisores: los del núcleo por grupo, y los de cada paquete

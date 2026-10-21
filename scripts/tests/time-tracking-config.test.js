@@ -11,6 +11,7 @@
  *
  *   T14-T15, T21-T22, T40-T46 · los hooks, el despachador y las skills de una integración (`@int:`), su manifiesto
  *         mal escrito (roto con aviso, nunca frena la instalación) y la herramienta que no se puede leer.
+ *   T52 · las cuentas de solo conteo (`managed.js` y el Node del arnés) dicen un manifiesto roto, no lo cuentan callado.
  *
  * Nada toca el HOME real. El token de mentira se arma por partes.
  */
@@ -490,4 +491,32 @@ test('IntegrationsLib_UnloadableOrUnreadable_IsSaid @story-7.40 @ac-4', (t) => {
     assert.deepStrictEqual(l.manifests, []);
     assert.match(l.problems[0].reasons[0], /no se puede leer/);
   } finally { fs.chmodSync(cerrada, 0o755); }
+});
+
+test('ManagedCounts_BrokenManifest_IsSaid @story-7.40 @ac-4', () => {
+  // un árbol con los guiones de éste y una carpeta de integraciones propia: Clockify sana y «acme», de horas, rota
+  const tree = tmp('ttc-arbol-');
+  fs.symlinkSync(path.join(ROOT, 'scripts'), path.join(tree, 'scripts'), 'dir');
+  fs.mkdirSync(path.join(tree, 'integrations', 'acme'), { recursive: true });
+  fs.cpSync(path.join(ROOT, 'integrations', 'clockify'), path.join(tree, 'integrations', 'clockify'), { recursive: true });
+  fs.writeFileSync(path.join(tree, 'integrations', 'acme', 'integration.json'), JSON.stringify({ name: 'acme', label: 'Acme', kind: 'timeTracking', hooks: [{ event: 'Nunca', script: 'scripts/x.js', label: 'x', platforms: { windows: true } }] }));
+  const M = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'managed.js'));
+  const HN = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'harness-node.js'));
+  // la cuenta del instalador: sigue contando lo sano y dice el roto con su nombre
+  const e = M.expectedControls({ platform: 'darwin', tree, integrations: {}, env: {}, home: casa() });
+  assert.ok([...e.expected, ...e.off, ...e.unknown].some((x) => /clockify/.test(x.relpath || x.id)), `lo sano se sigue contando: ${JSON.stringify(e)}`);
+  assert.ok(e.problems.some((p) => /acme/.test(p) && /manifiesto/.test(p)), `el roto se dice: ${JSON.stringify(e.problems)}`);
+  // la del Node del arnés: los guiones de lo sano, y el roto en sus problemas
+  const problemas = [];
+  const listed = HN.listedHookPaths(tree, problemas);
+  assert.ok(listed.includes('integrations/clockify/scripts/on-prompt.js'));
+  assert.ok(problemas.some((p) => /acme/.test(p) && /manifiesto/.test(p)), `el roto se dice: ${JSON.stringify(problemas)}`);
+  // sin la biblioteca de integraciones (un árbol viejo): callado, como siempre
+  const viejo = tmp('ttc-viejo-');
+  fs.mkdirSync(path.join(viejo, 'scripts', 'setup'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'setup', 'hooks-list.json'), path.join(viejo, 'scripts', 'setup', 'hooks-list.json'));
+  const sinProblemas = [];
+  assert.ok(Array.isArray(HN.listedHookPaths(viejo, sinProblemas)));
+  assert.deepStrictEqual(sinProblemas, []);
+  for (const d of [tree, viejo]) fs.rmSync(d, { recursive: true, force: true });
 });

@@ -1438,7 +1438,9 @@ test('2.31-T11 NewSections_ValidateWithMachineReader_RejectPersonalValues @story
   const cambio = (r, esperado) => { assert.strictEqual(r.ok, true, JSON.stringify(r.problems)); assert.strictEqual(r.texto, ORG.formatJson(esperado)); };
   // integraciones: las seis del equipo (CodeGraph incluido); Telegram no se edita acá (es de cada máquina)
   const integ = ORG.seccionPorId('integraciones');
-  assert.deepStrictEqual(integ.rutas, ['integrations.clockify', 'integrations.engram', 'integrations.mailbox', 'integrations.codex', 'integrations.nightly', 'integrations.codegraph']);
+  // la herramienta de horas y la llave vieja, para poder sacarla; las hojas de cada herramienta salen de sus manifiestos
+  assert.deepStrictEqual(ORG.rutasDeHoras(), ['integrations.solidtime']);
+  assert.deepStrictEqual(integ.rutas, ['integrations.timeTracking', 'integrations.clockify', 'integrations.engram', 'integrations.mailbox', 'integrations.codex', 'integrations.nightly', 'integrations.codegraph']);
   cambio(rev('integraciones', { integrations: { clockify: false, engram: true, mailbox: true, codex: true, nightly: true, codegraph: true } }), { ...PERFIL_TYCON, integrations: { ...PERFIL_TYCON.integrations, clockify: false, codex: true, codegraph: true } });
   assert.deepStrictEqual(rev('integraciones', { integrations: { clockify: 'sí' } }).problems.map((p) => p.path), ['integrations.clockify']);
   // Azure DevOps: la organización; un correo ahí es un valor personal y lo rechaza el lector
@@ -2948,10 +2950,10 @@ test('T13 Repos_SinPipelineQuePasa @story-2.59 @ac-13', async () => {
 test('T7 Integraciones_UnRenglonPorIntegracion @story-2.59 @ac-7', async () => {
   let p = await compacta(secInteg(INTEG));
   const filas = p.renglones(p.tablas()[0]);
-  assert.strictEqual(filas.length, 6, 'las cinco de antes y CodeGraph');
+  assert.strictEqual(filas.length, 6, 'la de horas, las cuatro de antes y CodeGraph');
   assert.ok(p.clases(p.tablas()[0]).includes('integ'));
   filas.forEach((f) => { assert.strictEqual(p.de(f, 'que').length, 1); assert.strictEqual(p.todo(f).filter((n) => n.tag === 'select').length, 1); });
-  assert.match(p.texto(filas[0]), /Clockify/);
+  assert.match(p.texto(filas[0]), /Registro de horas/, 'el primero es la herramienta de horas');
   assert.deepStrictEqual(p.todo(filas[3]).find((n) => n.tag === 'select').hijos.map((o) => o.attrs.value), ['', 'true', 'false', 'detect'], 'codex suma «si está instalado»');
   p.todo(filas[2]).find((n) => n.tag === 'select').on.change({ target: { value: 'true' } });
   assert.deepStrictEqual((await p.revisado()).integrations, { ...INTEG, mailbox: true });
@@ -3788,4 +3790,108 @@ test('T13 Modelos_NivelesPidenSuVersion @story-2.70 @ac-11', async () => {
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { _nota: 'economy', reviewers: 'haiku' } }).version, ORG.MODELS_SINCE);
   const TEAM = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
   assert.deepStrictEqual(ORG.modelosEnNiveles({ _nota: 'opus', helpers: 'haiku' }, TEAM), { _nota: 'opus', helpers: 'economy' });
+});
+
+// ── la herramienta de horas se elige en Integraciones ────────────────────────────────────────────────────────────────
+// Las opciones salen de los manifiestos de integrations/ del árbol (el servidor las manda en `extras.horas`); con
+// Solidtime, la pantalla pide la URL de la instancia y dice el comando del token, que nunca pide.
+const HORAS = [{ name: 'clockify', label: 'Clockify', url: false, token: null }, { name: 'solidtime', label: 'Solidtime', url: true, token: 'harness.js config set solidtime.token' }];
+const secHoras = (i) => ({ ...secInteg(i), extras: { horas: HORAS } });
+
+test('Config_TimeTrackingSelector_SavesKey @story-7.40 @ac-10', async () => {
+  // el servidor manda las herramientas de los manifiestos del árbol
+  await conEquipo({}, async ({ seccion }) => {
+    const ex = (await seccion('integraciones')).extras;
+    assert.deepStrictEqual(ex.horas.map((h) => [h.name, h.label, h.url]), [['clockify', 'Clockify', false], ['solidtime', 'Solidtime', true]]);
+    assert.match(ex.horas[1].token, /harness\.js config set solidtime\.token/);
+  });
+  // la pantalla: el primer renglón es «Registro de horas», con Ninguno y las de los manifiestos
+  let p = await compacta(secHoras(INTEG));
+  const sel = () => p.todo(p.renglones(p.tablas()[0])[0]).find((n) => n.tag === 'select');
+  assert.match(p.texto(p.renglones(p.tablas()[0])[0]), /Registro de horas/);
+  assert.deepStrictEqual(sel().hijos.map((o) => o.attrs.value), ['', 'none', 'clockify', 'solidtime']);
+  assert.strictEqual(sel().value, 'clockify', 'la llave vieja prendida se muestra como Clockify');
+  assert.ok(!p.todo(p.sec('integraciones')).some((n) => n.attrs['data-path'] === 'integrations.clockify'), 'ya no hay renglón de la llave vieja');
+  // elegir Solidtime: aparece la URL, el comando del token, y ningún campo para el token
+  sel().on.change({ target: { value: 'solidtime' } });
+  const url = p.todo(p.sec('integraciones')).find((n) => n.tag === 'input' && n.attrs['data-path'] === 'integrations.solidtime.url');
+  assert.ok(url, 'pide la URL de la instancia');
+  assert.match(p.textoDe('integraciones'), /harness\.js config set solidtime\.token/);
+  assert.ok(!p.todo(p.sec('integraciones')).some((n) => /token/i.test(String(n.attrs['data-path'] || ''))), 'nunca pide el token');
+  url.on.input({ target: { value: 'https://horas.acme.example' } });
+  const { clockify: _vieja, ...sinVieja } = INTEG;
+  assert.deepStrictEqual((await p.revisado()).integrations, { ...sinVieja, timeTracking: 'solidtime', solidtime: { url: 'https://horas.acme.example' } }, 'la clave nueva y la URL; la llave vieja sale');
+  // con la llave vieja apagada se muestra Ninguno; elegir Clockify no pide URL
+  p = await compacta(secHoras({ ...INTEG, clockify: false }));
+  assert.strictEqual(sel().value, 'none');
+  sel().on.change({ target: { value: 'clockify' } });
+  assert.ok(!p.todo(p.sec('integraciones')).some((n) => n.attrs['data-path'] === 'integrations.solidtime.url'));
+  assert.deepStrictEqual((await p.revisado()).integrations, { ...sinVieja, timeTracking: 'clockify' });
+  // el servidor: una URL sin https:// se rechaza; https y localhost pasan
+  const rev = (doc) => ORG.revisar({ seccion: 'integraciones', texto: ORG.formatJson(PERFIL_TYCON), borrador: doc, lectores: { 'harness-config': TC } });
+  const { clockify: _c, ...integSinVieja } = PERFIL_TYCON.integrations;
+  assert.deepStrictEqual(rev({ integrations: { ...integSinVieja, timeTracking: 'solidtime', solidtime: { url: 'http://horas.acme.example' } } }).problems.map((x) => x.path), ['integrations.solidtime.url']);
+  for (const u of ['https://horas.acme.example', 'http://localhost:8080']) {
+    const r = rev({ integrations: { ...integSinVieja, timeTracking: 'solidtime', solidtime: { url: u } } });
+    assert.strictEqual(r.ok, true, `${u}: ${JSON.stringify(r.problems)}`);
+    assert.strictEqual(JSON.parse(r.texto).integrations.solidtime.url, u, 'la URL llega al archivo');
+  }
+  // las hojas de cada herramienta salen de su manifiesto: la de Solidtime es de la sección; una que nadie declara, no
+  const integ = ORG.seccionPorId('integraciones');
+  assert.deepStrictEqual(ORG.hojasAjenas(integ, { integrations: {} }, { integrations: { timeTracking: 'solidtime', solidtime: { url: 'https://h' } } }), []);
+  assert.deepStrictEqual(ORG.hojasAjenas(integ, { integrations: {} }, { integrations: { acme: { url: 'https://h' } } }), ['integrations.acme.url']);
+  // como la lee la máquina: un valor con mayúsculas o espacios se reconoce, y con Solidtime aparece su URL
+  p = await compacta(secHoras({ ...INTEG, timeTracking: ' Solidtime ' }));
+  assert.strictEqual(sel().value, 'solidtime');
+  assert.ok(p.todo(p.sec('integraciones')).some((n) => n.attrs['data-path'] === 'integrations.solidtime.url'));
+  // una herramienta que el perfil tiene y este sitio no ofrece se muestra dicha; los manifiestos rotos, también
+  p = await compacta({ ...secInteg({ ...INTEG, timeTracking: 'harvest' }), extras: { horas: HORAS, horasProblemas: ['la integración acme tiene el manifiesto roto (x): no se ofrece'] } });
+  assert.strictEqual(sel().value, 'harvest');
+  assert.match(p.texto(p.renglones(p.tablas()[0])[0]), /harvest \(este sitio no la ofrece\)/);
+  assert.match(p.textoDe('integraciones'), /acme tiene el manifiesto roto/);
+});
+
+test('Config_TimeTracking_RaisesRequiresAndDropsOldKey @story-7.40 @ac-10', { skip: SIN_BACKEND }, async () => {
+  // la función: la capa sube a la versión que lee la clave nueva sólo cuando el pedido la cambia y la capa pide menos
+  const antes = { integrations: { clockify: true } };
+  const despues = { integrations: { timeTracking: 'solidtime' } };
+  const sube = ORG.timeTrackingLayer({ layerText: JSON.stringify(capa(ORG.RESPONSE_SINCE)), actual: antes, doc: despues });
+  assert.strictEqual(sube.archivo, 'team-layer.json');
+  assert.deepStrictEqual(JSON.parse(sube.contenido).requires.harness, `>= ${ORG.TIME_TRACKING_SINCE}`);
+  assert.strictEqual(ORG.TIME_TRACKING_SINCE, '2026.10.21.15', 'la versión que publicó la tanda A, la primera que lee integrations.timeTracking');
+  assert.strictEqual(ORG.timeTrackingLayer({ layerText: JSON.stringify(capa(ORG.TIME_TRACKING_SINCE)), actual: antes, doc: despues }), null, 'ya pide lo suficiente');
+  assert.strictEqual(ORG.timeTrackingLayer({ layerText: JSON.stringify(capa(ORG.RESPONSE_SINCE)), actual: despues, doc: despues }), null, 'no la cambia');
+  assert.match(ORG.timeTrackingLayer({ layerText: '{ roto', actual: antes, doc: despues }).problema, /team-layer\.json/);
+  // la capa con la marca de orden de bytes la lee como la máquina; la que no tiene la forma «>= x» no se pisa
+  const conBom = ORG.timeTrackingLayer({ layerText: `﻿${JSON.stringify({ schema: 1, name: 'acme', ...capa(ORG.RESPONSE_SINCE) })}`, actual: antes, doc: despues });
+  assert.deepStrictEqual(JSON.parse(conBom.contenido), { schema: 1, name: 'acme', requires: { harness: `>= ${ORG.TIME_TRACKING_SINCE}` } }, 'sube y conserva lo demás');
+  assert.match(ORG.timeTrackingLayer({ layerText: JSON.stringify({ requires: { harness: '2026.10.01.1' } }), actual: antes, doc: despues }).problema, /no «>= versión»/);
+  // sin capa ninguna máquina aplica el perfil: no hay versión que subir, y no se inventa una declaración incompleta
+  assert.strictEqual(ORG.timeTrackingLayer({ layerText: null, actual: antes, doc: despues }), null);
+  // prender o apagar otra integración no cambia la herramienta: el pedido no lee la capa
+  assert.strictEqual(ORG.cambiaHoras({ actual: { integrations: { engram: true } }, doc: { integrations: { engram: false } } }), false);
+  assert.strictEqual(ORG.cambiaHoras({ actual: antes, doc: despues }), true);
+  // de punta a punta: el pedido al perfil lleva el perfil sin la llave vieja y la capa con la versión nueva
+  const { arrancarAdoFalso } = require('./lib/fake-ado-api.js');
+  let ado, r, dir;
+  try {
+    ado = await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: 'perfil' });
+    ado.st.politicas = [{ isEnabled: true, isBlocking: true, type: { displayName: 'Minimum number of reviewers' }, settings: { minimumApproverCount: 1, creatorVoteCounts: false, scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: ado.st.repoId }] } }];
+    ({ r, dir } = await opsPorHttp({ 'team-profile.json': PERFIL_TYCON, 'team-layer.json': capa(ORG.RESPONSE_SINCE), 'team-repos.json': TR_BASE }));
+    const remotos = { perfil: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'perfil', web: 'https://dev.azure.com/acme/Proy/_git/perfil' } };
+    await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': opsBase() }), perfil: dir }), env: { ...PERFIL_ENV, SITE_PROFILE_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base } } }, async (ctx) => {
+      const lead = await ctx.entrar(LEAD); const tok = await ctx.token(lead);
+      const { clockify: _c, ...integSinVieja } = PERFIL_TYCON.integrations;
+      const rev = (await ctx.escribir('/api/config/revisar', lead, tok, { seccion: 'integraciones', borrador: { integrations: { ...integSinVieja, timeTracking: 'clockify' } } })).json;
+      assert.strictEqual(rev.ok, true, JSON.stringify(rev.problems));
+      const s = (await ctx.h.pedir('/api/config', { cookie: lead })).json.secciones.find((x) => x.id === 'integraciones');
+      const p = (await ctx.escribir('/api/config/proponer', lead, tok, { seccion: 'integraciones', texto: rev.texto, oid: s.oid })).json;
+      assert.strictEqual(p.ok, true, JSON.stringify(p));
+      const ref = ado.st.pedidos[0].sourceRefName;
+      const perfil = JSON.parse(r.archivoEn(ref, 'team-profile.json'));
+      assert.strictEqual(perfil.integrations.timeTracking, 'clockify');
+      assert.ok(!('clockify' in perfil.integrations), 'la llave vieja salió del perfil');
+      assert.strictEqual(JSON.parse(r.archivoEn(ref, 'team-layer.json')).requires.harness, `>= ${ORG.TIME_TRACKING_SINCE}`, 'y el mismo pedido sube la versión que pide el perfil');
+    });
+  } finally { await cerrarTodos(ado, r); }
 });

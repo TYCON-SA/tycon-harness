@@ -837,7 +837,8 @@ test('T28 ComoTrabaja_IntegracionesSonPiezasDeSuPaso @story-2.61.3 @ac-3 — el 
   const integraciones = TC.integraciones(TC.cargar({ env: {}, home: tmp('hiw-home-') }));
   for (const f of H2.INTEGRATION_PIECES) {
     assert.ok(ids.includes(f.step), `${f.id}: el paso ${f.step}`);
-    assert.ok(f.integration in integraciones, `${f.id}: ${f.integration} es una integración`);
+    // las de horas son de la herramienta que elija la organización: no nombran ninguna
+    assert.ok(f.timeTool ? f.integration === null : f.integration in integraciones, `${f.id}: ${f.integration} es una integración`);
     assert.ok(fs.existsSync(path.join(ROOT, f.code)), `${f.id}: ${f.code}`);
     for (const idioma of ['es', 'en']) assert.ok(TX().t(idioma, f.textKey), `${f.id}: su texto en ${idioma}`);
   }
@@ -881,6 +882,41 @@ test('T47 ComoTrabaja_HorasPorLaHerramientaElegida @story-7.40 @ac-4 — la de h
   // otra elegida: los de Clockify no
   const otra = H2.buildModel({ treeDir: ROOT, profileDir: perfilIntegraciones({ timeTracking: 'solidtime', engram: true }) });
   assert.ok(!todos(otra).some((c) => c.integration === 'clockify'), 'con Solidtime, nada de Clockify');
+}));
+
+test('HowItWorks_TimeControls_OnlyWhenChosen @story-7.40 @ac-11 — los de horas con el nombre de la elegida; con ninguna, no aparecen', () => conCasa(() => {
+  const H2 = HIW();
+  const todos = (m) => [...m.allSteps.controls, ...m.steps.flatMap((x) => x.controls)];
+  const piezasDeHoras = (m) => m.steps.flatMap((x) => x.orgPieces || []).filter((x) => x.timeTool);
+  const chip = (texto) => `ct-chip horas">${texto}<`;
+  for (const [tool, label] of [['clockify', 'Clockify'], ['solidtime', 'Solidtime']]) {
+    const m = H2.buildModel({ treeDir: ROOT, profileDir: perfilIntegraciones({ timeTracking: tool, engram: true }) });
+    assert.strictEqual(m.org.timeToolLabel, label);
+    assert.deepStrictEqual(piezasDeHoras(m).map((x) => x.id).sort(), ['timeTrackingClose', 'timeTrackingStart'], `${tool}: el 0b y el 9`);
+    assert.ok(piezasDeHoras(m).every((x) => x.integration === tool), `${tool}: las piezas son de la elegida`);
+    const suyos = todos(m).filter((c) => c.timeTool);
+    assert.ok(suyos.length && suyos.every((c) => c.integration === tool), `${tool}: sólo sus controles`);
+    const html = TAB().renderPage(m, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
+    assert.ok(html.includes(chip(label)), `${tool}: el chip con su nombre`);
+    // ninguna pieza ni control de horas con «del arnés» ni «según tu organización»
+    const filas = html.split('<li ').map((li) => li.split('</li>')[0]).filter((li) => li.includes(chip(label)));
+    assert.ok(filas.length >= suyos.length, `${tool}: cada control de horas con el nombre`);
+    for (const li of filas) assert.ok(!li.includes(TX().t('es', 'comoTrabaja.delArnes')) && !li.includes(TX().t('es', 'comoTrabaja.segunTuOrganizacionMarca')), li.slice(0, 200));
+  }
+  // con ninguna (o la llave vieja apagada): ni las piezas ni los controles de horas
+  for (const integ of [{ timeTracking: 'none', engram: true }, { clockify: false, engram: true }]) {
+    const m = H2.buildModel({ treeDir: ROOT, profileDir: perfilIntegraciones(integ) });
+    assert.deepStrictEqual(piezasDeHoras(m), [], JSON.stringify(integ));
+    assert.ok(!todos(m).some((c) => c.timeTool), JSON.stringify(integ));
+  }
+  // una herramienta que el árbol no trae: sus piezas no se ven, y la franja dice por qué
+  const rara = H2.buildModel({ treeDir: ROOT, profileDir: perfilIntegraciones({ timeTracking: 'harvest', engram: true }) });
+  assert.deepStrictEqual(piezasDeHoras(rara), []);
+  assert.ok(rara.org.problems.some((x) => /harvest/.test(x) && /no es una herramienta de horas/.test(x)), JSON.stringify(rara.org.problems));
+  // sin perfil no se sabe: las piezas se ven «según tu organización»
+  const sin = H2.buildModel({ treeDir: ROOT, profileDir: null });
+  assert.strictEqual(piezasDeHoras(sin).length, 2);
+  assert.ok(!TAB().renderPage(sin, { idioma: 'es', publicRepo: PUBLICO, version: 'v' }).includes('ct-chip horas"'));
 }));
 
 test('T29 ComoTrabaja_SoloLoQueTuOrganizacionUsa @story-2.61.3 @ac-4 — apagada no aparece; prendida o sin perfil, «según tu organización»', () => conCasa(() => {
