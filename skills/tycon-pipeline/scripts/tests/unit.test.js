@@ -4150,6 +4150,49 @@ test('detector UI: una tanda de pipelines que nombra el frente marca pantalla au
   for (const c of casos) assert.equal(uiDetect(uiStory(LISTAS_CS + c)), true, `es pantalla: ${c.trim()}`);
 });
 
+// Un script no es una pantalla: un gate de un repo que se llama FrontEnd no hace de pantalla a la story que lo toca.
+// Lo que decide es la extensión o la carpeta del archivo; el nombre del repo sigue contando para el resto.
+test('detector UI: un script o un archivo de CI dentro de un repo del frente no marca pantalla', () => {
+  const casos = [
+    'files_to_modify:\n  - "(AcmeFrontEnd) scripts/e2e-gate.sh"\n',
+    'files_to_modify:\n  - "(AcmeFrontEnd) scripts/e2e-gate.test.js"\n',
+    'files_to_modify:\n  - AcmeFrontEnd/azure-pipelines.yml\n',
+    'files_to_modify:\n  - AcmeFrontEnd/tools/medir.py\n',
+    'files_to_modify:\n  - AcmeFrontEnd/.github/workflows/ci.yml\n',
+  ];
+  for (const c of casos) assert.equal(uiDetect(uiStory(c)), false, `no es pantalla: ${c.trim()}`);
+  assert.equal(uiDetect(uiStory('files_to_modify:\n  - "(AcmeFrontEnd) src/hooks/useAlgo.ts"\n')), true,
+    'un .ts del frente sigue siendo pantalla por el nombre del repo');
+  assert.equal(uiDetect(uiStory('files_to_modify:\n  - "(AcmeFrontEnd) scripts/e2e-gate.sh"\n  - "(AcmeFrontEnd) src/hooks/useAlgo.ts"\n')), true,
+    'con un archivo del frente en otra entrada, la story sigue siendo de pantalla');
+  assert.equal(uiDetect(uiStory('files_to_modify:\n  - AcmeFrontEnd/scripts/Panel.tsx\n')), true,
+    'una extensión de pantalla manda aunque esté en scripts/');
+  assert.equal(uiDetect(uiStory('files_to_modify:\n  - AcmeFrontEnd/src/components/scripts/carga.ts\n')), true,
+    'bajo una carpeta de pantalla manda la carpeta');
+  assert.equal(uiDetect(uiStory('files_to_modify:\n  - AcmeFrontEnd/scripts/build-form.ts\n')), false,
+    'un .ts de la carpeta de scripts del repo es un script');
+  assert.equal(uiDetect(uiStory('files_to_modify:\n  - AcmeFrontEnd/tools/arrancar.cmd\n  - AcmeFrontEnd/tools/arrancar.psm1\n')), false,
+    'otras extensiones de script');
+  assert.equal(uiDetect(uiStory('files_to_modify:\n  frontend:\n    - scripts/e2e-gate.sh\n')), true,
+    'la llave que agrupa por repo sigue nombrando el frente (lado seguro)');
+});
+
+// Un id de escenario de navegador cuenta como fila de la tabla de pruebas de la story; citado en la prosa, en el
+// frontmatter o en otra tabla (dependencias, trazabilidad) puede ser de otra story.
+test('detector UI: un «E2E-n» marca pantalla sólo como fila de la tabla de pruebas de la story', () => {
+  const fm = LISTAS_CS;
+  assert.equal(uiDetect(uiStory(fm, '## Tests\n\n| ID | Test |\n|---|---|\n| E2E-1 | el panel abre |\n')), true, 'fila de la tabla de pruebas');
+  assert.equal(uiDetect(uiStory(fm, '### Tests (3)\n\n| ID | Test |\n|---|---|\n| `E2E-2.1` | flujo |\n')), true, 'con el id entre comillas');
+  assert.equal(uiDetect(uiStory(fm, 'La prueba E2E-4.5.9 de la otra story quedó como fixme.\n')), false, 'citado en la prosa');
+  assert.equal(uiDetect(uiStory(fm, 'E2E-1: el usuario abre el panel\n')), true, 'encabezando la línea');
+  assert.equal(uiDetect(uiStory(fm, '- E2E-2: filtra la lista\n')), true, 'tras una viñeta');
+  assert.equal(uiDetect(uiStory(fm, '**Escenario E2E-3**: guarda el formulario\n')), true, 'tras «Escenario», en negrita');
+  assert.equal(uiDetect(uiStory(fm + 'notas:\n  - summary: "los tests E2E-6.1.20 de la 6.1 se rompieron"\n')), false, 'citado en el frontmatter');
+  assert.equal(uiDetect(uiStory(fm, '## Dependencies\n\n| Escenario | Prueba |\n|---|---|\n| `E2E-2.4.HW.1` — hardware | AT-1 |\n')), false,
+    'fila de otra tabla');
+  assert.equal(uiDetect(uiStory(fm, '## Tests\n\nCorre con Playwright E2E contra la app.\n')), true, 'la mención de Playwright E2E sigue marcando');
+});
+
 test('detector UI: las listas con otra llave (files, files_to_reference, files_to_delete) cuentan', () => {
   const casos = [
     'files:\n  - AcmeFrontEnd/src/x.ts\n',

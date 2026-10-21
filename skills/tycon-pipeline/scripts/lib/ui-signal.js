@@ -20,6 +20,9 @@
  *      Una entrada cuyas rutas son TODAS documentos (.md/.txt, con ancla o número de línea) no cuenta por su ruta
  *      (un documento no es pantalla), salvo bajo src/app|pages|content/, donde un
  *      documento puede ser una página. `.mdx` cuenta siempre: es una página en los sitios que lo usan.
+ *      Tampoco cuenta por su ruta una entrada cuyos archivos no pueden ser pantalla: un script por su extensión
+ *      (.sh, .ps1, .bat, .cmd, .py, .yml) o un archivo de una carpeta de scripts o de CI (`scripts/`, `pipelines/`,
+ *      `.github/`). El gate de un repo que se llama `FrontEnd` no es una pantalla; un `.ts` de ese repo sí.
  *   3. RUTA o NOMBRE DECLARADO en un CAMPO ESTRUCTURADO (`repo`, `repos`, `target_repo`, `target_repos`, `tags`,
  *      `stack`, `layer`, `component`, `area`: valor suelto, entre corchetes o en bloque) o en cualquier cosa que
  *      cuelgue de `pipelines:` o `tandas:` (el nombre de la tanda incluido), sin distinguir mayúsculas. Una nota
@@ -28,7 +31,10 @@
  *      archivos a tocar, y sin las rutas HTTP (`GET /…`, `/api/…`, URLs). «Declara archivos a tocar» =
  *      `files`, `files_to_create` o `files_to_modify` con al menos una entrada con forma de ruta: `TBD`, `null`,
  *      `~`, `[]` o sólo una lista de lectura no cuentan. Con archivos declarados, mandan las listas.
- *   5. ESCENARIOS de prueba de navegador en el cuerpo del spec.
+ *   5. ESCENARIOS de prueba de navegador en el cuerpo del spec: `tests/e2e/`, «Playwright E2E», o un id `E2E-n` como
+ *      id `E2E-n` que encabeza una línea (sola, tras una viñeta o tras «Escenario») o es fila de una tabla bajo un título
+ *      de pruebas. Un `E2E-n` citado a mitad de una frase, en el frontmatter o en otra tabla (dependencias,
+ *      trazabilidad) puede ser de otra story, y no cuenta.
  *
  * Por qué la prosa queda de respaldo: una story de backend con sólo `.cs` en sus listas y una ruta HTTP
  * terminada en `/frontend` en el `driver` quedaría como de pantalla, y la guía del tester la bloquearía sin
@@ -49,7 +55,18 @@ const { parseEvidenceConfig, discoverRepoRoot } = require('./evidence-config.js'
 
 const UI_FM_FILES_RE = /^\s*-\s*["']?[^"'\n]*\.(tsx|jsx|vue|svelte)\b/mi;
 const UI_FM_PATHS_RE = /front-?end|src\/app\/|src\/components\//i;
-const UI_BODY_RE = /tests\/e2e\/|Playwright E2E|(^|\s)E2E-?\d/;
+const UI_BODY_RE = /tests\/e2e\/|Playwright E2E/;
+// Un id de escenario de navegador (`E2E-3`, `E2E1`) cuenta cuando la story lo declara: encabezando una línea (sola, tras
+// una viñeta o tras «Escenario») o como fila de una tabla de pruebas. Citado a mitad de una frase, en el frontmatter o en
+// otra tabla (dependencias, trazabilidad) puede ser de otra story.
+const UI_BODY_LINE_RE = /^[ \t]*(?:[-*][ \t]+)?(?:\*\*)?(?:escenario[ \t]+)?`?E2E-?\d/im;
+const UI_BODY_ROW_RE = /^[ \t]*\|[ \t]*`?E2E-?\d/m;
+const TESTS_HEADING_RE = /^#{2,6}[^\n]*\btests?\b/i;
+function testSections(body) {
+  return String(body || '').split(/^(?=#{1,6}\s)/m).filter((sec) => TESTS_HEADING_RE.test(sec)).join('\n');
+}
+// Lo que no puede ser una pantalla: un script por su extensión, o cualquier archivo de una carpeta de scripts o de CI.
+const NOT_SCREEN_RE = /\.(sh|ps1|psm1|bat|cmd|py|ya?ml)$|(^|\/)(scripts|pipelines|\.github|\.azure-pipelines)\//i;
 const UI_EXT_RE = /\.(tsx|jsx|vue|svelte)\b/i;
 // Rutas HTTP: un verbo con su ruta, cualquier `/api/…` y las URLs. No son rutas de archivo.
 const HTTP_ROUTE_RE = /\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+\/[^\s"'`)\]]*|(?<![\w.])\/api\/[^\s"'`)\]]*|https?:\/\/[^\s"'`)\]]*/gi;
@@ -108,6 +125,12 @@ const isDocPath = (p) => DOC_FILE_RE.test(p) && !PAGE_DIR_RE.test(p);
  * de documento con espacios en el nombre («docs/Guia de uso.md»): termina en .md/.txt, no junta varias rutas (` y `,
  * `,`, `;`) y ninguna otra palabra tiene extensión.
  */
+/** ¿Todas las rutas de la entrada son archivos que no pueden ser pantalla? Una entrada sin rutas no lo es. */
+function isNotScreenOnly(text) {
+  const ps = pathsOf(text);
+  // Bajo una carpeta de pantalla (src/app, src/components, src/pages) manda la carpeta: ahí un `scripts/` es parte de la pantalla.
+  return ps.length > 0 && ps.every((p) => NOT_SCREEN_RE.test(cleanToken(p)) && !UI_EXT_RE.test(p) && !/src\/(app|components|pages)\//i.test(p));
+}
 function isDocOnly(text) {
   const ps = pathsOf(text);
   if (ps.length > 0 && ps.every(isDocPath)) return true;
@@ -213,7 +236,7 @@ function uiSignalParts(fm, body, repoRoot) {
   const lines = fmLines(f);
   const fileEntries = entriesUnder(lines, FILE_LIST_KEY_RE);
   if (fileEntries.some((e) => UI_EXT_RE.test(noComment(e)))) return verdict('extension');
-  if (fileEntries.some((e) => !isDocOnly(e) && hit(entryLocation(e)))) return verdict('lista');
+  if (fileEntries.some((e) => !isDocOnly(e) && !isNotScreenOnly(e) && hit(entryLocation(e)))) return verdict('lista');
   // Una lista agrupada por repo (`files_to_modify:` → `frontend:` → rutas, o `- FrontEnd: x.ts`, o entre llaves):
   // la llave que cuelga de la lista también nombra la ubicación.
   const subKeys = lines.flatMap((l) => {
@@ -233,7 +256,7 @@ function uiSignalParts(fm, body, repoRoot) {
   const declaresTouch = entriesUnder(lines, TOUCH_LIST_KEY_RE)
     .some((e) => !EMPTY_VALUE_RE.test(unquote(noComment(e))) && looksLikePath(e));
   if (!declaresTouch && hit(f.replace(HTTP_ROUTE_RE, ' '))) return verdict('prosa');
-  if (UI_BODY_RE.test(body || '')) return verdict('cuerpo');
+  if (UI_BODY_RE.test(body || '') || UI_BODY_LINE_RE.test(body || '') || UI_BODY_ROW_RE.test(testSections(body))) return verdict('cuerpo');
   const dropped = !!f && hit(f);
   const dropReason = !dropped ? null
     : (fileEntries.some((e) => isDocOnly(e) && hit(noComment(e))) ? 'documentos' : 'prosa');
