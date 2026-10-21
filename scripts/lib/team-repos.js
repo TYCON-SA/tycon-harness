@@ -608,7 +608,12 @@ if (require.main === module) {
     if (r.ok) for (const c of harnessCopies(r.data, platform)) process.stdout.write(`${c.measured ? 'measure' : 'skip'}\t${c.id}\n`);
     else for (const p of r.problems) process.stderr.write(`❌ ${file} · ${p.path || '(el archivo)'}: ${p.message}\n`);
   } else if (args.includes('--json')) process.stdout.write(`${JSON.stringify(r, null, 2)}\n`);
-  else if (r.ok) process.stdout.write(`✅ ${file}: válido\n`);
-  else for (const p of r.problems) process.stdout.write(`❌ ${p.path || '(el archivo)'}: ${p.message}\n`);
+  else if (r.ok) {
+    process.stdout.write(`✅ ${file}: válido\n`);
+    // una sección con problemas no anula el archivo, pero esa sección no se usa: se dice, no se calla
+    for (const [seccion, ps] of Object.entries(r.sectionProblems || {})) {
+      for (const p of ps) process.stdout.write(`⚠️  ${p.path || seccion}: ${p.message} — la sección ${seccion} no se usa\n`);
+    }
+  } else for (const p of r.problems) process.stdout.write(`❌ ${p.path || '(el archivo)'}: ${p.message}\n`);
   process.exit(r.ok ? 0 : (r.couldNotRead ? 2 : 1));
 }

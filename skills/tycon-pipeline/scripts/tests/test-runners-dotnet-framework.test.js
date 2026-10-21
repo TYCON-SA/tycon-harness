@@ -301,6 +301,11 @@ test('@story-7.51 @ac-8 @ac-9 T9 RepoArgs_Validation_AndNotFromTestedRepo', () =
     const sec = (t.sectionProblems && t.sectionProblems.stack) || t.problems;
     assert.ok(sec.some(enRuta), `team-repos ${JSON.stringify(extra)}: ${JSON.stringify(sec)}`);
   }
+  // por la línea de comandos el lector también lo dice: el archivo es válido, pero la sección stack no se usa
+  const conMalo = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'nf-cli-')), 'team-repos.json');
+  fs.writeFileSync(conMalo, JSON.stringify({ ...REPOS_BASE, stack: { test_runners: [netfx({ repos: [{ repo: r, args: 'a$(x)' }] })] } }));
+  const cli = spawnSync(process.execPath, [path.join(RAIZ, 'scripts', 'lib', 'team-repos.js'), conMalo], { encoding: 'utf8' });
+  assert.match(cli.stdout, /stack\.test_runners\.0\.repos\.0\.args: .*la sección stack no se usa/, cli.stdout);
   // un repo que trae su propio team-repos.json con otro comando no cambia nada: la configuración es la del arnés
   const bin = herramientas();
   const lanz = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'nf-l-')), 'n');
