@@ -1352,6 +1352,7 @@ function computeValidadores({ story, repo }) {
     packs: resumenPaquetes(activos), packs_dir: packsLib.dirPaquetes(),
     packs_nota: packsLib.notaDePaquetes({ repo, instalados: paquetesInstalados(), activos }),
     contexto: { files, detection: det },
+    dependencias_de_pruebas: require('./lib/test-deps.js').dependenciasDePruebas({ repo, storyText: content }),
   };
 }
 
