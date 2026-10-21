@@ -1,5 +1,5 @@
-// La prueba del motor del plugin harness-mods (T17): el cartel se dibuja con una corrida en la sesión,
-// no muestra dinero, /mods hide lo saca en el momento y /mods off queda guardado.
+// La prueba del motor del plugin harness-mods (T17): el cartel se dibuja con una corrida en la sesión, con la
+// letra chica de los avisos, no muestra dinero, /mods hide lo saca en el momento y /mods off queda guardado.
 //
 // Correr: claude plugin test mods/harness-mods (lo envuelve scripts/tests/harness-mods-plugin.test.sh).
 
@@ -57,6 +57,17 @@ test('el cartel se dibuja con la corrida de la sesión y sin dinero', async ($, 
   expect(await ui.find({ type: 'Text', text: /contexto usado 21 %/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /USD|\$/ })).toBeUndefined()
 })
+
+for (const surface of ['terminal', 'vscode'] as const) {
+  test(`el cartel va con la letra chica de los avisos (${surface})`, async ($, on) => {
+    world(on, { [MARKER_PATH]: MARKER })
+    await $.session.start({ cwd: HOME, surface, isInteractive: true })
+    const ui = await $.ui.mount({ plugin: 'harness-mods', surface, component: 'AbovePrompt', props: PROPS })
+    const texts = await ui.findAll({ type: 'Text' })
+    expect(texts.length).toBeGreaterThan(0)
+    for (const t of texts) expect((t.props as any).size).toBe('footnote')
+  })
+}
 
 test('/mods hide lo saca en el momento; /mods show lo vuelve a mostrar', async ($, on) => {
   world(on, { [MARKER_PATH]: MARKER })

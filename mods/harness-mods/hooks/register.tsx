@@ -15,6 +15,8 @@ import { runModsCommand, isActive, isShown } from './mods.mjs'
 
 const BOARD = 'pipeline-board'
 const EVERY_MS = 30000
+// la letra del cartel, la de los avisos de Claude Code de abajo del prompt (la terminal tiene un solo tamaño)
+const SIZE = 'footnote' as const
 const OFF_TEXT = `${BOARD} está apagado: para verlo, \`/mods on ${BOARD}\`.`
 
 const snapshot = atom({ plugin: 'harness-mods', key: 'snapshot' } as const, null as Snapshot | null)
@@ -176,11 +178,11 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Box>
-          <Text bold>{story}</Text>
-          {title ? <Text> · {title}</Text> : null}
-          <Text dimColor> · </Text>
-          <Text color={run.waiting ? 'yellow' : undefined}>{step}</Text>
-          <Text dimColor> · {rest.join(' · ')} </Text>
+          <Text size={SIZE} bold>{story}</Text>
+          {title ? <Text size={SIZE}> · {title}</Text> : null}
+          <Text size={SIZE} dimColor> · </Text>
+          <Text size={SIZE} color={run.waiting ? 'yellow' : undefined}>{step}</Text>
+          <Text size={SIZE} dimColor> · {rest.join(' · ')} </Text>
           <Button
             key="hide"
             label="Ocultar"
@@ -190,7 +192,7 @@ export const register: Register = on => {
             }}
           />
         </Box>
-        {full ? <Text dimColor wrap="truncate-end">{full}</Text> : null}
+        {full ? <Text size={SIZE} dimColor wrap="truncate-end">{full}</Text> : null}
       </Box>
     )
   })
