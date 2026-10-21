@@ -325,6 +325,35 @@ async function subir({ repo, almacen, ahora = Date.now, log = () => {}, dryRun =
 }
 
 // ── bajar ──────────────────────────────────────────────────────────────────────────────────────────────────────
+const CONSERVAR_COPIAS = 3;
+const GRACIA_COPIAS_MS = 60 * 60 * 1000;
+const FORMA_COPIA = /^copia-[0-9a-f]{7,12}-[0-9a-f]{6}$/;
+/**
+ * Poda la carpeta de las copias abiertas: quedan `actual` y las más nuevas hasta `conservar` en total; las demás, y los
+ * `.abriendo-` que dejó un corte, se borran si se abrieron hace más de `gracia`. La gracia y las copias que se conservan
+ * cuidan a otra réplica del sitio que abrió la suya hace poco (un cambio de revisión); una réplica que sigue con una copia
+ * más vieja que esas la vuelve a bajar en su próximo refresco, porque la suya ya no existe. Sin esto, cada reinicio dejaba
+ * la copia anterior para siempre: quién era la anterior sólo lo sabe la memoria del proceso. Lo que no tiene la forma de
+ * una copia no se toca. `{ borradas }`.
+ */
+function podarCopias({ dir, actual, conservar = CONSERVAR_COPIAS, gracia = GRACIA_COPIAS_MS, ahora = Date.now, log = () => {} }) {
+  let nombres;
+  try { nombres = fs.readdirSync(dir); } catch (e) { if (e.code !== 'ENOENT') log(`copia de operaciones: no se pudo listar ${dir} para borrar las copias viejas (${e.code || e.message})`); return { borradas: [] }; }
+  const fecha = (n) => { try { return fs.lstatSync(path.join(dir, n)).mtimeMs; } catch { return NaN; } };
+  const copias = nombres.filter((n) => FORMA_COPIA.test(n)).map((n) => ({ n, t: fecha(n) })).filter((x) => Number.isFinite(x.t)).sort((a, b) => b.t - a.t);
+  const quedan = new Set(actual ? [path.basename(actual)] : []);
+  for (const c of copias) { if (quedan.size >= conservar) break; quedan.add(c.n); }
+  const limite = ahora() - gracia;
+  const candidatas = copias.filter((c) => !quedan.has(c.n)).concat(nombres.filter((n) => n.startsWith('.abriendo-')).map((n) => ({ n, t: fecha(n) })));
+  const borradas = [];
+  for (const c of candidatas) {
+    if (!Number.isFinite(c.t) || c.t > limite) continue;
+    try { fs.rmSync(path.join(dir, c.n), { recursive: true, force: true }); borradas.push(c.n); } catch (e) { log(`copia de operaciones: ${c.n} no se pudo borrar (${e.code || e.message}); queda para la próxima`); }
+  }
+  if (borradas.length) log(`copia de operaciones: borradas ${borradas.length} carpeta(s) viejas de la copia`);
+  return { borradas };
+}
+
 /**
  * `{ ok: true, cambio, carpeta, indice }` o `{ ok: false, codigo, motivo }`. `previo`: `{ commit, huella, carpeta }` de la
  * bajada anterior. Con el mismo commit y la misma huella no baja la foto. Con uno nuevo, la abre en `<dir>/copia-<commit>-<azar>` y recién entonces
@@ -346,7 +375,10 @@ async function bajar({ almacen, dir, previo = null, log = () => {} }) {
   const nombre = fotoDe(indice);
   if (!nombre) return { ok: false, codigo: 'ilegible', motivo: 'el índice de la copia nombra una foto que no tiene la forma de una foto' };
   // sin cambio sólo con el mismo commit Y la misma huella: una foto re-subida con el mismo commit trae otra
-  if (previo && previo.commit === indice.commit && previo.huella === indice.huella && previo.carpeta && fs.existsSync(previo.carpeta)) return { ok: true, cambio: false, carpeta: previo.carpeta, indice };
+  if (previo && previo.commit === indice.commit && previo.huella === indice.huella && previo.carpeta && fs.existsSync(previo.carpeta)) {
+    podarCopias({ dir, actual: previo.carpeta, log });
+    return { ok: true, cambio: false, carpeta: previo.carpeta, indice };
+  }
   const f = await almacen.get(nombre);
   if (f.error || f.status !== 200) return { ok: false, codigo: f.status === 404 ? 'ilegible' : codigoDe(f), motivo: `la foto que nombra el índice no se pudo bajar (${f.error ? f.error.code || f.error.message : f.status})` };
   if (crypto.createHash('sha256').update(f.cuerpo).digest('hex') !== indice.huella) return { ok: false, codigo: 'ilegible', motivo: 'la foto no tiene la huella que dice el índice: no se abre' };
@@ -368,6 +400,7 @@ async function bajar({ almacen, dir, previo = null, log = () => {} }) {
     if (previo && previo.carpeta && previo.carpeta !== carpeta && path.dirname(previo.carpeta) === dir) {
       try { fs.rmSync(previo.carpeta, { recursive: true, force: true }); } catch (e) { log(`copia de operaciones: la carpeta anterior no se pudo borrar (${e.code || e.message}); queda para la próxima`); }
     }
+    podarCopias({ dir, actual: carpeta, log });
     return { ok: true, cambio: true, carpeta, indice };
   } catch (e) {
     try { fs.rmSync(abriendo, { recursive: true, force: true }); } catch { /* lo dice el motivo de abajo */ }
@@ -404,7 +437,7 @@ async function main(argv) {
   return r.ok ? 0 : 1;
 }
 
-module.exports = { RUTAS, INDICE, rutaSana, rutaSegura, logoDe, armarFoto, leerFoto, juntar, almacenDeLaNube, codigoDe, subir, bajar, borrarViejas };
+module.exports = { RUTAS, INDICE, rutaSana, rutaSegura, logoDe, armarFoto, leerFoto, juntar, almacenDeLaNube, codigoDe, subir, bajar, borrarViejas, podarCopias };
 
 if (require.main === module) {
   main(process.argv.slice(2)).then((c) => process.exit(c), (e) => { process.stderr.write(`[copia] falló: ${e && e.stack ? e.stack : e}\n`); process.exit(1); });

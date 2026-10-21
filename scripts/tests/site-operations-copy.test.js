@@ -200,6 +200,49 @@ test('T13 2.34-Bajar_MismoCommitNoBaja @story-2.34 @ac-6 — el índice no cambi
   assert.deepStrictEqual(al.ops, [['get', 'actual.json']], 'sólo el índice');
 });
 
+test('Bajar_PodaLasCopiasViejas — tras un reinicio (sin «previo») la carpeta guarda sólo las últimas; lo reciente y lo ajeno no se tocan', async () => {
+  // 🔴 rojo: sin la poda, cada arranque del sitio deja la copia anterior en el disco de datos (cuál era sólo lo sabe la
+  //    memoria del proceso), el disco se llena y el sitio deja de leer la configuración.
+  const { al, idx } = await conFotoSubida();
+  const dir = tmp();
+  const ahora = Date.now();
+  const hace = (min) => new Date(ahora - min * 60000);
+  const copia = (sufijo, min) => { const c = path.join(dir, `copia-${'a'.repeat(12)}-${sufijo}`); fs.mkdirSync(c); fs.writeFileSync(path.join(c, 'operations.json'), '{}'); fs.utimesSync(c, hace(min), hace(min)); return c; };
+  const viejas = ['000001', '000002', '000003', '000004', '000005'].map((s, i) => copia(s, 120 + i * 60));
+  const reciente = copia('00000a', 5);          // otra réplica puede estar leyéndola: dentro de la hora de gracia
+  const abriendo = path.join(dir, '.abriendo-zzz'); fs.mkdirSync(abriendo); fs.utimesSync(abriendo, hace(180), hace(180));
+  const abriendoAhora = path.join(dir, '.abriendo-yyy'); fs.mkdirSync(abriendoAhora);
+  const ajeno = path.join(dir, 'otra-cosa'); fs.mkdirSync(ajeno); fs.utimesSync(ajeno, hace(600), hace(600));
+  const lineas = [];
+  const r = await COPIA.bajar({ almacen: al, dir, previo: null, log: (l) => lineas.push(l) });
+  assert.strictEqual(r.ok, true, r.motivo);
+  const quedan = fs.readdirSync(dir).sort();
+  // se quedan: la abierta, las dos más nuevas de las otras (la reciente y la vieja más nueva), lo que se está abriendo
+  // ahora y lo que no es una copia
+  assert.deepStrictEqual(quedan, [path.basename(abriendoAhora), path.basename(r.carpeta), path.basename(reciente), path.basename(viejas[0]), path.basename(ajeno)].sort());
+  assert.ok(lineas.some((l) => /borradas 5 carpeta\(s\) viejas de la copia/.test(l)), lineas.join('\n'));
+  // otro reinicio con el mismo commit: abre otra y la carpeta sigue acotada
+  const r2 = await COPIA.bajar({ almacen: al, dir, previo: null, log: sinLog });
+  assert.strictEqual(r2.ok, true, r2.motivo);
+  // quedan la nueva, la anterior (dentro de la gracia) y la reciente; la vieja queda cuarta y se borra
+  assert.deepStrictEqual(fs.readdirSync(dir).filter((n) => /^copia-/.test(n)).sort(), [path.basename(r2.carpeta), path.basename(r.carpeta), path.basename(reciente)].sort());
+  // sin cambio de commit también poda (un sitio que no se reinicia ni recibe commits nuevos no acumula)
+  copia('000009', 300);
+  const r3 = await COPIA.bajar({ almacen: al, dir, previo: { commit: idx.commit, huella: idx.huella, carpeta: r2.carpeta }, log: sinLog });
+  assert.strictEqual(r3.cambio, false);
+  assert.ok(!fs.existsSync(path.join(dir, `copia-${'a'.repeat(12)}-000009`)), 'la vieja de más, borrada aunque no haya foto nueva');
+});
+
+test('PodarCopias_SinCarpetaOIlegible_NoFalla — una carpeta que no existe o no se lista no frena la bajada', () => {
+  const lineas = [];
+  assert.deepStrictEqual(COPIA.podarCopias({ dir: path.join(tmp(), 'no-existe'), actual: null, log: (l) => lineas.push(l) }).borradas, []);
+  assert.deepStrictEqual(lineas, [], 'que no exista no es un problema');
+  // un archivo donde va la carpeta: no se lista, lo dice y sigue
+  const archivo = path.join(tmp(), 'es-un-archivo'); fs.writeFileSync(archivo, 'x');
+  assert.deepStrictEqual(COPIA.podarCopias({ dir: archivo, actual: null, log: (l) => lineas.push(l) }).borradas, []);
+  assert.ok(lineas.some((l) => /no se pudo listar .* para borrar las copias viejas \(ENOTDIR\)/.test(l)), lineas.join('\n'));
+});
+
 test('T14 2.34-Bajar_HuellaDistinta @story-2.34 @ac-8 — una foto con otra huella no se abre', async () => {
   const { al, idx } = await conFotoSubida();
   al.blobs.set('actual.json', { cuerpo: Buffer.from(JSON.stringify({ ...idx, huella: '0'.repeat(64) })), modificado: Date.now() });
