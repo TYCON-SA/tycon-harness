@@ -45,6 +45,20 @@ function firstDifference(a, b) {
   return 0;
 }
 
+/**
+ * Los archivos que se copian al freno de producción (`ARCHIVOS` de scripts/production/install-guard.sh, leído en la
+ * base). El aviso de arranque compara cada copia instalada entera contra `main`: cambiarles un comentario pide reinstalar
+ * el freno con permiso de administrador en cada máquina, así que un cambio de sólo comentarios no los toca. Sin el
+ * instalador en la base (un repo sin freno), ninguno.
+ */
+function guardCopies(repo, base) {
+  let src;
+  try { src = contentAt(repo, base, 'scripts/production/install-guard.sh'); } catch (_) { return new Set(); }
+  const m = /^ARCHIVOS=\(\n([\s\S]*?)\n\)/m.exec(src);
+  if (!m) throw new Error('scripts/production/install-guard.sh no trae la lista ARCHIVOS: no sé qué se copia al freno');
+  return new Set(m[1].split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#')));
+}
+
 function compare(args) {
   let base;
   let tip;
@@ -62,10 +76,12 @@ function compare(args) {
   const diffArgs = ['diff', '--name-status', '-z', '--no-renames', base];
   if (tip) diffArgs.push(tip);
   const parts = git(args.repo, diffArgs).split('\0').filter(Boolean);
+  const guard = guardCopies(args.repo, base);
   const files = [];
   for (let i = 0; i < parts.length; i += 2) {
     const status = parts[i][0];
     const file = parts[i + 1];
+    if (guard.has(file)) { files.push({ file, result: 'differs', reason: 'se copia al freno de producción: cambiarlo, aunque sea un comentario, pide reinstalar el freno en cada máquina' }); continue; }
     if (status !== 'M') { files.push({ file, result: 'differs', reason: status === 'A' ? 'archivo nuevo' : status === 'D' ? 'archivo borrado' : `cambio ${status}` }); continue; }
     const before = codeOf(contentAt(args.repo, base, file), file);
     const after = codeOf(contentAt(args.repo, tip, file), file);
