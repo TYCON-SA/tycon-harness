@@ -2495,45 +2495,42 @@ test(`${T79} — j · git commit de verdad en el clon del público: el commit no
   assert.notStrictEqual(r.code, 0, r.out);
   assert.strictEqual(git(linked, ['rev-parse', 'HEAD']), head, `el commit no se crea\n${r.out}`);
   assert.match(r.out, /guides\/x\.md:5\b/);
-  assert.match(r.out, /la lista sale de un clon atrasado[^\n]*1 commit\(s\) atrás/, 'midió el clon de mantenimiento, no el que se commitea');
-  assert.ok(r.out.includes(fs.realpathSync(l.maint)) || r.out.includes(l.maint), 'y nombra ese clon');
+  // la lista sale de la rama principal remota del clon de mantenimiento: ni un aviso de atraso, que
+  // saldría si midiera el repo que se commitea
+  assert.doesNotMatch(r.out, /clon atrasado/, 'midió el clon de mantenimiento, no el que se commitea');
   // los registros quedaron en la máquina del laboratorio
   assert.strictEqual(jsonl(stateFileOf(l, 'new-names.jsonl')).length, 3);
 });
 
 // k · en el commit
-test(`${T79} — k · la lista de un clon atrasado: el aviso sale junto al veredicto y no lo cambia`, () => {
+test(`${T79} — k · la lista de un clon atrasado: mira con la de su rama principal remota, sin aviso @story-8.86 @ac-3 @ac-4`, () => {
   // (con el clon al día el freno no avisa: lo miden los casos a y g, que piden la salida vacía o sin esa línea)
   const l = publishedLab();
-  // el veredicto con la lista al día, para comparar: el término frena
   stage(l.pub, { 'guides/x.md': withName });
   const fresh = pubBrake(l);
   assert.strictEqual(fresh.code, 1, fresh.out);
   assert.doesNotMatch(fresh.out, /atrasado/, 'al día no avisa');
   leaveMaintBehind(l);
-  for (const [what, files, code] of [
-    ['frena', { 'guides/x.md': withName }, 1],
-    // el término que el remoto sumó y este clon no trajo: con la lista vieja pasa — por eso el aviso
-    ['pasa con la lista vieja', { 'guides/x.md': '# Guía\n\nLo usa Globex.\n' }, 0],
+  for (const [what, files] of [
+    ['frena', { 'guides/x.md': withName }],
+    // el término que el remoto sumó y este clon no trajo al disco: frena igual, porque la lista sale de esa rama
+    ['el término nuevo del remoto', { 'guides/x.md': '# Guía\n\nLo usa Globex.\n' }],
   ]) {
     stage(l.pub, files);
     const r = pubBrake(l);
-    assert.strictEqual(r.code, code, `${what}: el mismo veredicto que con la lista al día\n${r.out}`);
-    assert.match(r.out, /nombres nuevos:[^\n]*la lista sale de un clon atrasado[^\n]*1 commit\(s\) atrás de su rama principal remota, y la lista cambió/, what);
-    assert.match(r.out, /git -C "[^"\n]+" pull/, `${what}: cómo ponerlo al día`);
+    assert.strictEqual(r.code, 1, `${what}\n${r.out}`);
+    assert.doesNotMatch(r.out, /clon atrasado|pull/, `${what}: lo del disco no es un aviso`);
     assert.doesNotMatch(r.out, /adelante|un término más|Globex/, `${what}: ni ramas, ni asuntos, ni términos del repo privado`);
   }
-  // una lista ilegible en un clon atrasado: «no pude mirar», y dice que ese clon está atrasado (es lo primero a descartar)
+  // la lista del disco a medio traer no cambia nada: la que vale es la de la rama remota
   write(l.maint, { [LIST_REL]: '<<<<<<< un merge a medias\n' });
   const r = pubBrake(l);
-  assert.strictEqual(r.code, 2, r.out);
-  assert.match(r.out, /no pude mirar/);
-  assert.match(r.out, /clon atrasado/);
+  assert.strictEqual(r.code, 1, r.out);
 });
 
 // k2 · el clon de la lista ADELANTE de su remoto (una excepción commiteada ahí y sin subir, que es la salida que el
 // propio freno indica): no está atrasado, y «traé ese clon» no lo arregla. El consejo lo da el freno antes de publicar.
-test(`${T79} — k2 · la lista de un clon adelantado: el aviso dice que hay que subirlo, no que hay que traerlo`, () => {
+test(`${T79} — k2 · la lista de un clon adelantado: se mira con la de su rama remota, sin aviso`, () => {
   const l = publishedLab();
   // su rama principal remota, como la conoce el clon, queda en el commit de antes: el clon está UN commit adelante
   git(l.maint, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
@@ -2542,8 +2539,8 @@ test(`${T79} — k2 · la lista de un clon adelantado: el aviso dice que hay que
   stage(l.pub, { 'guides/x.md': withName });
   const r = pubBrake(l);
   assert.strictEqual(r.code, 1, `el veredicto no cambia\n${r.out}`);
-  assert.match(r.out, /nombres nuevos:[^\n]*git -C "[^"\n]+" push/, `dice cómo subirlo\n${r.out}`);
-  assert.doesNotMatch(r.out, /clon atrasado|traé ese clon|pull/, `no manda a traer un clon que no está atrás\n${r.out}`);
+  // la lista sale de la rama principal remota: lo propio sin subir no se usa, y no hay aviso
+  assert.doesNotMatch(r.out, /clon atrasado|traé ese clon|pull|git -C "[^"\n]+" push/, `ni traer ni subir\n${r.out}`);
   assert.doesNotMatch(r.out, /una entrada propia|Globex/, 'ni asuntos ni términos del repo privado');
 });
 
