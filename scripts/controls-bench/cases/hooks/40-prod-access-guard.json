@@ -1863,8 +1863,8 @@
      "expect": {
       "exit": 2,
       "stderr_re": [
-          "production\\.json"
-        ]
+       "production\\.json"
+      ]
      }
     },
     {
@@ -3746,6 +3746,258 @@
       "stderr_re": [
        "ESCRIBE"
       ]
+     }
+    },
+    {
+     "id": "firewall-abrir-canonica-pasa",
+     "type": "must-not-block",
+     "__doc": "Story 6.2 · T23 · `--open-firewall <host>` es una forma canónica de la puerta: pasa al cuadro de la regla `ask`. ROJO PREVIO: sin la forma en la lista de canónicas, el freno la cortaba como «no canónica» y el cuadro nunca aparecía.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "/opt/tycon/bin/tycon-prod-sql --open-firewall acme-sql.database.windows.net"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "stdout_empty": true
+     },
+     "tools": [
+      "claude"
+     ],
+     "sin_freno_instalado": true,
+     "asymmetry": "En Codex toda invocación de la puerta se frena: lo cubre `codex-frena-abrir-firewall`."
+    },
+    {
+     "id": "firewall-cerrar-canonica-pasa",
+     "type": "must-not-block",
+     "__doc": "Story 6.2 · T23 · `--close-firewall <host>` también es canónica. ROJO PREVIO: igual que abrir, se cortaba como «no canónica».",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "/opt/tycon/bin/tycon-prod-sql --close-firewall acme-sql.database.windows.net"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "stdout_empty": true
+     },
+     "tools": [
+      "claude"
+     ],
+     "sin_freno_instalado": true,
+     "asymmetry": "En Codex toda invocación de la puerta se frena."
+    },
+    {
+     "id": "firewall-con-session-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.2 · T23 · `--session <id>` lo pasa sólo el hook de fin de sesión, que no pasa por el freno: desde la herramienta Bash no es canónica.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "/opt/tycon/bin/tycon-prod-sql --close-firewall acme-sql.database.windows.net --session 11111111-aaaa-4aaa-8aaa-111111111111"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "canónica"
+      ]
+     }
+    },
+    {
+     "id": "firewall-con-rango-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.2 · T23/T26 · las formas del firewall aceptan sólo el host: un rango o una IP no es canónico.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "/opt/tycon/bin/tycon-prod-sql --open-firewall acme-sql.database.windows.net 0.0.0.0"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "canónica"
+      ]
+     }
+    },
+    {
+     "id": "az-firewall-directo-nombra-la-puerta",
+     "type": "must-block",
+     "__doc": "Story 6.2 · T22 · el comando directo de Azure para crear una regla contra un servidor de producción sigue frenado, y el mensaje nombra la puerta como el único camino. ROJO PREVIO: el mensaje no decía cómo habilitar la IP, y el asistente terminaba pidiéndole al dev que lo hiciera a mano.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "az sql server firewall-rule create -g rg-acme -s acme-sql.database.windows.net -n mi-ip --start-ip-address 203.0.113.9 --end-ip-address 203.0.113.9"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "PRODUCCI",
+       "--open-firewall acme-sql\\.database\\.windows\\.net"
+      ]
+     }
+    },
+    {
+     "id": "az-firewall-nombre-corto-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.2 · T22 · con el nombre corto (`-s <servidor>` sin el dominio, que es lo que toma `az`) el comando también se frena, y el mensaje arma el host entero para la puerta.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "az sql server firewall-rule delete -g rg-acme -s acme-sql -n mi-ip"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "--open-firewall acme-sql\\.database\\.windows\\.net"
+      ]
+     }
+    },
+    {
+     "id": "estado-firewall-borrar-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.2 · T20 · el estado de las reglas abiertas está protegido como la memoria de producción: borrarlo escondería una regla viva. ROJO PREVIO: el archivo no estaba en la lista de estados protegidos.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "rm ~/.claude/.tycon-pipeline/production-firewall.json"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "estado-firewall-escribir-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.2 · T20 · tampoco se escribe a mano (en su otra ubicación).",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "echo '{\"reglas\":[]}' > ~/.tycon/state/production-firewall.json"
+      }
+     },
+     "expect": {
+      "exit": 2
+     }
+    },
+    {
+     "id": "codex-frena-abrir-firewall",
+     "type": "must-block",
+     "__doc": "Story 6.2 · T31 · Codex no tiene el cuadro de la configuración administrada ni un evento de fin de sesión: tampoco abre reglas. El freno corta la forma como a toda invocación de la puerta.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "/opt/tycon/bin/tycon-prod-sql --open-firewall acme-sql.database.windows.net"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "dev|Codex"
+      ]
+     },
+     "tools": [
+      "codex"
+     ],
+     "asymmetry": "En Codex no existe la configuración administrada de Claude Code: sin cuadro de aprobación, la puerta tampoco se acepta y la sentencia la corre el dev."
+    },
+    {
+     "id": "estado-firewall-copiar-encima-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.2 · T20 · copiar otro archivo encima del estado del firewall también lo pisa: se frena como borrarlo.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cp /tmp/vacio.json ~/.claude/.tycon-pipeline/production-firewall.json"
+      }
+     },
+     "expect": {
+      "exit": 2
      }
     }
    ]

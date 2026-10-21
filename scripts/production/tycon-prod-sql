@@ -22,6 +22,17 @@
 #   tycon-prod-sql <host> '<sentencia>' [--max-filas N]
 #   tycon-prod-sql --reclasificar <host>      baja un host a no-producción (lo aprobás en el cuadro)
 #   tycon-prod-sql --verificar                revisa la instalación y la entrada del Llavero, sin leer el secreto
+#   tycon-prod-sql --cargar-clave <host>      deja el archivo para cargar la clave, sin consultar nada
+#   tycon-prod-sql --open-firewall <host>     abre la regla de firewall de esta máquina en un Azure SQL de producción
+#   tycon-prod-sql --close-firewall <host>    la cierra (el hook de fin de sesión agrega --session <id>)
+#
+# EL FIREWALL Y SU LÍMITE, ESCRITO: abrir y cerrar llaman a `az`, que NO es un binario de root con huella (es del
+# usuario: Homebrew o el instalador de Microsoft). Rompe la regla de «sólo binarios de root» y se acepta con tres
+# condiciones: (a) `az` se busca en una lista fija de rutas absolutas, nunca en el PATH; (b) nunca recibe la clave de
+# la base ni nada del Llavero (corre con un entorno limpio); (c) sólo se le piden `account list`, `sql server list`
+# y `sql server firewall-rule show|create|update|delete`, siempre con el nombre fijo `tycon-gate-<id de la máquina>`.
+# La regla es de UNA sola IP, la que el propio Azure SQL informa al rechazar la conexión (error 40615): no se llama a
+# ningún servicio externo para saberla.
 #
 # Salidas: 0 = corrió · 2 = no se puede (forma inválida, host que no es producción, algo que no
 # verifica) · 3 = falta la clave (deja el .command para cargarla)
@@ -132,17 +143,24 @@ anotar(){ # $1 = json parcial (sólo valores ya validados: host y llavero pasaro
 }
 
 # ── argumentos ────────────────────────────────────────────────────────────────────────────────
-[ $# -ge 1 ] || muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-filas N]  ·  --cargar-clave <host>  ·  --reclasificar <host>  ·  --verificar"
+[ $# -ge 1 ] || muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-filas N]  ·  --cargar-clave <host>  ·  --reclasificar <host>  ·  --verificar  ·  --open-firewall <host>  ·  --close-firewall <host>"
 
-MODO=consulta; HOST=""; SENTENCIA=""
+MODO=consulta; HOST=""; SENTENCIA=""; SESION_CIERRE=""
+SESION_VALIDA='^[A-Za-z0-9-]{8,64}$'
 case "${1:-}" in
+  # Las formas del firewall aceptan SÓLO el host: ni un rango, ni una IP, ni un nombre de regla, ni una suscripción.
+  --open-firewall) MODO=open-firewall; HOST="${2:-}"; [ $# -eq 2 ] && [ -n "$HOST" ] || muere "uso: tycon-prod-sql --open-firewall <host>  (sólo el host: la IP la informa Azure y la regla tiene nombre fijo)" ;;
+  # `--session <id>` lo pasa sólo el hook de fin de sesión: el freno no deja pasar esta forma a la herramienta Bash
+  --close-firewall) MODO=close-firewall; HOST="${2:-}"
+                    if [ $# -eq 4 ] && [ "$3" = "--session" ] && [[ "$4" =~ $SESION_VALIDA ]]; then SESION_CIERRE="$4"
+                    elif [ $# -ne 2 ] || [ -z "$HOST" ]; then muere "uso: tycon-prod-sql --close-firewall <host>  (sólo el host: cierra la regla de esta máquina y ninguna otra)"; fi ;;
   --reclasificar) MODO=reclasificar; HOST="${2:-}"; [ $# -eq 2 ] || muere "uso: tycon-prod-sql --reclasificar <host>" ;;
   --verificar)    MODO=verificar; [ $# -eq 1 ] || muere "uso: tycon-prod-sql --verificar" ;;
   # 🔴 Cargar la clave SIN tener que fallar una consulta primero (2026-09-15, pedido del dev: el
   # disparador era «corré algo que falle», que es un rodeo). La clave la sigue tipeando la persona en
   # el archivo que deja la puerta: nunca pasa por la conversación ni la escribe el asistente.
   --cargar-clave) MODO=cargar-clave; HOST="${2:-}"; [ $# -eq 2 ] || muere "uso: tycon-prod-sql --cargar-clave <host>" ;;
-  -*)             muere "primer argumento inválido: sólo <host>, --cargar-clave, --reclasificar o --verificar" ;;
+  -*)             muere "primer argumento inválido: sólo <host>, --cargar-clave, --reclasificar, --verificar, --open-firewall o --close-firewall" ;;
   *)              HOST="$1"; SENTENCIA="${2:-}"
                   [ $# -ge 2 ] || muere "falta la sentencia: tycon-prod-sql <host> 'select …'"
                   if [ $# -gt 2 ]; then
@@ -151,7 +169,8 @@ case "${1:-}" in
                     MAX_FILAS="$4"
                   fi ;;
 esac
-if [ -n "$HOST" ] && ! printf '%s' "$HOST" | grep -qE "$HOST_VALIDO"; then
+# el valor entero (`[[ =~ ]]`), no línea por línea: un host con un salto de línea no pasa por una de sus líneas
+if [ -n "$HOST" ] && ! [[ "$HOST" =~ $HOST_VALIDO ]]; then
   muere "el host «${HOST}» no tiene forma de nombre de host."
 fi
 
@@ -273,6 +292,190 @@ EST="$("$NODE" -e '
   process.stdout.write(`${c.estado}|${c.llavero || ""}|${c.base || ""}|${c.puerto || ""}`);
 ' "$INDICE_JS" "$HOST" 2>/dev/null)" || EST="ilegible|el intérprete falló|"
 ESTADO="${EST%%|*}"; RESTO="${EST#*|}"; LLAVERO="${RESTO%%|*}"; RESTO="${RESTO#*|}"; BASE="${RESTO%%|*}"; PUERTO="${RESTO#*|}"
+
+# ── el firewall: abrir y cerrar la regla de esta máquina ─────────────────────────────────────────
+if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
+  FIREWALL="$_ESTADO/production-firewall.json"
+  SESION="${CLAUDE_CODE_SESSION_ID:-}"; [[ "$SESION" =~ $SESION_VALIDA ]] || SESION=""
+  [ -n "$SESION_CIERRE" ] && SESION="$SESION_CIERRE"
+  # el host como lo escribe el índice (minúsculas, sin punto final, el nombre corto con su dominio): el mismo servidor
+  # escrito de otra forma es la misma regla y la misma entrada del estado
+  HOST="$("$NODE" -e 'const m = require(process.argv[1]); process.stdout.write(m.normalizar(process.argv[2]) || "")' "$INDICE_JS" "$HOST" 2>/dev/null)"
+  [[ "$HOST" =~ $HOST_VALIDO ]] || muere "el host no tiene forma de nombre de host."
+  # el tope de cada llamada a az: fijo instalada (un cierre hace 3 o 4 llamadas y el hook tiene 110 s en total); la
+  # variable sólo vale con la raíz de prueba
+  AZ_TOPE=25; [ -n "$RAIZ" ] && [ -n "${TYCON_PROD_AZ_TIMEOUT:-}" ] && AZ_TOPE="$TYCON_PROD_AZ_TIMEOUT"
+  AZ=""; for c in "$RAIZ/opt/homebrew/bin/az" "$RAIZ/usr/local/bin/az" "$RAIZ/usr/bin/az"; do [ -x "$c" ] && { AZ="$c"; break; }; done
+
+  # El estado de las reglas abiertas: host, regla, IP, desde cuándo, qué sesiones la usan y una versión (`rev`) que
+  # sube con cada apertura. Lo escriben sólo la puerta y su hook, de a uno (un candado): dos puertas a la vez se
+  # pisaban la lista de sesiones. Ilegible es «no sé» (sale 3) y no se pisa.
+  estado_fw(){ # $1 = operación, resto = argumentos
+    TYCON_FW_LOG="$REGISTRO" "$NODE" -e '
+      const fs = require("fs"), path = require("path");
+      const [archivo, op, host, a, b, c] = process.argv.slice(1);
+      const candado = `${archivo}.lock`;
+      const dormir = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+      fs.mkdirSync(path.dirname(archivo), { recursive: true });
+      for (let i = 0; ; i++) {
+        try { fs.mkdirSync(candado); break; } catch (err) {
+          if (err.code !== "EEXIST") throw err;
+          // un candado de más de 30 s es de una puerta que murió con él tomado
+          try { if (Date.now() - fs.statSync(candado).mtimeMs > 30000) { fs.rmdirSync(candado); continue; } } catch (_) { continue; }
+          if (i > 200) { console.error(`el estado del firewall está tomado por otra puerta hace rato (${candado})`); process.exit(3); }
+          dormir(100);
+        }
+      }
+      process.on("exit", () => { try { fs.rmdirSync(candado); } catch (_) {} });
+      let e = { reglas: [] };
+      if (fs.existsSync(archivo)) {
+        try { e = JSON.parse(fs.readFileSync(archivo, "utf8")); if (!Array.isArray(e.reglas)) throw new Error("sin reglas"); }
+        catch (err) { console.error(`el estado del firewall (${archivo}) está ilegible: ${err.message}`); process.exit(3); }
+      }
+      const guardar = () => { const t = `${archivo}.tmp-${process.pid}`; fs.writeFileSync(t, JSON.stringify(e, null, 2) + "\n"); fs.renameSync(t, archivo); };
+      // viva = su transcripción tuvo actividad en los últimos 3 minutos (la misma señal que el control de sesiones paralelas)
+      const viva = (id) => { const raiz = path.join(process.env.HOME, ".claude", "projects"); let ds = []; try { ds = fs.readdirSync(raiz); } catch (_) { return false; }
+        return ds.some((d) => { try { return Date.now() - fs.statSync(path.join(raiz, d, `${id}.jsonl`)).mtimeMs < 3 * 60 * 1000; } catch (_) { return false; } }); };
+      // ¿el registro muestra una apertura de este host sin un cierre posterior?
+      const abiertaEnElRegistro = () => { let abierta = false;
+        try { for (const l of fs.readFileSync(process.env.TYCON_FW_LOG, "utf8").split("\n")) { let j; try { j = JSON.parse(l); } catch (_) { continue; }
+          if (!j || j.host !== host) continue;
+          if (j.accion === "open-firewall") abierta = true; else if (j.accion === "close-firewall" && j.exit === 0) abierta = false; } } catch (_) {}
+        return abierta; };
+      const r = e.reglas.find((x) => x.host === host);
+      if (op === "has") process.exit(r || abiertaEnElRegistro() ? 0 : 1);
+      if (op === "rev") { process.stdout.write(String(r ? r.rev || 0 : "")); process.exit(0); }
+      if (op === "open") { // a = regla, b = ip, c = sesión. Se escribe ANTES de pedirle la regla a Azure: un tope deja rastro
+        if (r) { r.regla = a; r.ip = b; r.rev = (r.rev || 0) + 1; if (c && !r.sesiones.includes(c)) r.sesiones.push(c); }
+        else e.reglas.push({ host, regla: a, ip: b, abierta: new Date().toISOString(), sesiones: c ? [c] : [], rev: 1 });
+        guardar();
+      } else if (op === "use") { if (r && a && !r.sesiones.includes(a)) { r.sesiones.push(a); guardar(); } }
+      else if (op === "release") { // saca la sesión; imprime «sesiones vivas que siguen|versión»
+        if (!r) { process.stdout.write("0|"); process.exit(0); }
+        r.sesiones = r.sesiones.filter((s) => s !== a); guardar();
+        process.stdout.write(`${r.sesiones.filter(viva).length}|${r.rev || 0}`);
+      } else if (op === "remove") { // a = la versión que se cerró: si alguien la volvió a abrir en el medio, la entrada queda
+        if (r && a !== "" && a !== undefined && String(r.rev || 0) !== a) { process.stdout.write("reabierta"); process.exit(0); }
+        e.reglas = e.reglas.filter((x) => x.host !== host); guardar();
+      }
+    ' "$FIREWALL" "$@"
+  }
+  # az con un entorno limpio (nada del Llavero ni de la base), con tope de tiempo; 142 = el tope lo cortó
+  correr_az(){ env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=C /usr/bin/perl -e 'alarm shift @ARGV; exec @ARGV or exit 127' "$AZ_TOPE" "$AZ" "$@"; }
+  ACCION="$MODO"; POR=""; [ -n "$SESION_CIERRE" ] && POR=',"por":"fin-de-sesion"'
+  fallo_fw(){ # $1 = motivo · anota el intento y sale 2
+    anotar "\"host\":\"$HOST\",\"accion\":\"$ACCION\",\"regla\":\"${REGLA:-}\",\"sesion\":\"$SESION\"$POR,\"exit\":2"
+    muere "$1"
+  }
+
+  # Cerrar es la dirección segura: un host del estado se cierra aunque hoy esté reclasificado o sin declarar.
+  EN_ESTADO=0; estado_fw has "$HOST" 2>/dev/null && EN_ESTADO=1
+  if [ "$MODO" = open-firewall ] || [ "$EN_ESTADO" = 0 ]; then
+    case "$ESTADO" in
+      produccion) : ;;
+      no-produccion) muere "«${HOST}» está declarado como NO producción: su firewall no pasa por la puerta." ;;
+      ilegible) muere "no pude leer el índice de servidores (${LLAVERO}). No toco ningún firewall sin saber qué es producción." ;;
+      *) muere "«${HOST}» no está declarado como producción en ningún proyecto de esta máquina (ni hay una regla abierta para él)." ;;
+    esac
+  fi
+  case "$HOST" in
+    *.database.windows.net) CORTO="${HOST%.database.windows.net}" ;;
+    *) muere "«${HOST}» no es un Azure SQL (*.database.windows.net): la puerta sólo maneja el firewall de Azure SQL." ;;
+  esac
+  [[ "$CORTO" =~ ^[a-z0-9][a-z0-9-]*$ ]] || muere "el nombre corto del servidor («${CORTO}») no tiene forma de nombre de Azure SQL."
+
+  # el nombre de la regla: fijo por máquina, sin el nombre del equipo ni de la persona
+  UUID="$("$RAIZ/usr/sbin/ioreg" -rd1 -c IOPlatformExpertDevice 2>/dev/null | sed -n 's/.*"IOPlatformUUID" = "\([^"]*\)".*/\1/p' | head -1)"
+  [ -n "$UUID" ] || muere "no pude leer el identificador de esta máquina: sin él la regla no tendría un nombre propio."
+  REGLA="tycon-gate-$(printf '%s' "$UUID" | shasum -a 256 | cut -c1-8)"
+
+  [ -n "$AZ" ] || fallo_fw "no encuentro az en las rutas fijas (/opt/homebrew/bin, /usr/local/bin, /usr/bin). NO uso el del PATH. Instalalo con: brew install azure-cli"
+
+  ubicar_servidor(){ # deja SUB y RG, o sale 2 diciendo por qué
+    local subs salida rc s rg; SUB=""; RG=""
+    subs="$(correr_az account list --query "[?state=='Enabled'].id" -o tsv 2>"$_ESTADO/.az-err-$$")"; rc=$?
+    salida="$(cat "$_ESTADO/.az-err-$$" 2>/dev/null)"; rm -f "$_ESTADO/.az-err-$$"
+    [ "$rc" = 142 ] && fallo_fw "az no contestó en ${AZ_TOPE} s (tope): no sé si el firewall cambió. Reintentá."
+    [ "$rc" = 0 ] || fallo_fw "az no pudo listar las suscripciones (código $rc): $(printf '%s' "$salida" | head -1). Si no iniciaste sesión: az login"
+    local encontrados=0
+    for s in $subs; do
+      printf '%s' "$s" | grep -qE '^[A-Za-z0-9-]+$' || continue
+      rg="$(correr_az sql server list --subscription "$s" --query "[?name=='$CORTO'].resourceGroup" -o tsv 2>/dev/null)"; rc=$?
+      [ "$rc" = 142 ] && fallo_fw "az no contestó en ${AZ_TOPE} s (tope) al buscar el servidor. Reintentá."
+      for g in $rg; do encontrados=$((encontrados+1)); SUB="$s"; RG="$g"; done
+    done
+    [ "$encontrados" = 1 ] || fallo_fw "el servidor «${CORTO}» aparece en $encontrados lugar(es) entre tus suscripciones: necesito exactamente uno, no elijo a ciegas."
+    printf '%s' "$RG" | grep -qE '^[A-Za-z0-9._()-]+$' || fallo_fw "el grupo de recursos que devolvió az («${RG}») no tiene forma de nombre."
+  }
+  regla_az(){ correr_az sql server firewall-rule "$1" --subscription "$SUB" -g "$RG" -s "$CORTO" -n "$REGLA" "${@:2}"; }
+
+  if [ "$MODO" = close-firewall ]; then
+    REV=""
+    if [ -n "$SESION_CIERRE" ]; then
+      soltado="$(estado_fw release "$HOST" "$SESION_CIERRE")" || soltado=""
+      quedan="${soltado%%|*}"; REV="${soltado#*|}"
+      if [ -n "$quedan" ] && [ "$quedan" != 0 ]; then
+        printf 'la regla %s de %s sigue abierta: la usa(n) %s sesión(es) viva(s)\n' "$REGLA" "$CORTO" "$quedan"; exit 0
+      fi
+    else
+      REV="$(estado_fw rev "$HOST" 2>/dev/null)" || REV=""
+    fi
+    ubicar_servidor
+    salida="$(regla_az show 2>&1)"; rc=$?
+    [ "$rc" = 142 ] && fallo_fw "az no contestó en ${AZ_TOPE} s (tope): la regla queda anotada como abierta. Reintentá: /opt/tycon/bin/tycon-prod-sql --close-firewall $HOST"
+    if [ "$rc" = 0 ]; then
+      salida="$(regla_az delete 2>&1)"; rc=$?
+      [ "$rc" = 142 ] && fallo_fw "az no contestó en ${AZ_TOPE} s (tope): la regla queda anotada como abierta. Reintentá: /opt/tycon/bin/tycon-prod-sql --close-firewall $HOST"
+      [ "$rc" = 0 ] || fallo_fw "az no pudo borrar la regla $REGLA (código $rc): $(printf '%s' "$salida" | head -1). Queda anotada como abierta."
+      echo "regla $REGLA cerrada en $CORTO"
+    elif printf '%s' "$salida" | grep -q 'ResourceNotFound'; then
+      echo "la regla $REGLA ya no estaba en $CORTO"
+    else
+      # 🔴 Sólo «no existe» cuenta como cerrada. Un límite de pedidos, la red, un permiso o una sesión vencida NO
+      # dicen nada de la regla: si se leyeran como «ya no estaba», una regla viva en producción quedaría sin rastro.
+      fallo_fw "az no pudo mirar la regla $REGLA (código $rc): $(printf '%s' "$salida" | head -1). Queda anotada como abierta. Reintentá: /opt/tycon/bin/tycon-prod-sql --close-firewall $HOST"
+    fi
+    estado_fw remove "$HOST" "$REV" >/dev/null || true
+    anotar "\"host\":\"$HOST\",\"accion\":\"close-firewall\",\"regla\":\"$REGLA\",\"sesion\":\"$SESION\"$POR,\"exit\":0"
+    exit 0
+  fi
+
+  # abrir: la IP sale del rechazo del propio Azure SQL al intentar entrar, con un usuario que no existe y sin la clave
+  verificar_binario "$CLIENTE" "/opt/tycon/bin/sqlcmd" "el cliente de base"
+  PRUEBA="$(HOME=/var/empty SQLCMDPASSWORD= "$CLIENTE" -x -S "$HOST" -U tycon-gate-probe -Q 'select 1' -l 15 -b 2>&1)"
+  IP="$(printf '%s' "$PRUEBA" | sed -n "s/.*Client with IP address '\([^']*\)' is not allowed.*/\1/p" | head -1)"
+  if [ -z "$IP" ] && printf '%s' "$PRUEBA" | grep -qi 'Login failed'; then
+    # la conexión llegó a la etapa de la clave: esta IP ya tiene acceso (por la regla de la puerta o por otra)
+    estado_fw use "$HOST" "$SESION" || true
+    echo "ya tenés acceso a $CORTO desde esta máquina: no hace falta abrir nada"
+    exit 0
+  fi
+  ip_publica(){ # una IPv4 pública, una sola dirección, sin ceros adelante (`010.1.2.3` es otra forma de escribir una privada)
+    [[ "$1" =~ ^((0|[1-9][0-9]{0,2})\.){3}(0|[1-9][0-9]{0,2})$ ]] || return 1
+    local IFS=.; set -- $1
+    for o in "$@"; do [ "$o" -le 255 ] || return 1; done
+    case "$1" in 0|10|127) return 1 ;; esac
+    [ "$1" = 172 ] && [ "$2" -ge 16 ] && [ "$2" -le 31 ] && return 1
+    [ "$1" = 192 ] && [ "$2" = 168 ] && return 1
+    [ "$1" = 169 ] && [ "$2" = 254 ] && return 1
+    return 0
+  }
+  ip_publica "$IP" || fallo_fw "no pude saber la IP de esta máquina: el rechazo de Azure no trajo una IPv4 pública ($(printf '%s' "$PRUEBA" | head -1 | cut -c1-160)). No la adivino."
+  ubicar_servidor
+  regla_az show >/dev/null 2>&1; rc=$?
+  [ "$rc" = 142 ] && fallo_fw "az no contestó en ${AZ_TOPE} s (tope): no sé si la regla existe. Reintentá."
+  if [ "$rc" = 0 ]; then OP=update; else OP=create; fi
+  # 🔴 Se anota ANTES de pedirla: si az llega al tope o falla después de crearla, la regla puede existir en Azure, y
+  # el fin de sesión o el barrido la tienen que encontrar. Sin poder anotarla, no se abre.
+  estado_fw open "$HOST" "$REGLA" "$IP" "$SESION" || fallo_fw "no pude anotar la regla en el estado del firewall: no la abro sin poder cerrarla después."
+  salida="$(regla_az "$OP" --start-ip-address "$IP" --end-ip-address "$IP" 2>&1)"; rc=$?
+  [ "$rc" = 142 ] && fallo_fw "az no contestó en ${AZ_TOPE} s (tope): no sé si la regla quedó. Queda anotada: se cierra al terminar la sesión, o ya: /opt/tycon/bin/tycon-prod-sql --close-firewall $HOST"
+  [ "$rc" = 0 ] || fallo_fw "az no pudo $([ "$OP" = create ] && echo crear || echo actualizar) la regla (código $rc): $(printf '%s' "$salida" | head -1). Queda anotada por si quedó a medias: se cierra al terminar la sesión."
+  anotar "\"host\":\"$HOST\",\"accion\":\"open-firewall\",\"regla\":\"$REGLA\",\"ip\":\"$IP\",\"sesion\":\"$SESION\",\"exit\":0"
+  echo "regla $REGLA abierta para $IP en $CORTO — se cierra sola al terminar esta sesión"
+  exit 0
+fi
+
 case "$ESTADO" in
   produccion) : ;;
   no-produccion) muere "«${HOST}» está declarado como NO producción: consultalo directo, la puerta es para producción." ;;

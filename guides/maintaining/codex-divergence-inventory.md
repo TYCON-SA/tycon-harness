@@ -300,6 +300,12 @@ El hook reconoce Codex por el `turn_id` del payload (mismo criterio que `on-skil
 se consulta producción desde Codex». Caso del banco: `codex-frena-tambien-la-puerta`
 (`40-prod-access-guard.json`), y la divergencia está declarada en `adapters/codex/hooks.json`.
 
+**El firewall de la puerta** (`--open-firewall` / `--close-firewall`): en Codex tampoco se abre una regla.
+Además del cuadro, le falta un evento de fin de sesión (sus hooks son PreToolUse, PostToolUse,
+SessionStart, Stop y UserPromptSubmit, y `Stop` es fin de turno, no de sesión), así que nadie cerraría la
+regla. El freno corta la forma como a toda invocación de la puerta. Caso del banco:
+`codex-frena-abrir-firewall` (`40-prod-access-guard.json`).
+
 **Windows**: el binario lee `%PROGRAMDATA%\ClaudeCode\managed-settings.json`; el aviso de arranque
 (`produccion-notice.js`) se registra por el `.ps1`, pero el `.ps1` **no instala hooks de git**, así
 que el lint del catálogo (`.tycon/production.json`) no corre ahí — deuda ya declarada del instalador

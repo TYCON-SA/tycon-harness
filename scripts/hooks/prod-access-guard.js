@@ -266,6 +266,10 @@ const CANONICA_VERIF = new RegExp(`^${RUTA_PUERTA} --verificar$`);
 // contraseña. No lee nada del Llavero ni consulta ninguna base; el disparador antes era «corré una
 // consulta que falle», que es un rodeo (2026-09-15).
 const CANONICA_CARGA = new RegExp(`^${RUTA_PUERTA} --cargar-clave (${HOST_CANONICO})$`);
+// `--open-firewall <host>` y `--close-firewall <host>`: la regla de firewall de ESTA máquina, con el mismo cuadro. Sólo
+// el host: `--session <id>` lo pasa el hook de fin de sesión, que no pasa por acá, y cualquier otro argumento (un
+// rango, una IP, un nombre de regla) no es canónico.
+const CANONICA_FIREWALL = new RegExp(`^${RUTA_PUERTA} --(?:open|close)-firewall (${HOST_CANONICO})$`);
 
 function decidir(entrada) {
   let payload = {};
@@ -368,7 +372,7 @@ function decidir(entrada) {
     // y `` ` `` — el shell parte ahí y la segunda mitad corría SIN pasar por la puerta (ejecución
     // arbitraria aprobada por el freno; pase adversarial 2026-09-15, el hallazgo más grave).
     const unSoloSegmento = partes.length === 1;
-    const canonica = unSoloSegmento && (CANONICA.test(limpio) || CANONICA_RECLAS.test(limpio) || CANONICA_VERIF.test(limpio) || CANONICA_CARGA.test(limpio));
+    const canonica = unSoloSegmento && (CANONICA.test(limpio) || CANONICA_RECLAS.test(limpio) || CANONICA_VERIF.test(limpio) || CANONICA_CARGA.test(limpio) || CANONICA_FIREWALL.test(limpio));
     if (!canonica) {
       frenar('la puerta se invocó de una forma que no es la canónica.', [
         'Sólo se acepta la ruta absoluta, sin nada antes ni después, y la sentencia en UN argumento',
@@ -437,6 +441,11 @@ function decidir(entrada) {
   }
   if (vencido()) frenar('el freno se quedó sin tiempo mientras leía el índice, y el comando nombra un servidor de base.', [], { cmd });
 
+  // El comando directo de Azure para el firewall sigue frenado; el mensaje dice el único camino: la puerta.
+  const esFirewall = /\baz\s+sql\s+server\s+firewall-rule\b/.test(cmd);
+  const caminoFirewall = (h) => (esFirewall
+    ? [`Para habilitar la IP de esta máquina en el firewall, el único camino es la puerta (con su cuadro, y la regla se cierra sola): /opt/tycon/bin/tycon-prod-sql --open-firewall ${h && h.includes('.') ? h : `${h || '<host>'}.database.windows.net`}`]
+    : []);
   for (const n of nombrados) {
     if (n.host === null) {
       frenar(`ese comando nombra un servidor de base que no es un literal (${n.crudo}).`, [
@@ -456,11 +465,13 @@ function decidir(entrada) {
           ? 'Ese host ya se vio como producción antes; el catálogo de ahora dice otra cosa y no alcanza.'
           : 'Toda consulta a producción pasa por la puerta y la aprobás vos, sentencia por sentencia.',
         `Si de verdad ya no es producción: /opt/tycon/bin/tycon-prod-sql --reclasificar ${n.host}`,
+        ...caminoFirewall(n.host),
       ], { cmd, host: n.host, repos: c.repos }, 'produccion');
     }
     // desconocido
     frenar(`«${n.host}» no está declarado en ningún proyecto de esta máquina.`, [
       'Lo que no está declarado se trata como producción.',
+      ...caminoFirewall(n.host),
       `Si es de un ambiente de prueba, declaralo en <repo>/.tycon/production.json:`,
       `  {"servers":[{"host":"${n.host}","environment":"no-produccion"}]}`,
       indice.catalogos.length
@@ -854,7 +865,8 @@ function juzgarSecurity(t0) {
 // los dos nombres (la copia vieja de /opt lee los viejos). Proteger sólo los nuevos dejaría editar a mano lo que la copia
 // vieja usa para decidir. Los viejos salen de acá en el commit que apaga la escritura doble (AC 49).
 const CATALOGOS = ['production.json', 'produccion.json'];
-const ESTADOS = ['production-index.json', 'production-memory.json', 'produccion-indice.json', 'produccion-memoria.json'];
+// `production-firewall.json`: las reglas de firewall que abrió la puerta. Borrarlo a mano escondería una regla viva.
+const ESTADOS = ['production-index.json', 'production-memory.json', 'production-firewall.json', 'produccion-indice.json', 'produccion-memoria.json'];
 const NOMBRES_PROTEGIDOS = [...CATALOGOS, ...ESTADOS];
 const CARPETAS_PROTEGIDAS = ['.tycon', '.tycon-pipeline'];
 // los dos nombres (`production…`, `produccion…`) y nada más: `product*` es un comodín cualquiera, y frenarlo en un
@@ -863,7 +875,7 @@ const NOMBRA_PRODUCCION = /^(?:production|produccion)/i;
 // La mención ENTERA de un nombre protegido dentro de un argumento que no es una ruta: el programa de `python3 -c`,
 // `node -e`, `perl -e` (`os.remove('…/production-memory.json')`). Era la red del texto crudo sobre el segmento entero;
 // ahora es por palabra y con borde de nombre: `production-index.json0` (L3) es OTRO archivo y no se frena.
-const MENCION_PROTEGIDA = /(?<![\w-])(?:\.tycon\/(?:production|produccion)\.json|production-(?:index|memory)\.json|produccion-(?:indice|memoria)\.json)(?![\w.-])/i;
+const MENCION_PROTEGIDA = /(?<![\w-])(?:\.tycon\/(?:production|produccion)\.json|production-(?:index|memory|firewall)\.json|produccion-(?:indice|memoria)\.json)(?![\w.-])/i;
 
 // 🔴 Lista blanca de LECTORES, no lista negra de escritores (pase adversarial 2026-09-15). Y sin
 // `sort` (`-o` escribe), `uniq` (`uniq a b` escribe en b) ni `find` (`-delete`, `-exec`): esos tres
