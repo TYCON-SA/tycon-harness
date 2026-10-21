@@ -12,6 +12,7 @@
 !guides/sitio-de-la-organizacion/capturas/
 !scripts/lib/
 !scripts/metrics/
+!scripts/instincts/instinct-upload.js
 !scripts/nightly/dashboard/
 !scripts/nightly/projects/state-age.js
 !scripts/setup/harness/
