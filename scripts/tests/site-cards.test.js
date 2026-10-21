@@ -287,6 +287,53 @@ test('T10 1.31-SitioYTablero_MismoNumeroSinNombres @story-1.31 @ac-7: la ficha d
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('2.36-Proyectos_GrillaArribaDeLaTabla: quien mantiene ve las siete fichas de la organización en una grilla antes de la tabla; una persona no; la oculta no sale', () => {
+  const clon = clonDeJuguete();
+  // un producto declarado, para que la página arme su tabla
+  const repos = path.join(clon, 'scripts', 'nightly', 'dependencies', 'repos.json');
+  fs.mkdirSync(path.dirname(repos), { recursive: true });
+  fs.writeFileSync(repos, JSON.stringify({ repos: [{ producto: 'Producto X', ruta: 'X/repo', ado: 'Proyecto X/Repo X', tipo: 'npm', activo: true }] }));
+  const m = construirModelo(clon);
+  const pagina = (modelo, quien) => views.paginaProyectos({ modelo, quien, pestanas: [], ahora: Date.parse(`${HOY}T12:00:00Z`) });
+  const html = pagina(access.filtrar(m, { rol: 'maintainer' }, access.crearReglas({})), { rol: 'maintainer', email: LEAD });
+  const deProyectos = fichas.FICHAS.filter((f) => f.pestana === 'proyectos');
+  assert.strictEqual(deProyectos.length, 7);
+  for (const f of deProyectos) assert.match(html, new RegExp(`data-ficha="${f.id}"`), `${f.id} sale en Proyectos`);
+  for (const f of fichas.FICHAS.filter((x) => x.pestana !== 'proyectos')) assert.ok(!html.includes(`data-ficha="${f.id}"`), `${f.id} no es de Proyectos`);
+  // una sola grilla, arriba de la tabla de productos
+  const ultima = Math.max(...deProyectos.map((f) => html.indexOf(`data-ficha="${f.id}"`)));
+  assert.ok(html.includes('<table class="tabla" id="proyectos">'), 'la foto de juguete arma la tabla de productos');
+  assert.ok(ultima < html.indexOf('<table'), 'las fichas van antes de la tabla');
+  // cada ficha dice lo que dice el modelo: con su número, o «no medida» (nunca cero)
+  for (const f of m.fichas.lista.filter((x) => x.pestana === 'proyectos')) {
+    const desde = html.indexOf(`data-ficha="${f.id}"`);
+    const trozo = html.slice(html.lastIndexOf('<div class="tile', desde), desde + 600);
+    if (f.estado === 'no_medido') { assert.match(trozo, /^<div class="tile blind"/, `${f.id} no medida`); assert.doesNotMatch(trozo.split('</div></div>')[0], /t-val">0</); }
+    else assert.ok(trozo.includes(`t-val">${fichas.formatear(f)}<`), `${f.id} con su número`);
+  }
+  // una persona ve su Proyectos sin las fichas de la organización
+  const persona = access.filtrar(m, { rol: 'person', email: PERSONA }, access.crearReglas({}));
+  const dePersona = pagina(persona, { rol: 'person', email: PERSONA });
+  assert.doesNotMatch(dePersona, /data-ficha=|id="fichas-proyectos"|id="fichas-calculando"/);
+  assert.ok(!dePersona.includes('Cómo va la organización'), 'una persona no ve la sección de la organización');
+  // sin la lista de productos (o sin poder leerla), las fichas de la organización siguen arriba
+  for (const sinLista of [{ ...m, proyectos: { ...(m.proyectos || {}), lista: null } }, { ...m, productosFuente: { estado: 'no_medido', motivo: 'sin_foto' } }]) {
+    const h = pagina(access.filtrar(sinLista, { rol: 'maintainer' }, access.crearReglas({})), { rol: 'maintainer', email: LEAD });
+    assert.match(h, /id="fichas-proyectos"[\s\S]*data-ficha="bus_factor"/, 'la grilla sale aunque falte la lista de productos');
+  }
+  // la oculta desde Configuración no sale
+  const conOculta = construirModelo(clon, { ocultas: ['backlog'] });
+  const html2 = pagina(access.filtrar(conOculta, { rol: 'maintainer' }, access.crearReglas({})), { rol: 'maintainer', email: LEAD });
+  assert.doesNotMatch(html2, /data-ficha="backlog"/);
+  assert.match(html2, /data-ficha="bus_factor"/);
+  // mientras el sitio no las calculó, lo dice; sin ninguna ficha de Proyectos visible, no hay grilla vacía
+  assert.match(pagina({ ...m, fichas: null }, { rol: 'maintainer', email: LEAD }), /id="fichas-calculando"/);
+  const sinNinguna = construirModelo(clon, { ocultas: deProyectos.map((f) => f.id) });
+  assert.doesNotMatch(pagina(sinNinguna, { rol: 'maintainer', email: LEAD }), /id="fichas-proyectos"/);
+  // ningún texto libre de las fotos llega a la página
+  for (const marca of LIBRE) assert.ok(!html.includes(marca), `${marca} llegó a Proyectos`);
+});
+
 test('2.36-Fuga_ConLasFichas: ningún texto libre de las fotos llega al modelo ni a la página de Arnés', () => {
   const clon = clonDeJuguete();
   const m = construirModelo(clon);

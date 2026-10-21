@@ -165,6 +165,7 @@ const TEXTOS = {
   'proyectos.filtrar': { es: 'Filtrar', en: 'Filter' },
   'proyectos.totales': { es: 'En total, sin contar dos veces lo compartido: {enCurso} en curso, {paradas} paradas, {sinMedir} sin medir.', en: 'In total, counting shared ones once: {enCurso} in progress, {paradas} stalled, {sinMedir} not measured.' },
   'proyectos.comoVa': { es: 'Cómo va cada producto', en: 'How each product is doing' },
+  'proyectos.fichas': { es: 'Cómo va la organización', en: 'How the organization is doing' },
   'proyectos.ninguno': { es: 'Ningún producto declarado.', en: 'No product declared.' },
   'proyectos.lede': { es: 'Por producto: lo que está en curso, lo trabado, qué versión está en prueba y en producción, y si algo lo vigila.', en: 'Per product: what is in progress, what is stuck, which version is in staging and in production, and whether anything watches it.' },
 
