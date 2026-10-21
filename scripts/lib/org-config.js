@@ -169,6 +169,10 @@ const REVIEW_SINCE = '2026.10.20.43';
 // `stack`: la etiqueta del merge que trajo `stack.rules` al lector (las terminaciones y las herramientas llegaron antes;
 // se pide la versión que lee la clave entera)
 const STACK_SINCE = '2026.10.19.11';
+// los niveles de modelo: un lector anterior acepta `models` sólo con los nombres de Claude y, con un nivel
+// adentro, descarta toda la configuración de modelos (techo incluido). Se pide sólo si el archivo trae algún nivel; con
+// nombres, sigue MODELS_SINCE. Provisoria hasta la etiqueta del merge que la trae (como REVIEW_SINCE)
+const MODEL_LEVELS_SINCE = '2026.10.21.8';
 const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE], ['coverage', COVERAGE_SINCE], ['review', REVIEW_SINCE], ['stack', STACK_SINCE]]);
 /** La versión que tiene que pedir el perfil para este `team-repos.json` (sin archivo, la de siempre), y las claves por las que la pide. */
 function versionQuePide(doc) {
@@ -178,7 +182,40 @@ function versionQuePide(doc) {
     claves.push(k);
     if (!versionAtLeast(version, min)) version = min;
   }
+  if (isObject(doc) && conNivelDeModelo(doc.models) && !versionAtLeast(version, MODEL_LEVELS_SINCE)) version = MODEL_LEVELS_SINCE;
   return { version, claves };
+}
+/** ¿`models` trae algún nivel (en cualquier clave, también adentro de un objeto)? Un comentario («_…») no cuenta. */
+function conNivelDeModelo(v) {
+  if (typeof v === 'string') return require('./team-repos.js').MODEL_LEVELS.includes(v);
+  return isObject(v) && Object.entries(v).some(([k, x]) => !k.startsWith('_') && conNivelDeModelo(x));
+}
+/**
+ * `models` con cada nombre de Claude pasado a su nivel, con el lector del árbol (`MODEL_NAMES` y `MODEL_LEVELS`, en el
+ * mismo orden): lo que la pantalla muestra y propone. Un lector sin niveles lo deja como está.
+ */
+function modelosEnNiveles(v, lector) {
+  if (!lector || !Array.isArray(lector.MODEL_LEVELS) || !Array.isArray(lector.MODEL_NAMES)) return v;
+  if (typeof v === 'string') return lector.MODEL_NAMES.includes(v) ? lector.MODEL_LEVELS[lector.MODEL_NAMES.indexOf(v)] : v;
+  if (!isObject(v)) return v;
+  return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === 'fable_question' || k.startsWith('_') ? x : modelosEnNiveles(x, lector)]));
+}
+/**
+ * Las equivalencias de Codex del árbol que sirve el sitio (`build/equivalences.json → models`, por modelo de Claude):
+ * la línea chica debajo de cada nivel. `{ equivalencias, motivo }`: sin el archivo o sin la clave, `equivalencias: null`
+ * y la pantalla dice «sin equivalencia»; un archivo que está y no se pudo leer trae además el `motivo`, que la pantalla
+ * muestra («no pude leer» nunca se ve igual que «no hay»).
+ */
+function equivalenciasDe(tree) {
+  const f = path.join(String(tree), 'build', 'equivalences.json');
+  let texto;
+  try { texto = fs.readFileSync(f, 'utf8'); } catch (e) {
+    return { equivalencias: null, motivo: e && e.code === 'ENOENT' ? null : M('org.equivalenciasIlegibles', { error: (e && e.code) || String(e) }) };
+  }
+  try {
+    const j = JSON.parse(texto);
+    return { equivalencias: isObject(j) && isObject(j.models) ? j.models : null, motivo: null };
+  } catch (e) { return { equivalencias: null, motivo: M('org.equivalenciasIlegibles', { error: String((e && e.message) || e).split('\n')[0] }) }; }
 }
 const versionParts = (v) => { const m = /^(\d{4})\.(\d{1,2})\.(\d{1,2})\.(\d+)$/.exec(String(v || '').trim()); return m ? m.slice(1).map(Number) : null; };
 const versionAtLeast = (v, min) => {
@@ -1791,7 +1828,19 @@ function pantalla(idioma = 'es') {
     box.appendChild(restoYTexto(s, d, pr, 'merge_suites', T('pantalla.lasSuitesAlMergearComo')));
     return box;
   }
+  // la pantalla habla en niveles (copia de LEVELS de models.js, en el orden de MODELOS: cada nivel es el modelo
+  // de su posición). Lo guardado con un nombre se muestra y se propone como su nivel
   var MODELOS = ['haiku', 'sonnet', 'opus', 'fable'];
+  var NIVELES = ['economy', 'balanced', 'strong', 'max'];
+  function nivelDe(v) { var i = MODELOS.indexOf(v); return i >= 0 ? NIVELES[i] : v; }
+  function modeloDe(v) { var i = NIVELES.indexOf(v); return i >= 0 ? MODELOS[i] : (MODELOS.indexOf(v) >= 0 ? v : null); }
+  function nombreNivel(v) { return NIVELES.indexOf(nivelDe(v)) >= 0 ? T('pantalla.nivel.' + nivelDe(v)) : v; }
+  function enNiveles(v) {
+    if (typeof v === 'string') return nivelDe(v);
+    if (!esObjeto(v)) return v;
+    Object.keys(v).forEach(function (k) { if (k !== 'fable_question' && k.charAt(0) !== '_') v[k] = enNiveles(v[k]); });
+    return v;
+  }
   // el nombre llano de cada revisor, por su identificador sin el prefijo de quien lo publica; uno que no está acá se
   // muestra con su identificador
   var REVISOR = {
@@ -1819,10 +1868,19 @@ function pantalla(idioma = 'es') {
       box.appendChild(restoYTexto(s, d, pr, 'models', T('pantalla.losModelosComoTexto')));
       return box;
     }
-    d.models = d.models || {};
+    d.models = enNiveles(d.models || {});
     var m = d.models;
+    var equiv = (s.extras && s.extras.equivalencias) || null;
+    // la línea chica debajo de un selector: a qué modelo equivale el nivel en cada herramienta (sin nivel, ninguna)
+    var motivoEquiv = (s.extras && s.extras.motivoEquivalencias) || null;
+    function lineaEquiv(v) {
+      var mod = modeloDe(v);
+      if (!mod) return '';
+      var codex = equiv && Object.prototype.hasOwnProperty.call(equiv, mod) && equiv[mod] ? equiv[mod] : (motivoEquiv || T('pantalla.sinEquivalenciaCodex'));
+      return T('pantalla.equivalenciaDelNivel', { claude: mod, codex: codex });
+    }
     if (!hoy) box.appendChild(el('p', { class: 'muted', text: T('pantalla.noSeLosModelosDe') + ((s.extras && s.extras.motivoHoy) || T('pantalla.sinMotivo')) + T('pantalla.sinDeclararUsaLosDe') }));
-    var DE_MODELOS = [['', T('pantalla.elPorDefecto')]].concat(MODELOS.map(function (x) { return [x, x]; }));
+    var DE_MODELOS = [['', T('pantalla.elPorDefecto')]].concat(NIVELES.map(function (x) { return [x, T('pantalla.nivel.' + x)]; }));
     function de(obj, k) { return obj && typeof obj === 'object' ? obj[k] : undefined; }
     function cabeza(titulo) { box.appendChild(el('p', { class: 'sub-t', text: titulo })); return tabla('modelos', titulo, [T('pantalla.trabajo'), T('pantalla.porDefecto2'), T('pantalla.tuOrganizacionUsa')]); }
     // pone o saca una hoja de models («sub»: dentro de un objeto, que sale si queda vacío)
@@ -1832,16 +1890,21 @@ function pantalla(idioma = 'es') {
       if (v) m[k][sub] = v; else { delete m[k][sub]; if (!Object.keys(m[k]).length) delete m[k]; }
     }
     // un renglón de modelo: «que» es el contenido de la primera celda; «quitarlo», la ✕ de un revisor en particular
-    function fila(t, que, label, k, sub, opciones, h, quitarlo) {
+    // «h» es el valor por defecto como viene (un modelo); con «conEquiv», el renglón lleva la línea de equivalencias
+    function fila(t, que, label, k, sub, opciones, h, quitarlo, conEquiv) {
       var p = 'models.' + k + (sub ? '.' + sub : '');
-      var c = corto(label, sub ? de(m[k], sub) : m[k], opciones, function (v) { poner(k, sub, v); }, p, pr);
+      var linea = conEquiv ? el('small', { class: 'equiv muted' }) : null;
+      var pintar = function (v) { if (linea) linea.textContent = lineaEquiv(v || h); };
+      var c = corto(label, sub ? de(m[k], sub) : m[k], opciones, function (v) { poner(k, sub, v); pintar(v); }, p, pr);
+      pintar(sub ? de(m[k], sub) : m[k]);
       var acc = el('div', { class: 'acc', role: 'cell' }, c.sel);
+      if (linea) acc.appendChild(linea);
       if (quitarlo) acc.appendChild(el('button', { class: 'quitar-fila', type: 'button', text: '✕', title: T('pantalla.quitarEsteRevisor'), 'aria-label': T('pantalla.quitarEsteRevisor') + ': ' + label, onclick: quitarlo }));
       var celda = el('div', { class: 'que', role: 'cell' });
       [].concat(que).forEach(function (n) { celda.appendChild(n); });
-      t.appendChild(renglon([celda, el('div', { class: 'hoy', role: 'cell', text: h == null ? '—' : h }), acc], c.mios));
+      t.appendChild(renglon([celda, el('div', { class: 'hoy', role: 'cell', text: h == null ? '—' : (conEquiv ? nombreNivel(h) : h) }), acc], c.mios));
     }
-    function trabajo(t, label, k, sub) { fila(t, el('span', { text: label }), label, k, sub, DE_MODELOS, sub ? de(de(hoy, k), sub) : de(hoy, k)); }
+    function trabajo(t, label, k, sub) { fila(t, el('span', { text: label }), label, k, sub, DE_MODELOS, sub ? de(de(hoy, k), sub) : de(hoy, k), null, true); }
 
     var rev = cabeza(T('pantalla.losRevisores'));
     trabajo(rev, T('pantalla.primeraVuelta'), 'reviewers');
@@ -1855,14 +1918,14 @@ function pantalla(idioma = 'es') {
         var nombre = nombreRevisor(id);
         var declarado = !!rv && (id in rv);
         fila(rev, [el('span', { text: nombre }), el('small', { text: ' · ' + T('pantalla.unRevisorEnParticular2') })], nombre, 'reviewer', id, DE_MODELOS, de(de(hoy, 'reviewer'), id),
-          declarado ? function () { delete m.reviewer[id]; if (!Object.keys(m.reviewer).length) delete m.reviewer; render(); } : null);
+          declarado ? function () { delete m.reviewer[id]; if (!Object.keys(m.reviewer).length) delete m.reviewer; render(); } : null, true);
       });
       box.appendChild(rev);
       var conocidos = ((s.extras && s.extras.revisores) || []).filter(function (id) { return (!rv || !(id in rv)) && conHoy.indexOf(id) < 0; });
       if (conocidos.length) {
         var elegir = el('select', { class: 'corto', 'aria-label': T('pantalla.revisor2') }, el('option', { value: '', text: T('pantalla.elegiUnRevisor') }));
         conocidos.forEach(function (id) { elegir.appendChild(el('option', { value: id, text: nombreRevisor(id) })); });
-        box.appendChild(el('div', { class: 'agregar-revisor' }, elegir, el('button', { class: 'mas', type: 'button', text: T('pantalla.agregarUnRevisorEnParticular'), onclick: function () { if (!elegir.value) return; m.reviewer = rv || {}; m.reviewer[elegir.value] = 'sonnet'; render(); } })));
+        box.appendChild(el('div', { class: 'agregar-revisor' }, elegir, el('button', { class: 'mas', type: 'button', text: T('pantalla.agregarUnRevisorEnParticular'), onclick: function () { if (!elegir.value) return; m.reviewer = rv || {}; m.reviewer[elegir.value] = 'balanced'; render(); } })));
       }
     }
     if (m.reviewer !== undefined && !rv) box.appendChild(editorGenerico(s, m, pr, 'reviewer', T('pantalla.revisorYModeloComoTexto')));
@@ -1886,10 +1949,11 @@ function pantalla(idioma = 'es') {
     // el tope obligatorio, un renglón al pie: la casilla, «ningún trabajo pasa de» y el modelo
     var techo = el('input', { type: 'checkbox', 'aria-label': T('pantalla.topeObligatorio'), 'data-path': 'models.mandatory_ceiling', onchange: function (e) { if (e.target.checked) m.mandatory_ceiling = true; else { delete m.mandatory_ceiling; delete m.ceiling; } render(); } });
     techo.checked = m.mandatory_ceiling === true;
-    var c = corto(T('pantalla.topeObligatorio'), m.ceiling, [['', T('pantalla.elegiUno')]].concat(MODELOS.map(function (x) { return [x, x]; })), function (v) { if (v) m.ceiling = v; else delete m.ceiling; }, 'models.ceiling', pr);
+    var lineaTope = el('small', { class: 'equiv muted', text: lineaEquiv(m.ceiling) });
+    var c = corto(T('pantalla.topeObligatorio'), m.ceiling, [['', T('pantalla.elegiUno')]].concat(NIVELES.map(function (x) { return [x, T('pantalla.nivel.' + x)]; })), function (v) { if (v) m.ceiling = v; else delete m.ceiling; lineaTope.textContent = lineaEquiv(v); }, 'models.ceiling', pr);
     if (m.mandatory_ceiling !== true) c.sel.setAttribute('disabled', 'disabled');
     var tope = el('div', { class: 'tope' }, el('label', {}, techo, el('b', { text: ' ' + T('pantalla.topeObligatorio') + ':' })), el('span', { text: T('pantalla.ningunTrabajoPasaDe2') }), c.sel,
-      el('span', { class: 'muted', text: T('pantalla.loPagaLaOrganizacionNingun') }));
+      lineaTope, el('span', { class: 'muted', text: T('pantalla.loPagaLaOrganizacionNingun') }));
     c.mios.concat(problemasEn(pr, 'models.mandatory_ceiling')).forEach(function (x) { tope.appendChild(el('div', { class: 'err', text: x.message })); });
     box.appendChild(tope);
     box.appendChild(restoYTexto(s, d, pr, 'models', T('pantalla.losModelosComoTexto')));
@@ -2467,8 +2531,8 @@ function pantalla(idioma = 'es') {
 }
 
 module.exports = {
-  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
-  problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy,
+  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, modelosEnNiveles, equivalenciasDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS,
 };

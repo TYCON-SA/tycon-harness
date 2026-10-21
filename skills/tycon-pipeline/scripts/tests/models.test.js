@@ -736,3 +736,70 @@ test('T29 Suites_NoLeenLaConfiguracionDeLaMaquina @story-7.29 @ac-21', () => {
   const foto = JSON.parse(fs.readFileSync(FOTO, 'utf8')).casos;
   assert.deepStrictEqual(medirCaso(CASOS.find((c) => c[0] === 'hint-heavy'), {}).campos, foto['hint-heavy']);
 });
+
+// ── los niveles neutros (económico, equilibrado, potente, máximo) ─────────────────────────────────────
+
+/** Un `team-repos.json` de laboratorio con `models` y lo que lee el único lector. */
+function leerConModels(models) {
+  const M = models_();
+  const TR = require(path.join(RAIZ, 'scripts', 'lib', 'team-repos.js'));
+  const d = tmp('org-270');
+  fs.writeFileSync(path.join(d, 'team-repos.json'), JSON.stringify(equipo(models)));
+  return M.readOrgModels({ dir: d, teamRepos: TR });
+}
+function models_() { return models(); }
+
+// el mismo archivo, en niveles y en nombres, con un valor en cada clave
+const EN_NIVELES = {
+  reviewers: 'balanced', reviewer: { 'tycon-spec-first-checker': 'strong' }, reviewers_reloop: 'economy',
+  adversarial: { model: 'balanced', heavy: 'max', fable_question: 'never' }, helpers: 'economy',
+  session: { low: 'balanced', normal: 'strong', heavy: 'max' }, mandatory_ceiling: true, ceiling: 'max',
+};
+const EN_NOMBRES = {
+  reviewers: 'sonnet', reviewer: { 'tycon-spec-first-checker': 'opus' }, reviewers_reloop: 'haiku',
+  adversarial: { model: 'sonnet', heavy: 'fable', fable_question: 'never' }, helpers: 'haiku',
+  session: { low: 'sonnet', normal: 'opus', heavy: 'fable' }, mandatory_ceiling: true, ceiling: 'fable',
+};
+
+test('T1 Levels_OrderAndTranslation @story-2.70 @ac-1', () => {
+  const M = models();
+  assert.deepStrictEqual(M.LEVELS, ['economy', 'balanced', 'strong', 'max']);
+  M.LEVELS.forEach((nivel, i) => {
+    assert.equal(M.modelOf(nivel), M.MODELS[i], nivel);
+    assert.equal(M.levelOf(M.MODELS[i]), nivel, M.MODELS[i]);
+    assert.equal(M.levelOf(M.modelOf(nivel)), nivel, 'ida y vuelta');
+    // lo que ya está en la otra forma queda como está
+    assert.equal(M.modelOf(M.MODELS[i]), M.MODELS[i]);
+    assert.equal(M.levelOf(nivel), nivel);
+  });
+  assert.equal(M.modelOf('medio'), null);
+  assert.equal(M.levelOf('gpt-5.6-luna'), null);
+  // un comentario («_…») queda como está aunque su texto sea un nivel
+  assert.deepStrictEqual(M.toClaudeModels({ _nota: 'strong', helpers: 'economy' }), { _nota: 'strong', helpers: 'haiku' });
+});
+
+test('T2 ReadOrgModels_LevelsAreClaudeModels @story-2.70 @ac-1', () => {
+  const r = leerConModels(EN_NIVELES);
+  assert.equal(r.problem, null);
+  assert.equal(r.declared, true);
+  assert.deepStrictEqual(r.data, EN_NOMBRES);
+});
+
+test('T3 ReadOrgModels_OldNamesStillRead @story-2.70 @ac-2', () => {
+  const r = leerConModels(EN_NOMBRES);
+  assert.deepStrictEqual(r, { declared: true, data: EN_NOMBRES, problem: null });
+});
+
+test('T4 Resolvers_SameWithLevelOrName @story-2.70 @ac-1 @ac-10', () => {
+  const M = models();
+  const opts = (org) => ({ org, set: ['tycon-spec-first-checker', 'tycon-plugin-tests-coverage'], iter: 2, heavy: true, band: 'heavy', today: { recommended: 'opus', also_ok: ['sonnet'] } });
+  const conNiveles = M.resolveModels(opts(leerConModels(EN_NIVELES).data));
+  const conNombres = M.resolveModels(opts(leerConModels(EN_NOMBRES).data));
+  assert.deepStrictEqual(conNiveles, conNombres);
+  assert.equal(conNiveles.reviewers['tycon-spec-first-checker'].first_round, 'opus');
+  assert.equal(conNiveles.adversarial.model, 'fable');
+  assert.equal(conNiveles.helpers.model, 'haiku');
+  assert.equal(conNiveles.session.recommended, 'fable');
+  // sin configuración, los valores de hoy (decisión 3: DEFAULTS no cambia)
+  assert.deepStrictEqual(M.resolveModels(opts(null)).helpers, { model: M.DEFAULTS.helpers, origin: 'default' });
+});
