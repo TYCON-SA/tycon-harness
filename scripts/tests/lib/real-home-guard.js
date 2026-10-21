@@ -10,7 +10,7 @@
  *
  * Por qué frena Y anota: el código que borra suele tragarse el error (un `rmrf` con try/catch, un registro que «nunca
  * rompe el commit»), así que frenar solo deja la prueba verde. Y anotar sin frenar llega tarde: el caso que la motivó
- * (incident-log#case-test-undo-deleted-installed-harness-2026-10-11) fue una prueba de «deshacer la mudanza» con el ambiente vacío, que borró el arnés instalado.
+ * fue una prueba de «deshacer la mudanza» con el ambiente vacío, que borró el arnés instalado.
  *
  * Lo que NO ve: procesos que no son node (git, bash) y un `node` lanzado con un ambiente armado a mano que no hereda
  * `NODE_OPTIONS`. Para eso está la HOME de juguete de cada caso; esta red atrapa cuando la HOME de juguete falta.

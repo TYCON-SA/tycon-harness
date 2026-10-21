@@ -1688,7 +1688,7 @@ function main() {
       lines.push('       (b) Story SIN nada que auditar (docs/config puros) — lo decide el DEV, en el frontmatter:');
       lines.push('           advisors_exempt: true');
       lines.push('           advisors_exempt_reason: "<razón concreta>"');
-      lines.push('       (c) Kill-switch del dev: TYCON_ADVISORS_GATE=off. Caso: incident-log#done-sin-advisors-S1-2026-08-24.');
+      lines.push('       (c) Kill-switch del dev: TYCON_ADVISORS_GATE=off.');
     } else if (v.reason === 'sin-testigo' || v.reason === 'no-roster' || v.reason === 'roster-fabricado'
                || v.reason === 'roster-invalido' || v.reason === 'roster-ilegible') {
       // "revisor ≠ autor": el rastro tiene que decir QUIÉN revisó, y coincidir con los revisores
@@ -1787,7 +1787,6 @@ function main() {
   }
   lines.push('');
   lines.push('Por qué: Story 4.2 — done declarado + commiteado sin correr los E2E.');
-  lines.push('  Caso: ~/.claude/tycon-harness/guides/maintaining/incident-log.md#dod-4.2.');
   lines.push('  Este hook es la infra que lo enforce.');
   lines.push('');
   lines.push('Acciones permitidas:');

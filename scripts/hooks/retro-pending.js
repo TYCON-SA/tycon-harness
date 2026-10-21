@@ -933,7 +933,7 @@ function gate(event) {
   try { fs.mkdirSync(STATE_DIR, { recursive: true }); fs.writeFileSync(stateFile, String(blocks + 1)); } catch { /* fail-open */ }
   process.stdout.write(JSON.stringify({
     decision: 'block',
-    reason: `⛔ retro-pending: hay ${mine.length + foreign.length} merge(s) a main sin su archivo de retrospectiva. Corré el latido (un segundo, sin modelo) por cada uno antes de cerrar el turno y commiteá su salida con \`chore(retro …)\` — paso 10b de /tycon-merge-to-main:\n${lines.join('\n')}\n  Lo que salda cada pendiente es el archivo que escribe el latido; el tycon-retrospective-capturer se usa sólo si el dev pide «retro con modelo» (y en ese caso escribe él el archivo: no hace falta además el latido).\nBloqueo ${blocks + 1}/${MAX_BLOCKS}. Casos: incident-log#retro-multi-repo-2026-08-24 · incident-log#retro-sin-modelo-2026-09-16.`,
+    reason: `⛔ retro-pending: hay ${mine.length + foreign.length} merge(s) a main sin su archivo de retrospectiva. Corré el latido (un segundo, sin modelo) por cada uno antes de cerrar el turno y commiteá su salida con \`chore(retro …)\` — paso 10b de /tycon-merge-to-main:\n${lines.join('\n')}\n  Lo que salda cada pendiente es el archivo que escribe el latido; el tycon-retrospective-capturer se usa sólo si el dev pide «retro con modelo» (y en ese caso escribe él el archivo: no hace falta además el latido).\nBloqueo ${blocks + 1}/${MAX_BLOCKS}.`,
   }) + '\n');
 }
 

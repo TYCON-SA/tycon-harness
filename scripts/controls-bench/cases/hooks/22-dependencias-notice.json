@@ -15,7 +15,7 @@
         {
           "id": "denuncia-que-dejo-de-correr-Y-CALLA-los-numeros-viejos",
           "type": "must-emit",
-          "__doc": "🔴 El caso que da sentido a la pieza. Snapshot viejo con un hallazgo adentro: hay que decir que NO ESTÁ CORRIENDO y NO mostrar el paquete. Una foto vieja o tranquiliza con un limpio caduco, o hace perseguir algo que quizá ya se arregló. Misma lección que el examen de revisores detenido (incident-log, 2026-08-31).",
+          "__doc": "🔴 El caso que da sentido a la pieza. Snapshot viejo con un hallazgo adentro: hay que decir que NO ESTÁ CORRIENDO y NO mostrar el paquete. Una foto vieja o tranquiliza con un limpio caduco, o hace perseguir algo que quizá ya se arregló. Misma lección que el examen de revisores detenido (2026-08-31).",
           "__doc_no_toques_el_numero": "🔴 La afirmación dice `hace \\d+ día`, NO un número fijo, y el fixture está MUY por encima del umbral (12 días contra 3). No es cosmética: hasta el 2026-09-04 esperaba el literal `9 día` con un fixture de 9 días, y fallaba o pasaba SEGÚN LA HORA. El aviso ancla el informe al mediodía UTC (`${fecha}T12:00:00Z`) mientras el fixture usa la hora actual, así que antes de las 12 UTC la resta da un día menos. La corrida del 2026-09-04 04:48Z lo encontró en rojo y se leyó como control roto. Un caso que depende del reloj es peor que no tener caso: enseña a ignorar el rojo del banco que vigila a todos los demás controles.",
           "setup": [
             "mkdir -p tcg/scripts/hooks dash deps/pending && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",

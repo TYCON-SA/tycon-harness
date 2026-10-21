@@ -247,7 +247,7 @@ fi
 cd "$FRONTEND_DIR" || fail_precondition "frontend_dir inexistente: $FRONTEND_DIR"
 
 # --- Capturas de los specs de la story (story 7.24) ---------------------------
-# 🔴 Caso disparador (2026-10-14, guides/maintaining/incident-log.md#case-screen-passed-all-controls-unreadable-2026-10-14): una ventana pasó todos los controles y
+# 🔴 Caso disparador (2026-10-14): una ventana pasó todos los controles y
 # nadie la vio antes del merge; el dueño la encontró «inentendible» en staging. Con filtro (los specs de la story), el
 # gate fuerza `screenshot: 'on'` con una config ENVOLTORIO temporal que importa la del repo —la del repo no se toca— y
 # copia a la evidencia las imágenes que lista el reporte (también las que el spec adjunta con `testInfo.attach`).
@@ -310,7 +310,7 @@ read -r TOTAL PASSED FAILED SKIPPED <<< "$(node -e 'const l=require(process.argv
 
 TITULOS="$(node "$(dirname "${BASH_SOURCE[0]}")/lib/e2e-evidence.js" titles "$JSON_OUT")"
 
-# Veredicto de TRES estados (story FIX-Q1 de un producto del equipo, 2026-09-27 — guides/maintaining/incident-log.md#case-critical-specs-skip-themselves-2026-09-27). El exit code de Playwright NO
+# Veredicto de TRES estados (story FIX-Q1 de un producto del equipo, 2026-09-27). El exit code de Playwright NO
 # alcanza: devuelve 0 cuando TODOS los tests se saltean, y así este gate reportó "PASS (0/4)" con
 # cero flujos ejercidos. La decisión vive en la librería del contrato, con sus tests
 # (tests/e2e-gate-verdict.test.js), para que no se re-copie mal en el gate de cada repo.
@@ -319,7 +319,7 @@ read -r VERDICT GATE_EXIT <<< "$(node -e 'const ev=require(process.argv[1]);cons
 MOTIVO="$(node -e 'const ev=require(process.argv[1]);process.stdout.write(ev.veredicto({exitCode:+process.argv[2],total:+process.argv[3],passed:+process.argv[4],failed:+process.argv[5],skipped:+process.argv[6]}).motivo)' "$LIB" "$EXIT_CODE" "${TOTAL:-0}" "${PASSED:-0}" "${FAILED:-0}" "${SKIPPED:-0}")"
 
 # Los recorridos declarados que esta app NO tiene: sin esta línea, correr 1 de 5 se lee igual que
-# correr los 5 (caso real del 2026-09-27 con el set crítico de un producto del equipo — guides/maintaining/incident-log.md#case-critical-specs-skip-themselves-2026-09-27).
+# correr los 5.
 NO_ENCONTRADOS="$(node -e 'const ev=require(process.argv[1]);console.log(ev.filtrosNoEncontrados(process.argv[2], process.argv.slice(3)).join(" "))' "$LIB" "$FRONTEND_DIR" ${SPEC_FILTERS[@]+"${SPEC_FILTERS[@]}"})"
 
 EXTRA="$(tail -c 4000 "$JSON_OUT.err")"

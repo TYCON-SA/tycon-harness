@@ -135,8 +135,8 @@ test('T3 · cada estado del censo tiene decisión escrita (y el snapshot AVISA, 
   // 🔴 La segunda fuente AVISA y NO frena, a propósito. Se miden ≈3 estados nuevos por mes entre
   //    los 20 repos: assertar contra el snapshot pondría la suite del arnés en rojo una vez por
   //    mes por un repo de OTRO producto, sin que cambie una línea de código, y la salida sería
-  //    editar el diccionario en vez de arreglar nada. Es letra por letra
-  //    `incident-log#veredicto-que-cambia-sin-que-cambie-el-codigo-2026-09-01`. El canal de
+  //    editar el diccionario en vez de arreglar nada. Es el caso del veredicto
+  //    que cambia sin que cambie el código. El canal de
   //    alarma es la ficha del tablero (AC 12), que los nombra con su cuenta.
   const nuevos = estadosDelUltimoSnapshot();
   if (nuevos === null) {

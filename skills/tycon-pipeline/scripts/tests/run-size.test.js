@@ -146,7 +146,7 @@ const LISTA_844 = [
   'scripts/tests/pieces-cards.test.js                 # público: T1-T5, T10, T11',
   'scripts/tests/pieces-destinations.test.js          # privado: T12',
   'guides/piezas-del-arnes.md                         # público: cada ficha reescrita',
-  'guides/maintaining/incident-log.md                 # privado (el real)',
+  'guides/guide-update-proposals.md                 # privado (el real)',
   'scripts/tests/readme-index.test.js',
   'scripts/tests/guides-moved.test.js',
   'scripts/tests/third-party-skills.test.js',

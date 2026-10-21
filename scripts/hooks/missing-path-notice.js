@@ -186,7 +186,7 @@ if (require.main === module) {
       process.stderr.write(
         `⚠️  Ese comando quiso LEER ${m.length === 1 ? 'una ruta que no existe' : 'rutas que no existen'}: ${m.join(', ')}\n` +
         '   Si te devolvió vacío, eso NO significa "no hay nada" — significa que miraste donde no\n' +
-        '   está. Verificá la ruta antes de sacar conclusiones (incident-log#listado-vacio-2026-08-27).\n',
+        '   está. Verificá la ruta antes de sacar conclusiones.\n',
       );
       process.exit(2);
     }

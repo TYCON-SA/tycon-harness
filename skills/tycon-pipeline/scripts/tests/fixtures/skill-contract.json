@@ -373,11 +373,11 @@
   },
   {
    "id": "BUG-PIPELINE-006",
-   "motivo": "no es un id de regla: era el identificador interno de un defecto, citado en los pasos 6 y 8 junto al relato de cómo se encontró. Los pasos dicen la regla (el findings.json se escribe con el comando y el paso 8 lo exige) sin el relato; el caso vive en el registro de incidentes."
+   "motivo": "no es un id de regla: era el identificador interno de un defecto, citado en los pasos 6 y 8 junto al relato de cómo se encontró. Los pasos dicen la regla (el findings.json se escribe con el comando y el paso 8 lo exige) sin el relato."
   },
   {
    "id": "TESTGATE-DEDUCTOR-LAYOUT-GAP-1",
-   "motivo": "no es un id de regla: era el identificador interno de una propuesta, citado en el paso 7b junto al caso que la motivó. El paso dice la regla (al salir del loop se chequea que el verde de la suite siga midiendo este código) sin el caso; el caso vive en el registro de incidentes."
+   "motivo": "no es un id de regla: era el identificador interno de una propuesta, citado en el paso 7b junto al caso que la motivó. El paso dice la regla (al salir del loop se chequea que el verde de la suite siga midiendo este código) sin el caso."
   }
  ],
  "parrafos": [
@@ -555,7 +555,7 @@
   },
   {
    "h": "db4f7a2d26eee334",
-   "inicio": "Casos: `guides/maintaining/incident-log.md#reloop-2.5` (commit prep sin re-correr "
+   "inicio": "Casos: (commit prep sin re-correr "
   },
   {
    "h": "93cfeda51c62289b",
@@ -563,11 +563,11 @@
   },
   {
    "h": "38d449e1ba27da8b",
-   "inicio": "Caso: `guides/maintaining/incident-log.md#skip-inference-2.9` (Step 0b/0c skipeado"
+   "inicio": "Caso: (Step 0b/0c skipeado"
   },
   {
    "h": "a51b8d331ef5a5b0",
-   "inicio": "Caso: `guides/maintaining/incident-log.md#dod-4.2` (Claude declaró `done` + commit"
+   "inicio": "Caso: (Claude declaró `done` + commit"
   },
   {
    "h": "1679cc61b9cbfd99",
@@ -779,7 +779,7 @@
   },
   {
    "h": "b11a57499cb6fd21",
-   "inicio": "**INTRODUCIDO 2026-05-15** — caso: `guides/maintaining/incident-log.md#marker-1.7.1`"
+   "inicio": "**INTRODUCIDO 2026-05-15** — caso original"
   },
   {
    "h": "a48593013eff60b3",
@@ -915,7 +915,7 @@
   },
   {
    "h": "d69e196ffb7c0f53",
-   "inicio": "**El caso original** (`incident-log#adhoc-self-declared-2026-08-24`): "
+   "inicio": "**El caso original** (2026-08-24): "
   },
   {
    "h": "6cb90a16c813765c",

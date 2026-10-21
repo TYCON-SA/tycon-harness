@@ -406,7 +406,7 @@
         {
           "id": "push-no-sincroniza-ni-ensucia-el-arbol",
           "type": "must-stay-quiet",
-          "_por_que": "Reemplaza a `push-stagea-la-memoria-nueva-y-avisa` (2026-08-25 → 2026-09-16). Aquel caso exigía que el sync corriera también al pushear, stageara la memoria nueva y avisara «commiteala y volvé a pushear». Medido el 2026-09-16: ese commit casi nunca llegaba; el manifest quedaba modificado sin commit, el `pull --autostash` del arranque siguiente chocaba en la lista de chunks y la limpieza del conflicto descartaba las entradas nuevas — 5 chunks sin entrada en el índice, 3 de ellos ya publicados en main, o sea memoria que las otras máquinas no importan; y cuatro arranques trabados en un día. Ahora en un push el hook NO llama a engram (el engram falso de este setup crearía un chunk si lo llamara) y no toca .engram/: lo pendiente se exporta y commitea junto en el commit siguiente. Rojo previo verificado contra el hook anterior. Caso: incident-log#memoria-huerfana-por-sync-en-push-2026-09-16.",
+          "_por_que": "Reemplaza a `push-stagea-la-memoria-nueva-y-avisa` (2026-08-25 → 2026-09-16). Aquel caso exigía que el sync corriera también al pushear, stageara la memoria nueva y avisara «commiteala y volvé a pushear». Medido el 2026-09-16: ese commit casi nunca llegaba; el manifest quedaba modificado sin commit, el `pull --autostash` del arranque siguiente chocaba en la lista de chunks y la limpieza del conflicto descartaba las entradas nuevas — 5 chunks sin entrada en el índice, 3 de ellos ya publicados en main, o sea memoria que las otras máquinas no importan; y cuatro arranques trabados en un día. Ahora en un push el hook NO llama a engram (el engram falso de este setup crearía un chunk si lo llamara) y no toca .engram/: lo pendiente se exporta y commitea junto en el commit siguiente. Rojo previo verificado contra el hook anterior. Caso: memoria huérfana por el sync en cada push (2026-09-16).",
           "setup": [
             "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
             "printf 'benchproj' > .engram-project",
@@ -832,7 +832,7 @@
         {
           "id": "avisa-la-deriva-heredada-y-no-frena",
           "type": "must-not-block",
-          "_por_que": "Decisión del dev: frena sólo lo que ESTE commit rompe. Un freno que muerde en cada commit por algo que rompió otro se apaga en una semana (incident-log#sesiones-concurrentes-mismo-checkout-2026-09-05: «un freno que castiga la maniobra segura enseña a saltearlo»). Acá HEAD ya venía con 3 archivos y 2 entradas: el commit no empeora nada, así que avisa con el comando y deja pasar.",
+          "_por_que": "Decisión del dev: frena sólo lo que ESTE commit rompe. Un freno que muerde en cada commit por algo que rompió otro se apaga en una semana («un freno que castiga la maniobra segura enseña a saltearlo»). Acá HEAD ya venía con 3 archivos y 2 entradas: el commit no empeora nada, así que avisa con el comando y deja pasar.",
           "setup": [
             "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
             "printf 'benchproj' > .engram-project",

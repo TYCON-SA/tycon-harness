@@ -14,7 +14,7 @@
       "residuo_conocido": {
         "tool": "codex",
         "fecha": "2026-08-25",
-        "incidente": "incident-log#corral-que-se-escapa",
+        "incidente": "el corral que se escapa",
         "estado": "veredicto CORRECTO y unánime (3/3) — el residuo es una fuga del corral en 1 de 3 corridas",
         "motivo": "El caso ya NO muere por tiempo (era exit≠0 por el barrido de ~/SourceCode). Con el corral aislado y el límite duro, el revisor contesta bien y consistente. Lo que queda: 1 de 3 corridas todavía mira una ruta real de la máquina (~/SourceCode/Totora), probablemente arrastrada por los hermanos nombrados como EJEMPLO en la prosa. No cambia el veredicto, pero mientras pase, el caso no es 100% reproducible en otra máquina. RE-MEDIR en la semanal: si la fuga no vuelve, cerrar."
       },

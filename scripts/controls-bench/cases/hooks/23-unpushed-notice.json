@@ -273,7 +273,7 @@
         {
           "id": "commit-ajeno-en-el-grupo-no-se-atribuye-y-prohibe-tocarlo",
           "type": "must-block",
-          "__doc": "2026-08-31 (incident-log#revert-cruzado-entre-sesiones-2026-08-31): la sesión pusheó a main en Back (ledger push-main → se escanea el grupo) y Front tiene un commit local que NO hizo esta sesión. Antes: 'esta sesión commiteó' → el agente lo revirtió y pusheó. Ahora: aviso de commit AJENO con prohibición de tocarlo.",
+          "__doc": "2026-08-31: la sesión pusheó a main en Back (ledger push-main → se escanea el grupo) y Front tiene un commit local que NO hizo esta sesión. Antes: 'esta sesión commiteó' → el agente lo revirtió y pusheó. Ahora: aviso de commit AJENO con prohibición de tocarlo.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
             "git init -q --bare o1.git && git init -q --bare o2.git && mkdir -p grupo/Back grupo/Front",

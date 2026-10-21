@@ -90,7 +90,7 @@
         {
           "id": "la-retrospectiva-estampa-el-repo-y-el-merge-QUE-LE-PIDIERON",
           "type": "must-run",
-          "__doc": "2026-08-31 (incident-log#retro-gate-cuenta-sin-repo-2026-08-31): la atribución contesta «¿en qué repo trabaja esta sesión?» — buena para los revisores, MENTIRA para el capturer, que se lanza post-merge y muchas veces con el marker de una story de OTRO repo. Sobre ese dato el freno empareja merge↔retro. El blanco real viaja en el prompt del spawn: acá el marker dice el fixture y el prompt pide otro repo — gana el prompt (en retro_repo/retro_sha, sin pisar repo/story, de los que dependen el roster y el snapshot de iteración).",
+          "__doc": "2026-08-31: la atribución contesta «¿en qué repo trabaja esta sesión?» — buena para los revisores, MENTIRA para el capturer, que se lanza post-merge y muchas veces con el marker de una story de OTRO repo. Sobre ese dato el freno empareja merge↔retro. El blanco real viaja en el prompt del spawn: acá el marker dice el fixture y el prompt pide otro repo — gana el prompt (en retro_repo/retro_sha, sin pisar repo/story, de los que dependen el roster y el snapshot de iteración).",
           "setup": [
             "git init -q -b main . && echo x > a.txt && git add a.txt && git -c user.email=b@b -c user.name=b commit -q -m base",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-led1.json',JSON.stringify({sessionId:'bench-led1',storyId:'9.4',repoPath:process.env.FIXTURE,lastTouch:new Date().toISOString()}))\""

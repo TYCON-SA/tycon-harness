@@ -717,7 +717,7 @@ function revisar({ repo, base, staged }) {
       destino.push({ archivo: rel, story: idBruto, regla: 'sin-constancia-de-revisores',
         mensaje: !pref
           ? `pasa a \`done\` y no pude calcular la clave de la story ${idBruto} (${rel}) para buscar su carpeta de revisores: sin clave no se da constancia por buena (el motivo está en el aviso del portón). No es «no hay constancia»: es «no la pude buscar».`
-          : `pasa a \`done\` y no hay \`.advisors/pipeline-runs/${pref}*/\` en el repo${pref !== `${idBruto}-` ? ` (el número ${idBruto} se repite en el repo: la carpeta lleva la clave de esta story; las \`${idBruto}-*\` viejas no dicen de cuál son y no cuentan)` : ''}. Escape del dev: \`advisors_exempt: true\` + su razón. (Caso: incident-log#done-sin-advisors-S1-2026-08-24.)` });
+          : `pasa a \`done\` y no hay \`.advisors/pipeline-runs/${pref}*/\` en el repo${pref !== `${idBruto}-` ? ` (el número ${idBruto} se repite en el repo: la carpeta lleva la clave de esta story; las \`${idBruto}-*\` viejas no dicen de cuál son y no cuentan)` : ''}. Escape del dev: \`advisors_exempt: true\` + su razón.` });
     }
 
     // (4) el que escribió el código no puede ser el que lo revisó — y tiene que estar ESCRITO

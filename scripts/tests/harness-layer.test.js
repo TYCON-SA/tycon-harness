@@ -82,7 +82,7 @@ write(INTERNAL, 'skills/projects/producto/SKILL.md', 'la skill de un producto (p
 write(INTERNAL, 'packs/core/pack.json', '{"pack":"core"}\n');
 write(INTERNAL, 'packs/clients/cliente-a/pack.json', '{"pack":"cliente-a"}\n');
 write(INTERNAL, 'guides/guia.md', 'una guía pública\n');
-write(INTERNAL, 'guides/maintaining/incident-log.md', 'el registro de incidentes (privado)\n');
+write(INTERNAL, 'guides/guide-update-proposals.md', 'la guía de propuestas (privada)\n');
 write(INTERNAL, 'scripts/tests/suites.json', '{\n  "diarias": [],\n  "interna": true\n}\n');
 write(INTERNAL, 'tasks/tarea.md', 'una tarea (privada)\n');
 // la lista blanca y la tabla de juguete: con ellas la línea de comandos sabe qué publica el commit (la copia las trae)
@@ -92,7 +92,7 @@ git(INTERNAL, ['add', '-A']);
 git(INTERNAL, ['commit', '-q', '-m', 'interno v1']);
 const C1 = git(INTERNAL, ['rev-parse', 'HEAD']);
 
-const LEAVE_OUT = ['skills/projects/', 'packs/clients/', 'guides/maintaining/incident-log.md', 'tasks/'];
+const LEAVE_OUT = ['skills/projects/', 'packs/clients/', 'guides/guide-update-proposals.md', 'tasks/'];
 const TRANSFORM = { path: 'scripts/tests/suites.json', transform: 'suites-json' };
 const PUBLIC = exportToy({ internalDir: INTERNAL, outDir: path.join(LAB, 'publico'), leaveOut: LEAVE_OUT, transform: TRANSFORM,
   onlyPublic: { 'extra/sin-declarar.txt': 'sólo afuera y sin declarar\n' } });
@@ -108,7 +108,7 @@ test('T3 Layer_ComplementByBlobs_TransformedOnlyFromVersionJson_PublicWins_Publi
     assert.strictEqual(r.ok, true, r.reason);
     const add = r.entries.filter((e) => e.kind === 'add');
     const over = r.entries.filter((e) => e.kind === 'overwrite');
-    assert.deepStrictEqual(paths(add), ['guides/maintaining/incident-log.md', 'packs/clients/cliente-a/pack.json', 'skills/projects/producto/SKILL.md', 'tasks/tarea.md']);
+    assert.deepStrictEqual(paths(add), ['guides/guide-update-proposals.md', 'packs/clients/cliente-a/pack.json', 'skills/projects/producto/SKILL.md', 'tasks/tarea.md']);
     assert.deepStrictEqual(over.map((e) => [e.path, e.transform]), [['scripts/tests/suites.json', 'suites-json']]);
     for (const e of r.entries) {
       assert.match(e.blob, /^[0-9a-f]{40,64}$/, `${e.path} sin blob`);
@@ -243,7 +243,7 @@ test('T3 Layer_ComplementByBlobs_TransformedOnlyFromVersionJson_PublicWins_Publi
     const both = L.computeLayer({ ...base, internalCommit: C3, publishable: publishableBy([...LEAVE_OUT, 'guides/otra-privada.md', 'guides/nueva.md']) });
     assert.strictEqual(both.ok, true, both.reason);
     assert.deepStrictEqual(both.entries.filter((e) => e.kind === 'add' && e.path.startsWith('guides/')).map((e) => e.path),
-      ['guides/maintaining/incident-log.md', 'guides/nueva.md', 'guides/otra-privada.md']);
+      ['guides/guide-update-proposals.md', 'guides/nueva.md', 'guides/otra-privada.md']);
     // la línea de comandos: la clasificación del exportador de verdad, con la lista blanca de juguete de ese commit
     const out = path.join(LAB, 'lista-c3.json');
     const cli = layerCli(['compute', '--internal', INTERNAL, '--internal-commit', C3, '--public', PUBLIC.dir, '--public-commit', PUBLIC.commit, '--out', out]);

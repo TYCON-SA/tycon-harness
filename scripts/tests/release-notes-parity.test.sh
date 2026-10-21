@@ -3,8 +3,7 @@
 #
 # 🔴 Lo que se prueba NO es que salga verde: es que sepa ponerse ROJO. Un control que nunca se pone
 # rojo es decoración, y de eso se trata el incidente que lo motivó
-# (incident-log#porton-instalado-donde-no-hay-stories-2026-08-31, lección 1: un señuelo prueba el
-# mecanismo sólo si el mecanismo puede fallar).
+# (lección: un señuelo prueba el mecanismo sólo si el mecanismo puede fallar).
 set -u
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 GATE="$AQUI/scripts/tools/release-notes-parity.js"

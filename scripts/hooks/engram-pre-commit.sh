@@ -540,7 +540,7 @@ cruzar_indice() {
   echo "    Reparación (rescata las entradas exactas de git, nunca inventa, y las deja stageadas):" >&2
   echo "      $ARREGLO" >&2
   echo "    Después volvé a commitear. Escape (queda registrado): TYCON_ENGRAM_MANIFEST_OK=1 git commit …" >&2
-  echo "    Caso: guides/maintaining/incident-log.md#indice-de-memoria-truncado-en-el-commit-2026-09-17 · guides/integrations/engram-workflow.md §manifest" >&2
+  echo "    Más en guides/integrations/engram-workflow.md §manifest" >&2
 
   # Los dos escapes. Ninguno apaga el sync ni las validaciones de siempre: sólo el bloqueo.
   if [ "${TYCON_ENGRAM_MANIFEST_GUARD:-1}" = "0" ]; then constancia "$REGLA" aviso; return 0; fi
