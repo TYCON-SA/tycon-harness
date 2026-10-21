@@ -129,6 +129,8 @@ test('DesignateRelay_FraseDelDev_DesignaEstaSesion — la coordinadora se design
   assert.match(designa([delDev('¿Esta sesión es la coordinadora?')], { quote: 'Esta sesión es la coordinadora' }).motivo, /pregunta/);
   // quien aprueba es una persona, no el agente
   assert.equal(designa([delDev(FRASE)], { approvedBy: 'orquestador' }).ok, false);
+  // la frase dentro de un texto pegado no la dijo el dev: no designa
+  assert.equal(designa([delDev(`fijate\n\n<pasted_content id="p1">\n${FRASE}\n</pasted_content>`)]).ok, false);
   // sin la clave en el perfil del árbol, la organización no usa sesión que reenvía: no hay qué designar
   const sinClave = tmp('cw-designa-sin-');
   fs.writeFileSync(path.join(sinClave, 'team-profile.json'), JSON.stringify({}));

@@ -218,10 +218,13 @@ function juezDesignacion(rol) {
     if (/[?¿]/.test(t)) return 'la frase es una pregunta';
     return null;
   };
-  juez.retracta = (texto) => {
-    const t = String(texto || '').toLowerCase();
-    return !!r && t.includes(r) && RE_ESTA_SESION.test(t) && RE_NIEGA.test(t);
-  };
+  // sólo una frase que niega el rol mismo («ya no sos la coordinadora», «esta sesión ya no es la coordinadora»): un «no»
+  // cualquiera de otra charla no anula la designación
+  const rolRe = r.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const anula = new RegExp(`\\b(?:ya\\s+)?no\\s+(?:es|sos|ser[aá]s?)\\s+(?:m[aá]s\\s+)?(?:la\\s+|el\\s+)?${rolRe}(?![\\p{L}\\p{N}])`
+    + `|\\bdej[aáeó]s?\\s+de\\s+ser\\s+(?:la\\s+|el\\s+)?${rolRe}(?![\\p{L}\\p{N}])`
+    + `|\\b(?:is|are)\\s+(?:no\\s+longer|not)\\s+(?:the\\s+)?${rolRe}(?![\\p{L}\\p{N}])`, 'iu');
+  juez.retracta = (texto) => !!r && anula.test(String(texto || ''));
   return juez;
 }
 
@@ -241,7 +244,7 @@ function designar({ approvedBy, quote, env = process.env, home, arnes } = {}) {
   const juez = juezDesignacion(declarada.valor);
   const mala = juez(cita);
   if (mala) return { ok: false, motivo: mala };
-  const r = require('./person-ok.js').citaDeLaPersona(cita, { env, home, juzgar: juez });
+  const r = require('./person-ok.js').citaDeLaPersona(cita, { env, home, juzgar: juez, sinPegado: true });
   if (!r.legible) return { ok: false, sinConversacion: true, motivo: `no puedo leer la conversación de esta sesión (${r.motivo})` };
   if (r.corta) return { ok: false, motivo: 'la frase es muy corta' };
   if (!r.encontrada) return { ok: false, motivo: r.rechazo || 'la frase no la encontré en un mensaje escrito por el dev en esta conversación' };
