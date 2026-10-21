@@ -888,6 +888,22 @@ function motivoDeLaboratorio({ env = process.env, home = os.homedir(), real } = 
   return null;
 }
 
+/**
+ * Las corridas que quedaron sin cerrar (el marcador desapareció sin su volcado) dejan el suyo, marcado `sinCerrar`, en
+ * la carpeta que se sube (`unclosed-runs.js`). Nunca frena la subida: una falla se dice y sigue.
+ */
+function prepararSinCerrar({ origen, home, stateDir, projectsDir, tmp, now, log = () => {} } = {}) {
+  try {
+    const r = require('./unclosed-runs.js').materialize({ dest: origen, home, stateDir, projectsDir, tmp, now });
+    if (r.written.length) log(`${r.written.length} corrida(s) sin cerrar: su volcado quedó para subir, marcado «sin cerrar»`);
+    for (const p of r.problems) log(`corridas sin cerrar: ${p}`);
+    return r;
+  } catch (e) {
+    log(`no pude buscar corridas sin cerrar: ${e.message}`);
+    return { written: [], runs: [], problems: [e.message] };
+  }
+}
+
 async function subir(opts = {}) {
   const res = {
     subido: false, estado: null, motivo: null, maquina: null,
@@ -912,6 +928,8 @@ async function subir(opts = {}) {
   }
 
   const origen = path.resolve(process.env.TYCON_TIMING_HISTORY || path.join(CASA_PIPELINE, 'timing-history'));
+  // con la carpeta de siempre: con otra (las suites, TYCON_TIMING_HISTORY), no se mezclan corridas de la máquina real
+  if (!process.env.TYCON_TIMING_HISTORY) prepararSinCerrar({ origen, log });
   const dirRegistros = path.resolve(variable('TYCON_LOGS_DIR') || path.join(CASA_PIPELINE, 'registros-buzon'));
   const rutaRegistro = path.resolve(variable('TYCON_UPLOADS_LOG') || path.join(CASA_PIPELINE, 'mailbox-uploads.json'));
 
@@ -1198,7 +1216,7 @@ async function chequearSoloCrear(opts = {}) {
   return fin(1, 'no_medido', `no medido: ningún blob confirmado de esta máquina tiene todavía su archivo local con el mismo sha256 (${candidatos.length} anotado(s)): no se manda nada distinto de lo confirmado`);
 }
 
-module.exports = { placeFactsForMailbox, subir, chequearSoloCrear, motivoDeLaboratorio, MARCAS_DE_CI, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
+module.exports = { placeFactsForMailbox, subir, prepararSinCerrar, chequearSoloCrear, motivoDeLaboratorio, MARCAS_DE_CI, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
 
 /**
  * `--log <archivo>`: la salida (la estándar y la de error) se AGREGA a ese archivo, que pasado ~512 KB se mueve a `.1`.

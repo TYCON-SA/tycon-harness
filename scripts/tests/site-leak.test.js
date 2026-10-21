@@ -37,10 +37,11 @@ const MAQ_A = 'maq-a-11111111';
 const MAQ_B = 'maq-b-22222222';
 const MAQ_SC = 'maq-sinconfirmar-99999999';
 
-const DE_B = [MAQ_B, '#9001', '/pr/9001', '#9002', '/edit/9002', 'Producto Solo B', 'Repo Solo B'];
+// el título de un pedido se muestra a su asignado: es suyo, no texto libre de una fuente; a nadie más
+const DE_B = [MAQ_B, '#9001', '/pr/9001', '#9002', '/edit/9002', 'Producto Solo B', 'Repo Solo B', 'TITULO-PEDIDO-B'];
 const SIN_CONFIRMAR = [MAQ_SC];
 const LIBRE = ['TITULO-LIBRE-PR', 'DIAGNOSTICO-LIBRE', 'MENSAJE-FRENO-LIBRE', 'TITULO-STORY-LIBRE', 'RASGO-LIBRE', 'NOMBRE-VISIBLE-LIBRE', 'UMBRAL-LIBRE', 'MOTIVO LIBRE DE DESPLIEGUE'];
-const DE_A = [MAQ_A, '#9101', '#9102'];
+const DE_A = [MAQ_A, '#9101', '#9102', 'TITULO-PEDIDO-A'];
 
 function escribirArbol(raiz, archivos) {
   for (const [rel, c] of Object.entries(archivos)) {
@@ -49,7 +50,8 @@ function escribirArbol(raiz, archivos) {
   }
 }
 
-function fuentesConMarcadores() {
+// `noMedidos`: lo que el nocturno de pedidos asignados deja de los proyectos que no pudo medir
+function fuentesConMarcadores({ noMedidos = {}, pedidosExtra = [] } = {}) {
   const extra = {
     'scripts/nightly/dependencies/repos.json': { repos: [
       { producto: 'Producto A', ruta: 'A/repo', ado: 'Proyecto A/Repo A', activo: true },
@@ -62,9 +64,10 @@ function fuentesConMarcadores() {
       { numero: 9101, proyecto: 'Proyecto A', repo: 'Repo A', dias: 1, autor: A, enlace: 'https://dev.example/pr/9101', titulo: 'TITULO-LIBRE-PR' },
     ] },
     [`.dashboard/assigned/assigned-${HOY}.json`]: { estado: 'medido', pedidos: [
-      { id: 9002, proyecto: 'Proyecto Solo B', tipo: 'Bug', estado: 'Active', asignado: B, dias_en_estado: 2, enlace: 'https://dev.example/wi/edit/9002', dependencias: true, titulo: 'TITULO-LIBRE-PR' },
-      { id: 9102, proyecto: 'Proyecto A', tipo: 'Task', estado: 'New', asignado: A, dias_en_estado: 1, enlace: 'https://dev.example/wi/edit/9102', dependencias: false },
-    ] },
+      { id: 9002, proyecto: 'Proyecto Solo B', tipo: 'Bug', estado: 'Active', asignado: B, dias_en_estado: 2, enlace: 'https://dev.example/wi/edit/9002', dependencias: true, titulo: 'TITULO-PEDIDO-B' },
+      { id: 9102, proyecto: 'Proyecto A', tipo: 'Task', estado: 'New', asignado: A, dias_en_estado: 1, enlace: 'https://dev.example/wi/edit/9102', dependencias: false, titulo: 'TITULO-PEDIDO-A <b>negrita</b>' },
+      ...pedidosExtra,
+    ], ...noMedidos },
     [`.dashboard/vigilante/vigilante-${HOY}.json`]: { fecha: HOY, productos: { 'producto-a': { ok: true } }, hallazgos: [{ diagnostico: 'DIAGNOSTICO-LIBRE' }], resumen: { rubros: { pendientes: { valor: [{ id: 'x', diagnostico: 'DIAGNOSTICO-LIBRE' }] }, aceptadas_sin_story: { valor: [] } } } },
     [`.dashboard/controls-bench/banco-${HOY}.json`]: { ts: `${HOY}T05:00:00Z`, ran: 2, results: { 'caso-1': { tools: { claude: { pass: false, failures: ['MENSAJE-FRENO-LIBRE'] } } } } },
     [`.dashboard/paridad/paridad-${HOY}.json`]: { estado: 'medido', divergencias: [{ grupo: 'g', que: 'RASGO-LIBRE', tienen: ['Producto Solo B'], no_tienen: ['Producto A'] }], por_ruta: [{ ruta: 'A/repo', estado: 'medido', divergencias: 1, vencidas: 0 }, { ruta: 'B/repo', estado: 'medido', divergencias: 0, vencidas: 0 }] },
@@ -203,4 +206,58 @@ test('T28 2.28-Fuga_CorreoInformadoDeOtraMaquina', async () => {
     // y B, confirmada por esa huella, sí ve su corrida: la lectura llegó a la regla
     assert.match((await h.pedir('/', { cookie: await entrar(B) })).texto, /1 corridas en 7 días/);
   } finally { if (h) await h.cerrar(); await emisor.cerrar(); fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
+// Inicio con la sesión de cada una: el título de cada pedido lo ve sólo su asignado, escapado, y los proyectos que la
+// noche no pudo medir los ve quien trabaja en ellos (y quien mantiene), sin el motivo de la plataforma.
+async function inicioDe(modelo, espejo, repos, quienes) {
+  const emisor = await arrancarEmisor();
+  let h = null;
+  try {
+    const informados = require(path.join(H.SITE, '..', 'lib', 'people.js')).leerCorreosInformados(espejo);
+    h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes: H.fuentesFijas({ config: CONFIG, modelo, personas: { informados, repos } }), ahora: () => Date.parse(`${HOY}T12:00:00Z`) });
+    const ahoraSeg = Math.floor(Date.parse(`${HOY}T12:00:00Z`) / 1000);
+    const out = {};
+    for (const email of quienes) {
+      const s = (await H.ingresar(h, emisor, { sub: `s-${email}`, email, email_verified: true, iat: ahoraSeg, exp: ahoraSeg + 3600 })).sesion;
+      out[email] = Object.fromEntries(await Promise.all(h.sitio.rutas.map(async (r) => [r.path, (await h.pedir(r.path, { cookie: s, method: r.method })).texto])));
+    }
+    return out;
+  } finally { if (h) await h.cerrar(); await emisor.cerrar(); }
+}
+
+test('T7 Fuga_TituloDelPedido_SoloSuDueno', async () => {
+  const { raiz, modelo, espejo, repos } = fuentesConMarcadores();
+  try {
+    const p = await inicioDe(modelo, espejo, repos, [A, B]);
+    assert.ok(p[A]['/'].includes('TITULO-PEDIDO-A &lt;b&gt;negrita&lt;/b&gt;'), 'A ve el título de su pedido, escapado');
+    assert.ok(!p[A]['/'].includes('<b>negrita</b>'), 'el HTML del título no llega crudo');
+    assert.deepStrictEqual(Object.entries(p[A]).filter(([, t]) => t.includes('TITULO-PEDIDO-B')).map(([r]) => r), [], 'A nunca ve el título de B');
+    assert.ok(p[B]['/'].includes('TITULO-PEDIDO-B'), 'B ve el título del suyo');
+    assert.deepStrictEqual(Object.entries(p[B]).filter(([, t]) => t.includes('TITULO-PEDIDO-A')).map(([r]) => r), [], 'B nunca ve el de A');
+  } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
+test('T8 Fuga_ProyectoSinMedir_SoloDondeTrabaja', async () => {
+  const noMedidos = { proyectos_no_medidos: [{ proyecto: 'Proyecto Solo B', motivo: 'MOTIVO-LIBRE-DEL-PROYECTO' }] };
+  const { raiz, modelo, espejo, repos } = fuentesConMarcadores({ noMedidos });
+  try {
+    const p = await inicioDe(modelo, espejo, repos, [A, B, LEAD]);
+    assert.match(p[B]['/'], /No se pudo medir esta noche: Proyecto Solo B/, 'B trabaja en ese proyecto: lo ve nombrado');
+    assert.ok(!Object.values(p[A]).some((t) => t.includes('Proyecto Solo B')), 'A no trabaja ahí: no lo ve');
+    assert.match(p[LEAD]['/'], /No se pudo medir esta noche: Proyecto Solo B/, 'quien mantiene lo ve');
+    for (const q of [A, B, LEAD]) assert.ok(!Object.values(p[q]).some((t) => t.includes('MOTIVO-LIBRE-DEL-PROYECTO')), `${q}: el motivo de la plataforma nunca sale`);
+  } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
+test('T8 Fuga_ProductosNoDeclarados', async () => {
+  // A tiene un pedido asignado en el proyecto donde sólo trabaja B: un pedido no le declara ese producto
+  const pedidosExtra = [{ id: 9103, proyecto: 'Proyecto Solo B', tipo: 'Task', estado: 'New', asignado: A, dias_en_estado: 1, enlace: 'https://dev.example/wi/edit/9103', dependencias: false }];
+  const { raiz, modelo, espejo, repos } = fuentesConMarcadores({ pedidosExtra });
+  try {
+    const p = await inicioDe(modelo, espejo, repos, [A, B]);
+    assert.deepStrictEqual(Object.entries(p[A]).filter(([, t]) => /Producto Solo B|Repo Solo B/.test(t)).map(([r]) => r), [], 'A no ve el producto de B en ninguna ruta');
+    assert.ok(p[A]['/'].includes('#9103'), 'su pedido sí lo ve (Inicio sale de su identidad)');
+    assert.ok(p[B]['/proyectos'].includes('Producto Solo B'), 'B, que lo tiene declarado, lo ve');
+  } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
 });

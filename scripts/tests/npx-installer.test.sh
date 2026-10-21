@@ -87,6 +87,9 @@ tycon_note() { [ -d "$(TYCON_DIR)" ] && echo "ℹ️  npx-installer: tras $2 que
 installed_ok() { [ "$(estado_kind)" = release ] && [ -f "$(TYCON_DIR)/harness/version.json" ] && [ -f "$(TYCON_DIR)/harness/scripts/setup/harness.js" ]; }
 requests() { grep -c -- "$1" "$LAB_RELEASE_LOG" 2>/dev/null || true; }
 log_lines() { wc -l < "$LAB_RELEASE_LOG" | tr -d ' '; }
+# el paquete siempre baja la punta (info/refs y codeload) antes de que el instalador del árbol decida: «sin instalar nada» se
+# mide por las consultas a la API, que sólo hace `install` (el paquete no la usa sin permiso)
+api_lines() { grep -c '"host":"api"' "$LAB_RELEASE_LOG" 2>/dev/null || true; }
 tmp_left() { ls -d "$LAB_TMP"/tycon-harness-* 2>/dev/null | wc -l | tr -d ' '; }
 # run_npx <opciones…> — npx con el paquete armado, sin terminal (el --yes de npm va ANTES del nombre: no pregunta npx)
 run_npx() { env -u TYCON_GITHUB_TOKEN "$REAL_NPX" --yes --package "$TGZ" tycon-harness --repo "$REPO" "$@" < /dev/null; }
@@ -122,8 +125,8 @@ else no "T1 process.execPath (rc $RC, node de mentira: $(grep 'scripts/setup/har
 # ══ T6 / T41 · la máquina ya instalada: mira la punta y dice «al día», sin bajar nada (el cierre, AC 35) ════════════
 : > "$LAB_RELEASE_LOG"
 run_npx > "$BASE/t6.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && grep -q 'al día' "$BASE/t6.out" && grep -q '2026.10.08.1' "$BASE/t6.out" && grep -qF "$(TYCON_DIR)/harness" "$BASE/t6.out" && [ "$(requests 'info/refs')" = 1 ] && [ "$(requests '/tar.gz/')" = 0 ] && [ "$(grep -c '"host":"api"' "$LAB_RELEASE_LOG")" = 0 ]; then
-  ok "T6/T41/8.46 T16 con el arnés ya instalado y la misma punta: dice «al día» con el lugar y la versión; una sola consulta (info/refs), nada bajado"
+if [ "$RC" -eq 0 ] && grep -q 'al día' "$BASE/t6.out" && ! grep -q '2026.10.08.1' "$BASE/t6.out" && grep -qF "$(TYCON_DIR)/harness" "$BASE/t6.out" && [ "$(requests 'info/refs')" = 1 ] && [ "$(requests '/tar.gz/')" = 1 ] && [ "$(api_lines)" = 0 ]; then
+  ok "T6/T41/8.46 T16 con el arnés ya instalado y la misma punta: dice «al día» con el lugar y sin número de versión; el paquete mira la punta y baja el árbol (info/refs y codeload, una vez) y nadie instala nada"
 else no "T6 máquina instalada al día (rc $RC, info/refs $(requests 'info/refs'), tar.gz $(requests '/tar.gz/')): $(brief "$BASE/t6.out")"; fi
 STATE_F="$LAB_HOME/.claude/.tycon-pipeline/harness-state.json"
 state_commit() { node -e 'try{const s=require(process.argv[1]);console.log((s.sources.find((x)=>x.name==="harness")||{}).commit||"")}catch{console.log("")}' "$STATE_F"; }
@@ -132,18 +135,18 @@ ino() { node -e 'console.log(require("fs").statSync(process.argv[1]).ino)' "$(TY
 INO0="$(ino)"
 LAB_PTY_DELAY=4 run_ix_tty n > "$BASE/t41n.out" 2>&1; RC=$?
 LAB_PTY_DELAY=4 run_ix_tty '' > "$BASE/t41e.out" 2>&1; RC2=$?
-if [ "$RC" -eq 0 ] && [ "$RC2" -eq 0 ] && grep -q '¿Actualizo? \[s/N\]' "$BASE/t41n.out" && grep -q 'no actualicé' "$BASE/t41n.out" && grep -q 'no actualicé' "$BASE/t41e.out" && grep -qE 'node "[^"]+/harness\.js" update --yes' "$BASE/t41n.out" && [ "$(state_commit)" != "$TIP" ] && [ "$(ino)" = "$INO0" ]; then
+if [ "$RC" -eq 0 ] && [ "$RC2" -eq 0 ] && grep -q '¿Actualizo? \[s/N\]' "$BASE/t41n.out" && grep -q 'no actualicé' "$BASE/t41n.out" && grep -q 'no actualicé' "$BASE/t41e.out" && grep -qF 'npx @tyconsa/harness@latest' "$BASE/t41n.out" && [ "$(state_commit)" != "$TIP" ] && [ "$(ino)" = "$INO0" ]; then
   ok "T41 con una versión nueva: pregunta «¿Actualizo? [s/N]»; «n» y Enter salen 0 «no actualicé» con la línea que aplica (update --yes), y el árbol instalado queda el mismo"
 else no "T41 «n»/Enter (rc $RC/$RC2, inodo $INO0 → $(ino)): $(brief "$BASE/t41n.out" 400) · $(brief "$BASE/t41e.out" 200)"; fi
 run_ix > "$BASE/t41t.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && grep -q 'hay una versión nueva' "$BASE/t41t.out" && ! grep -q 'Actualizo' "$BASE/t41t.out" && grep -qE 'node "[^"]+/harness\.js" update --yes' "$BASE/t41t.out" && [ "$(state_commit)" != "$TIP" ]; then
-  ok "T41 sin terminal: no pregunta, dice que hay una versión nueva y la línea de update, sale 0"
+if [ "$RC" -eq 0 ] && grep -q 'hay una versión nueva' "$BASE/t41t.out" && ! grep -q 'Actualizo' "$BASE/t41t.out" && grep -qF 'npx @tyconsa/harness@latest' "$BASE/t41t.out" && [ "$(state_commit)" != "$TIP" ]; then
+  ok "T41 sin terminal: no pregunta, dice que hay una versión nueva y cómo actualizar (npx en una terminal), sale 0"
 else no "T41 sin terminal (rc $RC): $(brief "$BASE/t41t.out" 400)"; fi
 # «s» con la política de FÁBRICA («ask», sin TYCON_UPDATE_APPLY): el sí tiene que aplicar, no sólo mirar (pase adversarial,
 # clase 15: `update` sin --yes salía 3 sin cambiar nada); y «y» vale como sí, como en «¿Instalo?» (clase 10)
 LAB_PTY_DELAY=4 harness_lab_pty s env -u TYCON_GITHUB_TOKEN -u TYCON_UPDATE_APPLY "$REAL_NODE" "$PKG/index.js" --repo "$REPO" > "$BASE/t41s.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && grep -q '¿Actualizo?' "$BASE/t41s.out" && [ "$(state_commit)" = "$TIP" ] && ! grep -q "bajo $REPO" "$BASE/t41s.out"; then
-  ok "T41 con «s» y la política de fábrica: corre el update del árbol instalado y lo aplica (el estado queda en la punta nueva), sin bajar el arnés de cero"
+if [ "$RC" -eq 0 ] && grep -q '¿Actualizo?' "$BASE/t41s.out" && [ "$(state_commit)" = "$TIP" ] && ! grep -q 'Para quién es\|¿Instalo?' "$BASE/t41s.out"; then
+  ok "T41 con «s» y la política de fábrica: corre el update del árbol bajado y lo aplica (el estado queda en la punta nueva), sin reinstalar de cero"
 else no "T41 con «s» (rc $RC, estado $(state_commit | cut -c1-7), punta ${TIP:0:7}): $(brief "$BASE/t41s.out" 500)"; fi
 harness_lab_publish_stable 2026.10.09.2 >/dev/null 2>&1; TIP="$(harness_lab_remote_head main)"
 LAB_PTY_DELAY=4 harness_lab_pty y env -u TYCON_GITHUB_TOKEN -u TYCON_UPDATE_APPLY "$REAL_NODE" "$PKG/index.js" --repo "$REPO" > "$BASE/t41y.out" 2>&1; RC=$?
@@ -153,16 +156,17 @@ else no "T41 con «y» (rc $RC, estado $(state_commit | cut -c1-7), punta ${TIP:
 t42() { # t42 <nombre> <descripción> <env…>
   local name="$1" what="$2" rc; shift 2
   env -u TYCON_GITHUB_TOKEN "$@" "$REAL_NODE" "$PKG/index.js" --repo "$REPO" < /dev/null > "$BASE/t42-$name.out" 2>&1; rc=$?
-  if [ "$rc" -eq 0 ] && grep -q 'no pude mirar si hay una versión nueva' "$BASE/t42-$name.out" && ! grep -q 'al día' "$BASE/t42-$name.out" && grep -qE 'harness\.js" update' "$BASE/t42-$name.out"; then ok "T42 $what: sale 0 diciendo que no pudo mirar, con la línea de update, sin decir «al día»"
+  # el paquete es quien mira la punta (con las dos rutas, la pública y la API): si no puede, sale 1 con la causa y nunca dice «al día»
+  if [ "$rc" -eq 1 ] && grep -qE 'sin red|GitHub contestó|certificado' "$BASE/t42-$name.out" && ! grep -q 'al día' "$BASE/t42-$name.out"; then ok "T42 $what: sale 1 con la causa, sin decir «al día»"
   else no "T42 $what (rc $rc): $(brief "$BASE/t42-$name.out" 400)"; fi
 }
-t42 nonet 'sin red' TYCON_RELEASE_GIT=http://127.0.0.1:9
+t42 nonet 'sin red' TYCON_RELEASE_GIT=http://127.0.0.1:9 TYCON_RELEASE_API=http://127.0.0.1:9
 node -e 'const s=require("http").createServer((q,r)=>{r.writeHead(500);r.end("roto")});s.listen(0,"127.0.0.1",()=>require("fs").writeFileSync(process.argv[1],String(s.address().port)))' "$BASE/500b.port" & P500B=$!
 for _ in $(seq 1 30); do [ -s "$BASE/500b.port" ] && break; sleep 0.1; done
-t42 five 'GitHub contesta 500' TYCON_RELEASE_GIT="http://127.0.0.1:$(cat "$BASE/500b.port")"
+t42 five 'GitHub contesta 500' TYCON_RELEASE_GIT="http://127.0.0.1:$(cat "$BASE/500b.port")" TYCON_RELEASE_API="http://127.0.0.1:$(cat "$BASE/500b.port")"
 kill "$P500B" 2>/dev/null; wait "$P500B" 2>/dev/null
 cp "$STATE_F" "$BASE/state.bak"
-node -e 'const f=process.argv[1],fs=require("fs");const s=JSON.parse(fs.readFileSync(f,"utf8"));s.sources=s.sources.map((x)=>Object.assign({},x,{kind:"clone"}));fs.writeFileSync(f,JSON.stringify(s,null,2))' "$STATE_F"
+node -e 'const f=process.argv[1],fs=require("fs");const s=JSON.parse(fs.readFileSync(f,"utf8"));s.sources=s.sources.map((x)=>Object.assign({},x,{kind:"tree"}));fs.writeFileSync(f,JSON.stringify(s,null,2))' "$STATE_F"
 run_ix > "$BASE/t42clon.out" 2>&1; RC=$?
 cp "$BASE/state.bak" "$STATE_F"
 if [ "$RC" -eq 0 ] && grep -q 'instalado desde un clon' "$BASE/t42clon.out" && ! grep -q 'al día' "$BASE/t42clon.out" && grep -qE 'harness\.js" update' "$BASE/t42clon.out"; then ok "T42 instalado desde un clon: lo dice, con la línea de update, sin comparar"
@@ -178,14 +182,14 @@ else no "T42 estado sin commit (rc $RC): $(brief "$BASE/t42roto.out" 400)"; fi
 node -e 'const f=process.argv[1],fs=require("fs");const s=JSON.parse(fs.readFileSync(f,"utf8"));s.sources=s.sources.map((x)=>x.name==="harness"?Object.assign({},x,{ref:"otra-rama"}):x);fs.writeFileSync(f,JSON.stringify(s,null,2))' "$STATE_F"
 run_ix > "$BASE/t42rama.out" 2>&1; RC=$?
 cp "$BASE/state.bak" "$STATE_F"
-if [ "$RC" -eq 0 ] && grep -q 'la rama otra-rama no aparece' "$BASE/t42rama.out" && ! grep -q 'al día' "$BASE/t42rama.out"; then ok "T42 una rama del estado que no está en el repo: «no pude mirar» con la causa (no «GitHub contestó 200»)"
+if [ "$RC" -eq 0 ] && grep -q 'sigue .* (otra-rama)' "$BASE/t42rama.out" && ! grep -q 'al día' "$BASE/t42rama.out"; then ok "T42 una rama del estado que no es main: no se compara con la punta de main (no «al día»), con la línea de update"
 else no "T42 rama que no está (rc $RC): $(brief "$BASE/t42rama.out" 300)"; fi
 # un certificado que no se puede verificar al mirar la punta (un proxy de la empresa sin NODE_EXTRA_CA_CERTS) es «no pude
 # mirar», con la línea de update y salida 0, como sin red (pase adversarial, clase 16)
 if command -v openssl >/dev/null 2>&1 && openssl req -x509 -newkey rsa:2048 -nodes -keyout "$BASE/t42.key" -out "$BASE/t42.crt" -days 1 -subj '/CN=127.0.0.1' >/dev/null 2>&1; then
   node -e 'const fs=require("fs");const s=require("https").createServer({key:fs.readFileSync(process.argv[1]),cert:fs.readFileSync(process.argv[2])},(q,r)=>{r.writeHead(200);r.end("x")});s.listen(0,"127.0.0.1",()=>fs.writeFileSync(process.argv[3],String(s.address().port)))' "$BASE/t42.key" "$BASE/t42.crt" "$BASE/t42tls.port" & PTLS=$!
   for _ in $(seq 1 30); do [ -s "$BASE/t42tls.port" ] && break; sleep 0.1; done
-  t42 cert 'certificado sin verificar' TYCON_RELEASE_GIT="https://127.0.0.1:$(cat "$BASE/t42tls.port")"
+  t42 cert 'certificado sin verificar' TYCON_RELEASE_GIT="https://127.0.0.1:$(cat "$BASE/t42tls.port")" TYCON_RELEASE_API=http://127.0.0.1:9
   if grep -q 'certificado' "$BASE/t42-cert.out"; then ok "T42 el certificado sin verificar se nombra como la causa"; else no "T42 la causa del certificado: $(brief "$BASE/t42-cert.out" 300)"; fi
   kill "$PTLS" 2>/dev/null; wait "$PTLS" 2>/dev/null
 else echo "⏭ npx-installer: T42 (certificado) NO MEDIDO — no hay openssl para armar el certificado de juguete"; fi
@@ -201,11 +205,11 @@ for kind in sin-git git-roto; do
 done
 # con el arnés ya instalado, «dar de alta mi organización» no es «ya está»: corre team-init del árbol INSTALADO, sin red
 # (sin terminal, el alta pide --name y sale 2: lo que mide que llegó a correr)
-N0="$(log_lines)"
+N0="$(api_lines)"
 run_ix --audience org > "$BASE/t6org.out" 2>&1; RC=$?
-if [ "$RC" -eq 2 ] && grep -q 'falta el nombre de la organización' "$BASE/t6org.out" && ! grep -q 'ya está instalado' "$BASE/t6org.out" && [ "$(log_lines)" = "$N0" ]; then
-  ok "T6/T18 con el arnés ya instalado y --audience org: corre harness.js team-init del árbol instalado, sin bajar nada"
-else no "T6 instalada + --audience org (rc $RC, pedidos $(($(log_lines) - N0))): $(brief "$BASE/t6org.out")"; fi
+if [ "$RC" -eq 2 ] && grep -q 'falta el nombre de la organización' "$BASE/t6org.out" && ! grep -q 'ya está instalado' "$BASE/t6org.out" && [ "$(api_lines)" = "$N0" ]; then
+  ok "T6/T18 con el arnés ya instalado y --audience org: corre harness.js team-init del árbol bajado, sin instalar nada"
+else no "T6 instalada + --audience org (rc $RC, consultas a la API $(($(api_lines) - N0))): $(brief "$BASE/t6org.out")"; fi
 
 # ══ T2 · las opciones llegan tal cual; --dry-run no escribe ════════════════════════════════════════════════════════
 harness_lab_release_fresh_home; H0="$(harness_lab_home_hash)"
@@ -280,7 +284,7 @@ else no "8.46 T11 --dry-run (rc $RC): $(brief "$BASE/t11.out" 400)"; fi
 # (T14) sin terminal y sin --yes (las URL con credencial se arman con ${A}: escrita entera, el freno de publicación la lee como un correo): 2 con la línea exacta, sin bajar nada
 fresh846; : > "$LAB_RELEASE_LOG"
 run_ix --packs none > "$BASE/t14.out" 2>&1; RC=$?
-if [ "$RC" -eq 2 ] && grep -qF "corré npx @tyconsa/harness@latest --repo $REPO --packs none --yes" "$BASE/t14.out" && [ "$(log_lines)" = 0 ] && [ ! -d "$(TYCON_DIR)" ]; then
+if [ "$RC" -eq 2 ] && grep -qF "corré npx @tyconsa/harness@latest --repo $REPO --packs none --yes" "$BASE/t14.out" && [ "$(api_lines)" = 0 ] && [ ! -d "$(TYCON_DIR)" ]; then
   ok "8.46 T14 sin terminal ni --yes: sale 2 con la línea exacta (con las opciones que vinieron), sin bajar nada"
 else no "8.46 T14 sin terminal (rc $RC, pedidos $(log_lines)): $(brief "$BASE/t14.out" 400)"; fi
 A="@"; run_ix --team "https://persona:CREDENCIAL-DE-LAB${A}dev.azure.com/acme/proy/_git/perfil" > "$BASE/t14red.out" 2>&1; RC=$?
@@ -296,7 +300,7 @@ else no "8.46 T14 credencial en --team=URL, --repo o mayúsculas (rc $RC/$RC2/$R
 # (T12) sin Claude Code ni Codex: 1 con las órdenes, sin bajar nada; con --tool no se mira
 harness_lab_tools none; harness_lab_tools_fresh_home; fresh846; : > "$LAB_RELEASE_LOG"
 run_ix --yes > "$BASE/t12.out" 2>&1; RC=$?
-if [ "$RC" -eq 1 ] && grep -q 'no encontré Claude Code ni Codex' "$BASE/t12.out" && grep -qF 'https://claude.ai/install' "$BASE/t12.out" && grep -qF 'chatgpt.com/codex/install' "$BASE/t12.out" && [ "$(log_lines)" = 0 ] && [ ! -d "$(TYCON_DIR)" ]; then
+if [ "$RC" -eq 1 ] && grep -q 'no encontré Claude Code ni Codex' "$BASE/t12.out" && grep -qF 'https://claude.ai/install' "$BASE/t12.out" && grep -qF 'chatgpt.com/codex/install' "$BASE/t12.out" && [ "$(api_lines)" = 0 ] && [ ! -d "$(TYCON_DIR)" ]; then
   ok "8.46 T12 sin agente de código: sale 1 con las órdenes de Claude Code y Codex, sin bajar nada"
 else no "8.46 T12 sin agente (rc $RC, pedidos $(log_lines)): $(brief "$BASE/t12.out" 400)"; fi
 run_ix --tool codex --dry-run > "$BASE/t12tool.out" 2>&1; RC=$?
@@ -316,7 +320,7 @@ harness_lab_team_server || no "T17 el servidor de juguete con los dos repos no a
 harness_lab_release_control "{ \"auth\": \"none\", \"auth_by_repo\": { \"$ORG/example-team\": \"token:permiso-del-equipo-de-laboratorio\" } }"
 harness_lab_release_fresh_home; : > "$LAB_RELEASE_LOG"
 run_ix --team "$ORG/example-team" --profile minimal --yes > "$BASE/t4team.out" 2>&1; RC=$?
-if [ "$RC" -eq 1 ] && grep -q "$ORG/example-team" "$BASE/t4team.out" && grep -q 'github.com/settings/' "$BASE/t4team.out" && [ "$(requests '/tar.gz/')" = 0 ] && [ "$(requests '/tarball/')" = 0 ] && [ ! -d "$(TYCON_DIR)" ]; then
+if [ "$RC" -eq 1 ] && grep -q "$ORG/example-team" "$BASE/t4team.out" && grep -q 'github.com/settings/' "$BASE/t4team.out" && [ "$(api_lines)" = 0 ] && [ "$(requests '/tarball/')" = 0 ] && [ ! -d "$(TYCON_DIR)" ]; then
   ok "T4 con --team a un repo del equipo que no se lee, sin terminal: sale 1 nombrándolo con la acción, ANTES de bajar nada"
 else no "T4 --team privado sin permiso (rc $RC, tar.gz $(requests '/tar.gz/')): $(brief "$BASE/t4team.out" 400)"; fi
 harness_lab_release_fresh_home; : > "$LAB_RELEASE_LOG"
@@ -344,7 +348,7 @@ RESET_T=$(( $(date +%s) + 2700 )); HORA_T="$(node -e 'const d=new Date(Number(pr
 harness_lab_release_control "{ \"auth\": \"none\", \"auth_by_repo\": { \"$ORG/example-team\": \"token:permiso-del-equipo-de-laboratorio\" }, \"ratelimit\": true, \"ratelimit_reset\": $RESET_T }"
 harness_lab_release_fresh_home; : > "$LAB_RELEASE_LOG"
 env TYCON_GITHUB_TOKEN="$TEAM_PERM" "$REAL_NODE" "$PKG/index.js" --repo "$REPO" --team "$ORG/example-team" --profile minimal --yes < /dev/null > "$BASE/t4teamlimit.out" 2>&1; RC=$?
-if [ "$RC" -eq 1 ] && grep -q "example-team.*hasta las $HORA_T" "$BASE/t4teamlimit.out" && [ "$(requests '/tar.gz/')" = 0 ] && [ "$(requests '/tarball/')" = 0 ] && [ ! -d "$(TYCON_DIR)" ]; then
+if [ "$RC" -eq 1 ] && grep -q "hasta las $HORA_T" "$BASE/t4teamlimit.out" && [ "$(requests '/tar.gz/')" = 0 ] && [ "$(requests '/tarball/')" = 0 ] && [ ! -d "$(TYCON_DIR)" ]; then
   ok "T4/T26 el tope de la API al mirar el repo del equipo: sale 1 nombrándolo y diciendo hasta qué hora, sin bajar nada"
 else no "T4 tope al mirar el equipo (rc $RC): $(brief "$BASE/t4teamlimit.out" 400)"; fi
 harness_lab_release_control '{ "auth": "none" }'
@@ -355,7 +359,7 @@ for bad in "--repo ../$NAME" "--repo $ORG/.." "--repo ./." "--team $ORG/.." "--t
   run_ix $bad --yes > "$BASE/t1dots.out" 2>&1; RC=$?
   if [ "$RC" -ne 2 ]; then DOTS_OK=0; DOTS_BAD="${DOTS_BAD} «${bad}» rc ${RC}: $(brief "$BASE/t1dots.out" 160);"; fi
 done
-if [ "$DOTS_OK" = 1 ] && [ "$(log_lines)" = 0 ] && [ ! -d "$(TYCON_DIR)" ]; then ok "T1 --repo/--team con un segmento «.» o «..» (GitHub y Azure) salen 2 sin tocar la red"
+if [ "$DOTS_OK" = 1 ] && [ "$(api_lines)" = 0 ] && [ ! -d "$(TYCON_DIR)" ]; then ok "T1 --repo/--team con un segmento «.» o «..» (GitHub y Azure) salen 2 sin tocar la red"
 else no "T1 segmentos de puntos (pedidos $(log_lines)):$DOTS_BAD"; fi
 # la cadena completa install → alta, con el nombre CONTESTADO en la terminal: --audience org instala y el alta
 # escribe los tres archivos. El ejemplo del alta: el repo del equipo de juguete, ya público, con los tres archivos del
@@ -434,7 +438,7 @@ for t in brew apt apt-get sudo winget; do printf '#!/bin/sh\necho "%s $*" >> "%s
 harness_lab_release_fresh_home; : > "$LAB_RELEASE_LOG"; H0="$(harness_lab_home_hash)"
 env -u TYCON_GITHUB_TOKEN PATH="$LAB/path-notar" "$REAL_NODE" "$PKG/index.js" --repo "$REPO" --yes < /dev/null > "$BASE/t8.out" 2>&1; RC=$?
 case "$(uname -s)" in Darwin) WANT='brew install' ;; *) WANT='tar' ;; esac
-if [ "$RC" -eq 1 ] && grep -q "falta tar.*$WANT" "$BASE/t8.out" && grep -q 'no lo corro' "$BASE/t8.out" && [ ! -e "$PKG_CALLS" ] && [ "$(log_lines)" = 0 ] && [ "$(harness_lab_home_hash)" = "$H0" ]; then
+if [ "$RC" -eq 1 ] && grep -q "falta tar.*$WANT" "$BASE/t8.out" && grep -q 'no lo corro' "$BASE/t8.out" && [ ! -e "$PKG_CALLS" ] && [ "$(api_lines)" = 0 ] && [ "$(harness_lab_home_hash)" = "$H0" ]; then
   ok "T8 sin tar: sale 1 nombrándolo con su comando sugerido, sin correrlo, sin bajar nada y con la HOME igual"
 else no "T8 sin tar (rc $RC, gestores: $(cat "$PKG_CALLS" 2>/dev/null | tr '\n' ' ')): $(brief "$BASE/t8.out" 400)"; fi
 
@@ -443,7 +447,7 @@ else no "T8 sin tar (rc $RC, gestores: $(cat "$PKG_CALLS" 2>/dev/null | tr '\n' 
 harness_lab_release_fresh_home; : > "$LAB_RELEASE_LOG"
 mkdir -p "$LAB_HOME/.claude/.tycon-pipeline" && printf '{ "tree": "cortado' > "$LAB_HOME/.claude/.tycon-pipeline/harness-state.json"
 run_ix --profile minimal --yes > "$BASE/t7state.out" 2>&1; RC=$?
-if [ "$RC" -eq 1 ] && grep -q 'harness-state.json' "$BASE/t7state.out" && grep -q 'no se lee' "$BASE/t7state.out" && [ "$(log_lines)" = 0 ] && [ ! -e "$(TYCON_DIR)/harness" ]; then
+if [ "$RC" -eq 1 ] && grep -q 'harness-state.json' "$BASE/t7state.out" && grep -q 'no se lee' "$BASE/t7state.out" && [ "$(api_lines)" = 0 ] && [ ! -e "$(TYCON_DIR)/harness" ]; then
   ok "T7 un estado del arnés que no se lee: sale 1 nombrándolo, sin red y sin instalar encima"
 else no "T7 estado ilegible (rc $RC, pedidos $(log_lines)): $(brief "$BASE/t7state.out" 300)"; fi
 rm -f "$LAB_HOME/.claude/.tycon-pipeline/harness-state.json"

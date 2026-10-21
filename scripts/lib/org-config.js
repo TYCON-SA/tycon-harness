@@ -78,6 +78,9 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'aplicar', titulo: 'Los cambios de un mantenedor', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.auto_apply']), idCorto: 'operations', necesita: ['site'] }),
   // las fichas del tablero nocturno que el sitio no muestra (la lista es la de scripts/site/tabs/cards.js)
   Object.freeze({ id: 'fichas', titulo: 'Fichas que muestra el sitio', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.hidden_cards']), idCorto: 'operations', necesita: ['site'] }),
+  // el pedido de trabajo de una vulnerabilidad: su tipo, los campos fijos y los de cada gravedad. Un lector
+  // que no conoce `work_items` deja la sección en «todavía no sabe leer»
+  Object.freeze({ id: 'pedidos', titulo: 'Pedidos de vulnerabilidades', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['work_items'], idCorto: 'operations', necesita: ['work_items'] }),
   // cómo se mantiene al día el sitio: «automático» o «sólo aviso», en la misma pestaña que el sitio
   Object.freeze({ id: 'aldia', titulo: 'Cómo se actualiza el sitio', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.update']), idCorto: 'operations', necesita: ['site'] }),
   // dos partes de team-repos.json con su propia sección (tanda C): dónde corren las suites al mergear (story 7.28) y el
@@ -952,11 +955,12 @@ function pantalla(idioma = 'es') {
     instalacion: { t: T('pantalla.perfilDeInstalacion'), d: T('pantalla.cuantoInstalaElArnesEn'), corto: T('pantalla.instalacion') },
     hilos: { t: T('pantalla.conversacionesDeLasCorridas'), d: T('pantalla.siElSitioBajaTambien'), corto: T('pantalla.conversaciones') },
     fichas: { t: T('pantalla.fichasQueMuestraElSitio'), d: T('pantalla.lasFichasDelTablero'), corto: T('pantalla.fichas') },
+    pedidos: { t: T('pantalla.pedidosDeVulnerabilidades'), d: T('pantalla.pedidosDeVulnerabilidadesAyuda'), corto: T('pantalla.pedidosDeVulnerabilidades') },
     aplicar: { t: T('pantalla.losCambiosDeUnMantenedor'), d: T('pantalla.siUnCambioQuePropone'), corto: T('pantalla.losCambiosDeUnMantenedor') },
     aldia: { t: T('pantalla.comoSeActualizaElSitio'), d: T('pantalla.siElSitioSePone'), corto: T('pantalla.actualizacionDelSitio') },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'integraciones', 'hilos'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'integraciones', 'hilos'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -989,6 +993,7 @@ function pantalla(idioma = 'es') {
     people: T('pantalla.palabraPersonas'), machines: T('pantalla.maquinas'), projects: T('pantalla.proyectos'), person: T('pantalla.persona'), reported_sha256: T('pantalla.correoInformado'), confirmed_by: T('pantalla.confirmadaPor'), confirmed_on: T('pantalla.confirmadaEl'), add: T('pantalla.suma'), remove: T('pantalla.saca'),
     owners: T('pantalla.palabraResponsables'), reviewers: T('pantalla.revisores'), default: T('pantalla.porDefecto'), by_project: T('pantalla.porProyecto'), dependencies: T('pantalla.dependencias'), watcher: T('pantalla.vigilante'),
     deployments: T('pantalla.palabraDespliegues'), products: T('pantalla.palabraProductos'), staging: T('pantalla.prueba'), production: T('pantalla.produccion'), pipeline: T('pantalla.pipeline'), stages: T('pantalla.pasos'), environment: T('pantalla.entorno'), workflow: T('pantalla.workflow'),
+    work_items: T('pantalla.pedidosDeVulnerabilidades'), type: T('pantalla.pedidosTipo'), fixed_fields: T('pantalla.pedidosCamposFijos'), by_severity: T('pantalla.pedidosPorGravedad'),
     notify: T('pantalla.avisoDiario2'), channel: T('pantalla.palabraCanal'), thresholds: T('pantalla.palabraUmbrales'), direction: T('pantalla.mejorSiEs'), ok_min: T('pantalla.verdeDesde'), ok_max: T('pantalla.verdeHasta'), bad_max: T('pantalla.rojoHasta'), bad_min: T('pantalla.rojoDesde'),
     merge_suites: T('pantalla.pruebasAlMergear2'), rule: T('pantalla.regla'), full_tests_pipeline: T('pantalla.pipelineDeLasPruebasCompletas'), models: T('pantalla.palabraModelos'), mandatory_ceiling: T('pantalla.techoObligatorio'), ceiling: T('pantalla.techo'), reviewer: T('pantalla.revisor'), reviewers_reloop: T('pantalla.revisoresDeLaSegundaVuelta'), adversarial: T('pantalla.paseAdversarial'), helpers: T('pantalla.ayudantes'), session: T('pantalla.sesion'), model: T('pantalla.modelo'), heavy: T('pantalla.pesado'), fable_question: T('pantalla.preguntaAntesDeUsarFable'), low: T('pantalla.liviano'), normal: T('pantalla.normal'),
     wait_notice: T('pantalla.avisoDeEspera2'), minutes: T('pantalla.minutos'), coverage: T('pantalla.coberturaDeLasPruebas2'), min_touched_lines_pct: T('pantalla.porcentajeMinimoDeLasLineas'), review: T('pantalla.vueltasDeRevisores2'), max_rounds: T('pantalla.topeDeVueltas'), blocking_prefixes: T('pantalla.prefijosDeSeguridadODatos'), public: T('pantalla.repoPublico'), profile: T('pantalla.repoDelEquipo'), operations: T('pantalla.repoDeOperaciones'), org: T('pantalla.organizacion'), project: T('pantalla.proyecto'), repo: T('pantalla.repo'), repos: T('pantalla.palabraRepos'), platform: T('pantalla.plataforma'),
@@ -1296,16 +1301,40 @@ function pantalla(idioma = 'es') {
       conf.appendChild(li);
     });
     box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.confirmadas') }), Object.keys(machines).length ? conf : el('p', { class: 'muted', text: T('pantalla.ninguna') })));
+    // Lo que ve cada persona es sólo lo declarado (add). Los «quitados» (remove) de antes ya no hacen nada: se avisa
+    // una vez y salen del borrador, así el próximo Proponer los limpia del archivo.
+    var proyectos = d.people.projects || {};
+    Object.keys(proyectos).forEach(function (k) {
+      var f = proyectos[k];
+      if (!f || typeof f !== 'object' || f.remove === undefined) return;
+      ex.quitadosViejos = true;
+      delete f.remove;
+      if (!Object.keys(f).length) delete proyectos[k];
+    });
     var donde = el('ul', { class: 'renglones' });
     (ex.personas || []).forEach(function (p) {
-      var fix = (d.people.projects || {})[p.correo] || {};
+      // la clave que ya tiene en el archivo (otro de sus correos, o con mayúsculas); sin ninguna, su primer correo
+      var clave = p.clave || p.correo;
+      var fix = (d.people.projects || {})[clave] || {};
+      var declarados = Array.isArray(fix.add) ? fix.add : [];
+      var deLaPersona = function () { d.people.projects = d.people.projects || {}; var f = d.people.projects[clave] = d.people.projects[clave] || {}; f.add = Array.isArray(f.add) ? f.add : []; return f; };
       var agregar = el('input', { placeholder: T('pantalla.producto2'), 'aria-label': T('pantalla.producto') });
-      donde.appendChild(el('li', {}, el('span', { class: 'quien', text: p.correo }), el('span', { class: 'dato', text: T('pantalla.deducido') + ((p.deducidos || []).join(', ') || T('pantalla.nada2')) + T('pantalla.seAgrega') + ((fix.add || []).join(', ') || T('pantalla.nada2')) + T('pantalla.seQuita') + ((fix.remove || []).join(', ') || T('pantalla.nada2')) + (p.caida ? T('pantalla.susMaquinasNoMandanNoticias') : '') }),
-        el('span', { class: 'acc' }, agregar,
-          el('button', { class: 'sec', type: 'button', text: T('pantalla.agregar'), onclick: function () { var v = agregar.value.trim(); if (!v) return; d.people.projects = d.people.projects || {}; var f = d.people.projects[p.correo] = d.people.projects[p.correo] || {}; f.add = f.add || []; f.add.push(v); render(); } }),
-          el('button', { class: 'sec', type: 'button', text: T('pantalla.quitar'), onclick: function () { var v = agregar.value.trim(); if (!v) return; d.people.projects = d.people.projects || {}; var f = d.people.projects[p.correo] = d.people.projects[p.correo] || {}; f.remove = f.remove || []; f.remove.push(v); render(); } }))));
+      var acciones = el('span', { class: 'acc' });
+      declarados.forEach(function (prod) {
+        acciones.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.quitar'), 'data-producto': prod, 'aria-label': T('pantalla.quitar') + ' ' + prod, onclick: function () { var f = deLaPersona(); f.add = f.add.filter(function (x) { return x !== prod; }); if (!f.add.length) delete d.people.projects[clave]; render(); } }));
+      });
+      (p.sugeridos || []).filter(function (s2) { return declarados.indexOf(s2) < 0; }).forEach(function (prod) {
+        acciones.appendChild(el('span', { class: 'dato', text: T('pantalla.sugerido') + prod }));
+        acciones.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.aceptar'), 'data-producto': prod, onclick: function () { var f = deLaPersona(); if (f.add.indexOf(prod) < 0) f.add.push(prod); render(); } }));
+      });
+      acciones.appendChild(agregar);
+      acciones.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.agregar'), onclick: function () { var v = agregar.value.trim(); if (!v) return; var f = deLaPersona(); if (f.add.indexOf(v) < 0) f.add.push(v); render(); } }));
+      donde.appendChild(el('li', {}, el('span', { class: 'quien', text: p.correo }), el('span', { class: 'dato', text: T('pantalla.ve') + (declarados.join(', ') || T('pantalla.nada2')) + (p.caida ? T('pantalla.susMaquinasNoMandanNoticias') : '') }), acciones));
     });
-    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.enQueProyectosTrabajaCada') }), el('p', { class: 'sub-d', text: T('pantalla.elSitioLoDeduceDe') }), (ex.personas || []).length ? donde : el('p', { class: 'muted', text: T('pantalla.nadieTodavia') })));
+    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.enQueProyectosTrabajaCada') }), el('p', { class: 'sub-d', text: T('pantalla.elSitioLoDeduceDe') }));
+    if (ex.quitadosViejos) sub.appendChild(aviso('warn', T('pantalla.quitadosViejos'), T('pantalla.quitadosViejosDetalle')));
+    sub.appendChild((ex.personas || []).length ? donde : el('p', { class: 'muted', text: T('pantalla.nadieTodavia') }));
+    box.appendChild(sub);
     return box;
   }
   // los nombres de los umbrales, como los titula el tablero; uno que no está acá se muestra con su clave
@@ -1865,6 +1894,50 @@ function pantalla(idioma = 'es') {
       d.wait_notice.minutes = numOTexto(v);
     }, 'wait_notice.minutes', pr, { inputmode: 'numeric' }));
   }
+  // los pedidos de vulnerabilidades: el tipo, los campos fijos y una fila por gravedad, cada campo con su
+  // nombre (la referencia, como «Microsoft.VSTS.Common.Priority») y su valor. Todo lo escrito lo valida el lector al
+  // revisar; los comentarios «__…» del archivo se conservan y no se muestran
+  var GRAVEDADES = [['critical', T('pantalla.gravedadCritica')], ['high', T('pantalla.gravedadAlta')], ['moderate', T('pantalla.gravedadMedia')], ['low', T('pantalla.gravedadBaja')]];
+  function camposDePedido(titulo, ayuda, mapa, set, p, pr) {
+    var m = esObjeto(mapa) ? mapa : {};
+    var box = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: titulo }), ayuda ? el('p', { class: 'sub-d', text: ayuda }) : null);
+    var nombres = Object.keys(m).filter(function (k) { return k.indexOf('__') !== 0; });
+    if (!nombres.length) box.appendChild(el('p', { class: 'muted', text: T('pantalla.pedidosSinCampos') }));
+    // renombrar un campo arma el mapa de nuevo, en el mismo orden: el nombre vigente vive en ref
+    // un nombre que ya tiene otro campo de la lista no se aplica (pisaría su valor): se dice junto al campo
+    var reArmar = function (viejo, nuevo, valor) { if (nuevo !== viejo && Object.prototype.hasOwnProperty.call(m, nuevo)) return false; var out = {}; Object.keys(m).forEach(function (k) { if (k === viejo) out[nuevo] = valor; else out[k] = m[k]; }); m = out; set(m); return true; };
+    nombres.forEach(function (k) {
+      var ref = { k: k };
+      var aviso = el('div', { class: 'err', 'data-path': p + '.' + k + '.repetido' });
+      box.appendChild(el('div', { class: 'fila quitar' },
+        campo(T('pantalla.pedidosCampo'), k, function (v) { var ok = reArmar(ref.k, v, m[ref.k]); if (ok) ref.k = v; aviso.textContent = ok ? '' : T('pantalla.pedidosCampoRepetido'); }, p + '.' + k, pr, { placeholder: 'Microsoft.VSTS.Common.Priority' }),
+        campo(T('pantalla.pedidosValor'), m[k], function (v) { m[ref.k] = numOTexto(v); set(m); }, p + '.' + k + '.valor', pr),
+        quitar(function () { delete m[ref.k]; set(m); render(); })));
+      box.appendChild(aviso);
+    });
+    box.appendChild(el('button', { class: 'mas', type: 'button', text: '+ ' + T('pantalla.pedidosAgregarCampo'), onclick: function () { var n = ''; while (Object.prototype.hasOwnProperty.call(m, n)) n += ' '; m[n] = ''; set(m); render(); } }));
+    problemasEn(pr, p).forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
+    return box;
+  }
+  function editorPedidos(s, d, pr) {
+    var w = function () { if (!esObjeto(d.work_items)) d.work_items = {}; return d.work_items; };
+    // una parte que queda vacía se saca: no se propone un «{}»
+    var limpiar = function () { var x = d.work_items; if (!esObjeto(x)) return; ['fixed_fields', 'by_severity'].forEach(function (k) { if (esObjeto(x[k]) && !Object.keys(x[k]).length) delete x[k]; }); if (!Object.keys(x).length) delete d.work_items; };
+    var actual = esObjeto(d.work_items) ? d.work_items : {};
+    var box = el('div', { class: 'pila' });
+    box.appendChild(campo(T('pantalla.pedidosTipo'), actual.type, function (v) { if (v === '') { if (esObjeto(d.work_items)) delete d.work_items.type; } else w().type = v; limpiar(); }, 'work_items.type', pr, { placeholder: T('pantalla.pedidosTipoEjemplo') }));
+    box.appendChild(el('p', { class: 'sub-d', text: T('pantalla.pedidosTipoAyuda') }));
+    box.appendChild(camposDePedido(T('pantalla.pedidosCamposFijos'), T('pantalla.pedidosCamposFijosAyuda'), actual.fixed_fields, function (m) { w().fixed_fields = m; limpiar(); }, 'work_items.fixed_fields', pr));
+    var gs = esObjeto(actual.by_severity) ? actual.by_severity : {};
+    var tabla = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.pedidosPorGravedad') }), el('p', { class: 'sub-d', text: T('pantalla.pedidosPorGravedadAyuda') }));
+    GRAVEDADES.forEach(function (g) {
+      tabla.appendChild(camposDePedido(g[1], '', gs[g[0]], function (m) { var x = w(); if (!esObjeto(x.by_severity)) x.by_severity = {}; if (Object.keys(m).length) x.by_severity[g[0]] = m; else delete x.by_severity[g[0]]; limpiar(); }, 'work_items.by_severity.' + g[0], pr));
+    });
+    problemasEn(pr, 'work_items.by_severity').forEach(function (x) { tabla.appendChild(el('div', { class: 'err', text: x.message })); });
+    box.appendChild(tabla);
+    box.appendChild(restoYTexto(s, d, pr, 'work_items', T('pantalla.pedidosComoTexto')));
+    return box;
+  }
   // el umbral de cobertura: un porcentaje entero de 1 a 100; vacío, el de siempre (75)
   function editorCobertura(s, d, pr) {
     var c = esObjeto(d.coverage) ? d.coverage : {};
@@ -1985,7 +2058,7 @@ function pantalla(idioma = 'es') {
       el('p', { class: 'sub-d', text: T('pantalla.tecIdiomaVacio') })));
     return box;
   }
-  var EDITORES = { tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, revision: editorRevision, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, pruebaAMano: editorPruebaAMano, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', T('pantalla.elCanalComoTexto')); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, revision: editorRevision, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, pruebaAMano: editorPruebaAMano, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', T('pantalla.elCanalComoTexto')); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada

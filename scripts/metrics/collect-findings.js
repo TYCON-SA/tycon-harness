@@ -478,29 +478,31 @@ function recolectar({ raiz, salida, catalogo, revisores, hoy, dryRun, fuentes, b
       duenosPorRegla.get(r.regla).push(r.dueno);
     }
 
-    let raizReal = rutaRaiz;
+    // todas las carpetas de repos de la máquina (puede haber más de una); declarada a mano, la de la opción o la variable
+    let raices = rutaRaiz ? String(rutaRaiz).split(path.delimiter).filter(Boolean) : null;
     let fuenteRaiz = rutaRaiz ? 'declarada' : null;
-    if (!raizReal) {
-      // 🔴 La interfaz real es resolveReposRoot().root (la primera versión llamaba a una que no existe).
+    if (!raices) {
       try {
         const r = require('../lib/repos-root.js').resolveReposRoot();
-        raizReal = r && r.root;
+        raices = (r && r.roots) || [];
         fuenteRaiz = r && r.fuente;
       } catch (e) { throw new NoMedido(`no pude resolver la raíz de repos (${e.message})`); }
-      if (!raizReal) throw new NoMedido('la raíz de repos vino vacía');
+      if (!raices.length) throw new NoMedido('la raíz de repos vino vacía');
     }
-    try {
-      if (!fs.statSync(raizReal).isDirectory()) throw new NoMedido('la raíz de repos no es un directorio');
-    } catch (e) {
-      if (e instanceof NoMedido) throw e;
-      throw new NoMedido(`no pude leer la raíz de repos (${e.code || e.message})`);
+    for (const raizReal of raices) {
+      try {
+        if (!fs.statSync(raizReal).isDirectory()) throw new NoMedido(`la raíz de repos ${raizReal} no es un directorio`);
+      } catch (e) {
+        if (e instanceof NoMedido) throw e;
+        throw new NoMedido(`no pude leer la raíz de repos ${raizReal} (${e.code || e.message})`);
+      }
     }
 
     const reloj = () => {
       if (Date.now() - inicio > tope) throw new NoMedido(`se agotó el tiempo (${tope} ms): una recolección a medias no se sube`);
     };
     const cuenta = { carpetas_ilegibles: 0, worktrees_salteados: 0, enlaces_salteados: 0 };
-    const repos = buscarRepos(raizReal, cuenta, reloj);
+    const repos = [...new Set(raices.flatMap((r) => buscarRepos(r, cuenta, reloj)))];
     if (repos.length === 0) throw new NoMedido('no encontré ningún repo bajo la raíz (¿raíz equivocada?)');
 
     const baldes = Object.fromEntries(BALDES.map((b) => [b, 0]));

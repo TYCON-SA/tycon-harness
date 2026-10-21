@@ -294,8 +294,8 @@ function clon(archivos) {
 const opsBase = (extra = {}) => ({ version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD] }, ...extra });
 
 /** Las fuentes de la 2.23 de mentira, con los clones y el espejo que la pestaña lee. */
-function fuentesCon({ ops, perfil = null, config, informados = null, repos = null, espejo = null, estado = {}, indice = null, escritura = null }) {
-  const f = H.fuentesFijas({ config: config || opsBase(), personas: { informados, repos } });
+function fuentesCon({ ops, perfil = null, config, informados = null, repos = null, espejo = null, estado = {}, indice = null, escritura = null, modelo = {} }) {
+  const f = H.fuentesFijas({ config: config || opsBase(), modelo, personas: { informados, repos } });
   const base = f.estado;
   f.estado = () => ({ ...base(), ...estado });
   // con la copia de operaciones: la carpeta de la foto con su índice, y el clon de escritura aparte
@@ -524,8 +524,10 @@ test('T9 Personas_ConfirmarEscribeQuienYCuando_YQuitar @story-2.29 @ac-9', async
 });
 
 test('T10 Personas_CorreccionDeDondeTrabaja @story-2.29 @ac-9', async () => {
+  // las personas de la sección salen de «Quién entra al sitio»: las dos están en la lista
+  const lista = [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [DEV] }, { role: 'dev', emails: ['caido@acme.example'] }];
   const machines = { 'maq-a': { person: DEV, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' }, 'maq-x': { person: 'caido@acme.example', reported_sha256: sha('otro@acme.example'), confirmed_by: LEAD, confirmed_on: '2026-10-01' } };
-  const config = opsBase({ people: { machines } });
+  const config = opsBase({ site: { access: lista }, people: { machines } });
   const ops = clon({ 'operations.json': config });
   const inf = H.informados({ 'maq-a': null, 'maq-x': 'nuevo@acme.example' });
   await conPestana({ fuentes: fuentesCon({ ops, config, informados: inf }) }, async ({ h, entrar, token, escribir }) => {
@@ -551,6 +553,99 @@ test('T10 Personas_CorreccionDeDondeTrabaja @story-2.29 @ac-9', async () => {
       assert.strictEqual(!p.soloLectura, editable);
     });
   }
+});
+
+// ── «En qué proyectos trabaja cada uno»: las personas de la lista de acceso, lo deducido como sugerencia ──────────
+
+test('T5 Personas_DeLaListaDeAcceso', async () => {
+  const SIN = 'sin.maquina@acme.example';
+  const config = opsBase({ site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [SIN, 'otro.correo@acme.example'] }] },
+    people: { projects: { 'declarada@acme.example': { add: ['Gama'] } } } });
+  const ops = clon({ 'operations.json': config });
+  await conPestana({ fuentes: fuentesCon({ ops, config }) }, async ({ h, entrar }) => {
+    const p = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'personas');
+    const correos = p.extras.personas.map((x) => x.correo);
+    assert.ok(correos.includes(SIN), 'una persona de la lista sin máquina aparece (por su primer correo)');
+    assert.ok(!correos.includes('otro.correo@acme.example'), 'una vez por persona, no por correo');
+    assert.ok(correos.includes('declarada@acme.example'), 'quien ya tiene algo declarado también');
+    assert.ok(!correos.includes(LEAD), 'quien mantiene ve todo: no se le declaran productos');
+  });
+});
+
+test('T6 Sugerencia_SeAcepta', async () => {
+  // del lado del servidor: lo deducido que no está declarado llega como sugerencia
+  const config = opsBase({ site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [DEV] }] }, people: { projects: { [DEV]: { add: ['Alfa'] } } } });
+  const modelo = {
+    pedidos: { estado: 'medido', fecha: HOY, lista: [{ id: 1, proyecto: 'Beta', tipo: 'Bug', estado: 'Active', asignado: DEV, dias: 1 }, { id: 2, proyecto: 'Alfa', tipo: 'Bug', estado: 'Active', asignado: DEV, dias: 1 }] },
+    productos: [{ producto: 'Alfa', proyectos: ['Alfa'], rutas: [] }, { producto: 'Beta', proyectos: ['Beta'], rutas: [] }],
+  };
+  const repos = [{ producto: 'Alfa', ruta: 'Alfa/Web', ado: 'Alfa/Web' }, { producto: 'Beta', ruta: 'Beta/Front', ado: 'Beta/Front' }];
+  const ops = clon({ 'operations.json': config });
+  await conPestana({ fuentes: fuentesCon({ ops, config, modelo, repos, informados: H.informados({}) }) }, async ({ h, entrar }) => {
+    const p = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'personas');
+    const dev = p.extras.personas.find((x) => x.correo === DEV);
+    assert.deepStrictEqual(dev.sugeridos, ['Beta'], 'Beta por su pedido; Alfa ya está declarado');
+  });
+  // en la pantalla: «sugerido: Beta» con Aceptar, que lo suma a lo declarado; Quitar saca de lo declarado
+  const seccion = { id: 'personas', titulo: 'personas', repo: 'operaciones', estado: 'cargado', soloLectura: false, motivo: null, problems: [], avisos: [],
+    borrador: { people: { projects: { [DEV]: { add: ['Alfa'] } } } }, extras: { personas: [{ correo: DEV, sugeridos: ['Beta'], caida: false }] } };
+  const pa = await pantallaFalsa([seccion]);
+  assert.strictEqual(pa.error, null);
+  assert.ok(pa.textoDe('personas').includes('sugerido: Beta'), pa.textoDe('personas'));
+  await pa.click('Aceptar', 'personas');
+  assert.ok(!pa.textoDe('personas').includes('sugerido: Beta'), 'aceptada deja de ser sugerencia');
+  await pa.click('Revisar cambios', 'personas');
+  const rev = pa.pedidos.filter((x) => x.ruta === '/api/config/revisar').pop();
+  assert.deepStrictEqual(rev.cuerpo.borrador.people.projects[DEV].add, ['Alfa', 'Beta'], 'Aceptar la sumó a lo declarado');
+  // «Quitar» sobre un declarado lo saca de add (y no escribe un remove)
+  const pq = await pantallaFalsa([{ ...seccion, borrador: { people: { projects: { [DEV]: { add: ['Alfa', 'Beta'] } } } }, extras: { personas: [{ correo: DEV, sugeridos: [], caida: false }] } }]);
+  const quitar = pq.todo(pq.sec('personas')).find((n) => n.tag === 'button' && n.textContent === 'Quitar' && n.attrs['data-producto'] === 'Beta');
+  assert.ok(quitar, 'cada declarado tiene su Quitar');
+  quitar.on.click({});
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  await pq.click('Revisar cambios', 'personas');
+  const rq = pq.pedidos.filter((x) => x.ruta === '/api/config/revisar').pop();
+  assert.deepStrictEqual(rq.cuerpo.borrador.people.projects[DEV], { add: ['Alfa'] });
+});
+
+// el pase adversarial lo reprodujo: lo declarado bajo otro correo de la persona, o con mayúsculas, la pantalla no lo veía
+test('T11 Personas_DeclaradoBajoOtroCorreo_SeVeYSeEdita', async () => {
+  const OTRO = 'segundo.correo@acme.example';
+  const machines = { 'maq-b': { person: OTRO, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' } };
+  const config = opsBase({ site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [DEV, OTRO] }] },
+    people: { machines, projects: { 'Segundo.Correo@acme.example': { add: ['Alfa'] } } } });
+  const ops = clon({ 'operations.json': config });
+  const modelo = { productos: [{ producto: 'Alfa', proyectos: ['Alfa'], rutas: [] }] };
+  const inf = H.informados({ 'maq-b': 'otro.distinto@acme.example' });
+  await conPestana({ fuentes: fuentesCon({ ops, config, modelo, informados: inf }) }, async ({ h, entrar }) => {
+    const p = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'personas');
+    const fila = p.extras.personas.find((x) => x.correo === DEV);
+    assert.strictEqual(fila.clave, 'Segundo.Correo@acme.example', 'la pantalla edita la clave que ya existe, con su grafía');
+    assert.strictEqual(fila.caida, true, 'la máquina de su otro correo cuenta (informa otro correo: no confirmada)');
+  });
+  const seccion = { id: 'personas', titulo: 'personas', repo: 'operaciones', estado: 'cargado', soloLectura: false, motivo: null, problems: [], avisos: [],
+    borrador: { people: { projects: { 'Segundo.Correo@acme.example': { add: ['Alfa'] } } } }, extras: { personas: [{ correo: DEV, clave: 'Segundo.Correo@acme.example', sugeridos: ['Beta'], caida: false }] } };
+  const pa = await pantallaFalsa([seccion]);
+  assert.ok(pa.textoDe('personas').includes('ve: Alfa'), pa.textoDe('personas'));
+  await pa.click('Aceptar', 'personas');
+  await pa.click('Revisar cambios', 'personas');
+  const rev = pa.pedidos.filter((x) => x.ruta === '/api/config/revisar').pop();
+  assert.deepStrictEqual(rev.cuerpo.borrador.people.projects, { 'Segundo.Correo@acme.example': { add: ['Alfa', 'Beta'] } }, 'una sola clave, la que ya estaba');
+});
+
+test('T7 QuitadosViejos_SeAvisanYSeLimpian', async () => {
+  const seccion = { id: 'personas', titulo: 'personas', repo: 'operaciones', estado: 'cargado', soloLectura: false, motivo: null, problems: [], avisos: [],
+    borrador: { people: { projects: { [DEV]: { add: ['Alfa'], remove: ['Beta'] }, 'solo.quitados@acme.example': { remove: ['Gama'] } } } },
+    extras: { personas: [{ correo: DEV, sugeridos: [], caida: false }] } };
+  const p = await pantallaFalsa([seccion]);
+  assert.strictEqual(p.error, null);
+  assert.ok(p.textoDe('personas').includes('hay quitados viejos que ya no hacen nada'), p.textoDe('personas'));
+  await p.click('Revisar cambios', 'personas');
+  const rev = p.pedidos.filter((x) => x.ruta === '/api/config/revisar').pop();
+  assert.deepStrictEqual(rev.cuerpo.borrador.people.projects, { [DEV]: { add: ['Alfa'] } }, 'el borrador que se propone ya no trae los quitados');
+  // sin quitados, no hay aviso
+  const sin = await pantallaFalsa([{ ...seccion, borrador: { people: { projects: { [DEV]: { add: ['Alfa'] } } } }, extras: { personas: [{ correo: DEV, sugeridos: [], caida: false }] } }]);
+  assert.ok(!sin.textoDe('personas').includes('quitados viejos'));
 });
 
 test('T11 Sitio_MantenedoresVaciaNoSePropone_CorreoMalFormado @story-2.29 @ac-10', async () => {
@@ -2220,7 +2315,7 @@ test('T17 2.36-Seccion_FichasQueMuestraElSitio @story-2.36 @ac-2 — la sección
   const vuelta = ORG.revisar({ seccion: 'fichas', texto: r.texto, borrador: { site: { maintainers: [LEAD], refresh_minutes: 15 } }, lectores: { 'operations-config.js': OPS } });
   assert.strictEqual(vuelta.texto, ORG.formatJson(base));
   const codigo = pantallaEnCastellano();
-  assert.match(codigo, /\['avisos', 'Avisos y la noche', \['canal', 'espera', 'umbrales', 'fichas'\]/);
+  assert.match(codigo, /\['avisos', 'Avisos y la noche', \['canal', 'espera', 'umbrales', 'fichas', 'pedidos'\]/);
   assert.match(codigo, /fichas: editorFichas/);
   // en el sitio, la sección llega con las 25 fichas y su casilla
   const ops = clon({ 'operations.json': opsBase() });
@@ -3114,4 +3209,122 @@ test('T2 OrgConfig_TelegramText_PerMachine @story-8.75 @ac-2 — el texto dice q
   assert.match(es, /Telegram/);
   assert.doesNotMatch(es, /CodeGraph/);
   assert.match(ORG.pantalla(), /pantalla\.telegramSeConfigura/);
+});
+
+// ── los pedidos de vulnerabilidades ────────────────────────────────────────────────────────────────────────────────
+// T16 y T17, los criterios de la sección; T16b y T17b, los casos que encontró el pase adversarial (comentarios con «_»,
+// nombres con «key» dentro de una palabra, Severity que fija el pedido y el nombre repetido en el editor)
+
+const WI_RIESGO = { type: 'Riesgo', fixed_fields: { 'Custom.Categoria': 'Seguridad', 'Custom.Probabilidad': 3 }, by_severity: { critical: { 'Custom.Impacto': 5 }, high: { 'Custom.Impacto': 4 }, moderate: { 'Custom.Impacto': 3 }, low: { 'Custom.Impacto': 2 } } };
+
+test('T16 Config_SeccionPedidosMuestraTipoCamposYTabla_EsEn @story-4.9 @ac-10 — la sección muestra el tipo, los campos fijos y una fila por gravedad, en castellano y en inglés', async () => {
+  // 🔴 rojo: la sección no existe, va en otra pestaña, le falta el tipo, un campo fijo o una gravedad, o no tiene su texto en inglés.
+  const s = ORG.seccionPorId('pedidos');
+  assert.ok(s, 'hay una sección de los pedidos de vulnerabilidades');
+  assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.claves, s.idCorto, s.necesita], ['Pedidos de vulnerabilidades', 'operations.json', 'operaciones', 'operations-config.js', ['work_items'], 'operations', ['work_items']]);
+  assert.strictEqual(ORG.lectorSabe(OPS, s), true, 'el lector de hoy conoce la clave');
+  assert.strictEqual(ORG.lectorSabe({ ...OPS, KEYS: OPS.KEYS.filter((k) => k !== 'work_items') }, s), false, 'uno anterior deja la sección en «todavía no sabe leer»');
+  assert.match(pantallaEnCastellano(), /\['avisos', 'Avisos y la noche', \['canal', 'espera', 'umbrales', 'fichas', 'pedidos'\]/);
+  for (const idioma of ['es', 'en']) {
+    const sec = SEC('pedidos', { borrador: { work_items: WI_RIESGO } });
+    const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), sec], idioma, hash: '#seccion-pedidos' });
+    assert.strictEqual((r.panelDe('seccion-pedidos') || { attrs: {} }).attrs.id, 'pestana-avisos', `${idioma}: en «Avisos y la noche»`);
+    const caja = r.creados.filter((n) => n.attrs.id === 'seccion-pedidos').pop();
+    const nodos = []; const walk = (x) => { nodos.push(x); (x.hijos || []).forEach(walk); }; walk(caja);
+    const rutas = nodos.filter((n) => n.tag === 'input').map((n) => n.attrs['data-path']);
+    for (const p of ['work_items.type', 'work_items.fixed_fields.Custom.Categoria', 'work_items.fixed_fields.Custom.Probabilidad']) assert.ok(rutas.includes(p), `${idioma}: el campo ${p}`);
+    for (const g of OPS.SEVERITIES) assert.ok(rutas.includes(`work_items.by_severity.${g}.Custom.Impacto`), `${idioma}: la fila de ${g}`);
+    const texto = nodos.map((n) => n.textContent || '').join(' | ');
+    assert.match(texto, idioma === 'es' ? /Pedidos de vulnerabilidades/ : /Vulnerability work items/);
+    assert.match(texto, idioma === 'es' ? /Crítica/ : /Critical/, `${idioma}: la gravedad dicha en el idioma`);
+  }
+  // el editor cambia el borrador con la forma del lector: renombrar un campo lo mueve, un número va como número
+  const sec = SEC('pedidos', { borrador: { work_items: JSON.parse(JSON.stringify(WI_RIESGO)) } });
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), sec], hash: '#seccion-pedidos' });
+  const ultimo = (pred) => { const caja = r.creados.filter((n) => n.attrs.id === 'seccion-pedidos').pop(); const out = []; const walk = (x) => { if (pred(x)) out.push(x); (x.hijos || []).forEach(walk); }; walk(caja); return out.pop(); };
+  ultimo((n) => n.tag === 'input' && n.attrs['data-path'] === 'work_items.by_severity.high.Custom.Impacto.valor').on.input({ target: { value: '5' } });
+  ultimo((n) => n.tag === 'input' && n.attrs['data-path'] === 'work_items.fixed_fields.Custom.Categoria').on.input({ target: { value: 'Custom.Area' } });
+  ultimo((n) => n.tag === 'button' && n.textContent === 'Revisar cambios').on.click();
+  for (let i = 0; i < 10; i++) await new Promise((x) => setImmediate(x));
+  const enviado = r.llamadas.filter((l) => /revisar/.test(l.ruta)).pop().cuerpo.borrador.work_items;
+  assert.deepStrictEqual(enviado.fixed_fields, { 'Custom.Area': 'Seguridad', 'Custom.Probabilidad': 3 });
+  assert.deepStrictEqual(enviado.by_severity.high, { 'Custom.Impacto': 5 });
+});
+
+test('T17 Config_CambioInvalidoMuestraElProblemaDelLector @story-4.9 @ac-11 — un cambio inválido da el problema del lector y no se propone; uno válido cambia sólo work_items', async () => {
+  // 🔴 rojo: un campo que fija el pedido, un valor con «@» o una gravedad inventada pasan; el problema no se ve junto a su
+  // campo; o un cambio válido toca otra parte de operations.json.
+  const base = opsBase({ owners: { default: LEAD, by_project: { 'acme/Pagos': 'pagos@acme.example' } } });
+  const rev = (work_items) => ORG.revisar({ seccion: 'pedidos', texto: ORG.formatJson(base), borrador: { work_items }, lectores: { 'operations-config.js': OPS } });
+  for (const [wi, ruta] of [
+    [{ fixed_fields: { 'System.Tags': 'x' } }, 'work_items.fixed_fields.System.Tags'],
+    [{ fixed_fields: { 'Custom.Categoria': '@/etc/passwd' } }, 'work_items.fixed_fields.Custom.Categoria'],
+    [{ by_severity: { urgente: { 'Custom.Impacto': 5 } } }, 'work_items.by_severity.urgente'],
+    [{ type: 'Riesgo; rm' }, 'work_items.type'],
+  ]) {
+    const malo = rev(wi);
+    assert.strictEqual(malo.ok, false, JSON.stringify(wi));
+    assert.ok(malo.problems.some((p) => p.path === ruta), `${JSON.stringify(wi)} → ${ruta}: ${JSON.stringify(malo.problems)}`);
+  }
+  const bien = rev(WI_RIESGO);
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  assert.strictEqual(bien.texto, ORG.formatJson({ ...base, work_items: WI_RIESGO }), 'sólo work_items cambia');
+  // la pantalla dibuja el problema junto a su campo y no ofrece proponer
+  const problems = [{ path: 'work_items.fixed_fields.System.Tags', message: 'lo fija el pedido (su identidad, su asignación o su texto): la configuración no lo pisa' }];
+  const p = await pantallaFalsa([SEC('pedidos', { borrador: { work_items: { fixed_fields: { 'System.Tags': 'x' } } }, problems })]);
+  assert.strictEqual(p.error, null);
+  assert.ok(p.textoDe('pedidos').includes(problems[0].message), 'el problema del lector se ve en la sección');
+  const campoMalo = p.todo(p.sec('pedidos')).find((n) => n.tag === 'input' && n.attrs['data-path'] === 'work_items.fixed_fields.System.Tags');
+  assert.strictEqual(campoMalo.attrs.class, 'bad', 'marcado en su campo');
+  // en el sitio: la sección llega cargada desde operations.json, con la configuración como borrador
+  const ops = clon({ 'operations.json': { ...base, work_items: WI_RIESGO } });
+  await conPestana({ fuentes: fuentesCon({ ops }) }, async ({ h, entrar, token, escribir }) => {
+    const lead = await entrar(LEAD); const tok = await token(lead);
+    const s = (await h.pedir('/api/config', { cookie: lead })).json.secciones.find((x) => x.id === 'pedidos');
+    assert.strictEqual(s.estado, 'cargado');
+    assert.deepStrictEqual(s.borrador.work_items, WI_RIESGO);
+    // el camino de pedido de siempre: lo inválido no pasa de «Revisar»; lo válido llega a «Proponer», que sin la
+    // identidad de escritura del repo de operaciones se frena recién ahí
+    const malo = (await escribir('/api/config/revisar', lead, tok, { seccion: 'pedidos', borrador: { work_items: { fixed_fields: { 'System.Tags': 'x' } } } })).json;
+    assert.strictEqual(malo.ok, false);
+    assert.ok(malo.problems.some((p) => p.path === 'work_items.fixed_fields.System.Tags'));
+    const nuevo = { work_items: { ...WI_RIESGO, type: 'Bug' } };
+    const ok = (await escribir('/api/config/revisar', lead, tok, { seccion: 'pedidos', borrador: nuevo })).json;
+    assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+    assert.deepStrictEqual(JSON.parse(ok.texto), { ...base, ...nuevo }, 'el resto de operations.json igual');
+    const pr = (await escribir('/api/config/proponer', lead, tok, { seccion: 'pedidos', texto: ok.texto, oid: s.oid })).json;
+    assert.match(pr.message, /sin identidad de escritura/);
+  });
+});
+
+test('T17b Lector_WorkItems_ComentariosSecretosYGravedad @story-4.9 @ac-11 (pase adversarial) — un «_comentario» no es un campo, «Custom.Keyword» no es un secreto y Severity lo fija el pedido', () => {
+  // 🔴 rojo: un comentario con un solo «_» invalida el archivo; un campo propio con «key» dentro de una palabra se toma
+  // por secreto; o Severity se acepta y la noche lo pisa sin avisar.
+  const doc = (work_items) => ({ version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD] }, work_items });
+  const probs = (wi) => OPS.parse(JSON.stringify(doc(wi))).problems.filter((p) => String(p.path).startsWith('work_items'));
+  assert.deepStrictEqual(probs({ type: 'Bug', _comment: 'x', fixed_fields: { _comment: 'nota', 'Custom.A': 'v' }, by_severity: { _note: 'n', high: { _comment: 'y', 'Custom.B': 2 } } }), [], 'los comentarios con «_» se aceptan en las tres partes');
+  assert.deepStrictEqual(probs({ fixed_fields: { 'Custom.Keyword': 'x', 'Custom.Monkey': 'y', 'Custom.Passage': 'z' } }), [], 'una palabra que contiene «key» o «sas» no es un secreto');
+  for (const k of ['Custom.ApiKey', 'Custom.api_token', 'Custom.Secret', 'Custom.Password', 'Custom.apikey', 'Custom.authtoken', 'Custom.clientsecret', 'Custom.Pat']) assert.match((probs({ fixed_fields: { [k]: 'x' } })[0] || {}).message || '', /forma de secreto/, k);
+  assert.match((probs({ fixed_fields: { 'Microsoft.VSTS.Common.Severity': '1 - Critical' } })[0] || {}).message || '', /lo fija el pedido/);
+  assert.strictEqual(OPS.workItemFieldOk('Microsoft.VSTS.Common.Severity', '1 - Critical'), false, 'tampoco viaja al armar el pedido');
+  assert.strictEqual(OPS.workItemFieldOk('_comment', 'nota'), false, 'un comentario no viaja');
+  assert.strictEqual(OPS.workItemFieldOk('Custom.Keyword', 'x'), true);
+});
+
+test('T16b Editor_Pedidos_NombreRepetidoYVaciar @story-4.9 @ac-10 (pase adversarial) — renombrar a un campo que ya está no lo pisa; vaciar todo saca work_items', async () => {
+  // 🔴 rojo: al tipear el nombre de otro campo de la lista se pierde su valor sin aviso, o vaciar deja «{}» en el archivo.
+  const sec = SEC('pedidos', { borrador: { work_items: { fixed_fields: { 'Custom.A': 'uno', 'Custom.B': 'dos' } } } });
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), sec], hash: '#seccion-pedidos' });
+  const caja = () => r.creados.filter((n) => n.attrs.id === 'seccion-pedidos').pop();
+  const todos = () => { const out = []; const walk = (x) => { out.push(x); (x.hijos || []).forEach(walk); }; walk(caja()); return out; };
+  const esperar = async () => { for (let i = 0; i < 10; i++) await new Promise((x) => setImmediate(x)); };
+  const revisado = async () => { todos().filter((n) => n.tag === 'button' && n.textContent === 'Revisar cambios').pop().on.click(); await esperar(); return r.llamadas.filter((l) => /revisar/.test(l.ruta)).pop().cuerpo.borrador; };
+  const nombreA = todos().find((n) => n.tag === 'input' && n.attrs['data-path'] === 'work_items.fixed_fields.Custom.A');
+  nombreA.on.input({ target: { value: 'Custom.B' } });
+  const aviso = todos().find((n) => n.attrs['data-path'] === 'work_items.fixed_fields.Custom.A.repetido');
+  assert.match(aviso.textContent, /ya está en la lista/);
+  assert.deepStrictEqual((await revisado()).work_items.fixed_fields, { 'Custom.A': 'uno', 'Custom.B': 'dos' }, 'ninguno se perdió');
+  // quitar los dos campos saca la parte y la clave entera
+  for (let i = 0; i < 2; i++) todos().filter((n) => n.tag === 'button' && n.attrs.title === 'Quitar').filter((b) => b !== undefined)[0].on.click();
+  assert.strictEqual((await revisado()).work_items, undefined, 'sin nada, sin work_items: cada proyecto con su elemento de backlog');
 });

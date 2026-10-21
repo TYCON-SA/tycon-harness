@@ -586,7 +586,7 @@ rc=$(correr)
 { [ "$rc" -eq 0 ] \
   && llamada crear 0 'arg("--title") === "Dependencia vulnerable: browserslist (high) en A/A"' \
   && llamada crear 0 'b.includes("A/A") && !b.includes("B/B") && b.includes("GHSA-73wf-abc12345") && /4 noche/.test(b) && b.includes("vulnerabilidades-pendientes.json")' \
-  && llamada crear 0 'a.some((x) => /^System\.Tags=arnes-hallazgo; ?arnes:abc12345$/.test(x))' \
+  && llamada crear 0 'a.some((x) => /^System\.Tags=arnes-hallazgo; ?arnes:abc12345; arnes-gravedad:high$/.test(x))' \
   && llamada crear 1 'b.includes("B/B") && !b.includes("A/A")' \
   && llamada comentario 0 'b.includes(`data-vss-mention="version:2.0,${process.env.BACKUP_OWNER_ID}"`) && b.includes("@Respaldo Prueba")'; } \
   && ok "T13: el Bug lleva los repos de su proyecto (no los del otro), avisos, noches, la deuda, las etiquetas y la mención" \

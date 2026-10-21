@@ -51,11 +51,13 @@ BAD=""; N_LINKS=0
 for l in "${HOME}/.claude/skills"/*; do [ -e "${l}" ] || [ -L "${l}" ] || continue; N_LINKS=$((N_LINKS + 1)); { [ -L "${l}" ] && [ -e "${l}" ]; } || BAD="${BAD} $(basename "${l}")"; done
 if [ -d "${HOME}/.claude/skills" ] && [ ! -L "${HOME}/.claude/skills" ] && [ "${N_LINKS}" -gt 0 ] && [ -z "${BAD}" ]; then ok "T46 ~/.claude/skills es una carpeta real con ${N_LINKS} enlace(s) que resuelven"
 else no "T46 ~/.claude/skills (${N_LINKS} entradas; rotas o no enlaces:${BAD:- ninguna})"; fi
-# la segunda corrida, sobre la misma HOME: «al día», sin bajar nada
-before="$(grep -c '/tar.gz/' "${N}/requests.log" 2>/dev/null || true)"
+# la segunda corrida, sobre la misma HOME: «al día», sin instalar ni actualizar nada. El paquete baja la punta siempre
+# (decide el instalador del árbol bajado): lo que se mide es que el estado del arnés instalado no cambie.
+STATE="$(find "${HOME}/.tycon" "${HOME}/.claude" -name harness-state.json -type f 2>/dev/null | head -n 1)"
+before="$([ -n "${STATE}" ] && cksum < "${STATE}" || echo sin-estado)"
 npx_run > "${OUT_DIR}/npx-again.out" 2>&1; RC=$?
-after="$(grep -c '/tar.gz/' "${N}/requests.log" 2>/dev/null || true)"
-if [ "${RC}" -eq 0 ] && grep -q 'al día' "${OUT_DIR}/npx-again.out" && [ "${before}" = "${after}" ]; then ok "T46 la segunda corrida sobre la misma máquina dice «al día» y no baja nada"
-else no "T46 la segunda corrida salió ${RC} (comprimidos pedidos: ${before} → ${after}): $(tail -n 3 "${OUT_DIR}/npx-again.out" | tr '\n' ' ')"; fi
+after="$([ -n "${STATE}" ] && cksum < "${STATE}" || echo sin-estado)"
+if [ "${RC}" -eq 0 ] && grep -q 'al día' "${OUT_DIR}/npx-again.out" && grep -q 'No cambié nada' "${OUT_DIR}/npx-again.out" && [ -n "${STATE}" ] && [ "${before}" = "${after}" ]; then ok "T46 la segunda corrida sobre la misma máquina dice «al día» y no instala ni actualiza nada"
+else no "T46 la segunda corrida salió ${RC} (estado del arnés: ${STATE:-no encontrado}; ${before} → ${after}): $(tail -n 3 "${OUT_DIR}/npx-again.out" | tr '\n' ' ')"; fi
 kill "${SERVER}" 2>/dev/null
 scenario_end npx

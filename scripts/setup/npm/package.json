@@ -1,7 +1,7 @@
 {
   "name": "@tyconsa/harness",
-  "version": "1.0.3",
-  "description": "Instalador del arnés TYCON: baja la versión publicada de GitHub, muestra el plan y pregunta antes de escribir. El arnés no viene en este paquete.",
+  "version": "1.1.0",
+  "description": "Arranque del instalador del arnés TYCON: baja la versión publicada de GitHub y le pasa el trabajo a su instalador, que muestra el plan y pregunta antes de escribir. El arnés no viene en este paquete.",
   "bin": {
     "tycon-harness": "index.js"
   },

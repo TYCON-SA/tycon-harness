@@ -6,8 +6,10 @@ El instalador del arnés TYCON, en una línea, igual en Windows, Mac y Linux:
 npx @tyconsa/harness@latest
 ```
 
-- **Qué hace**: revisa los requisitos, baja de GitHub la versión publicada del arnés a una carpeta temporal y corre su
-  `harness.js install`. El arnés **no viene en el paquete**: llega de GitHub y se verifica contra el árbol del commit.
+- **Qué hace**: baja de GitHub la versión publicada del arnés a una carpeta temporal y le pasa el trabajo al instalador
+  de ese árbol (`harness.js npx`): los requisitos, para quién, el permiso del equipo y `harness.js install`. El paquete
+  sólo arranca; por eso un cambio del instalador llega sin publicarlo de nuevo. El arnés **no viene en el paquete**:
+  llega de GitHub y se verifica contra el árbol del commit.
 - **Un solo sí**: no pregunta nada antes del plan. Instala para vos, con la instalación mínima, sin conexiones
   opcionales y sin paquete; muestra en cinco renglones lo que va a cambiar en tu máquina y espera tu
   `¿Instalo? [s/N]`. Con un «no», no queda nada. `--profile full`, `--integrations` y `--packs` lo cambian; `--team
@@ -20,7 +22,7 @@ npx @tyconsa/harness@latest
   1.0.1 se publicó a mano y no la tiene). Ojo: **npx no comprueba la firma al instalar**; se mira en la página o con
   `npm view`.
 - **Con el arnés ya instalado**: no lo reinstala. Dice si está al día o, si hay una versión nueva, pregunta
-  `¿Actualizo? [s/N]` y corre su `update`.
+  `¿Actualizo? [s/N]` y corre el `update` de la versión recién bajada.
 - **Sin npm, a mano**: `scripts/setup/get-harness.sh` (o `get-harness.ps1` en Windows) del repo público: bajarlo,
   leerlo y correrlo.
 - **Node**: hace falta Node 22 o posterior sólo para instalar; después el arnés usa su propio Node 24.

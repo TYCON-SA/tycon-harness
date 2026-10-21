@@ -27,7 +27,12 @@
 #   TYCON_AZ_FAIL=<paso>[:<patrón>][,…]   ese paso sale 1 (con el patrón: sólo si aparece en los
 #                                          argumentos o en los archivos leídos)
 #   TYCON_AZ_GARBAGE=<paso>[:<patrón>][,…]  ese paso sale 0 con texto que no es JSON
-# Pasos: version identidad wiql wi revisiones estados grupo miembros equipo iteracion crear comentario actualizar prs lote
+# Pasos: version identidad wiql wi revisiones estados categorias campos grupo miembros equipo iteracion crear comentario actualizar prs lote
+#
+# · `categorias`: `devops invoke --area wit --resource workitemtypecategories --route-parameters project=P` →
+#   `categorias-P.json`; sin fixture, un proceso cuyo elemento de backlog por defecto es el Bug.
+# · `campos`: `devops invoke --area wit --resource workitemtypesfield --route-parameters project=P type=T` →
+#   `campos-P-T.json`; sin fixture, el Bug de siempre (con Severity y ReproSteps) y cualquier otro tipo no existe.
 #
 # ── LO QUE SUMÓ LA 2.23 (los pedidos asignados, para el sitio de la organización) ───────────────────────────────
 # · `lote`: `devops invoke --area wit --resource workitemsbatch --in-file <{ids, fields}>` → `{ count, value }` con el
@@ -122,6 +127,8 @@ else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'i
 else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'wit' && String(arg('--resource')).toLowerCase() === 'wiql') paso = 'wiql';
 else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'wit' && String(arg('--resource')).toLowerCase() === 'revisions') paso = 'revisiones';
 else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'wit' && String(arg('--resource')).toLowerCase() === 'workitemtypestates') paso = 'estados';
+else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'wit' && String(arg('--resource')).toLowerCase() === 'workitemtypecategories') paso = 'categorias';
+else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'wit' && String(arg('--resource')).toLowerCase() === 'workitemtypesfield') paso = 'campos';
 else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'git' && String(arg('--resource')).toLowerCase() === 'pullrequests') paso = 'prs';
 else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'wit' && String(arg('--resource')).toLowerCase() === 'workitemsbatch') paso = 'lote';
 else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'build' && String(arg('--resource')).toLowerCase() === 'timeline') paso = 'timeline';
@@ -286,6 +293,23 @@ switch (paso) {
     const f = fixJson(`revisiones-${id}.json`, null);
     if (f) out(f);
     falla(`TF401232: el work item ${id} no existe o no tenés permiso para leerlo`);
+    break;
+  }
+  case 'categorias': {
+    // las categorías de tipos de un proyecto. Sin fixture, el mundo de las suites de antes: un proceso cuyo elemento
+    // de backlog por defecto es el Bug (así esas suites crean Bugs sin cambiar sus fixtures)
+    const rp = kv('--route-parameters');
+    out(fixJson(`categorias-${rp.project}.json`, null) || { count: 1, value: [{ referenceName: 'Microsoft.RequirementCategory', defaultWorkItemType: { name: 'Bug' } }] });
+    break;
+  }
+  case 'campos': {
+    // los campos de un tipo en un proyecto (`campos-<proyecto>-<tipo>.json`). Sin fixture: el Bug de siempre, con
+    // Severity y ReproSteps; cualquier otro tipo no existe (sale 1 con VS402323, como Azure)
+    const rp = kv('--route-parameters');
+    const f = fixJson(`campos-${rp.project}-${rp.type}.json`, null);
+    if (f) out(f);
+    if (rp.type === 'Bug') out({ count: 4, value: ['System.Title', 'System.Description', 'Microsoft.VSTS.TCM.ReproSteps', 'Microsoft.VSTS.Common.Severity'].map((referenceName) => ({ referenceName, alwaysRequired: referenceName === 'System.Title' })) });
+    falla(`VS402323: el tipo ${rp.type} no existe en el proyecto ${rp.project}`);
     break;
   }
   case 'estados': {

@@ -78,15 +78,20 @@ function consultar(db, query, timeout) {
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: timeout || 15000 });
 }
 
-const REPOS_ROOT = (() => {
-  try { return require('./repos-root.js').resolveReposRoot().root; }
+// todas las carpetas de repos de la máquina (puede haber más de una); REPOS_ROOT es la primera
+const REPOS_ROOTS = (() => {
+  try { return require('./repos-root.js').resolveReposRoot().roots || []; }
   catch (e) {
     // ~/.claude/tycon.json roto: un comando frena (story 8.3) — como CLI, con el archivo, la clave y el motivo y exit 2, no con
     // una traza (pase adversarial de la tanda B); como módulo, el que lo carga decide. Sin raíz → null y cada chequeo dice «no medido».
     if (e && e.name === 'ConfigError') { if (require.main === module) { console.error(e.message); process.exit(2); } throw e; }
-    return null;
+    return [];
   }
 })();
+const REPOS_ROOT = REPOS_ROOTS[0] || null;
+/** Con varias raíces y sin una pedida, la función corre en cada una y junta lo que da. */
+const enCadaRaiz = (override, fn, juntar) => (!override && REPOS_ROOTS.length > 1 ? juntar(REPOS_ROOTS.map((r) => fn(r))) : null);
+const juntarListas = (xs) => (xs.some((x) => x === null) ? null : [].concat(...xs));
 
 const exists = (p) => { try { fs.accessSync(p); return true; } catch { return false; } };
 const safeRead = (p) => { try { return fs.readFileSync(p, 'utf8'); } catch { return ''; } };
@@ -392,6 +397,12 @@ function pinDe(dir) {
 // Distingue TRES estados, no dos: con pin y exportando · con pin pero SIN un solo chunk (declaró y
 // nunca sincronizó — el pin engaña, el repo parece cubierto) · sin pin.
 function scanEngramRepos(rootOverride) {
+  const varias = enCadaRaiz(rootOverride, scanEngramRepos, (xs) => ({
+    pinned: [].concat(...xs.map((x) => x.pinned)), unpinned: [].concat(...xs.map((x) => x.unpinned)),
+    nuncaSincronizo: [].concat(...xs.map((x) => x.nuncaSincronizo)),
+    error: xs.map((x) => x.error).filter(Boolean).join(' · ') || null, root: REPOS_ROOT, roots: REPOS_ROOTS,
+  }));
+  if (varias) return varias;
   const root = rootOverride || REPOS_ROOT;
   // 🔴 `error` distingue "miré y no hay nada" de "no pude mirar" (2026-08-25, revisión
   // adversarial). Antes una raíz inexistente o ilegible devolvía las MISMAS listas vacías que una
@@ -407,11 +418,11 @@ function scanEngramRepos(rootOverride) {
   const mirar = (dir, etiqueta) => {
     if (!exists(path.join(dir, '.engram'))) return;
     const name = pinDe(dir);
-    if (!name) { out.unpinned.push({ repo: etiqueta, project: null }); return; }
+    if (!name) { out.unpinned.push({ repo: etiqueta, project: null, dir }); return; }
     const chunks = path.join(dir, '.engram', 'chunks');
     let n = 0;
     try { n = exists(chunks) ? fs.readdirSync(chunks).filter((f) => f.endsWith('.jsonl.gz')).length : 0; } catch {}
-    const fila = { repo: etiqueta, project: name };
+    const fila = { repo: etiqueta, project: name, dir };
     out.pinned.push(fila);
     // Sólo cuenta como "nunca sincronizó" si además es un repo git: una carpeta contenedora sin
     // .git no tiene por qué llevar chunks — los suyos viven en los sub-repos.
@@ -481,6 +492,8 @@ function scanEngramRepos(rootOverride) {
 const CROSS_CUTTING_PROJECTS = new Set(['tycon', 'tycon-claude-guides', 'agent-skills', 'tycon-global']);
 
 function engramDirsWithMultipleProjects(dbOverride, scopeOverride) {
+  const varias = enCadaRaiz(scopeOverride, (r) => engramDirsWithMultipleProjects(dbOverride, r), (xs) => juntarListas(xs) || 'nulo');
+  if (varias) return varias === 'nulo' ? null : varias;
   const db = dbOverride || path.join(HOME, '.engram', 'engram.db');
   if (!scopeOverride && !REPOS_ROOT) return null;   // sin raíz no se puede mirar: null = «no sé» (story 8.3)
   const scope = (scopeOverride || REPOS_ROOT) + path.sep;
@@ -535,6 +548,8 @@ function engramDirsWithMultipleProjects(dbOverride, scopeOverride) {
 // 11 obs varadas en el arnés y 91 en un repo del equipo, ambas invisibles hasta que alguien
 // las buscó a mano. Devuelve null si no se pudo mirar (sin sqlite3 / sin DB): "no sé" no es "está limpio".
 function engramUnexportedByRepo(rootOverride, dbOverride) {
+  const varias = enCadaRaiz(rootOverride, (r) => engramUnexportedByRepo(r, dbOverride), (xs) => juntarListas(xs) || 'nulo');
+  if (varias) return varias === 'nulo' ? null : varias;
   const db = dbOverride || path.join(HOME, '.engram', 'engram.db');
   if (!exists(db)) return null;
   const root = rootOverride || REPOS_ROOT;
@@ -614,13 +629,15 @@ function engramUnexportedByRepo(rootOverride, dbOverride) {
 // El criterio se carga tarde (sólo si hay algún repo que cruzar) para que los casos del banco que
 // no tienen repos con nombre fijado sigan sin necesitar el archivo en su fixture.
 function engramChunksSinIndexar(rootOverride) {
+  const varias = enCadaRaiz(rootOverride, engramChunksSinIndexar, (xs) => [].concat(...xs));
+  if (varias) return varias;
   const root = rootOverride || REPOS_ROOT;
   if (!root) return [{ repo: '(sin raíz)', sinIndexar: [], fantasma: [], error: 'sin raíz de repos: no medido (TYCON_REPOS_ROOT, o rutas.repos en ~/.claude/tycon.json)' }];
   const { pinned } = scanEngramRepos(rootOverride);
   const out = [];
   let criterio = null;
-  for (const { repo } of pinned) {
-    const dir = path.join(root, repo);
+  for (const { repo, dir: suDir } of pinned) {
+    const dir = suDir || path.join(root, repo);
     const base = path.join(dir, '.engram');
     if (!exists(path.join(base, 'chunks')) && !exists(path.join(base, 'manifest.json'))) continue; // repo sin memoria
     // Si el criterio no está, se DICE y se corta: devolver la lista a medias (o vacía) se leería
@@ -635,20 +652,20 @@ function engramChunksSinIndexar(rootOverride) {
       if (r.codigo === 'sin-manifest') {
         // Sin índice, NINGUNO de sus archivos es importable: se nombran todos (es el peor caso y
         // el que menos ruido hacía antes de 2026-08-25).
-        if (r.archivos) out.push({ repo, sinManifest: true, sinIndexar: r.archivosIds || [], fantasma: [] });
+        if (r.archivos) out.push({ repo, dir, sinManifest: true, sinIndexar: r.archivosIds || [], fantasma: [] });
         continue;
       }
       // Índice que declara entradas y carpeta de archivos que no está: TODAS sus entradas apuntan
       // a la nada. Se reporta como fantasmas —la forma de siempre— y no como «no pude medir»: acá
       // sí se sabe qué falta, y nombrarlo es lo único que permite arreglarlo.
-      if (r.codigo === 'sin-carpeta-chunks') { out.push({ repo, sinIndexar: [], fantasma: r.declaradosIds || [] }); continue; }
-      if (r.codigo === 'chunks-ilegibles' || r.codigo === 'ilegible') { out.push({ repo, error: r.motivo, sinIndexar: [], fantasma: [] }); continue; }
+      if (r.codigo === 'sin-carpeta-chunks') { out.push({ repo, dir, sinIndexar: [], fantasma: r.declaradosIds || [] }); continue; }
+      if (r.codigo === 'chunks-ilegibles' || r.codigo === 'ilegible') { out.push({ repo, dir, error: r.motivo, sinIndexar: [], fantasma: [] }); continue; }
       // Un índice que no parsea es su propio problema (ENGRAM-MANIFEST-1 lo cubre en el commit);
       // acá se declara y se sigue, sin inventar que hay huérfanos.
-      out.push({ repo, manifestIlegible: true, sinIndexar: [], fantasma: [] });
+      out.push({ repo, dir, manifestIlegible: true, sinIndexar: [], fantasma: [] });
       continue;
     }
-    if (r.huerfanos.length || r.fantasmas.length) out.push({ repo, sinIndexar: r.huerfanos, fantasma: r.fantasmas });
+    if (r.huerfanos.length || r.fantasmas.length) out.push({ repo, dir, sinIndexar: r.huerfanos, fantasma: r.fantasmas });
   }
   return out;
 }

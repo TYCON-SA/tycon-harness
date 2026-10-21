@@ -70,7 +70,7 @@ let audit;
 try { audit = require('./harness-audit.js'); }
 catch (e) { if (e && e.name === 'ConfigError' && require.main === module) { console.error(e.message); process.exit(2); } throw e; }
 const REPOS_ROOT = (() => {
-  try { return require('./repos-root.js').resolveReposRoot().root; }
+  try { return (require('./repos-root.js').resolveReposRoot().roots || [])[0] || null; }
   catch (e) { if (e && e.name === 'ConfigError') throw e; return null; }   // ~/.claude/tycon.json roto: un comando frena (story 8.3)
 })();
 
@@ -148,8 +148,9 @@ function planificar(opciones) {
   } catch { return { plan: [], motivo: 'no se pudo leer la tabla de sesiones (¿falta sqlite3?)' }; }
 
   const plan = [];
-  for (const { repo, project } of pinned) {
-    const dir = path.join(root, repo);
+  for (const { repo, project, dir: suDir } of pinned) {
+    // con varias carpetas de repos, la auditoría dice dónde está cada uno
+    const dir = suDir || path.join(root, repo);
     const usados = dirAProjects.get(dir);
     if (!usados) continue;
     const pin = String(project).toLowerCase();

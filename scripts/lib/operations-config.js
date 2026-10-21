@@ -37,6 +37,12 @@
 //               "brand": { "name": <texto>,                 opcional — la marca del sitio: el nombre de la organización,
 //                          "logo": <ruta en este repo, .png o .svg>, el logo (vive acá, en el repo de operaciones) y
 //                          "dark": "invert" | "keep" } },     qué hacer con él en el tema oscuro (por defecto, invertirlo)
+//     "work_items": { "type": <tipo de work item>,             opcional — el pedido de una vulnerabilidad: su tipo; si
+//                                                            no existe en un proyecto, va su elemento de backlog
+//         "fixed_fields": { <campo>: texto | número },        los campos de todos los pedidos de ese tipo
+//         "by_severity": { "critical"|"high"|"moderate"|"low": { <campo>: texto | número } } },
+//                                                            los de cada gravedad; pisan a los fijos. Sin la clave, el
+//                                                            pedido es el elemento de backlog de cada proyecto
 //     "notify": { "channel": "telegram" | "slack" | "teams" }, opcional — por dónde sale el aviso de los nocturnos
 //                                                            Sin `notify` no se manda nada. El destino
 //                                                            (el chat, el token, la dirección del webhook) va en los
@@ -47,9 +53,9 @@
 //           "reported_sha256": <64 hexadecimales> | null,    la huella del correo que informaba la máquina al confirmar
 //           "confirmed_by": <correo>,                        quién la confirmó
 //           "confirmed_on": "AAAA-MM-DD" } },                y qué día
-//       "projects": { "<correo>": {                          opcional — corrige «dónde trabaja» cada persona
-//           "add": [<producto>, …],                          productos que se suman a los deducidos
-//           "remove": [<producto>, …] } } } }              y los que se sacan (un producto no va en las dos)
+//       "projects": { "<correo>": {                          opcional — en qué productos trabaja cada persona
+//           "add": [<producto>, …],                          los productos que ve: sólo los declarados acá
+//           "remove": [<producto>, …] } } } }              se sigue leyendo sin efecto; el sitio lo limpia al proponer
 //   En `site`, una clave con forma de secreto (token, secret, sas, password, key…) es un problema en cualquier nivel: los
 //   secretos del sitio van en las variables de su plataforma.
 //   <identidad> = el nombre único de la plataforma: el principalName de Azure (el que viaja en System.AssignedTo) o
@@ -76,7 +82,10 @@
 const fs = require('fs');
 
 const VERSION = 1;
-const KEYS = ['version', 'owners', 'reviewers', 'site', 'people', 'deployments', 'notify'];
+const KEYS = ['version', 'owners', 'reviewers', 'site', 'people', 'deployments', 'notify', 'work_items'];
+// el pedido de trabajo de una vulnerabilidad: el tipo de work item y sus campos (lo lee la revisión nocturna)
+const WORK_ITEM_KEYS = ['type', 'fixed_fields', 'by_severity'];
+const SEVERITIES = ['critical', 'high', 'moderate', 'low'];
 // story 2.22: de qué sistema se leen los despliegues de cada producto. Sin nombres por defecto: todo lo declara la
 // organización (el identificador EXACTO de cada stage, o el environment de GitHub).
 const DEPLOYMENT_PROVIDERS = ['azure', 'github'];
@@ -427,6 +436,65 @@ function validate(doc) {
   if (doc.people !== undefined) problems.push(...peopleProblems(doc.people));
   if (doc.deployments !== undefined) problems.push(...deploymentsProblems(doc.deployments));
   if (doc.notify !== undefined) problems.push(...notifyProblems(doc.notify));
+  if (doc.work_items !== undefined) problems.push(...workItemsProblems(doc.work_items));
+  return problems;
+}
+
+// La referencia de un campo de work item («Custom.Algo», «Microsoft.VSTS.Common.Priority»). Los campos van como
+// argumentos de la línea de comandos de la plataforma: un nombre que empieza con «--» sería una opción.
+const WORK_ITEM_FIELD = /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_-]+)+$/;
+// el nombre de un tipo de work item, que también va a la línea de comandos y a la ruta de la API
+const WORK_ITEM_TYPE = /^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,127}$/u;
+// los que el pedido ya fija (su identidad, a quién va, su texto): la configuración no los pisa
+const WORK_ITEM_RESERVED = new Set(['system.tags', 'system.assignedto', 'system.title', 'system.description', 'system.state',
+  'system.teamproject', 'system.workitemtype', 'system.areapath', 'system.iterationpath', 'system.areaid', 'system.iterationid',
+  'microsoft.vsts.tcm.reprosteps', 'microsoft.vsts.common.severity']);
+// un nombre de campo con forma de secreto. Los términos largos cuentan en cualquier parte del nombre («Custom.authtoken»,
+// «Custom.clientsecret»); los cortos, sólo como palabra entera (partida por «.», «_», «-» y mayúsculas), para que
+// «Custom.ApiKey» lo sea y «Custom.Keyword» o «Custom.Monkey», no
+const SECRET_LONG = /token|secret|passw|credential|apikey|accesskey|bearer/i;
+const SECRET_WORD = /^(sas|pwd|key|pat)s?$/i;
+const secretField = (k) => SECRET_LONG.test(k) || String(k).replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(/[\s._-]+/).some((w) => SECRET_WORD.test(w));
+
+/** ¿Puede viajar este campo de la configuración al pedido? Las mismas reglas que valida el lector; los comentarios, no. */
+function workItemFieldOk(k, v) {
+  if (comment(k) || !WORK_ITEM_FIELD.test(k) || WORK_ITEM_RESERVED.has(k.toLowerCase()) || secretField(k)) return false;
+  if (typeof v === 'number') return Number.isFinite(v);
+  return typeof v === 'string' && v.trim() !== '' && !v.startsWith('@') && !/[\r\n]/.test(v);
+}
+
+/** Un mapa de campos de work item: referencia de campo → texto o número. Un nombre con forma de secreto no va. */
+function workItemFieldsProblems(v, at) {
+  if (!isObject(v)) return [{ path: at, message: 'tiene que ser un objeto { "<referencia de campo>": texto o número }' }];
+  const problems = [];
+  for (const [k, val] of Object.entries(v)) {
+    if (fieldComment(k, val)) continue;
+    if (!k.trim()) { problems.push({ path: at, message: 'un campo sin nombre' }); continue; }
+    if (!WORK_ITEM_FIELD.test(k)) { problems.push({ path: `${at}.${k}`, message: 'no es la referencia de un campo (como «Microsoft.VSTS.Common.Priority»)' }); continue; }
+    if (WORK_ITEM_RESERVED.has(k.toLowerCase())) { problems.push({ path: `${at}.${k}`, message: 'lo fija el pedido (su identidad, su asignación o su texto): la configuración no lo pisa' }); continue; }
+    if (secretField(k)) { problems.push({ path: `${at}.${k}`, message: 'tiene forma de secreto: los secretos no van en este archivo' }); continue; }
+    if (typeof val === 'number' && Number.isFinite(val)) continue;
+    if (!(typeof val === 'string' && val.trim())) problems.push({ path: `${at}.${k}`, message: 'tiene que ser un texto no vacío o un número' });
+    // «@» al principio hace que la línea de comandos lea un archivo; un salto de línea parte el argumento
+    else if (val.startsWith('@') || /[\r\n]/.test(val)) problems.push({ path: `${at}.${k}`, message: 'no puede empezar con «@» ni tener saltos de línea' });
+  }
+  return problems;
+}
+
+function workItemsProblems(w) {
+  if (!isObject(w)) return [{ path: 'work_items', message: 'tiene que ser un objeto { type, fixed_fields, by_severity }' }];
+  const problems = [...unknownKeys(w, WORK_ITEM_KEYS, 'work_items')];
+  // el nombre va a la línea de comandos y a la ruta de la API: sólo letras, números, espacios, «.», «-» y «_»
+  if (w.type !== undefined && !(typeof w.type === 'string' && WORK_ITEM_TYPE.test(w.type))) problems.push({ path: 'work_items.type', message: 'tiene que ser el nombre de un tipo de work item (letras, números, espacios, «.», «-», «_»)' });
+  if (w.fixed_fields !== undefined) problems.push(...workItemFieldsProblems(w.fixed_fields, 'work_items.fixed_fields'));
+  if (w.by_severity !== undefined) {
+    if (!isObject(w.by_severity)) problems.push({ path: 'work_items.by_severity', message: `tiene que ser un objeto con ${SEVERITIES.join(', ')}` });
+    else for (const [sev, campos] of Object.entries(w.by_severity)) {
+      if (fieldComment(sev, campos)) continue;
+      if (!SEVERITIES.includes(sev)) problems.push({ path: `work_items.by_severity.${sev}`, message: `gravedad desconocida (son ${SEVERITIES.join(', ')})` });
+      else problems.push(...workItemFieldsProblems(campos, `work_items.by_severity.${sev}`));
+    }
+  }
   return problems;
 }
 
@@ -456,7 +524,7 @@ function ownerFor(data, project) {
   return Object.prototype.hasOwnProperty.call(bp, project) ? bp[project] : data.owners.default;
 }
 
-module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, CARD_IDS,ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, parse, load, ownerFor };
+module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, CARD_IDS,ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, SEVERITIES, WORK_ITEM_KEYS, parse, load, ownerFor, workItemFieldOk };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

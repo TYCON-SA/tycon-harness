@@ -35,7 +35,8 @@ const norm = (c) => String(c || '').trim().toLowerCase();
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 
 const FRASE_IDENTIDAD = 'no medido: tu identidad en la plataforma no es tu correo de la organización; pedile a quien mantiene que la asocie';
-const FRASE_PROYECTOS = 'todavía no se sabe en qué proyectos trabajás: lo confirma quien mantiene el arnés';
+const FRASE_PROYECTOS = 'quien mantiene todavía no te asignó productos';
+const FRASE_INEXISTENTES = 'lo que te asignaron no está en la lista de productos: avisale a quien mantiene';
 
 /** El contexto de la regla: la configuración vigente (o el último bueno) y lo informado por las máquinas. */
 const contextoDe = (config, personas) => people.contexto({ operations: isObject(config) ? config : {}, informados: personas && isObject(personas.informados) ? personas.informados : null });
@@ -95,24 +96,48 @@ function crearReglas({ config, modelo, personas } = {}) {
     return { todas: new Set([...suyos, ...alias]), conAlias: alias.length > 0 };
   }
 
-  /** Los productos de una persona según `dondeTrabaja`; null (la frase) si no se sabe o no hay ninguno. */
+  const existentes = new Set((Array.isArray(m.productos) ? m.productos : []).filter(isObject).map((p) => p.producto));
+  /** Lo declarado en Configuración (`people.projects.<correo>.add`, con todos los correos de la persona), sólo los productos que existen. */
+  function declaradosCrudos(email) {
+    const suyos = people.correosDe(email, c);
+    const add = Object.entries(c.projects || {}).filter(([k]) => suyos.includes(norm(k)))
+      .flatMap(([, v]) => (isObject(v) && Array.isArray(v.add) ? v.add : [])).filter((p) => typeof p === 'string');
+    return [...new Set(add)];
+  }
+  function declaradosDe(email) { return declaradosCrudos(email).filter((p) => existentes.has(p)).sort(); }
+
+  /**
+   * Los productos que ve una persona: SÓLO lo declarado. Deducirlo de corridas o pedidos mostraba productos donde no
+   * trabaja (un pedido asignado alcanzaba). Sin nada declarado, null: la tabla cerrada con su frase, nunca todos.
+   */
   function proyectosDe(email) {
+    const d = declaradosDe(email);
+    return d.length ? d : null;
+  }
+
+  /** Lo deducido de sus corridas y sus pedidos que todavía no está declarado: una sugerencia para quien mantiene. */
+  function sugeridosDe(email) {
     const lista = (f) => (isObject(f) && Array.isArray(f.lista) ? f.lista : []);
     const d = people.dondeTrabaja(email, c, {
       repos: personas && Array.isArray(personas.repos) ? personas.repos : null,
       fotos: lista(m.proyectos).filter(isObject).map((x) => ({ proyecto: x.proyecto, repo: x.repo })),
-      // sin lo informado no se sabe de quién es cada corrida: no ubican productos (los pedidos y lo agregado, sí)
+      // sin lo informado no se sabe de quién es cada corrida: no sugieren productos (los pedidos, sí)
       corridas: informadosOk ? lista(m.corridas).filter(isObject).map((x) => ({ maquina: carpetaDe(x), producto: x.producto || null, cambio: null })) : [],
       pedidos: lista(m.pedidos).filter(isObject).map((x) => ({ proyecto: x.proyecto, asignado: x.asignado })),
     });
-    const productos = d.productos.map((p) => p.producto);
-    return d.estado === 'medido' && productos.length ? productos : null;
+    if (d.estado !== 'medido') return [];
+    const ya = new Set(declaradosDe(email));
+    // los deducidos salen de repos.json: son productos que existen
+    return d.productos.map((p) => p.producto).filter((p) => !ya.has(p)).sort();
   }
 
   return {
     maquina,
     identidades,
     proyectosDe,
+    sugeridosDe,
+    /** ¿Tiene algo declarado que no está en la lista de productos? Sin esto la frase diría «no te asignó», que es falso. */
+    declaradoSinExistir: (email) => declaradosCrudos(email).some((p) => !existentes.has(p)),
     /** ¿Se sabe de quién es cada máquina? Sin lo informado (o sin las uniones), nadie que no mantenga ve corridas (story 2.27). */
     quienEsQuienMedido: informadosOk,
     /** Las máquinas confirmadas de una persona (la ficha gris de quien todavía no tiene corridas, story 2.27 AC 11). */
@@ -179,7 +204,9 @@ function filtrar(modelo, quien, reglas) {
 
   const suyos = reglas.proyectosDe(quien.email);
   if (!Array.isArray(suyos)) {
-    out.proyectos = { estado: 'no_medido', codigo: 'sin_donde_trabaja', motivo: FRASE_PROYECTOS, lista: null };
+    out.proyectos = reglas.declaradoSinExistir && reglas.declaradoSinExistir(quien.email)
+      ? { estado: 'no_medido', codigo: 'declarados_inexistentes', motivo: FRASE_INEXISTENTES, lista: null }
+      : { estado: 'no_medido', codigo: 'sin_donde_trabaja', motivo: FRASE_PROYECTOS, lista: null };
     out.productos = [];
   } else {
     const set = new Set(suyos);
@@ -188,13 +215,15 @@ function filtrar(modelo, quien, reglas) {
     // el cruce es por el nombre del PROYECTO (decodificado en sources.js), como en la pestaña de quien mantiene
     const proyectosSuyos = new Set(out.productos.flatMap((p) => p.proyectos || []));
     const pr = m.proyectos || {};
-    out.proyectos = { estado: pr.estado || 'no_medido', codigo: pr.codigo || null, motivo: pr.motivo || null, fecha: pr.fecha || null,
+    out.proyectos = { estado: pr.estado || 'no_medido', codigo: pr.codigo || null, motivo: pr.motivo || null, fecha: pr.fecha || null, hay_al_dia: pr.hay_al_dia === true,
       lista: (Array.isArray(pr.lista) ? pr.lista : []).filter((x) => proyectosSuyos.has(x.proyecto)).map(copia) };
     if (m.despliegues) {
       const d = copia(m.despliegues);
       d.productos = Object.fromEntries(Object.entries(d.productos || {}).filter(([k]) => set.has(k)));
       out.despliegues = d;
     }
+    // los proyectos que la noche no pudo medir: sólo los suyos (el nombre de un proyecto ajeno es de otra persona)
+    out.pedidos.sin_medir = (Array.isArray(pedidos.sin_medir) ? pedidos.sin_medir : []).filter((x) => proyectosSuyos.has(x));
     if (m.dependencias && m.dependencias.vivas_por_proyecto) {
       out.dependencias = { estado: m.dependencias.estado, codigo: m.dependencias.codigo || null, fecha: m.dependencias.fecha || null,
         vivas_por_proyecto: Object.fromEntries(Object.entries(m.dependencias.vivas_por_proyecto).filter(([k]) => proyectosSuyos.has(k))) };

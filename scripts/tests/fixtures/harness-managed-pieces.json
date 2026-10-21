@@ -63,6 +63,7 @@
     { "kind": "hook", "id": "SessionStart:@tcg:dependencies-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "integration:nightly", "windows": true },
     { "kind": "hook", "id": "SessionStart:@tcg:dashboard-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "integration:nightly", "windows": true },
     { "kind": "hook", "id": "SessionStart:@tcg:owner-email-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "integration:mailbox", "windows": true },
+    { "kind": "hook", "id": "SessionStart:@tcg:unclosed-runs-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "integration:mailbox", "windows": true },
     { "kind": "hook", "id": "SessionStart:@tcg:produccion-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "SessionStart:@tcg:lane-llm-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "SessionStart:@tcg:engram-drift-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "integration:engram", "windows": true },

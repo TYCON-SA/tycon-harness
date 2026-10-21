@@ -2587,6 +2587,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.80 (T6 a T10): `harness.js npx`, lo que sigue a la bajada del paquete de npm (scripts/setup/harness/npx.js): requisites() por plataforma, «para quién», --team con parseTeam (GitHub y Azure) y su permiso, el agente instalado, la línea exacta sin terminal, la máquina ya instalada (al día, «¿Actualizo?» con el update del árbol que corre, team-init, install --team), un solo número de versión, y el paquete 1.0.3 de la historia contra el árbol de la rama. Un hijo con lo que toca la máquina inyectado y un GitHub de juguete. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/npx-entry.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.40, tanda A (T13 a T16): .github/workflows/npm-publish.yml leído por texto con check-public-workflow.js --publisher (disparador, permisos, acciones por sha, npm exacto ≥ 11.15.0, npm stage publish desde la carpeta del paquete, la integridad antes de publicar) y sus pasos de shell corridos con un npm de mentira: ya publicada con el mismo contenido sale 0, con otro rojo, npm viejo rojo, el paquete inexistente o sin publicador de confianza salteado en verde con aviso. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/npm-publish-workflow.test.js",
@@ -2764,6 +2770,18 @@
       "__nota": "story 2.28 (AC 30 · T42-T43): el aviso de arranque «tu máquina le informa al equipo tu correo de git» (scripts/hooks/owner-email-notice.js). Con un HOME de prueba por caso y el buzón prendido por variable: lo dice una vez con el correo y los dos comandos, calla en los arranques siguientes, lo vuelve a decir si el correo cambia, y el sello guarda la huella, nunca el correo. Calla y no sella sin user.email, con el buzón apagado, con la subida apagada, en un agente de compilación o apagado por variable; con la carpeta de estado sin permiso calla y sale 0; un git falso al frente del PATH nunca se llama. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/owner-email-notice.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.67 (tanda A): las corridas que quedaron sin cerrar. El recolector las busca en los repos de las sesiones (no en una raíz) y toma sólo las de esta máquina (nunca entraron a git, o el gates.log las nombra), sin cierre, sin marcador vivo y de más de 24 h; el volcado trae sólo lo que hay y lo demás «no medido»; una vez por run dir; upload-runs los deja antes de contar; la vista dice «sin cerrar»; el aviso de arranque, una vez por día. Hogares, sesiones y repos de juguete; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/unclosed-runs.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.67 (tanda B): la carpeta de los repos puede ser más de una y estar fuera de la carpeta personal. Fuera del home votan todos los ancestros menos la raíz del disco; rutas.repos y TYCON_REPOS_ROOT aceptan varias y `set` guarda la lista; root es la primera de roots; las sesiones dan una raíz por grupo (desde la segunda, con al menos dos repos); las repetidas o anidadas se sacan; sin raíz, el motivo trae el comando; los que recorren repos ven los de todas. Hogares, configuraciones y repos de juguete; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/repos-roots.test.js",
       "requiere": []
     },
     {

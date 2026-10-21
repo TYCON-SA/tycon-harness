@@ -74,14 +74,15 @@ function mainRepoOf(dir) {
 function knownRepos(cwd) {
   const found = new Map();
   const add = (p) => { const m = mainRepoOf(p); if (m && !found.has(norm(m))) found.set(norm(m), m); };
-  let root = null;
+  // todas las carpetas de repos de la máquina (puede haber más de una)
+  let roots = [];
   try {
     const lib = path.join(__dirname, '..', 'lib', 'repos-root.js');
-    if (fs.existsSync(lib)) root = require(lib).resolveReposRoot(process.env.TYCON_REPOS_ROOT).root;
-  } catch (_) { root = null; }
+    if (fs.existsSync(lib)) roots = require(lib).resolveReposRoot(process.env.TYCON_REPOS_ROOT).roots || [];
+  } catch (_) { roots = []; }
   const isMain = (p) => { try { return fs.statSync(path.join(p, '.git')).isDirectory(); } catch (_) { return false; } };
   const kids = (p) => { try { return fs.readdirSync(p, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => path.join(p, e.name)); } catch (_) { return []; } };
-  if (root) {
+  for (const root of roots) {
     for (const a of kids(root)) {
       if (isMain(a)) { add(a); continue; }
       for (const b of kids(a)) if (isMain(b)) add(b);

@@ -396,7 +396,9 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
       proyectos.push({ proyecto: decodificar(texto(d.proyecto)), repo: texto(d.repo), fecha, vieja, stories: (Array.isArray(d.stories) ? d.stories : []).filter(isObject).map((s) => ({ grupo: texto(s.grupo, 30), canonico: texto(s.canonico, 30), dias_en_estado: num(s.dias_en_estado) })) });
     }
     if (!proyectos.length) m.proyectos = noMedida(ilegibles ? 'ilegible' : 'sin_foto');
-    else m.proyectos = fuente('medido', ilegibles ? 'parcial' : null, fechaProy, { lista: proyectos, ilegibles });
+    // hay_al_dia: si el nocturno de métricas dejó alguna foto al día; viaja aparte porque la vista de una persona recorta
+    // la lista a sus productos y sin esto no podría decir «sus repos no usan stories del arnés»
+    else m.proyectos = fuente('medido', ilegibles ? 'parcial' : null, fechaProy, { lista: proyectos, ilegibles, hay_al_dia: proyectos.some((x) => !x.vieja) });
   } catch (e) {
     m.proyectos = noMedida(e.code === 'ENOENT' ? 'sin_foto' : 'ilegible');
     if (e.code !== 'ENOENT') log(`la carpeta de fotos por proyecto no se pudo leer (${e.code || e.message})`);
@@ -428,7 +430,9 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
   else m.prs = prs.ok ? noMedida('no_medido_noche', prs.fecha) : prs.fuente;
   const asig = foto('assigned', 'assigned-*.json');
   if (asig.ok && asig.doc.estado === 'medido' && Array.isArray(asig.doc.pedidos)) {
-    m.pedidos = fuente('medido', null, asig.fecha, { lista: asig.doc.pedidos.filter(isObject).map((p) => ({ id: num(p.id), proyecto: texto(p.proyecto), tipo: texto(p.tipo, 40), estado: texto(p.estado, 40), asignado: texto(p.asignado, 200), dias: num(p.dias_en_estado), enlace: enlace(p.enlace), dependencias: p.dependencias === true })) });
+    m.pedidos = fuente('medido', null, asig.fecha, { lista: asig.doc.pedidos.filter(isObject).map((p) => ({ id: num(p.id), proyecto: texto(p.proyecto), tipo: texto(p.tipo, 40), estado: texto(p.estado, 40), asignado: texto(p.asignado, 200), dias: num(p.dias_en_estado), enlace: enlace(p.enlace), dependencias: p.dependencias === true, titulo: texto(p.titulo, 120) })),
+      // de los proyectos que la noche no pudo medir, sólo el nombre: el motivo trae texto de la plataforma
+      sin_medir: (Array.isArray(asig.doc.proyectos_no_medidos) ? asig.doc.proyectos_no_medidos : []).filter(isObject).map((x) => texto(x.proyecto)).filter(Boolean).map(decodificar) });
   } else if (asig.ok && asig.doc.estado === 'medido') { m.pedidos = noMedida('ilegible', asig.fecha); log(`la foto de pedidos asignados del ${asig.fecha} dice medido y no trae la lista`); }
   else m.pedidos = asig.ok ? noMedida('no_medido_noche', asig.fecha) : asig.fuente;
 

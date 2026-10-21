@@ -425,10 +425,29 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       extras.porConfirmar = informados ? people.maquinasPorConfirmar(c) : [];
       extras.sinActividad = informados ? people.maquinasSinActividad(c) : [];
       const reglas = access.crearReglas({ config: base2, modelo: fuentes.modelo(), personas: pers });
-      const correos = [...new Set(Object.values(c.machines).filter(isObject).map((e) => norm(e.person)).filter(Boolean))].sort();
+      // Las personas salen de «Quién entra al sitio» (por su primer correo), más quien ya tenga algo declarado: con las
+      // máquinas confirmadas, quien todavía no tiene máquina no aparecía. Sin lista de acceso, las de las máquinas.
+      const lista = people.listaDeAcceso(base2);
+      const deLaLista = lista.origen === 'lista' ? lista.entradas.filter((e) => e.role === 'dev').map((e) => e.emails[0]) : null;
+      const candidatos = [...(deLaLista || Object.values(c.machines).filter(isObject).map((e) => norm(e.person))),
+        ...Object.keys((base2 && isObject(base2.people) && isObject(base2.people.projects) ? base2.people.projects : {})).filter((k) => !k.startsWith('_')).map(norm)].filter(Boolean);
+      const vistos = new Set();
+      const correos = [];
+      for (const correo of candidatos) {
+        const suyos = people.correosDe(correo, c);
+        if (suyos.some((x) => vistos.has(x)) || vistos.has(correo)) continue;
+        [correo, ...suyos].forEach((x) => vistos.add(x));
+        correos.push(correo);
+      }
+      correos.sort();
+      const declarados = (base2 && isObject(base2.people) && isObject(base2.people.projects)) ? base2.people.projects : {};
       extras.personas = correos.map((correo) => {
-        const suyas = Object.entries(c.machines).filter(([, e]) => isObject(e) && norm(e.person) === correo).map(([m]) => m);
-        return { correo, deducidos: reglas.proyectosDe(correo) || [], caida: suyas.every((m) => people.estadoDeMaquina(m, c).estado !== 'confirmada') };
+        // todos sus correos: sus máquinas y lo declarado pueden estar a nombre de cualquiera de ellos
+        const suyos = new Set([correo, ...people.correosDe(correo, c)]);
+        const suyas = Object.entries(c.machines).filter(([, e]) => isObject(e) && suyos.has(norm(e.person))).map(([m]) => m);
+        // la pantalla edita la clave que ya existe (con su grafía), así no crea una segunda para la misma persona
+        const clave = Object.keys(declarados).find((k) => !k.startsWith('_') && suyos.has(norm(k))) || correo;
+        return { correo, clave, sugeridos: reglas.sugeridosDe(correo), caida: suyas.length > 0 && suyas.every((m) => people.estadoDeMaquina(m, c).estado !== 'confirmada') };
       });
       v.extras = extras;
     }

@@ -123,6 +123,10 @@ const COMMANDS = {
   relocate:  { opts: { '--check': 'flag' }, help: `muda a mano lo registrado por el nombre viejo ~/.claude/${PLACE.LEGACY_PLACE_NAME} al lugar ~/.claude/${PLACE.PLACE_NAME} (--check dice qué cambiaría, sin escribir)` },
   'team-config': { opts: { '--no-open': 'flag', '--team-clone': 'value', '--operations-clone': 'value' }, help: 'abre en el navegador la página local que muestra, de sólo lectura, la configuración de la organización: dónde vive cada repo (team-repos.json, en el clon del perfil del equipo), a quién se asignan los avisos (operations.json, en el clon de operaciones) y el resto de sus secciones, con los problemas que ven los lectores. Se edita en el sitio de la organización, o con un pedido al repo de operaciones si no hay sitio. Las carpetas de los clones se guardan como paths.team y paths.operations; --team-clone y --operations-clone las usan sólo esta vez, sin guardarlas. --no-open imprime la dirección sin abrir el navegador' },
   'team-init': { opts: { '--dir': 'value', '--name': 'value', '--platform': 'value', '--profile-repo': 'value', '--dry-run': 'flag', '--stories': 'value', '--no-stories': 'flag', '--stories-only': 'flag', '--local': 'flag' }, help: 'da de alta tu organización (story 8.40): pregunta el nombre, la plataforma (github|azure|local), la dirección del repo del perfil y la carpeta (lo que no vino por opción), baja el ejemplo publicado y deja en la carpeta los tres archivos obligatorios del perfil del equipo, validados con los lectores de la versión instalada; después dice cómo crear el repo vacío, ofrece subirlo con git y ofrece instalar esta máquina con --team. Al final ofrece el repo de historias del equipo con su portón (las plantillas de scripts/setup/harness/team-stories/, al lado de la carpeta del perfil): --stories <nombre> lo arma sin preguntar, --no-stories lo saltea y --stories-only arma sólo ese repo (en --dir). No crea repos ni pide credenciales. --dry-run muestra los archivos sin escribir. --local (o «local» como plataforma) arma el perfil de una persona sola en esta máquina, sin dirección ni cuenta: la declaración y el perfil con git y un commit en main; el arnés lo lee de esa carpeta (install --team <carpeta>) y se puede subir después. Sin arnés instalado sale 2' },
+  // lo que corre el paquete de npm después de bajar este árbol (scripts/setup/harness/npx.js): las opciones de `install` y
+  // `--audience`, en las dos formas (`--opción valor` y `--opción=valor`); no declara opciones: npx.js las separa y el resto
+  // pasa a `install` tal cual, que es quien las valida (`passthrough`: `parse` entrega los argumentos sin mirarlos)
+  npx:       { opts: {}, passthrough: true, help: 'lo que sigue a la bajada de `npx @tyconsa/harness@latest` (el paquete baja este árbol y lo corre con el commit en TYCON_NPX_COMMIT): revisa los requisitos (Node, tar; bash y python3, o pwsh 7 en Windows) y que haya Claude Code o Codex, y dice lo que falta sin instalar nada; sin preguntas, es para mí (--team <repo> para sumarte a un equipo, --audience team|org para elegir, org da de alta tu organización), con la instalación mínima, ninguna conexión opcional y sin paquete; después corre install --version latest --defaults de este árbol: muestra un plan de cinco renglones y pregunta una sola vez «¿Instalo? [s/N]». Con el arnés ya instalado no lo reinstala: dice si está al día, o pregunta «¿Actualizo? [s/N]» y corre el update de este árbol. Sin nadie delante, --yes acepta el plan. Sale 0 bien o nada que hacer, 1 si falta algo, 2 por un uso mal hecho o una confirmación pendiente' },
   layer:     { opts: { '--check': 'flag', '--list': 'flag', '--json': 'flag', '--public': 'value', '--harness-clone': 'value' }, help: 'la capa privada, sólo leyendo: qué agregó, qué pisó, qué está editado a mano (--check sale 0 si está entera, 1 si falta o sobra algo, 3 si no hay capa; --list nombra cada archivo; --public <copia> y --harness-clone <clon> calculan contra esa copia y ese clon sin tocar el estado)' },
 };
 
@@ -146,6 +150,7 @@ function parse(argv) {
   if (!spec) return { error: `subcomando desconocido: «${cmd}». Los que existen: ${Object.keys(COMMANDS).join(', ')}` };
   const opts = {};
   const args = [];
+  if (spec.passthrough) return argv.slice(1).some((a) => a === '--help' || a === '-h') ? { help: true, cmd } : { cmd, opts, args };
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--help' || a === '-h') return { help: true, cmd };
@@ -4849,6 +4854,9 @@ function cmdTeamInit(ctx) {
   return mod('team-init').run({ ...ctx, tree: need.state.tree || ctx.tree, state: need.state, version });
 }
 
+/** `npx`: lo que sigue a la bajada del paquete de npm (scripts/setup/harness/npx.js), siempre con el código de ESTE árbol. */
+function cmdNpx(ctx) { return mod('npx').run(ctx); }
+
 const HANDLERS = {
   install: cmdInstall,
   startup: cmdStartup,
@@ -4866,13 +4874,14 @@ const HANDLERS = {
   migrate: cmdMigrate,
   'team-config': cmdTeamConfig,
   'team-init': cmdTeamInit,
+  npx: cmdNpx,
 };
 
 function main(argv) {
   const p = parse(argv);
   if (p.help) { process.stdout.write(usage() + '\n'); return 0; }
   if (p.error) { process.stderr.write(`harness.js: ${p.error}\n`); return 2; }
-  const ctx = { tree: real(TREE) || TREE, home: os.homedir(), env: process.env, opts: p.opts, args: p.args, platform: process.platform };
+  const ctx = { tree: real(TREE) || TREE, home: os.homedir(), env: process.env, opts: p.opts, args: p.args, argv: argv.slice(1), platform: process.platform };
   // la corrida desprendida de `startup` (story 8.23, tanda L) le anota su resultado al hook que la lanzó; también si sale
   // por un error que no pasa por acá
   const detachedRun = p.cmd === 'startup' && mod('detach').adoptDetachedRun();

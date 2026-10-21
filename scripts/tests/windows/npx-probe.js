@@ -17,7 +17,7 @@
  * Con `--from registry` (escenario `npx-published`, story 8.40 · AC 40 · T47) mide el paquete PUBLICADO: `npx --yes
  * @tyconsa/harness@latest` del registro de npm real contra el GitHub real, en otra carpeta de usuario de juguete y sin
  * ninguna variable del GitHub de juguete. Mide que instala (lo mismo que el punto 1) y que la misma línea, corrida otra
- * vez sobre esa carpeta, dice «está al día. No bajé nada» sin tocar el árbol instalado (AC 35). Lo que no depende del
+ * vez sobre esa carpeta, dice «está al día» sin tocar el árbol instalado (AC 35). Lo que no depende del
  * paquete no se disfraza: sin red, el registro caído o el límite de GitHub salen «no medido» con su motivo, y una punta de
  * `main` que se movió entre las dos corridas también (el «al día» no se pudo comparar). Nunca verde sin medir.
  *
@@ -133,7 +133,8 @@ function againVerdict({ exit, out, treeSame, timedOut = false, installedCommit =
   // la «nueva» es el commit que quedó instalado: no se movió nada, la comparación del paquete está mal (AC 35)
   if (fresh && installedCommit && installedCommit.startsWith(fresh[1])) return { finding: `la segunda corrida dice que hay una versión nueva (${fresh[1]}), pero es el mismo commit que quedó instalado` };
   if (/hay una versión nueva/.test(said)) return { notMeasured: 'la punta de main del arnés se movió entre las dos corridas: el «al día» no se pudo comparar (volvé a encolar)' };
-  if (/está al día\. No bajé nada/.test(said)) return treeSame ? { ok: true } : { finding: 'dijo «al día», pero el árbol instalado cambió entre las dos corridas' };
+  // el paquete de hoy baja la punta y dice «No cambié nada»; el de antes decía «No bajé nada»: lo que se mide es el árbol
+  if (/está al día\. No (?:bajé|cambié) nada/.test(said)) return treeSame ? { ok: true } : { finding: 'dijo «al día», pero el árbol instalado cambió entre las dos corridas' };
   return { finding: `la segunda corrida salió ${exit} y no dijo «al día»: ${lastLines(said, 3)}` };
 }
 
@@ -241,7 +242,7 @@ function measureRegistry({ lab, platform = process.platform, baseEnv = process.e
     if (pp) rec.finding('npx-published:profile-not-kept', 'profile', pp, 'W8', { severity: 'breaks' });
   }
 
-  // 2 · la misma línea otra vez, sobre la misma carpeta: «al día», sin bajar ni tocar el árbol
+  // 2 · la misma línea otra vez, sobre la misma carpeta: «al día», sin tocar el árbol
   const before = treePrint(home);
   const again = npxRun('again');
   if (didNotStart(again)) return { status: L.STATUS.error, reason: `no pude correr npx la segunda vez (${didNotStart(again)}): ${npx}` };
