@@ -67,6 +67,12 @@
       "requiere": []
     },
     {
+      "__nota": "Los días de instintos al buzón y de vuelta (scripts/instincts/instinct-upload.js, su lugar en upload-runs.js, la forma nueva de download-runs.js y el aviso de la máquina sin buzón): un archivo por día cerrado desde el aviso, sólo lo de la organización y con seis campos, la versión nueva para una línea tardía, el corte a mitad sin anotar, el tope, «no medido» y la bajada sólo con --instincts. Sin red: un buzón de mentira local y HOME temporal.",
+      "raiz": "arnes",
+      "ruta": "tests/instinct-upload.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.27: el observador, el comando de revisión y el disparador del arranque sobre un árbol que NO trae su buzón (una versión bajada, la copia pública) — nada se crea por ensayar o listar, se escribe en la casa, se lee en todos los lugares. Con un claude de mentira en el PATH.",
       "raiz": "arnes",
       "ruta": "tests/instinct-outside-tree.test.sh",

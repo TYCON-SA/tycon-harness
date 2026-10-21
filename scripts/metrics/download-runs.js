@@ -32,7 +32,7 @@
  * anterior, se lee ése, y antes de escribir el nuevo se le pasa su contenido (scripts/lib/renames.json).
  *
  * Uso:
- *   node scripts/metrics/download-runs.js [--json] [--budget-ms N] [--no-threads]
+ *   node scripts/metrics/download-runs.js [--json] [--budget-ms N] [--no-threads] [--instincts]
  *   node scripts/metrics/download-runs.js --overwrites-report [--json]
  *   node scripts/metrics/download-runs.js --harness-node-report [--json]
  *
@@ -45,6 +45,10 @@
  *   (`*.hilo.jsonl.gz`, `*.cambio.json.gz`: traen código de todos los repos); los cuenta en
  *   `omitidos`. Lo usa el nocturno del tablero: la página no usa las conversaciones —prompts, rutas, código de
  *   clientes— y el agente de Azure no tiene por qué tenerlas.
+ *
+ *   --instincts: baja también los días de instintos (`<maquina>/instincts/v<versión>/<día>.jsonl.gz`, la versión más
+ *   nueva de cada día) a `<maquina>/instincts/<día>.jsonl.gz`. Traen comandos: sin la opción —el nocturno, el sitio—
+ *   no se bajan y se cuentan en `omitidos`, uno por carpeta y día. Lo usa el que propone instintos.
  *
  *   --overwrites-report: sólo LISTA el contenedor —no baja nada, no escribe el espejo— y cuenta los blobs
  *   re-escritos (última modificación más de 1 s después de la creación) por tipo y por máquina con su alias, y si cada
@@ -85,7 +89,7 @@ const http = require('http');
 const https = require('https');
 const { spawnSync } = require('child_process');
 const { readEnv, resolveFile, prepareStateWrite } = require('../lib/legacy-names.js');
-const { leerConfig, integracionBuzon, urlBase, huellaDeCorridas, FORMA_MAQUINA, FORMA_CODIGO, FORMA_ARCHIVO, FORMA_REGISTRO, FORMA_VERSION, REGISTROS, X_MS_VERSION } = require('./upload-runs.js');
+const { leerConfig, integracionBuzon, urlBase, huellaDeCorridas, FORMA_MAQUINA, FORMA_CODIGO, FORMA_ARCHIVO, FORMA_REGISTRO, FORMA_INSTINTO, FORMA_VERSION, REGISTROS, X_MS_VERSION } = require('./upload-runs.js');
 
 const CASA_PIPELINE = path.join(stateDirOf(os.homedir()));
 const DONDE = 'scripts/metrics/download-runs.js';
@@ -148,6 +152,10 @@ function formaDelNombre(nombre) {
   }
   if (partes.length === 3 && partes[1] === 'registros' && FORMA_MAQUINA.test(partes[0]) && FORMA_REGISTRO.test(partes[2])) {
     return { maquina: partes[0], archivo: `registros/${partes[2]}`, version: null };
+  }
+  // un día de instintos: siempre con versión
+  if (partes.length === 4 && partes[1] === 'instincts' && FORMA_MAQUINA.test(partes[0]) && FORMA_VERSION.test(partes[2]) && FORMA_INSTINTO.test(partes[3])) {
+    return { maquina: partes[0], archivo: `instincts/${partes[3]}`, version: partes[2] };
   }
   if (partes.length === 3 && FORMA_MAQUINA.test(partes[0]) && FORMA_VERSION.test(partes[1]) && FORMA_ARCHIVO.test(partes[2])) {
     return { maquina: partes[0], archivo: partes[2], version: partes[1] };
@@ -244,6 +252,7 @@ function compararVersiones(a, b) {
 function tipoDelBlob(forma) {
   if (!forma) return 'ignorado';
   if (forma.archivo.startsWith('registros/')) return 'registros';
+  if (forma.archivo.startsWith('instincts/')) return 'instintos';
   if (forma.archivo.endsWith('.hilo.jsonl.gz')) return 'hilo';
   if (forma.archivo.endsWith('.cambio.json.gz')) return 'cambio';
   return 'volcado';
@@ -724,6 +733,7 @@ async function bajar(opts = {}) {
   // máquina, el juego más nuevo que está COMPLETO. El espejo queda con la ruta sin versión: los lectores no cambian.
   const porClave = new Map();
   const juegos = new Map();
+  const instintosOmitidos = new Set();
   for (const b of listado) {
     const forma = formaDelNombre(b.nombre);
     if (!forma || !Number.isFinite(b.largo)) { res.ignorados += 1; if (res.ignorados_nombres.length < 20) res.ignorados_nombres.push(nombreMostrable(b.nombre)); continue; }
@@ -731,6 +741,9 @@ async function bajar(opts = {}) {
     // `--no-threads` es «bajá lo que la página necesita»: el hilo y el cambio de git traen código de todos los
     // repos y el nocturno del tablero no los usa. De TODAS sus versiones.
     if (sinHilos && /\.(hilo\.jsonl|cambio\.json)\.gz$/.test(forma.archivo)) { res.omitidos += 1; continue; }
+    // los días de instintos traen comandos: se bajan sólo con `--instincts` (el que propone); sin la opción se
+    // cuentan una vez por carpeta y día, no por versión
+    if (forma.archivo.startsWith('instincts/') && opts.instintos !== true) { instintosOmitidos.add(`${forma.maquina}/${forma.archivo}`); continue; }
     if (forma.archivo.startsWith('registros/')) {
       if (!juegos.has(forma.maquina)) juegos.set(forma.maquina, new Map());
       const vs = juegos.get(forma.maquina);
@@ -743,6 +756,7 @@ async function bajar(opts = {}) {
       porClave.get(k).push({ b, forma });
     }
   }
+  res.omitidos += instintosOmitidos.size;
   const elegidos = [];
   for (const lista of porClave.values()) {
     lista.sort((x, y) => ((x.forma.version || '') < (y.forma.version || '') ? -1 : 1));
@@ -967,6 +981,7 @@ if (require.main === module) {
   accion({
     budgetMs: budget !== undefined ? Number(budget) : undefined,
     sinHilos: args.includes('--no-threads'),
+    instintos: args.includes('--instincts'),
     log: (m) => (json ? console.error : console.log)(`[${stamp()}] ${m}`),
   }).then(({ codigo, res }) => {
     if (res.motivo && codigo !== 0) console.error(`[${stamp()}] ${res.estado}: ${res.motivo}`);

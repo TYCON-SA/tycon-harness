@@ -42,6 +42,13 @@
  *    equipo es sólo la cuenta. Entre esos registros va también `legacy-names.jsonl` (los usos de nombres
  *    viejos, con los que se decide su retiro), proyectado a sus campos y con sus conteos en la cobertura.
  *
+ * 🔴 Y LOS DÍAS DE INSTINTOS: con la integración `instincts` prendida, la preparación del día arma también, con
+ *    `scripts/instincts/instinct-upload.js`, un archivo por día UTC cerrado desde el aviso de la grabadora, con sólo lo de
+ *    la organización del perfil y seis campos por línea, en `registros-buzon/instincts/`, y su cuenta va a la cobertura
+ *    en `instincts`, al lado de `fuentes`. Suben después de los registros y antes de las corridas, siempre a
+ *    `<maquina>/instincts/v<versión>/<día>.jsonl.gz`: un día ya subido igual no se manda; con una línea tardía, sube
+ *    entero con otra versión.
+ *
  * 🔴 Y DÓNDE VIVE EL ARNÉS: el mismo día, con los registros, prepara `place.json` —en qué
  *    nombre vive el arnés, si el nombre viejo existe, cuánto queda registrado por él (por archivo, con la misma expresión
  *    que `harness.js doctor`), el sha256 de la copia fija de arranque contra el del árbol, y si las skills salen de un
@@ -127,6 +134,9 @@ const REGISTROS = ['bypass.log', 'carriles.jsonl', 'frenos.jsonl', 'gates.log', 
 // (por ejemplo `frenos.jsonl`) subiría y la bajada lo filtraría, así que llegaría al buzón y no lo
 // bajaría nadie, en verde.
 const FORMA_REGISTRO = new RegExp(`^(${REGISTROS.map((r) => `${r.replace(/\./g, '\\.')}\\.gz`).join('|')}|cobertura\\.json|place\\.json)$`);
+// Un día de instintos (`scripts/instincts/instinct-upload.js`): sube como `<maquina>/instincts/v<versión>/<día>`. La bajada
+// importa esta forma: una sola definición.
+const FORMA_INSTINTO = /^\d{4}-\d{2}-\d{2}\.jsonl\.gz$/;
 const DIAS_AVISO_VENCE = 30;
 
 /**
@@ -647,8 +657,56 @@ function prepararRegistros(opts = {}) {
   try { facts = placeFactsForMailbox(dia, opts.folder); } catch (e) { facts = { schema: 1, day: dia, place: { status: 'no_medido', reason: `no se pudo mirar (${(e && e.code) || 'error'})` } }; }
   if (facts) escribirAtomico(lugar, `${JSON.stringify(facts, null, 1)}\n`);
   else { try { fs.unlinkSync(lugar); } catch (_) { /* no estaba */ } }
-  escribirAtomico(coberturaArchivo, `${JSON.stringify({ esquema: 1, fecha: dia, preparado, fuentes }, null, 1)}\n`);
+  // los días de instintos van a su subcarpeta, y su cuenta a la cobertura, al lado de `fuentes` (la bajada juzga si un
+  // juego está completo mirando `fuentes`: un día de instintos no es parte del juego)
+  const instincts = prepararInstintos({ destino, dia, maquina: opts.maquina, folder: opts.folder, registro: opts.registro, destinoBuzon: opts.destinoBuzon });
+  const cobertura = { esquema: 1, fecha: dia, preparado, fuentes };
+  if (instincts) cobertura.instincts = instincts;
+  escribirAtomico(coberturaArchivo, `${JSON.stringify(cobertura, null, 1)}\n`);
   return { estado: 'preparado', fuentes, version: preparado };
+}
+
+/**
+ * Arma los días de instintos en `<destino>/instincts/` y devuelve la sección `instincts` de la cobertura, o null si la
+ * integración está apagada (la máquina no participa: no se declara nada). Lo ya subido sale del registro de subidas de
+ * esta carpeta y este buzón. Nunca tira: lo que no se pudo mirar es `no_medido`, con el motivo.
+ */
+function prepararInstintos({ destino, dia, maquina, folder, registro, destinoBuzon }) {
+  const dir = path.join(destino, 'instincts');
+  const limpiar = () => { try { for (const f of fs.readdirSync(dir)) if (FORMA_INSTINTO.test(f)) fs.rmSync(path.join(dir, f), { force: true }); } catch (_) { /* no estaba */ } };
+  const integ = integracionBuzon('instincts');
+  if (integ.error) { limpiar(); return { estado: 'no_medido', motivo: 'la configuración del arnés está rota' }; }
+  if (!integ.prendida) { limpiar(); return null; }
+  let armado;
+  try { armado = require('../instincts/instinct-upload.js'); }
+  catch (e) {
+    // sólo «el armado no viaja con este guion» (una copia suelta) es «no participa»; otra falla de carga se dice
+    // la primera línea del mensaje nombra el módulo que falta; las siguientes, quién lo pidió
+    if (e && e.code === 'MODULE_NOT_FOUND' && String(e.message).split('\n')[0].includes('instinct-upload')) { limpiar(); return null; }
+    limpiar();
+    return { estado: 'no_medido', motivo: `el armado de los días no se pudo cargar (${(e && e.code) || 'error'})` };
+  }
+  let sello = null;
+  try { sello = JSON.parse(fs.readFileSync(path.join(CASA_PIPELINE, 'instincts-notice.json'), 'utf8')); } catch (_) { sello = null; }
+  let org = '';
+  try { const cfg = require('../lib/tycon-config.js'); org = cfg.valor(cfg.leer(), 'ado.org') || ''; }
+  catch (_) { limpiar(); return { estado: 'no_medido', motivo: 'no se pudo leer la organización del perfil' }; }
+  const subidos = {};
+  try {
+    const r = JSON.parse(fs.readFileSync(resolveFile(registro, { where: DONDE }), 'utf8'));
+    const prefijo = `${maquina}/instincts/`;
+    if (r && r.destino === destinoBuzon && r.archivos) {
+      for (const [k, e] of Object.entries(r.archivos)) if (k.startsWith(prefijo) && e && e.sha256) subidos[k.slice(prefijo.length, prefijo.length + 10)] = e.sha256;
+    }
+  } catch (_) { /* sin registro: nada subido */ }
+  const tope = Number(process.env.TYCON_INSTINCTS_MAX_SIZE);
+  try {
+    return armado.prepareDays({
+      obsDir: process.env.TYCON_INSTINCT_OBS_DIR || path.join(os.homedir(), '.claude', 'tycon-observations'),
+      outDir: dir, seal: sello, org, today: dia, folder: folder ? folder.name : maquina, uploaded: subidos,
+      ...(Number.isInteger(tope) && tope > 0 ? { maxBytes: tope } : {}),
+    }).coverage;
+  } catch (e) { limpiar(); return { estado: 'no_medido', motivo: `los días de instintos no se pudieron armar (${(e && e.code) || 'error'})` }; }
 }
 
 /**
@@ -975,7 +1033,7 @@ async function subir(opts = {}) {
   const entradas = [];
   const noLeidos = [];
   let prep = { estado: 'sin_carpeta' };
-  try { prep = prepararRegistros({ folder: carpeta.folder }); }
+  try { prep = prepararRegistros({ folder: carpeta.folder, maquina, registro: rutaRegistro, destinoBuzon: `${cfg.cuenta}/${cfg.contenedor}` }); }
   catch (e) { noLeidos.push(`registros de frenos y escapes (${e.code || 'error'})`); }
   res.registros = prep.estado;
   // lo que va en place.json, también en la salida (--json)
@@ -990,6 +1048,20 @@ async function subir(opts = {}) {
     nombres.sort((a, b) => (a === 'cobertura.json') - (b === 'cobertura.json') || (a < b ? -1 : a > b ? 1 : 0));
     for (const f of nombres) entradas.push({ dir: dirRegistros, f, juego, clave: `${maquina}/registros/${juego}/${f}`, blob: `${maquina}/registros/${juego}/${f}` });
   } else if (prep.estado !== 'sin_carpeta') noLeidos.push('registros de frenos y escapes (la preparación no tiene momento: no se sabe su versión)');
+  // los días de instintos: después de los registros y antes de las corridas, siempre con versión
+  const dirInstintos = path.join(dirRegistros, 'instincts');
+  // sólo con la preparación del día medida: si el armado falló, en la carpeta pueden quedar días de antes que no
+  // tienen que salir
+  let instintosMedidos = false;
+  try { instintosMedidos = JSON.parse(fs.readFileSync(path.join(dirRegistros, 'cobertura.json'), 'utf8')).instincts.estado === 'medido'; }
+  catch (_) { instintosMedidos = false; }
+  if (instintosMedidos && integracionBuzon('instincts').prendida) {
+    try {
+      for (const f of fs.readdirSync(dirInstintos).filter((x) => FORMA_INSTINTO.test(x)).sort()) {
+        entradas.push({ dir: dirInstintos, f, juego: null, clave: `${maquina}/instincts/${f}`, blob: null, conVersion: (v) => `${maquina}/instincts/${v}/${f}` });
+      }
+    } catch (e) { if (e.code !== 'ENOENT') noLeidos.push(`días de instintos (${e.code || 'error'})`); }
+  }
   try { for (const f of archivosDelRegistro(origen)) entradas.push({ dir: origen, f, juego: null, clave: `${maquina}/${f}`, blob: `${maquina}/${f}` }); }
   catch (e) {
     // Una máquina que nunca corrió el pipeline no tiene la carpeta: es «nada que subir» de corridas, no un fallo en cada arranque.
@@ -1016,7 +1088,7 @@ async function subir(opts = {}) {
   // un archivo del juego ya confirmado que cambió NO se vuelve a mandar a su nombre: el juego se
   // da por roto en esta pasada y se re-prepara (la pasada siguiente lo sube entero bajo otra versión).
   const juegosRotos = new Set();
-  for (const { dir, f, clave, blob, juego: suJuego } of entradas) {
+  for (const { dir, f, clave, blob, juego: suJuego, conVersion } of entradas) {
     const local = path.join(dir, f);
     let st;
     try { st = fs.statSync(local); } catch (e) { if (e.code !== 'ENOENT') noLeidos.push(`${f} (${e.code || e.message})`); continue; }
@@ -1033,6 +1105,12 @@ async function subir(opts = {}) {
       continue;
     }
     if (prev && suJuego) { juegosRotos.add(suJuego); continue; }
+    // un día de instintos va siempre a una versión: la primera vez y cuando llegó una línea tardía
+    if (conVersion) {
+      const version = versionMonotona(pasada, prev ? prev.version : null);
+      pendientes.push({ f, dir, clave, blob: conVersion(version), conVersion, version, previa: prev ? prev.version || null : null, juego: null, mtimeMs: st.mtimeMs, size: cuerpo.length, sha256 });
+      continue;
+    }
     // lo que ya se confirmó y cambió va a una versión —el inicio de la pasada, monótono por archivo—, nunca
     // al nombre anterior. Una entrada sin `blob` (de una versión anterior del registro) apunta al nombre de siempre.
     if (prev && !suJuego) {
@@ -1108,7 +1186,7 @@ async function subir(opts = {}) {
       reintentado = true;
       const vistas = [msDeVersion(version), msDeVersion(p.previa)].filter((x) => x !== null);
       version = versionMonotona(Math.max(ahoraMs(), pasada), vistas.length ? Math.max(...vistas) : null);
-      blob = `${maquina}/${version}/${p.f}`;
+      blob = p.conVersion ? p.conVersion(version) : `${maquina}/${version}/${p.f}`;
       r = await ponerBlob(urlDe(blob), cuerpo, md5, tiempo);
     }
     if (r.error) {
@@ -1216,7 +1294,7 @@ async function chequearSoloCrear(opts = {}) {
   return fin(1, 'no_medido', `no medido: ningún blob confirmado de esta máquina tiene todavía su archivo local con el mismo sha256 (${candidatos.length} anotado(s)): no se manda nada distinto de lo confirmado`);
 }
 
-module.exports = { placeFactsForMailbox, subir, prepararSinCerrar, chequearSoloCrear, motivoDeLaboratorio, MARCAS_DE_CI, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
+module.exports = { placeFactsForMailbox, subir, prepararSinCerrar, chequearSoloCrear, motivoDeLaboratorio, MARCAS_DE_CI, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, FORMA_INSTINTO, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
 
 /**
  * `--log <archivo>`: la salida (la estándar y la de error) se AGREGA a ese archivo, que pasado ~512 KB se mueve a `.1`.
