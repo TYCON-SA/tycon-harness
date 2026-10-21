@@ -68,6 +68,7 @@ const os = require('os');
 const crypto = require('crypto');
 const smokeSecrets = require(path.join(__dirname, 'lib', 'smoke-secrets.js'));
 const uiSignal = require(path.join(__dirname, 'lib', 'ui-signal.js'));
+const e2eEvidence = require(path.join(__dirname, 'lib', 'e2e-evidence.js'));
 
 // Desde cuándo un AC de pantalla sin imagen bloquea: las stories que arrancaron antes de esta hora no se frenan a mitad
 // de su trabajo y reciben un aviso. Es la hora en que se publica la regla.
@@ -290,7 +291,10 @@ function readE2eGates(evidenceDirs, sid, gatesLogPath, storyPath) {
       let content = '';
       try { content = fs.readFileSync(full, 'utf8'); } catch { continue; }
       const verdict = (content.match(/verdict=(\w+)/) || [])[1] || null;
-      const specFilter = (content.match(/\*\*Spec filter\*\*:\s*(\S+)/) || [])[1] || null;
+      // Todos los filtros de la línea: un gate corrido con varios specs los nombra separados por espacio.
+      const specFilters = ((content.match(/\*\*Spec filter\*\*:[ \t]*(.*)/) || [])[1] || '').split(/\s+/).filter(Boolean);
+      const specFilter = specFilters[0] || null;
+      const skipped = e2eEvidence.skippedOf(content);
       // Espejo: run-check dod green cuyo cmd menciona el spec filter (o, si no hay filter, la clave — o la
       // ruta de la story, que es como se le pasa al gate).
       const needles = specFilter ? [specFilter] : [sid, storyPath].filter(Boolean);
@@ -308,7 +312,7 @@ function readE2eGates(evidenceDirs, sid, gatesLogPath, storyPath) {
           else if (/^##\s/.test(line)) break;
         }
       }
-      gates.push({ path: full, ts: compactTsToMs(m[1]), tsRaw: m[1], verdict, specFilter, mirrored, titulos });
+      gates.push({ path: full, ts: compactTsToMs(m[1]), tsRaw: m[1], verdict, specFilter, specFilters, skipped, mirrored, titulos });
     }
   }
   gates.sort((a, b) => b.ts - a.ts);
@@ -990,7 +994,15 @@ function compute(opts) {
 
   // --- evidencia runtime 1: gates E2E (frescura BLOQUEANTE + espejo en gates.log OBLIGATORIO)
   const allGates = readE2eGates(evidenceDirs, evKey, gatesLogPath, storyPath);
-  const freshPassGates = allGates.filter((g) => g.verdict === 'PASS' && g.ts >= maxCodeMtime && g.mirrored);
+  // Un PASS con pruebas apagadas, o que no dice cuántas, no da la evidencia por completa: el verde puede ser
+  // «se corrió una de diez». Se nombra y no cuenta; con cero, como siempre.
+  const passCompleto = (g) => g.skipped === 0;
+  for (const g of allGates.filter((x) => x.verdict === 'PASS' && x.ts >= maxCodeMtime && x.mirrored && !passCompleto(x))) {
+    warnings.push(g.skipped === null
+      ? `Gate E2E ${path.basename(g.path)}: PASS que no informa cuántas pruebas se apagaron → no otorga evidencia completa. Re-corré el gate del arnés (anota \`- skipped: N\`) o agregá la línea al gate del repo.`
+      : `Gate E2E ${path.basename(g.path)}: PASS con ${g.skipped} prueba(s) apagada(s) → no otorga evidencia completa. Prendé esas pruebas y re-corré el gate, o sacá del filtro el spec que las tiene.`);
+  }
+  const freshPassGates = allGates.filter((g) => g.verdict === 'PASS' && g.ts >= maxCodeMtime && g.mirrored && passCompleto(g));
   for (const g of allGates.filter((x) => x.verdict === 'PASS' && x.ts < maxCodeMtime)) {
     warnings.push(`Gate E2E ${path.basename(g.path)} es ANTERIOR al último edit de código (${maxCodeFile}) → NO cuenta. Re-corré el gate (scoped, barato).`);
   }
@@ -1076,9 +1088,8 @@ function compute(opts) {
     const nivel = r.nivel || '';
     if (RUNTIME_NIVEL_RE.test(nivel)) {
       const specToken = (r.name.match(/([\w.-]+\.spec\.[tj]s)/) || [])[1] || null;
-      const gate = freshPassGates.find((g) =>
-        g.specFilter && (r.name.includes(g.specFilter) || r.raw.includes(g.specFilter) ||
-          (specToken && g.specFilter.includes(specToken))));
+      const gate = freshPassGates.find((g) => g.specFilters.some((sf) =>
+        r.name.includes(sf) || r.raw.includes(sf) || (specToken && sf.includes(specToken))));
       return { row: r, tier: gate ? 'runtime' : 'none', ref: gate ? path.basename(gate.path) : null };
     }
     const kind = kindOf(r.name, fePaths);

@@ -93,11 +93,13 @@ function writeMirroredSmoke(dodDir, gatesLog, sid, acs, cmd = 'curl -s http://ap
 // Escribe el gate .md Y (por default) el ESPEJO run-check en gates.log — como lo hace
 // `marker.js run-check dod -- bash <gate> ... <specFilter>` en producción. Pasar
 // mirror=false para simular un gate forjado a mano (sin espejo → no debe contar).
-function writeGate(dodDir, sid, tsCompact, verdict, specFilter, gatesLog, mirror = true, titulos = null) {
+// `skipped`: las pruebas apagadas que anota el gate (`- skipped: N`, como el del arnés); null = constancia sin la línea.
+function writeGate(dodDir, sid, tsCompact, verdict, specFilter, gatesLog, mirror = true, titulos = null, skipped = 0) {
   fs.writeFileSync(path.join(dodDir, `${sid}-e2e-gate-${tsCompact}.md`), [
     `# DoD Runtime Evidence — Story ${sid} — Playwright Gate (scoped)`,
     `**Spec filter**: ${specFilter}`,
     '```', `verdict=${verdict}`, 'total=1', `passed=${verdict === 'PASS' ? 1 : 0}`, '```',
+    ...(skipped === null ? [] : [`- skipped: ${skipped}`]),
     // Contrato DODRT-C8: los títulos de los tests que pasaron.
     ...(titulos ? ['', '## Tests corridos (títulos completos — contrato DODRT-C8)', ...titulos.map((t) => `- ${t}`), ''] : []),
   ].join('\n'));
@@ -1530,6 +1532,55 @@ withWaiverLog(() => {
     const rcs = casos.map((a) => spawnSync(process.execPath, [cli, ...a], { encoding: 'utf8' }).status);
     check('la CLI del ayudante sale 2 sin --dod, con una opción desconocida o sin valor',
       rcs.every((x) => x === 2) && fs.readdirSync(dir).length === 0, JSON.stringify(rcs));
+  }
+}
+
+// Las pruebas apagadas cuentan: un gate PASS con pruebas apagadas, o que no dice cuántas, no deja sus filas con
+// evidencia runtime completa; con cero, todo sigue igual.
+{
+  const caso = (skipped) => {
+    const f = makeWorkspace();
+    writeGate(f.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', f.gatesLog, true, null, skipped);
+    return rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+  };
+  // T1 Matriz_SkippedNoOtorga
+  const r1 = caso(3);
+  check('Matriz_SkippedNoOtorga: PASS con 3 apagadas no deja RUNTIME y el aviso las nombra',
+    r1.perAc[1].verdict !== 'RUNTIME' && r1.perAc[3].verdict !== 'RUNTIME' &&
+      r1.warnings.some((w) => /3 prueba\(s\) apagada\(s\)/.test(w)), JSON.stringify([r1.perAc[1].verdict, r1.warnings]));
+  // T2 Matriz_SkippedCeroIgualQueAntes
+  const r2 = caso(0);
+  check('Matriz_SkippedCeroIgualQueAntes: PASS con 0 apagadas otorga como siempre',
+    r2.perAc[1].verdict === 'RUNTIME' && r2.perAc[3].verdict === 'RUNTIME' && !r2.warnings.some((w) => /apagada/.test(w)),
+    JSON.stringify(r2.perAc[1]));
+  // T3 Matriz_SkippedAusenteNoEsCero
+  const r3 = caso(null);
+  check('Matriz_SkippedAusenteNoEsCero: sin la línea queda «no informado», sin RUNTIME',
+    r3.perAc[1].verdict !== 'RUNTIME' && r3.warnings.some((w) => /no informa cuántas pruebas se apagaron/.test(w)),
+    JSON.stringify([r3.perAc[1].verdict, r3.warnings]));
+  // Los formatos que escriben los gates de los repos: `skipped: N` suelto y `skipped=N` dentro de otra línea.
+  const conTexto = (linea) => {
+    const f = makeWorkspace();
+    const ts = recentCompact();
+    writeGate(f.dodDir, '9.9', ts, 'PASS', 'story-9-9.spec.ts', f.gatesLog, true, null, null);
+    fs.appendFileSync(path.join(f.dodDir, `9.9-e2e-gate-${ts}.md`), `\n${linea}\n`);
+    return rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+  };
+  check('los formatos de los repos se leen: «skipped: 0» y «skipped=0» otorgan, «skipped=2» no',
+    conTexto('skipped: 0').perAc[1].verdict === 'RUNTIME' &&
+      conTexto('NOTES: passed=1 failed=0 flaky=0 skipped=0. JSON: x').perAc[1].verdict === 'RUNTIME' &&
+      conTexto('verdict=PASS total=3 passed=1 failed=0 skipped=2 scope=scoped').perAc[1].verdict !== 'RUNTIME');
+  // La salida pegada de Playwright no cuenta: un «skipped=0» ahí abajo no reemplaza la línea de la cabecera.
+  check('un «skipped=0» en la salida pegada no cuenta como la línea de la cabecera',
+    conTexto('## Salida\n```\nNOTES skipped=0\n```').perAc[1].verdict !== 'RUNTIME' &&
+      conTexto('## Tests corridos\n- un test que dice skipped: 0').perAc[1].verdict !== 'RUNTIME');
+  // Un gate con varios filtros: cada uno de sus specs queda atribuido.
+  {
+    const f = makeWorkspace();
+    writeGate(f.dodDir, '9.9', recentCompact(), 'PASS', 'otro.spec.ts story-9-9.spec.ts', f.gatesLog);
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+    check('un gate con varios filtros atribuye a cada spec, no sólo al primero', r.perAc[1].verdict === 'RUNTIME',
+      JSON.stringify(r.perAc[1]));
   }
 }
 
