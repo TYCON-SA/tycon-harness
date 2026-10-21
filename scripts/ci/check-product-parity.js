@@ -3,15 +3,14 @@
 /**
  * ¿Los pipelines de los cinco productos hacen LO MISMO?
  *
- * 🔴 POR QUÉ EXISTE (2026-09-01).
+ * 🔴 POR QUÉ EXISTE.
  *
- * Ese día se dio FRESNO por alineado con URUTAU —comparando a mano— y faltaban ONCE cosas. Cuatro de
- * ellas estaban repartidas entre productos que YA se habían dado por cerrados: un backend sin
- * reintento cuando el host limita, dos productos sin el aviso de atraso, y —la peor— un pipeline
- * que NO se disparaba cuando el cambio tocaba sólo las pruebas, o sea que la prueba nueva no
- * corría hasta que alguien tocara código.
+ * Dar un producto por alineado con otro comparando a mano deja cosas sin ver: un backend sin
+ * reintento cuando el host limita, productos sin el aviso de atraso, y —lo peor— un pipeline
+ * que NO se dispara cuando el cambio toca sólo las pruebas, o sea que la prueba nueva no
+ * corre hasta que alguien toque código. Varias quedan repartidas entre productos ya dados por cerrados.
  *
- * Ninguna la encontró una revisión: las encontró el dev preguntando "¿me lo podés asegurar con
+ * Ninguna la encuentra una revisión: la encuentra el dev preguntando "¿me lo podés asegurar con
  * evidencia?". Este control existe para que esa pregunta tenga respuesta sin que nadie la haga.
  *
  * 🔴 NO JUZGA CUÁL ES EL COMPORTAMIENTO CORRECTO. Juzga que los cinco hagan lo mismo. Si divergen,
@@ -24,24 +23,22 @@
  * "No medido" y "medido y coincide" son cosas distintas, y confundirlas es el modo de falla que
  * el arnés persigue en todas sus piezas.
  *
- * 🔴 UN RASGO PUEDE ACOTARSE A UN BLOQUE DEL YAML (`bloque: "trigger"`), 2026-09-02. El primer
- * falso negativo real de este control: `dispara-tests` buscaba `- tests/**` en el archivo ENTERO
- * y lo encontró en FRESNO… dentro del bloque `pr:`, que para Azure Repos es inerte. El `trigger:` de
- * FRESNO no lo tenía, así que un merge sólo de pruebas NO construía en main — y el control decía
- * "los cinco coinciden". Lo mismo con `dispara-pipeline` (`azure-pipelines.yml` estaba en `pr:`).
+ * 🔴 UN RASGO PUEDE ACOTARSE A UN BLOQUE DEL YAML (`bloque: "trigger"`). Sin esto hay falsos negativos:
+ * `dispara-tests` buscaría `- tests/**` en el archivo ENTERO y lo encontraría dentro del bloque `pr:`, que para
+ * Azure Repos es inerte. Si el `trigger:` no lo tiene, un merge sólo de pruebas NO construye en main — y el control
+ * diría "los cinco coinciden". Lo mismo con `dispara-pipeline` (`azure-pipelines.yml` en `pr:`).
  * Un rasgo con `bloque` se evalúa SÓLO sobre ese bloque de nivel raíz; si el bloque no existe, el
  * rasgo cuenta como ausente.
  *
- * 🔴 UN GRUPO PUEDE MIRAR OTRO ARCHIVO (`archivo:`), 2026-09-02. Los 4 pipelines de producción
- * viven en `azure-pipelines-prod.yml`; hasta hoy el control sólo leía `azure-pipelines.yml`, así
- * que ningún rasgo de producción podía ponerse rojo. Un grupo declarado como objeto puede decir
+ * 🔴 UN GRUPO PUEDE MIRAR OTRO ARCHIVO (`archivo:`). Los 4 pipelines de producción viven en
+ * `azure-pipelines-prod.yml`; si el control sólo leyera `azure-pipelines.yml`, ningún rasgo de producción podría
+ * ponerse rojo. Un grupo declarado como objeto puede decir
  * qué archivo lee y si sólo le aplican los rasgos que lo nombran (`solo_rasgos_que_lo_nombren`):
  * a producción no se le pide el portón ni las pruebas, que son de CI.
  *
- * 🔴 CORRE CADA NOCHE Y DEJA SU RESULTADO CON FECHA (story 2.25, 2026-10-15). Hasta ese día sólo lo corrían las
- * pruebas: ningún pipeline lo llamaba, así que un producto podía dejar de hacer lo mismo que los demás y nadie se
- * enteraba hasta preguntar. Ahora lo corre la revisión nocturna de dependencias (que ya clona los repos de producto
- * sobre `main`, con la misma `ruta`) y guarda `--out .dashboard/paridad/paridad-<día>.json`, que lee el sitio de la
+ * 🔴 CORRE CADA NOCHE Y DEJA SU RESULTADO CON FECHA. Si sólo lo corrieran las pruebas, un producto podría dejar
+ * de hacer lo mismo que los demás y nadie se enteraría hasta preguntar. Lo corre la revisión nocturna de dependencias
+ * (que ya clona los repos de producto sobre `main`, con la misma `ruta`) y guarda `--out .dashboard/paridad/paridad-<día>.json`, que lee el sitio de la
  * organización. Lo que imprime y el código de salida son los de siempre; el archivo dice además si algo quedó sin medir.
  *
  * El archivo (`--out`), con exactamente estas claves: `v` (1) · `fecha` (día UTC) · `generated_at` · `estado`
@@ -59,18 +56,17 @@
  * vencidas de sus grupos. El texto de los YAML, la carpeta de los clones y las rutas absolutas NO van al archivo.
  * Un repo que sólo está en grupos a los que ningún rasgo les aplica no va a `por_ruta` ni a `clone-list`: no se compara
  * nunca, y salir «medido» lo mostraría «en orden». Una `revision` que no es AAAA-MM-DD es una declaración incompleta
- * (comparada como texto, no vencía nunca). `--today <AAAA-MM-DD>`: el día de la noche, para la `fecha` y para vencer.
+ * (comparada como texto, no vencería nunca). `--today <AAAA-MM-DD>`: el día de la noche, para la `fecha` y para vencer.
  *
- * 🔴 UNA DECLARACIÓN VENCIDA NO AMPARA, Y LA COMPARACIÓN SIGUE (story 2.25). Antes cortaba con 1 antes de comparar
- * nada: una sola fecha vencida dejaba la noche sin mirar el resto. Ahora el rasgo cuenta como divergencia, la
- * declaración sale en `vencidas` y se sigue con los demás. Sale 1, como antes.
+ * 🔴 UNA DECLARACIÓN VENCIDA NO AMPARA, Y LA COMPARACIÓN SIGUE. Cortar con 1 antes de comparar
+ * nada dejaría la noche sin mirar el resto por una sola fecha vencida. En cambio el rasgo cuenta como divergencia, la
+ * declaración sale en `vencidas` y se sigue con los demás. Sale 1.
  *
- * DÓNDE VIVE CADA REPO (story 2.25): una entrada puede decir `ado: "<proyecto>/<repo>"` (el proyecto codificado, como en
+ * DÓNDE VIVE CADA REPO: una entrada puede decir `ado: "<proyecto>/<repo>"` (el proyecto codificado, como en
  * repos.json: `Acme%20Uno/Back`) o `github: "<dueño>/<repo>"`. Lo usa `clone-list`, para que la noche clone lo que
  * la revisión de dependencias no trae; el resto del control (y check-trigger-without-docs.js) ignora esas claves.
  *
- * 🔴 LA LISTA ES DE LA ORGANIZACIÓN Y VIVE EN SU REPO DE OPERACIONES (2026-10-16). Hasta ese día la de un equipo vivía
- * en el repo donde mantiene el arnés; se mudó a `scripts/ci/product-parity.json` de su repo de operaciones, donde está
+ * 🔴 LA LISTA ES DE LA ORGANIZACIÓN Y VIVE EN SU REPO DE OPERACIONES: en `scripts/ci/product-parity.json`, donde está
  * el resto de su configuración (y donde el sitio de la organización la puede editar). La noche la lee de ahí con
  * `--config`. Sin `--config`, `configPorDefecto()` decide: si la máquina declara el clon de operaciones
  * (`paths.operations`), la de ese clon; si lo declara y no sirve o no la trae, o si la máquina mantiene el arnés
@@ -82,7 +78,7 @@
  * Uso:  node check-product-parity.js [--root <dir>] [--config <archivo>] [--out <archivo.json>] [--today <AAAA-MM-DD>]
  *       node check-product-parity.js clone-list --root <dir> [--config <archivo>] [--platform azure|github]
  *       node check-product-parity.js config-path
- *       (--root se llamaba en castellano hasta la story 8.9, tanda B3a; el nombre viejo sigue andando hasta el retiro)
+ *       (el nombre viejo de --root, en castellano, sigue andando hasta el retiro)
  * Sale 0 si todos coinciden (o la diferencia está declarada) · 1 si hay divergencia o una declaración vencida o
  * incompleta · 2 si no pudo medir lo suficiente para opinar (o llegó una opción con su nombre viejo y el nuevo a la vez).
  * `clone-list` imprime `<ruta>\t<dirección>` por cada ruta que no tiene `<dir>/<ruta>/.git` y declara dónde vive (la
@@ -93,7 +89,7 @@ const fs = require('fs');
 const path = require('path');
 const cp = require('child_process');
 const os = require('os');
-// El traductor de las opciones viejas vive al lado y viaja con este archivo en el artefacto arnes-ci (story 8.9).
+// El traductor de las opciones viejas vive al lado y viaja con este archivo en el artefacto arnes-ci.
 const { aliasLegacyOptions, LegacyOptionsError } = (() => {
   try { return require('./legacy-options.js'); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') process.stderr.write(`⚠️  legacy-options.js no cargó (${e && e.message}): los nombres viejos de este guion no se traducen\n`); return { aliasLegacyOptions: (argv) => argv, LegacyOptionsError: Error }; }
 })();
@@ -124,7 +120,7 @@ function configPorDefecto() {
   try {
     const [ND, TH] = libs.map((l) => require(l));
     // 🔴 sin mirar si los nocturnos están prendidos (resolveOperations sí): la lista no depende de que esta máquina
-    // espere la noche, y caer en la copia del arnés con ellos apagados era «sin productos» en 0.
+    // espere la noche, y caer en la copia del arnés con ellos apagados sería «sin productos» en 0.
     const o = ND.operationsClone(TH);
     if (o.declared) {
       const por = o.problem || ND.unfit(o.path, typeof TH.maintainedPath === 'function' ? TH.maintainedPath() : null, 'paths.operations');
@@ -134,7 +130,7 @@ function configPorDefecto() {
     }
     if (o.problem) return sin(o.problem);
     // «mantiene» = DECLARA alguno de los dos clones, exista o no la carpeta (maintainedPath() exige que exista: un clon
-    // movido dejaba la máquina como la de un dev, y caía en «sin productos» en 0 — revisión del 2026-10-16)
+    // movido dejaría la máquina como la de un dev, y caería en «sin productos» en 0)
     const m = typeof TH.maintainersClone === 'function' ? TH.maintainersClone() : { declared: false };
     if (m.problem) return sin(m.problem);
     const mantiene = Boolean(m.declared) || declaraMantenido(TH);
@@ -166,7 +162,7 @@ function aplica(rasgo, grupo, g) {
   return rasgo.grupos ? rasgo.grupos.includes(grupo) : !g.soloExplicitos;
 }
 
-/** Un grupo está «en juego» si al menos un rasgo le aplica (revisión adversarial de la 2.25). Uno al que ninguno le aplica
+/** Un grupo está «en juego» si al menos un rasgo le aplica. Uno al que ninguno le aplica
  *  —el de los sitios web del equipo: sólo rasgos que lo nombren, y ninguno lo nombra— no se compara nunca: sus repos no
  *  van a por_ruta (el sitio los mostraría «en orden» sin haberlos comparado) ni a la lista para clonar. */
 function enJuego(cfg, grupo, g) {
@@ -184,8 +180,8 @@ function rutasDeLaLista(cfg) {
   return out;
 }
 
-/** Cómo se nombra cada repo de un grupo: su producto; si dos del grupo repiten producto, el producto con su ruta (antes la
- *  segunda entrada pisaba a la primera y ese repo salía de la comparación sin aviso). */
+/** Cómo se nombra cada repo de un grupo: su producto; si dos del grupo repiten producto, el producto con su ruta (sin eso la
+ *  segunda entrada pisaría a la primera y ese repo saldría de la comparación sin aviso). */
 function nombresDelGrupo(g) {
   const base = g.repos.map((r) => (r && r.producto) || (r && r.ruta) || '?');
   return base.map((n, i) => (base.indexOf(n) !== base.lastIndexOf(n) ? `${n} (${g.repos[i].ruta})` : n));
@@ -234,7 +230,7 @@ function terminar(o, R, rc, estado, motivo) {
   return rc;
 }
 
-/** Lo que la noche tiene que clonar para comparar: `ruta<TAB>dirección`, cada ruta una vez (story 2.25). */
+/** Lo que la noche tiene que clonar para comparar: `ruta<TAB>dirección`, cada ruta una vez. */
 function cloneList(o) {
   if (!resolverConfig(o)) { process.stderr.write(`🔴 sin la lista de productos: ${o.sinConfig} — no se clona nada\n`); return 2; }
   let cfg;
@@ -311,7 +307,7 @@ function bloqueRaiz(texto, clave) {
   return lineas.slice(ini, fin).join('\n');
 }
 
-// story 8.10.3 (AC 3): la copia pública trae un product-parity.json SIN productos, a propósito (los del equipo no viajan).
+// La copia pública trae un product-parity.json SIN productos, a propósito (los del equipo no viajan).
 // Sólo una marca explícita —`sin_productos` con su motivo y sin grupos— da 0 diciendo que no se comparó nada; grupos vacíos
 // sin la marca siguen siendo «no se midió nada» (2), y la marca con grupos es una contradicción (2).
 function sinProductosAProposito(cfg) {
@@ -323,7 +319,7 @@ function sinProductosAProposito(cfg) {
 }
 
 /**
- * La lectura de `diferencias_declaradas` (story 2.29, decisión P7): la que juzga cada noche y la que usa la pestaña
+ * La lectura de `diferencias_declaradas`: la que juzga cada noche y la que usa la pestaña
  * Configuración del sitio para «Revisar» un cambio. Cada entrada exige `grupo`, `rasgo`, `motivo`, `fecha` y `revision`;
  * una `revision` que no es AAAA-MM-DD no vence nunca (es un permiso) y se rechaza; `revision < hoy` va a `vencidas`
  * (no ampara, y la comparación sigue), si no a `declaradas`. Devuelve `{ problemas: [{ path, message, consola }],
@@ -339,8 +335,8 @@ function leerDeclaradas(cfg, hoy) {
         return { problemas: [{ path: `diferencias_declaradas.${i}.${campo}`, message, consola: `${message} — sin motivo ni fecha no es una decisión, es un permiso` }], declaradas: [], vencidas: [] };
       }
     }
-    // 🔴 la revisión se compara como texto: una que no es AAAA-MM-DD («2026/09/01», «permanente») no vencía NUNCA y
-    // amparaba para siempre (revisión adversarial de la 2.25). Se trata como una declaración incompleta.
+    // 🔴 la revisión se compara como texto: una que no es AAAA-MM-DD («2026/09/01», «permanente») no vencería NUNCA y
+    // ampararía para siempre. Se trata como una declaración incompleta.
     if (typeof d.revision !== 'string' || !DIA.test(d.revision)) {
       const message = `la diferencia declarada ${d.grupo}/${d.rasgo} tiene una "revision" que no es AAAA-MM-DD`;
       return { problemas: [{ path: `diferencias_declaradas.${i}.revision`, message, consola: `${message} (${JSON.stringify(d.revision)}) — así no vence nunca: es un permiso` }], declaradas: [], vencidas: [] };
@@ -417,8 +413,8 @@ function main(argv0) {
     return sinProductos.rc ? terminar(o, R, sinProductos.rc, 'no_medido', sinProductos.msg) : terminar(o, R, 0, 'sin_productos', cfg.sin_productos.trim());
   }
 
-  // Sin raíz declarada no se mide nada, y eso se dice (story 8.3): antes había la carpeta de UNA máquina
-  // como último recurso, que en cualquier otra medía cero productos en silencio.
+  // Sin raíz declarada no se mide nada, y eso se dice: la carpeta de UNA máquina
+  // como último recurso mediría cero productos en silencio en cualquier otra.
   const raizDeclarada = o.raiz || cfg.raiz_por_defecto;
   if (!raizDeclarada) {
     console.log('🔴 sin raíz de repos: pasá --root <carpeta> o declará raiz_por_defecto en la configuración — no se midió nada, y eso no es «todo bien»');
@@ -426,8 +422,8 @@ function main(argv0) {
     return terminar(o, R, 2, 'no_medido', 'sin carpeta de los clones (falta --root)');
   }
   const raiz = expandir(raizDeclarada);
-  // Una configuración degenerada dice qué tiene y deja su archivo; antes caía con un TypeError y la noche sólo veía
-  // «no dejó su resultado» (revisión adversarial de la 2.25).
+  // Una configuración degenerada dice qué tiene y deja su archivo; sin esto caería con un TypeError y la noche sólo vería
+  // «no dejó su resultado».
   if (!Array.isArray(cfg.rasgos)) {
     console.log('🔴 la configuración no trae la lista "rasgos" — no se midió nada');
     return terminar(o, R, 2, 'no_medido', 'la configuración no trae la lista "rasgos"');
@@ -441,7 +437,7 @@ function main(argv0) {
     }
   }
   // la lectura de las diferencias declaradas es la de `leerDeclaradas`, la misma que usa la pestaña Configuración del
-  // sitio (story 2.29, decisión P7): dos validadores se separan solos
+  // sitio: dos validadores se separan solos
   const ld = leerDeclaradas(cfg, hoy);
   if (ld.problemas.length) {
     const p = ld.problemas[0];
@@ -499,27 +495,25 @@ function main(argv0) {
       rutaDe[nombre] = r.ruta;
       const hayCarpeta = fs.existsSync(path.join(raiz, r.ruta));
       const f = path.join(raiz, r.ruta, g.archivo);
-      // 🔴 NO SE PREGUNTA POR EL DISCO ANTES DE MIRAR LO PUBLICADO (2026-09-04). Acá había un
-      // `if (!fs.existsSync(f)) { ausentes++; continue; }` JUSTO ANTES de leer `origin/main`, o sea
-      // que el arreglo de abajo —"se compara lo publicado, no el disco"— quedaba anulado para el
+      // 🔴 NO SE PREGUNTA POR EL DISCO ANTES DE MIRAR LO PUBLICADO. Un
+      // `if (!fs.existsSync(f)) { ausentes++; continue; }` JUSTO ANTES de leer `origin/main` anularía
+      // el criterio de abajo —"se compara lo publicado, no el disco"— para el
       // caso más común: el clon parado en `dev`, que es donde trabaja el dev. Si el archivo existe
-      // en `origin/main` pero no en el árbol de trabajo, el repo se contaba como "no está en esta
-      // máquina" y salía de la comparación ENTERA, en silencio.
+      // en `origin/main` pero no en el árbol de trabajo, el repo se contaría como "no está en esta
+      // máquina" y saldría de la comparación ENTERA, en silencio.
       //
-      // Medido el 2026-09-04, revisión de cierre: los pipelines de PRODUCCIÓN de dos productos no se
-      // compararon con nada —ni siquiera el freno de retroceso, que está marcado `exigido`— porque
-      // sus clones estaban en `dev`. El control decía "1 divergencia sobre 55" habiendo dejado dos
-      // repos afuera. Un control que se saltea lo que no encuentra en el disco mide menos de lo que
-      // dice, y "no medido" se lee como "coincide".
+      // Los pipelines de PRODUCCIÓN de un producto con el clon en `dev` no se compararían con nada —ni
+      // siquiera el freno de retroceso, que está marcado `exigido`—, y el control diría "1 divergencia sobre 55"
+      // habiendo dejado dos repos afuera. Un control que se saltea lo que no encuentra en el disco mide menos de lo
+      // que dice, y "no medido" se lee como "coincide".
       //
-      // Ahora: primero lo publicado; el disco es el plan B; y sólo si FALLAN LOS DOS es ausente.
+      // Primero lo publicado; el disco es el plan B; y sólo si FALLAN LOS DOS es ausente.
       //
       // La pregunta que este control contesta es "¿los cinco productos hacen lo mismo?", y eso se
-      // decide sobre lo que CORRE, o sea `origin/main`. Leía el árbol de trabajo, así que un
-      // checkout parado en otra rama —lo normal: el dev trabaja en `dev`— se reportaba como
-      // divergencia del PRODUCTO. Medido el 2026-09-03: el backend de un producto, 29 commits atrás,
-      // producía CUATRO divergencias que en `origin/main` no existen. Un control que da falsas
-      // alarmas se apaga, y se lleva puestos los casos donde sí importaba.
+      // decide sobre lo que CORRE, o sea `origin/main`. Si leyera el árbol de trabajo, un
+      // checkout parado en otra rama —lo normal: el dev trabaja en `dev`— se reportaría como
+      // divergencia del PRODUCTO: un clon atrasado produciría divergencias que en `origin/main` no
+      // existen. Un control que da falsas alarmas se apaga, y se lleva puestos los casos donde sí importaba.
       //
       // El disco sigue siendo el plan B —para un repo sin remoto, o sin ese ref— pero AVISANDO:
       // "no pude leer lo publicado" y "leí lo publicado" no son lo mismo y no se pueden confundir.
@@ -558,8 +552,7 @@ function main(argv0) {
     for (const rasgo of cfg.rasgos) {
       // Un rasgo sin `id` o sin `patron` NO se saltea en silencio: `new RegExp(undefined)` compila
       // sin quejarse, no matchea nunca, y sumaría una comparación que en realidad no se hizo — o
-      // sea, inflaría el "todos coinciden" con una medición fantasma. (Cazado el 2026-09-01 al
-      // meter por error un bloque de comentario dentro del array de rasgos.)
+      // sea, inflaría el "todos coinciden" con una medición fantasma.
       if (!rasgo.id || typeof rasgo.patron !== 'string') {
         console.log(`🔴 hay una entrada en "rasgos" sin id o sin patron: ${JSON.stringify(rasgo).slice(0, 120)}`);
         console.log('   Un rasgo que no se puede evaluar NO es un rasgo que pasa.');
@@ -591,7 +584,7 @@ function main(argv0) {
         lineas.push(`  ⏳ ${grupo} · ${rasgo.que}: en camino a ${enViaje.join(', ')} (revisar ${revisiones})`);
       }
 
-      // 🔴 UNANIMIDAD NO ES SIEMPRE ACUERDO (2026-09-01). Este control compara los productos
+      // 🔴 UNANIMIDAD NO ES SIEMPRE ACUERDO. Este control compara los productos
       // ENTRE SÍ, así que si los cinco dejan de hacer lo mismo a la vez, los cinco coinciden y
       // sale verde. Para los rasgos que tienen un criterio ÚNICO escrito afuera —hoy, el guión
       // `scripts/ci/audit-dependencies.js`— eso no alcanza: un rasgo `exigido` que NADIE
@@ -636,7 +629,7 @@ function main(argv0) {
   R.res.comparaciones = comparados;
   if (comparados === 0) {
     console.log('🔴 no se comparó nada — no puedo opinar');
-    // una declaración vencida sale 1 aunque no se haya podido comparar nada, como siempre (AC 3)
+    // una declaración vencida sale 1 aunque no se haya podido comparar nada, como siempre
     return terminar(o, R, R.res.vencidas.length ? 1 : 2, 'no_medido', 'no se comparó nada');
   }
   // se comparó: medido si todo se leyó de lo publicado; parcial si algo quedó afuera o salió del disco

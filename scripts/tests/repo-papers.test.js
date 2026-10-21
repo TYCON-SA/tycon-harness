@@ -1,17 +1,16 @@
 'use strict';
 
 /**
- * repo-papers.test.js — los papeles del repo público, medidos donde viven (story 8.7, tanda A · T10-T14; traída del
- * repo privado el 2026-10-13, story 8.26, desde su public-papers.test.js: lleva otro nombre para que el árbol armado
- * —el privado con el público encima— no tenga dos archivos en la misma ruta mientras el privado conserve el suyo).
+ * repo-papers.test.js — los papeles del repo público, medidos donde viven. Lleva un nombre distinto del de su par del
+ * repo privado para que el árbol armado —el privado con el público encima— no tenga dos archivos en la misma ruta.
  *
  * Los papeles son lo que hace de este repo un proyecto que se puede usar de afuera: `LICENSE`, `NOTICE`, las dos
- * portadas (`README.md` y `README.es.md`, en la raíz desde 2026-10-14), `.github/CONTRIBUTING.md`, `.github/CODE_OF_CONDUCT.md`,
+ * portadas (`README.md` y `README.es.md`, en la raíz), `.github/CONTRIBUTING.md`, `.github/CODE_OF_CONDUCT.md`,
  * `.github/SECURITY.md`, la CI (`.github/workflows/ci.yml`), las tres páginas de primeros pasos (`getting-started/`), el
  * guion de entrada (`scripts/setup/get-harness.{sh,ps1}`) y la lista de remotos públicos
  * (`scripts/setup/public-remotes.json`).
- * Hasta el 2026-10-13 vivían en el repo privado como plantillas (`scripts/publishing/public-files/<destino>`, con la
- * dirección del repo por marcadores) y el exportador las ponía en su lugar; desde esa noche se escriben acá, en su ruta
+ * En el repo privado son plantillas (`scripts/publishing/public-files/<destino>`, con la
+ * dirección del repo por marcadores) que el exportador pone en su lugar; acá se escriben en su ruta
  * real, con la dirección ya puesta. Esta suite los lee en esa ruta (`RAIZ/<destino>`) y los compara contra lo que existe
  * en este mismo repo: el manifiesto de terceros, la lista de hooks, la lista de efectos, el instalador, las skills y los
  * paquetes (en el repo unido viven en `skills/` y `packs/`, no en un clon aparte). No usa red ni herramientas de afuera.
@@ -20,19 +19,19 @@
  *   · T10 — la licencia es el texto canónico de la ASF byte a byte.
  *   · T11 — el NOTICE trae titular, licencia, marcas y una línea `* <ruta>` por cada `derived` del manifiesto, con su
  *     origen, licencia, copyright y el aviso MIT debajo.
- *   · T12 — CONTRIBUTING, CODE_OF_CONDUCT y SECURITY dicen lo que pide el AC 3.
+ *   · T12 — CONTRIBUTING, CODE_OF_CONDUCT y SECURITY dicen lo que un proyecto abierto necesita: cómo contribuir, la conducta y cómo avisar una falla de seguridad.
  *   · T13 — las dos portadas cumplen el mismo contrato: secciones, bloques marcados idénticos, instalación de una línea;
- *     y ningún papel quedó con un marcador `{{public-*}}` sin reemplazar ni con otra dirección que la declarada.
+ *     y ningún papel queda con un marcador `{{public-*}}` sin reemplazar ni con otra dirección que la declarada.
  *   · T14 — lo que nombran (hooks, integraciones, variables, subcomandos) existe de verdad.
- *   · T33 de la story 8.13 (tanda D) — la portada del mecanismo de instalación: una línea para instalar, y «cómo se
+ *   · T33 — la portada del mecanismo de instalación: una línea para instalar, y «cómo se
  *     actualiza» con los comandos, la retención, los números de versión y la copia fija; el permiso de lectura; las 6
  *     horas; Node 22. Por palabras clave, en los dos idiomas, cada una con su espejo.
- *   · T35 (tanda C) — la guía de publicación le dice a la story 8.8 qué recibe, punto por punto (AC 27).
+ *   · T35 — la guía de publicación dice qué recibe la publicación, punto por punto.
  *
  * Lo que la versión del privado medía y acá no está, porque es de la tubería privada de publicación y no existe en este
  * repo: que los repos internos no lleven `LICENSE`, el contacto permitido en `denylist.json`, los sintéticos de
  * `allowlist.json` que traían cada papel desde `public-files/`, `public-repos.json` (acá el nombre público lo declara
- * `scripts/setup/public-remotes.json`) y la evidencia de la story 8.7 en `specs/`. Cada lugar lo dice donde estaba.
+ * `scripts/setup/public-remotes.json`) y la evidencia de la historia de publicación en `specs/`. Cada lugar lo dice donde estaba.
  */
 
 const test = require('node:test');
@@ -55,7 +54,7 @@ const PAPERS = [
   'scripts/setup/public-remotes.json',
 ];
 
-// La dirección del repo público. En el privado los papeles la llevaban por marcadores (`{{public-org}}/{{public-repo}}`)
+// La dirección del repo público. En el privado los papeles la llevan por marcadores (`{{public-org}}/{{public-repo}}`)
 // y el nombre vivía en `public-repos.json`; acá los papeles ya la traen puesta y el único lugar que la declara es
 // `scripts/setup/public-remotes.json` (el programa de instalación reconoce con ella un clon del público). La prueba la lee
 // de ahí y no la escribe: el nombre del repo público escrito fuera de un .md frena otros controles.
@@ -120,7 +119,7 @@ const SECTIONS = [
   ['How it updates', 'Cómo se actualiza'],
 ];
 const BLOCKS = ['requirements', 'install:core', 'install:unattended', 'install:clone', 'install:clone-unattended'];
-// la frase con que el paquete del stack del equipo se describe (su manifiesto vive en el perfil del equipo desde la 8.41)
+// la frase con que el paquete del stack del equipo se describe (su manifiesto vive en el perfil del equipo)
 const STACK_PHRASE = { es: 'el paquete del stack de TYCON: .NET + React/Next.js sobre Bizuit' };
 // La marca BMad fuera de los identificadores sólo puede aparecer en la frase de compatibilidad (política de marca).
 const BMAD_COMPAT = {
@@ -129,10 +128,10 @@ const BMAD_COMPAT = {
 };
 // La parte fija del mensaje de `paquetesActivos()` (packs.js de agent-skills) para un paquete pedido y no instalado.
 const PACK_MISSING_MESSAGE = 'el repo declara el paquete «<nombre>» en `packs:` y no está instalado en';
-// La instalación de la portada (story 8.23, tanda E · AC 33): tres líneas por sistema —bajar el guion, leerlo,
-// correrlo—, sin git. La bajada va por raw.githubusercontent.com, no por la API: sin credencial, la API tiene un tope de 60
-// consultas por hora por conexión y una máquina nueva no llegaba ni a correr el guion (deuda DEF-8.34-portada-por-la-api). La URL es la del repo público declarado. Desde que el repo de la versión publicada es público (story
-// 8.26, AC 66) la primera línea va SIN credencial: ni la cabecera `Authorization` ni la variable del permiso (T80).
+// La instalación de la portada: tres líneas por sistema —bajar el guion, leerlo, correrlo—, sin git. La bajada va por
+// raw.githubusercontent.com, no por la API: sin credencial, la API tiene un tope de 60 consultas por hora por conexión y
+// una máquina nueva no llegaría ni a correr el guion. La URL es la del repo público declarado. Como el repo de la versión
+// publicada es público, la primera línea va SIN credencial: ni la cabecera `Authorization` ni la variable del permiso.
 const SCRIPT_URL = (file) => `https://raw.githubusercontent.com/${ORG_REPO}/main/scripts/setup/${file}`;
 const INSTALL_LINES = {
   bash: [`curl -fsSL -o get-harness.sh ${SCRIPT_URL('get-harness.sh')}`, 'less get-harness.sh', 'bash get-harness.sh'],
@@ -140,7 +139,7 @@ const INSTALL_LINES = {
 };
 /** Las mismas tres líneas, la última con las opciones de install (`install:unattended`). */
 const withOptions = (shell, options) => [INSTALL_LINES[shell][0], INSTALL_LINES[shell][1], `${INSTALL_LINES[shell][2]} -- ${options}`];
-// El clon, modo desarrollador (`install:clone`): el comando de la 8.13, para quien mantiene el arnés; no para usarlo.
+// El clon, modo desarrollador (`install:clone`): para quien mantiene el arnés; no para usarlo.
 const CLONE_LINE = {
   bash: `git clone https://github.com/${ORG_REPO} ${CLONE_DIR} && node ${CLONE_DIR}/scripts/setup/harness.js install`,
   powershell: `git clone https://github.com/${ORG_REPO} ${CLONE_DIR}; node ${CLONE_DIR}/scripts/setup/harness.js install`,
@@ -150,7 +149,7 @@ const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse',
 // ── utilidades ──────────────────────────────────────────────────────────────────────────────────────────────────
 const exists = (abs) => fs.existsSync(abs);
 const readPaper = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
-// La portada y su referencia (getting-started/reference(.es).md, donde viven desde 2026-10-14 los bloques de instalación
+// La portada y su referencia (getting-started/reference(.es).md, donde viven los bloques de instalación
 // y todo lo de consultar), leídas juntas: los contratos buscan por título de sección, y ningún título se repite entre las dos
 const REFERENCE = { en: 'getting-started/reference.md', es: 'getting-started/reference.es.md' };
 const readCover = (lang) => `${readPaper({ en: 'README.md', es: 'README.es.md' }[lang])}\n${readPaper(REFERENCE[lang])}`;
@@ -245,8 +244,7 @@ function runHarnessScript(rel, args) {
 }
 
 /**
- * Los hooks que registra el arnés: los de scripts/setup/hooks-list.json, LA lista que leen los dos instaladores desde la
- * story 8.17 (tanda W3 · AC 27). Antes se leían del texto de install-tycon-hooks.sh.
+ * Los hooks que registra el arnés: los de scripts/setup/hooks-list.json, LA lista que leen los dos instaladores.
  */
 function installerHooks() {
   const list = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'setup', 'hooks-list.json'), 'utf8')).hooks;
@@ -264,21 +262,21 @@ function installerHooks() {
   return { count: all.length, pairs };
 }
 
-/** El texto donde una variable `TYCON_*` nombrada tiene que existir (AC 4, T14). */
+/** El texto donde una variable `TYCON_*` nombrada tiene que existir (T14). */
 function variableCorpus({ withHooks = false } = {}) {
   const files = [
     'scripts/install-tycon-hooks.sh',
-    // desde la W3 de la 8.17 los interruptores de los hooks viven en la lista única y su aplicador
+    // los interruptores de los hooks viven en la lista única y su aplicador
     'scripts/setup/hooks-list.json',
     'scripts/setup/apply-hooks.js',
     'scripts/setup/sync-claude-md-blocks.sh',
     'scripts/lib/tycon-config.js',
     'scripts/setup/harness.js',
-    // El paso de terceros del instalador: su tope de red (`TYCON_THIRD_PARTY_NETWORK_BUDGET_S`) vive acá (AC 23).
+    // El paso de terceros del instalador: su tope de red (`TYCON_THIRD_PARTY_NETWORK_BUDGET_S`) vive acá.
     'scripts/publishing/install-third-party.js',
-    // La consulta al modelo del portón de edición: su interruptor (`TYCON_LANE_LLM`) vive acá (story 8.16, AC 5).
+    // La consulta al modelo del portón de edición: su interruptor (`TYCON_LANE_LLM`) vive acá.
     'skills/tycon-pipeline/scripts/lib/lane-classifier.js',
-    // El guion de entrada de la portada (story 8.23, tanda E): el permiso de lectura le llega por `TYCON_GITHUB_TOKEN`.
+    // El guion de entrada de la portada: el permiso de lectura le llega por `TYCON_GITHUB_TOKEN`.
     'scripts/setup/get-harness.sh',
   ].map((f) => path.join(RAIZ, f));
   const harnessDir = path.join(RAIZ, 'scripts', 'setup', 'harness');
@@ -293,7 +291,7 @@ const namedVariables = (text) => [...new Set(text.match(/\bTYCON_[A-Z0-9_]+\b/g)
 
 const README = { en: 'README.md', es: 'README.es.md' };
 // Los pedidos de instalación guiada que un dev de afuera le pega a Claude Code (enlazados desde «Instalación»).
-// los tres (el de Linux desde la story 8.23 E: la portada lo enlaza y se reescribió con la misma bajada del guion)
+// los tres: Windows, Mac y Linux (la portada enlaza el de Linux, escrito con la misma bajada del guion)
 const GUIDED_PAPERS = ['getting-started/windows.md', 'getting-started/mac.md', 'getting-started/linux.md'];
 
 // ── T10 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -358,7 +356,7 @@ test('Papeles_Comunidad_SusSecciones', () => {
     assertEnglishParagraph(firstParagraph(text), file);
   }
 
-  // CONTRIBUTING: los pull requests son bienvenidos (decisión del dueño, 2026-10-13: el público es la fuente, ya no un
+  // CONTRIBUTING: los pull requests son bienvenidos (el público es la fuente, no un
   // espejo), cómo correr lo de la CI, las dos reglas de escritura, licencia e idioma.
   assert.doesNotMatch(contributing, /espejo|mirror|sincronizaci/i, 'CONTRIBUTING: el repo ya no es un espejo que se sincroniza');
   assert.match(contributing, /bienvenidos/, 'CONTRIBUTING: tiene que decir que los pull requests son bienvenidos');
@@ -407,7 +405,7 @@ test('Papeles_Portadas_MismoContratoEnDosIdiomas', async (t) => {
       `el bloque <!-- ${name} --> tiene que ser byte a byte igual en las dos portadas`);
   }
 
-  // install:core: tres líneas por sistema —bajar el guion, leerlo, correrlo—, con la URL por marcadores (story 8.23 E).
+  // install:core: tres líneas por sistema —bajar el guion, leerlo, correrlo—, con la URL por marcadores.
   const core = fences(block(text.en, 'install:core', README.en));
   for (const lang of ['bash', 'powershell']) {
     const f = core.filter((x) => x.lang === lang);
@@ -415,7 +413,7 @@ test('Papeles_Portadas_MismoContratoEnDosIdiomas', async (t) => {
     const body = f[0].body.split('\n').filter((l) => l.trim());
     assert.deepStrictEqual(body, INSTALL_LINES[lang], `install:core (${lang}): las tres líneas de la portada sin git (bajar, leer, correr)`);
   }
-  // install:clone: el modo desarrollador, una línea por sistema, el comando de la 8.13 (para quien mantiene el arnés)
+  // install:clone: el modo desarrollador, una línea por sistema (para quien mantiene el arnés)
   const clone = fences(block(text.en, 'install:clone', README.en));
   for (const lang of ['bash', 'powershell']) {
     const f = clone.filter((x) => x.lang === lang);
@@ -423,7 +421,7 @@ test('Papeles_Portadas_MismoContratoEnDosIdiomas', async (t) => {
     assert.deepStrictEqual(f[0].body.split('\n').filter((l) => l.trim()), [CLONE_LINE[lang]], `install:clone (${lang}): una sola línea, el clon y harness.js install`);
   }
 
-  // La dirección del repo público. En el privado los papeles la llevaban por marcadores y el nombre vivía en
+  // La dirección del repo público. En el privado los papeles la llevan por marcadores y el nombre vive en
   // public-repos.json (que no está en este repo); acá cada papel la trae ya puesta: ningún marcador sin reemplazar, y
   // toda dirección del arnés en GitHub es la que declara scripts/setup/public-remotes.json.
   assert.ok(!PUBLIC_REPO.error, `scripts/setup/public-remotes.json: ${PUBLIC_REPO.error}`);
@@ -467,7 +465,7 @@ test('Papeles_Portadas_MismoContratoEnDosIdiomas', async (t) => {
     assert.doesNotMatch(readPaper(guided), /git clone/, `${guided}: el pedido guiado ya no clona (story 8.23 E)`);
   }
 
-  // el paquete del stack vive en el perfil del equipo (story 8.41): se mide donde está (el repo del equipo encima)
+  // el paquete del stack vive en el perfil del equipo: se mide donde está (el repo del equipo encima)
   await t.test('la description del paquete del stack', (tt) => {
     const file = path.join(RAIZ, 'packs', 'bizuit', 'pack.json');
     // en la copia pública (sin los paquetes del equipo: la señal es el de clientes) no se mide y se dice; con el repo del
@@ -529,7 +527,7 @@ test('Papeles_HooksEInterruptoresQueExisten', async (t) => {
     assert.ok(h >= 0, 'INSTALL.md: falta la sección «Los hooks que instala»');
     const table = firstTable(lines.slice(h + 1).map((l) => l.line).join('\n'));
     assert.ok(table, 'INSTALL.md: la sección «Los hooks que instala» no tiene tabla');
-    // «Perfil» (story 8.16, tanda C): su cruce con la lista de efectos vive en install-effects.test.js (T31)
+    // «Perfil»: su cruce con la lista de efectos vive en install-effects.test.js (T31)
     assert.deepStrictEqual(table.header, ['Hook', 'Evento', 'Qué hace', '¿Bloquea?', 'Perfil', 'Interruptor'], 'INSTALL.md: las columnas de la tabla de hooks');
     const seen = new Map();
     for (const r of table.rows) {
@@ -550,7 +548,7 @@ test('Papeles_HooksEInterruptoresQueExisten', async (t) => {
   });
 });
 
-// ── T33 de la story 8.13 (tanda D · AC 27) ──────────────────────────────────────────────────────────────────────
+// ── T33 ────────────────────────────────────────────────────────────────────────────────────────────────────────────
 // La portada después del mecanismo de instalación: una línea para instalar, y lo que la persona necesita saber para
 // actualizar. Se afirma por PALABRAS CLAVE y en los dos idiomas: una prosa en castellano y otra en inglés no pueden ser
 // iguales byte a byte (eso vale para los bloques marcados). Cada punto dice DÓNDE tiene que estar (su sección, o su
@@ -585,7 +583,7 @@ const updateBullets = (text, lang) => IN_UPDATES(text, lang).split('\n').map((l)
 /** Un punto por palabras clave: `both` vale para los dos idiomas; `en` / `es`, para el suyo. */
 const keywordPoint = (what, where, { both = [], en = [], es = [] }) => ({ what, where, keywords: { en: [...both, ...en], es: [...both, ...es] } });
 const FRONT_PAGE_KEYWORDS = [
-  // story 8.40 (AC 31, decisión del dueño 2026-10-16): el piso para instalar es Node 22, el de los dos guiones y el
+  // el piso para instalar es Node 22, el de los dos guiones y el
   // paquete de npm; 20 se tolera sólo para actualizar una instalación existente (harness.js) y no se prueba
   keywordPoint('requisitos: Node 22', IN_REQUIREMENTS, {
     both: ['Node 22', 'node >= 22'],
@@ -663,11 +661,10 @@ function frontPageProblems(text, lang) {
   return out;
 }
 
-// 🔴 rojo previo (medido con las portadas de antes de la tanda D): 14 problemas en la primera portada que mira —12
-//    palabras clave que faltan (el permiso de lectura, «6 hours», los números de versión, la confirmación de latest con
+// 🔴 Una portada sin estos puntos falla en cada uno: sin las palabras clave (el permiso de lectura, «6 hours», los números de versión, la confirmación de latest con
 //    auto, `rollback --to <copy>`, la retención con `rollback --release`, la copia fija con su carpeta y `TYCON_UPDATE=0`),
-//    «rollback --to no recibe un número de versión» y las viñetas (cinco, sin «Versions» ni «Startup»)—. Los dos espejos
-//    fallaban antes: sin la frase en la portada real no hay de dónde sacarla («la portada de juguete … es igual a la real»).
+//    sin «rollback --to no recibe un número de versión» y con las viñetas equivocadas (cinco, sin «Versions» ni «Startup»). Los dos espejos
+//    fallan también: sin la frase en la portada real no hay de dónde sacarla («la portada de juguete … es igual a la real»).
 test('PublicFrontPage_OneLineInstall_BothLanguages', async (t) => {
   const text = { en: readCover('en'), es: readCover('es') };
 
@@ -719,12 +716,12 @@ test('PublicFrontPage_OneLineInstall_BothLanguages', async (t) => {
   });
 });
 
-// ── T35 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T35 ────────────────────────────────────────────────────────────────────────────────────────────────────────────
 // La guía de publicación viaja con el arnés, y su sección «Lo que la publicación recibe» se mide igual que en el privado.
 const HANDOFF_GUIDE = 'guides/maintaining/publicacion-espejo.md';
 const HANDOFF_SECTION = 'Lo que la publicación recibe';
-// Cada punto del AC 27 de la story 8.7: lo que la sección tiene que decir. Un punto es una lista de expresiones; todas
-// tienen que estar en la sección (no en el resto de la guía: la 8.8 lee ESA sección).
+// Cada punto es lo que la sección tiene que decir: una lista de expresiones; todas
+// tienen que estar en la sección (no en el resto de la guía: quien consume la guía lee ESA sección).
 const HANDOFF_POINTS = [
   ['qué exportación se publica', [/--package core,bizuit --single-repo/]],
   ['a qué repo: el que devuelve readPublicRepo()', [/readPublicRepo\(\)/]],
@@ -756,31 +753,29 @@ test('Papeles_LoQueRecibeLa88', async (t) => {
     }
   });
 
-  // (el privado medía además la evidencia de la corrida con modelo —Task 16, AC 28— en el Dev Agent Record de la story
-  // 8.7: las stories viven en specs/ del repo privado, que no está en este repo)
+  // (el privado medía además la evidencia de la corrida con modelo, en el registro de la story de publicación:
+  // las stories viven en specs/ del repo privado, que no está en este repo)
 });
 
-// ── story 8.16, tanda A · «decir la verdad» (AC 5, 6, 7 y 10) ───────────────────────────────────────────────────
+// ── la portada dice todo lo que la instalación cambia ──────────────────────────────────────────────────────────────
 // La portada dice TODO lo que la instalación cambia en la máquina y en cómo contesta el asistente, y lo dice desde la
 // lista declarada (`scripts/setup/install-effects.json`): cada efecto marcado `front_page: true` tiene que estar
 // nombrado en los dos idiomas. «Nombrado» es mecánico e igual en los dos idiomas: el nombre del bloque, la clave del
-// ajuste, el interruptor de la pieza o la ruta donde guarda. Lo demás va por palabras clave, como el AC 27 de la 8.13.
+// ajuste, el interruptor de la pieza o la ruta donde guarda. Lo demás va por palabras clave, como el resto de los puntos de la portada.
 const { readEffects } = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'managed.js'));
 const IN_WHAT_IT_IS = sectionOf(at('What it is and what it isn\'t'));
 const IN_FIRST_USE = sectionOf(at('Your first story'));
 const IN_WRITES = sectionOf(at('What it writes on your machine and what it does on its own'));
 const IN_PRODUCT = sectionOf(at('Your product repo'));
-// El orden de la sección (AC 5): primero cómo contesta el asistente; después lo que frena, lo que corre solo, lo que
+// El orden de la sección: primero cómo contesta el asistente; después lo que frena, lo que corre solo, lo que
 // escribe y guarda, y la red.
 const WRITES_ORDER = {
   en: ['It changes how your assistant answers', 'Guards that can block', 'What it does on its own', 'What it writes and keeps on disk', 'Network'],
   es: ['Cambia cómo contesta tu asistente', 'Controles que frenan', 'Qué hace solo', 'Qué escribe y qué guarda en disco', 'La red'],
 };
-// La frase de Windows (AC 10). La story pedía «por WSL; el nativo, en preparación»; el dueño delegó la decisión
-// (2026-10-04) y la revisión adversaria mostró que esa frase ya era falsa: el camino nativo se midió ese día en una
-// máquina virtual y WSL no lo probó nadie. Hasta el 2026-10-06 la portada decía «ninguno probado con esta copia»; ese
-// día el camino nativo se instaló desde la copia en una máquina Windows 11 limpia, con `doctor` en orden y los hooks de
-// git puestos (prueba del dev externo), y la frase pasó a decir eso. WSL sigue sin probar, y lo dice. Dos piezas la atan
+// La frase de Windows: dice lo que está probado y lo que no. El camino nativo se instaló desde la copia en una máquina
+// Windows 11 limpia, con `doctor` en orden y los hooks de git puestos; WSL no lo probó nadie, y la frase lo dice.
+// Dos piezas la atan
 // a lo declarado: la lista de soporte de Windows (`windows-support.json`: el día que diga `supported`, esta frase y
 // `recommended` se revisan juntas) y la lista de efectos (mientras el instalador de Windows no registre los dos frenos,
 // la portada lo dice; cuando los registre, deja de decirlo).
@@ -798,7 +793,7 @@ const WINDOWS_GUARDS = ['PreToolUse:@tcg:safety-guard-pre.sh', 'PreToolUse:@tcg:
 function frontPageToken(e) {
   if (e.kind === 'block') return `\`${e.id.replace(/^TYCON_BLOCK:/, '')}\``;
   if (e.kind === 'setting') return e.id.split('.').pop();
-  if (e.kind === 'import') return 'INDEX.md';   // el índice que carga la línea de import (hasta 2026-10-14, README.md)
+  if (e.kind === 'import') return 'INDEX.md';   // el índice que carga la línea de import
   const variable = (String(e.switch || '').match(/\bTYCON_[A-Z0-9_]+/) || [])[0];
   if (variable) return variable;
   if (e.stores) return e.stores;
@@ -809,12 +804,12 @@ const effectName = (e) => String(e.id || e.id_pattern);
 /**
  * El nombre ENTERO, no como parte de otro: `TYCON_UPDATE` no queda nombrado por `TYCON_UPDATE_CHANNEL`, ni
  * `~/.claude/.tycon-pipeline/` por la ruta de las copias, ni `~/.claude/tycon-harness` por la ruta del comando
- * (pase adversarial de la tanda A: se podía borrar la frase que de verdad nombraba el efecto y la prueba seguía verde).
+ * (sin esto, se podría borrar la frase que de verdad nombra el efecto y la prueba seguiría verde).
  */
 const wholeToken = (token) => new RegExp(`${escapeRe(token)}(?![A-Za-z0-9_./-])`, 'g');
 const namesToken = (text, token) => wholeToken(token).test(text);
 /**
- * Los KB del índice (INDEX.md; hasta 2026-10-14, el README) que la línea de import carga en cada sesión, TAL COMO SALE en la copia pública: el de la raíz sin sus
+ * Los KB del índice (INDEX.md) que la línea de import carga en cada sesión, TAL COMO SALE en la copia pública: el de la raíz sin sus
  * bloques internos (la misma transformación que le aplica el exportador). El del repo interno pesa más.
  */
 function importedReadmeKb() {
@@ -840,9 +835,9 @@ function effectsProblems(text, lang, effects) {
   return out;
 }
 
-// Los puntos por palabras clave de la tanda A. `what` empieza con el AC, así el espejo sabe en qué punto tiene que fallar.
+// Los puntos por palabras clave. `what` empieza con un rótulo, así el espejo sabe en qué punto tiene que fallar.
 const GUIDED_INSTALL_KEYWORDS = [
-  // AC 5 (f): lo que el dueño aprobó para la tanda D de la 8.13 sigue dicho
+  // lo ya dicho sobre el mecanismo de instalación sigue dicho
   keywordPoint('AC 5 · aprobado en la 8.13 D: la consulta cada 6 horas', IN_ON_ITS_OWN, { en: ['at most once every 6 hours'], es: ['como mucho una vez cada 6 horas'] }),
   keywordPoint('AC 5 · aprobado en la 8.13 D: no aplica sin update --yes desde una terminal', IN_ON_ITS_OWN, {
     both: ['harness.js update --yes'], en: ['unless you ask for it from a terminal'], es: ['sin que se lo pidas desde una terminal'],
@@ -855,7 +850,7 @@ const GUIDED_INSTALL_KEYWORDS = [
   keywordPoint('AC 5 · aprobado en la 8.13 D: la copia fija y rollback --to <copia>', IN_UPDATES, {
     en: ['pinned copy', 'harness.js rollback --to <copy>'], es: ['copia fija', 'harness.js rollback --to <copia>'],
   }),
-  // AC 5 (a) a (e)
+  // lo que escribe, lo que frena, lo que corre solo, lo que guarda y la red
   keywordPoint('AC 5 · (a) el tope de largo que un hook mide y cobra', IN_WRITES, {
     both: ['1300'], en: ['in all your projects', 'plain Spanish'], es: ['en todos tus proyectos', 'castellano llano'],
   }),
@@ -868,7 +863,7 @@ const GUIDED_INSTALL_KEYWORDS = [
       '~/.claude/blocking-meter/', '~/.claude/lectura-grande/'],
     en: ['a compressed copy of the conversation', 'the last 8 requests of each session'], es: ['una copia comprimida de la conversación', 'los últimos 8 pedidos de cada sesión'],
   }),
-  // lo que escribe el lado Codex (pedido del dueño, 2026-10-04: «acá habla solo de Claude, ¿y Codex?»)
+  // lo que escribe el lado Codex: la portada no habla sólo de Claude
   keywordPoint('AC 5 · el lado Codex: qué escribe bajo ~/.codex/, su llave y el paso a mano', IN_WRITES, {
     both: ['~/.codex/', '`AGENTS.md`', '`hooks.json`', '`config.toml`', '`integrations.codex: true`', 'TYCON_CODEX=1', '`/hooks`'],
     en: ['off by default', 'One step stays manual'], es: ['viene apagado', 'Queda un paso a mano'],
@@ -876,7 +871,7 @@ const GUIDED_INSTALL_KEYWORDS = [
   keywordPoint('AC 5 · (e) la red: no manda datos de uso; de fábrica, sólo GitHub', IN_WRITES, {
     both: ['GitHub', 'scripts/publishing/third-party-skills.json'], en: ['sends no usage data'], es: ['no manda datos de uso'],
   }),
-  // AC 6
+  // copias de respaldo, interruptores, uninstall, primer uso e idioma de la salida
   keywordPoint('AC 6 · dónde quedan las copias de respaldo y cómo se vuelve', IN_WRITES, { both: ['~/.claude/.tycon-pipeline/harness/backups/', 'harness.js rollback --list'] }),
   keywordPoint('AC 6 · dónde se pone un interruptor', IN_WRITES, {
     both: ['`env`', '~/.claude/settings.json', '~/.claude/tycon.json'],
@@ -889,12 +884,12 @@ const GUIDED_INSTALL_KEYWORDS = [
     both: ['harness.js doctor', 'implementemos la story'], en: ['never commits'], es: ['nunca commitea'],
   }),
   keywordPoint('AC 6 · toda la salida está sólo en castellano (portada en inglés)', IN_WHAT_IT_IS, { en: ['are in Spanish only today'] }),
-  // AC 7
+  // qué pone un repo bajo el arnés
   keywordPoint('AC 7 · qué pone un repo bajo el arnés (la carpeta .tycon/, la primera story o .advisors/) y sus dos apagados', IN_PRODUCT, {
     both: ['`.tycon/`', '`.advisors/`', 'TYCON_STORY_GATE=off', '`pipeline.story_gate: false`', 'TYCON_RETRO_PENDING=0'],
     en: ['the first story', 'is denied'], es: ['la primera historia', 'se deniega'],
   }),
-  // AC 10
+  // Windows
   keywordPoint('AC 10 · Windows, en los requisitos', IN_REQUIREMENTS, { both: ['PowerShell 7', 'WSL'], en: [WINDOWS_PHRASE.requirements.en], es: [WINDOWS_PHRASE.requirements.es] }),
   keywordPoint('AC 10 · Windows, junto al bloque de PowerShell', IN_INSTALL, { both: ['PowerShell 7'], en: [WINDOWS_PHRASE.install.en], es: [WINDOWS_PHRASE.install.es] }),
 ];
@@ -908,10 +903,9 @@ function guidedLeftovers(text, lang) {
   if (/deshace todo|undoes all of it/.test(text)) out.push('AC 6 · uninstall no «deshace todo»: quita sólo lo que el mecanismo registró');
   const firstUse = IN_FIRST_USE(text, lang).split('\n').filter((l) => l.trim());
   if (firstUse.length > FIRST_USE_MAX_LINES) out.push(`AC 6 · «Tu primera historia» tiene ${firstUse.length} renglones (tope ${FIRST_USE_MAX_LINES})`);
-  // AC 10: en la «Referencia», todo párrafo que nombra Windows nombra WSL (WSL sigue sin probar, y lo dice). Arriba
-  // alcanza con una mención en «Qué necesitás»: la regla, aplicada a toda la página, llenaba de WSL el camino recomendado
-  // (revisión del lector interno, 2026-10-06).
-  // la referencia empieza en su primera sección (desde 2026-10-14 vive en getting-started/reference(.es).md)
+  // En la «Referencia», todo párrafo que nombra Windows nombra WSL (WSL sigue sin probar, y lo dice). Arriba
+  // alcanza con una mención en «Qué necesitás»: la regla, aplicada a toda la página, llenaría de WSL el camino recomendado.
+  // la referencia empieza en su primera sección (vive en getting-started/reference(.es).md)
   const refTitle = `## ${titleOf(at('What it is and what it isn\'t'), lang)}`;
   const reference = text.includes(refTitle) ? text.slice(text.indexOf(refTitle)) : text;
   if (!/\bWSL\b/.test(sectionOf(at('What you need'))(text, lang))) out.push('AC 10 · «Qué necesitás» no nombra WSL');
@@ -930,7 +924,7 @@ function guidedProblems(text, lang, effects) {
   return [...out, ...effectsProblems(text, lang, effects).map((m) => `AC 5 · ${m}`), ...guidedLeftovers(text, lang)];
 }
 
-// 🔴 rojo previo (medido con las portadas de antes de la tanda A): la sección no nombra ningún bloque por su nombre ni
+// 🔴 Una portada con estos problemas falla: la sección no nombra ningún bloque por su nombre ni
 //    los dos ajustes, no dice «1300», el barrido diario, lo que guarda, la red ni dónde va un interruptor; dice
 //    «deshace todo»; no hay «Primer uso» ni la frase de Windows.
 test('Papers_FrontPage_GuidedInstall_TandaA', async (t) => {
@@ -940,7 +934,7 @@ test('Papers_FrontPage_GuidedInstall_TandaA', async (t) => {
   const effects = loaded.effects;
   const onPage = effects.filter((e) => e.front_page);
 
-  // T4
+  // cada efecto marcado para la portada está nombrado en los dos idiomas
   await t.test('Papers_FrontPage_NamesEveryFrontPageEffect_BothLanguages', () => {
     assert.ok(onPage.length >= 12, `la lista marca ${onPage.length} efectos para la portada: los bloques, el import, los dos frenos, lo que corre solo, lo que guarda y los dos ajustes son más`);
     for (const kind of ['block', 'import', 'setting', 'hook', 'task', 'command', 'git-hook', 'third-party']) {
@@ -963,7 +957,7 @@ test('Papers_FrontPage_GuidedInstall_TandaA', async (t) => {
     }
   });
 
-  // T5, T6, T7 y la mitad de T11
+  // las frases ya aprobadas, las copias de respaldo, el interruptor, el primer uso, el idioma de la salida, el portón del repo de producto y la frase de Windows
   await t.test('Papers_FrontPage_KeepsOwnerApprovedSentences · BackupsSwitchPlaceFirstUseOutputLanguage · ProductRepoGate · WslNowNativeInPreparation', () => {
     for (const lang of ['en', 'es']) assert.deepStrictEqual(guidedProblems(text[lang], lang, effects), [], `${README[lang]}: lo que le falta o le sobra a la portada`);
   });
@@ -996,14 +990,14 @@ test('Papers_FrontPage_GuidedInstall_TandaA', async (t) => {
     }
   });
 
-  // T7: los dos apagados que la portada nombra existen en el portón
+  // los dos apagados que la portada nombra existen en el portón
   await t.test('Papers_FrontPage_ProductRepoGateAndItsSwitchesExist', () => {
     const gate = fs.readFileSync(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'story-gate.js'), 'utf8');
     assert.match(gate, /\bTYCON_STORY_GATE\b/, 'story-gate.js: el interruptor de la persona');
     assert.match(gate, /pipeline\.story_gate: false/, 'story-gate.js: el apagado por repo');
   });
 
-  // T11: la frase de Windows sale de la lista declarada de Windows (8.17), no de una decisión suelta
+  // la frase de Windows sale de la lista declarada de Windows, no de una decisión suelta
   await t.test('Papers_WindowsPhrase_FollowsTheDeclaredLists', () => {
     const support = readJson(path.join(RAIZ, 'scripts', 'setup', 'windows-support.json'));
     assert.notStrictEqual(support.native, 'supported',
@@ -1021,11 +1015,10 @@ test('Papers_FrontPage_GuidedInstall_TandaA', async (t) => {
   });
 });
 
-// ── story 8.23, tanda E · la portada SIN git (AC 33 y 34 · la parte de los papeles de T34 y T35) ─────────────────
-// Desde la tanda E el bloque `install:core` ES el guion de entrada (bajarlo sin credencial, leerlo,
+// ── la portada SIN git ─────────────────────────────────────────────────────────────────────────────────────────────
+// El bloque `install:core` ES el guion de entrada (bajarlo sin credencial, leerlo,
 // correrlo: tres líneas por sistema); `get-harness.*` baja la versión publicada como archivos —sin git, sin clon— y sigue
-// con `harness.js install --version latest`. El guion aparte de la 8.16 E (`install:script`, guardado mientras el repo
-// fuera privado) y su fixture se retiraron: ya no hay dos formas de entrar. El clon queda como MODO DESARROLLADOR
+// con `harness.js install --version latest`. No hay otro guion de entrada: hay una sola forma de entrar. El clon queda como MODO DESARROLLADOR
 // (`install:clone`, después de `install:unattended`): para cambiar el arnés, no para usarlo.
 // Nunca una tubería hacia un intérprete, en ninguna parte de la portada: `| bash`, `| sudo bash`, y las dos formas sin
 // tubería que hacen lo mismo, `bash <(curl …)` y `sh -c "$(curl …)"`.
@@ -1037,8 +1030,7 @@ const NO_GIT_KEYWORDS = [
   keywordPoint('AC 33 · sin git, sin clon: la versión publicada bajada como archivos', IN_INSTALL, {
     both: ['harness.js install --version latest'], en: ['no git, no clone'], es: ['sin git, sin clon'],
   }),
-  // hasta que el repo fue público este punto era «el permiso de lectura, pedido antes de bajar y guardado una vez».
-  // Con el repo público el permiso no hace falta: lo que queda dicho es para qué sirve uno propio (el límite de pedidos
+  // sin credencial el permiso no hace falta: lo que queda dicho es para qué sirve uno propio (el límite de pedidos
   // sin credencial), dónde lo guarda el guion y cómo se saca
   keywordPoint('AC 33 · sin credencial; un permiso propio sólo para el límite de pedidos, guardado donde se dice y con su salida', IN_INSTALL, {
     both: ['TYCON_GITHUB_TOKEN', '`~/.tycon/config.json`', '403', 'harness.js config unset github.token'],
@@ -1075,7 +1067,7 @@ test('Papers_NoGitFrontPage_ThreeVisibleLines_NoPipeToShell_PermissionBeforeDown
   }
 });
 
-// ── Story 8.16, tanda B (AC 19 · T24): el plan y la conformidad, dichos en la portada ─────────────────────────────────
+// ── el plan y la conformidad, dichos en la portada ─────────────────────────────────────────────────────────────────
 // `install:core` no cambia; el párrafo de abajo dice que `install` muestra el plan y pregunta; un bloque nuevo
 // `install:unattended` (bash y PowerShell) trae la misma línea más `--yes`, para una máquina sin terminal, con una oración
 // que avisa que así se acepta el plan sin que nadie lo vea y que conviene mirar antes `--dry-run`.
@@ -1092,7 +1084,7 @@ test('Papeles_UnattendedBlock_BothLanguages (T24)', () => {
     for (const shell of ['bash', 'powershell']) {
       const f = un.filter((x) => x.lang === shell);
       assert.strictEqual(f.length, 1, `${README[lang]}: install:unattended tiene que traer un bloque ${shell}`);
-      // desde la tanda D (AC 36) el bloque nombra el perfil: `--yes` acepta el plan pero no elige. Desde la 8.23 E son las
+      // el bloque nombra el perfil: `--yes` acepta el plan pero no elige. Son las
       // tres líneas de install:core, la última con `-- --profile minimal --yes`
       assert.deepStrictEqual(f[0].body.split('\n').filter((l) => l.trim()), withOptions(shell, '--profile minimal --yes'),
         `${README[lang]}: install:unattended (${shell}) son las líneas de install:core, la última con -- --profile minimal --yes`);
@@ -1104,7 +1096,7 @@ test('Papeles_UnattendedBlock_BothLanguages (T24)', () => {
   }
 });
 
-// ── Story 8.16, tanda C (AC 22 · T31, la mitad de las portadas): la sección «Perfiles» ──────────────────────────────
+// ── la sección «Perfiles» ──────────────────────────────────────────────────────────────────────────────────────────
 // Doce renglones como mucho, con lo que trae cada perfil: cuántos hooks trae `minimal` (contados desde la lista de
 // efectos, no escritos a mano), qué se queda sólo en `full` (los frenos, los bloques que cambian cómo contesta el
 // asistente, los hooks de git, las tareas de fondo), cómo se elige y qué pasa si no se elige.
@@ -1144,10 +1136,10 @@ test('Papers_ProfilesSection_BothLanguages (T31)', () => {
   }
 });
 
-// ── Story 8.16, tanda B (AC 19, arreglo de la tanda A): las skills de la portada, con su nombre EN LA COPIA ───────────
+// ── las skills de la portada, con su nombre EN LA COPIA ────────────────────────────────────────────────────────────
 // La portada se lee en la copia pública, donde algunas skills tienen otro nombre que en su origen (`bmad-create-story`
-// sale como `tycon-create-story`, por la política de marca de BMad). «Primer uso» nombraba la de origen y la exportación
-// real salía 1. Una skill nombrada entre acentos graves con un nombre que acá no existe es un nombre que el lector no
+// sale como `tycon-create-story`, por la política de marca de BMad). Si «Primer uso» nombrara la de origen, la exportación
+// real saldría 1. Una skill nombrada entre acentos graves con un nombre que acá no existe es un nombre que el lector no
 // encuentra. En el privado los nombres viejos salían de `skillRenames` (from → to); acá ese renombre ya está hecho
 // (from = to), así que salen del manifiesto de terceros: el nombre de origen de cada skill derivada (`based_on.path`)
 // que no es el suyo, más todo `from` de `skillRenames` que todavía difiera de su `to`.
@@ -1179,8 +1171,8 @@ test('Papeles_Portadas_SkillsConSuNombreEnLaCopia', () => {
   }
 });
 
-// ── story 8.19, tanda C · la ruta del lugar en las portadas (AC 24, T34) ────────────────────────────────────────────
-// Las dos portadas nombran el lugar (`~/.claude/<lugar>`, el nombre de place.js) donde nombraban el viejo, y ninguna
+// ── la ruta del lugar en las portadas ──────────────────────────────────────────────────────────────────────────────
+// Las dos portadas nombran el lugar (`~/.claude/<lugar>`, el nombre de place.js) y ninguna
 // nombra la ruta vieja: afuera, el viejo no existe. El bloque de instalación no cambia: sigue siendo la línea de siempre
 // y no nombra ninguna de las dos rutas. El install-effects.json manda a la portada el efecto del lugar, no el del viejo.
 test('PublicPapers_PlacePath_ZeroLegacy_InstallBlockUnchanged', () => {
@@ -1190,7 +1182,7 @@ test('PublicPapers_PlacePath_ZeroLegacy_InstallBlockUnchanged', () => {
   for (const lang of ['en', 'es']) {
     const text = readCover(lang);
     assert.deepStrictEqual(text.match(legacyRx) || [], [], `${README[lang]}: nombra la ruta vieja del lugar`);
-    // la portada reescrita para el dev externo (2026-10-06) nombra menos rutas que la de antes (eran 10 o más): el piso
+    // la portada para el dev externo nombra pocas rutas: el piso
     // sólo asegura que el lugar sigue nombrado donde hace falta; lo que importa es que la ruta vieja no aparezca
     assert.ok((text.match(placeRx) || []).length >= 5, `${README[lang]}: nombra el lugar ${(text.match(placeRx) || []).length} veces (piso: 5)`);
     const install = block(text, 'install:core', README[lang]);
@@ -1206,22 +1198,21 @@ test('PublicPapers_PlacePath_ZeroLegacy_InstallBlockUnchanged', () => {
   assert.ok(!legacy || legacy.front_page === false, 'install-effects.json: el viejo no va a la portada');
 });
 
-// ── Story 8.16, tanda D (AC 36 · T50): las preguntas, dichas en la portada ───────────────────────────────────────────
+// ── las preguntas, dichas en la portada ────────────────────────────────────────────────────────────────────────────
 // «Instalación» dice las tres preguntas (el perfil sin valor por defecto, las integraciones, el paquete del
 // stack) y las opciones que las contestan; el bloque sin terminal nombra el perfil (`--profile minimal --yes`) con la
 // oración «o `--profile full`»; y la tabla de «Qué es opcional» marca `mailbox` y `nightly` como del equipo.
-// 🔴 rojo previo verificado: antes de la tanda D la portada no nombraba las preguntas ni las opciones, y el bloque sin
-// terminal era `install --yes`.
+// 🔴 Sin esto la portada no nombra las preguntas ni las opciones, y el bloque sin terminal es `install --yes`.
 const QUESTIONS_KEYWORDS = {
   both: ['`--profile minimal|full`', '`--integrations <list|none>`', '`--packs all|none`'],
   en: ['asks what it cannot decide on its own', 'the profile', 'no default', 'which integrations', 'stack pack in all your repos',
-    // segunda vuelta (decisión del dueño, 2026-10-05): una sola vez, y cuándo no pregunta
+    // la segunda vuelta de preguntas: una sola vez, y cuándo no pregunta
     'asks only once', 'with `--yes`', 'over an existing install it asks nothing', 'how to change the profile or the integrations'],
   es: ['pregunta lo que no puede decidir solo', 'el perfil', 'no hay uno por defecto', 'qué integraciones', 'paquete del stack en todos tus repos',
     'Pregunta una sola vez', 'con `--yes`', 'sobre una instalación que ya existe no pregunta nada', 'cómo cambiar el perfil o las integraciones'],
 };
 const UNATTENDED_FULL = { en: 'or `--profile full`', es: 'o `--profile full`' };
-// 2026-10-13: mailbox y nightly ya no se marcan como «del equipo, con infraestructura que este repo no trae», sino por lo que
+// mailbox y nightly no se marcan como «del equipo, con infraestructura que este repo no trae», sino por lo que
 // son: piezas de la organización (su buzón, sus procesos de la noche, que corren desde su repo de operaciones)
 const TEAM_ONLY = { en: "your organization's", es: 'de tu organización' };
 function questionsProblems(text, lang) {
@@ -1257,14 +1248,13 @@ test('Papers_ProfilesAndQuestions_UnattendedCarriesProfile_BothLanguages (T50)',
   }
 });
 
-// ── portada clara (2026-10-06): lo que cambia, ANTES de instalar, y lo que las instrucciones para Claude cumplen ────
+// ── portada clara: lo que cambia, ANTES de instalar, y lo que las instrucciones para Claude cumplen ────────────────
 // La parte de arriba avisa, antes de los pasos, lo que el camino recomendado (`full`) cambia en todos los proyectos —
 // sobre todo `core.hooksPath`, el único efecto que puede apagar algo propio del lector— y cómo pedir `minimal`. Las dos
 // instrucciones que se le pegan a Claude cumplen esas promesas: el plan que se muestra antes del «sí» dice si configura
-// `core.hooksPath` (desde el 2026-10-14 la pone la instalación si git no tiene ninguna: antes no la ponía nadie y una
-// máquina mudada quedaba sin el freno antes de publicar), saben pedir el perfil mínimo y piden el mismo Node que
-// «Requisitos». Ninguno de los cuatro papeles dice «v20» (la portada pedía 22 en los requisitos y v20 en los pasos:
-// revisión del lector interno, F1).
+// `core.hooksPath` (la pone la instalación si git no tiene ninguna: sin ella una
+// máquina mudada queda sin el freno antes de publicar), saben pedir el perfil mínimo y piden el mismo Node que
+// «Requisitos». Ninguno de los cuatro papeles dice «v20» (la portada tiene que pedir lo mismo en los requisitos y en los pasos).
 const IN_BEFORE = sectionOf(at('What the full install changes'));
 const BEFORE_KEYWORDS = {
   both: ['`full`', '`minimal`', '`core.hooksPath`', '`.git/hooks/`', 'harness.js uninstall --dry-run'],
@@ -1278,13 +1268,13 @@ function clearTopProblems(text, lang) {
   const where = IN_BEFORE(text, lang);
   for (const k of [...BEFORE_KEYWORDS.both, ...BEFORE_KEYWORDS[lang]]) if (!says(where, k)) out.push(`antes de instalar — falta «${k}»`);
   const guided = sectionOf(at('Install with Claude Code'))(text, lang);
-  // desde la story 8.23 (tanda E) el arnés vive en ~/.tycon/harness como archivos bajados, no en un clon
+  // el arnés vive en ~/.tycon/harness como archivos bajados, no en un clon
   for (const k of ['`minimal`', '`core.hooksPath`', '`~/.tycon/harness`']) if (!says(guided, k)) out.push(`instalar con Claude Code — falta «${k}»`);
-  // story 8.40 (AC 31): el piso para instalar es Node 22, en la portada y en las páginas guiadas («con v22 también anda»)
+  // el piso para instalar es Node 22, en la portada y en las páginas guiadas («con v22 también anda»)
   if (says(sectionOf(at('What you need'))(text, lang), 'Node 22') === false) out.push('qué necesitás — falta «Node 22»');
   if (/\bv2[02]\b/.test(text)) out.push('dice «v20»/«v22»: la portada dice «Node 22» en «Requisitos» (la forma «v22» es la de las páginas guiadas)');
   if (/Node 20 (o posterior|or later)/.test(text)) out.push('dice «Node 20 o posterior»: el piso para instalar es Node 22');
-  // lo que la revisión marcó como falso: la configuración de la primera story no queda guardada sola
+  // la configuración de la primera story no queda guardada sola: ningún papel dice lo contrario
   if (/writes both files|escribe los dos archivos/.test(text)) out.push('promete que la primera story guarda `_bmad/` sola');
   return out;
 }
@@ -1307,13 +1297,13 @@ test('PublicFrontPage_ClearTop_ChangesBeforeInstall_GuidesKeepThePromises', asyn
       const paper = readPaper(guided);
       const missing = GUIDE_KEYWORDS.filter((k) => !paper.includes(k));
       assert.deepStrictEqual(missing, [], `${guided}: lo que la portada promete de estas instrucciones`);
-      // story 8.40 (AC 31): las páginas guiadas piden el piso para instalar, Node 22; v20 sería pedir de menos
+      // las páginas guiadas piden el piso para instalar, Node 22; v20 sería pedir de menos
       assert.doesNotMatch(paper, /\bv20\b|node 20\+/, `${guided}: dice «v20»; el piso para instalar (y de las páginas guiadas) es Node 22`);
       // el aviso va ANTES del comando que configura core.hooksPath
       assert.ok(paper.indexOf('.git/hooks/') < paper.indexOf('git config --global core.hooksPath'), `${guided}: el aviso de .git/hooks/ va antes de configurar core.hooksPath`);
     }
   });
-  // story 8.28: el ensayo del pipeline de Windows sigue la página de Windows por su MARCA. La marca envuelve el bloque
+  // el ensayo del pipeline de Windows sigue la página de Windows por su MARCA. La marca envuelve el bloque
   // de la parte 1 desde AFUERA (un comentario adentro dejaría de ser invisible: se le pega al asistente con el bloque),
   // una sola vez, y no le cambia una letra a lo que la persona copia. Las páginas de Mac y de Linux no la llevan.
   await t.test('la página de Windows trae la marca del ensayo, afuera del bloque que se copia', () => {
@@ -1331,7 +1321,7 @@ test('PublicFrontPage_ClearTop_ChangesBeforeInstall_GuidesKeepThePromises', asyn
   });
 });
 
-// ── story 8.26, tanda H1c (AC 66 · T80): primeros pasos sin permiso para bajar el arnés ─────────────────────────────
+// ── primeros pasos sin permiso para bajar el arnés ─────────────────────────────────────────────────────────────────
 // Con el repo de la versión publicada ya PÚBLICO, el paso «creá un permiso de lectura de GitHub y aceptá la invitación»
 // sobra: el guion de entrada se baja sin credencial, y pide un permiso sólo si GitHub contesta 401 o 404. Las tres
 // páginas que se le pegan a Claude y las dos portadas dejan de pedirlo; las tres páginas siguen siendo gemelas (los
@@ -1343,7 +1333,7 @@ const DOWNLOAD_LINE = {
   bash: `curl -fsSL -o get-harness.sh ${SCRIPT_URL('get-harness.sh')}`,
   powershell: `Invoke-WebRequest -OutFile get-harness.ps1 ${SCRIPT_URL('get-harness.ps1')}`,
 };
-// (story 8.40, AC 43) la parte 1 instala con la línea npx, la MISMA en los tres sistemas: el plan con --dry-run y, con el
+// la parte 1 instala con la línea npx, la MISMA en los tres sistemas: el plan con --dry-run y, con el
 // sí, la misma línea sin él, sin -y ni --yes (la persona contesta «¿Instalo? [s/N]» en su terminal). El guion de entrada
 // queda debajo, a mano, con el renglón sin credencial de la portada
 const NPX_PLAN_LINE = 'npx @tyconsa/harness@latest --audience me --profile full --integrations none --packs all --dry-run';
@@ -1368,9 +1358,9 @@ const SAFE_TOKEN_LINE = {
 const paragraphsOf = (text) => String(text).split(/\n\s*\n/);
 const saysLimit = (p) => /\b403\b/.test(p);
 const withoutLimit = (text) => paragraphsOf(text).filter((p) => !saysLimit(p)).join('\n\n');
-// Lo que un texto HACE con el permiso, diga lo que diga y con las palabras que use (la primera versión de esta prueba
-// frenaba el paso viejo pegado tal cual y dejaba pasar el mismo paso reescrito: «token» por «permiso», «private
-// repository» por «repository is private», un párrafo sin número). Tres cosas, que ninguna página ni portada puede hacer:
+// Lo que un texto HACE con el permiso, diga lo que diga y con las palabras que use (no basta frenar el paso pegado tal
+// cual: el mismo paso reescrito —«token» por «permiso», «private repository» por «repository is private», un párrafo
+// sin número— tiene que frenar igual). Tres cosas, que ninguna página ni portada puede hacer:
 //   (a) mandar una credencial en un comando que baja algo;
 //   (b) pedir que se cree, se pegue o se exporte una credencial de GitHub, o que se acepte una invitación;
 //   (c) tocar la variable del permiso fuera del párrafo del límite de pedidos.
@@ -1492,7 +1482,7 @@ function coverPermissionProblems(text, lang) {
   return out;
 }
 
-// 🔴 rojo previo (medido con las páginas y las portadas de antes): cada página falla en «manda a crear un permiso»,
+// 🔴 Una página o portada que pide un permiso falla así: cada página, en «manda a crear un permiso»,
 //    «habla de una invitación», «manda una credencial», «dice que el repo es privado», «guarda un permiso», el caso del
 //    403 (no está), la bajada y las dos referencias (ocho pasos, no siete); cada portada, en los mismos cuatro primeros,
 //    en TYCON_GITHUB_TOKEN fuera del caso del límite, en las tres secciones y en la bajada.
@@ -1563,9 +1553,9 @@ test('T80 TeamOnboardingText_InTeamLayer_GettingStartedWithoutRepoPermission —
     }
   });
 
-  // Las doce mutaciones de la revisión independiente de esta rama, una por una y cada una sobre UN papel: cuatro de ellas
-  // (el mismo paso REESCRITO: «token» por «permiso», el adjetivo adelante, un párrafo sin número) pasaban la primera
-  // versión de esta prueba en verde. Las que reponían un papel «entero como antes» van acá como el paso de antes pegado
+  // Las doce mutaciones, una por una y cada una sobre UN papel: cuatro de ellas
+  // (el mismo paso REESCRITO: «token» por «permiso», el adjetivo adelante, un párrafo sin número) pasarían en verde si la
+  // prueba sólo mirara el paso pegado tal cual. Las que reponen un papel «entero como antes» van acá como el paso de antes pegado
   // de vuelta, con su texto literal.
   await t.test('el espejo de la revisión: doce maneras de volver a meter el paso, las doce en rojo', () => {
     const must = (text, from, to) => { assert.ok(text.includes(from), `la mutación no encuentra su ancla: «${from.slice(0, 50)}»`); return text.replace(from, () => to); };

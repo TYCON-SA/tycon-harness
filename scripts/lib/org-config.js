@@ -1,6 +1,6 @@
 'use strict';
 /*
- * org-config.js — EL NÚCLEO COMÚN DE LA CONFIGURACIÓN DE LA ORGANIZACIÓN (story 2.29).
+ * org-config.js — EL NÚCLEO COMÚN DE LA CONFIGURACIÓN DE LA ORGANIZACIÓN.
  *
  * Qué resuelve: la configuración de una organización vive en tres archivos de dos repos —`team-repos.json` del perfil
  * del equipo, `operations.json` y `scripts/nightly/dashboard/sources.json` del repo de operaciones— más la lista de
@@ -10,17 +10,17 @@
  *   · LAS SECCIONES: qué parte de qué archivo, de qué repo, con qué lector y con qué identificador corto de rama.
  *   · LOS LECTORES: cada sección se valida con el `parse` del MISMO lector que usa el arnés (team-repos.js,
  *     operations-config.js, la lectura de las declaradas que exporta check-product-parity.js). Acá no hay un
- *     validador propio: `thresholdsParse` sólo recorre `thresholds` y llama a `umbralValido` de common.js (AC 11).
- *   · REVISAR: aplicar el borrador de una sección sobre el archivo tal como está (el resto queda byte por byte,
- *     AC 23) y validar el archivo entero.
+ *     validador propio: `thresholdsParse` sólo recorre `thresholds` y llama a `umbralValido` de common.js.
+ *   · REVISAR: aplicar el borrador de una sección sobre el archivo tal como está (el resto queda byte por byte)
+ *     y validar el archivo entero.
  *   · La regla de la capa del equipo (`TEAM_REPOS_SINCE`, y `MERGE_SUITES_SINCE` y `MODELS_SINCE` para las claves que
  *     llegaron después), la plataforma del remoto, el formato con que se escribe.
- *   · La tabla de versiones por máquina (AC 13) y la vista de paridad por producto (AC 25), que no editan nada.
+ *   · La tabla de versiones por máquina y la vista de paridad por producto, que no editan nada.
  *   · EL CÓDIGO DE PANTALLA (`pantalla()`): el JS que la pestaña sirve como `/static/config.js`, sin nada en línea.
  *
  * Este archivo viaja en la imagen del sitio y en la copia fija del programa: no carga nada de `scripts/lib/` por ruta
  * relativa al cargar; los lectores se piden al árbol que se le pasa (`loadReader`) o se inyectan. No nombra ninguna
- * configuración de máquina (T20) ni ningún valor de una organización (T23). Casos: scripts/tests/site-config.test.js.
+ * configuración de máquina ni ningún valor de una organización. Casos: scripts/tests/site-config.test.js.
  */
 const fs = require('fs');
 const path = require('path');
@@ -29,7 +29,7 @@ const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x)
 // Un comentario en un archivo de la organización: la clave empieza con «_» (`_comment`, `_note`, `__doc`) y su valor es
 // texto. Vale donde las claves son nombres de campos; donde son datos (productos, personas) se sigue mirando «__», para no
 // tapar un nombre. Un «_» solo con forma de secreto, o que guarda un objeto, se revisa como cualquier clave; «__» sigue
-// siendo comentario con cualquier valor, como antes.
+// siendo comentario con cualquier valor.
 const esComentario = (k, v) => k.startsWith('__') || (k.startsWith('_') && !/token|secret|sas|password|passwd|pwd|key|credential/i.test(k) && (typeof v === 'string' || (Array.isArray(v) && v.every((s) => typeof s === 'string'))));
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 
@@ -39,8 +39,8 @@ const formatJson = (data) => `${JSON.stringify(data, null, 2)}\n`;
 /**
  * Las secciones. `archivo` es la ruta en el repo; `repo` 'perfil' u 'operaciones'; `lector` el archivo de scripts/lib
  * (o de scripts/ci) que la valida; `claves` las claves del archivo que la sección edita (null = el archivo entero);
- * `idCorto` el identificador de la rama del pedido (AC 14); `necesita` claves que el lector tiene que conocer para que
- * esta versión del arnés «sepa leer» la sección (una versión anterior a la story que la crea no las trae).
+ * `idCorto` el identificador de la rama del pedido; `necesita` claves que el lector tiene que conocer para que
+ * esta versión del arnés «sepa leer» la sección (una versión anterior a la que la crea no las trae).
  */
 // los mensajes de este archivo viven en la tabla del sitio (scripts/site/texts.js, `org.*`); acá se arman en castellano
 // y el sitio los dice en el idioma de cada pedido
@@ -56,9 +56,9 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'umbrales', titulo: 'Umbrales', archivo: 'scripts/nightly/dashboard/sources.json', repo: 'operaciones', lector: 'thresholds', claves: ['thresholds'], idCorto: 'thresholds', necesita: [] }),
   Object.freeze({ id: 'paridad', titulo: 'Paridad: las diferencias declaradas', archivo: 'scripts/ci/product-parity.json', repo: 'operaciones', lector: 'check-product-parity.js', claves: ['diferencias_declaradas'], idCorto: 'parity', necesita: [] }),
   // qué paquetes activa la organización (`packs.default`: all, none o una lista). El perfil se llama team-profile.json; un
-  // repo del perfil que todavía usa el nombre de antes se lee y se propone con ése (`archivoViejo`)
+  // repo del perfil que usa el nombre anterior del archivo se lee y se propone con ése (`archivoViejo`)
   Object.freeze({ id: 'paquetes', titulo: 'Paquetes', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['packs'], idCorto: 'profile', necesita: ['packs'] }),
-  // story 2.31: lo que cambia la experiencia de cada dev, en el perfil del equipo, validado por el mismo lector de la
+  // lo que cambia la experiencia de cada dev, en el perfil del equipo, validado por el mismo lector de la
   // máquina. `rutas` (opcional): las hojas que la sección cambia dentro de sus `claves`; lo demás de esas claves queda
   // como estaba (Telegram, de cada máquina, no se edita desde la sección de integraciones).
   // quién puede reenviar el ok de un dev para eximir un crítico (approvals.relay_session; vale sólo desde el perfil)
@@ -69,7 +69,7 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'ado', titulo: 'Azure DevOps', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['ado'], rutas: Object.freeze(['ado.org']), idCorto: 'profile', necesita: ['ado'] }),
   Object.freeze({ id: 'actualizacion', titulo: 'Cómo se actualizan las máquinas', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['update'], rutas: Object.freeze(['update.channel', 'update.apply']), idCorto: 'profile', necesita: ['update'] }),
   Object.freeze({ id: 'instalacion', titulo: 'Perfil de instalación', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['install'], rutas: Object.freeze(['install.profile']), idCorto: 'profile', necesita: ['install'] }),
-  // las conversaciones de las corridas: el interruptor del sitio, en operations.json (decisión 8 de la 2.31)
+  // las conversaciones de las corridas: el interruptor del sitio, en operations.json
   // la marca de la organización en el sitio (el nombre, el logo del repo de operaciones y qué hacer con él en oscuro)
   Object.freeze({ id: 'organizacion', titulo: 'La organización', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.brand.name', 'site.brand.logo', 'site.brand.dark']), idCorto: 'operations', necesita: ['site'] }),
   Object.freeze({ id: 'hilos', titulo: 'Conversaciones de las corridas', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.mailbox.threads']), idCorto: 'operations', necesita: ['site'] }),
@@ -83,12 +83,12 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'pedidos', titulo: 'Pedidos de vulnerabilidades', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['work_items'], idCorto: 'operations', necesita: ['work_items'] }),
   // cómo se mantiene al día el sitio: «automático» o «sólo aviso», en la misma pestaña que el sitio
   Object.freeze({ id: 'aldia', titulo: 'Cómo se actualiza el sitio', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.update']), idCorto: 'operations', necesita: ['site'] }),
-  // dos partes de team-repos.json con su propia sección (tanda C): dónde corren las suites al mergear (story 7.28) y el
-  // modelo de cada trabajo del pipeline (story 7.29). Un lector anterior no las conoce: la sección dice «no sabe leer».
+  // dos partes de team-repos.json con su propia sección: dónde corren las suites al mergear y el
+  // modelo de cada trabajo del pipeline. Un lector anterior no las conoce: la sección dice «no sabe leer».
   // Comparten el identificador de rama con «repos»: un pedido abierto sobre el archivo frena los otros (un pedido por archivo)
   Object.freeze({ id: 'suites', titulo: 'Dónde corren las suites completas al mergear', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['merge_suites'], idCorto: 'repos', necesita: ['merge_suites'] }),
   Object.freeze({ id: 'modelos', titulo: 'Modelos de cada trabajo del pipeline', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['models'], idCorto: 'repos', necesita: ['models'] }),
-  // el plazo del aviso de espera (story 7.20): cuántos minutos espera una corrida a una persona antes de avisar
+  // el plazo del aviso de espera: cuántos minutos espera una corrida a una persona antes de avisar
   Object.freeze({ id: 'espera', titulo: 'Aviso de espera', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['wait_notice'], idCorto: 'repos', necesita: ['wait_notice'] }),
   // el umbral de cobertura de las líneas nuevas: el control de pruebas avisa por debajo de este porcentaje
   Object.freeze({ id: 'cobertura', titulo: 'Cobertura de las pruebas', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['coverage'], idCorto: 'repos', necesita: ['coverage'] }),
@@ -154,13 +154,13 @@ function remoteOf(url) {
 const TEAM_REPOS_SINCE = '2026.10.13.10';
 /**
  * 🔴 Las claves de `team-repos.json` que llegaron después del archivo, con la primera versión cuyo lector las conoce (la
- * etiqueta del merge que las trajo): `merge_suites` (story 7.28) y `models` (story 7.29). Una máquina con un lector
+ * etiqueta del merge que las trajo): `merge_suites` y `models`. Una máquina con un lector
  * anterior ve una clave desconocida y rechaza la capa entera; por eso, con una de ellas en el archivo propuesto, el
  * perfil tiene que pedir al menos su versión, y con varias, la mayor.
  */
 const MERGE_SUITES_SINCE = '2026.10.16.3';
 const MODELS_SINCE = '2026.10.16.10';
-// `wait_notice` (story 7.20): la etiqueta del merge que lo trajo al lector
+// `wait_notice`: la etiqueta del merge que lo trajo al lector
 const WAIT_NOTICE_SINCE = '2026.10.17.8';
 // `coverage`: la etiqueta del merge que lo trajo al lector
 const COVERAGE_SINCE = '2026.10.17.45';
@@ -243,7 +243,7 @@ function profileGateProblem(layerText, doc) {
 }
 
 /**
- * 🔴 La primera versión del arnés cuyo lector conoce `response` en el perfil del equipo (story 2.31: la etiqueta del merge
+ * 🔴 La primera versión del arnés cuyo lector conoce `response` en el perfil del equipo (la etiqueta del merge
  * que la trajo). Una máquina con un lector anterior ve una clave desconocida y rechaza el perfil ENTERO; por eso, con
  * `response` en el perfil propuesto, el perfil tiene que pedir al menos esta versión.
  */
@@ -266,7 +266,7 @@ const QA_SINCE = '2026.10.20.39';
  */
 function teamProfileGateProblem({ layerText, versionImagen, doc, actual }) {
   // con el archivo actual, sólo frena lo que el pedido CAMBIA: una lista de paquetes o un `response` que ya están en el
-  // perfil no traban la edición de otra sección (pase adversarial de la 2.31); sin él, todo lo que trae el archivo
+  // perfil no traban la edición de otra sección; sin él, todo lo que trae el archivo
   const cambia = (k) => !isObject(actual) || canonico(actual[k]) !== canonico(isObject(doc) ? doc[k] : undefined);
   const paquetes = cambia('packs') ? packsListGateProblem({ layerText, versionImagen, valor: isObject(doc) && isObject(doc.packs) ? doc.packs.default : undefined }) : null;
   if (paquetes) return paquetes;
@@ -321,7 +321,7 @@ function umbralValidoDe(opts) {
 }
 
 /**
- * El lector de la sección Umbrales (AC 11): un envoltorio sobre `umbralValido`, con problemas por ruta
+ * El lector de la sección Umbrales: un envoltorio sobre `umbralValido`, con problemas por ruta
  * `thresholds.<clave>`. Precondición: el archivo está en el formato que escribe el arnés (`formatJson`); si no, la
  * sección es sólo de lectura (`soloLectura: true`), porque reescribirlo cambiaría el archivo entero. Una clave que el
  * arnés (`opts.arnes.thresholds`) no conoce es un problema; una que el archivo ya trae y el arnés ya no usa es un aviso
@@ -372,7 +372,7 @@ function aplicarSeccion(doc, seccion, borrador) {
   const b = isObject(borrador) ? borrador : {};
   if (seccion.rutas) {
     // sólo esas hojas: lo demás de la clave queda como estaba; una hoja que el borrador no trae se saca, y el objeto que
-    // queda vacío por eso, también (no se escribe un `{}` que antes no estaba)
+    // queda vacío por eso, también (no se escribe un `{}` que el archivo no tenía)
     for (const ruta of seccion.rutas) {
       const partes = ruta.split('.');
       const valor = partes.reduce((o, k) => (isObject(o) ? o[k] : undefined), b);
@@ -395,7 +395,7 @@ function aplicarSeccion(doc, seccion, borrador) {
 
 /**
  * Las hojas que un archivo propuesto cambia contra el actual DENTRO de las claves de la sección pero fuera de sus `rutas`
- * (story 2.31): lo que «Proponer» rechaza. Sin `rutas`, ninguna: la sección es dueña de sus claves enteras.
+ * (lo que «Proponer» rechaza). Sin `rutas`, ninguna: la sección es dueña de sus claves enteras.
  */
 function hojasAjenas(seccion, actual, doc) {
   if (!seccion || !seccion.rutas) return [];
@@ -439,7 +439,7 @@ function clavesAjenas(seccion, borrador) {
 const docDe = (text) => { if (text === null || text === undefined) return null; try { const v = JSON.parse(String(text)); return isObject(v) ? v : null; } catch { return null; } };
 
 /**
- * Revisar un cambio (AC 6, 11, 23, 26): `{ ok, problems: [{ path, message, sinCampo? }], texto, aviso?, avisos? }`.
+ * Revisar un cambio: `{ ok, problems: [{ path, message, sinCampo? }], texto, aviso?, avisos? }`.
  * `texto` es el archivo entero tal como se propondría (dos espacios y salto final) si validó. `texto` de entrada es el
  * archivo actual (null si no existe todavía). Los `lectores` van por nombre de archivo (`operations-config.js`…).
  */
@@ -487,7 +487,7 @@ function revisar({ seccion, texto, borrador, lectores = {}, arnes = null, hoy = 
       if (problems.length) return { ok: false, problems, texto: null };
       for (const j of indices) nueva.diferencias_declaradas[j] = { ...nueva.diferencias_declaradas[j], motivo: b.motivo.trim(), fecha: dia, revision: b.revision };
     } else return { ok: false, problems: [{ path: '', message: M('org.accionRenovar'), sinCampo: true }], texto: null };
-    // la validación es la del control (P7): la misma lectura que juzga de noche
+    // la validación es la del control: la misma lectura que juzga de noche
     const r = lector.leerDeclaradas(nueva, dia);
     if (r.problemas && r.problemas.length) return { ok: false, problems: r.problemas.map((p) => ({ path: p.path || 'diferencias_declaradas', message: p.message })), texto: null };
     return { ok: true, problems: [], texto: formatJson(nueva), aviso };
@@ -508,8 +508,8 @@ function revisar({ seccion, texto, borrador, lectores = {}, arnes = null, hoy = 
 }
 
 /**
- * Los problemas que el lector da aparte, sin anular el archivo (`sectionProblems`: hoy, los de `models`, decisión 13 de
- * la 7.29), que tocan a esta sección: los de sus claves; en la sección del archivo entero, los de una clave que el
+ * Los problemas que el lector da aparte, sin anular el archivo (`sectionProblems`: hoy, los de `models`), que tocan
+ * a esta sección: los de sus claves; en la sección del archivo entero, los de una clave que el
  * archivo propuesto cambia contra el actual (`actual` null: todas). Sin esto, un modelo mal escrito se propondría,
  * porque el lector dice «válido».
  */
@@ -583,7 +583,7 @@ function buscarModelosDeHoy(tree) {
   return { hoy: null, motivo };
 }
 
-// ── las versiones de cada máquina (AC 13) ────────────────────────────────────────────────────────────────────────
+// ── las versiones de cada máquina ────────────────────────────────────────────────────────────────────────
 const SIN_NOTICIAS_DIAS = 14;
 const CARPETA_CON_FECHA = /^v(\d{4})(\d{2})(\d{2})T\d{6}\d{3}Z$/;
 /**
@@ -623,11 +623,11 @@ function versionesDeMaquinas({ espejo, versionImagen, ahora = Date.now(), person
   return out;
 }
 
-// ── la paridad por producto (AC 25) ──────────────────────────────────────────────────────────────────────────────
+// ── la paridad por producto ──────────────────────────────────────────────────────────────────────────────
 /**
  * La vista de la sección Paridad: por producto de la lista, agrupado por su grupo, los rasgos en que queda del lado
  * distinto, los declarados que lo amparan y los vencidos. `lista` es product-parity.json (o null); `resultado`, el
- * archivo de hoy (o null). La definición (grupos y rasgos) se muestra y no se edita (P3).
+ * archivo de hoy (o null). La definición (grupos y rasgos) se muestra y no se edita.
  */
 function paridadPorProducto({ lista, resultado, hoy, resultadoIlegible = false }) {
   if (!isObject(lista)) return { estado: 'sin_lista', texto: M('org.paridadSinLista'), productos: [], definicion: null };
@@ -644,7 +644,7 @@ function paridadPorProducto({ lista, resultado, hoy, resultadoIlegible = false }
       if (!porProducto.has(producto)) porProducto.set(producto, { producto, grupos: new Set(), rutas: new Set(), faltan: [], tiene: [], declaradas: [], vencidas: [] });
       const p = porProducto.get(producto); p.grupos.add(grupo); p.rutas.add(r.ruta);
       // el control nombra cada repo en divergencias[] por su producto, o «producto (ruta)» si el grupo lo repite
-      // (nombresDelGrupo de check-product-parity.js): se busca por los tres nombres (pase adversarial de la 2.29)
+      // (nombresDelGrupo de check-product-parity.js): se busca por los tres nombres
       for (const k of [r.ruta, producto, `${producto} (${r.ruta})`]) if (!rutaDe.has(`${grupo}\u0000${k}`)) rutaDe.set(`${grupo}\u0000${k}`, { producto, grupo });
     }
   }
@@ -848,10 +848,10 @@ function diferencia(antes, despues, contexto) {
 
 // ── el código de pantalla ────────────────────────────────────────────────────────────────────────────────────────
 /**
- * El JS de la pestaña Configuración, servido por el sitio como `/static/config.js` (AC 4): un solo archivo, sin nada de
+ * El JS de la pestaña Configuración, servido por el sitio como `/static/config.js`: un solo archivo, sin nada de
  * afuera, con `textContent` siempre (lo que trae un archivo —un nombre, un motivo del lector— no puede volverse
  * marcado). Lee el token de doble envío del `<meta name="site-token">` que arma el servidor y lo manda en cada
- * escritura en `X-Site-Token` (AC 3). Habla con /api/config (leer), /api/config/revisar, /api/config/stages y
+ * escritura en `X-Site-Token`. Habla con /api/config (leer), /api/config/revisar, /api/config/stages y
  * /api/config/proponer. «Descargar el archivo» no es una ruta: arma la descarga con el texto que «Revisar» devolvió.
  */
 function pantalla(idioma = 'es') {

@@ -2,18 +2,18 @@
 # dashboard.test.sh — los casos del tablero del arnés (vista por pregunta, generada).
 #
 # 🔴 REGLA DE ADMISIÓN: cada caso trae escrita la MUTACIÓN que lo pone en rojo. Un caso que no
-#    sabe ponerse rojo no vale — el precedente está en el banco (un chequeo que buscaba un texto
-#    que la línea de resumen imprime siempre, y pasaba con el arreglo desactivado).
+#    sabe ponerse rojo no vale — el caso típico es un chequeo que busca un texto
+#    que la línea de resumen imprime siempre, y pasa con el arreglo desactivado.
 #
 # Sin red. Fixtures en mktemp -d. El exit code se lee ANTES de cualquier pipe.
 
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TABLERO="$RAIZ/scripts/nightly/dashboard/dashboard.js"
-# 🔴 HOME falso (2026-09-15, story 2.16): el anillo local de la página (gates.log, timing-history) sale de
-#    ~/.claude en el disco de la máquina. Sin aislarlo, C-02 —que prohíbe «111» en la página— se puso rojo
-#    el día que el registro de frenos real de esta máquina llegó a exactamente 111 guías de QA: el caso
-#    medía la máquina, no el tablero. Ninguno de estos casos fabrica datos en HOME.
+# 🔴 HOME falso: el anillo local de la página (gates.log, timing-history) sale de
+#    ~/.claude en el disco de la máquina. Sin aislarlo, C-02 —que prohíbe «111» en la página— se pone rojo
+#    el día que el registro de frenos real de esta máquina llega a exactamente 111 guías de QA: el caso
+#    mediría la máquina, no el tablero. Ninguno de estos casos fabrica datos en HOME.
 HOME="$(mktemp -d)"; export HOME
 FALLOS=0
 ok()  { echo "  ok   — $1"; }
@@ -109,7 +109,7 @@ PY2
 echo "== dashboard.test.sh =="
 
 # ── C-01 · una fuente esperada que NO está no es "cero": es exit 2, ficha con trama y banda ──
-# 🔴 rojo previo: recorrer el directorio con readdir en vez de la lista de fuentes esperadas.
+# 🔴 mutación que lo pone en rojo: recorrer el directorio con readdir en vez de la lista de fuentes esperadas.
 T=$(mktemp -d); montar_sano "$T"; rm -rf "$T/dependencias"
 node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1; RC=$?
 [ "$RC" -eq 2 ] && ok "C-01 fuente ausente → exit 2 (fue $RC)" || mal "C-01 esperaba exit 2, fue $RC"
@@ -118,7 +118,7 @@ grep -q 'MEDICIÓN INCOMPLETA' "$T/o.html" && ok "C-01 el tablero se declara inc
 rm -rf "$T"
 
 # ── C-02 · un dato viejo se pinta con trama y SE LE CALLAN los números ──
-# 🔴 rojo previo: subir max_edad_dias, o dibujar el valor tachado en vez de borrarlo.
+# 🔴 mutación que lo pone en rojo: subir max_edad_dias, o dibujar el valor tachado en vez de borrarlo.
 T=$(mktemp -d); montar_sano "$T"
 rm -f "$T"/sdlc-stage-*.json
 TS9="$(hace 9)"; F9="$(fecha_hace 9)"
@@ -130,7 +130,7 @@ cat > "$T/sdlc-stage-$F9.json" <<JSON
 JSON
 node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
 # los números del dato viejo, SUELTOS y fuera del sello «Datos del commit: <sha>»: un sha corto como «2229a42» contiene
-# «222», y la prueba salía roja en ese commit de main sin ningún número dibujado (public-ci, 2026-10-14)
+# «222», y la prueba saldría roja en ese commit sin ningún número dibujado
 numeros_viejos() { sed -E 's/Datos del commit:<\/b> [0-9a-f]+//g' "$1" | grep -E '(^|[^0-9a-fA-F.,])(777|222|111)([^0-9a-fA-F.,]|$)|22,2|33,3' >/dev/null; }
 printf '<b>Datos del commit:</b> 2229a42 · hace 9 días\n' > "$T/sello.html"
 numeros_viejos "$T/sello.html" && mal "C-02 el sello del commit (2229a42) cuenta como un número viejo" || ok "C-02 el sello del commit no cuenta como un número viejo"
@@ -141,7 +141,7 @@ grep -q "hace 9 días" "$T/o.html" && ok "C-02 muestra la EDAD, no la fecha" || 
 rm -rf "$T"
 
 # ── C-03 · un archivo ilegible NO se lee como "sin hallazgos" ──
-# 🔴 rojo previo: envolver el JSON.parse en un catch que devuelva {} en vez de conservar el error.
+# 🔴 mutación que lo pone en rojo: envolver el JSON.parse en un catch que devuelva {} en vez de conservar el error.
 T=$(mktemp -d); montar_sano "$T"; echo "{roto" > "$T/vigilante/vigilante-$(hoy).json"
 node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1; RC=$?
 [ "$RC" -eq 2 ] && ok "C-03 archivo ilegible → exit 2 (fue $RC)" || mal "C-03 esperaba exit 2, fue $RC"
@@ -149,7 +149,7 @@ grep -q "ilegible" "$T/o.html" && ok "C-03 el motivo real viaja hasta la página
 rm -rf "$T"
 
 # ── C-04 · exit 0 con rojos adentro; distinto de 0 SÓLO si no pudo medir ──
-# 🔴 rojo previo: hacer que el exit dependa de la cantidad de rojos (invierte el contrato de la casa).
+# 🔴 mutación que lo pone en rojo: hacer que el exit dependa de la cantidad de rojos (invierte el contrato de la casa).
 T=$(mktemp -d); montar_sano "$T"
 python3 - "$T" <<'PY'
 import json,sys,os,glob
@@ -164,7 +164,7 @@ grep -q 'chip bad"><span class="g">▲</span>rojo' "$T/o.html" && ok "C-04 el es
 rm -rf "$T"
 
 # ── C-05 · un ratio con numerador mayor que el denominador es error, no un dato ──
-# 🔴 rojo previo: quitar el aserto num <= den de ratio().
+# 🔴 mutación que lo pone en rojo: quitar el aserto num <= den de ratio().
 T=$(mktemp -d); montar_sano "$T"
 python3 - "$T" <<'PY'
 import json,sys,glob,os
@@ -177,7 +177,7 @@ grep -q "universos distintos" "$T/o.html" && ok "C-05 dice por qué no lo dibuja
 rm -rf "$T"
 
 # ── C-06 · denominador cero → trama, jamás 0% ──
-# 🔴 rojo previo: `value: den ? num/den : 0`.
+# 🔴 mutación que lo pone en rojo: `value: den ? num/den : 0`.
 T=$(mktemp -d); montar_sano "$T"
 python3 - "$T" <<'PY'
 import json,sys,glob,os
@@ -189,7 +189,7 @@ grep -q "denominador vacío" "$T/o.html" && ok "C-06 denominador 0 → trama con
 rm -rf "$T"
 
 # ── C-07 · ninguna ficha medida sin su denominador al lado ──
-# 🔴 rojo previo: sacar el <div class="t-den"> del template de la ficha medida.
+# 🔴 mutación que lo pone en rojo: sacar el <div class="t-den"> del template de la ficha medida.
 T=$(mktemp -d); montar_sano "$T"
 node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
 read -r SIN CON <<<"$(python3 - "$T/o.html" <<'PY'
