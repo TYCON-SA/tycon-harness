@@ -89,6 +89,24 @@
       "retired_by": "8.24"
     },
     {
+      "path": "scripts/hooks/prod-firewall-close.js",
+      "why": "el freno de producción corre fuera del arnés y necesita la ruta literal: el cierre de la regla de firewall corre desde los managed settings, le pide la carpeta del estado a tycon-home.js si está al lado y sólo sin él arma la de siempre bajo ~/.claude, como respaldo",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/production/install-guard.sh",
+      "why": "el freno de producción corre fuera del arnés y necesita la ruta literal: el instalador (con sudo, en shell) ubica el arnés bajo ~/.claude, lee ~/.claude/tycon.json y barre el estado viejo, sin poder importar tycon-home.js",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/production/managed-settings.tycon-production.json.template",
+      "why": "el freno de producción corre fuera del arnés y necesita la ruta literal: la plantilla de los managed settings es un JSON que lee Claude Code tal cual, sin poder importar nada",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
       "path": "scripts/setup/harness/startup-line.js",
       "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
       "retire_after": "2026-11-07",
