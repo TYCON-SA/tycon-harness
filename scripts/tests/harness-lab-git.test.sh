@@ -54,9 +54,10 @@ mkdir -p "$REPO" "$BARE"
 harness_lab_git "$REPO" init -q -b main >/dev/null 2>&1 || mal "no pude crear el repo de juguete"
 harness_lab_git "$BARE" init -q --bare >/dev/null 2>&1 || mal "no pude crear el bare de juguete"
 
-# el control primero: sin la función, este git lanza el mantenimiento (si no, lo de abajo no mide nada)
+# el control primero: sin la función, este git lanza el mantenimiento (si no, lo de abajo no mide nada). Sin
+# GIT_CONFIG_COUNT: quien corre la suite puede traer el mantenimiento ya apagado por variable, y el control no mediría
 echo uno > "$REPO/a.txt"; plain_git "$REPO" add -A >/dev/null 2>&1
-GIT_TRACE2_EVENT="$BASE/plain-commit.json" plain_git "$REPO" commit -q -m "control" >/dev/null 2>&1; RC=$?
+GIT_TRACE2_EVENT="$BASE/plain-commit.json" env -u GIT_CONFIG_COUNT bash -c "$(declare -f plain_git); plain_git \"\$@\"" _ "$REPO" commit -q -m "control" >/dev/null 2>&1; RC=$?
 N="$(launched "$BASE/plain-commit.json")"
 if [ "$RC" = 0 ] && [ "$N" -ge 1 ]; then ok "el control: sin la función, un commit lanza el mantenimiento (${N})"
 else mal "el control no midió: rc ${RC}, ${N} proceso(s) de mantenimiento — este git ($(git --version 2>&1)) ya no lo lanza tras un commit, o la traza cambió: lo de abajo no prueba nada"; fi

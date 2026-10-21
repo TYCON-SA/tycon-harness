@@ -191,9 +191,63 @@ ES_TEST=0
 # anotar. Se saca sólo para MIRAR: lo que se frena se decide sobre el comando tal cual.
 CMD_SEG="$CMD"
 [[ "${HUBO_ESCAPE:-0}" == "1" ]] && CMD_SEG="$(echo "$CMD" | sed -E 's/TYCON_FULL_SUITE=1[[:space:]]+//g')"
-SEGMENTS=$(echo "$CMD_SEG" | tr ';&|' '\n')
+# Lo que va entre comillas es texto, no un comando: en `grep "dotnet test|x"`, lo que sigue al `|` de adentro de las
+# comillas no es un segmento. El comando se corta como siempre por `;`, `&`, `|` y saltos de línea, y se descartan sólo
+# los segmentos que EMPIEZAN adentro de comillas: el que empieza afuera se mira entero, con sus comillas, como antes
+# (`pytest "-x; echo "` sigue frenando). Una comilla escapada (`it\'s`) no abre texto.
+# Lo que va entre comillas después de `bash -c`, `sh -c`, `eval`, `ssh`, `pwsh`/`powershell` o `cmd` SÍ es un comando, y
+# las comillas `$'…'` tienen sus propios escapes: con cualquiera de ellos, o sin perl, se corta como antes y además se le
+# sacan al segmento las comillas que quedaron sueltas (`bash -c "cd x; dotnet test"` frena).
+_COMANDO_EN_TEXTO='(^|[^[:alnum:]_])((ba|z|da|k)?sh[[:space:]]+(-[[:alnum:]]+[[:space:]]+)*-[[:alnum:]]*c|eval|ssh|pwsh|powershell|cmd(\.exe)?)([[:space:]]|$)'
+SEGMENTS=""
+# Lo mismo con `$(…)` o comillas invertidas: lo de adentro se ejecuta aunque vaya entre comillas dobles.
+# Con un heredoc (`<<`) las comillas de su cuerpo no son comillas: se corta como antes.
+if command -v perl >/dev/null 2>&1 && ! [[ "$CMD_SEG" =~ $_COMANDO_EN_TEXTO ]] && [[ "$CMD_SEG" != *"\$'"* ]] && [[ "$CMD_SEG" != *"<<"* ]] \
+   && [[ "$CMD_SEG" != *"\$("* ]] && [[ "$CMD_SEG" != *'`'* ]]; then
+  # un comentario (`#` al empezar una palabra, fuera de comillas) llega hasta el fin de su línea: sus comillas no abren
+  # texto, y su salto de línea corta como cualquier otro
+  SEGMENTS="$(printf '%s' "$CMD_SEG" | perl -0ne '
+    my ($cur, $q, $tira, $esc, $com) = ("", "", 0, 0, 0); my @out;
+    for my $c (split //, $_) {
+      if ($com) { if ($c eq "\n") { $com = 0; push @out, $cur unless $tira; $cur = ""; $tira = 0; } else { $cur .= $c; } next; }
+      if ($esc) { $cur .= $c; $esc = 0; next; }
+      if ($q eq "" && $c eq "#" && ($cur eq "" || $cur =~ /\s$/)) { $com = 1; $cur .= $c; next; }
+      if ($c eq "\\" && $q ne "\x27") { $cur .= $c; $esc = 1; next; }
+      if ($q eq "" && ($c eq "\"" || $c eq "\x27")) { $q = $c; $cur .= $c; next; }
+      if ($q ne "" && $c eq $q) { $q = ""; $cur .= $c; next; }
+      if ($c =~ /[;&|\n]/) { push @out, $cur unless $tira; $cur = ""; $tira = ($q ne "") ? 1 : 0; next; }
+      $cur .= $c;
+    }
+    push @out, $cur unless $tira;
+    print join("\n", @out), "\n";' 2>/dev/null)" || SEGMENTS=""
+fi
+_SUELTAS=0
+if [[ -z "${SEGMENTS//[[:space:]]/}" ]]; then
+  # cortado como antes, y además en `$(`, `(` y comillas invertidas: lo de adentro de una sustitución corre; con
+  # `bash -c`, `eval` y compañía, también en las comillas (lo de adentro es el comando)
+  if [[ "$CMD_SEG" =~ $_COMANDO_EN_TEXTO ]]; then
+    SEGMENTS=$(echo "$CMD_SEG" | tr ";&|\`(\"'" '\n')
+  else
+    SEGMENTS=$(echo "$CMD_SEG" | tr ";&|\`(" '\n')
+  fi
+  _SUELTAS=1
+fi
 for SEG in $SEGMENTS; do
   SEG="$(echo "$SEG" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  # cortado como antes: una comilla que quedó sola en un borde es de un `bash -c "…; dotnet test"` partido. Sólo si
+  # quedó sola (cantidad impar): `pytest -m "not slow"` conserva las suyas
+  if [[ "$_SUELTAS" == "1" ]]; then
+    _DOBLES="${SEG//[^\"]/}"; _SIMPLES="${SEG//[^\']/}"
+    if (( ${#_DOBLES} % 2 == 1 )); then SEG="${SEG#\"}"; SEG="${SEG%\"}"; fi
+    if (( ${#_SIMPLES} % 2 == 1 )); then SEG="${SEG#\'}"; SEG="${SEG%\'}"; fi
+    # y lo que quedó de un `$(…; dotnet test)` o de comillas invertidas partidas
+    _INVERTIDAS="${SEG//[^\`]/}"
+    if (( ${#_INVERTIDAS} % 2 == 1 )); then SEG="${SEG#\`}"; SEG="${SEG%\`}"; fi
+    _ABRE="${SEG//[^(]/}"; _CIERRA="${SEG//[^)]/}"
+    while (( ${#_CIERRA} > ${#_ABRE} )) && [[ "$SEG" == *")" ]]; do SEG="${SEG%)}"; _CIERRA="${SEG//[^)]/}"; done
+    SEG="${SEG#\$(}"
+    SEG="$(echo "$SEG" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  fi
   [[ -z "$SEG" ]] && continue
 
   # --- npm test / npm run test[:coverage] ---

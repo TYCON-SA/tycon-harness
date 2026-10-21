@@ -286,7 +286,7 @@ test('T10 Revisar_ConElLectorDelPipeline @story-2.61 @ac-8 — el borrador pasa 
   // «mira todos los archivos» se conserva mientras no se escriban archivos
   const siempre = carpeta(perfilCon({ paquete: { ...PAQUETE(), reviewers: [{ ...PAQUETE().reviewers[0], surface: { always: true } }] } }));
   const d = TAB().draftOf(siempre, 'acme-pagos', 'acme-pagos-reviewer').draft;
-  assert.ok(d.always && !d.paths.length);
+  assert.ok(d.uses[0].always && !d.uses[0].paths.length);
   const conSiempre = TAB().reviewDraft({ profileDir: siempre, draft: { ...d } });
   assert.deepStrictEqual(conSiempre.problems, []);
   assert.deepStrictEqual(JSON.parse(conSiempre.files[0].contenido).reviewers[0].surface, { always: true });
@@ -324,8 +324,8 @@ test('T13 ComoTrabaja_SinPerfilDiceElMotivo @story-2.61 @ac-11 — sin perfil, b
 });
 
 // ── el revisor del perfil se lee donde está ──
-// Un paquete del perfil sin carpeta de agentes propia, con un revisor de dos usos cuyo .md vive en agents/ de la raíz
-// del perfil (como el paquete de clientes de una organización real).
+// Un paquete del perfil que no declara su carpeta de agentes, con un revisor de dos usos: su .md vive en la carpeta
+// agents/ del paquete. En agents/ de la raíz del perfil es un problema (lo mide T11 NoEditable_SoloRoto).
 const PAQUETE_RAIZ = () => ({
   name: 'acme-clientes', description: 'Los revisores de los clientes de Acme.',
   reviewers: [
@@ -335,7 +335,7 @@ const PAQUETE_RAIZ = () => ({
 });
 const perfilRaiz = ({ conAgente = true } = {}) => carpeta(perfilCon({ paquete: null, extra: {
   'packs/acme-clientes/pack.json': PAQUETE_RAIZ(),
-  ...(conAgente ? { 'agents/acme-hermanos-reviewer.md': AGENTE('acme-hermanos-reviewer') } : {}),
+  ...(conAgente ? { 'packs/acme-clientes/agents/acme-hermanos-reviewer.md': AGENTE('acme-hermanos-reviewer') } : {}),
 } }));
 const deClientes = (m, id) => m.steps.find((s) => s.id === id).reviewers.packs.filter((r) => r.pack === 'acme-clientes');
 
@@ -346,7 +346,7 @@ test('T1 Perfil_RevisorEnAgentsDeLaRaiz_Activo @story-2.64 @ac-1 — el paquete 
   assert.ok(m.org.packs.active.includes('acme-clientes'), 'activo con packs.default all');
   const [cond] = deClientes(m, '5');
   assert.ok(cond && cond.active === true && cond.editable === true, 'el uso condicional, activo y editable');
-  assert.strictEqual(cond.md, 'agents/acme-hermanos-reviewer.md');
+  assert.strictEqual(cond.md, 'packs/acme-clientes/agents/acme-hermanos-reviewer.md');
 });
 
 test('T2 Editor_AbreConLasInstruccionesDeLaRaiz @story-2.64 @ac-2 — el borrador trae el .md de agents/ del perfil', () => {
@@ -354,23 +354,26 @@ test('T2 Editor_AbreConLasInstruccionesDeLaRaiz @story-2.64 @ac-2 — el borrado
   assert.ok(!r.error, r.error);
   // la cabecera viene en campos y el cuerpo aparte: los dos salen del .md de agents/
   assert.strictEqual(TAB().armarAgente(r.draft.cabecera, r.draft.cuerpo), AGENTE('acme-hermanos-reviewer'));
-  assert.strictEqual(r.md, 'agents/acme-hermanos-reviewer.md');
+  assert.strictEqual(r.md, 'packs/acme-clientes/agents/acme-hermanos-reviewer.md');
 });
 
 test('T3 Proponer_EscribeDondeEsta @story-2.64 @ac-3 — revisar y proponer sin crear una segunda copia', () => {
   const perfil = perfilRaiz();
   const { draft } = TAB().draftOf(perfil, 'acme-clientes', 'acme-hermanos-reviewer');
-  const r = TAB().reviewDraft({ profileDir: perfil, draft: { ...draft, paths: ['**/*.cs', '**/*.csproj'], cuerpo: draft.cuerpo.replace('registro de pagos', 'registro de pagos y cobros') } });
+  const usos = draft.uses.map((u) => (u.group === 'validacion' ? u : { ...u, paths: ['**/*.cs', '**/*.csproj'] }));
+  const md = path.join(perfil, 'packs', 'acme-clientes', 'agents', 'acme-hermanos-reviewer.md');
+  const antes = fs.readFileSync(md, 'utf8');
+  const r = TAB().reviewDraft({ profileDir: perfil, draft: { ...draft, uses: usos, cuerpo: draft.cuerpo.replace('registro de pagos', 'registro de pagos y cobros') } });
   assert.deepStrictEqual(r.problems, []);
   assert.ok(r.ok);
-  assert.deepStrictEqual(r.files.map((f) => f.archivo), ['packs/acme-clientes/pack.json', 'agents/acme-hermanos-reviewer.md']);
+  assert.deepStrictEqual(r.files.map((f) => f.archivo), ['packs/acme-clientes/pack.json', 'packs/acme-clientes/agents/acme-hermanos-reviewer.md']);
   assert.match(r.files[1].contenido, /pagos y cobros/);
-  assert.ok(!fs.existsSync(path.join(perfil, 'packs', 'acme-clientes', 'agents')), 'el perfil no se toca al revisar');
-  // un revisor nuevo nace donde lo busca el validador: sin carpeta de agentes propia, en agents/ del perfil; uno que
-  // vive dentro de su paquete se propone ahí
+  assert.strictEqual(fs.readFileSync(md, 'utf8'), antes, 'el perfil no se toca al revisar');
+  assert.ok(!fs.existsSync(path.join(perfil, 'agents')), 'ni nace una copia en agents/ de la raíz');
+  // un revisor nuevo nace donde lo busca el validador: en la carpeta de agentes de su paquete, declarada o no
   const nuevo = TAB().reviewDraft({ profileDir: perfil, draft: { pack: 'acme-clientes', agent: 'acme-nuevo-reviewer', group: 'condicional', detection: 'csModified', paths: ['**/*.cs'], prefix: 'NUEVO', instructions: AGENTE('acme-nuevo-reviewer') } });
   assert.deepStrictEqual(nuevo.problems, []);
-  assert.strictEqual(nuevo.files[1].archivo, 'agents/acme-nuevo-reviewer.md');
+  assert.strictEqual(nuevo.files[1].archivo, 'packs/acme-clientes/agents/acme-nuevo-reviewer.md');
   const hoy = carpeta(perfilCon());
   const nuevoEnSuPaquete = TAB().reviewDraft({ profileDir: hoy, draft: { pack: 'acme-pagos', agent: 'acme-nuevo-reviewer', group: 'condicional', detection: 'pyModified', paths: ['**/*.py'], prefix: 'NUEVO', instructions: AGENTE('acme-nuevo-reviewer') } });
   assert.deepStrictEqual(nuevoEnSuPaquete.problems, []);
@@ -386,32 +389,33 @@ test('T7 Editor_SinRutasNiEnlaces @story-2.64 @ac-2 @ac-6 — los mensajes del e
   // otro paquete del perfil declara el mismo revisor: el mensaje nombra su manifiesto, relativo
   const perfil = carpeta(perfilCon({ paquete: null, extra: {
     'packs/acme-clientes/pack.json': PAQUETE_RAIZ(),
-    'agents/acme-hermanos-reviewer.md': AGENTE('acme-hermanos-reviewer'),
+    'packs/acme-clientes/agents/acme-hermanos-reviewer.md': AGENTE('acme-hermanos-reviewer'),
     'packs/acme-otro/pack.json': { name: 'acme-otro', description: 'x', agents: 'agents', reviewers: [{ agent: 'acme-hermanos-reviewer', group: 'base', surface: { paths: ['**/*.cs'] }, depth: 'lean', prefixes: ['OTRO'] }] },
   } }));
   const { draft } = TAB().draftOf(perfil, 'acme-clientes', 'acme-hermanos-reviewer');
   const r = TAB().reviewDraft({ profileDir: perfil, draft });
   assert.ok(r.problems.some((x) => /otro paquete/.test(x)), 'el repetido se dice');
   for (const x of r.problems) for (const absoluta of [perfil, ROOT, os.tmpdir()]) assert.ok(!x.includes(absoluta), `sin la ruta ${absoluta}: ${x}`);
-  // agents/ del perfil es un enlace a una carpeta de afuera: el editor no la lee
+  // la carpeta de agentes del paquete es un enlace a una carpeta de afuera: el editor no la lee
   const afuera = carpeta({ 'acme-hermanos-reviewer.md': AGENTE('acme-hermanos-reviewer') });
   const enlazado = carpeta(perfilCon({ paquete: null, extra: { 'packs/acme-clientes/pack.json': PAQUETE_RAIZ() } }));
-  fs.symlinkSync(afuera, path.join(enlazado, 'agents'));
+  fs.symlinkSync(afuera, path.join(enlazado, 'packs', 'acme-clientes', 'agents'));
   assert.match(TAB().draftOf(enlazado, 'acme-clientes', 'acme-hermanos-reviewer').error || '', /no es un archivo común/);
 });
 
 test('T4 NoEditable_DiceElMotivo @story-2.64 @ac-4 — un paquete roto y un uso que valida la historia dicen por qué', () => {
   const pagina = (perfil, idioma) => TAB().renderPage(HIW().buildModel({ treeDir: ROOT, profileDir: perfil }), { idioma, publicRepo: PUBLICO, version: 'v' });
   for (const idioma of ['es', 'en']) {
-    const sano = pagina(perfilRaiz(), idioma);
-    assert.ok(sano.includes(TX().t(idioma, 'comoTrabaja.noEditableValidacion')), `${idioma}: el motivo del uso que valida`);
-    const roto = pagina(perfilRaiz({ conAgente: false }), idioma);
     const prefijo = TX().t(idioma, 'comoTrabaja.noEditableRoto', { motivo: '' }).trim();
+    // el uso que valida la historia también se edita: en un paquete sano, ningún «no se puede editar»
+    const sano = pagina(perfilRaiz(), idioma);
+    assert.ok(!sano.includes(prefijo), `${idioma}: un paquete sano se edita entero`);
+    const roto = pagina(perfilRaiz({ conAgente: false }), idioma);
     assert.ok(roto.includes(prefijo), `${idioma}: el motivo del paquete roto`);
-    const primero = TX().t(idioma, 'comoTrabaja.faltaAgente', { revisor: 'acme-hermanos-reviewer', rutas: 'agents/acme-hermanos-reviewer.md' });
+    const primero = TX().t(idioma, 'comoTrabaja.faltaAgente', { revisor: 'acme-hermanos-reviewer', rutas: 'packs/acme-clientes/agents/acme-hermanos-reviewer.md' });
     assert.ok(roto.includes(TX().t(idioma, 'comoTrabaja.noEditableRoto', { motivo: primero })), `${idioma}: con el primer problema del paquete`);
     for (const html of [sano, roto]) assert.ok(!html.includes('Se edita a mano') && !html.includes('edited by hand'), `${idioma}: sin «Se edita a mano»`);
-    if (idioma === 'en') for (const k of ['noEditableRoto', 'noEditableValidacion', 'faltaAgente']) assert.ok(!hasSpanish(TX().t('en', `comoTrabaja.${k}`, { motivo: 'x', revisor: 'x', rutas: 'x' })), k);
+    if (idioma === 'en') for (const k of ['noEditableRoto', 'faltaAgente']) assert.ok(!hasSpanish(TX().t('en', `comoTrabaja.${k}`, { motivo: 'x', revisor: 'x', rutas: 'x' })), k);
   }
 });
 
@@ -420,11 +424,12 @@ test('T6 PaqueteRoto_UnaVezEnLlano @story-2.64 @ac-6 — el agente que falta, un
   const m = HIW().buildModel({ treeDir: ROOT, profileDir: perfil });
   const p = m.packs.find((x) => x.name === 'acme-clientes');
   assert.strictEqual(new Set(p.problems).size, p.problems.length, 'sin problemas repetidos');
-  // el paquete no declara carpeta de agentes: el validador lo busca sólo en agents/ del perfil, y eso se dice
-  assert.deepStrictEqual(p.missing, [{ agent: 'acme-hermanos-reviewer', expected: ['agents/acme-hermanos-reviewer.md'] }]);
-  const conCarpeta = carpeta(perfilCon({ paquete: null, extra: { 'packs/acme-clientes/pack.json': { ...PAQUETE_RAIZ(), agents: 'agents' } } }));
+  // el paquete no declara carpeta de agentes: el validador lo busca en la de siempre del paquete, y eso se dice
+  assert.deepStrictEqual(p.missing, [{ agent: 'acme-hermanos-reviewer', expected: ['packs/acme-clientes/agents/acme-hermanos-reviewer.md'] }]);
+  const conCarpeta = carpeta(perfilCon({ paquete: null, extra: { 'packs/acme-clientes/pack.json': { ...PAQUETE_RAIZ(), agents: 'revisores' } } }));
+  fs.mkdirSync(path.join(conCarpeta, 'packs', 'acme-clientes', 'revisores'));
   assert.deepStrictEqual(HIW().buildModel({ treeDir: ROOT, profileDir: conCarpeta }).packs.find((x) => x.name === 'acme-clientes').missing[0].expected,
-    ['packs/acme-clientes/agents/acme-hermanos-reviewer.md', 'agents/acme-hermanos-reviewer.md'], 'con carpeta propia, los dos lugares');
+    ['packs/acme-clientes/revisores/acme-hermanos-reviewer.md'], 'con carpeta declarada, ésa');
   for (const idioma of ['es', 'en']) {
     const html = TAB().renderPage(m, { idioma, publicRepo: PUBLICO, version: 'v' });
     const errores = html.match(/<p class="ct-error">[^]*?<\/p>/g) || [];
@@ -832,7 +837,8 @@ test('T28 ComoTrabaja_IntegracionesSonPiezasDeSuPaso @story-2.61.3 @ac-3 — el 
   const integraciones = TC.integraciones(TC.cargar({ env: {}, home: tmp('hiw-home-') }));
   for (const f of H2.INTEGRATION_PIECES) {
     assert.ok(ids.includes(f.step), `${f.id}: el paso ${f.step}`);
-    assert.ok(f.integration in integraciones, `${f.id}: ${f.integration} es una integración`);
+    // las de horas son de la herramienta que elija la organización: no nombran ninguna
+    assert.ok(f.timeTool ? f.integration === null : f.integration in integraciones, `${f.id}: ${f.integration} es una integración`);
     assert.ok(fs.existsSync(path.join(ROOT, f.code)), `${f.id}: ${f.code}`);
     for (const idioma of ['es', 'en']) assert.ok(TX().t(idioma, f.textKey), `${f.id}: su texto en ${idioma}`);
   }
@@ -876,6 +882,41 @@ test('T47 ComoTrabaja_HorasPorLaHerramientaElegida @story-7.40 @ac-4 — la de h
   // otra elegida: los de Clockify no
   const otra = H2.buildModel({ treeDir: ROOT, profileDir: perfilIntegraciones({ timeTracking: 'solidtime', engram: true }) });
   assert.ok(!todos(otra).some((c) => c.integration === 'clockify'), 'con Solidtime, nada de Clockify');
+}));
+
+test('HowItWorks_TimeControls_OnlyWhenChosen @story-7.40 @ac-11 — los de horas con el nombre de la elegida; con ninguna, no aparecen', () => conCasa(() => {
+  const H2 = HIW();
+  const todos = (m) => [...m.allSteps.controls, ...m.steps.flatMap((x) => x.controls)];
+  const piezasDeHoras = (m) => m.steps.flatMap((x) => x.orgPieces || []).filter((x) => x.timeTool);
+  const chip = (texto) => `ct-chip horas">${texto}<`;
+  for (const [tool, label] of [['clockify', 'Clockify'], ['solidtime', 'Solidtime']]) {
+    const m = H2.buildModel({ treeDir: ROOT, profileDir: perfilIntegraciones({ timeTracking: tool, engram: true }) });
+    assert.strictEqual(m.org.timeToolLabel, label);
+    assert.deepStrictEqual(piezasDeHoras(m).map((x) => x.id).sort(), ['timeTrackingClose', 'timeTrackingStart'], `${tool}: el 0b y el 9`);
+    assert.ok(piezasDeHoras(m).every((x) => x.integration === tool), `${tool}: las piezas son de la elegida`);
+    const suyos = todos(m).filter((c) => c.timeTool);
+    assert.ok(suyos.length && suyos.every((c) => c.integration === tool), `${tool}: sólo sus controles`);
+    const html = TAB().renderPage(m, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
+    assert.ok(html.includes(chip(label)), `${tool}: el chip con su nombre`);
+    // ninguna pieza ni control de horas con «del arnés» ni «según tu organización»
+    const filas = html.split('<li ').map((li) => li.split('</li>')[0]).filter((li) => li.includes(chip(label)));
+    assert.ok(filas.length >= suyos.length, `${tool}: cada control de horas con el nombre`);
+    for (const li of filas) assert.ok(!li.includes(TX().t('es', 'comoTrabaja.delArnes')) && !li.includes(TX().t('es', 'comoTrabaja.segunTuOrganizacionMarca')), li.slice(0, 200));
+  }
+  // con ninguna (o la llave vieja apagada): ni las piezas ni los controles de horas
+  for (const integ of [{ timeTracking: 'none', engram: true }, { clockify: false, engram: true }]) {
+    const m = H2.buildModel({ treeDir: ROOT, profileDir: perfilIntegraciones(integ) });
+    assert.deepStrictEqual(piezasDeHoras(m), [], JSON.stringify(integ));
+    assert.ok(!todos(m).some((c) => c.timeTool), JSON.stringify(integ));
+  }
+  // una herramienta que el árbol no trae: sus piezas no se ven, y la franja dice por qué
+  const rara = H2.buildModel({ treeDir: ROOT, profileDir: perfilIntegraciones({ timeTracking: 'harvest', engram: true }) });
+  assert.deepStrictEqual(piezasDeHoras(rara), []);
+  assert.ok(rara.org.problems.some((x) => /harvest/.test(x) && /no es una herramienta de horas/.test(x)), JSON.stringify(rara.org.problems));
+  // sin perfil no se sabe: las piezas se ven «según tu organización»
+  const sin = H2.buildModel({ treeDir: ROOT, profileDir: null });
+  assert.strictEqual(piezasDeHoras(sin).length, 2);
+  assert.ok(!TAB().renderPage(sin, { idioma: 'es', publicRepo: PUBLICO, version: 'v' }).includes('ct-chip horas"'));
 }));
 
 test('T29 ComoTrabaja_SoloLoQueTuOrganizacionUsa @story-2.61.3 @ac-4 — apagada no aparece; prendida o sin perfil, «según tu organización»', () => conCasa(() => {
@@ -1107,7 +1148,8 @@ test('T9 Proponer_ElRevisorEntero @story-2.63 @ac-8 — el pedido trae el pack.j
   // 🔴 rojo: el .md propuesto pierde la clave que el editor no muestra, o el pack.json cambia más que el revisor.
   const p = perfilCompleto();
   const antes = JSON.parse(fs.readFileSync(path.join(p, 'packs', 'acme-pagos', 'pack.json'), 'utf8'));
-  const r = TAB().reviewDraft({ profileDir: p, draft: borradorDe(p, { cuerpo: '## Qué mirás\n- Los reintentos de cobro.\n', prefix: 'COBRO' }, { descripcion: 'Revisa el cobro y sus reintentos.', modelo: 'strong' }) });
+  const usos = TAB().draftOf(p, 'acme-pagos', 'acme-pagos-reviewer').draft.uses.map((u) => ({ ...u, prefix: 'COBRO' }));
+  const r = TAB().reviewDraft({ profileDir: p, draft: borradorDe(p, { cuerpo: '## Qué mirás\n- Los reintentos de cobro.\n', uses: usos }, { descripcion: 'Revisa el cobro y sus reintentos.', modelo: 'strong' }) });
   assert.deepStrictEqual(r.problems, []);
   assert.deepStrictEqual(r.files.map((f) => f.archivo), ['packs/acme-pagos/pack.json', 'packs/acme-pagos/agents/acme-pagos-reviewer.md']);
   const pack = JSON.parse(r.files[0].contenido);
@@ -1192,4 +1234,179 @@ test('T21 Herramientas_ConSuExplicacion_EsEn @story-2.63 @ac-17 — cada casilla
   }
   assert.match(TAB().guion('es'), /T\('comoTrabaja\.herramienta\.' \+ /, 'el editor pone la explicación al lado de cada casilla');
   assert.match(TAB().guion('es'), /T\('comoTrabaja\.revisorSoloLee'\)/, 'y la línea de que un revisor sólo lee');
+});
+
+// ════════════════════════ el revisor como unidad: una solapa por uso ════════════════════════
+
+// el revisor de dos usos («revisa el cambio» y «valida la historia»), con su .md en la carpeta de su paquete
+const PAQUETE_DOS_USOS = ({ cuando = { detection: 'csModified' } } = {}) => ({
+  name: 'acme-clientes', description: 'Los revisores de los clientes de Acme.', agents: 'agents',
+  reviewers: [
+    { agent: 'acme-hermanos-reviewer', group: 'condicional', when: cuando, surface: { paths: ['**/*.cs'] }, depth: 'deep', prefixes: ['HERM'] },
+    { agent: 'acme-hermanos-reviewer', group: 'validacion', when: { detection: 'csModified' }, model: 'sonnet', prompt: 'Validá {story_path} en {repo_path}', prefixes: ['HERM'] },
+  ],
+});
+const perfilDosUsos = ({ paquete = PAQUETE_DOS_USOS(), lugar = 'paquete', repos = null } = {}) => carpeta(perfilCon({ paquete: null, repos, extra: {
+  'packs/acme-clientes/pack.json': paquete,
+  ...(lugar === 'paquete' ? { 'packs/acme-clientes/agents/acme-hermanos-reviewer.md': AGENTE('acme-hermanos-reviewer') } : {}),
+  ...(lugar === 'raiz' ? { 'agents/acme-hermanos-reviewer.md': AGENTE('acme-hermanos-reviewer') } : {}),
+} }));
+const usoDe = (d, validacion) => d.uses.find((u) => (u.group === 'validacion') === validacion);
+const conUsos = (d, cambiar) => ({ ...d, uses: d.uses.map((u) => cambiar(JSON.parse(JSON.stringify(u)))) });
+
+test('T1 Revisor_UnaVezPorPaso @story-2.63 @ac-1 — un revisor de dos usos, una vez en cada paso, y los dos «Editar» abren el mismo editor en su solapa', () => {
+  // 🔴 rojo: el uso que valida la historia no se edita, y el editor abre una entrada del manifiesto, no el revisor.
+  const m = HIW().buildModel({ treeDir: ROOT, profileDir: perfilDosUsos() });
+  const [en5, en1] = ['5', '1'].map((id) => deClientes(m, id));
+  assert.deepStrictEqual([en5.length, en1.length], [1, 1], 'una vez en Revisores y una vez en Validar la historia');
+  assert.deepStrictEqual([en5[0].use, en1[0].use], ['cambio', 'validacion']);
+  assert.ok(en5[0].editable && en1[0].editable, 'los dos usos se editan');
+  const html = TAB().renderPage(m, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
+  for (const [id, uso] of [['5', 'cambio'], ['1', 'validacion']]) {
+    const botones = seccionDe(html, id).match(/data-action="edit"[^>]*data-agent="acme-hermanos-reviewer"[^>]*/g) || [];
+    assert.strictEqual(botones.length, 1, `paso ${id}: un «Editar»`);
+    assert.match(botones[0], new RegExp(`data-use="${uso}"`), `paso ${id}: abre la solapa «${uso}»`);
+  }
+  // el editor trae el revisor entero, con sus dos usos en el orden del manifiesto
+  const d = TAB().draftOf(perfilDosUsos(), 'acme-clientes', 'acme-hermanos-reviewer').draft;
+  assert.deepStrictEqual(d.uses.map((u) => u.group), ['condicional', 'validacion']);
+  assert.match(TAB().guion('es'), /getAttribute\('data-use'\)/, 'el guion abre la solapa del uso del botón');
+});
+
+test('T5 UsoCambio_CamposLlanos @story-2.63 @ac-4 — «Entra», «Archivos que mira» como etiquetas, «Código de sus hallazgos» con su ejemplo y la profundidad', () => {
+  // 🔴 rojo: la solapa dice «Prefijo de sus reglas» y las rutas van en un cuadro de texto.
+  const t = (idioma, k, v) => TX().t(idioma, k, v);
+  assert.strictEqual(t('es', 'comoTrabaja.campoRutas'), 'Archivos que mira');
+  assert.strictEqual(t('es', 'comoTrabaja.campoPrefijo'), 'Código de sus hallazgos');
+  for (const idioma of ['es', 'en']) {
+    assert.match(t(idioma, 'comoTrabaja.prefijoEjemplo', { prefijo: 'XPAT' }), /XPAT-1, XPAT-2/, `${idioma}: el ejemplo del código`);
+    for (const k of ['usoCambio', 'usoValidacion', 'campoEntra', 'campoProfundidad', 'rutasAyuda', 'quitarRuta']) {
+      assert.ok(t(idioma, `comoTrabaja.${k}`) !== `comoTrabaja.${k}`, `${idioma}: ${k}`);
+      if (idioma === 'en') assert.ok(!hasSpanish(t('en', `comoTrabaja.${k}`, { ruta: 'x' })), `${k} sin castellano`);
+    }
+    for (const p of require(path.join(SCRIPTS, 'lib', 'packs.js')).VOCABULARIO.profundidades) assert.ok(t(idioma, `comoTrabaja.profundidad.${p}`) !== `comoTrabaja.profundidad.${p}`, `${idioma}: profundidad ${p}`);
+    const textos = JSON.stringify(TAB().textosDelGuion(idioma));
+    assert.ok(!/Prefijo de sus reglas|prefix of its rules/i.test(textos), `${idioma}: nunca «Prefijo de sus reglas»`);
+  }
+  const g = TAB().guion('es');
+  // entre comillas simples: en el código del editor (la tabla de textos del guion va con comillas dobles)
+  for (const k of ['campoRutas', 'campoPrefijo', 'prefijoEjemplo', 'campoEntra', 'campoProfundidad', 'usoCambio', 'usoValidacion', 'campoEntraCuando', 'campoModeloValidacion', 'campoPrompt', 'promptAyuda', 'rutasAyuda', 'quitarRuta']) assert.match(g, new RegExp(`'comoTrabaja\\.${k}'`), `el editor usa ${k}`);
+  assert.match(g, /'Enter'/, 'las rutas se agregan con Enter');
+  assert.match(g, /entrada\.addEventListener\('input', cambio\)/, 'escribir una ruta sin Enter también apaga «Proponer»');
+  assert.match(g, /ct-etiqueta/, 'y se muestran como etiquetas');
+  const d = TAB().draftOf(perfilDosUsos(), 'acme-clientes', 'acme-hermanos-reviewer').draft;
+  assert.deepStrictEqual(usoDe(d, false), { group: 'condicional', detection: 'csModified', whenWritten: false, whenText: '', paths: ['**/*.cs'], always: false, prefix: 'HERM', depth: 'deep' });
+});
+
+test('T6 UsoValidacion_SeEdita @story-2.63 @ac-5 @ac-11 — el modelo y lo que le pide la validación se editan y viajan en el pack.json', () => {
+  // 🔴 rojo: el uso que valida la historia dice «no se puede editar».
+  const perfil = perfilDosUsos();
+  const d = TAB().draftOf(perfil, 'acme-clientes', 'acme-hermanos-reviewer').draft;
+  const v = usoDe(d, true);
+  assert.deepStrictEqual([v.detection, v.modelo, v.modeloTalCual, v.prompt], ['csModified', 'balanced', false, 'Validá {story_path} en {repo_path}']);
+  const antes = JSON.parse(fs.readFileSync(path.join(perfil, 'packs', 'acme-clientes', 'pack.json'), 'utf8'));
+  const r = TAB().reviewDraft({ profileDir: perfil, draft: conUsos(d, (u) => (u.group === 'validacion' ? { ...u, modelo: 'strong', prompt: 'Validá con cuidado {story_path} en {repo_path}' } : u)) });
+  assert.deepStrictEqual(r.problems, []);
+  const pack = JSON.parse(r.files[0].contenido);
+  assert.deepStrictEqual(pack.reviewers[0], antes.reviewers[0], 'el otro uso, igual');
+  assert.deepStrictEqual(pack.reviewers[1], { ...antes.reviewers[1], model: 'opus', prompt: 'Validá con cuidado {story_path} en {repo_path}' });
+  // «el que use la organización»: sin la clave
+  const sinModelo = TAB().reviewDraft({ profileDir: perfil, draft: conUsos(d, (u) => (u.group === 'validacion' ? { ...u, modelo: '' } : u)) });
+  assert.ok(!('model' in JSON.parse(sinModelo.files[0].contenido).reviewers[1]));
+  // el techo de la organización vale también para la validación
+  const GH = (repo) => ({ platform: 'github', org: 'acme', repo });
+  const conTecho = perfilDosUsos({ repos: { version: 1, public: GH('arnes'), profile: GH('perfil'), operations: GH('operaciones'), models: { mandatory_ceiling: true, ceiling: 'balanced' } } });
+  const dt = TAB().draftOf(conTecho, 'acme-clientes', 'acme-hermanos-reviewer').draft;
+  assert.match(TAB().reviewDraft({ profileDir: conTecho, draft: conUsos(dt, (u) => (u.group === 'validacion' ? { ...u, modelo: 'max' } : u)) }).problems.join(' · '), /techo/);
+  // un modelo que no se traduce a un nivel se muestra y se guarda tal cual
+  const raro = perfilDosUsos({ paquete: { ...PAQUETE_DOS_USOS(), reviewers: PAQUETE_DOS_USOS().reviewers.map((x) => (x.group === 'validacion' ? { ...x, model: 'claude-opus-4-1-20250805' } : x)) } });
+  const dr = TAB().draftOf(raro, 'acme-clientes', 'acme-hermanos-reviewer').draft;
+  assert.deepStrictEqual([usoDe(dr, true).modelo, usoDe(dr, true).modeloTalCual], ['claude-opus-4-1-20250805', true]);
+  assert.strictEqual(JSON.parse(TAB().reviewDraft({ profileDir: raro, draft: dr }).files[0].contenido).reviewers[1].model, 'claude-opus-4-1-20250805');
+  // lo que le pide, vacío: lo dice el validador; y la explicación de {story_path} y {repo_path}, en los dos idiomas
+  assert.match(TAB().reviewDraft({ profileDir: perfil, draft: conUsos(d, (u) => (u.group === 'validacion' ? { ...u, prompt: '  ' } : u)) }).problems.join(' · '), /prompt/);
+  for (const idioma of ['es', 'en']) {
+    const ayuda = TX().t(idioma, 'comoTrabaja.promptAyuda');
+    assert.ok(ayuda.includes('{story_path}') && ayuda.includes('{repo_path}'), `${idioma}: explica los dos`);
+    for (const k of ['campoEntraCuando', 'campoModeloValidacion', 'campoPrompt']) assert.ok(TX().t(idioma, `comoTrabaja.${k}`) !== `comoTrabaja.${k}`, `${idioma}: ${k}`);
+  }
+  assert.ok(!('comoTrabaja.noEditableValidacion' in TX().TEXTOS), 'el motivo de «no se edita la validación» ya no existe');
+  // los usos no se suman ni se quitan desde el editor, ni un uso cambia de paso
+  assert.strictEqual(TAB().reviewDraft({ profileDir: perfil, draft: { ...d, uses: [usoDe(d, false)] } }).ok, false);
+  assert.strictEqual(TAB().reviewDraft({ profileDir: perfil, draft: conUsos(d, (u) => ({ ...u, group: 'condicional' })) }).ok, false);
+});
+
+test('T6b Usos_NombreYPasoSeCuidan @story-2.63 @ac-5 @ac-8 (pase adversarial) — renombrar sobre otro revisor del paquete frena; un uso que cambia de paso da un solo problema', () => {
+  // 🔴 rojo: el nombre de otro revisor (en otro paso) pasaba y su .md se pisaba; un revisor nuevo con un uso que valida
+  // sumaba «reviewers[N]: tiene que ser un objeto» al problema verdadero.
+  const otro = { agent: 'acme-otro-reviewer', group: 'validacion', when: { detection: 'csModified' }, prompt: 'Validá {story_path} en {repo_path}', prefixes: ['OTRO'] };
+  const perfil = perfilDosUsos({ paquete: { ...PAQUETE_DOS_USOS(), reviewers: [...PAQUETE_DOS_USOS().reviewers, otro] } });
+  fs.writeFileSync(path.join(perfil, 'packs', 'acme-clientes', 'agents', 'acme-otro-reviewer.md'), AGENTE('acme-otro-reviewer'));
+  const d = TAB().draftOf(perfil, 'acme-clientes', 'acme-hermanos-reviewer').draft;
+  const pisa = TAB().reviewDraft({ profileDir: perfil, draft: { ...d, agent: 'acme-otro-reviewer', cabecera: { ...d.cabecera, nombre: 'acme-otro-reviewer' } } });
+  assert.strictEqual(pisa.ok, false);
+  assert.deepStrictEqual(pisa.files, [], 'ningún archivo propuesto');
+  assert.match(pisa.problems.join(' · '), /ya tiene un revisor que se llama acme-otro-reviewer/);
+  // un revisor nuevo cuyo único uso dice validar: un solo problema, el verdadero
+  const nuevo = TAB().reviewDraft({ profileDir: perfil, draft: { pack: 'acme-clientes', agent: 'acme-nuevo-reviewer', uses: [{ group: 'validacion', detection: 'csModified' }], cabecera: { nombre: 'acme-nuevo-reviewer', descripcion: 'd', herramientas: ['Read'] }, cuerpo: 'x\n' } });
+  assert.strictEqual(nuevo.ok, false);
+  assert.ok(!nuevo.problems.some((x) => /tiene que ser un objeto/.test(x)), `sin el problema de una entrada vacía: ${nuevo.problems.join(' · ')}`);
+  assert.ok(nuevo.problems.some((x) => /no pasa de revisar el cambio a validar la historia/.test(x)));
+});
+
+test('T12 TextosYTema @story-2.63 @ac-12 — los textos del editor en es y en, el inglés sin castellano; los estilos con las variables del tema y la regla del teléfono', () => {
+  // 🔴 rojo: un texto del editor sin su inglés (o con castellano), un color escrito a mano, o las solapas sin la regla
+  // de pantalla angosta.
+  const claves = Object.keys(TX().TEXTOS).filter((k) => /^comoTrabaja\.(uso|campo|profundidad\.|rutas|quitarRuta|prefijo|prompt|condicionPropia|verComoEsta|herramienta\.|lte\.|err\.(usos|usoCambiado|profundidad|nombreEnUso|modelo)|revisorSoloLee|motivo)|^pantalla\.lte\./.test(k));
+  assert.ok(claves.length >= 40, `los textos del editor (${claves.length})`);
+  for (const k of claves) {
+    const e = TX().TEXTOS[k];
+    assert.ok(e && e.es && e.en, `${k}: es y en`);
+    assert.deepStrictEqual(enCastellano([TX().t('en', k, { ruta: 'x', prefijo: 'X', modelo: 'x', revisor: 'x', techo: 'x', motivo: 'x', n: 2 })]), [], `${k}: el inglés sin castellano`);
+  }
+  // los estilos del editor: sólo variables del tema (nada de colores escritos a mano)
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  const editor = css.split('\n').filter((l) => /^\.(ct-solapa|ct-usos|ct-uso|ct-campo|ct-rutas|ct-x|ct-propia|ct-panel \.ct-rutas|ct-etiqueta|ct-herramientas|ct-casilla|lte)/.test(l));
+  assert.ok(editor.length >= 10, 'las reglas del editor');
+  for (const l of editor) assert.doesNotMatch(l, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/, `sólo variables del tema: ${l}`);
+  // en pantalla angosta: las solapas se parten en renglones y las casillas van de a una (sin scroll lateral)
+  assert.match(css, /\.ct-solapas\{[^}]*flex-wrap:wrap/);
+  const angosta = css.slice(css.indexOf('@container (max-width:700px)'));
+  assert.match(angosta, /\.ct-herramientas\{grid-template-columns:1fr\}/);
+  assert.match(angosta, /\.ct-dos\{grid-template-columns:1fr\}/);
+});
+
+test('T7 CondicionPropia_ViajaIgual @story-2.63 @ac-6 — una condición escrita a mano se muestra de sólo lectura y viaja sin cambios', () => {
+  // 🔴 rojo: la condición propia sale como «la condición escrita en el paquete» y se pierde al elegir otra.
+  const cuando = { any: [{ added: { pattern: ':\\s*IBackendPlugin\\b', extensions: ['.cs'] } }, { detection: 'csModified' }] };
+  const perfil = perfilDosUsos({ paquete: PAQUETE_DOS_USOS({ cuando }) });
+  const d = TAB().draftOf(perfil, 'acme-clientes', 'acme-hermanos-reviewer').draft;
+  const c = usoDe(d, false);
+  assert.strictEqual(c.whenWritten, true);
+  assert.deepStrictEqual(JSON.parse(c.whenText), cuando, 'cómo está escrita, para mostrarla');
+  const r = TAB().reviewDraft({ profileDir: perfil, draft: conUsos(d, (u) => (u.group === 'validacion' ? u : { ...u, paths: ['**/*.cs', '**/*.csproj'] })) });
+  assert.deepStrictEqual(r.problems, []);
+  assert.deepStrictEqual(JSON.parse(r.files[0].contenido).reviewers[0].when, cuando, 'viaja sin cambios');
+  for (const idioma of ['es', 'en']) {
+    assert.match(TX().t(idioma, 'comoTrabaja.condicionPropia'), idioma === 'es' ? /se mantiene tal cual/ : /kept as is/);
+    assert.ok(TX().t(idioma, 'comoTrabaja.verComoEsta') !== 'comoTrabaja.verComoEsta');
+    const html = TAB().renderPage(HIW().buildModel({ treeDir: ROOT, profileDir: perfil }), { idioma, publicRepo: PUBLICO, version: 'v' });
+    assert.ok(!/la condición escrita en el paquete|condition written in the pack/i.test(html + JSON.stringify(TAB().textosDelGuion(idioma))), `${idioma}: nunca «la condición escrita en el paquete»`);
+  }
+  assert.match(TAB().guion('es'), /T\('comoTrabaja\.verComoEsta'\)/, 'el editor ofrece verla');
+});
+
+test('T11 NoEditable_SoloRoto @story-2.63 @ac-11 — un paquete sano se edita entero; uno roto lo dice con su motivo', () => {
+  // 🔴 rojo: un uso sano dice que no se puede editar.
+  for (const idioma of ['es', 'en']) {
+    const pagina = (perfil) => TAB().renderPage(HIW().buildModel({ treeDir: ROOT, profileDir: perfil }), { idioma, publicRepo: PUBLICO, version: 'v' });
+    const prefijo = TX().t(idioma, 'comoTrabaja.noEditableRoto', { motivo: '' }).trim();
+    assert.ok(!pagina(perfilDosUsos()).includes(prefijo), `${idioma}: un paquete sano no dice que no se edita`);
+    // sin su .md: roto, con el motivo
+    assert.ok(pagina(perfilDosUsos({ lugar: 'ninguno' })).includes(prefijo), `${idioma}: sin el .md, roto`);
+    // con el .md sólo en agents/ de la raíz: roto, con la regla en llano
+    const enLaRaiz = pagina(perfilDosUsos({ lugar: 'raiz' }));
+    assert.ok(enLaRaiz.includes(prefijo), `${idioma}: con el .md en la raíz, roto`);
+    assert.match(enLaRaiz, /tienen que estar en packs\/acme-clientes\/agents\/acme-hermanos-reviewer\.md/);
+  }
 });

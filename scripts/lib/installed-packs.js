@@ -117,8 +117,8 @@ function leerPaquetes({ packsDir, explicito } = {}) {
       archivo,
       descripcion: typeof json.description === 'string' ? json.description : '',
       guias: Array.isArray(json.guides) ? json.guides.filter((g) => typeof g === 'string') : [],
-      // la carpeta de agentes DEL paquete (clave `agents`), o null: sus revisores se buscan ahí antes que en la raíz
-      agentes: typeof json.agents === 'string' && json.agents ? path.join(carpeta, json.agents) : null,
+      // la carpeta de agentes DEL paquete, donde viven sus revisores: la declarada en `agents`, o `agents`
+      agentes: path.join(carpeta, typeof json.agents === 'string' && json.agents ? json.agents : 'agents'),
       revisores,
       hermanos: hermanos.lista,
     });

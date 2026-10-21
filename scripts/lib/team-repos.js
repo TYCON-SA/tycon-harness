@@ -94,7 +94,9 @@ const STACK_KEYS = ['code_extensions', 'test_runners', 'rules'];
 const STACK_EXT_RE = /^\.[a-z0-9]+(?:\.[a-z0-9]+)?$/;
 const RULE_VALUES = { test_names: ['any', 'pascal', 'snake'], screen_test: ['ui', 'react', 'off'] };
 const UI_LANGUAGE_RE = /^[a-z]{2}(?:-[A-Z]{2})?$/;
-const RUNNER_RESULT_FORMATS = ['junit', 'jest-json'];
+const RUNNER_RESULT_FORMATS = ['junit', 'jest-json', 'trx'];
+const RUNNER_DETECT_DEPTH_MAX = 3;
+const RUNNER_ARGS_FORBIDDEN = /["'$`\\\r\n]/;
 const RUNNER_COVERAGE_FORMATS = ['cobertura', 'lcov', 'istanbul-json', 'jacoco', 'go-cover'];
 const RUNNER_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -117,7 +119,39 @@ function runnersProblems(value) {
     if (r.coverage !== undefined && (!isObject(r.coverage) || !RUNNER_COVERAGE_FORMATS.includes(r.coverage.format) || typeof r.coverage.path !== 'string')) {
       out.push({ path: `${p}.coverage.format`, message: `la cobertura tiene que ser ${RUNNER_COVERAGE_FORMATS.join(', ')}, con su path` });
     }
+    out.push(...runnerDetailProblems(r, p));
     if (typeof r.name === 'string') nombres.add(r.name);
+  });
+  return out;
+}
+
+/**
+ * Los problemas de `detect_depth`, `args_default` y `repos` de una herramienta: hasta dónde busca su archivo detector y
+ * el detalle de cada repo (`{args}` en el comando). Las mismas reglas que `detalleProblemas` de test-runners.js del skill.
+ */
+function runnerDetailProblems(r, p) {
+  const out = [];
+  if (r.detect_depth !== undefined && (!Number.isInteger(r.detect_depth) || r.detect_depth < 0 || r.detect_depth > RUNNER_DETECT_DEPTH_MAX)) {
+    out.push({ path: `${p}.detect_depth`, message: `un entero de 0 a ${RUNNER_DETECT_DEPTH_MAX} (es ${JSON.stringify(r.detect_depth)})` });
+  }
+  const argsBad = (v) => typeof v !== 'string' || RUNNER_ARGS_FORBIDDEN.test(v);
+  const ARGS_MSG = 'texto sin comillas, $, comillas invertidas, barra invertida ni saltos de línea (va entre comillas en el comando)';
+  if (r.args_default !== undefined && argsBad(r.args_default)) out.push({ path: `${p}.args_default`, message: ARGS_MSG });
+  if (r.repos === undefined) return out;
+  if (!Array.isArray(r.repos)) return [...out, { path: `${p}.repos`, message: 'tiene que ser una lista de entradas { repo, args }' }];
+  const seen = new Set();
+  r.repos.forEach((e, j) => {
+    const at = `${p}.repos.${j}`;
+    if (!isObject(e)) { out.push({ path: at, message: 'tiene que ser un objeto { repo, args }' }); return; }
+    for (const k of Object.keys(e)) if (k !== 'repo' && k !== 'args' && !fieldComment(k, e[k])) out.push({ path: `${at}.${k}`, message: 'clave desconocida' });
+    const bad = repoProblems(e.repo, `${at}.repo`);
+    if (bad.length) out.push(...bad);
+    else {
+      const key = identityKey(e.repo);
+      if (seen.has(key)) out.push({ path: `${at}.repo`, message: 'este repo ya tiene una entrada en repos' });
+      seen.add(key);
+    }
+    if (argsBad(e.args)) out.push({ path: `${at}.args`, message: ARGS_MSG });
   });
   return out;
 }
@@ -557,7 +591,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, reviewProblems, modelsAboveCeiling, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, parse, load, url, privateRepoRef, repoProblems, harnessCopies, mergeSuitesFor };
+module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, reviewProblems, modelsAboveCeiling, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
@@ -574,7 +608,12 @@ if (require.main === module) {
     if (r.ok) for (const c of harnessCopies(r.data, platform)) process.stdout.write(`${c.measured ? 'measure' : 'skip'}\t${c.id}\n`);
     else for (const p of r.problems) process.stderr.write(`❌ ${file} · ${p.path || '(el archivo)'}: ${p.message}\n`);
   } else if (args.includes('--json')) process.stdout.write(`${JSON.stringify(r, null, 2)}\n`);
-  else if (r.ok) process.stdout.write(`✅ ${file}: válido\n`);
-  else for (const p of r.problems) process.stdout.write(`❌ ${p.path || '(el archivo)'}: ${p.message}\n`);
+  else if (r.ok) {
+    process.stdout.write(`✅ ${file}: válido\n`);
+    // una sección con problemas no anula el archivo, pero esa sección no se usa: se dice, no se calla
+    for (const [seccion, ps] of Object.entries(r.sectionProblems || {})) {
+      for (const p of ps) process.stdout.write(`⚠️  ${p.path || seccion}: ${p.message} — la sección ${seccion} no se usa\n`);
+    }
+  } else for (const p of r.problems) process.stdout.write(`❌ ${p.path || '(el archivo)'}: ${p.message}\n`);
   process.exit(r.ok ? 0 : (r.couldNotRead ? 2 : 1));
 }

@@ -64,23 +64,32 @@ pipeline_en_la_version() {
   printf -- '---\nname: tycon-core-juguete\ndescription: revisor del núcleo de juguete\n---\nRevisa.\n' > "$a/agents/tycon-core-juguete.md"
   printf -- '---\nname: publica-juguete\ndescription: skill pública de juguete\n---\n' > "$a/skills/tycon-pipeline/SKILL.md"
 }
-agente() { printf -- '---\nname: %s\ndescription: revisor del equipo de juguete\n---\nRevisa cosas del equipo.\n' "$2" > "$LAB_AUTHOR_TEAM/agents/$1.md"; }
+# agente <archivo> <name>: los revisores del paquete de juguete (rev-juguete-*) van en la carpeta de su paquete; los
+# demás, en agents/ de la raíz de la capa
+agente() {
+  local d="$LAB_AUTHOR_TEAM/agents"
+  case "$1" in rev-juguete-*) d="$LAB_AUTHOR_TEAM/packs/equipo-juguete/agents" ;; esac
+  mkdir -p "$d"
+  printf -- '---\nname: %s\ndescription: revisor del equipo de juguete\n---\nRevisa cosas del equipo.\n' "$2" > "$d/$1.md"
+}
 skill() { mkdir -p "$LAB_AUTHOR_TEAM/skills/$1"; printf -- '---\nname: %s\ndescription: skill del equipo de juguete\n---\nUsala para %s.\n' "$(basename "$1")" "$1" > "$LAB_AUTHOR_TEAM/skills/$1/SKILL.md"; }
-paquete() { # paquete <carpeta> <revisor-base> <revisor-condicional>
-  mkdir -p "$LAB_AUTHOR_TEAM/packs/$1"
+paquete() { # paquete <carpeta> <revisor-base> <revisor-condicional> — con sus agentes en la carpeta del paquete (menos un fantasma)
+  mkdir -p "$LAB_AUTHOR_TEAM/packs/$1/agents"
   python3 - "$LAB_AUTHOR_TEAM/packs/$1/pack.json" "$1" "$2" "$3" <<'PY'
 import json,sys
 f,n,b,c=sys.argv[1:5]
 rev=lambda a,g: {"agent": a, "group": g, "when": {"detection": "codeModified"}, "surface": {"paths": ["**/*.ts"]}, "depth": "standard", "prefixes": ["JUG"]}
 json.dump({"name": n, "description": "paquete del equipo de juguete", "reviewers": [rev(b, "base"), rev(c, "condicional")]}, open(f, "w"), indent=2)
 PY
+  local r
+  for r in "$2" "$3"; do
+    [ "$r" = rev-fantasma ] && continue
+    printf -- '---\nname: %s\ndescription: revisor del equipo de juguete\n---\nRevisa cosas del equipo.\n' "$r" > "$LAB_AUTHOR_TEAM/packs/$1/agents/$r.md"
+  done
 }
-# la capa sana: un paquete con dos revisores, sus agentes, una skill de una carpeta y una anidada a tres
+# la capa sana: un paquete con dos revisores y sus agentes, una skill de una carpeta y una anidada a tres
 capa_a2() {
-  mkdir -p "$LAB_AUTHOR_TEAM/agents"
   paquete equipo-juguete rev-juguete-base rev-juguete-cond
-  agente rev-juguete-base rev-juguete-base
-  agente rev-juguete-cond rev-juguete-cond
   skill sola-juguete
   skill projects/cliente-inventado/arquitectura-juguete
   mkdir -p "$LAB_AUTHOR_TEAM/skills/projects/cliente-inventado/arquitectura-juguete/references"
@@ -170,7 +179,7 @@ if corre T20; then
   instala_team
   [ "$INSTALL_RC" = 0 ] && ok "instalada con la capa de la A2a" || mal "install: rc $INSTALL_RC: $INSTALL_OUT"
   DIFF=0
-  for f in packs/equipo-juguete/pack.json agents/rev-juguete-base.md agents/rev-juguete-cond.md skills/sola-juguete/SKILL.md skills/projects/cliente-inventado/arquitectura-juguete/references/a.md; do
+  for f in packs/equipo-juguete/pack.json packs/equipo-juguete/agents/rev-juguete-base.md packs/equipo-juguete/agents/rev-juguete-cond.md skills/sola-juguete/SKILL.md skills/projects/cliente-inventado/arquitectura-juguete/references/a.md; do
     cmp -s "$(NEW)/$f" "$LAB_AUTHOR_TEAM/$f" || { mal "$f no está o difiere en ~/.tycon/harness"; DIFF=1; }
   done
   [ "$DIFF" = 0 ] && ok "los archivos de la capa, byte a byte, en ~/.tycon/harness"

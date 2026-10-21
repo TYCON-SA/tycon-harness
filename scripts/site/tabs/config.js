@@ -81,6 +81,25 @@ function leer(dir, rel, indice = null) {
 const docDe = (t) => { try { const v = JSON.parse(t); return isObject(v) ? v : null; } catch { return null; } };
 /** El archivo de una sección en un clon: el de hoy, o el de antes (`archivoViejo`) si el repo todavía sólo trae ése. */
 const archivoDe = (s, dir) => (s.archivoViejo && dir && !fs.existsSync(path.join(dir, s.archivo)) && fs.existsSync(path.join(dir, s.archivoViejo)) ? s.archivoViejo : s.archivo);
+/**
+ * Las herramientas de horas que trae el árbol del sitio, de sus manifiestos (`integrations/<n>/integration.json`, kind
+ * `timeTracking`): `[{ name, label, url, token }]`. `url`: si pide la dirección de su instancia en el perfil; `token`: el
+ * comando con que cada persona pone el suyo en su máquina (nunca se pide acá). Un manifiesto roto no se ofrece: se dice en
+ * `problemas`, igual que la biblioteca que no carga (la pantalla los muestra, en vez de un selector mudo).
+ */
+function herramientasDeHoras() {
+  let INT;
+  try { INT = require(path.join(TREE, 'scripts', 'lib', 'integrations.js')); } catch (e) {
+    return { horas: [], problemas: [M('config.horasSinBiblioteca', { motivo: (e && e.code) || (e && e.message) || 'error' })] };
+  }
+  const l = INT.listManifests({ dir: path.join(TREE, 'integrations') });
+  const horas = l.manifests.filter((m) => m.kind === 'timeTracking').map((m) => {
+    const secreto = m.settings.find((x) => x.type === 'secreto');
+    // la dirección de la instancia va en `integrations.<nombre>.url`, la hoja que la sección sabe cambiar
+    return { name: m.name, label: m.label, url: m.settings.some((x) => x.type === 'url' && x.from === 'profile' && x.key === `integrations.${m.name}.url`), token: secreto ? `harness.js config set ${secreto.key}` : null };
+  });
+  return { horas, problemas: l.problems.map((b) => M('config.horasManifiestoRoto', { nombre: b.name, motivo: b.reasons.join('; ') })) };
+}
 /** Los paquetes legibles de las carpetas `packs/` del árbol y del clon del perfil (la capa del equipo trae los suyos). */
 function paquetesLegibles(perfilDir) {
   const out = [];
@@ -360,6 +379,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     // sin pipeline dicen qué pasa, con la misma respuesta que da el lector al merge
     if (s.id === 'modelos' && doc) v.problems.push(...ORG.problemasDelTope(s, lec, doc));
     if (s.id === 'suites') v.extras = { sinPipeline: ORG.sinPipelinePorRegla(lec), queHace: ORG.queHacePorRegla(lec) };
+    if (s.id === 'integraciones') { const h = herramientasDeHoras(); v.extras = { horas: h.horas, horasProblemas: h.problemas }; }
     // las herramientas de prueba de fábrica de esta versión, para que «Cambiar» arranque desde ellas; las que la puerta
     // corre por dentro se listan sin poder cambiarse
     if (s.id === 'tecnologia') v.extras = tecnologiaDeFabrica();
@@ -665,12 +685,26 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       if (!e || !e.dir) return { ok: false, message: M('config.clonFallo', { motivo: (e && e.motivo) || M('config.noSeArmoClon') }) };
       dir = e.dir;
     }
+    // la herramienta de horas: el mismo pedido sube la versión que pide el perfil, si es anterior a la que la lee (una
+    // máquina vieja rechaza la capa nueva y sigue con la de antes, con su llave vieja)
+    let archivos = null;
+    const antes = docDe(base ? base.texto || '' : v.texto || '');
+    // la capa se lee sólo si el pedido cambia la herramienta: prender o apagar otra integración no la necesita
+    if (s.id === 'integraciones' && ORG.cambiaHoras({ actual: antes, doc: docDe(texto) })) {
+      const capa = leerDe(dir, 'team-layer.json');
+      if (capa.estado === 'ilegible') return { ok: false, message: capa.motivo };
+      const sube = ORG.timeTrackingLayer({ layerText: capa.estado === 'leido' ? capa.texto : null, actual: antes, doc: docDe(texto) });
+      if (sube && sube.problema) return { ok: false, message: sube.problema };
+      if (sube) archivos = [{ archivo: v.archivo, contenido: texto, oidEsperado: body.oid }, { archivo: sube.archivo, contenido: sube.contenido, oidEsperado: capa.estado === 'leido' ? capa.oid : null }];
+    }
     const r = await RP.proponer({
-      clon: dir, archivo: v.archivo, contenido: texto, oidEsperado: body.oid, idCorto: s.idCorto,
+      clon: dir, ...(archivos ? { archivos } : { archivo: v.archivo, contenido: texto, oidEsperado: body.oid }), idCorto: s.idCorto,
       secciones: [s.titulo], quien: norm(ctx.sesion.email), credencial: cred, remote, urlBase, exclusivo: fuentes.exclusivo || ((fn) => fn()),
       now: new Date(ahora()), fetch, log, aplicarSolo: aplicarSolo(), marca: body.marca || null,
     });
     if (!r || r.codigo !== 'cambio') return r;
+    // lo que cambió en main fue la capa, no el archivo de la sección: no se mezcla, se pide abrir de nuevo
+    if (r.archivo && r.archivo !== v.archivo) { const { textoActual: _t, oidActual: _o, ...cambio } = r; return cambio; }
     const { textoActual, oidActual, ...cambio } = r;
     // la punta tiene el archivo pero no se pudo leer: mezclar contra un archivo vacío borraría el resto al proponer
     if (oidActual && typeof textoActual !== 'string') { log(`propuesta de ${v.archivo}: no pude leer la versión de main para mezclar; queda el «cambió» de siempre`); return cambio; }
@@ -843,7 +877,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const html = views.layout(ctx, TX.t(idioma, 'pestana.configuracion'), `<div id="config-app"><p class="q-note">${TX.t(idioma, 'config.cargando')}</p></div>`, TX.t(idioma, 'config.lede'));
     // el token de doble envío y el código de la pestaña en el idioma de la página, sin nada en línea (la CSP
     // del sitio no lo admite)
-    return html.replace('</head>', `<meta name="site-token" content="${tok.replace(/[^A-Za-z0-9_-]/g, '')}"><script src="/static/config.js?l=${idioma}" defer></script></head>`);
+    return html.replace('</head>', `<meta name="site-token" content="${tok.replace(/[^A-Za-z0-9_-]/g, '')}"><script src="/static/long-text-editor.js" defer></script><script src="/static/config.js?l=${idioma}" defer></script></head>`);
   }
 
   // lo que cuesta armar —cada sección leída de su clon y validada con su lector, y el permiso de proponer, que pregunta

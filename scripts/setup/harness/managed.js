@@ -143,6 +143,19 @@ function hooksListRows(tree, keep) {
   }
   return out.length ? out : null;
 }
+/**
+ * Lo que la cuenta no puede contar de las integraciones del árbol, en una línea cada cosa: un manifiesto roto (sus hooks
+ * no se cuentan) o la biblioteca que está y no carga. Un árbol sin la biblioteca (una versión anterior) no tiene nada que
+ * decir. Lo leen la cuenta de controles de esta pieza y la del Node del arnés.
+ */
+function manifestProblems(tree) {
+  const lib = path.join(tree, 'scripts', 'lib', 'integrations.js');
+  if (!fs.existsSync(lib)) return [];
+  try {
+    const INT = require(lib);
+    return INT.listManifests({ dir: path.join(tree, 'integrations') }).problems.map((b) => `el manifiesto de la integración ${b.name} está roto (${b.reasons.join('; ')}): sus hooks no se cuentan`);
+  } catch (e) { return [`no pude cargar scripts/lib/integrations.js (${e.code || e.message}): los hooks de las integraciones no se cuentan`]; }
+}
 /** Una fila de una lista de aplicador: un par evento+guion por entrada (lo que esperan `unregistered` y quien ya usaba
  *  estas listas), con TODOS sus matchers en `matchers` (B5: dos filas del mismo guion y evento con distinto matcher son
  *  dos controles). Devuelve true si el par ya estaba. */
@@ -547,6 +560,7 @@ function expectedControls({ platform = process.platform, tree = null, integratio
   const source = windows ? APPLIER_PS1 : APPLIER_SH;
   const out = { source, listed: null, expected: [], missing: [], off: [], unknown: [], excluded: [], undeclared: [], problems: [], caveat: null };
   const list = windows ? ps1Hooks(tree) : applierHooks(tree);
+  if (tree) out.problems.push(...manifestProblems(tree));
   if (!list) {
     out.problems.push(`no pude leer la lista de controles de scripts/${source}${tree ? ` en ${tree}` : ' (sin árbol)'}: no sé cuántos se esperan en esta máquina`);
     return out;
@@ -674,5 +688,5 @@ function controlState(control, settings, siblings = []) {
 module.exports = {
   KINDS, EVENTS, parseReport, hookId, hookNeedle, applierHooks, ps1Hooks, present, merge, missing, unregistered, describe, expectedControls,
   EFFECTS_FILE, EFFECT_KINDS, EFFECT_BLOCKS, EFFECT_INTEGRATIONS, PROFILES, effectProblems, readEffects, brakes,
-  integrationProblems, readIntegrations,
+  integrationProblems, manifestProblems, readIntegrations,
 };

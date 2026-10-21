@@ -422,6 +422,12 @@
       "requiere": []
     },
     {
+      "__nota": "la receta de una herramienta de la organización alcanza para .NET Framework con vstest: el reporte TRX, el archivo detector en una subcarpeta y un detalle por repo (herramienta falsa en el PATH); y el camino del agente hasta la receta.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-runners-dotnet-framework.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la puerta de pruebas con pytest, Go, Maven, Gradle, Karma y una herramienta de la organización (herramientas falsas en el PATH), y una story que toca dos proyectos.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/test-gate-runners.test.js",
@@ -1196,6 +1202,12 @@
     {
       "raiz": "arnes",
       "ruta": "tests/guard-record.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "el freno de pruebas sin alcance frena el comando corrido y no un texto entre comillas que sólo se busca.",
+      "raiz": "arnes",
+      "ruta": "tests/test-scope-guard.test.sh",
       "requiere": []
     },
     {

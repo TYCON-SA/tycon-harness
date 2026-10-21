@@ -414,7 +414,7 @@ body.solo .corridas #fichas-corridas,body.solo .corridas #fichas-calculando{disp
 .ct-pieza.apagada .ct-nom,.ct-pieza.apagada .ct-cuando{opacity:.55}
 .ct-acc{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .ct-chip{display:inline-block;padding:0 7px;border-radius:999px;font:11px/18px var(--sans);border:1px solid var(--line-strong);color:var(--ink-2);vertical-align:1px}
-.ct-chip.org{border-color:var(--accent);color:var(--accent)}
+.ct-chip.org,.ct-chip.horas{border-color:var(--accent);color:var(--accent)}
 .ct-chip.arnes{color:var(--muted)}
 .ct-chip.segun{border-color:var(--accent);color:var(--accent);border-style:dashed}
 .ct-chip.frena{border-color:var(--bad);color:var(--bad-ink)}
@@ -447,6 +447,20 @@ body.solo .corridas #fichas-corridas,body.solo .corridas #fichas-calculando{disp
 .ct-etiquetas{display:flex;flex-wrap:wrap;gap:6px}
 .ct-etiqueta{font-family:var(--mono);font-size:12px;padding:2px 8px;border-radius:999px;border:1px dashed var(--line-strong);color:var(--ink-2);overflow-wrap:anywhere}
 .ct-editor .ct-nota{max-width:none}
+/* una solapa por uso del revisor; los archivos que mira, como etiquetas que se quitan con la x */
+.ct-solapas{display:flex;flex-wrap:wrap;gap:6px;border-bottom:1px solid var(--line);padding-bottom:6px}
+.ct-solapa{padding:6px 12px;border:1px solid transparent;border-radius:8px 8px 0 0;background:transparent;color:var(--ink-2);font:13px var(--sans);cursor:pointer}
+.ct-solapa[aria-selected="true"]{border-color:var(--line-strong);background:var(--surface);color:var(--ink);font-weight:700}
+.ct-usos{display:grid;min-width:0}
+.ct-uso{display:grid;gap:10px;min-width:0}
+.ct-uso[hidden]{display:none}
+.ct-campo{display:grid;gap:4px;font-size:12.5px;color:var(--ink-2);min-width:0}
+.ct-rutas{align-items:center;padding:6px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface)}
+.ct-panel .ct-rutas input{border:0;padding:2px 4px;flex:1 1 140px;font-family:var(--mono)}
+.ct-x{margin-left:6px;padding:0 2px;border:0;background:transparent;color:var(--ink-2);font:inherit;cursor:pointer}
+.ct-x:hover,.ct-x:focus-visible{color:var(--bad-ink)}
+.ct-propia summary{font-size:12.5px;color:var(--ink-2);cursor:pointer}
+.ct-propia pre{margin:6px 0 0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font:12px/1.5 var(--mono);color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
 /* el editor de texto largo (long-text-editor.js): una pieza del sitio, no sólo de esta pestaña */
 .lte{border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);display:grid;min-width:0}
 .lte-barra{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;padding:6px;border-bottom:1px solid var(--line)}
@@ -454,6 +468,9 @@ body.solo .corridas #fichas-corridas,body.solo .corridas #fichas-calculando{disp
 .lte-solapas button{padding:5px 10px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--ink-2);font:12.5px var(--sans);cursor:pointer}
 .lte-solapas button[aria-selected="true"]{border-color:var(--line-strong);background:var(--surface-2);color:var(--ink);font-weight:700}
 .lte-acciones .btn{padding:4px 10px;font-size:12.5px}
+/* en Configuración los botones de los formularios son oscuros: los del editor se ven igual que en las otras páginas */
+.form-block .lte .btn{background:var(--surface);color:var(--ink);border:1px solid var(--line-strong);padding:4px 10px;font-size:12.5px}
+.form-block .lte .btn:hover{background:var(--wash)}
 .lte-buscar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px;border-bottom:1px solid var(--line)}
 .lte-buscar[hidden],.lte-previa[hidden],.lte-cambios[hidden],.lte-cuerpo[hidden],.lte-renglones[hidden],.lte .btn[hidden]{display:none}
 .lte-cuenta{font-size:12.5px;color:var(--ink-2)}

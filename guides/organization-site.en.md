@@ -563,6 +563,24 @@ What the person sees in the section, and what the agent does when asked for a to
      `node -e 'console.log(JSON.stringify(require("<harness>/scripts/lib/team-repos.js").parse(require("fs").readFileSync("team-repos.json","utf8")).sectionProblems || {}))'`.
      With no problems in `stack`, it proposes it as a request to the profile repo.
   4. An admin approves the request and the tool shows up in the list, where it can be changed.
+- **What the recipe allows**, so the agent does not propose something the reader rejects or that never applies:
+  - **The report** is `junit`, `jest-json` or `trx` (vstest's, `/Logger:trx`); `path` may use `*` and `**`.
+  - **The detection file** is an exact name. It is looked for in the folder under test and, with `detect_depth` (0 to
+    3), in its subfolders, skipping `bin`, `obj`, `node_modules` and dot folders. Pick one that belongs to the tool:
+    `packages.config` is .NET Framework's; a bare `.sln` or `.csproj` is any .NET's and would take `dotnet test`'s
+    place in the other repos.
+  - **An organization tool wins over .NET** when its detection file is in the solution's folder (or its subfolders,
+    with `detect_depth`). It runs once, from the solution.
+  - **What changes from one repo to another** (a category filter, say) does not go in the command: it goes in `repos`,
+    one `{ "repo": <repo>, "args": "…" }` entry per repo, with this same file's `<repo>` shape. The command uses it as
+    `{args}`; a repo with no entry uses `args_default`, or nothing. `args` cannot hold quotes, `$`, backticks,
+    backslashes or line breaks, because it goes inside quotes in the command. The repo is recognized by its `origin`
+    remote.
+  - **The command runs with bash** and its first word has to be on the PATH (otherwise the gate says it is missing).
+    Nothing is read from the repo under test.
+- **Where the profile clone is**: `harness.js team-config --no-open` says which folder this machine uses (the
+  `paths.team` key). If there is none, clone the `profile` repo from `team-repos.json` into a folder of your own.
+- **The request** goes to the profile repo's main branch, **without auto-complete**: an admin reads and approves it.
 
 ### Installation and updates (Instalación y actualización)
 

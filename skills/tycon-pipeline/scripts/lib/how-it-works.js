@@ -37,10 +37,11 @@ const DENY_RX = /permissionDecision|['"]deny['"]|exit\(2\)|exitCode|\bexit 2\b|d
 const PER_REPO_INTEGRATIONS = Object.freeze(['ado']);
 function stepFile(archivo) { return `${STEPS_DIR.split(path.sep).join('/')}/${archivo}`; }
 const INTEGRATION_PIECES = Object.freeze([
-  { id: 'timeTrackingStart', step: '0', integration: 'clockify', textKey: 'piezaOrg.registroDeHorasAbre', code: stepFile('step-00b-work-start.md') },
+  // las dos de horas son de la herramienta que elija la organización (`timeTool`): el núcleo no las ata a ninguna
+  { id: 'timeTrackingStart', step: '0', integration: null, timeTool: true, textKey: 'piezaOrg.registroDeHorasAbre', code: stepFile('step-00b-work-start.md') },
   { id: 'adoWorkItemActive', step: '0', integration: 'ado', textKey: 'piezaOrg.pedidoAdoActivo', code: stepFile('step-00c-ado-mark-active.md') },
   { id: 'adoWorkItemClose', step: '9', integration: 'ado', textKey: 'piezaOrg.pedidoAdoCierra', code: stepFile('step-09-ado-story-closure.md') },
-  { id: 'timeTrackingClose', step: '9', integration: 'clockify', textKey: 'piezaOrg.registroDeHorasCierra', code: stepFile('step-09-ado-story-closure.md') },
+  { id: 'timeTrackingClose', step: '9', integration: null, timeTool: true, textKey: 'piezaOrg.registroDeHorasCierra', code: stepFile('step-09-ado-story-closure.md') },
 ].map(Object.freeze));
 
 const rel = (p) => p.split(path.sep).join('/');
@@ -136,13 +137,15 @@ function integrationPieces(treeDir) {
     const manifests = listing.manifests;
     const timeKinds = new Set(manifests.filter((m) => m.kind === 'timeTracking').map((m) => m.name));
     return {
+      // el nombre para mostrar de cada herramienta de horas («Clockify», «Solidtime»), del campo `label` de su manifiesto
+      timeLabels: Object.fromEntries(manifests.filter((m) => m.kind === 'timeTracking').map((m) => [m.name, m.label])),
       hooks: manifests.flatMap((m) => INT.hookEntries(m, { tool: 'claude' })),
       dispatch: (mode) => manifests.flatMap((m) => INT.dispatchEntries(m, mode).map((d) => Object.assign(d, { timeTool: timeKinds.has(m.name) }))),
       problems: listing.problems.map((b) => ({ spec: `integrations/${b.name}`, message: `el manifiesto está roto (${b.reasons.join('; ')}): sus controles no se muestran` })),
     };
   } catch (e) {
     const problems = fs.existsSync(lib) ? [{ spec: 'scripts/lib/integrations.js', message: `no se pudo cargar (${e.code || e.message}): los controles de las integraciones no se muestran` }] : [];
-    return { hooks: [], dispatch: () => [], problems };
+    return { timeLabels: {}, hooks: [], dispatch: () => [], problems };
   }
 }
 // un control que hay que prender a mano (`optin:<VARIABLE>` con `default: off`): no corre salvo que alguien lo prenda
@@ -183,7 +186,7 @@ function readControls(treeDir) {
     }
     controls.push({ spec: h.spec, script, event: h.event, steps: h.steps, effect: h.effect, integration: integrationOf(h.when), optional: optionalOf(h), viaDispatcher: null, timeTool: String(h.when || '').startsWith('time:') });
   }
-  return { controls, problems };
+  return { controls, problems, timeLabels: ints.timeLabels };
 }
 
 /** Lo que frena la prueba: un control sin pasos o efecto, un paso que no existe, un «frena» sin salida que niega. */
@@ -325,25 +328,11 @@ function agentsFolderOf(json) {
 }
 
 /**
- * Los lugares donde el validador busca el `.md` de un revisor, relativos a `baseDir` (la raíz del árbol o del perfil),
- * en su orden: la carpeta de agentes que declara el paquete (si declara una) y la de respaldo (`agentsDir`, la
- * `agents/` de la raíz).
+ * Dónde tiene que estar el `.md` de un revisor, relativo a la raíz del árbol o del perfil: la carpeta de agentes de su
+ * paquete (la declarada, o `agents`). Es la única casa que acepta el validador.
  */
-function agentPlacesOf({ baseDir, pack, json, agent, agentsDir }) {
-  const declarada = json && typeof json.agents === 'string' && json.agents ? agentsFolderOf(json) : null;
-  return [
-    ...(declarada ? [rel(path.join('packs', pack, declarada, `${agent}.md`))] : []),
-    ...(agentsDir ? [rel(path.relative(baseDir, path.join(agentsDir, `${agent}.md`)))] : []),
-  ];
-}
-
-/**
- * Dónde está el `.md` de un revisor: el primero de sus lugares donde existe. Si no está en ninguno, el primero: ahí
- * nace uno nuevo (la carpeta del paquete si declara una; si no, la de la raíz).
- */
-function agentFileOf({ baseDir, pack, json, agent, agentsDir }) {
-  const lugares = agentPlacesOf({ baseDir, pack, json, agent, agentsDir });
-  return lugares.find((l) => fs.existsSync(path.join(baseDir, l))) || lugares[0] || rel(path.join('packs', pack, 'agents', `${agent}.md`));
+function agentFileOf({ pack, json, agent }) {
+  return rel(path.join('packs', pack, agentsFolderOf(json) || 'agents', `${agent}.md`));
 }
 
 /** El texto con las rutas absolutas de estas carpetas pasadas a relativas: la pantalla no muestra rutas de la máquina. */
@@ -383,7 +372,7 @@ function readPacks({ treeDir, packsDir, origin, agentsDir = path.join(treeDir, '
         const texto = `${e.revisor ? `${e.revisor}: ` : ''}${withoutAbsolutePaths(e.motivo, [baseDir, treeDir])}`;
         if (!problems.includes(texto)) problems.push(texto);
         if (e.revisor && /^no existe el agente /.test(e.motivo) && !missing.some((x) => x.agent === e.revisor)) {
-          missing.push({ agent: e.revisor, expected: agentPlacesOf({ baseDir, pack: n, json, agent: e.revisor, agentsDir }) });
+          missing.push({ agent: e.revisor, expected: [agentFileOf({ pack: n, json, agent: e.revisor })] });
         }
       }
       for (const r of Array.isArray(json.reviewers) ? json.reviewers : []) {
@@ -395,7 +384,7 @@ function readPacks({ treeDir, packsDir, origin, agentsDir = path.join(treeDir, '
     const reviewers = json && Array.isArray(json.reviewers) ? json.reviewers.filter((r) => r && typeof r === 'object' && typeof r.agent === 'string').map((r) => ({
       agent: r.agent, group: r.group, when: r.when || null, surface: r.surface || null, prefixes: r.prefixes || [],
       file: carpeta ? rel(path.join(n, carpeta, `${r.agent}.md`)) : rel(path.join(n, 'pack.json')),
-      md: carpeta ? agentFileOf({ baseDir, pack: n, json, agent: r.agent, agentsDir }) : null,
+      md: carpeta ? agentFileOf({ pack: n, json, agent: r.agent }) : null,
     })) : [];
     out.push({ name: n, origin, dir: path.join(packsDir, n), reviewers, problems, missing });
   }
@@ -444,7 +433,11 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
   const instalados = unique(packs.filter((p) => !p.problems.length).map((p) => p.name)).sort();
   const v = org ? org.packsDefault : null;
   const activos = !org ? null : v === 'all' ? instalados : Array.isArray(v) ? instalados.filter((n) => v.includes(n)) : [];
-  const { controls, problems: problemasDeControles } = readControls(treeDir);
+  const { controls, problems: problemasDeControles, timeLabels = {} } = readControls(treeDir);
+  // la herramienta de horas elegida, con su nombre: ninguna, una desconocida o una con el manifiesto roto apagan las
+  // piezas de horas; sin perfil no se sabe, y se ven «según tu organización»
+  const toolLabel = org && org.integrationsKnown && typeof org.timeTracking === 'string' ? (timeLabels[org.timeTracking] || null) : null;
+  const piezaApagada = (f) => (f.timeTool ? Boolean(org && org.integrationsKnown && !toolLabel) : apagada(f.integration));
   // el validador de stories del paso 1 sale del mismo cálculo que el pipeline (sin paquetes: sólo el núcleo)
   const validadores = (() => {
     const prev = process.env.TYCON_PACKS_DIR;
@@ -465,9 +458,11 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
     const core = (grupo) => (s.id === '5' || s.id === '7b' ? PIPE.CORE_REVIEWERS.filter((r) => r.group === grupo).map((r) => ({ agent: r.agent, whenKey: r.whenKey, file: `agents/${r.agent}.md` })) : []);
     const grupos = s.id === '1' ? ['validacion'] : (s.id === '5' || s.id === '7b') ? ['base', 'condicional'] : [];
     const dePaquetes = packs.flatMap((p) => p.reviewers.filter((r) => grupos.includes(r.group)).map((r) => ({
-      ...r, pack: p.name, origin: p.origin, active: activos === null ? null : activos.includes(p.name), editable: p.origin === 'organization' && !p.problems.length && r.group !== 'validacion',
-      // por qué no se edita un revisor de la organización: su paquete roto (con el primer problema) o un uso que valida
-      notEditable: p.origin !== 'organization' ? null : p.problems.length ? { reason: 'broken', detail: p.problems[0] } : r.group === 'validacion' ? { reason: 'validation' } : null,
+      ...r, pack: p.name, origin: p.origin, active: activos === null ? null : activos.includes(p.name), editable: p.origin === 'organization' && !p.problems.length,
+      // el uso que abre «Editar»: la solapa que revisa el cambio o la que valida la historia
+      use: r.group === 'validacion' ? 'validacion' : 'cambio',
+      // por qué no se edita un revisor de la organización: sólo con su paquete roto, con el primer problema
+      notEditable: p.origin === 'organization' && p.problems.length ? { reason: 'broken', detail: p.problems[0] } : null,
     })));
     const bloque = {
       always: core('always'),
@@ -485,7 +480,7 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
     return {
       ...s, reviewers: bloque, controls: [...propios.values()],
       orgPiecesDeclared: declaradas.length,
-      orgPieces: declaradas.filter((f) => !apagada(f.integration)).map((f) => ({ id: f.id, integration: f.integration, textKey: f.textKey, code: f.code })),
+      orgPieces: declaradas.filter((f) => !piezaApagada(f)).map((f) => ({ id: f.id, integration: f.timeTool ? (toolLabel ? org.timeTracking : null) : f.integration, timeTool: Boolean(f.timeTool), textKey: f.textKey, code: f.code })),
       storyPieces: STORY_CONDITIONALS.filter((c) => c.steps.some((id) => propiosIds.includes(id))).map((c) => ({ id: c.id, code: c.code, guide: c.guide, textKey: c.textKey })),
     };
   });
@@ -496,7 +491,8 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
   }
   return {
     steps, allSteps: { controls: [...enTodo.values()] },
-    org: org ? { ...org, packs: { installed: instalados, active: activos } } : null,
+    // una herramienta de horas elegida que el árbol no trae (o con el manifiesto roto): sus piezas no se ven, y se dice por qué
+    org: org ? { ...org, timeToolLabel: toolLabel, problems: [...org.problems, ...(org.integrationsKnown && typeof org.timeTracking === 'string' && org.timeTracking !== 'none' && !toolLabel ? [`integrations.timeTracking: «${org.timeTracking}» no es una herramienta de horas de este árbol (o su manifiesto está roto): sus piezas no se muestran`] : [])], packs: { installed: instalados, active: activos } } : null,
     profile: { state: profileDir ? 'leido' : (profileState || 'no_configurado'), reason: profileReason || null },
     packs: packs.map((p) => ({ name: p.name, origin: p.origin, problems: p.problems, missing: p.missing || [], reviewers: p.reviewers.map((r) => r.agent) })),
     // lo que no se pudo leer de las fuentes del arnés: la pantalla lo dice, no lo esconde detrás de un «no hay»

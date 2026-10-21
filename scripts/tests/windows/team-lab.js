@@ -931,11 +931,11 @@ function writeTeamLayerA2(dir, { second = true } = {}) {
     put('perfil-equipo.json', `${JSON.stringify({ ado: { org: 'https://dev.azure.com/acme' }, integrations: { engram: true, nightly: true }, update: { channel: 'latest', apply: 'auto' }, packs: { default: 'all' }, install: { profile: 'full' } }, null, 2)}\n`),
     put('scripts/metrics/corridas-buzon.json', '{ "_que_es": "la llave de JUGUETE del buzón (ensayo): no abre nada", "cuenta": "labcorridas", "contenedor": "corridas", "sas": "sv=lab", "vence": "2099-01-01" }\n'),
     put(`packs/${LAYER_A2.pack}/pack.json`, `${JSON.stringify({ name: LAYER_A2.pack, description: 'paquete del equipo de juguete (ensayo de Windows)', reviewers }, null, 2)}\n`),
-    put(`agents/${LAYER_A2.base}.md`, agent(LAYER_A2.base)),
+    put(`packs/${LAYER_A2.pack}/agents/${LAYER_A2.base}.md`, agent(LAYER_A2.base)),
     put(`skills/${LAYER_A2.nested}/SKILL.md`, skill(path.posix.basename(LAYER_A2.nested))),
     put(`skills/${LAYER_A2.nested}/references/a.md`, '# referencia de juguete\n'),
   ];
-  if (second) out.push(put(`agents/${LAYER_A2.cond}.md`, agent(LAYER_A2.cond)), put(`skills/${LAYER_A2.single}/SKILL.md`, skill(LAYER_A2.single)));
+  if (second) out.push(put(`packs/${LAYER_A2.pack}/agents/${LAYER_A2.cond}.md`, agent(LAYER_A2.cond)), put(`skills/${LAYER_A2.single}/SKILL.md`, skill(LAYER_A2.single)));
   // el paquete entero: su revisor sólo entra con un archivo que ningún repo de juguete trae (no cambia ningún set)
   const W = LAYER_A2.whole;
   out.push(

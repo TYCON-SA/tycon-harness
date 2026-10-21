@@ -228,6 +228,38 @@ function rutaReal(p) {
  * glob.glob(os.path.join(dir, "**", nombre), recursive=True): el archivo en `dir` y en cualquier subcarpeta, sin
  * entrar a las carpetas ocultas ni tomar archivos ocultos. `coincide(nombre)` decide el nombre del archivo.
  */
+/**
+ * Los totales de uno o más TRX de vstest (`dotnet test --logger trx` o `vstest.console /Logger:trx`): la suma de sus
+ * `Counters`. `{ total, passed, failed, executed }`. La usan la rama de .NET y la de una herramienta con reporte `trx`.
+ */
+function contarTrx(archivos, sinResumen = []) {
+  const tot = { total: 0, passed: 0, failed: 0, executed: 0 };
+  for (const tf of archivos) {
+    const t = leerXml(fs.readFileSync(tf, 'utf8'));
+    // `{ns}` de la raíz, como en ElementTree de Python: `.//x:Counters` con el espacio de nombres de la raíz
+    const ns = t.tag.split('}')[0].replace(/^\{+|\{+$/g, '');
+    const buscado = `{${ns}}Counters`;
+    const c = descendientes(t, buscado).find((e) => e !== t);
+    if (c) for (const k of Object.keys(tot)) tot[k] += pyInt(atributo(c, k, 0));
+    else sinResumen.push(tf);
+  }
+  return tot;
+}
+
+/** Un TRX con la forma del lector de JUnit (`readJunit`): `{ ok, total, passed, failed, skipped, files }` o `{ ok:false, reason }`. */
+function trxComoReporte(archivos) {
+  if (!archivos.length) return { ok: false, reason: 'la herramienta no dejó ningún reporte TRX en esta corrida: sin él la puerta no puede contar las pruebas' };
+  try {
+    const sinResumen = [];
+    const t = contarTrx(archivos, sinResumen);
+    // un TRX sin su resumen (Counters) no dice cuántas corrieron: eso es «no pude contar», no «cero pruebas»
+    if (sinResumen.length) return { ok: false, reason: `${sinResumen.length} reporte(s) TRX sin su resumen de pruebas (Counters): ${sinResumen.map((f) => path.basename(f)).join(', ')}` };
+    return { ok: true, total: t.total, passed: t.passed, failed: t.failed, skipped: Math.max(0, t.total - t.executed), files: archivos.length };
+  } catch (e) {
+    return { ok: false, reason: `no pude leer el reporte TRX (${e && e.message ? e.message : e})` };
+  }
+}
+
 function buscarArchivos(dir, coincide) {
   const out = [];
   const visitar = (d) => {
@@ -462,8 +494,10 @@ function informe(argv) {
     if (generico) {
       const { readJunit } = require('./junit-report.js');
       const archivos = reportesDe(generico.results, { repoRun, resultsDir });
-      const j = generico.results && generico.results.format === 'junit' ? readJunit(archivos)
-        : { ok: false, reason: `formato de reporte ${generico.results && generico.results.format} sin lector en esta puerta` };
+      const formato = generico.results && generico.results.format;
+      const j = formato === 'junit' ? readJunit(archivos)
+        : formato === 'trx' ? trxComoReporte(archivos)
+          : { ok: false, reason: `formato de reporte ${formato} sin lector en esta puerta` };
       const sinPruebas = path.join(resultsDir, 'sin-pruebas.txt');
       if (existe(sinPruebas)) result.no_tests_run = `${fs.readFileSync(sinPruebas, 'utf8').trim()}: eso no es verde`;
       if (j.ok) {
@@ -484,16 +518,14 @@ function informe(argv) {
       // Con corrida secuencial por proyecto hay UN trx por ensamblado: se suman TODOS.
       const trx = buscarArchivos(resultsDir, (nm) => nm.endsWith('.trx'));
       if (trx.length) {
-        const tot = { total: 0, passed: 0, failed: 0, executed: 0 };
-        for (const tf of trx) {
-          const t = leerXml(fs.readFileSync(tf, 'utf8'));
-          // `{ns}` de la raíz, como en ElementTree de Python: `.//x:Counters` con el espacio de nombres de la raíz
-          const ns = t.tag.split('}')[0].replace(/^\{+|\{+$/g, '');
-          const buscado = `{${ns}}Counters`;
-          const c = descendientes(t, buscado).find((e) => e !== t);
-          if (c) for (const k of Object.keys(tot)) tot[k] += pyInt(atributo(c, k, 0));
+        const sinResumen = [];
+        result.totals = contarTrx(trx, sinResumen);
+        // un TRX sin su resumen no dice cuántas corrieron: se dice, en vez de sumar cero en silencio
+        if (sinResumen.length) {
+          result.totals_error = `${sinResumen.length} reporte(s) TRX sin su resumen de pruebas (Counters): ${sinResumen.map((f) => path.basename(f)).join(', ')}`;
+          process.stderr.write(`[test-gate] 🔴 ${result.totals_error}\n`);
+          result.suite_green = false;
         }
-        result.totals = tot;
         result.trx_files = trx.length;
         // trx_files < test_projects = corrida PARCIAL (un proyecto falló y la cadena && cortó antes de los siguientes).
         if (testProjectCount) {
@@ -1049,7 +1081,7 @@ function informe(argv) {
 }
 
 // OBS_HASTA sale de acá y de ningún otro lado: el tablero la importa para decir si la observación venció.
-module.exports = { informe, leerXml, descendientes, redondear1, rutaReal, buscarArchivos, OBS_HASTA, isCodeFile };
+module.exports = { informe, leerXml, descendientes, redondear1, rutaReal, buscarArchivos, contarTrx, OBS_HASTA, isCodeFile };
 
 if (require.main === module) {
   try {

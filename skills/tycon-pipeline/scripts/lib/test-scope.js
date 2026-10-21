@@ -235,10 +235,23 @@ function discoverCandidates(repoDir) {
     for (const d of porProfundidad) {
       if (byDir.has(d)) continue;
       let r = null;
-      try { r = runnersLib.resolve(d === '.' ? repoDir : path.join(repoDir, d), { stack }); } catch (e) {
+      try {
+        const i = runnersLib.inspect(d === '.' ? repoDir : path.join(repoDir, d), { stack });
+        r = i.runner;
+        // lo que no se pudo leer (una carpeta, el remoto) se dice: no es lo mismo que «no es proyecto»
+        for (const p of i.problems || []) process.stderr.write(`[test-scope] ⚠️  ${d}: ${p}\n`);
+      } catch (e) {
         process.stderr.write(`[test-scope] ⚠️  no pude ver qué herramienta de prueba usa ${d} (${e && e.message ? e.message : e}): no cuenta como proyecto\n`);
       }
       if (!r) continue;
+      // una carpeta del territorio de una solución es un proyecto de esa solución, no uno aparte: la herramienta que la
+      // detecta (p. ej. packages.config de .NET Framework, buscado en subcarpetas) corre desde la solución
+      // (sin mirar mayúsculas: el .sln de Windows y la carpeta en el disco no siempre coinciden; y lo que está debajo
+      // de la carpeta de la solución también es de ella)
+      const enMinusculas = d.toLowerCase();
+      if ([...byDir.entries()].some(([c, v]) => Array.isArray(v.territory)
+        && (v.territory.some((t) => String(t).toLowerCase() === enMinusculas || isUnder(enMinusculas, String(t).toLowerCase()))
+          || (c !== '.' && isUnder(d, c))))) continue;
       const dentroDeOtro = [...byDir.entries()].some(([c, v]) => v.runner === r.name && c !== d && isUnder(d, c));
       if (!dentroDeOtro) add(d, r.name);
     }
