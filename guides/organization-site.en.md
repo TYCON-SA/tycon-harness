@@ -525,8 +525,8 @@ only: they are changed with a request in their repo.
   coordinating session that passes a developer's OK on to the session doing the work, to waive a reviewer's critical
   finding or sign off a criterion that cannot be tested live. «No» (the default): the developer writes the OK in their
   own session's chat. Here you only say yes or no, and it only counts from here, never from a machine. Which session is
-  the coordinator is designated on each machine: the developer writes «Esta sesión es la coordinadora» («this session is
-  the coordinator») in that session's chat, and the session records it with
+  the coordinator is designated on each machine: in that session's chat, the developer writes a sentence that names the
+  role and says it is this session, and the session records it with
   `marker.js designate-relay --approved-by "<the developer>" --quote "<their sentence>"`. It is recognized by its
   conversation, not by its name: it keeps counting after the session restarts, and has to be designated again after a
   new chat or a `/clear`. A session with the same name cannot relay.

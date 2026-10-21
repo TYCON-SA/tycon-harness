@@ -207,10 +207,9 @@ const VOCABULARIO = Object.freeze({
   // claude-md-blocks/response-style/<estilo>.<idioma>.md, y un valor fuera de la lista es configuración ROTA (el
   // sincronizador deja el bloque que había). Sin valor: `neutral` en `es`, y el tope del estilo (TOPE_POR_ESTILO).
   response: Object.freeze({ language: 'opcion:es|en', style: 'opcion:executive|detailed|neutral', max_chars: 'entero:300-4000' }),
-  // Si la organización usa una sesión que reenvía el ok de un dev, para eximir un crítico o firmar un criterio que no se
-  // puede probar en vivo: el valor es el nombre del rol (por ejemplo «coordinadora»). Cuál sesión lo cumple se designa en
-  // cada máquina con la frase del dev (`marker.js designate-relay`). Sin valor, nadie. Vale SÓLO desde el perfil del
-  // equipo (PROFILE_ONLY).
+  // Quién puede reenviar el ok de un dev: el nombre de la sesión (la coordinadora de una organización) cuyos
+  // mensajes valen como reenvío textual del ok del dev para eximir un crítico o firmar un criterio que no se puede probar
+  // en vivo. Sin valor, nadie. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY).
   approvals: Object.freeze({ relay_session: 'texto' }),
   // Si, además del arnés, una persona tiene que marcar cada criterio de la guía del tester como probado a mano antes de
   // cerrar la historia: `off` (o sin valor) = no; `required` = el cierre frena sin esa marca. Cerrada, para sumar un
