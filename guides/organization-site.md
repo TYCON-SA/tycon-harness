@@ -343,7 +343,9 @@ Las secciones, en el orden de la pantalla:
   `operations.json`), «Proponer» abre el pedido, lo aprueba con la identidad del sitio y lo completa; enseguida el sitio
   vuelve a leer el repo y la sección dice «Aplicado». Sólo pasa si las políticas de la rama principal quedan cumplidas
   con ese voto: si piden algo más (otro revisor, un revisor nombrado, un build), el sitio dice qué falta y deja el
-  pedido para aprobar. En GitHub siempre queda el pedido: quien abre un pedido no puede aprobarlo. Antes de proponer, al
+  pedido para aprobar. En GitHub, donde quien abre un pedido no puede aprobarlo, el sitio no vota: lo mergea directo si
+  el repo deja a su identidad saltear la revisión, y si pide la aprobación de otra persona le prende el auto-merge y
+  entra en cuanto alguien lo apruebe; si el repo tampoco deja el auto-merge, queda el pedido. Antes de proponer, al
   lado del botón, la sección dice qué va a pasar. Queda escrito quién lo hizo: la descripción del pedido nombra a quien
   lo pidió, y el registro del sitio anota `cambio aplicado: <archivo> por <correo>, pedido <enlace>`. Cuenta la opción
   que ya está en el repo: el cambio que la prende queda para aprobar como cualquier otro, y recién después los cambios

@@ -354,8 +354,11 @@ The sections, in the order of the screen:
   On ("yes", `site.auto_apply` in `operations.json`), "Propose" opens the request, approves it with the site's identity
   and completes it; right after, the site reads the repo again and the section says "Applied" (*Aplicado*). It only
   happens if the main branch's policies are met with that vote: if they ask for more (another reviewer, a named
-  reviewer, a build), the site says what is missing and leaves the request to be approved. On GitHub the request always
-  stays: whoever opens a request cannot approve it. Before proposing, next to the button, the section says what will
+  reviewer, a build), the site says what is missing and leaves the request to be approved. On GitHub, where whoever
+  opens a request cannot approve it, the site does not vote: it merges directly if the repository lets its identity
+  bypass the review, and if it requires someone else's approval it turns on auto-merge and the change goes in as soon as
+  someone approves it; if the repository does not allow auto-merge either, the request stays. Before proposing, next to
+  the button, the section says what will
   happen. Who did it stays written: the request's description names who asked for it, and the site's log records
   `cambio aplicado: <file> por <email>, pedido <link>`. What counts is the option already in the repo: the change that
   turns it on is left to be approved like any other, and only after that do changes go in by themselves. It lives in

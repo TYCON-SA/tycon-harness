@@ -28,7 +28,7 @@ async function arrancarGithubFalso({ owner = 'acme', repo = 'ops', token } = {})
   const llamadas = [];
   const st = {
     mainOid: 'b'.repeat(40), proteccion: null, reglas: [], politicas403: false, pedidos: [], fallarPedido: null,
-    environments: [], environments403: false, exigirAuth: token ? `Bearer ${token}` : null,
+    environments: [], environments403: false, mergeDirecto: 200, autoMerge: 'ok', exigirAuth: token ? `Bearer ${token}` : null,
   };
   let siguiente = 1;
   const web = `https://github.example/${owner}/${repo}`;
@@ -44,6 +44,10 @@ async function arrancarGithubFalso({ owner = 'acme', repo = 'ops', token } = {})
     if (!auth || (st.exigirAuth && auth !== st.exigirAuth)) return json(401, { message: 'Bad credentials' });
     if (req.method === 'POST' && ruta === '/graphql') {
       if (/enablePullRequestAutoMerge|mergePullRequest/.test(JSON.stringify(cuerpo || {}))) llamada.prohibida = true;
+      if (/enablePullRequestAutoMerge/.test(JSON.stringify(cuerpo || {}))) {
+        if (st.autoMerge !== 'ok') return json(200, { data: { enablePullRequestAutoMerge: null }, errors: [{ message: st.autoMerge }] });
+        return json(200, { data: { enablePullRequestAutoMerge: { pullRequest: { number: 1 } } } });
+      }
       return json(200, { data: {} });
     }
     if (!ruta.startsWith(prefijo)) return json(404, { message: 'Not Found' });
@@ -68,12 +72,21 @@ async function arrancarGithubFalso({ owner = 'acme', repo = 'ops', token } = {})
         if (st.fallarPedido) return json(st.fallarPedido, { message: st.fallarPedido === 403 ? 'Resource not accessible by personal access token' : 'Server Error' });
         if (!cuerpo || !cuerpo.title || !cuerpo.head || !cuerpo.base) return json(422, { message: 'Validation Failed' });
         const n = siguiente; siguiente += 1;
-        const pedido = { number: n, state: 'open', html_url: `${web}/pull/${n}`, title: cuerpo.title, body: cuerpo.body || '', head: { ref: cuerpo.head }, base: { ref: cuerpo.base } };
+        const pedido = { number: n, node_id: `PR_nodo${n}`, state: 'open', html_url: `${web}/pull/${n}`, title: cuerpo.title, body: cuerpo.body || '', head: { ref: cuerpo.head }, base: { ref: cuerpo.base } };
         st.pedidos.push(pedido);
         return json(201, pedido);
       }
     }
-    if ((m = /^pulls\/(\d+)\/merge$/.exec(resto)) && req.method === 'PUT') { llamada.prohibida = true; return json(200, { merged: true }); }
+    if ((m = /^pulls\/(\d+)\/merge$/.exec(resto)) && req.method === 'PUT') {
+      llamada.prohibida = true;
+      if (st.mergeDirecto === 'perdido') return json(502, { message: 'Bad Gateway' });
+      if (st.mergeDirecto !== 200) return json(st.mergeDirecto, { message: 'At least 1 approving review is required by reviewers with write access.' });
+      return json(200, { merged: true, sha: 'c'.repeat(40) });
+    }
+    if ((m = /^pulls\/(\d+)$/.exec(resto)) && req.method === 'GET') {
+      const pedido = st.pedidos.find((p) => p.number === Number(m[1]));
+      return pedido ? json(200, { ...pedido, merged: st.mergeDirecto === 'perdido' }) : json(404, { message: 'Not Found' });
+    }
     if ((m = /^pulls\/(\d+)$/.exec(resto)) && req.method === 'PATCH') { llamada.prohibida = true; return json(200, {}); }
     if (req.method === 'GET' && resto === 'environments') {
       if (st.environments403) return json(403, { message: 'Resource not accessible by personal access token' });
