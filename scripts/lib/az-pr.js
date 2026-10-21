@@ -2,28 +2,20 @@
 /**
  * scripts/lib/az-pr.js — cómo leer un comando `az repos pr …` sin dejarse engañar.
  *
- * Nace con pr-auto-complete-guard.js (2026-09-03) después de que su primera versión, escrita con
- * el mismo regex de una línea que ya usaban pr-one-per-repo-guard.js y retro-pending.js, cayera en la
- * revisión adversarial por SEIS caminos distintos: una bandera escrita dentro del título contaba
- * como bandera; dos creaciones encadenadas con `&&` se juzgaban por las banderas de la primera;
- * la forma corta `--squash` (que para az vale `true`) se leía como su siguiente token; el último
- * valor repetido es el que toma az y el hook tomaba el primero; `--auto-complete yes` es válido
- * para az y el hook lo rechazaba; y una continuación de línea (`\` + salto) se leía como valor.
+ * Lo comparten pr-auto-complete-guard.js, pr-one-per-repo-guard.js y retro-pending.js. Un regex de una línea por hook
+ * se equivoca en seis cosas: una bandera escrita dentro del título cuenta como bandera; dos creaciones encadenadas con
+ * `&&` se juzgan por las banderas de la primera; la forma corta `--squash` (que para az vale `true`) se lee como su
+ * siguiente token; el último valor repetido es el que toma az, no el primero; `--auto-complete yes` es válido para az;
+ * y una continuación de línea (`\` + salto) no es un valor.
  *
- * 🔴 UN SOLO RECORRIDO DEL TEXTO (segunda revisión adversarial, el mismo día). La versión que
- * arregló esos seis tenía TRES recorridos con conciencia de comillas —partir en segmentos, vaciar
- * las cadenas, y el regex de cada bandera— y esa duplicación produjo su propio defecto: como las
- * banderas se buscaban sobre el texto YA vaciado, `--auto-complete "true"` (perfectamente válido
- * para az) se leía como vacío y quedaba BLOQUEADO. Un freno que corta el camino correcto se apaga.
- * Ahora el texto se recorre UNA vez y se parte en fichas; cada ficha sabe si empezó entre comillas,
- * que es lo único que hacía falta para distinguir «esto es una bandera» de «esto es el título que
- * la menciona».
+ * 🔴 UN SOLO RECORRIDO DEL TEXTO. Con varios recorridos con conciencia de comillas —partir en segmentos, vaciar las
+ * cadenas, buscar cada bandera— las banderas se buscarían sobre el texto ya vaciado, y `--auto-complete "true"`
+ * (válido para az) se leería como vacío y quedaría BLOQUEADO. Un freno que corta el camino correcto se apaga.
+ * Por eso el texto se recorre UNA vez y se parte en fichas; cada ficha sabe si empezó entre comillas, que es lo único
+ * que hace falta para distinguir «esto es una bandera» de «esto es el título que la menciona».
  *
- * 🔴 Los tres hooks que miran `az repos pr` parseaban por su cuenta y ya divergían (el más viejo
- * deja pasar en silencio la forma `--org=…`). Éste es el lugar para que diverjan una sola vez.
- * Desde el 2026-09-06 los tres (pr-auto-complete-guard, pr-one-per-repo-guard, retro-pending) leen de acá
- * (AZ-PR-PARSER-UNICO-1), y los tres recorren TODOS los `pr create` de una cadena, no el primero.
- * Quien agregue un cuarto lector lo suma acá, no escribe otro regex.
+ * 🔴 Los tres hooks leen de acá, para que el criterio no diverja, y los tres recorren TODOS los `pr create` de una
+ * cadena, no el primero. Quien agregue un cuarto lector lo suma acá, no escribe otro regex.
  *
  * Qué NO resuelve, a propósito: sustitución de comandos (`$(…)`), heredocs, backticks. Un comando
  * armado así se juzga por lo que se ve; lo que se ve no puede decir "auto-complete" sin tenerlo.
@@ -43,7 +35,7 @@ const OPERADORES = new Set(['&&', '||', ';', '|', '\n']);
  *
  * `\` + salto de línea se quita (así lo lee la terminal): un comando partido en varias líneas es UN comando.
  *
- * `expande` (story 8.26, tanda F1): la ficha trae algo que la terminal va a reemplazar antes de correr el comando
+ * `expande`: la ficha trae algo que la terminal va a reemplazar antes de correr el comando
  * —`$nombre`, `${…}`, `$(…)` o comillas invertidas, fuera de comillas simples y sin barra delante—. Su `texto` es lo
  * escrito, no lo que va a llegar: quien necesita el texto de verdad (scripts/lib/gh-pr.js) lo da por ilegible. Los
  * lectores de `az` no lo miran.
@@ -71,9 +63,9 @@ function fichas(cmd, opts = {}) {
   const abreExpansion = (c, n) => c === '`' || (c === '$' && n !== undefined && /[A-Za-z_{(0-9@*#?$!\-[=~^+]/.test(n));
 
   // Heredocs: `<<[-]['"]?PALABRA['"]?` … hasta la línea que sólo dice PALABRA. Todo eso es TEXTO.
-  // 🔴 Sólo cuenta el `<<` que está FUERA de comillas (story 8.26, tanda F1): buscado en el texto crudo, un
-  // `echo "ejemplo: cat <<EOF"` abría un bloque que no existe, y todo lo que seguía —los comandos de los renglones
-  // de abajo— se tragaba como cuerpo. Por eso acá sólo se ANOTAN los candidatos, y cada uno se abre cuando el
+  // 🔴 Sólo cuenta el `<<` que está FUERA de comillas: buscado en el texto crudo, un
+  // `echo "ejemplo: cat <<EOF"` abriría un bloque que no existe, y todo lo que siguiera —los comandos de los renglones
+  // de abajo— se tragaría como cuerpo. Por eso acá sólo se ANOTAN los candidatos, y cada uno se abre cuando el
   // recorrido llega a su `<<` sin estar adentro de una cadena. (`<<<` es un texto de entrada, no un bloque.)
   // El delimitador puede llevar una barra delante (`<<\EOF`) y guiones o puntos adentro (`<<'FIN-1'`). Y un `<<` adentro
   // de una cuenta (`$((1<<b))`) es un corrimiento de bits, no un bloque.
@@ -101,7 +93,7 @@ function fichas(cmd, opts = {}) {
     if (q) {
       // Entre comillas dobles la terminal sólo se come la barra delante de `$`, de una comilla invertida, de `"` y de
       // otra barra; delante de cualquier otra cosa la barra QUEDA (`"C:\Users\x"` se publica con sus barras). Sacarlas
-      // todas escondía una ruta de máquina de Windows, y dejaba ilegible la ruta de un archivo.
+      // todas esconde una ruta de máquina de Windows y deja ilegible la ruta de un archivo.
       if (c === '\\' && q === '"' && !ps && n !== undefined && /[$`"\\]/.test(n)) { texto += n; i++; continue; }
       if (c === q) { q = null; continue; }
       if (q === '"' && abreExpansion(c, n)) expande = true;
@@ -117,19 +109,18 @@ function fichas(cmd, opts = {}) {
 
     if ((c === '&' && n === '&') || (c === '|' && n === '|')) { cerrar(); out.push({ op: c + c }); i++; continue; }
     // 🔴 El `&` suelto (segundo plano) TAMBIÉN separa: `az … create --auto-complete true & az … create`
-    // son dos comandos, y juzgarlos como uno le regalaba al segundo las banderas del primero
-    // (segunda revisión adversarial). No confundirlo con las redirecciones: en `2>&1` el `&` viene
+    // son dos comandos, y juzgarlos como uno le regalaría al segundo las banderas del primero.
+    // No confundirlo con las redirecciones: en `2>&1` el `&` viene
     // detrás de un `>`, y en `&>` lo precede.
     if (c === '&' && s[i - 1] !== '>' && n !== '>') { cerrar(); out.push({ op: '&' }); continue; }
     // Una sustitución de comandos ES un comando: `PR=$(az repos pr create …)` tiene que juzgarse
-    // igual que si estuviera suelto (3ª revisión: pasaba, y con un espacio de más bloqueaba —
-    // el mismo comando con veredicto opuesto delataba que era un accidente, no una decisión).
+    // igual que si estuviera suelto: si no, el mismo comando tendría veredictos opuestos según un espacio de más.
     if (c === '$' && n === '(') { cerrar(); out.push({ op: '$(' }); i++; continue; }
     if (c === '(' || c === ')' || c === '`') { cerrar(); out.push({ op: c }); continue; }
     if (c === ';' || c === '|' || c === '\n') { cerrar(); out.push({ op: c === '\n' ? '\n' : c }); continue; }
     if (c === ' ' || c === '\t' || c === '\r') { cerrar(); continue; }
-    // Un comentario se descarta hasta el fin de línea. Sin esto, un `# don't …` dejaba una comilla
-    // abierta que se tragaba el `az repos pr create` de la línea siguiente (2ª revisión adversarial).
+    // Un comentario se descarta hasta el fin de línea. Sin esto, un `# don't …` deja una comilla
+    // abierta que se traga el `az repos pr create` de la línea siguiente.
     if (c === '#' && !abierta) { while (i < s.length && s[i] !== '\n') i++; out.push({ op: '\n' }); continue; }
     if (c === '\\' && n !== undefined && !ps) { if (!abierta) { abierta = true; empezoLibre = true; } texto += n; i++; continue; }
 
@@ -187,7 +178,7 @@ const esFalso = (v) => v !== null && v !== undefined && FALSO.has(String(v).toLo
 /**
  * `az [opciones globales] repos pr <verbo>` leído de las fichas sueltas: un `echo "az repos pr
  * create"` no cuenta, y `az -o json repos pr create` sí — az acepta sus opciones globales antes
- * del grupo, y exigir las cuatro palabras pegadas dejaba pasar esa forma (2ª revisión adversarial).
+ * del grupo, y exigir las cuatro palabras pegadas dejaría pasar esa forma.
  * El binario puede venir con ruta, con `.cmd`/`.exe` y en cualquier caja (macOS no distingue).
  */
 function verboDePr(seg) {
@@ -210,7 +201,7 @@ function verboDePr(seg) {
  * ¿El segmento le pasa CÓDIGO a un intérprete? (`bash -c "…"`, `sh -c`, `eval`, `python3 -c`). Ahí
  * el `az repos pr create` viaja adentro de una cadena y ninguna ficha lo delata: no se puede juzgar
  * lo que se ejecuta, así que quien llama decide (este freno lo trata como «no pude mirar» y frena).
- * Un `echo "az repos pr create"` NO entra acá: echo no ejecuta nada. (2ª revisión adversarial.)
+ * Un `echo "az repos pr create"` NO entra acá: echo no ejecuta nada.
  */
 function pasaCodigoAUnInterprete(seg) {
   const nombre = /(^|\/|\\)(ba|z|k|da)?sh(\.exe)?$|(^|\/|\\)python3?(\.exe)?$|^eval$|^source$/i;
@@ -230,7 +221,7 @@ const textoDe = (seg) => seg.map((f) => (f.esBandera ? f.texto : `"${f.texto}"`)
 /**
  * ¿El segmento arranca con el escape `TYCON_PR_BY_HAND=1` PEGADO al comando? Sólo así vale: desde
  * el entorno sería permanente y silencioso, y en cualquier otra parte del texto sería un accidente.
- * El nombre viejo de la variable (story 8.9, tanda B1) sigue valiendo hasta el retiro y anota su uso.
+ * El nombre viejo de la variable sigue valiendo hasta el retiro y anota su uso.
  */
 function tieneEscape(seg, nombre = 'TYCON_PR_BY_HAND') {
   const legacy = (() => { try { return require('./legacy-names.js'); } catch (_) { return null; } })();
@@ -253,8 +244,8 @@ function tieneEscape(seg, nombre = 'TYCON_PR_BY_HAND') {
 
 /**
  * Filtro barato para descartar de una un comando que no tiene nada que ver. Mira el texto YA unido:
- * un `az repos pr \<salto> create` esquivaba el filtro y con él al hook entero (2ª revisión
- * adversarial). Y NO nombra al binario a propósito: pedir `az` pegado a `repos` volvía a esquivarlo
+ * un `az repos pr \<salto> create` esquivaría el filtro y con él al hook entero. Y NO nombra al binario a
+ * propósito: pedir `az` pegado a `repos` lo esquivaría
  * con `az -o json repos pr create`, que az acepta. Es un superconjunto barato — quien decide de
  * verdad es `verboDePr` sobre las fichas.
  */

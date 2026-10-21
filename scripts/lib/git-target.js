@@ -8,18 +8,14 @@
  * con el cwd de la sesión es decidir sobre el repo equivocado, y como git no falla, no hay error:
  * hay un dato falso.
  *
- * El criterio lo escribió primero `session-collision-guard.js` (2026-09-05), después de que su
- * primera versión frenara TRES veces a una sesión que trabajaba en un clon descartable justamente
- * para no tocar el checkout compartido. Ese mismo día se descubrió que el defecto era simétrico:
- * un destino irresoluble (`git -C "$VAR" commit`) pasaba sin mirar.
+ * El criterio lo comparten `session-collision-guard.js` y `retro-pending.js`. Sin él, una sesión que trabaja en un
+ * clon descartable justamente para no tocar el checkout compartido se frena igual, y un destino irresoluble
+ * (`git -C "$VAR" commit`) pasa sin mirar.
  *
- * 🔴 El 2026-09-15 el MISMO criterio faltaba en `retro-pending.js` (RETRO-PENDING-CD-MISATTR-1): un
- * `cd ~/.claude/agent-skills && git push origin main` quedó registrado contra un repo del equipo, con la
- * sha `2f6a0fcbe459` — el `origin/main` STALE de ese otro checkout, que nadie había fetcheado en
- * semanas. Peor: como el repo se calculó mal, la exclusión que el propio hook tiene para los repos
- * del arnés nunca se activó, y quedó un pendiente que NINGUNA retrospectiva podía cerrar. Antes de
- * escribir una tercera copia del criterio, se extrajo acá. Quien necesite resolver "a qué repo
- * apunta este git" lo pide a este archivo; no escribe otro regex.
+ * 🔴 Sin el criterio, un `cd ~/.claude/agent-skills && git push origin main` queda registrado contra un repo del
+ * equipo, con la sha del `origin/main` STALE de ese otro checkout. Peor: como el repo se calcula mal, la exclusión que
+ * el propio hook tiene para los repos del arnés nunca se activa, y queda un pendiente que NINGUNA retrospectiva puede
+ * cerrar. Quien necesite resolver "a qué repo apunta este git" lo pide a este archivo; no escribe otro regex.
  *
  * ── QUÉ NO RESUELVE, A PROPÓSITO ────────────────────────────────────────────────────────────────
  * Sustitución de comandos (`$(…)`), heredocs, `sh -c "…"`, y variables que el comando NO define.
@@ -34,9 +30,7 @@ const path = require('path');
 /** Operadores que separan sentencias. Sin conciencia de comillas: ver "qué no resuelve". */
 const SEPARADOR = /\s*(?:&&|\|\||;|\||\n)\s*/;
 // 🔴 `expandir`, `variablesDelComando` y la marca de "no lo pude resolver" NO se definen acá: son
-// las mismas tres de `shell-parse.js`, y estaban escritas dos veces —byte a byte idénticas— porque
-// esta pieza y el freno de producción nacieron el mismo día en dos ramas. Dos copias del mismo
-// criterio divergen solas: este repo ya lo pagó con `release-notes.sh` en 8 repos. Una definición,
+// las de `shell-parse.js`. Dos copias del mismo criterio divergen solas. Una definición,
 // tres consumidores (el freno de sesiones, el registro de retrospectivas y el freno de producción).
 const { expandir, variablesDelComando, SIN_RESOLVER } = require(path.join(__dirname, 'shell-parse.js'));
 
@@ -46,8 +40,7 @@ const { expandir, variablesDelComando, SIN_RESOLVER } = require(path.join(__dirn
  * El análisis por sentencia exige que la sentencia EMPIECE con `git` (o con `VAR=x git`), así que
  * sin esto un git envuelto es INVISIBLE — y eso no es "otro repo", es "no lo vi": el consumidor que
  * se niega a concluir termina avisando "no pude resolver" cuando no había nada que resolver
- * (pase adversarial 2026-09-15, hallazgo #2: `time git push origin main`, sin `cd` y sin `-C`, dejó
- * de registrarse). Se pide con `{ envoltorios: true }` y NO viene puesto: el freno de sesiones
+ * (`time git push origin main`, sin `cd` y sin `-C`, dejaría de registrarse). Se pide con `{ envoltorios: true }` y NO viene puesto: el freno de sesiones
  * nunca se midió con esta tolerancia, y ampliar lo que FRENA no es lo mismo que ampliar lo que
  * REGISTRA. El día que se le prenda, va con sus casos.
  */

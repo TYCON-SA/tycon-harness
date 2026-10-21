@@ -4,10 +4,10 @@
 /**
  * suites-for-change.js — qué suites de `scripts/tests/suites.json` corre el control de cada cambio en Azure.
  *
- * POR QUÉ (2026-10-02): el control de `main` (pipelines/azure-pipelines-maintainers-pr.yml) corre las ~190 suites una por una y
- * se pasó de su tope de 45 minutos. Dos suites se llevaban casi la mitad: la copia pública de verdad
- * (`export-real.test.sh`, ~14 min) y las skills de terceros reales (`third-party-real.test.sh`, ~2 min). Las dos ya
- * declaraban `gate_only_when_touching`, que respetaba el portón de cada story y el control de Azure no. Con esto, en
+ * POR QUÉ: el control de `main` (pipelines/azure-pipelines-maintainers-pr.yml) corre las ~190 suites una por una y
+ * se pasa de su tope de 45 minutos. Dos suites se llevan casi la mitad: la copia pública de verdad
+ * (`export-real.test.sh`, ~14 min) y las skills de terceros reales (`third-party-real.test.sh`, ~2 min). Las dos
+ * declaran `gate_only_when_touching`, que respeta el portón de cada story. Con esto, en
  * el control corren sólo si el cambio toca alguna de sus carpetas o la suite misma. El banco nocturno las corre
  * todas las noches igual: no se pierde la medición, se mueve a la noche.
  *
@@ -15,38 +15,38 @@
  * (`tycon-pipeline/scripts/lib/touched-files.js`): cada patrón es `<carpeta>/**`, relativo a la raíz del repo, sin
  * comodines antes del `/**` final. Un patrón con otra forma no se interpreta y la suite corre; sin esa regla, corre todo.
  *
- * LAS DOS MÁS LARGAS (`--heavy`, 2026-10-04, decisión del dueño): `export-real.test.sh` (~24 min en el nocturno) y
+ * LAS DOS MÁS LARGAS (`--heavy`): `export-real.test.sh` (~24 min en el nocturno) y
  * `clean-machine.test.sh` (~7 min cuando mide) corren en el control SÓLO si el cambio toca lo que ellas miden. El
  * criterio vive en scripts/ci/heavy-suites.json (suite → patrones, con su motivo) y, para esas suites, MANDA sobre su
  * `gate_only_when_touching`, que es más angosto y sigue siendo el del portón de cada story. No depende de la regla de
  * agent-skills: sus patrones son `<carpeta>/**`, `*` (un tramo sin barras) o la ruta exacta de un archivo. Un archivo
  * roto no apaga nada: se avisa y corre todo.
- * 2026-10-05 (decisión del dueño): una suite con `"shared": false` no hereda los patrones comunes. Así quedó la copia
- * pública de verdad: se llevaba ~28 de los ~40 minutos de cada validación y corría por casi cualquier cambio; ahora
- * corre en la rama sólo si el cambio toca el exportador o la prueba misma, y todas las noches en el banco nocturno.
+ * Una suite con `"shared": false` no hereda los patrones comunes. Así la copia
+ * pública de verdad, que se lleva ~28 de los ~40 minutos de cada validación, corre
+ * en la rama sólo si el cambio toca el exportador o la prueba misma, y todas las noches en el banco nocturno.
  *
  * «NO PUDE MIRAR» CORRE TODO: sin lista de cambios (no se pudo calcular el diff, el archivo no existe o no se lee) no
  * se difiere ninguna suite, y se dice por qué. Nunca se corre menos por no saber.
  *
- * LA RAÍZ `agent-skills` SALE DE LA FUNCIÓN, NO DE QUIEN LLAMA (story 8.18, AC 12 y 13, 2026-10-03): los dos repos
- * internos se unieron en uno y las suites con raíz `agent-skills` viven en `<repo>/skills`. Con la raíz escrita en el
- * YAML (`$HOME/.claude/agent-skills/skills`), en un clon de trabajo se listaban las suites INSTALADAS en la máquina:
+ * LA RAÍZ `agent-skills` SALE DE LA FUNCIÓN, NO DE QUIEN LLAMA: en el repo unido las suites con raíz `agent-skills`
+ * viven en `<repo>/skills`. Con la raíz escrita en el
+ * YAML (`$HOME/.claude/agent-skills/skills`), en un clon de trabajo se listarían las suites INSTALADAS en la máquina:
  * el control daba verde sin haber corrido el cambio. Sin `--skills`, la raíz es la que contesta `resolveSkillsDirs()`
  * de scripts/lib/skills-dir.js (la variable › el propio clon si es unido › lo instalado), la misma que usan los demás
  * lectores de suites.json; la línea `ROOT` dice cuál fue y de qué regla salió. `--skills` sigue valiendo para quien
  * la quiera fijar a mano. Una raíz que NO existe no saca sus suites de la lista (sería un salteo en silencio): siguen
  * como `RUN`, quien corre la lista las marca «NO se midió» y las cuenta como falla, y acá se dice el motivo.
  *
- * POR DEPENDENCIAS (`--deps`, story 8.22, tramo B, decisión del dueño: la validación en 15 min): una suite que no declara
+ * POR DEPENDENCIAS (`--deps`, para que la validación dure 15 min): una suite que no declara
  * criterio propio corre sólo si el cambio toca algo de lo que usa su código (scripts/ci/suite-deps.js); las demás, el
  * banco nocturno. Ante la duda corre (ver el bloque de `--deps` en main), y sin foto nocturna completa y reciente
  * (`--nightly`) no se saltea nada. Los .md no eligen (`--changed` es la lista de código), salvo para la pesada que
  * declara `reads_md` en heavy-suites.json, que se elige con la lista entera (`--changed-with-docs`).
- * Tramo E (2026-10-07): las pesadas también. Una pesada corre si el cambio toca sus patrones, la red de `shared` (que
+ * Las pesadas también. Una pesada corre si el cambio toca sus patrones, la red de `shared` (que
  * quedó sólo con lo que el lector no puede calcular) o lo que usa su código, según su `deps` en heavy-suites.json: sin
  * poner, el grafo entero; `false`, sólo sus patrones; `"graph"`, el grafo sin el «depende de todo» (su ls-files o su
- * grep son sobre un repo de juguete). Sin --deps utilizable corren todas: sus patrones ya no alcanzan solos.
- * Tramo F (2026-10-07): `--over-limit` trae scripts/ci/suites-over-limit.json, la lista de las suites que pasan de 45 s
+ * grep son sobre un repo de juguete). Sin --deps utilizable corren todas: sus patrones no alcanzan solos.
+ * `--over-limit` trae scripts/ci/suites-over-limit.json, la lista de las suites que pasan de 45 s
  * en el agente con lo que se decidió de cada una. La que va al nocturno (`"nightly": true`) sale `SKIP` aunque el cambio
  * la toque; la que lleva una excepción firmada corre como siempre. Sin saber qué cambió corren todas, y una lista que no
  * se deja leer no saltea ninguna.
@@ -69,8 +69,8 @@ function arg(argv, name) {
   return i >= 0 ? argv[i + 1] : null;
 }
 
-// La regla es UNA: la del portón de las stories, que vive en agent-skills (revisor de fallos silenciosos, 2026-10-02:
-// una copia a mano ya divergía en los espacios). Sin ella no se difiere nada: corre todo.
+// La regla es UNA: la del portón de las stories, que vive en agent-skills (una copia a mano divergiría en los
+// espacios). Sin ella no se difiere nada: corre todo.
 function gateRule(skillsRoot) {
   try {
     const lib = require(path.join(skillsRoot, 'tycon-pipeline', 'scripts', 'lib', 'touched-files.js'));
@@ -91,7 +91,7 @@ function readChanged(file) {
 }
 
 /**
- * La red de `--deps` (story 8.22, AC 9 g): lo que la rama saltea lo mide el banco nocturno. Sin su última foto
+ * La red de `--deps`: lo que la rama saltea lo mide el banco nocturno. Sin su última foto
  * (`scripts/controls-bench/ultimo-suites.json` de origin/main), con `complete` distinto de true o con más de 36 h, esa red
  * no está. Devuelve el motivo por el que no hay red, o null si la hay.
  */
@@ -113,8 +113,7 @@ function nightlyNet(file, now = Date.now()) {
 }
 
 /**
- * Lo que hay que buscar en el código de una suite para saber si usaba un archivo que el cambio borró o movió (story 8.22,
- * AC 9 b; pase adversarial del tramo B): su nombre (`state.js`); su nombre sin extensión pegado a una barra y a una
+ * Lo que hay que buscar en el código de una suite para saber si usaba un archivo que el cambio borró o movió: su nombre (`state.js`); su nombre sin extensión pegado a una barra y a una
  * comilla, como lo escribe un `require` (`/state'`); y cada carpeta que lo contenía y ya no está en el disco
  * (`scripts/widgets`), de dos tramos o más —`scripts` sola nombraría casi todo—.
  */
@@ -176,12 +175,12 @@ function readHeavy(file) {
   const shared = group(data && data.shared, 'shared');
   if (typeof shared === 'string') return { problem: `${file}: ${shared}` };
   if (!data.suites || typeof data.suites !== 'object' || Array.isArray(data.suites)) return { problem: `${file} no trae «suites»` };
-  // `deps_ignore` (tramo E, pase adversarial): carpetas de datos que no viajan ni se instalan y que el código de las
+  // `deps_ignore`: carpetas de datos que no viajan ni se instalan y que el código de las
   // pesadas nombra en rutas de juguete (el laboratorio, los avisos de los hooks). No eligen pesadas por el grafo; una
   // pesada que lea datos reales de ahí los pone en sus patrones. Sin la clave, no se ignora nada
   const ignore = data.deps_ignore === undefined ? [] : group(data.deps_ignore, 'deps_ignore');
   if (typeof ignore === 'string') return { problem: `${file}: ${ignore}` };
-  // `groups` (story 8.22, tramo G; decisión del dueño, 2026-10-08): un criterio con nombre que varias suites comparten.
+  // `groups`: un criterio con nombre que varias suites comparten.
   // La suite que lo nombra (`"group": "<nombre>"`) corre SÓLO si el cambio toca los patrones del grupo o los suyos: no
   // hereda `shared` ni se elige por lo que usa su código. Nació para las suites del laboratorio del instalador, que
   // corren en la rama sólo cuando el cambio toca el instalador (el grupo `installer` dice su costo aceptado). Un grupo
@@ -192,7 +191,7 @@ function readHeavy(file) {
     const patterns = group(entry, name);
     if (typeof patterns === 'string') return { problem: `${file}: el grupo ${patterns}` };
     // Un grupo sin ningún patrón no elige nada: las suites que lo nombran quedarían sólo con su propio archivo, y un
-    // cambio en lo que el grupo decía cuidar las saltearía sin aviso (pase adversarial del tramo G). Lista vacía = mal escrito
+    // cambio en lo que el grupo decía cuidar las saltearía sin aviso. Lista vacía = mal escrito
     if (!patterns.length) return { problem: `${file}: el grupo «${name}» trae la lista «patterns» vacía` };
     groups.set(name, patterns);
   }
@@ -216,12 +215,12 @@ function readHeavy(file) {
     }
     // `shared` de una suite: sin poner o true, hereda; false, no. Otro valor no se adivina
     if (entry.shared !== undefined && typeof entry.shared !== 'boolean') return { problem: `${file}: «${name}» trae «shared» que no es true ni false (${JSON.stringify(entry.shared)})` };
-    // `reads_md` (story 8.22): la pesada mira también los .md del cambio (la copia pública los publica). Otro valor no se adivina
+    // `reads_md`: la pesada mira también los .md del cambio (la copia pública los publica). Otro valor no se adivina
     if (entry.reads_md !== undefined && typeof entry.reads_md !== 'boolean') return { problem: `${file}: «${name}» trae «reads_md» que no es true ni false (${JSON.stringify(entry.reads_md)})` };
-    // `deps` (story 8.22, tramo E): sin poner o true, también lo que usa su código; false, sólo sus patrones; "graph", lo
+    // `deps`: sin poner o true, también lo que usa su código; false, sólo sus patrones; "graph", lo
     // que usa sin el «depende de todo» (su ls-files o su grep son sobre un repo de juguete). Otro valor no se adivina
     if (![undefined, true, false, 'graph'].includes(entry.deps)) return { problem: `${file}: «${name}» trae «deps» que no es true, false ni "graph" (${JSON.stringify(entry.deps)})` };
-    // `graph_whole_lines`: cuántas líneas de su código recorrían el repo cuando alguien revisó el «graph». Otro valor no se adivina
+    // `graph_whole_lines`: cuántas líneas de su código recorren el repo, según quien revisó el «graph». Otro valor no se adivina
     if (entry.graph_whole_lines !== undefined && !(Number.isInteger(entry.graph_whole_lines) && entry.graph_whole_lines >= 0)) {
       return { problem: `${file}: «${name}» trae «graph_whole_lines» que no es un entero desde 0 (${JSON.stringify(entry.graph_whole_lines)})` };
     }
@@ -237,11 +236,11 @@ function readHeavy(file) {
   return { suites, readsMd, depsMode, graphLines, ignore };
 }
 
-// ── Las que pasan del límite en la validación de una rama (story 8.22, tramo F, AC 21) ───────────────────────────────
+// ── Las que pasan del límite en la validación de una rama ───────────────────────────────
 // scripts/ci/suites-over-limit.json dice, por suite, qué se decidió: `"nightly": true` (la rama no la corre nunca: la
 // corre el banco nocturno) o `"exception"` firmada (corre como siempre, y alguien se hizo cargo). Una entrada mal
 // formada deja el archivo ENTERO sin leer: una excepción sin firma no cuenta, y media lista leída saltearía suites con
-// una decisión que nadie tomó. Las `legacy-names-*` no entran: se retiran con la story 8.15 (AC 23).
+// una decisión que nadie tomó. Las `legacy-names-*` no entran: son nombres en retiro.
 const LEGACY_NAMES = /^legacy-names-/;
 const filled = (x) => typeof x === 'string' && x.trim() !== '';
 function readOverLimit(file) {
@@ -282,8 +281,8 @@ function readOverLimit(file) {
  * Lo que pide decisión se juzga parte por parte: partir una suite es la forma de que cada parte entre en el límite.
  * Pero la excepción firmada de una parte NO sobra si la suite entera (la suma de sus partes) pasa del límite: el grupo del
  * laboratorio del instalador de scripts/ci/heavy-suites.json juzga entera la suite partida («el criterio es el de la
- * suite entera») y su control exige la decisión en cada parte. Sin esto las dos reglas se contradecían (nocturno del
- * 2026-10-15: dos partes de 27 y 35 s, entera 62 s, salían «la entrada sobra» acá y «sin decisión» allá). Sólo la
+ * suite entera») y su control exige la decisión en cada parte. Sin esto las dos reglas se contradirían (dos partes de
+ * 27 y 35 s, con la suite entera en 62 s, saldrían «la entrada sobra» acá y «sin decisión» allá). Sólo la
  * excepción: una parte liviana mandada «al nocturno» se sigue juzgando sola, porque esa decisión la saca de la validación.
  */
 const SPLIT_PART = /^(.*)\.p[1-9]\d*\.test\.(js|sh)$/;
@@ -350,7 +349,7 @@ function main(argv) {
   if (changed.known && rule.missing) changed = { known: false, reason: rule.missing };
   if (!changed.known) process.stderr.write(`ℹ️  ${changed.reason}: corre todo\n`);
   const { isValidPattern, touches } = rule;
-  // Las que pasan del límite y van al nocturno (tramo F): la rama no las corre aunque el cambio las toque. Sin saber qué
+  // Las que pasan del límite y van al nocturno: la rama no las corre aunque el cambio las toque. Sin saber qué
   // cambió corre todo, también ellas; y si la lista no se deja leer no se saltea ninguna por el límite, y se dice.
   const overFile = arg(argv, '--over-limit');
   let toNightly = { limit: 0, names: new Set() };
@@ -369,10 +368,10 @@ function main(argv) {
   }
   // «La propia suite», como ruta del repo: scripts/<ruta> para las del arnés y, en el repo unido, skills/<ruta> para
   // las de agent-skills. Con dos repos físicos la de agent-skills queda fuera del repo y no hay ruta que comparar.
-  // Para las de agent-skills se prueban DOS formas (pase adversarial del tramo 1 de la story 8.18, 2026-10-04): con la
-  // RAÍZ resuelta a su ruta real, que es lo que había, y con el ARCHIVO entero resuelto. La segunda cubre `--skills`
+  // Para las de agent-skills se prueban DOS formas: con la
+  // RAÍZ resuelta a su ruta real, y con el ARCHIVO entero resuelto. La segunda cubre `--skills`
   // apuntando a una carpeta real con un enlace por skill (la forma de `~/.claude/skills`): ahí la raíz resuelta es ella
-  // misma, la ruta daba `../…` y la suite editada se difería. La primera se conserva porque un archivo que ya no está
+  // misma, la ruta daría `../…` y la suite editada se diferiría. La primera se conserva porque un archivo que ya no está
   // en disco (la suite que el cambio borró) no se puede resolver. Alcanza con que una figure en el cambio: sumar una
   // forma sólo puede hacer correr una suite, nunca diferirla.
   const repoRoot = realDir(path.dirname(path.resolve(scriptsRoot)));
@@ -381,16 +380,15 @@ function main(argv) {
     const rel = path.relative(repoRoot, abs).split(path.sep).join('/');
     return rel.startsWith('../') || path.isAbsolute(rel) ? null : rel;
   };
-  // Una suite PARTIDA (story 8.22, tramo F) es un archivo entero con todas sus pruebas y N partes de una línea,
+  // Una suite PARTIDA es un archivo entero con todas sus pruebas y N partes de una línea,
   // `<suite>.p<k>.test.<js|sh>`, que son lo registrado. «La propia suite» de una parte es también su archivo entero —ahí
   // viven sus casos— y lo que la reparte: el registro de duraciones y la biblioteca. Y su CÓDIGO, para leer de qué depende,
-  // es el del entero (`codePath`): leído desde la parte, el entero quedaba un nivel más abajo, sin su «recorre el repo» ni
-  // lo que nombran los guiones que nombra. Pase adversarial del tramo: editar el entero de una partida con criterio propio
-  // salteaba todas sus partes (20 de 28), y una partida sin criterio dejaba de correr con cambios en lo que usa.
+  // es el del entero (`codePath`): leído desde la parte, el entero queda un nivel más abajo, sin su «recorre el repo» ni
+  // lo que nombran los guiones que nombra. Sin esto, editar el entero de una partida con criterio propio
+  // saltearía todas sus partes, y una partida sin criterio dejaría de correr con cambios en lo que usa.
   // Qué ES una parte lo dicen su nombre Y su contenido: la línea que carga el entero (`runPart` en Node, `SUITE_PART=k/n`
   // con el nombre del entero en consola). Sólo por el nombre, una suite común que se llamara `x.p1.test.js` al lado de
-  // un `x.test.js` ajeno se leía por las dependencias de ése, y salía SKIP con un cambio en lo que ella sí usa (revisor
-  // de fallos silenciosos, vuelta 3). Una parte que no está o no se deja leer se toma por el nombre: sólo puede hacerla
+  // un `x.test.js` ajeno se leería por las dependencias de ése, y saldría SKIP con un cambio en lo que ella sí usa. Una parte que no está o no se deja leer se toma por el nombre: sólo puede hacerla
   // correr de más. El entero cuenta como propio esté o no en disco: si el cambio lo borró o lo movió, sus partes
   // quedaron sin qué cargar y tienen que correr y salir rojas, no saltearse hasta el nocturno. El código, en cambio, se
   // lee del entero sólo si está (`codePath`); si no, de la parte. Vale para las dos raíces.
@@ -427,7 +425,7 @@ function main(argv) {
     const whole = wholeNameOf(rel);
     return whole && fs.existsSync(path.join(repoRoot, whole)) ? whole : rel;
   };
-  // --deps (story 8.22, tramo B; antes `64a5a523`): una suite que no declara criterio propio corre sólo si el cambio toca
+  // --deps: una suite que no declara criterio propio corre sólo si el cambio toca
   // algo de lo que su código usa (scripts/ci/suite-deps.js). Ante la duda, corre:
   //  (a) el cambio toca cómo se elige (este archivo, el lector de dependencias, el criterio de las pesadas, la lista de
   //      las que pasan de 45 s o el pipeline) → corre todo. La lista de suites no: casi toda story suma una suite, y la
@@ -437,9 +435,9 @@ function main(argv) {
   //  (c) una suite que no está en disco corre, y quien la corre dice «NO se midió»; una que está y no se deja leer (o
   //      algo de lo que carga), también corre.
   //  (g) sin foto nocturna completa y de las últimas 36 h no hay red para lo salteado: no se saltea nada.
-  // Las de `gate_only_when_touching` siguen con su criterio: `--deps` no las mira. Las pesadas (`--heavy`), desde el tramo
-  // E, sí: corren si el cambio toca sus patrones, la red de `shared` o lo que usa su código (según su `deps`), y sin
-  // `--deps` utilizable corren todas, porque sus patrones ya no alcanzan solos.
+  // Las de `gate_only_when_touching` siguen con su criterio: `--deps` no las mira. Las pesadas (`--heavy`),
+  // sí: corren si el cambio toca sus patrones, la red de `shared` o lo que usa su código (según su `deps`), y sin
+  // `--deps` utilizable corren todas, porque sus patrones no alcanzan solos.
   const SELECTION_ITSELF = ['scripts/ci/suites-for-change.js', 'scripts/ci/suite-deps.js', 'scripts/ci/heavy-suites.json',
     'scripts/ci/suites-over-limit.json', 'pipelines/azure-pipelines-maintainers-pr.yml', 'pipelines/templates/run-suites.yml'];
   let depsSel = null;
@@ -469,7 +467,7 @@ function main(argv) {
     for (const u of deps.unreadable) process.stderr.write(`⚠️  ${path.posix.basename(rel)}: no se deja leer ${u.rel} (${u.reason}) — corre\n`);
     if (depsSel.D.touchedBy(deps, files) || ownPaths(s).some((own) => files.includes(own))) return false;
     // lo borrado o movido de ESTA lista: una pesada que mira .md se evalúa con la lista entera, y un .md borrado que su
-    // código lee también cuenta (pase adversarial del tramo E: antes sólo se buscaba lo de la lista de código)
+    // código lee también cuenta (no sólo lo de la lista de código)
     let needles = depsSel.needles;
     if (files !== depsSel.files) {
       const key = files.join('\n');
@@ -493,7 +491,7 @@ function main(argv) {
     return true;
   };
   // Las pesadas que miran .md (`reads_md`) se eligen con la lista ENTERA (`--changed-with-docs`); las demás, y todo lo
-  // que no es pesada, con `--changed`, que en la 170 es la lista de código (story 8.22, AC 7: los .md no eligen suites).
+  // que no es pesada, con `--changed`, que en la 170 es la lista de código (los .md no eligen suites).
   // Pedida y no legible: las que miran .md no saben qué .md cambiaron, y corren (sin lista, como en «no pude mirar»).
   const docsFile = arg(argv, '--changed-with-docs');
   let withDocs = readChanged(docsFile);
@@ -505,8 +503,8 @@ function main(argv) {
   const lines = [];
   const heavyWithoutDeps = [];
   // ¿El «graph» de esta pesada sigue revisado? Sólo si su código tiene hoy las mismas líneas que recorren el repo que
-  // cuando alguien lo revisó (`graph_whole_lines`). Si no, depende de todo hasta que la revisen, y se dice (revisores del
-  // tramo E: si no, un recorrido real del repo agregado después se salteaba en silencio).
+  // cuando alguien lo revisó (`graph_whole_lines`). Si no, depende de todo hasta que la revisen, y se dice (si no, un recorrido real del repo agregado después se
+  // saltearía en silencio).
   const graphStillReviewed = (s, name) => {
     const rel = codePath(s);
     let now = null;
@@ -521,7 +519,7 @@ function main(argv) {
       process.stderr.write(`⚠️  ${name}: graph_whole_lines dice ${said.lines === undefined ? 'nada' : said.lines} y su código tiene ${now === null ? '¿?' : now} línea(s) que recorren el repo: depende de todo hasta que alguien la revise (${heavyFile})\n`);
       return false;
     }
-    // mismo número, otras líneas (revisores del tramo E, iter 2): una reemplazada por otra también se vuelve a mirar
+    // mismo número, otras líneas: una reemplazada por otra también se vuelve a mirar
     if (said.sha !== sha) {
       process.stderr.write(`⚠️  ${name}: las líneas que recorren el repo cambiaron (graph_whole_sha): depende de todo hasta que alguien la revise (${heavyFile}, ahora ${sha})\n`);
       return false;
@@ -545,7 +543,7 @@ function main(argv) {
       const mode = heavy.depsMode.get(name);
       // (lo propio de una parte —su archivo entero, el reparto— la corre aunque sus patrones no lo nombren)
       if (files && !files.some((f) => heavyPatterns.some((re) => re.test(f))) && !ownPaths(s).some((own) => files.includes(own))) {
-        // tramo E: los patrones ya no alcanzan solos (la red de `shared` se achicó). Sin `--deps` utilizable corre, como
+        // los patrones solos no alcanzan: la red de `shared` trae sólo lo que el lector no puede calcular. Sin `--deps` utilizable corre, como
         // cualquier suite cuando --deps no saltea nada; con `deps: false`, sus patrones son todo su criterio; si no, se
         // saltea sólo si tampoco usa nada del cambio.
         if (!depsSel) heavyWithoutDeps.push(name);
@@ -599,7 +597,7 @@ function main(argv) {
 }
 
 // 🔴 `process.exitCode`, no `process.exit()`: escrita a una tubería, la salida es asincrónica y `process.exit()` la corta
-// a los 8 KB (medido el 2026-10-04 con la lista real: 140 de 219 líneas, sin la copia pública ni la máquina limpia). En
-// el pipeline va a un archivo y no mordía; a quien la lea por una tubería, sí.
+// a los 8 KB (con la lista real quedan 140 de 219 líneas, sin la copia pública ni la máquina limpia). En
+// el pipeline va a un archivo y no muerde; a quien la lea por una tubería, sí.
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 module.exports = { main, nightlyNet, readOverLimit, overLimitProblems };

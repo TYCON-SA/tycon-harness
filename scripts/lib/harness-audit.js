@@ -22,17 +22,15 @@
  *   node ~/.claude/tycon-harness/scripts/lib/harness-audit.js          # reporte text
  *   node ~/.claude/tycon-harness/scripts/lib/harness-audit.js --json   # output JSON
  *   node ~/.claude/tycon-harness/scripts/lib/harness-audit.js --verbose # detalle por check
- *
- * Rubric version: 2026-05-23 (TYCON v1).
  */
 
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
-// archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
-// scripts/tests/tycon-home.test.js). Si está y no carga, tira.
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
+// archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma que
+// resuelve ese módulo (prueba: scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const os = require('os');
 const { execSync, execFileSync } = require('child_process');
@@ -40,7 +38,7 @@ const { execSync, execFileSync } = require('child_process');
 const HOME = os.homedir();
 const JSON_OUT = process.argv.includes('--json');
 
-// ── Paridad de instalación Claude↔Codex (Etapa H) ────────────────────────────────────────────
+// ── Paridad de instalación Claude↔Codex ────────────────────────────────────────────
 // Una sola herramienta de diagnóstico: el scorecard mide el lado Claude; `--parity` mide que el
 // lado Codex de ESTA máquina refleje el canónico (11 superficies fs-only, detalle en
 // scripts/lib/harness-parity.js). Se corre acá y no en un doctor aparte a propósito.
@@ -49,17 +47,17 @@ if (process.argv.includes('--parity')) {
 }
 const VERBOSE = process.argv.includes('--verbose');
 
-// `TYCON_AGENTS_DIR` (story 8.2): la misma variable que lee el cargador de paquetes del pipeline;
+// `TYCON_AGENTS_DIR`: la misma variable que lee el cargador de paquetes del pipeline;
 // la usan las pruebas para auditar contra una carpeta de agentes de mentira.
 const AGENTS_DIR = process.env.TYCON_AGENTS_DIR || path.join(HOME, '.claude/agents');
 const SKILLS_DIR = path.join(HOME, '.claude/agent-skills/skills');
 const SETTINGS = path.join(HOME, '.claude/settings.json');
-const TCG_ROOT = path.resolve(__dirname, '..', '..');   // el clon donde vive este archivo, en scripts/lib/ (story 8.3: ninguna carpeta escrita a mano)
+const TCG_ROOT = path.resolve(__dirname, '..', '..');   // el clon donde vive este archivo, en scripts/lib/: ninguna carpeta escrita a mano
 const TCG_GUIDES = path.join(TCG_ROOT, 'guides');
 const TCG_SCRIPTS = path.join(TCG_ROOT, 'scripts');
 const CATALOG = path.join(TCG_GUIDES, 'advisor-rules-catalog.md');
 
-// Dónde viven los repos del equipo en ESTA máquina. Hardcodear la carpeta de una máquina hacía que los
+// Dónde viven los repos del equipo en ESTA máquina. Hardcodear la carpeta de una máquina haría que los
 // chequeos de memoria devolvieran cero repos en cualquier otra máquina — y cero repos se lee
 // igual que "está todo bien". Ver scripts/lib/repos-root.js.
 // El binario de sqlite3. Configurable porque no siempre está en el PATH ni en el mismo lugar:
@@ -68,11 +66,10 @@ const CATALOG = path.join(TCG_GUIDES, 'advisor-rules-catalog.md');
 // "no puedo verificar" sin romper el PATH entero del sandbox.
 const SQLITE = process.env.TYCON_SQLITE_BIN || 'sqlite3';
 
-// 🔴 `execFileSync` con ARRAY, nunca un string de shell (corregido 2026-08-25 por la revisión
-// adversarial). El string armaba una línea de shell: un binario con ESPACIOS en la ruta —
-// `C:\\Program Files\\sqlite3.exe`, que es el caso NORMAL en Windows— pasaba el chequeo de
-// existencia y después fallaba al consultar, devolviendo null. Y null, río abajo, se leía como
-// "no hay nada raro". El caso se reprodujo: con espacios el binario ni siquiera se invocaba.
+// 🔴 `execFileSync` con ARRAY, nunca un string de shell. Un string arma una línea de shell: un binario con
+// ESPACIOS en la ruta —`C:\\Program Files\\sqlite3.exe`, que es el caso NORMAL en Windows— pasaría el chequeo de
+// existencia y después fallaría al consultar, devolviendo null. Y null, río abajo, se lee como
+// "no hay nada raro".
 function consultar(db, query, timeout) {
   return execFileSync(SQLITE, ['-readonly', db, query],
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: timeout || 15000 });
@@ -82,8 +79,8 @@ function consultar(db, query, timeout) {
 const REPOS_ROOTS = (() => {
   try { return require('./repos-root.js').resolveReposRoot().roots || []; }
   catch (e) {
-    // ~/.claude/tycon.json roto: un comando frena (story 8.3) — como CLI, con el archivo, la clave y el motivo y exit 2, no con
-    // una traza (pase adversarial de la tanda B); como módulo, el que lo carga decide. Sin raíz → null y cada chequeo dice «no medido».
+    // ~/.claude/tycon.json roto: un comando frena — como CLI, con el archivo, la clave y el motivo y exit 2, no con
+    // una traza; como módulo, el que lo carga decide. Sin raíz → null y cada chequeo dice «no medido».
     if (e && e.name === 'ConfigError') { if (require.main === module) { console.error(e.message); process.exit(2); } throw e; }
     return [];
   }
@@ -117,7 +114,7 @@ function checkAdvisorCoverage() {
   const checks = [];
   // Sólo el NÚCLEO del pipeline va escrito acá. Los revisores de un producto o de un cliente
   // (convenciones de plugins Bizuit; plugins hermanos; el adaptador de un cliente) viven en los paquetes de revisores
-  // (story 8.2) y se exigen leyendo los manifiestos instalados, más abajo: sin paquetes, no se exigen.
+  // y se exigen leyendo los manifiestos instalados, más abajo: sin paquetes, no se exigen.
   const expectedCoreAdvisors = [
     'tycon-plugin-tests-coverage',
     'tycon-plugin-security-basics',
@@ -147,7 +144,7 @@ function checkAdvisorCoverage() {
   for (const a of expectedConditional) {
     if (exists(path.join(AGENTS_DIR, `${a}.md`))) conditionalPresent++;
   }
-  // los condicionales de un stack viven en sus paquetes (story 8.41) y se exigen abajo, leyendo los manifiestos
+  // los condicionales de un stack viven en sus paquetes y se exigen abajo, leyendo los manifiestos
   checks.push({
     name: `Advisors condicionales del núcleo (${conditionalPresent}/${expectedConditional.length})`,
     passed: conditionalPresent === expectedConditional.length,
@@ -155,7 +152,7 @@ function checkAdvisorCoverage() {
     severity: 'warning',
   });
 
-  // Los revisores de los paquetes instalados (story 8.2): cada agente que un manifiesto declara
+  // Los revisores de los paquetes instalados: cada agente que un manifiesto declara
   // tiene que estar; y un manifiesto ilegible es una FALLA, no «sin paquete».
   const { paquetes, errores } = require('./installed-packs.js').leerPaquetes();
   for (const e of errores) {
@@ -167,7 +164,7 @@ function checkAdvisorCoverage() {
     });
   }
   // los que la organización activa (packs.default): un paquete apagado no enlaza sus revisores, y no se le exigen; uno
-  // activado que no está, o una configuración ilegible, es una falla (story 8.41)
+  // activado que no está, o una configuración ilegible, es una falla
   let activos = null;
   try {
     const C = require('./tycon-config.js');
@@ -248,15 +245,15 @@ function checkContextEfficiency() {
   // Anthropic Connectors inferidos
   const inferredConnectors = ['claude_ai_Docu_de_MS', 'claude_ai_Gamma', 'claude_ai_Gmail', 'claude_ai_Google_Calendar', 'claude_ai_Google_Drive', 'claude_ai_Wix'];
   const connectorTokens = { 'claude_ai_Docu_de_MS': 1500, 'claude_ai_Gamma': 4000, 'claude_ai_Gmail': 6500, 'claude_ai_Google_Calendar': 4000, 'claude_ai_Google_Drive': 4000, 'claude_ai_Wix': 9500 };
-  // 🔴 Lo NO autorizado no carga esquemas (CONTEXT-BUDGET-TOOLS-DIFERIDAS-1, 2026-09-06): cobrarlo
-  // entero inflaba la cuenta a 48.500, puntuaba 0/10 y empujaba a desconectar conectores por un
-  // ahorro que no existía. Claude Code deja la lista en `~/.claude/mcp-needs-auth-cache.json`.
+  // 🔴 Lo NO autorizado no carga esquemas: cobrarlo
+  // entero inflaría la cuenta, puntuaría 0/10 y empujaría a desconectar conectores por un
+  // ahorro que no existe. Claude Code deja la lista en `~/.claude/mcp-needs-auth-cache.json`.
   // Misma regla que context-budget.js (dos copias de la cuenta — ver scripts/tests/context-budget.test.sh).
   let sinAutorizar = new Set();
   try {
     const cache = JSON.parse(safeRead(path.join(HOME, '.claude/mcp-needs-auth-cache.json')));
     sinAutorizar = new Set(Object.keys(cache).filter((k) => k.startsWith('claude.ai ')).map((k) => k.slice('claude.ai '.length)));
-  } catch { /* sin cache: se asume todo cargado, como antes */ }
+  } catch { /* sin cache: se asume todo cargado */ }
   const TOKENS_PER_UNLOADED_TOOL = 12;
   for (const c of inferredConnectors) {
     const nombre = c.replace(/^claude_ai_/, '').replace(/_/g, ' ');
@@ -282,12 +279,11 @@ function checkContextEfficiency() {
     file: SETTINGS,
     severity: 'warning',
   });
-  // ── La cadena del CLAUDE.md, con sus @imports (story 7.4, 2026-09-17) ──────────────────────
-  // Esta categoría sumaba skills + agentes + MCP y NO contaba el CLAUDE.md: decía «overhead < 25 %
-  // de la ventana» con un piso real del 62 % de 200 mil, porque el README del arnés —235.771 bytes
-  // ≈ 76 mil tokens, importado entero en cada sesión y en cada subagente— no entraba en ninguna
-  // cuenta. Otra aparición de «verde que significa no miré nada», esta vez en la pieza que existe
-  // para medir esto. Medición: tasks/medicion-7.4-piso-de-contexto-2026-09-17.md.
+  // ── La cadena del CLAUDE.md, con sus @imports ──────────────────────────────────────────────
+  // Una cuenta de sólo skills + agentes + MCP no cuenta el CLAUDE.md: diría «overhead < 25 % de la ventana»
+  // con un piso real mucho mayor, porque el README del arnés, importado entero en cada sesión y en cada
+  // subagente, no entraría en ninguna cuenta. Sería «verde que significa no miré nada», en la pieza que existe
+  // para medir esto.
   //
   // 🔴 La cuenta se IMPORTA de context-budget.js, no se copia: el precio de las herramientas MCP ya
   // vive duplicado acá y el caso C-05 de la suite existe justamente para cazar cuando las dos copias
@@ -298,8 +294,8 @@ function checkContextEfficiency() {
   catch (e) { cadenaError = e.message; }
   const CADENA_MAX = 30_000;
   checks.push(cadena ? {
-    // 🔴 «estimado» en el nombre a propósito: la cuenta es chars/4 y subestima ~30 % (medido:
-    // 3,02–3,08 bytes/token en este contenido). El error va hacia ABAJO, así que un rojo es rojo de
+    // 🔴 «estimado» en el nombre a propósito: la cuenta es chars/4 y subestima ~30 % (unos 3,05 bytes/token en este
+    // contenido). El error va hacia ABAJO, así que un rojo es rojo de
     // verdad, pero el número no se puede citar como medido. El medido sale de `context-budget.js --measured`.
     name: `Cadena del CLAUDE.md con sus @imports < ${CADENA_MAX.toLocaleString('en-US')} tokens (actual: ${cadena.totalTokens.toLocaleString('en-US')} estimado — chars/4 subestima ~30 %)`,
     passed: cadena.totalTokens < CADENA_MAX,
@@ -365,14 +361,12 @@ function checkQualityGates() {
   return { name: 'Quality Gates', checks };
 }
 
-// ── Pinning del project name de engram (ENGRAM-PROJECT-NAME-DRIFT-1, 2026-08-25) ─────────────
+// ── Pinning del project name de engram ───────────────────────────────────────────────────────
 // Por qué existe: engram autodetecta el project name desde el basename del cwd cuando el repo no
 // lo fija. Eso fragmenta la memoria SIN dar error — `mem_search` con el nombre equivocado devuelve
-// "no memories found", que es indistinguible de "este repo todavía no tiene historia". Medido el
-// 2026-08-24 en dos repos el mismo día: el repo del framework (74 obs en 6 nombres, disparado por un
-// rename de carpeta) y el arnés (135 obs en 7 nombres, porque la guía mandaba `tycon` y
-// `.engram-project` declaraba el nombre del repo como proyecto; 11 de esas obs NUNCA se exportaron a un chunk,
-// o sea que existían en UNA sola máquina).
+// "no memories found", que es indistinguible de "este repo todavía no tiene historia". Pasa, por ejemplo, con un
+// rename de carpeta, o cuando la guía manda un nombre y `.engram-project` declara otro; las observaciones que
+// nunca se exportaron a un chunk existen en UNA sola máquina.
 //
 // Dos checks, a propósito: el pin PREVIENE (barato, sin tocar la DB) y el conteo por directorio
 // DETECTA lo que ya se fragmentó. El segundo es fail-open total: si no hay sqlite3 o no está la DB,
@@ -387,11 +381,9 @@ function pinDe(dir) {
   return name || null;
 }
 
-// 🔴 Recorre DOS niveles, no uno (corregido 2026-08-25). La primera versión miraba sólo los hijos
-// directos de la raíz de repos y por eso era ciega justo donde estaban los casos: Ceibo, Totora,
-// Pacara, FRESNO y URUTAU son CONTENEDORES —la carpeta de arriba no es un repo git— y sus repos de
-// verdad viven un nivel más abajo. Con un solo nivel se perdían 4 repos sin pin y 2 que declaran
-// el nombre desde hace meses sin haber exportado jamás. Un detector que no mira donde pasan las
+// 🔴 Recorre varios niveles, no sólo los hijos directos de la raíz de repos: hay CONTENEDORES —la carpeta de arriba no
+// es un repo git— y sus repos de verdad viven un nivel más abajo. Mirando un solo nivel se perderían repos sin pin y
+// repos que declaran el nombre sin haber exportado jamás. Un detector que no mira donde pasan las
 // cosas es un detector que no detecta.
 //
 // Distingue TRES estados, no dos: con pin y exportando · con pin pero SIN un solo chunk (declaró y
@@ -404,10 +396,9 @@ function scanEngramRepos(rootOverride) {
   }));
   if (varias) return varias;
   const root = rootOverride || REPOS_ROOT;
-  // 🔴 `error` distingue "miré y no hay nada" de "no pude mirar" (2026-08-25, revisión
-  // adversarial). Antes una raíz inexistente o ilegible devolvía las MISMAS listas vacías que una
-  // raíz sana sin repos — y cero repos se lee igual que "está todo bien". El consumidor tiene que
-  // poder notar la diferencia; el hook la convierte en un aviso.
+  // 🔴 `error` distingue "miré y no hay nada" de "no pude mirar". Una raíz inexistente o ilegible no puede
+  // devolver las MISMAS listas vacías que una raíz sana sin repos — y cero repos se lee igual que "está todo bien".
+  // El consumidor tiene que poder notar la diferencia; el hook la convierte en un aviso.
   const out = { pinned: [], unpinned: [], nuncaSincronizo: [], error: null, root };
   if (!root) { out.error = 'sin raíz de repos (TYCON_REPOS_ROOT, o rutas.repos en ~/.claude/tycon.json): no medido'; return out; }
   if (!exists(root)) {
@@ -429,16 +420,14 @@ function scanEngramRepos(rootOverride) {
     if (n === 0 && exists(path.join(dir, '.git'))) out.nuncaSincronizo.push(fila);
   };
 
-  // 🔴 El recorrido baja hasta 4 niveles (story 1.6, 2026-09-17). Antes miraba 2, y por eso el
-  // clon de DevB —`Proyectos/FRESNO/Codigo/FRESNOProyecto`, tres niveles— no aparecía NUNCA en el
-  // aviso diario: sus 18 recuerdos llevaban tres semanas invisibles y el chequeo lo daba por sano.
+  // 🔴 El recorrido baja hasta 4 niveles: un clon a tres niveles de la raíz (`Proyectos/FRESNO/Codigo/FRESNOProyecto`)
+  // quedaría invisible en el aviso diario y el chequeo lo daría por sano.
   //
-  // La regla de corte tiene una asimetría deliberada, medida el 2026-09-17 sobre la raíz de repos del autor:
+  // La regla de corte tiene una asimetría deliberada:
   // **los niveles 1 y 2 se recorren siempre**, aunque la carpeta madre sea ella misma un repo. Si
-  // se cortara ahí, se perderían 14 repos que hoy se ven (Ceibo ×4, Pacara ×3, Totora ×3,
-  // Ebano ×3, aula-demo/web): sus contenedores tienen `.engram/` propio y sus repos adentro
-  // también. Recién para bajar al 3º y al 4º se corta al entrar en algo que ya es un repo, que es
-  // donde aparecen `vendor/` y compañía. Así el conjunto nuevo CONTIENE al viejo por construcción.
+  // se cortara ahí, se perderían repos que se ven: sus contenedores tienen `.engram/` propio y sus repos
+  // adentro también. Recién para bajar al 3º y al 4º se corta al entrar en algo que ya es un repo, que es
+  // donde aparecen `vendor/` y compañía. Así el recorrido con 4 niveles CONTIENE al de 2 por construcción.
   const EXCLUIDAS = new Set(['node_modules', 'bin', 'obj']);
   const HONDO = 4;
   const esRepo = (dir) => exists(path.join(dir, '.engram')) || exists(path.join(dir, '.engram-project')) || exists(path.join(dir, '.git'));
@@ -470,18 +459,16 @@ function scanEngramRepos(rootOverride) {
   return out;
 }
 
-// ── Por qué NO hay un chequeo de "pin que apunta al project equivocado" (evaluado y DESCARTADO
-// 2026-08-25) ─────────────────────────────────────────────────────────────────────────────────
-// La idea era comparar el pin declarado contra el project que las sesiones de ese directorio usan
-// de verdad. Se implementó y se midió: **5 hallazgos, 4 falsos**. `Pacara/BackEnd` declara
+// ── Por qué NO hay un chequeo de "pin que apunta al project equivocado" ───────────────────────────
+// La idea es comparar el pin declarado contra el project que las sesiones de ese directorio usan
+// de verdad. Da falsos positivos: `Pacara/BackEnd` declara
 // `NimboBackEnd` y sus sesiones dicen `backend`; `Totora/FrontEnd` declara `totora` y sus
 // sesiones dicen `frontend`. En los dos casos el pin está BIEN y lo que "usan de verdad" es la
-// autodetección por basename — o sea que el chequeo acusaba justo a los repos bien configurados.
+// autodetección por basename — o sea que el chequeo acusaría justo a los repos bien configurados.
 //
-// El caso que motivó la idea (`Ceibo/Ceibo` declarando `Yatay`
-// — guides/maintaining/incident-log.md#case-engram-pin-differs-from-basename-2026-08-25) es estructuralmente
+// Un repo que declara el nombre anterior del producto es estructuralmente
 // idéntico a esos falsos positivos —pin ≠ basename— y además NO está claro que esté mal: es el
-// repo archivo del producto bajo su nombre anterior, 1 commit en 90 días, con memorias de esa era.
+// repo archivo del producto bajo su nombre anterior, con memorias de esa era.
 // Sin una señal que separe "archivo legítimo" de "pin equivocado", el chequeo sería ruido. Un
 // control que acusa a los repos correctos se apaga, y se lleva puestos los casos donde sí
 // importaba. Si aparece esa señal, el lugar es acá.
@@ -495,22 +482,20 @@ function engramDirsWithMultipleProjects(dbOverride, scopeOverride) {
   const varias = enCadaRaiz(scopeOverride, (r) => engramDirsWithMultipleProjects(dbOverride, r), (xs) => juntarListas(xs) || 'nulo');
   if (varias) return varias === 'nulo' ? null : varias;
   const db = dbOverride || path.join(HOME, '.engram', 'engram.db');
-  if (!scopeOverride && !REPOS_ROOT) return null;   // sin raíz no se puede mirar: null = «no sé» (story 8.3)
+  if (!scopeOverride && !REPOS_ROOT) return null;   // sin raíz no se puede mirar: null = «no sé»
   const scope = (scopeOverride || REPOS_ROOT) + path.sep;
   if (!exists(db)) return null;
   try {
-    // 🔴 Se agrupa en JS y NO en SQL a propósito: engram 1.20 guarda los project names
+    // 🔴 Se agrupa en JS y NO en SQL a propósito: engram guarda los project names
     // lowercaseados y filtra case-insensitive, así que `FRESNO` y `fresno` son EL MISMO cajón. Un
-    // COUNT(DISTINCT project) crudo los cuenta como dos y el check grita por 17 repos de los
-    // cuales ~10 no tienen nada roto. Un control que cría lobos se termina ignorando, y se lleva
+    // COUNT(DISTINCT project) crudo los cuenta como dos y el check gritaría por repos que
+    // no tienen nada roto. Un control que cría lobos se termina ignorando, y se lleva
     // puestos los casos donde sí importaba — así que la normalización es parte del control, no un
-    // detalle cosmético. Medido: 17 → 6 al normalizar.
+    // detalle cosmético.
     // 🔴 Sólo cuentan los nombres que TODAVÍA tienen observaciones vivas. Tras consolidar, las
     // filas viejas de `sessions` conservan su etiqueta original aunque las observaciones ya se
     // hayan mudado — sin este filtro el chequeo seguiría en rojo para siempre sobre memoria que
-    // ya está unificada, y un rojo permanente se aprende a ignorar. Medido: 4 falsos positivos
-    // (dos de un producto, el de formularios y el del framework) apenas terminó la
-    // consolidación del 2026-08-25.
+    // ya está unificada, y un rojo permanente se aprende a ignorar.
     const q = "SELECT s.directory || ' :: ' || s.project FROM sessions s "
             + "WHERE s.directory IS NOT NULL AND s.directory <> '' AND s.project IS NOT NULL AND s.project <> '' "
             + "AND EXISTS (SELECT 1 FROM observations o WHERE o.project = s.project AND o.deleted_at IS NULL);";
@@ -544,24 +529,22 @@ function engramDirsWithMultipleProjects(dbOverride, scopeOverride) {
 
 // Observaciones que existen en la DB local pero NO están en ningún chunk de `.engram/chunks/` del
 // repo — o sea: memoria que vive en UNA sola máquina y no llegó a nadie más. Es la falla más cara
-// de las tres, porque no se recupera: si se pierde el disco, se perdió. Medido el 2026-08-25:
-// 11 obs varadas en el arnés y 91 en un repo del equipo, ambas invisibles hasta que alguien
-// las buscó a mano. Devuelve null si no se pudo mirar (sin sqlite3 / sin DB): "no sé" no es "está limpio".
+// de las tres, porque no se recupera: si se pierde el disco, se perdió. Es invisible hasta que alguien
+// la busca a mano. Devuelve null si no se pudo mirar (sin sqlite3 / sin DB): "no sé" no es "está limpio".
 function engramUnexportedByRepo(rootOverride, dbOverride) {
   const varias = enCadaRaiz(rootOverride, (r) => engramUnexportedByRepo(r, dbOverride), (xs) => juntarListas(xs) || 'nulo');
   if (varias) return varias === 'nulo' ? null : varias;
   const db = dbOverride || path.join(HOME, '.engram', 'engram.db');
   if (!exists(db)) return null;
   const root = rootOverride || REPOS_ROOT;
-  if (!root) return null;   // sin raíz: «no sé» (story 8.3)
+  if (!root) return null;   // sin raíz: «no sé»
   const { pinned } = scanEngramRepos(rootOverride);
   if (!pinned.length) return [];
 
-  // 🔴 Se agrupa POR PROJECT, no por repo (corregido 2026-08-25, apenas el escaneo pasó a dos
-  // niveles). Varios repos comparten un mismo cajón a propósito — los 3 de Ceibo sincronizan
-  // `ceibo`, los 5 de Totora sincronizan `totora` — así que una observación viaja si está en
-  // los chunks de CUALQUIERA de ellos. Mirando repo por repo, la primera versión reportó 2442
-  // observaciones "varadas" que sí habían viajado, sólo que por el `.engram/` de un hermano.
+  // 🔴 Se agrupa POR PROJECT, no por repo. Varios repos comparten un mismo cajón a propósito — los 3 de Ceibo
+  // sincronizan `ceibo`, los 5 de Totora sincronizan `totora` — así que una observación viaja si está en
+  // los chunks de CUALQUIERA de ellos. Mirando repo por repo se reportarían como "varadas" observaciones que
+  // sí viajaron, sólo que por el `.engram/` de un hermano.
   const porProject = new Map();
   for (const r of pinned) {
     const k = String(r.project).toLowerCase();
@@ -607,25 +590,22 @@ function engramUnexportedByRepo(rootOverride, dbOverride) {
 
 // Chunks que están en disco pero NO en el índice (`manifest.json`) — y al revés. El índice NO es
 // decorativo: `engram sync --import` lo usa para saber qué levantar, así que un chunk commiteado
-// pero sin entrada es memoria que viajó por git y que NADIE puede leer. Verificado el 2026-08-25 en
-// FRESNO/FRESNOBZExtBackend: el chunk `14b4f99a` (8 observaciones reales de otro dev sobre bugs de
-// conciliación) estaba en `main` desde el 24/08 y sus observaciones NO estaban en la DB local ni
-// figuraban en `sync_chunks` — invisibles para todo el equipo.
+// pero sin entrada es memoria que viajó por git y que NADIE puede leer: sus observaciones no están en la DB
+// local ni figuran en `sync_chunks`, invisibles para todo el equipo.
 //
-// 🔴 Por qué hace falta este chequeo aparte: el caso NO lo agarra ninguno de los otros tres. No es
+// 🔴 Por qué hace falta este chequeo aparte: ninguno de los otros tres agarra el caso. No es
 // falta de pin (el repo lo tiene), no es memoria partida en dos nombres, y no es "sin exportar" —
-// el chunk SÍ se exportó y SÍ se commiteó. El agujero está entre el archivo y el índice, y se abrió
-// en un commit normal, sin conflicto de por medio (que es el único caso que ENGRAM-MANIFEST-1
-// cubría). Un archivo presente que el índice no nombra se lee, desde afuera, exactamente igual que
-// un archivo que no existe.
-// 🔴 El cruce NO se decide acá (story 1.6, 2026-09-17): lo decide `scripts/lib/manifest-engram.js`,
-// que es el mismo criterio que usan el hook del commit y el portón de CI. Antes vivía escrito tres
-// veces; la copia que quedara vieja mentiría en silencio, que es justo el modo de falla que esta
-// familia de controles persigue. Es la regla que ya estaba escrita en la cabecera de
+// el chunk SÍ se exportó y SÍ se commiteó. El agujero está entre el archivo y el índice, y se abre
+// en un commit normal, sin conflicto de por medio. Un archivo presente que el índice no nombra se lee,
+// desde afuera, exactamente igual que un archivo que no existe.
+// 🔴 El cruce NO se decide acá: lo decide `scripts/lib/manifest-engram.js`,
+// que es el mismo criterio que usan el hook del commit y el portón de CI. Escrito en tres lugares, la copia
+// que quedara vieja mentiría en silencio, que es justo el modo de falla que esta
+// familia de controles persigue. Es la regla de la cabecera de
 // `engram-drift-notice.js`: reusar los chequeos, no reimplementarlos.
 //
-// La FORMA de salida no cambia —`{repo, sinIndexar, fantasma}` más los bordes `sinManifest`,
-// `manifestIlegible` y `error`— porque la consumen el chequeo 3 del aviso diario y el scorecard.
+// La FORMA de salida es `{repo, sinIndexar, fantasma}` más los bordes `sinManifest`,
+// `manifestIlegible` y `error`, porque la consumen el chequeo 3 del aviso diario y el scorecard.
 // El criterio se carga tarde (sólo si hay algún repo que cruzar) para que los casos del banco que
 // no tienen repos con nombre fijado sigan sin necesitar el archivo en su fixture.
 function engramChunksSinIndexar(rootOverride) {
@@ -646,12 +626,12 @@ function engramChunksSinIndexar(rootOverride) {
     // Sin referencia de git: el aviso diario mira el estado del checkout, no lo que rompió un commit.
     const r = criterio.cruzar(dir, { contra: null });
     if (r.estado === 'no-medido') {
-      // Los dos bordes que antes salían por `continue` y se leían como «este repo está sano»
-      // (2026-08-25, revisión adversarial): chunks SIN índice —o sea que NINGUNO es importable, el
-      // peor caso y el que menos ruido hacía— e índice SIN carpeta de chunks.
+      // Los dos bordes que se leerían como «este repo está sano» si salieran por `continue`:
+      // chunks SIN índice —o sea que NINGUNO es importable, el peor caso y el que menos ruido hace— e índice SIN
+      // carpeta de chunks.
       if (r.codigo === 'sin-manifest') {
         // Sin índice, NINGUNO de sus archivos es importable: se nombran todos (es el peor caso y
-        // el que menos ruido hacía antes de 2026-08-25).
+        // el que menos ruido hace).
         if (r.archivos) out.push({ repo, dir, sinManifest: true, sinIndexar: r.archivosIds || [], fantasma: [] });
         continue;
       }
@@ -660,7 +640,7 @@ function engramChunksSinIndexar(rootOverride) {
       // sí se sabe qué falta, y nombrarlo es lo único que permite arreglarlo.
       if (r.codigo === 'sin-carpeta-chunks') { out.push({ repo, dir, sinIndexar: [], fantasma: r.declaradosIds || [] }); continue; }
       if (r.codigo === 'chunks-ilegibles' || r.codigo === 'ilegible') { out.push({ repo, dir, error: r.motivo, sinIndexar: [], fantasma: [] }); continue; }
-      // Un índice que no parsea es su propio problema (ENGRAM-MANIFEST-1 lo cubre en el commit);
+      // Un índice que no parsea es su propio problema (el control del commit lo cubre);
       // acá se declara y se sigue, sin inventar que hay huérfanos.
       out.push({ repo, dir, manifestIlegible: true, sinIndexar: [], fantasma: [] });
       continue;
@@ -672,17 +652,17 @@ function engramChunksSinIndexar(rootOverride) {
 
 function checkMemoryPersistence() {
   const checks = [];
-  // engram (story 8.3, AC 9/10): con la integración apagada los chequeos de memoria NO se miden y se dice — nunca «0
-  // repos» en verde. Configuración rota → NO MEDIDO con el motivo (una auditoría informa, no frena). Sin lector: como hoy.
+  // engram: con la integración apagada los chequeos de memoria NO se miden y se dice — nunca «0
+  // repos» en verde. Configuración rota → NO MEDIDO con el motivo (una auditoría informa, no frena). Sin lector: se mide como si estuviera prendida.
   try {
     const cfg = require(path.join(__dirname, 'tycon-config.js'));
-    // configuración rota: no llega acá — el módulo ya frenó al cargar (REPOS_ROOT), como todo comando (AC 2)
+    // configuración rota: no llega acá — el módulo ya frenó al cargar (REPOS_ROOT), como todo comando
     const e = cfg.integracionParaHook('engram');
     if (!e.prendida) {
       return { name: 'Memory Persistence', checks: [{ name: `Memoria persistente (engram): NO MEDIDO — ${e.apagada}`, passed: true, file: '~/.claude/tycon.json', severity: 'info', detail: { checked: false } }] };
     }
   } catch (e) {
-    // sin la lib al lado: como hoy. Otro error del lector es un hallazgo, no silencio.
+    // sin la lib al lado: se sigue sin ella. Otro error del lector es un hallazgo, no silencio.
     if (!(e && e.code === 'MODULE_NOT_FOUND')) checks.push({ name: `Memoria persistente (engram): el lector de configuración falló (${e && e.message})`, passed: false, file: 'scripts/lib/tycon-config.js', severity: 'warning' });
   }
   const s = readSettings();
@@ -729,12 +709,12 @@ function checkMemoryPersistence() {
     severity: 'info',
   });
 
-  // ENGRAM-PROJECT-NAME-DRIFT-1 — el pin previene, el conteo detecta.
+  // El pin previene, el conteo detecta.
   const eng = scanEngramRepos();
   if (eng.error) {
-    // 🔴 «No pude mirar» no es «está todo bien» (story 8.3, AC 6): sin raíz de repos (o raíz ilegible) los dos
-    // chequeos de abajo salían VERDES con «0 repos». Cero repos se lee igual que «todo cubierto» — la frase que
-    // este archivo repite en sus comentarios y que acá no se cumplía (cazador de fallos silenciosos, vuelta 1).
+    // 🔴 «No pude mirar» no es «está todo bien»: sin raíz de repos (o raíz ilegible) los dos
+    // chequeos de abajo saldrían VERDES con «0 repos». Cero repos se lee igual que «todo cubierto» — la frase que
+    // este archivo repite en sus comentarios.
     checks.push({
       name: `Memoria de los repos (pin y chunks exportados): NO MEDIDO — ${eng.error}`,
       passed: true,
@@ -940,14 +920,13 @@ function checkPipelineWiring() {
     severity: 'critical',
   });
 
-  // Coherencia: desde que el set de advisors se computa mecánicamente
-  // (`pipeline.js mech-check` / `advisors`), pipeline.js ES la fuente de verdad
+  // Coherencia: el set de advisors se computa mecánicamente
+  // (`pipeline.js mech-check` / `advisors`), así que pipeline.js ES la fuente de verdad
   // del wiring — SKILL.md/step-05 solo narran ejemplos y no tienen por qué
-  // nombrar cada advisor (actualización 2026-08-13; antes el check exigía los 3
-  // archivos y daba falsos rojos). El guard anti-drop es test-pipeline-coverage.js:
+  // nombrar cada advisor. El guard anti-drop es test-pipeline-coverage.js:
   // un advisor cableado debe estar en pipeline.js Y en el expected-set del test.
   const coverageTest = path.join(SKILLS_DIR, 'tycon-pipeline/scripts/tests/test-pipeline-coverage.js');
-  // (del núcleo: los de un stack viven en su paquete y no se nombran en pipeline.js, story 8.41)
+  // (del núcleo: los de un stack viven en su paquete y no se nombran en pipeline.js)
   const probe = ['tycon-e2e-realness-checker', 'tycon-silent-failure-hunter', 'llm-cost-reviewer'];
   for (const a of probe) {
     const inJs = exists(pipelineJs) && safeRead(pipelineJs).includes(a);
@@ -964,12 +943,11 @@ function checkPipelineWiring() {
 }
 
 // ============================================================
-// Categoría 8 — Learning Loop (auditoría 2026-06-09: "nadie vigila al
-// vigilante"). El escenario que esta categoría detecta YA OCURRIÓ sin que
-// nada lo viera: instinct-mining 17 días registrado-pero-apagado (0
-// observations) y retrospective-capturer sin trigger (1 corrida en 37 días).
+// Categoría 8 — Learning Loop ("nadie vigila al vigilante"). Detecta
+// features de aprendizaje registrados pero apagados (instinct-mining sin
+// observations) y retrospective-capturer sin trigger (casi sin corridas).
 // Checks condicionados al estado DECLARADO de cada feature: si un feature
-// está apagado a propósito (Camino B), su check se reporta como passed con
+// está apagado a propósito, su check se reporta como passed con
 // detail 'feature off' — un rojo perpetuo entrenaría a ignorar la categoría.
 // ============================================================
 
@@ -1007,8 +985,8 @@ function checkLearningLoop() {
   }
 
   // (c) retrospective-capturer: su doc no debe declarar ACTIVO si no hay
-  // rastro de corridas recientes (la mentira "Status: ACTIVO" con 1 corrida
-  // en 37 días es el caso disparador).
+  // rastro de corridas recientes (declarar "Status: ACTIVO" con casi ninguna
+  // corrida es la mentira que este check caza).
   const capturerDoc = safeRead(path.join(AGENTS_DIR, 'tycon-retrospective-capturer.md'));
   const declaresActive = /Status:\s*ACTIVO/i.test(capturerDoc);
   let capturerEvidence = false;
@@ -1160,7 +1138,7 @@ function render(result) {
 // Main
 // ============================================================
 
-// Los helpers de ENGRAM-PROJECT-NAME-DRIFT-1 se exportan para que su test los ejerza sin correr
+// Los helpers del pin del project name se exportan para que su test los ejerza sin correr
 // el scorecard entero (que mide la máquina real y por eso no es determinístico). El guard
 // `require.main` mantiene intacto el uso como CLI.
 module.exports = { scanEngramRepos, pinDe, engramDirsWithMultipleProjects, engramUnexportedByRepo, engramChunksSinIndexar, CROSS_CUTTING_PROJECTS, checkAdvisorCoverage, checkPipelineWiring };

@@ -6,18 +6,16 @@
  * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────────────────
  * El análisis de dependencias está escrito COPIADO adentro de los 10 pipelines del equipo (5
  * formularios con `npm audit`, 5 backends con `dotnet list package --vulnerable`), y nada las
- * mantiene iguales. Ya divergieron, y no de forma inofensiva: medido el 2026-09-01, el paso de
- * `FRESNOBZExtBackend` NO restaura las dependencias antes de escanear —así que no mira nada—, el
- * fallo se pierde en el `| tee` y el paso termina en VERDE. Tiene 4 vulnerabilidades altas reales
- * y su pipeline dice que está limpio. Es el mismo defecto que ya se arregló en Ceibo (build 9027)
- * y se backporteó a Totora, URUTAU y Lapacho; a FRESNO no.
+ * mantiene iguales. Divergen, y no de forma inofensiva: un paso que NO restaura las dependencias
+ * antes de escanear no mira nada, el fallo se pierde en el `| tee` y el paso termina en VERDE,
+ * aunque el repo tenga vulnerabilidades altas reales y su pipeline diga que está limpio.
  *
  * Y hay una segunda razón, que es la que trajo esta pieza: **el veredicto de este análisis puede
  * cambiar sin que cambie una línea de código**. Es el único de los tres controles de seguridad que
  * pregunta AFUERA (la base pública de avisos de GitHub); los otros dos —secretos y código— miran
- * sólo el repo, así que el mismo código da siempre el mismo resultado. Caso medido: el pipeline de
- * los formularios de un producto del equipo pasó en verde a las 15:56 del 2026-09-01 y a las 16:42 se publicó CVE-2026-73089
- * sobre `browserslist`. Mismo código, veredicto opuesto, y nadie se enteraba hasta el próximo PR — guides/maintaining/incident-log.md#veredicto-que-cambia-sin-que-cambie-el-codigo-2026-09-01.
+ * sólo el repo, así que el mismo código da siempre el mismo resultado. Ejemplo: un pipeline de
+ * formularios pasa en verde y, horas después, se publica un CVE sobre `browserslist`. Mismo
+ * código, veredicto opuesto, y nadie se entera hasta el próximo PR.
  *
  * ── QUÉ HACE, Y QUÉ NO ──────────────────────────────────────────────────────────────────────────
  * Mide y REPORTA. **No decide si eso frena**: eso lo decide quien lo llama, que es lo que separa
@@ -51,12 +49,12 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-// Las variables renombradas a inglés (story 8.9): el nombre viejo sigue valiendo hasta el retiro. Sin la biblioteca al
+// Las variables renombradas a inglés: el nombre viejo sigue valiendo hasta el retiro. Sin la biblioteca al
 // lado (una copia suelta de este archivo, como la semilla de las pruebas de la noche), paso directo con el nombre nuevo.
 const { readEnv } = (() => {
   try { return require('../lib/legacy-names.js'); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') process.stderr.write(`⚠️  legacy-names.js no cargó (${e && e.message}): las variables viejas no se leen\n`); return { readEnv: (n) => process.env[n] }; }
 })();
-// Las opciones renombradas a inglés (story 8.9, tanda B2): los pipelines de los productos siguen pasando las viejas
+// Las opciones renombradas a inglés: los pipelines de los productos siguen pasando las viejas
 // hasta el retiro. El traductor vive al lado (viaja en el artefacto arnes-ci); una copia suelta de este archivo sin él
 // sólo entiende las nuevas.
 const { aliasLegacyOptions, LegacyOptionsError } = (() => {
@@ -71,7 +69,7 @@ const SEVERIDADES_CONOCIDAS = ['critical', 'high', 'moderate', 'low', 'info'];
 /**
  * La gravedad de una vulnerabilidad de npm o nuget. Una vacía o que no es de las conocidas cuenta como ALTA, con la marca
  * `gravedad_sin_dato` y lo que vino en `gravedad_informada`, igual que pip: bajarla o descartarla sería callar lo que no
- * se sabe, y el repo salía limpio sin aviso.
+ * se sabe, y el repo saldría limpio sin aviso.
  */
 function gravedad(sev) {
   const s = String(sev == null ? '' : sev).trim().toLowerCase();
@@ -153,10 +151,10 @@ function correr(cmd, args, cwd, timeoutMs) {
   const opts = { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, TYCON_DEP_REAL: cmd } };
   if (timeoutMs > 0) opts.timeout = timeoutMs;
   const r = spawnSync(real, args, opts);
-  // 🔴 Un registro que NO CONTESTA se corta por tiempo (2026-09-03). Esa noche el registro de
-  // avisos se degradó y UNA llamada tardó 267 segundos —medido desde la máquina del dev, otra red,
-  // así que no era Azure—. Sin tiempo de espera, el paso por formulario de un producto del equipo (33 llamadas) se
-  // comió 40 minutos contra un techo de 60 por trabajo, y el trabajo murió sin veredicto — guides/maintaining/incident-log.md#case-advisory-registry-timeout-2026-09-03.
+  // 🔴 Un registro que NO CONTESTA se corta por tiempo. Si el registro de avisos se degrada, UNA
+  // llamada puede tardar cientos de segundos. Sin tiempo de espera, el paso por formulario de un
+  // producto del equipo (33 llamadas) se come 40 minutos contra un techo de 60 por trabajo, y el
+  // trabajo muere sin veredicto.
   // Lo normal es ~1 segundo por formulario; el corte va treinta veces más arriba. Y lo que sale de
   // acá es "no pude medir" con su motivo — nunca un verde.
   if (r.error && (r.error.code === 'ETIMEDOUT' || r.signal)) {
@@ -180,20 +178,18 @@ function auditarNpm(repo) {
   if (!fs.existsSync(path.join(repo, 'package-lock.json'))) {
     return { medido: false, motivo: 'no hay package-lock.json: npm audit no puede resolver el árbol de dependencias' };
   }
-  // 🔴 SE REINTENTA ANTE UN TROPIEZO DEL REGISTRO (2026-09-03). Este análisis es el único de los
-  // tres controles de seguridad que pregunta AFUERA, y afuera se cae. Medido ese día: los pull
-  // requests 2876 (Totora) y 2877 (URUTAU) quedaron rechazados a las 22:42 con "npm audit reportó
-  // un error", mientras Lapacho pasaba un minuto después con el mismo guion y los mismos repos
-  // habían pasado a las 21:30. El resto del arnés ya reintenta ante lo transitorio —las imágenes de
-  // análisis, el ingreso al host—; esto no, y un tropiezo de red frenaba un cambio sano.
+  // 🔴 SE REINTENTA ANTE UN TROPIEZO DEL REGISTRO. Este análisis es el único de los tres controles
+  // de seguridad que pregunta AFUERA, y afuera se cae. Sin reintento, un tropiezo de red rechaza un
+  // pull request sano con "npm audit reportó un error" mientras otro repo pasa un minuto después
+  // con el mismo guion. El resto del arnés ya reintenta ante lo transitorio —las imágenes de
+  // análisis, el ingreso al host—.
   //
   // 🔴 El reintento acorta la ventana del tropiezo; NO convierte un "no pude medir" en un verde:
   // si tras los intentos sigue sin contestar, se devuelve no-medido igual que antes.
-  // 🔴 EL REINTENTO TIENE PRESUPUESTO (2026-09-03, la misma noche que nació). Este guion se llama
-  // UNA vez por la raíz pero 33 veces en el bucle por formulario de FRESNO: con el registro caído,
-  // 3 intentos con esperas por cada uno convierten un paso de 36 segundos en media hora, contra un
-  // techo de 60 minutos por trabajo. Medido esa noche: ese paso pasó de 0,6 a 24+ minutos SÓLO por
-  // la lentitud del registro, sin reintentos todavía. Un reintento tiene que ayudar con un tropiezo,
+  // 🔴 EL REINTENTO TIENE PRESUPUESTO. Este guion se llama UNA vez por la raíz pero 33 veces en el
+  // bucle por formulario de FRESNO: con el registro caído, 3 intentos con esperas por cada uno
+  // convierten un paso de 36 segundos en media hora, contra un techo de 60 minutos por trabajo.
+  // Un reintento tiene que ayudar con un tropiezo,
   // no amplificar una caída: pasado el presupuesto se deja de insistir y se dice no-medido.
   const INTENTOS = Number(readEnv('TYCON_DEP_ATTEMPTS', { where: WHERE }) || 3);
   const PRESUPUESTO = Number(readEnv('TYCON_DEP_BUDGET_MS', { where: WHERE }) || 20000);
@@ -263,7 +259,7 @@ function proyectoNuget(repo, explicito) {
  *
  * 🔴 El restore no es opcional ni un detalle de rendimiento: sin el assets file, `dotnet list
  * --vulnerable` sale 1 con "No assets file was found" y NO MIRA NADA. Ése es literalmente el
- * agujero del backend de un producto del equipo, donde además el 1 se perdía en un `| tee` y el paso salía verde — guides/maintaining/incident-log.md#veredicto-que-cambia-sin-que-cambie-el-codigo-2026-09-01.
+ * agujero de un paso que escanea sin restaurar: el 1 se pierde en un `| tee` y el paso sale verde.
  * Acá el restore es un paso propio y su fallo es "no pude medir", nunca "limpio".
  */
 function auditarNuget(repo, proyectoRel) {
@@ -391,23 +387,21 @@ function auditar({ repo, tipo, proyecto, declaradas, hoy }) {
     const d = decl.paquetes[h.paquete.toLowerCase()];
     // Una declaración vencida (o ilegible, o sin fecha) NO ampara: vuelve a contar como nuevo.
     //
-    // 🔴 LA AMNISTÍA ES POR (PAQUETE, AVISO), NO POR NOMBRE DE PAQUETE (2026-09-03).
+    // 🔴 LA AMNISTÍA ES POR (PAQUETE, AVISO), NO POR NOMBRE DE PAQUETE.
     //
-    // Antes bastaba con que el NOMBRE figurara: eso amparaba el paquete entero, en todo el repo y
-    // para todo aviso futuro. Tres consecuencias medidas: un formulario nuevo que agregara un
-    // paquete ya declarado pasaba el control sin que nadie lo mirara; un aviso NUEVO sobre un
-    // paquete declarado no despertaba a nadie hasta la fecha de revisión; y un paquete declarado
-    // como alto que pasara a crítico seguía amparado. Contradecía lo que la revisión nocturna
-    // promete: "lo declarado no despierta y lo vencido vuelve a contar".
+    // Amparar por el nombre ampararía el paquete entero, en todo el repo y para todo aviso futuro:
+    // un formulario nuevo que agregara un paquete ya declarado pasaría el control sin que nadie lo
+    // mirara; un aviso NUEVO sobre un paquete declarado no despertaría a nadie hasta la fecha de
+    // revisión; y un paquete declarado como alto que pasara a crítico seguiría amparado. Eso
+    // contradice lo que la revisión nocturna promete: "lo declarado no despierta y lo vencido
+    // vuelve a contar".
     //
-    // Ahora la entrada tiene que nombrar los avisos concretos que ampara (campo `advisories`), y
+    // Por eso la entrada tiene que nombrar los avisos concretos que ampara (campo `advisories`), y
     // sólo ampara al hallazgo si TODOS sus avisos están entre ellos. Un aviso nuevo cae afuera y
     // frena, que es exactamente lo que se quiere.
     //
-    // Compatibilidad: una entrada SIN `advisories` no ampara nada. Es a propósito y se midió antes
-    // de encenderlo — las 34 declaraciones que existían se anotaron primero, en la misma tanda, y
-    // el análisis de los 4 repos quedó en verde. Una entrada sin avisos es una declaración a medias,
-    // y una declaración a medias es la puerta por la que volvería el problema.
+    // Una entrada SIN `advisories` no ampara nada. Es a propósito: una entrada sin avisos es una
+    // declaración a medias, y una declaración a medias es la puerta por la que volvería el problema.
     // 🔴 Los dos lados se comparan NORMALIZADOS. El análisis informa la dirección completa del
     // aviso (https://github.com/advisories/GHSA-…) y la declaración anota sólo el identificador:
     // comparados en crudo NO coinciden nunca, y el resultado sería "nada está amparado" — un rojo
@@ -418,11 +412,10 @@ function auditar({ repo, tipo, proyecto, declaradas, hoy }) {
       : null;
     const avisosDelHallazgo = Array.isArray(h.advisories) ? h.advisories.map(idAviso).filter(Boolean) : [];
     // 🔴 SI EL ANÁLISIS NO DA UN AVISO, NO SE LE PUEDE EXIGIR UNO. Un paquete vulnerable *a través
-    // de otro* no tiene aviso propio: npm lo reporta sin identificador. Exigirle uno lo volvía
+    // de otro* no tiene aviso propio: npm lo reporta sin identificador. Exigirle uno lo volvería
     // IMPOSIBLE de declarar — quedaría en rojo para siempre, y un control que no se puede satisfacer
-    // se apaga. Medido: 3 formularios de 47 caían ahí. En ese caso, y sólo en ese, la declaración
-    // ampara por nombre, como antes, y el informe lo dice. Donde SÍ hay aviso —la enorme mayoría—
-    // la regla apretada rige, que es donde estaba el agujero.
+    // se apaga. En ese caso, y sólo en ese, la declaración ampara por nombre y el informe lo dice.
+    // Donde SÍ hay aviso —la enorme mayoría— rige la regla apretada.
     const sinAvisoPropio = avisosDelHallazgo.length === 0;
     const todosAmparados = !!avisosDeclarados
       && (sinAvisoPropio || avisosDelHallazgo.every((x) => avisosDeclarados.has(x)));
@@ -484,14 +477,11 @@ function main() {
   return 0;
 }
 
-// 🔴 `process.exitCode`, NO `process.exit()` (2026-09-28). Cuando la salida va a una tubería
+// 🔴 `process.exitCode`, NO `process.exit()`. Cuando la salida va a una tubería
 // —y ahí va siempre: el nocturno invoca este guión con spawnSync y le parsea el JSON— las
 // escrituras de Node son ASINCRÓNICAS, y `process.exit()` mata el proceso con parte del
-// informe todavía sin escribir. Medido: un informe de 9782 bytes llegaba CORTADO en 8192, el
-// JSON no parseaba y el repo salía «no devolvió JSON legible (exit 0)», o sea NO MEDIDO — con
-// un motivo que no nombra la causa real. Sólo se notaba con informes de más de 8 KB, así que
-// los 8 repos que ya estaban (pocos hallazgos cada uno) nunca lo dispararon: apareció con el
-// primero grande. Con `exitCode` el proceso termina solo cuando terminó de escribir.
-// Caso: guides/maintaining/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
+// informe todavía sin escribir: un informe de más de 8 KB llega CORTADO, el JSON no parsea y
+// el repo sale «no devolvió JSON legible (exit 0)», o sea NO MEDIDO, con un motivo que no
+// nombra la causa real. Con `exitCode` el proceso termina solo cuando terminó de escribir.
 if (require.main === module) process.exitCode = main();
 module.exports = { auditar, leerDeclaracion, parseArgs, SEVERIDADES_GRAVES };

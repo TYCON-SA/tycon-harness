@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 'use strict';
-// maintainers-sync.js — el arranque pone al día el clon de mantenimiento (story 8.37, 2026-10-14).
+// maintainers-sync.js — el arranque pone al día el clon de mantenimiento.
 //
-// ── EL CASO ───────────────────────────────────────────────────────────────────────────────────────────────────────
-// La máquina de quien mantiene el arnés declara el clon del repo de mantenimiento (`paths.maintainers`, story 8.26). De
+// ── POR QUÉ ───────────────────────────────────────────────────────────────────────────────────────────────────────
+// La máquina de quien mantiene el arnés declara el clon del repo de mantenimiento (`paths.maintainers`). De
 // ahí cada sesión carga la portada privada (un `@import` del CLAUDE.md) y de ahí los avisos leen la noche
-// (scripts/lib/night-data.js). El arranque pone al día el clon del arnés, no ése: quedaba atrás de `main` días enteros y
-// cada sesión cargaba la portada vieja sin ningún aviso.
+// (scripts/lib/night-data.js). El arranque pone al día el clon del arnés, no ése: sin esta puesta al día, el clon de mantenimiento queda atrás de `main` días enteros y
+// cada sesión carga la portada vieja sin ningún aviso.
 //
 // ── QUÉ HACE ──────────────────────────────────────────────────────────────────────────────────────────────────────
 // El aviso de arranque (scripts/hooks/branch-guard-notice.js) llama a `launch`, que lanza `run` DESPRENDIDO y vuelve
-// enseguida: medido el 2026-10-14, Claude Code lee los `@import` al arrancar en paralelo con los hooks, sin esperarlos,
+// enseguida: Claude Code lee los `@import` al arrancar en paralelo con los hooks, sin esperarlos,
 // así que esperar la bajada sólo atrasaría la sesión sin que ella la vea (la lee la siguiente). `run`:
 //   · sin la clave, con la variable apagada, fuera del perfil completo, con el mismo clon que el arnés (a ése lo mueve el
 //     arranque) o con el candado de otra corrida viva → no corre git ni escribe nada;
@@ -53,7 +53,7 @@ const GIT_TIMEOUT_MS = 10000;
 const RELAY_TIMEOUT_MS = 5 * 60 * 1000;
 const OFFLINE_LOUD_MS = 3 * 24 * 60 * 60 * 1000;
 const MAX_FILES = 5;
-// lo que pide a la persona; el resto calla (decisión 5 de la story). `sin-red` entra sólo con `offline_days`.
+// lo que pide a la persona; el resto calla. `sin-red` entra sólo con `offline_days`.
 const LOUD = new Set(['otra-rama', 'cambios-propios', 'sin-empujar', 'divergido', 'operacion-a-medias', 'archivos-traban',
   'sin-permiso', 'sin-remoto', 'fallo', 'no-sirve']);
 // las variables de git que cambian DÓNDE trabaja o qué configuración lee: heredadas de la sesión (un hook de git, un
@@ -106,7 +106,7 @@ function classifyFetchError(stderr, timedOut) {
   if (timedOut) return 'sin-red';
   const s = String(stderr || '');
   // un 401/403/407 cuenta sólo como código de una respuesta HTTP, no suelto: en «after 403 ms», «port 403» o un host
-  // «git-401» es un número cualquiera (pase adversarial)
+  // «git-401» es un número cualquiera
   if (/Authentication failed|could not read (Username|Password)|terminal prompts disabled|Permission denied|(returned error|HTTP code|status code|HTTP\/[\d.]+):? 40[137]\b|TF401019|access denied|not authorized|Proxy Authentication Required/i.test(s)) return 'sin-permiso';
   if (/Could not resolve (host|proxy)|Failed to connect|Connection (refused|timed out|reset)|Operation timed out|Network is unreachable|Could not connect|No route to host|Temporary failure in name resolution|Name or service not known|SSL_ERROR_SYSCALL|Recv failure|connection closed/i.test(s)) return 'sin-red';
   return 'fallo';
@@ -170,7 +170,7 @@ function releaseLock(file) {
   try { const held = JSON.parse(fs.readFileSync(file, 'utf8')); if (held && held.pid === process.pid) fs.rmSync(file, { force: true }); } catch (_) { /* nada */ }
 }
 
-/** El perfil de instalación: `full` deja correr y avisar; `minimal` o sin saber, no (decisión 13 de la story). */
+/** El perfil de instalación: `full` deja correr y avisar; `minimal` o sin saber, no. */
 function profileAllows(home, env) {
   try {
     const P = require(path.join(HARNESS_ROOT, 'scripts', 'setup', 'harness', 'profile.js'));
@@ -233,7 +233,7 @@ function syncClone(dir, env) {
   if (!remote.ok) return { status: 'sin-remoto' };
   const fetchMs = Number(env[FETCH_MS_VAR]) > 0 ? Number(env[FETCH_MS_VAR]) : FETCH_TIMEOUT_MS;
   // con el destino explícito: un clon cuya configuración no mapea main (uno de una sola rama) dejaría origin/main viejo
-  // y saldría «al día» sin estarlo (pase adversarial)
+  // y saldría «al día» sin estarlo
   const fetched = git(dir, ['fetch', '--quiet', '--no-tags', 'origin', '+refs/heads/main:refs/remotes/origin/main'], { env, timeout: fetchMs });
   if (!fetched.ok) {
     const kind = classifyFetchError(fetched.err, fetched.timedOut);
@@ -330,7 +330,7 @@ function noticeLine(r) {
 
 /**
  * La línea pendiente de la corrida anterior (una vez): la marca como mostrada. null si no hay nada que decir, si la
- * variable la apaga o fuera del perfil completo (AC 10b: ahí no se avisa nada de esto, ni lo que quedó de antes).
+ * variable la apaga o fuera del perfil completo (ahí no se avisa nada de esto, ni lo que quedó de antes).
  */
 function takeNotice({ home = os.homedir(), env = process.env } = {}) {
   if (String(env[OFF_VAR] || '') === '0') return null;

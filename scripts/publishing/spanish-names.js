@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 'use strict';
-// spanish-names.js — el freno de nombres NUEVOS en castellano en lo que ejecuta la máquina (épica 8, story 8.9 · 2026-09-29)
+// spanish-names.js — el freno de nombres NUEVOS en castellano en lo que ejecuta la máquina 
 //
 // POR QUÉ EXISTE: el núcleo público mezcla inglés y castellano en lo que alguien de afuera tiene que ESCRIBIR para usarlo
-// —archivos, opciones, subcomandos, variables, claves de configuración—. La story 8.9 los renombra por tandas; sin este
+// —archivos, opciones, subcomandos, variables, claves de configuración—. Los renombres a inglés se hacen por tandas; sin este
 // freno, lo que una tanda renombra lo vuelve a ensuciar el commit siguiente. La prosa, los mensajes, las guías, los
 // comentarios y los ids de los casos siguen en castellano: la convención está en guides/maintaining/nombres-en-ingles.md.
 //
@@ -20,7 +20,7 @@
 // CÓMO FALLA: 0 = pasa · 1 = hallazgos (el commit no se crea) · 2 = no pude mirar (tampoco se crea). Sin el otro repo,
 // avisa fuerte y deja pasar. `TYCON_SPANISH_NAMES=0` lo apaga, lo dice en cada commit y deja constancia.
 //
-// EN EL REPO UNIDO (story 8.18: el arnés con agent-skills adentro) no hay «otro repo» en ningún modo: las dos fuentes
+// EN EL REPO UNIDO (el arnés con agent-skills adentro) no hay «otro repo» en ningún modo: las dos fuentes
 // son las dos mitades del mismo árbol, partidas por ruta (new-names.js → sourceOfPath). El freno, --count, --check-map
 // y --stale-mentions las arman así; cada hallazgo sale una vez, y un rango cuya base es de antes de la unión compara
 // la mitad que esa base no trae con su propia historia.
@@ -44,7 +44,7 @@ const { CouldNotLook } = nn;
 const WORDS_PATH = 'scripts/lib/spanish-words.json';
 const CEILING_PATH = 'scripts/publishing/spanish-names-ceiling.json';
 const RENAMES_PATH = 'scripts/lib/renames.json';
-// el perfil del equipo con su nombre de hoy o el de antes (los dos dicen «este árbol es del equipo»)
+// el perfil del equipo con su nombre actual o el anterior (los dos dicen «este árbol es del equipo»)
 const PROFILES = ['team-profile.json', 'perfil-equipo.json'];
 const hasProfile = (dir) => PROFILES.some((n) => fs.existsSync(path.join(dir, n)));
 const DEFAULT_DICT = '/usr/share/dict/words';
@@ -52,7 +52,7 @@ const CATEGORIES = ['path', 'option', 'subcommand', 'value', 'env', 'key'];
 const LABEL = { path: 'ruta', option: 'opción', subcommand: 'subcomando', value: 'valor', env: 'variable', key: 'clave' };
 const CEILING_FIELDS = ['files', 'folders', 'options', 'subcommands', 'values', 'env', 'keys', 'total'];
 // Lo que puede cambiar qué sale o qué cuenta aunque no sea un ejecutable. El techo y la lista también por su ruta vieja
-// (un rango cuya punta es de antes de la mudanza de la tanda C4: pase adversarial), sacada del mapa.
+// (un rango cuya punta es de antes de la mudanza de esos archivos), sacada del mapa.
 const TRIGGERS = [WORDS_PATH, CEILING_PATH, RENAMES_PATH, nn.CONFIG.list, nn.CONFIG.exporter,
   ...nn.legacyPathsOf(CEILING_PATH), ...nn.legacyPathsOf(nn.CONFIG.list)];
 const PACK = /^packs\/[^/]+\/pack\.json$/;
@@ -132,7 +132,7 @@ const variants = (t) => {
 // El diccionario del sistema trae la palabra, no sus formas: `navigated`, `toggled`, `updated`, `running`, `entries`
 // no están. Para decidir «es inglés» se prueban también las raíces; para «es castellano», nunca (sólo el plural simple).
 // El plural INGLÉS: `-s`, y `-es` sólo después de s/x/z/ch/sh (`boxes`, `matches`). Con la regla castellana (`-es` suelto)
-// `errores` o `versiones` caían en `error`/`version` del diccionario y pasaban por inglesas (pase adversarial, 5b).
+// `errores` o `versiones` caerían en `error`/`version` del diccionario y pasarían por inglesas.
 const englishStems = (t) => {
   const v = [t];
   const add = (x) => { if (x.length >= 3) v.push(x); };
@@ -218,8 +218,8 @@ const EXEC_EXT = /\.(js|mjs|cjs|sh|bash|ps1|psm1|py|command)$/;
 function kindOf(rel, text) {
   if (/\.md$/i.test(rel) || CASES.test(rel)) return null;
   // un reemplazo generado es un nombre VIEJO que sigue andando hasta el retiro, nunca uno nuevo: no depende de qué mapa
-  // haya a mano (un mapa de laboratorio sin su entrada lo hacía ver nuevo, tanda C1). Sólo el idéntico a lo que escribe
-  // --write-shims: la marca sola se escribe a mano (revisor de seguridad). Con una biblioteca de antes de la C1 (una copia
+  // haya a mano (sin su entrada, un mapa de laboratorio lo haría ver nuevo). Sólo el idéntico a lo que escribe
+  // --write-shims: la marca sola se escribe a mano. Con una biblioteca anterior a `isGeneratedShim` (una copia
   // de trabajo a medio actualizar) no hay cómo saberlo: el archivo se mira como cualquier otro, que es el lado que frena.
   const isGenerated = text && require('../lib/legacy-names.js').isGeneratedShim;
   if (typeof isGenerated === 'function' && isGenerated(rel, text)) return null;
@@ -365,10 +365,10 @@ function extract(rel, text, { schemaFiles = [], renames = null } = {}) {
         }
       }
     }
-    // valores: sólo los que el mapa de renombres declara, en el archivo que los lee (tanda A2 en adelante)
-    // el `where` de un valor sigue a su archivo cuando se muda (tanda C2): en la foto de antes, el archivo vive en la ruta
+    // valores: sólo los que el mapa de renombres declara, en el archivo que los lee
+    // el `where` de un valor sigue a su archivo cuando se muda: en la foto de antes, el archivo vive en la ruta
     // vieja del mapa y sus valores tienen que contar como «ya existía» — si no, un valor viejo que el archivo mudado
-    // conserva (una etiqueta de pantalla igual al valor) frena como nuevo
+    // conserva (una etiqueta de pantalla igual al valor) frenaría como nuevo
     const entriesAll = renames && Array.isArray(renames.entries) ? renames.entries : [];
     const movedFrom = new Set(entriesAll.filter((f) => f && f.kind === 'file' && f.old === rel && typeof f.new === 'string').map((f) => f.new));
     const values = entriesAll.filter((e) => e && e.kind === 'value' && (e.where === rel || movedFrom.has(e.where)));
@@ -553,9 +553,9 @@ function run(args) {
     parents = shas.map((sha) => ({ sha, changes: nn.parseChanges(nn.hookGit(repo, ['diff-index', '--cached', '-M', '-z', '--name-status', sha || nn.EMPTY_TREE])) }));
     afterTree = () => nn.indexTree(repo);
   }
-  // story 8.18: en el repo unido (el arnés con agent-skills adentro) esta corrida mira sólo los cambios de su fuente
+  // en el repo unido (el arnés con agent-skills adentro) esta corrida mira sólo los cambios de su fuente
   // lógica, y la otra fuente es la otra mitad del mismo árbol: no se lee ningún otro clon (ver new-names.js). En un
-  // rango que cruza la unión (el pull request del corte), la mitad que la base no trae se compara con su historia.
+  // rango que cruza la unión, la mitad que la base no trae se compara con su historia.
   let afterMemo = null;
   const afterOnce = () => (afterMemo || (afterMemo = afterTree()));
   const unified = nn.unifiedCheckout(repo) && (args.mode !== 'range' || nn.unifiedTree(afterOnce()));
@@ -565,7 +565,7 @@ function run(args) {
   const touched = parents.flatMap((p) => p.changes);
   const trigger = (rel) => (source === 'arnes' && TRIGGERS.includes(rel)) || (source === 'agent-skills' && PACK.test(rel));
   // Por la ruta sola no se sabe: un `.zsh` o un `.template` con `#!` es un ejecutable (kindOf mira el texto). Acá sólo
-  // se descarta lo que seguro no se mira; el resto lo decide kindOf con el contenido (pase adversarial, 5b).
+  // se descarta lo que seguro no se mira; el resto lo decide kindOf con el contenido.
   const maybe = (rel) => !!rel && (trigger(rel) || (!/\.md$/i.test(rel) && !CASES.test(rel)));
   if (!touched.some((c) => (c.status !== 'D' && maybe(c.path)) || maybe(c.oldPath))) return { outcome: 'quiet' };
 
@@ -580,8 +580,8 @@ function run(args) {
   const read = nn.blobReader(dirs);
   const trees = unified ? nn.splitTree(afterOnce()) : { [source]: afterOnce() };
   if (!isPublic && !unified) trees[other] = nn.commitTree(otherInfo.dir, otherInfo.head);
-  // la copia de un solo repo (story 8.7, AC 11): el arnés y agent-skills viven en la MISMA raíz, así que el árbol del
-  // otro es el mismo índice (y en cada antes, el mismo commit) — si no, el lado agent-skills no encuentra la lista
+  // la copia de un solo repo: el arnés y agent-skills viven en la MISMA raíz, así que el árbol del
+  // otro es el mismo índice (y en cada antes, el mismo commit) — sin eso, el lado agent-skills no encuentra la lista
   const mismaRaiz = isPublic && !otherInfo.missing && path.resolve(otherInfo.dir || '') === path.resolve(repo);
   if (mismaRaiz) trees[other] = trees[source];
   const beforeTrees = parents.map((p) => {
@@ -651,12 +651,12 @@ function run(args) {
     const k = `${source}\0${c.path}`;
     if (!afterShip.has(k)) continue;
     // la ruta es nueva para la copia si el archivo es nuevo, o si empieza a salir aunque el commit además lo modifique
-    // (story 8.18, pase adversarial del tramo 2, clase 8: un modificado que empieza a salir por la lista blanca no se
-    // juzgaba por su ruta, y en el repo unido el reparto del doble aviso se lo deja a esta corrida, la de su fuente)
+    // (un modificado que empieza a salir por la lista blanca se juzga por su ruta, y en el repo unido el reparto del
+    // doble aviso se lo deja a esta corrida, la de su fuente)
     const newPath = changedIn.every((m) => ['A', 'R', 'C'].includes(m.get(c.path).status)) || startsShipping(k);
     looked.set(k, { source, rel: c.path, newPath });
   }
-  // en el repo unido, cada archivo que empieza a salir lo mira una sola de las dos corridas ([DEF-8.18-doble-aviso])
+  // en el repo unido, cada archivo que empieza a salir lo mira una sola de las dos corridas, para no avisar dos veces
   const mine = unified ? nn.startsHere(source, parents) : () => true;
   for (const [k, f] of afterShip) {
     if (looked.has(k)) continue;
@@ -725,7 +725,7 @@ function run(args) {
 
   // 9 · el techo sólo sube en el commit que suma palabras a words
   if (source === 'arnes' && touched.some((c) => nn.isConfigPath(CEILING_PATH, c.path) || nn.isConfigPath(CEILING_PATH, c.oldPath))) {
-    // el techo de cada foto: con la ruta nueva o, en una foto de antes de la mudanza (tanda C4: la base del PR de la
+    // el techo de cada foto: con la ruta nueva o, en una foto de antes de la mudanza (la base del PR de la
     // mudanza, o la punta de un rango histórico), con la vieja que dice el mapa (nunca escrita acá)
     const pathIn = (t) => nn.configPathIn(new Map((harnessTree(t || {}) || []).map((x) => [x.ruta, x])), CEILING_PATH) || CEILING_PATH;
     const b = parents[0].sha ? harnessText(beforeTrees[0], pathIn(beforeTrees[0])) : null;
@@ -733,14 +733,14 @@ function run(args) {
     if (b !== null && a !== null) {
       const before = nn.parseJson(b, `${CEILING_PATH} (antes)`);
       const after = nn.parseJson(a, CEILING_PATH);
-      // un paquete renombrado (tanda B3a: `nucleo` → `core`, entrada value del exportador en el mapa) conserva su techo con
+      // un paquete renombrado (`nucleo` → `core`, entrada value del exportador en el mapa) conserva su techo con
       // el nombre nuevo: pasar la clave no es «perder la cifra»
       const renamesText = harnessText(trees, RENAMES_PATH);
       const renamedPkg = new Map();
       if (renamesText !== null) {
         const m = nn.parseJson(renamesText, RENAMES_PATH);
         const entries = Array.isArray(m && m.entries) ? m.entries : [];
-        // el exportador se mudó en la tanda C2: el mapa de una foto de antes nombra su valor con la ruta vieja, que sale
+        // el exportador se mudó: el mapa de una foto de antes nombra su valor con la ruta vieja, que sale
         // de la entrada `file` de ese mismo mapa (nunca escrita acá)
         const exporterWhere = new Set([nn.CONFIG.exporter,
           ...entries.filter((e) => e && e.kind === 'file' && e.new === nn.CONFIG.exporter && typeof e.old === 'string').map((e) => e.old)]);
@@ -818,7 +818,7 @@ function count(args) {
     const read = nn.blobReader({ arnes: repo, 'agent-skills': repo });
     packages.copy = countFiles(tree.filter((e) => e.tipo === 'blob').map((e) => ({ source: 'arnes', rel: e.ruta, text: blobText(read, 'arnes', e) })), words, det);
   } else {
-    // story 8.18: en el repo unido las dos fuentes son las dos mitades del mismo HEAD, partidas por ruta
+    // en el repo unido las dos fuentes son las dos mitades del mismo HEAD, partidas por ruta
     const unified = nn.unifiedCheckout(repo);
     const otherInfo = unified ? { dir: repo } : nn.otherRepo('arnes');
     if (otherInfo.missing) throw new CouldNotLook(`no encontré agent-skills (${otherInfo.dir}): sin la segunda fuente no hay copia que contar`);
@@ -837,14 +837,14 @@ function count(args) {
   return { mode: isPublic ? 'public' : 'team', dictionary: det.dictionary, packages };
 }
 
-// ── --check-map: el validador del mapa de renombres (tanda A2, AC 13) ───────────────────────────────────────────
+// ── --check-map: el validador del mapa de renombres ───────────────────────────────────────────
 /**
  * Los problemas del mapa (scripts/lib/renames.json o `--map`), sobre el disco de `--repo`: forma de cada entrada, un
  * `old` o un `new` repetido en el mismo kind y where, un `new` en castellano, un `new` que choca, un valor o una clave sin
  * su `where`, y un archivo que llaman de afuera sin su reemplazo. Sin mapa no hay nada que validar.
  */
 const ENTRY_KEYS = ['kind', 'old', 'new', 'where', 'batch', 'callers', 'repo', 'repeatable', 'option', 'assigned_to', 'role', 'role_waiver', 'homonyms'];
-// `homonyms` (story 8.12, AC 37): los archivos del repo de la entrada donde su nombre viejo es OTRO archivo que se llama
+// `homonyms` los archivos del repo de la entrada donde su nombre viejo es OTRO archivo que se llama
 // igual (el pipeline de cada producto se llama como el nocturno de métricas del arnés, que se mudó a `pipelines/`). Cada uno, un
 // glob relativo a la raíz de ese repo (`**` cruza carpetas, `*` y `?` no) y el motivo. --stale-mentions no cuenta esa
 // entrada en esos archivos; en cualquier otro, sí; y un glob que no matchea nada frena (una lista vieja no tapa callada).
@@ -864,12 +864,12 @@ function homonymProblems(e, at) {
   });
   return problems;
 }
-// El rol de un hook va en su nombre (story 8.12, AC 7): todo archivo que llega a scripts/hooks/ declara `role`, y con un
+// El rol de un hook va en su nombre: todo archivo que llega a scripts/hooks/ declara `role`, y con un
 // rol que no es `none` su nombre termina en `-<rol>` (`x-guard.js`, `x-notice.sh`, `x-meter.js`).
 const HOOKS_DIR = 'scripts/hooks/';
 const HOOK_ROLES = ['guard', 'notice', 'meter', 'none'];
-// 🔴 Las únicas entradas que pueden saltear el sufijo con `role_waiver`: las que la 8.9 cargó antes de que existiera la
-// regla, y que la tabla de constancia de guides/maintaining/nombres-en-ingles.md deja con su nombre (decisión del dueño, 2026-10-01).
+// 🔴 Las únicas entradas que pueden saltear el sufijo con `role_waiver`: las cargadas antes de que existiera la
+// regla, y que la tabla de constancia de guides/maintaining/nombres-en-ingles.md deja con su nombre.
 // Una entrada nueva no entra acá: se nombra con su sufijo. Van por su nombre NUEVO: el viejo no se escribe fuera del mapa
 // (--stale-mentions lo marcaría), y el nuevo identifica la entrada igual.
 const ROLE_WAIVER_NEWS = new Set(['scripts/hooks/advisor-liveness-on-change.js']);
@@ -888,11 +888,11 @@ const realDate = (s) => {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
 };
 /**
- * ¿La carpeta nueva tiene sólo lo que llegó antes que su carpeta? Una sola mudanza por archivo (story 8.9, «Estructura
- * destino»): un archivo renombrado en C1-C3 va directo a su destino final, que puede ser la carpeta nueva de una entrada
+ * ¿La carpeta nueva tiene sólo lo que llegó antes que su carpeta? Una sola mudanza por archivo (la «estructura
+ * destino» del renombre): un archivo renombrado va directo a su destino final, que puede ser la carpeta nueva de una entrada
  * `folder` que todavía no se mudó. Eso no es un choque si cada archivo de la carpeta nueva es el `new` de una entrada
  * `file` del mismo repo que viene de la carpeta vieja. Cualquier otro archivo ahí sí lo es. Cuenta lo que git versiona: un
- * `.DS_Store` o un archivo de un editor no es un choque (pase adversarial, tanda C1); sin git, el disco.
+ * `.DS_Store` o un archivo de un editor no es un choque; sin git, el disco.
  */
 function onlyArrivals(e, newAbs, entries) {
   const repo = e.repo || 'arnes';
@@ -900,7 +900,7 @@ function onlyArrivals(e, newAbs, entries) {
     && typeof x.old === 'string' && typeof x.new === 'string' && x.old.startsWith(`${e.old}/`) && x.new.startsWith(`${e.new}/`)).map((x) => x.new));
   const root = newAbs.slice(0, newAbs.length - e.new.length);
   // sin repo (o sin git), el disco; si git falla de verdad, frena: caer callado al disco haría de un `.DS_Store` un choque, y
-  // de un git roto un veredicto (pase adversarial de la story 8.12, R2, revisor de fallos silenciosos)
+  // de un git roto un veredicto
   const ls = require('../lib/legacy-names.js').gitAt(root, ['ls-files', '-z', '--', e.new]);
   if (ls.failed) throw new CouldNotLook(`no pude preguntarle a git qué versiona ${e.new} en ${root} (${ls.why}) para saber si la carpeta nueva tiene sólo lo que llegó antes — «no pude preguntar» no es «no hay nada»`);
   if (!ls.notARepo) return ls.r.stdout.split('\0').filter(Boolean).every((f) => arrivals.has(f));
@@ -908,7 +908,7 @@ function onlyArrivals(e, newAbs, entries) {
     .every((f) => (f.isDirectory() ? walk(path.join(dir, f.name), `${rel}/${f.name}`) : arrivals.has(`${rel}/${f.name}`)));
   return walk(newAbs, e.new);
 }
-/** Los problemas de `role` y `role_waiver` de una entrada (story 8.12, AC 7). */
+/** Los problemas de `role` y `role_waiver` de una entrada. */
 function roleProblems(e, at) {
   const problems = [];
   const isHook = e.kind === 'file' && typeof e.new === 'string' && e.new.startsWith(HOOKS_DIR);
@@ -949,7 +949,7 @@ function checkMap(args) {
   const rootOf = (e) => {
     if (e.repo !== 'agent-skills') return repo;
     if (skillsRoot === null) {
-      // story 8.18: en el repo unido agent-skills está en esta misma raíz, con sus rutas de siempre
+      // en el repo unido agent-skills está en esta misma raíz, con sus rutas de siempre
       const o = nn.unifiedCheckout(repo) ? { dir: repo } : nn.otherRepo('arnes');
       skillsRoot = !o.missing && o.dir && fs.existsSync(o.dir) ? o.dir : '';
     }
@@ -968,10 +968,10 @@ function checkMap(args) {
     if (['option', 'subcommand', 'value', 'key'].includes(e.kind) && (typeof e.where !== 'string' || !e.where)) problems.push(`${at}: un ${e.kind} tiene que nombrar su where (el script o archivo que lo lee)`);
     if (e.repo !== undefined && !['arnes', 'agent-skills'].includes(e.repo)) problems.push(`${at}: repo es arnes o agent-skills (no «${e.repo}»)`);
     if (e.repeatable !== undefined && (e.kind !== 'option' || typeof e.repeatable !== 'boolean')) problems.push(`${at}: repeatable es true/false y sólo en una opción`);
-    // un valor dice de qué opción es (su nombre nuevo, sin guiones): así se traduce sólo ahí y --stale-mentions lo encuentra (tanda B3a)
+    // un valor dice de qué opción es (su nombre nuevo, sin guiones): así se traduce sólo ahí y --stale-mentions lo encuentra
     if (e.kind === 'value' && (typeof e.option !== 'string' || !NAME_RULES.option.re.test(e.option))) problems.push(`${at}: un value tiene que nombrar su option (la opción cuyo valor es, con su nombre nuevo y sin guiones)`);
     if (e.kind !== 'value' && e.option !== undefined) problems.push(`${at}: option va sólo en un value`);
-    // un valor que no es de una opción de línea de comandos declara a qué claves o variables se asigna (tanda G): ahí lo
+    // un valor que no es de una opción de línea de comandos declara a qué claves o variables se asigna: ahí lo
     // busca --stale-mentions (`"<nombre>": <viejo>`, `<NOMBRE>=<viejo>`)
     if (e.assigned_to !== undefined) {
       if (e.kind !== 'value') problems.push(`${at}: assigned_to va sólo en un value`);
@@ -1004,8 +1004,8 @@ function checkMap(args) {
       else seen.set(k, at);
     }
     // de una ruta se juzgan sólo los nombres que el old no tenía: un archivo o una carpeta que nada más se muda conserva su
-    // nombre, también uno en castellano que la 8.9 decidió dejar así (story 8.12, AC 1). Un `file` que cambia de nombre
-    // es nuevo y se juzga ENTERO, también la carpeta que ya tenía (pase spec-first de la R1)
+    // nombre, también uno en castellano que se decidió dejar así. Un `file` que cambia de nombre
+    // es nuevo y se juzga ENTERO, también la carpeta que ya tenía
     const keepsName = e.kind === 'folder' || path.posix.basename(e.old) === path.posix.basename(e.new);
     const before = isFile(e) && keepsName ? new Set(pathNames(e.old)) : new Set();
     const names = isFile(e) ? pathNames(e.new).filter((n) => !before.has(n)) : [e.kind === 'option' ? e.new.replace(/^-+/, '') : e.new];
@@ -1020,8 +1020,8 @@ function checkMap(args) {
       const oldExists = fs.existsSync(oldAbs);
       const newExists = e.kind === 'folder' ? isDir(newAbs) : fs.existsSync(newAbs);
       // acá alcanza la marca, como en isMoved: un reemplazo generado con una versión anterior del texto sigue siendo un
-      // reemplazo (el freno de nombres, que es el que deja pasar, exige el generado tal cual — tanda C1). Una carpeta
-      // vieja se juzga con el mismo criterio que isMoved (pase adversarial de la story 8.12, R2): sólo lo que git versiona
+      // reemplazo (el freno de nombres, que es el que deja pasar, exige el generado tal cual). Una carpeta
+      // vieja se juzga con el mismo criterio que isMoved: sólo lo que git versiona
       // la hace real; los restos de la máquina (el log del grabador, sus descartados, un `.DS_Store`), sin seguir o
       // ignorados, no son un choque.
       const oldIsShim = e.kind === 'folder' ? isDir(oldAbs) && !legacy.oldStillReal(oldAbs, 'folder', root)
@@ -1031,7 +1031,7 @@ function checkMap(args) {
       } else if (oldExists && !oldIsShim && newExists && !(e.kind === 'folder' && onlyArrivals(e, newAbs, map.entries))) {
         problems.push(`${at}: el nombre nuevo choca: ${e.new} ya existe y ${e.old} también (no es un reemplazo)`);
       } else if (oldExists && !oldIsShim) {
-        // todavía no se movió: válido, no hace nada hasta la mudanza (estructura destino, AC 13)
+        // todavía no se movió: válido, no hace nada hasta la mudanza
       } else if (e.kind === 'file' && legacy.needsShim(e)) {
         const outside = e.callers.filter((c) => c !== 'same-repo' && c !== 'ado').join(', ');
         if (!legacy.supportsShim(e.old)) problems.push(`${at}: lo llaman de afuera (${outside}) y no hay forma de reemplazo para «${path.extname(e.old) || 'sin extensión'}» — si lo nombra un pipeline de Azure DevOps, va con callers: ["ado"] (tarea humana)`);
@@ -1052,7 +1052,7 @@ function checkMap(args) {
   return { file, problems, entries: map.entries.length };
 }
 
-// ── las opciones de scripts/ci: el mapa contra los pares declarados en cada guion (tanda B2, AC 27) ─────────────
+// ── las opciones de scripts/ci: el mapa contra los pares declarados en cada guion ─────────────
 /**
  * Los guiones de scripts/ci viajan solos en el artefacto `arnes-ci` (sin scripts/lib ni el mapa), así que traducen
  * sus opciones viejas con el traductor de su carpeta (legacy-options.sh/.js) y los pares declarados en el propio guion.
@@ -1064,7 +1064,7 @@ const CI_DIR = 'scripts/ci/';
 function ciPairsProblems(repo, entries) {
   const { declaredPairs } = require('../ci/legacy-options.js');
   const problems = [];
-  // opciones y valores (tanda B3a: el par `opcion=viejo:nuevo`); `kind` distingue los dos lados del cruce
+  // opciones y valores (el par `opcion=viejo:nuevo`); `kind` distingue los dos lados del cruce
   const opts = entries.filter((e) => e && (e.kind === 'option' || e.kind === 'value') && typeof e.where === 'string' && e.where.startsWith(CI_DIR)
     && (e.repo || 'arnes') === 'arnes' && typeof e.old === 'string' && typeof e.new === 'string');
   const pairText = (p) => (p.kind === 'value' ? `${p.option}=${p.old}:${p.new}` : `${p.old}:${p.new}`);
@@ -1108,51 +1108,51 @@ function ciPairsProblems(repo, entries) {
   return problems;
 }
 
-// ── --stale-mentions: los nombres viejos que quedan fuera de su lugar (tanda B1, AC 25) ────────────────────────
+// ── --stale-mentions: los nombres viejos que quedan fuera de su lugar ────────────────────────
 /**
  * Un nombre viejo del mapa nombrado en los dos repos fuera de las zonas donde tiene que seguir (una variable, en
  * cualquier archivo; una opción `--viejo`, en su guion y en los archivos de su repo que nombran ese guion): el mapa, los reemplazos,
  * la biblioteca de compatibilidad (`legacy-names.*`, también el puente de agent-skills), `specs/`, `tasks/`,
- * `guides/maintaining/incident-log.md`, la evidencia de corridas pasadas (`.advisors/`), la guía de la convención y las pruebas de
- * compatibilidad (`scripts/tests/legacy-names*`). En una variable con `repo`
+ * el registro de incidentes del equipo, la evidencia de corridas pasadas (`.advisors/`), la guía de la
+ * convención y las pruebas de compatibilidad (`scripts/tests/legacy-names*`). En una variable con `repo`
  * (el único repo que la lee), el nombre viejo en el OTRO repo es una referencia entre repos y no cuenta: ese repo puede
- * estar un pull atrás hasta el retiro (AC 1 d). Un kind que este modo todavía no sabe mirar es «no pude mirar»: cada
- * tanda lo suma con su primera entrada, nunca se saltea callado. Una entrada con `homonyms` no cuenta en los archivos de
- * sus globs, donde el nombre viejo es otro archivo que se llama igual (story 8.12, AC 37); un glob muerto frena.
+ * estar un pull atrás hasta el retiro. Un kind que este modo todavía no sabe mirar es «no pude mirar»: se suma
+ * con su primera entrada, nunca se saltea callado. Una entrada con `homonyms` no cuenta en los archivos de
+ * sus globs, donde el nombre viejo es otro archivo que se llama igual; un glob muerto frena.
  */
 const STALE_KINDS = ['env', 'option', 'subcommand', 'value', 'folder', 'file', 'state-file', 'config-file', 'key'];
-// 🔴 Los que LEEN o PROTEGEN los dos nombres a propósito (tanda P, escritura doble): el freno de producción tiene que
+// 🔴 Los que LEEN o PROTEGEN los dos nombres a propósito (escritura doble): el freno de producción tiene que
 // nombrar el catálogo, el índice y la memoria con su nombre de antes del renombre, porque la copia vieja de /opt los sigue
 // usando hasta que todas las máquinas autorizadas reinstalen. No hay forma de hacerlo sin escribir el nombre viejo, y en
-// una plantilla JSON no hay comentario donde declararlo. Salen de esta lista en el commit que apaga la escritura doble
-// (AC 49 de la story 8.9): desde ahí, un nombre viejo en ellos vuelve a ser una mención de más.
+// una plantilla JSON no hay comentario donde declararlo. Salen de esta lista en el commit que apaga la escritura doble:
+// desde ahí, un nombre viejo en ellos vuelve a ser una mención de más.
 const LEGACY_READERS = new Set([
   'scripts/production/production-index.js', 'scripts/production/tycon-prod-sql', 'scripts/production/node-shim.sh',
   'scripts/production/install-guard.sh', 'scripts/production/lint-production-json.js',
   'scripts/production/managed-settings.tycon-production.json.template', 'scripts/hooks/prod-access-guard.js',
   'scripts/hooks/produccion-notice.js', 'scripts/hooks/git-pre-commit-global.sh', 'scripts/lib/tycon-config.js',
   // los controles del commit: la copia propia del repo privado busca los guiones de las skills también en la carpeta de
-  // antes del renombre, para un arnés atrasado (legacy-names-c4 T43c); sale con el retiro de los nombres viejos
+  // antes del renombre, para un arnés atrasado; sale con el retiro de los nombres viejos
   '.githooks/pre-commit-checks',
-  // la copia propia del freno (2026-10-14): ocupa en /opt el lugar de scripts/lib/tycon-config.js y lee lo mismo que ella
+  // la copia propia del freno: ocupa en /opt el lugar de scripts/lib/tycon-config.js y lee lo mismo que ella
   'scripts/production/guard-libs/lib/tycon-config.js',
-  // compara contra una base de antes del renombre y corre los archivos de esa base por el nombre que tenían (tanda C1)
+  // compara contra una base de antes del renombre y corre los archivos de esa base por el nombre que tenían
   'scripts/publishing/profile-equivalence.js',
   // el termómetro mide también los commits de la medición (T5), donde el archivo de esquema del intérprete tenía su
   // nombre viejo: `schemaFiles` lista los dos (cada árbol tiene uno solo). Sale con el retiro, no con la escritura doble.
   'scripts/lib/spanish-words.json',
 ]);
-// Los kinds de ruta y de clave (tanda P): cómo se nombra el viejo en un archivo. Una ruta, entera y no como pedazo de
+// Los kinds de ruta y de clave: cómo se nombra el viejo en un archivo. Una ruta, entera y no como pedazo de
 // otra (`x-viejo.js` no está dentro de `mi-x-viejo.js`); un archivo o un estado también por su nombre solo; una clave,
 // sólo como clave de un JSON (`"clave":`), en `«…»` o entre acentos graves, y sólo en los archivos que nombran el
 // archivo donde vive (con cualquiera de sus dos nombres): la misma palabra suelta es prosa.
 // antes, cualquier cosa que no sea parte de un nombre (una `/` sí: la ruta vieja puede venir al final de una absoluta).
 // `inside`: las carpetas que la ruta nueva agrega delante de la vieja (`pipelines/` en `x.yml` → `pipelines/x.yml`); ahí
-// la vieja está dentro de la nueva y no es una mención (story 8.12, AC 3). Detrás de otra cosa, sigue contando.
-// `onlyAsPath`: una carpeta vieja de UN solo pedazo es también una palabra común (la de los instintos, tanda R2: «propone
+// la vieja está dentro de la nueva y no es una mención. Detrás de otra cosa, sigue contando.
+// `onlyAsPath`: una carpeta vieja de UN solo pedazo es también una palabra común (la de los instintos: «propone
 // …», «Revisar y accionar …»); cuenta sólo escrita como ruta, con una barra detrás (`<vieja>/pending/`, `<vieja>\pending\`).
 // La palabra suelta es prosa. El exportador decide igual (`rutaViejaRe`, que lee PATH_SEP_AHEAD de acá).
-// Qué es «una barra detrás» (pase adversarial de la R2, clase 7): una `/`, o una `\` que NO abre una secuencia de escape de
+// Qué es «una barra detrás»: una `/`, o una `\` que NO abre una secuencia de escape de
 // un string o de una expresión regular. `<vieja>\n`, `<vieja>\t`, `/<vieja>\b/` (también `\r`, `\f`, `\v`, `\0`, `\x`,
 // `\u`, una comilla o un acento grave detrás de la `\`) no son una ruta. `\\` (la barra de Windows escrita dentro de un
 // string: `"<vieja>\\pending"`) y `\/` (la barra escapada de un JSON o de una expresión regular) sí lo son. Borde elegido:
@@ -1167,7 +1167,7 @@ const addedPrefix = (oldRel, newRel) => {
   return n.length > o.length && n.endsWith(`/${o}`) ? n.slice(0, n.length - o.length) : '';
 };
 // El nombre suelto de un archivo renombrado: solo, detrás de `./` o detrás de SU carpeta. Detrás de otra carpeta es otro
-// archivo con el mismo nombre (`lib/x.js` de agent-skills no es el `scripts/ci/x.js` renombrado, tanda C1).
+// archivo con el mismo nombre (`lib/x.js` de agent-skills no es el `scripts/ci/x.js` renombrado).
 const baseRe = (p, folder) => {
   const parent = path.posix.basename(path.posix.dirname(p));
   const where = parent && parent !== '.' ? `(?:(?<=(?:^|[^\\w.~-])${esc(parent)}/)|(?<=(?:^|[^\\w.~-])\\./)|(?<!/))` : '';
@@ -1176,10 +1176,10 @@ const baseRe = (p, folder) => {
 function esc(x) { return x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 // La misma ruta escrita a la Windows (`scripts\x.ps1`, `~\.claude\…\scripts\x.ps1`): las guías y las cabeceras de los
 // .ps1 la usan de verdad, y el instalador ya la reescribe (`machineRewrites`); sin esta variante, una mención vieja así
-// pasaba el control en verde (pase adversarial de la story 8.12, R1).
+// pasaría el control en verde.
 const winRes = (p, folder, inside) => (p.includes('/') ? [pathRe(p.split('/').join('\\'), folder, inside ? inside.split('/').join('\\') : inside)] : []);
 // Una ruta vieja detrás de una barra sigue contando —puede ser el final de una absoluta, `/…/tycon-claude-guides/<vieja>/`—,
-// salvo que lo de delante de la barra arme con ella OTRA ruta del repo que existe hoy (story 8.12, AC 3, matiz de la R2):
+// salvo que lo de delante de la barra arme con ella OTRA ruta del repo que existe:
 // la carpeta de la raíz que se mudó a `inbox/instincts/` se llama igual que el último pedazo de `scripts/instincts/`, otra
 // carpeta de verdad. `inside` resuelve sólo el caso de la ruta NUEVA; éste es el de una ruta ajena. Se prueban los pedazos
 // de delante de a uno (`scripts/<vieja>`, `x/scripts/<vieja>`, …) contra el repo: en una absoluta a la vieja ninguno existe
@@ -1214,7 +1214,7 @@ function pathMatchers(entries) {
   const out = [];
   for (const e of entries) {
     if (!e || typeof e.old !== 'string' || !e.old || typeof e.new !== 'string') continue;
-    // un estado vive en la HOME, no en un repo: lo nombran los dos (tanda D2: la carpeta de la consola la escribe
+    // un estado vive en la HOME, no en un repo: lo nombran los dos (la carpeta de la consola la escribe
     // agent-skills y la lee el arnés). `*` = se mira en las dos fuentes.
     const repo = e.repo || (e.kind === 'state-file' ? '*' : 'arnes');
     const old = e.old.replace(/^~\//, '');
@@ -1224,10 +1224,9 @@ function pathMatchers(entries) {
       out.push({ e, repo, res, test: pathTest(res, dir) });
     }
     // el nombre suelto sólo si cambia: un archivo que nada más cambia de carpeta sigue nombrándose igual en su ruta nueva
-    // (tanda C0, AC 59)
     else if (e.kind === 'file' || e.kind === 'state-file') {
       const renamed = path.posix.basename(old) !== path.posix.basename(e.new.replace(/^~\//, ''));
-      // un estado puede ser una carpeta (tanda D2: `console-writes/<sesión>.jsonl`): ahí la barra después del nombre
+      // un estado puede ser una carpeta (`console-writes/<sesión>.jsonl`): ahí la barra después del nombre
       // también es una mención. En un archivo de estado nunca viene una barra detrás, así que no cuesta nada.
       const dirLike = e.kind === 'state-file';
       const inside = e.kind === 'file' ? addedPrefix(old, e.new) : '';
@@ -1244,14 +1243,13 @@ function pathMatchers(entries) {
 }
 /**
  * Los buscadores de ruta que vale la pena probar contra `text`: los que tienen su último pedazo escrito ahí. Sin este
- * filtro, las ~316 entradas de ruta del mapa por cada archivo del repo eran 41 s de cálculo en cada --stale-mentions
- * (story 8.22, tramo F: todo el peso de guides-moved.test.js). spanish-names.test.js (T43) mide que el filtro no puede
+ * filtro, las ~316 entradas de ruta del mapa por cada archivo del repo costarían unos 41 s de cálculo en cada
+ * --stale-mentions. spanish-names.test.js mide que el filtro no puede
  * tapar una mención, entrada por entrada del mapa real.
  */
 const pathsNaming = (matchers, text) => matchers.filter((m) => text.includes(m.needle));
-// Los esquemas AJENOS que se escriben con una clave vieja de un archivo del mapa y no son ese archivo (tanda D1, pase
-// adversarial): cada uno se reconoce por una clave propia en la misma línea (`marker`) y exime sólo SUS claves (`keys`).
-// Una lista declarada, no «cualquier clave que el .json no tenga»: eso tomaba por clave datos, textos y ternarios, y dejaba
+// Los esquemas AJENOS que se escriben con una clave vieja de un archivo del mapa y no son ese archivo: cada uno se reconoce por una clave propia en la misma línea (`marker`) y exime sólo SUS claves (`keys`).
+// Una lista declarada, no «cualquier clave que el .json no tenga»: eso tomaría por clave datos, textos y ternarios, y dejaría
 // pasar menciones viejas reales. Uno nuevo se suma acá, con su caso en spanish-names.test.js.
 const FOREIGN_SCHEMAS = Object.freeze([
   { what: 'una entrada de scripts/tests/suites.json', marker: 'requiere', keys: ['raiz', 'ruta'] },
@@ -1263,12 +1261,12 @@ const CONFIG_READER = 'tycon-config.js';
 const quotedKeyRe = (k) => new RegExp(`(?<![\\w-])\\\\?["']${esc(k)}\\\\?["']\\s*:`);
 /**
  * Las menciones de una clave vieja: como clave JSON (`"x":`) o en prosa («x», `x`), en un archivo que nombra el .json de
- * la clave. Tanda D1, lo que NO es esa clave aunque se escriba igual (cada una, una regla precisa):
+ * la clave. Lo que NO es esa clave aunque se escriba igual (cada una, una regla precisa):
  *   · `"x":` dentro de OTRO .json es una clave de ese otro archivo (la de un fixture no es la de budget.json);
  *   · `"x":` en una línea de un esquema ajeno DECLARADO (FOREIGN_SCHEMAS), si `x` es una clave de ese esquema;
  *   · en prosa, «x»/`x` seguido de «privado» es la clave de la tabla PRIVADA (replacements.json), que no cambia;
- *   · en prosa, un viejo que es el nombre de una transformación del exportador es ese id (`opts.ids`), que no cambia
- *     (pregunta decidida 2): la clave se busca, en ese caso, sólo en su forma JSON.
+ *   · en prosa, un viejo que es el nombre de una transformación del exportador es ese id (`opts.ids`), que no cambia:
+ *     la clave se busca, en ese caso, sólo en su forma JSON.
  * `test(line, rel)` dice si la línea la nombra; `res` es el filtro grueso por archivo.
  */
 function keyMatchers(entries, opts = {}) {
@@ -1286,7 +1284,7 @@ function keyMatchers(entries, opts = {}) {
     const prose = ids.has(e.old) ? [] : [new RegExp(`«${k}»${notPrivate}`), new RegExp(`\`${k}\`${notPrivate}`)];
     const foreign = FOREIGN_SCHEMAS.filter((s) => s.keys.includes(e.old)).map((s) => quotedKeyRe(s.marker));
     // las claves del archivo de la máquina se escriben también con punto (`integrations.<vieja>`) y como argumento del
-    // lector (`tycon-config.js key <vieja>`, `get <sección>.<vieja>`) — tanda G, pase adversarial, causa 2. El prefijo es
+    // lector (`tycon-config.js key <vieja>`, `get <sección>.<vieja>`) El prefijo es
     // cualquier otra clave del mismo archivo (las secciones están en el mapa con sus dos nombres).
     const config = [];
     if (e.where === MACHINE_CONFIG) {
@@ -1307,46 +1305,40 @@ function keyMatchers(entries, opts = {}) {
 }
 const SCRIPT_NAME = /[A-Za-z0-9_.-]+\.(?:sh|js|mjs|cjs|ps1|py)\b/g;
 // `.advisors/`: evidencia de corridas pasadas (historia, no se reescribe); la guía de la convención nombra un viejo como ejemplo.
-// La foto de un pipeline de producto (tanda B2) copia las líneas de afuera, con los nombres viejos que los productos
+// La foto de un pipeline de producto copia las líneas de afuera, con los nombres viejos que los productos
 // siguen usando hasta el retiro: es la prueba de que siguen andando.
-// Tanda B3a, más historia que no se reescribe: las métricas grabadas por merge (`.dashboard/`), el registro de propuestas
-// y las revisiones con fecha de guides/, y el techo de la 8.10 (names-ceiling.json no se toca: AC 29). La página del
-// tablero estuvo acá hasta que el nocturno la regeneró con el nombre nuevo (corrida 11421, tanda C1): ya no es zona.
-// Volvió a estar en las tandas C4 y D1, y salió otra vez cuando el nocturno la regeneró sobre el merge de la D1
-// (corrida 11477, [DEF-8.9-TABLERO-D1]).
-// Tanda B3b, la historia de agent-skills: el CHANGELOG de cada skill y la HISTORIA.md del pipeline (los párrafos que el
+// Más historia que no se reescribe: las métricas grabadas por merge (`.dashboard/`), el registro de propuestas
+// y las revisiones con fecha de guides/, y el techo de nombres (names-ceiling.json no se toca). La página del
+// tablero es zona mientras el nocturno no la regenere con el nombre nuevo.
+// La historia de agent-skills: el CHANGELOG de cada skill y la HISTORIA.md del pipeline (los párrafos que el
 // SKILL.md dejó al recortarse, con la fecha en que se escribieron).
 const STALE_ZONES = [/^specs\//, /^tasks\//, /^\.advisors\//, /^scripts\/publishing\/denylist\.json$/, /^guides\/maintaining\/incident-log\.md$/, /^guides\/maintaining\/nombres-en-ingles\.md$/, /^scripts\/tests\/legacy-names[^/]*$/,
   /^scripts\/tests\/fixtures\/product-pipeline\//, /^\.dashboard\//, /^guides\/guide-update-proposals\.md$/, /^guides\/(?:decisions\/)?revision-adversarial-[^/]*\.md$/,
   /^scripts\/publishing\/names-ceiling\.json$/,
   /^skills\/[^/]+\/CHANGELOG\.md$/, /^skills\/tycon-pipeline\/HISTORIA\.md$/,
-  // Tanda C1, más historia: la guía de prueba de cada story (qa/, como specs/) y los instintos ya archivados. Y las
-  // traducciones a Codex de los agentes de agent-skills: son texto de agent-skills, que nombra al arnés con el nombre viejo
-  // hasta el retiro (AC 1 d), y build/check.js las compara con el agente de la máquina; la copia pública las regenera
-  // con la ruta ya traducida.
-  // (los archivados se mudaron con su carpeta a `inbox/` en la tanda R2 de la story 8.12)
+  // Más historia: la guía de prueba de cada story (qa/, como specs/) y los instintos ya archivados (viven en `inbox/`).
+  // Y las traducciones a Codex de los agentes de agent-skills: son texto de agent-skills, que nombra al arnés con el
+  // nombre viejo hasta el retiro, y build/check.js las compara con el agente de la máquina; la copia pública las
+  // regenera con la ruta ya traducida.
   /^qa\//, /^inbox\/instincts\/archived\//, /^adapters\/codex\/agents(?:-native)?\/[^/]+\.toml$/,
-  // Tanda C3: la foto del último nocturno (banco y suites). Es la copia de `.dashboard/controls-bench/` que viaja al lado
-  // del banco, y sus `motivos` copian tal cual la salida de una prueba roja de esa noche: el 2026-10-01 una prueba
-  // renombrada en la C2 quedó nombrada en un motivo y este modo dio rojo en la noche siguiente (legacy-names-env T30).
+  // La foto del último nocturno (banco y suites). Es la copia de `.dashboard/controls-bench/` que viaja al lado
+  // del banco, y sus `motivos` copian tal cual la salida de una prueba roja de esa noche: una prueba renombrada que
+  // queda nombrada en un motivo pondría este modo en rojo la noche siguiente.
   // Las claves de esas fotos sí se migran con el renombre (legacy-names.js --migrate-bench).
   /^scripts\/controls-bench\/ultimo-(?:banco|suites)\.json$/,
-  // Tanda D1: la clasificación commiteada de las claves (viejo → nuevo, una fila por clave y lugar) es dato de historia:
+  // La clasificación commiteada de las claves (viejo → nuevo, una fila por clave y lugar) es dato de historia:
   // nombra cada clave y ruta vieja a propósito, y se genera, no se reescribe.
   /^scripts\/tests\/fixtures\/legacy-names-d1\//,
-  // Tanda F: las fichas de las dos colas de los nocturnos (`pending/`, `promoted/` y `archived/` de cada una). Son datos
+  // Las fichas de las dos colas de los nocturnos (`pending/`, `promoted/` y `archived/` de cada una). Son datos
   // que escribe un proceso, como `.dashboard/`: llevan el motivo de un rechazo tal cual lo escribió una persona en el pull
-  // request («se resuelve junto con <cola>/<id>», la rama de la cola) y rutas de archivos de los productos. Con las colas
-  // mudadas, la primera noche que una ficha lo trajera este modo salía rojo sin que nadie tocara código (pase adversarial
-  // de la tanda, clase 9). El README de cada cola NO entra: es una guía, y una ruta vieja ahí es una instrucción viva.
+  // request («se resuelve junto con <cola>/<id>», la rama de la cola) y rutas de archivos de los productos. Si una ficha trae
+  // una ruta vieja, este modo saldría rojo sin que nadie tocara código. El README de cada cola NO entra: es una guía, y una ruta vieja ahí es una instrucción viva.
   /^inbox\/(?:dependencies|watcher)\/(?:pending|promoted|archived)\//,
-  // Tanda G: la página del tablero vuelve a ser zona —como en las tandas C4 y D1— hasta que el nocturno la regenere sobre
-  // el merge: trae escrito el comando de la vista de corridas con el nombre que tenía su opción, y no se edita a mano (la
-  // escribe dashboard.js, que ya imprime el nombre nuevo). Sale de acá con esa corrida ([DEF-8.9-TABLERO-G]).
+  // La página del tablero es zona hasta que el nocturno la regenere: puede traer escrito el comando de la vista de
+  // corridas con el nombre que tenía su opción, y no se edita a mano (la escribe dashboard.js, que imprime el nombre nuevo).
   /^artifacts\/tablero-del-arnes\.html$/];
 // Un `.gitignore` que ignora la carpeta vieja ENTERA (`/<vieja>/`) la nombra a propósito: es lo que esconde los restos que
-// cada máquina guarda ahí después de la mudanza —el log del grabador, sus descartados— (pase adversarial de la story 8.12,
-// R2). Sólo la línea que es la carpeta sola; un patrón de adentro (`<vieja>/drafts/`) sigue siendo una mención vieja.
+// cada máquina guarda ahí después de la mudanza —el log del grabador, sus descartados—. Sólo la línea que es la carpeta sola; un patrón de adentro (`<vieja>/drafts/`) sigue siendo una mención vieja.
 const ignoresOldFolder = (rel, line, e) => e.kind === 'folder' && path.posix.basename(rel) === '.gitignore'
   && line.trim().replace(/^\//, '').replace(/\/(?:\*\*)?$/, '') === e.old.replace(/\/+$/, '');
 /** ¿El repo de mantenimiento adelgazado? Lo dice su lista de lo que repite del público. */
@@ -1365,9 +1357,9 @@ function staleMentions(args) {
   const entries = Array.isArray(map && map.entries) ? map.entries : [];
   const unknown = [...new Set(entries.map((e) => e && e.kind).filter((k) => !STALE_KINDS.includes(k)))];
   if (unknown.length) throw new CouldNotLook(`el mapa tiene entradas de ${unknown.join(', ')} y --stale-mentions todavía sabe mirar sólo ${STALE_KINDS.join(', ')}: se suma en la tanda que trae esa entrada`);
-  // story 8.18: en el repo unido las dos fuentes viven en esta raíz y cada archivo es de la suya por su ruta. Sin esto
-  // el recorrido tomaba `skills/` por archivos del arnés y contaba como menciones viejas las que agent-skills hace del
-  // arnés, que son referencias entre fuentes (AC 1 d) — o, sin «el otro repo» a mano, no miraba.
+  // en el repo unido las dos fuentes viven en esta raíz y cada archivo es de la suya por su ruta. Sin esto
+  // el recorrido tomaría `skills/` por archivos del arnés y contaría como menciones viejas las que agent-skills hace del
+  // arnés, que son referencias entre fuentes — o, sin «el otro repo» a mano, no miraría.
   // El repo de mantenimiento adelgazado con el público encima (su lista de lo que repite dice `layout: "thin"`) también
   // tiene las dos fuentes en esta raíz, aunque ya no traiga el perfil del equipo: se recorre una sola vez.
   const unified = nn.unifiedCheckout(repo) || (thinLayout(repo) && require('../lib/canonical-path.js').isSingleRepo(repo));
@@ -1377,19 +1369,19 @@ function staleMentions(args) {
   const findings = [];
   const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const olds = entries.filter((e) => e && e.kind === 'env' && typeof e.old === 'string' && e.old).map((e) => ({ e, re: new RegExp(`(?<![A-Za-z0-9_])${esc(e.old)}(?![A-Za-z0-9_])`) }));
-  // una opción (tanda B2): el --viejo en su where y en los archivos de su repo que nombran ese guion; en el otro repo es
-  // una referencia entre repos (AC 1 d). La declaración del par («viejo:nuevo», sin guiones) no es una mención.
+  // una opción: el --viejo en su where y en los archivos de su repo que nombran ese guion; en el otro repo es
+  // una referencia entre repos. La declaración del par («viejo:nuevo», sin guiones) no es una mención.
   const opts = entries.filter((e) => e && e.kind === 'option' && typeof e.old === 'string' && e.old && typeof e.where === 'string')
     .map((e) => ({ e, flag: `--${e.old}`, base: path.posix.basename(e.where), re: new RegExp(`(?<![A-Za-z0-9_-])--${esc(e.old)}(?![A-Za-z0-9_-])`) }));
-  // rutas y claves (tanda P): en su propio repo; en el otro es una referencia entre repos, que sigue andando porque el
-  // arnés lee los dos nombres (AC 1 d). Un archivo o una carpeta cuenta recién cuando se mudó —el nuevo existe y el viejo
-  // ya no es el de verdad—: una entrada nace antes de su mudanza con sus llamadores medidos (tanda C0, AC 59), y hasta
+  // rutas y claves: en su propio repo; en el otro es una referencia entre repos, que sigue andando porque el
+  // arnés lee los dos nombres. Un archivo o una carpeta cuenta recién cuando se mudó —el nuevo existe y el viejo
+  // ya no es el de verdad—: una entrada nace antes de su mudanza con sus llamadores medidos, y hasta
   // entonces la ruta vieja es la real, como ya la tratan el validador del mapa, el instalador, --write-shims y el exportador.
   const moved = (e) => (e.kind !== 'file' && e.kind !== 'folder') || legacy.isMoved(e, repos[e.repo || 'arnes']);
   const paths = pathMatchers(entries.filter((e) => e && moved(e)));
   // los ids de transformación del exportador, que se escriben como una clave vieja de la lista blanca y no cambian
   const keys = keyMatchers(entries, { ids: (exporter.TRANSFORMACIONES || []).map((t) => t.nombre) });
-  // un subcomando (tanda B3a): el nombre de su script seguido del viejo en la misma línea (`tool.js <viejo>`);
+  // un subcomando: el nombre de su script seguido del viejo en la misma línea (`tool.js <viejo>`);
   // un valor: `--<opción> viejo` o `--<opción>=viejo`, con la opción nueva o su nombre viejo, donde se nombra el script.
   // Como la opción, se busca en su where y en los archivos de su repo que nombran ese script.
   const subs = entries.filter((e) => e && e.kind === 'subcommand' && typeof e.old === 'string' && e.old && typeof e.where === 'string')
@@ -1398,7 +1390,7 @@ function staleMentions(args) {
       return { e, flag: e.old, base, shown: [e.old, e.new], re: new RegExp(`${esc(base)}["'\`]?\\s+["']?${esc(e.old)}(?![A-Za-z0-9_-])`) };
     });
   const valueEntries = entries.filter((e) => e && e.kind === 'value' && typeof e.old === 'string' && e.old && typeof e.where === 'string' && typeof e.option === 'string');
-  // un valor de una clave de configuración o de una variable (tanda G, pase adversarial): se busca asignado a los nombres
+  // un valor de una clave de configuración o de una variable: se busca asignado a los nombres
   // que declara (`"<nombre>": "<viejo>"`, `"<nombre>": [..., "<viejo>"]`, `<NOMBRE>=<viejo>`), en todo su repo. La
   // declaración del par viejo:nuevo (`<NOMBRE>=<viejo>:<nuevo>`) no es una mención.
   const assigned = valueEntries.filter((e) => Array.isArray(e.assigned_to) && e.assigned_to.length).map((e) => {
@@ -1406,7 +1398,7 @@ function staleMentions(args) {
     return { e, re: new RegExp(`(?<![A-Za-z0-9_])["']?(?:${names})["']?\\s*(?::|=)\\s*(?:\\[[^\\]\\n]*?)?["']?${esc(e.old)}(?![A-Za-z0-9_-])(?!:${esc(e.new)})`) };
   });
   // un valor sin assigned_to se busca como `--<opción> <viejo>`: si su guion no tiene esa opción, esa forma no aparece
-  // nunca y el modo saldría 0 callado. Eso es «no pude mirar» (tanda G, pase adversarial, causa 1).
+  // nunca y el modo saldría 0 callado. Eso es «no pude mirar».
   for (const e of valueEntries) {
     if (Array.isArray(e.assigned_to)) continue;
     const file = path.join(repos[e.repo || 'arnes'] || repo, e.where);
@@ -1431,7 +1423,7 @@ function staleMentions(args) {
     }
     return versioned[source];
   };
-  // los homónimos (story 8.12, AC 37): una forma rota o un glob que no matchea ningún archivo del repo de la entrada es
+  // los homónimos: una forma rota o un glob que no matchea ningún archivo del repo de la entrada es
   // «no pude mirar» — una lista vieja o mal escrita taparía menciones en silencio
   const homonymRes = new Map();
   entries.forEach((e, i) => {
@@ -1474,9 +1466,9 @@ function staleMentions(args) {
       const minePaths = reader ? [] : pathsNaming(paths, text).filter((p) => (p.repo === source || p.repo === '*') && !(p.e.kind === 'file' && rel === p.e.new && path.posix.basename(p.e.old) !== path.posix.basename(p.e.new)) && p.res.some((r) => r.test(text))).filter(own);
       const mineKeys = reader ? [] : keys.filter((k) => k.repo === source && k.names.some((n) => text.includes(n)) && k.res.some((r) => r.test(text))).filter(own);
       // lo que la mudanza no toca: el reemplazo generado, y el archivo ya RENOMBRADO cuyo propio nombre viejo aparece en su
-      // cabecera («hasta la story 8.9 se llamaba …») — eso es historia, no un llamador. Uno que sólo cambió de carpeta sí se
-      // mira a sí mismo: su «Uso:» con la ruta vieja es una instrucción viva (pase adversarial de la story 8.12, R1)
-      // un reemplazo nombra su nombre viejo a propósito; sólo el generado tal cual (la marca sola se escribe a mano: tanda C1)
+      // cabecera («se llamaba …») — eso es historia, no un llamador. Uno que sólo cambió de carpeta sí se
+      // mira a sí mismo: su «Uso:» con la ruta vieja es una instrucción viva.
+      // un reemplazo nombra su nombre viejo a propósito; sólo el generado tal cual (la marca sola se escribe a mano)
       if ((!mine.length && !mineOpts.length && !mineScoped.length && !minePaths.length && !mineKeys.length) || legacy.isGeneratedShim(rel, text)) continue;
       // en quien llama, una línea que nombra OTRO guion y no éste es de ese otro (`marker.js … --tipo`): no cuenta. Un
       // guion que es el VALOR de una asignación (`TYCON_DEP_CMD="$TMP/doble.sh" node "$GUION" …`) no es el que se llama.

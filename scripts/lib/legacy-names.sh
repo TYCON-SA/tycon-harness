@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# legacy-names.sh — que un nombre viejo siga andando en un guion de bash (story 8.9, tanda A2 · 2026-09-30)
+# legacy-names.sh — que un nombre viejo siga andando en un guion de bash
 #
 # El par de scripts/lib/legacy-names.js para bash, incluido el 3.2 de macOS: nada de ${v,,}, arreglos asociativos ni una
 # variable pegada a un carácter no ASCII. Lee el mismo mapa (scripts/lib/renames.json) con UNA llamada a node, sólo si
@@ -68,9 +68,9 @@ _legacy_names_log() { # <kind> <old> <new> <where> [--conflict]
   return 0
 }
 
-# Los nombres viejos del mapa, leídos UNA vez por proceso con un grep (tanda B1): el caso de todos los días es que ninguna
-# variable vieja está puesta, y entonces legacy_env no tiene nada que hacer. Sin este atajo cada llamada lanzaba subshells
-# y un node, y el hook global de git (que corre en cada commit de cualquier repo) sumaba ~100 ms. Si alguna vieja está
+# Los nombres viejos del mapa, leídos UNA vez por proceso con un grep: el caso de todos los días es que ninguna
+# variable vieja está puesta, y entonces legacy_env no tiene nada que hacer. Sin este atajo cada llamada lanzaría subshells
+# y un node, y el hook global de git (que corre en cada commit de cualquier repo) sumaría ~100 ms. Si alguna vieja está
 # puesta —no importa cuál—, sigue el camino completo de abajo, que decide con el mapa entero.
 _LEGACY_NAMES_OLDS=""
 _LEGACY_NAMES_OLDS_READ=""
@@ -114,7 +114,7 @@ legacy_env() {
 }
 
 # _legacy_names_value <opción (nombre nuevo) o vacío> <argumento> <where>: deja en _LEGACY_VALUE el argumento, o su valor
-# nuevo si es un valor viejo de ESA opción (tanda B3a: el cuarto campo de la línea es la opción; «0», sin opción, vale para
+# nuevo si es un valor viejo de ESA opción (el cuarto campo de la línea es la opción; «0», sin opción, vale para
 # cualquiera). El where lo pasa legacy_args: calculado desde acá, BASH_SOURCE apuntaría un nivel más arriba.
 _legacy_names_value() {
   local hit v o

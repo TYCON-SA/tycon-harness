@@ -5,23 +5,23 @@
  * queue-validation.js — encola la validación de una rama en Azure y, ANTES, corta las validaciones de esa misma rama
  * que todavía no terminaron.
  *
- * POR QUÉ (2026-10-05, pedido del dueño): la organización tiene 4 carriles y seis sesiones validando ramas a la vez.
- * Cada sesión encolaba con `az pipelines run --id 170 --branch <rama>`; si después empujaba otro commit y volvía a
- * encolar, la validación vieja seguía ocupando la fila sobre un código que ya nadie iba a mergear (ese día: dos
- * validaciones de la misma rama, una de un commit ya superado, ~40 min de carril cada una). La nueva prueba lo mismo
+ * POR QUÉ: la organización tiene 4 carriles y varias sesiones validando ramas a la vez.
+ * Cada sesión encola con `az pipelines run --id 170 --branch <rama>`; si después empuja otro commit y vuelve a
+ * encolar, la validación vieja sigue ocupando la fila sobre un código que ya nadie va a mergear (dos
+ * validaciones de la misma rama, una de un commit ya superado, ocupan ~40 min de carril cada una). La nueva prueba lo mismo
  * que la vieja y más: la vieja se corta.
  *
  * Sólo corta validaciones de LA MISMA RAMA y del MISMO pipeline. Las de otras ramas no: cada rama tiene sus cambios y
  * la validación de una no prueba la de otra.
  *
  * Cortar una corrida no saca su trabajo de la fila: el pedido de agente queda huérfano hasta que Azure lo limpia, a
- * los minutos (bloque ADO de las instrucciones, regla 3). Por eso, además de cancelar la corrida, borra sus pedidos
+ * los minutos. Por eso, además de cancelar la corrida, borra sus pedidos
  * que todavía esperan carril. Uno que ya tiene carril lo termina Azure al cancelar.
  *
  * «No pude mirar» no es «no hay»: si la lista de validaciones de la rama no se puede leer, no se corta nada ni se
  * encola nada (sale 2 y lo dice), para que nadie crea que la vieja ya no está.
  *
- * UN CLON DE GITHUB (story 8.26, tanda C, AC 10). Desde el corte el dueño trabaja en un clon del repo público, y la
+ * UN CLON DE GITHUB. Quien mantiene el arnés puede trabajar en un clon del repo público, y la
  * validación es otra definición, atada a ese repo. Este guion viaja en el público: la organización, el proyecto y el
  * número de esa definición NO se escriben acá; salen de las opciones o de la configuración de la máquina
  * (`TYCON_VALIDATION_ORG`, `TYCON_VALIDATION_PROJECT`, `TYCON_VALIDATION_PIPELINE`). Sin definición, sale 2: no inventa
@@ -32,7 +32,7 @@
  * Uso:  node scripts/ci/queue-validation.js [--branch <rama>] [--pipeline <id>] [--org <org>] [--project <proyecto>]
  *                                           [--all] [--dry-run]
  *   --branch     por defecto, la rama actual del clon (`git rev-parse --abbrev-ref HEAD`).
- *   --all        la validación completa: corren todas las suites (parámetro `runAll` de pipelines/azure-pipelines-maintainers-pr.yml, story 8.22).
+ *   --all        la validación completa: corren todas las suites (parámetro `runAll` de pipelines/azure-pipelines-maintainers-pr.yml).
  *                Sin él, la validación corre lo que la rama toca.
  *   --pipeline   o `TYCON_VALIDATION_PIPELINE`; con un origin de Azure, por defecto 170 (la validación del interno).
  *   --org/--project  o `TYCON_VALIDATION_ORG`/`TYCON_VALIDATION_PROJECT`; con un origin de Azure, por defecto los suyos
@@ -61,7 +61,7 @@ function git(args) {
 
 /**
  * org y proyecto del `origin` de Azure DevOps; null si el origin no tiene una de sus formas. Azure tiene cuatro, y el
- * agente de sus propios pipelines usa la segunda (170 #12645):
+ * agente de sus propios pipelines usa la segunda:
  *   https://dev.azure.com/<org>/<proyecto>/_git/<repo>         https://<org>.visualstudio.com/[DefaultCollection/]<proyecto>/_git/<repo>
  *   …ssh.dev.azure.com:v3/<org>/<proyecto>/<repo>              …vs-ssh.visualstudio.com:v3/<org>/<proyecto>/<repo>
  */
@@ -95,14 +95,14 @@ function serverAndPath(url) {
   const u = String(url || '').trim();
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(u)) {
     // Una dirección entera la parte el lector de direcciones de Node, como la parten git y curl. Partida a mano, lo que
-    // hay antes de la arroba pasaba por usuario aunque trajera un `?`, un `#` o una `\`, que cortan el servidor
-    // (`https://otro-servidor?@<azure>/…` se leía como de Azure, y git se conecta a `otro-servidor`).
+    // hay antes de la arroba pasaría por usuario aunque traiga un `?`, un `#` o una `\`, que cortan el servidor
+    // (`https://otro-servidor?@<azure>/…` se lee como de Azure, y git se conecta a `otro-servidor`).
     let parsed;
     try { parsed = new URL(u); } catch (_) { return null; }
     return parsed.hostname ? { server: parsed.hostname.toLowerCase(), path: parsed.pathname.replace(/^\/+/, '') } : null;
   }
   // en la corta, git toma por servidor lo que hay hasta el PRIMER `:`: el usuario no puede traer uno (si no,
-  // `otro-servidor:x@<azure>:v3/…` se leía como de Azure, y git se conecta a `otro-servidor`)
+  // `otro-servidor:x@<azure>:v3/…` se leería como de Azure, y git se conectaría a `otro-servidor`)
   const m = /^(?:[^@/:]+@)?([^@/:]+):(.*)$/.exec(u);
   return m ? { server: m[1].toLowerCase(), path: m[2] } : null;
 }
@@ -170,7 +170,7 @@ async function call(base, auth, method, path, body) {
 
 async function main(argv) {
   const dry = argv.includes('--dry-run');
-  // `--all` (story 8.22, AC 6): la validación completa de la rama — el parámetro `runAll` de la 170 corre todas las suites
+  // `--all`: la validación completa de la rama — el parámetro `runAll` de la 170 corre todas las suites
   const all = argv.includes('--all');
   const allNote = all ? ', corre todo' : '';
   const branch = arg(argv, '--branch') || git(['rev-parse', '--abbrev-ref', 'HEAD']);
@@ -179,13 +179,13 @@ async function main(argv) {
   // Sin origin (fuera de un clon, o un clon sin ese remoto) no hay de dónde leer nada: no es el clon del público, y la
   // organización y el proyecto sólo pueden llegar por opción. A propósito: así se encola a mano desde cualquier carpeta.
   const originUrl = read.url;
-  // El clon del público es todo clon con un origin que NO es de Azure (pase adversarial de la tanda C): reconocer GitHub
-  // por su dirección dejaba afuera un origin con usuario antes del servidor (`https://<usuario>` arroba `github.com/…`) o un alias de SSH
-  // (`git@github-trabajo:…`, el de varias cuentas), y ese clon se trataba como el interno. Un remoto de otro servidor
+  // El clon del público es todo clon con un origin que NO es de Azure: reconocer GitHub
+  // por su dirección dejaría afuera un origin con usuario antes del servidor (`https://<usuario>` arroba `github.com/…`) o un alias de SSH
+  // (`git@github-trabajo:…`, el de varias cuentas), y ese clon se trataría como el interno. Un remoto de otro servidor
   // también cae acá: `gh` no lo encuentra y el guion sale 2 sin tocar nada. «De Azure» es por el servidor, en sus cuatro
-  // formas (`isAzure`): el agente de Azure clona con la de `visualstudio.com`, y ese clon es el interno (170 #12645).
+  // formas (`isAzure`): el agente de Azure clona con la de `visualstudio.com`, y ese clon es el interno.
   const github = !!originUrl && !isAzure(originUrl);
-  // Con un clon de GitHub no hay definición por defecto: la 170 es la del interno de Azure (story 8.26, tanda C). La
+  // Con un clon de GitHub no hay definición por defecto: la 170 es la del interno de Azure. La
   // configuración de la máquina (`TYCON_VALIDATION_*`) es la del PÚBLICO: vale sólo para un clon de GitHub. Desde un clon
   // de Azure manda su origin y la 170 —si no, una máquina configurada para el público encolaría esa definición sobre
   // una rama del interno.

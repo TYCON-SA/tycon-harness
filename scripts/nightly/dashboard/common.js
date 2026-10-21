@@ -1,14 +1,12 @@
 #!/usr/bin/env node
 'use strict';
 /*
- * common.js — la presentación COMPARTIDA de las dos páginas del tablero (story 2.14).
+ * common.js — la presentación COMPARTIDA de las dos páginas del tablero.
  *
- * Movimiento PURO desde dashboard.js (2026-09-09): las utilidades honestas (medida / noMedida /
- * ratio / mediana / edad), la ficha con su denominador, el chip con glifo y palabra, el juicio
- * por umbral y el CSS del tema y de las fichas. Ni un byte cambió al moverlo: la página de seis
- * preguntas regenerada antes y después es idéntica (Dev Agent Record de la 2.14).
+ * Trae las utilidades honestas (medida / noMedida / ratio / mediana / edad), la ficha con su
+ * denominador, el chip con glifo y palabra, el juicio por umbral y el CSS del tema y de las fichas.
  *
- * Por qué existe: la vista de corridas necesita exactamente estas piezas, y copiarlas era tener
+ * Por qué existe: la vista de corridas necesita exactamente estas piezas, y copiarlas sería tener
  * dos fichas que se separan solas el día que alguien arregle una. Lo que es de UNA sola página
  * (barrasCausa, filaFuente, grafico, la línea de tiempo de una corrida) se queda en su página.
  */
@@ -50,8 +48,8 @@ const GLIFO = { ok: '●', warn: '◆', bad: '▲', blind: '▨', decl: '◇' };
 /** El juicio sale de `sources.json → thresholds`. Sin fila, la ficha queda neutra. */
 /**
  * 🔴 Un umbral PRESENTE pero mal formado (sin `direction`, o con un número que falta) no es un
- * umbral: comparado contra `undefined` daba SIEMPRE «atención», indistinguible de un juicio real
- * (cazador de fallos silenciosos, story 2.14). Se declara: la ficha sale neutra y con el motivo.
+ * umbral: comparado contra `undefined` daría SIEMPRE «atención», indistinguible de un juicio real.
+ * Se declara: la ficha sale neutra y con el motivo.
  */
 function umbralValido(u) {
   if (!u || typeof u !== 'object') return false;

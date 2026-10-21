@@ -2,17 +2,16 @@
 /**
  * check-artifact-paths.js — un pipeline no puede LEER de una carpeta que él nunca LLENA.
  *
- * 🔴 POR QUÉ EXISTE (2026-09-03 — guides/maintaining/incident-log.md#case-artifact-read-from-empty-folder-2026-09-03). Los pipelines de producción de los plugins de dos productos del equipo bajan
+ * 🔴 POR QUÉ EXISTE. Los pipelines de producción de los plugins de dos productos del equipo bajan
  * su artefacto con `- download: ci`, que lo deja en `$(Pipeline.Workspace)/ci`. Nueve pasos de cada
- * archivo lo leen de ahí. UNO —justo el que sube el paquete al host— lo buscaba en
+ * archivo lo leen de ahí. UNO —justo el que sube el paquete al host— lo buscaría en
  * `$(System.ArtifactsDirectory)`, que en esos pipelines nadie llena. Resultado: el despliegue a
- * producción fallaba SIEMPRE, después de la aprobación humana y después de que el freno de retroceso
- * ya había interrogado al host. Cada intento quemaba una aprobación, y de los dos productos no salía
- * una sola versión a producción por ese camino.
+ * producción fallaría SIEMPRE, después de la aprobación humana y después de que el freno de retroceso
+ * ya hubiera interrogado al host. Cada intento quemaría una aprobación, y ninguna versión llegaría
+ * a producción por ese camino.
  *
- * Quedó de una migración a medias: se actualizaron nueve referencias y ésta no. Es la SEGUNDA vez en
- * el mismo día que el mismo archivo muerde por lo mismo (antes fue la ruta del guion compartido), y
- * por eso esto es un control y no un arreglo más: lo que falla dos veces igual, falla una tercera.
+ * Es el resto de una migración a medias: se actualizan nueve referencias y ésta no. Es un control y
+ * no un arreglo puntual porque lo que falla dos veces igual, falla una tercera.
  *
  * QUÉ MIRA, exactamente una cosa: si un archivo LEE de `$(System.ArtifactsDirectory)` sin que nada
  * en ese mismo archivo la LLENE. Se llena con `DownloadPipelineArtifact`/`DownloadBuildArtifact` con

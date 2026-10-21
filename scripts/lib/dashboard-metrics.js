@@ -3,24 +3,19 @@
  *
  * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────
  *
- * Medido el 2026-08-28: `.dashboard/` tenía **117 archivos** de métricas, uno por merge, escritos
- * por `tycon-retrospective-capturer` desde el 2026-05-03, cubriendo 22 proyectos. Es exactamente
- * el insumo que hace falta para tener una métrica de resultado con denominador y serie.
+ * `.dashboard/` guarda un archivo de métricas por merge, escrito por `tycon-retrospective-capturer`. Es el insumo
+ * de una métrica de resultado con denominador y serie, pero sólo si todos los archivos tienen la misma forma.
  *
- * **No se podían sumar.** 107 de 117 sin `schema_version`; el campo principal `value` era int en
- * 25 archivos, float en 7, **string en 26** y ausente/null en 51 — o sea 32 utilizables de 109.
- * Cada corrida inventó sus propios sub-campos (14+ variantes: `value`, `value_este_run`, `detail`,
- * `note`/`notes`, `threshold`/`threshold_alert`…). Sumar el ratio de accionado daba 162%.
+ * Sin un formato, los archivos no se pueden sumar: `schema_version` ausente, el campo principal `value` como int,
+ * float, string o null según la corrida, y sub-campos propios de cada una (`value`, `value_este_run`, `detail`,
+ * `note`/`notes`, `threshold`/`threshold_alert`…). Sumar el ratio de accionado daría 162%.
  *
- * La causa NO fue descuido: la definición del capturer describe con mucho cuidado CÓMO calcular
- * cada métrica, y nunca dijo QUÉ FORMA tiene el número. Y nadie escribió jamás el consumidor, así
- * que nadie se enteró. Es el principio 1 del arnés aplicado a su propia medición:
- * **una métrica que nadie agrega nunca es una métrica que no existe.** No dio error: dio silencio,
- * durante cuatro meses.
+ * La definición del capturer describe CÓMO calcular cada métrica, pero no QUÉ FORMA tiene el número, y sin un
+ * consumidor nadie se entera. Es el principio 1 del arnés aplicado a su propia medición:
+ * **una métrica que nadie agrega es una métrica que no existe.** No da error: da silencio.
  *
- * Precedente directo, del mismo día: los campos de IDENTIDAD (`repo` absoluto + `merge_commit`) se
- * volvieron obligatorios porque 14 retrospectivas corridas dejaban el contador de pendientes en 20.
- * Mismo modo de falla, otra capa. Esto cierra la capa numérica.
+ * Los campos de IDENTIDAD (`repo` absoluto + `merge_commit`) son obligatorios por el mismo motivo: sin ellos las
+ * retrospectivas corridas no se cuentan contra las pendientes. Esto cierra la capa numérica.
  *
  * ── LA REGLA QUE MÁS IMPORTA ─────────────────────────────────────────────────────────────────
  *
@@ -71,15 +66,12 @@ const METRICS = {
     parts: [],
     label: 'commits con arreglos post-auditoría sin re-correr revisores',
   },
-  // 🔴 La fila que existe para denunciar el punto ciego ERA ella misma el punto ciego (2026-09-18).
+  // 🔴 La fila que existe para denunciar el punto ciego sería ella misma el punto ciego.
   // Su definición presupone una story con paso 5b: sus dos señales son una story hija que declara
   // `followup_of:` y un commit que re-toca un archivo del File List. Un cambio que entra SIN story no
-  // encaja en ninguna, así que la fila imprimía `0` — y el caso documentado es exactamente ése:
-  // un commit metió 93 líneas operativas a main sin story, sin pipeline y sin tests, produjo un
-  // incidente diez días después, y la fila decía 0. Medido sobre la serie: de los 52 archivos que la
-  // traen, **46 publican 0**, y uno de ellos lo dice en su propio detalle («Sin story — la métrica
-  // exige … ninguno aplica»). Un cero que significa «esta pregunta no se pudo hacer» es el falso
-  // verde que la fila fue creada para evitar. Entra al contrato para que no se pueda volver a
+  // encaja en ninguna, así que la fila imprimiría `0` aunque ese cambio produzca un incidente.
+  // Un cero que significa «esta pregunta no se pudo hacer» es el falso
+  // verde que la fila fue creada para evitar. Entra al contrato para que no se pueda
   // publicar: ver la regla de `status: 'n/a'` en validate().
   deep_review_skipped_then_hotfixed: {
     kind: 'count',
@@ -90,13 +82,11 @@ const METRICS = {
     kind: 'count',
     parts: ['produccion', 'tests', 'story_spec'],
     label: 'hallazgos sobre el instrumento que verifica (tests y spec)',
-    // 🔴 El contrato dice QUÉ CUENTA `value`, no sólo qué forma tiene (2026-09-18). El schema 2.0 arregló
-    // el TIPO (117 archivos no sumables por int contra string) y dejó abierto el SIGNIFICADO: medido
-    // sobre los 29 archivos con las tres partes, 23 publicaban `tests + story_spec` (lo que dice el
-    // label), 4 el TOTAL con `produccion` y 2 sólo `tests` — tres unidades en la misma serie y el
-    // validador en verde, con dos de los seis escritos el mismo día de la propuesta. La invariante
-    // vive ACÁ, en el contrato, y no en un `if` suelto del validador: el motivo del defecto es que el
-    // contrato estaba en prosa y el chequeo en código. Sólo se juzga cuando están las partes que la
+    // 🔴 El contrato dice QUÉ CUENTA `value`, no sólo qué forma tiene. Fijar el TIPO no alcanza: queda abierto el
+    // SIGNIFICADO. Con las tres partes presentes, `value` podría ser `tests + story_spec` (lo que dice el
+    // label), el TOTAL con `produccion` o sólo `tests` — tres unidades en la misma serie y el
+    // validador en verde. La invariante vive ACÁ, en el contrato, y no en un `if` suelto del validador: si el
+    // contrato está en prosa y el chequeo en código, se separan. Sólo se juzga cuando están las partes que la
     // definen; sin ellas no se puede afirmar nada, y «no pude mirar» no es «está bien».
     invariant: (e) => {
       if (e.tests === null || e.story_spec === null) return null;
@@ -107,10 +97,10 @@ const METRICS = {
   },
 };
 
-// La proporción de hallazgos accionados NO lleva invariante todavía, a propósito: medido el 2026-09-18
-// sobre 25 archivos, `denominator` es `actioned + waived` en 16, `actioned + waived + refuted` en 11 y
-// ninguna de las dos en 8 — no hay una lectura única que declarar, y gatear con una inventada es peor
-// que no gatear. Cuando el recolector de la 2.9 publique la serie, el contrato se escribe con lo medido.
+// La proporción de hallazgos accionados NO lleva invariante todavía, a propósito: `denominator` es `actioned + waived`
+// en unos archivos, `actioned + waived + refuted` en otros y ninguna de las dos en otros — no hay una lectura única
+// que declarar, y gatear con una inventada es peor que no gatear. Cuando el recolector publique la serie, el contrato
+// se escribe con lo medido.
 
 const IDENTITY = ['repo', 'merge_commit', 'project', 'captured_at'];
 
@@ -187,11 +177,10 @@ function validate(doc, { strict = true } = {}) {
       continue;
     }
 
-    // 🔴 «No pude preguntar» no se publica como un número (2026-09-18). Una entrada que se declara a
+    // 🔴 «No pude preguntar» no se publica como un número. Una entrada que se declara a
     // sí misma no-aplicable (`status: 'n/a'`) o que trae `unavailable_reason` está diciendo que la
     // pregunta no se pudo hacer: ahí `value` va en null. Un 0 en ese caso se suma a la serie y se lee
-    // como «miré y no hay», que es el falso verde más caro del tablero. Medido: 46 de los 52 archivos
-    // con `deep_review_skipped_then_hotfixed` publican 0, uno de ellos con el motivo escrito al lado.
+    // como «miré y no hay», que es el falso verde más caro del tablero.
     const seDeclaraNoMedida = entry.status === 'n/a'
       || (entry.unavailable_reason !== undefined && String(entry.unavailable_reason).trim() !== '');
     if (seDeclaraNoMedida && entry.value !== null) {
@@ -248,12 +237,10 @@ function validate(doc, { strict = true } = {}) {
 /**
  * La fecha de un registro sale de una CADENA DECLARADA, y se publica de qué eslabón salió.
  *
- * 🔴 Por qué (medido 2026-09-05): `captured_at` está en 26 de 125 archivos; `generated_at` en 69;
- * `date` en 11; y 19 sólo tienen la fecha en el nombre. Leer un solo campo dejaba `date: null` en
- * 99 registros, y cualquier `--since`/`--until` los descartaba EN SILENCIO — el 79 % de la serie.
- * Peor: la tendencia ordenaba por `String(null)`, que cae después de cualquier fecha, así que
- * "primera mitad vs segunda mitad" mezclaba mayo con septiembre. La flecha que imprimía no
- * significaba nada.
+ * 🔴 Por qué: según el archivo, la fecha está en `captured_at`, en `generated_at`, en `date` o sólo en el nombre.
+ * Leer un solo campo deja `date: null` en muchos registros, y cualquier `--since`/`--until` los descarta EN SILENCIO.
+ * Peor: la tendencia ordena por `String(null)`, que cae después de cualquier fecha, así que
+ * "primera mitad vs segunda mitad" mezclaría meses distintos y la flecha no significaría nada.
  *
  * Una fecha inferida del nombre del archivo NO vale lo mismo que una declarada adentro: por eso
  * viaja `date_source`, y si la declarada y la del nombre no coinciden (pasa en 21 de 106), viaja

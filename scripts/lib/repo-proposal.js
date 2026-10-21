@@ -1,26 +1,25 @@
 'use strict';
 /*
- * repo-proposal.js — LA PROPUESTA POR RAMA Y PEDIDO DESDE EL CLON DEL SITIO (story 2.29, AC 14 a 16 y 18; decisiones
- * 1, 3, 10 y 11).
+ * repo-proposal.js — LA PROPUESTA POR RAMA Y PEDIDO DESDE EL CLON DEL SITIO.
  *
  * Qué resuelve: la pestaña Configuración del sitio guarda un cambio a un archivo del repo de operaciones como lo hace
  * hoy la página local (`team-config.js`: una rama `team-config/<id>-<sello>` y un pedido hacia la rama principal), pero
- * desde el clon temporal que el sitio ya tiene para leer (2.23) y SIN TOCAR su árbol de trabajo ni su índice: ese clon
+ * desde el clon temporal que el sitio ya tiene para leer y SIN TOCAR su árbol de trabajo ni su índice: ese clon
  * lo relee `sources.js` en cada refresco, y un cambio a medias ahí se vería como configuración. Por eso el commit se arma
  * con los comandos de bajo nivel de git (`hash-object -w`, `read-tree` / `update-index --cacheinfo` / `write-tree` sobre
  * un índice temporal en `GIT_INDEX_FILE`, `commit-tree -p <punta de main>`) y se empuja por su sha a la rama nueva, sin
  * crear una ref local: después de proponer, `git status` del clon sigue limpio, `HEAD` en main y `git branch` igual.
  *
- * Las decisiones que este módulo cumple:
- *   1  — rama y pedido, nunca la rama principal: el empuje va SIN `--force` y SÓLO a `refs/heads/team-config/...`; el
+ * Lo que este módulo garantiza:
+ *   · rama y pedido, nunca la rama principal: el empuje va SIN `--force` y SÓLO a `refs/heads/team-config/...`; el
  *        pedido se abre por la API REST del proveedor (la imagen del sitio no trae `gh` ni `az`) sin auto-completar ni
  *        merge; y antes de crear nada se lee la POLÍTICA de la rama principal (al menos un revisor): sin ella, la
  *        identidad de escritura del sitio podría escribir main, y la propuesta se apaga con el motivo.
- *   3  — si el archivo cambió desde que se abrió la sección (`oidEsperado` distinto del de main recién traída), no se
+ *   · si el archivo cambió desde que se abrió la sección (`oidEsperado` distinto del de main recién traída), no se
  *        propone: vuelve `cambio` con el texto y la versión de la punta (`textoActual`, `oidActual`), para que quien
  *        llama ponga la propuesta encima; y si ya hay un pedido abierto de la pestaña sobre ese archivo, se muestra su enlace.
- *   10 — un pedido por archivo, con todas las secciones cambiadas en el cuerpo.
- *   11 — una sola credencial de escritura (`SITE_OPERATIONS_WRITE_TOKEN`): va a git SÓLO en una cabecera por variables
+ *   · un pedido por archivo, con todas las secciones cambiadas en el cuerpo.
+ *   · una sola credencial de escritura (`SITE_OPERATIONS_WRITE_TOKEN`): va a git SÓLO en una cabecera por variables
  *        `GIT_CONFIG_*` (`http.<origen>/.extraheader`, el patrón de sources.js) y a la API en `Authorization`; nunca en
  *        la dirección, en un argumento, en el disco, en el registro ni en un mensaje (se reemplaza por `[credencial]`).
  *
@@ -215,7 +214,7 @@ function filtroCubre(patrones, archivo) {
   if (lista.some((p) => !p || !PATRON_CONOCIDO.test(p))) return false;
   const ruta = `/${String(archivo).replace(/^\/+/, '')}`;
   // `*` y `?` no cruzan carpetas: si en Azure `*` fuera recursivo, el costo es un «no cubre» de más (lado seguro); al revés,
-  // `/scripts/*` daría por cubierto un archivo de una subcarpeta que la política capaz no cubre (revisión de seguridad)
+  // `/scripts/*` daría por cubierto un archivo de una subcarpeta que la política capaz no cubre
   const re = (p) => new RegExp(`^${p.replace(/[.^${}()|[\]\\+]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]')}$`, 'i');
   const incluye = lista.filter((p) => !p.startsWith('!'));
   const excluye = lista.filter((p) => p.startsWith('!')).map((p) => p.slice(1));
@@ -311,7 +310,7 @@ const SIN_APLICAR_GITHUB = 'Con la opción prendida, el sitio lo mergea directo 
 
 /**
  * El pedido activo hacia main desde una rama `team-config/<idCorto>-*`: `{ enlace, rama }`, o null si no hay. Si la API
- * no contesta bien devuelve `{ error }`: «no pude mirar» no es «no hay» (revisión de fallos silenciosos de la 2.29).
+ * no contesta bien devuelve `{ error }`: «no pude mirar» no es «no hay».
  */
 async function pedidoAbierto({ remote, credencial, idCorto, urlBase, fetch: f }) {
   if (!remote || (remote.platform !== 'azure' && remote.platform !== 'github')) return null;
@@ -381,7 +380,7 @@ async function pedidoDeMarca({ remote, credencial, marca, urlBase, fetch: f, aho
   return p ? { estado: activo ? 'abierto' : 'aplicado', enlace: p.html_url } : null;
 }
 
-/** Abre el pedido por REST: { ok, enlace } | { ok: false, motivo }. Abrirlo no lo completa ni lo mergea (decisión 1). */
+/** Abre el pedido por REST: { ok, enlace } | { ok: false, motivo }. Abrirlo no lo completa ni lo mergea */
 async function abrirPedido({ remote, cred, urlBase, rama, titulo, cuerpo, fetch: f, secretos }) {
   const base = baseDe(remote, urlBase);
   if (remote.platform === 'azure') {
@@ -504,7 +503,7 @@ async function proponer({ clon, archivo: archivoSuelto, contenido, oidEsperado, 
   if (!cred.git || !cred.api) return { ok: false, codigo: 'sin_credencial', message: M('rp.sinCredencial') };
   // varios archivos en un mismo pedido (`archivos: [{ archivo, contenido, oidEsperado }]`), o uno suelto como siempre
   const lista = Array.isArray(varios) ? varios : [{ archivo: archivoSuelto, contenido, oidEsperado }];
-  // sin la versión del archivo que se abrió no se puede saber si otro lo cambió (AC 16): null = «no existía»
+  // sin la versión del archivo que se abrió no se puede saber si otro lo cambió: null = «no existía»
   if (!lista.length || lista.some((x) => !x || x.oidEsperado === undefined)) return { ok: false, codigo: 'sin_version', message: M('rp.sinVersion') };
   if (!clon || !idCorto || lista.some((x) => !x.archivo || typeof x.contenido !== 'string')) return { ok: false, codigo: 'git', message: M('rp.faltanDatos') };
   const archivo = lista.map((x) => x.archivo).join(', ');
@@ -536,7 +535,7 @@ async function proponer({ clon, archivo: archivoSuelto, contenido, oidEsperado, 
     if (puntaR.status !== 0) return { ok: false, codigo: 'git', message: M('rp.sinPunta', { rama: RAMA_PRINCIPAL, error: fallaGit(puntaR, 'git rev-parse') }) };
     const punta = String(puntaR.stdout).trim();
 
-    // 2. ¿cambió algún archivo desde que se abrió la sección? (decisión 3)
+    // 2. ¿cambió algún archivo desde que se abrió la sección?
     for (const x of lista) {
       const oidR = await correr(['rev-parse', '--verify', '--quiet', `${punta}:${x.archivo}`], { cwd: clon, env });
       const oidActual = oidR.status === 0 ? String(oidR.stdout).trim() : null;
@@ -548,7 +547,7 @@ async function proponer({ clon, archivo: archivoSuelto, contenido, oidEsperado, 
       return { ok: false, codigo: 'cambio', message: M('rp.cambio'), oidActual, ...(lista.length > 1 ? { archivo: x.archivo } : {}), ...(oidActual && textoActual === null ? {} : { textoActual }) };
     }
 
-    // 3. ¿ya hay un pedido abierto sobre este archivo? (decisión 3)
+    // 3. ¿ya hay un pedido abierto sobre este archivo?
     const abierto = await pedidoAbierto({ remote, credencial: cred, idCorto, urlBase, fetch: f });
     if (abierto && abierto.error) return { ok: false, codigo: 'no_se_pudo_leer', message: M('rp.noVerifique', { error: abierto.error }) };
     if (abierto) return { ok: false, codigo: 'pedido_abierto', enlace: abierto.enlace, rama: abierto.rama, message: M('rp.yaAbierto', { enlace: abierto.enlace }) };
@@ -596,7 +595,7 @@ async function proponer({ clon, archivo: archivoSuelto, contenido, oidEsperado, 
     }
     registrar(`propuesta de ${archivo}: rama ${rama} empujada`);
 
-    // 6. el pedido (decisión 10: uno por archivo, con las secciones)
+    // 6. el pedido (uno por archivo, con las secciones)
     // con la opción de aplicar solo, el pedido dice quién lo pidió y que lo aplica el sitio (el registro de quién lo hizo)
     const cuerpo = cuerpoDelPedido({ secciones, quien, aplicarSolo, marca });
     const pedido = await abrirPedido({ remote, cred, urlBase, rama, titulo, cuerpo, fetch: f, secretos });
@@ -629,7 +628,7 @@ function envDeGit(origen, cabecera) {
   return env;
 }
 
-// ── lo que la pestaña Configuración lee de cada plataforma, sin escribir nada (story 2.29, AC 7 y 8) ─────────────────
+// ── lo que la pestaña Configuración lee de cada plataforma, sin escribir nada ─────────────────
 /** El enlace web a un archivo de la rama principal de un repo, o null si la plataforma no se reconoce. */
 function enlaceArchivo(remote, rel) {
   if (!remote || !remote.web) return null;
@@ -639,7 +638,7 @@ function enlaceArchivo(remote, rel) {
 }
 
 /**
- * La propuesta de stages de un pipeline (AC 8): sólo lee, con la credencial de sólo lectura de pipelines. En Azure
+ * La propuesta de stages de un pipeline: sólo lee, con la credencial de sólo lectura de pipelines. En Azure
  * DevOps, `pipeline` es el número de la definición: se leen la última corrida terminada de la rama principal y su
  * timeline, y se proponen los identificadores de stage (el nombre visible va al lado, sólo como ayuda). En GitHub,
  * `pipeline` es `dueño/repo` del producto: se proponen sus environments. `{ ok, propuestos: [{ identificador, nombre,
@@ -654,9 +653,9 @@ async function stagesPropuestos({ pipeline, remote, token, urlBase = {}, fetch =
     return r.json();
   };
   // Azure: «<número>» (en el proyecto del repo de operaciones) o «<proyecto>/<número>» (los ids de definición son por
-  // proyecto: un producto que vive en otro proyecto se nombra con el suyo; pase adversarial de la 2.29)
-  // un segmento hecho sólo de puntos («.», «..») subiría de nivel en la ruta de la API: no es un nombre (revisión de
-  // seguridad de la 2.29); los demás van codificados
+  // proyecto: un producto que vive en otro proyecto se nombra con el suyo)
+  // un segmento hecho sólo de puntos («.», «..») subiría de nivel en la ruta de la API: no es un nombre;
+  // los demás van codificados
   const sinPuntos = (s) => !/^\.+$/.test(s);
   const az = /^(?:([^/]+)\/)?(\d+)$/.exec(p);
   if (az && az[1] !== undefined && !sinPuntos(az[1])) return { ok: false, message: M('rp.pipelineNoReconocido') };

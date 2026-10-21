@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# harness-node.sh — qué Node usa un guion de shell del arnés (story 8.39, AC 8).
+# harness-node.sh — qué Node usa un guion de shell del arnés.
 #
 # El arnés baja su propio Node a `<casa>/node/current` (la casa es TYCON_HOME o ~/.tycon; la regla vive en
 # scripts/setup/harness/tycon-home.js#harnessNode, y ésta es una copia declarada en
@@ -7,7 +7,7 @@
 # git, el instalador) lanzan sus `node` con él si está y es ejecutable; si no, con el `node` del PATH, como siempre.
 #
 # Se carga con `.` y deja UNA función; no exporta nada ni cambia el PATH: lo que el guion lance después (el
-# `.githooks/pre-commit` del repo del dev, `npm install -g`) sigue con el Node del dev (decisión 2 de la story).
+# `.githooks/pre-commit` del repo del dev, `npm install -g`) sigue con el Node del dev.
 #
 #   . "<árbol>/scripts/lib/harness-node.sh"
 #   HNODE="$(harness_node_bin)"            # la ruta de current, o «node»

@@ -2,17 +2,16 @@
 'use strict';
 
 /**
- * suites-block.js — ¿un rojo NUEVO de suite frena esta validación, o sólo avisa? (story 8.26, tanda C, AC 14)
+ * suites-block.js — ¿un rojo NUEVO de suite frena esta validación, o sólo avisa?
  *
- * POR QUÉ EXISTE. Desde la Etapa 3 del plan de protección (2026-09-17) los rojos nuevos de suite avisan y no frenan: dos
- * suites verdes en una máquina salían rojas en el agente, y no siempre las mismas. Con la validación como control
- * obligatorio de `main` en el repo público (decisión 1 del dueño), el modo aviso tiene que poder salir; pero sacarlo con
- * falsos rojos frena cambios sanos (medido al empezar la tanda C: 5 de 16 validaciones de rama, tasks/measurement-8.26-
- * tanda-c/). El dueño decidió (decisión 10): el freno detrás de un interruptor, que se cambia sin un merge.
+ * POR QUÉ EXISTE. Un rojo nuevo de suite puede avisar sin frenar: dos suites verdes en una máquina pueden salir rojas
+ * en el agente, y no siempre las mismas. Con la validación como control obligatorio de `main` en el repo público, el
+ * modo aviso tiene que poder salir; pero sacarlo con falsos rojos frena cambios sanos. Por eso el freno va detrás de
+ * un interruptor, que se cambia sin un merge.
  *
  * El interruptor es una variable de la definición del pipeline, `HARNESS_SUITES_BLOCK`. Sin ella, decide el repo propio:
- *   · un repo de Azure (la validación del interno, la 170): APAGADO, como hasta hoy;
- *   · un repo de GitHub (la definición nueva, sobre el público): PRENDIDO — si algo falla, falla cerrado.
+ *   · un repo de Azure (la validación del interno, la 170): APAGADO;
+ *   · un repo de GitHub (la definición sobre el público): PRENDIDO — si algo falla, falla cerrado.
  * Un valor que no se entiende frena (y lo dice): un interruptor mal escrito no puede abrir la puerta.
  *
  * La leen dos pasos de la validación: el veredicto (apagado → `pr-verdict.js --suites-warn`) y el que corre las suites

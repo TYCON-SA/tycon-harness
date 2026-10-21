@@ -2,12 +2,10 @@
 /**
  * clean-git-env.js —el git de un sandbox no puede terminar escribiendo en el repo de verdad.
  *
- * 🔴 EL CASO. 2026-09-27: un commit que tocaba `agents/tycon-e2e-realness-checker.md` disparó el
- * chequeo de vida del pre-commit (`advisor-liveness-on-change.js`), el chequeo armó su fixture con
- * `mkFixture()`, y los `git init && git add -A && git commit -qm fixture` del fixture cayeron
- * SOBRE LA RAMA DEL DEV: dos commits `fixture` en la punta, y el árbol del repo reemplazado por el
- * del fixture (un `.spec.ts` de juguete). Se recuperó con `git reset`, pero el commit se perdió y
- * el trabajo estuvo a un `git gc` de ser irrecuperable.
+ * 🔴 QUÉ EVITA. Un chequeo del pre-commit (como `advisor-liveness-on-change.js`) que arma un fixture con
+ * `git init && git add -A && git commit -qm fixture` sin este env escribe SOBRE LA RAMA DEL DEV: deja commits
+ * `fixture` en la punta y reemplaza el árbol del repo por el del fixture. Se recupera con `git reset`, pero el
+ * trabajo queda a un `git gc` de ser irrecuperable.
  *
  * POR QUÉ. git le exporta a sus hooks `GIT_DIR`, `GIT_INDEX_FILE` y compañía. Cualquier `git` que
  * un hook lance las hereda, y esas variables GANAN sobre el `cwd`: `git init` crea el repo del

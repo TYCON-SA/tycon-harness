@@ -3,16 +3,15 @@
 /**
  * ¿Algún paso ESCRIBE EN EL REPOSITORIO o PUBLICA UN ARTEFACTO sin exigir que lo anterior haya salido bien?
  *
- * 🔴 POR QUÉ EXISTE (2026-09-02).
+ * 🔴 POR QUÉ EXISTE.
  *
  * En Azure DevOps, un `condition:` explícito **reemplaza** al `succeeded()` implícito. Es la misma
  * trampa que el arnés ya cerró para las ETAPAS (`check-stage-dependencies.js`) — pero ese
  * control mira etapas y jobs, no pasos, a propósito.
  *
- * Medido ese día en los cinco pipelines de formularios: el paso que commitea y sube el número de
- * versión nuevo tiene condición explícita, y en **cuatro de los cinco** esa condición NO incluye
- * `succeeded()`. Consecuencia: si la construcción de los formularios falla, el paso que arma los
- * paquetes se saltea (ése sí la tiene) pero el commit `chore: update form versions [skip ci]`
+ * En un pipeline de formularios, el paso que commitea y sube el número de versión nuevo tiene
+ * condición explícita. Si esa condición NO incluye `succeeded()` y la construcción de los
+ * formularios falla, el paso que arma los paquetes se saltea (ése sí la tiene) pero el commit `chore: update form versions [skip ci]`
  * **entra a la rama principal igual**. Tres daños encadenados:
  *
  *   1. la rama principal dice que se publicó una versión que no existe;
@@ -20,14 +19,10 @@
  *   3. al re-correr, el envío queda rechazado y hace falta una corrida manual — que sube la
  *      versión de TODOS los formularios.
  *
- * 🔴 ALCANCE: pasos que **escriben en el repositorio** (git commit/push/tag) y, desde el
- * 2026-09-03, pasos que **publican un artefacto** (PublishPipelineArtifact / PublishBuildArtifacts).
- * Nació acotado al primero A PROPÓSITO: los cinco pipelines de formularios publicaban sus ZIP sin
- * la cláusula y eso estaba declarado como deuda con fecha — un control que nace rojo por diez
- * hallazgos que el plan excluye es un control que se apaga, y se lleva puestos los casos donde sí
- * importaba. Ese mismo día se arreglaron los cinco (`and(succeeded(), …)` en Prepare y Publish),
- * así que el alcance se amplió SIN nacer rojo: medido sobre los 14 pipelines publicados, cero
- * hallazgos; sobre la evidencia congelada del 2026-09-02, 4 commits + 5 publicaciones (caso 8).
+ * 🔴 ALCANCE: pasos que **escriben en el repositorio** (git commit/push/tag) y pasos que
+ * **publican un artefacto** (PublishPipelineArtifact / PublishBuildArtifacts). Los pipelines de
+ * formularios llevan `and(succeeded(), …)` en Prepare y Publish; un control con hallazgos que el
+ * plan excluye es un control que se apaga, y se lleva puestos los casos donde sí importaba.
  * Copiar o empaquetar NO es publicar: el alcance es lo que SALE del pipeline (el paquete o el
  * commit), no los pasos intermedios.
  *
@@ -60,7 +55,7 @@ function pasosQueEscriben(texto) {
       if (actual) pasos.push(actual);
       // 🔴 El resto de la línea de arranque ES cuerpo. Un guion en una sola línea
       // (`- script: git push origin main`) tiene el comando ahí y en ninguna otra parte:
-      // saltearla dejaba pasar exactamente esa forma. Lo cazaron los casos 6 de la suite.
+      // saltearla dejaría pasar exactamente esa forma. La cubren los casos de la suite.
       actual = { indent: inicio[1].length, linea: i + 1, nombre: null, condicion: null, cuerpo: [inicio[3] || ''] };
       continue;
     }

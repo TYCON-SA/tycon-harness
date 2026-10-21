@@ -1,14 +1,12 @@
 #!/usr/bin/env node
 /**
  * manifest-engram.js — el criterio único: ¿el índice de memoria declara todos sus archivos?
- * (story 1.6, 2026-09-17)
  *
  * La memoria del equipo viaja por git en dos piezas: los chunks (`.engram/chunks/<id>.jsonl.gz`,
  * los datos) y el índice (`.engram/manifest.json`, la lista de cuáles existen). `engram sync
  * --import` lee EL ÍNDICE, no la carpeta: **un chunk sin entrada no existe para las demás
- * máquinas, y no da error** — el síntoma es un tranquilizador «no new chunks». El 2026-09-17 el
- * commit ad4f498 de este repo dejó 205 entradas para 210 archivos y nada lo objetó; la entrada
- * perdida no vuelve sola (ni `sync`, ni `--import`, ni tener el chunk en disco la recuperan).
+ * máquinas, y no da error** — el síntoma es un tranquilizador «no new chunks». Un commit puede dejar
+ * 205 entradas para 210 archivos sin que nada lo objete; la entrada perdida no vuelve sola (ni `sync`, ni `--import`, ni tener el chunk en disco la recuperan).
  *
  * Tres controles preguntan lo mismo en momentos distintos —el hook del commit, el aviso diario
  * (vía harness-audit.js) y el portón de CI— así que el criterio se escribe UNA vez, acá. Si se
@@ -16,7 +14,7 @@
  * que quede viejo miente en silencio. Es la misma regla que ya está escrita en la cabecera de
  * `engram-drift-notice.js`: reusar los chequeos, no reimplementarlos.
  *
- * Qué NO hace, a propósito (decisiones del dev, ver la story §Decisiones):
+ * Qué NO hace, a propósito:
  *   · no repara dentro del commit — reparar cambia lo que se commitea sin que se vea, que es el
  *     mismo silencio que esto combate. El bloqueo NOMBRA el comando; lo corre una persona.
  *   · no borra nunca una entrada (fantasmas y duplicados se listan: borrar es otra decisión).
@@ -106,9 +104,9 @@ function leerIndiceDeArbol(dir, ref) {
   return parsearIndice(r.out);
 }
 function leerChunksDeArbol(dir, ref) {
-  // 🔴 `:/` ancla el pathspec a la RAÍZ del repo (2026-09-17, pase adversarial), igual que el
-  // `git show <ref>:<path>` con el que se lee el índice. Sin eso, el pathspec es relativo al CWD: si
-  // `dir` es un subdirectorio, la lista salía vacía y TODAS las entradas se reportaban como fantasma.
+  // 🔴 `:/` ancla el pathspec a la RAÍZ del repo, igual que el `git show <ref>:<path>` con el que se lee el
+  // índice. Sin eso, el pathspec es relativo al CWD: si `dir` es un subdirectorio, la lista sale vacía y TODAS las
+  // entradas se reportan como fantasma.
   const r = gitOk(dir, ['ls-tree', '-r', '--name-only', ref || 'HEAD', '--', ':/' + REL_CHUNKS]);
   if (!r.ok) return { error: { codigo: 'chunks-ilegibles', motivo: `no se pudo listar ${REL_CHUNKS}/ en \`${ref || 'HEAD'}\`: ${r.motivo}` } };
   return {
@@ -244,10 +242,9 @@ function cruzar(dir, opciones) {
  * serializar(manifest) — EXACTAMENTE como lo escribe engram 1.20.0: JSON con indentación de 2 y
  * **sin salto de línea final** (el archivo termina en `]\n}`).
  *
- * 🔴 El salto final importa: `engram-rescue-unexported.js` escribía uno, así que cada sync
- * posterior lo sacaba y el archivo aparecía modificado en cada commit sin que nadie lo tocara.
- * Verificado el 2026-09-17 sobre el índice real de este repo (227 entradas, 40.677 bytes): ida y
- * vuelta idéntica byte a byte. Si engram algún día cambia el formato, el caso T12 de la suite es
+ * 🔴 El salto final importa: si se escribiera uno, cada sync posterior lo sacaría y el archivo aparecería
+ * modificado en cada commit sin que nadie lo tocara. Sobre un índice real (227 entradas, 40.677 bytes) la ida y
+ * vuelta es idéntica byte a byte. Si engram algún día cambia el formato, el caso T12 de la suite es
  * el que avisa.
  */
 function serializar(manifest) {
@@ -289,8 +286,8 @@ function fechaUtc(iso) {
  * FRESNOProyecto), de la más nueva a la más vieja, y se queda con la primera que declare cada id.
  * Nunca inventa: si nadie la tuvo, el id no aparece en el resultado.
  *
- * Costo: un `git show` por versión del índice, cortando apenas no quedan pendientes. Medido en este
- * repo (2026-09-17, 197 versiones): **3,8 s en el peor caso** — un id que nadie tuvo nunca, que
+ * Costo: un `git show` por versión del índice, cortando apenas no quedan pendientes. Medido con
+ * 197 versiones: **3,8 s en el peor caso** — un id que nadie tuvo nunca, que
  * obliga a recorrerlas todas. Lo paga sólo la REPARACIÓN, que corre una persona y una vez; el cruce
  * del commit no entra acá y cuesta ~70 ms.
  */
@@ -298,12 +295,11 @@ function rescatarDeLaHistoria(dir, ids) {
   const pendientes = new Set(ids);
   const encontradas = new Map();
   if (!pendientes.size) return encontradas;
-  // 🔴 `--full-history` (2026-09-17, pase adversarial): sin él, git SIMPLIFICA la historia y en un
-  // merge TREESAME a un padre para ESTE path poda el otro lado entero — que es exactamente donde
-  // vive la entrada perdida del caso canónico. La maniobra que la propia guía prescribe para un
-  // conflicto del índice (`git checkout --theirs`) produce ese merge. Sin la bandera, `reparar`
-  // reconstruía desde el chunk (autor y fecha equivocados) una entrada que git tenía entera; y con
-  // el chunk ilegible la declaraba irreparable. Reproducido con un pull con conflicto.
+  // 🔴 `--full-history`: sin él, git SIMPLIFICA la historia y en un merge TREESAME a un padre para ESTE path poda
+  // el otro lado entero — que es exactamente donde vive la entrada perdida. La maniobra que la propia guía prescribe
+  // para un conflicto del índice (`git checkout --theirs`) produce ese merge. Sin la bandera, `reparar` reconstruye
+  // desde el chunk (autor y fecha equivocados) una entrada que git tiene entera; y con el chunk ilegible la declara
+  // irreparable.
   const log = gitOk(dir, ['log', '--all', '--full-history', '--format=%H', '--', REL_INDICE]);
   if (!log.ok) return encontradas;
   for (const sha of log.out.split('\n').map((s) => s.trim()).filter(Boolean)) {
@@ -330,8 +326,8 @@ function reconstruirDelChunk(dir, id) {
   let autor = '', fecha = '';
   const r = gitOk(dir, ['log', '--format=%an|%aI', '-1', '--', path.join(REL_CHUNKS, id + SUFIJO)]);
   if (r.ok && r.out.trim()) {
-    // 🔴 Por el ÚLTIMO separador, no el primero (2026-09-17, pase adversarial): un autor con `|` en
-    // el nombre truncaba el autor y dejaba la fecha ilegible → created_at de 1970. La fecha ISO
+    // 🔴 Por el ÚLTIMO separador, no el primero: un autor con `|` en el nombre truncaría el autor y dejaría la
+    // fecha ilegible → created_at de 1970. La fecha ISO
     // nunca trae `|`, así que el último separador siempre es el que divide.
     const linea = r.out.trim().split('\n')[0];
     const i = linea.lastIndexOf('|');
@@ -379,19 +375,18 @@ function reparar(dir, opciones) {
   const o = opciones || {};
   const apply = !!o.apply;
   const cruce = cruzar(dir, { contra: o.contra === undefined ? 'HEAD' : o.contra });
-  // 🔴 `null`, NO listas vacías (arreglo del 2026-09-17, hallazgo del cazador de fallos silenciosos
-  // sobre esta misma story). Devolver `reparadas: []` cuando no se pudo medir es indistinguible de
-  // «miré y no había nada que reparar» — y así `reindexar()` imprimía «✅ Todo chunk está en el
-  // índice» y salía 0 sobre un índice que nunca pudo leer. Es EXACTAMENTE el daño que esta story
-  // combate, adentro de la herramienta que la story recomienda para repararlo. Con `null`, el
+  // 🔴 `null`, NO listas vacías. Devolver `reparadas: []` cuando no se pudo medir es indistinguible de
+  // «miré y no había nada que reparar» — y así `reindexar()` imprimiría «✅ Todo chunk está en el
+  // índice» y saldría 0 sobre un índice que nunca pudo leer. Es EXACTAMENTE el daño que este criterio
+  // combate, adentro de la herramienta que recomienda para repararlo. Con `null`, el
   // consumidor que no mire `estado` se rompe ruidosamente en vez de mentir en silencio.
   if (cruce.estado === 'no-medido') return { ...cruce, aplicado: false, reparadas: null, noReparadas: null };
 
   const faltantes = cruce.huerfanos;
-  // 🔴 Sin huérfanos NO quiere decir «sano» (2026-09-17, pase adversarial): puede haber fantasmas o
-  // duplicados, que esta función no repara a propósito (D5: borrar es otra decisión) pero SÍ tiene
-  // que listar. Antes cortaba acá con «no hay nada que reparar» y exit 0 sobre un índice que el
-  // cruce acababa de declarar en deriva — y es el comando que el hook y el aviso diario recomiendan.
+  // 🔴 Sin huérfanos NO quiere decir «sano»: puede haber fantasmas o duplicados, que esta función no repara a
+  // propósito (borrar es otra decisión) pero SÍ tiene que listar. Cortar acá con «no hay nada que reparar» y exit 0
+  // daría por bueno un índice que el cruce acaba de declarar en deriva — y es el comando que el hook y el aviso
+  // diario recomiendan.
   if (!faltantes.length) {
     return { ...cruce, aplicado: false, reparadas: [], noReparadas: [], verificado: null };
   }
@@ -423,14 +418,13 @@ function reparar(dir, opciones) {
   if (reparadas.length) {
     for (const r of reparadas) insertarPorFecha(manifest.chunks, r.entrada);
     fs.writeFileSync(fIndice, serializar(manifest));
-    // 🔴 Se stagea el índice Y cada chunk que acaba de declarar (2026-09-17, pase adversarial).
+    // 🔴 Se stagea el índice Y cada chunk que acaba de declarar.
     // En el caso `chunk-sin-entrada` el archivo todavía no está en git: stagear sólo el índice
-    // producía el commit INVERSO al que la story combate — una entrada cuyo archivo no viaja — y
-    // el cruce local decía «sano» porque en disco están los dos.
+    // produciría el commit INVERSO al que este criterio combate — una entrada cuyo archivo no viaja — y
+    // el cruce local diría «sano» porque en disco están los dos.
     const aStagear = [REL_INDICE, ...reparadas.map((r) => path.join(REL_CHUNKS, r.id + SUFIJO))];
-    // 🔴 Y se mira si el `git add` salió bien (cazador de fallos silenciosos, vuelta 2): un chunk que
-    // un `.gitignore` excluye, o un permiso, dejaban el mensaje diciendo «stageado» sin haberlo
-    // corroborado. Si falla, se dice y `reparado` queda en false: el índice quedó escrito, pero el
+    // 🔴 Y se mira si el `git add` salió bien: un chunk que un `.gitignore` excluye, o un permiso, dejarían el
+    // mensaje diciendo «stageado» sin haberlo corroborado. Si falla, se dice y `reparado` queda en false: el índice quedó escrito, pero el
     // commit no se lo va a llevar entero.
     const add = gitOk(dir, ['add', '--', ...aStagear]);
     if (!add.ok) avisos.push(`no pude stagear todo lo reparado (el índice puede haber quedado stageado y algún archivo no): ${add.motivo}`);
@@ -464,9 +458,9 @@ function verificarConImportador(dir, archivos) {
       env: { ...process.env, ENGRAM_DATA_DIR: tmpBase },
     });
     // 🔴 El engram REAL (1.20.0) imprime «Imported 3 new chunk(s) from .engram/»: entre el número
-    // y «chunk» hay una palabra. Con `\s+` el match era null SIEMPRE, así que la comparación del
-    // AC 17 no corría nunca y la alarma de desajuste era inalcanzable — en toda máquina con engram
-    // instalado esto decía «no pude leer cuántos chunks vio» tras una reparación correcta.
+    // y «chunk» hay una palabra. Con `\s+` el match sería null SIEMPRE, así que la comparación de
+    // chunks no correría nunca y la alarma de desajuste sería inalcanzable — en toda máquina con engram
+    // instalado esto diría «no pude leer cuántos chunks vio» tras una reparación correcta.
     const n = (out.match(/(\d+)[^\n]*?\bchunks?\b/i) || [])[1];
     if (n === undefined) return `importé sobre una base descartable y no pude leer cuántos chunks vio: ${out.trim().split('\n').slice(-1)[0] || '(sin salida)'}`;
     return Number(n) === archivos
@@ -551,8 +545,8 @@ function main(argv) {
 
   if (cmd === 'cross') {
     // `--staged`: «lo nuevo» es el ÍNDICE de git — lo que el commit va a llevar — y no el disco.
-    // Es lo que usa el hook del commit (2026-09-17, pase adversarial: cruzaba el árbol de trabajo,
-    // y con un índice truncado stageado y el disco sano quedaba MUDO mientras el commit entraba).
+    // Es lo que usa el hook del commit: cruzar el árbol de trabajo dejaría MUDO un índice truncado stageado con el
+    // disco sano, mientras el commit entra.
     const opciones = contraCrudo === undefined ? {} : { contra: contraCrudo };
     if (tiene('--staged')) opciones.arbol = '';
     const r = cruzar(dir, opciones);
@@ -571,11 +565,11 @@ function main(argv) {
 module.exports = { cruzar, serializar, reparar, contarChunk, parsearIndice, insertarPorFecha, comandoDeReparacion, REL_INDICE, REL_CHUNKS };
 
 if (require.main === module) {
-  // El subcomando y la opción viejos siguen andando (story 8.9, tanda B3a). Viejo y nuevo juntos: 3, el «no se pudo
+  // El subcomando y la opción viejos siguen andando. Viejo y nuevo juntos: 3, el «no se pudo
   // medir» de este criterio (nunca 2, que es el bloqueo de los hooks). Sin la biblioteca (una copia suelta), paso directo.
   try { require('./legacy-names.js').aliasArgv('scripts/lib/manifest-engram.js', { exitCode: SALIDA.NO_MEDIDO }); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; }
   // `exitCode`, no `process.exit()`: el reporte `--json` es grande, y con la salida por un caño `process.exit()` corta
   // lo que el caño todavía no tomó (en macOS llegaron 8192 bytes de 12 495: el intermitente de T34 de
-  // legacy-names-b3.test.js, 2026-10-04). `main` es toda sincrónica: al volver no queda nada pendiente salvo esa salida.
+  // legacy-names-b3.test.js). `main` es toda sincrónica: al volver no queda nada pendiente salvo esa salida.
   process.exitCode = main(process.argv.slice(2));
 }

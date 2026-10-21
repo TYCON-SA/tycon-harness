@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * state-age.js — cuántas stories llevan más de N días paradas en su estado, por producto y estado (story 2.26).
+ * state-age.js — cuántas stories llevan más de N días paradas en su estado, por producto y estado.
  *
- * La auditoría de los tableros del 2026-10-15 encontró más de cien stories en revisión y una página que no decía
- * cuántas llevaban semanas ahí. El dato ya está en cada foto por proyecto (`dias_en_estado`, story 2.20, calculado con
+ * Responde cuántas stories llevan semanas paradas en un estado (por ejemplo, en revisión).
+ * El dato ya está en cada foto por proyecto (`dias_en_estado`, calculado con
  * las transiciones del medidor): acá sólo se suma. Sin medir nada de nuevo y sin escribir nada.
  *
  *   stateAge({ photosDir, products, today, dias }) →
@@ -12,14 +12,14 @@
  *   - `products`: el `repos.json` de la organización ({ repos: [...] } o la lista). El producto de una foto es el de las
  *     entradas cuyo proyecto de Azure DevOps (el tramo de `ado` antes de `/`, decodificado) coincide con su `proyecto`.
  *     Sin entrada, la foto cuenta con el nombre de su proyecto y `sin_producto_declarado: true`; con entradas de dos
- *     productos, cuenta en cada uno con `compartido_con: N`, y el titular la cuenta una vez (la regla de la 2.23).
+ *     productos, cuenta en cada uno con `compartido_con: N`, y el titular la cuenta una vez (la misma regla del sitio de la organización).
  *   - `dias`: `sources.json → params.edad_en_estado_dias`, dos enteros crecientes. Sin ellos, «no medido»: ningún
  *     umbral escrito en el código.
  *   - Por producto y estado canónico: `total`, `mas_de_<d1>`, `mas_de_<d2>` (estrictamente más) y `sin_dato`. Las del
  *     grupo `cerrado` y `sin_entrega` no cuentan; las `desconocido`, sólo en `desconocido`. Una story con
  *     `dias_en_estado: null` va a `sin_dato`, nunca a «menos de N»: «no medido» no es cero.
  *   - `paradas` (en curso con más del primer umbral) y `sin_medir` (en curso sin dato): la definición de «parada» que
- *     usa el sitio de la organización (story 2.23), en un solo lugar.
+ *     usa el sitio de la organización, en un solo lugar.
  *   - El titular suma sólo lo empezado (grupos `en_curso` y `bloqueado`): una story de backlog vieja no está parada.
  *   - Una foto de más de 2 días antes de `today`, o ilegible, es «no medido» para ese repo, con su motivo.
  *   - Sólo conteos: ningún id, título ni ruta de story sale de acá.
@@ -79,7 +79,7 @@ function stateAge({ photosDir, products, today, dias } = {}) {
     porProyecto.get(p).add(r.producto);
   }
   // Las claves separan lo declarado de lo que no: un proyecto sin declarar que se llama como un producto declarado de
-  // otro proyecto sale aparte, nunca mezclado con él (pase adversarial).
+  // otro proyecto sale aparte, nunca mezclado con él.
   const productos = new Map();   // `p:<producto>` | `s:<proyecto>` → acumulado
   const nuevo = (nombre, extra) => ({ producto: nombre, ...extra, fotos: 0, por_estado: {}, desconocido: 0, paradas: 0, sin_medir: 0, repos_no_medidos: [] });
   for (const nombre of new Set((repos || []).map((r) => r && r.producto).filter(Boolean))) productos.set(`p:${nombre}`, nuevo(nombre, {}));

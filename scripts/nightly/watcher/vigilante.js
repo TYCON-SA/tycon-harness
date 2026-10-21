@@ -1,15 +1,14 @@
 #!/usr/bin/env node
 /**
- * vigilante.js — el vigilante de producción del arnés TYCON (Tanda 3 del plan vs el playbook).
+ * vigilante.js — el vigilante de producción del arnés TYCON.
  *
  * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────────────────
  * El arnés vigila cómo se FABRICA el software. Lo que está entregado y corriendo lo vigila un
- * humano: medido sobre nuestros propios casos, **11 de 11 incidentes de producción (abr→ago 2026)
- * los detectó una persona** — un gestor, un supervisor, un usuario, el dev usando la app — y en 4
- * el dato ya estaba en una tabla antes de que alguien avisara
- * (el inventario de telemetría de producción del equipo que lo escribió, 2026-08-30, §2.2; no viaja).
+ * humano: los incidentes de producción los detecta una persona
+ * — un gestor, un supervisor, un usuario, el dev usando la app — y muchas veces
+ * el dato ya está en una tabla antes de que alguien avise.
  *
- * Las alertas de Azure del Día 0 avisan QUE algo pasó. Esto hace lo que ninguna alerta hace: entra
+ * Las alertas de Azure avisan QUE algo pasó. Esto hace lo que ninguna alerta hace: entra
  * a mirar POR QUÉ, agrupa la evidencia y deja un borrador para que a la mañana una persona decida.
  *
  * 🔴 **Sin humano en el disparo, con humano en toda acción.** Detecta, diagnostica y propone.
@@ -18,15 +17,14 @@
  *
  * ── LA FRONTERA CON LAS ALERTAS DE AZURE (regla permanente) ─────────────────────────────────────
  * Si un problema se puede expresar como "una métrica que Azure ya tiene cruzó un número", NO es de
- * esta pieza: es una alerta de Azure que falta crear. Lo que vive acá es lo SUB-UMBRAL: el
- * incidente #9 fueron 8 errores en 2 horas y el #11 fueron 11 en 7 días — ninguno llega al "más de
- * 5 en 5 minutos" que dispara la alerta. Calibrado contra los 11 incidentes reales: este diseño
- * habría levantado 6; las alertas de Azure, 1; y no se solapan.
+ * esta pieza: es una alerta de Azure que falta crear. Lo que vive acá es lo SUB-UMBRAL: por
+ * ejemplo, 8 errores en 2 horas, u 11 en 7 días — ninguno llega al "más de
+ * 5 en 5 minutos" que dispara la alerta. Esta pieza y las alertas de Azure no se solapan.
  *
  * ── QUÉ LEE ─────────────────────────────────────────────────────────────────────────────────────
  * Sólo la API de administración del host Bizuit, con las credenciales que YA usan los pipelines de
- * deploy (`BIZEXT_<PROD>_USER/PASS`). No hay conexión de servicio a Azure en la organización
- * (verificado), así que Application Insights queda fuera de v1 con su gatillo declarado.
+ * deploy (`BIZEXT_<PROD>_USER/PASS`). No hay conexión de servicio a Azure en la organización,
+ * así que Application Insights queda fuera de v1 con su gatillo declarado.
  *
  * Uso:
  *   node vigilante.js run    [--config <hosts.json>] [--fixture <dir>] [--out <dir>] [--pending <dir>] [--json] [--dry-run]
@@ -55,11 +53,11 @@ const path = require('path');
 const crypto = require('crypto');
 const https = require('https');
 
-// story 8.12 (tanda R4): el guion vive en scripts/nightly/watcher/, tres niveles bajo la raíz del repo
+// El guion vive en scripts/nightly/watcher/, tres niveles bajo la raíz del repo
 const RAIZ = path.resolve(__dirname, '..', '..', '..');
 const CONFIG_DEF = path.join(__dirname, 'hosts.json');
 const OUT_DEF = path.join(RAIZ, '.dashboard', 'vigilante');
-// story 8.9 (tanda F): la cola de borradores vive en inbox/watcher/; la foto de la noche sigue en .dashboard/vigilante/
+// La cola de borradores vive en inbox/watcher/; la foto de la noche, en .dashboard/vigilante/
 const PENDING_DEF = path.join(RAIZ, 'inbox', 'watcher');
 
 // ── utilidades ─────────────────────────────────────────────────────────────────────────────────
@@ -79,7 +77,7 @@ function parseArgs(argv) {
     else if (v === '--pending') a.pending = path.resolve(argv[++i]);
     else if (v === '--draft') a.borrador = path.resolve(argv[++i]);
     else if (v === '--today') a.hoy = argv[++i]; // sólo para tests: fija la fecha de la corrida
-    // `note` (story 4.2): lo único que escribe el borrador desde afuera de una corrida. Lo llama
+    // `note`: lo único que escribe el borrador desde afuera de una corrida. Lo llama
     // scripts/ci/open-pr-per-finding.sh, que no conoce el formato de ninguna de las dos colas.
     else if (v === '--card') a.ficha = path.resolve(argv[++i]);
     else if (v === '--pr') a.pr = argv[++i];
@@ -159,7 +157,7 @@ function normalizarEjecucion(row) {
  *
  * Por eso lo que se persiste es el mensaje NORMALIZADO (que es además el que agrupa), con los
  * patrones peligrosos tachados. El crudo no se guarda: si hace falta, está en el host, que es donde
- * corresponde. Lo cazó el pase adversarial de la pieza.
+ * corresponde.
  */
 const PATRONES_SENSIBLES = [
   [/(password|pwd|pass|secret|token|apikey|api[-_]?key|authorization)\s*[=:]\s*[^\s;,)"']+/gi, '$1=<tachado>'],
@@ -217,7 +215,7 @@ function postLogin(baseUrl, user, pass, timeoutMs = 20000) {
     let req;
     try {
       // 🔴 La ruta real es `api/auth/login` (AuthenticationController), no `api/admin/login`:
-      // esa devolvía 404 en los tres hosts. Verificado contra producción antes de shipear.
+      // esa devuelve 404 en los hosts.
       req = https.request(`${baseUrl}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(cuerpo) },
@@ -361,9 +359,9 @@ function evaluar({ producto, ejecuciones, salud, stats, totales, base, cfg, modo
   const errores = ejecuciones.filter((e) => e.estado >= 500);
   const piso = cfg.umbral_piso;
   // Informativo a nivel producto (va al snapshot). 🔴 NO se usa para silenciar: la marca de "de
-  // esto Azure ya avisó" se decide POR GRUPO más abajo. Antes se estampaba a todos los hallazgos
-  // del producto, así que una ráfaga en un endpoint tapaba del aviso a un plugin caído que no
-  // tenía nada que ver (hallazgo del pase adversarial).
+  // esto Azure ya avisó" se decide POR GRUPO más abajo. Estamparla en todos los hallazgos
+  // del producto haría que una ráfaga en un endpoint tapara del aviso a un plugin caído que no
+  // tiene nada que ver.
   const rafagaAzure = yaAlertadoPorAzure(errores, cfg.umbral_rafaga_azure);
 
   // (1) SALUD — un plugin caído es hallazgo directo, sin línea base. Corre incluso en modo frío:
@@ -388,7 +386,7 @@ function evaluar({ producto, ejecuciones, salud, stats, totales, base, cfg, modo
     }
   }
   // (1b) LATIDO — un plugin que venía recibiendo pedidos y hoy no recibe ninguno. Es lo único que
-  // ve el caso del gateway que "latía" y no atendía (incidente #8): la salud decía Running.
+  // ve el caso de un gateway que "late" y no atiende: la salud dice Running.
   for (const [plugin, info] of Object.entries(salud || {})) {
     if (plugin === '__lista' || !info || typeof info !== 'object' || !info.ultimoPedido) continue;
     const horas = (Date.parse(ahoraIso || new Date().toISOString()) - Date.parse(info.ultimoPedido)) / 3600000;
@@ -443,7 +441,7 @@ function evaluar({ producto, ejecuciones, salud, stats, totales, base, cfg, modo
     const total = totales[`${g.plugin}|${g.endpoint}`] ?? null;
 
     // (2) DERIVA — un tipo de error que NUNCA se había visto. La señal más limpia del corpus
-    // (incidente #6: MissingMethodException nueva tras un update del framework).
+    // (por ejemplo, una MissingMethodException nueva tras un update del framework).
     const esNuevo = m === null || m === 0;
     // (3) GOTEO — persistente por debajo del umbral de ráfaga de Azure.
     const esGoteo = n >= umbral;
@@ -459,10 +457,10 @@ function evaluar({ producto, ejecuciones, salud, stats, totales, base, cfg, modo
         `${n} × ${g.estado} en la ventana (mediana previa ${m}, umbral ${umbral}).`, grupoYaAlertado));
     } else {
       // (4) DESAGREGACIÓN — el total está sano pero una rebanada concentra los errores.
-      // Es el incidente #9: una cuenta de servicio perdió un permiso y sólo ella fallaba; todo lo
-      // que Azure mira decía "bien".
+      // Por ejemplo, una cuenta de servicio pierde un permiso y sólo ella falla; todo lo
+      // que Azure mira dice "bien".
       // 🔴 UN solo hallazgo por grupo: usuario e IP suelen ser la misma persona, y como los dos
-      // comparten la huella, el segundo borrador PISABA al primero (pase adversarial).
+      // comparten la huella, el segundo borrador PISARÍA al primero.
       let reportado = false;
       for (const dim of ['usuario', 'ip']) {
         if (reportado) break;
@@ -532,12 +530,12 @@ function camposDe(texto) {
     huella: g('huella'), veredicto: g('veredicto'), severidad: g('severidad'),
     vista_por_ultima_vez: g('vista_por_ultima_vez'), noches_seguidas: Number(g('noches_seguidas')) || 1,
     // `null` es el valor vacío del sello, no una fecha: sin este colapso un borrador recién
-    // escrito parecía ya recordado y el recordatorio no sonaba NUNCA (lo cazó su propio test).
+    // escrito parecería ya recordado y el recordatorio no sonaría NUNCA.
     recordado_el: g('recordado_el') === 'null' ? null : g('recordado_el'),
     plugin: g('plugin'), endpoint: g('endpoint'),
     // El diagnóstico se escribe con JSON.stringify y suele traer comillas ADENTRO (el nombre del
-    // plugin va entrecomillado), así que el lector escalar de arriba lo devolvía vacío — y el PR
-    // salía con el título mocho y "(sin diagnóstico)" en el cuerpo. Lo cazó la primera corrida.
+    // plugin va entrecomillado), así que el lector escalar de arriba lo devolvería vacío — y el PR
+    // saldría con el título mocho y "(sin diagnóstico)" en el cuerpo.
     diagnostico: leerTexto(texto, 'diagnostico'),
   };
 }
@@ -575,10 +573,10 @@ function escribirBorrador(dir, h, fecha, extra) {
     ...(extra && extra.yaAlertado ? ['ya_alertado_por_azure: true  # no suena: complementa el mail que el equipo ya recibió'] : []),
     'evidencia:',
     ...(h.evidencia || []).map((e) => `  - ${JSON.stringify(e)}`),
-    // 🔴 El hecho ya se había decidido y volvió después del silencio. `cmdRun` calculaba esta marca
-    // y la TIRABA: no viajaba al borrador ni al snapshot, así que nadie —ni la persona que lo
-    // recibe, ni el pull request— podía distinguir un hecho nuevo de uno que ya se descartó una
-    // vez. Con `note --rejected` archivando fichas (story 4.2), esa diferencia pasa a ser lo que
+    // 🔴 El hecho ya se decidió y volvió después del silencio. La marca viaja al borrador y al
+    // snapshot: sin ella nadie —ni la persona que lo
+    // recibe, ni el pull request— puede distinguir un hecho nuevo de uno que ya se descartó una
+    // vez. Con `note --rejected` archivando fichas, esa diferencia es lo que
     // explica por qué algo que "ya se había decidido" está pidiendo decisión de nuevo.
     ...(h.reincidente ? ['reincidente:',
       `  desde: "${h.reincidente.desde}"`,
@@ -656,9 +654,9 @@ function marcarRecordados(borradores, hoy) {
  * A los 7 días sin que nadie lo toque, un pendiente pasa solo a `ignorado`.
  *
  * 🔴 Se mide desde la ÚLTIMA VEZ QUE SE VIO, no desde que se creó. Con la fecha de creación, un
- * problema que sigue vivo —un plugin caído ocho noches seguidas— se auto-archivaba a la séptima
- * y, como el dedup respeta lo archivado, quedaba mudo PARA SIEMPRE. Un problema que persiste tiene
- * que gritar más, no menos. (Reproducido por el pase adversarial: 8 noches, silencio permanente.)
+ * problema que sigue vivo —un plugin caído ocho noches seguidas— se auto-archivaría a la séptima
+ * y, como el dedup respeta lo archivado, quedaría mudo PARA SIEMPRE. Un problema que persiste tiene
+ * que gritar más, no menos.
  */
 function marcarIgnorados(pendingDir, hoy) {
   const dirP = path.join(pendingDir, 'pending');
@@ -694,7 +692,7 @@ async function cmdRun(a) {
   if (!cfg) { console.error(`⚠ no pude leer la config: ${a.config}`); return 1; }
   const hoy = a.hoy || new Date().toISOString().slice(0, 10);
   // 🔴 Desde AHORA hacia atrás, no desde la medianoche del día: con la medianoche la ventana real
-  // era de 33 h (el pipeline corre 08:00 UTC) y la franja 23:00–08:00 se contaba DOS veces, en dos
+  // sería de 33 h (el pipeline corre 08:00 UTC) y la franja 23:00–08:00 se contaría DOS veces, en dos
   // líneas base distintas. Con `--today` (tests) se usa el mediodía de ese día como ancla estable.
   const ancla = a.hoy ? Date.parse(`${hoy}T12:00:00Z`) : Date.now();
   const desde = new Date(ancla - cfg.ventana_horas * 3600 * 1000).toISOString();
@@ -728,16 +726,16 @@ async function cmdRun(a) {
     // 🔴 El hueco se ESCRIBE cada noche. Si el detalle por pedido no llega, deriva y desagregación
     // no tienen insumo — y eso no puede parecerse a "no encontré nada".
     if (datos.degradada) resultado.no_medido.push(`${prod.id}: ${datos.degradada}`);
-    // 🔴 Sólo cuentan las noches en que ESTE producto se pudo medir. Antes, tres noches con las
-    // credenciales rotas consumían el arranque en frío y la primera noche con datos salía en modo
-    // normal con la línea base vacía: un error viejo y conocido se reportaba como "tipo NUEVO,
-    // severidad alta" (pase adversarial).
+    // 🔴 Sólo cuentan las noches en que ESTE producto se pudo medir. Si no, tres noches con las
+    // credenciales rotas consumirían el arranque en frío y la primera noche con datos saldría en modo
+    // normal con la línea base vacía: un error viejo y conocido se reportaría como "tipo NUEVO,
+    // severidad alta".
     const nochesDelProducto = historicos.filter((h) => h.conteos && h.conteos[prod.id] !== undefined);
     const frioProducto = nochesDelProducto.length < cfg.noches_arranque_frio;
     // 🔴 Y se rellena con CERO la noche medida en que la huella no apareció. Sin eso la mediana se
-    // calculaba sólo sobre las noches en que el error existió — un error esporádico (3 ocurrencias
-    // una noche de cada 14) tenía mediana 3 y umbral 9, así que el goteo del incidente #11 quedaba
-    // por debajo. Además `m === 0` era inalcanzable, o sea código muerto.
+    // calcularía sólo sobre las noches en que el error existió — un error esporádico (3 ocurrencias
+    // una noche de cada 14) tendría mediana 3 y umbral 9, así que su goteo quedaría
+    // por debajo. Además `m === 0` sería inalcanzable, o sea código muerto.
     const huellasVistas = new Set();
     for (const h of nochesDelProducto) for (const fp of Object.keys(h.conteos[prod.id])) huellasVistas.add(fp);
     const baseMediana = {};
@@ -769,9 +767,9 @@ async function cmdRun(a) {
       }
     }
     resultado.conteos[prod.id] = conteos;
-    // 🔴 El conteo de errores sale de la fuente que SE USÓ. Antes mostraba las filas de detalle
-    // (0 por el bug del host) mientras el aviso decía 158: dos números distintos para lo mismo en
-    // la misma pantalla es exactamente la confusión que esta pieza existe para evitar.
+    // 🔴 El conteo de errores sale de la fuente que SE USÓ. Mostrar las filas de detalle
+    // (0 por un bug del host) mientras el aviso dice 158 daría dos números distintos para lo mismo en
+    // la misma pantalla, que es exactamente la confusión que esta pieza existe para evitar.
     const erroresContados = datos.fuente === 'ejecuciones'
       ? datos.ejecuciones.filter((x) => x.estado >= 500).length
       : Object.values(datos.stats || {}).reduce((n, st) => n + Object.entries(st.porCodigo || {})
@@ -796,15 +794,15 @@ async function cmdRun(a) {
       //   · `descartado` = alguien lo miró y decidió que no servía → se respeta 60 días;
       //   · `ignorado`   = nadie lo miró → se respeta 7, porque no hubo decisión que respetar.
       // Sin esta ventana, un problema descartado en marzo que VUELVE en agosto por otra causa no
-      // sonaba nunca más (pase adversarial). Y como el propio README dice que ignorado "cuenta
-      // peor que descartado", darle el mismo silencio era contradecirse.
+      // sonaría nunca más. Y como el propio README dice que ignorado "cuenta
+      // peor que descartado", darle el mismo silencio sería contradecirse.
       // 🔴 La MÁS RECIENTE, no la primera que devuelva el sistema de archivos (que no ordena): con
-      // más de una vida archivada de la misma huella, la ventana de silencio se evaluaba contra una
-      // decisión arbitraria y el `reincidente.desde` señalaba una vida cualquiera.
+      // más de una vida archivada de la misma huella, la ventana de silencio se evaluaría contra una
+      // decisión arbitraria y el `reincidente.desde` señalaría una vida cualquiera.
       // 🔴 Lo aceptado (`promoted/`, veredicto `util`) también es una decisión, con la misma ventana
-      // que lo descartado. Antes sólo se miraba `archived/`: un hallazgo aceptado que se repetía la
-      // noche siguiente volvía a escribir su ficha en `pending/` y abría otro borrador y otro pedido
-      // por el mismo hecho, que ya tenía el suyo.
+      // que lo descartado. Mirar sólo `archived/` haría que un hallazgo aceptado que se repite la
+      // noche siguiente vuelva a escribir su ficha en `pending/` y abra otro borrador y otro pedido
+      // por el mismo hecho, que ya tiene el suyo.
       const archivado = abiertos
         .filter((b) => b.campos.huella === h.huella && (b.carpeta === 'archived' || b.carpeta === 'promoted'))
         .sort((a, b) => String(b.campos.vista_por_ultima_vez || b.campos.fecha || '')
@@ -880,13 +878,13 @@ function construirAviso(fecha, hallazgos, noMedido, cfg, recordatorio) {
 }
 
 /**
- * `note` — RECHAZAR EL PULL REQUEST ES `/tycon-vigilante reject` (story 4.2).
+ * `note` — RECHAZAR EL PULL REQUEST ES `/tycon-vigilante reject`.
  *
- * El caso que lo funda: la rama de un hallazgo recibió su pull request, una persona lo rechazó horas
- * después, y a la mañana siguiente el pipeline abrió otro —que también se rechazó, para que apareciera
- * un tercero—. Tres pull requests para una decisión ya tomada, porque
- * "no hay PR activo" y "nunca tuvo uno" se veían igual. La ÚNICA ficha que no se reabrió es la que
- * el dev, además de rechazar, archivó a mano con `/tycon-vigilante reject`: esto automatiza eso.
+ * El caso que lo funda: la rama de un hallazgo recibe su pull request, una persona lo rechaza horas
+ * después, y a la mañana siguiente el pipeline abre otro —que también se rechaza, para que aparezca
+ * un tercero—. Serían tres pull requests para una decisión ya tomada, porque
+ * "no hay PR activo" y "nunca tuvo uno" se ven igual. Lo evita archivar la ficha a mano con
+ * `/tycon-vigilante reject`: esto automatiza eso.
  *
  * 🔴 Y acá el rechazo SÍ archiva, al revés que en dependencias. La diferencia no es un descuido:
  * un borrador del vigilante es una HIPÓTESIS y descartarla es una decisión completa; una ficha de
@@ -983,7 +981,7 @@ function cmdReport(a) {
  *
  * 🔴 Por qué el PR y no un mail: un mail no tiene dueño ni estado — se lee y se pierde. Un PR queda
  * en la lista de cada revisor hasta que alguien lo toca, y el rechazo OBLIGA a escribir el motivo,
- * que hoy dependía de que la persona se acordara. Ese motivo es el dato que calibra la pieza: sin
+ * que si no dependería de que la persona se acordara. Ese motivo es el dato que calibra la pieza: sin
  * él, "no servía" y "nadie lo miró" son indistinguibles, y esa diferencia es la que decide si el
  * vigilante sigue existiendo.
  *
@@ -1052,10 +1050,10 @@ async function main() {
 }
 
 if (require.main === module) {
-  // story 8.9: los nombres viejos (subcomandos y opciones en castellano) siguen andando hasta el retiro
+  // Los nombres viejos (subcomandos y opciones en castellano) siguen andando hasta el retiro
   require('../../lib/legacy-names.js').aliasArgv('scripts/nightly/watcher/vigilante.js', { exitCode: 2, prefix: 'error: ' });
   main().then((c) => process.exit(c || 0)).catch((e) => {
-    // 🔴 Sin esto, una excepción no manejada mataba el proceso y la noche quedaba indistinguible
+    // 🔴 Sin esto, una excepción no manejada mataría el proceso y la noche quedaría indistinguible
     // de una tranquila (el pecado que esta pieza jura no cometer). Se imprime con el mismo texto
     // que busca el pipeline para levantar el aviso.
     console.log(`   ∅ NO MEDIDO — el vigilante se cayó: ${e && e.message}`);
@@ -1065,6 +1063,6 @@ if (require.main === module) {
 }
 module.exports = {
   normalizarMensaje, huella, mediana, evaluar, yaAlertadoPorAzure, camposDe, construirAviso, listarBorradores, escribirBorrador, marcarIgnorados, pendientesQueEnvejecen, marcarRecordados, textoPr, cmdAnotar, cmdReport, leerTexto,
-  // las rutas por omisión, para que una prueba vea adónde escribe la noche sin correrla (story 8.12, T30)
+  // las rutas por omisión, para que una prueba vea adónde escribe la noche sin correrla (T30)
   defaults: { root: RAIZ, config: CONFIG_DEF, out: OUT_DEF, pending: PENDING_DEF },
 };

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 'use strict';
-// export-compare.js — la copia pública antes y después de una mudanza (story 8.12, AC 4 · tanda R2, 2026-10-02)
+// export-compare.js — la copia pública antes y después de una mudanza
 //
-// POR QUÉ EXISTE: la 8.12 muda carpetas enteras del arnés (R2, R4, R5, R6) y el exportador nombra muchas de esas rutas
-// (exclusiones fijas, «in» y «out» de la lista blanca). Una mudanza que se olvida de mover un glob puede publicar en
-// silencio lo que antes quedaba excluido, o dejar afuera lo que salía. El AC 4 pide que cada tanda que toca una ruta que
-// el exportador nombra compare la copia de antes con la de después y que la diferencia sea SÓLO de rutas. Este ayudante
-// lo hace igual en todas las tandas: saca una foto de cada lado y las compara.
+// POR QUÉ EXISTE: una mudanza de carpetas enteras del arnés toca muchas rutas que el exportador nombra (exclusiones
+// fijas, «in» y «out» de la lista blanca). Una mudanza que se olvida de mover un glob puede publicar en silencio lo que
+// antes quedaba excluido, o dejar afuera lo que salía. Por eso, cada cambio que toca una ruta que el exportador nombra
+// compara la copia de antes con la de después, y la diferencia tiene que ser SÓLO de rutas. Este ayudante lo hace igual
+// cada vez: saca una foto de cada lado y las compara.
 //
 // QUÉ COMPARA, paquete por paquete (`core` y `bizuit`) y fuente por fuente (arnes, agent-skills):
 //   a) lo que SALE en la copia y lo que queda EXCLUIDO (cubierto por un «in» del paquete pero fuera de la copia), por
@@ -31,24 +31,24 @@
 // CÓMO FALLA: `diff` sale 0 = sólo cambiaron rutas · 1 = hallazgos (cada uno dicho en castellano) · 2 = no pude comparar
 // (una foto rota o que falta, o una foto «antes» cuya exportación no salió). `snapshot` sale 0 con la foto escrita
 // (aunque una exportación haya dado 1: los hallazgos son dato, y lo dice) · 2 si no pudo sacarla, o si el --explain o una
-// exportación no pudo salir (2): la foto queda escrita para mirarla, pero no sirve (story 8.18, pase adversarial del
-// tramo 2: antes salía 0 y una foto rota pasaba por buena). «No pude comparar» nunca es 0.
+// exportación no pudo salir (2): la foto queda escrita para mirarla, pero no sirve (si saliera 0, una foto rota pasaría
+// por buena). «No pude comparar» nunca es 0.
 // Sin `--agent-skills`, el commit de agent-skills lo elige el exportador: en el repo unido, el de `--harness`.
 //
 // A mano (los repos, como el exportador: TYCON_GUIDES_DIR y TYCON_SKILLS_DIR):
 //   node scripts/publishing/export-compare.js snapshot --out <carpeta-nueva> [--harness <ref>] [--agent-skills <ref>]
 //        [--exporter <export.js>] [--packages core,bizuit] [--work <carpeta-temporal>]
 //   node scripts/publishing/export-compare.js diff <foto-antes> <foto-después> [--json]
-// La tanda guarda las dos fotos y el diff en la carpeta de su corrida (.advisors/pipeline-runs/<corrida>/export-compare/).
-// Desde la story 8.18 (el repo unido), dos comparaciones más, sobre copias `--single-repo` ya armadas y sobre dos salidas
+// Las dos fotos y el diff se guardan en la carpeta de la corrida (.advisors/pipeline-runs/<corrida>/export-compare/).
+// Con el repo unido, dos comparaciones más, sobre copias `--single-repo` ya armadas y sobre dos salidas
 // de `--explain --json` (el porqué y las reglas, más abajo: «El mismo árbol desde el repo unido»):
 //   node scripts/publishing/export-compare.js trees <copia-antes> <copia-después> [--json]
 //        [--range <unión>..<punta> [--repo <clon>]] [--touched <lista>] [--allowlist <f>]
 //   node scripts/publishing/export-compare.js exclusions <explain-antes.json> <explain-después.json> [--json]
 //
-// DESDE EL CORTE A GITHUB (story 8.26, AC 36) el exportador de este repo ya no arma copias: `snapshot` con el de al lado
+// El exportador de este repo no arma copias: `snapshot` con el de al lado
 // sale 2 (la exportación de cada paquete no sale), y `trees` no tiene copias nuevas que comparar. Quedan `diff` (sobre
-// fotos ya sacadas) y `exclusions` (sobre dos salidas de `--explain --json`). Para comparar copias de antes del corte,
+// fotos ya sacadas) y `exclusions` (sobre dos salidas de `--explain --json`). Para comparar copias anteriores al corte,
 // `snapshot --exporter` con el `export.js` de un clon en un commit de entonces.
 // Guía: guides/maintaining/publicacion-espejo.md
 
@@ -148,9 +148,9 @@ function parseSnapshotArgs(argv) {
  * La parte del pre-commit del repo unido que la exportación publicó como el `.githooks/pre-commit` de `source`, o null.
  * En el repo unido el pre-commit viene partido (`pre-commit-harness`, `pre-commit-skills`) y la copia de dos repos
  * devuelve cada parte a su repo (transformación split-hooks, que la exportación anota en `ajustes`). Su ruta no está en
- * la copia, pero su contenido sí sale: no es un excluido (story 8.18, pase adversarial del tramo 2, clase 11 — la foto
- * las anotaba como excluidas y un `diff` entre una foto de antes de la unión y una del repo unido daba dos hallazgos
- * falsos). El nombre de la parte lo dice el exportador que corrió (`HOOK_PARTS`): uno que parte el pre-commit y no lo
+ * la copia, pero su contenido sí sale: no es un excluido (anotarlas como excluidas haría que un `diff` entre una foto
+ * de antes de la unión y una del repo unido diera dos hallazgos falsos). El nombre de la parte lo dice el exportador
+ * que corrió (`HOOK_PARTS`): uno que parte el pre-commit y no lo
  * dice es «no pude sacar la foto», nunca una parte adivinada.
  */
 function splitHookPart(ctx, pkg, exportJson, source) {
@@ -174,7 +174,7 @@ function filesOf(ctx, pkg, exportJson) {
     const shipped = fs.existsSync(path.join(copy, source)) ? treeOf(path.join(copy, source), 'HEAD') : {};
     const def = (ctx.list.packages[pkg] || {})[source] || {};
     if (!Array.isArray(def.in)) throw new CouldNotCompare(`la lista blanca (${ctx.listPath}) no tiene «in» para ${pkg}/${source}`);
-    // el repo unido (story 8.18): el exportador leyó UNA fuente física y la partió por ruta; acá, lo mismo — el árbol de
+    // el repo unido: el exportador leyó UNA fuente física y la partió por ruta; acá, lo mismo — el árbol de
     // cada fuente lógica es su mitad del commit del arnés, y no se busca ningún otro clon
     const unified = exportJson.physicalSources === 1;
     if (unified && typeof ctx.sourceOfPath !== 'function') throw new CouldNotCompare(`la exportación de ${pkg} salió de una sola fuente física y al lado del exportador no está cómo partirla por ruta (new-names.js → sourceOfPath)`);
@@ -207,9 +207,9 @@ function snapshot(argv) {
   fs.mkdirSync(out, { recursive: true });
   const workParent = path.resolve(a.work || os.tmpdir());
   const work = fs.mkdtempSync(path.join(workParent, 'export-compare-'));
-  // `--agent-skills` va sólo si se pidió (story 8.18, pase adversarial del tramo 2, clase 1): sin él, el exportador hace
-  // lo de siempre —en el repo unido las dos fuentes salen del commit de --harness; con dos repos, origin/main de
-  // agent-skills—. Antes se le pasaba siempre origin/main, y la foto de una rama adelantada del repo unido salía rota.
+  // `--agent-skills` va sólo si se pidió: sin él, el exportador hace lo de siempre —en el repo unido las dos fuentes
+  // salen del commit de --harness; con dos repos, origin/main de agent-skills—. Pasarle siempre origin/main rompería la
+  // foto de una rama adelantada del repo unido.
   // En snapshot.json, `agentSkills: null` = el que eligió el exportador (lo dice export-<paquete>.json → fuentes).
   const refs = ['--harness', a.harness || 'origin/main', ...(a.agentSkills ? ['--agent-skills', a.agentSkills] : [])];
   const run = (args) => spawnSync(process.execPath, [exporterPath, ...args, ...refs], { encoding: 'utf8', maxBuffer: 1 << 30, cwd: workParent });
@@ -230,7 +230,7 @@ function snapshot(argv) {
     const listPath = path.join(path.dirname(exporterPath), 'allowlist.json');
     const rawList = readJson(listPath, 'la lista blanca');
     const list = typeof exporter.paquetesConNombresNuevos === 'function' ? exporter.paquetesConNombresNuevos(rawList) : rawList;
-    // las rutas de la fuente lógica agent-skills en el repo unido (story 8.18): las dice new-names.js, al lado del exportador
+    // las rutas de la fuente lógica agent-skills en el repo unido: las dice new-names.js, al lado del exportador
     // que corre. Uno de antes de la unión no las trae, y tampoco las necesita: nunca lee una sola fuente física
     let sourceOfPath = null;
     const namesPath = path.join(path.dirname(exporterPath), 'new-names.js');
@@ -342,8 +342,7 @@ function sharedTail(p, q) {
 /** Empareja lo de antes con lo de después de una fuente de un paquete.
  *  El ORDEN de los pasos es el contrato: un cambio de lado de una RUTA se mira antes que cualquier emparejamiento por
  *  contenido, y el emparejamiento por contenido del mismo lado se queda sólo con lo que sobra de cada lado. Así, con
- *  contenidos repetidos (los `.gitkeep` vacíos), un archivo que entra o sale de la copia nunca queda «movido» (pase
- *  adversarial R2). Todo emparejamiento es determinista: no depende del orden de las claves de la foto. */
+ *  contenidos repetidos (los `.gitkeep` vacíos), un archivo que entra o sale de la copia nunca queda «movido». Todo emparejamiento es determinista: no depende del orden de las claves de la foto. */
 function compareFiles(pkg, source, before, after, out) {
   const entries = (photo) => SETS.flatMap((set) => Object.entries((photo[set] || {})[source] || {}).map(([p, hash]) => ({ set, path: p, hash })))
     .sort((x, y) => byText(x.set, y.set) || byText(x.path, y.path));
@@ -496,21 +495,21 @@ function human(r) {
   return `${l.join('\n')}\n`;
 }
 
-// ══ El mismo árbol desde el repo unido (story 8.18, tramo 2 · 2026-10-04) ═══════════════════════════════════════════════
+// ══ El mismo árbol desde el repo unido ═══════════════════════════════════════════════
 // POR QUÉ: el arnés y agent-skills pasaron a ser UN repo, y la condición para cortar es binaria: la copia `--single-repo`
 // que el exportador arma desde el repo unido es EL MISMO ÁRBOL que la que armaba desde los dos repos. `diff` (arriba)
 // compara fotos de la copia de dos repos y tolera mudanzas; acá no hay nada que tolerar. `trees` compara dos copias ya
 // armadas (cada una un repo de git con un commit) por el identificador de git: el árbol entero, cada entrada de primer
 // nivel y, donde difieren, archivo por archivo. Una diferencia sólo pasa si está DECLARADA:
 //   · el `.gitignore` de después es el de antes menos exactamente el bloque `.advisors/` de agent-skills —esa línea y
-//     las de comentario que tiene pegadas arriba— (decisión del dueño, 2026-10-03: unir los dos .gitignore tal cual
-//     dejaba de versionar el registro de revisores);
-//   · con `--range <unión>..<punta>` (o `--touched <lista>`), un archivo que la story tocó a propósito: los archivos
+//     las de comentario que tiene pegadas arriba— (unir los dos .gitignore tal cual dejaría de versionar el
+//     registro de revisores);
+//   · con `--range <unión>..<punta>` (o `--touched <lista>`), un archivo tocado a propósito: los archivos
 //     distintos tienen que ser un subconjunto de la IMAGEN, por el exportador, de lo tocado. La imagen de un archivo es su
 //     misma ruta y, en tres casos que dice la lista blanca o el exportador, otra: una skill que sale renombrada
 //     (`skillRenames`), un papel (`synthetic`: su destino) y un revisor (sus dos traducciones a Codex). Un archivo
 //     distinto que no es imagen de nada tocado es un intruso: 1, nombrándolo. Sólo tiene imagen lo que el exportador
-//     publica (`shipsByExporter`): un archivo privado que la story tocó y que aparece en la copia es un intruso, no
+//     publica (`shipsByExporter`): un archivo privado tocado que aparece en la copia es un intruso, no
 //     algo «tocado a propósito». Por eso con lo tocado hace falta también la tabla privada al lado de la lista blanca.
 // `exclusions` compara dos salidas de `export.js --explain --json`: 0 sin clasificar, 0 globs muertos, las mismas
 // exclusiones fijas y cada exclusión cubriendo los mismos archivos; lo único que la unión cambia ahí también está
@@ -522,9 +521,9 @@ const IGNORE_BLOCK_LINE = '.advisors/';
 const CODEX_FOLDERS = Object.freeze(['adapters/codex/agents', 'adapters/codex/agents-native']);
 // Lo que la unión cambia en `--explain`: el .gitignore y el README.md de agent-skills ya no son entradas de su fuente (el
 // .gitignore unido y el README que manda son los del arnés), y la exclusión de ese README se queda sin archivo.
-// El .gitattributes (2026-10-04): los dos repos lo traen idéntico desde la 8.17, después del commit de la unión; en el
-// repo unido es uno, del lado del arnés, y la exclusión de agent-skills que lo dejaba fuera queda sin archivo. Lo midió
-// export-real T21 sobre main de los dos repos (story 8.18); que sean idénticos lo exige la prueba al componer la unión.
+// El .gitattributes: los dos repos lo traen idéntico; en el repo unido es uno, del lado del arnés, y la exclusión de
+// agent-skills que lo dejaba fuera queda sin archivo. Que sean idénticos lo exige la prueba al componer la unión
+// (export-real T21).
 const UNION_FIRST_LEVEL_GONE = Object.freeze(['agent-skills/.gitignore', 'agent-skills/README.md', 'agent-skills/.gitattributes']);
 const UNION_COVERAGE_EMPTIED = Object.freeze([
   { origen: 'afuera', fuente: 'agent-skills', glob: 'README.md' },
@@ -608,9 +607,9 @@ function touchedFiles(a) {
 }
 
 /**
- * ¿El exportador publica esta ruta del repo unido? (story 8.18, pase adversarial del tramo 2, clase 9). Antes la imagen
- * de un archivo tocado era su misma ruta, se publicara o no: un archivo PRIVADO que la story tocó y que aparece en la
- * copia pasaba como «tocado a propósito» —la fuga que la medición del AC 21 tiene que ver—. Sale si, en algún paquete
+ * ¿El exportador publica esta ruta del repo unido? Sin esta pregunta, la imagen de un archivo tocado sería su misma
+ * ruta, se publicara o no: un archivo PRIVADO tocado que aparece en la copia pasaría como «tocado a propósito», que es
+ * la fuga que la medición tiene que ver. Sale si, en algún paquete
  * público, un «in» de su fuente lo toma y no lo deja afuera ninguna de las reglas que no dependen del paquete pedido: las
  * exclusiones fijas, el «out» de todos los paquetes que lo toman, el «lista de excluidos» de la tabla privada (la que está al lado de
  * la lista blanca), `suitesOutside` y `casesOutside`. Las mismas reglas, con las mismas funciones, que `filterPackage` de
@@ -637,7 +636,7 @@ function shipsByExporter(list, listPath) {
   const fits = (glob, p) => exporter.coincide(glob, p);
   return (p) => {
     const source = sourceOfPath(p);
-    // con el `salvo` de cada exclusión fija (story 8.26, tanda C): las mismas reglas que filterPackage
+    // con el `salvo` de cada exclusión fija: las mismas reglas que filterPackage
     if (exporter.EXCLUIDOS_SIEMPRE.some((x) => x.fuente === source && (exporter.cubreFija ? exporter.cubreFija(x, p) : fits(x.glob, p)))) return false;
     if (privateOut.some((x) => x.source === source && fits(x.glob, p))) return false;
     if (suitesOut.has(`${source}/${p}`) || casesOut.has(`${source}/${p}`)) return false;

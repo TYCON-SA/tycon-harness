@@ -1,19 +1,17 @@
 #!/usr/bin/env node
 /**
  * sql-compile.js — antes del commit, COMPILA sin ejecutar cada migración SQL nueva o modificada.
- * AVISA, no frena (2026-09-14, decisión del dev: «al principio sólo avisa, y medimos»).
+ * AVISA, no frena.
  *
- * 🔴 Caso que lo motiva (el repo del framework, 2026-09-10): `054_CleanupOldPluginVersionsAtomic.sql`
- * llegó al commit con un error de sintaxis —Msg 1046, una subconsulta dentro de un PRINT— y frenó el
- * despliegue entero, que corre todas las migraciones en orden. Esa entrega pasó por decenas de
- * revisores y 2589 tests: ninguno toca un `.sql` suelto. Cualquier ejecución contra una base lo
- * habría mostrado en segundos. (incident-log#migracion-destructiva-en-base-compartida-2026-09-10)
+ * 🔴 Por qué existe: una migración con un error de sintaxis —Msg 1046, una subconsulta dentro de un PRINT— frena el
+ * despliegue entero, que corre todas las migraciones en orden. Ni los revisores ni los tests lo ven: ninguno toca un
+ * `.sql` suelto. Cualquier ejecución contra una base lo muestra en segundos.
  *
  * Cómo compila SIN ejecutar:
  *   · `SET NOEXEC ON` en el primer lote: SQL Server compila cada lote y no ejecuta ninguno.
  *   · Un `.sql` que MENCIONA NOEXEC no se manda (podría apagarlo y ejecutarse), y uno que usa
  *     comandos de sqlcmd (`!!` corre en la máquina, `:r` trae otro archivo) tampoco: quedan «sin
- *     compilar», con el motivo. No se usa `sqlcmd -X` para eso: medido el 2026-09-14 con el sqlcmd
+ *     compilar», con el motivo. No se usa `sqlcmd -X` para eso: con el sqlcmd
  *     de Homebrew, `-X` hace que ignore el archivo de entrada y abra el modo interactivo.
  *   · `-x`: las variables `$(…)` de sqlcmd no se sustituyen.
  *   · Se compila lo STAGEADO (`git show :<archivo>`), no el disco: lo que se commitea.
@@ -43,7 +41,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -67,7 +65,7 @@ function registrar(fila) {
   try {
     const dir = path.join(stateDirOf(os.homedir()));
     fs.mkdirSync(dir, { recursive: true });
-    // El nombre viejo (story 8.9, tanda D2) pasa al nuevo con su historia antes de la primera línea; si la copia falla,
+    // El nombre viejo pasa al nuevo con su historia antes de la primera línea; si la copia falla,
     // no se anota (un registro nuevo sin la historia del viejo la perdería para siempre).
     const registro = prepareStateWrite(path.join(dir, 'sql-compile.jsonl'), { where: 'scripts/ci/sql-compile.js' });
     fs.appendFileSync(registro, JSON.stringify({ ts: new Date().toISOString(), ...fila }) + '\n');

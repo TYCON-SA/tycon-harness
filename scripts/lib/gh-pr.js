@@ -1,6 +1,6 @@
 'use strict';
 /**
- * scripts/lib/gh-pr.js — cómo leer un comando `gh` para saber qué PUBLICA (story 8.26, tanda F1 · AC 54).
+ * scripts/lib/gh-pr.js — cómo leer un comando `gh` para saber qué PUBLICA.
  *
  * POR QUÉ EXISTE. Con el arnés mantenido directo en su repo público, un `gh pr create`, un comentario o una versión
  * publican texto sin pasar por `git push`: el `pre-push` no los ve. El freno antes de publicar
@@ -58,10 +58,10 @@ const BINARIO = /(^|[\\/])gh(\.exe|\.cmd)?$/i;
 // un texto de entrada) es una forma común de correrlo, y desde acá no se puede leer. El mismo texto dado a cualquier
 // otro programa (`git commit -m`, `grep`, `sed`, `npm test -t`, un guion de python) es un dato.
 // 🔴 Es una lista corta A PROPÓSITO. La alternativa —«todo texto con esa forma es oculto salvo en una lista de programas
-// inofensivos»— se probó: frenaba `sed`, `npm test -t "…"`, un `python3 - <<EOF` que edita una guía, en CUALQUIER repo.
+// inofensivos»— frenaría `sed`, `npm test -t "…"`, un `python3 - <<EOF` que edita una guía, en CUALQUIER repo.
 // Este freno cubre el accidente, no la evasión: un programa que no es una terminal y ejecuta una opción suya (`git -c
 // alias.x='!…'`, `git rebase -x`, `rg --pre`), el nombre de `gh` armado a pedazos adentro de un texto, y un `gh` adentro
-// de un guion que la línea corre, NO se ven. Lo dice la story (AC 54) y lo mira la verificación de lo publicado.
+// de un guion que la línea corre, NO se ven. Es un límite declarado, y lo mira la verificación de lo publicado.
 // (`xargs` no está: corre el programa que se le nombra, y ése se mira —`xargs sh -c …` tiene su `sh`, `xargs gh …` su `gh`—.)
 const TERMINAL = /(^|[\\/])((ba|z|k|da|a)?sh|fish|pwsh|powershell|cmd)(\.exe)?$|^(eval|iex|invoke-expression|ssh|watch|su|doas|parallel)$/i;
 const HAY_HEREDOC = /\d*<<-?(?!<)/;   // `<<EOF`, `<< EOF`, `3<<EOF`, `bash<<EOF`; `<<<` es otra cosa (su texto sí llega como ficha)
@@ -79,10 +79,10 @@ const DENTRO_DE_CADENA = new RegExp(`(^|[^A-Za-z0-9_.-])gh(\\.exe)?\\s+${GRUPOS_
 // (`run(['gh', 'pr', 'create', …])`, `execFileSync('gh', ['pr', 'create', …])`).
 // El comando que la llamada corre se LEE como una línea más (uno de lectura no se frena). En la lista, lo que no es un
 // texto (una variable, una llamada) ocupa su lugar como un argumento más: `["gh", "--repo", repo, "pr", "create"]` se
-// lee `gh --repo <algo> pr create`. Cortar la lista en la primera variable lo dejaba en `gh --repo`, «de lectura».
+// lee `gh --repo <algo> pr create`. Cortar la lista en la primera variable lo dejaría en `gh --repo`, «de lectura».
 // …y sólo cuenta cuando ese código se le da a un INTÉRPRETE (por `-c`/`-e`, por un bloque o por una tubería). Lista
 // corta a propósito, como `TERMINAL`: el mismo texto dado a `grep`, a `git commit -m` o a `echo` es un dato. Frenando
-// por la llamada sola, buscar `execSync("gh pr` en el código quedaba frenado en cualquier repo.
+// por la llamada sola, buscar `execSync("gh pr` en el código quedaría frenado en cualquier repo.
 const INTERPRETE = /(^|[\\/])(python[\d.]*|pypy[\d.]*|node(js)?|deno|bun|ruby|perl|php|lua|osascript|rscript|tsx|ts-node)(\.exe)?$/i;
 // las opciones de un buscador que llevan el nombre de un lenguaje o un patrón de archivos como valor (`rg -t ruby`)
 const OPCION_DE_TIPO = /^(-t|-T|--type|--type-not|--type-add|-g|--glob|--iglob|--include|--exclude)$/;
@@ -238,8 +238,8 @@ function sacarBloques(cmd, opts = {}) {
     return guardar(cuerpo);
   });
   // En PowerShell, el bloque literal se lee; el que expande, sólo si no trae nada que expandir. Si no, queda una
-  // sustitución en su lugar (ilegible). Sin esto, un apóstrofo suelto adentro del bloque cerraba «la cadena», el
-  // renglón siguiente cortaba el comando, y el resto del cuerpo quedaba como otros comandos que nadie miraba.
+  // sustitución en su lugar (ilegible). Sin esto, un apóstrofo suelto adentro del bloque cerraría «la cadena», el
+  // renglón siguiente cortaría el comando, y el resto del cuerpo quedaría como otros comandos que nadie miraba.
   if (opts.powershell) {
     texto = texto.replace(BLOQUE_PS, (todo, comilla, cuerpo) => (comilla === '"' && /[$`]/.test(cuerpo) ? '"$(bloque de texto de PowerShell)"' : guardar(cuerpo)));
   }
@@ -314,8 +314,8 @@ function leerGh(propias, resto, corte, cuerpos, lugar) {
   const archivos = [];
   const marcar = (motivo) => { if (!ilegible.includes(motivo)) ilegible.push(motivo); };
   // El cuerpo de un bloque, donde esté su marca: la ficha entera, o PEGADA a otra cosa (`body=<bloque>` en un campo de
-  // `gh api`). Devolviéndolo sólo cuando la ficha entera era la marca, lo pegado se revisaba como la marca —un texto al
-  // azar— y el cuerpo de verdad salía sin mirar.
+  // `gh api`). Devolviéndolo sólo cuando la ficha entera era la marca, lo pegado se revisaría como la marca —un texto al
+  // azar— y el cuerpo de verdad saldría sin mirar.
   const leer = (texto) => {
     let t = String(texto);
     for (const [marca, cuerpo] of cuerpos) if (t.includes(marca)) t = t.split(marca).join(cuerpo);
@@ -335,7 +335,7 @@ function leerGh(propias, resto, corte, cuerpos, lugar) {
   resto = resto.slice(ini);
 
   // grupo y verbo: los que vienen PEGADOS a `gh` (`gh pr create`). Buscar «el primer argumento que no es una opción»
-  // dejaba elegir el verbo desde un valor: `gh pr create --title view …` se leía como `gh pr view`, de lectura. Si en
+  // dejaría elegir el verbo desde un valor: `gh pr create --title view …` se leía como `gh pr view`, de lectura. Si en
   // el lugar del grupo o del verbo hay una opción, no hay grupo o no hay verbo: lo que no se sabe leer no es de lectura.
   const primero = resto[0] && !esOpcion(resto[0]) ? resto[0] : null;
   const grupo = primero && !primero.expande ? primero.texto : null;
@@ -426,7 +426,7 @@ function leerGh(propias, resto, corte, cuerpos, lugar) {
   for (let k = 0; k < cuerpo.length; k += 1) {
     const f = cuerpo[k];
     // Una opción CONOCIDA escrita entre comillas (`gh api "-X" POST …`) es la misma opción para `gh`: las comillas las
-    // saca la terminal. Tomada por un argumento, ese `gh api` quedaba «de lectura». (Una desconocida entre comillas se
+    // saca la terminal. Tomada por un argumento, ese `gh api` quedaría «de lectura». (Una desconocida entre comillas se
     // sigue mirando como texto, y un pedido de ayuda entre comillas no cuenta como ayuda: de más, nunca de menos.)
     const conocidaEntreComillas = !f.esBandera && !f.expande && /^-[A-Za-z-]/.test(f.texto) && f.texto !== '--' && !/^--?h(elp)?$/.test(f.texto)
       && clase(f.texto.startsWith('--') ? f.texto.split('=')[0] : f.texto.slice(0, 2)) !== 'desconocida';
@@ -498,7 +498,7 @@ function leerGh(propias, resto, corte, cuerpos, lugar) {
     }
     // 🔴 El repo también se nombra por un ARGUMENTO, y entonces `gh` ignora la carpeta: la dirección de un pedido o de
     // un issue (`gh pr comment https://github.com/o/r/pull/5 …`) y el `OWNER/REPO` de `gh repo edit|delete|rename|…`.
-    // Sin esto, desde una carpeta que no es un clon del arnés el comando era «de otro repo» y salía sin mirar.
+    // Sin esto, desde una carpeta que no es un clon del arnés el comando sería «de otro repo» y saldría sin mirar.
     if (n === 0 && !f.expande && esPrOIssue && verbo !== 'create') {
       const m = /^https?:\/\/[^/\s]+\/([^/\s]+)\/([^/\s]+)\/(?:pull|issues)\/\d+/i.exec(texto);
       const r = m ? repoDe(`${m[1]}/${m[2]}`) : null;
@@ -662,8 +662,8 @@ function sacarSustituciones(texto) {
     if (c === '\\' && i + 1 < s.length) { out += c + s[i + 1]; i += 1; continue; }
     if (!q) {
       // 🔴 Un comentario y el cuerpo de un bloque heredoc NO son código: un apóstrofo ahí («don't») no abre ninguna
-      // cadena. Recorridos como código, dejaban este recorrido «adentro de comillas» y la sustitución con el `gh` que
-      // venía después no se sacaba — y como para el lector de fichas (que sí los saltea) era una ficha más, salía sin mirar.
+      // cadena. Recorridos como código, dejarían este recorrido «adentro de comillas» y la sustitución con el `gh` que
+      // viene después no se sacaría — y como para el lector de fichas (que sí los saltea) es una ficha más, saldría sin mirar.
       if (c === '#' && (i === 0 || /[\s;&|()]/.test(s[i - 1]))) {
         const fin = s.indexOf('\n', i);
         const hasta = fin < 0 ? s.length : fin;
@@ -764,8 +764,8 @@ function comandosGh(cmd, nivel = 0, opts = {}) {
   const bloques0 = sacarBloques(cmd, opts);
   const { cuerpos } = bloques0;
   // 🔴 Una sustitución entre comillas dobles es un comando que CORRE (`URL="$(gh pr create …)"` es como un agente guarda
-  // la dirección del pedido), y adentro de las comillas el lector no parte la ficha: quedaba como texto de otro programa
-  // y salía sin mirar. Se sacan antes de partir, y lo de adentro se lee como una línea más (al final de esta función).
+  // la dirección del pedido), y adentro de las comillas el lector no parte la ficha: quedaría como texto de otro programa
+  // y saldría sin mirar. Se sacan antes de partir, y lo de adentro se lee como una línea más (al final de esta función).
   // (hasta tres niveles: `"$(basename "$(gh pr create …)")"` tiene una adentro de otra)
   const sueltas0 = nivel <= 2 ? sacarSustituciones(bloques0.texto) : { texto: bloques0.texto, adentro: [] };
   const texto = sueltas0.texto;
@@ -786,8 +786,8 @@ function comandosGh(cmd, nivel = 0, opts = {}) {
   });
   const nombraGh = sueltas.some((f) => NOMBRA_A_GH.test(f.texto));
   const nombraGhConGrupo = sueltas.some((f) => DENTRO_DE_CADENA.test(f.texto));
-  // …y cuáles son esos otros nombres: los que la línea DEFINE como alias o como función. Sin esto, la regla tomaba por
-  // «un alias de gh» a cualquier programa con un verbo parecido (`git merge -m "… gh pr …"` quedaba frenado).
+  // …y cuáles son esos otros nombres: los que la línea DEFINE como alias o como función. Sin esto, la regla tomaría por
+  // «un alias de gh» a cualquier programa con un verbo parecido (`git merge -m "… gh pr …"` quedaría frenado).
   const definidos = new Set();
   for (const { fichas, corte } of segmentos) {
     const p = posicionDeComando(fichas).i;
@@ -814,7 +814,7 @@ function comandosGh(cmd, nivel = 0, opts = {}) {
   // ¿Este texto, corrido como comando, publica? Se LEE como una línea más (un nivel): `bash -c "gh pr view 5"` es de
   // lectura y no se frena. Si tiene la forma y no se deja leer como comando, cuenta como que sí.
   // 🔴 La puerta es que el texto NOMBRE a `gh` como palabra, no que traiga `gh <grupo>` pegado: `gh` acepta opciones
-  // antes del grupo (`gh -R a/b pr create …`), y con la forma pegada como puerta ese texto ni se leía. Leído como una
+  // antes del grupo (`gh -R a/b pr create …`), y con la forma pegada como puerta ese texto ni se leería. Leído como una
   // línea más valen las mismas reglas que afuera: una variable, un alias o un `cd` adentro del texto.
   const publicaAdentro = (t) => {
     const liso = String(t).replace(/["'\\]/g, '');
@@ -853,7 +853,7 @@ function comandosGh(cmd, nivel = 0, opts = {}) {
       let ini = m.index + m[0].length;
       let fin = ini;
       // …o hasta las tres comillas que cierran, si abre con tres (`os.system("""gh pr create …""")`: leída como un
-      // texto vacío seguido de otra cosa, el comando quedaba afuera)
+      // texto vacío seguido de otra cosa, el comando quedaría afuera)
       const triple = m[1].repeat(3);
       if (s.startsWith(triple, ini - 1)) {
         ini += 2;
@@ -988,8 +988,8 @@ function comandosGh(cmd, nivel = 0, opts = {}) {
     // `sudo -E python3 -c`, `npx -y tsx -e`). Una palabra con ese nombre NO lo es en dos casos, donde el código es el
     // dato que otro programa busca: cuando es el valor de una opción de TIPO de un buscador (`rg -t ruby '…'`), y cuando
     // viene DESPUÉS del código (`grep '…' node`).
-    // (Se probaron dos reglas más finas —«con una opción delante no cuenta», y «…salvo que después traiga `-c`/`-e`»— y
-    // cada una abría el caso contrario: `npx -y tsx -e` salía sin mirar, o `rg -t ruby -e '…'` quedaba frenado.)
+    // (Una regla más fina —«con una opción delante no cuenta», o «…salvo que después traiga `-c`/`-e`»— abriría
+    // el caso contrario: `npx -y tsx -e` saldría sin mirar, o `rg -t ruby -e '…'` quedaría frenado.)
     const kInterprete = seg.findIndex((f, k) => f.esBandera && !f.expande && INTERPRETE.test(f.texto.replace(/\d*<<.*$/, ''))
       && !(k > 0 && seg[k - 1].esBandera && !seg[k - 1].expande && OPCION_DE_TIPO.test(seg[k - 1].texto)));
     const esInterprete = kInterprete >= 0;

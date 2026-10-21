@@ -11,8 +11,8 @@
  *
  * Consecuencia: **el veredicto del primero puede cambiar sin que cambie una línea de código.**
  *
- * Caso medido el 2026-09-01: el pipeline de Acme/FrontEnd pasó en verde a las 15:56. A las 16:42
- * los mantenedores de `browserslist` publicaron CVE-2026-73089 (alta, 7.5). Mismo código, misma
+ * Ejemplo: un pipeline pasa en verde a las 15:56. A las 16:42
+ * los mantenedores de `browserslist` publican un aviso de gravedad alta. Mismo código, misma
  * versión instalada, veredicto opuesto. Nadie se habría enterado hasta que a alguien se le
  * ocurriera abrir un pull request — y ese análisis SÓLO corre en los pull requests.
  *
@@ -44,7 +44,7 @@
  * ── USO ─────────────────────────────────────────────────────────────────────────────────────────
  *   node nightly-dependencies.js run       [--root <dir>] [--config <f>] [--out <dir>]
  *                                           [--pending <dir>] [--json] [--dry-run] [--today <fecha>]
- *                                           [--bugs <bugs-<fecha>.json>]   (story 4.5; por defecto <out>/bugs-<hoy>.json)
+ *                                           [--bugs <bugs-<fecha>.json>]   (por defecto <out>/bugs-<hoy>.json)
  *   node nightly-dependencies.js pr-text   --draft <archivo>
  *   node nightly-dependencies.js report    [--pending <dir>] [--json]
  *   node nightly-dependencies.js clone-list [--config <f>]   (lo que el pipeline clona, cada ruta una vez)
@@ -62,8 +62,8 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
 const RAIZ_REPO = path.resolve(__dirname, '..', '..', '..');
-// story 8.9 (tanda F): repos.json vive al lado de este guion, en scripts/nightly/dependencies/, y las
-// fichas en inbox/dependencies/. La foto de cada noche sigue en .dashboard/dependencias: no se mudó.
+// repos.json vive al lado de este guion, en scripts/nightly/dependencies/, y las
+// fichas en inbox/dependencies/. La foto de cada noche vive en .dashboard/dependencias.
 const CONFIG_DEF = path.join(RAIZ_REPO, 'scripts', 'nightly', 'dependencies', 'repos.json');
 const OUT_DEF = path.join(RAIZ_REPO, '.dashboard', 'dependencias');
 const PENDING_DEF = path.join(RAIZ_REPO, 'inbox', 'dependencies');
@@ -86,7 +86,7 @@ function parseArgs(argv) {
     else if (v === '--script') a.guion = path.resolve(argv[++i]);
     else if (v === '--bugs') a.bugs = path.resolve(argv[++i]);
     else if (v === '--today') a.hoy = argv[++i];
-    // `note` (story 4.2): lo único que ESCRIBE la ficha. El guion compartido del pipeline decide
+    // `note`: lo único que ESCRIBE la ficha. El guion compartido del pipeline decide
     // y delega acá — nunca hace `sed` sobre una ficha, porque el formato lo conoce esta cola.
     else if (v === '--card') a.ficha = path.resolve(argv[++i]);
     else if (v === '--pr') a.pr = argv[++i];
@@ -115,16 +115,16 @@ function huella(paquete, severidad, advisories) {
 //
 // 🔴 No hay biblioteca de YAML acá, y es a propósito: CUATRO lectores por expresión regular
 // dependen del formato línea a línea (este guion, `dependencies-notice.js`, `pr-text` y un `sed`
-// del pipeline). Lo que sí hacía falta es leer las listas POR CLAVE, como ya hacía `prTexto`:
-// `archivarResueltos` tomaba como repo CUALQUIER línea `  - x` del archivo que no fuera una URL,
-// así que con la lista `ids:` que esta story estrena, un IDENTIFICADOR se exigía "medido" — y como
-// un id nunca está entre los repos medidos, la ficha no se resolvía nunca (caso T13).
+// del pipeline). Las listas se leen POR CLAVE, como hace `prTexto`:
+// tomar como repo CUALQUIER línea `  - x` del archivo que no sea una URL
+// haría que, con la lista `ids:`, un IDENTIFICADOR se exigiera "medido" — y como
+// un id nunca está entre los repos medidos, la ficha no se resolvería nunca.
 
 const CLAVES_LISTA = ['ids', 'repos', 'declarada_en', 'avisos'];
 
 /** El orden canónico de las claves. Sólo se usa para saber DÓNDE insertar una clave que no está. */
 const ORDEN_FICHA = ['id', 'detectado', 'veredicto', 'paquete', 'severidad', 'noches',
-  // La identidad del pull request y la decisión que una persona tomó sobre él (story 4.2). Van
+  // La identidad del pull request y la decisión que una persona tomó sobre él. Van
   // juntas y arriba porque son lo que el pipeline lee ANTES de decidir si abre uno nuevo.
   'pr', 'rechazado', 'motivo_rechazo', 'pr_cerrado',
   'reaparecido', 'bloqueada_por', 'resuelto', 'resuelto_antes', 'descartado', 'descartado_antes',
@@ -150,8 +150,8 @@ function leerFicha(txt) {
     let v = m[2].trim();
     // 🔴 Un comentario al final de la línea es un comentario, no parte del valor. El caso 21 de la
     // suite escribe `veredicto: pendiente # decision-en-curso` justamente para probar que una nota
-    // de una persona sobrevive; leyendo la línea entera, esa ficha dejaba de ser "pendiente" y la
-    // vigilancia se la salteaba ENTERA, en silencio. Dentro de comillas el `#` no es comentario.
+    // de una persona sobrevive; leyendo la línea entera, esa ficha dejaría de ser "pendiente" y la
+    // vigilancia se la saltearía ENTERA, en silencio. Dentro de comillas el `#` no es comentario.
     if (!v.startsWith('"')) v = v.replace(/\s+#.*$/, '').trim();
     escalares[m[1]] = v.replace(/^"([\s\S]*)"$/, '$1');
   }
@@ -178,8 +178,8 @@ function ponerEscalar(txt, clave, valor) {
   // 🔴 La cadena de reemplazo va por una FUNCIÓN. Con la forma `txt.replace(re, cadena)`,
   // `String.replace` interpreta los patrones `$&`, `$'`, `` $` `` y `$$` que traiga el valor — y
   // `motivo_rechazo:` es el comentario de un pull request, o sea texto escrito por cualquiera que
-  // pueda comentarlo. En el vigilante ese mismo patrón SÍ mordía: `$'` copiaba el resto entero de
-  // la ficha adentro del valor y la dejaba con claves duplicadas.
+  // pueda comentarlo. En el vigilante ese mismo patrón SÍ muerde: `$'` copia el resto entero de
+  // la ficha adentro del valor y la deja con claves duplicadas.
   //
   // Acá hoy no se dispara —`note --rejected` no reescribe un `rechazado:` que ya está, y los
   // renombres pasan por `insertarClave`, que concatena— pero la clase se cierra entera, no hasta
@@ -196,8 +196,8 @@ function quitarClave(txt, clave) {
 function ponerLista(txt, clave, items) {
   // 🔴 Vaciar borra la sección ENTERA (cabecera + ítems), esté o no la clave en CLAVES_LISTA: por
   // construcción, lo que pasa por acá es una lista. Con `quitarClave` a secas, una clave fuera de esa lista
-  // (`visto_cerrado:`, `avisado_cerrado_vivo:`) perdía sólo la cabecera y sus ítems quedaban pegados a la
-  // lista anterior, creciendo con cada reapertura (pase adversarial de la story 4.5).
+  // (`visto_cerrado:`, `avisado_cerrado_vivo:`) pierde sólo la cabecera y sus ítems quedan pegados a la
+  // lista anterior, creciendo con cada reapertura.
   if (!items.length) return reLista(clave).test(txt) ? txt.replace(reLista(clave), '') : quitarClave(txt, clave);
   const bloque = `${clave}:\n${items.map((x) => `  - ${x}`).join('\n')}\n`;
   return reLista(clave).test(txt) ? txt.replace(reLista(clave), () => bloque) : insertarClave(txt, clave, bloque);
@@ -215,10 +215,10 @@ const soloRepo = (linea) => String(linea).replace(/\s*\(vence[^)]*\)\s*$/, '').t
 const diasEntre = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
 
 // ── identidad de una entrada ───────────────────────────────────────────────────────────────────
-// 🔴 Desde el 2026-09-05 una entrada puede ser una SUBCARPETA de un repo (`subruta`): el gateway de
+// 🔴 Una entrada puede ser una SUBCARPETA de un repo (`subruta`): el gateway de
 // mensajería de Acme vive en `Acme/BackEnd/tools/chat-gateway`, es Node, tiene su propio
 // lockfile y corre en producción. Con dos entradas que comparten `ruta` —la raíz y la subcarpeta— la
-// etiqueta `producto/basename(ruta)` colisionaba: los hallazgos del gateway se mezclarían con los del
+// etiqueta `producto/basename(ruta)` colisionaría: los hallazgos del gateway se mezclarían con los del
 // plugin y un borrador abierto de uno taparía al otro. La etiqueta suma la subruta SÓLO cuando la
 // hay: la de las entradas que ya existen no cambia (si cambiara, la noche siguiente todo parecería
 // nuevo y se comería el presupuesto de ruido).
@@ -228,12 +228,12 @@ const rutaCompleta = (r) => (r.subruta ? `${r.ruta}/${r.subruta}` : r.ruta);
 /**
  * Dónde está REALMENTE el repo de una entrada en esta máquina.
  *
- * 🔴 `ruta` no es el nombre de la carpeta: es la ETIQUETA (2026-09-29). En Azure da igual —el
+ * 🔴 `ruta` no es el nombre de la carpeta: es la ETIQUETA. En Azure da igual —el
  * pipeline clona en `<raiz>/<ruta>`, así que la carpeta existe por construcción—, pero en la
  * máquina de un dev cada uno clonó con el nombre que quiso, y varias entradas NO coinciden:
  * `Acme/FrontEnd` está en `Acme/AcmeFrontEnd`, `Globex/GlobexPluginfrontend`
- * en `Globex/GlobexFrontend`. Esos repos salían NO MEDIDO con «el repo no está en …», que
- * es verdad pero inútil: el repo estaba, con otro nombre.
+ * en `Globex/GlobexFrontend`. Sin esto, esos repos saldrían NO MEDIDO con «el repo no está en …», que
+ * es verdad pero inútil: el repo está, con otro nombre.
  *
  * NO se arregla renombrando `ruta`: la etiqueta de una entrada es `producto/basename(ruta)`, las
  * fichas abiertas nombran a sus repos con ella, y cambiarla haría ver todo como novedad la noche
@@ -275,7 +275,7 @@ function ubicarRepo(entrada, raiz) {
   return { dir: directo };
 }
 
-/** Lo mismo para una entrada de GitHub (story 8.31): el remoto `github.com[:/]<dueño>/<repo>(.git)` es la identidad. */
+/** Lo mismo para una entrada de GitHub: el remoto `github.com[:/]<dueño>/<repo>(.git)` es la identidad. */
 function ubicarRepoDeGithub(entrada, raiz, directo) {
   const buscada = String(entrada.github).toLowerCase();
   if (!/^[a-z0-9._-]+\/[a-z0-9._-]+$/.test(buscada)) return { dir: directo };
@@ -309,20 +309,19 @@ function auditarRepo(entrada, raiz, guion, hoy) {
     // aparte y se dice. Misma regla que check-product-parity.js.
     return { ...base, medido: false, motivo_no_medido: `el repo no está en ${dir}` };
   }
-  // 🔴 SE AUDITA LO PUBLICADO, NO LA RAMA QUE QUEDÓ EN EL DISCO (2026-09-03).
+  // 🔴 SE AUDITA LO PUBLICADO, NO LA RAMA QUE QUEDÓ EN EL DISCO.
   //
-  // Este nocturno promete mirar `main` —es lo que corre en producción— y auditaba el árbol de
-  // trabajo, o sea la rama en la que quedó el checkout de cada repo. En las máquinas del equipo eso
+  // Este nocturno promete mirar `main` —es lo que corre en producción—; auditar el árbol de
+  // trabajo miraría la rama en la que quedó el checkout de cada repo. En las máquinas del equipo eso
   // suele ser `dev`: se reportarían vulnerabilidades que producción no tiene, o peor, se PERDERÍAN
-  // las que sí. Era la tercera pieza del arnés con la misma premisa mala encontrada el mismo día
-  // (las otras dos: el control de paridad y la suite de "las etapas cortan"), y la última en caer.
+  // las que sí.
   //
   // Se resuelve con un árbol de trabajo TEMPORAL parado en `origin/main`, que se borra al terminar.
   // No se toca el checkout del dev: un árbol aparte no cambia la rama en la que está trabajando.
   //
   // 🔴 SI NO SE PUDO PREPARAR ESE ÁRBOL, ES "NO MEDIDO" — nunca "limpio". Un repo sin remoto, sin
   // `origin/main`, o que no es un repo git, no se audita desde el disco "por las dudas": eso sería
-  // volver al defecto con otro nombre, y en silencio.
+  // auditar la rama equivocada, y en silencio.
   const pub = arbolPublicado(dir);
   if (!pub.ok) return { ...base, medido: false, motivo_no_medido: `no se pudo preparar lo publicado (origin/main): ${pub.motivo}` };
   base.rama_auditada = 'origin/main';
@@ -331,10 +330,10 @@ function auditarRepo(entrada, raiz, guion, hoy) {
   base.trajo_lo_ultimo = pub.fetch;   // false = se auditó el origin/main que había en el disco
 
   try {
-    // 🔴 SUBCARPETA (2026-09-05): el árbol se prepara desde la RAÍZ (`ruta`) y lo que se audita es
+    // 🔴 SUBCARPETA: el árbol se prepara desde la RAÍZ (`ruta`) y lo que se audita es
     // `subruta` adentro de ese árbol. Si la subcarpeta no está en lo publicado, es NO MEDIDO con el
     // motivo — nunca "limpio", y nunca la raíz por consuelo: eso sería un número de otra cosa con
-    // la etiqueta del gateway, que es exactamente la mentira que este campo vino a cerrar.
+    // la etiqueta del gateway, que es exactamente la mentira que este campo evita.
     let dirAuditado = pub.dir;
     if (entrada.subruta) {
       const sub = path.resolve(pub.dir, entrada.subruta);
@@ -364,8 +363,8 @@ function arbolPublicado(dir) {
   const git = (args, opts = {}) => spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', timeout: 120000, ...opts });
   if (git(['rev-parse', '--is-inside-work-tree']).status !== 0) return { ok: false, motivo: 'no es un repo git' };
   // 🔴 `git -C <subcarpeta>` resuelve la raíz del repo desde cualquier subcarpeta, y el árbol
-  // temporal se arma desde esa raíz. Hasta el 2026-09-05 una `ruta` que apuntaba adentro de un repo
-  // NO fallaba: auditaba la raíz y rotulaba el resultado con el nombre de la subcarpeta — un número
+  // temporal se arma desde esa raíz. Una `ruta` que apunta adentro de un repo
+  // NO falla: audita la raíz y rotula el resultado con el nombre de la subcarpeta — un número
   // equivocado con la etiqueta correcta. Una subcarpeta se declara con `ruta` (la raíz) + `subruta`.
   const raizReal = (git(['rev-parse', '--show-toplevel']).stdout || '').trim();
   let esRaiz = false;
@@ -436,9 +435,9 @@ function agruparHallazgos(repos) {
  * La PRESENCIA de cada hecho en cada repo — declarada o no.
  *
  * `agruparHallazgos` descarta lo declarado ANTES de comparar, y eso es correcto para decidir a
- * quién se DESPIERTA. Pero usar esa misma lista para decidir si una ficha se RESOLVIÓ es el
- * defecto 2 de la story 4.1: el id declarado desaparecía de `hallazgos` y se leía como "ya no
- * está", o sea que declarar una deuda salía como haberla pagado. Declarar no es pagar.
+ * quién se DESPIERTA. Pero usar esa misma lista para decidir si una ficha se RESOLVIÓ hace que el
+ * id declarado desaparezca de `hallazgos` y se lea como "ya no
+ * está", o sea que declarar una deuda salga como haberla pagado. Declarar no es pagar.
  */
 function agruparPresencias(repos) {
   const m = new Map();
@@ -462,13 +461,13 @@ function agruparPresencias(repos) {
 /**
  * El PROYECTO de Azure DevOps al que pertenece un repo, por su etiqueta.
  *
- * Es lo que decide si dos hallazgos del mismo paquete son la misma ficha (story 4.1, AC 11: hoy
- * `js-yaml` está en Globex y en Acme, y son dos fichas porque el pedido de trabajo es uno por
- * proyecto). Nace acá y la reusa la story 4.4 — por eso va en `module.exports`.
+ * Es lo que decide si dos hallazgos del mismo paquete son la misma ficha (por ejemplo,
+ * `js-yaml` en Globex y en Acme son dos fichas porque el pedido de trabajo es uno por
+ * proyecto). La reusa work-items.js — por eso va en `module.exports`.
  */
 function proyectoDe(etiquetaRepo, cfg) {
   const e = ((cfg && cfg.repos) || []).find((r) => etiqueta(r) === etiquetaRepo);
-  // story 8.31: en GitHub el «proyecto» es el repo (`github: <dueño>/<repo>`): un issue vive en un repo, como un Bug en
+  // En GitHub el «proyecto» es el repo (`github: <dueño>/<repo>`): un issue vive en un repo, como un Bug en
   // su proyecto. Una ficha de GitHub es (paquete, repo).
   if (e && !e.ado && e.github) return String(e.github);
   const crudo = e && e.ado ? String(e.ado).split('/')[0]
@@ -482,12 +481,12 @@ function proyectoDe(etiquetaRepo, cfg) {
  *
  * `proyectoDe` cae en el `producto` cuando la etiqueta no está en `repos.json`, y para decidir si dos
  * hallazgos son la misma ficha eso sirve. Para PEDIRLE algo a Azure no: el producto no es el proyecto
- * (Acme → «Acme Web», Globex → GlobexCore), y un repo que salió de la config generaba un pedido a un
- * proyecto inexistente que fallaba todas las noches (pase adversarial de la story 4.4).
+ * (Acme → «Acme Web», Globex → GlobexCore), y un repo que salió de la config generaría un pedido a un
+ * proyecto inexistente que fallaría todas las noches.
  */
 function proyectoAzureDe(etiquetaRepo, cfg) {
   const e = ((cfg && cfg.repos) || []).find((r) => etiqueta(r) === etiquetaRepo);
-  // story 8.31: el lugar al que se le PIDE, también en GitHub (el repo `<dueño>/<repo>`, donde se abre el issue). El
+  // El lugar al que se le PIDE, también en GitHub (el repo `<dueño>/<repo>`, donde se abre el issue). El
   // nombre se conserva: lo usan los guiones de pedidos de las dos plataformas, y cada uno rechaza la entrada ajena.
   if (e && !e.ado && e.github) return String(e.github);
   if (!e || !e.ado) return null;
@@ -522,7 +521,7 @@ function correr(a) {
   const activos = (cfg.repos || []).filter((r) => r.activo !== false);
   const apagados = (cfg.repos || []).filter((r) => r.activo === false).map(rutaCompleta);
   // Las MISMAS etiquetas que usa una ficha para nombrar sus repos: `repos_apagados` guarda la
-  // ruta (su forma no cambia — AC 17), pero la ficha dice `producto/repo`, y hay que comparar eso.
+  // ruta (su forma no cambia), pero la ficha dice `producto/repo`, y hay que comparar eso.
   const apagadosEtiq = new Set((cfg.repos || []).filter((r) => r.activo === false).map(etiqueta));
 
   const repos = activos.map((e) => auditarRepo(e, raiz, a.guion, hoy));
@@ -598,9 +597,9 @@ function correr(a) {
 
   // El tope se reparte DESPUÉS de descontar los anexos: si no, un aviso nuevo sobre un problema ya
   // anunciado le comería el turno a un hallazgo que nadie vio todavía.
-  // 🔴 Una CRÍTICA no espera turno (pedido del dev, 2026-09-14): no consume el tope y se anuncia la
-  // misma noche. Con el orden «más noches primero», una crítica recién aparecida quedaba detrás de altas
-  // viejas y podía esperar varias noches. El tope existe para no aturdir con altas.
+  // 🔴 Una CRÍTICA no espera turno: no consume el tope y se anuncia la
+  // misma noche. Con el orden «más noches primero», una crítica recién aparecida quedaría detrás de altas
+  // viejas y podría esperar varias noches. El tope existe para no aturdir con altas.
   const conCupo = candidatos.filter((x) => x.h.severidad !== 'critical');
   const elegidos = previo ? [...candidatos.filter((x) => x.h.severidad === 'critical'), ...conCupo.slice(0, tope)] : [];
   const postergados = (previo ? conCupo.slice(tope) : candidatos).map((x) => x.h);
@@ -629,7 +628,7 @@ function correr(a) {
     hallazgos,
     // 🔴 `hallazgos` es lo que DESPIERTA a alguien (sin lo declarado). `presencias` es lo que HAY
     // en cada repo, declarado o no: es lo único con lo que se puede decidir si una ficha se
-    // resolvió. Confundirlos era leer "declarado" como "pagado" (story 4.1, defecto 2).
+    // resolvió. Confundirlos es leer "declarado" como "pagado".
     presencias: agruparPresencias(repos),
     anunciados_hoy: idsAnunciados,
     postergados_por_presupuesto: postergados.map((h) => h.id),
@@ -639,7 +638,7 @@ function correr(a) {
   };
 
   // Se crean fichas SÓLO para lo que se anuncia hoy (tope de ruido). El REFRESCO de los hechos de
-  // cada noche ya no vive acá: lo hace `vigilarFichas`, que además es la única que decide — tener
+  // cada noche no vive acá: lo hace `vigilarFichas`, que además es la única que decide — tener
   // dos lugares que escriben la misma ficha en la misma corrida es cómo se pisan las decisiones.
   if (!a.dryRun) escribirBorradores(a.pending, aCrear, snapshot);
   // 🔴 La vigilancia de las fichas VIVAS —las pendientes y también las ya ACEPTADAS— corre acá,
@@ -652,7 +651,7 @@ function correr(a) {
   snapshot.descartados_ids = vig.descartados;
   snapshot.aceptadas_sin_resolver = vig.aceptadas_sin_resolver;
   // Siempre presente, aunque vacía: una clave ausente y una lista vacía se leen igual desde
-  // afuera, y el resumen diario de la 4.3 lee justamente ésta.
+  // afuera, y el resumen diario lee justamente ésta.
   snapshot.rechazadas_sin_deuda_ids = vig.rechazadas_sin_deuda || [];
   // Una ficha cerrada que la vigilancia encontró de vuelta también es novedad: se anuncia igual que
   // la que detecta el camino del tope. NO consume tope — no es un hallazgo nuevo, es uno que volvió.
@@ -661,8 +660,8 @@ function correr(a) {
     if (!snapshot.anunciados_hoy.includes(id)) snapshot.anunciados_hoy.push(id);
   }
   snapshot.reaparecidos_ids.sort(); snapshot.anunciados_hoy.sort();
-  // 🔴 EL CRUCE (story 4.5): después de vigilar (necesita las fichas ya refrescadas y movidas) y antes de
-  // archivar ignoradas (que ahora mira el estado de los pedidos). La clave `cruce` está SIEMPRE: una
+  // 🔴 EL CRUCE: después de vigilar (necesita las fichas ya refrescadas y movidas) y antes de
+  // archivar ignoradas (que mira el estado de los pedidos). La clave `cruce` está SIEMPRE: una
   // clave ausente se leería igual que «ningún pedido cerrado», y eso es lo que esta pieza no puede decir
   // sin haber mirado. En `--dry-run` se calcula sin escribir marcadores.
   const volcado = leerVolcado(a.bugs || path.join(a.out, `bugs-${hoy}.json`));
@@ -671,10 +670,10 @@ function correr(a) {
   const ignorados = a.dryRun ? [] : archivarIgnorados(a.pending, hoy, cfg, volcado, frenados);
   snapshot.cruce.ignorado_frenado = frenados;
   snapshot.ignorados_ids = ignorados;
-  // El snapshot se escribe DESPUÉS de decidir resueltos e ignorados (2026-09-05): antes se
-  // escribía antes, y `ignorados_ids` —que el pipeline lee del ARCHIVO para abandonar los PR
-  // de lo ignorado— nunca llegaba al disco: quedaba sólo en la salida. Los PR ignorados no se
-  // abandonaban nunca.
+  // El snapshot se escribe DESPUÉS de decidir resueltos e ignorados: si se
+  // escribiera antes, `ignorados_ids` —que el pipeline lee del ARCHIVO para abandonar los PR
+  // de lo ignorado— no llegaría al disco: quedaría sólo en la salida. Los PR ignorados no se
+  // abandonarían nunca.
   if (!a.dryRun) {
     fs.mkdirSync(a.out, { recursive: true });
     fs.writeFileSync(path.join(a.out, `dependencias-${hoy}.json`), JSON.stringify(snapshot, null, 2) + '\n');
@@ -723,10 +722,10 @@ function escribirBorradores(pendingDir, aAnunciar, snapshot) {
 
 // ── antes de crear una ficha, se busca en las TRES carpetas ────────────────────────────────────
 //
-// 🔴 EL IDENTIFICADOR SE MUEVE SOLO (story 4.1, defecto 3). La huella es `paquete|severidad|avisos`,
-// así que un aviso NUEVO sobre el mismo paquete produce OTRO id: el viejo desaparecía de los
-// hallazgos —y se daba por resuelto, falso— y el nuevo nacía como ficha nueva, con su propio pull
-// request. Dos pull requests y un "arreglo" fantasma por el mismo hecho.
+// 🔴 EL IDENTIFICADOR SE MUEVE SOLO. La huella es `paquete|severidad|avisos`,
+// así que un aviso NUEVO sobre el mismo paquete produce OTRO id: el viejo desaparece de los
+// hallazgos —y se daría por resuelto, falso— y el nuevo nacería como ficha nueva, con su propio pull
+// request: dos pull requests y un "arreglo" fantasma por el mismo hecho.
 //
 // La identidad de una ficha es (paquete, PROYECTO de Azure DevOps), porque el pedido de trabajo es
 // uno por proyecto: el mismo paquete en dos proyectos distintos son dos fichas, y eso no cambia.
@@ -769,10 +768,10 @@ function fichaDe(fichas, h, cfg) {
  * Anexa un id (y sus avisos) a una ficha VIVA. No la mueve ni cambia su veredicto.
  *
  * 🔴 RELEE DEL DISCO Y ACTUALIZA EL OBJETO EN MEMORIA. La lista de fichas se arma UNA vez antes del
- * bucle, así que dos avisos nuevos del mismo paquete y proyecto en la MISMA noche escribían los dos
- * sobre el texto leído al principio: el segundo pisaba al primero. El resumen decía «los dos
- * anexados» y el archivo tenía uno solo — el identificador perdido quedaba marcado como anunciado,
- * sin pull request, y nadie se enteraba. (Cazado por el revisor de fallos silenciosos, caso T18.)
+ * bucle, así que dos avisos nuevos del mismo paquete y proyecto en la MISMA noche escribirían los dos
+ * sobre el texto leído al principio: el segundo pisaría al primero. El resumen diría «los dos
+ * anexados» y el archivo tendría uno solo — el identificador perdido quedaría marcado como anunciado,
+ * sin pull request, y nadie se enteraría.
  */
 function anexarAFicha(f, h) {
   refrescarFicha(f);
@@ -809,14 +808,14 @@ function refrescarFicha(f) {
  */
 function reactivarFicha(f, h, hoy, pendingDir) {
   // 🔴 Misma relectura que el anexo, y por el mismo motivo: si dos avisos nuevos reactivan la MISMA
-  // ficha cerrada esta noche, la segunda llamada trabajaba sobre el texto viejo e intentaba borrar
-  // un archivo que la primera ya había movido — excepción sin capturar que tumbaba la corrida
-  // ENTERA, con los diez repos ya auditados y nada escrito (caso T18b). Reactivar dos veces la
+  // ficha cerrada esta noche, la segunda llamada trabajaría sobre el texto viejo e intentaría borrar
+  // un archivo que la primera ya movió — excepción sin capturar que tumbaría la corrida
+  // ENTERA, con los diez repos ya auditados y nada escrito. Reactivar dos veces la
   // misma ficha tiene que ser inofensivo: la segunda sólo anexa.
   refrescarFicha(f);
   if (!fs.existsSync(f.archivo)) return;
   let txt = f.txt;
-  // 🔴 Y la historia del pull request se corta acá (story 4.2): la ficha reactivada NO puede
+  // 🔴 Y la historia del pull request se corta acá: la ficha reactivada NO puede
   // conservar `pr:`, porque el pipeline consultaría el pull request de su vida anterior —cerrado o
   // completado— y no abriría ninguno nuevo. El hecho volvió: necesita su propio lugar donde
   // decidirse. La historia no se pierde, se renombra, y `pr-text` la cuenta en el texto del PR
@@ -827,10 +826,10 @@ function reactivarFicha(f, h, hoy, pendingDir) {
     txt = renombrarClave(txt, de, a);
   }
   txt = quitarClave(txt, 'pr_cerrado');
-  // (story 4.5) Los marcadores del CRUCE son de un episodio: una ficha que vuelve empieza de cero. Si no, el
-  // Bug cerrado con la vulnerabilidad de vuelta salía «ya avisado» y el aviso nuevo no salía nunca. `pedidos:`
+  // Los marcadores del CRUCE son de un episodio: una ficha que vuelve empieza de cero. Si no, el
+  // Bug cerrado con la vulnerabilidad de vuelta saldría «ya avisado» y el aviso nuevo no saldría nunca. `pedidos:`
   // se conserva: el Bug es el mismo. 🔴 `pagado_avisado:` NO se borra acá: es por proyecto, y borrarlo entero
-  // repetía «ya no aparece» en el proyecto donde nada cambió (revisor de fallos silenciosos, vuelta 2). Lo
+  // repetiría «ya no aparece» en el proyecto donde nada cambió. Lo
   // borra el guion de pedidos en el proyecto donde la vulnerabilidad vuelve a aparecer.
   for (const k of ['visto_cerrado', 'avisado_cerrado_vivo']) txt = ponerLista(txt, k, []);
   txt = ponerEscalar(txt, 'veredicto', 'pendiente');
@@ -850,12 +849,11 @@ function reactivarFicha(f, h, hoy, pendingDir) {
 }
 
 /**
- * LA VIGILANCIA VA POR FICHA, NO POR HALLAZGO (story 4.1).
+ * LA VIGILANCIA VA POR FICHA, NO POR HALLAZGO.
  *
- * Antes el recorrido iba por hallazgo y buscaba `pending/<id>.yaml`, así que una ficha ACEPTADA
- * —que el pipeline mueve a `promoted/` al mergear su pull request— no la volvía a mirar nadie:
- * nunca recibía `resuelto:` y sus datos quedaban congelados en la primera noche. Medido el
- * 2026-09-09: el único `resuelto:` que existía en `promoted/` lo había escrito una persona a mano.
+ * Recorrer por hallazgo y buscar `pending/<id>.yaml` dejaría sin mirar a una ficha ACEPTADA
+ * —que el pipeline mueve a `promoted/` al mergear su pull request—: nunca recibiría `resuelto:` y
+ * sus datos quedarían congelados en la primera noche.
  *
  * Se recorren las fichas VIVAS (`pending/` con veredicto pendiente + `promoted/` sin `resuelto:`),
  * se une la presencia de TODOS sus ids, y se decide EN ESTE ORDEN — el orden es la regla:
@@ -886,10 +884,10 @@ function vigilarFichas(pendingDir, hoy, snapshot, apagadosEtiq, cfg, yaReactivad
       const fi = leerFicha(txt);
       // 🔴 LAS FICHAS CERRADAS TAMBIÉN SE MIRAN, para detectar que el problema VOLVIÓ.
       //
-      // Antes sólo se recorrían las vivas, y la reactivación vivía en el otro camino —el del tope de
-      // anuncios—, que decide contra el último snapshot COMPLETO. Dos líneas base distintas para la
-      // misma pregunta: bastaba que UN repo de los veinte no se midiera la noche en que otra ficha se
-      // curaba, y esa ficha quedaba `resuelto:` PARA SIEMPRE aunque la vulnerabilidad volviera —
+      // Mirar sólo las vivas dejaría la reactivación en el otro camino —el del tope de
+      // anuncios—, que decide contra el último snapshot COMPLETO. Serían dos líneas base distintas para la
+      // misma pregunta: bastaría que UN repo de los veinte no se midiera la noche en que otra ficha se
+      // cura, y esa ficha quedaría `resuelto:` PARA SIEMPRE aunque la vulnerabilidad volviera —
       // contada como trabajo real, sin que nadie volviera a ser avisado.
       if (decididasHoy.has(f)) continue;
       const cerrada = (estado === 'promoted' && !!fi.escalares.resuelto)
@@ -897,7 +895,7 @@ function vigilarFichas(pendingDir, hoy, snapshot, apagadosEtiq, cfg, yaReactivad
       if (estado === 'pending' && fi.escalares.veredicto !== 'pendiente') continue;
 
       // 🔴 Compatibilidad con las fichas que ya existen: sin `ids:`, el id es el suyo. Sin esto, la
-      // primera noche después de esta story ninguna ficha vieja tendría ids y todas se resolverían.
+      // la primera noche ninguna ficha vieja tendría ids y todas se resolverían.
       const idFicha = fi.escalares.id || f.replace(/\.yaml$/, '');
       const ids = fi.listas.ids.length ? fi.listas.ids : [idFicha];
 
@@ -906,14 +904,13 @@ function vigilarFichas(pendingDir, hoy, snapshot, apagadosEtiq, cfg, yaReactivad
       // 🔴 Por qué no alcanza con los ids: la declaración de deuda ampara por AVISO, no por
       // severidad. Si el mismo aviso se re-puntúa de alto a crítico, nace otra huella —ya
       // amparada— que nunca entra a la lista de anuncios (lo declarado no despierta a nadie) y por
-      // eso nunca se anexa a la ficha. La ficha no la veía, creía que su paquete había
-      // desaparecido, y escribía `resuelto:` donde correspondía «descartado por deuda»: el defecto
-      // que esta story existe para cerrar, entrando por otra puerta.
+      // eso nunca se anexa a la ficha. La ficha no la vería, creería que su paquete desapareció,
+      // y escribiría `resuelto:` donde corresponde «descartado por deuda».
       //
       // La identidad es la MISMA que usa `fichaDe` para decidir si dos hechos son la misma ficha
       // (paquete sin distinguir mayúsculas + proyecto de Azure), así que las dos preguntas
       // —«¿es la misma ficha?» y «¿sigue estando?»— se contestan con el mismo criterio.
-      // (Extraída a `presenciaDeFicha` en la story 4.5: el cruce por proyecto usa la MISMA regla.)
+      // (Es `presenciaDeFicha`: el cruce por proyecto usa la MISMA regla.)
       const porRepo = presenciaDeFicha(fi, ids, snapshot, cfg);
 
       // Los repos "de la ficha": los que decía anoche (sin declarar y declarados) más donde está hoy.
@@ -928,11 +925,11 @@ function vigilarFichas(pendingDir, hoy, snapshot, apagadosEtiq, cfg, yaReactivad
       // decisión queda bloqueada): el pull request transporta la decisión, los datos son los de hoy.
       //
       // 🔴 PERO UN REPO QUE NO SE PUDO MEDIR NO SE BORRA DE LA FICHA. La presencia sólo conoce los
-      // repos MEDIDOS, así que escribir `repos:` con lo presente sacaba de la ficha al repo que esa
-      // noche no se pudo mirar. La noche siguiente ya no era «de la ficha», no bloqueaba nada, y la
-      // ficha se resolvía —o se archivaba por deuda— con ese repo JAMÁS medido: el «no medido =
-      // limpio» que esta story existe para cerrar, reintroducido por la puerta de atrás. Hacen falta
-      // DOS noches para verlo, y por eso ningún caso de una sola noche lo veía (T19).
+      // repos MEDIDOS, así que escribir `repos:` con lo presente sacaría de la ficha al repo que esa
+      // noche no se pudo mirar. La noche siguiente ya no sería «de la ficha», no bloquearía nada, y la
+      // ficha se resolvería —o se archivaría por deuda— con ese repo JAMÁS medido: el «no medido =
+      // limpio» de vuelta por la puerta de atrás. Hacen falta
+      // DOS noches para verlo, así que un caso de una sola noche no lo ve.
       const sinMirar = (r) => !medidos.has(r) || apagadosEtiq.has(r);
       const sinDeclarar = [...new Set([
         ...[...porRepo.values()].filter((x) => !x.declarada).map((x) => x.repo),
@@ -966,13 +963,13 @@ function vigilarFichas(pendingDir, hoy, snapshot, apagadosEtiq, cfg, yaReactivad
 
       // 🔴 UNA RECHAZADA VIVA SE PUBLICA ACÁ, antes de las cuatro ramas — no en la (d).
       //
-      // Estando en la (d) se perdía por el `continue` de la (a): si CUALQUIER repo de la ficha
-      // quedaba apagado o sin medir esa noche, la ficha desaparecía de `rechazadas_sin_deuda_ids`
+      // Estando en la (d) se perdería por el `continue` de la (a): si CUALQUIER repo de la ficha
+      // quedara apagado o sin medir esa noche, la ficha desaparecería de `rechazadas_sin_deuda_ids`
       // y de la línea ⚠️ del aviso **sin decir nada**, en una corrida que se lee como normal — y
-      // contradiciendo a `report`, que sí la seguía contando. Reproducido: noche con el repo
+      // contradiciendo a `report`, que sí la seguiría contando. Ejemplo: noche con el repo
       // medido → la lista trae la ficha; noche siguiente con `activo:false` → lista vacía, con la
       // ficha todavía en `pending/`, `veredicto: pendiente` y `rechazado:`. El consumidor de esa
-      // clave (el resumen diario de la 4.3) leería «no hay rechazadas», que es el cero silencioso
+      // clave (el resumen diario) leería «no hay rechazadas», que es el cero silencioso
       // que esta pieza existe para no cometer.
       //
       // El hecho es de la FICHA, no de la noche: está rechazada y está viva. Que un repo no se
@@ -1028,10 +1025,10 @@ function vigilarFichas(pendingDir, hoy, snapshot, apagadosEtiq, cfg, yaReactivad
       }
 
       // (d) sigue viva.
-      // 🔴 Y si una persona rechazó su pull request, eso se PUBLICA (story 4.2). Rechazar el aviso
+      // 🔴 Y si una persona rechazó su pull request, eso se PUBLICA. Rechazar el aviso
       // no arregla la vulnerabilidad: la ficha sigue viva y su única salida es la medición o la
       // deuda declarada en todos sus repos. Sin publicarla, una rechazada sería indistinguible de
-      // una resuelta en todos los contadores — el mismo defecto que la 4.1 cerró con «resuelto».
+      // una resuelta en todos los contadores — el mismo error de confundir «declarado» con «resuelto».
       if (/^rechazado:/m.test(txt)) res.rechazadas_sin_deuda.push(idFicha);
       escribirSiCambio(p, txt);
       if (estado === 'promoted') {
@@ -1058,29 +1055,29 @@ const escribirSiCambio = (p, txt) => { if (fs.readFileSync(p, 'utf8') !== txt) f
  * Un borrador que nadie miró en 7 días pasa solo a archivado como `ignorado`.
  *
  * 🔴 El reloj arranca en la última vez que la ficha PIDIÓ una decisión, no en la primera. Una ficha
- * cerrada que reaparece conserva su `detectado:` original (AC 12) — y una deuda vence a meses, así
+ * cerrada que reaparece conserva su `detectado:` original — y una deuda vence a meses, así
  * que el caso normal es que reaparezca con más de 7 días encima. Sin esto, la reactivación y el
- * archivado como ignorada ocurrían la MISMA noche: la ficha quedaba anunciada pero fuera de
- * `pending/`, el pipeline la salteaba («no está el borrador»), y la noche siguiente el hallazgo
- * heredaba `anunciado: true` y no se anunciaba nunca más. La vulnerabilidad volvía y la métrica
- * decía «nadie la miró». El corte de 7 días no cambia: cambia desde cuándo se cuenta.
+ * archivado como ignorada ocurrirían la MISMA noche: la ficha quedaría anunciada pero fuera de
+ * `pending/`, el pipeline la saltearía («no está el borrador»), y la noche siguiente el hallazgo
+ * heredaría `anunciado: true` y no se anunciaría nunca más. La vulnerabilidad volvería y la métrica
+ * diría «nadie la miró». El corte de 7 días no cambia: cambia desde cuándo se cuenta.
  *
- * 🔴 UNA FICHA SIN PEDIDO NO PUEDE SER «NADIE LA MIRÓ» (story 4.4, AC 11): si el pedido de trabajo
+ * 🔴 UNA FICHA SIN PEDIDO NO PUEDE SER «NADIE LA MIRÓ»: si el pedido de trabajo
  * del líder no se pudo crear en alguno de sus proyectos, nadie PUDO mirarla — archivarla como
  * ignorada taparía un fallo de creación con el único número que juzga a la pieza. Queda en
  * `pending/` y el guion de pedidos la publica en `sin_pedido`. Aplica SÓLO con
- * `azure.pedidos_activos: true` (decisión del dev, 2026-09-13): con la pieza apagada ninguna ficha
+ * `azure.pedidos_activos: true`: con la pieza apagada ninguna ficha
  * tiene pedido, y la protección haría que ninguna volviera a ignorarse desde el merge.
  */
 /**
  * ¿Los pedidos están prendidos? Los Bugs de Azure (`azure.pedidos_activos`) o los issues de GitHub
- * (`github.issues_enabled`, story 8.31). Con cualquiera de los dos, una ficha sin pedido no es «nadie la miró».
+ * (`github.issues_enabled`). Con cualquiera de los dos, una ficha sin pedido no es «nadie la miró».
  */
 const pedidosActivos = (cfg) => !!(cfg && ((cfg.azure && cfg.azure.pedidos_activos === true)
   || (cfg.github && cfg.github.issues_enabled === true)));
 
 /**
- * La clave de un pedido en el volcado (story 8.31). En Azure, el número: un id de work item es único en la
+ * La clave de un pedido en el volcado. En Azure, el número: un id de work item es único en la
  * organización. En GitHub el número de un issue se repite entre repos: `<dueño>/<repo>#<n>`. Lo dice el volcado
  * (`plataforma: "github"`); sin esa clave, el número, como siempre.
  */
@@ -1101,7 +1098,7 @@ function archivarIgnorados(pendingDir, hoy, cfg, volcado, frenados = []) {
   const ids = [];
   for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.yaml'))) {
     const txt = fs.readFileSync(path.join(dir, f), 'utf8');
-    // 🔴 RECHAZAR ES MIRAR (story 4.2). `ignorado` cuenta PEOR que descartado porque mide "a nadie
+    // 🔴 RECHAZAR ES MIRAR. `ignorado` cuenta PEOR que descartado porque mide "a nadie
     // le importó"; una ficha cuyo pull request una persona se tomó el trabajo de rechazar es
     // exactamente lo contrario, y archivarla ahí mentiría en el único número que juzga a la pieza.
     if (/^rechazado:/m.test(txt)) continue;
@@ -1117,10 +1114,10 @@ function archivarIgnorados(pendingDir, hoy, cfg, volcado, frenados = []) {
     const desde = [det && det[1], rea && rea[1]].filter(Boolean).sort().pop();
     const m = desde ? [null, desde] : null;
     if (!m || diasEntre(m[1], hoy) < DIAS_PARA_IGNORADO) continue;
-    // 🔴 CON PEDIDOS, «NADIE LA MIRÓ» SE LEE DEL PEDIDO (story 4.5, AC 7): el reloj es «7 días sin cambios
+    // 🔴 CON PEDIDOS, «NADIE LA MIRÓ» SE LEE DEL PEDIDO: el reloj es «7 días sin cambios
     // de una PERSONA en el pedido», no «7 días desde que nació». Un comentario del pipeline no cuenta
     // (lo resuelve el volcado); un pedido no leído, cerrado, o una noche sin volcado NO ignoran nada, y
-    // se dice por qué. Sin pedidos (los pedidos apagados) rige la regla de antes.
+    // se dice por qué. Sin pedidos (los pedidos apagados) rige la regla de los 7 días desde que nació.
     const pedidosFicha = leerPedidos(txt);
     if (pedidosFicha.length) {
       const motivo = motivoParaNoIgnorar(pedidosFicha, volcado, hoy);
@@ -1136,23 +1133,23 @@ function archivarIgnorados(pendingDir, hoy, cfg, volcado, frenados = []) {
   return ids.sort();
 }
 
-// ── el cruce «pedido cerrado, vulnerabilidad viva» (story 4.5) ─────────────────────────────────
+// ── el cruce «pedido cerrado, vulnerabilidad viva» ─────────────────────────────────
 //
-// Desde la 4.4 hay DOS fuentes sobre el mismo hecho: el estado del Bug (lo que una persona decidió) y
-// la medición de esta noche (lo que hay en `origin/main`). Nada las comparaba: un Bug cerrado por error,
-// por limpiar el tablero o por darlo por hecho antes del merge quedaba cerrado para siempre con la
-// vulnerabilidad viva — y el tablero decía «listo». Acá se comparan POR PROYECTO, sobre el volcado que
+// Hay DOS fuentes sobre el mismo hecho: el estado del Bug (lo que una persona decidió) y
+// la medición de esta noche (lo que hay en `origin/main`). Sin compararlas, un Bug cerrado por error,
+// por limpiar el tablero o por darlo por hecho antes del merge quedaría cerrado para siempre con la
+// vulnerabilidad viva — y el tablero diría «listo». Acá se comparan POR PROYECTO, sobre el volcado que
 // dejó `work-items.js state`. Este guion no habla con Azure: lee un archivo.
 
-/** Categorías de estado de Azure DevOps (medidas el 2026-09-10 en los procesos Agile y Scrum). */
+/** Categorías de estado de Azure DevOps (las de los procesos Agile y Scrum). */
 const CATEGORIAS_ABIERTAS = ['Proposed', 'InProgress'];
 const CATEGORIAS_CERRADAS = ['Resolved', 'Completed', 'Removed'];
 
 /**
  * La presencia de una ficha en cada repo, esta noche: `Map<repo, { repo, declarada, vence }>`.
  *
- * Es la UNIÓN sobre todos sus ids y sobre el mismo paquete en el mismo proyecto — el criterio de la
- * 4.1, extraído de `vigilarFichas` para que el cruce lo use sin copiarlo: «¿sigue estando?» y «¿sigue
+ * Es la UNIÓN sobre todos sus ids y sobre el mismo paquete en el mismo proyecto — el criterio de
+ * `vigilarFichas`, compartido para que el cruce lo use sin copiarlo: «¿sigue estando?» y «¿sigue
  * estando en este proyecto?» tienen que contestarse con la misma regla.
  */
 function presenciaDeFicha(fi, ids, snapshot, cfg) {
@@ -1191,7 +1188,7 @@ function leerVolcado(ruta) {
   }
   const lista = (x) => (Array.isArray(x) ? x.filter((y) => y && typeof y === 'object') : []);
   return { archivo: nombre, consultado: true, motivo: null, pedidos: v.pedidos,
-    // story 8.31: la plataforma decide la clave de cada pedido y el vocabulario de cierre
+    // La plataforma decide la clave de cada pedido y el vocabulario de cierre
     plataforma: v.plataforma === 'github' ? 'github' : 'azure',
     huerfanos: lista(v.huerfanos), huerfanos_no_consultados: lista(v.huerfanos_no_consultados) };
 }
@@ -1272,8 +1269,8 @@ function cruzarPedidos({ pendingDir, hoy, snapshot, volcado, cfg, apagadosEtiq =
         const visto = vistos.find((l) => l.startsWith(`${X}: `));
         const avisados = listaDe(t, 'avisado_cerrado_vivo');
         // 🔴 Reabierto se decide ANTES de mirar la medición: saber que el Bug se reabrió no necesita
-        // presencias, y esperar a que se midan todos los repos dejaba vivos los marcadores del cierre
-        // anterior (pase adversarial de la 4.5).
+        // presencias, y esperar a que se midan todos los repos dejaría vivos los marcadores del cierre
+        // anterior.
         if (abierto) {
           if (visto || avisados.some((l) => l.startsWith(`${X} (`))) {
             t = ponerLista(t, 'visto_cerrado', vistos.filter((l) => !l.startsWith(`${X}: `)));
@@ -1287,7 +1284,7 @@ function cruzarPedidos({ pendingDir, hoy, snapshot, volcado, cfg, apagadosEtiq =
         // 🔴 Un repo de la ficha que ya no está en repos.json no tiene proyecto conocido
         // (`proyectoDe` caería en el producto, y el producto no es el proyecto: Acme ≠ «Acme Web»). No
         // se puede afirmar que NO sea de este proyecto, así que cuenta — y como no se mide, bloquea el par:
-        // «no medido» nunca sale «coincide» (pase adversarial de la 4.5).
+        // «no medido» nunca sale «coincide».
         const reposX = [...new Set([...fi.listas.repos, ...fi.listas.declarada_en.map(soloRepo), ...porRepo.keys()])]
           .filter((r) => r && (!enConfig.has(r) || proyectoDe(r, cfg) === X)).sort();
         const sinMirar = reposX.filter((r) => apagadosEtiq.has(r) || !medidos.has(r));
@@ -1308,7 +1305,7 @@ function cruzarPedidos({ pendingDir, hoy, snapshot, volcado, cfg, apagadosEtiq =
         let desde = visto ? visto.slice(X.length + 2).trim() : null;
         if (desde !== null && !/^\d{4}-\d{2}-\d{2}$/.test(desde)) {
           // Una fecha que no se puede leer (editada a mano, vacía) no puede trabar la gracia para siempre:
-          // se reescribe con hoy y la gracia vuelve a empezar (pase adversarial de la 4.5).
+          // se reescribe con hoy y la gracia vuelve a empezar.
           t = ponerLista(t, 'visto_cerrado', [...vistos.filter((l) => !l.startsWith(`${X}: `) && l !== `${X}:`), `${X}: ${hoy}`]);
           desde = null;
           c.en_gracia.push({ ...par, estado: e.estado, motivo: e.motivo, clase, visto_cerrado: hoy });
@@ -1404,15 +1401,14 @@ function imprimirCorrida(s, aAnunciar, postergados) {
 // ── el texto del pull request ──────────────────────────────────────────────────────────────────
 
 /**
- * `note` — LO ÚNICO QUE ESCRIBE LA FICHA desde afuera de una corrida (story 4.2).
+ * `note` — LO ÚNICO QUE ESCRIBE LA FICHA desde afuera de una corrida.
  *
- * El paso de pull request de los dos pipelines vive ahora en un guion compartido
+ * El paso de pull request de los dos pipelines vive en un guion compartido
  * (`scripts/ci/open-pr-per-finding.sh`) que no conoce el formato de ninguna de las dos colas: lee
  * `pr:` y `veredicto:` por línea y para TODO lo demás llama acá. Si el compartido escribiera la
- * ficha con `sed`, el formato quedaría descrito en dos lugares y —como ya pasó con los dos bloques
- * de YAML, separados en cinco días— se separarían solos.
+ * ficha con `sed`, el formato quedaría descrito en dos lugares y se separarían solos.
  *
- * 🔴 El rechazo NO archiva la ficha (decisión 7 del dev): la vulnerabilidad es un hecho MEDIDO y
+ * 🔴 El rechazo NO archiva la ficha: la vulnerabilidad es un hecho MEDIDO y
  * rechazar el aviso no la saca de `main`. La ficha sigue viva y sale por medición (`resuelto:`) o
  * por deuda declarada en todos sus repos. Es lo contrario que en el vigilante, donde un borrador
  * es una hipótesis y descartarla es una decisión completa — cada cola tiene su consecuencia.
@@ -1485,13 +1481,12 @@ function prTexto(a) {
 /**
  * El texto de una ficha, en LÍNEAS — UNA sola generación para los dos lugares donde se lee.
  *
- * Nace de la story 4.4: el pedido de trabajo del líder (un Bug en el proyecto del cliente) cuenta lo
- * mismo que el pull request del arnés, y dos plantillas del mismo texto se separan solas (este repo
- * ya lo pagó con dos bloques de YAML que en cinco días diferían en tres lugares). La parte común
+ * El pedido de trabajo del líder (un Bug en el proyecto del cliente) cuenta lo
+ * mismo que el pull request del arnés, y dos plantillas del mismo texto se separan solas. La parte común
  * —paquete, repos, avisos, noches— es UNA; lo que cambia es qué se decide y dónde:
  *
- *   destino 'pr'      → markdown. 🔴 La salida de `pr-text` es BYTE A BYTE la de antes de extraer
- *                       esta función (caso T26 de work-items.test.sh, con el texto dorado).
+ *   destino 'pr'      → markdown. 🔴 La salida de `pr-text` es BYTE A BYTE la del texto dorado
+ *                       (caso T26 de scripts/tests/work-items.test.sh).
  *   destino 'pedido'  → las mismas líneas para el Bug; `aHtml` las convierte, porque Repro Steps y
  *                       Descripción son campos HTML y el markdown se vería crudo en el formulario.
  *
@@ -1499,7 +1494,7 @@ function prTexto(a) {
  */
 function cuerpoDeFicha(d, { destino = 'pr' } = {}) {
   const repos = d.repos || [], avisos = d.avisos || [];
-  // story 8.31: en un issue de GitHub, un `@algo` de un nombre de paquete menciona a una cuenta y un `#123` enlaza otro
+  // En un issue de GitHub, un `@algo` de un nombre de paquete menciona a una cuenta y un `#123` enlaza otro
   // issue. Los nombres que vienen de afuera van en código: ahí GitHub no hace ninguna de las dos cosas.
   const issue = destino === 'issue';
   const cod = (s) => (issue ? `\`${String(s).replace(/`/g, "'")}\`` : s);
@@ -1512,7 +1507,7 @@ function cuerpoDeFicha(d, { destino = 'pr' } = {}) {
     '',
     '**Avisos**',
     // Sin enlaces, el mismo marcador que escribe la ficha: un título «Avisos» sin nada debajo se lee
-    // como un texto roto (pase adversarial de la 4.4). Con la ficha de siempre esto no cambia nada.
+    // como un texto roto. Con la ficha de siempre esto no cambia nada.
     // un enlace a la base de avisos de GitHub no menciona ni enlaza nada más: va como enlace; lo demás, en código
     ...(avisos.length ? avisos.map((u) => (/^https:\/\/github\.com\/advisories\/GHSA-[A-Za-z0-9-]+$/.test(String(u)) ? u : cod(u)))
       : ['(el informe no trajo enlace)']).map((u) => `- ${u}`),
@@ -1551,7 +1546,7 @@ function cuerpoDeFicha(d, { destino = 'pr' } = {}) {
     );
     return L;
   }
-  // 🔴 Una ficha REACTIVADA no llega virgen: ya se decidió una vez sobre ella (story 4.2). Sin
+  // 🔴 Una ficha REACTIVADA no llega virgen: ya se decidió una vez sobre ella. Sin
   // decirlo, quien recibe este pull request vuelve a decidir a ciegas lo mismo que ya decidió, y
   // el arnés parece insistir sin memoria — la forma más rápida de que se deje de mirar la lista.
   if (d.prAntes && d.rechAntes) {
@@ -1572,7 +1567,7 @@ function cuerpoDeFicha(d, { destino = 'pr' } = {}) {
 }
 
 /**
- * Las líneas de `cuerpoDeFicha` en HTML, para un campo de Azure DevOps (story 4.4).
+ * Las líneas de `cuerpoDeFicha` en HTML, para un campo de Azure DevOps.
  *
  * Sólo el subconjunto que el generador usa: párrafos, listas `- `, bloques ```, `**negrita**`,
  * `código`, enlaces y la línea entera entre `_…_`. Todo se escapa ANTES de marcar: el texto trae
@@ -1609,7 +1604,7 @@ function aHtml(lineas) {
 }
 
 /**
- * La lista `pedidos:` de una ficha → `[{ proyecto, id }]` (story 4.4).
+ * La lista `pedidos:` de una ficha → `[{ proyecto, id }]`.
  *
  * Cada línea es `<Proyecto>: <id>` y el proyecto PUEDE tener espacios (`Acme Web: 123`), así que
  * se parte en el ÚLTIMO `: `. Una línea que no termina en un número no es un pedido: se ignora acá y
@@ -1640,7 +1635,7 @@ function clones(a) {
   for (const r of cfg.repos || []) {
     if (r.activo === false || !r.ruta || vistas.has(r.ruta)) continue;
     vistas.add(r.ruta);
-    // story 8.31: una entrada de GitHub da `<dueño>/<repo>`. Dos columnas siempre: el modelo de Azure lee dos.
+    // Una entrada de GitHub da `<dueño>/<repo>`. Dos columnas siempre: el modelo de Azure lee dos.
     console.log(`${r.ruta}\t${r.ado || r.github || ''}`);
   }
   return 0;
@@ -1666,12 +1661,12 @@ function report(a) {
   };
   const todos = [...leerDir('pending'), ...leerDir('promoted'), ...leerDir('archived')];
 
-  // 🔴 EL CONTADOR CUENTA ARREGLOS, NO DECISIONES (story 4.1, AC 15).
+  // 🔴 EL CONTADOR CUENTA ARREGLOS, NO DECISIONES.
   //
-  // Hasta el 2026-09-10 "trabajo real" era TODA la carpeta `promoted/`, o sea toda ficha cuyo pull
-  // request alguien mergeó. Pero mergear ese pull request quiere decir "sí, hay que arreglarlo",
-  // no "está arreglado": medido ese día, de las 3 fichas aceptadas sólo 1 tenía `resuelto:`, y lo
-  // había escrito una persona a mano. Un tablero que llama "trabajo real" a una intención mide
+  // El "trabajo real" NO es toda la carpeta `promoted/`, o sea toda ficha cuyo pull
+  // request alguien mergeó: mergear ese pull request quiere decir "sí, hay que arreglarlo",
+  // no "está arreglado".
+  // Un tablero que llama "trabajo real" a una intención mide
   // exactamente lo contrario de lo que promete.
   const promovidas = todos.filter((x) => x.estado === 'promoted');
   const trabajo_real = promovidas.filter((x) => x.resuelto).length;
@@ -1770,22 +1765,21 @@ function main() {
 
 // 🔴 `process.exitCode`, NO `process.exit()`. Este guión lo ejecuta otro proceso y le parsea la
 // salida; en Node las escrituras a una tubería son ASINCRÓNICAS y `process.exit()` mata el proceso
-// con parte de lo escrito todavía en el aire. Medido en audit-dependencies.js el 2026-09-28: un
-// informe de 9782 bytes llegaba cortado en 8192 y el consumidor lo leía como «no pude», nunca como
+// con parte de lo escrito todavía en el aire: un
+// informe de 9782 bytes llega cortado en 8192 y el consumidor lo lee como «no pude», nunca como
 // un error. `main` acá es sincrónica y no deja manejadores abiertos, así que con `exitCode` el
 // proceso termina solo, cuando terminó de escribir.
-// Caso: guides/maintaining/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
 if (require.main === module) {
-  // story 8.9: los nombres viejos (subcomandos y opciones en castellano) siguen andando hasta el retiro
+  // Los nombres viejos (subcomandos y opciones en castellano) siguen andando hasta el retiro
   require('../../lib/legacy-names.js').aliasArgv('scripts/nightly/dependencies/nightly-dependencies.js', { exitCode: 2, prefix: 'error: ' });
   process.exitCode = main();
 }
-// Lo que sigue a `parseArgs` lo reusa `work-items.js` (story 4.4): la ficha se lee y se
+// Lo que sigue a `parseArgs` lo reusa `work-items.js`: la ficha se lee y se
 // escribe con UN solo código, y el texto del Bug sale del mismo generador que el del pull request.
 module.exports = { huella, agruparHallazgos, agruparPresencias, proyectoDe, leerFicha, snapshotAnterior, parseArgs, ubicarRepo,
   listaDe, ponerLista, etiqueta, soloRepo, leerTodasLasFichas, leerPedidos, cuerpoDeFicha, aHtml, archivarIgnorados,
   proyectoAzureDe,
-  // story 4.5 — el cruce
+  // el cruce
   presenciaDeFicha, leerVolcado, cruzarPedidos, motivoParaNoIgnorar, CATEGORIAS_ABIERTAS, CATEGORIAS_CERRADAS,
-  // story 8.31 — GitHub
+  // GitHub
   pedidosActivos, claveDePedido, vocabularioDeCierre };

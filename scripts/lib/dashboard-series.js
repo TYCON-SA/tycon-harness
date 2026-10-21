@@ -2,9 +2,9 @@
 /**
  * dashboard-series.js — EL CONSUMIDOR que nunca se escribió.
  *
- * El capturer viene emitiendo un archivo de métricas por merge desde el 2026-05-03. Nadie los
- * agregó nunca, así que nadie se enteró de que no se podían sumar (ver el encabezado de
- * `dashboard-metrics.js`, su vecino, para la medición completa). Este script es esa mitad que faltaba.
+ * El capturer emite un archivo de métricas por merge. Sin un consumidor que los agregue, nadie se entera de
+ * que no se pueden sumar (ver el encabezado de `dashboard-metrics.js`, su vecino, para el formato). Este script
+ * es ese consumidor.
  *
  * 🔴 **Declara su propia cobertura, siempre.** Nunca imprime un promedio sin decir sobre cuántos
  * registros lo calculó. Un número sin denominador es exactamente el problema que este script
@@ -16,7 +16,7 @@
  *   node scripts/lib/dashboard-series.js                    # la serie + el resumen
  *   node scripts/lib/dashboard-series.js --validate         # sale 1 si un archivo v2 viola el formato
  *   node scripts/lib/dashboard-series.js --json             # para consumir desde otra pieza
- *   node scripts/lib/dashboard-series.js --since 2026-08-01 # ventana
+ *   node scripts/lib/dashboard-series.js --since <AAAA-MM-DD> # ventana
  *   node scripts/lib/dashboard-series.js --project totora    # un proyecto
  *   node scripts/lib/dashboard-series.js --dir <path>       # otro .dashboard
  */
@@ -27,11 +27,11 @@ const path = require('path');
 const { METRICS, loadAll } = require('./dashboard-metrics.js');
 
 const REPO = path.resolve(__dirname, '..', '..');   // el clon: este archivo vive en scripts/lib/
-// dónde vive `.dashboard` en esta máquina lo sabe tycon-home.js (story 8.23, tanda D): en una instalación bajada es
+// dónde vive `.dashboard` en esta máquina lo sabe tycon-home.js: en una instalación bajada es
 // ~/.tycon/state/dashboard; en un clon, el de siempre. Si el archivo viaja suelto, el de siempre.
 function dashboardDefault() {
-  // lo que escribe la máquina vive donde dice scripts/lib/night-data.js (story 8.26, tanda J): en una versión bajada, el
-  // clon de mantenimiento que la máquina declara; nunca el del público. Sin esa biblioteca al lado, lo de antes.
+  // lo que escribe la máquina vive donde dice scripts/lib/night-data.js : en una versión bajada, el
+  // clon de mantenimiento que la máquina declara; nunca el del público. Sin esa biblioteca al lado, el de siempre.
   // (si la biblioteca ESTÁ y no carga, tira: no se vuelve callado a la ruta de antes; si no pudo saber, lo avisa ella)
   { const lib = path.join(__dirname, 'night-data.js'); if (require('fs').existsSync(lib)) { const d = require(lib).machineDashboardDir(REPO); if (d) return d; } }
   try {
@@ -71,8 +71,8 @@ function stats(nums) {
 /**
  * La tendencia se calcula sobre los registros CON fecha, en orden cronológico, y sólo si son
  * suficientes: ≥60 % de la ventana con fecha confiable y ≥6 valores. Si no, devuelve el motivo —
- * y el reporte lo imprime en vez de una flecha. Con los datos del 2026-09-05 (26 de 125 con
- * `captured_at`) el resultado correcto es NO dibujar tendencia.
+ * y el reporte lo imprime en vez de una flecha. Con pocos registros con `captured_at`, lo correcto es NO dibujar
+ * tendencia.
  */
 const MIN_COBERTURA_FECHAS = 0.6;
 const MIN_VALORES_TENDENCIA = 6;
@@ -131,9 +131,9 @@ function main() {
   }
 
   // ── filtros ────────────────────────────────────────────────────────────────────────────────
-  // 🔴 Todo filtro REPORTA cuántos registros dejó afuera y por qué (2026-09-05). Antes, con la
-  // fecha leída de un solo campo, `--since` descartaba 99 de 125 en silencio: un denominador que
-  // se achica sin decirlo se lee igual que uno completo.
+  // 🔴 Todo filtro REPORTA cuántos registros dejó afuera y por qué: con la fecha leída de un solo campo,
+  // `--since` descartaría registros en silencio, y un denominador que se achica sin decirlo se lee igual que uno
+  // completo.
   let rows = records.filter((r) => r.status === 'ok' || r.status === 'legacy');
   const antesDeVentana = rows.length;
   const sinFecha = rows.filter((r) => !r.date).length;
@@ -146,7 +146,7 @@ function main() {
   }
 
   // 🔴 El orden cronológico se arma SÓLO con los que tienen fecha. Ordenar por `String(date)` con
-  // nulos ponía "null" después de cualquier fecha: la "segunda mitad" mezclaba mayo con septiembre.
+  // nulos pone "null" después de cualquier fecha: la "segunda mitad" mezclaría meses distintos.
   const dated = rows.filter((r) => r.date).sort((x, y) => x.date.localeCompare(y.date));
   const dateSources = {};
   for (const r of rows) { const k = r.date_source || 'ninguna'; dateSources[k] = (dateSources[k] === undefined ? 0 : dateSources[k]) + 1; }
