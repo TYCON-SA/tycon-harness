@@ -11,8 +11,10 @@
 #
 # Lo que no se puede perder:
 #   T2  · Swap_LinksOnly_NoVersionDirRenamed — install y dos update: la nueva en versions/<v>, harness y previous
-#         enlaces a las dos últimas, sin diario; ninguna carpeta de versions/ se renombra; un lector en bucle nunca ve
-#         harness ausente (el cambio del enlace en posix es atómico).
+#         enlaces a las dos últimas, sin diario; ninguna carpeta de versions/ se renombra; harness nunca se quita: el
+#         enlace nuevo lo reemplaza con un rename (en posix, atómico). Se mira el mecanismo y no un lector en bucle: en
+#         macOS un lector ve el nombre ausente un instante aun durante un rename atómico (medido: miles de veces en
+#         veinte segundos de cambios), así que ese lector daba rojos de azar sin medir nada del arnés.
 #   T3  · Swap_ActiveFileHeld_Applies — con la versión ACTIVA tomada, update aplica en esa corrida: sale 0, sin
 #         `waiting` ni `failed`.
 #   T4  · Persisted_NeverNamesVersionDir — después de install, update y rollback, nada escrito fuera de ~/.tycon
@@ -73,7 +75,7 @@ instala() {
   INSTALL_OUT="$(harness install --version "${1:-latest}" --yes 2>&1)"; INSTALL_RC=$?
 }
 # la envoltura de «tomado»: rename de una carpeta nombrada en TYCON_TEST_HELD (o de algo adentro) falla con EPERM; con
-# TYCON_TEST_RENAME_LOG anota cada rename (origen<TAB>destino)
+# TYCON_TEST_RENAME_LOG anota cada rename (origen<TAB>destino) y cada borrado (-<TAB>ruta)
 HELD_JS="$BASE/held-rename.js"
 cat > "$HELD_JS" <<'JS'
 // held-rename.js (harness-release-links.test.sh): simula en posix una carpeta TOMADA de Windows
@@ -91,6 +93,13 @@ fs.renameSync = function renameSync(from, to) {
   }
   return orig.apply(this, arguments);
 };
+for (const name of ['unlinkSync', 'rmdirSync', 'rmSync']) {
+  const real = fs[name];
+  fs[name] = function removal(p) {
+    if (log) { try { fs.appendFileSync(log, `-\t${path.resolve(String(p))}\n`); } catch (_) { /* sin registro */ } }
+    return real.apply(this, arguments);
+  };
+}
 JS
 # corre un comando con la envoltura puesta: con_tomado "<carpetas separadas por :>" <comando…>
 con_tomado() { local h="$1"; shift; NODE_OPTIONS="--require $HELD_JS" TYCON_TEST_HELD="$h" "$@"; }
@@ -112,19 +121,16 @@ if corre T2; then
   [ -L "$T/harness" ] && [ "$(destino "$T/harness")" = "$T/versions/2026.10.07.1" ] && ok "harness es un enlace a versions/2026.10.07.1" || mal "harness: $(ls -la "$T" 2>&1 | tr '\n' ' ')"
   [ ! -e "$T/previous" ] && [ ! -L "$T/previous" ] && ok "sin previous todavía" || mal "hay previous tras la primera instalación"
   harness_lab_publish_stable 2026.10.07.2
-  # un lector en bucle mientras se actualiza: nunca ve harness ausente
-  GAPS="$BASE/gaps2"; : > "$GAPS"
-  ( while [ ! -e "$BASE/stop2" ]; do [ -e "$T/harness/.tycon-release.json" ] || echo hueco >> "$GAPS"; done ) &
-  lector=$!
   out="$(con_registro harness_release update --yes 2>&1)"; rc=$?
-  touch "$BASE/stop2"; wait "$lector" 2>/dev/null
   [ "$rc" = 0 ] && ok "update aplica: $out" || mal "update salió $rc: $out"
   [ "$(destino "$T/harness")" = "$T/versions/2026.10.07.2" ] && ok "harness → versions/2026.10.07.2" || mal "harness → $(destino "$T/harness")"
   [ "$(destino "$T/previous")" = "$T/versions/2026.10.07.1" ] && ok "previous → versions/2026.10.07.1" || mal "previous → $(destino "$T/previous")"
   [ "$(version_en "$T/harness")" = 2026.10.07.2 ] && [ "$(estado "d['version']['number']")" = 2026.10.07.2 ] && ok "el árbol y el estado dicen 2026.10.07.2" || mal "árbol $(version_en "$T/harness") · estado $(estado "d['version']['number']")"
   [ ! -e "$T/link-swap.json" ] && [ ! -e "$T/swap.json" ] && ok "sin diario al terminar" || mal "quedó un diario: $(ls "$T")"
   renombro_versiones && mal "se renombró una carpeta de versions/: $(grep "^$T/versions/" "$RENAMES")" || ok "ninguna carpeta de versions/ se renombró"
-  [ ! -s "$GAPS" ] && ok "un lector en bucle nunca vio harness ausente" || mal "el lector vio harness ausente $(wc -l < "$GAPS") vez/veces"
+  # harness nunca queda ausente: no se borra ni se mueve, y el enlace nuevo entra con un rename sobre él
+  awk -F'\t' -v h="$T/harness" '$1 == "-" && $2 == h || $1 == h { f = 1 } END { exit !f }' "$RENAMES" && mal "harness se quitó o se movió durante el cambio (queda un hueco): $(grep -F "$T/harness" "$RENAMES" | tr '\n' ' ')" || ok "harness no se quitó ni se movió en ningún momento"
+  awk -F'\t' -v h="$T/harness" 'index($1, h ".tycon-new-") == 1 && $2 == h { f = 1 } END { exit !f }' "$RENAMES" && ok "el enlace nuevo reemplazó a harness con un rename" || mal "harness no se reemplazó con un rename: $(grep -F "$T/harness" "$RENAMES" | tr '\n' ' ')"
   harness_lab_publish_stable 2026.10.07.3
   out="$(con_registro harness_release update --yes 2>&1)"; rc=$?
   [ "$rc" = 0 ] && [ "$(destino "$T/harness")" = "$T/versions/2026.10.07.3" ] && [ "$(destino "$T/previous")" = "$T/versions/2026.10.07.2" ] && ok "otra más: harness → .3, previous → .2" || mal "tercera: rc=$rc harness → $(destino "$T/harness") previous → $(destino "$T/previous")"

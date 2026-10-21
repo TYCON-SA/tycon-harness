@@ -142,7 +142,9 @@ const everythingWritten = (fx) => {
   const out = [];
   const walk = (dir) => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const p = path.join(dir, e.name); if (e.isDirectory()) walk(p); else out.push(fs.readFileSync(p, 'utf8')); } };
   walk(fx.home);
-  return out.join('\n');
+  // la hora de cada renglón del registro de frenos no sale de lo mirado: sin sacarla, un número corto que se busca
+  // («100») aparece en los milisegundos («…:07.100Z») una vez cada tanto
+  return out.join('\n').replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, '<hora>');
 };
 
 /** Un rojo: sale 1, con la categoría y el lugar, y sin el texto en la salida ni en lo que el freno deja escrito. */
