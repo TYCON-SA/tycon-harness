@@ -16,6 +16,8 @@ const net = require('net');
 const tls = require('tls');
 
 const LOCAL = new Set(['127.0.0.1', 'localhost', '::1']);
+// el nombre con que se presenta al servidor (EHLO): el de la máquina, si tiene forma de nombre; si no, localhost
+const saludo = /^[A-Za-z0-9.-]{1,253}$/.test(require('os').hostname()) ? require('os').hostname() : 'localhost';
 // los códigos de un servidor que no se alcanza (no de un apretón TLS que falla)
 const REDES = ['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT', 'EHOSTUNREACH', 'ENETUNREACH', 'ECONNRESET'];
 
@@ -82,12 +84,12 @@ function enviar(o) {
       // TLS directo en el 465 (o si quien llama lo pide); en los demás, en claro hasta el STARTTLS
       if (o.tlsDirecto !== undefined ? o.tlsDirecto : o.puerto === 465) await pasoATls(); else escuchar(sock);
       if (!espera(await pedir(null), 220)) return;
-      let r = await pedir('EHLO tycon-harness');
+      let r = await pedir(`EHLO ${saludo}`);
       if (!espera(r, 250)) return;
       if (!conTls && /STARTTLS/i.test(r.texto)) {
         if (!espera(await pedir('STARTTLS'), 220)) return;
         await pasoATls();
-        r = await pedir('EHLO tycon-harness');
+        r = await pedir(`EHLO ${saludo}`);
         if (!espera(r, 250)) return;
       }
       if (!correoSeguro({ host: o.host, conTls })) { fin({ error: 'tls' }); return; }
