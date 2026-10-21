@@ -8,8 +8,8 @@
  * Los papeles son lo que hace de este repo un proyecto que se puede usar de afuera: `LICENSE`, `NOTICE`, las dos
  * portadas (`README.md` y `README.es.md`, en la raíz desde 2026-10-14), `.github/CONTRIBUTING.md`, `.github/CODE_OF_CONDUCT.md`,
  * `.github/SECURITY.md`, la CI (`.github/workflows/ci.yml`), las tres páginas de primeros pasos (`getting-started/`), el
- * guion de entrada (`scripts/setup/get-harness.{sh,ps1}`), la lista de remotos públicos
- * (`scripts/setup/public-remotes.json`) y la página de ejemplo del registro de incidentes (`guides/maintaining/incident-log.md`).
+ * guion de entrada (`scripts/setup/get-harness.{sh,ps1}`) y la lista de remotos públicos
+ * (`scripts/setup/public-remotes.json`).
  * Hasta el 2026-10-13 vivían en el repo privado como plantillas (`scripts/publishing/public-files/<destino>`, con la
  * dirección del repo por marcadores) y el exportador las ponía en su lugar; desde esa noche se escriben acá, en su ruta
  * real, con la dirección ya puesta. Esta suite los lee en esa ruta (`RAIZ/<destino>`) y los compara contra lo que existe
@@ -46,12 +46,12 @@ const { spawnSync } = require('child_process');
 const RAIZ = path.resolve(__dirname, '..', '..');
 const PUBLISHING = path.join(RAIZ, 'scripts', 'publishing');
 
-// Los papeles, por la ruta donde viven en este repo. Son los quince que en el privado eran plantillas de
+// Los papeles, por la ruta donde viven en este repo. Son los catorce que en el privado eran plantillas de
 // scripts/publishing/public-files/<destino>, uno a uno.
 const PAPERS = [
   '.github/CODE_OF_CONDUCT.md', '.github/CONTRIBUTING.md', 'README.es.md', 'README.md', '.github/SECURITY.md',
   '.github/workflows/ci.yml', 'LICENSE', 'NOTICE', 'getting-started/linux.md', 'getting-started/mac.md',
-  'getting-started/windows.md', 'guides/maintaining/incident-log.md', 'scripts/setup/get-harness.ps1', 'scripts/setup/get-harness.sh',
+  'getting-started/windows.md', 'scripts/setup/get-harness.ps1', 'scripts/setup/get-harness.sh',
   'scripts/setup/public-remotes.json',
 ];
 
