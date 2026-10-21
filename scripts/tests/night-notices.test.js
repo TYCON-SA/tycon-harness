@@ -105,7 +105,9 @@ function machine({ published = night(Date.now() - HOUR), fetched = 60 * 1000, fe
   const lab = { base, home: path.join(base, 'home'), tmp: path.join(base, 'tmp') };
   lab.tycon = path.join(lab.home, '.tycon');
   for (const d of [lab.home, lab.tmp, path.join(base, 'bench-local')]) fs.mkdirSync(d, { recursive: true });
-  write(path.join(base, 'gitconfig'), '');
+  // sin el mantenimiento automático de git: un commit puede dejar de fondo un empaquetado en el repo de origen, y el clon
+  // que lo copia en ese momento falla con «failed to copy file … tmp_idx» (visto en la CI de Linux)
+  write(path.join(base, 'gitconfig'), '[gc]\n\tauto = 0\n[maintenance]\n\tauto = false\n');
   write(path.join(base, 'exam-config.json'), JSON.stringify({ designated_machine: '' }));
   if (release) write(path.join(lab.tycon, 'state', 'harness-state.json'), JSON.stringify({ schema: 1, sources: [{ kind: 'release', version: '0.0.0' }] }));
 
