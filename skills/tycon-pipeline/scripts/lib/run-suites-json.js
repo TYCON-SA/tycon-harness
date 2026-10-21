@@ -90,8 +90,11 @@ function launch(p, covDir, env0) {
   const e = { ...env };
   delete e.NODE_TEST_CONTEXT;
   delete e.NODE_V8_COVERAGE;
-  // Sin `--test-coverage-exclude`: Node 20 no la tiene. El envoltorio y la propia suite se descartan al juntar.
-  return [process.execPath, ['--experimental-test-coverage', '--test-reporter=lcov',
+  // Con `--test-coverage-exclude` declarado, Node no aplica su exclusión de fábrica, que deja afuera todo `test-*.js`
+  // (la receta de pruebas y el informe de la puerta salían «sin datos»). Un Node que no la tiene (el 20 viejo) corre
+  // como antes. El envoltorio y la propia suite se descartan igual al juntar.
+  const excluir = process.allowedNodeEnvironmentFlags.has('--test-coverage-exclude') ? [`--test-coverage-exclude=${WRAPPER}`] : [];
+  return [process.execPath, ['--experimental-test-coverage', ...excluir, '--test-reporter=lcov',
     `--test-reporter-destination=${path.join(covDir, `${String(p.idx).padStart(4, '0')}.lcov`)}`, WRAPPER, ej, p.ruta], e];
 }
 

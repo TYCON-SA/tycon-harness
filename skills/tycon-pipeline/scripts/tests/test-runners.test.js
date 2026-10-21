@@ -105,7 +105,7 @@ test('@story-8.48 @ac-14 T16 TeamRepos_StackKey_ValidatesRunners', () => {
   const bueno = { name: 'go', detect: 'go.mod', command: 'gotestsum --junitfile {results}/j.xml', results: { format: 'junit', path: '{results}/j.xml' } };
   const malos = [
     [{ name: 'a', detect: 'x', results: { format: 'junit', path: 'x' } }, /command/],
-    [{ ...bueno, name: 'b', results: { format: 'trx', path: 'x' } }, /results\.format/],
+    [{ ...bueno, name: 'b', results: { format: 'nunit', path: 'x' } }, /results\.format/],
     [{ ...bueno, name: 'c', coverage: { format: 'clover', path: 'x' } }, /coverage\.format/],
     [{ ...bueno }, /repetido/],
     [{ ...bueno, name: 'd', detect: '../go.mod' }, /detect/],

@@ -908,3 +908,23 @@ test('T21 8.55-AusenteYDiferidas_ElMotivoDiceLaVerdad @story-8.55 @ac-5 — con 
   assert.doesNotMatch(r.resumen.no_medido || '', /todas las suites declaradas están ausentes/);
   assert.match(r.resumen.no_medido || '', /1 ausente.*1 diferida/);
 });
+
+test('T22 7.51-Coverage_DeclaresExclude_SoTestNamedFilesAreMeasured @story-7.51 @ac-16 — un archivo llamado test-*.js se mide', (t) => {
+  // 🔴 mutación: lanzar la suite sin `--test-coverage-exclude`; Node aplica su exclusión de fábrica y `test-acme.js` no
+  //    aparece en el lcov (la receta y el informe de la puerta salían «sin datos de cobertura»).
+  if (!process.allowedNodeEnvironmentFlags.has('--test-coverage-exclude')) { t.skip('NO MEDIDO: este Node no tiene --test-coverage-exclude'); return; }
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/usa-test-acme.test.js' }] });
+  f.escribir('arnes', 'lib/test-acme.js', 'module.exports = (n) => (n > 0 ? "sí" : "no");\n');
+  f.escribir('arnes', 'tests/usa-test-acme.test.js', "require('../lib/test-acme.js')(1);\nprocess.exit(0)\n");
+  const env = { ...process.env };
+  delete env.NODE_V8_COVERAGE;
+  delete env.NODE_TEST_CONTEXT;
+  const cov = path.join(f.root, 'cov');
+  const out = path.join(f.root, 'out.json');
+  const r = spawnSync(process.execPath, [RUNNER, f.repo, out, '--skills', f.skills, '--coverage', cov], { encoding: 'utf8', env });
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  const lcov = fs.readFileSync(path.join(cov, 'lcov.info'), 'utf8');
+  assert.match(lcov, /^SF:.*lib[\\/]test-acme\.js$/m, 'el código llamado test-*.js está en el lcov');
+  assert.doesNotMatch(lcov, /coverage-wrapper/, 'el envoltorio sigue afuera');
+  assert.doesNotMatch(lcov, /usa-test-acme\.test\.js/, 'la suite sigue afuera');
+});

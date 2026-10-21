@@ -2526,8 +2526,9 @@ test('T30a SiteConfig_AskYourAgent_CopiesPhrase @story-8.48 @ac-36 — «Pedíse
   } finally {
     if (antes) Object.defineProperty(globalThis, 'navigator', antes); else delete globalThis.navigator;
   }
-  assert.strictEqual(copiado, 'configurá las pruebas de mi proyecto en la configuración del arnés');
-  assert.match(p.texto(), /configurá las pruebas de mi proyecto en la configuración del arnés/);
+  // la frase lleva al agente a la receta: nombra la sección de la guía
+  assert.strictEqual(copiado, 'configurá las pruebas de mi proyecto en la configuración del arnés (la receta está en la sección «Tu tecnología» de guides/organization-site.md del arnés)');
+  assert.match(p.texto(), /configurá las pruebas de mi proyecto en la configuración del arnés \(la receta está en la sección «Tu tecnología»/);
   assert.match(p.texto(), /después la herramienta aparece en esta lista/i);
   const guia = fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.md'), 'utf8');
   const sec = guia.split(/\n### Tu tecnología\n/)[1];
