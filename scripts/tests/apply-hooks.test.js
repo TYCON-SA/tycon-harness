@@ -182,6 +182,37 @@ test('T34 ApplyHooks_ByWhen_InterpreterByExtension_RemovesReplacedOldAndOptinOff
   assert.deepStrictEqual(again, ['a.js', 'b.sh', 'c.py']);
 });
 
+test('T8 HooksList_RegistersNodeRecorderAndNotice_DropsShell @story-4.7 @ac-5 @ac-8 — la grabadora en node, de fondo, y su aviso; la registración vieja del .sh sale, en Mac y en Windows', (t) => {
+  const real = JSON.parse(fs.readFileSync(LIST, 'utf8'));
+  const rec = real.hooks.filter((h) => h.spec === '@tcg:instinct-observe.js');
+  const not = real.hooks.filter((h) => h.spec === '@tcg:instincts-notice.js');
+  assert.strictEqual(rec.length, 1, 'la grabadora está una vez');
+  assert.deepStrictEqual([rec[0].event, rec[0].matcher, rec[0].when, rec[0].async, rec[0].platforms.windows], ['PostToolUse', '', 'integration:instincts', true, true]);
+  assert.strictEqual(not.length, 1, 'el aviso está una vez');
+  assert.deepStrictEqual([not[0].event, not[0].when, not[0].platforms.windows], ['SessionStart', 'always', true]);
+  assert.ok(real.legacy_fragments.includes('scripts/hooks/instinct-observe.sh'), 'la ruta pelada del .sh viejo sale por legacy_fragments');
+  for (const platform of ['posix', 'windows']) {
+    const list = LIST_OF([rec[0], not[0]], { legacy_fragments: ['scripts/hooks/instinct-observe.sh'] });
+    const L = lab(t, { list, files: ['@tcg:instinct-observe.js', '@tcg:instincts-notice.js'] });
+    fs.writeFileSync(L.settingsPath, JSON.stringify({
+      hooks: { PostToolUse: [{ hooks: [{ type: 'command', command: '/Users/x/.claude/tycon-harness/scripts/hooks/instinct-observe.sh' }] }] },
+    }, null, 2) + '\n');
+    const r = run(L, ['--platform', platform], { TYCON_INSTINCTS: '1' });
+    assert.strictEqual(r.status, 0, `${platform}: ${r.stderr}`);
+    const s = settingsOf(L);
+    const post = (s.hooks.PostToolUse || []).flatMap((e) => e.hooks || []);
+    assert.ok(!post.some((h) => h.command.endsWith('instinct-observe.sh')), `${platform}: el .sh viejo se fue`);
+    const js = post.filter((h) => h.command.includes('instinct-observe.js'));
+    assert.strictEqual(js.length, 1, `${platform}: entra la grabadora en node`);
+    assert.strictEqual(js[0].async, true, `${platform}: de fondo`);
+    assert.ok(commandsOf(s, 'SessionStart').some((c) => c.includes('instincts-notice.js')), `${platform}: entra el aviso`);
+    const off = run(L, ['--platform', platform], { TYCON_INSTINCTS: '0' });
+    assert.strictEqual(off.status, 0);
+    assert.ok(!commandsOf(settingsOf(L), 'PostToolUse').some((c) => c.includes('instinct-observe.js')), `${platform}: apagada, la grabadora sale`);
+    assert.ok(commandsOf(settingsOf(L), 'SessionStart').some((c) => c.includes('instincts-notice.js')), `${platform}: el aviso queda, para decir lo de las variables viejas`);
+  }
+});
+
 // ── T35 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 test('T35 ApplyHooks_NoChangeNoRewrite_AtomicWithBackup_CheckWritesNothing_ReportJson', (t) => {
   const list = LIST_OF([H('Stop', '', '@tcg:s.js'), H('PreToolUse', 'Bash', '@tcg:p.js')]);

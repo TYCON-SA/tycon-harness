@@ -417,6 +417,7 @@ from.
 | `codex` | deploys the Codex side | `integrations.codex: true` or `"detect"`, or `TYCON_CODEX=1` |
 | `claude` | plugs Claude Code (hooks, settings, the index import) | `integrations.claude: true` or `"detect"`, or `TYCON_CLAUDE=1` |
 | `nightly` | notices from your organization's nightly jobs (dashboard, dependencies, retrospectives), which run from its operations repo: see [For teams](../README.md#for-teams) | `integrations.nightly: true`, or `TYCON_NIGHTLY=1` |
+| `instincts` | the instinct recorder: one sanitized line per tool used, to find what the team keeps repeating; your team profile turns it on | `integrations.instincts: true` in the team profile, or `TYCON_INSTINCTS=1` to try it on one machine (`TYCON_INSTINCTS=0` turns it off) |
 | `telegram` | progress notices to a Telegram chat | `telegram.chat_id` in `~/.claude/tycon.json`, or `TYCON_TELEGRAM_CHAT_ID` |
 
 **The Codex side**: the same harness under Codex, translated and deployed automatically. It needs `codex` on the PATH

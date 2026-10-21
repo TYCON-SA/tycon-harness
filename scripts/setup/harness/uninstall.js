@@ -46,6 +46,7 @@ const HOOK_STORES = [
   { name: 'safety-guard.log', dir: false, what: 'el registro de comandos bloqueados' },
   { name: '.tycon-retro-staleness-last-notice', dir: false, what: 'el sello del aviso de retrospectivas' },
   { name: 'clocki', dir: true, what: 'el estado del timer de Clockify' },
+  { name: 'tycon-observations', dir: true, what: 'lo que grabó la grabadora de instintos' },
 ];
 const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8').replace(/^﻿/, '')); } catch (_) { return null; } };
 const expandHome = (p, home) => (typeof p === 'string' ? p.replace(/^~(?=$|[\\/])/, home) : null);

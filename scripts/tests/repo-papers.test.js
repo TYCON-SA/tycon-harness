@@ -502,11 +502,11 @@ test('Papeles_HooksEInterruptoresQueExisten', async (t) => {
     }
   });
 
-  await t.test('las nueve integraciones, contra tycon-config.js explain --json', () => {
+  await t.test('las diez integraciones, contra tycon-config.js explain --json', () => {
     const explained = JSON.parse(runHarnessScript('scripts/lib/tycon-config.js', ['explain', '--json']));
     const keys = Object.keys(explained.integraciones).sort();
-    // nueve: `claude` es una integración más, como `codex` (qué herramienta se enchufa)
-    assert.strictEqual(keys.length, 9, `tycon-config.js explain --json da ${keys.length} integraciones`);
+    // diez: `claude` es una integración más, como `codex` (qué herramienta se enchufa), y `instincts` (la grabadora) también
+    assert.strictEqual(keys.length, 10, `tycon-config.js explain --json da ${keys.length} integraciones`);
     for (const [lang, title] of [['en', 'What is optional'], ['es', 'Qué es opcional']]) {
       const sec = section(text[lang], title);
       assert.ok(sec, `${README[lang]}: falta la sección «${title}»`);

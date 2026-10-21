@@ -522,14 +522,14 @@ test('T9 Config_IntegracionesParaShell — `integrations --shell` imprime una as
   assert.equal(r.status, 0, r.stderr);
   const lineas = r.stdout.trim().split('\n');
   for (const esperada of ['TYCON_INTEG_ADO=1', 'TYCON_INTEG_CLOCKIFY=1', 'TYCON_INTEG_CODEX=detect', 'TYCON_INTEG_ENGRAM=0',
-    'TYCON_INTEG_CODEGRAPH=0', 'TYCON_INTEG_MAILBOX=0', 'TYCON_INTEG_NIGHTLY=0', 'TYCON_INTEG_TELEGRAM=0']) {
+    'TYCON_INTEG_CODEGRAPH=0', 'TYCON_INTEG_MAILBOX=0', 'TYCON_INTEG_NIGHTLY=0', 'TYCON_INTEG_INSTINCTS=0', 'TYCON_INTEG_TELEGRAM=0']) {
     assert.ok(lineas.includes(esperada), `falta ${esperada} en:\n${r.stdout}`);
   }
   assert.ok(lineas.every((l) => /^TYCON_INTEG_[A-Z]+=(0|1|detect)$/.test(l)), `sólo asignaciones (el instalador las evalúa):\n${r.stdout}`);
   const j = cli(['integrations', '--json'], { home, env });
   assert.equal(j.status, 0, j.stderr);
   const obj = JSON.parse(j.stdout);
-  assert.deepEqual(Object.keys(obj).sort(), ['ado', 'clockify', 'codegraph', 'codex', 'engram', 'mailbox', 'nightly', 'telegram']);
+  assert.deepEqual(Object.keys(obj).sort(), ['ado', 'clockify', 'codegraph', 'codex', 'engram', 'instincts', 'mailbox', 'nightly', 'telegram']);
   assert.equal(obj.codex, 'detect'); assert.equal(obj.ado, true); assert.equal(obj.engram, false);
   maquina(home, '{ "integrations": { "clokify": true } }');
   const rota = cli(['integrations', '--shell'], { home, env: { TYCON_PROFILE: '0' } });
@@ -876,7 +876,7 @@ test('T65 Config_IntegrationKeysInEnglish — mailbox, nightly y "detect" se lee
   // el vocabulario que se informa es el nuevo: una clave mal escrita lista las válidas, y un tipo equivocado dice "detect"
   assert.throws(() => lib().leer({ env: { TYCON_PROFILE: '0' }, home: (() => { const h = casa(); maquina(h, { integrations: { mailbx: true } }); return h; })(), arnes }), (err) => {
     assert.equal(err.errores[0].clave, 'integrations.mailbx');
-    assert.match(err.errores[0].motivo, /clockify, engram, codegraph, mailbox, codex, nightly/);
+    assert.match(err.errores[0].motivo, /clockify, engram, codegraph, mailbox, codex, nightly, instincts/);
     return true;
   });
   assert.throws(() => lib().leer({ env: { TYCON_PROFILE: '0' }, home: (() => { const h = casa(); maquina(h, { integrations: { codex: 'quizas' } }); return h; })(), arnes }), (err) => {
@@ -918,7 +918,7 @@ test('T65 Config_IntegrationKeysInEnglish — mailbox, nightly y "detect" se lee
 
   // los mensajes de «apagado» mandan a escribir la forma nueva (son los que imprime un comando que la necesitaba)
   const { COMO_SE_PRENDE, LAS_OCHO, VARIABLES } = lib();
-  assert.deepEqual(LAS_OCHO, ['ado', 'clockify', 'engram', 'codegraph', 'mailbox', 'codex', 'nightly', 'telegram']);
+  assert.deepEqual(LAS_OCHO, ['ado', 'clockify', 'engram', 'codegraph', 'mailbox', 'codex', 'nightly', 'instincts', 'telegram']);
   assert.match(COMO_SE_PRENDE.mailbox, /integrations\.mailbox=true/);
   assert.match(COMO_SE_PRENDE.nightly, /integrations\.nightly=true/);
   assert.match(COMO_SE_PRENDE.codex, /integrations\.codex=true o "detect"/);
@@ -1306,7 +1306,7 @@ test('8.23 C · T24 Detect_ToolInstalledNotDeployed_ClaudeAndCodex_NoticeBefore 
   const C = lib();
   assert.equal(C.VOCABULARIO.integraciones.claude, C.VOCABULARIO.integraciones.codex, 'el mismo tipo: true, false o detect');
   assert.deepEqual(C.TOOLS, ['claude', 'codex']);
-  assert.equal(C.LAS_OCHO.length, 8, 'las integraciones siguen siendo ocho');
+  assert.equal(C.LAS_OCHO.length, 9, 'las integraciones son nueve (instincts entra con la 4.7) y claude no es una de ellas');
   assert.ok(!C.LAS_OCHO.includes('claude') && !C.INTEGRACIONES.includes('claude'));
   // nadie dijo nada: «sin decir» (quien decide lo trata como detect), con el origen que lo distingue de «apagada a propósito»
   let k = C.toolKeys(cargar({ home: casa(), arnes: arnesCon(null) }));
@@ -1881,4 +1881,26 @@ test('7.46 · Config_QaManualCheck_SoloPerfil @story-7.46 @ac-6', () => {
   const r = cli(['set', 'qa.manual_check', 'off'], { home: casa() });
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
+});
+
+test('T31 TyconConfig_InstinctsIntegration_EnvProfileOrder @story-4.7 @ac-1 @ac-2 — el perfil la prende, la variable la apaga, sin nada queda apagada', () => {
+  const C = lib();
+  assert.equal(C.VOCABULARIO.integraciones.instincts, 'llave', 'la clave está en el vocabulario');
+  assert.ok(C.LAS_OCHO.includes('instincts'));
+  assert.deepEqual(C.VARIABLES['integraciones.instincts'], ['TYCON_INSTINCTS']);
+  assert.match(C.COMO_SE_PRENDE.instincts, /TYCON_INSTINCTS/);
+  const perfil = { integrations: { instincts: true } };
+  let c = cargar({ home: casa(), arnes: arnesCon(perfil) });
+  assert.deepEqual(c.errores, []);
+  assert.equal(C.estadoIntegracion(c, 'instincts').estado, 'prendida', 'el perfil del equipo la prende');
+  c = cargar({ home: casa(), arnes: arnesCon(perfil), env: { TYCON_INSTINCTS: '0' } });
+  assert.equal(C.estadoIntegracion(c, 'instincts').estado, 'apagada', 'la variable la apaga en una máquina');
+  c = cargar({ home: casa(), arnes: arnesCon(null) });
+  assert.equal(C.estadoIntegracion(c, 'instincts').estado, 'apagada', 'sin perfil ni variable, apagada');
+  const h = casa();
+  c = cargar({ home: h, arnes: arnesCon(null), env: { TYCON_INSTINCT_MINING: '1' } });
+  assert.equal(C.estadoIntegracion(c, 'instincts').estado, 'apagada', 'la variable vieja ya no prende nada');
+  const hook = C.integracionParaHook('instincts', { home: h, arnes: arnesCon(perfil), env: {} });
+  assert.equal(hook.ok, true);
+  assert.equal(hook.prendida, true, 'el gancho la ve prendida por el perfil');
 });

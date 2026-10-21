@@ -18,6 +18,10 @@
           },
           {
             "type": "command",
+            "command": "node ${TCG}/scripts/hooks/instincts-notice.js"
+          },
+          {
+            "type": "command",
             "command": "bash ${TCG}/scripts/hooks/telegram-zombie-sweep.sh"
           },
           {
@@ -172,7 +176,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${TCG}/scripts/hooks/instinct-observe.sh"
+            "command": "node ${TCG}/scripts/hooks/instinct-observe.js"
           }
         ]
       },
@@ -291,7 +295,7 @@
         "git-pre-push-global.sh",
         "harness-env-publish.sh",
         "wrapper.sh",
-        "instinct-observe.py",
+        "instinct-observe.sh",
         "correr.sh"
       ]
     },

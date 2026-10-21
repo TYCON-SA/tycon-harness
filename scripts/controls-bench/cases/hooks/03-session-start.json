@@ -265,14 +265,19 @@
       ]
     },
     {
-      "hook": "instinct-observe.sh",
-      "script": "${TCG}/scripts/hooks/instinct-observe.sh",
+      "hook": "instinct-observe.js",
+      "script": "${TCG}/scripts/hooks/instinct-observe.js",
       "event": "PostToolUse",
       "matcher": "*",
       "cases": [
         {
           "id": "quiet-default-apagado",
           "type": "must-stay-quiet",
+          "env": {
+            "TYCON_INSTINCT_MINING": "1",
+            "TYCON_INSTINCT_OBS_DIR": "${FIXTURE}/obs"
+          },
+          "__doc": "La integración apagada (nadie la prende) no graba nada, aunque la variable vieja diga 1: la grabación la decide sólo la integración instincts.",
           "stdin": {
             "tool_name": "Bash",
             "tool_input": {
@@ -286,10 +291,10 @@
           }
         },
         {
-          "id": "graba-con-optin",
+          "id": "graba-con-la-integracion",
           "type": "must-run",
           "env": {
-            "TYCON_INSTINCT_MINING": "1",
+            "TYCON_INSTINCTS": "1",
             "TYCON_INSTINCT_OBS_DIR": "${FIXTURE}/obs"
           },
           "stdin": {
@@ -310,15 +315,15 @@
         {
           "id": "quiet-datos-de-cliente-filtrados",
           "type": "must-run",
-          "__doc": "REESCRITO 2026-08-25: el auditor de vacuidad lo cazó pasando con un control que no hace nada — asertaba file_not_contains sobre un seed que el hook JAMÁS escribe (graba en <mes>.jsonl). El control correcto DESCARTA el evento entero cuando la ruta toca /clients/ (privacidad de cliente: ni sanitizado entra). Como la acción del control ES una ausencia, el caso necesita un testigo positivo: el wrapper deja constancia de que la corrida llegó al final, y la aserción negativa verifica que del evento no quedó NADA.",
+          "__doc": "El control DESCARTA el evento entero cuando la ruta toca /clients/ (privacidad de cliente: ni saneado entra). Como la acción del control es una ausencia, el caso necesita un testigo positivo: el envoltorio deja constancia de que la corrida llegó al final, y la aserción negativa verifica que del evento no quedó nada.",
           "script": "${FIXTURE}/wrapper.sh",
           "env": {
-            "TYCON_INSTINCT_MINING": "1",
+            "TYCON_INSTINCTS": "1",
             "TYCON_INSTINCT_OBS_DIR": "${FIXTURE}/obs"
           },
           "setup": [
             "mkdir -p obs",
-            "printf '#!/bin/sh\\nbash \"$TCG/scripts/hooks/instinct-observe.sh\"\\ncat \"$FIXTURE\"/obs/*.jsonl >> \"$FIXTURE/testigo.txt\" 2>/dev/null\\necho FIN >> \"$FIXTURE/testigo.txt\"\\n' > wrapper.sh && chmod +x wrapper.sh"
+            "printf '#!/bin/sh\\nnode \"$TCG/scripts/hooks/instinct-observe.js\"\\ncat \"$FIXTURE\"/obs/*.jsonl >> \"$FIXTURE/testigo.txt\" 2>/dev/null\\necho FIN >> \"$FIXTURE/testigo.txt\"\\n' > wrapper.sh && chmod +x wrapper.sh"
           ],
           "stdin": {
             "tool_name": "Read",
@@ -339,6 +344,113 @@
                 "path": "${FIXTURE}/testigo.txt",
                 "re": "clients|acme|contrato"
               }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "instinct-observe.sh",
+      "script": "${TCG}/scripts/hooks/instinct-observe.sh",
+      "event": "PostToolUse",
+      "matcher": "*",
+      "__doc": "El reenvío de una registración vieja: pasa el evento a instinct-observe.js y decide lo mismo que él.",
+      "cases": [
+        {
+          "id": "reenvio-quiet-apagado",
+          "type": "must-stay-quiet",
+          "env": {
+            "TYCON_INSTINCT_MINING": "1",
+            "TYCON_INSTINCT_OBS_DIR": "${FIXTURE}/obs"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "npm test -- Foo"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${FIXTURE}/obs"
+            ]
+          }
+        },
+        {
+          "id": "reenvio-graba-con-la-integracion",
+          "type": "must-run",
+          "env": {
+            "TYCON_INSTINCTS": "1",
+            "TYCON_INSTINCT_OBS_DIR": "${FIXTURE}/obs"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "npm test -- Foo"
+            }
+          },
+          "expect": {
+            "dir_has_file": [
+              {
+                "dir": "${FIXTURE}/obs",
+                "suffix": ".jsonl"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "instincts-notice.js",
+      "script": "${TCG}/scripts/hooks/instincts-notice.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "quiet-apagada-sin-variables-viejas",
+          "type": "must-stay-quiet",
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/instincts-notice.json"
+            ]
+          }
+        },
+        {
+          "id": "dice-una-vez-que-las-variables-viejas-no-prenden",
+          "type": "must-run",
+          "env": {
+            "TYCON_INSTINCT_MINING": "1"
+          },
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "ya no prenden nada"
+            ],
+            "file_exists": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/instincts-notice.json"
+            ]
+          }
+        },
+        {
+          "id": "prendida-dice-que-viaja-y-deja-el-sello",
+          "type": "must-run",
+          "env": {
+            "TYCON_INSTINCTS": "1"
+          },
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "buzón de la organización",
+              "TYCON_INSTINCTS=0"
+            ],
+            "file_exists": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/instincts-notice.json"
             ]
           }
         }

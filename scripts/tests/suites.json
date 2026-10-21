@@ -61,6 +61,12 @@
       "requiere": []
     },
     {
+      "__nota": "La grabadora de instintos en Node (scripts/hooks/instinct-observe.js): la línea con el repo y la organización del remoto, el saneado, lo que no se graba, la integración apagada, los fallos callados y anotados, el reenvío del .sh y la herramienta PowerShell. Sin red: repos de laboratorio y HOME temporal.",
+      "raiz": "arnes",
+      "ruta": "tests/instinct-observe.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.27: el observador, el comando de revisión y el disparador del arranque sobre un árbol que NO trae su buzón (una versión bajada, la copia pública) — nada se crea por ensayar o listar, se escribe en la casa, se lee en todos los lugares. Con un claude de mentira en el PATH.",
       "raiz": "arnes",
       "ruta": "tests/instinct-outside-tree.test.sh",
@@ -1774,7 +1780,7 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.3 (tanda A, pase adversarial): los consumidores de shell/python del lector, corridos sin red — validate-pipeline-in-ado.sh (precedencia de las variables igual que el lector; config rota con archivo y clave, no «sin organización») e instinct-observe.py (`~` en TYCON_REPOS_ROOT).",
+      "__nota": "story 8.3 (tanda A, pase adversarial): los consumidores de shell/python del lector, corridos sin red — validate-pipeline-in-ado.sh (precedencia de las variables igual que el lector; config rota con archivo y clave, no «sin organización») e instinct-observe.js (`~` en TYCON_REPOS_ROOT).",
       "raiz": "arnes",
       "ruta": "tests/config-shell-consumers.test.sh",
       "requiere": []
