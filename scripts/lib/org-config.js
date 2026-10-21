@@ -1700,10 +1700,18 @@ function pantalla(idioma = 'es') {
     return fila;
   }
   function editorAprobaciones(s, d, pr) {
-    // sólo sí o no: el valor es el nombre del rol (el que ya tenga, o «coordinadora»); la sesión se designa en la máquina
+    // sí o no, y con «sí» el nombre del rol (el que ya tenga, o «coordinadora»): es el valor que se guarda, y la frase que
+    // designa la sesión en cada máquina lo nombra
     var rol = (d.approvals || {}).relay_session;
-    var box = el('div', { class: 'pila' }, selector(T('pantalla.quienReenviaElOk'), rol ? 'si' : '', [['', T('pantalla.quienReenviaElOkNo')], ['si', T('pantalla.quienReenviaElOkSi')]], function (x) { hoja(d, 'approvals', 'relay_session', x === 'si' ? (rol || 'coordinadora') : ''); }, 'approvals.relay_session', pr));
-    box.appendChild(el('p', { class: 'muted', text: T('pantalla.quienReenviaElOkAyuda') }));
+    var box = el('div', { class: 'pila' }, selector(T('pantalla.quienReenviaElOk'), rol ? 'si' : '', [['', T('pantalla.quienReenviaElOkNo')], ['si', T('pantalla.quienReenviaElOkSi')]], function (x) { hoja(d, 'approvals', 'relay_session', x === 'si' ? (rol || 'coordinadora') : ''); render(); }, 'approvals.relay_session', pr));
+    var ayuda = el('p', { class: 'muted', text: T('pantalla.quienReenviaElOkAyuda', { nombre: rol || 'coordinadora' }) });
+    // sin volver a dibujar mientras se escribe (se perdería el foco): la ayuda se actualiza en el lugar
+    if (rol) box.appendChild(campo(T('pantalla.quienReenviaElOkComoLaLlaman'), rol, function (v) {
+      var nombre = String(v).trim() || 'coordinadora';
+      hoja(d, 'approvals', 'relay_session', nombre);
+      ayuda.textContent = T('pantalla.quienReenviaElOkAyuda', { nombre: nombre });
+    }, 'approvals.relay_session.nombre', pr, { placeholder: T('pantalla.quienReenviaElOkEjemplo') }));
+    box.appendChild(ayuda);
     return box;
   }
   function editorPruebaAMano(s, d, pr) {
@@ -2044,11 +2052,13 @@ function pantalla(idioma = 'es') {
       if (v) m[k][sub] = v; else { delete m[k][sub]; if (!Object.keys(m[k]).length) delete m[k]; }
     }
     // un renglón de modelo: «que» es el contenido de la primera celda; «quitarlo», la ✕ de un revisor en particular
-    // «h» es el valor por defecto como viene (un modelo); con «conEquiv», el renglón lleva la línea de equivalencias
+    // «h» es el valor por defecto como viene (un modelo); con «conEquiv», el renglón lleva la línea de equivalencias:
+    // «true» la calcula del valor elegido, y un nivel la deja fija en ese nivel (un renglón que no elige modelo)
     function fila(t, que, label, k, sub, opciones, h, quitarlo, conEquiv) {
       var p = 'models.' + k + (sub ? '.' + sub : '');
+      var fijo = typeof conEquiv === 'string' ? conEquiv : null;
       var linea = conEquiv ? el('small', { class: 'equiv muted' }) : null;
-      var pintar = function (v) { if (linea) linea.textContent = lineaEquiv(v || h); };
+      var pintar = function (v) { if (linea) linea.textContent = lineaEquiv(fijo || v || h); };
       var c = corto(label, sub ? de(m[k], sub) : m[k], opciones, function (v) { poner(k, sub, v); pintar(v); }, p, pr);
       pintar(sub ? de(m[k], sub) : m[k]);
       var acc = el('div', { class: 'acc', role: 'cell' }, c.sel);
@@ -2056,7 +2066,7 @@ function pantalla(idioma = 'es') {
       if (quitarlo) acc.appendChild(el('button', { class: 'quitar-fila', type: 'button', text: '✕', title: T('pantalla.quitarEsteRevisor'), 'aria-label': T('pantalla.quitarEsteRevisor') + ': ' + label, onclick: quitarlo }));
       var celda = el('div', { class: 'que', role: 'cell' });
       [].concat(que).forEach(function (n) { celda.appendChild(n); });
-      t.appendChild(renglon([celda, el('div', { class: 'hoy', role: 'cell', text: h == null ? '—' : (conEquiv ? nombreNivel(h) : h) }), acc], c.mios));
+      t.appendChild(renglon([celda, el('div', { class: 'hoy', role: 'cell', text: h == null ? '—' : (conEquiv === true ? nombreNivel(h) : h) }), acc], c.mios));
     }
     function trabajo(t, label, k, sub) { fila(t, el('span', { text: label }), label, k, sub, DE_MODELOS, sub ? de(de(hoy, k), sub) : de(hoy, k), null, true); }
 
@@ -2089,8 +2099,8 @@ function pantalla(idioma = 'es') {
     trabajo(adv, T('pantalla.unaStoryNormal'), 'adversarial', 'model');
     trabajo(adv, T('pantalla.unaStoryPesada'), 'adversarial', 'heavy');
     var fq = de(de(hoy, 'adversarial'), 'fable_question');
-    fila(adv, el('span', { text: T('pantalla.preguntarAntesDeUsarFable') }), T('pantalla.preguntarAntesDeUsarFable'), 'adversarial', 'fable_question',
-      [['', T('pantalla.elPorDefecto')], ['ask', T('pantalla.preguntar')], ['never', T('pantalla.nunca')]], fq ? (fq === 'ask' ? T('pantalla.preguntar') : T('pantalla.nunca')) : null);
+    fila(adv, el('span', { text: T('pantalla.preguntarAntesDelNivelMaximo') }), T('pantalla.preguntarAntesDelNivelMaximo'), 'adversarial', 'fable_question',
+      [['', T('pantalla.elPorDefecto')], ['ask', T('pantalla.preguntar')], ['never', T('pantalla.nunca')]], fq ? (fq === 'ask' ? T('pantalla.preguntar') : T('pantalla.nunca')) : null, null, 'max');
     box.appendChild(adv);
 
     var ayu = cabeza(T('pantalla.losAyudantesYLaSesion'));
@@ -2331,7 +2341,7 @@ function pantalla(idioma = 'es') {
   // fábrica, cambiadas o agregadas) y las tres reglas. Una clave que queda vacía se saca: no se propone un «{}»
   var TEC_FORM = null;     // la herramienta que se está cambiando: { name, r, fabrica }
   var TEC_AGENTE = false;  // se tocó «Pedíselo a tu agente»
-  var TEC_REEMPLAZAR = null;  // la interna cuya explicación de «Reemplazar» está abierta
+  var TEC_REEMPLAZAR = null;  // la interna cuya frase de «Reemplazar» está a la vista
   var TEC_NOMBRES = { dotnet: '.NET', vitest: 'Vitest', jest: 'Jest', node: 'Node (node --test)', pytest: 'pytest (Python)', go: 'Go', maven: 'Maven (Java)', gradle: 'Gradle (Java, Kotlin)', karma: 'Karma (Angular)', playwright: 'Playwright (punta a punta)' };
   var TEC_ARCHIVOS = { dotnet: '.sln, .csproj', vitest: 'package.json (vitest)', jest: 'package.json (jest)', node: 'package.json (node --test)' };
   // el nombre para personas: el de fábrica, o el «label» que le puso la organización a su receta; si no, el id
@@ -2401,12 +2411,18 @@ function pantalla(idioma = 'es') {
     var fabrica = ex.fabrica || [];
     var tabla = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecComoSeCorrenLasPruebas') }), el('p', { class: 'sub-d', text: T('pantalla.tecComoSeCorrenAyuda') }));
     // cada fila con las mismas cuatro columnas: nombre, archivo que la detecta, origen y acción. Las internas no se
-    // editan: «Reemplazar» despliega, en la fila, cómo ganarle con una receta de la organización
+    // editan: «Reemplazar» hace lo de «Pedíselo a tu agente» con la frase armada para esa herramienta (la copia si el
+    // navegador deja) y la muestra en la fila, con lo que pasa después
     (ex.internos || []).forEach(function (n) {
       var abierta = TEC_REEMPLAZAR === n;
+      var frase = T('pantalla.tecFraseReemplazar', { nombre: TEC_NOMBRES[n] || n, archivo: String(TEC_ARCHIVOS[n] || '').replace(/ \(.*\)$/, '') });
       tabla.appendChild(el('div', { class: 'fila', 'data-runner': n }, el('span', { text: TEC_NOMBRES[n] || n }), el('span', { class: 'muted', text: TEC_ARCHIVOS[n] || '' }), el('span', { text: T('pantalla.tecIncluidaEnElArnes') }),
-        el('span', {}, boton(T('pantalla.tecReemplazar'), function () { TEC_REEMPLAZAR = abierta ? null : n; render(); }))));
-      if (abierta) tabla.appendChild(el('p', { class: 'sub-d', 'data-reemplazar': n, text: T('pantalla.tecComoReemplazarUnaDeLaPuerta') }));
+        el('span', {}, boton(T('pantalla.tecReemplazar'), function () {
+          TEC_REEMPLAZAR = n;
+          try { if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(frase).catch(function () {}); } catch (e) { /* sin portapapeles, la frase queda a la vista */ }
+          render();
+        }))));
+      if (abierta) tabla.appendChild(el('div', { class: 'msg ok', 'data-reemplazar': n }, el('b', { text: T('pantalla.tecPegaEstaFrase') }), el('p', { text: '«' + frase + '»' }), el('p', { text: T('pantalla.tecAlReemplazarPasa') })));
     });
     // el motivo exacto, plegado: lo arma el servidor y no está traducido
     if (!ex.fabrica) tabla.appendChild(aviso('nm', T('pantalla.tecSinListaDeFabrica'), ex.motivo || null));
