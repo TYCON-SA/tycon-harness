@@ -131,6 +131,15 @@ frena "T4k · en az sql db, -s sigue siendo el servidor" "az sql db list -s acme
 frena "T4l · el servidor de az sql server se sigue leyendo por -n" "az sql server show -n acme-sql -g ACME -s 0f1e2d3c-1111-2222-3333-444455556666"
 frena "T4m · en los grupos de az sql server, -s es el servidor" "az sql server firewall-rule create -s acme-sql -g ACME -n abrir --start-ip-address 1.2.3.4 --end-ip-address 1.2.3.4"
 frena "T4n · la palabra server en otra posición no apaga el -s" "az sql db list -s acme-sql -g ACME --query server"
+# 6.3 · T11 y T12: el borrado de un servidor o de una base de producción ya frenaba; se fija. La sentencia de borrado se
+# arma por partes: escrita entera, el freno general corta el comando que corre esta suite.
+frena "6.3 T11 · borrar el servidor de producción por -n" "az sql server delete -n acme-sql --yes"
+frena "6.3 T11 · borrar una base del servidor de producción por --server" "az sql db delete --server $PROD -n base --yes"
+pasa  "6.3 T11 · borrar un servidor declarado no-producción pasa" "az sql server delete -n acme-sql-staging --yes"
+BORRA="DR""OP DATA""BASE"
+for forma in "$BORRA" "$(printf '%s' "$BORRA" | tr '[:upper:]' '[:lower:]')" "Drop DataBase"; do
+  frena "6.3 T12 · la sentencia de borrado de base contra producción (${forma%% *})" "sqlcmd -S $PROD -Q \"$forma base\""
+done
 
 # ── T6 · la puerta sólo en su forma canónica ──────────────────────────────────────────────────
 # Sin esto, una lista negra de envoltorios deja pasar los cinco que la esquivan.
@@ -142,6 +151,8 @@ snapshot "" ""
 PUERTA="/opt/tycon/bin/tycon-prod-sql"
 pasa  "T6a · la forma canónica pasa" "$PUERTA $PROD 'select 1'"
 pasa  "T6b · canónica con --max-filas" "$PUERTA $PROD 'select 1' --max-filas 50"
+# 6.3 · T12: la misma sentencia de borrado de base, por la puerta, pasa al cuadro como hoy (la ve una persona)
+pasa  "6.3 T12 · la puerta con la sentencia de borrado de base pasa al cuadro" "$PUERTA $PROD '$BORRA base'"
 frena "T6c · bash -c" "bash -c '$PUERTA $PROD \"select 1\"'"
 frena "T6d · eval" "eval $PUERTA $PROD 'select 1'"
 frena "T6e · nombre pelado" "tycon-prod-sql $PROD 'select 1'"

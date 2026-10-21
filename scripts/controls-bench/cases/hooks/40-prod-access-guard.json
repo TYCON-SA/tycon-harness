@@ -4432,6 +4432,328 @@
        "protegido"
       ]
      }
+    },
+    {
+     "id": "az-group-delete-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.3 · T1 · borrar un grupo se lleva el servidor con sus bases y el freno no sabe qué contiene: frena sin mirar el nombre. ROJO PREVIO: sin el paso del borrado en Azure, el freno lo dejaba pasar (rc=0).",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "az group delete --name tycon-prueba-puerta-6-2 --yes"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "puede llevarse un servidor de producci"
+      ]
+     }
+    },
+    {
+     "id": "az-group-delete-opciones-globales-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.3 · T3 · las opciones globales de az delante del subcomando no esconden el borrado. ROJO PREVIO: sin el paso del borrado en Azure, el freno lo dejaba pasar (rc=0).",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "az --subscription S -o none group delete -n g --yes"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "puede llevarse un servidor de producci"
+      ]
+     }
+    },
+    {
+     "id": "az-group-delete-escondido-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.3 · T4 · el borrado escondido en bash -c también se frena. ROJO PREVIO: sin el paso del borrado en Azure, el freno lo dejaba pasar (rc=0).",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "bash -c 'az group delete -n g --yes'"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "puede llevarse un servidor de producci"
+      ]
+     }
+    },
+    {
+     "id": "az-resource-delete-servidor-por-nombre-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.3 · T5 · el servidor SQL nombrado por -n y el tipo lo decide el catálogo: es producción, frena. ROJO PREVIO: el freno sólo leía el servidor de --ids.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "az resource delete -g G -n acme-sql --resource-type Microsoft.Sql/servers"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "PRODUCCI"
+      ]
+     }
+    },
+    {
+     "id": "az-resource-delete-tipo-no-sql-pasa",
+     "type": "must-not-block",
+     "__doc": "Story 6.3 · T6 · un recurso cuyo tipo se lee y no es de Microsoft.Sql no puede llevarse una base: pasa. Sin rojo previo: ya pasaba, y fija que el paso nuevo no lo frene.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "az resource delete --ids /subscriptions/s/resourceGroups/G/providers/Microsoft.Web/sites/app"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "stdout_empty": true
+     }
+    },
+    {
+     "id": "az-resource-delete-sin-tipo-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.3 · T7 · sin tipo legible no se puede probar que no sea un servidor: frena. ROJO PREVIO: sin el paso del borrado en Azure, el freno lo dejaba pasar (rc=0).",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "az resource delete -g G -n x"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "puede llevarse un servidor de producci"
+      ]
+     }
+    },
+    {
+     "id": "az-lock-delete-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.3 · T8 · quitar el candado deja el servidor sin protección contra el borrado. ROJO PREVIO: sin el paso del borrado en Azure, el freno lo dejaba pasar (rc=0).",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "az lock delete --name l --resource-group G"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "puede llevarse un servidor de producci"
+      ]
+     }
+    },
+    {
+     "id": "az-lock-create-pasa",
+     "type": "must-not-block",
+     "__doc": "Story 6.3 · T8 · crear un candado protege, no borra: pasa. Sin rojo previo: fija que el paso nuevo no lo frene.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "az lock create --name l -g G --lock-type CanNotDelete"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "stdout_empty": true
+     }
+    },
+    {
+     "id": "az-rest-delete-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.3 · T9 · la API de Azure con el método delete puede borrar un grupo o un servidor. ROJO PREVIO: sin el paso del borrado en Azure, el freno lo dejaba pasar (rc=0).",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "az rest --method delete --url https://management.azure.com/subscriptions/s/resourcegroups/G?api-version=2021-04-01"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "puede llevarse un servidor de producci"
+      ]
+     }
+    },
+    {
+     "id": "az-group-list-pasa",
+     "type": "must-not-block",
+     "__doc": "Story 6.3 · T20 · listar grupos no borra nada: pasa. Sin rojo previo: fija que la lectura generosa no frene la lectura.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "az group list -o table"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "stdout_empty": true
+     }
+    },
+    {
+     "id": "az-sql-server-delete-produccion-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.3 · T11 · borrar el servidor de producción por su nombre ya frenaba; se fija. Sin rojo previo propio: lo frena el paso de los servidores.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "az sql server delete -n acme-sql --yes"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "PRODUCCI"
+      ]
+     }
+    },
+    {
+     "id": "powershell-remove-azresourcegroup-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.3 · T10 · el borrado de grupo de PowerShell se frena siempre. ROJO PREVIO: sin el paso del borrado en Azure, el freno lo dejaba pasar (rc=0).",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "PowerShell",
+      "tool_input": {
+       "command": "Remove-AzResourceGroup -Name g -Force"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "puede llevarse un servidor de producci"
+      ]
+     }
+    },
+    {
+     "id": "az-group-delete-codex-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.3 · T23 · en Codex el borrado de grupo se corta igual. ROJO PREVIO: sin el paso del borrado en Azure, el freno lo dejaba pasar (rc=0).",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "az group delete -n g --yes"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "puede llevarse un servidor de producci"
+      ]
+     },
+     "tools": [
+      "codex"
+     ]
     }
    ]
   }

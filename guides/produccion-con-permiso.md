@@ -185,6 +185,37 @@ el comando de Azure que crearía la regla, aunque lo autorices en el chat. El ca
   `production.log`.
 - Sólo para Azure SQL (`*.database.windows.net`): un SQL Server propio, con `port`, no pasa por acá.
 
+## Borrar en Azure: el grupo, el candado y el recurso
+
+Borrar un grupo de recursos se lleva todo lo que tiene adentro, también un servidor de producción con sus bases. El
+catálogo declara servidores, no grupos, así que **el freno no sabe qué grupo contiene qué**. Por eso frena todos estos
+comandos, sin mirar el nombre del grupo ni el catálogo, y sin preguntarle a Azure:
+
+- `az group delete`, en cualquier forma (con opciones globales delante, con `sudo`, `az.cmd`, `az.exe`, escondido en
+  `bash -c` o `xargs`).
+- `az lock delete`: quita el candado que protege contra el borrado. Crear, listar y mirar candados pasa.
+- `az rest` con el método delete, o con un método que sale de una variable: la dirección puede ser un grupo o un
+  servidor. Los otros métodos pasan. Lo mismo `Invoke-AzRestMethod -Method DELETE` en PowerShell.
+- `az resource delete`, salvo que se lea el tipo de todo lo que borra y nada sea de `Microsoft.Sql`, de
+  `Microsoft.Resources` (el grupo) ni de `Microsoft.Authorization` (el candado). Si nombra un servidor SQL, lo decide
+  el catálogo como cualquier otro comando: producción o desconocido frena, un no-producción declarado pasa. Sin tipo
+  legible (una variable, un `-n` sin `--resource-type`, un comodín), frena.
+- `azd down`, que borra los recursos de un entorno.
+- En PowerShell, `Remove-AzResourceGroup`, `Remove-AzResource`, `Remove-AzSqlServer`, `Remove-AzSqlDatabase` y
+  `Remove-AzResourceLock`, siempre.
+- El borrado escondido también: con el programa en una variable (`$A group delete`), en la segunda línea del comando,
+  dentro de un programa de `awk` o `sed`, en el código de `python -c` o `node -e`, en un guion que corre un shell, por
+  `ssh` y con `xargs` cuando el subcomando viene de la entrada. El mensaje de un commit que nombra estos comandos no se
+  frena: no es un comando.
+
+Borrar un grupo lo hace **una persona, en su propia terminal**, fuera del asistente, después de mirar qué contiene. La
+puerta no borra nada. El corte queda anotado con la regla `borrado-de-azure`.
+
+El límite: el freno cubre los comandos del asistente en esta máquina. **No** cubre el portal de Azure, Terraform, un
+despliegue con `az deployment group create --mode Complete` (borra lo que la plantilla no nombra), los SDK ni a otra
+persona. La protección de verdad en Azure es un candado `CanNotDelete` en el servidor de producción, que pone una persona
+con permiso de candados; el freno impide que el asistente lo quite.
+
 ## Los límites, dichos antes
 
 - 🔴 **La regla que pregunta por `az sql server firewall-rule` es de CORTESÍA**, no un freno: se
