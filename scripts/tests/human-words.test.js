@@ -164,6 +164,13 @@ test('T4 HumanWords_ProgramTextsWithoutCorrida @story-8.87 @ac-2 @ac-7', () => {
       for (const m of linea.matchAll(/<[a-z/][^>]*>([^<$]*)/g)) if (CORRIDA.test(m[1])) malas.push(`${f}: ${m[1].slice(0, 100)}`);
     }
   }
+  // tycon-config.js tiene una copia en el freno de producción que tiene que coincidir con ella en lo que el freno usa
+  // (guard-libs-check.js): su texto cambia junto con el freno, que se reinstala aparte
+  const conElFreno = (f, s) => f === 'scripts/lib/tycon-config.js' && s.startsWith('buzón de corridas apagado');
+  for (let k = malas.length - 1; k >= 0; k--) {
+    const [f, ...resto] = malas[k].split(': ');
+    if (conElFreno(f, resto.join(': '))) malas.splice(k, 1);
+  }
   for (const f of guiones()) {
     for (const s of cadenasDeGuion(leer(f))) {
       if (/^corridas?$/i.test(s)) continue;
