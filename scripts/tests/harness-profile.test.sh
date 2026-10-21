@@ -127,7 +127,7 @@ minimal_hooks() { python3 -c "
 import json,sys
 for e in json.load(open(sys.argv[1], encoding='utf-8'))['effects']:
     # los opt-in de minimal que nacen prendidos cuentan (el freno de comandos, 2026-10-05); el de sesiones nace apagado
-    if e['kind']=='hook' and 'minimal' in e['profiles'] and not e['when'].startswith(('integration:','platform:')) and e['when']!='optin:TYCON_SESSION_GUARD': print(e['id'])" "$EFFECTS" | LC_ALL=C sort -u; }
+    if e['kind']=='hook' and 'minimal' in e['profiles'] and not e['when'].startswith(('integration:','time:','platform:')) and e['when']!='optin:TYCON_SESSION_GUARD': print(e['id'])" "$EFFECTS" | LC_ALL=C sort -u; }
 setting() { python3 -c "
 import json,sys
 s=json.load(open(sys.argv[1], encoding='utf-8')); k=sys.argv[2].split('.'); v=s

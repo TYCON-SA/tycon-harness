@@ -2795,8 +2795,11 @@ test('T96 · Ps1Hooks_CommentedRow_NotExpected: una fila del .ps1 comentada con 
   r = on.count('win32');
   assert.deepStrictEqual(idsOf(r.missing), ['PreToolUse:@tcg:toy-guard-pre.sh'], 'sin comentar, se espera y falta');
   // y con la lista real del árbol, el lector lee lo mismo que las filas que empiezan la línea (las que PowerShell lee)
-  // la lista real es scripts/setup/hooks-list.json: en Windows, lo que no excluye
-  const realList = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'setup', 'hooks-list.json'), 'utf8')).hooks;
+  // la lista real es scripts/setup/hooks-list.json más los hooks de Claude Code de las integraciones de horas (sus
+  // manifiestos): en Windows, lo que no excluye
+  const INT = require(path.join(RAIZ, 'scripts', 'lib', 'integrations.js'));
+  const intHooks = INT.listManifests({ dir: path.join(RAIZ, 'integrations') }).manifests.flatMap((m) => INT.hookEntries(m, { tool: 'claude' }));
+  const realList = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'setup', 'hooks-list.json'), 'utf8')).hooks.concat(intHooks);
   const realPairs = new Set(realList.filter((h) => h.platforms.windows !== false).map((h) => `${h.event}:${h.spec}`));
   assert.deepStrictEqual(ids(RAIZ), [...realPairs].sort(), 'la lista real: la lista única, menos lo que excluye de Windows');
 });

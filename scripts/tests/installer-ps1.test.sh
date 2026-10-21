@@ -1007,22 +1007,23 @@ make_readable
 unsafe_cmds() { node -e 'const s=require(process.argv[1]);let n=0,all=0;for(const b of Object.values(s.hooks||{}))for(const e of b)for(const h of e.hooks||[]){all++;const c=String(h.command||"");if(/[$`]/.test(c)||(c.match(/"/g)||[]).length!==2)n++;}console.log(n+" de "+all)' "$1" 2>&1; }   # <settings>: «<comandos con $, acento grave o comillas de más> de <todos>»
 unsafe_notice() { grep 'NO quedó registrado' "$1" | grep 'su ruta trae' | grep -c "$2"; }   # <salida> <texto>: las líneas de ruta insegura que traen ese texto
 DOLLAR_DIR="$T/lab\$usr"; mkdir -p "$DOLLAR_DIR"
-# (1) la carpeta de usuario trae `$`: los diez guiones de las skills (su ruta pasa por ~/.claude) no se registran; los del clon, sí
+# (1) la carpeta de usuario trae `$`: los ocho guiones de las skills (su ruta pasa por ~/.claude) no se registran; los del clon,
+# sí (también los de las integraciones, que viven en el clon)
 HP="$(mktemp -d "$DOLLAR_DIR/home.XXXXXX")"; SP="$HP/.claude/settings.json"
 installer "$HP" "${HELD[@]}" "${TEAM[@]}" > "$T/p.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && [ "$(unsafe_cmds "$SP")" = "0 de $CLONE_HOOKS" ] && [ "$(hook_n "$SP" PreToolUse '*' tycon-pipeline/scripts/on-bash-write-gate.js)$(hook_n "$SP" UserPromptSubmit '*' clocki/scripts/on-prompt.js)" = 00 ]; then
   ok "(t) con \$ en la carpeta de usuario: los guiones cuya ruta lo trae NO se registran (ningún comando con \$ en settings.json; quedan los $CLONE_HOOKS del clon)"
 else no "(t) con \$ en la carpeta de usuario (rc $RC): comandos inseguros «$(unsafe_cmds "$SP")» (esperaba «0 de ${CLONE_HOOKS}»), on-bash-write-gate $(hook_n "$SP" PreToolUse '*' tycon-pipeline/scripts/on-bash-write-gate.js) · $(brief "$T/p.out" 200)"; fi
-if [ "$(unsafe_notice "$T/p.out" '«\$»')" = 10 ] && [ "$(unsafe_notice "$T/p.out" 'tycon-pipeline/scripts/on-bash-write-gate\.js (PreToolUse)')" = 1 ] && [ "$(unsafe_notice "$T/p.out" 'clocki/scripts/on-prompt\.js (UserPromptSubmit)')" = 1 ]; then
+if [ "$(unsafe_notice "$T/p.out" '«\$»')" = 8 ] && [ "$(unsafe_notice "$T/p.out" 'tycon-pipeline/scripts/on-bash-write-gate\.js (PreToolUse)')" = 1 ] && [ "$(unsafe_notice "$T/p.out" 'clockify/scripts/on-prompt\.js')" = 0 ]; then
   ok "(t) …y una línea por cada uno lo dice: el guion y el carácter (\$)"
-else no "(t) con \$ en la carpeta de usuario: $(unsafe_notice "$T/p.out" '«\$»') línea(s) que nombran el carácter (esperaba 10) · $(grep 'su ruta trae' "$T/p.out" | head -1 | cut -c1-240)"; fi
+else no "(t) con \$ en la carpeta de usuario: $(unsafe_notice "$T/p.out" '«\$»') línea(s) que nombran el carácter (esperaba 8) · $(grep 'su ruta trae' "$T/p.out" | head -1 | cut -c1-240)"; fi
 if [ "$(hook_n "$SP" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)$(hook_n "$SP" Stop '*' large-read-meter.js)" = 11 ] && ! grep 'su ruta trae' "$T/p.out" | grep 'safety-guard-pre\.sh' >/dev/null; then
   ok "(t) el espejo, en la misma corrida: los guiones del clon (su ruta no trae \$) se registran sin aviso, .sh y .js"
 else no "(t) el espejo en la misma corrida: safety-guard $(hook_n "$SP" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh), large-read-meter $(hook_n "$SP" Stop '*' large-read-meter.js)"; fi
 cp "$SP" "$T/p.settings.json"
 installer "$HP" "${HELD[@]}" "${TEAM[@]}" > "$T/p2.out" 2>&1; RC=$?
 installer "$HP" "${HELD[@]}" "${TEAM[@]}" -- -Check > "$T/p3.out" 2>&1; RC3=$?
-if [ "$RC" -eq 0 ] && [ "$RC3" -eq 0 ] && cmp -s "$SP" "$T/p.settings.json" && [ "$(unsafe_notice "$T/p2.out" '«\$»')" = 10 ] && [ "$(unsafe_notice "$T/p3.out" '«\$»')" = 10 ] && ! grep -q 'hooks faltan' "$T/p3.out"; then
+if [ "$RC" -eq 0 ] && [ "$RC3" -eq 0 ] && cmp -s "$SP" "$T/p.settings.json" && [ "$(unsafe_notice "$T/p2.out" '«\$»')" = 8 ] && [ "$(unsafe_notice "$T/p3.out" '«\$»')" = 8 ] && ! grep -q 'hooks faltan' "$T/p3.out"; then
   ok "(t) la segunda corrida no cambia settings.json y lo vuelve a decir; -Check lo dice y no los cuenta entre los que faltan"
 else no "(t) la segunda corrida o -Check con \$ en la carpeta de usuario (rc $RC y $RC3): $(unsafe_notice "$T/p2.out" '«\$»') y $(unsafe_notice "$T/p3.out" '«\$»') línea(s) · $(grep -c 'hooks faltan' "$T/p3.out") aviso(s) de faltantes"; fi
 # (2) el clon trae `$` en su ruta: los guiones del clon —los tres .sh entre ellos— no se registran; los de las skills, sí

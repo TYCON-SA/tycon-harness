@@ -1448,7 +1448,8 @@ function cli(argv) {
   if (cmd === 'time-tracking') {
     let c;
     try { c = leer(); } catch (e) { process.stderr.write(e.message + '\n'); process.exit(2); }
-    process.stdout.write(timeTracking(c).value + '\n');
+    // sin anotar el nombre viejo: lo pregunta el instalador, también con -Check, que no escribe nada en la casa
+    process.stdout.write(sinAnotar(() => timeTracking(c)).value + '\n');
     process.exit(0);
   }
   // `response --json`: idioma, estilo y tope del bloque de respuesta, ya resueltos (lo leen los
