@@ -538,8 +538,13 @@ only: they are changed with a request in their repo.
   profile repo.
 - **Integrations** (*Integraciones*): which services each machine uses (the time clock, the memory, the mailbox, the
   night, the CodeGraph code index); a machine can turn one off for itself. With CodeGraph on, the installer sets it up
-  for each dev and the harness warns when a machine lacks it. Telegram is not here: it belongs to each machine. It lives
-  in `team-profile.json`, in the profile repo. A maintainer reviews it.
+  for each dev and the harness warns when a machine lacks it. It lives in `team-profile.json`, in the profile repo. A
+  maintainer reviews it. The **«Avisos»** (notices) row chooses where the harness notifies (a run waiting for a person,
+  the morning summary, the watcher): one or more of Telegram, Slack, Teams and email, or none; not declared, Telegram,
+  as until now. With email, the server and its port. It never asks for a credential: each dev's session notices use
+  their own (`harness.js config set notify.<key>`, on their machine; Telegram, the machine's bot) and the night ones,
+  the server's secret variables (`pipelines/operations/README.md`). Saving the channels also raises the profile's
+  `requires.harness` to the first version that reads them.
 - **Run conversations** (*Conversaciones de las corridas*): whether the site also downloads what was said in each run;
   with that, the Runs detail shows the files it touched. It lives in `operations.json`, in the operations repo. A
   maintainer reviews it.

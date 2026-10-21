@@ -685,12 +685,12 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       if (!e || !e.dir) return { ok: false, message: M('config.clonFallo', { motivo: (e && e.motivo) || M('config.noSeArmoClon') }) };
       dir = e.dir;
     }
-    // la herramienta de horas: el mismo pedido sube la versión que pide el perfil, si es anterior a la que la lee (una
-    // máquina vieja rechaza la capa nueva y sigue con la de antes, con su llave vieja)
+    // la herramienta de horas y los canales de aviso: el mismo pedido sube la versión que pide el perfil, si es anterior
+    // a la que los lee (una máquina vieja rechaza la capa nueva y sigue con la de antes)
     let archivos = null;
     const antes = docDe(base ? base.texto || '' : v.texto || '');
-    // la capa se lee sólo si el pedido cambia la herramienta: prender o apagar otra integración no la necesita
-    if (s.id === 'integraciones' && ORG.cambiaHoras({ actual: antes, doc: docDe(texto) })) {
+    // la capa se lee sólo si el pedido cambia una de esas claves: prender o apagar otra integración no la necesita
+    if (s.id === 'integraciones' && ORG.cambiaLaCapa({ actual: antes, doc: docDe(texto) })) {
       const capa = leerDe(dir, 'team-layer.json');
       if (capa.estado === 'ilegible') return { ok: false, message: capa.motivo };
       const sube = ORG.timeTrackingLayer({ layerText: capa.estado === 'leido' ? capa.texto : null, actual: antes, doc: docDe(texto) });

@@ -1440,7 +1440,7 @@ test('2.31-T11 NewSections_ValidateWithMachineReader_RejectPersonalValues @story
   const integ = ORG.seccionPorId('integraciones');
   // la herramienta de horas y la llave vieja, para poder sacarla; las hojas de cada herramienta salen de sus manifiestos
   assert.deepStrictEqual(ORG.rutasDeHoras(), ['integrations.solidtime']);
-  assert.deepStrictEqual(integ.rutas, ['integrations.timeTracking', 'integrations.clockify', 'integrations.engram', 'integrations.mailbox', 'integrations.codex', 'integrations.nightly', 'integrations.codegraph']);
+  assert.deepStrictEqual(integ.rutas, ['integrations.timeTracking', 'integrations.notify', 'integrations.clockify', 'integrations.engram', 'integrations.mailbox', 'integrations.codex', 'integrations.nightly', 'integrations.codegraph']);
   cambio(rev('integraciones', { integrations: { clockify: false, engram: true, mailbox: true, codex: true, nightly: true, codegraph: true } }), { ...PERFIL_TYCON, integrations: { ...PERFIL_TYCON.integrations, clockify: false, codex: true, codegraph: true } });
   assert.deepStrictEqual(rev('integraciones', { integrations: { clockify: 'sí' } }).problems.map((p) => p.path), ['integrations.clockify']);
   // Azure DevOps: la organización; un correo ahí es un valor personal y lo rechaza el lector
@@ -3012,12 +3012,13 @@ test('T13 Repos_SinPipelineQuePasa @story-2.59 @ac-13', async () => {
 test('T7 Integraciones_UnRenglonPorIntegracion @story-2.59 @ac-7', async () => {
   let p = await compacta(secInteg(INTEG));
   const filas = p.renglones(p.tablas()[0]);
-  assert.strictEqual(filas.length, 6, 'la de horas, las cuatro de antes y CodeGraph');
+  assert.strictEqual(filas.length, 7, 'la de horas, la de los avisos (story 7.40), las cuatro de antes y CodeGraph');
   assert.ok(p.clases(p.tablas()[0]).includes('integ'));
   filas.forEach((f) => { assert.strictEqual(p.de(f, 'que').length, 1); assert.strictEqual(p.todo(f).filter((n) => n.tag === 'select').length, 1); });
   assert.match(p.texto(filas[0]), /Registro de horas/, 'el primero es la herramienta de horas');
-  assert.deepStrictEqual(p.todo(filas[3]).find((n) => n.tag === 'select').hijos.map((o) => o.attrs.value), ['', 'true', 'false', 'detect'], 'codex suma «si está instalado»');
-  p.todo(filas[2]).find((n) => n.tag === 'select').on.change({ target: { value: 'true' } });
+  assert.match(p.texto(filas[1]), /Avisos/, 'el segundo, los canales de aviso');
+  assert.deepStrictEqual(p.todo(filas[4]).find((n) => n.tag === 'select').hijos.map((o) => o.attrs.value), ['', 'true', 'false', 'detect'], 'codex suma «si está instalado»');
+  p.todo(filas[3]).find((n) => n.tag === 'select').on.change({ target: { value: 'true' } });
   assert.deepStrictEqual((await p.revisado()).integrations, { ...INTEG, mailbox: true });
   p = await compacta(secInteg(INTEG));
   p.todo(p.renglones(p.tablas()[0])[0]).find((n) => n.tag === 'select').on.change({ target: { value: '' } });
@@ -3959,6 +3960,81 @@ test('Config_TimeTracking_RaisesRequiresAndDropsOldKey @story-7.40 @ac-10', { sk
       assert.strictEqual(perfil.integrations.timeTracking, 'clockify');
       assert.ok(!('clockify' in perfil.integrations), 'la llave vieja salió del perfil');
       assert.strictEqual(JSON.parse(r.archivoEn(ref, 'team-layer.json')).requires.harness, `>= ${ORG.TIME_TRACKING_SINCE}`, 'y el mismo pedido sube la versión que pide el perfil');
+    });
+  } finally { await cerrarTodos(ado, r); }
+});
+
+test('T28 Config_NotifyChannels_NoSecrets @story-7.40 @ac-18', async () => {
+  // la pantalla: el renglón «Avisos», sin declarar (Telegram, como hasta ahora), ninguno, o los canales tildados
+  let p = await compacta(secHoras(INTEG));
+  const avisos = () => p.renglones(p.tablas()[0]).find((r) => /Avisos/.test(p.texto(r)));
+  const sel = () => p.todo(avisos()).find((n) => n.tag === 'select');
+  assert.ok(avisos(), 'hay un renglón «Avisos» en Integraciones');
+  assert.deepStrictEqual(sel().hijos.map((o) => o.attrs.value), ['', 'none', 'elegir']);
+  assert.strictEqual(sel().value, '', 'sin la lista, «sin declarar»');
+  sel().on.change({ target: { value: 'elegir' } });
+  const tilde = (canal) => p.todo(p.sec('integraciones')).find((n) => n.tag === 'input' && n.attrs['data-path'] === `integrations.notify.channels.${canal}`);
+  assert.deepStrictEqual(['telegram', 'slack', 'teams', 'mail'].map((c) => Boolean(tilde(c))), [true, true, true, true], 'los cuatro canales para tildar');
+  tilde('slack').on.change({ target: { checked: true } });
+  tilde('mail').on.change({ target: { checked: true } });
+  tilde('telegram').on.change({ target: { checked: false } });
+  const host = p.todo(p.sec('integraciones')).find((n) => n.tag === 'input' && n.attrs['data-path'] === 'integrations.notify.mail_host');
+  const puerto = p.todo(p.sec('integraciones')).find((n) => n.tag === 'input' && n.attrs['data-path'] === 'integrations.notify.mail_port');
+  assert.ok(host && puerto, 'con el correo, su servidor y su puerto');
+  host.on.input({ target: { value: 'smtp.acme.example' } });
+  puerto.on.input({ target: { value: '587' } });
+  // ninguna credencial: la pantalla dice dónde va cada una y nunca la pide
+  assert.match(p.textoDe('integraciones'), /harness\.js config set notify\.slack_webhook/);
+  assert.match(p.textoDe('integraciones'), /TYCON_SLACK_WEBHOOK_URL/);
+  assert.ok(!p.todo(p.sec('integraciones')).some((n) => n.tag === 'input' && /webhook|password|user|token|address|chat/i.test(String(n.attrs['data-path'] || ''))), 'nunca un campo de credencial');
+  assert.deepStrictEqual((await p.revisado()).integrations.notify, { channels: ['slack', 'mail'], mail_host: 'smtp.acme.example', mail_port: 587 }, 'los canales y el servidor, en el perfil');
+  // destildar el correo saca su servidor; «ninguno» es la lista vacía; «sin declarar» saca la clave
+  tilde('mail').on.change({ target: { checked: false } });
+  assert.deepStrictEqual((await p.revisado()).integrations.notify, { channels: ['slack'] });
+  sel().on.change({ target: { value: 'none' } });
+  assert.deepStrictEqual((await p.revisado()).integrations.notify, { channels: [] });
+  sel().on.change({ target: { value: '' } });
+  assert.ok(!('notify' in (await p.revisado()).integrations));
+  // el servidor lo valida con el lector de la máquina: un canal inventado o un puerto que no es un número no pasan
+  const rev = (notify) => ORG.revisar({ seccion: 'integraciones', texto: ORG.formatJson(PERFIL_TYCON), borrador: { integrations: { ...PERFIL_TYCON.integrations, notify } }, lectores: { 'harness-config': TC } });
+  assert.strictEqual(rev({ channels: ['slack', 'mail'], mail_host: 'smtp.acme.example', mail_port: 587 }).ok, true);
+  assert.deepStrictEqual(rev({ channels: ['paloma'] }).problems.map((x) => x.path), ['integrations.notify.channels']);
+  assert.deepStrictEqual(rev({ channels: ['mail'], mail_port: 'x' }).problems.map((x) => x.path), ['integrations.notify.mail_port']);
+  // la clave es de la sección: no es una hoja ajena
+  assert.deepStrictEqual(ORG.hojasAjenas(ORG.seccionPorId('integraciones'), { integrations: {} }, { integrations: { notify: { channels: ['slack'] } } }), []);
+});
+
+test('T54 Config_NotifyChannels_RaisesRequires @story-7.40 @ac-18', { skip: SIN_BACKEND }, async () => {
+  // la función: guardar los canales sube la capa a la versión que los lee; con la herramienta de horas, a la mayor
+  const antes = { integrations: { engram: true } };
+  const conAvisos = { integrations: { engram: true, notify: { channels: ['slack'] } } };
+  assert.strictEqual(ORG.cambiaAvisos({ actual: antes, doc: conAvisos }), true);
+  assert.strictEqual(ORG.cambiaLaCapa({ actual: { integrations: { engram: true } }, doc: { integrations: { engram: false } } }), false, 'otra integración no la toca');
+  const sube = ORG.timeTrackingLayer({ layerText: JSON.stringify(capa(ORG.RESPONSE_SINCE)), actual: antes, doc: conAvisos });
+  assert.strictEqual(JSON.parse(sube.contenido).requires.harness, `>= ${ORG.NOTIFY_SINCE}`);
+  assert.strictEqual(ORG.NOTIFY_SINCE, '2026.10.21.52', 'la etiqueta del merge que trajo el lector de integrations.notify');
+  assert.ok(ORG.versionAtLeast(ORG.NOTIFY_SINCE, ORG.TIME_TRACKING_SINCE), 'la versión que lee los avisos es posterior a la de las horas');
+  const ambas = ORG.timeTrackingLayer({ layerText: JSON.stringify(capa(ORG.RESPONSE_SINCE)), actual: { integrations: { clockify: true } }, doc: { integrations: { timeTracking: 'solidtime', notify: { channels: [] } } } });
+  assert.strictEqual(JSON.parse(ambas.contenido).requires.harness, `>= ${ORG.NOTIFY_SINCE}`, 'la mayor de las dos');
+  assert.strictEqual(ORG.timeTrackingLayer({ layerText: JSON.stringify(capa(ORG.NOTIFY_SINCE)), actual: antes, doc: conAvisos }), null, 'ya pide lo suficiente');
+  // de punta a punta: el pedido al perfil lleva los canales y la capa con la versión nueva
+  const { arrancarAdoFalso } = require('./lib/fake-ado-api.js');
+  let ado, r, dir;
+  try {
+    ado = await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: 'perfil' });
+    ado.st.politicas = [{ isEnabled: true, isBlocking: true, type: { displayName: 'Minimum number of reviewers' }, settings: { minimumApproverCount: 1, creatorVoteCounts: false, scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: ado.st.repoId }] } }];
+    ({ r, dir } = await opsPorHttp({ 'team-profile.json': PERFIL_TYCON, 'team-layer.json': capa(ORG.RESPONSE_SINCE), 'team-repos.json': TR_BASE }));
+    const remotos = { perfil: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'perfil', web: 'https://dev.azure.com/acme/Proy/_git/perfil' } };
+    await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': opsBase() }), perfil: dir }), env: { ...PERFIL_ENV, SITE_PROFILE_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base } } }, async (ctx) => {
+      const lead = await ctx.entrar(LEAD); const tok = await ctx.token(lead);
+      const rev = (await ctx.escribir('/api/config/revisar', lead, tok, { seccion: 'integraciones', borrador: { integrations: { ...PERFIL_TYCON.integrations, notify: { channels: ['slack', 'mail'], mail_host: 'smtp.acme.example' } } } })).json;
+      assert.strictEqual(rev.ok, true, JSON.stringify(rev.problems));
+      const s = (await ctx.h.pedir('/api/config', { cookie: lead })).json.secciones.find((x) => x.id === 'integraciones');
+      const pr = (await ctx.escribir('/api/config/proponer', lead, tok, { seccion: 'integraciones', texto: rev.texto, oid: s.oid })).json;
+      assert.strictEqual(pr.ok, true, JSON.stringify(pr));
+      const ref = ado.st.pedidos[0].sourceRefName;
+      assert.deepStrictEqual(JSON.parse(r.archivoEn(ref, 'team-profile.json')).integrations.notify, { channels: ['slack', 'mail'], mail_host: 'smtp.acme.example' });
+      assert.strictEqual(JSON.parse(r.archivoEn(ref, 'team-layer.json')).requires.harness, `>= ${ORG.NOTIFY_SINCE}`, 'y el mismo pedido sube la versión que pide el perfil');
     });
   } finally { await cerrarTodos(ado, r); }
 });
