@@ -347,6 +347,14 @@
       "scripts": [
         "scripts/hooks/large-read-notice.js"
       ]
+    },
+    {
+      "log": "SessionStart · sweep.js y PostToolUse · touch-activity.js (integración de horas)",
+      "verdict": "Los registra el despliegue desde el manifiesto de la integración elegida (integrations/<nombre>/integration.json, build/deploy-codex-hooks.js withIntegrationHooks): este fragmento no los trae escritos. Sin herramienta de horas elegida no se registran, a propósito.",
+      "scripts": [
+        "sweep.js",
+        "touch-activity.js"
+      ]
     }
   ]
 }
