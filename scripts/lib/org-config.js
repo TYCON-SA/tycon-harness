@@ -2207,7 +2207,7 @@ function pantalla(idioma = 'es') {
       el('div', { class: 'msg warn' }, el('b', { text: T('pantalla.tecElComandoCorreEnCadaComputadora') })),
       campo(T('pantalla.tecArchivoQueLaDetecta'), r.detect, upd('detect'), 'runner.detect', []),
       campo(T('pantalla.tecComando'), r.command, upd('command'), 'runner.command', []),
-      selector(T('pantalla.tecQueReporteDeja'), res.format, [['junit', T('pantalla.tecReporteJunit')], ['jest-json', T('pantalla.tecReporteJest')]], dentro('results', 'format'), 'runner.results.format', []),
+      selector(T('pantalla.tecQueReporteDeja'), res.format, [['junit', T('pantalla.tecReporteJunit')], ['jest-json', T('pantalla.tecReporteJest')], ['trx', T('pantalla.tecReporteTrx')]], dentro('results', 'format'), 'runner.results.format', []),
       campo(T('pantalla.tecDondeQuedaElReporte'), res.path, dentro('results', 'path'), 'runner.results.path', []),
       selector(T('pantalla.tecMideLaCobertura'), cov ? cov.format : '', [['', T('pantalla.tecNoMide')], ['cobertura', 'Cobertura'], ['lcov', 'lcov'], ['istanbul-json', 'istanbul'], ['jacoco', 'JaCoCo'], ['go-cover', 'Go']], function (v) {
         if (!v) delete r.coverage; else { if (!esObjeto(r.coverage)) r.coverage = { path: '' }; r.coverage.format = v; }

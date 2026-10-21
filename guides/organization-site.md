@@ -533,16 +533,33 @@ Lo que la persona ve en la sección y lo que hace el agente cuando le piden una 
 - **«Pedíselo a tu agente»** deja la frase «configurá las pruebas de mi proyecto en la configuración del arnés». La
   persona la pega en su agente de código, abierto en el proyecto.
 - **Lo que hace el agente** con esa frase:
-  1. Mira el proyecto: qué herramienta corre las pruebas, el **archivo que la detecta** (el que está en la carpeta del
-     proyecto, por ejemplo `Cargo.toml`), el comando, qué reporte deja (JUnit o el JSON de Vitest/Jest) y dónde, y si
-     mide la cobertura y en qué formato (Cobertura, lcov, istanbul, JaCoCo o el perfil de Go). `{results}` es la
-     carpeta de la corrida.
+  1. Mira el proyecto: qué herramienta corre las pruebas, el **archivo que la detecta** (por ejemplo `Cargo.toml`), el
+     comando, qué reporte deja y dónde, y si mide la cobertura y en qué formato (Cobertura, lcov, istanbul, JaCoCo o el
+     perfil de Go). `{results}` es la carpeta de la corrida.
   2. Arma la entrada de `stack.test_runners` en `team-repos.json` del repo del perfil: `name` (minúsculas y guiones),
      `detect`, `command`, `results` y, si mide, `coverage`.
   3. La valida con el lector de las máquinas antes de proponer:
      `node -e 'console.log(JSON.stringify(require("<arnés>/scripts/lib/team-repos.js").parse(require("fs").readFileSync("team-repos.json","utf8")).sectionProblems || {}))'`.
      Sin problemas en `stack`, la propone como pedido al repo del perfil.
   4. Un admin aprueba el pedido y la herramienta aparece en la lista, donde se puede cambiar.
+- **Lo que la receta permite**, para que el agente no proponga algo que el lector rechaza o que nunca aplica:
+  - **El reporte** es `junit`, `jest-json` o `trx` (el de vstest, `/Logger:trx`); `path` puede tener `*` y `**`.
+  - **El archivo detector** es un nombre exacto. Se busca en la carpeta que se prueba y, con `detect_depth` (de 0 a 3),
+    en sus subcarpetas, sin entrar a `bin`, `obj`, `node_modules` ni carpetas con punto. Elegí uno propio de la
+    herramienta: `packages.config` es de .NET Framework; un `.sln` o un `.csproj` sueltos son de cualquier .NET y le
+    quitarían el lugar a `dotnet test` en los demás repos.
+  - **Una herramienta de la organización le gana a .NET** si su archivo detector está en la carpeta de la solución (o
+    en sus subcarpetas, con `detect_depth`). Corre una vez, desde la solución.
+  - **Lo que cambia de un repo a otro** (un filtro de categorías, por ejemplo) no va en el comando: va en `repos`, una
+    entrada `{ "repo": <repo>, "args": "…" }` por repo, con la forma `<repo>` de este mismo archivo. El comando lo usa
+    como `{args}`; un repo sin entrada usa `args_default`, o nada. `args` no puede traer comillas, `$`, comillas
+    invertidas, barra invertida ni saltos de línea, porque va entre comillas en el comando. El repo se reconoce por su
+    remoto `origin`.
+  - **El comando corre con bash** y la primera palabra tiene que estar en el PATH (si no, la puerta dice que falta).
+    Nada se lee del repo que se prueba.
+- **Dónde está el clon del perfil**: `harness.js team-config --no-open` dice qué carpeta usa esta máquina (la clave
+  `paths.team`). Si no hay ninguna, se clona el repo `profile` de `team-repos.json` en una carpeta propia.
+- **El pedido** va a la rama principal del repo del perfil, **sin auto-completar**: lo lee y lo aprueba un admin.
 
 ### Instalación y actualización
 
