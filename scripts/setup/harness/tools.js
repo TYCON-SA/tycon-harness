@@ -1,24 +1,24 @@
 'use strict';
-// tools.js — qué herramientas enchufa el arnés en esta máquina: Claude Code, Codex, o las dos (story 8.23, tanda C).
+// tools.js — qué herramientas enchufa el arnés en esta máquina: Claude Code, Codex, o las dos.
 //
-// ── EL CASO (2026-10-06) ──────────────────────────────────────────────────────────────────────────────────────────
-// Un dev que sólo usa Codex no podía instalar el arnés: el instalador escribía en la carpeta de Claude Code aunque no
-// estuviera, la actualización la disparaba sólo el arranque de Claude Code, y el lado Codex se armaba leyendo archivos
-// de Claude (`~/.claude/CLAUDE.md`, `~/.claude.json`). Desde acá el arnés pregunta qué herramientas HAY y enchufa sólo
+// ── EL CASO ──────────────────────────────────────────────────────────────────────────────────────────
+// Un dev que sólo usa Codex tiene que poder instalar el arnés: sin esto, el instalador escribiría en la carpeta de Claude
+// Code aunque no esté, la actualización la dispararía sólo el arranque de Claude Code, y el lado Codex se armaría leyendo
+// archivos de Claude (`~/.claude/CLAUDE.md`, `~/.claude.json`). Acá el arnés pregunta qué herramientas HAY y enchufa sólo
 // esas.
 //
 // ── QUÉ HAY ACÁ ───────────────────────────────────────────────────────────────────────────────────────────────────
 //   · detect()   una herramienta está INSTALADA si su ejecutable está en el PATH o existe su configuración propia —la
 //                que el arnés nunca crea: `~/.claude.json` (Claude Code) y `auth.json` en la carpeta de Codex—. Lo que
 //                el arnés despliega (`settings.json`, `hooks.json`, los perfiles) NO cuenta: «ya desplegado» no es
-//                «instalada» (AC 24), y una máquina no se detectaría a sí misma.
+//                «instalada», y una máquina no se detectaría a sí misma.
 //   · choose()   cuáles se enchufan: las de `--tool` si vino (la persona las fija, estén o no); si no, por cada una su
 //                llave (`integrations.claude` / `integrations.codex`): prendida → sí; apagada A PROPÓSITO → no; `detect`
 //                o sin decir → lo que diga detect().
 //   · plugged()  cuáles tiene enchufadas una máquina YA instalada: `state.tools`. Se decide en `install` (y en la
 //                mudanza) y queda escrito: no se vuelve a detectar en cada arranque, porque el PATH de un arranque
 //                (launchd, una app gráfica) no es el de la persona —la señal no puede vivir sólo en el entorno
-//                (caso 2026-09-04)—. Un estado sin `tools` (las máquinas de antes) se lee como siempre: Claude Code, y
+//                —. Un estado sin `tools` (una máquina sin ese dato) se lee como siempre: Claude Code, y
 //                Codex si ya está desplegado.
 //
 // `TYCON_TOOLS_DETECT_PATH`: variable de PRUEBA. Reemplaza al PATH sólo para detectar (el PATH de quien corre una suite
@@ -44,8 +44,8 @@ function codexHome({ home = os.homedir(), env = process.env } = {}) {
  * ¿La ruta `p` sirve como el ejecutable que se encontró en el PATH? Un archivo ejecutable, sí. En Windows, además, lo que
  * existe y no es una carpeta: el PowerShell 7 de la Microsoft Store vive en `…\AppData\Local\Microsoft\WindowsApps\
  * pwsh.exe` como un alias de ejecución (un punto de reanálisis), y sobre él Node falla en `statSync` (EACCES/UNKNOWN)
- * aunque `spawnSync('pwsh')` lo ejecute. Medido en una máquina Windows 11 del equipo (2026-10-14): `pwsh --version`
- * daba 7.6.7 y `doctor` decía «falta pwsh en el PATH». No hay falso positivo: quien lo encuentra lo ejecuta después
+ * aunque `spawnSync('pwsh')` lo ejecute. Sin esto, con ese alias `pwsh --version`
+ * daría 7.6.7 y `doctor` diría «falta pwsh en el PATH». No hay falso positivo: quien lo encuentra lo ejecuta después
  * (`versionOf` en harness.js) y uno que no arranca sigue contando como faltante. `fsApi` se inyecta sólo en las pruebas.
  */
 function runnableAt(p, platform = process.platform, fsApi = fs) {
@@ -161,7 +161,7 @@ function agentLines(platform = process.platform) {
   ];
 }
 
-/** Lo que dice `install` cuando no hay ninguna (AC 21): sale 1 sin escribir, con cómo instalar cada una. */
+/** Lo que dice `install` cuando no hay ninguna: sale 1 sin escribir, con cómo instalar cada una. */
 function noneFound(platform = process.platform) {
   return ['no encontré Claude Code ni Codex en esta máquina (ni su ejecutable en el PATH ni su configuración propia). El arnés trabaja con uno de los dos; instalá uno y volvé a correr la misma línea:',
     ...agentLines(platform), 'O decí cuál enchufar con --tool claude|codex. No escribí nada'].join('\n');
@@ -176,7 +176,7 @@ function codexDeployed({ home = os.homedir(), env = process.env } = {}) {
 
 /**
  * Las herramientas enchufadas de una máquina instalada. Con `state.tools` (una lista válida), ésa. Sin ella —un estado
- * de antes de la tanda C—, lo de siempre: Claude Code, y Codex si ya está desplegado.
+ * sin ese dato—, lo de siempre: Claude Code, y Codex si ya está desplegado.
  */
 function plugged(state, { home = os.homedir(), env = process.env } = {}) {
   const t = state && Array.isArray(state.tools) ? TOOLS.filter((x) => state.tools.includes(x)) : null;
@@ -184,11 +184,11 @@ function plugged(state, { home = os.homedir(), env = process.env } = {}) {
   return codexDeployed({ home, env }) ? ['claude', 'codex'] : ['claude'];
 }
 
-// ── el enchufe de Codex (AC 22, 23) ───────────────────────────────────────────────────────────────────────────────
+// ── el enchufe de Codex ───────────────────────────────────────────────────────────────────────────────
 // Un solo camino, en Node, para Mac, Linux y Windows: los desplegadores del árbol (`build/deploy-codex-all.js`: los
 // perfiles y subagentes de los revisores, `hooks.json`, los servidores MCP con `writable_roots`, y los enlaces de
-// `~/.codex/skills`) y las reglas en `AGENTS.md` (`scripts/setup/agents-md-blocks.js`). Hasta la tanda C esto lo hacía
-// el aplicador en shell, adentro del enchufe de Claude Code: una máquina sin Claude Code no tenía cómo recibirlo.
+// `~/.codex/skills`) y las reglas en `AGENTS.md` (`scripts/setup/agents-md-blocks.js`). Si lo hiciera
+// el aplicador en shell, adentro del enchufe de Claude Code, una máquina sin Claude Code no tendría cómo recibirlo.
 
 const DEPLOY_TIMEOUT_MS = 5 * 60 * 1000;
 // los renglones de los desplegadores que llegan al informe de la instalación (la prueba T19 de
@@ -207,7 +207,7 @@ function skillRoots({ tree, home = os.homedir() }) {
   return roots;
 }
 
-// ── el registro de los revisores de la capa del equipo en Codex (story 8.25, tanda A2b · AC 30 e, h) ──────────────
+// ── el registro de los revisores de la capa del equipo en Codex ──────────────
 // La capa del equipo no trae traducciones a Codex: la máquina las genera desde el `.md` de cada revisor (build/generate.js
 // --deploy-only) directo a `$CODEX_HOME`, y anota acá el nombre y el hash de cada archivo que escribió. De este registro
 // salen el borrado de lo que la capa saca (sólo si el archivo sigue siendo el que se escribió), las piezas de Codex que
@@ -312,7 +312,7 @@ function plugCodex({ tree, home = os.homedir(), env = process.env, log = null, s
     say(reason);
     return { ok: false, out: '', pieces: [], warnings: [], reason };
   }
-  // (forma con enlaces, story 8.33: los desplegadores arman sus rutas con `__dirname`; así nombran ~/.tycon/harness)
+  // (forma con enlaces: los desplegadores arman sus rutas con `__dirname`; así nombran ~/.tycon/harness)
   const childEnv = Object.assign({}, require('./tycon-home.js').keepLinkPathsEnv(env));
   if (snapshotDir) childEnv.TYCON_HARNESS_SNAPSHOT_DIR = snapshotDir; else delete childEnv.TYCON_HARNESS_SNAPSHOT_DIR;
   for (const k of ['TYCON_REPORT_PIECES', 'TYCON_PLAN_PIECES']) delete childEnv[k];   // las piezas las cuenta codexPieces
@@ -326,14 +326,14 @@ function plugCodex({ tree, home = os.homedir(), env = process.env, log = null, s
   if (d.text) outs.push(d.text);
   say(`despliegue ${deploy} → ${d.ok ? 'ok' : `rc ${d.status}${d.error ? ` (${d.error.message})` : ''}`}${d.text ? ` · ${d.text.split('\n').slice(-3).join(' | ').slice(0, 400)}` : ''}`);
   let reason = d.ok ? null : `el despliegue de Codex salió ${d.status === null ? 'matado' : d.status}`;
-  // las reglas: un árbol de antes de la tanda C no trae el escritor; ahí AGENTS.md queda como esté, y se dice
+  // las reglas: un árbol viejo no trae el escritor; ahí AGENTS.md queda como esté, y se dice
   if (fs.existsSync(blocks)) {
     const b = run(blocks, []);
     if (b.text) outs.push(b.text);
     say(`reglas ${blocks} → ${b.ok ? 'ok' : `rc ${b.status}`}${b.text ? ` · ${b.text.split('\n').slice(-2).join(' | ').slice(0, 300)}` : ''}`);
     if (!b.ok && !reason) reason = `las reglas de Codex (AGENTS.md) no se pudieron escribir (rc ${b.status === null ? 'matado' : b.status})`;
     // el escritor sale 0 siempre (un hook de arranque nunca frena): lo que no pudo lo dice por su salida, y acá se lee
-    // (pase adversarial de la C, clase 30: sin esto «las reglas no se pudieron escribir» no salía nunca)
+    // (sin esto, «las reglas no se pudieron escribir» no saldría nunca)
     const cannot = b.text.split('\n').find((l) => /^⚠ tycon: AGENTS\.md de Codex: /.test(l.trim()));   // «no pude…», «sin bloques en…»: cualquier motivo
     if (cannot && !reason) reason = cannot.trim().replace(/^⚠ tycon: /, '');
   } else say(`esta versión no trae ${blocks}: AGENTS.md queda como está`);
@@ -344,7 +344,7 @@ function plugCodex({ tree, home = os.homedir(), env = process.env, log = null, s
   return { ok: reason === null, out, pieces, warnings, reason };
 }
 
-// ── el aviso previo (AC 24) ───────────────────────────────────────────────────────────────────────────────────────
+// ── el aviso previo ───────────────────────────────────────────────────────────────────────────────────────
 // `detect` sigue a la herramienta INSTALADA, no a «ya desplegada»: una máquina con `codex` instalado y sin enchufar
 // pasa a recibir sus enchufes en la próxima instalación (o en la mudanza), NO sola en un arranque. Antes de eso se le
 // dice, en el arranque y en `doctor`. Una herramienta apagada a propósito con su llave no se nombra.
@@ -374,7 +374,7 @@ function same(a, b) {
   return x.length === y.length && x.every((t, i) => t === y[i]);
 }
 
-/** ¿El estado dice a propósito qué enchufa? (`tools` escrito por la tanda C) */
+/** ¿El estado dice a propósito qué enchufa? (`tools` escrito por `install`) */
 function recorded(state) {
   return Boolean(state && Array.isArray(state.tools) && state.tools.some((x) => TOOLS.includes(x)));
 }

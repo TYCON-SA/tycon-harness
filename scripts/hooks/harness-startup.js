@@ -1,23 +1,22 @@
 #!/usr/bin/env node
 'use strict';
 // harness-startup.js — hook de SessionStart del lado Codex: el arranque de una sesión de Codex ACTUALIZA el arnés
-// (story 8.23, tanda C · AC 22).
 //
-// ── EL CASO (2026-10-06) ──────────────────────────────────────────────────────────────────────────────────────────
-// La actualización del arnés la disparaba sólo la línea de arranque de Claude Code (`settings.json` → la copia fija
-// `bootstrap.js` → `harness.js startup`). El arranque de Codex corría `harness-maintain.sh`, que lanza el aplicador de
-// fondo y NO actualiza: una máquina que sólo usa Codex se quedaba en la versión con que se instaló, para siempre y sin
-// una palabra. Y era un guion de shell: en Windows sin Git Bash no corría.
+// ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────────────────────────────────────
+// La actualización del arnés la dispara la línea de arranque de Claude Code (`settings.json` → la copia fija
+// `bootstrap.js` → `harness.js startup`). `harness-maintain.sh` lanza el aplicador de
+// fondo y NO actualiza: una máquina que sólo usa Codex se quedaría en la versión con que se instaló, para siempre y sin
+// una palabra. Y es un guion de shell: en Windows sin Git Bash no corre.
 //
 // ── QUÉ HACE ──────────────────────────────────────────────────────────────────────────────────────────────────────
 // Lo mismo que la línea de arranque de Claude Code, desde Node (anda igual en Mac, Linux y Windows):
 //   1. Corre la COPIA FIJA de arranque —`<estado>/harness/bootstrap.js`, fuera del árbol que se actualiza—, que lanza
-//      `harness.js startup` con sus topes de siempre (la red, el candado, y lo largo aparte del hook: tanda L). Lo que
+//      `harness.js startup` con sus topes de siempre (la red, el candado, y lo largo aparte del hook). Lo que
 //      imprime (el aviso de una versión disponible, de una retención) sale por acá, a la sesión.
 //   2. Si la copia fija sale distinto de 0 (el árbol no arranca), lanza el respaldo en shell que vive a su lado
 //      (`bootstrap-fallback.sh`, o `.ps1` en Windows), desprendido de la sesión: repara o vuelve a la versión anterior.
-//   3. Sin copia fija (una máquina con Codex desplegado y sin el mecanismo de instalación: de antes de la 8.13), lo de
-//      antes: el aplicador del árbol, de fondo y desprendido de la sesión.
+//   3. Sin copia fija (una máquina con Codex desplegado y sin el mecanismo de instalación), el aplicador
+//      del árbol, de fondo y desprendido de la sesión.
 // Dónde está el estado lo dice scripts/setup/harness/tycon-home.js (una máquina sin Claude Code lo tiene en
 // `~/.tycon/state`).
 //
@@ -32,7 +31,7 @@ const { spawn, spawnSync } = require('child_process');
 const TREE = path.resolve(__dirname, '..', '..');
 const STARTUP_TIMEOUT_MS = 90 * 1000;
 
-/** La carpeta del estado, o null si no se puede saber (un árbol sin tycon-home.js: de antes del mecanismo). */
+/** La carpeta del estado, o null si no se puede saber (un árbol sin tycon-home.js). */
 function stateDir() {
   try { return require(path.join(TREE, 'scripts', 'setup', 'harness', 'tycon-home.js')).stateDir(os.homedir()); } catch (_) { return null; }
 }
@@ -67,12 +66,12 @@ function main() {
   }
 
   // con el mecanismo instalado (hay estado) y sin su copia fija: no es «una máquina de antes», es una copia fija que
-  // falta; el aplicador suelto de Claude Code acá sería un enchufe a espaldas de la persona (pase adversarial, clase 14)
+  // falta; el aplicador suelto de Claude Code acá sería un enchufe a espaldas de la persona
   if (state && fs.existsSync(path.join(state, 'harness-state.json'))) {
     process.stdout.write(`arnés: falta la copia fija de arranque en ${fixedDir}: el arnés no se actualiza en esta sesión; la repone node <árbol>/scripts/setup/harness.js install --version latest\n`);
     return;
   }
-  // sin el mecanismo de instalación: el mantenimiento de antes (el aplicador del árbol, de fondo)
+  // sin el mecanismo de instalación: el mantenimiento sin el mecanismo (el aplicador del árbol, de fondo)
   if (process.env.TYCON_NO_AUTOINSTALL === '1') return;
   const win = process.platform === 'win32';
   const applier = path.join(TREE, 'scripts', win ? 'install-tycon-hooks.ps1' : 'install-tycon-hooks.sh');

@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 'use strict';
-// retro-pending.js — "push a main sin retrospectiva" (2026-08-24, incident-log#retro-multi-repo-2026-08-24)
+// retro-pending.js — "push a main sin retrospectiva"
 //
-// POR QUÉ EXISTE: el único disparador del tycon-retrospective-capturer era el step 10b de
-// /tycon-merge-to-main — un paso al FINAL del skill que depende de que el agente se acuerde. Falló
-// de dos formas medidas: (1) merges a main fuera del skill, sin rastro; (2) sesiones que mergean
-// 2+ repos y lanzan el capturer para uno solo (2026-08-24: FrontEnd sí, BackEnd no — "docs-only,
-// no hace falta", decisión del agente). El aviso de staleness sólo grita a los 7 días.
+// POR QUÉ EXISTE: un único disparador de la retrospectiva —un paso al FINAL del skill de merge— depende de que el agente
+// se acuerde. Falla de dos formas: (1) merges a main fuera del skill, sin rastro; (2) sesiones que mergean 2+ repos y
+// lanzan el capturer para uno solo. El aviso de staleness sólo grita a los 7 días.
 //
 // QUÉ HACE (un script, tres eventos — el modo se deduce del payload o se fuerza con --mode):
 //   record (PostToolUse Bash): un `git push` que toca main/master en un repo bajo el arnés deja
@@ -16,70 +14,61 @@
 //           turno con el comando del latido (scripts/metrics/retro-heartbeat.js, un segundo, sin modelo).
 //           Reclama los merges de ESTA sesión y también los de OTRA sesión que estén en el
 //           repo/workspace del cwd y ya tengan cierta antigüedad (TYCON_RETRO_GATE_FOREIGN_MIN_AGE_MIN,
-//           30 min) — sin eso, un merge que la sesión dueña no cerró sólo lo reclamaba el aviso de
-//           arranque, que se puede ignorar (medido: 4 días). Los ajenos se agrupan por repo. Tope 3
+//           30 min) — sin eso, un merge que la sesión dueña no cerró sólo lo reclamaría el aviso de
+//           arranque, que se puede ignorar. Los ajenos se agrupan por repo. Tope 3
 //           bloqueos seguidos (después deja pasar avisando).
 //   notice (SessionStart): lista los merges anotados que NINGUNA retrospectiva cubrió todavía,
 //           con el comando para lanzarla — pero SOLO los del repo/workspace de la sesión (el cwd).
 //           Los pendientes de OTROS proyectos se resumen en una línea informativa SIN instrucción
-//           de lanzamiento: se reclaman al abrir sesión en su propio repo (feedback del dev
-//           2026-08-28: una sesión de un producto lanzó las retrospectivas de otros productos del equipo — el
-//           aviso global convertía cualquier sesión en la mula de carga de todos los proyectos — guides/maintaining/incident-log.md#case-retro-launched-for-other-repos-2026-08-28).
+//           de lanzamiento: se reclaman al abrir sesión en su propio repo. Un aviso global convertiría
+//           cualquier sesión en la mula de carga de todos los proyectos.
 //           Escape hatch: TYCON_RETRO_PENDING_SCOPE=all restaura el listado global con instrucción.
-//           El backstop de "nadie abre sesión en ese repo" sigue siendo retro-staleness-notice.js.
-// LÍMITES DECLARADOS de la atribución (pase adversarial 2026-09-15, hallazgos #4 a #6). No están
-// arreglados a propósito: los tres viven en el regex del `cd` de la lib COMPARTIDA con
-// session-collision-guard.js, y tocarlo cambia lo que ese freno BLOQUEA — otra pieza, otra medición
-// y otros casos. Los tres caen en la conducta de siempre (atribuir al repo de la sesión), que para
-// el freno es su lado seguro y acá es una entrada contra el repo equivocado: la misma forma del
-// incidente del 15-09, con una cola.
+//           El backstop de "nadie abre sesión en ese repo" es retro-staleness-notice.js.
+// LÍMITES DECLARADOS de la atribución. No se arreglan a propósito: los tres viven en el regex del `cd` de la lib
+// COMPARTIDA con session-collision-guard.js, y tocarlo cambia lo que ese freno BLOQUEA — otra pieza, otra medición
+// y otros casos. Los tres caen en la conducta de siempre (atribuir al repo de la sesión), que para el freno es su
+// lado seguro y acá es una entrada contra el repo equivocado.
 //   · `cd X 2>/dev/null && git push origin main` — el regex del `cd` exige que la sentencia termine
 //     en el argumento, así que la redirección lo esconde y el `cd` no se sigue.
 //   · `pushd X && git push origin main && popd` — `pushd` no se entiende como un cambio de
 //     directorio (tampoco `popd`).
 //   · `cd $HOME/X && …` — `HOME` se trata como una variable que el comando no define (`~` sí se
 //     expande), así que sale "no pude resolver": no anota nada y lo dice. Ruidoso, no falso.
-// Y lo que NO se ve, por el mismo precio que ya se pagaba: un push dentro de un `sh -c "…"` o de un
-// heredoc que no alimenta a un shell (`python3 - <<EOF` que lanza el push por dentro). Desde el
-// 2026-09-17 ese cuerpo se quita ANTES de analizar —es texto, no comandos: un `node - <<EOF` con un
-// string con forma de push disparaba el aviso de "no pude resolver" sin que hubiera ningún push—; el
-// de un `bash <<EOF` se conserva y su push se sigue anotando. Lo demás lo cubre
-// retro-staleness-notice.js, por días.
+// Y lo que NO se ve: un push dentro de un `sh -c "…"` o de un heredoc que no alimenta a un shell (`python3 - <<EOF` que
+// lanza el push por dentro). Ese cuerpo se quita ANTES de analizar —es texto, no comandos: un `node - <<EOF` con un
+// string con forma de push dispararía el aviso de "no pude resolver" sin que hubiera ningún push—; el
+// de un `bash <<EOF` se conserva y su push se anota. Lo demás lo cubre retro-staleness-notice.js, por días.
 // "Cubierto" es MECÁNICO: el capturer escribe en ~/.claude/tycon-harness/.dashboard/metrics-*.json
 // `repo` + `merge_commit`; una entry pendiente se da por cubierta cuando existe un JSON con ese repo
 // y ese commit (prefijo). Límite honesto: un push hecho desde una terminal sin Claude/Codex no pasa
-// por este hook — ese caso lo sigue cubriendo retro-staleness-notice.js (por días).
-// 🔴 EL BUCLE DE LA RETRO (2026-09-16, cierre de la story 2.6): la retrospectiva escribe sus
-// conclusiones en archivos (.dashboard/metrics-*.json, guides/guide-update-proposals.md) que también
-// hay que subir a main — y ese push volvía a exigir OTRA retrospectiva, que escribía, que había que
-// subir. Se cortó a mano lanzando una segunda retro instruida a no escribir nada. Dos arreglos:
+// por este hook — ese caso lo cubre retro-staleness-notice.js (por días).
+// 🔴 EL BUCLE DE LA RETRO: la retrospectiva escribe sus conclusiones en archivos (.dashboard/metrics-*.json,
+// guides/guide-update-proposals.md) que también hay que subir a main — y ese push volvería a exigir OTRA retrospectiva,
+// que escribiría, que habría que subir. Dos cortes:
 //   · Un push cuyos commits nuevos son TODOS salida de una retrospectiva no pide otra. Criterio
 //     ANGOSTO a propósito: se lee el rango origin/<main>@{1}..origin/<main> —el reflog del
 //     remote-tracking ref, que el propio push acaba de mover— y TODOS los mensajes tienen que
-//     empezar con `chore(retro` (así se titulan los commits de salida de la retro; medido: los 5
-//     reales de este repo). Basta UNO que no lo sea para registrar como siempre: este hook existe
-//     porque un agente decidió que un cambio «sólo de docs» no necesitaba retro — eximir «todo push
-//     sin merge» reabriría ese agujero, y en el repo del arnés casi todo va directo a main sin
-//     merge. Si no se puede saber qué trajo el push (sin `origin/<main>`, reflog apagado, rango
-//     vacío o ilegible) se registra: la duda va hacia más control, nunca hacia menos. Un clon
-//     fresco SÍ se resuelve: cada entrada del reflog guarda el valor viejo, así que tras el primer
-//     push `@{1}` es donde estaba el remoto (medido 2026-09-16). Límites declarados: es una convención de
+//     empezar con `chore(retro` (así se titulan los commits de salida de la retro). Basta UNO que no lo
+//     sea para registrar como siempre: este hook existe porque un agente puede decidir que un cambio
+//     «sólo de docs» no necesita retro — eximir «todo push sin merge» reabriría ese agujero, y en el repo
+//     del arnés casi todo va directo a main sin merge. Si no se puede saber qué trajo el push (sin
+//     `origin/<main>`, reflog apagado, rango vacío o ilegible) se registra: la duda va hacia más control,
+//     nunca hacia menos. Un clon fresco SÍ se resuelve: cada entrada del reflog guarda el valor viejo, así
+//     que tras el primer push `@{1}` es donde estaba el remoto. Límites declarados: es una convención de
 //     mensaje (un commit titulado `chore(retro` a mano la esquiva — el mismo precio que `[skip ci]`)
 //     y no aplica al modo PR (ahí el merge lo hace ADO y acá no hay rango que leer).
 //   · "Cubierto" mira también el .dashboard/ del REPO DEL PUSH (entry.repoPath), no sólo el del
 //     checkout donde vive el hook: una retro corrida desde un clon descartable deja su métrica en el
-//     .dashboard/ DEL CLON, y el control no la veía hasta que el checkout compartido bajara main.
-// 🔴 LA RETRO QUE NO APORTA NADA (2026-09-16, incident-log#retro-por-push-sin-story-2026-09-16): un fix
-// de 18 líneas en un test (main 525a4b0) produjo una retrospectiva completa —~5 min de agente y un commit
-// `chore(retro` más— con 5 de sus 8 métricas en null «sin story»: las métricas son del pipeline de una
-// story, y un push ad-hoc no tiene pipeline. Medido ANTES de tocar (30 días, 20 repos, línea de main):
-// 1812 commits, 346 tocaron SÓLO tests/docs/.dashboard/.engram sin cerrar story (285 en el arnés,
-// que va directo a main); 119 retrospectivas, 82 sin story, 25 con la mitad o más de sus métricas en null.
+//     .dashboard/ DEL CLON, y el control no la vería hasta que el checkout compartido bajara main.
+// 🔴 LA RETRO QUE NO APORTA NADA: un fix de 18 líneas en un test produce una retrospectiva completa —~5 min de agente y
+// un commit `chore(retro` más— con 5 de sus 8 métricas en null «sin story»: las métricas son del pipeline de una
+// story, y un push ad-hoc no tiene pipeline. Medido sobre 30 días y 20 repos: de 1812 commits en la línea de main,
+// 346 tocaron SÓLO tests/docs/.dashboard/.engram sin cerrar story (285 en el arnés, que va directo a main).
 // Exención MECÁNICA por los ARCHIVOS del push (nunca por el texto del mensaje: una etiqueta se esquiva):
 // exento si TODO lo que trajo el push vive bajo un directorio `tests/` o `__tests__/`, es `.md`, o está en
 // `.dashboard/` o `.engram/` — y NUNCA si el push cierra una story: trae algo bajo `.advisors/` (evidencia
 // de pipeline-runs / dod-runtime) o cambia un `status:` en un `.md`. Un push cuyos commits son todos
-// `chore(retro` sigue exento como antes (sin entrada). La exención DEJA CONSTANCIA: entrada en el ledger
+// `chore(retro` también queda exento (sin entrada). La exención DEJA CONSTANCIA: entrada en el ledger
 // con `exento: 'solo-tests-docs'` y los archivos que la justifican; el gate no la reclama, y el aviso de
 // arranque CUENTA exentos vs con retro (`--report` para el detalle) — una exención que no se cuenta es un
 // apagado silencioso. Sin rango legible (sin reflog, modo PR, rango vacío, `git` que falló) NO hay exención:
@@ -87,47 +76,36 @@
 // (hacia más control) y un `status:` dentro de un bloque de código de un `.md` tampoco. Casos:
 // 14-retro-pending.json (`exento-…`, `registra-push-MIXTO-test-mas-js…`, `registra-push-que-cierra-story…`).
 // La regla dura no se toca: un merge de story pide su retrospectiva, por repo, siempre.
-// 🔴 EL RECORTE: EXIGE EL ARCHIVO, NO EL AGENTE (2026-09-16, story 7.1,
-// incident-log#retro-sin-modelo-2026-09-16). El gate emparejaba cada merge con un
-// tycon-retrospective-capturer LANZADO (spawns del ledger advisor-runs/, por sha, por repo o comodín).
-// Medido en 30 días: 87 lanzamientos con duración y tokens, 4,9 min y 135 k tokens de mediana —
-// 8,3 h y 12,5 M tokens—, 119 archivos de métricas de los que 63 no tenían story (18 lanzados sólo
-// para que este freno dejara de reclamar), y de las seis métricas del contrato cuatro ya las publican
-// otras piezas (2.9, 2.14, 2.15). Aguas abajo el archivo tiene dos consumidores: `first_pass_ratio`
-// del nocturno SDLC y este mismo hook. Así que el paso 10b ya no lanza el agente: corre
-// retro-heartbeat.js, que escribe el archivo en un segundo; el agente queda a pedido («retro con
-// modelo»). Y el gate dejó de mirar spawns: UN AGENTE LANZADO YA NO PAGA LA DEUDA, LA PAGA EL
-// ARCHIVO — si el agente no lo escribió, bloquea igual. Salieron `capturerSpawns`, `unmatched`,
-// `foreignUnclaimed`, `spawnRepo`, `shaMatch` y la pista de «retros lanzadas que no quedaron
-// registradas»; el ledger advisor-runs/ ya no es insumo de este hook (on-advisor-run.js sigue
-// escribiendo retro_repo/retro_sha: no se tocó, no se lee). La lección de retro-multi-repo sigue en
-// pie para la llamada al script: lo que importa se exige al cerrar, no se recuerda.
-// 🔴 QUIÉN ES EL ARNÉS: LO DICE EL REMOTO, NO LA CARPETA (2026-09-17, el pendiente (a) de
-// incident-log#retro-por-push-sin-story-2026-09-16). Los repos del arnés no deben retrospectiva, y
-// eso se decidía mirando si algún segmento de la RUTA se llamaba `agent-skills` o
-// el arnés. O sea que el mismo push se registraba o no según desde qué carpeta se
-// hacía: un clon descartable del arnés (`…/scratchpad/tcg`, que es como se trabaja cuando hay otra
-// sesión viva en el checkout) SÍ quedaba anotado, y un repo de producto clonado debajo de una
-// carpeta con ese nombre quedaba excluido sin serlo — la segunda es la cara: una retrospectiva que
-// no se pide y nada lo dice. Ahora decide el `origin` del repo del push, comparado como
-// (org, proyecto, repo) de Azure en cualquiera de sus formas de URL (dev.azure.com,
-// *.visualstudio.com, ssh; con cualquier usuario adelante). Un `origin` que es una ruta local —el
+// 🔴 EL GATE EXIGE EL ARCHIVO, NO EL AGENTE: un merge se paga con su archivo de métricas, no con un
+// tycon-retrospective-capturer lanzado. Lanzar el agente por cada merge es caro (medido en 30 días: 4,9 min y 135 k
+// tokens de mediana por lanzamiento; 119 archivos de métricas de los que 63 no tenían story) y cuatro de las seis
+// métricas del contrato ya las publican otras piezas. Aguas abajo el archivo tiene dos consumidores:
+// `first_pass_ratio` del nocturno SDLC y este mismo hook. Por eso el paso 10b corre retro-heartbeat.js, que escribe
+// el archivo en un segundo; el agente queda a pedido («retro con modelo»). Un agente lanzado NO paga la deuda, la paga
+// el archivo — si el agente no lo escribió, el gate bloquea igual. El ledger advisor-runs/ no es insumo de este hook
+// (on-advisor-run.js sigue escribiendo retro_repo/retro_sha, pero acá no se lee): lo que importa se exige al cerrar,
+// no se recuerda.
+// 🔴 QUIÉN ES EL ARNÉS: LO DICE EL REMOTO, NO LA CARPETA. Los repos del arnés no deben retrospectiva. Decidirlo
+// mirando si algún segmento de la RUTA se llama `agent-skills` o el arnés haría que el mismo push se registrara o no
+// según desde qué carpeta se hace: un clon descartable del arnés (`…/scratchpad/tcg`, que es como se trabaja cuando hay
+// otra sesión viva en el checkout) quedaría anotado, y un repo de producto clonado debajo de una carpeta con ese nombre
+// quedaría excluido sin serlo — la segunda es la cara: una retrospectiva que no se pide y nada lo dice. Por eso decide
+// el `origin` del repo del push, comparado como (org, proyecto, repo) de Azure en cualquiera de sus formas de URL
+// (dev.azure.com, *.visualstudio.com, ssh; con cualquier usuario adelante). Un `origin` que es una ruta local —el
 // clon de un checkout— se sigue hasta el repo de verdad, con tope de saltos. El nombre de la carpeta
 // queda SÓLO como respaldo para el repo que no tiene `origin` (no hay otra identidad que leer). Un
-// remoto que no se sabe leer no es el arnés: se registra. La política no cambió: los repos del arnés
-// siguen excluidos. Límites declarados: mira `origin` aunque el push nombre otro remoto (igual que
-// el resto del hook, que lee `origin/<main>`), y las dos identidades están escritas en la lib — si
+// remoto que no se sabe leer no es el arnés: se registra. Límites declarados: mira `origin` aunque el push nombre otro
+// remoto (igual que el resto del hook, que lee `origin/<main>`), y las dos identidades están escritas en la lib — si
 // un repo del arnés se muda de proyecto en Azure, este hook empieza a registrarlo (ruidoso, no mudo).
-// El criterio vive en UN lugar, scripts/lib/harness-repo.js: la misma exclusión estaba escrita
-// tres veces (acá, en unpushed-work-notice.js y en lib/story-gate.js de agent-skills), las tres por
+// El criterio vive en UN lugar, scripts/lib/harness-repo.js, para que la exclusión no se escriba varias veces por
 // carpeta. Casos: 14-retro-pending.json (`quiet-clon-del-arnes-…`,
 // `registra-repo-de-producto-debajo-…`) y scripts/tests/harness-repo.test.sh.
-// 🔴 LOS REPOS DE LABORATORIO (2026-10-14). Una sesión armó un repo de juguete en su carpeta de trabajo temporal
-// (`/private/tmp/…/scratchpad/…`, con `.tycon/` y `origin` a un repo de PRUEBA en GitHub) para probar una story, empujó
-// tres veces a main, y el cierre del turno quedó frenado por tres «merges sin retrospectiva» que ninguna retrospectiva
-// tenía sentido escribir. Ahora un push a main desde un repo de laboratorio NO se anota, y SE DICE (stderr, exit 2,
-// con el comando del latido por si era de verdad); el freno y el aviso de arranque tampoco reclaman las entradas viejas
-// de un repo que sigue en pie y es de laboratorio. Un repo es de laboratorio si cumple LAS DOS:
+// 🔴 LOS REPOS DE LABORATORIO. Una sesión puede armar un repo de juguete en su carpeta de trabajo temporal
+// (`/private/tmp/…/scratchpad/…`, con `.tycon/` y `origin` a un repo de PRUEBA en GitHub) para probar una story y
+// empujar a main varias veces; el cierre del turno quedaría frenado por «merges sin retrospectiva» que ninguna
+// retrospectiva tiene sentido escribir. Por eso un push a main desde un repo de laboratorio NO se anota, y SE DICE
+// (stderr, exit 2, con el comando del latido por si era de verdad); el freno y el aviso de arranque tampoco reclaman
+// las entradas viejas de un repo que sigue en pie y es de laboratorio. Un repo es de laboratorio si cumple LAS DOS:
 //   1. vive en una carpeta temporal: la del sistema (`os.tmpdir()`, TMPDIR/TEMP/TMP) o las de siempre de un Unix
 //      (`/tmp`, `/var/tmp`, `/var/folders`, y sus `/private/…` en Mac) — ahí van también las carpetas de trabajo de las
 //      sesiones. Nunca el HOME ni algo que lo contenga, aunque una variable lo nombre. `TYCON_RETRO_LAB_DIRS` (carpetas
@@ -147,38 +125,35 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const { execFileSync } = require('child_process');
-// Lector COMPARTIDO de `az repos pr` (AZ-PR-PARSER-UNICO-1, 2026-09-06): el regex propio sólo
-// entendía `--target-branch main`; con la forma corta `-t main` un merge por PR no se registraba y
-// no había retrospectiva — en silencio. Copiado al sandbox del banco junto con el hook (setups).
+// Lector COMPARTIDO de `az repos pr`: un regex propio que sólo entienda `--target-branch main` no
+// registraría un merge por PR con la forma corta `-t main`, y no habría retrospectiva — en silencio.
+// Se copia al sandbox del banco junto con el hook (setups).
 const az = require(path.join(__dirname, '..', 'lib', 'az-pr.js'));
-// Resolutor COMPARTIDO de "a qué repo apunta este git" (RETRO-PENDING-CD-MISATTR-1, 2026-09-15).
-// El repo se calculaba con el cwd de la SESIÓN, sin seguir el `cd` ni el `-C` del propio comando.
-// Caso real del 2026-09-15: `cd ~/.claude/agent-skills && git push origin main` quedó anotado
-// contra un repo del equipo con la sha `2f6a0fcbe459` — el `origin/main` STALE de ese otro checkout.
-// Y como el repo estaba mal, la exclusión de los repos del arnés (unas líneas más abajo) nunca se
-// activó: quedó un pendiente que ninguna retrospectiva podía cerrar, reclamado en cada sesión de
-// un repo del equipo para siempre. El criterio ya existía en session-collision-guard.js ("el repo DESTINO
-// del comando, no el de la sesión"); se extrajo a scripts/lib/git-target.js en vez de escribirlo
-// por tercera vez. Casos: 14-retro-pending.json (los cinco últimos de "registra").
+// Resolutor COMPARTIDO de "a qué repo apunta este git".
+// El repo se calcula con el `cd` y el `-C` del propio comando, no con el cwd de la SESIÓN: con el cwd,
+// `cd ~/.claude/agent-skills && git push origin main` se anotaría contra el repo de la sesión con la sha
+// `origin/main` STALE de ese otro checkout, la exclusión de los repos del arnés (unas líneas más abajo) nunca
+// se activaría y quedaría un pendiente que ninguna retrospectiva puede cerrar, reclamado en cada sesión de
+// un repo del equipo para siempre. El criterio es el de session-collision-guard.js ("el repo DESTINO
+// del comando, no el de la sesión") y vive en scripts/lib/git-target.js.
+// Casos: 14-retro-pending.json (los cinco últimos de "registra").
 const destinoGit = require(path.join(__dirname, '..', 'lib', 'git-target.js'));
 const GIT_PUSH = destinoGit.regexDeGit(destinoGit.VERBOS_QUE_PUBLICAN);
-// Quién es un repo DEL arnés (2026-09-17): lo dice el remoto `origin`, no la carpeta. Criterio ÚNICO,
-// compartido con unpushed-work-notice.js y con el portón de carril de agent-skills — estaba escrito
-// tres veces, las tres por nombre de carpeta. Copiado al sandbox del banco junto con el hook (setups).
+// Quién es un repo DEL arnés: lo dice el remoto `origin`, no la carpeta. Criterio ÚNICO,
+// compartido con unpushed-work-notice.js y con el portón de carril de agent-skills. Se copia al sandbox del banco junto con el hook (setups).
 const { esRepoDelArnes, juzgarRepo, identidadRemoto, resolverRemoto, mismaIdentidad } = require(path.join(__dirname, '..', 'lib', 'harness-repo.js'));
-// El cuerpo de un heredoc que NO va a un shell es TEXTO, no comandos (2026-09-17). Caso real de ese
-// día: un `node - <<'EOF'` cuyo cuerpo traía, dentro de un string, `cd ${dir} && … && git push -q origin
-// main`. El recorrido por sentencias corta por `&&` sin mirar dónde está, así que vio un `cd` a una
-// variable que nadie define seguido de un `git push … main`: aviso de «no pude resolver a qué repo fue
-// ese push» + exit 2, sin que hubiera ningún push. Los heredocs que sólo MENCIONAN un push ya callaban
-// (`mencion`), pero sólo porque su texto no EMPEZABA una sentencia con `git`; éste sí. Ahora el cuerpo
-// se quita antes de analizar — salvo cuando el heredoc alimenta a un shell (`bash <<EOF`,
-// `cat <<EOF | sh`): ahí el cuerpo SON comandos y un push de verdad se sigue viendo como hasta hoy.
+// El cuerpo de un heredoc que NO va a un shell es TEXTO, no comandos. Caso: un `node - <<'EOF'` cuyo cuerpo trae, dentro de un
+// string, `cd ${dir} && … && git push -q origin main`. El recorrido por sentencias corta por `&&` sin mirar dónde
+// está, así que vería un `cd` a una variable que nadie define seguido de un `git push … main`: aviso de «no pude
+// resolver a qué repo fue ese push» + exit 2, sin que haya ningún push. Los heredocs que sólo MENCIONAN un push
+// callan (`mencion`) porque su texto no EMPIEZA una sentencia con `git`; éste sí. Por eso el cuerpo se quita
+// antes de analizar — salvo cuando el heredoc alimenta a un shell (`bash <<EOF`, `cat <<EOF | sh`): ahí el cuerpo
+// SON comandos y un push de verdad se sigue viendo.
 const { sinHeredocs } = require(path.join(__dirname, '..', 'lib', 'shell-parse.js'));
 
 /** El comando con lo que está ENTRE COMILLAS tapado (mismo largo, para no mover nada de lugar).
@@ -190,20 +165,20 @@ function sinLoCitado(texto) {
 
 const STATE_DIR = path.join(stateDirOf(os.homedir()));
 const LEDGER = path.join(STATE_DIR, 'retro-pending.jsonl');
-// de qué árbol se leen los .dashboard que escribe el nocturno (story 8.23, A2, AC 6): lo decide tycon-home.js (hoy, este
-// mismo árbol; desde la B, el clon que se mantiene); si este archivo viaja suelto, este árbol
+// de qué árbol se leen los .dashboard que escribe el nocturno: lo decide tycon-home.js (el clon que se
+// mantiene); si este archivo viaja suelto, este árbol
 const MAINTAINED_TREE = (() => {
   const own = path.resolve(__dirname, '..', '..');
   const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
   return fs.existsSync(lib) ? require(lib).maintainedDir(os.homedir(), own) : own;
 })();
 const DASHBOARD_DIR = MAINTAINED_TREE ? path.join(MAINTAINED_TREE, '.dashboard') : null;
-// y donde escribe el latido en esta máquina según tycon-home.js (story 8.23, tanda D): en una instalación bajada sin clon
+// y donde escribe el latido en esta máquina según tycon-home.js: en una instalación bajada sin clon
 // declarado es ~/.tycon/state/dashboard — si no se mira ahí, el latido que este aviso pide correr nunca lo apaga
 const MACHINE_DASHBOARD_DIR = (() => {
-  // desde la story 8.26 (tanda J) el latido escribe donde dice scripts/lib/night-data.js: en una versión bajada, el clon de
-  // mantenimiento que la máquina declara (nunca el del público). Sin esa biblioteca al lado, lo de antes.
-  // (si la biblioteca ESTÁ y no carga, tira: no se vuelve callado a la ruta de antes; si no pudo saber, lo avisa ella)
+  // el latido escribe donde dice scripts/lib/night-data.js: en una versión bajada, el clon de
+  // mantenimiento que la máquina declara (nunca el del público). Sin esa biblioteca al lado, la ruta de tycon-home.js.
+  // (si la biblioteca ESTÁ y no carga, tira: no se vuelve callado a la otra ruta; si no pudo saber, lo avisa ella)
   { const lib = path.join(__dirname, '..', 'lib', 'night-data.js'); if (fs.existsSync(lib)) { const d = require(lib).machineDashboardDir(path.resolve(__dirname, '..', '..')); if (d) return d; } }
   try { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); const TH = require(lib); return typeof TH.dashboardDir === 'function' ? TH.dashboardDir(os.homedir(), MAINTAINED_TREE || path.resolve(__dirname, '..', '..')) : null; } catch { return null; }
 })();
@@ -214,7 +189,7 @@ function readJsonl(file) {
   try { return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); }
   catch { return []; }
 }
-// Memo por proceso (2026-09-18): el aviso de arranque resolvía las mismas rutas cientos de veces
+// Memo por proceso: el aviso de arranque resuelve las mismas rutas cientos de veces
 // (cada entrada del ledger × cada metrics-*.json con `repo` absoluto). Una corrida del hook es corta
 // y no crea ni mueve directorios entre dos llamadas, así que la respuesta no cambia adentro de ella.
 const realMemo = new Map();
@@ -242,11 +217,11 @@ function gitOrNull(cwd, args) {
 }
 
 // ── cubierto por una retrospectiva? (metrics-*.json con repo + merge_commit) ─────────────────────
-// Se mira en DOS lugares (2026-09-16, ver "EL BUCLE" en la cabecera): el .dashboard/ del checkout
+// Se mira en DOS lugares: el .dashboard/ del checkout
 // donde vive el hook (el arnés canónico, donde el capturer escribe por contrato) Y el .dashboard/
 // del repo del push. Una retro corrida desde un clon descartable del arnés deja su metrics-*.json
-// en el clon, y hasta que el checkout compartido bajara main el control decía "sin retrospectiva"
-// sobre un merge que ya la tenía — y bloqueaba el cierre del turno por eso.
+// en el clon, y hasta que el checkout compartido baje main el control diría "sin retrospectiva"
+// sobre un merge que ya la tiene — y bloquearía el cierre del turno por eso.
 function dashboardsDe(entry) {
   const out = [];
   for (const d of [DASHBOARD_DIR, MACHINE_DASHBOARD_DIR, path.join(String(entry.repoPath || ''), '.dashboard')].filter(Boolean)) {
@@ -307,12 +282,12 @@ function contarVentana(dias) {
   }
   return c;
 }
-// El comando que paga la deuda: el latido (story 7.1). Lo usan el gate y el aviso de arranque.
+// El comando que paga la deuda: el latido. Lo usan el gate y el aviso de arranque.
 function launchHint(e) {
   return `node "${LATIDO}" --repo "${e.repoPath}" --merge ${e.sha} [--story <id> si el merge cierra una story]`;
 }
 
-// ── ¿repo de laboratorio? (2026-10-14, «LOS REPOS DE LABORATORIO» en la cabecera) ──────────────
+// ── ¿repo de laboratorio? ──────────────
 const ENV_LAB_DIRS = 'TYCON_RETRO_LAB_DIRS';
 const CENSO_PROFUNDIDAD = 4;          // ~/repos/Producto/Backend/src: alcanza para las copias de trabajo del equipo
 const CENSO_TOPE = 4000;              // carpetas miradas como mucho: la raíz de repos de una máquina no se recorre entera
@@ -421,23 +396,23 @@ const laboratoriosVistos = [];
 // ── record ─────────────────────────────────────────────────────────────────────────────────────
 function record(event) {
   const cmd = String((event.tool_input && event.tool_input.command) || '');
-  // Modo `pr` del merge (H4 del pase adversarial 2026-08-30): el único push es a dev y el
-  // merge a main lo hace ADO server-side — sin esta rama, ningún merge por PR registraba
-  // retrospectiva y el paso 10b volvía a depender de la memoria del agente (la falla exacta
-  // que este hook existe para cerrar, incident-log#retro-multi-repo-2026-08-24).
-  // 🔴 ALGÚN `pr create` de la cadena apuntando a main, no sólo el primero (revisión adversarial
-  // 2026-09-06): `… create -t dev && … create -r R2 -t main` no registraba el merge. Mismo patrón
+  // Modo `pr` del merge: el único push es a dev y el
+  // merge a main lo hace ADO server-side — sin esta rama, ningún merge por PR registraría
+  // retrospectiva y el paso 10b dependería de la memoria del agente (la falla exacta
+  // que este hook existe para cerrar).
+  // 🔴 ALGÚN `pr create` de la cadena apuntando a main, no sólo el primero:
+  // `… create -t dev && … create -r R2 -t main` no registraría el merge. Mismo patrón
   // que pr-auto-complete-guard.js, que recorre todos los segmentos.
   const creates = az.pareceAzPr(cmd) ? az.segmentos(cmd).filter((seg) => az.verboDePr(seg) === 'create') : [];
   const prTarget = creates.map((seg) => String(az.flagDe(seg, 'target-branch', 't') || '')).find((t) => /^(main|master)$/.test(t)) || '';
   const isPrCreate = /^(main|master)$/.test(prTarget);
   // El filtro grueso se le pregunta al comando CON LO CITADO TAPADO: un `git push` entre comillas es
   // texto, no un push. Sin esto, cualquier `grep -rn "git push origin main" …` o `node -e` con
-  // strings caía en el aviso de "no pude resolver" + exit 2 — le saltó 3 veces al pase adversarial
-  // del 2026-09-15 en una sola revisión, y un control ruidoso termina en TYCON_RETRO_PENDING=0.
+  // strings caería en el aviso de "no pude resolver" + exit 2, y un control ruidoso termina en
+  // TYCON_RETRO_PENDING=0.
   // El precio declarado: un `sh -c "git push origin main"` queda del lado de "mencionado" y no se
-  // ve. Es el mismo precio que ya se paga por los heredocs, y va al lado barato: 0 de los 23 pushes
-  // del ledger real tienen esa forma.
+  // ve. Es el mismo precio que se paga por los heredocs, y va al lado barato: ningún push del ledger
+  // real tiene esa forma.
   // `cmdShell`: el comando sin los cuerpos de heredoc que son texto (ver el require de sinHeredocs).
   // Sólo el camino del push lo usa; el del PR ya corta sus segmentos sin heredocs (az-pr.js).
   const cmdShell = sinHeredocs(cmd, { salvoShell: true });
@@ -451,7 +426,7 @@ function record(event) {
   // sesión. `puntos` trae una entrada por entrega; `resuelto:false` es "no sé", y eso NO se
   // convierte en el repo de la sesión: se dice más abajo.
   const puntos = isPrCreate
-    ? pedidosDeAz(cmd, cwd)   // story 7.25: cada pedido con SU repo, o «no sé» (nunca la carpeta de la sesión a ciegas)
+    ? pedidosDeAz(cmd, cwd)   // cada pedido con SU repo, o «no sé» (nunca la carpeta de la sesión a ciegas)
     // `envoltorios: true`: un `time git push` o un `/usr/bin/git push` son un push. Acá se REGISTRA
     // lo que ya pasó, así que reconocer de más no frena a nadie; no verlo sí pierde una
     // retrospectiva (o, peor, la publica como "no pude resolver" habiendo podido).
@@ -473,12 +448,11 @@ function record(event) {
     const e = anotar(event, cmd, { dir: p.dir, st: cmd }, { isPrCreate: true, prTarget: p.target, sha: p.sha });
     if (e) anotadas.push(e);
   }
-  // 🔴 Cada entrega se juzga por SÍ MISMA. Hubo un dedup por directorio acá y descartaba entregas
-  // que nadie había juzgado todavía: con `git push origin dev && git push origin main` desde una
-  // sesión parada en dev, el primer push consumía el repo, `anotar` devolvía null (no nombra main,
-  // no está en main) y el segundo —el que SÍ iba a main— se salteaba: exit 0, sin entrada y sin
-  // aviso (pase adversarial 2026-09-15, hallazgo #1; esa forma exacta está en el ledger real de
-  // Lapacho/Backend). Registrar de menos y en silencio es el peor modo de falla de esta pieza.
+  // 🔴 Cada entrega se juzga por SÍ MISMA. Un dedup por directorio descartaría entregas
+  // que nadie juzgó todavía: con `git push origin dev && git push origin main` desde una
+  // sesión parada en dev, el primer push consumiría el repo, `anotar` devolvería null (no nombra main,
+  // no está en main) y el segundo —el que SÍ va a main— se saltearía: exit 0, sin entrada y sin
+  // aviso. Registrar de menos y en silencio es el peor modo de falla de esta pieza.
   // No hace falta dedup: `anotar` ya se niega a repetir una entry con el mismo repoPath + sha.
   for (const p of puntos) {
     if (!p.resuelto) { irresoluble = true; continue; }
@@ -486,15 +460,13 @@ function record(event) {
     if (e) anotadas.push(e);
   }
   // "No pude saber a qué repo fue" no se publica como si fuera el repo de la sesión — que es
-  // exactamente el defecto que este arreglo cierra. Se dice. Y se dice SÓLO cuando había algo que
+  // exactamente la atribución falsa que este manejo evita. Se dice. Y se dice SÓLO cuando había algo que
   // registrar (el push nombra main/master, o es un PR a main): avisar en cada push a una rama de
   // trabajo con una variable adentro sería el camino corto a TYCON_RETRO_PENDING=0.
-  // 🔴 Y SÓLO cuando había un push, no cuando se lo mencionó (`!p.mencion`, 2ª vuelta del pase
-  // adversarial 2026-09-15, §3): medido sobre 3192 comandos Bash reales de 60 días, el aviso
-  // saltaba 28 veces y 26 eran TEXTO — 20 heredocs que describen un push (`cat > … <<'EOF'`), 4
-  // `git stash push -m "… main"`, 1 rama `tmp-direct-push`, 1 `python3 -c` con el push en un
-  // string —, casi todas en sesiones del propio arnés, donde la versión anterior callaba. ~1 falso
-  // cada 2-3 días es la vía corta a TYCON_RETRO_PENDING=0. Lo que SÍ tiene forma de git y no se
+  // 🔴 Y SÓLO cuando había un push, no cuando se lo mencionó (`!p.mencion`): medido sobre 3192 comandos Bash
+  // reales de 60 días, el aviso por menciones saltaría 28 veces y 26 serían TEXTO — 20 heredocs que describen un
+  // push (`cat > … <<'EOF'`), 4 `git stash push -m "… main"`, 1 rama `tmp-direct-push`, 1 `python3 -c` con el push
+  // en un string. ~1 falso cada 2-3 días es la vía corta a TYCON_RETRO_PENDING=0. Lo que SÍ tiene forma de git y no se
   // puede ubicar (`git -C "$DEST" push`, `cd "$D" && git push`, el `do git -C $r push` de un
   // `for` — los 2 avisos legítimos de esos 60 días) sigue avisando: no es una mención, es un push
   // que no pude atribuir. Registrar de menos sigue siendo el peor modo de falla de esta pieza, y
@@ -515,10 +487,10 @@ function record(event) {
     if (labLineas.length) { process.stderr.write(labLineas.join('\n') + '\n'); process.exit(2); }
     return;
   }
-  // stderr + exit 2, no stdout (2026-08-27): en PostToolUse el stdout va SOLO al debug log — el
-  // agente jamás lo veía. Canal documentado que sí llega al modelo: stderr con exit 2 (la
-  // herramienta ya corrió; no bloquea nada, sólo hace visible el aviso). Mismo arreglo que
-  // missing-path-notice; el hallazgo fue de la revisión adversarial del 35737a8.
+  // stderr + exit 2, no stdout: en PostToolUse el stdout va SOLO al debug log — el
+  // agente jamás lo ve. Canal documentado que sí llega al modelo: stderr con exit 2 (la
+  // herramienta ya corrió; no bloquea nada, sólo hace visible el aviso). Mismo canal que
+  // missing-path-notice.
   const fmt = (e) => `${path.basename(e.repoPath)} @ ${e.sha}`;
   const reclamadas = anotadas.filter((e) => !e.exento);
   const exentas = anotadas.filter((e) => e.exento);
@@ -535,28 +507,24 @@ function record(event) {
   process.exit(2);
 }
 
-// ── a qué repo va cada `az repos pr create` hacia main (story 7.25 del arnés, 2026-10-15) ──────────
+// ── a qué repo va cada `az repos pr create` hacia main ──────────
 // La DETECCIÓN sigue siendo la del lector compartido (az.segmentos sobre el comando entero, con conciencia de comillas);
-// acá se averigua el REPO de cada pedido. Hasta la 7.25 esto era `dirDelPrCreate`, y estaba roto de una forma que nadie
-// veía: le pasaba a `az.verboDePr` el TEXTO de la sentencia cuando ese lector espera las fichas ya cortadas; tiraba
-// (`seg.filter is not a function`), el `catch` lo tapaba y devolvía la carpeta de la sesión. O sea que ningún `cd` de un
-// pedido se siguió nunca: con la sesión en la carpeta que agrupa los repos (no es un repo), el pedido no dejaba entrada y
-// el hook salía 0 sin decir nada — dos veces medido, 2026-09-24 y 2026-10-14, en el mismo producto del equipo.
-// Ahora, por cada pedido hacia main:
+// acá se averigua el REPO de cada pedido, siguiendo los `cd` del comando: con la sesión en la carpeta que agrupa los
+// repos (no es un repo), usar la carpeta de la sesión no dejaría entrada y el hook saldría 0 sin decir nada.
+// Por cada pedido hacia main:
 //   · la carpeta: la de la sesión con los `cd` del comando seguidos; un `cd` que no se puede resolver es «no sé»;
 //   · el repo: si `--repository` es un nombre escrito, el repo cuyo `origin` es ESE repositorio — la carpeta, uno de
 //     sus subdirectorios o uno de sus hermanos (mismo padre); si viene en una variable o no viene, el repo de la carpeta;
-//   · un repo cuyo `origin` es de OTRO host (GitHub, un servidor propio) no es el de un pedido de Azure: «no sé»
-//     (decisión D6 del dueño, 2026-10-15, «Avisar y no anotar»). Caso: la sesión en un repo de GitHub crea el pedido de
-//     Azure de otro repo que no está clonado cerca; antes quedaba anotado contra el de GitHub, un pendiente que ninguna
-//     retrospectiva cerraba. Límite declarado: un Azure DevOps Server propio (no dev.azure.com ni *.visualstudio.com)
+//   · un repo cuyo `origin` es de OTRO host (GitHub, un servidor propio) no es el de un pedido de Azure: «no sé».
+//     Caso: la sesión en un repo de GitHub crea el pedido de Azure de otro repo que no está clonado cerca; anotarlo
+//     contra el de GitHub dejaría un pendiente que ninguna retrospectiva cierra. Límite declarado: un Azure DevOps Server propio (no dev.azure.com ni *.visualstudio.com)
 //     cuenta como otro host, igual que un repo espejo (origin en GitHub y un segundo remoto de Azure que `az` detecta
 //     solo) — los dos avisan de más, ninguno anota de menos en silencio;
 //   · sin repo: «no sé» (`resuelto:false`) — quien llama lo dice; nunca se anota contra la carpeta de la sesión, que
-//     sería la atribución falsa que este hook ya cerró para los pushes el 2026-09-15.
+//     sería una atribución falsa, igual que para los pushes.
 // La punta es la de `--source-branch` si el repo la conoce (local o del remoto), y si no la de HEAD.
 /**
- * La identidad del `origin` de un repo, en cuatro estados que NO se mezclan (revisores de la 7.25):
+ * La identidad del `origin` de un repo, en cuatro estados que NO se mezclan:
  *   `{ estado: 'nombre', nombre }` (de Azure) · `{ estado: 'otro-host', host }` (un remoto que no es de Azure) ·
  *   `{ estado: 'sin-identidad' }` (no tiene origin, o es uno que no es un remoto) · `{ estado: 'error' }` (leerlo falló).
  *   Sólo «sin identidad» deja caer al repo de la carpeta; «otro host» y un error son «no sé».
@@ -565,7 +533,7 @@ function identidadDelOrigin(root) {
   let r;
   try { r = resolverRemoto(root); } catch { return { estado: 'error' }; }
   // Sólo un origin de AZURE tiene un nombre comparable con el `--repository` de `az repos`. Uno de GitHub (u otro host)
-  // dice que el repo NO es de Azure: un pedido de Azure no puede ser suyo (D6 de la 7.25, retro-heartbeat.test.sh T20).
+  // dice que el repo NO es de Azure: un pedido de Azure no puede ser suyo.
   if (r && r.id && r.id.nombre && r.id.org) return { estado: 'nombre', nombre: String(r.id.nombre).toLowerCase() };
   if (r && r.id) return { estado: 'otro-host', host: r.id.host || 'otro host' };
   if (r && r.por === 'sin-origin') {
@@ -645,7 +613,7 @@ function pedidoDeUnaSentencia(s) {
       const busqueda = repoPorNombre(s.dir, escrito);
       root = busqueda.root;
       // Sin coincidencia, el repo de la carpeta vale SÓLO si su origin no se puede leer (sin origin, o uno que no es un
-      // remoto): ahí no hay identidad que contradiga al --repository, y es lo que hacía este hook antes de la 7.25.
+      // remoto): ahí no hay identidad que contradiga al --repository.
       const propia = root ? null : raizGit(s.dir);
       const idPropia = propia ? identidadDelOrigin(propia) : null;
       if (idPropia && idPropia.estado === 'sin-identidad') root = propia;
@@ -688,11 +656,11 @@ function pedidoDeUnaSentencia(s) {
 
 // ── los pedidos de GitHub ──────────────────────────────────────────────────────────────────────────
 // Un repo que vive en GitHub entrega con `gh pr create` hacia la rama principal, como uno de Azure con
-// `az repos pr create`. Sin esto, ahí ningún merge por pedido dejaba entrada y la retrospectiva volvía a
+// `az repos pr create`. Sin esto, ahí ningún merge por pedido deja entrada y la retrospectiva vuelve a
 // depender de que alguien se acordara. El comando lo lee el lector COMPARTIDO de `gh` (scripts/lib/gh-pr.js,
 // el mismo del freno antes de publicar): acá no hay otro regex.
 // 🔴 Este hook viaja suelto (el banco y las pruebas lo copian con sus librerías, a mano): el lector se carga
-// sólo si el comando parece traer un `gh` y si el archivo está al lado. Sin él, calla como antes de existir.
+// sólo si el comando parece traer un `gh` y si el archivo está al lado. Sin él, calla.
 function lectorDeGh(cmd) {
   if (!/gh/i.test(cmd)) return null;   // el descarte barato; si el comando trae un `gh` lo decide el lector, no otro regex
   const lib = path.join(__dirname, '..', 'lib', 'gh-pr.js');
@@ -768,10 +736,8 @@ function anotar(event, cmd, punto, ctx) {
   if (!fs.existsSync(path.join(root, '.tycon')) && !fs.existsSync(path.join(root, '.advisors'))) return null;
   // Los repos DEL arnés (agent-skills / el arnés) se trabajan directo en main, sin story
   // ni pipeline: no hay retrospectiva que correr (misma POLÍTICA que el portón de carril,
-  // lib/story-gate.js HARNESS_REPO_SEGMENTS). Falso positivo real el 2026-08-24: el primer push de
-  // este mismo hook quedó registrado como merge pendiente. 🔴 Esta exclusión es también la que el
-  // bug del 2026-09-15 dejaba sin efecto: con el repo mal calculado, nunca llegaba a mirarla.
-  // Desde el 2026-09-17 se decide por el REMOTO, no por la carpeta ("QUIÉN ES EL ARNÉS", en la cabecera).
+  // lib/story-gate.js HARNESS_REPO_SEGMENTS). 🔴 Con el repo mal calculado esta exclusión nunca se miraría.
+  // Se decide por el REMOTO, no por la carpeta ("QUIÉN ES EL ARNÉS", en la cabecera).
   if (esRepoDelArnes(root)) return null;
   // La rama y el destino se leen de LA SENTENCIA, no del comando entero: una línea con dos pushes
   // a ramas distintas habla de las dos, y cada repo tiene que juzgarse por lo suyo.
@@ -779,8 +745,8 @@ function anotar(event, cmd, punto, ctx) {
   const branch = git(root, ['rev-parse', '--abbrev-ref', 'HEAD']);
   // `main` tiene que ser un REFSPEC suelto (`origin main`, `HEAD:main`, `HEAD:refs/heads/main`), no un
   // pedazo del nombre de otra rama. Con `\bmain\b` el guion cuenta como borde de palabra, y el push de la
-  // rama `chore/bajar-main-a-dev` quedó anotado como push a main con la punta vieja de origin/main (caso
-  // real 2026-09-18, en el repo de historias de un producto del equipo — guides/maintaining/incident-log.md#case-push-branch-named-main-2026-09-18; bench `quiet-push-de-una-rama-con-main-en-el-nombre`).
+  // rama `chore/bajar-main-a-dev` se anotaría como push a main con la punta vieja de origin/main (bench
+  // `quiet-push-de-una-rama-con-main-en-el-nombre`).
   const mentionsMain = /\bpush\b[^|;&\n]*(?:[\s:"']|refs\/heads\/)(main|master)(?=$|[\s;&|"'])/.test(st);
   const onMain = /^(main|master)$/.test(branch) && !/\bpush\b[^|;&\n]*\b(dev|develop|feat|feature|fix|hotfix|release)\b/.test(st);
   if (!ctx.isPrCreate && !mentionsMain && !onMain) return null;
@@ -788,9 +754,9 @@ function anotar(event, cmd, punto, ctx) {
   const lab = juzgarLaboratorio(root);
   if (lab.laboratorio) { laboratoriosVistos.push({ root, sha: git(root, ['rev-parse', 'HEAD']).slice(0, 12), ...lab }); return null; }
   const target = ctx.prTarget === 'master' || (!ctx.isPrCreate && (/\bmaster\b/.test(st) || branch === 'master')) ? 'master' : 'main';
-  // Qué trajo el push (2026-09-16, "EL BUCLE" y "LA RETRO QUE NO APORTA NADA" en la cabecera). Se decide
+  // Qué trajo el push. Se decide
   // sobre el repo al que se empujó, antes de leer la sha. Sólo para pushes: en el modo PR el merge lo
-  // hace ADO y acá no hay rango que leer. Salida de retro → sin entrada, como antes. Sólo tests/docs →
+  // hace ADO y acá no hay rango que leer. Salida de retro → sin entrada. Sólo tests/docs →
   // entrada EXENTA (constancia + cuenta). Cualquier otra cosa → entrada que pide retrospectiva.
   const juicio = ctx.isPrCreate ? null : juzgarPush(root, target);
   if (juicio && juicio.retro) return null;
@@ -805,7 +771,7 @@ function anotar(event, cmd, punto, ctx) {
   if (!sha) return null;
   const entry = { ts: new Date().toISOString(), sessionId: sessionIdOf(event), repoPath: root, sha: sha.slice(0, 12), branch: target, cmd: cmd.slice(0, 120) };
   if (juicio && juicio.exento) Object.assign(entry, { exento: juicio.exento, motivo: juicio.motivo, commits: juicio.commits, archivos: juicio.archivos.slice(0, 40) });
-  if (ctx.isPrCreate && !ctx.sha && ctx.punta) entry.punta = ctx.punta;   // story 7.25: la punta cayó a HEAD, dicho
+  if (ctx.isPrCreate && !ctx.sha && ctx.punta) entry.punta = ctx.punta;   // la punta cayó a HEAD, dicho
   if (readJsonl(LEDGER).some((e) => e.repoPath === root && e.sha === entry.sha)) return null;
   fs.mkdirSync(STATE_DIR, { recursive: true });
   fs.appendFileSync(LEDGER, JSON.stringify(entry) + '\n', 'utf8');
@@ -813,9 +779,9 @@ function anotar(event, cmd, punto, ctx) {
 }
 
 // ── ¿qué trajo este push? salida de retro · sólo tests/docs · o algo que pide retrospectiva ─────
-// (2026-09-16: "EL BUCLE" y "LA RETRO QUE NO APORTA NADA" en la cabecera.) Un solo lector del rango
+// Un solo lector del rango
 // `origin/<target>@{1}..origin/<target>` —el reflog del remote-tracking ref, que el propio push acaba de
-// mover ("update by push"; medido 2026-09-16 con clone, con init+fetch y con push)— y tres preguntas
+// mover— y tres preguntas
 // sobre él, en este orden: ¿todo es salida de retro? ¿cierra una story? ¿todo es tests/docs?
 // Alcanza con UNA entrada del reflog: cada una guarda el valor viejo, así que en un clon fresco `@{1}`
 // tras el primer push es donde estaba el remoto (git avisa "only has 1 entries" por stderr y resuelve
@@ -875,11 +841,9 @@ function juzgarPush(root, target) {
 }
 
 // ── gate (Stop) ────────────────────────────────────────────────────────────────────────────────
-// Cada merge pendiente se paga con SU archivo de métricas (story 7.1): `pendingEntries()` ya sacó los
-// cubiertos por `coveredByMetrics` y los exentos, así que acá sólo se decide A QUIÉN reclamar. Hasta
-// el 2026-09-16 se emparejaba cada merge con un spawn del capturer (por sha, por repo o comodín —
-// incident-log#retro-gate-cuenta-sin-repo-2026-08-31); con el latido de un segundo ese
-// emparejamiento dejó de tener sentido y se retiró con sus casos.
+// Cada merge pendiente se paga con SU archivo de métricas: `pendingEntries()` ya sacó los
+// cubiertos por `coveredByMetrics` y los exentos, así que acá sólo se decide A QUIÉN reclamar. Un
+// capturer lanzado no cuenta: sólo el archivo.
 //
 // Los merges AJENOS se agrupan por repo (convención de worktrees normalizada): un repo, una línea,
 // con el más viejo arriba y cada merge con su comando — así se cierran todos en la misma vuelta en
@@ -900,10 +864,10 @@ function porRepo(entries) {
   for (const lista of grupos.values()) lista.sort((a, b) => (Date.parse(a.ts) || 0) - (Date.parse(b.ts) || 0));
   return [...grupos.values()];
 }
-// Alcance del reclamo ajeno: el repo, o el workspace que lo contiene UN nivel más arriba (Ceibo/ →
-// CeiboBackend). Nunca una raíz que cuelga proyectos distintos (la raíz de repos, ~): desde ahí una
-// sesión pasaba a ser la mula de carga de todos los proyectos, que es justo lo que el aviso de
-// arranque dejó de hacer el 2026-08-28.
+// Alcance del reclamo ajeno: el repo, o el workspace que lo contiene UN nivel más arriba (Producto/ →
+// ProductoBackend). Nunca una raíz que cuelga proyectos distintos (la raíz de repos, ~): desde ahí una
+// sesión pasaría a ser la mula de carga de todos los proyectos, que es justo lo que el aviso de
+// arranque evita.
 function nearEnough(entry, cwd) {
   const r = real(entry.repoPath);
   const c = real(cwd);
@@ -918,12 +882,12 @@ function gate(event) {
   const safe = String(sid).replace(/[/\\]/g, '_');
   const stateFile = path.join(STATE_DIR, `retro-gate-${safe}.count`);
   // El tope de bloqueos cuenta CONSECUTIVOS: un cierre limpio lo resetea. Vitalicio, cada nudge
-  // legítimo ya cumplido gastaba presupuesto y del 4º merge en adelante la sesión no frenaba nunca
-  // más — justo las sesiones largas, que son las que mergean varias veces (pase adversarial).
+  // legítimo ya cumplido gastaría presupuesto y del 4º merge en adelante la sesión no frenaría nunca
+  // más — justo las sesiones largas, que son las que mergean varias veces.
   const limpio = () => { try { fs.unlinkSync(stateFile); } catch { /* no existía */ } };
   const pend = pendingEntries();
   const mine = pend.filter((e) => e.sessionId === sid);
-  // Merges de OTRA sesión en el repo de ÉSTA (2026-08-31, decisión del dev): el aviso de arranque
+  // Merges de OTRA sesión en el repo de ÉSTA: el aviso de arranque
   // es un recordatorio y se puede ignorar — así una retro quedó 4 días sin correr. Acá se reclama
   // al cerrar el turno, con tres cercos: sólo el repo/workspace del cwd, sólo pasados
   // TYCON_RETRO_GATE_FOREIGN_MIN_AGE_MIN minutos (para no frenar a una sesión paralela que acaba de
@@ -965,7 +929,7 @@ function gate(event) {
   }
   // El contador sube DESPUÉS de armar el mensaje: si algo revienta al renderizar, el catch global
   // se lo traga y el turno cierra — pero al menos no queda gastado un bloqueo por un Stop que no
-  // avisó nada (pase adversarial 2026-08-31, entrada del ledger sin `ts`).
+  // avisó nada.
   try { fs.mkdirSync(STATE_DIR, { recursive: true }); fs.writeFileSync(stateFile, String(blocks + 1)); } catch { /* fail-open */ }
   process.stdout.write(JSON.stringify({
     decision: 'block',
@@ -989,7 +953,7 @@ function belongsToCwd(entry, cwd) {
 function notice(event) {
   const minAgeMs = Number(process.env.TYCON_RETRO_PENDING_MIN_AGE_MIN || 5) * 60000;
   const old = pendingEntries().filter((e) => Date.now() - (Date.parse(e.ts) || 0) >= minAgeMs);
-  // La cuenta de la exención (2026-09-16): se rinde SÓLO cuando hubo exenciones en la ventana — sin
+  // La cuenta de la exención: se rinde SÓLO cuando hubo exenciones en la ventana — sin
   // ellas no hay nada que rendir, y una línea más en cada arranque es ruido que se deja de leer.
   const cuenta = contarVentana(30);
   const cuentaLine = cuenta.exentos
@@ -1018,7 +982,7 @@ function notice(event) {
 
 function main() {
   if (process.env.TYCON_RETRO_PENDING === '0') return;
-  // Los nombres viejos siguen andando (story 8.9, tanda B3a). Como hook corre sin argumentos: ahí ni se carga la
+  // Los nombres viejos siguen andando. Como hook corre sin argumentos: ahí ni se carga la
   // biblioteca. Sin ella al lado (una copia suelta), paso directo.
   if (process.argv.length > 2) {
     let legacy = null;
@@ -1039,7 +1003,7 @@ function main() {
     const root = git(dir, ['rev-parse', '--show-toplevel']);
     if (!root) { process.stdout.write(JSON.stringify({ error: `no es un repo git: ${dir}` }) + '\n'); process.exitCode = 2; return; }
     const target = /^(main|master)$/.test(git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])) ? git(root, ['rev-parse', '--abbrev-ref', 'HEAD']) : 'main';
-    // `arnes` (2026-09-17): `--judge` decía qué TRAJO el push, no si este hook lo anotaría — y a un repo
+    // `arnes`: `--judge` dice qué TRAJO el push, no si este hook lo anotaría — y a un repo
     // del arnés no lo anota nunca. Se dice, con de dónde salió el dato; `exento` no cambia (sigue hablando
     // sólo de lo que trajo el push) y qué hacer con un merge del arnés lo sigue decidiendo quien pregunta.
     const arnes = juzgarRepo(root);

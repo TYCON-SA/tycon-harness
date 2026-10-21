@@ -2,21 +2,20 @@
 /**
  * pr-auto-complete-guard.js — freno: un pull request a main, armado a mano y sin auto-complete, no sale.
  *
- * 🔴 POR QUÉ EXISTE (2026-09-03, un pull request del backend de un producto del equipo). El agente tenía listo un fix,
- * el repo declara `merge.mode: pr` y el skill `tycon-merge-to-main` sabe crear el pull request como
- * corresponde. Igual abrió el PR con `az repos pr create` suelto: sin `--auto-complete true` (el PR
+ * 🔴 POR QUÉ EXISTE. Un agente con un fix listo, en un repo que declara `merge.mode: pr` y con el skill
+ * `tycon-merge-to-main` que sabe crear el pull request como corresponde, puede abrir el PR con
+ * `az repos pr create` suelto: sin `--auto-complete true` (el PR
  * queda abierto para siempre, nadie lo completa) y sin `--squash false` (con squash los commits
  * desaparecen de main y las notas de versión, que listan los commits desde la versión publicada,
- * colapsan a una línea). Lo vio el dev en la pantalla de Azure, al lado de otro PR que sí lo tenía.
- * El skill hacía lo correcto; lo que faltaba era algo que OBLIGARA a pasar por él. Una regla escrita
- * («usá el skill») es exactamente lo que falló ese día.
+ * colapsan a una línea). El skill hace lo correcto; lo que hace falta es algo que OBLIGUE a pasar por él,
+ * porque una regla escrita («usá el skill») no alcanza.
  *
  * QUÉ MIRA. Al CREAR, sólo los pull requests **a main/master**: el skill es el camino de esa rama,
  * y frenar un `feature → dev` con el consejo de usarlo sería un consejo equivocado — un freno que
- * estorba el trabajo legítimo se apaga, y con él el caso que sí importa (2ª revisión adversarial).
+ * estorba el trabajo legítimo se apaga, y con él el caso que sí importa.
  * Al ACTUALIZAR no se puede acotar igual: `az repos pr update` identifica el PR por número y **no
  * dice a qué rama apunta**, así que se mira siempre (decisión fail-closed, con el escape a mano).
- * Por eso el mensaje del update no afirma "a main" — decirlo era falso (3ª revisión adversarial).
+ * Por eso el mensaje del update no afirma "a main" — decirlo sería falso.
  *
  * QUÉ HACE. Para cada `az repos pr create` del comando —cada uno con SUS banderas, aunque vengan
  * varios encadenados— exige `--auto-complete true` y `--squash false` explícitos (sin el segundo la
@@ -32,13 +31,13 @@
  * constancia en stderr y en el mismo `bypass.log` que ya usa el freno de tests.
  *
  * Salida: exit 2 bloquea (el comando no corre) · exit 0 deja pasar.
- * Apagar del todo: TYCON_PR_AUTO_COMPLETE_GUARD=0 (hasta la story 8.9 la variable tenía un nombre en castellano, que sigue
+ * Apagar del todo: TYCON_PR_AUTO_COMPLETE_GUARD=0 (la variable tuvo un nombre en castellano, que sigue
  * valiendo hasta el retiro del mapa de renombres).
  */
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -75,10 +74,10 @@ function constancia(tipo, texto, comando) {
   } catch { /* la constancia en stderr ya salió */ }
 }
 
-let huboEscape = false;   // ¿ya se anotó el escape de este comando? (story 2.6)
+let huboEscape = false;   // ¿ya se anotó el escape de este comando?
 // ¿este freno llegó a JUZGAR algún segmento? Un `--help`, un pull request que va a `dev` o un
 // borrador son cosas que él mismo declara fuera de su alcance: anotarles un `paso` mete en su
-// denominador comandos que nunca juzga (revisor spec-first, vuelta 2, 2026-09-16).
+// denominador comandos que nunca juzga.
 let huboJuicio = false;
 const problemas = [];
 for (const seg of az.segmentos(cmd)) {
@@ -130,12 +129,12 @@ for (const seg of az.segmentos(cmd)) {
   if (faltas.length) problemas.push({ seg, verbo, faltas });
 }
 
-// 🔴 UNA DECISIÓN, UNA LÍNEA — y el veredicto es el que tuvo EL COMANDO, no cada segmento (story 2.6).
-// Un comando con dos `pr create` —uno salteado y otro mal armado— escribía `escape` Y `bloqueo`: dos
-// decisiones donde hubo una, y encima el `escape` quedaba registrado como si algo hubiera pasado cuando
+// 🔴 UNA DECISIÓN, UNA LÍNEA — y el veredicto es el que tuvo EL COMANDO, no cada segmento.
+// Un comando con dos `pr create` —uno salteado y otro mal armado— escribiría `escape` Y `bloqueo`: dos
+// decisiones donde hubo una, y el `escape` quedaría registrado como si algo hubiera pasado cuando
 // el comando entero murió en 2 y no corrió nada. Por eso la constancia se escribe ACÁ, una sola vez,
 // cuando ya se sabe qué decidió: si frenó es `bloqueo`, si no frenó pero hubo escape es `escape`, y si
-// no frenó ni hubo escape es `paso` (revisor de fallos silenciosos, vuelta 2, 2026-09-16).
+// no frenó ni hubo escape es `paso`.
 // Sólo se anota si el freno TUVO algo que decidir: juzgó un segmento, o se lo saltearon con el
 // escape declarado. Un `--help`, un pull request que va a `dev` o un borrador no son decisiones.
 if (huboJuicio || huboEscape) {

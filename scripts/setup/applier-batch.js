@@ -2,13 +2,12 @@
 'use strict';
 /**
  * applier-batch.js — varios pasos de Node del aplicador en UN solo proceso, cada uno con la misma respuesta que su
- * llamada suelta (story 8.36).
+ * llamada suelta.
  *
  * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────────────────────────────────
- * El aplicador de Windows (`install-tycon-hooks.ps1`) corre en cada arranque de sesión. Lanzaba unos 16 procesos de
- * Node por corrida, y PowerShell gasta ~50-100 ms en lanzar cada uno (medido el 2026-10-14 sobre la suite
- * installer-ps1: 1,6 s por corrida en una Mac; más en un Windows de verdad). Esta tanda corre varios de esos pasos
- * juntos. No cambia lo que hace cada paso: llama a la misma función que corre su arranque como programa (`cli`).
+ * El aplicador de Windows (`install-tycon-hooks.ps1`) corre en cada arranque de sesión. Lanzar un proceso de Node por
+ * paso cuesta unas decenas de milisegundos en PowerShell, y son muchos pasos por corrida. Esta tanda corre varios de
+ * esos pasos juntos. No cambia lo que hace cada paso: llama a la misma función que corre su arranque como programa (`cli`).
  *
  * ── QUÉ HACE ────────────────────────────────────────────────────────────────────────────────────────────────────
  * Lee un plan, revisa que cada paso sea de la lista cerrada (`STEPS`) y recién entonces los corre en orden. A cada uno:
@@ -21,8 +20,8 @@
  * lanzaba un Node por pregunta (dos).
  * Lo que un guion avisa «una vez por proceso» sale una vez por tanda, no una vez por paso.
  *
- * Quien la llama (el `.ps1`) reimprime la salida de cada paso donde antes estaba su llamada suelta. Si esta tanda no
- * está o no deja su resultado, hace las llamadas sueltas de antes: la tanda no saca ningún respaldo.
+ * Quien la llama (el `.ps1`) reimprime la salida de cada paso donde estaría su llamada suelta. Si esta tanda no
+ * está o no deja su resultado, hace las llamadas sueltas: la tanda no saca ningún respaldo.
  *
  * Uso:  node scripts/setup/applier-batch.js --plan <plan.json> --out <resultado.json>
  *   plan:      { "steps": [ { "id": "skills", "script": "skills-dir", "args": ["--skills", "--installed"],
@@ -81,7 +80,7 @@ function captured(fn) {
   try {
     const r = fn();
     if (r && typeof r.then === 'function') {
-      // la tanda corre pasos sincrónicos: lo que una promesa haga después ya no tiene a quién escribirle
+      // la tanda corre pasos sincrónicos: lo que una promesa haga después no tiene a quién escribirle
       chunks.push(['err', 'applier-batch: el paso devolvió una promesa y la tanda sólo corre pasos sincrónicos\n']);
       rc = 1;
     } else rc = typeof r === 'number' ? r : (process.exitCode || 0);

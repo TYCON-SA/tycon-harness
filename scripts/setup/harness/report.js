@@ -1,10 +1,10 @@
 'use strict';
 // report.js — lo que el mecanismo le dice a la persona: la versión, el resumen de install, el diagnóstico de doctor,
-// el registro de arranque y el aviso pendiente (story 8.13, AC 3, AC 11, AC 13).
+// el registro de arranque y el aviso pendiente.
 //
 // La versión, mientras el equipo instala desde los repos internos: `YYYY.MM.DD+<sha7>` —la fecha UTC del commit de HEAD
 // del arnés, nunca la del reloj—, con el sha de agent-skills al lado (sin número, no se ordena). Con `version.json` en la
-// raíz del árbol (la copia pública, tanda D: `{ version, source: { <fuente>: <sha>, … } }`) se imprime la estampada y sus
+// raíz del árbol (la copia pública: `{ version, source: { <fuente>: <sha>, … } }`) se imprime la estampada y sus
 // shas fuente; si HEAD tiene la etiqueta `v<número>` que pone el merge, ése es el número (el archivo dice el piso). El archivo NO trae canal —el mismo llega a `main` (estable) con el merge—: el canal que se muestra es el de
 // la política. `source` es un mapa nombre → sha con las claves que traiga (hoy `harness` y `agent_skills`; con los repos
 // internos unificados será una): no se exige ninguna. En `developer` se avisa que la versión es la del clon.
@@ -46,7 +46,7 @@ function headDateUtc(dir, env, rev = 'HEAD') {
  * El número de versión de un commit que está en el clon (lo traído, antes de aplicarlo): el de su `version.json` si lo
  * trae (`stamped`); si ese commit de verdad no trae el archivo, el derivado `YYYY.MM.DD+sha7` con la fecha UTC de ESE
  * commit. Si el archivo está y no se pudo leer, NO se inventa el derivado (no es «sin número»): `number` es `null` y
- * `problem` dice por qué. Lo usa el aviso de versión nueva (AC 26).
+ * `problem` dice por qué. Lo usa el aviso de versión nueva.
  * @returns {{ number: string|null, stamped: boolean, problem: string|null }}
  */
 function numberAt(dir, rev, { env = process.env } = {}) {
@@ -99,13 +99,13 @@ function versionLine(state, opts = {}) {
   const d = derive(state, opts);
   const list = (state.sources || []).map((s) => `${s.name}@${s.ref}`).join(', ') || 'sin fuentes';
   // con el clon de skills re-apuntado al repo unificado los dos clones están en el MISMO commit: se muestra uno solo,
-  // el del número (story 8.18, AC 35). Con commits distintos —o sin clon aparte— se dice como siempre
+  // el del número. Con commits distintos —o sin clon aparte— se dicen los dos
   const oneCommit = Boolean(d.agent_skills.commit) && d.agent_skills.commit === d.harness.commit;
   const parts = d.stamped
     ? [d.number, ...Object.keys(d.source).map((name) => `${name.replace(/_/g, '-')} ${sha7(d.source[name]) || '—'}`)]
     : (oneCommit ? [d.number] : [d.number, `agent-skills ${sha7(d.agent_skills.commit) || '—'}`]);
   parts.push(state.mode || 'managed', opts.channel || state.channel || 'stable', list);
-  // la capa (story 8.13.1, AC 17): su commit, y si quedó al mínimo, cuántas horas atrás de main interno
+  // la capa: su commit, y si quedó al mínimo, cuántas horas atrás de main interno
   const layer = (state.sources || []).find((s) => s && s.kind === 'layer');
   if (layer) {
     const lag = isObject(state.layer) && state.layer.minimum ? ` · mínimo, ${typeof state.layer.lag_hours === 'number' ? state.layer.lag_hours : '—'} h` : '';
@@ -113,7 +113,7 @@ function versionLine(state, opts = {}) {
   }
   let line = parts.join(' · ');
   if (state.mode === 'developer') line += ` · modo desarrollador: la versión es la del clon ${state.tree}, no una publicada`;
-  // la retención que dejó un rollback (tanda C, AC 19): update no avanza hasta levantarla
+  // la retención que dejó un rollback: update no avanza hasta levantarla
   if (isObject(state.hold)) line += ` · retención: deshiciste ${state.hold.commit || '—'} el ${state.hold.at || '—'}; update no avanza (harness.js rollback --release, o update --yes)`;
   return line;
 }
@@ -130,16 +130,16 @@ function versionJson(state, opts = {}) {
   });
 }
 
-// ── el cierre de `install` (story 8.16, AC 8 y 9) ───────────────────────────────────────────────────────────────────
-// El caso (auditoría de la copia publicada, 2026-10-03): `install` imprimía «piezas escritas: link, state, …» —los pasos
-// del programa, no lo que quedó en la máquina— y de la salida del aplicador sólo iban al registro las últimas tres líneas:
-// la persona no veía ni los hooks que le agregaron ni los avisos. Ahora el cierre cuenta lo que quedó, por tipo, desde el
+// ── el cierre de `install` ───────────────────────────────────────────────────────────────────
+// Sin este cierre, `install` imprimiría «piezas escritas: link, state, …» —los pasos del programa, no lo que quedó en la
+// máquina— y de la salida del aplicador sólo irían al registro las últimas tres líneas: la persona no vería ni los hooks
+// que le agregaron ni los avisos. El cierre cuenta lo que quedó, por tipo, desde el
 // reporte del aplicador; dice cuántos hooks pueden frenar según la lista de efectos; repite cada aviso del aplicador tal
 // cual; y dice dónde quedó la copia de respaldo, cómo volver, dónde está el registro y qué sigue.
-const HARNESS_CMD = `node ~/.claude/${require('./place.js').PLACE_NAME}/scripts/setup/harness.js`;   // el lugar (story 8.19)
+const HARNESS_CMD = `node ~/.claude/${require('./place.js').PLACE_NAME}/scripts/setup/harness.js`;   // el lugar
 const WARNING_LINE = /^\s*(⚠|🔴|🛑)/u;
 // el instalador de Windows escribe los mismos avisos con «! » y «!! » (no usa los emojis): sin esto, en Windows el
-// cierre no repetía ninguno (pase adversarial de la tanda A)
+// cierre no repetiría ninguno
 const WARNING_LINE_WINDOWS = /^\s*(⚠|🔴|🛑|!!? )/u;
 /**
  * Los avisos de la salida del aplicador, tal cual y sin repetir: cada línea que empieza con la marca (⚠, 🔴 o 🛑; con
@@ -161,10 +161,10 @@ function warningLines(out, { windows = false } = {}) {
 
 /**
  * Dónde quedó la copia de respaldo y cómo volver. Sin copia (no se pudo tomar: `takeSnapshot` lo anota en el registro)
- * se dice eso y nada más: nunca se promete una carpeta que no existe ni un `.bak` que traiga lo de antes. Medido en el
- * pase adversarial de la tanda A: los `.bak` que quedan en ese caso (el de la línea de arranque y el de las piezas
+ * se dice eso y nada más: nunca se promete una carpeta que no existe ni un `.bak` que traiga lo de antes. Los `.bak` que
+ * quedan en ese caso (el de la línea de arranque y el de las piezas
  * compartidas llevan el mismo sello al segundo, y el segundo pisa al primero) no traen el contenido de antes de
- * instalar, y la línea de import de `CLAUDE.md` no tiene copia propia (`[FUP-8.16-A-bak-sin-copia]`).
+ * instalar, y la línea de import de `CLAUDE.md` no tiene copia propia.
  */
 function backupLine(dir) {
   if (dir) return `copia de respaldo: ${dir} · volver: ${HARNESS_CMD} rollback --list`;
@@ -230,9 +230,9 @@ function leftCounts(pieces, { effects = null, thirdParty = null } = {}) {
 function installSummary(result = {}) {
   const L = [`versión: ${result.version || '—'}`];
   L.push(`canal: ${result.channel || 'stable'} · aplicación: ${result.apply || 'ask'}`);
-  // el perfil de instalación (story 8.16, tanda C · AC 25): «perfil: minimal (--profile)», «perfil: full (sin elegir)»
+  // el perfil de instalación: «perfil: minimal (--profile)», «perfil: full (sin elegir)»
   if (result.profile) L.push(result.profile);
-  // las integraciones y el paquete del stack, cada uno con su origen (story 8.16, tanda D · AC 33)
+  // las integraciones y el paquete del stack, cada uno con su origen
   if (Array.isArray(result.configLines)) for (const l of result.configLines) L.push(l);
   if (result.changed === false) {
     L.push('sin cambios: ya estaba instalado así');
@@ -263,7 +263,7 @@ function installSummary(result = {}) {
 }
 
 /**
- * Lo que `install` dice cuando el aplicador o la comprobación de salud fallan (AC 9): qué falló, que la instalación
+ * Lo que `install` dice cuando el aplicador o la comprobación de salud fallan: qué falló, que la instalación
  * quedó a medias, dónde están el registro y la copia, y las dos salidas. Sin «qué sigue».
  */
 function installFailure({ what, log = null, backup = null, warnings = [] } = {}) {
@@ -276,16 +276,16 @@ function installFailure({ what, log = null, backup = null, warnings = [] } = {})
   return L;
 }
 
-/** La línea que `update` suma cuando aplicó una versión (AC 8): dónde quedó la copia de antes y cómo volver. */
+/** La línea que `update` suma cuando aplicó una versión: dónde quedó la copia de antes y cómo volver. */
 function updateBackupLine(dir) {
   return `copia de antes en ${dir} · volver: ${HARNESS_CMD} rollback`;
 }
 
-// ── los hooks que ya quedaron repetidos (story 8.18 · decisión del dueño, 2026-10-04: «avisa y no toca») ───────────
-// El caso: el ensayo del alta de un dev nuevo (2026-10-03) terminó con 32 hooks registrados DOS veces —el mismo archivo
-// por dos rutas: la carpeta del clon y el enlace del lugar del arnés—. El instalador ya no registra uno dos
+// ── los hooks que ya quedaron repetidos («avisa y no toca») ───────────
+// Una máquina puede tener hooks registrados DOS veces —el mismo archivo por dos rutas: la carpeta del clon y el enlace
+// del lugar del arnés—. El instalador no registra uno dos
 // veces (reconoce un hook por el archivo real que nombra), pero los que una máquina ya tiene se quedan: sacarlos solo
-// cambiaría el `settings.json` de las máquinas del equipo el día del corte. `doctor` lo dice una vez, como dato, y nada
+// cambiaría el `settings.json` de las máquinas del equipo. `doctor` lo dice una vez, como dato, y nada
 // más: ni toca el archivo ni pone el diagnóstico en rojo. La limpieza, si se hace, es una tarea aparte.
 //
 // Repetido = el mismo evento, el mismo matcher (sus partes en cualquier orden, como los compara el instalador) y el
@@ -294,16 +294,16 @@ function updateBackupLine(dir) {
 // absoluta —como los escribe el instalador—, un archivo que vive bajo una de las raíces (`roots`: el árbol y la carpeta
 // de las skills). Un hook de la persona repetido es asunto suyo.
 //
-// «El mismo archivo» es QUÉ ARCHIVO es, no cómo está escrita su ruta (pase adversarial del tramo 3, clase 15 ·
-// 2026-10-04). Se comparaba la ruta real letra por letra, y «es del arnés» era un prefijo letra por letra contra las
-// raíces: `fs.realpathSync` resuelve enlaces pero no iguala mayúsculas, así que en un disco que no las distingue (el de
-// una Mac, el de Windows) la misma carpeta escrita con otra caja (`…/src/harness` por `…/Src/harness`) ni contaba como
-// del arnés. Medido: 27 hooks registrados dos veces y doctor callado. La regla, la misma que usa el instalador
+// «El mismo archivo» es QUÉ ARCHIVO es, no cómo está escrita su ruta. Comparar la ruta real letra por letra, o tomar «es
+// del arnés» como un prefijo letra por letra contra las raíces, falla: `fs.realpathSync` resuelve enlaces pero no iguala
+// mayúsculas, así que en un disco que no las distingue (el de una Mac, el de Windows) la misma carpeta escrita con otra
+// caja (`…/src/harness` por `…/Src/harness`) no contaría como del arnés y doctor callaría los repetidos. La regla, la
+// misma que usa el instalador
 // (`file_id` en install-tycon-hooks.sh):
 //   1. por identidad de archivo —dispositivo e inodo—; «bajo una raíz» es que alguna carpeta madre ES esa raíz;
 //   2. si el disco no da esa identidad, por la ruta real, igualando la caja SÓLO si ese disco no la distingue (se mide:
 //      ¿la misma carpeta con la caja cambiada existe?). En un disco que sí la distingue, `a.js` y `A.js` son dos archivos.
-// Un archivo que no está en el disco no cuenta (como antes). Dos nombres del mismo archivo (un enlace duro) son uno.
+// Un archivo que no está en el disco no cuenta. Dos nombres del mismo archivo (un enlace duro) son uno.
 // la ruta real como la escribe el disco (`native` devuelve también la caja de verdad); si el sistema no la da —en
 // Windows falla en algunas unidades virtuales—, la de siempre; si la ruta no existe, null
 const realOrNull = (p) => {
@@ -413,11 +413,11 @@ function doctorText(report = {}) {
 function doctorJson(report = {}) {
   const items = Array.isArray(report.items) ? report.items : [];
   const pick = (level) => items.filter((i) => i && i.level === level).map((i) => i.text);
-  // las claves que suma la tanda D de la 8.16 (`profile`, `integrations`, `packs`, `brakes`) van después de las de siempre
+  // las claves de la instalación (`profile`, `integrations`, `packs`, `brakes`) van después de las básicas
   return Object.assign({ mode: report.mode || null, fail: pick('fail'), warn: pick('warn'), ok: pick('ok') }, report.extra || {});
 }
 
-// ── la capa privada (story 8.13.1, tanda A · AC 5): el texto y el JSON de lo que midió `layerFacts` (harness.js) ──────
+// ── la capa privada: el texto y el JSON de lo que midió `layerFacts` (harness.js) ──────
 // Acá no se chequea nada: se cuenta y se nombra. Una lista larga se corta en LAYER_NAMED rutas y dice cuántas más hay.
 const LAYER_NAMED = 20;
 const named = (paths, each) => {
@@ -544,7 +544,7 @@ function log(home = os.homedir(), line) {
 function setNotice(state, text) { state.notice = text ? String(text) : null; return state; }
 function clearNotice(state) { state.notice = null; return state; }
 
-// ── «no se pudo actualizar desde» (story 8.23, tanda L, AC 39) ─────────────────────────────────────────────────────
+// ── «no se pudo actualizar desde» ─────────────────────────────────────────────────────
 // Un archivo aparte del estado, al lado del candado: lo escribe justamente el arranque que NO pudo actualizar —también
 // el que se fue porque otra sesión tenía el candado, que no puede tocar el estado—. Escritura atómica; ilegible = «no sé».
 const FAILURE_SAY_FROM = 2;   // desde el segundo arranque fallido: uno solo puede ser un corte de red de un minuto
@@ -558,10 +558,10 @@ function readUpdateFailure(home) {
     return f && typeof f.since === 'string' && Number.isInteger(f.count) ? f : { unreadable: `${file}: no tiene el formato esperado` };
   } catch (e) { return { unreadable: `${file}: ${e.message}` }; }
 }
-// Dos clases (pase adversarial de la tanda L): `busy` (otra sesión tuvo el candado demasiado tiempo) la borra cualquier
+// Dos clases: `busy` (otra sesión tuvo el candado demasiado tiempo) la borra cualquier
 // arranque sano que tuvo el candado; `update` (no se pudo mirar o aplicar: sin red, sin credencial, la versión no
 // quedó sana) sólo una mirada sana. Si no, un arranque en la ventana sin red —o en modo desarrollador, que nunca mira—
-// dejaba un aviso falso para siempre.
+// dejaría un aviso falso para siempre.
 const BUSY_FAILURE_MS = 5 * 60 * 1000;
 /** ¿Un candado ocupado es una falla? Sólo si el otro lo tiene hace rato: dos sesiones que arrancan juntas no lo son. */
 function busyIsFailure({ ageMs }) { return Number.isFinite(ageMs) && ageMs >= BUSY_FAILURE_MS; }
@@ -582,7 +582,7 @@ function recordUpdateFailure(home, reason, { now = Date.now(), kind = 'update' }
   } catch (e) { log(home, `startup: no pude anotar que no se pudo actualizar (${e.message}): ${reason}`); }
   return next;
 }
-/** Borra la falla anotada; con `kind`, sólo si es de esa clase (una de antes, sin clase, cuenta como `update`). */
+/** Borra la falla anotada; con `kind`, sólo si es de esa clase (una sin clase cuenta como `update`). */
 function clearUpdateFailure(home, { kind = null } = {}) {
   if (kind) { const f = readUpdateFailure(home); if (!f || f.unreadable || (f.kind || 'update') !== kind) return; }
   try { fs.rmSync(paths(home).failuresFile, { force: true }); } catch (e) { log(home, `startup: no pude borrar la falla anotada (${e.message}): el próximo arranque sano lo reintenta`); }

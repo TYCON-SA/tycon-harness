@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 'use strict';
-// public-push-guard.js — el freno antes de publicar (story 8.26, tanda F1 · AC 22, 52, 53 y 54)
+// public-push-guard.js — el freno antes de publicar
 //
 // 🔴 POR QUÉ EXISTE. El arnés se mantiene directo en su repo público: una rama empujada ya es pública, antes de cualquier
-// pedido o merge, y lo publicado no se retira (borrar la rama no borra los commits). Hasta acá nada llegaba al público sin
-// pasar por el exportador y su detector; sin exportador, este freno es lo único que hay ANTES. La revisión adversarial de
-// su diseño encontró tres formas de que no frenara nada en el camino normal, y por eso existen tres decisiones:
+// pedido o merge, y lo publicado no se retira (borrar la rama no borra los commits). Sin exportador entre medio, este
+// freno es lo único que hay ANTES de que algo llegue al público. Tres decisiones lo mantienen útil en el camino normal:
 //   · mira CADA commit nuevo, no la diferencia neta: un commit que mete un nombre y otro que lo saca dejan el nombre en la
 //     historia empujada;
 //   · corre el detector COMPLETO (scripts/publishing/detector.js), no sólo los términos de la lista: un token, un correo
@@ -35,15 +34,15 @@
 // del equipo (`team-profile.json`, o `perfil-equipo.json`) la lista es obligatoria. Sin perfil y sin lista (alguien de afuera con su copia)
 // corre lo que no necesita lista, y lo dice.
 //
-// ¿ESA LISTA ESTÁ AL DÍA? (tanda H1c · AC 65 f). La lista se lee del disco de un clon, y nadie miraba si ese clon estaba
-// al día: una lista 36 commits atrás de su remoto frenó a quien mantiene por su propia firma, que una excepción ya
-// publicada dejaba pasar (2026-10-10) — y al revés, con una lista vieja se escapa el término que se sumó ayer. Se MIDE y
+// ¿ESA LISTA ESTÁ AL DÍA? La lista se lee del disco de un clon: si ese clon está
+// atrasado respecto de su remoto, frena por su propia firma lo que una excepción ya
+// publicada deja pasar — y al revés, con una lista vieja se escapa el término que se sumó ayer. Se MIDE y
 // se AVISA; nunca cambia un veredicto ni un código de salida. Tres medidas, de la más barata a la más cara:
 //   · el archivo del disco contra el de la rama principal remota como la conoce el clon (`origin/HEAD`, o `origin/main`):
 //     ve el clon parado en una rama de trabajo, un `HEAD` suelto y la lista editada a mano; y cuántos commits atrás está;
 //   · la edad de la última traída (la fecha de `FETCH_HEAD`), sin red: con 3 días cumplidos, avisa;
 //   · sólo al empujar —que ya sale a la red— y con `status --fetch`: se le pregunta al remoto del clon por la punta de
-//     su rama principal, con un tope corto y sin pedir claves. Es lo único que ve el caso real: un clon que nadie trajo
+//     su rama principal, con un tope corto y sin pedir claves. Es lo único que ve el atraso real: un clon que nadie trajo
 //     está «al día» con lo que él conoce.
 // Lo que avisa, además del atraso: una última traída que FALLÓ (git deja vacío su `FETCH_HEAD`: no es «traído hoy») y un
 // clon que está ADELANTE de su remoto (una excepción commiteada sin subir: ahí no dice «atrasado» ni «traelo», dice
@@ -70,7 +69,7 @@
 //   node public-push-guard.js pre-push <remoto> <dirección> [--json]   (las líneas de git por la entrada; lo llama
 //        scripts/hooks/git-pre-push-global.sh, que el instalador deja como `pre-push` global de git)
 //   node public-push-guard.js range --base <commit> --head <commit> [--branch <nombre>] [--title-file <archivo>]
-//        [--body-file <archivo>] [--json]       (tanda F2 · AC 23: un PEDIDO, en su validación — cada commit que suma a
+//        [--body-file <archivo>] [--json]       (un PEDIDO, en su validación — cada commit que suma a
 //        su rama destino, el nombre de la rama, el título y el cuerpo. No le pregunta nada al remoto y la lista es
 //        siempre obligatoria; lo llama el paso «El freno de publicación sobre el pedido» de pipelines/azure-pipelines-maintainers-pr.yml)
 //   node public-push-guard.js status [--fetch]                         (¿está puesto?, ¿de dónde sale la lista?, ¿está al
@@ -103,7 +102,7 @@ const HOOK_MARK = 'git-pre-push-global.sh';
 const FORBIDDEN = Object.freeze(['.engram/', 'specs/', 'tasks/', 'inbox/', '.advisors/', '.dashboard/']);
 const DEFAULT_LIMIT_MS = 120000;
 const REMOTE_ANSWER_MS = 20000;   // cuánto se espera a que el remoto diga qué tiene; si no contesta, se mira todo
-// la frescura de la lista (tanda H1c): es un aviso, así que sus topes son cortos — nunca alarga un empuje de verdad
+// la frescura de la lista: es un aviso, así que sus topes son cortos — nunca alarga un empuje de verdad
 const LIST_STALE_DAYS = 3;            // con estos días CUMPLIDOS desde la última traída del clon de la lista, se avisa
 const LIST_REMOTE_ANSWER_MS = 8000;   // cuánto se espera a que el remoto de ese clon diga su punta; si no contesta, no se dice nada de él
 const LIST_LOCAL_GIT_MS = 10000;      // cada pregunta a git sobre ese clon, sin red: si no contesta, «no se pudo medir»
@@ -132,7 +131,7 @@ const short = (sha) => String(sha).slice(0, 10);
 function git(cwd, args, { input, binary = false } = {}) {
   // la entrada va como bytes: con `encoding: 'buffer'` Node no sabe convertir un texto
   // GIT_NO_REPLACE_OBJECTS: se lee el objeto de VERDAD. Con un reemplazo (`git replace`) git muestra otro objeto en su
-  // lugar, pero el empuje manda el original: un commit sucio «arreglado» con un reemplazo se miraba limpio y salía tal cual.
+  // lugar, pero el empuje manda el original: un commit sucio «arreglado» con un reemplazo se miraría limpio y saldría tal cual.
   return spawnSync('git', ['-C', cwd, '-c', 'core.quotePath=false', ...args], {
     input: input === undefined ? undefined : Buffer.from(input), ...(binary ? {} : { encoding: 'utf8' }), maxBuffer: 1024 * 1024 * 1024, windowsHide: true,
     env: { ...process.env, GIT_NO_REPLACE_OBJECTS: '1' },
@@ -165,7 +164,7 @@ function toplevel(cwd) {
 /**
  * Lo mismo, diciendo además si se SABE: `{ top, known }`. «Esta carpeta no es un repo» es una respuesta; «git no pudo
  * contestar» (un clon de otro dueño que git no quiere abrir, un repo desnudo, una carpeta que no está, git ausente) no
- * lo es — leído como «no es un clon», el `gh` corrido ahí salía sin mirar. Se le pide a git en inglés para poder leerlo.
+ * lo es — leído como «no es un clon», el `gh` corrido ahí saldría sin mirar. Se le pide a git en inglés para poder leerlo.
  */
 function repoAt(dir) {
   const r = spawnSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', windowsHide: true, env: { ...process.env, LC_ALL: 'C', LANG: 'C' } });
@@ -178,9 +177,9 @@ const isHarnessTree = (top) => Boolean(top) && fs.existsSync(path.join(top, TREE
 /**
  * La ruta REAL de algo del disco, para comparar dos rutas. 🔴 La variante nativa, siempre: `fs.realpathSync` a secas
  * resuelve los enlaces pero deja las mayúsculas como se ESCRIBIERON, y en un disco que no las distingue (la Mac por
- * defecto, Windows) la misma carpeta nombrada con otra caja daba otra ruta. Con eso «¿está adentro de?» decidía letra
- * por letra: la lista salía del propio árbol que se empuja si la máquina lo declaraba con otra caja, y el aviso de la
- * lista atrasada no podía medir. git y la variante nativa devuelven la caja del disco. Toda comparación de rutas de
+ * defecto, Windows) la misma carpeta nombrada con otra caja da otra ruta. Con eso «¿está adentro de?» decidiría letra
+ * por letra: la lista saldría del propio árbol que se empuja si la máquina lo declara con otra caja, y el aviso de la
+ * lista atrasada no podría medir. git y la variante nativa devuelven la caja del disco. Toda comparación de rutas de
  * este archivo pasa por acá o por `isInside`.
  */
 function realOf(p) {
@@ -318,7 +317,7 @@ function resolveList(top, env = process.env, { pushing = false, optional = false
     return { cfg, forbidden: globs.map((g) => D.globARegex(g)), source: place.source, label: place.label, file: place.file, generic: false, terms: raw.terminos.length, extraForbidden: globs.length };
   }
   // `optional`: quien llama no sabe si lo que mira va al repo público del arnés (un `gh` de destino desconocido). En la
-  // máquina de alguien del equipo que no mantiene —tiene el perfil, no tiene la lista— exigirla ahí frenaba un `gh`
+  // máquina de alguien del equipo que no mantiene —tiene el perfil, no tiene la lista— exigirla ahí frenaría un `gh`
   // común en un repo de producto, con una instrucción que esa persona no puede cumplir. Se mira lo que no necesita lista.
   // `required`: la validación de un pedido (el modo de rango). Ahí no existe «sólo lo que no necesita lista»: el agente
   // que la corre no tiene perfil ni máquina, y un pedido mirado sin la lista saldría verde con cualquier nombre adentro.
@@ -327,7 +326,7 @@ function resolveList(top, env = process.env, { pushing = false, optional = false
   return generic();
 }
 
-// ── ¿la lista está al día? (tanda H1c · AC 65 f; el porqué, en la cabecera) ──────────────────────────────────────
+// ── ¿la lista está al día? ──────────────────────────────────────
 // Lo que se le antepone a TODA llamada a git sobre el clon de la lista. Ese clon es de otro repo y su configuración no
 // la escribió este freno: medir no puede ejecutar lo que ahí esté configurado. `core.fsmonitor` es un programa que git
 // lanza cada vez que refresca el índice; el protocolo `ext::` hace de una dirección de remoto un comando. (El ayudante
@@ -346,7 +345,7 @@ const fetchedUrl = (u) => String(u || '').trim().replace(/^([a-z][a-z0-9+.-]*:\/
  * o null. `failed`: el último intento falló. Sale de `FETCH_HEAD`, que git reescribe en cada traída; un clon recién
  * hecho no tiene, y cada árbol enlazado (`git worktree`) anota el suyo: se miran todos, del más nuevo al más viejo.
  * 🔴 La fecha de ese archivo sola no alcanza: git lo VACÍA antes de conectarse, así que una traída que falla lo deja en
- * 0 bytes y con fecha de hoy — leído como «traído hoy», el aviso por edad no salía nunca justo con el remoto
+ * 0 bytes y con fecha de hoy — leído como «traído hoy», el aviso por edad no saldría nunca justo con el remoto
  * inalcanzable. Y la traída de OTRO remoto del clon lo reescribe igual: ésa no dice nada de la rama principal de la
  * lista, y no cuenta (sólo cuando se reconoce con certeza que es de otro remoto del clon; ante la duda, cuenta).
  */
@@ -573,10 +572,10 @@ function isDeclared(id, env) {
   if (H.esIdentidadDelArnes(id, { env })) return true;
   // 🔴 harness-repo.js sólo suma lo declarado cuando el arnés que corre tiene un remoto propio que leer (para no decidir
   // «esto es el arnés» por una declaración suelta). Un arnés INSTALADO no es un clon: ahí la tercera señal no se
-  // cumplía nunca, y un `gh` que nombraba el repo público desde otra carpeta salía sin mirar. Para ESTE freno, lo
+  // cumple nunca, y un `gh` que nombra el repo público desde otra carpeta saldría sin mirar. Para ESTE freno, lo
   // declarado alcanza: de más se mira un repo; de menos se publica sin mirar.
   // …y vale también con TYCON_HARNESS_IDENTITIES puesta: esa variable SUMA repos a los que se miran, nunca saca uno
-  // declarado (con ella sola como fuente, ponerla alcanzaba para que el repo público dejara de contar).
+  // declarado (con ella sola como fuente, ponerla alcanzaría para que el repo público dejara de contar).
   if (typeof H.declaradas !== 'function') return false;
   return H.declaradas().ids.some((x) => H.mismaIdentidad(x, id));
 }
@@ -868,10 +867,10 @@ function reviewCommitsInto(R, looked, { top, tips, excludes, list, tick }) {
  * que este repo también tiene. `null` si no contestó — y entonces no se da nada por publicado: se mira todo.
  *
  * 🔴 POR QUÉ SE LE PREGUNTA, y no se usan las ramas de seguimiento (`refs/remotes/<nombre>/*`). Esas ramas no guardan
- * de qué repo salieron. Dos veces dieron por «ya publicado» lo que el público no tenía: con un remoto que trae de un
- * lado y empuja a otro (`url` privada, `pushurl` pública), y —peor, porque es el gesto del día del corte— después de
+ * de qué repo salieron, y darían por «ya publicado» lo que el público no tiene: con un remoto que trae de un
+ * lado y empuja a otro (`url` privada, `pushurl` pública), y —peor— después de
  * re-apuntar el remoto de siempre al repo público (`git remote set-url origin <público>`): las ramas de seguimiento
- * seguían siendo las del repo interno, toda esa historia se excluía, el freno decía «1 commit mirado» y git publicaba
+ * seguirían siendo las del repo interno, toda esa historia se excluiría, el freno diría «1 commit mirado» y git publicaría
  * la historia entera. Lo único que dice la verdad sobre el remoto es el remoto. Cuesta una ida y vuelta por empuje,
  * hacia el mismo servidor al que el empuje ya le está hablando.
  */
@@ -894,7 +893,7 @@ function newPairs(top, commits, parentsOf) {
   if (!commits.length) return [];
   // `--ignore-submodules=none`: sin eso git obedece el `ignore` del `.gitmodules` del árbol de trabajo —que viene en lo
   // mismo que se mira— y con `ignore = all` no lista el submódulo: el «sin leer» no saldría, y el veredicto de los
-  // MISMOS commits dependería de dónde está parado el árbol (pase adversarial de la tanda F2).
+  // MISMOS commits dependería de dónde está parado el árbol.
   const raw = gitOut(top, ['diff-tree', '--stdin', '-r', '-m', '--root', '--no-renames', '--no-abbrev', '--ignore-submodules=none', '-z'], { input: `${commits.join('\n')}\n` });
   const tokens = raw.split('\0');
   const count = new Map();   // commit\0objeto\0ruta → en cuántas de las diferencias contra sus padres aparece
@@ -961,7 +960,7 @@ function record(rule, verdict) {
 /**
  * ¿Este empuje es del arnés? Tres señales, cualquiera alcanza: el árbol de trabajo trae la marca; lo que se empuja la
  * trae (se puede empujar una rama del arnés parado en otra que no la tiene, o desde un repo desnudo); o el remoto es
- * uno de los repos que el arnés declara como suyos. Mirar sólo el árbol de trabajo dejaba salir sin freno todo empuje
+ * uno de los repos que el arnés declara como suyos. Mirar sólo el árbol de trabajo dejaría salir sin freno todo empuje
  * hecho desde un estado sin ese archivo.
  */
 function concernsHarness({ repo, top, lines, url, env }) {
@@ -1061,7 +1060,7 @@ function prePushMessage(result) {
   return L;
 }
 
-// ── el modo de rango: un pedido, en su validación (tanda F2 · AC 23) ─────────────────────────────────────────────
+// ── el modo de rango: un pedido, en su validación ─────────────────────────────────────────────
 /**
  * Lo que un PEDIDO publica, mirado en la validación que corre antes del merge: cada commit que alcanza `head` y no
  * alcanza `base` (los que el pedido suma a su rama destino), el nombre de la rama, y el título y el cuerpo.
@@ -1093,7 +1092,7 @@ function rangeMode({ base, head, branch = null, titleFile = null, bodyFile = nul
     };
     // 🔴 Un clon al que le falta historia (superficial) no trae todos los commits del pedido: `rev-list` devuelve los
     // que hay, y los que faltan saldrían como «limpios». La validación baja la historia entera; si alguien le baja la
-    // profundidad, o esto se corre a mano en un clon superficial, es «no pude mirar» (pase adversarial de la tanda F2).
+    // profundidad, o esto se corre a mano en un clon superficial, es «no pude mirar».
     const shallow = git(top, ['rev-parse', '--is-shallow-repository']);
     if (shallow.error || shallow.status !== 0) throw new Blind('no pude leer el repo (git no dijo si el clon trae la historia entera)');
     if (String(shallow.stdout || '').trim() !== 'false') throw new Blind('este clon no trae la historia entera (es superficial): los commits del pedido que faltan no se pueden mirar, y no se dan por limpios');
@@ -1199,7 +1198,7 @@ function status({ cwd = process.cwd(), env = process.env, fetch = false } = {}) 
     else unread = 'no pude leer qué carpeta de hooks usa git en este repo';
   } else {
     // `--includes`: con `--global` git no sigue los archivos incluidos (`[include]`) salvo que se lo pidan, y al correr
-    // un hook sí: la carpeta puesta desde un archivo incluido se leía como «git no tiene». `--type=path`: con `~` expandido.
+    // un hook sí: la carpeta puesta desde un archivo incluido se leería como «git no tiene». `--type=path`: con `~` expandido.
     // Es la misma lectura que hacen los dos instaladores y `harness.js doctor`.
     const r = spawnSync('git', ['config', '--global', '--includes', '--type=path', 'core.hooksPath'], { encoding: 'utf8', windowsHide: true });
     if (r.status === 0 && String(r.stdout).trim()) hook = path.join(String(r.stdout).trim().replace(/^~(?=$|[\\/])/, os.homedir()), 'pre-push');
@@ -1261,7 +1260,7 @@ function publicRemotesOf(top, env) {
       if (g.error) throw new Blind('no pude leer la dirección de un remoto del repo');
       // Un «remoto» SIN dirección no es un remoto: git lista uno cuando la configuración global trae una sección con
       // ese nombre (`remote.origin.prune=true`) y el repo no lo tiene; no se puede empujar a él. (git contesta con un
-      // error, o con el nombre mismo como dirección.) Tomarlo por «no pude mirar» frenaba todo `gh` de ese repo.
+      // error, o con el nombre mismo como dirección.) Tomarlo por «no pude mirar» frenaría todo `gh` de ese repo.
       if (g.status !== 0) continue;
       for (const u of String(g.stdout || '').split('\n').map((s) => s.trim()).filter(Boolean)) {
         if (u === name) continue;
@@ -1540,7 +1539,7 @@ function hookMode(payloadText, env = process.env) {
 function main(argv) {
   const [mode, ...rest] = argv;
   // Una entrada que no se pudo LEER es null, nunca '': vacía quiere decir «git no empuja nada» o «un evento sin
-  // comando», y leer así un error de lectura dejaba salir un empuje sin mirarlo.
+  // comando», y leer así un error de lectura dejaría salir un empuje sin mirarlo.
   const readInput = () => { try { return fs.readFileSync(0, 'utf8'); } catch (_) { return null; } };
   if (mode === undefined) {
     // 🔴 se lee la entrada ANTES de decidir nada: salir sin drenarla rompe la tubería de quien escribe
@@ -1599,9 +1598,9 @@ module.exports = {
   parseLines, reviewPush, newPairs, prePush, prePushMessage, status, makeReview, reviewIdentity, main,
   publicRemotesOf, reviewGhCommand, reviewLocalFile, hookMode, concernsHarness, lineFacts, whereItRuns, otherHeaders,
   remoteHas, readObjects, repoAt, pushMayBeHarness, isDeclared,
-  // tanda F2: el modo de rango (la validación de un pedido)
+  // el modo de rango (la validación de un pedido)
   rangeMode, rangeMessage,
-  // tanda H1c: ¿la lista está al día? (lo usan también `harness.js doctor` y scripts/publishing/new-names.js; las
+  // ¿la lista está al día? (lo usan también `harness.js doctor` y scripts/publishing/new-names.js; las
   // firmas, en el comentario de cada función)
   listFreshness, freshnessText, freshnessLines, gitElsewhere, HOOK_MARK, LIST_PATH, LIST_STALE_DAYS, LIST_REMOTE_ANSWER_MS,
 };

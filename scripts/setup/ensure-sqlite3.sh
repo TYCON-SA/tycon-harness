@@ -55,8 +55,7 @@ aviso_manual() {
   echo "    Silenciar: TYCON_NO_SQLITE_CHECK=1" >&2
   # 🔴 Si el sello no se puede escribir, el throttle no existe: el intento y el aviso se repiten en
   # CADA arranque. Eso se dice — un aviso que reaparece sin explicación se lee como ruido y termina
-  # apagado. (2026-08-25, revisión adversarial: dos corridas seguidas con HOME no escribible dieron
-  # el mismo aviso y ningún sello.)
+  # apagado.
   if ! { mkdir -p "$(dirname "$STAMP")" 2>/dev/null && echo "$ahora" > "$STAMP" 2>/dev/null; }; then
     echo "    (no pude escribir $STAMP, así que este aviso va a repetirse en cada arranque)" >&2
   fi

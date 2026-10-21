@@ -1,10 +1,10 @@
 'use strict';
-// sources.js — las fuentes del arnés: cada clon que `update` trae y avanza (story 8.13, AC 6).
+// sources.js — las fuentes del arnés: cada clon que `update` trae y avanza.
 //
 // Una fuente es `{ name, url, ref, rewrites, dir, commit, previous }`: en los repos internos son dos —`harness` (el clon
-// al que apunta el enlace) y `agent_skills` (`~/.claude/agent-skills`)—; en el repo único de la 8.7 (skills/ y agents/ en
+// al que apunta el enlace) y `agent_skills` (`~/.claude/agent-skills`)—; en el repo único (skills/ y agents/ en
 // la raíz del clon) es una. `url` es el origin fijado en `install`: si el origin del clon cambió, nada sale a la red
-// (AC 29a nace acá; `install --source <url>` lo cambia a propósito).
+// (`install --source <url>` lo cambia a propósito).
 //
 // Dos tipos de ref:
 //   · FIJA (`main` interno hoy; `rewrites:false`): `git fetch origin <ref>` y `merge --ff-only`, con las mismas reglas que
@@ -13,7 +13,7 @@
 //     el nocturno y el respaldo local los reescribe —el caso medido que dejó una máquina 158 commits atrás—) y NO se
 //     reaplican (lo publicado es lo bueno; lo local queda en `git stash list`); si divergió (commits propios) o está en
 //     otra rama no se toca nada y se nombra el motivo con el comando para arreglarlo a mano.
-//   · REESCRITA (el repo público, tanda D; `rewrites:true`): rama local `tycon/installed` y `reset --hard` a lo traído.
+//   · REESCRITA (el repo público; `rewrites:true`): rama local `tycon/installed` y `reset --hard` a lo traído.
 //     Los dos canales se consumen igual: `latest` es `mirror/sync` y `stable` es `main` (`channelRef`); la ref sale de la
 //     política en cada `check`, y si `mirror/sync` no está, o su número es menor que el de `main`, `latest` lee `main`.
 //     «No bajar» se decide por NÚMERO (`version.json` de cada commit, `version-order.js`), no por ancestría: el commit de
@@ -39,7 +39,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { stateDir: stateDirOf } = require('./tycon-home.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
+const { stateDir: stateDirOf } = require('./tycon-home.js');   // la carpeta del estado, de una sola pieza
 const { spawnSync } = require('child_process');
 const versionOrder = require('./version-order.js');
 
@@ -64,20 +64,20 @@ const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return null
 // ── git ──────────────────────────────────────────────────────────────────────────────────────────
 
 // sin preguntar NADA: ni la terminal ni el gestor de credenciales, que en Windows abre un login invisible que deja al
-// arranque esperando hasta que Claude Code lo corta con el candado tomado (story 8.23, AC 38)
+// arranque esperando hasta que Claude Code lo corta con el candado tomado
 function gitEnv(env) {
   return Object.assign({}, env || process.env, { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', LC_ALL: 'C' });
 }
 
 /** Corre git en `dir` con tope de tiempo. Nunca tira: `{ ok, out, raw, err, status, timedOut }`. `out` va recortado;
  *  `raw` no (el `status --porcelain` empieza con un espacio que es parte del formato: recortarlo le come un carácter al
- *  primer archivo — pase adversarial de la tanda A, clase 20). */
+ *  primer archivo). */
 function git(dir, args, { env, timeout = 30000, input } = {}) {
   // `maxBuffer`: el tope por defecto de Node (1 MB) corta a git cuando lista un árbol grande o lo que un clon no sigue
   // (un `node_modules` ignorado); cortado, la lista sale vacía con error, y eso es «no pude mirar», no «no hay nada».
   // `input`: lo que va por stdin (una lista para `--stdin`); sin él, stdin cerrado como siempre
   // `timeout` en milisegundos ENTEROS (Node rechaza otro): el tope que le queda a una fuente puede llegar con decimales
-  // (8.13.1, C7). Un entero pasa igual que antes
+  // Un entero pasa igual.
   const r = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', '-C', dir, ...args], { windowsHide: true,
     encoding: 'utf8', env: gitEnv(env), timeout: Number.isFinite(timeout) ? Math.max(1, Math.round(timeout)) : timeout, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], input,
     maxBuffer: GIT_MAX_BUFFER,
@@ -98,8 +98,8 @@ function head(dir, opts = {}) { return value(dir, ['rev-parse', 'HEAD'], opts); 
 
 // ── «no existe» / «no se pudo leer» ───────────────────────────────────────────────────────────────
 // Un `.ok` falso de git NO dice «no hay»: sale igual cuando la ref está y no se deja leer (basura en su archivo, un commit
-// que falta, un tope de tiempo, un clon roto). Leer eso como «no existe» era dar vía libre sin saber (segunda vuelta de
-// revisores de la tanda D: una rama `tycon/installed` corrompida pasaba por «la primera vez»). Estas tres funciones
+// que falta, un tope de tiempo, un clon roto). Leer eso como «no existe» daría vía libre sin saber: una rama `tycon/installed` corrompida
+// pasaría por «la primera vez». Estas tres funciones
 // contestan en TRES estados, y lo que decide si algo se mueve pasa por ellas. Ninguna mira el TEXTO de un error de git
 // (no dependen del idioma): miran el código de salida, si git dijo algo, y lo que hay en disco.
 const why = (r) => (r.timedOut ? 'git no contestó a tiempo' : (firstLine(r.err) || `git salió ${r.status}`));
@@ -167,7 +167,7 @@ function branch(dir, opts = {}) {
   return b || null;
 }
 function isRepo(dir, opts = {}) { return Boolean(dir) && fs.existsSync(dir) && value(dir, ['rev-parse', '--is-inside-work-tree'], opts) === 'true'; }
-/** ¿Es un repo `--bare`? El clon de lectura de una capa (story 8.13.1) lo es: no tiene árbol de trabajo. */
+/** ¿Es un repo `--bare`? El clon de lectura de una capa lo es: no tiene árbol de trabajo. */
 function isBare(dir, opts = {}) { return Boolean(dir) && fs.existsSync(dir) && value(dir, ['rev-parse', '--is-bare-repository'], opts) === 'true'; }
 function gitDir(dir, opts = {}) {
   const g = value(dir, ['rev-parse', '--git-dir'], opts);
@@ -244,10 +244,10 @@ function channelRef(src, channel) {
 
 /**
  * La ref que se sigue es `main` al instalar, NUNCA la rama en la que el clon esté parado: un clon en una rama de trabajo
- * queda con `ref: main` y `update` lo encuentra «en otra rama» —no se toca y se avisa (AC 8)—. Antes la rama actual
- * pasaba a ser la ref y `rewrites` se deducía de ella, y `update` sacaba al dev de su rama con `checkout -B` +
- * `reset --hard` (pase adversarial de la tanda A, clases 1, 7 y 8). Que la ref se reescriba lo decide sólo el remoto
- * (`isPublicRemote`); la ref de cada canal la pone `check`, con la política vigente (tanda D).
+ * queda con `ref: main` y `update` lo encuentra «en otra rama» —no se toca y se avisa—. Si la rama actual
+ * fuera la ref, `rewrites` se deduciría de ella y `update` sacaría al dev de su rama con `checkout -B` +
+ * `reset --hard`. Que la ref se reescriba lo decide sólo el remoto
+ * (`isPublicRemote`); la ref de cada canal la pone `check`, con la política vigente.
  */
 function describe(name, dir, { tree, env }) {
   const url = origin(dir, { env });
@@ -373,8 +373,8 @@ function untrackedInTheWay(dir, to, env) {
 /** El motivo, para la persona, de una comparación de ascendencia que git no pudo hacer. */
 const cannotCompare = (a, b) => `git no pudo comparar ${a} con ${b} (un commit que falta o un objeto ilegible): no se sabe cuál es más nueva`;
 /**
- * El número publicado de un commit, leído de su `version.json`. TRES casos, que no se confunden (revisión de la tanda D:
- * antes «no lo pude leer» se devolvía igual que «no lo trae», y `assess` aplicaba un commit cuyo número nunca leyó):
+ * El número publicado de un commit, leído de su `version.json`. TRES casos, que no se confunden (si «no lo pude leer»
+ * se confundiera con «no lo trae», `assess` aplicaría un commit cuyo número nunca leyó):
  *   · `ok`      — `version` es el número;
  *   · `absent`  — ese commit de verdad no trae el archivo (un clon interno; la primera publicación): legítimo;
  *   · `problem` — no se pudo leer: la rev no está en el clon, git falló o agotó su tope, el JSON es ilegible, o `version`
@@ -481,7 +481,7 @@ function budgetOf(budgetS, env) {
   return Number.isFinite(b) && b > 0 ? b : DEFAULT_BUDGET_S;
 }
 /** Un tope en segundos para los mensajes: entero si lo es («15»), si no con un decimal («14.3»). Lo que le queda del tope
- *  a la última fuente ya no es un número redondo (8.13.1, C7: el tope cuenta desde que arrancó el comando). */
+ *  a la última fuente no es un número redondo (el tope cuenta desde que arrancó el comando). */
 function secondsText(s) { return Number.isInteger(s) ? String(s) : String(Math.round(s * 10) / 10); }
 
 /** El origin del clon tiene que ser el fijado: si no, nada sale a la red. */
@@ -493,7 +493,7 @@ function originMismatch(src, env) {
 }
 
 /**
- * Los errores de git que son LA RED (story 8.7, tanda C · decisión C1): no resolvió el nombre, conexión rechazada, sin
+ * Los errores de git que son LA RED: no resolvió el nombre, conexión rechazada, sin
  * ruta al host, red inalcanzable, tiempo agotado. Es una lista POSITIVA, con los textos de git, curl y ssh en inglés
  * (`gitEnv` corre git con `LC_ALL=C`): lo que no está acá —un repo que no existe, una ref que falta, un certificado, una
  * credencial— NO es «sin red» y deja su aviso. Tomar por red todo lo que no se reconoce callaría un repo roto.
@@ -521,7 +521,7 @@ function fetchRef(src, ref, { budgetS, env = process.env } = {}) {
   const no = (reason, extra) => Object.assign({ ok: false, reason, to: null, timedOut: false, offline: false, missing: false }, extra || {});
   const mismatch = originMismatch(src, env);
   if (mismatch) return no(mismatch);
-  // un clon de lectura `--bare` (la capa de la story 8.13.1) también se trae: no tiene árbol, pero sí sus refs
+  // un clon de lectura `--bare` (el de la capa) también se trae: no tiene árbol, pero sí sus refs
   if (!isRepo(src.dir, { env }) && !isBare(src.dir, { env })) return no(`${src.name}: ${src.dir} no es un clon de git`);
   const budget = budgetOf(budgetS, env);
   // con las etiquetas de número: el número de un commit que numeró el merge es su etiqueta (`versionAt`)
@@ -607,7 +607,7 @@ function check(src, { budgetS, env = process.env, channel } = {}) {
  * Qué pasaría al avanzar (después de `fetch`): si se puede, desde dónde a dónde, si hay que apartar algo.
  * @returns {{ ok, reason, from, to, dirty, divergent, upToDate, setAside: string[], excluded: string[] }}
  */
-// `also`: rutas que quien llama sabe suyas y no cuentan como «cambios sin commitear» (story 8.13.1: los archivos que la
+// `also`: rutas que quien llama sabe suyas y no cuentan como «cambios sin commitear» (los archivos que la
 // capa pisó a propósito, cuyo sha256 es el del manifiesto; la capa se re-apila después de mover el árbol).
 function plan(src, { env = process.env, home = os.homedir(), also = [] } = {}) {
   const from = head(src.dir, { env });
@@ -687,8 +687,8 @@ function defaultBranch(dir, env) {
  *   · es la primera vez y HEAD es un AVANCE SIMPLE del commit registrado: el clon sigue en su rama por defecto (la que
  *     dejó `git clone`), lo que el arnés sigue está sin modificar, HEAD desciende del commit registrado y no trae commits
  *     propios (todo lo suyo está en lo traído de `origin`). Es lo que deja un `git pull` a mano o el respaldo en shell
- *     (`git pull --ff-only`) antes de la primera actualización: no es trabajo de la persona (pase adversarial de la
- *     tanda D: sin esto ese clon quedaba bloqueado para siempre).
+ *     (`git pull --ff-only`) antes de la primera actualización: no es trabajo de la persona (sin esto ese clon
+ *     quedaría bloqueado para siempre).
  * Una rama propia, commits propios o archivos seguidos modificados no se tocan: el motivo dice qué hay y un comando que
  * SE PUEDE correr —nunca `checkout tycon/installed` cuando esa rama no existe—.
  *
@@ -752,8 +752,8 @@ function savePrevious(src, from, env) {
 
 /**
  * Reaplica el stash propio. Primero CON el índice (`--index`): lo que la persona tenía agregado vuelve agregado. Sin eso
- * volvía como «modificado sin agregar» —el contenido intacto, el índice no—, y la ida y vuelta de la llave de la 8.18
- * promete dejar el clon como estaba (pase adversarial del tramo 3, clases 16 y 19). Si el índice guardado no entra sobre
+ * volvería como «modificado sin agregar» —el contenido intacto, el índice no—, y la ida y vuelta de la llave, que
+ * promete dejar el clon como estaba, no lo cumpliría. Si el índice guardado no entra sobre
  * el commit de ahora, git se niega ANTES de tocar nada («Conflicts in index»): ahí se reaplica sin él, como siempre, y lo
  * agregado vuelve sin agregar. Si el intento con índice dejó algo a medias no se insiste: quien llama limpia y lo local
  * queda en el stash.
@@ -766,9 +766,8 @@ function popStash(dir, env) {
   return git(dir, ['stash', 'pop', '-q'], { env });
 }
 /** Lo que se dice cuando `popStash` no pudo reaplicar en un camino de ERROR: lo local no se perdió, quedó en el stash, y
- *  hay que decirlo con el comando para verlo. Antes esos dos caminos (el merge de `advance` que falló, el reset de
- *  `revert` que falló) ignoraban el resultado y lo del dev quedaba en el stash sin aviso (segunda vuelta del revisor de
- *  fallos silenciosos del tramo 3). */
+ *  hay que decirlo con el comando para verlo. Sin esto, esos dos caminos (el merge de `advance` que falló, el reset de
+ *  `revert` que falló) dejarían lo del dev en el stash sin aviso. */
 const keptInStash = (dir, pop) => `lo que tenías sin commitear no se pudo reaplicar (${firstLine(pop.err) || `git salió ${pop.status}`}): no se perdió, quedó en git -C ${dir} stash list`;
 
 /**
@@ -859,12 +858,11 @@ function emptyIndexWithHead(dir, env) {
 }
 
 /**
- * Los finales de línea de un clon viejo, ANTES de aplicar (story 8.17, AC 71). Un clon de Windows anterior a
+ * Los finales de línea de un clon viejo, ANTES de aplicar. Un clon de Windows anterior a
  * `.gitattributes` conserva `\r\n` en todo lo que el `pull` no toca, y un hook `.sh` así no corre: un freno sale distinto
  * de 2 y no frena. `git checkout -- .` y `git reset --hard` solos no lo arreglan (git da esos archivos por no
  * modificados). La receta que se le IMPRIME a la persona es la de `.gitattributes` (`git rm --cached -r -q .` y
- * `git reset --hard -q`); la que corre acá reescribe SÓLO los archivos con `\r\n` desde el índice, sin vaciarlo nunca
- * (pase adversarial de la W3a, B4): se les cambia la fecha —así git ya no los da por al día— y `git checkout-index -f -u`
+ * `git reset --hard -q`); la que corre acá reescribe SÓLO los archivos con `\r\n` desde el índice, sin vaciarlo nunca: se les cambia la fecha —así git ya no los da por al día— y `git checkout-index -f -u`
  * los vuelve a escribir con `\n`. Medido contra la receta impresa: mismos bytes en disco, `git status` limpio y ningún
  * `w/crlf`. Si muere a mitad, el índice sigue entero y la corrida siguiente vuelve a ver los que faltan.
  *   · sólo en Windows (`platform`, que se recibe para poder probarlo sin Windows) y sólo en modo instalado (`managed`):
@@ -902,7 +900,7 @@ function normalizeEol(dir, { env = process.env, platform = process.platform, mod
     const named = hidden.slice(0, 3).join(', ') + (hidden.length > 3 ? ` y ${hidden.length - 3} más` : '');
     return { status: 'dirty', files: n, line: `hay ${what}, y ${hidden.length} archivo(s) marcados --assume-unchanged o --skip-worktree (${named}): git status no muestra sus cambios y la normalización podría pisarlos, así que no toqué nada. Quitales la marca (git -C "${dir}" update-index --no-assume-unchanged <archivo>, o --no-skip-worktree), guardá o descartá sus cambios y corré: ${recipe}` };
   }
-  // la receta (B4). `read-tree HEAD` rearma el índice de una vez (con el árbol limpio, es el mismo contenido) y deja sus
+  // la receta. `read-tree HEAD` rearma el índice de una vez (con el árbol limpio, es el mismo contenido) y deja sus
   // datos de disco en cero: así `checkout-index -f` ya no da esos archivos por al día y los reescribe desde el índice, por
   // lista y con -z. El índice nunca queda vacío: si algo muere a mitad, `git status` sigue limpio y la corrida siguiente
   // ve los que faltan. (Medido: cambiarles sólo la fecha no alcanza —un `git status` en el medio la vuelve a dar por buena—,
@@ -924,8 +922,8 @@ function normalizeEol(dir, { env = process.env, platform = process.platform, mod
 /**
  * Vuelve la fuente a `previous`. Lo local NO se pierde: `advance` ya reaplicó lo que el dev tenía sin commitear, así que
  * antes del `reset --hard` se aparta en un stash propio y después se reaplica, con su índice (`popStash`); si la
- * reaplicación choca, queda en el stash y se dice (pase adversarial de la tanda A, clases 9 y 23: el reset a secas lo
- * borraba sin copia). Lo SIN SEGUIR no se aparta: quien llama mira antes que nada suyo esté en el camino (`reset --hard`
+ * reaplicación choca, queda en el stash y se dice (el reset a secas lo
+ * borraría sin copia). Lo SIN SEGUIR no se aparta: quien llama mira antes que nada suyo esté en el camino (`reset --hard`
  * pisa sin avisar un archivo sin seguir en una ruta que vuelve — `repoint.js` lo frena en la vuelta de la llave).
  * @returns {{ ok, reason, kept }}  kept = lo local quedó en `git stash list` (no se pudo reaplicar sobre previous)
  */

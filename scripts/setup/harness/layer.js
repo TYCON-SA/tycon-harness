@@ -1,9 +1,8 @@
 'use strict';
-// layer.js — la capa privada: lo que una máquina del equipo apila encima de la copia pública (story 8.13.1, tanda A,
-// AC 3 y 4).
+// layer.js — la capa privada: lo que una máquina del equipo apila encima de la copia pública.
 //
-// Dos piezas separadas a propósito (AC 3): CALCULAR la lista y APILARLA. El apilador recibe una lista y no sabe de
-// dónde salió: otra forma de calcularla (la de un equipo de afuera, pregunta 6 de la story) se suma sin tocarlo.
+// Dos piezas separadas a propósito: CALCULAR la lista y APILARLA. El apilador recibe una lista y no sabe de
+// dónde salió: otra forma de calcularla (la de un equipo de afuera) se suma sin tocarlo.
 //
 // CALCULAR (`computeLayer`, sin escribir nada): `git ls-tree -r` del commit interno contra el del commit público, ruta
 // por ruta, por el hash de git de cada archivo (el blob):
@@ -16,7 +15,7 @@
 //     commit interno: los destinos `synthetic` (los papeles de public-files/), los `generated` (version.json) y la
 //     carpeta nueva de cada `skillRenames` (`outsideMatcher`). Un papel nuevo en la lista blanca se reconoce solo;
 //     si la lista blanca no se puede leer, se dice por qué y lo de sólo afuera sigue como hallazgo;
-//   · y la otra mitad de la compatibilidad (AC 5): un `add` que ese commit interno PUBLICA (un archivo nuevo en una
+//   · y la otra mitad de la compatibilidad: un `add` que ese commit interno PUBLICA (un archivo nuevo en una
 //     carpeta pública, que la copia todavía no trae) también es «capa de otra versión». Qué publica el commit lo dice la
 //     clasificación del exportador (`whatShips`, la misma del freno de nombres), con la lista blanca, la tabla y el mapa
 //     de renombres de ESE commit leídos de git: sin exportar y sin escribir nada. Las listas privadas se leen en memoria
@@ -91,7 +90,7 @@ class LayerError extends Error {
 function gitEnv() {
   const env = {};
   for (const [k, v] of Object.entries(process.env)) if (!k.startsWith('GIT_')) env[k] = v;
-  return Object.assign(env, { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', LC_ALL: 'C' });   // sin login invisible (8.23, AC 38)
+  return Object.assign(env, { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', LC_ALL: 'C' });   // sin login invisible
 }
 
 /** Corre git en `dir`. Tira `LayerError` si falla. Con `binary` devuelve un Buffer. */
@@ -183,8 +182,8 @@ function copyOnlyPatterns(lista) {
   return [...new Set(out)].sort();
 }
 
-/** La lista blanca de un commit interno, leída de git (su ruta de hoy o la de antes de la mudanza, con las claves de
- *  hoy). `tree` es su `readTree`. Tira si el commit no la trae o no se puede leer. Sólo rutas: no es una lista privada. */
+/** La lista blanca de un commit interno, leída de git (su ruta actual o la anterior a la mudanza, con las claves
+ *  actuales). `tree` es su `readTree`. Tira si el commit no la trae o no se puede leer. Sólo rutas: no es una lista privada. */
 function commitAllowlist(dir, commit, tree) {
   const names = require(path.join(PUBLISHING, 'new-names.js'));
   const legacy = require(path.join(__dirname, '..', '..', 'lib', 'legacy-names.js'));
@@ -222,7 +221,7 @@ function outsideMatcher({ internalDir, internalCommit = 'HEAD', publicOnly = DEF
 }
 
 /**
- * Qué publica un commit interno, sin exportar (AC 5): la clasificación del exportador (`whatShips`) con la lista blanca,
+ * Qué publica un commit interno, sin exportar: la clasificación del exportador (`whatShips`) con la lista blanca,
  * la tabla y el mapa de renombres de ESE commit, leídos de git (la máquina los tiene en su clon de lectura). Devuelve una
  * función ruta interna → ruta en la copia (otra si el exportador la renombra), o null si no sale. Cuenta lo que sale
  * tal cual o traducido y lo que un paquete deja «pendiente» de la unión (en la copia, que es la unión de los paquetes
@@ -287,7 +286,7 @@ function computeLayer({ internalDir, internalCommit = 'HEAD', publicDir, publicC
     (outside(p) ? base.onlyPublic.declared : base.onlyPublic.undeclared).push(p);
   }
   base.onlyPublic.problem = outside.problem;
-  // la otra mitad (AC 5): un agregado que el commit interno publica y la copia no trae. Sólo si la primera pasó: la
+  // la otra mitad: un agregado que el commit interno publica y la copia no trae. Sólo si la primera pasó: la
   // clasificación lee la lista blanca del commit, y una capa ya de otra versión no la necesita
   const adds = base.entries.filter((e) => e.kind === 'add');
   if (!base.otherVersion.length && adds.length) {
@@ -419,8 +418,8 @@ function excludeLines(paths, tracked) {
 /**
  * El texto nuevo de info/exclude: el bloque reemplazado en su lugar (o agregado al final); lo de afuera, byte a byte.
  * El inicio y el fin se reconocen sin mirar el final de línea ni los espacios del final (un editor de Windows deja
- * CRLF); el bloque nuevo usa el final de línea que ya tiene el archivo. Dos bloques completos (lo que dejaba la
- * versión anterior con CRLF) quedan en uno, en el lugar del primero. Un inicio sin su fin antes del próximo inicio o
+ * CRLF); el bloque nuevo usa el final de línea que ya tiene el archivo. Dos bloques completos quedan en uno,
+ * en el lugar del primero. Un inicio sin su fin antes del próximo inicio o
  * del final del archivo tira: no se adivina dónde termina, para no comerse líneas de la persona.
  */
 function withBlock(text, block, where = 'info/exclude') {
@@ -479,7 +478,7 @@ function readManifest(file) {
   try { data = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { throw new LayerError(`el manifiesto ${file} no se puede leer (${e.message})`); }
   if (!data || !Array.isArray(data.files)) throw new LayerError(`el manifiesto ${file} no trae «files»`);
   // sus rutas terminan en un borrado, una escritura o un checkout (lo que salió de la lista): la misma regla que la
-  // lista, antes de tocar nada (revisión del paso 5, vuelta 2)
+  // lista, antes de tocar nada
   for (const f of data.files) if (!isSafeLayerPath(f && f.path)) throw new LayerError(`ruta inválida en el manifiesto de la capa: ${shownPath(f)} (${file})`);
   return data;
 }
@@ -593,8 +592,8 @@ function applyLayer({ tree, from, list, manifest, writers = DEFAULT_LISTS.writer
   const blobs = readBlobs(from, [...new Set(toWrite.map((w) => w.entry.blob))]);
 
   // lo que vuelve al público va PRIMERO: es lo único que escribe git y puede fallar por algo de afuera (otra sesión con
-  // el índice tomado). Si falla acá, no se escribió nada más y el manifiesto queda como estaba (revisión del paso 5,
-  // vuelta 2: antes corría después de los agregados, y lo ya escrito quedaba sin manifiesto que lo dijera)
+  // el índice tomado). Si falla acá, no se escribió nada más y el manifiesto queda como estaba: si corriera después de los
+  // agregados, lo ya escrito quedaría sin manifiesto que lo dijera
   if (toRestore.length) {
     git(tree, ['checkout', '-q', '--', ...toRestore.map(literalPathspec)]);
     result.restored.push(...toRestore);

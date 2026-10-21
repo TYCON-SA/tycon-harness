@@ -4,33 +4,32 @@
 // están en main pero ATRASADOS respecto de lo publicado (origin/main), o TRABADOS
 // (conflicto abierto que dejó un autostash del arranque).
 //
-// POR QUÉ EXISTE (2026-08-20, Etapa A migración Codex): esos dos repos son UNA copia
+// POR QUÉ EXISTE: esos dos repos son UNA copia
 // en el disco de cada dev, y TODAS las sesiones leen guías/skills de lo que esté
-// checkouteado. La convención de la migración es un branch por etapa (codex/etapa-*)
+// checkouteado. La convención de la migración a Codex es un branch por etapa (codex/etapa-*)
 // mergeado a main al cerrar — si la sesión que trabaja la migración deja el clon
 // parado en su branch, cualquier otra sesión arranca leyendo el arnés a medio hacer,
-// SIN ningún error visible. La regla del clon compartido (codex-migration.md §5) dice
+// SIN ningún error visible. La regla del clon compartido dice
 // "no se confía en memoria": este hook es el chequeo mecánico.
 //
-// SEGUNDA CONDICIÓN (2026-09-03): "clon válido" no es sólo "en main" — es "en main Y al
+// SEGUNDA CONDICIÓN: "clon válido" no es sólo "en main" — es "en main Y al
 // día". La línea de arranque hace `git pull` y descarta el error a propósito; si un archivo
-// modificado localmente choca con lo publicado, el pull no avanza y nadie se entera. Medido
-// en una máquina del equipo: 272 commits atrás durante seis días, corriendo el instalador
-// viejo cada día (el instalador vive adentro del clon), con el freno de story-a-mano
-// llegado por agent-skills y sin el hook que lo abre. El archivo que trababa lo había
-// escrito el propio arnés (el capturador de retrospectivas). Este hook lee origin/main tal
+// modificado localmente choca con lo publicado, el pull no avanza y nadie se entera. Sin esto,
+// un clon queda cientos de commits atrás durante días, corriendo el instalador
+// viejo cada día (el instalador vive adentro del clon) y sin los hooks nuevos.
+// El archivo que traba puede haberlo escrito el propio arnés (el capturador de
+// retrospectivas). Este hook lee origin/main tal
 // como quedó del último fetch — el pull del arranque hace el fetch aunque el merge falle,
 // salvo con el clon trabado (abajo), donde muere antes de fetchear: ahí "al día" puede ser
 // viejo, y el fetch lo hace la sanadora — así que no necesita red: compara y nombra el
 // archivo que traba.
 //
-// TERCERA CONDICIÓN (hallazgo H1 de la revisión adversarial del mismo día): con la línea
+// TERCERA CONDICIÓN: con la línea
 // de arranque ya protegida (`--autostash`), la primera vez que lo local no se puede reaplicar
 // sobre lo nuevo git guarda lo local en el stash pero deja el archivo con marcadores de
 // conflicto (`UU`) — y desde ahí ningún pull entra ("unmerged files"), con behind = 0. El
 // consejo `git stash` en ese estado git lo rechaza. Acá se detecta y se da el consejo que sí
 // funciona. Repararlo es tarea de lib/guides-heal.js del pipeline (al primer prompt); avisar
-// es tarea de acá. incident-log#arnes-que-se-bloquea-a-si-mismo-2026-09-03
 //
 // COMPORTAMIENTO: en cada arranque de sesión, por cada repo: rama actual; si está en main,
 // conflicto abierto por autostash, y cuántos commits está atrás de origin/main (si lo tiene).
@@ -43,7 +42,7 @@
 
 'use strict';
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -60,7 +59,7 @@ function git(dir, args) {
 }
 const lines = (s) => String(s || '').split('\n').filter(Boolean);
 
-// ── «no pude leer» no es «no hay» (story 8.13, tanda D, segunda vuelta de revisores) ─────────────────────────────────
+// ── «no pude leer» no es «no hay» ─────────────────────────────────
 // Un `git` que falla no dice POR QUÉ con su sola falla: una ref con basura adentro, un lock o el tope de tiempo fallan
 // igual que una ref ausente. Leer esa falla como «la rama no existe», «no es un clon», «sin conflictos» o «al día» es
 // inventar un veredicto. Lo que DECIDE algo pasa por acá y distingue tres estados; ante «no se pudo leer» el aviso lo
@@ -146,17 +145,17 @@ function manualAdvice(dir, stuck, unmerged, collide) {
   const steps = [];
   const d = sh(dir);
   // Sólo los archivos en conflicto, NUNCA `reset --hard`: lo que el dev haya editado después de
-  // quedar trabado no está en ningún stash (hallazgo H8 de la segunda pasada adversarial).
-  // Un comando por tipo (story 8.5.1): `checkout HEAD --` sobre una ruta que HEAD no tiene (DU: el retiro de las skills
-  // de terceros borró un archivo que el dev había tocado) falla ENTERO y no resuelve ni los demás. Ésas salen del
+  // quedar trabado no está en ningún stash.
+  // Un comando por tipo: `checkout HEAD --` sobre una ruta que HEAD no tiene (DU: lo publicado borró
+  // un archivo que el dev había tocado) falla ENTERO y no resuelve ni los demás. Ésas salen del
   // índice con `rm --cached`: el archivo del dev queda en el disco, y su versión sigue en el stash.
   if (stuck) {
     const gone = unmerged.filter((u) => !u.inHead).map((u) => sh(u.file));
     const kept = unmerged.filter((u) => u.inHead).map((u) => sh(u.file));
     if (gone.length) steps.push(`git -C ${d} rm --cached -- ${gone.join(' ')}   # los que lo publicado borró: tu versión queda en el disco y en el stash`);
     if (kept.length) steps.push(`git -C ${d} checkout HEAD -- ${kept.join(' ')}   # sólo los archivos en conflicto; lo tuyo ya está en el stash (git stash list)`);
-    // Trabado Y atrasado: lo que el dev tocó DESPUÉS de trabarse y lo publicado también cambia traba el merge (pase
-    // adversarial de la 8.5.1). Con el índice ya sin conflictos, `git stash` sí se acepta.
+    // Trabado Y atrasado: lo que el dev tocó DESPUÉS de trabarse y lo publicado también cambia traba el merge.
+    // Con el índice ya sin conflictos, `git stash` sí se acepta.
     const inConflict = new Set(unmerged.map((u) => u.file));
     if (collide.tracked.some((f) => !inConflict.has(f))) steps.push(`git -C ${d} stash   # lo que tocaste después y lo publicado cambia`);
   } else steps.push(`git -C ${d} stash`);
@@ -165,15 +164,15 @@ function manualAdvice(dir, stuck, unmerged, collide) {
   return steps;
 }
 
-// ── story 8.13 (tanda A, AC 9): el estado del mecanismo de instalación y su política ──────────────────────────────
-// Este hook es síncrono: es el camino que hoy SÍ lleva un aviso a la conversación. Desde la 8.13 (a) imprime el `notice`
+// ── el estado del mecanismo de instalación y su política ──────────────────────────────
+// Este hook es síncrono: es el camino que lleva un aviso a la conversación. Además (a) imprime el `notice`
 // pendiente que dejó `harness.js startup` (versión nueva en `ask`, fallo, retención, origen cambiado, Node viejo, estado
 // roto), DIRIGIDO A LA PERSONA —el agente no aplica una actualización por su cuenta—; y (b) el grito de «atrasado» sólo en
 // `managed` con `apply: auto`: en `developer`, en `ask` o con TYCON_UPDATE=0 el atraso es decisión de esa persona y lo dice
-// `doctor`; con retención (`hold`, tanda C) tampoco: imprime la retención. Sin estado (una máquina que todavía no pasó
-// por la tanda A) todo sigue como hoy. Vive acá y no en scripts/lib/ por la misma razón que `sh()`: el banco copia este
+// `doctor`; con retención (`hold`) tampoco: imprime la retención. Sin estado (una máquina que todavía no pasó
+// por un arranque con estado) todo sigue como siempre. Vive acá y no en scripts/lib/ por la misma razón que `sh()`: el banco copia este
 // hook suelto — por eso la política se lee con lo que haya: la variable
-// (manda siempre), el lector de configuración si está al lado, lo que `startup` dejó en el estado, o `auto` (lo de hoy).
+// (manda siempre), el lector de configuración si está al lado, lo que `startup` dejó en el estado, o `auto` (el valor por omisión).
 const fs = require('fs');
 const STATE_FILE = path.join(stateDirOf(os.homedir()), 'harness-state.json');
 
@@ -208,16 +207,16 @@ function updatePolicy(state) {
   return { enabled: true, apply: 'auto' };
 }
 
-// ── story 8.13 (tanda D, AC 25): una copia del repo público vive en la rama local `tycon/installed` ──────────────────
+// ── una copia del repo público vive en la rama local `tycon/installed` ──────────────────
 // Los dos canales del público (`mirror/sync` y `main`) se consumen con una rama local `tycon/installed` + `reset --hard`.
-// Sin esto, después de su primera actualización cada sesión de una persona de afuera arrancaba con «FUERA de main», y el
-// atraso se medía contra la ref equivocada. Sólo cuando EL ESTADO dice que esa fuente se reescribe: sin estado (el banco
+// Sin esto, después de su primera actualización cada sesión de una persona de afuera arranca con «FUERA de main», y el
+// atraso se mide contra la ref equivocada. Sólo cuando EL ESTADO dice que esa fuente se reescribe: sin estado (el banco
 // de controles corre este hook suelto) o con una fuente de ref fija, todo sigue como siempre.
 //
-// La fuente se busca por la CARPETA, no por el nombre (causa A del pase adversarial de la tanda D): la copia pública es
+// La fuente se busca por la CARPETA, no por el nombre: la copia pública es
 // UN solo repo —el estado trae una fuente, `harness`, y `~/.claude/agent-skills` es un enlace a ese mismo clon—. Buscando
-// `agent_skills` por nombre no aparecía, la rama de casa quedaba en `main`, y cada sesión posterior a la primera
-// actualización arrancaba con «agent-skills FUERA de main» y el consejo `checkout main`, que deja a `update` bloqueado.
+// `agent_skills` por nombre no aparece, la rama de casa queda en `main`, y cada sesión posterior a la primera
+// actualización arranca con «agent-skills FUERA de main» y el consejo `checkout main`, que deja a `update` bloqueado.
 // Un clon es de una fuente si su carpeta real ES la `dir` de esa fuente; y si dos de los repos que se recorren son el
 // mismo clon, se juzga una vez.
 const INSTALLED_BRANCH = 'tycon/installed';
@@ -253,15 +252,15 @@ function rewrittenSource(state, id) {
 /** Cómo se nombra un clon en el aviso: una vez, aunque en esta máquina sea dos de los repos que se recorren. */
 const shown = (l) => (l.also.length ? `${l.name} (el mismo clon que ${l.also.join(', ')})` : l.name);
 
-// ── story 8.9 (tanda E, AC 53): los nombres viejos después de la fecha de retiro ──────────────────────────────────────
+// ── los nombres viejos después de la fecha de retiro ──────────────────────────────────────
 // Durante el renombre a inglés un nombre viejo sigue andando en silencio y cada uso se anota en
-// ~/.claude/.tycon-pipeline/legacy-names.jsonl (AC 17). Pasada `retire_after` del mapa (scripts/lib/renames.json), si esta
-// máquina anotó usos en los últimos 14 días, UNA línea dice cuáles y dónde cambiarlos: la story de retiro saca los nombres
+// ~/.claude/.tycon-pipeline/legacy-names.jsonl. Pasada `retire_after` del mapa (scripts/lib/renames.json), si esta
+// máquina anotó usos en los últimos 14 días, UNA línea dice cuáles y dónde cambiarlos: el retiro saca los nombres
 // viejos y lo que todavía los usa dejaría de andar. Antes de la fecha, nada (el silencio de la transición es a propósito).
 // Vive en este aviso y no en un hook propio: es el aviso de arranque sobre el estado del arnés en esta máquina, y un hook
-// nuevo pedía registrarlo en el instalador, el banco y Codex para una línea que vive hasta la story de retiro. Lee el mapa
+// nuevo pedía registrarlo en el instalador, el banco y Codex para una línea que vive hasta el retiro. Lee el mapa
 // y el registro directo (sin `legacy-names.js`): el banco copia este hook suelto, y sin mapa al lado calla.
-// Las variables renombradas a inglés (TYCON_TODAY tiene nombre viejo, tanda B1) van por la biblioteca de nombres viejos,
+// Las variables renombradas a inglés (TYCON_TODAY tiene nombre viejo) van por la biblioteca de nombres viejos,
 // como en los demás hooks; sin la biblioteca al lado (el banco copia este hook suelto), el nombre nuevo a secas.
 const readVar = (() => {
   try {
@@ -295,7 +294,7 @@ function whereToChange(u, scripts) {
 }
 // «No está» es legítimo (el banco copia este hook suelto, sin mapa; una máquina sin usos no tiene registro): calla. «Está y
 // no lo pude leer» (permiso, disco, un mapa que no parsea) NO es «no hay nombres viejos en uso»: se dice, en una línea, y
-// el arranque sigue (revisores de la tanda E).
+// el arranque sigue.
 // el motivo va en una sola línea y corto: el mensaje de un JSON roto cita el contenido del archivo
 const legacyWhy = (e) => String((e && (e.code || e.message)) || 'sin detalle').replace(/\s+/g, ' ').slice(0, 120);
 const legacyUnread = (what, e) => `🔔 TYCON — nombres viejos: no pude leer ${what} (${legacyWhy(e)}); no sé si esta máquina sigue usando alguno después de su fecha de retiro. Decile a la persona en una línea.`;
@@ -344,7 +343,7 @@ function legacyRetireLine() {
 }
 
 /**
- * «No se pudo actualizar desde <fecha>: <motivo>» (story 8.23, tanda L, AC 39): lo anota el arranque que no pudo —también
+ * «No se pudo actualizar desde <fecha>: <motivo>»: lo anota el arranque que no pudo —también
  * el que se fue porque otra sesión tenía el candado— y acá se dice desde el segundo arranque fallido. La regla y el texto
  * viven en scripts/setup/harness/report.js; se carga SI ESTÁ al lado (el banco copia este hook suelto). Si está y no
  * carga, se dice: no se calla.
@@ -362,8 +361,8 @@ function updateFailureLine() {
 }
 
 /**
- * La línea vieja del índice (2026-10-14: el índice de guías pasó de README.md a INDEX.md, y README.md quedó como la
- * portada). Una sesión cuya línea de CLAUDE.md apuntaba al README.md del arnés (la forma vieja) cargó la portada, no el
+ * La línea vieja del índice (el índice de guías es INDEX.md; README.md es la
+ * portada). Una sesión cuya línea de CLAUDE.md apuntaba al README.md del arnés (la forma vieja) carga la portada, no el
  * índice: la línea se reescribe acá (import-line.js, la misma regla que el aplicador y harness.js) y a ESTA sesión, que ya
  * leyó el CLAUDE.md, se le pasa el índice. El índice no entra entero en la salida de un aviso de arranque (Claude Code
  * guarda en un archivo lo que pasa de ~10 KB y deja sólo el comienzo), así que se le pide leerlo por su ruta. En Codex
@@ -394,8 +393,8 @@ function oldIndexLines() {
 }
 
 /**
- * PowerShell 7 faltante en Windows (story 8.35, decisión del dueño 2026-10-14). La línea de arranque de Windows es
- * `pwsh -Command "…"`: sin `pwsh`, falla en silencio y el arnés deja de arrancar y de actualizarse; sólo `doctor` lo decía.
+ * PowerShell 7 faltante en Windows. La línea de arranque de Windows es
+ * `pwsh -Command "…"`: sin `pwsh`, falla en silencio y el arnés deja de arrancar y de actualizarse, y sin este aviso sólo `doctor` lo dice.
  * Este hook corre con Node, así que puede avisarlo: una vez por máquina (la marca vive en la carpeta de estado); con `pwsh`
  * de vuelta la marca se borra, así que si vuelve a faltar avisa otra vez. `TYCON_BRANCH_GUARD_PLATFORM` es sólo de pruebas.
  */
@@ -421,7 +420,7 @@ try {
   const harnessLines = [];
   try { harnessLines.push(...pwshMissingLines()); } catch (_) { /* fail-open: un aviso que tira no frena el arranque */ }
   try { harnessLines.push(...oldIndexLines()); } catch (_) { /* fail-open: lo repone el próximo arranque */ }
-  // story 8.37: el clon de mantenimiento (`paths.maintainers`). Primero lo pendiente de la corrida anterior (una línea, una
+  // El clon de mantenimiento (`paths.maintainers`). Primero lo pendiente de la corrida anterior (una línea, una
   // vez), después se lanza la de esta sesión, de fondo y sin esperarla. La pieza se carga SI ESTÁ, por su ruta: el banco
   // copia este hook suelto. Ver scripts/lib/maintainers-sync.js.
   try {
@@ -449,7 +448,7 @@ try {
       '   No lo apliques sin que te lo pida: la decisión es suya.',
     );
   }
-  // La retención (story 8.13, tanda C, decisión 9 del dueño): `harness.js rollback` deja `hold` y desde ahí `update` no
+  // La retención: `harness.js rollback` deja `hold` y desde ahí `update` no
   // avanza solo. El atraso es A PROPÓSITO —la persona deshizo esa versión—: gritar «ARNÉS ATRASADO» y dar el `merge`
   // para avanzar a mano sería empujar justo lo que se deshizo. En su lugar se dice la retención, dirigida a la persona:
   // qué versión se deshizo, desde cuándo y cómo volver a actualizar. Si el `notice` de `startup` ya trae el comando, no
@@ -468,7 +467,7 @@ try {
 
   // El script vive en ~/.claude/tycon-harness/scripts/hooks/ → la raíz del repo es ../../
   const repos = [
-    { name: 'el arnés', dir: path.resolve(__dirname, '..', '..') },   // el nombre que lee la persona (story 8.19, tanda E)
+    { name: 'el arnés', dir: path.resolve(__dirname, '..', '..') },   // el nombre que lee la persona
     { name: 'agent-skills', dir: path.join(os.homedir(), '.claude', 'agent-skills') },
   ];
 
@@ -539,7 +538,7 @@ try {
   }
   // Dos avisos, cada uno con SU vuelta: el de los clones que viven en `main` (el de siempre) y el de los que viven en
   // `tycon/installed`. Van separados para que ningún texto que manda a `main` quede debajo de un clon cuya fuente se
-  // reescribe: desde `main` `update` no lo mueve, y ese consejo lo dejaba bloqueado (causa A).
+  // reescribe: desde `main` `update` no lo mueve, y ese consejo lo dejaría bloqueado.
   const offMain = offenders.filter((o) => o.home === 'main');
   const offInstalled = offenders.filter((o) => o.home !== 'main');
   if (offMain.length > 0) {

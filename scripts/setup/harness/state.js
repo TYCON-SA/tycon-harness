@@ -1,34 +1,34 @@
 'use strict';
-// state.js — el estado del mecanismo de instalación: ~/.claude/.tycon-pipeline/harness-state.json (story 8.13, AC 2).
+// state.js — el estado del mecanismo de instalación: ~/.claude/.tycon-pipeline/harness-state.json.
 //
 // Lo que guarda: `schema`, `mode` (managed | developer), `tree` (a qué apunta el enlace), `sources` (una lista: en los
-// repos internos son dos —`harness` y `agent_skills`—, en el repo único de la 8.7 es una), `channel`, `version`, `managed`
-// (las piezas que el aplicador escribió; lo llena la tanda B), `hold` (la retención de un rollback; tanda C), `notice` (el
+// repos internos son dos —`harness` y `agent_skills`—, en el repo único es una), `channel`, `version`, `managed`
+// (las piezas que el aplicador escribió), `hold` (la retención de un rollback), `notice` (el
 // aviso pendiente que imprime el hook síncrono), `last_fetch` / `last_apply` / `last_health`, `failed` y `bootstrap` (la
 // copia fija de arranque y sus sha256).
 //
-// Lo que suma la story 8.34, también aditivo: `api_limited_until` (hasta qué hora —ISO— el arranque no le pide nada a la
+// También aditivos: `api_limited_until` (hasta qué hora —ISO— el arranque no le pide nada a la
 // API de GitHub porque contestó su tope) y `api_limited_notice` (la espera de la que ya se avisó: el aviso sale una vez).
-// Y desde 2026-10-14, `token_expired_notice` (cuándo se avisó que el permiso de GitHub guardado venció y el repo público se
+// Y `token_expired_notice` (cuándo se avisó que el permiso de GitHub guardado venció y el repo público se
 // leyó sin él: el aviso sale una vez mientras siga ese permiso; release.js la borra cuando el permiso sirve o ya no está).
 //
-// El Node propio del arnés (story 8.39) tiene su registro APARTE, en `harness/harness-node.json` (`harnessNodeFile`):
+// El Node propio del arnés tiene su registro APARTE, en `harness/harness-node.json` (`harnessNodeFile`):
 // el último intento (`last_try`), la última falla (`last_failure: { at, reason }`), la versión que no arranca en la máquina
 // (`incompatible`) y la anterior que se guarda (`previous`). Lo escribe harness-node.js desde `runApplierOnly`, que corre
 // dentro de comandos que ya tienen este estado en memoria y lo escriben después: en este archivo se perdería (mismo
 // motivo que update-failures.json).
 //
-// Lo que suma la story 8.13.1 (AC 2), sin subir el `schema`: campos ADITIVOS. `source` (`internal` | `public`: de dónde
+// Más campos ADITIVOS, sin subir el `schema`: `source` (`internal` | `public`: de dónde
 // instala la máquina), `sources[].kind` (`tree` | `layer`: el árbol o la capa que se apila encima) y `sources[].reference`
 // (sólo en una capa: el clon interno de la persona, si existe; el clon de lectura del mecanismo va en su `dir`). Las
 // fuentes se llaman `harness` (el árbol) e `internal` (la capa); la ref de vuelta de la capa sale de la regla de
 // siempre (`refs/tycon/previous/<name>`, sources.js). Además `layer` (`manifest`, `version`, `at`, `minimum`,
 // `lag_hours`), `migration` (`tree_before`, `journal`) y `migration_hold` (`at`, `reason`): no reusan `tree_before` ni
-// `hold` de la 8.13. Un estado de la 8.13, sin nada de esto, se lee como `source: internal` sin capa; una fuente sin
+// `hold`. Un estado sin nada de esto se lee como `source: internal` sin capa; una fuente sin
 // `kind` es el árbol (`kindOf`). Leer no escribe: los campos se completan en memoria.
 //
 // Las dos reglas que importan:
-//   · Un estado ILEGIBLE no es «no instalado» (misma regla que la configuración, 8.3 AC 2): `read` distingue `missing`
+//   · Un estado ILEGIBLE no es «no instalado» (misma regla que la configuración): `read` distingue `missing`
 //     (sin archivo: «no instalado», 3) de `broken` / `unsupported_schema` / `tree_missing` (algo está y no sirve: 2, con
 //     el motivo). Nunca tira: devuelve `{ status, state, reason }`.
 //   · Se escribe ATÓMICO (temporal + rename, tres reintentos ante EPERM/EACCES: Windows reserva el archivo mientras un
@@ -39,21 +39,21 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { stateDir } = require('./tycon-home.js');   // story 8.23: la ruta del estado la sabe una sola pieza
+const { stateDir } = require('./tycon-home.js');   // la ruta del estado la sabe una sola pieza
 
 const SCHEMA = 1;
 const FILE_NAME = 'harness-state.json';
-// story 8.13.1 (AC 2): de dónde instala la máquina, qué es cada fuente y cómo se llaman las dos
+// de dónde instala la máquina, qué es cada fuente y cómo se llaman las dos
 const SOURCE_VALUES = Object.freeze(['internal', 'public']);
-// story 8.23 (tanda B): `release` es la versión BAJADA como archivos (sin git), al lado de `tree` (el clon). Una máquina
+// `release` es la versión BAJADA como archivos (sin git), al lado de `tree` (el clon). Una máquina
 // con un clon no cambia nada: la forma la decide `isRelease`, y cada comando bifurca al principio.
 const KINDS = Object.freeze(['tree', 'layer', 'release']);
 const TREE_SOURCE = 'harness';
 const LAYER_SOURCE = 'internal';
-// los campos de la 8.13.1 que un estado de la 8.13 no trae, y con qué se leen
-// `team` (story 8.25, AC 2): la capa del equipo apilada sobre la versión bajada — `{ repo, ref, commit, tree, etag, name,
-// files, applied_at }` o null (una máquina sin capa, que se lee como hoy). Aditivo: ni una sección en config.json ni un
-// `kind` nuevo en sources[] (D2 de la story).
+// los campos aditivos que un estado anterior no trae, y con qué se leen
+// `team`: la capa del equipo apilada sobre la versión bajada — `{ repo, ref, commit, tree, etag, name,
+// files, applied_at }` o null (una máquina sin capa). Aditivo: ni una sección en config.json ni un
+// `kind` nuevo en sources[].
 const ADDED_FIELDS = Object.freeze({ source: 'internal', layer: null, migration: null, migration_hold: null, team: null });
 
 /** Dónde vive cada cosa: el estado, la carpeta del mecanismo (candado, registro, copia fija). */
@@ -65,14 +65,14 @@ function paths(home = os.homedir()) {
     file: path.join(dir, FILE_NAME),
     harnessDir,
     lockDir: path.join(harnessDir, 'harness.lock'),
-    // story 8.23 (tanda L, AC 39): desde cuándo y por qué el arranque no pudo actualizar; lo escribe el que NO pudo
+    // desde cuándo y por qué el arranque no pudo actualizar; lo escribe el que NO pudo
     // (también el que encontró el candado tomado, sin tomarlo) y lo borra una actualización sana
     failuresFile: path.join(harnessDir, 'update-failures.json'),
-    // story 8.39: el registro del Node propio del arnés (lo escribe harness-node.js)
+    // el registro del Node propio del arnés (lo escribe harness-node.js)
     harnessNodeFile: path.join(harnessDir, 'harness-node.json'),
     log: path.join(harnessDir, 'startup.log'),
     bootstrapDir: harnessDir,
-    // story 8.13.1 (AC 7): los clones de lectura del mecanismo, uno por fuente `layer` (`sources/<nombre>`, --bare), y
+    // los clones de lectura del mecanismo, uno por fuente `layer` (`sources/<nombre>`, --bare), y
     // el manifiesto de la capa apilada
     sourcesDir: path.join(harnessDir, 'sources'),
     layerManifest: path.join(harnessDir, 'layer.json'),
@@ -131,16 +131,16 @@ function firstInstall(home, version) {
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 
-/** Qué es una fuente: `tree` o `layer`. Una fuente sin `kind` (la 8.13) es el árbol. */
+/** Qué es una fuente: `tree` o `layer`. Una fuente sin `kind` es el árbol. */
 function kindOf(source) { return (source && source.kind) || 'tree'; }
-/** Las fuentes que son capa (ninguna en un estado de la 8.13, ni en una máquina de afuera). */
+/** Las fuentes que son capa (ninguna en un estado sin capa, ni en una máquina de afuera). */
 function layerSources(state) { return (state && Array.isArray(state.sources) ? state.sources : []).filter((s) => kindOf(s) === 'layer'); }
-/** La fuente `release` (story 8.23, tanda B), o null: una instalación de versión bajada tiene exactamente una. */
+/** La fuente `release`, o null: una instalación de versión bajada tiene exactamente una. */
 function releaseSource(state) { return (state && Array.isArray(state.sources) ? state.sources : []).find((s) => kindOf(s) === 'release') || null; }
 /** ¿La máquina instaló una versión bajada (sin git)? Si no, es un clon: todo sigue como hoy. */
 function isRelease(state) { return releaseSource(state) !== null; }
 
-/** El motivo por el que los campos de la 8.13.1 no sirven, o null. Un valor inventado es un estado roto, no el default. */
+/** El motivo por el que los campos aditivos no sirven, o null. Un valor inventado es un estado roto, no el default. */
 function addedFieldsProblem(state) {
   if (state.source !== undefined && !SOURCE_VALUES.includes(state.source)) {
     return `«source» vale ${JSON.stringify(state.source)}; tiene que ser ${SOURCE_VALUES.join(' o ')}`;
@@ -191,7 +191,7 @@ function read(home = os.homedir()) {
   if (!Array.isArray(state.sources)) return { status: 'broken', state, reason: '«sources» tiene que ser una lista', file };
   const problem = addedFieldsProblem(state);
   if (problem) return { status: 'broken', state, reason: problem, file };
-  // un estado de la 8.13 se lee como `source: internal` sin capa (story 8.13.1, AC 2): en memoria, sin escribir
+  // un estado sin esos campos se lee como `source: internal` sin capa: en memoria, sin escribir
   for (const [k, v] of Object.entries(ADDED_FIELDS)) if (state[k] === undefined) state[k] = v;
   return { status: 'ok', state, reason: null, file };
 }

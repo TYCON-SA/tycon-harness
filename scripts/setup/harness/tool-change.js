@@ -1,10 +1,10 @@
 'use strict';
-// tool-change.js — sumar o sacar una herramienta en una máquina que YA tiene el arnés (story 8.23, tanda C · AC 26).
+// tool-change.js — sumar o sacar una herramienta en una máquina que YA tiene el arnés.
 //
 // ── EL CASO ───────────────────────────────────────────────────────────────────────────────────────────────────────
-// Una persona instala el arnés con la herramienta que tiene y después suma la otra (o deja de usar una). Hasta la
-// tanda C eso era «instalá todo otra vez»: el instalador volvía a escribir los enchufes de las dos, y sacar una no
-// existía (sólo `uninstall` entero). Acá:
+// Una persona instala el arnés con la herramienta que tiene y después suma la otra (o deja de usar una). Sin esto,
+// eso sería «instalá todo otra vez»: el instalador volvería a escribir los enchufes de las dos, y sacar una no
+// se podría (sólo `uninstall` entero). Acá:
 //   · `install --tool <la nueva>`  enchufa SÓLO esa, desde el árbol que ya está: sin red, sin cambiar de versión y sin
 //                                  tocar los enchufes de la otra (ni corre su instalador).
 //   · `uninstall --tool <una>`     quita SÓLO las piezas registradas de esa, con la mecánica de siempre (`remove.js`: lo
@@ -17,9 +17,9 @@
 // skills de terceros. El resto (hooks de `settings.json`, ajustes, bloques, el `@import`, la línea de arranque, enlaces,
 // comandos, y lo que su instalador deja en git y en las tareas del sistema) es de Claude Code.
 //
-// Los dos límites que quedan para la mudanza (tanda D), dichos y con salida 2:
+// Los dos límites que quedan para la mudanza, dichos y con salida 2:
 //   · una máquina que NACIÓ sin Claude Code vive en `~/.tycon`, y el instalador de Claude Code (shell) tiene escrito el
-//     lugar de antes: sumarle Claude Code espera a la mudanza;
+//     lugar de siempre: sumarle Claude Code espera a la mudanza;
 //   · una instalación desde un CLON vive en la carpeta de Claude Code: ahí Claude Code no se saca.
 //
 // Contrato: `add(ctx, state, H)` y `remove(ctx, state, H)` → `{ code, lines }`. `H` son las piezas de harness.js que
@@ -49,7 +49,7 @@ function ownerOf(piece, fixedDir) {
 const version = (state) => (state && state.version && state.version.number) || '—';
 
 /** El aviso «herramienta sin enchufar» guardado en el estado se recalcula recién en el próximo arranque: al enchufar o
- *  desenchufar acá, se saca ya (pase adversarial, clase 20: doctor lo seguía mostrando justo después de enchufar). */
+ *  desenchufar acá, se saca ya. */
 function clearUnpluggedNotice(state, R) {
   if (typeof state.notice !== 'string' || !T.NOTICE_TAIL.test(state.notice)) return;
   const rest = state.notice.replace(T.NOTICE_TAIL, '').replace(/^ · /, '').trim();
@@ -182,7 +182,7 @@ function removal(ctx, state, tool, H, { codexStays = false } = {}) {
         const to = path.resolve(path.dirname(l), fs.readlinkSync(l));
         if (!roots.some((r) => to === r || to.startsWith(r + path.sep))) continue;
         // el enlace de las skills es adonde apuntan los enlaces de ~/.codex/skills y los hooks ${SKILLS} de Codex: con
-        // Codex quedándose, se queda (pase adversarial, clase 23: sacarlo dejaba a Codex colgado y doctor no lo veía)
+        // Codex quedándose, se queda
         if (codexStays && l === TH.installedSkillsDir(ctx.home)) { notes.push(`queda el enlace ${l}: las skills y los hooks de Codex apuntan ahí`); continue; }
         links.push(l);
       } catch (_) { /* no está */ }
@@ -199,7 +199,7 @@ function remove(ctx, state, H) {
   const where = { home: ctx.home, env: ctx.env };
   const plugged = T.plugged(state, where);
   // también una herramienta que `install` dejó de mantener por su llave (ya no está en `tools`) pero cuyas piezas siguen
-  // registradas: el plan promete «sus piezas quedan hasta uninstall --tool <x>», y acá se cumple (pase adversarial, clase 11)
+  // registradas: el plan promete «sus piezas quedan hasta uninstall --tool <x>», y acá se cumple
   const fixedDirNow = S.paths(ctx.home).bootstrapDir;
   const registered = T.TOOLS.filter((t) => (Array.isArray(state.managed) ? state.managed : []).some((p) => ownerOf(p, fixedDirNow) === t));
   const removing = opt.tools.filter((t) => plugged.includes(t) || registered.includes(t));
@@ -237,8 +237,8 @@ function remove(ctx, state, H) {
     for (const t of removing) {
       const p = removal(ctx, st, t, H, { codexStays: left.includes('codex') });
       // «¿sigue como lo dejó la instalación?» se pregunta contra la copia que ESCRIBIÓ esas piezas: la de `install --tool`
-      // (reason `tool`) si la herramienta se enchufó después, si no la del primer install (pase adversarial, clase 1:
-      // con la copia del primer install, hooks.json y config.toml de Codex quedaban vivos y el estado decía «sin Codex»)
+      // (reason `tool`) si la herramienta se enchufó después, si no la del primer install (con la copia del primer install,
+      // hooks.json y config.toml de Codex quedarían vivos y el estado diría «sin Codex»)
       const base = baselineFor(ctx.home, p.pieces, U, snap);
       const r = RM.removePieces(p.pieces, { home: ctx.home, env: ctx.env, tree: st.tree, log, restoreIfEqual: base.map, afterSha: base.after, platform: ctx.platform });
       for (const x of [...r.removed, ...r.absent]) gone.add(x);

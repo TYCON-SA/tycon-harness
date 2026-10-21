@@ -3,13 +3,13 @@
  * lane-llm-notice.js — el medidor del desempate por modelo del portón de carril.
  *
  * POR QUÉ EXISTE
- * El 2026-08-27 el portón de carril sumó un desempate por modelo barato
- * (`tycon-pipeline/scripts/lib/lane-classifier.js`, caso: incident-log#carril-sin-salida-2026-08-27):
+ * El portón de carril tiene un desempate por modelo barato
+ * (`tycon-pipeline/scripts/lib/lane-classifier.js`):
  * cuando el camino mecánico ya decidió denegar, se le pregunta a Haiku si el USER autorizó el
  * atajo, leyendo sus prompts reales. Si dice que sí, se abre un permiso que el freno había
  * cerrado, y queda un `ADHOC_LLM_OVERRIDE_LANE` en `adhoc.log`.
  *
- * Nació SIN medidor, y ése es el problema que esto cierra: todo el resto del arnés funciona
+ * Este medidor cierra un agujero: todo el resto del arnés funciona
  * porque cada control tiene otro que lo mira (los meters de estilo y de bloqueo, el bench-notice,
  * el retro-pending). Una pieza que decide sola y deja su rastro en un archivo que nadie lee es,
  * en la práctica, una pieza sin verificar — que es exactamente lo que el arnés no se permite.
@@ -30,7 +30,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -89,7 +89,7 @@ function stats(evs) {
   for (const e of evs) {
     if (e.kind === 'ADHOC_SET' || e.kind === 'ADHOC_UPDATE') s.adhocTotal++;
     if (e.kind === 'ADHOC_LLM_OVERRIDE_LANE') { s.overrides++; s.abrio++; s.consultas++; continue; }
-    // ADHOC_DENIED_LANE: histórico (regex, borrado 2026-08-27) · ADHOC_LLM_DENIED_LANE: el juez actual vetó.
+    // ADHOC_DENIED_LANE: registros de un juez anterior (regex) · ADHOC_LLM_DENIED_LANE: el juez actual vetó.
     if (e.kind === 'ADHOC_SET_UNJUDGED') { s.sinJuez = (s.sinJuez || 0) + 1; if (e.via === 'error') s.errores++; continue; }
     if (e.kind === 'ADHOC_DENIED_LANE' || e.kind === 'ADHOC_LLM_DENIED_LANE' || e.kind === 'ADHOC_DENIED_STORY_QUOTE' || e.kind === 'ADHOC_DENIED_REASON') {
       if (CONSULTADO.has(e.via)) { s.consultas++; s.negoIgual++; }

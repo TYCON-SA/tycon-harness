@@ -1,11 +1,10 @@
 'use strict';
-// github-auth.js — la credencial con que el arnés le habla a GitHub (story 8.23, tanda B · AC 11).
+// github-auth.js — la credencial con que el arnés le habla a GitHub.
 //
-// ── LA DECISIÓN (el dueño, 2026-10-06) ───────────────────────────────────────────────────────────────────────────
+// ── LA DECISIÓN ──────────────────────────────────────────────────────────────────────────────────────────────────
 // La credencial es SIEMPRE el permiso de sólo lectura que la persona pega una vez (`harness.js config set github.token`)
 // y que queda guardado en `~/.tycon/config.json`, sólo para su usuario. No se lee la credencial guardada de git, del
-// gestor de credenciales, de `gh` ni de otra herramienta: un solo camino en Mac, Windows y Linux (el equipo trabaja en
-// Azure y casi nadie tiene login de GitHub). Sin permiso, el pedido va sin credencial —sirve el día que el repo sea
+// gestor de credenciales, de `gh` ni de otra herramienta: un solo camino en Mac, Windows y Linux (casi nadie del equipo tiene login de GitHub). Sin permiso, el pedido va sin credencial —sirve el día que el repo sea
 // público—; si eso no alcanza, la ÚNICA acción que se le pide a la persona es crear el permiso y pegarlo.
 //
 // ── LO QUE NUNCA PASA ────────────────────────────────────────────────────────────────────────────────────────────
@@ -28,8 +27,8 @@ const { ownPaths } = require('./tycon-home.js');
 const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new';
 const SET_HINT = 'harness.js config set github.token';
 const CAUSES_404 = Object.freeze(['sin permiso de GitHub guardado', 'el permiso no ve el repo', 'falta aceptar la invitación al repo']);
-// `azure.token` (story 8.25): el PAT de sólo lectura (Code: Read) de Azure DevOps para el repo del equipo; secreto como el de GitHub
-// `paths.maintainers` (story 8.26, tanda F1): el clon del repo de mantenimiento en esta máquina, de donde el freno antes
+// `azure.token`: el PAT de sólo lectura (Code: Read) de Azure DevOps para el repo del equipo; secreto como el de GitHub
+// `paths.maintainers`: el clon del repo de mantenimiento en esta máquina, de donde el freno antes
 // de publicar (scripts/hooks/public-push-guard.js) lee la lista privada. Sólo la tiene la máquina de quien mantiene.
 // `paths.team` y `paths.operations`: los clones del perfil del equipo y del repo de operaciones, que edita la página de
 // configuración de la organización (harness.js team-config). Sólo los tiene quien configura la organización.
@@ -95,8 +94,7 @@ function setKey(key, value, { env = process.env, platform = process.platform } =
 // `setKey` escribe; quien LEE ese archivo es otro programa: `scripts/lib/tycon-config.js`, con su vocabulario cerrado.
 // Y hay DOS copias de ese lector en una máquina: la de este arnés y la que el freno de producción tiene instalada en
 // /opt/tycon, con permisos de administrador, que no se actualiza sola. Una clave que el comando escribe y un lector no
-// conoce deja la configuración entera «rota» para ese lector (caso real, 2026-10-10: `paths.maintainers` en las dos
-// máquinas del dueño, el mismo día de publicada). Por eso `setKeyChecked` les pregunta a los lectores ANTES de escribir.
+// conoce deja la configuración entera «rota» para ese lector (por ejemplo, una clave recién publicada). Por eso `setKeyChecked` les pregunta a los lectores ANTES de escribir.
 //
 // Cómo se pregunta: a cada lector se le muestra una COPIA del archivo en una carpeta temporal (`TYCON_HOME` apuntando
 // ahí, con su `state/` para que el lector la tome por el archivo de la máquina) — el de hoy y el que quedaría. El archivo
@@ -185,7 +183,7 @@ function setKeyChecked(key, value, { env = process.env, platform = process.platf
     // 🔴 Antes de creerle un «válida», se comprueba que el lector LEE la copia: se le muestra un archivo que tiene que
     // rechazar. Uno que lo acepta no está mirando lo que se le muestra —una copia vieja del freno de producción lee
     // otro archivo, el de la carpeta de Claude Code, pase lo que pase con TYCON_HOME— y su «válida» no dice nada del
-    // archivo nuevo: contestaba «válida» antes y después, y la clave quedaba «guardada» sin haberla mirado nadie.
+    // archivo nuevo: contestaría «válida» antes y después, y la clave quedaría «guardada» sin haberla mirado nadie.
     const control = askReader(reader, CANARY, env, { ms: readerMs });
     if (control.state === 'absent') continue;
     if (control.state !== 'rejects') {
@@ -224,7 +222,7 @@ function authHeaders(token) {
 }
 
 /**
- * La acción única que se le pide a la persona cuando no hay permiso o no sirve. Con `repos` (story 8.25: la copia pública
+ * La acción única que se le pide a la persona cuando no hay permiso o no sirve. Con `repos` (la copia pública
  * y el repo del equipo), el permiso tiene que ver los DOS, y se nombran por su valor.
  */
 function action({ repos = null } = {}) {
@@ -235,7 +233,7 @@ function action({ repos = null } = {}) {
 /**
  * Qué decir ante un 404 del repo: las tres causas y, si se pudo mirar `/user`, la probable.
  * @param {{ token: string|null, userStatus: number|null, repo?: string|null, repos?: string[]|null, status?: number }} p —
- *   `userStatus`: lo que contestó GET /user (null: no se pidió); `repo`: cuál no se ve (story 8.25: con la copia y el repo
+ *   `userStatus`: lo que contestó GET /user (null: no se pidió); `repo`: cuál no se ve (con la copia y el repo
  *   del equipo hay dos, y se nombra el que falló); `repos`: los que el permiso tiene que ver; `status`: 404, o 403 (GitHub
  *   contesta una u otra a un permiso que no ve un repo privado: las dos son «sin acceso»).
  */

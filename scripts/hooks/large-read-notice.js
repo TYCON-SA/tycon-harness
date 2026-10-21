@@ -19,7 +19,7 @@ const PENDING_DIR = path.join(os.homedir(), '.claude', 'lectura-grande', 'pendin
 
 // 🔇 Sandbox de EVALS: las corridas del banco spawnean `claude -p` y cada hook UserPromptSubmit le
 // inyecta su reminder AL PROMPT del agente simulado, que lo lee como parte de la conversación. Eso
-// sesga la medición de los OTROS controles (Story 3.40). El arnés setea TYCON_EVAL_SANDBOX=1 al
+// sesga la medición de los OTROS controles. El arnés setea TYCON_EVAL_SANDBOX=1 al
 // spawnear; acá nos callamos.
 if (process.env.TYCON_EVAL_SANDBOX === '1') process.exit(0);
 
@@ -56,9 +56,8 @@ function main() {
 
   let p;
   try { p = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { p = null; }
-  // 🔴 NO se borra todavía. La primera versión borraba acá, antes de validar y de emitir: un
-  // pendiente escrito a medias se parseaba a null, se borraba igual, y el cobro se perdía sin
-  // traza. El borrado va DESPUÉS de escribir el aviso, al final de esta función.
+  // 🔴 NO se borra todavía. Borrar acá, antes de validar y de emitir, perdería el cobro sin traza: un
+  // pendiente escrito a medias se parsea a null y se borraría igual. El borrado va DESPUÉS de escribir el aviso, al final de esta función.
   if (!p || !p.peor) return;
 
   const canal = p.peor.canal === 'read'

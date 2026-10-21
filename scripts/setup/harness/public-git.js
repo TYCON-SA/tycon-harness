@@ -1,22 +1,22 @@
 'use strict';
-// public-git.js — las rutas PÚBLICAS de GitHub con las que una versión bajada mira y baja sin permiso (story 8.34).
+// public-git.js — las rutas PÚBLICAS de GitHub con las que una versión bajada mira y baja sin permiso.
 //
 // ── POR QUÉ ──────────────────────────────────────────────────────────────────────────────────────────────────────
 // Sin permiso guardado, la API de GitHub (`api.github.com`) tiene un tope de 60 consultas por hora POR CONEXIÓN, aunque el
-// repo sea público: dos máquinas que comparten conexión se quedaban sin consultas y no podían actualizar. Estas rutas no
-// cuentan contra ese tope (medido el 2026-10-14 con la API agotada: siguieron contestando y `rate_limit` no se movió):
+// repo sea público: dos máquinas que comparten conexión se quedan sin consultas y no pueden actualizar. Estas rutas no
+// cuentan contra ese tope (con la API agotada siguen contestando y `rate_limit` no se mueve):
 //   · `https://github.com/<org>/<repo>.git/info/refs?service=git-upload-pack` — lo que lee `git ls-remote`, pero leído
 //     por el cliente propio (scripts/lib/http-get.js): el arnés NO exige git. Trae todas las ramas con su commit.
 //   · `https://raw.githubusercontent.com/<org>/<repo>/<sha>/version.json` — el número, POR COMMIT (por rama queda 5 min
 //     en caché y podría dar un número viejo; por commit no cambia nunca).
-//   · `https://codeload.github.com/<org>/<repo>/tar.gz/<sha>` — el comprimido del commit (la API redirigía ahí).
-// Con permiso guardado no se usan: el camino es el de la API, como antes (lo pidió el dueño; y un repo privado sólo se
+//   · `https://codeload.github.com/<org>/<repo>/tar.gz/<sha>` — el comprimido del commit (la API redirige ahí).
+// Con permiso guardado no se usan: el camino es el de la API (y un repo privado sólo se
 // ve con permiso).
 //
 // ── LAS BASES ────────────────────────────────────────────────────────────────────────────────────────────────────
 // `TYCON_RELEASE_GIT`, `TYCON_RELEASE_RAW` y `TYCON_RELEASE_ARCHIVE` cambian las bases (sólo pruebas: el GitHub de
 // juguete, como `TYCON_RELEASE_API`). Salvaguarda: si `TYCON_RELEASE_API` está puesta y `TYCON_RELEASE_GIT` no, NO hay
-// rutas públicas (`bases` → null) y se mira por la API como antes: un laboratorio que apuntó la API a su juguete y no
+// rutas públicas (`bases` → null) y se mira por la API: un laboratorio que apuntó la API a su juguete y no
 // las rutas públicas no sale al GitHub de verdad. El ensayo contra el GitHub real que apunta la API a un puerto cerrado
 // pone `TYCON_RELEASE_GIT=https://github.com` explícito.
 //

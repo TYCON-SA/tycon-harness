@@ -4,7 +4,7 @@
  * advisor-liveness-on-change.js — cuando cambia la prosa de un revisor, se le toma el chequeo de vida
  * de ESE revisor, en el acto.
  *
- * ── POR QUÉ (2026-09-01) ────────────────────────────────────────────────────────────────────────
+ * ── POR QUÉ ────────────────────────────────────────────────────────────────────────
  * El chequeo de vida (`advisor-runner.js --liveness`) corre por CALENDARIO: martes y viernes a las 2 de
  * la mañana, toque alguien la prosa de un revisor o no. O sea que el momento en que un revisor se
  * rompe —cuando alguien le edita las instrucciones— y el momento en que nos enteramos están hasta
@@ -75,7 +75,7 @@ function canariosDe(advisor) {
  * @param {{code:number, rojos:Array<{key:string,clase:string}>}} primera  la corrida del par
  * @param {{flags:Array<boolean|null>}|null} confirmacion  las 3 corridas del caso rojo, si hubo
  * @returns {{accion:'pass'|'block'|'warn', motivo:string}}
- * (pasa · frena · avisa hasta la story 8.9, tanda E: la decisión no sale de este archivo)
+ * (pasa · frena · avisa; la decisión no sale de este archivo)
  */
 function decidir(primera, confirmacion) {
   if (primera.infra) return { accion: 'warn', motivo: `no se pudo medir (${primera.infra}) — el commit pasa, pero el revisor NO quedó verificado` };

@@ -1,12 +1,12 @@
 'use strict';
-// plugin-dirs.js — la carpeta de los mods del arnés dentro de CLAUDE_CODE_PLUGIN_DIRS (story 7.27).
+// plugin-dirs.js — la carpeta de los mods del arnés dentro de CLAUDE_CODE_PLUGIN_DIRS.
 //
 // Claude Code carga como plugin cada carpeta de esa variable (del entorno, o del `env` de ~/.claude/settings.json),
 // separadas por el separador de listas de la plataforma (`:` en Mac y Linux, `;` en Windows). El dev puede tener las
 // suyas: el arnés SUMA la propia, sin duplicar ni reordenar, y al desinstalar saca sólo la propia.
 //
-// La única entrada ajena que se saca es la del mod que el cartel tenía antes de entrar al arnés (la carpeta
-// `tycon-mods/tablero-corrida` dentro de la de Claude Code), y sólo si ya no existe: una carpeta que no existe no carga
+// La única entrada ajena que se saca es la del mod del cartel instalado por fuera del arnés (la carpeta
+// `tycon-mods/tablero-corrida` dentro de la de Claude Code), y sólo si no existe: una carpeta que no existe no carga
 // nada.
 //
 // Vive en scripts/setup/harness/ porque la desinstalación corre desde la copia fija del programa, que sólo trae esa
@@ -47,8 +47,8 @@ function hasDir(value, dir, { sep = separator(), home }) {
  * Suma `dir` a la lista. Devuelve `{ value, changed, dropped }`: `dropped` son las entradas del mod viejo que se sacaron.
  * `inherited`: la variable como la tiene exportada la terminal del dev. Si settings.json no la trae, se parte de esa:
  * la del `env` de settings.json le gana a la de la terminal, y escribir sólo la del arnés le haría perder sus carpetas
- * (pase adversarial de la 7.27, clase 3). `exists(path)` se puede pasar para probar; por defecto mira el disco.
- * Si la carpeta ya está y no sale nada, el valor queda tal cual (aunque traiga espacios o separadores de más: clase 12).
+ * `exists(path)` se puede pasar para probar; por defecto mira el disco.
+ * Si la carpeta ya está y no sale nada, el valor queda tal cual (aunque traiga espacios o separadores de más).
  */
 function addDir(value, dir, { sep = separator(), home, exists = fs.existsSync, inherited = undefined }) {
   const base = typeof value === 'string' && value.trim() !== '' ? value : typeof inherited === 'string' ? inherited : value;

@@ -3,31 +3,30 @@
  * produccion-notice.js — al abrir la sesión: regenera el índice de servidores y, SÓLO en las
  * máquinas autorizadas a tocar producción, grita si el freno no está, quedó viejo o fue alterado.
  *
- * POR QUÉ SÓLO EN ESAS MÁQUINAS (story 6.1, AC 25): el resto del equipo no instala nada, así que un
+ * POR QUÉ SÓLO EN ESAS MÁQUINAS: el resto del equipo no instala nada, así que un
  * aviso ahí sería ruido en cada arranque — y un aviso que suena sin motivo es el que se aprende a
  * ignorar. «Autorizada» = ya instaló el freno alguna vez, o tiene una entrada `tycon-prod-*` en el
  * llavero propio (se pregunta si EXISTE, sin leer la clave ni abrir cuadro).
  *
  * CONTRA QUÉ COMPARA: contra lo PUBLICADO (`origin/main` del clon del arnés), no contra el disco —
- * un archivo retocado en el clon diría «actualizalo» y el instalador instalaría lo retocado
- * (revisores del Step 5, 2026-09-15). Una versión instalada que coincide con una publicada ANTERIOR
+ * un archivo retocado en el clon diría «actualizalo» y el instalador instalaría lo retocado.
+ * Una versión instalada que coincide con una publicada ANTERIOR
  * es «quedó vieja» (rojo); una que no coincide con ninguna publicada es «alterada» (rojo). Y reverifica
  * las huellas de `/opt/tycon/huellas.json` contra los archivos instalados (AC 29). Compara el freno, la puerta, el
- * lanzador, la configuración administrada y las bibliotecas que el freno requiere (story 8.14, AC 21:
- * `BIBLIOTECAS_DEL_FRENO`) — desde el 2026-10-14, contra la COPIA PROPIA del freno (scripts/production/guard-libs/), no
- * contra las bibliotecas compartidas: un cambio en el resto del arnés ya no pide reinstalar.
+ * lanzador, la configuración administrada y las bibliotecas que el freno requiere
+ * (`BIBLIOTECAS_DEL_FRENO`) — contra la COPIA PROPIA del freno (scripts/production/guard-libs/), no
+ * contra las bibliotecas compartidas: un cambio en el resto del arnés no pide reinstalar.
  *
- * EN UNA VERSIÓN BAJADA (2026-10-09): el arnés que corre no es un clon (`~/.tycon/harness`, sin git) y el freno se
+ * EN UNA VERSIÓN BAJADA: el arnés que corre no es un clon (`~/.tycon/harness`, sin git) y el freno se
  * instala desde ESA carpeta, que no trae los mismos bytes que el clon interno. La referencia pasa a ser la versión que
  * corre —su manifiesto, `.tycon-release.json`— y, para saber si lo instalado es lo que dejó el instalador, la constancia
  * que éste escribe como root (`/opt/tycon/production/installed-files.json`). Igual a la versión que corre: al día.
- * Distinto, pero igual a la constancia: quedó viejo. Distinto de las dos: alguien lo cambió. Caso:
- * `guides/maintaining/incident-log.md#freno-alterado-en-version-bajada-2026-10-09`.
+ * Distinto, pero igual a la constancia: quedó viejo. Distinto de las dos: alguien lo cambió.
  *
  * TAMBIÉN LEE `hook-errors.log`: el freno anota ahí cuando no pudo decidir. Un registro que nadie
  * mira no sirve de nada.
  *
- * EL RENOMBRE A INGLÉS (story 8.9, tanda P): la carpeta del freno pasó de `scripts/produccion/` a `scripts/production/`
+ * EL RENOMBRE A INGLÉS: la carpeta del freno pasó de `scripts/produccion/` a `scripts/production/`
  * y varios archivos cambiaron de nombre. Una copia instalada ANTES del renombre coincide con una versión publicada de la
  * ruta VIEJA: por eso la historia se busca en la ruta nueva y en la vieja (el mapa, scripts/lib/renames.json), y esa
  * copia es «quedó viejo: reinstalalo», nunca «alguien lo cambió».
@@ -40,14 +39,14 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
-// los nombres viejos de las variables y de las rutas (story 8.9): sin la biblioteca, sólo los nuevos
+// los nombres viejos de las variables y de las rutas: sin la biblioteca, sólo los nuevos
 const legacy = (() => { try { return require(path.join(__dirname, '..', 'lib', 'legacy-names.js')); } catch { return null; } })();
 const variable = (nombre) => (legacy ? legacy.readEnv(nombre, { where: 'scripts/hooks/produccion-notice.js' }) : process.env[nombre]);
 
@@ -61,16 +60,15 @@ const HOME = process.env.HOME || os.homedir();
 // interruptor (misma regla que la puerta y el freno).
 const RAIZ = (!fs.existsSync('/opt/tycon') && process.env.TYCON_PROD_ROOT) ? process.env.TYCON_PROD_ROOT : '';
 // 🔴 `RAIZ || '/'`: con la raíz vacía —o sea, en TODA máquina de verdad— `path.join('', 'opt', 'tycon')`
-// da `opt/tycon`, una ruta RELATIVA al directorio donde corra el aviso. Resultado: el arranque gritaba
-// «el freno NO está instalado» justo en las máquinas donde SÍ lo está, todos los días. No se veía en el
-// banco porque ahí la raíz siempre viene puesta: la costura de prueba tapaba el defecto (2026-09-15, la
-// primera vez que se corrió en una máquina con el freno instalado de verdad).
+// da `opt/tycon`, una ruta RELATIVA al directorio donde corra el aviso. Resultado: el arranque gritaría
+// «el freno NO está instalado» justo en las máquinas donde SÍ lo está, todos los días. No se vería en el
+// banco porque ahí la raíz siempre viene puesta: la costura de prueba taparía el defecto.
 const OPT = path.join(RAIZ || '/', 'opt', 'tycon');
 const MANAGED_D = path.join(RAIZ || '/', 'Library', 'Application Support', 'ClaudeCode', 'managed-settings.d');
 // el archivo administrado con su nombre de antes del renombre, si la máquina todavía no reinstaló
 const MANAGED = [path.join(MANAGED_D, 'tycon-production.json'), path.join(MANAGED_D, 'tycon-produccion.json')]
   .find((f) => fs.existsSync(f)) || path.join(MANAGED_D, 'tycon-production.json');
-const ARNES = process.env.TYCON_GUIDES_DIR || path.resolve(__dirname, '..', '..');   // este hook vive en el arnés: su ubicación (story 8.3)
+const ARNES = process.env.TYCON_GUIDES_DIR || path.resolve(__dirname, '..', '..');   // este hook vive en el arnés: su ubicación
 const SECURITY = path.join(RAIZ, 'usr', 'bin', 'security');
 const LLAVERO_PROPIO = path.join(HOME, 'Library', 'Keychains', 'tycon-prod.keychain-db');
 const INSTALADOR = path.join(ARNES, 'scripts', 'production', 'install-guard.command');
@@ -80,8 +78,7 @@ const lineas = [];
 const sha256 = (f) => { try { return crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex'); } catch { return null; } };
 const existe = (f) => { try { fs.statSync(f); return true; } catch { return false; } };
 
-// 🔴 El instalador se ABRE solo (2026-09-15, pedido del dev: «es un comando que corre el otro dev en su
-// máquina, ¿por qué no viene con el arnés?»). El arnés se instala a sí mismo en cada arranque; el
+// 🔴 El instalador se ABRE solo, en vez de ser un comando que cada dev corre en su máquina. El arnés se instala a sí mismo en cada arranque; el
 // freno tiene que entrar por el mismo camino. Lo único que no puede hacer es escribir la contraseña
 // del Mac: por eso abre la ventana del instalador, que la pide, en vez de instalar en silencio. Una
 // vez por día como mucho (un aviso que salta en cada sesión se cierra sin leer). Bajo la raíz de
@@ -97,9 +94,9 @@ function abrirInstalador() {
   if (!RAIZ && existe(INSTALADOR)) spawnSync('open', [INSTALADOR], { stdio: 'ignore', timeout: 5000 });
   return true;
 }
-// Contra qué se compara lo instalado (story 8.23, tanda B · AC 18): en un clon, el propio árbol; en una versión bajada, el
+// Contra qué se compara lo instalado: en un clon, el propio árbol; en una versión bajada, el
 // clon que la máquina declara mantener (`paths.maintained`), o ninguno — y entonces no se corre git sobre ~/.tycon ni se
-// avisa «no pude leer lo publicado»: la comparación calla (el origen de confianza del freno lo cambia la tanda D).
+// avisa «no pude leer lo publicado»: la comparación calla.
 // 🔴 Esto vale cuando el arnés que corre es un CLON. Si es una versión bajada, lo instalado se juzga contra ella y no
 // contra este clon (más abajo, `BAJADA`): el freno se instala desde la versión bajada, no desde el clon que se mantiene.
 const PUBLICADO = (() => {
@@ -141,9 +138,9 @@ function estadoContraPublicado(instalado, rutaEnRepo, antes) {
   const actual = git(['rev-parse', `origin/main:${rutaEnRepo}`]);
   if (actual.status !== 0) return 'sin-publicado';
   if (actual.stdout.trim() === blob) return 'al-dia';
-  // 🔴 En la historia de la ruta NUEVA y de la VIEJA (story 8.9, AC 47): `git log -- <ruta nueva>` no sigue el renombre,
-  // así que una copia instalada antes de él no coincidía con nada y se leía «alguien lo cambió». Lo mismo con la copia
-  // propia (2026-10-14): una biblioteca instalada antes de ella sale de la historia de la compartida.
+  // 🔴 En la historia de la ruta NUEVA y de la VIEJA: `git log -- <ruta nueva>` no sigue el renombre,
+  // así que una copia instalada antes de él no coincidiría con nada y se leería «alguien lo cambió». Lo mismo con la copia
+  // propia: una biblioteca instalada antes de ella sale de la historia de la compartida.
   const rutas = [rutaEnRepo, ...rutasViejas(rutaEnRepo)];
   if (antes) rutas.push(antes, ...rutasViejas(antes));
   for (const ruta of rutas) {
@@ -157,11 +154,10 @@ function estadoContraPublicado(instalado, rutaEnRepo, antes) {
   return 'alterada';
 }
 
-// ── la versión BAJADA (2026-10-09) ───────────────────────────────────────────────────────────────────────────────────
-// 🔴 EL CASO: una máquina mudada a ~/.tycon reinstaló el freno desde la versión bajada y cada arranque le decía «NO
-// coincide con ninguna versión publicada… alguien lo cambió». El aviso comparaba contra `origin/main` del clon que la
-// máquina mantiene (`paths.maintained`), y lo instalado venía de la copia que se baja, que no trae los mismos bytes. Le
-// pasaba a toda máquina mudada con un clon declarado; sin clon declarado, la comparación callaba entera.
+// ── la versión BAJADA ───────────────────────────────────────────────────────────────────────────────────
+// 🔴 Comparar sólo contra `origin/main` del clon que la máquina mantiene (`paths.maintained`) diría en cada arranque «NO
+// coincide con ninguna versión publicada… alguien lo cambió» a una máquina con el freno instalado desde la versión
+// bajada: esa copia no trae los mismos bytes. Y sin clon declarado, la comparación callaría entera.
 // Una versión bajada se reconoce igual que en el instalador: trae su manifiesto y no es un clon. Se mira el árbol de
 // TYCON_GUIDES_DIR y el de este archivo (el arnés que corre), sin cargar nada: este aviso viaja suelto.
 const MANIFIESTO_BAJADA = '.tycon-release.json';
@@ -190,7 +186,7 @@ function blobsDe(archivo) {
  * El estado de lo instalado en una versión bajada, que no tiene historia de git.
  * @param {Map<string,string>} corre lo que publica la versión que corre
  * @param {Map<string,string>|null} dejado lo que dejó el instalador; null = un freno instalado antes de la constancia
- * @param {string} [antes] la ruta de la biblioteca compartida de la que salía antes de la copia propia
+ * @param {string} [antes] la ruta de la biblioteca compartida de la que sale antes de la copia propia
  * @returns {'al-dia'|'vieja'|'alterada'|'sin-publicado'}
  */
 function estadoContraVersionBajada(instalado, rutaEnRepo, corre, dejado, antes) {
@@ -199,29 +195,28 @@ function estadoContraVersionBajada(instalado, rutaEnRepo, corre, dejado, antes) 
   const publicado = corre.get(rutaEnRepo);
   if (!publicado) return 'sin-publicado';
   if (publicado === blob) return 'al-dia';
-  // Sin constancia no hay con qué decir «alguien lo cambió»: es un freno instalado antes de ella (o desde el clon, antes
-  // de la mudanza) y lo que le toca es reinstalar, que la deja escrita. La puerta y el freno los cubren igual sus huellas.
+  // Sin constancia no hay con qué decir «alguien lo cambió»: es un freno instalado antes de ella (o desde el clon) y lo que le toca es reinstalar, que la deja escrita. La puerta y el freno los cubren igual sus huellas.
   if (!dejado) return 'vieja';
   // una constancia de antes de la copia propia anota la biblioteca con la ruta de la compartida, de donde se copió
   const anotado = dejado.has(rutaEnRepo) ? dejado.get(rutaEnRepo) : (antes ? dejado.get(antes) : undefined);
   return anotado === blob ? 'vieja' : 'alterada';
 }
 
-// El texto exacto: lo busca la prueba T51 de la story 8.9 y lo lee la persona en cada arranque.
+// El texto exacto: lo busca una prueba y lo lee la persona en cada arranque.
 const AVISO_VIEJO = 'el freno quedó viejo: reinstalalo';
 
 /**
- * Las bibliotecas que el freno INSTALADO requiere de verdad (story 8.14, AC 21): dónde quedan en /opt/tycon y de qué
+ * Las bibliotecas que el freno INSTALADO requiere de verdad: dónde quedan en /opt/tycon y de qué
  * archivo del arnés salen. Un arnés que cambia sólo una de ellas (el lector de nombres, por ejemplo) deja al freno
  * instalado leyendo con la versión vieja, igual que si cambiara el hook: eso también es «quedó viejo».
- * No son todas las de `ARCHIVOS` del instalador, sólo las que el freno carga: el costo, dicho y aceptado en la story, es
+ * No son todas las de `ARCHIVOS` del instalador, sólo las que el freno carga: el costo es
  * que un cambio en cualquiera de éstas pide reinstalar con sudo en cada máquina autorizada. La lista no se escribe de
  * memoria: `install-guard.test.sh` (T31c) corre el freno instalado con un trazador y exige que esta lista sea
- * exactamente lo que cargó. La de las constancias se compara por su nombre de hoy: desde la story 8.7 (tanda B) el freno
- * la carga primero por ése y sólo si falta por el de antes (el instalador la deja con los dos).
+ * exactamente lo que cargó. La de las constancias se compara por su nombre de hoy: el freno
+ * la carga primero por ése y sólo si falta por el anterior (el instalador la deja con los dos).
  */
-// 🔴 LA COPIA PROPIA (2026-10-14, decisión del dueño): ese costo se pagaba casi en cada versión, porque las bibliotecas
-// compartidas cambian todo el tiempo por motivos que no son del freno. Ahora `repo` es la copia del freno
+// 🔴 LA COPIA PROPIA: ese costo se pagaría casi en cada versión, porque las bibliotecas
+// compartidas cambian todo el tiempo por motivos que no son del freno. Por eso `repo` es la copia del freno
 // (scripts/production/guard-libs/), que cambia sólo cuando alguien lo decide (guard-libs-check.js); `antes` es la
 // compartida de la que se copiaba hasta entonces: un freno instalado así se reconoce como «quedó viejo», no «alterado».
 const COPIA_PROPIA = 'scripts/production/guard-libs/';
@@ -233,11 +228,11 @@ const BIBLIOTECAS_DEL_FRENO = [
   { opt: 'lib/tycon-config.js', repo: `${COPIA_PROPIA}lib/tycon-config.js`, antes: 'scripts/lib/tycon-config.js' },
   { opt: 'lib/legacy-names.js', repo: `${COPIA_PROPIA}lib/legacy-names.js`, antes: 'scripts/lib/legacy-names.js' },
   { opt: 'lib/skills-dir.js', repo: `${COPIA_PROPIA}lib/skills-dir.js`, antes: 'scripts/lib/skills-dir.js' },
-  // dónde vive cada cosa en la máquina (story 8.23, tanda D · AC 30): tycon-config.js y skills-dir.js la cargan si está
+  // dónde vive cada cosa en la máquina: tycon-config.js y skills-dir.js la cargan si está
   { opt: 'setup/harness/tycon-home.js', repo: `${COPIA_PROPIA}setup/harness/tycon-home.js`, antes: 'scripts/setup/harness/tycon-home.js' },
 ];
 // La única vez que pide reinstalar por la copia propia: un freno instalado antes de ella. Lo dice la constancia del
-// instalador (sus rutas son las de la copia desde ese día); sin constancia, o ilegible, es de antes.
+// instalador (sus rutas son las de la copia); sin constancia, o ilegible, es de antes.
 const TEXTO_COPIA_PROPIA = '   Esta vez es por un cambio de fondo: desde esta versión el freno lleva su propia copia de las bibliotecas que usa. Después de reinstalar, sólo te va a pedir reinstalar cuando cambie el freno, no cada vez que cambia el resto del arnés.';
 const instaladoConCopiaPropia = (dejado) => !!dejado && [...dejado.keys()].some((p) => p.startsWith(COPIA_PROPIA));
 
@@ -247,8 +242,8 @@ function main() {
   try {
     const mod = require(path.join(__dirname, '..', 'production', 'production-index.js'));
     indice = mod.guardar(mod.construir({ home: HOME }), HOME);
-    // La configuración del arnés rota viaja en el índice (story 8.3, AC 2) y es un AVISO de cada arranque, tenga o
-    // no freno esta máquina: sin esto, en una máquina autorizada sin otros avisos, el error quedaba mudo.
+    // La configuración del arnés rota viaja en el índice y es un AVISO de cada arranque, tenga o
+    // no freno esta máquina: sin esto, en una máquina autorizada sin otros avisos, el error queda mudo.
     for (const e of indice.errores || []) if (/configuración del arnés ROTA/.test(e.motivo)) avisos.push(`⚠ ${e.motivo}`);
   } catch (e) {
     avisos.push(`🟠 no pude regenerar el índice de servidores de producción: ${e.message}`);
@@ -275,19 +270,18 @@ function main() {
     }
   }
   // 🔴 Tener el llavero propio CREADO ya es ser una máquina de producción: se crea al cargar la
-  // primera clave y no lo crea nada más. Antes hacía falta poder CONSULTARLO, así que un llavero
-  // bloqueado (o un `security` que no contesta) dejaba a una máquina autorizada sin ninguno de estos
-  // avisos —justo la que más los necesita— (revisores del Step 5, 2026-09-15).
-  // 🔴 Y tener en la máquina un repo que DECLARA un servidor de producción también alcanza (2026-09-15,
-  // pedido del dev: «tiene que ser todo automático»). Antes, sumar a alguien al freno era mandarle un
-  // instructivo y confiar en que lo siguiera — y quien no lo seguía se quedaba sin freno y sin aviso,
-  // en silencio. Ahora el arnés se lo dice solo: si trabajás en un proyecto con producción declarada,
+  // primera clave y no lo crea nada más. Si hiciera falta poder CONSULTARLO, un llavero
+  // bloqueado (o un `security` que no contesta) dejaría a una máquina autorizada sin ninguno de estos
+  // avisos —justo la que más los necesita—.
+  // 🔴 Y tener en la máquina un repo que DECLARA un servidor de producción también alcanza: sumar a
+  // alguien al freno con un instructivo deja sin freno y sin aviso, en silencio, a quien no lo sigue.
+  // El arnés se lo dice solo: si trabajás en un proyecto con producción declarada,
   // el aviso de arranque te da el comando. Lo único que no se puede automatizar es la contraseña del
   // Mac que pide instalar (escribe en /opt y en /Library).
   const trabajaConProduccion = !!(indice && Object.values(indice.hosts || {}).some((h) => h.ambiente === 'produccion'));
   const autorizada = instaladoAlgunaVez || tieneClave || existe(LLAVERO_PROPIO) || trabajaConProduccion;
   if (!autorizada) {
-    // La configuración del arnés rota se DICE aunque esta máquina no tenga producción (story 8.3, AC 2): el resto de
+    // La configuración del arnés rota se DICE aunque esta máquina no tenga producción: el resto de
     // los avisos del freno no aplican acá, éste sí — es un archivo de la máquina, no del freno.
     for (const a of avisos.filter((a) => /configuración del arnés/.test(a))) console.log(a);
     if (llaveroIlegible) console.log('🟠 freno de producción: no pude consultar el llavero propio para saber si esta máquina tiene la clave de producción.');
@@ -303,7 +297,7 @@ function main() {
     { instalado: MANAGED, repo: 'scripts/production/managed-settings.tycon-production.json.template', nombre: 'la configuración administrada' },
   ];
   const faltan = piezas.filter((p) => !existe(p.instalado));
-  // las bibliotecas del freno (story 8.14, AC 21): se comparan contra lo publicado como las piezas. Una que falta se dice
+  // las bibliotecas del freno: se comparan contra lo publicado como las piezas. Una que falta se dice
   // sólo si nada más pide reinstalar: en una copia de antes del renombre faltan por estar con su nombre viejo, y eso ya
   // lo dice «quedó viejo».
   const bibliotecas = BIBLIOTECAS_DEL_FRENO.map((b) => ({ instalado: path.join(OPT, b.opt), repo: b.repo, antes: b.antes, nombre: `la biblioteca ${path.basename(b.opt)}` }));
@@ -339,7 +333,7 @@ function main() {
       if (bibliotecasFaltan.length) aMediasPorBibliotecas();
     } else if (git(['rev-parse', '--verify', 'origin/main']).status !== 0) {
       // 🟠 y no una línea de pie: sin esto, «lo comparé y está al día» y «no pude compararlo» se veían
-      // igual — el aviso callaba entero (revisores del Step 5, 2026-09-15).
+      // igual — el aviso callaba entero.
       avisos.push(`🟠 no pude leer lo publicado del arnés (origin/main en ${ARNES}): no puedo decir si el freno instalado está al día ni si alguien lo cambió.`);
       if (bibliotecasFaltan.length) aMediasPorBibliotecas();
     } else {
@@ -360,8 +354,7 @@ function main() {
       } else if (bibliotecasFaltan.length) {
         aMediasPorBibliotecas();
       }
-      // 🟠 lo que lo publicado no tiene NO se pudo comparar: sin esto se leía igual que «al día» (revisión de la tanda A
-      // de la 8.14, el mismo silencio que ya se había cerrado para origin/main ilegible)
+      // 🟠 lo que lo publicado no tiene NO se pudo comparar: sin esto se leería igual que «al día»
       const sinComparar = estados.filter((e) => e.estado === 'sin-publicado');
       if (sinComparar.length) avisos.push(`🟠 no pude comparar contra lo publicado: ${sinComparar.map((s) => s.nombre).join(', ')} (lo publicado del arnés no tiene ${sinComparar.length === 1 ? 'ese archivo' : 'esos archivos'}): no puedo decir si está al día ni si alguien lo cambió.`);
       administradaVieja = estados.some((e) => e.instalado === MANAGED && e.estado === 'vieja');
@@ -383,9 +376,9 @@ function main() {
       const m = JSON.parse(fs.readFileSync(MANAGED, 'utf8'));
       // 🔴 Se revisan TODAS las reglas, no sólo la de la puerta: sacarle a mano la del catálogo o la
       // de la memoria deja editar en silencio los archivos con los que el freno decide qué es
-      // producción, y el aviso daba «bien» igual (revisores del Step 5, 2026-09-15).
+      // producción, y el aviso daba «bien» igual.
       const reglas = ((m.permissions || {}).ask || []).join(' ');
-      // los dos nombres del catálogo, del índice y de la memoria (story 8.9, tanda P). Una administrada de antes del
+      // los dos nombres del catálogo, del índice y de la memoria. Una administrada de antes del
       // renombre no los tiene, y eso ya lo dijo «quedó viejo»: no se suma otro aviso que parezca un toqueteo.
       const exigidas = administradaVieja ? [] : [
         ['tycon-prod-sql', 'la que abre el cuadro de aprobación de la puerta'],
@@ -442,7 +435,7 @@ function main() {
 }
 
 if (COMO_MODULO) {
-  // para las pruebas (story 8.9, T51): el juicio contra lo publicado, sin correr el aviso
+  // para las pruebas: el juicio contra lo publicado, sin correr el aviso
   module.exports = { estadoContraPublicado, estadoContraVersionBajada, blobsDe, rutasViejas, AVISO_VIEJO, BIBLIOTECAS_DEL_FRENO, COPIA_PROPIA, TEXTO_COPIA_PROPIA, instaladoConCopiaPropia };
 } else {
   try { main(); } catch (e) {

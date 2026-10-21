@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
-# test-scope-guard-pre.sh — enforcement de test-execution-discipline (2026-06-09).
+# test-scope-guard-pre.sh — enforcement de test-execution-discipline.
 #
 # Hook PreToolUse matcher=Bash|PowerShell (en Windows Claude Code corre los comandos con su herramienta
-# PowerShell, y con matcher `Bash` solo este freno no se disparaba — medido el 2026-10-04 en una sesión
-# real; ver safety-guard-pre.sh). BLOQUEA (exit 2) comandos de test SIN scope:
-# las 6 reglas NO-NEGOCIABLES de test-execution-discipline.md eran solo prosa y
-# la máquina del dev (8c/16GB) se congeló DOS veces por full-suites sin filtro
-# (swap thrash, collect 822s). Este hook las vuelve mecánicas.
+# PowerShell, y con matcher `Bash` solo este freno no se dispararía; ver safety-guard-pre.sh). BLOQUEA (exit 2)
+# comandos de test SIN scope: las reglas NO-NEGOCIABLES de test-execution-discipline.md son solo prosa, y una
+# full-suite sin filtro puede congelar la máquina del dev (swap thrash). Este hook las vuelve mecánicas.
 #
 # Bloquea:
 #   - `npm test` / `npm run test` / `npm run test:coverage` SIN patrón posicional
@@ -24,25 +22,22 @@
 #
 # Fail-open: error inesperado → exit 0 (no romper la sesión por un bug del hook).
 #
-# 🔴 La entrada se lee SIN depender de `jq` (2026-10-03). Hasta ese día el freno hacía
-# `command -v jq || exit 0`: en una máquina sin `jq` la suite completa sin filtro pasaba sin una
-# palabra, y `jq` no es un requisito declarado del arnés (`node` sí). Ahora se lee con `jq` si está
-# y, si no, con `node`; el resultado es el mismo con los dos (casos `sin-jq-…` del banco). Lo mismo
-# para la línea de bypass.log, que también se escribía con `jq`.
+# 🔴 La entrada se lee SIN depender de `jq`: con `command -v jq || exit 0`, en una máquina sin `jq` la suite completa
+# sin filtro pasaría sin una palabra, y `jq` no es un requisito declarado del arnés (`node` sí). Se lee con `jq` si
+# está y, si no, con `node`; el resultado es el mismo con los dos (casos `sin-jq-…` del banco). Lo mismo vale para
+# la línea de bypass.log.
 #
-# 🟡 DECISIÓN A CONFIRMAR — qué hace si no hay NI `jq` NI `node` (o la entrada llega vacía, no se
-# pudo leer o no es JSON): deja
+# 🟡 Qué hace si no hay NI `jq` NI `node` (o la entrada llega vacía, no se pudo leer o no es JSON): deja
 # pasar, AVISANDO en cada llamada, y sale 1. Es la misma decisión que safety-guard-pre.sh, con el
 # razonamiento completo en su encabezado: frenar (exit 2) frenaría todos los comandos, no sólo los
 # de pruebas; salir 0 con el aviso por stderr es callar (ese stderr va al registro de depuración);
 # con exit 1 el comando corre y a la persona le aparece la primera línea del aviso. Acá el daño de
 # dejar pasar es menor que en el safety-guard (una máquina congelada se recupera). Para frenar:
 # cambiar el `exit 1` de `cannot_read` por `exit 2` y los casos `…-deja-pasar-y-lo-dice` del banco.
-# 🔴 FALTA CONFIRMARLO CON UNA SESIÓN REAL: que con exit 1 el comando corre y el aviso se ve sale
-# de la documentación de hooks de Claude Code; no se midió en vivo, ni en Claude Code ni en Codex.
-# Lo único medido en las dos es que `exit 2` frena y llega al modelo
-# (guides/maintaining/codex-divergence-inventory.md). Hay que correr `scripts/controls-bench/live-fire.js`
-# contra un `PreToolUse` real. Deuda anotada: `[FUP-frenos-sin-jq-live-fire]` en tasks/todo.md.
+# 🔴 Límite conocido: que con exit 1 el comando corre y el aviso se ve sale de la documentación de hooks de Claude
+# Code; no está medido en vivo, ni en Claude Code ni en Codex. Lo único medido en las dos es que `exit 2` frena y
+# llega al modelo (guides/maintaining/codex-divergence-inventory.md). Se mediría con
+# `scripts/controls-bench/live-fire.js` contra un `PreToolUse` real.
 #
 # Test manual:
 #   echo '{"tool_input":{"command":"npm test"},"cwd":"/tmp"}' | bash test-scope-guard-pre.sh; echo "exit=$?"   # → 2
@@ -55,14 +50,13 @@ trap 'exit 0' ERR
 if [[ "${TYCON_TEST_SCOPE_GUARD:-1}" == "0" ]]; then exit 0; fi
 
 # 🔴 Una entrada VACÍA o que no se pudo leer NO es «nada que frenar»: es «no pude leer», y va por
-# `cannot_read` como el resto (más abajo, cuando ya está definida). Antes salía 0 acá mismo, mudo:
-# la misma familia que el `exit 0` sin `jq` (revisor de fallos silenciosos, 2026-10-03). Lo que sí
-# es «nada que frenar» es una entrada que se lee y no trae comando: ésa sigue saliendo 0 callada.
+# `cannot_read` como el resto (más abajo, cuando ya está definida). Salir 0 acá, mudo, sería la misma
+# familia que el `exit 0` sin `jq`: un fallo silencioso. Lo que sí es «nada que frenar» es una entrada que se lee y no trae comando: ésa sigue saliendo 0 callada.
 INPUT="$(cat 2>/dev/null)" || INPUT=""
 
 # Con qué se lee: `jq` si está (es más rápido y este hook corre en cada comando) y `node`, que es
 # requisito del arnés, si `jq` no está O no pudo. Ninguno de los dos → `cannot_read`.
-# El Node del arnés (story 8.39): el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH.
+# El Node del arnés: el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH.
 # con el bash de la Mac (3.2) y `set -e`, un `.` que no encuentra el archivo corta el guion aunque lleve `||`: se mira antes
 _hn="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/harness-node.sh"
 { [ -f "$_hn" ] && . "$_hn" 2>/dev/null; } || harness_node_bin() { echo node; }
@@ -77,7 +71,7 @@ if command -v "$HNODE" >/dev/null 2>&1; then HAS_NODE=1; fi
 # con `-s` exige un solo documento, que es lo que `JSON.parse` acepta; con `-s` `jq` no imprime
 # nada si falla, así que probar después con `node` no duplica la salida.
 # Por qué se prueba con `node` cuando `jq` falla: hay JSON válido que `jq` rechaza (un `\ud800`
-# suelto), y antes eso era otra forma de pasar sin revisión — y en silencio.
+# suelto), y eso sería otra forma de pasar sin revisión, en silencio.
 # 🔴 Si tocás una rama, tocá la otra: este bloque está copiado igual en safety-guard-pre.sh.
 read_field() {
   if [[ "$HAS_JQ" == "1" ]]; then
@@ -124,7 +118,7 @@ if [[ -z "$INPUT" ]]; then cannot_read; fi
 CMD="$(read_field tool_input.command)" || cannot_read
 if [[ -z "$CMD" ]]; then exit 0; fi
 
-# Constancia de la decisión (story 2.6). Ayuda, no evidencia: nunca cambia lo que este freno
+# Constancia de la decisión. Ayuda, no evidencia: nunca cambia lo que este freno
 # decide ni con qué código sale. El comando va por STDIN y de él sólo se guarda la huella.
 constancia() { # $1 = regla  $2 = veredicto
   local lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/guard-record.js"
@@ -143,11 +137,11 @@ if [[ "$CMD" =~ TYCON_FULL_SUITE=[\"\']?1 ]]; then
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(echo "$CMD" | head -c 300 | to_json_text)" \
     >> "$STATE_DIR/bypass.log" 2>/dev/null || true
   # 🔴 NO se sale acá ni se anota todavía. El escape se reconoce por el TEXTO, así que un mensaje de
-  #    commit, un heredoc o un `grep` que MENCIONEN la variable lo disparan: medido sobre el registro
-  #    real, 135 de 516 entradas (26 %) no son escapes de verdad. La línea del registro nuevo se
-  #    escribe al final, cuando ya se sabe si algún segmento era realmente un comando de pruebas
-  #    (pase adversarial, 2026-09-16). El `bypass.log` de arriba NO se toca: su ruido es anterior a
-  #    esta story y cambiarlo movería un número que cuenta otra ficha — queda declarado como deuda.
+  #    commit, un heredoc o un `grep` que MENCIONEN la variable lo disparan: sobre el registro
+  #    real, buena parte de las entradas no son escapes de verdad. La línea del registro nuevo se
+  #    escribe al final, cuando ya se sabe si algún segmento era realmente un comando de pruebas.
+  #    El `bypass.log` de arriba NO se toca: su ruido es conocido y cambiarlo movería un número que
+  #    cuenta otra medición.
   HUBO_ESCAPE=1
 fi
 HUBO_ESCAPE="${HUBO_ESCAPE:-0}"
@@ -190,10 +184,10 @@ EOF
 # Nota: split simple — suficiente para los patrones reales de npm/dotnet test.
 IFS=$'\n'
 # ¿Alguno de los segmentos era un comando de pruebas? Sólo entonces este freno «tuvo algo que
-# decidir» y anota un `paso` (story 2.6, decisión D1: el denominador no son todos los comandos).
+# decidir» y anota un `paso` (el denominador no son todos los comandos).
 ES_TEST=0
 # Con el escape puesto, el prefijo `TYCON_FULL_SUITE=1` tapa al comando de pruebas que le sigue
-# (`^npm …` no matchea `TYCON_FULL_SUITE=1 npm …`), y sin esto un escape LEGÍTIMO se quedaba sin
+# (`^npm …` no matchea `TYCON_FULL_SUITE=1 npm …`), y sin esto un escape LEGÍTIMO quedaría sin
 # anotar. Se saca sólo para MIRAR: lo que se frena se decide sobre el comando tal cual.
 CMD_SEG="$CMD"
 [[ "${HUBO_ESCAPE:-0}" == "1" ]] && CMD_SEG="$(echo "$CMD" | sed -E 's/TYCON_FULL_SUITE=1[[:space:]]+//g')"

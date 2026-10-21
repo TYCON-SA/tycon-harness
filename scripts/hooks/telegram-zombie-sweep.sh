@@ -2,11 +2,11 @@
 # telegram-zombie-sweep.sh — SessionStart hook: cierra los bots de Telegram HUÉRFANOS del plugin
 # oficial de Claude Code (claude-plugins-official/telegram).
 #
-# Caso: incident-log#telegram-zombies (2026-08-24). El plugin levanta por sesión un lanzador
+# El plugin levanta por sesión un lanzador
 # `bun run --cwd <plugin> ... start` + un hijo `bun server.ts` que hace long-polling a Telegram.
 # Cuando el `claude` que lo lanzó muere, el lanzador NO siempre muere con él: queda huérfano
 # (ppid=1), pelea el token con el bot válido (409 Conflict), pierde mensajes y quema CPU
-# (4 zombies de 20 h a 4 días, 30-55 % CPU cada uno). El plugin solo mata UN poller viejo (el
+# (varios zombies de horas o días, con mucho CPU cada uno). El plugin solo mata UN poller viejo (el
 # de bot.pid) — con tres, quedan dos. Esto es de Anthropic; este hook es la mitigación nuestra.
 #
 # Criterio (el único seguro con varias sesiones vivas): lanzador del plugin con ppid=1

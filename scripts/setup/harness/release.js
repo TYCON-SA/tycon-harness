@@ -1,30 +1,30 @@
 'use strict';
-// release.js — la instalación `release`: una versión BAJADA de GitHub como archivos, sin git (story 8.23, tanda B).
+// release.js — la instalación `release`: una versión BAJADA de GitHub como archivos, sin git.
 //
 // ── QUÉ ES ───────────────────────────────────────────────────────────────────────────────────────────────────────
-// Hasta la 8.23 cada máquina usaba un CLON de git para usar el arnés. Acá la máquina baja de GitHub el comprimido de
+// Sin git, la máquina baja de GitHub el comprimido de
 // un commit publicado, lo verifica y lo deja en `~/.tycon/harness`; la versión anterior queda en `~/.tycon/previous`
 // para volver atrás sin red. Es la forma `kind: release` del estado, al lado de `kind: tree` (el clon): una máquina con
 // clon no pasa por acá nunca (`state.isRelease`).
 //
 // ── CÓMO HABLA CON GITHUB ────────────────────────────────────────────────────────────────────────────────────────
-// SIN permiso guardado (story 8.34), por las rutas públicas de public-git.js, que no cuentan contra el tope de la API
+// SIN permiso guardado, por las rutas públicas de public-git.js, que no cuentan contra el tope de la API
 // (60 consultas por hora por conexión, aunque el repo sea público):
 //   · las ramas, de UN pedido a `info/refs` (`main` y `mirror/sync` juntas); el número, del raw de cada commit, salvo que
 //     el commit ya se conozca (el instalado, o una punta ya vista: `src.etags.tips`);
 //   · el comprimido, de codeload (`tar.gz/<sha>`), y los de terceros, igual;
-//   · a la API le queda UNA consulta por bajada: `git/commits/<sha>`, el árbol con el que se verifica (decisión D1 = A
-//     del dueño, 2026-10-14). `install --version <n>` sigue por la API (D2 = A).
-//   · Respaldo: `info/refs` sin red, con un 5xx o ilegible → se mira por la API, como antes, y se anota en el registro;
+//   · a la API le queda UNA consulta por bajada: `git/commits/<sha>`, el árbol con el que se verifica.
+//     `install --version <n>` sigue por la API.
+//   · Respaldo: `info/refs` sin red, con un 5xx o ilegible → se mira por la API y se anota en el registro;
 //     un 401/404 de `info/refs` (así contesta GitHub un repo que no existe o no es público) no cae: es «no se ve». El raw
 //     caído → ese único `version.json` por la API.
 //   · El tope: un 403 con `X-RateLimit-Remaining: 0` deja la hora de renovación (`limitedUntil`); el arranque la guarda
 //     (`state.api_limited_until`) y hasta esa hora su cliente NO le pide nada a la API (`waitUntil`), avisa una vez y no lo
 //     cuenta como fallo. `update` a mano intenta una vez.
-// CON permiso guardado, por la API, igual que antes de la 8.34 (lo pidió el dueño; un repo privado sólo se ve así), con
+// CON permiso guardado, por la API (un repo privado sólo se ve así), con
 // el cliente propio (scripts/lib/http-get.js: proxy, tope, redirección sin reenviar la credencial).
-// Un permiso guardado que VENCIÓ (2026-10-14, la máquina de un dev): GitHub contesta 401 aunque el repo sea público, y el
-// arnés quedaba sin actualizarse por un permiso que no hacía falta. Ante un 401 de un repo `/repos/<org>/<n>/…`, el cliente
+// Un permiso guardado que VENCIÓ: GitHub contesta 401 aunque el repo sea público, y el
+// arnés quedaría sin actualizarse por un permiso que no hace falta. Ante un 401 de un repo `/repos/<org>/<n>/…`, el cliente
 // mira si ese repo se lee sin permiso (`info/refs` sin credencial, 200): si sí, sigue SIN el permiso —las rutas públicas de
 // arriba— por el resto del proceso, y la máquina lo dice una vez (`EXPIRED_TOKEN_TEXT`, `state.token_expired_notice`); el
 // permiso no se borra solo. Si el repo no se lee sin permiso (privado), el 401 se dice como siempre. El cliente del repo
@@ -141,17 +141,17 @@ function client(ctx, { deadlineAt = null, waitUntil = null, keepToken = false } 
   // un permiso que ya contestó 401 contra un repo público en este proceso no se vuelve a mandar (`keepToken`: el repo del equipo)
   let expired = false;
   if (token && !keepToken && EXPIRED_TOKEN === token) { token = null; expired = true; }
-  // sin permiso, las rutas públicas (story 8.34); con permiso, ninguna: el camino es el de la API, como antes
+  // sin permiso, las rutas públicas; con permiso, ninguna: el camino es el de la API
   const pub = token ? null : PG.bases(env);
   // el tope que contestó la API en esta corrida (la hora de renovación, en ms), y la espera que se respeta (el arranque)
   const limit = { until: null };
   // el reloj se puede correr (`setDeadline`): mirar es corto y bajar es largo, y quien baja después de mirar no hereda lo que
-  // sobró de la mirada (2026-10-09). `clock` cuenta desde cuándo corre y cuántos pedidos contestaron: con eso un fallo del
+  // sobró de la mirada. `clock` cuenta desde cuándo corre y cuántos pedidos contestaron: con eso un fallo del
   // reloj se dice como lo que es («se acabó el tiempo») y no como «sin red»
   const clock = { deadline: deadlineAt || (Date.now() + budgetS(env) * 1000), since: Date.now(), answered: 0 };
   const http = lib('http-get.js');
   const get = (route, { etag = null, maxBytes = 8 * 1024 * 1024, timeoutMs = null, retry = true } = {}) => {
-    // la espera del tope (decisión 6 de la 8.34): hasta la hora que dijo GitHub, ningún pedido a la API
+    // la espera del tope: hasta la hora que dijo GitHub, ningún pedido a la API
     if (waitUntil && Date.now() < waitUntil) return { ok: false, kind: 'limited', until: waitUntil, message: 'la API está en su tope' };
     const headers = Object.assign({ Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': API_VERSION }, GA.authHeaders(token));
     if (etag) headers['If-None-Match'] = etag;
@@ -204,7 +204,7 @@ function resetOf(headers) {
 }
 /** HH:MM en la hora local de la máquina. */
 function localHHMM(ms) { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
-/** El tope, dicho (decisión 7): hasta qué hora, en hora local; sin pedir un permiso como única salida. */
+/** El tope, dicho: hasta qué hora, en hora local; sin pedir un permiso como única salida. */
 function limitText(c, until) {
   return `GitHub limita las consultas ${c.token ? 'de tu permiso' : 'sin permiso de esta conexión'} hasta las ${localHHMM(until)}`;
 }
@@ -220,7 +220,7 @@ function outOfClockText(r, what) {
 }
 
 /**
- * Qué decir cuando un pedido no sirvió (AC 9 y 11): `{ status: 'unknown', reason }` para lo que no se pudo mirar, y
+ * Qué decir cuando un pedido no sirvió: `{ status: 'unknown', reason }` para lo que no se pudo mirar, y
  * `{ status: 'blocked', reason }` para lo que sí contestó y cierra el camino. `probeUser`: pide /user para la causa del 404.
  */
 function explainFailure(c, r, { what = 'la API de GitHub', probeUser = true, repo = null } = {}) {
@@ -229,15 +229,15 @@ function explainFailure(c, r, { what = 'la API de GitHub', probeUser = true, rep
     if (r.outOfClock) return { status: 'unknown', outOfClock: true, reason: outOfClockText(r, what) };
     if (r.kind === 'network') return { status: 'unknown', reason: `sin red: no pude hablar con ${what} (${r.code || r.message})` };
     if (r.kind === 'proxy-timeout' || r.kind === 'proxy') return { status: 'unknown', reason: `proxy sin respuesta: ${r.message}` };
-    // sin proxy, un servidor que no contesta es «sin red» (la regla de la 8.13 T4: una IP no ruteable, un servidor mudo)
+    // sin proxy, un servidor que no contesta es «sin red» (una IP no ruteable, un servidor mudo)
     if (r.kind === 'timeout') return { status: 'unknown', reason: `sin red: ${what} no contestó dentro del tope (${r.message})` };
     if (r.kind === 'tls') return { status: 'unknown', reason: `no pude verificar el certificado de ${what} (${r.message})` };
     return { status: 'unknown', reason: `no pude mirar ${what}: ${r.message}` };
   }
-  // `c.repos` (story 8.25): con la capa del equipo declarada, el permiso tiene que ver los DOS repos y la acción los nombra
+  // `c.repos`: con la capa del equipo declarada, el permiso tiene que ver los DOS repos y la acción los nombra
   if (r.status === 401) return { status: 'blocked', reason: GA.explain401({ repos: c.repos || null }) };
   if (r.status === 403 && String(r.headers['x-ratelimit-remaining']) === '0') {
-    // el tope (story 8.34, decisión 7): la hora local, y que se puede esperar; el permiso es una opción, no la única salida
+    // el tope: la hora local, y que se puede esperar; el permiso es una opción, no la única salida
     const until = resetOf(r.headers);
     return { status: 'unknown', limitedUntil: until, reason: `${limitText(c, until)}: probá de nuevo después de esa hora${c.token ? '' : ' (un permiso guardado tiene otro tope, pero el repo público no lo necesita)'}` };
   }
@@ -245,7 +245,7 @@ function explainFailure(c, r, { what = 'la API de GitHub', probeUser = true, rep
     let userStatus = null;
     if (probeUser && c.token) { const u = c.get('/user'); userStatus = u.ok ? u.status : null; }
     // el repo se nombra sólo cuando hay DOS que distinguir (la copia y el del equipo, `c.repos`): una máquina sin equipo ve el
-    // texto de siempre (AC 16 de la story 8.25)
+    // texto de siempre
     return { status: 'blocked', reason: GA.explain404({ token: c.token, userStatus, repo: c.repos ? repo : null, repos: c.repos || null }) };
   }
   return { status: 'unknown', reason: `${what} contestó ${r.status}` };
@@ -336,7 +336,7 @@ function resolveChannel(c, repo, channel, { installed = null, tips = null, log =
   if (c.public && !c.token) {
     const p = resolvePublic(c, repo, channel, { tips });
     if (!p.fallback) return p;
-    // el respaldo (decisión 4): github.com sin contestar o info/refs ilegible → la API, como antes, y queda dicho
+    // el respaldo: github.com sin contestar o info/refs ilegible → la API y queda dicho
     if (log) log(`mirar: ${p.fallback}: miro por la API`);
   }
   const hadToken = Boolean(c.token);
@@ -369,7 +369,7 @@ function resolveChannel(c, repo, channel, { installed = null, tips = null, log =
 }
 
 /**
- * Lo que el canal apunta, sin la API (story 8.34): las ramas de UN `info/refs` y el número del raw de cada commit (o de
+ * Lo que el canal apunta, sin la API: las ramas de UN `info/refs` y el número del raw de cada commit (o de
  * `tips`, los commits cuyo número ya se conoce: el instalado y las puntas ya vistas). La misma forma que `resolveChannel`,
  * o `{ fallback: <por qué> }` cuando hay que mirar por la API.
  */
@@ -402,7 +402,7 @@ function resolvePublic(c, repo, channel, { tips = null } = {}) {
  * su caché de 5 minutos podría dar un número viejo). Sólo vale un 200 que es un `version.json` con su número; cualquier
  * otra cosa —sin red, sin respuesta, un 404, la página de un proxy que filtra (con 200 o con 404), algo que no se lee— es
  * «raw caído» y se pide ese único `version.json` a la API (que distingue de verdad un commit sin version.json). El raw
- * tiene a lo sumo la mitad del reloj, para que al respaldo le quede la otra (pase adversarial de la story 8.34).
+ * tiene a lo sumo la mitad del reloj, para que al respaldo le quede la otra.
  * `{ ok, version }` (`version: null` si el commit no lo trae) o el motivo; lo que lee lo suma a `tips`.
  */
 function numberAt(c, repo, sha, tips, tags = null) {
@@ -444,12 +444,12 @@ function check(ctx, state, { channel, log = null, deadlineAt = null, waitUntil =
   const ch = channel || state.channel || 'stable';
   const etags = isObject(src.etags) ? src.etags : {};
   // la ref del canal con el ETag de la última mirada: un 304 dice «la MISMA punta que vi» (su commit y su número vienen
-  // guardados con el ETag) sin gastar cuota (AC 9); lo que se compara con lo instalado es siempre ese commit, nunca
+  // guardados con el ETag) sin gastar cuota; lo que se compara con lo instalado es siempre ese commit, nunca
   // «no cambió desde la última mirada» (la última mirada pudo ser de otro canal, o de una punta todavía no instalada)
   const want = ch === 'latest' ? SYNC_REF : MAIN_REF;
   const cached = etags[`ref:${want}`];
   let t = null;
-  // (sin permiso no hay ETag: un 304 sin credencial gasta igual —story 8.34—; se mira por info/refs)
+  // (sin permiso no hay ETag: un 304 sin credencial gasta igual; se mira por info/refs)
   if (!c.public && ch !== 'latest' && trustedCache(cached)) {
     const same = refCommit(c, repo(src), want, { etag: cached.etag, retry: false });
     if (same.ok && same.unchanged) t = fromCache(cached, want);
@@ -590,7 +590,7 @@ function download(ctx, c, repoName, { commit, version, ref, tagged = false, log 
   if (!meta.ok || meta.status !== 200 || !meta.json || !meta.json.tree || typeof meta.json.tree.sha !== 'string') return Object.assign({ ok: false }, explainFailure(c, meta, { what: `el commit ${sha7(commit)}` }));
   const expectedTree = meta.json.tree.sha;
   const tarBudget = Number(ctx.env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) > 0 ? Number(ctx.env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) : TARBALL_BUDGET_S_DEFAULT;
-  // sin permiso, de codeload (story 8.34): el mismo archivo al que redirigía la API, sin gastar una consulta
+  // sin permiso, de codeload: el mismo archivo al que redirige la API, sin gastar una consulta
   const tar = c.public
     ? c.getPublic(PG.tarUrl(c.public, repoName, commit), { maxBytes: MAX_TARBALL_BYTES, timeoutMs: tarBudget * 1000 })
     : c.get(`/repos/${repoName}/tarball/${commit}`, { maxBytes: MAX_TARBALL_BYTES, timeoutMs: tarBudget * 1000 });
@@ -604,7 +604,7 @@ function download(ctx, c, repoName, { commit, version, ref, tagged = false, log 
     fs.rmSync(dir, { recursive: true, force: true });
     return { ok: false, status: 'blocked', reason: `lo bajado no coincide con el commit ${sha7(commit)}: el árbol calculado es ${sha7(got)} y el del commit ${sha7(expectedTree)} — no instalo nada` };
   }
-  // el número con el que se nombra la versión sale de algo verificado (story 8.34, decisión 5): el version.json del árbol
+  // el número con el que se nombra la versión sale de algo verificado: el version.json del árbol
   // verificado tiene que decir el número que se dio (el del raw, o el de la API). Con el número de una etiqueta, el árbol
   // dice el PISO: tiene que traer la marca y un piso que no pase a la etiqueta
   if (version) {
@@ -632,7 +632,7 @@ function readManifest(dir) {
   try { const j = JSON.parse(fs.readFileSync(path.join(dir, MANIFEST_NAME), 'utf8')); return isObject(j) && Array.isArray(j.files) ? j : null; } catch (_) { return null; }
 }
 
-// ── las skills de terceros, desde la caché (AC 12) ───────────────────────────────────────────────────────────────
+// ── las skills de terceros, desde la caché ───────────────────────────────────────────────────────────────
 /**
  * Los destinos `download` del manifiesto de terceros del árbol que hay que reponer: los que NO están en el disco y, cuando
  * la caché de la bajada tiene su manifiesto, los que están con OTRO contenido (archivo por archivo, por hash; los modos
@@ -695,10 +695,10 @@ function restoreThirdParty(ctx, c, incomingDir, { log = null, only = null } = {}
   const origins = isObject(manifest.origins) ? manifest.origins : {};
   const resolved = (e) => { const base = e.from && isObject(origins[e.from]) ? origins[e.from] : {}; return Object.assign({}, e, { origin: e.origin !== undefined ? e.origin : base.origin, commit: e.commit !== undefined ? e.commit : base.commit }); };
   const rawEntries = Array.isArray(manifest.thirdParty) ? manifest.thirdParty : Array.isArray(manifest.third_party) ? manifest.third_party.map((e) => (isObject(e) ? resolved(e) : e)) : [];
-  // la forma de cada entrada ANTES de usarla para borrar o escribir (revisor de seguridad de la tanda G de la 8.23): un destino
+  // la forma de cada entrada ANTES de usarla para borrar o escribir: un destino
   // relativo, sin `..` ni segmentos vacíos, que quede dentro del árbol; un commit de 40 hexadecimales. Lo que no cumple se
   // dice y no se toca (el manifiesto publicado está verificado, pero este código escribe también en el árbol en uso).
-  // `only` (tanda G): sólo esos destinos — la actualización al día repone lo que FALTA, no vuelve a copiar todo
+  // `only`: sólo esos destinos — la actualización al día repone lo que FALTA, no vuelve a copiar todo
   const SHA40 = /^[0-9a-f]{40}$/i;
   const saneTarget = (t) => typeof t === 'string' && t && !path.isAbsolute(t) && !t.includes('\\') && !t.includes('\0')
     && !t.split('/').some((s) => s === '' || s === '.' || s === '..' || s === '.git')
@@ -719,7 +719,7 @@ function restoreThirdParty(ctx, c, incomingDir, { log = null, only = null } = {}
     if (!origin) return { failure: `el origen ${e.origin} no es un repo de GitHub` };
     const key = `${origin.org}/${origin.name}@${e.commit}`;
     if (!downloads.has(key)) {
-      // sin permiso, de codeload (story 8.34); su verificación contra el árbol declarado no cambia
+      // sin permiso, de codeload; su verificación contra el árbol declarado no cambia
       const tar = c.public
         ? c.getPublic(PG.tarUrl(c.public, `${origin.org}/${origin.name}`, e.commit), { maxBytes: MAX_TARBALL_BYTES, timeoutMs: TARBALL_BUDGET_S_DEFAULT * 1000 })
         : c.get(`/repos/${origin.org}/${origin.name}/tarball/${e.commit}`, { maxBytes: MAX_TARBALL_BYTES, timeoutMs: TARBALL_BUDGET_S_DEFAULT * 1000 });
@@ -782,7 +782,7 @@ function restoreThirdParty(ctx, c, incomingDir, { log = null, only = null } = {}
   return { notes: [...notes0, ...notes] };
 }
 
-// ── el cambio con diario (AC 12, 13, 14) ─────────────────────────────────────────────────────────────────────────
+// ── el cambio con diario ─────────────────────────────────────────────────────────────────────────
 
 // un sello único por carpeta apartada: dos cambios en el mismo segundo (las pruebas, una máquina rápida) no pueden chocar
 // en `trash/` — el `rename` sobre una carpeta que ya existe falla, y la actualización «esperaría» sin motivo
@@ -804,19 +804,19 @@ function renameRetry(from, to) {
 function writeJournal(file, data) { fs.mkdirSync(path.dirname(file), { recursive: true }); const tmp = `${file}.tmp-${process.pid}`; fs.writeFileSync(tmp, `${JSON.stringify(Object.assign({ schema: 1 }, data), null, 2)}\n`); fs.renameSync(tmp, file); }
 function readJournal(file) { try { const j = JSON.parse(fs.readFileSync(file, 'utf8')); return isObject(j) && typeof j.stage === 'string' ? j : null; } catch (_) { return null; } }
 
-// ── el cambio con ENLACES (story 8.33): Windows, y las pruebas de Mac con TYCON_RELEASE_LINKS=1 ─────────────────────
+// ── el cambio con ENLACES: Windows, y las pruebas de Mac con TYCON_RELEASE_LINKS=1 ─────────────────────
 // `harness` y `previous` son enlaces (uniones en Windows) a `versions/<v>/`. Cambiar de versión, volver atrás y reparar
 // cambian ENLACES; ninguna carpeta de versión se renombra después de armada, así que una carpeta tomada por otra sesión
-// o por VS Code no frena nada (182 #13451: la unión se cambia con su destino tomado). El diario es otro archivo
-// (`link-swap.json`): la copia fija de antes de esta story borra `swap.json` si `harness` existe, y lo perdería.
+// o por VS Code no frena nada (la unión se cambia con su destino tomado). El diario es otro archivo
+// (`link-swap.json`): la copia fija de una versión anterior borra `swap.json` si `harness` existe, y lo perdería.
 // Regla de la reparación: un cambio cortado vuelve los dos enlaces a donde estaban (el estado todavía dice esa versión).
 
 const linksOn = (ctx) => TH.linksMode({ env: ctx.env });
 // el número del manifiesto da el nombre de una carpeta que después se puede borrar: sólo un número publicado, nunca algo
-// con separadores (revisor de seguridad: `../` en un manifiesto ajeno)
+// con separadores (`../` en un manifiesto ajeno)
 const versionOfDir = (dir) => { const m = readManifest(dir); return m && m.version && VO.isOrdered(String(m.version)) ? String(m.version) : null; };
-// la misma carpeta: por su ruta real si existe, y sin distinguir mayúsculas en Windows (pase adversarial, clase 2: una
-// casa escrita con otra caja, o /tmp y /private/tmp, hacía parecer libre la versión en uso y la limpieza la borraba)
+// la misma carpeta: por su ruta real si existe, y sin distinguir mayúsculas en Windows (una
+// casa escrita con otra caja, o /tmp y /private/tmp, hace parecer libre la versión en uso y la limpieza la borra)
 const canon = (p) => { let r = path.resolve(p); try { r = fs.realpathSync(r); } catch (_) { /* no está: tal cual */ } return process.platform === 'win32' ? r.toLowerCase() : r; };
 const sameDir = (a, b) => Boolean(a && b) && canon(a) === canon(b);
 // el mismo NOMBRE (sin seguir enlaces): para validar lo que nombra un diario
@@ -833,7 +833,7 @@ function linkedVersions(own) { return [TH.linkTarget(own.harness), TH.linkTarget
 function freeVersionDir(ctx, own, v) {
   const base = path.join(own.versions, String(v || 'sin-numero'));
   if (!exists(base)) return base;
-  // como la limpieza (D6, pase adversarial clase 3): primero se APARTA a trash/ —en Windows falla entera si algo la tiene
+  // como la limpieza: primero se APARTA a trash/ —en Windows falla entera si algo la tiene
   // abierta, así nunca se borra a medias una versión en uso—, y lo que una pieza nombra no se toca
   if (!linkedVersions(own).some((t) => sameDir(t, base)) && !isNamed(ctx, base)) {
     try {
@@ -864,7 +864,7 @@ function restoreLinks(own, j) {
 }
 
 /**
- * La conversión de una máquina en la forma de hoy (decisión 7 de la 8.33): `harness/` y `previous/` carpetas reales pasan
+ * La conversión de una máquina en la forma con enlaces: `harness/` y `previous/` carpetas reales pasan
  * a `versions/<v>/` y su nombre a ser un enlace. Es un `rename` de la carpeta en uso —el mismo que falla con una ventana
  * abierta—, una sola vez por máquina. `{ ok, converted, held?, reason? }`: con `harness/` tomada, `ok: false, held: true`
  * y nada cambió para `harness`. Lo llaman el arranque (cada vez, sin frenar nada) y el cambio de versión.
@@ -889,8 +889,8 @@ function convertLayout(ctx, { log = null } = {}) {
         if (log) log(`release: conversión a la forma con enlaces: ${own.harness} está tomada (${r.reason}); queda para el próximo arranque`);
         return { ok: false, held: true, reason: `${own.harness} está tomada (${r.reason})` };
       }
-      // `previous` tomada con `harness` ya convertida: la conversión queda A MEDIAS y cuenta como TRABADA (pase adversarial,
-      // clase 1): con `previous` todavía carpeta no hay a dónde volver, así que no se cambia de versión hasta que las dos
+      // `previous` tomada con `harness` ya convertida: la conversión queda A MEDIAS y cuenta como TRABADA:
+      // con `previous` todavía carpeta no hay a dónde volver, así que no se cambia de versión hasta que las dos
       // sean enlaces. `harness` ya convertida queda así (es la misma versión); el arranque siguiente reintenta `previous`
       fs.rmSync(own.linkJournal, { force: true });
       if (log) log(`release: conversión: ${own.previous} está tomada (${r.reason}); queda como carpeta hasta el próximo arranque`);
@@ -909,7 +909,7 @@ function swapLinks(ctx, { incomingDir, version, log = null }) {
   const own = TH.ownPaths({ env: ctx.env });
   const conv = convertLayout(ctx, { log });
   if (!conv.ok) {
-    // la versión no se pierde (AC 10): queda en versions/<v>; la máquina sigue en la de antes
+    // la versión no se pierde: queda en versions/<v>; la máquina sigue en la de antes
     let kept = null;
     let keptWhy = null;
     try {
@@ -924,7 +924,7 @@ function swapLinks(ctx, { incomingDir, version, log = null }) {
   const harnessWas = TH.linkTarget(own.harness);
   const previousWas = TH.linkTarget(own.previous);
   // lo ajeno dentro de una skill de la lista fija en la versión que deja de ser «anterior» se guarda antes de soltarla
-  // (tanda A2c de la 8.25 · AC 36): la limpieza la va a borrar
+  // (la limpieza la va a borrar)
   const kept = [];
   if (previousWas && !sameDir(previousWas, harnessWas)) {
     try {
@@ -981,7 +981,7 @@ function swapBackLinks(ctx, { log = null, reason = 'rollback' } = {}) {
   return { ok: true, aside: reason === 'rollback' ? own.previous : harnessWas };
 }
 
-/** Repara un cambio de enlaces cortado (AC 5). `{ repaired, lines }`; sin `link-swap.json`, nada. */
+/** Repara un cambio de enlaces cortado. `{ repaired, lines }`; sin `link-swap.json`, nada. */
 function repairLinks(ctx, { log = null } = {}) {
   const own = TH.ownPaths({ env: ctx.env });
   if (!exists(own.linkJournal)) return { repaired: false, lines: [] };
@@ -1011,15 +1011,15 @@ function repairLinks(ctx, { log = null } = {}) {
 
 /** Días enteros desde una fecha ISO (0 si no se puede leer). */
 const daysSince = (iso) => { const t = Date.parse(iso || ''); return Number.isFinite(t) ? Math.max(0, Math.floor((Date.now() - t) / 86400000)) : 0; };
-const PENDING_SAY_DAYS = 7;   // decisión 9 de la 8.33: el aviso sale cuando la más vieja lleva 7 días sin poder borrarse
-// ajuste del dueño (2026-10-14) a la decisión 7: la conversión trabada avisa recién con 3 días o 10 arranques, lo que
+const PENDING_SAY_DAYS = 7;   // el aviso sale cuando la más vieja lleva 7 días sin poder borrarse
+// la conversión trabada avisa recién con 3 días o 10 arranques, lo que
 // llegue primero (un dev que nunca cierra todo arranca varias veces por día: los 10 arranques llegan antes)
 const CONVERT_SAY_DAYS = 3;
 const CONVERT_SAY_ATTEMPTS = 10;
 
 /**
- * La limpieza de `versions/` (AC 11): lo que no es destino de `harness` ni de `previous`. Primero se intenta RENOMBRAR a
- * `trash/` —en Windows falla entera si algo la tiene tomada (182 #13451), así nunca se borra a medias una versión en
+ * La limpieza de `versions/`: lo que no es destino de `harness` ni de `previous`. Primero se intenta RENOMBRAR a
+ * `trash/` —en Windows falla entera si algo la tiene tomada, así nunca se borra a medias una versión en
  * uso—; lo apartado se borra. Lo tomado queda en `state.link_pending` con la fecha en que quedó pendiente; lo nombrado no
  * se toca. Devuelve lo de `cleanupDeferred` más `held` y `oldHeld` (las tomadas de 7 días o más).
  */
@@ -1028,7 +1028,7 @@ function cleanupVersions(ctx, state, out, { log = null } = {}) {
   out.held = [];
   out.oldHeld = [];
   // con la conversión pendiente (`harness` todavía es una carpeta), lo que hay en versions/ es la versión que espera a
-  // la conversión (AC 10): no se toca hasta que harness sea un enlace
+  // la conversión: no se toca hasta que harness sea un enlace
   if (!TH.isLink(own.harness) || (exists(own.previous) && !TH.isLink(own.previous))) return out;
   const linked = linkedVersions(own);
   const pending = isObject(state.link_pending) ? Object.assign({}, state.link_pending) : {};
@@ -1039,13 +1039,13 @@ function cleanupVersions(ctx, state, out, { log = null } = {}) {
     const dir = path.join(own.versions, n);
     if (linked.some((t) => sameDir(t, dir))) continue;
     const named = isNamed(ctx, dir, { state });
-    // (lo nombrado también va a doctor: AC 11 — por el nombre de la versión, como lo pendiente)
+    // (lo nombrado también va a doctor, por el nombre de la versión, como lo pendiente)
     if (named) { namedBy[n] = named; out.kept.push(dir); out.lines.push(`${dir} no se borra: lo nombra ${named}`); continue; }
     try { fs.mkdirSync(own.trash, { recursive: true }); } catch (e) { out.kept.push(dir); out.lines.push(`${dir} queda: no pude crear ${own.trash} (${e.code || e.message})`); continue; }
     const aside = path.join(own.trash, `${n}-${stamp()}`);
     const r = renameRetry(dir, aside);
     if (!r.ok) {
-      // (se anota por el NOMBRE de la versión, no por su ruta: el estado no nombra versions/ — decisión 8, AC 4)
+      // (se anota por el NOMBRE de la versión, no por su ruta: el estado no nombra versions/)
       if (!pending[n]) pending[n] = nowIso();
       out.kept.push(dir);
       out.held.push({ dir, since: pending[n], days: daysSince(pending[n]) });
@@ -1065,12 +1065,12 @@ function cleanupVersions(ctx, state, out, { log = null } = {}) {
   return out;
 }
 
-/** El aviso de una versión vieja que no se puede borrar hace 7 días o más (decisión 9). */
+/** El aviso de una versión vieja que no se puede borrar hace 7 días o más. */
 function oldHeldText(oldHeld) {
   const h = oldHeld.slice().sort((a, b) => b.days - a.days)[0];
   return `una versión vieja del arnés (${h.dir}) no se puede borrar hace ${h.days} días: algún programa la tiene abierta. Cerrá las otras sesiones de Claude Code y de Codex, y VS Code (si sigue, reiniciá la máquina); se borra sola en el arranque siguiente`;
 }
-/** El aviso de la conversión trabada (decisión 7): qué pasa, qué cerrar, reiniciar como último recurso, el comando. */
+/** El aviso de la conversión trabada: qué pasa, qué cerrar, reiniciar como último recurso, el comando. */
 function convertHeldText(own) {
   return `el arnés no se puede actualizar en esta máquina hasta pasar a la forma nueva, y una de sus carpetas (${own.harness} o ${own.previous}) está en uso. Cerrá las otras sesiones de Claude Code y de Codex, y VS Code, y en una terminal suelta corré: node "${path.join(own.harness, 'scripts', 'setup', 'harness.js')}" update --yes. Si sigue trabado, reiniciá la máquina y corrélo antes de abrir nada. Pasa una sola vez por máquina`;
 }
@@ -1088,7 +1088,7 @@ function swap(ctx, { incomingDir, version, log = null }) {
   const base = { incoming: incomingDir, version, at: nowIso(), harness: own.harness, previous: own.previous };
   writeJournal(journal, Object.assign({ stage: 'start' }, base));
   // lo ajeno dentro de una skill de la lista fija en previous/ (una spec escrita ahí por error) se guarda en
-  // ~/.tycon/team/kept-…/previous/ ANTES de mandarla a trash/, y la salida lo nombra (tanda A2c · AC 36); nunca frena el cambio
+  // ~/.tycon/team/kept-…/previous/ ANTES de mandarla a trash/, y la salida lo nombra; nunca frena el cambio
   const kept = [];
   if (exists(own.previous)) {
     try {
@@ -1128,7 +1128,7 @@ function swap(ctx, { incomingDir, version, log = null }) {
 }
 
 /**
- * La vuelta del cambio, con el mismo diario. `rollback` (AC 15) INTERCAMBIA `harness/` y `previous/`: la deshecha queda
+ * La vuelta del cambio, con el mismo diario. `rollback` INTERCAMBIA `harness/` y `previous/`: la deshecha queda
  * en `previous/`, así un segundo `rollback` la deshace. Una salud roja (`reason: 'failed'`) manda la versión rota a
  * `trash/` y vuelve `previous/` a `harness/`: lo roto no se guarda como «anterior».
  */
@@ -1164,12 +1164,12 @@ function swapBack(ctx, { log = null, reason = 'rollback' } = {}) {
 }
 
 /**
- * Repara un cambio cortado a mitad desde el diario (AC 13). Lo llaman el arranque, bootstrap.js y, en shell, los
+ * Repara un cambio cortado a mitad desde el diario. Lo llaman el arranque, bootstrap.js y, en shell, los
  * respaldos. `{ repaired: boolean, lines }`. Sin diario, nada.
  */
 function repair(ctx, { log = null } = {}) {
   const own = TH.ownPaths({ env: ctx.env });
-  // el diario de los enlaces (story 8.33) primero; después, el de carpetas, como siempre
+  // el diario de los enlaces primero; después, el de carpetas, como siempre
   const rl = repairLinks(ctx, { log });
   if (exists(own.linkJournal)) return rl;
   const j = readJournal(own.journal);
@@ -1180,7 +1180,7 @@ function repair(ctx, { log = null } = {}) {
   switch (j.stage) {
     case 'start': case 'previous-cleared':
       // la etapa se escribe ANTES del rename harness → previous: un corte justo después deja harness/ ausente con la
-      // etapa vieja (pase adversarial de la B). Si harness/ no está, se completa igual que en «harness-out»
+      // etapa vieja. Si harness/ no está, se completa igual que en «harness-out»
       if (exists(own.harness)) { lines.push(say(`el diario quedó en «${j.stage}» con harness/ en su lugar: lo saco`)); return done(); }
     // falls through
     case 'harness-out':
@@ -1228,12 +1228,12 @@ function repair(ctx, { log = null } = {}) {
 
 /**
  * ¿Alguna pieza de la máquina nombra esta carpeta? (el estado, settings.json, hooks.json, el plist, la tarea del examen)
- * Con `state`, el estado se mira en memoria y SIN su lista de pendientes de limpiar (8.33): que la limpieza anote una
+ * Con `state`, el estado se mira en memoria y SIN su lista de pendientes de limpiar: que la limpieza anote una
  * versión como pendiente no la vuelve «nombrada».
  */
 /**
- * ¿`text` nombra la carpeta en alguna de sus `forms`? Como RUTA ENTERA: lo que sigue no puede seguir el nombre (pase
- * adversarial de la 8.33, clase 4: `versions/2026.10.14.1` está adentro de `versions/2026.10.14.18`, y la .1 quedaba
+ * ¿`text` nombra la carpeta en alguna de sus `forms`? Como RUTA ENTERA: lo que sigue no puede seguir el nombre (por ejemplo,
+ * `versions/2026.10.14.1` está adentro de `versions/2026.10.14.18`, y la .1 quedaría
  * «nombrada» para siempre).
  */
 function namesDir(text, forms) {
@@ -1251,7 +1251,7 @@ function namesDir(text, forms) {
 function isNamed(ctx, dir, { state = null } = {}) {
   const H = ctx.home || os.homedir();
   // la carpeta como se la pidió y por su ruta real: una pieza pudo escribirla con la casa escrita de otra forma (la
-  // ruta real, /var y /private/var en Mac) y tiene que contar igual (pase adversarial de la 8.33, clase 2)
+  // ruta real, /var y /private/var en Mac) y tiene que contar igual
   // …y, para una carpeta de versions/, también como se la escribe desde la carpeta del usuario (~/.tycon/versions/<v>):
   // así la nombran los enchufes aunque esta corrida tenga TYCON_HOME escrita de otra forma
   const names = [dir];
@@ -1272,7 +1272,7 @@ function isNamed(ctx, dir, { state = null } = {}) {
     path.join(H, 'Library', 'LaunchAgents', 'ar.com.tycon.examen-periodico.plist'),
   ];
   // la ruta tal cual, como la escapa JSON (en Windows `C:\\Users\\…`) y con barras normales: un settings.json o un
-  // hooks.json la guardan en cualquiera de las tres formas (pase adversarial de la B)
+  // hooks.json la guardan en cualquiera de las tres formas
   const forms = allForms;
   for (const f of files) {
     try { const text = fs.readFileSync(f, 'utf8'); if (namesDir(text, forms)) return f; } catch (_) { /* no está */ }
@@ -1288,7 +1288,7 @@ function isNamed(ctx, dir, { state = null } = {}) {
 }
 
 /**
- * La limpieza diferida (AC 14): en el arranque siguiente a una actualización SANA se borra `trash/*` y lo que quedó en
+ * La limpieza diferida: en el arranque siguiente a una actualización SANA se borra `trash/*` y lo que quedó en
  * `incoming/` que no es la versión activa. Un archivo tomado queda para el próximo arranque sin frenar nada; una carpeta
  * que alguna pieza nombra no se toca. `{ removed, kept, lines }`.
  */
@@ -1308,12 +1308,12 @@ function cleanupDeferred(ctx, state, { log = null } = {}) {
       out.lines.push(`${dir} queda para el próximo arranque (${e.code || e.message}: un archivo está tomado)`);
     }
   }
-  // la forma con enlaces (story 8.33): las versiones que ningún enlace usa
+  // la forma con enlaces: las versiones que ningún enlace usa
   if (linksOn(ctx)) cleanupVersions(ctx, state, out, { log });
   return out;
 }
 
-// ── instalar (AC 8) ───────────────────────────────────────────────────────────────────────────────────────────────
+// ── instalar ───────────────────────────────────────────────────────────────────────────────────────────────
 
 /** La fuente `release` del estado. */
 function makeSource({ repoInfo, ref, commit, tree, version }) {
@@ -1347,29 +1347,29 @@ function cmdInstall(ctx, H) {
     const f = S.fail(read, { home: ctx.home });
     return { code: f.code, lines: [f.line] };
   }
-  // qué herramientas se enchufan (tanda C, AC 21): las de `--tool`, o las detectadas. Antes de la red y de escribir
+  // qué herramientas se enchufan: las de `--tool`, o las detectadas. Antes de la red y de escribir
   // nada: sin ninguna sale 1; un `--tool` que no vale, 2
   // (sobre una máquina ya instalada, lo que estaba enchufado se conserva: `install` nunca desenchufa)
   let tc = H.toolChoice(ctx, ctx.tree, { state: read.status === 'ok' ? read.state : null });
   if (!tc.ok) return { code: tc.code, lines: [`harness.js install: ${tc.line}`] };
-  // `--profile` se revisa como en el camino del clon, antes de la red (story 8.40, pedido 2: acá un valor que no existe
-  // se instalaba igual, como full)
+  // `--profile` se revisa como en el camino del clon, antes de la red (un valor que no existe
+  // se instalaría igual, como full)
   const PR = require('./profile.js');
   const profileError = PR.checkOption(ctx.opts.profile, ctx.env);
   if (profileError) return { code: 2, lines: [`harness.js install: ${profileError}`] };
   const withClaude = tc.tools.includes('claude');
-  // Una máquina que NO enchufa a Claude Code vive entera en la casa propia del arnés (tanda C, AC 22): su estado nace en
+  // Una máquina que NO enchufa a Claude Code vive entera en la casa propia del arnés: su estado nace en
   // `~/.tycon/state` y nada se escribe en la carpeta de Claude Code. La regla la lee `tycon-home.js` del disco; acá se
   // decide quién NACE ahí: sin Claude Code y sin estado donde siempre. Al revés —sumarle Claude Code a una máquina que
-  // ya vive ahí— hay que esperar a la mudanza: el aplicador en shell tiene el lugar de antes escrito (DEF-8.23-D).
+  // ya vive ahí— hay que esperar a la mudanza: el aplicador en shell tiene el lugar de antes escrito.
   // una `~/.tycon/state` sin estado adentro es el resto de una instalación cortada (Ctrl-C en «¿Instalo?», proceso
-  // matado): no marca nada; se barre antes de decidir dónde nace esta (pase adversarial de la C, clase 7)
+  // matado): no marca nada; se barre antes de decidir dónde nace esta
   if (TH.dropStaleOwnHome(ctx.home, { log: (l) => log(`install: ${l}`) })) log(`install: ${TH.ownStateDir(ctx.home)} estaba vacía (una instalación cortada): la saqué`);
   const bornInOwnHome = !withClaude && read.status === 'missing' && !TH.livesInOwnHome(ctx.home);
   // Lo que se frena es SUMARLE Claude Code a una máquina que vive en la casa propia SIN él (nació sólo con Codex). Una máquina
-  // MUDADA (`migrate --to-home`, story 8.23 D) vive ahí CON Claude Code enchufado —su estado lo dice—: reinstalarla (por ejemplo,
-  // para sumarle la capa del equipo con --team) es una reinstalación como cualquier otra. Antes de este arreglo el guardia de
-  // la tanda C no distinguía las dos y no había forma de sumarle la capa a una máquina ya mudada (story 8.25, H7 del dueño)
+  // MUDADA (`migrate --to-home`) vive ahí CON Claude Code enchufado —su estado lo dice—: reinstalarla (por ejemplo,
+  // para sumarle la capa del equipo con --team) es una reinstalación como cualquier otra. El guardia distingue las dos formas:
+  // sin esa distinción no habría forma de sumarle la capa a una máquina ya mudada
   const ownHomeTools = read.state && Array.isArray(read.state.tools) ? read.state.tools : [];
   if (withClaude && TH.livesInOwnHome(ctx.home) && !ownHomeTools.includes('claude')) {
     return { code: 2, lines: [`harness.js install: esta máquina vive en la casa propia del arnés (${TH.ownStateDir(ctx.home)}) y se instaló sin Claude Code (sólo Codex). Sumarle Claude Code a una máquina así todavía no se puede —la mudanza a ~/.tycon es la de una máquina con clon—; sólo Codex: harness.js install --version ${String(ctx.opts.version || 'latest')} --tool codex. No escribí nada`] };
@@ -1385,10 +1385,10 @@ function cmdInstall(ctx, H) {
   if (missing) return { code: 1, lines: [`harness.js install: ${missing}`] };
   const repoInfo = repoOf({ tree: ctx.tree, option: ctx.opts.repo || null });
   if (repoInfo.problem) return { code: 2, lines: [`harness.js install: ${repoInfo.problem}`] };
-  // la capa del equipo (story 8.25, A1a): de dónde sale el repo del equipo —`--team`, o el estado que ya lo registró— y su
-  // forma, antes de la red y de escribir nada. Se RESUELVE más abajo (paso 1 bis) y se apila después del «¿Instalo?»
+  // la capa del equipo: de dónde sale el repo del equipo —`--team`, o el estado que ya lo registró— y su
+  // forma, antes de la red y de escribir nada. Se RESUELVE más abajo y se apila después del «¿Instalo?»
   const TEAM = require('./team.js');
-  // (también cuando la máquina bajada perdió su árbol —`tree_missing`—: el estado sigue recordando la capa; clase 13 del pase adversarial)
+  // (también cuando la máquina bajada perdió su árbol —`tree_missing`—: el estado sigue recordando la capa)
   const teamRepo = TEAM.teamOf({ option: ctx.opts.team, state: (read.status === 'ok' || read.status === 'tree_missing') && read.state ? read.state : null });
   if (teamRepo.problem) return { code: 2, lines: [`harness.js install: ${teamRepo.problem}`] };
   const wanted = String(ctx.opts.version || 'latest').trim();
@@ -1421,9 +1421,9 @@ function cmdInstall(ctx, H) {
     target = { ref, commit: loc.commit, version: loc.version, tagged: Boolean(loc.tagged), note: null };
   }
   // 1 bis. la capa del equipo se RESUELVE y valida acá —ref, commit, lista del árbol (lista cerrada), declaración, perfil—
-  // sin escribir ni registrar: sin acceso al repo del equipo, 1 con la HOME idéntica (AC 8). Se baja y apila después del
+  // sin escribir ni registrar: sin acceso al repo del equipo, 1 con la HOME idéntica. Se baja y apila después del
   // «¿Instalo?» y de las skills de terceros. El perfil se valida con el lector del árbol que corre y, al apilar, otra vez
-  // con el de la versión que va a quedar (AC 6)
+  // con el de la versión que va a quedar
   let teamPlan = null;
   let teamOpen = null;
   if (teamRepo.repo) {
@@ -1451,7 +1451,7 @@ function cmdInstall(ctx, H) {
     return 'perfil: sin elegir — install lo pregunta (sin terminal o con --yes: pasá --profile minimal|full)';
   };
   if (ctx.opts['dry-run']) {
-    // la conexión vieja de una skill de la lista que la capa trae (tanda A2c · AC 35): el plan dice qué se copiaría, sin escribir
+    // la conexión vieja de una skill de la lista que la capa trae: el plan dice qué se copiaría, sin escribir
     const st0 = read.status === 'ok' ? read.state : null;
     const dataPlan = teamPlan ? TEAM.moveSkillData({ home: ctx.home, env: ctx.env, dryRun: true, team: Object.assign({}, st0 && st0.team), layerPaths: teamPlan.files.map((f) => f.path), migrateHome: st0 && st0.migrate_home, previousDir: TH.ownPaths({ env: ctx.env }).previous }).lines : [];
     return { code: 0, lines: [`se instalaría ${what}`, tc.line, profileLine({ dryRun: true }), ...teamLine, ...dataPlan, ...(target.note ? [target.note] : []), ...(tokenExpired(ctx.env) ? [EXPIRED_TOKEN_TEXT] : [])] };
@@ -1461,7 +1461,7 @@ function cmdInstall(ctx, H) {
   // desde acá se escribe (la bajada, el registro): la máquina sin Claude Code ya vive en su casa, así ni el registro de
   // esta instalación cae en la carpeta de Claude Code
   if (bornInOwnHome) {
-    // un corte por señal (Ctrl-C en la bajada o en la pregunta) también deshace lo creado: sin esto quedaba la carpeta
+    // un corte por señal (Ctrl-C en la bajada o en la pregunta) también deshace lo creado: sin esto quedaría la carpeta
     for (const sig of ['SIGINT', 'SIGTERM']) process.once(sig, () => { undoOwnHome(); process.exit(130); });
     try { TH.adoptOwnHome(ctx.home); } catch (e) { return { code: 1, lines: [`harness.js install: no pude crear ${TH.ownStateDir(ctx.home)} (${e.code || e.message}): sin esa carpeta el estado caería en la de Claude Code. No instalé nada`] }; }
   }
@@ -1474,13 +1474,13 @@ function cmdInstall(ctx, H) {
   // bajado: así ya ven el perfil del equipo y no preguntan lo que el equipo contesta)
   let teamStack = null;
   if (teamPlan) {
-    // un choque con la versión bajada se mira ANTES de bajar la capa: no queda nada escrito (AC 4)
+    // un choque con la versión bajada se mira ANTES de bajar la capa: no queda nada escrito
     const col = TEAM.collisionWith(teamPlan, d.dir);
     if (col.length) { const why = TEAM.collisionReason(teamPlan, d.dir, col); fs.rmSync(d.dir, { recursive: true, force: true }); undoOwnHome(); return { code: 1, lines: [`harness.js install: ${why}`] }; }
     const tf = teamOpen.fetch(teamPlan, { env: ctx.env, log });
     if (!tf.ok) { fs.rmSync(d.dir, { recursive: true, force: true }); undoOwnHome(); return { code: tf.status === 'unknown' ? 2 : 1, lines: [`harness.js install: ${tf.reason}`] }; }
     teamStack = TEAM.stackTeam(tf, d.dir, { home: ctx.home, env: ctx.env, log });
-    // el momento 2 (AC 26) no deja ni incoming/ ni la caché que esta corrida acaba de crear
+    // si el apilado falla, no quedan ni incoming/ ni la caché que esta corrida acaba de crear
     if (!teamStack.ok) {
       fs.rmSync(d.dir, { recursive: true, force: true });
       let left = '';
@@ -1522,7 +1522,7 @@ function cmdInstall(ctx, H) {
     notes.push(...(sw.kept || []));
     pieces.push('tree');
     // 5. los enlaces de hoy, al árbol nuevo: el lugar y agent-skills. Son enchufes de Claude Code (viven en su carpeta):
-    // una máquina que no lo enchufa no los tiene (tanda C, AC 22)
+    // una máquina que no lo enchufa no los tiene
     if (withClaude) {
       // el lugar apunta a ~/.tycon/harness aunque hoy apunte a otro clon válido: `link` lo fuerza (como `install --local`)
       const l = H.ensureLink(ctx, tree, { link: tree, prefer: tree });
@@ -1544,12 +1544,12 @@ function cmdInstall(ctx, H) {
     }
     else { state.tree = tree; state.sources = [src]; state.mode = 'managed'; state.version.number = target.version; pieces.push('state'); }
     state.source = 'public';
-    // la capa del equipo queda en el estado (story 8.25, AC 2 y 7): `update` la lleva a cada versión nueva
+    // la capa del equipo queda en el estado: `update` la lleva a cada versión nueva
     state.team = teamStack ? TEAM.stateEntry(teamStack.manifest, existing && existing.team) : null;
-    // qué herramientas enchufa esta máquina queda ESCRITO (tanda C): el arranque no vuelve a detectar
+    // qué herramientas enchufa esta máquina queda ESCRITO: el arranque no vuelve a detectar
     state.tools = [...tc.tools];
     // con la capa apilada, la política se RELEE del árbol que quedó (trae el perfil del equipo): así el estado dice el canal
-    // del perfil y el arranque siguiente no anuncia «el canal vigente cambió» (AC 7)
+    // del perfil y el arranque siguiente no anuncia «el canal vigente cambió»
     const policyAfter = teamStack ? H.policyOf(ctx, tree) : null;
     if (policyAfter && policyAfter.errors.length) notes.push(`la política del equipo no se pudo leer después de apilar la capa (${policyAfter.errors[0]}): sigue con el canal de antes (${policy.channel})`);
     const policyNow = policyAfter && !policyAfter.errors.length ? policyAfter : policy;
@@ -1568,8 +1568,8 @@ function cmdInstall(ctx, H) {
       if (H.ensureImport(ctx)) pieces.push('import');
     }
     // 8. el perfil pedido (con --profile o contestado) y lo contestado, con el escritor único de la configuración y antes
-    // del aplicador, como el camino del clon: sin esto el aplicador instalaba full aunque se pidiera minimal (story 8.40,
-    // pedido 2). Si no se puede escribir, no se sigue: el aplicador instalaría otro perfil que el pedido
+    // del aplicador, como el camino del clon: sin esto el aplicador instalaría full aunque se pidiera minimal.
+    // Si no se puede escribir, no se sigue: el aplicador instalaría otro perfil que el pedido
     if (ctx.opts.profile && H.machineProfile(ctx) !== ctx.opts.profile) {
       let sk;
       try { sk = require(path.join(tree, 'scripts', 'lib', 'tycon-config.js')).setKey(ctx.home, PR.KEY, ctx.opts.profile, { env: ctx.env }); } catch (e) { sk = { ok: false, reason: e.message }; }
@@ -1597,7 +1597,7 @@ function cmdInstall(ctx, H) {
     if (tc.tools.includes('codex')) pieces.push('codex');
     // lo que el enchufe de Codex le dice a la persona (un servidor MCP que falta, los hooks a aprobar) va al cierre
     if (tc.tools.includes('codex')) for (const w of a.warnings || []) if (!notes.includes(w)) notes.push(w);
-    // reinstalar con otro perfil (story 8.40, pedido 2; como el clon en install, story 8.16 AC 26): lo registrado que el
+    // reinstalar con otro perfil (como el clon en install): lo registrado que el
     // perfil nuevo ya no trae se quita antes de fundir el registro. Si no se supo qué sobraba, el estado se queda con el
     // perfil de antes y el arranque siguiente lo reintenta
     const profNow = H.profileOf(ctx, tree);
@@ -1605,7 +1605,7 @@ function cmdInstall(ctx, H) {
     const dropped = switching ? H.dropForProfile(ctx, state, tree, a, log, profNow.value) : true;
     if (switching) notes.push(...H.profileSwitchNotes(dropped));
     H.recordPieces(ctx, state, a.report, a.shared);
-    // la carpeta global de hooks de git (2026-10-14): si git no tenía ninguna, la puso el aplicador de arriba; se dice, y
+    // la carpeta global de hooks de git: si git no tenía ninguna, la puso el aplicador de arriba; se dice, y
     // si git no la dejó escribir, el aviso con el comando a mano (los demás avisos del aplicador no llegan a este cierre)
     { const hp = H.noteHooksPath(state, a); if (hp) notes.push(hp); else if (a.gitHooksPath && a.gitHooksPath.status === 'failed') notes.push(...a.gitHooksPath.line.split('\n')); }
     if (profNow.ok && dropped !== null) state.profile = { value: profNow.value, origin: profNow.origin };
@@ -1620,8 +1620,8 @@ function cmdInstall(ctx, H) {
     }
     state.failed = null;
     state.last_health = nowIso();
-    // la conexión vieja de una skill de la lista fija (tanda A2c · AC 35): después del cambio sano, una vez por skill; lo que
-    // no se pudo copiar se dice y no frena la instalación (D4)
+    // la conexión vieja de una skill de la lista fija: después del cambio sano, una vez por skill; lo que
+    // no se pudo copiar se dice y no frena la instalación
     const moved = TEAM.moveSkillData({ home: ctx.home, env: ctx.env, team: state.team, harnessDir: tree, migrateHome: existing && existing.migrate_home, previousDir: TH.ownPaths({ env: ctx.env }).previous });
     for (const l of moved.lines) { notes.push(l); log(l); }
     S.write(ctx.home, state);
@@ -1635,7 +1635,7 @@ function cmdInstall(ctx, H) {
   }, { env: ctx.env, onBusy: (lock) => ({ code: 3, lines: [`harness.js: ${lock.reason || 'otra sesión está actualizando'}`] }) });
 }
 
-// ── actualizar (AC 9, 10, 12) ─────────────────────────────────────────────────────────────────────────────────────
+// ── actualizar ─────────────────────────────────────────────────────────────────────────────────────
 
 /**
  * El `doUpdate` de una instalación release: mira (`check`), y con `mode: 'apply'` baja, verifica, restituye terceros,
@@ -1643,8 +1643,8 @@ function cmdInstall(ctx, H) {
  * `{ status, code, lines, backup? }`. `yes` levanta la retención y reintenta lo fallido.
  */
 /**
- * La capa del equipo puesta al día DENTRO de harness/ cuando no se instala una versión pública (story 8.25, A1b · AC 10). Sólo
- * con `state.team.repo`. Sin red primero: un archivo de la capa que FALTA se repone desde la caché del mismo commit (W11). Después
+ * La capa del equipo puesta al día DENTRO de harness/ cuando no se instala una versión pública. Sólo
+ * con `state.team.repo`. Sin red primero: un archivo de la capa que FALTA se repone desde la caché del mismo commit. Después
  * la ref: si da el commit que ya está en harness/ (o uno ya rechazado), nada más (una mirada = un pedido). Con un commit nuevo:
  * se resuelve y valida contra la versión INSTALADA (su número y su lector), se mira el choque con su manifiesto antes de bajar,
  * se baja a la caché y se refresca en el lugar como una transacción (`team.refreshInPlace`). Lo que no se puede no cambia nada en
@@ -1663,15 +1663,15 @@ function refreshTeam(ctx, state, { log = null, publicRepo = null } = {}) {
     const text = `capa del equipo: ${reason} — sigue en ${label}`;
     const why = String(reason).slice(0, 600);
     state.team = Object.assign({}, state.team, { last_error: { at: nowIso(), reason: why } });
-    // con la versión que la rechazó (A2a, AC 29): otra versión instalada la vuelve a evaluar
+    // con la versión que la rechazó: otra versión instalada la vuelve a evaluar
     if (rejectCommit && SHA40.test(String(rejectCommit))) state.team.rejected = { commit: rejectCommit, reason: why, at: nowIso(), version: (state.version && state.version.number) || null };
     say(text);
     return { status: 'failed', lines: [text], notice: text };
   };
   const lines = [];
-  // si el perfil cambió se compara por su contenido antes y después, en CUALQUIER rama (pase adversarial, C-2: la reposición
+  // si el perfil cambió se compara por su contenido antes y después, en CUALQUIER rama (la reposición
   // desde la caché también lo cambia y la política se tiene que releer)
-  // el perfil con su nombre de hoy o el de antes (team.js → profileIn): un repo del equipo que lo renombra no cuenta como cambio
+  // el perfil con su nombre actual o el viejo (team.js → profileIn): un repo del equipo que lo renombra no cuenta como cambio
   const profileNow = () => { try { return fs.readFileSync(TEAM.profileIn(own.harness).file, 'utf8'); } catch (_) { return null; } };
   const profileBefore = profileNow();
   try {
@@ -1694,8 +1694,8 @@ function refreshTeam(ctx, state, { log = null, publicRepo = null } = {}) {
       }
     }
     // 2. la ref: una punta conocida (la de harness/ o una ya rechazada) no pide nada más
-    // una punta rechazada se saltea sólo si la rechazó ESTA versión (A2a, AC 29: una versión que la entiende la vuelve a evaluar,
-    // aunque haya llegado sin pasar por el apilado de update —rollback, install --version—); sin versión anotada (A1b), como antes
+    // una punta rechazada se saltea sólo si la rechazó ESTA versión (una versión que la entiende la vuelve a evaluar,
+    // aunque haya llegado sin pasar por el apilado de update —rollback, install --version—); sin versión anotada, se rechaza igual
     const rj = isObject(state.team.rejected) && SHA40.test(String(state.team.rejected.commit)) ? state.team.rejected : null;
     const rejected = rj && (!rj.version || rj.version === (state.version && state.version.number)) ? rj : null;
     const known = [];
@@ -1707,7 +1707,7 @@ function refreshTeam(ctx, state, { log = null, publicRepo = null } = {}) {
     const r = open.resolve({ version: state.version && state.version.number, readerTree: own.harness, home: ctx.home, env: ctx.env, knownCommits: known });
     // una versión pública que no se instaló por la capa (team-collision / team-invalid) se reintenta cuando la punta del equipo
     // es OTRA que la que se evaluó al fallar —aunque la instalada no la acepte (p. ej. `requires.harness` subido a esa versión)—:
-    // la decide `update` contra la versión nueva en el arranque siguiente (pase adversarial de la A2a, clases 1, 6, 9 y 12)
+    // la decide `update` contra la versión nueva en el arranque siguiente
     if (state.failed && (state.failed.reason === 'team-collision' || state.failed.reason === 'team-invalid')
       && r.commit && SHA40.test(String(r.commit)) && r.commit !== state.failed.team_commit) {
       lines.push(`capa del equipo: la punta cambió (${sha7(r.commit)}): la versión ${state.failed.commit || '—'} se vuelve a intentar en el próximo arranque`);
@@ -1729,12 +1729,12 @@ function refreshTeam(ctx, state, { log = null, publicRepo = null } = {}) {
     if (!tf.ok) return fail(tf.reason);
     const rf = TEAM.refreshInPlace(tf, own.harness, { home: ctx.home, env: ctx.env, log });
     if (!rf.ok) {
-      // una punta que no vale para la versión instalada (momento 2, AC 26) no deja la caché que esta corrida acaba de crear
+      // una punta que no vale para la versión instalada no deja la caché que esta corrida acaba de crear
       if (rf.invalid && !tf.fromCache) { try { fs.rmSync(tf.cacheDir, { recursive: true, force: true }); } catch (_) { /* queda: la próxima bajada la reemplaza */ } }
       return fail(rf.reason, { rejectCommit: rf.invalid || rf.collision ? r.commit : null });
     }
     state.team = TEAM.stateEntry(rf.manifest, state.team);
-    // una versión pública anotada como fallida por chocar con la capa o por no aceptarla: con la capa nueva se reintenta (N1, AC 19)
+    // una versión pública anotada como fallida por chocar con la capa o por no aceptarla: con la capa nueva se reintenta
     if (state.failed && (state.failed.reason === 'team-collision' || state.failed.reason === 'team-invalid')) state.failed = null;
     lines.push(`capa del equipo ${rf.manifest.name} (${rf.manifest.repo}): ${rf.from ? sha7(rf.from) : 'sin capa'} → ${sha7(rf.manifest.commit)}${rf.written.length ? ` · actualizado(s) ${rf.written.join(', ')}` : ''}${rf.removed.length ? ` · quitado(s) ${rf.removed.join(', ')}` : ''}`);
     const handEdited = [...rf.kept, ...rf.keptRemoved];
@@ -1749,7 +1749,7 @@ function refreshTeam(ctx, state, { log = null, publicRepo = null } = {}) {
 
 /**
  * La capa del equipo evaluada con el código de la versión recién instalada. El proceso que instala corre el código de la
- * versión de antes, y su lista cerrada no conoce lo que la nueva acepta: una punta que sólo la nueva acepta se arrastraba
+ * versión de antes, y su lista cerrada no conoce lo que la nueva acepta: una punta que sólo la nueva acepta se arrastraría
  * vieja hasta otro arranque. Corre `team-after-swap.js` del árbol nuevo en un proceso aparte (el código cargado en éste es
  * el viejo) con el estado por la entrada; devuelve lo que dijo `refreshTeam` de esa versión y, si refrescó, deja su
  * `state.team`. Nunca tira: `{ status: 'refreshed'|'same'|'failed', answered, lines }` (`answered`: la versión nueva
@@ -1798,15 +1798,15 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   const src = S.releaseSource(state);
   const channel = (policy && policy.channel) || state.channel || 'stable';
   const deadlineAt = (startedAt || Date.now()) + budgetS(ctx.env) * 1000;
-  // la espera del tope de la API (story 8.34, decisión 6): el arranque la respeta (`respectLimit`); `update` a mano intenta
+  // la espera del tope de la API: el arranque la respeta (`respectLimit`); `update` a mano intenta
   // una vez, porque lo pidió una persona. Una espera vencida se borra
   const limitedAt = Date.parse(state.api_limited_until || '') || null;
   if (limitedAt && Date.now() >= limitedAt) { state.api_limited_until = null; state.api_limited_notice = null; }
   const waitUntil = respectLimit && limitedAt && Date.now() < limitedAt ? limitedAt : null;
   const c0 = check(ctx, state, { channel, log, deadlineAt, waitUntil });
-  // la capa del equipo en el lugar (story 8.25, A1b · AC 10): cuando en ESTA corrida no se instala una versión pública, y sólo si
-  // quien llama lo pide (el arranque; `update` salvo --check/--dry-run). También sin poder mirar la copia (W1): la capa no depende
-  // de GitHub. El resultado va aparte (`res.team`): el estado de la copia no cambia por la capa (W3)
+  // la capa del equipo en el lugar: cuando en ESTA corrida no se instala una versión pública, y sólo si
+  // quien llama lo pide (el arranque; `update` salvo --check/--dry-run). También sin poder mirar la copia: la capa no depende
+  // de GitHub. El resultado va aparte (`res.team`): el estado de la copia no cambia por la capa
   const withTeam = (res) => { if (teamRefresh && mode !== 'dry-run' && state.mode !== 'developer') res.team = refreshTeam(ctx, state, { log, publicRepo: repo(src) }); return res; };
   if (c0.status === 'unknown') {
     state.last_fetch_failed = nowIso();
@@ -1816,13 +1816,13 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   state.last_fetch = nowIso();
   state.last_fetch_failed = null;
   // sin una versión nueva no hay nada esperando al tope: la espera se borra (si no, doctor seguiría anunciando «se baja
-  // sola» una versión que no hay; revisor de fallos silenciosos de la story 8.34). Si vuelve a hacer falta la API, el
+  // sola» una versión que no hay). Si vuelve a hacer falta la API, el
   // primer 403 la anota de nuevo
   if (c0.status === 'up_to_date' || c0.status === 'older') { state.api_limited_until = null; state.api_limited_notice = null; }
   if (c0.status === 'up_to_date' && mode === 'apply') {
-    // una skill de terceros que no se pudo bajar al instalar (sin red, el origen caído) quedaba sin reponer hasta la
-    // versión siguiente, y el aviso del aplicador mandaba a «harness.js update», que al día no hacía nada (pase adversarial
-    // de la tanda G de la story 8.23, clase 12): al día, se repone lo que FALTA, nada más
+    // una skill de terceros que no se pudo bajar al instalar (sin red, el origen caído) queda sin reponer hasta la
+    // versión siguiente, y el aviso del aplicador manda a «harness.js update», que al día no hace nada:
+    // al día, se repone lo que FALTA, nada más
     const own = TH.ownPaths({ env: ctx.env });
     const missing = missingThirdParty(own.harness, own);
     if (missing.length) {
@@ -1851,7 +1851,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
 
   const c = client(ctx, { deadlineAt: Date.now() + Math.max(budgetS(ctx.env), TARBALL_BUDGET_S_DEFAULT) * 1000, waitUntil });
   const d = download(ctx, c, repo(src), { commit: t.commit, version: t.version, ref: t.ref, tagged: Boolean(t.tagged), log });
-  // al tope: la versión nueva espera a la hora que dijo GitHub; no es un fallo (story 8.34, decisiones 6 y 7)
+  // al tope: la versión nueva espera a la hora que dijo GitHub; no es un fallo
   if (!d.ok && d.limitedUntil) {
     state.last_fetch_failed = nowIso();
     state.api_limited_until = new Date(d.limitedUntil).toISOString();
@@ -1859,12 +1859,12 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   }
   if (d.ok) { state.api_limited_until = null; state.api_limited_notice = null; }
   // (una versión nueva que no se pudo bajar ni instalar NO congela la capa del equipo: cada salida del camino de aplicar que no
-  // termina en el cambio refresca la capa en el lugar — pase adversarial de la A1b, R-1. La de la salud roja no hace falta: la
+  // termina en el cambio refresca la capa en el lugar. La de la salud roja no hace falta: la
   // versión queda `failed` y el arranque siguiente pasa por la rama «ya falló», que refresca)
   if (!d.ok) { if (d.status === 'unknown') state.last_fetch_failed = nowIso(); return withTeam({ status: d.status === 'unknown' ? 'unknown' : 'blocked', code: 2, lines: [`harness.js update: ${d.reason}`] }); }
   const tp = restoreThirdParty(ctx, c, d.dir, { log });
   const own = TH.ownPaths({ env: ctx.env });
-  // la capa del equipo (story 8.25, AC 9): la punta del repo del equipo, apilada sobre la versión nueva ANTES del cambio;
+  // la capa del equipo: la punta del repo del equipo, apilada sobre la versión nueva ANTES del cambio;
   // sin acceso (o con una punta que no valida), la que YA está en harness/ —comprobada contra su manifiesto— y se dice;
   // una versión que trae una ruta de la capa no se instala y queda anotada como fallida (no se vuelve a bajar en cada
   // arranque hasta que cambie la punta)
@@ -1879,13 +1879,13 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
     const r = open.ok ? open.resolve({ version: t.version, readerTree: d.dir, home: ctx.home, env: ctx.env }) : { ok: false, reason: open.reason };
     let st;
     if (r.ok) {
-      // un choque con la versión nueva se mira ANTES de bajar la capa: no queda nada escrito (AC 4)
+      // un choque con la versión nueva se mira ANTES de bajar la capa: no queda nada escrito
       const col = TEAM.collisionWith(r, d.dir);
       if (col.length) st = { ok: false, collision: col, reason: TEAM.collisionReason(r, d.dir, col) };
       else {
         const tf = open.fetch(r, { env: ctx.env, log });
         st = tf.ok ? TEAM.stackTeam(tf, d.dir, { home: ctx.home, env: ctx.env, log }) : { ok: false, reason: tf.reason, carry: true };
-        // una punta que no vale para la versión nueva (momento 2, AC 19 y 26): no deja su caché y se arrastra la instalada
+        // una punta que no vale para la versión nueva no deja su caché y se arrastra la instalada
         if (tf.ok && !st.ok && st.invalid) {
           if (!tf.fromCache) { try { fs.rmSync(tf.cacheDir, { recursive: true, force: true }); } catch (e) { if (log) log(`update: no pude borrar la caché de la punta rechazada ${tf.cacheDir} (${e.code || e.message}); la próxima bajada la reemplaza`); } }
           st = Object.assign({}, st, { carry: true });
@@ -1899,13 +1899,13 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
       if (carried.ok) { teamLines.push(`capa del equipo: sin acceso al repo del equipo o su punta no vale (${st.reason}) — sigue en ${sha7(carried.manifest.commit)}`); st = carried; }
       else if (carried.collision) st = carried;
       // la instalada tampoco vale para la versión nueva (su cargador o su lector la rechazan): la versión no se instala y queda
-      // anotada (team-invalid), como un choque, para no volver a bajarla en cada arranque hasta que cambie la punta (AC 19)
+      // anotada (team-invalid), como un choque, para no volver a bajarla en cada arranque hasta que cambie la punta
       else if (carried.invalid) st = { ok: false, invalid: true, reason: `${st.reason}; y ${carried.reason}: la versión nueva no se instala` };
       // ni la punta nueva ni la instalada (editada o incompleta): la versión nueva NO se instala sin capa; la máquina queda donde
-      // estaba y lo dice (AC 9: nunca una máquina del equipo a medias)
+      // estaba y lo dice (nunca una máquina del equipo a medias)
       else st = { ok: false, reason: `${st.reason}; y la capa instalada no se puede arrastrar (${carried.reason}): la versión nueva no se instala hasta que el repo del equipo se vea o la capa instalada esté entera` };
     }
-    // la punta del equipo que se evaluó (null si ni se pudo resolver): el refresco reintenta la versión cuando ve OTRA (clases 1 y 9)
+    // la punta del equipo que se evaluó (null si ni se pudo resolver): el refresco reintenta la versión cuando ve OTRA
     const teamCommit = r && /^[0-9a-f]{40}$/.test(String(r.commit || '')) ? r.commit : null;
     if (!st.ok && st.invalid) {
       fs.rmSync(d.dir, { recursive: true, force: true });
@@ -1929,7 +1929,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   if (!sw.ok) {
     H.finishSnapshot(ctx, snap, log);
     if (sw.waiting && sw.convert) {
-      // la conversión a la forma con enlaces trabada (8.33, AC 10): la versión quedó en versions/, la máquina en la de antes
+      // la conversión a la forma con enlaces trabada: la versión quedó en versions/, la máquina en la de antes
       const own0 = TH.ownPaths({ env: ctx.env });
       if (log) log(`update: la conversión a la forma con enlaces está trabada (${sw.reason})${sw.kept ? `; la versión ${t.version} quedó en ${sw.kept}` : ''}`);
       return withTeam({ status: 'waiting', convert: true, code: 2, lines: [`harness.js update: ${convertHeldText(own0)}`] });
@@ -1942,7 +1942,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   state.version.number = t.version;
   if (teamManifest) state.team = require('./team.js').stateEntry(teamManifest, state.team);
   if (log) log(`update: ${what}`);
-  // la punta que rechazó el lector de la versión de antes se vuelve a evaluar con el de la nueva, antes de enchufar: si la
+  // la punta que rechazó el lector de la versión anterior se vuelve a evaluar con el de la nueva, antes de enchufar: si la
   // acepta, el aplicador ya enlaza lo que trae (una versión que mudó piezas a la capa no deja la máquina sin ellas)
   if (retryTeamWithNew) {
     const rt = refreshTeamWithNewCode(ctx, state, own.harness, { log });
@@ -1977,11 +1977,11 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   state.last_health = nowIso();
   H.copyBootstrap(ctx, own.harness, state, { version: t.version });
   H.finishSnapshot(ctx, snap, log);
-  // la conexión vieja de una skill de la lista (tanda A2c · AC 35): después del cambio sano (previous/ sigue ahí), una vez por skill
+  // la conexión vieja de una skill de la lista: después del cambio sano (previous/ sigue ahí), una vez por skill
   const moved = require('./team.js').moveSkillData({ home: ctx.home, env: ctx.env, team: state.team, harnessDir: own.harness, migrateHome: state.migrate_home, previousDir: own.previous });
   for (const l of moved.lines) if (log) log(`update: ${l}`);
   // lo que la mudanza y kept- tienen que decir viaja también como aviso: el arranque con aplicación automática muestra sólo la
-  // primera línea y manda el resto al registro, y la mudanza no se repite (pase adversarial de la A2c, clase 15)
+  // primera línea y manda el resto al registro, y la mudanza no se repite
   // las skills y agentes de un paquete que la organización no activa y el aplicador sacó: se dicen, en una línea
   const packLine = typeof H.packRetiredLine === 'function' ? H.packRetiredLine(a) : null;
   const packLines = packLine ? [packLine] : [];
@@ -1991,7 +1991,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   return { status: 'applied', code: 0, lines: [`arnés ${before} → ${t.version}`, ...(a.readNotes || []), ...tp.notes, ...teamLines, ...(sw.kept || []), ...moved.lines, ...packLines], from: before, to: t.version, backup: snap && snap.dir ? snap.dir : null, dataNotice };
 }
 
-/** `rollback` en release (AC 15): el cambio al revés, los enchufes, la salud; sin previous/, dice `install --version`. */
+/** `rollback` en release: el cambio al revés, los enchufes, la salud; sin previous/, dice `install --version`. */
 function rollback(ctx, state, H, { log = null } = {}) {
   const own = TH.ownPaths({ env: ctx.env });
   const src = S.releaseSource(state);
@@ -2005,7 +2005,7 @@ function rollback(ctx, state, H, { log = null } = {}) {
   if (m) Object.assign(src, { ref: m.ref || src.ref, commit: m.commit, tree: m.tree, version: m.version, previous: null });
   state.version.number = m ? m.version : (prevManifest ? prevManifest.version : state.version.number);
   state.version.installed_at = nowIso();
-  // la capa del equipo es la del árbol que quedó (story 8.25, A1b · AC 12): la de su .tycon-team.json; sin capa ahí, el repo
+  // la capa del equipo es la del árbol que quedó: la de su .tycon-team.json; sin capa ahí, el repo
   // recordado sin commit (el arranque siguiente la trae); un estado sin team y un árbol con capa la toma
   let teamSyncProblem = null;
   try { require('./team.js').syncStateWithTree(state, own.harness, { adopt: true }); } catch (e) { teamSyncProblem = `no pude leer la capa del equipo del árbol que quedó (${e.message}): el estado puede nombrar otra capa — harness.js doctor lo detalla`; if (log) log(`rollback: ${teamSyncProblem}`); }
@@ -2023,7 +2023,7 @@ function rollback(ctx, state, H, { log = null } = {}) {
   return { ok: true, lines, undone, snap };
 }
 
-// ── doctor (AC 17) ────────────────────────────────────────────────────────────────────────────────────────────────
+// ── doctor ────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** Los archivos de `harness/` contra su manifiesto: editados, de más, faltantes (lo de terceros y el manifiesto no cuentan). */
 function auditTree(ctx, tree) {
@@ -2042,9 +2042,9 @@ function auditTree(ctx, tree) {
   // por el repo (.dashboard/, .advisors/: lo escriben los nocturnos y las corridas)
   let thirdTargets = [];
   try { const raw = JSON.parse(fs.readFileSync(path.join(tree, 'scripts', 'publishing', 'third-party-skills.json'), 'utf8')); thirdTargets = (raw.thirdParty || raw.third_party || []).map((e) => String(e.target)); } catch (_) { thirdTargets = []; }
-  // …y la capa del equipo (story 8.25): sus archivos y su manifiesto son del árbol, no «de más»
+  // …y la capa del equipo: sus archivos y su manifiesto son del árbol, no «de más»
   // (y los temporales de un refresco de la capa cortado a mitad —sólo ARCHIVOS al lado de un destino de la capa: el refresco
-  // siguiente los borra—; nada más se esconde: pase adversarial de la A1b, S-1)
+  // siguiente los borra—; nada más se esconde)
   let teamPaths = new Set();
   let isLayerTemp = () => false;
   try { const TEAM = require('./team.js'); teamPaths = new Set(TEAM.layerPaths(tree)); isLayerTemp = TEAM.isLayerTemp; } catch (_) { teamPaths = new Set(); }
@@ -2085,14 +2085,14 @@ function startup(ctx, state, H, { log, snapshot = null }) {
     R.setNotice(state, text); S.write(ctx.home, state);
     return { code: 0, lines: [text] };
   }
-  // la conversión a la forma con enlaces (story 8.33, decisión 7 con el ajuste del dueño): se intenta en silencio en cada
+  // la conversión a la forma con enlaces: se intenta en silencio en cada
   // arranque, sin frenar nada. Trabada, el aviso sale UNA vez a los 3 días o 10 arranques; si no, registro y doctor
   if (linksOn(ctx) && state.mode !== 'developer') {
     const cv = convertLayout(ctx, { log: (l) => log(`startup: ${l.replace(/^release: /, '')}`) });
     if (cv.ok) {
       if (state.link_convert) { log('startup: la conversión a la forma con enlaces salió'); delete state.link_convert; }
     } else if (cv.held) {
-      // ajuste del dueño (2026-10-14, «molestar lo menos posible»): se intenta en silencio —la primera sesión del día
+      // se intenta en silencio —la primera sesión del día
       // suele arrancar con todo cerrado y ahí sale—; el aviso sale UNA vez, recién con 3 días o 10 arranques trabada
       const lc = isObject(state.link_convert) ? state.link_convert : { since: nowIso(), attempts: 0 };
       lc.attempts = (Number(lc.attempts) || 0) + 1;
@@ -2103,7 +2103,7 @@ function startup(ctx, state, H, { log, snapshot = null }) {
     } else log(`startup: la conversión a la forma con enlaces no se pudo (${cv.reason})`);
   }
   // el respaldo en shell pudo volver a previous/ sin tocar el estado: lo que hay en harness/ manda, y la versión que
-  // se cayó queda como `failed` para no volver a bajarla sola (pase adversarial de la B)
+  // se cayó queda como `failed` para no volver a bajarla sola
   const src0 = S.releaseSource(state);
   const onDisk = readManifest(own.harness);
   if (onDisk && onDisk.commit && src0 && onDisk.commit !== src0.commit) {
@@ -2111,11 +2111,11 @@ function startup(ctx, state, H, { log, snapshot = null }) {
     state.failed = { commit: src0.version, sources: { harness: src0.commit }, at: nowIso(), log: S.paths(ctx.home).log, reason: 'fallback' };
     Object.assign(src0, { ref: onDisk.ref || src0.ref, commit: onDisk.commit, tree: onDisk.tree, version: onDisk.version });
     state.version.number = onDisk.version;
-    // …y la capa del equipo es la del árbol que quedó (story 8.25; pase adversarial, clase 2)
+    // …y la capa del equipo es la del árbol que quedó
     if (require('./team.js').syncStateWithTree(state, own.harness)) log('startup: la capa del equipo del estado pasó a ser la del árbol que quedó');
     notice = `la versión ${state.failed.commit} no arrancaba y el respaldo volvió a ${onDisk.version}; esa versión no se reintenta sola (cuando cambie la punta, o con ${H.applyHint}) — harness.js doctor lo detalla`;
   }
-  // `state.team` refleja SIEMPRE la capa que hay en harness/, sin red y antes de mirar (story 8.25, A1b · W4): un arranque que
+  // `state.team` refleja SIEMPRE la capa que hay en harness/, sin red y antes de mirar: un arranque que
   // murió entre refrescar la capa y grabar el estado no deja el estado en otro commit para siempre
   if (state.mode !== 'developer') { try { if (require('./team.js').syncStateWithTree(state, own.harness)) log('startup: la capa del equipo del estado pasó a ser la de harness/'); } catch (e) { log(`startup: no pude leer la capa del equipo de harness/ (${e.message})`); } }
   let policy = H.policyOf(ctx, own.harness);
@@ -2135,7 +2135,7 @@ function startup(ctx, state, H, { log, snapshot = null }) {
       const src = S.releaseSource(state);
       const m = readManifest(own.harness);
       if (back.ok && m) { Object.assign(src, { ref: m.ref || src.ref, commit: m.commit, tree: m.tree, version: m.version }); state.version.number = m.version; }
-      // la capa del equipo del estado pasa a ser la del árbol que quedó (story 8.25; pase adversarial, clase 2)
+      // la capa del equipo del estado pasa a ser la del árbol que quedó
       if (back.ok && require('./team.js').syncStateWithTree(state, own.harness)) log('startup: la capa del equipo del estado pasó a ser la del árbol que quedó');
       state.failed = { commit: f.commit, sources: f.sources, at: nowIso(), log: S.paths(ctx.home).log, reason: 'health' };
       notice = `la versión ${f.commit} no quedó sana (${h.failures[0]}): ${back.ok ? `volvió sola a ${state.version.number}` : `NO pudo volver sola (${back.reason}): harness.js rollback`}`;
@@ -2154,7 +2154,7 @@ function startup(ctx, state, H, { log, snapshot = null }) {
     const window = FETCH_WINDOW_MS[policy.apply] || FETCH_WINDOW_MS.auto;
     const sinceLook = Date.now() - (Date.parse(state.last_fetch || '') || 0);
     const sinceTry = Date.now() - (Date.parse(state.last_fetch_failed || '') || 0);
-    // pasada la hora del tope de la API, el primer arranque baja lo que esperaba, sin esperar la ventana (story 8.34, AC 11)
+    // pasada la hora del tope de la API, el primer arranque baja lo que esperaba, sin esperar la ventana
     const limitedAt = Date.parse(state.api_limited_until || '') || null;
     const limitOver = Boolean(limitedAt && Date.now() >= limitedAt);
     if (limitOver) log('startup: pasó la hora del tope de la API: miro y bajo lo que esperaba');
@@ -2163,8 +2163,8 @@ function startup(ctx, state, H, { log, snapshot = null }) {
     else {
       fetched = true;
       const u = update(ctx, state, H, { mode: policy.apply === 'auto' ? 'apply' : 'check', log, snapshot: snap, policy, teamRefresh: true, respectLimit: true });
-      // la capa del equipo refrescada en el lugar (A1b · AC 10): su línea si no hay otra, su aviso se SUMA (W3), y con el perfil
-      // cambiado la política se relee antes de grabar el estado (W12: si no, el arranque siguiente diría «el canal cambió»)
+      // la capa del equipo refrescada en el lugar: su línea si no hay otra, su aviso se SUMA, y con el perfil
+      // cambiado la política se relee antes de grabar el estado (si no, el arranque siguiente diría «el canal cambió»)
       if (u.team && u.team.status !== 'none' && u.team.status !== 'same') {
         for (const l of u.team.lines) log(`startup: ${l}`);
         if (u.team.notice) teamNotice = u.team.notice;
@@ -2177,13 +2177,13 @@ function startup(ctx, state, H, { log, snapshot = null }) {
           }
         }
       }
-      // la conversión trabada (8.33) no es una falla que se cuente: su aviso es el de una sola vez, de arriba
+      // la conversión trabada no es una falla que se cuente: su aviso es el de una sola vez, de arriba
       const convertWait = u.status === 'waiting' && u.convert;
       if (['new', 'applied', 'up_to_date', 'older'].includes(u.status) || convertWait) R.clearUpdateFailure(ctx.home);
-      // esperar al tope de la API no es un fallo: la hora se sabe (story 8.34, decisión 6)
+      // esperar al tope de la API no es un fallo: la hora se sabe
       else if (!['held', 'skipped', 'limited'].includes(u.status)) R.recordUpdateFailure(ctx.home, String(u.lines[0] || u.status).replace(/^harness\.js update: /, ''));
       if (u.status === 'limited') {
-        // el aviso, UNA vez por espera (decisión 7); después, el registro y doctor
+        // el aviso, UNA vez por espera; después, el registro y doctor
         log(`startup: ${u.lines.join(' · ')}`);
         if (state.api_limited_notice !== state.api_limited_until) { state.api_limited_notice = state.api_limited_until; notice = notice || u.lines[0].replace(/^harness\.js update: /, ''); line = u.lines[0]; }
       } else if (u.status === 'new') { const text = H.availableText(state, policy, u); notice = notice || text; log(`startup: ${text}`); line = text; }
@@ -2193,7 +2193,7 @@ function startup(ctx, state, H, { log, snapshot = null }) {
       else if (u.status === 'held' || u.status === 'skipped' || convertWait) log(`startup: ${u.lines.join(' · ')}`);
       else if (u.status === 'unknown' && /sin red/.test(u.lines[0])) { log(`startup: ${u.lines.join(' · ')}`); line = 'arnés: sin red, no se actualizó'; }
       else { log(`startup: ${u.lines.join(' · ')}`); notice = notice || u.lines[0].replace(/^harness\.js update: /, ''); line = u.lines[0]; }
-      // el permiso guardado venció y el repo se leyó sin él (2026-10-14): una línea, sin frenar, UNA vez mientras siga ese
+      // el permiso guardado venció y el repo se leyó sin él: una línea, sin frenar, UNA vez mientras siga ese
       // permiso; con un permiso que vuelve a servir, la marca se borra (y uno nuevo que venza se avisa de nuevo)
       if (tokenExpired(ctx.env)) {
         log(`startup: ${EXPIRED_TOKEN_TEXT}`);
@@ -2203,7 +2203,7 @@ function startup(ctx, state, H, { log, snapshot = null }) {
   }
   // sin permiso guardado, no hay nada que avisar: la marca se borra
   if (state.token_expired_notice && !GA.readToken({ env: ctx.env }).token) state.token_expired_notice = null;
-  // el cambio de perfil (story 8.16, AC 26), como en un clon; y el aplicador, SIEMPRE, con el registro de lo que dejó
+  // el cambio de perfil, como en un clon; y el aplicador, SIEMPRE, con el registro de lo que dejó
   const applierTree = state.mode === 'developer' ? state.tree : own.harness;
   const sw = H.profileSwitch(ctx, state, applierTree, log);
   if (sw.notice) notice = notice || sw.notice;
@@ -2216,7 +2216,7 @@ function startup(ctx, state, H, { log, snapshot = null }) {
     H.recordPieces(ctx, state, a.report, a.shared);
     { const pl = typeof H.packRetiredLine === 'function' ? H.packRetiredLine(a) : null; if (pl) { log(`startup: ${pl}`); notice = notice ? `${notice} · ${pl}` : pl; } }
     if (sw.profile && sw.profile.ok && dropped !== null) state.profile = { value: sw.profile.value, origin: sw.profile.origin };
-    // `--force` repite la salud entera aunque nada cambió (8.13 AC 21)
+    // `--force` repite la salud entera aunque nada cambió
     if (ctx.opts && ctx.opts.force) {
       const h = H.runHealth(ctx, state, { report: a.report, applierOut: a.out, log });
       if (h.ok) state.last_health = nowIso();
@@ -2224,25 +2224,25 @@ function startup(ctx, state, H, { log, snapshot = null }) {
     }
   }
   H.finishSnapshot(ctx, sw.snap, log);
-  // la limpieza diferida (AC 14): sólo con la salud en verde después del último cambio
+  // la limpieza diferida: sólo con la salud en verde después del último cambio
   const cl = cleanupDeferred(ctx, state, { log });
   for (const l of cl.lines) log(`startup: limpieza: ${l}`);
-  // una versión vieja tomada hace 7 días o más (8.33, decisión 9): el arranque lo dice, con qué cerrar
+  // una versión vieja tomada hace 7 días o más: el arranque lo dice, con qué cerrar
   if (cl.oldHeld && cl.oldHeld.length) { const t = oldHeldText(cl.oldHeld); line = line ? `${line} · ${t}` : t; log(`startup: ${t}`); }
   if (!notice && state.hold) notice = H.holdText(state);
   if (!notice && state.failed && state.failed.stage === 'install') notice = `la instalación quedó a medias (${state.failed.reason === 'applier' ? 'el aplicador falló' : 'la comprobación de salud no pasó'}, ${state.failed.at || '—'}): harness.js install --version latest otra vez la retoma — harness.js doctor lo detalla`;
   if (!notice && state.failed) notice = `la versión ${state.failed.commit} no quedó sana (${state.failed.reason || 'salud'}, ${state.failed.at || '—'}) y volvió sola a ${state.version && state.version.number}; no se reintenta sola hasta que cambie la punta (o ${H.applyHint}) — harness.js doctor lo detalla`;
   if (!notice && keepFromLastLook && !fetched && policy.enabled) notice = state.notice;
-  // el aviso de la capa del equipo se suma, no reemplaza (A1b, W3)
+  // el aviso de la capa del equipo se suma, no reemplaza
   if (teamNotice && !(notice || '').includes(teamNotice)) notice = notice ? `${notice} · ${teamNotice}` : teamNotice;
-  // una herramienta instalada y sin enchufar (tanda C, AC 24): se dice en cada arranque, sin pisar otro aviso
+  // una herramienta instalada y sin enchufar: se dice en cada arranque, sin pisar otro aviso
   { const tn = typeof H.toolNotice === 'function' ? H.toolNotice(ctx, own.harness, state) : null; if (tn) notice = notice ? `${notice} · ${tn}` : tn; }
-  // la carpeta global de hooks de git (2026-10-14): con `auto` la pone este arranque y lo dice una vez; con `ask`, el aviso
+  // la carpeta global de hooks de git: con `auto` la pone este arranque y lo dice una vez; con `ask`, el aviso
   // la pide. Sólo con el aplicador sano (el pre-push tiene que estar en su lugar)
   if (typeof H.hooksPathUnattended === 'function') {
     if (a.ok) notice = H.hooksPathUnattended(ctx, state, applierTree, policy, { mode: 'startup', log: (l) => log(`startup: ${l}`), notice }).notice;
   }
-  // el Node del arnés (story 8.39, AC 11): mientras no lo pudo bajar, se dice en cada arranque, sin pisar otro aviso
+  // el Node del arnés: mientras no lo pudo bajar, se dice en cada arranque, sin pisar otro aviso
   if (typeof H.harnessNodeNotice === 'function') notice = H.harnessNodeNotice(notice, a);
   if (notice) R.setNotice(state, notice); else R.clearNotice(state);
   S.write(ctx.home, state);
@@ -2258,7 +2258,7 @@ function cmdUpdate(ctx, state, H, { log, asked = null }) {
   if (policy.errors.length) return { code: 2, lines: [`harness.js update: la política de actualización está mal escrita: ${policy.errors.join(' · ')}`] };
   if (!policy.enabled) return { code: 0, lines: ['TYCON_UPDATE=0: la actualización está apagada del todo (sacá la variable para actualizar)'] };
   if (exists(own.journal) || exists(own.linkJournal)) { const rep = repair(ctx, { log }); if (exists(own.journal) || exists(own.linkJournal)) return { code: 2, lines: [`harness.js update: hay un cambio de versión a medias que no pude reparar: ${rep.lines[0] || 'ver el diario'}`] }; }
-  // `update --yes` en una terminal suelta es lo que el aviso de la conversión manda correr (8.33, decisión 7): convierte
+  // `update --yes` en una terminal suelta es lo que el aviso de la conversión manda correr: convierte
   // primero, aunque no haya versión nueva
   if (linksOn(ctx) && !ctx.opts.check && !ctx.opts['dry-run']) {
     const cv = convertLayout(ctx, { log });
@@ -2272,13 +2272,13 @@ function cmdUpdate(ctx, state, H, { log, asked = null }) {
   H.applyPolicy(ctx, state, policy);
   const lifted = [];
   if (ctx.opts.yes && mode === 'apply' && state.hold) { lifted.push(`retención levantada (había deshecho ${state.hold.commit})`); state.hold = null; }
-  // la capa del equipo en el lugar (story 8.25, A1b · AC 10 y W2): con cualquier política, salvo --check y --dry-run (que no
-  // escriben); el código de salida sigue siendo el de la copia (N3)
+  // la capa del equipo en el lugar: con cualquier política, salvo --check y --dry-run (que no
+  // escriben); el código de salida sigue siendo el de la copia
   const u = update(ctx, state, H, { mode, log, yes: Boolean(ctx.opts.yes), policy, startedAt: Date.now(), teamRefresh: !ctx.opts.check && !ctx.opts['dry-run'] });
   if (u.status === 'applied') { R.clearNotice(state); if (u.backup) u.lines = [...u.lines, R.updateBackupLine(u.backup)]; }
   else if (mode === 'check' && u.status === 'new') R.setNotice(state, H.availableText(state, policy, u));
-  // una mirada sana a mano borra la falla que anotaron arranques anteriores, como lo hace el arranque (2026-10-15: en
-  // una máquina del equipo en Windows, el aviso «no se pudo actualizar desde ayer» seguía con el arnés ya al día)
+  // una mirada sana a mano borra la falla que anotaron arranques anteriores, como lo hace el arranque.
+  // sin esto, el aviso «no se pudo actualizar desde ayer» seguiría con el arnés ya al día
   if (mode !== 'dry-run' && ['new', 'applied', 'up_to_date', 'older'].includes(u.status)) R.clearUpdateFailure(ctx.home);
   else if (u.status === 'up_to_date' && state.notice && !H.REEVALUATED_NOTICE.test(state.notice)) R.clearNotice(state);
   if (u.team && u.team.lines && u.team.lines.length) {
@@ -2286,15 +2286,15 @@ function cmdUpdate(ctx, state, H, { log, asked = null }) {
     const tn = u.team.notice;
     if (tn && !(state.notice || '').includes(tn)) R.setNotice(state, state.notice ? `${state.notice} · ${tn}` : tn);
   }
-  // con el perfil cambiado por la capa, la política se relee antes de grabar el estado, como en el arranque (pase adversarial,
-  // C-1: si no, el arranque siguiente dice «el canal cambió» y vuelve a mirar la red)
+  // con el perfil cambiado por la capa, la política se relee antes de grabar el estado, como en el arranque
+  // (si no, el arranque siguiente dice «el canal cambió» y vuelve a mirar la red)
   if (u.team && u.team.profileChanged) {
     const p2 = H.policyOf(ctx, own.harness);
     if (p2.errors.length) u.lines = [...(u.lines || []), `la política no se pudo releer después de refrescar la capa del equipo (${p2.errors[0]}): sigue la de antes`];
     else { state.policy = { channel: p2.channel, apply: p2.apply, enabled: p2.enabled }; H.applyPolicy(ctx, state, p2); }
   }
   if (lifted.length) u.lines = [...lifted, ...u.lines];
-  // la carpeta global de hooks de git (2026-10-14): un update que aplica la pone si falta (el aviso de `ask` la pedía)
+  // la carpeta global de hooks de git: un update que aplica la pone si falta (el aviso de `ask` la pedía)
   if (mode === 'apply' && typeof H.hooksPathUnattended === 'function' && !['failed', 'busy'].includes(u.status)) {
     const hp = H.hooksPathUnattended(ctx, state, own.harness, policy, { mode: 'update', log: (l) => log(`update: ${l}`), notice: state.notice });
     if (hp.line) u.lines = [...(u.lines || []), ...hp.line.split('\n')];
@@ -2325,9 +2325,9 @@ function sitioDePruebaLineas(tree, dryRun, home) {
 }
 
 /**
- * Las líneas de la capa del equipo para `doctor` (story 8.25, A1b · AC 11): la línea `ok` (nombre, repo, commit, cuenta, entera);
+ * Las líneas de la capa del equipo para `doctor`: la línea `ok` (nombre, repo, commit, cuenta, entera);
  * editados y faltantes, la capa declarada y ausente, el último refresco que no se pudo, y el paquete de revisores del equipo que
- * todavía no está (hasta la A2), todos `warn`. Sin capa en el árbol ni en el estado: nada.
+ * todavía no está, todos `warn`. Sin capa en el árbol ni en el estado: nada.
  */
 function teamDoctorItems(ctx, state, tree) {
   const TEAM = require('./team.js');
@@ -2351,17 +2351,17 @@ function teamDoctorItems(ctx, state, tree) {
     const prof = TEAM.profileIn(tree);
     try { const p = JSON.parse(fs.readFileSync(prof.file, 'utf8')); integrationsOn = isObject(p.integrations) && Object.values(p.integrations).some((v) => v === true); } catch (e) {
       integrationsOn = false;
-      // sin perfil en la capa no hay nada que avisar; uno que no se puede leer se dice (fallos silenciosos, A2a vuelta 2)
+      // sin perfil en la capa no hay nada que avisar; uno que no se puede leer se dice
       if (e && e.code !== 'ENOENT') out.push({ level: 'warn', text: `capa del equipo: ${prof.name} no se puede leer (${e.code || e.message})` });
     }
-    // el nombre del perfil: el de antes sigue andando, dicho en una línea suave (nunca un fallo)
+    // el nombre del perfil: el viejo sigue andando, dicho en una línea suave (nunca un fallo)
     const profNotice = TEAM.profileNameNotice(prof, 'layer');
     if (profNotice) out.push({ level: 'ok', text: `capa del equipo: ${profNotice}` });
-    // (A2a, AC 20: una capa que ya trae un paquete no lo dice)
+    // (una capa que ya trae un paquete no lo dice)
     const layerHasPack = m.files.some((f) => /^packs\/[^/]+\/pack\.json$/.test(f.path));
     if (integrationsOn && !layerHasPack && !exists(path.join(tree, 'packs', 'clients', 'pack.json'))) out.push({ level: 'warn', text: 'capa del equipo: el paquete de revisores del equipo (packs/clients) todavía no está en esta máquina — llega con la parte 2 de la capa; mientras tanto el pipeline corre sin esos revisores' });
     // las skills anidadas de la capa (skills/<grupo>/…) se leen por ruta en ~/.claude/skills/<grupo>/…; si esa carpeta es REAL y
-    // ya trae su propio <grupo>/, las del equipo no se ven (el aplicador no pisa lo ajeno): se dice, nombrando la carpeta (AC 20)
+    // ya trae su propio <grupo>/, las del equipo no se ven (el aplicador no pisa lo ajeno): se dice, nombrando la carpeta
     const groups = [...new Set(m.files.map((f) => f.path).filter((p) => p.startsWith('skills/') && p.split('/').length > 3 && path.posix.basename(p) === 'SKILL.md').map((p) => p.split('/')[1]))];
     const claudeSkills = path.join(ctx.home, '.claude', 'skills');
     let realDir = false;
@@ -2376,21 +2376,21 @@ function teamDoctorItems(ctx, state, tree) {
     }
   }
   if (declared && isObject(state.team.last_error) && state.team.last_error.reason) out.push({ level: 'warn', text: `capa del equipo: el último refresco no se pudo (${state.team.last_error.at || '—'}): ${state.team.last_error.reason}` });
-  // una versión pública que no se instaló por la capa (AC 9 y 19): no se reintenta sola hasta que cambie la punta
+  // una versión pública que no se instaló por la capa: no se reintenta sola hasta que cambie la punta
   if (isObject(state.failed) && (state.failed.reason === 'team-collision' || state.failed.reason === 'team-invalid')) {
     out.push({ level: 'warn', text: `capa del equipo: la versión ${state.failed.commit || '—'} no se instaló (${state.failed.reason === 'team-invalid' ? 'team-invalid: ni la punta del equipo ni la capa instalada valen para esa versión' : 'team-collision: esa versión trae una ruta de la capa'}, ${state.failed.at || '—'}); no se reintenta sola hasta que cambie la punta del equipo` });
   }
   return out;
 }
 
-/** Lo que `doctor` dice de una instalación release (AC 17): versión, canal, previous/, el árbol contra su manifiesto. */
+/** Lo que `doctor` dice de una instalación release: versión, canal, previous/, el árbol contra su manifiesto. */
 function doctorItems(ctx, state, { fetch = false, channel = null } = {}) {
   const own = TH.ownPaths({ env: ctx.env });
   const src = S.releaseSource(state);
   const items = [];
   const add = (level, text) => items.push({ level, text });
   // el canal que se dice es el VIGENTE (la política, que quien llama ya leyó); el del estado es la copia de la última
-  // mirada y queda atrás si la configuración cambió a mano (la primera máquina migrada, 2026-10-08: «canal latest» en la
+  // mirada y queda atrás si la configuración cambió a mano (por ejemplo, «canal latest» en la
   // política y «canal stable» en esta línea). Si difieren, se dice: el arranque siguiente lo pone al día
   const now = channel || state.channel;
   const stale = channel && state.channel && channel !== state.channel ? ` (el estado todavía dice ${state.channel}: el próximo arranque lo pone al día)` : '';
@@ -2400,7 +2400,7 @@ function doctorItems(ctx, state, { fetch = false, channel = null } = {}) {
   else add('ok', `sin versión anterior (${own.previous}): para volver a un número publicado, harness.js install --version <n>`);
   if (exists(own.journal)) add('fail', `hay un cambio de versión a medias (${own.journal}): el próximo arranque lo repara; harness.js update también`);
   if (exists(own.linkJournal)) add('fail', `hay un cambio de versión a medias (${own.linkJournal}): el próximo arranque lo repara; harness.js update también`);
-  // (story 8.35) ~/.claude/skills y ~/.claude/agents son carpetas del dev; un enlace a la carpeta ENTERA del arnés es la
+  // ~/.claude/skills y ~/.claude/agents son carpetas del dev; un enlace a la carpeta ENTERA del arnés es la
   // forma vieja: lo que el dev o Claude Code ponen ahí cae adentro del arnés y se pierde con una actualización
   // (los dos enchufes de Claude Code, cada uno escrito entero: así el techo de la carpeta de Claude Code los reconoce)
   const plugs = { skills: path.join(ctx.home || os.homedir(), '.claude', 'skills'), agents: path.join(ctx.home || os.homedir(), '.claude', 'agents') };
@@ -2418,7 +2418,7 @@ function doctorItems(ctx, state, { fetch = false, channel = null } = {}) {
     if (near.includes(`${side}.tycon-aparte`)) add('warn', `en ${p}.tycon-aparte hay cosas tuyas apartadas (estaban dos veces con distinto contenido): revisalas y borrá lo que sobre`);
     if (same) add('warn', `${p} es un enlace a la carpeta entera del arnés (la forma vieja): lo que pongas ahí se pierde con una actualización. El próximo arranque la convierte en una carpeta tuya, con lo tuyo adentro`);
   }
-  // la forma con enlaces (story 8.33): dónde apunta cada enlace, la conversión trabada, lo pendiente de limpiar
+  // la forma con enlaces: dónde apunta cada enlace, la conversión trabada, lo pendiente de limpiar
   if (linksOn(ctx)) {
     const where = (name) => (TH.isLink(name) ? `${name} → ${TH.linkTarget(name)}` : exists(name) ? `${name} es una carpeta (la forma de antes)` : `${name} no está`);
     add('ok', `enlaces: ${where(own.harness)} · ${where(own.previous)}`);
@@ -2439,7 +2439,7 @@ function doctorItems(ctx, state, { fetch = false, channel = null } = {}) {
     }
   }
   const a = auditTree(ctx, own.harness);
-  // las skills de la lista fija que trae la capa (tanda A2c · AC 36): lo ajeno dentro de su carpeta se dice con su lugar y
+  // las skills de la lista fija que trae la capa: lo ajeno dentro de su carpeta se dice con su lugar y
   // reemplaza, para esas rutas, la línea «de más»; nunca `fail`, nunca tira, nada en modo desarrollador
   let sd = { items: [], foreign: new Set() };
   if (state.mode !== 'developer') {
@@ -2456,19 +2456,19 @@ function doctorItems(ctx, state, { fetch = false, channel = null } = {}) {
   }
   const tp = readManifest(own.thirdParty);   // sólo informativo
   void tp;
-  // la capa del equipo (story 8.25, A1b · AC 11): sin red, sin tirar nunca (doctor corre dentro de la salud: un volcado la
-  // pondría roja y desharía una versión pública sana — W5), nunca `fail`, y nada en una máquina sin capa ni en modo desarrollador
+  // la capa del equipo: sin red, sin tirar nunca (doctor corre dentro de la salud: un volcado la
+  // pondría roja y desharía una versión pública sana), nunca `fail`, y nada en una máquina sin capa ni en modo desarrollador
   if (state.mode !== 'developer') {
     try { for (const it of teamDoctorItems(ctx, state, own.harness)) add(it.level, it.text); } catch (e) { add('warn', `capa del equipo: no pude revisarla (${e.message})`); }
     for (const it of sd.items) add(it.level === 'fail' ? 'warn' : it.level, it.text);
   }
-  // la espera del tope de la API (story 8.34): hasta qué hora, y que se baja sola después
+  // la espera del tope de la API: hasta qué hora, y que se baja sola después
   { const until = Date.parse(state.api_limited_until || '') || null; if (until && Date.now() < until) add('warn', `${limitText({ token: GA.readToken({ env: ctx.env }).token }, until)}: la versión nueva se baja sola en el primer arranque después de esa hora`); }
   if (fetch) {
     const c = check(ctx, state, { channel: now });
     add(c.status === 'unknown' || c.status === 'blocked' ? 'warn' : 'ok', `red: ${c.lines[0].replace(/^harness\.js update: /, '')}`);
   }
-  // el permiso guardado que venció contra el repo público (2026-10-14): amarillo, nunca rojo — la máquina se actualiza igual
+  // el permiso guardado que venció contra el repo público: amarillo, nunca rojo — la máquina se actualiza igual
   if (tokenExpired(ctx.env) || (state.token_expired_notice && GA.readToken({ env: ctx.env }).token)) add('warn', EXPIRED_TOKEN_TEXT);
   return items;
 }
@@ -2480,7 +2480,7 @@ function versionLine(state, { channel = null } = {}) {
 }
 function versionJson(state, { channel = null } = {}) {
   const src = S.releaseSource(state);
-  // `team` (story 8.25): la capa del equipo apilada, o null (una máquina sin capa)
+  // `team`: la capa del equipo apilada, o null (una máquina sin capa)
   return { number: src.version, stamped: true, kind: 'release', harness: { commit: src.commit, tree: src.tree, ref: src.ref, repo: src.url }, mode: state.mode || 'managed', channel: channel || state.channel || 'stable', team: isObject(state.team) ? state.team : null };
 }
 

@@ -3,9 +3,7 @@
  * rebuild-before-verify.js — tras editar componentes de frontend, asegura que el build de dev
  * del PROYECTO corra antes de pedirle al usuario verificación visual en browser.
  *
- * Origen: instinct fcc5ee1f3c (Ceibo, 1228 ev, 2026-06) generalizado por pedido del dev
- * ("que no sea específico del proyecto") + re-detectado como cb7e2d944b (707 ev, 2026-08-13).
- * El problema medido: edits a .tsx seguidos de "fijate en el browser" que fallan por build
+ * El problema que cubre: edits a .tsx seguidos de "fijate en el browser" que fallan por build
  * roto/no corrido — el type-check solo no atrapa bundling/imports.
  *
  * PROJECT-AGNOSTIC por convención (misma lección que el gate E2E): el comando de build lo
@@ -13,7 +11,7 @@
  *
  *   frontend:
  *     dev_build_cmd: "npm run build:dev"   # obligatorio para que el hook actúe
- *     dir: "ceibo-deposito"               # opcional: subdir del frontend (components + cwd del build)
+ *     dir: "mi-frontend"                   # opcional: subdir del frontend (components + cwd del build)
  *
  * Sin esa key → no-op TOTAL (cero ruido en repos que no optaron).
  *
@@ -88,7 +86,7 @@ function main() {
   const cwd = event.cwd || process.cwd();
 
   // ── PostToolUse Edit|Write|apply_patch: marcar sucio ──────────────────────
-  // apply_patch (Codex, Etapa E2 2026-08-22): la lib compartida lo normaliza a N eventos
+  // apply_patch (Codex): la lib compartida lo normaliza a N eventos
   // Edit/Write (uno por archivo del patch); un Edit de Claude pasa como identidad. Fallback:
   // sin la lib, conducta idéntica a la actual (solo Edit/Write nativos).
   if (eventName === 'PostToolUse' && (event.tool_name === 'Edit' || event.tool_name === 'Write' || event.tool_name === 'apply_patch')) {
@@ -115,7 +113,7 @@ function main() {
   }
 
   // ── PostToolUse Bash|PowerShell: el build corrió → limpiar ────────────────
-  // (la herramienta PowerShell es por donde Claude Code corre los comandos en Windows; 2026-10-04)
+  // (la herramienta PowerShell es por donde Claude Code corre los comandos en Windows)
   if (eventName === 'PostToolUse' && (event.tool_name === 'Bash' || event.tool_name === 'PowerShell')) {
     const cmd = (event.tool_input && event.tool_input.command) || '';
     if (!cmd) return;
@@ -123,14 +121,11 @@ function main() {
     if (!repoRoot) return;
     const marker = readMarker(repoRoot);
     if (!marker) return;
-    // 🔴 C10 (2026-08-25) — se acepta el comando CONGELADO en el marker Y el que la config
-    // declara HOY. Antes se comparaba sólo contra el del marker, así que si el repo cambiaba
-    // `dev_build_cmd` después de marcarse sucio, correr el comando nuevo y correcto NO limpiaba
-    // la marca: el recordatorio quedaba pidiendo un comando que ya no existe, y la única forma
-    // de salir era editar otro componente (se auto-cura, pero pidiendo lo equivocado mientras
-    // tanto). No deja pasar nada malo — es ruido — pero un aviso que pide algo imposible es
-    // exactamente lo que entrena a ignorar los avisos.
-    // Auditoría: ~/.claude/tycon-harness/guides/decisions/controles-apagables-por-config-2026-08-25.md §C10.
+    // 🔴 Se acepta el comando CONGELADO en el marker Y el que la config declara hoy. Si sólo se
+    // comparara con el del marker, un repo que cambia `dev_build_cmd` después de marcarse sucio
+    // no limpiaría la marca al correr el comando nuevo y correcto: el recordatorio seguiría pidiendo
+    // un comando que ya no existe, y la única salida sería editar otro componente. No deja pasar
+    // nada malo — es ruido — pero un aviso que pide algo imposible entrena a ignorar los avisos.
     const cfgAhora = readFrontendConfig(repoRoot);
     const aceptados = [marker.dev_build_cmd, cfgAhora && cfgAhora.devBuildCmd].filter(Boolean);
     if (!aceptados.length) return;

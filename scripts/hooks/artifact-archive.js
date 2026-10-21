@@ -1,14 +1,11 @@
 #!/usr/bin/env node
 /**
- * artifact-archive.js — PostToolUse matcher=Artifact (2026-08-30)
+ * artifact-archive.js — PostToolUse matcher=Artifact
  *
  * Los artefactos publicados en claude.ai nacen de un HTML que vive en el scratchpad de la
  * sesión — una carpeta temporal que se pierde. Este hook copia el archivo publicado al repo
  * git de la sesión (<raíz>/artifacts/) y mantiene un índice con la URL publicada, para que
  * el entregable viaje versionado con el proyecto y no dependa de la galería de claude.ai.
- *
- * Pedido del dev 2026-08-30: "cualquier artefacto de estos tenemos que almacenarlos
- * automáticamente en los repos, sino se pierden".
  *
  * Qué NO hace, a propósito:
  *  - NO commitea (regla #0 de git-commit-conventions: ningún commit sin consentimiento).
@@ -41,8 +38,8 @@ function gitRoot(from) {
 }
 
 // Dos formatos de dirección conviven: el viejo (claude.ai/code/artifact/<uuid>) y el actual
-// (claude.ai/artifact/<id alfanumérico>). Reconocer sólo el viejo dejaba «URL no capturada» en el
-// índice y pisaba la dirección que ya estaba anotada (2026-09-15). La galería
+// (claude.ai/artifact/<id alfanumérico>). Reconocer sólo el viejo deja «URL no capturada» en el
+// índice y pisa la dirección que ya estaba anotada. La galería
 // (claude.ai/code/artifacts, con «s» y sin barra después) no matchea.
 const ARTIFACT_URL_RE = /https:\/\/claude\.ai\/(?:code\/)?artifact\/[A-Za-z0-9-]+/;
 

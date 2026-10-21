@@ -4,19 +4,19 @@
 # Hook PreToolUse matcher=Bash. Cuando el comando es `git commit`, corre
 # `engram sync --project <name>` y stagea `.engram/` para que los chunks
 # de memoria persistente viajen con el commit. En `git push` NO hace nada
-# (2026-09-16 — ver la nota junto a la salida temprana, más abajo). Implementa
+# (ver la nota junto a la salida temprana, más abajo). Implementa
 # la regla "Engram Memory System → Pre-commit Engram Sync" del CLAUDE.md global.
 #
 # Diseño:
 #   - Opt-in POR REPO: solo actúa si la raíz del repo tiene un archivo
 #     `.engram-project` cuyo contenido es el project name de engram.
-#   - El repo es el del COMMIT, no el de la sesión (2026-10-10): `cd <otro> && git commit` y
+#   - El repo es el del COMMIT, no el de la sesión: `cd <otro> && git commit` y
 #     `git -C <otro> commit` exportan y preparan en <otro>. Ver «¿En qué repo se hace el commit?».
-#   - Un commit en un clon del repo PÚBLICO del arnés no exporta nada, en ningún lado (story 8.26, tanda
-#     H1c): ese clon no trae `.engram-project`, así que acá no pasa nada, y lo pendiente lo exporta y lo
+#   - Un commit en un clon del repo PÚBLICO del arnés no exporta nada, en ningún lado:
+#     ese clon no trae `.engram-project`, así que acá no pasa nada, y lo pendiente lo exporta y lo
 #     prepara el próximo commit hecho EN el clon privado de mantenimiento (`engram sync --project X`
-#     exporta todo lo pendiente del proyecto, se haya guardado desde la sesión que sea). Se descartó
-#     exportar a ese otro clon desde acá: lo que queda sin preparar en un repo donde no se está
+#     exporta todo lo pendiente del proyecto, se haya guardado desde la sesión que sea). No se exporta
+#     a ese otro clon desde acá: lo que queda sin preparar en un repo donde no se está
 #     commiteando no viaja nunca (`stagear_lo_nuevo` prepara sólo lo de ESTA vuelta) y el commit
 #     siguiente entra con el índice declarando un trozo que no está. Lo fija `Memory_NotInPublicRepo`
 #     de scripts/tests/manifest-engram.test.sh.
@@ -52,16 +52,15 @@ log() {
 INPUT=$(cat 2>/dev/null) || INPUT=""
 log "invoked | stdin-len=${#INPUT}"
 
-# ── Leer JSON sin depender de `jq` (2026-10-03) ──────────────────────────────────────────────
-# Este hook leía el comando con `jq`, y sin `jq` el comando quedaba VACÍO: «no era un commit», y
-# salía 0 sin sincronizar la memoria ni cruzar el índice, sin una palabra (el aviso «jq no está en
-# el PATH» de `cruzar_indice` era inalcanzable). `jq` no es un requisito declarado del arnés; `node`
-# sí. Lo cazó un ensayo de instalación desde cero, junto con los dos frenos (safety-guard y
-# test-scope-guard), que tenían el mismo defecto. Ahora se lee con `jq` si está y, si no, con
+# ── Leer JSON sin depender de `jq` ──────────────────────────────────────────────
+# Leer el comando con `jq` solo dejaría el comando VACÍO sin `jq`: «no era un commit», y
+# saldría 0 sin sincronizar la memoria ni cruzar el índice, sin una palabra (el aviso «jq no está en
+# el PATH» de `cruzar_indice` sería inalcanzable). `jq` no es un requisito declarado del arnés; `node`
+# sí. Se lee con `jq` si está y, si no, con
 # `node`: las dos ramas de `read_json` hacen lo mismo (casos `sin-jq-…` del banco).
 # Si `jq` está pero no pudo, se prueba con `node` antes de rendirse: hay JSON válido que `jq`
 # rechaza (un `\ud800` suelto). Con `-s`, `jq` no imprime nada si falla: no se duplica la salida.
-# El Node del arnés (story 8.39): el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH.
+# El Node del arnés: el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH.
 # con el bash de la Mac (3.2) y `set -e`, un `.` que no encuentra el archivo corta el guion aunque lleve `||`: se mira antes
 _hn="$SCRIPT_DIR/../lib/harness-node.sh"
 { [ -f "$_hn" ] && . "$_hn" 2>/dev/null; } || harness_node_bin() { echo node; }
@@ -130,11 +129,11 @@ read_json_node() {
 # de la documentación de hooks de Claude Code; no se midió en vivo, ni en Claude Code ni en Codex.
 # Lo único medido en las dos es que `exit 2` frena y llega al modelo
 # (guides/maintaining/codex-divergence-inventory.md). Hay que correr `scripts/controls-bench/live-fire.js`
-# contra un `PreToolUse` real. Deuda anotada: `[FUP-frenos-sin-jq-live-fire]` en tasks/todo.md.
+# contra un `PreToolUse` real.
 cannot_read() {
   # 🔴 Una entrada VACÍA (o que no se pudo leer) es «no pude leer», explícito: no se le pregunta si
-  # nombra «commit», porque no nombra nada. Antes caía en el `exit 0` de abajo, mudo (revisor de
-  # fallos silenciosos, 2026-10-03). El filtro del texto vale sólo para una entrada que SÍ llegó.
+  # nombra «commit», porque no nombra nada. Si no, caería en el `exit 0` de abajo, mudo.
+  # El filtro del texto vale sólo para una entrada que SÍ llegó.
   if [ -n "$INPUT" ]; then
     case "$INPUT" in *commit*) ;; *) log "no pude leer la entrada y no nombra commit, exit 0"; exit 0 ;; esac
   fi
@@ -153,43 +152,37 @@ if [ -z "$INPUT" ]; then cannot_read; fi
 CMD=$(printf '%s' "$INPUT" | read_json text tool_input.command "") || cannot_read
 log "parsed CMD=[$CMD]"
 
-# 🔴 El match es por POSICIÓN, no por substring (endurecido 2026-08-25). El glob viejo
-# (`*"git push"*`) daba positivo con CUALQUIER comando que contuviera ese texto en cualquier lado:
-# un heredoc que escribe un caso de test, un `sed` sobre documentación, un `grep "git push"`. Con
-# el hook sólo sincronizando eso era desperdicio invisible; desde que la rama de push FRENA
-# (ENGRAM-PRECOMMIT-PUSH-STAGE-GAP-1) pasó a ser un bloqueo falso — y se disparó de verdad, contra
-# el propio comando que estaba agregando los casos de este hook al banco.
+# 🔴 El match es por POSICIÓN, no por substring. Un glob
+# (`*"git push"*`) daría positivo con CUALQUIER comando que contuviera ese texto en cualquier lado:
+# un heredoc que escribe un caso de test, un `sed` sobre documentación, un `grep "git push"`. Un falso positivo así es un sync de más, sin costo visible.
 #
-# Ahora tiene que aparecer al principio del comando o después de un separador (`;`, `&&`, `||`,
+# Tiene que aparecer al principio del comando o después de un separador (`;`, `&&`, `||`,
 # `|`, `(`), que es donde empieza un comando de verdad. `grep -qE` y no `case`: los globs de sh no
 # tienen alternación con anclas.
 #
-# 🔴 Ampliado 2026-08-25 (revisión adversarial). El patrón anterior sólo aceptaba OPCIONES entre
-# `git` y el subcomando (`-[^ ]+`), así que se perdía todo lo que lleva VALOR o prefijo — formas
-# que el equipo usa a diario y que se reprodujeron sin disparar el hook:
+# 🔴 Entre `git` y el subcomando no alcanza aceptar sólo OPCIONES (`-[^ ]+`): se perdería todo
+# lo que lleva VALOR o prefijo — formas
+# que el equipo usa a diario y que tienen que disparar el hook:
 #     git -C /ruta push · git -c color.ui=false push · command git push · /usr/bin/git push
-# Ahora se aceptan hasta 4 tokens cualesquiera entre `git` y el subcomando, un prefijo de ruta
+# Se aceptan hasta 4 tokens cualesquiera entre `git` y el subcomando, un prefijo de ruta
 # (`/usr/bin/git`) y el envoltorio `command`.
 #
-# El sesgo cambió a propósito: mientras el hook BLOQUEABA, un falso positivo cortaba trabajo real y
-# convenía ser restrictivo. Ahora no bloquea — un falso positivo cuesta un sync de más y el staging
+# El sesgo es a propósito: un falso positivo cuesta un sync de más y el staging
 # ya es selectivo, mientras que un falso NEGATIVO deja la memoria de esa sesión sin exportar. Con
 # ese costo asimétrico, conviene errar hacia detectar de más.
 #
 # Sigue sin ser un parser de shell, y no puede serlo con un regex: un `; git push` adentro de un
-# string entrecomillado dispara igual. Eso es tolerable HOY porque el efecto es sincronizar y
+# string entrecomillado dispara igual. Eso es tolerable porque el efecto es sincronizar y
 # stagear sólo lo que ese sync generó. Si alguna vez esta rama vuelve a bloquear, esto NO alcanza.
 ES_COMMIT=0; ES_PUSH=0
-# 🔴 Y con PREFIJO (revisión adversarial 2026-09-06): `VAR=1 git commit`, `sudo git push`, `if …; then git
-# commit`, `{ git push; }` no se reconocían. Es el mismo criterio que `_GIT_POS` del safety-guard: lo que
+# 🔴 Y con PREFIJO: `VAR=1 git commit`, `sudo git push`, `if …; then git
+# commit`, `{ git push; }` tienen que reconocerse. Es el mismo criterio que `_GIT_POS` del safety-guard: lo que
 # se admite antes de `git` son asignaciones, envoltorios (sudo, env, time, nohup, exec, command, timeout,
 # nice) y los separadores `{`, backtick, `!`, `then`/`do`/`else`, `-c "` de un shell.
 _GIT='(^|[;&|({`!]|&&|\|\||-c[[:space:]]+["'"'"']|(then|do|else)[[:space:]])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|sudo|env|time|nohup|exec|command|timeout|nice|-[A-Za-z]+|[0-9]+)[[:space:]]+)*([^[:space:]]*/)?git[[:space:]]+([^[:space:]]+[[:space:]]+){0,4}'
-# 🔴 Los strings entrecomillados se VACÍAN antes de matchear (2026-09-17, pase adversarial). La
-# cabecera de arriba ya lo anticipaba: «un `; git push` adentro de un string dispara igual … si
-# alguna vez esta rama vuelve a bloquear, esto NO alcanza». Esta story la hizo bloquear. Un
-# `git log --grep="; git commit"` quedaba tratado como commit, y un mensaje `-m "… ;
-# TYCON_ENGRAM_MANIFEST_OK=1 …"` abría el escape. Sigue sin ser un parser de shell: se borra el
+# 🔴 Los strings entrecomillados se VACÍAN antes de matchear: la rama de commit bloquea, y un
+# `git log --grep="; git commit"` se trataría como commit, y un mensaje `-m "… ;
+# TYCON_ENGRAM_MANIFEST_OK=1 …"` abriría el escape. Sigue sin ser un parser de shell: se borra el
 # contenido de "…" y '…' (con `\"` adentro) y se matchea sobre lo que queda, que es donde viven los
 # comandos de verdad. `$CMD` no se toca: el log, la constancia y el sync lo siguen viendo entero.
 CMD_SIN_STRINGS=$(printf '%s' "$CMD" | sed -e "s/\\\\\"//g" -e "s/\"[^\"]*\"/\"\"/g" -e "s/'[^']*'/''/g")
@@ -200,31 +193,27 @@ if [ "$ES_COMMIT" = "0" ] && [ "$ES_PUSH" = "0" ]; then
   log "no match, exit 0"; exit 0
 fi
 
-# 🔴 En un `git push` NO se sincroniza (2026-09-16; reemplaza a ENGRAM-PRECOMMIT-PUSH-STAGE-GAP-1
-# del 2026-08-25). Aquella versión, para que la memoria exportada en el push «no quedara suelta»,
-# la stageaba y avisaba «commiteala y volvé a pushear». Medido el 2026-09-16 en la máquina del
-# admin del arnés: ese commit de limpieza casi nunca llega. El manifest queda modificado sin
-# commit; el `git pull --autostash` del arranque de la sesión siguiente lo guarda aparte, trae lo
+# 🔴 En un `git push` NO se sincroniza: stagear lo exportado y avisar «commiteala y volvé a pushear»
+# deja el manifest modificado sin commit, porque ese commit de limpieza casi nunca llega.
+# El `git pull --autostash` del arranque de la sesión siguiente lo guarda aparte, trae lo
 # publicado y al reaplicarlo CHOCA (cada máquina agrega su entrada al final de la misma lista); la
 # limpieza del conflicto se queda con la versión publicada y descarta las entradas nuevas.
-# Resultado: chunks en disco que ningún índice lista —esa mañana, 3 ya publicados en main y 2
-# locales— y un chunk sin entrada NO existe para las demás máquinas (guides/integrations/engram-workflow.md
-# §manifest). Cuatro arranques trabados en un día. Sin sync en el push no hay nada que quede
+# Resultado: chunks en disco que ningún índice lista, y un chunk sin entrada NO existe para las demás máquinas
+# (guides/integrations/engram-workflow.md §manifest). Sin sync en el push no hay nada que quede
 # suelto: lo pendiente se exporta, se stagea y se commitea junto, en el `git commit` siguiente.
-# Se pierde latencia, no memoria. Caso: incident-log#memoria-huerfana-por-sync-en-push-2026-09-16.
+# Se pierde latencia, no memoria.
 if [ "$ES_COMMIT" = "0" ]; then
   log "push: no se sincroniza (un sync en push deja .engram/ sucio sin commit), exit 0"
   exit 0
 fi
 
-# ── ¿En qué repo se hace el commit? (2026-10-10) ──────────────────────────────────────────────
-# Este hook corre parado en la carpeta de la SESIÓN, y elegía el repo con `git rev-parse` desde
-# ahí. El comando puede commitear en OTRO repo (`cd <clon> && git commit`, `git -C <clon> commit`):
-# entonces el sync exportaba la memoria a la carpeta de la sesión y la dejaba PREPARADA ahí, el
-# commit salía sin su memoria, y la carpeta de la sesión —con el índice modificado sin commitear—
-# dejaba de actualizarse sola. Visto dos veces el 2026-10-10 en la carpeta compartida del arnés
-# (ocho trozos a la mañana y uno más a la tarde); de esa carpeta lee su lista el freno de
-# publicación, y atrasada frenó empujes. Caso: tasks/todo.md, DEF-engram-pre-commit-repo-de-la-sesion.
+# ── ¿En qué repo se hace el commit? ──────────────────────────────────────────────
+# Este hook corre parado en la carpeta de la SESIÓN, y elegir el repo con `git rev-parse` desde
+# ahí falla si el comando commitea en OTRO repo (`cd <clon> && git commit`, `git -C <clon> commit`):
+# entonces el sync exportaría la memoria a la carpeta de la sesión y la dejaría PREPARADA ahí, el
+# commit saldría sin su memoria, y la carpeta de la sesión —con el índice modificado sin commitear—
+# dejaría de actualizarse sola. Y de la carpeta compartida del arnés lee su lista el freno de
+# publicación: atrasada, frena empujes.
 #
 # El criterio NO se escribe acá: es el de scripts/lib/git-target.js (el `cd` arrastrado y el `-C`
 # de cada git), el mismo que usan el freno de sesiones y el registro de retrospectivas, llamado
@@ -277,8 +266,8 @@ commit_dirs() {
   ' "$LIB_TARGET" "$LIB_SHELL" "$SESSION_DIR" 2>/dev/null || printf 'error\tnode no pudo correr el criterio\n'
 }
 
-# Se avisa sólo si la carpeta de la sesión guarda memoria: es donde la versión anterior habría
-# escrito. En cualquier otro lado este hook ya no hacía nada, y sigue sin decir nada.
+# Se avisa sólo si la carpeta de la sesión guarda memoria: es donde habría
+# escrito. En cualquier otro lado este hook no hace nada ni dice nada.
 unknown_target() { # $1 = qué no se pudo ubicar
   local root
   root=$(git -C "$SESSION_DIR" rev-parse --show-toplevel 2>/dev/null)
@@ -342,23 +331,23 @@ if [ -z "$PROJECT" ]; then
 fi
 log "project=$PROJECT"
 
-# ── La configuración del arnés (story 8.3, AC 2) ─────────────────────────────────────────────
+# ── La configuración del arnés ─────────────────────────────────────────────
 # Un `~/.claude/tycon.json` (o un perfil) roto NO se lee como «engram apagado» ni frena el commit:
 # se dice en CADA corrida —sin sello, sin silencio— y esta invocación no sincroniza. Nunca sale ≠ 0
 # por esto: un PreToolUse que sale con 2 deja la sesión sin Bash. El lector vive al lado de este hook.
 CONFIG_JS="$SCRIPT_DIR/../lib/tycon-config.js"
 if [ -f "$CONFIG_JS" ] && command -v "$HNODE" >/dev/null 2>&1; then
   # Se decide por el VEREDICTO del lector (la primera línea de su aviso), no por «hay algo en stderr»: un warning
-  # ajeno del runtime (ExperimentalWarning, nvm, NODE_OPTIONS) NO apaga el sync (pase adversarial, vuelta 1).
+  # ajeno del runtime (ExperimentalWarning, nvm, NODE_OPTIONS) NO apaga el sync.
   CONFIG_AVISO="$("$HNODE" "$CONFIG_JS" validate --hook 2>&1 >/dev/null)" || true
   if printf '%s' "$CONFIG_AVISO" | grep -q 'tycon: la configuración del arnés está ROTA'; then
     printf '%s\n' "$CONFIG_AVISO" >&2
     log "configuración del arnés rota: no se sincroniza, exit 0"
     exit 0
   fi
-  # ── Su integración, mirada por el propio hook (DEF-8.23-C-hooks-codex-sin-integracion, 2026-10-09) ─────────────
-  # Del lado Claude Code, con engram apagada este hook no se registra; pero quedaba registrado en Codex, o en un
-  # settings.json de antes, y sincronizaba igual. Con engram apagada no hace nada. Manda el mismo interruptor que usa
+  # ── Su integración, mirada por el propio hook ─────────────
+  # Del lado Claude Code, con engram apagada este hook no se registra; pero puede quedar registrado en Codex, o en un
+  # settings.json viejo, y sincronizaría igual. Con engram apagada no hace nada. Manda el mismo interruptor que usa
   # el aplicador (`override` de scripts/setup/hooks-list.json): TYCON_ENGRAM_HOOK=1 lo prende y =0 lo apaga.
   ENGRAM_STATE="$("$HNODE" "$CONFIG_JS" key engram --hook --switch TYCON_ENGRAM_HOOK 2>/dev/null)" || ENGRAM_STATE=""
   if [ "$ENGRAM_STATE" = "apagada" ]; then
@@ -374,10 +363,10 @@ fi
 
 cd "$REPO" || exit 0
 
-# 🔴 Foto de `.engram/` ANTES del sync (2026-08-25, revisión adversarial). El `git add .engram/`
-# incondicional stageaba TODO lo que hubiera ahí — incluidos chunks que el dev tenía sin commitear
-# de antes, o que dejó a propósito fuera del commit. Reproducido: un falso positivo del matcher
-# stageó un `.engram/chunks/manual.jsonl.gz` preexistente. Ahora se stagea sólo lo que ESTA
+# 🔴 Foto de `.engram/` ANTES del sync. El `git add .engram/`
+# incondicional stagearía TODO lo que hubiera ahí — incluidos chunks que el dev tenía sin commitear
+# de antes, o que dejó a propósito fuera del commit. Un falso positivo del matcher
+# stagearía un `.engram/chunks/manual.jsonl.gz` preexistente. Por eso se stagea sólo lo que ESTA
 # invocación creó o tocó; si no se pudo tomar la foto, no se stagea nada (ver `stagear_lo_nuevo`).
 # `foto_engram` lista cada archivo con su tamaño y su mtime. Se usa `cksum` y no `stat`, que tiene
 # banderas distintas en BSD y en GNU — el hook corre en macOS y en Linux, y una bandera que no
@@ -390,16 +379,15 @@ foto_engram() {
 }
 # Se cuentan los ARCHIVOS previos, no si la carpeta existía. Un `.engram/` recién creado —o con
 # `chunks/` vacío— da una foto vacía que es CORRECTA, y confundirla con "no pude sacar la foto"
-# hacía que el hook se negara a stagear justo en el caso normal del primer sync. (Lo cazó el banco
-# de controles apenas se agregó el caso; es exactamente para eso.)
+# haría que el hook se negara a stagear justo en el caso normal del primer sync.
 ARCHIVOS_ANTES=$(find "$REPO/.engram" -type f 2>/dev/null | wc -l | tr -d ' ')
 ANTES_FOTO=$(foto_engram)
 
 "$ENGRAM_BIN" sync --project "$PROJECT" >/dev/null 2>&1
 SYNC_RC=$?
 log "engram sync rc=$SYNC_RC"
-# 🔴 Un sync que falla dejaba stdout/stderr vacíos y el commit/push seguía como si nada
-# (2026-08-25, revisión adversarial). El rc sólo iba al log de debug, que nadie mira. No se
+# 🔴 Un sync que falla deja stdout/stderr vacíos y el commit/push sigue como si nada
+# El rc sólo va al log de debug, que nadie mira. No se
 # bloquea —el sync no es el trabajo del dev— pero se DICE: si no exportó, la memoria de esta
 # sesión no viaja, y eso tiene que ser visible en el momento, no descubrirse tres semanas después.
 if [ "$SYNC_RC" != "0" ]; then
@@ -419,8 +407,8 @@ stagear_lo_nuevo() {
     return 0
   fi
   # Cada línea de la foto es «<ruta> <suma>»: la ruta es todo menos el último campo. Con `$1` de awk
-  # una ruta con espacios se cortaba en el primero y el `git add` fallaba callado: el sync exportaba y
-  # nada quedaba preparado (visto el 2026-10-10 al medir un commit en un clon de ruta con espacios).
+  # una ruta con espacios se cortaría en el primero y el `git add` fallaría callado: el sync exportaría y
+  # nada quedaría preparado.
   NUEVOS=$(comm -13 <(printf '%s\n' "$ANTES_FOTO") <(printf '%s\n' "$AHORA_FOTO") 2>/dev/null | awk 'NF' | sed 's/ [^ ]*$//')
   if [ -z "$NUEVOS" ]; then log "el sync no cambió nada en .engram/"; return 0; fi
   printf '%s\n' "$NUEVOS" | while IFS= read -r f; do
@@ -429,22 +417,22 @@ stagear_lo_nuevo() {
   log "staged (sólo lo del sync): $(printf '%s' "$NUEVOS" | tr '\n' ' ')"
 }
 
-# ── El cruce del índice contra sus archivos (story 1.6, 2026-09-17) ─────────────────────────────
+# ── El cruce del índice contra sus archivos ─────────────────────────────
 # `engram sync --import` lee el ÍNDICE, no la carpeta: un chunk sin entrada no existe para las
-# demás máquinas y NO da error. El 2026-09-17 el commit ad4f498 entró con 205 entradas para 210
-# archivos y este hook no dijo nada: validaba marcadores y JSON, no completitud. Una entrada
+# demás máquinas y NO da error. Un commit puede entrar con 205 entradas para 210
+# archivos sin que se note si el hook sólo valida marcadores y JSON, no completitud. Una entrada
 # perdida no vuelve sola.
 #
-# Qué frena y qué no (decisión del dev): frena SÓLO lo que ESTE commit rompe —entradas que HEAD
+# Qué frena y qué no: frena SÓLO lo que ESTE commit rompe —entradas que HEAD
 # declara y el índice a commitear ya no, o chunks nuevos sin entrada—; lo heredado avisa; lo que no
 # se pudo medir se dice y deja pasar. Un freno que muerde por algo que rompió otro se apaga en una
 # semana. Y no repara: la reparación es un comando que este mensaje nombra, para que el cambio al
 # índice lo haga una persona y se vea.
-# ¿Parsea como JSON? Con NODE primero (2026-09-17, pase adversarial): es la dependencia dura del
+# ¿Parsea como JSON? Con NODE primero: es la dependencia dura del
 # cruce y del resto del arnés, así que el camino que corre el 100 % de las veces es el que TODOS los
-# casos del banco ejercitan. python3 queda de respaldo. Antes era al revés y sin python3 un índice
-# PERFECTO se declaraba «NO parsea», no se stageaba nada del sync y el cruce no llegaba a correr —
-# y ese camino no lo probaba nadie. Sin ninguno de los dos, se asume válido: el cruce, que exige
+# casos del banco ejercitan. python3 queda de respaldo. Al revés, sin python3 un índice
+# PERFECTO se declararía «NO parsea», no se stagearía nada del sync y el cruce no llegaría a correr —
+# y ese camino no lo prueba nadie. Sin ninguno de los dos, se asume válido: el cruce, que exige
 # node, va a decir «no pude medir».
 json_valido() {
   if command -v "$HNODE" >/dev/null 2>&1; then "$HNODE" -e 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))' "$1" 2>/dev/null; return $?; fi
@@ -468,10 +456,10 @@ cruzar_indice() {
   if ! command -v "$HNODE" >/dev/null 2>&1; then no_pude_medir "node no está en el PATH"; return 0; fi
   if [ ! -f "$LIB_MANIFEST" ]; then no_pude_medir "falta el criterio ($LIB_MANIFEST)"; return 0; fi
 
-  # 🔴 Se cruza LO QUE GIT VA A COMMITEAR (2026-09-17, pase adversarial), no el disco: el índice de
+  # 🔴 Se cruza LO QUE GIT VA A COMMITEAR, no el disco: el índice de
   # git. Con un índice truncado stageado y el árbol de trabajo sano —o al revés— el cruce del disco
-  # medía otra cosa: el hook quedaba MUDO y el commit entraba con el defecto exacto que existe para
-  # frenar (reproducido: 2 entradas para 3 chunks, hook rc=0, y el portón lo cazaba después). Por
+  # mediría otra cosa: el hook quedaría MUDO y el commit entraría con el defecto exacto que existe para
+  # frenar (p. ej. 2 entradas para 3 chunks, hook rc=0). Por
   # eso el cruce corre DESPUÉS de `stagear_lo_nuevo`: lo del sync ya está en el índice.
   # La excepción es `-a`/`--all`: ahí git stagea todo lo modificado en el momento del commit, o sea
   # que lo que va a viajar es el DISCO — y se mira el disco.
@@ -482,10 +470,10 @@ cruzar_indice() {
     CRUCE=$("$HNODE" "$LIB_MANIFEST" cross --repo "$REPO" --staged --json 2>/dev/null)
   fi
   if [ -z "$CRUCE" ]; then no_pude_medir "el criterio no devolvió nada"; return 0; fi
-  # 🔴 Que la salida PAREZCA algo no alcanza: tiene que parsear (2026-09-17, hallazgo del cazador de
-  # fallos silenciosos). Con una salida corrupta —un stack trace a medias, por ejemplo— cada
-  # `jq -r '.x // "default"'` devuelve vacío por su cuenta, ESTADO queda en "" y el flujo caía en la
-  # rama de AVISO: el commit pasaba con un mensaje que hablaba de una deriva que nadie midió, y una
+  # 🔴 Que la salida PAREZCA algo no alcanza: tiene que parsear
+  # Con una salida corrupta —un stack trace a medias, por ejemplo— cada
+  # `jq -r '.x // "default"'` devuelve vacío por su cuenta, ESTADO queda en "" y el flujo caería en la
+  # rama de AVISO: el commit pasaría con un mensaje sobre una deriva que nadie midió, y una
   # pérdida real nunca habría llegado al bloqueo. Se valida una vez, acá.
   if ! printf '%s' "$CRUCE" | read_json cross; then
     no_pude_medir "el criterio devolvió algo que no es un resultado válido"; return 0
@@ -495,12 +483,11 @@ cruzar_indice() {
   REGLA=$(printf '%s' "$CRUCE" | read_json text regla "no-pude-medir")
   # 🔴 Un repo con `.engram/` pero SIN un solo archivo de memoria todavía no tiene nada que
   # proteger: se calla y no anota. Sin esto, «no pude medir» saldría en CADA commit de un repo que
-  # sólo tiene la carpeta creada — medido el 2026-09-17 en esta máquina: 3 de 22 (dos de la plataforma
-  # y uno de un producto). Un aviso que aparece siempre y no se puede accionar es el que
+  # sólo tiene la carpeta creada. Un aviso que aparece siempre y no se puede accionar es el que
   # enseña a ignorar los otros. Con UN archivo ya hay memoria en juego y el cruce habla.
-  # 🔴 `null` NO es `0` (2026-09-17, pase adversarial): `archivos: null` es «no pude contar los
+  # 🔴 `null` NO es `0`: `archivos: null` es «no pude contar los
   # archivos» (la carpeta no está o no se pudo leer) y `0` es «conté y hay cero». Con `// 0` los dos
-  # caían en el silencio, y un índice que declara N entradas sin su carpeta de chunks salía mudo.
+  # caerían en el silencio, y un índice que declara N entradas sin su carpeta de chunks saldría mudo.
   ARCHIVOS=$(printf '%s' "$CRUCE" | read_json count archivos)
   if [ "$ESTADO" = "no-medido" ] && [ "$ARCHIVOS" = "0" ]; then
     log "repo con .engram/ pero sin archivos de memoria — nada que cruzar"
@@ -525,7 +512,7 @@ cruzar_indice() {
     # 🔴 Dos motivos distintos para no frenar, y el mensaje NO los mezcla: o se comparó contra la
     # referencia y esto ya venía así, o no se pudo comparar y entonces no se sabe. Decir «ya venía
     # incompleto» cuando no hubo con qué comparar es afirmar algo que no se midió — el mismo pecado
-    # que este control persigue. (Caso real: el PRIMER commit de memoria de un repo, donde el índice
+    # que este control persigue. (Ejemplo: el PRIMER commit de memoria de un repo, donde el índice
     # todavía no existe en HEAD.)
     COMPARABLE=$(printf '%s' "$CRUCE" | read_json text contra.legible "false")
     if [ "$COMPARABLE" = "true" ]; then
@@ -568,9 +555,9 @@ cruzar_indice() {
 
 if [ "$ES_COMMIT" = "1" ]; then
     if [ -d "$REPO/.engram" ]; then
-      # ENGRAM-MANIFEST-1 (2026-08-22, OK del dev): el add incondicional dejó pasar a main un
-      # manifest con MARCADORES DE CONFLICTO adentro (12946bf) — un `git add` no valida contenido,
-      # solo saca el path de la lista de unmerged, y el commit pasó con JSON roto. Antes de
+      # Un `git add` incondicional dejaría pasar un
+      # manifest con MARCADORES DE CONFLICTO adentro — no valida contenido,
+      # solo saca el path de la lista de unmerged, y el commit pasaría con JSON roto. Antes de
       # stagear: el manifest no debe traer marcadores Y debe parsear como JSON. Si está roto, NO
       # se agrega (el conflicto queda visible y git bloquea el commit como corresponde) y se avisa
       # a los gritos con la maniobra de recuperación (guides/integrations/engram-workflow.md §manifest).
@@ -584,7 +571,7 @@ if [ "$ES_COMMIT" = "1" ]; then
         echo "🛑 tycon: .engram/manifest.json NO parsea como JSON — no lo stageo. Recuperación: guides/integrations/engram-workflow.md §manifest. 🔴 NO borres el manifest: \`engram sync\` no lo reconstruye." >&2
         no_pude_medir "el índice no parsea como JSON (ya avisado arriba)"
       else
-        # 🔴 El ORDEN importa (AC 9 ↔ AC 5): se MIDE acá —después del sync, que es quien escribe la
+        # 🔴 El ORDEN importa: se MIDE acá —después del sync, que es quien escribe la
         # entrada nueva— pero se DECIDE después de stagear. Si se frenara antes del staging, lo que
         # el sync acaba de exportar quedaría sin stagear; y en el reintento la foto previa y la de
         # después salen iguales, así que `stagear_lo_nuevo` no lo agarraría nunca y esa memoria se
@@ -599,8 +586,7 @@ if [ "$ES_COMMIT" = "1" ]; then
     [ "${CRUCE_PENDIENTE:-0}" = "1" ] && cruzar_indice
 fi
 
-# La rama de `git push` (ENGRAM-PRECOMMIT-PUSH-STAGE-GAP-1, 2026-08-25) se retiró el 2026-09-16:
-# en un push el hook sale antes del sync — ver la salida temprana junto al matcher.
+# En un push el hook sale antes del sync — ver la salida temprana junto al matcher.
 
 
 exit 0

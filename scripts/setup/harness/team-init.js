@@ -1,5 +1,5 @@
 'use strict';
-// team-init.js — el alta guiada de una organización: `harness.js team-init` (story 8.40, tanda B · AC 21 a 25 y 29).
+// team-init.js — el alta guiada de una organización: `harness.js team-init`.
 //
 // Qué resuelve: una organización nueva necesita su repo del perfil del equipo (los tres archivos obligatorios de la capa:
 // team-layer.json, team-profile.json y team-repos.json) antes de que nadie pueda instalar con `--team`. Copiar el ejemplo
@@ -8,13 +8,13 @@
 // info/refs y codeload, sin git y sin permiso), arma los tres archivos con lo contestado y los VALIDA con los mismos
 // lectores con que el arnés apila la capa (team.js: la declaración, el perfil, team-repos.js), cargados del árbol
 // INSTALADO, como team-config.js. Nada se escribe si algo no valida: un ejemplo con una clave que esta versión no conoce
-// se dice, no se adivina (AC 25).
+// se dice, no se adivina.
 //
-// No crea repos ni pide credenciales (decisión 9 de la story): dice dónde crear el repo vacío; si hay git y la persona
+// No crea repos ni pide credenciales: dice dónde crear el repo vacío; si hay git y la persona
 // dice que sí, lo sube con el git de la máquina (su credencial, la de siempre); si no, imprime los dos comandos. Con el
 // push hecho, ofrece instalar esta máquina con el perfil (`install --version <la instalada> --team <repo>`).
 //
-// Al final ofrece el repo de HISTORIAS del equipo (el cierre de la 8.40, AC 37 y 38): las plantillas genéricas del núcleo
+// Al final ofrece el repo de HISTORIAS del equipo: las plantillas genéricas del núcleo
 // (team-stories/, al lado de este archivo en el árbol instalado) llenas y en su lugar, al lado de la carpeta del perfil. Va al final para que
 // las respuestas de antes no cambien de orden. `--stories <nombre>` contesta, `--no-stories` lo saltea y `--stories-only`
 // arma sólo ese repo (para hacerlo después). Tampoco crea ese repo: imprime los comandos y la política de rama.
@@ -45,7 +45,7 @@ const STORIES_LAYOUT = Object.freeze({
 });
 const REPO_NAME = /^[A-Za-z0-9._-]{1,100}$/;
 // los guiones de entrada NO piden el permiso del repo del equipo (sólo el del arnés): se dice cómo llega, no se promete
-// que se pida (pase adversarial, clase 12). GitHub: la variable, que el guion guarda; Azure: el gestor de credenciales de git
+// que se pida. GitHub: la variable, que el guion guarda; Azure: el gestor de credenciales de git
 const teamCredential = (src) => (src.host === 'azure'
   ? `su credencial de Azure DevOps de LECTURA de ese repo en el gestor de credenciales de git (un git clone ${src.url} una vez la deja guardada); el guion no la pide`
   : 'su permiso de GitHub de LECTURA de ese repo (Fine-grained, Contents: read) en TYCON_GITHUB_TOKEN al correr la línea: el guion no lo pide, lo guarda');
@@ -382,7 +382,7 @@ function run(ctx) {
     out('  2. subí los archivos con git (pegá estas dos líneas cuando el repo exista):');
     for (const c of cmds) out(`       ${c}`);
   }
-  // la ruta del árbol, entre comillas: una carpeta personal con espacios (Windows) rompería la línea pegada (clase 10)
+  // la ruta del árbol, entre comillas: una carpeta personal con espacios (Windows) rompería la línea pegada
   const installCmd = `node "${path.join(tree, 'scripts', 'setup', 'harness.js')}" install --version ${version} --team ${src.repo}`;
   let installRc = 0;
   if (pushed && P.saidYes(ask(P, out, '  3. ¿Instalo esta máquina con el perfil ahora? [s/N] ') || '')) {

@@ -1,10 +1,10 @@
 'use strict';
 /**
- * plan.js — lo que `install` (y `apply --dry-run`) muestra ANTES de escribir (story 8.16, tanda B · AC 12, 15, 18).
+ * plan.js — lo que `install` (y `apply --dry-run`) muestra ANTES de escribir.
  *
  * `build()` junta tres cosas: el plan del aplicador (`--check --plan-json`: `[{kind, where, id, action}]`), las piezas
  * que escribe el propio programa (el enlace, el estado, la copia fija, la línea de arranque, el import) y la lista
- * declarada de efectos (`scripts/setup/install-effects.json`, tanda A). `describe()` lo dice en ocho secciones, con la
+ * declarada de efectos (`scripts/setup/install-effects.json`). `describe()` lo dice en ocho secciones, con la
  * forma de `describePlan` de uninstall.js:
  *
  *   escribe:                                agrupado por archivo, con cuántos hooks pueden frenar un comando
@@ -18,10 +18,10 @@
  *
  * Cada línea dice lo que pasa, no cómo está implementado: ningún nombre de guion ni de hook. Lo que ya estaba (`keep`)
  * no se anuncia como cambio, y una reparación no vuelve a listar las tareas de siempre (ya corrían). Un aplicador que no
- * sabe mostrar su plan lo dice, y entonces «nada que escribir» nunca es verdad (AC 15).
+ * sabe mostrar su plan lo dice, y entonces «nada que escribir» nunca es verdad.
  *
  * `effectsDiff()` / `describeEffectsDiff()`: la diferencia de comportamiento entre dos listas de efectos, lo que `update`
- * muestra antes de preguntar «¿Aplico ahora?» (AC 18).
+ * muestra antes de preguntar «¿Aplico ahora?».
  *
  * Datos puros: no lee ni escribe nada.
  */
@@ -127,8 +127,8 @@ function partLabel(kind, list, plan) {
     case 'pull-line': return n === 1 ? 'una línea de arranque con `git pull`, para que no pise cambios locales' : `${n} líneas de arranque con \`git pull\`, para que no pisen cambios locales`;
     case 'state': return 'el estado de la instalación';
     case 'channel': return 'el canal elegido';
-    case 'profile': return 'el perfil de instalación elegido';   // story 8.16, tanda C: `install --profile` lo escribe
-    case 'config': return n === 1 ? 'una respuesta de la instalación (integraciones o paquete del stack)' : `${n} respuestas de la instalación (integraciones y paquete del stack)`;   // story 8.16, tanda D
+    case 'profile': return 'el perfil de instalación elegido';   // `install --profile` lo escribe
+    case 'config': return n === 1 ? 'una respuesta de la instalación (integraciones o paquete del stack)' : `${n} respuestas de la instalación (integraciones y paquete del stack)`;
     default: return plural(n, kind, kind);
   }
 }
@@ -161,7 +161,7 @@ function describe(plan) {
   const withEffect = changes.map((p) => ({ p, e: effectFor(p, plan.effects) })).filter((x) => x.e);
   const ctx = { env: plan.env, platform: plan.platform, integrations: plan.integrations,
     detected: { codex: plan.pieces.some((p) => p.kind === 'codex' && p.action !== 'remove') } };
-  // las tareas de fondo del perfil que va a quedar (story 8.16, tanda C · AC 25; pase adversarial, clase 1): una de full no
+  // las tareas de fondo del perfil que va a quedar: una de full no
   // se anuncia en un plan de minimal, porque el aplicador de minimal no la lanza
   const inProfile = (e) => !plan.profile || !Array.isArray(e.profiles) || e.profiles.includes(plan.profile);
   const tasks = plan.first ? plan.effects.filter((e) => e && e.kind === 'task' && applies(e.when, ctx) && inProfile(e)) : [];
@@ -170,8 +170,8 @@ function describe(plan) {
 
   const writes = grouped(plan, changes);
   if (!plan.applierKnown) writes.push(`  - ${OLD_APPLIER}`);
-  // la carpeta global de hooks de git (2026-10-14): sin ella los hooks de git que se instalan no corren, y desde ahora la
-  // pone la instalación si git no tiene ninguna. Es configuración de git de la persona: el plan lo dice antes del «sí»
+  // la carpeta global de hooks de git: sin ella los hooks de git que se instalan no corren, y la pone la
+  // instalación si git no tiene ninguna. Es configuración de git de la persona: el plan lo dice antes del «sí»
   const gitHook = changes.find((p) => p.kind === 'git-hook');
   if (gitHook && !(plan.env && plan.env.TYCON_NO_GIT_HOOKS === '1')) {
     writes.push(`  - la carpeta global de hooks de git (core.hooksPath → ${display(plan, path.dirname(gitHook.where))}), sólo si git no tiene ninguna: con ella git corre los hooks del arnés en todos tus repos, en lugar del .git/hooks/ de cada uno. Si ya tenés una, no la toca`);

@@ -35,7 +35,7 @@ $ErrorActionPreference = 'Continue'
 
 if ($env:TYCON_NO_ENGRAM_VERSION_CHECK -eq '1') { exit 0 }
 
-# PowerShell 7 es un requisito (story 8.17, W3W4): lanzado suelto con Windows PowerShell 5.1, lo dice en una línea y sale 1
+# PowerShell 7 es un requisito: lanzado suelto con Windows PowerShell 5.1, lo dice en una línea y sale 1
 # antes de lanzar nada. El instalador ya frena antes de llegar acá; esto cubre a quien lo corre a mano. Mismo criterio y
 # misma variable de prueba que install-tycon-hooks.ps1 (sólo simula una versión más vieja; el texto, sin tildes: ver allá).
 $TyconPsMajor = $PSVersionTable.PSVersion.Major

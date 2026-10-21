@@ -1,16 +1,16 @@
 'use strict';
 // import-line.js — la línea de ~/.claude/CLAUDE.md que carga en cada sesión el índice de guías del arnés.
 //
-// El índice se llamó `README.md` hasta 2026-10-14; ese día pasó a llamarse `INDEX.md` y `README.md` quedó como la portada
-// para personas (la que muestra GitHub). Una máquina con la línea vieja cargaría la portada en vez del índice, así que la
-// línea vieja se reescribe a la nueva en su lugar, una sola vez y sin tocar el resto del archivo, en tres momentos:
+// El índice se llama `INDEX.md`; `README.md` es la portada para personas (la que muestra GitHub). Una máquina con la
+// línea que apunta a `README.md` cargaría la portada en vez del índice, así que esa línea se reescribe a la nueva en su
+// lugar, una sola vez y sin tocar el resto del archivo, en tres momentos:
 //   · el aplicador del árbol NUEVO (install-tycon-hooks.sh / .ps1) la corre con `--fix` en cada instalación y en cada
 //     actualización: el programa que decide la actualización es el instalado antes, pero el aplicador ya es el nuevo, así
 //     que la misma actualización deja la línea nueva antes de la sesión siguiente;
 //   · `harness.js` (install y cada arranque) la reescribe si la encuentra, y la agrega si no está;
 //   · el aviso sincrónico del arranque (scripts/hooks/branch-guard-notice.js), si la sesión arrancó con la línea vieja, la
 //     reescribe y además le pasa el índice a ESA sesión, que ya había leído el CLAUDE.md.
-// También reconoce la línea con el nombre viejo del lugar (story 8.19): la pasa a INDEX.md con ese
+// También reconoce la línea con el nombre viejo del lugar: la pasa a INDEX.md con ese
 // mismo nombre; mudarla al lugar es de `harness.js relocate`, nunca de una actualización.
 //
 // Este archivo viaja en la copia fija del programa: sólo `require` dentro de scripts/setup/harness/.
@@ -28,9 +28,9 @@ const OLD_INDEX_FILE = 'README.md';
 const lineFor = (place, file) => `@~/.claude/${place}/${file}`;
 /** La línea de hoy. */
 const IMPORT_LINE = lineFor(PLACE.PLACE_NAME, INDEX_FILE);
-/** La de hoy con el nombre viejo del lugar: vale (el nombre viejo resuelve) y sólo `relocate` la muda (story 8.19). */
+/** La de hoy con el nombre viejo del lugar: vale (el nombre viejo resuelve) y sólo `relocate` la muda. */
 const LEGACY_LINE = lineFor(PLACE.LEGACY_PLACE_NAME, INDEX_FILE);
-/** Las formas de antes, las que apuntan al README.md que era el índice: pasan a INDEX.md con el mismo nombre del lugar. */
+/** Las formas viejas, las que apuntan a README.md como si fuera el índice: pasan a INDEX.md con el mismo nombre del lugar. */
 const OLD_FORMS = Object.freeze([lineFor(PLACE.PLACE_NAME, OLD_INDEX_FILE), lineFor(PLACE.LEGACY_PLACE_NAME, OLD_INDEX_FILE)]);
 /** Las que valen hoy. */
 const CURRENT_FORMS = Object.freeze([IMPORT_LINE, LEGACY_LINE]);

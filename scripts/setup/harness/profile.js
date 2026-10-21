@@ -1,6 +1,6 @@
 'use strict';
 /**
- * profile.js — el perfil de instalación: `minimal` o `full` (story 8.16, tanda C · AC 21, 25 a 28).
+ * profile.js — el perfil de instalación: `minimal` o `full`.
  *
  * Qué trae cada perfil lo dice `scripts/setup/install-effects.json` (`profiles`), y lo obedecen el aplicador y el sync
  * de bloques. Acá vive lo que `harness.js` necesita para elegirlo y cambiarlo:
@@ -12,7 +12,7 @@
  *   · `label()` — cómo se dice: «perfil: minimal (--profile)», «perfil: full (sin elegir)».
  *   · `toRemove()` — en un cambio de perfil, lo registrado que el reporte del aplicador del perfil nuevo ya no trae
  *     (sin las piezas propias de harness.js ni las skills de terceros): eso lo quita `removePieces`, con su copia — la
- *     mecánica de la vuelta atrás de la 8.13, no una segunda forma de sacar piezas.
+ *     mecánica de la vuelta atrás, no una segunda forma de sacar piezas.
  *
  * Este archivo viaja en la copia fija del programa: no carga `scripts/lib/` por ruta relativa, recibe el árbol.
  */
@@ -23,7 +23,7 @@ const ENV_VAR = 'TYCON_INSTALL_PROFILE';
 const KEY = 'install.profile';
 
 /** El lector de configuración del árbol: `{ C }`, o `{ reason }` si no está, es anterior a la sección `install` o no
- *  carga — con el motivo real, no uno genérico (revisor de fallos silenciosos, tanda C). */
+ *  carga — con el motivo real, no uno genérico. */
 function configOf(tree) {
   const file = path.join(tree, 'scripts', 'lib', 'tycon-config.js');
   let C;
@@ -52,7 +52,7 @@ function resolve({ tree, home, env = process.env } = {}) {
   }
   const v = c.valores && c.valores.install ? c.valores.install.profile : null;
   const origin = (c.origenes || {})[KEY] || 'sin-valor';
-  // el archivo de la máquina como se le dice a la persona (story 8.23, tanda G · AC 44 c): `~/.tycon/config.json` donde
+  // el archivo de la máquina como se le dice a la persona: `~/.tycon/config.json` donde
   // la máquina vive ahí, el de siempre donde no. Lo usa `label`; sin él, el nombre genérico
   const file = c.archivos && c.archivos.maquina && c.archivos.maquina.ruta ? c.archivos.maquina.ruta : null;
   const h = home || require('os').homedir();
@@ -72,7 +72,7 @@ function checkOption(value, env = process.env) {
 }
 
 /** «perfil: <valor> (<origen>)», con el origen dicho para una persona. `via`: de dónde vino lo que se va a escribir
- *  (`--profile`, o `respuesta` si se contestó la pregunta de la tanda D). */
+ *  (`--profile`, o `respuesta` si se contestó la pregunta). */
 function label(r, { viaOption = false, via = '--profile' } = {}) {
   if (!r || !r.ok) return `perfil: no se pudo saber (${r ? r.reason : 'sin lector'})`;
   const origin = viaOption ? via : ({ 'sin-valor': 'sin elegir', maquina: r.machineFile || 'el archivo de la máquina', env: ENV_VAR, perfil: 'perfil' }[r.origin] || r.origin);
@@ -86,7 +86,7 @@ function installedValue(state) {
 
 /**
  * Lo que se quita al cambiar de perfil: lo registrado (`managed`) que el reporte del perfil nuevo ya no trae Y que la
- * lista de efectos dice que el perfil nuevo no trae. Las dos condiciones (pase adversarial de la tanda C, clases 8 y 12):
+ * lista de efectos dice que el perfil nuevo no trae. Las dos condiciones valen juntas:
  * «no vino en el reporte» solo no alcanza — una pieza de los dos perfiles cuyo paso está apagado a mano
  * (`TYCON_NO_COMMANDS_SYNC=1`, `TYCON_NO_CLAUDEMD_SYNC=1`) tampoco se reporta, y no es del perfil que se va. Una pieza sin
  * entrada en la lista no se quita. Tampoco las piezas propias de harness.js (`isOwn`) ni las skills de terceros (viven

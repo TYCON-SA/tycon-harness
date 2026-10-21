@@ -1,6 +1,5 @@
 'use strict';
-// team-azure.js — la capa del equipo desde un repo de AZURE DEVOPS (story 8.25, la fuente de TYCON; decisión del dueño
-// 2026-10-08 22:45): cuando la copia sea pública bajar el arnés no pide credencial, y los devs del equipo ya tienen la de
+// team-azure.js — la capa del equipo desde un repo de AZURE DEVOPS: cuando la copia sea pública bajar el arnés no pide credencial, y los devs del equipo ya tienen la de
 // Azure por su trabajo; no necesitan cuenta de GitHub. Lo que la capa ES (lista cerrada, declaración, perfil validado,
 // apilado, estado) vive en team.js; acá sólo CÓMO se baja de Azure y de dónde sale la credencial.
 //
@@ -14,7 +13,7 @@
 //   2. el gestor de credenciales de git, SIN interacción (`git credential fill` con GCM_INTERACTIVE=never y
 //      GIT_TERMINAL_PROMPT=0; TYCON_AZURE_GIT_CREDENTIAL=0 lo apaga, para las pruebas);
 //   3. ninguna → `{ ok: false }` con la acción, y quien llama frena (install/migrate: 1 sin escribir; update: la capa que ya está).
-// Medido contra la API real (2026-10-08): un anónimo Y un PAT inválido reciben 302 a la página de login (no 401), así que
+// Contra la API real: un anónimo Y un PAT inválido reciben 302 a la página de login (no 401), así que
 // «sin credencial» y «no vale» se dicen juntas; 403 es «sin permiso de lectura (Code: Read)»; 404 trae `typeKey`
 // (ProjectDoesNotExist / GitRepositoryNotFound). Los árboles vienen con `mode` "40000" (sin el cero adelante).
 //
@@ -111,7 +110,7 @@ function client(src, cred, { env = process.env, deadlineAt = null } = {}) {
   const base = ab.ok ? ab.base : null;
   const prefix = `${base}/${encodeURIComponent(src.org)}/${encodeURIComponent(src.project)}/_apis/git/repositories/${encodeURIComponent(src.name)}/`;
   // el reloj, como el del cliente de GitHub (release.js): se puede correr para la bajada (`setDeadline`) y un fallo del reloj
-  // queda marcado (`outOfClock`) para decirse «se acabó el tiempo», no «sin red» (2026-10-09)
+  // queda marcado (`outOfClock`) para decirse «se acabó el tiempo», no «sin red»
   const clock = { deadline: deadlineAt || (Date.now() + 15000), since: Date.now(), answered: 0 };
   const auth = cred && cred.ok ? { Authorization: `Basic ${Buffer.from(`:${cred.pat}`).toString('base64')}` } : {};
   const get = (rest, { maxBytes = 8 * 1024 * 1024, accept = 'application/json', timeoutMs = null } = {}) => {
@@ -187,7 +186,7 @@ function resolve(c, { version, readerTree, deferReaders = false, home = os.homed
   const ref = refs.json.value.find((v) => v && v.name === `refs/heads/${TEAM_REF}`);
   if (!ref || typeof ref.objectId !== 'string' || !SHA40.test(ref.objectId)) return { ok: false, status: 'blocked', missing: 'team', reason: `${head}: el repo del equipo no tiene la rama ${TEAM_REF}${refs.json.value.length ? ` (hay ${refs.json.value.map((v) => String(v.name || '').replace(/^refs\/heads\//, '')).slice(0, 3).join(', ')})` : ''}; la capa se lee de refs/heads/${TEAM_REF}` };
   const commit = ref.objectId;
-  // el refresco en el lugar (story 8.25, A1b · AC 10 (a), W10): un commit que quien llama ya conoce (el de harness/ o uno
+  // el refresco en el lugar: un commit que quien llama ya conoce (el de harness/ o uno
   // rechazado) no pide nada más
   if (Array.isArray(knownCommits) && knownCommits.includes(commit)) return { ok: true, unchanged: true, repo: src.url, host: 'azure', commit, etag: null };
   const meta = c.get(`commits/${commit}`);
@@ -197,7 +196,7 @@ function resolve(c, { version, readerTree, deferReaders = false, home = os.homed
   const list = c.get(`trees/${tree}?recursive=true`);
   if (!list.ok || list.status !== 200 || !list.json || !Array.isArray(list.json.treeEntries)) { const f = explain(c, list, `la lista del árbol ${sha7(tree)} del repo del equipo`); return Object.assign({ ok: false }, f, { reason: `${head}: ${f.reason}` }); }
   // una entrada sin forma (nula, sin ruta, sin sha de 40 hex, sin tipo o sin modo) es «la lista no sirve», dicho — no un TypeError
-  // que suba hasta el catch de harness.js como un volcado de pila (pase adversarial 8.25 A1a-azure)
+  // que suba hasta el catch de harness.js como un volcado de pila
   const malformed = list.json.treeEntries.find((e) => !e || typeof e !== 'object' || typeof e.relativePath !== 'string' || !e.relativePath || typeof e.objectId !== 'string' || !SHA40.test(e.objectId) || typeof e.gitObjectType !== 'string' || typeof e.mode !== 'string');
   if (malformed !== undefined) return { ok: false, status: 'blocked', reason: `${head}: la lista del árbol ${sha7(tree)} que Azure DevOps devolvió trae una entrada sin forma (sin ruta, sin sha de 40 hex, sin tipo o sin modo): no se usa` };
   const entries = list.json.treeEntries.map((e) => ({ path: e.relativePath, mode: e.mode === '40000' ? '040000' : e.mode, type: e.gitObjectType, sha: e.objectId, size: Number(e.size) || 0 }));
@@ -208,9 +207,9 @@ function resolve(c, { version, readerTree, deferReaders = false, home = os.homed
   if (recomputed !== tree) return { ok: false, status: 'blocked', reason: `${head}: la lista del árbol que Azure DevOps devolvió no da el árbol del commit ${sha7(commit)} (${sha7(recomputed)} ≠ ${sha7(tree)}; lista cortada o alterada): no se usa` };
   const plan = T.planTeam(entries, { truncated: Boolean(list.json.truncated) });
   if (!plan.ok) return { ok: false, status: 'blocked', invalid: true, commit, reason: `${head} @ ${sha7(commit)}: no se apila — ${plan.problems.map((p) => `${p.path}: ${p.reason}`).join(' · ')}` };
-  // el momento 1 (AC 26): la declaración y lo que se juzga por su contenido, cada item verificado por su blob, a una temporal fuera
+  // el momento 1: la declaración y lo que se juzga por su contenido, cada item verificado por su blob, a una temporal fuera
   // del HOME que `fetch` reusa (cada archivo se pide UNA vez); lo que la máquina ya tiene con ese blob —en harness/ o en otra
-  // caché— no se pide (tanda A2c · AC 39: un commit que sólo cambia el perfil cuesta la lista más un pedido)
+  // caché— no se pide (un commit que sólo cambia el perfil cuesta la lista más un pedido)
   const store = T.blobStore(env);
   const judged = T.judgeContent(plan, (p, sha) => { const have = sha ? store.get(sha) : null; return have ? { ok: true, buf: have, blob: sha } : itemAt(c, commit, p, sha); }, { version, readerTree, deferReaders, home, env, head, commit });
   if (!judged.ok) return judged;
@@ -237,12 +236,12 @@ function fetch(c, resolved, { env = process.env, log = null, deadlineFor = null,
     if (intact.length === resolved.files.length) { if (log) log(`team: ${resolved.repo} @ ${sha7(resolved.commit)} desde la caché (${intact.length} archivo(s))`); T.dropStaged(resolved.stagedDir); return { ok: true, cacheDir, files: intact, fromCache: true, resolved }; }
   }
   const staged = [];
-  // lo que el momento 1 ya leyó y verificó (resolved.stagedDir) no se vuelve a pedir: cada archivo, una vez (AC 26); y lo que la
-  // máquina ya tiene con ese blob, en harness/ o en otra caché, tampoco (tanda A2c · AC 39)
+  // lo que el momento 1 ya leyó y verificó (resolved.stagedDir) no se vuelve a pedir: cada archivo, una vez; y lo que la
+  // máquina ya tiene con ese blob, en harness/ o en otra caché, tampoco
   const already = (f) => { if (!resolved.stagedDir) return null; try { const b = fs.readFileSync(path.join(resolved.stagedDir, ...f.path.split('/'))); return T.blobOf(b) === f.sha ? b : null; } catch (_) { return null; } };
   const store = T.blobStore(env);
   // lo que un intento anterior de ESTE commit ya bajó (y no llegó a terminar) queda en `<caché>.partial/<blob>`: una bajada
-  // que se queda sin tiempo sigue desde ahí en vez de empezar de cero —si no, una red lenta no converge nunca (2026-10-09)—.
+  // que se queda sin tiempo sigue desde ahí en vez de empezar de cero —si no, una red lenta no converge nunca—.
   // Cada archivo se verifica por su blob al leerlo; lo guardado de OTRO commit se borra acá
   const partialDir = `${cacheDir}.partial`;
   try { for (const n of fs.readdirSync(path.dirname(cacheDir))) if (/^[0-9a-f]{12}\.partial$/.test(n) && n !== path.basename(partialDir)) fs.rmSync(path.join(path.dirname(cacheDir), n), { recursive: true, force: true }); } catch (_) { /* sin cachés todavía */ }

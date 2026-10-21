@@ -1,16 +1,15 @@
 'use strict';
-// lock.js — el candado propio del mecanismo: ~/.claude/.tycon-pipeline/harness/harness.lock (story 8.13, AC 3).
+// lock.js — el candado propio del mecanismo: ~/.claude/.tycon-pipeline/harness/harness.lock.
 //
 // Calco del método probado del aplicador (`install-tycon-hooks.sh`, bloque «Lock anti-concurrencia»): `mkdir` atómico,
 // el pid adentro para diagnóstico, y un candado HUÉRFANO (más de 10 minutos: crash o SIGKILL sin limpieza) se pisa con
 // un mutex de takeover —mkdir, sección crítica de microsegundos, vida 1 minuto— re-verificando la vejez ADENTRO del
-// mutex: `rmdir + mkdir` a secas dejaba pasar a dos, y un `mv` atómico abría una ventana por la que un tercero entraba
-// (medido en la ronda adversarial del aplicador: 0 solapamientos en 160 contendientes con este método).
+// mutex: `rmdir + mkdir` a secas deja pasar a dos, y un `mv` atómico abre una ventana por la que entra un tercero.
 //
 // Quién lo usa: toda operación que escribe (`startup`, `update`, `apply`, `link`, `install`, y en la C `rollback` y
 // `uninstall`). La segunda sesión que llega mientras la primera trabaja se va: `startup` en silencio con 0, los demás
 // con 3 «otra sesión está actualizando» —eso lo decide el llamador con `onBusy`—. Con `TYCON_HARNESS_LOCK_HELD=1` en el
-// ambiente no se toma nada: lo tiene el padre (el aplicador que llamó a `install --from-existing`, AC 8), y tampoco se
+// ambiente no se toma nada: lo tiene el padre (el aplicador que llamó a `install --from-existing`), y tampoco se
 // suelta. En Windows el candado vive acá y cubre al `.ps1`.
 //
 // Funciones puras respecto del HOME: reciben `home` y `env`.
@@ -30,7 +29,7 @@ function isStale(p, limitMs, now) {
   const m = mtimeMs(p);
   return m !== null && (now - m) > limitMs;
 }
-/** El dueño del candado: `{ pid, host }` (`host` null en el formato de antes de la 8.23, sólo el PID) o null. */
+/** El dueño del candado: `{ pid, host }` (`host` null en el formato sin máquina, sólo el PID) o null. */
 function readOwner(lockDir) {
   try {
     const [p, h] = fs.readFileSync(`${lockDir}/pid`, 'utf8').split('\n').map((s) => s.trim());
@@ -40,7 +39,7 @@ function readOwner(lockDir) {
 }
 function readPid(lockDir) { const o = readOwner(lockDir); return o ? o.pid : null; }
 /**
- * ¿El dueño del candado ya no existe? (story 8.23, AC 37). Sólo se puede saber en ESTA máquina —el formato de antes, sin
+ * ¿El dueño del candado ya no existe? Sólo se puede saber en ESTA máquina —el formato sin
  * máquina, es de ésta— y sólo cuando el sistema dice que el PID no existe (`ESRCH`). Vivo, sin permiso para consultarlo
  * (`EPERM`), de otra máquina o ilegible: no se sabe, y manda la regla de la edad de siempre. Un PID reusado por otro
  * proceso se ve vivo: también cae a la edad.
@@ -60,9 +59,9 @@ function take(lockDir, ownerPid = process.pid) {
 
 /**
  * Toma el candado. No espera: si está tomado, vuelve enseguida con `ok:false`.
- * `ownerPid`: el proceso que va a USAR el candado, si no es éste (story 8.23, pase adversarial de la tanda L: el
+ * `ownerPid`: el proceso que va a USAR el candado, si no es éste (el
  * instalador de Windows lo toma con un `node -e` que termina enseguida; a nombre de ése, el candado de un instalador vivo
- * se daba por huérfano en el acto).
+ * se daría por huérfano en el acto).
  * @returns {{ ok: boolean, held: boolean, pid: number|null, reason: string|null, ageMs?: number }}
  *   `held:true` = lo tiene el padre (TYCON_HARNESS_LOCK_HELD=1): no se tomó nada y no hay que soltar nada.
  *   `ageMs` (ocupado): hace cuánto lo tiene el otro.
@@ -103,8 +102,8 @@ function acquire(home = os.homedir(), { env = process.env, now = Date.now(), own
   }
   if (!taken) return busy();
   if (!dead) return { ok: true, held: false, pid: ownerPid, reason: null };
-  // lo dice el registro, para TODO comando que toma el candado (startup, update, install, rollback, …): un candado pisado
-  // es un arranque o una actualización que se cortó (story 8.23, AC 37)
+  // lo dice el registro, para TODO comando que toma el candado (startup, update, install, rollback, …):
+  // un candado pisado es un arranque o una actualización que se cortó
   try {
     const { log } = paths(home);
     fs.appendFileSync(log, `${new Date().toISOString()} candado: era del pid ${owner.pid}, que ya no existe (algo se cortó sin soltarlo): lo pisé (pid ${process.pid}, ${process.argv.slice(2, 3).join('') || 'harness.js'})\n`);
