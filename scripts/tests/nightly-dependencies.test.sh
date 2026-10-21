@@ -1525,6 +1525,170 @@ fmx=$(grep -l "^paquete: acme-mx$" "$TMP/pend/pending"/*.yaml 2>/dev/null | head
 { [ -n "$fmx" ] && ! grep -q "falta de dato" "$fmx" && grep -q "^  - M1/M1$" "$fmx" && grep -q "^  - M2/M2$" "$fmx"; } \
   && ok "T11 8.55 con un repo que informa la gravedad, la ficha no dice «falta de dato»" || no "T11 8.55 mezcla: $(cat "$fmx" 2>/dev/null)"
 
+# ── la noche mira cada formulario ──────────────────────────────────────────────────────────────
+# Un repo de formularios tiene un lockfile por formulario: mirar sólo el de la raíz deja afuera una alta en
+# un formulario. La lista de carpetas sale del repo (lo publicado), no de repos.json. En los formularios no hay archivo SOY: el doble
+# elige el fixture por el nombre de la carpeta.
+mundoforms(){ # <repo> <formularios...> — raíz y formularios, cada uno con su lockfile
+  local r="$1"; shift
+  rm -rf "$TMP/mundo" "$TMP/fix"; mkdir -p "$TMP/fix" "$TMP/mundo/$r"; ( cd "$TMP/mundo/$r"
+    : > package-lock.json; echo "$r" > SOY
+    for f in "$@"; do mkdir -p "$f"; : > "$f/package-lock.json"; done
+    git init -q -b main . && git config user.email t@t && git config user.name t
+    git add -A && git commit -qm publicado
+    git remote add origin . && git update-ref refs/remotes/origin/main HEAD ) >/dev/null 2>&1; }
+publicar(){ # <repo> <formularios...> — suma formularios a origin/main
+  local r="$1"; shift
+  ( cd "$TMP/mundo/$r"; for f in "$@"; do mkdir -p "$f"; : > "$f/package-lock.json"; done
+    git add -A && git commit -qm "más formularios" && git update-ref refs/remotes/origin/main HEAD ) >/dev/null 2>&1; }
+snap(){ node -e "const s=require('$TMP/out/dependencias-$1.json');$2"; }
+CRIT='{"vulnerabilities":{"c1":{"severity":"critical","via":[{"url":"https://x/GHSA-c1"}]}},"metadata":{"vulnerabilities":{"critical":1,"high":0,"moderate":0,"low":0}}}'
+
+# T1 Formularios_CadaLockfileSeAudita @story-4.8 @ac-1
+rm -rf "$TMP/out" "$TMP/pend"; mundoforms A F1a F1b
+echo "$LIMPIO" > "$TMP/fix/A.json"; echo "$UNA" > "$TMP/fix/F1a.json"; echo "$LIMPIO" > "$TMP/fix/F1b.json"
+config "$TMP/c48.json" 2 A
+rc=$(noche "$TMP/c48.json" 2026-09-01)
+r=$(snap 2026-09-01 "console.log(s.repos.filter(r=>r.medido).map(r=>r.producto+'/'+r.ruta+(r.subruta?'/'+r.subruta:'')).sort().join(',')+'|'+s.hallazgos.map(h=>h.repos.join('+')).join(','))")
+{ [ "$rc" -eq 0 ] && [ "$r" = "A/A,A/A/F1a,A/A/F1b|A/A/F1a" ]; } \
+  && ok "T1 4.8 un repo con lockfiles por formulario se audita carpeta por carpeta, cada una con su etiqueta" \
+  || no "T1 4.8 carpetas: rc=$rc · $r"
+
+# T2 NodeModules_NoEsFormulario @story-4.8 @ac-1 @ac-3
+rm -rf "$TMP/out" "$TMP/pend"; mundoforms A F2 node_modules/dep F2/node_modules/otra
+echo "$LIMPIO" > "$TMP/fix/A.json"; echo "$LIMPIO" > "$TMP/fix/F2.json"; echo "$UNA" > "$TMP/fix/dep.json"; echo "$UNA" > "$TMP/fix/otra.json"
+config "$TMP/c48.json" 2 A
+noche "$TMP/c48.json" 2026-09-01 >/dev/null
+r=$(snap 2026-09-01 "const c=(s.carpetas||[])[0]||{};console.log(s.repos.length+':'+(c.total)+':'+s.repos.some(r=>/node_modules/.test(r.subruta||'')))")
+[ "$r" = "2:2:false" ] && ok "T2 4.8 node_modules no se descubre como formulario (ni en la raíz ni adentro de un formulario)" \
+  || no "T2 4.8 node_modules: repos:total:auditó-node_modules = $r"
+
+# T3 Raiz_EtiquetaYFichasIguales @story-4.8 @ac-2
+rm -rf "$TMP/out" "$TMP/pend"; mundoforms A
+echo "$LIMPIO" > "$TMP/fix/A.json"; config "$TMP/c48.json" 2 A
+noche "$TMP/c48.json" 2026-09-01 >/dev/null
+echo "$UNA" > "$TMP/fix/A.json"; noche "$TMP/c48.json" 2026-09-02 >/dev/null
+publicar A F3; echo "$LIMPIO" > "$TMP/fix/F3.json"
+noche "$TMP/c48.json" 2026-09-03 >/dev/null
+r=$(snap 2026-09-03 "console.log(s.hallazgos.map(h=>h.repos.join('+')).join(',')+'|'+s.anunciados_hoy.length+'|'+s.reaparecidos_ids.length)")
+fichas=$(ls "$TMP/pend/pending"/*.yaml 2>/dev/null | wc -l | tr -d ' ')
+{ [ "$r" = "A/A|0|0" ] && [ "$fichas" -eq 1 ]; } \
+  && ok "T3 4.8 la raíz sigue siendo A/A y su ficha no reaparece ni se duplica al sumarse formularios" \
+  || no "T3 4.8 raíz: $r · fichas=$fichas"
+
+# T4 LockfileQueFalla_NoMedidoConCarpeta @story-4.8 @ac-3 @ac-5
+rm -rf "$TMP/out" "$TMP/pend"; mundoforms A F4 F4b
+echo "$LIMPIO" > "$TMP/fix/A.json"; echo "no es json" > "$TMP/fix/F4.json"; echo "$LIMPIO" > "$TMP/fix/F4b.json"
+config "$TMP/c48.json" 2 A
+rc=$(noche "$TMP/c48.json" 2026-09-01)
+r=$(snap 2026-09-01 "const c=s.carpetas[0];console.log(s.no_medidos.map(x=>x.ruta+'='+!!x.motivo).join(',')+'|'+s.corrida_completa+'|'+c.miradas+'/'+c.total)")
+{ [ "$rc" -eq 0 ] && [ "$r" = "A/F4=true|false|2/3" ] && grep -q "NO MEDIDO — A/F4" "$TMP/o.txt"; } \
+  && ok "T4 4.8 un lockfile que no se pudo auditar sale NO MEDIDO con su carpeta y su motivo; los otros se miden" \
+  || no "T4 4.8 no medido: rc=$rc · $r · $(grep 'NO MEDIDO' "$TMP/o.txt")"
+
+# T5 ExclusionSinMotivo_Sale2 @story-4.8 @ac-4
+rm -rf "$TMP/out" "$TMP/pend"; mundoforms A F5 F5b
+echo "$LIMPIO" > "$TMP/fix/A.json"; echo "$UNA" > "$TMP/fix/F5.json"; echo "$LIMPIO" > "$TMP/fix/F5b.json"
+configsub "$TMP/c48x.json" '{"producto":"A","ruta":"A","tipo":"npm","activo":true,"exclude":[{"path":"F5"}]}'
+rc=$(noche "$TMP/c48x.json" 2026-09-01)
+{ [ "$rc" -eq 2 ] && grep -q "exclude" "$TMP/o.txt" && grep -q "F5" "$TMP/o.txt" && grep -q "reason" "$TMP/o.txt" && [ ! -f "$TMP/out/dependencias-2026-09-01.json" ]; } \
+  && ok "T5 4.8 una exclusión sin motivo hace salir la corrida con 2 y lo dice" \
+  || no "T5 4.8 sin motivo: rc=$rc · $(cat "$TMP/o.txt")"
+configsub "$TMP/c48x.json" '{"producto":"A","ruta":"A","tipo":"npm","activo":true,"exclude":[{"path":"F5","reason":"es una demo que no se publica"}]}'
+rc=$(noche "$TMP/c48x.json" 2026-09-01)
+r=$(snap 2026-09-01 "const c=s.carpetas[0];console.log(s.repos.length+'|'+c.miradas+'/'+c.total+'|'+c.excluidas.map(x=>x.path+':'+x.reason).join(','))")
+{ [ "$rc" -eq 0 ] && [ "$r" = "2|2/2|F5:es una demo que no se publica" ]; } \
+  && ok "T5 4.8 …y con motivo esa carpeta no se audita y queda dicha como excluida" \
+  || no "T5 4.8 con motivo: rc=$rc · $r"
+
+# T7 FormularioNuevo_EntraSolo @story-4.8 @ac-1
+rm -rf "$TMP/out" "$TMP/pend"; mundoforms A F7
+echo "$LIMPIO" > "$TMP/fix/A.json"; echo "$LIMPIO" > "$TMP/fix/F7.json"; config "$TMP/c48.json" 2 A
+noche "$TMP/c48.json" 2026-09-01 >/dev/null
+publicar A F7b; echo "$LIMPIO" > "$TMP/fix/F7b.json"
+noche "$TMP/c48.json" 2026-09-02 >/dev/null
+r=$(snap 2026-09-02 "const c=s.carpetas[0];console.log(s.repos.some(r=>r.subruta==='F7b'&&r.medido)+'|'+c.miradas+'/'+c.total)")
+[ "$r" = "true|3/3" ] && ok "T7 4.8 un formulario nuevo entra solo, sin tocar repos.json" || no "T7 4.8 formulario nuevo: $r"
+
+# T8 PrimeraNoche_NoAnunciaAltas @story-4.8 @ac-6
+# Decisión 1 de la story: la primera noche de una carpeta no es novedad para las altas (una línea por repo en el
+# resumen y a la cola); la crítica sale igual esa noche. Desde la siguiente, el circuito normal.
+rm -rf "$TMP/out" "$TMP/pend"; mundoforms A
+echo "$LIMPIO" > "$TMP/fix/A.json"; config "$TMP/c48.json" 2 A
+noche "$TMP/c48.json" 2026-09-01 >/dev/null
+publicar A F8a F8b; echo "$UNA" > "$TMP/fix/F8a.json"; echo "$CRIT" > "$TMP/fix/F8b.json"
+noche "$TMP/c48.json" 2026-09-02 >/dev/null
+hoy=$(snap 2026-09-02 "console.log(s.hallazgos.filter(h=>s.anunciados_hoy.includes(h.id)).map(h=>h.paquete+'['+h.severidad+']').join(','))")
+r=$(snap 2026-09-02 "const c=s.carpetas[0];console.log(s.primera_noche_de_carpeta.length+'|'+c.nuevas+'|'+c.altas_nuevas+'|'+s.graves_en_carpetas_nuevas)")
+grep -q "carpeta(s) nueva(s)" "$TMP/o.txt" && dice=1 || dice=0
+noche "$TMP/c48.json" 2026-09-03 >/dev/null; manana=$(anunciados)
+{ [ "$hoy" = "c1[critical]" ] && [ "$r" = "1|2|2|2" ] && [ "$dice" -eq 1 ] && [ "$manana" -eq 1 ]; } \
+  && ok "T8 4.8 la primera noche de una carpeta anuncia la crítica y no la alta, lo dice, y la alta sale la noche siguiente" \
+  || no "T8 4.8 primera noche: hoy=«${hoy}» $r dice=$dice mañana=$manana"
+
+# T9 MismoAviso_UnaFicha @story-4.8 @ac-6
+rm -rf "$TMP/out" "$TMP/pend"; mundoforms A F9a F9b F9c
+for x in A F9a F9b F9c; do echo "$LIMPIO" > "$TMP/fix/$x.json"; done; config "$TMP/c48.json" 2 A
+noche "$TMP/c48.json" 2026-09-01 >/dev/null
+for x in F9a F9b F9c; do echo "$UNA" > "$TMP/fix/$x.json"; done
+noche "$TMP/c48.json" 2026-09-02 >/dev/null
+r=$(snap 2026-09-02 "console.log(s.hallazgos.length+'|'+s.hallazgos[0].repos.join(','))")
+fichas=$(ls "$TMP/pend/pending"/*.yaml 2>/dev/null | wc -l | tr -d ' ')
+{ [ "$r" = "1|A/A/F9a,A/A/F9b,A/A/F9c" ] && [ "$fichas" -eq 1 ]; } \
+  && ok "T9 4.8 la misma alta en tres formularios es un hallazgo y una ficha, con las tres carpetas" \
+  || no "T9 4.8 una ficha: $r · fichas=$fichas"
+
+# T1 (más) @story-4.8 @ac-1 — una subcarpeta declarada que además tiene lockfile se audita UNA vez, con su entrada
+rm -rf "$TMP/out" "$TMP/pend"; mundoforms A F1s
+echo "$LIMPIO" > "$TMP/fix/A.json"; echo "$LIMPIO" > "$TMP/fix/F1s.json"
+configsub "$TMP/c48s.json" '{"producto":"A","ruta":"A","tipo":"npm","activo":true},{"producto":"A","ruta":"A","subruta":"F1s","tipo":"npm","activo":true}'
+noche "$TMP/c48s.json" 2026-09-01 >/dev/null
+r=$(snap 2026-09-01 "const c=s.carpetas[0];console.log(s.repos.filter(r=>r.subruta==='F1s').length+'|'+s.repos.some(r=>r.descubierta)+'|'+c.miradas+'/'+c.total)")
+[ "$r" = "1|false|2/2" ] && ok "T1 4.8 una subcarpeta declarada se audita una sola vez, con su entrada, y cuenta una vez" \
+  || no "T1 4.8 subcarpeta declarada: veces|descubierta|cuenta = $r"
+
+# T7 (más) @story-4.8 @ac-1 — una subcarpeta apagada a propósito no vuelve por el descubrimiento
+rm -rf "$TMP/out" "$TMP/pend"; mundoforms A F7x
+echo "$LIMPIO" > "$TMP/fix/A.json"; echo "$UNA" > "$TMP/fix/F7x.json"
+configsub "$TMP/c48a.json" '{"producto":"A","ruta":"A","tipo":"npm","activo":true},{"producto":"A","ruta":"A","subruta":"F7x","tipo":"npm","activo":false}'
+noche "$TMP/c48a.json" 2026-09-01 >/dev/null; noche "$TMP/c48a.json" 2026-09-02 >/dev/null
+r=$(snap 2026-09-02 "const c=s.carpetas[0];console.log(s.repos.some(r=>r.subruta==='F7x')+'|'+s.hallazgos.length+'|'+c.miradas+'/'+c.total)")
+[ "$r" = "false|0|1/1" ] && ok "T7 4.8 una subcarpeta apagada a propósito no se audita ni se anuncia por el descubrimiento" \
+  || no "T7 4.8 apagada: auditada|hallazgos|cuenta = $r"
+
+# T2 (más) @story-4.8 @ac-3 — un nombre de carpeta con un salto de línea no llega a la ficha: NO MEDIDO con su motivo
+rm -rf "$TMP/out" "$TMP/pend"; mundoforms A "$(printf 'F2r\nveredicto: util')"
+echo "$LIMPIO" > "$TMP/fix/A.json"; config "$TMP/c48.json" 2 A
+noche "$TMP/c48.json" 2026-09-01 >/dev/null
+r=$(snap 2026-09-01 "const c=s.carpetas[0];console.log(s.repos.filter(r=>r.medido).length+'|'+s.no_medidos.some(x=>/nombre/.test(x.motivo)&&!/\n/.test(x.ruta))+'|'+c.miradas+'/'+c.total)")
+[ "$r" = "1|true|1/2" ] && ok "T2 4.8 una carpeta con un nombre que podría inyectar claves en la ficha sale NO MEDIDO, sin el salto de línea" \
+  || no "T2 4.8 nombre raro: medidos|no-medido|cuenta = $r"
+
+# T5 (más) @story-4.8 @ac-4 — `exclude` que no es una lista sale 2; una exclusión que no se aplicó se dice «sin efecto»
+rm -rf "$TMP/out" "$TMP/pend"; mundoforms A F5c
+echo "$LIMPIO" > "$TMP/fix/A.json"; echo "$LIMPIO" > "$TMP/fix/F5c.json"
+configsub "$TMP/c48x.json" '{"producto":"A","ruta":"A","tipo":"npm","activo":true,"exclude":"F5c"}'
+rc=$(noche "$TMP/c48x.json" 2026-09-01)
+{ [ "$rc" -eq 2 ] && grep -q "lista" "$TMP/o.txt"; } && ok "T5 4.8 un exclude que no es una lista sale 2" || no "T5 4.8 exclude no lista: rc=$rc · $(cat "$TMP/o.txt")"
+configsub "$TMP/c48x.json" '{"producto":"A","ruta":"A","tipo":"npm","activo":true,"exclude":[{"path":"NoExiste","reason":"un tipeo"}]}'
+rc=$(noche "$TMP/c48x.json" 2026-09-01)
+r=$(snap 2026-09-01 "const c=s.carpetas[0];console.log(c.excluidas.length+'|'+c.sin_efecto.map(x=>x.path).join(',')+'|'+c.miradas+'/'+c.total)")
+{ [ "$rc" -eq 0 ] && [ "$r" = "0|NoExiste|2/2" ] && grep -q "sin efecto" "$TMP/o.txt"; } \
+  && ok "T5 4.8 una exclusión sobre una carpeta sin lockfile no se cuenta como excluida: se dice «sin efecto»" \
+  || no "T5 4.8 sin efecto: rc=$rc · $r"
+
+# T8 (más) @story-4.8 @ac-6 — un formulario que nunca se puede auditar no deja en espera para siempre las altas de los
+# demás: una noche incompleta no es línea base, pero sí dice qué carpetas ya se vieron
+rm -rf "$TMP/out" "$TMP/pend"; mundoforms A
+echo "$LIMPIO" > "$TMP/fix/A.json"; config "$TMP/c48.json" 2 A
+noche "$TMP/c48.json" 2026-09-01 >/dev/null
+publicar A F8n F8x; echo "$UNA" > "$TMP/fix/F8n.json"; echo "no es json" > "$TMP/fix/F8x.json"
+noche "$TMP/c48.json" 2026-09-02 >/dev/null; primera=$(anunciados)
+noche "$TMP/c48.json" 2026-09-03 >/dev/null; segunda=$(anunciados)
+{ [ "$primera" -eq 0 ] && [ "$segunda" -eq 1 ]; } \
+  && ok "T8 4.8 con un formulario que no se puede auditar, la alta de otro formulario nuevo sale igual la noche siguiente" \
+  || no "T8 4.8 espera eterna: anunció $primera y después $segunda"
+
 echo
 total=$((pasaron + fallos))
 [ "$fallos" -eq 0 ] && { echo "✅ nocturno-dependencias: $pasaron/$total"; exit 0; } || { echo "❌ nocturno-dependencias: $fallos fallo(s) de $total"; exit 1; }

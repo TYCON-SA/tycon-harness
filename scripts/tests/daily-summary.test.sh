@@ -1015,7 +1015,7 @@ vsnap "$D" "$HOY" '{}'; reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY" --
 D="$TMP/t2130"; mundo "$D"
 ficha "$D" pending aaa11111 "$(fecha "$HOY" -3)" pendiente A/A
 ficha "$D" pending bbb22222 "$HOY" pendiente B/B
-snap "$D" "$HOY" '{"hallazgos":[{"id":"aaa11111","paquete":"pkg-aaa11111","severidad":"high","repos":["A/A"],"noches":3},{"id":"bbb22222","paquete":"pkg-bbb22222","severidad":"high","repos":["B/B"],"noches":1}],"anunciados_hoy":["bbb22222"],"no_medidos":[{"ruta":"RepoSecreto/Marcador","motivo":"el restore de RepoSecreto falló"}],"pedidos":{"simulado":false,"creados":[{"ficha":"bbb22222","proyecto":"ProyectoMarcador","id":9191,"asignado_a":"persona@marcador.example"}],"adoptados":[],"fallidos":[{"ficha":"aaa11111","proyecto":"ProyectoMarcador","paso":"crear","motivo":"MotivoLibreMarcador"}],"postergados":[],"sin_iteracion":[],"sin_dueno_unico":[{"proyecto":"ProyectoSinDueno","motivo":"dos dueños"}],"deuda_avisada":[]},"cruce":{"consultado":true,"motivo":null,"cerrados_vivos":[],"resueltas_con_pedido_abierto":[],"no_leidos":[],"huerfanos":[{"id":4545,"proyecto":"ProyectoHuerfano","ficha":"aaa11111","estado":"Active"}]}}'
+snap "$D" "$HOY" '{"hallazgos":[{"id":"aaa11111","paquete":"pkg-aaa11111","severidad":"high","repos":["A/A"],"noches":3},{"id":"bbb22222","paquete":"pkg-bbb22222","severidad":"high","repos":["B/B"],"noches":1}],"anunciados_hoy":["bbb22222"],"no_medidos":[{"ruta":"RepoSecreto/Marcador","motivo":"el restore de RepoSecreto falló"}],"carpetas":[{"repo":"RepoSecreto/Marcador","miradas":2,"total":3,"excluidas":[{"path":"Marcador","reason":"MotivoLibreMarcador"}],"nuevas":2,"altas_nuevas":1}],"graves_en_carpetas_nuevas":1,"pedidos":{"simulado":false,"creados":[{"ficha":"bbb22222","proyecto":"ProyectoMarcador","id":9191,"asignado_a":"persona@marcador.example"}],"adoptados":[],"fallidos":[{"ficha":"aaa11111","proyecto":"ProyectoMarcador","paso":"crear","motivo":"MotivoLibreMarcador"}],"postergados":[],"sin_iteracion":[],"sin_dueno_unico":[{"proyecto":"ProyectoSinDueno","motivo":"dos dueños"}],"deuda_avisada":[]},"cruce":{"consultado":true,"motivo":null,"cerrados_vivos":[],"resueltas_con_pedido_abierto":[],"no_leidos":[],"huerfanos":[{"id":4545,"proyecto":"ProyectoHuerfano","ficha":"aaa11111","estado":"Active"}]}}'
 echo '{ "rubros_sin_fuente": { "rechazadas_sin_deuda": "MotivoSinFuenteMarcador" } }' > "$D/resumen.json"
 armar "$D" dependencias "$HOY" > "$D/a.json" 2> "$D/a.err"
 T21TXT=$(q "$D/a.json" 'j.texto')
@@ -1279,6 +1279,29 @@ armar "$D" dependencias "$HOY" --runs "$D/runs-rotas" > "$D/rotas.json" 2>/dev/n
 [ "$(q "$D/rotas.json" 'j.dudas_revisores.valor')" = "null" ] && [ "$(q "$D/rotas.json" 'j.dudas_revisores.no_leidas')" = "2" ] \
   && [ "$(q "$D/rotas.json" 'j.dudas_revisores.motivo')" != "null" ] \
   && ok "1.21-C2 si ninguna corrida se pudo leer es null con motivo, no «sin dudas»" || no "1.21-C2 rotas: $(q "$D/rotas.json" 'JSON.stringify(j.dudas_revisores)')"
+
+# ════════════════════════════════════════════════════════════════════════════════════════════════
+# T6 Resumen_CarpetasPorRepo @story-4.8 @ac-5 @ac-6
+# La noche mira cada formulario; el resumen dice cuántas carpetas miró por repo, así un hueco se ve sin medir a mano,
+# y la primera noche de las carpetas nuevas va en una línea por repo (sus altas no se anuncian esa noche).
+D="$TMP/t48"; mundo "$D"
+# Sólo cantidades, como manda el caso «el texto no nombra paquetes, repos…»: el detalle por repo queda en la foto.
+snap "$D" "$HOY" '{"carpetas":[{"repo":"A/A","miradas":9,"total":9,"excluidas":[],"nuevas":0,"altas_nuevas":0},{"repo":"B/B","miradas":7,"total":8,"excluidas":[],"nuevas":8,"altas_nuevas":3},{"repo":"C/C","miradas":0,"total":null,"excluidas":[],"nuevas":0,"altas_nuevas":0}],"graves_en_carpetas_nuevas":3}'
+armar "$D" dependencias "$HOY" > "$D/a.json" 2>/dev/null
+T48=$(q "$D/a.json" 'j.texto')
+{ grep -qF "Carpetas: 16 de 17, en 3 repo(s) (1 con hueco, 1 sin contar)" <<<"$T48" \
+  && grep -qF "Carpetas nuevas: 8 en 1 repo(s), 3 alta(s) o crítica(s) que nadie miraba" <<<"$T48" \
+  && ! grep -qE "A/A|B/B|C/C" <<<"$T48"; } \
+  && ok "T6 4.8 el resumen cuenta las carpetas miradas, los huecos y las nuevas con sus altas, sin nombrar repos" || no "T6 4.8 carpetas: $T48"
+D="$TMP/t48b"; mundo "$D"; snap "$D" "$HOY" '{}'
+armar "$D" dependencias "$HOY" > "$D/a.json" 2>/dev/null
+[ "$(q "$D/a.json" '/Carpetas/.test(j.texto)')" = false ] \
+  && ok "T6 4.8 una foto de antes, sin la cuenta de carpetas, no inventa la línea" || no "T6 4.8 sin carpetas: $(q "$D/a.json" 'j.texto')"
+D="$TMP/t48c"; mundo "$D"; snap "$D" "$HOY" '{"carpetas":[{"repo":"A/A","miradas":0,"total":null,"excluidas":[],"nuevas":0,"altas_nuevas":0}]}'
+armar "$D" dependencias "$HOY" > "$D/a.json" 2>/dev/null
+T48C=$(q "$D/a.json" 'j.texto')
+{ grep -qF "Carpetas: sin contar, en 1 repo(s)" <<<"$T48C" && ! grep -q "^Carpetas: 0 de 0" <<<"$T48C"; } \
+  && ok "T6 4.8 sin ningún repo contado no dice «0 de 0»: dice «sin contar»" || no "T6 4.8 0 de 0: $T48C"
 
 echo
 if [ "$FALLOS" -eq 0 ]; then echo "✅ resumen-diario: $TOTAL/$TOTAL"; exit 0; fi

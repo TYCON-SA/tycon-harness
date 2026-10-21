@@ -708,7 +708,7 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 _(scripts/nightly/dependencies/ + scripts/ci/audit-dependencies.js)_
 
-**Qué es:** La revisión nocturna de dependencias: mira `main` de cada repo y abre un pull request por cada hallazgo nuevo.
+**Qué es:** La revisión nocturna de dependencias: mira `main` de cada repo, y de cada formulario con su lockfile, y abre un pull request por cada hallazgo nuevo.
 
 **Por qué existe:** El veredicto del control de dependencias cambia sin que cambie el código, y sólo corría en pull requests. Avisa y no frena. Lo declarado no despierta, lo vencido vuelve a contar, y no medido nunca es limpio.
 
