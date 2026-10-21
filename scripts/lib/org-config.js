@@ -171,8 +171,8 @@ const REVIEW_SINCE = '2026.10.20.43';
 const STACK_SINCE = '2026.10.19.11';
 // los niveles de modelo: un lector anterior acepta `models` sólo con los nombres de Claude y, con un nivel
 // adentro, descarta toda la configuración de modelos (techo incluido). Se pide sólo si el archivo trae algún nivel; con
-// nombres, sigue MODELS_SINCE. Provisoria hasta la etiqueta del merge que la trae (como REVIEW_SINCE)
-const MODEL_LEVELS_SINCE = '2026.10.21.8';
+// nombres, sigue MODELS_SINCE. Es la etiqueta del merge que trajo los niveles al lector
+const MODEL_LEVELS_SINCE = '2026.10.21.9';
 const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE], ['coverage', COVERAGE_SINCE], ['review', REVIEW_SINCE], ['stack', STACK_SINCE]]);
 /** La versión que tiene que pedir el perfil para este `team-repos.json` (sin archivo, la de siempre), y las claves por las que la pide. */
 function versionQuePide(doc) {
