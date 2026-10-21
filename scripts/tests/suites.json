@@ -189,6 +189,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/typecheck-forms.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/rollback-guard.test.sh",
       "requiere": []
     },
