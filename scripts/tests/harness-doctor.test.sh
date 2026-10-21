@@ -1199,12 +1199,13 @@ grep -q -e '--type=path core.hooksPath' "$T79_WLOG" && grep -q -e "$T79_CLONE" "
 SALIDA="$(GIT_CONFIG_GLOBAL="$T79_GITCONFIG" harness doctor 2>&1)"
 case "$SALIDA$JSON" in *"$T79_MARK"*|*"$T79_TERM"*) mal "$T79 doctor cita un término de la lista, el asunto de un commit o una rama del repo privado" ;; *) ok "$T79 doctor no cita ni un término de la lista, ni el asunto de un commit, ni el nombre de una rama" ;; esac
 case "$SALIDA" in *"freno antes de publicar"*"clon atrasado"*) ok "$T79 la salida para una persona lo dice igual" ;; *) mal "$T79 la salida de texto no lo dice: $SALIDA" ;; esac
-# la lista del clon con las marcas de un merge a medias: no se puede usar, y dice además que ese clon no está al día
+# la lista del disco con las marcas de un merge a medias: el freno la lee de la rama principal remota del clon, así que
+# se puede usar; doctor dice igual que el disco de ese clon no está al día
 cp "$T79_CLONE/scripts/publishing/denylist.json" "$BASE/t79/lista-sana.json"
 printf '<<<<<<< HEAD\n{ "terminos": [] }\n=======\n' > "$T79_CLONE/scripts/publishing/denylist.json"
 doctor79
-t79_has "$JSON" warn "'la lista no se puede usar' in t and 'no se puede leer' in t" && t79_has "$JSON" warn "'clon atrasado' in t and '3 commit(s) atrás' in t" && [ "$RC" = "$T79_RC0" ] && [ "$(printf '%s' "$JSON" | jtxt "d['fail']")" = "$T79_FAIL0" ] \
-  && ok "$T79 una lista que no se deja leer (un merge a medias): avisa que no se puede usar y que su clon está atrasado (aviso, no rojo)" || mal "$T79 lista ilegible: rc $RC warn=«$(t79_lines "$JSON" warn)» fail=$(printf '%s' "$JSON" | jtxt "d['fail']")"
+! t79_has "$JSON" warn "'la lista no se puede usar' in t" && t79_has "$JSON" warn "'clon atrasado' in t and '3 commit(s) atrás' in t" && [ "$RC" = "$T79_RC0" ] && [ "$(printf '%s' "$JSON" | jtxt "d['fail']")" = "$T79_FAIL0" ] \
+  && ok "$T79 la lista del disco a medio traer: se usa la de la rama remota, y avisa que su clon está atrasado (aviso, no rojo)" || mal "$T79 lista del disco ilegible: rc $RC warn=«$(t79_lines "$JSON" warn)» fail=$(printf '%s' "$JSON" | jtxt "d['fail']")"
 cp "$BASE/t79/lista-sana.json" "$T79_CLONE/scripts/publishing/denylist.json"
 # declarado y la carpeta ya no está: avisa por qué no sirve (y no es un rojo)
 t79_config "{ \"paths\": { \"maintainers\": \"$BASE/t79/no-existe\" } }"
