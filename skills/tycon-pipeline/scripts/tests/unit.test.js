@@ -6845,13 +6845,13 @@ function nextWithoutClockify(sid, extra) {
   return JSON.parse(r.stdout);
 }
 
-test('next: con Clockify apagada el 0b es un salteo mecánico (no espera la bandera)', (t) => {
-  if (!fs.existsSync(path.join(HARNESS_HERE_0B, 'scripts', 'lib', 'tycon-config.js'))) { t.skip('sin el arnés en este árbol: no hay llave que medir'); return; }
+test('next: sin herramienta de horas el 0b es un salteo mecánico (no espera la bandera)', (t) => {
+  if (!fs.existsSync(path.join(HARNESS_HERE_0B, 'scripts', 'lib', 'work-signal.js'))) { t.skip('sin el evento de trabajo en este árbol: no hay herramienta que medir'); return; }
   const d = nextWithoutClockify('cero-b-apagada');
-  assert.equal(d.next_step, '1', 'sin Clockify el 0b no frena la secuencia');
-  assert.match(d.steps.find((s) => s.step === '0b').skip_mechanical || '', /Clockify/);
+  assert.equal(d.next_step, '1', 'sin herramienta de horas el 0b no frena la secuencia');
+  assert.match(d.steps.find((s) => s.step === '0b').skip_mechanical || '', /ninguna herramienta de horas/);
   const c = nextWithoutClockify('cero-b-prendida', { TYCON_CLOCKIFY: '1' });
-  assert.equal(c.next_step, '0b', 'control: con Clockify prendida el 0b sigue esperando su bandera');
+  assert.equal(c.next_step, '0b', 'control: con la llave vieja prendida (Clockify) el 0b sigue esperando su bandera');
 });
 
 test('next: el salteo del 0c sin pedido de trabajo sigue siendo un salteo (no pide constancia)', () => {
@@ -7114,4 +7114,157 @@ test('T12 SetModels_AceptaNivel @story-2.70 @ac-5', () => {
   assert.strictEqual(r.status, 2);
   assert.match(r.stderr, /economy, balanced, strong, max/);
   fs.rmSync(fakeHome, { recursive: true, force: true });
+});
+
+// ── 7.40 B2: el paso 0b y el 9 llaman al evento neutro de trabajo ──────────────────────────────────
+// El núcleo no sabe con qué herramienta se registran las horas: `pipeline.js work-signal` le pasa el evento a la
+// integración elegida (scripts/lib/work-signal.js del arnés) y `next` saltea el 0b cuando no hay ninguna. Cada caso arma
+// su HOME, su casa del arnés y una integración de mentira; el arnés es este mismo árbol (TYCON_GUIDES_DIR).
+const ARNES_740 = path.resolve(SCRIPTS, '..', '..', '..');
+
+function integracionDeMentira740() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'b2-int-'));
+  fs.mkdirSync(path.join(dir, 'fake', 'scripts'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'fake', 'integration.json'), JSON.stringify({ name: 'fake', label: 'De mentira', kind: 'timeTracking', onWork: 'scripts/on-work.js', hooks: [], dispatch: [], settings: [] }));
+  fs.writeFileSync(path.join(dir, 'fake', 'scripts', 'on-work.js'), [
+    "let raw = ''; process.stdin.on('data', (c) => { raw += c; }); process.stdin.on('end', () => {",
+    "  const ev = JSON.parse(raw);",
+    "  const seconds = process.env.B2_SECONDS === '' ? undefined : Number(process.env.B2_SECONDS || 1080);",
+    "  process.stdout.write(JSON.stringify(ev.event === 'stop' ? (seconds === undefined ? {} : { seconds }) : { action: `abrí ${ev.storyId} — ${ev.title} en ${ev.sessionId}` }) + '\\n');",
+    "});",
+  ].join('\n'));
+  return dir;
+}
+
+const correr740 = (home, sid, script, args, extra = {}) => {
+  const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0',
+    TYCON_GUIDES_DIR: ARNES_740, TYCON_HOME: path.join(home, '.tycon'), TYCON_PROFILE: '0', ...extra };
+  delete env.TYCON_CLOCKIFY;
+  if (!('TYCON_TIME_TRACKING' in extra)) delete env.TYCON_TIME_TRACKING;
+  return require('node:child_process').spawnSync(process.execPath, [path.join(SCRIPTS, script), ...args], { encoding: 'utf8', env });
+};
+
+test('Step0b_NoIntegration_SkippedWithReason @story-7.40 @ac-3', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'b2-0b-'));
+  const sid = 'b2-paso-0b';
+  const ints = integracionDeMentira740();
+  const { file, repo } = markerDe27(home, sid, { clockiStarted: undefined, adoMarkedActive: true });
+  const paso0b = (extra) => {
+    const r = correr740(home, sid, 'pipeline.js', ['next'], { TYCON_INTEGRATIONS_DIR: ints, ...extra });
+    assert.equal(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    return { next: out.next_step, step: out.steps.find((s) => s.step === '0b') };
+  };
+  try {
+    // sin herramienta elegida (sin clave, o `none`): salteado con su motivo, y no se pide ninguna bandera
+    for (const extra of [{}, { TYCON_TIME_TRACKING: 'none' }]) {
+      const { next, step } = paso0b(extra);
+      assert.notEqual(next, '0b', 'sin herramienta de horas el 0b no es el próximo');
+      assert.match(step.skip_mechanical || '', /ninguna herramienta de horas/, 'dice por qué se saltea');
+    }
+    // una desconocida es ninguna, y también lo dice
+    assert.match(paso0b({ TYCON_TIME_TRACKING: 'harvest' }).step.skip_mechanical || '', /desconocida.*harvest|harvest.*desconocida/);
+    // con una elegida, el 0b va y pide la bandera nueva
+    const elegida = correr740(home, sid, 'pipeline.js', ['next'], { TYCON_INTEGRATIONS_DIR: ints, TYCON_TIME_TRACKING: 'fake' });
+    const out = JSON.parse(elegida.stdout);
+    assert.equal(out.next_step, '0b');
+    assert.equal(out.steps.find((s) => s.step === '0b').name, 'Arranque: aviso de trabajo');
+    assert.match(out.note, /set-flag workSignalStarted true/);
+    // la bandera nueva lo da por hecho
+    assert.equal(correr740(home, sid, 'marker.js', ['set-flag', 'workSignalStarted', 'true']).status, 0);
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).workSignalStarted, true);
+    assert.equal(paso0b({ TYCON_TIME_TRACKING: 'fake' }).step.done, true);
+    // y la vieja de una corrida en vuelo también: no se reabre el reloj
+    const m = JSON.parse(fs.readFileSync(file, 'utf8'));
+    delete m.workSignalStarted; m.clockiStarted = true;
+    fs.writeFileSync(file, JSON.stringify(m));
+    assert.equal(paso0b({ TYCON_TIME_TRACKING: 'fake' }).step.done, true, 'clockiStarted de antes sigue valiendo');
+    // set-flag con el nombre viejo escribe la nueva y avisa
+    delete m.clockiStarted; fs.writeFileSync(file, JSON.stringify(m));
+    const vieja = correr740(home, sid, 'marker.js', ['set-flag', 'clockiStarted', 'true']);
+    assert.equal(vieja.status, 0, vieja.stderr);
+    assert.match(vieja.stderr, /workSignalStarted/);
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).workSignalStarted, true);
+  } finally {
+    for (const d of [home, repo, ints]) fs.rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('Step9_SumsSecondsFromStop @story-7.40 @ac-2', () => {
+  const { completedWorkHours } = require(path.join(SCRIPTS, 'pipeline.js'));
+  assert.equal(completedWorkHours(0, { seconds: 1080 }), 0.3, '1080 s son 0,3 h');
+  assert.equal(completedWorkHours(2, { seconds: 1080 }), 2.3, 'se suma a lo que ya tenía');
+  assert.equal(completedWorkHours(2, {}), null, 'sin segundos no suma: no se inventa');
+  assert.equal(completedWorkHours(2, { seconds: -5 }), null);
+  assert.equal(completedWorkHours(2, null), null);
+
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'b2-9-'));
+  const sid = 'b2-paso-9';
+  const ints = integracionDeMentira740();
+  const { repo } = markerDe27(home, sid, {});
+  fs.writeFileSync(path.join(repo, 'story.md'), '---\nstory: "9.9"\ntitle: "Una historia de laboratorio"\nstatus: in-progress\n---\n# x\n');
+  const senal = (evento, extra) => {
+    const r = correr740(home, sid, 'pipeline.js', ['work-signal', evento], { TYCON_INTEGRATIONS_DIR: ints, TYCON_TIME_TRACKING: 'fake', ...extra });
+    assert.equal(r.status, 0, r.stderr);
+    return JSON.parse(r.stdout);
+  };
+  try {
+    // stop con 1080 s: los segundos y las horas para CompletedWork
+    const conSegundos = senal('stop', { B2_SECONDS: '1080' });
+    assert.equal(conSegundos.seconds, 1080);
+    assert.equal(conSegundos.hours, 0.3);
+    // stop sin segundos: nada que sumar
+    const sinSegundos = senal('stop', { B2_SECONDS: '' });
+    assert.equal(sinSegundos.seconds, undefined);
+    assert.equal(sinSegundos.hours, undefined);
+    // start le pasa a la integración la historia, el título y la sesión del marker, y trae la acción para el agente
+    assert.equal(senal('start', {}).action, `abrí 9.9 — Una historia de laboratorio en ${sid}`);
+    // sin herramienta elegida: no corre nada
+    const ninguna = correr740(home, sid, 'pipeline.js', ['work-signal', 'stop'], { TYCON_INTEGRATIONS_DIR: ints, TYCON_TIME_TRACKING: 'none' });
+    assert.equal(ninguna.status, 0, ninguna.stderr);
+    const n = JSON.parse(ninguna.stdout);
+    assert.equal(n.ran, false);
+    assert.equal(n.hours, undefined);
+    // un evento que no es del pipeline: uso mal escrito
+    assert.equal(correr740(home, sid, 'pipeline.js', ['work-signal', 'sweep'], { TYCON_INTEGRATIONS_DIR: ints }).status, 2);
+    // el paso 9 corre después del merge, con el marker ya borrado: la story por argumento
+    fs.rmSync(path.join(home, '.claude', '.tycon-pipeline', 'active', `${sid}.json`));
+    assert.equal(correr740(home, sid, 'pipeline.js', ['work-signal', 'stop'], { TYCON_INTEGRATIONS_DIR: ints, TYCON_TIME_TRACKING: 'fake' }).status, 1, 'sin marker ni story no sabe de qué historia');
+    const r9 = correr740(home, sid, 'pipeline.js', ['work-signal', 'stop', '--story', path.join(repo, 'story.md'), '--repo', repo], { TYCON_INTEGRATIONS_DIR: ints, TYCON_TIME_TRACKING: 'fake', B2_SECONDS: '1080' });
+    assert.equal(r9.status, 0, r9.stderr);
+    assert.equal(JSON.parse(r9.stdout).hours, 0.3);
+    // la sesión sale de la misma cadena que el marker: bajo Codex llega la suya, no ninguna
+    const conStory = (story, extra) => {
+      const r = correr740(home, sid, 'pipeline.js', ['work-signal', 'start', '--story', story, '--repo', repo], { TYCON_INTEGRATIONS_DIR: ints, TYCON_TIME_TRACKING: 'fake', ...extra });
+      assert.equal(r.status, 0, r.stderr);
+      return JSON.parse(r.stdout);
+    };
+    const codex = correr740(home, sid, 'pipeline.js', ['work-signal', 'start', '--story', path.join(repo, 'story.md'), '--repo', repo],
+      { TYCON_INTEGRATIONS_DIR: ints, TYCON_TIME_TRACKING: 'fake', CODEX_SESSION_ID: 'cdx-1', CLAUDE_CODE_SESSION_ID: '' });
+    assert.equal(codex.status, 0, codex.stderr);
+    assert.match(JSON.parse(codex.stdout).action, / en cdx-1$/, 'la sesión de Codex llega a la integración');
+    // una story guardada en Windows (CRLF y marca de orden de bytes) se lee igual
+    const crlf = path.join(repo, 'story-crlf.md');
+    fs.writeFileSync(crlf, '﻿---\r\nstory: "9.9"\r\ntitle: "Con finales de Windows"\r\nstatus: in-progress\r\n---\r\n# x\r\n');
+    assert.match(conStory(crlf, {}).action, /^abrí 9\.9 — Con finales de Windows en /);
+    // una clave vacía es vacía: no se lleva la de abajo
+    const vacia = path.join(repo, 'story-vacia.md');
+    fs.writeFileSync(vacia, '---\nstory: "9.9"\ntitle:\nstatus: ready\n---\n# x\n');
+    assert.doesNotMatch(conStory(vacia, {}).action, /status/, 'el título vacío no toma el renglón siguiente');
+    const sinId = path.join(repo, 'story-sin-id.md');
+    fs.writeFileSync(sinId, '---\nstory:\ntitle: algo\n---\n# x\n');
+    assert.equal(correr740(home, sid, 'pipeline.js', ['work-signal', 'stop', '--story', sinId], { TYCON_INTEGRATIONS_DIR: ints, TYCON_TIME_TRACKING: 'fake' }).status, 1, 'sin id no inventa uno con la clave de abajo');
+    // el evento del arnés presente y que no carga se dice como tal, no como «no está»
+    const roto = fs.mkdtempSync(path.join(os.tmpdir(), 'b2-arnes-roto-'));
+    fs.mkdirSync(path.join(roto, 'scripts', 'lib'), { recursive: true });
+    fs.writeFileSync(path.join(roto, 'scripts', 'install-tycon-hooks.sh'), '');   // lo que lo hace un clon del arnés
+    fs.writeFileSync(path.join(roto, 'scripts', 'lib', 'work-signal.js'), "throw new Error('roto a propósito');\n");
+    const r = correr740(home, sid, 'pipeline.js', ['work-signal', 'stop', '--story', path.join(repo, 'story.md')], { TYCON_GUIDES_DIR: roto });
+    fs.rmSync(roto, { recursive: true, force: true });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stderr, /no carga \(roto a propósito\)/);
+    assert.doesNotMatch(r.stderr, /no trae el evento/);
+  } finally {
+    for (const d of [home, repo, ints]) fs.rmSync(d, { recursive: true, force: true });
+  }
 });

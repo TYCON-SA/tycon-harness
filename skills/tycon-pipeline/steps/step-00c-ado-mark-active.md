@@ -2,7 +2,7 @@
 
 **Objetivo**: cuando el dev invoca el pipeline para trabajar una story, transicionar el work item de Azure DevOps del estado inicial (`New` / `To Do` / `Approved`) a **`Active`** (o equivalente según process template). Espejo de simetría con `step-09-ado-story-closure.md` que cierra el ciclo.
 
-**Posición en el flujo**: corre inmediatamente DESPUÉS de `step-00b-clocki-start.md`. Mismo momento conceptual: ya se decidió arrancar a trabajar. **Desde 2026-07-30 corre EN PARALELO con el validator del Step 1** (fan-out del arranque — ver step-00b §Fan-out): el validator ya está lanzado en background mientras este step ejecuta inline. No comparten datos (este step solo lee frontmatter + config ADO). Si este step necesita confirmación del dev (fallback por título, WI cerrado), resolverla ANTES de procesar el reporte del validator, con la pregunta claramente rotulada como de ADO.
+**Posición en el flujo**: corre inmediatamente DESPUÉS de `step-00b-work-start.md`. Mismo momento conceptual: ya se decidió arrancar a trabajar. **Desde 2026-07-30 corre EN PARALELO con el validator del Step 1** (fan-out del arranque — ver step-00b §Fan-out): el validator ya está lanzado en background mientras este step ejecuta inline. No comparten datos (este step solo lee frontmatter + config ADO). Si este step necesita confirmación del dev (fallback por título, WI cerrado), resolverla ANTES de procesar el reporte del validator, con la pregunta claramente rotulada como de ADO.
 
 ## Cuándo se ejecuta
 
@@ -170,5 +170,5 @@ Es la simetría de step-09 (cierre con trazabilidad): que el INICIO del trabajo 
 
 ## Referencia cruzada
 
-- `step-00b-clocki-start.md` — abre el timer Clockify. Step-00c es su simétrico ADO: ambos disparan al iniciar, ambos son opcionales-silent-skip si no hay config.
+- `step-00b-work-start.md` — le avisa el trabajo a la herramienta de horas. Step-00c es su simétrico ADO: ambos disparan al iniciar, ambos son opcionales-silent-skip si no hay config.
 - `step-09-ado-story-closure.md` — cierra el WI con trazabilidad (commits + CI run + PR link). Step-00c y step-09 son los extremos del ciclo de vida ADO de la story.

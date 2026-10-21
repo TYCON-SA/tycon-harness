@@ -31,6 +31,8 @@
     { "kind": "hook", "id": "UserPromptSubmit:@int:clockify/scripts/on-prompt.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "time:clockify", "windows": true },
     { "kind": "hook", "id": "UserPromptSubmit:tycon-pipeline/scripts/on-prompt.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PostToolUse:@int:clockify/scripts/touch-activity.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "time:clockify", "windows": true },
+    { "kind": "hook", "id": "UserPromptSubmit:@int:solidtime/scripts/on-prompt.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "time:solidtime", "windows": true },
+    { "kind": "hook", "id": "PostToolUse:@int:solidtime/scripts/on-activity.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "time:solidtime", "windows": true },
     { "kind": "hook", "id": "PostToolUse:tycon-pipeline/scripts/hook-post-edit.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PreToolUse:tycon-pipeline/scripts/hook-pre-edit.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PostToolUse:tycon-pipeline/scripts/on-skill-invoke.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },

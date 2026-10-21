@@ -25,7 +25,7 @@ const RAIZ = path.join(SKILL, '..', '..');
 // La tabla, escrita acá a propósito: es la de la story, no la del código que se prueba.
 const ESPERADOS = {
   0: 'Arranque',
-  '0b': 'Arranque: reloj de Clockify',
+  '0b': 'Arranque: aviso de trabajo',
   '0c': 'Arranque: pedido en ADO',
   1: 'Validar la historia',
   2: 'Armar el plan',
@@ -100,7 +100,7 @@ function entorno() {
 }
 
 const ORDEN = ['0', '0b', '0c', '1', '2', '3', '4', '5', '5b', '6', '7', '7c', '8'];
-const BANDERA = { '0b': 'clockiStarted', '0c': 'adoMarkedActive', '5b': 'deepReviewDone', '7c': 'dodRuntimeChecked' };
+const BANDERA = { '0b': 'workSignalStarted', '0c': 'adoMarkedActive', '5b': 'deepReviewDone', '7c': 'dodRuntimeChecked' };
 
 test('T1 Display_PlainNamesOnly — lo que ve el dueño nombra cada paso por su nombre llano, sin número', () => {
   // la tabla

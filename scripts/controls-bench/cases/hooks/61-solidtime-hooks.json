@@ -1,0 +1,80 @@
+{
+  "__doc": "Los hooks de Solidtime (story 7.40, tanda B2): le pasan al evento de trabajo del núcleo lo que pasa en la sesión. Lo que el banco fija: un uso de herramienta anota la actividad sin hablarle al agente, y un mensaje de la persona sin nada abierto queda callado aunque falte el token (no lo repite en cada mensaje); con una sesión quieta, el cierre por inactividad corre y dice lo que falta. Ninguno llama a la API en estos casos: sin token no hay pedido. La suite completa, con un servidor de mentira, es scripts/tests/solidtime-integration.test.js (T49).",
+  "hooks": [
+    {
+      "hook": "on-activity.js (solidtime)",
+      "script": "${TCG}/integrations/solidtime/scripts/on-activity.js",
+      "event": "PostToolUse",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "uso-de-herramienta-anota-la-actividad",
+          "type": "must-stay-quiet",
+          "__doc": "Con Solidtime elegida y una sesión abierta, un uso de herramienta mueve la última actividad y no imprime nada. ROJO PREVIO: la fecha vieja queda en el estado, o el hook le habla al agente.",
+          "setup": [
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.tycon/state/time-tracking/solidtime/sessions';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-st1.json',JSON.stringify({entryId:'ent-b1',storyId:'9.9',description:'Story 9.9',startedAt:'2020-01-01T00:00:00Z',lastActivity:'2020-01-01T00:00:00Z'}))\""
+          ],
+          "stdin": {
+            "hook_event_name": "PostToolUse",
+            "session_id": "bench-st1",
+            "cwd": "${FIXTURE}",
+            "tool_name": "Edit"
+          },
+          "env": { "TYCON_TIME_TRACKING": "solidtime", "TYCON_PROFILE": "0" },
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": ["."],
+            "file_contains": [{ "path": "${SANDBOX_HOME}/.tycon/state/time-tracking/solidtime/sessions/bench-st1.json", "re": "ent-b1" }],
+            "file_not_contains": [{ "path": "${SANDBOX_HOME}/.tycon/state/time-tracking/solidtime/sessions/bench-st1.json", "re": "lastActivity\":\"2020-01-01" }]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "on-prompt.js (solidtime)",
+      "script": "${TCG}/integrations/solidtime/scripts/on-prompt.js",
+      "event": "UserPromptSubmit",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "sin-nada-abierto-callado",
+          "type": "must-stay-quiet",
+          "__doc": "Sin sesiones guardadas no hay nada que cerrar: el mensaje de la persona no dispara avisos aunque falten la URL y el token. ROJO PREVIO: «falta tu token» en cada mensaje.",
+          "stdin": {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "bench-st2",
+            "cwd": "${FIXTURE}",
+            "prompt": "seguí"
+          },
+          "env": { "TYCON_TIME_TRACKING": "solidtime", "TYCON_PROFILE": "0" },
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": ["."],
+            "stderr_not_re": ["."],
+            "file_absent": ["${SANDBOX_HOME}/.tycon/state/time-tracking/solidtime/errors.jsonl"]
+          }
+        },
+        {
+          "id": "sesion-quieta-corre-el-cierre",
+          "type": "must-emit",
+          "__doc": "Con una sesión quieta hace años, el cierre por inactividad corre: sin URL ni token, dice cuál falta y dónde se pone, y sale 0. ROJO PREVIO: callado (el hook no llega al cierre) o salida distinta de 0.",
+          "setup": [
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.tycon/state/time-tracking/solidtime/sessions';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-st3.json',JSON.stringify({entryId:'ent-b3',storyId:'9.9',description:'Story 9.9',startedAt:'2020-01-01T00:00:00Z',lastActivity:'2020-01-01T00:00:00Z'}))\""
+          ],
+          "stdin": {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "bench-st4",
+            "cwd": "${FIXTURE}",
+            "prompt": "otra cosa"
+          },
+          "env": { "TYCON_TIME_TRACKING": "solidtime", "TYCON_PROFILE": "0" },
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": ["."],
+            "stderr_re": ["solidtime.*(token|URL)"]
+          }
+        }
+      ]
+    }
+  ]
+}

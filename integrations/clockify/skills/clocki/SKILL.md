@@ -332,14 +332,52 @@ El agente JUZGA si corresponde abrir timer. Si sí, propone al user con confirma
 
 ## Integración con tycon-pipeline
 
-El skill `tycon-pipeline` invoca `clocki:start` automáticamente en `step-00b-clocki-start.md` (entre preflight y validate-story), con:
-- `description` = título de la story + ID (extraído del frontmatter)
+El pipeline no nombra a Clockify: emite el aviso de trabajo (`pipeline.js work-signal start|stop`) y esta integración
+(`scripts/on-work.js`) le contesta al agente, en `action`, qué hacer con el MCP. Lo que sigue es ese «qué hacer».
+
+### Arranque desde el pipeline (paso 0b, «Arranque: aviso de trabajo»)
+
+La acción de `start` manda a abrir la entrada con el «Flujo de `start`» de arriba, con:
+- `description` = `Story <id> — <title>` (del frontmatter; cap 100 caracteres)
 - `source` = `tycon-pipeline`
-- **SIN pedir confirmación** — el pipeline es intent explícito.
+- **SIN pedir confirmación** — el pipeline es intent explícito. La única pregunta posible es el proyecto, si el
+  auto-match no da uno solo: se hace antes del fan-out del arranque.
+- **Si NINGUNA tool de Clockify está disponible** → saltear con `⚠ Clockify: MCP no disponible, sigo sin registrar`.
+  🔴 Chequeá las DOS variantes de nombre: bajo Codex vienen con **guiones bajos**
+  (`mcp__clockify__list_clockify_workspaces`), no con guiones — ver «Nombres de las tools de Clockify». No saltees sólo
+  porque no encontrás el nombre EXACTO con guiones: eso apagaba el registro en silencio bajo Codex.
 
-El cierre del timer ocurre en estas 4 condiciones (en orden de precedencia):
+🔴 **Regla atómica**: cerrar la previa de este cwd (paso 2 del flujo), crear la nueva (paso 4) y persistir (paso 5) van
+en el MISMO bloque de llamadas. Si se cierra y no se abre la sucesora, el tiempo entre una y otra queda sin registrar:
+el pipeline sigue, pero se avisa como CRITICAL. Después de persistir, verificar que el `entryId` del archivo de la
+sesión sea el de la respuesta de `create`.
 
-1. **Step 9 del pipeline cierra el timer automáticamente** (2026-05-13) cuando el dev invoca el step de cierre ADO (`"cerrá la story X en ADO"` / `"marco done la story X"` / `/tycon-pipeline close <path>`). El step-09 postea comment ADO + transiciona state a `Closed` + **cierra el timer con `end=now`** (no `lastActivity` — el cierre es explícito por finalización del trabajo, todo el tiempo trackeado hasta ahora es trabajo real). Ver `tycon-pipeline/steps/step-09-ado-story-closure.md` sección "Acción — cerrar clocki timer".
+Lo que deja escrito en `.advisors/pipeline-runs/<clave>-<sello>/step-00b-work-start.md`: integración `clockify`, la
+acción (`entryId`, `projectId`, `description`, `startedAt`) y el status.
+
+### Cierre desde el pipeline (paso 9, «Cerrar la historia»)
+
+La acción de `stop` manda a:
+
+1. **Cerrar la entrada abierta** de esta sesión en el cwd de la story, si hay una, con
+   `mcp__clockify__update-clockify-time-entry` y `end = ahora` en hora local (no `lastActivity`: el cierre es explícito
+   por finalización del trabajo). Sacarla del archivo de la sesión. Si falla (red, 401): un aviso de una línea; el
+   sweep la cierra después.
+2. **Sumar las entradas de la historia** para `CompletedWork`, aunque no hubiera ninguna abierta (las que cerró el sweep
+   por inactividad también son trabajo de la story):
+   - workspace y proyecto, de `~/.claude/clocki/project-cache.json` para el cwd (sólo lectura);
+   - ventana: desde el primer commit de la story (`git log --reverse --pretty=format:"%aI" -- <story_path> | head -1`)
+     hasta el merge a main más 24 h;
+   - `mcp__clockify__list-clockify-time-entries` con `workspaceId`, `userId` (de `mcp__clockify__get-clockify-user`),
+     `projectId` y la ventana;
+   - quedarse con las que dicen `Story <id>` (sin distinguir mayúsculas) o una palabra fuerte del título, mostrarle al
+     dev las candidatas y pedir confirmación (las de descripción genérica, como «fix typo», las decide él);
+   - sumar `durationSeconds`. Sin ninguna, no hay tiempo: no se inventa. Workspace o proyecto sin resolver: sin tiempo,
+     con el motivo.
+
+El cierre de la entrada ocurre en estas 4 condiciones (en orden de precedencia):
+
+1. **Step 9 del pipeline la cierra** (2026-05-13) cuando el dev invoca el step de cierre ADO (`"cerrá la story X en ADO"` / `"marco done la story X"` / `/tycon-pipeline close <path>`): la acción de `stop` de arriba, con `end=now`.
 2. El dev empieza otra cosa (nuevo `clocki:start` cierra el previo).
 3. Idle > 15min sin actividad (sweep cierra retroactivamente con `end=lastActivity`).
 4. El dev tipea `/clocki stop` manualmente (cierra con `end=lastActivity`).

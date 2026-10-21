@@ -7,7 +7,7 @@
 /** Cada paso: su id (el del marker) y el nombre que lee el dev — el único que se le muestra, sin el id. */
 export const STEPS = [
   { id: '0', name: 'Arranque' },
-  { id: '0b', name: 'Arranque: reloj de Clockify' },
+  { id: '0b', name: 'Arranque: aviso de trabajo' },
   { id: '0c', name: 'Arranque: pedido en ADO' },
   { id: '1', name: 'Validar la historia' },
   { id: '2', name: 'Armar el plan' },
@@ -22,7 +22,10 @@ export const STEPS = [
 ];
 
 /** Los sub-pasos que se dan por hechos con una bandera del marker (el 7c, como en `computeNext`). */
-export const SUBSTEP_FLAG = { '0b': 'clockiStarted', '0c': 'adoMarkedActive', '5b': 'deepReviewDone', '7c': 'dodRuntimeChecked' };
+export const SUBSTEP_FLAG = { '0b': 'workSignalStarted', '0c': 'adoMarkedActive', '5b': 'deepReviewDone', '7c': 'dodRuntimeChecked' };
+
+/** El nombre viejo de una bandera, que todavía puede traer el marker de una corrida en vuelo: también da el sub-paso por hecho. */
+export const SUBSTEP_OLD_FLAG = { '0b': 'clockiStarted' };
 
 /** Los pasos que esperan al dev cuando la corrida no es autónoma. */
 export const ASKS_DEV = ['3', '7'];

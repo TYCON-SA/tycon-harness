@@ -12,8 +12,10 @@
 // Una historia nunca se frena por esto: todo error termina en un aviso de una línea y en errors.jsonl (la acción y el
 // código, nunca el token, la URL ni el cuerpo de la respuesta).
 //
-// El estado de la máquina, en `stateDir`: `identity.json` (organización y miembro, por instancia) y
-// `sessions/<sesión>.json` (la entrada abierta por esa sesión: id, historia, última actividad).
+// El estado de la máquina, en `stateDir`: `identity.json` (organización y miembro, por instancia),
+// `sessions/<sesión>.json` (la entrada abierta por esa sesión: id, historia, última actividad) y `closed.json` (los
+// segundos de cada historia que ya se cerraron antes de su `stop`: por inactividad o al abrir otra). El `stop` de una
+// historia devuelve lo de su entrada abierta más eso, y lo saca: es el tiempo que el paso 9 suma a CompletedWork.
 //
 // Casos: scripts/tests/solidtime-integration.test.js.
 
@@ -112,8 +114,50 @@ async function close(api, org, id, end) {
 
 const descriptionOf = (ev) => `Story ${ev.storyId || '?'}${ev.title ? ` — ${ev.title}` : ''}`.slice(0, 200);
 const sameStory = (entry, ev) => String(entry.description || '').startsWith(`Story ${ev.storyId} `) || entry.description === `Story ${ev.storyId}`;
+/** La historia de una entrada: la de las sesiones que la seguían o, si no, la de su descripción («Story <id> — …»). */
+const storyOf = (list, entry) => {
+  const s = list.find((x) => x.data && x.data.storyId);
+  if (s) return s.data.storyId;
+  const m = /^Story (\S+)(?: |$)/.exec(String((entry && entry.description) || ''));
+  return m && m[1] !== '?' ? m[1] : null;
+};
 
-async function start(api, ev) {
+/**
+ * Los segundos ya cerrados de cada historia, hasta su `stop`: `{ all, damaged }`. Un archivo que está y no se lee es
+ * «dañado», no «vacío»: no se pisa (se perderían los segundos de las otras historias) y se dice.
+ */
+const closedFile = (stateDir) => path.join(stateDir, 'closed.json');
+function readClosed(stateDir, warnings) {
+  const file = closedFile(stateDir);
+  if (!fs.existsSync(file)) return { all: {}, damaged: false };
+  const all = readJson(file);
+  if (all && typeof all === 'object' && !Array.isArray(all)) return { all, damaged: false };
+  logError(stateDir, 'leer los segundos ya cerrados', 'closed.json está dañado');
+  warnings.push('solidtime: el archivo de los segundos ya cerrados (closed.json) está dañado; no lo toco y esos segundos no se suman');
+  return { all: {}, damaged: true };
+}
+function credit(stateDir, entry, storyId, seconds, warnings) {
+  if (seconds === null) { warnings.push(`solidtime: cerré la entrada ${entry}, pero la instancia no informó su duración; esos segundos no se suman`); return; }
+  if (!Number.isInteger(seconds) || seconds <= 0) return;
+  if (!storyId) { warnings.push(`solidtime: cerré la entrada ${entry}, pero no sé de qué historia era; sus segundos no se suman`); return; }
+  const c = readClosed(stateDir, warnings);
+  if (c.damaged) return;
+  c.all[storyId] = (Number.isInteger(c.all[storyId]) ? c.all[storyId] : 0) + seconds;
+  writeJson(closedFile(stateDir), c.all);
+}
+const banked = (stateDir, storyId, warnings) => {
+  const { all } = readClosed(stateDir, warnings);
+  const v = Object.prototype.hasOwnProperty.call(all, storyId) ? all[storyId] : 0;
+  return Number.isInteger(v) ? v : 0;
+};
+function forget(stateDir, storyId) {
+  const c = readClosed(stateDir, []);
+  if (c.damaged || !Object.prototype.hasOwnProperty.call(c.all, storyId)) return;
+  delete c.all[storyId];
+  writeJson(closedFile(stateDir), c.all);
+}
+
+async function start(api, ev, warnings) {
   const id = await identity(api, ev.stateDir);
   const running = await active(api);
   const own = readJson(sessionFile(ev.stateDir, ev.sessionId));
@@ -125,7 +169,8 @@ async function start(api, ev) {
     // otra historia corriendo: se cierra antes de abrir (una sola abierta por persona); si la seguían sesiones de esta
     // máquina, con la actividad más reciente de todas ellas
     const prev = listSessions(ev.stateDir).filter((s) => !s.damaged && s.data.entryId === running.id);
-    await close(api, id.organization, running.id, prev.length ? latest(prev) : ev.at);
+    const seconds = await close(api, id.organization, running.id, prev.length ? latest(prev) : ev.at);
+    credit(ev.stateDir, running.id, storyOf(prev, running), seconds, warnings);
     for (const s of prev) fs.rmSync(s.file, { force: true });
   }
   const project = await projectFor(api, id.organization, ev.repo);
@@ -163,26 +208,48 @@ const latest = (list) => list.map(lastOf).sort().pop();
  * historia), no la cierra: sólo deja de seguirla. El archivo de la sesión se borra recién con el cierre hecho; si el
  * cierre falla queda, y el próximo stop o sweep lo reintenta. Una entrada que ya no corre en la herramienta, o un cierre
  * sin duración, se avisa: los segundos no se pierden en silencio.
+ *
+ * La entrada es la de la sesión o, si esta sesión no abrió ninguna (el paso 9 corre después del merge, muchas veces en
+ * otra sesión), la de la misma historia que siga abierta en esta máquina. Los segundos son los de esa entrada más los
+ * que la historia ya tenía cerrados (`closed.json`), que salen con el cierre hecho.
  */
-async function stop(api, ev, warnings) {
+function ownSession(ev) {
   const file = sessionFile(ev.stateDir, ev.sessionId);
-  const own = readSession(file);
-  if (!own) return {};
+  const data = readSession(file);
+  if (data) return { file, data };
+  if (!ev.storyId) return null;
+  const same = listSessions(ev.stateDir).find((s) => !s.damaged && s.data.storyId === ev.storyId);
+  return same ? { file: same.file, data: same.data } : null;
+}
+
+/** El `stop` sin entrada abierta de la historia: no llama a la API y devuelve lo que ya estaba cerrado. */
+function stopWithoutEntry(ev, warnings) {
+  const prior = ev.storyId ? banked(ev.stateDir, ev.storyId, warnings) : 0;
+  if (!prior) return {};
+  forget(ev.stateDir, ev.storyId);
+  return { seconds: prior };
+}
+
+async function stop(api, ev, warnings) {
+  const found = ownSession(ev);
+  if (!found) return stopWithoutEntry(ev, warnings);
+  const { file, data: own } = found;
   const now = Date.parse(ev.at);
   const others = listSessions(ev.stateDir).filter((s) => !s.damaged && s.file !== file && s.data.entryId === own.entryId);
   if (others.some((s) => !isIdle(s, now))) { fs.rmSync(file, { force: true }); return {}; }
   const id = await identity(api, ev.stateDir);
   const running = await active(api);
-  let out = {};
+  const prior = banked(ev.stateDir, own.storyId, warnings);
+  let seconds = null;
   if (running && running.id === own.entryId) {
-    const seconds = await close(api, id.organization, running.id, ev.at);
-    if (seconds !== null) out = { seconds };
-    else warnings.push('solidtime: cerré la entrada, pero la instancia no informó su duración; no hay segundos que sumar');
+    seconds = await close(api, id.organization, running.id, ev.at);
+    if (seconds === null) warnings.push('solidtime: cerré la entrada, pero la instancia no informó su duración; sumo sólo lo que ya estaba cerrado');
   } else {
-    warnings.push(`solidtime: la entrada de esta sesión (${own.entryId}) ya no estaba abierta en la instancia; no hay segundos que sumar`);
+    warnings.push(`solidtime: la entrada de esta sesión (${own.entryId}) ya no estaba abierta en la instancia; sumo sólo lo que ya estaba cerrado`);
   }
   for (const f of [file, ...others.map((s) => s.file)]) fs.rmSync(f, { force: true });
-  return out;
+  forget(ev.stateDir, own.storyId);
+  return seconds !== null || prior ? { seconds: (seconds || 0) + prior } : {};
 }
 
 /** Las sesiones guardadas: `[{ file, data, damaged }]`; una que no se lee viene con `damaged: true` (nunca se descarta). */
@@ -219,7 +286,8 @@ async function sweep(api, ev, warnings) {
   const id = await identity(api, ev.stateDir);
   const running = await active(api);
   for (const [entryId, list] of idle) {
-    if (running && running.id === entryId) await close(api, id.organization, entryId, latest(list));
+    if (running && running.id === entryId) credit(ev.stateDir, entryId, storyOf(list, running), await close(api, id.organization, entryId, latest(list)), warnings);
+    else warnings.push(`solidtime: la entrada ${entryId} ya no estaba abierta en la instancia; la dejo de seguir y sus segundos no se suman`);
     for (const s of list) fs.rmSync(s.file, { force: true });
   }
   return {};
@@ -245,6 +313,11 @@ function logError(stateDir, action, detail) {
 
 async function dispatch(ev, timeoutMs) {
   if (ev.event === 'activity') return { result: activity(ev), warnings: [] };
+  // el cierre por inactividad corre con cada mensaje de la persona: sin sesiones guardadas no hay nada que cerrar, y
+  // tampoco se repite en cada mensaje que falta configurar algo (eso lo dice `start`)
+  if (ev.event === 'sweep' && !listSessions(ev.stateDir).length) return { result: {}, warnings: [] };
+  // sin entrada abierta de la historia, el `stop` no llama a la API (AC 9): lo ya cerrado sale igual, sin ajustes
+  if (ev.event === 'stop' && !ownSession(ev)) { const warnings = []; return { result: stopWithoutEntry(ev, warnings), warnings }; }
   const missing = missingLines(ev);
   if (missing.length) return { result: {}, warnings: missing };
   const settings = ev.settings && typeof ev.settings === 'object' ? ev.settings : {};
@@ -252,7 +325,7 @@ async function dispatch(ev, timeoutMs) {
   const url = String(settings.url);
   if (!/^(https:\/\/|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$))/.test(url)) return { result: {}, warnings: ['solidtime: la URL de la instancia tiene que empezar con https:// (o http://localhost para probar): el token no viaja en claro; sigo sin registrar'] };
   const api = { url, token: String(settings.token), timeoutMs };
-  if (ev.event === 'start') return { result: await start(api, ev), warnings: [] };
+  if (ev.event === 'start') { const warnings = []; return { result: await start(api, ev, warnings), warnings }; }
   if (ev.event === 'stop' || ev.event === 'sweep') {
     const warnings = [];
     const result = ev.event === 'stop' ? await stop(api, ev, warnings) : await sweep(api, ev, warnings);
