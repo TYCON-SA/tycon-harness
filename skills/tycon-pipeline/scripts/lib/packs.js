@@ -290,11 +290,14 @@ function validarManifiesto(json, { archivo, agentsDir, nucleo = [], banderas = [
     vistos.add(clave);
     if (!gruposDe.has(agente)) gruposDe.set(agente, new Set());
     gruposDe.get(agente).add(r.group);
-    // el agente existe: primero en la carpeta del paquete, después en la de la raíz; en las dos, roto
+    // las instrucciones de un revisor viven en la carpeta de agentes de su paquete (la declarada, o `agents`): una sola
+    // casa por revisor. Sólo en la raíz es un problema que dice adónde va; en las dos, también
     const md = path.join(agentsDir, `${agente}.md`);
-    const propio = carpetaPropia.agents ? path.join(carpetaPropia.agents, `${agente}.md`) : null;
-    if (propio && fs.existsSync(propio) && fs.existsSync(md)) e(`el agente ${agente} está en dos lugares (${propio} y en la raíz, ${md}): va en uno solo`);
-    else if (!(propio && fs.existsSync(propio)) && !fs.existsSync(md)) e(`no existe el agente ${propio ? `${propio} ni ${md}` : md}`);
+    const propio = path.join(carpetaPropia.agents || path.join(path.dirname(archivo), 'agents'), `${agente}.md`);
+    const enElPaquete = `packs/${carpeta}/${typeof json.agents === 'string' && json.agents ? json.agents : 'agents'}/${agente}.md`;
+    if (fs.existsSync(propio) && fs.existsSync(md)) e(`el agente ${agente} está en dos lugares (${propio} y en la raíz, ${md}): va en uno solo`);
+    else if (!fs.existsSync(propio) && fs.existsSync(md)) e(`las instrucciones de ${agente} tienen que estar en ${enElPaquete} (hoy están en agents/${agente}.md)`);
+    else if (!fs.existsSync(propio)) e(`no existe el agente ${propio}`);
   });
   // Un revisor del paso 5 tiene UNA superficie y UNA profundidad: en `base` o en `condicional`, no en
   // los dos (con los dos, `superficieDe`/`tierDe` tomarían la primera entrada y la otra se ignoraría
@@ -370,7 +373,7 @@ function cargarPaquetes({ packsDir, agentsDir, nucleo = [], banderas = [] } = {}
       nombre: json.name, dir: p.dir, archivo: p.archivo,
       descripcion: json.description, guias: json.guides || [],
       skills: json.skills ? path.join(p.dir, json.skills) : null,
-      agentes: json.agents ? path.join(p.dir, json.agents) : null,
+      agentes: path.join(p.dir, json.agents || 'agents'),
       revisores: json.reviewers.map(normalizarRevisor),
       hermanos: (json.siblings || []).map((h) => ({ ruta: h.path, nombre: h.name })),
     });

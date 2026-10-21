@@ -71,13 +71,25 @@ function agentes(...nombres) {
   return d;
 }
 
-/** Carpeta de paquetes: `{ nombre: manifiesto }` (objeto → JSON; string → tal cual, para romperlo). */
+/**
+ * Carpeta de paquetes: `{ nombre: manifiesto }` (objeto → JSON; string → tal cual, para romperlo). Las instrucciones de
+ * cada revisor de prueba (`AGENTES_PRUEBA`) van en la carpeta de agentes de su paquete, que es donde las busca el
+ * validador; un revisor que no es de prueba (uno inventado para que falte) queda sin su `.md`.
+ */
 function paquetes(mapa) {
   const d = tmp('packs-dir-');
   for (const [nombre, contenido] of Object.entries(mapa)) {
     fs.mkdirSync(path.join(d, nombre));
     fs.writeFileSync(path.join(d, nombre, 'pack.json'),
       typeof contenido === 'string' ? contenido : JSON.stringify(contenido, null, 2) + '\n');
+    // con las claves de hoy o con las viejas (`revisores`, `agente`)
+    const revisores = typeof contenido === 'object' ? (contenido.reviewers || contenido.revisores) : null;
+    if (!Array.isArray(revisores)) continue;
+    const carpeta = path.join(d, nombre, typeof contenido.agents === 'string' && contenido.agents ? contenido.agents : 'agents');
+    for (const a of new Set(revisores.map((r) => r && (r.agent || r.agente)).filter((a) => [...AGENTES_PRUEBA, 'rev-cableado'].includes(a)))) {
+      fs.mkdirSync(carpeta, { recursive: true });
+      fs.writeFileSync(path.join(carpeta, `${a}.md`), `---\nname: ${a}\n---\n# ${a}\n`);
+    }
   }
   return d;
 }
@@ -175,7 +187,7 @@ const ordenado = (a) => (a || []).slice().sort();
 // ── T1 · AC 1 — el manifiesto suma revisores por grupo, con superficie y profundidad ─────────────
 test('Pack_ManifiestoValido_SumaRevisoresPorGrupo', () => {
   const packsDir = paquetes({ prueba: PRUEBA });
-  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const agentsDir = agentes();
   const d = repo();
   agregar(d, 'src/A.cs', 'class MagiaNegra {}\n');
   const r = advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir, TYCON_PIPELINE_COST_TIER: 'lean' });
@@ -209,7 +221,7 @@ test('Pack_ManifiestoValido_SumaRevisoresPorGrupo', () => {
 // ── superficie del manifiesto gobierna las vueltas (advisorAffectedByDelta) ──────────────────────
 test('Pack_Superficie_GobiernaLasVueltas', () => {
   const packsDir = paquetes({ prueba: PRUEBA });
-  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const agentsDir = agentes();
   process.env.TYCON_PACKS_DIR = packsDir;
   process.env.TYCON_AGENTS_DIR = agentsDir;
   try {
@@ -263,7 +275,7 @@ test('Pack_VocabularioDeCondiciones_TodasLasFormas', () => {
 // ── T3 · AC 2, 5 — clave o bandera desconocida = manifiesto inválido, nunca «falso» ─────────────
 test('Pack_ClaveOBanderaDesconocida_ManifiestoInvalido', () => {
   const packs = require('../lib/packs.js');
-  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const agentsDir = agentes();
   const conClaveRota = JSON.parse(JSON.stringify(PRUEBA));
   conClaveRota.reviewers[0].when = { file: '\\.cs$' };              // falta la s
   const conBanderaRota = JSON.parse(JSON.stringify(PRUEBA));
@@ -315,7 +327,7 @@ test('Pack_ClaveOBanderaDesconocida_ManifiestoInvalido', () => {
 // ── Los hermanos del corral del banco viven en su paquete ─────
 test('Pack_Siblings_FieldValidatedAndDelivered', () => {
   const packs = require('../lib/packs.js');
-  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const agentsDir = agentes();
   assert.ok(packs.VOCABULARIO.manifiesto.includes('siblings'), 'el vocabulario del manifiesto conoce «siblings»');
   const conHermanos = JSON.parse(JSON.stringify(PRUEBA));
   conHermanos.siblings = [
@@ -349,7 +361,7 @@ test('Pack_Siblings_FieldValidatedAndDelivered', () => {
 // ── Las claves del manifiesto en inglés; uno de afuera con las de antes sigue andando ──
 test('D1 Pack_OldKeysOutsideTheRepo_SameAsNew — un manifiesto en TYCON_PACKS_DIR con las claves viejas carga igual que el nuevo', () => {
   const packs = require('../lib/packs.js');
-  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const agentsDir = agentes();
   const conHermanos = { ...JSON.parse(JSON.stringify(PRUEBA)), siblings: [{ path: 'AcmeCorp/Backend/src/AcmeCorpBackend', name: 'AcmeCorp' }] };
   const viejo = conClavesViejas(conHermanos);
   assert.ok(!('reviewers' in viejo) && Object.keys(viejo).length === Object.keys(conHermanos).length, 'el de laboratorio está escrito con las claves de antes');
@@ -357,7 +369,7 @@ test('D1 Pack_OldKeysOutsideTheRepo_SameAsNew — un manifiesto en TYCON_PACKS_D
     packs.resetCache();
     return enHomeAislada(() => packs.cargarPaquetes({ packsDir: paquetes({ prueba: manifiesto }), agentsDir, nucleo: [TC, SB], banderas: ['csModified'] }));
   };
-  const sinRutas = (ps) => ps.map(({ dir, archivo, ...resto }) => resto);
+  const sinRutas = (ps) => ps.map(({ dir, archivo, agentes: _a, ...resto }) => resto);
   // en este proceso, el puente va por el arnés de la máquina (TYCON_GUIDES_DIR o el enlace: al día o atrasado, según su
   // mapa); en el hijo de abajo, sin arnés (la tabla propia)
   const nuevo = sinRutas(cargar(conHermanos));
@@ -365,7 +377,7 @@ test('D1 Pack_OldKeysOutsideTheRepo_SameAsNew — un manifiesto en TYCON_PACKS_D
   const sinArnes = spawnSync(process.execPath, ['-e', `
     const packs = require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'packs.js'))});
     const r = packs.cargarPaquetes({ packsDir: process.argv[1], agentsDir: process.argv[2], nucleo: [], banderas: ['csModified'] });
-    process.stdout.write(JSON.stringify(r.map(({ dir, archivo, ...resto }) => resto)));`, paquetes({ prueba: viejo }), agentsDir],
+    process.stdout.write(JSON.stringify(r.map(({ dir, archivo, agentes, ...resto }) => resto)));`, paquetes({ prueba: viejo }), agentsDir],
   { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: tmp('packs-home-'), TYCON_GUIDES_DIR: path.join(tmp('packs-nada-'), 'no-existe') } });
   assert.equal(sinArnes.status, 0, sinArnes.stderr);
   assert.deepEqual(JSON.parse(sinArnes.stdout), nuevo, 'sin arnés (o uno anterior a la D1): la tabla propia del puente traduce igual');
@@ -377,13 +389,13 @@ test('D1 Pack_OldKeysOutsideTheRepo_SameAsNew — un manifiesto en TYCON_PACKS_D
   const rViejo = advisors(d, ['src/A.cs'], env(viejo));
   assert.equal(rViejo.status, 0, rViejo.stderr);
   assert.deepEqual([rViejo.json.base, rViejo.json.conditional], [rNuevo.json.base, rNuevo.json.conditional], 'el mismo set');
-  assert.deepEqual(rViejo.json.packs.map(({ dir, ...p }) => p), rNuevo.json.packs.map(({ dir, ...p }) => p), 'la misma salida');
+  assert.deepEqual(rViejo.json.packs.map(({ dir, agentes, ...p }) => p), rNuevo.json.packs.map(({ dir, agentes, ...p }) => p), 'la misma salida');
   assert.ok(rNuevo.json.packs[0].revisores[0].agente, 'la salida conserva sus claves de siempre (pregunta decidida 2)');
 });
 
 test('D1 Pack_OldAndNewKeyDiffer_BrokenPack — la clave vieja y la nueva con valores distintos es un paquete roto', () => {
   const packs = require('../lib/packs.js');
-  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const agentsDir = agentes();
   const viejaDe = (nuevo) => VIEJA_DE.get(nuevo);
   const casos = [
     // arriba: la descripción con sus dos nombres
@@ -433,7 +445,7 @@ test('D1 Bridge_OwnPackKeysEqualTheMap — la tabla propia de claves del manifie
 // ── T4 · AC 3 — descubrimiento: la variable, o packs/ de agent-skills ──────────────────────────
 test('Pack_Descubrimiento_VariableYDefault', (t) => {
   const packsDir = paquetes({ prueba: PRUEBA });
-  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const agentsDir = agentes();
   const d = repo();
   agregar(d, 'src/A.cs', 'class X {}\n');
   const conVariable = advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
@@ -457,7 +469,7 @@ test('Pack_ListaDelRepo_RestringeYFallaSiFalta', () => {
   otro.name = 'otro';
   otro.reviewers = [{ agent: 'rev-otro', group: 'base', when: { detection: 'csModified' }, surface: { paths: ['**/*.cs'] }, depth: 'standard', prefixes: ['RO'] }];
   const packsDir = paquetes({ prueba: PRUEBA, otro });
-  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const agentsDir = agentes();
 
   // sin lista: los dos activos
   const todos = repo();
@@ -555,7 +567,7 @@ test('Pack_ListaDelRepo_FormasYaml', () => {
 
 // ── T6 · AC 5 — un paquete roto frena nombrando archivo, revisor y motivo ───────────────────────
 test('Pack_Roto_FallaNombrandoArchivoYMotivo', () => {
-  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const agentsDir = agentes();
   const sinAgente = JSON.parse(JSON.stringify(PRUEBA));
   sinAgente.reviewers[0].agent = 'rev-fantasma';
   const duplicaNucleo = JSON.parse(JSON.stringify(PRUEBA));
@@ -589,7 +601,7 @@ test('Pack_Roto_FallaNombrandoArchivoYMotivo', () => {
 // ── T7 · AC 6 — la salida incluye los paquetes cargados ─────────────────────────────────────────
 test('Advisors_SalidaIncluyePaquetesCargados', () => {
   const packsDir = paquetes({ prueba: PRUEBA });
-  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const agentsDir = agentes();
   const d = repo();
   agregar(d, 'src/A.cs', 'class X {}\n');
   const con = advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
@@ -673,7 +685,7 @@ test('T21 Pipeline_NamesNoneOfThirteen', () => {
   const conPaquete = paquetes({ cableado: { name: 'cableado', description: 'paquete de juguete con el revisor de cableado', reviewers: [
     { agent: 'rev-cableado', group: 'condicional', when: { files: '\\.tsx$' }, surface: { paths: ['**/*.tsx'] }, depth: 'lean', prefixes: ['WIRING'] },
   ] } });
-  const con = mech({ TYCON_PACKS_DIR: conPaquete, TYCON_AGENTS_DIR: agentes('rev-cableado') });
+  const con = mech({ TYCON_PACKS_DIR: conPaquete, TYCON_AGENTS_DIR: agentes() });
   assert.ok(con.json, con.stderr);
   assert.ok(con.json.ambiguous.some((a) => a.rule === 'WIRING-C1'), JSON.stringify(con.json.ambiguous));
   assert.deepEqual(con.json.llm_escalation, ['rev-cableado']);
@@ -754,7 +766,7 @@ test('Validadores_ConYSinPaqueteClientes', (t) => {
   const d = repo();
   // con el paquete de prueba: el validador + el de validación del paquete, con su prompt rendido
   const packsDir = paquetes({ prueba: PRUEBA });
-  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const agentsDir = agentes();
   const con = pipeline('validadores', ['--story', story, '--repo', d], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
   assert.equal(con.status, 0, con.stderr);
   assert.deepEqual(con.json.validadores, ['tycon-story-validator', 'rev-val']);
@@ -842,7 +854,7 @@ test('Packs_ApagadoPorDefectoSinPerfil', (t) => {
   const otro = { ...JSON.parse(JSON.stringify(PRUEBA)), name: 'otro' };
   otro.reviewers = [{ agent: 'rev-otro', group: 'base', when: { detection: 'csModified' }, surface: { paths: ['**/*.cs'] }, depth: 'standard', prefixes: ['RO'] }];
   const packsDir = paquetes({ prueba: PRUEBA, otro });
-  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const agentsDir = agentes();
   const conRepo = (yaml) => { const d = repo(yaml == null ? {} : { yaml }); agregar(d, 'src/A.cs', 'class X {}\n'); return d; };
   const correr = (d, env) => advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir, ...env });
   const nombres = (r) => ordenado((r.json && r.json.packs || []).map((p) => p.nombre));
@@ -971,7 +983,7 @@ test('Packs_NingunoActivo_SeDiceDistintoDeNingunoInstalado', (t) => {
   const otro = { ...JSON.parse(JSON.stringify(PRUEBA)), name: 'otro' };
   otro.reviewers = [{ agent: 'rev-otro', group: 'base', when: { detection: 'csModified' }, surface: { paths: ['**/*.cs'] }, depth: 'standard', prefixes: ['RO'] }];
   const packsDir = paquetes({ prueba: PRUEBA, otro });
-  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const agentsDir = agentes();
   const d = repo({}); agregar(d, 'src/A.cs', 'class X {}\n');
   const correr = (env) => advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir, ...env });
   // instalados dos, packs.default none (el perfil) y el repo sin `packs:`: ninguno activo, y la nota lo dice con los nombres
@@ -1022,7 +1034,7 @@ test('8.29 · T6 Packs_DefaultFollowsTheProfile @story-8.29 @ac-6 — en un repo
   const otro = { ...JSON.parse(JSON.stringify(PRUEBA)), name: 'otro' };
   otro.reviewers = [{ agent: 'rev-otro', group: 'base', when: { detection: 'csModified' }, surface: { paths: ['**/*.cs'] }, depth: 'standard', prefixes: ['RO'] }];
   const packsDir = paquetes({ prueba: PRUEBA, otro });
-  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const agentsDir = agentes();
   const d = repo({}); agregar(d, 'src/A.cs', 'class X {}\n');
   /** Una carpeta de usuario cuyo archivo de configuración dice los paquetes que la máquina eligió al instalar. */
   const casaCon = (valor) => {
@@ -1092,8 +1104,80 @@ test('MissingActivePack_SaysWhatToDo', () => {
   const packsDir = paquetes({ prueba: PRUEBA });
   const d = repo();
   agregar(d, 'src/A.cs', 'class X {}\n');
-  const r = advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentes(...AGENTES_PRUEBA), TYCON_PACKS_DEFAULT: 'mi-stack' });
+  const r = advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentes(), TYCON_PACKS_DEFAULT: 'mi-stack' });
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /mi-stack/);
   assert.match(r.stderr, /TYCON_PACKS_DEFAULT/);
+});
+
+// ── las instrucciones de un revisor viven en la carpeta de agentes de su paquete ──────
+/** Un paquete `acme-x` con un revisor y su `.md` donde se pida: en la carpeta del paquete (`propia`) o en la raíz. */
+function paqueteConRevisor({ declara = null, enElPaquete = true, enLaRaiz = false } = {}) {
+  const packsDir = paquetes({ 'acme-x': { name: 'acme-x', description: 'x', ...(declara ? { agents: declara } : {}), reviewers: [{ agent: 'acme-x-reviewer', group: 'base', when: { detection: 'csModified' }, surface: { paths: ['**/*.x'] }, depth: 'lean', prefixes: ['ACMEX'] }] } });
+  const raiz = agentes(...(enLaRaiz ? ['acme-x-reviewer'] : []));
+  if (enElPaquete) {
+    const carpeta = path.join(packsDir, 'acme-x', declara || 'agents');
+    fs.mkdirSync(carpeta, { recursive: true });
+    fs.writeFileSync(path.join(carpeta, 'acme-x-reviewer.md'), '---\nname: acme-x-reviewer\n---\n# acme-x-reviewer\n');
+  }
+  return { packsDir, agentsDir: raiz };
+}
+
+test('T13 Instrucciones_FueraDeSuPaquete_Problema @story-2.63 @ac-9 — un revisor que sólo está en agents/ de la raíz es un problema que dice dónde va', () => {
+  const { validateTree } = require('../lib/packs.js');
+  // sin carpeta declarada, la del paquete es «agents»
+  const sinDeclarar = paqueteConRevisor({ enElPaquete: false, enLaRaiz: true });
+  const e1 = validateTree(sinDeclarar);
+  assert.strictEqual(e1.length, 1, JSON.stringify(e1));
+  assert.strictEqual(e1[0].revisor, 'acme-x-reviewer');
+  assert.strictEqual(e1[0].motivo, 'las instrucciones de acme-x-reviewer tienen que estar en packs/acme-x/agents/acme-x-reviewer.md (hoy están en agents/acme-x-reviewer.md)');
+  // con una carpeta declarada, ésa
+  const declarada = paqueteConRevisor({ declara: 'revisores', enElPaquete: false, enLaRaiz: true });
+  assert.match(validateTree(declarada).map((e) => e.motivo).join(' · '), /tienen que estar en packs\/acme-x\/revisores\/acme-x-reviewer\.md \(hoy están en agents\/acme-x-reviewer\.md\)/);
+  // en ningún lado: «no existe», con la ruta del paquete
+  assert.match(validateTree(paqueteConRevisor({ enElPaquete: false })).map((e) => e.motivo).join(' · '), /no existe el agente .*acme-x\/agents\/acme-x-reviewer\.md$/);
+  // en los dos lugares sigue siendo un problema
+  assert.match(validateTree(paqueteConRevisor({ enLaRaiz: true })).map((e) => e.motivo).join(' · '), /dos lugares/);
+});
+
+test('T14 Instrucciones_EnSuPaquete_Pasa @story-2.63 @ac-9 @ac-14 — en la carpeta de su paquete pasa, declarada o no; el ejemplo del árbol también', () => {
+  const { validateTree } = require('../lib/packs.js');
+  assert.deepStrictEqual(validateTree(paqueteConRevisor()), [], 'sin declarar: packs/<p>/agents/');
+  assert.deepStrictEqual(validateTree(paqueteConRevisor({ declara: 'revisores' })), [], 'declarada');
+  // el paquete de ejemplo del árbol
+  const ejemplos = path.join(RAIZ, 'examples', 'packs');
+  if (fs.existsSync(ejemplos)) assert.deepStrictEqual(validateTree({ packsDir: ejemplos, agentsDir: path.join(RAIZ, 'agents') }), [], 'examples/packs');
+  // y los paquetes instalados del árbol, si los trae (el árbol armado con el perfil del equipo: bizuit, clients…)
+  assert.deepStrictEqual(validateTree({ packsDir: PACKS_REALES, agentsDir: path.join(RAIZ, 'agents') }), [], 'packs/ del árbol');
+  // el enlazador de piezas toma la misma carpeta: un paquete sin «agents» declarado enlaza los de su agents/
+  const PP = require(path.join(RAIZ, 'scripts', 'lib', 'pack-pieces.js'));
+  const { packsDir, agentsDir } = paqueteConRevisor();
+  const piezas = PP.piecesOf({ packsDir, agentsDir, coreSkillsDir: tmp('packs-skills-'), names: ['acme-x'] });
+  assert.deepStrictEqual(piezas.agents.map((a) => [a.pack, a.name]), [['acme-x', 'acme-x-reviewer.md']]);
+  assert.deepStrictEqual(piezas.errores, []);
+  // y el cargador del pipeline dice esa carpeta como la de los agentes del paquete
+  const { cargarPaquetes, resetCache, BANDERAS } = require('../lib/packs.js');
+  resetCache();
+  const [p] = cargarPaquetes({ packsDir, agentsDir, banderas: BANDERAS });
+  assert.strictEqual(p.agentes, path.join(packsDir, 'acme-x', 'agents'));
+});
+
+// el validador de antes de la regla de la carpeta del paquete: el de main justo antes de que entrara
+const VALIDADOR_ANTERIOR = '3a97d3898d6b5d2bb9426a441feb513bac3d105e';
+test('T15 ClientesMudado_LeenLasDosVersiones @story-2.63 @ac-10 — el paquete con su revisor mudado lo leen el validador anterior y el nuevo', (t) => {
+  const mudado = paqueteConRevisor({ declara: 'agents' });
+  // el validador anterior, sacado de la historia del repo a una carpeta aparte (con el módulo que pide)
+  const leer = (ruta) => spawnSync('git', ['-C', RAIZ, 'show', `${VALIDADOR_ANTERIOR}:${ruta}`], { encoding: 'utf8' });
+  const viejo = leer('skills/tycon-pipeline/scripts/lib/packs.js');
+  // la CI del público baja la historia entera: ahí no tenerla es un rojo, no un salteo
+  if (viejo.status !== 0 && process.env.GITHUB_ACTIONS === 'true') assert.fail(`la CI no trae el commit ${VALIDADOR_ANTERIOR.slice(0, 7)}: ${viejo.stderr}`);
+  if (viejo.status !== 0) return t.skip(`NO MEDIDO: este árbol no tiene la historia con el validador anterior (${VALIDADOR_ANTERIOR.slice(0, 7)})`);
+  const dir = tmp('packs-anterior-');
+  fs.writeFileSync(path.join(dir, 'packs.js'), viejo.stdout);
+  fs.writeFileSync(path.join(dir, 'legacy-names.js'), leer('skills/tycon-pipeline/scripts/lib/legacy-names.js').stdout);
+  const anterior = require(path.join(dir, 'packs.js'));
+  assert.deepStrictEqual(anterior.validateTree(mudado), [], 'el validador anterior');
+  assert.deepStrictEqual(require('../lib/packs.js').validateTree(mudado), [], 'el nuevo');
+  // y el anterior aceptaba el revisor en la raíz, que el nuevo ya no
+  assert.deepStrictEqual(anterior.validateTree(paqueteConRevisor({ enElPaquete: false, enLaRaiz: true })), []);
 });
