@@ -125,6 +125,12 @@ frena "T4e · por --ids de recurso" "az resource show --ids /subscriptions/x/res
 pasa  "T4f · staging con prefijo parecido pasa" "sqlcmd -S $STAGING -Q \"select 1\""
 pasa  "T4g · un comando sin base no dice nada" "git status"
 pasa  "T4h · SQL_SERVER= no es una cadena de conexión" "SQL_SERVER=algo make build"
+pasa  "T4i · el tipo de recurso de una consulta de az graph no es un servidor" "az graph query -q \"Resources | where type =~ 'microsoft.sql/servers/databases' | project name\""
+pasa  "T4j · en az sql server, lo que sigue a -s no es un servidor" "az sql server list -s 0f1e2d3c-1111-2222-3333-444455556666 -o table"
+frena "T4k · en az sql db, -s sigue siendo el servidor" "az sql db list -s acme-sql -g ACME"
+frena "T4l · el servidor de az sql server se sigue leyendo por -n" "az sql server show -n acme-sql -g ACME -s 0f1e2d3c-1111-2222-3333-444455556666"
+frena "T4m · en los grupos de az sql server, -s es el servidor" "az sql server firewall-rule create -s acme-sql -g ACME -n abrir --start-ip-address 1.2.3.4 --end-ip-address 1.2.3.4"
+frena "T4n · la palabra server en otra posición no apaga el -s" "az sql db list -s acme-sql -g ACME --query server"
 
 # ── T6 · la puerta sólo en su forma canónica ──────────────────────────────────────────────────
 # Rojo previo: lista negra de envoltorios → los cinco que la Task 0 vio esquivar pasan.
