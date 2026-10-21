@@ -1,0 +1,355 @@
+{
+  "__doc": "Las citas al registro de incidentes del equipo que el árbol publicado conserva, una por una: archivo, el texto exacto del renglón y el motivo. La mira scripts/tests/team-log-citations.test.js (T15). Una cita nueva se reescribe sin el registro; sólo entra acá si es de una de estas familias.",
+  "allowed": [
+    {
+      "file": "guides/maintaining/publicacion-espejo.md",
+      "text": "| `incident-log` | un enlace o un ancla al registro d",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/hooks/prod-access-guard.js",
+      "text": "l equipo — guides/maintaining/incident-log.md#produccion-sin-permiso-2026-09-15)",
+      "reason": "un archivo del freno de producción: se copia a /opt/tycon y el aviso de arranque lo compara entero contra main, así que no se toca"
+    },
+    {
+      "file": "scripts/metrics/reviewers-cost.js",
+      "text": "-format|advisor-rules-catalog|incident-log|guide-update-proposals|sprint-status|",
+      "reason": "una regla de comportamiento (los nombres de archivo que no son una story) y el caso que la prueba: cambiarla cambia lo que mide el costo de los revisores"
+    },
+    {
+      "file": "scripts/production/production-index.js",
+      "text": "ya bien — guides/maintaining/incident-log.md#case-azure-sql-enters-master-2026-",
+      "reason": "un archivo del freno de producción: se copia a /opt/tycon y el aviso de arranque lo compara entero contra main, así que no se toca"
+    },
+    {
+      "file": "scripts/production/tycon-prod-sql",
+      "text": "tory 6.1 — guides/maintaining/incident-log.md#produccion-sin-permiso-2026-09-15)",
+      "reason": "un archivo del freno de producción: se copia a /opt/tycon y el aviso de arranque lo compara entero contra main, así que no se toca"
+    },
+    {
+      "file": "scripts/production/tycon-prod-sql",
+      "text": "26-09-15 — guides/maintaining/incident-log.md#case-azure-sql-enters-master-2026-",
+      "reason": "un archivo del freno de producción: se copia a /opt/tycon y el aviso de arranque lo compara entero contra main, así que no se toca"
+    },
+    {
+      "file": "scripts/publishing/allowlist.json",
+      "text": "NOTICE, portadas, comunidad, incident-log público): cada uno llega a su destino",
+      "reason": "el exportador y los controles de nombres excluyen el registro del repo del equipo por su ruta: la exclusión tiene que nombrarla mientras el registro exista allá"
+    },
+    {
+      "file": "scripts/publishing/export.js",
+      "text": "s', glob: 'guides/maintaining/incident-log.md', motivo: 'los incidentes del equi",
+      "reason": "el exportador y los controles de nombres excluyen el registro del repo del equipo por su ruta: la exclusión tiene que nombrarla mientras el registro exista allá"
+    },
+    {
+      "file": "scripts/publishing/export.js",
+      "text": "ruta === 'guides/maintaining/incident-log.md') continue;",
+      "reason": "el exportador y los controles de nombres excluyen el registro del repo del equipo por su ruta: la exclusión tiene que nombrarla mientras el registro exista allá"
+    },
+    {
+      "file": "scripts/publishing/internal-history.js",
+      "text": "'incident-log': { re: /incident-log(?:\\.md)?#[\\w.-]",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/publishing/internal-history.js",
+      "text": "or (const f of ['pr-number', 'incident-log', 'work-branch', 'azure-run', 'privat",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/publishing/internal-history.js",
+      "text": "FORMS['incident-log-path'] = { re: /\\bincident-log(?:\\.md",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/publishing/internal-history.js",
+      "text": "if (cp.anchor && /(^|\\/)incident-log\\.md$/.test(p)) continue;   // ese arc",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/publishing/internal-history.js",
+      "text": "'incident-log': 'sacá el caso: decí el error en pre",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/publishing/internal-history.js",
+      "text": "'incident-log-path': 'sacá la ruta al registro: dec",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/publishing/internal-history.json",
+      "text": "\"incident-log\": { \"mode\": \"block\" },",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/publishing/internal-history.json",
+      "text": "\"incident-log\": { \"mode\": \"block\" },",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/publishing/internal-history.json",
+      "text": "\"incident-log-path\": { \"mode\": \"warn\", \"why\": \"la r",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/publishing/new-names.js",
+      "text": "ncidentes (guides/maintaining/incident-log.md, que no se publica). En un guion s",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/publishing/public-copy.js",
+      "text": "&& p === 'guides/maintaining/incident-log.md') continue;",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/publishing/spanish-names.js",
+      "text": "son$/, /^guides\\/maintaining\\/incident-log\\.md$/, /^guides\\/maintaining\\/nombres",
+      "reason": "el exportador y los controles de nombres excluyen el registro del repo del equipo por su ruta: la exclusión tiene que nombrarla mientras el registro exista allá"
+    },
+    {
+      "file": "scripts/publishing/spanish-names.js",
+      "text": "+ 'guides/maintaining/incident-log.md, la lista privada del freno de pub",
+      "reason": "el exportador y los controles de nombres excluyen el registro del repo del equipo por su ruta: la exclusión tiene que nombrarla mientras el registro exista allá"
+    },
+    {
+      "file": "scripts/tests/code-comments.test.js",
+      "text": "'incident-log': j('incident-log.md', '#caso-x'),",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/code-comments.test.js",
+      "text": "'incident-log': 'el registro de incidentes no se pu",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/code-comments.test.js",
+      "text": ".md#caso-x')}\\n`, 'a.js'), [['incident-log', 1]], 'el registro con ancla cuenta",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/code-comments.test.js",
+      "text": "mment').map((f) => f.form), ['incident-log-path'], 'la ruta suelta es su propia",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/evidence-key-collision.test.sh",
+      "text": "evidencia: T11 la entrada del incident-log: NO MEDIDO en la copia (trae un reemp",
+      "reason": "una prueba que lee el registro real con el perfil del equipo y en el público se saltea: cuida que la entrada de su caso siga en el registro"
+    },
+    {
+      "file": "scripts/tests/evidence-key-collision.test.sh",
+      "text": "05' \"$AQUI/guides/maintaining/incident-log.md\" || f11=\"$f11 incident-log\"",
+      "reason": "una prueba que lee el registro real con el perfil del equipo y en el público se saltea: cuida que la entrada de su caso siga en el registro"
+    },
+    {
+      "file": "scripts/tests/evidence-key-collision.test.sh",
+      "text": "za' \"$AQUI/guides/maintaining/incident-log.md\" || f11=\"$f11 regla\"",
+      "reason": "una prueba que lee el registro real con el perfil del equipo y en el público se saltea: cuida que la entrada de su caso siga en el registro"
+    },
+    {
+      "file": "scripts/tests/evidence-key-collision.test.sh",
+      "text": "tory-format pide el id único, incident-log tiene su entrada y README su fila\"",
+      "reason": "una prueba que lee el registro real con el perfil del equipo y en el público se saltea: cuida que la entrada de su caso siga en el registro"
+    },
+    {
+      "file": "scripts/tests/export.test.js",
+      "text": "es/a.md', 'guides/maintaining/incident-log.md',",
+      "reason": "el exportador y los controles de nombres excluyen el registro del repo del equipo por su ruta: la exclusión tiene que nombrarla mientras el registro exista allá"
+    },
+    {
+      "file": "scripts/tests/export.test.js",
+      "text": "'El caso: `guides/maintaining/incident-log.md#x-2026-01-01` y `guides/maintainin",
+      "reason": "el exportador y los controles de nombres excluyen el registro del repo del equipo por su ruta: la exclusión tiene que nombrarla mientras el registro exista allá"
+    },
+    {
+      "file": "scripts/tests/fixtures/layer-lab-allowlist.json",
+      "text": "ashboard/, guides/maintaining/incident-log.md, skills/projects/, los packs/ de o",
+      "reason": "el exportador y los controles de nombres excluyen el registro del repo del equipo por su ruta: la exclusión tiene que nombrarla mientras el registro exista allá"
+    },
+    {
+      "file": "scripts/tests/forms-to-version.test.sh",
+      "text": "versionar: T10 la entrada del incident-log: NO MEDIDO en el público (trae un ree",
+      "reason": "una prueba que lee el registro real con el perfil del equipo y en el público se saltea: cuida que la entrada de su caso siga en el registro"
+    },
+    {
+      "file": "scripts/tests/forms-to-version.test.sh",
+      "text": "21' \"$AQUI/guides/maintaining/incident-log.md\" \\",
+      "reason": "una prueba que lee el registro real con el perfil del equipo y en el público se saltea: cuida que la entrada de su caso siga en el registro"
+    },
+    {
+      "file": "scripts/tests/forms-to-version.test.sh",
+      "text": "&& ok \"…y el incident-log tiene la entrada del caso\" \\",
+      "reason": "una prueba que lee el registro real con el perfil del equipo y en el público se saltea: cuida que la entrada de su caso siga en el registro"
+    },
+    {
+      "file": "scripts/tests/forms-to-version.test.sh",
+      "text": "-09-21\" en guides/maintaining/incident-log.md'",
+      "reason": "una prueba que lee el registro real con el perfil del equipo y en el público se saltea: cuida que la entrada de su caso siga en el registro"
+    },
+    {
+      "file": "scripts/tests/harness-place.test.js",
+      "text": ")\\/|^guides\\/((maintaining\\/)?incident-log\\.md|decisions\\/|codex-migration\\.md)|",
+      "reason": "el exportador y los controles de nombres excluyen el registro del repo del equipo por su ruta: la exclusión tiene que nombrarla mientras el registro exista allá"
+    },
+    {
+      "file": "scripts/tests/harness-place.test.js",
+      "text": "board/x', 'guides/maintaining/incident-log.md', 'guides/decisions/x.md', 'script",
+      "reason": "el exportador y los controles de nombres excluyen el registro del repo del equipo por su ruta: la exclusión tiene que nombrarla mientras el registro exista allá"
+    },
+    {
+      "file": "scripts/tests/internal-history-guard.test.js",
+      "text": "'incident-log': j('incident-log.md', '#caso-x'),",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/internal-history-guard.test.js",
+      "text": "'incident-log': 'el registro de incidentes (`guides",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/internal-history-guard.test.js",
+      "text": "ides/a.md': `# Guía\\n\\n${RED['incident-log']}\\n` });   // sin `git add`: sólo lo",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/internal-history-guard.test.js",
+      "text": "rr}`, /guides\\/a\\.md:3\\b[^\\n]*incident-log/);",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/internal-history-guard.test.js",
+      "text": "const hostile = `${'](a/incident-log'.repeat(40000)}\\n`;",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/internal-history-guard.test.js",
+      "text": "\\^\\)\\\\?s?\\]\\*/.test(ih.FORMS['incident-log'].re.source), 'la expresión no trae u",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/internal-history-guard.test.js",
+      "text": "vado.md', 'guides/maintaining/incident-log.md'].includes(p), conventions: ['task",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/internal-history-guard.test.js",
+      "text": "'El caso: `guides/maintaining/incident-log.md', '#caso-x`.'), 'guides/a.md'), []",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/internal-history-guard.test.js",
+      "text": "assert.match(b, /incident-log\\.md/, 'sigue diciendo dónde vive el c",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/internal-history-guard.test.js",
+      "text": "assert.ok(!/referencialo: incident-log#/.test(blocks), 'el control de los bl",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/internal-history-guard.test.js",
+      "text": "same('incident-log', j('[caso](incident-log.md', '#caso-",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/internal-history-guard.test.js",
+      "text": "other('incident-log', j('incident-log.md', '#caso-x'), j(",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/internal-history-guard.test.js",
+      "text": "IZ, 'guides', 'maintaining', 'incident-log.md') : null;",
+      "reason": "una prueba que lee el registro real con el perfil del equipo y en el público se saltea: cuida que la entrada de su caso siga en el registro"
+    },
+    {
+      "file": "scripts/tests/internal-history-guard.test.js",
+      "text": "ía', '## Una sección', j('ver incident-log.md', '#caso-uno.'), '```', '## no es",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/internal-history-guard.test.js",
+      "text": "## Falso tres', '```', j('ver incident-log.md', '#caso-ñandú-2026'), '## Última'",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/new-names.test.js",
+      "text": "'guides/maintaining/incident-log.md': '# Incidentes\\n',",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/new-names.test.js",
+      "text": "ert.match(r.out.slice(b, c), /incident-log/, '(b) dice dónde vive el caso');",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/new-names.test.js",
+      "text": "cs/x.md', 'guides/maintaining/incident-log.md', 'onboarding/x.md', 'scripts/cont",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/new-names.test.js",
+      "text": ".arnes, { 'guides/maintaining/incident-log.md': '# Incidentes\\n\\nEl de AcmeCorp.",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/new-names.test.js",
+      "text": "commit(l.arnes, 'el incident-log con un nombre (no sale: exclusión fij",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/new-names.test.js",
+      "text": ", glob: 'guides\\/maintaining\\/incident-log\\.md'.*\\n/m, '');",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/new-names.test.js",
+      "text": "a sacar la exclusión fija del incident-log');",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/new-names.test.js",
+      "text": "(r.out, /guides\\/maintaining\\/incident-log\\.md:3/);",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/public-copy.test.js",
+      "text": "xt: lines('[1](../maintaining/incident-log.md#caso) [2](./y.md?plain=1) [3](../.",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/public-copy.test.js",
+      "text": "al(seen, ['guides/maintaining/incident-log.md', 'guides/bizuit/y.md', 'scripts/t",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/public-copy.test.js",
+      "text": "'guides/maintaining/incident-log.md', 'guides/a.md', 'inbox', 'skills/",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/public-copy.test.js",
+      "text": "'El caso: `guides/maintaining/incident-log.md#un-caso-2026-01-01`.',",
+      "reason": "la forma `incident-log` del freno de historia interna (scripts/publishing/internal-history.js), su configuración, sus mensajes o su prueba: el freno tiene que seguir reconociéndola"
+    },
+    {
+      "file": "scripts/tests/validator-verdict.test.sh",
+      "text": "['T2h otra story con «incident-log» en el nombre', 'Validá specs/story-3",
+      "reason": "una regla de comportamiento (los nombres de archivo que no son una story) y el caso que la prueba: cambiarla cambia lo que mide el costo de los revisores"
+    },
+    {
+      "file": "skills/tycon-pipeline/scripts/tests/unit.test.js",
+      "text": "iz, 'guides', 'maintaining', 'incident-log.md'), 'utf8');",
+      "reason": "una prueba que lee el registro real con el perfil del equipo y en el público se saltea: cuida que la entrada de su caso siga en el registro"
+    },
+    {
+      "file": "skills/tycon-pipeline/scripts/tests/unit.test.js",
+      "text": "026-10-07$/m, 'la entrada del incident-log existe');",
+      "reason": "una prueba que lee el registro real con el perfil del equipo y en el público se saltea: cuida que la entrada de su caso siga en el registro"
+    },
+    {
+      "file": "skills/tycon-pipeline/scripts/tests/unit.test.js",
+      "text": "assert.ok(!/incident-log(?:\\.md)?#/.test(ficha), 'sin enlazar",
+      "reason": "una prueba que lee el registro real con el perfil del equipo y en el público se saltea: cuida que la entrada de su caso siga en el registro"
+    }
+  ]
+}

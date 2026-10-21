@@ -87,10 +87,6 @@
       "transform": "internal-blocks"
     },
     {
-      "path": "guides/maintaining/incident-log.md",
-      "transform": "sinteticos"
-    },
-    {
       "path": "guides/integrations/instinct-mining.md",
       "transform": "not-in-copy"
     },

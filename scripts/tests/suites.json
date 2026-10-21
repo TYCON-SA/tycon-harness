@@ -2224,6 +2224,12 @@
       "requiere": []
     },
     {
+      "__nota": "El árbol que se publica no cita el registro de incidentes del equipo: cada renglón que lo nombra está en la lista de excepciones (scripts/tests/fixtures/team-log-citations-allowed.json), una cita por entrada con su motivo, y una excepción que ya no coincide hace fallar.",
+      "raiz": "arnes",
+      "ruta": "tests/team-log-citations.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "El comando que dice si un cambio toca sólo comentarios (scripts/publishing/comment-only-diff.js): reescribir comentarios y líneas en blanco sale 0; cambiar código, una cadena, agregar o borrar un archivo, un lenguaje sin lector, o un archivo que se copia al freno de producción, sale 1. Repos de juguete, en segundos.",
       "raiz": "arnes",
       "ruta": "tests/comment-only-diff.test.js",

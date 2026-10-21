@@ -9,7 +9,6 @@ git, pruebas, frenos) siguen en el índice.
 | Escribir o editar guías, skills, steps o material del sitio — cómo nombrar Claude/Codex/el agente | `guides/maintaining/criterio-tres-claude.md` |
 | Saber cuánto contexto carga cada sesión y cada revisor, y de qué está hecho | `node scripts/tools/context-budget.js [--measured]` — `--measured` da el piso REAL de los lanzamientos, no el estimado |
 | Upgrade de BMAD, debug de incompatibilidad con advisors | `guides/maintaining/bmad-contract.md` |
-| Antes de retirar/relajar una regla, hook o advisor — ver qué incidente lo motivó | `guides/maintaining/incident-log.md` |
 | Cambiar una regla que tiene que estar SIEMPRE cargada en el `CLAUDE.md` de todos (estilo de respuesta, comunicación), o agregar un bloque nuevo | `claude-md-blocks/` — editar el `.md` y commitear; se propaga solo en el próximo `SessionStart` |
 | Entender por qué el bloque de Azure DevOps dice lo que dice —antes de podarlo, relajarlo o discutirlo— · el detalle de los seis casos con sus comandos | `guides/integrations/ado-cola-y-listados.md` |
 | Tocar la regla de estilo de respuesta, el medidor `response-style-meter.js`, o el formato de reporte de un agente · entender por qué el bloque dice lo que dice antes de podarlo | `guides/response-style.md` |
