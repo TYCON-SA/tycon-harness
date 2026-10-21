@@ -719,6 +719,21 @@ test('T19h Bench_FolderLinksAreJunctions — ningún caso que corre en Windows e
   assert.ok(junctions >= 60, `el lector no encontró los junctions de los casos GIT-C4 (${junctions})`);
 });
 
+test('T19i LiveFire_SessionThatDidNotWork_IsUnmeasuredNotSixReds — una sesión sin cuota no se cuenta como hooks que no disparan', () => {
+  const { sessionDidNotWork } = require(LIVE_FIRE);
+  const quota = { status: 1, stderr: 'hook: SessionStart\nERROR: You’ve hit your usage limit. Try again later.\nERROR: otra\n' };
+  assert.strictEqual(sessionDidNotWork(quota, new Set(['SessionStart', 'UserPromptSubmit'])), 'ERROR: You’ve hit your usage limit. Try again later.',
+    'el motivo es la primera línea de error de la herramienta');
+  assert.strictEqual(sessionDidNotWork({ status: 3, stderr: 'nada útil' }, new Set()), null, 'sin un error de la cuenta, lo que falte es rojo');
+  assert.strictEqual(sessionDidNotWork({ status: 1, stderr: 'ERROR: hook PreToolUse exited with code 2' }, new Set(['SessionStart'])), null,
+    'un error que no nombra la cuenta (un hook que frena) puede ser el arnés: rojo');
+  assert.strictEqual(sessionDidNotWork({ status: null, signal: 'SIGTERM', stderr: 'ERROR: usage limit' }, new Set()), null,
+    'un corte por tiempo puede ser un hook colgado: rojo');
+  assert.strictEqual(sessionDidNotWork({ status: 0, stderr: '' }, new Set()), null, 'una sesión que terminó bien sí midió: si falta un marcador, es rojo');
+  assert.strictEqual(sessionDidNotWork({ status: 1, stderr: 'ERROR: usage limit' }, new Set(['PreToolUse'])), null,
+    'si el agente llegó a correr un comando, la sesión trabajó: lo que falte es del arnés');
+});
+
 test.after(() => {
   for (const d of temporaries) { try { fs.rmSync(d, { recursive: true, force: true }); } catch (_) { /* un temporal que no se pudo borrar no cambia el veredicto */ } }
 });

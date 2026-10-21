@@ -163,6 +163,18 @@ function runCodex(sandbox, markerDir) {
   );
 }
 
+// Una sesión que la herramienta cortó por la CUENTA (sin cuota, sin sesión iniciada, el modelo no disponible) antes de
+// correr un comando no midió los hooks: sus marcadores faltan porque el agente no trabajó, y contarlos como rojos del
+// arnés culparía al arnés del tope de uso de una cuenta. Sólo cuenta una línea de error que
+// nombre la cuenta: cualquier otro error, un corte por tiempo o un hook que frena siguen saliendo rojos, porque pueden
+// ser el arnés. Devuelve esa línea, o null.
+const ACCOUNT_ERROR = /usage limit|quota|rate limit|credit balance|not logged in|log ?in again|authenticat|unauthorized|\b40[13]\b|\b429\b|model .*(not found|not available|does not exist)/i;
+function sessionDidNotWork(res, fired) {
+  if (!res || typeof res.status !== 'number' || res.status === 0 || res.signal || fired.has('PreToolUse')) return null;
+  const errorLine = String(res.stderr || '').split('\n').map((l) => l.trim()).find((l) => /^error\b/i.test(l) && ACCOUNT_ERROR.test(l));
+  return errorLine ? errorLine.slice(0, 300) : null;
+}
+
 function main() {
   // `--report-dir`: dónde escribiría el reporte esta máquina, sin abrir una sesión (lo prueba harness-parity.test.sh)
   if (argv.includes('--report-dir')) { process.stdout.write(OUT_DIR); process.exit(0); }
@@ -180,11 +192,14 @@ function main() {
   const markers = fs.readdirSync(markerDir).filter((f) => f.endsWith('.json'));
   const fired = new Set(markers.map((f) => f.replace(/\.json$/, '')));
   const failures = [];
+  const unmeasured = PROVE ? null : sessionDidNotWork(res, fired);
 
   const expected = [...EVENTS];
   if (PROVE) expected.push('CANARY'); // plantado a propósito: DEBE faltar
 
+  if (unmeasured) failures.push(`NO MEDIDO: la sesión de ${TOOL} no llegó a correr un comando (${unmeasured}) — es la prueba, no el arnés: se repite cuando la sesión ande`);
   for (const ev of expected) {
+    if (unmeasured) break;
     if (!fired.has(ev)) failures.push(`hook de ${ev} NO SE DISPARÓ (sin marcador)`);
     else console.log(`✅ ${ev} disparó`);
   }
@@ -200,6 +215,7 @@ function main() {
   for (const [ev, mode] of Object.entries(INJECT_CONTRACT[TOOL] || {})) {
     const seen = finalText.includes(`E3INJ-${ev}`);
     injection[ev] = seen ? 'inyectado' : 'NO-inyectado';
+    if (unmeasured) continue;
     if (mode === 'declared-no') {
       if (seen) console.log(`📏 inyección ${ev}: APARECIÓ — el contrato medido decía que no inyecta; ¿cambió la herramienta? (informativo, revisar)`);
       else console.log(`✅ inyección ${ev}: no inyecta, conforme al contrato declarado (medido 2026-08-22 en ambas)`);
@@ -228,7 +244,7 @@ function main() {
   const sessionTail = failures.length
     ? { stdout: String(res.stdout || '').slice(-3000), stderr: String(res.stderr || '').slice(-2000), exit: res.status }
     : undefined;
-  fs.writeFileSync(outPath, JSON.stringify({ ts: new Date().toISOString(), tool: TOOL, prove: PROVE, fired: [...fired], injection, failures, session: sessionTail, payloads: evidence }, null, 2) + '\n');
+  fs.writeFileSync(outPath, JSON.stringify({ ts: new Date().toISOString(), tool: TOOL, prove: PROVE, fired: [...fired], injection, failures, unmeasured: unmeasured || undefined, session: sessionTail, payloads: evidence }, null, 2) + '\n');
   console.log(`payloads capturados + veredicto: ${outPath}`);
 
   try { fs.rmSync(sandbox, { recursive: true, force: true }); } catch (_) {}
@@ -251,6 +267,6 @@ function main() {
 }
 
 // Requerirlo no abre una sesión: el marcador y su registro se prueban sin gastar una (scripts/tests/bench-portable.test.js).
-module.exports = { markScript, hookEntry, buildHooksConfig };
+module.exports = { markScript, hookEntry, buildHooksConfig, sessionDidNotWork };
 
 if (require.main === module) main();
