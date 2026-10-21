@@ -2934,6 +2934,36 @@ function guardarCambioDeCorrida(archivo, dump) {
   }
 }
 
+/**
+ * Una ejecución que tocó archivos y no completó ningún paso después del arranque trabajó por fuera del pipeline: el
+ * cierre lo dice en una línea y lo deja en bypass.log, para que se vea en el momento y en el tablero. No frena nada.
+ * «Tocó archivos» es lo que registró el editor más lo que git ve cambiado contra el commit de arranque; lo de
+ * `.advisors/` es del propio pipeline y no cuenta.
+ */
+function avisarCierreSinPasos(marker) {
+  try {
+    const arranque = (s) => String(s).startsWith('0');
+    if ((marker.stepsCompleted || []).some((s) => !arranque(s))) return;
+    const repo = marker.repoPath && fs.existsSync(marker.repoPath) ? marker.repoPath : null;
+    const mostrar = (f) => (repo && f.startsWith(repo + path.sep) ? path.relative(repo, f) : f);
+    const tocados = new Set((marker.filesTouched || []).map(String));
+    if (repo && marker.baseSha) {
+      const { spawnSync } = require('child_process');
+      const git = (args) => spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', timeout: 10000 });
+      for (const r of [git(['diff', '--name-only', marker.baseSha]), git(['ls-files', '--others', '--exclude-standard'])]) {
+        if (r.error || r.status !== 0) continue;
+        for (const f of String(r.stdout).split('\n').filter(Boolean)) tocados.add(path.join(repo, f));
+      }
+    }
+    const archivos = [...tocados].map(mostrar).filter((f) => !f.split(/[\\/]/).includes('.advisors'));
+    if (!archivos.length) return;
+    const desde = Date.parse(marker.startedAt || '');
+    const minutos = Number.isFinite(desde) ? Math.max(1, Math.round((Date.now() - desde) / 60000)) : null;
+    appendLog('bypass.log', { kind: 'RUN_CLOSED_WITHOUT_STEPS', storyId: marker.storyId, files: archivos.length, sample: archivos.slice(0, 5), minutes: minutos });
+    process.stderr.write(`⚠️  la ejecución de la ${marker.storyId} tocó ${archivos.length} archivo(s) en ${minutos === null ? '?' : minutos} min y no anotó ningún paso después del arranque: el trabajo se hizo por fuera del pipeline (queda en bypass.log)\n`);
+  } catch { /* el aviso nunca frena el cierre */ }
+}
+
 function cmdClear() {
   // Timing dump automático: el cierre del
   // pipeline archiva el marker completo + los gates de la sesión ANTES de borrar —
@@ -3028,6 +3058,7 @@ function cmdClear() {
         fs.writeFileSync(path.join(target, `timing-dump-${ts}.json`), JSON.stringify(dumpFinal, null, 2), 'utf8');
       }
       process.stderr.write(`[marker] timing dump archivado: timing-history/${safeStory}-${ts}.json\n`);
+      avisarCierreSinPasos(marker);
       // Línea de costo al cierre — mecánica, siempre, sin flags. Compara contra la vara del
       // historial para que el número signifique algo sin tener que ir a buscarlo.
       if (costo.spawns) {
