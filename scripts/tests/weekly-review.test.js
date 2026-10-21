@@ -11,6 +11,8 @@ const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const REVIEW = path.join(ROOT, 'scripts', 'nightly', 'weekly-review', 'weekly-review.js');
+// el `generated_by` del latido, el mismo que escribe retro-heartbeat.js
+const { HEARTBEAT } = require(path.join(ROOT, 'scripts', 'lib', 'retro-coverage.js'));
 const SUMMARY = path.join(ROOT, 'scripts', 'nightly', 'dependencies', 'daily-summary.js');
 const GUIDE = path.join(ROOT, 'guides', 'maintaining', 'mantener-el-arnes.md');
 
@@ -61,7 +63,7 @@ function retros(list) {
   const files = {};
   for (const r of list) {
     files[`.dashboard/retros/metrics-${r.sha.slice(0, 7)}.json`] = JSON.stringify({ schema_version: '2.0', repo: '/agente/x', merge_commit: r.sha,
-      story: r.story || null, generated_by: r.by || 'retro-heartbeat.js', ...(r.learnings ? { learnings: r.learnings } : {}), metrics: {} });
+      story: r.story || null, generated_by: r.by || HEARTBEAT, ...(r.learnings ? { learnings: r.learnings } : {}), metrics: {} });
   }
   return repo([{ date: '2026-10-18T23:00:00', branch: 'chore/retros', files }]).dir;
 }
