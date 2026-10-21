@@ -3,23 +3,22 @@
 /**
  * ¿Un merge de SÓLO DOCUMENTACIÓN construye, despliega y pide producción?
  *
- * 🔴 POR QUÉ EXISTE (2026-09-24).
+ * 🔴 POR QUÉ EXISTE.
  *
- * Ese día un pull request del backend de un producto —una story: su spec, la evidencia del pipeline
- * y la guía del tester; 29 archivos, NINGUNO de código— entró a `main` y disparó la corrida 10998:
- * compiló, corrió las pruebas, desplegó a staging, subió la versión a 1.0.248 y encoló el pedido de
- * aprobación de PRODUCCIÓN (corrida 11002). Nadie lo pidió: `requestedBy` era el propio Azure. El día
- * anterior había pasado lo mismo con el sitio de Totora, y se parchó A MANO ese pipeline —o sea que
- * el arreglo vivía en un repo y el problema en todos.
+ * Un pull request del backend de un producto —una story: su spec, la evidencia del pipeline y la
+ * guía del tester; decenas de archivos, NINGUNO de código— que entra a `main` puede disparar una
+ * corrida que compila, corre las pruebas, despliega a staging, sube la versión y encola el pedido
+ * de aprobación de PRODUCCIÓN. Nadie lo pidió: `requestedBy` es el propio Azure. Parchar ese
+ * pipeline A MANO deja el arreglo en un repo y el problema en todos.
  *
  * Dos causas, y ninguna es de un repo:
- *   1. Los pipelines con lista de rutas (`trigger.paths.include`) llevan `.tycon/**`. Entró el
- *      2026-09-01 "como los otros cuatro" —por paridad, no por necesidad: ningún paso del build lee
- *      `.tycon/`, y `affected-forms.js` lo declara "no afecta al paquete" desde el 04-09— y el
- *      pipeline TYCON escribe `.tycon/runtime-waivers.jsonl` en casi toda story. O sea: casi todo merge
- *      de documentación construye. Medido ese día: 11 pipelines.
+ *   1. Los pipelines con lista de rutas (`trigger.paths.include`) que llevan `.tycon/**`. Entra
+ *      "como los otros" —por paridad, no por necesidad: ningún paso del build lee `.tycon/`, y
+ *      `affected-forms.js` lo declara "no afecta al paquete"— y el pipeline TYCON escribe
+ *      `.tycon/runtime-waivers.jsonl` en casi toda story. O sea: casi todo merge de documentación
+ *      construye.
  *   2. Los pipelines SIN lista de rutas construyen con cualquier commit: para Azure, sin filtro la
- *      raíz está incluida. Los sitios de los productos estaban así.
+ *      raíz está incluida. Los sitios de los productos son así.
  *
  * Un pedido de producción que no trae código no es inofensivo: quema una aprobación humana, ocupa un
  * carril del grupo de agentes, y quien aprueba tiene que averiguar qué trae —o aprueba de más.
@@ -32,8 +31,8 @@
  * el mismo pipeline TIENE que disparar con código; un filtro que apaga todo también está roto, y sin
  * esta mitad un `include` vacío saldría verde.
  *
- * 🔴 LAS REGLAS DE AZURE que simula (learn.microsoft.com › pipelines › repos › azure-repos-git, versión
- * del 2026-08-07; citadas para que nadie tenga que confiar en la memoria del autor):
+ * 🔴 LAS REGLAS DE AZURE que simula (learn.microsoft.com › pipelines › repos › azure-repos-git;
+ * citadas para que nadie tenga que confiar en la memoria del autor):
  *   · «If you don't set path filters, then the root folder of the repo is implicitly included by default.»
  *   · «If you exclude a path, you cannot also include it unless you qualify it to a deeper folder.»
  *     → entre un include y un exclude que cubren el mismo archivo gana el MÁS ESPECÍFICO, y a igual
@@ -50,12 +49,10 @@
  *     veredicto del CI —si el CI no construye por documentación, producción no se pide.
  *   · ramas, `batch`, etiquetas y el bloque `pr:`: otra pregunta, otro control.
  *   · un repo que legítimamente construya con documentación (un sitio de docs): hoy no hay ninguno entre
- *     los productos. El día que aparezca, se declara acá con motivo y fecha —no se afloja el control
- *     para todos.
+ *     los productos. Si aparece, se declara acá con motivo —no se afloja el control para todos.
  *   · el pipeline de PUBLICACIÓN del arnés (pipelines/azure-pipelines-public-leak-check.yml, en el repo del
- *     equipo), declarado el 2026-10-04 (story 8.18): no construye, no despliega ni pide producción —hoy
- *     verifica que lo publicado no filtre nada privado—, y desde 2026-10-13 un merge no lo dispara
- *     (`trigger: none`). No está en product-parity.json; con --file da 2 (no tiene qué medir), y
+ *     equipo): no construye, no despliega ni pide producción —verifica que lo publicado no filtre
+ *     nada privado—, y un merge no lo dispara (`trigger: none`). No está en product-parity.json; con --file da 2 (no tiene qué medir), y
  *     trigger-without-docs.test.sh lo deja fijado.
  *
  * Los repos salen de `product-parity.json` (la única lista de qué pipelines son "los productos"; sin --config, la de la
@@ -66,7 +63,7 @@
  *       node check-trigger-without-docs.js --file <azure-pipelines.yml> [--file …]   (un YAML suelto)
  *       node check-trigger-without-docs.js --repo <dir> --changed <archivo> […]  (¿estos archivos disparan la CI de ese
  *         repo? Lee sus azure-pipelines*.yml de origin/main; 0 no dispara · 1 dispara · 2 no se pudo saber)
- * (story 8.9, tanda B3a: --root y --file tenían nombre en castellano; el viejo sigue andando hasta el retiro)
+ * (--root y --file tienen un nombre viejo en castellano que sigue andando hasta el retiro)
  * Sale 0 ningún pipeline medido construye por documentación · 1 alguno construye (o no construye ni
  * con código) · 2 no pudo medir lo suficiente para opinar (o llegó una opción con su nombre viejo y el nuevo a la vez).
  */
@@ -75,7 +72,7 @@ const path = require('path');
 const cp = require('child_process');
 const os = require('os');
 const { bloqueRaiz, normalizarGrupo, configPorDefecto } = require('./check-product-parity.js');
-// Las opciones renombradas a inglés (story 8.9, tanda B3a): el nombre viejo sigue andando hasta el retiro. El traductor
+// Las opciones renombradas a inglés: el nombre viejo sigue andando hasta el retiro. El traductor
 // vive al lado y viaja con este archivo en el artefacto arnes-ci.
 const { aliasLegacyOptions, LegacyOptionsError } = (() => {
   try { return require('./legacy-options.js'); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') process.stderr.write(`⚠️  legacy-options.js no cargó (${e && e.message}): los nombres viejos de este guion no se traducen\n`); return { aliasLegacyOptions: (argv) => argv, LegacyOptionsError: Error }; }
@@ -83,13 +80,12 @@ const { aliasLegacyOptions, LegacyOptionsError } = (() => {
 
 /**
  * El juego de archivos de un merge de SÓLO documentación. No es una lista inventada: son las rutas
- * de un pull request del backend de un producto del equipo (2026-09-24, 29 archivos y 0 de código — guides/maintaining/incident-log.md#merge-de-solo-docs-que-pide-produccion-2026-09-24), más lo que
+ * de un pull request del backend de un producto del equipo (29 archivos y 0 de código), más lo que
  * toca un commit de documentación en un sitio o en un repo sin pipeline TYCON. Cada entrada es algo
  * que el arnés o una persona ESCRIBE sin cambiar una línea de lo que se construye.
  *
  * 🔴 Lo que NO está, y por qué: `pruebas-pendientes.json` y las declaraciones de vulnerabilidades no
- * cambian el paquete, pero SÍ el veredicto (borrar una deuda tiene que volver a juzgar —caso del pull
- * request 2984 de los formularios de un producto del equipo, 2026-09-05 — guides/maintaining/incident-log.md#deuda-de-pruebas-borrada-sin-pagarla-2026-09-05), así que un merge que las toca DEBE construir. Y `azure-pipelines*.yml`
+ * cambian el paquete, pero SÍ el veredicto (borrar una deuda tiene que volver a juzgar), así que un merge que las toca DEBE construir. Y `azure-pipelines*.yml`
  * tampoco: un cambio al pipeline tiene que disparar una corrida.
  */
 const MERGE_SOLO_DOCS = [
@@ -351,7 +347,7 @@ function leerPublicado(repoDir, archivo, avisos, etiqueta) {
   } catch (_) { return null; }
 }
 
-// story 8.10.3 (AC 3): la copia pública trae un product-parity.json SIN productos, a propósito (los del equipo no viajan).
+// La copia pública trae un product-parity.json SIN productos, a propósito (los del equipo no viajan).
 // Sólo una marca explícita —`sin_productos` con su motivo y sin grupos— da 0 diciendo que no se comparó nada; grupos vacíos
 // sin la marca siguen siendo «no se midió nada» (2), y la marca con grupos es una contradicción (2).
 function sinProductosAProposito(cfg) {
@@ -422,8 +418,8 @@ function main(argv0) {
       else console.log(sinProductos.msg);
       return sinProductos.rc;
     }
-    // Sin raíz declarada no se mide nada, y eso se dice: hasta la story 8.3 acá había la carpeta de
-    // UNA máquina como último recurso, que en cualquier otra medía cero repos en silencio.
+    // Sin raíz declarada no se mide nada, y eso se dice: usar la carpeta de UNA máquina como último
+    // recurso mediría cero repos en silencio en cualquier otra.
     const raizDeclarada = o.raiz || cfg.raiz_por_defecto;
     if (!raizDeclarada) { console.log('🔴 sin raíz de repos: pasá --root <carpeta> o declará raiz_por_defecto en la configuración — no se midió nada, y eso no es «todo bien»'); return 2; }
     const raiz = expandir(raizDeclarada);

@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 'use strict';
-// new-names.js — el freno de nombres reales NUEVOS en lo que se publica (épica 8, story 8.10 · 2026-09-28)
+// new-names.js — el freno de nombres reales NUEVOS en lo que se publica
 //
-// POR QUÉ EXISTE: el núcleo se escribe sin nombres reales (decisión del 2026-09-28) y hasta hoy eso lo cuidaba sólo
-// quien escribía. Medido el último mes: la mitad de los commits que tocaron archivos que salen en la copia pública
-// metió un nombre (2.803 menciones netas en 30 días). La tabla de reemplazos del exportador los tapa al publicar, pero
-// sólo mientras esté completa; y limpiar lo ya escrito no dura si el mes siguiente entra otro tanto. Este freno corre al
-// commitear (y en el pull request del arnés) y no deja entrar un nombre NUEVO en un archivo que sale.
+// POR QUÉ EXISTE: el núcleo se escribe sin nombres reales, y sin freno eso lo cuidaría sólo quien escribe. La tabla
+// de reemplazos del exportador los tapa al publicar, pero sólo mientras esté completa; y limpiar lo ya escrito no dura
+// si después entra otro tanto. Este freno corre al commitear (y en el pull request del arnés) y no deja entrar un nombre NUEVO en un archivo que sale.
 //
 // QUÉ MIRA, archivo por archivo, «antes» contra «después»:
 //   · DESPUÉS = el índice que git le pasa al hook (`GIT_INDEX_FILE`: con `git commit -a` o `git commit <ruta>` no es el
@@ -14,7 +12,7 @@
 //   · Qué sale y con qué contenido lo decide el EXPORTADOR (`whatShips` de export.js): la misma lista blanca,
 //     exclusiones fijas, `afuera` privados, revisores de paquete y transformaciones que arman la copia. Cada foto se
 //     clasifica con su propia configuración (lo que salía antes, con la de antes); la lista de nombres es siempre la
-//     del después (AC 9: sumar un término no hace frenar las menciones que ya estaban).
+//     del después (sumar un término no hace frenar las menciones que ya estaban).
 //   · Neto: una categoría y texto (sin distinguir caja) que aparece más veces después que antes —en un merge, más que
 //     en CUALQUIERA de los padres—. Retocar, mover o renombrar lo que ya estaba no frena: así se apaga un freno.
 //   · Además: los nombres pegados (`<Término>Backend`, la regla del exportador), la ruta de un archivo nuevo, una
@@ -32,13 +30,13 @@
 // deja una línea de conteos —nunca un texto encontrado— en ~/.claude/.tycon-pipeline/new-names.jsonl y en el registro
 // de frenos.
 //
-// EN EL REPO UNIDO (story 8.18: el arnés con agent-skills adentro) no hay «otro repo»: el pre-commit corre el freno una
+// EN EL REPO UNIDO (el arnés con agent-skills adentro) no hay «otro repo»: el pre-commit corre el freno una
 // vez por fuente sobre la misma raíz, cada corrida mira lo de SU fuente lógica (por ruta) y cada hallazgo sale una vez.
 // Un rango cuya base es de antes de la unión compara la mitad que esa base no trae con su propia historia.
 //
-// EN EL ÁRBOL QUE ES LA FORMA PUBLICADA (story 8.26, tanda H1c). Quien mantiene el arnés commitea en un clon del repo
-// PÚBLICO. Ese árbol no trae la lista, la tabla ni el perfil —son privados—, y el freno callaba («no hay lista por
-// diseño»): un nombre real se veía recién al empujar, con el commit ya hecho. Ahí corre un modo aparte:
+// EN EL ÁRBOL QUE ES LA FORMA PUBLICADA. Quien mantiene el arnés commitea en un clon del repo PÚBLICO. Ese árbol no
+// trae la lista, la tabla ni el perfil —son privados—, y sin un modo aparte el freno callaría («no hay lista por
+// diseño»): un nombre real se vería recién al empujar, con el commit ya hecho. Ahí corre un modo aparte:
 //   · CUÁNDO: el árbol que se commitea trae scripts/setup/public-remotes.json (sólo existe en la copia publicada) y no
 //     trae lista propia. Es una señal positiva: «sin lista ni perfil» también lo cumple cualquier laboratorio de prueba.
 //     La forma es la que el árbol ERA —el commit de antes; el índice, sólo si no hay ninguno—: un commit no cambia de
@@ -72,7 +70,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
+// la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -92,19 +90,19 @@ const CONFIG = {
   denied: 'scripts/publishing/denylist.json',
   exporter: 'scripts/publishing/export.js',
   ceiling: 'scripts/publishing/names-ceiling.json',
-  parity: 'scripts/ci/product-parity.json',   // su ruta de antes de la tanda D1 sale del mapa (legacyPathsOf)
+  parity: 'scripts/ci/product-parity.json',   // su ruta anterior sale del mapa (legacyPathsOf)
   profile: 'team-profile.json',
-  legacyProfile: 'perfil-equipo.json',   // el nombre de antes del perfil: sigue diciendo «este árbol es del equipo»
+  legacyProfile: 'perfil-equipo.json',   // el nombre anterior del perfil: sigue diciendo «este árbol es del equipo»
 };
 /** El perfil que trae `dir` (el nombre de hoy primero), o undefined. */
 const profileIn = (dir) => [CONFIG.profile, CONFIG.legacyProfile].find((n) => fs.existsSync(path.join(dir, n)));
 const hasProfile = (dir) => Boolean(profileIn(dir));
-// El exportador se mudó en la tanda C2 de la story 8.9: en una foto de antes vive en su ruta vieja, que sale del mapa
+// En una foto de antes de la mudanza, el exportador vive en su ruta vieja, que sale del mapa
 // de renombres —nunca escrita acá—. Sin mapa (la copia pública) no hay rutas viejas.
 const legacyNames = require('../lib/legacy-names.js');
 const EXPORTER_PATHS = [CONFIG.exporter, ...legacyNames.usableEntries(legacyNames.loadMap())
   .filter((e) => e.kind === 'file' && (e.repo || 'arnes') === 'arnes' && e.new === CONFIG.exporter).map((e) => e.old)];
-// La configuración se mudó (y la lista, la tabla y la de denegación cambiaron de nombre) en la tanda C4: una foto de antes
+// La configuración tiene ruta nueva (y también la lista, la tabla y la de denegación): una foto de antes de la mudanza
 // —la base de un `--range`, el HEAD de un pre-commit— la tiene en su ruta vieja. La vieja sale del mapa, nunca escrita
 // acá: la entrada `file` con ese nombre nuevo, o la `folder` que lo contiene. Primero la ruta nueva; la vieja, sólo si en
 // esa foto no está. Sin mapa (la copia pública) no hay rutas viejas.
@@ -129,14 +127,13 @@ function configPathIn(harness, ruta) {
   return null;
 }
 /** ¿`p` es esa configuración, por su ruta nueva o por una vieja del mapa? Un rango cuya punta es de antes de la mudanza
- *  (repetir un rango histórico con el código de hoy) la toca por la vieja: lo tocado se reconoce por las dos (pase
- *  adversarial de la C4). */
+ *  (repetir un rango histórico con el código actual) la toca por la vieja: lo tocado se reconoce por las dos. */
 const legacyOf = (ruta) => CONFIG_LEGACY.get(ruta) || legacyPathsOf(ruta);
 const isConfigPath = (ruta, p) => typeof p === 'string' && (p === ruta || legacyOf(ruta).includes(p));
 const withLegacy = (rutas) => rutas.flatMap((r) => [r, ...legacyOf(r)]);
 const PACK = /^packs\/[^/]+\/pack\.json$/;
 // Lo que reclasifica los dos repos (un archivo que no salía puede empezar a salir) y lo que dispara el freno aunque no
-// salga (la lista, el techo, los productos). Los demás archivos que no salen no cargan nada (AC 14).
+// salga (la lista, el techo, los productos). Los demás archivos que no salen no cargan nada.
 const RECLASSIFY = { arnes: [...withLegacy([CONFIG.list, CONFIG.table]), ...EXPORTER_PATHS], 'agent-skills': [] };
 const TRIGGERS = { arnes: [...RECLASSIFY.arnes, ...withLegacy([CONFIG.denied, CONFIG.ceiling, CONFIG.parity])], 'agent-skills': [] };
 const isReclassify = (source, ruta) => RECLASSIFY[source].includes(ruta) || (source === 'agent-skills' && PACK.test(ruta));
@@ -148,9 +145,9 @@ const SPECIAL = (ruta, lista) => ruta === 'adapters/codex/agents/MANIFEST.json' 
 class CouldNotLook extends Error {}
 const say = (s) => process.stderr.write(`${s}\n`);
 
-// ── las claves de la lista blanca (story 8.9, tanda D1) ──────────────────────────────────────────────────────────
-// Las claves de la lista cambiaron de nombre en la D1. Una foto de antes (la base de un rango, el HEAD del commit que la
-// muda, la punta de un rango histórico) la trae con las viejas: el freno la lee siempre con las de hoy (`readKeysDeep`,
+// ── las claves de la lista blanca ──────────────────────────────────────────────────────────────────────────────────
+// Las claves de la lista cambiaron de nombre. Una foto de antes del cambio (la base de un rango, el HEAD del commit que la
+// muda, la punta de un rango histórico) la trae con las viejas: el freno la lee siempre con las actuales (`readKeysDeep`,
 // con el mapa), y a un exportador de esa misma foto —que lee las suyas— se la devuelve con las de su época. Las viejas
 // salen del mapa, nunca escritas acá; sin mapa (la copia pública) no hay viejas y todo es paso directo.
 const listKeyEntries = () => legacyNames.usableEntries(legacyNames.loadMap())
@@ -180,7 +177,7 @@ function usesLegacyKeys(text) {
   const walk = (v) => (Array.isArray(v) ? v.some(walk) : !!v && typeof v === 'object' && Object.entries(v).some(([k, x]) => old.has(k) || walk(x)));
   return walk(parsed);
 }
-/** La lista (con las claves de hoy) con las claves viejas, para el exportador de una foto de antes de la D1. */
+/** La lista (con las claves actuales) con las claves viejas, para el exportador de una foto de antes del cambio. */
 function toLegacyKeys(lista) {
   const back = new Map(listKeyEntries().map((e) => [e.new, e.old]));
   if (!back.size) return lista;
@@ -191,7 +188,7 @@ function toLegacyKeys(lista) {
   };
   return walk(lista);
 }
-/** La lista como la lee el exportador de la foto: el de hoy, con las claves de hoy; uno de antes de la D1, con las suyas. */
+/** La lista como la lee el exportador de la foto: el actual, con las claves actuales; uno de antes del cambio, con las suyas. */
 const listForMod = (snap, lista) => (snap.mod !== exporter && snap.legacyKeys ? toLegacyKeys(lista) : lista);
 const azure = () => /^true$/i.test(process.env.TF_BUILD || '');
 const byCode = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
@@ -199,7 +196,7 @@ const byCode = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 // ── git ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 // Dos gits: el del HOOK (con el entorno que git le pasa, para leer el índice del commit en curso: `GIT_INDEX_FILE`) y
 // el AISLADO del exportador (sin ningún `GIT_*`), para leer objetos por sha. El aislado no sirve para el índice: borra
-// `GIT_INDEX_FILE` y con `git commit -a` no vería nada (AC 10).
+// `GIT_INDEX_FILE` y con `git commit -a` no vería nada.
 function hookGit(dir, args) {
   const r = spawnSync('git', args, { cwd: dir, env: process.env, encoding: 'utf8', maxBuffer: 1024 * 1024 * 1024 });
   if (r.error) throw new CouldNotLook(`no pude correr git ${args[0]} (${r.error.code || r.error.message})`);
@@ -269,7 +266,7 @@ const realOr = (p) => { try { return fs.realpathSync(p); } catch { return path.r
 // letra por letra. La usa el modo de la forma publicada para decir cuál es el árbol que se commitea.
 const realNative = (p) => { try { return fs.realpathSync.native(p); } catch { return realOr(p); } };
 
-/** El otro repo, por su HEAD. null = no está (aviso fuerte y se deja pasar, AC 8). */
+/** El otro repo, por su HEAD. null = no está (aviso fuerte y se deja pasar). */
 function otherRepo(source) {
   const dir = source === 'arnes'
     ? require('../lib/skills-dir.js').resolveSkillsDirs(process.env.TYCON_SKILLS_DIR || '').repo
@@ -280,12 +277,12 @@ function otherRepo(source) {
   return { dir: realOr(dir), head: r.stdout.trim() };
 }
 
-// ── el repo unido (story 8.18): una fuente física, dos lógicas partidas por ruta ───────────────────────────────────
+// ── el repo unido: una fuente física, dos lógicas partidas por ruta ───────────────────────────────────
 // Desde que el arnés y agent-skills son UN repo, su pre-commit corre este freno dos veces sobre la misma raíz, una por
 // fuente. Cada corrida mira lo de SU fuente lógica y arma «el otro repo» con la otra mitad del mismo árbol: no lee
 // ningún otro clon y no hay «other-repo-missing». Las rutas de agent-skills son las de siempre, porque entró con cada
-// archivo en su lugar. Sin esto, la corrida de agent-skills veía cada carpeta del arnés como «sin clasificar» y la del
-// arnés lo mismo con `skills/`: ningún commit que agregara un archivo se podía crear.
+// archivo en su lugar. Sin esto, la corrida de agent-skills vería cada carpeta del arnés como «sin clasificar» y la del
+// arnés lo mismo con `skills/`: ningún commit que agregara un archivo se podría crear.
 const SKILLS_FOLDERS = /^(?:agents|skills|packs)\//;
 const SKILLS_FILES = new Set(['.tycon/post-commit-ignore', '.githooks/pre-commit-skills']);
 /** La fuente lógica de una ruta del repo unido. */
@@ -332,12 +329,11 @@ function treeShape(tree) {
 /** ¿La foto es del repo unido? La punta de un `--range` puede ser de antes de la unión, o de la historia de agent-skills. */
 const unifiedTree = (tree) => treeShape(tree) === 'unified';
 
-// ── un rango que cruza la unión (story 8.18, AC 25) ────────────────────────────────────────────────────────────────
-// El pull request del corte sale de un `main` de ANTES de la unión: a la base de su rango le falta una mitad entera.
+// ── un rango que cruza la unión ────────────────────────────────────────────────────────────────
+// Un pull request puede salir de un `main` de ANTES de la unión: a la base de su rango le falta una mitad entera.
 // Esa mitad no es nueva: entró con su historia por el merge de la unión, y cada commit de esa historia ya pasó por
-// estos frenos en su repo. Tomarla por nueva frenaba lo que ya estaba —medido sobre la base de la story: las 7
-// variables de agent-skills que su techo ya contaba salían «nuevas» para el pull request— y hacía mirar de nuevo
-// cientos de archivos. El antes de la mitad que falta es el commit desde donde entró: el padre, con la forma del otro
+// estos frenos en su repo. Tomarla por nueva frenaría lo que ya estaba —las variables de agent-skills que su techo ya
+// cuenta saldrían «nuevas» para el pull request— y haría mirar de nuevo cientos de archivos. El antes de la mitad que falta es el commit desde donde entró: el padre, con la forma del otro
 // repo, de un merge del rango cuyo árbol ya es el del repo unido. Lo que ese merge (o un commit posterior) cambia sobre
 // ese padre se mira como cualquier cambio: nada se saltea. Sin ese merge —la mitad agregada por un commit común, sin su
 // historia— no hay antes con que comparar, y la mitad es toda nueva.
@@ -359,11 +355,10 @@ function commitShapes(repo, shas) {
  * un lado contenido en otro no suma (el antes es la punta de esa historia). Con más de un lado, cada uno es un «antes»,
  * como los padres de un merge: es nuevo lo que no estaba en ninguno.
  *
- * Pero un lado VIEJO no vale entero (story 8.18, pase adversarial del tramo 2, clase 10). La topología real del pull
- * request del corte: el lado de skills de la unión sale de una rama aparte, y el main de agent-skills siguió desde el
- * mismo punto y se mezcló después; ninguno contiene al otro. Un nombre que la última punta limpió seguía «estando» en el
- * lado viejo, que nunca lo limpió, y volver a meterlo pasaba la red. Ahora el primer lado es el de la mezcla más nueva
- * (la última punta) y cada lado viejo lleva `overlay`: de él vale sólo lo que él mismo cambió desde el punto común con
+ * Pero un lado VIEJO no vale entero. Caso: el lado de skills de la unión sale de una rama aparte, y el main de
+ * agent-skills sigue desde el mismo punto y se mezcla después; ninguno contiene al otro. Un nombre que la última punta
+ * limpió seguiría «estando» en el lado viejo, que nunca lo limpió, y volver a meterlo pasaría la red. Por eso el primer
+ * lado es el de la mezcla más nueva (la última punta) y cada lado viejo lleva `overlay`: de él vale sólo lo que él mismo cambió desde el punto común con
  * la última punta (lo demás, como en la última punta). Ver `staleSideHalf`.
  */
 function rangeBefores(repo, base, tip, baseTree) {
@@ -434,11 +429,11 @@ const halfPathspec = (source) => SKILLS_PATHSPEC.map((p) => (source === 'agent-s
  * Los padres de una corrida del repo unido, con los cambios de CADA fuente lógica (`all`) y los de la propia (`changes`).
  * En un rango, cada «antes» de `rangeBefores` es un padre: la mitad que la base no trae se compara con su historia.
  *
- * Los cambios de cada mitad salen de un `diff -M` restringido a ESA mitad (story 8.18, pase adversarial del tramo 2,
- * clase 14): git empareja un renombre sólo dentro de lo que mira. Antes la detección corría sobre el árbol entero y
- * recién después se partía: un archivo de la otra mitad con el mismo texto se quedaba con el origen del renombre, y el
- * movido dentro de la propia mitad pasaba a ser un alta (sus nombres de siempre, «nuevos»). Un renombre que cruza de una
- * mitad a la otra sale, igual que antes, como una baja para una y un alta para la otra.
+ * Los cambios de cada mitad salen de un `diff -M` restringido a ESA mitad: git empareja
+ * un renombre sólo dentro de lo que mira. Si la detección corriera sobre el árbol entero y recién después se partiera,
+ * un archivo de la otra mitad con el mismo texto se quedaría con el origen del renombre, y el movido dentro de la propia
+ * mitad pasaría a ser un alta (sus nombres de siempre, «nuevos»). Un renombre que cruza de una mitad a la otra sale
+ * como una baja para una y un alta para la otra.
  */
 function unifiedParents(repo, parents, source, range) {
   // lo stageado: el índice que va a commitear el hook (`hookGit`, con su entorno); un rango: commits (`isolated`)
@@ -451,7 +446,7 @@ function unifiedParents(repo, parents, source, range) {
     if (!memo.has(k)) memo.set(k, diff(sha, half));
     return memo.get(k);
   };
-  // la mitad de un lado viejo (clase 10): lo que git dice desde el lado, salvo en las rutas donde su «antes» es el de la
+  // la mitad de un lado viejo: lo que git dice desde el lado, salvo en las rutas donde su «antes» es el de la
   // última punta; ahí, el «antes» contra la punta, ruta por ruta (un renombre que toca una de esas rutas se parte en
   // baja y alta: la otra ruta conserva su sentido)
   let tipHalves = null;
@@ -498,9 +493,9 @@ function beforeHalves(repo, p) {
   return { ...halves, [from.overlay.half]: staleSideHalf(repo, from.overlay, from[from.overlay.half]).tree };
 }
 /**
- * Quién mira un archivo que «empieza a salir» ([DEF-8.18-doble-aviso]). Con dos repos la otra fuente no cambia entre el
+ * Quién mira un archivo que «empieza a salir». Con dos repos la otra fuente no cambia entre el
  * antes y el después, y todo lo que empieza a salir lo causa el propio commit. En el repo unido las dos mitades cambian
- * en el mismo commit y las dos corridas lo ven: el mismo hallazgo salía dos veces. Cada archivo lo mira UNA corrida: lo
+ * en el mismo commit y las dos corridas lo ven: el mismo hallazgo saldría dos veces. Cada archivo lo mira UNA corrida: lo
  * que el commit toca, la de su fuente; lo que no toca —empieza a salir porque cambió qué se publica—, la de la fuente
  * que lo reclasifica (el arnés si tocó la lista, la tabla o el exportador; si no, agent-skills con sus paquetes) y, si
  * no reclasifica ninguna (un merge), la de su fuente.
@@ -532,7 +527,7 @@ function exporterIn(harness) {
   return EXPORTER_PATHS.find((ruta) => { const e = harness.get(ruta); return e && e.tipo === 'blob'; }) || null;
 }
 /**
- * El código del exportador de una foto: si es otro que el de este disco, se compila el de la foto (AC 8(c)). Se compila
+ * El código del exportador de una foto: si es otro que el de este disco, se compila el de la foto. Se compila
  * en la carpeta donde vivía en esa foto: sus `require` relativos (el detector, el freno de castellano) resuelven desde
  * ahí, y uno de antes de la mudanza los busca junto a su ruta vieja.
  */
@@ -542,10 +537,10 @@ function exporterFor(ruta, entry, text) {
   if (entry.obj === diskExporterSha) return exporter;
   if (!compiled.has(entry.obj)) {
     let mod;
-    // El código de una foto de antes de la mudanza (tanda C4) pide sus vecinos por la carpeta vieja, donde hoy hay un
-    // reemplazo generado: ese reemplazo es para los llamadores de afuera, y cargado por el freno anotaba un uso falso del
+    // El código de una foto de antes de la mudanza pide sus vecinos por la carpeta vieja, donde hay un
+    // reemplazo generado: ese reemplazo es para los llamadores de afuera, y cargado por el freno anotaría un uso falso del
     // nombre viejo (y en Azure, un aviso por stderr). Mientras se compila, un `require` que cae en un reemplazo va directo
-    // a su destino, que es el mismo código (pase adversarial de la C4).
+    // a su destino, que es el mismo código.
     const resolve = Module._resolveFilename;
     Module._resolveFilename = function resolveSkippingShims(...args) {
       const f = resolve.apply(this, args);
@@ -567,7 +562,7 @@ function exporterFor(ruta, entry, text) {
     } finally {
       Module._resolveFilename = resolve;
     }
-    // Un exportador de antes de esta story no trae la clasificación exportada: se usa la de hoy con los datos de esa foto.
+    // Un exportador antiguo no trae la clasificación exportada: se usa la actual con los datos de esa foto.
     compiled.set(entry.obj, typeof mod.whatShips === 'function' ? mod : exporter);
   }
   return compiled.get(entry.obj);
@@ -588,7 +583,7 @@ function snapshot(name, trees, { dirs, read, disk, harnessDisk, allowMissing }) 
     const e = harness.get(ruta);
     return e && e.tipo === 'blob' ? read('arnes', e.obj).toString('utf8') : null;
   };
-  // la lista y la tabla de una foto de antes de la mudanza (tanda C4), en su ruta vieja; con disk, siempre la de hoy
+  // la lista y la tabla de una foto de antes de la mudanza, en su ruta vieja; con disk, siempre la actual
   const configText = (ruta) => (disk ? text(ruta) : text(configPathIn(harness, ruta) || ruta));
   const listText = configText(CONFIG.list);
   const tableText = configText(CONFIG.table);
@@ -604,7 +599,7 @@ function snapshot(name, trees, { dirs, read, disk, harnessDisk, allowMissing }) 
 /** El contexto que espera el exportador (el mismo que arma su `prepararFuentes`), desde una foto. */
 function contextFor(snap, { lista: given, table, strict }) {
   const mod = snap.mod;
-  // con las claves de hoy (la de una foto de antes de la D1 trae las viejas); el exportador de la foto la recibe con las
+  // con las claves actuales (la de una foto de antes del cambio trae las viejas); el exportador de la foto la recibe con las
   // suyas. Los paquetes quedan como vienen: los renombra quien compara dos fotos (run).
   const lista = normalizeKeys(given);
   try {
@@ -628,7 +623,7 @@ function contextFor(snap, { lista: given, table, strict }) {
     if (t === null) continue;   // el archivo no está en la foto: nada que vaciar
     let parsed;
     try { parsed = JSON.parse(t); } catch { problems.push(`empty: ${file} no es JSON válido`); continue; }
-    // una ruta con puntos («a.b») baja a una clave anidada, como en el exportador (story 8.10.3, pase adversarial)
+    // una ruta con puntos («a.b») baja a una clave anidada, como en el exportador
     const hasPath = (obj, k) => String(k).split('.').every((tramo) => {
       if (!obj || typeof obj !== 'object' || Array.isArray(obj) || !Object.prototype.hasOwnProperty.call(obj, tramo)) return false;
       obj = obj[tramo];
@@ -643,7 +638,7 @@ function contextFor(snap, { lista: given, table, strict }) {
     const bar = String(x.glob || '').indexOf('/');
     return { fuente: String(x.glob).slice(0, bar), glob: String(x.glob).slice(bar + 1), motivo: x.motivo };
   });
-  // `estricto: false` (la foto de ANTES): un mapa de renombres roto no puede trabar el commit que lo arregla (story 8.9)
+  // `estricto: false` (la foto de ANTES): un mapa de renombres roto no puede trabar el commit que lo arregla
   return { repos: { arnes: { dir: snap.dirs.arnes }, 'agent-skills': { dir: snap.dirs['agent-skills'] } }, arboles: snap.trees, lista: listForMod(snap, clean), afueraPrivado, estricto: !!strict };
 }
 
@@ -692,7 +687,7 @@ function namesIn(pieces, det, terms, rel) {
       if (!NAME_CATEGORIES.has(h.categoria)) continue;
       out.push({ key: `${h.categoria}\0${h.texto.toLowerCase()}`, category: h.categoria, text: h.texto, line: h.linea, lineText: lines[h.linea - 1] });
     }
-    // (story 8.10.3, AC 12) con las mismas excepciones exactas que respeta el exportador: un pegado declarado no es nombre
+    // con las mismas excepciones exactas que respeta el exportador: un pegado declarado no es nombre
     // nuevo. En una RUTA no hay excepción, igual que allá: un nombre pegado en una ruta se arregla renombrando.
     for (const g of exporter.nombresPegados([[rel, piece.text]], terms, rel === PATHS_LIST ? [] : det && det.permitidos)) {
       const term = terms.find((t) => t.patron === g.termino) || {};
@@ -764,7 +759,7 @@ function pairFor(pairs, text) {
 
 const termKey = (t) => JSON.stringify([t && t.patron, t && t.categoria]);
 
-// ── la forma publicada (story 8.26, tanda H1c · AC 65 c) ─────────────────────────────────────────────────────────
+// ── la forma publicada ─────────────────────────────────────────────────────────
 // El porqué, qué mira y qué no, en la cabecera («EN EL ÁRBOL QUE ES LA FORMA PUBLICADA»). Acá, las tres piezas: cuándo
 // aplica (`isPublishedForm`), si la máquina es del equipo (`isTeamMachine`) y la corrida (`publishedRun`).
 const PUBLISHED_MARK = 'scripts/setup/public-remotes.json';   // sólo existe en la copia publicada (lo pone el exportador)
@@ -783,10 +778,10 @@ const MODE_LINK = '120000';
  *   · no se saca el freno borrando la señal, ni elige con qué lista se lo mira trayéndose una (la que trae se mira como
  *     cualquier archivo): alcanza con que algún padre trajera la señal;
  *   · y el antes VETA: si algún padre traía lista propia —un árbol interno, o uno al que ya le plantaron una—, no es la
- *     forma publicada y sigue el camino de siempre. Pasó al revés: mirando sólo cómo quedaba el índice, un commit en un
- *     clon interno que sacaba la lista y agregaba la señal salía 0, cuando el freno de siempre decía «no pude mirar»;
- *   · por lo mismo, la señal que llega con el commit no cuenta: un árbol interno que ya había perdido su lista (y salía
- *     2) pasaba a 0 con sólo agregar ese archivo.
+ *     forma publicada y sigue el camino de siempre. Mirando sólo cómo queda el índice, un commit en un
+ *     clon interno que sacara la lista y agregara la señal saldría 0, cuando el freno de siempre dice «no pude mirar»;
+ *   · por lo mismo, la señal que llega con el commit no cuenta: un árbol interno que ya perdió su lista (y sale
+ *     2) pasaría a 0 con sólo agregar ese archivo.
  * El antes sale de deshacer los cambios que `run` ya leyó: no le cuesta otra pregunta a git.
  */
 function isPublishedForm(repo, parents) {
@@ -1001,12 +996,12 @@ function run(args) {
     if (shas[0] && fs.existsSync(mergeAbs)) shas.push(...fs.readFileSync(mergeAbs, 'utf8').split('\n').map((x) => x.trim()).filter(Boolean));
     parents = shas.map((sha) => ({ sha, changes: parseChanges(hookGit(repo, ['diff-index', '--cached', '-M', '-z', '--name-status', sha || EMPTY_TREE])) }));
     afterTree = () => indexTree(repo);
-    // story 8.26 (tanda H1c): el árbol que ES la forma publicada se mira aparte, con la lista de la máquina. Se decide
+    // el árbol que ES la forma publicada se mira aparte, con la lista de la máquina. Se decide
     // ACÁ, antes del atajo «nada de lo tocado sale» del paso 2: ahí no hay exportador que saque `tasks/` o `specs/`, todo
     // lo que se commitea se publica. Sólo con lo preparado: `--range` es de la validación, que trae su configuración.
     if (isPublishedForm(repo, parents)) return publishedRun(args, repo, parents, afterTree);
   }
-  // story 8.18: en el repo unido esta corrida mira sólo los cambios de su fuente lógica (ver «el repo unido», arriba).
+  // en el repo unido esta corrida mira sólo los cambios de su fuente lógica (ver «el repo unido», arriba).
   // Con lo stageado alcanza el disco, que es lo que el índice va a commitear; en un rango se confirma con la punta, y
   // si el rango cruza la unión, la mitad que la base no trae se compara con su historia (ver «un rango que cruza la unión»).
   let afterMemo = null;
@@ -1014,8 +1009,8 @@ function run(args) {
   const unified = unifiedCheckout(repo) && (args.mode !== 'range' || unifiedTree(afterOnce()));
   if (unified) parents = unifiedParents(repo, parents, source, range);
 
-  // 2 · AC 14: si nada de lo tocado sale ni dispara, no se carga nada
-  // con el `salvo` de cada exclusión fija (story 8.26, tanda C): las rutas que salen igual no son «nada de lo tocado sale»
+  // 2 · si nada de lo tocado sale ni dispara, no se carga nada
+  // con el `salvo` de cada exclusión fija: las rutas que salen igual no son «nada de lo tocado sale»
   const covers = exporter.cubreFija || ((x, ruta) => exporter.coincide(x.glob, ruta));
   const fixed = (ruta) => exporter.EXCLUIDOS_SIEMPRE.some((x) => x.fuente === source && covers(x, ruta));
   const touched = parents.flatMap((p) => p.changes);
@@ -1035,7 +1030,7 @@ function run(args) {
   const trees = unified ? splitTree(afterOnce()) : { [source]: afterOnce() };
   const harnessAfter = unified || source === 'arnes' ? trees.arnes : commitTree(otherInfo.dir, otherInfo.head);
   const harnessMap = new Map(harnessAfter.map((e) => [e.ruta, e]));
-  // la punta de un --range anterior a la mudanza (tanda C4) tiene la configuración en su ruta vieja: la del mapa
+  // la punta de un --range anterior a la mudanza tiene la configuración en su ruta vieja: la del mapa
   const afterText = (ruta) => {
     if (disk) { const p = path.join(harnessDisk, ruta); return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null; }
     const e = harnessMap.get(configPathIn(harnessMap, ruta) || ruta);
@@ -1066,7 +1061,7 @@ function run(args) {
     return t;
   });
   // Una sola lectura de git por repo para lo que se va a leer seguro: la configuración, lo que transforma la copia y lo
-  // que el commit cambia, en las dos fotos. Después todo sale de la memoria de leerObjetos (antes eran ~14 lecturas).
+  // que el commit cambia, en las dos fotos. Después todo sale de la memoria de leerObjetos (sin esto serían ~14 lecturas).
   const wanted = (ruta) => /^scripts\/publishing\/[^/]+\.json$/.test(ruta) || ruta === CONFIG.parity || EXPORTER_PATHS.includes(ruta)
     || LEGACY_CONFIG_PATHS.has(ruta)
     || PACK.test(ruta) || /^scripts\/controls-bench\/cases\/hooks\//.test(ruta) || SPECIAL(ruta, null);
@@ -1079,7 +1074,7 @@ function run(args) {
     if (objs.size) exporter.leerObjetos({ dir: dirs[f] }, [...objs]);
   }
   const beforeHarness = (i) => new Map((unified || source === 'arnes' ? beforeTrees[i].arnes : trees.arnes).map((e) => [e.ruta, e]));
-  // la configuración de la foto de antes: la ruta nueva o, si esa foto es de antes de la mudanza (tanda C4), la vieja
+  // la configuración de la foto de antes: la ruta nueva o, si esa foto es de antes de la mudanza, la vieja
   const beforeText = (i, ruta) => {
     const h = beforeHarness(i);
     const e = h.get(configPathIn(h, ruta) || ruta);
@@ -1088,14 +1083,14 @@ function run(args) {
 
   // 4 · las fotos: el después (con su configuración y con «lo que tapaba la base») y un antes por padre
   const afterSnap = snapshot('el después', trees, { dirs, read, disk, harnessDisk });
-  // story 8.9 (AC 29): cada lista con los paquetes por su nombre nuevo. En el commit del renombre la base nombra al núcleo
-  // con el viejo y la punta con el nuevo: son el MISMO paquete, y compararlas como dos haría «empezar a salir» todo. Lo
-  // mismo con las claves (tanda D1): las dos listas se comparan con las de hoy (normalizeList).
+  // cada lista con los paquetes por su nombre nuevo. En el commit de un renombre la base nombra al núcleo con el viejo y
+  // la punta con el nuevo: son el MISMO paquete, y compararlas como dos haría «empezar a salir» todo. Lo mismo con las
+  // claves: las dos listas se comparan con las actuales (normalizeList).
   const newPackageNames = normalizeList;
   const afterList = newPackageNames(parseJson(afterSnap.listText, CONFIG.list));
   const afterTable = parseJson(afterSnap.tableText, CONFIG.table);
   // Una configuración del antes que no se deja leer (sólo pasa si alguien salteó el freno) no se reemplaza callada: se
-  // dice qué control queda a ciegas, sin citar su contenido (revisor de fallos silenciosos, vuelta 4).
+  // dice qué control queda a ciegas, sin citar su contenido.
   const beforeJson = (ruta, blind) => {
     const t = beforeText(0, ruta);
     if (t === null) return { value: null, broken: false };
@@ -1107,11 +1102,11 @@ function run(args) {
   const sameBlind = 'las excepciones que este commit agregue ahí no se distinguen de las que ya estaban: se compara con la del después';
   const baseList = (!disk && newPackageNames(beforeJson(CONFIG.list, sameBlind).value)) || afterList;
   const baseTable = (!disk && beforeJson(CONFIG.table, sameBlind).value) || afterTable;
-  // AC 9: lo que el commit agrega para TAPAR algo —un afuera de la lista o privado, una clave en `empty`, un caso o una
+  // lo que el commit agrega para TAPAR algo —un afuera de la lista o privado, una clave en `empty`, un caso o una
   // suite fuera, un sintético— no vale para su propio nombre. La vista «efectiva» es la del después con lo que tapaba la
   // base: un nombre que ahí aparece y con la configuración del commit no, lo tapa una excepción de este mismo commit.
   // Editar un afuera que ya tapaba el archivo (ensancharlo, moverlo a la tabla privada) no es una excepción: la base ya lo
-  // tapaba (hallazgo del pase adversarial: identificarlo por el texto del glob frenaba sin salida).
+  // tapaba (identificarlo por el texto del glob frenaría sin salida).
   const clone = (x) => JSON.parse(JSON.stringify(x));
   const effectiveList = clone(afterList);
   for (const [pkg, def] of Object.entries(effectiveList.packages || {})) {
@@ -1126,13 +1121,13 @@ function run(args) {
     if (baseList[k] === undefined) delete effectiveList[k];
     else effectiveList[k] = clone(baseList[k]);
   }
-  // story 8.9 (tanda C2): una suite o un caso que la base dejaba fuera y que este cambio RENOMBRA sigue tapado con su
+  // una suite o un caso que la base dejaba fuera y que este cambio RENOMBRA sigue tapado con su
   // nombre nuevo: es el mismo archivo y la base ya lo tapaba (el criterio de arriba). Sólo vale para un `file` del mapa de
   // renombres cuyo viejo existía en la base y cuyo nuevo existe en el después (mudado de verdad, no una entrada suelta).
   // Sin esto, renombrar una prueba con datos que no salen frena el PR entero sin salida: su excepción con el nombre
-  // nuevo es «una excepción de este mismo commit» (pase adversarial de la C2).
+  // nuevo es «una excepción de este mismo commit».
   // viejo → nuevo de los archivos del arnés que el mapa (el del después) declara mudados y que de verdad se mudaron. Un mapa
-  // que no se deja leer no tapa nada: el freno queda como antes (más estricto), nunca más permisivo.
+  // que no se deja leer no tapa nada: el freno queda estricto, nunca más permisivo.
   const movedFiles = (before, after) => {
     const out = new Map();
     const m = after.get('scripts/lib/renames.json');
@@ -1161,9 +1156,9 @@ function run(args) {
       if (nuevo && nuevo.startsWith(prefix)) effectiveList[k].push({ ...x, path: nuevo.slice(prefix.length) });
     }
   }
-  // story 8.12 (tanda R5): lo mismo con un `out` de un paquete que nombraba EXACTO un archivo que el cambio muda (una guía
+  // lo mismo con un `out` de un paquete que nombraba EXACTO un archivo que el cambio muda (una guía
   // privada que pasa a guides/decisions/): sigue tapado con su ruta nueva. Sólo la ruta exacta, nunca un patrón: un `out`
-  // del después que de paso tape otro archivo sigue siendo una excepción de este commit (pase adversarial de la R5).
+  // del después que de paso tape otro archivo sigue siendo una excepción de este commit.
   if (renamedFiles.size) {
     for (const def of Object.values(effectiveList.packages || {})) {
       const out = def && def.arnes && def.arnes.out;
@@ -1174,11 +1169,11 @@ function run(args) {
       }
     }
   }
-  // (tanda D1) lo mismo con un archivo que la base vaciaba y este cambio renombra: se sigue vaciando con su nombre nuevo.
-  // Si el cambio también renombró sus claves (la D1 lo hace), las de la base ya no están: valen las del después para ese
+  // lo mismo con un archivo que la base vaciaba y este cambio renombra: se sigue vaciando con su nombre nuevo.
+  // Si el cambio también renombró sus claves, las de la base ya no están: valen las del después para ese
   // archivo sólo si CADA una es una clave de la base o su nombre nuevo según el mapa (entradas `key` cuyo where es el
   // archivo, por su nombre nuevo o el viejo). Cualquier otra —aunque sean las mismas en cantidad— es una excepción de este
-  // commit (pase adversarial de la D1, false-negative-classification-1): se queda con las de la base.
+  // commit: se queda con las de la base.
   if (effectiveList.empty && typeof effectiveList.empty === 'object' && renamedFiles.size) {
     const afterEmpty = (afterList && afterList.empty) || {};
     const keyEntries = legacyNames.usableEntries(legacyNames.loadMap()).filter((e) => e.kind === 'key' && typeof e.old === 'string' && typeof e.new === 'string');
@@ -1192,7 +1187,7 @@ function run(args) {
     }
   }
   const effectiveTable = { ...afterTable, afuera: clone(baseTable.afuera || []) };
-  // y lo mismo con un afuera privado (`arnes/<ruta exacta>`) del archivo mudado (la misma clase, R5)
+  // y lo mismo con un afuera privado (`arnes/<ruta exacta>`) del archivo mudado
   for (const x of [...effectiveTable.afuera]) {
     const nuevo = x && typeof x.glob === 'string' && x.glob.startsWith('arnes/') && renamedFiles.get(x.glob.slice('arnes/'.length));
     if (nuevo) effectiveTable.afuera.push({ ...x, glob: `arnes/${nuevo}` });
@@ -1208,7 +1203,7 @@ function run(args) {
   const effShips = newHiding ? ships(afterSnap, contextFor(afterSnap, { lista: effectiveList, table: effectiveTable, strict: false })) : afterShips;
   const beforeShips = parents.map((p, i) => {
     // sin configuración propia (un commit de antes de la lista blanca), o con una que no se deja leer ni cargar (el commit
-    // que la ARREGLA), el antes se clasifica con la del después: si no, el arreglo no se podría commitear
+    // que la ARREGLA), la foto previa se clasifica con la del después: si no, el arreglo no se podría commitear
     let snap;
     try {
       snap = snapshot(`el antes (${p.sha ? p.sha.slice(0, 12) : 'sin HEAD'})`, beforeTrees[i], { dirs, read, disk, harnessDisk, allowMissing: true });
@@ -1248,8 +1243,8 @@ function run(args) {
   const structural = source === 'arnes' && touched.some((c) => c.status !== 'M' || /^scripts\/(tests|controls-bench)\//.test(c.path));
   const special = (ruta) => SPECIAL(ruta, afterList) || SPECIAL(ruta, baseList);
   if (structural) for (const e of trees.arnes) if (special(e.ruta)) lookAt('arnes', e.ruta, parents.map(() => e.ruta));
-  // Lo que empieza a salir —por la configuración del commit, o en un merge, porque un padre no lo publicaba— se mira entero
-  // (AC 8(c)), también su ruta. Por paquete: salir en un paquete más también es salir.
+  // Lo que empieza a salir —por la configuración del commit, o en un merge, porque un padre no lo publicaba— se mira entero,
+  // también su ruta. Por paquete: salir en un paquete más también es salir.
   if (reclassifies || newHiding || parents.length > 1) {
     const shipped = (sh, tr) => {
       const keys = new Set();
@@ -1275,7 +1270,7 @@ function run(args) {
     if (reclassifies) for (const e of trees.arnes) if (special(e.ruta) && mine('arnes', e.ruta)) lookAt('arnes', e.ruta, parents.map(() => e.ruta));
   }
 
-  // una entrada de primer nivel sin clasificar que el commit estrena (AC 7)
+  // una entrada de primer nivel sin clasificar que el commit estrena
   let unclassified;
   try {
     unclassified = new Set(afterSnap.mod.primerNivel(afterCtx, source).filter((r) => !r.reglas.length).map((r) => r.nombre));
@@ -1290,14 +1285,14 @@ function run(args) {
     if (unclassified.has(top)) entries.add(top);
   }
 
-  // AC 14: si nada de lo que el commit toca sale, no estrena una entrada sin clasificar ni toca un disparador, la lista de
+  // si nada de lo que el commit toca sale, no estrena una entrada sin clasificar ni toca un disparador, la lista de
   // nombres no se carga: un commit que sólo toca lo que la lista blanca deja afuera sale acá, callado y sin registro.
   const triggered = touched.some((c) => isTrigger(source, c.path) || (c.oldPath && isTrigger(source, c.oldPath)));
   if (!triggered && !entries.size && ![...looked.values()].some((x) => afterShips.ofFile(x.source, x.ruta).length || effShips.ofFile(x.source, x.ruta).length)) {
     return { outcome: 'quiet' };
   }
 
-  // la lista de nombres: la del después, siempre (AC 9)
+  // la lista de nombres: la del después, siempre
   const denied = parseJson(deniedText, CONFIG.denied);
   const terms = Array.isArray(denied.terminos) ? denied.terminos : [];
   // Con --config-from disk la lista es la de hoy para las dos fotos: el commit que se repite no «trae» excepciones.
@@ -1305,14 +1300,14 @@ function run(args) {
     : beforeJson(CONFIG.denied, 'todos sus permisos cuentan como nuevos y el techo no se excusa (no se sabe qué términos suma el commit)');
   const baseDenied = deniedBefore.value || {};
 
-  // AC 9: las excepciones que trae ESTE commit no valen para su propio nombre
+  // las excepciones que trae ESTE commit no valen para su propio nombre
   // Un permitido se identifica por archivo y patrón: reordenar sus claves o reescribir su motivo no lo vuelve nuevo.
   const permitKey = (x) => JSON.stringify([x && x.archivo, (x && x.patron) || null]);
   const samePermits = new Set((baseDenied.permitidos || []).map(permitKey));
   const newPermits = (denied.permitidos || []).filter((x) => !samePermits.has(permitKey(x)));
   // Sacar un término (o un patrón) de la lista en el mismo commit que trae su mención también es una excepción: en la
-  // vista efectiva siguen contando (lo encontró el pase adversarial; sin esto el commit pasaba callado).
-  // (story 8.10.2, AC 18) `glued: false` apaga las formas pegadas: también cambia qué se ve, así que también es una
+  // vista efectiva siguen contando (sin esto el commit pasaría callado).
+  // `glued: false` apaga las formas pegadas: también cambia qué se ve, así que también es una
   // excepción
   const termId = (t) => JSON.stringify([t && t.patron, t && t.categoria, !!(t && t.palabra), !!(t && t.mayusculas), !!(t && t.glued === false)]);
   const patternId = (x) => JSON.stringify([x && x.regex, x && x.categoria]);
@@ -1377,7 +1372,7 @@ function run(args) {
     for (const f of exceptions) findings.push({ ...f, kind: 'exception', source: x.source, ruta: x.ruta, line: realLine(raw, f, used) });
   }
 
-  // 7 · las rutas (AC 5): de todo lo que se mira y sale. La ruta de antes descuenta sólo si ESA ruta salía: un git mv desde
+  // 7 · las rutas: de todo lo que se mira y sale. La ruta de antes descuenta sólo si ESA ruta salía: un git mv desde
   // algo que no se publica, o un archivo que empieza a salir por la configuración, estrena su ruta.
   for (const x of files) {
     if (!afterShips.ofFile(x.source, x.ruta).length) continue;
@@ -1447,7 +1442,7 @@ function report(result, ownSource) {
   const where = (f) => `${f.source === ownSource ? '' : `${f.source}: `}${f.ruta}`;
   const suggestion = (f) => {
     const anon = pairFor(pairs, f.glued ? f.term : f.text);
-    // (story 8.10.1) el de la tabla se muestra como lo que la copia va a poner si el real queda, no como lo que hay que
+    // el de la tabla se muestra como lo que la copia va a poner si el real queda, no como lo que hay que
     // escribir: un inventado de la tabla corresponde uno a uno a un real
     return anon ? ` → escribí un nombre neutro; si queda, la tabla lo tapa con «${anon}»` : ` → sin par en la tabla: un sujeto genérico o un par nuevo en ${CONFIG.table}`;
   };
@@ -1486,8 +1481,8 @@ function report(result, ownSource) {
   return l.join('\n');
 }
 
-// ── los registros (AC 13): conteos y huella, nunca un texto encontrado ───────────────────────────────────────────
-// `extra` (tanda H1c): en la forma publicada, `{ form: 'published', list }` — de qué lugar salió la lista (`maintainers`,
+// ── los registros: conteos y huella, nunca un texto encontrado ───────────────────────────────────────────
+// `extra`: en la forma publicada, `{ form: 'published', list }` — de qué lugar salió la lista (`maintainers`,
 // `maintained`, `env`, `harness`; null si no hubo), nunca su contenido ni su ruta.
 function record(args, { outcome, verdict, rule, files = 0, findings = [], ms = 0, extra = null }) {
   if (args.mode !== 'staged') return;   // el pull request y las repeticiones no son commits de una máquina
@@ -1598,14 +1593,14 @@ if (require.main === module) process.exitCode = main();
 
 module.exports = {
   parseArgs, netNew, pairFor, parseChanges,
-  // story 8.9: el freno de nombres en castellano (spanish-names.js) arma las mismas fotos con la misma clasificación del
+  // el freno de nombres en castellano (spanish-names.js) arma las mismas fotos con la misma clasificación del
   // exportador; se reusan de acá en vez de copiarlas.
-  // story 8.26 (tanda H1c): las dos preguntas del modo de la forma publicada, para poder hacerlas sueltas en las pruebas
+  // las dos preguntas del modo de la forma publicada, para poder hacerlas sueltas en las pruebas
   isPublishedForm, isTeamMachine,
   CouldNotLook, CONFIG, legacyPathsOf, configPathIn, isConfigPath, exporterFor, SOURCES, EMPTY_TREE, hookGit, isolated, indexTree, commitTree, otherRepo, blobReader, snapshot,
   contextFor, ships, parseJson, realOr,
-  // story 8.18: el repo unido, partido por ruta (lo reusa spanish-names.js)
+  // el repo unido, partido por ruta (lo reusa spanish-names.js)
   sourceOfPath, splitTree, ownChanges, unifiedCheckout, unifiedTree,
-  // el rango que cruza la unión y el archivo que empieza a salir, mirado una sola vez (AC 25)
+  // el rango que cruza la unión y el archivo que empieza a salir, mirado una sola vez
   treeShape, rangeBefores, unifiedParents, beforeHalves, startsHere,
 };

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// verify-notice.js — el texto del aviso de la verificación de lo publicado (story 8.26, tanda F2 · AC 24).
+// verify-notice.js — el texto del aviso de la verificación de lo publicado.
 //
 // POR QUÉ EXISTE. Con el arnés mantenido directo en el repo público, lo publicado no se retira solo: un nombre en un
 // comentario o un secreto en las notas de una versión siguen ahí hasta que alguien los saque. La verificación de noche
@@ -18,7 +18,7 @@
 //   · No agrega nada que el informe no traiga —y el informe nunca trae el texto hallado, sólo el lugar—. Lo que
 //     escribió un tercero (una ruta de un pedido) entra en una línea, sin caracteres de control y con tope; el aviso
 //     entero entra en un mensaje.
-//   · Con el repo PRIVADO, lo que quedó en la historia de `main` no dispara el aviso (story 8.26, tanda F3 · AC 57):
+//   · Con el repo PRIVADO, lo que quedó en la historia de `main` no dispara el aviso:
 //     ahí no hay nada que hacer hasta el corte —la guía lo acepta— y un aviso de todas las noches se deja de leer. Se
 //     cuenta aparte, y el aviso sale sólo si hay algo más: otro hallazgo, un secreto (que se rota esté donde esté),
 //     algo que nadie leyó (un binario sin permiso, un submódulo), una parte sin mirar, un «no medido» con `--strict`.
@@ -106,7 +106,7 @@ function readReport(file) {
 }
 
 /**
- * Lo aceptado, aparte (story 8.26, tanda F3 · AC 57). Devuelve los hallazgos que se avisan (`rest`) y cuántos quedaron
+ * Lo aceptado, aparte. Devuelve los hallazgos que se avisan (`rest`) y cuántos quedaron
  * aparte (`accepted`). Un hallazgo queda aparte sólo si se cumple TODO, exactamente:
  *   · el informe dice que el repo es privado (`private === true`; `false`, `null` —no se pudo leer— o ausente, no);
  *   · la verificación terminó en 1 y el informe dice 1 (hallazgos, y nada raro entre la corrida y su informe);

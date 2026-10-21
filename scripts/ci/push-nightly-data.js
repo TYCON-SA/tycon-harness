@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 'use strict';
-// push-nightly-data.js — cómo guardan los nocturnos lo que escribieron (story 8.26, tanda H1a).
+// push-nightly-data.js — cómo guardan los nocturnos lo que escribieron.
 //
 // Uso:  node scripts/ci/push-nightly-data.js save --message <texto> [--require <ruta>]... [--require-daily <patrón>]...
 //                                                 [--verify <orden> [--verify-export <ruta>]...] -- <ruta>...
 //       node scripts/ci/push-nightly-data.js sync -- <ruta>...
 //       Las dos: [--repo <checkout>] [--remote origin] [--branch main]. `save`: [--attempts 3] [--wait-ms 2000] [--today <fecha>].
 //
-// POR QUÉ EXISTE. Cada nocturno guardaba con `git push origin HEAD:main` y, si lo rechazaban, rebasaba sobre
-// `origin/main`. Eso empuja TODO lo que haya debajo de HEAD. Cuando el arnés sale de GitHub, debajo de HEAD hay un commit
-// local —la superposición: lo público encima del checkout— que no existe en el remoto: lo subía entero, con sus
-// borrados. Eran seis pasos en los YAML y un séptimo adentro de `open-pr-per-finding.sh`, que además devolvía el checkout
-// a `origin/main` y dejaba a la noche corriendo otro código. Ahora hay un solo camino, el mismo con las dos fuentes.
+// POR QUÉ EXISTE. Guardar con `git push origin HEAD:main` y, si lo rechazan, rebasar sobre
+// `origin/main` empuja TODO lo que haya debajo de HEAD. Cuando el arnés sale de GitHub, debajo de HEAD hay un commit
+// local —la superposición: lo público encima del checkout— que no existe en el remoto: lo subiría entero, con sus
+// borrados. Por eso hay un solo camino, el mismo con las dos fuentes, y ningún paso mueve el checkout a `origin/main`:
+// eso dejaría a la noche corriendo otro código.
 //
 // LA REGLA: EL CHECKOUT NO SE MUEVE. `HEAD` y el índice quedan como estaban; lo que la noche escribió vive en el disco.
 //
@@ -55,7 +55,7 @@
 // que la plantilla guardó para la corrida (`<Agent.TempDirectory>/arnes-guion/`), si lo guardó; si no, el del
 // checkout. `sync` no la mira: no empuja nada. Un árbol sin `overlay-harness.js` (el de los pipelines de operaciones de
 // cualquier organización, que no superponen nada: pipelines/operations/) corre la guarda pública, `harness-tree.js`, con
-// la misma huella y los mismos argumentos (story 8.30).
+// la misma huella y los mismos argumentos.
 //
 // Salida: 0 viajó, o no había nada nuevo · 1 NO viajó (dice por qué) · 2 uso.
 // Casos: scripts/tests/push-nightly-data.test.js (T73).
@@ -69,7 +69,7 @@ const STATE_FILE = 'nightly-data.json';
 // lo que nunca es un dato de la noche, aunque caiga en una carpeta que se guarda
 const NEVER = ['.DS_Store', '*.swp', '*.bak'];
 const TREE_CHECK = 'scripts/ci/overlay-harness.js';
-// la guarda pública (story 8.30): la misma huella, para un árbol que no trae la superposición
+// la guarda pública: la misma huella, para un árbol que no trae la superposición
 const PUBLIC_TREE_CHECK = 'scripts/ci/harness-tree.js';
 /** Dónde deja la plantilla (traer-arnes.yml) el guion de la corrida, bajo la carpeta temporal del agente. */
 const RUN_TREE_CHECK = path.join('arnes-guion', 'overlay-harness.js');
@@ -94,7 +94,7 @@ function git(repo, args, { env, input } = {}) {
     status: r.status,
     out: r.stdout ? r.stdout.toString('utf8').trim() : '',
     // lo que git (o el remoto) dijo al fallar se usa sólo para mostrarlo: se sanea acá, en el origen, para que ningún
-    // camino lo imprima crudo (los «intento N: …» lo mostraban sin pasar por `quiet`)
+    // camino lo imprima crudo (los «intento N: …» también pasan por `quiet`)
     err: quiet(r.stderr ? r.stderr.toString('utf8') : String(r.error || '')),
   };
 }
@@ -109,7 +109,7 @@ function cleanPaths(list, what) {
   const out = [];
   for (const raw of list) {
     const p = String(raw).replace(/\\/g, '/').replace(/\/+$/, '');
-    // se mira la ruta YA normalizada: `\private\tmp` (barras al revés) pasaba por relativa. Y sin caracteres de
+    // se mira la ruta YA normalizada: `\private\tmp` (barras al revés) pasaría por relativa. Y sin caracteres de
     // control: una ruta con un salto de línea se imprimiría en dos líneas, y la segunda podría leerse como una orden
     // (lo que se rechaza se muestra con esos caracteres a la vista, no crudos)
     const shown = quiet(String(raw).replace(/[\u0000-\u001f\u007f]/g, '?'));
@@ -127,7 +127,7 @@ function cleanPaths(list, what) {
   return out;
 }
 // Una ruta con comodines la resuelve git con las reglas del shell: `*` no cruza carpetas (`**` sí). Sin esta marca,
-// `carpeta/*.json` se llevaba también `carpeta/sub/otro.json`, cosa que el comodín del shell de antes no hacía.
+// `carpeta/*.json` llevaría también `carpeta/sub/otro.json`, cosa que el comodín del shell no hace.
 const WILD = /[*?[]/;
 const pathspec = (s) => (WILD.test(s) ? `:(glob)${s}` : s);
 const exclude = (specs) => specs.map((s) => (WILD.test(s) ? `:(exclude,glob)${s}` : `:(exclude)${s}`));
@@ -241,12 +241,12 @@ function stepCommit(repo, base, specs, message, env, tmp, say) {
   const idx = { ...env, GIT_INDEX_FILE: path.join(tmp, 'step-index') };
   gitOrRed(repo, ['read-tree', base], 'no pude leer el árbol de la base', { env: idx });
   // una ruta que no está ni en el disco ni en la base no es un error: esa noche no escribió ahí. Pero un `git` que
-  // falla al listar NO es «no hay nada»: sale rojo (si no, todas las rutas se descartaban y el paso decía «nada nuevo»)
+  // falla al listar NO es «no hay nada»: sale rojo (si no, todas las rutas se descartarían y el paso diría «nada nuevo»)
   const live = specs.filter((s) => gitOrRed(repo, ['ls-files', '--cached', '--others', '--', pathspec(s)], `no pude listar lo que hay en ${s}`, { env: idx }) !== '');
   if (live.length) {
     gitOrRed(repo, ['add', '-A', '-f', '--', ...live.map(pathspec)], 'no pude tomar del disco lo que escribió el paso', { env: idx });
     // Lo que NO es un dato de la noche vuelve a quedar como estaba en la base, después de tomar todo y no con rutas
-    // de exclusión (con más de una exclusión de comodín, `git add` dejaba afuera también los archivos nuevos de la
+    // de exclusión (con más de una exclusión de comodín, `git add` deja afuera también los archivos nuevos de la
     // carpeta: medido con git 2.50). Dos clases:
     //   · la basura de la máquina, NUNCA: ni nueva, ni cambiada, ni borrada si alguien la versionó alguna vez;
     //   · un enlace simbólico o un submódulo: apunta a cualquier lado, y el `sync` siguiente lo escribiría en el
@@ -306,8 +306,8 @@ function save(o, say) {
   const exported = cleanPaths(o.verifyExport, '--verify-export');
   if (exported.length && !o.verify) throw new Usage('--verify-export va con --verify');
   const today = o.today || new Date().toISOString().slice(0, 10);
-  // una fecha de verdad, no sólo su forma: `2026-13-45` reventaba al calcular el día anterior, y `2026-02-30` se
-  // corregía sola a otro día
+  // una fecha de verdad, no sólo su forma: un mes 13 revienta al calcular el día anterior, y un 30 de febrero se
+  // corrige solo a otro día
   const parsed = DAY.test(today) ? new Date(`${today}T12:00:00Z`) : null;
   if (!parsed || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== today) {
     throw new Usage(`--today: «${today}» no es una fecha (AAAA-MM-DD)`);
@@ -443,7 +443,7 @@ function sync(o, say) {
     // sólo lo que existe en la punta o en el índice (los comodines los resuelve git): lo demás no tiene qué traer
     const atTip = { ...env, GIT_INDEX_FILE: path.join(tmp, 'tip-index') };
     gitOrRed(repo, ['read-tree', tip], `no pude leer la punta de ${remote}/${branch}`, { env: atTip });
-    // un `git` que falla al listar no es «no hay qué traer»: rojo (si no, no restauraba nada y decía «datos al disco»)
+    // un `git` que falla al listar no es «no hay qué traer»: rojo (si no, no restauraría nada y diría «datos al disco»)
     const live = specs.filter((s) => gitOrRed(repo, ['ls-files', '--cached', '--', pathspec(s)], `no pude listar ${s} en la punta de ${remote}/${branch}`, { env: atTip }) !== ''
       || gitOrRed(repo, ['ls-files', '--cached', '--', pathspec(s)], `no pude listar ${s} en el checkout`, { env }) !== '');
     if (live.length) {

@@ -1,15 +1,12 @@
 #!/usr/bin/env node
 'use strict';
 // harness-repo.js — ¿este repo es uno de los repos DEL arnés? Lo dice el REMOTO, no la carpeta.
-// (2026-09-17, el pendiente (a) de incident-log#retro-por-push-sin-story-2026-09-16)
 //
 // POR QUÉ EXISTE: los repos del arnés (agent-skills / el arnés) se trabajan directo en
-// main, sin story ni pipeline, así que varios controles los excluyen. Esa exclusión estaba escrita
-// TRES veces —retro-pending.js, unpushed-work-notice.js y lib/story-gate.js de agent-skills— y las
-// tres miraban si algún segmento de la RUTA se llamaba `agent-skills` o el arnés. O sea
-// que el mismo repo era o no «del arnés» según la carpeta desde la que se trabajaba: un clon
-// descartable (`…/scratchpad/tcg`, que es como se trabaja cuando hay otra sesión viva en el checkout)
-// NO quedaba excluido, y un repo de producto clonado debajo de una carpeta con ese nombre quedaba
+// main, sin story ni pipeline, así que varios controles los excluyen. Esa exclusión no puede mirar si algún segmento
+// de la RUTA se llama `agent-skills` o el arnés: el mismo repo sería o no «del arnés» según la carpeta desde la que
+// se trabaja. Un clon descartable (`…/scratchpad/tcg`, que es como se trabaja cuando hay otra sesión viva en el
+// checkout) NO quedaría excluido, y un repo de producto clonado debajo de una carpeta con ese nombre quedaría
 // excluido sin serlo — la cara: un control que no corre y nada lo dice.
 //
 // EL CRITERIO, en un solo lugar:
@@ -25,7 +22,7 @@
 //      la carpeta: no hay otra identidad que leer.
 //   4. Un remoto que no se sabe leer (no es una URL de git) NO es el arnés — la duda va hacia más control.
 //
-// QUÉ ES «EL ARNÉS» (story 8.3, AC 7 — antes eran dos URLs de una organización escritas acá):
+// QUÉ ES «EL ARNÉS»:
 //   las identidades de referencia salen del `origin` del PROPIO clon del arnés (este archivo vive en
 //   `<clon>/scripts/lib/`) y del `origin` de agent-skills (`~/.claude/agent-skills`, o `TYCON_SKILLS_DIR`),
 //   cada uno seguido con la MISMA cadena que el repo juzgado (el propio clon puede ser descartable, con
@@ -34,34 +31,34 @@
 //   dice (`por: 'carpeta-sin-identidad-propia'`). Para las pruebas —y para quien quiera fijarlas— se
 //   inyectan: `TYCON_HARNESS_IDENTITIES="url1,url2"` o `opts.identidades`.
 //
-// LAS TRES FORMAS DE MÁQUINA (story 8.18, contrato C5 — lo usa el carril de las máquinas; no se cambia sin avisar):
-//   el arnés y agent-skills pasan a ser UN repo, y mientras dura la mudanza una máquina puede tener
+// LAS TRES FORMAS DE MÁQUINA (el carril de las máquinas las usa; no se cambian sin avisar):
+//   el arnés y agent-skills son UN repo, y mientras dura la mudanza una máquina puede tener
 //     (a) un árbol: el clon del repo unido, con `~/.claude/agent-skills` enlazado a él;
 //     (b) dos clones, el viejo de agent-skills ya re-apuntado al remoto del arnés (mismo `origin`);
 //     (c) dos clones, el viejo sin re-apuntar (su `origin` es el remoto viejo).
 //   En las tres, los dos clones son «del arnés». (a) y (b) salen solas: es el `origin` del propio clon. La (c) no:
-//   «dónde están las skills» lo contesta `resolveSkillsDirs()`, que desde esta story dice EL PROPIO CLON cuando trae
-//   `skills/` —después del corte, el clon del arnés de toda máquina—, y el remoto viejo se quedaba sin nadie que lo
-//   nombrara: el clon instalado de las skills pasaba a tratarse como un repo de producto. Por eso la referencia suma
-//   SIEMPRE el `origin` de lo instalado en `~/.claude/agent-skills`, además del propio clon y de lo que diga la regla.
+//   «dónde están las skills» lo contesta `resolveSkillsDirs()`, que dice EL PROPIO CLON cuando trae
+//   `skills/`, y el remoto viejo se quedaría sin nadie que lo nombrara: el clon instalado de las skills pasaría a
+//   tratarse como un repo de producto. Por eso la referencia suma SIEMPRE el `origin` de lo instalado en
+//   `~/.claude/agent-skills`, además del propio clon y de lo que diga la regla.
 //   Con `TYCON_SKILLS_DIR` puesta manda la variable, como en todo el arnés: lo instalado no suma.
 //   El remoto viejo es «del arnés» mientras exista ese clon instalado con ese `origin`: no hay ninguna URL escrita acá,
 //   y una máquina que ya re-apuntó deja de reconocer, sola, un clon suelto que siga en el remoto viejo.
 //
-// LOS OTROS REPOS DEL ARNÉS (story 8.26, AC 21): desde el corte a GitHub, el dueño escribe en el repo PÚBLICO y lo interno
+// LOS OTROS REPOS DEL ARNÉS: el dueño escribe en el repo PÚBLICO y lo interno
 //   vive en el repo de MANTENIMIENTO. Los dos se trabajan como el arnés, y ninguno es el `origin` del clon que corre. Su
 //   identidad la DECLARA ese clon, junto a él (nunca escrita acá): en el interno, `scripts/publishing/public-repos.json`
 //   (`org`/`repo` del público en GitHub y `maintainers`, la dirección del de mantenimiento); en la copia,
 //   `scripts/setup/public-remotes.json` (los remotos públicos, con el nombre ya puesto). Una declaración que está y no se
 //   deja leer no suma nada —la duda va hacia más control— y la CLI la nombra (`declaraciones_ilegibles`). Con
 //   identidades inyectadas no se suma lo declarado: mandan las inyectadas.
-// LO QUE DECLARA LA MÁQUINA (story 8.26, tanda H1c · AC 65): después del corte, quien mantiene trabaja en un clon del
-//   PÚBLICO, que no trae `public-repos.json`: la dirección del repo de mantenimiento ya no la puede declarar el árbol.
-//   La declara la máquina (`paths.maintainers` de su configuración: el clon privado, que hasta la tanda J es el del
-//   interno), y cuenta el `origin` de ESE clon, seguido como cualquier otro. A diferencia de lo que declara el árbol,
-//   vale también cuando el clon que corre NO tiene identidad propia: una versión instalada no es un clon (medido el
-//   2026-10-11: su referencia quedaba vacía y decidía el nombre de la carpeta, así que un clon descartable del repo
-//   interno salía «no»), y la declaración de la máquina no es un archivo suelto junto al árbol: es la persona diciendo
+// LO QUE DECLARA LA MÁQUINA: quien mantiene trabaja en un clon del
+//   PÚBLICO, que no trae `public-repos.json`: la dirección del repo de mantenimiento no la puede declarar el árbol.
+//   La declara la máquina (`paths.maintainers` de su configuración: el clon privado), y cuenta el `origin` de ESE
+//   clon, seguido como cualquier otro. A diferencia de lo que declara el árbol,
+//   vale también cuando el clon que corre NO tiene identidad propia: una versión instalada no es un clon (su referencia
+//   quedaría vacía y decidiría el nombre de la carpeta, así que un clon descartable del repo
+//   interno saldría «no»), y la declaración de la máquina no es un archivo suelto junto al árbol: es la persona diciendo
 //   cuál es su clon. Con ella en la referencia, lo que el árbol declara se suma como siempre.
 //   🔴 Lo que eso cambia: en esa máquina, todo clon de un repo del arnés pasa a serlo por su remoto, esté donde esté, y
 //   ahí dejan de correr los controles que excluyen a los repos del arnés (el portón de carril, el registro de
@@ -71,7 +68,7 @@
 //   dejó de ser un clon, git subiría al repo de arriba y ése pasaría a ser «del arnés». Una declaración que no sirve no
 //   suma nada y la CLI la nombra (`declaracion_de_maquina`). Con identidades inyectadas tampoco se suma.
 // git se llama SIN las variables que deja un hook de git (GIT_DIR y compañía): con ellas puestas, `git -C <otro>` lee el
-//   repo del hook, y un repo de producto salía «del arnés» con el remoto del repo que se estaba commiteando.
+//   repo del hook, y un repo de producto saldría «del arnés» con el remoto del repo que se está commiteando.
 // Límites declarados: mira `origin` aunque se trabaje contra otro remoto.
 //
 // A mano:  node scripts/lib/harness-repo.js [dir|archivo]   → dice qué decidió, por qué, y qué es «el arnés» acá.
@@ -83,7 +80,7 @@ const { readEnv } = require('./legacy-names.js');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
 // la carpeta del clon por su nombre (respaldo sin `origin`): agent-skills, el repo interno y el público, que se clona en
-// una carpeta con el nombre del lugar (story 8.19, AC 12: los dos nombres, siempre como segmento de ruta). Escritos acá:
+// una carpeta con el nombre del lugar (los dos nombres, siempre como segmento de ruta). Escritos acá:
 // el banco y varias suites copian este archivo suelto a un árbol de juguete (reconocedor declarado en
 // scripts/tests/fixtures/harness-place-names.json).
 const SEGMENTOS_DEL_ARNES = ['agent-skills', 'tycon-claude-guides', 'tycon-harness'];
@@ -91,8 +88,8 @@ const MAX_SALTOS = 4; // un clon de un clon de un clon alcanza; un ciclo de `ori
 const ENV_IDENTIDADES = 'TYCON_HARNESS_IDENTITIES';
 
 // la ruta REAL, con la caja del disco: `realpathSync` a secas resuelve los enlaces pero deja las mayúsculas como se
-// escribieron; en un disco que no las distingue (Mac, Windows) la misma carpeta tipeada con otra caja no era «la misma»
-// que la que contesta git, que sí la corrige (pase adversarial de la story 8.26, tanda H1c)
+// escribieron; en un disco que no las distingue (Mac, Windows) la misma carpeta tipeada con otra caja no sería «la misma»
+// que la que contesta git, que sí la corrige
 function real(p) { try { return fs.realpathSync.native(String(p)); } catch { return String(p); } }
 // lo que git le deja puesto a un hook: apunta al repo del hook, no al que se pregunta (cabecera)
 const GIT_OF_A_HOOK = /^GIT_(DIR|WORK_TREE|INDEX_FILE|PREFIX|COMMON_DIR|NAMESPACE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES)$/;
@@ -139,8 +136,8 @@ function identidadRemoto(url) {
   let m = u.match(/^(?:ssh|git|https?|git\+ssh|ssh\+git|ftps?):\/\/(?:[^@/]+@)?([^/:]+)(?::\d+)?\/(.+)$/i);   // esquema://[usuario@]host[:puerto]/ruta
   if (m) { host = m[1]; ruta = m[2]; }
   else {
-    // usuario@host:ruta (scp). Un host sin punto (`git@gitserver:o/r.git`, un servidor interno) también vale — AC 7,
-    // «cualquier host» (pase adversarial, vuelta 1); lo que NO es un remoto es una ruta de Windows: una sola letra
+    // usuario@host:ruta (scp). Un host sin punto (`git@gitserver:o/r.git`, un servidor interno) también vale —
+    // «cualquier host»; lo que NO es un remoto es una ruta de Windows: una sola letra
     // sin usuario seguida de `\` o `/` (`C:\repos`, `C:/repos`).
     m = u.match(/^(?:([^@/\\]+)@)?([^/\\:]+):(?![\\/]{2})(.+)$/);
     if (m && !(m[2].length === 1 && !m[1] && /^[\\/]/.test(m[3]))) { host = m[2]; ruta = m[3]; }
@@ -204,11 +201,11 @@ function identidadesDelArnes(opts = {}) {
   let ids;
   if (inyectadas) ids = inyectadas.split(',').map((s) => identidadRemoto(s.trim())).filter(Boolean);
   else {
-    // 🔴 El valor de siempre (lo instalado) es SÓLO para la copia que viaja sin skills-dir.js al lado. Antes era un
-    //    `catch` que tragaba cualquier error (pase adversarial del tramo 1 de la story 8.18, 2026-10-04). Medido: con la
-    //    variable puesta y un skills-dir.js que está y no carga, la referencia salía de lo instalado en vez de la
-    //    variable —un clon suelto con el remoto viejo pasaba a ser «del arnés»— con código 0 y sin una línea; y el
-    //    error que skills-dir.js tira cuando su vecina canonical-path.js está y no carga se perdía acá. Se mira si el
+    // 🔴 El valor de siempre (lo instalado) es SÓLO para la copia que viaja sin skills-dir.js al lado. Un
+    //    `catch` que tragara cualquier error haría que, con la variable puesta y un skills-dir.js que está y no
+    //    carga, la referencia saliera de lo instalado en vez de la variable —un clon suelto con el remoto viejo
+    //    pasaría a ser «del arnés»— con código 0 y sin una línea; y el error que skills-dir.js tira cuando su vecina
+    //    canonical-path.js está y no carga se perdería acá. Se mira si el
     //    archivo ESTÁ, no el mensaje del error (el «Require stack» nombra a skills-dir.js aunque falte otro).
     let skills = installed;
     if (fs.existsSync(path.join(__dirname, 'skills-dir.js'))) skills = require('./skills-dir.js').resolveSkillsDirs(env.TYCON_SKILLS_DIR).repo;
@@ -281,7 +278,7 @@ function declaradas() {
   memoDeclaradas = { ids, publicas, ilegibles };
   return memoDeclaradas;
 }
-/** ¿Es el repo PÚBLICO del arnés, el que el clon que corre declara? (story 8.26, tanda H1c: de quién es la
+/** ¿Es el repo PÚBLICO del arnés, el que el clon que corre declara? (de quién es la
  *  configuración del merge que se lee del clon de mantenimiento). Nunca por lo que declara la máquina. */
 function esPublicoDeclarado(id) {
   const n = normalizar(id);
@@ -293,7 +290,7 @@ function declaracionDeMaquina(env = process.env) {
   if (!fs.existsSync(lib)) return { declared: false, path: null, problem: null };
   try {
     const fn = require(lib).maintainersClone;
-    if (typeof fn !== 'function') return { declared: false, path: null, problem: null };   // un tycon-home.js anterior a la clave
+    if (typeof fn !== 'function') return { declared: false, path: null, problem: null };   // un tycon-home.js sin esa función
     return fn({ env });
   } catch (e) { return { declared: false, path: null, problem: `no pude leer lo que declara la máquina (${String((e && e.message) || e).split('\n')[0]})` }; }
 }

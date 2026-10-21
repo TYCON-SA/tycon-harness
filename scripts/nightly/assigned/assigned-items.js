@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /*
- * assigned-items.js — LOS PEDIDOS ABIERTOS ASIGNADOS A CADA PERSONA, DE CADA NOCHE (story 2.23, AC 16; decisión 20).
+ * assigned-items.js — LOS PEDIDOS ABIERTOS ASIGNADOS A CADA PERSONA, DE CADA NOCHE.
  *
  * El sitio de la organización le muestra a cada dev lo que tiene asignado. No consulta la plataforma en vivo (eso le
  * pediría una credencial con lectura de pedidos de toda la organización): lee este archivo, que deja el nocturno del
@@ -136,7 +136,7 @@ function delProyecto({ cmd, org, hoy, proyecto, tmp, categoriasDe }) {
     // las categorías del tipo DEL PEDIDO en su proyecto; sin ellas no se sabe si está abierto: el proyecto no se mide
     const c = categoriasDe(proyecto, x.tipo);
     if (!c.categorias) throw new NoSePudo(c.motivo);
-    // Un estado que su tipo ya no declara (medido: Tasks en «Closed» después de un cambio de proceso) no está abierto
+    // Un estado que su tipo ya no declara (por ejemplo, Tasks en «Closed» después de un cambio de proceso) no está abierto
     // para ese tipo: no se muestra, pero se cuenta, para que no desaparezca callado.
     if (!Object.prototype.hasOwnProperty.call(c.categorias, x.estado)) {
       const k = `${x.tipo}\u0000${x.estado}`;

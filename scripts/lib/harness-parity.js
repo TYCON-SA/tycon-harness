@@ -1,6 +1,6 @@
 'use strict';
 /**
- * scripts/lib/harness-parity.js — la paridad de INSTALACIÓN Claude↔Codex (Etapa H, P2).
+ * scripts/lib/harness-parity.js — la paridad de INSTALACIÓN Claude↔Codex.
  *
  * Responde una sola pregunta, medible: **¿el lado Codex de ESTA máquina refleja lo que el
  * canónico dice que debería haber?** Once superficies de estado de disco — acá se prueba la
@@ -11,20 +11,19 @@
  * corre su red rápida). El reporte va a `.bench/harness-parity.json` y lo cobra
  * `bench-notice.js` al arranque siguiente — el rojo llega solo.
  *
- * 🔴 Endurecida por DOS rondas adversariales el 2026-08-23. Las reglas, con su porqué:
+ * 🔴 Las reglas, con su porqué:
  *   1. **La política vive en el DEPLOYER y se importa** (resolveServers, writableRootsHas,
- *      serverRegistered, deployPairs, substitute, linkState). Las copias a mano divergieron
- *      DOS veces en el mismo día.
+ *      serverRegistered, deployPairs, substitute, linkState). Las copias a mano divergen.
  *   2. **Predicados con alcance y por ESTRUCTURA, no substrings ni prosa** — la ruta en un
- *      comentario compraba un verde; un header comentado registraba un server; el chequeo por
- *      frases en castellano necesitó un parche de conjugación en su primera corrida.
+ *      comentario compraría un verde; un header comentado registraría un server; un chequeo por
+ *      frases en castellano necesitaría un parche de conjugación.
  *   3. **Nunca un rojo que el dev no pueda limpiar.** Skill propio del dev, agente personal en
  *      ~/.claude/agents, llave activa vía fish/direnv, formato interno de codex que cambió:
  *      todo eso es respetado o declarado, no rojo — un rojo inarreglable termina en opt-out
  *      del control entero, llevándose los rojos verdaderos.
  *   4. **Un crash es un ROJO con causa y el reporte se escribe SIEMPRE** — incluido el crash
  *      al CARGAR la política (por eso los require de deployers son lazy y guardados: un
- *      equivalences.json a medio mergear mataba el módulo antes de toda garantía).
+ *      equivalences.json a medio mergear mataría el módulo antes de toda garantía).
  *   5. **Un fallo de ejecución no es verde** (spawn con error/timeout ≠ "al día").
  *
  * DISPARADOR: la EVIDENCIA de despliegue en CODEX_HOME, no la llave TYCON_CODEX. Es
@@ -32,7 +31,7 @@
  * "¿hay algo que auditar?", aquél "¿está completo para saltear el deploy?") — diferencia
  * documentada, no drift.
  *
- * La superficie 11 (deployers-cubiertos) es el análogo de B2 para la instalación, y su mapa se
+ * La superficie 11 (deployers-cubiertos) cubre la instalación como lo hace el controls-bench con el runtime, y su mapa se
  * VALIDA contra las superficies reales: agregarle una entrada de prosa no lo satisface.
  * Red end-to-end: scripts/tests/harness-parity.test.sh (diaria, con laboratorio propio vía
  * TYCON_PARITY_BENCH_DIR — no toca el reporte real).
@@ -47,18 +46,18 @@ const TCG = path.resolve(__dirname, '..', '..');
 const HOME = os.homedir();
 const CODEX = () => process.env.CODEX_HOME || path.join(HOME, '.codex');
 /**
- * Dónde va el reporte (story 8.23, tanda G · AC 44 a): la variable explícita gana; en una versión BAJADA (el árbol trae su
- * manifiesto `.tycon-release.json`) el árbol es de sólo lectura para la máquina —escribir adentro lo dejaba «de más» para
- * `doctor` y la próxima actualización lo perdía (la primera máquina migrada, 2026-10-08)— y el reporte va a la carpeta
+ * Dónde va el reporte: la variable explícita gana; en una versión BAJADA (el árbol trae su
+ * manifiesto `.tycon-release.json`) el árbol es de sólo lectura para la máquina —escribir adentro lo dejaría «de más» para
+ * `doctor` y la próxima actualización lo perdería— y el reporte va a la carpeta
  * del estado; en un clon, donde siempre (`.bench/` del árbol, que git ignora). La misma función la usa quien cobra el
  * rojo (bench-notice.js): un solo lugar decide.
  */
 const BENCH_DIR = () => {
   if (process.env.TYCON_PARITY_BENCH_DIR) return process.env.TYCON_PARITY_BENCH_DIR;
   if (fs.existsSync(path.join(TCG, '.tycon-release.json'))) {
-    // sin la pieza (una copia suelta): donde siempre. Cualquier OTRO error de la pieza sube: callarlo dejaba el reporte
-    // adentro del árbol bajado, que es justo lo que este lugar evita (cazador de fallos silenciosos, tanda G; una TYCON_HOME
-    // relativa NO es uno de esos errores: `stateDir(home)` la ignora y usa la casa, medido en harness-parity.test.sh)
+    // sin la pieza (una copia suelta): donde siempre. Cualquier OTRO error de la pieza sube: callarlo dejaría el reporte
+    // adentro del árbol bajado, que es justo lo que este lugar evita (una TYCON_HOME
+    // relativa NO es uno de esos errores: `stateDir(home)` la ignora y usa la casa)
     try { return path.join(require(path.join(TCG, 'scripts', 'setup', 'harness', 'tycon-home.js')).stateDir(HOME), 'controls-bench'); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; }
   }
   return path.join(TCG, 'scripts', 'controls-bench', '.bench');
@@ -96,8 +95,8 @@ function loadPolicy(errores) {
 }
 
 /**
- * Qué herramientas enchufa esta máquina (story 8.23, tanda C · AC 25): lo que dice el ESTADO del mecanismo de instalación
- * (`tools`), o —en una máquina de antes de la tanda C, o sin mecanismo— lo de siempre: Claude Code, y Codex si su lado
+ * Qué herramientas enchufa esta máquina: lo que dice el ESTADO del mecanismo de instalación
+ * (`tools`), o —en una máquina sin mecanismo— lo de siempre: Claude Code, y Codex si su lado
  * está desplegado. `recorded` dice cuál de las dos fue. La paridad mide sobre esto: una máquina que sólo enchufa a Codex
  * no puede dar rojo por piezas de Claude Code que no tiene.
  */
@@ -136,8 +135,8 @@ function sAdvisors(ctx) {
     return { name: 'advisors', ok: false, detail: 'MANIFEST.json vacío o ilegible — nada que comparar no es un verde' };
   }
   let stale = 0, missing = 0;
-  // lo desplegado lleva el modelo resuelto de la organización (story 7.29): se compara con la misma resolución que el
-  // despliegue (orgCodexModel + deployedContent); un generador anterior no la tiene y se compara como siempre
+  // lo desplegado lleva el modelo resuelto de la organización: se compara con la misma resolución que el
+  // despliegue (orgCodexModel + deployedContent); un generador que no la tiene se compara como siempre
   const conOrg = typeof ctx.pol.gen.orgCodexModel === 'function' && typeof ctx.pol.gen.deployedContent === 'function';
   const esperado = (n, buf) => (conOrg ? Buffer.from(ctx.pol.gen.deployedContent(buf.toString('utf8'), ctx.pol.gen.orgCodexModel(TCG, n))) : buf);
   for (const n of ctx.manifest) {
@@ -149,7 +148,7 @@ function sAdvisors(ctx) {
       if (Buffer.compare(esperado(n, a), b) !== 0) stale++;
     }
   }
-  // Los revisores de la capa del equipo (story 8.25, A2b · AC 30 d): no hay adapters/ con qué compararlos —la máquina los
+  // Los revisores de la capa del equipo: no hay adapters/ con qué compararlos —la máquina los
   // genera—, así que se comparan contra lo que el generador escribiría AHORA (la misma lista y la misma función que el
   // despliegue: advisorsToDeploy y generateOne). Uno que falta o difiere es rojo, con quién lo arregla: ese rojo no lo
   // limpia el dev con un comando suyo.
@@ -184,8 +183,8 @@ function sAdvisors(ctx) {
   }
   // Un .md en ~/.claude/agents que no está en el manifest puede ser un agente PERSONAL del dev
   // (uso documentado de esa carpeta): se INFORMA, jamás es rojo — migrarlo exigiría meterlo al
-  // manifest del equipo con casos, que no es una remediación del dev. (2ª ronda: regla 3.)
-  // (sólo donde Claude Code está enchufado: en una máquina sólo con Codex esa carpeta no es de nadie — tanda C de la 8.23)
+  // manifest del equipo con casos, que no es una remediación del dev.
+  // (sólo donde Claude Code está enchufado: en una máquina sólo con Codex esa carpeta no es de nadie)
   // Los de la capa del equipo no son personales: no van en esa nota (se miden arriba).
   const canon = ctx.tools && !ctx.tools.includes('claude') ? [] : ls(path.join(HOME, '.claude', 'agents')).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3));
   const sinMigrar = canon.filter((a) => !ctx.manifest.includes(a) && !teamNames.includes(a));
@@ -201,18 +200,18 @@ function sHooks(ctx) {
   const fragRaw = rds(ctx.pol.hooks.FRAGMENT);
   if (!fragRaw) return { name: 'hooks', ok: false, detail: 'adapters/codex/hooks.json ilegible' };
   // lo esperado es lo que esta máquina registra: sin los hooks de una integración apagada, con la MISMA decisión que el
-  // desplegador (DEF-8.23-C-hooks-codex-sin-integracion). Un desplegador viejo, sin la función: el fragmento entero.
+  // desplegador. Un desplegador sin la función: el fragmento entero.
   const raw = JSON.parse(fragRaw);
   const act = typeof ctx.pol.hooks.activeFragment === 'function' ? ctx.pol.hooks.activeFragment(raw) : { fragment: raw, dropped: [] };
   const esperado = ctx.pol.hooks.substitute(act.fragment.hooks, TCG, ctx.pol.hooks.SKILLS);
-  // Comando COMPLETO + multiconjunto: el basename era ciego al path y a los duplicados.
+  // Comando COMPLETO + multiconjunto: el basename sería ciego al path y a los duplicados.
   const flat = (h) => {
     const o = [];
     for (const [e, gs] of Object.entries(h || {})) for (const g of gs) for (const x of (g.hooks || [])) o.push(`${e}|${g.matcher || '*'}|${x.command}`);
     return o.sort();
   };
   const esp = flat(esperado);
-  // Un hook desplegado que todavía apunta a la ruta vieja de un archivo renombrado (story 8.9) corre el nuevo a través de su
+  // Un hook desplegado que todavía apunta a la ruta vieja de un archivo renombrado corre el nuevo a través de su
   // reemplazo: cuenta como el nuevo. Lo reescribe el instalador (--migrate-machine); mientras tanto no es un rojo.
   let resolver = (x) => x;
   try { const ln = require(path.join(TCG, 'scripts', 'lib', 'legacy-names.js')); resolver = (x) => ln.resolveShimsInCommand(x); } catch { /* sin la biblioteca, como antes */ }
@@ -234,7 +233,7 @@ function sSkills(ctx) {
   });
   if (reales.length === 0) return { name: 'skills', ok: false, detail: `el clon de skills está vacío o ilegible (${clone})` };
   const conteo = { ausente: [], roto: [], dev: 0, ok: 0 };
-  // las de los paquetes que la organización activa (story 8.41): el deployer las enlaza aparte (packSkills), cada una
+  // las de los paquetes que la organización activa: el deployer las enlaza aparte (packSkills), cada una
   // desde la carpeta de skills de su paquete — la paridad las mira igual
   // (si no se pueden leer, no es «no hay»: se dice)
   let dePaquetes = [];
@@ -267,7 +266,7 @@ function sMcp(ctx) {
 
 function sAgentsMd() {
   if (process.env.TYCON_NO_CLAUDEMD_SYNC === '1') return { name: 'agents-md', ok: true, detail: 'sync opt-out (TYCON_NO_CLAUDEMD_SYNC=1) — sin reglas que auditar' };
-  // Desde la tanda C de la story 8.23 AGENTS.md no es copia del CLAUDE.md: lleva los bloques del arnés entre sus marcas,
+  // AGENTS.md no es copia del CLAUDE.md: lleva los bloques del arnés entre sus marcas,
   // escritos por agents-md-blocks.js. Se mide con ESE escritor en modo `check` (la política vive en quien escribe): así
   // una máquina sólo con Codex no depende de un CLAUDE.md que no tiene, y lo que la persona escribe fuera de las marcas
   // no cuenta como diferencia.
@@ -307,16 +306,16 @@ function sCodexCli() {
 }
 
 function sLlaveEnRc(ctx) {
-  // con el mecanismo de instalación diciendo qué enchufa la máquina (tanda C de la 8.23), el lado Codex se mantiene por
-  // el ESTADO —lo re-enchufa cada actualización— y ya no depende de una variable del rc que el arranque no ve
+  // con el mecanismo de instalación diciendo qué enchufa la máquina, el lado Codex se mantiene por
+  // el ESTADO —lo re-enchufa cada actualización— y no depende de una variable del rc que el arranque no ve
   if (ctx && ctx.recorded && ctx.tools.includes('codex')) {
     return { name: 'llave-en-rc', ok: true, detail: 'el estado del arnés dice que esta máquina enchufa a Codex: su lado se mantiene sin depender de la llave' };
   }
   if (process.platform === 'win32') {
     return { name: 'llave-en-rc', ok: true, detail: 'Windows: la llave se verifica en el checklist F3 (registro de usuario), no acá' };
   }
-  // Tolerante a comillas y con .zshenv (el archivo canónico de env en zsh): la 2ª ronda cazó
-  // que `export TYCON_CODEX="1"` — hábito común — daba rojo permanente en una máquina sana.
+  // Tolerante a comillas y con .zshenv (el archivo canónico de env en zsh): `export TYCON_CODEX="1"` —hábito
+  // común— daría rojo permanente en una máquina sana.
   const rcs = ['.zshrc', '.zshenv', '.zprofile', '.bashrc', '.bash_profile', '.profile'].map((f) => path.join(HOME, f));
   const enRc = rcs.some((f) => /^[^#\n]*\bTYCON_CODEX\s*=\s*["']?1/m.test(rds(f) || ''));
   if (enRc) return { name: 'llave-en-rc', ok: true, detail: 'TYCON_CODEX=1 en el rc' };
@@ -330,13 +329,14 @@ function sLlaveEnRc(ctx) {
 
 function sWritableRoots(ctx) {
   if (!ctx.pol.mcp) return { name: 'writable-roots', ok: false, detail: 'política de deploy-codex-mcp no cargada' };
-  // todas las raíces que el desplegador pone (tanda C de la 8.23): el estado vigente y la casa propia del arnés
+  // todas las raíces que el desplegador pone: el estado vigente y la casa propia del arnés
   const roots = typeof ctx.pol.mcp.markerRoots === 'function' ? ctx.pol.mcp.markerRoots() : [ctx.pol.mcp.markerRoot()];
   const ok = roots.every((r) => ctx.pol.mcp.writableRootsHas(ctx.toml, r));
-  // 🔴 Que estén no alcanza (2026-10-11): con UNA raíz que pasa por un enlace, Codex rechaza todos los comandos de shell
-  //    y no avisa al arrancar. Pasó en la primera máquina mudada a ~/.tycon (la carpeta vieja del estado quedó como
-  //    enlace y seguía en la lista) con esta superficie en verde: miraba que las rutas estuvieran, no que Codex las
-  //    aceptara. La política de qué es un enlace y de quién es cada raíz vive en el desplegador.
+  //
+  // 🔴 Que estén no alcanza: con UNA raíz que pasa por un enlace, Codex rechaza todos los comandos de shell
+  //    y no avisa al arrancar. Una superficie que sólo mira que las rutas estén daría verde sin que Codex las
+  //    acepte (por ejemplo, la carpeta vieja del estado que quedó como enlace y sigue en la lista). La política de
+  //    qué es un enlace y de quién es cada raíz vive en el desplegador.
   if (ok && typeof ctx.pol.mcp.linkedRoots === 'function') {
     const linked = ctx.pol.mcp.linkedRoots(ctx.toml);
     if (linked.length) {
@@ -361,7 +361,7 @@ function sTrust(ctx) {
   if (total === 0) return { name: 'trust', ok: true, detail: 'sin hooks desplegados' };
   const hooksPath = path.join(CODEX(), 'hooks.json');
   // Posiciones DISTINTAS cubiertas (Set, no contador): dos claves viejas que normalizan a la
-  // misma posición inflaban el conteo y daban verde con un hook sin aprobar.
+  // misma posición inflarían el conteo y darían verde con un hook sin aprobar.
   const cubiertas = new Set();
   let clavesTotales = 0, clavesParseadas = 0;
   for (const m of ctx.toml.matchAll(/\[hooks\.state\."([^"]+)"\]/g)) {
@@ -389,8 +389,8 @@ function sTrust(ctx) {
 
 function sDeployersCubiertos() {
   // valor = superficies que lo miden ('+'-separadas), validadas contra las REALES; 'exento'
-  // sólo para el orquestador, con su razón. Un mapa de prosa libre se satisfacía agregando una
-  // entrada sin escribir la superficie (2ª ronda).
+  // sólo para el orquestador, con su razón. Un mapa de prosa libre se satisface agregando una
+  // entrada sin escribir la superficie.
   const CUBIERTOS = {
     'generate.js': 'advisors',
     'deploy-codex-hooks.js': 'hooks',
@@ -431,7 +431,7 @@ function writeReport(report) {
     fs.mkdirSync(BENCH_DIR(), { recursive: true });
     const dst = path.join(BENCH_DIR(), 'harness-parity.json');
     // Atómico (tmp+rename): el reporte tiene lectores asíncronos (bench-notice, la red diaria)
-    // y una lectura a mitad de escritura se descartaba en silencio.
+    // y una lectura a mitad de escritura se descartaría en silencio.
     const tmp = `${dst}.tmp-${process.pid}`;
     fs.writeFileSync(tmp, JSON.stringify(report, null, 1) + '\n');
     fs.renameSync(tmp, dst);
@@ -440,7 +440,7 @@ function writeReport(report) {
 
 function runParity(opts = {}) {
   let report;
-  // se mide sobre cada herramienta ENCHUFADA (story 8.23, tanda C · AC 25): con el estado diciendo qué enchufa la máquina,
+  // se mide sobre cada herramienta ENCHUFADA: con el estado diciendo qué enchufa la máquina,
   // manda el estado —sin Codex en la lista no hay nada que medir, aunque haya quedado algo desplegado; con Codex en la
   // lista se mide aunque todavía no haya nada (y da rojo)—; sin estado que lo diga, la evidencia de despliegue, como siempre
   let plugged = { tools: ['claude'], recorded: false };

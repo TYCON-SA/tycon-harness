@@ -3,20 +3,18 @@
  * lint-story-frontmatter.js — chequea que el frontmatter de cada story sea LEGIBLE
  * por las herramientas del harness.
  *
- * POR QUÉ EXISTE (caso disparador 2026-07-24)
- * -------------------------------------------
- * Cuatro stories (4.2.1, 4.8.1, 3.1.3, 3.1.4) tenían el frontmatter **sin el `---`
- * de cierre**. Ninguna herramienta se quejó: todas hacen `content.indexOf('\n---', 3)`
- * y, al no encontrarlo (o al enganchar una regla horizontal `---` del cuerpo), se
- * saltean la story EN SILENCIO. Resultado: esas stories eran invisibles para el
- * validator, el backfill de back-links, los scripts de status y el hook de DoD —
- * durante meses. Una de ellas ocultaba además una deuda de evidencia DoD.
+ * POR QUÉ EXISTE
+ * ---------------
+ * Un frontmatter **sin el `---` de cierre** no hace quejar a ninguna herramienta: todas hacen
+ * `content.indexOf('\n---', 3)` y, al no encontrarlo (o al enganchar una regla horizontal `---` del cuerpo), se
+ * saltean la story EN SILENCIO. La story queda invisible para el validator, el backfill de back-links, los scripts
+ * de status y el hook de DoD, y puede ocultar una deuda de evidencia DoD.
  *
  * Segundo modo de falla de la misma familia: **comillas dobles dentro del comentario
  * inline** de un campo escalar (típico en `status:`). El scalar que usan las tools es
  *     /^status:\s*"?([^"\n]+?)"?\s*$/m
  * y el `[^"]` corta en la primera comilla → el `$` no matchea → el campo da `null` →
- * el colector descarta la story igual que en el caso anterior. Hallado en 4.6 y 14.7.
+ * el colector descarta la story igual que en el caso anterior.
  *
  * QUÉ CHEQUEA
  * -----------
@@ -25,13 +23,13 @@
  *      leer con EL MISMO regex que usan las herramientas del harness.
  *   3. Bonus, si hay python3 + PyYAML disponible: el frontmatter parsea como YAML.
  *      Si no está, se saltea con aviso (fail-open, no rompe el commit de nadie).
- *   4. La CAUSA del reproceso (story 2.3 del arnés, 2026-09-05): una story que declara
+ *   4. La CAUSA del reproceso: una story que declara
  *      `followup_of:` dice por qué hubo que volver en `followup_reason:`, con el vocabulario
  *      CERRADO de `scripts/metrics/rework-causes.json`. Se le EXIGE sólo a la story que NACE
  *      en este commit (sin historial en git); a una que ya existía sin el campo se le AVISA y no
- *      se la frena. Medido al crear la regla: 285 stories con `followup_of:` en 9 repos —
- *      exigírselo a todas ponía en rojo el pre-commit de todo el equipo el día del merge, o sea
- *      apagaba este lint en una semana. Un valor FUERA del vocabulario frena siempre, nueva o
+ *      se la frena. Hay cientos de stories con `followup_of:` repartidas en varios repos:
+ *      exigírselo a todas pondría en rojo el pre-commit de todo el equipo el día del merge, o sea
+ *      apagaría este lint en una semana. Un valor FUERA del vocabulario frena siempre, nueva o
  *      vieja, sin normalizar mayúsculas ni acentos (un vocabulario que acepta variantes deja de
  *      ser cerrado). Sin git, o fuera de un repo, no se puede saber si nace ahora → se la trata
  *      como existente: un freno que no puede decidir no frena. Si el vocabulario no se puede
@@ -60,10 +58,10 @@
  *
  *     TYCON_GUIDES_DIR="${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}"
  *     FM_LINT="$TYCON_GUIDES_DIR/scripts/lib/lint-story-frontmatter.js"
- *     # Se le pasan TODOS los .md del commit: el filtro "esto es una story" lo hace el lint
- *     # (2026-08-15). Antes el grep era `^specs/stories/.*\.md$` y en un repo con otro layout
- *     # el hook no le pasaba NADA — el lint decía OK sin haber mirado una sola story.
- *     # Con los renombres (R), y separados por NUL: un nombre con tildes o espacios no se escapa (story 8.40).
+ *     # Se le pasan TODOS los .md del commit: el filtro "esto es una story" lo hace el lint. Con un grep
+ *     # `^specs/stories/.*\.md$`, en un repo con otro layout el hook no le pasaría NADA y el lint diría OK sin haber
+ *     # mirado una sola story.
+ *     # Con los renombres (R), y separados por NUL: un nombre con tildes o espacios no se escapa.
  *     CHANGED_STORIES=()
  *     while IFS= read -r -d '' f; do case "$f" in *.md) CHANGED_STORIES+=("$f") ;; esac
  *     done < <(git -c core.quotePath=false diff --cached --name-only -z --diff-filter=ACMR)
@@ -99,12 +97,11 @@ const os = require('os');
 
 const REQUIRED = ['story', 'epic', 'status'];
 
-// ── La causa del reproceso — `followup_reason:` (story 2.3, 2026-09-05) ───────────────────────
+// ── La causa del reproceso — `followup_reason:` ───────────────────────────────────────────────
 //
 // 🔴 La LECTURA (bloque `followup_of:`, vocabulario de causas, «¿nace en este commit?») vive en UN
 //    solo lugar, `followup-of.js` (su vecino en scripts/lib/), que este archivo y `metrics/sdlc-stage-metrics.js` importan.
-//    La primera versión la tenía escrita DOS veces «con el mismo criterio», y el pase adversarial
-//    del 2026-09-05 encontró cuatro defectos que vivían en las dos copias a la vez (lista YAML sin
+//    Escrita DOS veces «con el mismo criterio», dejaría los mismos defectos en las dos copias a la vez (lista YAML sin
 //    indentar invisible, `[] # comentario` contado como seguimiento, `indexOf` en vez de `.index`,
 //    y un array aceptado como vocabulario). El motivo de cada uno está en la cabecera de esa lib.
 const { tieneFollowupOf, leerCausas, naceAhora } = require('./followup-of.js');
@@ -115,19 +112,14 @@ const { readEnv } = require('./legacy-names.js');
 const CAUSAS_PATH = readEnv('TYCON_CAUSES_PATH', { where: 'scripts/lib/lint-story-frontmatter.js' })
   || path.join(__dirname, '..', 'metrics', 'rework-causes.json');
 
-// ── Qué archivos son "una story" — por IDENTIDAD DECLARADA (2026-08-23) ───────────────────────
+// ── Qué archivos son "una story" — por IDENTIDAD DECLARADA ───────────────────────────────────
 //
-// Historia de este bloque, en tres actos:
-//   v1 (hasta 2026-08-15) decidía por RUTA (`<repo>/specs/stories/`). En un repo con otro layout
-//      el lint no miraba nada y decía "✅ OK": el control que existe para que ninguna story se
-//      pierda en silencio, perdiéndose en silencio.
-//   v2 (2026-08-15) decidía por (a) vivir en una carpeta con stories legibles, o (b) declarar
-//      `story:` / `epic:` / `status:`. **Medido el 2026-08-23: habría rechazado 331 de los 1608
-//      `.md` de un repo del equipo.** Las 141 stories y los 13 documentos de planning viven en la MISMA
-//      carpeta, así que (a) los agarra a todos; y (b) agarra cada prd/architecture/epics/brief/
-//      report del repo, porque todos declaran `status:`. Un gate que rechaza commits legítimos se
-//      apaga, y se lleva puestos también los casos donde sí importaba.
-//   v3 (éste) decide por lo ÚNICO que declara "yo soy una story": la clave `story:`.
+// El detector decide por lo ÚNICO que declara "yo soy una story": la clave `story:`. Decidir por RUTA
+// (`<repo>/specs/stories/`) deja sin mirar un repo con otro layout: el lint diría "✅ OK", el control que existe para
+// que ninguna story se pierda en silencio, perdiéndose en silencio. Decidir por vivir en una carpeta con stories
+// legibles, o por declarar `story:` / `epic:` / `status:`, rechazaría cientos de `.md` legítimos: las stories y los
+// documentos de planning viven en la MISMA carpeta, y cada prd/architecture/epics/brief/report declara `status:`. Un
+// gate que rechaza commits legítimos se apaga, y se lleva puestos también los casos donde sí importaba.
 //
 // Por qué `story:` y no `status:`: **`story:` es IDENTIDAD, `status:` es ESTADO.** Un PRD, una
 // arquitectura, un épico, un brief y un reporte de readiness tienen estado; ninguno tiene número
@@ -145,17 +137,14 @@ const CAUSAS_PATH = readEnv('TYCON_CAUSES_PATH', { where: 'scripts/lib/lint-stor
 //
 // 🔴 LO QUE NO SE USA COMO REQUISITO, A PROPÓSITO: el NOMBRE del archivo y los headers del CUERPO
 // (`## Acceptance Criteria`). Los dos parecen señales robustas y los dos se rompen al cambiar de
-// repo: medido, 463 stories reales se llaman `story-N.M-slug.md` (ningún patrón de id razonable
-// las matchea) y 62 escriben `## Acceptance criteria` con minúscula. Exigir cualquiera de las dos
+// repo: hay stories reales que se llaman `story-N.M-slug.md` (ningún patrón de id razonable
+// las matchea) y otras que escriben `## Acceptance criteria` con minúscula. Exigir cualquiera de las dos
 // deja esas stories AFUERA del lint — o sea: story rota, "✅ OK", exit 0. Que es exactamente el
 // modo de falla que este archivo existe para impedir.
 // La asimetría que sí vale: una lista de EXCLUSIÓN por nombre degrada del lado seguro (si se queda
 // vieja se lintea de más, y eso se ve al instante). Por eso el nombre aparece sólo para sacar
 // plantillas.
 //
-// Criterio elegido por un panel de 3 propuestas independientes + 9 escépticos que las atacaron
-// contra 12 repos reales (2026-08-23). Las dos alternativas —nombre de archivo y marcador de
-// cuerpo— quedaron descartadas por los números de arriba.
 // Resolución TOLERANTE de TYCON_SKILLS_DIR (acepta la raíz del clon O la carpeta de skills —
 // las dos semánticas conviven documentadas; ver scripts/lib/skills-dir.js).
 const SKILLS_DIR = require('./skills-dir.js').resolveSkillsDirs().skills;
@@ -182,8 +171,8 @@ function storyDirsOf(repoRoot) {
  * `story: "{N.NN}"` (un placeholder) y un `status: "backlog"  # backlog | ready-for-dev | …` cuyo
  * comentario rompe el scalar a propósito — o sea que entraría y fallaría, y el "arreglo" que el
  * error sugeriría es borrarle a la plantilla la documentación de sus valores legales.
- * Anclado a los EXTREMOS del nombre a propósito: `story-1.22-template-render-fail-loud.md` y
- * `story-1.3-template-de-spec.md` son stories REALES, y con el patrón sin anclar se perdían.
+ * Anclado a los EXTREMOS del nombre a propósito: `story-N.M-template-render-fail-loud.md` y
+ * `story-N.M-template-de-spec.md` son stories REALES, y con el patrón sin anclar se perderían.
  */
 const NOT_A_STORY_NAME = /^_|^(?:template|plantilla|ejemplo|example)[-_.]|[-_.](?:template|plantilla|ejemplo|example)$/i;
 
@@ -207,7 +196,7 @@ const STORY_SHAPED = /^[ \t]*epic[ \t]*:/mi;
  *   - el archivo no abre con `---`      → null (no hay frontmatter que romper)
  *   - el frontmatter cierra             → sólo el frontmatter (un `story:` del cuerpo no cuenta)
  *   - el frontmatter NO cierra (modo 1) → TODA la cabecera
- * La última rama es la clave: es el modo de rotura que dejó 4 stories invisibles 2 meses. Si un
+ * La última rama es la clave: es el modo de rotura que deja stories invisibles durante meses. Si un
  * archivo abrió `---` y no lo cerró ya tiene un defecto real, así que mirarlo de más no se puede
  * equivocar — la rotura no puede esconder la evidencia de que esto era una story.
  */
@@ -221,8 +210,8 @@ function frontmatterZone(head) {
 /**
  * ¿Este `.md` se lintea?
  * @param {string[]} [aviso] acumulador de lo que NO se linteó pero podría ser una story. Se
- *        IMPRIME al final de la corrida: un filtro que descarta en silencio es el próximo
- *        incidente de 2026-07-24, que no fue "el lint dijo que estaba bien" sino que nadie miró.
+ *        IMPRIME al final de la corrida: un filtro que descarta en silencio deja stories sin mirar sin que
+ *        nadie se entere.
  */
 function looksLikeStory(abs, storyDirSet, aviso) {
   let head;
@@ -240,10 +229,9 @@ function looksLikeStory(abs, storyDirSet, aviso) {
   }
 
   // No se lintea — pero si vive entre stories, o tiene forma de story sin declarar identidad
-  // (`epic:` sin `story:`: la convención del repo del framework y Totora, que usan `id:`), queda
-  // anotado. Esos archivos son INVISIBLES para todo el arnés hoy mismo, y el aviso es lo único
+  // (`epic:` sin `story:`: hay repos que usan `id:`), queda anotado. Esos archivos son INVISIBLES para todo el arnés hoy mismo, y el aviso es lo único
   // que los delata. No bloquean: a un archivo que nunca dijo ser una story no se le puede exigir
-  // que lo sea, y bloquearlo apagaría el gate en tres repos el día de la adopción.
+  // que lo sea, y bloquearlo apagaría el gate en varios repos el día de la adopción.
   if (aviso && (storyDirSet.has(path.dirname(abs)) || (zone !== null && STORY_SHAPED.test(zone)))) {
     aviso.push(abs);
   }
@@ -271,10 +259,9 @@ function resolveDirs() {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
-    // 2026-08-15: antes esto exigía que existiera `<gitRoot>/specs/stories` para devolver el repo.
-    // En un repo con otro layout la raíz caía al fallback —el propio arnés— y el
-    // lint terminaba buscando stories en el repo equivocado. La raíz es la raíz git, exista o no
-    // esa carpeta; QUÉ carpetas mirar lo decide el descubrimiento estructural.
+    // La raíz es la raíz git, exista o no `<gitRoot>/specs/stories`: si se exigiera esa carpeta, en un repo con otro
+    // layout la raíz caería al fallback —el propio arnés— y el lint buscaría stories en el repo equivocado.
+    // QUÉ carpetas mirar lo decide el descubrimiento estructural.
     if (gitRoot) return { root: gitRoot, stories: path.join(gitRoot, 'specs', 'stories') };
   } catch {
     /* no estamos en un repo git — seguimos al fallback */
@@ -320,13 +307,12 @@ function yamlChecker() {
   };
 }
 
-// ── Número de story repetido en el repo (story 1.17) ─────────────────────────────────────────────
-// El id de una story tiene que ser único dentro de su repo (story-format.md §1.0). Dos repos del equipo
-// numeran por tema y cada tema arranca en 1.1: con el mismo número, la evidencia de cierre de una story se
-// mezclaba con la de otra y la matriz contaba como corrido un criterio con el registro ajeno. El arnés ya
-// separa la evidencia (`<tema>__<número>`), pero el número repetido sigue confundiendo a quien busca
-// «la story 1.2». AVISA y no frena: al escribir esto había 23 números repetidos en un repo y 8 en otro —
-// frenar de entrada traba a dos equipos. `soloEstos`: con archivos por argumento (el pre-commit), se avisa
+// ── Número de story repetido en el repo ──────────────────────────────────────────────────────────
+// El id de una story tiene que ser único dentro de su repo (story-format.md §1.0). Hay repos que numeran por tema y
+// cada tema arranca en 1.1: con el mismo número, la evidencia de cierre de una story se mezcla con la de otra y la
+// matriz cuenta como corrido un criterio con el registro ajeno. El arnés ya separa la evidencia
+// (`<tema>__<número>`), pero el número repetido sigue confundiendo a quien busca «la story N.M». AVISA y no frena:
+// con muchos números repetidos ya existentes, frenar de entrada traba a los equipos. `soloEstos`: con archivos por argumento (el pre-commit), se avisa
 // sólo de los grupos que los incluyen; sin argumentos, de todos.
 function avisarNumerosRepetidos(soloEstos) {
   if (!discovery || !REPO_ROOT) return;
@@ -370,14 +356,14 @@ function main() {
   const dirSet = new Set(dirs);
 
   // Lo que NO se linteó pero podría ser una story. Se imprime al final, sin bloquear: un filtro
-  // que descarta en silencio es el próximo incidente de 2026-07-24.
+  // que descarta en silencio deja stories sin mirar sin que nadie se entere.
   const aviso = [];
 
   let files;
   if (args.length > 0) {
     // El hook del repo puede pasarle TODOS los `.md` del commit: el filtro lo hace el lint, que es
-    // el que sabe qué es una story. Antes el grep del hook (`^specs/stories/`) era el filtro — y
-    // por eso un repo con otro layout no linteaba nada.
+    // el que sabe qué es una story. Con un grep del hook (`^specs/stories/`) como filtro, un repo con otro
+    // layout no lintearía nada.
     files = args
       .map((f) => path.resolve(f))
       .filter((f) => f.endsWith('.md') && fs.existsSync(f) && looksLikeStory(f, dirSet, aviso));
@@ -395,10 +381,9 @@ function main() {
       let entries = [];
       try { entries = fs.readdirSync(dir); } catch { continue; }
       for (const f of entries) {
-        // MISMO filtro que la rama con argumentos. Antes esta rama tomaba la carpeta ENTERA, así
-        // que el modo standalone rompía con los documentos de planning aunque el pre-commit
-        // estuviera bien: dos caminos con dos criterios es cómo se arregla uno y el otro sigue
-        // roto. Los archivos que el descubridor no pudo leer siguen entrando — los caza
+        // MISMO filtro que la rama con argumentos. Si esta rama tomara la carpeta ENTERA, el modo standalone
+        // rompería con los documentos de planning aunque el pre-commit estuviera bien: dos caminos con dos
+        // criterios es cómo se arregla uno y el otro sigue roto. Los archivos que el descubridor no pudo leer siguen entrando — los caza
         // `frontmatterZone`, que se agranda justo cuando el frontmatter está roto.
         if (!f.endsWith('.md') || f === 'INDEX.md') continue;
         const cand = path.join(dir, f);
@@ -416,7 +401,7 @@ function main() {
   const vocab = leerCausas(CAUSAS_PATH);
   // 🔴 Se pregunta por `motivo`, NO por `!vocab.causas`: cuando el vocabulario no vale, `leerCausas`
   //    devuelve `causas: []` — y `[]` es TRUTHY en JS, así que el aviso no salía y la regla corría
-  //    con un vocabulario VACÍO, rechazando causas perfectamente válidas. Lo destapó el caso T21.
+  //    con un vocabulario VACÍO, rechazando causas perfectamente válidas.
   if (vocab.motivo) {
     console.error(`⚠️  ${vocab.motivo} (${CAUSAS_PATH}).`);
     console.error('    La regla de `followup_reason:` NO se aplica en esta corrida — es un hueco declarado, no un OK.');
@@ -467,13 +452,12 @@ function main() {
       continue;
     }
 
-    // 4. La causa del reproceso (story 2.3). El por qué de cada rama, en la cabecera del archivo.
+    // 4. La causa del reproceso. El por qué de cada rama, en la cabecera del archivo.
     if (!vocab.motivo) {
       const lista = vocab.causas.join(' · ');
       const causa = scalar(parsed.fm, 'followup_reason');
       if (causa !== null && !vocab.causas.includes(causa)) {
-        // Fuera del vocabulario: frena SIEMPRE, nueva o vieja — hoy ninguna story tiene el campo,
-        // así que nadie empieza a fallar. Sin normalizar: si `Defecto-Propio` pasa "por comodidad",
+        // Fuera del vocabulario: frena SIEMPRE, nueva o vieja. Sin normalizar: si `Defecto-Propio` pasa "por comodidad",
         // el vocabulario deja de ser cerrado y la ficha del tablero deja de poder sumarlo.
         errors.push({
           rel,
@@ -555,14 +539,12 @@ function main() {
 }
 
 // Exportado para que OTROS controles usen EL MISMO criterio de "esto es una story" en vez de
-// escribir el suyo (dos detectores del mismo concepto son el drift de mañana — y el primero que se
-// escribió aparte, en el portón de CI, dio un falso positivo el mismo día: tomó por story rota un
-// reporte de medición que declara `story:` en el cuerpo, sin frontmatter).
+// escribir el suyo (dos detectores del mismo concepto terminan divergiendo: uno aparte podría tomar por story rota
+// un reporte de medición que declara `story:` en el cuerpo, sin frontmatter).
 module.exports = { frontmatterZone, looksLikeStory, DECLARES_STORY, NOT_A_STORY_NAME, STORY_SHAPED };
 
 // 🔴 `process.exitCode`, NO `process.exit()`: en Node las escrituras a una tubería son
 // ASINCRÓNICAS y `process.exit()` mata el proceso con parte de lo escrito en el aire. Medido con
 // la forma de este guión (una escritura grande y salir): a 41 KB llega cortado en 8192 y el JSON
 // se rompe; el consumidor lo lee como «no pude», nunca como un error.
-// Caso: guides/maintaining/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
 if (require.main === module) process.exitCode = main();

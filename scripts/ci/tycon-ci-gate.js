@@ -2,18 +2,13 @@
 /**
  * tycon-ci-gate.js — los controles del arnés que SÍ pueden correr del lado del servidor.
  *
- * ── POR QUÉ EXISTE (auditoría del 2026-08-25, §5.4 del plan de controles apagables) ─────────────
- * *"Todo el barrido fue de controles LOCALES (pre-commit y hooks de sesión). Un control que sólo
- * corre local se saltea con una bandera de git; ese bloqueo existe pero no se verificó acá."*
- *
- * Medido el 2026-08-25 sobre los repos del equipo: **31 pipelines de CI y NINGUNO corre un control
- * del arnés** (las 3 coincidencias del barrido eran nombres de solución `Tycon.BIZUIT.*`, no
- * controles). O sea que toda la protección del arnés es **condicional a la máquina**:
+ * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────────
+ * Los controles LOCALES (pre-commit y hooks de sesión) se saltean con una bandera de git. Un control que sólo
+ * corre local hace que toda la protección del arnés sea **condicional a la máquina**:
  *
  *   · una persona sin el arnés instalado (alguien nuevo, otra máquina) commitea sin ningún control;
  *   · un merge o una edición hechos desde la web de Azure DevOps no pasan por ningún hook;
- *   · sin `core.hooksPath` global, los `.githooks/` del repo no corren — y eso ya pasó
- *     (`incident-log#hookspath-eclipse`);
+ *   · sin `core.hooksPath` global, los `.githooks/` del repo no corren;
  *   · la bandera que saltea hooks está frenada por el guard, pero **sólo si el guard está puesto**.
  *
  * El freno local sigue siendo el que atrapa temprano y con buen mensaje. Éste es la red de abajo:
@@ -25,10 +20,10 @@
  * fingir que sí sería peor que no tenerlo.
  *
  *   1. **Frontmatter de stories legible** — cuando el frontmatter no parsea, las tools no dan
- *      error: saltean la story EN SILENCIO (caso de un producto del equipo, 2026-07-24: 4 stories invisibles 2 meses).
+ *      error: saltean la story EN SILENCIO.
  *   2. **Evidencia de cierre** — una story que pasa a `review`/`done` en este diff tiene que traer
  *      su evidencia EN EL REPO (`.advisors/dod-runtime/<id>-*.md`, sin contar la matriz por AC, el
- *      self-audit ni el plan manual — 2026-09-05). Es la mitad del gate local que no depende de la
+ *      self-audit ni el plan manual). Es la mitad del gate local que no depende de la
  *      sesión. Si el código vive en otro repo, la evidencia igual nace acá (`guides/ci-gate.md`).
  *   3. **Constancia de revisores** — una story que pasa a `done` tiene que tener una corrida del
  *      pipeline en el repo (`.advisors/pipeline-runs/<id>-…`). Es el ADVISORS-GATE del pre-commit,
@@ -40,7 +35,7 @@
  * Los seis son MECÁNICOS: sin modelo, sin red, sin estado de sesión.
  *
  * ── ADOPCIÓN ────────────────────────────────────────────────────────────────────────────────────
- * Opt-in por repo. No se adoptó en ninguno todavía: meter un paso nuevo en 31 pipelines de cliente
+ * Opt-in por repo: meter un paso nuevo en un pipeline de cliente
  * es decisión del dev, no de un script. El snippet de ADO está en `guides/ci-gate.md`.
  *
  * Uso:  node tycon-ci-gate.js [--repo <dir>] [--base <ref>] [--staged] [--json] [--selftest]
@@ -60,18 +55,16 @@ function git(repo, args, opts) {
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 20000, maxBuffer: 32 * 1024 * 1024, ...(opts || {}) });
 }
 
-// 🔴 El criterio de "esto es una story" se IMPORTA del lint local, no se reescribe. La primera
-// versión de este portón tenía el suyo propio y dio un falso positivo el mismo día: tomó por story
-// rota un reporte de medición que declara `story:` en el CUERPO, sin frontmatter. El lint local ya
-// había pagado esa lección (2026-08-23: el criterio anterior habría rechazado 331 de los 1608 `.md`
-// de un repo del equipo). Dos detectores del mismo concepto son el drift de mañana.
+// 🔴 El criterio de "esto es una story" se IMPORTA del lint local, no se reescribe: un detector propio tomaría por
+// story rota un reporte de medición que declara `story:` en el CUERPO, sin frontmatter.
+// Dos detectores del mismo concepto son el drift de mañana.
 const detector = require(path.join(__dirname, '..', 'lib', 'lint-story-frontmatter.js'));
 const { readEnv, envNames } = require(path.join(__dirname, '..', 'lib', 'legacy-names.js'));
 const { aliasLegacyOptions } = require(path.join(__dirname, 'legacy-options.js'));
 const WHERE = 'scripts/ci/tycon-ci-gate.js';
 
-// Las dos llaves que hoy avisan (TYCON_REVIEW_A_DONE y TYCON_ROSTER_NAMES) vuelven a frenar con el mismo valor: `block`
-// (story 8.9, tanda G — como TYCON_ATDD_COMMIT_GATE=block). El valor de antes, una palabra en castellano, sigue valiendo
+// Las dos llaves que avisan (TYCON_REVIEW_A_DONE y TYCON_ROSTER_NAMES) vuelven a frenar con el mismo valor: `block`
+// (como TYCON_ATDD_COMMIT_GATE=block). El valor viejo, una palabra en castellano, sigue valiendo
 // hasta el retiro: el par va declarado acá como los de las opciones de esta carpeta (`<nombre>=<viejo>:<nuevo>`), para
 // que el mapa de renombres y el guion digan lo mismo (lo cruza `spanish-names.js --check-map`), y lo pasa al nuevo el
 // mismo traductor, que además anota el uso. El nombre del par es el de la primera de las dos llaves; vale para las dos.
@@ -138,24 +131,23 @@ function contenidoEn(repo, ref, rel) {
   try { return git(repo, ['show', `${ref}:${rel}`]); } catch (_e) { return null; }
 }
 
-// 🔴 No todo `<id>-*` es evidencia de cierre (2026-09-05, revisión adversarial del caso de un producto del equipo):
-// la matriz por AC (`-runtime-matrix.md`) lista los ACs INCLUIDOS los que no tienen evidencia, y
-// el self-audit y el plan de prueba manual los escribe el agente libremente. El freno local ya los
-// excluía (`findDodEvidence` de on-pre-commit.js); este portón no, así que una copia de SÓLO la
-// matriz —o un ledger suelto— lo ponía verde sin una corrida real detrás. Mismo criterio que el
+// 🔴 No todo `<id>-*` es evidencia de cierre: la matriz por AC (`-runtime-matrix.md`) lista los ACs INCLUIDOS los que
+// no tienen evidencia, y el self-audit y el plan de prueba manual los escribe el agente libremente. El freno local los
+// excluye (`findDodEvidence` de on-pre-commit.js); si este portón no lo hiciera, una copia de SÓLO la
+// matriz —o un ledger suelto— lo pondría verde sin una corrida real detrás. Mismo criterio que el
 // local: un `.md` con el prefijo de la story que no sea ninguno de esos tres.
-// 🔴 Es una COPIA deliberada de `lib/closing-evidence.js` del skill (2026-09-06): este portón corre
+// 🔴 Es una COPIA deliberada de `lib/closing-evidence.js` del skill: este portón corre
 // en un agente sin `~/.claude/`, así que no puede importarla. Las dos las compara
 // `scripts/tests/closing-evidence-parity.test.js` en cada corrida — mismo mecanismo que cuida
 // `validarRoster`. El medidor del tablero importa ESTA copia (mismo repo), así que son dos en total.
-// 2026-10-14 — el freno del commit pasó a sumar por AC la UNIÓN de las tres fuentes que escribe la máquina (registro de
+// El freno del commit suma por AC la UNIÓN de las tres fuentes que escribe la máquina (registro de
 // pruebas de humo, gates E2E y firmas del dev; `coberturaDeLaUnion` en la canónica). Acá no se copia a propósito: este
 // portón nunca miró criterio por criterio —pide que exista evidencia de cierre— y la validez de las dos primeras
 // fuentes se confirma contra gates.log, que vive en la máquina y no en el agente. Lo que sí comparten las dos capas
 // es esta lista, y con ella el registro (`-smoke-ledger.jsonl`) y el gate (`-e2e-gate-*.md`) ya cuentan como evidencia;
 // el `-cierre.md`, si existe, también (es un `.md`).
 const NO_ES_EVIDENCIA_DE_CIERRE = [/-self-audit(?:-iter\d+)?\.md$/, /-runtime-matrix\.md$/, /-manual-test-plan\.md$/];
-// El ledger de smokes CUENTA (decisión del dev, 2026-09-06): es el registro crudo de cada prueba
+// El ledger de smokes CUENTA: es el registro crudo de cada prueba
 // que corrió, escrito por la máquina — más difícil de falsear que un informe. Motivo completo en
 // la canónica del skill.
 const ES_EVIDENCIA_ADEMAS = [/-smoke-ledger\.jsonl$/];
@@ -165,7 +157,7 @@ function esEvidenciaDeCierre(f) {
   return n.endsWith('.md') && !NO_ES_EVIDENCIA_DE_CIERRE.some((re) => re.test(n));
 }
 
-// La CLAVE de la evidencia de cierre (story 1.17): con un número repetido en el repo, `<id>-*` es la
+// La CLAVE de la evidencia de cierre: con un número repetido en el repo, `<id>-*` es la
 // evidencia de cualquiera de las stories que lo comparten — el portón le daría a una la de la otra. La calcula
 // lib/evidence-key.js del skill tycon-pipeline, que se encuentra igual que el descubridor de stories del lint.
 // Sin la biblioteca, el id de siempre y un aviso visible: el portón no deja de correr por esto.
@@ -177,8 +169,7 @@ try {
 } catch (e) { evidenceKeyFalta = e.message; }
 
 /** El prefijo de la evidencia de cierre: `<clave>-`, o null si la clave no se puede decidir (no hay evidencia). */
-// La regla es la de `evidencePrefix` (lib/evidence-key.js), la misma que usa el freno del frontmatter (story 1.17.1,
-// tanda 2): sin ruta, el número; con ruta y sin archivo, nada —no se sabe si el número se repite—; sin clave, nada. Lo
+// La regla es la de `evidencePrefix` (lib/evidence-key.js), la misma que usa el freno del frontmatter: sin ruta, el número; con ruta y sin archivo, nada —no se sabe si el número se repite—; sin clave, nada. Lo
 // propio del portón es sólo el aviso, y el respaldo si la biblioteca no está.
 function prefijoDeEvidencia(storyId, storyPath) {
   if (!storyPath) return `${storyId}-`;
@@ -200,7 +191,7 @@ function prefijoDeEvidencia(storyId, storyPath) {
 
 /** ¿Hay evidencia de este tipo para esta story, en cualquier parte del repo? `storyPath`: ver prefijoDeEvidencia. */
 // `prefijoYa` (opcional): el prefijo ya calculado por quien llama — `undefined` = calcularlo acá. Así `revisar` lo
-// calcula UNA vez por story (recorrer el repo y avisar dos veces era costo y ruido; revisión de la 1.17.1).
+// calcula UNA vez por story (recorrer el repo y avisar dos veces es costo y ruido).
 function hayEvidencia(repo, sub, storyId, storyPath, prefijoYa) {
   const raiz = path.join(repo, '.advisors', sub);
   const dirs = [raiz];
@@ -211,8 +202,8 @@ function hayEvidencia(repo, sub, storyId, storyPath, prefijoYa) {
       dirs.push(path.join(repo, e.name, '.advisors', sub));
     }
   } catch (_e) { /* raíz ilegible */ }
-  // Las carpetas de corrida (`pipeline-runs`) van por la misma clave desde la story 1.17.1: con un número repetido,
-  // `<id>-*` le daba a una story la constancia de revisores de otra.
+  // Las carpetas de corrida (`pipeline-runs`) van por la misma clave: con un número repetido,
+  // `<id>-*` le daría a una story la constancia de revisores de otra.
   const prefijo = prefijoYa !== undefined ? prefijoYa : prefijoDeEvidencia(storyId, storyPath);
   if (!prefijo) return false;
   for (const d of dirs) {
@@ -232,10 +223,10 @@ function hayEvidencia(repo, sub, storyId, storyPath, prefijoYa) {
 // 🔴 Corte por fecha, MECÁNICO y sin config: el nombre del run dir trae su timestamp. Un run
 // anterior al estreno de la pieza no puede tener roster — su ausencia AVISA. De ahí en adelante,
 // la ausencia FRENA. Y un roster presente pero mentiroso o incoherente frena SIEMPRE, sin corte:
-// dato malo es peor que dato ausente (lección: incident-log#porton-ci-debut-no-corrio-2026-08-30).
+// dato malo es peor que dato ausente.
 const CUTOFF_ROSTER = process.env.TYCON_ROSTER_CUTOFF || '20260831';
 
-// Por la clave de la story (story 1.17.1), igual que la constancia: `storyPath` es la ruta de la story en el repo.
+// Por la clave de la story, igual que la constancia: `storyPath` es la ruta de la story en el repo.
 // Sin clave calculable no hay carpeta que dar por suya (prefijoDeEvidencia ya dijo el motivo).
 function runDirsDeStory(repo, storyId, storyPath) {
   const pref = prefijoDeEvidencia(storyId, storyPath);
@@ -254,10 +245,9 @@ function runDirsDeStory(repo, storyId, storyPath) {
     try { entradas = fs.readdirSync(b); } catch (_e) { continue; }
     for (const n of entradas) {
       if (n !== clave && !n.startsWith(`${clave}-`)) continue;
-      // El sello de fecha del run dir tiene DOS formas en los repos reales: `1.1-20260825120000`
-      // y `4.2-20260824-1200` (fecha y hora separadas). Leer sólo la primera dejaba a la segunda
-      // "sin fecha" — y sin fecha esto frenaba corridas viejas que no pueden tener el registro.
-      // Lo cazó el banco de controles, no la lectura del código.
+      // El sello de fecha del run dir tiene DOS formas en los repos reales: `1.1-AAAAMMDDhhmmss`
+      // y `4.2-AAAAMMDD-hhmm` (fecha y hora separadas). Leer sólo la primera dejaría a la segunda
+      // "sin fecha" — y sin fecha esto frenaría corridas viejas que no pueden tener el registro.
       const m = n.match(/-(\d{8})(?:-?\d*)?$/);
       out.push({ dir: path.join(b, n), nombre: n, stamp: m ? m[1] : null });
     }
@@ -270,9 +260,8 @@ function advisoresEnFindings(runDir) {
   const nombres = new Set();
   let raw;
   // Que FALTE es normal (una corrida puede no tener hallazgos) y se calla. Que esté ROTO apaga el
-  // cruce entero sin que nadie se entere, y eso no es «está todo bien»: se dice por stderr
-  // (2026-09-22 — el mismo punto ciego lo tenía el freno local y lo cazó el revisor de fallos
-  // silenciosos). Sigue sin frenar: un archivo ilegible no es una incoherencia probada.
+  // cruce entero sin que nadie se entere, y eso no es «está todo bien»: se dice por stderr.
+  // Sigue sin frenar: un archivo ilegible no es una incoherencia probada.
   try { raw = fs.readFileSync(path.join(runDir, 'findings.json'), 'utf8'); } catch (_e) { return null; }
   // 🔴 Este aviso sale por el registro PÚBLICO de la corrida del portón, así que dice lo justo:
   // el nombre de la corrida, nunca la ruta absoluta del checkout (lleva el nombre del repo y del
@@ -286,12 +275,9 @@ function advisoresEnFindings(runDir) {
       + 'hallazgos y quién figura en el registro de revisores NO corrió.');
     return null;
   }
-  // 🔴 El tercer camino, y el que se había quedado afuera: JSON válido pero con una forma que no
-  // es ni una lista ni `{findings: [...]}`. Caía al `[]` mudo, o sea que el cruce se apagaba sin
-  // que nadie se enterara — el mismo agujero que se acababa de cerrar para el JSON roto, dos
-  // líneas más arriba. Lo reprodujo en vivo el revisor de fallos silenciosos en la segunda vuelta,
-  // sobre el arreglo de la primera: el arreglo estaba incompleto y la afirmación de que el punto
-  // ciego estaba cerrado era falsa. Los tres casos son ahora los mismos que en el freno local.
+  // 🔴 El tercer camino: JSON válido pero con una forma que no
+  // es ni una lista ni `{findings: [...]}`. Caería al `[]` mudo, o sea que el cruce se apagaría sin
+  // que nadie se enterara — el mismo agujero que el JSON roto. Los tres casos son los mismos que en el freno local.
   let lista;
   if (Array.isArray(data)) lista = data;
   else if (Array.isArray(data && data.findings)) lista = data.findings;
@@ -425,42 +411,37 @@ function revisarAprobaciones(repo, storyId, storyPath) {
  * el portón corre en un agente de CI que sólo hace checkout de este repo y del repo del producto,
  * sin `~/.claude/`. La paridad entre las dos definiciones la cuida
  * `scripts/tests/roster-validate-parity.test.js`, que corre LAS DOS sobre los mismos casos y
- * compara veredicto y reglas — no la buena memoria de quien las edite. (Ese test nació porque este
- * comentario afirmaba que un caso del banco cuidaba la paridad y ese caso no existía: un control
- * documentado que no corre. Lo cazó el pase adversarial de la pieza.)
+ * compara veredicto y reglas — no la buena memoria de quien las edite.
  */
-// Por PREFIJO, idéntico a `lib/review-roster.js` (2026-09-06): medido sobre los runs reales
-// faltaban cinco fuentes del propio pipeline y la story 2.1 daba `roster-incoherente` ×3.
+// Por PREFIJO, idéntico a `lib/review-roster.js`: las fuentes del propio pipeline se reconocen por su prefijo, y sin
+// alguna de ellas un run real daría `roster-incoherente`.
 const FUENTES_SINTETICAS = [
   /^mech-check$/, /^pipeline$/,
-  /^adversarial-verify(\s|:|\(|-|$)/,   // `-fable`, `-opus`: nombres reales de la 4.4 (2026-09-14)
-  /^pase adversarial(\s|:|\(|-|$)/,     // el mismo paso 5b nombrado en castellano (AG-2, 2026-09-22)
+  /^adversarial-verify(\s|:|\(|-|$)/,   // `-fable`, `-opus`: variantes del mismo paso
+  /^pase adversarial(\s|:|\(|-|$)/,     // el mismo paso 5b nombrado en castellano
   /^orquestador(\s|\(|$)/,
   /^runtime-matrix(\s|\(|$)/,
-  /^e2e-runtime(\s|:|\(|-|$)/,          // el gate de E2E del step 7c: tampoco es un spawn (AG-3, 2026-09-22)
+  /^e2e-runtime(\s|:|\(|-|$)/,          // el gate de E2E del step 7c: tampoco es un spawn
   /^ensayo runtime(\s|\(|$)/,
 ];
 
-// 🔴 El nombre del revisor se escribe en DOS lados con dos criterios (2026-09-22, un pull request de
-// Totora): el roster lo proyecta una máquina desde el ledger de spawns —`tycon-silent-failure-hunter`,
-// pelado—, y el `advisor` de `findings.json` lo tipeaba el orquestador, que le agregaba la vuelta o
-// el modelo para que un humano lo lea: `tycon-silent-failure-hunter (iter 3)`. Comparados letra por
-// letra, el segundo "no figura entre los revisores" y el portón frena un PR sano.
+// 🔴 El nombre del revisor se escribe en DOS lados con dos criterios: el roster lo proyecta una máquina desde el
+// ledger de spawns —`tycon-silent-failure-hunter`, pelado—, y el `advisor` de `findings.json` lo tipea el
+// orquestador, que puede agregarle la vuelta o el modelo para que un humano lo lea:
+// `tycon-silent-failure-hunter (iter 3)`. Comparados letra por letra, el segundo "no figura entre los revisores" y
+// el portón frenaría un PR sano.
 //
-// ── POR QUÉ EL RECORTE SIGUE ACÁ (story 7.13, AC 6) ──────────────────────────────────────────
-// La causa ya está arreglada del lado de quien ESCRIBE: desde la 7.13 `write-findings` valida el
-// firmante contra los revisores de esa corrida y guarda el id pelado, con la anotación en campos
-// propios (`iter`, `model`, `nota`). O sea que los hallazgos NUEVOS no traen paréntesis.
+// ── POR QUÉ EL RECORTE SIGUE ACÁ ──────────────────────────────────────────
+// `write-findings` valida el firmante contra los revisores de esa corrida y guarda el id pelado, con la anotación en
+// campos propios (`iter`, `model`, `nota`). O sea que los hallazgos NUEVOS no traen paréntesis.
 //
-// Pero el portón no lee sólo hallazgos nuevos. Medido el 2026-09-22 sobre los run dirs del disco:
-// **54 hallazgos en 11 corridas YA COMMITEADAS** traen la anotación pegada al nombre, y una máquina
-// que todavía no actualizó el skill los sigue escribiendo así. El recorte es la tolerancia del
-// LECTOR mientras ese histórico exista; retirarlo hoy volvería a marcar como ausentes a revisores
-// que sí corrieron (medido: AG-2 pasa de 1 hallazgo a 3 — lo fija
-// `scripts/tests/roster-validate-parity.test.js`).
+// Pero el portón no lee sólo hallazgos nuevos: hay hallazgos YA COMMITEADOS con la anotación pegada al nombre, y una
+// máquina que no actualizó el skill los sigue escribiendo así. El recorte es la tolerancia del
+// LECTOR mientras ese histórico exista; retirarlo volvería a marcar como ausentes a revisores
+// que sí corrieron (lo fija `scripts/tests/roster-validate-parity.test.js`).
 //
 // Se retira cuando no queden corridas vivas con el formato viejo. Lo que NO se hace es sumar una
-// regex por cada adorno nuevo: ése es el camino que la 7.13 vino a cerrar.
+// regex por cada adorno nuevo.
 //
 // El paréntesis final es una anotación, nunca parte del id de un agente (son kebab-case, sin
 // paréntesis). Se recorta sólo al final, así que no puede fusionar dos agentes distintos.
@@ -492,11 +473,10 @@ function validarRoster(roster, advisores) {
     }
   }
   if (advisores && revs) {
-    // ── Tramo contra tramo (story 7.13) ────────────────────────────────────────────────────────
+    // ── Tramo contra tramo ────────────────────────────────────────────────────────
     // El roster cubre la RONDA DEL PASO 5 (arranca en el último `step5-start`) y `findings.json`
     // cubre toda la corrida. Un hallazgo del paso 1 —la validación de la story, antes de
-    // implementar— caía siempre como "revisor ausente": fue el quinto hallazgo de ese pull request, el
-    // único que parecía real. Y la ventana del roster NO se puede ensanchar, porque ahí adentro
+    // implementar— caería siempre como "revisor ausente". Y la ventana del roster NO se puede ensanchar, porque ahí adentro
     // está `general-purpose`, que implementa. Por eso el roster lista aparte los agentes de los
     // pasos previos y cada hallazgo dice de qué tramo viene.
     const nombresDe = (lista) => {
@@ -511,14 +491,14 @@ function validarRoster(roster, advisores) {
     const enPrevios = nombresDe(roster.agentes_previos);
     for (const item of advisores) {
       // Texto pelado (la forma vieja, que sigue valiendo) o `{advisor, tramo}` (lo que escribe
-      // `write-findings` desde la 7.13). Sin tramo declarado se compara contra los dos.
+      // `write-findings`). Sin tramo declarado se compara contra los dos.
       const a = (item && typeof item === 'object') ? item.advisor : item;
       const tramo = (item && typeof item === 'object') ? item.tramo : null;
       if (!a || typeof a !== 'string') continue;
       // Las fuentes que escribe el propio pipeline (`mech-check`, el pase adversarial) NUNCA son
-      // un spawn y nunca van a estar en el roster: exigirles asiento frenaba casi toda story real
-      // con hallazgos, y encima sin salida — agregarlas a mano dispara `roster-fabricado` en el
-      // freno local. Deadlock cazado por el pase adversarial de esta misma pieza.
+      // un spawn y nunca van a estar en el roster: exigirles asiento frenaría casi toda story real
+      // con hallazgos, y sin salida — agregarlas a mano dispara `roster-fabricado` en el
+      // freno local.
       const canon = nombreCanonico(a);
       if (FUENTES_SINTETICAS.some((re) => re.test(a) || re.test(canon))) continue;
       const listas = tramo === 'previo' ? [enPrevios]
@@ -527,12 +507,11 @@ function validarRoster(roster, advisores) {
       if (!listas.some((set) => set.has(a) || set.has(canon))) {
         // 🔴 `validado` = este hallazgo traía su `tramo`, y `tramo` lo escribe `write-findings`
         // SÓLO cuando pudo leer el registro y ubicar al firmante — o sea, cuando la validación de
-        // verdad ocurrió al escribirlo (story 7.13). Un hallazgo así que igual no cuadra es una
+        // verdad ocurrió al escribirlo. Un hallazgo así que igual no cuadra es una
         // incoherencia REAL y puede frenar. Uno sin `tramo` es del formato viejo, nadie lo validó,
-        // y sigue avisando: medido el 2026-09-22 sobre los 80 run dirs del disco, 12 marcarían por
-        // el formato y volver a frenar de golpe repetiría el frenón de aquel pull request con otra excusa.
+        // y sigue avisando: frenar por el formato repetiría el frenón de un pull request sano.
         // Se enciende solo a medida que las corridas viejas dejan de cerrarse — sin día de corte y
-        // sin que nadie tenga que acordarse de cerrar una ventana de medición (que ya pasó acá).
+        // sin que nadie tenga que acordarse de cerrar una ventana de medición.
         const p = { regla: 'roster-incoherente', detalle: tramo === 'previo'
           ? `"${a}" reportó hallazgos del tramo previo al paso 5 y no figura entre los agentes de ese tramo`
           : `"${a}" reportó hallazgos pero no figura entre los revisores` };
@@ -547,9 +526,9 @@ function validarRoster(roster, advisores) {
 // ¿Este diff toca la memoria de engram? Una sola pregunta a git, y si la respuesta es que no, el
 // chequeo 5 no lee NADA: cero costo y cero ruido en el 99% de los pull requests.
 //
-// 🔴 `--no-renames` (story 8.18, 2026-10-04): esta lista DECIDE por ruta si el chequeo corre. Sin la opción git empareja
-// un borrado con un alta y lista sólo la ruta nueva: el índice (o un chunk) movido a otra carpeta no aparecía como
-// tocado, y el chequeo no corría. Con la opción, un archivo movido son dos líneas —la vieja y la nueva— y la vieja se
+// 🔴 `--no-renames`: esta lista DECIDE por ruta si el chequeo corre. Sin la opción git empareja
+// un borrado con un alta y lista sólo la ruta nueva: el índice (o un chunk) movido a otra carpeta no aparecería como
+// tocado, y el chequeo no correría. Con la opción, un archivo movido son dos líneas —la vieja y la nueva— y la vieja se
 // ve. (`mdDelDiff`, arriba, no la lleva a propósito: lista los `.md` que hay que LEER, y el de la ruta vieja ya no está.)
 function tocaEngram(repo, base, staged) {
   let salida = '';
@@ -568,7 +547,7 @@ function tocaEngram(repo, base, staged) {
   return { toca: salida.split('\n').some((f) => f === '.engram/manifest.json' || f.startsWith('.engram/chunks/')) };
 }
 
-// ── Chequeo 5: el índice de memoria declara sus archivos (story 1.6, 2026-09-17) ────────────────
+// ── Chequeo 5: el índice de memoria declara sus archivos ────────────────
 // El criterio es el MISMO que usan el freno del commit y el aviso diario: `scripts/lib/
 // manifest-engram.js`. Este control existe porque es lo único que ve los commits hechos FUERA del
 // asistente —la web de Azure, otra máquina, un hook salteado—, que son justo los que el freno del
@@ -583,17 +562,15 @@ function revisarIndiceDeMemoria(repo, base, staged) {
   try { criterio = require(path.join(__dirname, '..', 'lib', 'manifest-engram.js')); }
   catch (e) { return { avisos: [{ archivo: '.engram/manifest.json', regla: 'indice-de-memoria-no-comparable', mensaje: `no pude comparar el índice de memoria: falta el criterio (${e.message})` }] }; }
 
-  // 🔴 «Lo de antes» es la BASE DE MERGE, no la punta de `--base` (2026-09-17, pase adversarial).
+  // 🔴 «Lo de antes» es la BASE DE MERGE, no la punta de `--base`.
   // `tocaEngram` y `mdDelDiff` ya usan `base...HEAD` (tres puntos = desde donde se separó la rama);
-  // cruzar contra la punta de main era otra noción de «antes» en el mismo control, y frenaba pull
-  // requests que no rompieron nada: alcanzaba con que main reparara el índice DESPUÉS del fork para
-  // que sus entradas nuevas aparecieran como «perdidas» en una rama que nunca las tuvo. Reproducido
-  // sobre la historia real de este repo (rama abierta antes de 0950f4f: 5 «perdidas» falsas).
+  // cruzar contra la punta de main sería otra noción de «antes» en el mismo control, y frenaría pull
+  // requests que no rompieron nada: alcanza con que main repare el índice DESPUÉS del fork para
+  // que sus entradas nuevas aparezcan como «perdidas» en una rama que nunca las tuvo.
   let referencia = staged ? 'HEAD' : base;
   if (!staged) {
     // 🔴 Si la base de merge no se puede calcular (clon shallow, historias sin ancestro común) NO se
-    // cae en silencio a la punta: eso reabría el mismo bug que se acaba de cerrar, con un aviso
-    // que ningún código emitía (cazador de fallos silenciosos, vuelta 2). Se dice y no se frena.
+    // cae en silencio a la punta: eso reabriría el mismo bug. Se dice y no se frena.
     try { referencia = git(repo, ['merge-base', base, 'HEAD']).trim(); }
     catch (e) {
       const motivo = String((e && e.stderr) || (e && e.message) || e).trim().split('\n')[0];
@@ -652,8 +629,8 @@ function revisar({ repo, base, staged }) {
     const nuevo = contenidoEn(repo, refNuevo, rel);
     if (nuevo === null) continue;                       // borrado en este diff
     const fmNuevo = frontmatter(nuevo);
-    // La identidad de una story es `story:`, en todo el arnés (`declaresStoryIdentity`, 2026-08-23). El portón leía
-    // también `storyId:`, y era el único: una story así tenía controles acá y no en el pipeline (story 1.17.1, tanda 2).
+    // La identidad de una story es `story:`, en todo el arnés (`declaresStoryIdentity`). Leer también `storyId:` le
+    // daría a una story controles acá y no en el pipeline.
     const idBruto = fmNuevo && escalar(fmNuevo, 'story');
 
     // (1) frontmatter que no cierra en un archivo que DECLARA ser una story: silencio, no error.
@@ -664,9 +641,9 @@ function revisar({ repo, base, staged }) {
     }
     if (!idBruto) {                                     // no es una story
       // …pero si se parece a una en review/done, se dice: que nadie crea que pasó por los controles. Sólo se mira si
-      // la clave ESTÁ, nunca se toma su valor como número de story. Tres caminos al silencio, los tres cerrados (pase
-      // adversarial de la tanda 2): pasar a review/done; renombrar `story:` a `storyId:` sin tocar el estado —la story
-      // dejaba de estar bajo control y nadie se enteraba—; y un frontmatter roto, que no deja leer nada.
+      // la clave ESTÁ, nunca se toma su valor como número de story. Tres caminos al silencio, los tres cerrados:
+      // pasar a review/done; renombrar `story:` a `storyId:` sin tocar el estado —la story
+      // deja de estar bajo control y nadie se entera—; y un frontmatter roto, que no deja leer nada.
       const cabeza = fmNuevo !== null ? fmNuevo : (nuevo.startsWith('---') ? nuevo.split('\n').slice(0, 60).join('\n') : null);
       const est = cabeza ? String(escalar(cabeza, 'status') || '').toLowerCase() : '';
       if (cabeza && /^storyId:\s*\S/m.test(cabeza) && LISTOS.has(est)) {
@@ -694,17 +671,16 @@ function revisar({ repo, base, staged }) {
 
     revisadas.push({ archivo: rel, story: idBruto, de: estadoViejo || '(nueva)', a: estadoNuevo });
 
-    // 🔴 `review → done` en el pre-commit AVISA, no frena (revisión adversarial 2026-09-06, hallazgo
-    // #18): la decisión del dev —REVIEW-A-DONE-SIN-FRENO-1, «avisando dos semanas, se mide, y recién
-    // ahí frena»— vivía sólo en el hook del skill; esta copia, corrida por git en `--staged`, frenaba
-    // la misma transición diez segundos después del aviso, así que el aviso era inerte y la medición
-    // nunca se acumulaba. Misma llave que el skill: TYCON_REVIEW_A_DONE=block. En el pull request
-    // (sin `--staged`) no cambia nada: ahí frena desde el 2026-09-04.
+    // 🔴 `review → done` en el pre-commit AVISA, no frena: la decisión de avisar primero, medir, y recién
+    // después frenar vive en el hook del skill y en esta copia, corrida por git en `--staged`. Si esta copia
+    // frenara la misma transición diez segundos después del aviso, el aviso sería inerte y la medición
+    // nunca se acumularía. Misma llave que el skill: TYCON_REVIEW_A_DONE=block. En el pull request
+    // (sin `--staged`) frena.
     const soloAviso = staged && estadoViejo === 'review' && estadoNuevo === 'done'
       && !llaveFrena(process.env.TYCON_REVIEW_A_DONE);
     const destino = soloAviso ? avisos : hallazgos;
 
-    // La clave de la story, UNA vez: la usan la evidencia de cierre y la constancia de revisores (story 1.17.1).
+    // La clave de la story, UNA vez: la usan la evidencia de cierre y la constancia de revisores.
     // Perezosa: sólo se recorre el repo si alguna de las dos reglas la necesita.
     let prefStory;
     const prefijoDeLaStory = () => (prefStory !== undefined ? prefStory : (prefStory = prefijoDeEvidencia(idBruto, path.join(repo, rel))));
@@ -713,8 +689,7 @@ function revisar({ repo, base, staged }) {
     const exentaDod = /^dod_runtime_exempt:\s*true\b/m.test(fmNuevo);
     if (!exentaDod && !hayEvidencia(repo, 'dod-runtime', idBruto, path.join(repo, rel), prefijoDeLaStory())) {
       // Igual que la constancia de revisores (abajo): sin clave el portón no miró, y la salida no es declarar una
-      // exención — que taparía un número repetido — sino arreglar lo que impide calcularla (pase de fallos
-      // silenciosos, 1.17.1).
+      // exención — que taparía un número repetido — sino arreglar lo que impide calcularla.
       const prefDod = prefijoDeLaStory();
       destino.push({ archivo: rel, story: idBruto, regla: 'sin-evidencia-de-cierre',
         mensaje: !prefDod
@@ -737,8 +712,8 @@ function revisar({ repo, base, staged }) {
     }
     if (estadoNuevo === 'done' && !exentaAdv && !hayEvidencia(repo, 'pipeline-runs', idBruto, path.join(repo, rel), prefijoDeLaStory())) {
       const pref = prefijoDeLaStory();
-      // Sin clave el portón NO miró (falla cerrado): el hallazgo lo dice, no sólo el aviso por stderr (pase de fallos
-      // silenciosos, 1.17.1). «No pude verificar» y «no hay constancia» piden cosas distintas al dev.
+      // Sin clave el portón NO miró (falla cerrado): el hallazgo lo dice, no sólo el aviso por stderr.
+      // «No pude verificar» y «no hay constancia» piden cosas distintas al dev.
       destino.push({ archivo: rel, story: idBruto, regla: 'sin-constancia-de-revisores',
         mensaje: !pref
           ? `pasa a \`done\` y no pude calcular la clave de la story ${idBruto} (${rel}) para buscar su carpeta de revisores: sin clave no se da constancia por buena (el motivo está en el aviso del portón). No es «no hay constancia»: es «no la pude buscar».`
@@ -747,29 +722,26 @@ function revisar({ repo, base, staged }) {
 
     // (4) el que escribió el código no puede ser el que lo revisó — y tiene que estar ESCRITO
     //
-    // 🔴 `roster-incoherente` AVISA, no frena (decisión del dev, 2026-09-22). Las otras tres reglas
+    // 🔴 `roster-incoherente` AVISA, no frena. Las otras tres reglas
     // del registro —que exista, que se pueda leer, que el autor no figure como revisor— se ganaron
-    // el lugar y siguen frenando. Ésta no: en sus dos apariciones lo que falló fue ELLA, no lo que
-    // vigila. En agosto frenaba casi toda story real porque las fuentes que escribe el propio
-    // pipeline (`mech-check`, `adversarial-verify:*`) no son spawns y nunca están en el roster
-    // (incident-log, pase adversarial de la pieza); el 2026-09-22 volvió a pasar con otros nombres
-    // —la vuelta o el modelo pegados al nombre del revisor— y frenó un pull request de un producto del equipo con 5
-    // hallazgos de los que 4 eran suyos. Cero atrapadas reales antes de eso.
+    // el lugar y siguen frenando. Ésta no: lo que falló fue ELLA, no lo que
+    // vigila. Frenaría casi toda story real porque las fuentes que escribe el propio
+    // pipeline (`mech-check`, `adversarial-verify:*`) no son spawns y nunca están en el roster, y
+    // también frenaría un pull request con la vuelta o el modelo pegados al nombre del revisor.
     //
     // El motivo de bajarla y no borrarla: un control cuyas únicas fallas son propias, y que cuesta
     // mañanas, termina apagado ENTERO con un `advisors_exempt: true` — y ahí se pierden también
     // las tres que sí sirven. Como aviso sigue diciendo lo que ve y se puede contar.
     //
-    // Vuelve a frenar con TYCON_ROSTER_NAMES=block, y la story 7.13 la deja casi imposible de
+    // Vuelve a frenar con TYCON_ROSTER_NAMES=block, y `write-findings` la deja casi imposible de
     // fallar (el firmante de un hallazgo se ELIGE de los revisores que corrieron, no se tipea):
     // cuando eso esté, se revisa si vuelve a frenar o si directamente sobra.
     if (estadoNuevo === 'done' && !exentaAdv) {
-      // 🔴 Desde la 7.13 el canal lo decide el PROPIO hallazgo, no la regla entera: uno que traía
+      // 🔴 El canal lo decide el PROPIO hallazgo, no la regla entera: uno que trae
       // su `tramo` fue validado al escribirse contra el registro de esa corrida, así que si igual
       // no cuadra es una incoherencia REAL y frena. Uno sin `tramo` es del formato viejo —nadie lo
       // validó— y sigue avisando. Vuelve a frenar sola a medida que las corridas viejas dejan de
       // cerrarse, sin día de corte y sin depender de que alguien cierre una ventana de medición.
-      // Medido el 2026-09-22: de 80 corridas en disco, 12 marcarían por el formato viejo.
       const nombresFrenan = llaveFrena(readEnv('TYCON_ROSTER_NAMES', { where: WHERE }));
       for (const h of revisarAutoria(repo, idBruto, path.join(repo, rel))) {
         const esAviso = h.regla === 'roster-incoherente' && !nombresFrenan && !h.validado;
@@ -813,22 +785,20 @@ function selftest() {
   conStory(story('done'));
   const sinNada = revisar({ repo: tmp, base });
 
-  // 🔴 Lo que NO es evidencia de cierre aunque lleve el prefijo (2026-09-05): la matriz por AC,
-  // el self-audit y el plan manual. Rojo previo: con estos archivos el portón daba VERDE — una
-  // copia parcial de la evidencia de otro repo lo satisfacía.
+  // 🔴 Lo que NO es evidencia de cierre aunque lleve el prefijo: la matriz por AC,
+  // el self-audit y el plan manual. Con estos archivos el portón daría VERDE — una
+  // copia parcial de la evidencia de otro repo lo satisfaría.
   fs.mkdirSync(path.join(tmp, '.advisors', 'dod-runtime'), { recursive: true });
   for (const f of ['1.1-runtime-matrix.md', '1.1-self-audit-iter1.md', '1.1-manual-test-plan.md']) {
     fs.writeFileSync(path.join(tmp, '.advisors', 'dod-runtime', f), 'no es evidencia');
   }
   const soloMatriz = revisar({ repo: tmp, base });
-  // 🔴 …pero el ledger de smokes SÍ (decisión del dev, 2026-09-06): es el registro crudo de cada
-  // prueba que corrió, escrito por la máquina. Hasta ese día este mismo caso lo ponía junto a la
-  // matriz como «no evidencia»; la decisión lo dio vuelta y la definición única cambió en las
-  // cuatro capas a la vez.
+  // 🔴 …pero el ledger de smokes SÍ: es el registro crudo de cada
+  // prueba que corrió, escrito por la máquina. La definición única rige en las cuatro capas a la vez.
   fs.writeFileSync(path.join(tmp, '.advisors', 'dod-runtime', '1.1-smoke-ledger.jsonl'), '{"story":"1.1","acs":[1],"exit":0}\n');
   const conLedger = revisar({ repo: tmp, base });
   fs.rmSync(path.join(tmp, '.advisors', 'dod-runtime', '1.1-smoke-ledger.jsonl'));
-  // …y el gate E2E del proyecto (lo que un producto del equipo commiteó a mano) sí lo es.
+  // …y el gate E2E del proyecto (commiteado a mano) sí lo es.
   fs.writeFileSync(path.join(tmp, '.advisors', 'dod-runtime', '1.1-e2e-gate-20260905T120000Z.md'), 'verdict=PASS');
   const conGate = revisar({ repo: tmp, base });
   fs.rmSync(path.join(tmp, '.advisors', 'dod-runtime', '1.1-e2e-gate-20260905T120000Z.md'));
@@ -853,10 +823,8 @@ function selftest() {
   conStory(story('in-progress'));
   const sinTransicion = revisar({ repo: tmp, base });
 
-  // 🔴 El falso positivo que dio la PRIMERA versión de este portón, con su detector propio: un
-  // reporte de medición SIN frontmatter que menciona `story:` en el cuerpo. No es una story y no
-  // se puede tratar como una story rota. Se caza con el detector del lint local, que ya había
-  // pagado esta lección (2026-08-23: 331 de 1608 `.md` de un repo del equipo rechazados por el criterio viejo).
+  // 🔴 Un reporte de medición SIN frontmatter que menciona `story:` en el cuerpo no es una story y no
+  // se puede tratar como una story rota. Se caza con el detector del lint local.
   fs.mkdirSync(path.join(tmp, 'mediciones'), { recursive: true });
   fs.writeFileSync(path.join(tmp, 'mediciones', 'resultado.md'),
     '# Qué reglas implementa el proceso\n\nmide: cadena\nstory: 4.37\nmaterial: filas.json\n');
@@ -897,7 +865,7 @@ function selftest() {
     try { return revisar({ repo: tmp, base }); }
     finally { nombres.forEach((k, i) => { if (antes[i] === undefined) delete process.env[k]; else process.env[k] = antes[i]; }); }
   })();
-  // (d1b) el MISMO hallazgo, pero escrito por `write-findings` con su `tramo` (story 7.13): eso
+  // (d1b) el MISMO hallazgo, pero escrito por `write-findings` con su `tramo`: eso
   // quiere decir que el firmante se validó contra el registro al escribirlo, así que la
   // incoherencia es REAL y frena sin necesidad de la llave. Es cómo la regla vuelve sola a frenar
   // a medida que las corridas del formato viejo dejan de cerrarse.
@@ -919,7 +887,7 @@ function selftest() {
   fs.mkdirSync(path.join(tmp, '.advisors', 'pipeline-runs', '1.1-20260825120000'), { recursive: true });
   const preCutoff = revisar({ repo: tmp, base });
   // (g) la OTRA forma real del nombre (`-YYYYMMDD-HHMM`): también es una fecha, y también es vieja.
-  // Leerla mal dejaba el run "sin fecha" y lo frenaba — regresión que cazó el banco de controles.
+  // Leerla mal dejaría el run "sin fecha" y lo frenaría.
   fs.rmSync(path.join(tmp, '.advisors', 'pipeline-runs', '1.1-20260825120000'), { recursive: true, force: true });
   fs.mkdirSync(path.join(tmp, '.advisors', 'pipeline-runs', '1.1-20260824-1200'), { recursive: true });
   const preCutoffConHora = revisar({ repo: tmp, base });
@@ -928,10 +896,9 @@ function selftest() {
   fs.mkdirSync(path.join(tmp, '.advisors', 'pipeline-runs', '1.1-corrida-manual'), { recursive: true });
   const sinFecha = revisar({ repo: tmp, base });
 
-  // ── Modo `--staged`: el MISMO control, antes de que el commit exista (2026-09-04) ───────────
-  // Caso disparador: el repo de specs de un producto del equipo. Una story del Epic 8 entró declarándose
-  // `review` con su código sin pushear, y el rojo apareció recién en el servidor. El freno local
-  // que cubre exactamente ese caso vive en un hook de Claude Code: un commit hecho desde la
+  // ── Modo `--staged`: el MISMO control, antes de que el commit exista ───────────
+  // Caso: una story que entra declarándose `review` con su código sin pushear. El freno local
+  // que cubre ese caso vive en un hook de Claude Code: un commit hecho desde la
   // terminal, desde el botón de VS Code o desde la web se lo saltea SIN ENTERARSE. Medido contra
   // el índice, en cambio, lo corre git — que corre siempre, use quien use la herramienta que use.
   fs.rmSync(path.join(tmp, '.advisors'), { recursive: true, force: true });
@@ -953,7 +920,7 @@ function selftest() {
   sh('add', '-A');
   const stagedOtraCosa = revisar({ repo: tmp, staged: true });
 
-  // 🔴 `review → done` en `--staged` AVISA y no frena (2026-09-06, hallazgo #18): la decisión del dev
+  // 🔴 `review → done` en `--staged` AVISA y no frena: la decisión
   // tiene que vivir en las dos copias, o el aviso del skill es inerte. Con la llave, frena.
   sh('-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'otra cosa');
   conStory(story('in-progress'));
@@ -977,8 +944,8 @@ function selftest() {
   //
   // 🔴 El estado se prepara con HEAD IGUAL a la base para esta story, a propósito: así el modo
   // viejo (comparar contra una rama) no ve absolutamente nada, y el 1 sólo puede venir de haber
-  // mirado el índice. La primera versión de este caso no lo hacía y salía verde CON LA
-  // FUNCIONALIDAD DESACTIVADA — o sea, no probaba nada. Por eso va con su control al lado.
+  // mirado el índice. Un caso que no lo hiciera saldría verde CON LA
+  // FUNCIONALIDAD DESACTIVADA — o sea, no probaría nada. Por eso va con su control al lado.
   conStory(story('in-progress'));
   fs.rmSync(path.join(tmp, '.advisors'), { recursive: true, force: true });
   fs.writeFileSync(path.join(tmp, 'specs', 'stories', '1-1.md'), story('done'));
@@ -997,18 +964,18 @@ function selftest() {
     cliSinStaged = 0;
   } catch (e) { cliSinStaged = e.status; }
 
-  // (i) 🔴 EL CLI DE VERDAD, no sólo el motor (2026-08-31, revisión a ciegas).
-  // Todo lo de arriba llama a revisar() y mira su salida. El bug que se escapó vivía en main():
-  // un atajo salía 0 cuando no había stories en transición, TIRANDO los hallazgos — y el
-  // frontmatter roto es justamente un hallazgo SIN transición. El motor decía "lo encontré" y el
-  // proceso salía 0. Un control se verifica por lo que el CI recibe: el código de salida.
+  // (i) 🔴 EL CLI DE VERDAD, no sólo el motor.
+  // Todo lo de arriba llama a revisar() y mira su salida. Un atajo en main() que saliera 0 cuando no hay
+  // stories en transición TIRARÍA los hallazgos — y el
+  // frontmatter roto es justamente un hallazgo SIN transición. El motor diría "lo encontré" y el
+  // proceso saldría 0. Un control se verifica por lo que el CI recibe: el código de salida.
   conStory('---\nstory: "1.1"\nstatus: done\n# falta el cierre\n');
   let cliSalida = 0;
   try {
     execFileSync(process.execPath, [__filename, '--repo', tmp, '--base', base], { stdio: 'ignore' });
   } catch (e) { cliSalida = e.status; }
 
-  // ── Chequeo 5: el índice de memoria (story 1.6) ───────────────────────────────────────────────
+  // ── Chequeo 5: el índice de memoria ───────────────────────────────────────────────
   // Este control es lo ÚNICO que ve los commits hechos fuera del asistente (la web de Azure, otra
   // máquina, un hook salteado): el freno del commit no los toca. Mismo criterio que el hook, misma
   // asimetría — lo que el pull request ROMPE frena; lo que ya venía roto avisa.
@@ -1072,8 +1039,8 @@ function selftest() {
   sh4('add', '-A'); sh4('-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'ahora el índice parsea');
   const prBaseIlegible = revisar({ repo: tmp4, base: baseIlegible });
 
-  // 🔴 Base de merge, no punta de main (pase adversarial 2026-09-17): main repara el índice DESPUÉS
-  // del fork; la rama, abierta antes, ni tocó esos ids. Contra la punta salían como «perdidas».
+  // 🔴 Base de merge, no punta de main: main repara el índice DESPUÉS
+  // del fork; la rama, abierta antes, ni tocó esos ids. Contra la punta saldrían como «perdidas».
   const tmp5 = fs.mkdtempSync(path.join(os.tmpdir(), 'cigate-engram4-'));
   const sh5 = (...a) => execFileSync('git', ['-C', tmp5, ...a], { stdio: 'ignore' });
   const commit5 = (m) => { sh5('add', '-A'); sh5('-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', m); };
@@ -1093,16 +1060,15 @@ function selftest() {
   const prContraMainReparado = revisar({ repo: tmp5, base: 'main' });
   fs.rmSync(tmp5, { recursive: true, force: true });
 
-  // 🔴 Los avisos del chequeo 5 llegan al CLI aunque no haya stories ni hallazgos (pase adversarial):
-  // el atajo «✅ ninguna story pasa a review/done» salía ANTES de imprimirlos.
+  // 🔴 Los avisos del chequeo 5 llegan al CLI aunque no haya stories ni hallazgos:
+  // el atajo «✅ ninguna story pasa a review/done» saldría ANTES de imprimirlos.
   // (tmp3 todavía existe acá: se borra más abajo junto con los otros). El aviso sale por stderr y el
   // CLI termina en 0, así que se capturan las DOS salidas con spawnSync — execFileSync sólo devuelve
   // stdout cuando el código es 0.
   const cliAviso = require('child_process').spawnSync(process.execPath, [__filename, '--repo', tmp3, '--base', baseHeredada], { encoding: 'utf8' });
   const cliAvisoEngramOut = String(cliAviso.stdout || '') + String(cliAviso.stderr || '');
 
-  // 🔴 Sin base de merge (historias sin ancestro común, clon shallow) → AVISA, no cae a la punta
-  // (cazador de fallos silenciosos, vuelta 2: el fallback silencioso reabría el bug recién cerrado).
+  // 🔴 Sin base de merge (historias sin ancestro común, clon shallow) → AVISA, no cae a la punta.
   const tmp6 = fs.mkdtempSync(path.join(os.tmpdir(), 'cigate-engram5-'));
   const sh6 = (...a) => execFileSync('git', ['-C', tmp6, ...a], { stdio: 'ignore' });
   fs.mkdirSync(path.join(tmp6, '.engram', 'chunks'), { recursive: true });
@@ -1116,10 +1082,10 @@ function selftest() {
   const prSinBaseComun = revisar({ repo: tmp6, base: 'main' });
   fs.rmSync(tmp6, { recursive: true, force: true });
 
-  // 🔴 Un archivo MOVIDO fuera de `.engram/` no esquiva el chequeo (story 8.18, deuda `listas-sin-renombres`,
-  // 2026-10-04). `git diff --name-only` empareja el borrado con el alta y lista sólo la ruta NUEVA: la vieja, que es
-  // la que decide si el chequeo corre, no aparecía. Mover el índice (o un chunk) a otra carpeta dejaba la memoria sin
-  // índice (o el índice con una entrada sin archivo) y el portón no decía nada. Dos repos: uno por el pull request,
+  // 🔴 Un archivo MOVIDO fuera de `.engram/` no esquiva el chequeo. `git diff --name-only` empareja el borrado con el
+  // alta y lista sólo la ruta NUEVA: la vieja, que es
+  // la que decide si el chequeo corre, no aparecería. Mover el índice (o un chunk) a otra carpeta dejaría la memoria sin
+  // índice (o el índice con una entrada sin archivo) y el portón no diría nada. Dos repos: uno por el pull request,
   // otro por `--staged`.
   const memoryRepo = (prefix) => {
     const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -1177,14 +1143,13 @@ function selftest() {
     ['un run posterior al corte SIN registro de autoría frena', reglas(postSinRoster).includes('sin-registro-de-autoria')],
     ['con el registro de autoría válido, limpio', postConRoster.hallazgos.length === 0],
     ['si el que implementó figura como revisor, frena', reglas(autoRevision).includes('revisor-es-el-autor')],
-    // 🔴 Cambió de frenar a AVISAR el 2026-09-22 (decisión del dev): en sus dos apariciones falló
-    // la regla, no lo que vigila. El caso no se borra —sigue midiendo que la ve— y el canal ahora
-    // es parte de lo que se afirma. Con TYCON_ROSTER_NAMES=block vuelve a hallazgos.
+    // 🔴 La regla AVISA y no frena: lo que falló fue la regla, no lo que vigila. El caso no se borra
+    // —sigue midiendo que la ve— y el canal es parte de lo que se afirma. Con TYCON_ROSTER_NAMES=block vuelve a hallazgos.
     ['un advisor con hallazgos que el registro no lista, AVISA y no frena',
       (incoherente.avisos || []).some((h) => h.regla === 'roster-incoherente')
       && !reglas(incoherente).includes('roster-incoherente')],
     ['…y con TYCON_ROSTER_NAMES=block vuelve a frenar', reglas(incoherenteFreno).includes('roster-incoherente')],
-    // 🔴 La regla vuelve a frenar SOLA para lo que nació validado (story 7.13), sin llave y sin
+    // 🔴 La regla vuelve a frenar SOLA para lo que nació validado, sin llave y sin
     // día de corte: el hallazgo que trae su `tramo` pasó por la validación al escribirse.
     ['un hallazgo que SÍ se validó al escribirse (trae su tramo) frena sin llave',
       reglas(incoherenteValidado).includes('roster-incoherente')
@@ -1204,7 +1169,7 @@ function selftest() {
     ['--staged + TYCON_REVIEW_A_DONE=block: `review → done` FRENA', reglas(stagedInternaFreno).includes('sin-evidencia-de-cierre')],
     ['en el pull request (sin --staged) `review → done` sigue frenando', reglas(ciInterna).includes('sin-evidencia-de-cierre')],
     ['el CLI --staged SALE 0 ante `review → done` (avisa, no frena)', cliInterna === 0],
-    // ── chequeo 5: el índice de memoria (story 1.6) ──────────────────────────────────────────
+    // ── chequeo 5: el índice de memoria ──────────────────────────────────────────
     ['🔴 un PR que PIERDE entradas del índice de memoria frena, nombrando el id', reglas(prQuePierde).includes('indice-de-memoria-perdio-entradas')
       && prQuePierde.hallazgos.some((h) => /cccc3333/.test(h.mensaje))],
     ['la deriva HEREDADA del índice avisa y no frena (el PR no la causó)', prHeredado.hallazgos.length === 0
@@ -1250,18 +1215,15 @@ function main() {
     console.error(`⚠ tycon-ci-gate: ${r.error} — no se pudo revisar nada. NO se da por bueno.`);
     return 1;
   }
-  // 🔴 `&& !r.hallazgos.length` (2026-08-31, revisión a ciegas). ANTES este atajo salía 0 en
-  // cuanto no había stories EN TRANSICIÓN, sin mirar los hallazgos — y el hallazgo de
-  // `frontmatter-roto` es exactamente uno que aparece SIN transición: una story cuyo frontmatter
-  // no se puede leer no puede verse pasando a `done`, por definición. Resultado: en el modo con
-  // que lo invoca el CI el hallazgo se calculaba y se TIRABA, imprimiendo ✅ y saliendo 0; el
-  // mismo input con --json salía 1. O sea que el primer control que promete la documentación
-  // —"frontmatter legible"— nunca frenó nada en el servidor.
+  // 🔴 `&& !r.hallazgos.length`: un atajo que saliera 0 en cuanto no hay stories EN TRANSICIÓN, sin mirar los
+  // hallazgos, tiraría el hallazgo de `frontmatter-roto`, que aparece SIN transición: una story cuyo frontmatter
+  // no se puede leer no puede verse pasando a `done`, por definición. El CI vería ✅ y exit 0; el
+  // mismo input con --json saldría 1.
   const dondeMira = staged ? 'lo que estás por commitear' : 'este diff';
-  // 🔴 El atajo verde sólo vale si TAMPOCO hay avisos (2026-09-17, pase adversarial): antes salía
-  // antes del bloque de avisos, así que todo aviso del chequeo 5 —«no pude comparar el índice de
-  // memoria», «deriva heredada»— se tragaba y el portón imprimía ✅. Justo lo que el AC 23 prohíbe:
-  // nunca dar por bueno lo que no se pudo medir.
+  // 🔴 El atajo verde sólo vale si TAMPOCO hay avisos: si saliera
+  // antes del bloque de avisos, todo aviso del chequeo 5 —«no pude comparar el índice de
+  // memoria», «deriva heredada»— se tragaría y el portón imprimiría ✅. Nunca se da por bueno
+  // lo que no se pudo medir.
   if (!r.revisadas.length && !r.hallazgos.length && !(r.avisos || []).length) {
     console.log(`✅ tycon-ci-gate: ninguna story pasa a review/done en ${dondeMira} (${r.archivos} .md mirados).`);
     return 0;
@@ -1281,8 +1243,8 @@ function main() {
     console.error('\n⚠️  AVISO — corridas sin registro de aprobaciones (no frena):');
     for (const h of avisosDeAprobaciones) console.error(`   · [${h.regla}] ${h.archivo}: ${h.mensaje}`);
   }
-  // También el suyo (pase adversarial de la 1.17.1, tanda 2): bajo el encabezado de `review → done` decía que con
-  // TYCON_REVIEW_A_DONE=block frenaba y que el pull request la frenaba, y ninguna de las dos es cierta.
+  // Este aviso tiene su propio encabezado: el de `review → done` no le corresponde, porque no depende de
+  // TYCON_REVIEW_A_DONE=block ni del pull request.
   const avisosDeStoryId = (r.avisos || []).filter((h) => h.regla === 'storyid-sin-story');
   if (avisosDeStoryId.length) {
     console.error('\n⚠️  AVISO — archivos que se parecen a una story pero el arnés no los trata como tal:');
@@ -1324,15 +1286,9 @@ function main() {
     console.error('   cuál), que queda escrito y se ve en el pull request. El portón del servidor va a');
     console.error('   pedir exactamente lo mismo cuando el commit llegue.');
   } else {
-    // 🔴 Este texto YA MINTIÓ una vez y costó una mañana. Del 2026-09-22 a la mañana decía que
-    // todos estos controles corrían en el pre-commit; `roster-incoherente` no corría, y el dev se
-    // fue a buscar un hook salteado que nunca existió (un pull request de un producto del equipo). Se corrigió diciendo
-    // que ese cruce vivía SÓLO acá… y esa corrección quedó falsa el mismo día, cuando la story 7.13
-    // le dio su contraparte local (`revisarRosterLocal` en `on-pre-commit.js`). Lo cazó el pase
-    // adversarial de la propia 7.13.
-    // La lección, por tercera vez: un mensaje de error que afirma dónde corre otra capa se pudre
-    // con el próximo cambio. Así que ya no lo afirma — dice lo único que este proceso sabe de
-    // verdad: que el commit llegó hasta acá.
+    // 🔴 Este texto no afirma dónde corre cada capa: un mensaje de error que afirma dónde corre otra capa se pudre
+    // con el próximo cambio (por ejemplo, `roster-incoherente` tiene su contraparte local en `revisarRosterLocal` de
+    // `on-pre-commit.js`). Dice lo único que este proceso sabe de verdad: que el commit llegó hasta acá.
     console.error('\n   Estos controles tienen contraparte en la máquina, en el pre-commit del arnés.');
     console.error('   Que hayan llegado acá significa que ese commit no pasó por ella: otra máquina,');
     console.error('   la web de Azure DevOps, hooks salteados, o una copia del arnés desactualizada.');
@@ -1344,13 +1300,11 @@ function main() {
 
 // 🔴 `process.exitCode`, NO `process.exit()`. Este guión lo ejecuta otro proceso y le parsea la
 // salida; en Node las escrituras a una tubería son ASINCRÓNICAS y `process.exit()` mata el proceso
-// con parte de lo escrito todavía en el aire. Medido en audit-dependencies.js el 2026-09-28: un
-// informe de 9782 bytes llegaba cortado en 8192 y el consumidor lo leía como «no pude», nunca como
-// un error. `main` acá es sincrónica y no deja manejadores abiertos, así que con `exitCode` el
+// con parte de lo escrito todavía en el aire: un informe de ~9800 bytes llega cortado en 8192 y el consumidor lo
+// lee como «no pude», nunca como un error. `main` acá es sincrónica y no deja manejadores abiertos, así que con `exitCode` el
 // proceso termina solo, cuando terminó de escribir.
-// Caso: guides/maintaining/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
 if (require.main === module) process.exitCode = main();
-// `mdDelDiff` y `contenidoEn` se exportan desde 2026-09-22 para que `cierre-recortado` T12 pueda
-// EJECUTARLAS en vez de comparar sus bytes contra `main`. Comparar texto no distinguía una mejora
-// de un deterioro: cualquier cambio salía rojo, y así se fueron desfrizando funciones de a una.
+// `mdDelDiff` y `contenidoEn` se exportan para que `cierre-recortado` T12 pueda
+// EJECUTARLAS en vez de comparar sus bytes contra `main`. Comparar texto no distingue una mejora
+// de un deterioro: cualquier cambio sale rojo.
 module.exports = { llaveFrena, revisar, revisarAprobaciones, frontmatter, declaraSerStory, escalar, hayEvidencia, prefijoDeEvidencia, runDirsDeStory, validarRoster, advisoresEnFindings, FUENTES_SINTETICAS, esEvidenciaDeCierre, NO_ES_EVIDENCIA_DE_CIERRE, ES_EVIDENCIA_ADEMAS, mdDelDiff, contenidoEn };

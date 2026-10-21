@@ -2,10 +2,10 @@
 'use strict';
 // check-unreplaced-placeholders.js — que un alta no commitee un marcador de plantilla vivo
 //
-// POR QUÉ EXISTE (2026-09-28). Un alta de producto copia las plantillas de
+// POR QUÉ EXISTE. Un alta de producto copia las plantillas de
 // un paquete (`packs/<paquete>/templates/`, que llega con el perfil del equipo) y les reemplaza los
-// marcadores: `{{PRODUCT}}`, `{{BACKEND_REPO}}`, `{{PLUGIN}}`, `{{DATE}}`… En una corrida simulada del alta contamos **~120 marcadores de 11
-// tipos repartidos en más de 20 archivos**, y ningún control miraba si quedaba alguno vivo.
+// marcadores: `{{PRODUCT}}`, `{{BACKEND_REPO}}`, `{{PLUGIN}}`, `{{DATE}}`… Son decenas de marcadores
+// repartidos en más de 20 archivos, y sin este control nadie mira si queda alguno vivo.
 //
 // Un marcador que sobrevive NO da error: se lee como un valor más. Los dos casos que duelen:
 //   · `repo_group: [{{BACKEND_REPO}}, {{STORIES_REPO}}]` en `.tycon/advisors.yaml` → los
@@ -30,12 +30,12 @@
 //
 // 🔴 NO correrlo sobre `new-product-templates/`: ahí los marcadores son el contenido. El control
 // saltea esa carpeta por nombre, y también cualquier ruta que el llamador excluya con --exclude
-// (story 8.9, tanda B3a: se llamaba en castellano y el nombre viejo sigue andando hasta el retiro).
+// (el nombre viejo en castellano sigue andando hasta el retiro).
 
 const fs = require('fs');
 const path = require('path');
 const { esRutaDelArnes } = require('../lib/harness-repo.js');
-// El traductor de las opciones viejas vive al lado (story 8.9).
+// El traductor de las opciones viejas vive al lado.
 const { aliasLegacyOptions, LegacyOptionsError } = (() => {
   try { return require('./legacy-options.js'); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') process.stderr.write(`⚠️  legacy-options.js no cargó (${e && e.message}): los nombres viejos de este guion no se traducen\n`); return { aliasLegacyOptions: (argv) => argv, LegacyOptionsError: Error }; }
 })();

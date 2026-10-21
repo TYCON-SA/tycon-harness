@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * prune.js — el criterio de poda del catálogo de reglas (story 2.9).
+ * prune.js — el criterio de poda del catálogo de reglas.
  *
  * LA PREGUNTA
  * -----------
  * ¿Qué regla no encontró nada nunca — y sabe ponerse roja?
  *
- * Hasta acá el catálogo sólo podía crecer: se contaba el numerador (los hallazgos) y no el
- * denominador (las oportunidades). Sin denominador, «esta regla nunca encontró nada» y «a esta regla
+ * Un catálogo que sólo cuenta el numerador (los hallazgos) y no el denominador (las oportunidades) sólo
+ * puede crecer. Sin denominador, «esta regla nunca encontró nada» y «a esta regla
  * nunca la miró nadie» se ven idénticos, y retirar a ciegas es tan malo como no retirar nunca.
  *
  * LAS TRES PUNTAS QUE CRUZA
@@ -18,18 +18,18 @@
  *                corridas (`timing-history/*.json → revisores.por_tipo`) — NO de `advisor-runs/`,
  *                que se borra a los 7 días: la serie nacería muerta.
  *
- *  🔴 LAS DOS PUNTAS CUENTAN EL MISMO UNIVERSO DE MÁQUINAS (vuelta 2). Una máquina entra sólo si sus
+ *  🔴 LAS DOS PUNTAS CUENTAN EL MISMO UNIVERSO DE MÁQUINAS. Una máquina entra sólo si sus
  *     hallazgos están MEDIDOS —esta, según el sello del recolector (`estadoDeLaSerie`, la única
  *     definición); una del buzón, según su cobertura, y no más vieja que `prune.max_findings_days`—, y
  *     de las que no entran tampoco se cuentan las corridas: sumar el denominador de todas contra el
- *     numerador de algunas infla las candidatas (medido: 8 publicadas, 4 reales). Sin ninguna máquina
+ *     numerador de algunas infla las candidatas. Sin ninguna máquina
  *     medida el cruce se NIEGA: cero hallazgos no medidos se leerían como «no encontró nada».
  *  🔴 La misma corrida puede llegar por dos máquinas (la evidencia viaja por git): cuenta una vez, por
  *     su huella `corrida`. Y un volcado archivado dos veces cuenta una, el más nuevo, por su sesión.
- *  🔴 Story 2.28: cada máquina sube a `<nombre>-<código>`. Una carpeta vieja que el bajador declara en
+ *  🔴 Cada máquina sube a `<nombre>-<código>`. Una carpeta vieja que el bajador declara en
  *     `.carpetas-de-maquina.json` como unida o compartida no es una máquina más en ninguna de las dos
  *     puntas; una que siguió recibiendo sí (es otra máquina que no actualizó). Sin ese archivo, cada
- *     carpeta cuenta como antes y se dice.
+ *     carpeta cuenta como una máquina y se dice.
  *   banco        si la regla tiene un caso que la obliga a marcar (`must-flag`) y si el examen
  *                periódico lo corrió.
  *
@@ -43,14 +43,14 @@
  *   candidata_a_retiro             probada, cero hallazgos, con recorrido suficiente
  *   sin_oportunidades_suficientes  probada, cero hallazgos, pero con poco recorrido
  *
- *  🔴 Por qué ESTE orden y no el que la story escribió primero: el banco sólo hace falta para juzgar
+ *  🔴 Por qué ESTE orden: el banco sólo hace falta para juzgar
  *     reglas que nunca encontraron nada. Una regla con hallazgos reales ya demostró que detecta; una
  *     rota o una que grita en falso tiene que verse aunque el banco no la haya examinado. Con
- *     `sin_examinar` antes de `rota`, la única regla rota medida hoy (una del paquete de clientes, con un caso «no debe
- *     marcar» que falló) quedaba escondida.
+ *     `sin_examinar` antes de `rota`, una regla rota medida (con un caso «no debe marcar» que falló) quedaría
+ *     escondida.
  *
- *  🔴 «Disuade» no es un estado: es la advertencia pegada a cada candidata. Medido el 2026-09-16,
- *     las 68 reglas con caso tienen TODAS un caso `must-flag`, así que «probada» y «sabe ponerse
+ *  🔴 «Disuade» no es un estado: es la advertencia pegada a cada candidata. Todas las
+ *     reglas con caso tienen un caso `must-flag`, así que «probada» y «sabe ponerse
  *     roja» son el mismo conjunto: una cubeta «disuade» separada de «candidata» no se llenaría nunca.
  *
  * LO QUE NUNCA HACE
@@ -68,7 +68,7 @@
  *     [--findings <jsonl>] [--mailbox <dir>] [--history <dir>] [--machine <alias>]
  *     [--cases <dir>] [--exam <json>] [--catalog <md>] [--reviewers <dir>] [--sources <json>] [--without-local]
  *
- *   --without-local (story 2.12): no hay «esta máquina». Lo usa el nocturno de Azure, que no es una máquina del equipo:
+ *   --without-local: no hay «esta máquina». Lo usa el nocturno de Azure, que no es una máquina del equipo:
  *     sin la bandera, el agente entraría como una máquina más (sin medir, o con los hallazgos y la historia de su
  *     disco), y las dos puntas del cruce dejarían de contar sólo las máquinas del buzón.
  *
@@ -81,7 +81,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -131,7 +131,7 @@ function leerConfig(ruta) {
     }
     return v;
   };
-  // Las claves del archivo, en inglés (story 8.9, tanda D1); los nombres de `conf` son internos y no cambian.
+  // Las claves del archivo, en inglés; los nombres de `conf` son internos y no cambian.
   const conf = {
     ventana_dias: entero('window_days', 1),
     umbral_oportunidades: entero('threshold_opportunities', 1),
@@ -205,8 +205,8 @@ function leerHallazgos({ local, claveLocal, buzon, ventana, fuera, hoy, fuentes,
     acc.medidas.set(clave, new Set(serie.volcados.map((v) => v.volcado)));
   };
 
-  // esta máquina, del disco — medida sólo si el recolector lo dice (una sola definición). Sin ruta (el nocturno, story
-  // 2.12) no hay «esta máquina»: ni aporta ni se nombra como sin medir.
+  // esta máquina, del disco — medida sólo si el recolector lo dice (una sola definición). Sin ruta (el nocturno)
+  // no hay «esta máquina»: ni aporta ni se nombra como sin medir.
   if (local) {
     const est = estadoDeLaSerie({ salida: local, hoy, fuentes, maxDias });
     if (est.estado === 'medido') {
@@ -224,7 +224,7 @@ function leerHallazgos({ local, claveLocal, buzon, ventana, fuera, hoy, fuentes,
   entradas.sort((a, b) => a.name.localeCompare(b.name));
   for (const e of entradas) {
     if (!e.isDirectory() || acc.medidas.has(e.name)) continue;
-    // story 2.28: una carpeta vieja unida o compartida no es una máquina más: lo suyo está en las carpetas nuevas, que
+    // una carpeta vieja unida o compartida no es una máquina más: lo suyo está en las carpetas nuevas, que
     // reciben el registro entero.
     if (viejas.has(e.name)) continue;
     // 🔴 Los motivos de acá son FIJOS o llevan sólo fechas y conteos: la cobertura viene de otra máquina y
@@ -296,13 +296,13 @@ function leerHistoria({ local, claveLocal, buzon, ventana, fuera, noRevisores, m
   if (local) juntar(local, claveLocal);   // sin ruta (el nocturno): la historia sale sólo del buzón
   try {
     const dirs = fs.readdirSync(buzon, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
-    // story 2.28: las corridas de una carpeta vieja unida o compartida tampoco suman aparte (las de la nueva son las mismas)
+    // las corridas de una carpeta vieja unida o compartida tampoco suman aparte (las de la nueva son las mismas)
     for (const n of dirs) if (!viejas.has(n)) juntar(path.join(buzon, n), n);
   } catch (e) { if (e.code !== 'ENOENT') carpetasIlegibles += 1; }
   // Un mismo archivo, en el disco y en el buzón (o en dos carpetas de una máquina renombrada), cuenta UNA vez — y la copia
   // que queda es la de una máquina que lo tiene LEÍDO en su serie, después la de una medida y recién después la de
-  // cualquiera. 🔴 Deduplicar por orden de llegada (pase adversarial de la 2.12) le daba el volcado a la carpeta vieja sin
-  // medir cuando su nombre ordenaba primero, y con ella se iba el denominador: en el nocturno no hay disco que lo tape.
+  // cualquiera. 🔴 Deduplicar por orden de llegada le daría el volcado a la carpeta vieja sin
+  // medir cuando su nombre ordena primero, y con ella se iría el denominador: en el nocturno no hay disco que lo tape.
   const rango = (c) => (medidas.has(c.clave) ? (medidas.get(c.clave).has(c.nombre) ? 0 : 1) : 2);
   const vistos = new Set();
   const archivos = [];
@@ -435,7 +435,7 @@ function leerBanco({ casos, examen, hoy, maxDias }) {
 // ───────────────────────────── el cruce ─────────────────────────────
 
 function podar(opts = {}) {
-  // Las variables renombradas a inglés (story 8.9): el nombre viejo sigue valiendo hasta el retiro.
+  // Las variables están en inglés: el nombre viejo sigue valiendo hasta el retiro.
   const variable = (nombre) => readEnv(nombre, { where: 'scripts/nightly/dashboard/prune.js' });
   // 🔴 Una fecha pedida que no se entiende NO se reemplaza por la de hoy: se niega.
   const pedida = opts.hoy !== undefined && opts.hoy !== null ? opts.hoy : variable('TYCON_TODAY');
@@ -457,11 +457,11 @@ function podar(opts = {}) {
   const buzon = opts.buzon || variable('TYCON_MAILBOX_DIR') || path.join(casa, 'corridas-buzon');
   const claveLocal = maquina || SIN_NOMBRE;
 
-  // 🔴 story 2.12: el nocturno de Azure no es una máquina del equipo. Con `sinLocal`, ninguna de las dos puntas lee
+  // 🔴 El nocturno de Azure no es una máquina del equipo. Con `sinLocal`, ninguna de las dos puntas lee
   //    el disco de quien corre el cruce: numerador y denominador salen de las MISMAS máquinas del buzón.
   const sinLocal = opts.sinLocal === true;
-  // story 2.28 (decisiones 12 y 13): las carpetas viejas del buzón las declara el bajador en `.carpetas-de-maquina.json`.
-  // Sin ese archivo no se une nada (cada carpeta cuenta como hoy) y se dice. Sin buzón, no hay nada que unir ni que decir.
+  // Las carpetas viejas del buzón las declara el bajador en `.carpetas-de-maquina.json`.
+  // Sin ese archivo no se une nada (cada carpeta cuenta como una máquina) y se dice. Sin buzón, no hay nada que unir ni que decir.
   let uniones = null;
   try { if (fs.statSync(buzon).isDirectory()) uniones = leerUnionesDeCarpetas(buzon); }
   catch (e) { uniones = e && e.code === 'ENOENT' ? null : { estado: 'no_medidas', motivo: `la carpeta del buzón no se pudo mirar (${(e && e.code) || 'error'}): uniones de carpetas no medidas` }; }
@@ -568,7 +568,7 @@ function podar(opts = {}) {
         // 🔴 Por ALIAS, nunca por nombre: el nombre de una máquina suele ser el de su dueño.
         maquinas_sin_medir: hall.sinMedir.map((m) => ({ alias: m.clave === SIN_NOMBRE ? 'esta máquina' : aliasDeNombre(m.clave), local: m.local, motivo: m.motivo })),
         buzon_ilegible: hall.buzonIlegible,
-        // story 2.28: sin nombres de carpeta, sólo el estado y nuestro motivo
+        // sin nombres de carpeta, sólo el estado y nuestro motivo
         uniones_de_carpetas: uniones ? (uniones.estado === 'medidas' ? { estado: 'medidas', viejas_no_contadas: viejas.size } : { estado: 'no_medidas', motivo: uniones.motivo }) : null,
         recolector: hall.recolector,
       },

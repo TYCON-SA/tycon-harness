@@ -1,9 +1,9 @@
 'use strict';
 /**
- * github.js — el segundo proveedor de la foto de despliegues (story 2.22, decisiones 3 y 9): la API de deployments y
+ * github.js — el segundo proveedor de la foto de despliegues: la API de deployments y
  * environments de GitHub. Un environment de GitHub es un stage de despliegue.
  *
- * Campos que se leen (documentación oficial de la API REST de GitHub, confirmada el 2026-10-16):
+ * Campos que se leen (documentación oficial de la API REST de GitHub, confirmada):
  *   GET repos/{o}/{r}/environments/{env}                     → existe (200) o no (404)
  *   GET repos/{o}/{r}/deployments?environment=&per_page=     → id, sha, created_at
  *   GET repos/{o}/{r}/deployments/{id}/statuses?per_page=    → id, state, created_at
@@ -16,10 +16,10 @@
  * El criterio: cuenta como despliegue SÓLO el deployment cuyo ÚLTIMO estado es `success`. Cero deployments en un
  * environment que existe es «sin despliegue en la ventana», no «no medido». La aprobación: `pendiente` si una corrida en
  * `waiting` tiene un despliegue pendiente para el environment; «vencida» no se distingue de «cancelada» en GitHub y sale
- * no medida con su motivo. «Main»: la última corrida terminada del workflow en la rama por defecto (decisión 11, con la
- * tabla de conclusiones del AC 8).
+ * no medida con su motivo. «Main»: la última corrida terminada del workflow en la rama por defecto, con la
+ * tabla de conclusiones.
  *
- * Verificación en real limitada (decisión 9): ninguna organización que usa el arnés despliega hoy con GitHub Actions.
+ * Verificación en real limitada: ninguna organización que usa el arnés despliega hoy con GitHub Actions.
  * Habla por `gh api` (TYCON_GH_CMD lo reemplaza: un ejecutable, o un `.js` que corre con node). Fallas: lanza
  * `{ noMedido: true, motivo, detalle }`; 401/403 → `sin_permiso`, otra → `gh_fallo`, algo que no es JSON →
  * `respuesta_no_json`, sin tiempo → `presupuesto_agotado`.

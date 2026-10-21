@@ -3,18 +3,17 @@
 /**
  * canonical-path.js — ¿el arnés está donde el resto del arnés cree que está? Y el enlace que lo dice.
  *
- * ── EL CASO (2026-09-05) ──────────────────────────────────────────────────────────────────────
- * Un dev con los proyectos fuera de la carpeta canónica de entonces preguntó si el arnés podía fallar por la ruta.
- * Al medirlo: la ruta del clon estaba ESCRITA en ~50 lugares —la línea de arranque, 15 procedimientos
- * de revisores que leen las guías de ahí, la ruta por defecto del pipeline, la lista de lo que los
- * revisores pueden leer bajo el banco—. Si el clon vive en otro lado NADA falla: los hooks se resuelven
+ * ── EL PROBLEMA ───────────────────────────────────────────────────────────────────────────────
+ * Con los proyectos fuera de la carpeta canónica, la ruta del clon puede estar ESCRITA en muchos lugares —la línea de
+ * arranque, los procedimientos de revisores que leen las guías de ahí, la ruta por defecto del pipeline, la lista de
+ * lo que los revisores pueden leer bajo el banco—. Si el clon vive en otro lado NADA falla: los hooks se resuelven
  * solos desde donde está el script (por eso todo "anda"), pero los revisores no encuentran las guías
  * que su procedimiento les manda leer. Degrada en silencio, que es el modo de falla que este arnés
  * existe para cazar.
  *
- * ── EL ENLACE (story 8.3, 2026-09-26) ─────────────────────────────────────────────────────────
- * Un prompt no puede leer una variable, pero sí una ruta estable. Desde la 8.3 la forma de nombrar al
- * arnés en prosa es un enlace en `~/.claude/` (hoy el lugar `~/.claude/tycon-harness`; el mismo recurso que `~/.claude/agents`,
+ * ── EL ENLACE ─────────────────────────────────────────────────────────────────────────────────
+ * Un prompt no puede leer una variable, pero sí una ruta estable. La forma de nombrar al
+ * arnés en prosa es un enlace en `~/.claude/` (el lugar `~/.claude/tycon-harness`; el mismo recurso que `~/.claude/agents`,
  * que es un enlace a agent-skills), y el clon puede vivir en cualquier carpeta. Este archivo lo cuida:
  *   · `asegurarEnlace()` lo crea si falta y lo repara si está colgado (o si apunta a algo que no es un
  *     clon del arnés). Si apunta a OTRO clon válido —existe y tiene `scripts/install-tycon-hooks.sh`—
@@ -31,43 +30,43 @@
  * Windows: se crea un JUNCTION (`fs.symlinkSync(…, 'junction')`): un symlink de directorio pide modo
  * desarrollador o admin y el junction no. `install-tycon-hooks.ps1` lo llama igual que el `.sh`. En el
  * Mac del autor no hay `pwsh` ni Windows: ese camino está verificado sólo por lectura — probarlo en
- * una máquina Windows es deuda declarada (misma deuda que ya tenía este archivo).
+ * una máquina Windows es una deuda declarada.
  *
- * ── EL LUGAR Y EL NOMBRE VIEJO (story 8.19, 2026-10-04) ─────────────────────────────────────────────────────
- * El enlace se llamaba como el repo interno. Desde la 8.19 el LUGAR del arnés es `~/.claude/tycon-harness` (el nombre del
- * repo público; la constante vive en scripts/setup/harness/place.js) y el nombre viejo (el del repo interno, `LEGACY_PLACE_NAME`)
+ * ── EL LUGAR Y EL NOMBRE VIEJO ──────────────────────────────────────────────────────────────────────────────
+ * El LUGAR del arnés es `~/.claude/tycon-harness` (el nombre del repo público; la constante vive en
+ * scripts/setup/harness/place.js) y el nombre viejo (el del repo interno, `LEGACY_PLACE_NAME`)
  * sigue resolviendo en las máquinas ya instaladas. `--ensure-link` aplica la REGLA DE NACIMIENTO (`ensurePlace`), bajo
  * un candado propio (`~/.claude/.tycon-pipeline/place.lock`) y siempre en el mismo orden, primero el lugar y después el
  * viejo:
  *   · una carpeta real que es un clon, en cualquiera de los dos nombres, nunca se re-apunta ni se borra;
  *   · el destino de nacimiento es, en orden: a donde resuelve el nombre viejo (si es un clon); el `tree` del estado del
  *     mecanismo (o `--prefer <dir>`); recién entonces el clon que corre. Un clon descartable que corre primero no se
- *     queda con el nombre mientras el viejo o el estado digan otra cosa (el riesgo S1 de la story);
+ *     queda con el nombre mientras el viejo o el estado digan otra cosa;
  *   · el nombre viejo, si es un enlace, apunta AL LUGAR (no al clon): re-apuntar el lugar no lo deja atrás.
- * La matriz entera (siete estados por nombre) está en `ensurePlace`, con la tabla de la story al lado. `--link <ruta>`
+ * La matriz entera (siete estados por nombre) está en `ensurePlace`. `--link <ruta>`
  * re-apunta el lugar creando antes el enlace nuevo con un nombre temporal y cambiándolo recién después.
  *
  * Uso: node scripts/lib/canonical-path.js [--clone <ruta>] [--canonical <ruta>] [--home <ruta>]   → el aviso (o nada)
  *      node scripts/lib/canonical-path.js --ensure-link [--clone <dir>] [--check] [--link <ruta>] [--prefer <dir>] [--home <ruta>]
  *        (sale 0 siempre, salvo un --link que no se puede cumplir —no es un clon, o el lugar es una carpeta real—: 2)
  *      node scripts/lib/canonical-path.js --ensure-repo-links --clone <dir> [--home <dir>] [--check] [--only agent-skills|entries]
- *        (los enlaces del repo único, story 8.7: ver «LOS ENLACES DEL REPO ÚNICO» más abajo; sale 0 siempre, 2 sólo por uso)
+ *        (los enlaces del repo único: ver «LOS ENLACES DEL REPO ÚNICO» más abajo; sale 0 siempre, 2 sólo por uso)
  *      node scripts/lib/canonical-path.js --place-pieces [--home <dir>]
- *        (story 8.19: «link<TAB>ruta<TAB>id» por cada nombre del lugar que es un enlace; sale 0 siempre)
+ *        («link<TAB>ruta<TAB>id» por cada nombre del lugar que es un enlace; sale 0 siempre)
  *      node scripts/lib/canonical-path.js --separate-skills-clone [--clone <dir>] [--home <dir>]
- *        (story 8.18: la ruta del clon aparte de agent-skills si la máquina está en la transición, o nada; sale 0 siempre)
+ *        (la ruta del clon aparte de agent-skills si la máquina está en la transición, o nada; sale 0 siempre)
  *      node scripts/lib/canonical-path.js --selftest
  */
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const { readEnv, aliasArgv } = require('./legacy-names.js');
 
-// El nombre del lugar del arnés (story 8.19) vive en scripts/setup/harness/place.js. Se carga la primera vez que se usa:
+// El nombre del lugar del arnés vive en scripts/setup/harness/place.js. Se carga la primera vez que se usa:
 // muchas pruebas y guiones copian scripts/lib/ suelta a un árbol de juguete y sólo preguntan `isSingleRepo()` (lo hace
 // skills-dir.js, la vecina): esa pregunta no necesita el nombre y no tiene por qué romperse sin scripts/setup/.
 let placeModule = null;
@@ -81,7 +80,7 @@ function samePath(a, b) {
   return !!a && !!b && (a === b || ((process.platform === 'win32' || process.platform === 'darwin') && a.toLowerCase() === b.toLowerCase()));
 }
 function rutaEnlace(home) { return PLACE().placePath(home); }
-/** «Clon válido del arnés» = existe y tiene el instalador (el criterio del AC 4). */
+/** «Clon válido del arnés» = existe y tiene el instalador. */
 function esClonDelArnes(dir) { return !!dir && fs.existsSync(path.join(dir, 'scripts', 'install-tycon-hooks.sh')); }
 
 /** @returns {{ruta:string, estado:'falta'|'colgado'|'enlace'|'carpeta'|'archivo', destino:string|null, destinoReal:string|null}} */
@@ -109,22 +108,21 @@ function crearEnlace(destino, ruta) {
  * Crea / repara / respeta el enlace. Nunca tira por el estado del disco: devuelve qué hizo (o qué haría,
  * con `check`) y un mensaje para la persona.
  * @returns {{accion:'created'|'repaired'|'unchanged'|'other-clone'|'real-folder'|'repointed'|'invalid'|'error', mensaje:string, ruta:string, destino:string|null, escribio:boolean}}
- * (los valores de `accion` estaban en castellano hasta la story 8.9, tanda E; no salen del proceso: el instalador lee
- * sólo el mensaje y el código de salida)
+ * (los valores de `accion` no salen del proceso: el instalador lee sólo el mensaje y el código de salida)
  */
 function asegurarEnlace(opts = {}) {
-  // el lugar del arnés (sin `enlace` ni `destino`): la regla de nacimiento de la 8.19. Los enlaces del repo único
+  // el lugar del arnés (sin `enlace` ni `destino`): la regla de nacimiento. Los enlaces del repo único
   // siguen por `asegurarEnlaceInterno`, con su criterio de siempre
   if (!opts.enlace && !opts.destino) return ensurePlace(opts);
   try { return asegurarEnlaceInterno(opts); }
   catch (e) {
     // Un enlace que no se pudo crear/borrar (permisos, un `.claude` que es archivo, disco de sólo lectura) se DICE y
-    // el instalador sigue registrando hooks: un aviso que rompe el arranque se apaga (pase adversarial, vuelta 1).
+    // el instalador sigue registrando hooks: un aviso que rompe el arranque se apaga.
     const ruta = (opts.enlace || rutaEnlace(opts.home));
     return { accion: 'error', mensaje: `⚠️ tycon: no pude crear/reparar el enlace ${ruta} (${e && e.message}). Los revisores nombran al arnés por ese enlace: arreglalo a mano o volvé a correr el instalador`, ruta, destino: null, escribio: false };
   }
 }
-// `destino` y `esValido` (story 8.7, tanda C) son para los enlaces del repo único, que apuntan ADENTRO del clon y tienen
+// `destino` y `esValido` son para los enlaces del repo único, que apuntan ADENTRO del clon y tienen
 // cada uno su criterio de «válido»; sin ellos vale lo de siempre: el destino es el clon y válido es «clon del arnés».
 function asegurarEnlaceInterno({ clon, home, enlace, check = false, forzar = null, destino = null, esValido = esClonDelArnes } = {}) {
   const c = destino ? (real(destino) || path.resolve(destino)) : (real(clon || RAIZ) || path.resolve(clon || RAIZ));
@@ -167,14 +165,12 @@ function asegurarEnlaceInterno({ clon, home, enlace, check = false, forzar = nul
   }
 }
 
-// ── EL LUGAR Y LA REGLA DE NACIMIENTO (story 8.19, AC 5-8) ─────────────────────────────────────────────────────────
+// ── EL LUGAR Y LA REGLA DE NACIMIENTO ─────────────────────────────────────────────────────────
 // Los siete estados de cada nombre: F falta · E enlace a un clon válido · C colgado (también un ciclo) · N enlace a algo
 // que no es un clon · R carpeta real que es un clon · X carpeta real que no es un clon · A archivo. La matriz (filas: el
-// lugar; columnas: el viejo) es la de «Cómo funciona» de la story; cada rama de abajo cita su celda.
-// Hasta el merge de la tanda C una máquina que no tenía el nombre viejo lo recibía igual (V→L*): los textos que todavía lo
-// nombraban tenían que encontrar algo. Desde la tanda C los textos nombran el lugar y las celdas V→L* pasan a «—»: una
-// máquina nueva queda con un solo nombre (AC 30). El viejo que ya nació así (legacy-place-born.json) no se borra acá:
-// borrar el nombre viejo es el retiro (story 8.15).
+// lugar; columnas: el viejo); cada rama de abajo cita su celda.
+// Los textos nombran el lugar, no el viejo, así que una máquina nueva queda con un solo nombre (las celdas V→L* son «—»).
+// El viejo que ya nació así (legacy-place-born.json) no se borra acá: borrar el nombre viejo es el retiro.
 const LEGACY_FOR_NEW_MACHINES = false;
 const PLACE_LOCK_STALE_MS = 2 * 60 * 1000;
 const PLACE_LOCK_WAIT_MS = 5000;
@@ -195,7 +191,7 @@ function nameState(ruta, isValid = esClonDelArnes) {
   return { ruta, kind: 'A', direct: null, real: null };
 }
 
-/** La ruta tal cual si su último nombre es un enlace (la forma con enlaces de la 8.33); si no, null. */
+/** La ruta tal cual si su último nombre es un enlace; si no, null. */
 function stableName(p) {
   if (!p) return null;
   try { return fs.lstatSync(p).isSymbolicLink() ? path.resolve(p) : null; } catch (_) { return null; }
@@ -221,7 +217,7 @@ function makeLink(target, ruta) {
 /**
  * Pone `ruta` apuntando a `target`. Si `ruta` ya existe (un enlace), crea antes el nuevo con un nombre temporal y lo cambia
  * recién después: si crear el temporal falla no se borró nada; si el cambio final falla, `ruta` se recrea hacia
- * `previous` y se dice (AC 8). En Windows renombrar sobre un junction existente no anda: se borra y se renombra.
+ * `previous` y se dice. En Windows renombrar sobre un junction existente no anda: se borra y se renombra.
  */
 function pointName(target, ruta, previous = null) {
   let exists = true;
@@ -274,7 +270,7 @@ function placePlan({ clon, home, forzar = null, prefer = null, isValid = esClonD
   const legacyAtPlace = V.direct && same(V.direct, P.ruta);
   const plan = { P, V, c, place: null, previous: P.kind === 'E' || P.kind === 'N' ? P.real : null, legacy: false, accion: 'unchanged', lines: [], conflict: false };
   const say = (l) => plan.lines.push(l);
-  // el viejo: V→L (enlace a reparar o re-apuntar), V→L* (falta: sólo hasta la tanda C), dato (carpeta ajena o archivo)
+  // el viejo: V→L (enlace a reparar o re-apuntar), V→L* (falta; hoy no ocurre), dato (carpeta ajena o archivo)
   const legacyFollows = () => {
     if (V.kind === 'F') { if (LEGACY_FOR_NEW_MACHINES) plan.legacy = true; return; }
     if (V.kind === 'C' || V.kind === 'N') { plan.legacy = true; return; }
@@ -287,8 +283,8 @@ function placePlan({ clon, home, forzar = null, prefer = null, isValid = esClonD
     if (!isValid(f)) { plan.accion = 'invalid'; say(`✗ --link ${forzar}: no es un clon del arnés (no tiene scripts/install-tycon-hooks.sh); el lugar no se tocó`); return plan; }
     if (P.kind === 'R') { plan.accion = 'refused'; say(`✗ tycon: el lugar ${P.ruta} es una carpeta real (tu clon): no lo re-apunto; cloná en otra carpeta para usar el modo desarrollador`); return plan; }
     if (P.kind === 'X' || P.kind === 'A') { plan.accion = 'refused'; say(`✗ tycon: en ${P.ruta} hay ${KIND_WORD[P.kind]}, no un enlace: no lo piso (movelo y volvé a correrlo)`); return plan; }
-    // la forma con enlaces (story 8.33): si lo que se pide es un ENLACE (`~/.tycon/harness`, una unión en Windows), el lugar
-    // apunta a ese nombre, nunca a la carpeta numerada a la que lleva hoy: con la ruta real, la versión siguiente lo dejaría
+    // la forma con enlaces: si lo que se pide es un ENLACE (`~/.tycon/harness`, una unión en Windows), el lugar
+    // apunta a ese nombre, nunca a la carpeta numerada a la que lleva: con la ruta real, la versión siguiente lo dejaría
     // apuntando a la vieja
     const stable = stableName(forzar);
     if (!(P.kind === 'E' && same(P.real, f) && (!stable || (P.direct && same(P.direct, stable))))) { plan.place = stable || f; plan.accion = 'repointed'; }
@@ -304,8 +300,8 @@ function placePlan({ clon, home, forzar = null, prefer = null, isValid = esClonD
   }
   if (P.kind === 'F' || P.kind === 'C' || P.kind === 'N') {
     if (V.kind === 'R') { plan.place = V.real; plan.accion = 'created'; return plan; }                     // L→R
-    // (forma con enlaces, 8.33: si el viejo apunta a un ENLACE —`~/.tycon/harness`—, el lugar apunta a ese nombre, no a la
-    // carpeta numerada a la que lleva hoy)
+    // (forma con enlaces: si el viejo apunta a un ENLACE —`~/.tycon/harness`—, el lugar apunta a ese nombre, no a la
+    // carpeta numerada a la que lleva)
     if (V.kind === 'E') { plan.place = (V.direct && stableName(V.direct)) || V.real; plan.accion = 'created'; legacyFollows(); return plan; }   // L→K · V→L
     // L→D: el viejo no da un clon; el estado (o --prefer) antes que el clon que corre
     const pref = real(prefer || stateTree(home));
@@ -365,8 +361,8 @@ function ensurePlace({ clon, home, check = false, forzar = null, prefer = null, 
   // lo que no escribe (nada que hacer, conflicto, --check) se contesta sin el candado
   const quiet = (p) => p.accion === 'invalid' || p.accion === 'refused' || p.accion === 'conflict' || p.accion === 'real-folder' || (!p.place && !p.legacy);
   if (!quiet(plan) && !check) {
-    // El plan se vuelve a calcular CON el candado tomado (segunda vuelta, C1): mientras éste esperaba, otro instalador
-    // pudo crear el lugar; con el plan de antes, un clon descartable que esperaba el turno se quedaba con el nombre.
+    // El plan se vuelve a calcular CON el candado tomado: mientras éste esperaba, otro instalador
+    // pudo crear el lugar; con el plan de antes, un clon descartable que esperaba el turno se quedaría con el nombre.
     const lock = takePlaceLock(home);
     if (!lock.ok && lock.error) return out('error', [`⚠️ tycon: no pude crear/reparar el lugar ${placeRuta} (${lock.reason}). El nombre viejo quedó como estaba; los revisores nombran al arnés por el lugar: arreglalo a mano o volvé a correr el instalador`], plan.previous);
     if (!lock.ok) return out('busy', [`⚠️ tycon: no escribo el lugar ahora: ${lock.reason}`], plan.P.real);
@@ -421,9 +417,9 @@ function ensurePlace({ clon, home, check = false, forzar = null, prefer = null, 
 }
 
 /**
- * El nombre viejo que nació en ESTA máquina por la regla de máquina nueva (V→L*, segunda vuelta C3): queda anotado en
- * ~/.claude/.tycon-pipeline/legacy-place-born.json para que el retiro (story 8.15) lo quite ahí, y sólo ahí; desde la tanda C
- * ya no nace (LEGACY_FOR_NEW_MACHINES en false). El viejo de una máquina
+ * El nombre viejo que nació en ESTA máquina por la regla de máquina nueva (V→L*): queda anotado en
+ * ~/.claude/.tycon-pipeline/legacy-place-born.json para que el retiro lo quite ahí, y sólo ahí; con
+ * LEGACY_FOR_NEW_MACHINES en false ya no nace. El viejo de una máquina
  * que ya lo tenía no se anota: sigue siendo de lo que la persona tiene escrito. Anotar nunca frena.
  */
 function noteLegacyBorn(home, legacyRuta) {
@@ -435,7 +431,7 @@ function noteLegacyBorn(home, legacyRuta) {
 }
 
 /**
- * Lo que la `accion` de un enlace es en el plan del instalador (story 8.16, AC 11): crearlo es `add`, repararlo o
+ * Lo que la `accion` de un enlace es en el plan del instalador: crearlo es `add`, repararlo o
  * re-apuntarlo es `update`, dejarlo como está (también el que apunta a otro clon y no se mueve) es `keep`. Una carpeta
  * real o un `--link` inválido no son del arnés: no van al plan (null).
  */
@@ -449,24 +445,24 @@ function appendPlan(file, entries) {
   catch (e) { process.stderr.write(`⚠ tycon: no pude anotar los enlaces en el plan del instalador (${e && e.message})\n`); }
 }
 
-// ── LOS ENLACES DEL REPO ÚNICO (story 8.7, tanda C · AC 18) ────────────────────────────────────────
+// ── LOS ENLACES DEL REPO ÚNICO ─────────────────────────────────────────────────────────────────────
 // En el repo público el clon trae el arnés Y agent-skills juntos (skills/ y agents/ en su raíz). Todo lo que busca a
-// agent-skills —19 lectores de TYCON_SKILLS_DIR, rutas fijas del código y los prompts, que nombran ~/.claude/agent-skills—
+// agent-skills —los lectores de TYCON_SKILLS_DIR, rutas fijas del código y los prompts, que nombran ~/.claude/agent-skills—
 // tiene que encontrarlo sin ninguna variable puesta: tres enlaces más, con las reglas de `asegurarEnlace()`.
 //   · ~/.claude/agent-skills → el clon · ~/.claude/agents → <clon>/agents · ~/.claude/skills → <clon>/skills.
-//   · «Válido» es por enlace (decisión C12): si ya apunta a otro lado que sirve, NO se mueve y se dice —así un clon de
+//   · «Válido» es por enlace: si ya apunta a otro lado que sirve, NO se mueve y se dice —así un clon de
 //     repo único corrido en una máquina del equipo no le roba sus enlaces—.
 //   · Si ~/.claude/skills o ~/.claude/agents ya son carpetas reales (quien usa Claude Code con algo propio) —o un enlace
 //     a una carpeta propia, que es lo mismo visto desde Claude— no se pisan ni se mueven:
 //     adentro va un enlace por entrada del clon. Una entrada ajena con el mismo nombre no se toca y se nombra; en cada
 //     corrida se agregan las nuevas y se sacan los enlaces SUYOS que quedaron colgados (su destino escrito cae bajo
 //     <clon>/skills/ o <clon>/agents/ y ya no existe), y los enlaces duros que anotó cuya entrada ya no está en el clon
-//     (story 8.17, W4). Un colgado ajeno no se toca, ni un archivo propio con el nombre de uno de esos duros.
+//     Un colgado ajeno no se toca, ni un archivo propio con el nombre de uno de esos duros.
 //   · El clon del equipo (sin skills/ en la raíz) no aplica: no se imprime ni se toca nada.
 // Windows: el enlace a una carpeta es un junction; el enlace por entrada a un ARCHIVO (cada revisor es un `.md`) prueba
 // primero el enlace de archivo, que pide modo desarrollador; si Windows lo niega, un enlace duro; si tampoco, se dice y no
-// se escribe (decisión C18; story 8.17, AC 39 — ver linkOne más abajo). Medido con un creador de enlaces inyectado (T51);
-// en un Windows de verdad lo mide el paso `scenarios` del pipeline de Windows (T55).
+// se escribe (ver linkOne más abajo). Se mide con un creador de enlaces inyectado; en un Windows de verdad lo mide el
+// paso `scenarios` del pipeline de Windows.
 const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch (_) { return false; } };
 const isRealDir = (p) => { try { return fs.lstatSync(p).isDirectory(); } catch (_) { return false; } };   // un enlace no cuenta
 // ¿`d` es la carpeta `sub` (agents o skills) de OTRO árbol del arnés? Lo es si se llama así y al lado tiene
@@ -483,11 +479,11 @@ function isSingleRepo(dir) {
   return !!dir && fs.existsSync(path.join(dir, 'skills', 'tycon-pipeline')) && isDir(path.join(dir, 'agents'));
 }
 
-// ── LA MÁQUINA DEL EQUIPO EN LA TRANSICIÓN (story 8.18, AC 28 · 2026-10-04) ────────────────────────────────────────
-// El caso: los dos repos internos se unieron en uno. Desde ese día el clon del arnés de CADA máquina del equipo trae
+// ── LA MÁQUINA DEL EQUIPO EN LA TRANSICIÓN ─────────────────────────────────────────────────────────────────────────
+// Cuando los dos repos internos se unen en uno, el clon del arnés de CADA máquina del equipo trae
 // skills/ y agents/ en su raíz —o sea, `isSingleRepo()` da sí—, pero la máquina sigue como estaba: su clon viejo de
 // agent-skills es una carpeta real en ~/.claude/agent-skills, y ~/.claude/skills y ~/.claude/agents son enlaces a su
-// interior. Medido sobre la base (2026-10-04): con las reglas de arriba el instalador decía tres líneas en CADA arranque
+// interior. Con las reglas de arriba el instalador diría tres líneas en CADA arranque
 // de CADA máquina, también con --check —«hay una carpeta real, no un enlace: no la piso» y dos «apunta a otro lado que
 // sirve… no lo muevo»—. No hay nada que arreglar ahí: es el estado esperado hasta que la llave `update.skills_source`
 // re-apunte ese clon. Un aviso que suena siempre y no pide nada es ruido, y el ruido tapa al aviso que sí importa.
@@ -497,10 +493,10 @@ function isSingleRepo(dir) {
 // el enlace a un clon viejo que vive en otra carpeta; NO vale un enlace a otro árbol entero del arnés (un clon
 // descartable corrido en esta máquina: eso se sigue diciendo), ni una carpeta que no es un clon de git, ni una que no
 // trae las skills. Callar vale sólo para el estado conocido.
-// En ese estado `ensureRepoLinks()` no aplica: no imprime, no mueve y no anota piezas, igual que antes de la unión. Y
+// En ese estado `ensureRepoLinks()` no aplica: no imprime, no mueve y no anota piezas. Y
 // NUNCA apunta nada a este clon, ni siquiera un enlace que falta: si `main` volviera a un commit de antes de la unión,
 // ese enlace quedaría colgado. Quién lo dice: `harness.js doctor`, una vez, como dato.
-// `isSingleRepo()` no cambia (contrato C4 de la 8.18: la importan el exportador y la CI con ese criterio).
+// `isSingleRepo()` es el criterio que también usan el exportador y la CI.
 /**
  * @returns {string|null} la ruta real del clon aparte de agent-skills del que esta máquina lee las skills, o null si
  *   este clon no es unido o la máquina no está en ese estado
@@ -519,16 +515,15 @@ function separateSkillsClone({ clone, home } = {}) {
   return dir;
 }
 
-// ── LAS SKILLS DE LA CUENTA EN EL CLON VIEJO (2026-10-05) ─────────────────────────────────────────────────────────────
+// ── LAS SKILLS DE LA CUENTA EN EL CLON VIEJO ──────────────────────────────────────────────────────────────────────────
 // Claude Code baja las skills de la cuenta a ~/.claude/skills/synced/. En la transición, ~/.claude/skills es un enlace
-// al interior del clon viejo de agent-skills, y ese repo no ignora `skills/synced/` (el unido sí, en su .gitignore desde
-// el commit c86f2f39): medido en Windows el 2026-10-04, 229 archivos sueltos adentro del clon viejo, que un `git add -A`
-// stagearía. Ese repo no se toca; lo que se escribe es su `.git/info/exclude`, que es LOCAL de esa máquina y no se
+// al interior del clon viejo de agent-skills, y ese repo no ignora `skills/synced/` (el unido sí, en su .gitignore):
+// quedan cientos de archivos sueltos adentro del clon viejo, que un `git add -A` stagearía. Ese repo no se toca; lo que se escribe es su `.git/info/exclude`, que es LOCAL de esa máquina y no se
 // versiona: una línea que sólo agrega «ignorar», no borra ni mueve nada.
 //   · si `skills/synced/` ya está ignorado —por esa línea, por un .gitignore del repo o por el global— no se toca nada;
 //   · con --check dice qué haría y no escribe;
 //   · si git no contesta (no está, la carpeta no es un repo de verdad, se colgó) CALLA y no escribe: no es un freno,
-//     es una comodidad. Lo peor que pasa es lo de antes —los archivos quedan sueltos— y el freno del `git add -A` en
+//     es una comodidad. Lo peor que pasa es que los archivos quedan sueltos, y el freno del `git add -A` en
 //     ese árbol (GIT-C4 del safety-guard) sigue frenando.
 const SYNCED_SKILLS = 'skills/synced/';
 /**
@@ -561,7 +556,7 @@ function ignoreSyncedSkills({ dir, check = false, git = 'git' } = {}) {
   return { action: 'added', file };
 }
 
-// ── EL ENLACE DE UN ARCHIVO (story 8.17, W4 · AC 39; decisión C18 de la 8.7) ────────────────────────────────────────
+// ── EL ENLACE DE UN ARCHIVO ─────────────────────────────────────────────────────────────────────────────────────────
 // Una carpeta se enlaza con un junction en Windows (no pide permisos). Un ARCHIVO (cada revisor es un `.md`) no admite
 // junction: se prueba primero el enlace de archivo, que en Windows pide el «modo desarrollador»; si lo niega, un enlace
 // duro (mismo archivo en el mismo disco, no pide permisos); si tampoco, se dice («no pude enlazar») y no se escribe nada.
@@ -569,10 +564,10 @@ function ignoreSyncedSkills({ dir, check = false, git = 'git' } = {}) {
 // Si git reemplaza el archivo del clon (un pull que lo cambia), el duro queda con el contenido viejo y deja de ser el mismo
 // archivo: como está anotado (ver «LOS ENLACES DUROS QUE CREÓ EL ARNÉS»), la corrida siguiente lo rehace, no lo nombra
 // como entrada que choca.
-// `links` se inyecta en las pruebas (T51 de canonical-path.test.sh): en Linux y Mac el enlace de archivo no falla nunca.
+// `links` se inyecta en las pruebas (canonical-path.test.sh): en Linux y Mac el enlace de archivo no falla nunca.
 const DEFAULT_LINKS = { symlink: (t, w, type) => fs.symlinkSync(t, w, type), link: (t, w) => fs.linkSync(t, w), platform: process.platform };
 // `{ bigint: true }`: en Windows el ID de archivo de NTFS pasa de 2^53 y como Number pierde los bits bajos: dos archivos
-// distintos darían el mismo `ino` (pase adversarial, clase 6; T51c). Igual que apply-hooks.js.
+// distintos darían el mismo `ino`. Igual que apply-hooks.js.
 const sameFile = (a, b) => {
   try {
     const x = fs.lstatSync(a, { bigint: true }); const y = fs.statSync(b, { bigint: true });
@@ -580,10 +575,10 @@ const sameFile = (a, b) => {
   } catch (_) { return false; }
 };
 
-// ── LOS ENLACES DUROS QUE CREÓ EL ARNÉS (story 8.17, W4 · pase adversarial, clases 2, 3, 9 y 14) ───────────────────
-// Un enlace duro es un archivo común: cuando el revisor se borra del clon no queda «colgado», así que ni la limpieza de
-// linkEntries ni el desinstalador lo reconocían como del arnés, y la copia quedaba en ~/.claude/agents para siempre, sin
-// aviso. Desde acá se anota cada duro que se crea en ~/.claude/.tycon-pipeline/hard-links.json: la ruta, el archivo del
+// ── LOS ENLACES DUROS QUE CREÓ EL ARNÉS ─────────────────────────────────────────────────────────────────────────────
+// Un enlace duro es un archivo común: cuando el revisor se borra del clon no queda «colgado», así que sin un registro ni la
+// limpieza de linkEntries ni el desinstalador lo reconocerían como del arnés, y la copia quedaría en ~/.claude/agents para
+// siempre, sin aviso. Por eso se anota cada duro que se crea en ~/.claude/.tycon-pipeline/hard-links.json: la ruta, el archivo del
 // clon al que se enlazó y su identidad (dispositivo, inodo, fecha de modificación y tamaño, en bigint). Una entrada
 // anotada es del arnés MIENTRAS el archivo siga siendo ése: si la persona lo reemplazó por uno suyo con el mismo nombre,
 // la identidad no coincide y no se toca. La fecha de modificación cuida el inodo reusado (el sistema puede darle el mismo
@@ -661,7 +656,7 @@ function linkOne(target, where, links) {
 
 /** Un enlace por entrada de `src` dentro de la carpeta real `dir`. Nunca pisa lo que no es suyo. */
 function linkEntries({ dir, src, written, id, check, links, home, extra = [], retire = [], retireNames = [], protect = [] }) {
-  // `toAdd`/`toRemove`: los nombres que agregaría o sacaría (el plan del instalador, story 8.16 · AC 11)
+  // `toAdd`/`toRemove`: los nombres que agregaría o sacaría (el plan del instalador)
   // `hard`: los que quedaron como enlace duro · `unlinked`: archivos que no se pudieron enlazar de ninguna forma
   // `registry`: por qué no se pudo leer el registro de enlaces duros (null si se leyó)
   // `extra`: las entradas de los paquetes activos ({ name, src }); `retire`: las carpetas de los paquetes que la organización
@@ -700,7 +695,7 @@ function linkEntries({ dir, src, written, id, check, links, home, extra = [], re
     if (!fs.existsSync(target)) continue;
     const e = estadoEnlace({ enlace: where });
     if (e.estado === 'enlace' && e.destinoReal === real(target)) { out.inPlace.push(name); continue; }
-    if (e.estado === 'archivo' && sameFile(where, target)) {   // su enlace duro (AC 39): se anota (o se re-anota, si cambió)
+    if (e.estado === 'archivo' && sameFile(where, target)) {   // su enlace duro: se anota (o se re-anota, si cambió)
       if (!check) record(where, target);
       out.inPlace.push(name); continue;
     }
@@ -760,11 +755,11 @@ function linkEntries({ dir, src, written, id, check, links, home, extra = [], re
   return out;
 }
 
-// ── LAS CARPETAS DE SKILLS Y AGENTES, SIEMPRE REALES (story 8.35, 2026-10-14) ─────────────────────────────────────
-// Con `~/.claude/skills` (o `agents`) ausente, esto creaba un enlace a la carpeta ENTERA del árbol. Lo que Claude Code
-// sincroniza ahí (`skills/synced`, cada ~10 minutos) y lo que el dev crea (una skill o un agente propio) caía adentro del
-// arnés, y la actualización lo perdía. Ahora son siempre carpetas del dev con un enlace por entrada del arnés, y una
-// máquina con la forma vieja se convierte sola la próxima vez que corre el aplicador (en cada arranque): lo que no es del
+// ── LAS CARPETAS DE SKILLS Y AGENTES, SIEMPRE REALES ─────────────────────────────────────────────────────────────
+// Un enlace a la carpeta ENTERA del árbol en `~/.claude/skills` (o `agents`) haría que lo que Claude Code
+// sincroniza ahí (`skills/synced`, cada ~10 minutos) y lo que el dev crea (una skill o un agente propio) cayera adentro del
+// arnés, y la actualización lo perdería. Por eso son siempre carpetas del dev con un enlace por entrada del arnés, y una
+// máquina con la forma vieja (el enlace entero) se convierte sola la próxima vez que corre el aplicador (en cada arranque): lo que no es del
 // arnés se MUEVE a la carpeta real. Nada se borra a través del enlace: se quita el enlace mismo.
 
 const CONVERT_TMP_MARK = '.tycon-new-';
@@ -986,13 +981,13 @@ function convertWholeLink({ where, src, side, tree, check = false }) {
  */
 function ensureRepoLinks({ clone, home, check = false, only = null, links = null } = {}) {
   const given = path.resolve(clone || RAIZ);
-  // la forma con enlaces (story 8.33): si el árbol se nombra por un enlace (`~/.tycon/harness`), los enlaces del arnés
+  // la forma con enlaces: si el árbol se nombra por un enlace (`~/.tycon/harness`), los enlaces del arnés
   // apuntan adentro de ESE nombre, no de la carpeta numerada: con la ruta real, la versión siguiente los dejaría en la vieja
   const c = stableName(given) || real(given) || given;
-  // `plan`: con `check`, cada enlace con lo que le haría el instalador (add · update · remove · keep; story 8.16, AC 11)
+  // `plan`: con `check`, cada enlace con lo que le haría el instalador (add · update · remove · keep)
   const out = { applies: isSingleRepo(c), lines: [], pieces: [], separate: null, plan: [] };
   if (!out.applies) return out;
-  // la máquina del equipo en la transición (8.18): dos clones, y las skills salen del viejo. Nada que decir ni que mover
+  // la máquina del equipo en la transición: dos clones, y las skills salen del viejo. Nada que decir ni que mover
   out.separate = separateSkillsClone({ clone: c, home });
   if (out.separate) {
     out.applies = false;
@@ -1017,7 +1012,7 @@ function ensureRepoLinks({ clone, home, check = false, only = null, links = null
     const where = path.join(home || os.homedir(), '.claude', L.id);
     const dest = path.join(c, L.sub);
     try {
-      // (story 8.35) skills y agents son SIEMPRE carpetas reales: ausente → se crea real; un enlace a la carpeta entera
+      // skills y agents son SIEMPRE carpetas reales: ausente → se crea real; un enlace a la carpeta entera
       // de ESTE árbol (la forma vieja) o una temporal de un corte → se convierte, moviendo lo que no es del arnés
       let born = false;   // la carpeta la creó esta corrida: su línea dice «creada», no «no la piso»
       let dangling = null;   // el destino del enlace colgado que la carpeta real reemplazó
@@ -1040,7 +1035,7 @@ function ensureRepoLinks({ clone, home, check = false, only = null, links = null
       const before = estadoEnlace({ enlace: where });
       // Un enlace a una carpeta PROPIA (ni este clon ni otro árbol del arnés: los archivos de configuración de la
       // persona, por ejemplo) se trata como una carpeta real: no se mueve, y adentro va un enlace por entrada. Moverlo
-      // dejaba sus skills fuera de la vista de Claude (decisión del dueño, 2026-10-03).
+      // dejaría sus skills fuera de la vista de Claude.
       const own = L.entries && before.estado === 'enlace' && !samePath(before.destinoReal, real(dest))
         && isDir(before.destinoReal) && !L.valid(before.destinoReal);
       // (con --check y la carpeta ausente o colgada, el plan es el de la carpeta real que se crearía: un enlace por entrada)
@@ -1088,7 +1083,7 @@ function ensureRepoLinks({ clone, home, check = false, only = null, links = null
 }
 
 /**
- * Las entradas de los paquetes del árbol para los enlaces por entrada (story 8.41): `extra[skills|agents]` (las de los
+ * Las entradas de los paquetes del árbol para los enlaces por entrada: `extra[skills|agents]` (las de los
  * paquetes que activa la organización), `retire[...]` (las carpetas de los que no activa: un enlace del arnés que apunta
  * ahí se saca), `written[...]` (las carpetas de todos: un enlace suyo colgado ahí se limpia) y las líneas para decir. Si
  * no se puede saber qué activa la organización, no se agrega ni se saca nada de ningún paquete (y se dice).
@@ -1147,8 +1142,8 @@ function aviso({ clon, canonica, home, env = process.env } = {}) {
   }
   const e = estadoEnlace({ home });
   if (e.estado === 'enlace' && rc && e.destinoReal === rc) return null;
-  // con sólo el nombre viejo (el lugar falta o está colgado) y apuntando a este clon, callado: lo usan sin decir nada
-  // (story 8.19, AC 9); el instalador crea el lugar en la próxima corrida
+  // con sólo el nombre viejo (el lugar falta o está colgado) y apuntando a este clon, callado: lo usan sin decir nada;
+  // el instalador crea el lugar en la próxima corrida
   if ((e.estado === 'falta' || e.estado === 'colgado') && rc && PLACE().samePath(real(PLACE().legacyPlacePath(home)), rc)) return null;
   const cabeza = {
     falta: `⚠️ tycon: el arnés corre desde ${c} y el enlace ${e.ruta} FALTA.`,
@@ -1170,7 +1165,7 @@ function selftest() {
   const noClon = real(mk('no-clon'));
   const casos = [];
 
-  // ── T14: el aviso mira el enlace ──────────────────────────────────────────────────────────
+  // ── el aviso mira el enlace ──────────────────────────────────────────────────────────
   const h1 = casa('h1'); fs.symlinkSync(a, rutaEnlace(h1));
   casos.push(['T14 el arnés corre desde el clon del enlace: calla', aviso({ clon: a, home: h1, env: {} }) === null]);
   casos.push(['T14 …y un symlink al clon del enlace también calla (se compara la ruta real)',
@@ -1190,7 +1185,7 @@ function selftest() {
   casos.push(['--canonical <ruta> (comparación directa, sin enlace): igual calla, distinta avisa',
     aviso({ clon: a, canonica: a, env: {} }) === null && /ruta canónica/.test(aviso({ clon: b, canonica: a, env: {} }) || '')]);
 
-  // ── T4 (unitario): el instalador delega acá ───────────────────────────────────────────────
+  // ── Prueba unitaria: el instalador delega acá ───────────────────────────────────────────────
   const h5 = casa('h5');
   let r = asegurarEnlace({ clon: a, home: h5 });
   casos.push(['T4 sin enlace: lo crea apuntando al clon', r.accion === 'created' && r.escribio && real(rutaEnlace(h5)) === a]);
@@ -1222,7 +1217,7 @@ function selftest() {
   casos.push(['T4 el enlace no se puede escribir (`.claude` es un archivo): dice «no pude», no tira y no escribió (pase adversarial, vuelta 1)',
     r.accion === 'error' && !r.escribio && /no pude/.test(r.mensaje)]);
 
-  // ── AC 18 de la 8.7 (unitario): los enlaces del repo único ────────────────────────────────────────
+  // ── Prueba unitaria: los enlaces del repo único ────────────────────────────────────────
   const W = (f, txt) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, txt); return f; };
   const isLink = (p) => { try { return fs.lstatSync(p).isSymbolicLink(); } catch (_) { return false; } };
   const isRealDir = (p) => { try { const s = fs.lstatSync(p); return s.isDirectory() && !s.isSymbolicLink(); } catch (_) { return false; } };
@@ -1241,7 +1236,7 @@ function selftest() {
 
   const k1 = casa('k1');
   let q = ensureRepoLinks({ clone: u, home: k1 });
-  // (story 8.35: skills y agents son carpetas REALES con un enlace por entrada, nunca un enlace a la carpeta entera)
+  // (skills y agents son carpetas REALES con un enlace por entrada, nunca un enlace a la carpeta entera)
   const ENTRY_IDS = 'agents/rev-a.md,agents/rev-b.md,skills/extra,skills/tycon-pipeline';
   casos.push(['AC18 HOME limpia: agent-skills → el clon; agents y skills, carpetas reales con un enlace por entrada; una línea por cada una',
     q.applies === true && real(at(k1, 'agent-skills')) === u && isRealDir(at(k1, 'agents')) && isRealDir(at(k1, 'skills'))
@@ -1266,13 +1261,13 @@ function selftest() {
   casos.push(['AC18 el equipo (clon sin skills/ en la raíz): no aplica, no dice nada y no toca nada',
     q.applies === false && q.lines.length === 0 && q.pieces.length === 0 && fs.readdirSync(path.join(k3, '.claude')).length === 0]);
 
-  // C12: «válido» por enlace — agent-skills si tiene skills/tycon-pipeline; skills y agents si son esa carpeta de OTRO
+  // «válido» por enlace — agent-skills si tiene skills/tycon-pipeline; skills y agents si son esa carpeta de OTRO
   // árbol del arnés (al lado hay skills/tycon-pipeline como carpeta real)
   const otherSkills = real(mk('equipo', 'agent-skills')); mk('equipo', 'agent-skills', 'skills', 'tycon-pipeline'); mk('equipo', 'agent-skills', 'agents');
   const k4 = casa('k4');
   fs.symlinkSync(otherSkills, at(k4, 'agent-skills')); fs.symlinkSync(path.join(otherSkills, 'skills'), at(k4, 'skills')); fs.symlinkSync(path.join(otherSkills, 'agents'), at(k4, 'agents'));
   q = ensureRepoLinks({ clone: u, home: k4 });
-  // (la máquina del equipo DE VERDAD —su agent-skills es un clon de git— calla desde la story 8.18: T29, más abajo)
+  // (la máquina del equipo DE VERDAD —su agent-skills es un clon de git— calla, ver más abajo)
   casos.push(['AC18/C12 los tres apuntan a OTRO agent-skills válido que no es un clon de git: no se mueven, se dice, y no son piezas',
     real(at(k4, 'agent-skills')) === otherSkills && real(at(k4, 'skills')) === path.join(otherSkills, 'skills') && real(at(k4, 'agents')) === path.join(otherSkills, 'agents')
     && q.lines.length === 3 && q.lines.every((l) => /no lo muevo/.test(l)) && q.pieces.length === 0]);
@@ -1282,7 +1277,7 @@ function selftest() {
   casos.push(['AC18/C12 agent-skills apuntando a una carpeta que no sirve (sin skills/tycon-pipeline): se repara',
     real(at(k5, 'agent-skills')) === u && q.lines.filter((l) => /reparado/.test(l)).length === 1]);
   // skills y agents enlazados a una carpeta PROPIA (los archivos de configuración de la persona): se tratan como una
-  // carpeta real —el enlace no se mueve, adentro va un enlace por entrada— (decisión del dueño, 2026-10-03)
+  // carpeta real —el enlace no se mueve, adentro va un enlace por entrada—
   casos.push(['AC18 skills y agents enlazados a una carpeta propia: el enlace NO se mueve y adentro va un enlace por entrada',
     real(at(k5, 'skills')) === noClon && real(at(k5, 'agents')) === noClon
     && real(path.join(noClon, 'tycon-pipeline')) === path.join(u, 'skills', 'tycon-pipeline') && real(path.join(noClon, 'rev-a.md')) === path.join(u, 'agents', 'rev-a.md')
@@ -1294,7 +1289,7 @@ function selftest() {
   const k6 = casa('k6');
   for (const n of ['agent-skills', 'skills', 'agents']) fs.symlinkSync(path.join(t, 'borrado', n), at(k6, n));
   q = ensureRepoLinks({ clone: u, home: k6 });
-  // (story 8.35) agent-skills se repara como enlace; skills y agents colgados pasan a carpetas reales (nunca la forma vieja)
+  // agent-skills se repara como enlace; skills y agents colgados pasan a carpetas reales (nunca la forma vieja)
   casos.push(['AC18 colgados: agent-skills se repara; skills y agents quedan carpetas reales con un enlace por entrada',
     real(at(k6, 'agent-skills')) === u && isRealDir(at(k6, 'skills')) && isRealDir(at(k6, 'agents'))
     && real(at(k6, 'skills', 'tycon-pipeline')) === path.join(u, 'skills', 'tycon-pipeline') && real(at(k6, 'agents', 'rev-a.md')) === path.join(u, 'agents', 'rev-a.md')
@@ -1338,8 +1333,8 @@ function selftest() {
     real(at(k9, 'skills', 'tycon-pipeline')) === path.join(u, 'skills', 'tycon-pipeline') && real(at(k9, 'agents', 'rev-a.md')) === real(theirs)
     && /agents\/rev-a\.md/.test(q.lines.find((l) => /no las piso/.test(l)) || '') && !q.pieces.some((x) => x.id === 'agents/rev-a.md')]);
 
-  // una entrada del CLON que es ella misma un enlace colgado no se enlaza (pase adversarial de la tanda C: se agregaba
-  // y se sacaba en la misma corrida, todas las corridas, y se anotaba como pieza un enlace que ya no existía)
+  // una entrada del CLON que es ella misma un enlace colgado no se enlaza (si no, se agregaría
+  // y se sacaría en la misma corrida, todas las corridas, y se anotaría como pieza un enlace que ya no existe)
   const u2 = singleRepoClone('publico-colgado', 'harness'); fs.symlinkSync(path.join(t, 'no-existe', 'zzz'), path.join(u2, 'skills', 'dangling'));
   const k18 = casa('k18'); fs.mkdirSync(at(k18, 'skills')); fs.mkdirSync(at(k18, 'agents'));
   q = ensureRepoLinks({ clone: u2, home: k18, only: 'entries' });
@@ -1402,10 +1397,10 @@ function selftest() {
   casos.push(['AC18 --ensure-link: en el repo único crea SÓLO el nombre del arnés (el lugar; desde la tanda C de la 8.19, una máquina nueva no recibe el viejo)',
     c1.status === 0 && real(rutaEnlace(k16)) === u && fs.readdirSync(path.join(k16, '.claude')).filter((n) => !n.startsWith('.')).sort().join(',') === (LEGACY_FOR_NEW_MACHINES ? [PLACE().LEGACY_PLACE_NAME, PLACE().PLACE_NAME] : [PLACE().PLACE_NAME]).sort().join(',')]);
 
-  // ── story 8.18, AC 28 (unitario · T29): la máquina del equipo en la TRANSICIÓN ───────────────────────────────────
+  // ── Prueba unitaria: la máquina del equipo en la TRANSICIÓN ───────────────────────────────────
   // El clon del arnés ya trae skills/ y agents/ (`u`), y la máquina sigue con su clon viejo de agent-skills: una carpeta
   // REAL en ~/.claude/agent-skills, con skills y agents enlazados a su interior. Cero líneas, ninguna pieza, nada movido.
-  // 🔴 rojo previo (medido sobre la base, 2026-10-04): tres líneas por corrida —«hay una carpeta real… no la piso» y dos
+  // 🔴 Sin esta regla el instalador diría tres líneas por corrida —«hay una carpeta real… no la piso» y dos
   //    «apunta a otro lado que sirve… no lo muevo»—, también con --check.
   const separate = typeof separateSkillsClone === 'function' ? separateSkillsClone : () => undefined;
   const teamHome = (name, { git = true, links = true } = {}) => {
@@ -1473,9 +1468,9 @@ function selftest() {
   casos.push(['T29 (contrato C4) isSingleRepo no cambió: el clon unido sí, el del equipo sin skills/ no, y el clon viejo de skills también da sí',
     isSingleRepo(u) === true && isSingleRepo(a) === false && isSingleRepo(real(at(m1, 'agent-skills'))) === true && isSingleRepo.length === 1]);
 
-  // ── 2026-10-05 (T30): el clon viejo ignora las skills de la cuenta ─────────────────────────────────────────────────
-  // 🔴 rojo previo: en la transición el instalador no hacía nada, y los 229 archivos de skills/synced/ quedaban sueltos
-  //    adentro del clon viejo (medido en Windows el 2026-10-04). Repos de git DE VERDAD: la pregunta la contesta git.
+  // ── el clon viejo ignora las skills de la cuenta ─────────────────────────────────────────────────
+  // 🔴 Sin la exclusión local, en la transición el instalador no hace nada y los archivos de skills/synced/ quedan sueltos
+  //    adentro del clon viejo. Repos de git DE VERDAD: la pregunta la contesta git.
   const { spawnSync: sp } = require('child_process');
   const gitOk = sp('git', ['--version'], { encoding: 'utf8' }).status === 0;
   if (gitOk) {
@@ -1540,7 +1535,7 @@ function selftest() {
 }
 
 /**
- * La línea de comandos, como función (story 8.36): sale con `process.exit`, como siempre. La llama el arranque de este
+ * La línea de comandos, como función: sale con `process.exit`, como siempre. La llama el arranque de este
  * archivo como programa y la tanda del aplicador (scripts/setup/applier-batch.js), que atrapa esa salida en su mismo
  * proceso. Los nombres viejos de las opciones los traduce el arranque, antes de llamarla.
  */
@@ -1551,7 +1546,7 @@ function cli(argv) {
     const check = argv.includes('--check');
     const r = asegurarEnlace({ clon: arg('--clone'), home: arg('--home'), check, forzar: arg('--link'), prefer: arg('--prefer') });
     process.stdout.write(r.mensaje + '\n');
-    // el plan del instalador (story 8.16, AC 11): sólo con --check, en el temporal que deja `--plan-json`. Desde la 8.19,
+    // el plan del instalador: sólo con --check, en el temporal que deja `--plan-json`. Trae
     // los dos nombres del lugar, cada uno con lo que le pasaría
     const action = planAction(r.accion);
     const planned = action ? [{ where: r.ruta, id: PLACE().PLACE_NAME, action }] : [];
@@ -1568,7 +1563,7 @@ function cli(argv) {
     const check = argv.includes('--check');
     const r = ensureRepoLinks({ clone: arg('--clone'), home: arg('--home'), check, only });
     for (const l of r.lines) process.stdout.write(l + '\n');
-    // el reporte de piezas del instalador (story 8.13, AC 15): mismo temporal y misma forma que anotan él y el sync
+    // el reporte de piezas del instalador: el mismo temporal y la misma forma que anotan él y el sync
     const pieces = process.env.TYCON_REPORT_PIECES;
     if (pieces && !check && r.pieces.length) {
       try { fs.appendFileSync(pieces, r.pieces.map((p) => `link\t${p.where}\t${p.id}\n`).join('')); }
@@ -1578,13 +1573,13 @@ function cli(argv) {
     process.exit(0);   // sale 0 siempre (2 sólo por uso): un enlace que no se pudo escribir avisa, no frena el arranque
   }
   if (argv.includes('--place-pieces')) {
-    // story 8.19 (AC 11): una pieza `link` por cada nombre del lugar que ES un enlace (un junction en Windows), con la
+    // una pieza `link` por cada nombre del lugar que ES un enlace (un junction en Windows), con la
     // ruta sin resolver. Lo pregunta Node porque en el bash de Git para Windows `-L` no reconoce un junction. Sale 0
     for (const p of placePieces({ home: arg('--home') })) process.stdout.write(`link\t${p.where}\t${p.id}\n`);
     process.exit(0);
   }
   if (argv.includes('--separate-skills-clone')) {
-    // la pregunta de la transición (8.18), para quien no puede cargar este archivo (harness.js corre desde su copia fija;
+    // la pregunta de la transición, para quien no puede cargar este archivo (harness.js corre desde su copia fija;
     // un guion de shell): imprime la ruta del clon aparte, o nada. Sale 0 siempre
     const dir = separateSkillsClone({ clone: arg('--clone'), home: arg('--home') });
     if (dir) process.stdout.write(dir + '\n');
@@ -1596,9 +1591,9 @@ function cli(argv) {
 }
 
 if (require.main === module) {
-  aliasArgv('scripts/lib/canonical-path.js', { exitCode: 2 });   // los nombres viejos siguen andando (story 8.9, tanda B3a)
+  aliasArgv('scripts/lib/canonical-path.js', { exitCode: 2 });   // los nombres viejos siguen andando
   cli(process.argv.slice(2));
 }
 module.exports = { aviso, asegurarEnlace, estadoEnlace, rutaEnlace, esClonDelArnes, ensurePlace, placePieces, placePlan, nameState, pointName, removeName, takePlaceLock, LEGACY_FOR_NEW_MACHINES, ensureRepoLinks, isSingleRepo, REPO_LINKS, separateSkillsClone, ignoreSyncedSkills, ownHardLink, forgetHardLink, hardLinksFile, cli };
-// el nombre del lugar, como siempre se exportó (story 8.19: sale de place.js, cargada al pedirlo)
+// el nombre del lugar, que sale de place.js, cargada al pedirlo
 Object.defineProperty(module.exports, 'NOMBRE_ENLACE', { enumerable: true, get: () => PLACE().PLACE_NAME });

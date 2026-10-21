@@ -1,24 +1,22 @@
 #!/usr/bin/env node
 'use strict';
 /*
- * reducer.js — LA CUENTA DE FRENOS Y ESCAPES DE TODAS LAS MÁQUINAS (story 2.5, 2026-09-15)
+ * reducer.js — LA CUENTA DE FRENOS Y ESCAPES DE TODAS LAS MÁQUINAS
  *
- * El tablero rotulaba «en esta máquina» los frenos y los escapes: salían de los registros del disco de quien
- * generaba la página. Ahora cada máquina sube sus dos registros completos al buzón de la 2.16
- * (`upload-runs.js`, una vez por día, comprimidos, con una `cobertura.json` que dice si pudo leerlos), la
+ * Los frenos y los escapes del tablero no son «de esta máquina»: cada máquina sube sus dos registros completos
+ * al buzón (`upload-runs.js`, una vez por día, comprimidos, con una `cobertura.json` que dice si pudo leerlos), la
  * bajada los deja en `~/.claude/.tycon-pipeline/corridas-buzon/<maquina>/registros/`, y este archivo los
  * CUENTA —junto con los de esta máquina, leídos del disco— y le entrega al tablero sólo números.
  *
  * 🔴 LO QUE SALE DE ACÁ LO VE TODO EL EQUIPO (la página del tablero se commitea). Los registros traen
- *    comandos, rutas, prompts y nombres de cliente; nada de eso puede salir. Por eso, lista blanca en dos capas
- *    (decisión D1 del plan del tablero):
+ *    comandos, rutas, prompts y nombres de cliente; nada de eso puede salir. Por eso, lista blanca en dos capas:
  *    · Qué CAMPOS se leen lo decide este archivo (`FUENTES`, abajo), no la configuración: del `gates.log`, el
- *      nombre del control y su estado —y, desde la story 2.8, los dos conteos de la mutación (`killed`, `total`)
+ *      nombre del control y su estado, los dos conteos de la mutación (`killed`, `total`)
  *      y el `esquema` de la línea de guía de QA, que son números, más su `clave` —una huella que sólo decide qué línea
  *      representa a cada cierre y nunca sale—; del `bypass.log`, el tipo (`type` o `kind`).
  *      Ni `cmd`, ni `repoPath`, ni `text` (el prompt del dev), ni `command`, ni `cwd`, ni `reason`, ni `story`.
  *      Agregar un campo es código con su prueba de fuga.
- *    · Una métrica puede JUNTAR valores en vez de sumarlos (`DISTRIBUCIONES`, story 2.8): la mediana de un
+ *    · Una métrica puede JUNTAR valores en vez de sumarlos (`DISTRIBUCIONES`): la mediana de un
  *      puntaje se calcula sobre la unión de las muestras de todas las máquinas, nunca promediando medianas.
  *    · Qué VALORES puede publicar una dimensión lo declara `sources.json → reducer.metrics.*.values`, una
  *      lista cerrada. Lo que no está sale `otro`. Una métrica con una fuente, una dimensión o un tipo que este
@@ -39,11 +37,11 @@
  * Uso:
  *   node scripts/nightly/dashboard/reducer.js [--json]            # la cuenta, sólo números, alias y fechas
  *   node scripts/nightly/dashboard/reducer.js --alias             # el alias de esta máquina (para declararla): el de
- *                                                                 # su carpeta del buzón, `<nombre>-<código>` (story 2.28)
+ *                                                                 # su carpeta del buzón, `<nombre>-<código>`
  *   node scripts/nightly/dashboard/reducer.js --alias-of <nombre> # el alias de otra máquina, por su carpeta entera
  *                                                                 # (`macbook-pro-1a2b3c4d`) o por su nombre viejo
  *
- * Carpetas viejas (story 2.28): una carpeta `unida` a su nueva (`.carpetas-de-maquina.json` del bajador) no se cuenta
+ * Carpetas viejas: una carpeta `unida` a su nueva (`.carpetas-de-maquina.json` del bajador) no se cuenta
  * aparte, y la cobertura muestra «maq-<nuevo> (antes, maq-<viejo>)»; una `compartida` tampoco. Una `siguio_recibiendo`
  * se cuenta como una máquina propia (lo que recibió después de la mudanza es de otra máquina que no actualizó).
  *
@@ -58,7 +56,7 @@
 
 const fs = require('fs');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -67,7 +65,7 @@ const crypto = require('crypto');
 const zlib = require('zlib');
 const { nombreDeMaquina, normalizarNombreDeMaquina, FORMA_MAQUINA, REGISTROS } = require('../../metrics/upload-runs.js');
 const { readEnv } = require('../../lib/legacy-names.js');
-/** Una variable renombrada a inglés (story 8.9): el nombre viejo sigue valiendo hasta el retiro. */
+/** Una variable renombrada a inglés: el nombre viejo sigue valiendo hasta el retiro. */
 const variable = (nombre) => readEnv(nombre, { where: 'scripts/nightly/dashboard/reducer.js' });
 
 const ESQUEMA = 1;
@@ -78,13 +76,12 @@ const FORMA_METRICA = /^[a-z][a-z0-9_]{0,30}$/;
 const ESTADOS_BLOQUEO = new Set(['blocked', 'red', 'fail', 'failed', 'FAIL', 'rejected']);
 
 /**
- * ¿Ese estado es un bloqueo? (story 2.6)
+ * ¿Ese estado es un bloqueo?
  *
  * 🔴 El vocabulario NO es plano: las pruebas y la compilación escriben el detalle pegado al estado
- *    —`red:exit=1`, `red:exit=127`, `fail:timeout`—, así que la igualdad exacta los contaba como «no
- *    bloqueó». Medido en el registro real de esta máquina: **489 bloqueos publicados como cero**, y
- *    la ficha decía «0 % de bloqueos» sobre 816 evaluaciones de pruebas de las que 226 salieron en
- *    rojo. Se mira lo que hay ANTES de los dos puntos, y sólo si los dos puntos están: `redundante`
+ *    —`red:exit=1`, `red:exit=127`, `fail:timeout`—, así que la igualdad exacta los contaría como «no
+ *    bloqueó» y publicaría bloqueos como cero, con una ficha que diría «0 % de bloqueos» sobre
+ *    evaluaciones que salieron en rojo. Se mira lo que hay ANTES de los dos puntos, y sólo si los dos puntos están: `redundante`
  *    y `greenish` empiezan igual que un bloqueo y no lo son.
  */
 function esBloqueo(v) {
@@ -108,7 +105,7 @@ const controlDe = (d) => d.name || d.check || d.gate || d.type;
 /** Un entero no negativo de verdad: `null`, `12.5` o `"12"` no son un conteo de mutantes. */
 const enteroNoNegativo = (x) => Number.isInteger(x) && x >= 0;
 /**
- * La duración de una corrida de la suite, en segundos, o null si la línea no es una (story 2.21, AC 13). Una sola lectura
+ * La duración de una corrida de la suite, en segundos, o null si la línea no es una. Una sola lectura
  * para la ficha local (el gates.log de esta máquina) y para la cuenta del equipo: control `tests` y `durationMs` número
  * finito ≥ 0. `"1500"`, un negativo o un infinito no son una duración.
  */
@@ -120,40 +117,40 @@ function duracionSuite(d) {
 const FUENTES = {
   gates: {
     archivo: 'gates.log',
-    // `type` es la CUARTA forma de nombrar un control, y no se leía: 1.460 líneas reales
-    // (`smoke-run`, `RUNTIME_WAIVER`) caían en un balde anónimo del 17 % (story 2.6).
+    // `type` es la CUARTA forma de nombrar un control: sin leerla, líneas como las de
+    // `smoke-run` y `RUNTIME_WAIVER` caerían en un balde anónimo.
     dims: {
       control: { etiqueta: controlDe, sinValor: 'sin-nombre' },
-      // story 2.8 — el estado de una línea, para las métricas de mutación y guía de QA. Sólo lo usan tipos que
+      // el estado de una línea, para las métricas de mutación y guía de QA. Sólo lo usan tipos que
       // descartan las líneas de otros controles; y como toda dimensión, sale filtrado por la lista cerrada.
       estado: { etiqueta: (d) => d.status, sinValor: 'sin-estado' },
     },
     // Sólo un estado que es TEXTO puede bloquear: un objeto raro cuenta como evaluación sin bloqueo (String() sobre
     // un objeto con toString no llamable tiraba la cuenta entera).
     tipos: {
-      // `cobertura-tocada` (story 2.4) no es una evaluación que pueda bloquear: se observa sin frenar, así que
+      // `cobertura-tocada` no es una evaluación que pueda bloquear: se observa sin frenar, así que
       // no suma al denominador de los bloqueos — si sumara, la proporción de bloqueos bajaría sola.
-      // Tampoco una guía de QA que NO APLICA (story 2.8): no se evaluó nada.
+      // Tampoco una guía de QA que NO APLICA: no se evaluó nada.
       ratio: (d) => ((d.name || d.check) === 'cobertura-tocada' || (controlDe(d) === 'qa-guide' && d.status === 'no-aplica')
         ? { num: 0, den: 0 }
         : { num: esBloqueo(d.status || d.verdict || d.decision) ? 1 : 0, den: 1 }),
-      // ── story 2.8 · mutación y guía de QA ──────────────────────────────────────────────────────────
+      // ── mutación y guía de QA ──────────────────────────────────────────────────────────
       // Estos tipos devuelven `null` para las líneas que no les tocan: una línea de otro control no es ni una
       // muestra ni un chequeo, y no puede crear una entrada en la dimensión.
       // 🔴 Un puntaje es una MUESTRA sólo con los dos conteos enteros, `total > 0` y `killed ≤ total`. Un
       //    chequeo que no pudo correr (`structural`, `error`, un `pass` sin mutantes) no es un 0 %: no midió.
       muestra_mutacion: (d) => (controlDe(d) === 'mutation' && tienePuntaje(d) ? { muestra: d.killed / d.total } : null),
-      // story 2.21 — la duración de la suite: una muestra por corrida de `tests`, en segundos. Sólo el número sale.
+      // la duración de la suite: una muestra por corrida de `tests`, en segundos. Sólo el número sale.
       muestra_duracion_suite: (d) => { const s = duracionSuite(d); return s === null ? null : { muestra: s }; },
       ratio_mutacion_con_puntaje: (d) => (controlDe(d) === 'mutation' ? { num: tienePuntaje(d) ? 1 : 0, den: 1 } : null),
       conteo_qa_guia: (d) => (controlDe(d) === 'qa-guide' ? { num: 1, den: null, clave: claveDeCierre(d) } : null),
-      // 🔴 La proporción sólo con el REGISTRO COMPLETO (`esquema: 2`): hasta la story 2.8 el aviso anotaba sólo
-      //    las guías que faltaban o estaban viejas, así que con las líneas viejas «presentes» es 0 por construcción.
+      // 🔴 La proporción sólo con el REGISTRO COMPLETO (`esquema: 2`): un registro que anota sólo
+      //    las guías que faltan o están viejas deja «presentes» en 0 por construcción.
       //    `no-aplica` tampoco entra: esa story no necesitaba guía.
       ratio_qa_presente: (d) => (controlDe(d) === 'qa-guide' && d.esquema === 2 && ['presente', 'missing', 'stale'].includes(d.status)
         ? { num: d.status === 'presente' ? 1 : 0, den: 1, clave: claveDeCierre(d) }
         : null),
-      // story 2.4 — la observación del 75 % sobre las líneas tocadas (`cobertura-tocada`), que no frena.
+      // la observación del 75 % sobre las líneas tocadas (`cobertura-tocada`), que no frena.
       // `ratio_evaluo`: de las corridas, cuántas pudieron medir (todo lo que no es `no-medido`).
       // `ratio_habria_frenado`: de las que midieron, cuántas habrían frenado. Un `no-medido` NO entra al
       // denominador del segundo: una corrida que no pudo mirar no «cumplió».
@@ -173,7 +170,7 @@ const FUENTES = {
     dims: { tipo: { etiqueta: (d) => d.type || d.kind, sinValor: 'sin-tipo' } },
     tipos: { conteo: () => ({ num: 1, den: null }) },
   },
-  // story 2.6 — la constancia de los frenos PREVIOS a la herramienta. Unidad distinta a `gates`
+  // la constancia de los frenos PREVIOS a la herramienta. Unidad distinta a `gates`
   // (que son evaluaciones de una corrida del pipeline): acá cada línea es una decisión sobre UN
   // comando. Del archivo se leen tres campos y ninguno más: ni la huella del comando sale.
   frenos: {
@@ -188,13 +185,12 @@ const FUENTES = {
       ratio_bloqueo: (d) => ({ num: d.veredicto === 'bloqueo' ? 1 : 0, den: 1 }),
       ratio_escape: (d) => ({ num: d.veredicto === 'escape' ? 1 : 0, den: 1 }),
       // 🔴 `aviso` es el ÚNICO veredicto que puede producir `push-referencia-fantasma`, que nunca
-      //    bloquea. Sin este agregador la ficha lo publicaba como «frenó 0, lo saltearon 0»: el
-      //    «se ve igual que uno que nunca se disparó» que esta story existe para eliminar, hecho
-      //    realidad justo para uno de los seis (pase adversarial, 2026-09-16).
+      //    bloquea. Sin este agregador la ficha lo publicaría como «frenó 0, lo saltearon 0»: se
+      //    vería igual que uno que nunca se disparó, justo lo que la ficha existe para evitar.
       ratio_aviso: (d) => ({ num: d.veredicto === 'aviso' ? 1 : 0, den: 1 }),
     },
   },
-  // story 2.7 — el carril de cada commit hecho desde una sesión. Del archivo se lee UN campo: el
+  // el carril de cada commit hecho desde una sesión. Del archivo se lee UN campo: el
   // carril. La story viaja en el registro (sirve para leerlo a mano en el buzón) pero no es una
   // dimensión: nunca puede salir a la página.
   carriles: {
@@ -202,7 +198,7 @@ const FUENTES = {
     dims: { carril: { etiqueta: (d) => d.carril, sinValor: 'sin-carril' } },
     tipos: { conteo: () => ({ num: 1, den: null }) },
   },
-  // story 2.9 — los hallazgos de los revisores, ya proyectados por `collect-findings.js` a seis
+  // los hallazgos de los revisores, ya proyectados por `collect-findings.js` a seis
   // claves. 🔴 La dimensión publicada por ACÁ es la GRAVEDAD, no la regla: esta métrica contesta
   // «cuántos hallazgos tuvo el equipo», que es una cuenta agregada con piso y ventana. La tabla POR
   // REGLA la arma `prune.js` leyendo el mismo material sin piso ni recorte — porque ahí «1 hallazgo»
@@ -225,7 +221,7 @@ const FUENTES = {
 };
 function recolector() { return require('../../metrics/collect-findings.js'); }
 /**
- * La identidad de un CIERRE en la línea de la guía de QA (revisión adversarial de la story 2.8). El aviso escribe su
+ * La identidad de un CIERRE en la línea de la guía de QA. El aviso escribe su
  * línea en cada intento de commit, antes de frenos que pueden cortarlo: sin esta clave, un cierre que rebotó tres
  * veces contaba como tres. Es una huella de 16 hexadecimales de repo + story + contenido (sin el estado); cualquier otra
  * cosa no deduplica (cuenta la línea). De cada clave cuenta la ÚLTIMA línea: el resultado final del cierre, no el
@@ -234,7 +230,7 @@ function recolector() { return require('../../metrics/collect-findings.js'); }
 function claveDeCierre(d) { return typeof d.clave === 'string' && /^[0-9a-f]{16}$/.test(d.clave) ? d.clave : null; }
 function tienePuntaje(d) { return enteroNoNegativo(d.killed) && enteroNoNegativo(d.total) && d.total > 0 && d.killed <= d.total; }
 /**
- * Los tipos que JUNTAN valores en vez de sumarlos (story 2.8). Una mediana no se suma: con dos máquinas hay que
+ * Los tipos que JUNTAN valores en vez de sumarlos. Una mediana no se suma: con dos máquinas hay que
  * calcularla sobre la unión de sus muestras, nunca promediando las medianas de cada una. Lo que sale son números,
  * sin ninguna etiqueta de la línea de origen.
  */
@@ -243,8 +239,8 @@ const DISTRIBUCIONES = new Set(['muestra_mutacion', 'muestra_duracion_suite']);
 for (const f of Object.values(FUENTES)) {
   if (!REGISTROS.includes(f.archivo)) throw new Error(`reductor: ${f.archivo} no está entre los registros que sube upload-runs.js`);
 }
-// Y la vuelta: el NOMBRE de la fuente tiene que ser el que la cobertura declara (el archivo sin su
-// última extensión). Si no, la máquina se lee «no medida» para siempre y en silencio — story 2.6.
+// El NOMBRE de la fuente tiene que ser el que la cobertura declara (el archivo sin su
+// última extensión). Si no, la máquina se lee «no medida» para siempre y en silencio.
 for (const [id, f] of Object.entries(FUENTES)) {
   const esperado = f.archivo.replace(/\.[^.]+$/, '');
   if (id !== esperado) throw new Error(`reductor: la fuente «${id}» declara el archivo ${f.archivo}, cuya cobertura se llama «${esperado}»`);
@@ -273,8 +269,8 @@ function aliasDeNombre(n) {
 function aliasDe(nombre) { return aliasDeNombre(normalizarNombreDeMaquina(nombre)); }
 
 /**
- * Las uniones de carpetas del buzón (story 2.28, decisiones 11-13). Cada máquina sube ahora a `<nombre>-<código>`; la
- * carpeta vieja (`<nombre>`) queda como estaba. La unión la calcula UNA función del bajador (`carpetasDeMaquina` de
+ * Las uniones de carpetas del buzón. Cada máquina sube a `<nombre>-<código>`; la
+ * carpeta vieja (`<nombre>`) puede seguir existiendo. La unión la calcula UNA función del bajador (`carpetasDeMaquina` de
  * `download-runs.js`), que la deja en `<espejo>/.carpetas-de-maquina.json`; el reductor, la poda y la vista de corridas
  * leen ese archivo y nunca `place.json` (que trae el correo). Devuelve `{ estado: 'medidas', carpetas: Map(vieja →
  * { estado, nueva, declarantes, desde }) }`, o `{ estado: 'no_medidas', motivo }` si no está o no tiene forma: entonces
@@ -335,7 +331,7 @@ function validarConfig(cfg) {
     if (!Object.prototype.hasOwnProperty.call(f.tipos, m.type)) return niega(`la métrica «${nombre}» declara un tipo que su fuente no permite`);
     if (!Array.isArray(m.values) || !m.values.length) return niega(`la métrica «${nombre}» no declara la lista cerrada de valores de su dimensión`);
     if (!m.values.every((v) => typeof v === 'string' && FORMA_VALOR.test(v))) return niega(`la métrica «${nombre}» tiene un valor que no es un identificador (letras, números, - y _)`);
-    // story 7.2: `values_only` cuenta SÓLO lo de la lista (lo demás no entra ni como «otro»). Dos grupos de frenos
+    // `values_only` cuenta SÓLO lo de la lista (lo demás no entra ni como «otro»). Dos grupos de frenos
     // comparten fuente —los previos a la herramienta y los del cierre— y cada ficha tiene que contar el suyo.
     if (m.values_only !== undefined && typeof m.values_only !== 'boolean') return niega(`la métrica «${nombre}» declara «values_only» y no es verdadero/falso`);
   }
@@ -410,7 +406,7 @@ function juntar({ registros, buzon, cfg, hoy, maquina } = {}) {
       maquinas.set(aliasLocal, { fecha: dia, fuentes, leer: (id) => textos[id] });
     }
   }
-  // story 2.28: las carpetas viejas del buzón. Una `unida` no se cuenta aparte (sus registros están enteros en la nueva);
+  // las carpetas viejas del buzón. Una `unida` no se cuenta aparte (sus registros están enteros en la nueva);
   // una `compartida` tampoco (duplica a alguna de sus declarantes, que vuelven a subir lo suyo a su carpeta nueva). Una
   // `siguio_recibiendo` SÍ se cuenta, como una máquina propia: lo que llegó después de la mudanza es de OTRA máquina que
   // todavía no actualizó, y el juego de registros más nuevo que eligió el bajador es el suyo, no un duplicado.
@@ -470,12 +466,12 @@ function juntar({ registros, buzon, cfg, hoy, maquina } = {}) {
 
   // 2 · contar
   const metricas = {};
-  // Las claves de cierre ya contadas, por métrica y entre TODAS las máquinas (story 2.8). Fuera de `metricas` a propósito:
+  // Las claves de cierre ya contadas, por métrica y entre TODAS las máquinas. Fuera de `metricas` a propósito:
   // no se publican.
   const vistas = {};
   for (const [nombre, m] of Object.entries(r.metrics)) {
     const dist = DISTRIBUCIONES.has(m.type);
-    // `aportaron` (story 2.8): máquinas con al menos un evento de esta métrica. «Midió» dice que pudo leer su
+    // `aportaron`: máquinas con al menos un evento de esta métrica. «Midió» dice que pudo leer su
     // registro; «aportó» dice que había algo. Con una sola que aporta, la serie no es del equipo, y la página lo dice.
     metricas[nombre] = { tipo: m.type, num: 0, den: m.type === 'conteo' || /^conteo_/.test(m.type) || dist ? null : 0, porDim: {}, maquinas: maquinas.size, midieron: 0, aportaron: 0 };
     if (dist) metricas[nombre].muestras = [];
@@ -512,7 +508,7 @@ function juntar({ registros, buzon, cfg, hoy, maquina } = {}) {
       const def = FUENTES[m.source].dims[m.dim];
       const aporte = FUENTES[m.source].tipos[m.type];
       let aporto = false;
-      // De cada clave de cierre, la ÚLTIMA línea de esta máquina es la que cuenta (story 2.8, revisión): los intentos
+      // De cada clave de cierre, la ÚLTIMA línea de esta máquina es la que cuenta: los intentos
       // anteriores del mismo cierre se saltean. Entre máquinas, la primera que la trae (el mismo cierre en dos
       // máquinas es excepcional).
       const ultima = new Map();
@@ -521,11 +517,11 @@ function juntar({ registros, buzon, cfg, hoy, maquina } = {}) {
         const a = aporte(o); if (a && a.clave) ultima.set(a.clave, i);
       });
       for (const [i, o] of lista.entries()) {
-        // Un tipo devuelve null para la línea que no le toca (story 2.8): se descarta ANTES de calcular la dimensión,
+        // Un tipo devuelve null para la línea que no le toca: se descarta ANTES de calcular la dimensión,
         // para que las líneas de otros controles no creen entradas «otro» ni «sin-estado».
         const a = aporte(o);
         if (!a) continue;
-        // story 7.2 (antes de la clave: una línea ajena no puede ocupar el lugar de un cierre): con `values_only`, lo que no es de la lista no es de esta métrica — ni aporta ni sale «otro».
+        // Se mira antes de la clave, para que una línea ajena no ocupe el lugar de un cierre: con `values_only`, lo que no es de la lista no es de esta métrica — ni aporta ni sale «otro».
         if (m.values_only === true && !m.values.includes(def.etiqueta(o))) continue;
         if (a.clave) {
           if (ultima.get(a.clave) !== i) { aporto = true; continue; }
@@ -549,7 +545,7 @@ function juntar({ registros, buzon, cfg, hoy, maquina } = {}) {
   const esperadas = r.expected_machines.filter((m) => m.from <= ventana.hasta).map((m) => m.alias);
   const vistos = [...maquinas.keys()].sort();
   const limiteAtraso = restarDias(dia, DIAS_ATRASO);
-  // story 2.28 (AC 29): la esperada vieja cuenta como reportada si reportó su nueva —nunca «ausente»—, y la nueva no es
+  // la esperada vieja cuenta como reportada si reportó su nueva —nunca «ausente»—, y la nueva no es
   // una máquina «sin declarar» más: es la misma, y la cobertura pide declararla en lugar de la vieja.
   const antesDe = new Map();   // alias nuevo → alias viejo, sólo si la nueva reportó
   for (const { vieja, nueva } of unidas) {
@@ -582,13 +578,13 @@ function textoCobertura(j) {
   const c = j.cobertura;
   const partes = [`reportaron ${c.reportaron} de ${c.esperadas} máquina${c.esperadas === 1 ? '' : 's'} esperada${c.esperadas === 1 ? '' : 's'}`];
   if (c.ausentes.length) partes.push(`no reportó: ${c.ausentes.join(', ')}`);
-  // dónde se declara una máquina (story 2.21, AC 10): la lista existe para ver cuándo una deja de reportar, así que no se
+  // dónde se declara una máquina: la lista existe para ver cuándo una deja de reportar, así que no se
   // arma sola — la declara una persona en la configuración de su organización
   if (c.sin_declarar.length) partes.push(`+${c.sin_declarar.length} sin declarar: ${c.sin_declarar.join(', ')} (una máquina se declara en reducer.expected_machines del sources.json de la organización)`);
   if (c.atrasadas.length) partes.push(`atrasada${c.atrasadas.length === 1 ? '' : 's'}: ${c.atrasadas.map((x) => `${x.alias} (hasta ${x.hasta})`).join(', ')}`);
   if (c.carpetas_ilegibles) partes.push(`${c.carpetas_ilegibles} carpeta${c.carpetas_ilegibles === 1 ? '' : 's'} de registros ilegible${c.carpetas_ilegibles === 1 ? '' : 's'}`);
   if (c.lineas_ilegibles) partes.push(`${c.lineas_ilegibles} línea${c.lineas_ilegibles === 1 ? '' : 's'} ilegible${c.lineas_ilegibles === 1 ? '' : 's'} en los registros`);
-  // story 2.28: sólo alias (validados por su forma) y texto nuestro, nunca el nombre de una carpeta
+  // sólo alias (validados por su forma) y texto nuestro, nunca el nombre de una carpeta
   for (const u of c.uniones || []) partes.push(`${u.alias} (antes, ${u.antes})${u.declarar ? ': declararla en reducer.expected_machines en lugar de la vieja' : ''}`);
   for (const x of c.apartadas || []) partes.push(`${x.alias}: compartida por ${x.declarantes} máquinas, no se une ni se cuenta aparte`);
   if (c.uniones_de_carpetas && c.uniones_de_carpetas.estado === 'no_medidas') partes.push(`uniones de carpetas no medidas (${c.uniones_de_carpetas.motivo}): cada carpeta cuenta como una máquina`);
@@ -599,7 +595,7 @@ function textoCobertura(j) {
 module.exports = { juntar, textoCobertura, validarConfig, aliasDe, aliasDeNombre, leerUnionesDeCarpetas, duracionSuite, FUENTES, BALDES_GENERICOS, ESQUEMA };
 
 if (require.main === module) {
-  // --alias-of se llamaba de otra forma hasta la story 8.9 (tanda G): el nombre viejo sigue andando hasta el retiro
+  // El nombre viejo de --alias-of sigue andando hasta el retiro
   require('../../lib/legacy-names.js').aliasArgv('scripts/nightly/dashboard/reducer.js', { exitCode: 1 });
   const args = process.argv.slice(2);
   const i = args.indexOf('--alias-of');

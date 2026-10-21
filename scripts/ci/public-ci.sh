@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# public-ci.sh — todo lo que la CI del repo público corre, en un solo guion (épica 8, story 8.7 · AC 15).
+# public-ci.sh — todo lo que la CI del repo público corre, en un solo guion.
 #
 # POR QUÉ EXISTE: quien manda un cambio al repo público tiene que poder correr EN SU MÁQUINA lo mismo que corre la CI, y
 # la CI tiene que correr un guion del repo, no una lista de comandos escrita en un YAML que nadie prueba. El workflow
@@ -39,7 +39,7 @@
 #  10 version              sólo con --range: node scripts/ci/version-tag.js check-pr. Con `numbering: "merge-tag"` en el
 #                          version.json de la base, el pedido no toca el número (lo pone la etiqueta del merge); sin la
 #                          marca, el de la punta tiene que ser MAYOR que el de la base (lo que una máquina compara).
-#                          Además, si el rango toca scripts/setup/npm/ (el paquete de npm, story 8.40), su `version`
+#                          Además, si el rango toca scripts/setup/npm/ (el paquete de npm), su `version`
 #                          semver sube: node scripts/ci/npm-package-version.js. Esa carpeta no es un proyecto de npm
 #                          para esta CI: nada acá corre npm test ni npm install en ella
 #  11 clean-machine        sólo con --clean-machine: bash scripts/tests/clean-machine.test.sh en su modo público, o sea con
@@ -188,9 +188,9 @@ cleanup() {
 trap cleanup EXIT
 
 # ── el layout: dónde están las skills ──────────────────────────────────────────────────────────────
-# 🔴 «No pude preguntar» no es «no hay skills» (story 8.18, 2026-10-04). La biblioteca tira cuando su vecina
-#    (canonical-path.js) está y no carga; con `2>/dev/null || true` eso quedaba como «no encuentro las skills: ni … ni
-#    el lugar de instalación», que manda a buscar una instalación que no es el problema. Ahora la causa se dice acá y
+# 🔴 «No pude preguntar» no es «no hay skills». La biblioteca tira cuando su vecina
+#    (canonical-path.js) está y no carga; con `2>/dev/null || true` eso quedaría como «no encuentro las skills: ni … ni
+#    el lugar de instalación», que manda a buscar una instalación que no es el problema. La causa se dice acá y
 #    en el paso que las necesita (el 6), que es rojo «no pude correr» por ESO. Los demás pasos corren igual.
 SKILLS_REPO=""; SKILLS_ERROR=""
 if [ -d "${ROOT}/skills/tycon-pipeline" ]; then
@@ -519,7 +519,7 @@ version_bumped() {
   [ -f "${ROOT}/scripts/ci/version-tag.js" ] \
     || { echo "no pude correr: el repo no trae scripts/ci/version-tag.js (la regla del número)"; return "${BLOCKED_EXIT}"; }
   node "${ROOT}/scripts/ci/version-tag.js" check-pr --root "${ROOT}" --base "${RANGE_BASE}" --tip "${RANGE_TIP}" || return $?
-  # la versión del paquete de npm (story 8.40, AC 11): si el pedido toca scripts/setup/npm/, su `version` sube. Un repo sin
+  # la versión del paquete de npm: si el pedido toca scripts/setup/npm/, su `version` sube. Un repo sin
   # el paquete (los de juguete de public-ci.test.sh) no tiene nada que exigir; un repo CON el paquete y sin su regla no es
   # «nada que exigir»: es «no pude correr», rojo (un salto se vería igual que un verde)
   if [ ! -f "${ROOT}/scripts/ci/npm-package-version.js" ]; then

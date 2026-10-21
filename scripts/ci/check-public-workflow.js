@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * check-public-workflow.js — el control del `ci.yml` de la copia pública (épica 8, story 8.7 · AC 16).
+ * check-public-workflow.js — el control del `ci.yml` de la copia pública.
  *
  * POR QUÉ EXISTE: el workflow de un repo público corre código de cualquiera que mande un pull request. Un cambio de una
  * línea —el disparador que corre con los permisos del repo de destino, un permiso de escritura, una acción fijada por un
@@ -21,7 +21,7 @@
  *   permissions          un solo bloque `permissions`, arriba de todo, con `contents: read` y nada más
  *   fetch-depth          el checkout trae la historia completa (`fetch-depth: 0`): la necesita `--range`
  *   node-matrix          la matriz es Node 24 y es la que se instala; aparte, el job `installer-floor` instala Node 22 (el
- *                        piso del instalador, 2026-10-16) y es el único que no instala el de la matriz
+ *                        piso del instalador) y es el único que no instala el de la matriz
  *   range                en un pull request y en la cola, `public-ci.sh` corre con `--range origin/<base>...HEAD`
  *   base-controls        en un pull request y en la cola corre el `public-ci.sh` DE LA BASE (sacado con `git show`) con
  *                        `--base`, y en la cola la base es la del grupo
@@ -29,16 +29,16 @@
  *   aggregate-job        el job `public-ci` corre siempre, depende de todos los demás y falla si alguno no terminó bien
  *   parts                la matriz parte la corrida en `checks` y `suites-1-of-<n>` … `suites-<n>-of-<n>`, todas, en orden y
  *                        una vez, y la parte llega a public-ci.sh desde la matriz (`TYCON_PUBLIC_CI_PART: ${{ matrix.part }}`):
- *                        una parte que falta deja suites sin correr y el veredicto igual verde (2026-10-14). La única
+ *                        una parte que falta deja suites sin correr y el veredicto igual verde. La única
  *                        otra parte es la fija `installer-floor`, del job del mismo nombre
  *   after-queue          cada job se saltea en el push a main que hace la cola de merge, y SÓLO en ése: la cola ya probó
- *                        ese commit (2026-10-15). La condición es exacta: una que saltea más (todo push, o un pedido) deja
+ *                        ese commit. La condición es exacta: una que saltea más (todo push, o un pedido) deja
  *                        sin correr un merge directo de un administrador —la salida de urgencia—; el job `public-ci` la
  *                        suma detrás de `always()`, que en los demás eventos sigue mandando
  * …y la decimocuarta es la red:
  *   shape                las líneas de código del archivo son EXACTAMENTE las de `SHAPE` (abajo), en ese orden
  *
- * 🔴 POR QUÉ `shape` (pase adversarial del 2026-10-03, 13 clases de hallazgos con la misma enfermedad). Una regla que
+ * 🔴 POR QUÉ `shape`. Una regla que
  *    busca «lo prohibido» por texto siempre deja pasar OTRA forma de escribirlo: la opción dentro de un comentario de
  *    shell, la llamada con otra ruta, un `|| true` que se traga el rojo, un `exclude` en la matriz, un `if:` en el paso,
  *    un job en estilo flujo (`{ … }`), el token por índice, un escape `\x65`, un retorno de carro suelto que para YAML es
@@ -56,7 +56,7 @@
  * único con permiso de escritura (sólo para empujar esa etiqueta): se controla con su propia forma exacta
  * (`TAGGER_SHAPE`) y con las reglas que valen para cualquier workflow de un repo público.
  *
- * EL TERCERO (`--publisher`, story 8.40): `npm-publish.yml`, el que publica el instalador de npm con trusted publishing.
+ * EL TERCERO (`--publisher`): `npm-publish.yml`, el que publica el instalador de npm con trusted publishing.
  * Es el único que pide la identidad de la corrida (`id-token: write`): su forma exacta (`PUBLISHER_SHAPE`), las reglas de
  * cualquier workflow público y cinco propias (`publisher-trigger`, `publisher-enabled`, `publisher-permissions`,
  * `publisher-npm`, `publisher-stage`). EL CUARTO, `site-image.yml`, publica la imagen del sitio de la
@@ -67,7 +67,7 @@
  *   0 = cumple todo · 1 = alguna regla rota (una línea `❌ check-public-workflow: <regla> — <qué>` por regla) ·
  *   2 = no pude leer el archivo (no es un verde)
  * Lo corre scripts/tests/public-ci.test.sh sobre el `ci.yml` real y sobre copias alteradas: una por regla y una por cada
- * clase del pase adversarial.
+ * forma de evasión conocida.
  */
 
 const fs = require('fs');
@@ -238,7 +238,7 @@ const TAGGER_SHAPE = [
 ];
 
 /**
- * LA FORMA de `npm-publish.yml` (`--publisher`, story 8.40): el workflow que publica el instalador de npm
+ * LA FORMA de `npm-publish.yml` (`--publisher`): el workflow que publica el instalador de npm
  * (scripts/setup/npm/) con trusted publishing. Es el ÚNICO que pide la identidad de la corrida (`id-token: write`), y sólo
  * en su job: corre en un push a `main` que toca la carpeta del paquete o a mano sobre `main`, nunca en un pedido; se
  * habilita con la variable de repositorio `NPM_PUBLISH_ENABLED=true` (sin ella, salteado en verde con un aviso; con ella,
@@ -536,7 +536,7 @@ const RULES = [
       if (!parents[0] || !/^matrix\s*:$/.test(parents[0].body.replace(/\s+#.*$/, '')) || !parents[1] || !/^strategy\s*:$/.test(parents[1].body.replace(/\s+#.*$/, ''))) {
         return `\`node: [24]\` no cuelga de \`strategy: matrix:\` (línea ${at(matrix)}): así no es una matriz`;
       }
-      // el piso del instalador (2026-10-16): un solo `node-version: 22`, y sólo dentro del job `installer-floor`
+      // el piso del instalador: un solo `node-version: 22`, y sólo dentro del job `installer-floor`
       const floorJob = jobBlock(lines, 'installer-floor');
       const installed = lines.filter((l) => l.code && /^node-version\s*:/.test(l.body));
       const floor = installed.filter((l) => valueOf(l.body) === '22');
@@ -573,7 +573,7 @@ const RULES = [
       // el rango sale de la misma base: en la cola, desde main se colarían los cambios del grupo de adelante
       if (!code.some((b) => /^bash "\$\{RUNNER_TEMP\}\/public-ci-base\.sh" .* --range "\$\{BASE\}\.\.\.HEAD" /.test(b))) return 'el public-ci.sh de la base no corre con `--range "${BASE}...HEAD"` (el rango sale de la misma base)';
       if (!code.some((b) => b === 'git cat-file -e "${BASE}^{commit}" || exit 1')) return 'una base que no se lee no frena antes de elegir qué guion corre (`git cat-file -e "${BASE}^{commit}" || exit 1`)';
-      // sin el guion en la base, rojo: ninguna llamada al public-ci.sh del pedido con `--range` (la rama que corría los
+      // sin el guion en la base, rojo: ninguna llamada al public-ci.sh del pedido con `--range` (la rama que corre los
       // controles del propio pedido)
       if (!code.some((b) => b === BASE_SCRIPT_GUARD.trim())) return 'una base sin scripts/ci/run-base-controls.sh no frena en rojo «no pude correr»';
       const own = lines.filter((l) => l.code && /^bash scripts\/ci\/public-ci\.sh .*--range\b/.test(l.body));
@@ -633,7 +633,7 @@ const RULES = [
         return `la matriz parte la corrida en \`checks\` y \`suites-1-of-<n>\` … \`suites-<n>-of-<n>\`, todas, en orden y una vez (una que falta deja suites sin correr), y dice: ${parts.join(', ') || 'nada'} (línea ${decl[0].n})`;
       }
       const all = lines.filter((l) => l.code && /^TYCON_PUBLIC_CI_PART\s*:/.test(l.body));
-      // la única parte fija es la del piso del instalador, dentro de su job (2026-10-16)
+      // la única parte fija es la del piso del instalador, dentro de su job
       const floorJob = jobBlock(lines, 'installer-floor');
       const fixed = all.filter((l) => valueOf(l.body) === 'installer-floor' && floorJob.includes(l));
       const env = all.filter((l) => !fixed.includes(l));

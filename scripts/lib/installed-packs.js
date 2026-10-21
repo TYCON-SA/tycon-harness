@@ -2,14 +2,13 @@
 
 /**
  * installed-packs.js —el lector LIVIANO de los paquetes de revisores, del lado del arnés
- * (story 8.2, 2026-09-26).
  *
  * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────────────────
  * Los revisores de un producto o de un cliente (convenciones de plugins Bizuit; plugins hermanos;
- * el adaptador de un cliente) viven desde la 8.2 en `packs/<nombre>/pack.json` de agent-skills, no en el código. Dos
- * scripts de este repo los tenían escritos a mano: `harness-audit.js` (¿está instalado cada revisor
+ * el adaptador de un cliente) viven en `packs/<nombre>/pack.json` de agent-skills, no en el código. Dos
+ * scripts de este repo necesitan leerlos: `harness-audit.js` (¿está instalado cada revisor
  * que el equipo espera?) e `scripts/instincts/instinct-draft.js` (¿a qué revisor le toca una regla nueva, por su
- * prefijo?). Los dos leen ahora de acá.
+ * prefijo?). Los dos leen de acá.
  *
  * ── POR QUÉ NO USA EL CARGADOR DEL PIPELINE ─────────────────────────────────────────────────────
  * `lib/packs.js` de tycon-pipeline valida el vocabulario cerrado y evalúa condiciones; para eso
@@ -22,7 +21,7 @@
  * «No pude leerlo» nunca se convierte en «no hay paquete». La carpeta POR DEFECTO ausente (máquina sin
  * agent-skills) sí es cero paquetes, sin error: es un estado legítimo. Una `TYCON_PACKS_DIR` (o un
  * `packsDir` explícito) que apunta a una carpeta inexistente es un error: configuración rota, no «sin
- * paquetes» — el mismo criterio que el cargador del pipeline (AC 3 de la story).
+ * paquetes» — el mismo criterio que el cargador del pipeline.
  *
  * Uso:
  *   const { leerPaquetes, prefijosDePaquetes } = require('./lib/installed-packs.js');
@@ -33,9 +32,9 @@
  * Dónde busca: `TYCON_PACKS_DIR`, o `~/.claude/agent-skills/packs` (misma resolución que
  * `lib/packs.js` del pipeline, que toma la raíz de agent-skills desde su propia ruta).
  *
- * Las claves del manifiesto están en inglés desde la story 8.9 (tanda D1). agent-skills se actualiza con su propio
- * pull y un paquete puede vivir fuera (`TYCON_PACKS_DIR`): un manifiesto con las claves de antes se lee igual,
- * traducido con `readKeysDeep` (where `packs/pack.json`, el mismo del cargador del pipeline). Una vieja y su nueva
+ * Las claves del manifiesto están en inglés. agent-skills se actualiza con su propio
+ * pull y un paquete puede vivir fuera (`TYCON_PACKS_DIR`): un manifiesto con las claves en castellano se lee igual,
+ * traducido con `readKeysDeep` (where `packs/pack.json`, el mismo del cargador del pipeline). Una clave vieja y su nueva
  * con valores distintos es un manifiesto roto (sale en `errores`). Lo que devuelve conserva su forma de siempre.
  */
 
@@ -118,7 +117,7 @@ function leerPaquetes({ packsDir, explicito } = {}) {
       archivo,
       descripcion: typeof json.description === 'string' ? json.description : '',
       guias: Array.isArray(json.guides) ? json.guides.filter((g) => typeof g === 'string') : [],
-      // la carpeta de agentes DEL paquete (clave `agents`, story 8.41), o null: sus revisores se buscan ahí antes que en la raíz
+      // la carpeta de agentes DEL paquete (clave `agents`), o null: sus revisores se buscan ahí antes que en la raíz
       agentes: typeof json.agents === 'string' && json.agents ? path.join(carpeta, json.agents) : null,
       revisores,
       hermanos: hermanos.lista,
@@ -128,7 +127,7 @@ function leerPaquetes({ packsDir, explicito } = {}) {
 }
 
 /**
- * `siblings` del manifiesto (story 8.10, AC 24): los plugins hermanos que el banco fabrica en su corral. Las mismas
+ * `siblings` del manifiesto: los plugins hermanos que el banco fabrica en su corral. Las mismas
  * reglas que valida `packs.js` en agent-skills: una lista de { path relativa sin «..», name identificador }. Mal
  * formado es un error del paquete (con su motivo), no una lista a medias. Devuelve { ruta, nombre } (la forma de siempre).
  */
@@ -153,7 +152,7 @@ function leerHermanos(valor) {
  * Los hermanos del corral del banco: los de todos los paquetes instalados, en orden. Sin paquetes, ninguno.
  * Un paquete roto (o una carpeta explícita que no existe) TIRA nombrando archivo y motivo: un corral armado a
  * medias se ve igual que «no hay paquete de clientes», y el revisor de hermanos correría sin hermanos sin que nada lo
- * diga (story 8.2: un paquete roto no degrada a «sin ese paquete»; revisor de fallos silenciosos, tanda B de la 8.10).
+ * diga (un paquete roto no degrada a «sin ese paquete»).
  */
 function siblingsFromPacks(opts) {
   const { paquetes, errores } = leerPaquetes(opts);

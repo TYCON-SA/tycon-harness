@@ -13,11 +13,9 @@
 # Exit: siempre 0 — un texto informativo no puede frenar un despliegue. Si algo falla, deja
 #       el ZIP intacto (queda la nota que trajo del empaquetado) y avisa por stderr.
 #
-# 🔴 ÉSTE ES EL CANÓNICO (2026-08-31). Vive SOLO acá.
-# Estaba copiado en los 4 backends. Las cuatro copias eran BYTE A BYTE IDÉNTICAS — o sea que la
-# duplicación no aportaba nada y sólo esperaba a que alguien tocara una. Se promueve junto con
-# `release-notes.sh` en la misma pasada: hacerlo después habría sido repetir el mismo trabajo de
-# tocar los 8 pipelines.
+# 🔴 ÉSTE ES EL CANÓNICO. Vive SOLO acá: una copia por backend sería idéntica byte a byte, o sea
+# que la duplicación no aportaría nada y sólo esperaría a que alguien toque una. Se mantiene junto
+# con `release-notes.sh`.
 # =============================================================================
 set -uo pipefail
 
@@ -43,10 +41,10 @@ fi
 
 mv "$TMP/plugin.new.json" "$TMP/plugin.json"
 # El `cd "$TMP"` de abajo cambia el directorio, así que el zip hay que nombrarlo por su ruta
-# ABSOLUTA. Antes acá iba "$OLDPWD/$ZIP", que sólo servía si $ZIP venía relativo — y el YAML
-# lo pasa siempre absoluto ($(System.ArtifactsDirectory)), con lo cual concatenaba las dos
-# rutas, el zip fallaba SIEMPRE y —como este script sale 0 a propósito— nadie se enteraba:
-# todos los paquetes se publicaban con la nota vieja del empaquetado.
+# ABSOLUTA. "$OLDPWD/$ZIP" sólo serviría si $ZIP viniera relativo — y el YAML lo pasa siempre
+# absoluto ($(System.ArtifactsDirectory)), con lo cual concatenaría las dos rutas, el zip
+# fallaría SIEMPRE y —como este script sale 0 a propósito— nadie se enteraría: todos los
+# paquetes se publicarían con la nota vieja del empaquetado.
 ZIP_ABS="$(cd "$(dirname "$ZIP")" && pwd)/$(basename "$ZIP")"
 # `zip -j` NO: el archivo tiene que quedar en la raíz del zip, con su nombre.
 if ! ( cd "$TMP" && zip -q "$ZIP_ABS" plugin.json ) 2>/dev/null; then

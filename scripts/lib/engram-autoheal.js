@@ -7,8 +7,7 @@
  * engram autodetecta el project name desde el nombre de la carpeta cuando el repo no lo fija. Un
  * rename, una sesión desde otra subcarpeta o un nombre tipeado a mano abren un cajón nuevo, y
  * buscar en el equivocado devuelve *"no memories found"* — indistinguible de "este proyecto no
- * tiene historia". El 2026-08-25 se midió en cuatro repos: 74, 135, 1151 y 507 observaciones
- * partidas.
+ * tiene historia".
  *
  * Los repos ya declaran su nombre canónico (`.engram/config.json`), y ESO viaja por git. Lo que no
  * viaja es el arreglo de la base LOCAL: cada máquina importó los chunks viejos con el nombre viejo,
@@ -21,9 +20,9 @@
  *
  *   1. **No es un proyecto transversal.** Guardar el arnés bajo `tycon` desde el cwd de cualquier
  *      producto es la convención del equipo (engram-workflow.md §2), no drift.
- *   2. **No es el nombre declarado por OTRO repo.** Medido: en la carpeta de Totora hay 311
- *      observaciones bajo `nimbobackend`. Alguien trabajó en otro producto desde ahí. Un
- *      automatismo sin esta guarda se las llevaba adentro de Totora, en silencio y sin vuelta.
+ *   2. **No es el nombre declarado por OTRO repo.** Si en la carpeta de Totora hay observaciones bajo
+ *      `nimbobackend`, alguien trabajó en otro producto desde ahí. Un automatismo sin esta guarda
+ *      se las llevaría adentro de Totora, en silencio y sin vuelta.
  *   3. **No se usa desde más de una carpeta.** Si un nombre aparece en varios directorios es un
  *      proyecto con vida propia, no basura de autodetección. Caza el caso `backend`, que la
  *      autodetección genera IGUAL en `Totora/Backend` y en `Pacara/BackEnd`.
@@ -36,9 +35,9 @@
  * ajenos). No se le delega el criterio: se lo usa como ÍNDICE. Se lee su lista numerada, se
  * eligen SÓLO los números cuyos nombres pasaron las guardas, y se le responde con esos. Si ofrece
  * de más, no se selecciona; si no ofrece algo del plan, no se une — los dos lados fallan hacia el
- * lado seguro. El orden de la lista se verificó determinístico.
+ * lado seguro. El orden de la lista es determinístico.
  *
- * Y después se COMPROBACIÓN el resultado: los cajones del plan tienen que quedar en cero y ningún
+ * Y después se COMPRUEBA el resultado: los cajones del plan tienen que quedar en cero y ningún
  * otro proyecto puede haber perdido observaciones. Si la cuenta no cierra, grita — un merge que
  * salió distinto de lo planeado es exactamente lo que no se puede dejar pasar en silencio.
  *
@@ -65,13 +64,13 @@ const JSON_OUT = process.argv.includes('--json');
 const DB = path.join(os.homedir(), '.engram', 'engram.db');
 
 // harness-audit resuelve la raíz de repos al cargar y con ~/.claude/tycon.json roto tira ConfigError: como comando se frena
-// prolijo (archivo · clave · motivo, exit 2), no con una traza (pase adversarial de la tanda B). Como módulo, el que carga decide.
+// prolijo (archivo · clave · motivo, exit 2), no con una traza. Como módulo, el que carga decide.
 let audit;
 try { audit = require('./harness-audit.js'); }
 catch (e) { if (e && e.name === 'ConfigError' && require.main === module) { console.error(e.message); process.exit(2); } throw e; }
 const REPOS_ROOT = (() => {
   try { return (require('./repos-root.js').resolveReposRoot().roots || [])[0] || null; }
-  catch (e) { if (e && e.name === 'ConfigError') throw e; return null; }   // ~/.claude/tycon.json roto: un comando frena (story 8.3)
+  catch (e) { if (e && e.name === 'ConfigError') throw e; return null; }   // ~/.claude/tycon.json roto: un comando frena
 })();
 
 const CROSS = audit.CROSS_CUTTING_PROJECTS;
@@ -111,7 +110,7 @@ function planificar(opciones) {
   if (!root) return { plan: [], motivo: 'sin raíz de repos (definí TYCON_REPOS_ROOT o rutas.repos en ~/.claude/tycon.json): no medido' };
   // `sinBase` distingue dos cosas que NO son lo mismo: que no exista base de engram (nada que
   // verificar — una máquina que todavía no la usa) de que exista y no se pueda leer (ahí sí, no
-  // se sabe). Mezclarlas hacía que el hook gritara "no pude verificar" en cualquier máquina sin
+  // se sabe). Mezclarlas haría que el hook gritara "no pude verificar" en cualquier máquina sin
   // engram, que es ruido puro.
   if (!fs.existsSync(db)) return { plan: [], motivo: 'no hay base de engram en esta máquina', sinBase: true };
 
@@ -186,15 +185,13 @@ function ofertaDe(dir, bin) {
 }
 
 /**
- * El punto de restauración. Un backup que se puede pisar no es un punto de restauración
- * (hallazgo 6 de la revisión adversarial, 2026-08-25).
+ * El punto de restauración. Un backup que se puede pisar no es un punto de restauración.
  *
- * Tres cosas que la versión anterior no hacía y que son la diferencia entre poder volver atrás y
- * creer que se puede:
- *   · el nombre llevaba SÓLO LA FECHA — la segunda corrida del día sobrescribía el único punto de
+ * Tres cosas que separan poder volver atrás de creer que se puede:
+ *   · el nombre lleva más que la fecha — si no, la segunda corrida del día sobrescribiría el único punto de
  *     restauración, justo cuando más falta hace (la primera ya movió memoria);
- *   · se creaba sin exclusión: dos procesos a la vez escribían el mismo archivo;
- *   · no se verificaba que la copia se pudiera LEER. Un backup corrupto es peor que ninguno,
+ *   · se crea con exclusión: dos procesos a la vez no escriben el mismo archivo;
+ *   · se verifica que la copia se pueda LEER. Un backup corrupto es peor que ninguno,
  *     porque se decide mutar confiando en él.
  */
 function hacerBackup() {
@@ -241,8 +238,8 @@ function ejecutar(plan, bin) {
   }
 
   // COMPROBACIÓN: lo del plan tiene que haber quedado en cero, y nada AJENO puede haber perdido.
-  // 🔴 En try/catch (hallazgo 6): si la comprobación se cae, la base YA está cambiada — y la
-  // versión anterior moría con un stack sin decir dónde estaba el punto de restauración. Un error
+  // 🔴 En try/catch: si la comprobación se cae, la base YA está cambiada — y sin esto moriría con un stack sin
+  // decir dónde está el punto de restauración. Un error
   // acá no es "no pasó nada", es "pasó y no sé qué".
   try {
     const despues = conteos();
@@ -268,8 +265,8 @@ module.exports = { planificar, ofertaDe, hacerBackup };
 
 if (require.main !== module) return;
 
-// engram (story 8.3, AC 9/10): con la integración apagada no hay memoria que unificar — se dice en UNA línea y sale 0;
-// configuración rota → archivo, clave y motivo, exit 2 (un comando frena). Sin lector al lado: como hoy.
+// engram: con la integración apagada no hay memoria que unificar — se dice en UNA línea y sale 0;
+// configuración rota → archivo, clave y motivo, exit 2 (un comando frena). Sin lector al lado, sigue como si la integración estuviera prendida.
 {
   let integ = null;
   try { integ = require('./tycon-config.js').integracionParaComando('engram'); }

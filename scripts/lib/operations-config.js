@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 'use strict';
-// operations-config.js — la configuración de los nocturnos de una organización (story 8.26, tanda J · 2026-10-13).
+// operations-config.js — la configuración de los nocturnos de una organización.
 //
-// POR QUÉ EXISTE: a quién se asigna un Bug de dependencias y quiénes revisan los pedidos que abren los nocturnos estaba
-// a mano —un mail de respaldo escrito en el código y dos variables de las definiciones de Azure—, y una organización
-// nueva no tenía dónde decir los suyos. `operations.json`, en la raíz del repo de operaciones de la organización, lo
-// declara. Ese repo NO se instala en las máquinas: la lista de personas no le llega a todo el equipo (decisión del
-// dueño). La leen los pipelines de operaciones y el sitio de la organización. Quién puede cambiarla lo deciden los
+// POR QUÉ EXISTE: a quién se asigna un Bug de dependencias y quiénes revisan los pedidos que abren los nocturnos lo
+// declara cada organización, sin un mail escrito en el código ni variables de las definiciones de Azure.
+// `operations.json`, en la raíz del repo de operaciones de la organización, lo declara.
+// Ese repo NO se instala en las máquinas: la lista de personas no le llega a todo el equipo.
+// La leen los pipelines de operaciones y el sitio de la organización. Quién puede cambiarla lo deciden los
 // permisos de ese repo.
 //
 // LA FORMA (versión 1):
@@ -19,12 +19,12 @@
 //                             "emails": [<correo>, …] }, … ],   entrada por persona, con uno o más correos; un correo no
 //                                                            está en dos entradas. Sin ella, el sitio la arma con
 //                                                            `maintainers` y las personas de `people.machines`
-//               "maintainers": [<correo>, …],                la forma de antes: quiénes mantienen. Con `access` puesta,
+//               "maintainers": [<correo>, …],                la forma corta: quiénes mantienen. Con `access` puesta,
 //                                                            no va (una sola fuente)
 //               "mailbox": { "provider": "azure-blob",        opcional — el buzón de corridas que lee el sitio
 //                            "account": <texto>, "container": <texto>, "threads": <bool> },  threads: true baja también
 //                                                            las conversaciones y los cambios de git para el detalle de
-//                                                            la pestaña Corridas, si el sitio tiene disco (story 2.27)
+//                                                            la pestaña Corridas, si el sitio tiene disco
 //               "refresh_minutes": <5 a 120>,              opcional — cada cuánto se releen las fuentes
 //               "url": "https://…",                           opcional — la dirección del sitio, sólo https y sin usuario
 //                                                            ni clave: va en el aviso de la mañana
@@ -47,7 +47,7 @@
 //                                                            Sin `notify` no se manda nada. El destino
 //                                                            (el chat, el token, la dirección del webhook) va en los
 //                                                            secretos del pipeline, nunca acá.
-//     "people": {                                            opcional — quién es quién (story 2.28)
+//     "people": {                                            opcional — quién es quién
 //       "machines": { "<máquina>": {                         opcional — cada máquina confirmada por un mantenedor
 //           "person": <correo>,                              la persona dueña de las corridas de esa máquina
 //           "reported_sha256": <64 hexadecimales> | null,    la huella del correo que informaba la máquina al confirmar
@@ -65,7 +65,7 @@
 //   `reported_sha256` es el sha256 del correo informado, en minúsculas y sin espacios alrededor; NUNCA el correo en
 //   claro: el archivo queda en la historia de git del repo de operaciones para siempre. `null` si la máquina no
 //   informaba correo al confirmarla.
-//     "deployments": {                                       opcional — de qué sistema se leen los despliegues (story 2.22)
+//     "deployments": {                                       opcional — de qué sistema se leen los despliegues
 //       "provider": "azure" | "github",
 //       "products": { "<producto>": { "staging": [<entrada>…], "production": [<entrada>…] } } }   listas no vacías
 //   Una entrada de Azure: { "pipeline": "<proyecto>/<nombre exacto de la definición>", "stages": ["<identificador>", …] }
@@ -86,7 +86,7 @@ const KEYS = ['version', 'owners', 'reviewers', 'site', 'people', 'deployments',
 // el pedido de trabajo de una vulnerabilidad: el tipo de work item y sus campos (lo lee la revisión nocturna)
 const WORK_ITEM_KEYS = ['type', 'fixed_fields', 'by_severity'];
 const SEVERITIES = ['critical', 'high', 'moderate', 'low'];
-// story 2.22: de qué sistema se leen los despliegues de cada producto. Sin nombres por defecto: todo lo declara la
+// De qué sistema se leen los despliegues de cada producto. Sin nombres por defecto: todo lo declara la
 // organización (el identificador EXACTO de cada stage, o el environment de GitHub).
 const DEPLOYMENT_PROVIDERS = ['azure', 'github'];
 const DEPLOYMENT_SIDES = ['staging', 'production'];
@@ -122,7 +122,7 @@ const CONTAINER = /^[a-z0-9](?:[a-z0-9-]{1,61})[a-z0-9]$/;
 const SECRET_KEY = /token|secret|sas|password|passwd|pwd|key|credential/i;
 // Una identidad: sin espacios ni controles; un principalName de Azure (usuario@dominio) o un usuario de GitHub.
 const IDENTITY = /^[^\s@]+(@[^\s@]+)?$/;
-// story 2.28: quién es quién
+// Quién es quién
 const PEOPLE_KEYS = ['machines', 'projects'];
 const MACHINE_KEYS = ['person', 'reported_sha256', 'confirmed_by', 'confirmed_on'];
 const PROJECT_KEYS = ['add', 'remove'];
@@ -299,7 +299,7 @@ function dayProblems(v, at) {
   return [];
 }
 
-// Quién es quién (story 2.28). Una máquina con nombre mal formado se marca y su entrada se revisa igual.
+// Quién es quién. Una máquina con nombre mal formado se marca y su entrada se revisa igual.
 function peopleProblems(people) {
   if (!isObject(people)) return [{ path: 'people', message: 'tiene que ser un objeto { "machines": …, "projects": … }' }];
   const problems = [...unknownKeys(people, PEOPLE_KEYS, 'people')];
@@ -324,7 +324,7 @@ function peopleProblems(people) {
   if (projects !== undefined) {
     if (!isObject(projects)) problems.push({ path: 'people.projects', message: 'tiene que ser un objeto { "<correo>": { "add": […], "remove": […] } }' });
     else {
-      // los correos se comparan sin mayúsculas ni espacios (decisión 7): dos claves que son el mismo correo se pisarían
+      // los correos se comparan sin mayúsculas ni espacios: dos claves que son el mismo correo se pisarían
       const vistas = new Map();
       for (const who of Object.keys(projects)) {
         if (comment(who)) continue;
@@ -355,7 +355,7 @@ function peopleProblems(people) {
 
 const texto = (v) => typeof v === 'string' && v.trim() !== '';
 
-// story 2.22: { provider, products: { "<producto>": { staging: [entrada…], production: [entrada…] } } }
+// { provider, products: { "<producto>": { staging: [entrada…], production: [entrada…] } } }
 function deploymentsProblems(dep) {
   if (!isObject(dep)) return [{ path: 'deployments', message: 'tiene que ser un objeto { "provider": …, "products": … }' }];
   const problems = [...unknownKeys(dep, ['provider', 'products'], 'deployments')];

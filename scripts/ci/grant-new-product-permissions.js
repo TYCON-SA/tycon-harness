@@ -2,10 +2,9 @@
 'use strict';
 /**
  * Deja a un proyecto de Azure DevOps recién creado con TODOS los permisos que sus pipelines
- * necesitan para funcionar. Son cuatro, y cada uno se descubrió chocándose contra él.
+ * necesitan para funcionar. Son cuatro.
  *
- * 🔴 POR QUÉ EXISTE (alta de un producto nuevo, 2026-09-28, y su repetición el mismo día
- *    — guides/maintaining/incident-log.md#case-new-product-permissions-2026-09-28).
+ * 🔴 POR QUÉ EXISTE (alta de un producto nuevo).
  *
  * Un producto nuevo no arranca hasta tener las cuatro cosas de abajo. Ninguna da un error que se
  * entienda, y las cuatro se ven igual: "el pipeline falla y no sé por qué".
@@ -30,7 +29,7 @@
  * sirve en una organización y miente en la siguiente.
  *
  * 🔴 LA MISMA IDENTIDAD SE NOMBRA DE DOS MANERAS y cada API acepta sólo la suya. Pasarle a los
- * permisos el nombre del grafo devuelve HTTP 500 sin decir por qué (nos costó un rato):
+ * permisos el nombre del grafo devuelve HTTP 500 sin decir por qué:
  *     grafo (grupos):    svc.base64("<colección>:Build:<proyecto>")   sin el relleno '='
  *     permisos (listas): "Microsoft.TeamFoundation.ServiceIdentity;<colección>:Build:<proyecto>"
  *
@@ -49,8 +48,8 @@
  *                      revisa, no pushea— y repartirlos a todos es dar permiso de saltear las
  *                      políticas de rama donde no hace falta.
  *   --harness <nombre> proyecto del arnés (default: tycon-claude-guides)
- *   (--project, --verify, --write-access y --harness tenían nombre en castellano hasta la story 8.9, tanda B3a;
- *   los viejos siguen andando hasta el retiro)
+ *   (--project, --verify, --write-access y --harness tienen un nombre viejo en castellano que sigue
+ *   andando hasta el retiro)
  *   --repo <nombre>    repo del arnés (default: igual que el proyecto)
  *   --org <url>        default: `ado.org` de la configuración del arnés (TYCON_ADO_ORG, ~/.claude/tycon.json o
  *                      el perfil del equipo): sin ninguna, Azure DevOps está apagado en esta máquina y sale 2
@@ -68,7 +67,7 @@ const CONTRIBUIR = 4;              // GenericContribute
 const SALTEAR_POLITICAS = 128;     // PolicyExempt — para el commit de versión que va directo a main
 const ESCRITURA = CONTRIBUIR | SALTEAR_POLITICAS; // 132, lo mismo que tienen los productos que andan
 
-// Las opciones renombradas a inglés (story 8.9, tanda B3a): el nombre viejo sigue andando hasta el retiro. El
+// Las opciones renombradas a inglés: el nombre viejo sigue andando hasta el retiro. El
 // traductor vive al lado (viaja con este archivo en el artefacto arnes-ci).
 const { aliasLegacyOptions, LegacyOptionsError } = (() => {
   try { return require('./legacy-options.js'); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') process.stderr.write(`⚠️  legacy-options.js no cargó (${e && e.message}): los nombres viejos de este guion no se traducen\n`); return { aliasLegacyOptions: (argv) => argv, LegacyOptionsError: Error }; }
@@ -86,7 +85,7 @@ const flag = (n, d = null) => {
   const i = args.indexOf(n);
   return i === -1 ? d : (args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : true);
 };
-// La organización: `--org`, o `ado.org` de la configuración del arnés (story 8.3), como open-prs.js. Una organización
+// La organización: `--org`, o `ado.org` de la configuración del arnés, como open-prs.js. Una organización
 // escrita acá sirve en un equipo y miente en el siguiente: la misma regla que los identificadores de arriba.
 const ORG = (() => {
   const dada = flag('--org');

@@ -3,7 +3,7 @@
 /**
  * ¿Los dos manifiestos de un plugin dicen lo mismo, y el que viaja habilita lo que el paquete lleva?
  *
- * 🔴 POR QUÉ EXISTE (2026-09-02).
+ * 🔴 POR QUÉ EXISTE.
  *
  * Un plugin Bizuit tiene DOS manifiestos con roles distintos:
  *   · `plugin.json.example` — el CANÓNICO. Es el que el pipeline copia encima del real para sacar
@@ -14,18 +14,17 @@
  *     agrega una bandera nueva, y el que el bot reescribe al subir la versión.
  *
  * NADA obligaba a que la parte común —los metadatos— coincidiera. Quien agrega una bandera la pone
- * en uno y se olvida del otro, y no hay error: hay SILENCIO. Eso ya pasó tres veces:
+ * en uno y se olvida del otro, y no hay error: hay SILENCIO. Por ejemplo:
  *
  *   · `hasSignalRHubs` — sin ese campo el host no inyecta el resolver de hubs y el tiempo real
  *     queda sin mapear, sin un solo mensaje.
  *   · `relayHubsOnly` — sin él, el plugin vuelve a cargar de otra manera, también en silencio.
- *   · `migrations` — 2026-09-02: se cableó el flujo de migraciones administradas en tres productos
- *     copiando de un cuarto, con sus comentarios y su lógica… y quedó INERTE en los tres,
- *     porque la bandera se agregó al `plugin.json` y no al `example`, que es el que viaja. El
- *     host nunca miró la carpeta `migrations/` del ZIP. Todo verde — guides/maintaining/incident-log.md#case-manifest-flag-inert-2026-09-02.
+ *   · `migrations` — si la bandera se agrega al `plugin.json` y no al `example`, que es el que
+ *     viaja, el flujo de migraciones administradas queda INERTE: el host nunca mira la carpeta
+ *     `migrations/` del ZIP. Todo verde.
  *
- * Cada una de las tres se "arregló" agregando el campo de nuevo. La cuarta habría durado hasta la
- * quinta. Este control cierra la puerta en vez de la clave.
+ * Agregar el campo de nuevo arregla un caso y deja abierto el siguiente. Este control cierra la
+ * puerta en vez de la clave.
  *
  * 🔴 COMPARA CLAVES **Y VALORES**, no sólo claves. `"migrations": {"enabled": false}` en un archivo
  * y `true` en el otro pasa cualquier comparación por nombre, y el paquete viaja con el valor del
@@ -50,7 +49,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-// Las opciones renombradas a inglés (story 8.9, tanda B2): los pipelines de los productos siguen pasando las viejas
+// Las opciones renombradas a inglés: los pipelines de los productos siguen pasando las viejas
 // hasta el retiro. El traductor vive al lado y viaja con este archivo en el artefacto arnes-ci.
 const { aliasLegacyOptions, LegacyOptionsError } = (() => {
   try { return require('./legacy-options.js'); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') process.stderr.write(`⚠️  legacy-options.js no cargó (${e && e.message}): los nombres viejos de este guion no se traducen\n`); return { aliasLegacyOptions: (argv) => argv, LegacyOptionsError: Error }; }

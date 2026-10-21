@@ -2,24 +2,21 @@
 /**
  * check-tolerant-steps.js — un paso que DECIDE algo no puede ser tolerante a fallos.
  *
- * 🔴 POR QUÉ EXISTE (2026-09-03). Se midió provocándolo: una corrida que termina
+ * 🔴 POR QUÉ EXISTE. Una corrida que termina
  * `partiallySucceeded` —lo que pasa cuando un paso con `continueOnError: true` falla— **APRUEBA la
  * política de build del pull request**. O sea que marcar un paso como tolerante a fallos no es sólo
  * "no frena el pipeline": es "su fallo deja pasar el cambio a la rama principal".
  *
- * Hoy no hay ninguno mal marcado. Las clases tolerantes que quedan en los 14 pipelines no deciden
- * nada: avisar que una rama quedó atrás, recalcular notas de versión, publicar reportes de pruebas
- * y cobertura, y bajar un artefacto cuyo consumidor corta por su cuenta. Este control nace en verde
- * y existe para el paso siguiente — el que alguien agregue dentro de tres meses sin saber que la
- * marca también decide si el pull request pasa.
+ * Las clases tolerantes admitidas no deciden nada: avisar que una rama quedó atrás, recalcular notas de versión, publicar reportes de pruebas
+ * y cobertura, y bajar un artefacto cuyo consumidor corta por su cuenta. El control
+ * existe para el paso siguiente — el que alguien agregue sin saber que la marca también decide si
+ * el pull request pasa.
  *
- * 🔴 2026-09-03 — BAJAR EL ARNÉS SALIÓ DE LA LISTA BLANCA. Estaba con el motivo "hay copia local de
- * respaldo, y si falta, el paso que la usa corta por su cuenta". Las dos mitades eran falsas: la
- * copia local se borró hace meses, y los pasos que usan los guiones —el que decide a quién
- * versionar, el que despliega, el del humo— fallaban DESPUÉS, con un error que no se parece a la
- * causa. Se sacaron las 15 marcas de los 10 pipelines (un pull request por pipeline — guides/maintaining/incident-log.md#case-harness-download-tolerant-2026-09-03;
- * el backend de un producto ya era
- * estricto) y la clase sale de acá, para que la marca no vuelva sin que alguien la justifique.
+ * 🔴 BAJAR EL ARNÉS NO ESTÁ EN LA LISTA BLANCA. Un motivo como "hay copia local de respaldo, y si
+ * falta, el paso que la usa corta por su cuenta" no vale: no hay copia local, y los pasos que usan
+ * los guiones —el que decide a quién versionar, el que despliega, el del humo— fallarían DESPUÉS,
+ * con un error que no se parece a la causa. Esa clase queda afuera para que la marca no vuelva sin
+ * que alguien la justifique.
  *
  * CÓMO DECIDE. No adivina qué "decide": va por lista blanca de lo conocido-inofensivo, con la carga
  * de la prueba del lado de quien agrega algo nuevo. Un paso tolerante que no encaje en ninguna clase
@@ -42,8 +39,7 @@ const INOFENSIVOS = [
   { re: /download.*(artifact|paquete|deployment packages|plugin artifact)/i,
     por: 'bajar un artefacto cuyo consumidor corta por su cuenta si no llegó' },
   // «Upload to <el host de plugins> …»: el paso que sube el paquete en los pipelines de producto. Se reconoce por su
-  // forma —un destino de una palabra que termina en «Extensions»—; el nombre del destino no se escribe acá (story
-  // 8.10.3, tanda C). No se estira a cualquier «upload to X production»: eso es un despliegue, y tolerante se marca.
+  // forma —un destino de una palabra que termina en «Extensions»—; el nombre del destino no se escribe acá. No se estira a cualquier «upload to X production»: eso es un despliegue, y tolerante se marca.
   { re: /commit version update|upload to \w*extensions\b/i,
     por: 'sólo corre en la rama principal, donde no hay política de pull request que aprobar' },
 ];

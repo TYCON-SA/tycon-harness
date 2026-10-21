@@ -1,13 +1,11 @@
 #!/usr/bin/env node
 'use strict';
-// detector.js — lo que no puede salir en una publicación (épica 8, story 8.1 · 2026-09-26)
+// detector.js — lo que no puede salir en una publicación
 //
-// POR QUÉ EXISTE: el arnés se va a publicar como código abierto, y la auditoría de preparación
-// (tasks/auditoria-open-source-2026-09-26/) encontró unas 6.700 menciones de clientes y personas,
+// POR QUÉ EXISTE: el arnés se publica como código abierto, y puede traer menciones de clientes y personas,
 // credenciales vivas y rutas de máquina repartidas en miles de archivos. Revisar eso a ojo antes
-// de cada publicación no escala y no se repite igual dos veces. Este detector es el control: cada
-// story de la épica tiene como criterio que dé cero sobre lo que toca, el exportador (8.4) lo corre
-// antes de publicar, y la CI del repo público lo vuelve a correr.
+// de cada publicación no escala y no se repite igual dos veces. Este detector es el control:
+// el exportador lo corre antes de publicar, y la CI del repo público lo vuelve a correr.
 //
 // QUÉ BUSCA:
 //   · Los términos de una lista de denegación (clientes, personas, hosts internos, cuentas). Esa
@@ -22,10 +20,10 @@
 // motivo, o una ruta de --list que no existe → exit 2 y el motivo. Nunca «no encontré nada»
 // cuando en realidad no pudo mirar.
 //
-// LO QUE ENCONTRÓ EL PASE DE LA 8.10.1 (story 8.10.2, 2026-10-06): formas de un nombre que la 8.10.1 prometía y no veía
+// TAMBIÉN CUBRE formas de un nombre que de otro modo se escaparían
 // (la sigla pegada en mayúsculas, la barra invertida, el valor de una clave con comentario, la ñ y la ç en ASCII, el
-// singular en «e»), la sigla pegada dentro de una tira de base64, y el conteo (por posición, sin repetir una aparición) y
-// el orden del informe (por cantidad, recorriendo en orden de nombre). Cada cambio dice «story 8.10.2» donde está.
+// singular en «e») y la sigla pegada dentro de una tira de base64. Cuenta las apariciones (por posición, sin repetir una)
+// y ordena el informe (por cantidad, recorriendo en orden de nombre).
 //
 // SALIDA: exit 0 = limpio · 1 = hay hallazgos · 2 = no pude mirar. Los secretos se muestran
 // enmascarados (4 caracteres + ***): el informe del detector se puede pegar sin filtrar nada.
@@ -49,22 +47,22 @@ const PATRONES_GENERICOS = [
   { nombre: 'llave-aws', categoria: 'secreto', regex: /\bAKIA[0-9A-Z]{16}\b/g },
   { nombre: 'llave-privada', categoria: 'secreto', regex: /-----BEGIN [A-Z ]*PRIVATE KEY-----/g },
   { nombre: 'jwt', categoria: 'secreto', regex: /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g },
-  // Llaves sin prefijo reconocible (el caso real de la auditoría: una API key de 20 hex asignada a
+  // Llaves sin prefijo reconocible (por ejemplo, una API key de 20 hex asignada a
   // `…_API_KEY=` en un .md). Se reconoce por el NOMBRE de la variable, no por el valor.
   { nombre: 'asignacion-de-secreto', categoria: 'secreto', regex: /\b[A-Z0-9_]*(?:API_?KEY|SECRET|TOKEN|PASSWORD)[A-Z0-9_]*\s*[=:]\s*["']?[A-Za-z0-9+/_-]{16,}/g },
   { nombre: 'clave-en-cadena-de-conexion', categoria: 'secreto', regex: /\b(?:Password|Pwd)\s*=\s*[^;"'\s<>{}$]{4,}/gi },
   // La misma clave ENTRE COMILLAS (`Password="…"`, `bizuit:emailPassword="…"`): la regla de arriba corta en la comilla
-  // y la auditoría marcó ALTO justo esta forma (story 8.4, AC 15). Los marcadores de plantilla no son una clave:
+  // y no vería esta forma. Los marcadores de plantilla no son una clave:
   // `$VAR`, `{0}`, `%X%`, `***` y `<clave>` no disparan, ni un booleano (`requirePassword="true"`).
   { nombre: 'clave-entre-comillas', categoria: 'secreto', regex: /\b[A-Za-z0-9_.:-]*?(?:password|pwd)\s*=\s*(["'])(?![$%{<]|\*+\1|(?:true|false)\1)[^"'\s]{4,}\1/gi },
-  // Un proceso exportado con la organización como sufijo del nombre (story 8.6, AC 13): `<algo>__<org>.bpmn` o `.vdw`.
-  // Es un patrón de forma: la organización no tiene que estar en ninguna lista (32 de los 39 sufijos de las fixtures
-  // viejas no estaban). Sobre la lista de rutas de una copia, cubre también el nombre del archivo. La extensión, sin
+  // Un proceso exportado con la organización como sufijo del nombre: `<algo>__<org>.bpmn` o `.vdw`.
+  // Es un patrón de forma: la organización no tiene que estar en ninguna lista.
+  // Sobre la lista de rutas de una copia, cubre también el nombre del archivo. La extensión, sin
   // caja: un `.BPMN` es el mismo archivo.
   { nombre: 'nombre-con-sufijo-de-organizacion', categoria: 'cliente', regex: /[A-Za-z0-9]__[A-Za-z0-9][A-Za-z0-9-]*\.(?:bpmn|vdw)\b/gi },
   { nombre: 'ruta-de-maquina', categoria: 'ruta-de-maquina', regex: /\/(?:Users|home)\/[a-z][a-z0-9._-]*\/|\b[A-Z]:\\Users\\[A-Za-z][^\\\s]*\\/g },
   { nombre: 'email', categoria: 'email', regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/g },
-  // Una licencia ajena que no se puede redistribuir (story 8.5, AC 20): el aviso de copyright CON la reserva de todos los
+  // Una licencia ajena que no se puede redistribuir: el aviso de copyright CON la reserva de todos los
   // derechos en la misma línea, o el frontmatter de una skill propietaria. La frase suelta en prosa no alcanza. Escrito
   // con escapes para que este archivo, que sale en la copia, no se dispare a sí mismo.
   { nombre: 'foreign-license', categoria: 'foreign-license', regex: /^(?=.*(?:©|\bCopyright\b))(?=.*\bAll\s+rights\s+reserved\b).*$|^license:\s*Proprietary\b.*$/gi },
@@ -72,7 +70,7 @@ const PATRONES_GENERICOS = [
 const CATEGORIAS_ENMASCARADAS = new Set(['secreto']);
 // Lo que el patrón de email agarra y no es una persona: dominios de ejemplo (RFC 2606), usuarios
 // de servicio de git y el firmante automático de los commits, y nombres de imagen `icono@2x.png`.
-// Y las direcciones `noreply` de GitHub (story 8.26, tanda F1): `…@users.noreply.github.com` es la que GitHub le da a
+// Y las direcciones `noreply` de GitHub: `…@users.noreply.github.com` es la que GitHub le da a
 // una cuenta justamente para no publicar su correo —es con la que se firma en el repo público— y `noreply@github.com` es
 // el committer de todo merge hecho en GitHub. No son un correo de nadie; el nombre de la cuenta, si está en la lista, lo
 // sigue viendo su término.
@@ -113,22 +111,22 @@ function compilar(fuente, flags, donde) {
   }
 }
 
-// ── Variantes de un término (story 8.4, AC 30) ─────────────────────────────────────────────────────────────────
-// Un término que distingue mayúsculas (`SOL`, `Globex`) se escapaba en OTRA caja dentro de un identificador
-// (`tycon-prod-sol`, `/api/globex/…`): medido en la tanda B, la copia real salía con el detector en cero y ~700
+// ── Variantes de un término ─────────────────────────────────────────────────────────────────
+// Un término que distingue mayúsculas (`SOL`, `Globex`) se escaparía en OTRA caja dentro de un identificador
+// (`tycon-prod-sol`, `/api/globex/…`): el detector daría cero sobre una copia con cientos de
 // menciones de clientes. En prosa la palabra común no es un identificador («hay que tomar sol», «sol.» al final de
 // una oración, `globexImage`): sólo cuenta pegada a un separador de identificador o sola entre comillas. El exportador
 // arma sus reemplazos con estas mismas funciones: lo que el detector ve es exactamente lo que la tabla no alcanzó.
-// El borde izquierdo (story 8.10.1, pase adversarial C10): «no pegado a una letra o a un dígito», salvo que esa letra o
+// El borde izquierdo: «no pegado a una letra o a un dígito», salvo que esa letra o
 // ese dígito sea la cola de un escape (`\n`, `\t`, `\r` dentro de una cadena JSON o de un printf) o de un carácter
-// codificado para una URL (`%20`). Sin esto, un nombre justo después de un salto escapado no lo veía nadie.
+// codificado para una URL (`%20`). Sin esto, un nombre justo después de un salto escapado no lo vería nadie.
 const NO_ALNUM_ANTES = '(?:(?<![A-Za-z0-9])|(?<=\\\\[ntr])|(?<=%[0-9A-Fa-f]{2}))';
 const NO_ALNUM_DESPUES = '(?![A-Za-z0-9])';
 
 /** El término en cualquier caja, pegado a `-`, `_`, `/`, `\`, `@` o `.` (con letra o dígito del otro lado del punto) por
  *  algún lado, después de un `=` (el valor de una asignación: `engram_project=x`), o solo entre dos comillas iguales.
- *  Pegado a letras no: eso es otra palabra. (Story 8.10.2: la barra invertida de una ruta de Windows, y la arroba
- *  también a la derecha —la parte local de un email—; antes no se veían.) */
+ *  Pegado a letras no: eso es otra palabra. (Cubre la barra invertida de una ruta de Windows, y la arroba
+ *  también a la derecha —la parte local de un email—.) */
 function regexOtraCaja(patron) {
   return regexOtraCajaDe(escaparRegex(patron));
 }
@@ -156,11 +154,11 @@ function regexPartes(patron) {
 }
 const conSeparador = (texto) => /[-_ ]/.test(texto);
 
-// ── Formas partidas (story 8.10.1, segunda vuelta) ─────────────────────────────────────────────────────────────
-// La auditoría de la copia publicada y el pase adversarial mostraron que un término se esquivaba con un cambio mínimo:
+// ── Formas partidas ─────────────────────────────────────────────────────────────
+// Un término se esquiva con un cambio mínimo:
 // un guion donde había un espacio, una tilde, el singular, el host sin sus puntos, `%20`, unas comillas en el medio o
 // un corte de renglón. La lista no puede traer cada forma a mano: el detector las deriva de cada término.
-// (story 8.10.2) también la ñ y la ç: escritas en ASCII (`n`, `c`) son lo habitual en usuarios, emails e identificadores
+// También la ñ y la ç: escritas en ASCII (`n`, `c`) son lo habitual en usuarios, emails e identificadores
 const TILDES = { a: 'aá', e: 'eé', i: 'ií', o: 'oó', u: 'uúü', á: 'aá', é: 'eé', í: 'ií', ó: 'oó', ú: 'uúü', ü: 'uúü', n: 'nñ', ñ: 'nñ', c: 'cç', ç: 'cç' };
 // Un separador simple entre dos partes de un nombre, o ninguno. Un término de caja exacta no admite el espacio.
 const SEPARADOR = '(?:[-_ ./\\\\+]|%20)?';
@@ -203,7 +201,7 @@ function partesFlojas(patron) {
 /** El singular y el plural de la última parte: `Recibos` ve «Recibo»; `Sucursales`, «Sucursal»; una palabra entera que no
  *  termina en ese ve además su plural (`Zorb` → «Zorbs», «Zorbes»). Devuelve `{ base, cola }`: texto y regex. */
 function numeroDe(parte, palabra) {
-  // (story 8.10.2) la cola admite la `e` sola: `Deportes` ve «Deporte», no sólo «Deport»
+  // La cola admite la `e` sola: `Deportes` ve «Deporte», no sólo «Deport»
   if (/[A-Za-z]es$/i.test(parte) && parte.length > 4) return { base: parte.slice(0, -2), cola: '(?:[eE][sS]?|[sS])?' };
   if (/[A-Za-z]s$/i.test(parte) && parte.length > 3) return { base: parte.slice(0, -1), cola: '[sS]?' };
   if (palabra && /[A-Za-z]$/.test(parte)) return { base: parte, cola: '(?:[eE]?[sS])?' };
@@ -248,7 +246,7 @@ function aplanar(linea) {
 const APLANAR = [/\\?(["'])\s*\+\s*\\?\1/g, /\\?["'`]/g];
 
 /** Lo mismo para UN renglón, con el mapa de vuelta: `mapa[i]` es la posición en el renglón original del carácter `i`
- *  del texto aplanado (story 8.10.2: las pasadas que miran el texto aplanado comparan apariciones por posición, no por
+ *  del texto aplanado (las pasadas que miran el texto aplanado comparan apariciones por posición, no por
  *  cantidad). Las posiciones son las de JavaScript (unidades UTF-16), las mismas que dan los regex. */
 function aplanarConMapa(linea) {
   let texto = linea;
@@ -279,12 +277,12 @@ function variantesDe(t) {
   const sigla = t.palabra && t.mayusculas && /^[A-Za-z0-9]+$/.test(t.patron);
   const flojo = cuerpoFlojo(t);
   if (sigla) {
-    // en otra caja, pegada a un separador de identificador; desde la 8.10.1 también con su tilde y su plural (un alias
+    // en otra caja, pegada a un separador de identificador; también con su tilde y su plural (un alias
     // como `zorbs-mac`): el cuerpo flojo contiene al término tal cual
     v.push({ re: flojo ? regexOtraCajaDe(flojo) : regexOtraCaja(t.patron), nombre: '(otra caja, en un identificador)', vale: (x) => x !== t.patron });
     if (t.patron !== t.patron.toUpperCase()) v.push({ re: regexMayusculas(t.patron), nombre: '(en mayúsculas)', vale: () => true });
   }
-  // (story 8.10.1) un término de caja exacta no se parte en una frase: `QuickReview` no prohíbe «quick review»
+  // Un término de caja exacta no se parte en una frase: `QuickReview` no prohíbe «quick review»
   if (t.categoria === 'cliente' && partesDe(t.patron).length > 1 && !t.mayusculas) {
     v.push({ re: regexPartes(t.patron), nombre: '(separado en partes)', vale: conSeparador });
   }
@@ -293,7 +291,7 @@ function variantesDe(t) {
     const fuente = t.palabra ? `${NO_ALNUM_ANTES}${flojo}${NO_ALNUM_DESPUES}` : flojo;
     v.push({ re: new RegExp(fuente, t.mayusculas ? 'g' : 'gi'), nombre: '(otra forma)', vale: (x) => x !== t.patron });
     if (sigla) {
-      // en otra caja, como el valor entero de una clave (`project: zorb`), que en un YAML va sin comillas. (Story 8.10.2)
+      // en otra caja, como el valor entero de una clave (`project: zorb`), que en un YAML va sin comillas.
       // También con `=` y espacios (INI, TOML), entre llaves y con un comentario detrás.
       v.push({
         re: new RegExp(`^(\\s*(?:-\\s+|\\{\\s*)?["']?[\\w.-]+["']?\\s*[:=]\\s*["']?)(${flojo})(?=${CIERRE_DE_VALOR})`, 'i'),
@@ -309,7 +307,7 @@ function variantesDe(t) {
   return v;
 }
 
-// ── La sigla PEGADA a otra palabra (story 8.10.1, revisor de seguridad de la segunda vuelta) ───────────────────────
+// ── La sigla PEGADA a otra palabra ───────────────────────
 // Una sigla de palabra entera y caja exacta (`ZORB`) no se ve pegada a letras: ahí es otra palabra. Dos formas pegadas sí
 // nombran al mismo: con la inicial en mayúscula dentro de un CamelCase (`DeployZorbStaging`, el nombre de una etapa de
 // pipeline: salió así en una copia publicada) y en minúscula al principio o al final del valor de una clave que nombra
@@ -317,14 +315,14 @@ function variantesDe(t) {
 // están dentro de cientos de palabras del castellano. Una sigla que además es una palabra común las apaga con
 // `"glued": false` en su término. Lo que el exportador reemplaza no cambia: una forma de éstas en las fuentes es un
 // hallazgo, y se arregla en la fuente.
-// (story 8.10.2) La clave en cualquier caja (`ENGRAM_PROJECT=…`, `"Project": …`, `REPO=…`), con `export` adelante; el
+// La clave en cualquier caja (`ENGRAM_PROJECT=…`, `"Project": …`, `REPO=…`), con `export` adelante; el
 // resto del valor también con mayúsculas (`zorbForms`); y un comentario detrás del valor no lo esconde.
 const sinCaja = (s) => s.replace(/[a-z]/g, (c) => `[${c}${c.toUpperCase()}]`);
 const CLAVES_DE_PROYECTO = sinCaja('(?:project|engram_project|pin|repo|keychain)');
 // Lo que puede seguir al valor de una clave: su comilla, una coma, la llave o el corchete que cierra, y un comentario.
 const CIERRE_DE_VALOR = `["']?\\s*,?\\s*(?:[}\\]]\\s*,?\\s*)?(?:(?:#|//).*)?$`;
 
-/** (story 8.10.2) Si la posición cae dentro de una tira de base64 (un `integrity` de un lockfile, una imagen embebida):
+/** Si la posición cae dentro de una tira de base64 (un `integrity` de un lockfile, una imagen embebida):
  *  40 o más caracteres seguidos del alfabeto, con mayúsculas, minúsculas y al menos cuatro dígitos. Ahí una sigla
  *  pegada aparece por azar; en un identificador o en una ruta, que casi no traen dígitos, no. */
 function enTiraBase64(texto, index, largo) {
@@ -346,7 +344,7 @@ function variantesPegadas(patron) {
   // palabra. Y al principio de un nombre, seguida de otra palabra en CamelCase (`ZorbBackend`), sólo si el término NO
   // se escribe ya así: para `Globex`, `GlobexImage` es el prefijo que mira el control de nombres pegados del exportador,
   // y acá sigue sin ser un hallazgo (T32 de publishing-detector.test.js).
-  // (story 8.10.2) …y con la grafía del término tal cual, en mayúsculas (`DeployZORBStaging`, `PanelZORB`, `ZORBBackend`)
+  // …y con la grafía del término tal cual, en mayúsculas (`DeployZORBStaging`, `PanelZORB`, `ZORBBackend`)
   const enMedio = (x) => `(?<=[a-z0-9])${x}(?![a-z])`;
   const alPrincipio = (x) => `(?<![A-Za-z])${x}(?=[A-Z][a-z])`;
   const formas = [forma === patron ? enMedio(capitalizada) : `${enMedio(capitalizada)}|${alPrincipio(capitalizada)}`];
@@ -354,9 +352,9 @@ function variantesPegadas(patron) {
   // principio (`ZORBBackend`) ya la ve el control de nombres pegados del exportador, que mira el prefijo: acá contaría dos
   // veces, igual que `GlobexImage` (T32 de publishing-detector.test.js).
   if (patron === patron.toUpperCase() && patron !== forma) formas.push(`(?<=[a-z])${escaparRegex(patron)}(?![a-z])`);
-  // (story 8.10.3, tanda C) …y un término escrito en caja MIXTA (`ZetaRepo`, `ZETARepo`: el nombre de un repo), con su
+  // …y un término escrito en caja MIXTA (`ZetaRepo`, `ZETARepo`: el nombre de un repo), con su
   // grafía tal cual: `forma` lo aplana (`Zetarepo`) y esa no es su grafía, así que pegado después de otra palabra
-  // (`AcmeZETARepoBackEnd`, el nombre de un sitio; `DeployZetaRepoStaging`) no lo veía nadie. Al principio lo sigue
+  // (`AcmeZETARepoBackEnd`, el nombre de un sitio; `DeployZetaRepoStaging`) no lo vería nadie. Al principio lo sigue
   // mirando el control de nombres pegados del exportador; `myZetaRepository` es otra palabra.
   else if (patron !== forma && patron !== patron.toLowerCase()) formas.push(enMedio(escaparRegex(patron)));
   const fueraDeBase64 = (x, texto, index) => texto === undefined || !enTiraBase64(texto, index, x.length);
@@ -367,7 +365,7 @@ function variantesPegadas(patron) {
   ];
 }
 
-/** `text` (story 8.10): la lista ya leída —del índice de un commit, por ejemplo—; sin él, se lee `ruta` del disco. */
+/** `text`: la lista ya leída —del índice de un commit, por ejemplo—; sin él, se lee `ruta` del disco. */
 function cargarConfig(ruta, text) {
   if (!ruta) throw new ErrorDeConfig('falta --config: sin lista de denegación no hay contra qué mirar');
   let crudo = text;
@@ -392,8 +390,8 @@ function cargarConfig(ruta, text) {
     const fuente = t.palabra ? `${NO_ALNUM_ANTES}${cuerpo}${NO_ALNUM_DESPUES}` : cuerpo;
     // `pistas`: lo que un texto tiene que contener (sin caja) para que el término o alguna variante pueda aparecer. La
     // grafía, la otra caja y las mayúsculas contienen el término entero; el nombre separado en partes, cada parte. Un
-    // texto sin todas las partes no se recorre con esta regla (story 8.10: el freno revisa en cada commit). Desde la
-    // 8.10.1 se comparan sin tildes, sin la «s» del plural y contra el texto aplanado: una forma con tilde, en singular
+    // texto sin todas las partes no se recorre con esta regla (el freno revisa en cada commit). Se
+    // comparan sin tildes, sin la «s» del plural y contra el texto aplanado: una forma con tilde, en singular
     // o partida con comillas trae las mismas letras.
     const pistas = pistasDe(t);
     return { nombre: t.patron, categoria: t.categoria, regex: compilar(fuente, t.mayusculas ? 'g' : 'gi', donde), variantes: variantesDe(t), pistas, unaParte: pistas.length < 2, deLista: true };
@@ -401,10 +399,10 @@ function cargarConfig(ruta, text) {
   const patrones = (cfg.patrones || []).map((p, i) => {
     const donde = `patrones[${i}]`;
     if (!p || !p.nombre || !p.regex || !p.categoria) throw new ErrorDeConfig(`${donde}: necesita "nombre", "categoria" y "regex"`);
-    // `pistas` (opcional, story 8.10.1): las letras que una línea tiene que traer para que el patrón pueda aparecer
+    // `pistas` (opcional): las letras que una línea tiene que traer para que el patrón pueda aparecer
     // (`database.windows.net`). Se comparan sin caja y sin tildes, contra la línea aplanada. Sin pistas el patrón recorre
     // todas las líneas, y uno que empieza con una clase repetida (`[a-z0-9-]+…`) es cuadrático en una línea larga:
-    // medido, tres patrones así se llevaban 75 de los 76 segundos de una copia de 863 archivos.
+    // tres patrones así pueden llevarse casi todo el tiempo de una copia grande.
     if (p.pistas !== undefined && (!Array.isArray(p.pistas) || p.pistas.some((x) => typeof x !== 'string' || !x.trim()))) {
       throw new ErrorDeConfig(`${donde} (${p.nombre}): "pistas" es una lista de textos`);
     }
@@ -435,11 +433,11 @@ function cargarConfig(ruta, text) {
 }
 
 // ── Archivos a mirar ─────────────────────────────────────────────────────────────────────────
-// (story 8.10.2, pase adversarial) Un enlace simbólico no es ni archivo ni carpeta para `readdirSync`: se salteaba en
-// silencio, y con un nombre prohibido en lo apuntado el detector decía «limpio». Ahora se mira lo que apunta (cada carpeta
+// Un enlace simbólico no es ni archivo ni carpeta para `readdirSync`: se saltearía en
+// silencio, y con un nombre prohibido en lo apuntado el detector diría «limpio». Se mira lo que apunta (cada carpeta
 // una vez, aunque el enlace dé la vuelta), y un enlace roto es un «no pude mirar».
 function recorrer(dir, out, vistas = new Set([fs.realpathSync(dir)])) {
-  // (story 8.10.2) en orden de nombre: el del sistema de archivos cambia entre la Mac, Windows y Linux
+  // En orden de nombre: el del sistema de archivos cambia entre la Mac, Windows y Linux
   const entradas = fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   for (const e of entradas) {
     if (SALTEAR_CARPETAS.has(e.name)) continue;
@@ -524,13 +522,13 @@ function revisarArchivo(cfg, abs, rel) {
   return reviewText(cfg, buf.toString('utf8'), rel);
 }
 
-/** Un texto en memoria, con las mismas reglas que un archivo (story 8.10: el freno mira el índice, no el disco).
+/** Un texto en memoria, con las mismas reglas que un archivo (el freno mira el índice, no el disco).
  *  `opciones.categorias` (un Set) limita las reglas a esas categorías: el freno sólo busca nombres. */
 function reviewText(cfg, text, rel, opciones = {}) {
   const hallazgos = [];
   let permitidosN = 0;
   const lineas = text.split(/\r?\n/);
-  // (story 8.10.1) las letras del texto, para las pistas: sin caja, sin tildes, y sin lo que parte un nombre (las
+  // Las letras del texto, para las pistas: sin caja, sin tildes, y sin lo que parte un nombre (las
   // comillas, la concatenación, la barra que sigue en el renglón de abajo)
   const letras = sinTildes(aplanar(text.replace(/\\\r?\n[ \t]*/g, ''))).toLowerCase();
   const reglas = cfg.reglas.filter((r) => (!opciones.categorias || opciones.categorias.has(r.categoria))
@@ -565,18 +563,18 @@ function reviewText(cfg, text, rel, opciones = {}) {
     }
     // Una sigla «pegada» que cae ADENTRO de otro nombre de la lista no es un hallazgo aparte: con `ACME` y `AcmeCorp` en la
     // lista, el `Acme` de `AcmeCorp` es ese otro nombre, no la sigla pegada a una palabra cualquiera. Sin esto cada
-    // aparición contaba dos veces y una excepción que permite el nombre entero en un archivo dejaba de alcanzar (lo cazó
-    // mirror.test.js: tres casos en rojo). Sólo otro nombre de LA LISTA (story 8.10.2): un email que la contiene no, porque si
-    // después se descarta por inofensivo, el nombre no quedaba en ningún hallazgo.
+    // aparición contaría dos veces y una excepción que permite el nombre entero en un archivo dejaría de alcanzar.
+    // Sólo otro nombre de LA LISTA: un email que la contiene no, porque si
+    // después se descarta por inofensivo, el nombre no quedaría en ningún hallazgo.
     const cubierta = (r, ap) => /^\(pegada /.test(ap.variante || '') && typeof ap.index === 'number'
       && todas.some(([r2, ap2]) => r2 !== r && r2.deLista && typeof ap2.index === 'number' && ap2.texto.length > ap.texto.length
         && ap2.index <= ap.index && ap2.index + ap2.texto.length >= ap.index + ap.texto.length);
     for (const [r, ap] of todas) if (!cubierta(r, ap)) anotar(r, ap, i + 1, '');
-    // (story 8.10.1) Lo mismo sobre la línea aplanada, sólo para los términos y patrones de la lista: un nombre partido
+    // Lo mismo sobre la línea aplanada, sólo para los términos y patrones de la lista: un nombre partido
     // con comillas (`"acme"corp`, `'acme' + 'corp'`) es el mismo nombre. Cuenta lo que la línea tal cual no mostró.
-    // (story 8.10.2) Nueva es la aparición que empieza donde la línea tal cual no mostró ninguna: contar por cantidad
-    // dejaba que una aparición que aplanar borra (una sigla entre comillas que sin ellas queda como prosa) compensara una
-    // forma partida nueva, y ésta no se anotaba.
+    // Nueva es la aparición que empieza donde la línea tal cual no mostró ninguna: contar por cantidad
+    // dejaría que una aparición que aplanar borra (una sigla entre comillas que sin ellas queda como prosa) compensara una
+    // forma partida nueva, y ésta no se anotaría.
     const plana = aplanar(linea);
     let mapa = null;   // el mapa de vuelta, sólo si hay algo que ubicar
     if (plana !== linea) {
@@ -594,7 +592,7 @@ function reviewText(cfg, text, rel, opciones = {}) {
         }
       }
     }
-    // (story 8.10.1) …y sobre la unión con el renglón siguiente: la prosa de las guías va cortada a ancho fijo y un
+    // …y sobre la unión con el renglón siguiente: la prosa de las guías va cortada a ancho fijo y un
     // comando sigue abajo con una barra. Cuenta sólo lo que cruza el corte: lo demás ya lo vio cada renglón.
     if (i + 1 < lineas.length && deLista.length) {
       const sigue = /\\\s*$/.test(linea);
@@ -611,7 +609,7 @@ function reviewText(cfg, text, rel, opciones = {}) {
         for (const r of deLista) {
           // un término de una sola parte sólo puede cruzar el corte si el renglón sigue con una barra
           if (!puede(r, letrasUnion) || (!sigue && r.unaParte)) continue;
-          // (story 8.10.2) una aparición que el renglón solo ya informó, y que la continuación sólo alarga (la cola del
+          // Una aparición que el renglón solo ya informó, y que la continuación sólo alarga (la cola del
           // plural), no se cuenta otra vez
           const yaInformadas = new Set((enLaLinea.get(r) || []).map((ap) => ap.index));
           for (const ap of apariciones(r, union)) {
@@ -631,7 +629,7 @@ function reviewText(cfg, text, rel, opciones = {}) {
 
 const CORTE_DE_RENGLON = 200;
 
-/** Las apariciones de una regla en un texto: la grafía del término y sus variantes (AC 30 de la 8.4). Una aparición
+/** Las apariciones de una regla en un texto: la grafía del término y sus variantes. Una aparición
  *  cuenta una vez, aunque la vean dos: `[{ index, texto, variante }]`. */
 function apariciones(r, texto) {
   const out = [];
@@ -700,7 +698,7 @@ function parsear(argv) {
   return a;
 }
 
-/** Las entradas de un conteo de mayor a menor y, en empate, por nombre (story 8.10.2: un objeto pone primero las claves
+/** Las entradas de un conteo de mayor a menor y, en empate, por nombre (un objeto pone primero las claves
  *  con forma de número, así que el orden no puede salir del objeto). */
 function porCantidad(conteo) {
   return Object.entries(conteo).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
@@ -730,8 +728,8 @@ function main() {
   try {
     args = parsear(process.argv.slice(2));
     const r = detectar(args);
-    // (story 8.10.1, pase adversarial C8) El código de salida se DEJA puesto y el proceso termina solo: con
-    // `process.exit()` enseguida, un informe largo por un pipe llegaba cortado (65.536 bytes, u 8.192 por `spawnSync`)
+    // El código de salida se DEJA puesto y el proceso termina solo: con
+    // `process.exit()` enseguida, un informe largo por un pipe llega cortado (65.536 bytes, u 8.192 por `spawnSync`)
     // y sin aviso.
     process.exitCode = r.hallazgos.length === 0 ? 0 : 1;
     process.stdout.write(`${args.json ? JSON.stringify(r, null, 2) : informe(r, args.detalle)}\n`);
@@ -745,12 +743,12 @@ function main() {
 }
 
 if (require.main === module) {
-  // story 8.9: las opciones viejas en castellano siguen andando hasta el retiro
+  // Las opciones viejas en castellano siguen andando hasta el retiro
   require('../lib/legacy-names.js').aliasArgv('scripts/publishing/detector.js', { exitCode: 2, prefix: '⛔ detector: no pude mirar — ' });
   main();
 }
 
-// `esBinario` se exporta para el exportador (8.4): decide texto o binario con esta MISMA regla, nunca por extensión.
+// `esBinario` se exporta para el exportador: decide texto o binario con esta MISMA regla, nunca por extensión.
 module.exports = {
   detectar, cargarConfig, globARegex, esBinario, ErrorDeConfig, PATRONES_GENERICOS,
   regexOtraCaja, regexMayusculas, regexPartes, partesDe, conSeparador,

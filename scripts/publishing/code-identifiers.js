@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 'use strict';
 // code-identifiers.js — ¿sale en una copia un identificador de código de la lista de denegación, con CUALQUIER grafía?
-// (épica 8, story 8.10.3, tanda D · 2026-10-08)
 //
-// POR QUÉ EXISTE: los ejemplos del arnés citaban componentes, hooks, servicios, stories y archivos del código de
-// productos. Se reinventaron, y cada identificador real quedó en la lista de denegación como término de CAJA EXACTA (sin
+// POR QUÉ EXISTE: los ejemplos del arnés no pueden citar componentes, hooks, servicios, stories ni archivos del código de
+// productos: los identificadores reales están en la lista de denegación como término de CAJA EXACTA (sin
 // caja marcaría prosa común: `ZetaPanel` no es «the zeta panel»). El detector, entonces, ve la grafía exacta; la
 // misma cosa escrita `zeta-panel`, `ZETA_PANEL` o pegada a otra palabra (`abrirZetaPanel`) se le pasa.
-// Este buscador mira eso: cada NOMBRE de la copia, aplanado. Lo llama `scripts/tests/export-real.test.sh` (bloque
-// «8.10.3 D») sobre la copia pública de verdad; su lógica la prueba `scripts/tests/code-identifiers.test.js`.
+// Este buscador mira eso: cada NOMBRE de la copia, aplanado. Lo llama `scripts/tests/export-real.test.sh`
+// sobre la copia pública de verdad; su lógica la prueba `scripts/tests/code-identifiers.test.js`.
 //
 // QUÉ ES UN IDENTIFICADOR DE CÓDIGO de la lista: un término `interno`, de caja exacta (`mayusculas`), que vale también
 // pegado a otra palabra (sin `palabra`), escrito sólo con letras, números, guiones, puntos y guiones bajos, con dos

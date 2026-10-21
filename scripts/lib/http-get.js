@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 'use strict';
-// http-get.js — el cliente HTTP del mecanismo de instalación: GET con proxy, tope y redirecciones (story 8.23, tanda B).
+// http-get.js — el cliente HTTP del mecanismo de instalación: GET con proxy, tope y redirecciones.
 //
-// ── POR QUÉ UNO PROPIO (revisión I6, 2026-10-07) ─────────────────────────────────────────────────────────────────
+// ── POR QUÉ UNO PROPIO ─────────────────────────────────────────────────────────────────────────────────────────
 // Instalar sin git baja de GitHub por HTTPS. Node 20 (el piso del arnés) no honra `HTTPS_PROXY`/`NO_PROXY` en `fetch`,
 // y las máquinas del equipo pueden estar detrás de un proxy. Además la bajada del comprimido redirige a OTRO host
 // (codeload.github.com) con una llave temporal en la URL: la credencial no puede seguir a ese host.
@@ -22,7 +22,7 @@
 //   · `getSync(url, opts)` corre el pedido en un proceso hijo —harness.js es síncrono— y le pasa el pedido POR STDIN:
 //     ninguna cabecera (la credencial) va en la línea de comandos. Devuelve `{ ok, status, headers, body, url }` o
 //     `{ ok: false, kind, code, message }`, nunca tira.
-//   · `TYCON_HTTP_TRACE=<archivo>` (sólo pruebas, story 8.34): cada pedido —también cada salto de una redirección— agrega
+//   · `TYCON_HTTP_TRACE=<archivo>` (sólo pruebas): cada pedido —también cada salto de una redirección— agrega
 //     una línea JSON con el origen, la ruta (los VALORES de la consulta tapados: la llave temporal de codeload no se
 //     escribe) y si llevó `Authorization` (sí o no, nunca el valor). Así una prueba cuenta los pedidos a cada host, también
 //     contra el GitHub real (el ensayo de Windows).
@@ -68,7 +68,7 @@ const proxyAuth = (p) => (p.username ? { 'Proxy-Authorization': `Basic ${Buffer.
 const classifyNet = (e) => (e && NETWORK_CODES.has(e.code) ? 'network' : (e && /CERT|TLS|SSL|certificate/i.test(e.code || e.message) ? 'tls' : 'network'));
 
 // un proxy declarado `https://` se habla por TLS y, sin puerto, en el 443 (como curl); `http://` (o sin esquema), en claro
-// y en el 80 (pase adversarial de la 8.40, clase 9)
+// y en el 80
 const proxyIsTls = (p) => p.protocol === 'https:';
 const proxyPort = (p) => p.port || (proxyIsTls(p) ? 443 : 80);
 /** Las opciones de la conexión AL proxy: con TLS, su nombre (SNI salvo una IP) y las opciones TLS de quien llama. */
@@ -204,8 +204,8 @@ if (require.main === module) {
 
 /**
  * ¿Este fallo es del RELOJ de quien llama y no de la red? Un cliente con tope total (`deadlineAt`) que hace varios pedidos le
- * deja al último lo que sobra: si eso era casi nada, «no contestó en 118 ms» no dice nada de la red (2026-10-09: la capa de
- * 115 archivos bajada de a uno con el reloj de mirar salía como «sin red»). Es del reloj cuando el pedido ni llegó a salir
+ * deja al último lo que sobra: si eso es casi nada, «no contestó en 118 ms» no dice nada de la red (una capa de
+ * 115 archivos bajada de a uno con el reloj de mirar saldría como «sin red»). Es del reloj cuando el pedido ni llegó a salir
  * (`leftMs` ≤ 0), o cuando el servidor ya venía contestando (`answered` > 0) y a éste le quedaba menos que una espera justa.
  * Un servidor que nunca contestó, con todo el tope para él, sigue siendo «sin red».
  */

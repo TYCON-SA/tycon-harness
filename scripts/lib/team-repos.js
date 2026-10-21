@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 'use strict';
-// team-repos.js — dónde vive cada repo del arnés de una organización (story 8.26, tanda J · 2026-10-13).
+// team-repos.js — dónde vive cada repo del arnés de una organización.
 //
-// POR QUÉ EXISTE: el nombre de cada repo del arnés estaba escrito a mano en lugares distintos —el del público en una
-// lista del repo de mantenimiento, el del perfil y el de mantenimiento al lado, las copias del arnés en una variable de
-// una definición de Azure, el repo privado de las validaciones en otra—, y una organización nueva no tenía dónde
-// decir los suyos. `team-repos.json`, en la raíz del perfil del equipo, los declara a todos en un solo lugar. Lo leen el
+// POR QUÉ EXISTE: el nombre de cada repo del arnés no se escribe a mano en lugares distintos —ni en una lista
+// del repo de mantenimiento, ni en variables de las definiciones de Azure—: una organización necesita un solo lugar
+// donde decir los suyos. `team-repos.json`, en la raíz del perfil del equipo, los declara a todos. Lo leen el
 // instalador, los avisos de arranque y los pipelines de operaciones; nadie más escribe un nombre de repo.
 //
 // LA FORMA (versión 1):
@@ -16,21 +15,21 @@
 //     "maintainers": <repo>,            opcional — el de mantenimiento, sólo para quien mantiene el arnés
 //     "harness_copies": [<repo>, …] }   opcional — los repos de la organización que son copias del arnés: las métricas
 //                                       de la noche no los miden, salvo el de `maintainers` si está en la lista
-//     "merge_suites": {                 opcional (story 7.28) — dónde corren las suites completas al mergear cada repo
+//     "merge_suites": {                 opcional — dónde corren las suites completas al mergear cada repo
 //       "default"?: <regla>,            la de la organización; sin ella, «automatico»
 //       "repos"?: [ { "repo": <repo>, "rule"?: <regla>, "full_tests_pipeline"?: <texto> | <entero ≥ 1, sólo Azure> } ] }
 //                                       cada entrada trae al menos `rule` o `full_tests_pipeline`; un repo, una vez
 //   <regla> = «automatico» | «siempre-en-la-maquina» | «confiar-en-el-servidor» (MERGE_RULES; las decidió el dueño así).
 //   `full_tests_pipeline` es «el pipeline de pruebas completas» del repo: en Azure, por nombre o por id; en GitHub, el
 //   nombre del control obligatorio. Lo usa el skill de merge (scripts/tools/merge-pr.js); sin la clave, el skill lee
-//   `merge.mode` del repo como antes. La clave es opcional: no sube la versión del archivo.
-//     "models": {                       opcional (story 7.29) — el modelo de cada trabajo del pipeline
+//   `merge.mode` del repo. La clave es opcional: no sube la versión del archivo.
+//     "models": {                       opcional — el modelo de cada trabajo del pipeline
 //       "mandatory_ceiling"?: <bool>, "ceiling"?: <modelo>,   techo obligatorio (paga la organización): van juntos
 //       "reviewers"?: <modelo>, "reviewer"?: { "<revisor>": <modelo> }, "reviewers_reloop"?: <modelo>,
 //       "adversarial"?: { "model"?, "heavy"?: <modelo>, "fable_question"?: «ask» | «never» }, "helpers"?: <modelo>,
 //       "session"?: { "low"?, "normal"?, "heavy"?: <modelo> } }
-//   <modelo> = un nivel, «economy» | «balanced» | «strong» | «max» (MODEL_LEVELS), o el nombre de
-//   antes, «haiku» | «sonnet» | «opus» | «fable» (MODEL_NAMES), en el mismo orden; copias de models.js del skill. Quien la resuelve
+//   <modelo> = un nivel, «economy» | «balanced» | «strong» | «max» (MODEL_LEVELS), o el nombre del
+//   modelo, «haiku» | «sonnet» | «opus» | «fable» (MODEL_NAMES), en el mismo orden; copias de models.js del skill. Quien la resuelve
 //   es skills/tycon-pipeline/scripts/lib/models.js (`readOrgModels`, el único que la lee).
 //     "weekly_review": {                opcional — la revisión de la semana (scripts/nightly/weekly-review/)
 //       "enabled"?: <bool>, "budget_usd"?: <número, más de 0 y hasta 100>, "max_chars"?: <entero, 10.000 a 2.000.000> }
@@ -43,14 +42,13 @@
 //
 // EL CONTRATO: `parse(text)` → `{ ok, data, problems }`. Cada problema es `{ path, message }`, con la ruta de la clave
 // en puntos e índices (`operations.project`, `harness_copies.1.repo`; `''` para el archivo entero). Con un problema,
-// `data` es `null`: nunca hay datos a medias. Excepción (story 7.29, decisión 13): un problema DENTRO de `models` no
+// `data` es `null`: nunca hay datos a medias. Excepción: un problema DENTRO de `models` no
 // anula el archivo —un modelo mal escrito dejaría a todas las máquinas sin la capa—; sale aparte, en
-// `sectionProblems.models`, `ok` no cambia por eso y `data` viene sin `models` (se usan los valores de hoy). `load(file)` suma `couldNotRead: true` cuando el archivo no se pudo leer:
+// `sectionProblems.models`, `ok` no cambia por eso y `data` viene sin `models` (se usan los valores por defecto). `load(file)` suma `couldNotRead: true` cuando el archivo no se pudo leer:
 // «no pude leer» nunca es «no hay repo».
 //
-// LAS COPIAS DEL ARNÉS, PARA LAS MÉTRICAS (DEF-8.30-copias-del-arnes-en-team-repos · 2026-10-14, decisión del dueño):
-// antes las declaraba una variable de cada definición (`HARNESS_COPIES`, y `HARNESS_MEASURED_COPY` la que cuenta); ahora
-// las declara este archivo, como el resto de los repos: un lugar menos que configurar. `harnessCopies(data, platform)`
+// LAS COPIAS DEL ARNÉS, PARA LAS MÉTRICAS: las declara este archivo, como el resto de los repos, y no una variable de
+// cada definición: un lugar menos que configurar. `harnessCopies(data, platform)`
 // las da con la que se mide marcada: la de mantenimiento, si está en la lista —es donde se escriben las stories del
 // arnés—; las demás se saltean, así sus stories no cuentan dos veces. Sin clave nueva: la que cuenta ya está declarada.
 //
@@ -73,7 +71,7 @@ const WEEKLY_REVIEW_KEYS = ['enabled', 'budget_usd', 'max_chars'];
 const WEEKLY_REVIEW_DEFAULTS = Object.freeze({ enabled: true, budget_usd: 5, max_chars: 600000 });
 const WEEKLY_REVIEW_MAX_USD = 100;
 const WEEKLY_REVIEW_CHARS = [10000, 2000000];
-// El plazo del aviso de espera (story 7.20, AC 14): minutos enteros de 1 a 120. Lo lee scripts/hooks/wait-notice.js.
+// El plazo del aviso de espera: minutos enteros de 1 a 120. Lo lee scripts/hooks/wait-notice.js.
 const WAIT_NOTICE_KEYS = ['minutes'];
 const WAIT_NOTICE_MAX = 120;
 // El umbral de cobertura de las líneas tocadas: un entero de 1 a 100. Lo lee
@@ -123,7 +121,7 @@ function runnersProblems(value) {
   });
   return out;
 }
-// Copia de `MODELS` de skills/tycon-pipeline/scripts/lib/models.js, en su orden (story 7.29, decisión 12): este lector
+// Copia de `MODELS` de skills/tycon-pipeline/scripts/lib/models.js, en su orden: este lector
 // no puede cargar el skill —lo valida el instalador con el lector del árbol que va a quedar— y T21 compara las dos.
 const MODEL_NAMES = ['haiku', 'sonnet', 'opus', 'fable'];
 // Copia de `LEVELS` de models.js: lo que escribe la organización, en el mismo orden que MODEL_NAMES. Los nombres de
@@ -150,7 +148,7 @@ const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x)
 // `comment`: la clave de un dato (un revisor) que es un comentario; `fieldComment`: la de un objeto de campos fijos,
 // donde un nombre con «_» no puede ser un campo (`_comment`, `_lea_esto_primero`). Un comentario es texto: un «_» con
 // forma de secreto, o que guarda un objeto, se revisa como cualquier otra clave. «__» sigue siendo comentario con
-// cualquier valor, como antes.
+// cualquier valor.
 const comment = (k) => k.startsWith('__');
 const COMMENT_SECRET = /token|secret|sas|password|passwd|pwd|key|credential/i;
 const fieldComment = (k, v) => comment(k) || (k.startsWith('_') && !COMMENT_SECRET.test(k) && (typeof v === 'string' || (Array.isArray(v) && v.every((s) => typeof s === 'string'))));
@@ -244,7 +242,7 @@ function mergeSuitesFor(data, identity) {
 
 const modelProblem = (v, at) => (modelRank(v) >= 0 ? [] : [{ path: at, message: `tiene que ser ${MODEL_LEVELS.map((m) => `«${m}»`).join(', ')} (es ${JSON.stringify(v)})` }]);
 
-/** Los problemas de `models` (story 7.29); `[]` si está bien. Cada uno con la ruta de su clave. */
+/** Los problemas de `models`; `[]` si está bien. Cada uno con la ruta de su clave. */
 function modelsProblems(value) {
   if (!isObject(value)) return [{ path: 'models', message: 'tiene que ser un objeto (los modelos de cada trabajo del pipeline)' }];
   const out = [];
@@ -273,7 +271,7 @@ function modelsProblems(value) {
       }
     } else out.push(...modelProblem(v, at));
   }
-  // el techo es un solo modelo y vale sólo con mandatory_ceiling: true (decisión 15): uno sin el otro es un problema
+  // el techo es un solo modelo y vale sólo con mandatory_ceiling: true: uno sin el otro es un problema
   if (value.ceiling !== undefined && value.mandatory_ceiling !== true) out.push({ path: 'models.ceiling', message: 'un techo sin «mandatory_ceiling: true» no limita nada' });
   if (value.mandatory_ceiling === true && value.ceiling === undefined) out.push({ path: 'models.mandatory_ceiling', message: 'con techo obligatorio falta «ceiling»' });
   return out;
@@ -326,7 +324,7 @@ function suitesWithRule(rule) {
   return null;
 }
 
-/** Los problemas de `wait_notice` (story 7.20); `[]` si está bien. */
+/** Los problemas de `wait_notice`; `[]` si está bien. */
 function waitNoticeProblems(value) {
   if (!isObject(value)) return [{ path: 'wait_notice', message: 'tiene que ser un objeto (el plazo del aviso de espera)' }];
   const out = [];
@@ -480,9 +478,9 @@ function parse(text) {
     return { ok: false, data: null, problems: [{ path: '', message: `no es JSON válido: ${String((e && e.message) || e).split('\n')[0]}` }] };
   }
   const problems = validate(doc);
-  // un problema dentro de `models` no invalida el archivo (story 7.29, decisión 13): va aparte y `data` sale sin `models`
+  // un problema dentro de `models` no invalida el archivo: va aparte y `data` sale sin `models`
   const sectionModels = isObject(doc) && doc.models !== undefined ? modelsProblems(doc.models) : [];
-  // lo mismo con `wait_notice` (story 7.20): un plazo mal escrito no deja a todas las máquinas sin el archivo
+  // lo mismo con `wait_notice`: un plazo mal escrito no deja a todas las máquinas sin el archivo
   const sectionWait = isObject(doc) && doc.wait_notice !== undefined ? waitNoticeProblems(doc.wait_notice) : [];
   // y con `coverage`: un umbral mal escrito cae al valor por defecto, no deja sin el archivo
   const sectionCoverage = isObject(doc) && doc.coverage !== undefined ? coverageProblems(doc.coverage) : [];

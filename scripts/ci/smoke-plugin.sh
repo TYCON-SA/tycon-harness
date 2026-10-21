@@ -20,21 +20,20 @@
 # =============================================================================
 set -uo pipefail
 URL="${1:?url}"; USUARIO="${2:?usuario}"; CLAVE="${3:?clave}"; PLUGIN="${4:?nombre del plugin}"; ESPERADA="${5:?versión esperada}"
-# 🔴 EL IDENTIFICADOR DE COMPILACIÓN, OPCIONAL (2026-09-03). La versión sola no dice que lo instalado
+# 🔴 EL IDENTIFICADOR DE COMPILACIÓN, OPCIONAL. La versión sola no dice que lo instalado
 # sea ESTE build: se re-empaqueta y se sube sin tocar el número, y el humo lo aprueba igual. Es el
 # mismo agujero que el humo de formularios tenía comparando versión contra versión.
 # Se pasa el hash corto que este run empaquetó; si el host lo devuelve y NO coincide, es rojo.
-# Si el host no lo devuelve, AVISA y no frena: los otros plugins pueden todavía no reportarlo
-# (Ceibo recién lo arregló hoy). Se mide primero y se aprieta después, como se hizo con el peso.
+# Si el host no lo devuelve, AVISA y no frena: hay plugins que todavía pueden no reportarlo.
 ESPERADO_HASH="${6:-}"
 
 # >>> nombre-seguro — SEC-C1. Este bloque es byte a byte el mismo en smoke-plugin.sh y smoke-forms.sh (lo verifica smoke.test.sh)
-# 🔴 UN NOMBRE NO SE METE CRUDO EN UNA CONSULTA AL HOST NI EN UN MENSAJE (2026-09-17). El nombre del
+# 🔴 UN NOMBRE NO SE METE CRUDO EN UNA CONSULTA AL HOST NI EN UN MENSAJE. El nombre del
 # plugin sale del plugin.json del ZIP y el de cada formulario del manifest.json del ZIP: es texto del
-# PAQUETE. Iba tal cual a la URL (`../` cambia la ruta, `?` le agrega parámetros) y a cada línea de
-# salida, donde Azure interpreta `##vso[` esté donde esté. Desde el 03-09 y hasta hoy el humo aprobaba
-# igual. Un nombre que no pasa NO se consulta: el humo sale rojo y lo dice — no verificar nunca es verde.
-# El juego acepta los 9 plugins y los 65 formularios publicados (tasks/medicion-nombres-humo-2026-09-17.md).
+# PAQUETE. Tal cual en la URL (`../` cambia la ruta, `?` le agrega parámetros) o en cada línea de
+# salida (donde Azure interpreta `##vso[` esté donde esté), un nombre armado a propósito se aprobaría igual.
+# Un nombre que no pasa NO se consulta: el humo sale rojo y lo dice — no verificar nunca es verde.
+# El juego acepta todos los nombres de plugins y formularios publicados.
 # Va copiado en los dos humos y no en un tercer archivo a propósito: el artefacto puede llegar incompleto
 # y eso no puede ser un modo nuevo de tumbar un despliegue.
 REGLA_NOMBRE="empieza con letra o dígito, usa sólo letras, dígitos, '.', '_' y '-', no contiene '..' y tiene hasta 100 caracteres"
@@ -47,11 +46,10 @@ nombre_seguro() { # se compara la cadena ENTERA ([[ =~ ]]), no línea por línea
 nombre_visible() { printf '%s' "$1" | LC_ALL=C tr -c 'A-Za-z0-9._-' '?' | cut -c1-60; }
 # segunda barrera: aunque el juego se amplíe, a la URL va codificado (hoy no cambia nada: son caracteres no reservados)
 en_url() { jq -rn --arg s "$1" '$s|@uri' 2>/dev/null; }
-# 🔴 LO DEMÁS QUE TRAE EL PAQUETE TAMBIÉN SE VALIDA, Y LO QUE DICE EL HOST SE MUESTRA SANEADO (segunda parte,
-# mismo día). La versión y el identificador de compilación salen del mismo plugin.json / manifest.json que el
-# nombre e iban a las mismas líneas de salida. Las 74 versiones publicadas hoy son N.N.N; la forma admitida es
-# la que ya exige el registro de despliegues (story 2.10, AC 7), así un humo verde nunca deja una versión que
-# el registro después rechaza.
+# 🔴 LO DEMÁS QUE TRAE EL PAQUETE TAMBIÉN SE VALIDA, Y LO QUE DICE EL HOST SE MUESTRA SANEADO. La versión y el
+# identificador de compilación salen del mismo plugin.json / manifest.json que el nombre e iban a las mismas
+# líneas de salida. Las versiones publicadas son N.N.N; la forma admitida es la que ya exige el registro de
+# despliegues, así un humo verde nunca deja una versión que el registro después rechaza.
 REGLA_VERSION="tiene forma de versión: tres números separados por puntos (1.0.214), con un sufijo opcional de letras, dígitos y puntos detrás de '-' o '.', hasta 60 caracteres"
 version_segura() {
   local LC_ALL=C re='^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.]+)?$'
@@ -79,7 +77,7 @@ fi
 PLUGIN_URL=$(en_url "$PLUGIN") || PLUGIN_URL=""
 [ -n "$PLUGIN_URL" ] || { echo "##vso[task.logissue type=error][humo] no pude codificar el nombre del plugin para la consulta (¿falta jq?) — NO se consultó al host, así que no está verificado"; exit 1; }
 
-# 🔴 EL REGISTRO DE DESPLIEGUES (story 2.10). Un humo aprobado, dentro de una corrida de Azure, deja
+# 🔴 EL REGISTRO DE DESPLIEGUES. Un humo aprobado, dentro de una corrida de Azure, deja
 # una línea `[registro-despliegue]` y sus etiquetas (contrato en deploy-record.sh). Anotar nunca
 # cambia el veredicto: si el ayudante no llegó con el artefacto, se avisa y el humo sale igual.
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -102,10 +100,8 @@ login() {
       "${URL}/api/auth/login" -H 'Content-Type: application/json' --data-raw "$body" 2>/dev/null) || code="000"
     [ "$code" = "200" ] && break
     # 🔴 El host devuelve su límite de ingresos como 401 con {"error":"Too Many Requests"}, no
-    # como 429 (medido: el frontend de un producto del equipo, main, 2026-09-01 —
-    # guides/maintaining/incident-log.md#case-host-login-rate-limit-2026-09-01 —; el humo era el 6º login del mismo job y el
-    # host lo cortó). Ese 401 es transitorio y se reintenta con espera larga; un 401 sin ese
-    # texto es clave mal y no se reintenta.
+    # como 429 (el humo puede ser uno de varios logins seguidos del mismo job y el host lo corta). Ese 401 es
+    # transitorio y se reintenta con espera larga; un 401 sin ese texto es clave mal y no se reintenta.
     if [ "$code" = "401" ] && grep -qi "too many requests" "$respuesta" 2>/dev/null; then code="429"; fi
     case "$code" in 000|429|5??) [ "$intento" -lt 4 ] && { echo "[humo] login HTTP $code (intento $intento) — reintento en $((intento*15))s" >&2; sleep $((intento*15)); } ;; *) break ;; esac
   done
@@ -130,10 +126,9 @@ for intento in 1 2 3; do
     | if . == null then "AUSENTE" else "\(.version)|\(.isActive)|\(.isDefault)" end' 2>/dev/null) || ESTADO="ILEGIBLE"
   [ -z "$ESTADO" ] && ESTADO="ILEGIBLE"
   VER="${ESTADO%%|*}"; RESTO="${ESTADO#*|}"; ACTIVO="${RESTO%%|*}"; DEFAULT="${RESTO#*|}"
-  # 🔴 `isActive` NO significa "cargado" (medido 2026-09-02 leyendo el host): esa bandera la pone
+  # 🔴 `isActive` NO significa "cargado": esa bandera la pone
   # en verdadero el upload para TODA versión subida, cargada o no. En todo el host no hay un solo
-  # lugar que la ponga en falso. O sea que mirarla sola aprueba un plugin que no está corriendo —
-  # y explica el comentario de Ceibo sobre que "vienen todos true": no es un defecto de ese host.
+  # lugar que la ponga en falso. O sea que mirarla sola aprueba un plugin que no está corriendo.
   # Se pregunta por lo CARGADO de verdad, y por el motivo de degradación (el host puede cargar el
   # plugin con sus servicios internos caídos, devolver 200 y guardar el motivo en vez de fallar).
   if [ "$VER" = "$ESPERADA" ] && [ "$ACTIVO" = "true" ] && [ "$DEFAULT" = "true" ]; then
@@ -149,9 +144,8 @@ for intento in 1 2 3; do
       echo "##vso[task.logissue type=error][humo] $PLUGIN: la versión marcada como actual es v$ESPERADA pero la que el host tiene CARGADA es $(nombre_visible "$CARGADA") — el despliegue anotó y no cargó"
       exit 1
     fi
-    # 🔴 "SANO" HAY QUE PREGUNTARLO (2026-09-03). El comentario de arriba prometía que se
-    # preguntaba por el motivo de degradación y el código nunca lo preguntaba: imprimía "sano" sin
-    # haberlo medido. El host puede cargar el plugin con sus servicios internos caídos, devolver 200
+    # 🔴 "SANO" HAY QUE PREGUNTARLO: imprimir "sano" sin medirlo sería mentir. El host puede cargar el plugin con
+    # sus servicios internos caídos, devolver 200
     # y guardar el motivo en vez de fallar. Un 404 acá significa que esa versión del host no tiene
     # el chequeo — no es "sano", es "no se puede preguntar", y se dice.
     ID=$(printf '%s' "$LISTA" | jq -r --arg n "$PLUGIN" --arg v "$ESPERADA" '
@@ -174,9 +168,8 @@ for intento in 1 2 3; do
       SAL_CODE=$(printf '%s' "$SAL" | tail -1); SAL_BODY=$(printf '%s' "$SAL" | sed '$d')
       case "$SAL_CODE" in
         200)
-          # 🔴 Un 200 con cuerpo ilegible (HTML del proxy, vacío) hacía que jq no encontrara el campo
-          # y se imprimiera "sano" sin haber leído nada — la misma mentira que este bloque vino a
-          # cerrar. El guion hermano ya lo validaba; éste no.
+          # 🔴 Un 200 con cuerpo ilegible (HTML del proxy, vacío) haría que jq no encontrara el campo
+          # y se imprimiera "sano" sin haber leído nada — la misma mentira que este bloque cierra.
           if ! printf '%s' "$SAL_BODY" | jq -e . >/dev/null 2>&1; then
             echo "##vso[task.logissue type=error][humo] $PLUGIN v$ESPERADA: el estado de salud vino ilegible (no es JSON) — un chequeo que no se pudo hacer NO es un chequeo aprobado"
             exit 1
@@ -199,17 +192,16 @@ for intento in 1 2 3; do
     fi
     # El identificador de compilación, si este run lo pasó: pregunta al /health del PLUGIN.
     if [ -n "$ESPERADO_HASH" ]; then
-      # 🔴 DOS COSAS DISTINTAS, Y SÓLO UNA ADMITE AVISO (2026-09-03, revisión adversarial).
+      # 🔴 DOS COSAS DISTINTAS, Y SÓLO UNA ADMITE AVISO.
       #
       # Esta llamada va a las RUTAS PROPIAS del plugin, no a la API de administración. Que el host
       # diga "cargado, activo y default" no prueba que el plugin esté SIRVIENDO: si tras la recarga
       # sus rutas devuelven 404 —o el HTML del proxy— los frenos duros de arriba no lo ven, porque
       # miran /loaded y el health de administración. Por eso un código distinto de 200 es ROJO, con
-      # reintentos: es el agujero que dejó mudar acá el paso propio que tenía el pipeline de un
-      # producto, que exigía 200 — guides/maintaining/incident-log.md#case-smoke-lost-own-routes-check-2026-09-03.
+      # reintentos: el humo exige 200 de las rutas propias del plugin.
       #
       # Que el cuerpo no traiga el identificador es otra cosa: hay plugins que todavía no lo
-      # reportan. Eso avisa y no frena, hasta que los cinco lo hagan.
+      # reportan. Eso avisa y no frena.
       HCODE=""; HB=""
       for hi in 1 2 3; do
         RESP=$(curl -s -w '\n%{http_code}' --max-time 20 "${URL}/api/plugins/${PLUGIN_URL}/health" 2>/dev/null)

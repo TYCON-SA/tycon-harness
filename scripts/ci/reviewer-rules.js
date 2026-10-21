@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * reviewer-rules.js — al commitear un `CLAUDE.md`, AVISA si una línea nueva parece una regla de
- * revisión y quedó FUERA de la sección `## Reglas para revisores`. Nunca frena (story 7.5, 2026-09-19).
+ * revisión y quedó FUERA de la sección `## Reglas para revisores`. Nunca frena.
  *
- * Por qué: desde la 7.5 los revisores del pipeline ya no cargan el `CLAUDE.md` (`omitClaudeMd`); las
+ * Por qué: los revisores del pipeline no cargan el `CLAUDE.md` (`omitClaudeMd`); las
  * reglas propias del repo les llegan SÓLO por esa sección, que `pipeline.js` pega al principio de su
  * contexto. Una regla escrita en otra parte del archivo el revisor no la ve. Nadie tiene que acordarse
  * de mantener un archivo aparte —la sección vive en el mismo `CLAUDE.md`—, pero sí de escribir la regla
@@ -30,7 +30,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -56,8 +56,7 @@ const CERCA_RE = /^\s*(```|~~~)/;
 /**
  * Índice (0-based) del encabezado, o -1. Un encabezado dentro de una cerca cerrada (un ejemplo) no
  * cuenta; con una cerca SIN CERRAR en el archivo el estado de cerca no es confiable y se busca sin
- * mirar cercas — si no, una cerca abierta en una sección anterior escondía la sección real (pase
- * adversarial de la 7.5).
+ * mirar cercas — si no, una cerca abierta en una sección anterior esconde la sección real.
  */
 function lineaDelEncabezado(lineas) {
   let enCerca = false;
@@ -88,7 +87,7 @@ function lineasAgregadas(diff) {
   let n = null;
   for (const l of String(diff || '').split('\n')) {
     // `--- a/…` / `+++ b/…` sólo existen ANTES del primer hunk de cada archivo: adentro de un hunk,
-    // una línea agregada que empieza con «++» es contenido (pase adversarial de la 7.5).
+    // una línea agregada que empieza con «++» es contenido.
     if (l.startsWith('diff --git ')) { n = null; continue; }
     const h = l.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
     if (h) { n = Number(h[1]); continue; }
@@ -113,16 +112,14 @@ function candidatas(md, diff) {
 }
 
 /**
- * Los nombres de productos y clientes que se tachan: las reglas `cliente` de la lista de denegación
- * (story 8.10, AC 24 — antes era un bloque de la guía, una segunda lista que se desfasaba de la primera),
+ * Los nombres de productos y clientes que se tachan: las reglas `cliente` de la lista de denegación,
  * compiladas por el MISMO detector que usan el freno y el exportador: la grafía de cada término con sus
- * reglas `palabra` y `mayusculas`, y las variantes que el detector cuenta como el mismo nombre (story 8.4,
- * AC 30: otra caja en un identificador, todo en mayúsculas, el compuesto separado en partes). Re-derivar
- * el emparejamiento acá dejaba pasar esas formas a TypeSafe (pase adversarial de la tanda B).
+ * reglas `palabra` y `mayusculas`, y las variantes que el detector cuenta como el mismo nombre
+ * (otra caja en un identificador, todo en mayúsculas, el compuesto separado en partes). Re-derivar
+ * el emparejamiento acá dejaría pasar esas formas a TypeSafe.
  * Devuelve `{ reglas }` o `{ motivo }`. Sin lista NO se manda nada a TypeSafe (el llamador cae al
- * modo sin llave y lo dice): mandar sin tachar los nombres es justo lo que la story prohíbe, y una
- * lista vacía se veía igual que «no hay nombres» (hallazgo SILENT-C2 del paso 5 de la 7.5). La copia
- * pública no trae la lista (es privada): ahí no se manda nada, como antes sin el bloque.
+ * modo sin llave y lo dice): mandar sin tachar los nombres es justo lo que hay que evitar, y una
+ * lista vacía se vería igual que «no hay nombres». La copia pública no trae la lista (es privada): ahí no se manda nada.
  * El motivo nunca cita el contenido de la lista (es privada): sólo el código del error.
  */
 function nombresATachar(deniedList = DENIED) {
@@ -137,7 +134,7 @@ function nombresATachar(deniedList = DENIED) {
     return { motivo: `no pude leer la lista de nombres a tachar (${codigo ? codigo[0] : 'la lista no sirve'})` };
   }
   // Sólo los términos de la LISTA: un patrón genérico de categoría cliente (el sufijo de organización en un nombre
-  // de proceso, story 8.6) no es un nombre, y contarlo haría que una lista sin nombres pareciera tener.
+  // de proceso) no es un nombre, y contarlo haría que una lista sin nombres pareciera tener.
   const reglas = cfg.reglas.filter((r) => r.categoria === 'cliente' && !genericos.has(r));
   if (!reglas.length) return { motivo: 'la lista de denegación no trae términos «cliente» (los nombres a tachar)' };
   return { reglas };
@@ -219,7 +216,7 @@ function registrar(fila) {
   try {
     const dir = path.join(stateDirOf(os.homedir()));
     fs.mkdirSync(dir, { recursive: true });
-    // El nombre viejo (story 8.9, tanda D2) pasa al nuevo con su historia antes de la primera línea; si la copia falla,
+    // El nombre viejo pasa al nuevo con su historia antes de la primera línea; si la copia falla,
     // no se anota (un registro nuevo sin la historia del viejo la perdería para siempre).
     const registro = prepareStateWrite(path.join(dir, 'reviewer-rules.jsonl'), { where: 'scripts/ci/reviewer-rules.js' });
     fs.appendFileSync(registro, JSON.stringify({ ts: new Date().toISOString(), ...fila }) + '\n');
@@ -246,7 +243,7 @@ function git(repo, args) {
 async function correr({ repo, env = process.env, fetchImpl = globalThis.fetch, escribir = (s) => process.stderr.write(s), deniedList, topeMs } = {}) {
   if (readEnv('TYCON_REVIEWER_RULES', { env, where: 'scripts/ci/reviewer-rules.js' }) === '0') return 0;
   // Con renombres (`R`): mover CLAUDE.md ↔ .claude/CLAUDE.md en el mismo commit que agrega una regla
-  // dejaba el aviso mudo con `--diff-filter=ACM` (pase adversarial de la 7.5; sql-compile usa AMR).
+  // dejaría el aviso mudo con `--diff-filter=ACM` (sql-compile usa AMR).
   const staged = git(repo, ['diff', '--cached', '--name-status', '-M', '--diff-filter=ACMR']);
   if (staged === null) return 0;
   const tocados = [];

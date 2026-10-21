@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * deployments.js — la foto de despliegues de cada noche (story 2.22, 2026-10-16).
+ * deployments.js — la foto de despliegues de cada noche.
  *
- * POR QUÉ EXISTE: «qué llegó a producción y qué quedó en staging» era lo que más se necesitaba saber de los proyectos y
- * ningún guion leía el timeline de las compilaciones. Una corrida `succeeded` no prueba nada sobre producción: si nadie
+ * POR QUÉ EXISTE: «qué llegó a producción y qué quedó en staging» es lo que más importa saber de los proyectos, y
+ * el resultado de la corrida no lo dice. Una corrida `succeeded` no prueba nada sobre producción: si nadie
  * aprueba, la aprobación vence, el stage queda `skipped` y la corrida igual dice `succeeded` (regla ADO 6 del equipo).
  * Esta foto lee el STAGE de cada corrida (azure.js, github.js) y la deja por producto, para la ficha de despliegues del
- * tablero (G7) y la pestaña Proyectos del sitio de la organización (story 2.23).
+ * tablero y la pestaña Proyectos del sitio de la organización.
  *
  * QUÉ LEE
  *   · `operations.json` → `deployments` (lector: scripts/lib/operations-config.js). Cada organización declara su
@@ -28,11 +28,11 @@
  *     avisos: [ { codigo, producto, pipeline } ], fallas: [ { codigo, producto, pipeline } ] }
  *   `motivo` es SIEMPRE un código de MOTIVOS (abajo); `detalle`, el texto de la falla saneado (sin direcciones, correos,
  *   GUID ni el texto entre comillas de un mensaje TF…, a lo sumo 200 caracteres). `avisos` y `fallas` llevan sólo
- *   códigos y el nombre declarado del pipeline. Nada más: lista blanca campo por campo (decisión 13).
+ *   códigos y el nombre declarado del pipeline. Nada más: lista blanca campo por campo.
  *
  * 🔴 «No medido» nunca es «sin despliegue» ni «verde»: un pipeline que no se pudo leer sale `no_medido` con su motivo, y
  *    su producto `parcial` o `no_medido`. Bajo TF_BUILD cada falla sale además como `##vso[task.logissue type=warning]`.
- * Al registro: una línea por producto (estado, motivo y, por entorno, corrida y commit), nunca `detalle` (decisión 19).
+ * Al registro: una línea por producto (estado, motivo y, por entorno, corrida y commit), nunca `detalle`.
  *
  * USO
  *   node scripts/nightly/deployments/deployments.js [--today AAAA-MM-DD] [--out <carpeta>] [--operations <archivo>]
@@ -61,7 +61,7 @@ const AVISOS = ['no_esta_en_repos_json'];
 const ENTORNOS = [['staging', 'staging'], ['production', 'produccion']];
 const PEOR_MAIN = ['roto', 'no_medido', 'con_avisos', 'verde', 'sin_corridas'];
 
-/** El texto de una falla, saneado (decisión 17). */
+/** El texto de una falla, saneado. */
 function sanear(t) {
   return String(t || '')
     .replace(/(TF\d+:[^']*)'[^']*'/g, '$1<…>')
@@ -124,7 +124,7 @@ function armarProducto(resultados, declarado) {
   const aprobs = prod.filter((r) => r.ok && r.aprobacion).map((r) => r.aprobacion);
   const orden = ['pendiente', 'vencida', 'no_aprobada'];
   let ap = null;
-  // entre varios pipelines de producción, la corrida que se muestra es la más nueva (AC 6); `cuantas` se suma
+  // entre varios pipelines de producción, la corrida que se muestra es la más nueva; `cuantas` se suma
   const masNueva = (xs) => xs.reduce((a, b) => ((b._fecha || 0) > (a._fecha || 0) ? b : a));
   for (const e of orden) { const xs = aprobs.filter((a) => a.estado === e); if (xs.length) { ap = e === 'vencida' ? { ...masNueva(xs), cuantas: xs.reduce((n, a) => n + a.cuantas, 0) } : masNueva(xs); break; } }
   if (ap && '_fecha' in ap) { ap = { ...ap }; delete ap._fecha; }
