@@ -16,6 +16,7 @@
 !scripts/nightly/projects/state-age.js
 !scripts/setup/harness/
 !scripts/setup/install-effects.json
+!build/equivalences.json
 !scripts/setup/public-remotes.json
 !scripts/ci/check-product-parity.js
 !scripts/ci/legacy-options.js

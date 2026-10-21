@@ -45,6 +45,9 @@ COPY scripts/nightly/projects/state-age.js scripts/nightly/projects/
 COPY scripts/setup/harness/ scripts/setup/harness/
 # qué trae cada perfil de instalación: lo muestra la pestaña Configuración
 COPY scripts/setup/install-effects.json scripts/setup/
+# las equivalencias de cada modelo en Codex: la línea chica debajo de cada nivel en la sección de modelos
+# (equivalenciasDe, org-config.js). Con el comodín, un árbol sin build/ arma la imagen igual y la línea no sale
+COPY buil[d]/equivalences.json* build/
 # el repo público del arnés: sin él, la pestaña Cómo trabaja no tiene «Ver el código» ni adónde mandar una mejora
 COPY scripts/setup/public-remotes.json scripts/setup/
 COPY scripts/ci/check-product-parity.js scripts/ci/legacy-options.js scripts/ci/
