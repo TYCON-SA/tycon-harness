@@ -108,6 +108,16 @@
       "max_age_days": 2,
       "written_by": "scripts/metrics/author-concentration.js en el nocturno de métricas, en el paso de la foto por proyecto (story 2.26)",
       "_note": "La lee la ficha de la pregunta 5 del tablero en modo nocturno. Trae sólo proporciones y conteos POR PRODUCTO: ningún nombre ni correo, y ningún número por repo (decisión 18 de la 2.26). NO obligatoria: sin el archivo, o con uno de más de 2 días, la ficha sale «no medido» con el motivo, nunca 0."
+    },
+    {
+      "id": "story-reference",
+      "title": "Cambios de código sin historia (por repo, por persona y por tipo)",
+      "pattern": "story-reference-*.json",
+      "dir": ".",
+      "required": false,
+      "max_age_days": 2,
+      "written_by": "scripts/metrics/story-reference.js en el nocturno de métricas, en el paso de la concentración (story 1.31)",
+      "_note": "La lee la ficha «Cambios de código sin historia» (pregunta 1). Trae las entradas a main de los últimos 28 días por repo, por persona (con su nombre de git, nunca el correo: D7 de la 1.31, decisión del dueño) y por tipo. El sitio recibe sólo el número. NO obligatoria: sin el archivo, o con uno de más de 2 días, la ficha sale «no medido» con el motivo, nunca 0."
     }
   ],
   "reducer": {

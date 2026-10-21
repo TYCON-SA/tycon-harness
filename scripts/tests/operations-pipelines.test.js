@@ -640,6 +640,39 @@ test('T21 2.26-StageMetrics_ConcentracionEnElPasoDeLaFoto — el modelo público
   assert.strictEqual(ign.status, 1, '.gitignore del privado deja pasar el archivo de concentración');
 });
 
+// T9: la cuenta de los cambios sin historia corre en el mismo paso, después de la concentración, sobre
+// las mismas copias; una falla avisa y no apaga el paso; el guardado suma su archivo. Sin pasos nuevos ni «clone(s)».
+function pasoConSinHistoria(y, nombre, donde) {
+  const i = y.indexOf('node scripts/metrics/author-concentration.js');
+  const j = y.indexOf(`displayName: '${nombre}'`, i);
+  assert.ok(i > 0 && j > i, `${donde}: no encontré la concentración y el paso «${nombre}»`);
+  const paso = y.slice(i, j);
+  const k = paso.indexOf('node scripts/metrics/story-reference.js');
+  assert.ok(k > 0, `${donde}: la cuenta sin historia no está en el paso, después de la concentración`);
+  const nuevo = paso.slice(k);
+  assert.match(nuevo, /--scan "\$\(Agent\.TempDirectory\)\/repos"/, `${donde}: cuenta sobre las mismas copias`);
+  assert.match(nuevo, /--out "\$\(Build\.SourcesDirectory\)\/\.dashboard\/story-reference-\$\(date -u \+%Y-%m-%d\)\.json"/, `${donde}: el archivo del día en .dashboard/`);
+  assert.match(nuevo, /\|\| echo "##vso\[task\.logissue type=warning\]/, `${donde}: la falla avisa, no apaga`);
+  assert.match(nuevo, /⏱ {2}cambios sin historia/, `${donde}: imprime su duración`);
+  assert.doesNotMatch(nuevo, /- script:|displayName|\bclones?\b/, `${donde}: las líneas nuevas no suman pasos ni la palabra clone(s)`);
+  assert.match(y, /'\.dashboard\/story-reference-\*\.json'/, `${donde}: el guardado suma el archivo`);
+}
+
+test('T9 1.31-StageMetrics_CuentaEnElPasoDeLaConcentracion @story-1.31 @ac-5 — el modelo público y, con lo privado debajo, su copia y su plantilla', () => {
+  pasoConSinHistoria(read('stage-metrics.yml'), 'Medir y escribir el punto del día', 'pipelines/operations/stage-metrics.yml');
+  assert.doesNotMatch(read('github/stage-metrics.yml'), /story-reference/, 'el modelo de GitHub no la corre: sin el archivo, la ficha sale «no medido»');
+  const privado = path.join(ROOT, 'pipelines', 'azure-pipelines.yml');
+  if (!fs.existsSync(privado)) {
+    console.log('  (T9 lo privado —azure-pipelines.yml, ops-data.yml y .gitignore— no viene con la copia pública: NO MEDIDO acá)');
+    return;
+  }
+  pasoConSinHistoria(fs.readFileSync(privado, 'utf8'), 'Medir las 4 métricas y escribir el snapshot del día', 'pipelines/azure-pipelines.yml');
+  const ops = fs.readFileSync(path.join(ROOT, 'pipelines', 'templates', 'ops-data.yml'), 'utf8');
+  assert.match(ops, /story-reference-\*\.json/, 'ops-data.yml trae el archivo del día al árbol');
+  const ign = spawnSync('git', ['-C', ROOT, 'check-ignore', '-q', '.dashboard/story-reference-2026-10-20.json']);
+  assert.strictEqual(ign.status, 1, '.gitignore del privado deja pasar el archivo del día');
+});
+
 test('T25 2.34-Copia_DisparosYCredencial (Azure) @story-2.34 @ac-4 — cada push a main y una vez por día, con su conexión propia', () => {
   // 🔴 rojo: la copia corre una vez por noche (un cambio tarda un día en verse) o usa la credencial de otro trabajo.
   const t = read('site-copy.yml');

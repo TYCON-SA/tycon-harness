@@ -102,7 +102,7 @@ test('2.36-Lista_ConSuIdentificador: cada ficha tiene identificador fijo, pregun
     assert.ok(f.titulo && f.paraQue && Array.isArray(f.de) && f.de.length === 2, `${f.id}: título, para qué y de dónde`);
     assert.ok(['pct', 'num1', 'entero', 'redondo'].includes(f.formato), `${f.id}: formato`);
   }
-  assert.strictEqual(fichas.FICHAS.length, 25);
+  assert.strictEqual(fichas.FICHAS.length, 26);
 });
 
 test('2.36-Lista_IgualAlTablero: cada ficha del tablero está en la lista o declarada «ya estaba», y al revés', () => {
@@ -186,15 +186,15 @@ test('2.36-UnaSolaCuenta_TableroYSitio: sobre la misma foto, cada ficha da en el
 test('2.36-Oculta_NoSeCalculaNiLlega: una ficha oculta no entra al modelo, y el modelo dice cuántas hay ocultas', () => {
   const paneles = { extra: { backlog: { estado: 'medido', valor: 3, medidos: 3, total: 3 }, estados_sin_diccionario: { estado: 'medido', valor: 1, medidos: 1, total: 1 } }, local: {}, mejora: {}, poda: {} };
   const todas = fichas.modeloDeFichas(paneles, {});
-  assert.strictEqual(todas.lista.length, 25);
+  assert.strictEqual(todas.lista.length, 26);
   assert.strictEqual(todas.ocultas, 0);
   const algunas = fichas.modeloDeFichas(paneles, { ocultas: ['backlog', 'estados_sin_diccionario'] });
-  assert.strictEqual(algunas.lista.length, 23);
+  assert.strictEqual(algunas.lista.length, 24);
   assert.strictEqual(algunas.ocultas, 2);
   assert.ok(!algunas.lista.some((f) => f.id === 'backlog' || f.id === 'estados_sin_diccionario'));
   assert.ok(!/backlog|estados_sin_diccionario/.test(JSON.stringify(algunas)), 'el nombre de una ficha oculta viajó al modelo');
   // sin la clave se muestran todas, también con algo que no es una lista
-  assert.strictEqual(fichas.modeloDeFichas(paneles, { ocultas: 'backlog' }).lista.length, 25);
+  assert.strictEqual(fichas.modeloDeFichas(paneles, { ocultas: 'backlog' }).lista.length, 26);
 });
 
 // ── el sitio: Arnés con sus fichas ───────────────────────────────────────────────────────────────────────────
@@ -261,6 +261,32 @@ test('2.36-Arnes_SoloQuienMantiene: una persona sin el rol de quien mantiene rec
   } finally { if (h) await h.cerrar(); await emisor.cerrar(); }
 });
 
+test('T10 1.31-SitioYTablero_MismoNumeroSinNombres @story-1.31 @ac-7: la ficha de cambios sin historia da el mismo número en el sitio y en el tablero, y el sitio no trae nombres', () => {
+  const dir = tmp('fichas-sinhist-');
+  try {
+    montarDashboard(dir);
+    const persona = 'Zqx Sembrada';
+    fs.writeFileSync(path.join(dir, `story-reference-${HOY}.json`), JSON.stringify({ v: 1, generated_at: `${HOY}T05:00:00Z`,
+      ventana: { desde: '2026-09-20', hasta: HOY, dias: 28 }, cobertura: { repos_declarados: 2, repos_medidos: 1 },
+      totales: { codigo: 8, con: 6, sin: 2, por_persona: { [persona]: { con: 1, sin: 2 } }, por_tipo: { hotfix: 1, dependencias: 0, arnes_ci: 0, merge_dev: 1, otro: 0 }, por_via: { pedido: { con: 6, sin: 1 }, directo: { con: 0, sin: 1 } } },
+      repos: [{ producto: 'Alfa', repo: 'Alfa/Back', estado: 'medido', motivo: null, codigo: 8, con: 6, sin: 2 }, { producto: 'Beta', repo: 'Beta/Back', estado: 'no_medido', motivo: 'no está entre los clones del nocturno', codigo: null, con: null, sin: null }] }));
+    const env = { ...process.env, HOME: HOME_FALSO, TYCON_TODAY: HOY };
+    const AHORA = Date.parse(`${HOY}T12:00:00Z`);
+    const api = spawnSync(process.execPath, ['-e', `
+      const f = require(${JSON.stringify(path.join(RAIZ, 'scripts', 'site', 'tabs', 'cards.js'))});
+      const d = require(${JSON.stringify(TABLERO)}).colectar({ dir: ${JSON.stringify(dir)}, nocturno: true, ahora: ${AHORA} });
+      process.stdout.write(JSON.stringify({ tablero: d.paneles.extra.sin_historia, sitio: f.modeloDeFichas(d.paneles, { cfg: d.cfg }).lista.find((x) => x.id === 'sin_historia') }));`], { encoding: 'utf8', env, maxBuffer: 1 << 26 });
+    assert.strictEqual(api.status, 0, api.stderr);
+    const { tablero, sitio } = JSON.parse(api.stdout);
+    assert.strictEqual(tablero.estado, 'medido', JSON.stringify(tablero));
+    assert.strictEqual(tablero.valor, 0.25);
+    assert.deepStrictEqual([sitio.estado, sitio.valor, sitio.medidos, sitio.total, sitio.pestana], ['medido', 0.25, 2, 8, 'proyectos']);
+    // el detalle con nombres es del tablero; al sitio llega sólo el número (lista blanca de cards.js)
+    assert.ok(!JSON.stringify(sitio).includes(persona), 'el nombre llegó al sitio');
+    assert.match(fichas.tile(sitio), /25%/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('2.36-Fuga_ConLasFichas: ningún texto libre de las fotos llega al modelo ni a la página de Arnés', () => {
   const clon = clonDeJuguete();
   const m = construirModelo(clon);
@@ -285,7 +311,7 @@ test('2.36-Oculta_NoSeCalculaNiLlega (sitio): las ocultas por site.hidden_cards 
   assert.doesNotMatch(views.paginaArnes({ modelo: todas, quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: 0 }), /fichas? ocultas?/);
   // el cálculo roto no tira el sitio: cada ficha sale no medida
   const sinClon = fichas.fichasDelClon({ clon: path.join(clon, 'no-existe'), ahora: AHORA, ocultas: [] });
-  assert.strictEqual(sinClon.lista.length, 25);
+  assert.strictEqual(sinClon.lista.length, 26);
   assert.ok(sinClon.lista.every((f) => f.estado === 'no_medido'));
 });
 

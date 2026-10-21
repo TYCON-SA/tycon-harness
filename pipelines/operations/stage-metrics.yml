@@ -195,6 +195,16 @@ jobs:
             --out "$(Build.SourcesDirectory)/.dashboard/author-concentration-$(date -u +%Y-%m-%d).json" \
             || echo "##vso[task.logissue type=warning]La concentración por persona falló (exit $?) — el snapshot sigue; la ficha sale «no medido»"
           echo "⏱  concentración por persona: $(expr "$(date +%s)" - "$INICIO") s"
+          # Los cambios de código sin historia, sobre las MISMAS copias y en este mismo paso: las entradas a
+          # main de los últimos 28 días que no nombran una historia, por repo, por persona y por tipo. Sólo mide: no frena
+          # ni avisa a nadie. Una falla avisa y no apaga el snapshot: la ficha sale «no medido».
+          INICIO=$(date +%s)
+          node scripts/metrics/story-reference.js \
+            --scan "$(Agent.TempDirectory)/repos" \
+            --products "$(Build.SourcesDirectory)/scripts/nightly/dependencies/repos.json" \
+            --out "$(Build.SourcesDirectory)/.dashboard/story-reference-$(date -u +%Y-%m-%d).json" \
+            || echo "##vso[task.logissue type=warning]La cuenta de cambios sin historia falló (exit $?) — el snapshot sigue; la ficha sale «no medido»"
+          echo "⏱  cambios sin historia: $(expr "$(date +%s)" - "$INICIO") s"
         displayName: 'Medir y escribir el punto del día'
 
       - script: |
@@ -217,7 +227,7 @@ jobs:
           node scripts/ci/push-nightly-data.js save \
             --message "chore(metricas): snapshot SDLC $DAY [nocturno]" \
             --require-daily '.dashboard/sdlc-stage-{day}.json' \
-            -- '.dashboard/sdlc-stage-*.json' '.dashboard/proyectos/*.json' '.dashboard/author-concentration-*.json'
+            -- '.dashboard/sdlc-stage-*.json' '.dashboard/proyectos/*.json' '.dashboard/author-concentration-*.json' '.dashboard/story-reference-*.json'
         displayName: 'Guardar el punto del día en el repo de operaciones'
         # Sólo desde main (encolado sobre otra rama, guardar la subiría entera) y sólo con efectos.
         condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))

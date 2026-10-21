@@ -33,6 +33,7 @@ const DEFINICIONES = [
   { id: 'estados_sin_diccionario', pregunta: 1, pestana: 'proyectos', de: ['extra', 'estados_sin_diccionario'], formato: 'entero', clave: '' },
   { id: 'tiempo_por_etapa', pregunta: 1, pestana: 'proyectos', de: ['extra', 'tiempo_por_etapa'], formato: 'num1', clave: '' },
   { id: 'edad_estado', pregunta: 1, pestana: 'proyectos', de: ['extra', 'edad_estado'], formato: 'entero', clave: '' },
+  { id: 'sin_historia', pregunta: 1, pestana: 'proyectos', de: ['extra', 'sin_historia'], formato: 'pct', clave: '' },
   { id: 'dod', pregunta: 2, pestana: 'arnes', de: ['mejora', 'dod'], formato: 'pct', clave: 'dod' },
   { id: 'rework', pregunta: 2, pestana: 'arnes', de: ['mejora', 'rework'], formato: 'pct', clave: 'rework' },
   { id: 'rework_por_causa', pregunta: 2, pestana: 'arnes', de: ['extra', 'rework_por_causa'], formato: 'entero', clave: '' },
