@@ -410,16 +410,22 @@ only: they are changed with a request in their repo.
   says how many are hidden. It lives in `operations.json`, in the operations repo (`site.hidden_cards`). A maintainer
   reviews it.
 - **Vulnerability work items** (*Pedidos de vulnerabilidades*): the type and fields the night review uses to create
-  the work item for a vulnerability in each Azure DevOps project. It has three parts: the **type** (empty, each project
-  uses its backlog item), the **fixed fields**, which go on every work item, and one row **per severity** (critical,
-  high, moderate and low), whose fields win over the fixed ones when they match. Each field is written with its Azure
-  DevOps reference name (like `Microsoft.VSTS.Common.Priority`) and its value. The title, text, tags and assignment are
-  set by the harness and cannot be changed here. "Review changes" validates it with the same reader the night uses: a
-  field the harness sets, a value that starts with "@" or has a line break, or a severity that is not one of the four,
-  is marked on its field and not proposed. A project without the chosen type uses its own, and the morning summary
-  says so. It lives in `operations.json`, in the operations repo (`work_items`). A maintainer reviews it. Types and
-  fields are typed in: picking them from a list read from Azure DevOps would need a work item read permission the site
-  does not have.
+  the work item for a vulnerability in each Azure DevOps project. At the top, in a box, the **type** (empty, each
+  project uses its backlog item) and the **fixed fields**, which go on every work item. Below, **by severity**, a table
+  with one row per field and one column per severity (critical, high, moderate and low); its values win over the fixed
+  ones when the field matches. The site reads the types, each type's fields and their allowed values from the products'
+  projects: each field shows its name (with its reference name, like `Microsoft.VSTS.Common.Priority`, underneath) and
+  each value is picked from a dropdown. Values that start with a symbol, such as a colored circle, are shown without it
+  and saved exactly as Azure DevOps accepts them. A field without fixed values is typed in. Without the work item read
+  permission, or if Azure DevOps does not answer, a notice says why and everything is typed in by its reference name. A
+  field's ✕ removes it (from all four severities, in the table) and can be undone until you save. The title, text, tags
+  and assignment are set by the harness and cannot be changed here. "Review changes" validates it with the same reader
+  the night uses: a field the harness sets, a value that is empty, starts with "@" or has a line break, or a severity
+  that is not one of the four, is marked on its field and not proposed. A project without the chosen type uses its own,
+  and the morning summary says so. It lives in `operations.json`, in the operations repo (`work_items`). A maintainer
+  reviews it.
+
+![Vulnerability work items](sitio-de-la-organizacion/capturas/configuracion-pedidos.png)
 
 ![Notices and night runs](sitio-de-la-organizacion/capturas/configuracion-avisos.png)
 

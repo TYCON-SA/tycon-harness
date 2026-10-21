@@ -3245,17 +3245,17 @@ test('T16 Config_SeccionPedidosMuestraTipoCamposYTabla_EsEn @story-4.9 @ac-10 �
     assert.match(texto, idioma === 'es' ? /Pedidos de vulnerabilidades/ : /Vulnerability work items/);
     assert.match(texto, idioma === 'es' ? /Crítica/ : /Critical/, `${idioma}: la gravedad dicha en el idioma`);
   }
-  // el editor cambia el borrador con la forma del lector: renombrar un campo lo mueve, un número va como número
+  // el editor cambia el borrador con la forma del lector: renombrar una fila la mueve en las cuatro gravedades, un número va como número
   const sec = SEC('pedidos', { borrador: { work_items: JSON.parse(JSON.stringify(WI_RIESGO)) } });
   const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), sec], hash: '#seccion-pedidos' });
   const ultimo = (pred) => { const caja = r.creados.filter((n) => n.attrs.id === 'seccion-pedidos').pop(); const out = []; const walk = (x) => { if (pred(x)) out.push(x); (x.hijos || []).forEach(walk); }; walk(caja); return out.pop(); };
-  ultimo((n) => n.tag === 'input' && n.attrs['data-path'] === 'work_items.by_severity.high.Custom.Impacto.valor').on.input({ target: { value: '5' } });
-  ultimo((n) => n.tag === 'input' && n.attrs['data-path'] === 'work_items.fixed_fields.Custom.Categoria').on.input({ target: { value: 'Custom.Area' } });
+  ultimo((n) => n.tag === 'input' && n.attrs['data-path'] === 'work_items.by_severity.high.Custom.Impacto').on.input({ target: { value: '5' } });
+  ultimo((n) => n.tag === 'input' && n.attrs['data-path'] === 'work_items.campos.Custom.Impacto').on.input({ target: { value: 'Custom.Area' } });
   ultimo((n) => n.tag === 'button' && n.textContent === 'Revisar cambios').on.click();
   for (let i = 0; i < 10; i++) await new Promise((x) => setImmediate(x));
   const enviado = r.llamadas.filter((l) => /revisar/.test(l.ruta)).pop().cuerpo.borrador.work_items;
-  assert.deepStrictEqual(enviado.fixed_fields, { 'Custom.Area': 'Seguridad', 'Custom.Probabilidad': 3 });
-  assert.deepStrictEqual(enviado.by_severity.high, { 'Custom.Impacto': 5 });
+  assert.deepStrictEqual(enviado.fixed_fields, { 'Custom.Categoria': 'Seguridad', 'Custom.Probabilidad': 3 });
+  assert.deepStrictEqual(enviado.by_severity, { critical: { 'Custom.Area': 5 }, high: { 'Custom.Area': 5 }, moderate: { 'Custom.Area': 3 }, low: { 'Custom.Area': 2 } });
 });
 
 test('T17 Config_CambioInvalidoMuestraElProblemaDelLector @story-4.9 @ac-11 — un cambio inválido da el problema del lector y no se propone; uno válido cambia sólo work_items', async () => {
@@ -3318,22 +3318,244 @@ test('T17b Lector_WorkItems_ComentariosSecretosYGravedad @story-4.9 @ac-11 (pase
   assert.strictEqual(OPS.workItemFieldOk('Custom.Keyword', 'x'), true);
 });
 
-test('T16b Editor_Pedidos_NombreRepetidoYVaciar @story-4.9 @ac-10 (pase adversarial) — renombrar a un campo que ya está no lo pisa; vaciar todo saca work_items', async () => {
-  // 🔴 rojo: al tipear el nombre de otro campo de la lista se pierde su valor sin aviso, o vaciar deja «{}» en el archivo.
-  const sec = SEC('pedidos', { borrador: { work_items: { fixed_fields: { 'Custom.A': 'uno', 'Custom.B': 'dos' } } } });
+test('T16b Editor_Pedidos_NombreRepetidoYVaciar @story-4.9 @ac-10 (pase adversarial) — renombrar una fila a un campo que ya está no lo pisa; vaciar todo saca work_items', async () => {
+  // 🔴 rojo: al tipear el nombre de otra fila se pierde su valor sin aviso, renombrar no mueve el campo en todas las
+  // gravedades, o vaciar deja «{}» en el archivo.
+  const sec = SEC('pedidos', { borrador: { work_items: { fixed_fields: { 'Custom.A': 'uno' }, by_severity: { high: { 'Custom.B': 'dos', 'Custom.C': 'tres' }, low: { 'Custom.C': 'cuatro' } } } } });
   const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), sec], hash: '#seccion-pedidos' });
   const caja = () => r.creados.filter((n) => n.attrs.id === 'seccion-pedidos').pop();
   const todos = () => { const out = []; const walk = (x) => { out.push(x); (x.hijos || []).forEach(walk); }; walk(caja()); return out; };
   const esperar = async () => { for (let i = 0; i < 10; i++) await new Promise((x) => setImmediate(x)); };
   const revisado = async () => { todos().filter((n) => n.tag === 'button' && n.textContent === 'Revisar cambios').pop().on.click(); await esperar(); return r.llamadas.filter((l) => /revisar/.test(l.ruta)).pop().cuerpo.borrador; };
-  const nombreA = todos().find((n) => n.tag === 'input' && n.attrs['data-path'] === 'work_items.fixed_fields.Custom.A');
-  nombreA.on.input({ target: { value: 'Custom.B' } });
-  const aviso = todos().find((n) => n.attrs['data-path'] === 'work_items.fixed_fields.Custom.A.repetido');
+  const nombreB = todos().find((n) => n.tag === 'input' && n.attrs['data-path'] === 'work_items.campos.Custom.B');
+  nombreB.on.input({ target: { value: 'Custom.C' } });
+  const aviso = todos().find((n) => n.attrs['data-path'] === 'work_items.campos.Custom.B.repetido');
   assert.match(aviso.textContent, /ya está en la lista/);
-  assert.deepStrictEqual((await revisado()).work_items.fixed_fields, { 'Custom.A': 'uno', 'Custom.B': 'dos' }, 'ninguno se perdió');
-  // quitar los dos campos saca la parte y la clave entera
-  for (let i = 0; i < 2; i++) todos().filter((n) => n.tag === 'button' && n.attrs.title === 'Quitar').filter((b) => b !== undefined)[0].on.click();
+  assert.deepStrictEqual((await revisado()).work_items.by_severity, { high: { 'Custom.B': 'dos', 'Custom.C': 'tres' }, low: { 'Custom.C': 'cuatro' } }, 'ninguno se perdió');
+  todos().find((n) => n.tag === 'input' && n.attrs['data-path'] === 'work_items.campos.Custom.C').on.input({ target: { value: 'Custom.D' } });
+  const movido = (await revisado()).work_items.by_severity;
+  assert.deepStrictEqual(movido, { high: { 'Custom.B': 'dos', 'Custom.D': 'tres' }, low: { 'Custom.D': 'cuatro' } }, 'la fila se renombra en las dos gravedades');
+  assert.deepStrictEqual(Object.keys(movido.high), ['Custom.B', 'Custom.D'], 'en el mismo lugar');
+  // quitar el campo fijo y las dos filas saca las partes y la clave entera
+  for (let i = 0; i < 3; i++) { todos().filter((n) => n.tag === 'button' && n.attrs.title === 'Quitar')[0].on.click(); await esperar(); }
   assert.strictEqual((await revisado()).work_items, undefined, 'sin nada, sin work_items: cada proyecto con su elemento de backlog');
+});
+
+// ── la tabla de los pedidos: una fila por campo, una columna por gravedad, los valores para elegir ──
+// el nombre para personas, los valores sin su símbolo de adelante, la caída sin las listas y quitar que se puede
+// deshacer antes de guardar
+const CAMPOS_RIESGO = [
+  { referencia: 'Custom.Categoria', nombre: 'Categoría', valores: ['Calidad', 'Seguridad'] },
+  { referencia: 'Custom.Probabilidad', nombre: 'Probabilidad', valores: ['1', '2', '3', '4', '5'] },
+  { referencia: 'Custom.Impacto', nombre: 'Impacto', valores: ['1', '2', '3', '4', '5'] },
+  { referencia: 'Custom.PrioridadDelRiesgo', nombre: 'Prioridad del riesgo', valores: ['🔴 Crítico (21-25)', '🟠 Alto (15-20)', '🟡 Medio (8-14)', '🟢 Bajo (1-7)'] },
+  { referencia: 'Custom.Disparador', nombre: 'Disparador', valores: [] },
+];
+const WI_TABLA = { type: 'Riesgo', fixed_fields: { 'Custom.Categoria': 'Seguridad', 'Custom.Probabilidad': 3 }, by_severity: { critical: { 'Custom.Impacto': 5, 'Custom.PrioridadDelRiesgo': '🟠 Alto (15-20)' }, high: { 'Custom.Impacto': 4, 'Custom.PrioridadDelRiesgo': '🟡 Medio (8-14)' }, moderate: { 'Custom.Impacto': 3 }, low: { 'Custom.Impacto': 2, 'Custom.Disparador': 'una dependencia' } } };
+const LISTAS_RIESGO = { '/api/config/tipos-de-pedido': () => ({ ok: true, tipos: ['Bug', 'Riesgo'] }), '/api/config/campos-de-pedido': () => ({ ok: true, proyecto: 'Ventas', campos: CAMPOS_RIESGO }) };
+const GRAVEDADES_4 = ['critical', 'high', 'moderate', 'low'];
+/** La sección de los pedidos sobre la pantalla de mentira, con las listas que contesta el sitio. */
+async function tablaDePedidos(work_items, respuestas = LISTAS_RIESGO) {
+  const p = await pantallaFalsa([SEC('pedidos', { titulo: 'Pedidos de vulnerabilidades', borrador: { work_items: JSON.parse(JSON.stringify(work_items)) } })], respuestas);
+  const esperar = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
+  await esperar();
+  const nodos = () => p.todo(p.sec('pedidos'));
+  const en = (ruta) => nodos().filter((n) => n.attrs['data-path'] === ruta).pop();
+  const boton = (etiqueta) => nodos().find((n) => n.tag === 'button' && n.attrs['aria-label'] === etiqueta);
+  const opcionesDe = (n) => n.hijos.filter((o) => o.tag === 'option').map((o) => [o.attrs.value, o.textContent, o.attrs.selected === 'selected']);
+  const revisado = async () => { await p.click('Revisar cambios', 'pedidos'); return p.pedidos.filter((x) => x.ruta === '/api/config/revisar').pop().cuerpo.borrador.work_items; };
+  return { ...p, esperar, nodos, en, boton, opcionesDe, revisado };
+}
+
+test('T16d Tabla_UnaFilaPorCampo_DesplegablesConElGuardado @story-4.9 @ac-10 — con la lista, una fila por campo de las cuatro gravedades, y cada celda elige entre los valores del campo', async () => {
+  // 🔴 rojo: vuelve la lista «Campo / Valor» por gravedad, una fila se repite o falta, la celda no es un desplegable o no
+  // trae elegido lo guardado, o el campo se ve sólo con su nombre técnico.
+  const t = await tablaDePedidos(WI_TABLA);
+  assert.strictEqual(t.error, null);
+  assert.deepStrictEqual(t.nodos().filter((n) => n.attrs['data-fila']).map((n) => n.attrs['data-fila']), ['Custom.Impacto', 'Custom.PrioridadDelRiesgo', 'Custom.Disparador'], 'una fila por campo, en el orden en que aparecen');
+  for (const [g, v] of [['critical', '5'], ['high', '4'], ['moderate', '3'], ['low', '2']]) {
+    const celda = t.en(`work_items.by_severity.${g}.Custom.Impacto`);
+    assert.strictEqual(celda.tag, 'select', `${g}: un desplegable`);
+    assert.deepStrictEqual(t.opcionesDe(celda).map((o) => o[0]), ['', '1', '2', '3', '4', '5'], `${g}: los valores del campo, y vacío para dejarla sin valor`);
+    assert.deepStrictEqual(t.opcionesDe(celda).filter((o) => o[2]).map((o) => o[0]), [v], `${g}: elegido lo guardado`);
+  }
+  const texto = t.textoDe('pedidos');
+  assert.match(texto, /Impacto \| Custom\.Impacto/, 'el nombre para personas y la referencia, en la celda del campo');
+  assert.match(texto, /Campo \| Crítica \| Alta \| Media \| Baja/, 'las columnas de la tabla');
+  assert.match(texto, /proyecto Ventas/, 'de dónde salen los valores');
+  const tipo = t.en('work_items.type');
+  assert.strictEqual(tipo.tag, 'select', 'el tipo se elige');
+  assert.deepStrictEqual(t.opcionesDe(tipo).filter((o) => o[2]).map((o) => o[0]), ['Riesgo']);
+  const fijo = t.en('work_items.fixed_fields.Custom.Categoria');
+  assert.strictEqual(fijo.tag, 'select', 'un campo fijo con valores también se elige');
+  assert.deepStrictEqual(t.opcionesDe(fijo).filter((o) => o[2]).map((o) => o[0]), ['Seguridad']);
+  assert.match(texto, /Categoría \| · igual para todas/, 'el campo fijo con su nombre para personas');
+  // «+ campo»: los campos del tipo que todavía no están en la tabla
+  const nuevo = t.en('work_items.campos.nuevo');
+  assert.deepStrictEqual(t.opcionesDe(nuevo).map((o) => o[0]), ['', 'Custom.Categoria', 'Custom.Probabilidad']);
+  assert.strictEqual(t.opcionesDe(nuevo)[0][1], 'Elegí un campo del tipo Riesgo…');
+  t.en('work_items.by_severity.high.Custom.Impacto').on.change({ target: { value: '5' } });
+  assert.deepStrictEqual((await t.revisado()).by_severity.high, { 'Custom.Impacto': 5, 'Custom.PrioridadDelRiesgo': '🟡 Medio (8-14)' }, 'un número va como número');
+});
+
+test('T16e Tabla_EtiquetaSinCirculo_ValorExacto @story-4.9 @ac-10 — la opción se lee sin el símbolo de adelante y guarda el valor exacto, con el símbolo', async () => {
+  // 🔴 rojo: el desplegable muestra el círculo de color, o guarda el valor limpio que la plataforma no acepta.
+  const t = await tablaDePedidos(WI_TABLA);
+  const celda = t.en('work_items.by_severity.critical.Custom.PrioridadDelRiesgo');
+  assert.deepStrictEqual(t.opcionesDe(celda), [['', '—', false], ['🔴 Crítico (21-25)', 'Crítico (21-25)', false], ['🟠 Alto (15-20)', 'Alto (15-20)', true], ['🟡 Medio (8-14)', 'Medio (8-14)', false], ['🟢 Bajo (1-7)', 'Bajo (1-7)', false]]);
+  assert.deepStrictEqual(t.opcionesDe(t.en('work_items.by_severity.low.Custom.Impacto')).map((o) => o[1]), ['—', '1', '2', '3', '4', '5'], 'un valor sin símbolo se lee igual');
+  celda.on.change({ target: { value: '🔴 Crítico (21-25)' } });
+  assert.strictEqual((await t.revisado()).by_severity.critical['Custom.PrioridadDelRiesgo'], '🔴 Crítico (21-25)', 'se guarda con el círculo');
+  // un valor que es sólo un símbolo no queda sin etiqueta
+  const solo = await tablaDePedidos({ type: 'Riesgo', by_severity: { high: { 'Custom.Marca': '★' } } }, { ...LISTAS_RIESGO, '/api/config/campos-de-pedido': () => ({ ok: true, proyecto: 'Ventas', campos: [{ referencia: 'Custom.Marca', nombre: 'Marca', valores: ['★', '☆'] }] }) });
+  assert.deepStrictEqual(solo.opcionesDe(solo.en('work_items.by_severity.high.Custom.Marca')).map((o) => o[1]), ['—', '★', '☆']);
+});
+
+test('T16f Tabla_QuitarYAgregarFila_EnLasCuatroGravedades @story-4.9 @ac-10 — la ✕ saca el campo de las cuatro gravedades; «+ campo» lo agrega en las cuatro sin proponer un valor vacío', async () => {
+  // 🔴 rojo: la ✕ es una barra a lo ancho o deja el campo en alguna gravedad, «+ campo» lo agrega en una sola, o un
+  // valor vacío pasa el revisar.
+  const t = await tablaDePedidos(WI_TABLA);
+  const x = t.boton('Quitar Prioridad del riesgo');
+  assert.ok(x, 'la ✕ de la fila, con el nombre del campo');
+  assert.strictEqual(x.attrs.class, 'quitar-fila', 'la ✕ chica, no una barra');
+  x.on.click({}); await t.esperar();
+  let enviado = await t.revisado();
+  for (const g of GRAVEDADES_4) assert.ok(!Object.prototype.hasOwnProperty.call(enviado.by_severity[g] || {}, 'Custom.PrioridadDelRiesgo'), `${g}: sin el campo`);
+  assert.deepStrictEqual(enviado.by_severity.critical, { 'Custom.Impacto': 5 }, 'lo demás queda');
+  t.en('work_items.campos.nuevo').on.change({ target: { value: 'Custom.Probabilidad' } }); await t.esperar();
+  for (const g of GRAVEDADES_4) {
+    const celda = t.en(`work_items.by_severity.${g}.Custom.Probabilidad`);
+    assert.strictEqual(celda && celda.tag, 'select', `${g}: la celda nueva`);
+    assert.deepStrictEqual(t.opcionesDe(celda)[0], ['', '—', true], `${g}: sin elegir todavía`);
+  }
+  enviado = await t.revisado();
+  for (const g of GRAVEDADES_4) assert.strictEqual(enviado.by_severity[g]['Custom.Probabilidad'], '', `${g}: el campo nuevo`);
+  const problemas = OPS.parse(JSON.stringify({ version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD] }, work_items: enviado })).problems.map((p) => p.path);
+  for (const g of GRAVEDADES_4) assert.ok(problemas.includes(`work_items.by_severity.${g}.Custom.Probabilidad`), `${g}: vacío no pasa el lector, así que no se propone`);
+});
+
+test('T16g Tabla_CampoSinValores_CampoDeTexto @story-4.9 @ac-10 — un campo sin valores permitidos se escribe en la celda', async () => {
+  // 🔴 rojo: un campo sin valores fijos sale como desplegable vacío, o lo escrito no llega al borrador.
+  const t = await tablaDePedidos(WI_TABLA);
+  for (const g of GRAVEDADES_4) assert.strictEqual(t.en(`work_items.by_severity.${g}.Custom.Disparador`).tag, 'input', `${g}: se escribe`);
+  assert.strictEqual(t.en('work_items.by_severity.low.Custom.Disparador').attrs.value, 'una dependencia');
+  t.en('work_items.by_severity.critical.Custom.Disparador').on.input({ target: { value: 'un paquete' } });
+  const enviado = await t.revisado();
+  assert.strictEqual(enviado.by_severity.critical['Custom.Disparador'], 'un paquete');
+  assert.strictEqual(enviado.by_severity.low['Custom.Disparador'], 'una dependencia');
+  assert.match(t.textoDe('pedidos'), /Un campo sin valores fijos se escribe/);
+});
+
+test('T16h Tabla_SinLista_TextoAvisoYGuardadoIntacto @story-4.9 @ac-10 — sin las listas, campos de texto, el aviso con el motivo y lo guardado sin cambios', async () => {
+  // 🔴 rojo: sin permiso desaparecen los campos o la tabla, no dice por qué, o revisar sin tocar nada cambia lo guardado.
+  const sinPermiso = { ok: false, codigo: 'sin_permiso', message: 'el sitio no puede leer los tipos de pedido: falta su permiso de lectura de pedidos de trabajo' };
+  const t = await tablaDePedidos(WI_TABLA, { '/api/config/tipos-de-pedido': () => sinPermiso });
+  assert.strictEqual(t.error, null);
+  assert.ok(!t.nodos().some((n) => n.tag === 'select' || n.tag === 'datalist'), 'sin listas, todo se escribe');
+  assert.strictEqual(t.en('work_items.type').attrs.value, 'Riesgo');
+  assert.strictEqual(t.en('work_items.fixed_fields.Custom.Categoria').attrs.value, 'Seguridad');
+  assert.strictEqual(t.en('work_items.campos.Custom.Impacto').attrs.value, 'Custom.Impacto', 'la celda del campo es su referencia, para escribir');
+  for (const g of GRAVEDADES_4) assert.strictEqual(t.en(`work_items.by_severity.${g}.Custom.Impacto`).tag, 'input');
+  const aviso = t.nodos().find((n) => n.attrs.class === 'aviso-listas');
+  assert.ok(aviso, 'el aviso de arriba');
+  assert.match(t.textoDe('pedidos'), /Sin las listas de la plataforma: el sitio no puede leer los tipos de pedido: falta su permiso de lectura de pedidos de trabajo\. Podés escribir los nombres y los valores; se validan al revisar\./);
+  assert.ok(t.nodos().some((n) => n.tag === 'button' && n.textContent === '+ campo'), '«+ campo» también sin lista');
+  assert.deepStrictEqual(await t.revisado(), WI_TABLA, 'lo guardado, intacto');
+});
+
+test('T16i Quitar_SeDeshace_AntesDeGuardar @story-4.9 @ac-10 — quitar un campo fijo o una fila avisa y se deshace, con su valor', async () => {
+  // 🔴 rojo: la ✕ borra sin aviso, o «Deshacer» no devuelve el campo con sus valores.
+  const t = await tablaDePedidos(WI_TABLA);
+  const x = t.boton('Quitar Categoría');
+  assert.ok(x, 'el campo fijo también tiene su ✕');
+  x.on.click({}); await t.esperar();
+  assert.ok(!t.en('work_items.fixed_fields.Custom.Categoria'), 'ya no está');
+  assert.match(t.textoDe('pedidos'), /Quitaste Categoría\./, 'lo dice');
+  await t.click('Deshacer', 'pedidos');
+  assert.ok(t.en('work_items.fixed_fields.Custom.Categoria'), 'volvió');
+  assert.doesNotMatch(t.textoDe('pedidos'), /Quitaste/);
+  assert.deepStrictEqual((await t.revisado()).fixed_fields, WI_TABLA.fixed_fields, 'con su valor');
+  t.boton('Quitar Impacto').on.click({}); await t.esperar();
+  assert.match(t.textoDe('pedidos'), /Quitaste Impacto\./);
+  await t.click('Deshacer', 'pedidos');
+  assert.deepStrictEqual((await t.revisado()).by_severity, WI_TABLA.by_severity, 'la fila vuelve con sus cuatro valores');
+});
+
+// los bordes de la tabla: signos en las etiquetas, valores que parecen números, el orden al deshacer, los campos que
+// fija el pedido y la celda vacía
+const conCampos = (campos) => ({ ...LISTAS_RIESGO, '/api/config/campos-de-pedido': () => ({ ok: true, proyecto: 'Ventas', campos }) });
+
+test('T16j Tabla_EtiquetaSinElSimboloSolo_SinChoques @story-4.9 @ac-10 (pase adversarial) — sólo se limpia el símbolo de adelante, y dos valores que se leerían igual se muestran enteros', async () => {
+  // 🔴 rojo: «-1» se lee «1» (y se confunde con el 1), «(ninguno)» pierde su paréntesis, o dos valores distintos quedan
+  // con la misma etiqueta.
+  const t = await tablaDePedidos({ type: 'Riesgo', by_severity: { high: { 'Custom.Delta': '-1', 'Custom.Nivel': '🔴 Alto' } } }, conCampos([
+    { referencia: 'Custom.Delta', nombre: 'Delta', valores: ['-1', '0', '1', '(ninguno)', '¿Sí?'] },
+    { referencia: 'Custom.Nivel', nombre: 'Nivel', valores: ['🔴 Alto', '🟠 Alto', '🟢 Bajo'] },
+  ]));
+  const etiquetas = (ruta) => t.opcionesDe(t.en(ruta)).filter((o) => o[0] !== '').map((o) => o[1]);
+  assert.deepStrictEqual(etiquetas('work_items.by_severity.high.Custom.Delta'), ['-1', '0', '1', '(ninguno)', '¿Sí?'], 'los signos y la puntuación quedan');
+  assert.deepStrictEqual(etiquetas('work_items.by_severity.high.Custom.Nivel'), ['🔴 Alto', '🟠 Alto', 'Bajo'], 'sin el círculo se leerían igual: van enteros');
+});
+
+test('T16k Tabla_ValorElegido_SeGuardaExacto @story-4.9 @ac-10 (pase adversarial) — lo que parece número se guarda como número sólo si se escribe igual', async () => {
+  // 🔴 rojo: «007» se guarda 7 o «1.10» se guarda 1.1, en el desplegable o escrito a mano.
+  const t = await tablaDePedidos({ type: 'Riesgo', by_severity: { high: { 'Custom.Codigo': '1.10', 'Custom.Impacto': 4, 'Custom.Disparador': 'x' } } }, conCampos([
+    { referencia: 'Custom.Codigo', nombre: 'Código', valores: ['007', '1.10', '5'] },
+    { referencia: 'Custom.Impacto', nombre: 'Impacto', valores: ['1', '2', '3', '4', '5'] },
+    { referencia: 'Custom.Disparador', nombre: 'Disparador', valores: [] },
+  ]));
+  assert.deepStrictEqual(t.opcionesDe(t.en('work_items.by_severity.high.Custom.Codigo')).filter((o) => o[2]).map((o) => o[0]), ['1.10'], 'elegido lo guardado, tal cual');
+  t.en('work_items.by_severity.high.Custom.Codigo').on.change({ target: { value: '007' } });
+  t.en('work_items.by_severity.high.Custom.Impacto').on.change({ target: { value: '5' } });
+  t.en('work_items.by_severity.high.Custom.Disparador').on.input({ target: { value: '0012' } });
+  assert.deepStrictEqual((await t.revisado()).by_severity.high, { 'Custom.Codigo': '007', 'Custom.Impacto': 5, 'Custom.Disparador': '0012' });
+});
+
+test('T16l Deshacer_DevuelveElOrden_YSeApagaConOtroCambio @story-4.9 @ac-10 (pase adversarial) — deshacer deja el borrador como estaba; otro cambio en el medio apaga el deshacer', async () => {
+  // 🔴 rojo: el campo vuelve al final (el archivo cambia de orden sin que nadie lo pida), o «Deshacer» después de otro
+  // cambio pisa lo nuevo sin avisar.
+  const t = await tablaDePedidos(WI_TABLA);
+  t.boton('Quitar Categoría').on.click({}); await t.esperar();
+  await t.click('Deshacer', 'pedidos');
+  let enviado = await t.revisado();
+  assert.deepStrictEqual(Object.keys(enviado.fixed_fields), ['Custom.Categoria', 'Custom.Probabilidad'], 'en su lugar');
+  t.boton('Quitar Impacto').on.click({}); await t.esperar();
+  await t.click('Deshacer', 'pedidos');
+  enviado = await t.revisado();
+  assert.deepStrictEqual(Object.keys(enviado.by_severity.critical), ['Custom.Impacto', 'Custom.PrioridadDelRiesgo'], 'la fila en su lugar');
+  assert.deepStrictEqual(t.nodos().filter((n) => n.attrs['data-fila']).map((n) => n.attrs['data-fila']), ['Custom.Impacto', 'Custom.PrioridadDelRiesgo', 'Custom.Disparador']);
+  // quitar, cambiar otra cosa y recién ahí deshacer: el deshacer ya no está
+  t.boton('Quitar Prioridad del riesgo').on.click({}); await t.esperar();
+  const aviso = t.nodos().find((n) => n.attrs.class === 'deshacer');
+  t.en('work_items.by_severity.high.Custom.Impacto').on.change({ target: { value: '1' } });
+  assert.strictEqual(aviso.attrs.hidden, 'hidden', 'el aviso se apaga con el otro cambio');
+  aviso.hijos.find((n) => n.tag === 'button').on.click({}); await t.esperar();
+  enviado = await t.revisado();
+  assert.strictEqual(enviado.by_severity.high['Custom.Impacto'], 1, 'el otro cambio queda');
+  assert.ok(!Object.prototype.hasOwnProperty.call(enviado.by_severity.critical, 'Custom.PrioridadDelRiesgo'), 'y lo quitado no vuelve por un deshacer viejo');
+});
+
+test('T16m Agregar_NoOfreceLosCamposQueFijaElPedido @story-4.9 @ac-10 (pase adversarial) — «+ campo» y «+ campo fijo» no ofrecen lo que el lector siempre rechaza', async () => {
+  // 🔴 rojo: se puede elegir el título, las etiquetas, la asignación o la gravedad, que el lector rechaza después.
+  const t = await tablaDePedidos({ type: 'Riesgo' }, conCampos([...CAMPOS_RIESGO,
+    { referencia: 'System.Title', nombre: 'Title', valores: [] }, { referencia: 'System.Tags', nombre: 'Tags', valores: [] },
+    { referencia: 'System.AssignedTo', nombre: 'Assigned To', valores: [] }, { referencia: 'Microsoft.VSTS.Common.Severity', nombre: 'Severity', valores: ['1 - Critical'] }]));
+  for (const ruta of ['work_items.campos.nuevo', 'work_items.fijos.nuevo']) {
+    const ofrecidos = t.opcionesDe(t.en(ruta)).map((o) => o[0]).filter(Boolean);
+    assert.deepStrictEqual(ofrecidos, CAMPOS_RIESGO.map((c) => c.referencia), `${ruta}: sólo los que se pueden configurar`);
+  }
+});
+
+test('T16n Celda_SeVaciaSoloEnSuGravedad @story-4.9 @ac-10 (pase adversarial) — una celda con valor se puede vaciar, y el campo sigue en las otras gravedades', async () => {
+  // 🔴 rojo: el desplegable no ofrece dejar la celda sin valor, o vaciarla saca el campo de toda la tabla.
+  const t = await tablaDePedidos(WI_TABLA);
+  const celda = t.en('work_items.by_severity.moderate.Custom.Impacto');
+  assert.deepStrictEqual(t.opcionesDe(celda)[0], ['', '—', false], 'la opción de dejarla sin valor');
+  celda.on.change({ target: { value: '' } });
+  const enviado = await t.revisado();
+  assert.ok(!enviado.by_severity.moderate, 'la gravedad que queda sin campos se saca');
+  assert.deepStrictEqual(enviado.by_severity.critical, WI_TABLA.by_severity.critical, 'las demás, igual');
+  assert.ok(t.en('work_items.by_severity.moderate.Custom.Impacto'), 'la fila sigue');
 });
 
 // ── los tipos de pedido y sus campos, leídos de la plataforma: para elegir, y sin lista se escribe ──
@@ -3372,13 +3594,10 @@ test('T19 Pedidos_PantallaOfreceLasListas_YSinPermisoDejaEscribirConAviso @story
   const con = await pantallaFalsa([sec()], listas);
   for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
   const nodos = con.todo(con.sec('pedidos'));
-  const lista = (id) => (nodos.find((n) => n.tag === 'datalist' && n.attrs.id === id) || { hijos: [] }).hijos.map((o) => o.attrs.value);
-  assert.deepStrictEqual(lista('pedidos-tipos'), ['Bug', 'Riesgo'], 'los tipos para elegir');
-  assert.deepStrictEqual(lista('pedidos-campos'), ['Custom.Impacto', 'System.Title'], 'los campos del tipo elegido');
-  const tipo = nodos.find((n) => n.tag === 'input' && n.attrs['data-path'] === 'work_items.type');
-  assert.strictEqual(tipo.attrs.list, 'pedidos-tipos');
-  const valor = nodos.find((n) => n.tag === 'input' && n.attrs['data-path'] === 'work_items.fixed_fields.Custom.Impacto.valor');
-  assert.deepStrictEqual(lista(valor.attrs.list), ['1', '2', '3'], 'los valores permitidos del campo');
+  const valores = (ruta) => (nodos.find((n) => n.tag === 'select' && n.attrs['data-path'] === ruta) || { hijos: [] }).hijos.map((o) => o.attrs.value);
+  assert.deepStrictEqual(valores('work_items.type'), ['', 'Bug', 'Riesgo'], 'los tipos para elegir, y vacío para el de cada proyecto');
+  assert.deepStrictEqual(valores('work_items.campos.nuevo'), ['', 'Custom.Impacto'], 'los campos del tipo elegido, sin el título, que lo fija el pedido');
+  assert.deepStrictEqual(valores('work_items.fixed_fields.Custom.Impacto'), ['1', '2', '3'], 'los valores permitidos del campo');
   assert.match(con.textoDe('pedidos'), /no incluye los de Compras/);
   assert.deepStrictEqual(con.pedidos.filter((x) => x.ruta === '/api/config/campos-de-pedido').map((x) => x.cuerpo), [{ tipo: 'Riesgo' }], 'los campos, una vez por tipo');
   const sinPermiso = { ok: false, codigo: 'sin_permiso', message: 'el sitio no puede leer los tipos de pedido: falta su permiso de lectura de pedidos de trabajo. Mientras tanto, escribí el nombre' };
@@ -3388,7 +3607,7 @@ test('T19 Pedidos_PantallaOfreceLasListas_YSinPermisoDejaEscribirConAviso @story
   const t2 = n2.find((n) => n.tag === 'input' && n.attrs['data-path'] === 'work_items.type');
   assert.ok(t2 && t2.attrs.value === 'Riesgo' && !t2.attrs.list, 'el campo de siempre, con lo guardado');
   assert.ok(!n2.some((n) => n.tag === 'datalist'), 'sin listas');
-  assert.match(sin.textoDe('pedidos'), /Sin la lista de tipos: el sitio no puede leer los tipos de pedido/);
+  assert.match(sin.textoDe('pedidos'), /Sin las listas de la plataforma: el sitio no puede leer los tipos de pedido/);
   assert.deepStrictEqual(sin.pedidos.filter((x) => x.ruta === '/api/config/campos-de-pedido'), [], 'sin tipos no pide campos');
 });
 
@@ -3431,6 +3650,43 @@ test('T20 Pedidos_ElSitioLeeDeLosProyectosDeLosProductos_ConElTokenDeSoloLectura
       assert.match(t.message, /necesita lectura de pedidos de trabajo/);
     });
   } finally { await new Promise((r) => az.close(r)); }
+});
+
+test('T20b Pedidos_OrganizacionComoDireccion_SeLeeSuNombre @story-4.9 @ac-10 (tanda F) — repos.json guarda la organización como dirección, como la usa la noche: el sitio lee igual', async () => {
+  // 🔴 rojo: con «https://dev.azure.com/acme» (la forma del archivo real) el sitio dice «falta la organización» y la
+  // pantalla nunca recibe las listas: los campos se ven con su nombre técnico.
+  const RP = require(path.join(ROOT, 'scripts', 'lib', 'repo-proposal.js'));
+  const repos = (org) => ({ azure: { org }, repos: [{ producto: 'V', ado: 'Ventas/front' }] });
+  for (const [org, nombre] of [['https://dev.azure.com/acme', 'acme'], ['https://dev.azure.com/acme/', 'acme'], ['https://acme.visualstudio.com', 'acme'], ['https://acme.visualstudio.com/', 'acme'], ['acme', 'acme']]) {
+    assert.deepStrictEqual(RP.dondeLeerPedidos(repos(org)), { org: nombre, proyectos: ['Ventas'] }, org);
+  }
+  for (const org of ['https://dev.azure.com/', 'https://example.com/a/b', 'ftp://dev.azure.com/acme', 'no es/un nombre']) assert.strictEqual(RP.dondeLeerPedidos(repos(org)), null, `${org}: sin organización reconocible`);
+  const urls = [];
+  const r = await RP.tiposDePedido({ ...RP.dondeLeerPedidos(repos('https://dev.azure.com/acme')), project: 'Ventas', token: 't', urlBase: { azure: 'http://az.example' }, fetch: async (u) => { urls.push(String(u)); return new Response(JSON.stringify({ value: [{ name: 'Riesgo' }] }), { status: 200 }); } });
+  assert.deepStrictEqual(r, { ok: true, tipos: ['Riesgo'] });
+  assert.match(urls[0], /^http:\/\/az\.example\/acme\/Ventas\/_apis\/wit\/workitemtypes\?/);
+});
+
+test('T20c Pedidos_OrganizacionNoReconocida_LoDice @story-4.9 @ac-10 (tanda F, revisor de fallas silenciosas) — una organización mal escrita no se confunde con «no hay productos»', async () => {
+  // 🔴 rojo: con azure.org mal escrita el sitio dice «no hay productos con su proyecto declarado», y quien mantiene busca
+  // el error en la lista de productos en vez de en la organización.
+  const RP = require(path.join(ROOT, 'scripts', 'lib', 'repo-proposal.js'));
+  const repos = (org, lista = [{ producto: 'V', ado: 'Ventas/front' }]) => ({ azure: org === undefined ? undefined : { org }, repos: lista });
+  assert.strictEqual(RP.porQueNoSeLeenPedidos(repos('https://dev.azure.com/')), 'organizacion');
+  assert.strictEqual(RP.porQueNoSeLeenPedidos(repos(undefined)), 'organizacion');
+  assert.strictEqual(RP.porQueNoSeLeenPedidos(repos('acme', [])), 'proyectos');
+  assert.strictEqual(RP.porQueNoSeLeenPedidos(null), 'proyectos', 'sin repos.json, lo de siempre');
+  for (const [doc, esperado] of [[repos('https://example.com/a/b'), /la organización declarada en repos\.json/], [repos('acme', []), /no hay productos con su proyecto declarado/]]) {
+    const ops = clon({ 'operations.json': opsBase(), 'scripts/nightly/dependencies/repos.json': JSON.stringify(doc) });
+    await conPestana({ fuentes: fuentesCon({ ops }), env: { SITE_PIPELINES_TOKEN: 'pip' }, opciones: { urlBase: { azure: 'http://127.0.0.1:9' } } }, async ({ entrar, token, escribir }) => {
+      const lead = await entrar(LEAD); const tok = await token(lead);
+      for (const ruta of ['/api/config/tipos-de-pedido', '/api/config/campos-de-pedido']) {
+        const r = (await escribir(ruta, lead, tok, { tipo: 'Riesgo' })).json;
+        assert.strictEqual(r.ok, false, ruta);
+        assert.match(r.message, esperado, `${ruta}: ${r.message}`);
+      }
+    });
+  }
 });
 
 // ── los niveles de modelo en la pantalla ────────────────────────────────────────────────────────────────

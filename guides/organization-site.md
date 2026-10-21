@@ -392,15 +392,21 @@ en su repo.
   Proyectos y Corridas. Destildá las que no uses: dejan de armarse y de mostrarse, y Arnés dice cuántas hay ocultas.
   Queda en `operations.json`, en el repo de operaciones (`site.hidden_cards`). Lo revisa quien mantiene.
 - **Pedidos de vulnerabilidades**: con qué tipo y qué campos crea la revisión de la noche el pedido de trabajo de una
-  vulnerabilidad en cada proyecto de Azure DevOps. Tiene tres partes: el **tipo** (vacío, cada proyecto usa su elemento
-  de backlog), los **campos fijos**, que van en todos los pedidos, y una fila **por gravedad** (crítica, alta, media y
-  baja), cuyos campos ganan sobre los fijos si coinciden. Cada campo se escribe con su referencia en Azure DevOps (como
-  `Microsoft.VSTS.Common.Priority`) y su valor. El título, el texto, las etiquetas y la asignación los pone el arnés y no
-  se cambian acá. «Revisar cambios» lo valida con el mismo lector que usa la noche: un campo que el arnés fija, un valor
-  que empieza con «@» o con un salto de línea, o una gravedad que no es una de las cuatro, se marcan en su campo y no se
-  proponen. Un proyecto que no tiene el tipo elegido usa el suyo, y el resumen de la mañana lo dice. Queda en
-  `operations.json`, en el repo de operaciones (`work_items`). Lo revisa quien mantiene. Los tipos y los campos se
-  escriben: elegirlos de una lista leída de Azure DevOps pediría un permiso de lectura de work items que el sitio no tiene.
+  vulnerabilidad en cada proyecto de Azure DevOps. Arriba, en un recuadro, el **tipo** (vacío, cada proyecto usa su
+  elemento de backlog) y los **campos fijos**, que van en todos los pedidos. Abajo, **según la gravedad**, una tabla con
+  una fila por campo y una columna por gravedad (crítica, alta, media y baja); sus valores ganan sobre los fijos si el
+  campo coincide. El sitio lee de los proyectos de los productos los tipos, los campos de cada tipo y sus valores
+  permitidos: cada campo se ve con su nombre (y su referencia, como `Microsoft.VSTS.Common.Priority`, debajo) y cada
+  valor se elige de un desplegable. Los valores que traen un símbolo adelante, como un círculo de color, se ven sin él y
+  se guardan tal cual los acepta Azure DevOps. Un campo sin valores fijos se escribe. Sin permiso de lectura de work
+  items, o si Azure DevOps no contesta, un aviso dice por qué y todo se escribe con su referencia. La ✕ de un campo lo
+  quita (de las cuatro gravedades, en la tabla) y se puede deshacer hasta guardar. El título, el texto, las etiquetas y la
+  asignación los pone el arnés y no se cambian acá. «Revisar cambios» lo valida con el mismo lector que usa la noche: un
+  campo que el arnés fija, un valor vacío, que empieza con «@» o con un salto de línea, o una gravedad que no es una de
+  las cuatro, se marcan en su campo y no se proponen. Un proyecto que no tiene el tipo elegido usa el suyo, y el resumen
+  de la mañana lo dice. Queda en `operations.json`, en el repo de operaciones (`work_items`). Lo revisa quien mantiene.
+
+![Pedidos de vulnerabilidades](sitio-de-la-organizacion/capturas/configuracion-pedidos.png)
 
 ![Avisos y la noche](sitio-de-la-organizacion/capturas/configuracion-avisos.png)
 
