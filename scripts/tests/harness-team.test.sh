@@ -416,6 +416,8 @@ PY
 lineas() { local n; n="$(wc -l < "$LAB_RELEASE_LOG" 2>/dev/null)"; printf '%s' "${n// /}"; }
 team_pedidos() { local n; n="$(grep -c -- "/repos/$LAB_TEAM/" "$LAB_RELEASE_LOG" 2>/dev/null)"; printf '%s' "${n:-0}"; }
 applier_ultima() { tail -n 1 "$(dirname "$(ESTADO)")/lab-applier.log" 2>/dev/null; }
+# las corridas del aplicador de juguete que escriben (las de --check se anotan en otro lado)
+aplicador_corridas() { local n; n="$(grep -c '^run check=0' "$(dirname "$(ESTADO)")/lab-applier.log" 2>/dev/null)"; echo "${n:-0}"; }
 STARTUP_LOG() { printf '%s' "$(dirname "$(ESTADO)")/harness/startup.log"; }
 sha7() { printf '%s' "$1" | cut -c1-7; }
 aviso() { estado "d.get('notice') or ''"; }
@@ -497,15 +499,31 @@ if corre T10; then
   [ -n "$(estado "(d['team'].get('last_error') or {}).get('reason','')")" ] && ok "(e) state.team.last_error guarda el motivo" || mal "(e) sin last_error: $(estado "d.get('team')")"
   harness_lab_release_control '{ "auth": "none" }'
   # (f) `update --check` no toca la capa; `update` (al día, aplica) la trae, lo dice y sale 0
+  # …y el aplicador corre SÓLO en el update que refrescó la capa: un revisor que la capa mudó de carpeta queda con su
+  # enlace viejo colgado hasta la sesión siguiente si nadie vuelve a enlazar
   C4="$(team_head)"
+  A0="$(aplicador_corridas)"
   harness_release update --check >/dev/null 2>&1
   [ "$(estado "d['team']['commit']")" = "$C3" ] && ok "(f) update --check no tocó la capa" || mal "(f) --check tocó la capa: $(estado "d.get('team')")"
   harness_release update --dry-run >/dev/null 2>&1
   [ "$(estado "d['team']['commit']")" = "$C3" ] && ok "(f) update --dry-run tampoco" || mal "(f) --dry-run tocó la capa: $(estado "d.get('team')")"
+  [ "$(aplicador_corridas)" = "$A0" ] && ok "(f) …y ninguno de los dos corrió el aplicador" || mal "(f) --check o --dry-run corrieron el aplicador $(( $(aplicador_corridas) - A0 )) vez/veces"
   OUT="$(harness_release update 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(estado "d['team']['commit']")" = "$C4" ] && ok "(f) update al día trajo la capa nueva ($(sha7 "$C4")) y salió 0" || mal "(f) update: rc $RC $(estado "d.get('team')") $OUT"
   case "$OUT" in *"capa del equipo"*"$(sha7 "$C3")"*"$(sha7 "$C4")"*) ok "(f) …y lo dice (de $(sha7 "$C3") a $(sha7 "$C4"))" ;; *) mal "(f) update no lo dice: $OUT" ;; esac
   [ "$(estado "d['team'].get('last_error')")" = None ] && ok "(f) un refresco sano limpia last_error" || mal "(f) last_error sigue: $(estado "d['team'].get('last_error')")"
+  [ "$(( $(aplicador_corridas) - A0 ))" = 1 ] && ok "(f) T22 Update_RefrescaLaCapa_VuelveAEnlazar @story-2.63 @ac-18: el update que refrescó la capa corrió el aplicador una vez" || mal "(f) T22: el update que refrescó la capa corrió el aplicador $(( $(aplicador_corridas) - A0 )) vez/veces (esperaba 1)"
+  A1="$(aplicador_corridas)"
+  harness_release update >/dev/null 2>&1
+  [ "$(aplicador_corridas)" = "$A1" ] && ok "(f) T22: un update sin nada nuevo no corre el aplicador" || mal "(f) T22: un update sin nada nuevo corrió el aplicador $(( $(aplicador_corridas) - A1 )) vez/veces"
+  # …y si el aplicador falla, update lo dice en una línea, sale 0 (la capa entró) y no anota piezas nuevas
+  publica_perfil "$PERFIL_CON_NIGHTLY" "nightly prendida, con el aplicador fallando"
+  C4b="$(team_head)"
+  P0="$(estado "json.dumps(d.get('managed'), sort_keys=True)")"
+  OUT="$(LAB_APPLIER_FAIL=1 harness_release update 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && [ "$(estado "d['team']['commit']")" = "$C4b" ] && ok "(f) T22: con el aplicador fallando, la capa entró y update salió 0" || mal "(f) T22: aplicador fallando: rc $RC $(estado "d.get('team')")"
+  case "$OUT" in *"el aplicador falló"*) ok "(f) T22: …y lo dice en una línea" ;; *) mal "(f) T22: update no dice que el aplicador falló: $OUT" ;; esac
+  [ "$(estado "json.dumps(d.get('managed'), sort_keys=True)")" = "$P0" ] && ok "(f) T22: …y no anotó piezas de un aplicador que falló" || mal "(f) T22: anotó piezas con el aplicador fallando"
   # (g) política ask y una versión pública nueva sin aplicar: la capa nueva entra igual
   publica_perfil "$PERFIL_SIN_NIGHTLY" "nightly apagada (ask)"
   C5="$(team_head)"

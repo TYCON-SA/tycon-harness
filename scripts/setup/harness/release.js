@@ -2293,6 +2293,14 @@ function cmdUpdate(ctx, state, H, { log, asked = null }) {
     if (p2.errors.length) u.lines = [...(u.lines || []), `la política no se pudo releer después de refrescar la capa del equipo (${p2.errors[0]}): sigue la de antes`];
     else { state.policy = { channel: p2.channel, apply: p2.apply, enabled: p2.enabled }; H.applyPolicy(ctx, state, p2); }
   }
+  // la capa refrescada en el lugar pasa por el aplicador, como en el arranque: sin él, un revisor que la capa cambió de
+  // carpeta queda con su enlace viejo colgado hasta la sesión siguiente
+  if (u.team && u.team.status === 'refreshed') {
+    const a = H.runApplier(ctx, own.harness, { log });
+    state.last_apply = nowIso();
+    if (!a.ok) u.lines = [...(u.lines || []), `el aplicador falló (${a.reason}): detalle en ${S.paths(ctx.home).log}`];
+    else H.recordPieces(ctx, state, a.report, a.shared);
+  }
   if (lifted.length) u.lines = [...lifted, ...u.lines];
   // la carpeta global de hooks de git: un update que aplica la pone si falta (el aviso de `ask` la pedía)
   if (mode === 'apply' && typeof H.hooksPathUnattended === 'function' && !['failed', 'busy'].includes(u.status)) {
