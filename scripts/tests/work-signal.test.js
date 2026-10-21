@@ -143,10 +143,11 @@ test('WorkSignal_UnknownTool_TreatedAsNone @story-7.40 @ac-14', () => {
 // El techo: archivos del núcleo que nombran una herramienta de horas, fuera de las carpetas de integraciones, la vieja
 // carpeta de la skill y las pruebas. Sólo baja: llega a 0 cuando la última integración sale del núcleo.
 // Tampoco cuentan las capturas de la guía del sitio: son la página tal cual la guarda site-guide-captures.js, y la
-// página de Configuración trae la sección de integraciones con sus nombres; no es núcleo escrito
+// página de Configuración trae la sección de integraciones con sus nombres; no es núcleo escrito. Ni el registro de las
+// firmas del dueño (.github/control-changes.jsonl): anota las rutas de los controles que firma, también las borradas
 const TOOL_NAMES_CEILING = 56;
 const TOOL_NAMES_OUTSIDE_CORE = [':!integrations', ':!skills/clocki', ':!guides/integrations', ':!guides/sitio-de-la-organizacion/capturas',
-  ':!**/tests/**', ':!**/*.test.*'];
+  ':!.github/control-changes.jsonl', ':!**/tests/**', ':!**/*.test.*'];
 /** Los archivos del núcleo que nombran una herramienta de horas en el clon `root`. `--untracked`: un archivo nuevo cuenta desde que existe. */
 function coreFilesNamingTimeTool(root) {
   const r = spawnSync('git', ['-C', root, 'grep', '--untracked', '-il', '-E', 'clocki|clockify|solidtime', '--', '.', ...TOOL_NAMES_OUTSIDE_CORE], { encoding: 'utf8' });
