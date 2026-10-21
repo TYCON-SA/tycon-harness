@@ -109,7 +109,7 @@ const COMMANDS = {
   // el secreto no va por ahí (cmdConfig lo rechaza con el motivo)
   // las claves de la tabla salen de github-auth.js (KEYS): una clave que cmdConfig acepta y la tabla no, se rechaza antes de llegar
   // (pase adversarial 8.25 A1a-azure: `config set azure.token` —la acción que recomiendan todos los mensajes— salía 2 acá)
-  config:    { opts: {}, positional: ['set', 'unset', 'show', 'github.token', 'azure.token', 'paths.maintained', 'paths.maintainers', 'paths.team', 'paths.operations'], freeAfter: 2, help: 'la configuración propia del arnés en ~/.tycon/config.json (story 8.23, tanda B): `config set <clave> [<valor>]` guarda el valor (por argumento, por stdin, o pedido en la terminal); `config set github.token` lee el permiso de sólo lectura de GitHub por stdin o lo pide en la terminal SIN eco —nunca por argumento, nunca lo imprime— y lo guarda sólo para tu usuario; `config set azure.token` hace lo mismo con el PAT de Azure DevOps del repo del equipo (story 8.25); `config unset <clave>` lo saca; `config show` dice qué claves hay (sin valores)' },
+  config:    { opts: {}, positional: ['set', 'unset', 'show', 'github.token', 'azure.token', 'paths.maintained', 'paths.maintainers', 'paths.team', 'paths.operations'], extraPositional: (a) => { try { return require('../lib/integrations.js').isSecretKey(a); } catch (_) { return false; } }, freeAfter: 2, help: 'la configuración propia del arnés en ~/.tycon/config.json (story 8.23, tanda B): `config set <clave> [<valor>]` guarda el valor (por argumento, por stdin, o pedido en la terminal); `config set github.token` lee el permiso de sólo lectura de GitHub por stdin o lo pide en la terminal SIN eco —nunca por argumento, nunca lo imprime— y lo guarda sólo para tu usuario; `config set azure.token` hace lo mismo con el PAT de Azure DevOps del repo del equipo (story 8.25); `config unset <clave>` lo saca; `config show` dice qué claves hay (sin valores)' },
   startup:   { opts: { '--force': 'flag' }, help: 'lo que corre la línea de arranque de cada sesión (sale 0 siempre)' },
   update:    { opts: { '--check': 'flag', '--dry-run': 'flag', '--yes': 'flag' }, help: 'trae la punta del canal de cada fuente y, si hay versión nueva, la aplica (0 al día · 3 hay nueva · 2 no pude mirar, con --check)' },
   apply:     { opts: { '--dry-run': 'flag' }, help: 'corre el aplicador (install-tycon-hooks.sh / .ps1); --dry-run muestra lo que cambiaría, sin escribir' },
@@ -167,8 +167,12 @@ function parse(argv) {
       continue;
     }
     if (spec.positional && spec.positional.includes(a)) { args.push(a); continue; }
+    // las claves que no están en la tabla porque las declara otro: los secretos de las integraciones
+    if (spec.extraPositional && spec.extraPositional(a)) { args.push(a); continue; }
     // un valor suelto después de los posicionales reconocidos, donde el comando lo admite (`freeAfter`)
     if (spec.freeAfter && args.length >= spec.freeAfter) { args.push(a); continue; }
+    // en `config`, algo que no tiene forma de clave puede ser un secreto pegado en el lugar equivocado: no se repite
+    if (cmd === 'config' && !/^[a-z][A-Za-z._-]{0,39}$/.test(a)) return { error: `valor inesperado para config (no se muestra: no tiene forma de clave). Acepta: ${spec.positional.join(' | ')}` };
     return { error: `valor inesperado «${a}» para ${cmd}${spec.positional ? ` (acepta: ${spec.positional.join(' | ')})` : ''}` };
   }
   return { cmd, opts, args };
@@ -4736,14 +4740,21 @@ function cmdConfig(ctx) {
   const GA = mod('github-auth');
   const [verb, key, argValue, ...rest] = ctx.args;
   if (!verb || !['set', 'unset', 'show'].includes(verb)) return { code: 2, lines: ['harness.js config: uso: config set <clave> [<valor>] (sin valor: por stdin, o pedido en la terminal) · config unset <clave> · config show'] };
-  if (rest.length) return { code: 2, lines: [`harness.js config: un solo valor para ${key || 'la clave'} (sobran: ${rest.join(' ')})`] };
+  // los secretos que declaran las integraciones van en su propio archivo (scripts/lib/integrations.js): el freno de
+  // producción lee config.json con su copia del lector, que no los conoce
+  const INT = require('../lib/integrations.js');
+  // con una clave secreta, lo que sobra puede ser un pedazo del secreto: el mensaje no lo repite
+  const secret = !!key && (GA.SECRET_KEYS.includes(key) || INT.isSecretKey(key, { env: ctx.env }));
+  if (rest.length) return { code: 2, lines: [`harness.js config: un solo valor para ${key || 'la clave'} (sobran ${secret ? `${rest.length} argumento(s), que no se muestran` : `: ${rest.join(' ')}`})`] };
   if (verb === 'show') {
     const c = GA.readConfig({ env: ctx.env });
     if (!c.ok) return { code: 2, lines: [`harness.js config: ${c.reason}`] };
     const keys = [];
     for (const [section, v] of Object.entries(c.data)) if (v && typeof v === 'object') for (const k of Object.keys(v)) keys.push(`${section}.${k}`);
-    return { code: 0, stdout: true, lines: [`${c.file}: ${keys.length ? `claves guardadas: ${keys.join(', ')} (los valores no se muestran)` : 'sin claves'}`] };
+    const secrets = INT.secretKeys({ env: ctx.env }).map((s) => `${s.key}: ${INT.secretState(s.key, { env: ctx.env })}`);
+    return { code: 0, stdout: true, lines: [`${c.file}: ${keys.length ? `claves guardadas: ${keys.join(', ')} (los valores no se muestran)` : 'sin claves'}`, ...(secrets.length ? [`secretos de las integraciones (${INT.secretsDir(ctx.env)}): ${secrets.join(' · ')}`] : [])] };
   }
+  if (key && INT.isSecretKey(key, { env: ctx.env })) return configIntegrationSecret(ctx, INT, verb, key, argValue);
   if (!key || !GA.KEYS.includes(key)) return { code: 2, lines: [`harness.js config: la clave tiene que ser una de ${GA.KEYS.join(', ')}${key ? ` (dice «${key}»)` : ''}`] };
   if (verb === 'unset') {
     const r = GA.setKey(key, null, { env: ctx.env, platform: ctx.platform });
@@ -4804,6 +4815,39 @@ function cmdConfig(ctx) {
     return { code: 2, lines: [`harness.js config: ${first}`, ...more] };
   }
   return { code: 0, lines: [`${key} guardada en ${r.file} (sólo para tu usuario)`, ...(r.warning ? [r.warning] : []), ...(secretNote ? [secretNote] : [])] };
+}
+
+/**
+ * `config set|unset <integración>.<clave>` de un secreto que declara una integración: por stdin o por la terminal sin
+ * eco, nunca por argumento (quedaría en el historial del shell); se guarda aparte, sólo para el usuario; nunca se imprime.
+ */
+function configIntegrationSecret(ctx, INT, verb, key, argValue) {
+  if (verb === 'unset') {
+    if (argValue !== undefined && argValue !== null) return { code: 2, lines: [`harness.js config: unset ${key} no lleva valor (el que pasaste no se muestra)`] };
+    const r = INT.writeSecret(key, null, { env: ctx.env, platform: ctx.platform });
+    return r.ok ? { code: 0, lines: [`${key} sacada de ${r.file}`] } : { code: 2, lines: [`harness.js config: ${r.reason}`] };
+  }
+  if (argValue !== undefined && argValue !== null) return { code: 2, lines: [`harness.js config: ${key} no va por la línea de comandos (quedaría en el historial del shell): pegalo en la terminal —harness.js config set ${key} y Enter— o pasalo por stdin: printf '%s' '<valor>' | harness.js config set ${key}`] };
+  const P = mod('prompt');
+  let value = '';
+  let note = null;
+  if (!P.isTerminal()) {
+    const r = P.readAnswer();
+    if (r.error) return { code: 2, lines: [`harness.js config: no pude leer el valor por stdin (${r.error})`] };
+    value = r.text;
+  } else {
+    process.stdout.write(`pegá ${key} y Enter (no se muestra): `);
+    const r = P.readSecret();
+    if (r.error) return { code: 2, lines: [`harness.js config: no pude leer la terminal (${r.error}); no escribí nada`] };
+    if (r.aborted) return { code: 130, lines: ['harness.js config: cancelado; no escribí nada'] };
+    value = r.text;
+    if (r.echoed) note = 'ojo: esta terminal no deja apagar el eco: el valor se vio en pantalla (si hay alguien más mirando, revocalo y creá otro)';
+  }
+  value = String(value).replace(/\r?\n$/, '').trim();
+  if (!value) return { code: 2, lines: [`harness.js config: el valor de ${key} llegó vacío; pasalo por stdin: printf '%s' '<valor>' | harness.js config set ${key}`] };
+  const r = INT.writeSecret(key, value, { env: ctx.env, platform: ctx.platform });
+  if (!r.ok) return { code: 2, lines: [`harness.js config: ${r.reason}`] };
+  return { code: 0, lines: [`${key} guardada en ${r.file} (sólo para tu usuario)`, ...(note ? [note] : [])] };
 }
 
 /**

@@ -364,7 +364,9 @@ function profileFold({ ctx, oldTree, ownConfigData = null, oldConfigData = null 
   const moves = [], had = [], skipped = [];
   for (const e of r.entradas) {
     const item = { section: e.seccion, key: e.clave, value: e.valor };
-    if (PROFILE_SKIP.includes(`${e.seccion}.${e.clave}`)) skipped.push(item);
+    // la integración de horas elegida y los ajustes de una integración (un objeto) siguen en el perfil: el archivo de la
+    // máquina lo lee también el freno de producción con su copia del lector, que no los conoce.
+    if (PROFILE_SKIP.includes(`${e.seccion}.${e.clave}`) || (e.seccion === 'integrations' && (e.clave === 'timeTracking' || isObject(e.valor)))) skipped.push(item);
     else if (has(own, e.seccion, e.clave) || has(old, e.seccion, e.clave)) had.push(item);
     else moves.push(item);
   }
