@@ -209,7 +209,6 @@ const TEXTOS = {
   'arnes.motivoUltima5': { es: 'el sitio no sabe de qué imagen es (.tycon-release.json sin image)', en: 'the site does not know which image it comes from (.tycon-release.json without image)' },
   'arnes.ultimaSinMirar': { es: 'todavía no se miró la última publicada', en: 'the latest published has not been checked yet' },
   'arnes.comoEsta': { es: 'Cómo está el arnés', en: 'How the harness is doing' },
-  'arnes.enlaceTablero': { es: 'La página de las seis preguntas →', en: 'The six questions page →' },
   'arnes.lede': { es: 'Si los controles andan: lo que midió la noche y la versión que corre este sitio.', en: 'Whether the controls work: what the night run measured and the version this site runs.' },
 
   // ── las páginas sueltas ─────────────────────────────────────────────────────────────────────────────────────────
@@ -376,6 +375,7 @@ const TEXTOS = {
   'ficha.motivo.solo_en_la_maquina': { es: 'sólo se mide en la máquina de cada dev', en: 'it is only measured on each dev\'s machine' },
   'ficha.motivo.ilegible': { es: 'la foto de esta fuente no se pudo leer', en: 'the snapshot of this source could not be read' },
   'ficha.motivo.sin_datos': { es: 'la fuente no trae este dato', en: 'the source does not include this figure' },
+  'ficha.motivo.calculo_caido': { es: 'el cálculo de las fichas se cayó: mirá el registro del sitio', en: 'the card calculation failed: check the site log' },
   'fichas.bien': { es: 'bien', en: 'good' },
   'fichas.atencion': { es: 'atención', en: 'attention' },
   'fichas.rojo': { es: 'rojo', en: 'red' },

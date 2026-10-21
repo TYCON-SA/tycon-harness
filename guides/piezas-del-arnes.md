@@ -819,7 +819,11 @@ la configuración e instalarlo. Quién entra lo decide sólo la lista `site.acce
 cada rol, los problemas comunes, cómo se instala y cómo está hecho por dentro, en
 [guides/organization-site.md](organization-site.md) (en inglés,
 [guides/organization-site.en.md](organization-site.en.md)). Sus capturas las saca
-`scripts/tools/site-guide-captures.js` del sitio corriendo con una organización de laboratorio. Las piezas que lo acompañan: la imagen
+`scripts/tools/site-guide-captures.js` del sitio corriendo con una organización de laboratorio. Las fichas del tablero de
+la noche llegan a Arnés, Proyectos y Corridas por `scripts/site/tabs/cards.js`: el sitio llama al mismo cálculo que arma la
+página del tablero (`colectar()` de `scripts/nightly/dashboard/dashboard.js`), toma de cada ficha sólo lo de su lista
+blanca, y oculta las que la organización destildó en Configuración (`site.hidden_cards`); la página del tablero ya no se
+sirve en el sitio, sólo su sello. Red: `site-cards.test.js`. Las piezas que lo acompañan: la imagen
 (`.github/workflows/site-image.yml`), las instalaciones (`scripts/site/deploy/`: Azure Container Apps en dos fases,
 Render y una máquina propia), la prueba sin sesión (`scripts/site/check-deploy.js`) y el canal del aviso
 (`scripts/lib/notify.js`). Red: las suites `site-*` y `notify` de `scripts/tests/`.

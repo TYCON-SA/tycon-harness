@@ -73,11 +73,13 @@ function exprDelTablero(def) {
   return `${PREFIJO_DE_PANEL[def.de[0]]}.${def.de[1]}`;
 }
 
-const MOTIVOS = Object.freeze(['sin_foto', 'vieja', 'sin_buzon', 'solo_en_la_maquina', 'ilegible', 'sin_datos']);
+// `calculo_caido`: el cálculo común del tablero tiró, y ninguna ficha se pudo saber (no es una foto ilegible)
+const MOTIVOS = Object.freeze(['sin_foto', 'vieja', 'sin_buzon', 'solo_en_la_maquina', 'ilegible', 'sin_datos', 'calculo_caido']);
 
 /** El motivo del tablero es texto libre; el sitio manda sólo uno de la lista cerrada. */
 function motivoCerrado(texto) {
   const t = String(texto || '');
+  if (MOTIVOS.includes(t)) return t;
   if (/sin medición desde/i.test(t)) return 'vieja';
   if (/no hay ningún archivo|no se pudo leer la carpeta|no está la carpeta|no está declarada|sin_foto/i.test(t)) return 'sin_foto';
   if (/disco de cada máquina|no aplica en el nocturno|esta máquina/i.test(t)) return 'solo_en_la_maquina';
@@ -136,7 +138,7 @@ function modeloDeFichas(paneles, { cfg = {}, ocultas = [] } = {}) {
 }
 
 /** Todas las fichas visibles como no medidas con un motivo cerrado (el cálculo no corrió o se cayó). */
-function fichasNoMedidas(ocultas = [], motivo = 'ilegible') {
+function fichasNoMedidas(ocultas = [], motivo = 'calculo_caido') {
   const fuera = new Set(Array.isArray(ocultas) ? ocultas : []);
   return { lista: FICHAS.filter((f) => !fuera.has(f.id)).map((f) => proyectar(f, { estado: 'no_medido', motivo }, {})), ocultas: FICHAS.filter((f) => fuera.has(f.id)).length };
 }
@@ -144,7 +146,7 @@ function fichasNoMedidas(ocultas = [], motivo = 'ilegible') {
 /**
  * Las fichas del sitio a partir de la copia de operaciones (`clon`) y el espejo del buzón: llama al MISMO `colectar()` del
  * tablero nocturno, en su modo de noche (el sitio, igual que el agente de la noche, no es una máquina del equipo). Si el
- * cálculo falla, cada ficha sale «no medida» con el motivo `ilegible` y el detalle va a `log`.
+ * cálculo falla, cada ficha sale «no medida» con el motivo `calculo_caido` y el detalle va a `log`.
  */
 function fichasDelClon({ clon, dirBuzon = null, buzonLeido = false, ocultas = [], ahora = Date.now(), log = () => {} }) {
   const fuera = new Set(Array.isArray(ocultas) ? ocultas : []);
