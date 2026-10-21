@@ -183,6 +183,7 @@ const TEXTOS = {
   'fuente.corridas': { es: 'corridas', en: 'runs' },
   'fuente.pasos-corrida': { es: 'pasos-corrida', en: 'run steps' },
   'fuente.concentracion': { es: 'concentracion', en: 'authorship concentration' },
+  'fuente.story-reference': { es: 'story-reference', en: 'code changes without a story' },
   'arnes.alDia': { es: 'al día (del {fecha})', en: 'up to date (from {fecha})' },
   'arnes.banco': { es: 'Banco de controles', en: 'Controls bench' },
   'arnes.bancoRojos': { es: '{n} casos rojos (del {fecha})', en: '{n} red cases (from {fecha})' },

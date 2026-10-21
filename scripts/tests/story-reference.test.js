@@ -49,7 +49,7 @@ test('T1 Nombra_LasFormasDeD3_YNoElCuerpoNiUnaVersion @story-1.31 @ac-1', () => 
     'Merge pull request 7 from feature/2.14-tablero into main', 'fix/3.2-el-borde', 'docs(5.9): la guía', 'arreglo (GE-1)', 'GE-3 el mensaje']) {
     assert.ok(nombra(t), `«${t}» nombra una historia`);
   }
-  for (const t of ['chore: bump a (4.1.2)', 'Merge pull request 5112 from dev into main', 'arreglo del login', 'UTF-8 en el csv', 'CVE-2026 parche']) {
+  for (const t of ['chore: bump a (4.1.2)', 'Merge pull request 51 from dev into main', 'arreglo del login', 'UTF-8 en el csv', 'CVE-2026 parche']) {
     assert.ok(!nombra(t), `«${t}» no nombra una historia`);
   }
   // el cuerpo no cuenta: una historia se cita de pasada
@@ -193,7 +193,7 @@ test('T14 Ventana_FastForwardViejo_NoCortaLaCuenta @story-1.31 @ac-4', () => {
 
 test('T15 Via_SquashDeUnPedido_CuentaComoPedido @story-1.31 @ac-4', () => {
   const r = repo();
-  r.commit('Merged PR 2925: arregla los pasos', ['src/s.js']);   // squash de Azure DevOps
+  r.commit('Merged PR 29: arregla los pasos', ['src/s.js']);     // squash de Azure DevOps
   r.commit('agrega el filtro (#41)', ['src/g.js']);               // squash de GitHub
   r.commit('directo sin pedido', ['src/d.js']);
   const c = sr().contarRepo(r.dir, { today: HOY });
