@@ -408,6 +408,24 @@
       "form": "date",
       "value": "2026-09-21",
       "reason": "scripts/tests/forms-to-version.test.sh (T9) exige que el guion explique el salteo de merges con la fecha del caso; se reescribe cuando esa prueba deje de pedir la fecha"
+    },
+    {
+      "file": "scripts/site/cloud/azure.js",
+      "form": "date",
+      "value": "2019-08-01",
+      "reason": "la versión de la API de Azure (`api-version`) que el comentario nombra: es un dato del servicio, no una fecha del equipo"
+    },
+    {
+      "file": "scripts/install-tycon-hooks.ps1",
+      "form": "story-number",
+      "value": "story 8.36",
+      "reason": "un rótulo de sección que scripts/tests/legacy-names-install.test.sh (T26) usa como ancla de `sed` para recortar el bloque del .ps1; se reescribe cuando la prueba recorte por un marcador sin historia"
+    },
+    {
+      "file": "scripts/install-tycon-hooks.ps1",
+      "form": "story-number",
+      "value": "story 8.9",
+      "reason": "un rótulo de sección que scripts/tests/legacy-names-install.test.sh (T26) usa como ancla de `sed` para recortar el bloque del .ps1; se reescribe cuando la prueba recorte por un marcador sin historia"
     }
   ]
 }

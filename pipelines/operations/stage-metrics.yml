@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-# Métricas del ciclo de cada noche — MODELO para cualquier organización en Azure DevOps (story 8.30)
+# Métricas del ciclo de cada noche — MODELO para cualquier organización en Azure DevOps
 #
 # Cómo darlo de alta: pipelines/operations/README.md. Se copia a `pipelines/` del repo de operaciones de la organización y
 # se cambia UNA línea: el `name:` del recurso `harness` (marcada abajo).
@@ -21,7 +21,7 @@
 #
 # Las copias del repo del arnés (sólo si tu organización tiene alguna con stories) las declara `team-repos.json` del repo
 # de operaciones, `harness_copies`: no se miden, así sus stories no cuentan dos veces; de ellas se mide sólo la de
-# `maintainers`, si está en la lista. Las variables de antes, HARNESS_COPIES y HARNESS_MEASURED_COPY, ya no se leen: si
+# `maintainers`, si está en la lista. Las variables HARNESS_COPIES y HARNESS_MEASURED_COPY no se leen: si
 # siguen puestas, la corrida avisa, y sale en rojo si team-repos.json no declara las copias (no se mide dos veces en
 # silencio).
 #
@@ -90,9 +90,9 @@ jobs:
               [ "$KIND" != "measure" ] || MEASURED="$(lower "$ID")"
             done <<< "$DECLARED"
           fi
-          # Las variables de antes ya no se leen (DEF-8.30-copias-del-arnes-en-team-repos): dos lugares para lo mismo
+          # Las variables HARNESS_COPIES y HARNESS_MEASURED_COPY no se leen: dos lugares para lo mismo
           # terminan diciendo cosas distintas. Si siguen puestas y team-repos.json no declara copias, rojo: quien las puso
-          # tiene copias, y medirlas dos veces en silencio es justo lo que la variable evitaba.
+          # tiene copias, y medirlas dos veces en silencio es justo lo que se evita.
           if [ -n "$(printf '%s' "${HARNESS_COPIES:-}${HARNESS_MEASURED_COPY:-}" | tr -d '; \t')" ]; then
             if [ -z "$COPIES" ]; then
               echo "##vso[task.logissue type=error]HARNESS_COPIES y HARNESS_MEASURED_COPY ya no se leen: las copias del arnés se declaran en team-repos.json del repo de operaciones (harness_copies; se mide la de maintainers). Pasalas ahí y borrá las variables de la definición. No se midió nada."
@@ -185,7 +185,7 @@ jobs:
             --sdlc "$SDLC" \
             --out "$(Build.SourcesDirectory)/.dashboard/proyectos" \
             || echo "##vso[task.logissue type=warning]La foto por repo falló (exit $?) — el snapshot sigue"
-          # La concentración por persona (story 2.26), sobre las MISMAS copias y en este mismo paso: por producto, sin
+          # La concentración por persona, sobre las MISMAS copias y en este mismo paso: por producto, sin
           # nombres ni correos (lee git log en memoria). Los productos, del repos.json de la organización; sin él, la ficha
           # sale «no medido». Una falla avisa y no apaga el snapshot.
           INICIO=$(date +%s)

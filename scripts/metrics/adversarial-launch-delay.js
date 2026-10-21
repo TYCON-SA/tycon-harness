@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 'use strict';
 /*
- * adversarial-launch-delay.js — ¿EL PASE ADVERSARIAL SALIÓ A TIEMPO? (story 7.19, AC 15)
+ * adversarial-launch-delay.js — ¿EL PASE ADVERSARIAL SALIÓ A TIEMPO?
  *
  * El pase es el camino crítico de la revisión (27 min de mediana en 403 corridas): tiene que lanzarse al cerrar el
  * paso 4, en paralelo con los revisores. Esta cuenta mide, POR HORAS, cuántas corridas con pase lo lanzaron más de
- * 2 minutos después del primer revisor. La 7.19 original contaba el rótulo `launchedAtStep` (lo tipea el agente) y
- * en 36 de 86 casos estaba mal: acá NO se lee.
+ * 2 minutos después del primer revisor. Contar el rótulo `launchedAtStep` (lo tipea el agente) no sirve: da mal
+ * en 36 de 86 casos medidos, así que acá NO se lee.
  *
  * Las señales, fijas:
  *   · flujo lanzado  = `marker.adversarial.launchedAt` (lo escribe `mark-adversarial-launched` después de lanzar:
  *                      la hora del flujo con la demora de un turno).
  *   · primer revisor = el menor `lanzado` de `revisores.detalle` con un tipo de revisor del arnés, sin el validador
  *                      de stories (que corre antes de implementar).
- *   · apagado        = `marker.adversarialGate.early_launch === false` (story 7.19, AC 7) y, si no está, el
+ *   · apagado        = `marker.adversarialGate.early_launch === false` y, si no está, el
  *                      `"early_launch": false` en el resultado del comando `deep-review-gate` dentro del hilo de la
  *                      corrida. Sin ninguno de los dos, «no se sabe», contado aparte.
  *
@@ -31,7 +31,7 @@ const TARDE_MS = 2 * 60 * 1000;
 const VALIDADOR = 'tycon-story-validator';
 const RAIZ = path.join(__dirname, '..', '..');
 
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js, que viaja con este guion.
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js, que viaja con este guion.
 const { stateDir: stateDirOf } = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
 
 const aMs = (iso) => { const t = typeof iso === 'string' ? Date.parse(iso) : NaN; return Number.isFinite(t) ? t : null; };
@@ -96,8 +96,7 @@ function tempranoApagado(dump, lineas) {
 function medirCorrida(volcado, opts = {}) {
   let dump;
   try { dump = JSON.parse(fs.readFileSync(volcado, 'utf8')); } catch (e) { return { volcado, estado: 'ilegible', motivo: e.code || e.message }; }
-  // un JSON válido que no es un objeto (`null`, un número) también es ilegible: abortaba el informe entero (pase
-  // adversarial de la 7.19)
+  // un JSON válido que no es un objeto (`null`, un número) también es ilegible: abortaría el informe entero.
   if (!dump || typeof dump !== 'object' || Array.isArray(dump)) return { volcado, estado: 'ilegible', motivo: 'el volcado no es un objeto' };
   const marker = dump.marker || {};
   const lanzado = aMs(marker.adversarial && marker.adversarial.launchedAt);

@@ -1,4 +1,4 @@
-# pipelines/operations/templates/fetch-harness.yml — el arnés y el repo de operaciones, en su lugar (story 8.30).
+# pipelines/operations/templates/fetch-harness.yml — el arnés y el repo de operaciones, en su lugar.
 #
 # La incluyen los tres modelos de pipelines/operations/ como PRIMER paso de cada trabajo. Hace tres cosas:
 #   1. Trae el arnés (el recurso `harness` que declara el pipeline: el repo público de GitHub, o una copia en Azure

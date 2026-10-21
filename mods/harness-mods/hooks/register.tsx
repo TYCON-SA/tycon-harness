@@ -1,7 +1,7 @@
-// Los mods del arnés (story 7.27): el cartel de la corrida del pipeline arriba del prompt, /pipeline y /mods.
+// Los mods del arnés: el cartel de la corrida del pipeline arriba del prompt, /pipeline y /mods.
 //
 // La lógica vive en módulos puros (run.mjs, mods.mjs, steps.mjs) que prueba scripts/tests/harness-mods.test.js con
-// node; acá sólo se engancha al motor. Sin dinero: el dueño lo sacó del cartel.
+// node; acá sólo se engancha al motor. Sin dinero: el cartel no lo muestra.
 //
 // Estado: `hidden` y `snapshot` son de la sesión; `off` se guarda en el store del plugin (entre sesiones) y se copia
 // a la sesión al arrancar. Un mod apagado no lee nada ni registra su reloj.
@@ -64,7 +64,7 @@ async function titleFromSpec($: any, markerTextValue: string | null): Promise<st
 }
 
 async function refresh($: any): Promise<void> {
-  // apagado: no lee nada, y no deja una foto vieja que /pipeline o el cartel muestren como actual (clase 9)
+  // apagado: no lee nada, y no deja una foto vieja que /pipeline o el cartel muestren como actual
   if (!isActive(BOARD, { off: await read($, off) })) {
     await update($, snapshot, () => null)
     return
@@ -84,7 +84,7 @@ async function refresh($: any): Promise<void> {
   await update($, snapshot, () => ({ run, context, readError: marker.error, error: null }))
   const key = warnKey(run, await read($, warned))
   if (key && run) {
-    // se anota de una vez: dos refrescos a la par no dan dos avisos (clase 4)
+    // se anota de una vez: dos refrescos a la par no dan dos avisos
     let added = false
     await update($, warned, (w) => { const r = addWarned(w, key); added = r.added; return r.list })
     if (added) $.ui.toast(waitingToast(run))
@@ -102,7 +102,7 @@ async function safeRefresh($: any): Promise<void> {
 }
 
 // el reloj del cartel: uno solo por carga del módulo (una recarga lo descarta y `session.start` lo vuelve a poner)
-// `$.clock.every` devuelve un reloj con `cancel()`, no una función (clase 8)
+// `$.clock.every` devuelve un reloj con `cancel()`, no una función
 let timer: null | { cancel: () => void } = null
 
 function startTimer($: any): void {
@@ -142,7 +142,6 @@ export const register: Register = on => {
     // con una corrida en la foto y una falla del último refresco, la tabla se muestra pero se dice que puede estar vieja
     if (snap && snap.run) return { text: snap.error ? `${pipelineTable(snap.run)}\n\n(Puede estar desactualizada: no pude actualizar el cartel: ${snap.error})` : pipelineTable(snap.run) }
     // un marker que está pero no se lee no es «sin corrida», y una falla del cartel tampoco: cada uno se dice así
-    // (revisión de legibilidad de la pantalla)
     if (snap && snap.readError) return { text: `Hay una corrida en esta sesión, pero no pude leer su archivo: ${snap.readError}` }
     if (snap && snap.error) return { text: `No pude actualizar el cartel: ${snap.error}` }
     return { text: NO_RUN_TEXT }

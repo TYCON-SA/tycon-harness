@@ -8,16 +8,16 @@ const os = require('os');
 const STATE_DIR = path.join(os.homedir(), '.claude', 'clocki');
 // Per-session active timer files: ~/.claude/clocki/active/<sessionId>.json
 // Cada sesión escribe SOLO su propio archivo → cero contención read-modify-write
-// sobre un archivo compartido (fix race condition 2026-05-17).
+// sobre un archivo compartido (evita la condición de carrera).
 const ACTIVE_DIR = path.join(STATE_DIR, 'active');
-// Archivo legacy single-file (pre-2026-05-17). readActive() lo sigue mergeando
+// Archivo legacy single-file. readActive() lo sigue mergeando
 // para no perder timers abiertos durante la transición; los writes nuevos NO lo tocan.
 const LEGACY_ACTIVE_PATH = path.join(STATE_DIR, 'active.json');
 // Heartbeat per-session: ~/.claude/clocki/heartbeat/<sessionId> — timestamp
 // local-bare del último hook de clocki que corrió en esa sesión. Señal de
 // LIVENESS independiente del timer: el sweep la usa para NO cerrar timers de
-// sesiones vivas cuyo `lastActivity` luzca stale (incidente 2026-05-17 — un
-// timer legacy con lastActivity congelado fue cerrado siendo la sesión viva).
+// sesiones vivas cuyo `lastActivity` luzca stale (un timer legacy con lastActivity
+// congelado se cerraría estando la sesión viva).
 const HEARTBEAT_DIR = path.join(STATE_DIR, 'heartbeat');
 const CACHE_PATH = path.join(STATE_DIR, 'project-cache.json');
 const SETTINGS_PATH = path.join(STATE_DIR, 'settings.json');
@@ -33,10 +33,10 @@ const DEFAULT_SETTINGS = {
   // reabrir al volver).
   deadSessionMinutes: 120,
   defaultWorkspaceId: null,
-  // 🔴 PRECISION-FIRST keywords (2026-05-14 audit): solo imperativos / first-person plural
-  // verbos de acción concreta. Quitados: "story", "task", "tarea", "review", "revisar",
-  // "plan", "planning", "analyze", "design", "investigar" — generaban ruido extremo
-  // matcheando charla conversacional ("revisar X", "el plan de Y", "story 2.3 quedó bien").
+  // 🔴 PRECISION-FIRST keywords: solo imperativos / first-person plural
+  // verbos de acción concreta. Quedan fuera: "story", "task", "tarea", "review", "revisar",
+  // "plan", "planning", "analyze", "design", "investigar" — generan ruido extremo
+  // matcheando charla conversacional ("revisar X", "el plan de Y", "la story quedó bien").
   // Pattern: imperatives + first-person plural en español ("X-emos") y "let's X" en inglés.
   intentKeywords: [
     // ES imperativos
@@ -57,7 +57,7 @@ const DEFAULT_SETTINGS = {
     'implementemos la story', 'implementemos el',
     'fix bug', 'bug fix',
   ],
-  // 🔴 STOP keywords (2026-05-14 NEW): detectan fin/transición de trabajo.
+  // 🔴 STOP keywords: detectan fin/transición de trabajo.
   // Si hay timer activo Y prompt contiene alguno, emitir reminder de cierre/transición.
   stopKeywords: [
     'listo', 'ya está', 'ya esta', 'ya quedó', 'ya quedo',
@@ -185,9 +185,8 @@ function cleanStaleHeartbeats(maxAgeMinutes) {
 }
 
 // Housekeeping: borra los archivos de active/ que quedaron VACÍOS ({}). Cada sesión
-// deja el suyo al cerrar su timer y nadie los junta — 88 archivos acumulados al
-// 2026-07-25, de los cuales 1 tenía timer. No hacen daño, pero enterraban la señal:
-// cuesta ver 4 timers reales entre 88 archivos.
+// deja el suyo al cerrar su timer y nadie los junta, y se acumulan por decenas. No
+// hacen daño, pero entierran la señal: cuesta ver los pocos timers reales entre tantos archivos.
 //
 // Sólo toca archivos que parsean a objeto vacío Y con mtime viejo (default 24h), para
 // no correr una carrera contra una sesión que está justo entre create y write.
@@ -219,9 +218,9 @@ function cleanEmptyActiveFiles(maxAgeMinutes) {
  *
  * Por qué existe: touch-activity SOLO escribe archivos per-session. Una entry
  * que quedó en el legacy (sesión que abrió el timer con el clocki viejo, o cuyo
- * `start` corrió antes del fix per-session) nunca veía su `lastActivity`
- * actualizado → falso idle → el sweep la cerraba aunque la sesión estuviera
- * VIVA. Incidente 2026-05-17 (Story 3.3). La migración cierra ese gap: tras el
+ * `start` corrió antes del formato per-session) nunca vería su `lastActivity`
+ * actualizado → falso idle → el sweep la cerraría aunque la sesión estuviera
+ * VIVA. La migración cierra ese gap: tras el
  * primer touch, la entry vive en per-session y se actualiza normal.
  *
  * Solo migra entries con un sessionId real (no `_legacy` — ése no es una sesión).
@@ -263,7 +262,7 @@ function migrateLegacyEntry(sessionId, cwd, entry) {
  *
  * Mergea el `active.json` legacy single-file — que pudo quedar en formato
  * `{cwd:entry}` (oldest) o `{cwd:{sid:entry}}` (intermedio) — y cada
- * `active/<sessionId>.json` (formato per-session 2026-05-17). Tras el merge la
+ * `active/<sessionId>.json` (formato per-session). Tras el merge la
  * estructura es uniforme `{cwd:{sid:entry}}`.
  *
  * 🔴 Orden de merge: legacy PRIMERO, per-session DESPUÉS. Así, si un (cwd,sid)
@@ -355,9 +354,9 @@ function findActiveEntryForCwd(active, cwd, sessionId) {
 function readSettings() {
   const fromDisk = readJson(SETTINGS_PATH, {});
   const merged = { ...DEFAULT_SETTINGS, ...fromDisk };
-  // 🔴 Footgun guard (2026-05-21): un `[]` en disco para las listas de keywords NO
+  // 🔴 Footgun guard: un `[]` en disco para las listas de keywords NO
   // significa "sin keywords" — significa "no configurado". Sin esta guarda, un
-  // settings.json con `intentKeywords: []` (lo que sembraba el installer) dejaba que
+  // settings.json con `intentKeywords: []` (lo que sembraría el installer) dejaría que
   // el consumidor cayera a una lista ANCHA hardcodeada → falsos positivos sobre
   // charla/meta-discusión (ej: "plan", "fix", "add"). Array vacío o no-array → narrow default.
   if (!Array.isArray(merged.intentKeywords) || merged.intentKeywords.length === 0) {
@@ -392,7 +391,7 @@ function normalizeCwd(cwd) {
 // timezone" — el MCP convierte local→UTC al guardar). active.json guarda local bare
 // para que `end = lastActivity` se pueda pasar directo al MCP sin conversión.
 // 🔴 NO usar `toISOString()` (UTC con Z): pasar ese valor al MCP lo interpreta como
-// local y la entry queda corrida por el offset (caso 2026-05-17, Argentina UTC-3).
+// local y la entry queda corrida por el offset (en Argentina, UTC-3).
 function nowIso() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');

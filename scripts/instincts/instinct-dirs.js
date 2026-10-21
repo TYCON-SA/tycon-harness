@@ -1,23 +1,23 @@
 #!/usr/bin/env node
 'use strict';
-// instinct-dirs.js — dónde viven las propuestas del grabador de aprendizajes: la única pieza que lo sabe (story 8.27).
+// instinct-dirs.js — dónde viven las propuestas del grabador de aprendizajes: la única pieza que lo sabe.
 //
-// ── EL CASO (2026-10-09) ──────────────────────────────────────────────────────────────────────────────────────────
-// El observador, el disparador del arranque y el comando de revisión armaban cada uno `<árbol>/inbox/instincts` y
-// creaban la carpeta antes de mirar nada, también por listar o por ensayar. En un árbol que no la trae —una versión
-// bajada, la copia pública— eso deja una carpeta que nadie le trajo: una prueba que mide «nadie escribe en el árbol»
-// fallaba siempre a la primera sobre la copia, y en un arnés instalado lo escrito se pierde cuando la actualización
-// reemplaza el árbol. Decisión del dueño: en un arnés instalado se escribe en la casa de la persona; en un clon de
-// mantenedor, como siempre. Quien lee, encuentra las propuestas en los dos lugares.
+// ── EL PORQUÉ ─────────────────────────────────────────────────────────────────────────────────────────────────────
+// El observador, el disparador del arranque y el comando de revisión no arman cada uno `<árbol>/inbox/instincts` ni
+// crean la carpeta antes de mirar nada, tampoco por listar o por ensayar. En un árbol que no la trae —una versión
+// bajada, la copia pública— crearla dejaría una carpeta que nadie le trajo: una prueba que mide «nadie escribe en el árbol»
+// fallaría sobre la copia, y en un arnés instalado lo escrito se pierde cuando la actualización reemplaza el árbol.
+// Por eso en un arnés instalado se escribe en la casa de la persona; en un clon de mantenedor, en el árbol. Quien lee,
+// encuentra las propuestas en los dos lugares.
 //
-// ── EL CASO (2026-10-15) ──────────────────────────────────────────────────────────────────────────────────────────
+// ── EL CLON PRIVADO ───────────────────────────────────────────────────────────────────────────────────────────────
 // En la máquina del mantenedor el arnés instalado no trae buzón, y el clon que declara mantener (`paths.maintained`, el
-// público) tampoco: las propuestas iban a la casa, fuera de git y sin llegar a su otra máquina, aunque el clon del repo
-// privado (`paths.maintainers`) trae el buzón versionado. Ahora ese clon cuenta: ahí se escribe y de ahí se lee.
+// público) tampoco: sin otra regla las propuestas irían a la casa, fuera de git y sin llegar a su otra máquina, aunque
+// el clon del repo privado (`paths.maintainers`) trae el buzón versionado. Ese clon cuenta: ahí se escribe y de ahí se lee.
 //
 // ── LA REGLA ──────────────────────────────────────────────────────────────────────────────────────────────────────
 //   · El árbol TRAE su buzón si existe el archivo `inbox/instincts/README.md`. Lo versiona el repo de mantenimiento y
-//     ningún guion lo crea. «La carpeta existe» no alcanza: una versión anterior ya la creó donde no la traían.
+//     ningún guion lo crea. «La carpeta existe» no alcanza: puede haberla creado un guion donde el árbol no la trae.
 //   · Se ESCRIBE en el buzón del árbol si lo trae; si no, en el del clon del repo privado de mantenimiento que la máquina
 //     declara (`paths.maintainers`), si ese clon trae el suyo; si no, en la casa de la persona: `<estado>/inbox/instincts`, con
 //     `<estado>` contestado por scripts/setup/harness/tycon-home.js. Una carpeta de estado sin estado adentro (el resto
@@ -29,8 +29,8 @@
 //   · Un buzón del clon privado que no se deja mirar NO es «no lo trae»: `writePlace()` tira `InstinctDirsError` (nunca
 //     se cae, callado, a la casa); `readPlaces()` no lo suma y sigue con la casa (lo de ahí se sigue viendo), y
 //     `readNotes()` lo dice.
-//   · Con la configuración de la máquina ilegible no se sabe si declara el clon privado: se escribe en la casa, como
-//     antes, y `readNotes()` lo dice (frenar dejaría sin grabador a cualquier máquina con la configuración rota).
+//   · Con la configuración de la máquina ilegible no se sabe si declara el clon privado: se escribe en la casa, y
+//     `readNotes()` lo dice (frenar dejaría sin grabador a cualquier máquina con la configuración rota).
 //   · Nada de acá crea una carpeta por contestar. La única función que crea es `prepareLog()`, para el disparador.
 //   · Si tycon-home.js no está o no carga y el árbol no trae buzón, se tira `InstinctDirsError`: nadie cae al árbol.
 //

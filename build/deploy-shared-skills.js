@@ -1,16 +1,15 @@
 #!/usr/bin/env node
 /**
  * build/deploy-shared-skills.js — expone las skills del arnés a Codex vía symlinks en
- * ~/.codex/skills (Etapa F1, 2026-08-22). Lo invoca install-tycon-hooks.sh (TYCON_CODEX=1).
+ * ~/.codex/skills. Lo invoca install-tycon-hooks.sh (TYCON_CODEX=1).
  *
  * Fuente: el clon de agent-skills (~/.claude/agent-skills/skills — override TYCON_SKILLS_DIR).
  * Un symlink por skill → cero copias, cero drift: la skill que Claude lee es EXACTAMENTE la
  * que Codex lee (formato SKILL.md estándar en ambas, plan §7).
  *
- * 🔴 Desviación deliberada de la sonda 1 (que sugería ~/.agents/skills, la ruta que AMBAS
- * herramientas leen): Claude YA recibe estas skills vía el mecanismo de agent-skills — ponerlas
- * también en ~/.agents/skills se las DUPLICARÍA en el listado. ~/.codex/skills es la ruta que
- * SOLO codex lee (verificado sonda 1): mismo resultado, cero duplicación del lado Claude.
+ * 🔴 La ruta ~/.agents/skills la leen AMBAS herramientas, y no se usa: Claude YA recibe estas skills vía el mecanismo
+ * de agent-skills, y ponerlas también ahí se las DUPLICARÍA en el listado. ~/.codex/skills es la ruta que
+ * SOLO codex lee: mismo resultado, cero duplicación del lado Claude.
  *
  * Propiedad por TARGET del symlink (apunta adentro del clon de agent-skills) — igual que el
  * deployer de hooks: lo que el dev haya puesto a mano en ~/.codex/skills (dirs reales o
@@ -23,7 +22,7 @@ const os = require('os');
 const path = require('path');
 
 /**
- * `packs` (story 8.41): `{ root, extra: [{ name, src }], retire: [carpetas] }` — las skills de los paquetes que activa la
+ * `packs`: `{ root, extra: [{ name, src }], retire: [carpetas] }` — las skills de los paquetes que activa la
  * organización se enlazan igual que las del núcleo; un enlace nuestro a un paquete que dejó de estar activo se saca.
  * `root` es la carpeta de paquetes del clon: un enlace que apunta ahí también es nuestro.
  */
@@ -56,7 +55,7 @@ function deploySkills(srcDir, dstDir, packs = null) {
   // crear/actualizar un symlink por skill del clon
   for (const [name, src] of sources) {
     // stat (no lstat): seguir symlinks válidos del clon; los ROTOS (target muerto) se saltean
-    // — el clon real los tiene (p.ej. accessibility, 2026-08-22) y statSync tira ENOENT.
+    // — el clon real puede tenerlos (p.ej. accessibility) y statSync tira ENOENT.
     let stSrc = null; try { stSrc = fs.statSync(src); } catch (_) { continue; }
     if (!stSrc.isDirectory()) continue;
     if (!fs.existsSync(path.join(src, 'SKILL.md'))) continue; // solo skills reales
@@ -77,8 +76,7 @@ function deploySkills(srcDir, dstDir, packs = null) {
 
 /**
  * Clasifica el DESTINO de un skill con la MISMA política de propiedad que deploySkills — el
- * audit de paridad la importa en vez de re-derivarla (2ª ronda adversarial: la copia a mano ya
- * había divergido una vez, y este era el único deployer sin exportar su política).
+ * audit de paridad la importa en vez de re-derivarla (una copia a mano termina divergiendo).
  *   'ausente'    → no hay nada: el deploy lo crearía (rojo remediable).
  *   'ok'         → symlink nuestro apuntando al skill.
  *   'roto'       → symlink NUESTRO con target muerto o renombrado: el deploy lo limpia/re-crea.
@@ -130,7 +128,7 @@ function main() {
   if (process.argv.includes('--selftest')) return selftest();
   // Resolución TOLERANTE de TYCON_SKILLS_DIR (raíz del clon O carpeta de skills — las dos
   // semánticas conviven documentadas; ver scripts/lib/skills-dir.js). La variante «instalada»: los enlaces de
-  // ~/.codex/skills quedan ESCRITOS en la máquina y no tienen que moverse mientras haya dos clones (story 8.18, I12).
+  // ~/.codex/skills quedan ESCRITOS en la máquina y no tienen que moverse mientras haya dos clones.
   const src = require(path.join(__dirname, '..', 'scripts', 'lib', 'skills-dir.js')).resolveInstalledSkillsDirs().skills;
   const dst = path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'skills');
   if (process.argv.includes('--dry-run')) { console.log(`deploy-shared-skills: ${src} → ${dst} (dry-run)`); return 0; }
@@ -138,7 +136,7 @@ function main() {
   if (error) {
     // A stderr y exit 1: "no encontré el clon de agent-skills" es un despliegue FALLIDO, no un
     // "nada que hacer" — con exit 0 el instalador no puede enterarse, y una máquina Codex sin
-    // skills queda muda para siempre (hallazgo de la revisión 2026-08-23).
+    // skills queda muda para siempre.
     console.error(`deploy-shared-skills: ${error}`);
     return 1;
   }

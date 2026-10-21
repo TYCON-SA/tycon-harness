@@ -1,28 +1,28 @@
 'use strict';
 /*
- * access.js — EL ROL DE QUIEN PIDE Y EL FILTRO POR PERSONA (story 2.23, AC 10 a 12; decisiones 14, 18 y 22).
+ * access.js — EL ROL DE QUIEN PIDE Y EL FILTRO POR PERSONA.
  *
  * Todo dato que el sitio muestra pasa por `filtrar()` antes de llegar a una vista: la pantalla nunca recibe lo que la
- * persona no puede ver (S6). El rol se decide en CADA pedido con la configuración vigente, y sale SÓLO de la lista de
+ * persona no puede ver. El rol se decide en CADA pedido con la configuración vigente, y sale SÓLO de la lista de
  * quién entra (`site.access` de operations.json; sin ella, la lista armada con lo de antes):
  *   · mantenedor  su entrada tiene `role: maintainer`; o, SÓLO mientras la lista no tiene ningún maintainer, es
- *                 `SITE_FIRST_MAINTAINER` (decisión 14). Con alguno, la variable no cuenta y quien mantiene ve un aviso
+ *                 `SITE_FIRST_MAINTAINER`. Con alguno, la variable no cuenta y quien mantiene ve un aviso
  *                 para sacarla.
  *   · persona     su entrada tiene `role: dev`.
  *   · sin rol     lo demás: una página que dice que su cuenta no está en la lista, sin datos y con cómo entrar con otra cuenta.
  * Una persona puede tener varios correos: entra con cualquiera y lo suyo se calcula con todos.
  *
- * QUÉ ES DE QUIÉN (AC 12):
+ * QUÉ ES DE QUIÉN:
  *   · una corrida es de la persona confirmada para su máquina. La máquina es su carpeta nueva del buzón; una carpeta
- *     vieja `unida` (`.carpetas-de-maquina.json`, 2.28) sigue la confirmación de su nueva, y una entrada de
+ *     vieja `unida` (`.carpetas-de-maquina.json`) sigue la confirmación de su nueva, y una entrada de
  *     `people.machines` con el nombre viejo no cuenta; una vieja `compartida` o `siguio_recibiendo`, y toda máquina sin
  *     confirmar o caída, la ven SÓLO quienes mantienen. Una corrida sin máquina, también.
  *   · un pull request es de su autor y un pedido de su asignado, si la identidad de la plataforma es el correo de la
  *     persona o una de las suyas en `people.<correo>.identities`, sin distinguir mayúsculas. Si ninguna de sus
  *     identidades aparece en la fuente y no tiene alias, la fila dice «no medido» con la frase de asociarla.
- *   · un proyecto es de la persona si «donde trabaja» (2.28) lo nombra; sin esa lista, la frase de que todavía no se sabe.
+ *   · un proyecto es de la persona si «donde trabaja» lo nombra; sin esa lista, la frase de que todavía no se sabe.
  *
- * LA REGLA ES LA DE scripts/lib/people.js (2.28), y no se copia acá: quién es persona (`esPersona`), el estado de cada
+ * LA REGLA ES LA DE scripts/lib/people.js, y no se copia acá: quién es persona (`esPersona`), el estado de cada
  * máquina (`estadoDeMaquina`, con la unión de carpetas), quién ve una corrida (`puedeVer`), las máquinas por confirmar
  * (`maquinasPorConfirmar`) y dónde trabaja cada uno (`dondeTrabaja`). Lo que la máquina informa (su correo) llega en
  * `personas.informados`, FUERA del modelo: el modelo va entero a quien mantiene, y ningún correo informado puede llegar a
@@ -107,7 +107,7 @@ function crearReglas({ config, modelo, personas } = {}) {
   function declaradosDe(email) { return declaradosCrudos(email).filter((p) => existentes.has(p)).sort(); }
 
   /**
-   * Los productos que ve una persona: SÓLO lo declarado. Deducirlo de corridas o pedidos mostraba productos donde no
+   * Los productos que ve una persona: SÓLO lo declarado. Deducirlo de corridas o pedidos mostraría productos donde no
    * trabaja (un pedido asignado alcanzaba). Sin nada declarado, null: la tabla cerrada con su frase, nunca todos.
    */
   function proyectosDe(email) {
@@ -138,9 +138,9 @@ function crearReglas({ config, modelo, personas } = {}) {
     sugeridosDe,
     /** ¿Tiene algo declarado que no está en la lista de productos? Sin esto la frase diría «no te asignó», que es falso. */
     declaradoSinExistir: (email) => declaradosCrudos(email).some((p) => !existentes.has(p)),
-    /** ¿Se sabe de quién es cada máquina? Sin lo informado (o sin las uniones), nadie que no mantenga ve corridas (story 2.27). */
+    /** ¿Se sabe de quién es cada máquina? Sin lo informado (o sin las uniones), nadie que no mantenga ve corridas. */
     quienEsQuienMedido: informadosOk,
-    /** Las máquinas confirmadas de una persona (la ficha gris de quien todavía no tiene corridas, story 2.27 AC 11). */
+    /** Las máquinas confirmadas de una persona (la ficha gris de quien todavía no tiene corridas). */
     maquinasDe: (email) => {
       const suyos = people.correosDe(email, c);
       if (!informadosOk) return [];
@@ -242,13 +242,13 @@ function filtrar(modelo, quien, reglas) {
 }
 
 /**
- * LAS CORRIDAS DE LA PESTAÑA (story 2.27, AC 8 a 12; decisiones 6, 7 y 13). `M` es el modelo de runs.js armado desde el
+ * LAS CORRIDAS DE LA PESTAÑA. `M` es el modelo de runs.js armado desde el
  * espejo; sale el modelo que puede ver quien pide, ANTES de armar cualquier respuesta (la lista, el detalle o los textos):
  *   · quien mantiene: todas, también las sin máquina y las de máquinas sin confirmar, con los conteos globales;
  *   · una persona: sólo las de sus máquinas confirmadas (la regla de people.js, la misma de `puedeVer`), sin los conteos
  *     globales, con las máquinas y el buzón recalculados sobre lo suyo (`{ estado, parcial }`, sin el número de carpetas);
  *   · sin rol: null.
- * Los productos se unifican sobre lo filtrado, nunca sobre todo (decisión 13): el nombre de un dev no hereda la carpeta
+ * Los productos se unifican sobre lo filtrado, nunca sobre todo: el nombre de un dev no hereda la carpeta
  * de la máquina de otro. Todo sale copiado: el modelo de la pestaña no se toca.
  */
 function filtrarCorridas(M, quien, reglas) {
@@ -272,7 +272,7 @@ function filtrarCorridas(M, quien, reglas) {
   out.varias_maquinas = out.maquinas.lista.length > 1;
   out.buzon = buzon ? { estado: buzon.estado, parcial: buzon.estado !== 'leido' || Boolean(buzon.carpetas_ilegibles) } : null;
   // sin saber de quién es cada máquina, el filtro cierra (no se ve nada), pero eso NO es «no hay corridas»: es «no
-  // medido» (pase adversarial). Pasa hasta la primera bajada entera del buzón, o si lo informado no se pudo leer.
+  // medido». Pasa hasta la primera bajada entera del buzón, o si lo informado no se pudo leer.
   if (reglas.quienEsQuienMedido === false) {
     out.buzon = { estado: buzon ? buzon.estado : 'no_medido', parcial: true };
     out.vacio_motivo = 'no medido: todavía no se pudo saber de quién es cada máquina (lo que informan las máquinas se lee con la primera bajada entera del buzón); tus corridas faltan, no son cero';

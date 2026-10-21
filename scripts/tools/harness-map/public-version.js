@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * public-version.js — genera la versión PÚBLICA del mapa del arnés desde la PRIVADA (2026-09-15).
+ * public-version.js — genera la versión PÚBLICA del mapa del arnés desde la PRIVADA.
  *
  * La privada (`artifacts/mapa-arnes.html`) es la fuente: cada componente con por qué está, dónde
  * corre, cuándo, y en qué repo y archivo vive. La pública (`onboarding/mini-class/mapa-del-arnes.html`)
  * va al sitio abierto y NO puede llevar la máquina ni el canal del admin, horarios de las corridas
  * desatendidas ni los límites de cada control: juntos son un mapa de dónde conviene atacar. Los repos,
- * las rutas y el nombre en el código SÍ van (decisión del dev, 2026-09-15): son privados, así que
+ * las rutas y el nombre en el código SÍ van: son privados, así que
  * solos no dan acceso, y sirven de referencia a quien lee.
  *
  * Por qué un generador y no dos archivos: dos copias mantenidas a mano se separan solas. Acá la
@@ -31,7 +31,7 @@
  *   repo público y el mapa interno, publica.json y el sitio, en el del equipo. En un repo sin mapa no hay nada que generar.
  *
  * Salida: 0 generada o al día · 1 (--check) la pública no coincide con lo que se genera ·
- *         2 no se pudo generar (privada ilegible, texto público viejo, algo interno que se filtraba).
+ *         2 no se pudo generar (privada ilegible, texto público viejo, algo interno que se filtre).
  *
  * Lo corre el pre-commit de este repo cuando el commit toca la privada, este directorio o la
  * pública. Casos: scripts/tests/harness-map-public.test.sh
@@ -40,7 +40,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-// vive en scripts/tools/harness-map/ desde la story 8.12, tanda R4: la raíz del arnés está tres carpetas arriba
+// vive en scripts/tools/harness-map/: la raíz del arnés está tres carpetas arriba
 const RAIZ = path.resolve(__dirname, '..', '..', '..');
 require('../../lib/legacy-names.js').aliasArgv('scripts/tools/harness-map/public-version.js', { exitCode: 2 });
 const args = process.argv.slice(2);
@@ -50,7 +50,7 @@ const opcion = (nombre, porDefecto) => {
 };
 const ENTRADA = opcion('--input', path.join(RAIZ, 'artifacts', 'mapa-arnes.html'));
 const CONFIG = opcion('--config', path.join(__dirname, 'publica.json'));
-// la mini-clase vive en onboarding/mini-class/ desde la story 8.9, tanda F
+// la mini-clase vive en onboarding/mini-class/
 const SALIDA = opcion('--output', path.join(RAIZ, 'onboarding', 'mini-class', 'mapa-del-arnes.html'));
 const CHECK = args.includes('--check');
 // el selector de idioma ES | EN (programa y diccionario) se incrusta al final, igual que en las otras páginas del sitio.

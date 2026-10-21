@@ -1,6 +1,6 @@
 'use strict';
 /*
- * tabs/config.js — LA PESTAÑA CONFIGURACIÓN DEL SITIO DE LA ORGANIZACIÓN (story 2.29).
+ * tabs/config.js — LA PESTAÑA CONFIGURACIÓN DEL SITIO DE LA ORGANIZACIÓN.
  *
  * Qué resuelve: quien mantiene el arnés en una organización configura lo de la organización desde el sitio —dónde vive
  * cada repo, a quién se asignan avisos y pedidos, los despliegues, el canal del aviso, personas y máquinas, el sitio
@@ -8,13 +8,13 @@
  * cambio se propone con una rama y un pedido al repo que corresponde (nunca se escribe la rama principal). No toca la
  * configuración de ninguna máquina; muestra, de sólo lectura, los productos y la versión del arnés de cada máquina.
  *
- * QUIÉN ENTRA (AC 1 a 3): todas las rutas se registran en la tabla de la 2.23 como `maintainer` (un dev recibe 403 sin
- * un dato; sin sesión, lo que manda la 2.23). Cada ESCRITURA exige, en este orden: el `Origin` del sitio (o, sin `Origin`,
+ * QUIÉN ENTRA: todas las rutas se registran en la tabla de rutas del sitio como `maintainer` (un dev recibe 403 sin
+ * un dato; sin sesión, lo que manda el sitio). Cada ESCRITURA exige, en este orden: el `Origin` del sitio (o, sin `Origin`,
  * `Sec-Fetch-Site: same-origin`), `X-Site-Token` igual al token de la sesión (doble envío: nace con la sesión en la
  * cookie firmada y la página lo recibe en un `<meta>`), `Content-Type` JSON y un cuerpo de hasta 256 KB. Ninguna falta
  * crea nada en ningún repo.
  *
- * LO QUE LEE (AC 5): los clones que mantienen las fuentes de la 2.23 (`fuentes.clones()`): el de operaciones y, con
+ * LO QUE LEE: los clones que mantienen las fuentes del sitio (`fuentes.clones()`): el de operaciones y, con
  * `SITE_PROFILE_REPO`, el del perfil; el espejo del buzón (`fuentes.dirBuzon`) para las versiones. Las secciones, sus
  * lectores y la revisión viven en scripts/lib/org-config.js (el núcleo común con la página local); la propuesta, en
  * scripts/lib/repo-proposal.js. «Descargar el archivo» no es una ruta: el navegador lo arma con lo que «Revisar» validó.
@@ -97,7 +97,7 @@ function paquetesDe(valor, perfilDir) {
 }
 
 /**
- * Cómo contesta el asistente según el perfil (story 2.31): `{ vigente: { language, style, max_chars }, origen }`. Lo que
+ * Cómo contesta el asistente según el perfil: `{ vigente: { language, style, max_chars }, origen }`. Lo que
  * el perfil no dice sale de lo que hace el lector de la máquina sin valor (su `DEFAULTS` y el tope de cada estilo).
  */
 function respuestaVigente(lector, doc) {
@@ -164,7 +164,7 @@ function perfilesDeInstalacion() {
     return { minimal: de('minimal'), full: de('full'), motivo: null };
   } catch (e) { return { minimal: [], full: [], motivo: M('config.sinEfectos', { codigo: (e && e.code) || 'error' }) }; }
 }
-/** Lo que trae la organización en el repo del perfil (story 2.31, AC 17): skills, revisores, guías de alta y paquetes. */
+/** Lo que trae la organización en el repo del perfil: skills, revisores, guías de alta y paquetes. */
 const CONTENIDO = [['agents', M('config.tipoRevisor'), (d, f) => f.endsWith('.md')], ['onboarding', M('config.tipoGuia'), (d, f) => f.endsWith('.md')], ['packs', M('config.tipoPaquete'), (d, f) => fs.existsSync(path.join(d, f, 'pack.json'))]];
 // las skills: una carpeta con SKILL.md, hasta tres niveles bajo skills/ (`skills/<s>`, `skills/<grupo>/<s>`,
 // `skills/projects/<cliente>/<s>`), como las acepta la capa del equipo
@@ -261,7 +261,7 @@ const RELECTURA_MS = 30 * 1000;
 const ESPERA_REFRESCO_MS = 8 * 1000;
 
 /**
- * Las rutas de la pestaña, para `rutasExtra` de crearSitio. `cfg` es la del servidor; `fuentes`, las de la 2.23.
+ * Las rutas de la pestaña, para `rutasExtra` de crearSitio. `cfg` es la del servidor; `fuentes`, las del sitio.
  * Inyectables (pruebas): `lectores`, `versionImagen`, `ahora`, `hoy`, `fetch`, `urlBase` (la dirección de la API de cada plataforma) y
  * `remotos` ({ operaciones, perfil }: la plataforma de cada repo cuando la dirección no la dice) y `esperaRefrescoMs`.
  */
@@ -281,7 +281,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   const urlDe = (repo) => (repo === 'perfil' ? cfg.profileRepo : cfg.operationsRepo);
   const remoteDe = (repo) => remotos[repo] || ORG.remoteOf(urlDe(repo));
 
-  // ── la defensa de las escrituras (AC 3) ──
+  // ── la defensa de las escrituras ──
   const escritura = (ctx) => defensaDeEscritura(cfg, ctx);
 
   // ── la vista de una sección ──
@@ -372,7 +372,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       // la lista de quién entra (si el lector la conoce) y con qué se entra, de sólo lectura
       const conAcceso = Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('access');
       v.extras = { servicios: Array.isArray(lec.MAILBOX_PROVIDERS) ? lec.MAILBOX_PROVIDERS : null, conAcceso, inicioDeSesion: cfg.inicioDeSesion || null };
-      // sin la lista, la sección arranca con la armada con lo de hoy y la propone en lugar de site.maintainers (AC 5)
+      // sin la lista, la sección arranca con la armada con lo de hoy y la propone en lugar de site.maintainers
       const lista = conAcceso && doc && !(isObject(doc.site) && Array.isArray(doc.site.access)) ? people.listaDeAcceso(doc) : null;
       // lo que no se pudo leer queda afuera de la lista: se dice, para que nadie quede sin entrar sin saberlo (también si
       // no quedó nadie y no hay lista para proponer)
@@ -388,10 +388,10 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     // la plataforma, la organización y el proyecto del repo de operaciones: ahí se elige por nombre el pipeline de un despliegue
     if (s.id === 'despliegues') { const r = remoteDe('operaciones') || {}; v.extras = { plataforma: r.platform || null, org: r.org || null, proyecto: r.project || null }; }
     if (s.id === 'paquetes') v.extras = paquetesDe(doc && isObject(doc.packs) ? doc.packs.default : undefined, cl.perfil && cl.perfil.dir);
-    // story 2.31: las secciones del perfil que cambian la experiencia de cada dev
+    // las secciones del perfil que cambian la experiencia de cada dev
     if (s.id === 'respuesta') {
       v.extras = respuestaVigente(lec, doc);
-      // con una capa que pide una versión que no lee `response`, se muestra y no se propone (decisión 7)
+      // con una capa que pide una versión que no lee `response`, se muestra y no se propone
       const capa = leerDe(dir, 'team-layer.json');
       const gate = ORG.teamProfileGateProblem({ layerText: capa.estado === 'leido' ? capa.texto : '', versionImagen, doc: { response: {} } });
       if (gate) { v.soloLectura = true; v.motivo = gate; }
@@ -414,7 +414,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       v.soloLectura = true; v.motivo = M('config.hilosSinBuzon');
     }
     if (s.id === 'personas') {
-      // operations.json que no valida: el último bueno (24 h, la regla de la 2.28); el sitio frenado ya contesta 503
+      // operations.json que no valida: el último bueno (24 h, la regla de people.js); el sitio frenado ya contesta 503
       let base2 = parsed.ok ? doc : null;
       const est = fuentes.estado();
       const extras = {};
@@ -487,7 +487,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     return { ...r, porArchivo };
   }
 
-  /** Los productos (AC 7): `{ lista, motivo }` — una lista que no se pudo leer lo dice; no es «ningún producto». */
+  /** Los productos: `{ lista, motivo }` — una lista que no se pudo leer lo dice; no es «ningún producto». */
   function productos(dirOps, opsDoc) {
     const out = [];
     const r = dirOps ? leerDe(dirOps, 'scripts/nightly/dependencies/repos.json') : { estado: 'nuevo' };
@@ -498,7 +498,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       if (!isObject(x) || typeof x.producto !== 'string') continue;
       out.push({ producto: x.producto, origen: 'dependencias', repo: x.ado || x.github || x.ruta || null, activo: x.activo !== false, motivo: typeof x.motivo === 'string' ? x.motivo : null });
     }
-    // la forma de `deployments` es la del lector de la 2.22: { provider, products: { "<producto>": { staging, production } } }
+    // la forma de `deployments` es la del lector de despliegues: { provider, products: { "<producto>": { staging, production } } }
     const dep = opsDoc && isObject(opsDoc.deployments) && isObject(opsDoc.deployments.products) ? opsDoc.deployments.products : {};
     for (const k of Object.keys(dep)) if (!k.startsWith('__')) out.push({ producto: k, origen: 'deployments', repo: null, activo: true, motivo: null });
     return { lista: out, motivo };
@@ -553,7 +553,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (['no_reader', 'no_configurado', 'bajando', 'ilegible'].includes(v.estado) || v.soloLectura) return { ok: false, problems: [{ path: '', message: v.motivo, sinCampo: true }], texto: null };
     // la página carga sobre su versión (la base): se revisa sobre ésa aunque el sitio tenga otra, más vieja o más nueva.
     // Aplicar el borrador entero sobre otra versión pisaría en silencio lo que cambió en el medio; si el archivo cambió en
-    // main, la mezcla la hace «Proponer» contra la punta (decisión 11)
+    // main, la mezcla la hace «Proponer» contra la punta
     let texto = v.texto;
     if (body.oid !== undefined && body.oid !== v.oid && mezclable(s, borradorIn)) {
       const b = baseVerificada(body);
@@ -569,7 +569,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       const inf = informados && isObject(informados.maquinas) ? informados.maquinas[borrador.maquina] : null;
       const correo = inf && inf.estado === 'informa' ? inf.correo : null;
       peopleDoc.machines = isObject(peopleDoc.machines) ? peopleDoc.machines : {};
-      // el correo informado nunca se escribe en claro: la huella, normalizada (2.28, decisiones 3 y 5)
+      // el correo informado nunca se escribe en claro: la huella, normalizada
       peopleDoc.machines[borrador.maquina] = { person: norm(borrador.person || correo || ''), reported_sha256: correo ? people.huellaDeCorreo(correo) : null, confirmed_by: norm(ctx.sesion.email), confirmed_on: dia() };
       borrador = { people: peopleDoc };
     }
@@ -604,12 +604,12 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   function validarTexto(s, texto, actualTexto = vista(s).texto) {
     const doc = docDe(texto);
     if (!doc || ORG.formatJson(doc) !== texto) return M('config.noEsElRevisado');
-    // el pedido cambia sólo la sección (AC 23): lo demás del archivo tiene que quedar como está en el clon
+    // el pedido cambia sólo la sección: lo demás del archivo tiene que quedar como está en el clon
     if (s.claves) {
       const actual = docDe(actualTexto || '') || {};
       const ajenas = [...new Set([...Object.keys(actual), ...Object.keys(doc)])].filter((k) => !s.claves.includes(k) && JSON.stringify(actual[k]) !== JSON.stringify(doc[k]));
       if (ajenas.length) return M('config.cambiaAjenas', { claves: ajenas.join(', ') });
-      // una sección con `rutas` cambia sólo esas hojas de su clave (story 2.31): las otras, como están en el clon
+      // una sección con `rutas` cambia sólo esas hojas de su clave: las otras, como están en el clon
       const hojas = ORG.hojasAjenas(s, actual, doc);
       if (hojas.length) return M('config.cambiaAjenas', { claves: hojas.join(', ') });
     }
@@ -628,7 +628,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       const capa = leerDe(clones().perfil.dir, 'team-layer.json');
       const layerText = capa.estado === 'leido' ? capa.texto : '';
       // la sección Paquetes vive en un archivo que cualquier versión lee; sólo una LISTA pide una versión que la conozca
-      // el perfil del equipo: una lista de paquetes y `response` piden su versión (story 2.31); team-repos.json, la suya
+      // el perfil del equipo: una lista de paquetes y `response` piden su versión; team-repos.json, la suya
       const gate = s.archivo === 'team-profile.json'
         ? ORG.teamProfileGateProblem({ layerText, versionImagen, doc, actual: docDe(actualTexto || '') })
         : ORG.profileGateProblem(layerText, doc);
@@ -642,7 +642,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (['no_reader', 'no_configurado', 'bajando', 'ilegible'].includes(v.estado) || v.soloLectura) return { ok: false, message: v.motivo };
     if (s.id === 'personas' && v.extras && v.extras.vencido) return { ok: false, message: v.extras.vencido };
     const texto = typeof body.texto === 'string' ? body.texto : '';
-    // sin la versión que abrió, no se puede saber si otro cambió el archivo (AC 16): no se propone a ciegas
+    // sin la versión que abrió, no se puede saber si otro cambió el archivo: no se propone a ciegas
     if (body.oid === undefined) return { ok: false, message: M('config.faltaOid') };
     // lo propuesto se arma sobre la base que abrió la página: «no toca otras partes» se mira contra esa base. Que la base
     // sea la punta de main lo comprueba RP.proponer; si no lo es, se mezcla abajo
@@ -729,7 +729,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       const propia = r && r.enlace && r.codigo !== 'pedido_abierto' && (r.ok || r.codigo === 'quedo_abierto');
       if (!propia) return { ok: true, estado: 'no_hay' };
       if (r.codigo === 'aplicado') return { ok: true, estado: 'aplicado', enlace: r.enlace };
-      // abierta cuando se propuso: si ya entró o se cerró lo sabe la plataforma (decisión 10); si no contesta, sigue abierta
+      // abierta cuando se propuso: si ya entró o se cerró lo sabe la plataforma; si no contesta, sigue abierta
       const ahoraEn = await pedidoEnLaPlataforma(s, marca);
       return ahoraEn && !ahoraEn.error ? { ok: true, estado: ahoraEn.estado, ...(ahoraEn.enlace ? { enlace: ahoraEn.enlace } : {}) } : { ok: true, estado: 'abierto', enlace: r.enlace };
     }
@@ -766,7 +766,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     return { ...r, message: ya ? M('config.aplicadoYa') : M('config.aplicadoProximo') };
   }
 
-  // ── la propuesta de stages (AC 8): sólo lee, con SITE_PIPELINES_TOKEN; lo de cada plataforma vive en repo-proposal.js ──
+  // ── la propuesta de stages: sólo lee, con SITE_PIPELINES_TOKEN; lo de cada plataforma vive en repo-proposal.js ──
   const stages = (pipeline) => RP.stagesPropuestos({ pipeline, remote: remoteDe('operaciones'), token: cfg.pipelinesToken, urlBase, fetch });
 
   // ── los nombres en lugar de los números: los pipelines de un proyecto y los nombres de los pasos guardados ──
@@ -842,7 +842,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const idioma = views.idiomaDe(ctx);
     const html = views.layout(ctx, TX.t(idioma, 'pestana.configuracion'), `<div id="config-app"><p class="q-note">${TX.t(idioma, 'config.cargando')}</p></div>`, TX.t(idioma, 'config.lede'));
     // el token de doble envío y el código de la pestaña en el idioma de la página, sin nada en línea (la CSP
-    // de la 2.23 no lo admite)
+    // del sitio no lo admite)
     return html.replace('</head>', `<meta name="site-token" content="${tok.replace(/[^A-Za-z0-9_-]/g, '')}"><script src="/static/config.js?l=${idioma}" defer></script></head>`);
   }
 
@@ -851,7 +851,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   // y la configuración se reemplazan en cada pasada), hasta que pasa VIGENCIA_MS o hasta que alguien propone un cambio.
   // Dos pedidos a la vez comparten el mismo armado
   let guardado = null;
-  // «releé ya» (decisión 10): las fuentes enseguida, con una relectura a la vez y no más de una cada RELECTURA_MS
+  // «releé ya»: las fuentes enseguida, con una relectura a la vez y no más de una cada RELECTURA_MS
   let relectura = null;
   let ultimaRelectura = -Infinity;
   function releer() {

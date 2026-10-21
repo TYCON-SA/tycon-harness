@@ -1,4 +1,4 @@
-# Dockerfile.dockerignore — lo que entra a la imagen del sitio (story 2.23, AC 3). Lo lee BuildKit (docker buildx build)
+# Dockerfile.dockerignore — lo que entra a la imagen del sitio. Lo lee BuildKit (docker buildx build)
 # para scripts/site/Dockerfile. Lista blanca: todo afuera, salvo lo que el sitio ejecuta; después, por las dudas, afuera
 # las pruebas, la historia de git y todo lo que tenga forma de secreto (las líneas de abajo ganan sobre las de arriba).
 *

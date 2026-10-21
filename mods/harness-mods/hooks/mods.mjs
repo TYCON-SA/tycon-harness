@@ -1,4 +1,4 @@
-// Los mods del arnés y el comando /mods (story 7.27). Puro: recibe el estado y devuelve el nuevo, para probarlo con
+// Los mods del arnés y el comando /mods. Puro: recibe el estado y devuelve el nuevo, para probarlo con
 // node (scripts/tests/harness-mods.test.js); register.tsx guarda `off` en el store del plugin (entre sesiones) y
 // `hidden` en el estado de la sesión.
 //

@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-# El tablero del arnés — MODELO para cualquier organización en Azure DevOps (story 8.30)
+# El tablero del arnés — MODELO para cualquier organización en Azure DevOps
 #
 # Cómo darlo de alta: pipelines/operations/README.md. Se copia a `pipelines/` del repo de operaciones y se cambia el
 # `name:` del recurso `harness` (marcado abajo).
@@ -96,7 +96,7 @@ jobs:
 
       - template: pipelines/operations/templates/check-tree.yml@harness
 
-      # Lo que deja la noche para el sitio de la organización (story 2.23, AC 16): los pull requests abiertos con su autor y
+      # Lo que deja la noche para el sitio de la organización: los pull requests abiertos con su autor y
       # los pedidos abiertos con su asignado, SIN títulos. El sitio no consulta la plataforma: lee estos dos archivos del
       # repo de operaciones (lo asignado se ve con hasta un día de atraso, y la pantalla lo dice). Si una consulta falla, el
       # archivo se escribe igual con `estado: no_medido` y el paso avisa; la página del tablero no depende de ellos.
@@ -115,7 +115,7 @@ jobs:
         env:
           AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
 
-      # La foto de despliegues (story 2.22): qué llegó a staging y a producción en cada producto, leído del stage de cada
+      # La foto de despliegues: qué llegó a staging y a producción en cada producto, leído del stage de cada
       # corrida, con la aprobación pendiente o vencida y main roto o no. Lo que se lee lo declara `operations.json →
       # deployments`; sin declarar, cada producto sale «no medido». Va ANTES de la página (la ficha de despliegues la lee)
       # y es tolerante: si falla, la corrida queda naranja y el tablero se genera igual. La identidad de esta corrida
@@ -157,10 +157,10 @@ jobs:
       - script: |
           set -eu
           cd "$(Build.SourcesDirectory)"
-          # A main llegan SÓLO la página y los dos archivos del sitio (story 2.23), sobre la punta recién traída y con reintento. El sello se verifica ANTES de cada
+          # A main llegan SÓLO la página y los dos archivos del sitio, sobre la punta recién traída y con reintento. El sello se verifica ANTES de cada
           # empuje sobre lo que se va a publicar (la página y el .dashboard de la punta, extraídos a $PUSH_DIR).
           DAY=$(date -u +%Y-%m-%d)
-          # la marca de la configuración aplicada (story 2.29): el paso que trajo los datos de main la pisó; ops-data.yml
+          # la marca de la configuración aplicada: el paso que trajo los datos de main la pisó; ops-data.yml
           # dejó la copia de esta corrida en la carpeta temporal. Viaja sólo con una noche verde, como lo demás
           mkdir -p .dashboard && cp "$(Agent.TempDirectory)/applied-config.json" .dashboard/applied-config.json
           node scripts/ci/push-nightly-data.js save \

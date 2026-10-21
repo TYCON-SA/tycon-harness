@@ -1,26 +1,25 @@
 #!/usr/bin/env node
 /**
- * advisor-runner.js — capa de casos de ADVISORS del banco (Etapa C del plan codex-migration.md;
- * los casos B2 de cada advisor se escriben cuando ese advisor entra — regla dura: un advisor
- * no entra sin sus casos).
+ * advisor-runner.js — capa de casos de ADVISORS del banco (los casos de cada advisor se escriben
+ * cuando ese advisor entra — regla dura: un advisor no entra sin sus casos).
  *
  * A diferencia del runner de hooks (determinista), acá el sujeto es un LLM. El contrato de
- * veredicto es el firmado en §2.2 del plan:
+ * veredicto:
  *   - cada caso es QUIRÚRGICO: un pecado → una regla → el pass es "el rule ID objetivo está
  *     presente (must-flag) / ausente (must-not-flag)" — NUNCA el conteo total de findings;
  *   - cada caso corre N veces (default 3) y se exige unanimidad: un caso con corridas mixtas
- *     se reporta INESTABLE (se rediseña, no se promedia). 🔴 EXCEPCIÓN DECLARADA (2026-08-25):
+ *     se reporta INESTABLE (se rediseña, no se promedia). 🔴 EXCEPCIÓN DECLARADA:
  *     un caso puede declarar `varianza_declarada` con su ratio MEDIDO, un PISO de aciertos y un
  *     motivo escrito — por encima del piso pasa (clase `varianza-declarada`, listada al cierre),
- *     por DEBAJO es rojo de criterio. Nace de medir los 14 inestables del 2026-08-24: pecados
- *     inequívocos, fallos disjuntos entre herramientas y repartidos en 11 de 28 revisores, con el
- *     prompt ya acotado al diff — variancia de muestreo del juicio, no defecto del caso. Declarar
+ *     por DEBAJO es rojo de criterio. Sirve cuando el pecado es inequívoco y los fallos son
+ *     disjuntos entre herramientas y repartidos entre revisores, con el prompt ya acotado al
+ *     diff — variancia de muestreo del juicio, no defecto del caso. Declarar
  *     exige medición y motivo: no es un interruptor. Y un banco permanentemente en rojo se ignora;
  *   - desacuerdo persistente entre herramientas → asimetría declarada ("tools" + "asymmetry"
  *     en el caso), visible — el silencio no se acepta;
- *   - un caso puede exigir además QUE UNA TOOL MCP SE LLAMÓ (campo expect_mcp — decisión 4b,
- *     2026-08-22): cuando la tool falta, el advisor no se detiene ni inventa — SUSTITUYE el
- *     método por un comando de consola sin declararlo (sonda D), así que el veredicto correcto
+ *   - un caso puede exigir además QUE UNA TOOL MCP SE LLAMÓ (campo expect_mcp):
+ *     cuando la tool falta, el advisor no se detiene ni inventa — SUSTITUYE el
+ *     método por un comando de consola sin declararlo, así que el veredicto correcto
  *     por un camino no declarado tiene que caer en rojo. Si el server no está instalado en la
  *     máquina, el caso se SALTEA DEJANDO CONSTANCIA (skipped_mcp) — ni verde que miente ni rojo
  *     que no significa nada. Detección probada offline con --selftest-mcp (patrón live-fire
@@ -32,8 +31,7 @@
  *           tool_use se llama `mcp__<server>__<tool>` (el texto del veredicto se extrae del
  *           result final del stream).
  *
- * Casos por ARTEFACTOS (tanda 3, retrospective-capturer — decisión del dev 2026-08-22,
- * guides/decisions/codex-etapa-d-retro-red.md): el capturer no tiene rule IDs — su producto son
+ * Casos por ARTEFACTOS (retrospective-capturer): el capturer no tiene rule IDs — su producto son
  * ESCRITURAS, y el veredicto lo da ESTE RUNNER verificándolas post-run (no el modelo):
  *   "expect_artifact": [{ "path": ".dashboard/metrics-*.json", "json_keys": [..], "content_regex": ".." }]
  *   "forbid_artifact": [{ "path": ".advisors/alerts.md" }]
@@ -45,7 +43,7 @@
  *                       nonce — el delta declarado-vs-real ES el hallazgo (espejo CHEQUEOS-MCP).
  *   "expect_veredicto": "hallazgos" | "sin-la-regla" | "limpio" → el renglón `Veredicto:` con que
  *                       cierra el informe es obligatorio y tiene que cuadrar con el caso: nombrar su
- *                       regla, no nombrarla, o decir limpio (story 7.3: con ese renglón pipeline.js
+ *                       regla, no nombrarla, o decir limpio (con ese renglón pipeline.js
  *                       decide si relanza al validador de stories en los re-loops). Lo lee
  *                       `veredictoDe`, el mismo parser de la corrida real: una copia se separaría.
  * `{{NONCE}}` en files/prompt/git_commits se reemplaza por un token único POR CORRIDA; la
@@ -65,7 +63,7 @@
  *           este runner prueba también al generador: si el .toml no inyecta las instrucciones,
  *           el reporte no cita rule IDs y el caso cae en rojo.
  *
- * Cada corrida crea un fixture git-init efímero (codex exec exige repo git — hallazgo B1).
+ * Cada corrida crea un fixture git-init efímero (codex exec exige repo git).
  *
  * Uso:
  *   node advisor-runner.js [--tool claude|codex|both] [--only <substr>] [--runs N] [--jobs N]
@@ -76,7 +74,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -102,12 +100,10 @@ function mcpServerAvailable(server) {
   catch (_) { return false; }
 }
 
-/** Detección 4b: ¿el output de la corrida prueba que la tool MCP se llamó?
- * 🔴 codex escribe las líneas `mcp: ...` por STDERR (medido 2026-08-22 con --save-output: 4/4 en
- * stderr, 0 en stdout) — la v1 de este detector miraba solo stdout y dio "no llamó" en corridas
- * donde el modelo SÍ llamó y hasta declaró el fallo honestamente. El selftest no lo cazó porque
- * probaba el PARSEO con strings fabricados, no la PLOMERÍA de qué canal trae las líneas — por eso
- * ahora recibe (stdout, stderr) por separado y el selftest tiene el caso "línea en stderr". */
+/** Detección MCP: ¿el output de la corrida prueba que la tool MCP se llamó?
+ * 🔴 codex escribe las líneas `mcp: ...` por STDERR (4/4 en stderr, 0 en stdout): mirar solo stdout daría "no llamó"
+ * en corridas donde el modelo SÍ llamó. Por eso recibe (stdout, stderr) por separado, y el selftest tiene el caso
+ * "línea en stderr": probar solo el PARSEO con strings fabricados no prueba la PLOMERÍA de qué canal trae las líneas. */
 function mcpCallDetected(tool, expect, stdout, stderr) {
   if (tool === 'codex') return ((stdout || '') + '\n' + (stderr || '')).includes(`mcp: ${expect.server}/${expect.tool} started`);
   // claude stream-json: un tool_use con el nombre exacto
@@ -130,7 +126,7 @@ function claudeStreamText(stdout) {
   }
   return out;
 }
-// ---------- retro (tanda 3): aserciones por ARTEFACTOS — el runner verifica, no el modelo ----------
+// ---------- retro: aserciones por ARTEFACTOS — el runner verifica, no el modelo ----------
 
 function binAvailable(cmd) {
   try { execSync(`command -v ${cmd}`, { stdio: 'ignore', shell: '/bin/bash' }); return true; }
@@ -184,7 +180,7 @@ function checkArtifacts(fixture, caseDef, nonce) {
   return fails;
 }
 
-/** Salida real del CLI 2026-08-22: entradas "[1] #813 (tipo) — título\n    ... | project: X | scope: ...". */
+/** Salida real del CLI: entradas "[1] #813 (tipo) — título\n    ... | project: X | scope: ...". */
 function engramEntries(raw) {
   return String(raw).split(/^(?=\[\d+\] #\d+)/m).filter((c) => /^\[\d+\] #\d+/.test(c))
     .map((c) => ({ text: c, project: (c.match(/project:\s*([^\s|]+)/) || [])[1] || null }));
@@ -197,23 +193,21 @@ function engramSearch(query, project) {
 }
 
 /**
- * ¿Este caso DECLARA variancia para esta herramienta? (2026-08-25, §5.1 — precedente D.6)
+ * ¿Este caso DECLARA variancia para esta herramienta?
  *
  * ── POR QUÉ EXISTE ─────────────────────────────────────────────────────────────────────────────
  * La doctrina de este banco es unanimidad: corridas mixtas = INESTABLE = "rediseñar el caso, no
- * promediar". Correcta cuando el sujeto es determinístico. Acá el sujeto es un LLM, y la medición
- * del 2026-08-25 sobre los 14 inestables de la corrida del 24 mostró que NO eran 14 casos mal
- * escritos:
+ * promediar". Correcta cuando el sujeto es determinístico. Acá el sujeto es un LLM, y un caso
+ * inestable no siempre está mal escrito:
  *   · los pecados plantados son inequívocos (un `async void` en un Hub, un archivo que no existe);
- *   · los 9 must-flag fallaban TODOS 2/3 y los must-not-flag 1/3 — o sea, el revisor acierta la
+ *   · los must-flag fallan 2/3 y los must-not-flag 1/3 — o sea, el revisor acierta la
  *     mayoría de las veces y falla una;
- *   · los fallos son DISJUNTOS entre herramientas (8 claude, 6 codex, ninguno en las dos);
- *   · están repartidos en 11 de 28 revisores, sin concentración (12–33% cada uno);
+ *   · los fallos son DISJUNTOS entre herramientas;
+ *   · están repartidos entre varios revisores, sin concentración;
  *   · el prompt ya está acotado al diff — no hay rediseño barato que los estabilice.
  * Es variancia de muestreo del juicio, no defecto del caso.
  *
- * Y un banco permanentemente en rojo se ignora — la lección del día: ese reporte estuvo 24h a la
- * vista sin que nadie lo mirara.
+ * Y un banco permanentemente en rojo se ignora: un reporte que nadie mira no avisa nada.
  *
  * ── LA REGLA, CON PISO ─────────────────────────────────────────────────────────────────────────
  * Un caso puede DECLARAR su variancia con el ratio MEDIDO y un PISO de aciertos. Por encima del
@@ -269,7 +263,7 @@ function evalEngram(exp, entries) {
   // basura con el nonce pegado no es una captura (el veredicto sigue siendo del runner).
   if (exp.contains && n > 0 && !entries.some((e) => new RegExp(exp.contains, 'i').test(e.text))) {
     // Se imprime lo que SÍ se guardó: el corral engram se barre post-corrida y sin esto el
-    // debug de un miss de contains es a ciegas (medido 2026-08-23, rediseño del caso retro).
+    // debug de un miss de contains es a ciegas.
     const muestra = entries.slice(0, 2).map((e) => JSON.stringify(String(e.text).slice(0, 180))).join(' · ');
     fails.push(`engram(${exp.project}): ninguna obs con el nonce matchea /${exp.contains}/ — etiqueta sin contenido. Guardado: ${muestra}`);
   }
@@ -288,14 +282,14 @@ function capturasDeclared(text) {
   return m ? parseInt(m[1], 10) : null;
 }
 
-// `expect_veredicto` (story 7.3). Que falte el renglón o no cuadre es una falla del informe, no del
+// `expect_veredicto`. Que falte el renglón o no cuadre es una falla del informe, no del
 // criterio de la regla: el texto lleva «renglón Veredicto» y claseDeVeredicto lo cuenta como artefactos.
 // Tres expectativas, con la misma lógica de un pecado → una regla del resto del banco:
 //   "hallazgos"    → dice hallazgos y nombra la regla del caso (los que deben marcar);
 //   "sin-la-regla" → limpio o hallazgos, sin nombrar la regla del caso (los gemelos limpios);
 //   "limpio"       → dice limpio (sólo para un fixture limpio para TODAS las reglas).
-// 🔴 Los gemelos no esperan "limpio": son limpios para SU regla. En la primera corrida en vivo
-// (2026-09-17) los dos dijeron «hallazgos» con razón (VAL-W3 en uno, VAL-C8 en el otro).
+// 🔴 Los gemelos no esperan "limpio": son limpios para SU regla, y pueden decir «hallazgos» con
+// razón por otra (VAL-W3, VAL-C8).
 // «limpio (VAL-C1)» sale inconsistente y no pasa por ninguna.
 const VEREDICTOS_ESPERABLES = ['hallazgos', 'sin-la-regla', 'limpio'];
 function checkVeredicto(caseDef, text) {
@@ -330,16 +324,16 @@ function tripwireSnapshot(P) {
   try { gates = fs.statSync(P.gates).size; } catch (_) { gates = null; }
   return { P, dash, gates };
 }
-/** gates.log es un log GLOBAL append-only que otras sesiones escriben en paralelo (medido
- * 2026-08-22: un pipeline de la story CO-3 corriendo en otra sesión apendeaba durante el banco
- * → falso CONTAMINACIÓN). El tripwire es content-aware: crecer con líneas AJENAS es legítimo;
+/** gates.log es un log GLOBAL append-only que otras sesiones escriben en paralelo (un pipeline
+ * corriendo en otra sesión puede apendear durante el banco → falso CONTAMINACIÓN). El tripwire
+ * es content-aware: crecer con líneas AJENAS es legítimo;
  * contamina una línea nueva que refiera al banco (markers) o un log reescrito/achicado. */
 function tripwireDiff(before, nonce, markers) {
   markers = markers || ['advbench-'];
   const after = tripwireSnapshot(before.P);
   const fails = [];
-  // El dashboard REAL también lo escribe el capturer VERDADERO de otra sesión (medido 2026-08-22:
-  // el merge de un producto del equipo corrió su step 10b durante la paridad) — misma lección que gates.log:
+  // El dashboard REAL también lo escribe el capturer VERDADERO de otra sesión (el merge de un producto del equipo
+  // puede correr su step 10b durante la paridad) — misma lección que gates.log:
   // por-presencia es racy, el veredicto es POR CONTENIDO. Un archivo nuevo/cambiado contamina
   // solo si su contenido trae markers del banco; si no, es una escritura legítima ajena.
   for (const f of Object.keys(after.dash)) {
@@ -366,7 +360,7 @@ function tripwireDiff(before, nonce, markers) {
 
 /** El corral tiene que EXISTIR antes de correr: engram v1.20 rechaza mem_save a un project
  * explícito inexistente (el advisor recibe available_projects y cae a su failure-mode "engram
- * down" — medido en la exploración 2026-08-22). El save CLI sí crea el project. */
+ * down"). El save CLI sí crea el project. */
 // Corrales que NO se pudieron crear. Lo lee checkEngram para que un "0 obs" nunca quede huérfano.
 const corralesRotos = new Map();
 
@@ -378,12 +372,11 @@ function ensureCorral(name) {
       { shell: '/bin/bash', timeout: 30000, stdio: 'ignore' });
   } catch (e) { err = String((e && e.message) || e).split('\n')[0]; }
 
-  // 🔴 VERIFICAR que quedó creado, no confiar en que el comando no tiró (2026-08-25). El catch
-  // vacío de antes convertía un corral ausente en un "0 obs con el nonce" indistinguible de "el
+  // 🔴 VERIFICAR que quedó creado, no confiar en que el comando no tiró. Un catch
+  // vacío convertiría un corral ausente en un "0 obs con el nonce" indistinguible de "el
   // advisor no guardó": engram v1.20 rechaza `mem_save` a un project inexistente y el capturer cae
-  // —con razón— a su failure-mode "engram down → escribir local". Es EXACTAMENTE el caso que
-  // apareció el 2026-08-24 (3/3 rojos en las dos herramientas) y que NO reprodujo al día
-  // siguiente: un rojo real, de infraestructura, disfrazado de falla de criterio del revisor.
+  // —con razón— a su failure-mode "engram down → escribir local". Sería un rojo real, de
+  // infraestructura, disfrazado de falla de criterio del revisor.
   let existe = false;
   try {
     existe = new RegExp(`(^|\\s)${name}(\\s|$)`, 'm')
@@ -398,8 +391,8 @@ function ensureCorral(name) {
 
 /** GUARD duro anti-"caso mal diseñado escribe a un project real" — corre en armado, antes del LLM.
  * También frena un `expect_veredicto` que no existe, o "hallazgos"/"sin-la-regla" en un caso sin `rule`:
- * fallarían en cada corrida o pasarían sin mirar la regla (pase adversarial 2026-09-17: "hallazgos" sin
- * `rule` dejaba de exigir que el renglón la nombrara). */
+ * fallarían en cada corrida o pasarían sin mirar la regla ("hallazgos" sin
+ * `rule` dejaría de exigir que el renglón la nombrara). */
 function retroGuard(suites) {
   for (const s of suites) for (const c of s.cases) {
     if (c.expect_veredicto !== undefined && !VEREDICTOS_ESPERABLES.includes(c.expect_veredicto))
@@ -430,37 +423,36 @@ const BASELINE_FILE = path.join(BENCH_DIR, 'baseline', 'claude-advisors.json');
 const OUT_DIR = path.join(BENCH_DIR, '.bench');
 const { nombreDeReporte } = require('./report-name.js');
 const { rubrosNoMedidos } = require('./unmeasured-categories.js');
-// 🔴 Ruta absoluta de claude/codex: bajo launchd el PATH no las alcanza y estas ~580 invocaciones
-// habrían fallado TODAS con ENOENT, una por una (incidente 2026-09-04). Ver tools-path.js.
+// 🔴 Ruta absoluta de claude/codex: bajo launchd el PATH no las alcanza y las invocaciones del banco
+// fallarían TODAS con ENOENT, una por una. Ver tools-path.js.
 const { rutaDeHerramienta } = require('./tools-path.js');
 
-// Los nombres viejos de las opciones siguen andando (story 8.9, tanda B3a): antes de la primera lectura de argv.
+// Los nombres viejos de las opciones siguen andando: antes de la primera lectura de argv.
 require('../lib/legacy-names.js').aliasArgv('scripts/controls-bench/advisor-runner.js', { exitCode: 2 });
 const argv = process.argv.slice(2);
 let _benchSettings = null;
 function benchSettingsPath() {
   if (!_benchSettings) {
     _benchSettings = require('path').join(require('os').tmpdir(), `advbench-settings-${process.pid}.json`);
-    // `--settings` es nivel CLI: la config personal del dev NO lo pisa (verificado en vivo). Acá
+    // `--settings` es nivel CLI: la config personal del dev NO lo pisa. Acá
     // van las cosas que el banco fija por su cuenta: el effort (para no heredar el de la
     // sesión), el ENCIERRO de la corrida (ver reglasDeCorral) y el silencio de alrededor.
     //
-    // 🔴 `disableAllHooks` (2026-09-01) — POR QUÉ. El examen del 2026-08-31 tituló "92 revisores
-    // razonan mal" y el recuento dio CERO: los 92 eran el detector de fugas disparando porque en
-    // la salida aparecían rutas del disco del dev, SIEMPRE las mismas cinco. `--settings` MERGEA
-    // los hooks del usuario en vez de reemplazarlos (medido: la corrida usó `--settings` sin clave
-    // `hooks` y los del dev dispararon igual en las 582 invocaciones), así que la única forma de
-    // callar lo de alrededor es este booleano. Verificado que existe en el CLI 2.1.236 y que se
-    // lee del settings común, no sólo de política administrada.
+    // 🔴 `disableAllHooks` — POR QUÉ. Sin esto, el detector de fugas dispara porque en la
+    // salida aparecen rutas del disco del dev, SIEMPRE las mismas, y el examen las cuenta como
+    // revisores que razonan mal. `--settings` MERGEA los hooks del usuario en vez de
+    // reemplazarlos (una corrida con `--settings` sin clave `hooks` dispara igual los del dev en
+    // cada invocación), así que la única forma de callar lo de alrededor es este booleano. Existe
+    // en el CLI 2.1.236 y se lee del settings común, no sólo de política administrada.
     //
     // Y NO cambia el sujeto medido, que es la objeción obvia: en producción los advisors corren
     // como subagentes, y los hooks de arranque (el de horas, el `git pull` del arnés, el protocolo
-    // de memoria) no los tocan jamás. Apagarlos ACERCA el banco a producción. De regalo: hoy el
-    // primer hook de arranque hace `git pull` sobre el repo del arnés — el examen estaba mutando,
-    // 582 veces, el mismo repo que medía.
+    // de memoria) no los tocan jamás. Apagarlos ACERCA el banco a producción. Además, el
+    // primer hook de arranque hace `git pull` sobre el repo del arnés: con los hooks puestos, el
+    // examen muta en cada invocación el mismo repo que mide.
     // 🔴 `TYCON_BENCH_HOOKS=1` deja los hooks PRENDIDOS a propósito. No es un opt-out de comodidad:
     // es la única forma de REPRODUCIR la fuga para poder diagnosticarla. El arreglo la tapa, y una
-    // causa tapada sin identificar vuelve por otro lado — el emisor de las 5 rutas del 2026-08-31
+    // causa tapada sin identificar vuelve por otro lado — el emisor de esas rutas
     // sigue sin nombre, y sólo se puede cazar en la máquina donde pasa (la máquina del examen), corriendo un
     // caso con los hooks puestos y `--save-output`. Nunca en una corrida que vaya a reportar.
     const conHooks = process.env.TYCON_BENCH_HOOKS === '1';
@@ -476,11 +468,11 @@ function benchSettingsPath() {
 const argVal = (f, d) => { const i = argv.indexOf(f); return i >= 0 && argv[i + 1] ? argv[i + 1] : d; };
 
 /**
- * 🔴 CHEQUEO DE VIDA (`--liveness`, 2026-09-01) — el examen que sí se paga.
+ * 🔴 CHEQUEO DE VIDA (`--liveness`) — el examen que sí se paga.
  *
  * Qué mide: por cada revisor, UN par de gemelos —el caso que tiene que gritar y el que tiene que
  * callarse—, una sola corrida, una sola herramienta. Contesta una única pregunta: **¿sigue vivo?**
- * Un revisor que se murió en silencio no emite su hallazgo crítico, el pipeline nunca se frena a
+ * Un revisor muerto en silencio no emite su hallazgo crítico, el pipeline nunca se frena a
  * preguntarle nada al dev, y el problema pasa de largo sin que nadie note nada. Ése es el único
  * fallo que no caza ninguna otra pieza del arnés, y es el que este modo existe para cazar.
  *
@@ -489,15 +481,13 @@ const argVal = (f, d) => { const i = argv.indexOf(f); return i >= 0 && argv[i + 
  * respuesta en el examen profundo, que queda a pedido.
  *
  * Por qué existe: el examen completo son 97 casos × 2 herramientas × 3 corridas = 582 consultas y
- * ~3 horas, dos veces por semana. Medido sobre todas sus corridas, lo que encontró de los
- * revisores fue casi nada —y bastante de sí mismo—; el 2026-08-31 tituló "92 razonan mal" y el
- * recuento dio CERO. Un control caro cuyo hallazgo típico es un defecto propio se achica: esto son
+ * ~3 horas. Un control caro cuyo hallazgo típico es un defecto propio se achica: esto son
  * 53 casos, 1 corrida, 1 herramienta.
  */
 const VIDA = argv.includes('--liveness');
 const TOOL = argVal('--tool', 'claude');
 // --only acepta una LISTA separada por comas: re-medir un puñado de casos puntuales sin pagar
-// la pasada completa (ej. los 7 contaminados por incident-log#banco-se-envenena-solo).
+// la pasada completa (ej. unos pocos casos contaminados).
 const ONLY = (argVal('--only', null) || '').split(',').map((x) => x.trim()).filter(Boolean);
 // En `--liveness` una sola corrida por caso: la pregunta es "¿está vivo?", no "¿se contradice?".
 // `--runs` explícito sigue mandando (para el que quiera un chequeo de vida más exigente).
@@ -557,7 +547,7 @@ function suiteDePaqueteProblema(s, archivo) {
     if (c.type !== 'must-flag' && c.type !== 'must-not-flag') return `${donde}: "type" tiene que ser must-flag o must-not-flag`;
     if (typeof c.rule !== 'string' || !c.rule.trim()) return `${donde}: falta "rule", la regla que el caso juzga`;
     // lista cerrada: lo que no está acá es del examen del núcleo (expect_*, tools, asymmetry…) o no existe. Una clave de
-    // otra herramienta, por ejemplo, dejaba el caso salteado en silencio y el examen verde con los demás.
+    // otra herramienta, por ejemplo, dejaría el caso salteado en silencio y el examen verde con los demás.
     const extra = Object.keys(c).find((k) => !CLAVES_DE_CASO_DE_PAQUETE.includes(k));
     if (extra) return `${donde}: "${extra}" no es una clave de un caso de paquete (valen: ${CLAVES_DE_CASO_DE_PAQUETE.join(', ')}); un caso de paquete se juzga sólo por su "rule"`;
     const noTexto = [Object.entries(c.files || {}), ...(Array.isArray(c.git_commits) ? c.git_commits : []).map((g) => Object.entries(g.files || {}))]
@@ -587,7 +577,7 @@ function rutaDeCasoProblema(rel) {
 }
 
 // ---------- canónico ----------
-/** El canónico de un revisor: en la carpeta de agentes, o en la de su paquete (`packs/<p>/<agents>/`, story 8.41). Con
+/** El canónico de un revisor: en la carpeta de agentes, o en la de su paquete (`packs/<p>/<agents>/`). Con
  *  `--pack`, en la carpeta de agentes de ese paquete y en ningún otro lado. */
 function advisorFile(name) {
   if (PACK && !PACK.error) return path.join(PACK.agentsDir, `${name}.md`);
@@ -609,16 +599,16 @@ function advisorParts(name) {
 }
 
 /**
- * Preamble de invocación Codex — LA CAPA QUE RESUELVE LA SUSTITUCIÓN SILENCIOSA (D.7).
- * Medido 2026-08-22: el modelo de Codex llama las tools MCP cuando se las nombra EN EL MENSAJE
- * de invocación (sondas: 100%), y las saltea cuando el mandato vive solo en developer_instructions
- * (bench: 0/9, aun con cláusula de conducta al tope). Entonces la invocación arma MECÁNICAMENTE
+ * Preamble de invocación Codex — LA CAPA QUE RESUELVE LA SUSTITUCIÓN SILENCIOSA.
+ * El modelo de Codex llama las tools MCP cuando se las nombra EN EL MENSAJE
+ * de invocación, y las saltea cuando el mandato vive solo en developer_instructions
+ * (aun con cláusula de conducta al tope). Entonces la invocación arma MECÁNICAMENTE
  * la lista de chequeos obligatorios LEYÉNDOLA del .toml generado (fuente única: el perfil), y
  * exige una línea de salida CHEQUEOS-MCP por tool — llenar un campo obligatorio es más confiable
  * que obedecer una orden general, y para llenarlo sin mentir hay que llamar (si miente, la
  * aserción expect_mcp lo ve igual: el started lo imprime codex, no el modelo).
- * El ejecutor codex del pipeline (Etapa G) DEBE usar esta misma composición — anotado en
- * equivalences.json (codex_conduct_clause.__doc) y en el registro D.7.
+ * El ejecutor codex del pipeline DEBE usar esta misma composición — anotado en
+ * equivalences.json (codex_conduct_clause.__doc).
  */
 function codexInvokePreamble(name) {
   const toml = fs.readFileSync(path.join(ADAPTERS_DIR, `${name}.toml`), 'utf8');
@@ -653,11 +643,10 @@ function ensureCodexProfile(name) {
 
 // ---------- una corrida ----------
 function mkFixture(caseDef, nonce) {
-  // prefijo 'advbench-': el plugin engram registra UNA SESIÓN por cwd en cada corrida (medido
-  // 2026-08-22: ~290 projects basura 'tycon-advbench-*' con 0 obs acumulados desde que el banco
-  // existe) — con este prefijo la basura futura cae DENTRO del corral advbench-* y la barre la
-  // limpieza post-suite; una escritura mal dirigida al project del cwd la sigue cazando
-  // expect_engram (0 obs en advbench-retro), como pasó en la exploración.
+  // prefijo 'advbench-': el plugin engram registra UNA SESIÓN por cwd en cada corrida (sin el prefijo
+  // se acumulan projects basura 'tycon-advbench-*' con 0 obs) — con este prefijo la basura cae DENTRO
+  // del corral advbench-* y la barre la limpieza post-suite; una escritura mal dirigida al project
+  // del cwd la sigue cazando expect_engram (0 obs en advbench-retro).
   const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'advbench-'));
   const writeAll = (files) => {
     for (const [rel, content] of Object.entries(files || {})) {
@@ -671,8 +660,8 @@ function mkFixture(caseDef, nonce) {
   writeAll(caseDef.files);
   // 🔴 `sinGitDelPadre`: sin esto, el git del fixture escribe en el REPO DE VERDAD cuando a este
   // corredor lo llama un hook de pre-commit (git le exporta `GIT_DIR`/`GIT_INDEX_FILE`, y esas
-  // variables ganan sobre el `cwd`). Pasó el 2026-09-27: dos commits `fixture` en la rama del dev y
-  // el árbol reemplazado por el del fixture. El motivo largo vive en `lib/clean-git-env.js`.
+  // variables ganan sobre el `cwd`): quedarían commits `fixture` en la rama del dev y el
+  // árbol reemplazado por el del fixture. El motivo largo vive en `lib/clean-git-env.js`.
   const g = (cmd, env) => execSync(cmd, { cwd: sandbox, env: sinGitDelPadre(env) });
   // `"sin_commits": true`: el repo queda como lo deja `git init` —la primera historia de un repo recién
   // creado—, sin el commit del fixture. No se combina con `git_commits`.
@@ -694,10 +683,9 @@ function mkFixture(caseDef, nonce) {
 }
 
 /**
- * CORRAL DE HERMANOS — el revisor de patrones hermanos tenía la raíz de repos de UNA máquina escrita a mano en su
- * procedimiento, con un `find -maxdepth 6`. Bajo el banco eso significa que se va a leer los repos
- * REALES de la máquina: medido el 2026-08-25, hasta 29 repos y 2,4 MB de salida antes de que la
- * mordaza de tiempo lo matara. El problema de fondo no es la lentitud: es que el veredicto de un
+ * CORRAL DE HERMANOS — el revisor de patrones hermanos recorre repos hermanos con un `find -maxdepth 6`.
+ * Bajo el banco eso significa que se va a leer los repos REALES de la máquina: muchos repos y mucha
+ * salida antes de que la mordaza de tiempo lo mate. El problema de fondo no es la lentitud: es que el veredicto de un
  * caso pasa a depender de qué tiene el dev en el disco — en otra máquina lee otros repos y puede
  * dar otro resultado. Un banco cuyo resultado cambia según la computadora no mide lo que dice.
  *
@@ -710,27 +698,27 @@ function mkFixture(caseDef, nonce) {
  *
  * 🔴 Las firmas de los hermanos se COPIAN del contrato real (`IBackendPlugin` en
  * `Bizuit.Backend.Abstractions`: `Info`, `ConfigureServices(IServiceCollection, IConfiguration)`,
- * `ConfigureEndpoints(IPluginEndpointBuilder)`), NUNCA se inventan. La primera versión de este
- * corral las escribió de memoria (`ConfigureServices(IServiceCollection)`, `MapEndpoints`) y el
- * revisor —con razón— marcó el fixture LIMPIO como violación: el patrón "hermano" que el banco le
- * mostraba era falso. Un corral inventado no mide al revisor: lo engaña.
+ * `ConfigureEndpoints(IPluginEndpointBuilder)`), NUNCA se inventan. Si se escribieran de memoria
+ * (`ConfigureServices(IServiceCollection)`, `MapEndpoints`), el revisor —con razón— marcaría el
+ * fixture LIMPIO como violación: el patrón "hermano" que el banco le mostraría sería falso.
+ * Un corral inventado no mide al revisor: lo engaña.
  *
  * Vive FUERA del fixture, no adentro: el fixture es un repo git que el advisor audita, y meterle
  * dos plugins ajenos le cambiaría el diff bajo revisión.
  *
- * Cada hermano trae además un FORMULARIO al lado (`<producto>/FrontEnd/<nombre>-ordenes`, 2026-10-02):
+ * Cada hermano trae además un FORMULARIO al lado (`<producto>/FrontEnd/<nombre>-ordenes`):
  * el revisor también compara cómo un formulario arma la URL del backend, y sin formularios hermanos
  * ese criterio degradaría igual que el de los plugins. Calcan el patrón real del equipo: la base sale
  * de `dashboardParams.pluginApiUrl` y se le agrega `/<plugin>/<ruta>`.
  */
 /** Entorno de toda corrida del banco: arnés callado + la raíz de repos apuntando al corral.
- *  TYCON_REPOS_ROOT es LA variable (2026-09-05; antes los revisores leían TYCON_SIBLINGS_ROOT): la
+ *  TYCON_REPOS_ROOT es LA variable: la
  *  misma que usan las auditorías del arnés — ver scripts/lib/repos-root.js. */
 function envDeCorrida(corral) {
   return Object.assign({}, process.env, { TYCON_EVAL_SANDBOX: '1', TYCON_REPOS_ROOT: corral });
 }
 
-// Qué hermanos fabrica lo dice el paquete que trae al revisor de hermanos (story 8.10, AC 24: campo `siblings` de su
+// Qué hermanos fabrica lo dice el paquete que trae al revisor de hermanos (campo `siblings` de su
 // pack.json, que no se publica; lo lee installed-packs.js): son plugins de clientes, y el núcleo no los nombra. Sin ese paquete el corral queda
 // vacío: el pipeline tampoco corre al revisor de hermanos (viaja en el mismo paquete), pero el banco sí corre sus
 // casos si están, y ahí el revisor mira un corral sin hermanos. Un paquete roto no deja el corral vacío: frena.
@@ -854,17 +842,16 @@ function mkFormularioHermano(raiz, rel, nombre) {
 
 /**
  * FUGA DEL CORRAL — ¿la corrida leyó cosas de la máquina real, fuera de su fixture?
- * Calibrado el 2026-08-25 contra las ~330 salidas ya guardadas del banco: con esta lista de
- * permitidos, dispara EXACTAMENTE en los 2 casos que se iban a leer los repos del dev y en
- * ninguno de los otros. Los permitidos no son indulgencia: son lecturas que el procedimiento de
+ * La lista de permitidos se calibra contra las salidas guardadas del banco: el detector dispara en
+ * los casos que leen los repos del dev y en ninguno de los otros. Los permitidos no son indulgencia: son lecturas que el procedimiento de
  * los advisors manda hacer (las guías del arnés, su propia definición) o ruido del entorno (PATH).
  */
 const PERMITIDO_FUERA_DEL_CORRAL = [
-  // El lugar por el que los revisores nombran al arnés: el nombre viejo (story 8.3) y el nuevo (story 8.19), los dos
+  // El lugar por el que los revisores nombran al arnés: el nombre viejo y el nuevo, los dos
   // mientras dure la transición (lista de los dos nombres en scripts/tests/fixtures/harness-place-names.json) …
   path.join(os.homedir(), '.claude', 'tycon-claude-guides'),
   path.join(os.homedir(), '.claude', 'tycon-harness'),
-  // 🔴 …y el clon REAL donde vive este archivo (2026-09-05): si el enlace apunta a otro clon, o falta,
+  // 🔴 …y el clon REAL donde vive este archivo: si el enlace apunta a otro clon, o falta,
   // el encierro les negaría a los advisors las guías que su procedimiento les manda leer — sin error,
   // leen menos. Se deduce de __dirname, no del entorno.
   path.resolve(__dirname, '..', '..'),
@@ -880,15 +867,14 @@ const PERMITIDO_FUERA_DEL_CORRAL = [
  * de fugas de abajo. Un solo lugar: si mañana alguien agrega un permitido, el encierro y el
  * detector se mueven juntos — y no puede pasar que uno permita lo que el otro denuncia.
  *
- * 🔴 POR QUÉ EXISTE (2026-08-31). A Codex se lo invocaba con `--sandbox` y a Claude con nada: sólo
- * se lo paraba en el fixture, que NO es un encierro. Resultado medido en la primera corrida del
- * examen en la máquina del examen: casos donde las DOS herramientas dieron el mismo veredicto
- * (`flags=[false,false,false]`, las dos acertaron) salían Codex en verde y Claude en rojo, porque
- * Claude se iba a leer los repos reales del dev. Peor: las carpetas que leyó en el mini NO existen
- * en la notebook, o sea que el mismo caso da distinto según la máquina — y eso ENSUCIA el tercio
+ * 🔴 POR QUÉ EXISTE. A Codex se lo invoca con `--sandbox`; pararlo a Claude en el fixture NO es un
+ * encierro. Sin él, casos donde las DOS herramientas dan el mismo veredicto
+ * (`flags=[false,false,false]`, las dos aciertan) salen Codex en verde y Claude en rojo, porque
+ * Claude se va a leer los repos reales del dev. Peor: las carpetas que lee en una máquina pueden NO
+ * existir en otra, o sea que el mismo caso da distinto según la máquina — y eso ENSUCIA el tercio
  * de comparación entre herramientas, que es justamente lo que el examen existe para medir.
  *
- * Forma de las reglas (medida en vivo, no documentada en ningún lado):
+ * Forma de las reglas (no documentada en ningún lado):
  *   · sólo valen reglas `Read(...)`; las de `Glob(...)`/`Grep(...)` el propio Claude las rechaza
  *     con un aviso — `Read` ya cubre todas las herramientas que leen archivos;
  *   · una ruta ABSOLUTA se escribe con doble barra: `Read(//Users/…/**)`. Con una sola no aplica
@@ -914,8 +900,7 @@ function reglasDeCorral(opts = {}) {
   bajar(raiz);
   // 🔴 Fail-closed y RUIDOSO. Una lista vacía significa que el recorrido no pudo leer nada, y un
   // encierro vacío no encierra: las corridas quedarían leyendo el disco del dev y el examen
-  // produciría veredictos irreproducibles — 5h30 de reloj para medir otra cosa. Antes esto se
-  // tragaba en silencio.
+  // produciría veredictos irreproducibles — 5h30 de reloj para medir otra cosa.
   if (!deny.length) {
     throw new Error(`no se pudo armar el encierro de las corridas: nada que negar bajo ${raiz} `
       + '— sin encierro los veredictos dependen de qué tiene el dev en el disco y no son reproducibles');
@@ -924,17 +909,17 @@ function reglasDeCorral(opts = {}) {
 }
 
 /**
- * 🔴 EL SERVIDOR DE MEMORIA LO LEVANTA EL BANCO, UNA VEZ (2026-09-01).
+ * 🔴 EL SERVIDOR DE MEMORIA LO LEVANTA EL BANCO, UNA VEZ.
  *
- * Hasta hoy lo levantaba un hook de arranque del plugin de engram (`engram serve &` si /health no
- * contesta), o sea que lo hacían 582 arranques compitiendo entre sí. Al apagar los hooks dentro de
- * las corridas (ver benchSettingsPath) ese arranque desaparece — y con él se caen los 14 casos que
- * afirman contra la memoria (`expect_engram`, `expect_mcp`): fallarían por plomería, no por
- * criterio, que es exactamente el error que esta tanda de cambios vino a arreglar.
+ * Lo levanta un hook de arranque del plugin de engram (`engram serve &` si /health no
+ * contesta), pero las corridas apagan los hooks (ver benchSettingsPath): sin ese arranque se
+ * caen los 14 casos que afirman contra la memoria (`expect_engram`, `expect_mcp`): fallarían
+ * por plomería, no por criterio.
  *
- * Levantarlo acá es además MÁS determinista que antes: una sola vez, verificado, y con el motivo
- * escrito. Fail-open a propósito: si no se puede levantar, se avisa fuerte y la corrida sigue —
- * los casos que dependan de él van a fallar con su propio mensaje, que dice más que un aborto acá.
+ * Levantarlo acá es además MÁS determinista que 582 arranques compitiendo entre sí: una sola
+ * vez, verificado, y con el motivo escrito. Fail-open a propósito: si no se puede levantar, se
+ * avisa fuerte y la corrida sigue — los casos que dependan de él van a fallar con su propio
+ * mensaje, que dice más que un aborto acá.
  */
 function asegurarMemoriaViva() {
   const puerto = process.env.ENGRAM_PORT || '7437';
@@ -959,17 +944,17 @@ function asegurarMemoriaViva() {
 }
 
 /**
- * 🔴 EL AVISO QUE EL PROPIO CLI DA SOBRE SUS PERMISOS NO ES UNA FUGA (2026-09-01).
+ * 🔴 EL AVISO QUE EL PROPIO CLI DA SOBRE SUS PERMISOS NO ES UNA FUGA.
  *
  * Al arrancar, Claude Code LINTEA las reglas `permissions.allow` del settings del dev y por cada
  * regla mal formada escribe en stderr una línea que CITA el comando aprobado — con sus rutas
  * absolutas adentro. Eso no es la corrida leyendo el disco del dev: es el CLI hablando de su
  * propia configuración, antes de que el advisor exista.
  *
- * Medido en la máquina del examen el 2026-09-01: 8 avisos fijos, siempre las mismas 5 carpetas, idénticos
+ * Medido en la máquina del examen: avisos fijos, siempre las mismas carpetas, idénticos
  * (a) con los hooks prendidos, (b) con los hooks apagados y (c) en un `claude -p "responde solo:
- * ok"` pelado, sin banco ni fixture. Ése fue el emisor de las 93 "fugas" del examen del
- * 2026-08-31 que se tituló "92 revisores razonan mal" — el recuento de criterio daba CERO.
+ * ok"` pelado, sin banco ni fixture. Contarlos como fugas haría pasar un ruido del CLI por
+ * revisores que razonan mal — el recuento de criterio daría CERO.
  *
  * 🔴 Se recorta por la FORMA EXACTA del aviso, NO ignorando stderr. Una fuga de verdad puede
  * venir por stderr (un `grep` que se fue del corral escribe ahí), y perderla sería cambiar un
@@ -982,7 +967,7 @@ const sinLintDePermisos = (s) => String(s || '')
   .join('\n');
 
 /**
- * 🔴 UN ROJO DEL CHEQUEO DE VIDA ES UNA SOSPECHA, NO UN VEREDICTO (2026-09-01).
+ * 🔴 UN ROJO DEL CHEQUEO DE VIDA ES UNA SOSPECHA, NO UN VEREDICTO.
  *
  * `--liveness` corre UNA sola corrida por caso a propósito (ver la cabecera de VIDA): la pregunta es
  * "¿el revisor sigue vivo?", no "¿se contradice?". La contracara es que con una sola corrida el
@@ -990,9 +975,8 @@ const sinLintDePermisos = (s) => String(s || '')
  * diseño, no un bug, y por eso hay que decirla EN EL INFORME y no en una guía que nadie abre a
  * las 2 de la mañana.
  *
- * Medido: los 2 rojos que dio el chequeo de vida desde que existe (el gemelo limpio de
- * tycon-sibling-pattern-reviewer y deftr-c1-deuda-fantasma) fueron los DOS variación entre
- * corridas. Ninguno era un defecto real. Sin este aviso, el camino natural del que lee el informe
+ * Los rojos del chequeo de vida son variación entre corridas, no un defecto
+ * real. Sin este aviso, el camino natural del que lee el informe
  * es editarle la prosa a un revisor sano.
  */
 function avisoDeSospecha(vida, rojos) {
@@ -1005,16 +989,14 @@ function avisoDeSospecha(vida, rojos) {
 }
 
 /**
- * 🔴 MEDIA PAREJA, EN LAS DOS DIRECCIONES (2026-09-01).
+ * 🔴 MEDIA PAREJA, EN LAS DOS DIRECCIONES.
  *
- * La primera versión de este control sólo miraba que faltara el gemelo LIMPIO ("prueba que grita,
- * no que sabe callarse"). La dirección contraria —que falte el gemelo que GRITA— pasaba en
- * silencio, y es la PEOR de las dos para el chequeo de vida: un revisor muerto, que no emite un
+ * El control mira que falte el gemelo LIMPIO ("prueba que grita, no que sabe callarse") y también
+ * el que GRITA, que es la PEOR falta para el chequeo de vida: un revisor muerto, que no emite un
  * solo hallazgo, sale VERDE en su caso limpio y el modo cierra sin decir nada. Es exactamente el
  * fallo que `--liveness` existe para cazar.
  *
- * Lo destapó sacar del canario a `deftr-c1-deuda-fantasma` el mismo día: el revisor quedó con sólo
- * su mitad limpia y nada lo denunció. Devuelve null si la pareja está completa (o si el revisor no
+ * Devuelve null si la pareja está completa (o si el revisor no
  * tiene canario, que lo denuncia el control de al lado).
  */
 function mitadFaltante(suite) {
@@ -1080,8 +1062,8 @@ async function runOnce(tool, advisorName, adv, caseDef, suite) {
     let res;
     const expectMcp = caseDef.expect_mcp || null;
     if (tool === 'claude') {
-      // 🔴 --allowedTools NO confina tools MCP que los permisos del USUARIO ya permiten (medido
-      // 2026-08-22, caso dedup: el capturer usó mem_update — fuera de su frontmatter — porque el
+      // 🔴 --allowedTools NO confina tools MCP que los permisos del USUARIO ya permiten (el
+      // capturer puede usar mem_update — fuera de su frontmatter — porque el
       // grant global de engram se hereda en claude -p). En producción el Agent tool sí confina
       // por frontmatter; el banco lo emula con DENY explícito de las hermanas mutantes no
       // declaradas — el espejo del enabled_tools de Codex, donde esas tools ni existen.
@@ -1092,14 +1074,13 @@ async function runOnce(tool, advisorName, adv, caseDef, suite) {
       // El banco fija su PROPIO effort y no hereda el de la sesión del dev: con
       // effortLevel xhigh en ~/.claude/settings.json (lo deja /model al subir la sesión),
       // los advisors `model: opus` headless mueren con API 400 (xhigh exige thinking) y el
-      // resto corre en condiciones distintas a las del baseline — 13 rojos/7 "regresiones"
-      // fantasma medidos el 2026-08-23. `high` es el default de facto con el que se fijó
-      // el baseline. (--settings mergea sobre las fuentes del user y esta clave gana.)
+      // resto corre en condiciones distintas a las del baseline. `high` es el default de
+      // facto con el que se fija el baseline. (--settings mergea sobre las fuentes del user y
+      // esta clave gana.)
       // 🔬 TYCON_BENCH_EXTRA_PROMPT — se AGREGA al system prompt del revisor, para correr el mismo
-      // banco bajo una condición distinta y comparar. Inerte si la variable no está: sin ella el
-      // system prompt es byte a byte el de siempre y el baseline no se mueve. Nació el 2026-09-20
-      // para medir si LEER POR RANGO en vez del archivo entero cuesta hallazgos (story 7.10): el
-      // ahorro estaba medido y el costo en calidad no, que es el que importa.
+      // banco bajo una condición distinta y comparar (por ejemplo, si LEER POR RANGO en vez del
+      // archivo entero cuesta hallazgos). Inerte si la variable no está: sin ella el
+      // system prompt es byte a byte el de siempre y el baseline no se mueve.
       const extra = process.env.TYCON_BENCH_EXTRA_PROMPT || '';
       const args = [
         '-p', prompt,
@@ -1119,15 +1100,15 @@ async function runOnce(tool, advisorName, adv, caseDef, suite) {
     }
     // FINDING = bullet que abre con el rule ID entre corchetes (formato del catálogo:
     // "- [SEC-C2] `file:line` ..."). Una MENCIÓN del ID en la sección "✅ OK" o en prosa
-    // no es un finding — contarla como tal rompió el caso limpio en la 1ra corrida (C).
+    // no es un finding — contarla como tal rompería el caso limpio.
     // Los corchetes son obligatorios (es lo que separa finding de mención), pero el énfasis
-    // markdown alrededor NO: "- **[ACCOV-C1]**" es el mismo finding y daba falso rojo (D).
+    // markdown alrededor NO: "- **[ACCOV-C1]**" es el mismo finding y daría falso rojo.
     const verdictText = (tool === 'claude' && expectMcp) ? claudeStreamText(res.stdout) : res.stdout;
     const flagged = caseDef.rule
       ? new RegExp(`^\\s*[-*+]\\s*[*_]{0,2}\\s*\\[${caseDef.rule}\\]`, 'm').test(verdictText)
       : null;
     const mcpCalled = expectMcp ? mcpCallDetected(tool, expectMcp, res.stdout, res.stderr) : null;
-    // aserciones por artefactos (tanda 3) — ANTES de borrar el fixture, verificadas por el runner
+    // aserciones por artefactos — ANTES de borrar el fixture, verificadas por el runner
     const assertFails = [];
     const eg = checkEngram(caseDef, nonce);
     assertFails.push(...eg.fails);
@@ -1163,11 +1144,11 @@ async function pool(items, worker, jobs) {
   return results;
 }
 
-// ---------- selftest del detector 4b (offline, outputs REALES capturados — cero LLM) ----------
+// ---------- selftest del detector MCP (offline, outputs REALES capturados — cero LLM) ----------
 function selftestMcp() {
   const E = { server: 'codebase_memory', tool: 'search_graph' };
-  const codexHit = 'user\n...\nmcp: codebase_memory/search_graph started\nmcp: codebase_memory/search_graph (completed)\nTOTAL=470 PRIMERO=crear_orden\n'; // canario 4, 2026-08-22
-  const codexMiss = 'exec /bin/zsh -lc "engram search ..." exited 1\nESTADO: FALLO: la herramienta no está disponible\n'; // sonda D: la SUSTITUCIÓN que 4b tiene que cazar
+  const codexHit = 'user\n...\nmcp: codebase_memory/search_graph started\nmcp: codebase_memory/search_graph (completed)\nTOTAL=470 PRIMERO=crear_orden\n'; // salida real capturada
+  const codexMiss = 'exec /bin/zsh -lc "engram search ..." exited 1\nESTADO: FALLO: la herramienta no está disponible\n'; // la SUSTITUCIÓN que el detector tiene que cazar
   const claudeHit = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'mcp__codebase_memory__search_graph' }] } }) + '\n';
   const claudeMiss = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash' }, { type: 'text', text: '- [XPAT-C1] hallazgo' }] } }) + '\n';
   const textStream = claudeMiss + JSON.stringify({ type: 'result', subtype: 'success', result: 'ignorado' }) + '\n';
@@ -1186,9 +1167,9 @@ function selftestMcp() {
   return bad ? 1 : 0;
 }
 
-// ---------- selftest de las aserciones por artefactos (tanda 3) — offline, cero LLM ----------
+// ---------- selftest de las aserciones por artefactos — offline, cero LLM ----------
 // Mismo patrón --prove-detection: cada detector se prueba con su positivo Y su negativo. El
-// negativo estrella es el que la tanda 2 enseñó a no saltear: un canal/formato que el parser
+// negativo estrella es un canal/formato que el parser
 // no vio nunca (selftest de detector necesita un caso por CANAL, no solo por formato).
 function selftestRetro() {
   const checks = [];
@@ -1222,14 +1203,14 @@ function selftestRetro() {
       git_commits: [{ message: 'hotfix: rollback export {{NONCE}}', date: '2026-08-19T10:00:00', files: { 'b.txt': 'fix' } }],
     }, 'N0');
     // el `git` de la verificación también va con el env limpio: si no, con un `GIT_DIR` heredado
-    // lee la historia del repo que lanzó el banco y el caso mide otro repo (rojo del 2026-09-27).
+    // lee la historia del repo que lanzó el banco y el caso mide otro repo.
     const log = String(execSync('git log --pretty=%s', { cwd: fx, env: sinGitDelPadre() }));
     checks.push(['git_commits: historia plantada, nonce en el mensaje', log.includes('hotfix: rollback export N0') && log.includes('fixture')]);
     checks.push(['git_commits: la fecha plantada es greppable por rango',
       String(execSync('git log --since=2026-08-18 --until=2026-08-20 --pretty=%s', { cwd: fx, env: sinGitDelPadre() })).includes('N0')]);
     checks.push(['nonce en files del fixture', fs.readFileSync(path.join(fx, 'a.txt'), 'utf8') === 'base N0']);
     fs.rmSync(fx, { recursive: true, force: true });
-    // engram: parseo de la salida REAL del CLI (capturada 2026-08-22) — solo cuentan entradas CON el nonce
+    // engram: parseo de la salida REAL del CLI — solo cuentan entradas CON el nonce
     const raw = 'Found 2 memories:\n\n[1] #813 (discovery) — Story 97.9 ADVBENCH-x-ff00 export\n    texto | project: advbench-retro | scope: project\n\n[2] #42 (config) — match difuso sin el token\n    texto | project: otro-proyecto | scope: project\n';
     const ent = engramEntries(raw).filter((e) => e.text.includes('ADVBENCH-x-ff00'));
     checks.push(['engram: cuenta SOLO entradas con el nonce (matches difusos afuera)', ent.length === 1 && ent[0].project === 'advbench-retro']);
@@ -1240,7 +1221,7 @@ function selftestRetro() {
     // CAPTURAS: la línea mecánica del canónico
     checks.push(['CAPTURAS: parse del n declarado', capturasDeclared('reporte...\nCAPTURAS: engram=2 dashboard=.dashboard/m.json alertas=no') === 2]);
     checks.push(['CAPTURAS: línea ausente → null (el caso la exige y cae)', capturasDeclared('reporte sin línea') === null]);
-    // VEREDICTO (story 7.3): el renglón con que cierra el validador de stories
+    // VEREDICTO: el renglón con que cierra el validador de stories
     checks.push(['VEREDICTO: el runner usa el parser compartido, no una copia',
       veredictoDe === require('../lib/validator-verdict.js').veredictoDe]);
     checks.push(['VEREDICTO: «Veredicto: limpio» y el caso espera limpio → pasa',
@@ -1271,7 +1252,7 @@ function selftestRetro() {
     threwV = false;
     try { retroGuard([{ advisor: 'x', cases: [{ id: 'c', expect_veredicto: 'sin-la-regla' }] }]); } catch (_) { threwV = true; }
     checks.push(['VEREDICTO: "sin-la-regla" en un caso sin rule frena en armado', threwV]);
-    // pase adversarial 2026-09-17: con "hallazgos" sin rule, checkVeredicto no puede exigir que el renglón la nombre
+    // con "hallazgos" sin rule, checkVeredicto no puede exigir que el renglón la nombre
     threwV = false;
     try { retroGuard([{ advisor: 'x', cases: [{ id: 'c', expect_veredicto: 'hallazgos' }] }]); } catch (_) { threwV = true; }
     checks.push(['VEREDICTO: "hallazgos" en un caso sin rule frena en armado', threwV]);
@@ -1319,7 +1300,7 @@ function selftestRetro() {
   return bad ? 1 : 0;
 }
 
-// ---------- caso de banco "apps apagada" (decisión 3, 2026-08-22) — determinista, $0 ----------
+// ---------- caso de banco "apps apagada" — determinista, $0 ----------
 // Dos capas sin LLM (la cuota de Codex no puede dejar esto sin correr):
 //   (a) ESTÁTICA: cada .toml del manifest declara `features.apps = false` ANTES de la primera
 //       tabla — independiente del generador a propósito: si generate.js dejara de emitirla, el
@@ -1327,8 +1308,7 @@ function selftestRetro() {
 //   (b) COMPORTAMIENTO: `codex debug prompt-input` CON `-c features.apps=false` no contiene el
 //       MCP codex_apps y SIN el override sí — prueba que la clave sigue teniendo efecto en la
 //       versión instalada de Codex. Skip con constancia si codex no está en la máquina.
-// La capa LLM (el modelo mismo dice APPS=NO) quedó probada 4/4 en los canarios del registro D.5
-// y viaja implícita en toda corrida codex del banco (el perfil se despliega en cada caso).
+// La capa LLM (el modelo mismo dice APPS=NO) viaja implícita en toda corrida codex del banco (el perfil se despliega en cada caso).
 function checkAppsOff() {
   const manifest = JSON.parse(fs.readFileSync(path.join(ADAPTERS_DIR, 'MANIFEST.json'), 'utf8'));
   let bad = 0;
@@ -1353,7 +1333,7 @@ function checkAppsOff() {
   };
   const con = render('-c features.apps=false');
   const sin = render('');
-  // guardia anti-falso-verde (2026-08-22: un --profile inexistente devolvía el TEXTO DEL ERROR,
+  // guardia anti-falso-verde (un --profile inexistente devuelve el TEXTO DEL ERROR,
   // que tampoco contiene codex_apps): el positivo y el negativo tienen que salir DISTINTOS.
   if (!sin.includes('codex_apps')) { console.log('❌ apps-off comportamiento: el render SIN override no muestra codex_apps — el chequeo perdió su positivo de control (¿cambió el formato de prompt-input?)'); return 1; }
   if (con.includes('codex_apps')) { console.log('❌ apps-off comportamiento: con features.apps=false el prompt SIGUE mostrando codex_apps — la clave dejó de tener efecto'); return 1; }
@@ -1366,19 +1346,16 @@ function checkAppsOff() {
  * Clase de un veredicto a partir de sus fallas. ÚNICO lugar donde se decide qué clase de problema
  * es un rojo — lo usan el resumen de una corrida y `--reclassify`.
  *
- * 🔴 Por qué existe (2026-08-25): el resumen contaba juntos dos problemas que se arreglan de formas
+ * 🔴 Por qué existe: contar juntos dos problemas que se arreglan de formas
  * OPUESTAS. Un rojo de CRITERIO es el revisor razonando mal, y se arregla editando su prosa. Uno
  * INESTABLE es el revisor contestando distinto entre corridas, y se arregla rediseñando el CASO
- * (o aceptando que ese juicio no es determinístico). Medido sobre la corrida del 2026-08-24: de
- * 19 rojos, **16 eran inestabilidad y 3 criterio** — y el reporte decía "19 rojos". Un número que
- * mezcla las dos cosas se lee como el peor de los dos, y por eso nadie actúa: ese rojo estuvo un
- * día entero a la vista sin que se mirara.
+ * (o aceptando que ese juicio no es determinístico). Un número que
+ * mezcla las dos cosas se lee como el peor de los dos, y por eso nadie actúa.
  */
 /**
- * Cola ÚTIL de una corrida que no terminó. El `slice(-400)` pelado no servía bajo Codex: los
+ * Cola ÚTIL de una corrida que no terminó. Un `slice(-400)` pelado no sirve bajo Codex: los
  * últimos 400 caracteres son SIEMPRE su registro de eventos ("hook: PostToolUse Completed" ×8),
- * así que el motivo real nunca se veía y quedaba un diagnóstico ciego — medido el 2026-08-25 con
- * los 2 casos que sobrevivieron al arreglo de incident-log#banco-se-envenena-solo.
+ * así que el motivo real nunca se vería y quedaría un diagnóstico ciego.
  * Prioriza, en orden: la última mención de un error real, después stderr, después el final crudo.
  */
 function colaUtil(res) {
@@ -1393,17 +1370,16 @@ function colaUtil(res) {
 function claseDeVeredicto(v) {
   if (!v || v.pass !== false) return 'ok';
   const f = (v.failures || []).map(String);
-  // 🔴 EL ERROR DE CORRIDA GANA sobre INESTABLE (corregido 2026-08-25, el mismo día de nacer).
+  // 🔴 EL ERROR DE CORRIDA GANA sobre INESTABLE.
   // Un caso con corridas mixtas DONDE ALGUNA NO TERMINÓ no es variancia de juicio: es plomería.
-  // Con el orden anterior, 5 de los 14 "inestables" tenían además una corrida con exit≠0 y
-  // quedaban etiquetados como variancia — o sea, un problema de infraestructura contado como
-  // "el revisor cambia de opinión". Es el MISMO error que este desglose vino a arreglar, un
+  // Si ganara INESTABLE, un caso con una corrida con exit≠0 quedaría etiquetado como variancia
+  // — o sea, un problema de infraestructura contado como
+  // "el revisor cambia de opinión". Es el MISMO error que este desglose existe para evitar, un
   // nivel más abajo: una etiqueta que mezcla dos causas se lee como la más benigna.
   if (f.some((x) => /exit!=0/.test(x))) return 'error';
-  // 🔴 LA FUGA DEL CORRAL NO ES CRITERIO (2026-09-01). El examen del 2026-08-31 tituló "92 de
-  // criterio: el revisor razona mal" y NINGUNO lo era: los 92 eran este tripwire disparando, con
-  // los veredictos correctos abajo. Sin una casilla propia, una falla de aislamiento se lee como
-  // el peor diagnóstico posible y manda a editar la prosa de 28 advisors que están sanos.
+  // 🔴 LA FUGA DEL CORRAL NO ES CRITERIO. Cuando el tripwire dispara, los veredictos de abajo
+  // pueden ser correctos. Sin una casilla propia, una falla de aislamiento se lee como
+  // el peor diagnóstico posible y manda a editar la prosa de advisors que están sanos.
   // Es EXACTAMENTE el error del comentario de arriba, un nivel más arriba.
   if (f.some((x) => /el corral se escapó/.test(x))) return 'fuga';
   if (f.some((x) => /(?:^|: )INESTABLE/.test(x))) return 'inestable';
@@ -1426,10 +1402,10 @@ function reclasificar(archivo, opts = {}) {
   catch (e) { console.error(`no pude leer ${archivo}: ${e.message}`); return 1; }
   const r = d.results || {};
   const c = { criterio: [], inestable: [], error: [], fuga: [], artefactos: [] };
-  // 🔴 PLOMERÍA (2026-09-01): un rojo que NO habla del juicio del revisor —el corral se escapó, o
-  // la corrida no terminó— no puede arrastrar a los contadores de paridad y de regresión. En el
-  // examen del 2026-08-31 un solo hecho (93 fugas del lado claude) infló TRES números: 92 "de
-  // criterio", 83 de paridad rota y 71 regresiones. Contar una vez lo que pasó una vez.
+  // 🔴 PLOMERÍA: un rojo que NO habla del juicio del revisor —el corral se escapó, o
+  // la corrida no terminó— no puede arrastrar a los contadores de paridad y de regresión: un solo
+  // hecho (muchas fugas del lado claude) inflaría TRES números (de criterio, de paridad rota y de
+  // regresiones). Contar una vez lo que pasó una vez.
   const esPlomeria = (v) => ['fuga', 'error'].includes(claseDeVeredicto(v));
   const juicioOk = (v) => !v || v.pass !== false || esPlomeria(v);
   let paridadReal = 0, paridadRuido = 0, paridadPlomeria = 0;
@@ -1491,13 +1467,13 @@ function reclasificar(archivo, opts = {}) {
     return 0;
   }
 
-  // 🔴 --write (2026-09-01). El recuento en pantalla no servía para lo que hacía falta: el aviso
+  // 🔴 --write. El recuento en pantalla no alcanza: el aviso
   // de arranque de cada dev lee los CONTADORES DE ARRIBA del reporte, no su detalle. Mientras esos
-  // números no se toquen, el equipo entero sigue viendo "92 de criterio" aunque el recuento diga
+  // números no se toquen, el equipo entero sigue viendo los viejos aunque el recuento diga
   // otra cosa. Se reescriben, dejando constancia de que esto fue un RECUENTO y no una medición
   // nueva — un reporte que no dice cómo se produjo es el mismo problema, un paso más adelante.
   const antes = { failed: d.failed, criterio: d.criterio, inestables: d.inestables, paridadReal: d.paridadReal, baselineRegressions: d.baselineRegressions };
-  // El recuento respeta lo que la corrida original NO pudo medir (Story 1.1): reclasificar un
+  // El recuento respeta lo que la corrida original NO pudo medir: reclasificar un
   // reporte de una corrida y una herramienta no puede resucitar un `inestables: 0` que ya era
   // "no miré". Se deriva de `tool`/`runs`, que el reporte trae desde siempre.
   const nm = rubrosNoMedidos({ tool: d.tool, runs: d.runs });
@@ -1547,9 +1523,8 @@ function selftestClases() {
     ['🔴 el ERROR DE CORRIDA gana sobre inestable: mixto con una corrida que no terminó es plomería, no variancia',
       claseDeVeredicto({ pass: false, failures: ['INESTABLE: corridas mixtas', '1/3 corridas con exit!=0 · boom'] }) === 'error'],
     ['un veredicto sin datos no se clasifica como rojo', claseDeVeredicto(null) === 'ok'],
-    // Casillas nuevas (2026-09-01). 🔴 Los literales de acá salen de reportes REALES, con su
-    // prefijo `corrida N: ` incluido — un patrón anclado con `^` no engancha nada, y ése fue
-    // justamente el defecto que la revisión adversaria encontró en el primer diseño de este fix.
+    // Casillas nuevas. 🔴 Los literales de acá salen de reportes REALES, con su
+    // prefijo `corrida N: ` incluido — un patrón anclado con `^` no engancha nada.
     ['🔴 la fuga del corral NO es criterio (los 92 del 2026-08-31)',
       claseDeVeredicto({ pass: false, failures: ['corrida 1: el corral se escapó: la corrida leyó 5 ruta(s) reales de la máquina'] }) === 'fuga'],
     ['la fuga gana sobre inestable: con el corral roto el veredicto no prueba variancia',
@@ -1577,15 +1552,14 @@ function selftestClases() {
 }
 
 /**
- * 🔴 EL AUTOTEST SE ALIMENTA DE REPORTES REALES, NO DE STRINGS INVENTADOS (2026-09-01).
+ * 🔴 EL AUTOTEST SE ALIMENTA DE REPORTES REALES, NO DE STRINGS INVENTADOS.
  *
  * Por qué existe esta mitad: la clasificación se hace por GREP sobre el texto de las fallas, y un
  * autotest escrito a mano prueba el grep contra los strings que escribió el mismo que escribió el
- * grep — o sea, no prueba nada. Es el error que este archivo ya documenta arriba (§"probaba el
- * PARSEO con strings fabricados, no la PLOMERÍA") y el que la revisión adversaria encontró en el
- * primer diseño de esta casilla: los patrones estaban anclados con `^`, los mensajes reales vienen
- * con prefijo `corrida N: `, y el autotest de arriba —con sus literales inventados sin prefijo—
- * habría salido VERDE con el clasificador muerto.
+ * grep — o sea, no prueba nada. Es el error que este archivo ya documenta arriba (probar sólo el
+ * PARSEO con strings fabricados no prueba la PLOMERÍA): con patrones anclados con `^` y mensajes reales
+ * con prefijo `corrida N: `, el autotest de arriba —con sus literales inventados sin prefijo—
+ * saldría VERDE con el clasificador muerto.
  *
  * Entonces: se barren los reportes que hay en disco y se afirma la propiedad que importa —
  * ninguna fuga del corral puede quedar contada como "el revisor razona mal". Si mañana cambia el
@@ -1642,7 +1616,7 @@ function selftestCorral() {
       anotarCorralRoto(conRojo, 'advbench-x', undefined)[0] === conRojo[0]],
     ['sin rojos no se inventa ninguno', anotarCorralRoto([], 'advbench-x', 'exit 1').length === 0],
   ];
-  // Story 8.10, AC 24 (T36): los hermanos del corral los trae el paquete que los usa, no el núcleo.
+  // Los hermanos del corral los trae el paquete que los usa, no el núcleo.
   const conPaquete = mkCorralHermanos([
     { ruta: 'AcmeCorp/Backend/src/AcmeCorpBackend', nombre: 'AcmeCorp' },
     { ruta: 'Zorblax/Backend/src/ZorblaxBackend', nombre: 'Zorblax' },
@@ -1664,18 +1638,17 @@ function selftestCorral() {
     fs.rmSync(conPaquete, { recursive: true, force: true });
     fs.rmSync(sinPaquete, { recursive: true, force: true });
   }
-  // Las reglas del ENCIERRO (2026-08-31). Se ejercen sin invocar un solo advisor: lo que importa
-  // es la FORMA de la regla, y esa forma ya costó una tarde de pruebas en vivo.
+  // Las reglas del ENCIERRO. Se ejercen sin invocar un solo advisor: lo que importa
+  // es la FORMA de la regla.
   const reglas = reglasDeCorral();
   const arnes = path.resolve(__dirname, '..', '..');   // el clon donde corre, esté donde esté
   const cubre = (ruta) => reglas.some((r) => {
     const pref = r.slice('Read(/'.length, -'/**)'.length);
     return ruta === pref || ruta.startsWith(`${pref}/`);
   });
-  // 🔴 Un encierro que no encierra tiene que GRITAR, no quedarse callado (hallazgo del revisor de
-  // fallos silenciosos, 2026-08-31): si el recorrido del home falla, la lista sale vacía y las
-  // corridas quedan sueltas sin que nadie se entere — el examen gastaría 5h30 produciendo
-  // veredictos que dependen de qué tiene el dev en el disco.
+  // 🔴 Un encierro que no encierra tiene que GRITAR, no quedarse callado: si el recorrido del
+  // home falla, la lista sale vacía y las corridas quedan sueltas sin que nadie se entere — el
+  // examen gastaría 5h30 produciendo veredictos que dependen de qué tiene el dev en el disco.
   let gritaSiVacio = false;
   try { reglasDeCorral({ raiz: path.join(os.tmpdir(), `no-existe-${process.pid}`) }); }
   catch (_) { gritaSiVacio = true; }
@@ -1687,10 +1660,9 @@ function selftestCorral() {
     ['ninguna regla es de Glob o Grep (Claude las rechaza: sólo Read cubre las lecturas)',
       reglas.every((r) => r.startsWith('Read('))],
     ['el repo del arnés NO se niega (los advisors leen sus guías por procedimiento)', !cubre(arnes)],
-    // 🔴 Contra una raíz FABRICADA, no contra el disco del dev (2026-09-05): la versión anterior
-    // exigía que existiera ~/Proyectos/Totora — o sea que el autotest del encierro dependía de qué
-    // tenía clonado quien lo corría, exactamente lo que el encierro existe para impedir. En la
-    // máquina de DevB (sin Totora) daba rojo; en la del autor, verde. Un autotest que cambia según
+    // 🔴 Contra una raíz FABRICADA, no contra el disco del dev: exigir que exista un repo clonado
+    // haría depender el autotest del encierro de qué tenía clonado quien lo corría, exactamente lo
+    // que el encierro existe para impedir. Un autotest que cambia según
     // la máquina no mide el encierro: mide el disco.
     ['los OTROS repos del dev SÍ se niegan (raíz fabricada, no el disco de quien corre)',
       (() => {
@@ -1709,9 +1681,9 @@ function selftestCorral() {
     ['los permitidos declarados quedan todos afuera del deny',
       PERMITIDO_FUERA_DEL_CORRAL.every((p) => !cubre(path.resolve(p)))],
   );
-  // 🔴 El aviso del CLI sobre sus PROPIOS permisos (2026-09-01). El texto es el REAL capturado
-  // en la máquina del examen, no uno inventado: el fix anterior de este mismo archivo salió verde con
-  // literales fabricados y rojo contra la realidad. Los dos últimos casos son los que impiden
+  // 🔴 El aviso del CLI sobre sus PROPIOS permisos. El texto es el REAL capturado
+  // en la máquina del examen, no uno inventado: un autotest con literales fabricados sale verde
+  // y rojo contra la realidad. Los dos últimos casos son los que impiden
   // que esto se convierta en "ignorar stderr".
   const avisoReal = 'Permission allow rule (' + path.join(os.homedir(), '.claude', 'settings.json')
     + '): Bash(find ' + path.join(os.homedir(), 'Proyectos', 'FRESNO') + '* -type f -name "*.csproj")'
@@ -1730,8 +1702,8 @@ function selftestCorral() {
     ['una linea que sólo MENCIONA el aviso (sin ser el aviso) no queda exenta',
       fugaDelCorral({ stdout: 'el advisor dijo: Permission allow rule ... y leyo ' + repoAjeno + '/b.cs', stderr: '' }, null).length === 1],
   );
-  // El aviso de sospecha del chequeo de vida (2026-09-01). Es una línea de texto, pero decide si
-  // alguien le edita la prosa a un revisor sano: los 2 rojos que dio el modo fueron variación.
+  // El aviso de sospecha del chequeo de vida. Es una línea de texto, pero decide si
+  // alguien le edita la prosa a un revisor sano: los rojos que da el modo son variación.
   const susp = avisoDeSospecha(true, ['deftr-c1-deuda-fantasma']);
   casos.push(
     ['el chequeo de vida con rojos AVISA que es sospecha, no veredicto',
@@ -1743,8 +1715,8 @@ function selftestCorral() {
     ['🔴 una corrida NORMAL con rojos NO lo dice: ahí los rojos ya son de 3 corridas',
       avisoDeSospecha(false, ['x']) === null],
   );
-  // Media pareja EN LAS DOS DIRECCIONES (2026-09-01). El caso de la mitad que grita es el que
-  // faltaba: sin él, un revisor muerto sale verde y nadie lo denuncia.
+  // Media pareja EN LAS DOS DIRECCIONES. El caso de la mitad que grita es el que cubre al
+  // revisor muerto: sin él, un revisor muerto sale verde y nadie lo denuncia.
   const cN = { canario: true, type: 'must-not-flag' };
   const cF = { canario: true, type: 'must-flag' };
   casos.push(
@@ -1841,7 +1813,7 @@ async function main() {
   }
   retroGuard(suites); // corre SIEMPRE, también con --only: un caso fuera del corral no corre nunca
 
-  // 🔴 UN REVISOR SIN CANARIO NO SE CHEQUEA, Y ESO SE DICE (2026-09-01). El chequeo de vida corre
+  // 🔴 UN REVISOR SIN CANARIO NO SE CHEQUEA, Y ESO SE DICE. El chequeo de vida corre
   // sólo los casos marcados: un revisor nuevo —o uno al que le borraron la marca— saldría del
   // examen SIN un solo caso y la corrida cerraría en verde, que es el modo de falla que todo este
   // banco existe para evitar. No bloquea (arrancar bloqueando a todo el equipo es la vía rápida a
@@ -1862,7 +1834,7 @@ async function main() {
     // 🔴 MEDIA PAREJA NO ES UNA PAREJA. Un canario que sólo prueba "grita cuando tiene que gritar"
     // deja sin cubrir la otra mitad —que se calle cuando no hay nada—, y un revisor que grita
     // siempre es tan inútil como uno mudo: se lo termina ignorando, que es como muere un control.
-    // Sin esta línea, un revisor con media pareja pasaba en silencio (y le tocaba justo al de
+    // Sin esta línea, un revisor con media pareja pasaría en silencio (y le tocaría justo al de
     // evidencia de runtime, el único cuyo veredicto alimenta un candado).
     const mediaPareja = suites.filter((s) => mitadFaltante(s));
     if (mediaPareja.length) {
@@ -1878,7 +1850,7 @@ async function main() {
   }
   if (LIST) {
     // 🔴 `--list` tiene que listar LO QUE ESTA CORRIDA CORRERÍA, no el catálogo entero. Con
-    // `--liveness` mostraba los 99 casos y el modo sólo corre 53: un ensayo previo que miente sobre
+    // `--liveness` mostraría los 99 casos y el modo sólo corre 53: un ensayo previo que miente sobre
     // el alcance es peor que no tenerlo, porque se usa justamente para decidir si vale la pena
     // gastar la corrida.
     let n = 0;
@@ -1914,7 +1886,7 @@ async function main() {
   const results = {}; // key -> tool -> verdict
   // Precargar SOLO los advisors que esta corrida va a ejecutar: con --only, exigir el profile
   // de una suite que ni se corre aborta el run entero con un error que no tiene nada que ver
-  // con lo que se pidió (pasó al filtrar por un advisor mientras otros aún no estaban generados).
+  // con lo que se pidió.
   const advisorsEnJuego = new Set(jobsList.filter((j) => !j.excluded).map((j) => j.suite.advisor));
   for (const advisor of advisorsEnJuego) {
     advCache[advisor] = advisorParts(advisor);
@@ -1932,7 +1904,7 @@ async function main() {
       return;
     }
     if (caseDef.expect_mcp && !mcpServerAvailable(caseDef.expect_mcp.server)) {
-      // salteo CON CONSTANCIA (4b): sin el server instalado, ni verde que miente ni rojo sin señal
+      // salteo CON CONSTANCIA: sin el server instalado, ni verde que miente ni rojo sin señal
       results[key].tools[tool] = { skipped: true, skipped_mcp: caseDef.expect_mcp.server };
       console.log(`⏭️  [${tool}] ${key} SALTEADO con constancia: server MCP "${caseDef.expect_mcp.server}" no instalado en esta máquina (command no está en PATH)`);
       return;
@@ -1976,19 +1948,18 @@ async function main() {
       } else if (flags[0] !== want)
         failures.push(want ? `no citó ${caseDef.rule} en ninguna corrida` : `citó ${caseDef.rule} y no debía (${RUNS}/${RUNS})`);
     }
-    // contrato por artefactos (tanda 3): cada corrida se asserta sola; mixto = INESTABLE igual
+    // contrato por artefactos: cada corrida se asserta sola; mixto = INESTABLE igual
     runs.forEach((r, i) => { if (r.assertFails && r.assertFails.length) failures.push(`corrida ${i + 1}: ${r.assertFails.join(' · ')}`); });
     if (!caseDef.rule) {
       const oks = runs.map((r) => !(r.assertFails || []).length);
       if (!oks.every((o) => o === oks[0])) failures.push('INESTABLE: corridas mixtas en las aserciones de artefactos — rediseñar el caso, no promediar');
     }
-    // 🔴 CLASIFICAR el rojo (2026-08-25). El resumen contaba juntos dos problemas que se arreglan
+    // 🔴 CLASIFICAR el rojo. El resumen separa dos problemas que se arreglan
     // de formas opuestas: un CRITERIO equivocado (el revisor razona mal — se arregla editando su
     // prosa) y un caso INESTABLE (el revisor cambia de opinión entre corridas — se arregla
-    // rediseñando el caso, o aceptando que ese juicio no es determinístico). Medido en la corrida
-    // del 2026-08-24: de 19 rojos, **16 eran inestabilidad y 3 criterio**. Un número que mezcla las
-    // dos cosas se lee como el peor de los dos, y por eso no se actúa: ese reporte quedó en rojo
-    // sin que nadie lo mirara. Un control cuyo veredicto no se puede usar es un control apagado.
+    // rediseñando el caso, o aceptando que ese juicio no es determinístico). Un número que mezcla las
+    // dos cosas se lee como el peor de los dos, y por eso no se actúa.
+    // Un control cuyo veredicto no se puede usar es un control apagado.
     const verdict = { pass: failures.length === 0, failures, flags, ...(verdictExtra || {}) };
     // La clase `varianza-declarada` sólo vale si el caso PASA: un rojo con otras fallas no puede
     // llevar etiqueta de verde declarado.
@@ -2019,10 +1990,10 @@ async function main() {
 
   let failed = 0, parityBreaks = 0, baselineRegressions = 0, skippedMcp = 0;
   let criterio = 0, inestables = 0, erroresDeCorrida = 0, paridadPorInestabilidad = 0;
-  // 🔴 Las casillas nuevas se CUENTAN en la corrida en vivo, no sólo en el recuento (2026-09-01).
-  // Sin esto, `claseDeVeredicto` clasificaba bien y el reporte no lo decía: `fugas` salía
-  // `undefined`, y `bench-notice.js` —que lo lee para denunciar corridas no medidas— no veía nada.
-  // O sea: una corrida enteramente escapada del corral se habría mostrado como si estuviera medida.
+  // 🔴 Las casillas nuevas se CUENTAN en la corrida en vivo, no sólo en el recuento.
+  // Sin esto, `claseDeVeredicto` clasificaría bien y el reporte no lo diría: `fugas` saldría
+  // `undefined`, y `bench-notice.js` —que lo lee para denunciar corridas no medidas— no vería nada.
+  // O sea: una corrida enteramente escapada del corral se mostraría como si estuviera medida.
   let fugas = 0, artefactos = 0;
   let varianzaDeclarada = 0;
   for (const r of Object.values(results)) for (const t of Object.keys(r.tools))
@@ -2060,11 +2031,10 @@ async function main() {
     console.log(`📌 Línea de base Claude (advisors) fijada: ${Object.keys(snap).length} casos`);
   } else if (BASELINE_MODE === 'check' && fs.existsSync(BASELINE_FILE)) {
     const base = JSON.parse(fs.readFileSync(BASELINE_FILE, 'utf8')).cases;
-    // 🔴 "DESAPARECIÓ" SÓLO TIENE SENTIDO EN UNA CORRIDA COMPLETA (2026-09-01). La línea de base
-    // tiene los 99 casos; el chequeo de vida corre 53 a propósito. Sin esta distinción, repuntar
-    // el trabajo nocturno al chequeo de vida habría llenado el informe de 46 "casos desaparecidos"
-    // que no desaparecieron — un rojo falso, que es justo lo que esta tanda vino a sacar del
-    // titular. Un caso ausente de una corrida ACOTADA no se juzga: no se midió.
+    // 🔴 "DESAPARECIÓ" SÓLO TIENE SENTIDO EN UNA CORRIDA COMPLETA. La línea de base
+    // tiene los 99 casos; el chequeo de vida corre 53 a propósito. Sin esta distinción, el
+    // chequeo de vida llenaría el informe de 46 "casos desaparecidos" que no desaparecieron —
+    // un rojo falso. Un caso ausente de una corrida ACOTADA no se juzga: no se midió.
     const corridaCompleta = !VIDA && ONLY.length === 0;
     let noMedidos = 0;
     for (const [key, wasPass] of Object.entries(base)) {
@@ -2080,22 +2050,21 @@ async function main() {
   }
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
-  // 🔴 El nombre lo decide el ALCANCE de la corrida, no sólo `--tool` (Story 1.1). Antes, una
-  // corrida acotada con `--only` escribía en el mismo archivo que la foto completa de los 28 y la
-  // PISABA: el aviso del arranque leía ese archivo fresco con 3 casos y lo mostraba como el estado
-  // general, con los otros 25 desaparecidos y sin que nada lo dijera. La salida legítima era
-  // "acordate de pasar --json", y un control que depende de que alguien se acuerde no corre.
+  // 🔴 El nombre lo decide el ALCANCE de la corrida, no sólo `--tool`. Si no, una
+  // corrida acotada con `--only` escribiría en el mismo archivo que la foto completa de los 28 y la
+  // PISARÍA: el aviso del arranque leería ese archivo fresco con 3 casos y lo mostraría como el estado
+  // general, con los otros 25 desaparecidos y sin que nada lo dijera.
   // `--json` explícito sigue mandando: pisar la foto completa se puede, hay que pedirlo.
   // el informe de un paquete lleva su propio prefijo: el aviso del arranque lee sólo los `advisors-*` (el del núcleo)
   const { nombre, alcance } = nombreDeReporte({ tool: TOOL, only: ONLY, vida: VIDA, prefijo: PACK ? PACK.reportPrefix : undefined });
   const outPath = JSON_OUT || path.join(OUT_DIR, nombre);
   const paridadReal = parityBreaks - paridadPorInestabilidad;
 
-  // 🔴 "NO MEDIDO" NO SE PINTA DE CERO (Story 1.1, 2026-09-10). Con `--liveness` esta corrida hace UNA
+  // 🔴 "NO MEDIDO" NO SE PINTA DE CERO. Con `--liveness` esta corrida hace UNA
   // pasada por caso sobre UNA herramienta, así que la inestabilidad (¿el revisor se contradice
   // entre corridas?) y la paridad (¿las dos herramientas coinciden?) no tienen con qué compararse.
   // Emitir `0` ahí es afirmar "medí y no hay" cuando lo cierto es "no miré" — y el aviso de
-  // arranque lo mostraba en cada sesión al lado de los rubros que sí se midieron. El motivo va
+  // arranque lo mostraría en cada sesión al lado de los rubros que sí se midieron. El motivo va
   // ADENTRO del reporte, en castellano, para que no haya que saber esto para leerlo.
   const noMedido = rubrosNoMedidos({ tool: TOOL, runs: RUNS });
   const midioInestabilidad = noMedido.inestables === null;
@@ -2114,12 +2083,12 @@ async function main() {
     } }),
     baselineRegressions, skippedMcp, results,
   }, null, 2) + '\n');
-  // 🔴 El resumen distingue CRITERIO de INESTABILIDAD (2026-08-25). Antes decía "rojos=19" y con
-  // eso no se podía decidir nada: 16 de esos 19 eran el mismo caso cayendo distinto entre corridas
-  // (se arregla rediseñando el caso) y 3 eran el revisor razonando mal (se arregla editando su
-  // prosa). Son problemas opuestos, y un número que los suma se lee como el peor de los dos.
+  // 🔴 El resumen distingue CRITERIO de INESTABILIDAD. Un solo "rojos=N" no permite decidir
+  // nada: son problemas opuestos (el mismo caso cayendo distinto entre corridas se arregla
+  // rediseñando el caso; el revisor razonando mal, editando su prosa), y un número que los suma
+  // se lee como el peor de los dos.
   // La consola dice lo mismo que el reporte: un rubro que esta corrida no pudo medir se nombra
-  // "no medido", nunca 0 (Story 1.1). Si no, el resumen en pantalla sigue mintiendo aunque el
+  // "no medido", nunca 0. Si no, el resumen en pantalla sigue mintiendo aunque el
   // archivo diga la verdad — y el resumen es lo que mira quien la corre a mano.
   console.log(
     `\n${failed + parityBreaks + baselineRegressions === 0 ? '✅' : '❌'} rojos=${failed}` +

@@ -1,22 +1,22 @@
 #!/usr/bin/env node
 /**
  * build/check-hook-coverage.js — el CUARTO control del pre-commit: **un hook que existe en disco
- * tiene casos en el banco, o su deuda está declarada** (FIX-7, 2026-08-25 — caso C4).
+ * tiene casos en el banco, o su deuda está declarada**.
  *
  * ── EL AGUJERO QUE CIERRA ───────────────────────────────────────────────────────────────────────
  * El arnés tiene una regla explícita: *"una pieza nueva entra CON sus casos de prueba o no entra"*.
- * Los tres enumeradores que la hacían cumplir —los casos del banco, `adapters/codex/hooks.json` y
- * el manifiesto de advisors— **son todos listas escritas a mano**. O sea: sólo podían detectar las
+ * Los tres enumeradores que la hacen cumplir —los casos del banco, `adapters/codex/hooks.json` y
+ * el manifiesto de advisors— **son todos listas escritas a mano**. O sea: sólo pueden detectar las
  * piezas que alguien ya se acordó de anotar, justamente lo contrario del caso que la regla existe
- * para atrapar. **Ninguno recorría `scripts/hooks/` en disco.** Medido el 2026-08-25: 9 scripts de
- * hooks existían sin ningún caso que los nombrara, 5 de ellos frenos que sí bloquean.
+ * para atrapar. **Ninguno recorre `scripts/hooks/` en disco**, así que un script de hook puede existir
+ * sin ningún caso que lo nombre, también si es un freno que bloquea.
  *
  * Éste enumera EL DISCO. Es la diferencia entre un inventario y un censo.
  *
  * ── ARRANQUE ESCALONADO (decisión D3 del dev) ───────────────────────────────────────────────────
- * Con 9 scripts sin cobertura, encenderlo bloqueando habría frenado a todo el equipo el primer día
+ * Con 9 scripts sin cobertura, encenderlo bloqueando frenaría a todo el equipo el primer día
  * — la vía rápida a que alguien lo apague, o le pase `--no-verify` por encima, y ahí se pierde
- * también para los casos donde importaba. Entran con **deuda declarada** en
+ * también para los casos donde importa. Entran con **deuda declarada** en
  * `scripts/controls-bench/hook-debt.json`, con motivo y fecha. Mismo patrón que `divergences` del
  * registro de Codex: la asimetría se permite, el silencio no.
  *
@@ -50,9 +50,9 @@ const DEUDA_PATH = path.join(TCG, 'scripts', 'controls-bench', 'hook-debt.json')
  * (scripts/lib/skills-dir.js): `TYCON_SKILLS_DIR` —la raíz del clon o su carpeta `skills/`— o, sin ella, el lugar de
  * instalación (~/.claude/agent-skills).
  *
- * 🔴 Antes las armaba con la HOME e ignoraba la variable (pase adversarial de la story 8.7, 2026-10-03): en una máquina
- *    sin instalación —la CI pública, que exporta la variable— las dos raíces de skills quedaban «sin censar» y el
- *    control salía verde con 20 de 58 hooks sin mirar; con OTRO clon instalado, censaba las instaladas y no las del repo
+ * 🔴 Armar las rutas con la HOME e ignorar la variable es un error: en una máquina
+ *    sin instalación —la CI pública, que exporta la variable— las dos raíces de skills quedarían «sin censar» y el
+ *    control saldría verde con hooks sin mirar; con OTRO clon instalado, se censarían las instaladas y no las del repo
  *    que se revisa.
  */
 function skillsRoot(env) {
@@ -88,7 +88,7 @@ function raices(tcg, skills) {
   ];
 }
 
-/** Un reemplazo generado de un nombre viejo (story 8.9) no es un hook propio: sólo lanza al nuevo, que es el que tiene
+/** Un reemplazo generado de un nombre viejo no es un hook propio: sólo lanza al nuevo, que es el que tiene
  *  casos. La marca va en la segunda línea (scripts/lib/legacy-names.js). */
 function esReemplazo(abs) {
   try { return require(path.join(TCG, 'scripts', 'lib', 'legacy-names.js')).isShim(fs.readFileSync(abs, 'utf8')); } catch (_e) { return false; }
@@ -223,7 +223,7 @@ function selftest() {
     ['con TYCON_SKILLS_DIR (la carpeta skills/) se censan ESAS skills, y la raíz cuenta como pedida',
       skillsRoot({ TYCON_SKILLS_DIR: path.join(tmp, 'clon', 'skills') }).skills === path.join(tmp, 'clon', 'skills')
         && skillsRoot({ TYCON_SKILLS_DIR: path.join(tmp, 'clon', 'skills') }).requested === true],
-    // (story 8.18: sin la variable manda el propio clon cuando trae las skills adentro; si no, el lugar de instalación)
+    // (sin la variable manda el propio clon cuando trae las skills adentro; si no, el lugar de instalación)
     ['sin TYCON_SKILLS_DIR se censan las del propio clon si trae las skills, o las del lugar de instalación, y la raíz no cuenta como pedida',
       skillsRoot({}).skills === (ownCloneHasSkills
         ? path.join(TCG, 'skills') : path.join(os.homedir(), '.claude', 'agent-skills', 'skills'))

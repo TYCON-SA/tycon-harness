@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pipelines/operations/github/annotate.sh — los avisos de los guiones del arnés, en el idioma de GitHub (story 8.31).
+# pipelines/operations/github/annotate.sh — los avisos de los guiones del arnés, en el idioma de GitHub.
 #
 # Varios guiones de la noche escriben los avisos con la sintaxis de Azure (`##vso[task.logissue type=warning]…`), que
 # GitHub no interpreta: quedarían como texto suelto en el registro. Este filtro los convierte: warning → `::warning::`,

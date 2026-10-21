@@ -1,4 +1,4 @@
-// site.js — lo poco que corre en el navegador del sitio de la organización (story 2.23, decisión 24): el tema elegido y
+// site.js — lo poco que corre en el navegador del sitio de la organización: el tema elegido y
 // el filtro de las tablas. Se sirve como archivo (la política no admite scripts en línea) y no pide nada a nadie: filtra
 // filas que el servidor ya mandó, filtradas por persona. Se carga en el <head> sin `defer` para poner el tema antes de
 // dibujar la página; lo demás espera a DOMContentLoaded.

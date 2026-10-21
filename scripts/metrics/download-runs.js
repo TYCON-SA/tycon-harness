@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /*
- * download-runs.js — LAS CORRIDAS DE TODO EL EQUIPO, DESDE EL BUZÓN, PARA QUIEN PUEDE LEERLAS (story 2.16)
+ * download-runs.js — LAS CORRIDAS DE TODO EL EQUIPO, DESDE EL BUZÓN, PARA QUIEN PUEDE LEERLAS
  *
  * Todas las máquinas suben sus corridas al buzón de Azure Storage con una llave que sólo escribe
  * (`upload-runs.js`). Leerlas pide el rol «Storage Blob Data Reader» sobre el contenedor, que tienen
@@ -17,9 +17,9 @@
  *    con tope de tiempo: no puede abrir un login ni esperar una respuesta.
  *
  * Qué se baja: sólo nombres con forma `<maquina>/<volcado, hilo o cambio>` o `<maquina>/registros/<registro>` (lo que la
- * subida escribe), y desde la story 2.24 sus versiones: `<maquina>/v<versión>/<archivo>` y
- * `<maquina>/registros/v<versión>/<registro>` (la subida ya no pisa: lo que vuelve a subir lleva versión). De cada
- * corrida se baja SÓLO la versión más nueva (el nombre de siempre es la más vieja; las otras se cuentan en
+ * subida escribe), y sus versiones: `<maquina>/v<versión>/<archivo>` y
+ * `<maquina>/registros/v<versión>/<registro>` (la subida no pisa: lo que vuelve a subir lleva versión). De cada
+ * corrida se baja SÓLO la versión más nueva (el nombre sin versión es la más vieja; las otras se cuentan en
  * `versiones_viejas`), y de los registros de cada máquina el juego más nuevo que está COMPLETO —su cobertura, y cada
  * fuente que declara `medido` con su archivo—; uno más nuevo incompleto se cuenta en `versiones_incompletas`. Todo
  * queda en la ruta de siempre del espejo (`<maquina>/<archivo>`, `<maquina>/registros/<registro>`): los lectores no
@@ -28,25 +28,25 @@
  * (temporal + rename, verificando tamaño y Content-MD5). Qué ya está al día: tamaño + Content-MD5 del
  * listado contra el archivo local; si el listado no trae MD5, la Etag que se recordó al bajarlo
  * (`~/.claude/.tycon-pipeline/mailbox-downloads.json`). El índice y el sello diario de «sin permiso»
- * (`download-runs-no-permission.seal`) cambiaron de nombre en la story 8.9 (tanda D2): si sólo está el de
- * antes, se lee ése, y antes de escribir el nuevo se le pasa su contenido (scripts/lib/renames.json).
+ * (`download-runs-no-permission.seal`) tienen un nombre nuevo: si sólo está el
+ * anterior, se lee ése, y antes de escribir el nuevo se le pasa su contenido (scripts/lib/renames.json).
  *
  * Uso:
  *   node scripts/metrics/download-runs.js [--json] [--budget-ms N] [--no-threads]
  *   node scripts/metrics/download-runs.js --overwrites-report [--json]
  *   node scripts/metrics/download-runs.js --harness-node-report [--json]
  *
- *   --harness-node-report (story 8.39): sólo LISTA el contenedor, como --overwrites-report, y dice por máquina si su
+ *   --harness-node-report: sólo LISTA el contenedor, como --overwrites-report, y dice por máquina si su
  *   place.json es de una versión que trae el Node propio del arnés; `todas: true` decide cuándo sacar Node 22 de la CI.
  *
  *   (los archivos se bajan de a 8 a la vez, por fases: registros, coberturas y corridas; `bajar({ concurrencia })` lo
- *   cambia — hotfix del 2026-10-16: de a uno, la primera pasada de un espejo vacío no entraba en el tope del sitio)
- *   --no-threads (story 2.12): baja los registros y los volcados, NUNCA los hilos ni los cambios de git
- *   (`*.hilo.jsonl.gz`, `*.cambio.json.gz` — story 2.19: traen código de todos los repos); los cuenta en
+ *   cambia; de a uno, la primera pasada de un espejo vacío no entraría en el tope del sitio)
+ *   --no-threads: baja los registros y los volcados, NUNCA los hilos ni los cambios de git
+ *   (`*.hilo.jsonl.gz`, `*.cambio.json.gz`: traen código de todos los repos); los cuenta en
  *   `omitidos`. Lo usa el nocturno del tablero: la página no usa las conversaciones —prompts, rutas, código de
  *   clientes— y el agente de Azure no tiene por qué tenerlas.
  *
- *   --overwrites-report (story 2.24): sólo LISTA el contenedor —no baja nada, no escribe el espejo— y cuenta los blobs
+ *   --overwrites-report: sólo LISTA el contenedor —no baja nada, no escribe el espejo— y cuenta los blobs
  *   re-escritos (última modificación más de 1 s después de la creación) por tipo y por máquina con su alias, y si cada
  *   máquina declara en su place.json una versión lista para que la política pase a «sólo crear». Es la medición que va
  *   antes de cambiar la política.
@@ -55,11 +55,11 @@
  *   no quedó nada sin tiempo. Es EL criterio de «el buzón se leyó entero»: lo leen el pipeline y el generador del
  *   tablero, que no lo reescriben.
  *
- * Desde la story 2.28, al terminar cada bajada (también una parcial) deja en el espejo `.carpetas-de-maquina.json`: qué
+ * Al terminar cada bajada (también una parcial) deja en el espejo `.carpetas-de-maquina.json`: qué
  * carpeta vieja de una máquina es la historia de qué carpeta nueva `<nombre>-<código>` (ver `carpetasDeMaquina`). Sin
  * correos: el reductor, la poda y la vista leen ese archivo y no abren `place.json`.
  *
- * Desde el sitio de la organización (story 2.23): `bajar({ cuenta, contenedor, credencial: { sas } | { managed: true },
+ * Desde el sitio de la organización: `bajar({ cuenta, contenedor, credencial: { sas } | { managed: true },
  * dir, sinHilos, urlBase })` baja a `dir` con esa credencial y NO lee corridas-buzon.json, ni las integraciones de la
  * máquina, ni usa az. La SAS tiene que ser sólo de lectura (`negativaDeLectura`): cualquier otra no se usa y sale
  * `llave_con_escritura` sin un solo pedido al buzón. Con la SAS, la firma va en la consulta y sin cabecera Authorization.
@@ -75,7 +75,7 @@
 
 const fs = require('fs');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -114,7 +114,7 @@ function leerListado(xml) {
     const campo = (n) => { const r = m[1].match(new RegExp(`<${n}>([^<]*)</${n}>`)); return r ? decodificarXml(r[1]) : null; };
     const nombre = campo('Name');
     if (nombre === null) continue;
-    // story 2.24: las fechas de creación y de última modificación, para contar re-subidas sin bajar contenido
+    // Las fechas de creación y de última modificación, para contar re-subidas sin bajar contenido
     const fecha = (n) => { const v = campo(n); const t = v ? Date.parse(v) : NaN; return Number.isFinite(t) ? t : null; };
     blobs.push({ nombre, largo: Number(campo('Content-Length')), md5: campo('Content-MD5') || null, etag: campo('Etag') || null, creado: fecha('Creation-Time'), modificado: fecha('Last-Modified') });
   }
@@ -136,12 +136,12 @@ function nombreMostrable(nombre) {
 
 /**
  * ¿El nombre de un blob es `<maquina>/<volcado, hilo o cambio>`, o `<maquina>/registros/<registro o cobertura>` (los
- * registros de frenos y escapes que cuenta el reductor, story 2.5)? Devuelve { maquina, archivo } (archivo
+ * registros de frenos y escapes que cuenta el reductor)? Devuelve { maquina, archivo } (archivo
  * relativo a la carpeta de la máquina) o null. Ninguna otra subcarpeta se acepta.
  */
 function formaDelNombre(nombre) {
   const partes = String(nombre).split('/');
-  // story 2.24: lo que se volvió a subir lleva una versión — `<maquina>/v<versión>/<corrida>` y
+  // Lo que se volvió a subir lleva una versión — `<maquina>/v<versión>/<corrida>` y
   // `<maquina>/registros/v<versión>/<registro>`, con la versión EXACTA; `archivo` es la ruta de siempre, sin la versión.
   if (partes.length === 4 && partes[1] === 'registros' && FORMA_MAQUINA.test(partes[0]) && FORMA_VERSION.test(partes[2]) && FORMA_REGISTRO.test(partes[3])) {
     return { maquina: partes[0], archivo: `registros/${partes[3]}`, version: partes[2] };
@@ -160,7 +160,7 @@ function formaDelNombre(nombre) {
 
 /**
  * Un GET con la credencial. Resuelve { status, cuerpo, cabeceras } o { error } — nunca rechaza. `cred` es el token (texto,
- * va como Bearer) o `{ sas }` (story 2.23: la firma va en la consulta y NO hay cabecera Authorization).
+ * va como Bearer) o `{ sas }` (la firma va en la consulta y NO hay cabecera Authorization).
  */
 function pedir(url, cred, timeoutMs) {
   return new Promise((resolve) => {
@@ -221,13 +221,11 @@ async function listarTodo(base, token, cfg, prefijo = '') {
     marcador = pagina.siguiente;
   }
   // 🔴 mil páginas y todavía hay más: el listado no está entero, y un listado a medias no se baja como si lo fuera
-  //    (cazador de fallos silenciosos de la 2.23)
   return { estado: 'servicio_fallo', motivo: 'el listado del buzón pasó las 1000 páginas sin terminar: no se bajó nada' };
 }
 
-// story 2.24: la versión del arnés que trae «nombre nuevo por subida». Una máquina que declara en su place.json una
-// versión igual o posterior está lista para que la política del buzón pase a «sólo crear». Es la de version.json del
-// pedido que la trae: si otro pedido sube la versión antes del merge, se corre con ella.
+// La versión del arnés que trae «nombre nuevo por subida». Una máquina que declara en su place.json una
+// versión igual o posterior está lista para que la política del buzón pase a «sólo crear».
 const VERSION_SOLO_CREAR = '2026.10.15.33';
 const DIAS_AUSENTE = 14;
 
@@ -252,7 +250,7 @@ function tipoDelBlob(forma) {
 }
 
 /**
- * --overwrites-report (story 2.24, AC 1 y 15): cuántos blobs del buzón fueron re-escritos (última modificación más de 1 s
+ * --overwrites-report: cuántos blobs del buzón fueron re-escritos (última modificación más de 1 s
  * después de la creación), por tipo y por máquina CON SU ALIAS, y si cada máquina está lista para «sólo crear» según el
  * place.json más nuevo del espejo. Sólo LISTA: no baja contenido, no escribe el espejo ni sellos. El resultado es un
  * objeto propio, sin `ignorados_nombres` ni motivos que nombren blobs: los nombres traen la máquina, que se llama como
@@ -308,7 +306,7 @@ async function informeDeReescrituras(opts = {}) {
     const alias = aliasDeNombre(nombre);
     let version = null;
     let versionDia = null;
-    let harnessNode;   // undefined: el place.json no trae la clave (una versión anterior a la story 8.39)
+    let harnessNode;   // undefined: el place.json no trae la clave (una versión anterior a la que trae el Node propio)
     try {
       const place = JSON.parse(fs.readFileSync(path.join(dirBuzon, nombre, 'registros', 'place.json'), 'utf8'));
       const v = place && place.install && place.install.version;
@@ -336,11 +334,11 @@ async function informeDeReescrituras(opts = {}) {
 }
 
 /**
- * --harness-node-report (story 8.39, decisiones 7 y 17 · AC 23): ¿todas las máquinas ya corren una versión del arnés con
+ * --harness-node-report: ¿todas las máquinas ya corren una versión del arnés con
  * su Node propio? Es la medición que decide cuándo sacar Node 22 de la CI pública. Por máquina, con su alias: «sí» si su
- * place.json más nuevo es de una versión que trae la story 8.39, «no» si es de una anterior, «no medido» sin place.json.
- * La versión que trae la story se reconoce por lo que su place.json declara: desde esa versión, `install` trae la clave
- * `harness_node` (el número de versión lo pone el merge, y no se sabe al escribir esto). Aparte, informativo y sin cambiar
+ * place.json más nuevo es de una versión que trae el Node propio, «no» si es de una anterior, «no medido» sin place.json.
+ * Esa versión se reconoce por lo que su place.json declara: desde esa versión, `install` trae la clave
+ * `harness_node` (el número de versión lo pone el merge). Aparte, informativo y sin cambiar
  * el criterio, cuántas declaran que corren con el Node del PATH. Las que no subieron nada en 14 días van aparte, como
  * ausentes; `todas` es true sólo si ninguna presente dice «no» ni «no medido». Sólo LISTA el buzón, como
  * --overwrites-report (sin az, sin sesión o sin rol: salida 0 y «no medido»).
@@ -367,8 +365,8 @@ async function informeNodePropio(opts = {}) {
 }
 
 /**
- * story 2.28 (decisiones 11 y 13): qué carpeta vieja del espejo es la historia de qué carpeta nueva. Cada máquina sube
- * ahora a `<nombre>-<código>` y declara en su `registros/place.json` `folder.previous_folder` (la carpeta de antes) y
+ * Qué carpeta vieja del espejo es la historia de qué carpeta nueva. Cada máquina sube
+ * a `<nombre>-<código>` y declara en su `registros/place.json` `folder.previous_folder` (la carpeta anterior) y
  * `folder.moved_on` (el día de la mudanza). Una vieja se UNE a su nueva sólo si exactamente UNA carpeta la declara y la
  * vieja no recibió nada después de esa mudanza (ni un volcado con fecha posterior, ni un place.json de un día posterior).
  * Si la declaran dos o más (dos máquinas con el mismo nombre, o un código regenerado) queda `compartida`; si siguió
@@ -398,10 +396,10 @@ function carpetasDeMaquina(espejoDir, opts = {}) {
     try { return JSON.parse(fs.readFileSync(path.join(espejoDir, n, 'registros', 'place.json'), 'utf8')); }
     catch (e) { if (e.code !== 'ENOENT') out.no_leidas.push({ carpeta: n, motivo: e instanceof SyntaxError ? 'place.json no es JSON válido' : `place.json no se pudo leer (${e.code || 'error'})` }); return null; }
   };
-  // 🔴 Una declaración vale sólo con forma (pase adversarial): el buzón lo escribe cualquiera con la llave. La carpeta que
+  // 🔴 Una declaración vale sólo con forma: el buzón lo escribe cualquiera con la llave. La carpeta que
   //    declara es EXACTAMENTE `<vieja>-<código de 8 hexadecimales>` (la que arma upload-runs.js), la mudanza es una fecha
   //    real y no posterior al día de su place.json, y la vieja no es a su vez una carpeta que declara (no hay cadenas ni
-  //    ciclos). Sin eso una máquina podía declarar como suya la carpeta con código de otra y quedarse con sus corridas.
+  //    ciclos). Sin eso una máquina podría declarar como suya la carpeta con código de otra y quedarse con sus corridas.
   const fechaReal = (f) => DIA.test(String(f)) && new Date(`${f}T00:00:00Z`).toISOString().slice(0, 10) === f;
   const escapar = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const declarantes = new Map();   // carpeta nueva → { vieja, desde, reemplaza: [carpetas con código anteriores] }
@@ -459,7 +457,7 @@ function carpetasDeMaquina(espejoDir, opts = {}) {
     // 🔴 La unión pide además la HUELLA de las corridas que la máquina subió a la vieja (de su registro de subidas; la
     //    llave no deja listar el buzón, así que nadie más la sabe): si no coincide con lo que hay en la carpeta, la
     //    carpeta tiene corridas que esa máquina no subió — no se une, y cuenta como una máquina propia, como la que
-    //    siguió recibiendo (tercera vuelta de seguridad, decisión del dueño del 2026-10-15).
+    //    siguió recibiendo.
     let nombres = [];
     try { nombres = fs.readdirSync(path.join(espejoDir, vieja)); } catch (_) { nombres = null; }
     const coincide = nombres !== null && typeof ds[0].huella === 'string' && ds[0].huella === huellaDeCorridas(nombres);
@@ -471,7 +469,7 @@ function carpetasDeMaquina(espejoDir, opts = {}) {
   return out;
 }
 
-/** Deja la unión en el espejo (story 2.28): `.carpetas-de-maquina.json`. Devuelve null si pudo, o el motivo. */
+/** Deja la unión en el espejo: `.carpetas-de-maquina.json`. Devuelve null si pudo, o el motivo. */
 function escribirCarpetasDeMaquina(espejoDir) {
   const u = carpetasDeMaquina(espejoDir);
   // sin poder mirar el espejo no se escribe: un archivo con cero uniones pisaría uno bueno y diría «medidas»
@@ -481,7 +479,7 @@ function escribirCarpetasDeMaquina(espejoDir) {
 }
 
 /**
- * story 2.23: ¿esta SAS es SÓLO de lectura? null si sí; si no, el motivo. Es el chequeo de `negativaDeLaLlave` de la
+ * ¿Esta SAS es SÓLO de lectura? null si sí; si no, el motivo. Es el chequeo de `negativaDeLaLlave` de la
  * subida, al revés: se acepta sólo una SAS de CONTENEDOR (`sr=c`, sin `ss`/`srt`), con permisos dentro de leer y listar
  * y con listar (`sp` ⊆ {r, l}, con `l`), atada a una política guardada (`si`) y no vencida (`se`). Lista blanca: una
  * letra nueva de permiso que no conocemos tampoco pasa.
@@ -631,13 +629,13 @@ async function bajarUnaCorrida(opts = {}) {
 async function bajar(opts = {}) {
   const res = { bajado: false, estado: null, motivo: null, codigo: null, completo: false, blobs: 0, bajados: 0, bytes: 0, al_dia: 0, ignorados: 0, ignorados_nombres: [], omitidos: 0, versiones_viejas: 0, versiones_incompletas: 0, sin_tiempo: 0, aviso: null, resumidos: 0, por_tope: 0, podados: 0 };
   const log = (m) => { if (opts.log) opts.log(m); };
-  // story 2.28: desde que el listado se leyó, toda pasada —también la parcial— deja la unión de carpetas en el espejo
+  // Desde que el listado se leyó, toda pasada —también la parcial— deja la unión de carpetas en el espejo
   let espejoParaUniones = null;
   // Una pasada que no terminó bien nunca dice «bajado»: lo que sí bajó queda en disco y contado en `bajados`.
   const fin = (codigo, estado, motivo) => {
     if (espejoParaUniones) { const m = escribirCarpetasDeMaquina(espejoParaUniones); res.uniones = m || 'escritas'; if (m) log(m); }
     res.estado = estado; if (motivo) res.motivo = motivo; if (codigo !== 0) res.bajado = false;
-    // story 2.12: el único criterio de «leído entero» (ver la cabecera).
+    // El único criterio de «leído entero» (ver la cabecera).
     res.codigo = codigo;
     res.completo = codigo === 0 && (estado === 'bajado' || estado === 'al_dia') && res.sin_tiempo === 0;
     return { codigo, res };
@@ -650,7 +648,7 @@ async function bajar(opts = {}) {
   const topeHilos = conResumenes && Number.isFinite(opts.topeBytesHilos) && opts.topeBytesHilos > 0 ? opts.topeBytesHilos : null;
 
   const where = DONDE;
-  // story 2.23: con `cuenta` en las opciones, la bajada es la del sitio de la organización — la cuenta, el contenedor, la
+  // Con `cuenta` en las opciones, la bajada es la del sitio de la organización — la cuenta, el contenedor, la
   // credencial y la carpeta vienen de quien llama; NO se lee corridas-buzon.json, ni las integraciones de la máquina,
   // ni se usa az (la imagen del sitio no lo trae).
   const delSitio = typeof opts.cuenta === 'string' && opts.cuenta !== '';
@@ -669,7 +667,7 @@ async function bajar(opts = {}) {
     cfg = c.cfg;
     tkDelSitio = c.tk;
   } else {
-    // 0 · las integraciones (story 8.3, AC 9/10): el buzón apagado → exit 0 y una línea; y bajar necesita la sesión de az,
+    // 0 · las integraciones: el buzón apagado → exit 0 y una línea; y bajar necesita la sesión de az,
     //     así que Azure DevOps apagada → exit 0 y una línea. Configuración rota → exit 2 con archivo, clave y motivo.
     for (const llave of ['mailbox', 'ado']) {
       const integ = integracionBuzon(llave);
@@ -721,17 +719,17 @@ async function bajar(opts = {}) {
   };
   const pendientes = [];
   const noLeidos = [];
-  // story 2.24: lo que se volvió a subir lleva versión. ANTES de comparar con el disco se elige, por clave, qué blob es
-  // «el de ahora»: de una corrida, la versión más nueva (el nombre de siempre es la más vieja); de los registros de una
-  // máquina, el juego más nuevo que está COMPLETO. El espejo queda con la ruta de siempre: los lectores no cambian.
+  // Lo que se volvió a subir lleva versión. ANTES de comparar con el disco se elige, por clave, qué blob es
+  // «el de ahora»: de una corrida, la versión más nueva (el nombre sin versión es la más vieja); de los registros de una
+  // máquina, el juego más nuevo que está COMPLETO. El espejo queda con la ruta sin versión: los lectores no cambian.
   const porClave = new Map();
   const juegos = new Map();
   for (const b of listado) {
     const forma = formaDelNombre(b.nombre);
     if (!forma || !Number.isFinite(b.largo)) { res.ignorados += 1; if (res.ignorados_nombres.length < 20) res.ignorados_nombres.push(nombreMostrable(b.nombre)); continue; }
-    // story 2.12: sin hilos ni se mira el disco — la conversación no se baja.
+    // Sin hilos ni se mira el disco — la conversación no se baja.
     // `--no-threads` es «bajá lo que la página necesita»: el hilo y el cambio de git traen código de todos los
-    // repos y el nocturno del tablero no los usa (pase adversarial, story 2.19). De TODAS sus versiones.
+    // repos y el nocturno del tablero no los usa. De TODAS sus versiones.
     if (sinHilos && /\.(hilo\.jsonl|cambio\.json)\.gz$/.test(forma.archivo)) { res.omitidos += 1; continue; }
     if (forma.archivo.startsWith('registros/')) {
       if (!juegos.has(forma.maquina)) juegos.set(forma.maquina, new Map());
@@ -843,9 +841,9 @@ async function bajar(opts = {}) {
     pendientes.push({ ...b, ...forma, local, ...(base ? { base } : {}) });
   }
 
-  // 🔴 Los REGISTROS primero (story 2.5): los .gz de cada máquina, después su cobertura, y recién ahí las corridas.
-  //    Con el orden del listado (bypass, cobertura, gates) un corte dejaba la cobertura nueva junto a un gates viejo,
-  //    y los registros esperaban detrás de todas las corridas de la máquina.
+  // 🔴 Los REGISTROS primero: los .gz de cada máquina, después su cobertura, y recién ahí las corridas.
+  //    Con el orden del listado (bypass, cobertura, gates) un corte dejaría la cobertura nueva junto a un gates viejo,
+  //    y los registros esperarían detrás de todas las corridas de la máquina.
   const rango = (p) => (p.archivo.startsWith('registros/') ? (p.archivo === 'registros/cobertura.json' ? 1 : 0) : 2);
   pendientes.sort((a, b) => rango(a) - rango(b) || (a.nombre < b.nombre ? -1 : a.nombre > b.nombre ? 1 : 0));
 
@@ -858,10 +856,10 @@ async function bajar(opts = {}) {
   const guardarIndice = () => { prepareStateWrite(rutaIndice, { where }); escribirAtomico(rutaIndice, JSON.stringify(indice, null, 1) + '\n'); };
   const malos = [];
   // La cobertura de una máquina se escribe sólo si ninguno de SUS registros falló en esta pasada.
-  // 🔴 `.jsonl.gz` también (story 2.9): sin eso, una falla de hallazgos.jsonl.gz no retenía la cobertura.
-  // 🔴 Y por NOMBRE, sacado de REGISTROS de la subida (story 8.9, tanda E): la expresión escrita a mano no veía el guion de
+  // 🔴 `.jsonl.gz` también: sin eso, una falla de hallazgos.jsonl.gz no retendría la cobertura.
+  // 🔴 Y por NOMBRE, sacado de REGISTROS de la subida: la expresión escrita a mano no vería el guion de
   //    `legacy-names.jsonl.gz`. Una sola lista: un registro nuevo entra solo, como en la subida.
-  // story 2.24: el nombre puede traer la versión (`<maq>/registros/v…/<registro>`): se mira el ÚLTIMO tramo.
+  // El nombre puede traer la versión (`<maq>/registros/v…/<registro>`): se mira el ÚLTIMO tramo.
   const tramos = (x) => x.replace(/ \(.*$/, '').split('/');
   const esFallaDeRegistro = (x) => REGISTROS.some((r) => tramos(x)[1] === 'registros' && tramos(x)[tramos(x).length - 1] === `${r}.gz`);
   const maquinasConRegistroFallido = new Set(noLeidos.filter(esFallaDeRegistro).map((x) => x.split('/')[0]));
@@ -874,7 +872,7 @@ async function bajar(opts = {}) {
       malos.push(`${p.nombre} (retenida: un registro de esa máquina no bajó)`);
       return;
     }
-    // story 2.24: el blob se pide por su nombre en el buzón (con su versión, si la tiene); se escribe en la ruta de siempre
+    // El blob se pide por su nombre en el buzón (con su versión, si la tiene); se escribe en la ruta sin versión
     const r = coberturasLeidas.get(p.nombre) || await pedir(urlDe(p.nombre), tk.token, Math.max(60000, Math.min(300000, p.largo / 20)));
     if (fatal) return;
     if (r.error) { fatal = [1, 'sin_red', `sin red a mitad de la bajada (${r.error.code || r.error.message}) en ${p.nombre}${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`]; return; }
@@ -902,10 +900,10 @@ async function bajar(opts = {}) {
     res.bytes += r.cuerpo.length;
     res.bajado = true;
   }
-  // 🔴 EN PARALELO, con tope (hotfix 2026-10-16): de a uno, la primera pasada de un espejo vacío no entraba en los 120 s del
-  // sitio (unos 5 archivos por segundo). El orden de siempre se respeta POR FASES: todos los registros, después las
+  // 🔴 EN PARALELO, con tope: de a uno, la primera pasada de un espejo vacío no entraría en los 120 s del
+  // sitio (unos 5 archivos por segundo). El orden se respeta POR FASES: todos los registros, después las
   // coberturas (que miran si un registro de su máquina falló) y recién ahí las corridas. Dentro de una fase, hasta
-  // `concurrencia` a la vez (8 si no se dice). El corte por tiempo se mira antes de tomar cada archivo, como antes.
+  // `concurrencia` a la vez (8 si no se dice). El corte por tiempo se mira antes de tomar cada archivo.
   const conc = Number.isInteger(opts.concurrencia) && opts.concurrencia >= 1 ? Math.min(opts.concurrencia, 32) : 8;
   let tomados = 0;
   let corto = false;

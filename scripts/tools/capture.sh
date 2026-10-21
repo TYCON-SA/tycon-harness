@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # capture.sh — deja la última captura de pantalla en una ruta que el agente SIEMPRE puede leer.
 #
-# 🔴 Por qué existe (2026-09-09): el agente no pudo leer una captura del escritorio y el dev
-# perdió el hilo del trabajo. Dos causas distintas, y ninguna se arregla "intentando de nuevo":
+# 🔴 Por qué existe: el agente puede no poder leer una captura del escritorio, y el dev pierde el
+# hilo del trabajo. Hay dos causas distintas, y ninguna se arregla "intentando de nuevo":
 #   1. El nombre que pone macOS en español trae un espacio ESTRECHO (U+202F) antes de «a. m.».
 #      Viaja como texto entre el dev y el agente, se normaliza a un espacio común, y entonces
 #      la ruta ya no existe. El error que se ve es «no existe el archivo», que manda a buscar
@@ -22,7 +22,7 @@
 # mirar una captura vieja creyendo que es la nueva.
 
 set -uo pipefail
-# Las variables renombradas a inglés (story 8.9): el nombre viejo sigue valiendo hasta el retiro.
+# Las variables renombradas a inglés: el nombre viejo sigue valiendo hasta el retiro.
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/legacy-names.sh"
 legacy_env TYCON_CAPTURE_DIR; legacy_env TYCON_CAPTURE_SOURCE; legacy_env TYCON_CAPTURE_SIDE
 DEST_DIR="${TYCON_CAPTURE_DIR:-${TMPDIR:-/tmp}/tycon-captura}"
