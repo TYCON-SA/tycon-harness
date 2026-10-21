@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# daily-summary.test.sh — red de scripts/nightly/dependencies/daily-summary.js (story 4.3).
+# daily-summary.test.sh — red de scripts/nightly/dependencies/daily-summary.js.
 #
 # El resumen diario existe para que «no llegó» y «no había nada» dejen de ser el mismo silencio:
 # un mensaje por día a quien mantiene el arnés con lo que dejaron las dos colas nocturnas, y una constancia de
@@ -16,8 +16,7 @@
 # variables se exportan ANTES de cualquier caso: sin ellas, en la máquina de un dev el script
 # real leería `~/.claude/channels/telegram/.env` y mandaría un mensaje de verdad.
 #
-# Rojo previo (declarado): el guion nace en esta story; antes de escribirlo, TODA la suite sale
-# roja porque `daily-summary.js` no existe. Los casos de los pipelines (T17, T18) corren el paso
+# Sin `daily-summary.js` TODA la suite sale roja. Los casos de los pipelines (T17, T18) corren el paso
 # REAL extraído del YAML por su displayName, con las macros de Azure sustituidas como lo hace ADO.
 #
 # Correr: bash scripts/tests/daily-summary.test.sh   (~45 s: T13 espera sus dos reintentos de 5 s
@@ -26,7 +25,7 @@
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 RES="$RAIZ/scripts/nightly/dependencies/daily-summary.js"
-# story 8.9: el YAML del pipeline puede llamar con el nombre nuevo o con el viejo (el alias lo sigue aceptando hasta el
+# El YAML del pipeline puede llamar con el nombre nuevo o con el viejo (el alias lo sigue aceptando hasta el
 # retiro). El chequeo acepta los dos; el viejo sale del mapa de renombres, nunca escrito en la prueba.
 nombres(){ # <kind> <nuevo> → «nuevo|viejo» de daily-summary.js (sólo «nuevo» sin mapa)
   node -e 'const [k, n, f] = process.argv.slice(1); let v = [];
@@ -195,7 +194,7 @@ reset_srv() { : > "$TMP/pedidos.jsonl"; echo "${1:-ok:777}" > "$TMP/respuesta"; 
 ultimo() { tail -1 "$TMP/pedidos.jsonl" > "$TMP/ultimo.json"; q "$TMP/ultimo.json" "$1"; }
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# T1 (AC 1) armar_dependencias_ocho_rubros
+# T1 armar_dependencias_ocho_rubros
 D="$TMP/t1"; mundo "$D"
 snap "$D" "$HOY" '{"hallazgos":[{"id":"aaa11111","paquete":"browserslist","severidad":"high","repos":["A/A"],"noches":1},{"id":"bbb22222","paquete":"handlebars","severidad":"critical","repos":["B/B"],"noches":3}],"anunciados_hoy":["aaa11111"],"postergados_por_presupuesto":["bbb22222"]}'
 ficha "$D" pending aaa11111 "$HOY" pendiente A/A
@@ -203,8 +202,7 @@ ficha "$D" promoted ccc33333 "$(fecha "$HOY" -4)" util A/A
 armar "$D" dependencias "$HOY" > "$D/a.json" 2> "$D/a.err"
 CLAVES=$(q "$D/a.json" 'Object.keys(j.rubros).sort().join(",")')
 ESPERADAS="aceptadas_sin_resolver,deuda_con_pedido_abierto,edad_mas_vieja,nuevos,pedidos_cerrados,pedidos_cerrados_con_vivas,pedidos_creados,pedidos_reabiertos,postergadas_por_presupuesto,proyectos_con_tipo_de_fabrica,proyectos_sin_iteracion,rechazadas_sin_deuda,resueltas_con_pedido_abierto,vivas_por_proyecto"
-# (story 4.5: diez rubros — los dos del cruce se suman a los ocho de la 4.3; 2026-09-15: trece, con los pedidos creados,
-# cerrados y reabiertos por el arnés; catorce, con los proyectos donde el pedido salió con su elemento de backlog)
+# (catorce rubros: ocho de base, dos del cruce, tres de los pedidos creados, cerrados y reabiertos por el arnés, y uno con los proyectos donde el pedido salió con su elemento de backlog)
 [ "$CLAVES" = "$ESPERADAS" ] && ok "T1 armar devuelve los catorce rubros de dependencias" || no "T1 rubros: esperaba [$ESPERADAS], obtuve [$CLAVES] ($(head -c 300 "$D/a.err"))"
 [ "$(q "$D/a.json" 'Object.values(j.rubros).every(r => r && ["valor","de","motivo"].every(k => Object.prototype.hasOwnProperty.call(r, k)))')" = true ] \
   && ok "T1 cada rubro trae valor, de y motivo (ninguna clave ausente)" || no "T1 algún rubro no trae valor/de/motivo"
@@ -220,7 +218,7 @@ ESPERADAS="aceptadas_sin_resolver,deuda_con_pedido_abierto,edad_mas_vieja,nuevos
   && ok "T1 postergadas por presupuesto: los ids del snapshot con su paquete" || no "T1 postergadas mal: $(q "$D/a.json" 'j.rubros.postergadas_por_presupuesto')"
 
 
-# T1b (ADV-H) el desempate de la ficha más vieja no depende del idioma de la máquina
+# T1b el desempate de la ficha más vieja no depende del idioma de la máquina
 D="$TMP/t1b"; mundo "$D"; snap "$D" "$HOY" '{}'
 ficha "$D" pending zz000001 "$(fecha "$HOY" -3)" pendiente A/A
 ficha "$D" pending aa000001 "$(fecha "$HOY" -3)" pendiente A/A
@@ -229,7 +227,7 @@ LC_ALL=da_DK.UTF-8 LANG=da_DK.UTF-8 armar "$D" dependencias "$HOY" > "$D/a.json"
   && ok "T1b con dos vivas del mismo día, la más vieja es la de id menor también en un locale que ordena «aa» después de «z»" \
   || no "T1b desempate dependiente del locale: $(q "$D/a.json" 'j.rubros.edad_mas_vieja')"
 
-# T1c (TEST-W4) sin snapshot de hoy, ilegible o que no es un objeto: armar sale 1 y entregar sale 3 sin mandar nada
+# T1c sin snapshot de hoy, ilegible o que no es un objeto: armar sale 1 y entregar sale 3 sin mandar nada
 D="$TMP/t1c"; mundo "$D"
 node "$RES" build --source dependencies --today "$HOY" --out "$D/out" --pending "$D/pend" --config "$D/repos.json" --summary-config "$D/resumen.json" --watcher-out "$D/vig" > "$D/a.txt" 2>&1; RC=$?
 [ "$RC" = 1 ] && grep -q "no hay snapshot de dependencias para $HOY" "$D/a.txt" && ok "T1c armar sin snapshot de hoy sale 1 y lo dice" || no "T1c armar sin snapshot: rc=$RC · $(head -c 200 "$D/a.txt")"
@@ -242,7 +240,7 @@ echo 'null' > "$D/out/dependencias-$HOY.json"
 node "$RES" build --source dependencies --today "$HOY" --out "$D/out" --pending "$D/pend" --config "$D/repos.json" --summary-config "$D/resumen.json" --watcher-out "$D/vig" > "$D/c.txt" 2>&1; RC=$?
 [ "$RC" = 1 ] && grep -q 'no es un objeto' "$D/c.txt" && ok "T1c snapshot que es el JSON null: armar sale 1 y dice «no es un objeto»" || no "T1c snapshot null: rc=$RC · $(head -c 200 "$D/c.txt")"
 
-# T1d (SILENT, clase) una ficha que no se puede leer es un FALLO dicho, no una caída del resumen entero
+# T1d una ficha que no se puede leer es un FALLO dicho, no una caída del resumen entero
 D="$TMP/t1d"; mundo "$D"; snap "$D" "$HOY" '{}'
 ficha "$D" pending aaa11111 "$HOY" pendiente A/A
 mkdir -p "$D/pend/pending/rota.yaml"      # un directorio con nombre de ficha: leerlo tira EISDIR (vale también como root)
@@ -250,18 +248,17 @@ armar "$D" dependencias "$HOY" > "$D/a.json" 2> "$D/a.err"; RC=$?
 [ "$RC" = 0 ] && [ "$(q "$D/a.json" 'j.fallos.some(f => /no se pudo leer la ficha/.test(f) && /rota\.yaml/.test(f)) && j.rubros.vivas_por_proyecto.de === 1')" = true ] \
   && ok "T1d una ficha ilegible entra en fallos con su nombre y el resto del resumen se arma igual" || no "T1d ficha ilegible: rc=$RC · $(head -c 300 "$D/a.err") · $(q "$D/a.json" 'j.fallos')"
 
-# T1e (revisor de pruebas, iter 2) la carpeta de fichas entera no se puede leer: los rubros de fichas son null con motivo
+# T1e la carpeta de fichas entera no se puede leer: los rubros de fichas son null con motivo
 D="$TMP/t1e"; mundo "$D"; snap "$D" "$HOY" '{}'
 node "$RES" build --source dependencies --today "$HOY" --out "$D/out" --pending "$D/no-existe" --config "$D/repos.json" --summary-config "$D/resumen.json" --watcher-out "$D/vig" --json > "$D/a.json" 2> "$D/a.err"; RC=$?
 [ "$RC" = 0 ] && [ "$(q "$D/a.json" '["vivas_por_proyecto","edad_mas_vieja","aceptadas_sin_resolver"].every(k => j.rubros[k].valor === null && /no se pudieron leer las fichas/.test(j.rubros[k].motivo)) && j.fallos.some(f => /no se pudieron leer las fichas en/.test(f))')" = true ] \
   && ok "T1e sin carpeta de fichas legible: los tres rubros de fichas salen null con motivo y el fallo lo dice (nunca 0 vivas)" || no "T1e carpeta de fichas: rc=$RC · $(head -c 200 "$D/a.err") · $(q "$D/a.json" 'j.fallos')"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# T2 (AC 2) armar_sobre_la_foto_del_09_14 — la forma de esa noche, fabricada: tres hallazgos vivos, ninguno anunciado
+# T2 armar_sobre_la_foto_del_09_14 — la forma de esa noche, fabricada: tres hallazgos vivos, ninguno anunciado
 # ni postergado, cinco fichas (una pendiente, cuatro aceptadas de las que dos ya se resolvieron).
-# En el repo del equipo este caso leía el snapshot real de esa noche; en el público la foto se fabrica con la misma
-# forma y los mismos números (el snapshot real es dato del equipo y no viaja). Esa noche corrió antes de la 4.4: sin
-# `pedidos`, `cruce` ni `resumen`.
+# La foto se fabrica con la forma y los números de una noche real, de antes de que existieran `pedidos`, `cruce` y
+# `resumen` (el snapshot real es dato del equipo y no viaja).
 D="$TMP/t2"; mundo "$D"
 snap "$D" 2026-09-14 '{"hallazgos":[{"id":"ea4e7794","paquete":"pkg-ea4e7794","severidad":"high","repos":["A/A"]},{"id":"3788493d","paquete":"pkg-3788493d","severidad":"high","repos":["A/A"]},{"id":"94dbbf29","paquete":"pkg-94dbbf29","severidad":"high","repos":["B/B"]}]}'
 ficha "$D" pending ea4e7794 2026-09-10 pendiente A/A "pr: 3093"
@@ -278,7 +275,7 @@ R=$(q "$D/a.json" '[j.rubros.nuevos.valor.length, j.rubros.postergadas_por_presu
   || no "T2 rubros de pedidos: $(q "$D/a.json" '[j.rubros.deuda_con_pedido_abierto, j.rubros.proyectos_sin_iteracion]')"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# T3 (AC 3) rubro_sin_fuente_es_null_con_motivo
+# T3 rubro_sin_fuente_es_null_con_motivo
 D="$TMP/t3"; mundo "$D"
 snap "$D" "$HOY" '{"rechazadas_sin_deuda_ids":["zzz99999"]}'
 ficha "$D" pending zzz99999 "$HOY" pendiente A/A "rechazado: $HOY"
@@ -311,7 +308,7 @@ armar "$D" dependencias "$HOY" > "$D/c.json" 2>/dev/null
   || no "T3 el summary.json commiteado no está vacío o no existe: $(q "$RAIZ/scripts/nightly/dependencies/summary.json" 'j.rubros_sin_fuente')"
 
 
-# T3b (ADV-E) `rubros_sin_fuente` vale también para los rubros del vigilante
+# T3b `rubros_sin_fuente` vale también para los rubros del vigilante
 D="$TMP/t3b"; mundo "$D"; vsnap "$D" "$HOY" '{}'
 vficha "$D" pending 2026-09-05-globex-cccc3333 2026-09-05 pendiente
 echo '{ "rubros_sin_fuente": { "pendientes": "la story 9.9 trae la fuente de pendientes" } }' > "$D/resumen.json"
@@ -320,7 +317,7 @@ armar "$D" vigilante "$HOY" --summary-config "$D/resumen.json" > "$D/a.json" 2>/
   && ok "T3b un rubro del vigilante declarado sin fuente sale null con su motivo y el texto lo marca «?» sin el motivo" || no "T3b vigilante sin fuente: $(q "$D/a.json" '[j.rubros && j.rubros.pendientes, j.texto]')"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# T4 (AC 4) cambio_desde_ayer_arriba
+# T4 cambio_desde_ayer_arriba
 D="$TMP/t4"; mundo "$D"
 snap "$D" "$AYER" '{}'
 ficha "$D" promoted ccc33333 "$(fecha "$HOY" -4)" util A/A
@@ -337,7 +334,7 @@ armar "$D" dependencias "$HOY" > "$D/a.json" 2>/dev/null
 [ "$(q "$D/a.json" 'j.cambios === null && /sin ayer con qué comparar/.test(j.cambios_motivo || "") && /sin ayer con qué comparar/.test(j.texto)')" = true ] \
   && ok "T4 sin ayer con resumen: cambios null con motivo y el texto es la foto completa, rotulada" || no "T4 sin ayer: $(q "$D/a.json" '[j.cambios, j.cambios_motivo, j.texto]')"
 
-# T4b (AC 4) mismo_conteo_distintos_ids_es_cambio
+# T4b mismo_conteo_distintos_ids_es_cambio
 D="$TMP/t4b"; mundo "$D"
 snap "$D" "$AYER" '{}'
 ficha "$D" pending p1111111 "$AYER" pendiente A/A; ficha "$D" pending p2222222 "$AYER" pendiente A/A
@@ -349,7 +346,7 @@ armar "$D" dependencias "$HOY" > "$D/a.json" 2>/dev/null
 [ "$(q "$D/a.json" 'j.rubros.vivas_por_proyecto.de === 2 && Array.isArray(j.cambios) && j.cambios.includes("vivas_por_proyecto")')" = true ] \
   && ok "T4b dos fichas nuevas que reemplazan a dos resueltas: el número no cambia y el rubro SÍ está en cambios" || no "T4b comparación por conteo: $(q "$D/a.json" '[j.rubros.vivas_por_proyecto, j.cambios]')"
 
-# T4c (AC 4b) null_contra_numero_es_cambio
+# T4c null_contra_numero_es_cambio
 D="$TMP/t4c"; mundo "$D"
 snap "$D" "$AYER" '{"hallazgos":[{"id":"bbb22222","paquete":"handlebars","severidad":"critical","repos":["B/B"],"noches":3}],"postergados_por_presupuesto":["bbb22222"]}'
 sellar "$D" "$AYER"
@@ -359,7 +356,7 @@ armar "$D" dependencias "$HOY" > "$D/a.json" 2>/dev/null
   && ok "T4c un número de ayer contra un null de hoy es cambio y se dice «pasó a no medido»" || no "T4c null contra número: $(q "$D/a.json" '[j.rubros.postergadas_por_presupuesto, j.cambios, j.texto]')"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# T5 (AC 5) sin_cambios_son_tres_lineas_y_se_manda — con la edad creciendo un día (no es cambio)
+# T5 sin_cambios_son_tres_lineas_y_se_manda — con la edad creciendo un día (no es cambio)
 D="$TMP/t5"; mundo "$D"
 PEDIDOS_OK='{"pedidos":{"simulado":false,"tope":2,"fichas_vivas":1,"fichas_sin_pedido":0,"creados":[],"adoptados":[],"existentes":1,"fallidos":[],"postergados":[],"sin_iteracion":[],"sin_dueno_unico":[],"pagados_avisados":[],"deuda_avisada":[],"sin_pedido":[]}}'
 snap "$D" "$AYER" "$PEDIDOS_OK"; snap "$D" "$HOY" "$PEDIDOS_OK"
@@ -374,7 +371,7 @@ armar "$D" dependencias "$HOY" > "$D/a.json" 2>/dev/null
 reset_srv ok:501; RC=$(entregar "$D" dependencias "$HOY")
 [ "$RC" = 0 ] && [ "$(pedidos)" = 1 ] && ok "T5 la noche sin cambios SE ENTREGA igual (un POST, sale 0): el silencio no es un canal" || no "T5 entrega sin cambios: rc=$RC pedidos=$(pedidos) · $(cat "$D/entregar.txt")"
 
-# T5b (AC 2, forma) el_tope_de_telegram — muchas fichas no rompen el mensaje
+# T5b (forma) el_tope_de_telegram — muchas fichas no rompen el mensaje
 D="$TMP/t5b"; mundo "$D"
 HALL=$(node -e 'const a=[];for(let i=0;i<60;i++)a.push({id:"n"+String(i).padStart(7,"0"),paquete:"paquete-con-nombre-largo-"+i,severidad:"high",repos:["A/A"],noches:1});console.log(JSON.stringify(a))')
 snap "$D" "$HOY" "{\"hallazgos\":$HALL,\"anunciados_hoy\":$(node -e 'console.log(JSON.stringify(Array.from({length:60},(_, i)=>"n"+String(i).padStart(7,"0"))))'),\"postergados_por_presupuesto\":$(node -e 'console.log(JSON.stringify(Array.from({length:40},(_, i)=>"n"+String(i).padStart(7,"0"))))')}"
@@ -385,7 +382,7 @@ armar "$D" dependencias "$HOY" > "$D/a.json" 2>/dev/null
   || no "T5b tope: $(q "$D/a.json" 'j.texto.split("\n").length + " líneas, " + j.texto.length + " caracteres"')"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# T6 (AC 6) fallos_siempre_arriba
+# T6 fallos_siempre_arriba
 D="$TMP/t6"; mundo "$D"
 snap "$D" "$AYER" '{}'
 sellar "$D" "$AYER" null "⚠ telegram-notify: no hay token (ni \$TELEGRAM_BOT_TOKEN ni /x/.env) — NO se mandó el aviso."
@@ -403,7 +400,7 @@ armar "$D" dependencias "$HOY" > "$D/b.json" 2>/dev/null
   && ok "T6 con \`pedidos\`: sus fallidos y los proyectos sin dueño único entran en fallos" || no "T6 fallos de pedidos: $(q "$D/b.json" 'j.fallos')"
 
 
-# T6b (ADV-A) una CADENA de noches sin entregar queda escrita entera en el primer resumen que llega —
+# T6b una CADENA de noches sin entregar queda escrita entera en el primer resumen que llega —
 # también la noche que no dejó constancia (sin la clave) y la que dejó `resumen: null`
 D="$TMP/t6b"; mundo "$D"
 H3=$(fecha "$HOY" -3); H2=$(fecha "$HOY" -2); H1=$(fecha "$HOY" -1)
@@ -418,7 +415,7 @@ constancia "$D/out/dependencias-$H1.json" null
 armar "$D" dependencias "$HOY" > "$D/b.json" 2>/dev/null
 [ "$(q "$D/b.json" 'j.fallos.some(f => f.includes("el resumen del '"$H1"' no se entregó: sin motivo escrito"))')" = true ] \
   && ok "T6b una noche con \`resumen: null\` cuenta como no entregada (la misma lectura que el aviso del arranque)" || no "T6b resumen null: $(q "$D/b.json" 'j.fallos')"
-# T6c antes de que la pieza existiera ninguna noche dejó constancia: eso NO es una cadena de fallas
+# T6c los snapshots de noches sin constancia de entrega (anteriores a la pieza) NO son una cadena de fallas
 D="$TMP/t6c"; mundo "$D"
 snap "$D" "$(fecha "$HOY" -2)" '{}'; snap "$D" "$(fecha "$HOY" -1)" '{}'; snap "$D" "$HOY" '{}'
 armar "$D" dependencias "$HOY" > "$D/a.json" 2>/dev/null
@@ -434,7 +431,7 @@ armar "$D" vigilante "$HOY" > "$D/a.json" 2>/dev/null
   && ok "T6d el vigilante también cobra la noche anterior que no dejó constancia" || no "T6d vigilante: $(q "$D/a.json" 'j.fallos')"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# T7 (AC 7) vigilante_viejo_entra_en_fallos
+# T7 vigilante_viejo_entra_en_fallos
 D="$TMP/t7"; mundo "$D"; snap "$D" "$HOY" '{}'
 vsnap "$D" "$(fecha "$HOY" -2)" '{}'
 armar "$D" dependencias "$HOY" > "$D/a.json" 2>/dev/null
@@ -450,7 +447,7 @@ armar "$D" dependencias "$HOY" > "$D/a.json" 2>/dev/null
   && ok "T7 sin ningún snapshot del vigilante (no se estrenó): silencio sobre el vigilante" || no "T7 habló de un vigilante que nunca corrió: $(q "$D/a.json" 'j.fallos')"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# T8 (AC 8) armar_vigilante_cinco_rubros
+# T8 armar_vigilante_cinco_rubros
 D="$TMP/t8"; mundo "$D"
 vsnap "$D" "$HOY" '{"hallazgos":[{"id":"'"$HOY"'-acme-aaaa0001","regla":"latido","producto":"acme","huella":"aaaa0001","severidad":"media","plugin":"x","endpoint":null}],"nuevos":1,"no_medido":["globex: timeout"],"marcados_ignorados":1,"ignorados_ids":["2026-09-01-initech-eeee5555"]}'
 vficha "$D" promoted 2026-09-01-acme-aaaa1111 2026-09-01 util 'story_creada: "specs/story-9.9.md"'
@@ -475,7 +472,7 @@ armar "$D" vigilante "$HOY" > "$D/b.json" 2>/dev/null
   && ok "T8 un snapshot del vigilante sin sus listas: null con motivo, no cero" || no "T8 listas ausentes: $(q "$D/b.json" '[j.rubros.nuevos, j.rubros.ignoradas_hoy]')"
 
 
-# T8b (ADV-B) `story_creada` vacía —null, ~, "" o null con comentario— NO es una story
+# T8b `story_creada` vacía —null, ~, "" o null con comentario— NO es una story
 D="$TMP/t8b"; mundo "$D"; vsnap "$D" "$HOY" '{}'
 vficha "$D" promoted 2026-09-01-acme-dddd0001 2026-09-01 util 'story_creada: null'
 vficha "$D" promoted 2026-09-01-acme-dddd0002 2026-09-01 util 'story_creada: ~'
@@ -487,11 +484,11 @@ armar "$D" vigilante "$HOY" > "$D/a.json" 2>/dev/null
   && ok "T8b una story_creada vacía (null, ~, \"\", null con comentario) sigue contando como aceptada sin story" || no "T8b story_creada vacía: $(q "$D/a.json" 'j.rubros.aceptadas_sin_story')"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# T9 (AC 9) approve_nombra_la_clave — NO VIAJA al público: miraba el comando del vigilante (`commands/tycon-vigilante.md`),
-# que es del repo del equipo. El vigilante de producción no se publica (story 8.30); el caso sigue en el repo privado.
+# T9 approve_nombra_la_clave — NO VIAJA al público: mira el comando del vigilante (`commands/tycon-vigilante.md`),
+# que es del repo del equipo. El vigilante de producción no se publica; el caso sigue en el repo privado.
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# T10 (AC 10) entregar_manda_y_guarda_message_id
+# T10 entregar_manda_y_guarda_message_id
 D="$TMP/t10"; mundo "$D"
 snap "$D" "$HOY" '{"hallazgos":[{"id":"aaa11111","paquete":"browserslist","severidad":"high","repos":["A/A"],"noches":1}],"anunciados_hoy":["aaa11111"]}'
 ficha "$D" pending aaa11111 "$HOY" pendiente A/A
@@ -508,7 +505,7 @@ if grep -q 'tok-de-prueba-que-no-debe-aparecer\|990011223344' "$D/entregar.txt" 
   no "T10 🔴 el token o el chat_id aparecen en la salida o en el snapshot"
 else ok "T10 ni el token ni el chat_id aparecen en la salida ni en el snapshot"; fi
 
-# T10b (AC 10, --dry-run) no manda, no escribe, no muestra el destinatario
+# T10b (--dry-run) no manda, no escribe, no muestra el destinatario
 D="$TMP/t10b"; mundo "$D"; snap "$D" "$HOY" '{}'
 cp "$D/out/dependencias-$HOY.json" "$D/antes.json"
 reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --dry-run)
@@ -516,7 +513,7 @@ reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --dry-run)
   && ok "T10b --dry-run: cero POST, el snapshot intacto y sin el chat_id en la salida" || no "T10b dry-run: rc=$RC pedidos=$(pedidos) · $(head -c 400 "$D/entregar.txt")"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# T11 (AC 11) vigilante_edita_el_mensaje_del_dia
+# T11 vigilante_edita_el_mensaje_del_dia
 D="$TMP/t11"; mundo "$D"
 snap "$D" "$HOY" '{}'; ficha "$D" pending aaa11111 "$HOY" pendiente A/A
 reset_srv ok:777; entregar "$D" dependencias "$HOY" >/dev/null
@@ -534,7 +531,7 @@ reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY")
 [ "$(ultimo 'j.text.split("\n").length <= 40 && j.text.length <= 3500')" = true ] \
   && ok "T11 el mensaje combinado respeta el tope (≤40 líneas, ≤3500 caracteres)" || no "T11 mensaje combinado fuera de tope"
 
-# T11b (AC 11b) sin_mensaje_de_dependencias_manda_nuevo
+# T11b sin_mensaje_de_dependencias_manda_nuevo
 D="$TMP/t11b"; mundo "$D"
 snap "$D" "$HOY" '{}'; sellar "$D" "$HOY" null "⚠ telegram-notify: no hay token — NO se mandó el aviso."
 vsnap "$D" "$HOY" '{}'
@@ -547,7 +544,7 @@ reset_srv ok:889; RC=$(entregar "$D" vigilante "$HOY")
 [ "$RC" = 0 ] && [ "$(ultimo 'j.ruta')" = "/bot<token>/sendMessage" ] && grep -q 'dependencias no entregó su resumen hoy' <<<"$(ultimo 'j.text')" \
   && ok "T11b sin snapshot de dependencias de hoy: también mensaje nuevo que lo dice" || no "T11b sin snapshot: rc=$RC · $(cat "$D/entregar.txt")"
 
-# T11c (AC 11) la edición rechazada por Telegram cae a un mensaje nuevo, y lo dice
+# T11c la edición rechazada por Telegram cae a un mensaje nuevo, y lo dice
 D="$TMP/t11c"; mundo "$D"
 snap "$D" "$HOY" '{}'; sellar "$D" "$HOY" 555
 vsnap "$D" "$HOY" '{}'
@@ -557,7 +554,7 @@ RC=$(entregar "$D" vigilante "$HOY")
   && ok "T11c mensaje que ya no se puede editar: cae a uno nuevo (editado false) en vez de reintentar la edición" \
   || no "T11c: rc=$RC · $(head -c 400 "$TMP/pedidos.jsonl") · $(q "$D/vig/vigilante-$HOY.json" 'j.resumen')"
 
-# T11d (AC 11) «message is not modified» es entregado (el texto ya estaba)
+# T11d «message is not modified» es entregado (el texto ya estaba)
 D="$TMP/t11d"; mundo "$D"
 snap "$D" "$HOY" '{}'; sellar "$D" "$HOY" 555
 vsnap "$D" "$HOY" '{}'
@@ -567,7 +564,7 @@ RC=$(entregar "$D" vigilante "$HOY")
   && ok "T11d «message is not modified»: cuenta como entregado, sin reintentos" || no "T11d: rc=$RC pedidos=$(pedidos) · $(q "$D/vig/vigilante-$HOY.json" 'j.resumen')"
 
 
-# T11e (ADV-C) si la sección de dependencias no se puede rearmar, el vigilante NO pisa el mensaje de las 04:00
+# T11e si la sección de dependencias no se puede rearmar, el vigilante NO pisa el mensaje de las 04:00
 D="$TMP/t11e"; mundo "$D"
 snap "$D" "$HOY" '{}'; sellar "$D" "$HOY" 555
 node -e 'const fs=require("fs");const f=process.argv[1];const s=JSON.parse(fs.readFileSync(f,"utf8"));delete s.resumen.rubros.proyectos_sin_iteracion;fs.writeFileSync(f,JSON.stringify(s,null,2)+"\n")' "$D/out/dependencias-$HOY.json"
@@ -579,7 +576,7 @@ reset_srv ok:600; RC=$(entregar "$D" vigilante "$HOY")
   && ok "T11e sin rubros de dependencias reconstruibles no se edita (no se borra lo de las 04:00): va un mensaje aparte" \
   || no "T11e edición destructiva: rc=$RC · $(head -c 400 "$TMP/pedidos.jsonl")"
 
-# T11f (ADV-D) la sección que el vigilante vuelve a escribir es la de las 04:00, con sus fallos
+# T11f la sección que el vigilante vuelve a escribir es la de las 04:00, con sus fallos
 D="$TMP/t11f"; mundo "$D"; snap "$D" "$HOY" '{}'
 rm -f "$D/resumen.json"                     # a las 04:00 no se pudo leer resumen.json: es un fallo de esa noche
 reset_srv ok:700; entregar "$D" dependencias "$HOY" >/dev/null
@@ -589,7 +586,7 @@ reset_srv ok:700; RC=$(entregar "$D" vigilante "$HOY")
 grep -q '^fallos: 1$' <<<"$L04" && [ "$RC" = 0 ] && grep -q '^fallos: 1$' <<<"$(ultimo 'j.text')" && [ "$(q "$D/out/dependencias-$HOY.json" 'j.resumen.fallos.some(f => /summary\.json/.test(f))')" = true ] \
   && ok "T11f la edición de las 08:00 conserva los fallos que dijo el mensaje de las 04:00" || no "T11f fallos perdidos en la edición: rc=$RC · 04:00=[$L04] · 08:00=[$(ultimo 'j.text')]"
 
-# T11g (ADV-G) dependencias entregó pero sin message_id: el vigilante va aparte y NO dice que no entregó
+# T11g dependencias entregó pero sin message_id: el vigilante va aparte y NO dice que no entregó
 D="$TMP/t11g"; mundo "$D"; snap "$D" "$HOY" '{}'; sellar "$D" "$HOY" 1
 constancia "$D/out/dependencias-$HOY.json" "$(q "$D/out/dependencias-$HOY.json" '({ ...j.resumen, message_id: null, entregado_el: "2000-01-01T04:00:00Z", motivo: null })')"
 vsnap "$D" "$HOY" '{}'
@@ -599,27 +596,27 @@ L1=$(ultimo 'j.text.split("\n")[0]')
   && ok "T11g sin message_id para editar, el mensaje aparte dice que dependencias SÍ entregó" || no "T11g primera línea engañosa: rc=$RC · «${L1}»"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# T11h (revisor de pruebas, iter 2) el snapshot de dependencias de hoy está ilegible: el vigilante manda uno nuevo y lo dice
+# T11h el snapshot de dependencias de hoy está ilegible: el vigilante manda uno nuevo y lo dice
 D="$TMP/t11h"; mundo "$D"; echo 'esto no es json' > "$D/out/dependencias-$HOY.json"; vsnap "$D" "$HOY" '{}'
 reset_srv ok:901; RC=$(entregar "$D" vigilante "$HOY")
 [ "$RC" = 0 ] && [ "$(ultimo 'j.ruta')" = "/bot<token>/sendMessage" ] && grep -q 'dependencias no entregó su resumen hoy: su snapshot de hoy está ilegible' <<<"$(ultimo 'j.text.split("\n")[0]')" \
   && ok "T11h snapshot de dependencias ilegible: mensaje nuevo cuya primera línea lo dice" || no "T11h: rc=$RC · $(ultimo 'j.text.split("\n")[0]')"
 
-# T12 (AC 12) sin_config_sale_3_con_el_motivo_del_script
+# T12 sin_config_sale_3_con_el_motivo_del_script
 D="$TMP/t12"; mundo "$D"; snap "$D" "$HOY" '{}'
 reset_srv ok:1
 RC=$(TYCON_TELEGRAM_DIR="$TMP/canal-vacio" entregar "$D" dependencias "$HOY")
 [ "$RC" = 3 ] && [ "$(pedidos)" = 0 ] && [ "$(q "$D/out/dependencias-$HOY.json" 'j.resumen.message_id === null && /no hay token/.test(j.resumen.motivo) && j.resumen.entregado_el === null')" = true ] \
   && ok "T12 sin token: cero POST, message_id null, motivo con la línea del script («no hay token»), sale 3" || no "T12: rc=$RC pedidos=$(pedidos) · $(q "$D/out/dependencias-$HOY.json" 'j.resumen')"
 
-# T13 (AC 13) telegram_rechaza_reintenta_y_lo_dice
+# T13 telegram_rechaza_reintenta_y_lo_dice
 D="$TMP/t13"; mundo "$D"; snap "$D" "$HOY" '{}'
 reset_srv "rechaza:Bad Request: chat not found"
 RC=$(entregar "$D" dependencias "$HOY")
 [ "$RC" = 3 ] && [ "$(pedidos)" = 3 ] && [ "$(q "$D/out/dependencias-$HOY.json" 'j.resumen.message_id === null && /chat not found/.test(j.resumen.motivo)')" = true ] \
   && ok "T13 Telegram rechaza: 3 intentos (2 reintentos), motivo con la respuesta, sale 3" || no "T13: rc=$RC pedidos=$(pedidos) · $(q "$D/out/dependencias-$HOY.json" 'j.resumen')"
 
-# T13b (AC 13b) telegram_muda_termina — con un perro guardián de 60 s (macOS no trae `timeout`)
+# T13b telegram_muda_termina — con un perro guardián de 60 s (macOS no trae `timeout`)
 D="$TMP/t13b"; mundo "$D"; snap "$D" "$HOY" '{}'
 reset_srv mudo
 cp "$D/out/dependencias-$HOY.json" "$D/antes.json"
@@ -631,7 +628,7 @@ RC=$(cat "$D/rc.txt" 2>/dev/null)
   && ok "T13b Telegram mudo: entregar TERMINA (corte de 15 s) con motivo «sin respuesta» y sale 3" || no "T13b: rc=[$RC] · $(q "$D/out/dependencias-$HOY.json" 'j.resumen') · $(head -c 300 "$D/entregar.txt")"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# T14 (AC 14) resumen_se_escribe_despues_y_solo_eso  (sobre el snapshot del T13b y del T10)
+# T14 resumen_se_escribe_despues_y_solo_eso  (sobre el snapshot del T13b y del T10)
 for C in t13b t10; do
   D="$TMP/$C"
   node -e '
@@ -655,7 +652,7 @@ else
 fi
 
 
-# T14b (SILENT-W) un error inesperado del guion sale en UNA línea (no un stack) y deja constancia con el motivo
+# T14b un error inesperado del guion sale en UNA línea (no un stack) y deja constancia con el motivo
 D="$TMP/t14b"; mundo "$D"; snap "$D" "$HOY" '{}'
 reset_srv ok:1
 RC=$(TYCON_SUMMARY_INJECT_FAILURE=1 entregar "$D" dependencias "$HOY")
@@ -664,14 +661,14 @@ RC=$(TYCON_SUMMARY_INJECT_FAILURE=1 entregar "$D" dependencias "$HOY")
   && ok "T14b un error inesperado: sale 3, la última línea lo dice sin stack, y el snapshot queda con el motivo" \
   || no "T14b error inesperado: rc=$RC · $(tail -c 400 "$D/entregar.txt")"
 
-# T14c (revisor de pruebas, iter 2) el error inesperado también por `armar`: una línea, sale 1, sin constancia
+# T14c el error inesperado también por `armar`: una línea, sale 1, sin constancia
 D="$TMP/t14c"; mundo "$D"; snap "$D" "$HOY" '{}'; cp "$D/out/dependencias-$HOY.json" "$D/antes.json"
 TYCON_SUMMARY_INJECT_FAILURE=1 node "$RES" build --source dependencies --today "$HOY" --out "$D/out" --pending "$D/pend" --config "$D/repos.json" --summary-config "$D/resumen.json" --watcher-out "$D/vig" > "$D/a.txt" 2>&1; RC=$?
 [ "$RC" = 1 ] && tail -n 1 "$D/a.txt" | grep 'error inesperado' >/dev/null && ! grep -qE '^\s+at ' "$D/a.txt" && cmp -s "$D/antes.json" "$D/out/dependencias-$HOY.json" \
   && ok "T14c armar con un error inesperado sale 1 en una línea y no toca el snapshot" || no "T14c: rc=$RC · $(tail -c 300 "$D/a.txt")"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# T15, T15b, T15c, T15d, T16, T16b (AC 15, 16) — los casos del aviso viven en el BANCO de controles
+# T15, T15b, T15c, T15d, T16, T16b — los casos del aviso viven en el BANCO de controles
 # (`scripts/controls-bench/cases/hooks/22-dependencias-notice.json`), que es donde se corren contra el
 # hook real en un sandbox. Acá se verifica que sigan ahí, con su tipo, y que el fixture del caso viejo
 # de la noche buena traiga la constancia de entrega (T15d): si alguien lo borra, ese caso vuelve a pedir
@@ -690,7 +687,7 @@ console.log(falta.length ? falta.join(" · ") : "ok");' "$BANCO" 2>&1)
 [ "$R" = ok ] && ok "T15/T15b/T15c/T15d/T16/T16b los casos del aviso están en el banco (y la noche buena vieja trae su constancia de entrega)" || no "T15–T16b en el banco: $R"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# T15-paridad (AC 15, 16) — el guion que deja la constancia y el aviso que la cobra usan LA MISMA regla
+# T15-paridad — el guion que deja la constancia y el aviso que la cobra usan LA MISMA regla
 # de «entregado». Viven en dos archivos a propósito (el banco copia el hook solo, sin hermanos), así
 # que lo único que impide que se separen es esta tabla.
 PAR=$(node -e '
@@ -704,7 +701,7 @@ console.log(dif.length ? "DIFIEREN: " + JSON.stringify(dif) : "iguales");' "$RES
 [ "$PAR" = iguales ] && ok "T15-paridad la regla de «entregado» del resumen y la del aviso de arranque coinciden en toda la tabla" || no "T15-paridad: $PAR"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# T17 / T18 (AC 17, 18) — los pasos REALES de los pipelines
+# T17 / T18 — los pasos REALES de los pipelines
 extraer() { # <yaml> <displayName> → cuerpo del `- script: |` (misma técnica que open-pr-per-finding.test.sh)
   python3 - "$1" "$2" <<'PY'
 import re, sys
@@ -757,9 +754,9 @@ sandbox() { # <dir> <fuente>
   else echo '{ "version": 1, "owners": { "default": "lead@acme.example" }, "notify": { "channel": "telegram" } }' > "$S/operations.json"; fi
 }
 BASE_OK=1; git -C "$RAIZ" rev-parse --verify --quiet origin/main >/dev/null || BASE_OK=0
-# story 8.9: el renombre de una opción o de un archivo del arnés a inglés (mapa de renombres) no es «tocar el paso»: los
+# El renombre de una opción o de un archivo del arnés a inglés (mapa de renombres) no es «tocar el paso»: los
 # dos lados se comparan con cada `--viejo` pasado a `--nuevo` y cada ruta vieja a la nueva. Sin mapa, el texto tal cual.
-# Tanda F: la carpeta de la cola (`--queue`) también es una ruta, así que una carpeta mudada (`kind: folder` del mapa)
+# La carpeta de la cola (`--queue`) también es una ruta, así que una carpeta mudada (`kind: folder` del mapa)
 # se compara por su nombre nuevo — SÓLO en esa posición. `--branch` lleva la misma palabra y es un valor (el prefijo
 # de la rama): si alguien lo cambiara por la carpeta, el paso tiene que salir distinto.
 opciones_nuevas() {
@@ -771,7 +768,7 @@ opciones_nuevas() {
     for (const x of e.filter((x) => x && x.kind === "folder" && !x.repo && x.old && x.new)) t = t.replace(new RegExp(`(--queue[ \\t]+)${esc(x.old)}(?![A-Za-z0-9_./-])`, "g"), `$1${x.new}`);
     process.stdout.write(t);' "$RAIZ/scripts/lib/renames.json"
 }
-# story 8.12 (tanda R6): los yml pasaron a pipelines/. Hasta el merge, origin/main los tiene en su ruta de antes: se lee
+# Los yml viven en pipelines/. Si origin/main los tiene todavía en su ruta de antes, se lee
 # la nueva si ya está publicada; si no, la vieja armada DESDE EL MAPA (nunca escrita acá), diciéndolo. Sale 2 sin mapa
 # (la copia pública) y 1 si ninguna de las dos está en origin/main.
 ruta_publicada() { # <ruta nueva> → la ruta a leer en origin/main
@@ -791,21 +788,21 @@ igual_a_main() { # <yaml> <display> → true si el paso entero es idéntico al d
   [ "$rc" = 2 ] && { echo "NO MEDIDO — copia pública sin el mapa"; return; }
   # Sin el yml en origin/main no hay contra qué comparar: no es «cambió». Pasa en el nocturno, que corre en el repo del
   # equipo con el público encima (su origin/main no trae los pipelines que se mudaron al público), y con un pipeline
-  # nuevo de la rama. Antes salía rojo «nomain» cada noche (corrida del 2026-10-15).
+  # nuevo de la rama. Sin esto saldría rojo «nomain» cada noche.
   [ "$rc" = 0 ] || { echo "NO MEDIDO — origin/main de este repo no tiene $1: no hay paso de antes contra el cual comparar"; return; }
   git -C "$RAIZ" show "origin/main:$pub" > "$TMP/main.yml" 2>/dev/null || { echo nomain; return; }
-  # la condición de `efectos` (story 8.26 B: una corrida de prueba no abre pedidos ni avisa) no es un cambio del paso:
+  # la condición de `efectos` (una corrida de prueba no abre pedidos ni avisa) no es un cambio del paso:
   # se saca de los dos lados, y sólo esa línea (la fija pipelines-moved.test.js, T7)
   local sin_efectos="condition: and(succeeded(), eq('\${{ parameters.efectos }}', 'true'))"
   [ "$(region "$RAIZ/$1" "$2" | opciones_nuevas | grep -vF "$sin_efectos")" = "$(region "$TMP/main.yml" "$2" | opciones_nuevas | grep -vF "$sin_efectos")" ] && echo true || echo false
 }
 
-# En el público el paso real es el del MODELO de la revisión nocturna (pipelines/operations/dependency-audit.yml, story
-# 8.30), con sus nombres de pasos. T18 (el pipeline del vigilante) no viaja: el vigilante de producción es del repo del
+# En el público el paso real es el del MODELO de la revisión nocturna (pipelines/operations/dependency-audit.yml),
+# con sus nombres de pasos. T18 (el pipeline del vigilante) no viaja: el vigilante de producción es del repo del
 # equipo, y sus casos siguen allá. Tampoco viaja el chequeo del grupo de variables `vigilante-prod-hosts`, que era del
 # pipeline del equipo: el modelo no carga grupos.
 for CASO in dependencias; do
-  # 2.30-T30: el paso real, por su nombre, sin condición sobre el chat de Telegram
+  # el paso real, por su nombre, sin condición sobre el chat de Telegram
   T=2.30-T30; Y="$RAIZ/pipelines/operations/dependency-audit.yml"; YREL=pipelines/operations/dependency-audit.yml
   ANTES='Crear los pedidos de trabajo'; DESPUES='Guardar el snapshot y las fichas en el repo de operaciones'
   INTACTOS=("Abrir un pull request por hallazgo (ahí se decide)"); SNAP=".dashboard/dependencias/dependencias-$HOY.json"
@@ -868,7 +865,7 @@ for CASO in dependencias; do
 done
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# T30 (story 4.5, AC 15) resumen_lee_el_cruce — dos rubros que LEEN `cruce`, nunca un 0 sin fuente
+# T30 resumen_lee_el_cruce — dos rubros que LEEN `cruce`, nunca un 0 sin fuente
 D="$TMP/t30"; mundo "$D"
 snap "$D" "$HOY" '{"cruce":"__BORRAR__"}'
 armar "$D" dependencias "$HOY" > "$D/a.json" 2> "$D/a.err"
@@ -892,12 +889,11 @@ armar "$D" dependencias "$HOY" > "$D/a.json" 2> "$D/a.err"
   && ok "T30 (5b) un proyecto donde no se pudo buscar Bugs sueltos es un fallo de la noche, no un silencio" || no "T30 no consultados: $(q "$D/a.json" 'j.fallos')"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# T31 (2026-09-15) la_noche_que_se_encendieron_los_pedidos — el mensaje real de ese día, corregido.
-# Llegó «5 cambio(s) desde ayer» con cinco renglones en 0 y SIN nombrar los tres Bugs que la noche
-# había creado de verdad (5173, 5174, 5175): tres rubros «cambiaron» sólo porque `simulado` pasó a
-# false, dos eran rubros nuevos que se midieron por primera vez, y el que sí cambió (un pedido
-# postergado que salió) no decía qué había antes. El ayer se sella con la forma de la constancia de
-# ese día: sin los rubros que nacieron después (se borran del sello).
+# T31 la_noche_que_se_encendieron_los_pedidos — el mensaje de la noche en que los pedidos pasan de simulados a reales.
+# Tiene que nombrar los Bugs que la noche creó de verdad y no decir «5 cambio(s) desde ayer» con cinco renglones
+# en 0: tres rubros «cambian» sólo porque `simulado` pasa a false, dos son rubros nuevos que se miden por primera vez,
+# y el que sí cambió (un pedido postergado que salió) tiene que decir qué había antes. El ayer se sella con la forma de
+# la constancia de ese día: sin los rubros que nacieron después (se borran del sello).
 D="$TMP/t31"; mundo "$D"
 ficha "$D" pending ea4e7794 "$(fecha "$HOY" -5)" pendiente A/A
 ficha "$D" promoted 3788493d "$(fecha "$HOY" -6)" util A/A
@@ -928,8 +924,8 @@ snap "$D" "$HOY" '{"pedidos":{"simulado":true,"creados":[],"adoptados":[],"falli
 armar "$D" dependencias "$HOY" > "$D/a.json" 2> "$D/a.err"
 [ "$(q "$D/a.json" 'JSON.stringify(j.cambios) === "[]" && /^Pedidos de trabajo: volvieron a simulado \(ayer estaban encendidos\)\.$/m.test(j.texto) && j.texto.startsWith("Sin cambios desde ayer")')" = true ] \
   && ok "T31b apagar los pedidos se dice en una línea y no cuenta como cambios" || no "T31b: $(q "$D/a.json" '[j.cambios, j.texto]')"
-# T31c (revisión adversarial) una noche SIN sección `pedidos` no es un cambio de modo: sin el paso de pedidos no
-# se sabe si estaban encendidos. Antes, «postergadas» traía `simulado: false` igual y el resumen decía «encendidos».
+# T31c una noche SIN sección `pedidos` no es un cambio de modo: sin el paso de pedidos no
+# se sabe si estaban encendidos (el `simulado: false` de «postergadas» solo no alcanza para decir «encendidos»).
 D="$TMP/t31c"; mundo "$D"
 snap "$D" "$AYER" '{"pedidos":{"simulado":true,"creados":[],"adoptados":[],"fallidos":[],"postergados":[],"sin_iteracion":[],"deuda_avisada":[]}}'
 sellar "$D" "$AYER"
@@ -944,7 +940,7 @@ snap "$D" "$HOY" '{"pedidos":{"simulado":true,"creados":[],"adoptados":[],"falli
 armar "$D" dependencias "$HOY" > "$D/a.json" 2> "$D/a.err"
 [ "$(q "$D/a.json" 'j.modo_pedidos === null && !/Pedidos de trabajo:/.test(j.texto)')" = true ] \
   && ok "T31d ayer sin sección pedidos (hoy simulados): no dice «volvieron a simulado»" || no "T31d: $(q "$D/a.json" '[j.modo_pedidos, j.texto]')"
-# T32 (revisión adversarial del cierre, 2026-09-15) los Bugs que cerró el arnés se NOMBRAN, y la noche del cierre
+# T32 los Bugs que cerró el arnés se NOMBRAN, y la noche del cierre
 # no salen también como «resueltas con pedido abierto» (el cruce corre antes que el cierre y los ve abiertos)
 D="$TMP/t32"; mundo "$D"
 snap "$D" "$HOY" '{"pedidos":{"simulado":false,"creados":[],"adoptados":[],"fallidos":[],"postergados":[],"sin_iteracion":[],"deuda_avisada":[],"pagados_avisados":[{"ficha":"aaa11111","proyecto":"ProyA","id":301,"cerrado":true,"motivo_azure":"Fixed and verified"},{"ficha":"bbb22222","proyecto":"Proy B","id":302,"cerrado":false,"motivo_azure":null}],"reabiertos":[{"ficha":"ccc33333","proyecto":"ProyA","id":303}]},"cruce":{"consultado":true,"motivo":null,"evaluados":2,"cerrados_vivos":[],"resueltas_con_pedido_abierto":[{"ficha":"aaa11111","proyecto":"ProyA","pedido":301,"dias":0},{"ficha":"bbb22222","proyecto":"Proy B","pedido":302,"dias":3}],"no_leidos":[],"huerfanos":[],"huerfanos_no_consultados":[]}}'
@@ -953,8 +949,8 @@ armar "$D" dependencias "$HOY" > "$D/a.json" 2> "$D/a.err"
   && ok "T32 el resumen cuenta los Bugs que cerró y los que reabrió el arnés (sin nombrarlos), y no repite los cerrados como «resueltas con pedido abierto»" || no "T32: $(q "$D/a.json" '[j.rubros.pedidos_cerrados, j.rubros.resueltas_con_pedido_abierto, j.texto]') ($(head -c 200 "$D/a.err"))"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# T33 (story 4.6, AC 5) la_seccion_viaja_en_el_mismo_mensaje — los PR abiertos van al final del MISMO mensaje
-# Rojo previo: `--extra` no existe → `entregar` sale 2 («opción desconocida») y no manda nada.
+# T33 la_seccion_viaja_en_el_mismo_mensaje — los PR abiertos van al final del MISMO mensaje
+# Sin `--extra`, `entregar` sale 2 («opción desconocida») y no manda nada.
 D="$TMP/t33"; mundo "$D"
 snap "$D" "$HOY" '{}'; ficha "$D" pending aaa11111 "$HOY" pendiente A/A
 reset_srv ok:777; entregar "$D" dependencias "$HOY" >/dev/null
@@ -987,7 +983,7 @@ reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY" --extra "$D/largo.txt")
   && ok "T33 una sección enorme deja sólo su cantidad: no recorta dependencias ni vigilante, y el total entra en 4096" \
   || no "T33 sección enorme: rc=$RC · largo=$(ultimo 'j.text.length') · $(ultimo 'j.text')"
 
-# T33c (adversarial ADV-1, iter 2) nombres_largos_se_recortan_por_linea_entera — una sección que pasa el tope de
+# T33c nombres_largos_se_recortan_por_linea_entera — una sección que pasa el tope de
 # caracteres con pocas líneas no puede cortarse a mitad de la lista: se sacan líneas enteras de abajo y se dice cuántas.
 { echo 'PR abiertos hace más de 2 días: 15'
   for i in $(seq 1 10); do echo "#29$i Acme Custom Portal/acme-custom-portal-sample — Persona Inventada Apellido Largo — $((i + 2)) días"; done
@@ -997,7 +993,7 @@ reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY" --extra "$D/nombres-largos
 [ "$RC" = 0 ] && [ "$(ultimo 'j.text.includes("PR abiertos hace más de 2 días: 15") && !/#29\d|Persona Inventada|acme-custom/.test(j.text)')" = true ] \
   && ok "T33c con nombres largos sólo viaja la cantidad: ningún PR, autor ni repo" \
   || no "T33c nombres largos: rc=$RC · $(ultimo 'j.text')"
-# T33d (TEST-W4, iter 2) archivo vacío o que no se puede leer: se dice, distinto de «no se generó»
+# T33d archivo vacío o que no se puede leer: se dice, distinto de «no se generó»
 : > "$D/vacio.txt"; mkdir -p "$D/es-carpeta.txt"
 vsnap "$D" "$HOY" '{}'; reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY" --extra "$D/vacio.txt")
 [ "$RC" = 0 ] && [ "$(ultimo 'j.text.split("\n").slice(-2)[0]')" = "PR abiertos: ? (no se pudo consultar)" ] \
@@ -1005,13 +1001,13 @@ vsnap "$D" "$HOY" '{}'; reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY" --
 vsnap "$D" "$HOY" '{}'; reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY" --extra "$D/es-carpeta.txt")
 [ "$RC" = 0 ] && [ "$(ultimo 'j.text.split("\n").slice(-2)[0]')" = "PR abiertos: ? (no se pudo consultar)" ] \
   && ok "T33d archivo ilegible (una carpeta): «?» sin el motivo" || no "T33d ilegible: rc=$RC · $(ultimo 'j.text')"
-# T33e (SEC-C5, barrido de clase) la sección que llega de afuera tampoco trae «##vso[» al mensaje
+# T33e la sección que llega de afuera tampoco trae «##vso[» al mensaje
 printf 'PR abiertos hace más de 2 días: 1\n#1 P/R — ##vso[task.setvariable variable=X]y — 3 días\n' > "$D/hostil.txt"
 vsnap "$D" "$HOY" '{}'; reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY" --extra "$D/hostil.txt" --dry-run)
 [ "$RC" = 0 ] && ! grep -qE '##(vso)?\[' "$D/entregar.txt" && ok "T33e --extra no deja pasar «##vso[» ni en el ensayo por stdout" || no "T33e: rc=$RC · $(grep -E '##' "$D/entregar.txt" | head -2)"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# 2.30-T21 Resumen_SoloCantidades — ningún nombre ni id en el texto; el detalle, en el snapshot
+# T21 Resumen_SoloCantidades — ningún nombre ni id en el texto; el detalle, en el snapshot
 D="$TMP/t2130"; mundo "$D"
 ficha "$D" pending aaa11111 "$(fecha "$HOY" -3)" pendiente A/A
 ficha "$D" pending bbb22222 "$HOY" pendiente B/B
@@ -1032,7 +1028,7 @@ VTXT=$(q "$D/v.json" 'j.texto')
 FUGA=""; for M in ProductoMarcador ReglaMarcador host-marcador globex cccc3333 ffff DATO-DE-CLIENTE; do grep -qF -- "$M" <<<"$VTXT" && FUGA="$FUGA $M"; done
 [ -z "$FUGA" ] && grep -q '🌙 vigilante' <<<"$VTXT" && ok "2.30-T21 el texto del vigilante tampoco nombra productos, reglas, hosts ni ids" || no "2.30-T21 🔴 vigilante, se colaron:$FUGA · $VTXT"
 
-# 2.30-T22 Resumen_EnlaceSoloSiPasoLaPrueba
+# T22 Resumen_EnlaceSoloSiPasoLaPrueba
 D="$TMP/t2230"; mundo "$D"; snap "$D" "$HOY" '{}'
 echo '{ "version": 1, "owners": { "default": "lead@acme.example" }, "notify": { "channel": "telegram" }, "site": { "url": "https://sitio.acme.example" } }' > "$D/ops-url.json"
 prueba() { node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ resultado: process.argv[2], motivo: process.argv[3] === "-" ? null : process.argv[3], hora: process.argv[4] }) + "\n")' "$D/check.json" "$1" "$2" "$3"; }
@@ -1042,7 +1038,7 @@ RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "
 [ "$RC" = 0 ] && [ "$(ultima_linea)" = "sitio: https://sitio.acme.example (probado 04:12 UTC)" ] \
   && [ "$(q "$D/out/dependencias-$HOY.json" 'j.resumen.sitio.resultado + "|" + j.resumen.sitio.linea')" = "paso|sitio: https://sitio.acme.example (probado 04:12 UTC)" ] \
   && ok "2.30-T22 pasó la prueba de esta mañana: la última línea es el enlace con la hora, y queda en la constancia" || no "2.30-T22 paso: rc=$RC · «$(ultima_linea)» · $(head -c 300 "$D/entregar.txt")"
-# 2.48 un aviso del vocabulario de check-deploy se suma al final de la línea; uno libre (puede traer la dirección) se ignora
+# un aviso del vocabulario de check-deploy se suma al final de la línea; uno libre (puede traer la dirección) se ignora
 AVISO48=$(node -e 'process.stdout.write(require(process.argv[1]).AVISOS[0])' "$RAIZ/scripts/site/check-deploy.js")
 avisar() { node -e 'const f=process.argv[1]; const j=JSON.parse(require("fs").readFileSync(f,"utf8")); j.avisos=[process.argv[2]]; require("fs").writeFileSync(f, JSON.stringify(j)+"\n")' "$D/check.json" "$1"; }
 prueba paso - "${HOY}T04:12:30.000Z"; avisar "$AVISO48"; reset_srv ok:1
@@ -1085,7 +1081,7 @@ for P in prs5 prs-sf; do
   [ "$(ultimo 'j.text.split("\n").slice(-2)[0]')" = "$(cat "$D/$P.txt")" ] && ok "2.30-T22 la línea de PR «$(cat "$D/$P.txt")» entra tal cual" || no "2.30-T22 línea de PR $P: $(ultimo 'j.text')"
 done
 
-# 2.30-T23 Resumen_UnMensajePorDia — Telegram edita y conserva la línea del sitio; Slack manda el suyo
+# T23 Resumen_UnMensajePorDia — Telegram edita y conserva la línea del sitio; Slack manda el suyo
 D="$TMP/t2330"; mundo "$D"; snap "$D" "$HOY" '{}'
 echo '{ "version": 1, "owners": { "default": "lead@acme.example" }, "notify": { "channel": "telegram" }, "site": { "url": "https://sitio.acme.example" } }' > "$D/ops-url.json"
 node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ resultado: "paso", motivo: null, hora: process.argv[2] + "T04:12:30.000Z" }))' "$D/check.json" "$HOY"
@@ -1128,11 +1124,11 @@ RC=$(TYCON_NOTIFY_WEBHOOK_URL="$TYCON_TELEGRAM_API/hook/secreto" OPS_FILE="$D/op
   && ok "2.30-T23 Slack: el vigilante manda el suyo con la misma línea, editado false, y la dirección no queda en ningún lado" \
   || no "2.30-T23 slack vigilante: rc=$RC pedidos=$(pedidos) · $(q "$D/vig/vigilante-$HOY.json" 'j.resumen') · $(head -c 300 "$D/entregar.txt")"
 
-# T33b (story 4.6, AC 5) — NO VIAJA al público: miraba el paso «Listar los PR abiertos» del pipeline del vigilante, que
-# es del repo del equipo (el vigilante de producción no se publica, story 8.30). El caso sigue en el repo privado; lo que
+# T33b — NO VIAJA al público: mira el paso «Listar los PR abiertos» del pipeline del vigilante, que
+# es del repo del equipo (el vigilante de producción no se publica). El caso sigue en el repo privado; lo que
 # el guion hace con `--extra` lo prueban T33, T33c, T33d y T33e acá.
 
-# 2.33-T25 Manana_LineaDelSitio — la versión del sitio en la mañana, del resultado del nocturno que lo actualiza: una línea
+# T25 Manana_LineaDelSitio — la versión del sitio en la mañana, del resultado del nocturno que lo actualiza: una línea
 # fija antes de la del sitio, sólo con versiones y un motivo de la lista cerrada (nunca el texto libre del resultado)
 penultima() { ultimo 'j.text.split("\n").slice(-2)[0]'; }
 act() { printf '{"version":1,"plataforma":"azure","resultado":"%s","desde":%s,"hacia":%s,"hora":"%s","motivo":%s}\n' "$1" "$2" "$3" "$4" "$5" > "$D/su.json"; }
@@ -1171,7 +1167,7 @@ RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "
 [ "$(penultima)" != "sitio: sin el resultado del nocturno de hoy; el sitio dice al entrar si hay una versión nueva" ] && [ "$(ultima_linea)" = "sitio: https://sitio.acme.example (probado 04:12 UTC)" ] \
   && ok "2.33-T25 sin --site-update (una organización sin el nocturno), el mensaje queda como antes" || no "2.33-T25 sin la opción cambió: «$(penultima)»"
 
-# 1.26-T7 Resumen_LatidoYRetroPorSeparado y 1.26-T8 Resumen_Faltan_LoDice — la línea de las retrospectivas, del informe
+# Resumen_LatidoYRetroPorSeparado y Resumen_Faltan_LoDice — la línea de las retrospectivas, del informe
 # que deja el barrido de la noche (`retro-sweep.js --report`, pasado con `--retros`): latido sin modelo y retro con
 # aprendizajes por separado, lo que no pide retro y lo que falta. Sin `--retros`, el resumen no tiene esa línea.
 retros() { # <archivo> <json de totales/repos>
@@ -1196,7 +1192,7 @@ T8b="$(ultimo 'j.text.split("\n").find((l) => l.startsWith("retros:")) || ""')"
 [ "$RC" = 0 ] && [ "$T8b" = "retros: ? (el barrido de la noche no dejó su informe)" ] \
   && ok "1.26-T8 sin el informe del barrido lo dice, no es «faltan 0»" || no "1.26-T8 sin informe: «${T8b}»"
 
-# 1.26-T8 (iteración 2): nombres con espacios o acentos salen tal cual; un informe sin `no_piden` no se lee como «0».
+# Nombres con espacios o acentos salen tal cual; un informe sin `no_piden` no se lee como «0».
 retros "$D/retros.json" '{"repos":[{"nombre":"área ventas","mirado":true,"merges":1,"latido":0,"aprendizajes":0,"no_piden":{},"faltan":[{"sha":"abcdef1234567890","motivo":"x"}]},{"nombre":"Arnés del equipo","mirado":false}]}'
 prueba paso - "${HOY}T04:12:30.000Z"; reset_srv ok:1
 RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json" --retros "$D/retros.json")
@@ -1209,7 +1205,7 @@ RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "
 T8d="$(ultimo 'j.text.split("\n").find((l) => l.startsWith("retros:")) || ""')"
 [ "$T8d" = "retros: ? (el informe del barrido no se pudo leer)" ] && ok "1.26-T8 un informe sin no_piden no se lee como cero" || no "1.26-T8 sin no_piden: «${T8d}»"
 
-# 1.21-T7 ResumenDiario_DudasRepetidas — las dudas de los revisores, de las carpetas de corrida commiteadas del repo
+# ResumenDiario_DudasRepetidas — las dudas de los revisores, de las carpetas de corrida commiteadas del repo
 # (`.advisors/pipeline-runs/*/findings.json`, `--runs`) de los últimos 7 días: la misma (revisor, regla) con dos o más
 # «falsos» confirmados por un verificador, o con dos o más desacuerdos (el verificador reprodujo lo que el autor
 # quería descartar). El texto sólo lleva la cantidad (regla del aviso: ningún nombre de regla sale a un servicio de
@@ -1254,7 +1250,7 @@ reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --runs "$D/runs")
 [ "$RC" = 0 ] && [ "$(ultimo 'j.text.includes("dudas de revisores: 2")')" = "true" ] \
   && ok "1.21-T7 el resumen entregado trae la línea de las dudas" || no "1.21-T7 entrega rc=$RC"
 
-# 1.21 SEC-W8: el revisor y la regla salen de un findings.json del repo; pasan por el mismo filtro de nombres que lineaRetros.
+# El revisor y la regla salen de un findings.json del repo; pasan por el mismo filtro de nombres que lineaRetros.
 # 🔴 Sale rojo si un marcador en el revisor o en la regla llega tal cual al --json / a la constancia.
 mkdir -p "$D/runs-marca"
 corrida_dudas "$D/runs-marca" 1 1.1 "[{\"rule_id\":\"R-9\nGHP_MARCADOR_REGLA\",\"advisor\":\"rev-ok\",\"file\":\"a.js\",$FALSO},{\"rule_id\":\"R-8\",\"advisor\":\"rev;MARCADOR_REVISOR\",\"file\":\"a.js\",$FALSO}]"
@@ -1264,7 +1260,7 @@ grep -qE 'MARCADOR_REVISOR|MARCADOR_REGLA' "$D/marca.json" && no "1.21-W8 🔴 u
   || ok "1.21-W8 revisor y regla con caracteres raros salen como «?»"
 [ "$(q "$D/marca.json" 'j.dudas_revisores.valor.length')" = "2" ] && ok "1.21-W8 las dudas siguen contadas" || no "1.21-W8 dudas: $(q "$D/marca.json" 'JSON.stringify(j.dudas_revisores)')"
 
-# 1.21 SILENT-C2: un findings.json roto no es una corrida sin dudas. Se cuenta como «no leída»; si ninguna se pudo leer,
+# Un findings.json roto no es una corrida sin dudas. Se cuenta como «no leída»; si ninguna se pudo leer,
 # es null con su motivo.
 mkdir -p "$D/runs-mixto" "$D/runs-rotas"
 corrida_dudas "$D/runs-mixto" 1 1.1 "[{\"rule_id\":\"R-1\",\"advisor\":\"rev-a\",\"file\":\"a.js\",$FALSO}]"

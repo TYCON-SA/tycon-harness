@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # deploy-plugin.test.sh — los casos del guion de despliegue de plugins.
 #
-# 🔴 QUÉ PRUEBA, Y POR QUÉ ASÍ. La secuencia de despliegue estuvo mal escrita CUATRO veces en el
-# plan de cierre, y las cuatro habrían salido VERDES en una corrida real: dejaban producción rota
-# sin que nada se pusiera rojo. O sea que lo que hay que probar no es "el camino feliz funciona":
+# 🔴 QUÉ PRUEBA, Y POR QUÉ ASÍ. Una secuencia de despliegue mal escrita puede salir VERDE en una corrida real:
+# deja producción rota sin que nada se ponga rojo. O sea que lo que hay que probar no es "el camino feliz funciona":
 # es que **cada forma de fallar termina en rojo**, y que la versión anterior queda recuperada.
 #
 # No toca la red: se inyecta un `curl` falso por PATH que responde según el guion del caso.
@@ -111,11 +110,10 @@ caso10() { feliz; resp /api/admin/plugins/upload '{"error":"already exists"}' 40
 rc=$(corre caso10)
 [ "$rc" = "1" ] && grep -q "Voip:PbxId" "$TMP/salida.txt" && ok "🔴 en la re-corrida la lista de faltantes se lee de la vista previa, y sigue frenando nombrando la opción" || no "re-corrida con faltantes salió $rc"
 
-# ── 🔴 RETROCESO: SE MIRA CUÁLES, NO CUÁNTAS (2026-09-03) ───────────────────────────────────────
+# ── 🔴 RETROCESO: SE MIRA CUÁLES, NO CUÁNTAS ───────────────────────────────────────
 # Un retroceso de base de datos frena, y eso no cambia. Pero hay migraciones que el paquete deja
 # afuera A PROPÓSITO (declaradas en excludedMigrations, con su motivo): el host las tiene aplicadas y
-# las lee como retroceso, así que CONTAR retrocesos frenaba un despliegue por una decisión ya tomada.
-# Medido en Lapacho: la 006 está excluida desde el 29 de agosto y era el único "retroceso".
+# las lee como retroceso, así que CONTAR retrocesos frenaría un despliegue por una decisión ya tomada: se mira CUÁLES.
 retro() { # <json de rollbacksNeeded>
   feliz; resp /api/admin/plugins/7/set-default/preview "{\"pendingCount\":0,\"rollbackCount\":1,\"rollbacksNeeded\":$1}" 200; }
 corre_ex() { rm -rf "$TMP/respuestas"; mkdir -p "$TMP/respuestas"; printf '{}\n200\n' > "$TMP/respuestas/default"; retro "$1"
@@ -141,12 +139,11 @@ grep -q "009_Otra" "$TMP/salida.txt" && ok "…y nombra exactamente la que falta
 rc=$(corre_ex '[]' "006")
 [ "$rc" = "1" ] && ok "🔴 si el host dice que hay retroceso pero no dice CUÁL, frena (no sé ≠ declarado)" || no "🔴 sin nombres salió $rc — amparó a ciegas"
 
-# ── 🔴 TODA SALIDA POSTERIOR A "ACTIVAR" RECUPERA LA ANTERIOR (2026-09-03) ──────────────────────
+# ── 🔴 TODA SALIDA POSTERIOR A "ACTIVAR" RECUPERA LA ANTERIOR ──────────────────────
 # Activar descarga la vieja y carga la nueva, pero NO toca la marca de "actual". Cualquier fallo
 # DESPUES de ese punto deja el peor estado: la nueva a medias y la anterior marcada pero descargada
-# — el host sirve algo roto AHORA y al proximo reinicio no carga NINGUNA version. Los dos caminos
-# viejos recuperaban; los TRES del chequeo de salud, agregados el mismo dia, no. Estos casos exigen
-# que las cinco salidas dejen el host en un estado del que se pueda volver.
+# — el host sirve algo roto AHORA y al proximo reinicio no carga NINGUNA version. Estos casos exigen que las cinco
+# salidas (dos de la activación y tres del chequeo de salud) recuperen la anterior: el host queda en un estado del que se pueda volver.
 lista_con_anterior() { resp /api/admin/plugins '[{"pluginId":5,"name":"miplugin","isDefault":true},{"pluginId":7,"name":"miplugin","isDefault":false}]' 200; }
 
 degradado() { feliz; lista_con_anterior; resp /api/admin/plugins/7/health '{"errorMessage":"el worker de cola no arranco"}' 200; }
@@ -177,11 +174,11 @@ grep -qE "no encontr|NO pude recuperar|NO pude leer la lista" "$TMP/salida.txt" 
   && ok "…y lo DICE, en vez de callarse o fingir que recupero" \
   || no "🔴 no dijo que no habia anterior que recuperar"
 
-# ── 🔴 LA VISTA PREVIA ILEGIBLE NO ES "0 Y 0" (2026-09-03) ──────────────────────────────────────
+# ── 🔴 LA VISTA PREVIA ILEGIBLE NO ES "0 Y 0" ──────────────────────────────────────
 # `jq -r \'.campo // 0\'` sobre un cuerpo vacio o que no es JSON devuelve 0 sin quejarse, asi que EL
-# freno del despliegue imprimia "pendientes 0 - retrocesos 0" sin haber leido nada: no ejecutaba
-# migraciones y no revisaba retrocesos. La negativa aparecia mas tarde, al activar o al marcar, y
-# para entonces el host ya habia descargado la version anterior.
+# freno del despliegue imprimiria "pendientes 0 - retrocesos 0" sin haber leido nada: no ejecutaria
+# migraciones y no revisaria retrocesos. La negativa aparecería mas tarde, al activar o al marcar, y
+# para entonces el host ya habria descargado la version anterior.
 previa_html() { feliz; resp /api/admin/plugins/7/set-default/preview '<html>502 Bad Gateway</html>' 200; }
 rc=$(corre previa_html)
 [ "$rc" = "1" ] && ok "🔴 vista previa ilegible: frena ANTES de tocar nada (no la lee como 0 y 0)" || no "🔴 la vista previa ilegible salio $rc — aprobo sin haber leido"
@@ -189,11 +186,11 @@ previa_vacia() { feliz; resp /api/admin/plugins/7/set-default/preview '' 200; }
 rc=$(corre previa_vacia)
 [ "$rc" = "1" ] && ok "…y con cuerpo vacio, igual" || no "🔴 la vista previa vacia salio $rc"
 
-# ── 🔴 LA RECUPERACION NO PUEDE MENTIR (2026-09-03) ─────────────────────────────────────────────
-# `api()` no usa --fail, asi que curl sale 0 con un 500 o con el HTML del proxy. El `if` juzgaba por
-# el codigo de salida de curl y afirmaba "version anterior vuelta a cargar" sin haberlo medido: la
-# corrida quedaba en rojo pero el registro decia lo contrario de lo que paso, y el operador creia
-# que el host seguia sirviendo la version vieja cuando no habia NINGUNA cargada.
+# ── 🔴 LA RECUPERACION NO PUEDE MENTIR ─────────────────────────────────────────────
+# `api()` no usa --fail, asi que curl sale 0 con un 500 o con el HTML del proxy. Un `if` que juzgue por
+# el codigo de salida de curl afirmaria "version anterior vuelta a cargar" sin haberlo medido: la
+# corrida quedaria en rojo pero el registro diria lo contrario de lo que paso, y el operador creeria
+# que el host sigue sirviendo la version vieja cuando no hay NINGUNA cargada.
 recup_falla() { feliz
   resp /api/admin/plugins '[{"pluginId":5,"name":"miplugin","isDefault":true},{"pluginId":7,"name":"miplugin","isDefault":false}]' 200
   resp /api/admin/plugins/7/activate '{"error":"no cargo"}' 500
@@ -206,9 +203,9 @@ grep -q "vuelta a cargar" "$TMP/salida.txt" \
 grep -q "a mano" "$TMP/salida.txt" \
   && ok "…y le dice al operador que hay que activarla a mano" || no "no dijo que hay que intervenir"
 
-# ── 🔴 LA RECUPERACION NO TOCA UN PLUGIN AJENO (2026-09-03) ─────────────────────────────────────
-# La recuperacion buscaba "el primer plugin marcado como actual que no sea yo". En un host con varios
-# plugins eso reactiva uno AJENO, imprime "version anterior vuelta a cargar" y deja el nuestro
+# ── 🔴 LA RECUPERACION NO TOCA UN PLUGIN AJENO ─────────────────────────────────────
+# Una recuperacion que busque "el primer plugin marcado como actual que no sea yo" reactiva, en un host con varios
+# plugins, uno AJENO, imprime "version anterior vuelta a cargar" y deja el nuestro
 # descargado: se toca algo que nadie pidio tocar y el registro dice lo contrario de lo que paso.
 ajeno() { feliz
   resp /api/admin/plugins '[{"pluginId":9,"name":"otroplugin","isDefault":true},{"pluginId":7,"name":"miplugin","isDefault":false}]' 200
@@ -219,7 +216,7 @@ grep -q "vuelta a cargar" "$TMP/salida.txt" \
   && no "🔴 REACTIVO UN PLUGIN AJENO y dijo que recupero la anterior — toco algo que nadie pidio tocar" \
   || ok "🔴 …y NO reactiva el plugin ajeno (dice que no encontro otra version DE ESTE plugin)"
 
-# ── 🔴 LA APROBACIÓN DEL RETROCESO NO SE MANDA SI NO CORRESPONDE (2026-09-03) ────────────────────
+# ── 🔴 LA APROBACIÓN DEL RETROCESO NO SE MANDA SI NO CORRESPONDE ────────────────────
 # El host se niega a marcar como actual una version que retrocede migraciones salvo que se le mande
 # `rollbackApproved`. Esa aprobacion la genera la lista de exclusiones deliberadas — no es una
 # bandera de conveniencia. Lo que estos casos cuidan es lo contrario de lo obvio: que NO viaje cuando
@@ -241,7 +238,7 @@ grep -q "del retroceso: cada" "$TMP/salida.txt" \
   && ok "🔴 …y recien ahi manda la aprobacion, atada a la exclusion declarada" \
   || no "🔴 no mando la aprobacion: el host se va a negar a marcarla como actual"
 
-# ── 🔴 OPCIONES DE CONFIGURACIÓN PENDIENTES: SE DECLARAN, LO NO DECLARADO FRENA (2026-09-03) ────
+# ── 🔴 OPCIONES DE CONFIGURACIÓN PENDIENTES: SE DECLARAN, LO NO DECLARADO FRENA ────
 # El host avisa qué opciones no tienen valor, y es lo único que dice sobre configuración. Frenar es
 # lo correcto por default. Pero hay opciones que el equipo deja vacías A SABIENDAS (una credencial
 # de un servicio externo que todavía no existe, con el código devolviendo un error claro en el único
@@ -283,9 +280,9 @@ echo 'esto no es json' > "$DECL"
 rc=$(corre_con "$DECL")
 [ "$rc" = "1" ] && ok "un archivo de declaraciones ilegible frena (ilegible no es un permiso)" || no "🔴 el archivo ilegible amparó ($rc)"
 
-# ── 🔴 EL ESTADO DE SALUD SE LEÍA SIN MIRAR EL CÓDIGO HTTP (2026-09-03) ─────────────────────────
-# El guion leía `errorMessage` del cuerpo de /health sin mirar el código: con un 500, un HTML del
-# proxy o un cuerpo vacío, jq no encontraba el campo, el motivo quedaba vacío y se imprimía
+# ── 🔴 EL ESTADO DE SALUD NO SE LEE SIN MIRAR EL CÓDIGO HTTP ─────────────────────────
+# Leer `errorMessage` del cuerpo de /health sin mirar el código falla: con un 500, un HTML del
+# proxy o un cuerpo vacío, jq no encuentra el campo, el motivo queda vacío y se imprime
 # "activado y sin motivo de degradación". "Verde que significa no miré nada", adentro del guion que
 # existe para evitar exactamente eso. El 404 es el único que no frena: esa versión del host no tiene
 # el chequeo, y eso NO es "sano" — se dice.
@@ -302,12 +299,11 @@ rc=$(corre caso15)
 [ "$rc" = "0" ] && ok "si el host no expone /health, el despliegue sigue (la capacidad no está)" || no "🔴 un 404 de /health frenó el despliegue en hosts que no lo tienen ($rc)"
 grep -q "no expone /health" "$TMP/salida.txt" && ok "…pero queda dicho que NO se pudo verificar el modo degradado" || no "🔴 el 404 pasó EN SILENCIO — nadie se entera de que no se verificó"
 
-# ── 🔴 la lista de plugins ENVUELTA (2026-09-03) ──────────────────────────────────────────────
-# El host la devuelve a veces como arreglo y a veces envuelta en un objeto. La primera versión de
-# este guion sólo entendía el arreglo: ante una respuesta envuelta la recuperación de la versión
-# anterior fallaba EN SILENCIO, y el aviso de "no pude recuperar" vivía dentro del bloque que no se
-# ejecutaba — o sea que el plugin quedaba descargado sin que nadie lo dijera. El humo ya manejaba
-# las dos formas: los dos guiones discrepaban sobre el mismo host.
+# ── 🔴 la lista de plugins ENVUELTA ──────────────────────────────────────────────
+# El host la devuelve a veces como arreglo y a veces envuelta en un objeto. Un guion que sólo entendiera el arreglo
+# fallaría EN SILENCIO ante una respuesta envuelta en la recuperación de la versión anterior, y el aviso de "no pude
+# recuperar" viviría dentro del bloque que no se ejecuta — o sea que el plugin quedaría descargado sin que nadie lo
+# dijera. El humo ya maneja las dos formas: los dos guiones tienen que coincidir sobre el mismo host.
 caso11() { feliz; resp /api/admin/plugins/7/activate '{"error":"no cargó"}' 500
            resp /api/admin/plugins '{"plugins":[{"pluginId":6,"name":"miplugin","isDefault":true},{"pluginId":7,"name":"miplugin","isDefault":false}]}' 200; }
 rc=$(corre caso11)
@@ -325,7 +321,7 @@ bash "$GUION" --url http://x --user u --password c --zip /no/existe --endpoint /
 bash "$GUION" --url http://x --user u --password c --zip "$ZIP" >/dev/null 2>&1
 [ $? = 2 ] && ok "sin la ruta de subida sale 2 (Totora era el único que lo exigía)" || no "sin endpoint no salió 2"
 
-# ── 12. story 2.10 · el INTENTO de desplegar queda anotado en la corrida ───────────────────────
+# ── 12. el INTENTO de desplegar queda anotado en la corrida ───────────────────────
 # Dentro de una corrida de Azure, después de entrar al host y antes de subir nada: una línea
 # `[registro-despliegue]` con estado «intentado», la etiqueta `despliegue-intentado`, y el entorno
 # declarado en el archivo del job para que el humo del mismo job lo use. Un fallo ANTES del ingreso
@@ -369,7 +365,7 @@ mkdir -p "$TMP/job-d"; rc=$(corre_reg "$ZIP" http://host u c prod AGENT_TEMPDIRE
 rm -rf "$TMP/respuestas"; mkdir -p "$TMP/respuestas"; printf '{}\n200\n' > "$TMP/respuestas/default"; feliz
 mkdir -p "$TMP/job-e"; rc=$(corre_reg "$ZIP" http://host u c production AGENT_TEMPDIRECTORY="$TMP/job-e" RESOURCES_PIPELINE_CI_RUNID=77 ENVIRONMENT_NAME=production)
 linea_reg | jq -e '.build_ci=="77" and .build=="100" and .entorno=="produccion"' >/dev/null && ok "2.10 T12 en producción build_ci es el CI promovido" || no "2.10 T12 build_ci: $(linea_reg)"
-# story 8.9 (B3a): la opción dice `production`; el registro que lee el humo sigue guardando su dato de siempre
+# La opción dice `production`; el registro que lee el humo sigue guardando su dato de siempre
 REG_PROD=$(linea_reg | jq -r '.entorno' 2>/dev/null)
 linea_reg | jq -e '.entorno_fuente=="declarado"' >/dev/null && [ "$(cat "$TMP/job-e/tycon-despliegue/entorno" 2>/dev/null)" = "$REG_PROD" ] && [ -n "$REG_PROD" ] && [ "$REG_PROD" != production ] \
   && ! grep -q 'logissue type=warning.*registro-despliegue' "$TMP/salida.txt" \

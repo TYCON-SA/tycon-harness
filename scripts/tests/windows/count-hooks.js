@@ -1,18 +1,16 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * count-hooks.js — los hooks que quedaron en `settings.json`, contra los que deberían estar (story 8.17, W0 · AC 7).
+ * count-hooks.js — los hooks que quedan en `settings.json`, contra los que deberían estar.
  *
- * POR QUÉ EXISTE. El análisis previo contó, leyendo el código, que el instalador de Windows registra 29 hooks donde
- * el de Mac y Linux registra 45: le faltan 18 y tiene 2 que correrían dos veces. Eso es una lectura, no una medición.
- * Este paso lo mide sobre el `settings.json` que dejó la instalación de verdad, y lo dice por nombre.
+ * POR QUÉ EXISTE. Contar los hooks que registra el instalador leyendo su código es una lectura, no una medición.
+ * Este paso mide el `settings.json` que dejó la instalación de verdad, y lo dice por nombre.
  *
- * LA LISTA ESPERADA no está escrita acá: en W0 sale de LEER `scripts/install-tycon-hooks.sh` del clon que se mide —sus
+ * LA LISTA ESPERADA no está escrita acá: sale de `scripts/setup/hooks-list.json` del clon (`expectedFromList`),
+ * decidida con la misma función que usa el aplicador y para la plataforma donde corre la medición: en Windows, lo que
+ * la lista excluye no se espera. Un clon que no trae la lista se mide leyendo `scripts/install-tycon-hooks.sh` —sus
  * arreglos `HOOKS_CANONICAL` y `OPTIN_HOOKS`, la función que dice qué hook es de qué integración, y la condición de
  * cada opt-in—, evaluada para la configuración de esa corrida (qué integraciones están prendidas, qué variables hay).
- * Desde W3 sale de `scripts/setup/hooks-list.json` del clon (`expectedFromList`), decidida con la misma función que usa
- * el aplicador y para la plataforma donde corre la medición: en Windows, lo que la lista excluye no se espera. La lectura
- * del instalador queda sólo para medir un clon de antes de la W3.
  *
  * QUÉ DICE, por nombre: qué hook esperado FALTA; cuál está MÁS DE UNA VEZ; cuál está en OTRO evento o con OTRO matcher;
  * cuál quedó registrado estando reemplazado (corre dos veces: suelto y dentro de su despachador); cuál es del arnés y
@@ -56,8 +54,8 @@ function bashArray(text, name) {
 }
 
 /**
- * Cada `OPTIN_HOOKS+=( … )` con la condición del `if` que lo envuelve: `[{ spec, condition, optin }]`. Desde los perfiles
- * de la 8.16 (tanda C) el instalador decide un opt-in en una línea aparte, `_OP=0; _optin_por_perfil VAR [freno] || _OP=$?`,
+ * Cada `OPTIN_HOOKS+=( … )` con la condición del `if` que lo envuelve: `[{ spec, condition, optin }]`. Con perfiles,
+ * el instalador decide un opt-in en una línea aparte, `_OP=0; _optin_por_perfil VAR [freno] || _OP=$?`,
  * y el `if` pregunta por `"$_OP" == 0`: `optin` es la última de esas líneas antes del bloque (`{ name, brake }`), o null.
  */
 function optinBlocks(text) {
@@ -208,10 +206,10 @@ function expectedHooks(installerText, { integrations = {}, env = {}, home = '', 
 }
 
 /**
- * La lista esperada desde la lista única (story 8.17, tanda W3): `scripts/setup/hooks-list.json` del clon, decidida con
+ * La lista esperada desde la lista única: `scripts/setup/hooks-list.json` del clon, decidida con
  * la misma función que usa el aplicador (`decide` de scripts/setup/apply-hooks.js) para esta plataforma y esta
- * configuración. Misma forma que `expectedHooks`. `null` si el clon no trae la lista (uno de antes de la W3: se lee el
- * instalador, como en W0).
+ * configuración. Misma forma que `expectedHooks`. `null` si el clon no trae la lista (uno sin ella: se lee el
+ * instalador).
  */
 /**
  * La integración de horas elegida: la que trae `integrations.timeTracking`, o la que contesta el lector del clon
@@ -264,10 +262,10 @@ function expectedFromList(clone, { integrations = {}, env = {}, home = '', exist
 
 /**
  * El intérprete y el archivo de un `command` con la forma que escriben los instaladores: `node "<ruta>"` / `bash "<ruta>"`,
- * y desde la W4 un `.sh` en Windows con la ruta del bash de Git entre comillas (`"C:/…/bash.exe" "<ruta>"`): el intérprete
- * es el nombre de ese archivo, sin `.exe` (pase adversarial de la W3W4, clases 1 y 12).
+ * y un `.sh` en Windows con la ruta del bash de Git entre comillas (`"C:/…/bash.exe" "<ruta>"`): el intérprete
+ * es el nombre de ese archivo, sin `.exe`.
  */
-// Desde la story 8.39 el intérprete de un `.js` puede ser la ruta del Node propio del arnés SIN comillas
+// El intérprete de un `.js` puede ser la ruta del Node propio del arnés SIN comillas
 // (`C:/…/node/current/node.exe "<ruta>"`): el intérprete es también el nombre de ese archivo, sin `.exe`.
 function commandFile(command) {
   const m = /^\s*(?:"([^"]+)"|([^\s"]+))\s+"([^"]+)"\s*$/.exec(String(command || ''));
@@ -330,8 +328,8 @@ function compare(expected, settings, { superseded = [], home = '', clone = '', e
   }
   // lo que no está en su lugar: ¿está el mismo archivo en otro evento o con otro matcher, sin dueño?
   // En dos pasadas: primero, para todos, el mismo evento con otro matcher; después, cualquier otro evento. En una sola
-  // pasada, con un archivo esperado en varios eventos, el primero de la lista se llevaba el registro del otro evento y
-  // el que falta y el que está corrido salían con los nombres cruzados.
+  // pasada, con un archivo esperado en varios eventos, el primero de la lista se llevaría el registro del otro evento y
+  // el que falta y el que está corrido saldrían con los nombres cruzados.
   const found = new Map();
   for (const sameEvent of [true, false]) {
     for (const p of pending) {
@@ -400,7 +398,7 @@ function readIntegrations(clone, env, rec) {
   try { return JSON.parse(r.stdout); } catch (e) { rec.note(`el lector de configuración no devolvió JSON: ${e.message}`); return null; }
 }
 
-/** El perfil de instalación como lo lee el instalador (8.16 C): `get install.profile` del lector del clon, con el
+/** El perfil de instalación como lo lee el instalador: `get install.profile` del lector del clon, con el
  *  ambiente de la instalación medida. 0 con minimal|full → ok; 3 (sin valor) → ok, full; otra salida → rota. */
 function readProfile(clone, env) {
   const reader = path.join(clone, 'scripts', 'lib', 'tycon-config.js');
@@ -442,7 +440,7 @@ function main(argv) {
   rec.fact('integrations', integrations);
   const profile = readProfile(variant.clone, env);
   rec.fact('profile', profile);
-  // desde la W3, la lista única del clon, para la plataforma donde corre la medición; un clon de antes, el instalador
+  // la lista única del clon, para la plataforma donde corre la medición; un clon sin ella, el instalador
   let exp = expectedFromList(variant.clone, { integrations, env, home: variant.home, profile });
   let source = 'scripts/setup/hooks-list.json';
   if (!exp) {
