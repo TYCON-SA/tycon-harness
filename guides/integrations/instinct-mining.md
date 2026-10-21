@@ -14,12 +14,12 @@ Inspirado en [ECC continuous-learning-v2](https://github.com/affaan-m/ECC/blob/m
 ┌────────────────────────────────────────────────────────────────┐
 │ Durante CADA sesión Claude Code (transparente, sin interv.):  │
 │                                                                │
-│   Tool call → PostToolUse hook → instinct-observe.sh           │
+│   Tool call → PostToolUse hook → instinct-observe.js (fondo)   │
 │                                          │                     │
 │                                          ▼                     │
 │              ~/.claude/tycon-observations/<YYYY-MM>.jsonl      │
 │              (LOCAL por máquina, NO en git)                    │
-│              { ts, session_id, tool, project, summary, status }│
+│   { ts, session_id, tool, project, summary, status, repo, origin }
 └────────────────────────────────────────────────────────────────┘
                        │
                        ▼  (SessionStart hook, throttle 12h)
@@ -87,7 +87,26 @@ Resueltas durante la implementación 2026-05-23 (cierre de la especificación or
 
 ## Setup
 
-### En la máquina principal (y en cualquier máquina secundaria 50/50)
+### La grabadora: la prende el perfil del equipo
+
+La grabadora es `scripts/hooks/instinct-observe.js` y la registra el instalador del arnés, en Mac y en Windows (no hace
+falta Python). Graba sólo con la integración `instincts` prendida: para el equipo, la prende el perfil
+(`integrations.instincts: true`); `TYCON_INSTINCTS=0` o `~/.claude/tycon.json` la apagan en una máquina (o la prenden
+para probar). `TYCON_INSTINCT_MINING` ya no decide nada. Corre de fondo: no demora la herramienta.
+
+Además del proyecto, cada línea lleva `repo` (la carpeta del repo relativa a la raíz de repos, o al home si está
+afuera) y `origin` (el host y la organización del remoto `origin`, sin el nombre del repo ni credenciales: las cuatro
+formas de Azure dan `dev.azure.com/<org>`, GitHub da `github.com/<dueño>`). Fuera de un repo, los dos van `null`.
+
+Con la integración prendida, la primera sesión de cada máquina avisa una vez qué se graba, adónde sube y cómo bajarse,
+y deja un sello (`instincts-notice.json` en la carpeta de estado del arnés). Si una máquina todavía tiene
+`TYCON_INSTINCT_MINING=1` o `TYCON_INSTINCT_OBSERVER=1` con la integración apagada, el aviso dice una vez que esas
+variables ya no prenden nada.
+
+Si la grabadora falla (evento ilegible, carpeta sin permiso, disco lleno), sale 0 sin escribir en pantalla y anota el
+motivo en `~/.claude/tycon-observations/instinct-observe.errors.log` (tope 100 KB).
+
+### El observador, en la máquina principal (y en cualquier máquina secundaria 50/50)
 
 ```bash
 # 1. Clonar el arnés (si no estaba)
@@ -95,7 +114,6 @@ cd ~/SourceCode
 git clone <repo-url>
 
 # 2. Activar en ~/.zshrc:
-export TYCON_INSTINCT_MINING=1     # hook PostToolUse (graba JSONL local)
 export TYCON_INSTINCT_OBSERVER=1   # SessionStart hook (corre observer cada 12h)
 
 # Opcional Telegram:
@@ -110,13 +128,10 @@ export TYCON_INSTINCT_TELEGRAM_CHAT_ID=<tu_chat_id>
 # 4. source ~/.zshrc + reabrir Claude Code
 ```
 
-### En máquinas donde solo querés loguear (no correr observer)
+### En máquinas donde solo querés grabar (no correr observer)
 
-```bash
-export TYCON_INSTINCT_MINING=1
-# NO seteás TYCON_INSTINCT_OBSERVER
-~/.claude/tycon-harness/scripts/setup/install-instinct-mining.sh
-```
+No hace falta nada más que el perfil del equipo con la integración prendida: sin `TYCON_INSTINCT_OBSERVER`, la
+máquina graba y no corre el observador.
 
 ### Verificar instalación
 
@@ -144,12 +159,17 @@ Aunque las observations son locales, el hook sanitiza igual (defense in depth, p
 | `sk-XXXXXXXXXX` (16+ chars) | `[REDACTED-SK]` |
 | `ghp_XXXXXXXXXX` (16+ chars) | `[REDACTED-GHP]` |
 | Body >500 chars | truncate `...` |
-| Tool input contiene `specs/clients/` | observación se descarta entera |
+| `sig=XXXX` (la firma de un enlace de Azure) | tapada |
+| Credenciales en una URL (`https://usuario:clave@`), `-u usuario:clave`, `Authorization: …` | tapadas |
+| Tool input contiene `/clients/` | observación se descarta entera |
+| Herramienta fuera de la lista (las MCP incluidas) | `summary` es `null`: viaja sólo su nombre |
+
+En Windows, el comando de la herramienta `PowerShell` se graba y se sanea igual que el de `Bash`.
 
 Para validar la sanitización antes de habilitar:
 
 ```bash
-export TYCON_INSTINCT_MINING=1
+export TYCON_INSTINCTS=1
 # Trabajar normal por 30 minutos
 cat ~/.claude/tycon-observations/$(date -u +%Y-%m).jsonl | head -50
 # Verificar que no haya secrets ni paths absolutos
@@ -179,7 +199,8 @@ con Ollama es local (0 red, ~6 GB de RAM mientras infiere). El local NO se justi
 
 | Var | Default | Descripción |
 |---|---|---|
-| `TYCON_INSTINCT_MINING` | unset | `=1` activa el hook PostToolUse (graba JSONL) |
+| `TYCON_INSTINCTS` | lo que diga el perfil | `=0` apaga la grabadora en esta máquina; `=1` la prende para probar. Para el equipo la prende el perfil (`integrations.instincts`) |
+| `TYCON_INSTINCT_MINING` | — | Ya no decide: con la integración apagada no graba, y el aviso de arranque lo dice una vez |
 | `TYCON_INSTINCT_OBSERVER` | unset | `=1` activa el SessionStart hook (corre observer) |
 | `TYCON_INSTINCT_THROTTLE_SECONDS` | `43200` (12h) | Tiempo mínimo entre corridas del observer |
 | `TYCON_INSTINCT_OBS_DIR` | `~/.claude/tycon-observations` | Path local del JSONL |
@@ -195,10 +216,11 @@ con Ollama es local (0 red, ~6 GB de RAM mientras infiere). El local NO se justi
 ## Bajo Codex (2026-08-24)
 
 El observador **corre en Codex igual que en Claude** desde que es agnóstico de ejecutor. Requisitos,
-ya cubiertos: los hooks (`instinct-observe.sh` grabador, `instinct-trigger.sh` observer) están
+ya cubiertos: los hooks (`node instinct-observe.js` grabador, `instinct-trigger.sh` observer) están
 registrados en `adapters/codex/hooks.json`, y el observer usa `codex exec -m gpt-5.4-mini` cuando no
-hay `claude`. Para PRENDERLO bajo Codex valen las MISMAS env vars (`TYCON_INSTINCT_MINING=1` +
-`TYCON_INSTINCT_OBSERVER=1`):
+hay `claude`. La grabadora la prende el mismo perfil que en Claude; el observador, la misma variable
+(`TYCON_INSTINCT_OBSERVER=1`). Codex aprueba los ganchos por su hash: el cambio del comando de la grabadora
+pide la aprobación otra vez, una vez por máquina.
 - **Codex desde terminal**: hereda `~/.zshrc`, andan solas.
 - **Codex en el panel de VSCode (macOS)**: el panel gráfico no pasa por el rc, así que
   `harness-env-publish.sh` (LaunchAgent, lo instala `install-tycon-hooks.sh`) publica esas flags con
