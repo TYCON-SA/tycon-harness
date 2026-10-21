@@ -281,6 +281,8 @@ function leerEstatico() {
   return {
     '/static/site.css': { tipo: 'text/css; charset=utf-8', cuerpo: `${CSS_BASE}\n${CSS_CHIPS}\n${fs.readFileSync(path.join(dir, 'site.css'), 'utf8')}` },
     '/static/site.js': { tipo: 'text/javascript; charset=utf-8', cuerpo: fs.readFileSync(path.join(dir, 'site.js'), 'utf8') },
+    // el editor de texto largo, una sola pieza para los cuadros de texto largo de las pestañas
+    '/static/long-text-editor.js': { tipo: 'text/javascript; charset=utf-8', cuerpo: fs.readFileSync(path.join(dir, 'long-text-editor.js'), 'utf8') },
     // la letra del sitio viaja con él: la política no deja cargar nada de afuera
     '/static/fonts/lato-400.woff2': { tipo: 'font/woff2', cuerpo: fs.readFileSync(path.join(dir, 'fonts', 'lato-400.woff2')) },
     '/static/fonts/lato-700.woff2': { tipo: 'font/woff2', cuerpo: fs.readFileSync(path.join(dir, 'fonts', 'lato-700.woff2')) },

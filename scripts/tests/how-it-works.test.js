@@ -352,14 +352,15 @@ test('T1 Perfil_RevisorEnAgentsDeLaRaiz_Activo @story-2.64 @ac-1 — el paquete 
 test('T2 Editor_AbreConLasInstruccionesDeLaRaiz @story-2.64 @ac-2 — el borrador trae el .md de agents/ del perfil', () => {
   const r = TAB().draftOf(perfilRaiz(), 'acme-clientes', 'acme-hermanos-reviewer');
   assert.ok(!r.error, r.error);
-  assert.strictEqual(r.draft.instructions, AGENTE('acme-hermanos-reviewer'));
+  // la cabecera viene en campos y el cuerpo aparte: los dos salen del .md de agents/
+  assert.strictEqual(TAB().armarAgente(r.draft.cabecera, r.draft.cuerpo), AGENTE('acme-hermanos-reviewer'));
   assert.strictEqual(r.md, 'agents/acme-hermanos-reviewer.md');
 });
 
 test('T3 Proponer_EscribeDondeEsta @story-2.64 @ac-3 — revisar y proponer sin crear una segunda copia', () => {
   const perfil = perfilRaiz();
   const { draft } = TAB().draftOf(perfil, 'acme-clientes', 'acme-hermanos-reviewer');
-  const r = TAB().reviewDraft({ profileDir: perfil, draft: { ...draft, paths: ['**/*.cs', '**/*.csproj'], instructions: draft.instructions.replace('registro de pagos', 'registro de pagos y cobros') } });
+  const r = TAB().reviewDraft({ profileDir: perfil, draft: { ...draft, paths: ['**/*.cs', '**/*.csproj'], cuerpo: draft.cuerpo.replace('registro de pagos', 'registro de pagos y cobros') } });
   assert.deepStrictEqual(r.problems, []);
   assert.ok(r.ok);
   assert.deepStrictEqual(r.files.map((f) => f.archivo), ['packs/acme-clientes/pack.json', 'agents/acme-hermanos-reviewer.md']);
@@ -563,7 +564,8 @@ test('T1 ComoTrabaja_SoloMantenedores @story-2.61 @ac-1 — el mantenedor la ve;
     // el editor pide el revisor de hoy; uno que no está da 404 con su motivo
     const hoy = await h.pedir('/api/como-trabaja/revisor?pack=acme-pagos&agent=acme-pagos-reviewer', { cookie: lead });
     assert.strictEqual(hoy.status, 200);
-    assert.strictEqual(hoy.json.draft.instructions, AGENTE('acme-pagos-reviewer'));
+    assert.strictEqual(TAB().armarAgente(hoy.json.draft.cabecera, hoy.json.draft.cuerpo), AGENTE('acme-pagos-reviewer'));
+    assert.deepStrictEqual(hoy.json.modelos.map((m) => m.valor), ['', 'economy', 'balanced', 'strong', 'max'], 'con los modelos que puede elegir');
     const noEsta = await h.pedir('/api/como-trabaja/revisor?pack=acme-pagos&agent=otro-reviewer', { cookie: lead });
     assert.strictEqual(noEsta.status, 404);
     assert.match(noEsta.json.message, /ya no está/);
@@ -973,4 +975,208 @@ test('T34 Sonda_RepoSinEnlacesYCarpetaQueNoEsElArbol @story-2.61.3 @ac-8 — rep
     assert.match(json.error || '', /no es el árbol del arnés/, `${raiz}: ${r.stdout}`);
     assert.ok(!('steps' in json), 'no armó nada');
   }
+});
+
+// ════════════════════════ el revisor entero: la cabecera en campos y sus instrucciones ════════════════════════
+
+const MODELS = () => require(path.join(SCRIPTS, 'lib', 'models.js'));
+// un revisor con la cabecera completa: una herramienta que el sitio no conoce y una clave que el editor no muestra
+const AGENTE_COMPLETO = (nombre, { model = 'sonnet' } = {}) => `---\nname: ${nombre}\ndescription: Revisa los cambios en el cobro de Acme.\ntools: Read, Grep, Glob, mcp__codegraph__codegraph_search\n${model ? `model: ${model}\n` : ''}color: blue\n---\n\n## Qué mirás\n- Que todo cobro nuevo pase por el registro de pagos.\n`;
+const perfilCompleto = ({ model, repos = null } = {}) => carpeta(perfilCon({ repos, extra: { 'packs/acme-pagos/agents/acme-pagos-reviewer.md': AGENTE_COMPLETO('acme-pagos-reviewer', { model }) } }));
+// el borrador que manda el navegador: el que abrió, con los cambios encima
+const borradorDe = (perfil, cambios = {}, cabecera = {}) => {
+  const d = TAB().draftOf(perfil, 'acme-pagos', 'acme-pagos-reviewer').draft;
+  return { ...d, ...cambios, cabecera: { ...d.cabecera, ...cabecera } };
+};
+const mdPropuesto = (r) => (r.files.find((f) => f.archivo.endsWith('.md')) || {}).contenido;
+
+test('T2 Editor_CabeceraEnCampos @story-2.63 @ac-2 — el nombre, el modelo, las herramientas y la descripción aparte; las instrucciones sin la cabecera', () => {
+  // 🔴 rojo: el editor muestra el .md entero en un solo cuadro (la cabecera mezclada con las instrucciones).
+  const d = TAB().draftOf(perfilCompleto(), 'acme-pagos', 'acme-pagos-reviewer').draft;
+  assert.ok(d.cabecera, 'la cabecera viene aparte');
+  assert.strictEqual(d.cabecera.nombre, 'acme-pagos-reviewer');
+  assert.strictEqual(d.cabecera.descripcion, 'Revisa los cambios en el cobro de Acme.');
+  assert.strictEqual(d.cabecera.modelo, 'balanced', 'el modelo del archivo, dicho como su nivel');
+  assert.strictEqual(d.cabecera.modeloTalCual, false);
+  assert.deepStrictEqual(d.cabecera.herramientas, ['Read', 'Grep', 'Glob']);
+  assert.deepStrictEqual(d.cabecera.otrasHerramientas, ['mcp__codegraph__codegraph_search']);
+  assert.strictEqual(d.cuerpo, '## Qué mirás\n- Que todo cobro nuevo pase por el registro de pagos.\n', 'el cuerpo, sin la cabecera ni el renglón en blanco');
+  assert.ok(!/^---/m.test(d.cuerpo) && !/name:/.test(d.cuerpo));
+  // sin model en la cabecera: el que use la organización
+  assert.strictEqual(TAB().draftOf(perfilCompleto({ model: '' }), 'acme-pagos', 'acme-pagos-reviewer').draft.cabecera.modelo, '');
+});
+
+test('T3 Editor_ModeloConTecho @story-2.63 @ac-3 — los niveles neutros; los que pasan el techo, apagados con su motivo; uno que no se traduce, tal cual', () => {
+  // 🔴 rojo: el selector ofrece nombres de un proveedor, deja elegir lo que pasa el techo, o cambia en silencio un
+  // modelo que no reconoce.
+  const libre = TAB().modelosDe(perfilCompleto());
+  assert.deepStrictEqual(libre.map((m) => m.valor), ['', ...MODELS().LEVELS], 'el de la organización y los cuatro niveles');
+  assert.ok(libre.every((m) => !m.apagado), 'sin techo, todos se pueden elegir');
+  const GH = (repo) => ({ platform: 'github', org: 'acme', repo });
+  const conTecho = perfilCompleto({ repos: { version: 1, public: GH('arnes'), profile: GH('perfil'), operations: GH('operaciones'), models: { mandatory_ceiling: true, ceiling: 'balanced' } } });
+  const m = TAB().modelosDe(conTecho);
+  assert.deepStrictEqual(m.filter((x) => x.apagado).map((x) => x.valor), ['strong', 'max']);
+  for (const x of m.filter((y) => y.apagado)) assert.match(x.motivo, /techo/, x.valor);
+  const pasa = TAB().reviewDraft({ profileDir: conTecho, draft: borradorDe(conTecho, {}, { modelo: 'strong' }) });
+  assert.strictEqual(pasa.ok, false);
+  assert.match(pasa.problems.join(' · '), /techo/);
+  // con techo, el .md crudo tampoco lo pasa
+  assert.match(TAB().reviewDraft({ profileDir: conTecho, draft: { ...borradorDe(conTecho), cabecera: undefined, instructions: AGENTE_COMPLETO('acme-pagos-reviewer', { model: 'opus' }) } }).problems.join(' · '), /techo/);
+  // una configuración de la organización que no se puede leer no es «sin techo»: se dice, y un modelo elegido no pasa
+  const ilegible = perfilCompleto({ repos: { version: 1, models: { mandatory_ceiling: true, ceiling: 'balanced' } } });
+  assert.match(TAB().avisoDeModelos(ilegible) || '', /no se pudo saber el techo/);
+  assert.strictEqual(TAB().avisoDeModelos(perfilCompleto()), null, 'sin configuración, sin aviso');
+  const sinSaber = TAB().reviewDraft({ profileDir: ilegible, draft: borradorDe(ilegible, {}, { modelo: 'strong' }) });
+  assert.match(sinSaber.problems.join(' · '), /no se pudo saber el techo/);
+  assert.deepStrictEqual(TAB().reviewDraft({ profileDir: ilegible, draft: borradorDe(ilegible, {}, { modelo: '' }) }).problems, [], 'con el de la organización, sí');
+  // el nivel se guarda como el nombre que entiende quien corre el revisor (modelOf de lib/models.js)
+  const elegido = TAB().reviewDraft({ profileDir: conTecho, draft: borradorDe(conTecho, {}, { modelo: 'economy' }) });
+  assert.deepStrictEqual(elegido.problems, []);
+  assert.match(mdPropuesto(elegido), /^model: haiku$/m);
+  // un modelo que no es un nivel ni un nombre conocido: se muestra tal cual y se conserva al guardar
+  const raro = carpeta(perfilCon({ extra: { 'packs/acme-pagos/agents/acme-pagos-reviewer.md': AGENTE_COMPLETO('acme-pagos-reviewer', { model: 'claude-opus-4-1-20250805' }) } }));
+  const dr = TAB().draftOf(raro, 'acme-pagos', 'acme-pagos-reviewer').draft;
+  assert.deepStrictEqual([dr.cabecera.modelo, dr.cabecera.modeloTalCual], ['claude-opus-4-1-20250805', true]);
+  const r = TAB().reviewDraft({ profileDir: raro, draft: borradorDe(raro, {}, { descripcion: 'Otra descripción.' }) });
+  assert.deepStrictEqual(r.problems, []);
+  assert.match(mdPropuesto(r), /^model: claude-opus-4-1-20250805$/m, 'no se cambia en silencio');
+});
+
+test('T4 Editor_HerramientasRarasSeConservan @story-2.63 @ac-3 @ac-8 — una herramienta que el sitio no conoce se conserva al proponer', () => {
+  // 🔴 rojo: al guardar desde las casillas se pierde la herramienta del servidor MCP.
+  const p = perfilCompleto();
+  const r = TAB().reviewDraft({ profileDir: p, draft: borradorDe(p, {}, { herramientas: ['Read', 'Grep', 'Glob', 'Bash'] }) });
+  assert.deepStrictEqual(r.problems, []);
+  assert.match(mdPropuesto(r), /^tools: Read, Grep, Glob, Bash, mcp__codegraph__codegraph_search$/m);
+  // una casilla que no existe no entra: sólo las ocho conocidas
+  const inventada = TAB().reviewDraft({ profileDir: p, draft: borradorDe(p, {}, { herramientas: ['Read', 'Borrar'] }) });
+  assert.doesNotMatch(mdPropuesto(inventada) || '', /Borrar/);
+  // lo que el editor no deja cambiar no se puede meter desde el navegador: sale del archivo de hoy
+  const forzado = TAB().reviewDraft({ profileDir: p, draft: borradorDe(p, {}, { otrasHerramientas: ['mcp__otro__x'], otras: ['model: fable', 'permissionMode: bypass'], descripcion: 'Dos\nrenglones' }) });
+  assert.deepStrictEqual(forzado.problems, []);
+  assert.match(mdPropuesto(forzado), /^tools: Read, Grep, Glob, mcp__codegraph__codegraph_search$/m);
+  assert.doesNotMatch(mdPropuesto(forzado), /mcp__otro__x|permissionMode|model: fable/);
+  assert.match(mdPropuesto(forzado), /^description: Dos renglones$/m, 'un salto de renglón no parte la cabecera');
+  // ningún separador de renglón (\r, NEL, LS, PS) mete otra clave en la cabecera, y un «:» con tab se entrecomilla
+  for (const sep of ['\r', '\u0085', '\u2028', '\u2029']) {
+    const r = TAB().reviewDraft({ profileDir: p, draft: borradorDe(p, {}, { descripcion: `x${sep}model:\tfable` }) });
+    const md = mdPropuesto(r) || '';
+    assert.ok(!/^model: fable/m.test(md) && md.split(/\r?\n/).filter((l) => /^model:/.test(l)).length === 1, `${JSON.stringify(sep)}: una sola clave model`);
+    assert.match(md, /^description: "x model:\tfable"$/m, `${JSON.stringify(sep)}: en un renglón y entre comillas`);
+  }
+  // el .md entero (el borrador de antes del editor en campos) pasa por los mismos controles: la clave que no se muestra
+  // sale del archivo y el techo se mira
+  const crudo = TAB().reviewDraft({ profileDir: p, draft: { ...borradorDe(p), cabecera: undefined, instructions: '---\nname: acme-pagos-reviewer\ndescription: d\ntools: Read\nmodel: fable\npermissionMode: bypass\n---\n\nc\n' } });
+  assert.doesNotMatch(mdPropuesto(crudo) || '', /permissionMode/, 'una clave nueva en el .md crudo no entra');
+  // sin ninguna herramienta, se dice
+  const simple = carpeta(perfilCon());
+  assert.match(TAB().reviewDraft({ profileDir: simple, draft: borradorDe(simple, {}, { herramientas: [] }) }).problems.join(' · '), /herramienta/);
+});
+
+test('T8 RevisarYProponer_ElOrdenSeDice @story-2.63 @ac-7 — los botones numerados y la línea del motivo en sus tres estados', () => {
+  // 🔴 rojo: «Proponer» aparece apagado sin decir por qué, o al cambiar algo no se vuelve a pedir revisar.
+  for (const idioma of ['es', 'en']) {
+    const t = (k) => TX().t(idioma, k);
+    assert.match(t('comoTrabaja.revisar'), /^1\. /, `${idioma}: «1. Revisar»`);
+    assert.match(t('comoTrabaja.proponer'), /^2\. /, `${idioma}: «2. Proponer»`);
+    for (const k of ['comoTrabaja.motivoAntesDeRevisar', 'comoTrabaja.motivoRevisado', 'comoTrabaja.motivoCambiaste']) {
+      assert.ok(t(k) && t(k) !== k, `${idioma}: ${k}`);
+      if (idioma === 'en') assert.ok(!hasSpanish(t(k)), `${k} en inglés sin castellano`);
+    }
+  }
+  const g = TAB().guion ? TAB().guion('es') : '';
+  assert.ok(g, 'el guion del navegador se puede leer');
+  // el guion lleva todos los textos en TXT: lo que se mira es que el editor los pida
+  for (const k of ['motivoAntesDeRevisar', 'motivoRevisado', 'motivoCambiaste']) assert.match(g, new RegExp(`T\\('comoTrabaja\\.${k}'\\)`), `el editor usa ${k}`);
+});
+
+test('T9 Proponer_ElRevisorEntero @story-2.63 @ac-8 — el pedido trae el pack.json y el .md armado con los campos y el cuerpo', () => {
+  // 🔴 rojo: el .md propuesto pierde la clave que el editor no muestra, o el pack.json cambia más que el revisor.
+  const p = perfilCompleto();
+  const antes = JSON.parse(fs.readFileSync(path.join(p, 'packs', 'acme-pagos', 'pack.json'), 'utf8'));
+  const r = TAB().reviewDraft({ profileDir: p, draft: borradorDe(p, { cuerpo: '## Qué mirás\n- Los reintentos de cobro.\n', prefix: 'COBRO' }, { descripcion: 'Revisa el cobro y sus reintentos.', modelo: 'strong' }) });
+  assert.deepStrictEqual(r.problems, []);
+  assert.deepStrictEqual(r.files.map((f) => f.archivo), ['packs/acme-pagos/pack.json', 'packs/acme-pagos/agents/acme-pagos-reviewer.md']);
+  const pack = JSON.parse(r.files[0].contenido);
+  assert.deepStrictEqual({ ...pack, reviewers: undefined }, { ...antes, reviewers: undefined }, 'el resto del paquete viaja igual');
+  assert.deepStrictEqual(pack.reviewers[0].prefixes, ['COBRO']);
+  assert.strictEqual(mdPropuesto(r), '---\nname: acme-pagos-reviewer\ndescription: Revisa el cobro y sus reintentos.\ntools: Read, Grep, Glob, mcp__codegraph__codegraph_search\nmodel: opus\ncolor: blue\n---\n\n## Qué mirás\n- Los reintentos de cobro.\n');
+});
+
+test('T10 CabeceraArmada_SeLeeComoAntes @story-2.63 @ac-8 — el .md armado lo leen la pestaña y el pipeline; comillas sólo donde hacen falta', () => {
+  // 🔴 rojo: el .md armado lleva comillas de más, o una descripción con «: » rompe la cabecera.
+  const armado = TAB().armarAgente({ nombre: 'acme-pagos-reviewer', descripcion: 'Revisa el cobro: pagos y reintentos', herramientas: ['Read', 'Grep'], otrasHerramientas: [], modelo: 'max', otras: [] }, 'Cuerpo.\n');
+  assert.match(armado, /^description: "Revisa el cobro: pagos y reintentos"$/m, 'con «: » va entre comillas');
+  assert.match(armado, /^name: acme-pagos-reviewer$/m, 'un nombre simple, sin comillas');
+  const cab = TAB().cabeceraDe(armado);
+  assert.deepStrictEqual([cab.claves.name, cab.claves.description, cab.claves.tools, cab.claves.model], ['acme-pagos-reviewer', 'Revisa el cobro: pagos y reintentos', 'Read, Grep', 'fable']);
+  // el cargador del pipeline lee el modelo del .md armado
+  const agentes = carpeta({ 'acme-pagos-reviewer.md': armado });
+  assert.strictEqual(MODELS().frontmatterModel('acme-pagos-reviewer', { agentsDir: agentes }), 'fable');
+  // sin modelo elegido: sin la clave (el que use la organización)
+  assert.doesNotMatch(TAB().armarAgente({ nombre: 'x-reviewer', descripcion: 'd', herramientas: ['Read'], otrasHerramientas: [], modelo: '', otras: [] }, 'c\n'), /^model:/m);
+});
+
+test('T10b CabeceraArmada_IdaYVuelta_SinCambios @story-2.63 @ac-8 (pase adversarial) — abrir y guardar sin tocar nada deja los mismos bytes; YAML lee cada valor como texto', () => {
+  // 🔴 rojo: cada vuelta suma barras invertidas, o un valor como «null», «123» o «termina en:» queda sin comillas y
+  // YAML lo lee como otra cosa (o no lo lee).
+  const descripciones = ['Mira "todo": el codigo', "It's: fine", 'Ruta C:\\x: y', 'termina en:', 'null', '~', 'true', 'no', '123', '-1.5', 'a\ttab: x', 'simple sin nada'];
+  for (const d of descripciones) {
+    const c = { nombre: 'acme-x-reviewer', descripcion: d, herramientas: ['Read'], otrasHerramientas: [], modelo: '', otras: [] };
+    const md = TAB().armarAgente(c, 'Cuerpo.\n');
+    const leida = TAB().camposDe(md).cabecera;
+    assert.strictEqual(leida.descripcion, d, `${JSON.stringify(d)}: se lee igual que se escribió`);
+    assert.strictEqual(TAB().armarAgente({ ...c, descripcion: leida.descripcion }, 'Cuerpo.\n'), md, `${JSON.stringify(d)}: una segunda vuelta no cambia nada`);
+    const renglon = md.split('\n').find((l) => l.startsWith('description: '));
+    if (d !== 'simple sin nada') assert.match(renglon, /^description: (".*"|'.*')$/, `${JSON.stringify(d)}: entre comillas (${renglon})`);
+    else assert.strictEqual(renglon, 'description: simple sin nada', 'lo simple, sin comillas');
+  }
+  // un .md con la descripción entre comillas simples o dobles, como lo escribe otra herramienta
+  assert.strictEqual(TAB().camposDe("---\nname: x\ndescription: 'It''s here'\ntools: Read\n---\nc\n").cabecera.descripcion, "It's here");
+  assert.strictEqual(TAB().camposDe('---\nname: x\ndescription: "Una \\"cita\\" y \\\\barra"\ntools: Read\n---\nc\n').cabecera.descripcion, 'Una "cita" y \\barra');
+});
+
+test('T2b Editor_CabeceraEnVariosRenglones_YConBom @story-2.63 @ac-2 @ac-3 (pase adversarial) — los valores de varios renglones de YAML y un .md con BOM se leen bien y se guardan sanos', () => {
+  // 🔴 rojo: la descripción en bloque se lee como «>», las herramientas en lista se pierden, sus renglones quedan colgando
+  // debajo de otra clave al guardar, o un .md con BOM abre con los campos vacíos.
+  const md = '---\nname: acme-x-reviewer\ndescription: >\n  Revisa los cobros\n  y sus recibos.\ntools:\n  - Read\n  - Grep\n  - mcp__codegraph__codegraph_search\nmodel: sonnet\nnotas: |\n  primera\n  segunda\ncolor: red\n---\n\nCuerpo.\n';
+  const { cabecera, cuerpo } = TAB().camposDe(md);
+  assert.strictEqual(cabecera.descripcion, 'Revisa los cobros y sus recibos.');
+  assert.deepStrictEqual(cabecera.herramientas, ['Read', 'Grep']);
+  assert.deepStrictEqual(cabecera.otrasHerramientas, ['mcp__codegraph__codegraph_search']);
+  assert.strictEqual(cabecera.modelo, 'balanced');
+  assert.deepStrictEqual(cabecera.otras, ['notas: |', '  primera', '  segunda', 'color: red'], 'las otras claves, con sus renglones juntos');
+  assert.strictEqual(cuerpo, 'Cuerpo.\n');
+  const armado = TAB().armarAgente(cabecera, cuerpo);
+  assert.strictEqual(armado, '---\nname: acme-x-reviewer\ndescription: Revisa los cobros y sus recibos.\ntools: Read, Grep, mcp__codegraph__codegraph_search\nmodel: sonnet\nnotas: |\n  primera\n  segunda\ncolor: red\n---\n\nCuerpo.\n');
+  // con BOM (un editor de Windows lo agrega): se reconoce la cabecera y se guarda sin él
+  const conBom = TAB().camposDe(`\uFEFF${AGENTE_COMPLETO('acme-pagos-reviewer')}`);
+  assert.strictEqual(conBom.cabecera.nombre, 'acme-pagos-reviewer');
+  assert.ok(!/^---/.test(conBom.cuerpo), 'el cuerpo sin la cabecera');
+  assert.ok(TAB().cabeceraDe(`\uFEFF${AGENTE_COMPLETO('acme-pagos-reviewer')}`), 'la revisión también la reconoce');
+  // (vuelta 2) un valor entre comillas con un comentario al final, o con el comentario abajo, se lee sin las comillas;
+  // una clave que el lector no reconoce y un comentario suelto no se pegan al valor de la clave anterior
+  const conComentarios = TAB().camposDe('---\nname: acme-x-reviewer\ndescription: "Mira: todo" # nota\nmodel: "sonnet"\n  # abajo\n"a-b": 1\nx.y: 2\n# suelto\ntools: Read\n---\nc\n').cabecera;
+  assert.strictEqual(conComentarios.descripcion, 'Mira: todo');
+  assert.strictEqual(conComentarios.modelo, 'balanced', 'el modelo no cambia');
+  assert.deepStrictEqual(conComentarios.otras, ['"a-b": 1', 'x.y: 2', '# suelto'], 'cada renglón como estaba');
+  // una herramienta leída del archivo con un fin de renglón adentro no parte la cabecera al guardar
+  const partida = TAB().armarAgente({ nombre: 'x', descripcion: 'd', herramientas: [], otrasHerramientas: ['mcp__a\nmodel: opus'], modelo: '', otras: [] }, 'c');
+  assert.ok(!/^model:/m.test(partida), `ninguna clave nueva (${partida})`);
+});
+
+test('T21 Herramientas_ConSuExplicacion_EsEn @story-2.63 @ac-17 — cada casilla con su explicación corta, y que un revisor sólo lee', () => {
+  // 🔴 rojo: las casillas dicen sólo el nombre de la herramienta, o la explicación en inglés sale en castellano.
+  assert.deepStrictEqual(TAB().HERRAMIENTAS, ['Read', 'Grep', 'Glob', 'Bash', 'Edit', 'Write', 'WebFetch', 'WebSearch']);
+  for (const idioma of ['es', 'en']) {
+    for (const h of TAB().HERRAMIENTAS) {
+      const k = `comoTrabaja.herramienta.${h}`;
+      const v = TX().t(idioma, k);
+      assert.ok(v && v !== k, `${idioma}: ${h} con su explicación`);
+      if (idioma === 'en') assert.ok(!hasSpanish(v), `${h}: «${v}» sin castellano`);
+    }
+    assert.ok(TX().t(idioma, 'comoTrabaja.revisorSoloLee') !== 'comoTrabaja.revisorSoloLee', `${idioma}: la línea de que un revisor sólo lee`);
+  }
+  assert.match(TAB().guion('es'), /T\('comoTrabaja\.herramienta\.' \+ /, 'el editor pone la explicación al lado de cada casilla');
+  assert.match(TAB().guion('es'), /T\('comoTrabaja\.revisorSoloLee'\)/, 'y la línea de que un revisor sólo lee');
 });

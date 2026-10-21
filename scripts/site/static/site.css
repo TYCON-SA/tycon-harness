@@ -436,6 +436,42 @@ body.solo .corridas #fichas-corridas,body.solo .corridas #fichas-calculando{disp
 .ct-dos{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .ct-pie{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .ct-fuente{font-size:12px;color:var(--muted);margin:0}
+/* el revisor entero (story 2.63): la cabecera en campos, las herramientas explicadas y la línea de revisar y proponer */
+.ct-sub{margin:4px 0 0;font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.ct-grupo{border:0;margin:0;padding:0;display:grid;gap:6px;min-width:0}
+.ct-grupo legend{padding:0;margin-bottom:4px;font-size:12.5px;color:var(--ink-2)}
+.ct-herramientas{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px}
+.ct-panel label.ct-casilla{display:flex;gap:6px;align-items:baseline;font-size:12.5px;color:var(--ink-2)}
+.ct-panel .ct-casilla input{min-width:0;padding:0;margin:0;align-self:center}
+.ct-casilla b{font-family:var(--mono);font-size:12.5px;color:var(--ink)}
+.ct-etiquetas{display:flex;flex-wrap:wrap;gap:6px}
+.ct-etiqueta{font-family:var(--mono);font-size:12px;padding:2px 8px;border-radius:999px;border:1px dashed var(--line-strong);color:var(--ink-2);overflow-wrap:anywhere}
+.ct-editor .ct-nota{max-width:none}
+/* el editor de texto largo (long-text-editor.js): una pieza del sitio, no sólo de esta pestaña */
+.lte{border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);display:grid;min-width:0}
+.lte-barra{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;padding:6px;border-bottom:1px solid var(--line)}
+.lte-solapas,.lte-acciones{display:flex;flex-wrap:wrap;gap:6px}
+.lte-solapas button{padding:5px 10px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--ink-2);font:12.5px var(--sans);cursor:pointer}
+.lte-solapas button[aria-selected="true"]{border-color:var(--line-strong);background:var(--surface-2);color:var(--ink);font-weight:700}
+.lte-acciones .btn{padding:4px 10px;font-size:12.5px}
+.lte-buscar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px;border-bottom:1px solid var(--line)}
+.lte-buscar[hidden],.lte-previa[hidden],.lte-cambios[hidden],.lte-cuerpo[hidden],.lte-renglones[hidden],.lte .btn[hidden]{display:none}
+.lte-cuenta{font-size:12.5px;color:var(--ink-2)}
+.lte-cuerpo{display:flex;min-width:0}
+.ct-panel .lte textarea.lte-texto,.lte textarea.lte-texto{flex:1;border:0;border-radius:0 0 8px 8px;background:transparent;resize:none;overflow:hidden;min-height:120px;font:13px/1.5 var(--mono);color:var(--ink);padding:8px 10px}
+.lte-renglones{margin:0;padding:8px 6px;font:13px/1.5 var(--mono);color:var(--muted);text-align:right;border-right:1px solid var(--line);user-select:none}
+.lte-previa{padding:8px 12px;font-size:13.5px;color:var(--ink);overflow-wrap:anywhere}
+.lte-previa h2{font-size:15px;margin:10px 0 4px}.lte-previa h3{font-size:14px;margin:8px 0 4px}
+.lte-previa ul{margin:4px 0;padding-left:20px}.lte-previa p{margin:4px 0}
+.lte-previa code,.lte-cambios{font-family:var(--mono);font-size:12.5px}
+.lte-cambios{padding:8px 10px;border-top:1px solid var(--line);white-space:pre-wrap;overflow-wrap:anywhere}
+.lte-mas{color:var(--good-ink);background:var(--good-soft)}
+.lte-menos{color:var(--bad-ink);background:var(--crit-soft)}
+.lte-igual{color:var(--muted)}
+/* ampliado: ocupa la pantalla, con números de renglón; «Volver» o Esc lo devuelven */
+.lte.ampliado{position:fixed;inset:12px;z-index:50;grid-template-rows:auto auto minmax(0,1fr) auto auto;box-shadow:var(--shadow)}
+.lte.ampliado .lte-cuerpo{overflow:auto}
+.lte.ampliado textarea.lte-texto{overflow:auto;height:auto}
 .ct:not(.con-guion) .ct-paso{scroll-margin-top:12px}
 .ct.con-guion .ct-paso[hidden]{display:none}
 @container (max-width:700px){
@@ -446,5 +482,7 @@ body.solo .corridas #fichas-corridas,body.solo .corridas #fichas-calculando{disp
   .ct-acc{justify-content:flex-start}
   .ct-dos{grid-template-columns:1fr}
   .ct-fila b{min-width:0;flex-basis:100%}
+  .ct-herramientas{grid-template-columns:1fr}
+  .lte-barra{justify-content:flex-start}
 }
 /* fin de cómo trabaja */
