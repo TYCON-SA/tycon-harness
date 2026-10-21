@@ -60,6 +60,7 @@ la fila aplica.
 | **Correr CUALQUIER test** (vitest/jest/dotnet) — SIEMPRE antes de `npm test`/`dotnet test` | `guides/test-execution-discipline.md` |
 | Instalar/configurar tracking de Clockify en Claude Code (opcional) | `guides/integrations/clockify-mcp.md` |
 | Setup de tracking automático de tiempo (timer auto-start con confirmación + auto-close por idle) | `guides/integrations/clocki-tracking.md` |
+| Registrar horas en Solidtime (opcional): la URL de la instancia en el perfil, el token de cada dev con `harness.js config set solidtime.token`, qué hace y qué avisa | `guides/integrations/solidtime.md` |
 | Instalar/configurar CodeGraph (índice de código MCP, opcional) | `guides/integrations/codegraph-mcp.md` |
 | Crear stories que generen work items en Azure DevOps; configurar `.tycon/ado-config.yaml` | `guides/integrations/ado-projects.md` |
 | Consultar una base de PRODUCCIÓN · te frenó el freno de producción y querés saber por qué · declarar un servidor en `.tycon/production.json` · instalar o actualizar el freno (pide `sudo`) | `guides/produccion-con-permiso.md` |

@@ -1573,6 +1573,10 @@
     {
       "words": ["fastapi"],
       "reason": "nombre propio de un framework ajeno (FastAPI), no un nombre del arnés: lo usan el paquete de ejemplo examples/packs/svelte-fastapi y su revisor example-fastapi-reviewer (story 8.59). Decisión del dueño, 2026-10-19."
+    },
+    {
+      "words": ["solidtime"],
+      "reason": "nombre propio del producto de horas, como clockify: la integración integrations/solidtime/ y sus variables (TYCON_SOLIDTIME_TOKEN). Aprobada por la coordinadora, por delegación del dueño, el 2026-10-21 (story 7.40, tanda A)."
     }
   ],
   "schemaFiles": [

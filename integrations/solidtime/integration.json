@@ -1,0 +1,13 @@
+{
+  "__doc": "La integración de horas con Solidtime: escucha el evento de trabajo del núcleo (scripts/lib/work-signal.js) y abre, actualiza y cierra la entrada de cada persona por la API de su instancia. La URL de la instancia es de la organización (perfil del equipo); el token es de cada persona (harness.js config set solidtime.token). Guía: guides/integrations/solidtime.md.",
+  "name": "solidtime",
+  "label": "Solidtime",
+  "kind": "timeTracking",
+  "onWork": "scripts/on-work.js",
+  "hooks": [],
+  "dispatch": [],
+  "settings": [
+    { "key": "integrations.solidtime.url", "type": "url", "from": "profile" },
+    { "key": "solidtime.token", "type": "secreto", "env": "TYCON_SOLIDTIME_TOKEN" }
+  ]
+}

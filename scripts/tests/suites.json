@@ -1675,6 +1675,24 @@
       "requiere": []
     },
     {
+      "__nota": "El evento neutro de trabajo (scripts/lib/work-signal.js) y la integración de horas que lo escucha, con una integración de mentira en una carpeta temporal; más el techo de archivos del núcleo que nombran una herramienta de horas, que sólo baja.",
+      "raiz": "arnes",
+      "ruta": "tests/work-signal.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "La integración de Solidtime de punta a punta por el evento neutro, contra un servidor de mentira que contesta como la API medida (404 sin entrada abierta, 400 con otra abierta, 401, 422, red caída, tiempo agotado). El token se arma por partes y se busca en todo lo escrito.",
+      "raiz": "arnes",
+      "ruta": "tests/solidtime-integration.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "La clave de la herramienta de horas (con la llave vieja de Clockify) y los secretos de las integraciones: aparte de config.json, carpeta 700 y archivo 600, nunca por argumento ni impresos.",
+      "raiz": "arnes",
+      "ruta": "tests/time-tracking-config.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.23 (tanda A1): la única raíz de las rutas del arnés (scripts/setup/harness/tycon-home.js) con los valores de hoy, las cinco piezas que se la piden con sus variables parciales ganando, y el techo de «.claude» que sólo baja (fixtures/dot-claude-ceiling.json, fixtures/legacy-home-names.json). Sin red: HOME de juguete en procesos hijos y un repo de juguete para el techo.",
       "raiz": "arnes",
       "ruta": "tests/tycon-home.test.js",
