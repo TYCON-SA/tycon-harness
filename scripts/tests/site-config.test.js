@@ -1,9 +1,9 @@
 'use strict';
 /*
- * site-config.test.js — la pestaña Configuración del sitio de la organización (story 2.29).
+ * site-config.test.js — la pestaña Configuración del sitio de la organización.
  *
  * El núcleo común (scripts/lib/org-config.js) y la pestaña (scripts/site/tabs/config.js). El servidor de prueba es el
- * de la 2.23 con una sesión inyectada; los repos son repos git locales servidos por HTTP (lib/git-http-repo.js); las
+ * del sitio con una sesión inyectada; los repos son repos git locales servidos por HTTP (lib/git-http-repo.js); las
  * APIs REST de Azure DevOps y de GitHub son servidores falsos en el proceso (lib/fake-ado-api.js, lib/fake-github-api.js).
  * Correos, repos y organizaciones inventados: nada de acá habla con la red.
  */
@@ -262,7 +262,7 @@ test('T4a Pantalla_EsUnArchivo_SinFetchAfuera @story-2.29 @ac-4', () => {
 
 module.exports = { ARNES_THRESHOLDS, SOURCES_ORG, tmp };
 
-// ── la pestaña en el sitio de la 2.23 ────────────────────────────────────────────────────────────────────────────
+// ── la pestaña en el sitio ────────────────────────────────────────────────────────────────────────────
 const { spawnSync } = require('child_process');
 const H = require('./lib/site-harness.js');
 const { arrancarEmisor } = require('./lib/fake-oidc.js');
@@ -293,7 +293,7 @@ function clon(archivos) {
 }
 const opsBase = (extra = {}) => ({ version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD] }, ...extra });
 
-/** Las fuentes de la 2.23 de mentira, con los clones y el espejo que la pestaña lee. */
+/** Las fuentes del sitio, de mentira, con los clones y el espejo que la pestaña lee. */
 function fuentesCon({ ops, perfil = null, config, informados = null, repos = null, espejo = null, estado = {}, indice = null, escritura = null, modelo = {} }) {
   const f = H.fuentesFijas({ config: config || opsBase(), modelo, personas: { informados, repos } });
   const base = f.estado;
@@ -386,14 +386,14 @@ test('T3 Escritura_SinOrigenSinTokenNoJsonGrande_NadaCreado @story-2.29 @ac-3', 
   });
 });
 
-/** Un lector de operations.json que conoce las claves de la 2.22 y la 2.30 (las pruebas lo inyectan: esas stories traen el suyo). */
+/** Un lector de operations.json que conoce las claves que la pestaña usa (las pruebas lo inyectan: cada versión del arnés trae el suyo). */
 const OPS_FUTURO = { ...OPS, KEYS: [...OPS.KEYS, 'deployments', 'notify'], parse: (t) => { const d = JSON.parse(t); const { deployments, notify, ...resto } = d; const r = OPS.parse(JSON.stringify(resto)); return r.ok ? { ...r, data: d } : r; } };
 
 test('T4 Secciones_OchoEditablesYDosDeLectura_CanalSinSecretos_SinScriptEnLinea @story-2.29 @ac-4 @ac-12', async () => {
   const ops = clon({ 'operations.json': opsBase(), 'scripts/nightly/dashboard/sources.json': SOURCES_ORG, '.dashboard/applied-config.json': { files: { 'scripts/nightly/dashboard/sources.json': 'x' } }, 'scripts/ci/product-parity.json': { grupos: {}, rasgos: [], diferencias_declaradas: [] } });
   const perfil = clon({ 'team-repos.json': { version: 1 }, 'team-layer.json': { requires: { harness: `>= ${ORG.TEAM_REPOS_SINCE}` } } });
   const fuentes = fuentesCon({ ops, perfil });
-  // el lector de hoy ya sabe `notify`; el «todavía no sabe leer» se prueba con uno de antes, sin la clave
+  // el lector de hoy ya sabe `notify`; el «todavía no sabe leer» se prueba con un lector sin la clave
   const OPS_VIEJO = { ...OPS, KEYS: OPS.KEYS.filter((k) => k !== 'notify') };
   for (const [lectores, canalEdita] of [[{ 'operations-config.js': OPS_VIEJO }, false], [{}, true], [{ 'operations-config.js': OPS_FUTURO }, true]]) {
     await conPestana({ fuentes, env: { SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: 't' }, opciones: { lectores } }, async ({ h, entrar }) => {
@@ -546,7 +546,7 @@ test('T10 Personas_CorreccionDeDondeTrabaja @story-2.29 @ac-9', async () => {
   for (const [estado, rx, editable] of [[{ bandaConfig: { desde: AHORA - 2 * 3600000, motivo: 'problemas en owners' } }, /último bueno/, true], [{ frenado: { desde: AHORA - 3600000, fallaDesde: AHORA - 25 * 3600000 } }, /venció/, false]]) {
     await conPestana({ fuentes: fuentesCon({ ops: rota, config, estado }) }, async ({ h, entrar }) => {
       const r = await h.pedir('/api/config', { cookie: await entrar(LEAD) });
-      // con el sitio frenado la 2.23 contesta 503 a todos: la sección no se ve; con la banda, se ve el último bueno
+      // con el sitio frenado contesta 503 a todos: la sección no se ve; con la banda, se ve el último bueno
       if (estado.frenado) { assert.strictEqual(r.status, 503); return; }
       const p = r.json.secciones.find((s) => s.id === 'personas');
       assert.match(p.extras.ultimoBueno, rx);
@@ -608,7 +608,7 @@ test('T6 Sugerencia_SeAcepta', async () => {
   assert.deepStrictEqual(rq.cuerpo.borrador.people.projects[DEV], { add: ['Alfa'] });
 });
 
-// el pase adversarial lo reprodujo: lo declarado bajo otro correo de la persona, o con mayúsculas, la pantalla no lo veía
+// lo declarado bajo otro correo de la persona, o con mayúsculas, la pantalla lo ve igual
 test('T11 Personas_DeclaradoBajoOtroCorreo_SeVeYSeEdita', async () => {
   const OTRO = 'segundo.correo@acme.example';
   const machines = { 'maq-b': { person: OTRO, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' } };
@@ -753,7 +753,7 @@ test('T25 Mantenedores_CambianSoloAlMergearYReleer @story-2.29 @ac-10', async ()
     const rev = (await escribir('/api/config/revisar', lead, tok, { seccion: 'sitio', borrador: { site: { maintainers: [LEAD] } } })).json;
     assert.strictEqual(rev.ok, true);
     assert.strictEqual((await h.pedir('/api/config', { cookie: m2 })).status, 200, 'mientras el pedido está abierto, m2 sigue entrando');
-    fuentes.st.config = opsBase({ site: { maintainers: [LEAD] } });   // el merge y el refresco de la 2.23
+    fuentes.st.config = opsBase({ site: { maintainers: [LEAD] } });   // el merge y el refresco del sitio
     assert.strictEqual((await h.pedir('/api/config', { cookie: m2 })).status, 403, 'después del refresco, 403 sin cerrar su sesión');
   });
 });
@@ -859,7 +859,7 @@ test('T39b Pestana_ProponerArchivoPorArchivo_ConElFiltroDeRuta @story-2.30 @ac-2
 });
 
 test('T39c Pestana_ProponerPorArchivo_ConElNombreViejoDelPerfil @story-2.30 @ac-22b', async () => {
-  // el perfil todavía usa el nombre de antes (perfil-equipo.json): la sección lee y propone sobre ése, así que el estado de
+  // el perfil usa el nombre anterior del archivo (perfil-equipo.json): la sección lee y propone sobre ése, así que el estado de
   // «Proponer» tiene que estar también con ese nombre (la pantalla lo busca con el archivo que la sección resolvió)
   const { arrancarAdoFalso } = require('./lib/fake-ado-api.js');
   const ops = clon({ 'operations.json': opsBase() });
@@ -915,7 +915,7 @@ test('T24 Github_MismaPestana_SegundoProveedor @story-2.29 @ac-22', { skip: SIN_
   } finally { await cerrarTodos(r, gh); }
 });
 
-// ── vuelta 2 (revisores y pase adversarial de la 2.29) ───────────────────────────────────────────────────────────
+// ── casos de borde de la pestaña ───────────────────────────────────────────────────────────
 test('T31b Paridad_DivergenciasPorNombreDeProducto @story-2.29 @ac-25 — el control nombra cada repo por su producto (o «producto (ruta)»), no por la ruta', () => {
   const lista = { grupos: { backend: [{ ruta: 'Acme/Back', producto: 'Acme' }, { ruta: 'Beta/Back', producto: 'Beta' }, { ruta: 'Gama/Back', producto: 'Gama' }, { ruta: 'Gama/Back2', producto: 'Gama' }] }, rasgos: [], diferencias_declaradas: [] };
   const resultado = { fecha: HOY, estado: 'medido', divergencias: [{ grupo: 'backend', rasgo: 'r1', que: 'el rasgo uno', tienen: ['Acme', 'Beta'], no_tienen: ['Gama (Gama/Back)'] }] };
@@ -1132,7 +1132,7 @@ test('Mensajes_EnLlano_SinRutasNiClaves — la pantalla muestra dónde con los n
   assert.doesNotMatch(err, /site\.|mailbox|merge_suites|full_tests_pipeline|staging|ceiling»/, 'ninguna clave del archivo a la vista');
 });
 
-// ── tanda C: dónde corren las suites al mergear (7.28) y los modelos de cada trabajo (7.29) ──────────────────────
+// ── dónde corren las suites al mergear y los modelos de cada trabajo ──────────────────────
 const GH = (repo) => ({ platform: 'github', org: 'acme', repo });
 const TR_BASE = { version: 1, public: GH('harness'), profile: GH('profile'), operations: GH('ops') };
 const PERFIL_ENV = { SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: 't' };
@@ -1175,7 +1175,7 @@ test('7.28-T19 MergeSuites_SectionSavedOnlyThroughReader @story-7.28 @ac-12 — 
     const directo = await proponer('suites', ORG.formatJson({ ...TR_BASE, merge_suites: { repos: [{ repo: GH('app'), rule: 'inventada' }] } }));
     assert.strictEqual(directo.ok, false); assert.match(directo.message, /merge_suites\.repos\.0\.rule/);
   });
-  // un lector de antes de la 7.28 no conoce la clave: la sección no edita y lo dice
+  // un lector que no conoce la clave `merge_suites`: la sección no edita y lo dice
   const viejo = { ...TR, KEYS: TR.KEYS.filter((k) => k !== 'merge_suites' && k !== 'models') };
   await conPerfil({ lectores: { 'team-repos.js': viejo } }, async ({ seccion }) => {
     for (const id of ['suites', 'modelos']) {
@@ -1289,7 +1289,7 @@ test('T37 Modelos_ProblemaDeSeccion_NoSePropone @story-2.29 @ac-4 — el lector 
   });
 });
 
-// ── tanda C, pase adversarial: lo que la pantalla de las dos secciones nuevas tiene que aguantar ─────────────────
+// ── lo que la pantalla de las dos secciones (suites y modelos) tiene que aguantar ─────────────────
 /** La pantalla real sobre un documento mínimo con eventos: `click(texto, seccion)` aprieta un botón; `pedidos` anota cada fetch. */
 async function pantallaFalsa(secciones, respuestas = {}) {
   const creados = [];
@@ -1358,7 +1358,7 @@ test('T45 Revisar_Repos_ReordenarModelsNoEsCambio @story-2.29 @ac-4 (tanda C, pa
   assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
 });
 
-// ── story 2.31: la configuración del equipo, entera desde el sitio ───────────────────────────────────────────────
+// ── la configuración del equipo, entera desde el sitio ───────────────────────────────────────────────
 const TC = require(path.join(ROOT, 'scripts', 'lib', 'tycon-config.js'));
 const PERFIL_TYCON = { __doc: 'perfil de juguete', ado: { org: 'https://dev.azure.com/acme' }, integrations: { clockify: true, engram: true, mailbox: true, codex: 'detect', nightly: true }, update: { channel: 'latest', apply: 'auto', skills_source: 'separate' }, packs: { default: 'all' }, install: { profile: 'full' } };
 const CON_RESPUESTA = { ...PERFIL_TYCON, response: { language: 'es', style: 'executive', max_chars: 1300 } };
@@ -1514,7 +1514,7 @@ test('2.31-T13 ContentList_ReadOnly_NoEditAction @story-2.31 @ac-17 — lo que t
   assert.strictEqual(p.error, null);
 });
 
-// ── story 2.31, pase adversarial: lo que el sitio tiene que aguantar ─────────────────────────────────────────────
+// ── lo que el sitio tiene que aguantar de la configuración del equipo ─────────────────────────────────────────────
 test('2.31-T16 Proponer_SoloLasHojasDeLaSeccion @story-2.31 @ac-15 (pase adversarial) — al proponer, una sección con rutas no cambia otras hojas de su clave', async () => {
   const conBuzon = opsBase({ site: { maintainers: [LEAD, 'otro@acme.example'], mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'corridas' }, refresh_minutes: 15 } });
   await conEquipo({ ops: conBuzon }, async ({ revisar, proponer }) => {
@@ -1621,7 +1621,7 @@ test('T12 …el campo de la sección: un número entero va como número, vacío 
   // campo vaciado deja `coverage: {}` en el archivo.
   const sec = SEC('cobertura', { repo: 'perfil', borrador: {} });
   const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), sec] });
-  // los nodos de ahora (la pantalla vuelve a dibujar después de cada revisión)
+  // los nodos actuales (la pantalla vuelve a dibujar después de cada revisión)
   const enLaSeccion = (pred) => {
     const caja = r.creados.filter((n) => n.attrs.id === 'seccion-cobertura').pop();
     const out = []; const walk = (x) => { if (pred(x)) out.push(x); (x.hijos || []).forEach(walk); }; walk(caja);
@@ -1795,7 +1795,7 @@ test('Nombres_PruebasAlMergear_ElPipelineSeEligePorNombre_YSeGuardaElNumero — 
   const pipes = { ok: true, pipelines: [{ id: 123, nombre: 'Ventas-Backend-CI', carpeta: null }, { id: 9, nombre: 'Ventas-Frontend-CI', carpeta: null }] };
   const conLista = await pantallaFalsa([seccionPerfil('suites', { merge_suites: { repos: [{ repo: AZ('acme', 'Ventas', 'backend'), full_tests_pipeline: 123 }] } })], { '/api/config/pipelines': () => pipes });
   assert.strictEqual(conLista.error, null);
-  // 2.59: el renglón cerrado ya dice el pipeline por su nombre; los campos se abren con ✎
+  // el renglón cerrado ya dice el pipeline por su nombre; los campos se abren con ✎
   assert.strictEqual(conLista.todo(conLista.sec('suites')).find((n) => String(n.attrs.class || '').split(' ').includes('pc')).textContent, 'Ventas-Backend-CI', 'cerrado, por nombre');
   conLista.todo(conLista.sec('suites')).find((n) => n.tag === 'button' && n.textContent === '✎').on.click({});
   for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
@@ -1887,7 +1887,7 @@ test('Marca_LaOrganizacionEnPersonas_ConVistaPrevia — se edita en Configuraci�
   });
 });
 
-// ── quién entra al sitio lo decide la lista (AC 5 y 6), y el inicio de sesión elegido se ve (AC 8) ─────────
+// ── quién entra al sitio lo decide la lista, y el inicio de sesión elegido se ve ─────────
 test('T6 2.40-Personas_EditaLaLista @story-2.40 @ac-6 @ac-5', async () => {
   // (la lista vive en operations.json como las demás secciones de Personas)
   const M = 'mant@acme.example';
@@ -2258,7 +2258,7 @@ test('T19 2.34-Proponer_ContraMainFresco @story-2.34 @ac-10 — «Proponer» com
       assert.strictEqual(p1.ok, false);
       assert.match(p1.message, /el archivo cambió desde que lo abriste: recargá/);
       assert.deepStrictEqual(r.empujes, [], 'cero ramas');
-      // con la versión de main de ahora, el pedido se arma sobre esa punta
+      // con la versión actual de main, el pedido se arma sobre esa punta
       const oidMain = g(dirEscritura, 'rev-parse', 'FETCH_HEAD:operations.json');
       const p2 = (await escribir('/api/config/proponer', lead, tok, { seccion: 'responsables', texto: rev.texto, oid: oidMain })).json;
       assert.strictEqual(p2.ok, true, p2.message);
@@ -2680,7 +2680,7 @@ test('T5 Personas_TodoProblemaEnSuRenglon @story-2.56 @ac-5', async () => {
   assert.ok(String(campoVacio.attrs.class).split(' ').includes('bad'), 'el campo vacío con problema, en rojo');
   assert.match(v.todo(v.renglones()[0]).map((n) => n.textContent).join(' | '), /correo: el correo está vacío/);
   // una entrada que no es una persona, o con correos que no son una lista: la sección se dibuja igual y lo dice en su
-  // renglón (antes, la pantalla se caía y la sección quedaba vacía sin aviso)
+  // renglón (sin eso, la pantalla se caería y la sección quedaría vacía sin aviso)
   for (const rara of ['pepe', null, { role: 'dev', emails: 'suelto@acme.example' }]) {
     const q = await personas([SEIS[0], rara, SEIS[1]]);
     const filas = q.renglones();
@@ -2734,7 +2734,7 @@ test('T11 Personas_TextosDelDuenoEnIngles @story-2.56 @ac-10', () => {
   assert.strictEqual(t('es', 'pantalla.nadieEntraSiNoEsta'), 'Nadie entra si no está acá. Cada persona entra con cualquiera de sus correos y ve lo mismo.');
 });
 
-// ── 2.59: Modelos, Repos e Integraciones en renglones ─────────────────────────────────────────────────────────────────
+// ── Modelos, Repos e Integraciones en renglones ─────────────────────────────────────────────────────────────────
 const MOD_JS = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'models.js'));
 const MOD_DEFAULTS = MOD_JS.DEFAULTS;
 /** El mismo `models` con cada modelo de Claude pasado a su nivel (lo que la pantalla muestra y propone). */
@@ -3168,7 +3168,7 @@ test('7.46 Config_PruebaAMano_SeccionYPedido @story-7.46 @ac-7 @ac-15 — la sec
   assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
   assert.strictEqual(ok.texto, ORG.formatJson({ ...PERFIL_TYCON, qa: { manual_check: 'required' } }));
   assert.strictEqual(rev({ qa: { manual_check: 'si' } }).ok, false);
-  // la pantalla, en las dos lenguas: el título, el selector con sus dos opciones y la ayuda de la maqueta
+  // la pantalla, en las dos lenguas: el título, el selector con sus dos opciones y la ayuda
   const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   const esperado = {
     es: ['Prueba a mano de cada criterio', 'Una persona marca cada criterio como probado a mano', 'No (de fábrica): la guía dice qué probó el arnés', 'Sí: la historia no se cierra sin la marca de una persona'],
@@ -3219,7 +3219,7 @@ test('T2 OrgConfig_TelegramText_PerMachine @story-8.75 @ac-2 — el texto dice q
 });
 
 // ── los pedidos de vulnerabilidades ────────────────────────────────────────────────────────────────────────────────
-// T16 y T17, los criterios de la sección; T16b y T17b, los casos que encontró el pase adversarial (comentarios con «_»,
+// T16 y T17, los criterios de la sección; T16b y T17b, los casos de borde (comentarios con «_»,
 // nombres con «key» dentro de una palabra, Severity que fija el pedido y el nombre repetido en el editor)
 
 const WI_RIESGO = { type: 'Riesgo', fixed_fields: { 'Custom.Categoria': 'Seguridad', 'Custom.Probabilidad': 3 }, by_severity: { critical: { 'Custom.Impacto': 5 }, high: { 'Custom.Impacto': 4 }, moderate: { 'Custom.Impacto': 3 }, low: { 'Custom.Impacto': 2 } } };
@@ -3784,7 +3784,7 @@ test('T13 Modelos_NivelesPidenSuVersion @story-2.70 @ac-11', async () => {
   assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODELS_SINCE)), { ...TR_BASE, models: { reviewers: 'balanced' } })), new RegExp(ORG.MODEL_LEVELS_SINCE.replace(/\./g, '\\.')));
   assert.strictEqual(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_LEVELS_SINCE)), { ...TR_BASE, models: { reviewers: 'balanced' } }), null);
   assert.strictEqual(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODELS_SINCE)), { ...TR_BASE, models: { reviewers: 'sonnet' } }), null);
-  // un comentario cuyo texto es un nivel no es un nivel (pase adversarial): ni pide la versión ni se traduce
+  // un comentario cuyo texto es un nivel no es un nivel: ni pide la versión ni se traduce
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { _nota: 'economy', reviewers: 'haiku' } }).version, ORG.MODELS_SINCE);
   const TEAM = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
   assert.deepStrictEqual(ORG.modelosEnNiveles({ _nota: 'opus', helpers: 'haiku' }, TEAM), { _nota: 'opus', helpers: 'economy' });

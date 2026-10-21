@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * fire-registered.js — disparar cada hook TAL COMO QUEDÓ REGISTRADO, por cada shell posible (story 8.17, W0 · AC 8).
+ * fire-registered.js — disparar cada hook TAL COMO QUEDÓ REGISTRADO, por cada shell posible.
  *
  * POR QUÉ EXISTE. Nadie sabe con qué shell corre Claude Code el `command` de un hook en Windows, y el código del arnés
  * supone tres cosas distintas a la vez (bash en el instalador, `cmd.exe` en la comprobación de salud y en la línea de
@@ -17,7 +17,7 @@
  *
  * LAS ENTRADAS. A todo hook, una entrada legítima mínima de su evento. A los que frenan —los que tienen en el banco
  * de controles un caso «tiene que frenar»—, además ese caso y uno «tiene que pasar», si el banco trae alguno que no
- * necesite preparar un repo por shell (eso lo trae W1). El comando destructivo de un caso NO se ejecuta: viaja como
+ * necesite preparar un repo por shell (los demás se miden aparte). El comando destructivo de un caso NO se ejecuta: viaja como
  * texto dentro de la entrada y el hook decide sobre ese texto.
  *
  * ADEMÁS: los dos frenos en bash (`safety-guard-pre.sh`, `test-scope-guard-pre.sh`) lanzados sueltos bajo el bash de
@@ -277,9 +277,9 @@ function measureStartup({ line, forms, home, clone, env, rec }) {
   facts.is_async = line.is_async;
   const harnessDir = path.join(home, '.claude', '.tycon-pipeline', 'harness');
   const logFile = path.join(harnessDir, 'startup.log');
-  // los dos nombres del lugar del arnés: desde la 8.19 A, bootstrap.js prueba primero el nuevo y después el viejo.
-  // Romper sólo uno no rompe nada: el arranque encuentra el otro y el respaldo nunca hace falta (182 #12030, 5 hallazgos
-  // falsos). Se rompen los que estén; un arnés de antes de la 8.19 trae sólo el viejo.
+  // los dos nombres del lugar del arnés: bootstrap.js prueba primero el nuevo y después el viejo.
+  // Romper sólo uno no rompe nada: el arranque encuentra el otro y el respaldo nunca hace falta (saldrían hallazgos
+  // falsos). Se rompen los que estén; un arnés con el nombre viejo trae sólo el viejo.
   const links = [PLACE.PLACE_NAME, PLACE.LEGACY_PLACE_NAME].map((n) => path.join(home, '.claude', n)).filter((p) => { try { fs.lstatSync(p); return true; } catch (_) { return false; } });
   const settingsFile = path.join(home, '.claude', 'settings.json');
   const log = () => { try { return fs.readFileSync(logFile, 'utf8').split('\n').filter(Boolean); } catch (_) { return []; } };

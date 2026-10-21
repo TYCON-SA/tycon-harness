@@ -2,10 +2,9 @@
 # Prueba de check-product-parity.js — el control que verifica que los pipelines de los
 # cinco productos hagan LO MISMO.
 #
-# Nace del 2026-09-01: se dio un producto del equipo por alineado con otro y faltaban ONCE cosas, cuatro de ellas
-# repartidas en productos YA dados por cerrados. Ninguna la encontró una revisión: las encontró el
-# dev preguntando "¿me lo podés asegurar con evidencia?".
-# En su PRIMERA corrida el control encontró una duodécima que nadie había visto.
+# Existe porque un producto del equipo puede darse por alineado con otro y faltarle cosas, algunas repartidas en
+# productos ya dados por cerrados, que ninguna revisión encuentra: sólo las encuentra alguien que pregunta
+# "¿me lo podés asegurar con evidencia?". Este control las encuentra solo, incluidas las que nadie había visto.
 set -uo pipefail
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHK="$AQUI/scripts/ci/check-product-parity.js"
@@ -14,13 +13,13 @@ fallos=0
 ok(){ echo "✅ paridad: $1"; }
 no(){ echo "❌ paridad: $1"; fallos=$((fallos+1)); }
 
-# story 8.10.3: los casos que leen los patrones del product-parity.json DE VERDAD sólo miden con la lista real. En la copia
-# pública el archivo es un sintético con «sin_productos» (antes no viajaba, y el `require` que fallaba en silencio dejaba
-# esos casos en verde sin mirar nada): ahí dicen NO MEDIDO.
-# Tres estados (pase de fallos silenciosos de la tanda A): `real` mide; `copia` (el sintético con «sin_productos») dice NO
+# Los casos que leen los patrones del product-parity.json DE VERDAD sólo miden con la lista real. En la copia
+# pública el archivo es un sintético con «sin_productos»: ahí dicen NO MEDIDO (si el archivo no viajara, el `require` que
+# fallara en silencio dejaría esos casos en verde sin mirar nada).
+# Tres estados: `real` mide; `copia` (el sintético con «sin_productos») dice NO
 # MEDIDO; y un archivo que no está o no se puede leer es ROJO con su motivo — nunca «NO MEDIDO (copia pública)», que en el
 # repo del equipo taparía un product-parity.json roto.
-# 2026-10-16: la lista real es de la organización y vive en su repo de operaciones. Se busca como la busca el control sin
+# La lista real es de la organización y vive en su repo de operaciones. Se busca como la busca el control sin
 # --config (`config-path`): en la máquina de quien mantiene el arnés, la del clon de operaciones que declara; en la CI y
 # en la máquina de un dev, la copia del arnés (la marca «sin productos»). Si el control no puede decir cuál, el motivo
 # es ROJO: no hay lista que medir y eso no es la copia pública.
@@ -62,7 +61,7 @@ config "$TMP/c1.json"
 rc=$(corre "$TMP/c1.json")
 [ "$rc" -eq 0 ] && ok "dos productos que hacen lo mismo salen 0" || no "salió $rc con los dos iguales: $(cat "$TMP/out.txt")"
 
-# ---------------------------------------------------------------- 2. EL CASO REAL: uno lo tiene y el otro no
+# ---------------------------------------------------------------- 2. uno lo tiene y el otro no
 rm -rf "$TMP/mundo"; mundo "$TMP/mundo" 'grep Too Many Requests' 'sin reintento'
 config "$TMP/c2.json"
 rc=$(corre "$TMP/c2.json")
@@ -109,7 +108,7 @@ rc=$(corre "$TMP/c8.json")
 # Este control compara los productos ENTRE SÍ, así que si los cinco dejan de hacer lo mismo a la
 # vez, los cinco coinciden y sale verde. Para un rasgo con criterio ÚNICO escrito afuera (el guión
 # scripts/ci/audit-dependencies.js) eso no alcanza: que NADIE restaure antes de escanear no es
-# un acuerdo, es el mismo agujero en los cinco. Agregado 2026-09-01 con la revisión nocturna.
+# un acuerdo, es el mismo agujero en los cinco.
 cfg_exigido(){ cat > "$1" <<CFG
 {
   "raiz_por_defecto": "$TMP/mundo",
@@ -148,10 +147,10 @@ CFG
 rc=$(corre "$TMP/c11.json")
 [ "$rc" -eq 2 ] && ok "un rasgo sin id/patrón sale 2 (no se saltea en silencio)" || no "🔴 rasgo sin patrón salió $rc"
 
-# ---------------------------------------------------------------- 12. 🔴 EL FALSO NEGATIVO REAL: el rasgo estaba en `pr:`, no en `trigger:`
-# El backend de un producto del equipo (2026-09-02): `- tests/**` y `azure-pipelines.yml` aparecían en el archivo… dentro del
-# bloque `pr:`, que para Azure Repos es inerte. El `trigger:` no los tenía, un merge sólo de
-# pruebas NO construía en main, y el control decía "los cinco coinciden" porque buscaba en el
+# ---------------------------------------------------------------- 12. 🔴 EL FALSO NEGATIVO: el rasgo está en `pr:`, no en `trigger:`
+# Si `- tests/**` y `azure-pipelines.yml` aparecen en el archivo… dentro del bloque `pr:`, que para Azure Repos es inerte,
+# y el `trigger:` no los tiene, un merge sólo de pruebas NO construye en main. El control diría "los cinco coinciden"
+# si buscara en el
 # archivo entero. Un rasgo con `bloque` mira SÓLO ese bloque de nivel raíz.
 cfg_bloque(){ cat > "$1" <<CFG
 {
@@ -187,8 +186,8 @@ rc=$(corre "$TMP/c13.json")
 [ "$rc" -eq 0 ] && ok "con el rasgo dentro de trigger: en los dos, verde (el bloque se lee entero hasta la próxima clave raíz)" || no "🔴 falso positivo con bloque: $(cat "$TMP/out.txt")"
 
 # ---------------------------------------------------------------- 14. un grupo puede leer OTRO archivo (producción)
-# Los 4 pipelines de producción viven en azure-pipelines-prod.yml; hasta el 2026-09-02 el control
-# sólo leía azure-pipelines.yml y ningún rasgo de producción podía ponerse rojo.
+# Los 4 pipelines de producción viven en azure-pipelines-prod.yml; si el control sólo leyera azure-pipelines.yml,
+# ningún rasgo de producción podría ponerse rojo.
 rm -rf "$TMP/mundo"; mkdir -p "$TMP/mundo/ProdA/Back" "$TMP/mundo/ProdB/Back"
 printf 'nada que ver\n' > "$TMP/mundo/ProdA/Back/azure-pipelines.yml"
 printf 'nada que ver\n' > "$TMP/mundo/ProdB/Back/azure-pipelines.yml"
@@ -214,7 +213,7 @@ grep -q "prod · portón" "$TMP/out.txt" && no "🔴 le pidió el portón a prod
   || ok "…y a producción NO se le piden los rasgos que no lo nombran"
 
 # ---------------------------------------------------------------- 15. llamar al criterio único cumple los tres rasgos NuGet
-# (2026-09-02) Ese producto dejó de tener el bloque copiado y llama a audit-dependencies.js. El guion
+# Un producto que llama a audit-dependencies.js en vez de copiar el bloque: el guion
 # restaura, no pierde el fallo y frena por construcción: cumple los tres por definición.
 cfg_nuget(){ cat > "$1" <<CFG
 {
@@ -239,9 +238,8 @@ rc=$(corre "$TMP/c15b.json")
 { [ "$rc" -eq 1 ] && grep -q "frenar" "$TMP/out.txt"; } && ok "…pero llamarlo SIN --block no cuenta como frenar" || no "🔴 el guion sin --block pasó como si frenara: $(cat "$TMP/out.txt")"
 
 # ---------------------------------------------------------------- 16. la ventana del freno npm no puede castigar al que declara deuda
-# (2026-09-02) Con ventana de 900, los formularios de ese producto salían como "no frena" — y es el ÚNICO que
-# declara deuda, o sea el más completo: su bloque de deuda mete ~600 caracteres entre el análisis
-# y el primer `exit 1`. El control medía DISTANCIA, no conducta.
+# Con una ventana de 900, el producto que declara deuda (el más completo) saldría como "no frena": su bloque de deuda
+# mete ~600 caracteres entre el análisis y el primer `exit 1`. El control mide conducta, no DISTANCIA.
 cfg_npm(){ cat > "$1" <<CFG
 {
   "raiz_por_defecto": "$TMP/mundo",
@@ -265,12 +263,12 @@ rc=$(corre "$TMP/c16b.json")
 [ "$rc" -eq 1 ] && ok "…y el que sólo avisa sigue saliendo rojo" || no "🔴 dejó pasar a uno que no frena: salió $rc"
 
 # ---------------------------------------------------------------- 17. los patrones REALES de NuGet aceptan el guion único con la ruta en una variable
-# (2026-09-02) El backend de ese producto guarda la ruta en GUION="…/audit-dependencies.js" y lo invoca en OTRA
-# línea: `node "$GUION" --repo . --type nuget … --block`. Con un patrón que exigía nombre e
-# invocación en la MISMA línea, los tres rasgos daban a FRESNO por "no lo tiene" el mismo día que lo
-# estrenó — y tres declaraciones viejas lo tapaban. Este caso lee los patrones del JSON de verdad.
+# Un backend que guarda la ruta en GUION="…/audit-dependencies.js" y lo invoca en OTRA
+# línea: `node "$GUION" --repo . --type nuget … --block`. Un patrón que exigiera nombre e
+# invocación en la MISMA línea daría los tres rasgos por «no lo tiene», y declaraciones viejas lo taparían.
+# Este caso lee los patrones del JSON de verdad.
 JSON17="$LISTA_ORG"
-# Entre la ruta y la invocación va lo que FRESNO tiene de verdad: ~1000 caracteres de comentarios.
+# Entre la ruta y la invocación van ~1000 caracteres de comentarios, como en un backend real.
 RELLENO17="$(head -c 1000 /dev/zero | tr '\0' 'x' | fold -w 90 | sed 's/^/              # /')"
 FIX17="$(printf 'GUION="$(Build.SourcesDirectory)/tycon-claude-guides/scripts/ci/audit-dependencies.js"\nif [ ! -f "$GUION" ]; then exit 1; fi\n%s\nnode "$GUION" --repo . --type nuget --project src/X.csproj --declared vulnerabilidades-pendientes.json --block\nrc=$?\n' "$RELLENO17")"
 FIX17_SIN_FRENO="${FIX17/ --block/}"
@@ -293,10 +291,9 @@ fi
 
 # ---------------------------------------------------------------- 18. 🔴 SE COMPARA LO PUBLICADO, NO EL DISCO
 # La pregunta es "¿los cinco productos hacen lo mismo?", y eso se decide sobre lo que CORRE, o sea
-# origin/main. El control leía el árbol de trabajo, así que un checkout parado en otra rama —lo
-# normal: el dev trabaja en `dev`— se reportaba como divergencia del PRODUCTO. Medido el 2026-09-03:
-# el backend de Lapacho, 29 commits atrás, producía CUATRO divergencias que en origin/main no
-# existen. Un control que da falsas alarmas se apaga.
+# origin/main. Si el control leyera el árbol de trabajo, un checkout parado en otra rama —lo
+# normal: el dev trabaja en `dev`— se reportaría como divergencia del PRODUCTO: un clon atrasado
+# produciría divergencias que en origin/main no existen. Un control que da falsas alarmas se apaga.
 rm -rf "$TMP/mundo"; mundo "$TMP/mundo" 'grep Too Many Requests' 'grep Too Many Requests'
 for r in ProdA ProdB; do
   ( cd "$TMP/mundo/$r/Back" && git init -q -b main . && git config user.email t@t && git config user.name t \
@@ -320,14 +317,12 @@ grep -q "se compararon desde el DISCO" "$TMP/out.txt" \
   || no "🔴 leyó el disco sin avisar: $(cat "$TMP/out.txt" | tail -3)"
 
 # ---------------------------------------------------------------- 19b. 🔴 EN origin/main PERO NO EN EL DISCO → SE COMPARA IGUAL
-# (2026-09-04, revisión de cierre.) El arreglo del caso 18 —"se lee lo publicado"— estaba ANULADO
-# para el caso más común: había un `if (!fs.existsSync(f)) { ausentes++; continue; }` JUSTO ANTES de
-# leer origin/main. O sea que un archivo que existe en lo publicado pero no en el árbol de trabajo
-# —el clon parado en `dev`, que es donde trabaja el dev— sacaba al repo de la comparación ENTERA, en
-# silencio, contándolo como "no está en esta máquina".
-# Medido ese día: los pipelines de PRODUCCIÓN de FRESNO y de TIMBO no se compararon con nada, ni siquiera
-# el freno de retroceso que está marcado `exigido`. El control decía "1 divergencia sobre 55"
-# habiendo dejado dos repos afuera. "No medido" no puede leerse como "coincide".
+# El caso 18 —"se lee lo publicado"— se anularía en el caso más común si un
+# `if (!fs.existsSync(f)) { ausentes++; continue; }` corriera JUSTO ANTES de leer origin/main: un archivo que existe en lo
+# publicado pero no en el árbol de trabajo —el clon parado en `dev`, que es donde trabaja el dev— sacaría al repo
+# de la comparación ENTERA, en silencio, contándolo como "no está en esta máquina". Los pipelines de PRODUCCIÓN de
+# esos repos no se compararían con nada, ni siquiera el freno de retroceso que está marcado `exigido`, y el control
+# diría "1 divergencia sobre 55" habiendo dejado dos repos afuera. "No medido" no puede leerse como "coincide".
 rm -rf "$TMP/mundo"; mundo "$TMP/mundo" 'grep Too Many Requests' 'grep Too Many Requests'
 for r in ProdA ProdB; do
   ( cd "$TMP/mundo/$r/Back" && git init -q -b main . && git config user.email t@t && git config user.name t \
@@ -346,11 +341,11 @@ else
 fi
 
 # ---------------------------------------------------------------- 20. los patrones REALES de npm aceptan el guion único sobre la RAÍZ — y el de formularios sigue exigiendo el bucle
-# (2026-09-03) El análisis de la raíz de los cinco formularios pasó a llamar a audit-dependencies.js
-# (`--repo . --type npm … --block`) en vez del bloque `npm audit | tee` + grep copiado. Los tres
+# El análisis de la raíz de los formularios llama a audit-dependencies.js
+# (`--repo . --type npm … --block`) en vez de copiar el bloque `npm audit | tee` + grep. Los tres
 # rasgos de la raíz tienen que reconocerlo (como los de NuGet reconocen `--type nuget`), el de freno
-# NO puede darse por cumplido sin `--block`, y `deps-por-formulario` —que antes se reconocía por el
-# NOMBRE del guion— ya no puede: la raíz también lo llama ahora, así que ese patrón probaría el bucle
+# NO puede darse por cumplido sin `--block`, y `deps-por-formulario` no puede reconocerse por el
+# NOMBRE del guion: la raíz también lo llama, así que ese patrón probaría el bucle
 # por formulario con sólo tener el de la raíz. Este caso lee los patrones del JSON de verdad.
 JSON20="$LISTA_ORG"
 RAIZ20="$(printf 'AUD="$(Agent.TempDirectory)/arnes-ci/audit-dependencies.js"\n[ -f "$AUD" ] || exit 1\nnode "$AUD" --repo . --type npm --declared vulnerabilidades-pendientes.json --block\nRC=$?\n')"
@@ -378,11 +373,9 @@ else
 fi
 
 # ---------------------------------------------------------------- 20. los rasgos del DESPLIEGUE de plugins
-# (2026-09-03) El control daba los cinco productos coincidiendo mientras otro producto subía el paquete
-# marcándolo como actual en el mismo pedido —el modo que deja al host sin ninguna versión cargada
-# ante una migración pendiente— desde hacía meses. No lo levantaba porque NINGUNO de sus 53 rasgos
-# miraba cómo despliega cada uno. Lo encontró una pregunta del dev, no el control. Estos dos rasgos
-# cierran ese hueco: desplegar por el guion compartido, y pasarle al humo el identificador de
+# Un producto que sube el paquete marcándolo como actual en el mismo pedido —el modo que deja al host sin ninguna
+# versión cargada ante una migración pendiente— pasa desapercibido si NINGÚN rasgo mira cómo despliega cada
+# producto. Estos dos rasgos cierran ese hueco: desplegar por el guion compartido, y pasarle al humo el identificador de
 # compilación (que la versión sola no distingue dos builds del mismo número).
 JSON20="$LISTA_ORG"
 BUENO20="$(printf -- 'bash "$DESPLEGAR" \\\n  --url "$(URL)" --zip "$ZIP" --environment staging\nbash "$HUMO" "$(URL)" u p "$NOMBRE" "$VERSION" "$HASH"\n')"
@@ -405,7 +398,7 @@ else
 fi
 
 # ---------------------------------------------------------------- 21. un rasgo que nombra un guion renombrado acepta LOS DOS nombres
-# (story 8.9, tanda C2) Los guiones de scripts/ci pasaron al inglés. Los pipelines de los productos de hoy siguen
+# Los guiones de scripts/ci tienen nombre en inglés. Los pipelines de los productos de hoy siguen
 # llamando al nombre viejo (su reemplazo los atiende hasta el retiro) y un producto nuevo nace con el nuevo: un patrón
 # que aceptara uno solo pondría roja la paridad entre productos que no cambiaron nada, o dejaría afuera al producto
 # nuevo. Este caso lee los patrones del JSON de verdad y arma los nombres desde el mapa de renombres (no literales).
@@ -437,7 +430,7 @@ console.log(bad.join(" · "));' "$LISTA_ORG" "$MAPA21")
     || no "🔴 rasgos con un solo nombre: $res21"
 fi
 
-# ---------------------------------------------------------------- 8.10.3 A · T2 (AC 3): «sin productos» declarado a propósito
+# ---------------------------------------------------------------- «sin productos» declarado a propósito
 # ParityControl_ExplicitNoProducts_ExitsZeroAndSaysSo — la copia pública trae un product-parity.json sintético sin productos:
 # el control dice que no comparó nada y sale 0, pero SÓLO con la marca explícita; sin ella, lo de siempre (2).
 cat > "$TMP/c810a.json" <<'CFG'
@@ -465,7 +458,7 @@ rc=$(cd "$TMP" && node "$CHK" --config "$TMP/c810c.json" >"$TMP/out.txt" 2>&1; e
 # packs/bizuit/templates/ (marcadores reemplazados con nombres inventados) no deja ningún marcador vivo, y
 # sus pipelines pasan los controles de pipeline del arnés. Si una plantilla se queda atrás de los productos —un
 # disparador que construye con un merge de sólo documentación, un paso que publica con lo anterior en rojo—, esto lo dice
-# antes del próximo alta, no después. Las plantillas viajan con el perfil del equipo (story 8.41): sin el paquete
+# antes del próximo alta, no después. Las plantillas viajan con el perfil del equipo: sin el paquete
 # (la copia pública) no se mide, y se dice.
 TPL="$AQUI/packs/bizuit/templates"
 if [ ! -d "$AQUI/packs/bizuit" ]; then
@@ -511,7 +504,7 @@ else
   fi
   # T6 · Canonico_VersionPaqueteDespliegueYBumpAtadosAlVeredicto @story-1.14 @ac-2 @ac-4 — una corrida de backend sin
   # código nuevo no empaqueta, no commitea el bump y no despliega. Si una sola de esas etapas queda con la condición
-  # vieja, la corrida vacía vuelve a dejar algo detrás (el caso real dejó las tres cosas).
+  # vieja, la corrida vacía deja algo detrás (el bump, el paquete o el despliegue).
   res=$(node -e '
 const fs=require("fs"); const L=fs.readFileSync(process.argv[1],"utf8").split("\n"); const bad=[];
 const ind=(s)=>s.match(/^\s*/)[0].length;
@@ -567,9 +560,9 @@ else
   sin_lista_real "plantillas-cumplen-los-rasgos"
 fi
 
-# ================================================================ story 2.25 — el resultado fechado y la lista para clonar
+# ================================================================ el resultado fechado y la lista para clonar
 # La revisión nocturna de dependencias corre el control cada noche y guarda lo que dice en un archivo con fecha
-# (`--out`), que lee el sitio de la organización. Lo que imprime y su código de salida no cambian (decisión 10).
+# (`--out`), que lee el sitio de la organización. Lo que imprime y su código de salida no cambian.
 # publicado <dir>: el azure-pipelines.yml de <dir> queda en un commit y en origin/main (como un clon de la noche)
 publicado(){ ( cd "$1" && git init -q -b main . && git config user.email t@t && git config user.name t \
   && git add -A && git commit -qm publicado && git remote add origin . && git update-ref refs/remotes/origin/main HEAD ) >/dev/null 2>&1; }

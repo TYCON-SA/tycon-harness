@@ -1,16 +1,16 @@
 'use strict';
 /**
- * tycon-home.test.js — la única raíz de las rutas del arnés y el techo de «.claude» (story 8.23, tanda A1).
+ * tycon-home.test.js — la única raíz de las rutas del arnés y el techo de «.claude».
  *
- * EL CASO (2026-10-06). El dueño decidió que el arnés viva en `~/.tycon`, fuera de la carpeta de cualquier herramienta.
- * Hoy cinco piezas resuelven cada una un pedazo de la ruta, todas con `.claude` adentro, y «.claude» aparece más de mil
- * veces en el código. Antes de mover nada (tanda B), la ruta se pide a UN lugar y el resto deja de escribirla a mano.
+ * El arnés vive en `~/.tycon`, fuera de la carpeta de cualquier herramienta. Si cada pieza resolviera un pedazo de la
+ * ruta con `.claude` adentro, «.claude» aparecería más de mil veces en el código: la ruta se pide a UN lugar y el resto
+ * no la escribe a mano.
  *
- * Qué fija (los números son los de la tabla de pruebas de la story):
+ * Qué fija:
  *   T1  cada función de tycon-home.js da lo de hoy; `home()` sale de `os.homedir()` + `.tycon`; `TYCON_HOME` relativa o
  *       vacía es un error que la nombra; el archivo corre copiado suelto (sin el resto del arnés).
- *   T2  las piezas que viajan con el arnés piden su ruta a tycon-home.js y dan la misma ruta que la fórmula de antes; las
- *       dos que viajan al freno (tycon-config.js, skills-dir.js) pasan en la tanda D y hasta entonces dan la misma ruta;
+ *   T2  las piezas que viajan con el arnés piden su ruta a tycon-home.js y dan la misma ruta que la fórmula de siempre; las
+ *       dos que viajan al freno (tycon-config.js, skills-dir.js) dan la misma ruta que tycon-home.js sin pedírsela;
  *       cada variable parcial sigue ganando en su pedazo.
  *   T3  el techo de «.claude»: lo que no es un enchufe de Claude Code ni está en legacy-home-names.json no sube; si baja,
  *       la prueba pide bajar el techo. Re-medir: node scripts/tests/tycon-home.test.js --measure
@@ -54,7 +54,7 @@ function fakeClone(dir) {
   return fs.realpathSync(dir);
 }
 
-// ── T33 de la story 8.39 ────────────────────────────────────────────────────────────────────────────────────────────
+// ── T33 ────────────────────────────────────────────────────────────────────────────────────────────────────────────
 it('T33 NodeDelArnes_Rutas_YCopiasDeclaradas @story-8.39 @ac-2 @ac-26', () => {
   const home = fs.realpathSync(tmp('tycon-home-t33-'));
   const abs = path.join(home, 'otra-casa');
@@ -151,7 +151,7 @@ it('T2 FivePieces_AskTyconHome_PartialVarsStillWin_SameOutputs', () => {
       state: S.paths(h).dir, backups: SN.backupsRoot(h), config: C.rutaMaquina(h),
       skills: K.resolveInstalledSkillsDirs('').repo, skillsVar: K.resolveInstalledSkillsDirs(${JSON.stringify(skillsVar)}).source,
       hp: HP.resolver({ home: h, env: {} }).dir, hpVar: HP.resolver({ home: h, env: { TYCON_GUIDES_DIR: ${JSON.stringify(other)} } }).dir }));`, { home });
-  // la fórmula de antes de la tanda, escrita acá a propósito: es contra lo que se compara
+  // la fórmula de siempre, escrita acá a propósito: es contra lo que se compara
   assert.strictEqual(got.place, path.join(claude, PLACE_NAME));
   assert.strictEqual(got.legacy, path.join(claude, 'tycon-claude-guides'));
   assert.strictEqual(got.resolved, clone);
@@ -164,7 +164,7 @@ it('T2 FivePieces_AskTyconHome_PartialVarsStillWin_SameOutputs', () => {
   assert.strictEqual(got.skillsVar, 'variable', 'TYCON_SKILLS_DIR ya no gana');
   assert.strictEqual(got.hpVar, other, 'TYCON_GUIDES_DIR ya no gana');
 
-  // cada pieza pide la ruta: ninguna escribe a mano la carpeta que ahora da tycon-home.js
+  // cada pieza pide la ruta: ninguna escribe a mano la carpeta que da tycon-home.js
   const asks = {
     'scripts/setup/harness/place.js': /require\(['"]\.\/tycon-home(?:\.js)?['"]\)/,
     'scripts/setup/harness/state.js': /require\(['"]\.\/tycon-home(?:\.js)?['"]\)/,
@@ -172,15 +172,15 @@ it('T2 FivePieces_AskTyconHome_PartialVarsStillWin_SameOutputs', () => {
     'skills/tycon-pipeline/scripts/lib/harness-path.js': /tycon-home\.js/,
   };
   for (const [f, rx] of Object.entries(asks)) assert.ok(rx.test(fs.readFileSync(path.join(ROOT, f), 'utf8')), `${f}: no le pide la ruta a tycon-home.js`);
-  // las dos piezas que viajan con tycon-home.js al lado (la copia fija del programa) ya no escriben su ruta
+  // las dos piezas que viajan con tycon-home.js al lado (la copia fija del programa) no escriben su ruta
   const handWritten = {
     'scripts/setup/harness/state.js': /['"]\.claude['"],\s*['"]\.tycon-pipeline['"]/,
     'scripts/setup/harness/place.js': /['"]\.claude['"]/,
   };
   for (const [f, rx] of Object.entries(handWritten)) assert.ok(!rx.test(fs.readFileSync(path.join(ROOT, f), 'utf8')), `${f}: sigue armando la ruta a mano`);
 
-  // tycon-config.js y skills-dir.js viajan también al freno de producción: le piden la ruta a tycon-home.js en la tanda D
-  // (decisión del dueño, 2026-10-06: cambiarlas ahora pedía reinstalar el freno dos veces). Hasta entonces dan la misma
+  // tycon-config.js y skills-dir.js viajan también al freno de producción y no le piden la ruta a tycon-home.js (cambiarlas
+  // obligaría a reinstalar el freno): dan la misma ruta que tycon-home.js.
   const sameAsHome = inChild(`const H = require(${JSON.stringify(HOME_JS)}); const h = ${JSON.stringify(home)};
     console.log(JSON.stringify({ config: H.configFile(h), skills: H.installedSkillsDir(h) }));`, { home });
   assert.deepStrictEqual({ config: got.config, skills: got.skills }, sameAsHome, 'tycon-config.js o skills-dir.js se desfasaron de tycon-home.js');
@@ -192,8 +192,7 @@ it('T2 FivePieces_AskTyconHome_PartialVarsStillWin_SameOutputs', () => {
   fs.copyFileSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'harness-path.js'), hpCopy);
   const sepGot = inChild(`console.log(JSON.stringify(require(${JSON.stringify(hpCopy)}).resolver({ home: ${JSON.stringify(home)}, env: {} }).dir))`, { home });
   assert.strictEqual(sepGot, clone, 'harness-path.js sin tycon-home.js al lado dejó de resolver');
-  // y si tycon-home.js ESTÁ al lado y no carga, harness-path.js tira: no sigue callado con su copia (revisor de fallas
-  // silenciosas de la A1)
+  // y si tycon-home.js ESTÁ al lado y no carga, harness-path.js tira: no sigue callado con su copia
   const brokenHome = path.join(sep, 'scripts', 'setup', 'harness', 'tycon-home.js');
   fs.mkdirSync(path.dirname(brokenHome), { recursive: true });
   fs.writeFileSync(brokenHome, 'module.exports = {;\n');
@@ -204,8 +203,8 @@ it('T2 FivePieces_AskTyconHome_PartialVarsStillWin_SameOutputs', () => {
 });
 
 // ── T2b: la copia fija del programa nunca queda con un módulo que pide otro que todavía no llegó ──────────────────
-// (pase adversarial de la A1: place.js, state.js y snapshot.js cargan ./tycon-home.js, y la copia los llevaba en orden
-// alfabético —tycon-home.js después—; una copia cortada a mitad dejaba `rollback`/`uninstall` de emergencia rotos)
+// place.js, state.js y snapshot.js cargan ./tycon-home.js: si la copia los llevara en orden alfabético —tycon-home.js
+// después—, una copia cortada a mitad dejaría `rollback`/`uninstall` de emergencia rotos
 it('T2b FixedCopy_DepsBeforeDependents_CutAnywhereStillLoads', () => {
   const H = require(path.join(ROOT, 'scripts', 'setup', 'harness.js'));
   const files = H.fixedCopyFiles(ROOT);
@@ -224,14 +223,14 @@ it('T2b FixedCopy_DepsBeforeDependents_CutAnywhereStillLoads', () => {
   assert.strictEqual(order[order.length - 1], 'program/harness.js', 'el programa va último (segunda vuelta de la 8.13, M3)');
   assert.ok(order.indexOf('program/harness/tycon-home.js') < order.indexOf('program/harness/place.js'), 'tycon-home.js antes que place.js');
 
-  // y de verdad: el programa de la copia arranca cortando la copia después de cada archivo (sobre la copia completa de
-  // antes, que acá es la misma: lo que se mide es que ningún prefijo deja un require sin su archivo)
+  // y de verdad: el programa de la copia arranca cortando la copia después de cada archivo (lo que se mide es que
+  // ningún prefijo deja un require sin su archivo)
   const lab = tmp('tycon-home-t2b-');
   for (let cut = 1; cut <= files.length; cut++) {
     const dir = path.join(lab, String(cut));
     for (const f of files.slice(0, cut)) { fs.mkdirSync(path.dirname(path.join(dir, f.id)), { recursive: true }); fs.copyFileSync(f.src, path.join(dir, f.id)); }
-    // sólo los que cargan con la copia sola (los que piden algo de fuera, como ../../lib/tycon-config.js, no cargan suelto
-    // ni antes de esta story: se cargan del árbol, cuando lo hay)
+    // sólo los que cargan con la copia sola (los que piden algo de fuera, como ../../lib/tycon-config.js, no cargan suelto:
+    // se cargan del árbol, cuando lo hay)
     const prog = files.slice(0, cut).filter((f) => f.id.startsWith('program/harness/') && !/require\(\s*['"]\.\.\//.test(fs.readFileSync(f.src, 'utf8')));
     for (const f of prog) {
       const r = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(path.join(dir, f.id))})`], { encoding: 'utf8' });
@@ -241,7 +240,7 @@ it('T2b FixedCopy_DepsBeforeDependents_CutAnywhereStillLoads', () => {
   fs.rmSync(lab, { recursive: true, force: true });
 });
 
-// ── T5 · T6 (tanda A2): el estado pide su ruta; los lectores del árbol, la suya ────────────────────────────────────
+// ── T5 · T6: el estado pide su ruta; los lectores del árbol, la suya ───────────────────────────────────────────────
 // La carpeta del estado armada a mano: `path.join(…, '.claude', '.tycon-pipeline' …)` o una ruta '…/.claude/.tycon-pipeline'
 const STATE_BUILDER = /['"]\.claude['"]\s*,\s*['"]\.tycon-pipeline['"]|['"`][^'"`\n]*\.claude[\\/]+\.tycon-pipeline(?:[\\/][^'"`\n]*)?['"`]\s*\)|HOME_TYCON\s*,\s*['"]\.tycon-pipeline['"]/;
 /** Las líneas de código (sin comentarios ni mensajes) que arman la carpeta del estado a mano. */
@@ -270,8 +269,8 @@ it('T5 StateWriters_AskStateDir_SamePaths_FrenoLeftForD', () => {
   assert.deepStrictEqual(handWritten, [], `arman la carpeta del estado a mano (pedíselas a tycon-home.js stateDir()):\n${handWritten.join('\n')}`);
 
   // la línea del respaldo de los que viajan sueltos se evalúa SOLA, con y sin tycon-home.js al lado, y da la misma ruta:
-  // no puede depender de un `fs` u `os` que el archivo declara más abajo o adentro de una función (revisor de seguridad
-  // de la A2: la carga de branch-guard-notice.js y de la librería legacy-names.js de las skills reventaba)
+  // no puede depender de un `fs` u `os` que el archivo declara más abajo o adentro de una función (si dependiera de ellos,
+  // la carga de branch-guard-notice.js y de la librería legacy-names.js de las skills reventaría)
   const vm = require('vm');
   const home0 = fs.realpathSync(tmp('tycon-home-t5-decl-'));
   const expected = path.join(home0, '.claude', '.tycon-pipeline');
@@ -313,9 +312,9 @@ it('T5 StateWriters_AskStateDir_SamePaths_FrenoLeftForD', () => {
 
 it('T6 TreeReaders_AskMaintainedDir_SameToday_NightlyWritersUntouched', () => {
   const H = require(HOME_JS);
-  // hoy, el árbol de quien pregunta (desde la B: el clon que se mantiene, o nada). Con una HOME de laboratorio: con la
-  // de la máquina la respuesta dependía de cómo está instalado el arnés ahí (en una máquina con la versión bajada, el
-  // clon declarado en su configuración), no del árbol (banco 13618, grupo C)
+  // hoy, el árbol de quien pregunta (el clon que se mantiene, o nada). Con una HOME de laboratorio: con la
+  // de la máquina la respuesta dependería de cómo está instalado el arnés ahí (en una máquina con la versión bajada, el
+  // clon declarado en su configuración), no del árbol
   const casa = fs.realpathSync(tmp('tycon-home-t6-'));
   assert.strictEqual(H.maintainedDir(casa, ROOT), ROOT);
   fs.rmSync(casa, { recursive: true, force: true });
@@ -332,7 +331,7 @@ it('T6 TreeReaders_AskMaintainedDir_SameToday_NightlyWritersUntouched', () => {
 });
 
 // ── T3: el techo de «.claude» ──────────────────────────────────────────────────────────────────────────────────────
-// ── story 8.26, tanda H1c (AC 65): el clon de mantenimiento que declara la máquina ─────────────────────────────────
+// ── el clon de mantenimiento que declara la máquina ────────────────────────────────────────────────────────────────
 // `maintainedPath` contesta null para todo lo que no sirve; quien reconoce los repos del arnés o lee de ese clon la
 // configuración del merge tiene que poder decir «declara uno y no sirve», que no es «no declara ninguno».
 it('T78 (story 8.26) · maintainersClone: distingue «no declara» de «declara y no sirve», y nunca tira', () => {
@@ -367,13 +366,13 @@ it('T78 (story 8.26) · maintainersClone: distingue «no declara» de «declara 
 const SWEEP_DIRS = ['scripts', 'skills', 'agents', 'build', 'adapters', 'integrations'];
 const NOT_CODE = /\.(md|txt|png|jpe?g|gif|svg|ico|pdf|woff2?|ttf|trx|bpmn|vdw|xlsx|docx|pptx)$/i;
 const IS_TEST = (f) => /(^|\/)(tests?|__tests__|fixtures)\//.test(f) || /\.test\.[a-z0-9]+$/.test(f) || /controls-bench\/cases\//.test(f);
-// clase B: los enchufes de Claude Code, que se quedan en ~/.claude aunque el arnés se mude (AC 4)
+// los enchufes de Claude Code, que se quedan en ~/.claude aunque el arnés se mude
 const PLUG_AFTER = /^(?:\.json\b|(?:['"`]\s*,\s*['"`]|[\\/]+)(?:settings\.json|settings\.local\.json|CLAUDE\.md|skills|agents|commands|projects|plugins|channels)\b)/;
 
 /** Las apariciones de «.claude» que no son un enchufe, por archivo, en los archivos rastreados de `root`. */
 function measure(root, exempt) {
   // «sin git» es también una copia sin .git propio DENTRO de otro repo (un HOME versionado): ahí ls-files sale bien con la
-  // lista vacía y el techo bajaría entero de mentira (pase adversarial de la A1). Se mide sólo en la raíz de su repo.
+  // lista vacía y el techo bajaría entero de mentira. Se mide sólo en la raíz de su repo.
   const top = spawnSync('git', ['-C', root, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
   if (top.status !== 0 || fs.realpathSync(top.stdout.trim()) !== fs.realpathSync(root)) return null;
   const r = spawnSync('git', ['-C', root, 'ls-files', '-z', '--', ...SWEEP_DIRS], { encoding: 'utf8' });
@@ -385,14 +384,14 @@ function measure(root, exempt) {
     try { text = fs.readFileSync(path.join(root, f), 'utf8'); } catch (_) { continue; }
     if (text.includes('\0')) continue;
     // los envoltorios de los nombres viejos (legacy-names.js --write-shims) no son código propio: se regeneran solos y
-    // llevan el nombre de ANTES del renombre, que la copia publicada no puede nombrar (el 182 de la A1 frenó por eso:
-    // 94 entradas del techo eran nombres viejos)
+    // llevan el nombre de ANTES del renombre, que la copia publicada no puede nombrar (sin esto, el techo contaría
+    // los nombres viejos)
     if (text.split('\n').slice(0, 3).some((l) => l.includes(SHIM_MARK))) continue;
     const lines = [];
     let n = 0;
     text.split('\n').forEach((line, i) => {
       // una RUTA: «.claude» que no viene pegado a un identificador ni a un dominio (`r.tools.claude` y `code.claude.com`
-      // no son rutas: pase adversarial de la A1)
+      // no son rutas)
       const rx = /(?<![A-Za-z0-9_.-])\.claude(?![A-Za-z0-9_])/g;
       let m; let hit = false;
       while ((m = rx.exec(line))) if (!PLUG_AFTER.test(line.slice(m.index + m[0].length))) { n++; hit = true; }
@@ -478,11 +477,11 @@ it('T3 DotClaudeCeiling_NeverRises_ClassBAndLegacyExempt', () => {
   fs.rmSync(t, { recursive: true, force: true });
 });
 
-// ── T37 (story 8.23, tanda E · AC 36): el retiro tiene fecha y story ───────────────────────────────────────────────
+// ── T37: el retiro tiene fecha y story ─────────────────────────────────────────────────────────────────────────────
 // Cada ruta vieja declarada en legacy-home-names.json —las `entries` que definen la ruta de hoy y las `until_d` que
-// quedaron como respaldo tras la D— lleva `retire_after` (una fecha, la regla de 30 días de la 8.15) y `retired_by` (la
-// story que la retira, escrita aunque no implementada). El techo de «.claude» NO baja a cero en la E: lo baja esa story,
-// por tandas (decisión del dueño, 2026-10-08); acá se exige que la deuda esté declarada, no que esté pagada.
+// quedan como respaldo— lleva `retire_after` (una fecha, la regla de 30 días que declara `__retiro`) y `retired_by` (la
+// story que la retira, escrita aunque no implementada). El techo de «.claude» no baja a cero de una: lo baja esa story,
+// por tandas; acá se exige que la deuda esté declarada, no que esté pagada.
 it('T37 Retirement_CeilingZero_DatesSet_StoryWritten', () => {
   const L = legacy();
   const all = [...L.entries, ...(L.until_d || [])];
@@ -496,14 +495,14 @@ it('T37 Retirement_CeilingZero_DatesSet_StoryWritten', () => {
   }
   assert.ok(typeof L.__retiro === 'string' && L.__retiro.includes('8.15'), 'legacy-home-names.json: falta __retiro con la regla de la 8.15');
   // la story de retiro existe y nombra lo que retira. Las stories no viajan a la copia pública (specs/** queda afuera):
-  // ahí esta parte no se mide, y se dice (pase adversarial de la E, clase 10)
+  // ahí esta parte no se mide, y se dice
   if (!fs.existsSync(path.join(ROOT, 'specs'))) { console.log('⏭ T37: NO MEDIDO (la story de retiro) — la copia pública no trae specs/; se mide en el repo interno'); return; }
   for (const id of stories) {
     const matches = fs.readdirSync(path.join(ROOT, 'specs')).filter((f) => f.startsWith(`story-${id}-`) && f.endsWith('.md'));
     assert.strictEqual(matches.length, 1, `specs/: la story de retiro ${id} tiene que existir una vez (hay ${matches.length})`);
     const text = fs.readFileSync(path.join(ROOT, 'specs', matches[0]), 'utf8');
-    // el AC pide la story ESCRITA; su estado sigue su propio ciclo (draft → ready-for-dev → in-progress → review → done)
-    // y esta prueba no vence con él (pase adversarial de la E, clase 11): sólo exige un estado legible
+    // se exige la story ESCRITA; su estado sigue su propio ciclo (draft → ready-for-dev → in-progress → review → done)
+    // y esta prueba no vence con él: sólo exige un estado legible
     assert.match(text, /^status:\s*(draft|ready-for-dev|in-progress|review|done)\s*$/m, `${matches[0]}: la story de retiro tiene que tener un estado legible en su frontmatter`);
     for (const needle of ['legacy-home-names.json', 'dot-claude-ceiling.json', 'tycon-claude-guides', '.tycon-pipeline']) {
       assert.ok(text.includes(needle), `${matches[0]}: no nombra «${needle}»`);
