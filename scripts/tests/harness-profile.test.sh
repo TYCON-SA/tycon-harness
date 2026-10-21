@@ -286,9 +286,10 @@ PY
     #   scripts/hooks/owner-email-notice.js — tu correo de git, dicho una vez, con el buzón prendido (story 2.28, AC 30)
     #   scripts/hooks/wait-notice.js — el aviso de que una corrida espera a una persona, en sus seis eventos
     #   scripts/hooks/worktree-sweep.js — el barrido diario de las carpetas de trabajo ya mergeadas
+    #   scripts/hooks/unclosed-runs-notice.js — las corridas que quedaron sin cerrar, dicho una vez por día
     # «ruta=N»: registrado N veces (un hook en varios eventos); sin «=N», una.
     rm -f "$T/t40/added.out"
-    python3 - "$T/t40/new-norm.json" "$T/t40/added.out" scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js scripts/hooks/wait-notice.js=6 scripts/hooks/worktree-sweep.js <<'PY'
+    python3 - "$T/t40/new-norm.json" "$T/t40/added.out" scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js scripts/hooks/wait-notice.js=6 scripts/hooks/worktree-sweep.js scripts/hooks/unclosed-runs-notice.js <<'PY'
 import json, sys
 path, out = sys.argv[1], sys.argv[2]
 want = {a.split("=")[0]: int(a.split("=")[1]) if "=" in a else 1 for a in sys.argv[3:]}
