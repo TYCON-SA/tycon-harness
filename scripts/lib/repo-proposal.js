@@ -27,8 +27,9 @@
  * Con la opción de la organización «los cambios de un mantenedor se aplican solos» (`aplicarSolo`), después de abrir el
  * pedido el sitio lo aprueba con su propia identidad (la que lo creó), mira que todas las políticas bloqueantes del
  * pedido queden cumplidas y recién entonces lo completa, sin saltear ninguna (nunca `bypassPolicy`, nunca un empuje a
- * main). Si falta algo que el voto del sitio no da, lo dice y deja el pedido. Es lo único que este módulo cambia de un
- * pedido; sin la opción, nada de eso ocurre.
+ * main). Si falta algo que el voto del sitio no da, lo dice y deja el pedido. En GitHub, donde quien abre el pedido no
+ * puede aprobarlo, lo mergea directo si el repo lo deja, y si no le prende el auto-merge. Es lo único que este módulo
+ * cambia de un pedido; sin la opción, nada de eso ocurre.
  *
  * Sin dependencias fuera de Node: child_process, fs, path, os, crypto y el `fetch` global (Node 20+). Todo lo que habla
  * con afuera (git, fetch, el reloj, el candado) se inyecta para las pruebas (scripts/tests/repo-proposal.test.js).
@@ -65,7 +66,8 @@ const TEXTOS = {
   'rp.noSubi': { es: 'no pude subir la rama {rama} ({error})', en: 'I could not push the {rama} branch ({error})' },
   'rp.noAbri': { es: 'El cambio subió a la rama {rama}, pero no pude abrir el pedido ({motivo}). Abrilo desde: {manual}', en: 'The change was pushed to the {rama} branch, but I could not open the request ({motivo}). Open it from: {manual}' },
   'rp.abierto': { es: 'Pedido abierto: {enlace}', en: 'Request opened: {enlace}' },
-  'rp.githubNoAprueba': { es: 'No se pudo aplicar solo: en GitHub quien abre el pedido no puede aprobarlo. El pedido queda para aprobar: {enlace}', en: 'It could not be applied automatically: on GitHub, the author of a request cannot approve it. The request is waiting for approval: {enlace}' },
+  'rp.githubNoAprueba': { es: 'No se pudo aplicar solo: el repo pide una aprobación y no deja el auto-merge ({motivo}). El pedido queda para aprobar: {enlace}', en: 'It could not be applied automatically: the repository requires an approval and does not allow auto-merge ({motivo}). The request is waiting for approval: {enlace}' },
+  'rp.githubAutoMerge': { es: 'El repo pide la aprobación de otra persona: el pedido quedó con auto-merge y entra solo en cuanto alguien lo apruebe y pasen sus chequeos: {enlace}', en: 'The repository requires someone else to approve: the request has auto-merge on and goes in as soon as someone approves it and its checks pass: {enlace}' },
   'rp.pipelineNoReconocido': { es: 'no reconozco el pipeline: el número de la definición en Azure DevOps (o proyecto/número si es de otro proyecto), o dueño/repo en GitHub', en: 'I do not recognize the pipeline: the definition number in Azure DevOps (or project/number if it is from another project), or owner/repo on GitHub' },
   'rp.stageAMano': { es: 'no configurado: escribí el stage a mano (el sitio no tiene SITE_PIPELINES_TOKEN)', en: 'not set up: type the stage by hand (the site has no SITE_PIPELINES_TOKEN)' },
   'rp.noEsAzure': { es: 'el repo de operaciones no es de Azure DevOps: escribí el stage a mano', en: 'the operations repo is not on Azure DevOps: type the stage by hand' },
@@ -286,7 +288,8 @@ async function politicaDeRevision({ remote, credencial, urlBase, fetch: f, archi
     return { ok: true, detalle: `al menos ${n} revisor${n === 1 ? '' : 'es'}` };
   }
   const prot = await llamar({ url: `${base}/branches/${RAMA_PRINCIPAL}/protection`, remote, cred, fetch: f, secretos });
-  // en GitHub quien abre un pedido no puede aprobarlo: con la opción de aplicar solo, igual queda el pedido
+  // en GitHub quien abre un pedido no puede aprobarlo: si entra solo depende de que el repo deje mergear a la identidad del
+  // sitio sin aprobación, y eso se sabe recién al intentarlo
   const enGithub = (n) => ({ ok: true, detalle: `al menos ${n} revisor${n === 1 ? '' : 'es'}`, ...(aplicarSolo ? { aplicaSolo: false, motivoAplicar: SIN_APLICAR_GITHUB } : {}) });
   if (prot.status === 200) {
     const n = Number((((prot.doc || {}).required_pull_request_reviews || {}).required_approving_review_count) || 0);
@@ -298,7 +301,7 @@ async function politicaDeRevision({ remote, credencial, urlBase, fetch: f, archi
   if (n >= 1) return enGithub(n);
   return sinPolitica;
 }
-const SIN_APLICAR_GITHUB = 'Con la opción prendida, igual queda el pedido para aprobar: en GitHub quien abre el pedido no puede aprobarlo.';
+const SIN_APLICAR_GITHUB = 'Con la opción prendida, el sitio lo mergea directo si el repo se lo deja; si pide la aprobación de otra persona, el pedido queda con auto-merge y entra cuando alguien lo apruebe.';
 
 /**
  * El pedido activo hacia main desde una rama `team-config/<idCorto>-*`: `{ enlace, rama }`, o null si no hay. Si la API
@@ -372,7 +375,7 @@ async function pedidoDeMarca({ remote, credencial, marca, urlBase, fetch: f, aho
   return p ? { estado: activo ? 'abierto' : 'aplicado', enlace: p.html_url } : null;
 }
 
-/** Abre el pedido por REST: { ok, enlace } | { ok: false, motivo }. Nunca auto-completar ni merge (decisión 1). */
+/** Abre el pedido por REST: { ok, enlace } | { ok: false, motivo }. Abrirlo no lo completa ni lo mergea (decisión 1). */
 async function abrirPedido({ remote, cred, urlBase, rama, titulo, cuerpo, fetch: f, secretos }) {
   const base = baseDe(remote, urlBase);
   if (remote.platform === 'azure') {
@@ -383,7 +386,7 @@ async function abrirPedido({ remote, cred, urlBase, rama, titulo, cuerpo, fetch:
     return { ok: false, motivo: motivoDePedido(r) };
   }
   const r = await llamar({ method: 'POST', url: `${base}/pulls`, remote, cred, fetch: f, secretos, cuerpo: { title: titulo, head: rama, base: RAMA_PRINCIPAL, body: cuerpo } });
-  if (r.status === 201 && r.doc && r.doc.html_url) return { ok: true, enlace: r.doc.html_url };
+  if (r.status === 201 && r.doc && r.doc.html_url) return { ok: true, enlace: r.doc.html_url, numero: r.doc.number, nodo: r.doc.node_id || null };
   return { ok: false, motivo: motivoDePedido(r) };
 }
 const motivoDePedido = (r) => (r.status === 403 || r.status === 401 ? 'la identidad de escritura del sitio no tiene permiso para abrir pedidos en ese repo' : r.motivo || `HTTP ${r.status}`);
@@ -439,6 +442,38 @@ async function aplicarPedido({ remote, cred, urlBase, fetch: f, secretos, pedido
   if (estado !== 'completed' && ultimaLectura !== 'leida') return queda(`El pedido quedó aprobado por el sitio y se pidió completarlo, pero no pude confirmar si se completó (${ultimaLectura}): miralo en ${enlace}`);
   if (estado !== 'completed') return queda(`El pedido quedó abierto y aprobado por el sitio, pero todavía no se completó (${estado || 'sin estado'}): miralo en ${enlace}`);
   return { ok: true, codigo: 'aplicado', rama, enlace, message: M('rp.aplicado', { enlace }) };
+}
+
+/**
+ * Aplica solo un pedido de GitHub recién abierto. En GitHub quien abre un pedido no puede aprobarlo, así que el sitio no
+ * vota: primero lo mergea directo, que el repo deja cuando la identidad del sitio puede saltear la revisión; si el repo
+ * pide la aprobación de otra persona (o mergea por la cola), le prende el auto-merge y entra cuando alguien lo apruebe.
+ * Devuelve { codigo: 'aplicado' } · { codigo: 'no_aplica_solo' } (queda con auto-merge, o para aprobar). Nunca saltea
+ * una regla del repo: si GitHub no deja, el pedido queda.
+ */
+async function aplicarEnGithub({ remote, cred, urlBase, fetch: f, secretos, pedido, sha, titulo, rama }) {
+  const base = baseDe(remote, urlBase);
+  const { enlace } = pedido;
+  const directo = await llamar({ method: 'PUT', url: `${base}/pulls/${encodeURIComponent(pedido.numero)}/merge`, remote, cred, fetch: f, secretos, cuerpo: { merge_method: 'merge', sha, commit_title: `${titulo} (aplicado por el sitio)` } });
+  const aplicado = { ok: true, codigo: 'aplicado', rama, enlace, message: M('rp.aplicado', { enlace }) };
+  if (directo.status === 200 && directo.doc && directo.doc.merged === true) return aplicado;
+  // sin respuesta (o un error del servidor) el merge pudo haber entrado: se mira el pedido antes de seguir
+  if (!directo.status || directo.status >= 500) {
+    const visto = await llamar({ url: `${base}/pulls/${encodeURIComponent(pedido.numero)}`, remote, cred, fetch: f, secretos });
+    if (visto.status === 200 && visto.doc && visto.doc.merged === true) return aplicado;
+  }
+  const porQue = motivoDeEscritura(directo);
+  if (!pedido.nodo) return { ok: true, codigo: 'no_aplica_solo', rama, enlace, message: M('rp.githubNoAprueba', { motivo: porQue, enlace }) };
+  // GitHub Enterprise sirve la API en /api/v3 y GraphQL en /api/graphql; github.com, las dos en la raíz
+  const raiz = ((urlBase && urlBase.github) || URL_BASE.github).replace(/\/$/, '');
+  const graphql = /\/api\/v3$/.test(raiz) ? raiz.replace(/\/v3$/, '/graphql') : `${raiz}/graphql`;
+  const auto = await llamar({ method: 'POST', url: graphql, remote, cred, fetch: f, secretos, cuerpo: { query: 'mutation($id: ID!) { enablePullRequestAutoMerge(input: { pullRequestId: $id }) { pullRequest { number } } }', variables: { id: pedido.nodo } } });
+  const errores = auto.doc && Array.isArray(auto.doc.errors) ? auto.doc.errors : [];
+  if (auto.status === 200 && !errores.length && auto.doc && auto.doc.data && auto.doc.data.enablePullRequestAutoMerge) {
+    return { ok: true, codigo: 'no_aplica_solo', rama, enlace, message: M('rp.githubAutoMerge', { enlace }) };
+  }
+  const motivo = errores.length && errores[0] && errores[0].message ? tapar(String(errores[0].message).slice(0, 200), secretos) : motivoDeEscritura(auto);
+  return { ok: true, codigo: 'no_aplica_solo', rama, enlace, message: M('rp.githubNoAprueba', { motivo: `${porQue}; auto-merge: ${motivo}`, enlace }) };
 }
 
 /** El enlace para abrir el pedido a mano (el mismo que `proposalPlan` de team-config.js). */
@@ -566,8 +601,9 @@ async function proponer({ clon, archivo: archivoSuelto, contenido, oidEsperado, 
     }
     registrar(`propuesta de ${archivo}: pedido abierto ${pedido.enlace}`);
     if (!aplicarSolo) return { ok: true, rama, enlace: pedido.enlace, message: M('rp.abierto', { enlace: pedido.enlace }) };
-    if (remote.platform === 'github') return { ok: true, codigo: 'no_aplica_solo', rama, enlace: pedido.enlace, message: M('rp.githubNoAprueba', { enlace: pedido.enlace }) };
-    const aplicado = await aplicarPedido({ remote, cred, urlBase, fetch: f, secretos, pedido, sha, titulo, quien, rama, esperar });
+    const aplicado = remote.platform === 'github'
+      ? await aplicarEnGithub({ remote, cred, urlBase, fetch: f, secretos, pedido, sha, titulo, rama })
+      : await aplicarPedido({ remote, cred, urlBase, fetch: f, secretos, pedido, sha, titulo, quien, rama, esperar });
     registrar(aplicado.codigo === 'aplicado' ? `cambio aplicado: ${archivo} por ${quien || 'alguien'}, pedido ${pedido.enlace}` : `propuesta de ${archivo}: no se aplicó sola (${aplicado.codigo}): ${aplicado.message}`);
     return aplicado;
   });

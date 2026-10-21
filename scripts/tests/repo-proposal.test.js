@@ -600,16 +600,55 @@ test('T6 Proponer_CompletarFalla_DiceLoQueQuedo @story-2.39 @ac-7', { skip: SIN_
   }
 });
 
-test('T7 Proponer_GitHubEncendido_DejaElPedido @story-2.39 @ac-5', { skip: SIN_BACKEND }, async () => {
-  const m = await montar({ plataforma: 'github' });
-  try {
-    const res = await proponer(aplicando(m));
-    assert.deepStrictEqual([res.ok, res.codigo], [true, 'no_aplica_solo'], textoDe(res));
-    assert.match(res.message, /en GitHub quien abre el pedido no puede aprobarlo/);
-    assert.ok(res.enlace && res.message.includes(res.enlace), res.message);
-    assert.deepStrictEqual(m.api.prohibidas(), [], 'ni merge ni auto-merge');
-    assert.deepStrictEqual(m.api.llamadas.filter((l) => /reviews/.test(l.ruta)), [], 'ninguna revisión');
-  } finally { await m.cerrar(); }
+test('T7 Proponer_GitHubEncendido_MergeDirectoOAutoMerge @story-2.39 @ac-5 — en GitHub, sin voto: merge directo si el repo lo deja, si no auto-merge', { skip: SIN_BACKEND }, async () => {
+  const pasos = (m) => m.api.llamadas.filter((l) => /\/merge$/.test(l.ruta) || l.ruta === '/graphql').map((l) => (l.ruta === '/graphql' ? 'auto-merge' : 'merge'));
+  {
+    const m = await montar({ plataforma: 'github' });
+    try {
+      const res = await proponer(aplicando(m));
+      assert.deepStrictEqual([res.ok, res.codigo], [true, 'aplicado'], textoDe(res));
+      assert.ok(res.enlace && res.message.includes(res.enlace), res.message);
+      assert.deepStrictEqual(pasos(m), ['merge'], 'el repo lo dejó: no hace falta el auto-merge');
+      const merge = m.api.llamadas.find((l) => /\/merge$/.test(l.ruta));
+      assert.match(merge.cuerpo.sha, /^[0-9a-f]{40}$/, 'mergea el commit que empujó, no lo que haya en la rama');
+      assert.deepStrictEqual(m.api.llamadas.filter((l) => /reviews/.test(l.ruta)), [], 'ninguna revisión: en GitHub quien abre el pedido no puede aprobarlo');
+      assert.ok(m.registro.some((l) => l.startsWith(`cambio aplicado: operations.json por ${QUIEN}`)), m.registro.join('\n'));
+    } finally { await m.cerrar(); }
+  }
+  {
+    const m = await montar({ plataforma: 'github' });
+    try {
+      m.api.st.mergeDirecto = 405;
+      const res = await proponer(aplicando(m));
+      assert.deepStrictEqual([res.ok, res.codigo], [true, 'no_aplica_solo'], textoDe(res));
+      assert.match(res.message, /quedó con auto-merge y entra solo en cuanto alguien lo apruebe y pasen sus chequeos/);
+      assert.deepStrictEqual(pasos(m), ['merge', 'auto-merge']);
+      const auto = m.api.llamadas.find((l) => l.ruta === '/graphql');
+      assert.strictEqual(auto.cuerpo.variables.id, 'PR_nodo1', 'el auto-merge va al pedido que abrió');
+    } finally { await m.cerrar(); }
+  }
+  {
+    // el merge entró pero la respuesta se perdió: se mira el pedido y dice «Aplicado», sin pedir el auto-merge
+    const m = await montar({ plataforma: 'github' });
+    try {
+      m.api.st.mergeDirecto = 'perdido';
+      const res = await proponer(aplicando(m));
+      assert.strictEqual(res.codigo, 'aplicado', textoDe(res));
+      assert.deepStrictEqual(pasos(m), ['merge']);
+    } finally { await m.cerrar(); }
+  }
+  {
+    const m = await montar({ plataforma: 'github' });
+    try {
+      m.api.st.mergeDirecto = 405;
+      m.api.st.autoMerge = 'Auto merge is not allowed for this repository';
+      const res = await proponer(aplicando(m));
+      assert.deepStrictEqual([res.ok, res.codigo], [true, 'no_aplica_solo'], textoDe(res));
+      assert.match(res.message, /^No se pudo aplicar solo: .*Auto merge is not allowed for this repository.*El pedido queda para aprobar/);
+      assert.ok(res.enlace && res.message.includes(res.enlace), res.message);
+      assert.ok(!m.registro.join('\n').includes(QUIEN), 'lo que queda para aprobar no lleva el correo al registro');
+    } finally { await m.cerrar(); }
+  }
 });
 
 test('T10 Registro_Aplicado_NombraQuienYElPedido @story-2.39 @ac-6', { skip: SIN_BACKEND }, async () => {
@@ -725,7 +764,7 @@ test('T18 Politica_AplicarSolo_MotivosGithubYSinPolitica @story-2.39 @ac-4 @ac-5
     const b = gh.base();
     const r = await politicaDeRevision({ remote: b.remote, credencial: b.credencial, urlBase: b.urlBase, aplicarSolo: true });
     assert.deepStrictEqual([r.ok, r.aplicaSolo], [true, false], textoDe(r));
-    assert.match(r.motivoAplicar, /en GitHub quien abre el pedido no puede aprobarlo/);
+    assert.match(r.motivoAplicar, /lo mergea directo si el repo se lo deja; si pide la aprobación de otra persona, el pedido queda con auto-merge/);
     const apagada = await politicaDeRevision({ remote: b.remote, credencial: b.credencial, urlBase: b.urlBase });
     assert.ok(!('aplicaSolo' in apagada), 'con la opción apagada, la respuesta es la de siempre');
   } finally { await gh.cerrar(); }
