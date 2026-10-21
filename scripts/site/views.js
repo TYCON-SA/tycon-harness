@@ -385,9 +385,15 @@ function paginaProyectos(ctx) {
   const T = (k, v) => t(idioma, k, v);
   const titulo = T('pestana.proyectos');
   const m = ctx.modelo || {};
-  if (m.proyectos && m.proyectos.lista === null) return layout(ctx, titulo, seccion(titulo, `<p class="q-note">${esc(fraseDe(m.proyectos, idioma))}</p>`));
+  // las fichas de la organización del tablero nocturno, en una grilla arriba de la tabla; no dependen de la lista de
+  // productos. Sólo las trae el modelo de quien mantiene: el de una persona no tiene `fichas`, y su página no cambia
+  const [grilla] = fichasDelTablero.seccionesDe(m.fichas, 'proyectos', { sinPreguntas: true, idioma });
+  const fichas = m.fichas === null
+    ? `<p class="q-note" id="fichas-calculando">${esc(T('fichas.calculando'))}</p>`
+    : (grilla ? `<div id="fichas-proyectos">${seccion(T('proyectos.fichas'), grilla.html)}</div>` : '');
+  if (m.proyectos && m.proyectos.lista === null) return layout(ctx, titulo, fichas + seccion(titulo, `<p class="q-note">${esc(fraseDe(m.proyectos, idioma))}</p>`));
   // sin repos.json (o ilegible) no se sabe qué productos hay: «no medido», nunca «ningún producto»
-  if (m.productosFuente && m.productosFuente.estado === 'no_medido') return layout(ctx, titulo, seccion(titulo, `<p class="q-note">${esc(T('proyectos.sinLista', { motivo: fraseDe(m.productosFuente, idioma) }))}</p>`));
+  if (m.productosFuente && m.productosFuente.estado === 'no_medido') return layout(ctx, titulo, fichas + seccion(titulo, `<p class="q-note">${esc(T('proyectos.sinLista', { motivo: fraseDe(m.productosFuente, idioma) }))}</p>`));
   const { filas, totales } = filasProyectos(m, { idioma });
   const noMedido = (motivo) => esc(T('vista.noMedidoCon', { motivo }));
   const celdaDep = (d) => {
@@ -403,7 +409,7 @@ function paginaProyectos(ctx) {
   const cab = ['producto', 'enCurso', 'paradas', 'bloqueadas', 'enPrueba', 'enProduccion', 'aprobacion', 'vigilado', 'vivas', 'paridad'].map((k) => `<th>${esc(T(`proyectos.col.${k}`, { dias: PARADA_DIAS }))}</th>`).join('');
   const tabla = `<label class="filtro">${esc(T('proyectos.filtrar'))} <input type="search" data-filtro="proyectos"></label><div class="card tbl-wrap"><table class="tabla" id="proyectos"><thead><tr>${cab}</tr></thead><tbody>${filasHtml}</tbody></table></div>`;
   const pie = `<p class="q-note">${esc(T('proyectos.totales', { enCurso: totales.en_curso_total, paradas: totales.paradas_total, sinMedir: totales.sin_medir_total }))}</p>`;
-  return layout(ctx, titulo, seccion(T('proyectos.comoVa'), filas.length ? tabla + pie : `<p class="q-note">${esc(T('proyectos.ninguno'))}</p>`), T('proyectos.lede'));
+  return layout(ctx, titulo, fichas + seccion(T('proyectos.comoVa'), filas.length ? tabla + pie : `<p class="q-note">${esc(T('proyectos.ninguno'))}</p>`), T('proyectos.lede'));
 }
 
 function paginaArnes(ctx) {
