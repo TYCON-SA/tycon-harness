@@ -322,7 +322,7 @@ async function conPestana({ fuentes, env = {}, opciones = {} }, fn) {
     await fn({ h, entrar, token, escribir, cfg });
   } finally { await cerrarTodos(h, emisor); }
 }
-const RUTAS = [['GET', '/configuracion'], ['GET', '/static/config.js'], ['GET', '/api/config'], ['POST', '/api/config/revisar'], ['POST', '/api/config/stages'], ['POST', '/api/config/pipelines'], ['POST', '/api/config/pasos'], ['POST', '/api/config/proponer'], ['GET', '/api/config/propuesta']];
+const RUTAS = [['GET', '/configuracion'], ['GET', '/static/config.js'], ['GET', '/api/config'], ['POST', '/api/config/revisar'], ['POST', '/api/config/stages'], ['POST', '/api/config/pipelines'], ['POST', '/api/config/pasos'], ['POST', '/api/config/tipos-de-pedido'], ['POST', '/api/config/campos-de-pedido'], ['POST', '/api/config/proponer'], ['GET', '/api/config/propuesta']];
 
 test('T1 Dev_403EnTodasLasRutas_SinDatos @story-2.29 @ac-1', async () => {
   const ops = clon({ 'operations.json': opsBase({ owners: { default: 'marcador-owner@acme.example' } }) });
@@ -3327,4 +3327,101 @@ test('T16b Editor_Pedidos_NombreRepetidoYVaciar @story-4.9 @ac-10 (pase adversar
   // quitar los dos campos saca la parte y la clave entera
   for (let i = 0; i < 2; i++) todos().filter((n) => n.tag === 'button' && n.attrs.title === 'Quitar').filter((b) => b !== undefined)[0].on.click();
   assert.strictEqual((await revisado()).work_items, undefined, 'sin nada, sin work_items: cada proyecto con su elemento de backlog');
+});
+
+// ── los tipos de pedido y sus campos, leídos de la plataforma: para elegir, y sin lista se escribe ──
+test('T18 Pedidos_LecturaDeTiposYCampos_ConPermisoSinPermisoYCaidas @story-4.9 @ac-10 — la misma forma con lista, sin permiso, sin red y con una respuesta ilegible', async () => {
+  // 🔴 rojo: con permiso no da la lista (o trae tipos apagados o repetidos), un 401 no dice qué permiso falta, o una caída sale como lista vacía.
+  const RP = require(path.join(ROOT, 'scripts', 'lib', 'repo-proposal.js'));
+  const urls = [];
+  const resp = (status, doc) => async (url) => { urls.push(String(url)); return new Response(typeof doc === 'string' ? doc : JSON.stringify(doc || {}), { status }); };
+  const base = { org: 'acme', project: 'Ventas', token: 't', urlBase: { azure: 'http://az.example' } };
+  const ok = await RP.tiposDePedido({ ...base, fetch: resp(200, { value: [{ name: 'Riesgo' }, { name: 'Bug' }, { name: 'Viejo', isDisabled: true }, { name: 'Bug' }, { nombre: 'roto' }] }) });
+  assert.deepStrictEqual(ok, { ok: true, tipos: ['Bug', 'Riesgo'] });
+  assert.match(urls[0], /^http:\/\/az\.example\/acme\/Ventas\/_apis\/wit\/workitemtypes\?api-version=7\.1$/);
+  // los internos del proceso, que la plataforma declara en su categoría oculta, no se ofrecen
+  const conOcultos = async (url) => new Response(JSON.stringify(/HiddenCategory/.test(String(url)) ? { workItemTypes: [{ name: 'Test Plan' }] } : { value: [{ name: 'Bug' }, { name: 'Test Plan' }] }), { status: 200 });
+  assert.deepStrictEqual((await RP.tiposDePedido({ ...base, fetch: conOcultos })).tipos, ['Bug']);
+  const sin = await RP.tiposDePedido({ ...base, fetch: resp(401) });
+  assert.deepStrictEqual([sin.ok, sin.codigo], [false, 'sin_permiso']);
+  assert.match(sin.message, /lectura de pedidos de trabajo/);
+  assert.strictEqual((await RP.tiposDePedido({ ...base, token: null, fetch: resp(200) })).codigo, 'sin_permiso', 'sin credencial no pregunta');
+  assert.strictEqual((await RP.tiposDePedido({ ...base, fetch: async () => { throw new Error('red'); } })).codigo, 'sin_respuesta');
+  assert.strictEqual((await RP.tiposDePedido({ ...base, fetch: resp(200, 'no es json') })).codigo, 'sin_respuesta');
+  assert.strictEqual((await RP.tiposDePedido({ ...base, fetch: resp(500) })).codigo, 'sin_respuesta');
+  const campos = await RP.camposDelTipo({ ...base, tipo: 'Riesgo', fetch: resp(200, { value: [{ referenceName: 'Custom.Impacto', name: 'Impacto', allowedValues: [1, 2, '3'] }, { referenceName: 'System.Title', name: 'Title' }] }) });
+  assert.deepStrictEqual(campos, { ok: true, campos: [{ referencia: 'Custom.Impacto', nombre: 'Impacto', valores: ['1', '2', '3'] }, { referencia: 'System.Title', nombre: 'Title', valores: [] }] });
+  assert.match(urls[urls.length - 1], /\/workitemtypes\/Riesgo\/fields\?\$expand=allowedValues&api-version=7\.1$/);
+  const noEsta = await RP.camposDelTipo({ ...base, tipo: 'Nada', fetch: resp(404) });
+  assert.deepStrictEqual([noEsta.codigo, /no tiene el tipo de pedido Nada/.test(noEsta.message)], ['no_reconozco', true]);
+  for (const tipo of ['', '..', 'a/b', 'a?b']) assert.strictEqual((await RP.camposDelTipo({ ...base, tipo, fetch: resp(200) })).codigo, 'no_reconozco', JSON.stringify(tipo));
+});
+
+test('T19 Pedidos_PantallaOfreceLasListas_YSinPermisoDejaEscribirConAviso @story-4.9 @ac-10 — los tipos, los campos y los valores para elegir; sin la lista, el campo de siempre y por qué', async () => {
+  // 🔴 rojo: con la lista no hay opciones para elegir, o sin permiso el campo desaparece o no dice por qué.
+  const sec = () => ({ id: 'pedidos', titulo: 'Pedidos de vulnerabilidades', repo: 'operaciones', estado: 'cargado', soloLectura: false, problems: [], avisos: [], borrador: { work_items: { type: 'Riesgo', fixed_fields: { 'Custom.Impacto': 3 } } } });
+  const listas = { '/api/config/tipos-de-pedido': () => ({ ok: true, tipos: ['Bug', 'Riesgo'], sinLeer: [{ proyecto: 'Compras', message: 'x' }] }),
+    '/api/config/campos-de-pedido': () => ({ ok: true, proyecto: 'Ventas', campos: [{ referencia: 'Custom.Impacto', nombre: 'Impacto', valores: ['1', '2', '3'] }, { referencia: 'System.Title', nombre: 'Title', valores: [] }] }) };
+  const con = await pantallaFalsa([sec()], listas);
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  const nodos = con.todo(con.sec('pedidos'));
+  const lista = (id) => (nodos.find((n) => n.tag === 'datalist' && n.attrs.id === id) || { hijos: [] }).hijos.map((o) => o.attrs.value);
+  assert.deepStrictEqual(lista('pedidos-tipos'), ['Bug', 'Riesgo'], 'los tipos para elegir');
+  assert.deepStrictEqual(lista('pedidos-campos'), ['Custom.Impacto', 'System.Title'], 'los campos del tipo elegido');
+  const tipo = nodos.find((n) => n.tag === 'input' && n.attrs['data-path'] === 'work_items.type');
+  assert.strictEqual(tipo.attrs.list, 'pedidos-tipos');
+  const valor = nodos.find((n) => n.tag === 'input' && n.attrs['data-path'] === 'work_items.fixed_fields.Custom.Impacto.valor');
+  assert.deepStrictEqual(lista(valor.attrs.list), ['1', '2', '3'], 'los valores permitidos del campo');
+  assert.match(con.textoDe('pedidos'), /no incluye los de Compras/);
+  assert.deepStrictEqual(con.pedidos.filter((x) => x.ruta === '/api/config/campos-de-pedido').map((x) => x.cuerpo), [{ tipo: 'Riesgo' }], 'los campos, una vez por tipo');
+  const sinPermiso = { ok: false, codigo: 'sin_permiso', message: 'el sitio no puede leer los tipos de pedido: falta su permiso de lectura de pedidos de trabajo. Mientras tanto, escribí el nombre' };
+  const sin = await pantallaFalsa([sec()], { '/api/config/tipos-de-pedido': () => sinPermiso });
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  const n2 = sin.todo(sin.sec('pedidos'));
+  const t2 = n2.find((n) => n.tag === 'input' && n.attrs['data-path'] === 'work_items.type');
+  assert.ok(t2 && t2.attrs.value === 'Riesgo' && !t2.attrs.list, 'el campo de siempre, con lo guardado');
+  assert.ok(!n2.some((n) => n.tag === 'datalist'), 'sin listas');
+  assert.match(sin.textoDe('pedidos'), /Sin la lista de tipos: el sitio no puede leer los tipos de pedido/);
+  assert.deepStrictEqual(sin.pedidos.filter((x) => x.ruta === '/api/config/campos-de-pedido'), [], 'sin tipos no pide campos');
+});
+
+test('T20 Pedidos_ElSitioLeeDeLosProyectosDeLosProductos_ConElTokenDeSoloLectura @story-4.9 @ac-10 — junta los tipos, dice el proyecto que no pudo leer, y sin permiso cae con el motivo', async () => {
+  // 🔴 rojo: no lee de los proyectos de repos.json, pide con otra credencial, o un proyecto sin permiso tumba la lista entera.
+  const http = require('http');
+  const vistos = [];
+  const az = http.createServer((req, res) => {
+    vistos.push({ url: req.url, auth: req.headers.authorization });
+    const m = /^\/acme\/([^/]+)\/_apis\/wit\/workitemtypes(\/[^/?]+\/fields)?\?/.exec(req.url);
+    const proyecto = m && decodeURIComponent(m[1]);
+    if (proyecto === 'Compras') { res.writeHead(401); return res.end(); }
+    if (!m) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(m[2] ? { value: [{ referenceName: 'Custom.Impacto', name: 'Impacto', allowedValues: ['1', '2'] }] } : { value: proyecto === 'Ventas' ? [{ name: 'Riesgo' }, { name: 'Bug' }] : proyecto === 'Soporte Tecnico' ? [{ name: 'Bug' }, { name: 'Tarea' }] : [] }));
+  });
+  await new Promise((r) => az.listen(0, '127.0.0.1', r));
+  const baseAz = `http://127.0.0.1:${az.address().port}`;
+  try {
+    const repos = { azure: { org: 'acme' }, repos: [{ producto: 'V', ado: 'Ventas/front' }, { producto: 'V', ado: 'Ventas/back' }, { producto: 'S', ado: 'Soporte%20Tecnico/app' }, { producto: 'C', ado: 'Compras/app' }, { producto: 'X', ado: 'Apagado/app', activo: false }] };
+    const ops = clon({ 'operations.json': opsBase(), 'scripts/nightly/dependencies/repos.json': JSON.stringify(repos) });
+    await conPestana({ fuentes: fuentesCon({ ops }), env: { SITE_PIPELINES_TOKEN: 'pip' }, opciones: { urlBase: { azure: baseAz } } }, async ({ entrar, token, escribir }) => {
+      const lead = await entrar(LEAD); const tok = await token(lead);
+      const t = (await escribir('/api/config/tipos-de-pedido', lead, tok, {})).json;
+      assert.deepStrictEqual([t.ok, t.tipos], [true, ['Bug', 'Riesgo', 'Tarea']], JSON.stringify(t));
+      assert.deepStrictEqual(t.sinLeer.map((x) => x.proyecto), ['Compras']);
+      assert.ok(!vistos.some((v) => v.url.includes('/Apagado/')), 'un repo apagado no cuenta');
+      assert.ok(vistos.every((v) => v.auth === `Basic ${Buffer.from(':pip').toString('base64')}`), 'con el token de sólo lectura');
+      const c = (await escribir('/api/config/campos-de-pedido', lead, tok, { tipo: 'Riesgo' })).json;
+      assert.deepStrictEqual([c.ok, c.proyecto, c.campos[0].valores], [true, 'Ventas', ['1', '2']]);
+      const nada = (await escribir('/api/config/campos-de-pedido', lead, tok, { tipo: 'Inexistente' })).json;
+      assert.match(nada.message, /ningún proyecto de los productos tiene el tipo de pedido Inexistente/);
+    });
+    vistos.length = 0;
+    const soloCompras = clon({ 'operations.json': opsBase(), 'scripts/nightly/dependencies/repos.json': JSON.stringify({ azure: { org: 'acme' }, repos: [{ producto: 'C', ado: 'Compras/app' }] }) });
+    await conPestana({ fuentes: fuentesCon({ ops: soloCompras }), env: { SITE_PIPELINES_TOKEN: 'pip' }, opciones: { urlBase: { azure: baseAz } } }, async ({ entrar, token, escribir }) => {
+      const lead = await entrar(LEAD); const tok = await token(lead);
+      const t = (await escribir('/api/config/tipos-de-pedido', lead, tok, {})).json;
+      assert.deepStrictEqual([t.ok, t.codigo], [false, 'sin_permiso']);
+      assert.match(t.message, /necesita lectura de pedidos de trabajo/);
+    });
+  } finally { await new Promise((r) => az.close(r)); }
 });
