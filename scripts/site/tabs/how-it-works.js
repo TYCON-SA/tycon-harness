@@ -186,13 +186,171 @@ function renderPage(model, { idioma, publicRepo, version }) {
 
 // ── el revisor propio: revisar con el lector del pipeline ──
 
-/** La cabecera (frontmatter) de un agente: sus claves de primer nivel como texto, sin las comillas de un valor. */
+/** La cabecera y el cuerpo de un `.md`, sin el BOM que agregan algunos editores: `[bloque, cuerpo]`, o null sin cabecera. */
+function partesDe(texto) {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(String(texto || '').replace(/^﻿/, ''));
+  return m ? [m[1], m[2]] : null;
+}
+
+/**
+ * Las claves de primer nivel de una cabecera, en orden, cada una con sus renglones: el suyo y los que la siguen sin ser
+ * otra clave (un valor de varios renglones, una lista). Los renglones antes de la primera clave van con `clave: null`.
+ */
+function entradasDe(bloque) {
+  const out = [];
+  for (const l of bloque.split(/\r?\n/)) {
+    const k = /^([A-Za-z_][\w-]*):(.*)$/.exec(l);
+    if (k) out.push({ clave: k[1], crudo: k[2].trim(), renglones: [l], siguen: [] });
+    // un renglón sin sangría que no sigue una lista es otra clave (una que este lector no reconoce) o un comentario:
+    // va solo, como estaba
+    else if (/^[^\s-]/.test(l)) out.push({ clave: /^#/.test(l) ? null : '?', crudo: '', renglones: [l], siguen: [] });
+    else if (out.length) { out[out.length - 1].renglones.push(l); out[out.length - 1].siguen.push(l); }
+    else out.push({ clave: null, crudo: '', renglones: [l], siguen: [] });
+  }
+  return out;
+}
+
+/** Un valor sin sus comillas, como lo lee YAML: `\"` y `\\` entre dobles, `''` entre simples; sin ellas, sin el comentario. */
+function sinComillas(s) {
+  const d = /^"((?:[^"\\]|\\[\s\S])*)"(?:\s+#.*)?$/.exec(s);
+  if (d) return d[1].replace(/\\(.)/g, (_, c) => ({ n: '\n', t: '\t' }[c] || c));
+  const q = /^'((?:[^']|'')*)'(?:\s+#.*)?$/.exec(s);
+  if (q) return q[1].replace(/''/g, "'");
+  return s.replace(/\s+#.*$/, '');
+}
+
+/**
+ * El valor de una entrada: un bloque (`>` junta los renglones con un espacio, `|` con un fin de renglón), una lista
+ * (`- x` debajo, o `[x, y]`) como arreglo, y un valor que sigue en el renglón de abajo, junto.
+ */
+function valorDe(e) {
+  if (/^[|>][+-]?\d*$/.test(e.crudo)) return e.siguen.filter((l) => l.trim()).map((l) => l.trim()).join(e.crudo[0] === '>' ? ' ' : '\n');
+  // fuera de un bloque, un renglón que empieza con «#» es un comentario, no parte del valor
+  const mas = e.siguen.filter((l) => l.trim() && !/^\s*#/.test(l));
+  if (!e.crudo && mas.length && mas.every((l) => /^\s*-(\s|$)/.test(l))) return mas.map((l) => sinComillas(l.replace(/^\s*-\s*/, '').trim())).filter(Boolean);
+  if (/^\[[\s\S]*\]$/.test(e.crudo) && !mas.length) return e.crudo.slice(1, -1).split(',').map((x) => sinComillas(x.trim())).filter(Boolean);
+  return sinComillas([e.crudo, ...mas.map((l) => l.trim())].filter(Boolean).join(' '));
+}
+
+/** La cabecera (frontmatter) de un agente: sus claves de primer nivel como texto (una lista, separada por comas). */
 function cabeceraDe(texto) {
-  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(String(texto || ''));
-  if (!m) return null;
+  const p = partesDe(texto);
+  if (!p) return null;
   const claves = {};
-  for (const l of m[1].split(/\r?\n/)) { const k = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(l); if (k) claves[k[1]] = k[2].trim().replace(/^(["'])(.*)\1$/, '$2'); }
-  return { claves, cuerpo: m[2] };
+  for (const e of entradasDe(p[0])) if (e.clave && e.clave !== '?') { const v = valorDe(e); claves[e.clave] = Array.isArray(v) ? v.join(', ') : v; }
+  return { claves, cuerpo: p[1] };
+}
+
+// ── la cabecera en campos ──
+
+/** Las herramientas que el editor ofrece como casillas, en este orden; cada una con su explicación en texts.js. */
+const HERRAMIENTAS = ['Read', 'Grep', 'Glob', 'Bash', 'Edit', 'Write', 'WebFetch', 'WebSearch'];
+const MODELOS = () => require(path.join(TREE, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'models.js'));
+const TEAM_REPOS = () => require(path.join(TREE, 'scripts', 'lib', 'team-repos.js'));
+
+/**
+ * El techo de modelos de la organización, leído como lo lee el pipeline (lib/models.js): `{ techo, problema }`. Sin
+ * techo, `techo` es null; si la configuración no se pudo leer, `problema` lo dice (no es «sin techo»).
+ */
+function techoDe(profileDir) {
+  const M = MODELOS();
+  const r = M.readOrgModels({ dir: profileDir, teamRepos: TEAM_REPOS() });
+  return { techo: r && r.data ? M.ceilingOf(r.data) : null, problema: (r && r.problem) || null };
+}
+
+/** El aviso del selector de modelo cuando no se sabe el techo (la configuración no se pudo leer); null si se sabe. */
+function avisoDeModelos(profileDir, idioma = 'es') {
+  const { problema } = techoDe(profileDir);
+  return problema ? TX.t(idioma, 'comoTrabaja.techoDesconocido', { motivo: HIW().withoutAbsolutePaths(problema, [profileDir, TREE]) }) : null;
+}
+
+/**
+ * Las opciones del selector de modelo: «el que use la organización» (`''`) y los niveles neutros, en orden; los que
+ * pasan el techo de la organización, apagados con su motivo (en el idioma de la página).
+ */
+function modelosDe(profileDir, idioma = 'es') {
+  const M = MODELOS();
+  const { techo } = techoDe(profileDir);
+  const tope = techo ? M.rank(techo) : Infinity;
+  return [{ valor: '', apagado: false, motivo: null }, ...M.LEVELS.map((nivel) => {
+    const apagado = M.rank(M.modelOf(nivel)) > tope;
+    return { valor: nivel, apagado, motivo: apagado ? TX.t(idioma, 'comoTrabaja.pasaElTecho', { techo: M.levelOf(techo) }) : null };
+  })];
+}
+
+/**
+ * La cabecera de un `.md` de revisor en campos: nombre, descripción, modelo (su nivel; uno que no se traduce, tal
+ * cual, con `modeloTalCual`), las herramientas de las casillas y las demás (que se conservan), y las otras claves de la
+ * cabecera como renglones (`otras`), que el editor no muestra y viajan igual.
+ */
+function camposDe(texto) {
+  const p = partesDe(texto);
+  const cab = cabeceraDe(texto) || { claves: {}, cuerpo: String(texto || '') };
+  const tools = String(cab.claves.tools || '').split(',').map((t) => t.trim()).filter(Boolean);
+  const crudo = cab.claves.model || '';
+  const nivel = crudo ? MODELOS().levelOf(crudo) : '';
+  const propias = new Set(['name', 'description', 'tools', 'model']);
+  return {
+    cabecera: {
+      nombre: cab.claves.name || '', descripcion: cab.claves.description || '',
+      modelo: nivel || crudo, modeloTalCual: Boolean(crudo && !nivel),
+      herramientas: HERRAMIENTAS.filter((h) => tools.includes(h)), otrasHerramientas: tools.filter((t) => !HERRAMIENTAS.includes(t)),
+      // cada clave con todos sus renglones: uno de una lista o de un bloque no queda colgando debajo de otra
+      otras: (p ? entradasDe(p[0]) : []).filter((e) => !propias.has(e.clave)).flatMap((e) => e.renglones).filter((l) => l.trim()),
+    },
+    // el cuerpo sin el renglón en blanco que separa la cabecera
+    cuerpo: p ? p[1].replace(/^\r?\n/, '') : String(texto || ''),
+  };
+}
+
+/**
+ * Un texto en un solo renglón: cualquier fin de renglón (\n, \r, NEL, los separadores de Unicode) partiría la cabecera
+ * y metería otra clave. Se parte y se junta con un espacio (sin una expresión que recorra los espacios de cada lado,
+ * que con un texto largo de espacios tarda el cuadrado).
+ */
+function unRenglon(v) {
+  return String(v == null ? '' : v).split(/[\r\n\u0085\u2028\u2029]+/).map((x) => x.trim()).filter(Boolean).join(' ');
+}
+
+/** Un valor de la cabecera: entre comillas dobles sólo si sin ellas no se leería igual (un «: », un «#», comillas…). */
+function valorDeCabecera(v) {
+  const s = unRenglon(v);
+  // también lo que YAML leería como otra cosa: un «:» al final, un nulo, un sí/no o un número
+  const otraCosa = /:(\s|$)|\s#|^[\s\-?:,[\]{}#&*!|>'"%@`]|\s$/.test(s) || /^(null|~|true|false|yes|no|on|off|y|n)$/i.test(s) || /^[+-]?(\d|\.\d|\.(inf|nan)$)/i.test(s);
+  return otraCosa ? `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : s;
+}
+
+/**
+ * El `.md` de un revisor armado con sus campos y su cuerpo. El nivel se guarda como el nombre que entiende quien corre
+ * el revisor (`modelOf` de lib/models.js); un modelo que no se traduce va tal cual; sin modelo, sin la clave (el que
+ * use la organización). Las otras claves de la cabecera van al final, como estaban.
+ */
+function armarAgente(cabecera, cuerpo) {
+  const c = cabecera || {};
+  // una herramienta leída del archivo puede traer un fin de renglón (entre comillas, en un bloque): va en uno solo
+  const tools = [...HERRAMIENTAS.filter((h) => (c.herramientas || []).includes(h)), ...(c.otrasHerramientas || []).map((t) => unRenglon(t)).filter(Boolean)];
+  const modelo = c.modelo ? (MODELOS().modelOf(c.modelo) || c.modelo) : '';
+  const renglones = [`name: ${valorDeCabecera(c.nombre)}`, `description: ${valorDeCabecera(c.descripcion)}`, `tools: ${tools.join(', ')}`];
+  if (modelo) renglones.push(`model: ${valorDeCabecera(modelo)}`);
+  return `---\n${[...renglones, ...(c.otras || [])].join('\n')}\n---\n\n${String(cuerpo || '')}`;
+}
+
+/** Los problemas de la cabecera en campos, en el idioma de la página: nombre, herramientas y el techo del modelo. */
+function problemasDeCabecera(c, { agente, profileDir, idioma }) {
+  const E = (k, v) => TX.t(idioma, `comoTrabaja.err.${k}`, v);
+  const out = [];
+  if (NAME_RE.test(agente) && c.nombre !== agente) out.push(E('nombre', { revisor: agente }));
+  if (!String(c.descripcion || '').trim()) out.push(E('falta', { clave: 'description' }));
+  if (!(c.herramientas || []).length && !(c.otrasHerramientas || []).length) out.push(E('sinHerramientas'));
+  if (c.modelo && !c.modeloTalCual) {
+    const op = modelosDe(profileDir, idioma).find((m) => m.valor === c.modelo);
+    const aviso = avisoDeModelos(profileDir, idioma);
+    if (!op) out.push(E('modelo', { modelo: c.modelo }));
+    else if (op.apagado) out.push(op.motivo);
+    // sin saber el techo no se puede asegurar que el modelo elegido no lo pase: vale «el que use la organización»
+    else if (aviso) out.push(aviso);
+  }
+  return out;
 }
 
 /**
@@ -266,14 +424,29 @@ function reviewDraft({ profileDir, draft, treeDir = TREE, idioma = 'es' }) {
   if (!['base', 'condicional'].includes(draft.group)) problems.push(E('grupo'));
   if (!(typeof draft.detection === 'string' && draft.detection) && !(original && original.when)) problems.push(E('condicion'));
   const nuevo = { ...json, reviewers: original ? json.reviewers.map((r) => (r === original ? entradaDe(draft, original) : r)) : [...json.reviewers, entradaDe(draft, null)] };
-  // la cabecera y el cuerpo del agente
-  const cab = cabeceraDe(draft.instructions);
-  if (!cab) problems.push(E('cabecera'));
-  else {
-    // con un nombre mal escrito, el problema es el nombre (lo dice el lector); pedir que la cabecera lo repita confunde
-    if (NAME_RE.test(agente) && cab.claves.name !== agente) problems.push(E('nombre', { revisor: agente }));
-    for (const k of ['description', 'tools']) if (!cab.claves[k]) problems.push(E('falta', { clave: k }));
-    if (!cab.cuerpo.trim()) problems.push(E('vacias'));
+  // la cabecera y el cuerpo del agente. El editor los manda en campos; un borrador con el .md entero (el de antes del
+  // editor en campos) se pasa a campos y sigue el mismo camino: así nada entra a la cabecera sin los mismos controles
+  let nombreEscrito = agente;
+  if (!(draft.cabecera && typeof draft.cabecera === 'object')) {
+    if (!cabeceraDe(draft.instructions)) problems.push(E('cabecera'));
+    const partes = camposDe(draft.instructions);
+    nombreEscrito = partes.cabecera.nombre;
+    draft = { ...draft, cabecera: partes.cabecera, cuerpo: partes.cuerpo };
+  }
+  {
+    // lo que el editor no deja cambiar sale del archivo de hoy, nunca del navegador: las otras claves de la cabecera,
+    // las herramientas que no están en las casillas y el modelo que se conserva tal cual. Un revisor nuevo no trae nada
+    const hoy = draft.original ? draftOf(profileDir, draft.pack, draft.original) : null;
+    const actual = hoy && hoy.draft ? hoy.draft.cabecera : { otras: [], otrasHerramientas: [], modelo: '', modeloTalCual: false };
+    const c = {
+      nombre: nombreEscrito, descripcion: String(draft.cabecera.descripcion || ''), modelo: String(draft.cabecera.modelo || ''),
+      herramientas: Array.isArray(draft.cabecera.herramientas) ? draft.cabecera.herramientas.filter((h) => HERRAMIENTAS.includes(h)) : [],
+      otrasHerramientas: actual.otrasHerramientas, otras: actual.otras,
+      modeloTalCual: Boolean(actual.modeloTalCual && draft.cabecera.modelo === actual.modelo),
+    };
+    problems.push(...problemasDeCabecera(c, { agente, profileDir, idioma }));
+    if (!String(draft.cuerpo || '').trim()) problems.push(E('vacias'));
+    draft = { ...draft, instructions: armarAgente({ ...c, nombre: agente }, draft.cuerpo) };
   }
   // el validador del pipeline, sobre una copia del paquete con el borrador puesto
   // dónde va el .md del borrador: donde está hoy (la carpeta del paquete o agents/ del perfil); uno nuevo, en el paquete
@@ -370,9 +543,12 @@ function draftOf(profileDir, pack, agent) {
     if (!e || e.code !== 'ENOENT') return { error: `${relMd} (${(e && e.code) || 'error'})` };
   }
   const simple = r.when && typeof r.when.detection === 'string' && Object.keys(r.when).length === 1;
+  // la cabecera en campos y el cuerpo aparte (el editor); sin .md, el revisor arranca con su nombre
+  const { cabecera, cuerpo } = camposDe(instructions);
+  if (!cabecera.nombre) cabecera.nombre = agent;
   return { md: relMd, draft: {
     pack, original: agent, agent, group: r.group, detection: simple ? r.when.detection : '', whenWritten: Boolean(r.when && !simple),
-    paths: (r.surface && r.surface.paths) || [], always: Boolean(r.surface && r.surface.always === true), prefix: (r.prefixes || [])[0] || '', instructions,
+    paths: (r.surface && r.surface.paths) || [], always: Boolean(r.surface && r.surface.always === true), prefix: (r.prefixes || [])[0] || '', cabecera, cuerpo,
   } };
 }
 
@@ -380,7 +556,8 @@ function draftOf(profileDir, pack, agent) {
 
 /** Los textos que usa el guion del navegador, en el idioma de la página. */
 function textosDelGuion(idioma) {
-  const claves = Object.keys(TX.TEXTOS).filter((k) => k.startsWith('comoTrabaja.'));
+  // y los nombres de los niveles de modelo, los mismos de Configuración
+  const claves = Object.keys(TX.TEXTOS).filter((k) => k.startsWith('comoTrabaja.') || k.startsWith('pantalla.nivel.'));
   return Object.fromEntries(claves.map((k) => [k, TX.t(idioma, k)]));
 }
 
@@ -391,6 +568,7 @@ function guion(idioma) {
 (function () {
 var TXT = ${JSON.stringify(textosDelGuion(idioma))};
 var BANDERAS = ${JSON.stringify(banderas)};
+var HERRAMIENTAS = ${JSON.stringify(HERRAMIENTAS)};
 var MAX = ${ISSUE_URL_MAX};
 var buildIssueUrl = ${buildIssueUrl.toString()};
 function T(k, v) { var s = TXT[k] || k; return s.replace(/\\{([A-Za-z][A-Za-z0-9_]*)\\}/g, function (m, n) { return v && Object.prototype.hasOwnProperty.call(v, n) ? String(v[n]) : m; }); }
@@ -433,12 +611,39 @@ function pedir(ruta, cuerpo) {
 // el editor de un revisor del perfil
 // firmadas: las versiones de los archivos cuando se abrió el editor, firmadas por el servidor ({ versions, firma }); un
 // revisor nuevo las toma de la primera revisión. No se pisan: el aviso de «otro lo cambió» se mide desde la apertura
-function editor(boton, draft, firmadas) {
+function editor(boton, draft, firmadas, modelos) {
   var versiones = firmadas && firmadas.firma ? firmadas : null;
+  var cab = draft.cabecera || {};
   var estado = el('div', { class: 'ct-estado', 'aria-live': 'polite' });
+  var motivo = el('p', { class: 'ct-nota ct-motivo', 'data-motivo': 'antes', text: T('comoTrabaja.motivoAntesDeRevisar') });
   var proponer = el('button', { type: 'button', class: 'btn prim', disabled: 'disabled', 'data-action': 'propose', text: T('comoTrabaja.proponer') });
-  function cambio() { proponer.setAttribute('disabled', 'disabled'); estado.textContent = ''; }
-  var nombre = el('input', { value: draft.agent, 'data-field': 'agent', oninput: cambio });
+  var revisado = false;
+  // cualquier cambio apaga «Proponer»; si ya se había revisado, la línea pide volver a revisar
+  function cambio() {
+    proponer.setAttribute('disabled', 'disabled'); estado.textContent = '';
+    if (revisado) { revisado = false; motivo.textContent = T('comoTrabaja.motivoCambiaste'); motivo.setAttribute('data-motivo', 'cambiaste'); }
+  }
+  var nombre = el('input', { value: draft.agent, 'data-field': 'agent', 'aria-label': T('comoTrabaja.campoNombre'), oninput: cambio });
+  // el modelo: el de la organización o un nivel; los que pasan el techo, apagados con su motivo; uno que no se
+  // traduce a un nivel se muestra y se conserva tal cual
+  var modelo = el('select', { 'data-field': 'model', 'aria-label': T('comoTrabaja.campoModelo'), onchange: cambio });
+  (modelos || [{ valor: '' }]).forEach(function (m) {
+    var texto = m.valor ? T('pantalla.nivel.' + m.valor) : T('comoTrabaja.modeloDeLaOrganizacion');
+    modelo.appendChild(el('option', { value: m.valor, disabled: m.apagado ? 'disabled' : null, title: m.motivo || null, text: m.apagado ? texto + ' — ' + m.motivo : texto }));
+  });
+  if (cab.modeloTalCual) modelo.appendChild(el('option', { value: cab.modelo, text: T('comoTrabaja.modeloTalCual', { modelo: cab.modelo }) }));
+  modelo.value = cab.modelo || '';
+  // las herramientas: una casilla por cada una, con su explicación; las que no están en la lista, como etiquetas
+  var casillas = el('div', { class: 'ct-herramientas' });
+  HERRAMIENTAS.forEach(function (h) {
+    var c = el('input', { type: 'checkbox', value: h, 'data-tool': h, onchange: cambio });
+    c.checked = (cab.herramientas || []).indexOf(h) >= 0;
+    casillas.appendChild(el('label', { class: 'ct-casilla' }, c, el('b', { text: h }), el('span', { text: T('comoTrabaja.herramienta.' + h) })));
+  });
+  var otras = (cab.otrasHerramientas || []).length ? el('div', { class: 'ct-etiquetas' }) : null;
+  (cab.otrasHerramientas || []).forEach(function (h) { otras.appendChild(el('span', { class: 'ct-etiqueta', text: h })); });
+  var descripcion = el('input', { value: cab.descripcion || '', 'data-field': 'description', 'aria-label': T('comoTrabaja.campoDescripcion'), oninput: cambio });
+  var texto = el('textarea', { rows: '8', class: 'mono', 'data-field': 'instructions', 'aria-label': T('comoTrabaja.susInstrucciones') }); texto.value = draft.cuerpo || '';
   var grupo = el('select', { 'data-field': 'group', onchange: cambio }, el('option', { value: 'base', text: T('comoTrabaja.grupoBase') }), el('option', { value: 'condicional', text: T('comoTrabaja.grupoCondicional') }));
   grupo.value = draft.group === 'base' ? 'base' : 'condicional';
   // «la condición escrita en el paquete» sólo existe para un revisor que ya la tiene; uno nuevo elige una bandera
@@ -447,13 +652,21 @@ function editor(boton, draft, firmadas) {
   cuando.value = draft.detection || (draft.whenWritten ? '' : 'codeModified');
   var rutas = el('textarea', { rows: '2', 'data-field': 'paths', oninput: cambio }); rutas.value = (draft.paths || []).join('\\n');
   var prefijo = el('input', { value: draft.prefix || '', 'data-field': 'prefix', oninput: cambio });
-  var texto = el('textarea', { rows: '8', class: 'mono', 'data-field': 'instructions', oninput: cambio }); texto.value = draft.instructions || '';
-  function borrador() { return { pack: draft.pack, original: draft.original, agent: nombre.value.trim(), group: grupo.value, detection: cuando.value, paths: rutas.value.split('\\n'), prefix: prefijo.value.trim(), instructions: texto.value }; }
+  function borrador() {
+    var herramientas = []; casillas.querySelectorAll('input[data-tool]').forEach(function (c) { if (c.checked) herramientas.push(c.value); });
+    var agente = nombre.value.trim();
+    return { pack: draft.pack, original: draft.original, agent: agente, group: grupo.value, detection: cuando.value, paths: rutas.value.split('\\n'), prefix: prefijo.value.trim(),
+      cabecera: { nombre: agente, descripcion: descripcion.value, modelo: modelo.value, herramientas: herramientas }, cuerpo: texto.value };
+  }
   var revisar = el('button', { type: 'button', class: 'btn', 'data-action': 'check', text: T('comoTrabaja.revisar'), onclick: function () {
     pedir('/api/como-trabaja/revisar', { draft: borrador() }).then(function (r) {
       estado.textContent = '';
-      if (r.ok) { if (!versiones && r.firma) versiones = { versions: r.versions, firma: r.firma }; proponer.removeAttribute('disabled'); estado.appendChild(el('p', { class: 'ct-ok', text: T('comoTrabaja.seLeeBien') })); }
-      else (r.problems || [r.message]).forEach(function (p) { estado.appendChild(el('p', { class: 'ct-error', text: p })); });
+      if (r.ok) {
+        if (!versiones && r.firma) versiones = { versions: r.versions, firma: r.firma };
+        revisado = true; proponer.removeAttribute('disabled');
+        motivo.textContent = T('comoTrabaja.motivoRevisado'); motivo.setAttribute('data-motivo', 'revisado');
+        estado.appendChild(el('p', { class: 'ct-ok', text: T('comoTrabaja.seLeeBien') }));
+      } else (r.problems || [r.message]).forEach(function (p) { estado.appendChild(el('p', { class: 'ct-error', text: p })); });
     });
   } });
   proponer.onclick = function () {
@@ -465,11 +678,27 @@ function editor(boton, draft, firmadas) {
     });
   };
   var campo = function (clave, control) { return el('label', {}, el('span', { text: T(clave) }), control); };
-  var panel = el('li', { class: 'ct-panel ct-editor' }, campo('comoTrabaja.campoNombre', nombre),
+  var panel = el('li', { class: 'ct-panel ct-editor' },
+    el('p', { class: 'ct-sub', text: T('comoTrabaja.elRevisor') }),
+    el('div', { class: 'ct-dos' }, campo('comoTrabaja.campoNombre', nombre), campo('comoTrabaja.campoModelo', modelo)),
+    // sin saber el techo de la organización, se dice: un modelo elegido no se puede revisar
+    draft.avisoModelos ? el('p', { class: 'ct-error', 'data-aviso': 'modelos', text: draft.avisoModelos }) : null,
+    el('fieldset', { class: 'ct-grupo' }, el('legend', { text: T('comoTrabaja.campoHerramientas') }), casillas,
+      el('p', { class: 'ct-nota', text: T('comoTrabaja.revisorSoloLee') }), otras, otras ? el('p', { class: 'ct-nota', text: T('comoTrabaja.otrasHerramientas') }) : null),
+    campo('comoTrabaja.campoDescripcion', descripcion),
+    el('p', { class: 'ct-sub', text: T('comoTrabaja.susInstrucciones') }), texto,
+    el('p', { class: 'ct-nota', text: T('comoTrabaja.instruccionesNota') }),
     el('div', { class: 'ct-dos' }, campo('comoTrabaja.campoGrupo', grupo), campo('comoTrabaja.campoCuando', cuando)),
-    campo('comoTrabaja.campoRutas', rutas), campo('comoTrabaja.campoPrefijo', prefijo), campo('comoTrabaja.campoInstrucciones', texto), estado,
-    el('div', { class: 'ct-pie' }, revisar, proponer, el('button', { type: 'button', class: 'btn', text: T('comoTrabaja.cerrar'), onclick: cerrarPaneles })));
-  despuesDe(boton, panel); setTimeout(function () { nombre.focus(); }, 0);
+    campo('comoTrabaja.campoRutas', rutas), campo('comoTrabaja.campoPrefijo', prefijo), estado,
+    el('div', { class: 'ct-pie' }, revisar, proponer, el('button', { type: 'button', class: 'btn', text: T('comoTrabaja.cerrar'), onclick: cerrarPaneles })), motivo);
+  despuesDe(boton, panel);
+  // el editor de texto largo, compartido con el resto del sitio: vista previa y qué cambió contra lo que se abrió
+  if (window.LongTextEditor) window.LongTextEditor.montar(texto, { vistaPrevia: true, queCambio: true, alCambiar: cambio, textos: {
+    escribir: T('comoTrabaja.lte.escribir'), vistaPrevia: T('comoTrabaja.lte.vistaPrevia'), buscar: T('comoTrabaja.lte.buscar'), buscarQue: T('comoTrabaja.lte.buscarQue'),
+    siguiente: T('comoTrabaja.lte.siguiente'), unaVez: T('comoTrabaja.lte.unaVez'), vecesN: T('comoTrabaja.lte.vecesN'), queCambio: T('comoTrabaja.lte.queCambio'),
+    sinCambios: T('comoTrabaja.lte.sinCambios'), ampliar: T('comoTrabaja.lte.ampliar'), volver: T('comoTrabaja.lte.volver') } });
+  else texto.addEventListener('input', cambio);
+  setTimeout(function () { nombre.focus(); }, 0);
 }
 raiz.addEventListener('click', function (ev) {
   var b = ev.target.closest('button[data-action]'); if (!b) return;
@@ -478,12 +707,13 @@ raiz.addEventListener('click', function (ev) {
   var abierto = b.getAttribute('aria-expanded') === 'true';
   cerrarPaneles(); if (abierto) return;
   if (accion === 'improve') return cuadroMejora(b);
-  if (accion === 'add') return editor(b, { pack: b.getAttribute('data-pack'), original: null, agent: '', group: 'condicional', detection: 'codeModified', paths: [], prefix: '', instructions: '---\\nname: \\ndescription: \\ntools: Read, Grep, Glob\\n---\\n\\n' });
   // si el revisor no se pudo abrir, se dice debajo de su renglón (nunca un clic que no hace nada)
   function noSeAbrio(motivo) { despuesDe(b, el('li', { class: 'ct-panel' }, el('p', { class: 'ct-error', text: T('comoTrabaja.noSePudo', { motivo: motivo }) }), el('div', { class: 'ct-pie' }, el('button', { type: 'button', class: 'btn', text: T('comoTrabaja.cerrar'), onclick: cerrarPaneles })))); }
-  fetch('/api/como-trabaja/revisor?pack=' + encodeURIComponent(b.getAttribute('data-pack')) + '&agent=' + encodeURIComponent(b.getAttribute('data-agent')), { credentials: 'same-origin' })
+  // uno nuevo pide sólo los modelos que puede elegir (sin «agent»); uno existente, su borrador y sus versiones
+  var nuevo = accion === 'add';
+  fetch('/api/como-trabaja/revisor?pack=' + encodeURIComponent(b.getAttribute('data-pack')) + (nuevo ? '' : '&agent=' + encodeURIComponent(b.getAttribute('data-agent'))), { credentials: 'same-origin' })
     .then(function (r) { return r.json().catch(function () { return { message: String(r.status) }; }); })
-    .then(function (r) { if (r && r.draft) editor(b, r.draft, { versions: r.versions, firma: r.firma }); else noSeAbrio((r && r.message) || '?'); }, function (e) { noSeAbrio(String(e && e.message || e)); });
+    .then(function (r) { if (r && r.draft) { r.draft.avisoModelos = r.avisoModelos || null; editor(b, r.draft, nuevo ? null : { versions: r.versions, firma: r.firma }, r.modelos); } else noSeAbrio((r && r.message) || '?'); }, function (e) { noSeAbrio(String(e && e.message || e)); });
 });
 })();
 `;
@@ -513,7 +743,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, fetc
       cuerpo = `<p class="ct-error">${esc(TX.t(idioma, 'comoTrabaja.noSePudo', { motivo: String((e && e.message) || e).split('\n')[0] }))}</p>`;
     }
     const html = views.layout(ctx, TX.t(idioma, 'pestana.comoTrabaja'), cuerpo, TX.t(idioma, 'comoTrabaja.lede', { version: versionImagen || '' }));
-    return html.replace('</head>', `<meta name="site-token" content="${tok.replace(/[^A-Za-z0-9_-]/g, '')}"><script src="/static/como-trabaja.js?l=${idioma}" defer></script></head>`);
+    return html.replace('</head>', `<meta name="site-token" content="${tok.replace(/[^A-Za-z0-9_-]/g, '')}"><script src="/static/long-text-editor.js" defer></script><script src="/static/como-trabaja.js?l=${idioma}" defer></script></head>`);
   }
   async function revisar(ctx) {
     const w = await defensaDeEscritura(cfg, ctx);
@@ -567,17 +797,22 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, fetc
     { method: 'GET', path: '/api/como-trabaja/revisor', needs: solo, handler: async (ctx) => {
       const p = perfil();
       const pack = ctx.url && ctx.url.searchParams.get('pack'); const agent = ctx.url && ctx.url.searchParams.get('agent');
-      if (!p.dir || !NAME_RE.test(pack || '') || !NAME_RE.test(agent || '')) return json(404, { ok: false, message: TX.t(views.idiomaDe(ctx), 'comoTrabaja.err.sinPaquete') });
+      const idioma = views.idiomaDe(ctx);
+      if (!p.dir || !NAME_RE.test(pack || '')) return json(404, { ok: false, message: TX.t(idioma, 'comoTrabaja.err.sinPaquete') });
+      // sin «agent»: un revisor nuevo, con los modelos que se pueden elegir y las tres herramientas de lectura
+      if (!agent) return json(200, { draft: { pack, original: null, agent: '', group: 'condicional', detection: 'codeModified', paths: [], prefix: '', cuerpo: '',
+        cabecera: { nombre: '', descripcion: '', modelo: '', modeloTalCual: false, herramientas: ['Read', 'Grep', 'Glob'], otrasHerramientas: [], otras: [] } }, modelos: modelosDe(p.dir, idioma), avisoModelos: avisoDeModelos(p.dir, idioma) });
+      if (!NAME_RE.test(agent)) return json(404, { ok: false, message: TX.t(idioma, 'comoTrabaja.err.sinPaquete') });
       const d = draftOf(p.dir, pack, agent);
       if (d.error) { log(`cómo trabaja: el revisor ${pack}/${agent} no se pudo abrir (${d.error})`); return json(404, { ok: false, message: d.error }); }
       // las versiones de hoy de los dos archivos, firmadas: el aviso de «otro lo cambió» se mide desde que se abrió
       const v = await versionesDe(p.dir, [`packs/${pack}/pack.json`, d.md]);
       if (v.error) { log(`cómo trabaja: no pude leer las versiones del clon del perfil (${v.error})`); return json(404, { ok: false, message: TX.t(views.idiomaDe(ctx), 'comoTrabaja.err.clon', { motivo: v.error }) }); }
-      return json(200, { draft: d.draft, versions: v.versions, firma: firmaDe(ctx.sesion && ctx.sesion.tok, v.versions) });
+      return json(200, { draft: d.draft, versions: v.versions, firma: firmaDe(ctx.sesion && ctx.sesion.tok, v.versions), modelos: modelosDe(p.dir, idioma), avisoModelos: avisoDeModelos(p.dir, idioma) });
     } },
     { method: 'POST', path: '/api/como-trabaja/revisar', needs: solo, handler: revisar },
     { method: 'POST', path: '/api/como-trabaja/proponer', needs: solo, handler: proponer },
   ];
 }
 
-module.exports = { crearRutas, renderPage, issueUrl, buildIssueUrl, reviewDraft, draftOf, publicRepoOf, ISSUE_URL_MAX };
+module.exports = { crearRutas, renderPage, issueUrl, buildIssueUrl, reviewDraft, draftOf, publicRepoOf, ISSUE_URL_MAX, HERRAMIENTAS, modelosDe, avisoDeModelos, armarAgente, cabeceraDe, camposDe, guion };
