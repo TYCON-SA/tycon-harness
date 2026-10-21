@@ -73,6 +73,8 @@ function arbol(base, nombre, conf, args) {
   const a = path.join(base, nombre);
   fs.mkdirSync(path.join(a, 'scripts'), { recursive: true });
   fs.writeFileSync(path.join(a, 'scripts', 'install-tycon-hooks.sh'), '#!/bin/bash\n');
+  // las bibliotecas del arnés: en Windows la puerta busca ahí el bash de Git (git-bash.js) antes de lanzar el comando
+  copiar(path.join(RAIZ, 'scripts', 'lib'), path.join(a, 'scripts', 'lib'));
   const copia = JSON.parse(JSON.stringify(conf));
   const receta = copia.stack.test_runners.find((r) => r.name === 'netfx-vstest');
   if (args !== undefined) receta.repos = [...(receta.repos || []), { repo: REPO, args }];
