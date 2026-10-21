@@ -121,11 +121,12 @@ done
 # ENTERO (necesita el aplicador, la lista y el lector de la configuración al lado), con una HOME y un Codex de prueba;
 # cada integración la fija su variable, que gana sobre el perfil del equipo. Sin esto, con Codex
 # enchufado y engram apagada, doctor correría engram-pre-commit.sh.
-# el aviso del correo (owner-email-notice.js) es de la integración del buzón, y entra en la cuenta.
-DE_INTEGRACION="engram-pre-commit.sh engram-drift-notice.js integrations/clockify/scripts/on-prompt.js integrations/clockify/scripts/touch-activity.js integrations/clockify/scripts/sweep.js dependencies-notice.js dashboard-notice.js retro-staleness-notice.js owner-email-notice.js"
+# el aviso del correo (owner-email-notice.js) es de la integración del buzón, y entra en la cuenta; la grabadora de
+# instintos (instinct-observe.js), de la suya.
+DE_INTEGRACION="engram-pre-commit.sh engram-drift-notice.js integrations/clockify/scripts/on-prompt.js integrations/clockify/scripts/touch-activity.js integrations/clockify/scripts/sweep.js dependencies-notice.js dashboard-notice.js retro-staleness-notice.js owner-email-notice.js instinct-observe.js"
 CASA9="$T/casa9"; mkdir -p "$CASA9"
-APAGADAS="TYCON_ENGRAM=0 TYCON_CLOCKIFY=0 TYCON_NIGHTLY=0 TYCON_CODEGRAPH=0 TYCON_MAILBOX=0"
-PRENDIDAS="TYCON_ENGRAM=1 TYCON_CLOCKIFY=1 TYCON_NIGHTLY=1 TYCON_CODEGRAPH=1 TYCON_MAILBOX=1"
+APAGADAS="TYCON_ENGRAM=0 TYCON_CLOCKIFY=0 TYCON_NIGHTLY=0 TYCON_CODEGRAPH=0 TYCON_MAILBOX=0 TYCON_INSTINCTS=0"
+PRENDIDAS="TYCON_ENGRAM=1 TYCON_CLOCKIFY=1 TYCON_NIGHTLY=1 TYCON_CODEGRAPH=1 TYCON_MAILBOX=1 TYCON_INSTINCTS=1"
 desplegar_arbol() { # <codex home> <VAR=valor…>: el despliegue del árbol de verdad
   local destino="$1"; shift
   env -u TYCON_ENGRAM_HOOK HOME="$CASA9" USERPROFILE="$CASA9" CODEX_HOME="$destino" "$@" node "$RAIZ/build/deploy-codex-hooks.js" > "$T/out9" 2>&1
@@ -186,7 +187,7 @@ PAR="$(env -u TYCON_ENGRAM_HOOK HOME="$CASA9" USERPROFILE="$CASA9" CODEX_HOME="$
   const s = p.collect(p.buildCtx({ tools: ["claude", "codex"], recorded: true })).find((x) => x.name === "hooks");
   console.log(`${s.ok}|${s.detail}`);' "$RAIZ/scripts/lib/harness-parity.js" 2>&1)"
 case "$PAR" in
-  "true|"*"9 sin registrar por su integración apagada"*) ok "C-13 la paridad da verde la superficie de hooks y cuenta los 9 que no van ($PAR)" ;;
+  "true|"*"10 sin registrar por su integración apagada"*) ok "C-13 la paridad da verde la superficie de hooks y cuenta los 10 que no van ($PAR)" ;;
   *) mal "C-13 la paridad de hooks dice: $PAR" ;;
 esac
 

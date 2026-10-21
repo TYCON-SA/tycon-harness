@@ -86,6 +86,9 @@ const RAIZ_ARNES = path.resolve(__dirname, '..', '..');
 // Las variables renombradas a inglés (story 8.9, tanda B1): el nombre viejo sigue valiendo hasta el retiro. La biblioteca
 // viaja con este archivo a la copia del freno de producción (instalar-freno.sh, ARCHIVOS); sin ella, paso directo.
 const legacy = (() => { try { return require('./legacy-names.js'); } catch (_) { return null; } })();
+// Los manifiestos de integrations/: los ajustes que pide cada integración. Sin la biblioteca (la copia del freno de
+// producción no la trae) no hay integraciones que leer y lo demás sigue igual.
+const integ = (() => { try { return require('./integrations.js'); } catch (_) { return null; } })();
 let sinAnotarNivel = 0;   // ver `sinAnotar`, más abajo
 const leerVariable = (env, nombre) => (legacy ? (sinAnotarNivel ? leerVariableSinAnotar(env, nombre) : legacy.readEnv(nombre, { env, where: 'scripts/lib/tycon-config.js' })) : env[nombre]);
 /** Lo mismo que `legacy.readEnv` (gana el nombre nuevo; si no está, vale el viejo), sin anotar el uso: ver `sinAnotar`. */
@@ -153,10 +156,18 @@ const VOCABULARIO = Object.freeze({
   telegram: Object.freeze({ chat_id: 'texto' }),
   integraciones: Object.freeze({
     clockify: 'llave', engram: 'llave', codegraph: 'llave', mailbox: 'llave', codex: 'llave-o-detectar', nightly: 'llave',
+    // `instincts`: la grabadora de instintos (scripts/hooks/instinct-observe.js). Para el equipo la prende el perfil; la
+    // variable y el archivo de la máquina sirven para apagarla o para probarla en una máquina.
+    instincts: 'llave',
     // `claude` (story 8.23, tanda C · AC 24): la llave de la OTRA herramienta, con el vocabulario de `codex` (true, false o
     // "detect"). No es una de las ocho integraciones (no es un servicio): dice si el arnés enchufa a Claude Code. La leen
     // `toolKeys()` y `install`; `detect` —y nadie diciendo nada— es «si está instalada».
     claude: 'llave-o-detectar',
+    // `timeTracking`: la integración de horas que eligió la organización (`none` o el nombre de una carpeta de
+    // integrations/). Texto libre y no una lista cerrada: un valor que no corresponde a ninguna integración no rompe la
+    // configuración; lo dice el evento de trabajo (scripts/lib/work-signal.js) y se trata como `none`. Los ajustes de una
+    // integración van en `integrations.<nombre>` como objeto, con las claves que declara su manifiesto.
+    timeTracking: 'texto',
   }),
   // La política de actualización del arnés (story 8.13, AC 12): valores CERRADOS (`opcion:a|b`). Un valor fuera de la
   // lista es un error (8.3 AC 2), nunca «apagado» ni el default. `TYCON_UPDATE=0` (apagar del todo) no es una clave:
@@ -312,7 +323,8 @@ function anotarViejo(kind, old, nuevo, home) {
 // Las dos herramientas que el arnés sabe enchufar (story 8.23, tanda C): cada una con su llave en `integrations`.
 const TOOLS = Object.freeze(['claude', 'codex']);
 // `claude` es una llave de herramienta y no una integración: las ocho siguen siendo ocho (`codex` es las dos cosas).
-const INTEGRACIONES = Object.freeze(Object.keys(VOCABULARIO.integraciones).filter((k) => k !== 'claude'));
+// `timeTracking` tampoco: es una elección, no una llave (filtro por tipo).
+const INTEGRACIONES = Object.freeze(Object.keys(VOCABULARIO.integraciones).filter((k) => k !== 'claude' && String(VOCABULARIO.integraciones[k]).startsWith('llave')));
 // Las ocho, en el orden en que se informan: las dos «por dato» (ado por ado.org, telegram por telegram.chat_id) y las seis llaves.
 const LAS_OCHO = Object.freeze(['ado', ...INTEGRACIONES, 'telegram']);
 // Cómo se prende cada una — la línea que un comando imprime cuando la necesitaba y está apagada (AC 10). Sin «0», sin «nada».
@@ -324,6 +336,7 @@ const COMO_SE_PRENDE = Object.freeze({
   mailbox: 'buzón de corridas apagado en esta máquina: sin la llave — prender: la llave scripts/metrics/corridas-buzon.json del arnés interno (TYCON_MAILBOX_JSON=<ruta>), o integrations.mailbox=true en ~/.claude/tycon.json (TYCON_MAILBOX=1)',
   codex: 'Codex apagado en esta máquina — prender: integrations.codex=true o "detect" en ~/.claude/tycon.json (o TYCON_CODEX=1)',
   nightly: 'nocturnos del equipo apagados en esta máquina — prender: integrations.nightly=true en ~/.claude/tycon.json (o TYCON_NIGHTLY=1)',
+  instincts: 'grabadora de instintos apagada en esta máquina — la prende el perfil del equipo (integrations.instincts=true); para probarla en una máquina: integrations.instincts=true en ~/.claude/tycon.json (o TYCON_INSTINCTS=1)',
   telegram: 'Telegram apagado en esta máquina: sin chat configurado — prender: telegram.chat_id en ~/.claude/tycon.json, TYCON_TELEGRAM_CHAT_ID, o el plugin de Telegram',
 });
 
@@ -341,6 +354,8 @@ const VARIABLES = Object.freeze({
   'integraciones.codex': ['TYCON_CODEX'],
   'integraciones.claude': ['TYCON_CLAUDE'],
   'integraciones.nightly': ['TYCON_NIGHTLY'],
+  'integraciones.instincts': ['TYCON_INSTINCTS'],
+  'integraciones.timeTracking': ['TYCON_TIME_TRACKING'],
   'update.channel': ['TYCON_UPDATE_CHANNEL'],
   'update.apply': ['TYCON_UPDATE_APPLY'],
   'update.skills_source': ['TYCON_UPDATE_SKILLS_SOURCE'],
@@ -615,6 +630,37 @@ function seccionesDeArchivo(datos, archivo, errores, home) {
   return { datos: Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined)), vista };
 }
 
+/** Los ajustes de la organización que declara la integración `nombre` (`{ clave: tipo }`), o null si no hay tal. */
+function ajustesDeIntegracion(nombre) {
+  if (!integ || tiene(VOCABULARIO.integraciones, nombre)) return null;
+  try { return integ.profileSettings(nombre); } catch (_) { return null; }
+}
+/** Los motivos por los que el manifiesto de la integración `nombre` no vale, o null si no hay uno roto con ese nombre. */
+function problemaDeIntegracion(nombre) {
+  if (!integ) return null;
+  // si los manifiestos no se pueden leer, el motivo es ése (no «no hay uno roto»)
+  try { const p = integ.listManifests().problems.find((x) => x.name === nombre); return p ? p.reasons : null; } catch (e) { return [`no se pudieron leer los manifiestos (${e.code || e.message})`]; }
+}
+/** Los secretos (`nombre.clave`) que declara la integración `nombre`. */
+function secretosDeSeccion(nombre) {
+  if (!integ) return [];
+  try { return integ.secretKeys().filter((s) => s.integration === nombre).map((s) => s.key); } catch (_) { return []; }
+}
+/** El objeto de ajustes de una integración: cada clave declarada y de su tipo. */
+function validarAjustes(ajustes, valor, rutaEnArchivo) {
+  if (!esObjeto(valor)) return { errores: [{ clave: rutaEnArchivo, motivo: `tiene que ser un objeto con sus ajustes (${Object.keys(ajustes).join(', ') || 'ninguno'})` }] };
+  const errores = [];
+  const out = {};
+  for (const k of Object.keys(valor)) {
+    if (esComentario(k)) continue;
+    if (!tiene(ajustes, k)) { errores.push({ clave: `${rutaEnArchivo}.${k}`, motivo: `clave desconocida (válidas: ${Object.keys(ajustes).join(', ') || 'ninguna'})` }); continue; }
+    const err = validarTipo(ajustes[k], valor[k]);
+    if (err) { errores.push({ clave: `${rutaEnArchivo}.${k}`, motivo: err }); continue; }
+    out[k] = String(valor[k]).trim();
+  }
+  return { errores, valor: out };
+}
+
 function validarArchivo(datos0, { archivo, esPerfil, home }) {
   const errores = [];
   const plano = {};
@@ -626,6 +672,10 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
       // AC 3 también vale para los comentarios del perfil: un email, un chat o un token en `__doc` es lo mismo
       const m = esPerfil ? personalEnComentario(datos[seccion]) : null;
       if (m) errores.push({ archivo, clave: seccion, motivo: m });
+      continue;
+    }
+    if (!Object.prototype.hasOwnProperty.call(VOCABULARIO, seccion) && secretosDeSeccion(seccion).length) {
+      errores.push({ archivo, clave: seccion, motivo: `«${seccion}» es de una integración y lleva secretos: no va en este archivo — se guarda con \`harness.js config set ${secretosDeSeccion(seccion)[0]}\`, aparte, sólo para tu usuario` });
       continue;
     }
     if (!Object.prototype.hasOwnProperty.call(VOCABULARIO, seccion)) {
@@ -673,6 +723,15 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
         continue;
       }
       const tipo = VOCABULARIO[seccion][clave];
+      const ajustes = !tipo && seccion === 'integraciones' ? ajustesDeIntegracion(clave) : null;
+      if (ajustes) {
+        const r = validarAjustes(ajustes, valor, rutaEnArchivo);
+        if (r.errores.length) { errores.push(...r.errores.map((e) => Object.assign({ archivo }, e))); continue; }
+        plano[ruta] = r.valor;
+        continue;
+      }
+      const rota = !tipo && seccion === 'integraciones' ? problemaDeIntegracion(clave) : null;
+      if (rota) { errores.push({ archivo, clave: rutaEnArchivo, motivo: `la integración «${clave}» tiene el manifiesto roto (${rota.join('; ')}): sus ajustes no se pueden validar` }); continue; }
       if (!tipo) {
         const motivo = NOMBRES_PERSONALES.includes(String(clave).toLowerCase())
           ? `valor personal (la clave «${clave}» nombra un dato de una persona: va en ~/.claude/tycon.json o en su variable), y además no está en el vocabulario`
@@ -700,6 +759,9 @@ function validarTipo(tipo, valor) {
       return typeof valor === 'boolean' ? null : `tiene que ser un booleano (true/false), no ${JSON.stringify(valor)}`;
     case 'llave-o-detectar':
       return (typeof valor === 'boolean' || esDetect(valor)) ? null : `tiene que ser true, false o "${DETECT}", no ${JSON.stringify(valor)}`;
+    case 'url':
+      // la dirección de una instancia: https, o http sólo hacia esta máquina (para probar); un secreto nunca viaja en claro
+      return (typeof valor === 'string' && /^(https:\/\/[^\s/]+|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)(\/\S*)?$/.test(valor.trim())) ? null : `tiene que empezar con https:// (o http://localhost para probar), no ${JSON.stringify(valor)}`;
     case 'texto':
     case 'ruta':
       return (typeof valor === 'string' && valor.trim()) ? null : `tiene que ser un texto no vacío, no ${JSON.stringify(valor)}`;
@@ -902,6 +964,16 @@ function cargar(opts = {}) {
     }
   }
 
+  // los ajustes de cada integración (`integrations.<nombre>`): los del perfil, con los de la máquina encima, clave por clave
+  for (const ruta of new Set([...Object.keys(planoPerfil), ...Object.keys(planoMaquina)])) {
+    const [seccion, clave] = ruta.split('.');
+    if (seccion !== 'integraciones' || tiene(VOCABULARIO.integraciones, clave)) continue;
+    const dePerfil = esObjeto(planoPerfil[ruta]) ? planoPerfil[ruta] : {};
+    const deMaquina = esObjeto(planoMaquina[ruta]) ? planoMaquina[ruta] : {};
+    valores.integraciones[clave] = Object.assign({}, dePerfil, deMaquina);
+    origenes[ruta] = Object.keys(deMaquina).length ? 'maquina' : 'perfil';
+  }
+
   // `rutas.arnes`: la variable (la salida explícita que lee agent-skills) o la ubicación de este clon. No sale de
   // ningún archivo: un `rutas.arnes` en tycon.json sería una clave que nadie lee, y el vocabulario la rechaza.
   {
@@ -952,6 +1024,22 @@ function integraciones(config) {
   const out = {};
   for (const k of LAS_OCHO) { const e = estadoIntegracion(config, k).estado; out[k] = e === DETECT ? DETECT : e === 'prendida'; }
   return out;
+}
+/**
+ * La integración de horas elegida, según una configuración YA cargada: `{ value, origin, legacy }`. `value` es `none` o
+ * el nombre tal como está escrito (sin espacios a los lados, en minúsculas); si corresponde a una integración lo decide
+ * scripts/lib/work-signal.js. Sin `timeTracking`, la llave vieja `integrations.clockify` dice `true` → `clockify` y
+ * `false` → `none` (`legacy: true`, y se anota el uso del nombre viejo).
+ */
+function timeTracking(config) {
+  const v = config.valores.integraciones.timeTracking;
+  if (typeof v === 'string' && v.trim()) return { value: v.trim().toLowerCase(), origin: config.origenes['integraciones.timeTracking'], legacy: false };
+  const o = config.origenes['integraciones.clockify'];
+  if (o && o !== 'apagado') {
+    anotarViejo('key', 'integrations.clockify', 'integrations.timeTracking', config.home);
+    return { value: config.valores.integraciones.clockify ? 'clockify' : 'none', origin: o, legacy: true };
+  }
+  return { value: 'none', origin: 'sin-valor', legacy: false };
 }
 /**
  * Cómo contesta el asistente, según una configuración YA cargada: `{ language, style, max_chars, origen:
@@ -1290,7 +1378,7 @@ module.exports = {
   VOCABULARIO, DEFAULTS, PROFILE_WINS, PROFILE_ONLY, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
   rutaMaquina, nombreArchivoMaquina, comoSePrende, rutaPerfil, leerPerfil, rutaLlaveBuzon, cargar, leer, leerParaHook, avisoParaHook, valor, explicar, estadoEnlace, formaPersonal,
   normalizarOrg, nombreDeOrganizacion, resolverRutaDeArchivo, personalEnComentario,
-  esIntegracion, estadoIntegracion, integraciones, respuesta, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, cli,
+  esIntegracion, estadoIntegracion, integraciones, timeTracking, respuesta, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, cli,
 };
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────────────
@@ -1358,6 +1446,15 @@ function cli(argv) {
     if (argv.includes('--json')) { process.stdout.write(JSON.stringify(ocho) + '\n'); process.exit(0); }
     // forma shell: una asignación por integración, sólo `0` · `1` · `detect` (el instalador las evalúa tal cual)
     for (const k of LAS_OCHO) process.stdout.write(`TYCON_INTEG_${k.toUpperCase()}=${ocho[k] === DETECT ? DETECT : (ocho[k] ? '1' : '0')}\n`);
+    process.exit(0);
+  }
+  // `time-tracking`: la integración de horas elegida (`none` o su nombre, con la llave vieja leída), para el instalador.
+  // Rota: nada por stdout y exit 2, como `integrations`.
+  if (cmd === 'time-tracking') {
+    let c;
+    try { c = leer(); } catch (e) { process.stderr.write(e.message + '\n'); process.exit(2); }
+    // sin anotar el nombre viejo: lo pregunta el instalador, también con -Check, que no escribe nada en la casa
+    process.stdout.write(sinAnotar(() => timeTracking(c)).value + '\n');
     process.exit(0);
   }
   // `response --json`: idioma, estilo y tope del bloque de respuesta, ya resueltos (lo leen los
