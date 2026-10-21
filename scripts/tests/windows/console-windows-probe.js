@@ -1,18 +1,18 @@
 'use strict';
 /**
- * console-windows-probe.js — ¿el arranque desprendido abre ventanas de consola en Windows? (2026-10-07)
+ * console-windows-probe.js — ¿el arranque desprendido abre ventanas de consola en Windows?
  *
- * ── EL CASO ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- * Reporte de un dev del equipo en Windows: desde la tanda L de la story 8.23, `harness.js startup` corre desprendido
- * (DETACHED_PROCESS: sin consola) y cada programa de consola que lanzaba sin `windowsHide` —git, pwsh, node— recibía una
+ * ── POR QUÉ EXISTE ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+ * En Windows, `harness.js startup` corre desprendido
+ * (DETACHED_PROCESS: sin consola) y cada programa de consola que lance sin `windowsHide` —git, pwsh, node— recibe una
  * consola nueva y VISIBLE: 20 o más ventanas por inicio de sesión. El arreglo es el relevo de detach.js (el desprendido
  * lanza al que trabaja sin desprender y con la ventana oculta, y lo espera) más `windowsHide` en todo lo que el programa
- * lanza. Esta sonda MIDE eso en el agente Windows, igual que lo midió el dev: lanza por `runDetached` un trabajador que a
- * su vez lanza un `node` de 6 s SIN pedir ventana oculta (como lo hacía sources.js), y mira con PowerShell si ese nieto
+ * lanza. Esta sonda MIDE eso en el agente Windows: lanza por `runDetached` un trabajador que a
+ * su vez lanza un `node` de 6 s SIN pedir ventana oculta (como lo haría sources.js), y mira con PowerShell si ese nieto
  * quedó con ventana (`MainWindowHandle ≠ 0`).
  *
  * Dos corridas: con el relevo (lo de siempre en Windows) → ninguna ventana; y el CONTROL con el relevo apagado
- * (`TYCON_STARTUP_SHIM=0`, lo que hacía la tanda L) → tiene que verse una ventana. Si el control tampoco la ve, la
+ * (`TYCON_STARTUP_SHIM=0`, el comportamiento sin relevo) → tiene que verse una ventana. Si el control tampoco la ve, la
  * medición está ciega en este agente (sesión sin escritorio) y el paso sale NO MEDIDO, nunca verde.
  *
  * Fuera de Windows no mide nada (no medido). Uso: node scripts/tests/windows/console-windows-probe.js --lab <laboratorio> --out <carpeta del reporte>

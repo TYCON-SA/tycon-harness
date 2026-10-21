@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * pr-texts.test.js — el título y el cuerpo de un pedido, leídos de la API de GitHub (story 8.26, tanda F2 · AC 23 · T64).
+ * pr-texts.test.js — el título y el cuerpo de un pedido, leídos de la API de GitHub.
  *
  * El freno de publicación mira, en la validación de cada pedido, su título y su cuerpo. Esos dos textos no están en
  * git: los trae scripts/ci/pr-texts.js y los deja en dos archivos. Lo que no puede pasar:
@@ -141,7 +141,7 @@ test('T64_WhatItCannotRead_IsTwo_AndLeavesNoFiles_NotEvenOldOnes', async (t) => 
   assert.strictEqual(slow.status, 2, slow.all);
   assert.match(slow.stderr, /no contestó/);
   // 🔴 y si al guion lo CORTAN mientras espera (una corrida cancelada, el tope del paso), no llega a limpiar nada al
-  // salir: por eso los archivos de antes se borran ANTES de pedir nada, no sólo cuando la lectura falla
+  // salir: por eso los archivos de un intento anterior se borran ANTES de pedir nada, no sólo cuando la lectura falla
   assert.strictEqual((await run(fx, argsFor(fx, good))).status, 0);
   const stuck = await fakeApi(t, () => null);
   const child = spawn(process.execPath, [SCRIPT, ...argsFor(fx, stuck)], { env: { ...cleanEnv(), HOME: fx.root }, stdio: 'ignore' });

@@ -4,7 +4,7 @@
 #   T30 · el bloque `install:core` sale 0 igual; el paso de terceros dice que no pudo preguntar a los orígenes; el
 #         control de presencia nombra las skills de terceros que faltan; y `harness.js startup` sale 0 diciendo
 #         «sin red» en 35 s o menos.
-# La receta de T30 (decisión C2): la copia se sirve desde una carpeta local, así que su `fetch` anda aunque no haya
+# La receta de T30: la copia se sirve desde una carpeta local, así que su `fetch` anda aunque no haya
 # red. Para medir «sin red» de verdad: tras instalar se saca el desvío, se corre `harness.js install --source <URL>`
 # (el remedio documentado cuando el origen cambió) y recién entonces `startup`.
 # uso: bash /opt/lab/scenarios/no-network.sh
@@ -26,8 +26,8 @@ if ( cd "${WORK_DIR}" && git clone -q "${PUBLIC_URL}" check-clone ) > "${OUT_DIR
   else
     no "T31 install-tycon-hooks.sh --check salió ${RC} o escribió en la HOME: $(diff "${OUT_DIR}/home-before.txt" "${OUT_DIR}/home-after.txt" | grep '^[<>]' | head -n 4 | tr '\n' ' ') $(tail -n 2 "${OUT_DIR}/check.out" | tr '\n' ' ')"
   fi
-  # sin el enlace todavía, la revisión de terceros mira el CLON (decisión C16): con la ruta del enlace, que no existe,
-  # decía «no es un clon de agent-skills» y no revisaba nada. Acá revisa, y como nada está instalado, dice qué falta.
+  # sin el enlace todavía, la revisión de terceros mira el CLON: con la ruta del enlace, que no existe,
+  # diría «no es un clon de agent-skills» y no revisaría nada. Acá revisa, y como nada está instalado, dice qué falta.
   if ! grep -q 'no es un clon de agent-skills' "${OUT_DIR}/check.out" && grep -q 'skills de terceros' "${OUT_DIR}/check.out"; then
     ok "T31 --check sin el enlace revisa las skills de terceros en el propio clon (y dice cuáles faltan)"
   else
@@ -39,14 +39,14 @@ else
 fi
 
 # ── T30 · sin red la instalación sale 0 y lo dice ────────────────────────────────────────────────────────────
-run_block_pty core "${OUT_DIR}/install.out" "${ANSWERS_FULL}"; RC=$?   # en una terminal: install pregunta (story 8.16, tandas B y D)
+run_block_pty core "${OUT_DIR}/install.out" "${ANSWERS_FULL}"; RC=$?   # en una terminal: install pregunta
 if [ "${RC}" -eq 0 ] && find_clone; then ok "T30 sin red, el bloque install:core sale 0"
 else
   no "T30 sin red, el bloque install:core salió ${RC}: $(tail -n 4 "${OUT_DIR}/install.out" | tr '\n' ' ')"
   fakes_check "T30"; scenario_end no-network; exit 0
 fi
 
-# la línea del paso de terceros (el contrato de la 8.5). `harness.js install` guarda la salida del instalador en su
+# la línea del paso de terceros (su contrato). `harness.js install` guarda la salida del instalador en su
 # registro y no la muestra entera: si no está ahí, se corre el instalador una vez más, como en cada arranque, y se lee la suya
 LINE_RE='skills de terceros: .*no pude preguntar al origen'
 WHERE=""
@@ -65,7 +65,7 @@ N_MISSING=0; [ "${TP_MISSING:--}" != "-" ] && N_MISSING="$(echo "${TP_MISSING}" 
 if [ "${TP_TOTAL:-0}" -gt 0 ] && [ "${N_MISSING}" = "${TP_TOTAL}" ]; then ok "T30 el control de presencia nombra las ${TP_TOTAL} skills de terceros que faltan: ${TP_MISSING}"
 else no "T30 el control de presencia nombra ${N_MISSING} de ${TP_TOTAL:-0} skills de terceros como faltantes (sin red tendrían que faltar todas): ${TP_MISSING:-?}"; fi
 
-# la receta de C2, y recién entonces `startup`
+# sin el desvío, `install --source <URL>` y recién entonces `startup` (la receta de arriba)
 unserve_copy
 node "${HARNESS_JS}" install --yes --source "${PUBLIC_URL}" > "${OUT_DIR}/install-source.out" 2>&1; RC=$?
 if [ "${RC}" -eq 0 ] && [ "$(json "${STATE_FILE}" 'd.sources[0].url')" = "${PUBLIC_URL}" ]; then ok "T30 sin el desvío, harness.js install --source <URL del bloque> sale 0 y el estado guarda esa URL"

@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 # Prueba de cómo sync-claude-md-blocks.sh decide si mantiene el espejo de Codex.
 #
-# 🔴 POR QUÉ EXISTE (2026-09-04). El lado Codex se mantenía SÓLO con la variable de entorno
-# TYCON_CODEX=1. Esa variable vive en el rc del shell del dev, y el sincronizado corre desde el
-# arranque de sesión, que NO lee ese rc: la llave existía para el dev y no para el proceso que hace
-# el trabajo. Medido ese día: la llave estaba puesta (línea 162 del .zshrc) y el AGENTS.md llevaba
-# CINCO DÍAS sin actualizar, con el bloque de estilo viejo de 16.833 caracteres mientras el de
-# Claude tenía 6.352. Nada avisaba: el espejo se congeló en silencio.
+# 🔴 POR QUÉ EXISTE. Mantener el lado Codex SÓLO con la variable de entorno TYCON_CODEX=1 no alcanza: esa
+# variable vive en el rc del shell del dev, y el sincronizado corre desde el arranque de sesión, que NO lee ese
+# rc. La llave existiría para el dev y no para el proceso que hace el trabajo: el AGENTS.md quedaría días sin
+# actualizar, con el bloque de estilo viejo, y nada avisaría. El espejo se congelaría en silencio.
 #
 # El arreglo: la señal deja de depender del entorno. Si el AGENTS.md YA EXISTE con bloques del
 # arnés, esta máquina usa Codex y el espejo se mantiene, haya o no variable. La variable sigue
@@ -16,7 +14,7 @@ AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SYNC="$AQUI/scripts/setup/sync-claude-md-blocks.sh"
 # La ruta vieja del guion, armada del mapa (nunca escrita a mano: es la que traen las marcas de cada máquina).
 # La copia pública no lleva el mapa (nace con los nombres nuevos): ahí no hay marcas viejas que probar y el caso 4 se
-# saltea con constancia; el resto usa la marca con la ruta de hoy.
+# saltea con constancia; el resto usa la marca con la ruta actual.
 MAPA="$AQUI/scripts/lib/renames.json"
 VIEJA=""
 if [ -f "$MAPA" ]; then
@@ -35,7 +33,7 @@ marca(){ grep -c 'TYCON_BLOCK:response-style START' "$1" 2>/dev/null || echo 0; 
 corre(){ CLAUDE_MD_PATH="$TMP/CLAUDE.md" CODEX_AGENTS_MD_PATH="$TMP/AGENTS.md" \
          TYCON_CODEX="${1:-}" bash "$SYNC" >/dev/null 2>&1; }
 
-# ── 1. 🔴 EL CASO REAL: el espejo ya existe con bloques y NO hay variable → se mantiene igual
+# ── 1. 🔴 el espejo ya existe con bloques y NO hay variable → se mantiene igual
 : > "$TMP/CLAUDE.md"
 printf '%s\n%s\n%s\n' "$(head -c 200 /dev/zero | tr '\0' '#')" \
   "$MARCA_VIEJA" \
@@ -59,7 +57,7 @@ rm -f "$TMP/AGENTS.md"; : > "$TMP/CLAUDE.md"
 corre "1"
 [ "$(marca "$TMP/AGENTS.md")" = "1" ] && ok "con la variable, el espejo se estrena" || no "con la variable no lo creó"
 
-# ── 4. T15 R1_SyncBlocks_OldMarkersRewrittenOnce (story 8.12, AC 12): las marcas que cada máquina ya tiene nombran
+# ── 4. T15 R1_SyncBlocks_OldMarkersRewrittenOnce las marcas que cada máquina ya tiene nombran
 # la ruta vieja del guion ($VIEJA, del mapa). Se reconocen por su prefijo y la corrida siguiente las reescribe con la
 # ruta nueva (scripts/setup/), sin duplicar el bloque; una segunda corrida no cambia nada.
 if [ -z "$VIEJA" ]; then
@@ -83,9 +81,9 @@ else
   cmp -s "$TMP/CLAUDE.md" "$TMP/CLAUDE.antes" && ok "T15 la segunda corrida no cambia nada" || no "T15 la segunda corrida volvió a cambiar el archivo"
 fi
 
-# ── 5. T21 Applier_NoLegacyBakUnderHarness_YesStandalone (story 8.13, tanda B, AC 18): lanzado por harness.js
+# ── 5. T21 Applier_NoLegacyBakUnderHarness_YesStandalone lanzado por harness.js
 # (TYCON_HARNESS_SNAPSHOT_DIR puesta) el sync no deja sus .bak de CLAUDE.md ni del espejo AGENTS.md —la copia la tomó el
-# mecanismo antes—; suelto, como hoy, deja los dos. La parte del aplicador .sh está en harness-uninstall.test.sh.
+# mecanismo antes—; suelto, deja los dos. La parte del aplicador .sh está en harness-uninstall.test.sh.
 t21_seed(){ rm -f "$TMP"/*.bak.* "$TMP/AGENTS.md"; printf '# lo mío\n' > "$TMP/CLAUDE.md"
   printf '# de Codex\n%s\nVIEJO\n<!-- TYCON_BLOCK:response-style END -->\n' "$MARCA_VIEJA" > "$TMP/AGENTS.md"; }
 t21_list_baks(){ find "$TMP" -maxdepth 1 -name '*.bak.*' | sed "s|$TMP/||" | LC_ALL=C sort | tr '\n' ' '; }
@@ -106,8 +104,8 @@ B="$(t21_list_baks)"
   || no "T21 suelto faltan los .bak: quedaron «${B}»"
 
 # ── 6. T21 los .ps1 por lectura (sin máquina Windows): cada copia .bak.<ts> que escriben el aplicador y el sync de Windows
-# está detrás de TYCON_HARNESS_SNAPSHOT_DIR (el settings.json del aplicador; CLAUDE.md y el espejo del sync). Desde la
-# story 8.17 (W3) el .ps1 ya no escribe settings.json: lo escribe scripts/setup/apply-hooks.js, que se mira abajo.
+# está detrás de TYCON_HARNESS_SNAPSHOT_DIR (el settings.json del aplicador; CLAUDE.md y el espejo del sync). El
+# .ps1 no escribe settings.json: lo escribe scripts/setup/apply-hooks.js, que se mira abajo.
 if python3 - "$AQUI/scripts/install-tycon-hooks.ps1" "$AQUI/scripts/setup/sync-claude-md-blocks.ps1" <<'PY'
 import re, sys
 want = {sys.argv[1]: 0, sys.argv[2]: 2}

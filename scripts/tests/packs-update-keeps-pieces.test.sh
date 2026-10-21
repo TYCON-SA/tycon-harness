@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# packs-update-keeps-pieces.test.sh — la prueba de actualización de los paquetes, en Mac (story 8.41 · T11-T16, T42).
+# packs-update-keeps-pieces.test.sh — la prueba de actualización de los paquetes, en Mac (T11-T16, T42).
 #
 # Instala en una carpeta de usuario de laboratorio una versión del arnés siguiendo la página pública, toma la lista de
 # piezas que usa la máquina (cada skill y agente enlazado, cada guía del índice, cada control de commit, cada hook

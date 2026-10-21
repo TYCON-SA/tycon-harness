@@ -2,12 +2,12 @@
 'use strict';
 /**
  * codex-only-probe.js — una máquina SÓLO con Codex en un Windows: instalar, arrancar una sesión de Codex, diagnosticar
- * y desinstalar sin que aparezca nada en la carpeta de Claude Code (story 8.23, tanda C · AC 22 · escenario `codex-only`
+ * y desinstalar sin que aparezca nada en la carpeta de Claude Code (escenario `codex-only`
  * del pipeline 182).
  *
- * POR QUÉ EXISTE. Hasta la tanda C el arnés no se podía instalar sin Claude Code, y en Windows el lado Codex nunca
- * recibió sus reglas (`AGENTS.md` lo escribía sólo el guion de shell). La tanda C lo hace todo en Node —la detección,
- * el enchufe de Codex, el hook de arranque que actualiza, el estado en `~/.tycon/state`—, y nada de eso corrió en un
+ * POR QUÉ EXISTE. El arnés se instala sin Claude Code, y en Windows el lado Codex tiene que recibir
+ * sus reglas (`AGENTS.md` lo escribiría sólo el guion de shell). Todo se hace en Node —la detección,
+ * el enchufe de Codex, el hook de arranque que actualiza, el estado en `~/.tycon/state`—, y nada de eso se puede dar por bueno sin correr en un
  * Windows: ahí los enlaces de skills son uniones, las rutas llevan barra invertida y el hook de arranque no puede
  * depender de Git Bash. Este paso lo ensaya en el agente Windows con el «GitHub» de juguete sirviendo el remoto del
  * laboratorio, y lo dice.
@@ -47,7 +47,7 @@ const slash = (s) => String(s).replace(/\\/g, '/');
 const wait = (ms) => { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch (_) { /* nada */ } };
 const kill = (p) => { if (p) { try { p.kill(); } catch (_) { /* ya */ } } };
 
-// con identidad propia: el agente de Windows no tiene user.name/user.email y `git commit` sale 128 (182 #12314)
+// con identidad propia: el agente de Windows no tiene user.name/user.email y `git commit` sale 128
 function git(dir, args, env) { return L.run('git', ['-C', dir, '-c', 'user.name=Lab', '-c', 'user.email=lab@example.com', ...args], { env, timeoutMs: 5 * 60 * 1000 }); }
 
 /** Una versión numerada publicada sobre `main` del remoto, con la copia «autor». */

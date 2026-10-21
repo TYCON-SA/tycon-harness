@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * inventory.js — qué trae la máquina, ANTES de instalar nada (story 8.17, tanda W0 · AC 5 y 11).
+ * inventory.js — qué trae la máquina, ANTES de instalar nada.
  *
  * POR QUÉ EXISTE. El agente Windows de Azure no es una máquina común: trae herramientas que un usuario no tiene y,
  * se espera, corre como administrador. Sin este inventario la medición se cree sola: si el agente trae `jq`, los dos
@@ -90,7 +90,7 @@ function measureHomes({ platform, env, runner, gitBash, homedir, pwsh }) {
     if (gb.error || gb.exit !== 0) homes.git_bash_problem = gb.error ? `no arrancó (${gb.error})` : `salió ${gb.exit}: ${L.firstLine(gb.stderr)}`;
     else { const [h, w] = L.firstLine(gb.stdout).split('|'); homes.git_bash_home = h || null; homes.git_bash_home_windows = (w || '').trim() || null; }
   } else homes.git_bash_problem = gitBash ? gitBash.reason : 'sin bash de Git';
-  // las cuatro que pide el AC 5, en forma comparable (la de Git Bash, por su forma de Windows si la dio)
+  // las cuatro que pide el inventario, en forma comparable (la de Git Bash, por su forma de Windows si la dio)
   const four = {
     pwsh_home: homes.pwsh_home,
     userprofile: L.isWin(platform) ? homes.env_userprofile : (homes.env_userprofile || homes.env_home),

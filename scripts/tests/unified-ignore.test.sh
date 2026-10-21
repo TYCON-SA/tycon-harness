@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# unified-ignore.test.sh — el .gitignore del repo unido sigue versionando el registro de revisores (story 8.18, T4).
+# unified-ignore.test.sh — el .gitignore del repo unido sigue versionando el registro de revisores.
 #
 # ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────────────────────────────
 # El arnés y agent-skills se unieron en un repo, y cada uno traía su `.gitignore`. El de agent-skills ignoraba
@@ -41,16 +41,16 @@ FIXTURE="${ROOT}/scripts/tests/fixtures/union-commits.json"
 
 LAB="$(mktemp -d)"
 trap 'rm -rf "${LAB}"' EXIT
-# 🔴 pase adversarial: anular la configuración global no alcanza. git lee además el archivo de ignorados por defecto de la
+# 🔴 Anular la configuración global no alcanza. git lee además el archivo de ignorados por defecto de la
 # persona (`$XDG_CONFIG_HOME/git/ignore`, o `~/.config/git/ignore`), que no depende de esa configuración: con una línea
-# `__pycache__/` ahí, un .gitignore al que le FALTARA esa línea daba «todo verde». La prueba corre con una HOME vacía.
+# `__pycache__/` ahí, un .gitignore al que le FALTARA esa línea daría «todo verde». La prueba corre con una HOME vacía.
 mkdir -p "${LAB}/home"
 export HOME="${LAB}/home" XDG_CONFIG_HOME="${LAB}/home/.config"
 
 # La copia pública (sin el perfil del equipo) no versiona el registro de revisores, a propósito: el exportador le saca
 # al .gitignore las líneas «!…» que vuelven a incluir algo de `.advisors/`, porque esa carpeta nunca sale. Ahí lo del
 # registro (C-01, C-04 y C-05) NO SE MIDE y se dice; lo que tiene que seguir ignorado (C-02 y C-03) se mide igual.
-# 🔴 pase adversarial: sin esto la suite viajaba a la copia como portable y daba rojo en su CI.
+# 🔴 Sin esto, la suite viaja a la copia como portable y da rojo en su CI.
 TEAM=1
 [ -f "${ROOT}/perfil-equipo.json" ] || TEAM=0
 

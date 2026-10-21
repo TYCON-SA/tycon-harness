@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * portable-probe.js — la «base portable» del arnés (story 8.17, tanda W1), medida en un agente Windows: los finales de
+ * portable-probe.js — la «base portable» del arnés, medida en un agente Windows: los finales de
  * línea de un clon nuevo y de uno que ya existía, el bash de Git, el banco de controles entero y los portones que
  * deciden por ruta. Es el escenario `portable` de `pipelines/azure-pipelines-windows.yml`; lo llama `rehearse.js`.
  *
- * POR QUÉ EXISTE. La tanda W1 se escribió y se probó en una Mac, y todo el equipo trabaja en Windows: nada del arnés se
+ * POR QUÉ EXISTE. La base portable se escribió y se probó en una Mac, y todo el equipo trabaja en Windows: nada del arnés se
  * da por bueno hasta que corrió ahí. Lo que hay que medir quedó escrito bloque por bloque, con su salida esperada, en
- * el informe de la tanda (`para-medir-en-windows.md`); esto lo corre sin pasos a mano y sin arreglar nada.
+ * el informe (`para-medir-en-windows.md`); esto lo corre sin pasos a mano y sin arreglar nada.
  *
  * LAS PARTES (`--part`), cada una un paso del pipeline con su tope:
  *   fresh-clone      `git clone` de los dos repos en el commit que se mide, con el `core.autocrlf` de la máquina: cuántos
@@ -33,7 +33,7 @@
  *
  * CÓMO FALLA. Lo que la medición encuentra es un HECHO del reporte y un hallazgo del paso: no pone roja la corrida. El
  * paso sale «error» sólo si no pudo medir: sin los remotos del laboratorio, sin el clon, o un banco que no deja un
- * reporte legible. Si el commit que se mide no trae la pieza (es anterior a W1), el paso sale «no medido», con su motivo.
+ * reporte legible. Si el commit que se mide no trae la pieza (es anterior a la base portable), el paso sale «no medido», con su motivo.
  *
  * NUNCA LA CARPETA DE USUARIO REAL: todo corre con una carpeta de usuario del laboratorio (`lab.labHomeProblem`).
  *
@@ -49,7 +49,7 @@ const P = require('./portable-report.js');
 const PARTS = Object.freeze(['fresh-clone', 'existing-clone', 'git-bash', 'suites', 'bench', 'path-shapes']);
 const REPOS = Object.freeze([['harness', 'tycon-claude-guides'], ['skills', 'agent-skills']]);
 
-/** El repo unido (story 8.18): el clon del arnés trae `agents/`, `skills/` o `packs/` en su raíz. */
+/** El repo unido: el clon del arnés trae `agents/`, `skills/` o `packs/` en su raíz. */
 const isUnified = (harnessDir) => ['agents', 'skills', 'packs'].some((d) => fs.existsSync(path.join(harnessDir, d)));
 /** Qué carpeta de skills ven el banco y las suites: con un arnés unido, el propio clon; si no, el clon de agent-skills. */
 const skillsFor = (pair, state) => (singleRepo(state) || isUnified(pair.harness) ? pair.harness : pair.skills);
@@ -65,7 +65,7 @@ const skillsProblem = (state, clone) => (singleRepo(state) && !isUnified(clone)
   ? 'no pude medir: el laboratorio trae un solo repo y su árbol no trae las skills adentro (ni agents/, ni skills/, ni packs/): no hay skills con las que medir'
   : null);
 const GIT_BASH_VAR = 'CLAUDE_CODE_GIT_BASH_PATH';
-// El paso que normaliza el árbol de trabajo de un clon anterior a la regla (lo dice el informe de W1 y el propio
+// El paso que normaliza el árbol de trabajo de un clon anterior a la regla (lo dice el informe y el propio
 // `.gitattributes`). Va con el árbol limpio: descarta los cambios locales sin commitear de archivos versionados.
 const NORMALIZE = Object.freeze([['rm', '--cached', '-r', '-q', '.'], ['reset', '--hard', '-q']]);
 // Los dos caminos que parecen arreglarlo y no lo hacen: git no reescribe un archivo que el índice cree al día.
@@ -95,7 +95,7 @@ function places(lab) {
 /**
  * Los guiones de bash versionados de un clon (`.sh` y los hooks de `.githooks/`) y cuántos tienen `\r` en el árbol de
  * trabajo: `{ total, with_cr, first, unreadable }` o `{ problem }`. La lista se pide entera, un nombre por línea, y se
- * filtra acá: un patrón en la línea de comandos o una lista separada por ceros ya contaron «0 de 1» (corrida 11677).
+ * filtra acá: un patrón en la línea de comandos o una lista separada por ceros dan «0 de 1».
  */
 function scriptsWithCr(clone, env) {
   const r = L.run('git', ['-c', 'core.quotePath=false', '-C', clone, 'ls-files'], { env, cap: 16 * 1024 * 1024, timeoutMs: 120000 });
@@ -207,7 +207,7 @@ function freshClone(ctx) {
   // un solo repo, y el clon no trae las skills adentro: no se sigue midiendo con una carpeta de skills que no existe
   const noSkills = skillsProblem(state, clone);
   if (noSkills) return { status: L.STATUS.error, reason: noSkills };
-  // lo que hizo falso el «bash -n limpio» del análisis: bash da por bueno un guion con \r\n que al correr falla
+  // bash da por bueno un guion con \r\n que al correr falla: un «bash -n limpio» no alcanza
   const guard = 'scripts/hooks/safety-guard-pre.sh';
   const finder = path.join(clone, FINDER);
   if (fs.existsSync(finder) && fs.existsSync(path.join(clone, guard))) {
@@ -255,7 +255,7 @@ function existingClone(ctx) {
     save();
     return s;
   };
-  // antes: el remoto parado en la rama principal, sin la tanda
+  // antes: el remoto parado en la rama principal, sin los cambios que se miden
   let pointed = T.pointRemotes(state, 'base', env);
   if (pointed) return { status: L.STATUS.error, reason: `no pude medir: ${pointed}` };
   for (const [key, folder] of reposOf(state)) {
@@ -267,11 +267,11 @@ function existingClone(ctx) {
     const crlf = autocrlfOf(dir, env);
     repos[key] = { dir, base: state.remotes[key].base, target: state.remotes[key].target, autocrlf: crlf.value, autocrlf_origin: crlf.origin, gitattributes_at_base: fs.existsSync(path.join(dir, '.gitattributes')), stages: {} };
     const s = stage(key, 'at-base', false).scripts;
-    // con el .gitattributes de W1 ya en el «antes» (una rama que sale del main de hoy), lo esperado es ninguno con \r
+    // con el .gitattributes ya en el «antes» (una rama que sale del main actual), lo esperado es ninguno con \r
     if (repos[key].gitattributes_at_base) { if (!s.problem && s.with_cr) rec.finding(`existing-clone:${key}:base-has-cr`, 'line-endings', `el clon de ${folder} en el antes ya trae .gitattributes y aun así ${s.with_cr} de ${s.total} guiones de bash llegaron con \\r`); }
     else if (crlf.value === 'true' && !s.problem && s.with_cr !== s.total) rec.finding(`existing-clone:${key}:base-not-all-cr`, 'line-endings', `con core.autocrlf=true, el clon de ${folder} en el antes trae ${s.with_cr} de ${s.total} guiones de bash con \\r, no todos${repos[key].gitattributes_at_base ? ' (el antes ya trae .gitattributes)' : ''}`);
   }
-  // llega la tanda: el mismo `git pull` de siempre
+  // llegan los cambios que se miden: el mismo `git pull` de siempre
   pointed = T.pointRemotes(state, 'target', env);
   if (pointed) return { status: L.STATUS.error, reason: `no pude medir: ${pointed}` };
   for (const [key, folder] of reposOf(state)) {
@@ -289,7 +289,7 @@ function existingClone(ctx) {
   const noSkills = skillsProblem(state, clone);
   if (noSkills) return { status: L.STATUS.error, reason: noSkills };
   const testEnv = Object.assign({}, env, { TYCON_SKILLS_DIR: skillsFor(where.existing, state) });
-  // el rojo de antes del paso tiene que decir cómo se arregla: el paso, tal cual
+  // la prueba corrida antes del paso sale roja y tiene que decir cómo se arregla: el paso, tal cual
   const tests = { 'before-normalize': runTest(runner, 'line-endings', { clone, env: testEnv, id: 'line-endings-before-normalize', look: { names_the_step: /git rm --cached -r -q \./ } }) };
   rec.fact('tests', tests);
   const left = reposOf(state).some(([key]) => (repos[key].stages['after-pull'].scripts.with_cr || 0) > 0);
@@ -484,8 +484,8 @@ function measure({ part, lab, out, platform = process.platform, baseEnv = proces
   const problem = L.labHomeProblem(where.home, { labRoot: lab, platform, allowTemp });
   if (problem) return { status: L.STATUS.error, reason: `no pude medir: ${problem}` };
   // el clon nuevo de agent-skills es el que ven el banco y las suites: nunca el de la carpeta de usuario. Con un arnés
-  // del repo unido (story 8.18) las skills son las del propio clon: el agent-skills de antes de la unión quedó
-  // congelado en el corte y el banco de hoy, leído contra él, daba rojos que no son del arnés (corrida 11842: 55)
+  // del repo unido las skills son las del propio clon: el agent-skills anterior a la unión está
+  // congelado en el corte y el banco actual, leído contra él, daría rojos que no son del arnés
   const env = L.labEnv(where.home, { base: baseEnv, platform, extra: { TYCON_SKILLS_DIR: skillsFor(where.fresh, state) } });
   // Si a este guion lo lanza una prueba de `node --test`, esa variable llega heredada y las suites que se miden
   // escribirían su resultado en el formato interno de Node, no en el que se lee acá.
@@ -499,7 +499,7 @@ function measure({ part, lab, out, platform = process.platform, baseEnv = proces
   // con el clon ya hecho (toda parte menos las dos que clonan): un solo repo sin las skills adentro no se mide
   if (!['fresh-clone', 'existing-clone'].includes(part)) { const noSkills = skillsProblem(state, clone); if (noSkills) return { status: L.STATUS.error, reason: noSkills }; }
   // Qué se mide y dónde están las skills. `unified` mira el clon: en la parte que lo CREA todavía no existe, así que se
-  // vuelve a anotar al terminar (antes quedaba dicho «no unido» y una carpeta de skills que nunca iba a existir).
+  // vuelve a anotar al terminar (sin esto, queda dicho «no unido» y una carpeta de skills que nunca va a existir).
   // Sin el clon (la parte que lo crea no llegó a hacerlo) no se sabe si trae las skills: se anota «no se sabe», no «no».
   const noteMeasured = () => {
     const cloned = fs.existsSync(path.join(where.fresh.harness, '.git'));

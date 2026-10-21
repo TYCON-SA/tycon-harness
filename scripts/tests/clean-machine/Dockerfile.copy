@@ -1,4 +1,4 @@
-# La capa de la copia (story 8.7, decisión C21): sobre una de las imágenes de requisitos, el repo que se va a instalar y
+# La capa de la copia: sobre una de las imágenes de requisitos, el repo que se va a instalar y
 # lo que la prueba corre adentro. La arma `clean-machine.test.sh` con su contexto (`copy/` y `lab/`); `BASE` es la imagen
 # del núcleo o la del paquete.
 #

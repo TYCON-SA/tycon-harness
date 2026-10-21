@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * no-clone-probe.js — la instalación SIN git en un Windows: una versión bajada como archivos (story 8.23, tanda B ·
- * escenario `no-clone` del pipeline 182; T14 en Windows).
+ * no-clone-probe.js — la instalación SIN git en un Windows: una versión bajada como archivos
+ * (escenario `no-clone` del ensayo de Windows; T14 en Windows).
  *
- * POR QUÉ EXISTE. La tanda B instala el arnés bajando el comprimido de un commit publicado y cambiando una carpeta con
+ * POR QUÉ EXISTE. La instalación sin clon instala el arnés bajando el comprimido de un commit publicado y cambiando una carpeta con
  * diario; nada de eso corrió en un Windows: ahí el `rename` de una carpeta con un archivo TOMADO falla, los enlaces de
  * carpeta piden privilegios (se usan uniones), y el bit de ejecutable no existe en el disco. Este paso lo ensaya en el
  * agente Windows con el «GitHub» de juguete (scripts/tests/fixtures/toy-release-server.js) sirviendo el remoto del
@@ -17,13 +17,13 @@
  *      que ESPERAR (sale 2, dice «espera», no es `failed`) y aplicarse cuando se suelta; con un archivo de `trash/`
  *      tomado, el arranque siguiente no la borra, no frena nada y lo dice; suelto, la borra.
  *   4. `rollback`, `doctor --json` y `uninstall --yes`.
- *   6. (story 8.34 · T1 y T16) Contra el GitHub REAL, sin permiso, sólo en el agente de la 182 (`TF_BUILD`): cuánto gasta
+ *   6. (T1 y T16) Contra el GitHub REAL, sin permiso, sólo en el agente del ensayo de Windows (`TF_BUILD`): cuánto gasta
  *      del tope anónimo de la API cada ruta pública (`info/refs`, el raw por commit, codeload) y un 304 sin permiso; y, con
  *      el registro de pedidos (`TYCON_HTTP_TRACE`), cuántas consultas a `api.github.com` hacen la instalación (1: la
  *      verificación), mirar (0) y mirar con la API apuntada a un puerto cerrado (0, y anda); en Windows, que
- *      `get-harness.ps1` baja con la API cerrada. Lo de este paso son hechos de la story 8.34: la conexión del agente se
+ *      `get-harness.ps1` baja con la API cerrada. Lo que mide este paso depende de la red: la conexión del agente se
  *      comparte, así que un tope agotado por otros se anota, no se cuenta como falla del arnés.
- *   5. (story 8.25, A1b · T14) Lo mismo CON la capa del equipo, en otra carpeta de usuario: el repo del equipo de juguete
+ *   5. (T14) Lo mismo CON la capa del equipo, en otra carpeta de usuario: el repo del equipo de juguete
  *      servido por el Azure DevOps de juguete (`install --team <URL>` con el PAT de juguete guardado por `config set
  *      azure.token`; un commit sólo del equipo que llega en el arranque fuera de la ventana —en Windows, también con
  *      perfil-equipo.json tomado por otro proceso: entra entero o no cambia nada—; una versión pública nueva; `rollback`;
@@ -55,10 +55,10 @@ const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
 const lastLines = (s, n = 3) => String(s || '').split('\n').map((l) => l.trim()).filter(Boolean).slice(-n).join(' | ');
 const isWin = L.isWin();
 
-// con identidad propia: el agente de Windows no tiene user.name/user.email y `git commit` sale 128 (182 #12314)
-// …y sin los hooks de git de la carpeta de usuario del laboratorio: desde el 2026-10-14 `install` y la mudanza ponen ahí la
-// carpeta global de hooks del arnés, y su pre-push (el freno antes de publicar) frenaba las publicaciones de juguete del
-// propio ensayo, que van a un remoto de laboratorio declarado público (182 #13452). Lo que se mide es el arnés, no esto
+// con identidad propia: el agente de Windows no tiene user.name/user.email y `git commit` sale 128
+// …y sin los hooks de git de la carpeta de usuario del laboratorio: `install` y la mudanza ponen ahí la
+// carpeta global de hooks del arnés, y su pre-push (el freno antes de publicar) frenaría las publicaciones de juguete del
+// propio ensayo, que van a un remoto de laboratorio declarado público. Lo que se mide es el arnés, no esto
 const LAB_NO_HOOKS = path.join(require('os').tmpdir(), 'tycon-lab-no-git-hooks');
 function git(dir, args, env) { return L.run('git', ['-C', dir, '-c', 'user.name=Lab', '-c', 'user.email=lab@example.com', '-c', `core.hooksPath=${LAB_NO_HOOKS}`, ...args], { env, timeoutMs: 5 * 60 * 1000 }); }
 
@@ -76,9 +76,9 @@ function publish(author, number, env, extra = null) {
 }
 
 /** Un proceso que deja un archivo ABIERTO sin compartir (Windows) hasta que se lo mate. En posix abre y espera igual. */
-// `share` (FileShare de .NET): 'None' traba hasta leerlo; 'Read' (story 8.25, A1b) deja leer y traba reemplazarlo o borrarlo,
-// que es lo que hace un editor o un antivirus con el archivo abierto (182 #12551: con 'None' el arranque no podía leer el perfil,
-// no miraba la red y el refresco de la capa ni corría — la sonda medía otra cosa)
+// `share` (FileShare de .NET): 'None' traba hasta leerlo; 'Read' deja leer y traba reemplazarlo o borrarlo,
+// que es lo que hace un editor o un antivirus con el archivo abierto (con 'None' el arranque no puede leer el perfil,
+// no mira la red y el refresco de la capa ni corre: la sonda mediría otra cosa)
 function holdOpen(file, env, share = 'None') {
   if (isWin) {
     const ps = L.scanPath('pwsh', { env })[0] || L.scanPath('powershell', { env })[0];
@@ -122,13 +122,13 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
   const env0 = T.rehearsalEnv(home, { base: baseEnv, platform });
   rec.fact('home', home);
   rec.fact('lab_mode', !isWin);
-  // 0. el sondeo de la story 8.33 (T1): ¿se cambia una unión con la versión vieja tomada? Va primero y no depende de nada
+  // 0. el sondeo T1: ¿se cambia una unión con la versión vieja tomada? Va primero y no depende de nada
   require('./links-spike.js').measureLinks({ base, env: env0, rec });
-  // 0b. la medición de la story 8.39 (E1): ¿un hook .js con la ruta del Node del arnés SIN comillas corre por los cinco
+  // 0b. la medición E1: ¿un hook .js con la ruta del Node del arnés SIN comillas corre por los cinco
   // lanzadores? Tampoco depende de nada
   require('./node-form-spike.js').measureNodeForm({ base, env: env0, rec });
 
-  // el remoto en el commit de hoy, la copia «autor» y la copia del programa (lo que una persona tendría bajado)
+  // el remoto en el commit actual, la copia «autor» y la copia del programa (lo que una persona tendría bajado)
   const point = T.pointRemotes(state, 'target', env0);
   if (point) return { status: L.STATUS.error, reason: point };
   for (const [dir, label] of [[author, 'author'], [program, 'program']]) {
@@ -159,7 +159,7 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
     fs.writeFileSync(path.join(home, '.claude', 'settings.json'), '{\n  "hooks": {}\n}\n');
     fs.writeFileSync(path.join(home, '.claude', 'CLAUDE.md'), '');
     const env = T.rehearsalEnv(home, { base: baseEnv, platform, extra: {
-      // TYCON_CLAUDE=1 (story 8.23, tanda C): `install` enchufa las herramientas que detecta y el agente no tiene ninguna
+      // TYCON_CLAUDE=1: `install` enchufa las herramientas que detecta y el agente no tiene ninguna
       // instalada; este escenario mide la máquina con Claude Code (la de sólo Codex es el escenario `codex-only`)
       TYCON_RELEASE_API: api, TYCON_UPDATE_APPLY: 'auto', TYCON_PROFILE: profile, TYCON_CLAUDE: '1', TYCON_CODEX: '0', TYCON_BENCH_DAILY: '0', TYCON_STAGE_METRICS: '0',
       TYCON_SETTINGS_PATH: path.join(home, '.claude', 'settings.json'), CLAUDE_MD_PATH: path.join(home, '.claude', 'CLAUDE.md'),
@@ -167,8 +167,8 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
     } });
     const own = path.join(home, '.tycon');
     const harnessJs = (tree) => path.join(tree, 'scripts', 'setup', 'harness.js');
-    // `cap`: cuánto de la salida se guarda. `doctor --json` se LEE entero (con el tope de 4000 su JSON llegaba cortado
-    // apenas el diagnóstico sumó un renglón, y «no pude leerlo» salía como hallazgo: story 8.23, tanda C)
+    // `cap`: cuánto de la salida se guarda. `doctor --json` se LEE entero (con el tope de 4000 su JSON llega cortado
+    // en cuanto el diagnóstico suma un renglón, y «no pude leerlo» sale como hallazgo)
     const run = (tree, args, label, cap = 4000) => {
       const r = L.run(process.execPath, [harnessJs(tree), ...args], { env, timeoutMs: CMD_TIMEOUT_MS, cap });
       rec.fact(label, { exit: r.exit, error: r.error, out: lastLines(`${r.stdout}\n${r.stderr}`, 4), ms: r.ms });
@@ -192,9 +192,9 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
     }
     if (rec.step.facts.after_install.links.place === 'missing') rec.finding('no-clone:place-link-missing', 'links', `el lugar ${placeLink} no quedó enlazado a ~/.tycon/harness`, 'W8', { severity: 'loses-control' });
     if (rec.step.facts.after_install.links.skills === 'missing') rec.finding('no-clone:skills-link-missing', 'links', 'agent-skills no quedó enlazado a ~/.tycon/harness (en Windows, una unión)', 'W8', { severity: 'loses-control' });
-    // el freno antes de publicar, puesto (2026-10-14): una máquina limpia, sin carpeta global de hooks de git, queda con
-    // core.hooksPath apuntando a la carpeta del aplicador y el pre-push del arnés adentro. Antes la instalación sólo avisaba
-    // y nada la ponía: una máquina instalada sin el paso a mano de la página quedaba sin el freno, sin que nadie lo notara
+    // el freno antes de publicar, puesto: una máquina limpia, sin carpeta global de hooks de git, queda con
+    // core.hooksPath apuntando a la carpeta del aplicador y el pre-push del arnés adentro. Sin esto la instalación sólo avisaría
+    // y nada la pondría: una máquina instalada sin el paso a mano de la página quedaría sin el freno, sin que nadie lo notara
     {
       const hp = L.run('git', ['config', '--global', '--get', 'core.hooksPath'], { env, timeoutMs: 60000 });
       const want = path.join(home, '.git-hooks');
@@ -208,7 +208,7 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
     const hooks0 = hookCount();
     const tree = path.join(own, 'harness');
 
-    // 1b. el permiso guardado sólo para el usuario (AC 11): `config set github.token` por stdin; en Windows, la ACL de
+    // 1b. el permiso guardado sólo para el usuario: `config set github.token` por stdin; en Windows, la ACL de
     // config.json (icacls) no puede dar acceso a nadie más que la cuenta
     const token = `lab-token-${Date.now()}`;
     const cs = L.run(process.execPath, [harnessJs(tree), 'config', 'set', 'github.token'], { env, input: token, timeoutMs: 60000, cap: 1000 });
@@ -229,9 +229,9 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
     rec.fact('after_update_2', { version: versionOf(), previous: fs.existsSync(path.join(own, 'previous', 'version.json')), journal: fs.existsSync(path.join(own, 'swap.json')) });
     if (up2.exit !== 0 || versionOf() !== '2030.02.01.2') rec.finding('no-clone:update-fails', 'update', `update --yes salió ${up2.exit}: ${lastLines(`${up2.stdout}\n${up2.stderr}`, 2)}`, 'W8', { severity: 'breaks' });
 
-    // 3. (story 8.33 · T16) en Windows la versión bajada vive en la forma con ENLACES: la activa tomada no frena nada
+    // 3. (T16) en Windows la versión bajada vive en la forma con ENLACES: la activa tomada no frena nada
     if (isWin) {
-      // (story 8.35 · T14) las carpetas de skills y agentes de Claude Code: reales al instalar, y la forma vieja convertida
+      // (T14) las carpetas de skills y agentes de Claude Code: reales al instalar, y la forma vieja convertida
       const rf = measureRealFolders({ home, own, run, rec });
       measureLinkLayout({ own, home, author, env0, env, run, versionOf, stateFile, rec, lockers, harnessJs });
       if (rf) {
@@ -240,7 +240,7 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
         rec.fact('real_folders_after_updates', { kept: still });
         if (!still) rec.finding('no-clone:real-folders-own-lost-on-update', 'real-folders', `lo propio de ~/.claude no sobrevivió a las actualizaciones: ${rf.filter((f) => !fs.existsSync(f)).join(', ')}`, 'W8', { severity: 'breaks' });
       }
-      // la mitad de la 8.23 (con previous/ tomada, la actualización espera) no aplica en la forma con enlaces
+      // la parte de previous/ tomada (la actualización espera) no aplica en la forma con enlaces
     } else {
     // 3. el archivo tomado (T14): en previous/ durante un cambio → la actualización espera; en trash/ → la limpieza espera
     const v3 = publish(author, '2030.02.01.3', env0);
@@ -294,8 +294,8 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
     let hn = null;
     try { const dj = JSON.parse(doc.stdout); fails = dj.fail; hn = dj.harness_node || null; } catch (_) { fails = null; }
     rec.fact('doctor_fail', fails);
-    // el Node propio del arnés (story 8.39, AC 27): con la versión bajada instalada, los hooks corren con él, salvo que
-    // esté apagado o que la carpeta no entre en la forma de Windows (decisión 22, con su motivo en doctor)
+    // el Node propio del arnés: con la versión bajada instalada, los hooks corren con él, salvo que
+    // esté apagado o que la carpeta no entre en la forma de Windows (con su motivo en doctor)
     rec.fact('harness_node', hn);
     if (hn && hn.own !== true && hn.switch !== 'off' && !/no se puede escribir en un comando/.test(String(hn.reason || ''))) rec.finding('no-clone:harness-node-not-own', 'harness-node', `el arnés instalado no corre con su Node propio (${hn.reason || 'sin motivo'}): los hooks siguen con el Node del PATH`, 'W8', { severity: 'loses-control' });
     if (doc.exit !== 0 || !Array.isArray(fails) || fails.length) rec.finding('no-clone:doctor-red', 'doctor', `doctor --json salió ${doc.exit}: ${JSON.stringify(fails).slice(0, 400)}`, 'W8', { severity: 'loses-control' });
@@ -304,16 +304,16 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
     if (un.exit !== 0 || fs.existsSync(path.join(own, 'harness'))) rec.finding('no-clone:uninstall-fails', 'uninstall', `uninstall --yes salió ${un.exit}; ~/.tycon/harness ${fs.existsSync(path.join(own, 'harness')) ? 'sigue' : 'no está'}`, 'W8', { severity: 'loses-control' });
     try { rec.fact('server_requests', fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).length); } catch (_) { /* sin registro */ }
 
-    // 5. con la capa del equipo (story 8.25, A1b · T14 = Windows_NoCloneAndMigrate_WithTeamRepo_Pipeline182, su mitad no-clone)
+    // 5. con la capa del equipo (T14, su mitad no-clone)
     const team = measureTeam({ lab, base, author, program, bare, env0, baseEnv, platform, allowTemp, rec, api, org, name, repoOption, gitBin, serverDir, lockers });
     if (team) rec.note(team);
-    // 6. la capa de la A2 con Claude Code y Codex (story 8.25, A2b · T28)
+    // 6. la capa del equipo con Claude Code y Codex (T28)
     const teamA2 = measureTeamA2({ lab, base, program, env0, baseEnv, platform, allowTemp, rec, api, repoOption, gitBin, serverDir, lockers });
     if (teamA2) rec.note(teamA2);
-    // 7. la skill de la lista fija con sus datos fuera de su carpeta (story 8.25, A2c · T37)
+    // 7. la skill de la lista fija con sus datos fuera de su carpeta (T37)
     const skillData = measureTeamSkillData({ lab, base, author, program, env0, baseEnv, platform, allowTemp, rec, api, repoOption, gitBin, serverDir, lockers });
     if (skillData) rec.note(skillData);
-    // 8. contra el GitHub real, sin permiso (story 8.34 · T1 y T16)
+    // 8. contra el GitHub real, sin permiso (T1 y T16)
     const real = measureRealGithub({ base, program, baseEnv, platform, rec });
     if (real) rec.note(real);
     return { status: L.STATUS.measured, reason: null };
@@ -321,7 +321,7 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
 }
 
 /**
- * Las carpetas de skills y agentes de Claude Code (story 8.35 · T14, AC 1, 2 y 14): después de instalar son carpetas REALES
+ * Las carpetas de skills y agentes de Claude Code (T14): después de instalar son carpetas REALES
  * con un enlace por entrada (uniones para las skills; enlace de archivo o enlace duro para los agentes). Después se arma la
  * forma vieja —`~/.claude/skills` y `agents` uniones a la carpeta entera del arnés— con una skill propia, un agente propio y
  * `synced/` adentro del arnés, y el arranque (el aplicador de PowerShell de verdad) la convierte: lo propio queda en la
@@ -370,11 +370,11 @@ function measureRealFolders({ home, own, run, rec }) {
 }
 
 /**
- * La forma con ENLACES en Windows (story 8.33 · T16, AC 3, 5, 7, 9, 10, 11 y 17): `~/.tycon/harness` es una unión a
+ * La forma con ENLACES en Windows (T16): `~/.tycon/harness` es una unión a
  * `versions/<v>`. Con la versión ACTIVA tomada —un archivo abierto, un proceso con su carpeta de trabajo adentro y un
  * vigilante de carpetas, por la unión, como una sesión de Claude Code o un VS Code—: `update` aplica, `rollback` va y
  * vuelve; la limpieza deja lo tomado y lo borra al soltarse; el respaldo de PowerShell vuelve a la anterior por la
- * unión y repara un diario cortado; y una máquina en la forma de antes se convierte, trabada (el aviso UNA vez) y
+ * unión y repara un diario cortado; y una máquina en la forma anterior se convierte, trabada (el aviso UNA vez) y
  * después suelta. Cada diferencia es un hallazgo con su gravedad. Nunca tira.
  */
 function measureLinkLayout({ own, home, author, env0, env, run, versionOf, stateFile, rec, lockers, harnessJs }) {
@@ -393,7 +393,7 @@ function measureLinkLayout({ own, home, author, env0, env, run, versionOf, state
   rec.fact('links_after_update_2', { harness: target(harness), previous: target(previous), versions: ls(versions) });
   if (!isLinkP(harness)) { breaks('links-not-born', 'links', `después de install y update, ${harness} no es una unión (${ls(own).join(', ')})`); return; }
 
-  // a. AC 3: la activa tomada, update aplica en esa corrida
+  // a. la activa tomada, update aplica en esa corrida
   const v3 = publish(author, '2030.02.01.3', env0);
   if (!v3.ok) { rec.note(`forma con enlaces: no pude publicar la .3 (${v3.reason}): no medido`); return; }
   let hs = hold(harness);
@@ -403,7 +403,7 @@ function measureLinkLayout({ own, home, author, env0, env, run, versionOf, state
   if ((stateFile() || {}).failed) loses('active-held-marked-failed', 'update', 'con la activa tomada la versión quedó marcada failed');
   release(hs);
 
-  // b. AC 7: rollback con la activa tomada, y otra vez
+  // b. rollback con la activa tomada, y otra vez
   hs = hold(harness);
   const rb = run(harness, ['rollback'], 'links_rollback_active_held');
   const afterRb = { exit: rb.exit, version: versionOf(), harness: target(harness), previous: target(previous) };
@@ -413,7 +413,7 @@ function measureLinkLayout({ own, home, author, env0, env, run, versionOf, state
   if (rb2.exit !== 0 || versionOf() !== '2030.02.01.3') breaks('rollback-twice-fails', 'rollback', `el segundo rollback salió ${rb2.exit} (versión ${versionOf()})`);
   release(hs);
 
-  // c. AC 11: la limpieza deja lo tomado y lo borra al soltarse (la .1 ya no es destino de ningún enlace)
+  // c. la limpieza deja lo tomado y lo borra al soltarse (la .1 ya no es destino de ningún enlace)
   const old = vdir('2030.02.01.1');
   if (fs.existsSync(old)) {
     hs = hold(old);
@@ -428,7 +428,7 @@ function measureLinkLayout({ own, home, author, env0, env, run, versionOf, state
     if (st2.exit !== 0) breaks('cleanup-startup-fails', 'startup', `el arranque después de soltar salió ${st2.exit}`);
   } else rec.note(`forma con enlaces: ${old} ya no estaba antes de medir la limpieza (${ls(versions).join(', ')})`);
 
-  // d. AC 9 (T9): el respaldo de PowerShell con harness.js roto vuelve a la anterior por la unión
+  // d. T9: el respaldo de PowerShell con harness.js roto vuelve a la anterior por la unión
   const ps = L.scanPath('pwsh', { env: env0 })[0] || L.scanPath('powershell', { env: env0 })[0];
   const fallback = path.join(home, '.claude', '.tycon-pipeline', 'harness', 'bootstrap-fallback.ps1');
   const prevTarget = target(previous), activeTarget = target(harness);
@@ -441,7 +441,7 @@ function measureLinkLayout({ own, home, author, env0, env, run, versionOf, state
     if (!(target(harness) && path.resolve(target(harness)) === path.resolve(prevTarget))) breaks('ps1-fallback-no-retarget', 'fallback', `el respaldo de PowerShell no apuntó harness a la anterior (${prevTarget}): quedó en ${target(harness)} — ${lastLines(out(fb), 2)}`);
     if (!fs.existsSync(activeTarget)) loses('ps1-fallback-moved-dir', 'fallback', `el respaldo de PowerShell movió o borró ${activeTarget}`);
     fs.writeFileSync(js, good);
-    // e. AC 5 (T5): un diario cortado lo repara el respaldo de PowerShell: harness vuelve a donde estaba
+    // e. T5: un diario cortado lo repara el respaldo de PowerShell: harness vuelve a donde estaba
     try {
       const was = target(harness);
       fs.rmdirSync(harness); fs.symlinkSync(activeTarget, harness, 'junction');
@@ -451,7 +451,7 @@ function measureLinkLayout({ own, home, author, env0, env, run, versionOf, state
       rec.fact('links_ps1_repair', { exit: fr.exit, harness: back, journal: fs.existsSync(path.join(own, 'link-swap.json')) });
       if (!(back && path.resolve(back) === path.resolve(was)) || fs.existsSync(path.join(own, 'link-swap.json'))) breaks('ps1-repair-fails', 'fallback', `el respaldo de PowerShell no reparó el diario cortado: harness → ${back} (era ${was}) — ${lastLines(out(fr), 2)}`);
     } catch (e) { rec.note(`forma con enlaces: no pude armar el diario cortado para el respaldo (${e.code || e.message}): no medido`); }
-    // e2. (pase adversarial, clase 1) la conversión a medias: harness ya es unión y previous sigue siendo una carpeta
+    // e2. la conversión a medias: harness ya es unión y previous sigue siendo una carpeta
     // TOMADA; con harness.js roto el respaldo no puede mover nada y no tiene que dejar la máquina sin harness
     try {
       const act = target(harness);
@@ -474,7 +474,7 @@ function measureLinkLayout({ own, home, author, env0, env, run, versionOf, state
     run(harness, ['startup'], 'links_startup_after_fallback');
   } else rec.note(`forma con enlaces: el respaldo de PowerShell no se midió (${!ps ? 'sin pwsh ni powershell' : !fs.existsSync(fallback) ? `no está ${fallback}` : 'sin enlaces armados'})`);
 
-  // f. AC 10 (decisión 7): una máquina en la forma de antes (carpetas reales), trabada y después suelta
+  // f. una máquina en la forma anterior (carpetas reales), trabada y después suelta
   try {
     const keep = target(harness);
     for (const n of [harness, previous]) if (isLinkP(n)) fs.rmdirSync(n);
@@ -485,7 +485,7 @@ function measureLinkLayout({ own, home, author, env0, env, run, versionOf, state
   if (!vc.ok) { rec.note(`conversión: no pude publicar (${vc.reason}): no medido`); return; }
   hs = hold(harness);
   outOfWindowAt(home, rec);
-  // ajuste del dueño (2026-10-14): los primeros arranques trabados intentan en silencio; el aviso sale UNA vez al llegar a
+  // los primeros arranques trabados intentan en silencio; el aviso sale UNA vez al llegar a
   // 3 días o 10 arranques (acá: 9 intentos anotados a mano, y el décimo)
   const c1 = run(harness, ['startup'], 'links_convert_held');
   const silent = !/Cerrá/.test(out(c1));
@@ -509,7 +509,7 @@ function measureLinkLayout({ own, home, author, env0, env, run, versionOf, state
 }
 
 /**
- * La instalación sin clon CON la capa del equipo (story 8.25, A1b · T14): el repo del equipo de juguete servido por el Azure
+ * La instalación sin clon CON la capa del equipo (T14): el repo del equipo de juguete servido por el Azure
  * DevOps de juguete (la fuente de TYCON) —install, el refresco en el lugar con un commit sólo del equipo, una versión pública
  * nueva, rollback, doctor, uninstall— y por el GitHub de juguete con los dos repos (install). Con su propio entorno: sin el perfil
  * del laboratorio (la variable le ganaría a la capa), el arranque sin desprenderse (si no vuelve a los 20 s y se mide antes) y el
@@ -654,8 +654,8 @@ function measureTeam({ base, author, program, bare, env0, baseEnv, platform, all
   const ghControl = path.join(serverDir, 'gh2-control.json'), ghPorts = path.join(serverDir, 'gh2-ports.env');
   fs.writeFileSync(ghControl, '{ "auth": "none" }\n');
   // el `git archive` del GitHub de juguete corre con la configuración del agente, y Git for Windows trae core.autocrlf=true:
-  // sin un .gitattributes en el repo (la capa no puede traerlo), el comprimido salía con \r\n y su árbol no daba el del commit
-  // (182 #12551). GitHub de verdad arma el comprimido sin esa conversión: el servidor de juguete, igual
+  // sin un .gitattributes en el repo (la capa no puede traerlo), el comprimido sale con \r\n y su árbol no da el del commit.
+  // GitHub de verdad arma el comprimido sin esa conversión: el servidor de juguete, igual
   const gh2Env = Object.assign({}, env0, { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.autocrlf', GIT_CONFIG_VALUE_0: 'false' });
   const gh2 = spawn(process.execPath, [SERVER, '--repo', bare, '--org', org, '--name', name, '--repo', teamBare, '--org', 'TYCON-LAB', '--name', 'equipo-lab', '--git', gitBin, '--control', ghControl, '--log', path.join(serverDir, 'gh2-requests.log'), '--port-file', ghPorts], { env: gh2Env, stdio: 'ignore', windowsHide: true });
   lockers.push(gh2);
@@ -675,12 +675,12 @@ function measureTeam({ base, author, program, bare, env0, baseEnv, platform, all
 }
 
 /**
- * La capa de la A2 en una carpeta de usuario NUEVA con Claude Code y Codex enchufados (story 8.25, A2b · T28): la capa de juguete
+ * La capa del equipo en una carpeta de usuario NUEVA con Claude Code y Codex enchufados (T28): la capa de juguete
  * (scripts/tests/windows/team-lab.js, writeTeamLayerA2: un paquete con un revisor `base` y uno `condicional`, una skill de una
  * carpeta y una anidada a tres) servida por el Azure DevOps de juguete. install --team; los revisores en ~/.claude/agents y sus dos
  * traducciones en $CODEX_HOME (ninguna en adapters/ del árbol); la anidada por su ruta; un commit que saca un revisor y una skill,
  * y el arranque fuera de la ventana (sin uniones ni enlaces colgando, sin carpetas vacías); doctor --json sin fail; uninstall sin
- * ninguna traducción de la capa. Corre después de la parte de la A1b (que deja la versión 2030.02.01.5 sin los archivos de la
+ * ninguna traducción de la capa. Corre después de la parte anterior (que deja la versión 2030.02.01.5 sin los archivos de la
  * capa). Devuelve una nota si algo no se pudo ensayar (nunca tira).
  */
 function measureTeamA2({ lab, base, program, env0, baseEnv, platform, allowTemp, rec, api, repoOption, gitBin, serverDir, lockers }) {
@@ -789,12 +789,12 @@ function measureTeamA2({ lab, base, program, env0, baseEnv, platform, allowTemp,
 }
 
 /**
- * La skill de la lista FIJA con sus datos fuera de su carpeta (story 8.25, A2c · T37), en una carpeta de usuario NUEVA con Claude
+ * La skill de la lista FIJA con sus datos fuera de su carpeta (T37), en una carpeta de usuario NUEVA con Claude
  * Code: la capa de juguete (team-lab.js, writeTeamLayerA2c: `skills/bizuit-sdd` con contenido inventado y sus dos archivos de
  * datos) servida por el Azure DevOps de juguete. install --team apila los datos y la skill se ve en ~/.claude/skills; una
  * carpeta propia del dev en su lugar con un `.bizuit-config.yaml` de juguete, y un `update` a una versión nueva: la conexión llega
  * a %USERPROFILE%\.bizuit-sdd\config.yaml, byte a byte, y el original queda; doctor avisa la carpeta propia (sin fail). Los
- * permisos del archivo no se miden en Windows. Corre después de las partes de la A1b y la A2 (la versión publicada va a
+ * permisos del archivo no se miden en Windows. Corre después de las partes anteriores (la versión publicada va a
  * 2030.03.01.1, sin la skill de la lista, y después a 2030.03.01.2). Devuelve una nota si algo no se pudo ensayar (nunca tira).
  */
 function measureTeamSkillData({ lab, base, author, program, env0, baseEnv, platform, allowTemp, rec, api, repoOption, gitBin, serverDir, lockers }) {
@@ -840,7 +840,7 @@ function measureTeamSkillData({ lab, base, author, program, env0, baseEnv, platf
   const readable = (f) => { try { fs.readFileSync(f); return true; } catch (_) { return false; } };
   const SENT = 'CENTINELA-ensayo-a2c';
   // la versión que publica la sonda sale del árbol INTERNO, que trae la skill de la lista; la copia pública nunca la trae (va a
-  // la capa del equipo): se publica primero una versión sin esa carpeta, o la capa choca con la versión (medido en local)
+  // la capa del equipo): se publica primero una versión sin esa carpeta, o la capa choca con la versión
   try { fs.rmSync(path.join(author, ...C.skill.split('/')), { recursive: true, force: true }); } catch (e) { return `capa de la A2c: no pude sacar ${C.skill} de la versión de ensayo (${e.code || e.message}): no medido`; }
   const v0 = publish(author, '2030.03.01.1', env0);
   if (!v0.ok) return `capa de la A2c: no pude publicar la versión sin la skill de la lista (${v0.reason}): no medido`;
@@ -856,8 +856,8 @@ function measureTeamSkillData({ lab, base, author, program, env0, baseEnv, platf
   // b. una carpeta propia del dev en el lugar de la skill (como la instalación de antes del arnés), con su conexión de juguete. En
   // una máquina instalada ~/.claude/skills ENTERO es un enlace (o una unión) al árbol: la carpeta propia sólo existe donde la
   // persona tiene su ~/.claude/skills como carpeta real (el aplicador pone ahí un enlace por entrada y no pisa lo suyo). Se saca
-  // ese enlace SIN seguirlo —borrar «recursivo» un enlace o una unión vacía la carpeta del árbol a la que apunta (medido en la
-  // primera corrida local de esta sonda)— y se arma la carpeta real; nada se borra dentro de ~/.claude/skills
+  // ese enlace SIN seguirlo —borrar «recursivo» un enlace o una unión vacía la carpeta del árbol a la que apunta—
+  // y se arma la carpeta real; nada se borra dentro de ~/.claude/skills
   const skillsDir = path.join(home, '.claude', 'skills');
   const own = path.join(skillsDir, 'bizuit-sdd');
   try {
@@ -895,8 +895,8 @@ function measureTeamSkillData({ lab, base, author, program, env0, baseEnv, platf
 }
 
 /**
- * Contra el GitHub REAL, sin permiso (story 8.34 · T1 en Windows y T16): el sondeo del tope anónimo de la API y el registro de
- * pedidos de la instalación y de mirar, con el código de la rama (`program`). Sólo en el agente de la 182 (`TF_BUILD`; o con
+ * Contra el GitHub REAL, sin permiso (T1 en Windows y T16): el sondeo del tope anónimo de la API y el registro de
+ * pedidos de la instalación y de mirar, con el código de la rama (`program`). Sólo en el agente del ensayo de Windows (`TF_BUILD`; o con
  * `TYCON_PROBE_REAL_GITHUB=1`): en una suite local no sale a la red. Devuelve una nota si no se midió; nunca tira.
  */
 function measureRealGithub({ base, program, baseEnv, platform, rec }) {

@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 # stage-cutoff.test.sh — ¿las etapas CORTAN cuando tienen que cortar?
 #
-# 🔴 POR QUÉ EXISTE (2026-09-03). Pedido textual del dev: *"incluir los casos de falla a propósito
-# para asegurar que las etapas cortan cuando deben cortar y no continúan exitosamente los pipes"*.
+# 🔴 POR QUÉ EXISTE. Incluye casos de falla a propósito para asegurar que las etapas cortan
+# cuando deben cortar y no continúan exitosamente los pipes.
 #
 # Todo lo demás que el arnés prueba son GUIONES: se les inyecta un `curl` falso y se verifica que
 # fallen bien. Eso no dice nada sobre el YAML. La pregunta de acá es otra: con la construcción en
 # rojo, ¿el paso que commitea la versión corre igual?
 #
-# Y esa pregunta, hasta hoy, sólo se podía contestar rompiendo algo de verdad y mirando una corrida
-# real. Se contesta local con `Runner.Client` (runner.server, de la comunidad): evalúa las
+# Contestar esa pregunta rompiendo algo de verdad y mirando una corrida
+# real es caro. Se contesta local con `Runner.Client` (runner.server, de la comunidad): evalúa las
 # condiciones de Azure DevOps y decide qué corre y qué se saltea. Ver
 # `guides/maintaining/probar-pipelines-sin-correrlos.md`.
 #
 # 🔴 LAS CONDICIONES NO SE INVENTAN: se leen del pipeline REAL de cada producto. Si mañana alguien
 # le saca el `succeeded()` a un paso que escribe en el repositorio, este caso se pone rojo — que es
-# exactamente el defecto que el 2026-09-02 tenían cuatro de los cinco productos de formularios.
+# exactamente el defecto que se quiere atrapar.
 #
 # Si `Runner.Client` no está instalado, la suite AVISA y sale 0: no puede exigirse en cada máquina
 # del equipo. Pero cuando está, la pregunta se contesta.
@@ -59,11 +59,10 @@ grep -qE "^ARREGLO_CORRIO$|^\| ARREGLO_CORRIO$" "$TMP/salida.txt" \
 # ── las condiciones REALES de cada producto ───────────────────────────────────────────────────
 # Se busca, en cada pipeline de formularios, el paso que escribe en el repositorio, se toma su
 # condición literal y se la prueba con la construcción en rojo.
-# 🔴 SE LEE LO PUBLICADO, NO EL DISCO (2026-09-03). La pregunta es si el pipeline que CORRE corta
+# 🔴 SE LEE LO PUBLICADO, NO EL DISCO. La pregunta es si el pipeline que CORRE corta
 # cuando debe, o sea `origin/main`. Leyendo el árbol de trabajo, un checkout parado en otra rama —lo
 # normal: el dev trabaja en `dev`— se denuncia como si el producto commiteara con la construcción en
-# rojo. Medido ese día: Ceibo quedaba en rojo teniendo el succeeded() en main desde el 2 de
-# septiembre. Es el MISMO defecto que ese día se arregló en check-product-parity.js — un
+# rojo, aunque main ya tenga el succeeded(). Es el MISMO defecto que check-product-parity.js evita — un
 # control que da falsas alarmas se apaga, y se lleva puestos los casos donde sí importaba.
 # El disco sigue siendo el plan B, pero avisando: "no pude leer lo publicado" ≠ "leí lo publicado".
 publicado() {  # publicado <archivo-en-el-disco> → imprime la ruta a usar

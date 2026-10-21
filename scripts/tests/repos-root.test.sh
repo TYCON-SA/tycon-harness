@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# repos-root.test.sh — ¿dónde cree el arnés que están los repos de esta persona? (2026-09-05)
+# repos-root.test.sh — ¿dónde cree el arnés que están los repos de esta persona?
 #
-# Caso: el resolvedor deducía "la carpeta padre del arnés"; en una máquina con el arnés en
-# ~/SourceCode y los proyectos en otra carpeta eso elegía una carpeta con UN repo, y las auditorías
-# leían "cero repos" como "todo bien". Ahora deduce de las sesiones de la persona, el vecino sólo
-# cuenta si tiene vecinos, y el default se dice como default. Y es UNA variable (TYCON_REPOS_ROOT),
-# la misma que leen los revisores que buscan plugins hermanos. Detalle: scripts/lib/repos-root.js.
+# Deducir "la carpeta padre del arnés" falla en una máquina con el arnés en ~/SourceCode y los proyectos en otra
+# carpeta: elige una carpeta con UN repo, y las auditorías leen "cero repos" como "todo bien". Por eso el resolvedor
+# deduce de las sesiones de la persona, el vecino sólo cuenta si tiene vecinos, y el default se dice como default. Y es UNA variable
+# (TYCON_REPOS_ROOT), la misma que leen los revisores que buscan plugins hermanos. Detalle: scripts/lib/repos-root.js.
 #
 # 🔴 Sin pipes sobre el comando: el exit code REAL es el veredicto.
 set -u

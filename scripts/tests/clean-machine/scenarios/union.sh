@@ -4,7 +4,7 @@
 #   T28 · la copia, instalada con el bloque `install:core` de la portada, sobre el plugin de ejemplo: clonado DE GITHUB
 #         por sha (el desvío de la copia no lo toca, nunca por rama), con una story que nombra pruebas que el plugin ya
 #         tiene. El esqueleto del pipeline, `dotnet test` de verdad y la auditoría sin faltantes. Los paquetes de un
-#         stack (revisores, skills, guías) llegan con el perfil de cada equipo, no con la copia (story 8.41): acá el
+#         stack (revisores, skills, guías) llegan con el perfil de cada equipo, no con la copia: acá el
 #         pipeline corre sin ninguno activo y lo dice.
 # uso: bash /opt/lab/scenarios/union.sh
 set -uo pipefail
@@ -17,7 +17,7 @@ requirements_check "T24 (paquete)" "bizuit"
 fakes_setup ${WATCHED} curl wget launchctl open
 
 serve_copy
-run_block_pty core "${OUT_DIR}/install.out" "${ANSWERS_FULL}"; RC=$?   # en una terminal: install pregunta (story 8.16, tandas B y D)
+run_block_pty core "${OUT_DIR}/install.out" "${ANSWERS_FULL}"; RC=$?   # en una terminal: install pregunta
 if [ "${RC}" -eq 0 ] && find_clone; then ok "T28 el bloque install:core sale 0 sobre la copia con el paquete"
 else
   no "T28 el bloque install:core salió ${RC}: $(tail -n 4 "${OUT_DIR}/install.out" | tr '\n' ' ')"
@@ -52,7 +52,7 @@ else no "T28 pipeline.js mech-check salió ${RC} con ${V:-?} CRITICAL: $(json "$
 
 ( cd "${R}" && node "${PIPE_DIR}/pipeline.js" advisors --repo "${R}" --story "${STORY}" \
     --files src/MyPlugin/Features/Items/ItemsService.cs tests/MyPlugin.Tests/Features/ItemsServiceTests.cs ) > "${OUT_DIR}/advisors.json" 2> "${OUT_DIR}/advisors.err"; RC=$?
-# `packs` es una lista de objetos (decisión C6): la copia no trae paquetes, y el set conserva pruebas y seguridad
+# `packs` es una lista de objetos: la copia no trae paquetes, y el set conserva pruebas y seguridad
 V="$(json "${OUT_DIR}/advisors.json" '(d.packs || []).length + "|" + ["tycon-plugin-tests-coverage", "tycon-plugin-security-basics"].every((a) => (d.all || []).includes(a))')"
 if [ "${RC}" -eq 0 ] && [ "${V}" = "0|true" ]; then ok "T28 pipeline.js advisors sale 0 sin paquetes, con los revisores de pruebas y de seguridad en el set"
 else no "T28 pipeline.js advisors salió ${RC}; paquetes activos y núcleo en el set: «${V:-ilegible}» (esperado 0|true) $(head -c 300 "${OUT_DIR}/advisors.err" | tr '\n' ' ')"; fi

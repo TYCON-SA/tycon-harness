@@ -6,8 +6,8 @@
 # sobre los repos del disco) y verifica sobre el HTML resultante que las tres fichas están,
 # con denominador, con la cobertura de repos, y con los desconocidos NOMBRADOS.
 #
-# 🔴 El desglose de «en curso» no es decoración: medido el 2026-09-05, 181 de 217 (83 %)
-#    están en `review`. Sin el desglose la ficha esconde lo que más importa y del lado que
+# 🔴 El desglose de «en curso» no es decoración: la mayor parte de lo que está en curso
+#    suele estar en `review`. Sin el desglose la ficha esconde lo que más importa y del lado que
 #    da lindo — y la ficha vecina no lo rescata, porque el tiempo por etapa excluye por
 #    diseño la etapa en la que la story está AHORA.
 #

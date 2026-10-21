@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# AC 13 · el paso del nocturno imprime su duración, y la story no le sumó pasos ni clones.
-# Se EJECUTA el cronómetro real extraído del YAML (las líneas que esta story agregó), con el
+# El paso del nocturno imprime su duración, y no suma pasos ni clones.
+# Se EJECUTA el cronómetro real extraído del YAML, con el
 # medidor apuntado a un repo de verdad. Las macros de Azure no se pueden resolver fuera del
 # servidor, así que se sustituye SÓLO la invocación: el cronómetro y el `echo` son textuales.
 set -uo pipefail
@@ -36,8 +36,8 @@ bash "$T/paso.sh" | tee "$T/paso.out"
 grep -qE '⏱ .*medición.*: [0-9]+ s' "$T/paso.out" \
   || { echo "🛑 el paso no imprimió su duración"; exit 1; }
 
-# story 8.12 (tanda R6): el yml pasó a pipelines/. Hasta el merge, origin/main lo tiene en su ruta de antes: se compara
-# contra la nueva si ya está publicada; si no, contra la vieja armada DESDE EL MAPA (nunca escrita acá), diciéndolo.
+# El yml vive en pipelines/. Si origin/main todavía lo tiene en otra ruta, se compara contra la nueva si ya está
+# publicada; si no, contra la ruta vieja armada DESDE EL MAPA (nunca escrita acá), diciéndolo.
 NUEVA=pipelines/azure-pipelines.yml
 if git -C "$RAIZ" cat-file -e "origin/main:$NUEVA" 2>/dev/null; then
   PUB="$NUEVA"

@@ -1,7 +1,7 @@
 'use strict';
 /**
  * public-git.test.js — las rutas públicas de GitHub con las que una versión bajada mira y baja sin permiso
- * (scripts/setup/harness/public-git.js, story 8.34).
+ * (scripts/setup/harness/public-git.js).
  *
  * Qué fija:
  *   · `parseInfoRefs` lee las ramas de una respuesta de `info/refs` (pkt-line de git, con las capacidades después de un

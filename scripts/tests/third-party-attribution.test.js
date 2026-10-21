@@ -1,12 +1,10 @@
 'use strict';
 
 /**
- * third-party-attribution.test.js — la atribución de lo ajeno, medida sobre este repo (story 8.26, tanda I).
+ * third-party-attribution.test.js — la atribución de lo ajeno, medida sobre este repo.
  *
- * Hasta el 2026-10-13 esto lo medía `third-party-real.test.sh` en el repo del equipo, sobre la copia pública que el
- * exportador armaba desde ahí. Desde que el arnés se escribe en GitHub ya no sale ninguna copia: la que se publica es
- * ESTE repo, y la atribución se mide acá, sin red. Lo de aquella suite que medía el retiro de 2026-09 (la historia,
- * las máquinas de juguete del día del retiro, el exportador) no es un camino vivo y no se trajo.
+ * El arnés se escribe en GitHub y de ningún repo sale una copia: la que se publica es ESTE repo, y la atribución se
+ * mide acá, sin red.
  *
  * Lo que no se puede perder:
  *   · Cobertura: cada ruta versionada cae en un solo universo del manifiesto y nada ajeno está versionado

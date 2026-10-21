@@ -49,7 +49,7 @@ const DAY = '2030.01.15';
 const AT = (day, hour = 12) => `${day.replace(/\./g, '-')}T${String(hour).padStart(2, '0')}:00:00Z`;
 const git = (dir, args, date = AT(DAY)) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', env: gitEnv(date), stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
-// ── story 7.28: ninguna prueba le pregunta al `az` ni al `gh` de la máquina (AC 15) ──────────────────────────────────
+// ── ninguna prueba le pregunta al `az` ni al `gh` de la máquina ──────────────────────────────────
 // Lo que el proceso de pruebas tiene como `az` y `gh` «de verdad» es un guion que anota si lo llamaron: la última prueba
 // del archivo (T22) mira que el registro siga vacío. Las pruebas usan los dobles de `deps()` y, por la línea de comandos,
 // los de `cli()`.
@@ -160,7 +160,7 @@ test('T18 MergeSkill_GithubRemote_CreatesPrNoSquash_WaitsCheck_AzureUnchanged �
   assert.deepStrictEqual([other.host, other.step, other.canMerge], ['other', '9', false]);
   assert.match(other.notes.join(' '), /no sé crear pedidos/);
 
-  // una carpeta local (el clon de un clon): el empuje va a esa carpeta, no a un servidor — paso 9, como hoy
+  // una carpeta local (el clon de un clon): el empuje va a esa carpeta, no a un servidor — paso 9
   const real = withRemote('https://github.com/acme/widgets.git', PR_MODE);
   const local = plan(withRemote(real, PR_MODE));
   assert.deepStrictEqual([local.host, local.step], ['local', '9']);
@@ -287,7 +287,7 @@ test('T18 — el paso 9c: crea el pedido de la forma que el freno lee, mergea co
     at = found;
   }
   assert.match(all, /git -C <repo> commit [^\n]*-- version\.json/, 'el commit de versión nombra la ruta: no arrastra nada ya preparado');
-  // después del merge: relee la rama destino y avisa si el número quedó igual (AC 44)
+  // después del merge: relee la rama destino y avisa si el número quedó igual
   assert.match(text, /qued[óo] igual/);
   // sin el control declarado, hasta el pedido —con su latido— y no más
   assert.match(text, /merge\.check/);
@@ -314,7 +314,7 @@ test('T18 — SKILL.md y el paso 8 nombran el camino de GitHub', () => {
   assert.match(skill, /step-09c-create-pr-github\.md/);
   assert.match(skill, /version\.json/);
   assert.match(skill, /retro-heartbeat\.js/);
-  // El nombre de antes se arma por partes: escrito entero, el control de menciones viejas lo cuenta como una más.
+  // El nombre viejo se arma por partes: escrito entero, el control de menciones viejas lo cuenta como una más.
   assert.ok(!skill.includes(['retro', 'latido.js'].join('-')), 'el guion del latido, por su nombre de hoy');
   const step8 = fs.readFileSync(path.join(SKILL, 'steps', 'step-08-hitl-push.md'), 'utf8');
   assert.match(step8, /merge-pr\.js/);
@@ -359,7 +359,7 @@ test('T44 — dos pedidos abiertos a la vez: el segundo no queda con el número 
   serverMerge(work, 'feat/a');
   git(work, ['fetch', '--quiet', 'origin']);
 
-  // justo antes de mergear: el número del segundo ya no es mayor que el de la destino
+  // justo antes de mergear: el número del segundo no es mayor que el de la destino
   const check = M.checkVersion({ repo: work, base: 'origin/main', head: 'feat/b' }, deps());
   assert.deepStrictEqual([check.code, check.base, check.head], [1, `${DAY}.2`, `${DAY}.2`]);
   // se trae la destino (el mismo cambio de los dos lados no choca) y se sube de nuevo
@@ -725,13 +725,13 @@ test('T61 — por la línea de comandos: wait-checks con un gh de mentira (un gu
   assert.match(none.json.reason, /merge\.check/);
 });
 
-// ══ lo que cazaron los revisores y el pase adversarial (vuelta 1) ════════════════════════════════════════════════════
+// ══ casos de borde de revisores y del pase adversarial ════════════════════════════════════════════════════
 // Un git que falla en UNA llamada: lo demás corre de verdad.
 const failing = (when, answer = { ok: false, status: 128, out: '', err: 'fatal: git no pudo' }) => ({ git: (repo, args, real) => (when(args) ? answer : real()) });
 
 test('T18 — la configuración: un comentario en la primera columna no cierra el bloque, y lo que no se sabe leer se dice', () => {
   const read = (text) => M.readMergeConfig(withRemote('https://github.com/acme/widgets.git', text));
-  // 🔴 un comentario en la columna 0 ADENTRO del bloque: leído como fin del bloque, el plan mandaba a un empuje directo
+  // 🔴 un comentario en la columna 0 ADENTRO del bloque: leído como fin del bloque, el plan mandaría a un empuje directo
   assert.deepStrictEqual(read('merge:\n# el modo\n  mode: pr\n\n# el control\n  check: "c (d)"\n'), { mode: 'pr', check: 'c (d)' });
   assert.deepStrictEqual(read('﻿merge:   # cómo llega el trabajo\r\n  mode: pr\r\n  check: c\r\n'), { mode: 'pr', check: 'c' });
   // sin valor: nada, `~`, `null`, o sólo un comentario — nunca un control que se llame así
@@ -762,7 +762,7 @@ test('T18 — desde una subcarpeta del repo, cada orden contesta lo mismo que de
   const sub = path.join(work, 'scripts', 'adentro');
   const top = M.plan({ repo: work, source: 'feat/a', target: 'main' }, deps());
   const inner = M.plan({ repo: sub, source: 'feat/a', target: 'main' }, deps());
-  // 🔴 desde la subcarpeta el plan decía «el repo no declara merge.mode: pr» y mandaba a un empuje directo
+  // 🔴 desde la subcarpeta el plan diría «el repo no declara merge.mode: pr» y mandaría a un empuje directo
   assert.deepStrictEqual([inner.step, inner.mode, inner.check, inner.bodyFile], [top.step, top.mode, top.check, top.bodyFile]);
   assert.deepStrictEqual([top.step, top.check], ['9c', CHECK]);
   // la versión que subiría va en el plan (lo que muestra el paso 8 del skill), igual desde los dos lados
@@ -792,7 +792,7 @@ test('T18 — un alias de ssh sin usuario y el servidor de GitHub por el puerto 
   const plan = (url, sshHost) => M.plan({ repo: withRemote(url, PR_MODE), source: 'a', target: 'main' }, deps({ sshHost }));
   const asked = [];
   const ssh = (map) => (h) => { asked.push(h); return map[h] || null; };
-  // 🔴 `trabajo:dueño/repo` (sin `git@`) no se le preguntaba a ssh: salía «otro servidor» y el plan mandaba a empujar
+  // 🔴 `trabajo:dueño/repo` (sin `git@`) se le pregunta a ssh; sin eso saldría «otro servidor» y el plan mandaría a empujar
   assert.deepStrictEqual([plan('trabajo:acme/widgets.git', ssh({ trabajo: 'github.com' })).host, asked.pop()], ['github', 'trabajo']);
   // (la dirección se arma por partes: escrita de corrido, este archivo —que viaja en la copia— dispararía el detector de
   // correos de la publicación)
@@ -835,10 +835,10 @@ test('T44 — update-branch: si git no contesta, o no se puede deshacer el merge
   const noCompare = run(conflicted(), (a) => a[0] === 'merge-base');
   assert.strictEqual(noCompare.code, 2);
   assert.match(noCompare.reason, /no pudo comparar/);
-  // 🔴 el merge chocó y NO se pudo deshacer: el árbol quedó a medias, y eso va en el motivo (antes el resultado no se miraba)
+  // 🔴 el merge chocó y NO se pudo deshacer: el árbol queda a medias, y eso va en el motivo
   const stuck = conflicted();
   const noAbort = run(stuck, (a) => a[0] === 'merge' && a[1] === '--abort');
-  // …y ya no es «hay conflictos, seguí»: sale 2, con los archivos que chocan a la vista
+  // …y no es «hay conflictos, seguí»: sale 2, con los archivos que chocan a la vista
   assert.strictEqual(noAbort.code, 2);
   assert.deepStrictEqual(noAbort.conflicts, ['a.txt']);
   assert.match(noAbort.reason, /NO pude deshacer el merge/);
@@ -936,7 +936,7 @@ test('T18 — message: no queda ninguna marca aunque vengan anidadas o partidas,
   const from = path.join(dir, 'cuerpo.md');
   const to = path.join(dir, 'merge.md');
   const marks = /\[(skip ci|ci skip|no ci|skip actions|actions skip)\]|skip-checks:\s?true|\*\*\*NO_CI\*\*\*/i;
-  // 🔴 sacar una marca dejaba armada otra que venía partida; y juntar espacios fabricaba una en el título
+  // 🔴 sacar una marca dejaría armada otra que venía partida; y juntar espacios fabricaría una en el título
   const nested = ['merge: dev -> main — arreglo [skip [skip ci]ci] del [skip  ci] lector', '', 'una [ci [ci skip]skip] anidada',
     'skip-checks:skip-checks: true true', '***NO_***NO_CI***CI***', '[skip [no ci] ci]', ''].join('\n');
   fs.writeFileSync(from, nested);
@@ -968,7 +968,7 @@ test('T18 — message: no queda ninguna marca aunque vengan anidadas o partidas,
 test('T61 — la rama base del pedido tiene que ser la que se pidió comparar; y sin poder traer la destino, no es verde', () => {
   const t = ready();
   const ok = [run(CHECK, 'SUCCESS')];
-  // 🔴 el pedido va a OTRA rama: la versión se comparaba contra la equivocada (y si ésa no numera versiones, verde)
+  // 🔴 el pedido va a OTRA rama: la versión se compararía contra la equivocada (y si ésa no numera versiones, verde)
   const other = wait(t, [view(t.head, { baseRefName: 'release' }, ok)]);
   assert.deepStrictEqual([other.code, other.outcome], [2, 'cannot-ask']);
   assert.match(other.reason, /release/);
@@ -1053,7 +1053,7 @@ test('T18 — por la línea de comandos: una opción que no existe, sin su valor
 
 // ══ T78: desde un clon del PÚBLICO, la configuración del merge sale del clon de mantenimiento ════════════════════════
 // Después del corte a GitHub, quien mantiene el arnés trabaja en un clon del repo público, que no trae `.tycon/`. Sin ese
-// archivo el plan decía «push» y mandaba a un empuje directo a la rama principal. La configuración sigue viviendo en el
+// archivo el plan diría «push» y mandaría a un empuje directo a la rama principal. La configuración sigue viviendo en el
 // clon PRIVADO de mantenimiento que la máquina declara: se lee de lo COMMITEADO en su rama principal remota (nunca de
 // su árbol de trabajo), y para ese repo «no la encontré» frena con su motivo — nunca termina en un empuje directo.
 const HR = require(path.join(ROOT, 'scripts', 'lib', 'harness-repo.js'));
@@ -1116,7 +1116,7 @@ test(`${T78} — plan: un clon del público sin .tycon lee el modo y el control 
   const m = maintainers();
   const mine = declaring(m.clone);
   const p = planOf(thePublic(),mine.deps);
-  // 🔴 antes: mode «push», paso 9 — un empuje directo a la rama principal del público
+  // 🔴 no es mode «push», paso 9 — un empuje directo a la rama principal del público
   assert.deepStrictEqual([p.code, p.host, p.ghRepo, p.mode, p.step, p.canMerge, p.configFrom], [0, 'github', PUBLIC, 'pr', '9c', true, 'maintainers']);
   assert.strictEqual(p.check, CHECK, 'el nombre del control, tal cual lo declara el clon de mantenimiento');
   assert.match(p.notes.join(' '), /clon de mantenimiento/, 'el plan dice de dónde salió la configuración');
@@ -1199,7 +1199,7 @@ test(`${T78} — plan: para el clon del público, cada forma de «no encontré l
   ];
   for (const [name, answer, why] of cases) {
     const p = planOf(thePublic(),machine(answer).deps);
-    // 🔴 antes: código 0, mode «push», paso 9
+    // 🔴 no es código 0, mode «push», paso 9
     assert.strictEqual(p.code, 2, name);
     assert.match(p.reason, why, name);
     assert.strictEqual(p.step, undefined, `${name}: sin paso que seguir`);
@@ -1229,10 +1229,10 @@ test(`${T78} — plan: «no sé si es el público» tampoco termina en un empuje
   assert.strictEqual(alias.code, 2);
   assert.match(alias.reason, /ssh -G/);
   assert.strictEqual(alias.step, undefined);
-  // control: otro repo por ese mismo alias, y el mismo nombre por https en otro servidor, siguen como hoy
+  // control: otro repo por ese mismo alias, y el mismo nombre por https en otro servidor, siguen sin cambio
   const product = planOf(withRemote('git@trabajo:acme/widgets.git'), Object.assign({}, mine.deps, { sshHost: () => null }));
   assert.deepStrictEqual([product.code, product.host, product.mode, product.step, product.configFrom], [0, 'other', 'push', '9', 'repo']);
-  // 🔴 la declaración del público está y no se deja leer: el reconocedor contesta «no» a todo, y el público salía «push»
+  // 🔴 la declaración del público está y no se deja leer: el reconocedor contesta «no» a todo, y sin la salvaguarda el público saldría «push»
   const broken = { isPublic: () => false, publicDeclarations: () => [{ ruta: 'scripts/setup/public-remotes.json', motivo: 'no es JSON' }], maintainers: mine.deps.maintainers };
   const blind = planOf(thePublic(),broken);
   assert.strictEqual(blind.code, 2);
@@ -1242,7 +1242,7 @@ test(`${T78} — plan: «no sé si es el público» tampoco termina en un empuje
   assert.strictEqual(mine.asked.length, 0);
 });
 
-// Lo que encontró el pase adversarial (las tres sondas del «otro nombre de servidor» y la de las dos dudas juntas).
+// Las tres sondas del «otro nombre de servidor» y la de las dos dudas juntas.
 // La tabla de `mergeConfigFor`, una celda por caso: servidor de `origin` × declaración del público × archivo propio.
 test(`${T78} — plan: la tabla entera (servidor × declaración del público × archivo propio): ninguna duda, ni dos juntas, termina en un empuje directo`, () => {
   const m = maintainers();
@@ -1251,7 +1251,7 @@ test(`${T78} — plan: la tabla entera (servidor × declaración del público ×
   const at = (user, host) => [user, host].join('@');   // por partes: escrito entero se lee como un correo
   // un `origin` cuyo servidor no se reconoce y que trae la RUTA del público (dueño/repo, sin caja, sin `.git`)
   const PUBLIC_ROUTE = [
-    'https://www.github.com/acme/harness-public.git',            // 🔴 GitHub lo redirige: salía «push», paso 9
+    'https://www.github.com/acme/harness-public.git',            // 🔴 GitHub lo redirige: sin eso saldría «push», paso 9
     'https://WWW.GitHub.com/Acme/Harness-Public',
     'https://github.com./acme/harness-public.git',               // 🔴 con el punto final, también
     `https://${at('usuario:clave-de-prueba', 'www.github.com')}/acme/harness-public.git`,
@@ -1291,7 +1291,7 @@ test(`${T78} — plan: la tabla entera (servidor × declaración del público ×
   assert.deepStrictEqual([known.host, known.step, known.configFrom, known.asked], ['github', '9c', 'maintainers', 1], 'GitHub y es el público: el clon de mantenimiento');
   for (const url of PUBLIC_ROUTE) {
     const p = ask(url);
-    // 🔴 antes (salvo por un alias de ssh): código 0, mode «push», paso 9
+    // 🔴 no es código 0, mode «push», paso 9
     assert.deepStrictEqual([p.code, p.step, p.mode, p.asked], [2, undefined, undefined, 0], url);
     assert.match(p.reason, /no sé si este repo es el público del arnés/, url);
     assert.match(p.reason, /ssh -G/, `${url}: dice qué mirar`);
@@ -1308,7 +1308,7 @@ test(`${T78} — plan: la tabla entera (servidor × declaración del público ×
   const blind = { isPublic: () => false, publicDeclarations: unreadable };
   for (const url of ['https://github.com/acme/harness-public.git', ...PUBLIC_ROUTE, ...OTHER_ROUTE]) {
     const p = ask(url, blind);
-    // 🔴 antes, con un servidor que no se reconoce: código 0, mode «push», paso 9 — sin nombrar la declaración rota
+    // 🔴 con un servidor que no se reconoce no es código 0, mode «push», paso 9: nombra la declaración rota
     assert.deepStrictEqual([p.code, p.step, p.mode, p.asked], [2, undefined, undefined, 0], `declaración ilegible: ${url}`);
     assert.match(p.reason, /no pude leer cuál es el repo público[^\n]*public-remotes\.json/, url);
   }
@@ -1345,10 +1345,10 @@ test(`${T78} — control: un repo que no es el público sigue como hoy; y el que
   assert.deepStrictEqual([push.code, push.host, push.mode, push.check, push.step, push.canMerge, push.configFrom], [0, 'github', 'push', null, '9', false, 'repo']);
   assert.match(push.notes.join(' '), /el repo no declara merge\.mode: pr en \.tycon.advisors\.yaml: el merge se empuja \(paso 9\)/, 'la nota de siempre');
   assert.strictEqual(product.asked.length, 0, 'a la máquina no se le pregunta por un repo que no es el público');
-  // otro repo «del arnés» que no es el público (el de mantenimiento, en Azure), sin el archivo: como hoy
+  // otro repo «del arnés» que no es el público (el de mantenimiento, en Azure), sin el archivo: sigue en «push»
   const azure = planOf(withRemote('https://dev.azure.com/acme/Proyecto/_git/mantenimiento'), declaring(m.clone).deps);
   assert.deepStrictEqual([azure.host, azure.mode, azure.step, azure.configFrom], ['azure', 'push', '9', 'repo']);
-  // otro repo en un servidor que no se reconoce: como hoy (el que trae la RUTA del público es otra cosa: la tabla, arriba)
+  // otro repo en un servidor que no se reconoce: sigue en «push» (el que trae la RUTA del público es otra cosa: la tabla, arriba)
   const elsewhere = planOf(withRemote('https://gitlab.example/acme/harness-public-docs.git'), declaring(m.clone).deps);
   assert.deepStrictEqual([elsewhere.host, elsewhere.mode, elsewhere.step, elsewhere.configFrom], ['other', 'push', '9', 'repo']);
   // con el reconocedor de VERDAD y una casa de laboratorio que declara el clon: un producto sigue en el empuje
@@ -1423,7 +1423,7 @@ test(`${T78} — por la línea de comandos: con el público que ESTE árbol decl
   const none = cli(args, { TYCON_HOME: labHome() });
   assert.deepStrictEqual([none.status, none.json.code, none.json.step], [2, 2, undefined]);
   assert.match(none.stderr, /harness\.js config set paths\.maintainers/);
-  // 🔴 el mismo repo escrito con otro nombre del servidor (GitHub lo redirige): salía 0, «push», paso 9
+  // 🔴 el mismo repo escrito con otro nombre del servidor (GitHub lo redirige): sin eso saldría 0, «push», paso 9
   git(work, ['remote', 'set-url', 'origin', `https://www.${declared.host}/${declared.ruta}.git`]);
   const www = cli(args, { TYCON_HOME: labHome({ paths: { maintainers: m.clone } }) });
   assert.deepStrictEqual([www.status, www.json.code, www.json.step, www.json.mode], [2, 2, undefined, undefined]);
@@ -1439,7 +1439,7 @@ test(`${T78} — por la línea de comandos: con el público que ESTE árbol decl
 test(`${T78} — los textos del skill dicen dónde se declara el modo, y el paso 9b se lo pregunta al plan en vez de leer el archivo por su cuenta`, () => {
   const read = (...parts) => fs.readFileSync(path.join(SKILL, ...parts), 'utf8');
   const step9b = read('steps', 'step-09b-create-pr.md');
-  // 🔴 el 9b leía el modo con un grep sobre el archivo del repo: en un clon del público decía «push»
+  // 🔴 el 9b no lee el modo con un grep sobre el archivo del repo: en un clon del público diría «push»
   for (const b of codeBlocks(step9b)) assert.ok(!/(grep|cat|sed)[^\n]*advisors\.yaml/.test(b), `el 9b no lee el archivo por su cuenta: ${b}`);
   assert.match(step9b, /merge-pr\.js" plan/);
   for (const [name, text] of [['SKILL.md', read('SKILL.md')], ['el paso 8', read('steps', 'step-08-hitl-push.md')], ['el paso 9b', step9b], ['el paso 9c', read('steps', 'step-09c-create-pr-github.md')]]) {
@@ -1450,7 +1450,7 @@ test(`${T78} — los textos del skill dicen dónde se declara el modo, y el paso
 
 // ── T79: el número lo pone el merge ──────────────────────────────────────────────────────────────────────────────────
 // Con `numbering: "merge-tag"` en el version.json de la destino, el número lo pone una etiqueta v<número> sobre cada merge
-// (scripts/ci/version-tag.js): el pedido no toca el archivo. Sin la marca, todo sigue como antes (T44).
+// (scripts/ci/version-tag.js): el pedido no toca el archivo. Sin la marca, todo sigue igual (T44).
 const T79 = 'T79 VersionByMerge_MarkInTarget_PrDoesNotTouchVersion';
 const markedText = (version) => versionText(version).replace(`"version": "${version}",`, `"version": "${version}",\n  "numbering": "merge-tag",`);
 
@@ -1487,7 +1487,7 @@ test(`${T79} — la transición: con la destino SIN la marca, el pedido que la t
   assert.strictEqual(M.checkVersion({ repo: work, base: 'origin/main', head: 'feat/marca' }, deps()).code, 0);
 });
 
-// ══ story 7.28: el merge deja las suites completas al servidor cuando la rama lo exige ═══════════════════════════════
+// ══ el merge deja las suites completas al servidor cuando la rama lo exige ═══════════════════════════════
 // La regla sale de `team-repos.json → merge_suites` (o de la forma vieja, `merge.mode: pr`) y de lo que contesta la
 // plataforma: las políticas de la rama en Azure DevOps, las reglas de la rama en GitHub. «No pude preguntar» nunca es
 // «las corre el servidor» con la regla automático. Todo con dobles: ninguna prueba sale a la red.
@@ -1816,7 +1816,7 @@ test('T12 Plan_OutputContract_NewFieldsOldFieldsKept_NoCredentials @story-7.28 @
     assert.deepStrictEqual(Object.keys(p.platform).sort(), ['answer', 'asked', 'detail', 'mergeQueue']);
     assert.ok(!/\n/.test(p.suitesReason), 'una sola línea');
   }
-  // la forma vieja: el modo, el paso y el control de hoy
+  // la forma vieja: el modo, el paso y el control
   assert.deepStrictEqual([azure.host, azure.mode, azure.step, azure.org, azure.project, azure.name], ['azure', 'pr', '9b', 'acme', 'ventas', 'Backend']);
   assert.deepStrictEqual([github.host, github.mode, github.step, github.check, github.canMerge, github.ghRepo, github.name], ['github', 'pr', '9c', CHECK, true, 'acme/widgets', 'widgets']);
   // 🔴 la dirección con usuario y clave no va a ningún texto
@@ -1946,15 +1946,15 @@ test('T21 Skill_Texts_SuitesDecisionInSteps @story-7.28 @ac-13', () => {
   assert.match(modes, /El modo y dónde corren las suites salen del plan/);
   assert.match(modes, /Step 7 con `suites: "server"`/);
   for (const [name, text] of [['SKILL.md', skill], ['el paso 9', step('09')], ['el paso 9b', step('09b')]]) assert.match(text, /merge_suites/, `${name} nombra merge_suites`);
-  // la skill de alta de un producto vive en el paquete del stack del equipo (story 8.41): se mide donde está
+  // la skill de alta de un producto vive en el paquete del stack del equipo: se mide donde está
   const productFile = path.join(ROOT, 'packs', 'bizuit', 'skills', 'bizuit-new-product', 'SKILL.md');
   if (!fs.existsSync(productFile)) { console.log('⏭ T21: NO MEDIDO — la skill de alta de un producto viaja con el perfil del equipo, no con esta copia'); return; }
   assert.match(fs.readFileSync(productFile, 'utf8'), /merge_suites/, 'el alta de un producto trae la tarea humana de inscribir el repo');
 });
 
-// ── lo que confirmó el pase adversarial (story 7.28, vuelta 1) ───────────────────────────────────────────────────────
+// ── casos de borde del pase adversarial ───────────────────────────────────────────────────────
 test('T5b Plan_GitHub_RulesPaginated_RequiredCheckOnPage2 @story-7.28 @ac-2 @ac-3', () => {
-  // 🔴 GitHub pagina las reglas de la rama: un control obligatorio en la página 2 no se veía y daba «no exige»
+  // 🔴 GitHub pagina las reglas de la rama: un control obligatorio en la página 2 no se vería y daría «no exige»
   const filler = Array.from({ length: 100 }, (_, i) => ({ type: i % 2 ? 'deletion' : 'pull_request' }));
   const pages = { 1: filler, 2: RULESET(['ci-completo'], false) };
   const calls = [];

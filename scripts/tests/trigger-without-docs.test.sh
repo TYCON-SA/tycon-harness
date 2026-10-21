@@ -2,12 +2,10 @@
 # trigger-without-docs.test.sh — casos de check-trigger-without-docs.js: ¿un merge de SÓLO
 # documentación construye, despliega y pide producción?
 #
-# 🔴 EL CASO QUE LE DA SENTIDO (2026-09-24): un pull request del backend de un producto del equipo —29 archivos,
-# ninguno de código— entró a main y el CI compiló, desplegó a staging, subió la versión y encoló el
-# pedido de aprobación de PRODUCCIÓN. La causa era `.tycon/**` en el `paths.include` de once
-# pipelines (el pipeline TYCON escribe `.tycon/runtime-waivers.jsonl` en casi toda story), y los
-# sitios sin filtro de rutas construían con cualquier commit. El día anterior se había parchado a
-# mano UN pipeline; el problema vivía en todos.
+# 🔴 Por qué existe: un pull request de sólo documentación (ningún archivo de código) entra a main y
+# el CI compila, despliega a staging, sube la versión y encola el pedido de aprobación de PRODUCCIÓN. La causa
+# es `.tycon/**` en el `paths.include` de un pipeline (el pipeline TYCON escribe `.tycon/runtime-waivers.jsonl`
+# en casi toda story), o un sitio sin filtro de rutas, que construye con cualquier commit.
 set -uo pipefail
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHK="$AQUI/scripts/ci/check-trigger-without-docs.js"
@@ -17,7 +15,7 @@ ok(){ echo "✅ disparador: $1"; }
 no(){ echo "❌ disparador: $1"; fallos=$((fallos+1)); }
 corre(){ node "$CHK" "$@" >"$TMP/out.txt" 2>&1; echo $?; }
 
-# El trigger REAL de un backend TYCON (un producto del equipo, 2026-09-24), con `.tycon/**`.
+# El trigger de un backend TYCON de un producto del equipo, con `.tycon/**`.
 BACKEND_REAL='trigger:
   batch: true
   branches:
@@ -41,7 +39,7 @@ pr: none
 stages:
   - stage: Build'
 
-# ---------------------------------------------------------------- 1. EL CASO REAL: `.tycon/**` en include
+# ---------------------------------------------------------------- 1. `.tycon/**` en include
 printf '%s\n' "$BACKEND_REAL" > "$TMP/real.yml"
 rc=$(corre --file "$TMP/real.yml")
 [ "$rc" -eq 1 ] && ok "🔴 el caso real: con \`.tycon/**\` en include, un merge de sólo docs construye (sale 1)" || no "🔴 dejó pasar el caso real: salió $rc — $(cat "$TMP/out.txt")"
@@ -261,15 +259,14 @@ rc=$(corre --file "$TMP/real.yml" --json)
 node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(j.medidos!==1||j.resultados[0].veredicto!=="docs") process.exit(1)' "$TMP/out.txt" \
   && ok "--json trae medidos y el veredicto por pipeline" || no "--json no trae lo esperado: $(cat "$TMP/out.txt")"
 
-# ---------------------------------------------------------------- 15. el pipeline de publicación del arnés (story 8.18, AC 27; story 8.26, tanda H1b)
-# No es un pipeline de producto: no construye, no despliega y no pide producción. Hasta el corte a GitHub llevaba la
-# copia pública y lo disparaba cada merge a `main` del repo del equipo, sin filtro de rutas. Desde el corte la fuente es
-# el público, y aquel disparo sólo encolaba corridas que terminaban en su guarda sin hacer nada (47 el 2026-10-13): la
-# tanda H1b lo retiró (`trigger: none`). Quedan su corrida diaria, que verifica lo publicado, y la corrida a mano. Lo que
+# ---------------------------------------------------------------- 15. el pipeline de publicación del arnés
+# No es un pipeline de producto: no construye, no despliega y no pide producción. La fuente de lo que publica es el
+# repo público, así que un disparo por merge sólo encolaría corridas que terminan en su guarda sin hacer nada: no
+# tiene disparo (`trigger: none`). Quedan su corrida diaria, que verifica lo publicado, y la corrida a mano. Lo que
 # se fija acá, sobre el YAML de verdad (vive en el repo del equipo: en este repo solo, el caso no aplica):
 #   · ningún merge lo dispara: ni lo que era de agent-skills (agents/, skills/, packs/), ni una guía, el README o un guion;
 #   · y este control, corrido a mano sobre ese YAML, lo dice: con `trigger: none` no tiene nada que medir, y sale 2. El
-#     día que alguien le vuelva a poner un disparo (la vuelta atrás del corte), este caso se pone rojo y obliga a mirar.
+#     día que alguien le ponga un disparo, este caso se pone rojo y obliga a mirar.
 PUB="$AQUI/pipelines/azure-pipelines-public-leak-check.yml"
 # fires <archivo…> → 0 si ALGUNO dispara el pipeline de publicación (y los nombra en $TMP/out.txt); 1 si ninguno
 fires(){
@@ -293,7 +290,7 @@ else
     || no "🔴 publicación: el control dio $rc sobre su YAML y se esperaba 2 (trigger: none, nada que medir) — $(cat "$TMP/out.txt")"
 fi
 
-# ---------------------------------------------------------------- 8.10.3 A · T3 (AC 3): «sin productos» declarado a propósito
+# ---------------------------------------------------------------- T3: «sin productos» declarado a propósito
 # TriggerControl_ExplicitNoProducts_ExitsZeroAndSaysSo — la copia pública trae un product-parity.json sintético sin productos:
 # el control dice que no comparó nada y sale 0, pero SÓLO con la marca explícita; sin ella, lo de siempre (2).
 cat > "$TMP/t810a.json" <<'CFG'

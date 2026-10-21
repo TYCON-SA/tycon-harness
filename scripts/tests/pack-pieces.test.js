@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * pack-pieces.test.js — el paquete se activa por organización (story 8.41, tanda A1 · T1-T10 y T33).
+ * pack-pieces.test.js — el paquete se activa por organización (T1-T10 y T33).
  *
  * Qué sostiene: `packs.default` dice qué paquetes activa la organización (`all`, `none` o una lista) y los dos lectores
  * (`scripts/lib/tycon-config.js` y `lib/packs.js` del pipeline) dan lo mismo para cada forma; un paquete puede traer sus
@@ -61,7 +61,7 @@ function losDosLectores(env) {
   return r.json;
 }
 
-// ── T1 · AC 1 ────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T1 ────────────────────────────────────────────────────────────────────────────────────────────────────
 test('PacksDefault_AcceptsList_SameInBothReaders', () => {
   for (const [valor, esperado] of [['all', 'all'], ['none', 'none'], [['bizuit', 'clients'], ['bizuit', 'clients']]]) {
     const r = losDosLectores(entorno(valor));
@@ -107,7 +107,7 @@ function activos({ yaml = null, valor, packs }) {
     } catch (e) { process.stdout.write(JSON.stringify({ error: String(e.message) })); }`, entorno(valor));
 }
 
-// ── T2 · AC 2 ────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T2 ────────────────────────────────────────────────────────────────────────────────────────────────────
 test('PacksDefault_ListActivatesOnlyListed', () => {
   const packs = instalados('alfa', 'beta', 'gamma');
   assert.deepEqual(activos({ valor: ['beta'], packs }).json, { ok: ['beta'] });
@@ -116,7 +116,7 @@ test('PacksDefault_ListActivatesOnlyListed', () => {
   assert.deepEqual(activos({ valor: 'none', packs }).json, { ok: [] });
 });
 
-// ── T3 · AC 2 ────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T3 ────────────────────────────────────────────────────────────────────────────────────────────────────
 test('PacksDefault_ListedNotInstalled_Stops', () => {
   const packs = instalados('alfa');
   const r = activos({ valor: ['alfa', 'zeta'], packs }).json;
@@ -142,7 +142,7 @@ function validar({ packsDir, agentsDir }) {
   return P.validateTree({ packsDir, agentsDir, banderas: P.BANDERAS });
 }
 
-// ── T4 · AC 3 ────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T4 ────────────────────────────────────────────────────────────────────────────────────────────────────
 test('Manifest_SkillsAndAgentsKeys_Validated', () => {
   assert.deepEqual(validar(paqueteConCarpetas()), [], 'skills y agents dentro del paquete: válido');
   const sinSkills = paqueteConCarpetas({ skills: [] });
@@ -166,7 +166,7 @@ test('Manifest_SkillsAndAgentsKeys_Validated', () => {
   assert.equal(roto.errores.length, 1);
 });
 
-// ── story 8.41 · T46 (AC 51) y la búsqueda del agente de un revisor en su paquete (AC 27) ────────────────────────────
+// ── T46 y la búsqueda del agente de un revisor en su paquete ────────────────────────────
 test('T46 PackManifest_PathsStayInTree_BrokenPackNotAbsent · AgentDirInPacks', () => {
   const PP = require(PIECES);
   const IP = require(path.join(ROOT, 'scripts', 'lib', 'installed-packs.js'));
@@ -197,7 +197,7 @@ test('T46 PackManifest_PathsStayInTree_BrokenPackNotAbsent · AgentDirInPacks', 
   assert.throws(() => PP.agentDirInPacks(ok.packsDir, 'no-esta'), /roto\/pack\.json/, 'si no está y hay un paquete roto, se dice');
 });
 
-// ── T5 · AC 4 ────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T5 ────────────────────────────────────────────────────────────────────────────────────────────────────
 test('Agents_PackFirstThenRoot_DuplicateBreaks', () => {
   // en el paquete, sin copia en la raíz: se encuentra
   assert.deepEqual(validar(paqueteConCarpetas({ agentes: ['rev-propio'] })), []);
@@ -229,7 +229,7 @@ function enlazar(clon, env) {
   return r.stdout;
 }
 
-// ── T6 · AC 5 (y AC 13 en chico: el paquete que deja de estar activo sale, en una línea) ────────────────────────────
+// ── T6 (y, en chico: el paquete que deja de estar activo sale, en una línea) ────────────────────────────
 test('RepoLinks_PackEntries_LinkedWhenActive', () => {
   const clon = clonDeJuguete();
   const env = entorno('all');
@@ -268,7 +268,7 @@ test('RepoLinks_PackEntries_LinkedWhenActive', () => {
   assert.ok(!lexists(path.join(virgen.HOME, '.claude', 'skills', 's-paquete')));
 });
 
-// ── T6 (Codex) · AC 5 — las skills del paquete activo también van a ~/.codex/skills; si deja de estar activo, salen ──
+// ── T6 (Codex) — las skills del paquete activo también van a ~/.codex/skills; si deja de estar activo, salen ──
 test('RepoLinks_PackEntries_LinkedWhenActive_Codex', () => {
   const { deploySkills } = require(path.join(ROOT, 'build', 'deploy-shared-skills.js'));
   const clon = clonDeJuguete();
@@ -296,7 +296,7 @@ test('RepoLinks_PackEntries_LinkedWhenActive_Codex', () => {
   assert.ok(errs.some((m) => /roto/.test(m) && /pack\.json/.test(m)), JSON.stringify(errs));
 });
 
-// ── pase adversarial (clases 1, 9, 13): un paquete que se borra del árbol no deja enlaces colgando; con la configuración
+// ── un paquete que se borra del árbol no deja enlaces colgando; con la configuración
 //    rota no se saca nada de ningún paquete ──────────────────────────────────────────────────────────────────────────
 test('RepoLinks_DeletedPack_CleanedAndBrokenConfigTouchesNothing', () => {
   const clon = clonDeJuguete();
@@ -318,7 +318,7 @@ test('RepoLinks_DeletedPack_CleanedAndBrokenConfigTouchesNothing', () => {
   assert.ok(lexists(path.join(env2.HOME, '.claude', 'skills', 's-paquete')), 'con la configuración rota no se saca nada de un paquete');
 });
 
-// ── pase adversarial (clase 2): la misma pieza en dos paquetes activos, o una de paquete con el nombre de una del núcleo ──
+// ── la misma pieza en dos paquetes activos, o una de paquete con el nombre de una del núcleo ──
 test('PiecesOf_DuplicatesAcrossPacksOrCore_SaidAndLinkedOnce', () => {
   const clon = clonDeJuguete();
   const d = path.join(clon, 'packs', 'otro');
@@ -336,7 +336,7 @@ test('PiecesOf_DuplicatesAcrossPacksOrCore_SaidAndLinkedOnce', () => {
   assert.doesNotMatch(out, /del paquete prueba: el núcleo/, 'un choque entre paquetes no se le atribuye al núcleo');
 });
 
-// ── pase adversarial (clase 4): dos listas con los mismos paquetes en otro orden dicen lo mismo ───────────────────────
+// ── dos listas con los mismos paquetes en otro orden dicen lo mismo ───────────────────────
 test('SamePacks_IsASet', () => {
   const Q = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'questions.js'));
   assert.equal(Q.samePacks(['a', 'b'], ['b', 'a']), true);
@@ -345,7 +345,7 @@ test('SamePacks_IsASet', () => {
   assert.equal(Q.samePacks('all', ['a']), false);
 });
 
-// ── pase adversarial (clase 5): sin ningún paquete instalado, una lista de la organización que nombra uno frena ──────
+// ── sin ningún paquete instalado, una lista de la organización que nombra uno frena ──────
 test('PacksDefault_ListWithNothingInstalled_Stops', () => {
   const vacio = { dir: tmp('pp-packs-vacio-'), agentes: tmp('pp-agents-vacio-') };
   const r = activos({ valor: ['bizuit'], packs: vacio }).json;
@@ -354,7 +354,7 @@ test('PacksDefault_ListWithNothingInstalled_Stops', () => {
   assert.deepEqual(activos({ valor: 'all', packs: vacio }).json, { ok: [] }, 'con all o none no hay nada que pedir');
 });
 
-// ── pase adversarial (clase 14): un enlace duro (Windows sin modo desarrollador) cuenta como enlazado ─────────────────
+// ── un enlace duro (Windows sin modo desarrollador) cuenta como enlazado ─────────────────
 test('LinkedTo_HardLinkCounts', () => {
   const PP = require(PIECES);
   const d = tmp('pp-hard-');
@@ -368,7 +368,7 @@ test('LinkedTo_HardLinkCounts', () => {
   assert.equal(PP.linkedTo(path.join(d, 'falta.md'), path.join(d, 'src.md')), false);
 });
 
-// ── pase adversarial (clases 3, 8, 15): el modelo de un revisor que vive en la carpeta de su paquete ─────────────────
+// ── el modelo de un revisor que vive en la carpeta de su paquete ─────────────────
 test('Models_ReviewerInPackAgents_Found', () => {
   const M = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'models.js'));
   const clon = clonDeJuguete();
@@ -401,7 +401,7 @@ test('Models_ReviewerInPackAgents_Found', () => {
   assert.ok(r.warnings.some((w) => /pack\.json/.test(w.message) && /no se pudo leer|ilegible/.test(w.message)), JSON.stringify(r.warnings));
 });
 
-// ── vuelta 2: Codex dice el nombre repetido; sin paquetes instalados, una configuración rota no se lee como «ninguno» ──
+// ── Codex dice el nombre repetido; sin paquetes instalados, una configuración rota no se lee como «ninguno» ──
 test('Codex_DuplicateSaid_And_NoPacksBrokenConfigStops', () => {
   const { packSkills } = require(path.join(ROOT, 'build', 'deploy-shared-skills.js'));
   const clon = clonDeJuguete();
@@ -416,12 +416,12 @@ test('Codex_DuplicateSaid_And_NoPacksBrokenConfigStops', () => {
     for (const [k, v] of [['TYCON_PROFILE', antes.P], ['TYCON_PACKS_DEFAULT', antes.D]]) if (v === undefined) delete process.env[k]; else process.env[k] = v;
   }
   assert.ok(errs.some((m) => /tycon-pipeline/.test(m) && /núcleo/.test(m)), JSON.stringify(errs));
-  // sin ningún paquete instalado y con la configuración rota: frena (antes daba «ninguno»)
+  // sin ningún paquete instalado y con la configuración rota: frena (no da «ninguno»)
   const vacio = { dir: tmp('pp-packs-vacio-'), agentes: tmp('pp-agents-vacio-') };
   const r = activos({ valor: 'algunos!', packs: vacio }).json;
   assert.ok(r.error, JSON.stringify(r));
   assert.match(r.error, /packs\.default/);
-  // …y sin arnés que preguntar (lo único que se lee como antes): ninguno, sin frenar
+  // …y sin arnés que preguntar (lo único que se lee como siempre): ninguno, sin frenar
   const repo = tmp('pp-repo-sin-arnes-');
   const sinArnes = enProceso(`
     const P = require(${JSON.stringify(PACKS)});
@@ -433,7 +433,7 @@ test('Codex_DuplicateSaid_And_NoPacksBrokenConfigStops', () => {
   // tienen su caso arriba)
 });
 
-// ── AC 2 — un paquete de la lista que está roto se dice roto, no «no instalado» ──────────────────────────────────────
+// ── un paquete de la lista que está roto se dice roto, no «no instalado» ──────────────────────────────────────
 test('OrgActive_ListedBrokenPack_SaysBroken', () => {
   const clon = clonDeJuguete();
   W(path.join(clon, 'packs', 'roto', 'pack.json'), '{ roto');
@@ -451,7 +451,7 @@ test('OrgActive_ListedBrokenPack_SaysBroken', () => {
   assert.match(r2.json.error, /ausente/);
 });
 
-// ── T7 · AC 5 ────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T7 ────────────────────────────────────────────────────────────────────────────────────────────────────
 test('RepoLinks_PackEntries_OwnWins', () => {
   const clon = clonDeJuguete();
   const env = entorno('all');
@@ -466,7 +466,7 @@ test('RepoLinks_PackEntries_OwnWins', () => {
   assert.equal(fs.readFileSync(path.join(mia, 'SKILL.md'), 'utf8'), '# la mía\n');
 });
 
-// ── T8 · AC 6 ────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T8 ────────────────────────────────────────────────────────────────────────────────────────────────────
 test('RepoPacks_NotActiveForOrg_SaysWhere', () => {
   const packs = instalados('alfa', 'beta');
   const r = activos({ yaml: 'packs: [beta]\n', valor: ['alfa'], packs }).json;
@@ -488,7 +488,7 @@ test('RepoPacks_NotActiveForOrg_SaysWhere', () => {
   assert.match(cli.stderr, /activalo en Configuración del sitio/);
 });
 
-// ── T9 · AC 7 ────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T9 ────────────────────────────────────────────────────────────────────────────────────────────────────
 test('SiteConfig_PacksSection_ValidatesAndProposes', () => {
   const s = ORG.seccionPorId('paquetes');
   assert.ok(s, 'la sección existe');
@@ -521,14 +521,14 @@ test('SiteConfig_PacksSection_ValidatesAndProposes', () => {
   assert.match(ORG.pantalla(), /paquetes:\s*editorPaquetes/);
 });
 
-// ── T10 · AC 10 ──────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T10 ──────────────────────────────────────────────────────────────────────────────────────────────────
 test('FactoryDefault_StillNone', () => {
   const r = losDosLectores(entorno(undefined));
   assert.equal(r.config, 'none');
   assert.equal(r.packs, 'none');
 });
 
-// ── T33 · AC 8 ───────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T33 ───────────────────────────────────────────────────────────────────────────────────────────────────
 test('TeamProfile_StillAll_ReadByNewReader', (t) => {
   // el perfil del equipo viaja sólo con la capa del equipo (el repo interno, o la copia con lo interno encima)
   const perfil = ['team-profile.json', 'perfil-equipo.json'].map((n) => path.join(ROOT, n)).find((f) => fs.existsSync(f));

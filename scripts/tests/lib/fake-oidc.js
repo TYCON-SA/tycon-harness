@@ -1,6 +1,6 @@
 'use strict';
 /*
- * fake-oidc.js — un emisor OIDC local para las pruebas del sitio de la organización (story 2.23).
+ * fake-oidc.js — un emisor OIDC local para las pruebas del sitio de la organización.
  *
  * Sirve lo que un emisor real publica —el descubrimiento, el JWKS, la autorización y el canje del código— en
  * http://127.0.0.1:<puerto><prefijo>. NUNCA habla con la red. Con `prefijo` se imita la forma de cada proveedor: un

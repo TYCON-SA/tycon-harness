@@ -1,6 +1,6 @@
 'use strict';
 /*
- * repo-proposal.test.js — la propuesta por rama y pedido desde el clon del sitio (story 2.29, AC 14 a 16 y 18).
+ * repo-proposal.test.js — la propuesta por rama y pedido desde el clon del sitio.
  *
  * T15  Proponer_RamaCommitEmpujeYPedido_AzureYGithub      T26  Proponer_PedidoAbiertoSobreElArchivo_MuestraElEnlace
  * T15b Credencial_NuncaEnDiscoNiEnRegistro                T27  Proponer_RamaPrincipalSinPolitica_Apagado
@@ -29,7 +29,7 @@ const propuesta = require('../lib/repo-proposal.js');
 const { proponer, politicaDeRevision, pedidoAbierto, remoteOf } = propuesta;
 
 // sin git http-backend se saltea con constancia; en CI (CI=true) NO se saltea: un «verde» con estas pruebas salteadas no
-// cubre los AC 14 a 16 (el mismo criterio que site-sources.test.js)
+// cubre la propuesta por rama y pedido (el mismo criterio que site-sources.test.js)
 const SIN_BACKEND = !hayHttpBackend() && !process.env.CI && 'git http-backend no está en esta máquina: el repo por HTTP no se puede armar';
 // stable-data: el token nace al correr, nunca escrito; la hora de cada propuesta se pasa (`now`), nunca se lee del reloj
 const TOKEN = `tok-${crypto.randomBytes(8).toString('hex')}`;
@@ -291,12 +291,12 @@ test('T16b Proponer_ArchivoCambio_NoCreaNada @story-2.29 @ac-16', { skip: SIN_BA
   } finally { await m.cerrar(); }
 });
 
-// ── vuelta 2 (revisores y pase adversarial de la 2.29) ───────────────────────────────────────────────────────────
+// ── casos de borde ───────────────────────────────────────────────────────────────────────────────────────────────
 test('T26b Proponer_SinPoderMirarLosPedidosAbiertos_NoCreaNada @story-2.29 @ac-16 — «no pude mirar» no es «no hay»', { skip: SIN_BACKEND }, async () => {
   for (const plataforma of ['azure', 'github']) {
     const m = await montar({ plataforma });
     try {
-      // la lista de pedidos abiertos contesta 500; la política sí contesta (otro endpoint): antes se abría un duplicado
+      // la lista de pedidos abiertos contesta 500; la política sí contesta (otro endpoint): sin mirar el 500 se abriría un duplicado
       const caida = (url, o) => ((!o || !o.method || o.method === 'GET') && /pullrequests\?|\/pulls\?/.test(String(url)) ? Promise.resolve(new Response('{}', { status: 500 })) : fetch(url, o));
       const res = await proponer({ ...m.base(), fetch: caida });
       assert.strictEqual(res.ok, false, textoDe(res));
@@ -390,7 +390,7 @@ test('T41 Politica_VotoDeQuienCrea_NoCuenta @story-2.30 @ac-22b', { skip: SIN_BA
     assert.strictEqual((await politicaDeRevision(args)).ok, false, 'el mínimo de revisores que deja votar al autor no cuenta');
     m.api.st.politicas = [requeridos(m.api, { votoDelAutor: true })];
     assert.strictEqual((await politicaDeRevision(args)).ok, false, 'los revisores requeridos que dejan votar al autor no cuentan');
-    // con `false`, la de toda la rama sigue valiendo como hoy, con y sin archivo
+    // con `false`, la de toda la rama sigue valiendo, con y sin archivo
     m.api.st.politicas = [m.api.politicaDeRevisores(1)];
     assert.strictEqual((await politicaDeRevision(args)).ok, true);
     assert.strictEqual((await politicaDeRevision({ remote: b.remote, credencial: b.credencial, urlBase: b.urlBase })).ok, true);

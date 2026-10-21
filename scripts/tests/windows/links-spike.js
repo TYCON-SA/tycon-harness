@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * links-spike.js — el sondeo de la story 8.33 (Task 1 · AC 1 · T1 `Spike_JunctionRetargetWhileHeld`): ¿se puede cambiar
+ * links-spike.js — el sondeo `Spike_JunctionRetargetWhileHeld`: ¿se puede cambiar
  * la unión `~/.tycon/harness` de una versión a otra mientras la versión vieja está TOMADA en Windows?
  *
- * POR QUÉ EXISTE. La 8.23 cambia de versión renombrando carpetas, y en Windows el `rename` de una carpeta con un archivo
- * abierto, con un proceso parado adentro o con un vigilante de carpetas falla: con otra sesión o un VS Code abiertos la
- * actualización espera para siempre. La 8.33 hace que `~/.tycon/harness` sea una unión a `~/.tycon/versions/<v>` y que
- * actualizar sea cambiar la unión. Eso descansa en un hecho de Windows que sólo se sabe midiendo: que cambiar una unión
+ * POR QUÉ EXISTE. En Windows el `rename` de una carpeta con un archivo
+ * abierto, con un proceso parado adentro o con un vigilante de carpetas falla: con otra sesión o un VS Code abiertos, cambiar
+ * de versión renombrando carpetas espera para siempre. Por eso `~/.tycon/harness` es una unión a `~/.tycon/versions/<v>` y
+ * actualizar es cambiar la unión. Eso descansa en un hecho de Windows que sólo se sabe midiendo: que cambiar una unión
  * con su destino tomado anda. Este sondeo lo mide en cada corrida del escenario `no-clone`; si deja de andar, lo dice.
  *
  * QUÉ MIDE, en una carpeta del laboratorio (nunca en la carpeta del usuario del agente):
@@ -26,7 +26,7 @@
  *
  * Lo llama no-clone-probe.js como su primer paso. Deja los datos en `rec.fact('links_spike', …)` y un hallazgo
  * `no-clone:links-retarget-blocked` («rompe») si en Windows ninguna de las dos formas de cambiar la unión anduvo con
- * algún tipo de toma. Nunca tira: un problema del sondeo es una nota. Primera corrida: 182 #13451 (anda).
+ * algún tipo de toma. Nunca tira: un problema del sondeo es una nota.
  */
 const fs = require('fs');
 const path = require('path');
@@ -57,7 +57,7 @@ function makeVersion(dir, mark) {
 /**
  * Los que toman la carpeta, por la ruta de la unión. En posix el archivo y la carpeta de trabajo se arman igual. `file` y
  * `cwd` (relativos a `dir`) tienen que EXISTIR: con un archivo que no está, el proceso sigue vivo sin tomar nada y la
- * medición miente (182 #13456: en una versión de verdad no hay `held.txt` ni `sub/`). Si no existen, tira.
+ * medición miente (en una versión de verdad no hay `held.txt` ni `sub/`). Si no existen, tira.
  */
 function holders(kind, dir, env, isWin, { file = 'held.txt', cwd = 'sub' } = {}) {
   const ps = L.scanPath('pwsh', { env })[0] || L.scanPath('powershell', { env })[0];

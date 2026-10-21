@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# nightly-dod-notice.test.sh — el aviso por Telegram de la evidencia DoD del nocturno (story 1.5).
+# nightly-dod-notice.test.sh — el aviso por Telegram de la evidencia DoD del nocturno.
 #
 # Sin red y sin tocar nada de esta máquina: cada caso arma un repo git temporal con su propio
 # `origin` (bare), un clon «publicador» que empuja los snapshots como lo haría el nocturno de Azure,
@@ -10,7 +10,7 @@
 #    puerto local cerrado y carpeta del canal inexistente. Ni un error de cableado (el guion
 #    llamando al script real en vez del doble) puede llegar al Telegram de verdad.
 #
-# 🔴 REGLA DE ADMISIÓN: cada caso trae escrito su rojo previo contra el guion anterior
+# 🔴 REGLA DE ADMISIÓN: cada caso dice cómo falla contra un guion sin el arreglo
 #    (`AVISO_GUION=<guion viejo> bash scripts/tests/nightly-dod-notice.test.sh`). Los que no se ponen
 #    rojos lo dicen y son de no-regresión. El exit code se lee ANTES de cualquier pipe.
 #    Corre con /bin/bash, que en macOS es 3.2: la misma versión que usa el LaunchAgent.
@@ -84,7 +84,7 @@ armar() {
   git init -q "${PUB}"; git -C "${PUB}" checkout -q -b main
   git -C "${PUB}" remote add origin "${F}/origin.git"
   mkdir -p "${PUB}/scripts/lib" "${PUB}/.dashboard"
-  # El doble también vive donde el guion lo busca sin TYCON_NOTICE_NOTIFY: `scripts/lib/` desde la story 8.12 (R3).
+  # El doble también vive donde el guion lo busca sin TYCON_NOTICE_NOTIFY: `scripts/lib/`.
   # T33 lo usa así; sólo ahí (sin el reemplazo de la ruta vieja) se ve si el default apunta a la ruta nueva.
   printf '#!/usr/bin/env bash\nexec "%s" "$@"\n' "${BASE}/doble.sh" > "${PUB}/scripts/lib/tycon-telegram-notify.sh"
   chmod +x "${PUB}/scripts/lib/tycon-telegram-notify.sh"
@@ -104,8 +104,8 @@ enviado() { cat "${D}/llamadas" 2>/dev/null; }
 foto() { { git -C "${CO}" branch --show-current; git -C "${CO}" rev-parse HEAD; git -C "${CO}" status --porcelain; git -C "${CO}" diff; git -C "${CO}" diff --cached; } 2>&1; }
 contiene() { case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
 
-# ── T1 ─ AC 1 ───────────────────────────────────────────────────────────────────────────────────
-# Rojo previo: el guion viejo lee el disco de la rama y avisa «NO corrió hoy».
+# ── T1 ───────────────────────────────────────────────────────────────────────────────────
+# Falla si el guion lee el disco de la rama: avisa «NO corrió hoy».
 echo "T1 RamaDivergida_SnapshotPublicado_AvisaCambio"
 armar "$(repo A__A 10)"; rama_divergida; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0; correr
 MSG="$(enviado)"; cp "${OUT}" "${BASE}/out-t1"
@@ -113,8 +113,8 @@ if [ "${RC}" = 0 ] && contiene "${MSG}" "Se movió la evidencia DoD del nocturno
    && ! contiene "${MSG}" "no está publicado" && ! contiene "${MSG}" "NO corrió"; then ok "T1 avisa el cambio publicado aunque el checkout esté en otra rama"
 else mal "T1 rc=${RC} enviado=[${MSG}] salida=[$(cat "${OUT}")]"; fi
 
-# ── T2 ─ AC 2 ───────────────────────────────────────────────────────────────────────────────────
-# No-regresión en el guion viejo: con la rama divergida y el árbol sucio su merge fallaba solo.
+# ── T2 ───────────────────────────────────────────────────────────────────────────────────
+# No-regresión: con la rama divergida y el árbol sucio, un guion que hiciera merge fallaría solo.
 echo "T2 RamaDivergida_CheckoutIntacto"
 armar "$(repo A__A 10)"; rama_divergida
 echo cambio >> "${CO}/propio.txt"; echo nuevo > "${CO}/stageado.txt"; git -C "${CO}" add stageado.txt
@@ -122,16 +122,16 @@ ANTES="$(foto)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0; correr; DESP
 if [ "${ANTES}" = "${DESPUES}" ]; then ok "T2 rama, HEAD, índice y árbol idénticos"
 else mal "T2 el checkout cambió: antes=[${ANTES}] después=[${DESPUES}]"; fi
 
-# ── T3 ─ AC 2 ───────────────────────────────────────────────────────────────────────────────────
-# Rojo previo: el guion viejo le hacía fast-forward a la rama (defecto D1b).
+# ── T3 ───────────────────────────────────────────────────────────────────────────────────
+# Falla si el guion le hace fast-forward a la rama.
 echo "T3 RamaAtrasadaSinDivergir_NoLaMueve"
 armar "$(repo A__A 10)"; git -C "${CO}" checkout -q -b story/otra
 ANTES="$(foto)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0; correr; DESPUES="$(foto)"
 if [ "${ANTES}" = "${DESPUES}" ]; then ok "T3 la rama sin divergir no se mueve"
 else mal "T3 la rama se movió: antes=[${ANTES}] después=[${DESPUES}]"; fi
 
-# ── T4 ─ AC 2 ───────────────────────────────────────────────────────────────────────────────────
-# Rojo previo: el guion viejo avanzaba main en el checkout.
+# ── T4 ───────────────────────────────────────────────────────────────────────────────────
+# Falla si el guion avanza main en el checkout.
 echo "T4 CheckoutEnMain_NoLoMueve"
 armar "$(repo A__A 10)"
 ANTES="$(foto)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0; correr; DESPUES="$(foto)"
@@ -139,15 +139,15 @@ PUBLICADO="$(git -C "${PUB}" rev-parse HEAD)"; REF="$(git -C "${CO}" rev-parse r
 if [ "${ANTES}" = "${DESPUES}" ] && [ "${REF}" = "${PUBLICADO}" ]; then ok "T4 main del checkout quieto; origin/main al día"
 else mal "T4 antes=[${ANTES}] después=[${DESPUES}] origin/main=${REF} publicado=${PUBLICADO}"; fi
 
-# ── T5 ─ AC 2 ───────────────────────────────────────────────────────────────────────────────────
-# Rojo previo: el guion viejo tiene `git -C "$REPO" merge -q --ff-only origin/main`.
+# ── T5 ───────────────────────────────────────────────────────────────────────────────────
+# Falla si el guion tiene `git -C "$REPO" merge -q --ff-only origin/main`.
 echo "T5 GuionSinComandosQueEscriben"
 ESCRIBEN="$(grep -vE '^[[:space:]]*#' "${GUION}" | grep -nE 'git([[:space:]]+-[A-Za-z]+([[:space:]]+"?[^[:space:]]+"?)?)*[[:space:]]+(merge|pull|checkout|reset|stash|rebase)([[:space:]]|$)')"
 if [ -z "${ESCRIBEN}" ]; then ok "T5 ni merge, ni pull, ni checkout, ni reset, ni stash, ni rebase"
 else mal "T5 el guion escribe en el checkout: ${ESCRIBEN}"; fi
 
-# ── T6 ─ AC 3 ───────────────────────────────────────────────────────────────────────────────────
-# Rojo previo: sin `remote.origin.fetch`, `git fetch origin main` no actualiza origin/main.
+# ── T6 ───────────────────────────────────────────────────────────────────────────────────
+# Sin `remote.origin.fetch`, `git fetch origin main` no actualiza origin/main.
 echo "T6 Fetch_UsaRefspecExplicito"
 armar "$(repo A__A 10)"; rama_divergida; git -C "${CO}" config --unset-all remote.origin.fetch
 publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0; correr
@@ -155,8 +155,8 @@ REF="$(git -C "${CO}" rev-parse refs/remotes/origin/main 2>/dev/null)"
 if [ "${REF}" = "$(git -C "${PUB}" rev-parse HEAD)" ] && contiene "$(enviado)" "Se movió la evidencia DoD"; then ok "T6 el refspec explícito trae main aunque el remoto no tenga fetch configurado"
 else mal "T6 origin/main=${REF} enviado=[$(enviado)] salida=[$(cat "${OUT}")]"; fi
 
-# ── T7 ─ AC 4 ───────────────────────────────────────────────────────────────────────────────────
-# Rojo previo: con el remoto inalcanzable el guion viejo avisaba «NO corrió hoy» y salía 0.
+# ── T7 ───────────────────────────────────────────────────────────────────────────────────
+# Falla si, con el remoto inalcanzable, el guion avisa «NO corrió hoy» y sale 0.
 echo "T7 FetchFalla_SinHoyLocal_NoPudeMirar"
 armar "$(repo A__A 10)"; rama_divergida; publicar "${HOY}" 20 "$(repo A__A 20)"
 git -C "${CO}" remote set-url origin "${F}/no-existe.git"; codigos 0; correr; MSG="$(enviado)"
@@ -164,60 +164,60 @@ if [ "${RC}" = 2 ] && contiene "${MSG}" "no pude mirar" && contiene "${MSG}" "no
    && ! contiene "${MSG}" "NO corrió" && ! contiene "${MSG}" "no está publicado"; then ok "T7 fetch fallido = «no pude mirar» con el motivo, exit 2"
 else mal "T7 rc=${RC} enviado=[${MSG}] salida=[$(cat "${OUT}")]"; fi
 
-# ── T8 ─ AC 5 ───────────────────────────────────────────────────────────────────────────────────
-# Rojo previo: el guion viejo lee el disco de la rama divergida, no la referencia ya traída.
+# ── T8 ───────────────────────────────────────────────────────────────────────────────────
+# Falla si el guion lee el disco de la rama divergida, no la referencia ya traída.
 echo "T8 FetchFalla_ConHoyLocal_ComparaNormal"
 armar "$(repo A__A 10)"; rama_divergida; publicar "${HOY}" 20 "$(repo A__A 20)"
 git -C "${CO}" fetch -q origin; git -C "${CO}" remote set-url origin "${F}/no-existe.git"; codigos 0; correr
 if [ "${RC}" = 0 ] && contiene "$(enviado)" "Se movió la evidencia DoD del nocturno: 10% (10/100) -> 20% (20/100)"; then ok "T8 con el de hoy ya en la referencia local, compara"
 else mal "T8 rc=${RC} enviado=[$(enviado)] salida=[$(cat "${OUT}")]"; fi
 
-# ── T9 ─ AC 6 ───────────────────────────────────────────────────────────────────────────────────
-# Rojo previo: el guion viejo afirmaba «NO corrió hoy».
+# ── T9 ───────────────────────────────────────────────────────────────────────────────────
+# Falla si el guion afirma «NO corrió hoy».
 echo "T9 FetchOk_SinHoy_DiceLoObservado"
 armar "$(repo A__A 10)"; codigos 0; correr; MSG="$(enviado)"
 if [ "${RC}" = 0 ] && contiene "${MSG}" "no está publicado en main a las " && contiene "${MSG}" " UTC" \
    && contiene "${MSG}" "(${HOY})" && contiene "${MSG}" "el último es del ${AYER}" && ! contiene "${MSG}" "NO corrió"; then ok "T9 dice lo observado, sin afirmar que no corrió"
 else mal "T9 rc=${RC} enviado=[${MSG}]"; fi
 
-# ── T10 ─ AC 7 ──────────────────────────────────────────────────────────────────────────────────
-# Rojo previo: sin origin, el guion viejo leía el disco y avisaba «NO corrió hoy».
+# ── T10 ──────────────────────────────────────────────────────────────────────────────────
+# Falla si, sin origin, el guion lee el disco y avisa «NO corrió hoy».
 echo "T10 SinRefOrigenMain_NoPudeMirar"
 armar "$(repo A__A 10)"; git -C "${CO}" remote remove origin; codigos 0; correr; MSG="$(enviado)"
 if [ "${RC}" = 2 ] && contiene "${MSG}" "no pude mirar" && ! contiene "${MSG}" "NO corrió"; then ok "T10 sin origin/main = «no pude mirar», exit 2"
 else mal "T10 rc=${RC} enviado=[${MSG}] salida=[$(cat "${OUT}")]"; fi
 
-# ── T11 ─ AC 8 ──────────────────────────────────────────────────────────────────────────────────
-# Rojo previo: KeyError en porrepo() → «salida inesperada del comparador», sin aviso, exit 3.
+# ── T11 ──────────────────────────────────────────────────────────────────────────────────
+# Falla con KeyError en porrepo() → «salida inesperada del comparador», sin aviso, exit 3.
 echo "T11 RepoNuevo_NoRevienta"
 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 10),$(repo N__N 10)"; codigos 0; correr; MSG="$(enviado)"
 if [ "${RC}" = 0 ] && contiene "${MSG}" "N__N: nuevo -> 10% (10/100)" && ! grep -q Traceback "${OUT}"; then ok "T11 el repo nuevo se nombra como nuevo"
 else mal "T11 rc=${RC} enviado=[${MSG}] salida=[$(cat "${OUT}")]"; fi
 
-# ── T12 ─ AC 9 ──────────────────────────────────────────────────────────────────────────────────
-# Rojo previo: el guion viejo recorría sólo los repos de hoy — el que salió no aparecía.
+# ── T12 ──────────────────────────────────────────────────────────────────────────────────
+# Falla si el guion recorre sólo los repos de hoy — el que salió no aparece.
 echo "T12 RepoQueSalio_LoNombra"
 armar "$(repo A__A 10),$(repo X__X 5)" 15; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0; correr; MSG="$(enviado)"
 if [ "${RC}" = 0 ] && contiene "${MSG}" "X__X: 5% (5/100) -> salió"; then ok "T12 el repo que salió se nombra"
 else mal "T12 rc=${RC} enviado=[${MSG}] salida=[$(cat "${OUT}")]"; fi
 
-# ── T13 ─ AC 10 ─────────────────────────────────────────────────────────────────────────────────
-# Rojo previo: JSONDecodeError → «salida inesperada», sin aviso, exit 3.
+# ── T13 ─────────────────────────────────────────────────────────────────────────────────
+# Falla con JSONDecodeError → «salida inesperada», sin aviso, exit 3.
 echo "T13 JsonRoto_NoPudeComparar"
 armar "$(repo A__A 10)"; publicar_crudo "${HOY}" '{roto'; codigos 0; correr; MSG="$(enviado)"
 if [ "${RC}" = 2 ] && contiene "${MSG}" "no pude comparar los snapshots" && ! contiene "${MSG}" "salida inesperada"; then ok "T13 un snapshot roto se avisa como «no pude comparar», exit 2"
 else mal "T13 rc=${RC} enviado=[${MSG}] salida=[$(cat "${OUT}")]"; fi
 
-# ── T14 ─ AC 11 ─────────────────────────────────────────────────────────────────────────────────
-# Rojo previo: el guion viejo no reintentaba (1 llamada, aviso perdido, exit 0).
+# ── T14 ─────────────────────────────────────────────────────────────────────────────────
+# Falla si el guion no reintenta (1 llamada, aviso perdido, exit 0).
 echo "T14 EnvioFallaYReintentoSale_EntregaUnaVez"
 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 3 0
 export TYCON_NOTICE_STATE_DIR="${BASE}/estado-t14"; correr
 if [ "${RC}" = 0 ] && [ "$(llamadas)" = 2 ] && [ ! -s "${BASE}/estado-t14/pendientes.tsv" ]; then ok "T14 el reintento entrega, sin pendientes"
 else mal "T14 rc=${RC} llamadas=$(llamadas) pendientes=[$(cat "${BASE}/estado-t14/pendientes.tsv" 2>/dev/null)]"; fi
 
-# ── T15 ─ AC 12 ─────────────────────────────────────────────────────────────────────────────────
-# Rojo previo: exit 0, una sola llamada, ninguna línea con fecha, nada guardado.
+# ── T15 ─────────────────────────────────────────────────────────────────────────────────
+# Falla con exit 0, una sola llamada, ninguna línea con fecha, nada guardado.
 # Sin TYCON_NOTICE_STATE_DIR: verifica también el lugar por defecto (bajo el HOME falso).
 echo "T15 EnvioFallaSiempre_QuedaDicho"
 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 3
@@ -228,9 +228,9 @@ if [ "${RC}" = 3 ] && [ "$(llamadas)" = 3 ] && contiene "${LINEA}" "curl: (6) Co
    && contiene "${LINEA}" "Se movió la evidencia DoD del nocturno" && grep -q "^${HOY}${TAB}Se movió la evidencia DoD" "${PEND}" 2>/dev/null; then ok "T15 queda dicho: línea con fecha, motivo, texto, pendiente guardado, exit 3"
 else mal "T15 rc=${RC} llamadas=$(llamadas) línea=[${LINEA}] pendientes=[$(cat "${PEND}" 2>/dev/null)] salida=[$(cat "${OUT}")]"; fi
 
-# ── T16 ─ AC 13 ─────────────────────────────────────────────────────────────────────────────────
+# ── T16 ─────────────────────────────────────────────────────────────────────────────────
 # Continúa T15 (mismo HOME). Mañana sin cambios: igual se entrega lo pendiente.
-# Rojo previo: el guion viejo no guardaba nada → no hay qué entregar.
+# Falla si el guion no guarda nada → no hay qué entregar.
 echo "T16 PendienteSeEntregaAlDiaSiguiente"
 publicar "${MANANA}" 20 "$(repo A__A 20)"; codigos 0
 TYCON_NOTICE_TODAY="${MANANA}" correr; MSG="$(enviado)"
@@ -238,8 +238,8 @@ if [ "${RC}" = 0 ] && [ "$(llamadas)" = 1 ] && contiene "${MSG}" "(aviso del ${H
    && [ ! -s "${PEND}" ]; then ok "T16 el pendiente llega al día siguiente, en un solo mensaje, y se borra"
 else mal "T16 rc=${RC} llamadas=$(llamadas) enviado=[${MSG}] pendientes=[$(cat "${PEND}" 2>/dev/null)] salida=[$(cat "${OUT}")]"; fi
 
-# ── T17 ─ AC 13 ─────────────────────────────────────────────────────────────────────────────────
-# Rojo previo: no se guardaba nada (0 líneas, no 1).
+# ── T17 ─────────────────────────────────────────────────────────────────────────────────
+# Falla si no se guarda nada (0 líneas, no 1).
 echo "T17 PendienteVuelveAFallar_NoDuplica"
 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 3
 export TYCON_NOTICE_STATE_DIR="${BASE}/estado-t17"; correr; correr
@@ -247,56 +247,55 @@ N="$(grep -c . "${BASE}/estado-t17/pendientes.tsv" 2>/dev/null)"
 if [ "${RC}" = 3 ] && [ "${N}" = 1 ]; then ok "T17 dos fallas del mismo aviso dejan un solo pendiente"
 else mal "T17 rc=${RC} líneas=${N:-0} pendientes=[$(cat "${BASE}/estado-t17/pendientes.tsv" 2>/dev/null)]"; fi
 
-# ── T18 ─ AC 14 ─────────────────────────────────────────────────────────────────────────────────
-# Rojo previo: ninguna línea del guion viejo tiene fecha (el registro real tampoco).
+# ── T18 ─────────────────────────────────────────────────────────────────────────────────
+# Falla si ninguna línea del guion tiene fecha (el registro real tampoco).
 echo "T18 CadaLineaConFechaUTC"
 SIN_FECHA="$(cat "${BASE}/out-t1" "${BASE}/out-t15" | grep -vE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z aviso-dod: ' | grep -v '^$')"
 if [ -z "${SIN_FECHA}" ] && grep -q 'aviso-dod: veredicto: ' "${BASE}/out-t1" && grep -q 'aviso-dod: veredicto: ' "${BASE}/out-t15"; then ok "T18 toda línea lleva fecha UTC y hay veredicto"
 else mal "T18 líneas sin fecha=[${SIN_FECHA}] t1=[$(cat "${BASE}/out-t1")]"; fi
 
-# ── T19 ─ AC 15, 19 ─────────────────────────────────────────────────────────────────────────────
-# No-regresión (verde también en el guion viejo, con el checkout en main). La forma del aviso de
-# cambio (AC 19) la exige T1 textual.
+# No-regresión (verde también sin el arreglo, con el checkout en main). La forma del aviso de
+# cambio la exige T1 textual.
 echo "T19 SinCambio_Calla"
 armar "$(repo A__A 10)"; publicar "${HOY}" 10 "$(repo A__A 10)"; codigos 0; correr; RC_A="${RC}"; N_A="$(llamadas)"
-# Tope del detalle (AC 19): con 7 repos movidos se nombran los 6 primeros. Rojo previo: ninguno — el
-# guion viejo ya cortaba en 6; es no-regresión del recorte por la unión nueva.
+# Tope del detalle: con 7 repos movidos se nombran los 6 primeros.
+# Es no-regresión del recorte por la unión.
 R_AYER=""; R_HOY=""
 for i in 1 2 3 4 5 6 7; do R_AYER="${R_AYER:+${R_AYER},}$(repo "R${i}__R${i}" 10)"; R_HOY="${R_HOY:+${R_HOY},}$(repo "R${i}__R${i}" 20)"; done
 armar "${R_AYER}" 70; publicar "${HOY}" 140 "${R_HOY}"; codigos 0; correr; MSG="$(enviado)"
 if [ "${RC_A}" = 0 ] && [ "${N_A}" = 0 ] && [ "${RC}" = 0 ] && contiene "${MSG}" "R6__R6: 10% (10/100) -> 20% (20/100)" && ! contiene "${MSG}" "R7__R7"; then ok "T19 sin cambios calla; el detalle se corta en 6 repos"
 else mal "T19 sin-cambio rc=${RC_A} llamadas=${N_A} · siete rc=${RC} enviado=[${MSG}]"; fi
 
-# ── T20 ─ AC 16, 17 ─────────────────────────────────────────────────────────────────────────────
-# No-regresión (verde también en el guion viejo).
+# ── T20 ─────────────────────────────────────────────────────────────────────────────
+# No-regresión (verde también sin el arreglo).
 echo "T20 SinPrevio_Y_SinSnapshots"
 armar -; publicar "${HOY}" 10 "$(repo A__A 10)"; codigos 0; correr; RC_A="${RC}"; N_A="$(llamadas)"
 armar -; codigos 0; correr; MSG="$(enviado)"
 if [ "${RC_A}" = 0 ] && [ "${N_A}" = 0 ] && [ "${RC}" = 3 ] && contiene "${MSG}" "no hay ni un snapshot"; then ok "T20 sin anterior calla; sin snapshots avisa y sale 3"
 else mal "T20 sin-previo rc=${RC_A} llamadas=${N_A} · sin-snapshots rc=${RC} enviado=[${MSG}]"; fi
 
-# ── T21 ─ AC 18, 20 ─────────────────────────────────────────────────────────────────────────────
-# Rojo previo: el guion viejo imprime «[dry-run]» sin fecha (AC 14). Suma el aislamiento de esta suite.
+# ── T21 ─────────────────────────────────────────────────────────────────────────────
+# Falla si el guion imprime «[dry-run]» sin fecha. Suma el aislamiento de esta suite.
 echo "T21 DryRun_NoLlamaAlEnvio"
 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
 export TYCON_NOTICE_STATE_DIR="${BASE}/estado-t21"; mkdir -p "${BASE}/estado-t21"
 printf '%s\t%s\n' "${AYER}" "aviso viejo guardado" > "${BASE}/estado-t21/pendientes.tsv"
 TYCON_NOTICE_DRYRUN=1 correr
-# El dry-run no agrega ni borra pendientes (AC 18) y su línea también lleva fecha (AC 14).
+# El dry-run no agrega ni borra pendientes y su línea también lleva fecha.
 if [ "${RC}" = 0 ] && [ "$(llamadas)" = 0 ] \
    && grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z aviso-dod: \[dry-run\] .*Se movió la evidencia DoD' "${OUT}" \
    && [ "$(cat "${BASE}/estado-t21/pendientes.tsv" 2>/dev/null)" = "${AYER}${TAB}aviso viejo guardado" ] \
    && [ "${HOME}" = "${BASE}/home" ] && [ -z "${TELEGRAM_BOT_TOKEN}" ] && contiene "${TYCON_TELEGRAM_API}" "127.0.0.1"; then ok "T21 dry-run no envía; la suite está aislada"
 else mal "T21 rc=${RC} llamadas=$(llamadas) salida=[$(cat "${OUT}")]"; fi
 
-# ── T22 ─ AC 11 ─────────────────────────────────────────────────────────────────────────────────
-# Rojo previo: el guion viejo no lee estas variables — no hay línea que diga nada.
+# ── T22 ─────────────────────────────────────────────────────────────────────────────────
+# Falla si el guion no lee estas variables — no hay línea que diga nada.
 echo "T22 ValoresInvalidos_VuelvenAlDefaultYLoDicen"
 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
 TYCON_NOTICE_RETRIES=abc TYCON_NOTICE_WAIT_S=-1 correr
 OUT_A="$(cat "${OUT}")"; RC_A="${RC}"; N_A="$(llamadas)"
-# «00» son cero intentos con otra forma, y un número enorme desborda el `[ -lt ]` (rojo previo del
-# pase adversarial: pasaban sin decir nada, y el desborde imprimía un error sin fecha).
+# «00» son cero intentos con otra forma, y un número enorme desborda el `[ -lt ]` (sin validar,
+# pasarían sin decir nada, y el desborde imprimiría un error sin fecha).
 codigos 0; TYCON_NOTICE_RETRIES=00 correr; OUT_B="$(cat "${OUT}")"
 codigos 0; TYCON_NOTICE_RETRIES=99999999999999999999 correr; OUT_C="$(cat "${OUT}")"
 SIN_FECHA_C="$(printf '%s\n' "${OUT_C}" | grep -vE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z aviso-dod: ' | grep -v '^$')"
@@ -306,9 +305,9 @@ if [ "${RC_A}" = 0 ] && [ "${N_A}" = 1 ] && contiene "${OUT_A}" 'aviso-dod: TYCO
    && contiene "${OUT_C}" 'TYCON_NOTICE_RETRIES inválido («99999999999999999999»): uso 3' && [ -z "${SIN_FECHA_C}" ]; then ok "T22 un valor inválido (también «00» o desbordado) vuelve al default y lo dice"
 else mal "T22 abc=[${OUT_A}] 00=[${OUT_B}] enorme=[${OUT_C}]"; fi
 
-# ── T23 ─ AC 12, 14 ─────────────────────────────────────────────────────────────────────────────
-# Rojo previo: el guion viejo ignora TYCON_NOTICE_NOTIFY y entrega con el doble del repo (exit 0);
-# y sin script salía 3 al arrancar, sin veredicto ni pendiente.
+# ── T23 ─────────────────────────────────────────────────────────────────────────────
+# Falla si el guion ignora TYCON_NOTICE_NOTIFY y entrega con el doble del repo (exit 0);
+# o si, sin script, sale 3 al arrancar, sin veredicto ni pendiente.
 echo "T23 SinScriptDeEnvio_QuedaPendiente"
 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
 TYCON_NOTICE_NOTIFY="${BASE}/no-existe.sh" correr; RC_A="${RC}"; OUT_A="$(cat "${OUT}")"; PEND_A="$(cat "${BASE}/estado/pendientes.tsv" 2>/dev/null)"
@@ -318,9 +317,9 @@ if [ "${RC_A}" = 3 ] && contiene "${OUT_A}" "aviso-dod: veredicto: CAMBIO" && co
    && contiene "${PEND_A}" "${HOY}${TAB}Se movió la evidencia DoD" && [ "${RC}" = 0 ]; then ok "T23 sin script de envío: veredicto, NO SE ENTREGÓ, pendiente; sin cambios ni lo necesita"
 else mal "T23 con-cambio rc=${RC_A} salida=[${OUT_A}] pendientes=[${PEND_A}] · sin-cambio rc=${RC} salida=[$(cat "${OUT}")]"; fi
 
-# ── T24 ─ AC 8, 9 ───────────────────────────────────────────────────────────────────────────────
-# Rojo previo (pase adversarial, datos reales del snapshot de main del 2026-09-03): la clave era el
-# basename, así que dos repos «Project» se pisaban y el que se movió no aparecía en el detalle.
+# ── T24 ───────────────────────────────────────────────────────────────────────────────
+# Falla si la clave es el basename (datos reales de un snapshot de main):
+# dos repos «Project» se pisan y el que se movió no aparece en el detalle.
 echo "T24 ReposConElMismoNombre_NoSeMezclan"
 armar "$(repo_ruta /Users/a/SourceCode/Lapacho/Project 0 12),$(repo_ruta /Users/a/SourceCode/Totora/Project 0 2)" 0
 publicar "${HOY}" 6 "$(repo_ruta /Users/a/SourceCode/Lapacho/Project 6 12),$(repo_ruta /Users/a/SourceCode/Totora/Project 0 2)"
@@ -328,18 +327,18 @@ codigos 0; correr; MSG="$(enviado)"
 if [ "${RC}" = 0 ] && contiene "${MSG}" "Lapacho__Project: 0% (0/12) -> 50% (6/12)" && ! contiene "${MSG}" "Totora__Project" && ! contiene "${MSG}" " Project:"; then ok "T24 los repos homónimos se distinguen por su proyecto"
 else mal "T24 rc=${RC} enviado=[${MSG}] salida=[$(cat "${OUT}")]"; fi
 
-# ── T25 ─ AC 9 ──────────────────────────────────────────────────────────────────────────────────
-# Rojo previo (pase adversarial, datos reales 09-05→09-06): un repo que sigue en el snapshot pero se
-# quedó sin medición salía como «salió»; y ocupaba un lugar del detalle antes que un movimiento real.
+# ── T25 ──────────────────────────────────────────────────────────────────────────────────
+# Falla si un repo que sigue en el snapshot pero se
+# quedó sin medición sale como «salió»; y ocupa un lugar del detalle antes que un movimiento real.
 echo "T25 MedicionQueSePierde_NoEsSalio"
 armar "$(repo B__B 5),$(repo A__A 10)" 15; publicar "${HOY}" 20 "$(repo_sin_medir B__B),$(repo A__A 20)"; codigos 0; correr; MSG="$(enviado)"
 if [ "${RC}" = 0 ] && contiene "${MSG}" "B__B: 5% (5/100) -> sin medición" && ! contiene "${MSG}" "salió" \
    && contiene "${MSG}" ". A__A: 10% (10/100) -> 20% (20/100) · B__B"; then ok "T25 perder la medición no es salir, y los movimientos reales van primero"
 else mal "T25 rc=${RC} enviado=[${MSG}] salida=[$(cat "${OUT}")]"; fi
 
-# ── T26 ─ AC 13 ─────────────────────────────────────────────────────────────────────────────────
-# Rojo previo (pase adversarial): `read` no devuelve la última línea sin salto final → ese pendiente
-# no se mandaba y el archivo igual se borraba («pendientes entregados y borrados»).
+# ── T26 ─────────────────────────────────────────────────────────────────────────────────
+# Falla si se usa `read`, que no devuelve la última línea sin salto final → ese pendiente
+# no se manda y el archivo igual se borra («pendientes entregados y borrados»).
 echo "T26 PendienteSinSaltoFinal_SeEntrega"
 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
 mkdir -p "${BASE}/estado"; printf '%s\t%s' "${AYER}" "aviso viejo sin salto final" > "${BASE}/estado/pendientes.tsv"
@@ -352,8 +351,8 @@ codigos 3; mkdir -p "${BASE}/estado"; printf '%s\t%s' "${AYER}" "otro viejo" > "
 if [ "$(grep -c . "${BASE}/estado/pendientes.tsv")" = 2 ] && grep -q "^${HOY}${TAB}Se movió" "${BASE}/estado/pendientes.tsv"; then ok "T26 guardar sobre un archivo sin salto final no pega las líneas"
 else mal "T26 pendientes=[$(cat "${BASE}/estado/pendientes.tsv" 2>/dev/null)]"; fi
 
-# ── T27 ─ AC 21 ─────────────────────────────────────────────────────────────────────────────────
-# Rojo previo (pase adversarial): sin tope, tras varias noches fallidas el mensaje pasa los 4096
+# ── T27 ─────────────────────────────────────────────────────────────────────────────────
+# Falla sin tope: tras varias noches fallidas el mensaje pasa los 4096
 # caracteres de Telegram y no se entrega NUNCA más, aunque vuelva la red.
 echo "T27 MuchosPendientes_EntranEnUnMensaje"
 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0; mkdir -p "${BASE}/estado"
@@ -369,11 +368,11 @@ if [ "${RC}" = 0 ] && [ -n "${LARGO}" ] && [ "${LARGO}" -le 4000 ] && contiene "
    && contiene "${MSG}" "noche 1" && contiene "${MSG}" "más viejos" && ! contiene "${MSG}" "noche 40 " && [ ! -s "${BASE}/estado/pendientes.tsv" ]; then ok "T27 con 40 pendientes el mensaje entra (${LARGO} caracteres): hoy, los más nuevos y un resumen de los viejos"
 else mal "T27 rc=${RC} largo=${LARGO:-?} salida=[$(tail -3 "${OUT}")]"; fi
 
-# ── story 8.3.1 · el fetch reintenta antes de decir «no pude mirar» (AC 6-8) ─────────────────────────
-# Caso disparador (2026-09-27 03:43): la MacBook despertó sin DNS, el fetch falló una vez y el aviso dijo
+# ── el fetch reintenta antes de decir «no pude mirar» ─────────────────────────────────────────────
+# Si la máquina despierta sin DNS, el fetch falla una vez y el aviso diría
 # «no pude mirar» con el snapshot publicado. Un `git` de mentira en el PATH cuenta los fetch y falla los
 # primeros K con el texto pedido; todo lo demás (y los fetch siguientes) va al git real.
-# Rojo previo de los tres: el guion de la 8.3 hace UN solo fetch.
+# Fallan los tres si el guion hace UN solo fetch.
 GIT_REAL="$(command -v git)"
 mkdir -p "${BASE}/gitfalso"
 cat > "${BASE}/gitfalso/git" <<SH
@@ -418,28 +417,28 @@ PATH="${BASE}/gitfalso:${PATH}" TYCON_NOTICE_FETCH_RETRIES=0 TYCON_NOTICE_FETCH_
 if [ "${RC}" = 0 ] && [ "$(fetches)" = 1 ] && contiene "$(cat "${OUT}")" "TYCON_NOTICE_FETCH_RETRIES inválido" && contiene "$(cat "${OUT}")" "TYCON_NOTICE_FETCH_WAIT_S inválido"; then ok "T31 valores inválidos vuelven al default y lo dicen"
 else mal "T31 rc=${RC} fetches=$(fetches) salida=[$(cat "${OUT}")]"; fi
 
-# Pase adversarial (5b): la validación aceptaba sólo 1-2 dígitos, distinta de su hermana TYCON_NOTICE_RETRIES (hasta 3).
+# La validación acepta hasta 3 dígitos, igual que su hermana TYCON_NOTICE_RETRIES.
 echo "T32 FetchReintentosDeTresDigitos_SeRespetan (story 8.3.1 AC 6)"
 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; fetch_falla 99 "${DNS}"; codigos 0
 PATH="${BASE}/gitfalso:${PATH}" TYCON_NOTICE_FETCH_RETRIES=100 TYCON_NOTICE_FETCH_WAIT_S=0 TYCON_GUIDES_DIR="${CO}" /bin/bash "${GUION}" > "${OUT}" 2>&1; RC=$?
 if [ "${RC}" = 0 ] && [ "$(fetches)" = 100 ] && ! contiene "$(cat "${OUT}")" "inválido" && contiene "$(cat "${OUT}")" "anduvo al intento 100"; then ok "T32 un valor de tres dígitos se respeta como el de la variable hermana"
 else mal "T32 rc=${RC} fetches=$(fetches) salida=[$(tail -3 "${OUT}")]"; fi
 
-# ── T33 ─ story 8.12 T27 R3_TelegramNotify_CallersAndShim ─────────────────────────────────────────
-# Sin TYCON_NOTICE_NOTIFY (el LaunchAgent no la declara) el guion busca el envío en el arnés: desde la R3 vive en
+# ── T33 ─ R3_TelegramNotify_CallersAndShim ─────────────────────────────────────────────────────
+# Sin TYCON_NOTICE_NOTIFY (el LaunchAgent no la declara) el guion busca el envío en el arnés, en
 # `scripts/lib/`. El arnés de este caso no tiene el reemplazo de la ruta vieja, así que un default viejo no encuentra
-# el envío (exit 3, «falta el script de envío»). Rojo previo: el default apuntando a la ruta vieja.
+# el envío (exit 3, «falta el script de envío»). Falla si el default apunta a la ruta vieja.
 echo "T33 SinNotifyDeclarado_UsaElEnvioDeScriptsLib (story 8.12 T27)"
 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
 unset TYCON_NOTICE_NOTIFY; correr; export TYCON_NOTICE_NOTIFY="${BASE}/doble.sh"
 if [ "${RC}" = 0 ] && [ "$(llamadas)" = 1 ] && contiene "$(enviado)" "Se movió la evidencia DoD"; then ok "T33 sin TYCON_NOTICE_NOTIFY entrega con el envío de scripts/lib/"
 else mal "T33 rc=${RC} llamadas=$(llamadas) salida=[$(tail -3 "${OUT}")]"; fi
 
-# ── T34 ─ story 8.12 T27 R3_TelegramNotify_CallersAndShim ─────────────────────────────────────────
+# ── T34 ─ R3_TelegramNotify_CallersAndShim ─────────────────────────────────────────────────────
 # El resumen diario (scripts/nightly/dependencies/daily-summary.js) manda con el mismo envío. En su ensayo
 # (`--dry-run`: no manda ni escribe) corre el envío del arnés; acá el arnés es de laboratorio, con un doble en
-# `scripts/lib/` y nada en la ruta vieja. Rojo previo: el guion buscando el envío en la ruta vieja (exit 3).
-# La copia pública (story 8.7) no trae el resumen diario: `scripts/nightly/dependencies/` es del equipo y el exportador lo
+# `scripts/lib/` y nada en la ruta vieja. Falla si el guion busca el envío en la ruta vieja (exit 3).
+# La copia pública no trae el resumen diario: `scripts/nightly/dependencies/` es del equipo y el exportador lo
 # deja afuera. Ahí T34 no se puede medir y se dice. La señal de «copia pública» es la de siempre (sin el perfil del
 # equipo o sin el mapa de renombres); en el repo del equipo, que falte el resumen sigue siendo un rojo.
 echo "T34 ResumenDiario_Ensayo_UsaElEnvioDeScriptsLib (story 8.12 T27)"
@@ -475,12 +474,12 @@ if [ "${RC}" = 0 ] && grep -q "doble-de-scripts-lib ensayo" "${OUT}" && cmp -s "
 else mal "T34 rc=${RC} salida=[$(tail -3 "${OUT}")]"; fi
 fi
 
-# ── T35 y T36 ─ los datos, del clon de mantenimiento; el envío, del árbol propio (2026-10-13) ────────────────────
-# EL DEFECTO. Este guion tomaba como repo su propia ubicación. En una versión instalada eso es el árbol bajado, que no
-# es un clon: el `fetch` fallaba y el aviso decía «no pude mirar» todas las noches, con los datos sanos en el clon de
-# mantenimiento de la máquina. Y un solo «repo» ubicaba dos cosas distintas: de dónde se leen los datos y de dónde
+# ── T35 y T36 ─ los datos, del clon de mantenimiento; el envío, del árbol propio ────────────────────────
+# Si el guion tomara como repo su propia ubicación, en una versión instalada eso sería el árbol bajado, que no
+# es un clon: el `fetch` fallaría y el aviso diría «no pude mirar» todas las noches, con los datos sanos en el clon de
+# mantenimiento de la máquina. Y un solo «repo» ubicaría dos cosas distintas: de dónde se leen los datos y de dónde
 # sale el guion que manda el Telegram.
-# Rojo previo: el guion viejo, sin TYCON_GUIDES_DIR, hace `fetch` sobre el árbol de juguete (que no es un clon).
+# Falla si el guion, sin TYCON_GUIDES_DIR, hace `fetch` sobre el árbol de juguete (que no es un clon).
 # Se arma una versión instalada de juguete: una copia del guion y de sus bibliotecas, con su PROPIO doble del envío.
 instalada() {
   IN="${BASE}/instalada"; rm -rf "${IN}" "${BASE}/home/.tycon"
@@ -523,7 +522,7 @@ else mal "T36b rc=${RC} salida=[$(cat "${OUT}")]"; fi
 
 echo "T37 VersionInstalada_SinNodeEnElPath_DiceLaCausa_NoHaceFetchSobreUnArbolQueNoEsUnClon"
 # Corre desde una tarea programada: su PATH puede no traer node. Sin node no se puede preguntar de qué clon leer; en una
-# versión instalada el árbol propio no es un clon, y hacer el fetch igual daba «no pude mirar» por otra causa.
+# versión instalada el árbol propio no es un clon, y hacer el fetch igual daría «no pude mirar» por otra causa.
 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
 instalada "{\"paths\":{\"maintained\":\"${BASE}/clon-publico\",\"maintainers\":\"${CO}\",\"operations\":\"${CO}\"}}"
 SIN_NODE="${BASE}/bin-sin-node"; rm -rf "${SIN_NODE}"; mkdir -p "${SIN_NODE}"
@@ -537,7 +536,7 @@ else mal "T37 rc=${RC} salida=[$(cat "${OUT}")]"; fi
 
 echo "T38 DesdeUnClonConDatos_EnUnaMaquinaConVersionInstaladaSinClonDeMantenimiento_LeeSuArbol"
 # Lanzado DESDE un clon que trae los datos, el repo es ese clon, como siempre: que la máquina tenga además una versión
-# instalada sin clon de mantenimiento (o con los nocturnos apagados) no lo cambia. Rojo previo: salía 2 sin mirar nada.
+# instalada sin clon de mantenimiento (o con los nocturnos apagados) no lo cambia. Falla si sale 2 sin mirar nada.
 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
 instalada "{\"paths\":{\"maintained\":\"${BASE}/clon-publico\"}}"
 mkdir -p "${CO}/scripts/ci" "${CO}/scripts/setup" "${CO}/scripts/hooks"
@@ -553,11 +552,11 @@ for NOCT in 1 0; do
   rm -rf "${BASE}/estado"
 done
 
-# ── T39 ─ los datos, del clon de OPERACIONES; y el de mantenimiento también se trae (2026-10-14) ─────────────────────
-# EL CASO. Desde la story 8.30 las métricas se guardan en el repo de operaciones. Leídas del clon de mantenimiento, el
-# aviso del 14 dijo «el de hoy (2026-10-14) no está en main; el último es del 2026-10-13» con el de hoy ya guardado.
+# ── T39 ─ los datos, del clon de OPERACIONES; y el de mantenimiento también se trae ─────────────────────
+# Las métricas se guardan en el repo de operaciones. Leídas del clon de mantenimiento, el
+# aviso diría «el de hoy no está en main; el último es de ayer» con el de hoy ya guardado.
 # Y este guion es quien pone al día los clones cada noche: el de mantenimiento (banco, suites, examen) también.
-# Rojo previo: lee el clon de mantenimiento (sin el snapshot de hoy) y avisa que no está publicado; el de operaciones no
+# Falla si lee el clon de mantenimiento (sin el snapshot de hoy) y avisa que no está publicado, o si el de operaciones no
 # se trae.
 echo "T39 VersionInstalada_ConClonDeOperaciones_LeeDeAhi_YTraeTambienElDeMantenimiento"
 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0

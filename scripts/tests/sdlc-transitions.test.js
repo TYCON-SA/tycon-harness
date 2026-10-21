@@ -1,7 +1,7 @@
 'use strict';
 /**
  * sdlc-transitions.test.js — red de la derivación de transiciones de estado desde git
- * (Story 2.1). Fixture determinista: repos git efímeros con commits retro-fechados
+ * Fixture determinista: repos git efímeros con commits retro-fechados
  * (`GIT_AUTHOR_DATE`), igual molde que sdlc-stage-metrics.test.js. Fuerza el descubridor de
  * FALLBACK (`TYCON_SKILLS_DIR` inexistente) para no depender de agent-skills.
  *
@@ -161,11 +161,9 @@ function fixturePrincipal() {
 test('T14 · los estados del diccionario son los medidos (alias → canónico existente, sin huérfanos)', () => {
   // 🔴 rojo: un alias que apunte a un canónico inexistente.
   //
-  // 🔴 ACTUALIZADO por la story 2.2 (2026-09-05) — es el ÚNICO caso de la 2.1 que se toca, y se
-  //    toca porque assertaba el contenido del diccionario MÍNIMO que esta story reemplaza por el
-  //    completo. Lo que este caso cuida no cambió (alias → canónico existente, sin doble rol, los
-  //    seis canónicos originales siguen); lo que se agregó es la lista de canónicos nuevos. La
-  //    validación exhaustiva del diccionario vive ahora en `states-dictionary.test.js`.
+  // 🔴 Este caso cuida que cada alias apunte a un canónico existente, que ningún estado tenga doble rol y que los seis
+  //    canónicos originales sigan; además exige la lista de canónicos del diccionario completo. La validación
+  //    exhaustiva del diccionario vive en `states-dictionary.test.js`.
   const dict = JSON.parse(fs.readFileSync(ESTADOS_PATH, 'utf8'));
   assert.ok(Array.isArray(dict.canonical) && dict.canonical.length, 'canonical tiene que ser una lista no vacía');
   for (const c of ['draft', 'backlog', 'ready-for-dev', 'in-progress', 'review', 'done']) {
@@ -182,8 +180,8 @@ test('T14 · los estados del diccionario son los medidos (alias → canónico ex
     closed: 'done', approved: 'ready-for-dev', pending: 'backlog', vigente: 'done' })) {
     assert.equal(dict.alias[a], c, `el alias ya visto ${a} tiene que mapear a ${c}`);
   }
-  // 🔴 Los terminales que NO son una entrega no pueden caer en `cerrado`: es la trampa central de
-  //    la 2.2 (inflaría done_total y movería rework y dod, que se calculan sobre cerradas).
+  // 🔴 Los terminales que NO son una entrega no pueden caer en `cerrado`: es la trampa central
+  //    del criterio de «cerrado» (inflaría done_total y movería rework y dod, que se calculan sobre cerradas).
   for (const t of ['cancelled', 'abandoned', 'superseded', 'reverted']) {
     assert.ok(!dict.groups.cerrado.includes(t), `${t} terminó sin entregarse: no puede estar en groups.cerrado`);
   }
@@ -195,7 +193,7 @@ test('T5 · usa el MISMO regex del frontmatter (comentario inline con comillas n
   const fm = M.parseFrontmatter(texto);
   assert.equal(fm.status, 'review');
   assert.equal(fm.id, 'X-1');
-  // y el mismo parser sobre un archivo real tiene que dar lo mismo (AC 5: una sola fuente)
+  // y el mismo parser sobre un archivo real tiene que dar lo mismo (una sola fuente)
   const { repo } = nuevoRepo('regex');
   escribir(repo, 'specs/x.md', texto);
   assert.deepEqual(
@@ -284,7 +282,7 @@ test('T6 · tiempo por etapa: mediana y n por etapa, por story', () => {
   assert.equal(Math.round(ip.min), 4);
   assert.equal(Math.round(ip.max), 8);
   assert.equal(Math.round(ip.median), 6);
-  // El AC 6 define la etapa como transición-de-entrada → transición-de-salida. Una story que
+  // La etapa se define como transición-de-entrada → transición-de-salida. Una story que
   // NACIÓ en la etapa (D-1 y G-1 nacen ready-for-dev) no tiene transición de entrada, así que
   // no se le puede medir esa etapa — y no se le inventa un comienzo.
   const rfd = t['ready-for-dev'];
@@ -344,8 +342,8 @@ test('T12 · las cuatro métricas existentes no cambian', () => {
   assert.equal(lt.n, 3, 'el lead time sigue midiendo las 3 done');
   assert.equal(Math.round(lt.max), 10, 'T-1 sigue dando 10 días');
   assert.deepEqual(m.rework, { num: 1, den: 3 });
-  // 2026-09-18: la exención dejó de contar como evidencia (sale del cociente y va en `exentas`). Lo
-  // que este caso cuida sigue igual: las transiciones no alteran el número; la regla la fija el medidor.
+  // La exención no cuenta como evidencia (sale del cociente y va en `exentas`). Este caso cuida que las
+  // transiciones no alteran el número: la regla la fija el medidor.
   assert.deepEqual(m.dod, { num: 1, den: 2, exentas: 1 }, 'T-1 por archivo; T-2 exenta, fuera del cociente');
   assert.ok(root);
 });
@@ -417,8 +415,7 @@ test('T20 · un clon parcial SIN acceso al remoto no miente: "no pude" ≠ "med�
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// Los cuatro defectos que encontró el pase adversarial (2026-09-05), reproducidos en vivo por
-// un verificador independiente antes de arreglarse. Los cuatro eran SILENCIOSOS.
+// Defectos que fallan en SILENCIO: cada caso reproduce uno.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 test('T21 · dos commits con la MISMA fecha de autor no invierten la serie', () => {
@@ -512,8 +509,7 @@ test('T24 · si el `story:` cambia dentro del mismo archivo, la historia previa 
 test('T25 · renombrar Y renumerar a la vez no borra la historia en silencio', () => {
   // 🔴 rojo: la ruta vieja no está en el mapa de rutas actuales y el id viejo ya no existe, así
   //    que la versión no matchea por ninguno de los dos lados y se descarta — sin sumar a
-  //    `sin_historial` ni a `renumeradas`. Pérdida de historia MUDA (lo cazó el revisor de
-  //    cobertura en la 3ª vuelta, después de que ni el pase adversarial ni dos rondas lo vieran).
+  //    `sin_historial` ni a `renumeradas`. Pérdida de historia MUDA.
   const { repo } = nuevoRepo('mudanza-y-renumero');
   escribir(repo, 'specs/story-v.md', story('V-1', 'draft'));
   commit(repo, 'nace como V-1 en specs/', '2026-05-01T10:00:00-00:00');
@@ -556,8 +552,7 @@ test('T26 · una versión que NO se puede atribuir se cuenta y se dice — nunca
 test('T27 · con el presupuesto agotado NO se sale a buscar la cadena de renombres', () => {
   // 🔴 rojo: llamar a `mapaDeRenombres` siempre. Es OTRO `git log` sobre todo el historial, con
   //    su propio tope de 2 minutos: agotado el presupuesto, seguir gastando ahí reproduce el
-  //    cuelgue que el AC 8 existe para impedir — y el motivo publicado no lo diría.
-  //    (Lo cazó el revisor de fallos silenciosos en la 3ª vuelta, sobre un arreglo de la 3ª.)
+  //    cuelgue que el presupuesto existe para impedir — y el motivo publicado no lo diría.
   const { repo } = nuevoRepo('agotado-sin-renombres');
   escribir(repo, 'specs/story-x.md', story('X-1', 'draft'));       commit(repo, 'nace', '2026-05-01T10:00:00-00:00');
   escribir(repo, 'specs/story-x.md', story('X-1', 'in-progress')); commit(repo, 'ip', '2026-05-02T10:00:00-00:00');
@@ -671,8 +666,8 @@ test('T31 · el invariante se puede verificar desde el snapshot PUBLICADO, no s�
 });
 
 test('T32 · una cadena de renombres cortada llega al motivo, no muere adentro de la función', () => {
-  // 🔴 rojo: contar el corte y no cablearlo a `motivo`/`not_measured`. La marca existía y moría
-  //    en la función: desde afuera, un repo con historia perdida se veía «medido» y normal.
+  // 🔴 rojo: contar el corte y no cablearlo a `motivo`/`not_measured`. La marca quedaría y moriría
+  //    en la función: desde afuera, un repo con historia perdida se vería «medido» y normal.
   const { repo } = nuevoRepo('corte-visible');
   escribir(repo, 'specs/story-c.md', story('CC-1', 'draft'));   commit(repo, 'nace', '2026-05-01T10:00:00-00:00');
   escribir(repo, 'specs/muerta.md', story('CC-9', 'draft'));    commit(repo, 'nace la que se borra', '2026-05-02T10:00:00-00:00');
@@ -722,8 +717,7 @@ test('T33 · si la consulta del historial FALLA de entrada, el repo sale no medi
 test('T34 · una versión con el frontmatter ilegible se cuenta — cierra la clase entera', () => {
   // 🔴 rojo: `if (!c) continue` a secas. Una versión cuyo `status:` no se puede leer se salteaba
   //    sin dejar rastro: la serie sale más corta y nada lo dice. Es el MISMO patrón que los otros
-  //    siete caminos de "no pude" que esta story fue cerrando de a uno — se cierra acá por
-  //    barrido de la clase, no esperando a que un revisor lo encuentre.
+  //    siete caminos de "no pude": cada uno se cuenta y se dice, no se calla.
   const { repo } = nuevoRepo('frontmatter-roto');
   escribir(repo, 'specs/story-f.md', story('FR-1', 'draft'));
   commit(repo, 'nace bien', '2026-05-01T10:00:00-00:00');
@@ -774,9 +768,8 @@ test('canonEstado: canónico, alias, desconocido y vacío — llamado directo, n
 });
 
 test('un repo cortado por presupuesto NO aporta su parte al número global', () => {
-  // 🔴 rojo: devolver `tr.transiciones` / `tr.desconocidos` sin gatear por `tr.agotado` (como
-  //    estaba antes del 2026-09-05, cazado por el revisor de fallos silenciosos). El presupuesto
-  //    puede agotarse DESPUÉS de haber leído algún lote, y esas stories quedan con serie completa:
+  // 🔴 rojo: devolver `tr.transiciones` / `tr.desconocidos` sin gatear por `tr.agotado`.
+  //    El presupuesto puede agotarse DESPUÉS de haber leído algún lote, y esas stories quedan con serie completa:
   //    el repo publica "no medido" en su fila y su muestra PARCIAL entra igual al número global,
   //    que sale "medido". Y no es una muestra cualquiera — `git log` entrega del commit más nuevo
   //    al más viejo, así que lo que se alcanza a leer está sesgado hacia lo reciente.
@@ -814,7 +807,7 @@ test('un repo cortado por presupuesto NO aporta su parte al número global', () 
 
 test('nadie se pierde en el camino: medidas + sin_transiciones + sin_historial = el total', () => {
   // 🔴 rojo: dejar las stories cuyas versiones no se pudieron leer fuera de TODA cuenta — se van
-  //    del denominador en silencio, que es lo que el AC 2 prohíbe. La suma es el invariante que
+  //    del denominador en silencio, que es lo que está prohibido. La suma es el invariante que
   //    lo delata sin depender de poder reproducir un clon parcial sin red.
   const { repo } = fixturePrincipal();
   const stories = storiesActuales(repo);
@@ -826,7 +819,7 @@ test('nadie se pierde en el camino: medidas + sin_transiciones + sin_historial =
 });
 
 test('la forma del snapshot es UNA sola: --json y --snapshot no pueden divergir', () => {
-  // 🔴 rojo: volver a duplicar la definición del snapshot (estaba duplicada antes de esta story)
+  // 🔴 rojo: volver a duplicar la definición del snapshot
   //    y agregar un campo en un solo lado → las claves dejan de coincidir.
   const { root, repo } = fixturePrincipal();
   const dash = path.join(root, 'dash');
@@ -861,13 +854,12 @@ test('el snapshot suma los tres campos nuevos sin tocar los viejos', () => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════════════════════
-// Story 2.2 — el contador del PRESENTE, el criterio único de «cerrado», y sus frenos.
+// El contador del PRESENTE, el criterio único de «cerrado», y sus frenos.
 //
-// Los casos de arriba son de la 2.1 y NO se tocan (AC 15). Lo único que se actualizó allá es
-// «T14 · los estados del diccionario son los medidos», que asserta el contenido del diccionario
-// MÍNIMO y esta story lo reemplaza por el completo.
+// Los casos de arriba (las transiciones) no dependen de este contador. «T14 · los estados del diccionario son los
+// medidos» asserta el contenido del diccionario completo.
 //
-// 🔴 Estos casos miden el estado ACTUAL de cada story (el `status:` de hoy), que es otra cosa
+// 🔴 Estos casos miden el estado ACTUAL de cada story (el `status:` vigente), que es otra cosa
 //    que `estados_desconocidos`: ése mira cada versión HISTÓRICA. Dos campos casi homónimos que
 //    miden cosas distintas es exactamente cómo se elige el equivocado, así que cada caso dice
 //    cuál está mirando.
@@ -906,7 +898,7 @@ const dictBase = () => ({
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 test('T7 · estados_por_canonico sale por repo Y global, con sus tres baldes', () => {
-  // 🔴 rojo previo: mandar `whatever` al `estados_desconocidos` HISTÓRICO en vez de al balde
+  // 🔴 rojo: mandar `whatever` al `estados_desconocidos` HISTÓRICO en vez de al balde
   //    nuevo → `sin_diccionario` queda vacío y el total no cierra contra stories_total.
   const { repo } = nuevoRepo('conteo-actual');
   escribir(repo, 'specs/a.md', story('CA-1', 'in-progress'));
@@ -935,7 +927,7 @@ test('T7 · estados_por_canonico sale por repo Y global, con sus tres baldes', (
 });
 
 test('T8 · el invariante se verifica LEYENDO el JSON publicado, sin correr el código', () => {
-  // 🔴 rojo previo: excluir cualquiera de los tres baldes (típico: descartar las stories sin
+  // 🔴 rojo: excluir cualquiera de los tres baldes (típico: descartar las stories sin
   //    `status:` para que la cuenta «cierre») → la suma no da stories_total y el caso lo dice.
   const { repo } = nuevoRepo('invariante');
   escribir(repo, 'specs/a.md', story('IV-1', 'done'));
@@ -951,7 +943,7 @@ test('T8 · el invariante se verifica LEYENDO el JSON publicado, sin correr el c
     const total = suma(e.conteo) + suma(e.sin_diccionario) + e.sin_status;
     assert.equal(total, e.total, 'conteo + sin_diccionario + sin_status tiene que dar el total');
     // `por_grupo` puede sumar MENOS que el conteo sólo si hay un canónico sin grupo — y eso lo
-    // prohíbe el AC 6 (T6). Acá el diccionario es el real, así que tienen que coincidir.
+    // prohíbe T6. Acá el diccionario es el real, así que tienen que coincidir.
     assert.equal(suma(e.por_grupo), suma(e.conteo),
       'sum(por_grupo) tiene que dar lo mismo que sum(conteo): si no, hay un canónico sin grupo');
   }
@@ -960,9 +952,9 @@ test('T8 · el invariante se verifica LEYENDO el JSON publicado, sin correr el c
 });
 
 test('T16 · un estado inventado no se descarta NUNCA', () => {
-  // 🔴 rojo previo: `if (!DICT[s]) continue` → la story se evapora del denominador y `chirimbolo`
-  //    no aparece en ningún lado. Invariante heredado de la 2.1; se re-verifica acá porque esta
-  //    story toca justo esa función.
+  // 🔴 rojo: `if (!DICT[s]) continue` → la story se evapora del denominador y `chirimbolo`
+  //    no aparece en ningún lado. Es un invariante del medidor; se re-verifica acá porque este
+  //    caso toca justo esa función.
   const { repo } = nuevoRepo('inventado');
   escribir(repo, 'specs/a.md', story('IN-1', 'done'));
   escribir(repo, 'specs/b.md', story('IN-2', 'chirimbolo'));
@@ -981,7 +973,7 @@ test('T16 · un estado inventado no se descarta NUNCA', () => {
 });
 
 test('T9 · «no pude medir» son DOS cosas — y un historial ilegible NO es una de ellas', () => {
-  // 🔴 rojo previo: gatear el contador del presente por el presupuesto de transiciones (copiar el
+  // 🔴 rojo: gatear el contador del presente por el presupuesto de transiciones (copiar el
   //    patrón de su campo hermano `estados_desconocidos`) → el caso (b) sale `null` TENIENDO el
   //    dato. Es el «no medido» falso, y ya pasó: el presupuesto de 60 s se agota en repos reales.
   //    El estado ACTUAL se lee del frontmatter y ahí está disponible siempre.
@@ -1008,7 +1000,7 @@ test('T9 · «no pude medir» son DOS cosas — y un historial ilegible NO es un
 });
 
 test('T4 · cancelar no es entregar', () => {
-  // 🔴 rojo previo: mapear `cancelled → done` (es lo cómodo: «ya no están abiertas») → done_total
+  // 🔴 rojo: mapear `cancelled → done` (es lo cómodo: «ya no están abiertas») → done_total
   //    da 5 en vez de 3, y las dos ratios que se calculan SOBRE stories cerradas se mueven.
   //    🔴 NO se asserta `first_pass_ratio`: se lee de .dashboard/metrics-*.json y no mira un solo
   //    `status:`, así que ninguna mutación del diccionario podría ponerlo rojo — sería un assert
@@ -1040,12 +1032,12 @@ test('T4 · cancelar no es entregar', () => {
 });
 
 test('T13 · el delta de done_total es EXACTAMENTE el esperado (ni uno más, ni uno menos)', () => {
-  // 🔴 rojo previo: dejar `DONE_STATUSES` en el código → el delta es 0 y el caso lo dice. Sumar
+  // 🔴 rojo: dejar `DONE_STATUSES` en el código → el delta es 0 y el caso lo dice. Sumar
   //    también las `in-progress` → da 10 y también es rojo.
   //
   // Los dos criterios se contrastan inyectando DOS diccionarios sobre el MISMO fixture: uno que
-  // reproduce lo que `DONE_STATUSES` reconocía (`done`, `completed`, `closed` — ni `complete` ni
-  // `implemented`) y el canónico de esta story. Comparar contra el código viejo sería imposible
+  // reproduce el criterio de una lista fija (`done`, `completed`, `closed` — ni `complete` ni
+  // `implemented`) y el canónico de esta story. Comparar contra un código viejo sería imposible
   // una vez borrado; comparar dos diccionarios mide exactamente lo mismo y queda reproducible.
   const { root, repo } = nuevoRepo('delta-done');
   for (let i = 1; i <= 4; i++) escribir(repo, `specs/d${i}.md`, story(`DL-${i}`, 'done'));
@@ -1068,7 +1060,7 @@ test('T13 · el delta de done_total es EXACTAMENTE el esperado (ni uno más, ni 
   assert.equal(despues.estados_por_canonico.conteo['in-progress'], 2,
     'y las in-progress NO se cuelan: si dieran 10, el criterio se pasó de largo');
 
-  // Los seis campos del invariante de la 2.1 salen idénticos: el criterio de «cerrado» no toca
+  // Los seis campos del invariante del recuento salen idénticos: el criterio de «cerrado» no toca
   // el recuento de quién se pudo medir.
   for (const k of ['stories_total', 'stories_medidas', 'sin_transiciones', 'sin_historial',
     'archivos_duplicados', 'ids_duplicados']) {
@@ -1077,7 +1069,7 @@ test('T13 · el delta de done_total es EXACTAMENTE el esperado (ni uno más, ni 
 });
 
 test('T18 · mover un estado de grupo mueve el conteo, sin tocar el código', () => {
-  // 🔴 rojo previo: cachear el grupo al CARGAR el módulo en vez de leerlo AL MEDIR → el fixture
+  // 🔴 rojo: cachear el grupo al CARGAR el módulo en vez de leerlo AL MEDIR → el fixture
   //    no tiene ningún efecto y el caso pasa por casualidad con el diccionario del repo.
   const { root, repo } = nuevoRepo('mover-grupo');
   for (let i = 1; i <= 3; i++) escribir(repo, `specs/d${i}.md`, story(`MG-${i}`, 'done'));
@@ -1103,9 +1095,9 @@ test('T18 · mover un estado de grupo mueve el conteo, sin tocar el código', ()
 });
 
 test('T19 · un diccionario que no valida NO publica cero — los cinco caminos', () => {
-  // 🔴 rojo previo: dejar que `groups.cerrado` vacío filtre a cero → `done_total: 0` y
-  //    `rework: sin stories done`, todo verde, en los 20 repos. Es el caso que el AC 17 hace
-  //    necesario: hoy no puede pasar porque la lista vive en el código.
+  // 🔴 rojo: dejar que `groups.cerrado` vacío filtre a cero → `done_total: 0` y
+  //    `rework: sin stories done`, todo verde, en los 20 repos. Es el caso que esta
+  //    guarda existe para evitar: si la lista viviera en el código no podría pasar.
   const { root, repo } = nuevoRepo('dict-roto');
   escribir(repo, 'specs/a.md', story('DR-1', 'done'));
   escribir(repo, 'specs/b.md', story('DR-2', 'review'));
@@ -1137,16 +1129,15 @@ test('T19 · un diccionario que no valida NO publica cero — los cinco caminos'
 });
 
 test('T6b · el AC 6 se valida EN RUNTIME, no sólo sobre el archivo commiteado', () => {
-  // 🔴 Lo cazó el pase adversarial (2026-09-05, tres lentes independientes): `validarDiccionario()`
-  //    sólo miraba `groups.cerrado`. T6 valida las dos direcciones del AC 6 sobre el `states.json`
-  //    COMMITEADO — pero el que llega al medidor puede ser otro (`TYCON_STATES_PATH`, un merge
-  //    que pise el archivo, una edición a mano), y ahí no había ninguna guarda.
+  // 🔴 `validarDiccionario()` tiene que mirar más que `groups.cerrado`. T6 valida las dos direcciones de las reglas del diccionario
+  //    sobre el `states.json` COMMITEADO — pero el que llega al medidor puede ser otro (`TYCON_STATES_PATH`, un merge
+  //    que pise el archivo, una edición a mano), y sin esta guarda no hay ninguna validación ahí.
   //
-  // 🔴 rojo previo (a): un grupo con un ALIAS en vez del canónico → el diccionario pasa la
+  // 🔴 rojo (a): un grupo con un ALIAS en vez del canónico → el diccionario pasa la
   //    validación, `review` desaparece de `por_grupo` y `sum(por_grupo) < sum(conteo)` sin que
   //    nada lo diga. (b): un canónico en DOS grupos → `porGrupo` corta en el primero que matchea,
   //    así que `por_grupo.cerrado` da 0 mientras `done_total` da 2 — dos números que el smoke del
-  //    AC 14 asume iguales, desincronizados en silencio en cada corrida nocturna.
+  //    de la etapa asume iguales, desincronizados en silencio en cada corrida nocturna.
   const { root, repo } = nuevoRepo('ac6-runtime');
   escribir(repo, 'specs/a.md', story('AC6-1', 'done'));
   escribir(repo, 'specs/b.md', story('AC6-2', 'review'));
@@ -1171,11 +1162,10 @@ test('T6b · el AC 6 se valida EN RUNTIME, no sólo sobre el archivo commiteado'
 });
 
 test('T7b · un estado que se llama como una propiedad del prototipo se cuenta igual', () => {
-  // 🔴 Lo cazó el pase adversarial: `conteo` y `sin_diccionario` eran objetos literales indexados
-  //    con el valor CRUDO del frontmatter. Una story con `status: __proto__` (o `constructor`, o
-  //    `toString`) leía la propiedad heredada en vez de un contador, y el conteo salía mal o
-  //    reventaba — con el invariante del AC 8 rompiéndose sin que nada dijera por qué.
-  // 🔴 rojo previo: volver a `const conteo = {}` → `sin_diccionario.__proto__` no cuenta 1 y la
+  // 🔴 Si `conteo` y `sin_diccionario` fueran objetos literales indexados con el valor CRUDO del frontmatter, una
+  //    story con `status: __proto__` (o `constructor`, o `toString`) leería la propiedad heredada en vez de un
+  //    contador, y el conteo saldría mal o reventaría — con la suma sin cerrar y sin que nada dijera por qué.
+  // 🔴 rojo: volver a `const conteo = {}` → `sin_diccionario.__proto__` no cuenta 1 y la
   //    suma no cierra contra stories_total.
   const { repo } = nuevoRepo('prototipo');
   escribir(repo, 'specs/a.md', story('PR-1', 'done'));
@@ -1199,10 +1189,9 @@ test('T7b · un estado que se llama como una propiedad del prototipo se cuenta i
 });
 
 test('T22 · el snapshot registra QUÉ diccionario usó (ruta y hash)', () => {
-  // 🔴 rojo previo: no registrarlo → una máquina (o un nocturno) con TYCON_STATES_PATH puesta
+  // 🔴 rojo: no registrarlo → una máquina (o un nocturno) con TYCON_STATES_PATH puesta
   //    publica métricas de OTRO diccionario y el snapshot se ve idéntico al normal. Es el caso
-  //    que impide que la inyección de fixture se vuelva un interruptor invisible
-  //    (`guides/decisions/controles-apagables-por-config-2026-08-25.md`).
+  //    que impide que la inyección de fixture se vuelva un interruptor invisible.
   const { root, repo } = nuevoRepo('quien-diccionario');
   escribir(repo, 'specs/a.md', story('QD-1', 'done'));
   commit(repo, 'una', '2026-05-01T10:00:00-00:00');
@@ -1224,7 +1213,7 @@ test('T22 · el snapshot registra QUÉ diccionario usó (ruta y hash)', () => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════════════════════
-// Story 2.3 · la causa del reproceso — `rework_por_causa` por repo y global
+// La causa del reproceso — `rework_por_causa` por repo y global
 // ═════════════════════════════════════════════════════════════════════════════════════════════
 
 const CAUSAS_PATH = path.resolve(__dirname, '..', 'metrics', 'rework-causes.json');
@@ -1235,7 +1224,7 @@ function storyConSeguimiento(id, status, { types = ['fix'], reason = null } = {}
   return `---\nstory: ${id}\nepic: 1\nstatus: ${status}\nfollowup_of:\n${items}\n${reason ? `followup_reason: ${reason}\n` : ''}---\n\n# Story ${id}\n`;
 }
 
-/** El universo del AC 5: 7 con seguimiento (2 defecto-propio · 1 cambio-de-requisito · 3 sin causa · 1 fuera) + 2 sin. */
+/** El universo del caso: 7 con seguimiento (2 defecto-propio · 1 cambio-de-requisito · 3 sin causa · 1 fuera) + 2 sin. */
 function fixtureCausas(nombre) {
   const { root, repo } = nuevoRepo(nombre);
   escribir(repo, 'specs/a.md', storyConSeguimiento('RC-1', 'done', { types: ['fix'], reason: 'defecto-propio' }));
@@ -1253,9 +1242,9 @@ function fixtureCausas(nombre) {
 const sumaCausas = (o) => Object.values(o || {}).reduce((a, b) => a + b, 0);
 
 test('T7 (2.3) · rework_por_causa sale por repo Y global, con las cuatro causas SIEMPRE presentes', () => {
-  // 🔴 rojo previo: omitir las causas en cero → faltan barras; mandar `otra-cosa` a `sin_declarar` →
+  // 🔴 rojo: omitir las causas en cero → faltan barras; mandar `otra-cosa` a `sin_declarar` →
   //    `fuera_de_vocabulario` queda vacío y el invariante cierra igual (por eso T8 asserta el mapa).
-  //    Y el que ya mordió en el censo de esta story: leer el bloque con `^followup_of:\s*(.*)$` —
+  //    Y otro: leer el bloque con `^followup_of:\s*(.*)$` —
   //    el `\s*` se come el salto de línea y la primera línea del bloque se lee como inline → 0 type
   //    → `sin_declarar_por_type` da `{sin_type: 3}` en vez del desglose real.
   const { repo } = fixtureCausas('causas-ac5');
@@ -1280,8 +1269,8 @@ test('T7 (2.3) · rework_por_causa sale por repo Y global, con las cuatro causas
 });
 
 test('T7b (2.3) · un seguimiento sin `type:` cuenta en sin_type; un `followup_of: []` vacío no es un seguimiento', () => {
-  // 🔴 rojo previo: tratar `followup_of: []` como seguimiento (basta que la clave exista) → total 3
-  //    en vez de 2. Es exactamente lo que infló el primer censo de esta story (293 en vez de 285).
+  // 🔴 rojo: tratar `followup_of: []` como seguimiento (basta que la clave exista) → total 3
+  //    en vez de 2.
   const { repo } = nuevoRepo('causas-sin-type');
   escribir(repo, 'specs/a.md', storyConSeguimiento('ST-1', 'done', { types: [null] }));      // bloque sin type
   escribir(repo, 'specs/b.md', storyConSeguimiento('ST-2', 'done', { types: ['fix'], reason: 'descubrimiento' }));
@@ -1295,7 +1284,7 @@ test('T7b (2.3) · un seguimiento sin `type:` cuenta en sin_type; un `followup_o
 });
 
 test('T8 (2.3) · el invariante se lee del JSON publicado, sin correr el código', () => {
-  // 🔴 rojo previo: excluir un balde → la suma no cierra contra total; tragarse el fuera de
+  // 🔴 rojo: excluir un balde → la suma no cierra contra total; tragarse el fuera de
   //    vocabulario → la suma cerraría igual mandándolo a sin_declarar, por eso se asserta el mapa.
   const { repo } = fixtureCausas('causas-invariante');
   const d = medirJson(repo);
@@ -1310,7 +1299,7 @@ test('T8 (2.3) · el invariante se lee del JSON publicado, sin correr el código
 });
 
 test('T9 (2.3) · repo no medido → null con motivo; repo sin seguimientos → total 0 con las cuatro en cero', () => {
-  // 🔴 rojo previo: publicar `{}` en (a) → se lee como «sin reproceso»; publicar `null` en (b) → un
+  // 🔴 rojo: publicar `{}` en (a) → se lee como «sin reproceso»; publicar `null` en (b) → un
   //    «no medido» falso teniendo el dato; gatear por el presupuesto de git en (c) → idem.
   // (a) no es un repo git
   const noGit = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-nogit-causas-'));
@@ -1344,9 +1333,9 @@ test('T9 (2.3) · repo no medido → null con motivo; repo sin seguimientos → 
 });
 
 test('T9d (2.3) · un vocabulario de causas ilegible NO publica ceros, y el snapshot dice qué archivo usó', () => {
-  // 🔴 rojo previo: con el JSON de causas roto, contar igual con una lista vacía → cuatro barras en
+  // 🔴 rojo: con el JSON de causas roto, contar igual con una lista vacía → cuatro barras en
   //    cero y todo en sin_declarar, en verde. Y sin el rastro, TYCON_CAUSES_PATH sería un
-  //    interruptor invisible — la misma guarda que la 2.2 le puso a TYCON_STATES_PATH.
+  //    interruptor invisible — la misma guarda que lleva TYCON_STATES_PATH.
   const { root, repo } = fixtureCausas('causas-rotas');
   const roto = path.join(root, 'causas-rotas.json');
   fs.writeFileSync(roto, '{ esto no es json');
@@ -1364,13 +1353,13 @@ test('T9d (2.3) · un vocabulario de causas ilegible NO publica ceros, y el snap
 });
 
 test('T7c (2.3) · el pase adversarial: lista sin indentar, lista vacía con comentario, y el literal en otro campo', () => {
-  // Los tres son defectos REALES que cazó el pase adversarial del 2026-09-05 (clases A, B y E).
-  // 🔴 rojo previo de A: acotar el bloque con `after.search(/^\S/m)` encuentra el PROPIO guion del
+  // Tres defectos de borde del parser de seguimientos.
+  // 🔴 rojo de A: acotar el bloque con `after.search(/^\S/m)` encuentra el PROPIO guion del
   //    primer item y corta el bloque a '' → la story se evapora de total/sin_declarar SIN error.
-  //    Era una regresión: el parser hermano de `followed_up_by:` (que esta story no tocó) sí lo lee.
-  // 🔴 rojo previo de B: `inline !== '[]'` → un comentario al final rompe la igualdad y una story
+  //    El parser hermano de `followed_up_by:` sí lo lee.
+  // 🔴 rojo de B: `inline !== '[]'` → un comentario al final rompe la igualdad y una story
   //    sin seguimientos infla los contadores.
-  // 🔴 rojo previo de E: ubicar el bloque con `fm.indexOf(fo[0])` en vez de `match.index`.
+  // 🔴 rojo de E: ubicar el bloque con `fm.indexOf(fo[0])` en vez de `match.index`.
   const flushLeft = '---\nstory: FL-1\nepic: 1\nstatus: done\nfollowup_of:\n- id: "P-1"\n  type: "fix"\n  summary: "sin indentar"\n---\n\n# FL-1\n';
   const fmA = M.parseFrontmatter(flushLeft);
   assert.equal(fmA.followupOf, true, 'una lista YAML sin indentar SIGUE siendo un seguimiento');
@@ -1391,9 +1380,9 @@ test('T7c (2.3) · el pase adversarial: lista sin indentar, lista vacía con com
 });
 
 test('T9e (2.3) · un diccionario de ESTADOS roto no apaga la causa del reproceso', () => {
-  // 🔴 rojo previo (clase G del pase adversarial): el retorno temprano de `measureRepo` por
-  //    `dic.motivo` ponía `reworkPorCausa: null` aunque el vocabulario de CAUSAS estuviera sano y
-  //    el dato viviera en el frontmatter. Es el «no medido falso» que este archivo dice evitar:
+  // 🔴 rojo: el retorno temprano de `measureRepo` por
+  //    `dic.motivo` pone `reworkPorCausa: null` aunque el vocabulario de CAUSAS esté sano y
+  //    el dato viva en el frontmatter. Es el «no medido falso» que este archivo dice evitar:
   //    contarCausas() no depende del diccionario de estados para nada.
   const { root, repo } = fixtureCausas('estados-rotos-causas-sanas');
   const dicRoto = path.join(root, 'estados-roto.json');
@@ -1408,7 +1397,7 @@ test('T9e (2.3) · un diccionario de ESTADOS roto no apaga la causa del reproces
 });
 
 test('T9f (2.3) · un vocabulario con `causes` como ARRAY no vale como vocabulario', () => {
-  // 🔴 rojo previo (clase F): `typeof j.causes === 'object'` es true para un array, así que
+  // 🔴 rojo: `typeof j.causes === 'object'` es true para un array, así que
   //    `Object.keys()` devolvería los ÍNDICES ("0","1") como vocabulario — y las cuatro barras
   //    saldrían vacías, en verde.
   const { root, repo } = fixtureCausas('causas-array');
@@ -1420,15 +1409,14 @@ test('T9f (2.3) · un vocabulario con `causes` como ARRAY no vale como vocabular
 });
 
 test('T9g (2.3) · un descubridor canónico ROTO cae al de respaldo y SIGUE midiendo la causa', () => {
-  // Nace de un aviso del revisor de cobertura (TEST-W4): «la rama *el descubridor de stories
-  // falló* de measureRepo no se ejercita para este campo». Al escribir el caso apareció que esa
-  // rama **no es alcanzable rompiendo el descubridor canónico**: `discoverStoryFiles` atrapa el
+  // La rama *el descubridor de stories falló* de measureRepo
+  // **no es alcanzable rompiendo el descubridor canónico**: `discoverStoryFiles` atrapa el
   // error y cae al escaneo plano por identidad declarada — fail-open RUIDOSO, que es el diseño.
   // Para llegar al `error:` habría que romper también el respaldo (un repo ilegible), y ESE camino
   // ya está cubierto por T9a («no es un repo git»).
   //
   // 🔴 Entonces el caso afirma lo que de verdad importa: que la degradación **no pierde el dato**.
-  //    rojo previo: si alguien "arregla" el fail-open haciendo que el catch devuelva lista vacía
+  //    rojo: si alguien "arregla" el fail-open haciendo que el catch devuelva lista vacía
   //    en vez de escanear, este repo pasaría a publicar `total: 0` —«medí y no hay seguimientos»—
   //    con siete stories que sí los tienen. Eso es el cero falso, y acá se pone rojo.
   const { repo } = fixtureCausas('descubridor-roto');
@@ -1447,7 +1435,7 @@ test('T9g (2.3) · un descubridor canónico ROTO cae al de respaldo y SIGUE midi
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// Story 2.7 — el reproceso por CARRIL de la story, por repo
+// El reproceso por CARRIL de la story, por repo
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 const storyVuelta = (id, status, vuelta) => `---\nstory: ${id}\nepic: 1\nstatus: ${status}\n`
   + (vuelta ? 'followed_up_by:\n  - id: X-99\n' : '') + `---\n\n# Story ${id}\n`;
@@ -1473,7 +1461,7 @@ function fixtureCarril(nombre) {
 }
 
 test('T14 (2.7) · rework_por_carril separa con corrida / sin constancia, dentro de la ventana, por repo', () => {
-  // 🔴 rojo previo: contar TODO el repo (sin ventana) → las dos viejas entran como «sin constancia»
+  // 🔴 rojo: contar TODO el repo (sin ventana) → las dos viejas entran como «sin constancia»
   //    (den 4 en vez de 2) y el grupo sin corrida parece peor de lo que es por culpa de la historia.
   //    Y el global: sumar entre repos es mezclar productos — el campo NO existe en `global`.
   const { repo } = fixtureCarril('carril-ventana');
@@ -1488,7 +1476,7 @@ test('T14 (2.7) · rework_por_carril separa con corrida / sin constancia, dentro
 });
 
 test('T14b (2.7) · un repo que no guarda corridas publica null con motivo, nunca dos ceros', () => {
-  // 🔴 rojo previo: devolver {con_corrida:{0,0}, sin_constancia:{num,den}} → «nunca pasó nada por el pipeline».
+  // 🔴 rojo: devolver {con_corrida:{0,0}, sin_constancia:{num,den}} → «nunca pasó nada por el pipeline».
   const { repo } = nuevoRepo('carril-sin-carpeta');
   escribir(repo, 'specs/a.md', storyVuelta('RK-1', 'done', true));
   commit(repo, 'una', '2026-06-02T10:00:00-00:00');
@@ -1498,7 +1486,7 @@ test('T14b (2.7) · un repo que no guarda corridas publica null con motivo, nunc
 });
 
 test('T14c (2.7) · una carpeta de corrida de OTRA story con prefijo parecido no cuenta', () => {
-  // 🔴 rojo previo: `startsWith(id)` sin el guion → la corrida de RK-10 le da constancia a RK-1.
+  // 🔴 rojo: `startsWith(id)` sin el guion → la corrida de RK-10 le da constancia a RK-1.
   const { repo } = nuevoRepo('carril-prefijo');
   escribir(repo, '.advisors/pipeline-runs/RK-10-20260601T1000/findings.json', '[]');
   commit(repo, 'corrida', '2026-06-01T10:00:00-00:00');
@@ -1510,7 +1498,7 @@ test('T14c (2.7) · una carpeta de corrida de OTRA story con prefijo parecido no
 });
 
 test('T14d (2.7) · un repo sin ningún commit no publica el reproceso por carril: no se pudo leer el árbol', () => {
-  // 🔴 rojo previo: tratar `ls-tree` fallido como «sin carpeta» → el motivo diría «no guarda corridas»,
+  // 🔴 rojo: tratar `ls-tree` fallido como «sin carpeta» → el motivo diría «no guarda corridas»,
   //    que es una afirmación sobre el repo, cuando en realidad no se pudo mirar.
   const { repo } = nuevoRepo('carril-sin-commits');
   escribir(repo, 'specs/a.md', storyVuelta('RK-1', 'done', true));
@@ -1521,9 +1509,9 @@ test('T14d (2.7) · un repo sin ningún commit no publica el reproceso por carri
 });
 
 test('T14e (2.7) · una story cerrada ANTES de la ventana y editada después sigue fuera: manda la fecha del cierre, no la del último commit', () => {
-  // 🔴 rojo previo (hallado midiendo en real, 2026-09-16): con «último commit que tocó el archivo» como
-  //    fecha de cierre, cualquier story vieja retocada después (un back-link, un typo) entraba a la
-  //    ventana y caía en «sin constancia» — el grupo sin corrida cargaba con historia que no le toca.
+  // 🔴 rojo: con «último commit que tocó el archivo» como
+  //    fecha de cierre, cualquier story vieja retocada después (un back-link, un typo) entra a la
+  //    ventana y cae en «sin constancia» — el grupo sin corrida carga con historia que no le toca.
   const { repo } = nuevoRepo('carril-editada');
   escribir(repo, 'specs/a.md', storyVuelta('RK-1', 'in-progress', false));
   commit(repo, 'nace', '2026-04-20T10:00:00-00:00');
@@ -1543,9 +1531,8 @@ test('T14e (2.7) · una story cerrada ANTES de la ventana y editada después sig
 });
 
 test('T14f (2.7) · una story con alguna versión ilegible no se fecha: va a sin_fecha, no a un grupo', () => {
-  // 🔴 rojo previo (pase de fallos silenciosos, vuelta 3, reproducido): la primera versión tenía el
-  //    `status:` ilegible y la fecha de alta caía FUERA de la ventana, aunque el cierre real (legible,
-  //    con corrida) era de adentro → se publicaba `fuera_de_ventana: 1` y nadie sabía por qué.
+  // 🔴 rojo: con el `status:` ilegible, la fecha de alta caería FUERA de la ventana aunque el cierre real (legible,
+  //    con corrida) fuera de adentro → se publicaría `fuera_de_ventana: 1` y nadie sabría por qué.
   const { repo } = nuevoRepo('carril-ilegible');
   escribir(repo, 'specs/a.md', '---\nstory: RK-1\nepic: 1\nstatus:\n---\n\n# x\n');   // estado ilegible (vacío)
   commit(repo, 'nace rota', '2026-05-01T10:00:00-00:00');
@@ -1561,8 +1548,8 @@ test('T14f (2.7) · una story con alguna versión ilegible no se fecha: va a sin
 });
 
 test('T14g (2.7) · la corrida de una story con id más largo NO le da constancia a la de id más corto', () => {
-  // 🔴 rojo previo (pase adversarial, hallazgo 6): con `startsWith(id + '-')`, la carpeta
-  //    `1.3-B-20260601T1000` le daba constancia a la story `1.3`. La carpeta es `<id>-<fecha>`: después del
+  // 🔴 rojo: con `startsWith(id + '-')`, la carpeta
+  //    `1.3-B-20260601T1000` le da constancia a la story `1.3`. La carpeta es `<id>-<fecha>`: después del
   //    guion tiene que venir la fecha.
   const { repo } = nuevoRepo('carril-prefijo-largo');
   escribir(repo, '.advisors/pipeline-runs/RK-1-B-20260601T1000/findings.json', '[]');

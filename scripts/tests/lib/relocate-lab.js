@@ -1,6 +1,6 @@
 'use strict';
 /**
- * relocate-lab.js — la máquina de juguete de la story 8.19, tanda B: una HOME de laboratorio ya instalada que registró
+ * relocate-lab.js — la máquina de juguete: una HOME de laboratorio ya instalada que registró
  * cosas por el nombre viejo del lugar del arnés. La usan harness-reroot.test.js y harness-relocate.test.js (Node, para
  * que corran iguales en el agente Windows).
  *
@@ -88,7 +88,7 @@ function fill(text, vals, { json = false } = {}) {
 }
 
 /**
- * Arma la máquina en `h`: el lugar → el clon, el viejo → el lugar (lo que deja la tanda A), y los archivos de las
+ * Arma la máquina en `h`: el lugar → el clon, el viejo → el lugar, y los archivos de las
  * plantillas. Devuelve las rutas. `plists: false` en Windows (no hay LaunchAgents).
  */
 function machine(lab, h, clone, { plists = !IS_WIN, foreign } = {}) {

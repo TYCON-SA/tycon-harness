@@ -1,11 +1,10 @@
 'use strict';
 
 /**
- * suites-for-change.test.js — qué suites corre el control de cada cambio en Azure (2026-10-02).
+ * suites-for-change.test.js — qué suites corre el control de cada cambio en Azure.
  *
- * El control de `main` corre las ~190 suites una por una y se pasaba de su tope de 45 minutos: dos suites
- * (la copia pública de verdad, ~14 min, y las skills de terceros reales, ~2 min) se llevaban casi la mitad.
- * Las dos ya declaraban en `suites.json` «gate_only_when_touching»: corren en el control sólo si el cambio
+ * El control de `main` corre las ~190 suites una por una y tiene un tope de 45 minutos: las suites más lentas
+ * declaran en `suites.json` «gate_only_when_touching» y corren en el control sólo si el cambio
  * toca su carpeta (o la suite misma). Igual corren todas las noches en el banco: no se pierde la medición.
  *
  * Lo que no puede pasar: que una suite deje de correr porque no se pudo saber qué tocó el cambio. «No
@@ -23,7 +22,7 @@ const { spawnSync } = require('child_process');
 
 const SCRIPT = path.resolve(__dirname, '..', 'ci', 'suites-for-change.js');
 // la regla de las carpetas vive en agent-skills (la del portón de las stories): sin agent-skills, esto no se mide.
-// Dónde están las skills lo dice LA función (story 8.18): la variable › este clon si es unido › lo instalado.
+// Dónde están las skills lo dice LA función: la variable › este clon si es unido › lo instalado.
 const SKILLS = require(path.resolve(__dirname, '..', 'lib', 'skills-dir.js')).resolveSkillsDirs(process.env.TYCON_SKILLS_DIR || '').skills;
 const HAS_RULE = fs.existsSync(path.join(SKILLS, 'tycon-pipeline', 'scripts', 'lib', 'touched-files.js'));
 const NO_RULE = !HAS_RULE && 'NO MEDIDO — sin agent-skills (la regla de las carpetas)';
@@ -106,10 +105,10 @@ test('SuitesForChange_UnreadableSuitesJson_Exit2', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════
-// Story 8.18 (2026-10-03), AC 12 y 13 · T11: la raíz `agent-skills` sale de LA función (`resolveSkillsDirs()` de
+// T11: la raíz `agent-skills` sale de LA función (`resolveSkillsDirs()` de
 // scripts/lib/skills-dir.js: la variable › el propio clon si es unido › lo instalado), no de una ruta escrita en
-// quien llama. El caso: en un clon de trabajo del repo unido, la lista apuntaba a las suites INSTALADAS en la
-// máquina y el control daba verde sin haber corrido el cambio.
+// quien llama. Sin esto, en un clon de trabajo del repo unido la lista apunta a las suites INSTALADAS en la
+// máquina y el control da verde sin haber corrido el cambio.
 // El «propio clon» sale de dónde vive el guion: cada caso arma un clon de juguete con su copia y una HOME de juguete.
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════
 const LIB = path.resolve(__dirname, '..', 'lib');
@@ -162,7 +161,7 @@ function plan(w, { extra = [], variable, changed } = {}) {
 }
 
 test('T11 Suites_CanaryInWorkClone_RunsOwnTree_NotInstalled — sin variable ni --skills, la canario que se lista es la del CLON (roja), no la instalada (verde)', () => {
-  // 🔴 rojo previo: la raíz escrita en quien llama ($HOME/.claude/agent-skills/skills) → se lista la instalada y la
+  // 🔴 Con la raíz escrita en quien llama ($HOME/.claude/agent-skills/skills) se lista la instalada y la
   //    corrida da verde con la canario del clon en rojo.
   const w = workClone();
   const r = plan(w);
@@ -197,8 +196,8 @@ test('T11 — la variable gana al propio clon; y --skills, pasado a mano, gana a
 });
 
 test('T12 Suites_MissingRoot_NotMeasuredWithReason — la raíz agent-skills no existe: sus suites NO se callan ni se dan por corridas, y se dice el motivo', () => {
-  // 🔴 rojo previo: listar igual y callar → quien corre la lista sólo ve «no está»; o peor, sacar la suite de la
-  //    lista: un salteo en silencio. La suite se lista (quien la corre la marca «NO se midió» y cuenta como falla) y
+  // 🔴 Listar igual y callar deja a quien corre la lista viendo sólo «no está»; sacar la suite de la
+  //    lista es peor: un salteo en silencio. La suite se lista (quien la corre la marca «NO se midió» y cuenta como falla) y
   //    acá queda dicho POR QUÉ no está: la raíz y de qué regla salió.
   const w = workClone({ unified: false, installed: false });
   const r = plan(w);
@@ -215,7 +214,7 @@ test('T12 Suites_MissingRoot_NotMeasuredWithReason — la raíz agent-skills no 
 });
 
 test('T11 — en el repo unido, cambiar la propia suite de skills/ la hace correr aunque no toque su carpeta', { skip: NO_RULE }, () => {
-  // 🔴 rojo previo: «la propia suite» sólo se reconocía para la raíz `arnes` (scripts/<ruta>).
+  // 🔴 Si «la propia suite» sólo se reconociera para la raíz `arnes` (scripts/<ruta>), esta no correría.
   const suites = { diarias: [
     { raiz: 'arnes', ruta: 'tests/fast.test.js', requiere: [] },
     { raiz: 'agent-skills', ruta: CANARY, requiere: [], gate_only_when_touching: ['scripts/publishing/**'] },
@@ -229,10 +228,10 @@ test('T11 — en el repo unido, cambiar la propia suite de skills/ la hace corre
   assert.ok(own.run.includes(path.join(w.clone, 'skills', CANARY)), 'quien cambia la suite la quiere ver correr');
 });
 
-// ── pase adversarial del tramo 1 de la story 8.18 (2026-10-04) ──────────────────────────────────────────────────────
-// «La propia suite» se buscaba resolviendo a su ruta real sólo la RAÍZ de las skills. Con `--skills` apuntando a una
-// carpeta real que trae un enlace por skill (la forma de `~/.claude/skills` en la máquina de un solo árbol), la raíz
-// resuelta es ella misma, la ruta propia daba `../…` y la suite editada se DIFERÍA. Se resuelve el ARCHIVO entero.
+// ── la propia suite con `--skills` apuntando a una carpeta de enlaces ──────────────────────────────────────────────────────
+// «La propia suite» se busca resolviendo a su ruta real el ARCHIVO entero, no sólo la RAÍZ de las skills. Con `--skills`
+// apuntando a una carpeta real que trae un enlace por skill (la forma de `~/.claude/skills` en la máquina de un solo
+// árbol), la raíz resuelta es ella misma; resolviendo sólo la raíz, la ruta propia daría `../…` y la suite editada se DIFERIRÍA.
 const GATED = { diarias: [
   { raiz: 'arnes', ruta: 'tests/fast.test.js', requiere: [] },
   { raiz: 'agent-skills', ruta: CANARY, requiere: [], gate_only_when_touching: ['scripts/publishing/**'] },
@@ -246,7 +245,7 @@ function folderWithOneLinkPerSkill(w) {
 }
 
 test('5b-6c Suites_OwnSuiteTouched_SkillsFolderWithOneLinkPerSkill_Runs — --skills es una carpeta real con un enlace por skill: editar la propia suite la hace correr', { skip: NO_RULE }, () => {
-  // 🔴 rojo previo: `path.relative(repoRoot, path.join(realDir(skillsRoot), s.ruta))` → `../skills-by-link/…` → SKIP.
+  // 🔴 Con `path.relative(repoRoot, path.join(realDir(skillsRoot), s.ruta))` la ruta sale `../skills-by-link/…` y la suite se saltea.
   const w = workClone({ suites: GATED });
   const folder = folderWithOneLinkPerSkill(w);
   const r = plan(w, { extra: ['--skills', folder], changed: [`skills/${CANARY}`] });
@@ -293,8 +292,8 @@ test('SuitesForChange_WithoutTheGateRule_RunsEverything', () => {
 });
 
 test('SuitesForChange_RealList_ThroughAPipe_EverySuiteIsPrinted', () => {
-  // Con `process.exit()` la salida por una tubería se cortaba a los 8 KB: con la lista real salían 140 de 219 líneas y
-  // las últimas suites —la copia pública, la máquina limpia— no aparecían ni como RUN ni como SKIP.
+  // Con `process.exit()` la salida por una tubería se cortaría a los 8 KB: con la lista real saldrían 140 de 219 líneas y
+  // las últimas suites —la copia pública, la máquina limpia— no aparecerían ni como RUN ni como SKIP.
   const real = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'suites.json'), 'utf8'));
   const total = [...real.diarias, ...(real.semanales || [])].filter((s) => s && typeof s.ruta === 'string').length;
   const r = spawnSync(process.execPath, [SCRIPT, '--suites', path.resolve(__dirname, 'suites.json'), '--scripts', '/R/scripts',
@@ -303,9 +302,8 @@ test('SuitesForChange_RealList_ThroughAPipe_EverySuiteIsPrinted', () => {
   assert.strictEqual(r.stdout.split('\n').filter((l) => /^(RUN|SKIP)\t/.test(l)).length, total, 'una línea por suite, ninguna perdida');
 });
 
-// ── Story 8.22, tramo B — `--deps`: una suite sin criterio propio corre sólo si el cambio toca algo de lo que usa su
-// código (scripts/ci/suite-deps.js). Viene de `64a5a523` (revertido en `df7d3ba9` porque la rama a mano se calculaba con
-// el último commit). Un repo de juguete con suites que dependen de cosas distintas; la foto nocturna es de juguete.
+// ── `--deps`: una suite sin criterio propio corre sólo si el cambio toca algo de lo que usa su
+// código (scripts/ci/suite-deps.js). Un repo de juguete con suites que dependen de cosas distintas; la foto nocturna es de juguete.
 const DEPS_SKIP = /el cambio no toca nada de lo que usa su código \(scripts\/ci\/suite-deps\.js\): la corre el banco nocturno$/;
 const HOUR = 3600 * 1000;
 function depsRepo({ whole = true, missing = false, gated = false, legacy = false, heavy = false, heavyDeps = false } = {}) {
@@ -350,7 +348,7 @@ function depsRepo({ whole = true, missing = false, gated = false, legacy = false
     heavyJson.suites['harness-install.test.sh'] = { patterns: ['scripts/tests/harness-install.test.sh', 'guides/**'] };
   }
   if (heavyDeps) {
-    // tramo E (AC 18): las pesadas con su campo `deps`. La red (`shared`) es sólo lo del instalador de juguete; la del
+    // las pesadas con su campo `deps`. La red (`shared`) es sólo lo del instalador de juguete; la del
     // laboratorio usa lo que nombra su código; la que arma la copia va con su lista (`false`); y la que lista
     // un repo de juguete (`ls-files` de su laboratorio) usa el grafo sin el «depende de todo» (`"graph"`), al lado de
     // otra igual sin el campo, que sigue dependiendo de todo.
@@ -396,7 +394,7 @@ function depsPlan(dir, changed, { deps = true, docs = null, photo = true, list =
   if (docs) { fs.writeFileSync(path.join(dir, 'changed-docs.txt'), `${docs.join('\n')}\n`); args.push('--changed-with-docs', path.join(dir, 'changed-docs.txt')); }
   if (deps) args.push('--deps');
   if (deps && photo) args.push('--nightly', path.join(dir, 'nightly.json'));
-  // tramo F: la lista de las que pasan de 45 s (`over` es el contenido del archivo; con `false`, la ruta de uno que no está)
+  // la lista de las que pasan de 45 s (`over` es el contenido del archivo; con `false`, la ruta de uno que no está)
   if (over !== null) {
     const limitFile = path.join(dir, 'scripts', 'ci', 'suites-over-limit.json');
     if (over === false) fs.rmSync(limitFile, { force: true });
@@ -496,18 +494,18 @@ test('T11 SuitesForChange_MdDoesNotChoose_ExceptHeavyThatReadsMd — un README d
   // espejo: sin el .md en la lista entera, la copia no corre por ese cambio
   assert.ok(depsPlan(dir, ['adapters/x.json'], { docs: ['adapters/x.json'] }).skip.some((s) => s.startsWith('SKIP\texport-real.test.sh\t')));
   const real = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'ci', 'heavy-suites.json'), 'utf8'));
-  // Las que leen el texto de un .md real del repo, y sólo ésas: la máquina limpia (INSTALL.md y la portada; rojo real
-  // del merge 5b3b1db0) y el freno de producción (su guía, T33). La copia pública armada (export-real) salió de la lista
-  // en la story 8.26 (tanda I): desde que el arnés se escribe en GitHub, de ningún repo sale una copia.
+  // Las que leen el texto de un .md real del repo, y sólo ésas: la máquina limpia (INSTALL.md y la portada) y el
+  // freno de producción (su guía, T33). La copia pública armada (export-real) no está en la lista: el arnés se escribe
+  // en GitHub y de ningún repo sale una copia.
   const readers = Object.entries(real.suites).filter(([, e]) => e.reads_md !== undefined).map(([n]) => n).sort();
   assert.deepStrictEqual(readers, ['clean-machine.test.sh', 'prod-access-guard.test.sh'], 'las pesadas que declaran mirar .md');
   for (const n of readers) assert.strictEqual(real.suites[n].reads_md, true, `${n} declara que mira .md`);
 });
 
-// Pase adversarial del tramo B (2026-10-06) — dos huecos de «ante la duda, corre» (AC 9 b y c), confirmados ejecutando:
-// (b) un borrado o movido se buscaba sólo por el nombre del archivo CON extensión: un `require('./state')` o una suite
-//     que nombra la CARPETA que se movió no lo veían, y la suite rota se salteaba;
-// (c) una suite (o un archivo que carga) que existe pero no se deja leer se leía como texto vacío: sin dependencias, SKIP.
+// Dos huecos de «ante la duda, corre»:
+// (b) un borrado o movido se busca por el nombre del archivo CON y SIN extensión: un `require('./state')` o una suite
+//     que nombra la CARPETA que se movió tienen que verlo, o la suite rota se saltea;
+// (c) una suite (o un archivo que carga) que existe pero no se deja leer no se lee como texto vacío: sin dependencias, SKIP.
 const putIn = (dir, rel, body) => { const f = path.join(dir, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, body); return f; };
 const addSuite = (dir, name) => {
   const file = path.join(dir, 'scripts', 'tests', 'suites.json');
@@ -577,28 +575,28 @@ test('5b SuitesForChange_UnreadableDocsList_SaysSo — la lista entera ilegible:
   assert.match(r.stdout, /^RUN\t[^\n]*export-real\.test\.sh$/m, 'la que mira .md corre: no sabe qué .md cambiaron');
 });
 
-// T17 (AC 12) — la contraprueba con la historia: rojos reales del banco nocturno (2026-09-06 → 2026-10-06) cuyo merge
+// T17 — la contraprueba con la historia: rojos reales del banco nocturno cuyo merge
 // causante se identificó leyendo las fotos (`scripts/controls-bench/ultimo-suites.json`) y el commit que los arregló.
 // Por cada uno: el árbol de ESE merge (sus suites como eran), el cambio de ESE merge (`<merge>^1..<merge>`) y el selector
-// de hoy con --deps. La suite que se puso roja tiene que estar en RUN. Los rojos de entorno quedaron afuera.
-// Cada suite va con su nombre de HOY: el que tenía en ese merge, si se renombró, lo dice el mapa de renombres
+// actual con --deps. La suite que se puso roja tiene que estar en RUN. Los rojos de entorno quedan afuera.
+// Cada suite va con su nombre actual: el que tenía en ese merge, si se renombró, lo dice el mapa de renombres
 // (scripts/lib/renames.json). Escribir acá el nombre viejo lo cuenta el control de menciones viejas.
 const HISTORY_REDS = [
-  // [merge que la rompió, suite roja (nombre de hoy), motivo en una línea]
+  // [merge que la rompió, suite roja (nombre actual), motivo en una línea]
   ['428a980ed3b69f89c4eda5fc0dbf5fc6335f53e1', 'legacy-names-c4.test.js', 'un merge movió carpetas en scripts/lib/renames.json'],
   ['428a980ed3b69f89c4eda5fc0dbf5fc6335f53e1', 'legacy-names.test.js', 'el mismo cambio de renames.json'],
   ['61b88a81544cf26df7fb91736f65adfdbf6e6c3a', 'legacy-names-c0.test.js', 'un merge editó renames.json'],
   ['61b88a81544cf26df7fb91736f65adfdbf6e6c3a', 'legacy-names-c3.test.js', 'un merge editó la suite misma'],
   ['93ffc52b292daa2e279611c380121cc629fbb346', 'legacy-names-env.test.js', 'un merge tocó scripts/install-tycon-hooks.sh, que la suite audita'],
   ['7bc9af180e611c8c399fd1df3e3f19149dd28ad6', 'harness-install.test.sh', 'un merge editó el instalador y la suite'],
-  // (los dos rojos de export-real.test.sh, la copia pública armada, salieron con ella: story 8.26, tanda I)
+  // (export-real.test.sh, la copia pública armada, no está en la lista)
   ['5b3b1db06d079cbc5bc733e11c1f66cf3a149c10', 'clean-machine.test.sh', 'un merge editó INSTALL.md (T37)'],
   ['a4d71e835915e878be24007ccdffe8529148e98e', 'suites-coverage.test.js', 'un merge tocó suites.json sin registrar las suites nuevas'],
   ['70804576878a75e024d5cf6f7bf2cbd160e92450', 'install-guard.test.sh', 'story 6.1 trajo el freno de producción con su suite'],
   ['70804576878a75e024d5cf6f7bf2cbd160e92450', 'tycon-prod-sql.test.sh', 'la misma story 6.1'],
 ];
 const REPO = path.resolve(__dirname, '..', '..');
-// nombre de hoy → los nombres con que pudo estar en un árbol viejo (el de hoy y los `old` del mapa de renombres)
+// nombre actual → los nombres con que pudo estar en un árbol viejo (el actual y los `old` del mapa de renombres)
 // el mapa de renombres no viaja a la copia pública: ahí los casos de la historia quedan NO MEDIDOS, no rojos (export-real T23)
 const RENAMES_FILE = path.join(REPO, 'scripts', 'lib', 'renames.json');
 const RENAMES = fs.existsSync(RENAMES_FILE) ? (JSON.parse(fs.readFileSync(RENAMES_FILE, 'utf8')).entries || []) : null;
@@ -608,7 +606,7 @@ const NO_HISTORY = (!RENAMES && 'NO MEDIDO — copia pública sin scripts/lib/re
   || (HISTORY_REDS.some(([c]) => gitOut(['cat-file', '-e', `${c}^{commit}`]).status !== 0)
   && 'NO MEDIDO — este clon no trae los merges de la historia (clon superficial o de otro repo)');
 
-// Los rojos de `reds` que el selector de hoy, con --deps y el heavy-suites.json del repo, habría salteado en la rama.
+// Los rojos de `reds` que el selector actual, con --deps y el heavy-suites.json del repo, habría salteado en la rama.
 function historyMissed(reds) {
   const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'suites-for-change-history-')));
   clones.push(base);
@@ -660,7 +658,7 @@ test('T11 — un reads_md que no es true ni false es un archivo roto: corre todo
   assert.match(p.err, /reads_md/);
 });
 
-// Tramo E (story 8.22, AC 18-20, 2026-10-07): las pesadas también se eligen por lo que usan. Corren si el cambio toca sus
+// Las pesadas también se eligen por lo que usan. Corren si el cambio toca sus
 // patrones, la red de `shared` o lo que su código usa (scripts/ci/suite-deps.js). Cada pesada declara `deps`: sin poner,
 // el grafo entero; `false`, sólo sus patrones (las que recorren lo que se publica o se instala); `"graph"`, el grafo sin
 // el «depende de todo» de un `ls-files`/`grep` que corre sobre un repo de juguete. Sin --deps utilizable corren todas.
@@ -670,7 +668,7 @@ const skipOf = (p, name) => p.skip.find((s) => s.startsWith(`SKIP\t${name}\t`)) 
 
 test('T24 SuiteDeps_HeavyRunsOnlyIfItUsesTheChange — la pesada del laboratorio corre por lo que usa, no por la publicación', { skip: NO_RULE }, () => {
   const dir = depsRepo({ heavyDeps: true });
-  // rojo previo: un .json de la publicación (como 552dd00a) arrastraba todas las pesadas por `shared`
+  // un .json de la publicación no arrastra a todas las pesadas por `shared`
   const pub = depsPlan(dir, ['scripts/publishing/allow.json']);
   assert.ok(pub.run.includes('export-real.test.sh'), `la copia pública lo usa: corre\n${pub.err}`);
   assert.match(skipOf(pub, 'harness-plan.test.sh'), HEAVY_DEPS_SKIP, `la del laboratorio no lo usa: se saltea, con el motivo\n${pub.skip.join('\n')}`);
@@ -691,7 +689,7 @@ test('T25 SuiteDeps_HeavySharedNet_StillRuns — la red corre todas; sin --deps 
   const dir = depsRepo({ heavyDeps: true });
   const net = depsPlan(dir, ['scripts/setup/install.sh']);
   for (const n of HEAVIES) assert.ok(net.run.includes(n), `un cambio en la red (scripts/setup/**): ${n} corre\n${net.skip.join('\n')}`);
-  // sin --deps, sin foto, con la foto vieja o tocando la selección: los patrones solos ya no alcanzan, corren todas
+  // sin --deps, sin foto, con la foto vieja o tocando la selección: los patrones solos no alcanzan, corren todas
   const cases = [
     [depsPlan(dir, ['scripts/publishing/allow.json'], { deps: false }), 'sin --deps'],
     [depsPlan(dir, ['scripts/publishing/allow.json'], { photo: false }), 'sin foto nocturna'],
@@ -720,7 +718,7 @@ test('T27 SuiteDeps_HistoryHeavyReds_WouldHaveRun — los rojos de pesadas de la
     assert.ok(!real.shared.patterns.includes(p), `la contraprueba mide la red achicada: ${p} ya no está en shared`);
   }
   const heavyReds = HISTORY_REDS.filter(([, suite]) => namesOf(suite).some((n) => real.suites[n]));
-  // tres desde la story 8.26 (tanda I): el instalador, la máquina limpia y el freno de producción
+  // tres: el instalador, la máquina limpia y el freno de producción
   assert.ok(heavyReds.length >= 3, `los rojos de pesadas de la historia (${heavyReds.length})`);
   const missed = historyAll().filter((m) => heavyReds.some(([, suite]) => m.startsWith(`${suite} (`)));
   assert.deepStrictEqual(missed, [], 'rojos de pesadas que la rama habría salteado con la red achicada');
@@ -744,7 +742,7 @@ test('T38 SuiteDeps_ManualModePrintsDepsAndVerdict — el modo a mano lista lo q
   assert.match(usage.stderr, /^uso: suite-deps\.js/);
 });
 
-// Pase adversarial del tramo E (2026-10-07, Fable) y revisores: las carpetas de datos no eligen pesadas por el grafo
+// Las carpetas de datos no eligen pesadas por el grafo
 // (`deps_ignore`); un borrado de un .md se busca también para la pesada que mira .md; un `"graph"` cuyo código cambió
 // (`graph_whole_lines` no coincide) vuelve a depender de todo y lo dice.
 test('5b SuiteDeps_HeavyDataFoldersDoNotChoose — .engram/ y .advisors/ no corren pesadas por lo que su código nombra', { skip: NO_RULE }, () => {
@@ -782,7 +780,7 @@ test('SuiteDeps_GraphLinesChanged_DependsOnEverythingAndSaysSo — un «graph» 
   assert.match(p.err, /harness-profile\.test\.sh: graph_whole_lines dice 1 y su código tiene 2 línea\(s\) que recorren el repo: depende de todo hasta que alguien la revise/);
 });
 
-// Revisores del tramo E (iter 2): los caminos de error de los dos campos nuevos y de la revisión del «graph».
+// Los caminos de error de los dos campos nuevos y de la revisión del «graph».
 test('SuiteDeps_HeavyNewFieldsBrokenOrUnreadable_RunEverythingAndSaySo — deps_ignore o graph_whole_lines mal escritos, un graph sin número o ilegible', { skip: NO_RULE }, () => {
   const file = (dir) => path.join(dir, 'scripts', 'ci', 'heavy-suites.json');
   const edit = (dir, fn) => { const h = JSON.parse(fs.readFileSync(file(dir), 'utf8')); fn(h); fs.writeFileSync(file(dir), JSON.stringify(h)); };
@@ -820,7 +818,7 @@ test('SuiteDeps_GraphSuiteUnreadable_RunsAndSaysSo — un «graph» cuyo archivo
   }
 });
 
-// Revisores del tramo E (iter 2): el «graph» se revisa por el contenido de esas líneas, no sólo por cuántas son.
+// El «graph» se revisa por el contenido de esas líneas, no sólo por cuántas son.
 test('SuiteDeps_GraphLineReplaced_DependsOnEverythingAndSaysSo — reemplazar una línea que recorre el repo por otra, mismo número', { skip: NO_RULE }, () => {
   const dir = depsRepo({ heavyDeps: true });
   const suite = path.join(dir, 'scripts', 'tests', 'harness-profile.test.sh');
@@ -832,7 +830,7 @@ test('SuiteDeps_GraphLineReplaced_DependsOnEverythingAndSaysSo — reemplazar un
   assert.match(p.err, /harness-profile\.test\.sh: las líneas que recorren el repo cambiaron \(graph_whole_sha\): depende de todo hasta que alguien la revise/);
 });
 
-// ── story 8.22, tramo F (AC 21) · las que pasan de 45 s y van al nocturno no corren en la rama ──────────────────────────
+// ── las que pasan de 45 s y van al nocturno no corren en la rama ──────────────────────────
 const OVER_SKIP = /^SKIP\t[^\t]+\tpasa de 45 s: la corre el nocturno$/;
 const overOf = (suites) => ({ limit_seconds: 45, weight_set: 'pr', suites });
 const TO_NIGHTLY = { nightly: true, why: 'un solo paso largo que no se parte: la corre el banco nocturno' };
@@ -865,7 +863,7 @@ test('T29 — sin saber qué cambió corre también la del nocturno; y con el pl
   const over = overOf({ 'a.test.js': TO_NIGHTLY });
   const all = depsPlan(dir, [], { list: false, over });
   assert.ok(all.run.includes('a.test.js'), `sin lista de cambios no se saltea nada\n${all.skip.join('\n')}`);
-  // caso (f) del AC 9: nadie usa lo que cambió → corre todo, menos lo que la rama no corre nunca
+  // caso (f): nadie usa lo que cambió → corre todo, menos lo que la rama no corre nunca
   const nobody = depsPlan(dir, ['scripts/sin-uso.js'], { over });
   assert.match(nobody.err, /con --deps no quedaba ninguna suite: corre todo/);
   assert.ok(!nobody.run.includes('a.test.js') && nobody.run.includes('b.test.sh'), `corre todo salvo la del nocturno: ${nobody.run}`);
@@ -885,12 +883,11 @@ test('T29 — una lista que no se deja leer, mal formada o que no está no salte
   }
 });
 
-// ── Pase adversarial del tramo F (5b, 22 confirmados, 7 causas) · una PARTE se elige por su archivo entero ─────────────
-// Una suite partida (story 8.22, AC 34) es un archivo entero con todas sus pruebas y N partes de una línea. Lo
-// registrado son las partes, y el selector las miraba como si fueran toda la suite: «la propia suite» era la parte, y el
-// lector de dependencias arrancaba en la parte (del entero veía sólo un nivel, y no su «recorre el repo entero»).
-// Resultado, medido con el selector de verdad: editar mirror.test.js, export.test.js, new-names.test.js,
-// githook-livefire.test.sh o third-party-real.test.sh salteaba sus 20 partes; y una partida sin criterio propio dejaba
+// ── una PARTE se elige por su archivo entero ─────────────
+// Una suite partida es un archivo entero con todas sus pruebas y N partes de una línea. Lo registrado son las partes,
+// y el selector no las puede mirar como si fueran toda la suite: «la propia suite» es el archivo entero, y el lector
+// de dependencias arranca en el entero (con todos sus niveles y su «recorre el repo entero»), no en la parte.
+// Sin esto, editar el archivo entero de una suite partida saltea sus partes, y una partida sin criterio propio deja
 // de correr con cambios en lo que su código usa.
 const PARTS_LIB = path.resolve(__dirname, 'lib');
 function partsRepo() {
@@ -954,7 +951,7 @@ test('5b SuiteParts_PartsMachineryTouched_RunsEveryPart — cambiar el reparto o
 
 test('5b SuiteParts_DepsAreTheWholeFiles — una parte depende de lo que usa su archivo entero, a la misma profundidad que una suite sin partir', { skip: NO_RULE }, () => {
   const dir = partsRepo();
-  // el entero nombra guard.js, que carga guard-lib.js: desde la parte eso quedaba un nivel más abajo y no se seguía
+  // el entero nombra guard.js, que carga guard-lib.js: desde la parte eso queda un nivel más abajo y tiene que seguirse
   const lib = depsPlan(dir, ['scripts/hooks/guard-lib.js']);
   assert.deepStrictEqual(partsOf(lib, 'plain'), both('plain', 'js'), `lo que carga un guion que el entero nombra\n${lib.skip.join('\n')}`);
   assert.deepStrictEqual(partsOf(lib, 'heavyp'), both('heavyp', 'sh'), 'la pesada, por lo que usa su entero');
@@ -970,7 +967,7 @@ test('5b SuiteParts_DepsAreTheWholeFiles — una parte depende de lo que usa su 
   assert.deepStrictEqual(partsOf(any, 'heavyp'), [], 'ni a la pesada');
 });
 
-// Revisor de cobertura (vuelta 3): el archivo entero BORRADO o movido en el mismo cambio. Las partes siguen registradas
+// Caso: el archivo entero BORRADO o movido en el mismo cambio. Las partes siguen registradas
 // y ya no tienen qué cargar: tienen que correr (y salir rojas), no saltearse hasta el nocturno.
 test('5b SuiteParts_WholeFileDeleted_RunsItsParts — borrar o mover el archivo entero corre sus partes, que quedaron sin qué cargar', { skip: NO_RULE }, () => {
   for (const [stem, ext] of [['gated', 'js'], ['plain', 'js'], ['heavyp', 'sh']]) {
@@ -981,7 +978,7 @@ test('5b SuiteParts_WholeFileDeleted_RunsItsParts — borrar o mover el archivo 
   }
 });
 
-// Revisor de fallos silenciosos (vuelta 3): qué ES una parte no lo dice sólo el nombre.
+// Qué ES una parte no lo dice sólo el nombre.
 test('5b SuiteParts_NameLooksLikeAPartButIsNot_KeepsItsOwnDeps — una suite que sólo se LLAMA como una parte se mira por su propio código', { skip: NO_RULE }, () => {
   const dir = partsRepo();
   const put = (rel, body) => { const f = path.join(dir, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, body); };

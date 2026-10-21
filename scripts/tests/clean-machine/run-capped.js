@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * run-capped.js — corre un comando bajo un tope de tiempo (story 8.7, AC 26 · decisión C10).
+ * run-capped.js — corre un comando bajo un tope de tiempo.
  *
  *   node run-capped.js <paso> <segundos> [--container <nombre>] -- <comando…>
  *
@@ -40,7 +40,7 @@ if (opts.length) {
   if (opts.length !== 2 || opts[0] !== '--container' || !opts[1]) usage(`opción que no conozco: «${opts.join(' ')}»`);
   container = opts[1];
 }
-// El reloj de Node guarda el plazo en un entero de 32 bits: pasado de 2^31-1 ms lo baja a 1 ms y el paso se cortaba al
+// El reloj de Node guarda el plazo en un entero de 32 bits: pasado de 2^31-1 ms lo baja a 1 ms y el paso se corta al
 // instante. Un tope más grande que eso (unos 24 días) se queda en el máximo: es «sin tope» a todo efecto.
 const MAX_SECONDS = 2147483;
 const seconds = Math.min(Number(secondsRaw), MAX_SECONDS);

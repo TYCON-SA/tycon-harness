@@ -3,14 +3,14 @@
  * periodic-exam.test.js — el examen de los revisores corre solo en la máquina designada, y
  * cuando NO corre, eso se nota.
  *
- * Story 1.1. Los casos no son decorativos: cada uno fija una de las tres cosas que hacen que la
- * pieza sirva, y las tres nacen de un modo de falla ya medido en este repo:
+ * Los casos no son decorativos: cada uno fija una de las tres cosas que hacen que la
+ * pieza sirva, y las tres evitan un modo de falla:
  *
- *   1. **Que corra sin que nadie la arranque** — el lanzador anterior vivía enterrado bajo tres
- *      condiciones anidadas dentro del instalador y en la máquina del dev nunca disparó.
- *   2. **Que un examen que NO terminó no se parezca a uno que salió verde** — el lanzador anterior
- *      sellaba la semana ANTES de correr, así que la corrida cancelada el 2026-08-28 tras 5h30 se
- *      comió el turno de esa semana sin dejar una sola medición.
+ *   1. **Que corra sin que nadie la arranque** — un lanzador enterrado bajo tres
+ *      condiciones anidadas dentro del instalador nunca dispararía en la máquina del dev.
+ *   2. **Que un examen que NO terminó no se parezca a uno que salió verde** — un lanzador que
+ *      sellara la semana ANTES de correr se comería, con una corrida cancelada tras 5h30, el
+ *      turno de esa semana sin dejar una sola medición.
  *   3. **Que el resultado lo vea alguien más** — `.bench/` está en el `.gitignore`, así que un
  *      reporte que viva ahí no sale nunca de la máquina que lo escribió.
  *
@@ -32,7 +32,7 @@ const NOMBRADOR = path.join(TCG, 'scripts', 'controls-bench', 'report-name.js');
 const E = require(EXAMEN);
 const N = require(NOMBRADOR);
 
-// El estado renombrado a inglés en la tanda D2 de la story 8.9: el nombre viejo sale del mapa (no se escribe literal).
+// El estado renombrado a inglés: el nombre viejo sale del mapa (no se escribe literal).
 // En la copia pública el mapa no viaja: esos casos se saltean con motivo (sin nombre viejo no hay nada que migrar).
 const MAPA = (() => { try { return JSON.parse(fs.readFileSync(path.join(TCG, 'scripts', 'lib', 'renames.json'), 'utf8')); } catch (_) { return null; } })();
 const SIN_MAPA = !MAPA && 'copia pública: sin el mapa de renombres no hay nombre viejo';
@@ -67,7 +67,7 @@ function banco(opts = {}) {
   fs.mkdirSync(path.join(repo, 'scripts', 'controls-bench', '.bench'), { recursive: true });
   // 🔴 Los reportes nocturnos (banco y suites) que el aviso lee por default son los del REPO REAL:
   //    viajan por git y cambian cada noche. Sin aislarlos, un caso mide la máquina y no el aviso:
-  //    T51 se puso rojo el 2026-09-16 porque el motivo de una suite AJENA en rojo traía «no medido».
+  //    T51 se pondría rojo si el motivo de una suite AJENA en rojo trajera «no medido».
   //    Acá van frescos y limpios, que es cuando el aviso calla sobre ellos.
   const reporteSuites = path.join(repo, 'scripts', 'controls-bench', 'ultimo-suites.json');
   const reporteBanco = path.join(repo, 'scripts', 'controls-bench', 'ultimo-banco.json');
@@ -109,7 +109,7 @@ function banco(opts = {}) {
     `const modo=${JSON.stringify(opts.modoRunner || 'green')};`,
     'if(modo==="dies"){process.exit(1);}',
     'if(modo==="lies"){process.exit(0);}',   // sale 0 pero NO escribe el reporte
-    // El criterio de "qué no se pudo medir" NO se copia acá: se usa el módulo real (2026-09-10).
+    // El criterio de "qué no se pudo medir" NO se copia acá: se usa el módulo real.
     `const {rubrosNoMedidos}=require(${JSON.stringify(path.join(TCG, 'scripts', 'controls-bench', 'unmeasured-categories.js'))});`,
     'const noMedido=(tool,runs)=>{const nm=rubrosNoMedidos({tool,runs});const o={};if(nm.inestables)o.inestables=nm.inestables;if(nm.paridad)o.paridad=nm.paridad;return Object.keys(o).length?{no_medido:o}:{};};',
     'if(modo==="empty"){if(i>=0)fs.writeFileSync(process.argv[i+1],JSON.stringify({ts:new Date().toISOString(),tool:"claude",runs:1,failed:0,criterio:0,inestables:null,erroresDeCorrida:0,fugas:0,artefactos:0,parityBreaks:null,paridadReal:null,baselineRegressions:0,results:{},...noMedido("claude",1)}));process.exit(0);}',
@@ -173,7 +173,7 @@ function avisar(b, extraEnv = {}) {
     encoding: 'utf8', input: '{"source":"startup"}',
     env: Object.assign({}, process.env, {
       HOME: b.casa,
-      // La config del banco (con máquina designada), no la del clon: desde la story 8.4 el aviso calla el examen si la
+      // La config del banco (con máquina designada), no la del clon: el aviso calla el examen si la
       // config no designa máquina, y la copia pública la trae vacía — sin esto estos casos medirían el clon, no el aviso.
       TYCON_EXAM_CONFIG: b.rutaCfg,
       TYCON_BENCH_DIR: path.join(b.repo, 'scripts', 'controls-bench', '.bench'),
@@ -190,7 +190,7 @@ const escribir = (p, o) => { fs.mkdirSync(path.dirname(p), { recursive: true });
 test.after(() => { for (const d of TMPS) { try { fs.rmSync(d, { recursive: true, force: true }); } catch (_) { /* */ } } });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// T23 — un solo umbral, y NO es el que el aviso ya usa para otra cosa (AC 24)
+// T23 — un solo umbral, y NO es el que el aviso ya usa para otra cosa
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 test('T23 un_solo_umbral: los 8 días viven en un solo lugar y no pisan el umbral de paridad', () => {
@@ -211,7 +211,7 @@ test('T23 un_solo_umbral: los 8 días viven en un solo lugar y no pisan el umbra
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// T13 / T25 — sólo la máquina designada lanza; el resto no corre nada nuevo (AC 18, 14)
+// T13 / T25 — sólo la máquina designada lanza; el resto no corre nada nuevo
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 test('T13 solo_la_maquina_designada_lanza: otra máquina no lanza nada y sale 0', () => {
@@ -296,10 +296,10 @@ test('T24c el_sello_con_nombre_viejo_sigue_valiendo: leerlo no lo migra, sellar 
 });
 
 test('T59 cada_dia_programado_corre_con_la_config_real: el período no se come el disparador siguiente', () => {
-  // 2026-09-18: el T24 medía "viernes tras martes" con 3 días JUSTOS, pero el sello se escribe al
+  // Medir "viernes tras martes" con 3 días JUSTOS no alcanza: el sello se escribe al
   // TERMINAR (~02:16) y el disparador siguiente llega a las 02:00 — con `days_between_runs: 3`
-  // el viernes encontraba 2 d 23 h 44 min y se salteaba siempre. Se mide contra el archivo REAL,
-  // para cada día programado, con una corrida que tardó lo que tarda el chequeo de vida.
+  // el viernes encontraría 2 d 23 h 44 min y se saltearía siempre. Se mide contra el archivo REAL,
+  // para cada día programado, con una corrida que tarda lo que tarda el chequeo de vida.
   const cfg = E.leerConfig(path.join(TCG, 'scripts', 'controls-bench', 'exam-config.json'));
   const NUM = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
   const dias = cfg.scheduled_days.map((d) => NUM[d]).sort((a, b) => a - b);
@@ -353,10 +353,10 @@ test('T4 candado_muerto_no_bloquea: un PID que ya no existe no frena nada', () =
     'pasado el plazo largo sí se roba: si no, un PID reciclado lo dejaría trabado para siempre');
 
   assert.strictEqual(E.estadoDelCandado(path.join(b.raiz, 'no-existe.lock'), Date.now()).libre, true);
-  // 🔴 EL MONTAJE DE ESTE ASSERT SE CORRIGIÓ EL 2026-09-17, no su intención. Escribía la basura con
-  // mtime de AHORA y exigía "libre" — o sea, daba por buena exactamente la conducta que abría la
+  // 🔴 Con mtime de AHORA, exigir "libre" daría por buena exactamente la conducta que abre la
   // carrera: un candado ilegible recién escrito es uno que OTRO está publicando en este instante
-  // (ver T56 / T57). Lo que el caso afirma no cambió: un candado ilegible no bloquea PARA SIEMPRE.
+  // (ver T56 / T57).
+  // Lo que el caso afirma: un candado ilegible no bloquea PARA SIEMPRE.
   // Para medir eso hay que envejecerlo, porque "para siempre" es una afirmación sobre el tiempo.
   fs.writeFileSync(b.lock, 'esto no es json');
   const viejo = (Date.now() - 60 * 1000) / 1000;
@@ -387,10 +387,10 @@ test('T41 el candado no vence mientras su dueño lo esté refrescando', async ()
   let primera = null;
   for (let i = 0; i < 40 && !primera; i++) { primera = leer(); await new Promise((r) => setTimeout(r, 50)); }
   assert.ok(primera, 'el candado se toma al arrancar');
-  // 🔴 Se ESPERA el refresco (hasta 6 s), no se duerme 700 ms fijos (2026-09-06). Con el latido en
-  // 150 ms, 700 ms alcanzaban en una máquina ociosa — y con la suite completa corriendo al lado el
-  // proceso hijo quedaba sin CPU, la marca no cambiaba a tiempo y ESTE caso era el único rojo de
-  // toda la suite (67 verdes, 1 roja; solo, 58/58 cuatro veces seguidas). Lo que se afirma es que
+  // 🔴 Se ESPERA el refresco (hasta 6 s), no se duerme 700 ms fijos. Con el latido en
+  // 150 ms, 700 ms alcanzan en una máquina ociosa — pero con la suite completa corriendo al lado el
+  // proceso hijo queda sin CPU, la marca no cambia a tiempo y ESTE caso sería el único rojo de
+  // toda la suite. Lo que se afirma es que
   // el dueño refresca MIENTRAS vive, no que lo hace en menos de 700 ms.
   let segunda = null;
   for (let i = 0; i < 120 && !(segunda && segunda !== primera); i++) {
@@ -402,8 +402,8 @@ test('T41 el candado no vence mientras su dueño lo esté refrescando', async ()
 });
 
 test('T42 al terminar, cada corrida borra SU candado y no el de otro', () => {
-  // Si a una corrida le robaron el candado mientras corría, al terminar borraba el del ladrón y
-  // dejaba el sistema abierto para una TERCERA. Se borra sólo si sigue siendo el propio.
+  // Si a una corrida le roban el candado mientras corre, al terminar borraría el del ladrón y
+  // dejaría el sistema abierto para una TERCERA. Se borra sólo si sigue siendo el propio.
   const b = banco();
   escribir(b.lock, { pid: 999999, ts: new Date().toISOString(), maquina: 'el-ladron' });
   E.liberarCandado(b.lock, process.pid);
@@ -430,10 +430,10 @@ test('T43 "no tengo permiso para mirarlo" NO es "está muerto"', () => {
 });
 
 test('T44 no poder tomar el candado por un problema de la máquina se GRITA, no se calla', () => {
-  // 🔴 "Ya hay otra corrida" y "no pude ni crear el archivo del candado" son cosas opuestas y se
-  // trataban igual: salida limpia, sin registro. Si el problema persiste (permisos, disco lleno),
-  // el examen deja de correr PARA SIEMPRE y no queda un solo rastro para reclamarlo — que es,
-  // exactamente, el modo de falla que esta story existe para cerrar.
+  // 🔴 "Ya hay otra corrida" y "no pude ni crear el archivo del candado" son cosas opuestas y no se pueden tratar igual:
+  // salida limpia, sin registro. Si el problema persiste (permisos, disco lleno),
+  // el examen dejaría de correr PARA SIEMPRE y no quedaría un solo rastro para reclamarlo — que es,
+  // exactamente, el modo de falla que esta pieza existe para cerrar.
   const b = banco();
   fs.mkdirSync(b.lock, { recursive: true });     // una carpeta donde va el archivo del candado
   const r = correr(b);
@@ -445,19 +445,16 @@ test('T44 no poder tomar el candado por un problema de la máquina se GRITA, no 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// T56 / T57 / T58 — la carrera de la PUBLICACIÓN del candado (2026-09-17)
+// T56 / T57 / T58 — la carrera de la PUBLICACIÓN del candado
 //
-// 🔴 El candado tenía una carrera propia, y el T39 la venía denunciando desde el 2026-09-17 sin que
-// se le creyera. `tomarCandado` creaba el archivo con `wx` —atómico para decidir quién gana, eso
-// estaba bien— y le escribía el pid DESPUÉS, en un segundo acto. Entre los dos, el candado existe y
-// está VACÍO: un lector no lo puede parsear, `estadoDelCandado` contestaba "libre", el lector borraba
-// el candado del ganador y lo tomaba. Las dos corridas arrancaban, gastando la cuota del dev dos
-// veces, que es lo único que el candado existe para impedir.
+// 🔴 El candado tiene una carrera posible: `tomarCandado` crea el archivo con `wx` —atómico para decidir quién gana—
+// y escribe el pid DESPUÉS, en un segundo acto. Entre los dos, el candado existe y está VACÍO: un lector
+// no lo puede parsear, `estadoDelCandado` contestaría "libre", el lector borraría el candado del ganador
+// y lo tomaría. Las dos corridas arrancarían, gastando la cuota del dev dos veces, que es lo único
+// que el candado existe para impedir. T39 la denuncia.
 //
-// Medido antes de tocar una línea: T39 corrido 10 veces contra `origin/main` en la Mac del dev,
-// **2 rojas** ("arrancó 2"); en el agente de Azure (corrida 10569), 2 de 3. El §8 del plan de PR lo
-// había anotado como "intermitencia del agente" y como un caso que "da por hecho un solapamiento que
-// en 2 núcleos no está garantizado". No era eso: el solapamiento SÍ ocurría y el candado no retenía.
+// Un T39 que sale rojo ("arrancó 2") algunas veces de cada diez no es una intermitencia del agente ni un caso que
+// da por hecho un solapamiento que en 2 núcleos no está garantizado: el solapamiento SÍ ocurre y el candado no retiene.
 // Un test que se pone rojo 2 de 10 veces sobre un defecto real no es inestable: es el único que mira.
 //
 // Estos casos cierran las dos mitades: que la publicación sea un solo acto (T57) y que "no puedo
@@ -467,7 +464,7 @@ test('T44 no poder tomar el candado por un problema de la máquina se GRITA, no 
 
 test('T56 un candado ilegible RECIÉN escrito está ocupado, no libre', () => {
   const b = banco();
-  // Exactamente lo que dejaba el `wx` en el instante malo: el archivo existe y está vacío.
+  // Exactamente lo que deja el `wx` en el instante malo: el archivo existe y está vacío.
   fs.writeFileSync(b.lock, '');
   const est = E.estadoDelCandado(b.lock, Date.now());
   assert.strictEqual(est.libre, false,
@@ -494,9 +491,9 @@ test('T56b el espejo: ilegible y VIEJO sí es libre — el arreglo no puede trab
   // dejar el examen trabado hasta que una persona borre un archivo a mano. La ventana es de 10 s
   // contra las 48 h del vencimiento justamente para que un candado corrupto no se lleve un turno.
   //
-  // 🔴 Este caso es de NO-REGRESIÓN: no puede detectar el defecto, y no tiene que poder. Su primera
-  // versión afirmaba además el `motivo`, y eso lo ponía rojo contra `origin/main` por una razón
-  // cosmética —el motivo es nuevo—, peor que no tenerlo: se leería como un detector sin serlo. El
+  // 🔴 Este caso es de NO-REGRESIÓN: no puede detectar el defecto, y no tiene que poder. Si
+  // afirmara además el `motivo`, se pondría rojo contra `origin/main` por una razón
+  // cosmética —el motivo es nuevo—, peor que no afirmarlo: se leería como un detector sin serlo. El
   // motivo lo afirma T56, donde sí discrimina.
   //
   // 🔴 Y contra `origin/main` este caso NO ES EVALUABLE, que no es lo mismo que verde: consume
@@ -512,7 +509,7 @@ test('T56b el espejo: ilegible y VIEJO sí es libre — el arreglo no puede trab
 });
 
 test('T57 tomar el candado es UN acto: no se roba el que otro está publicando, y el propio nace legible', () => {
-  // El rojo previo determinista del defecto — sin depender de que la carrera se dé.
+  // La forma determinista del defecto — sin depender de que la carrera se dé.
   const b = banco();
   fs.writeFileSync(b.lock, '');
   const r = E.tomarCandado(b.lock, Date.now(), 'yo');
@@ -537,9 +534,9 @@ test('T57 tomar el candado es UN acto: no se roba el que otro está publicando, 
 });
 
 test('T57b liberar: un candado ILEGIBLE tampoco se da por propio', () => {
-  // El otro lado de la misma carrera. Borrarlo a ciegas al terminar sacaba del camino un candado que
-  // otra corrida podía estar publicando, dejando la puerta abierta a una TERCERA — el mismo
-  // razonamiento por el que ya no se borra el candado ajeno (T42).
+  // El otro lado de la misma carrera. Borrarlo a ciegas al terminar sacaría del camino un candado que
+  // otra corrida puede estar publicando, dejando la puerta abierta a una TERCERA — el mismo
+  // razonamiento por el que no se borra el candado ajeno (T42).
   const b = banco();
   fs.writeFileSync(b.lock, '');
   assert.strictEqual(E.liberarCandado(b.lock, process.pid), false);
@@ -548,7 +545,7 @@ test('T57b liberar: un candado ILEGIBLE tampoco se da por propio', () => {
 });
 
 test('T58 cinco corridas a la vez, tres tandas: arranca UNA y sólo una', async () => {
-  // 🔴 La forma severa de T39, y la que el dev pidió: en vez de repetir 10 veces el par de corridas
+  // 🔴 La forma severa de T39: en vez de repetir 10 veces el par de corridas
   // (2 oportunidades de colisión por tanda y ~30 s de suite), se lanzan CINCO a la vez —10 pares por
   // tanda— y la tanda se repite 3 veces. Más presión sobre la ventana y menos reloj.
   const { spawn } = require('child_process');
@@ -580,10 +577,9 @@ test('T58 cinco corridas a la vez, tres tandas: arranca UNA y sólo una', async 
   }
 });
 
-// 🔴 REESCRITO 2026-09-01. Antes exigía `--tool both`, o sea el examen COMPLETO: 582 consultas y
-// ~3 h dos veces por semana. Ese contrato se revirtió a propósito —medido, lo que encontraba de los
-// revisores era casi nada y de sí mismo mucho— y el nocturno pasó al chequeo de vida. Lo que este
-// test cuida NO cambió: que el nocturno corra el alcance COMPLETO de lo que le toca (nunca un
+// 🔴 El nocturno corre el chequeo de vida, no `--tool both` (el examen COMPLETO: 582 consultas y
+// ~3 h dos veces por semana). Lo que este test cuida:
+// que el nocturno corra el alcance COMPLETO de lo que le toca (nunca un
 // subconjunto arbitrario, porque una foto parcial se lee como el estado general) y que compare
 // contra la línea de base.
 test('T1 el nocturno corre el CHEQUEO DE VIDA completo, sin acotar, y deja su veredicto', () => {
@@ -602,7 +598,7 @@ test('T1 el nocturno corre el CHEQUEO DE VIDA completo, sin acotar, y deja su ve
   assert.strictEqual(rep.kind, 'examen-periodico');
   assert.strictEqual(rep.estado, 'completo');
   assert.strictEqual(rep.alcance, 'completo');
-  // AC 2 (reescrito el 2026-09-10): el tercio que el chequeo de vida SÍ mide —criterio— con su
+  // El tercio que el chequeo de vida SÍ mide —criterio— con su
   // número; los dos que NO puede medir con una corrida y una herramienta —inestabilidad y paridad—
   // en null con su motivo, nunca 0. El examen profundo (`--tool both --runs 3`) los mide, a pedido.
   assert.strictEqual(typeof rep.criterio, 'number', 'veredicto de criterio');
@@ -651,7 +647,7 @@ test('T12 sello_no_se_marca_si_no_termino: una corrida que muere no se come el t
 
 test('T6 corrida_incompleta_no_es_verde: queda registrada con su motivo y no pisa la última buena', () => {
   const b = banco({ modoRunner: 'lies' });   // sale 0 pero no deja reporte
-  // Había una medición buena de hace 2 días: NO se puede perder.
+  // Hay una medición buena de hace 2 días: NO se puede perder.
   escribir(b.reporteQueViaja, { kind: 'examen-periodico', estado: 'completo', alcance: 'completo',
     ts: haceDias(2), criterio: 0, inestables: 0, paridadReal: 0, baselineRegressions: 0, maquina: 'mini' });
 
@@ -691,10 +687,10 @@ test('T6b la sesión que se cae A MITAD del examen tampoco es verde', () => {
 });
 
 test('T35 una corrida donde TODO se salteó por falta de un MCP no es una corrida completa', () => {
-  // Hallazgo del pase adversarial, reproducido en vivo: el examen puede terminar con los 97 casos
+  // El examen puede terminar con los 97 casos
   // SALTEADOS por un servidor MCP ausente. Cero revisores evaluados de verdad, y sin embargo
   // criterio/inestables/paridad quedan todos en 0 — o sea, indistinguible de un verde perfecto.
-  // Sellaba el período y viajaba a git como la foto del estado. Es el FOCO de la story entero.
+  // Sellar el período y viajar a git como la foto del estado sería el peor desenlace: es el FOCO de esta pieza.
   const b = banco({ modoRunner: 'all-skipped' });
   escribir(b.reporteQueViaja, { kind: 'examen-periodico', estado: 'completo', alcance: 'completo',
     ts: haceDias(2), criterio: 0, inestables: 0, paridadReal: 0, baselineRegressions: 0, maquina: 'mini' });
@@ -708,14 +704,14 @@ test('T35 una corrida donde TODO se salteó por falta de un MCP no es una corrid
 });
 
 test('T36 si UNA de las dos herramientas se cayó, la corrida SÍ midió — pero se dice', () => {
-  // El otro lado del mismo hallazgo: el chequeo viejo comparaba errores contra CASOS, cuando con
-  // las dos herramientas hay dos ranuras por caso. Una herramienta caída daba "no midió" y tiraba
-  // a la basura la medición de la otra. Ahora cuenta ranuras: media medición es medición, y el
+  // Se cuentan ranuras, no casos: con las dos herramientas hay dos ranuras por caso.
+  // Si se compararan errores contra CASOS, una herramienta caída daría "no midió" y tiraría
+  // a la basura la medición de la otra. Contar ranuras: media medición es medición, y el
   // daño parcial se muestra en vez de esconderse.
   const b = banco({ modoRunner: 'one-tool-down' });
   // Este caso prueba el conteo por RANURAS del examen PROFUNDO (2 por caso, una por
-  // herramienta). El nocturno ya no corre `both`, pero la aritmética sigue viva para la
-  // corrida a pedido, y es donde el error de contar casos contra ranuras se escondía.
+  // herramienta). El nocturno no corre `both`, pero la aritmética sigue viva para la
+  // corrida a pedido, y es donde el error de contar casos contra ranuras se esconde.
   const r = correr(b, [], { BENCH_TOOL: 'both' });
   assert.strictEqual(r.status, 0, r.stdout + r.stderr);
   assert.ok(fs.existsSync(b.reporteQueViaja), 'la mitad que midió se guarda');
@@ -725,9 +721,9 @@ test('T36 si UNA de las dos herramientas se cayó, la corrida SÍ midió — per
 });
 
 test('T37 el aviso cuenta los casos que terminaron en error, no sólo los tres tercios', () => {
-  // Reproducido en vivo por el pase adversarial: un reporte fresco y "completo" con 30 casos en
-  // error de corrida y los otros contadores en 0 no imprimía NADA. La rama hermana del mismo
-  // archivo (la de los reportes locales) sí los contaba — la inconsistencia era del camino nuevo.
+  // Un reporte fresco y "completo" con 30 casos en
+  // error de corrida y los otros contadores en 0 tiene que imprimir algo. La rama hermana del mismo
+  // archivo (la de los reportes locales) sí los cuenta: el camino nuevo no puede ser inconsistente.
   const b = banco();
   escribir(b.reporteQueViaja, { kind: 'examen-periodico', estado: 'completo', alcance: 'completo',
     ts: new Date().toISOString(), criterio: 0, inestables: 0, paridadReal: 0, baselineRegressions: 0,
@@ -748,11 +744,11 @@ test('T38 el aviso deja constancia de los casos salteados por un MCP ausente', (
 });
 
 test('T39 el candado se toma ANTES de la sonda: dos corridas simultáneas, una sola arranca', async () => {
-  // 🔴 Reproducido en vivo por el pase adversarial con dos PIDs reales: el candado se CHEQUEABA en
-  // la decisión y se ESCRIBÍA recién después de la sonda de sesión, que puede tardar hasta dos
-  // minutos. Dos invocaciones que caigan en esa ventana pasaban las dos y arrancaban el examen
+  // 🔴 Con dos PIDs reales: el candado se toma de forma atómica antes de la sonda de sesión.
+  // Si se CHEQUEARA en la decisión y se ESCRIBIERA recién después de la sonda de sesión, que puede tardar hasta dos
+  // minutos, dos invocaciones que cayeran en esa ventana pasarían las dos y arrancarían el examen
   // completo en paralelo — gastando la cuota del dev dos veces, que es exactamente lo que el
-  // candado existe para impedir. La toma ahora es atómica y va antes de la sonda.
+  // candado existe para impedir.
   const b = banco({ modoRunner: 'slow' });
   const lanzar = () => new Promise((res) => {
     const { spawn } = require('child_process');
@@ -776,9 +772,9 @@ test('T39 el candado se toma ANTES de la sonda: dos corridas simultáneas, una s
 });
 
 test('T40 si el resultado no llegó a viajar, la propia máquina se entera', () => {
-  // Hallazgo del pase adversarial: con el push rechazado, el sello y el reporte local quedan
-  // frescos, así que en la máquina designada —la única que puede arreglarlo— no se notaba nada.
-  // La denuncia vivía sólo en el log de launchd: el mismo canal invisible que la story reemplazó.
+  // Con el push rechazado, el sello y el reporte local quedan
+  // frescos, así que en la máquina designada —la única que puede arreglarlo— no se notaría nada.
+  // La denuncia tiene que salir por el aviso, no sólo por el log de launchd: un canal invisible.
   const b = banco();
   const hook = path.join(b.remoto, 'hooks', 'pre-receive');
   fs.mkdirSync(path.dirname(hook), { recursive: true });
@@ -794,10 +790,10 @@ test('T40 si el resultado no llegó a viajar, la propia máquina se entera', () 
 });
 
 test('T45 la sonda prueba LAS DOS sesiones con una consulta real, no sólo la versión', () => {
-  // 🔴 Lo encontró la PRIMERA corrida real en el mini (2026-08-31): Codex sin credenciales
-  // responde perfecto a `--version` y devuelve 401 en cuanto se le pide algo. La sonda probaba
-  // Claude con una consulta de verdad y a Codex sólo la versión, así que dio el visto bueno y el
-  // examen arrancó — condenado a que la mitad de sus 582 invocaciones fueran error de corrida,
+  // 🔴 Codex sin credenciales
+  // responde perfecto a `--version` y devuelve 401 en cuanto se le pide algo. Si la sonda probara
+  // Claude con una consulta de verdad y a Codex sólo la versión, daría el visto bueno y el
+  // examen arrancaría — condenado a que la mitad de sus 582 invocaciones fueran error de corrida,
   // 5h30 de reloj, y un sello que se come el turno de los 3 días siguientes.
   const b = banco();
   const r = correr(b, [], {
@@ -873,7 +869,7 @@ test('T9 staging_selectivo: con el árbol sucio, sólo entra el reporte', () => 
 });
 
 test('T9b staging_selectivo: lo que el dev YA tenía en el stage tampoco se lo lleva puesto', () => {
-  // El caso que el T9 no cubría: el dev dejó algo preparado en el stage y se fue a dormir. A las
+  // El caso que T9 no cubre: el dev dejó algo preparado en el stage y se fue a dormir. A las
   // 2 de la mañana el examen commitea su reporte — y si el commit usara el índice tal como está,
   // se llevaría ese trabajo ajeno adentro, con un mensaje que habla de otra cosa. `git add` de
   // una sola ruta NO alcanza: lo que decide qué entra al commit es el índice ENTERO.
@@ -1004,7 +1000,7 @@ test('T14 designada_apagada_se_denuncia: sin ningún reporte, el aviso habla igu
 
 test('T22 el_aviso_habla_sin_fallas: cero rojos no puede significar cero información', () => {
   const b = banco();
-  // Todo lo demás en verde: el aviso viejo se habría callado por completo.
+  // Todo lo demás en verde: un aviso que sólo hablara de rojos se callaría por completo.
   escribir(path.join(b.repo, 'scripts', 'controls-bench', '.bench', 'last-run-claude.json'),
     { ts: new Date().toISOString(), failed: 0, parityBreaks: 0, baselineRegressions: 0 });
   const a = avisar(b);
@@ -1012,23 +1008,22 @@ test('T22 el_aviso_habla_sin_fallas: cero rojos no puede significar cero informa
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// T50..T53 — "no medido" NO se pinta de cero (AC 2 · 2026-09-10)
+// T50..T53 — "no medido" NO se pinta de cero
 //
-// 🔴 El caso real: el reporte del 05-09 que el aviso muestra en cada arranque trae
+// 🔴 Un reporte como el que el aviso muestra en cada arranque trae
 // `tool:"claude"` y `runs:1`. Con UNA corrida y UNA herramienta, la inestabilidad —el revisor
 // contestando distinto entre corridas— y la paridad —que las dos herramientas coincidan— son
-// IMPOSIBLES de medir. Y sin embargo el reporte publicaba `inestables: 0 · paridadReal: 0` y el
-// aviso los mostraba al lado de los que sí se midieron. Es la regla cardinal del arnés al revés,
+// IMPOSIBLES de medir. Publicar `inestables: 0 · paridadReal: 0` y mostrarlos al lado de los que sí se midieron
+// es la regla cardinal del arnés al revés,
 // y en la pieza que existe para vigilar a los revisores. El propio aviso ya sabe hacerlo bien
-// —"salteados por MCP ausente (constancia, no verde)"—; estos dos no.
+// —"salteados por MCP ausente (constancia, no verde)"—; estos dos tienen que hacerlo igual.
 //
-// La decisión de dejar de medirlos fue correcta y está justificada (periodic-exam.js l.612-628:
-// el chequeo de vida bajó de ~3 h a ~12 min). Lo que faltaba es DECIRLO en la salida.
+// Dejar de medirlos está justificado (el chequeo de vida dura ~12 min, no ~3 h). Lo que hace falta es DECIRLO en la salida.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 test('T50 una_corrida_y_una_herramienta: los rubros imposibles salen NO MEDIDOS, no en cero', () => {
   const b = banco();
-  // El reporte REAL del 2026-09-05, tal cual, con su fecha corrida a hoy para que sea fresco.
+  // Un reporte real, tal cual, con su fecha corrida a hoy para que sea fresco.
   escribir(b.reporteQueViaja, { kind: 'examen-periodico', estado: 'completo', alcance: 'completo',
     ts: new Date().toISOString(), tool: 'claude', runs: 1, maquina: 'devas-mac-mini',
     failed: 1, criterio: 1, inestables: 0, erroresDeCorrida: 0,
@@ -1065,7 +1060,7 @@ test('T51 el espejo: con dos herramientas y tres corridas, un cero SÍ es un cer
 test('T52 un reporte que no declara CÓMO se produjo no se lee como medido ni se inventa', () => {
   const b = banco();
   // Sin `tool` ni `runs`: no se puede saber si midió. No se denuncia (no hay evidencia de que no
-  // haya medido) pero tampoco se afirma nada nuevo — se muestra como siempre se mostró.
+  // haya medido) pero tampoco se afirma nada nuevo — se muestra como siempre.
   escribir(b.reporteQueViaja, { kind: 'examen-periodico', estado: 'completo', alcance: 'completo',
     ts: new Date().toISOString(), criterio: 3, inestables: 1, paridadReal: 2,
     baselineRegressions: 0, maquina: 'mini' });
@@ -1075,10 +1070,10 @@ test('T52 un reporte que no declara CÓMO se produjo no se lee como medido ni se
 });
 
 test('T55 el productor REAL deja null + motivo: --reclassify --write sobre un reporte de una corrida', () => {
-  // El pase adversarial del 2026-09-10 lo marcó: T50-T54 y el smoke ejercitan el AVISO y el examen,
-  // pero el `null` lo fabricaba el runner falso. Éste es el único camino de `advisor-runner.js` que
+  // T50-T54 y el smoke ejercitan el AVISO y el examen,
+  // pero el `null` lo fabrica el runner falso. Éste es el único camino de `advisor-runner.js` que
   // escribe un reporte sin llamar a un modelo: reclasificar uno ya escrito. Un reporte con los ceros
-  // viejos (`inestables: 0`, `paridadReal: 0`, `runs: 1`, `tool: claude`) tiene que salir honesto.
+  // de un formato anterior (`inestables: 0`, `paridadReal: 0`, `runs: 1`, `tool: claude`) tiene que salir honesto.
   const runner = path.join(TCG, 'scripts', 'controls-bench', 'advisor-runner.js');
   const b = banco();
   const escribirReporte = (nombre, tool, runs) => {
@@ -1114,8 +1109,8 @@ test('T55 el productor REAL deja null + motivo: --reclassify --write sobre un re
 
 test('T54 examen fresco y SIN rojos con una corrida/una herramienta: silencio legítimo, jamás un cero', () => {
   const b = banco();
-  // El pase adversarial del 2026-09-10 marcó esto: T50 y el smoke sólo cubren reportes CON rojos.
-  // Con criterio 0 el aviso calla —decisión previa, caso `quiet-examen-fresco-y-verde` del banco:
+  // T50 y el smoke sólo cubren reportes CON rojos.
+  // Con criterio 0 el aviso calla —caso `quiet-examen-fresco-y-verde` del banco:
   // con el chequeo de vida estos rubros quedan sin medir en toda corrida, y hablar por eso sería
   // ruido en cada arranque—, pero lo que no puede pasar, hable o no, es que imprima un 0 ahí.
   escribir(b.reporteQueViaja, { kind: 'examen-periodico', estado: 'completo', alcance: 'completo',
@@ -1152,8 +1147,8 @@ test('T53 el productor marca los rubros imposibles como no medidos, con el motiv
   const mudo = rubrosNoMedidos({});
   assert.strictEqual(mudo.inestables, null);
   assert.strictEqual(mudo.paridad, null);
-  // …y "declarado vacío" es "no declarado": `Number(null)` es 0 y sin la guarda se leía como
-  // "0 corridas por caso" (pase adversarial 2026-09-10); `tool: ''` no es una herramienta.
+  // …y "declarado vacío" es "no declarado": `Number(null)` es 0 y sin la guarda se leería como
+  // "0 corridas por caso"; `tool: ''` no es una herramienta.
   for (const raro of [{ runs: null }, { runs: undefined }, { runs: '' }, { tool: '' }, { tool: '  ' }]) {
     const r = rubrosNoMedidos(raro);
     assert.strictEqual(r.inestables, null, `runs raro no se juzga: ${JSON.stringify(raro)}`);
@@ -1180,8 +1175,8 @@ test('T16 el_aviso_distingue_completa_de_acotada: la parcial no se lee como el e
 test('T29 la_denuncia_sobrevive_a_que_otra_parte_se_rompa', () => {
   // 🔴 El peor caso posible acá: el aviso es fail-open por diseño (nunca puede romper el arranque
   // de sesión), así que un error interno lo deja mudo. Si la denuncia del examen —la razón de ser
-  // de esta story— se calcula dentro de ese mismo bloque, cualquier otra falla la borra en
-  // silencio: exactamente el modo de fallo que vinimos a cerrar, reintroducido por el arreglo.
+  // de esta pieza— se calcula dentro de ese mismo bloque, cualquier otra falla la borra en
+  // silencio: exactamente el modo de fallo que la pieza existe para cerrar.
   const b = banco();
   const bench = path.join(b.repo, 'scripts', 'controls-bench', '.bench');
   fs.chmodSync(bench, 0o000);                       // leer la carpeta del banco ahora tira
@@ -1236,15 +1231,14 @@ function instalarEn(b, maquina, extra = []) {
   const launchctlFalso = path.join(b.raiz, 'launchctl-falso.sh');
   fs.writeFileSync(launchctlFalso, '#!/bin/sh\necho "$@" >> "$LAUNCHCTL_LOG"\nexit 0\n');
   fs.chmodSync(launchctlFalso, 0o755);
-  // 🔴 Con las herramientas SIMULADAS al lado de un node falso (2026-09-05). Desde el commit que
-  // hizo que --install-task se NIEGUE si no alcanza a `claude` y `codex`, este helper corría con
-  // el node REAL: el test pasaba en una máquina con las dos instaladas y fallaba —ENOENT del plist
-  // en T25b/T33/T34— en cualquiera sin `codex`. DevB lo encontró en la suya. Lo que se prueba acá es
-  // el instalador, no la máquina: las herramientas las provee el fixture, como ya hacía T48.
+  // 🔴 Con las herramientas SIMULADAS al lado de un node falso. --install-task se NIEGA si no alcanza a `claude` y `codex`;
+  // con el node REAL, el test pasaría en una máquina con las dos instaladas y fallaría —ENOENT del plist
+  // en T25b/T33/T34— en cualquiera sin `codex`. Lo que se prueba acá es
+  // el instalador, no la máquina: las herramientas las provee el fixture, como en T48.
   const nodeFalso = fs.existsSync(path.join(b.raiz, 'bin-falso', 'node'))
     ? path.join(b.raiz, 'bin-falso', 'node')
     : binDeNode(b);
-  // La HOME del banco se declara la del usuario (story 8.4, AC 28): sin eso --install-task no toca launchd desde una
+  // La HOME del banco se declara la del usuario: sin eso --install-task no toca launchd desde una
   // HOME que no es la real, y estos casos existen justo para probar la instalación.
   const r = correrComoLaunchd(b, nodeFalso, ['--install-task', ...extra], {
     TYCON_EXAM_MACHINE: maquina,
@@ -1318,21 +1312,21 @@ test('T34b el_log_de_launchd_pasa_al_nombre_nuevo_al_reescribir_el_plist (story 
 test('T15/T19/T20 el instalador usa la pieza extraída, y no se lleva puestas las otras corridas', () => {
   const fuente = fs.readFileSync(path.join(TCG, 'scripts', 'install-tycon-hooks.sh'), 'utf8');
 
-  // T15: una sola implementación. El lanzador semanal viejo YA NO vive en el instalador.
+  // T15: una sola implementación. El lanzador semanal no vive en el instalador.
   assert.ok(!fuente.includes('controls-bench-advisors-last-run'),
     '🔴 el sello semanal viejo no puede seguir en el instalador: serían dos programadores para lo mismo');
   assert.ok(fuente.includes('periodic-exam.js'), 'el instalador invoca la pieza extraída');
 
-  // T19: de las otras dos corridas de aquel bloque queda UNA en las máquinas: live-fire (el disparo
-  // real dentro de Codex, que necesita la herramienta instalada). El banco determinista se fue a
-  // Azure DevOps el 2026-09-05 (pipelines/azure-pipelines-banco.yml): corría DOS veces por arranque en la
-  // máquina del dev y la segunda en cada sesión, y dos bancos superpuestos fabricaban rojos falsos.
-  // Este test lo atrapó la misma madrugada: afirmaba el contrato viejo ("sigue disparándose").
+  // T19: en las máquinas queda UNA corrida con el arranque: live-fire (el disparo
+  // real dentro de Codex, que necesita la herramienta instalada). El banco determinista corre en
+  // Azure DevOps (pipelines/azure-pipelines-banco.yml): en la máquina del dev correría DOS veces por arranque,
+  // y dos bancos superpuestos fabricarían rojos falsos.
+  // El test afirma que live-fire sigue disparándose.
   assert.ok(/live-fire\.js["'\s]+--tool codex/.test(fuente) || fuente.includes("live-fire.js' --tool codex"),
     'la corrida de live-fire bajo Codex sigue disparándose');
   // 🔴 Se buscan los LANZAMIENTOS (`nohup …`) que nombren al corredor por su variable o por su
-  // archivo: la primera versión de esta afirmación buscaba `runner.js` literal y daba VERDE contra
-  // el instalador viejo, que lanzaba `$BENCH_RUNNER` — un test que no puede fallar no es un test.
+  // archivo: buscar `runner.js` literal daría VERDE contra un instalador que
+  // lance `$BENCH_RUNNER` — un test que no puede fallar no es un test.
   const lanzaRunner = fuente.split('\n').some((l) => !/^\s*#/.test(l)
     && /nohup/.test(l) && /(BENCH_RUNNER|BENCH_JOB|run-controls-bench-job|runner\.js)/.test(l));
   assert.ok(!lanzaRunner,
@@ -1350,8 +1344,8 @@ test('T15/T19/T20 el instalador usa la pieza extraída, y no se lleva puestas la
     '🔴 ni de una llave que la máquina del dev no tiene puesta — ahí es donde el lanzador viejo nunca corrió');
 
   // 🔴 UN solo programador. El instalador INSTALA la tarea; no lanza el examen él también. Dos
-  // disparadores para lo mismo es exactamente lo que la story prohíbe por escrito — y además haría
-  // que cada máquina del equipo ejecutara la pieza en cada arranque, cuando el AC 14 dice que para
+  // disparadores para lo mismo está prohibido — y además haría
+  // que cada máquina del equipo ejecutara la pieza en cada arranque, cuando para
   // el resto lo único que cambia es el texto del aviso.
   assert.ok(!/nohup[^\n]*EXAMEN_PERIODICO/.test(bloque) && !/EXAMEN_PERIODICO\"?\s*&/.test(bloque),
     'el instalador no lanza el examen: para eso está la tarea programada');
@@ -1359,11 +1353,11 @@ test('T15/T19/T20 el instalador usa la pieza extraída, y no se lleva puestas la
 });
 
 // ---------------------------------------------------------------------------------------------
-// El MOTIVO de un pull que falló (2026-09-01). Lógica pura sobre un string: cero llamadas, cero git.
+// El MOTIVO de un pull que falló. Lógica pura sobre un string: cero llamadas, cero git.
 //
 // Por qué tiene casos propios: este texto es lo ÚNICO que va a leer el que el viernes se pregunte
-// por qué la medición se hizo con código viejo (`codigo_desactualizado` del reporte que viaja). El
-// primer intento se quedaba con la ÚLTIMA línea del error de git y dejaba `and the repository
+// por qué la medición se hizo con código viejo (`codigo_desactualizado` del reporte que viaja).
+// Quedarse con la ÚLTIMA línea del error de git dejaría `and the repository
 // exists.` — el final de una frase partida, que no dice ni qué falló ni dónde. Los dos textos de
 // git de acá abajo son REALES, capturados en la máquina del examen contra un repo de juguete.
 // ---------------------------------------------------------------------------------------------
@@ -1420,12 +1414,12 @@ test('motivo del pull: un texto largo se recorta Y SE NOTA que fue recortado', (
 });
 
 // ═════════════════════════════════════════════════════════════════════════════════════════════
-// T46/T47/T48 — EL PATH DE LAUNCHD (incidente 2026-09-04)
+// T46/T47/T48 — EL PATH DE LAUNCHD
 //
-// El examen del viernes 4/9 no dejó reporte y no fue por el horario: el disparador arrancó puntual
-// (02:00:04) y murió 4 segundos después con `spawnSync claude ENOENT`. launchd lanza sus trabajos
-// con el PATH mínimo de macOS y `claude`/`codex` viven en el bin de Node, que no está ahí. El plist
-// llevaba la ruta absoluta de node —por eso node arrancó— pero todo lo demás iba por nombre pelado.
+// Un examen que no deja reporte sin que sea por el horario: el disparador arranca puntual
+// y muere segundos después con `spawnSync claude ENOENT`. launchd lanza sus trabajos
+// con el PATH mínimo de macOS y `claude`/`codex` viven en el bin de Node, que no está ahí. Si el plist
+// lleva la ruta absoluta de node —por eso node arranca— pero todo lo demás va por nombre pelado, falla.
 //
 // 🔴 El fixture usa un HARD LINK de node en un directorio temporal, no un symlink: en macOS node
 // RESUELVE el symlink y `process.execPath` devolvería el node real (medido) — o sea que el caso
@@ -1441,10 +1435,10 @@ function binDeNode(b, { conHerramientas = true, real: rutaReal = process.execPat
   const bin = path.join(b.raiz, 'bin-falso');
   fs.mkdirSync(bin, { recursive: true });
   const nodeFalso = path.join(bin, 'node');
-  // 🔴 UNA COPIA, NUNCA UN ENLACE AL NODE REAL (2026-10-13). Era un enlace duro, y al llamar esto dos veces sobre el mismo
-  // banco el `copyFileSync` de respaldo copiaba el binario real sobre sí mismo: los bytes quedaban iguales, pero macOS
-  // dio por inválida su firma y mató con 137 a todo proceso que lanzara ese node, en toda la máquina, hasta que se
-  // reemplazó el archivo. Ahora es una copia con inodo propio (en APFS, un clon: instantáneo), se reusa si ya está, y
+  // 🔴 UNA COPIA, NUNCA UN ENLACE AL NODE REAL. Con un enlace duro, al llamar esto dos veces sobre el mismo
+  // banco el `copyFileSync` de respaldo copiaría el binario real sobre sí mismo: los bytes quedan iguales, pero macOS
+  // da por inválida su firma y mata con 137 a todo proceso que lance ese node, en toda la máquina, hasta que se
+  // reemplaza el archivo. Es una copia con inodo propio (en APFS, un clon: instantáneo), se reusa si ya está, y
   // antes de escribir se comprueba que el destino no sea el node que corre: si lo es, la prueba falla en seco.
   const real = fs.statSync(rutaReal);
   const esElReal = (p) => { try { const st = fs.statSync(p); return st.ino === real.ino && st.dev === real.dev; } catch (_) { return false; } };
@@ -1454,7 +1448,7 @@ function binDeNode(b, { conHerramientas = true, real: rutaReal = process.execPat
     fs.chmodSync(nodeFalso, 0o755);
   }
   if (conHerramientas) {
-    // La forma REAL de cada una (medida 2026-09-05): `claude` es un binario nativo — acá un sh
+    // La forma REAL de cada una: `claude` es un binario nativo — acá un sh
     // alcanza —; `codex` es un script `#!/usr/bin/env node`, y ésa es la trampa que el caso tiene
     // que ejercer: bajo el PATH mínimo `env` no encuentra `node` y sale 127 AUNQUE el spawn haya
     // sido por ruta absoluta. Sin la reparación del PATH, este fixture pone rojo a T46.
@@ -1471,7 +1465,7 @@ function correrComoLaunchd(b, nodeFalso, args = [], extraEnv = {}) {
   return spawnSync(nodeFalso, [EXAMEN, ...args], {
     encoding: 'utf8',
     env: Object.assign({
-      PATH: PATH_DE_LAUNCHD,          // ← el entorno del incidente
+      PATH: PATH_DE_LAUNCHD,          // ← el entorno de launchd
       HOME: b.casa,
       TYCON_EXAM_CONFIG: b.rutaCfg,
       TYCON_EXAM_RUNNER: b.rutaRunner,
@@ -1573,11 +1567,11 @@ test('T49 la resolución cae al nombre pelado cuando la herramienta no está al 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// Story 8.4 (tanda B), AC 28 — T24 ExamenPeriodico_HomeAjena_NoTocaLaunchd
+// T24 ExamenPeriodico_HomeAjena_NoTocaLaunchd
 //
-// launchd es por USUARIO (`gui/<uid>`), no por HOME. El 2026-09-27, probar el instalador en una HOME
-// temporal en la máquina designada re-apuntó la tarea REAL del examen a la copia temporal (se restauró el
-// mismo día). Con una HOME que no es la del usuario, --install-task no toca launchd —ni instala, ni
+// launchd es por USUARIO (`gui/<uid>`), no por HOME: probar el instalador en una HOME
+// temporal en la máquina designada re-apuntaría la tarea REAL del examen a la copia temporal.
+// Con una HOME que no es la del usuario, --install-task no toca launchd —ni instala, ni
 // retira, ni chequea—: lo dice en una línea y sale 0. Las pruebas que sí quieren instalar declaran su HOME
 // como la real con TYCON_EXAM_REAL_HOME (el control de abajo).
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -1631,7 +1625,7 @@ test('T24 (8.4) ExamenPeriodico_HomeAjena_NoTocaLaunchd — desde una HOME que n
   assert.match(fs.readFileSync(bitacora, 'utf8'), /bootstrap/, 'y registra la tarea');
 });
 
-// ── T32 · AC 34 (8.4, vuelta 1 de revisión) ─────────────────────────────────────────────────────────────────────
+// ── T32 ─────────────────────────────────────────────────────────────────────
 test('T32 (8.4) ExamenPeriodico_HomeConOtraCaja_EsLaMisma — la misma carpeta escrita con otra caja es la misma HOME', (t) => {
   const b = banco();
   const otraCaja = path.join(path.dirname(b.casa), path.basename(b.casa).toUpperCase());
@@ -1662,10 +1656,10 @@ test('T32 (8.4) ExamenPeriodico_HomeConOtraCaja_EsLaMisma — la misma carpeta e
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────
-// Story 8.9, tanda G — los días del examen se escriben en inglés, y un día que no existe ya no se descarta callado
+// Los días del examen se escriben en inglés, y un día que no existe no se descarta callado
 // ─────────────────────────────────────────────────────────────────────────────────────────
-// 🔴 rojo previo verificado: la tabla de días sólo conocía los nombres en castellano, así que `"friday"` no daba error:
-//    el filtro lo descartaba y el examen quedaba programado un día menos sin que nadie lo supiera. Que los nombres en
+// 🔴 Si la tabla de días sólo conociera los nombres en castellano, `"friday"` no daría error:
+//    el filtro lo descartaría y el examen quedaría programado un día menos sin que nadie lo supiera. Que los nombres en
 //    castellano sigan valiendo en las máquinas del equipo lo prueba legacy-names-g.test.js (con el mapa de renombres).
 
 test('T72 exam_days_in_english: los siete días se escriben en inglés; sin días, martes y viernes; mayúsculas y espacios no importan', () => {
@@ -1677,7 +1671,7 @@ test('T72 exam_days_in_english: los siete días se escriben en inglés; sin día
   assert.deepStrictEqual(dias(E.plistDeseado({ ...base, scheduled_days: [] })), [2, 5]);
   assert.deepStrictEqual(E.diasProgramados(['friday', 'friyay', 7]), { numeros: [5], desconocidos: ['friyay', '7'] });
   assert.deepStrictEqual(E.diasProgramados(undefined), { numeros: [2, 5], desconocidos: [] });
-  // Pase adversarial de la tanda G (causa 3): un valor que no es lista caía callado a martes y viernes. Ahora es desconocido.
+  // Un valor que no es lista es desconocido (no cae callado a martes y viernes).
   for (const raro of ['monday', { 0: 'monday' }, 5]) {
     const d = E.diasProgramados(raro);
     assert.deepStrictEqual(d.numeros, [], `${JSON.stringify(raro)}: no se inventan días`);
@@ -1686,9 +1680,9 @@ test('T72 exam_days_in_english: los siete días se escriben en inglés; sin día
   }
 });
 
-// Pase adversarial de la tanda G (causas 3, 4, 6 y 11): la negativa salía sólo por la salida de error, y el instalador llama
-// al guion con esa salida tapada: en la máquina designada nadie se enteraba. Además un valor que no es lista escribía el
-// disparador con los días de siempre antes de caerse. 🔴 ROJO PREVIO: la salida normal venía vacía, y con "monday" quedaba plist.
+// La negativa sale por la salida normal, no sólo por la de error: el instalador llama
+// al guion con esa salida tapada, y en la máquina designada nadie se enteraría. Además un valor que no es lista no escribe el
+// disparador con los días de siempre antes de caerse. 🔴 Falla si la salida normal viene vacía, o si con "monday" queda plist.
 test('T72 exam_refusal_visible: la negativa sale por la salida normal (la que el instalador no tapa), también con un valor que no es lista; --dry-run marca el día raro', () => {
   for (const scheduled_days of [['tuesday', 'friyay'], 'monday']) {
     for (const extra of [[], ['--check']]) {
@@ -1733,14 +1727,14 @@ test('T72 exam_unknown_day_refused: con un día que no existe --install-task se 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// T73-T76 — en la versión bajada, la máquina designada y el resultado viven en el clon de mantenimiento (2026-10-13)
+// T73-T76 — en la versión bajada, la máquina designada y el resultado viven en el clon de mantenimiento
 //
-// El caso: la máquina que corre el examen pasó el 9 de octubre a la versión bajada (el árbol público instalado, sin git).
-// Ese árbol trae `exam-config.json` con la máquina designada vacía: el instalador lo leyó, retiró el disparador, y el
-// martes 13 el examen no corrió. El arranque marcaba el sello de la corrida a mano como «no lo escribió el job», porque
-// buscaba el reporte en el árbol instalado. La máquina designada y el reporte que viaja son del clon de mantenimiento
+// En una máquina que corre el examen desde la versión bajada (el árbol público instalado, sin git):
+// ese árbol trae `exam-config.json` con la máquina designada vacía: si el instalador lo leyera, retiraría el disparador, y
+// el examen no correría. El arranque marcaría el sello de la corrida a mano como «no lo escribió el job», porque
+// buscaría el reporte en el árbol instalado. La máquina designada y el reporte que viaja son del clon de mantenimiento
 // que la máquina declara (`paths.maintainers`), el mismo del que los avisos leen la noche.
-// 🔴 Rojo previo: con el periodic-exam.js y el bench-notice.js de antes, T73, T74 y T75 fallan.
+// 🔴 T73, T74 y T75 fallan si se lee el árbol instalado en vez del clon de mantenimiento.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 /** Un árbol instalado de juguete: el código del examen y del aviso, con la configuración pública (nadie designado). */
@@ -1870,7 +1864,7 @@ test('T76 exam_own_config_wins: un árbol que designa máquina (un clon completo
 });
 
 test('T77 fake_node_never_touches_the_real_one: armar el node falso dos veces no toca el node real (2026-10-13)', () => {
-  // 🔴 Rojo previo: con el enlace duro, la segunda llamada copiaba el node real sobre sí mismo y macOS lo invalidaba.
+  // 🔴 Con un enlace duro, la segunda llamada copiaría el node real sobre sí mismo y macOS lo invalidaría.
   const huella = () => require('crypto').createHash('sha256').update(fs.readFileSync(process.execPath)).digest('hex');
   const real = fs.statSync(process.execPath);
   const antes = huella();
@@ -1895,7 +1889,7 @@ test('T77 fake_node_never_touches_the_real_one: armar el node falso dos veces no
   assert.strictEqual(fs.readFileSync(deMentira, 'utf8'), 'no soy node\n', 'y no lo tocó');
 });
 
-// ── story 8.39, T24: el disparador del examen con el Node propio del arnés ──────────────────────────────────────────
+// ── T24: el disparador del examen con el Node propio del arnés ──────────────────────────────────────────
 test('T24 Examen_NodeDelArnes_PlistConCurrentYHerramientas @story-8.39 @ac-9', () => {
   const b = banco();
   // las herramientas del dev, en OTRA carpeta del PATH de quien instala, con su node al lado (codex es

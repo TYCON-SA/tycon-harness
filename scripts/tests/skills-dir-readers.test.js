@@ -1,32 +1,31 @@
 'use strict';
 /**
- * skills-dir-readers.test.js — quien le pregunta a `skills-dir.js` dónde están las skills no se traga su error
- * (story 8.18, deuda `[DEF-8.18-lectores-que-tragan]` · 2026-10-04).
+ * skills-dir-readers.test.js — quien le pregunta a `skills-dir.js` dónde están las skills no se traga su error.
  *
- * EL CASO. `resolveSkillsDirs()` ahora TIRA cuando la biblioteca que le dice si el clon es unido (`canonical-path.js`)
- * está y no carga: antes contestaba «no es unido» y se leían las skills INSTALADAS en la máquina, callado. El pase
- * adversarial del tramo 1 encontró que varios lectores envuelven la llamada y siguen con el valor de siempre —un
- * `catch` genérico, o `2>/dev/null || true` desde bash—: con la biblioteca rota decían «agent-skills no está en esta
- * máquina», o directamente «todo verde», sin nombrar la causa. «No pude mirar» nunca es «no hay».
+ * `resolveSkillsDirs()` TIRA cuando la biblioteca que le dice si el clon es unido (`canonical-path.js`)
+ * está y no carga: si contestara «no es unido», se leerían las skills INSTALADAS en la máquina, callado. Varios lectores
+ * envuelven la llamada y siguen con el valor de siempre —un `catch` genérico, o `2>/dev/null || true` desde bash—: con
+ * la biblioteca rota dirían «agent-skills no está en esta máquina», o directamente «todo verde», sin nombrar la causa.
+ * «No pude mirar» nunca es «no hay».
  *
- * Acá se miden los dos guiones de prueba que no tienen otra suite donde vivir:
+ * Acá se miden los guiones de prueba que no tienen otra suite donde vivir:
  *   · `integrations-off.test.sh`   — con la biblioteca rota sale distinto de 0 con «NO MEDIDO — no pude resolver la
- *                                    carpeta de skills: <causa>»; antes decía «agent-skills no está en esta máquina».
+ *                                    carpeta de skills: <causa>», no «agent-skills no está en esta máquina».
  *   · `third-party-origin.test.sh` — con la biblioteca rota sale 2 (NO MEDIDO) ANTES de preguntarle nada a la red;
- *                                    antes seguía con la carpeta vacía y podía terminar en «todo verde».
+ *                                    seguir con la carpeta vacía podría terminar en «todo verde».
  *   · `clean-machine.test.sh`      — el bloque del modo interno, recortado (la suite entera usa docker): con la
- *                                    biblioteca rota dice «no pude resolver la carpeta de skills: <causa>»; antes,
+ *                                    biblioteca rota dice «no pude resolver la carpeta de skills: <causa>», no
  *                                    «modo interno sin agent-skills».
- *   · `legacy-names-install.test.sh` — con la biblioteca rota dice la causa y sale distinto de 0; antes caía a
- *                                    `~/.claude/agent-skills` y medía las skills instaladas.
+ *   · `legacy-names-install.test.sh` — con la biblioteca rota dice la causa y sale distinto de 0; no cae a
+ *                                    `~/.claude/agent-skills`.
  *   · `controls-bench/runner.js`   — el respaldo a la ruta instalada queda sólo para «skills-dir.js no está» (el clon
- *                                    viejo); lo demás tira. Antes un `catch` genérico se tragaba todo.
+ *                                    viejo); lo demás tira: un `catch` genérico se tragaría todo.
  *   · `third-party-real.test.sh`   — con la biblioteca rota sale 2 (NO MEDIDO) con la causa, aunque esté parada en un
- *                                    repo de git (pase adversarial del tramo 2, clase 12: con la carpeta vacía,
- *                                    `git -C ""` operaba sobre ese repo y la guarda «no encontré agent-skills» pasaba).
+ *                                    repo de git (con la carpeta vacía, `git -C ""` operaría sobre ese repo y la guarda
+ *                                    «no encontré agent-skills» pasaría).
  *   · los lectores de las suites largas (githook-livefire, export-real, mirror-pipeline): por la forma de la llamada,
- *     porque correrlas con la biblioteca rota no cabe en una prueba (clases 4 y 7 del mismo pase).
- * Los demás lectores de la deuda se miden donde ya vive cada uno: `public-ci.test.sh`, `profile-equivalence.test.sh`
+ *     porque correrlas con la biblioteca rota no cabe en una prueba.
+ * Los demás lectores se miden donde ya vive cada uno: `public-ci.test.sh`, `profile-equivalence.test.sh`
  * y `eol.test.js`.
  *
  * Cada caso arma un clon de juguete con una copia del guion, de `scripts/lib/skills-dir.js` y de lo que importa, y
@@ -121,7 +120,7 @@ function present(t, script) {
 const INTEGRATIONS = 'scripts/tests/integrations-off.test.sh';
 
 test('SkillsReaders_IntegrationsOff_BrokenNeighbor — con la biblioteca vecina rota dice «no pude resolver» con la causa y sale distinto de 0', (t) => {
-  // 🔴 rojo previo: `2>/dev/null || true` → la carpeta queda vacía y el guion dice «agent-skills no está en esta
+  // 🔴 rojo: `2>/dev/null || true` → la carpeta queda vacía y el guion dice «agent-skills no está en esta
   //    máquina»: manda a instalar algo que está, y calla que la biblioteca del clon no carga.
   if (!present(t, INTEGRATIONS)) return;
   const r = run(lab(INTEGRATIONS, { unified: true, installed: true, broken: true }));
@@ -145,7 +144,7 @@ test('SkillsReaders_IntegrationsOff_TrulyAbsent — el espejo: la carpeta que de
 const ORIGIN = 'scripts/tests/third-party-origin.test.sh';
 
 test('SkillsReaders_ThirdPartyOrigin_BrokenNeighbor — con la biblioteca vecina rota sale 2 (NO MEDIDO) con la causa, antes de preguntarle nada a la red', (t) => {
-  // 🔴 rojo previo: `2>/dev/null` → la carpeta queda vacía, T9 dice «no encontré … (sin ubicar)» sin sumar nada, y el
+  // 🔴 rojo: `2>/dev/null` → la carpeta queda vacía, T9 dice «no encontré … (sin ubicar)» sin sumar nada, y el
   //    guion puede cerrar con «todo verde».
   if (!present(t, ORIGIN)) return;
   const r = run(lab(ORIGIN, { unified: true, installed: true, broken: true }));
@@ -169,10 +168,10 @@ test('SkillsReaders_ThirdPartyOrigin_HealthyNeighbor — el espejo: con la bibli
 const THIRD_REAL = 'scripts/tests/third-party-real.test.sh';
 
 test('SkillsReaders_ThirdPartyReal_BrokenNeighbor — con la biblioteca vecina rota sale 2 (NO MEDIDO) con la causa, aunque esté parada en un repo de git', (t) => {
-  // 🔴 rojo previo (pase adversarial del tramo 2, clase 12): la carpeta salía del lector sin mirar su código de salida.
-  //    Con la biblioteca rota quedaba vacía, y `git -C ""` opera sobre el repo donde está parada la prueba: la guarda
-  //    «no encontré agent-skills» pasaba y la prueba seguía —con el commit suelto del retiro escribiendo objetos ahí—.
-  //    En este laboratorio seguía hasta el manifiesto y salía 1 con un rojo que no nombraba la causa.
+  // 🔴 rojo: la carpeta sale del lector sin mirar su código de salida. Con la biblioteca rota queda vacía, y
+  //    `git -C ""` opera sobre el repo donde está parada la prueba: la guarda «no encontré agent-skills» pasa y la
+  //    prueba sigue —con el commit suelto del retiro escribiendo objetos ahí—. En este laboratorio sigue hasta el
+  //    manifiesto y sale 1 con un rojo que no nombra la causa.
   if (!present(t, THIRD_REAL)) return;
   const l = lab(THIRD_REAL, { unified: true, installed: true, broken: true });
   const r = run(l, [], { cwd: gitRepoBeside(l) });
@@ -195,9 +194,9 @@ test('SkillsReaders_ThirdPartyReal_HealthyNeighbor — el espejo: con la bibliot
 // ── los lectores de bash dentro de suites largas: la forma de la llamada ───────────────────────────────────────────
 
 test('SkillsReaders_ShellReaders_DoNotSwallow — los lectores de las suites largas miran el código de salida y dicen la causa', (t) => {
-  // 🔴 rojo previo (pase adversarial del tramo 2, clases 4, 7 y 12): `2>/dev/null`, `|| true` o `|| echo <ruta
-  //    instalada>`. Con la biblioteca rota, githook-livefire seguía con el pre-commit INSTALADO (C-06 a C-08) y salteaba
-  //    C-23/C-24 con un aviso, y terminaba en «todo verde»; export-real y mirror-pipeline lo decían como «agent-skills
+  // 🔴 rojo: `2>/dev/null`, `|| true` o `|| echo <ruta
+  //    instalada>`. Con la biblioteca rota, githook-livefire sigue con el pre-commit INSTALADO (C-06 a C-08) y saltea
+  //    C-23/C-24 con un aviso, y termina en «todo verde»; export-real y mirror-pipeline lo dicen como «agent-skills
   //    no está». Estas suites tardan minutos y arman repos enteros: correrlas con la biblioteca rota no cabe en una
   //    prueba; se mide la forma de cada llamada. third-party-real tiene además su prueba de conducta, arriba.
   const readers = ['scripts/tests/githook-livefire.test.sh', 'scripts/tests/export-real.test.sh',
@@ -223,11 +222,10 @@ test('SkillsReaders_ShellReaders_DoNotSwallow — los lectores de las suites lar
 // ── las suites del renombre: dónde está agent-skills lo contesta la regla común, no cada una a su modo ──────────────
 
 test('SkillsReaders_LegacyNamesSuites_UseCommonRule — las suites del renombre ubican agent-skills por la regla común, no por la ruta instalada escrita a mano', (t) => {
-  // 🔴 rojo previo (medido el 2026-10-04, sin variables y con una HOME vacía, en un clon unido): c4 salteaba 4 pruebas
-  //    con «sin agent-skills», d1 salteaba 3 y d2 una, con las skills en su propia raíz. Y en una máquina con el clon de
-  //    skills de antes todavía instalado, medían ESE clon y no el de trabajo. Cada una tenía su `skillsRoot()` con
-  //    `~/.claude/agent-skills` escrito; la regla es una sola (la variable › el propio clon si es unido › lo instalado).
-  // c3 se sumó en el arreglo X3 (pase adversarial del tramo 2, clase 3): era la quinta con la ruta escrita a mano.
+  // 🔴 rojo: sin variables y con una HOME vacía, en un clon unido, una suite con su propio `skillsRoot()` y
+  //    `~/.claude/agent-skills` escrito saltea pruebas con «sin agent-skills» aunque las skills estén en su propia raíz;
+  //    y en una máquina con un clon de skills de antes todavía instalado, mide ESE clon y no el de trabajo. La regla
+  //    es una sola (la variable › el propio clon si es unido › lo instalado).
   const suites = ['c3', 'c4', 'd1', 'd2', 'f'].map((s) => `scripts/tests/legacy-names-${s}.test.js`).filter((f) => fs.existsSync(path.join(ROOT, f)));
   if (!suites.length) { t.skip('NO MEDIDO: las suites del renombre no viajan en esta copia'); return; }
   for (const f of suites) {
@@ -266,7 +264,7 @@ function runCleanBlock(l) {
 }
 
 test('SkillsReaders_CleanMachine_BrokenNeighbor — con la biblioteca vecina rota el modo interno dice «no pude resolver» con la causa, no «sin agent-skills»', (t) => {
-  // 🔴 rojo previo: `2>/dev/null || true` → la carpeta queda vacía y el guion dice «modo interno sin agent-skills
+  // 🔴 rojo: `2>/dev/null || true` → la carpeta queda vacía y el guion dice «modo interno sin agent-skills
   //    (TYCON_SKILLS_DIR o ~/.claude/agent-skills)»: manda a buscar un repo que está, y calla la causa.
   if (!present(t, CLEAN)) return;
   const r = runCleanBlock(lab(CLEAN, { unified: true, installed: true, broken: true }));
@@ -297,8 +295,8 @@ const INSTALL = 'scripts/tests/legacy-names-install.test.sh';
 const INSTALL_EXTRA = ['scripts/tests/lib/fake-home.sh'];
 
 test('SkillsReaders_LegacyNamesInstall_BrokenNeighbor — con la biblioteca vecina rota dice la causa y sale distinto de 0, sin caer a la ruta instalada', (t) => {
-  // 🔴 rojo previo: `2>/dev/null` y, con la salida vacía, `SKILLS_REPO="$HOME/.claude/agent-skills"`: medía las skills
-  //    INSTALADAS en vez de las del clon, y con nada seleccionado cerraba «todo verde».
+  // 🔴 rojo: `2>/dev/null` y, con la salida vacía, `SKILLS_REPO="$HOME/.claude/agent-skills"`: mide las skills
+  //    INSTALADAS en vez de las del clon, y con nada seleccionado cierra «todo verde».
   if (!present(t, INSTALL)) return;
   const r = run(lab(INSTALL, { unified: true, installed: true, broken: true, extra: INSTALL_EXTRA }), ['--only', 'NINGUNA']);
   assert.notStrictEqual(r.code, 0, r.out);
@@ -328,7 +326,7 @@ function runBench(l) {
 }
 
 test('SkillsReaders_BenchRunner_BrokenNeighbor — con la biblioteca vecina rota el banco no arranca con las skills instaladas: tira con la causa', (t) => {
-  // 🔴 rojo previo: `catch { return ~/.claude/agent-skills }` → con la vecina rota el banco medía las skills
+  // 🔴 rojo: `catch { return ~/.claude/agent-skills }` → con la vecina rota el banco mide las skills
   //    INSTALADAS y no las del clon, con código 0 y sin nombrar la causa.
   if (!present(t, RUNNER)) return;
   const r = runBench(lab(RUNNER, { unified: true, installed: true, broken: true, extra: RUNNER_EXTRA }));
@@ -337,7 +335,7 @@ test('SkillsReaders_BenchRunner_BrokenNeighbor — con la biblioteca vecina rota
 });
 
 test('SkillsReaders_BenchRunner_LibraryLoadsBroken — skills-dir.js que está y no carga tampoco es «no está»: tira', (t) => {
-  // 🔴 rojo previo: el mismo `catch` genérico leía un `require` roto adentro de skills-dir.js como «clon viejo».
+  // 🔴 rojo: el mismo `catch` genérico lee un `require` roto adentro de skills-dir.js como «clon viejo».
   if (!present(t, RUNNER)) return;
   const l = lab(RUNNER, { unified: true, installed: true, extra: RUNNER_EXTRA });
   fs.writeFileSync(path.join(l.clone, 'scripts', 'lib', 'skills-dir.js'), "require('./falta-a-proposito.js');\n");

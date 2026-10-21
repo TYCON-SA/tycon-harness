@@ -1,19 +1,17 @@
 'use strict';
-// public-copy-messages.test.js — los textos que en el arnés publicado mandarían a una pieza que no viaja (story 8.10.3,
-// tanda A, AC 5 · T5; story 8.26, AC 36).
+// public-copy-messages.test.js — los textos que en el arnés publicado mandarían a una pieza que no viaja.
 //
 // POR QUÉ EXISTE: tres piezas del arnés hablan de integraciones del equipo que el arnés publicado no trae —la llave del
 // buzón de corridas, el guion nocturno de dependencias y la lista de repos de producto—. Un texto que le dice a quien lo
 // usa que le falta algo, o que corra algo que no existe, es un diagnóstico falso.
 //
-// Hasta la story 8.26 el repo del equipo guardaba el texto «interno» y el exportador lo cambiaba sólo en la copia
-// (`allowlist.json → publicTexts`). Desde el AC 36 el repo de mantenimiento ya no arma la copia: el texto público es
-// el ÚNICO, en los dos lados, y la lista quedó vacía. Esta prueba fija eso:
+// El repo de mantenimiento no arma la copia con un texto «interno» que el exportador cambie después
+// (`allowlist.json → publicTexts`): el texto público es el ÚNICO, en los dos lados, y esa lista queda vacía. Esta prueba fija eso:
 //   · cada pieza, tal como está en el árbol, no manda a la pieza que no viaja;
 //   · ninguna tiene ya una entrada en `publicTexts` (una entrada nueva volvería a pedir un texto interno que el
 //     público no tiene, y el árbol de mantenimiento —lo privado con el público encima— dejaría de poder clasificarse).
-// El bloque del mapa del pre-commit NO está entre ellas, a propósito (pase adversarial de la tanda A): una suite que viaja
-// (githook-renames.test.sh, H2) arma un mapa de juguete y espera que ese bloque frene; sin el generador, el bloque sólo
+// El bloque del mapa del pre-commit NO está entre ellas, a propósito: una suite que viaja
+// (githook-renames.test.sh) arma un mapa de juguete y espera que ese bloque frene; sin el generador, el bloque sólo
 // avisa con su propio mensaje.
 const test = require('node:test');
 const assert = require('node:assert');

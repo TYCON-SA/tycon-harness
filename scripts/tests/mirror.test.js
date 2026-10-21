@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * mirror.test.js — la sincronización con el repo público (épica 8, story 8.8, tanda A · 2026-10-03).
+ * mirror.test.js — la sincronización con el repo público.
  *
  * Lo que no se puede perder, en orden de gravedad:
  *   · Que nada llegue al repo público sin pasar por el exportador y sus controles, y que fuera de la primera publicación
@@ -9,7 +9,7 @@
  *   · Que «no pude leer» nunca se lea como «no hay nada»: 2, sin escribir.
  *   · Que el token salga sólo de su variable, viaje por el ambiente y no aparezca en ninguna salida.
  *   · Que `verify` mire TODO lo publicado, también lo que no es git —versiones, pedidos, issues, comentarios, cada
- *     lista hasta su última página—, y que cada hallazgo diga qué hacer (story 8.26, tanda F2: T24 y T65).
+ *     lista hasta su última página—, y que cada hallazgo diga qué hacer (T24 y T65).
  *
  * SIN RED. El «repo público» es un repo `--bare` en un temporal (`TYCON_MIRROR_GIT_BASE=file://…`), con un hook que
  * anota cada ref empujada; la «API» es un servidor de este mismo proceso en 127.0.0.1 (`TYCON_MIRROR_API_URL`), que anota
@@ -178,7 +178,7 @@ function buildTemplate() {
   for (const s of fixedSamples('arnes')) inHarness[s] = 'muestra de una exclusión fija\n';
   Object.assign(inHarness, {
     'README.md': '# Arnés de mentira\n\nPara probar la publicación.\n',
-    // la portada en castellano: desde 2026-10-14 las dos portadas viven en la raíz del arnés, no son papeles
+    // la portada en castellano: las dos portadas viven en la raíz del arnés, no son papeles
     'README.es.md': '# Arnés de mentira\n\nPara probar la publicación, en castellano.\n',
     '.gitignore': 'node_modules/\n*.log\n',
     'scripts/hola.js': "'use strict';\nmodule.exports = () => 'hola';\n",
@@ -277,7 +277,7 @@ const defaultState = () => ({
   rules: FULL_RULES(),
   pulls: [],
   comments: [],
-  // lo publicado que no es git (story 8.26, tanda F2): lo que `verify` lee por la API, cada lista de a páginas
+  // lo publicado que no es git: lo que `verify` lee por la API, cada lista de a páginas
   releases: [],
   issues: [],            // pedidos (con `pull_request`) e issues, abiertos y cerrados
   labels: [],
@@ -407,7 +407,7 @@ function mirrorEnv(fx, { credential, env = {}, guides = true } = {}) {
 }
 
 /**
- * Corre mirror.js: `args[0]` es el subcomando (desde la story 8.26, AC 36, sólo `verify`). Por defecto pasa la lista de
+ * Corre mirror.js: `args[0]` es el subcomando (sólo `verify`). Por defecto pasa la lista de
  * denegación y el nombre público sintéticos por opción; `config: false` deja los valores por defecto.
  */
 function mirror(fx, args, opts = {}) {
@@ -437,9 +437,9 @@ function mirrorIdentity() {
   return { GIT_AUTHOR_NAME: fixed.nombre, GIT_AUTHOR_EMAIL: fixed.email, GIT_COMMITTER_NAME: fixed.nombre, GIT_COMMITTER_EMAIL: fixed.email };
 }
 
-// Lo publicado de partida: un árbol limpio, escrito directo en el público (story 8.26, AC 36: el público es la fuente y
-// el exportador ya no arma la copia que antes se sembraba acá). `harness` y `skills` son los commits de los internos de
-// mentira, para los trailers de `syncCommit`: `verify` ya no los compara con nada.
+// Lo publicado de partida: un árbol limpio, escrito directo en el público (el público es la fuente y
+// el exportador no arma la copia que se sembraba acá). `harness` y `skills` son los commits de los internos de
+// mentira, para los trailers de `syncCommit`: `verify` no los compara con nada.
 const SEED_FILES = {
   'README.md': '# Arnés de mentira\n\nPara probar la verificación de lo publicado.\n',
   'LICENSE': PAPERS.LICENSE,
@@ -564,13 +564,13 @@ function gitCalls(github) {
 }
 /** Las llamadas que hablan con el público. */
 const remoteCalls = (github, kind = 'ls-remote|fetch|push') => gitCalls(github).filter((c) => new RegExp(` (${kind}) `).test(c.args));
-/** La cabecera con la que git se presenta ante GitHub (AC 14): el valor que el guion le pasa por el ambiente. */
+/** La cabecera con la que git se presenta ante GitHub: el valor que el guion le pasa por el ambiente. */
 const authHeader = (credential) => `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${credential}`).toString('base64')}`;
 
 // Centinelas: no tienen forma de token de nadie, sólo son únicos.
 const READER = 'lector-de-mentira-0001';
 
-// ── T1 · AC 1 ──────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T1 ──────────────────────────────────────────────────────────────────────────────────────────────────────
 test('Mirror_PublicRepos_InvalidOrMissing_Exit2', async () => {
   const fx = await fixture();
   const broken = path.join(fx.dir, 'cfg', 'roto.json');
@@ -594,7 +594,7 @@ test('Mirror_PublicRepos_InvalidOrMissing_Exit2', async () => {
   assert.strictEqual(r.code, 2, r.all);
   assert.strictEqual(r.json.exit, 2);
   assert.match(r.json.message, /no pude leer el nombre público/);
-  // un subcomando que no existe (traer un cambio ajeno llega con otra tanda) también es 2, sin tocar nada
+  // un subcomando que no existe (`import`, `push`) o vacío también es 2, sin tocar nada
   for (const command of ['import', 'push', '']) {
     const u = await mirrorReadOnly(fx, [command], { credential: READER });
     assert.strictEqual(u.code, 2, `«${command}»: sale 2\n${u.all}`);
@@ -604,10 +604,10 @@ test('Mirror_PublicRepos_InvalidOrMissing_Exit2', async () => {
   assert.deepStrictEqual(pushes(fx), [], 'ningún push');
 });
 
-// story 8.26 (AC 36, T36): la mitad que llevaba la copia del exportador al público y absorbía los cambios ajenos ya no
-// existe. Cada uno de sus tres subcomandos sale 2 diciendo que ya no existe —no «subcomando desconocido», que se leería
+// T36: la mitad que llevaba la copia del exportador al público y absorbía los cambios ajenos no
+// existe. Cada uno de sus tres subcomandos sale 2 diciendo que no existe —no «subcomando desconocido», que se leería
 // como un error de tipeo—, sin leer el público, sin la API y sin empujar; también con --json y con las opciones que
-// tenían. Lo que queda es verify, y `module.exports` ya no trae nada de la sincronización.
+// tenían. Lo que queda es verify, y `module.exports` no trae nada de la sincronización.
 test('T36 Exporter_ClassifiesAndVerifiesOnly_AbsorbHalfRemoved — mirror.js: plan, first y sync ya no existen; queda verify', async () => {
   const fx = await fixture();
   seedPublication(fx);
@@ -667,7 +667,7 @@ function labWithFakeExporter(fx, answer, code = 0) {
   return path.join(lab, 'scripts', 'publishing', 'mirror.js');
 }
 
-// ── T24 · AC 15 ────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T24 ────────────────────────────────────────────────────────────────────────────────────────────────────
 /** `verify`, comprobando además que no escribe nada y que ninguna salida trae el nombre ni la URL del repo. */
 async function verifyPlain(fx, args = [], opts = {}) {
   const r = await mirrorReadOnly(fx, ['verify', ...args], opts);
@@ -767,7 +767,7 @@ test('Mirror_Verify_FindsNamesEverywhereWithScopedIdentityException', async () =
   assert.deepStrictEqual(r.json.findings.map((f) => `${f.part} ${f.category}`), ['c cliente']);
 });
 
-// ── Story 8.26, tanda F2 · AC 24: lo publicado que no es git, qué hacer con cada hallazgo, y el modo directo ────────
+// ── lo publicado que no es git, qué hacer con cada hallazgo, y el modo directo ────────
 // Con el arnés mantenido directo en el público, lo que un `gh` tecleado en una terminal o la web de GitHub publican no
 // pasa por ningún freno de la máquina: se ve recién acá. Todo sale de la API de mentira; los términos son inventados.
 
@@ -784,7 +784,7 @@ async function onePlaceEach(fx, cases) {
     assert.deepStrictEqual(r.json.findings.map((f) => `${f.part} ${f.category}`), [`${part} cliente`], `${name}: un hallazgo, en su parte\n${r.all}`);
     assert.match(r.json.findings[0].place, place, `${name}: el lugar`);
     assert.strictEqual(r.json.findings[0].action, action, `${name}: qué hacer`);
-    // hasta dónde llegó (tanda F3 de la 8.26): una versión, un texto de un pedido/issue/comentario, o algo del repo
+    // hasta dónde llegó: una versión, un texto de un pedido/issue/comentario, o algo del repo
     // (el nombre de la rama de un pedido es del pedido: su lugar lo dice)
     const reach = part === 'k' ? 'release' : action === 'edit' ? 'about' : /^el pedido nº \d+ \(rama/.test(r.json.findings[0].place) ? 'pull' : 'conversation';
     assert.strictEqual(r.json.findings[0].reach, reach, `${name}: hasta dónde llegó`);
@@ -880,7 +880,7 @@ test('T24_Verify_ReleasesPullsIssuesAndComments_OneFindingPerPlace_EachWithWhatT
   assert.ok(!r.all.toLowerCase().includes(TERM.toLowerCase()));
 });
 
-// Lo que sumó el pase adversarial de la tanda F2: texto publicado que ninguna de las listas de la prueba de arriba trae.
+// Texto publicado que ninguna de las listas de la prueba de arriba trae.
 test('T24_Verify_BranchNamesTimelineAndReviewHunks_OneFindingPerPlace_EachWithWhatToDo', async () => {
   const fx = await fixture();
   seedPublication(fx);
@@ -921,8 +921,8 @@ test('T24_Verify_WhatToDo_DependsOnHowFarItGot_MainPullRequestOrJustABranchOrTag
     gitFx(fx.bare, ['update-ref', 'refs/heads/main', seed.commit]);
     fx.api.reset();
   };
-  // T70 (story 8.26, tanda F3 · AC 58): cada hallazgo dice además hasta dónde llegó (`reach`), que hasta esa tanda
-  // sólo estaba en el texto del consejo. El aviso lo lee para saber qué es «de la historia de main».
+  // T70: cada hallazgo dice además hasta dónde llegó (`reach`), no sólo en el texto del consejo.
+  // El aviso lo lee para saber qué es «de la historia de main».
   const REACHES = {
     'un archivo de main': 'main', 'sólo en refs/pull/1/head': 'pull', 'el mensaje de un commit de un pedido': 'pull', 'sólo en una rama': 'ref',
     'el mensaje de una marca anotada': 'ref', 'la descripción del repo': 'about', 'una ruta de main': 'main', 'el mensaje de un commit de main': 'main',
@@ -1040,7 +1040,7 @@ test('T24_Verify_WhatToDo_DependsOnHowFarItGot_MainPullRequestOrJustABranchOrTag
     assert.ok(f, `${name}: falta el hallazgo «${category}»\n${r.all}`);
     check(f);
   };
-  // (un commit escrito directo en `main` ya no es un «cambio ajeno»: el público es la fuente, story 8.26 AC 36)
+  // (un commit escrito directo en `main` no es un «cambio ajeno»: el público es la fuente)
   reset();
   publicCommit(fx, { parents: [seed.commit], files: { 'docs/ajeno.md': '# Ajeno\n' }, message: 'Un cambio mergeado en GitHub' });
   const direct = await verifyRun(fx);
@@ -1058,9 +1058,9 @@ test('T24_Verify_WhatToDo_DependsOnHowFarItGot_MainPullRequestOrJustABranchOrTag
     assert.match(f.todo, /^es un secreto: se rota PRIMERO .*después, qué hacer: guides\//);
   }, { credential: READER });
 
-  // ── Pase adversarial de la tanda F2: hasta dónde llegó se dice por los COMMITS que lo traen, no por el objeto ──
+  // ── hasta dónde llegó se dice por los COMMITS que lo traen, no por el objeto ──
   // 🔴 un submódulo que llegó a main y después se sacó. Su objeto es un commit de OTRO repo: nunca está entre los
-  // alcanzables de éste, y mirado por su objeto salía siempre como «cuelga de una rama: se borra».
+  // alcanzables de éste, y mirado por su objeto saldría siempre como «cuelga de una rama: se borra».
   const gitlink = { gitlink: 'c'.repeat(40) };
   const submodule = (name, action, todo) => one(name, 'sin-leer', (f) => {
     assert.match(f.place, /un submódulo, en la historia o en otra ref/, name);
@@ -1129,8 +1129,8 @@ test('T65_Verify_EveryPage_APageThatFails_IsCouldNotLook_AndTheOtherPartsAreStil
   assert.deepStrictEqual(pagesOf('/issues/events'), ['100/1', '100/2']);
 
   // 🔴 las alertas de secretos se leen ANTES que las listas largas: la parte (m) hace una llamada por pedido, y si
-  // agota el cupo de la hora (de ahí en más la API contesta 403 a todo), las alertas ya se leyeron. Con el orden de
-  // antes quedaban «no medidas» la misma noche en que más importan (pase adversarial de la tanda F2).
+  // agota el cupo de la hora (de ahí en más la API contesta 403 a todo), las alertas ya se leyeron. Con otro orden
+  // quedarían «no medidas» la misma noche en que más importan.
   fx.api.reset();
   fx.api.state.credential = READER;
   fx.api.state.alerts = [{ number: 3, state: 'open' }];
@@ -1209,8 +1209,7 @@ test('T65_Verify_WhatIsNotAListOrCannotBeRead_IsCouldNotLook_NeverSkippedNorCutS
     ['un comentario que no es un objeto', (s) => { s.issueComments = [{ id: 1, body: 'Bien.' }, 7]; }, ['m']],
     ['un comentario de revisión que no es un objeto', (s) => { s.reviewComments = [null]; }, ['m']],
     // un comentario de revisión trae siempre su ruta y el fragmento del cambio: sin alguno no es «sin fragmento»; y lo
-    // de adentro de un evento de la línea de tiempo, si viene y no es un texto, tampoco es «sin texto» (revisor de
-    // fallos silenciosos, cuarta vuelta de la F2)
+    // de adentro de un evento de la línea de tiempo, si viene y no es un texto, tampoco es «sin texto»
     ['un comentario de revisión sin el fragmento del cambio', (s) => { s.reviewComments = [{ id: 1, pull_request_url: 'https://api.example.test/repos/o/r/pulls/7', body: 'Bien.', path: 'docs/aporte.md' }]; }, ['m']],
     ['un comentario de revisión sin su ruta', (s) => { s.reviewComments = [{ id: 1, pull_request_url: 'https://api.example.test/repos/o/r/pulls/7', body: 'Bien.', diff_hunk: '@@ -0,0 +1 @@\n+Limpio.' }]; }, ['m']],
     ['un comentario de revisión con una ruta que no es un texto', (s) => { s.reviewComments = [{ id: 1, pull_request_url: 'https://api.example.test/repos/o/r/pulls/7', body: 'Bien.', path: ['docs'], diff_hunk: '' }]; }, ['m']],
@@ -1219,7 +1218,7 @@ test('T65_Verify_WhatIsNotAListOrCannotBeRead_IsCouldNotLook_NeverSkippedNorCutS
     ['un evento con un «rename» que no es un objeto', (s) => { s.issueEvents = [{ id: 1, event: 'renamed', issue: { number: 7 }, rename: 7 }]; }, ['l', 'm']],
     ['un evento con una etiqueta que no es un objeto', (s) => { s.issueEvents = [{ id: 1, event: 'labeled', issue: { number: 7 }, label: [{ name: 'bug' }] }]; }, ['l', 'm']],
     // …y en cualquier parte que lee la API: donde va un texto, otra cosa (un objeto, un número, una lista) no se lee
-    // como «[object Object]», que saldría limpio (revisor de fallos silenciosos, quinta vuelta de la F2)
+    // como «[object Object]», que saldría limpio
     ['el cuerpo de un comentario que es un objeto', (s) => { s.issueComments = [{ id: 1, issue_url: 'https://api.example.test/repos/o/r/issues/7', body: { texto: 'Bien.' } }]; }, ['m']],
     ['el cuerpo de una revisión que es una lista', (s) => { s.reviews = { 7: [{ id: 1, body: ['Bien.'] }] }; }, ['m']],
     ['el cuerpo de un issue que es un número', (s) => { s.issues = [pr7, { number: 9, state: 'open', title: 'Un bug', body: 7 }]; }, ['l', 'm']],
@@ -1228,8 +1227,8 @@ test('T65_Verify_WhatIsNotAListOrCannotBeRead_IsCouldNotLook_NeverSkippedNorCutS
     ['el título del pedido abierto de la sincronización que es un objeto', () => { fx.api.override = (q) => (q.method === 'GET' && q.path.endsWith('/pulls') && q.query.state === 'open' ? { status: 200, json: [{ number: 1, title: {}, body: '', head: { ref: 'mirror/sync' } }] } : null); }, ['e']],
     ['un comentario sobre un commit que no es un objeto', (s) => { s.commitComments = ['x']; }, ['m']],
     ['una revisión que no es un objeto', (s) => { s.reviews = { 7: [{ id: 1, body: '' }, null] }; }, ['m']],
-    // las dos partes de antes que leen la API tenían el mismo salteo callado: el pedido abierto de la sincronización
-    // y los temas del repo
+    // las dos partes más viejas que leen la API tienen que fallar igual de a la vista: el pedido abierto de la
+    // sincronización y los temas del repo
     ['un pedido abierto de la sincronización que no es un objeto', () => { fx.api.override = (q) => (q.method === 'GET' && q.path.endsWith('/pulls') && q.query.state === 'open' ? { status: 200, json: [null] } : null); }, ['e']],
     // la lista de pedidos (de ahí sale el nombre de cada rama) y la línea de tiempo: lo mismo
     ['un pedido de la lista de pedidos que no es un objeto', (s) => { s.pulls = [null]; }, ['l', 'm']],
@@ -1281,11 +1280,11 @@ test('T65_Verify_ASecretRotatesFirst_AndTheReportFileSaysWhereAndWhatToDo_NeverT
   assert.strictEqual(written.command, 'verify');
   assert.strictEqual(written.exit, 1);
   assert.deepStrictEqual(written.findings, r.json.findings);
-  const KEYS = ['action', 'category', 'part', 'place', 'reach', 'rotateFirst', 'todo'];   // `reach`: tanda F3 de la 8.26
+  const KEYS = ['action', 'category', 'part', 'place', 'reach', 'rotateFirst', 'todo'];   // `reach`: hasta dónde llegó
   assert.deepStrictEqual(written.findings.map((f) => Object.keys(f).sort()), [KEYS, KEYS]);
   assert.deepStrictEqual(written.findings.map((f) => f.reach), ['conversation', 'conversation']);
   assert.strictEqual(written.private, false);
-  // T70 (tanda F3 · AC 58): con el repo privado el secreto se sigue rotando primero, y ninguno de los dos pide la purga
+  // T70: con el repo privado el secreto se sigue rotando primero, y ninguno de los dos pide la purga
   fx.api.state.credential = READER;
   fx.api.state.repo.private = true;
   const onPrivate = await verifyRun(fx, [], { credential: READER });
@@ -1324,7 +1323,7 @@ test('T65_Verify_ASecretRotatesFirst_AndTheReportFileSaysWhereAndWhatToDo_NeverT
   assert.strictEqual(early.exit, 2);
   assert.match(early.message, /no pude mirar/);
   // …y cuando frena ANTES de leer sus opciones: una opción que no existe, o un token que no tiene forma de token. El
-  // paso que avisa lee este archivo: sin él diría «no dejó un informe», no el motivo (pase adversarial de la tanda F2)
+  // paso que avisa lee este archivo: sin él diría «no dejó un informe», no el motivo
   for (const [what, args, opts, why] of [
     ['una opción que no existe', ['verify', '--json', '--report', report, '--not-an-option'], {}, /opción desconocida/],
     ['un token que no es una sola palabra', ['verify', '--json', '--report', report], { credential: 'dos palabras' }, /no tiene la forma de un token/],
@@ -1380,7 +1379,7 @@ test('T24_Verify_DirectMode_OwnerCommitOnMainIsNotForeign_AndANoreplyIdentityIsN
   const asOwner = { ...owner, GIT_COMMITTER_NAME: owner.GIT_AUTHOR_NAME, GIT_COMMITTER_EMAIL: owner.GIT_AUTHOR_EMAIL };
   const direct = publicCommit(fx, { parents: [seed.commit], files: { 'docs/nuevo.md': '# Nuevo\n' }, message: 'docs: una guía nueva', identity: asOwner });
 
-  // sin --direct es lo mismo (story 8.26, AC 36: verify es siempre directo): ese commit no es ajeno, y el `noreply` no es
+  // sin --direct es lo mismo (verify es siempre directo): ese commit no es ajeno, y el `noreply` no es
   // un hallazgo
   let r = await verifyRun(fx);
   assert.strictEqual(r.code, 0, r.all);
@@ -1425,7 +1424,7 @@ test('T24_Verify_DirectMode_OwnerCommitOnMainIsNotForeign_AndANoreplyIdentityIsN
   await check({ GIT_AUTHOR_NAME: `${TERM} Pérez` }, ['c cliente'], 'un nombre de la lista, con correo noreply');
   await check({ GIT_AUTHOR_EMAIL: [`77+${TERM}`, 'users.noreply.github.com'].join('@') }, ['c cliente'], 'una cuenta de la lista adentro del noreply');
   await check({ GIT_COMMITTER_NAME: 'GitHub', GIT_COMMITTER_EMAIL: WEB_COMMITTER }, [], 'el committer de un merge hecho en la web de GitHub');
-  // un correo que NO es noreply sigue siendo un hallazgo (la regla genérica de correos), como antes
+  // un correo que NO es noreply sigue siendo un hallazgo (la regla genérica de correos)
   await check({ GIT_AUTHOR_EMAIL: ['otra.persona', 'correo-inventado.dev'].join('@') }, ['c email'], 'un correo de verdad');
   // y el firmante de una marca anotada, lo mismo: con noreply pasa, con un correo de verdad no
   gitFx(fx.bare, ['update-ref', 'refs/heads/main', seed.commit]);
@@ -1437,7 +1436,7 @@ test('T24_Verify_DirectMode_OwnerCommitOnMainIsNotForeign_AndANoreplyIdentityIsN
   assert.deepStrictEqual(r.json.findings.map((f) => `${f.part} ${f.category}`), ['c email'], r.all);
 });
 
-// ── T25 · AC 15, 16 ────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T25 ────────────────────────────────────────────────────────────────────────────────────────────────
 test('Mirror_Verify_ExitCodesAndNotMeasured', async () => {
   let fx = await fixture();
   const seed = seedPublication(fx);
@@ -1518,7 +1517,7 @@ test('Mirror_Verify_ExitCodesAndNotMeasured', async () => {
   assert.strictEqual(r.code, 2, r.all);
   assert.match(r.err, /no pude mirar/);
   // todas las partes que se leen por la API: las de siempre y las de lo publicado que no es git (versiones, pedidos e
-  // issues, comentarios — story 8.26, tanda F2)
+  // issues, comentarios)
   assert.deepStrictEqual(r.json.couldNotLook.map((n) => n.part).sort(), ['d', 'e', 'k', 'l', 'm']);
 
   // la API contesta mal a lo que hay que mirar: 2, nunca «limpio»
@@ -1570,7 +1569,7 @@ const SYNC_REF = 'refs/heads/mirror/sync';
 const tipOf = (bare, ref) => gitFx(bare, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { tolerate: true }).stdout.trim();
 const base64 = (credential) => authHeader(credential).split(' ').pop();
 
-// ── T23 · AC 14 ────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T23 ────────────────────────────────────────────────────────────────────────────────────────────────────
 test('Mirror_Token_OnlyExplicitNeverInArgsNorDisk', async () => {
   // la cabecera con que git se presenta, con la base por defecto: una entrada de configuración por el ambiente
   assert.deepStrictEqual(require(MIRROR).gitAuth('abc', 'https://github.com'), {
@@ -1640,7 +1639,7 @@ test('Mirror_Token_OnlyExplicitNeverInArgsNorDisk', async () => {
 const openPulls = (fx) => fx.api.state.pulls.filter((p) => p.state === 'open');
 
 // ── BLOQUE T21-T22: inicio ───────────────────────────────────────────────────────────────────────────────────────
-// El token de instalación de la App (story 8.8, AC 13): `github-app-token.js` contra una API de mentira en 127.0.0.1,
+// El token de instalación de la App: `github-app-token.js` contra una API de mentira en 127.0.0.1,
 // con un par de llaves generado en cada prueba. El servidor vive en este mismo proceso: el guion se lanza con `spawn` y
 // una promesa, nunca con `spawnSync` (el servidor no contesta mientras el proceso espera, y la prueba se cuelga).
 const tokenScript = path.join(RAIZ, 'scripts', 'publishing', 'github-app-token.js');
@@ -1648,13 +1647,12 @@ const tokenScript = path.join(RAIZ, 'scripts', 'publishing', 'github-app-token.j
 const tokenPermissions = Object.freeze({
   contents: 'write', pull_requests: 'write', workflows: 'write',
   metadata: 'read', administration: 'read', secret_scanning_alerts: 'read',
-  // story 8.26, tanda F3 (AC 59): la lista de issues y su línea de tiempo no entran con ningún otro permiso
+  // la lista de issues y su línea de tiempo no entran con ningún otro permiso
   issues: 'read',
 });
 // T72 · Qué permiso acepta GitHub para cada dirección que `verify` lee (cualquiera de los de la fila alcanza). Sale de
-// la tabla de GitHub «Permissions required for GitHub Apps», leída fila por fila el 2026-10-10. La tanda F2 sumó la
-// lista de issues y su línea de tiempo sin sumarle el permiso al token, y se vio recién en una corrida de verdad (un
-// 403): con esta tabla, una dirección nueva sin permiso es un rojo de la suite.
+// la tabla de GitHub «Permissions required for GitHub Apps», leída fila por fila. Una dirección nueva sin su permiso en el
+// token da un 403 recién en una corrida de verdad: con esta tabla, es un rojo de la suite.
 const PERMISSION_FOR = Object.freeze([
   [/^$/, ['metadata']],
   [/^\/topics$/, ['metadata']],
@@ -2000,7 +1998,7 @@ test('GithubAppToken_Failures_Exit2WithoutSecrets', async () => {
 });
 // ── BLOQUE T21-T22: fin ──────────────────────────────────────────────────────────────────────────────────────────
 
-// ── T28 · AC 23 ────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T28 ────────────────────────────────────────────────────────────────────────────────────────────────────
 /** Las secciones de nivel 2 de un Markdown, fuera de los bloques de código: el título de cada una y su texto. */
 function sectionsOf(markdown) {
   const sections = [];
@@ -2017,7 +2015,7 @@ function sectionsOf(markdown) {
 test('Guide_IfVerifyFails_TwoCasesAndOwner', () => {
   const rel = 'guides/maintaining/publicacion-espejo.md';
   const whole = fs.readFileSync(path.join(RAIZ, rel), 'utf8');
-  // lo que sale en la copia: sin los bloques internos. En la copia ya no están, y la prueba da lo mismo
+  // lo que sale en la copia: sin los bloques internos. En la copia no están, y la prueba da lo mismo
   const shipped = require(path.join(PUBLISHING, 'public-copy.js')).internalBlocks(whole, rel);
   assert.deepStrictEqual(shipped.errors, [], 'los marcadores de bloque de la guía están bien puestos');
   const sections = sectionsOf(shipped.text);
@@ -2050,8 +2048,8 @@ test('Guide_IfVerifyFails_TwoCasesAndOwner', () => {
   for (const title of cited) assert.ok(titles.includes(title), `el guion remite a §«${title}», y la guía tiene esa sección`);
 });
 
-// ── Lo que encontró el pase adversarial de la tanda A (2026-10-03) ─────────────────────────────────────────────────
-// Cada prueba nació roja contra el guion de ese día, por la causa que nombra.
+// ── Casos de borde del pase adversarial ────────────────────────────────────────────────────────────────────────────
+// Cada prueba falla contra un guion que no cubra la causa que nombra.
 
 /** Un correo de una persona de afuera, con un dominio inventado que no es de ejemplo: por partes, como los demás. */
 const OUTSIDER = { name: 'Colaboradora De Afuera', email: ['colaboradora', 'correo-inventado.dev'].join('@') };
@@ -2076,7 +2074,7 @@ function listener(headers = null) {
   });
 }
 
-// ── causa 16 · AC 13, 14 ───────────────────────────────────────────────────────────────────────────────────────────
+// ── las bases sólo por http hacia esta máquina ────────────────────────────────────────────────────────────────────
 test('Mirror_Bases_PlainHttpOnlyToThisMachine_Exit2BeforeToken', async () => {
   const fx = await fixture();
   seedPublication(fx);
@@ -2146,7 +2144,7 @@ test('Mirror_Bases_PlainHttpOnlyToThisMachine_Exit2BeforeToken', async () => {
   }
 });
 
-// ── causa 20 · AC 15 (c) ───────────────────────────────────────────────────────────────────────────────────────────
+// ── commits de pull: el correo de un tercero no se juzga ──────────────────────────────────────────────────────────
 test('Mirror_Verify_PullOnlyCommits_ThirdPartyEmailNotJudged', async () => {
   const fx = await fixture();
   const seed = seedPublication(fx);
@@ -2206,7 +2204,7 @@ test('Mirror_Verify_PullOnlyCommits_ThirdPartyEmailNotJudged', async () => {
   }
 });
 
-// ── lo que `verify` no miraba ──────────────────────────────────────────────────────────────────────────────────────
+// ── lo que `verify` tiene que mirar ──────────────────────────────────────────────────────────────────────────────────────
 /** Un público recién publicado, y cómo volver a dejarlo así: `main` en la primera publicación y ninguna otra ref. */
 async function verifyLab(parts = {}) {
   const fx = await fixture();
@@ -2228,7 +2226,7 @@ async function verifyLab(parts = {}) {
 }
 const withoutTerm = (r, name) => assert.ok(!r.all.toLowerCase().includes(TERM.toLowerCase()), `${name}: ninguna salida trae el texto hallado\n${r.all}`);
 
-// ── causa 3 · AC 15 ────────────────────────────────────────────────────────────────────────────────────────────────
+// ── `verify` mira todas las refs que el servidor sirve ────────────────────────────────────────────────────────────
 test('Mirror_Verify_LooksAtEveryRefTheServerServes', async () => {
   const { fx, seed, reset } = await verifyLab();
   let r = await verifyRun(fx);
@@ -2251,7 +2249,7 @@ test('Mirror_Verify_LooksAtEveryRefTheServerServes', async () => {
   }
 });
 
-// ── causas 2 y 15 · AC 15 ──────────────────────────────────────────────────────────────────────────────────────────
+// ── los nombres de ruta de todo árbol alcanzable ──────────────────────────────────────────────────────────────────
 test('Mirror_Verify_PathNamesInEveryReachableTree', async () => {
   const { fx, seed, reset, republish, superseded } = await verifyLab();
   const rel = `docs/${TERM}/nota.md`;
@@ -2306,7 +2304,7 @@ test('Mirror_Verify_PathNamesInEveryReachableTree', async () => {
   assert.strictEqual(r.code, 0, r.all);
 });
 
-// ── causas 6, 17 y 23 · AC 15 (c) ──────────────────────────────────────────────────────────────────────────────────
+// ── etiquetas anidadas y el nombre de etiqueta declarado ──────────────────────────────────────────────────────────
 test('Mirror_Verify_NestedTagsAndDeclaredTagName', async () => {
   const { fx, seed, reset } = await verifyLab();
   const tagger = { GIT_COMMITTER_NAME: TERM, GIT_COMMITTER_EMAIL: 'alguien@example.com' };
@@ -2349,7 +2347,7 @@ test('Mirror_Verify_NestedTagsAndDeclaredTagName', async () => {
   assert.strictEqual(r.code, 0, r.all);
 });
 
-// ── causas 11 y 22 · AC 15 (c), AC 8 ───────────────────────────────────────────────────────────────────────────────
+// ── byte de control en un mensaje: nada se saltea ─────────────────────────────────────────────────────────────────
 test('Mirror_ControlByteInMessage_NothingSkipped', async () => {
   const { fx, seed, reset, republish } = await verifyLab();
   const SEP = '\x01';   // el separador que el guion ponía dentro del formato de `git log`
@@ -2411,7 +2409,7 @@ test('Mirror_Verify_MessageInAnotherEncoding_StillReviewed', async () => {
   }
 });
 
-// ── causas 7 y 9 · AC 15 (a') ──────────────────────────────────────────────────────────────────────────────────────
+// ── mismo blob bajo dos rutas: un veredicto por ruta ──────────────────────────────────────────────────────────────
 test('Mirror_Verify_SameBlobUnderTwoPaths_VerdictPerPath', async () => {
   // una excepción POR RUTA: ese contenido, en ese archivo, está permitido
   const denied = denylist();
@@ -2485,7 +2483,7 @@ test('Mirror_Output_TextFromThePublicRepoIsSanitized', async () => {
 
 });
 
-// ── causa 26 ───────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── cada corrida con --json lleva su mensaje ──────────────────────────────────────────────────────────────────────
 test('Mirror_Json_EveryRunCarriesItsMessage', async () => {
   const fx = await fixture();
   const said = [];
@@ -2516,7 +2514,7 @@ test('Mirror_Json_EveryRunCarriesItsMessage', async () => {
   assert.strictEqual(said.length, 3);
 });
 
-// ── la segunda vuelta de seguridad: tres lugares donde `verify` daba «limpio» sin haber mirado ─────────────────────
+// ── tres lugares donde `verify` daría «limpio» sin haber mirado ─────────────────────
 test('Mirror_Verify_ReplaceRefs_NeverHideWhatIsPublished', async () => {
   const { fx, seed, reset } = await verifyLab();
   /** Lo que hace `git replace` en el público: desde ahí, git lee `clean` cada vez que le piden `hidden`. */
@@ -2676,7 +2674,7 @@ test('Mirror_Git_NeverFollowsRedirects', async () => {
   }
 });
 
-// ── story 8.18 · AC 23 y 24 ────────────────────────────────────────────────────────────────────────────────────────
+// ── el repo único ─────────────────────────────────────────────────────────────────────────────────────────────────
 // Los dos repos internos pasan a ser UNO, con las dos historias unidas. Lo que no se puede perder:
 //   · que de un solo repo salga UN commit y los dos trailers nombren ese mismo: nada de lo publicado cambia de forma
 //     (`version.json`, `isSyncCommit` y `verify` siguen leyendo los dos trailers);
@@ -2689,7 +2687,7 @@ test('Mirror_Git_NeverFollowsRedirects', async () => {
 // revisores y la lista blanca del equipo en la misma raíz. El arnés de juguete trae sólo lo último (`teamList`): solo,
 // sigue siendo uno de dos repos; unido con agent-skills, es el repo único.
 
-// ══ story 8.13.1, tanda A (AC 6, T7) — la lista de transformados viaja en el version.json publicado ═══════════════════
+// ══ T7 — la lista de transformados viaja en el version.json publicado ══════════════════════════════════════════════════
 // El version.json que llega al público lo escribe ESTA sincronización (`numberRun`, en `first` y en `sync`), no el
 // exportador: sin la lista acá, cada máquina con la capa privada vería «capa de otra versión». La lista es la del
 // exportador de esa corrida (su --json), y `verify` comprueba que nombra exactamente las rutas publicadas cuyo blob no

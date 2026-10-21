@@ -2,10 +2,9 @@
 # pr-verdict.test.sh — red de `scripts/ci/pr-verdict.js`, el veredicto de la validación de un
 # pull request del arnés: un rojo que YA estaba rojo en main avisa; sólo un rojo NUEVO frena.
 #
-# Caso disparador (medido en la etapa 0 del plan de protección por PR, 2026-09-17):
-# `publish-bump.test.sh` está roja en el nocturno desde el 7/9 por una causa de entorno de Azure
-# que no se reproduce en local. Con un veredicto «cero rojos o no entra», la política habría frenado
-# el 100 % de los pull requests durante 11 días.
+# Por qué: una suite como `publish-bump.test.sh` puede estar roja en el nocturno por una causa de entorno de Azure
+# que no se reproduce en local. Con un veredicto «cero rojos o no entra», la política frenaría
+# todos los pull requests mientras dure.
 #
 # Los casos que más pesan son los dos pares espejo: sin ellos un verde no significaría nada.
 #   V1/V2  — el rojo viejo NO frena · el rojo nuevo SÍ frena (mismo reporte, una línea de diferencia)
@@ -16,7 +15,7 @@ set -uo pipefail
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT="$AQUI/scripts/ci/pr-verdict.js"
 YAML="$AQUI/pipelines/azure-pipelines-maintainers-pr.yml"
-# Los pasos que corren las suites viven en una plantilla que usan el trabajo de suites y el del banco (story 8.22, tramo I).
+# Los pasos que corren las suites viven en una plantilla que usan el trabajo de suites y el del banco.
 SUITES_TEMPLATE="$AQUI/pipelines/templates/run-suites.yml"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 fallos=0; pasaron=0
@@ -86,9 +85,8 @@ rc=$(corre --current-bench "$TMP/ahora-b.json" --bench-snapshot "$TMP/foto-b.jso
   && ok "V4b: la paridad rota que la foto no tenía es un rojo nuevo" || no "V4b: rc=$rc · $(cat "$TMP/out.txt")"
 
 # ── V5. la foto AUSENTE no es una excusa en blanco, ni un verde: «no pude decidir: sin foto» ─────
-# Story 8.26, tanda C (AC 43): hasta ese día, sin foto todo rojo contaba como nuevo y, sin rojos, salía verde. Con la
-# validación sobre el público la foto viene de afuera (donde la deja el nocturno): si no llegó, la corrida no sabe qué
-# es viejo y qué es nuevo, haya rojos o no. Sale 2 y lo dice; no frena como «rojo nuevo» ni aprueba en blanco.
+# Con la validación sobre el público la foto viene de afuera (donde la deja el nocturno): si no llegó, la corrida no sabe
+# qué es viejo y qué es nuevo, haya rojos o no. Sale 2 y lo dice; no frena como «rojo nuevo» ni aprueba en blanco.
 suites "$TMP/ahora-s.json" "$(hoy)" publish-bump.test.sh
 rc=$(corre --suites-actual "$TMP/ahora-s.json" --suites-snapshot "$TMP/no-existe.json")
 { [ "$rc" = 2 ] && grep -q 'no pude decidir: sin foto' "$TMP/out.txt" && grep -q 'no pude leer la foto nocturna' "$TMP/out.txt"; } \
@@ -105,7 +103,7 @@ banco "$TMP/ahora-b5.json" "$(hoy)" "hook-a::caso1|claude|1"
 rc=$(corre --current-bench "$TMP/ahora-b5.json" --bench-snapshot "$TMP/no-existe.json")
 { [ "$rc" = 2 ] && grep -q 'no pude decidir: sin foto' "$TMP/out.txt"; } \
   && ok "V5d: lo mismo con la foto del banco" || no "V5d: rc=$rc · $(cat "$TMP/out.txt")"
-# V5e — (pase adversarial de la tanda C de la 8.26) la etiqueta sigue a la foto de CADA sección: (a) sin foto de suites y en
+# V5e — la etiqueta sigue a la foto de CADA sección: (a) sin foto de suites y en
 # modo aviso, la roja de suite no se llama «ROJO NUEVO»; (b) con la foto de suites y sin la del banco, la roja de suite
 # nueva SÍ es «ROJO NUEVO» (su foto se leyó), y la corrida igual sale 2 por la foto que falta.
 rc=$(corre --suites-actual "$TMP/ahora-s.json" --suites-snapshot "$TMP/no-existe.json" --suites-warn)
@@ -166,7 +164,7 @@ node -e '
 suites "$TMP/foto-s.json" "$(hoy)"
 node "$SCRIPT" --suites-actual "$TMP/ahora-s.json" --suites-snapshot "$TMP/foto-s.json" --baseline "$VACIA" --ado > "$TMP/out.txt" 2>&1; rc=$?
 # Lo que importa NO es que la palabra desaparezca (el hallazgo tiene que seguir siendo legible):
-# es que en toda la salida haya UN solo `##vso[`, el nuestro. El del motivo quedó neutralizado.
+# es que en toda la salida haya UN solo `##vso[`, el nuestro. El del motivo queda neutralizado.
 { [ "$rc" = 1 ] && [ "$(grep -o '##vso\[' "$TMP/out.txt" | wc -l | tr -d ' ')" = 1 ] \
   && [ "$(grep -c . "$TMP/out.txt")" -ge 1 ] && grep -q 'mala.test.sh' "$TMP/out.txt" \
   && grep -q 'setvariable' "$TMP/out.txt"; } \
@@ -175,7 +173,7 @@ node "$SCRIPT" --suites-actual "$TMP/ahora-s.json" --suites-snapshot "$TMP/foto-
 
 # ── V11. el pipeline de PR llama a este guion y no escribe en el repo ───────────────────────────
 if [ ! -f "$YAML" ]; then
-  # el pipeline es del privado (story 8.41, tanda F2): la copia pública no lo trae, y ahí no hay qué medir
+  # el pipeline es del privado: la copia pública no lo trae, y ahí no hay qué medir
   echo "⏭ veredicto-pr: V11 NO MEDIDO — no está pipelines/azure-pipelines-maintainers-pr.yml (la copia pública no trae los pipelines del equipo). No es un verde."
 else
   { grep -q 'pr-verdict.js' "$YAML" && grep -q -- '--ado' "$YAML"; } \
@@ -186,7 +184,7 @@ else
   else
     ok "V11b: el pipeline de PR nunca commitea ni pushea (eso sigue siendo del nocturno)"
   fi
-  # Story 8.26, tanda C (AC 10): en un repo de GitHub el pedido es el que la dispara (`pr:` sobre main, y Azure corta las
+  # En un repo de GitHub el pedido es el que la dispara (`pr:` sobre main, y Azure corta las
   # corridas viejas del mismo pedido); en un repo de Azure ese bloque no se aplica (allá la encola la política de rama),
   # así que la 170 no cambia. Lo que sigue sin existir es el disparador por empuje: dos corridas por cambio.
   { grep -q '^trigger: none' "$YAML" && grep -A2 '^pr:' "$YAML" | grep -E 'include: \[main\]' >/dev/null && ! grep -q '^pr: none' "$YAML"; } \
@@ -194,10 +192,10 @@ else
 fi
 
 # ── V12. el orden: AgentSkills ANTES del lint, y sin condición ───────────────────────────────────
-# 🔴 ROJO PREVIO REAL, no inventado: la corrida 10568 (17/9) tenía el clon DESPUÉS del lint y dos
-# controles mintieron en la misma corrida — el lint de frontmatter declaró «todas las stories son
+# 🔴 Con el clon DESPUÉS del lint, dos
+# controles mienten en la misma corrida — el lint de frontmatter declara «todas las stories son
 # legibles» habiendo mirado 33 de 278 .md (sin el descubridor, que vive en AgentSkills), y
-# `build/check.js` salió rojo por no encontrar los advisors canónicos.
+# `build/check.js` sale rojo por no encontrar los advisors canónicos.
 if [ -f "$YAML" ]; then
   ORDEN=$(node -e '
     const y=require("fs").readFileSync(process.argv[1],"utf8").split("\n");
@@ -221,7 +219,7 @@ if [ -f "$YAML" ]; then
     || no "V12b: el clon de AgentSkills quedó condicionado; un PR de docs lintearía sin el descubridor"
 fi
 
-# ── V12d. una suite que anoche NO SE MIDIÓ no excusa un rojo de hoy (2026-10-04) ────────────────
+# ── V12d. una suite que anoche NO SE MIDIÓ no excusa un rojo de hoy ────────────────
 # Las suites del nocturno corren en trabajos paralelos, y las de un trabajo que no terminó quedan en `failures` de la
 # foto (con la marca «(no-medida)») y, aparte, en `unmeasured`. No son rojas: no se sabe cómo estaban. Lo que manda es
 # el campo `unmeasured`, no la marca: aunque la entrada llevara el nombre pelado, no cuenta como «ya estaba roja».
@@ -244,7 +242,7 @@ rc=$(corre --suites-actual "$TMP/ahora-s.json" --suites-snapshot "$TMP/foto-inc.
 { [ "$rc" = 1 ] && grep -q 'ROJO NUEVO.*lab-suite.test.sh' "$TMP/out.txt"; } \
   && ok "V12e: manda el campo unmeasured, no la marca: una no medida con el nombre pelado tampoco excusa" || no "V12e: rc=$rc · $(cat "$TMP/out.txt")"
 
-# ── V12f. las suites de ESTA corrida que no se midieron: ni verdes ni «rojo nuevo» (2026-10-04) ──────────────────
+# ── V12f. las suites de ESTA corrida que no se midieron: ni verdes ni «rojo nuevo» ──────────────────
 # La validación de cada cambio corre sus suites en trabajos paralelos. Si un trabajo no terminó (lo cortó el tope, no
 # publicó, lo que publicó no cuadra), sus suites llegan al reporte como no medidas. No son un rojo que trajo el cambio
 # —no se sabe cómo estaban— y tampoco un verde: el veredicto lo dice con todas las letras y sale 2 («no pude decidir»),
@@ -252,8 +250,8 @@ rc=$(corre --suites-actual "$TMP/ahora-s.json" --suites-snapshot "$TMP/foto-inc.
 foto_incompleta "$TMP/ahora-inc.json" "lab-a.test.sh(no-medida)" "lab-b.test.sh(no-medida)"
 suites "$TMP/foto-s.json" "$(hoy)" publish-bump.test.sh
 rc=$(corre --suites-actual "$TMP/ahora-inc.json" --suites-snapshot "$TMP/foto-s.json" --suites-warn)
-# Story 8.22, tramo D: una suite que pasó su tope también llega no medida, desde un trabajo que SÍ terminó: el motivo
-# que da el veredicto nombra las dos causas (pase adversarial: decía sólo «un trabajo no terminó»).
+# Una suite que pasó su tope también llega no medida, desde un trabajo que SÍ terminó: el motivo
+# que da el veredicto nombra las dos causas, no sólo «un trabajo no terminó».
 { [ "$rc" = 2 ] && grep -q '2 suite(s) NO SE MIDIERON' "$TMP/out.txt" && grep -q 'lab-a.test.sh' "$TMP/out.txt" \
   && grep -q 'un trabajo de suites no terminó, o la suite pasó su tope' "$TMP/out.txt" \
   && ! grep -q 'ROJO NUEVO.*lab-a' "$TMP/out.txt" && ! grep -q '✅ sin rojos nuevos' "$TMP/out.txt"; } \
@@ -266,7 +264,7 @@ rc=$(corre --suites-actual "$TMP/ahora-inc.json" --suites-snapshot "$TMP/foto-s.
   && ok "V12g: con suites sin medir, un rojo nuevo del banco sigue frenando (sale 1) y las no medidas se siguen diciendo" \
   || no "V12g: rc=$rc · $(cat "$TMP/out.txt")"
 
-# ── V12h. la suite que no corrió porque el cambio no toca lo que mide: se nombra, no se cuenta (2026-10-04) ────
+# ── V12h. la suite que no corrió porque el cambio no toca lo que mide: se nombra, no se cuenta ────
 node -e '
   const fs=require("fs");
   fs.writeFileSync(process.argv[1], JSON.stringify({kind:"bash-tests",ts:new Date().toISOString(),corridas:3,failures:[],motivos:{},
@@ -280,7 +278,7 @@ rc=$(corre --suites-actual "$TMP/ahora-nr.json" --suites-snapshot "$TMP/foto-s.j
   && ok "V12h: 🔴 la suite que no corrió se lista como «no corrió: el cambio no toca lo que mide», sin contarla roja ni verde" \
   || no "V12h: rc=$rc · $(cat "$TMP/out.txt")"
 
-# ── V12i. la suite que no viaja: «no corrió: no viaja», con su texto propio (story 8.26, tanda C, AC 11) ────────────
+# ── V12i. la suite que no viaja: «no corrió: no viaja», con su texto propio ────────────
 # Con la validación sobre el público, las suites que sólo existen en el repo de mantenimiento no están en el árbol que
 # se valida. No son un rojo, ni un verde, ni «el cambio no toca lo que mide» (que sería falso): corren en el nocturno.
 node -e '
@@ -296,9 +294,9 @@ rc=$(corre --suites-actual "$TMP/ahora-nv.json" --suites-snapshot "$TMP/foto-s.j
   && ok "V12i: 🔴 la suite que no viaja se nombra «no corrió: no viaja» y se cuenta aparte, ni roja ni verde" \
   || no "V12i: rc=$rc · $(cat "$TMP/out.txt")"
 
-# ── V13. Etapa 3: las suites AVISAN, el banco FRENA (decisión del dev, 2026-09-17) ──────────────
-# Medido en las corridas 10569 y 10570: dos suites verdes en la Mac salieron rojas en el agente, y
-# NO fueron las mismas. Con 116 suites, aun poca intermitencia deja casi todo PR en rojo por algo
+# ── V13. las suites AVISAN, el banco FRENA ──────────────
+# Dos suites verdes en la Mac pueden salir rojas en el agente, y
+# no siempre las mismas. Con 116 suites, aun poca intermitencia deja casi todo PR en rojo por algo
 # que el cambio no hizo. Lo que NO se relaja: el banco, y el minuto de lint (que corre aparte).
 suites "$TMP/foto-s.json" "$(hoy)"
 suites "$TMP/ahora-s.json" "$(hoy)" periodic-exam.test.js
@@ -312,13 +310,13 @@ rc=$(corre --current-bench "$TMP/ahora-b.json" --bench-snapshot "$TMP/foto-b.jso
 { [ "$rc" = 1 ] && grep -q 'ROJO NUEVO' "$TMP/out.txt" && ! grep -q 'MODO AVISO' "$TMP/out.txt"; } \
   && ok "V13b: (espejo) el banco sigue frenando en el mismo modo — sin esto, la bandera apagaría todo" \
   || no "V13b: rc=$rc · $(cat "$TMP/out.txt")"
-# Sin la bandera, la suite frena: la decisión es TEMPORAL y el default no cambió.
+# Sin la bandera, la suite frena: el modo aviso es TEMPORAL y el default es frenar.
 rc=$(corre --suites-actual "$TMP/ahora-s.json" --suites-snapshot "$TMP/foto-s.json")
 [ "$rc" = 1 ] && ok "V13c: sin la bandera la suite frena — el modo aviso es de la Etapa 3, no el default" \
   || no "V13c: rc=$rc · $(cat "$TMP/out.txt")"
 
 # ── V14. el reintento: las DOS pasadas quedan anotadas, y la intermitente se nombra ──────────────
-# Es el dato que la Etapa 3 necesita para decidir si las suites vuelven a frenar.
+# Es el dato que hace falta para decidir si las suites vuelven a frenar.
 node -e '
   const fs=require("fs");
   fs.writeFileSync(process.argv[1], JSON.stringify({kind:"bash-tests",ts:new Date().toISOString(),failures:[],motivos:{},
@@ -330,7 +328,7 @@ rc=$(corre --suites-actual "$TMP/ahora-s.json" --suites-snapshot "$TMP/foto-s.js
   && ok "V14a: la suite que salió verde en la 2ª pasada se nombra intermitente; la que siguió roja, no" \
   || no "V14a: rc=$rc · $(cat "$TMP/out.txt")"
 if [ -f "$YAML" ]; then
-  # Story 8.26, tanda C (AC 14): el modo aviso ya no está fijo en el YAML; lo decide el interruptor de la definición
+  # El modo aviso no está fijo en el YAML; lo decide el interruptor de la definición
   # (scripts/ci/suites-block.js). Lo que hace cada valor lo corre pr-suites-shards.test.js con el paso real.
   { grep -q -- '--retries' "$YAML" && grep -q 'suites-block.js' "$YAML" && grep -q 'suites-block.js' "$SUITES_TEMPLATE" \
     && ! grep -qE '^[^#]*pr-verdict\.js.* --suites-warn' "$YAML" && grep -q '2ª pasada' "$SUITES_TEMPLATE"; } \
@@ -343,11 +341,11 @@ if [ -f "$YAML" ]; then
     || ok "V14c: el banco no se reintenta (sólo las suites)"
 fi
 
-# ── V15. R6_Pipelines_TemplatesRegexGlobsCensus (T40 de la story 8.12) ───────────────────────────
+# ── V15. R6_Pipelines_TemplatesRegexGlobsCensus (T40) ───────────────────────────
 # Los yml del arnés viven en pipelines/ y la plantilla en pipelines/templates/.
-# 🔴 rojo previo (a): el regex viejo de «Qué trae este cambio» nombraba la carpeta de plantillas de antes y los yml de la
-#    raíz: un pull request que sólo toca pipelines/x.yml quedaba «sin código» y no corría ni banco ni suites.
-# 🔴 rojo previo (b): un `- template:` sin la barra inicial. Azure resuelve una ruta relativa desde la carpeta del yml que
+# 🔴 (a) El regex de «Qué trae este cambio» tiene que contar como código la carpeta de plantillas y los yml de la
+#    raíz: si no, un pull request que sólo toca pipelines/x.yml queda «sin código» y no corre ni banco ni suites.
+# 🔴 (b) Un `- template:` sin la barra inicial no sirve. Azure resuelve una ruta relativa desde la carpeta del yml que
 #    la incluye, y pipelines/pipelines/templates/… no existe: el pipeline no arranca.
 if [ -f "$YAML" ]; then
   # el patrón se lee del paso real, no de una copia
@@ -384,23 +382,23 @@ if compgen -G "$AQUI/pipelines/*.yml" > /dev/null; then
     && ok "V15b: 🔴 los $N \`- template:\` usan /pipelines/templates/… con la barra, y el archivo existe" \
     || no "V15b: plantillas mal nombradas (${N} usos): $(tr '\n' ' ' < "$TMP/plantillas.txt")"
 elif [ -d "$AQUI/pipelines" ] && ! compgen -G "$AQUI/pipelines/*.yml" > /dev/null; then
-  # los pipelines que usan plantillas son del privado (story 8.41, tanda F2): la copia pública sólo trae pipelines/operations/
+  # los pipelines que usan plantillas son del privado: la copia pública sólo trae pipelines/operations/
   echo "⏭ veredicto-pr: V15b NO MEDIDO — pipelines/ no trae ningún pipeline con plantillas (la copia pública no trae los pipelines del equipo). No es un verde."
 else
   no "V15b: no existe pipelines/ — los yml del arnés viven ahí desde la R6"
 fi
 
-# ── V16. PrPipeline_SkillsOnlyChange_CountsAsCode_BothHookParts (T14 de la story 8.18, AC 15) ────
-# Desde la 8.18 el arnés trae agent-skills adentro (`agents/`, `skills/`, `packs/`). Dos formas de que un pull
-# request que sólo toca skills pase sin que nadie lo mire, y las dos estaban:
-#   (a) «Qué trae este cambio» no contaba `skills/` ni `packs/` como código: ni banco ni suites;
-#   (b) el lint corría cada freno de nombres UNA vez, y en el repo unido cada corrida mira sólo la mitad de su
-#       fuente: la de `skills/` no la miraba nadie ([DEF-8.18-lint-del-pr]).
+# ── V16. PrPipeline_SkillsOnlyChange_CountsAsCode_BothHookParts (T14) ────
+# El arnés trae agent-skills adentro (`agents/`, `skills/`, `packs/`). Hay dos formas de que un pull
+# request que sólo toca skills pase sin que nadie lo mire:
+#   (a) «Qué trae este cambio» no cuenta `skills/` ni `packs/` como código: ni banco ni suites;
+#   (b) el lint corre cada freno de nombres UNA vez, y en el repo unido cada corrida mira sólo la mitad de su
+#       fuente: la de `skills/` no la mira nadie.
 # 🔴 El paso de lint se corre de verdad, sacado del yml por su displayName, con un `node` de juguete que anota
 #    cada llamada y sale con el código que el caso le pide: lo que se mide es qué controles llama el paso y qué
 #    hace con su código de salida, no los controles (cada uno tiene su suite).
 # El lint NO llama al pre-commit: un hook en el servidor mira lo stageado, que ahí es nada —un verde sobre el
-# vacío—. Son pasos escritos en el yml, con `--range` (precisado en el AC 15 tras la revisión adversarial).
+# vacío—. Son pasos escritos en el yml, con `--range`.
 if [ -f "$YAML" ]; then
   PATRON=$(awk "/- script: \|/{buf=\"\"} {buf=buf\"\\n\"\$0} /displayName: 'Qué trae este cambio'/{print buf; exit}" "$YAML" \
     | grep -E "grep -qE '[^']+' \"\\\$LISTA(_CODIGO)?\"" | sed -E "s/.*grep -qE '([^']+)'.*/\1/")
@@ -478,7 +476,7 @@ STUB
       && ok "V16b: 🔴 el lint corre cada freno de nombres dos veces, una por fuente (arnes y agent-skills), con --range" \
       || no "V16b: rc=$rc · llamadas: $(tr '\n' '|' < "$L16/calls.txt")"
 
-    # V16c — un rojo de la corrida de agent-skills frena el lint (antes no había quién lo viera) …
+    # V16c — un rojo de la corrida de agent-skills frena el lint (si no, nadie lo vería) …
     rc=$(lint16 "$L16/src" "skills/lab-skill/SKILL.md" "spanish-names.js $R --source agent-skills" 1)
     { [ "$rc" = 1 ] && grep -q '1 control(es) en rojo' "$L16/lint.txt" && grep -q 'agent-skills' "$L16/lint.txt"; } \
       && ok "V16c: 🔴 un nombre nuevo en castellano dentro de skills/ frena el lint, y la línea dice que fue la fuente agent-skills" \
@@ -535,11 +533,11 @@ STUB
   fi
 fi
 
-# ── V17. PrPipeline_MovedFile_CountsAtBothPaths (pase adversarial del tramo 1 de la 8.18, hallazgo 12) ────────────
-# La lista de archivos del cambio se armaba con `git diff --name-only`, y git detecta los renombres por defecto: un
-# archivo MOVIDO aparecía sólo con su ruta de destino. Medido por el verificador con el paso real, sacado del yml:
-# un pull request que hace `git mv skills/foo/SKILL.md guides/foo.md` dejaba `hayCodigo=no` —ni banco ni suites,
-# contra el AC 15—, y mover algo fuera de una carpeta con `gate_only_when_touching` difería su suite. Con
+# ── V17. PrPipeline_MovedFile_CountsAtBothPaths ────────────
+# La lista de archivos del cambio se arma con `git diff --name-only`, y git detecta los renombres por defecto: un
+# archivo MOVIDO aparecería sólo con su ruta de destino. Con el paso real, sacado del yml: un pull request que hace
+# `git mv skills/foo/SKILL.md guides/foo.md` dejaría `hayCodigo=no` —ni banco ni suites—, y mover algo fuera de una
+# carpeta con `gate_only_when_touching` difiere su suite. Con
 # `--no-renames` salen la ruta vieja y la nueva, y lo que mira por ruta ve el cambio en la carpeta de la que salió.
 # 🔴 El paso se corre de verdad, sacado del yml por su displayName, sobre un repo de juguete con su `origin` y una
 #    rama de pull request. git va con la configuración AISLADA: un `diff.renames=false` del dev pondría esto en verde
@@ -552,10 +550,10 @@ if [ -f "$YAML" ]; then
         git -c user.email=t@t -c user.name=t -c commit.gpgsign=false "$@" )
   }
   # Saca un paso del yml por su displayName y le sustituye las macros de Azure. Lo que no es de la máquina de prueba sale
-  # del entorno: `${{ parameters.runAll }}` → $RUN_ALL_TEST (False si no está) y `$(todoElRepo)` → $TODO_TEST (story 8.22).
-  # El trabajo de suites (tramo D): `$(SUITES_SHARD)`/`$(SUITES_OF)` → $SUITES_SHARD_TEST/$SUITES_OF_TEST (1 si no están) y
+  # del entorno: `${{ parameters.runAll }}` → $RUN_ALL_TEST (False si no está) y `$(todoElRepo)` → $TODO_TEST.
+  # Para el trabajo de suites: `$(SUITES_SHARD)`/`$(SUITES_OF)` → $SUITES_SHARD_TEST/$SUITES_OF_TEST (1 si no están) y
   # `$(Pipeline.Workspace)` → <carpeta temporal>/workspace. `$(Build.SourcesDirectory)` es este checkout, o el de $3.
-  # El paso se busca en el pipeline y en la plantilla de las suites (tramo I): en los dos archivos, uno tras otro.
+  # El paso se busca en el pipeline y en la plantilla de las suites: en los dos archivos, uno tras otro.
   step_of_yaml() { # $1=displayName $2=carpeta temporal [$3=raíz de las fuentes]
     node -e '
     const fs = require("fs");
@@ -627,7 +625,7 @@ if [ -f "$YAML" ]; then
       no "V17b: NO MEDIDO — no pude armar los repos de juguete: $(tr '\n' ' ' < "$L17/arm.txt" | cut -c1-200)"
     fi
 
-    # V17f — 2026-10-06 (orden del dueño): (a) una rama validada A MANO (sin pull request) se compara contra main con la
+    # V17f — (a) una rama validada A MANO (sin pull request) se compara contra main con la
     # rama ENTERA, no corre todo; (b) un .md no es código, también bajo scripts/; (c) salvo en skills/, agents/ y packs/.
     step17m() { # como step17, pero corrida a mano: sin rama destino
       rm -f "$L17/tmp/cambiados.txt"
@@ -681,7 +679,7 @@ if [ -f "$YAML" ]; then
       no "V17c: NO MEDIDO — no pude armar el repo de juguete: $(tr '\n' ' ' < "$L17/arm.txt" | cut -c1-200)"
     fi
 
-    # V17g — (story 8.22, AC 3) lo que vino de main con un merge no cuenta: la rama a mano trae un merge de main con
+    # V17g — lo que vino de main con un merge no cuenta: la rama a mano trae un merge de main con
     # scripts/hooks/z.js, y la lista tiene lo de la rama y no z.js
     if { base17 merged-main && printf "// cambio\n" >> "$L17/merged-main/scripts/lab-pub/lab-tool.js" && g17 -C "$L17/merged-main" commit -q -am rama \
         && g17 -C "$L17/merged-main" checkout -q main && mkdir -p "$L17/merged-main/scripts/hooks" && printf "// de main\n" > "$L17/merged-main/scripts/hooks/z.js" \
@@ -695,7 +693,7 @@ if [ -f "$YAML" ]; then
       no "V17g: NO MEDIDO — no pude armar el repo de juguete: $(tr '\n' ' ' < "$L17/arm.txt" | cut -c1-200)"
     fi
 
-    # V17h — (story 8.22, AC 5) dos conductas que se conservan: (a) si el fetch de origin/main falla, se usa el origin/main
+    # V17h — dos conductas que se conservan: (a) si el fetch de origin/main falla, se usa el origin/main
     # del checkout y se avisa; (b) una rama sin commits propios da una lista vacía: sólo lint
     if { base17 fetch-fails && printf "// cambio\n" >> "$L17/fetch-fails/scripts/lab-pub/lab-tool.js" && g17 -C "$L17/fetch-fails" commit -q -am rama \
         && g17 -C "$L17/fetch-fails" remote set-url origin "$L17/no-existe.git" && base17 empty-branch; } > "$L17/arm.txt" 2>&1; then
@@ -710,8 +708,8 @@ if [ -f "$YAML" ]; then
       no "V17h: NO MEDIDO — no pude armar los repos de juguete: $(tr '\n' ' ' < "$L17/arm.txt" | cut -c1-200)"
     fi
 
-    # V17k — T12 de la story 8.26, tanda C (AC 12): con un repo de GitHub como propio, el cambio se compara contra main de
-    # GitHub (el origin del checkout); si main no se puede alcanzar —ni traer ni estaba en el checkout—, corre TODO: falla
+    # V17k — T12: con un repo de GitHub como propio, el cambio se compara contra main de
+    # GitHub (el origin del checkout); si main no se puede alcanzar —ni traer ni está en el checkout—, corre TODO: falla
     # hacia más trabajo. Los dos caminos: la rama a mano y el pedido (rama destino main).
     step17gh() { # $1=caso $2=rama destino ("" = a mano) → el paso con el proveedor GitHub
       rm -f "$L17/tmp/cambiados.txt"
@@ -733,9 +731,9 @@ if [ -f "$YAML" ]; then
       no "V17k (T12): NO MEDIDO — no pude armar los repos de juguete: $(tr '\n' ' ' < "$L17/arm.txt" | cut -c1-200)"
     fi
 
-    # V17j — (pase adversarial del tramo B de la 8.22) (a) una ruta con letras no ASCII sale tal cual en la lista: con la
-    # configuración de fábrica de git (`core.quotePath`) salía entre comillas y con escapes octales, y con --deps no
-    # coincidía con nada de lo que usan las suites; (b) la lista de código no repite lo de skills/ (salía dos veces)
+    # V17j — (a) una ruta con letras no ASCII sale tal cual en la lista: con la configuración de fábrica de git
+    # (`core.quotePath`) saldría entre comillas y con escapes octales, y con --deps no coincidiría con nada de lo que
+    # usan las suites; (b) la lista de código no repite lo de skills/ (no sale dos veces)
     if { base17 non-ascii && mkdir -p "$L17/non-ascii/scripts/lab-pub" && printf "// año\n" > "$L17/non-ascii/scripts/lab-pub/año.js" \
         && printf "// otra\n" >> "$L17/non-ascii/skills/lab-skill/SKILL.md" && mkdir -p "$L17/non-ascii/skills/lab-skill/scripts" \
         && printf "// x\n" > "$L17/non-ascii/skills/lab-skill/scripts/x.js" && g17 -C "$L17/non-ascii" add -A && g17 -C "$L17/non-ascii" commit -q -m uno; } > "$L17/arm.txt" 2>&1; then
@@ -749,9 +747,9 @@ if [ -f "$YAML" ]; then
       no "V17j: NO MEDIDO — no pude armar el repo de juguete: $(tr '\n' ' ' < "$L17/arm.txt" | cut -c1-200)"
     fi
 
-    # V17d — (story 8.22, AC 4) sin último commit: el yml no tiene ningún `HEAD^1` fuera de los comentarios, y el paso
+    # V17d — sin último commit: el yml no tiene ningún `HEAD^1` fuera de los comentarios, y el paso
     # «Qué suites corren», sacado del yml, con `todoElRepo=si` y sin pull request corre TODAS, sin `--changed`, con el
-    # motivo de «Qué trae este cambio». 🔴 Rojo previo: caía a `git diff HEAD^1 HEAD` (el último commit).
+    # motivo de «Qué trae este cambio». 🔴 No cae a `git diff HEAD^1 HEAD` (el último commit).
     HEAD17="$(grep -vE '^[[:space:]]*#' "$YAML" | grep -c 'HEAD^1')"
     TOTAL17="$(node -e 'const s=require(process.argv[1]);console.log([...(s.diarias||[]),...(s.semanales||[])].filter((x)=>x&&typeof x.ruta==="string").length)' "$AQUI/scripts/tests/suites.json")"
     suites17() { # $1=todoElRepo $2=motivo → corre el paso de las suites en el checkout; deja la salida en suites.txt
@@ -769,8 +767,8 @@ if [ -f "$YAML" ]; then
         || no "V17d: HEAD^1 fuera de comentarios=$HEAD17 · rc=$RCS17 · corren $RUN17 de $TOTAL17 · $(tail -3 "$L17/suites.txt" | tr '\n' ' ' | cut -c1-300)"
     fi
 
-    # V17i — (story 8.22, AC 6) el parámetro runAll: una rama a mano de un archivo con runAll=true corre todo, y el
-    # registro dice «pedido a mano: corre todo». 🔴 Rojo previo: no había parámetro.
+    # V17i — el parámetro runAll: una rama a mano de un archivo con runAll=true corre todo, y el
+    # registro dice «pedido a mano: corre todo».
     if base17 run-all > "$L17/arm.txt" 2>&1 && printf "// cambio\n" >> "$L17/run-all/scripts/lab-pub/lab-tool.js" && g17 -C "$L17/run-all" commit -q -am uno >> "$L17/arm.txt" 2>&1; then
       RUN_ALL_TEST=True step17m run-all; RA_CODE17="$(code17)"
       RA_TODO17="$(grep -o 'todoElRepo\][a-z]*' "$L17/step.txt" | sed 's/.*\]//')"
@@ -791,11 +789,11 @@ if [ -f "$YAML" ]; then
     fi
   fi
 
-  # V18 — (story 8.22, tramo D, AC 16-17) el tope de cada suite y los reintentos con cabeza. El paso «Correr las suites de
+  # V18 — el tope de cada suite y los reintentos con cabeza. El paso «Correr las suites de
   # este trabajo», sacado del yml, corre en un repo de juguete con `origin/main` (ahí vive la foto nocturna) y copias de
   # los guiones que llama. Cuatro suites de juguete: una que duerme 30 s (su tope, por el piso de juguete, es de 2 s), una
   # verde, una roja que anoche ya estaba roja y una roja nueva; las rojas anotan cada pasada en un archivo.
-  # 🔴 Rojo previo: sin tope, la dormida se come 30 s dos veces; y toda roja se reintenta.
+  # 🔴 Sin tope, la dormida se comería 30 s dos veces; y toda roja se reintentaría.
   L18="$TMP/v18"; mkdir -p "$L18"
   toy18() { # $1=la foto nocturna de origin/main, en JSON ("" = sin foto) → deja el repo en $L18/repo y el paso en $L18/step.sh
     local W="$L18/repo"
@@ -809,7 +807,7 @@ if [ -f "$YAML" ]; then
     printf 'sleep 30\necho despierta\n' > "$W/scripts/tests/sleeper.test.sh"
     printf 'echo bien\n' > "$W/scripts/tests/green.test.sh"
     for s in red-old red-new; do printf 'echo pasada >> "%s"\necho "MAL — %s"\nexit 1\n' "$L18/passes-$s" "$s" > "$W/scripts/tests/$s.test.sh"; done
-    # Story 8.26, tanda C (AC 43): la foto es la que trajo `Validar` (fetch-snapshot.yml), en la carpeta temporal, no la
+    # La foto es la que trajo `Validar` (fetch-snapshot.yml), en la carpeta temporal, no la
     # del checkout. El checkout trae una foto VIEJA a propósito, distinta: si el paso la leyera, V18g lo vería.
     mkdir -p "$L18/tmp/snapshot"
     [ -n "$1" ] && printf '%s\n' "$1" > "$L18/tmp/snapshot/nightly-suites.json"
@@ -856,10 +854,9 @@ if [ -f "$YAML" ]; then
       && grep -qx 'red-new.test.sh' "$SH18/failures.txt"; } \
       && ok "V18d (T23): con el freno apagado y las suites pasadas del límite, la roja nueva corre una sola vez y lo dice" \
       || no "V18d (T23): pasadas=$(passes18 red-new) · $(grep 'red-new' "$L18/out.txt" | tr '\n' ' ' | cut -c1-200)"
-    # V18h — story 8.26, tanda C (AC 14): con el freno PRENDIDO una roja nueva frena el pedido, así que tiene su segunda
-    # pasada aunque el trabajo vaya tarde. En la medición de la tanda, el freno falso de harness-plan.test.sh fue
-    # justamente eso, tres veces: roja al final de un trabajo largo, sin reintento. Prendido por el interruptor, y por el
-    # proveedor GitHub sin interruptor (falla cerrado).
+    # V18h — con el freno PRENDIDO una roja nueva frena el pedido, así que tiene su segunda pasada aunque el trabajo
+    # vaya tarde: sin ella, una roja al final de un trabajo largo, sin reintento, sería un freno falso. Prendido por el
+    # interruptor, y por el proveedor GitHub sin interruptor (falla cerrado).
     rm -f "$L18"/passes-*; run18 SUITES_NO_RETRY_AFTER=0 HARNESS_SUITES_BLOCK=1
     H1="$(passes18 red-new)"
     rm -f "$L18"/passes-*; run18 SUITES_NO_RETRY_AFTER=0 BUILD_REPOSITORY_PROVIDER=GitHub
@@ -867,12 +864,12 @@ if [ -f "$YAML" ]; then
     { [ "$H1" = 2 ] && [ "$H2" = 2 ] && [ "$(passes18 red-old)" = 1 ]; } \
       && ok "V18h: con el freno prendido (interruptor, o GitHub sin interruptor) la roja nueva tardía se reintenta; la de anoche, no" \
       || no "V18h: pasadas con el interruptor=$H1, con GitHub=$H2, red-old=$(passes18 red-old) · $(grep -E 'red-new|freno' "$L18/out.txt" | tr '\n' ' ' | cut -c1-240)"
-    # Un límite mal escrito no apaga los reintentos: avisa y usa 600 s (revisor de pruebas, tramo D).
+    # Un límite mal escrito no apaga los reintentos: avisa y usa 600 s.
     rm -f "$L18"/passes-*; run18 SUITES_NO_RETRY_AFTER=diez
     { [ "$(passes18 red-new)" = 2 ] && grep -q 'SUITES_NO_RETRY_AFTER no es un número de segundos — uso 600' "$L18/out.txt" && grep -q '«diez»' "$L18/out.txt"; } \
       && ok "V18f: un SUITES_NO_RETRY_AFTER que no es un número avisa y usa 600 s: la roja nueva se reintenta" \
       || no "V18f: pasadas=$(passes18 red-new) · $(grep -E 'RETRY|red-new' "$L18/out.txt" | tr '\n' ' ' | cut -c1-200)"
-    # (pase adversarial del tramo D; story 8.26, tanda C, AC 43) manda la foto que bajó el trabajo —la misma con la que
+    # V18g — manda la foto que bajó el trabajo —la misma con la que
     # el veredicto perdona—, nunca la del checkout: el checkout de juguete trae red-new roja y aun así red-new se
     # reintentó arriba (V18c); y si la foto bajada no trae red-old, red-old se reintenta.
     printf '{"kind":"bash-tests","ts":"2026-10-06T00:00:00Z","failures":[],"complete":true}\n' > "$L18/tmp/snapshot/nightly-suites.json"
@@ -893,9 +890,9 @@ if [ -f "$YAML" ]; then
     no "V18e: NO MEDIDO — no pude armar el repo de juguete: $(tr '\n' ' ' < "$L18/arm.txt" | cut -c1-200)"
   fi
 
-  # V17e — ningún `git diff --name-only` de los yml arma una lista sin `--no-renames` (los sitios de hoy y los que vengan).
-  # Story 8.22: sin el último commit queda uno solo (el de «Qué trae este cambio»); se pide al menos 1. Y cada uno con
-  # `core.quotePath=false` (pase adversarial del tramo B): sin eso una ruta con «ñ» sale escapada y no coincide con nada.
+  # V17e — ningún `git diff --name-only` de los yml arma una lista sin `--no-renames` (los sitios actuales y los que vengan).
+  # Sin el último commit queda uno solo (el de «Qué trae este cambio»); se pide al menos 1. Y cada uno con
+  # `core.quotePath=false`: sin eso una ruta con «ñ» sale escapada y no coincide con nada.
   DIFF_RE17='git (-c [^ ]+ )*diff[^#]*--name-only'
   SIN17="$(grep -nE "$DIFF_RE17" "$AQUI"/pipelines/*.yml "$AQUI"/pipelines/templates/*.yml 2>/dev/null | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -v -- '--no-renames' | sed "s|^$AQUI/||")"
   SINQ17="$(grep -nE "$DIFF_RE17" "$AQUI"/pipelines/azure-pipelines-maintainers-pr.yml 2>/dev/null | grep -vE '^[0-9]+:[[:space:]]*#' | grep -v -- 'core.quotePath=false')"

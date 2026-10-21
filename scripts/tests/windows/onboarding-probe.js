@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * onboarding-probe.js — el alta de un dev nuevo del equipo en Windows, con lo que hay hoy (story 8.17, tanda W0 ·
- * escenario `onboarding`).
+ * onboarding-probe.js — el alta de un dev nuevo del equipo en Windows
+ * (escenario `onboarding`).
  *
  * POR QUÉ EXISTE. Un dev del equipo no instala la copia pública: clona los repos internos y le pega al asistente
  * un texto (`onboarding/new-dev-harness-setup.md`) que tiene una rama de pasos para Windows. Esa rama nunca corrió en

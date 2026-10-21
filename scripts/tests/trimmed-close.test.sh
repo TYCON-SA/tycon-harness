@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# trimmed-close.test.sh — la red de la story 7.2: los recortes del cierre de una story.
+# trimmed-close.test.sh — la red de los recortes del cierre de una story.
 #
-# Qué se recortó y qué se quedó (tasks/abogado-del-diablo-porton-2026-09-16.md): sale lo que relee la
+# Qué se recortó y qué se quedó: sale lo que relee la
 # evidencia con un modelo (el checker de DoD por default, el meta-audit C9, los dos revisores del step 9,
 # la suite E2E completa del merge); se queda lo que corre código y frena (matriz por AC, gate E2E, hooks,
 # portón de CI). Esta suite prueba los helpers mecánicos que reemplazan a lo recortado, que los textos
@@ -15,11 +15,11 @@
 #   T8  — ACCOV-C9 retirada en el catálogo; rules-distill y build/check verdes
 #   T10 — la constancia del cierre no filtra ruta, story ni texto del commit
 #   T11 — el banco de los tres hooks del cierre sigue verde
-#   T12 — run-check y el portón de CI sin cambios (la matriz dejó de compararse el 2026-10-07: ver el caso)
+#   T12 — run-check y el portón de CI sin cambios (la matriz no se compara: ver el caso)
 #
 # (T1/T2 viven en guard-record.test.sh, T6 en reducer.test.sh y T7 en dashboard.test.sh.)
 #
-# 🔴 REGLA DE ADMISIÓN: cada caso trae escrito su rojo previo. El exit code se lee ANTES de cualquier pipe.
+# 🔴 REGLA DE ADMISIÓN: cada caso trae escrita la falla que lo pone en rojo. El exit code se lee ANTES de cualquier pipe.
 # Las skills se buscan como en todo el arnés (scripts/lib/skills-dir.js): TYCON_SKILLS_DIR, el propio clon si
 # es unido (<clon>/skills) o ~/.claude/agent-skills/skills. Si no aparecen, lo que depende de ellas sale «NO MEDIDO»
 # en rojo — nunca verde.
@@ -59,7 +59,7 @@ if [ ! -f "$PIPE" ]; then
   no "NO MEDIDO: no encontré pipeline.js en $SKILLS (TYCON_SKILLS_DIR) — los helpers de la 7.2 no se pueden verificar"
 else
   # ── T3 — DodCheckerNeeded_TresPreguntas_YDudaHaciaInvocar ───────────────────────────────────────
-  # 🔴 rojo previo: contra pipeline.js de origin/main el subcomando no existe (sale sin exit 0/3 ni JSON).
+  # 🔴 Si el subcomando no existe, sale sin exit 0/3 ni JSON.
   R="$TMP/t3a"; B="$(repo "$R")"
   printf 'public class Latido : BackgroundService { }\n' > "$R/src/Latido.cs"
   a=$(helper dod-checker-needed --story "$R/specs/story-9.9.md" --repo "$R" --base "$B")
@@ -71,7 +71,7 @@ else
   R="$TMP/t3c"; B="$(repo "$R" '' "$(printf 'pipelines:\n  A-backend:\n    status: done\n  B-frontend:\n    status: blocked')")"
   c=$(helper dod-checker-needed --story "$R/specs/story-9.9.md" --repo "$R" --base "$B")
 
-  # ninguna: diff sin worker, ACs que NOMBRAN el patrón como texto citado (la propia 7.2 lo hace) y tandas cerradas
+  # ninguna: diff sin worker, ACs que NOMBRAN el patrón como texto citado y tandas cerradas
   R="$TMP/t3d"; B="$(repo "$R" '2. **Given** el helper **When** busca (`TransactionScope|transacci[oó]n.*(rollback|compensa)`) **Then** decide.' "$(printf 'pipelines:\n  A:\n    status: done')")"
   echo 'console.log(2)' >> "$R/src/app.js"
   rm -f "$GATES"
@@ -83,9 +83,9 @@ else
   f=$(helper dod-checker-needed --story "$R/specs/story-9.9.md" --repo "$R")        # sin base ni marcador: no hay base de la corrida
   g=$(helper dod-checker-needed --story "$TMP/no-existe.md" --repo "$TMP/tampoco")   # fuera del pipeline, nada legible
   grep -qi 'no pude' "$TMP/out"; wg=$?
-  # 🔴 rojo previo (defecto propio, revisión del diff antes de los revisores): con --repo en una SUBCARPETA, el
-  #    listado de lo no trackeado sale relativo a esa carpeta y el diff relativo a la raíz; el worker nuevo se
-  #    buscaba en la ruta equivocada y se salteaba en silencio → «no invocar».
+  # 🔴 Con --repo en una SUBCARPETA, el listado de lo no trackeado sale relativo a esa carpeta y el diff
+  #    relativo a la raíz; si no se normaliza, el worker nuevo se busca en la ruta equivocada y se saltea en
+  #    silencio → «no invocar».
   R="$TMP/t3e"; B="$(repo "$R")"; mkdir -p "$R/api/src"; printf 'class W : IHostedService { }\n' > "$R/api/src/W.cs"
   x=$(helper dod-checker-needed --story "$R/specs/story-9.9.md" --repo "$R/api" --base "$B")
 
@@ -96,14 +96,14 @@ else
     no "T3 exits worker/tx/tanda/ninguna/diff-roto/sin-base/sin-story/worker-en-subcarpeta=$a/$b/$c/$d/$e/$f/$g/$x · motivo-worker=$wa · línea=[$linea_d] · motivos-no-pude=$we/$wg"
   fi
 
-  # ── T3b — los falsos «no invocar» y «invocar de más» que encontró la revisión de la vuelta 1 ─────
-  # 🔴 rojo previo (pase adversarial + ac-coverage, 2026-09-17), un caso por clase:
-  #    · un .js que NOMBRA BackgroundService (pipeline.js mismo) no es un worker → invocaba de más
-  #    · prosa entre dos citas con **negritas** se borraba → una transacción real no se veía
-  #    · un worker con tilde en la ruta salía entre comillas y se descartaba
-  #    · con --repo en subcarpeta, un worker sin trackear FUERA de ella no se listaba
-  #    · un .js de 3 MB contaba como «no pude leer» e invocaba con un motivo falso
-  #    · un worker creado en OTRO repo de la misma corrida (marker.filesTouched) no se veía
+  # ── T3b — los falsos «no invocar» y «invocar de más» ─────
+  # 🔴 Un caso por clase:
+  #    · un .js que NOMBRA BackgroundService (pipeline.js mismo) no es un worker: invocaría de más
+  #    · prosa entre dos citas con **negritas** no se puede borrar: una transacción real no se vería
+  #    · un worker con tilde en la ruta sale entre comillas y no se puede descartar
+  #    · con --repo en subcarpeta, un worker sin trackear FUERA de ella se lista
+  #    · un .js de 3 MB no cuenta como «no pude leer» ni invoca con un motivo falso
+  #    · un worker creado en OTRO repo de la misma corrida (marker.filesTouched) se ve
   R="$TMP/t3f"; B="$(repo "$R")"; printf '// busca BackgroundService|IHostedService\nconst W=/BackgroundService/;\n' > "$R/src/pipeline.js"
   y1=$(helper dod-checker-needed --story "$R/specs/story-9.9.md" --repo "$R" --base "$B")
   R="$TMP/t3g"; B="$(repo "$R" '2. **Given** `OrdenesService` **When** confirma, todo va en una transacción con rollback si falla **Then** responde `201`.')"
@@ -131,7 +131,7 @@ else
   fi
 
   # ── T4 — DeferralsOpen_TagsVivosYTandasAbiertas ─────────────────────────────────────────────────
-  # 🔴 rojo previo: el subcomando no existe en origin/main.
+  # 🔴 Si el subcomando no existe, el caso sale rojo.
   R="$TMP/t4a"; repo "$R" >/dev/null
   printf -- '- [ ] [story-9.9-deuda] pagar la deuda del reporte\n- [x] [story-9.9-vieja] ya pagada\n' > "$R/tasks/todo.md"
   h=$(helper deferrals-open --story "$R/specs/story-9.9.md" --repo "$R")
@@ -151,9 +151,9 @@ else
     no "T4 exits tag/limpio/tanda=$h/$i/$k · lista-tag=$wh · lista-tanda=$wk · salida=$(head -c 300 "$TMP/out")"
   fi
 
-  # ── T4c — tags con guiones y tachados por pares (AC 7, vuelta 1) ────────────────────────────────
-  # 🔴 rojo previo (pase adversarial): un producto escribe `[story-2-9-…]` y el helper sólo buscaba la forma con
-  #    punto → deuda viva invisible, exit 0; y `~~nota~~ [story-9.9-x]` se tomaba como tachado entero.
+  # ── T4c — tags con guiones y tachados por pares ────────────────────────────────
+  # 🔴 Un producto escribe `[story-2-9-…]`: si el helper sólo buscara la forma con punto, la deuda viva sería
+  #    invisible (exit 0); y `~~nota~~ [story-<N.M>-x]` no se puede tomar como tachado entero.
   R="$TMP/t4e"; repo "$R" >/dev/null
   printf -- '### [story-9-9-tightening] abierto\n- [ ] [story-9-9-1-otra] es de la 9.9.1\n' > "$R/tasks/todo.md"
   z1=$(helper deferrals-open --story "$R/specs/story-9.9.md" --repo "$R")
@@ -163,8 +163,8 @@ else
   grep -q 'story-9.9-viva' "$TMP/out" && ! grep -q 'story-9.9-muerta' "$TMP/out"; wz2=$?
   printf -- '- [ ] [story-9-9-1-sub] sólo de la sub-story\n' > "$R/tasks/todo.md"
   z3=$(helper deferrals-open --story "$R/specs/story-9.9.md" --repo "$R")
-  # 🔴 rojo previo (silent-failure-hunter, vuelta 2): una story que EXISTE pero no se puede leer (una carpeta) se
-  #    leía como vacía → «sin deuda», exit 0. Misma clase en qa-legibilidad: anotaba con el nombre de la carpeta.
+  # 🔴 Una story que EXISTE pero no se puede leer (una carpeta) no puede leerse como vacía → «sin deuda»,
+  #    exit 0. Lo mismo en qa-legibilidad: no anota con el nombre de la carpeta.
   mkdir -p "$R/specs/story-carpeta.md"
   z4=$(helper deferrals-open --story "$R/specs/story-carpeta.md" --repo "$R")
   z5=$(helper qa-readability --story "$R/specs/story-carpeta.md" --repo "$R" --marks 1)
@@ -175,8 +175,8 @@ else
     no "T4c exits guiones/tachado/sólo-sub-story=$z1/$z2/$z3 · lista-guiones=$wz1 · lista-tachado=$wz2"
   fi
 
-  # ── T4b — qa-legibilidad deja una línea medible en gates.log (AC 11) ────────────────────────────
-  # 🔴 rojo previo: el subcomando no existe; la capa 4 de la guía no dejaba ninguna marca.
+  # ── T4b — qa-legibilidad deja una línea medible en gates.log ────────────────────────────
+  # 🔴 Sin el subcomando, la capa 4 de la guía no deja ninguna marca.
   R="$TMP/t4d"; repo "$R" >/dev/null; rm -f "$GATES"
   m=$(helper qa-readability --story "$R/specs/story-9.9.md" --repo "$R" --marks 3)
   linea_m="$(grep '"name":"qa-legibilidad"' "$GATES" 2>/dev/null | tail -1)"
@@ -188,9 +188,9 @@ else
   fi
 fi
 
-# ── T5 — PreCommit_SinSelfAudit_NoBloquea_ConSelfAuditConvergenciaSigue (AC 9) ─────────────────────
-# 🔴 rojo previo del primero: contra on-pre-commit.js de origin/main, una story a `review` con evidencia
-#    y matriz en orden, pero sin self-audit, frena por ACCOV-C8 (exit 2).
+# ── T5 — PreCommit_SinSelfAudit_NoBloquea_ConSelfAuditConvergenciaSigue ─────────────────────
+# 🔴 Primer caso: una story a `review` con evidencia y matriz en orden, pero sin self-audit, no frena
+#    (exit 0); sin esta regla frenaría por ACCOV-C8 (exit 2).
 PC="$SKILLS/tycon-pipeline/scripts/on-pre-commit.js"
 if [ ! -f "$PC" ]; then
   no "T5 NO MEDIDO: no encontré on-pre-commit.js en $SKILLS"
@@ -235,8 +235,8 @@ else
   audit_c8 "$R/.advisors/dod-runtime/9.9-self-audit-iter1.md" A B
   audit_c8 "$R/.advisors/dod-runtime/9.9-self-audit-iter2.md" A B NUEVO; touch -t 209901010000 "$R/.advisors/dod-runtime/9.9-self-audit-iter2.md"
   conv=$(correr_pc "$R"); grep -q 'ACCOV-C10' "$TMP/pc.err"; wconv=$?
-  # 🔴 rojo previo (ac-coverage, vuelta 1): al último self-audit le borran la sección de gaps → C10 comparaba
-  #    0 gaps contra los del iter previo y «convergía»: borrar §3 era la forma de saltear la convergencia.
+  # 🔴 Si al último self-audit le borran la sección de gaps, C10 compararía 0 gaps contra los de la
+  #    iteración previa y «convergería»: borrar §3 sería la forma de saltear la convergencia.
   R="$TMP/t5d"; caso_c8 "$R" done
   mkdir -p "$R/.advisors/pipeline-runs/9.9-20260824-1200" && echo '[]' > "$R/.advisors/pipeline-runs/9.9-20260824-1200/findings.json"
   audit_c8 "$R/.advisors/dod-runtime/9.9-self-audit-iter1.md" A B
@@ -251,9 +251,9 @@ else
   unset TYCON_WAIVER_LOG
 fi
 
-# ── T9 — Steps_TextosRecortados (AC 5, 7, 10, 11) ─────────────────────────────────────────────────
-# 🔴 rojo previo: contra los textos de origin/main, 7c.2 describe la regla de «las cuatro», el step 9
-#    relanza los dos revisores y el merge lanza la suite completa en segundo plano. Si los archivos no
+# ── T9 — Steps_TextosRecortados ─────────────────────────────────────────────────
+# 🔴 Los textos tienen que decir lo decidido: sin eso, 7c.2 describiría la regla de «las cuatro», el step 9
+#    relanzaría los dos revisores y el merge lanzaría la suite completa en segundo plano. Si los archivos no
 #    están en la máquina, se saltea diciéndolo (no es un rojo: no hay texto que juzgar).
 S07C="$SKILLS/tycon-pipeline/steps/step-07c-dod-runtime-gate.md"
 S09="$SKILLS/tycon-pipeline/steps/step-09-ado-story-closure.md"
@@ -285,8 +285,8 @@ else
   fi
 fi
 
-# ── T8 — Catalogo_ACCOV_C9_Retirada_RulesDistillVerde (AC 8) ──────────────────────────────────────
-# 🔴 rojo previo: la fila de ACCOV-C9 está viva en el catálogo (sin marca de retirada).
+# ── T8 — Catalogo_ACCOV_C9_Retirada_RulesDistillVerde ──────────────────────────────────────
+# 🔴 Sin la retirada, la fila de ACCOV-C9 estaría viva en el catálogo (sin marca de retirada).
 # rules-distill y build/check leen los agentes desde el home: un home falso con `.claude/agents` y
 # `.claude/agent-skills` apuntando al agent-skills que se prueba. La línea base de zombies es 1 y previa
 # (ACCOV-C1-EXT, fijada por C7 de rules-catalog.test.sh): lo que se exige es que no suba y que la
@@ -299,7 +299,7 @@ fila_c9="$(grep -E '^\| (~~)?\*?\*?ACCOV-C9' "$CAT" | head -1)"
 rd_out="$(HOME="$HB" node "$AQUI/scripts/tools/rules-distill.js" 2>&1)"; rd=$?
 HOME="$HB" TYCON_AGENTS_DIR="$AS_RAIZ/agents" node "$AQUI/build/check.js" > "$TMP/check.out" 2>&1; bc=$?
 zomb="$(echo "$rd_out" | grep -Eo '^  [0-9]+ zombies' | grep -Eo '[0-9]+')"
-# TEST-W8 la cita sólo el revisor de convenciones .NET, que desde la 8.41 vive en el paquete bizuit (no viaja al público):
+# TEST-W8 la cita sólo el revisor de convenciones .NET, que vive en el paquete bizuit (no viaja al público):
 # en un árbol sin ese paquete queda sin quien la cite y no cuenta como zombie; con el paquete, cuenta como cualquiera
 if [ -n "$zomb" ] && [ ! -d "$AQUI/packs/bizuit" ] && echo "$rd_out" | grep -E '^ +TEST-W8 +owner:' >/dev/null; then zomb=$((zomb - 1)); fi
 orph="$(echo "$rd_out" | grep -Eo '^  [0-9]+ orphans' | grep -Eo '[0-9]+')"
@@ -324,8 +324,8 @@ else
   no "T8 fila=[$(echo "$fila_c9" | cut -c1-90)] rules-distill=$rd zombies=${zomb:-?} orphans=${orph:-?} (cuentan:${orph_cuentan:- ninguno}) c9-listado=[$c9_listado] build/check=$bc $(grep -E '❌' "$TMP/check.out" | head -2 | tr '\n' ' ')"
 fi
 
-# ── T10 — Fuga_FrenosDelCierre_SinDatos (AC 1) ────────────────────────────────────────────────────
-# 🔴 rojo previo (por mutación): si la constancia pasara `cmd`, `specRel` o el mensaje del commit como
+# ── T10 — Fuga_FrenosDelCierre_SinDatos ────────────────────────────────────────────────────
+# 🔴 Por mutación: si la constancia pasara `cmd`, `specRel` o el mensaje del commit como
 #    `regla` o como campo propio, alguno de estos tres aparecería en el registro.
 if [ -f "$PC" ]; then
   R="$TMP/t10-historia-confidencial"; rm -rf "$R"; mkdir -p "$R/specs"
@@ -346,10 +346,9 @@ if [ -f "$PC" ]; then
   fi
 fi
 
-# ── T11 — Bench_HooksDelCierre_Verdes (AC 14) ─────────────────────────────────────────────────────
+# ── T11 — Bench_HooksDelCierre_Verdes ─────────────────────────────────────────────────────
 # El banco resuelve agent-skills desde el home: un home falso con `.claude/agent-skills` apuntando al que
-# se está probando (patrón de la 2.8). Ningún caso del banco exigía el self-audit como bloqueo (contado
-# el 2026-09-16: 0), así que no hubo casos que reescribir.
+# se está probando. Ningún caso del banco exige el self-audit como bloqueo.
 if [ -z "$AS_RAIZ" ] || [ ! -d "$AS_RAIZ/agents" ]; then
   no "T11 NO MEDIDO: no encontré la raíz de agent-skills a partir de $SKILLS"
 else
@@ -357,7 +356,7 @@ else
   for o in on-pre-commit frontmatter dod-evidence; do
     HOME="$HB" node "$AQUI/scripts/controls-bench/runner.js" --tool claude --only "$o" > "$TMP/banco-$o.out" 2>&1; r=$?
     linea="$(grep -E 'corridos' "$TMP/banco-$o.out" | tail -1)"
-    # en Windows el resumen intercala «N rojos conocidos (known-gaps.json)» (story 8.17): la misma suposición puso rojo a T19e
+    # en Windows el resumen intercala «N rojos conocidos (known-gaps.json)»: la misma suposición pondría rojo a T19e
     echo "$linea" | grep -E ' 0 rojos · ([0-9]+ rojos conocidos \(known-gaps\.json\) · )?0 NO MEDIDOS' >/dev/null && [ "$r" = "0" ] || res11="$res11 $o(rc=$r: $linea)"
   done
   if [ -z "$res11" ]; then ok "T11 el banco de on-pre-commit, on-frontmatter-write y on-dod-evidence-guard sigue verde"
@@ -365,16 +364,16 @@ else
   rm -f "$AQUI"/scripts/controls-bench/.bench/last-run-claude-parcial-{on-pre-commit,frontmatter,dod-evidence}-*.json 2>/dev/null
 fi
 
-# ── T12 — NoRegresion_GatesYCiGate (AC 15) ────────────────────────────────────────────────────────
+# ── T12 — NoRegresion_GatesYCiGate ────────────────────────────────────────────────────────
 # Lo que frena de verdad no se toca: `run-check` (marker.js) y el portón de CI, comparados contra
 # origin/main de cada repo. Y ningún caso del examen de revisores apunta a la regla retirada.
 t12=""
 # 🔴 De marker.js se compara SÓLO lo que ejecuta y registra los chequeos (`cmdRunCheck`, `registrarRunCheck`),
-#    no el archivo entero (story 2.19): el archivo entero ponía en rojo a toda story que tocara otra parte de
+#    no el archivo entero: el archivo entero pondría en rojo a toda story que tocara otra parte de
 #    marker.js hasta que se mergeara. Mutación que lo pone rojo: cambiar una línea de cualquiera de las dos.
-# 🔴 El tramo termina en la LLAVE DE CIERRE de la función (story 1.8, decisión D4 del dev), no en la función
-#    siguiente: lo que hay entre las dos (la lista `VALID_FLAGS` de set-flag) no es run-check, y la 1.8, que la
-#    cambió, salía roja acá sin haber tocado una línea de run-check.
+# 🔴 El tramo termina en la LLAVE DE CIERRE de la función, no en la función siguiente: lo que hay entre las
+#    dos (la lista `VALID_FLAGS` de set-flag) no es run-check, y un cambio ahí pondría rojo acá sin haber
+#    tocado una línea de run-check.
 funciones_run_check(){ node -e '
   const s = require("fs").readFileSync(0, "utf8"); let out = "";
   for (const n of ["cmdRunCheck", "registrarRunCheck"]) {
@@ -384,7 +383,7 @@ funciones_run_check(){ node -e '
     out += s.slice(i, j < 0 ? s.length : j + 2);
   }
   process.stdout.write(out);'; }
-# 🔴 EL REPO PRIVADO ADELGAZADO (story 8.26, tanda I): marker.js es del público y su `main` no lo trae. En el árbol armado
+# 🔴 EN EL REPO PRIVADO ADELGAZADO: marker.js es del público y su `main` no lo trae. En el árbol armado
 #    el que corre YA es el de `main` del público (compararlo contra él sería compararlo consigo mismo), y una rama de este
 #    repo no lo puede cambiar: la superposición rechaza un archivo que está en los dos repos sin declarar. Lo que frena de
 #    verdad lo cuida la validación del público. Esta mitad no aplica, y se dice; un repo con marker.js en su main la mide.
@@ -401,37 +400,30 @@ elif git -C "$AS_RAIZ" rev-parse --verify -q origin/main >/dev/null 2>&1; then
   RC_AHORA="$(funciones_run_check < "$AS_RAIZ/skills/tycon-pipeline/scripts/marker.js")"
   { [ -n "$RC_MAIN" ] && [ "$RC_MAIN" = "$RC_AHORA" ] && ! printf '%s' "$RC_AHORA" | grep '^SIN:' >/dev/null; } \
     || t12="$t12 agent-skills:run-check-cambiado"
-  # 🔴 La matriz ya NO se compara contra origin/main (2026-10-07, decisión del dueño). La comparación probaba que la
-  #    story 7.2 no la había tocado, y esa story cerró el 2026-09-16. Desde entonces sólo ponía en rojo —hasta el
-  #    merge, y volviendo sola a verde después— a toda rama que cambiara la matriz por un motivo propio: la 1.17, la
-  #    1.17.1, la 8.23 A2 y la 7.17, cuatro rojos esperados en una semana. Un rojo que se aprende a ignorar tapa al que
-  #    importa. La matriz tiene su red: `tycon-pipeline/scripts/tests/test-runtime-matrix.js`.
+  # 🔴 La matriz NO se compara contra origin/main: la comparación sólo pondría en rojo —hasta el merge, y
+  #    volviendo sola a verde después— a toda rama que cambiara la matriz por un motivo propio. Un rojo esperado
+  #    que se aprende a ignorar tapa al que importa. La matriz tiene su red: `tycon-pipeline/scripts/tests/test-runtime-matrix.js`.
 else
   t12="$t12 agent-skills-sin-origin/main(no-medido)"
 fi
-# 🔴 Del portón se comparan SÓLO las funciones que deciden sus chequeos, no el archivo entero
-#    (2026-09-17, story 1.6 — mismo arreglo y mismo motivo que el de `marker.js` de la story 2.19,
-#    doce líneas más arriba). El archivo entero ponía en rojo a toda story que AGREGARA un chequeo,
-#    aunque no tocara un solo byte de lo que la 7.2 quiso congelar: la 1.6 sumó el chequeo del
-#    índice de memoria y esta prueba se puso roja por sus comentarios.
-# 🔴 Y el 2026-09-22 se retiró del todo para el portón: comparar bytes —aunque fuera sólo los de
-#    seis funciones— no distinguía una mejora de un deterioro, así que cada story que mejoraba el
-#    portón desfrizaba una función con su justificación razonable, y el control se moría de a poco
-#    sin que nadie lo decidiera (dos en un solo día: `validarRoster` y `revisarAutoria`). Lo que el
-#    congelamiento quería proteger sigue protegido, pero medido como corresponde: **se ejecuta cada
-#    función** contra los casos del incidente que la puso en la lista. Una mejora pasa; un deterioro
-#    la pone en rojo. Verificado con cuatro mutaciones, una por función (ver el bloque `node` abajo).
-#    De `marker.js` (sólo las funciones de run-check) SÍ se siguen comparando los bytes. `runtime-matrix.js`
-#    dejó de compararse el 2026-10-07: ahí el congelamiento sí estorbaba (ver arriba, en T12).
+# 🔴 Del portón se comparan SÓLO las funciones que deciden sus chequeos, no el archivo entero (mismo motivo
+#    que el de `marker.js`, más arriba). El archivo entero pondría en rojo a toda story que AGREGARA un
+#    chequeo, aunque no tocara un solo byte de lo que esta prueba quiere congelar.
+# 🔴 Y para el portón la comparación por bytes no existe: comparar bytes —aunque fuera sólo los de seis
+#    funciones— no distingue una mejora de un deterioro, así que cada story que mejora el portón
+#    desfrizaría una función con su justificación razonable, y el control se moriría de a poco sin que
+#    nadie lo decidiera. Lo que el congelamiento quiere proteger se mide como corresponde: **se ejecuta cada
+#    función** contra los casos del incidente que la puso en la lista. Una mejora pasa; un deterioro la
+#    pone en rojo. Cada función tiene su mutación (ver el bloque `node` abajo).
+#    De `marker.js` (sólo las funciones de run-check) SÍ se comparan los bytes. `runtime-matrix.js` no se
+#    compara: ahí el congelamiento estorba (ver arriba, en T12).
 # Extrae una función de nivel superior y se queda con su LÓGICA: sin líneas de comentario ni
-# vacías. Así un comentario nuevo —o uno agregado entre dos funciones, que es lo que puso roja a
-# esta prueba— no cuenta como cambio, y cualquier línea de código que se toque, sí. Cortar por la
-# llave de cierre NO sirve: se come la función a la mitad si adentro hay un bloque que cierra en
-# columna 0 (medido: de las 64 líneas de `revisarAutoria` sacaba 47).
-# 🔴 Y la función termina donde termina SU cuerpo, no donde empieza la siguiente (2026-09-17, pase
-# adversarial): cortar en el próximo `\nfunction ` arrastraba todo lo que hubiera entre medio — un
-# docblock `/** … */`, una `const` nueva puesta arriba de la función siguiente— y lo comparaba como
-# si fuera código de la función congelada. Se cuenta llaves (ignorando strings, comentarios de línea
+# vacías. Así un comentario nuevo —o uno agregado entre dos funciones— no cuenta como cambio, y cualquier
+# línea de código que se toque, sí. Cortar por la llave de cierre NO sirve: se come la función a la mitad
+# si adentro hay un bloque que cierra en columna 0.
+# 🔴 Y la función termina donde termina SU cuerpo, no donde empieza la siguiente: cortar en el próximo
+# `\nfunction ` arrastraría todo lo que hubiera entre medio — un docblock `/** … */`, una `const` nueva
+# puesta arriba de la función siguiente— y lo compararía como si fuera código de la función congelada. Se cuenta llaves (ignorando strings, comentarios de línea
 # y de bloque) hasta cerrar la del `function`, y se descartan comentarios y líneas vacías.
 funcion_js(){ node -e '
   const s = require("fs").readFileSync(0, "utf8");
@@ -452,22 +444,19 @@ funcion_js(){ node -e '
     process.stdout.write(cuerpo.split("\n").filter((l) => l.trim() && !l.trim().startsWith("//")).join("\n"));
   }' "$1"; }
 if git -C "$AQUI" rev-parse --verify -q origin/main >/dev/null 2>&1; then
-  # 🔴 `validarRoster` SALE de la lista congelada (2026-09-22, story 7.13) y pasa a medirse por lo
-  #    que GARANTIZA, no por sus bytes. Es el mismo arreglo y el mismo motivo que el de la story 1.6
-  #    doce líneas más arriba: esta función es la que el arnés está evolucionando —la 7.13 le sumó
-  #    la comparación tramo contra tramo para que un hallazgo del paso 1 deje de contar como revisor
-  #    ausente— así que congelar sus bytes ponía en rojo a toda story que la mejorara, sin distinguir
-  #    una mejora de un debilitamiento. Lo que no puede pasar es que PIERDA una regla, y eso se
+  # 🔴 `validarRoster` no está en la lista congelada: se mide por lo que GARANTIZA, no por sus bytes. Es el
+  #    mismo motivo que el del portón más arriba: esta función es la que el arnés está evolucionando
+  #    —por ejemplo, la comparación tramo contra tramo para que un hallazgo del paso 1 no cuente como
+  #    revisor ausente— así que congelar sus bytes pondría en rojo a toda story que la mejorara, sin
+  #    distinguir una mejora de un debilitamiento. Lo que no puede pasar es que PIERDA una regla, y eso se
   #    chequea abajo, junto a los cuatro chequeos de `revisar()`. Su comportamiento real lo fijan dos
   #    suites propias que corren aparte: `roster-validate-parity.test.js` (las dos copias, veredicto
   #    por veredicto, sobre rosters reales de un pedido) y el `--selftest` del propio portón.
-  # 🔴 Y el 2026-09-22 se RETIRA la comparación por bytes para las seis (decisión del dev en la
-  #    misma sesión, tras desfrizar dos en un día: `validarRoster` y `revisarAutoria`, las dos por
-  #    mejoras legítimas). El congelamiento no distinguía una mejora de un deterioro: cualquier
-  #    cambio salía rojo, así que se lo iba vaciando de a una función por story y nadie decidía
-  #    nada. Lo que el congelamiento QUERÍA proteger sigue protegido, pero medido como corresponde:
+  # 🔴 Para las seis funciones no hay comparación por bytes. El congelamiento no distingue una mejora de un
+  #    deterioro: cualquier cambio saldría rojo, así que se lo iría vaciando de a una función por story y
+  #    nadie decidiría nada. Lo que el congelamiento QUIERE proteger se mide como corresponde:
   #    **ejecutando cada función** contra los casos del incidente que la puso ahí. Una mejora pasa;
-  #    un deterioro la pone en rojo, que es lo que se pedía desde el principio.
+  #    un deterioro la pone en rojo.
   #    Cada caso de abajo trae el incidente que lo justifica y su mutación verificada.
   node - "$AQUI" <<'PORTON' || t12="$t12 tycon-ci-gate:comportamiento-roto"
 const fs = require('fs'), os = require('os'), path = require('path');
@@ -521,10 +510,10 @@ PORTON
   done
   # …y `validarRoster` sigue pudiendo emitir sus cuatro veredictos: perder uno es el debilitamiento
   # que la congelación cuidaba. Agregar está bien, sacar no.
-  # 🔴 El cuerpo se captura UNA vez en una variable y se busca con `case`, sin tubería. La primera
-  # versión hacía `printf '%s' "$(…)" | grep -q`: `grep -q` corta apenas encuentra, el `printf` se
-  # come un SIGPIPE y el `||` lo lee como "no está" — la prueba salía roja de a ratos, según cuán
-  # rápido cerrara el grep. Verde a mano y roja en la corrida completa: el peor tipo de rojo.
+  # 🔴 El cuerpo se captura UNA vez en una variable y se busca con `case`, sin tubería. Con
+  # `printf '%s' "$(…)" | grep -q`, `grep -q` corta apenas encuentra, el `printf` se come un SIGPIPE
+  # y el `||` lo lee como "no está": la prueba saldría roja de a ratos, según cuán rápido cierre el grep.
+  # Verde a mano y roja en la corrida completa: el peor tipo de rojo.
   CUERPO_VR="$(funcion_js validarRoster < "$AQUI/scripts/ci/tycon-ci-gate.js")"
   for regla in registro-de-autoria-invalido sin-revisores revisor-es-el-autor roster-incoherente; do
     case "$CUERPO_VR" in

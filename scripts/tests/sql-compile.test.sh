@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # sql-compile.test.sh — red de `scripts/ci/sql-compile.js`, el aviso de migraciones SQL sin compilar.
 #
-# Caso que lo motiva (el repo del framework, 2026-09-10): una migración con un error de sintaxis
-# (Msg 1046, una subconsulta dentro de un PRINT) llegó al commit sin haberse ejecutado nunca y frenó
-# el despliegue entero. Pasó por decenas de revisores y 2589 tests: ninguno toca un `.sql` suelto.
+# Caso que lo motiva: una migración con un error de sintaxis (Msg 1046, una subconsulta dentro de un
+# PRINT) llega al commit sin haberse ejecutado nunca y frena el despliegue entero. Ningún test ni
+# revisor la toca: nadie ejecuta un `.sql` suelto.
 #
 # Ningún caso toca una base: `sqlcmd` es un doble que anota qué recibió y contesta lo que el caso
 # fabrica. Lo que se prueba es que el aviso compile SIN EJECUTAR (NOEXEC, y sin mandar archivos
@@ -74,7 +74,7 @@ rc=$(correr "${CONF[@]}")
   && ok "C2: 🔴 compila lo que se commitea (no el disco), con SET NOEXEC ON primero, -b y -x" \
   || no "C2: rc=$rc llamadas=$(llamadas) · $(salida) · argv=$(cat "$TMP/argv.log" 2>/dev/null) · entrada=$(head -3 "$TMP/entrada.log" 2>/dev/null | tr '\n' '|')"
 
-# ── C3. el caso real: la subconsulta en un PRINT no compila — se nombra con el error, y no frena ─
+# ── C3. la subconsulta en un PRINT no compila — se nombra con el error, y no frena ─
 repo
 printf 'BEGIN TRAN;\nPRINT (SELECT COUNT(*) FROM Plugins);\nCOMMIT;\n' > database/054_limpieza.sql && git add database/054_limpieza.sql
 rc=$(correr "${CONF[@]}" SQLCMD_FALSO_MODO=error)
@@ -119,8 +119,8 @@ rc=$(correr "${CONF[@]}")
 
 # ── C7. una migración BORRADA no se compila ──────────────────────────────────────────────────────
 repo
-# el commit con la HOME de juguete: con la real, el pre-commit global de la máquina corría sql-compile.js y anotaba esta
-# migración de prueba en la carpeta de estado REAL (68 líneas desde el 2026-09-16; visto en la tanda D2 de la 8.9)
+# el commit con la HOME de juguete: con la real, el pre-commit global de la máquina correría sql-compile.js y anotaría esta
+# migración de prueba en la carpeta de estado REAL
 printf 'PRINT 1;\n' > database/050_vieja.sql && git add database/050_vieja.sql && HOME="$TMP/h" git -c user.email=t@t -c user.name=t commit -q -m vieja
 git rm -q database/050_vieja.sql
 rc=$(correr "${CONF[@]}")
@@ -157,7 +157,7 @@ process.exit(ok ? 0 : 1);' "$reg"; } \
   && ok "C10: cada migración deja su resultado en sql-compile.jsonl (lo que permite medir antes de decidir si frena)" \
   || no "C10: $(cat "$reg" 2>/dev/null)"
 
-# ── C13. (story 8.9, tanda D2) el registro con nombre viejo pasa al nuevo sin perder su historia ───
+# ── C13. el registro con nombre viejo pasa al nuevo sin perder su historia ───
 # El nombre viejo sale del mapa de renombres (no se escribe literal). Con sólo el viejo, la primera
 # medición lo copia al nuevo y anota ahí; el viejo queda intacto hasta el retiro.
 # En la copia pública el mapa no viaja: sin nombre viejo no hay nada que migrar, el caso se saltea con motivo.

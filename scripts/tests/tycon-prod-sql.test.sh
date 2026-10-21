@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # tycon-prod-sql.test.sh — red de la PUERTA: la única forma de consultar una base de producción.
 #
-# Caso que lo motiva (2026-09-15, un producto del equipo): ~9 consultas a producción sin pedir permiso, después de una
-# autorización puntual. La puerta existe para que cada sentencia se vea y se apruebe, y para que la
-# contraseña NUNCA pase por la conversación.
+# Por qué existe: sin ella, una autorización puntual deja pasar consultas a producción sin pedir permiso. La puerta existe
+# para que cada sentencia se vea y se apruebe, y para que la contraseña NUNCA pase por la conversación.
 #
 # 🔴 Ningún caso toca una base, ni el Llavero real, ni /opt: raíz de sistema falsa
 # (TYCON_PROD_ROOT), HOME falso, y dobles de `security` y `sqlcmd` que anotan lo que reciben.
@@ -18,9 +17,9 @@
 #   T30 — los comandos del cliente (`!!`, `:r`, `:out`, `:connect`) los frena la puerta, antes de conectarse
 #   T33 — `port` en el catálogo: la puerta lo pega al host al conectarse, y un puerto inválido la
 #         frena antes del cliente. Corre incluso con el freno instalado (no toca nada externo)
-#   T31 — los flags que la puerta le pasa al cliente los acepta el cliente REAL (el caso que faltaba:
-#         los demás usan un sqlcmd de mentira que sólo anota argumentos, así que la puerta estuvo
-#         rota para TODA consulta desde que se instaló y ningún caso lo vio — 2026-09-16)
+#   T31 — los flags que la puerta le pasa al cliente los acepta el cliente REAL (los demás casos usan un sqlcmd de
+#         mentira que sólo anota argumentos, así que sin este la puerta podría estar rota para TODA consulta
+#         y ningún caso lo vería)
 #
 # Correr: bash scripts/tests/tycon-prod-sql.test.sh
 set -uo pipefail
@@ -37,10 +36,10 @@ STAGING=acme-sql-staging.database.windows.net
 CLAVE_MARCA='M4RC4-DE-L4-CL4VE'
 
 # ── T31 · los flags que la puerta le pasa al cliente, contra el cliente REAL ──────────────────
-# 🔴 EL CASO QUE FALTABA, y por el que la puerta estuvo rota para TODA consulta desde que se instaló
-# (2026-09-16: fallaba hasta con `select 1`). Todos los demás casos usan un `sqlcmd` de mentira que
+# 🔴 Cubre que el cliente real acepte los flags: sin este caso, la puerta puede estar rota para TODA consulta
+# (incluso `select 1`) sin que nada lo note. Todos los demás casos usan un `sqlcmd` de mentira que
 # sólo ANOTA los argumentos: prueban que la puerta manda los que quiere mandar, nunca que el cliente
-# real los acepte. La puerta mandaba `-X1`, que es del sqlcmd viejo (ODBC); contra go-sqlcmd ni
+# real los acepte. `-X1` es del sqlcmd viejo (ODBC); contra go-sqlcmd ni
 # parsea («Sqlcmd: '0': Unknown command»), y con las formas que sí parsean el cliente ignora el `-Q`
 # y se va a modo interactivo. Un argumento presente no es un argumento aceptado.
 #
@@ -74,10 +73,10 @@ if [ -f "$PUERTA" ]; then
 fi
 
 # ── T32 · el cliente REAL manda la clave del Llavero, no la de su config de usuario ─────────────
-# 🔴 El caso de la instalación (2026-09-15, un producto del equipo): go-sqlcmd lee `~/.sqlcmd/sqlconfig`, y si ahí
+# 🔴 Qué atrapa: go-sqlcmd lee `~/.sqlcmd/sqlconfig`, y si ahí
 # hay un contexto actual con usuario guardado, manda AL SERVIDOR la clave guardada ahí e ignora
-# SQLCMDPASSWORD, aunque reciba `-S` y `-U` explícitos. La config del dev tenía una clave de marzo con
-# un `\` de más: «Login failed» con la clave del Llavero bien cargada, TRES veces. Se prueba con un
+# SQLCMDPASSWORD, aunque reciba `-S` y `-U` explícitos. Si la config del dev tiene una clave vieja o con
+# un `\` de más, da «Login failed» aunque la clave del Llavero esté bien cargada. Se prueba con un
 # servidor TDS de mentira en 127.0.0.1 que decodifica el LOGIN7 (lib/tds-spy.py): no toca ninguna
 # base ni el Llavero. Dos mediciones: el CONTROL (el cliente suelto, con esa config a la vista) tiene
 # que reproducir el defecto; la PUERTA (su línea real, evaluada como en T31) tiene que mandar la clave
@@ -121,11 +120,11 @@ YAML
   control="$(clave_vista 14351)"
   # la puerta: SU línea, con el mismo HOME contaminado por fuera
   pid="$(espiar 14352)"
-  # 🔴 `SERVIDOR` y no sólo `HOST`: desde el 2026-09-29 la puerta se conecta a `$SERVIDOR`, que arma
+  # 🔴 `SERVIDOR` y no sólo `HOST`: la puerta se conecta a `$SERVIDOR`, que arma
   # más arriba pegándole el puerto del catálogo al host. Este caso evalúa SU línea real —para que no
-  # se le escape un cambio— así que tiene que darle las variables que esa línea usa hoy. Con `HOST`
-  # solo, el cliente recibía `-S ""`, se conectaba a ningún lado, y el caso fallaba diciendo que la
-  # puerta mandó «nada»: un rojo que parecía de la clave y era del destino.
+  # se le escape un cambio— así que tiene que darle las variables que esa línea usa. Con `HOST`
+  # solo, el cliente recibe `-S ""`, se conecta a ningún lado, y el caso falla diciendo que la
+  # puerta mandó «nada»: un rojo que parece de la clave y es del destino.
   # Cómo se DERIVA el destino lo cubre T33; acá lo que se mide es de dónde sale la contraseña.
   ( export HOME="$CASA32"; CLIENTE="$CLIENTE_REAL"; SERVIDOR="127.0.0.1,14352"; USUARIO="usuarioX"
     SENTENCIA="select 1"; CLAVE="DE-LA-VARIABLE"; ARGS_BASE=(-N o -l 5)
@@ -142,8 +141,8 @@ YAML
 fi
 
 # ── T33 · el puerto del catálogo ──────────────────────────────────────────────────────────────
-# POR QUÉ: hasta el 2026-09-29 un servidor que no escuchaba en el 1433 no tenía cómo declararse —
-# el catálogo no tenía campo y la puerta rechazaba `host,puerto` como argumento. La salida NO fue
+# POR QUÉ: un servidor que no escucha en el 1433 necesita declarar su puerto, y la puerta rechaza
+# `host,puerto` como argumento. La salida NO es
 # aflojar la validación del host: eso le daría dos escrituras al mismo servidor, y el freno
 # reconoce el nombre PELADO. El puerto se declara aparte y lo pega la puerta al conectarse.
 #
@@ -210,7 +209,7 @@ fi
 
 # 🔴 En una Mac con el freno INSTALADO la puerta ignora la raíz falsa (a propósito: no puede ser un
 # interruptor), así que esta suite usaría el `security` y el `sqlcmd` REALES contra la base real.
-# Ahí no corre, y lo dice (revisores del Step 5, 2026-09-15).
+# Ahí no corre, y lo dice.
 if [ -d /opt/tycon ]; then
   echo "⏭ prod-sql: esta máquina tiene el freno instalado (/opt/tycon): la suite no corre para no tocar el Llavero ni la base reales."
   exit 0
@@ -280,7 +279,7 @@ echo "algo salió mal en el servidor" >&2
 exit 1
 SH
   chmod +x "$RAIZ/opt/tycon/bin/sqlcmd"
-  # y la casa del dev tiene esa config, como la tenía la del incidente
+  # y la casa del dev tiene esa config
   mkdir -p "$CASA/.sqlcmd"; printf 'currentcontext: prueba\n' > "$CASA/.sqlcmd/sqlconfig"
   # un impostor en el PATH, que la puerta NO debe usar (T29)
   mkdir -p "$TMP/impostor"
@@ -318,8 +317,8 @@ select 2" "--other-flag"; do
 done
 
 # ── T30 · los comandos del cliente los frena LA PUERTA ────────────────────────────────────────
-# 🔴 Esto lo hacía el `-X1` que se le pasaba a sqlcmd, y resultó que ese flag no sólo no servía:
-# rompía la puerta entera (T31). Ahora se frena acá, ANTES de conectarse, sin depender del dialecto
+# 🔴 Esto no lo puede hacer un `-X1` pasado a sqlcmd: ese flag no sólo no sirve,
+# rompe la puerta entera (T31). Por eso se frena acá, ANTES de conectarse, sin depender del dialecto
 # de flags de ningún cliente. `!!` abre un shell, `:r` lee un archivo, `:out` escribe uno y
 # `:connect` va a otra base — ninguno consulta la base que se aprobó en el cuadro.
 mundo ok
@@ -355,7 +354,7 @@ else no "T22b · el cliente no recibió la clave por el entorno"; fi
 if grep -q "CLAVE-GUARDADA-EN-SQLCONFIG" "$TMP/sqlcmd-env.log" 2>/dev/null; then
   no "T22g · el cliente corrió con el HOME del dev y usó la clave guardada en ~/.sqlcmd/sqlconfig, no la del Llavero"
 else ok "T22g · el cliente corre sin ver la config de go-sqlcmd del usuario (la clave que viaja es la del Llavero)"; fi
-# T22h/T22i — `base`: sin ella el cliente entra a `master` y en Azure SQL no hay `USE` (medido, 2026-09-15)
+# T22h/T22i — `base`: sin ella el cliente entra a `master` y en Azure SQL no hay `USE` (medido)
 if grep -qE -- '(^| )-d ' "$TMP/sqlcmd-argv.log"; then no "T22h · le pasa -d al cliente sin que el catálogo declare «base»"
 else ok "T22h · sin «base» en el catálogo, no le pasa -d al cliente"; fi
 if grep -q "algo salió mal en el servidor" "$TMP/out" && grep -q "rc=" "$TMP/out"; then ok "T22c · junta error y salida, e imprime el código de salida real"
@@ -367,8 +366,8 @@ if grep -qE -- '(^| )-x( |$)' "$TMP/sqlcmd-argv.log"; then
   ok "T22e · el cliente corre sin sustitución de variables (una sentencia con \$(SQLCMDPASSWORD) no devuelve la clave)"
 else no "T22e · el cliente corre CON sustitución de variables: una sentencia podría devolver la clave"; fi
 # 🔴 Y NO le pasa `-X`: es del sqlcmd viejo (ODBC) y contra go-sqlcmd rompe la puerta entera (ver T31).
-# Este caso mira el reverso a propósito: la versión anterior EXIGÍA `-X1` acá, o sea que el test daba
-# verde justamente porque el flag roto estaba. Un argumento presente no es un argumento aceptado.
+# Este caso mira el reverso a propósito: exigir `-X1` acá daría
+# verde justamente porque el flag roto está. Un argumento presente no es un argumento aceptado.
 if grep -qE -- '(^| )-X' "$TMP/sqlcmd-argv.log"; then
   no "T22e2 · le pasa -X al cliente: contra go-sqlcmd eso hace que ignore el -Q y no corra NADA"
 else ok "T22e2 · no le pasa -X al cliente (los comandos del cliente los frena la puerta, antes de conectarse)"; fi
@@ -400,8 +399,8 @@ rc="$(puerta "$PROD" 'select 1')"
 if [ "$rc" != 0 ] && [ ! -s "$TMP/impostor.log" ]; then ok "T29b · sin el cliente de root NO cae al del PATH: falla diciéndolo"
 else no "T29b · sin el cliente de root usó el del PATH (rc=$rc)"; fi
 
-# 🔴 La huella del cliente de base: el camino que el pase adversarial del 2026-09-15 encontró ROTO en
-# el lanzador (una ruta con barras dentro de un `sed`, que hacía que NUNCA se verificara nada). Acá
+# 🔴 La huella del cliente de base: el camino que puede romperse en
+# el lanzador (una ruta con barras dentro de un `sed`, que hace que NUNCA se verifique nada). Acá
 # van los dos lados, porque un control que no se ejerce se ve igual que uno que anda.
 mundo ok
 printf '{"/opt/tycon/bin/sqlcmd":"%s"}' "$(shasum -a 256 "$RAIZ/opt/tycon/bin/sqlcmd" | cut -d' ' -f1)" > "$RAIZ/opt/tycon/huellas.json"
@@ -416,9 +415,8 @@ if [ "$rc" != 0 ] && [ ! -s "$TMP/sqlcmd-argv.log" ]; then ok "T29d · con la hu
 else no "T29d · ejecutó un cliente cuya huella no coincide (rc=$rc)"; fi
 
 # ── T24f · el .command CORRIENDO de verdad, contra un llavero descartable ─────────────────────
-# 🔴 Los casos de arriba LEEN la plantilla y buscan textos; ninguno la ejecuta. El verificador de
-# cierre lo marcó: la matriz daba por «corrido» algo que sólo se había leído (2026-09-15). Éste lo
-# corre: rinde la plantilla, la alimenta con un usuario y una clave con comillas de los dos tipos,
+# 🔴 Los casos de arriba LEEN la plantilla y buscan textos; ninguno la ejecuta,
+# y la matriz daría por «corrido» algo que sólo se leyó. Éste la ejecuta: rinde la plantilla, la alimenta con un usuario y una clave con comillas de los dos tipos,
 # `$` y `\`, y exige que la clave se lea después IDÉNTICA y que el usuario no haya inyectado otro
 # argumento (una comilla suelta podía colar `-A`, que deja la entrada legible por cualquier programa).
 # El llavero se crea en el temporal y se borra al terminar; NO se toca el Llavero del dev ni su lista.
@@ -455,8 +453,8 @@ if [ "$rc" != 0 ] && ! grep -q -- "-w" "$TMP/security-argv.log" 2>/dev/null; the
 else no "T23 · leyó el secreto de una entrada con confianza de más (rc=$rc)"; fi
 
 # 🔴 T23b — la clave cargada con «-A»: CUALQUIER programa puede leerla sin cuadro. Es el caso peor y
-# el que la versión anterior daba por limpio (no imprime líneas numeradas, así que «no había nadie de
-# más»). Rojo previo verificado contra el control anterior: pasaba y leía el secreto.
+# el que un control que sólo mire líneas numeradas daría por limpio (no imprime líneas numeradas, así que «no había nadie de
+# más»). Ese control pasaría y leería el secreto.
 mundo llave-abierta
 rc="$(puerta "$PROD" 'select 1')"
 if [ "$rc" != 0 ] && ! grep -q -- "-w" "$TMP/security-argv.log" 2>/dev/null; then ok "T23c · una clave que puede leer cualquier programa no se usa: no pide el secreto"
@@ -464,8 +462,8 @@ else no "T23c · leyó el secreto de una clave abierta a cualquier programa (rc=
 
 
 # ── T24j · `--cargar-clave <host>`: el archivo sin tener que fallar una consulta ────────────────
-# Pedido del dev el día de la instalación (2026-09-15): el disparador para cargar la clave era «corré
-# una consulta que falle», un rodeo. Ahora hay un comando directo. Tiene que dejar el .command, NO
+# Cargar la clave no exige «correr
+# una consulta que falle», un rodeo: hay un comando directo. Tiene que dejar el .command, NO
 # tocar el cliente de base, NO pedir el secreto al Llavero, y salir 0 (la persona sigue).
 mundo sin-entrada
 rc="$(puerta --cargar-clave "$PROD")"
@@ -492,8 +490,8 @@ if grep -q -- "-T /usr/bin/security" "$CMDF" 2>/dev/null && grep -q 'read -r -s'
 else no "T24b · el .command no tiene la forma esperada (plantilla, -T /usr/bin/security, read -s, security -i, llavero propio)"; fi
 
 # 🔴 T24d — la clave NO puede viajar por los argumentos: mientras corre el comando, `ps` la muestra a
-# cualquier programa del mismo usuario (revisores del Step 5, 2026-09-15). Y NUNCA `-A`, que abre la
-# entrada a cualquier programa sin cuadro. Rojo previo: la plantilla anterior usaba `-w "$CLAVE"`.
+# cualquier programa del mismo usuario Y NUNCA `-A`, que abre la
+# entrada a cualquier programa sin cuadro. Rojo que atrapa: una plantilla con `-w "$CLAVE"`.
 if grep -qE '^[^#|]*security[^|]*add-generic-password' "$CMDF" 2>/dev/null; then
   no "T24d · el .command ejecuta add-generic-password con la clave en los argumentos (visible en ps)"
 elif grep -qE -- '(^|[[:space:]])-A([[:space:]]|$)' "$CMDF" 2>/dev/null; then

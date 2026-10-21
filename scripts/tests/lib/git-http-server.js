@@ -1,6 +1,6 @@
 'use strict';
 /*
- * git-http-server.js — un repo git por HTTP, local, que EXIGE la cabecera de la credencial (story 2.23, T21).
+ * git-http-server.js — un repo git por HTTP, local, que EXIGE la cabecera de la credencial (T21).
  *
  * Envuelve `git http-backend` (viene con git) en un servidor de Node en http://127.0.0.1:<puerto>. Todo pedido sin la
  * cabecera `Authorization` esperada contesta 401; con `caido = true`, 503. NUNCA habla con la red.

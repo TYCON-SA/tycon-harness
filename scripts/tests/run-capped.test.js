@@ -1,11 +1,11 @@
 'use strict';
 
 /**
- * run-capped.test.js — el tope de cada suite en la validación de cada rama (story 8.22, tramo D).
+ * run-capped.test.js — el tope de cada suite en la validación de cada rama.
  *
  * `scripts/ci/run-capped.js` corre una suite con un tope de segundos y, si lo pasa, la corta entera: la suite y todo lo
  * que lanzó. El camino feliz del corte lo prueba el paso real del pipeline (pr-verdict.test.sh, V18a). Acá van los
- * bordes que encontraron la revisión y el pase adversarial del tramo D:
+ * bordes:
  *   · un pedido mal hecho no corre nada (sale 2), tampoco un tope que desborda el temporizador de Node: desbordado,
  *     Node lo baja a 1 ms y una suite sana saldría cortada;
  *   · un comando que no se puede lanzar sale 127, no 128;
@@ -106,7 +106,7 @@ test('RunCapped_OverCap_KillsTheWholeGroupMarksAndExits124', { skip: !POSIX && '
 });
 
 test('RunCapped_OverCap_WhatIgnoresTermGetsTheGraceThenKill', { skip: !POSIX && 'grupos de procesos: sólo POSIX' }, () => {
-  // Revisor de fallos silenciosos, tramo D: el KILL salía apenas el líder moría tras el TERM, sin los 5 s de gracia.
+  // El KILL no puede salir apenas el líder muere tras el TERM: tiene que dar los 5 s de gracia.
   // Un hijo que ignora el TERM y escribe al segundo tiene que llegar a escribir; después, nada queda vivo.
   const dir = lab();
   const late = path.join(dir, 'late');

@@ -1,6 +1,6 @@
 'use strict';
 /*
- * fake-github-oauth.js — GitHub OAuth y las tres lecturas de su API que hace el sitio, en local (story 2.23).
+ * fake-github-oauth.js — GitHub OAuth y las tres lecturas de su API que hace el sitio, en local.
  *
  * Una sola dirección http://127.0.0.1:<puerto> hace de las dos de GitHub: la del inicio de sesión (`/login/oauth/…`) y la
  * de la API (`/api/user`, `/api/user/emails`, `/api/user/memberships/orgs/<org>`). NUNCA habla con la red.

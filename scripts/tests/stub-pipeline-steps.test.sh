@@ -2,9 +2,8 @@
 # Prueba de stub-pipeline-steps.js — la copia de un pipeline con los pasos reemplazados por
 # `echo`, para que el corredor local recorra la cadena entera de etapas sin ejecutar nada.
 #
-# Nace del 2026-09-04: el corredor local sin agente sólo llegaba hasta la primera etapa con pasos
-# (un job sin agente "falla" y arrastra en cascada a lo que depende de él), así que la condición
-# de `Deploy` no se podía probar sin una corrida real.
+# Motivo: el corredor local sin agente sólo llega hasta la primera etapa con pasos (un job sin agente "falla" y
+# arrastra en cascada a lo que depende de él), así que la condición de `Deploy` no se puede probar sin una corrida real.
 set -uo pipefail
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 V="$AQUI/scripts/ci/stub-pipeline-steps.js"
@@ -118,7 +117,7 @@ else
   echo "ℹ️ vaciar: 7 salteado (sin PyYAML)"
 fi
 
-# ---------------------------------------------------------------- 8. rojo previo: sobre los pipelines reales del equipo vacía TODO
+# ---------------------------------------------------------------- 8. sobre los pipelines reales del equipo vacía TODO
 for f in "$AQUI"/../Totora/Backend/azure-pipelines.yml; do
   [ -f "$f" ] || { echo "ℹ️ vaciar: 8 salteado (no está Totora/Backend en el disco)"; break; }
   node "$V" "$f" > "$TMP/real.yml" 2>/dev/null; rc=$?

@@ -1,12 +1,12 @@
 'use strict';
-// push-nightly-data.test.js — cómo guardan los nocturnos lo que escribieron (story 8.26, tanda H1a · T73).
+// push-nightly-data.test.js — cómo guardan los nocturnos lo que escribieron.
 //
 // Lo que no se puede perder:
 //   · A `main` llega SÓLO lo que el paso escribió, sobre la punta recién traída. Nunca el commit local de la
-//     superposición ni un borrado que venga de ella: con ese commit debajo, el `git push origin HEAD:main` de antes lo
-//     subía entero.
+//     superposición ni un borrado que venga de ella: con ese commit debajo, un `git push origin HEAD:main` lo
+//     subiría entero.
 //   · Lo nuevo sin seguimiento, lo que el `.gitignore` del árbol ignora, lo borrado, lo renombrado y lo binario viajan
-//     igual: un `git add <carpeta>` salteaba en silencio lo ignorado y la noche salía verde sin su archivo del día.
+//     igual: un `git add <carpeta>` saltearía en silencio lo ignorado y la noche saldría verde sin su archivo del día.
 //   · El checkout no se mueve: `HEAD` y el índice quedan como estaban. Lo guardado se encadena aparte.
 //   · Dos guardados del mismo trabajo se componen, y si el primero no viajó el segundo lo lleva.
 //   · Lo que otro trabajo escribió en la misma carpeta no se borra; un choque de verdad sale rojo nombrando el archivo.
@@ -61,7 +61,7 @@ function writeFiles(dir, files) {
 }
 
 // El `.gitignore` del interno, en chico: la carpeta de datos entera ignorada y vuelta a incluir por partes. `otra/` no
-// está incluida: es el archivo «que el .gitignore del árbol ignora» del AC 60.
+// está incluida: es el archivo «que el .gitignore del árbol ignora».
 const GITIGNORE = ['.dashboard/', '!.dashboard/', '.dashboard/*', '!.dashboard/bench/', '!.dashboard/bench/*.json', '!.dashboard/bench/*.bin', '*.bak', ''].join('\n');
 const BINARY = Buffer.from([0, 1, 2, 255, 0, 10, 13, 0, 200]);
 // La guarda de la otra mitad (`overlay-harness.js --check-tree`), de mentira y en su lugar de siempre: sale lo que
@@ -217,7 +217,7 @@ test('T73 una ruta con comodín lleva sólo lo que nombra: lo nuevo que coincide
     '.dashboard/metrics-ajeno.json': '{"no":"es de este paso"}\n',
     '.dashboard/proyectos/uno.json': '{"p":1}\n',
     '.dashboard/proyectos/notas.txt': 'no es un json\n',
-    // el comodín no cruza carpetas, como el del shell que resolvía estas rutas antes
+    // el comodín no cruza carpetas, como el del shell
     '.dashboard/proyectos/sub/dos.json': '{"de":"una subcarpeta"}\n',
   });
   const r = save(w, ['--message', 'chore(metricas): snapshot [pipeline nocturno]', '--', '.dashboard/sdlc-stage-*.json', '.dashboard/proyectos/*.json']);
@@ -553,7 +553,7 @@ test('T73 lo que se extrae para verificar son archivos: un enlace simbólico de 
   assert.ok(!files.includes('submodulo'), 'el submódulo tampoco');
 });
 
-// ── lo que confirmó el pase adversarial (2026-10-11): cada caso nació en rojo, con la prueba que lo reprodujo ──────────
+// ── casos del pase adversarial: cada uno falla sin su arreglo ──────────
 test('T73 el archivo del día con acento en el nombre: el de ayer que el paso escribió cuenta (las rutas no llegan escapadas)', () => {
   const w = world('accent');
   writeFiles(w.job, { '.dashboard/bench/día-2026-01-01.json': '{"dia":1}\n' });
@@ -653,7 +653,7 @@ test('T73 «no pude» nunca es «no hay»: si git falla al listar o al comparar,
   let counters = 0;
   const failing = (order, from = 1) => ({ PATH: `${bin}${path.delimiter}${process.env.PATH}`, FAIL_GIT: order, FAIL_GIT_FROM: String(from), FAIL_GIT_COUNT: path.join(bin, `count-${++counters}`) });
 
-  // listar lo que hay en las rutas del paso: antes, un fallo descartaba todas las rutas y decía «Nada nuevo»
+  // listar lo que hay en las rutas del paso: sin esto, un fallo descartaría todas las rutas y diría «Nada nuevo»
   let w = world('git-fails-ls');
   let before = mainTip(w);
   writeFiles(w.job, { 'ultimo.json': '{"ts":"nuevo"}\n' });
@@ -685,7 +685,7 @@ test('T73 «no pude» nunca es «no hay»: si git falla al listar o al comparar,
   assert.match(r.out, /no pude comparar lo que se iba a empujar[^\n]*simulado[^\n]*NO viajó/);
   assert.strictEqual(mainTip(w), before, 'sin poder comprobar qué cambia, no se empuja');
 
-  // sync: antes, un fallo al listar no restauraba nada y decía «Datos … al disco»
+  // sync: sin esto, un fallo al listar no restauraría nada y diría «Datos … al disco»
   w = world('git-fails-sync');
   rival(w, { '.dashboard/bench/foto-nueva.json': '{}\n' });
   r = run(w, ['sync', '--', '.dashboard'], failing('ls-files'));
@@ -874,7 +874,7 @@ test('T73 la guarda del árbol: se comprueba antes de guardar; si el árbol camb
   if (process.platform !== 'win32') assert.match(r.out, /--check-tree salió sin código/, 'lo dice: terminó sin código');
   assert.strictEqual(mainTip(w), beforeKilled, 'la guarda muerta: nada viaja');
 
-  // El guion de ESTA corrida. Con el arnés traído de GitHub y antes del corte, el checkout queda parado en el commit
+  // El guion de ESTA corrida. Con el arnés traído de GitHub, el checkout queda parado en el commit
   // del que salió la copia: el `overlay-harness.js` del disco es el de ese commit, que puede no conocer `--check-tree`
   // o calcular la huella de otro modo. La plantilla guarda antes el de la corrida —el que calculó HARNESS_TREE— en la
   // carpeta temporal del agente, y la guarda corre ése (lo mismo que hace check-tree.yml antes de medir).
@@ -918,7 +918,7 @@ test('T73 la guarda del árbol: se comprueba antes de guardar; si el árbol camb
   assert.strictEqual(JSON.parse(fs.readFileSync(log, 'utf8')).tree, TREE, 'una carpeta con ese nombre no es el guion de la corrida');
 
   // sin la variable no se sabe contra qué árbol comparar: no se guarda. La plantilla que trae el arnés la deja en
-  // todo trabajo que guarda; que falte es que algo cambió ahí, y «guardar igual» era el estado de paso de antes.
+  // todo trabajo que guarda; que falte es que algo cambió ahí, y «guardar igual» sería seguir sin comprobar nada.
   for (const [tag, env] of [['absent', {}], ['empty', { HARNESS_TREE: '' }]]) {
     w = world(`guard-${tag}`);
     log = path.join(w.base, 'check.json');
@@ -965,7 +965,7 @@ test('T73 uso: sin mensaje, sin rutas o con una ruta que sale del repo, 2 y nada
     ['sync', '--', '.'],
     ['sync'],
     ['other', '--', 'ultimo.json'],
-    // el primer tramo de una ruta va escrito sin comodines: una clase de caracteres abarcaba el repo igual que `*`
+    // el primer tramo de una ruta va escrito sin comodines: una clase de caracteres abarcaría el repo igual que `*`
     ['save', '--message', 'm', '--', '[.a-z]*'],
     ['save', '--message', 'm', '--', '[a-z]*/x.json'],
     ['save', '--message', 'm', '--', '?dashboard/bench'],

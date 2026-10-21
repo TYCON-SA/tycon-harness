@@ -2,9 +2,9 @@
 # Prueba de check-stage-dependencies.js — el control que verifica que la condición de cada
 # etapa diga la verdad sobre de qué depende.
 #
-# Nace de un caso real (2026-09-01): el `Deploy` del backend de un producto del equipo nombraba a `TraerArnes` en su
-# condición sin depender de ella. Andaba de casualidad —Azure DevOps resuelve dependencias
-# transitivas— y se rompía el día que alguien reordenara las etapas. No daba ningún error.
+# Caso que lo motiva: un `Deploy` que nombra a `TraerArnes` en su condición sin depender de ella
+# anda de casualidad —Azure DevOps resuelve dependencias transitivas— y se rompe el día que alguien
+# reordene las etapas. No da ningún error.
 #
 # El caso 2 reproduce ESE defecto, y el 3 el gemelo peor: depender de las pruebas y no nombrarlas
 # en la condición, o sea empaquetar con las pruebas en rojo.
@@ -30,7 +30,7 @@ Y
 rc=$(corre "$TMP/sano.yml")
 [ "$rc" -eq 0 ] && ok "un pipeline coherente sale 0" || no "un pipeline sano salió $rc: $(cat "$TMP/out.txt")"
 
-# ---------------------------------------------------------------- 2. EL DEFECTO REAL de FRESNO
+# ---------------------------------------------------------------- 2. EL DEFECTO REAL: nombrar una etapa sin depender de ella
 cat > "$TMP/fantasma.yml" <<'Y'
 stages:
   - stage: TraerArnes
@@ -68,7 +68,7 @@ rc=$(corre "$TMP/muda.yml")
 grep -q "depende-en-silencio" "$TMP/out.txt" && ok "…y lo clasifica aparte del otro" || no "no clasificó el hallazgo"
 
 # ---------------------------------------------------------------- 4. sin condición NO es hallazgo
-# Ahí rige succeeded(), que es lo correcto por default. Marcarlo sería ruido en 19 pipelines.
+# Ahí rige succeeded(), que es lo correcto por default. Marcarlo sería ruido en todos los pipelines.
 cat > "$TMP/sincond.yml" <<'Y'
 stages:
   - stage: A
@@ -145,10 +145,10 @@ rc=$(corre "$TMP/vacio.yml")
 rc=$(corre "$TMP/no-existe.yml")
 [ "$rc" -ne 0 ] && ok "una ruta inexistente pasada a mano NO se lee como 'todo bien'" || no "🔴 una ruta inexistente salió 0"
 
-# ---------------------------------------------------------------- 11. 🔴 EL CASO CEIBO: succeeded() sobre una dependencia con condición propia
-# (2026-09-02, revisión adversarial #3). `ActivatePlugin` —con el humo adentro— dependía de
-# `RecycleAppPool`, que sólo corre si el upload devolvió 200. Con un 409 el reciclado quedaba
-# Skipped, `succeeded()` se envenenaba, la activación y el humo NO corrían y el stage quedaba VERDE.
+# ---------------------------------------------------------------- 11. 🔴 succeeded() sobre una dependencia con condición propia
+# `ActivatePlugin` —con el humo adentro— depende de `RecycleAppPool`, que sólo corre si el upload
+# devolvió 200. Con un 409 el reciclado queda Skipped, `succeeded()` se envenena, la activación y
+# el humo NO corren y el stage queda VERDE.
 cat > "$TMP/ceibo.yml" <<'Y'
 stages:
   - stage: Deploy
@@ -213,7 +213,7 @@ rc=$(corre "$TMP/ceibo-arreglado.yml")
 
 # ---------------------------------------------------------------- 14. las reglas de ETAPAS no se copian a los jobs (falsos positivos)
 # Un job sin dependsOn corre en PARALELO (no cuelga del anterior), y `condition: succeeded()`
-# explícito SÍ honra a las dependencias. Los dos casos son de ceibo-front / ceibo-back.
+# explícito SÍ honra a las dependencias.
 cat > "$TMP/jobs-sanos.yml" <<'Y'
 stages:
   - stage: E2E

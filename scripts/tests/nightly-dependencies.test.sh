@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Prueba de nightly-dependencies.js — la revisión nocturna de dependencias.
 #
-# Nace del 2026-09-01: el análisis de dependencias es el ÚNICO de los tres controles de seguridad
+# Motivo: el análisis de dependencias es el ÚNICO de los tres controles de seguridad
 # que pregunta AFUERA, así que su veredicto puede cambiar sin que cambie una línea de código — y
-# sólo corre en los pull requests. Medido ese día: Acme/FrontEnd pasó en verde a las 15:56 y a
-# las 16:42 salió CVE-2026-73089 sobre browserslist.
+# sólo corre en los pull requests. Ejemplo: un repo pasa en verde a las 15:56 y a
+# las 16:42 aparece una vulnerabilidad nueva sobre una de sus dependencias.
 #
 # Los casos giran alrededor de tres confusiones que matarían la pieza en silencio:
 #   · "no pude medir" leído como "está limpio";
@@ -41,7 +41,7 @@ DOS_ALTAS='{"vulnerabilities":{"browserslist":{"severity":"high","via":[{"url":"
 TRES_CRIT_DOS_ALTAS='{"vulnerabilities":{"c1":{"severity":"critical","via":[{"url":"https://x/GHSA-c1"}]},"c2":{"severity":"critical","via":[{"url":"https://x/GHSA-c2"}]},"c3":{"severity":"critical","via":[{"url":"https://x/GHSA-c3"}]},"a1":{"severity":"high","via":[{"url":"https://x/GHSA-a1"}]},"a2":{"severity":"high","via":[{"url":"https://x/GHSA-a2"}]}},"metadata":{"vulnerabilities":{"critical":3,"high":2,"moderate":0,"low":0}}}'
 DOS='{"vulnerabilities":{"browserslist":{"severity":"high","via":[{"url":"https://x/GHSA-73wf"}]},"handlebars":{"severity":"critical","via":[{"url":"https://x/GHSA-2qvq"}]}},"metadata":{"vulnerabilities":{"critical":1,"high":1,"moderate":0,"low":0}}}'
 
-# 🔴 Los repos de prueba son repos git CON origin/main: desde el 2026-09-03 el nocturno audita lo
+# 🔴 Los repos de prueba son repos git CON origin/main: el nocturno audita lo
 # publicado (un árbol temporal parado ahí), y un directorio que no es un repo git es "no medido".
 mundo(){ rm -rf "$TMP/mundo" "$TMP/fix"; mkdir -p "$TMP/fix"
   for r in "$@"; do mkdir -p "$TMP/mundo/$r"; ( cd "$TMP/mundo/$r"
@@ -102,8 +102,8 @@ noche "$TMP/c1.json" 2026-09-04 >/dev/null; tercero=$(anunciados)
   || no "presupuesto: anunció $primero,$segundo,$tercero (posterga=$dice_posterga)"
 
 # ── 5b. 🔴 UNA CRÍTICA NO ESPERA TURNO: no consume el tope y sale la misma noche ───────────────
-# Pedido del dev (2026-09-14): con el tope por noches primero, una crítica recién aparecida quedaba
-# detrás de altas más viejas y podía esperar varias noches. El tope es para no aturdir con altas;
+# Con el tope por noches primero, una crítica recién aparecida quedaría
+# detrás de altas más viejas y podría esperar varias noches. El tope es para no aturdir con altas;
 # una crítica se anuncia siempre. Tope 1, tres críticas y dos altas → 3 + 1 hoy, la alta que queda mañana.
 rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; config "$TMP/c1b.json" 1 A
 noche "$TMP/c1b.json" 2026-09-01 >/dev/null
@@ -152,8 +152,8 @@ echo '{"revision":"2026-12-31","paquetes":[{"paquete":"browserslist","advisories
 noche "$TMP/c5.json" 2026-09-02 >/dev/null
 [ "$(anunciados)" -eq 0 ] && ok "lo declarado como deuda no genera aviso" || no "lo declarado despertó a alguien"
 
-# 🔴 Desde el 2026-09-03 la declaración nombra los avisos que ampara: declarar sólo el nombre
-# amparaba el paquete entero, para todo aviso futuro.
+# 🔴 La declaración nombra los avisos que ampara: declarar sólo el nombre
+# ampararía el paquete entero, para todo aviso futuro.
 # ── 11. …pero si la declaración VENCE, vuelve a contar ──────────────────────────────────────
 echo '{"revision":"2026-01-01","paquetes":[{"paquete":"browserslist","advisories":["GHSA-73wf"]}]}' > "$TMP/mundo/A/vulnerabilidades-pendientes.json"
 ( cd "$TMP/mundo/A" && git add -A && git commit -qm "declaro la deuda" && git update-ref refs/remotes/origin/main HEAD ) >/dev/null 2>&1   # 🔴 se audita lo PUBLICADO: una declaración sin commitear no ampara
@@ -181,9 +181,9 @@ grep -qi "ignorado" "$TMP/rep.txt" && grep -qi "descartado" "$TMP/rep.txt" \
   && ok "la medición separa 'ignorado' de 'descartado'" || no "report no distingue los veredictos"
 
 # ── 15-18. 🔴 auditar LO PUBLICADO, no la rama que quedó en el disco ─────────────────────────
-# (2026-09-03) Este nocturno PROMETE mirar `main` —es lo que corre en producción— y auditaba el
-# árbol de trabajo, o sea la rama en la que quedó el checkout de cada repo. En las máquinas del
-# equipo eso suele ser `dev`: se reportarían vulnerabilidades que producción no tiene, o peor, se
+# Este nocturno PROMETE mirar `main` —es lo que corre en producción—; si auditara el
+# árbol de trabajo, o sea la rama en la que quedó el checkout de cada repo (en las máquinas del
+# equipo suele ser `dev`), se reportarían vulnerabilidades que producción no tiene, o peor, se
 # PERDERÍAN las que sí.
 cat > "$TMP/doble2.sh" <<'DOBLE2'
 #!/usr/bin/env bash
@@ -232,8 +232,8 @@ sobran=$(git -C "$TMP/mundo/ProdA" worktree list 2>/dev/null | grep -c nocturno 
 [ "${sobran:-0}" = "0" ] && ok "no deja árboles temporales colgados" || no "quedaron $sobran árboles temporales"
 
 # ── 19. 🔴 un pendiente cuya vulnerabilidad DESAPARECE se cierra como RESUELTO, no como ignorado ──
-# (2026-09-05) El dev pagó SSH.NET en tres repos; sin este camino el borrador seguía en pending/
-# hasta el día 7 y se archivaba como `ignorado` — el peor veredicto — por un trabajo que sí se hizo.
+# Si el dev paga SSH.NET en tres repos, sin este camino el borrador sigue en pending/
+# hasta el día 7 y se archiva como `ignorado` — el peor veredicto — por un trabajo que sí se hizo.
 rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; config "$TMP/c19.json" 2 A
 noche "$TMP/c19.json" 2026-09-01 >/dev/null; echo "$UNA" > "$TMP/fix/A.json"; noche "$TMP/c19.json" 2026-09-02 >/dev/null
 ls "$TMP/pend/pending"/*.yaml >/dev/null 2>&1 || no "19: no quedó el borrador pendiente de la noche 2"
@@ -255,8 +255,8 @@ noche "$TMP/c20.json" 2026-09-03 >/dev/null
   || no "20: se resolvió (o se perdió) un borrador con un repo NO MEDIDO — $(ls "$TMP/pend"/* 2>/dev/null | tr '\n' ' ')"
 
 # ── 21. el borrador refresca los HECHOS de cada noche (repos, noches) sin tocar la decisión ─────
-# (2026-09-05) El PR de SSH.NET salió nombrando a los tres repos del 03-09 cuando esa noche ya
-# sólo quedaba uno distinto: el borrador estaba congelado en su primera noche.
+# Sin el refresco, el PR de SSH.NET nombraría a los tres repos de la primera noche aunque la noche actual
+# sólo tenga uno distinto: el borrador quedaría congelado en su primera noche.
 rm -rf "$TMP/out" "$TMP/pend"; mundo A B; echo "$LIMPIO" > "$TMP/fix/A.json"; echo "$LIMPIO" > "$TMP/fix/B.json"; config "$TMP/c21.json" 2 A B
 noche "$TMP/c21.json" 2026-09-01 >/dev/null; echo "$UNA" > "$TMP/fix/A.json"; echo "$UNA" > "$TMP/fix/B.json"; noche "$TMP/c21.json" 2026-09-02 >/dev/null
 B21=$(ls "$TMP/pend/pending"/*.yaml | head -1)
@@ -266,12 +266,12 @@ echo "$LIMPIO" > "$TMP/fix/A.json"; noche "$TMP/c21.json" 2026-09-03 >/dev/null 
   && ok "el borrador dice los repos y las noches de HOY, y la decisión escrita no se toca" \
   || no "21: el borrador quedó congelado o pisó la decisión — $(grep -E '^(noches|repos|veredicto|  - )' "$B21" | tr '\n' ' ')"
 
-# ── 22-27. 🔴 SUBCARPETAS: el gateway de mensajería de Acme (2026-09-05) ─────────────────
+# ── 22-27. 🔴 SUBCARPETAS: el gateway de mensajería de Acme ─────────────────
 # `Acme/BackEnd` lleva en `tools/chat-gateway` un SEGUNDO programa (Node) que corre en
 # producción, con su propio lockfile y su propia deuda declarada. El pipeline del repo lo audita
-# (`--repo tools/chat-gateway`); el nocturno no, porque cada entrada era un repo entero. Medido
-# ese día sobre origin/main: la raíz da 0 altas y el gateway 1 crítica + 6 altas — o sea que el
-# nocturno lo reportaba LIMPIO todas las noches. Un verde que significa "no miré eso".
+# (`--repo tools/chat-gateway`); el nocturno no lo haría si cada entrada fuera un repo entero. Ejemplo
+# sobre origin/main: la raíz da 0 altas y el gateway 1 crítica + 6 altas — o sea que el
+# nocturno lo reportaría LIMPIO todas las noches. Un verde que significa "no miré eso".
 mundosub(){ # <repo> <sub> — raíz y subcarpeta, cada una con su lockfile y su fixture ("<repo>" y "<repo>-sub")
   rm -rf "$TMP/mundo" "$TMP/fix"; mkdir -p "$TMP/fix" "$TMP/mundo/$1/$2"; ( cd "$TMP/mundo/$1"
     : > package-lock.json; echo "$1" > SOY
@@ -361,15 +361,15 @@ node "$NOC" clone-list --config "$TMP/c27.json" > "$TMP/cl.txt" 2>&1
   || no "27: la lista de clones no deduplica o no existe — $(cat "$TMP/cl.txt" | head -3 | tr '\n' ' ')"
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
-# Story 4.1 — que «resuelto» signifique resuelto (2026-09-10)
+# Que «resuelto» signifique resuelto
 #
-# Tres defectos que se tapaban entre sí, los tres reproducidos contra el guion anterior:
-#   1. La ficha ACEPTADA (promoted/) no se volvía a mirar: nunca recibía `resuelto:` y sus datos
-#      quedaban congelados en la primera noche.
-#   2. Declarar la deuda salía como PAGADO: lo declarado se descuenta antes de comparar, el id
-#      desaparecía de `hallazgos` y se leía como "ya no está".
-#   3. El identificador se movía solo: un aviso nuevo sobre el mismo paquete crea otra huella, así
-#      que el viejo se daba por resuelto (falso) y el nuevo nacía como ficha nueva con PR nuevo.
+# Tres defectos que se tapan entre sí:
+#   1. La ficha ACEPTADA (promoted/) no se volvería a mirar: nunca recibiría `resuelto:` y sus datos
+#      quedarían congelados en la primera noche.
+#   2. Declarar la deuda se leería como PAGADO: lo declarado se descuenta antes de comparar, el id
+#      desaparece de `hallazgos` y se lee como "ya no está".
+#   3. El identificador se movería solo: un aviso nuevo sobre el mismo paquete crea otra huella, así
+#      que el viejo se daría por resuelto (falso) y el nuevo nacería como ficha nueva con PR nuevo.
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 
 # Una config donde cada entrada declara su `ado` (el proyecto de Azure DevOps) y puede estar
@@ -418,8 +418,8 @@ unaficha(){ ls "$TMP/pend/$1"/*.yaml 2>/dev/null | head -1; }
 snap(){ node -e "const s=require('$TMP/out/dependencias-$1.json');$2"; }
 
 # ── T1. 🔴 la ficha ACEPTADA se sigue vigilando: sus datos son los de HOY ─────────────────────
-# El pipeline mueve la ficha a promoted/ al mergear su pull request, y desde ahí no la miraba
-# nadie: `noches` quedaba congelado en la primera noche para siempre.
+# El pipeline mueve la ficha a promoted/ al mergear su pull request, y desde ahí no la mira
+# nadie: sin esto, `noches` queda congelado en la primera noche para siempre.
 rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; configx "$TMP/c-t1.json" 2 A
 noche "$TMP/c-t1.json" 2026-09-01 >/dev/null
 echo "$UNA" > "$TMP/fix/A.json"; noche "$TMP/c-t1.json" 2026-09-02 >/dev/null
@@ -481,8 +481,8 @@ noche "$TMP/c-t4.json" 2026-09-04 >/dev/null        # B vuelve a estar activo, y
   || no "T4b: no se destrabó — $(grep -E '^(bloqueada_por|resuelto)' "$F4" | tr '\n' ' ')"
 
 # ── T5. 🔴 DECLARAR NO ES PAGAR ───────────────────────────────────────────────────────────────
-# El defecto 2: lo declarado se descuenta ANTES de comparar, así que el id desaparecía de
-# `hallazgos` y se leía como "ya no está" → la ficha salía a promoted/ con motivo "(se pagó)".
+# Lo declarado se descuenta ANTES de comparar, así que el id desaparecería de
+# `hallazgos` y se leería como "ya no está" → la ficha saldría a promoted/ con motivo "(se pagó)".
 # La vulnerabilidad sigue ahí; lo que hubo es una decisión de postergar, con fecha.
 rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; configx "$TMP/c-t5.json" 2 A
 noche "$TMP/c-t5.json" 2026-09-01 >/dev/null
@@ -542,8 +542,8 @@ F8="$TMP/pend/pending/$ID8.yaml"
   || no "T8: nació una ficha nueva o no se reactivó — $(ls "$TMP/pend"/*/*.yaml | tr '\n' ' ')"
 
 # ── T9. 🔴 un aviso NUEVO sobre el mismo paquete se ANEXA: no es una ficha nueva ───────────────
-# El defecto 3: la huella es `paquete|severidad|avisos`, así que un aviso más = otro id. El viejo
-# desaparecía —"resuelto", falso— y el nuevo nacía con su propio pull request. Dos pull requests y
+# La huella es `paquete|severidad|avisos`, así que un aviso más = otro id. El viejo
+# desaparecería —"resuelto", falso— y el nuevo nacería con su propio pull request. Dos pull requests y
 # un arreglo fantasma por el mismo hecho.
 rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; configx "$TMP/c-t9.json" 2 A
 noche "$TMP/c-t9.json" 2026-09-01 >/dev/null
@@ -624,10 +624,9 @@ FB="$TMP/pend/pending/$IDB.yaml"
   || no "T12b: se anunció el id nuevo o nació otro archivo — $(ls "$TMP/pend"/*/*.yaml | tr '\n' ' ') · $(snap 2026-09-04 'console.log(s.anunciados_hoy.join(","))')"
 
 # ── T13. 🔴 los repos de una ficha se leen POR SECCIÓN, no "toda línea con guion" ─────────────
-# `archivarResueltos` tomaba cualquier `  - x` que no fuera una URL como si fuera un repo. Con la
-# lista `ids:` (que esta story estrena) eso significa que un identificador se exige "medido" — y
-# como un id nunca va a estar entre los repos medidos, la ficha NO SE RESUELVE NUNCA. Es el
-# defecto que se activa el día después del merge, sobre las fichas que la propia story crea.
+# Si `archivarResueltos` tomara cualquier `  - x` que no fuera una URL como si fuera un repo, con la
+# lista `ids:` un identificador se exigiría "medido" — y como un id nunca va a estar entre los repos
+# medidos, la ficha NO SE RESOLVERÍA NUNCA. El defecto aparecería sobre las fichas que crea esa misma lista.
 rm -rf "$TMP/out" "$TMP/pend"; mundo A B
 echo "$LIMPIO" > "$TMP/fix/A.json"; echo "$LIMPIO" > "$TMP/fix/B.json"
 configx "$TMP/c-t13.json" 2 A B
@@ -675,8 +674,8 @@ else
 fi
 
 # ── T14. el snapshot publica lo que DECIDE, no sólo lo que anuncia ────────────────────────────
-# Un `report` que cuenta decisiones y no arreglos es el defecto que esta story cierra; para poder
-# contar hace falta que la corrida publique las presencias y las listas de cada clase. Vacías
+# Para que `report` cuente arreglos y no decisiones, hace falta que la corrida publique las presencias
+# y las listas de cada clase. Vacías
 # cuando no hubo nada — NUNCA ausentes: una clave que falta y una lista vacía no son lo mismo.
 rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; configx "$TMP/c-t14.json" 2 A
 noche "$TMP/c-t14.json" 2026-09-01 >/dev/null
@@ -695,8 +694,8 @@ t14=$(snap 2026-09-02 "
   || no "T14: el snapshot no publica lo que decide — $t14"
 
 # ── T15. 🔴 `report` cuenta ARREGLOS, no decisiones ───────────────────────────────────────────
-# Hasta el 2026-09-10 "trabajo real" era TODA la carpeta promoted/, o sea toda ficha cuyo pull
-# request alguien mergeó. Pero mergearlo quiere decir "sí, hay que arreglarlo", no "está
+# "Trabajo real" no es TODA la carpeta promoted/, o sea toda ficha cuyo pull
+# request alguien mergeó: mergearlo quiere decir "sí, hay que arreglarlo", no "está
 # arreglado". Y una deuda declarada no es ni un arreglo ni un descarte: no entra al denominador.
 rm -rf "$TMP/rep15"; mkdir -p "$TMP/rep15/pending" "$TMP/rep15/promoted" "$TMP/rep15/archived"
 ficha15(){ # <carpeta> <id> <líneas extra…>
@@ -730,10 +729,10 @@ node "$NOC" report --pending "$TMP/rep15" > "$TMP/r15.txt" 2>&1
   || no "T15b: el texto no explica los contadores — $(grep -E 'Trabajo|Aceptadas|deuda' "$TMP/r15.txt" | tr '\n' ' ')"
 
 # ── T18. 🔴 DOS avisos nuevos del mismo paquete y proyecto en UNA MISMA noche ──────────────────
-# Lo cazó el cazador de fallos silenciosos sobre esta misma story: la lista de fichas se lee UNA
-# vez antes del bucle, así que el segundo anexo escribía sobre el texto que leyó al principio y
-# PISABA al primero en disco. El resumen decía "los dos anexados" y el archivo tenía uno solo: el
-# identificador perdido quedaba marcado como anunciado, sin pull request, y nadie se enteraba.
+# La lista de fichas se lee UNA
+# vez antes del bucle: sin cuidado, el segundo anexo escribiría sobre el texto que leyó al principio y
+# PISARÍA al primero en disco. El resumen diría "los dos anexados" y el archivo tendría uno solo: el
+# identificador perdido quedaría marcado como anunciado, sin pull request, y nadie se enteraría.
 rm -rf "$TMP/out" "$TMP/pend"; mundo A B
 echo "$LIMPIO" > "$TMP/fix/A.json"; echo "$LIMPIO" > "$TMP/fix/B.json"
 configx "$TMP/c-t18.json" 4 "A|ProyX/A" "B|ProyX/B"       # 🔴 el MISMO proyecto de Azure
@@ -753,8 +752,8 @@ anex=$(snap 2026-09-03 "console.log((s.anexados||[]).length)")
   || no "T18: un anexo pisó al otro — ids=$n18 (esperado 3) anexados=$anex · $(ls "$TMP/pend"/*/*.yaml | tr '\n' ' ')"
 
 # ── T18b. 🔴 …y dos que reactivan la MISMA ficha cerrada no rompen la corrida ─────────────────
-# Mismo origen: la segunda reactivación intentaba borrar un archivo que la primera ya había movido
-# → excepción sin capturar → la corrida entera se caía, con los repos ya auditados y nada escrito.
+# Mismo origen: la segunda reactivación intentaría borrar un archivo que la primera ya movió
+# → excepción sin capturar → la corrida entera se caería, con los repos ya auditados y nada escrito.
 rm -rf "$TMP/out" "$TMP/pend"; mundo A B
 echo "$LIMPIO" > "$TMP/fix/A.json"; echo "$LIMPIO" > "$TMP/fix/B.json"
 configx "$TMP/c-t18b.json" 4 "A|ProyX/A" "B|ProyX/B"
@@ -774,12 +773,12 @@ nC=$(sed -n '/^ids:/,/^[a-z_]*:/p' "$TMP/pend/pending/$IDC.yaml" 2>/dev/null | g
   || no "T18b: la corrida se cayó o duplicó la ficha — rc=$rc18 ids=$nC · $(ls "$TMP/pend"/*/*.yaml 2>/dev/null | tr '\n' ' ')"
 
 # ── T19. 🔴 un repo que NO SE MIDIÓ no puede desaparecer de la ficha ───────────────────────────
-# Lo cazó el revisor de alcance sobre esta misma story. El refresco de los hechos escribía `repos:`
+# El refresco de los hechos escribe `repos:`
 # con los repos donde el paquete está PRESENTE, y un repo que no se pudo medir no está presente en
-# ningún lado: se borraba del archivo. La noche siguiente ese repo ya no era "de la ficha", no
-# bloqueaba, y la ficha se resolvía SIN HABERLO MIRADO NUNCA — el «no medido = limpio» que esta
-# story existe para cerrar, reintroducido por la puerta de atrás. Dos noches, no una: por eso T3
-# (que mira una sola noche) lo esquivaba.
+# ningún lado: si se borrara del archivo, la noche siguiente ese repo ya no sería "de la ficha", no
+# bloquearía, y la ficha se resolvería SIN HABERLO MIRADO NUNCA — el «no medido = limpio» que esta pieza
+# existe para evitar. Hacen falta dos noches, no una: por eso T3
+# (que mira una sola noche) lo esquiva.
 rm -rf "$TMP/out" "$TMP/pend"; mundo A B
 echo "$LIMPIO" > "$TMP/fix/A.json"; echo "$LIMPIO" > "$TMP/fix/B.json"; configx "$TMP/c-t19.json" 2 A B
 noche "$TMP/c-t19.json" 2026-09-01 >/dev/null
@@ -798,13 +797,13 @@ echo "$LIMPIO" > "$TMP/fix/A.json"; noche "$TMP/c-t19.json" 2026-09-04 >/dev/nul
   || no "T19b: se resolvió con un repo que jamás se midió — $(ls "$TMP/pend"/*/*.yaml 2>/dev/null | tr '\n' ' ')"
 
 # ── T20. 🔴 una ficha que REAPARECE no se archiva como ignorada la misma noche ────────────────
-# Lo cazó el pase adversarial sobre esta misma story, y es el caso NORMAL, no el raro: una ficha
-# conserva su `detectado:` al reactivarse (AC 12) y una deuda vence a meses, así que casi toda
-# reaparición llega con más de 7 días encima. La reactivación y el archivado como ignorada pasaban
-# la MISMA noche: la ficha quedaba en `anunciados_hoy` pero fuera de `pending/`, el pipeline la
-# salteaba diciendo «no está el borrador», y la noche siguiente el hallazgo heredaba
-# `anunciado: true` — así que no se anunciaba NUNCA MÁS. La vulnerabilidad volvió, nadie recibió su
-# pull request, y la medición la contaba como «nadie la miró».
+# Es el caso NORMAL, no el raro: una ficha
+# conserva su `detectado:` al reactivarse y una deuda vence a meses, así que casi toda
+# reaparición llega con más de 7 días encima. Si la reactivación y el archivado como ignorada pasaran
+# la MISMA noche, la ficha quedaría en `anunciados_hoy` pero fuera de `pending/`, el pipeline la
+# saltearía diciendo «no está el borrador», y la noche siguiente el hallazgo heredaría
+# `anunciado: true` — así que no se anunciaría NUNCA MÁS. La vulnerabilidad vuelve, nadie recibiría su
+# pull request, y la medición la contaría como «nadie la miró».
 rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; configx "$TMP/c-t20.json" 2 A
 noche "$TMP/c-t20.json" 2026-09-01 >/dev/null
 echo "$UNA" > "$TMP/fix/A.json"; noche "$TMP/c-t20.json" 2026-09-02 >/dev/null
@@ -829,10 +828,10 @@ noche "$TMP/c-t20.json" 2026-09-20 >/dev/null      # 8 días desde que reapareci
   && ok "…y a los 8 sí se archiva como ignorada: el corte de 7 días no cambió, cambió desde cuándo se cuenta" \
   || no "T20c: no se archivó a los 8 días de reaparecer — $(ls "$TMP/pend"/*/*.yaml 2>/dev/null | tr '\n' ' ')"
 
-# ── T21. `proyectoDe` se prueba DIRECTO: es el contrato que la story 4.4 va a reusar ───────────
-# Lo pidió el revisor de cobertura: sus dos ramas se ejecutaban en T11 pero ninguna aserción
-# dependía del resultado — con el decodificado roto, T11 pasaba igual. Un contrato hacia otra
-# story que nadie asserta es un contrato que se rompe sin que nadie se entere.
+# ── T21. `proyectoDe` se prueba DIRECTO: es un contrato que otras piezas reusan ────────────────
+# Sus dos ramas se ejecutan en T11 pero ninguna aserción
+# depende del resultado — con el decodificado roto, T11 pasaría igual. Un contrato hacia otra
+# pieza que nadie asserta es un contrato que se rompe sin que nadie se entere.
 t21=$(node -e "
 const m=require('$NOC');
 const cfg={repos:[
@@ -853,7 +852,7 @@ console.log([
   || no "T21: proyectoDe no resuelve como promete — $t21"
 
 # ── T22. `--dry-run` dice qué haría y NO escribe nada ─────────────────────────────────────────
-# La bandera ya existía, pero esta story reescribió el camino que saltea: sin caso, un `--dry-run`
+# Sin caso, un `--dry-run`
 # que empezara a escribir fichas no lo notaría nadie — y es la bandera que alguien usa justamente
 # para mirar sin tocar.
 rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; configx "$TMP/c-t22.json" 2 A
@@ -869,10 +868,10 @@ despues=$(find "$TMP/pend" "$TMP/out" -type f 2>/dev/null | sort | xargs shasum 
   && ok "\`--dry-run\` informa lo que encontró y no escribe NADA: ni ficha, ni snapshot" \
   || no "T22: --dry-run tocó el disco o no informó — rc=$rcdry · $(head -3 "$TMP/dry.txt" | tr '\n' ' ')"
 
-# ── T23. una ficha SIN la clave `ids:` se vigila igual: es la forma de las 5 que ya existen ────
-# Las cinco fichas reales del repo son anteriores a esta story y no tienen `ids:`. Si la lectura no
-# tratara su ausencia como «un solo identificador, el suyo», la primera noche después del merge se
-# romperían o se resolverían TODAS. T13 prueba la ficha CON la clave; ésta prueba la de hoy.
+# ── T23. una ficha SIN la clave `ids:` se vigila igual: es la forma de las fichas ya existentes ──
+# Las fichas existentes no tienen `ids:`. Si la lectura no
+# tratara su ausencia como «un solo identificador, el suyo», la primera noche se
+# romperían o se resolverían TODAS. T13 prueba la ficha CON la clave; ésta prueba la que no la tiene.
 rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; configx "$TMP/c-t23.json" 2 A
 noche "$TMP/c-t23.json" 2026-09-01 >/dev/null
 echo "$UNA" > "$TMP/fix/A.json"; noche "$TMP/c-t23.json" 2026-09-02 >/dev/null
@@ -896,8 +895,8 @@ echo "$LIMPIO" > "$TMP/fix/A.json"; noche "$TMP/c-t23.json" 2026-09-04 >/dev/nul
   || no "T23: la ficha sin ids: no se resolvió — $(grep -E '^(noches|resuelto)' "$F23" | tr '\n' ' ')"
 
 # ── T24. 🔴 una ficha resuelta en una noche INCOMPLETA que vuelve, se reactiva igual ───────────
-# Segunda pasada adversarial. Había DOS líneas base distintas y nadie las miraba juntas: la
-# resolución se decide por ficha CUALQUIER noche, pero la reactivación salía de la lista de
+# Hay DOS líneas base distintas que conviene mirar juntas: la
+# resolución se decide por ficha CUALQUIER noche, pero la reactivación sale de la lista de
 # anuncios, que hereda `anunciado: true` del último snapshot COMPLETO. Basta que UN repo de los 20
 # no se mida la noche en que otra ficha se cura: esa ficha queda `resuelto:` PARA SIEMPRE aunque la
 # vulnerabilidad vuelva, `report` la cuenta como trabajo real, y nadie vuelve a ser avisado.
@@ -923,11 +922,11 @@ F24="$TMP/pend/pending/$ID24.yaml"
   || no "T24: quedó resuelta con la vulnerabilidad viva — $(ls "$TMP/pend"/*/*.yaml | tr '\n' ' ') · $(grep -E '^(veredicto|resuelto)' "$TMP/pend"/*/"$ID24.yaml" | tr '\n' ' ')"
 
 # ── T25. 🔴 un identificador que NACE declarado no puede leerse como «ya no está» ──────────────
-# Segunda pasada adversarial. La declaración ampara por AVISO, no por severidad: si el mismo aviso
+# La declaración ampara por AVISO, no por severidad: si el mismo aviso
 # se re-puntúa de alto a crítico, nace otra huella —ya amparada— que nunca entra a la lista de
 # anuncios (lo declarado no despierta a nadie) y por lo tanto nunca se anexa a la ficha. La ficha
 # no la ve, cree que su paquete desapareció, y escribe `resuelto:` donde correspondía «descartado
-# por deuda». Es el defecto 2 de la story entrando por otra puerta: deuda contada como arreglo.
+# por deuda». Es el defecto de la deuda contada como arreglo entrando por otra puerta.
 CRIT='{"vulnerabilities":{"browserslist":{"severity":"critical","via":[{"url":"https://x/GHSA-73wf"}]}},"metadata":{"vulnerabilities":{"critical":1,"high":0,"moderate":0,"low":0}}}'
 rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; configx "$TMP/c-t25.json" 2 A
 noche "$TMP/c-t25.json" 2026-09-01 >/dev/null
@@ -945,7 +944,7 @@ noche "$TMP/c-t25.json" 2026-09-03 >/dev/null
   || no "T25: la deuda declarada se contó como trabajo real — $(ls "$TMP/pend"/*/*.yaml | tr '\n' ' ') · $(grep -E '^(veredicto|resuelto|motivo)' "$TMP/pend"/*/"$ID25.yaml" | tr '\n' ' ')"
 
 # ══════════════════════════════════════════════════════════════════════════════════════════════
-# Story 4.2 — el pull request recordado. `note` es el ÚNICO que escribe la ficha: el guion
+# El pull request recordado. `note` es el ÚNICO que escribe la ficha: el guion
 # compartido del pipeline (scripts/ci/open-pr-per-finding.sh) decide y delega, nunca hace `sed`.
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -969,7 +968,7 @@ FICHA
 }
 note(){ node "$NOC" note "$@" >"$TMP/an.txt" 2>&1; echo $?; }
 
-# ── U1. `note --pr` escribe la identidad del pull request en la ficha (AC 15) ────────────────
+# ── U1. `note --pr` escribe la identidad del pull request en la ficha ────────────────
 # Sin esto la relación ficha↔PR vive SÓLO en el nombre de la rama, y "no encontré PR activo" —que
 # también es lo que devuelve una consulta que falló— se lee como "nunca tuvo": un PR por noche.
 F1="$TMP/u1.yaml"; fichafalsa "$F1"
@@ -983,7 +982,7 @@ rcmal=$(note --card "$F1" --pr abc)                            # un id no entero
   && ok "U1: la ficha recuerda su pull request (idempotente, entero obligatorio, sin tocar comentarios)" \
   || no "U1: rc=$rc rc2=$rc2 rcmal=$rcmal · $(grep -E '^(noches|pr)' "$F1" | tr '\n' ' ')"
 
-# ── U2. el motivo del rechazo entra ENTERO y en UNA línea (AC 15) ──────────────────────────────
+# ── U2. el motivo del rechazo entra ENTERO y en UNA línea ──────────────────────────────
 # 🔴 El comentario de una persona trae saltos de línea, comillas y `#`. En varias líneas rompe a
 # los CUATRO lectores por expresión regular de la ficha; con `#` sin comillas, `leerFicha` lo
 # cortaría por la mitad y el motivo quedaría mutilado justo en el dato que explica la decisión.
@@ -1002,7 +1001,7 @@ rcq=$(note --card "$F2" --clear-rejection)
   && ok "U2: el motivo del rechazo entra entero, en una línea y ≤200; --clear-rejection lo borra" \
   || no "U2: rc=$rc fecha=$tiene_fecha lineas=$LINEAS len=$LEN leido=«${LEIDO}» rcq=$rcq"
 
-# ── U8. `--pr-closed` (AC 15) ─────────────────────────────────────────────────────────────────
+# ── U8. `--pr-closed` ─────────────────────────────────────────────────────────────────
 F8="$TMP/u8.yaml"; fichafalsa "$F8"
 rc=$(note --card "$F8" --pr-closed 2026-09-10); a8=$(cat "$F8")
 rc2=$(note --card "$F8" --pr-closed 2026-09-10)
@@ -1015,7 +1014,7 @@ rcv=$(note --card "$F8"); rcx=$(note --card "$TMP/no-existe.yaml" --pr 1)
 { [ "$rcv" -eq 2 ] && [ "$rcx" -eq 2 ]; } \
   && ok "U1b: note sin acción o sobre una ficha ausente sale 2 con la ayuda" || no "U1b: $rcv/$rcx"
 
-# ── U3. una ficha que REAPARECE corta la historia de su pull request (AC 17) ────────────────────
+# ── U3. una ficha que REAPARECE corta la historia de su pull request ────────────────────
 # La ficha reactivada tiene que recibir un PR NUEVO: si conservara `pr:`, el guion consultaría el
 # PR de su vida anterior —completado— y no abriría nada. La historia no se pierde: se renombra.
 rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; configx "$TMP/c-u3.json" 2 A
@@ -1035,7 +1034,7 @@ RU3="$TMP/pend/pending/$IDU3.yaml"
   && ok "U3: 🔴 la ficha reactivada no arrastra su pull request viejo — la historia queda en los _antes" \
   || no "U3: $(grep -E '^(pr|rechazado|motivo_rechazo)' "$RU3" 2>/dev/null | tr '\n' ' ')"
 
-# ── U4. RECHAZAR ES MIRAR: una rechazada no se archiva como ignorada (AC 18) ────────────────────
+# ── U4. RECHAZAR ES MIRAR: una rechazada no se archiva como ignorada ────────────────────
 # `ignorado` cuenta PEOR que descartado porque mide "a nadie le importó". Una ficha cuyo PR una
 # persona se tomó el trabajo de rechazar es exactamente lo contrario, y contarla ahí mentiría.
 rm -rf "$TMP/out" "$TMP/pend"; mundo A B; echo "$LIMPIO" > "$TMP/fix/A.json"; cp "$TMP/fix/A.json" "$TMP/fix/B.json"
@@ -1052,7 +1051,7 @@ noche "$TMP/c-u4.json" 2026-09-10 >/dev/null      # 8 días después de detectad
   && ok "U4: 🔴 rechazar ES mirar — la rechazada no se archiva como ignorada, la otra sí" \
   || no "U4: rechazada=$([ -f "$CONR" ] && echo viva || echo archivada) otra=$([ -f "$SINR" ] && echo viva || echo archivada)"
 
-# ── U5. una rechazada VIVA se publica: el rechazo no la saca de main (AC 19) ────────────────────
+# ── U5. una rechazada VIVA se publica: el rechazo no la saca de main ────────────────────
 # Decisión 7 del dev: la vulnerabilidad es un hecho MEDIDO; rechazar el aviso no la arregla. Si no
 # se publicara, una rechazada sería indistinguible de una resuelta en todos los contadores.
 RIDS=$(snap 2026-09-10 "console.log(JSON.stringify(s.rechazadas_sin_deuda_ids||null))")
@@ -1065,13 +1064,13 @@ RTXT=$(node "$NOC" report --pending "$TMP/pend" 2>/dev/null)
   || no "U5: ids=$RIDS report=$RJSON"
 
 # ── U5b. la lista está SIEMPRE, aunque esté vacía ──────────────────────────────────────────────
-# Una clave ausente y una lista vacía se leen igual desde afuera, y la 4.3 va a leer justo ésta.
+# Una clave ausente y una lista vacía se leen igual desde afuera, y hay quien lee justo ésta.
 rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; configx "$TMP/c-u5b.json" 2 A
 noche "$TMP/c-u5b.json" 2026-09-01 >/dev/null
 snap 2026-09-01 "process.exit(Array.isArray(s.rechazadas_sin_deuda_ids)&&s.rechazadas_sin_deuda_ids.length===0?0:1)" \
   && ok "U5b: la lista de rechazadas está siempre presente, vacía cuando no hay" || no "U5b: falta la clave"
 
-# ── U6. el pull request nuevo DICE que ya se rechazó antes, y por qué (AC 20) ───────────────────
+# ── U6. el pull request nuevo DICE que ya se rechazó antes, y por qué ───────────────────────
 # Sin eso, quien lo recibe vuelve a decidir a ciegas lo mismo que ya decidió, y el arnés parece
 # insistir sin memoria — la forma más rápida de que se deje de mirar la lista.
 F6="$TMP/u6.yaml"; fichafalsa "$F6"
@@ -1083,8 +1082,8 @@ F6b="$TMP/u6b.yaml"; fichafalsa "$F6b"; T6b=$(node "$NOC" pr-text --draft "$F6b"
   && ok "U6: el pull request de una ficha reactivada avisa que ya se había rechazado, y por qué" \
   || no "U6: $(printf '%s' "$T6" | grep -i rechaz | head -2 | tr '\n' ' ')"
 
-# ── U7. rechazar NO impide que la deuda declarada la archive (AC 19) ───────────────────────────
-# No-regresión de la 4.1: la única salida de una rechazada es la medición o la deuda en TODOS sus
+# ── U7. rechazar NO impide que la deuda declarada la archive ───────────────────────────────────
+# La única salida de una rechazada es la medición o la deuda en TODOS sus
 # repos. Si el rechazo bloqueara el descarte, la ficha quedaría viva para siempre.
 rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; configx "$TMP/c-u7.json" 2 A
 noche "$TMP/c-u7.json" 2026-09-01 >/dev/null
@@ -1099,10 +1098,10 @@ noche "$TMP/c-u7.json" 2026-09-03 >/dev/null
   || no "U7: $(ls "$TMP/pend"/*/*.yaml | tr '\n' ' ')"
 
 # ── U9. 🔴 una rechazada VIVA no desaparece porque un repo no se midió ─────────────────────────
-# El defecto que cazó el pase adversarial: la publicación estaba en la última rama del recorrido,
-# después del `continue` de la primera, así que una noche con un repo apagado dejaba la lista VACÍA
-# —el cero silencioso que esta pieza existe para no cometer— y contradecía a `report`, que sí la
-# contaba. El hecho es de la FICHA, no de la noche: está rechazada y sigue viva.
+# Si la publicación estuviera en la última rama del recorrido,
+# después del `continue` de la primera, una noche con un repo apagado dejaría la lista VACÍA
+# —el cero silencioso que esta pieza existe para no cometer— y contradiría a `report`, que sí la
+# cuenta. El hecho es de la FICHA, no de la noche: está rechazada y sigue viva.
 rm -rf "$TMP/out" "$TMP/pend"; mundo A B; echo "$LIMPIO" > "$TMP/fix/A.json"; cp "$TMP/fix/A.json" "$TMP/fix/B.json"
 configx "$TMP/c-u9.json" 2 A B
 noche "$TMP/c-u9.json" 2026-09-01 >/dev/null
@@ -1133,8 +1132,8 @@ noche "$TMP/c-u9.json" 2026-09-05 >/dev/null
 # ── U11. 🔴 un valor con `$&` o `$'` no se interpreta al REESCRIBIR una clave ─────────────────
 # `String.replace` interpreta esos patrones en la cadena de reemplazo, y el valor acá es el motivo
 # de un rechazo: texto escrito por cualquiera que pueda comentar el pull request. En el vigilante
-# ese mismo patrón SÍ mordía —`$'` copiaba el resto ENTERO de la ficha adentro del valor y la
-# dejaba con claves duplicadas—; acá se cierra la misma clase, no sólo el sitio que ya mordió.
+# ese mismo patrón sería un problema —`$'` copiaría el resto ENTERO de la ficha adentro del valor y la
+# dejaría con claves duplicadas—; acá se cubre la misma clase, no sólo ese sitio.
 #
 # El camino de REESCRITURA (el peligroso) se alcanza así: la ficha ya tiene `motivo_rechazo:` de
 # una vida anterior y NO tiene `rechazado:`, así que el chequeo de idempotencia deja pasar y el
@@ -1152,12 +1151,11 @@ DUP11=$(grep -c '^motivo_rechazo:' "$F11")
   && ok "U11: 🔴 un motivo con \$& no se interpreta al reescribir la clave, y no duplica nada" \
   || no "U11: leido=«${LEIDO11}» · $DUP11 línea(s) motivo_rechazo"
 
-# ── P23 (story 4.4, AC 11). 🔴 con los pedidos ENCENDIDOS, una ficha sin pedido no es «ignorada» ──
+# ── P23. 🔴 con los pedidos ENCENDIDOS, una ficha sin pedido no es «ignorada» ──────────────
 # `ignorado` mide «nadie la miró». Si el pedido de trabajo del líder nunca se pudo crear, nadie PUDO
 # mirarla: archivarla ahí taparía un fallo de creación con la métrica que juzga a la pieza. En cuanto
 # la ficha tiene pedido en su proyecto, la regla de los 7 días vuelve a valer igual que siempre.
-# (Se llama P23 y no T23 porque la 4.1 ya tiene un T23 en esta suite. En la tabla de la story 4.4:
-# T23 `sin_pedido_no_se_ignora` y T23b `sin_pedido_con_la_llave_apagada`.)
+# (Se llama P23 y no T23 porque T23 ya existe en esta suite.)
 cfg44(){ # <archivo> <pedidos_activos: true|false>
   cat > "$1" <<CFG
 { "presupuesto_de_ruido": { "tope_pr_por_noche": 2 },
@@ -1177,7 +1175,7 @@ import sys
 p = sys.argv[1]; t = open(p, encoding='utf8').read()
 open(p, 'w', encoding='utf8').write(t.replace('ids:\n', 'pedidos:\n  - ProyA: 9\nids:\n', 1))
 PYP23
-# 🔴 Story 4.5: con pedido, «nadie la miró» se lee del PEDIDO — la noche trae su volcado, con el pedido
+# 🔴 Con pedido, «nadie la miró» se lee del PEDIDO — la noche trae su volcado, con el pedido
 # abierto y sin cambios de una persona. Sin volcado la ficha ya no se ignora (lo prueba T21 del cruce).
 echo "{\"fecha\":\"2026-09-11\",\"consultado\":true,\"motivo\":null,\"proyectos\":{},\"pedidos\":{\"9\":{\"ficha\":\"$ID_P23\",\"proyecto\":\"ProyA\",\"leido\":true,\"estado\":\"Active\",\"categoria\":\"InProgress\",\"motivo\":\"New\",\"estado_desde\":null,\"cambiado_por_persona_el\":null,\"cambiado_por_persona\":null,\"motivo_no_leido\":null}},\"huerfanos\":[],\"huerfanos_no_consultados\":[]}" > "$TMP/out/bugs-2026-09-11.json"
 noche "$TMP/c-p23.json" 2026-09-11 >/dev/null          # ahora sí tiene pedido en su único proyecto
@@ -1187,10 +1185,10 @@ noche "$TMP/c-p23.json" 2026-09-11 >/dev/null          # ahora sí tiene pedido 
   && ok "P23 (story 4.4 T23 sin_pedido_no_se_ignora): 🔴 con los pedidos encendidos, la ficha sin pedido sigue pendiente; con su pedido, a los 7 días se ignora como siempre" \
   || no "P23: sigue-sin-pedido=$SIGUE_P23 · archivada=$([ -f "$TMP/pend/archived/$ID_P23.yaml" ] && echo sí || echo no)"
 
-# ── P23b (story 4.4, AC 11b — decisión del dev). Con la llave APAGADA rige la regla de hoy ───────
+# ── P23b. Con la llave APAGADA rige la regla de siempre ───────────────────────────────────
 # Mientras la pieza está simulada ninguna ficha tiene pedido: aplicar la protección igual haría que
-# ninguna volviera a archivarse como ignorada desde el merge, y el pull request del arnés —el único
-# canal mientras tanto— sí le llegó a alguien.
+# ninguna volviera a archivarse como ignorada, y el pull request del arnés —el único
+# canal mientras tanto— sí le llega a alguien.
 rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; cfg44 "$TMP/c-p23b.json" false
 noche "$TMP/c-p23b.json" 2026-09-01 >/dev/null
 echo "$UNA" > "$TMP/fix/A.json"; noche "$TMP/c-p23b.json" 2026-09-02 >/dev/null
@@ -1201,9 +1199,9 @@ noche "$TMP/c-p23b.json" 2026-09-10 >/dev/null
   || no "P23b (T23b): la llave apagada cambió la regla de hoy (la ficha no se archivó)"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
-# STORY 4.5 — el cruce «pedido cerrado, vulnerabilidad viva»
+# El cruce «pedido cerrado, vulnerabilidad viva»
 #
-# Desde la 4.4 hay dos fuentes sobre el mismo hecho: el ESTADO del Bug (lo que una persona decidió) y la
+# Hay dos fuentes sobre el mismo hecho: el ESTADO del Bug (lo que una persona decidió) y la
 # MEDICIÓN de esta noche. El nocturno las compara POR PROYECTO sobre `bugs-<fecha>.json`, que vuelca el
 # paso anterior del pipeline — así esta suite no toca la red: el volcado se fabrica a mano. Los casos
 # giran alrededor de lo que convertiría la pieza en ruido (avisar la primera noche, avisar dos veces) o
@@ -1251,7 +1249,7 @@ mundo_cruce(){ # dos noches: la línea base y la que crea la ficha; después la 
   agregar "$FX" pedidos "Proy A: 101"
 }
 
-# ── T8 (AC 3). 🔴 una noche de gracia, y después UN aviso ────────────────────────────────────────
+# ── T8. 🔴 una noche de gracia, y después UN aviso ────────────────────────────────────────
 mundo_cruce
 volcado 2026-09-03 Closed Completed Verified; noche "$TMP/cx.json" 2026-09-03 >/dev/null
 n1=0; { grep -qx 'visto_cerrado:' "$FX" && grep -qx '  - Proy A: 2026-09-03' "$FX" && cruce 2026-09-03 'c.en_gracia.length === 1 && c.cerrados_vivos.length === 0 && c.evaluados === 1'; } && n1=1
@@ -1265,7 +1263,7 @@ n3=0; cruce 2026-09-05 'c.cerrados_vivos.length === 1 && c.cerrados_vivos[0].avi
   && ok "T8 (story 4.5): 🔴 la primera noche cerrado sólo se anota (gracia); la segunda sale en cerrados_vivos con avisar:true; con el aviso ya dado sigue listado sin repetir" \
   || no "T8: gracia=$n1 alarma=$n2 sin-repetir=$n3 · $(crucej 2026-09-04)"
 
-# ── T11 (AC 3d). 🔴 reabrir borra los marcadores: un cierre nuevo empieza de cero ────────────────
+# ── T11. 🔴 reabrir borra los marcadores: un cierre nuevo empieza de cero ────────────────
 mundo_cruce
 volcado 2026-09-03 Closed Completed Verified; noche "$TMP/cx.json" 2026-09-03 >/dev/null
 agregar "$FX" avisado_cerrado_vivo "Proy A (2026-09-03)"
@@ -1280,7 +1278,7 @@ r3=0; cruce 2026-09-06 'c.cerrados_vivos.length === 1 && c.cerrados_vivos[0].avi
   && ok "T11 (story 4.5): 🔴 un pedido reabierto borra visto_cerrado y avisado_cerrado_vivo; el cierre siguiente vuelve a tener su noche de gracia y su aviso" \
   || no "T11: reabre=$r1 gracia-otra-vez=$r2 aviso-otra-vez=$r3 · $(crucej 2026-09-04) · $(grep -A2 '^visto_cerrado\|^avisado' "$FX" | tr '\n' ' ')"
 
-# ── T12 (AC 3e). 🔴 una noche que no se pudo leer no decide nada ─────────────────────────────────
+# ── T12. 🔴 una noche que no se pudo leer no decide nada ─────────────────────────────────
 mundo_cruce
 volcado 2026-09-03 Closed Completed Verified; noche "$TMP/cx.json" 2026-09-03 >/dev/null
 volcado 2026-09-04 x x x false; noche "$TMP/cx.json" 2026-09-04 >/dev/null
@@ -1292,7 +1290,7 @@ l2=0; cruce 2026-09-05 'c.cerrados_vivos.length === 1 && c.cerrados_vivos[0].avi
   && ok "T12 (story 4.5): 🔴 un pedido no leído en la segunda noche sale en no_leidos, sin alarma ni gracia, con el marcador intacto; la primera noche legible decide" \
   || no "T12: no-leído=$l1 decide-después=$l2 · $(crucej 2026-09-04)"
 
-# ── T15 (AC 5b). 🔴 sin volcado, NADA coincide ────────────────────────────────────────────────────
+# ── T15. 🔴 sin volcado, NADA coincide ────────────────────────────────────────────────────
 mundo_cruce; agregar "$FX" visto_cerrado "Proy A: 2026-09-01"
 cp "$FX" "$TMP/antes-t15.yaml"
 noche "$TMP/cx.json" 2026-09-03 >/dev/null
@@ -1308,7 +1306,7 @@ s3=0; cruce 2026-09-05 'c.consultado === false && /volcado ilegible/.test(c.moti
   && ok "T15 (story 4.5): 🔴 sin volcado, con un volcado que no consultó, o ilegible: consultado:false con su motivo, todos los pares en no_leidos, ninguna alarma, y la salida dice NO LEÍDO" \
   || no "T15: sin-volcado=$s1 no-consultó=$s2 ilegible=$s3 · $(crucej 2026-09-03)"
 
-# ── T14 (AC 5). la clave `cruce` está SIEMPRE, con listas vacías ─────────────────────────────────
+# ── T14. la clave `cruce` está SIEMPRE, con listas vacías ─────────────────────────────────
 rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; cfgc "$TMP/cx.json"
 mkdir -p "$TMP/out"; echo '{"fecha":"2026-09-01","consultado":true,"motivo":null,"proyectos":{},"pedidos":{},"huerfanos":[],"huerfanos_no_consultados":[]}' > "$TMP/out/bugs-2026-09-01.json"
 noche "$TMP/cx.json" 2026-09-01 >/dev/null
@@ -1344,14 +1342,14 @@ XC
 xc(){ NOC="$NOC" TMPX="$TMP" node -e "$(cat "$TMP/xc.js")
 $1" 2>&1 | tail -3; }
 
-# ── T6 (AC 2). la presencia se juzga POR PROYECTO ────────────────────────────────────────────────
+# ── T6. la presencia se juzga POR PROYECTO ────────────────────────────────────────────────
 r=$(xc 'const f = F("pending", { repos: ["A/A", "B/B"], extra: ["pedidos:", "  - Proy A: 101", "  - ProyB: 201"] });
 const c = cruzar("2026-09-02", S({ presentes: { "A/A": false } }), V({ 101: P("Proy A", "Closed", "Completed", "Verified"), 201: P("ProyB", "Closed", "Completed", "Verified") }));
 const bien = di(c.en_gracia.map((x) => x.proyecto)) === di(["Proy A"]) && c.cerrados_vivos.length === 0 && di(lista(f, "visto_cerrado")) === di(["Proy A: 2026-09-02"]) && c.evaluados === 2;
 console.log(bien ? "ok" : "NO " + di(c) + " · " + di(lista(f, "visto_cerrado")));')
 [ "$r" = ok ] && ok "T6 (story 4.5): una ficha en dos proyectos con los dos pedidos cerrados: viva en Proy A (gracia y marcador sólo ahí), pagada en ProyB (nada)" || no "T6: $r"
 
-# ── T7 (AC 2, 2b). un repo sin medir no evalúa · un proyecto sin pedido tampoco ─────────────────
+# ── T7. un repo sin medir no evalúa · un proyecto sin pedido tampoco ─────────────────
 r=$(xc 'const f = F("pending", { extra: ["pedidos:", "  - Proy A: 101", "visto_cerrado:", "  - Proy A: 2026-09-01"] });
 const c = cruzar("2026-09-02", S({ sinMedir: ["A/A"] }), V({ 101: P("Proy A", "Closed", "Completed", "Verified") }));
 base = nuevaBase();
@@ -1363,14 +1361,14 @@ const bien = c.no_evaluados.some((x) => x.proyecto === "Proy A" && /A\/A sin med
 console.log(bien ? "ok" : "NO " + di(c.no_evaluados) + " · " + di(d.no_evaluados));')
 [ "$r" = ok ] && ok "T7 (story 4.5): con un repo del proyecto sin medir el par sale no_evaluados con el motivo y el marcador no se toca; un proyecto sin pedido sale «sin pedido en ProyC»" || no "T7: $r"
 
-# ── T9 (AC 3b). «no aplica» tiene su clase, y lo que se cierra como arreglado la suya ────────────
+# ── T9. «no aplica» tiene su clase, y lo que se cierra como arreglado la suya ────────────
 r=$(xc 'const clase = (estado, cat, motivo) => { base = nuevaBase(); F("pending", { extra: ["pedidos:", "  - Proy A: 101", "visto_cerrado:", "  - Proy A: 2026-09-01"] });
   const c = cruzar("2026-09-02", S(), V({ 101: P("Proy A", estado, cat, motivo) })); return c.cerrados_vivos.length === 1 ? c.cerrados_vivos[0].clase : "NADA " + di(c); };
 const r = [clase("Resolved", "Resolved", "Duplicate"), clase("Removed", "Removed", "Removed from the backlog"), clase("Closed", "Completed", "Verified"), clase("Done", "Completed", "Work finished")];
 console.log(di(r) === di(["no-aplica", "no-aplica", "arreglado", "arreglado"]) ? "ok" : "NO " + di(r));')
 [ "$r" = ok ] && ok "T9 (story 4.5): Resolved/Duplicate y Removed son «no-aplica»; Closed/Verified y Done/Work finished (Scrum) son «arreglado» — por categoría, no por nombre" || no "T9: $r"
 
-# ── T10 (AC 3c). cerrado con la deuda declarada: se lista, no se avisa ───────────────────────────
+# ── T10. cerrado con la deuda declarada: se lista, no se avisa ───────────────────────────
 r=$(xc 'const f = F("pending", { repos: [], declarada: ["A/A (vence 2026-12-31)"], extra: ["pedidos:", "  - Proy A: 101"] });
 const s = S({ presentes: { "A/A": true }, vence: "2026-12-31" }), v = V({ 101: P("Proy A", "Closed", "Completed", "Verified") });
 const c1 = cruzar("2026-09-02", s, v), c2 = cruzar("2026-09-03", s, v);
@@ -1379,7 +1377,7 @@ const bien = [c1, c2].every((c) => c.cerrados_vivos.length === 0 && c.en_gracia.
 console.log(bien ? "ok" : "NO " + di(c2) + " · " + di(lista(f, "visto_cerrado")));')
 [ "$r" = ok ] && ok "T10 (story 4.5): un pedido cerrado con la vulnerabilidad declarada como deuda sale en cerrados_con_deuda con el vencimiento, se anota visto_cerrado y no se avisa ninguna noche" || no "T10: $r"
 
-# ── T13 (AC 4). el espejo: resuelta con el pedido abierto se lista con su edad ───────────────────
+# ── T13. el espejo: resuelta con el pedido abierto se lista con su edad ───────────────────
 r=$(xc 'F("promoted", { repos: [], extra: ["resuelto: 2026-09-05", "pedidos:", "  - Proy A: 101"] });
 const a = cruzar("2026-09-08", S({ presentes: {} }), V({ 101: P("Proy A", "Active", "InProgress", "New") }));
 const b = cruzar("2026-09-08", S({ presentes: {} }), V({ 101: P("Proy A", "Closed", "Completed", "Fixed") }));
@@ -1389,7 +1387,7 @@ const bien = a.resueltas_con_pedido_abierto.length === 1 && x.dias === 3 && Stri
 console.log(bien ? "ok" : "NO " + di(a) + " · " + di(b));')
 [ "$r" = ok ] && ok "T13 (story 4.5): una ficha resuelta con el pedido abierto sale en resueltas_con_pedido_abierto con dias 3; con el pedido cerrado no se lista" || no "T13: $r"
 
-# ── T25 (AC 11). el vocabulario de «arreglado» es exacto, y sin él no se clasifica nada ─────────
+# ── T25. el vocabulario de «arreglado» es exacto, y sin él no se clasifica nada ─────────
 r=$(xc 'F("pending", { extra: ["pedidos:", "  - Proy A: 101", "visto_cerrado:", "  - Proy A: 2026-09-01"] });
 const a = cruzar("2026-09-02", S(), V({ 101: P("Proy A", "Closed", "Completed", "fixed") }));
 base = nuevaBase(); const f = F("pending", { extra: ["pedidos:", "  - Proy A: 101"] });
@@ -1399,7 +1397,7 @@ const bien = a.cerrados_vivos.length === 1 && a.cerrados_vivos[0].clase === "no-
 console.log(bien ? "ok" : "NO " + di(a.cerrados_vivos) + " · " + di(b));')
 [ "$r" = ok ] && ok "T25 (story 4.5): «fixed» en minúscula no es «Fixed» (no-aplica); sin motivos_arreglado ningún cerrado se clasifica: van a no_leidos y no se anota nada" || no "T25: $r"
 
-# ── T29n (AC 14d). el nocturno copia los Bugs sueltos del volcado a `cruce` ──────────────────────
+# ── T29n. el nocturno copia los Bugs sueltos del volcado a `cruce` ──────────────────────
 r=$(xc 'const h = [{ id: 150, proyecto: "Proy A", ficha: "abc12345", estado: "Active", categoria: "InProgress" }], nc = [{ proyecto: "ProyB", motivo: "salió 1" }];
 const a = cruzar("2026-09-02", S({ presentes: {} }), V({}, { huerfanos: h, huerfanos_no_consultados: nc }));
 const b = cruzar("2026-09-02", S({ presentes: {} }), { archivo: null, consultado: false, motivo: "sin volcado bugs-2026-09-02.json" });
@@ -1407,7 +1405,7 @@ const bien = di(a.huerfanos) === di(h) && di(a.huerfanos_no_consultados) === di(
 console.log(bien ? "ok" : "NO " + di(a) + " · " + di(b));')
 [ "$r" = ok ] && ok "T29n (story 4.5): los Bugs sueltos y los proyectos no consultados del volcado llegan a cruce; sin volcado legible, listas vacías con consultado:false" || no "T29n: $r"
 
-# ── T19–T21 (AC 7). `ignorado` se lee de la actividad de una PERSONA en el pedido ────────────────
+# ── T19–T21. `ignorado` se lee de la actividad de una PERSONA en el pedido ────────────────
 ign(){ # <cuerpo JS que define v (volcado)> → "ids|motivos frenados|en archived"
   xc "F('pending', { extra: ['pedidos:', '  - Proy A: 101'] });
 $1
@@ -1426,16 +1424,16 @@ t21c=$(ign "const v = { archivo: null, consultado: false, motivo: 'sin volcado b
 { [[ "$t21a" == "|abc12345:"*"no pude leer el pedido de Proy A"*"|false" ]] && [[ "$t21b" == "|abc12345:"*"el pedido de Proy A está cerrado"*"|false" ]] && [[ "$t21c" == "|abc12345:"*"sin volcado"*"|false" ]]; } \
   && ok "T21 (story 4.5): un pedido no leído, uno cerrado, o una noche sin volcado no ignoran la ficha, y dicen por qué" || no "T21: no-leído=«${t21a}» · cerrado=«${t21b}» · sin-volcado=«${t21c}»"
 
-# ── T24 (AC 10). lo que no cambia ─────────────────────────────────────────────────────────────────
+# ── T24. lo que no cambia ─────────────────────────────────────────────────────────────────
 n=$(grep -c "ponerEscalar(txt, 'resuelto'" "$NOC")
 [ "$n" -eq 1 ] && ok "T24 (story 4.5): «resuelto:» se sigue escribiendo en un solo lugar (la medición, no el cruce)" || no "T24: ponerEscalar(txt, 'resuelto' aparece ${n} veces"
 
-# ════ STORY 4.5 — iter 2: lo que encontró el pase adversarial y los revisores ═════════════════════
-# Cada caso reproduce un defecto confirmado por reproducción (5b en Fable) o una rama sin caso.
+# ════ El cruce: casos de borde ═════════════════════
+# Cada caso cubre un defecto posible o una rama sin caso.
 
 # ── A1. 🔴 reabrir no deja renglones sueltos en la ficha ──────────────────────────────────────────
-# `ponerLista(k, [])` sobre una clave fuera de CLAVES_LISTA borraba sólo la cabecera: los ítems quedaban
-# pegados a la lista anterior (`pedidos:`) y crecían con cada cierre y reapertura. T11 miraba sólo la cabecera.
+# `ponerLista(k, [])` sobre una clave fuera de CLAVES_LISTA borraría sólo la cabecera: los ítems quedarían
+# pegados a la lista anterior (`pedidos:`) y crecerían con cada cierre y reapertura. T11 mira sólo la cabecera.
 mundo_cruce
 volcado 2026-09-03 Closed Completed Verified; noche "$TMP/cx.json" 2026-09-03 >/dev/null
 agregar "$FX" avisado_cerrado_vivo "Proy A (2026-09-03)"
@@ -1455,7 +1453,7 @@ open(p, 'w', encoding='utf8').write(t)
 PYF1
 noche "$TMP/cx.json" 2026-09-03 >/dev/null
 F1="$TMP/pend/pending/$ID.yaml"
-# (vuelta 2: `pagado_avisado:` NO se borra acá — es por proyecto, y borrarlo entero repetía «ya no aparece»
+# (`pagado_avisado:` NO se borra acá — es por proyecto, y borrarlo entero repetiría «ya no aparece»
 #  en el proyecto donde nada cambió; lo borra el guion de pedidos en el proyecto donde volvió a aparecer.)
 { [ -f "$F1" ] && grep -q '^reaparecido: 2026-09-03' "$F1" && ! grep -qE '^(visto_cerrado|avisado_cerrado_vivo):|^  - Proy A(: 2026-08-30| \(2026-08-31\))$' "$F1" \
   && grep -qx '  - Proy A: 101' "$F1" && grep -qx '  - Proy A (2026-09-02)' "$F1"; } \
@@ -1501,7 +1499,7 @@ console.log(JSON.stringify({ b1, h1, g1, e1, t1c, t6c, t7c, t7d }));')
   && ok "B1/H1/G1/E1 (story 4.5, 5b) + ramas: un repo fuera de repos.json no se lee «coincide»; una reapertura leída borra marcadores aunque falte medir; una fecha ilegible reinicia la gracia; ignorado_frenado sale ordenado; categoría rara y volcado sin pedidos se dicen" \
   || no "B1/H1/G1/E1: ${r}"
 # ── T11: la ficha dice cuándo una vulnerabilidad es alta por falta de dato ────────────────────────
-# 🔴 rojo: el nocturno no pasaba `gravedad_sin_dato`; quien decide veía «alta» sin saber que era un valor por defecto.
+# 🔴 Falla si el nocturno no pasa `gravedad_sin_dato`: quien decide vería «alta» sin saber que es un valor por defecto.
 rm -rf "$TMP/out" "$TMP/pend"; mundo SD CD; echo "$LIMPIO" > "$TMP/fix/SD.json"; echo "$LIMPIO" > "$TMP/fix/CD.json"; config "$TMP/c.json" 5 SD CD
 noche "$TMP/c.json" 2026-09-01 >/dev/null
 echo '{"vulnerabilities":{"acme-sd":{"severity":"","via":[{"url":"https://x/GHSA-sd01"}]}},"metadata":{"vulnerabilities":{"critical":0,"high":0,"moderate":0,"low":0}}}' > "$TMP/fix/SD.json"
@@ -1611,7 +1609,7 @@ r=$(snap 2026-09-02 "const c=s.carpetas[0];console.log(s.repos.some(r=>r.subruta
 [ "$r" = "true|3/3" ] && ok "T7 4.8 un formulario nuevo entra solo, sin tocar repos.json" || no "T7 4.8 formulario nuevo: $r"
 
 # T8 PrimeraNoche_NoAnunciaAltas @story-4.8 @ac-6
-# Decisión 1 de la story: la primera noche de una carpeta no es novedad para las altas (una línea por repo en el
+# La primera noche de una carpeta no es novedad para las altas (una línea por repo en el
 # resumen y a la cola); la crítica sale igual esa noche. Desde la siguiente, el circuito normal.
 rm -rf "$TMP/out" "$TMP/pend"; mundoforms A
 echo "$LIMPIO" > "$TMP/fix/A.json"; config "$TMP/c48.json" 2 A

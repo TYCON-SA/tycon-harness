@@ -2,15 +2,15 @@
 // path-lookup.test.js — la búsqueda de un programa en el PATH de harness.js (`findInPath`, la que usan `install` y
 // `doctor` para los requisitos) y de scripts/setup/harness/tools.js (`findIn`, la que detecta Claude Code y Codex).
 //
-// EL CASO (2026-10-14): en una máquina Windows 11 del equipo `pwsh --version` daba 7.6.7 y `where.exe pwsh` daba
+// En una máquina Windows 11 del equipo `pwsh --version` da 7.6.7 y `where.exe pwsh` da
 // C:\Users\<usuario>\AppData\Local\Microsoft\WindowsApps\pwsh.exe —el PowerShell 7 de la Microsoft Store, que es un alias
-// de ejecución (un punto de reanálisis)—, pero `/tycon-harness` decía «falta pwsh en el PATH». Sobre ese alias Node falla
-// en `statSync` (EACCES/UNKNOWN), y la búsqueda se lo salteaba aunque `spawnSync('pwsh')` lo ejecuta.
+// de ejecución (un punto de reanálisis)—, pero una búsqueda ingenua diría «falta pwsh en el PATH». Sobre ese alias Node falla
+// en `statSync` (EACCES/UNKNOWN), y la búsqueda no puede saltearlo: `spawnSync('pwsh')` sí lo ejecuta.
 //
 // Sin máquina Windows, el sistema y el sistema de archivos se inyectan: un alias es una entrada cuyo `statSync` tira
 // EACCES y cuyo `lstatSync` dice que existe y no es una carpeta.
-// 🔴 rojo previo: `harness.js` no exportaba `findInPath` (TypeError), `tools.runnableAt` no existía, y las dos búsquedas
-//    se salteaban el alias.
+// 🔴 Cubre: `harness.js` exporta `findInPath` (si no, TypeError), `tools.runnableAt` existe, y las dos búsquedas
+//    no se saltean el alias.
 //
 // Uso: node --test scripts/tests/path-lookup.test.js   (no lanza procesos ni toca la máquina; lee una carpeta temporal)
 const test = require('node:test');

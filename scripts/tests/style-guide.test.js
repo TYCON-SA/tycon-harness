@@ -2,7 +2,7 @@
 'use strict';
 /**
  * style-guide.test.js — la regla de los comentarios del código (guides/maintaining/estilo-de-codigo.md) existe, trae dos ejemplos
- * buenos y dos malos, y el índice de guías (INDEX.md) tiene su fila. Story 8.41, AC 35 (T35).
+ * buenos y dos malos, y el índice de guías (INDEX.md) tiene su fila.
  *
  * Uso: node --test scripts/tests/style-guide.test.js
  */

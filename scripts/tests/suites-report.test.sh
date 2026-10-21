@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # suites-report.test.sh — red de `scripts/ci/suites-report.js`: el reporte nocturno de las suites
-# guarda POR QUÉ falló cada una, no sólo el nombre (propuesta PIPE-DEBT-2.13-b).
+# guarda POR QUÉ falló cada una, no sólo el nombre.
 #
-# Caso: el 2026-09-14 el aviso de arranque decía «1 en rojo — pipeline-debt.test.js» y para saber la
-# causa hubo que volver a correr la suite a mano (era una deuda vencida por fecha). El reporte viaja
-# por git a todas las máquinas, así que el motivo se SANEA: ni rutas del agente ni credenciales.
+# Sin el motivo, el aviso de arranque dice «1 en rojo — pipeline-debt.test.js» y para saber la causa hay que volver a
+# correr la suite a mano. El reporte viaja por git a todas las máquinas, así que el motivo se SANEA: ni rutas del
+# agente ni credenciales.
 #
 # Correr: bash scripts/tests/suites-report.test.sh
 set -uo pipefail
@@ -21,7 +21,7 @@ campo(){ node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],
 # ── R1. una suite roja: el reporte guarda el motivo, saneado ─────────────────────────────────────
 mkdir -p "$TMP/rojas"
 # La ruta del clon en un agente de CI, armada acá: escrita entera, el detector de publicación la marca como la ruta de
-# la máquina de una persona (esta prueba viaja en la copia desde la story 8.26, tanda C).
+# la máquina de una persona (esta prueba viaja en la copia).
 AGENT_HOME="/$(printf home)/lab-agent"
 cat > "$TMP/rojas/pipeline-debt.test.js.txt" <<OUT
 ✅ deuda: el registro se puede leer y parsear
@@ -51,11 +51,11 @@ node "$SCRIPT" --rep "$TMP/rep.json" --build 1001 --runs 83 --failures " lab-sui
   && ok "R3: una roja sin salida guardada, o ausente del clon, dice por qué no hay motivo" || no "R3: rc=$rc · $(cat "$TMP/rep.json" 2>/dev/null)"
 
 # ── R4. el pipeline guarda la salida de la roja y arma el reporte con este guion ─────────────────
-# Desde el 2026-10-04 son dos pasos en dos jobs: cada trabajo de suites guarda la salida de sus rojas («Correr las
+# Son dos pasos en dos jobs: cada trabajo de suites guarda la salida de sus rojas («Correr las
 # suites») y el job del reporte junta lo de todos y llama a este guion («Juntar lo que midió cada trabajo y armar el
 # reporte»). Que la salida guardada llegue de un paso al otro lo corre scripts/tests/nightly-suites-shards.test.js.
 paso(){ awk "/displayName: '$1'/{exit} {print}" "$YAML" | awk '/- script: \|/{buf=""} {buf=buf"\n"$0} END{print buf}'; }
-# Desde la story 8.26 (tanda C) esta prueba viaja con la validación; el pipeline nocturno del banco, no.
+# Esta prueba viaja con la validación; el pipeline nocturno del banco, no.
 if [ ! -f "$YAML" ] && [ ! -f "$AQUI/perfil-equipo.json" ]; then
   echo "⏭ reporte-suites: R4 NO MEDIDO — la copia pública no trae el pipeline nocturno del banco. No es un verde."
 else
@@ -71,16 +71,16 @@ mkdir -p "$TMP/h"
 node -e '
 const fs=require("fs"); const t=new Date().toISOString();
 fs.writeFileSync(process.argv[1], JSON.stringify({kind:"bash-tests",ts:t,origen:"azure-pipelines",corridas:83,failures:["pipeline-debt.test.js"],motivos:{"pipeline-debt.test.js":"❌ deuda: INSTALADOR-CODEX: VENCIDA el 2026-09-13 — decidir o re-fechar"}}));' "$TMP/suites.json"
-# TYCON_NIGHTLY=1: el aviso de las suites nocturnas es parte de la integración «nightly» (story 8.3) y esta HOME no tiene perfil
+# TYCON_NIGHTLY=1: el aviso de las suites nocturnas es parte de la integración «nightly» y esta HOME no tiene perfil
 salida=$(cd "$TMP" && echo '{"source":"startup"}' | HOME="$TMP/h" TYCON_NIGHTLY=1 TYCON_SUITES_REPORT="$TMP/suites.json" node "$NOTICE" 2>&1)
 { printf '%s' "$salida" | grep 'pipeline-debt.test.js' >/dev/null && printf '%s' "$salida" | grep 'VENCIDA el 2026-09-13' >/dev/null; } \
   && ok "R5: el aviso de arranque nombra la suite roja con su motivo" || no "R5: «${salida}»"
 
 # ── R6. las marcas de falla de TODAS las suites del nocturno: también «MAL» y «✗» ────────────────
-# 🔴 Caso: el 2026-09-17 el motivo de publish-bump.test.sh decía «warning: remote HEAD… · ok — C-11 … ·
+# 🔴 Caso: el motivo de publish-bump.test.sh dice «warning: remote HEAD… · ok — C-11 … ·
 #    FALLARON 1 chequeo(s)»: un caso VERDE y ninguno rojo, porque la suite marca sus fallas con «MAL» y
-#    el guion no lo reconocía, así que caía en las tres últimas líneas. Medido ese día sobre las 110
-#    suites de suites.json: 23 marcan con «MAL —» y 5 con «✗» (U+2717, no el «✖» U+2716 que sí estaba).
+#    si el guion no lo reconoce, cae en las tres últimas líneas. Varias suites de suites.json marcan con «MAL —»
+#    y otras con «✗» (U+2717, no el «✖» U+2716).
 rm -rf "$TMP/rojas"; mkdir -p "$TMP/rojas"
 cat > "$TMP/rojas/publish-bump.test.sh.txt" <<'OUT'
 warning: remote HEAD refers to nonexistent ref, unable to checkout
@@ -120,8 +120,8 @@ M3="$(campo 'r.motivos["prosa.test.sh"]')"
   && ok "R6c: un «MAL» o un «✗» en medio de una línea verde no entra al motivo" \
   || no "R6c: rc=$rc · motivo=«${M3}»"
 
-# ── R7. «no medida» no es «roja»: el reporte las distingue (revisión del 2026-10-04) ─────────────
-# Desde que las suites del nocturno corren en trabajos paralelos, las de un trabajo que no terminó llegan en
+# ── R7. «no medida» no es «roja»: el reporte las distingue ─────────────
+# Como las suites del nocturno corren en trabajos paralelos, las de un trabajo que no terminó llegan en
 # `--failures` con la marca «(no-medida)» (scripts/ci/suites-shard.js). El reporte las deja en `failures` —el control
 # de cada cambio compara por ese nombre— y además las separa: `unmeasured` (las mismas entradas) y `complete`.
 mkdir -p "$TMP/r7" && printf 'no medida: el trabajo 2 no terminó\n' > "$TMP/r7/lab-b.test.sh(no-medida).txt"
@@ -150,7 +150,7 @@ node "$SCRIPT" --rep "$TMP/rep.json" --build 1006 --runs 3 --failures "lab-a.tes
   && ok "R7d: una noche entera trae unmeasured vacío y complete en true (una roja o una ausente no la vuelven incompleta)" \
   || no "R7d: rc=$rc · $(cat "$TMP/rep.json" 2>/dev/null)"
 
-# ── R8. «no corrió»: la suite que el cambio no toca no es verde, ni roja, ni desaparecida (2026-10-04) ──────────
+# ── R8. «no corrió»: la suite que el cambio no toca no es verde, ni roja, ni desaparecida ──────────
 # La validación de cada pedido de merge deja para el nocturno las suites que el cambio no toca (scripts/ci/
 # suites-for-change.js; las dos más largas, por scripts/ci/heavy-suites.json). `--not-run` (nombre<TAB>motivo) las
 # anota en `notRun`, y la foto anterior no las cuenta como desaparecidas.
@@ -167,11 +167,11 @@ node "$SCRIPT" --rep "$TMP/rep.json" --build 1008 --runs 1 --failures "" --detai
   && ok "R8b: sin --not-run (el nocturno) el reporte no trae notRun: no hay nada que el nocturno deje de correr" \
   || no "R8b: rc=$rc · $(cat "$TMP/rep.json" 2>/dev/null)"
 
-# ── R9. «no viaja»: la suite de la foto que no está en ningún registro del árbol (story 8.26, tanda C, AC 11) ──────
+# ── R9. «no viaja»: la suite de la foto que no está en ningún registro del árbol ──────
 # Con la validación sobre el público, la foto nocturna (del repo de mantenimiento) nombra suites que el árbol validado no
 # trae. Sin registro serían «desaparecidas»: el aviso nombraría cada una, y la que el cambio borró de verdad quedaría
 # escondida entre ellas. `--registry` (el suites.json de la rama y el de main): la que no está en ninguno no viaja; la que
-# está en el de main y hoy no corrió desapareció, como siempre.
+# está en el de main y no corrió en esta corrida desapareció, como siempre.
 printf 'lab-a.test.sh\n' > "$TMP/r9-ran.txt"
 printf '{"diarias":[{"raiz":"arnes","ruta":"tests/lab-a.test.sh"}],"semanales":[]}\n' > "$TMP/r9-branch.json"
 printf '{"diarias":[{"raiz":"arnes","ruta":"tests/lab-a.test.sh"},{"raiz":"arnes","ruta":"tests/lab-gone.test.sh"}],"semanales":[]}\n' > "$TMP/r9-main.json"
@@ -190,7 +190,7 @@ node "$SCRIPT" --rep "$TMP/rep.json" --build 1010 --runs 1 --failures "" --detai
   && ok "R9b: un registro ilegible no da nada por «no viaja»: lo dice y deja las desaparecidas como siempre" \
   || no "R9b: rc=$rc · $(cat "$TMP/rep.json" 2>/dev/null) · $(cat "$TMP/r9b.err")"
 
-# ── R10. «se mide en otro lado» (story 2.21, AC 3) ───────────────────────────────────────────────────────────────
+# ── R10. «se mide en otro lado» ───────────────────────────────────────────────────────────────
 # Una suite cuyo registro declara `measured_elsewhere` y que llega «(no-medida)» no es una suite que falta: la mide otro
 # pipeline. Sale de `failures` y de `unmeasured`, va a `measuredElsewhere` con su motivo, sigue en `ran` y no vuelve
 # incompleta la noche. La declaración cubre sólo «no medida»: corrida y roja, sigue roja (R11).
@@ -219,14 +219,14 @@ node "$TMP/lab/scripts/ci/suites-report.js" --rep "$TMP/rep.json" --build 1012 -
   && ok "R10b @story-2.21 @ac-3: sin --registry ni --ran lee el registro de al lado del guion; la roja de verdad queda" \
   || no "R10b: rc=$rc · $(cat "$TMP/rep.json" 2>/dev/null) · $(cat "$TMP/r10b.err")"
 
-# ── R11. la declarada que corrió y salió ROJA sigue roja (story 2.21, AC 3) ─────────────────────────────────────────
+# ── R11. la declarada que corrió y salió ROJA sigue roja ─────────────────────────────────────────
 printf '❌ lab-limpia: se rompió de verdad\n' > "$TMP/r7/lab-limpia.test.sh.txt"
 node "$SCRIPT" --rep "$TMP/rep.json" --build 1013 --runs 2 --failures "lab-limpia.test.sh" --detail "$TMP/r7" --registry "$TMP/r10-decl.json" 2>/dev/null; rc=$?
 { [ "$rc" -eq 0 ] && [ "$(campo 'r.failures.join()')" = "lab-limpia.test.sh" ] && [ "$(campo 'JSON.stringify(r.measuredElsewhere)')" = '{}' ]; } \
   && ok "R11 MeasuredElsewhere_RojaSigueRoja @story-2.21 @ac-3: la declaración cubre sólo «no medida»; corrida y roja, sigue en failures" \
   || no "R11: rc=$rc · $(cat "$TMP/rep.json" 2>/dev/null)"
 
-# ── R12. una declaración que no se puede leer no reclasifica nada (story 2.21, AC 4) ──────────────────────────────
+# ── R12. una declaración que no se puede leer no reclasifica nada ──────────────────────────────
 r12(){ node "$SCRIPT" --rep "$TMP/rep.json" --build 1014 --runs 2 --failures "lab-limpia.test.sh(no-medida)" --detail "$TMP/r7" --registry "$1" 2>/dev/null; }
 printf '{ roto' > "$TMP/r12-roto.json"
 printf '{"diarias":[{"raiz":"arnes","ruta":"tests/lab-limpia.test.sh","measured_elsewhere":"   "}]}\n' > "$TMP/r12-vacia.json"

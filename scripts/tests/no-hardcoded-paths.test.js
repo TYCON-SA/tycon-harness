@@ -1,13 +1,13 @@
 'use strict';
 
 /**
- * no-hardcoded-paths.test.js — el enlace estable al arnés y el barrido de rutas fijas (story 8.3: T4 y T8).
+ * no-hardcoded-paths.test.js — el enlace estable al arnés y el barrido de rutas fijas (T4 y T8).
  *
- * EL AGUJERO QUE CIERRA. El código del núcleo tenía escrito a mano dónde está clonado el arnés
- * (`~/SourceCode/tycon-claude-guides`, en ~90 archivos de los dos repos), la organización de Azure
- * DevOps, un chat de Telegram y rutas de máquinas de personas. Valía en una máquina y en ninguna
- * otra, y no se podía publicar. Desde la 8.3 los prompts nombran al arnés por un enlace estable
- * (desde la 8.19, el lugar `~/.claude/tycon-harness`) que el instalador crea y cuida, y el código lo encuentra
+ * QUÉ EVITA. Si el código del núcleo tuviera escrito a mano dónde está clonado el arnés
+ * (`~/SourceCode/tycon-claude-guides`), la organización de Azure
+ * DevOps, un chat de Telegram y rutas de máquinas de personas, valdría en una máquina y en ninguna
+ * otra, y no se podría publicar. Los prompts nombran al arnés por un enlace estable
+ * (el lugar `~/.claude/tycon-harness`) que el instalador crea y cuida, y el código lo encuentra
  * por su ubicación o por ese enlace.
  *
  *   T4 · Rutas_EnlaceDelArnes_CreaReparaYNoMueve: el instalador bash, en una HOME temporal con
@@ -17,7 +17,7 @@
  *   T8 · Nucleo_SinRutasNiServiciosFijos: el código ejecutable del núcleo (alcance de Dev Notes, en los
  *        dos repos) no contiene `SourceCode`, la organización de Azure DevOps, ningún chat_id ni rutas
  *        `/Users/<persona>` — salvo la lista de excepciones, cada una con su motivo.
- *   T25 · RutasSinFijas_RepoUnico_Enlaces (story 8.7, tanda C · AC 18): en el repo único —el clon trae `skills/` y
+ *   T25 · RutasSinFijas_RepoUnico_Enlaces: en el repo único —el clon trae `skills/` y
  *        `agents/` en su raíz— el instalador apunta a ese mismo clon todo lo que busca a agent-skills, con tres enlaces
  *        más (`~/.claude/agent-skills`, `agents` y `skills`); en el clon del equipo no toca ninguno; uno que apunta a otro
  *        clon válido no se mueve y se dice; con carpetas reales —o enlazadas a una carpeta propia— va un enlace por
@@ -26,8 +26,7 @@
  *        con un agent-skills de juguete al lado (un `scripts/` enlazado no sirve: `canonical-path.js` resuelve la ruta
  *        real y volvería al repo de verdad), sin terceros y con un `launchctl` de mentira.
  *
- * 🔴 rojo previo verificado (censo 2026-09-26): 90 archivos con `SourceCode`, 8 con la organización,
- *    2 con el chat_id, 9 líneas con rutas de máquina. 🔴 Nada acá toca el HOME real ni el clon de
+ * 🔴 Nada acá toca el HOME real ni el clon de
  *    agent-skills instalado: HOME temporal siempre; agent-skills se lee, no se escribe.
  * 🔴 «No pude mirar» no es «coincide»: si el árbol de agent-skills no está, su mitad sale NO MEDIDA.
  */
@@ -78,9 +77,9 @@ function instalar(home, args = []) {
   assert.equal(r.status, 0, `el instalador tiene que salir 0 (aviso, nunca freno): ${r.stderr}\n${r.stdout}`);
   return r.stdout + '\n' + r.stderr;
 }
-// el lugar del arnés (story 8.19): desde la tanda C, el único nombre que recibe una máquina nueva
+// el lugar del arnés: el único nombre que recibe una máquina nueva
 const enlaceDe = (home) => require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'place.js')).placePath(home);
-/** Otro clon «válido» del arnés: existe y tiene scripts/install-tycon-hooks.sh (el criterio del AC 4). */
+/** Otro clon «válido» del arnés: existe y tiene scripts/install-tycon-hooks.sh. */
 function otroClonValido() {
   const d = tmp('rutas-otro-clon-');
   fs.mkdirSync(path.join(d, 'scripts'), { recursive: true });
@@ -153,8 +152,8 @@ test('T4 — la configuración ROTA no aborta el instalador ni se lee como «sin
   let r = spawnSync('bash', [INSTALADOR, '--check'], { encoding: 'utf8', timeout: 180000, env });
   let salida = r.stdout + '\n' + r.stderr;
   assert.equal(r.status, 0, salida);
-  // desde la tanda B lo dice el bloque de integraciones del instalador (una vez, «ROTA», y las integraciones —Codex
-  // incluida— quedan como estaban): el bloque de AGENTS.md ya no llega a correr con la configuración rota
+  // el bloque de integraciones del instalador lo dice (una vez, «ROTA», y las integraciones —Codex
+  // incluida— quedan como están): el bloque de AGENTS.md no llega a correr con la configuración rota
   assert.match(salida, /configuración del arnés está (rota|ROTA)/);
   assert.match(salida, /tycon\.json/);
   assert.doesNotMatch(salida, /sin raíz de repos conocida/, 'un archivo roto no se lee como «sin raíz»');
@@ -167,7 +166,7 @@ test('T4 — la configuración ROTA no aborta el instalador ni se lee como «sin
   assert.match(salida, /sin organización de Azure DevOps configurada/);
 });
 
-// ── T25 · RutasSinFijas_RepoUnico_Enlaces (story 8.7, tanda C · AC 18) ──────────────────────────────
+// ── T25 · RutasSinFijas_RepoUnico_Enlaces ──────────────────────────────────────────────────────────
 // 🔴 Nunca la HOME real: HOME temporal siempre, `TYCON_NO_NIGHTLY_EXAM=1`, `TYCON_NO_GUI_ENV=1` y `LAUNCHCTL_BIN` de
 //    mentira (las tareas programadas de macOS son por usuario, no por HOME). Sin terceros (`TYCON_THIRD_PARTY=0`): ni
 //    red ni historia de git. El instalador recibe un ambiente armado a mano: nada de quien corre la suite le llega.
@@ -302,13 +301,13 @@ test('T25 RutasSinFijas_RepoUnico_Enlaces — repo único, HOME limpia: los cuat
   const report = path.join(labTmp('lab-report-'), 'report.json');
   const r = install(single, home, ['--report-json', report]);
   assert.equal(r.status, 0, r.out);
-  // story 8.19: el lugar del arnés nace; desde la tanda C una máquina nueva no recibe el nombre viejo
+  // el lugar del arnés nace; una máquina nueva no recibe el nombre viejo
   const PLACE = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'place.js'));
   assert.equal(real(claude(home, PLACE.PLACE_NAME)), single, 'el lugar del arnés → el clon');
   assert.ok(!exists(claude(home, PLACE.LEGACY_PLACE_NAME)), 'una máquina nueva recibió el nombre viejo');
   assert.equal(real(claude(home, 'agent-skills')), single, 'agent-skills → el clon');
   for (const n of [PLACE.PLACE_NAME, 'agent-skills']) assert.ok(isLink(claude(home, n)), `${n} es un enlace`);
-  // story 8.35: skills y agents son carpetas reales del dev, con un enlace por CADA entrada del clon
+  // skills y agents son carpetas reales del dev, con un enlace por CADA entrada del clon
   const entries = [];
   for (const side of ['skills', 'agents']) {
     assert.ok(fs.statSync(claude(home, side)).isDirectory() && !isLink(claude(home, side)), `${side} es una carpeta real`);
@@ -322,7 +321,7 @@ test('T25 RutasSinFijas_RepoUnico_Enlaces — repo único, HOME limpia: los cuat
   assert.doesNotMatch(r.out, /agent-skills no encontrado/);
   const settings = fs.readFileSync(claude(home, 'settings.json'), 'utf8');
   assert.match(settings, /\.claude\/agent-skills\/skills\/tycon-pipeline\/scripts\/on-prompt\.js/, 'los hooks de agent-skills quedan registrados por el enlace');
-  // el reporte de piezas trae los enlaces (los dos nombres del lugar, story 8.19, y los tres del repo único), y cada uno
+  // el reporte de piezas trae los enlaces (los dos nombres del lugar y los tres del repo único), y cada uno
   // casa con la lista declarada
   const pieces = linkPieces(report);
   assert.deepEqual(pieces.map((p) => p.id).sort(), ['agent-skills', PLACE.PLACE_NAME, ...entries].sort());
@@ -395,7 +394,7 @@ test('T25 — skills/ y agents/ como carpetas reales con una entrada propia y un
 });
 
 test('T25 — skills/ y agents/ ENLAZADAS a una carpeta propia (los archivos de configuración de la persona): el enlace no se mueve, adentro va un enlace por entrada, lo propio intacto y la línea dice «carpeta propia»; la segunda corrida, muda', () => {
-  // Decisión del dueño (2026-10-03): moverle el enlace dejaba sus skills fuera de la vista de Claude. Las carpetas propias
+  // Mover el enlace dejaría sus skills fuera de la vista de Claude. Las carpetas propias
   // se llaman `skills` y `agents` a propósito: el nombre solo no las vuelve «otro clon del arnés».
   const single = singleRepo();
   const home = cleanHome();
@@ -525,9 +524,9 @@ test('T31 — el espejo: con python3 y node en ese mismo PATH armado a mano, el 
 
 // ── T8 ────────────────────────────────────────────────────────────────────────────────────────────
 
-// Lo que no puede estar en el código ejecutable del núcleo (AC 8). La organización de Azure DevOps y el chat de una
-// persona NO se escriben acá, ni enteros ni por partes: este archivo sale en la copia pública (auditoría del
-// 2026-10-03: salían los dos, uno dentro de un regex y el otro partido en dos literales). Salen de la lista privada
+// Lo que no puede estar en el código ejecutable del núcleo. La organización de Azure DevOps y el chat de una
+// persona NO se escriben acá, ni enteros ni por partes (ni dentro de un regex ni partidos
+// en dos literales): este archivo sale en la copia pública. Salen de la lista privada
 // de nombres, que no viaja. Sin la lista —la copia pública— no hay organización ni chat del equipo que buscar y esos
 // dos patrones no se arman; con una lista que no los trae o no se deja leer, la prueba falla: no pudo mirar.
 const PRIVATE_LIST = path.join(RAIZ, 'scripts', 'publishing', 'denylist.json');
@@ -566,19 +565,19 @@ const EXCEPCIONES = [
   { archivo: 'scripts/publishing/public-files/getting-started/windows.md', patron: /SourceCode/, motivo: 'instrucciones de instalación para una persona: le RECOMIENDAN dónde clonar el arnés (una carpeta dentro de ~/SourceCode); es un consejo que el lector sigue o cambia, no una ruta que el arnés supone' },
 ];
 
-/** Alcance del arnés (Dev Notes «Alcance del AC 8»). */
+/** Alcance del arnés: el código ejecutable del núcleo, en los dos repos. */
 function archivosDelArnes() {
-  // el nocturno de dependencias vive entero en scripts/nightly/dependencies/ (story 8.9, tanda F): en su carpeta vieja
+  // el nocturno de dependencias vive entero en scripts/nightly/dependencies/: en su carpeta anterior
   // quedan sólo reemplazos, que no nombran nada del equipo y se miran como cualquier otro archivo
   const salen = [
     /^scripts\/tests\//, /^scripts\/controls-bench\/(cases|evidence|\.bench)\//, /^scripts\/nightly\/dependencies\//, /^scripts\/vigilante\//,
     /^scripts\/metrics\/corridas-buzon\.json$/, /^scripts\/metrics\/censo-[^/]*\.json$/, /^scripts\/publishing\/denylist\.json$/,
-    /^scripts\/publishing\/replacements\.json$/,   // la tabla privada del exportador (story 8.4): nombra a los reales a propósito y nunca sale
+    /^scripts\/publishing\/replacements\.json$/,   // la tabla privada del exportador: nombra a los reales a propósito y nunca sale
     /^scripts\/ci\/product-parity\.json$/,
   ];
   const out = [];
-  // `.githooks` entra desde la story 8.7: en la copia pública de un solo repo el pre-commit del arnés viaja junto al de
-  // agent-skills y lo mide T8; con esto los dos layouts miran lo mismo (antes, en el repo del equipo no lo miraba nadie)
+  // `.githooks` entra: en la copia pública de un solo repo el pre-commit del arnés viaja junto al de
+  // agent-skills y lo mide T8; con esto los dos layouts miran lo mismo
   for (const raiz of ['scripts', 'build', 'commands', 'claude-md-blocks', '.githooks']) {
     for (const f of caminar(path.join(RAIZ, raiz))) {
       const rel = path.relative(RAIZ, f);
@@ -592,10 +591,10 @@ function archivosDelArnes() {
 function archivosDeAgentSkills(repo) {
   const out = [];
   const declaradosClientes = new Set();
-  // la carpeta se llama `clients` desde la tanda B3b de la story 8.9; un agent-skills anterior todavía tiene la vieja
+  // la carpeta se llama `clients`; un agent-skills anterior todavía tiene la vieja
   const carpeta = ['clients', 'clientes'].map((n) => path.join(repo, 'packs', n, 'pack.json')).find((f) => fs.existsSync(f));
   try {
-    // un agent-skills anterior a la tanda D1 trae las claves viejas del manifiesto: se leen por el mapa
+    // un agent-skills anterior trae las claves viejas del manifiesto: se leen por el mapa
     const { readKeysDeep } = require(path.join(RAIZ, 'scripts', 'lib', 'legacy-names.js'));
     const pack = readKeysDeep(JSON.parse(fs.readFileSync(carpeta, 'utf8')), 'packs/pack.json');
     for (const r of pack.reviewers || []) declaradosClientes.add(r.agent);
@@ -608,8 +607,8 @@ function archivosDeAgentSkills(repo) {
   for (const s of skills) for (const f of caminar(path.join(repo, 'skills', s))) out.push({ rel: path.relative(repo, f), abs: f });
   for (const d of ['.githooks', 'packs']) for (const f of caminar(path.join(repo, d))) out.push({ rel: path.relative(repo, f), abs: f });
   const salen = [/(^|\/)tests\//, /(^|\/)fixtures\//, /(^|\/)__tests__\//];
-  // Lo que la lista blanca deja AFUERA de la copia del núcleo no es núcleo (la skill del alta de productos, desde el
-  // 2026-09-28: su infraestructura es la del equipo). Se lee de la lista, no se copia acá: una segunda lista se separa.
+  // Lo que la lista blanca deja AFUERA de la copia del núcleo no es núcleo (la skill del alta de productos:
+  // su infraestructura es la del equipo). Se lee de la lista, no se copia acá: una segunda lista se separa.
   const lista = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'publishing', 'allowlist.json'), 'utf8'));
   const afuera = ((lista.packages.core['agent-skills'] || {}).out || []).map((x) => globARegex(x.glob.endsWith('/') ? `${x.glob}**` : x.glob));
   const quedan = out.filter((e) => !salen.some((re) => re.test(e.rel)) && !afuera.some((re) => re.test(e.rel)));
@@ -713,7 +712,7 @@ test('T8 — este archivo no trae la organización ni el chat del equipo, ni ent
   for (const x of priv.patterns) assert.ok(!sinEscapes(x.re).test(propio), `este archivo trae escrito lo que busca «${x.nombre}»`);
 });
 
-// ── profile-equivalence.js: las piezas que el pase adversarial (vuelta 1) encontró midiendo mal ──────────────────
+// ── profile-equivalence.js: piezas que podrían medir mal ─────────────────────────────────────────
 const EQUIV = require(path.join(RAIZ, 'scripts', 'publishing', 'profile-equivalence.js'));
 
 test('T11 Equivalencia_HooksPorNombre — la clave canónica de settings no cuenta como hook, y dos listas vacías no son «iguales»', () => {
@@ -783,8 +782,8 @@ test('T11 Equivalencia_Procedencia — con el árbol sin commitear el informe lo
 });
 
 // La copia pública es el árbol sin el perfil del equipo (no viaja). Una excepción declarada `noViaja` es de un archivo que
-// el exportador no publica: en la copia no está, y ahí no es una excepción huérfana (story 8.26, tanda C: la validación
-// de un pedido del público la leía como un rojo nuevo en cada corrida). En el repo del equipo tiene que estar, como todos.
+// el exportador no publica: en la copia no está, y ahí no es una excepción huérfana (si lo fuera, la validación
+// de un pedido del público la leería como un rojo nuevo en cada corrida). En el repo del equipo tiene que estar, como todos.
 /** Las excepciones de `list` cuyo archivo no está en el árbol `root` (las de `skills/`, en `skillsRoot`): las huérfanas. */
 function orphanExceptions(list, root, skillsRoot) {
   const publicCopy = !fs.existsSync(path.join(root, 'perfil-equipo.json'));
@@ -808,8 +807,8 @@ test('T8 — las excepciones existen y cada una dice por qué (una excepción hu
 });
 
 test('T8b — sólo la copia pública perdona el archivo que falta, y sólo a la excepción declarada `noViaja`', () => {
-  // (revisores de las vueltas 3 y 4 de la tanda C de la 8.26) «es la copia» lo dice el perfil del equipo, que no viaja;
-  // no un archivo que falta. Reconocida por la lista privada ausente, un repo del equipo que la perdiera daba verde.
+  // «es la copia» lo dice el perfil del equipo, que no viaja;
+  // no un archivo que falta. Si se reconociera por la lista privada ausente, un repo del equipo que la perdiera daría verde.
   // Dos árboles de juguete sin el archivo de la excepción: con el perfil es huérfana; sin él, sólo si no se declaró.
   const lab = fs.mkdtempSync(path.join(os.tmpdir(), 'excepciones-'));
   try {

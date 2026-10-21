@@ -1,16 +1,14 @@
 'use strict';
 /**
- * Paridad de las DOS validaciones del registro de autoría (2026-08-30).
+ * Paridad de las DOS validaciones del registro de autoría.
  *
  * La validación del roster está escrita dos veces a propósito: el portón de CI corre en un agente
  * que sólo hace checkout de los repos, sin `~/.claude/`, así que no puede importar la lib del
- * skill. Dos copias del mismo criterio son el drift de mañana — y en esta pieza el drift YA ocurrió
- * durante el desarrollo (el regex que lee la fecha del run dir y la política ante fecha ilegible
- * divergieron entre capas por unas horas).
+ * skill. Dos copias del mismo criterio terminan divergiendo (el regex que lee la fecha del run dir y la
+ * política ante fecha ilegible son lo primero que se separa entre capas).
  *
- * 🔴 Este archivo existe porque el comentario del portón decía que "un caso del banco cuida la
- * paridad" y ESE CASO NO EXISTÍA: un control documentado que no corre, que es el pecado que el
- * arnés más persigue. Lo cazó el pase adversarial de la propia pieza.
+ * 🔴 Este archivo es el caso que cuida la paridad que el comentario del portón promete: un control
+ * documentado que no corre es el pecado que el arnés más persigue.
  *
  * Si la lib del skill no está instalada (una máquina sin el arnés, o CI), el test NO pasa en
  * silencio: avisa fuerte y se saltea — un skip mudo sería otra vez el mismo pecado.
@@ -40,22 +38,22 @@ const CASOS = [
   ['findings coherentes', { version: 1, implementer: { kind: 'sesion-principal' }, reviewers: [rev('a')] }, ['a']],
   ['findings con un advisor ausente', { version: 1, implementer: { kind: 'sesion-principal' }, reviewers: [rev('a')] }, ['fantasma']],
   ['findings con fuentes del propio pipeline', { version: 1, implementer: { kind: 'sesion-principal' }, reviewers: [rev('a')] }, ['mech-check', 'adversarial-verify:x', 'pipeline']],
-  // Las cinco fuentes REALES que faltaban (2026-09-06): medidas sobre los runs del disco. Una es
-  // una variante de un patrón que ya estaba — por eso se reconoce el prefijo, no el nombre exacto.
+  // Las cinco fuentes REALES del pipeline, medidas sobre los runs del disco. Una es
+  // una variante de un patrón conocido — por eso se reconoce el prefijo, no el nombre exacto.
   ['findings con las fuentes del pipeline que faltaban', { version: 1, implementer: { kind: 'sesion-principal' }, reviewers: [rev('a')] },
     ['orquestador', 'orquestador (smoke AC 15)', 'runtime-matrix (smoke AC 14)', 'adversarial-verify (3 lentes)', 'ensayo runtime (no advisor)']],
-  // Story 4.4 (2026-09-14): los pases adversariales nombrados con guion daban roster-incoherente ×4.
+  // Los pases adversariales nombrados con guion no deben dar roster-incoherente.
   ['findings con pases adversariales nombrados con guion', { version: 1, implementer: { kind: 'sesion-principal' }, reviewers: [rev('a')] },
     ['adversarial-verify-fable', 'adversarial-verify-opus', 'adversarial-verify-sonnet-final', 'adversarial-verify-sonnet-pase2', 'adversarial-verify-5b']],
   ['findings con un advisor que se parece pero no es', { version: 1, implementer: { kind: 'sesion-principal' }, reviewers: [rev('a')] }, ['orquestadorx', 'el orquestador', 'adversarial-verifyx']],
-  // Un pull request de un producto del equipo (2026-09-22): los cinco nombres reales que frenaron el portón. Cuatro son
-  // el MISMO revisor del roster con la vuelta o el modelo pegados entre paréntesis, y uno es el
-  // gate de E2E, que tampoco es un spawn. Ninguno es un revisor ausente.
+  // Cinco nombres reales que frenarían el portón. Cuatro son el MISMO revisor del roster con la vuelta o el
+  // modelo pegados entre paréntesis, y uno es el gate de E2E, que tampoco es un spawn. Ninguno es un revisor
+  // ausente.
   ['findings con la vuelta pegada al nombre del revisor',
     { version: 1, implementer: { kind: 'sesion-principal' }, reviewers: [rev('tycon-silent-failure-hunter'), rev('tycon-plugin-security-basics')] },
     ['tycon-silent-failure-hunter (iter 3)', 'tycon-plugin-security-basics (iter 4)', 'pase adversarial (5b, opus)', 'e2e-runtime']],
   // 🔴 El recorte del paréntesis NO puede tapar a un revisor que de verdad no corrió: `tycon-sibling-
-  // pattern-reviewer` (el quinto hallazgo del mismo PR) sigue siendo incoherente, con o sin adorno.
+  // pattern-reviewer` sigue siendo incoherente, con o sin adorno.
   ['un revisor ausente de verdad sigue siéndolo aunque traiga paréntesis',
     { version: 1, implementer: { kind: 'sesion-principal' }, reviewers: [rev('tycon-silent-failure-hunter')] },
     ['tycon-sibling-pattern-reviewer', 'tycon-sibling-pattern-reviewer (iter 2)']],
@@ -63,10 +61,9 @@ const CASOS = [
   ['el recorte no fusiona dos agentes distintos',
     { version: 1, implementer: { kind: 'sesion-principal' }, reviewers: [rev('a')] },
     ['b (x) c', 'a b']],
-  // ── Story 7.13: el hallazgo dice de qué TRAMO viene, y el cruce compara tramo contra tramo ──
-  // La segunda causa de aquel pull request: el roster cubre la ronda del paso 5 y `findings.json` toda la
-  // corrida, así que un hallazgo del paso 1 daba `roster-incoherente` SIEMPRE. Las dos copias
-  // tienen que entender la forma nueva igual, o el dev ve una cosa en la máquina y otra en el PR.
+  // ── El hallazgo dice de qué TRAMO viene, y el cruce compara tramo contra tramo ──
+  // El roster cubre la ronda del paso 5 y `findings.json` toda la corrida: sin el tramo, un hallazgo del paso 1
+  // daría `roster-incoherente` SIEMPRE. Las dos copias tienen que entender la forma del tramo igual, o el dev ve una cosa en la máquina y otra en el PR.
   ['un hallazgo del paso 1 contra el tramo que le corresponde',
     { version: 1, implementer: { kind: 'sesion-principal' }, reviewers: [rev('a')],
       agentes_previos: [rev('tycon-story-validator')] },
@@ -95,8 +92,7 @@ test('las dos validaciones del roster dan el MISMO veredicto en todos los casos'
     t.skip('lib del skill ausente');
     return;
   }
-  // 🔴 Las LISTAS, no sólo los veredictos sobre casos fijos (revisión adversarial 2026-09-06,
-  // hallazgo #19): una regex DE MÁS en una copia dejaba este test verde con veredictos opuestos
+  // 🔴 Las LISTAS, no sólo los veredictos sobre casos fijos: una regex DE MÁS en una copia dejaría este test verde con veredictos opuestos
   // sobre el advisor que sólo esa copia reconocía — los casos cubren las fuentes reales, no una
   // entrada que exista en una sola lista. Igual que closing-evidence-parity.test.js.
   assert.deepEqual((gate.FUENTES_SINTETICAS || []).map(String).sort(), (lib.FUENTES_SINTETICAS || []).map(String).sort(),
@@ -114,11 +110,11 @@ test('las dos validaciones del roster dan el MISMO veredicto en todos los casos'
   }
 });
 
-// ── El tramo, con VEREDICTO esperado (story 7.13) ────────────────────────────────────────────
+// ── El tramo, con VEREDICTO esperado ────────────────────────────────────────────
 // 🔴 La paridad sola no alcanza acá y es una trampa conocida: compara las dos copias ENTRE SÍ, así
 // que si las dos ignoran los tramos igual, el test sale verde con el comportamiento mal. Este caso
 // fija lo que tiene que PASAR, no sólo que las dos opinen lo mismo.
-// ROJO PREVIO: hoy ninguna de las dos entiende `{advisor, tramo}` — lo pasa por String(), le sale
+// Falla si: ninguna de las dos entiende `{advisor, tramo}` — lo pasa por String(), le sale
 // `[object Object]`, y las dos dan `roster-incoherente` en los cuatro casos.
 const ROSTER_DOS_TRAMOS = {
   version: 1, implementer: { kind: 'sesion-principal' },
@@ -148,8 +144,8 @@ test('el cruce compara tramo contra tramo — en las DOS copias, con el veredict
   }
 });
 
-// ── T8 (AC 6) — los rosters REALES de aquel pull request, versionados como dato de prueba ───────────────
-// El AC pide medir el paliativo sobre los dos rosters reales: con el recorte del paréntesis, un
+// ── T8 — dos rosters REALES, versionados como dato de prueba ───────────────
+// Mide el recorte del paréntesis sobre los dos rosters reales: con el recorte, un
 // solo hallazgo. Es la medición que decide si el recorte se retira o se queda con su razón.
 // Los fixtures están anonimizados (ver su LEEME.md); los nombres, que es lo que el caso mide,
 // están enteros.
@@ -170,11 +166,10 @@ test('los rosters reales de AG-2 y AG-3 dan UN hallazgo, no cinco', () => {
     `AG-3 tiene que salir limpio: ${JSON.stringify(ag3.problemas)}`);
 });
 
-// 🔴 POR QUÉ EL RECORTE SE QUEDA (AC 6, segunda rama). Medido el 2026-09-22 sobre los run dirs del
-// disco: 54 hallazgos en 11 corridas YA COMMITEADAS traen la anotación pegada al nombre, y una
-// máquina con el skill viejo los sigue escribiendo hasta que actualice. La story endurece a quien
-// ESCRIBE (el firmante se elige); el cruce conserva la tolerancia de quien LEE mientras exista ese
-// histórico. Este caso mide el precio exacto de retirarlo hoy: AG-2 pasaría de 1 hallazgo a 3.
+// 🔴 POR QUÉ EL RECORTE SE QUEDA. Hay corridas YA COMMITEADAS con la anotación pegada al nombre, y una
+// máquina con el skill viejo las sigue escribiendo hasta que actualice. El cruce conserva la tolerancia de
+// quien LEE mientras exista ese histórico, aunque a quien ESCRIBE se le exija elegir el firmante. Este caso
+// mide el precio exacto de retirarlo: AG-2 pasaría de 1 hallazgo a 3.
 test('sin el recorte, los mismos rosters vuelven a marcar al revisor que sí corrió', () => {
   const roster = rosterDe('roster-ag2');
   const nombres = new Set(roster.reviewers.map((r) => r.agent));   // SIN nombreCanonico, a propósito
@@ -186,18 +181,16 @@ test('sin el recorte, los mismos rosters vuelven a marcar al revisor que sí cor
 });
 
 // ── El hallazgo VALIDADO al escribirse se distingue del que nadie validó ─────────────────────
-// `roster-incoherente` avisa y no frena desde el 2026-09-22, porque en sus dos apariciones falló
-// ella y no lo que vigila. La 7.13 le sacó la causa: el firmante ahora se valida contra el registro
-// AL ESCRIBIR el hallazgo. Pero eso vale para los hallazgos NUEVOS: medido sobre los 80 run dirs
-// del disco, 12 seguirían marcando por el formato viejo, y volver a frenar de golpe repetiría el
-// frenón de aquel pull request con otra excusa.
+// `roster-incoherente` avisa y no frena cuando nadie validó el hallazgo. El firmante se valida contra el
+// registro AL ESCRIBIR el hallazgo, pero eso vale para los hallazgos NUEVOS: las corridas viejas siguen
+// marcando por el formato anterior, y frenar de golpe por ellas sería un falso positivo.
 //
 // La marca no es la fecha ni una lista: es el propio hallazgo. `tramo` lo escribe `write-findings`
 // SÓLO cuando pudo leer el registro y ubicar al firmante — o sea, cuando la validación de verdad
 // ocurrió. Un hallazgo con `tramo` que igual no cuadra es una incoherencia REAL y frena; uno sin
 // `tramo` nadie lo validó, así que sigue avisando. Se enciende solo a medida que las corridas
 // viejas dejan de cerrarse: sin día de corte y sin que nadie tenga que acordarse.
-// 🔴 rojo previo: los dos casos salían iguales, sin nada que permitiera separarlos.
+// 🔴 Falla si: los dos casos salen iguales, sin nada que permita separarlos.
 test('un hallazgo incoherente se marca como validado SÓLO si venía con su tramo', () => {
   const roster = { version: 1, implementer: { kind: 'sesion-principal' }, reviewers: [rev('tycon-real')] };
   const nuevo = [{ advisor: 'tycon-fantasma', tramo: 'revision' }];   // lo escribió write-findings validando
@@ -214,10 +207,9 @@ test('un hallazgo incoherente se marca como validado SÓLO si venía con su tram
   }
 });
 
-// ── AC 9 — el portón del repo de la STORY acepta el roster proyectado ────────────────────────
+// ── el portón del repo de la STORY acepta el roster proyectado ────────────────────────
 // La proyección (`projected_from`) la ejercita el freno local, que es quien la necesita para
-// encontrar el testigo. Pero el AC dice «el portón del repo de specs pasa», y eso no estaba
-// asertado contra el portón mismo. Acá se mide directo: el portón no sabe nada de procedencia
+// encontrar el testigo. Acá se mide contra el portón mismo: el portón no sabe nada de procedencia
 // —ni la necesita, porque no ve el registro de subagentes— y un roster proyectado tiene que
 // pasarle igual que uno nacido en el repo.
 test('el portón acepta un roster proyectado desde el repo del código (AC 9)', () => {
@@ -231,12 +223,10 @@ test('el portón acepta un roster proyectado desde el repo del código (AC 9)', 
 });
 
 // ── El portón tampoco puede APAGAR el cruce en silencio ──────────────────────────────────────
-// Lo cazó el revisor de fallos silenciosos en la SEGUNDA vuelta, reproduciéndolo en vivo sobre el
-// arreglo de la primera: el JSON roto ya avisaba, pero un JSON válido con otra forma
-// (`{"status":"ok"}`) caía a `[]` mudo y el cruce no corría. O sea que el arreglo estaba a medias
-// y la afirmación de que el punto ciego estaba cerrado era falsa. Los tres caminos del portón
+// Un JSON roto avisa, y un JSON válido con otra forma (`{"status":"ok"}`) también: si cayera a `[]` mudo, el
+// cruce no correría y el punto ciego quedaría abierto sin decirlo. Los tres caminos del portón
 // tienen que ser los mismos que los del freno local.
-// 🔴 rojo previo: con `{"status":"ok"}` devolvía [] sin una línea a stderr.
+// 🔴 Falla si: con `{"status":"ok"}` devuelve [] sin una línea a stderr.
 test('el portón avisa cuando no puede leer los hallazgos, en los TRES caminos', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adv-findings-'));
   const fj = path.join(dir, 'findings.json');
@@ -253,7 +243,7 @@ test('el portón avisa cuando no puede leer los hallazgos, en los TRES caminos',
 
   // (b) JSON roto → avisa y null, SIN filtrar la ruta absoluta ni un pedazo del archivo.
   // Este aviso sale por el registro público de la corrida: mismo criterio que `cierre-recortado`
-  // T10 le exige a la constancia del cierre. Lo pidió el revisor de seguridad en la 2da vuelta.
+  // T10 le exige a la constancia del cierre.
   fs.writeFileSync(fj, '[{ "secreto-del-cliente": 1');
   const roto = capturar(() => gate.advisoresEnFindings(dir));
   assert.equal(roto.r, null);
@@ -261,7 +251,7 @@ test('el portón avisa cuando no puede leer los hallazgos, en los TRES caminos',
   assert.ok(!roto.dicho.includes(dir), 'pero NO la ruta absoluta del checkout');
   assert.ok(!/secreto-del-cliente/.test(roto.dicho), 'ni un fragmento del archivo (el parser lo arrastra)');
 
-  // (c) JSON válido con otra forma → avisa y null (el camino que faltaba)
+  // (c) JSON válido con otra forma → avisa y null
   fs.writeFileSync(fj, '{"status":"ok"}');
   const raro = capturar(() => gate.advisoresEnFindings(dir));
   assert.equal(raro.r, null, 'no puede devolver [] como si no hubiera hallazgos');

@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * public-push-guard.test.js — el freno antes de publicar, en un empuje (story 8.26, tanda F1 · AC 22 y 53).
+ * public-push-guard.test.js — el freno antes de publicar, en un empuje.
  *
  * Con el arnés mantenido directo en el repo público, una rama empujada ya es pública. Este freno es lo único que hay
  * antes. Lo que no puede pasar:
@@ -16,9 +16,9 @@
  * público con TYCON_PUBLIC_PUSH_TREAT_AS_PUBLIC, que sólo AGREGA remotos a mirar. La lista es inventada: ningún término
  * de esta prueba sale de una lista de verdad. El empuje real, con el hook instalado, lo corre githook-pre-push.test.sh.
  *
- * Tanda F2 (AC 23): el MODO DE RANGO (`range --base … --head …`), con el que la validación mira un pedido —cada commit
- * que suma a su rama destino, la rama, el título y el cuerpo—: T23 y T63. Y lo que la F1 dejó para cuando el control de
- * historia interna estuviera en el árbol: T67, con el control de verdad. El paso real del YAML que llama a ese modo se
+ * Casos del MODO DE RANGO (`range --base … --head …`), con el que la validación mira un pedido —cada commit
+ * que suma a su rama destino, la rama, el título y el cuerpo—: T23 y T63. Y del número de pedido que mira el control de
+ * historia interna: T67, con el control de verdad. El paso real del YAML que llama a ese modo se
  * mide en pr-suites-shards.test.js.
  *
  * Correr: node --test scripts/tests/public-push-guard.test.js
@@ -45,9 +45,9 @@ const REAL_LOOKING_EMAIL = ['otra.persona', 'empresa-de-verdad.com'].join('@');
 // lo que el freno necesita para correr, copiado a un arnés de laboratorio
 const PIECES = ['scripts/hooks/public-push-guard.js', 'scripts/lib/az-pr.js', 'scripts/lib/gh-pr.js', 'scripts/lib/harness-repo.js',
   'scripts/lib/legacy-names.js', 'scripts/lib/guard-record.js', 'scripts/publishing/detector.js', 'scripts/setup/harness/tycon-home.js'];
-// El control de historia interna, el de verdad (tanda G): de él sale la forma del número de pedido. Hasta que estuvo
-// en el árbol, esta prueba usaba un doble con el mismo contrato; un doble más generoso que el real daba verde a casos
-// que el real no frena (`arreglo/PR#123`, `pr-123`), y por eso ya no hay doble: lo que se mide es el control que corre.
+// El control de historia interna, el de verdad: de él sale la forma del número de pedido. No hay doble: un doble más
+// generoso que el real daría verde a casos que el real no frena (`arreglo/PR#123`, `pr-123`), y lo que se mide es el
+// control que corre.
 const HISTORY = 'scripts/publishing/internal-history.js';
 
 const cleanEnv = () => {
@@ -163,7 +163,7 @@ function assertPassed(r) {
   assert.deepStrictEqual(r.json.findings, []);
 }
 
-// ── AC 22: qué se mira en cada commit nuevo ─────────────────────────────────────────────────────────────────────
+// ── qué se mira en cada commit nuevo ─────────────────────────────────────────────────────────────────────
 
 test('T22_PublicPush_CleanBranch_Passes_AndSaysWhatItLooked', (t) => {
   const fx = lab(t);
@@ -259,7 +259,7 @@ test('T22_FullDetector_TokenMachinePathBinaryLinkAndSubmodule_Blocked', (t) => {
   git(fx.work, ['commit', '--quiet', '-m', 'un submódulo']);
   assertBlocked(fx, guard(fx, branchLine(fx, 'submodulo')), { category: 'sin-leer', place: /vendor\/otro.*submódulo/, secret: [] });
   // 🔴 …también si el propio árbol le dice a git que lo ignore (`ignore = all` en `.gitmodules`): lo que se mira no puede
-  // depender de un archivo que viene en lo mismo que se empuja. En el empuje y en el modo de rango (pase adversarial F2).
+  // depender de un archivo que viene en lo mismo que se empuja. En el empuje y en el modo de rango.
   write(fx.work, '.gitmodules', '[submodule "vendor/otro"]\n\tpath = vendor/otro\n\turl = ./otro\n\tignore = all\n');
   git(fx.work, ['add', '.gitmodules']);
   git(fx.work, ['commit', '--quiet', '-m', 'que git ignore ese submódulo']);
@@ -316,7 +316,7 @@ test('T22_PrNumberInMessageBranchAndTag_Blocked_StoryNumbersPass', (t) => {
   git(fx.work, ['tag', 'PR#1234', clean]);
   assertBlocked(fx, guard(fx, line('refs/tags/PR#1234', clean)), { category: 'historia-interna', place: /el nombre de la ref nº 1/, secret: ['1234'] });
   // En un nombre de ref no hay espacios, y la forma del control pide uno: se mira también con los separadores vueltos
-  // espacios, en mayúsculas y en minúsculas. Cada una de estas formas salía sin freno.
+  // espacios, en mayúsculas y en minúsculas. Cada una de estas formas tiene que frenar.
   ['arreglo/pr-1234', 'pr1234-arreglo', 'pull-request-1234', 'Pull_Request.1234', 'PULL-REQUEST-1234', 'hotfix/PRs_1234'].forEach((name) => {
     git(fx.work, ['branch', '-f', name, clean]);
     assertBlocked(fx, guard(fx, branchLine(fx, name)), { category: 'historia-interna', place: /el nombre de la ref nº 1/, secret: ['1234'] });
@@ -334,7 +334,7 @@ test('T22_PrNumberInMessageBranchAndTag_Blocked_StoryNumbersPass', (t) => {
 });
 
 // El asunto con que GitHub mergea («Merge pull request #N from …») trae el número de un pedido del repo PÚBLICO: no es
-// historia interna, y desde el pedido 100 coincide con la forma del número de pedido. Ya no hay una salvedad por la forma
+// historia interna, y desde el pedido 100 coincide con la forma del número de pedido. No hay una salvedad por la forma
 // del asunto: el control le pregunta al repo al que se empuja qué pedidos tiene (`git ls-remote`, sin la API de GitHub).
 // Acá el desnudo local hace de GitHub y publica el pedido como lo publica GitHub, `refs/pull/<N>/head`.
 test('T22_PublicPullRequestNumber_Passes_AzureNumberAndUnansweredPublicRepo_Blocked', (t) => {
@@ -457,7 +457,7 @@ test('T22_PrivateAndLocalRemotes_AndTreesThatAreNotTheHarness_SkipWithoutReading
   assert.strictEqual(skipped.json.verdict, 'skip');
 });
 
-// ── AC 53: de dónde sale la lista, y en qué máquina es obligatoria ────────────────────────────────────────────────
+// ── de dónde sale la lista, y en qué máquina es obligatoria ────────────────────────────────────────────────
 
 test('T56_ListLookupOrder_EnvMaintainersMaintainedHarness_FirstOneWins_NeverThePushedTree', (t) => {
   const fx = lab(t);
@@ -563,10 +563,10 @@ test('T56_MaintainersClone_DeclaredWithTheHarnessCommand_IsWhereTheGuardReadsThe
   const ok = config('set', 'paths.maintainers', maintainers);
   assert.strictEqual(ok.status, 0, ok.stdout + ok.stderr);
   assert.match(config('show').stdout, /paths\.maintainers/);
-  // 🔴 …y el LECTOR de la configuración la conoce. La primera versión la guardaba y el lector de esa misma versión la
-  // rechazaba («clave desconocida»): declarar la lista como pide el freno dejaba inválida la configuración de la máquina.
+  // 🔴 …y el LECTOR de la configuración la conoce. Si el freno la guarda y el lector la
+  // rechaza («clave desconocida»), declarar la lista como pide el freno deja inválida la configuración de la máquina.
   // El lector mira ese archivo sólo en una máquina que vive en su carpeta propia (`~/.tycon/state` existe): sin eso
-  // esta afirmación pasaba aunque el lector no conociera la clave, porque ni abría el archivo.
+  // esta afirmación pasaría aunque el lector no conociera la clave, porque ni abriría el archivo.
   fs.mkdirSync(path.join(fx.home, '.tycon', 'state'), { recursive: true });
   const valid = spawnSync(process.execPath, [path.join(REPO, 'scripts', 'lib', 'tycon-config.js'), 'validate'], { encoding: 'utf8', env });
   assert.strictEqual(valid.status, 0, `el lector rechaza lo que el comando guardó:\n${valid.stdout}${valid.stderr}`);
@@ -680,8 +680,8 @@ test('T56_ConfigSet_AFileAReaderRejects_IsNotLeftWritten', (t) => {
   GA.setKeyChecked('paths.maintainers', null, { env });
   // (2) 🔴 un lector que NO LEE la copia que se le muestra y contesta «válida, máquina: leido» igual: una copia vieja
   // del freno de producción lee el archivo de la carpeta de Claude Code, pase lo que pase con TYCON_HOME. Se lo
-  // descubre mostrándole primero un archivo que tiene que rechazar. Sin eso contestaba «válida» antes y después, y la
-  // clave quedaba «guardada» sin que nadie la hubiera mirado.
+  // descubre mostrándole primero un archivo que tiene que rechazar. Sin eso contestaría «válida» antes y después, y la
+  // clave quedaría «guardada» sin que nadie la hubiera mirado.
   const blind = path.join(fx.root, 'lector-ciego.js');
   fs.writeFileSync(blind, "process.stdout.write('configuración válida (máquina: leido)\\n');\n");
   r = GA.setKeyChecked('paths.maintainers', fx.work, { env, readers: [{ label: 'un lector que no mira', file: blind }] });
@@ -834,8 +834,8 @@ test('T56_Status_SaysWhereTheListComesFrom_AndFailsWhenSomethingIsMissing', (t) 
   r = status({}, null);
   assert.strictEqual(r.status, 1, r.stdout);
   assert.match(r.stdout, /la lista: NO/);
-  // T79 (tanda H1c): fuera de un repo se mira la carpeta GLOBAL de hooks. Puesta desde un archivo INCLUIDO por la
-  // configuración global (`[include]`), git la usa: leída sin seguir los incluidos, status decía «git no tiene carpeta
+  // T79: fuera de un repo se mira la carpeta GLOBAL de hooks. Puesta desde un archivo INCLUIDO por la
+  // configuración global (`[include]`), git la usa: leída sin seguir los incluidos, status diría «git no tiene carpeta
   // global de hooks» con el freno puesto — distinto de lo que dicen el instalador y `doctor`.
   const included = path.join(fx.root, 'gitconfig-incluido');
   const globalConfig = path.join(fx.root, 'gitconfig-global');
@@ -849,11 +849,11 @@ test('T56_Status_SaysWhereTheListComesFrom_AndFailsWhenSomethingIsMissing', (t) 
   assert.match(outside.stdout, /el pre-push: está puesto/);
 });
 
-// ── lo que encontró la primera vuelta de revisores: cada caso de acá salía VERDE sin que nadie hubiera mirado ─────
+// ── casos de los revisores: cada uno daría VERDE sin que nadie hubiera mirado ─────
 
 test('T22_UnreadableInput_IsNotAnEmptyPush', (t) => {
   // git manda por la entrada qué se empuja. Una entrada VACÍA es «nada que empujar» (pasa); una que no se pudo leer
-  // no es eso. Leída como vacía, un empuje entero salía sin mirarse.
+  // no es eso. Leída como vacía, un empuje entero saldría sin mirarse.
   const fx = lab(t);
   commitOn(fx, 'sucia', { 'guides/a.md': `con ${TERM}\n` });
   const call = (input) => spawnSync(process.execPath, ['-e',
@@ -869,8 +869,8 @@ test('T22_UnreadableInput_IsNotAnEmptyPush', (t) => {
   assert.match(unreadable.result.reason, /no pude leer lo que git le pasó/);
   // el gemelo: la entrada vacía sigue siendo «nada que empujar»
   assert.strictEqual(JSON.parse(call('').stdout).code, 0);
-  // Y cuando el que no pudo leerla es el despachador, lo dice con un argumento. Con cerrarle la entrada al freno no
-  // alcanzaba: Node reabre ese descriptor sobre nada y lee vacío — que es justo «nada que empujar».
+  // Y cuando el que no pudo leerla es el despachador, lo dice con un argumento. Cerrarle la entrada al freno no
+  // alcanza: Node reabre ese descriptor sobre nada y lee vacío — que es justo «nada que empujar».
   const told = guard(fx, '', { args: ['--json', '--input-unreadable'] });
   assert.strictEqual(told.status, 2, told.all);
   assert.match(told.json.reason, /no pude leer lo que git le pasó/);
@@ -886,9 +886,9 @@ test('T22_UnreadableInput_IsNotAnEmptyPush', (t) => {
 });
 
 test('T22_TrackingRefs_OnlyCountForARemoteThatFetchesFromTheAddressBeingPushedTo', (t) => {
-  // «Lo que ese remoto ya tiene no se vuelve a mirar» se decidía por el NOMBRE del remoto. Un remoto que trae de un
+  // «Lo que ese remoto ya tiene no se vuelve a mirar» se decide por el NOMBRE del remoto. Un remoto que trae de un
   // lado y empuja a otro (`url` privada, `pushurl` pública: una mudanza) tiene de seguimiento lo que hay en el
-  // privado: darlo por publicado dejaba salir sin mirar todo lo que el público todavía no tenía.
+  // privado: darlo por publicado dejaría salir sin mirar todo lo que el público todavía no tenía.
   const fx = lab(t);
   git(fx.work, ['remote', 'add', 'mudanza', fx.localUrl]);
   git(fx.work, ['remote', 'set-url', '--push', 'mudanza', fx.publicUrl]);
@@ -915,10 +915,10 @@ test('T22_TrackingRefs_OnlyCountForARemoteThatFetchesFromTheAddressBeingPushedTo
 });
 
 test('T22_ARemoteRepointedToThePublicRepo_ItsOldTrackingBranchesAreNotWhatThePublicHas', (t) => {
-  // 🔴 EL GESTO DEL DÍA DEL CORTE (pase adversarial, dos lentes): en el clon de siempre, `git remote set-url origin
-  // <público>`. Las ramas de seguimiento de `origin` siguen siendo las del repo INTERNO —no guardan de qué repo
-  // salieron—; dándolas por «lo que el remoto ya tiene», toda la historia interna se excluía, el freno decía «1 commit
-  // mirado» y git publicaba la historia entera. Ahora se le pregunta al remoto qué tiene.
+  // 🔴 Si en el clon de siempre se corre `git remote set-url origin
+  // <público>`, las ramas de seguimiento de `origin` siguen siendo las del repo INTERNO —no guardan de qué repo
+  // salieron—; dándolas por «lo que el remoto ya tiene», toda la historia interna se excluiría, el freno diría «1 commit
+  // mirado» y git publicaría la historia entera. Por eso se le pregunta al remoto qué tiene.
   const fx = lab(t);
   const interno = path.join(fx.root, 'interno.git');
   git(fx.root, ['init', '--quiet', '--bare', '--initial-branch=main', interno]);
@@ -928,7 +928,7 @@ test('T22_ARemoteRepointedToThePublicRepo_ItsOldTrackingBranchesAreNotWhatThePub
   commitHere(fx, { 'guides/interna.md': `del caso de ${TERM}\n`, 'specs/secreto.md': 'una story\n' }, 'docs: lo interno', { who: { name: 'Alguien', email: BAD_EMAIL } });
   git(fx.work, ['push', '--quiet', 'origin', 'main', 'dev']);
   git(fx.work, ['fetch', '--quiet', 'origin']);
-  // el corte: el mismo remoto, ahora hacia el público (que no tiene nada de eso); un `fetch` sin podar deja origin/dev
+  // el cambio de destino: el mismo remoto, ahora hacia el público (que no tiene nada de eso); un `fetch` sin podar deja origin/dev
   git(fx.work, ['remote', 'set-url', 'origin', fx.publicUrl]);
   git(fx.work, ['fetch', '--quiet', 'origin']);
   assert.ok(git(fx.work, ['rev-parse', 'refs/remotes/origin/dev']), 'el laboratorio: la rama de seguimiento vieja sigue ahí');
@@ -988,7 +988,7 @@ test('T22_WhatIsReadIsWhatIsPushed_ReplacedObjects_NoreplyAccount_RefsWithSpaces
 
 test('T56_TheListNeverComesFromThePushedTree_EvenWhenTheMachineNamesThatTreeAsItsClone', (t) => {
   // La máquina puede declarar como «el clon que mantiene» al mismo clon que se está empujando: con la lista adentro,
-  // la rama elegía con qué lista se la mira (una lista propia con una excepción general apagaba hasta lo genérico).
+  // la rama elegiría con qué lista se la mira (una lista propia con una excepción general apagaría hasta lo genérico).
   const fx = lab(t);
   const config = path.join(fx.home, '.tycon', 'config.json');
   writeList(path.join(fx.work, 'scripts/publishing/denylist.json'), OTHER_TERM, { permitidos: [{ archivo: '**', motivo: 'todo vale' }] });
@@ -1012,8 +1012,8 @@ test('T56_TheListNeverComesFromThePushedTree_EvenWhenTheMachineNamesThatTreeAsIt
 });
 
 test('T22_HarnessPush_ByWhatIsPushedAndByTheDeclaredRepo_NotOnlyByTheWorkingTree', (t) => {
-  // Se decidía mirando si el árbol de TRABAJO traía el instalador. Parado en una rama que no lo trae, una rama del
-  // arnés salía sin freno; y un repo del arnés que no trae ese archivo (el de las skills) no tenía freno nunca.
+  // Mirar si el árbol de TRABAJO trae el instalador no alcanza. Parado en una rama que no lo trae, una rama del
+  // arnés saldría sin freno; y un repo del arnés que no trae ese archivo (el de las skills) no tendría freno nunca.
   const fx = lab(t, { harnessTree: false });
   commitOn(fx, 'del-arnes', { 'scripts/install-tycon-hooks.sh': '#!/bin/sh\n', 'guides/a.md': `con ${TERM}\n` });
   git(fx.work, ['checkout', '--quiet', 'main']);
@@ -1033,7 +1033,7 @@ test('T22_HarnessPush_ByWhatIsPushedAndByTheDeclaredRepo_NotOnlyByTheWorkingTree
   assert.strictEqual(elsewhere.status, 0, elsewhere.all);
   assert.strictEqual(elsewhere.json.verdict, 'skip');
   // 🔴 Esa variable SUMA repos, no saca: el que el arnés declara en sus archivos sigue contando con la variable puesta
-  // en otra cosa (con ella como única fuente, ponerla alcanzaba para que el repo público saliera sin mirar).
+  // en otra cosa (con ella como única fuente, ponerla alcanzaría para que el repo público saliera sin mirar).
   write(fx.harness, 'scripts/publishing/public-repos.json', `${JSON.stringify({ org: 'acme', repo: 'declarado' })}\n`);
   const stillDeclared = guard(fx, branchLine(fx, 'sin-marca'), { remote: 'otro', url: 'https://github.com/acme/declarado.git', env: { TYCON_HARNESS_IDENTITIES: 'https://github.com/acme/otra-cosa' } });
   assertBlocked(fx, stillDeclared, { category: 'cliente', place: /skills\/a\.md:1/ });
@@ -1100,7 +1100,7 @@ test('T22_WhenGitCannotAnswer_ItIsCouldNotLook_NeverAnEmptyAnswer', (t) => {
   assert.throws(() => g.concernsHarness({ ...asked, lines: [{ localSha: 'e'.repeat(40) }] }), (e) => e instanceof g.Blind);
 });
 
-// ── AC 23: el modo de rango, con el que la validación mira un pedido (tanda F2) ─────────────────────────────────────
+// ── el modo de rango, con el que la validación mira un pedido ─────────────────────────────────────
 //
 // `range --base <commit> --head <commit> [--branch <nombre>] [--title-file <f>] [--body-file <f>]`: cada commit que el
 // pedido suma a su rama destino, el nombre de la rama, y el título y el cuerpo. No le pregunta nada al remoto, y la
@@ -1215,7 +1215,7 @@ test('T63_RangeMode_BranchBodyIdentityAndForbiddenPath_EachBlocked_AndItSaysWhat
   assert.strictEqual(ok.status, 0, ok.all);
   assert.match(ok.stdout, /^public-push-guard: verdict=pass findings=0 commits=1 branch=1 title=1 body=1$/m);
   assert.match(ok.stdout, /el nombre de la rama, mirado; el título y el cuerpo, mirados/);
-  // la línea de cuentas dice cada cosa por lo que pasó con ELLA (pase adversarial F2): sin el nombre de la rama, `branch=0`
+  // la línea de cuentas dice cada cosa por lo que pasó con ELLA: sin el nombre de la rama, `branch=0`
   // —el paso de la validación exige 1 en un pedido—; y con sólo el título, no dice haber mirado «el título y el cuerpo»
   const noBranch = rangeGuard(fx, { ...limpio, head: rama, args: [] });
   assert.match(noBranch.stdout, /^public-push-guard: verdict=pass findings=0 commits=1 branch=0 title=1 body=1$/m);
@@ -1251,7 +1251,7 @@ test('T63_RangeMode_WhatItCannotLookAt_IsTwo_AndWithoutAPullRequestItSaysThereIs
   two(rangeGuard(fx, { branch: 'pedido', titleFile: path.join(fx.root, 'no-esta.txt'), body: '' }), /el título/, 'el archivo del título no está');
   two(rangeGuard(fx, { branch: 'pedido', title: 'x', bodyFile: path.join(fx.root, 'no-esta.txt') }), /el cuerpo/, 'el archivo del cuerpo no está');
   // 🔴 un clon al que le falta historia (superficial): los commits del pedido que no están no son «commits limpios».
-  // Acá el pedido tiene dos commits y el clon «sabe» sólo de la punta (pase adversarial de la tanda F2).
+  // Acá el pedido tiene dos commits y el clon «sabe» sólo de la punta.
   commitOn(fx, 'pedido-largo', { 'guides/b.md': `para ${TERM}\n` }, 'docs: b');
   const longTip = commitHere(fx, { 'guides/b.md': 'limpio\n' }, 'docs: b, corregido');
   const shallowFile = path.join(git(fx.work, ['rev-parse', '--absolute-git-dir']), 'shallow');
@@ -1292,7 +1292,7 @@ test('T63_RangeMode_WhatItCannotLookAt_IsTwo_AndWithoutAPullRequestItSaysThereIs
   }
   // el tope de tiempo vencido tampoco es verde
   two(rangeGuard(fx, { branch: 'pedido', title: 'x', body: '', env: { TYCON_PUBLIC_PUSH_LIMIT_MS: '0' } }), /tope de tiempo/, 'el tope de tiempo');
-  // …y si para entonces ya había hallazgos (la rama, el título y el cuerpo se miran primero, que no cuesta nada), se
+  // …y si para entonces ya hay hallazgos (la rama, el título y el cuerpo se miran primero, que no cuesta nada), se
   // DICEN, con lo que faltó mirar: 1, no 2
   const partial = rangeGuard(fx, { branch: 'pedido', title: `docs: lo de ${TERM}`, body: '', env: { TYCON_PUBLIC_PUSH_LIMIT_MS: '0' } });
   assertBlocked(fx, partial, { category: 'cliente', place: /el título del pedido/ });
@@ -1331,8 +1331,7 @@ test('T63_RangeMode_WhatItCannotLookAt_IsTwo_AndWithoutAPullRequestItSaysThereIs
 });
 
 test('T67_PrNumber_InAGhTitle_AndInARefName_WithTheRealControl', (t) => {
-  // Lo que la tanda F1 dejó para cuando el control de historia interna estuviera en el árbol: estas formas se miden
-  // con el control de VERDAD, sin doble.
+  // Estas formas se miden con el control de historia interna de VERDAD, sin doble.
   const fx = lab(t);
   const real = require(path.join(REPO, HISTORY));
   assert.strictEqual(fs.readFileSync(path.join(fx.harness, HISTORY), 'utf8'), fs.readFileSync(path.join(REPO, HISTORY), 'utf8'), 'el laboratorio corre el control de verdad');
@@ -1361,7 +1360,7 @@ test('T67_PrNumber_InAGhTitle_AndInARefName_WithTheRealControl', (t) => {
     const r = hook(`gh pr create --title "${title}" --body "un cuerpo"`);
     assert.strictEqual(r.status, 0, `${title}\n${r.stderr}`);
   }
-  // y `status`, con el control en su lugar, dice que los números de pedido SE MIDEN (sin él decía que no: T22)
+  // y `status`, con el control en su lugar, dice que los números de pedido SE MIDEN (sin él dice que no: T22)
   const status = spawnSync(process.execPath, [path.join(fx.harness, 'scripts/hooks/public-push-guard.js'), 'status'], {
     cwd: fx.work, encoding: 'utf8',
     env: { ...cleanEnv(), HOME: fx.home, USERPROFILE: fx.home, TYCON_HOME: path.join(fx.home, '.tycon'), GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: os.devNull, TYCON_PUBLISH_DENYLIST: fx.list },
@@ -1373,7 +1372,7 @@ test('T67_PrNumber_InAGhTitle_AndInARefName_WithTheRealControl', (t) => {
 test('T57_LineFacts_TheVariablesThatMoveTheGuard_AreSeenQuotedAndTheWayPowerShellSetsThem', () => {
   // El freno de la sesión no deja correr un `push` ni un `gh` que publica junto a una variable que cambia de dónde
   // salen la lista o el freno, o la configuración con que git encuentra sus hooks. Mirando sólo `NOMBRE=` sin
-  // comillas, `export "TYCON_GUIDES_DIR=…"; git push` y `$env:TYCON_GUIDES_DIR = …` salían con un freno ajeno.
+  // comillas, `export "TYCON_GUIDES_DIR=…"; git push` y `$env:TYCON_GUIDES_DIR = …` saldrían con un freno ajeno.
   const g = require(path.join(REPO, 'scripts', 'hooks', 'public-push-guard.js'));
   const both = (cmd) => { const f = g.lineFacts(cmd); return f.sets && f.pushes; };
   for (const cmd of ['TYCON_GUIDES_DIR=/tmp/x git push', 'export "TYCON_GUIDES_DIR=/tmp/x"; git push origin rama', "export 'TYCON_HOME=/tmp/x' && \"git\" push",
@@ -1383,7 +1382,7 @@ test('T57_LineFacts_TheVariablesThatMoveTheGuard_AreSeenQuotedAndTheWayPowerShel
     assert.ok(both(cmd), `tenía que verse: ${cmd}\n${JSON.stringify(g.lineFacts(cmd))}`);
   }
   // 🔴 …pero sólo cuando el empuje PUEDE ser del arnés: en un repo que se sabe que no lo es, esas variables junto a un
-  // `push` no son asunto de este freno (frenarlas ahí era frenar a un repo de producto)
+  // `push` no son asunto de este freno (frenarlas ahí sería frenar a un repo de producto)
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ppg-prod-')));
   try {
     const sh = (dir, args) => spawnSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], { cwd: dir, encoding: 'utf8', env: { ...cleanEnv(), GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: os.devNull, HOME: dir } });
@@ -1424,7 +1423,7 @@ test('T57_WhereAGhRuns_AFolderThatIsNotThere_OrThatTheShellLooksUpElsewhere_IsUn
   fs.mkdirSync(path.join(fx.root, 'esta'));
   assert.strictEqual(g.whereItRuns(fx.root, c(['esta']), {}).dir, path.join(fx.root, 'esta'));
   assert.deepStrictEqual(g.whereItRuns(fx.root, c(['esta']), {}).candidates, [path.join(fx.root, 'esta')]);
-  // no está: el `cd` va a fallar (o la arma la terminal). Leída como «una carpeta que no es un clon», el pedido salía
+  // no está: el `cd` va a fallar (o la arma la terminal). Leída como «una carpeta que no es un clon», el pedido saldría sin mirarse: por eso no hay carpeta
   const gone = g.whereItRuns(fx.root, c(['no-esta']), {});
   assert.strictEqual(gone.dir, null);
   assert.ok(gone.candidates.includes(fx.root), 'y entre las candidatas sigue la carpeta de antes');
@@ -1435,11 +1434,11 @@ test('T57_WhereAGhRuns_AFolderThatIsNotThere_OrThatTheShellLooksUpElsewhere_IsUn
   assert.deepStrictEqual(g.whereItRuns(fx.root, c(['esta'], { cdIncierto: true }), {}).candidates, [fx.root, path.join(fx.root, 'esta')]);
 });
 
-// ── AC 54: el freno de `gh`, cuando el evento no se puede leer (el resto de ese freno se mide en el banco de controles) ──
+// ── el freno de `gh`, cuando el evento no se puede leer (el resto de ese freno se mide en el banco de controles) ──
 
 test('T57_HookMode_AnEventItCannotRead_IsSaid_AndWithAPublishingGhInSight_DoesNotRun', (t) => {
   // Para la herramienta sólo el código 2 frena. Un evento que no es JSON, o que no trae el comando donde siempre,
-  // pasaba con código 0 y sin una línea: todo `gh` salía sin mirar y nadie se enteraba.
+  // pasaría con código 0 y sin una línea: todo `gh` saldría sin mirar y nadie se enteraría.
   const fx = lab(t);
   const hook = (stdin) => spawnSync(process.execPath, [path.join(fx.harness, 'scripts/hooks/public-push-guard.js')], {
     cwd: fx.work, input: stdin, encoding: 'utf8',
@@ -1474,8 +1473,8 @@ test('T57_HookMode_AnEventItCannotRead_IsSaid_AndWithAPublishingGhInSight_DoesNo
 
 test('T57_GhFromAFolderGitWillNotOpen_IsNotAFolderThatIsNotAClone', (t) => {
   // «Esta carpeta no es un repo» es una respuesta; «git no pudo contestar» no. Un clon que git se niega a abrir (es
-  // de otro dueño: pasa en un volumen montado o en un contenedor) se leía como «no es un clon», y el `gh` corrido
-  // ahí —en el clon del arnés— salía sin mirar, con código 0 y sin una línea.
+  // de otro dueño: pasa en un volumen montado o en un contenedor) se leería como «no es un clon», y el `gh` corrido
+  // ahí —en el clon del arnés— saldría sin mirar, con código 0 y sin una línea.
   const fx = lab(t);
   git(fx.work, ['remote', 'set-url', 'origin', 'https://github.com/acme/widgets.git']);
   const hook = (command, env = {}, cwd = fx.work) => spawnSync(process.execPath, [path.join(fx.harness, 'scripts/hooks/public-push-guard.js')], {
@@ -1525,12 +1524,12 @@ test('T57_GhFromAFolderGitWillNotOpen_IsNotAFolderThatIsNotAClone', (t) => {
     assert.strictEqual(hook('gh pr comment 12 --body "limpio"', env, nowhere).status, 0, `limpio, con ${JSON.stringify(env)}`);
   }
   // Un «remoto» sin dirección no es un remoto (git lista uno cuando la configuración trae una sección con ese nombre y
-  // nada más): tomarlo por «no pude leer los remotos» frenaba todo `gh` de ese repo
+  // nada más): tomarlo por «no pude leer los remotos» frenaría todo `gh` de ese repo
   git(fx.work, ['config', 'remote.fantasma.prune', 'true']);
   assert.strictEqual(hook('gh pr create --title "limpio" --body "un cuerpo"').status, 0, 'con un remoto sin dirección, el limpio pasa');
   assert.strictEqual(hook(dirty).status, 2, 'y el que trae el término sigue frenado');
   // 🔴 El repo que el arnés DECLARA como suyo, en un arnés instalado (que no es un clon: no tiene un remoto propio que
-  // leer). Ahí esa señal no se cumplía nunca: un `gh` que nombraba el repo público desde otra carpeta salía sin mirar.
+  // leer). Ahí esa señal no se cumple nunca: un `gh` que nombra el repo público desde otra carpeta saldría sin mirar.
   write(fx.harness, 'scripts/publishing/public-repos.json', `${JSON.stringify({ org: 'acme', repo: 'declarado' })}\n`);
   const named = `gh issue create --repo acme/declarado --title "bug" --body "lo de ${TERM}"`;
   assert.strictEqual(hook(named, {}, nowhere).status, 2, 'el repo declarado, nombrado desde una carpeta cualquiera');
@@ -1575,10 +1574,10 @@ test('T18_MergeSubject_TopicThenNumber_Passes_AndTheOtherServersFormIsInternalHi
   assert.strictEqual(hook(create("'feat(x): una cosa'")).status, 2, 'tampoco el del pedido');
 });
 
-// ── Tanda H1c (AC 65 f) · T79: el aviso de la lista atrasada ─────────────────────────────────────────────────────
+// ── T79: el aviso de la lista atrasada ─────────────────────────────────────────────────────
 // El freno lee la lista del disco de un clon (el de mantenimiento, el que la máquina mantiene, el arnés que corre) y
-// nunca miraba si ese clon estaba al día. El caso (2026-10-10): una lista 36 commits atrás de su remoto frenó a quien
-// mantiene por su propia firma, que una excepción ya publicada dejaba pasar. Lo que se mide acá:
+// no mira por sí solo si ese clon está al día, y una lista atrasada frena a quien mantiene por su propia firma, que una
+// excepción ya publicada dejaría pasar. Lo que se mide acá:
 //   · que lo AVISE —al empujar (pase o frene), en `status`—, con tres medidas: el archivo del disco contra el de la rama
 //     principal remota como la conoce el clon, la edad de la última traída, y (sólo al empujar o con `status --fetch`)
 //     lo que contesta el remoto;
@@ -1785,8 +1784,8 @@ test(`${T79} — la última traída hace más de tres días: avisa por edad (y n
   let f = freshnessOf(fx);
   assert.strictEqual(f.fetchedDaysAgo, 2);
   assert.doesNotMatch(statusOf(fx).stdout, WARNING, 'dos días no es un aviso');
-  // el borde: «pasados 3 días». A las 71 horas todavía no; con 3 días cumplidos, sí (avisaba recién al cuarto día
-  // completo: la cuenta es un piso en días enteros y se comparaba con «más de 3»)
+  // el borde: «pasados 3 días». A las 71 horas todavía no; con 3 días cumplidos, sí (si se comparara con «más de 3», avisaría
+  // recién al cuarto día completo: la cuenta es un piso en días enteros)
   const hoursAgo = (n) => { const at = new Date(Date.now() - n * 3600000); fs.utimesSync(fetchHead, at, at); };
   hoursAgo(71);
   assert.doesNotMatch(statusOf(fx).stdout, WARNING, '71 horas no son 3 días');
@@ -1918,9 +1917,9 @@ test(`${T79} — es un aviso: el veredicto y el código de un empuje son los mis
   assert.doesNotMatch(rangeGuard(fx, { branch: 'limpia', list: inClone, args: [] }).all, WARNING);
 });
 
-// ── T79 · lo que encontraron los revisores y el pase adversarial de la tanda H1c ─────────────────────────────────
-// Cada caso de acá salía mal: el aviso desaparecía, decía algo que no era, o —el primero— la lista salía del propio
-// árbol que se empuja. Las pruebas con que se confirmó cada uno son la base de estos casos.
+// ── T79 · casos de los revisores y del pase adversarial ─────────────────────────────────
+// Cada caso de acá sale mal si falta su arreglo: el aviso desaparece, dice algo que no es, o —el primero— la lista sale
+// del propio árbol que se empuja.
 
 /** La misma carpeta con su último tramo en OTRAS mayúsculas, si el disco no las distingue (la Mac por defecto,
  *  Windows); null si las distingue —ahí otra caja es otra carpeta, y no hay nada que medir— o si no se pudo comprobar. */
@@ -1932,8 +1931,8 @@ function otherCase(dir) {
 const NOT_MEASURED = 'NO MEDIDO: el disco del laboratorio distingue mayúsculas (otra caja es otra carpeta): no hay caso que medir';
 
 test(`${T79} — la lista nombrada con otras mayúsculas (disco que no las distingue): se mide igual y el aviso sale`, (t) => {
-  // `fs.realpathSync` no corrige la caja; git sí. La ruta relativa de la lista dentro de su clon salía con `..`, el
-  // motivo decía «git no contestó» (falso) y el aviso de la lista atrasada desaparecía. Se llega con el comando
+  // `fs.realpathSync` no corrige la caja; git sí. Si la ruta relativa de la lista dentro de su clon saliera con `..`, el
+  // motivo diría «git no contestó» (falso) y el aviso de la lista atrasada desaparecería. Se llega con el comando
   // soportado: `config set paths.maintainers <ruta>` guarda la ruta como se tipeó.
   const fx = maintLab(t);
   const upper = otherCase(fx.maint);
@@ -1962,8 +1961,8 @@ test(`${T79} — la lista nombrada con otras mayúsculas (disco que no las disti
 });
 
 test(`${T79} — la lista nunca sale del árbol que se empuja, lo nombre la máquina con las mayúsculas que sea`, (t) => {
-  // «Está adentro del árbol que se empuja» se decidía letra por letra: con `paths.maintained`/`paths.maintainers`
-  // escritas en otra caja, el MISMO clon no se reconocía y la rama elegía con qué lista se la mira.
+  // «Está adentro del árbol que se empuja» no se decide letra por letra: con `paths.maintained`/`paths.maintainers`
+  // escritas en otra caja, el MISMO clon no se reconocería y la rama elegiría con qué lista se la mira.
   const fx = lab(t);
   const upper = otherCase(fx.work);
   if (!upper) { t.skip(NOT_MEASURED); return; }
@@ -1985,7 +1984,7 @@ test(`${T79} — la lista nunca sale del árbol que se empuja, lo nombre la máq
 
 test(`${T79} — un archivo que gh sube, nombrado con otras mayúsculas: la excepción de su ruta vale igual`, (t) => {
   // el mismo patrón en otro sitio del freno: la ruta del archivo dentro del repo (con la que la lista decide sus
-  // excepciones) se sacaba comparando letra por letra
+  // excepciones) se sacaría comparando letra por letra
   const fx = lab(t);
   write(fx.work, 'guides/a.md', `un ejemplo con ${TERM}\n`);
   if (!otherCase(path.join(fx.work, 'guides'))) { t.skip(NOT_MEASURED); return; }
@@ -2006,7 +2005,7 @@ test(`${T79} — un archivo que gh sube, nombrado con otras mayúsculas: la exce
 
 test(`${T79} — una traída que FALLA no es una traída: se dice, y la edad no vuelve a cero`, (t) => {
   // git vacía `FETCH_HEAD` antes de conectarse: una traída fallida lo deja en 0 bytes y con fecha de hoy. Leída como
-  // «última traída: hoy», el aviso por edad no salía nunca justo con el remoto inalcanzable.
+  // «última traída: hoy», el aviso por edad no saldría nunca justo con el remoto inalcanzable.
   const fx = maintLab(t);
   const fetchHead = path.join(fx.maint, '.git', 'FETCH_HEAD');
   publishToMaint(fx, 2);   // el remoto avanzó y este clon no se enteró
@@ -2079,11 +2078,10 @@ test(`${T79} — el clon de la lista ADELANTE de su remoto (una excepción sin s
   text = G.freshnessText(f);
   assert.match(text.text, /2 commit\(s\) atrás/);
   assert.match(text.text, /1 commit\(s\) (propios )?sin subir/);
-  // lo que no es ese caso sigue diciéndose como antes: en otra rama, o con la lista tocada a mano
+  // lo que no es ese caso se sigue diciendo igual: en otra rama, o con la lista tocada a mano
   git(fx.maint, ['checkout', '--quiet', '-b', `trabajo-${MARK}`]);
   assert.doesNotMatch(G.freshnessText(freshnessOf(fx)).text, /tiene cambios que su remoto todavía no tiene/, 'en una rama de trabajo no es «subilos»');
   // un conteo que git no pudo hacer (null) no es «cero atrás»: sin saber cuántos faltan no se dice «sólo falta subir»
-  // (cazador de fallos silenciosos, vuelta 2)
   const unknownBehind = G.freshnessText({ measured: true, why: null, clone: '/tmp/clon', differs: true, behind: null, ahead: 2, edited: false, onMain: true, fetchedDaysAgo: 0, fetchFailed: false });
   assert.notStrictEqual(unknownBehind.kind, 'ahead', 'sin poder contar lo de atrás, no afirma que el clon sólo está adelante');
   assert.strictEqual(unknownBehind.level, 'warn');

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # npx-installer.test.sh — el instalador del paquete de npm (`scripts/setup/npm/index.js`), por EJECUCIÓN: el paquete armado
-# con `npm pack` y corrido con `npx`, contra el GitHub de juguete, en una HOME de juguete (story 8.40, tanda A).
+# con `npm pack` y corrido con `npx`, contra el GitHub de juguete, en una HOME de juguete.
 #
 # Lo que no se puede perder:
 #   · T1  — `npx --package <tgz> tycon-harness` instala: dice de dónde baja («bajo <repo> (main <sha7>)») antes del plan,
@@ -26,7 +26,7 @@
 #           URL de GitHub); `--audience org` instala sin capa y, si sale 0, corre harness.js team-init del árbol instalado
 #           en la misma terminal; la cadena completa, con el nombre contestado, deja los tres archivos del perfil.
 #   · T18 — `--audience` y `--team` eligen para quién es la instalación, sin preguntar.
-#   · 8.46 — un solo sí: sin opciones, la única lectura de la terminal es «¿Instalo?», después de un plan de cinco
+#   · Un solo sí — sin opciones, la única lectura de la terminal es «¿Instalo?», después de un plan de cinco
 #           renglones (T1, T10); npx le pasa --defaults a install y las opciones de la persona llegan igual (T3); el plan
 #           detallado sigue en --dry-run (T11); sin Claude Code ni Codex sale 1 con las órdenes, sin bajar nada (T12); sin
 #           terminal y sin --yes sale 2 con la línea exacta, sin bajar nada, y con --yes instala la mínima (T14).
@@ -80,7 +80,7 @@ TGZ="$BASE/$(tail -1 "$BASE/pack.out")"
 TYCON_DIR() { printf '%s' "$LAB_HOME/.tycon"; }
 estado_kind() { node -e 'try{const s=require(process.argv[1]);console.log(s.sources[0].kind)}catch{console.log("sin-estado")}' "$LAB_HOME/.claude/.tycon-pipeline/harness-state.json" 2>/dev/null; }
 # lo que queda en ~/.tycon tras un «no»: install borra lo que bajó (incoming/<v>) pero puede dejar carpetas vacías o la
-# caché de las skills de terceros; eso es de install (release.js, que esta story no toca) y se anota, no se mide
+# caché de las skills de terceros; eso es de install (release.js, que esta suite no cubre) y se anota, no se mide
 nothing_installed() { [ "$(estado_kind)" = sin-estado ] && [ ! -e "$(TYCON_DIR)/harness" ] && [ ! -e "$(TYCON_DIR)/state/harness-state.json" ]; }
 tycon_left() { [ -d "$(TYCON_DIR)" ] && (cd "$(TYCON_DIR)" && find . -mindepth 1 -maxdepth 2 | LC_ALL=C sort | tr '\n' ' ') || echo 'no existe'; }
 tycon_note() { [ -d "$(TYCON_DIR)" ] && echo "ℹ️  npx-installer: tras $2 quedó en ~/.tycon (de install, no del instalador): $(tycon_left)"; return 0; }
@@ -122,7 +122,7 @@ env -u TYCON_GITHUB_TOKEN PATH="$LAB/fake-node-bin:$PATH" "$REAL_NODE" "$PKG/ind
 if [ "$RC" -eq 0 ] && installed_ok && ! grep -q 'scripts/setup/harness.js \(install\|config\)' "$LAB/fake-node.log" 2>/dev/null; then ok "T1 el hijo (install) corre con el mismo Node que el instalador: el node de mentira del PATH nunca lanzó harness.js install"
 else no "T1 process.execPath (rc $RC, node de mentira: $(grep 'scripts/setup/harness.js' "$LAB/fake-node.log" 2>/dev/null | head -2 | tr '\n' ' ')): $(brief "$BASE/t1b.out")"; fi
 
-# ══ T6 / T41 · la máquina ya instalada: mira la punta y dice «al día», sin bajar nada (el cierre, AC 35) ════════════
+# ══ T6 / T41 · la máquina ya instalada: mira la punta y dice «al día», sin bajar nada ════════════
 : > "$LAB_RELEASE_LOG"
 run_npx > "$BASE/t6.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && grep -q 'al día' "$BASE/t6.out" && ! grep -q '2026.10.08.1' "$BASE/t6.out" && grep -qF "$(TYCON_DIR)/harness" "$BASE/t6.out" && [ "$(requests 'info/refs')" = 1 ] && [ "$(requests '/tar.gz/')" = 1 ] && [ "$(api_lines)" = 0 ]; then
@@ -142,8 +142,8 @@ run_ix > "$BASE/t41t.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && grep -q 'hay una versión nueva' "$BASE/t41t.out" && ! grep -q 'Actualizo' "$BASE/t41t.out" && grep -qF 'npx @tyconsa/harness@latest' "$BASE/t41t.out" && [ "$(state_commit)" != "$TIP" ]; then
   ok "T41 sin terminal: no pregunta, dice que hay una versión nueva y cómo actualizar (npx en una terminal), sale 0"
 else no "T41 sin terminal (rc $RC): $(brief "$BASE/t41t.out" 400)"; fi
-# «s» con la política de FÁBRICA («ask», sin TYCON_UPDATE_APPLY): el sí tiene que aplicar, no sólo mirar (pase adversarial,
-# clase 15: `update` sin --yes salía 3 sin cambiar nada); y «y» vale como sí, como en «¿Instalo?» (clase 10)
+# «s» con la política de FÁBRICA («ask», sin TYCON_UPDATE_APPLY): el sí tiene que aplicar, no sólo mirar (`update` sin --yes
+# saldría 3 sin cambiar nada); y «y» vale como sí, como en «¿Instalo?»
 LAB_PTY_DELAY=4 harness_lab_pty s env -u TYCON_GITHUB_TOKEN -u TYCON_UPDATE_APPLY "$REAL_NODE" "$PKG/index.js" --repo "$REPO" > "$BASE/t41s.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && grep -q '¿Actualizo?' "$BASE/t41s.out" && [ "$(state_commit)" = "$TIP" ] && ! grep -q 'Para quién es\|¿Instalo?' "$BASE/t41s.out"; then
   ok "T41 con «s» y la política de fábrica: corre el update del árbol bajado y lo aplica (el estado queda en la punta nueva), sin reinstalar de cero"
@@ -171,21 +171,21 @@ run_ix > "$BASE/t42clon.out" 2>&1; RC=$?
 cp "$BASE/state.bak" "$STATE_F"
 if [ "$RC" -eq 0 ] && grep -q 'instalado desde un clon' "$BASE/t42clon.out" && ! grep -q 'al día' "$BASE/t42clon.out" && grep -qE 'harness\.js" update' "$BASE/t42clon.out"; then ok "T42 instalado desde un clon: lo dice, con la línea de update, sin comparar"
 else no "T42 desde un clon (rc $RC): $(brief "$BASE/t42clon.out" 400)"; fi
-# (pase adversarial del cierre) un estado con la fuente release pero sin commit no es «un clon»: lo dice; y una versión
-# {number: null} no se imprime como objeto (clases 4 y la de los fallos silenciosos)
+# un estado con la fuente release pero sin commit no es «un clon»: lo dice; y una versión
+# {number: null} no se imprime como objeto
 node -e 'const f=process.argv[1],fs=require("fs");const s=JSON.parse(fs.readFileSync(f,"utf8"));s.sources=s.sources.map((x)=>x.name==="harness"?Object.assign({},x,{commit:undefined}):x);s.version={number:null,installed_at:"x"};fs.writeFileSync(f,JSON.stringify(s,null,2))' "$STATE_F"
 run_ix > "$BASE/t42roto.out" 2>&1; RC=$?
 cp "$BASE/state.bak" "$STATE_F"
 if [ "$RC" -eq 0 ] && grep -q 'el estado no dice qué commit tiene' "$BASE/t42roto.out" && ! grep -q 'instalado desde un clon\|object Object\|al día' "$BASE/t42roto.out"; then ok "T42 un estado sin el commit instalado: lo dice (no «un clon», no «al día») y la versión vacía no sale como objeto"
 else no "T42 estado sin commit (rc $RC): $(brief "$BASE/t42roto.out" 400)"; fi
-# una rama que no existe en el repo del estado (un 200 de info/refs sin esa rama) dice la causa (vuelta 2 de revisores)
+# una rama que no existe en el repo del estado (un 200 de info/refs sin esa rama) dice la causa
 node -e 'const f=process.argv[1],fs=require("fs");const s=JSON.parse(fs.readFileSync(f,"utf8"));s.sources=s.sources.map((x)=>x.name==="harness"?Object.assign({},x,{ref:"otra-rama"}):x);fs.writeFileSync(f,JSON.stringify(s,null,2))' "$STATE_F"
 run_ix > "$BASE/t42rama.out" 2>&1; RC=$?
 cp "$BASE/state.bak" "$STATE_F"
 if [ "$RC" -eq 0 ] && grep -q 'sigue .* (otra-rama)' "$BASE/t42rama.out" && ! grep -q 'al día' "$BASE/t42rama.out"; then ok "T42 una rama del estado que no es main: no se compara con la punta de main (no «al día»), con la línea de update"
 else no "T42 rama que no está (rc $RC): $(brief "$BASE/t42rama.out" 300)"; fi
 # un certificado que no se puede verificar al mirar la punta (un proxy de la empresa sin NODE_EXTRA_CA_CERTS) es «no pude
-# mirar», con la línea de update y salida 0, como sin red (pase adversarial, clase 16)
+# mirar», con la línea de update y salida 0, como sin red
 if command -v openssl >/dev/null 2>&1 && openssl req -x509 -newkey rsa:2048 -nodes -keyout "$BASE/t42.key" -out "$BASE/t42.crt" -days 1 -subj '/CN=127.0.0.1' >/dev/null 2>&1; then
   node -e 'const fs=require("fs");const s=require("https").createServer({key:fs.readFileSync(process.argv[1]),cert:fs.readFileSync(process.argv[2])},(q,r)=>{r.writeHead(200);r.end("x")});s.listen(0,"127.0.0.1",()=>fs.writeFileSync(process.argv[3],String(s.address().port)))' "$BASE/t42.key" "$BASE/t42.crt" "$BASE/t42tls.port" & PTLS=$!
   for _ in $(seq 1 30); do [ -s "$BASE/t42tls.port" ] && break; sleep 0.1; done
@@ -193,8 +193,8 @@ if command -v openssl >/dev/null 2>&1 && openssl req -x509 -newkey rsa:2048 -nod
   if grep -q 'certificado' "$BASE/t42-cert.out"; then ok "T42 el certificado sin verificar se nombra como la causa"; else no "T42 la causa del certificado: $(brief "$BASE/t42-cert.out" 300)"; fi
   kill "$PTLS" 2>/dev/null; wait "$PTLS" 2>/dev/null
 else echo "⏭ npx-installer: T42 (certificado) NO MEDIDO — no hay openssl para armar el certificado de juguete"; fi
-# T55 (AC 47): la suite que el aplicador corre al instalar no falla sin git, tampoco con un git que existe y sale 1 (el de
-# /usr/bin en una Mac sin las herramientas de línea de comandos: pase adversarial, clase 2)
+# T55: la suite que el aplicador corre al instalar no falla sin git, tampoco con un git que existe y sale 1 (el de
+# /usr/bin en una Mac sin las herramientas de línea de comandos)
 mkdir -p "$LAB/git-roto-bin"; printf '#!/bin/sh\necho "xcode-select: note: No developer tools were found" >&2\nexit 1\n' > "$LAB/git-roto-bin/git"; chmod +x "$LAB/git-roto-bin/git"; ln -sf "$REAL_NODE" "$LAB/git-roto-bin/node"
 LEDGER="$RAIZ/skills/tycon-pipeline/scripts/tests/advisor-ledger.test.js"
 for kind in sin-git git-roto; do
@@ -330,7 +330,7 @@ if [ "$RC" -eq 0 ] && grep -q 'example-team' "$LAB_RELEASE_LOG" && ! grep -qF 'p
 else no "T17 --team (rc $RC; consultas al equipo $(requests 'example-team')): $(brief "$BASE/t17b.out" 500)"; fi
 if [ "$(node -e 'try{const s=require(process.argv[1]);console.log(s.team?s.team.repo:"")}catch{console.log("")}' "$LAB_HOME/.claude/.tycon-pipeline/harness-state.json")" = "$ORG/example-team" ]; then ok "T17 la máquina quedó con la capa del equipo apilada (estado team)"
 else no "T17 el estado no tiene la capa del equipo: $(node -e 'try{const s=require(process.argv[1]);console.log(JSON.stringify(s.team))}catch(e){console.log(e.message)}' "$LAB_HOME/.claude/.tycon-pipeline/harness-state.json")"; fi
-# clase 2 de la 8.40: --team acepta la URL de GitHub, no sólo org/repo
+# --team acepta la URL de GitHub, no sólo org/repo
 harness_lab_release_fresh_home; : > "$LAB_RELEASE_LOG"
 env TYCON_GITHUB_TOKEN="$TEAM_PERM" "$REAL_NODE" "$PKG/index.js" --repo "$REPO" --team https://github.com/example-org/example-team.git --profile minimal --dry-run < /dev/null > "$BASE/t17url.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && grep -q 'example-team' "$LAB_RELEASE_LOG" && ! grep -q 'tiene que ser' "$BASE/t17url.out"; then ok "T17 (clase 2) --team con la URL de GitHub del repo del perfil se acepta"
@@ -374,7 +374,7 @@ chain() { # chain <nombre> <respuestas> <opciones…>
     ok "T17/T18 $name: instala y el alta, con el nombre contestado en la terminal, deja los tres archivos validados"
   else no "T17/T18 $name, la cadena install → alta (rc $rc, estado $(estado_kind), carpeta: $(ls "$d" 2>/dev/null | tr '\n' ' ')): $(brief "$BASE/chain-$name.out" 500)"; fi
 }
-# la última respuesta («no») es la del repo de historias, que el alta pregunta al final (el cierre, AC 38)
+# la última respuesta («no») es la del repo de historias, que el alta pregunta al final
 chain org $'acme-org\ngithub\nacme/harness-team-profile\n'"$BASE/perfil-org"$'\nn\nno' --audience org
 
 # ══ T4 · el repo del arnés privado ════════════════════════════════════════════════════════════════════════════════

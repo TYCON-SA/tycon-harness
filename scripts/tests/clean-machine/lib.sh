@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # lib.sh — lo que comparten clean-machine.test.sh (en el anfitrión) y los escenarios (dentro del contenedor).
 #
-# El formato de las líneas es contrato (story 8.7, AC 26): lo lee quien mira la noche y `public-ci.sh`.
+# El formato de las líneas es contrato: lo lee quien mira la noche y `public-ci.sh`.
 #   ✅ clean-machine: T26 <texto>
 #   ❌ clean-machine: T26 <texto>
 #   ⏭ clean-machine: NO MEDIDO — <motivo>
@@ -50,7 +50,7 @@ major_of() {
   [[ "${out}" =~ ${CM_NUM_RE} ]] && echo "${BASH_REMATCH[1]}"
 }
 
-# ── la versión estampada de una copia (T34 de la story 8.13) ─────────────────────────────────────────────────
+# ── la versión estampada de una copia (T34) ─────────────────────────────────────────────────
 # El número que la publicación deja en `version.json`: AAAA.MM.DD.N (mes 01-12, día 01-31, N desde 1 sin ceros adelante).
 CM_VERSION_RE='^[0-9]{4}\.(0[1-9]|1[0-2])\.(0[1-9]|[12][0-9]|3[01])\.[1-9][0-9]*$'
 # stamped_version_of <árbol> → el número de su version.json. 1 si el árbol no trae el archivo (una copia de antes de la
@@ -81,7 +81,7 @@ FAKES_DIR=/tmp/fakes/bin               # herramientas de mentira que anotan cada
 CALLS_LOG=/tmp/fakes/calls.log
 WATCHED="jq az engram codegraph codex claude docker"   # lo que la portada NO pide: no puede estar ni ser llamado
 PIPE_DIR="${HOME}/.claude/agent-skills/skills/tycon-pipeline/scripts"
-HARNESS_LINK="${HOME}/.claude/tycon-harness"            # el lugar del arnés (story 8.19: el PLACE_NAME de scripts/setup/harness/place.js)
+HARNESS_LINK="${HOME}/.claude/tycon-harness"            # el lugar del arnés (el PLACE_NAME de scripts/setup/harness/place.js)
 HARNESS_JS="${HARNESS_LINK}/scripts/setup/harness.js"
 STATE_FILE="${HOME}/.claude/.tycon-pipeline/harness-state.json"
 STAMPED_FILE="${LAB_DIR}/blocks/stamped-version.txt"   # el número que `harness.js version` tiene que dar (lo deja el anfitrión)
@@ -124,20 +124,19 @@ requirements_check() {
   for w in ${watched}; do command -v "${w}" >/dev/null 2>&1 && found="${found} ${w}"; done
   if [ -z "${found}" ]; then ok "${t} ninguna herramienta vigilada está en esta imagen (${watched})"
   else no "${t} herramientas que la portada no pide y están en la imagen:${found}"; fi
-  # AC 17: un usuario sin privilegios. Lo pone el `USER node` del Dockerfile; acá se mide adentro, para que sacarlo
+  # Un usuario sin privilegios. Lo pone el `USER node` del Dockerfile; acá se mide adentro, para que sacarlo
   # por accidente sea un rojo y no un cambio que nadie ve.
   if [ "$(id -u)" != 0 ]; then ok "${t} el contenedor corre con un usuario sin privilegios ($(id -un), uid $(id -u))"
   else no "${t} el contenedor corre como root: quien instala desde la portada no lo es"; fi
 }
 
 # fakes_setup <herramienta…> — las de mentira, primeras en el PATH; cada llamada queda en CALLS_LOG
-# 🔴 Las de mentira ANOTAN llamadas; no dicen qué herramientas tiene la máquina. Desde la story 8.23 (tanda C) `install`
-# enchufa Codex si encuentra un `codex` en el PATH (scripts/setup/harness/tools.js, detect()), y el `codex` de mentira de
-# acá contaba como Codex instalado: la paridad medía un Codex falso (tres rojos, y bench-notice hablaba al arranque) y
-# doctor corría los hooks de Codex, que traen engram-pre-commit.sh, que encontraba el `jq` de mentira y lo llamaba
-# (nocturno 12518, 2026-10-09). La detección mira el PATH de la imagen, el de ANTES de las de mentira, con la variable
-# de prueba que usa el laboratorio (TYCON_TOOLS_DETECT_PATH, scripts/tests/lib/harness-lab.sh): así ve lo que tiene la
-# imagen de verdad, que es lo que mide T24. check_install mira además qué quedó enchufado.
+# 🔴 Las de mentira ANOTAN llamadas; no dicen qué herramientas tiene la máquina. `install` enchufa Codex si encuentra un
+# `codex` en el PATH (scripts/setup/harness/tools.js, detect()): si el `codex` de mentira contara como Codex instalado,
+# la paridad mediría un Codex falso y doctor correría los hooks de Codex, que traen engram-pre-commit.sh, que
+# encontraría el `jq` de mentira y lo llamaría. La detección mira el PATH de la imagen, el de ANTES de las de mentira,
+# con la variable de prueba que usa el laboratorio (TYCON_TOOLS_DETECT_PATH, scripts/tests/lib/harness-lab.sh): así ve
+# lo que tiene la imagen de verdad, que es lo que mide T24. check_install mira además qué quedó enchufado.
 fakes_setup() {
   local b
   mkdir -p "${FAKES_DIR}"; : > "${CALLS_LOG}"
@@ -160,8 +159,8 @@ unserve_copy() { git config --global --unset "url.${COPY_DIR}.insteadOf"; }
 # run_block <core|bizuit> <salida> [<carpeta>] — el bloque bash de la portada, tal cual, desde la carpeta (por defecto /work)
 run_block() { ( cd "${3:-${WORK_DIR}}" && bash "${LAB_DIR}/blocks/install-$1.sh" ) > "$2" 2>&1; }
 # pty_run <respuesta> <comando…> — el comando dentro de una TERMINAL de juguete (stdin, stdout y stderr son una tty),
-# con la respuesta escrita como si la tipeara una persona; sale con el código del comando (story 8.16, tanda B: desde
-# ahí `install` muestra el plan y pregunta, y sin terminal no escribe nada). python3 + pty: igual en cualquier Linux.
+# con la respuesta escrita como si la tipeara una persona; sale con el código del comando (`install` muestra el plan y
+# pregunta, y sin terminal no escribe nada). python3 + pty: igual en cualquier Linux.
 pty_run() {
   local answer="$1"; shift
   python3 - "${answer}" "$@" <<'PY'
@@ -204,7 +203,7 @@ sys.stdout.write(out.decode("utf-8", "replace").replace("\r\n", "\n"))
 sys.exit(os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1)
 PY
 }
-# Las respuestas de una primera instalación en la terminal (story 8.16, tanda D): perfil full, ninguna integración,
+# Las respuestas de una primera instalación en la terminal: perfil full, ninguna integración,
 # paquete del stack no, y sí a la conformidad — una por línea; la terminal las entrega de a una.
 ANSWERS_FULL=$'2\n\n\ns'
 # run_block_pty <nombre> <salida> <respuesta> [carpeta] — el bloque de la portada, tal cual, en la terminal de juguete
@@ -221,7 +220,7 @@ find_clone() {
 # real <ruta> → la ruta real, de una carpeta o de un archivo (`readlink -f` de coreutils: está en la imagen)
 real() { readlink -f "$1"; }
 
-# make_example_repo <carpeta> — el repo de ejemplo: la fixture, la story en specs/, rama story/1.1 y un commit
+# make_example_repo <carpeta> — el repo de ejemplo: la fixture, la story en specs/, la rama de la story y un commit
 make_example_repo() {
   mkdir -p "$1/specs" \
     && cp -R "${LAB_DIR}/example-repo/package.json" "${LAB_DIR}/example-repo/src" "${LAB_DIR}/example-repo/test" "$1/" \
@@ -231,15 +230,15 @@ make_example_repo() {
 }
 
 # ── T26: lo que deja `install:core` (común a las dos variantes; los enlaces los mira cada escenario) ───────────
-check_install() { # <T> [minimal|full] — el perfil que tiene que haber quedado (story 8.16, tanda D; por defecto full)
+check_install() { # <T> [minimal|full] — el perfil que tiene que haber quedado (por defecto full)
   local t="$1" profile="${2:-full}" v n cmd rc noisy f first url_cfg url_get want
-  # el estado de la 8.13: managed, stable, ask, UNA fuente; y su url es lo que da `git remote get-url` (decisión C2)
+  # el estado: managed, stable, ask, UNA fuente; y su url es lo que da `git remote get-url`
   url_cfg="$(git -C "${CLONE}" config --get remote.origin.url)"; url_get="$(git -C "${CLONE}" remote get-url origin)"
   v="$(json "${STATE_FILE}" '[d.mode, d.channel, d.policy && d.policy.apply, (d.sources || []).length, d.sources && d.sources[0] && d.sources[0].url].join("|")')"
   if [ "${v}" = "managed|stable|ask|1|${url_get}" ] && [ "${url_cfg}" = "${PUBLIC_URL}" ]; then
     ok "${t} el estado: managed, canal stable, política ask y una fuente; el origen del clon es la URL del bloque"
   else no "${t} el estado dice «${v:-ilegible}» (esperado «managed|stable|ask|1|${url_get}») y el origen del clon es ${url_cfg} (esperado ${PUBLIC_URL})"; fi
-  # qué quedó enchufado (story 8.23, tanda C): sólo Claude Code — la imagen no trae Codex, y el `codex` de mentira sólo
+  # qué quedó enchufado: sólo Claude Code — la imagen no trae Codex, y el `codex` de mentira sólo
   # anota llamadas (fakes_setup). Si vuelve a enchufarse Codex acá, la causa se ve en esta línea y no en sus síntomas.
   v="$(json "${STATE_FILE}" 'Array.isArray(d.tools) ? d.tools.join(",") : "sin-tools"')"
   if [ "${v}" = claude ]; then ok "${t} el estado enchufa sólo Claude Code: el codex de mentira no cuenta como Codex instalado"
@@ -248,7 +247,7 @@ check_install() { # <T> [minimal|full] — el perfil que tiene que haber quedado
   n="$(json "${HOME}/.claude/settings.json" '((d.hooks && d.hooks.SessionStart) || []).reduce((a, m) => a + (m.hooks || []).filter((h) => /\.tycon-pipeline\/harness\/bootstrap\.js/.test(h.command || "")).length, 0)')"
   if [ "${n:-0}" = 1 ] && [ -f "${HOME}/.claude/.tycon-pipeline/harness/bootstrap.js" ]; then ok "${t} la línea de arranque nueva está una vez en settings.json y la copia fija en ~/.claude/.tycon-pipeline/harness/"
   else no "${t} la línea de arranque nueva aparece ${n:-?} vez/veces en settings.json, o falta la copia fija (bootstrap.js)"; fi
-  # version: la estampada, exacta (T34 de la story 8.13). El número esperado lo deja el anfitrión en blocks/: el de
+  # version: la estampada, exacta (T34). El número esperado lo deja el anfitrión en blocks/: el de
   # laboratorio con que armó la copia (modo interno) o el del version.json del árbol (modo público). Si el árbol público
   # no trae version.json no hay contra qué comparar: se mira que responda, y lo exacto sale NO MEDIDO — nunca verde.
   want="$(cat "${STAMPED_FILE}" 2>/dev/null || true)"
@@ -266,7 +265,7 @@ check_install() { # <T> [minimal|full] — el perfil que tiene que haber quedado
   node "${HARNESS_JS}" doctor --json > "${OUT_DIR}/doctor.json" 2> "${OUT_DIR}/doctor.err"
   v="$(json "${OUT_DIR}/doctor.json" 'Array.isArray(d.fail) ? d.fail.length + "|" + d.fail.slice(0, 3).join(" · ") : "sin-lista"')"
   if [ "${v}" = "0|" ]; then ok "${t} harness.js doctor --json no trae ningún fail"; else no "${t} harness.js doctor --json: ${v:-no es JSON} $(head -c 200 "${OUT_DIR}/doctor.err")"; fi
-  # CLAUDE.md: el @import una vez, y cada bloque del arnés salvo los que piden una integración apagada (AC 25)
+  # CLAUDE.md: el @import una vez, y cada bloque del arnés salvo los que piden una integración apagada
   n="$(grep -c -x -F '@~/.claude/tycon-harness/INDEX.md' "${HOME}/.claude/CLAUDE.md" 2>/dev/null || true)"
   if [ "${n:-0}" = 1 ]; then ok "${t} ~/.claude/CLAUDE.md tiene la línea del @import una vez"; else no "${t} la línea del @import aparece ${n:-0} veces en ~/.claude/CLAUDE.md"; fi
   v=""; n=0
@@ -275,7 +274,7 @@ check_install() { # <T> [minimal|full] — el perfil que tiene que haber quedado
     cmd="$(basename "${f}" .md)"; IFS= read -r first < "${f}" || true
     case "${first}" in
       '<!--'*requires-integration:*) grep -q "TYCON_BLOCK:${cmd} " "${HOME}/.claude/CLAUDE.md" 2>/dev/null && v="${v} sobra:${cmd}" ;;
-      # los bloques de full (story 8.16, tanda C): en minimal no van
+      # los bloques de full: en minimal no van
       '<!--'*requires-profile:*full*) if [ "${profile}" = minimal ]; then grep -q "TYCON_BLOCK:${cmd} " "${HOME}/.claude/CLAUDE.md" 2>/dev/null && v="${v} sobra:${cmd}"
         else n=$((n + 1)); grep -q "TYCON_BLOCK:${cmd} START" "${HOME}/.claude/CLAUDE.md" 2>/dev/null || v="${v} falta:${cmd}"; fi ;;
       *) n=$((n + 1)); grep -q "TYCON_BLOCK:${cmd} START" "${HOME}/.claude/CLAUDE.md" 2>/dev/null || v="${v} falta:${cmd}" ;;
@@ -283,7 +282,7 @@ check_install() { # <T> [minimal|full] — el perfil que tiene que haber quedado
   done
   if [ -z "${v}" ] && { [ "${n}" -gt 0 ] || [ "${profile}" = minimal ]; }; then ok "${t} ~/.claude/CLAUDE.md tiene los ${n} bloques del arnés de ${profile} y ninguno de una integración apagada"
   else no "${t} los bloques de ~/.claude/CLAUDE.md:${v:- no encontré ningún bloque en el clon}"; fi
-  # el perfil que quedó (story 8.16, tanda D · AC 36): lo dice doctor
+  # el perfil que quedó: lo dice doctor
   v="$(json "${OUT_DIR}/doctor.json" 'd.profile ? d.profile.value : "sin-perfil"')"
   if [ "${v}" = "${profile}" ]; then ok "${t} harness.js doctor --json dice el perfil ${profile}"; else no "${t} harness.js doctor --json dice el perfil «${v:-ilegible}» (esperado ${profile})"; fi
   # --check: sale 0 y no trae ninguna línea de faltantes. Las dos cosas: con faltantes igual sale 0 (por eso se miran
@@ -333,7 +332,7 @@ JS
 
 # third_party <clon> → «<total> <faltan, separados por coma, o -> <cargas sin su skill, o ->»: las skills de terceros
 # del manifiesto DE LA COPIA (`install: download`) contra el disco, y las que cada una carga al arrancar según su propio
-# SKILL.md («Load config via <skill> skill»). Es el control de presencia de los AC 20 y 23 (decisión C4).
+# SKILL.md («Load config via <skill> skill»). Es el control de presencia.
 third_party() {
   node -e '
     const fs = require("fs"); const path = require("path");
@@ -353,7 +352,7 @@ third_party() {
 
 # third_party_in_history <clon> → «<total> <en la historia>»: de las skills de terceros del manifiesto del clon
 # (`install: download`), cuántas tienen su árbol alcanzable desde HEAD. Es lo que un clon nuevo baja, y de donde el
-# instalador las restituye sin red (story 8.18, AC 36). Si no son todas —un clon recortado—, «desde la historia local» no
+# instalador las restituye sin red. Si no son todas —un clon recortado—, «desde la historia local» no
 # se puede medir ahí: quien llama lo dice como NO MEDIDO, no como rojo.
 third_party_in_history() {
   git -C "$1" rev-list --objects HEAD 2>/dev/null | node -e '
@@ -365,8 +364,8 @@ third_party_in_history() {
 }
 
 # hooks_census <settings.json> → «<total> <repetidos>»: repetido = el mismo evento, el mismo matcher y el MISMO archivo
-# (por su ruta real: el enlace ~/.claude/tycon-harness y la carpeta del clon son dos rutas al mismo archivo). El
-# ensayo del alta (2026-10-03) midió 32 hooks registrados dos veces por llamar al instalador por el enlace.
+# (por su ruta real: el enlace ~/.claude/tycon-harness y la carpeta del clon son dos rutas al mismo archivo). Llamar al
+# instalador por el enlace registraría cada hook dos veces.
 hooks_census() {
   node -e '
     const fs = require("fs");
@@ -386,7 +385,7 @@ hooks_census() {
     console.log(`${total} ${repeated}`);' "$1"
 }
 
-# ── T26: una versión nueva que la política `ask` no aplica (T34 de la story 8.13) ─────────────────────────────
+# ── T26: una versión nueva que la política `ask` no aplica (T34) ─────────────────────────────
 # serve_new_version → NEW_VERSION: un commit nuevo en la copia que el desvío sirve (dentro del contenedor es de `node`:
 # Dockerfile.copy), que cambia la portada y —si la copia trae version.json— sube su número al siguiente, con la forma
 # exacta del archivo (dos espacios, las mismas claves en su orden, un salto de línea final). NEW_VERSION queda vacío si

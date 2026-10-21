@@ -85,11 +85,10 @@ run_hp 1.0.214 && no "🔴 plugin: aprobó con clave mala" || ok "plugin: 401 de
 grep -q "intento 1" "$TMP/err" && no "plugin: reintentó un 401 de clave mala" || ok "plugin: …y no reintentó"
 grep -qi "invalid credentials" "$TMP/err" && ok "plugin: …y muestra el cuerpo del 401 (para no volver a adivinar)" || no "plugin: no mostró el cuerpo del 401"
 
-# ── 🔴 lo MARCADO no es lo CARGADO (2026-09-02) ───────────────────────────────────────────────
+# ── 🔴 lo MARCADO no es lo CARGADO ────────────────────────────────────────────────────────────
 # `isActive` la pone el host en verdadero para TODA versión subida, cargada o no: en todo su
 # código no hay un solo lugar que la ponga en falso. Mirarla sola aprueba un plugin que no está
-# corriendo. Es el incidente del 2026-08-15 en un producto del equipo y el estado por el que se rechazaron dos
-# versiones del plan de cierre: anotar sin cargar.
+# corriendo: anotar sin cargar.
 echo 200 > "$TMP/login.code"
 echo '[{"name":"totorabackend","version":"1.0.214","isActive":true,"isDefault":true}]' > "$TMP/plugins.json"
 echo '[{"name":"totorabackend","version":"1.0.213"}]' > "$TMP/loaded.json"
@@ -104,12 +103,11 @@ run_hp 1.0.214 && ok "plugin: marcada y cargada coinciden → 0" || no "el caso 
 
 rm -f "$TMP/loaded.json"
 
-# ── 🔴 "SANO" HAY QUE PREGUNTARLO (2026-09-03) ────────────────────────────────────────────────
-# El humo imprimía "cargado, activo, default y sano" sin haber preguntado NUNCA por el modo
-# degradado: el host puede cargar el plugin con sus servicios internos caídos, devolver 200 y
-# guardar el motivo en vez de fallar. El comentario del código prometía la pregunta; el código no
-# la hacía. Tres casos: degradado → rojo · no se pudo leer → rojo · el host no lo expone → verde
-# pero DICIÉNDOLO, nunca "sano".
+# ── 🔴 "SANO" HAY QUE PREGUNTARLO ──────────────────────────────────────────────────────────────
+# Imprimir "cargado, activo, default y sano" exige haber preguntado por el modo degradado: el host
+# puede cargar el plugin con sus servicios internos caídos, devolver 200 y guardar el motivo en
+# vez de fallar. Tres casos: degradado → rojo · no se pudo leer → rojo · el host no lo expone →
+# verde pero DICIÉNDOLO, nunca "sano".
 echo 200 > "$TMP/login.code"
 echo '[{"pluginId":7,"name":"totorabackend","version":"1.0.214","isActive":true,"isDefault":true}]' > "$TMP/plugins.json"
 rm -f "$TMP/loaded.json"; echo 200 > "$TMP/health.code"; echo '{}' > "$TMP/health.json"
@@ -123,8 +121,8 @@ grep -q "worker de notificaciones" "$TMP/out" "$TMP/err" && ok "…y dice el mot
 echo '{}' > "$TMP/health.json"; echo 500 > "$TMP/health.code"
 run_hp 1.0.214 && no "🔴 plugin: no pudo leer la salud (HTTP 500) y aprobó igual" || ok "plugin: salud ilegible (500) → 1 (no pude mirar ≠ aprobado)"
 
-# 🔴 Un 200 con cuerpo ilegible hacia que jq no encontrara el campo y se imprimiera "sano" sin haber
-# leido nada — la misma mentira que este bloque vino a cerrar.
+# 🔴 Un 200 con cuerpo ilegible haría que jq no encuentre el campo y se imprima "sano" sin haber
+# leido nada — la misma mentira que este bloque cierra.
 echo 200 > "$TMP/health.code"; echo '<html>502</html>' > "$TMP/health.json"
 run_hp 1.0.214 && no "🔴 salud ilegible con 200: dijo que estaba sano sin poder leerla" || ok "🔴 salud ilegible con 200 → 1 (no dice sano sin haber leido)"
 echo '{}' > "$TMP/health.json"
@@ -135,12 +133,11 @@ grep -q "no medido" "$TMP/out" && ok "…pero NO dice 'sano': dice que no lo pud
 echo 200 > "$TMP/health.code"
 
 # ── 🔴 el IDENTIFICADOR DE COMPILACIÓN: la versión sola no dice que sea ESTE build ────────────
-# (2026-09-03) Dos versiones distintas del mismo número existen: se re-empaqueta y se vuelve a subir
+# Dos versiones distintas del mismo número existen: se re-empaqueta y se vuelve a subir
 # sin tocar el número. Comparar sólo la versión deja pasar eso, igual que en el humo de formularios.
-# Un producto del equipo lo verificaba con un paso propio que leía commitHash de /health; al pasar ese producto al guion
-# compartido ese paso se iba y la cobertura se perdía. Sube al guion, así lo tienen los CINCO.
-# 🔴 Si el host no devuelve el identificador, AVISA y no frena: los otros cuatro plugins todavía
-# pueden no reportarlo (Ceibo recién lo arregló hoy). Se mide y después se aprieta, como el peso.
+# La comprobación vive en el guion compartido (lee commitHash de /health), así la tienen todos los productos.
+# 🔴 Si el host no devuelve el identificador, AVISA y no frena: algunos plugins todavía
+# pueden no reportarlo.
 echo '{"status":"healthy","version":"1.0.214","commitHash":"abc1234def"}' > "$TMP/pluginhealth.json"
 run_hp 1.0.214 abc1234 && ok "🔴 identificador de compilación que coincide → 0" || no "🔴 el hash correcto salió $? ($(cat "$TMP/err"))"
 run_hp 1.0.214 9999999 && no "🔴 aprobó con OTRO identificador de compilación — dos builds del mismo número pasan igual" || ok "🔴 identificador distinto → 1 (no es este build)"
@@ -148,11 +145,10 @@ grep -q "9999999" "$TMP/out" "$TMP/err" && grep -q "abc1234" "$TMP/out" "$TMP/er
 echo '{"status":"healthy","version":"1.0.214"}' > "$TMP/pluginhealth.json"
 run_hp 1.0.214 abc1234 && ok "…y si el host contesta 200 sin identificador, AVISA y no frena (los otros plugins todavía no lo reportan)" || no "🔴 frenó a un host que contesta 200 sin identificador ($?)"
 
-# 🔴 PERO LAS RUTAS PROPIAS DEL PLUGIN TIENEN QUE CONTESTAR (2026-09-03, revisión adversarial).
-# El paso que se eliminó de ese producto exigía HTTP 200 en /api/plugins/<n>/health con 6 reintentos: un
-# 404 —o el HTML del proxy— era rojo. Al mudar la comprobación al guion compartido quedó una sola
-# llamada sin mirar el código, así que un 404 salía VERDE con un aviso: los frenos duros que quedan
-# miran la API de ADMINISTRACIÓN, no las rutas del plugin. Eso es un agujero distinto del hash.
+# 🔴 PERO LAS RUTAS PROPIAS DEL PLUGIN TIENEN QUE CONTESTAR.
+# Se exige HTTP 200 en /api/plugins/<n>/health con 6 reintentos: un 404 —o el HTML del proxy— es rojo.
+# Con una sola llamada sin mirar el código, un 404 saldría VERDE con un aviso: los demás frenos
+# miran la API de ADMINISTRACIÓN, no las rutas del plugin. Es un agujero distinto del hash.
 echo 404 > "$TMP/pluginhealth.code"
 run_hp 1.0.214 abc1234 && no "🔴 las rutas propias del plugin dan 404 y el humo aprobó — el plugin no está sirviendo" || ok "🔴 rutas del plugin en 404 → 1 (no alcanza con que la API de administración lo vea)"
 echo 500 > "$TMP/pluginhealth.code"
@@ -180,11 +176,11 @@ run_hf "$E" && no "🔴 forms: directorio sin ZIPs salió verde" || ok "forms: s
 R="$TMP/roto"; mkdir -p "$R"; ( cd "$TMP" && echo '{"forms":[{"formName":"x"}]}' > manifest.json && zip -q "$R/x.zip" manifest.json && rm manifest.json )
 run_hf "$R" && no "🔴 forms: manifest sin versión salió verde" || ok "forms: manifest sin versión → 1"
 
-# ── 🔴 EL HUMO COMPARA VERSIÓN, NO CÓDIGO (2026-09-03) ─────────────────────────────────────────
+# ── 🔴 EL HUMO COMPARA VERSIÓN, NO CÓDIGO ───────────────────────────────────────────────────────
 # Toda la familia de fallos de versionado pasa este humo POR CONSTRUCCIÓN: si el número no subió, el
 # host ya tiene "esa versión" —porque nunca se le subió nada— y sirve el código VIEJO. El control que
-# debería atrapar el fallo más caro del circuito es ciego a él. Primer paso: comparar el peso servido
-# con el que declara el paquete, AVISANDO (no frenando) hasta medir si el host envuelve el archivo.
+# debería atrapar el fallo más caro del circuito sería ciego a él; por eso compara el peso servido
+# con el que declara el paquete.
 mkdir -p "$TMP/z2" && rm -f "$TMP/z2"/*.zip
 ( cd "$TMP" && rm -rf arm && mkdir -p arm && cd arm \
   && printf '{"forms":[{"formName":"pedidos","version":"1.0.7","sizeBytes":"12345"}]}' > manifest.json \
@@ -195,24 +191,21 @@ echo '200 12345' > "$TMP/code.http"
 run_hf "$TMP/z2" && ok "formularios: peso servido igual al declarado → sin aviso" || no "🔴 el caso bueno salió $?"
 grep -q "difieren en" "$TMP/out" "$TMP/err" && no "🔴 avisó con los pesos iguales" || ok "…y no avisa de nada"
 
-# 🔴 EL PESO YA FRENA (2026-09-03, la misma noche, con la evidencia en la mano). El aviso entró
-# midiendo porque no estaba medido si el host envuelve el archivo. Se midió: en 48 formularios de
-# los CINCO productos (Totora 9807, URUTAU 9808, Lapacho 9819, Ceibo 9820, FRESNO 9793), el host
-# sirve EXACTAMENTE los bytes que declara el paquete — diferencia cero, no constante: nula. Con eso
-# el peso deja de ser un aviso y pasa a frenar: un formulario cuyo código servido pesa distinto del
-# que trae el paquete de esta corrida NO es el que se acaba de instalar.
+# 🔴 EL PESO FRENA. El host sirve EXACTAMENTE los bytes que declara el paquete — diferencia cero,
+# no constante: nula. Por eso el peso no es un aviso sino un freno: un formulario cuyo código
+# servido pesa distinto del que trae el paquete de esta corrida NO es el que se acaba de instalar.
 echo '200 99999' > "$TMP/code.http"
 run_hf "$TMP/z2" && no "🔴 el host sirve un peso distinto al del paquete y el humo lo aprobó — es el 'verde que no miró'" || ok "🔴 formularios: peso distinto al del paquete → 1 (el código servido no es el de esta corrida)"
 grep -q "difieren en" "$TMP/out" "$TMP/err" && ok "…y dice cuánto difieren" || no "🔴 frenó sin decir por qué"
 
 # …y lo que NO cambia: un manifiesto sin peso declarado no puede frenar por peso (no hay con qué
-# comparar). Es el caso de un paquete viejo: se sigue verificando la versión, como antes.
+# comparar). Es el caso de un paquete viejo: se sigue verificando la versión.
 ( cd "$TMP" && rm -rf arm3 && mkdir -p arm3 && cd arm3   && printf '{"forms":[{"formName":"pedidos","version":"1.0.7"}]}' > manifest.json   && rm -f "$TMP/z3"/*.zip 2>/dev/null; mkdir -p "$TMP/z3"   && zip -q "$TMP/z3/pedidos.zip" manifest.json ) >/dev/null 2>&1
 echo '200 99999' > "$TMP/code.http"
 run_hf "$TMP/z3" && ok "…y un paquete que no declara peso no frena por peso (no hay con qué comparar)" || no "🔴 frenó a un paquete sin peso declarado ($?)"
 echo '200 1234' > "$TMP/code.http"
 
-# ══ story 2.10 · REGISTRO DE DESPLIEGUES ═══════════════════════════════════════════════════════════
+# ══ REGISTRO DE DESPLIEGUES ═══════════════════════════════════════════════════════════════
 # Dentro de una corrida de Azure (TF_BUILD=True), un humo APROBADO deja una línea
 # `[registro-despliegue] {json}` y sus etiquetas; uno que falla, nada. Fuera de Azure, la salida es la
 # de siempre. La dirección del host, el usuario y la clave nunca aparecen.
@@ -311,9 +304,9 @@ reg_hf "$(job)" "$Z8"; rc=$?
 [ $rc -eq 0 ] && [ "$(lineas "$TMP/out")" = "0" ] && [ "$(etiquetas "$TMP/out")" = "0" ] && ok "2.10 T8 nada subido → 0, sin líneas y SIN etiqueta desplegado" || no "🔴 2.10 T8 una corrida que no subió nada quedó anotada (rc=$rc, $(etiquetas "$TMP/out") etiquetas)"
 grep -q '0 desplegado(s) en esta corrida · 2 ya estaban · 0 sin constancia · 0 sin anotar' "$TMP/err" && ok "2.10 T8 el resumen dice 2 ya estaban" || no "2.10 T8 resumen: $(grep '\[registro\]' "$TMP/err")"
 
-# ── T13 (revisión de seguridad) · un nombre de formulario fuera de su juego no se mete en NINGUNA consulta.
-# Hasta el 2026-09-17 el humo lo aprobaba (el nombre crudo iba a /code) y sólo el registro lo salteaba como
-# «sin constancia». Desde el arreglo SEC-C1 el humo sale ROJO antes de entrar al host: nada se anota.
+# ── T13 · un nombre de formulario fuera de su juego no se mete en NINGUNA consulta.
+# Con el nombre crudo yendo a /code el humo lo aprobaría y sólo el registro lo saltearía como
+# «sin constancia». Con SEC-C1 el humo sale ROJO antes de entrar al host: nada se anota.
 Z13="$TMP/z13"; rm -rf "$Z13"; mkc "$Z13" 'x%2e%2e' 1.0.2 abc1234 10; mkc "$Z13" a 1.0.2 abc1234 10
 formularios_al_dia 'x%2e%2e' a; cur a abc1234; : > "$TMP/urls.log"
 reg_hf "$(job)" "$Z13"; rc=$?
@@ -337,9 +330,9 @@ R4="$TMP/roto4"; mkdir -p "$R4"; ( cd "$TMP" && echo '{"forms":[{"formName":"x"}
 formularios_al_dia x
 fallo_forms "$R4" && ok "2.10 T4 manifest roto → 1 y sin registro" || no "🔴 2.10 T4 manifest roto anotó"
 
-# ── T6b (pase adversarial) · la MISMA versión publicada otra vez por esta corrida se anota: el host la
-# vuelve a publicar con el commit nuevo y no deja distinguirla de una versión nueva. La 2.11 cuenta cambios
-# por primera aparición de la versión (decisión del dev 2026-09-17). Este caso fija esa conducta.
+# ── T6b · la MISMA versión publicada otra vez por esta corrida se anota: el host la
+# vuelve a publicar con el commit nuevo y no deja distinguirla de una versión nueva. Los cambios se cuentan
+# por primera aparición de la versión. Este caso fija esa conducta.
 Z6b="$TMP/z6b"; rm -rf "$Z6b"; mkc "$Z6b" demo-form-a 1.0.2 1111111aaaa 10; mkc "$Z6b" demo-form-b 1.0.2 1111111aaaa 10
 formularios_al_dia demo-form-a demo-form-b; cur demo-form-a 1111111aaaa; cur demo-form-b 1111111aaaa
 reg_hf "$(job)" "$Z6b"; rc=$?
@@ -383,18 +376,18 @@ plugin_sano; J=$(job)
 env -i HOME="$TMP" PATH="$GRANJA" STUB_DIR="$TMP" "${REG[@]}" AGENT_TEMPDIRECTORY="$J" "$BASH" "$HP" http://stub u p totorabackend 1.0.214 abc1234 >"$TMP/out" 2>"$TMP/err"; rc=$?
 [ $rc -eq 0 ] && [ "$(lineas "$TMP/out")" = "0" ] && [ "$(etiquetas "$TMP/out")" = "0" ] && grep -q 'logissue type=warning.*registro-despliegue' "$TMP/out" && ok "2.10 T11 sin sha256sum ni shasum: sale 0, sin línea ni etiquetas, con aviso" || no "🔴 2.10 T11 sin herramienta de huella: rc=$rc líneas=$(lineas "$TMP/out") — $(tail -3 "$TMP/out") $(tail -3 "$TMP/err")"
 
-# ── T11b (pase adversarial) · formularios sin herramienta de huella: UN aviso y todos cuentan como sin anotar
+# ── T11b · formularios sin herramienta de huella: UN aviso y todos cuentan como sin anotar
 Z11="$TMP/z11"; rm -rf "$Z11"; for f in a b c; do mkc "$Z11" $f 1.0.2 abc1234def 10; done
 formularios_al_dia a b c; cur a abc1234def; cur b abc1234def; cur c abc1234def
 for c in unzip zip; do p=$(command -v "$c" 2>/dev/null) && ln -sf "$p" "$GRANJA/$c"; done
 env -i HOME="$TMP" PATH="$GRANJA" STUB_DIR="$TMP" "${REG[@]}" AGENT_TEMPDIRECTORY="$(job)" "$BASH" "$HF" http://stub u p "$Z11" >"$TMP/out" 2>"$TMP/err"; rc=$?
 [ $rc -eq 0 ] && [ "$(lineas "$TMP/out")" = "0" ] && [ "$(grep -c 'logissue type=warning.*registro-despliegue' "$TMP/out")" = "1" ] && grep -q '0 desplegado(s) en esta corrida · 0 ya estaban · 0 sin constancia · 3 sin anotar' "$TMP/err" && ok "2.10 T11b sin herramienta de huella: un solo aviso y los 3 cuentan como sin anotar" || no "🔴 2.10 T11b formularios sin huella: rc=$rc avisos=$(grep -c logissue "$TMP/out") $(grep '\[registro\]' "$TMP/err")"
 
-# ══ SEC-C1 (2026-09-17) · EL NOMBRE NO SE METE CRUDO EN UNA CONSULTA AL HOST ══════════════════════
-# El nombre del plugin (plugin.json del ZIP) y el de cada formulario (manifest.json del ZIP) iban tal
+# ══ SEC-C1 · EL NOMBRE NO SE METE CRUDO EN UNA CONSULTA AL HOST ══════════════════════
+# El nombre del plugin (plugin.json del ZIP) y el de cada formulario (manifest.json del ZIP) irían tal
 # cual a /api/plugins/<n>/health y /api/custom-forms/<f>/code, y a cada mensaje del humo — Azure lee
 # `##vso[` en cualquier línea de stdout o stderr. En cada caso de abajo el host de mentira CONOCE ese
-# nombre y dice que está todo bien: sin el arreglo el humo aprueba. Un nombre que no pasa NO se
+# nombre y dice que está todo bien: sin la validación el humo aprueba. Un nombre que no pasa NO se
 # consulta —ni siquiera se entra al host— y el humo sale rojo diciendo por qué: no verificar nunca es verde.
 pedidos(){ if [ -s "$TMP/urls.log" ]; then wc -l < "$TMP/urls.log" | tr -d ' '; else echo 0; fi; }
 # toda línea con `##vso[` tiene que ser un aviso o un error del propio humo, al principio de la línea
@@ -469,18 +462,18 @@ reg_hf "$(job)" "$ZR"; rc=$?
 malos=""; for f in $SAMPLE_FORMS; do grep -Fxq "http://stub/api/custom-forms/$f/code" "$TMP/urls.log" && grep -Fxq "http://stub/api/custom-forms/$f/versions" "$TMP/urls.log" || malos="$malos $f"; done
 [ -z "$malos" ] && ok "SEC-C1 no-regresión: /code y /versions se piden con el nombre tal cual (mayúsculas, '-' y '_' incluidos)" || no "🔴 SEC-C1 no-regresión: URL distinta de la de siempre para:$malos"
 [ "$(lineas "$TMP/out")" = "65" ] && ok "SEC-C1 no-regresión: y los 65 quedan en el registro de despliegues" || no "🔴 SEC-C1 no-regresión: el registro anotó $(lineas "$TMP/out") de 65"
-# ══ SEC-C1, segunda parte (2026-09-17) · LO DEMÁS QUE TRAE EL PAQUETE SE VALIDA; LO QUE DICE EL HOST SE MUESTRA SANEADO ══
-# Quedó abierto al cerrar los nombres. Del PAQUETE venían sin validar la versión (plugin.json / manifest), el
-# identificador de compilación y el PESO declarado — y el peso entraba a una cuenta `$(( ))`, donde bash
-# EJECUTA lo que venga adentro. Del HOST se imprimían tal cual la versión marcada, la cargada, la actual de
-# un formulario, el motivo de degradación, el identificador de compilación y el cuerpo de un login fallido.
+# ══ SEC-C1, segunda parte · LO DEMÁS QUE TRAE EL PAQUETE SE VALIDA; LO QUE DICE EL HOST SE MUESTRA SANEADO ══
+# Del PAQUETE se validan la versión (plugin.json / manifest), el identificador de compilación y el
+# PESO declarado — el peso entra a una cuenta `$(( ))`, donde bash EJECUTA lo que venga adentro.
+# Del HOST se imprimen la versión marcada, la cargada, la actual de un formulario, el motivo de
+# degradación, el identificador de compilación y el cuerpo de un login fallido.
 # Regla: lo del paquete se valida (si no pasa, no se consulta y es rojo); lo del host no se valida —si no
 # coincide, el humo ya es rojo—, se muestra sin poder armar una orden de Azure.
 INY='##vso[task.setvariable variable=PWN]1'
 una_orden_por_linea(){ ! cat "$TMP/out" "$TMP/err" | grep '##vso\[.*##' >/dev/null; }
 limpio(){ solo_logissue && una_orden_por_linea; }
 juzgar_por(){ # juzgar_por <patrón del motivo> <guion> <etiqueta> <rc> — el patrón lleva los acentos LITERALES: un '.' en
-  # su lugar falla en Linux sin UTF-8 (la letra son dos bytes); medido en Ubuntu con bash 5.2
+  # su lugar falla en Linux sin UTF-8 (la letra son dos bytes)
   local pat="$1" g="$2" e="$3" rc="$4"
   [ "$rc" -ne 0 ] && ok "SEC-C1b $g: $e → rojo" || no "🔴 SEC-C1b $g: $e APROBÓ: $(grep '✅' "$TMP/out" | head -1 | cut -c1-120)"
   [ "$(pedidos)" = "0" ] && ok "SEC-C1b $g: $e → ni una consulta al host" || no "🔴 SEC-C1b $g: $e → hizo $(pedidos) consulta(s)"
@@ -515,8 +508,8 @@ done
 HASHES=("abc1234$INY" 'zzzzzzz' 'abc12'); HETQ=('identificador de compilación con ##vso[' 'identificador que no es hexadecimal' 'identificador de 5 caracteres')
 i=0; while [ $i -lt ${#HASHES[@]} ]; do hp_hash "${HASHES[$i]}"; juzgar_por 'identificador de compilación.*no es válido' plugin "${HETQ[$i]}" $?; i=$((i+1)); done
 # 🔴 EL PESO: bash evalúa como EXPRESIÓN lo que entra a `$(( ))` — y `a[$(orden)]` ejecuta la orden.
-# (medido 2026-09-17 en bash 3.2 y 5.2: con `SIZE[$(orden)]` la orden corre; con una variable que no existe,
-# `set -u` corta antes — y en bash 3.2 el guion moría saliendo 0, un verde sin haber verificado nada)
+# (en bash 3.2 y 5.2: con `SIZE[$(orden)]` la orden corre; con una variable que no existe,
+# `set -u` corta antes — y en bash 3.2 el guion muere saliendo 0, un verde sin haber verificado nada)
 rm -f "$TMP/PWNED"; hf_paquete 1.0.2 "SIZE[\$(touch $TMP/PWNED)]"; rc=$?
 [ ! -e "$TMP/PWNED" ] && ok "🔴 SEC-C1b formularios: un peso declarado con una orden adentro NO la ejecuta" || no "🔴🔴 SEC-C1b formularios: el peso del manifest EJECUTÓ una orden en el agente"
 juzgar_por 'peso.*no es un número' formularios 'peso con una orden adentro' $rc
@@ -525,15 +518,15 @@ hf_paquete 1.0.2 'a[0]'; juzgar_por 'peso.*no es un número' formularios 'peso q
 hf_paquete 1.0.2 '010'; [ $? -eq 0 ] && ok "SEC-C1b formularios: un peso con ceros adelante se lee en base 10 (010 = 10 bytes), no como octal" || no "🔴 SEC-C1b formularios: '010' no se leyó como 10: $(tail -1 "$TMP/err")"
 hf_paquete 1.0.2 '1234567890123456'; juzgar_por 'peso.*no es un número' formularios 'peso de 16 dígitos' $?
 hf_paquete 1.0.2 '10'; [ $? -eq 0 ] && ok "SEC-C1b formularios: un peso numérico que coincide sigue aprobando" || no "🔴 SEC-C1b formularios: el peso bueno dejó de pasar: $(tail -1 "$TMP/err")"
-# 🔴 …y el OTRO lado de la misma cuenta: los bytes que cuenta `curl` (lo cazó el revisor de fallos silenciosos).
-# `curl -w` siempre da un número, pero si un día no lo diera la resta moría igual — en bash 3.2 saliendo 0 y sin
+# 🔴 …y el OTRO lado de la misma cuenta: los bytes que cuenta `curl`.
+# `curl -w` siempre da un número, pero si un día no lo diera la resta moriría igual — en bash 3.2 saliendo 0 y sin
 # imprimir una línea. Un tamaño que no es un número es «no pude mirar», con o sin peso declarado.
 hf_paquete 1.0.2 '10'; echo '200 abc' > "$TMP/code.http"; bash "$HF" http://stub u p "$ZV" >"$TMP/out" 2>"$TMP/err"; rc=$?
 [ $rc -ne 0 ] && grep -q 'no es un número' "$TMP/err" && ! grep -q '✅.*totora-encargos' "$TMP/out" && ok "SEC-C1b formularios: bytes servidos no numéricos (con peso declarado) → rojo y lo dice" || no "🔴 SEC-C1b formularios: bytes no numéricos con peso declarado → rc=$rc, sin decirlo: $(tail -1 "$TMP/err" | cut -c1-120)"
 hf_paquete 1.0.2; echo '200 abc' > "$TMP/code.http"; bash "$HF" http://stub u p "$ZV" >"$TMP/out" 2>"$TMP/err"; rc=$?
 [ $rc -ne 0 ] && grep -q 'no es un número' "$TMP/err" && ! grep -q '✅.*totora-encargos' "$TMP/out" && ok "SEC-C1b formularios: bytes servidos no numéricos (sin peso declarado) → rojo y lo dice" || no "🔴 SEC-C1b formularios: bytes no numéricos sin peso declarado → rc=$rc: $(grep '✅' "$TMP/out" | tail -1 | cut -c1-120)"
 echo '200 10' > "$TMP/code.http"
-# formas de versión que SÍ pasan (las 74 publicadas hoy son N.N.N; el sufijo es el que ya admite el registro de despliegues)
+# formas de versión que SÍ pasan (las versiones publicadas son N.N.N; el sufijo es el que ya admite el registro de despliegues)
 for v in 1.0.2 10.20.300 1.0.0-beta.1 1.0.0.4; do
   hp_version "$v"; [ $? -eq 0 ] || no "🔴 SEC-C1b plugin: la versión $v dejó de pasar: $(tail -1 "$TMP/out")"
   hf_paquete "$v"; [ $? -eq 0 ] || no "🔴 SEC-C1b formularios: la versión $v dejó de pasar: $(tail -1 "$TMP/err")"

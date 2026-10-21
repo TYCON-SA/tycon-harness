@@ -1,12 +1,12 @@
-# La máquina limpia del paquete del stack (story 8.7, AC 17 y 21): la del núcleo más el SDK de .NET que pide el plugin
+# La máquina limpia del paquete del stack: la del núcleo más el SDK de .NET que pide el plugin
 # de ejemplo (`net10.0`). Es la línea `dotnet (bizuit)` del bloque de requisitos de la portada.
 #
 # Parte de la imagen del núcleo (la pasa la prueba en `CORE_IMAGE`) y le COPIA el SDK desde la imagen oficial de
 # Microsoft: esa imagen no trae Node, así que no puede ser la base. El SDK también va fijado por el digest de su índice
 # multi-arquitectura (linux/amd64 y linux/arm64).
-#   Leído el 2026-10-03 con:  docker buildx imagetools inspect mcr.microsoft.com/dotnet/sdk:10.0
+#   Se lee con:  docker buildx imagetools inspect mcr.microsoft.com/dotnet/sdk:10.0
 #
-# Medido ese día: el SDK copiado (10.0.401, viene de una imagen Ubuntu) NO arranca en la base Debian sin ICU
+# El SDK copiado (10.0.401, viene de una imagen Ubuntu) NO arranca en la base Debian sin ICU
 # («Couldn't find a valid ICU package»). Con `libicu72` arranca, y el plugin de ejemplo restaura, compila y pasa sus 30
 # pruebas en arm64. No se usa el modo «sin globalización»: cambiaría lo que miden las pruebas del plugin.
 ARG CORE_IMAGE

@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
-# pre-commit-stories.test.sh — que el pre-commit de ESTE repo lintee las stories (2026-09-06).
+# pre-commit-stories.test.sh — que el pre-commit de ESTE repo lintee las stories.
 #
-# EL AGUJERO QUE CIERRA. La story 2.3 metió su regla nueva (`followup_reason:`) adentro de
-# `lint-story-frontmatter.js` y sus Dev Notes afirmaban que así «llega al pre-commit de
-# todos los repos sin tocar ningún hook». Censo de los 20 repos con `.githooks/pre-commit`: 19
-# llaman al lint y **uno no — justo tycon-claude-guides**, donde viven las stories del propio
-# arnés. Su pre-commit corría sólo `build/check.js`, y encima únicamente si el commit tocaba
-# `adapters/|build/|scripts/controls-bench/|scripts/hooks/|…`: un commit de `specs/` salía por el
-# `exit 0` sin mirar nada. O sea que la regla que el arnés parió no se aplicaba al arnés.
+# EL AGUJERO QUE CIERRA. Una regla nueva del lint de frontmatter (`followup_reason:`) vive adentro de
+# `lint-story-frontmatter.js` y llega al pre-commit de todos los repos sin tocar ningún hook, pero sólo si el
+# pre-commit llama al lint. Si el de este repo corriera sólo `build/check.js`, y encima únicamente cuando el commit
+# tocara `adapters/|build/|scripts/controls-bench/|scripts/hooks/|…`, un commit de `specs/` saldría por el `exit 0`
+# sin mirar nada, y la regla del arnés no se aplicaría al propio arnés.
 #
 # 🔴 LOS DOS CASOS QUE SOSTIENEN LA PIEZA, y ninguno se puede perder:
 #    · el que FRENA (story rota → exit 1): sin él, el arreglo se puede borrar y todo sigue verde;
 #    · el que NO frena (stories sanas, y un commit sin `.md` → exit 0): sin él, el control se
-#      apaga a la semana. Medido antes de cablear: las 5 stories del repo y los 170 `.md` pasan.
+#      apaga a la semana. Las stories sanas del repo y sus `.md` pasan.
 #
 # El banco es un repo de juguete con la MISMA estructura relativa, y se corre el hook REAL de
 # `.githooks/pre-commit` — no una copia de su lógica.
@@ -42,7 +40,7 @@ status: draft
 1. algo
 '
 
-# Frontmatter SIN el `---` de cierre: el modo de falla original (2026-07-24), el que deja la story
+# Frontmatter SIN el `---` de cierre: el modo de falla original, el que deja la story
 # invisible para el validator, el backfill, los scripts de status y el hook de DoD — sin dar error.
 STORY_ROTA='---
 story: "9.8"
@@ -60,7 +58,7 @@ montar() {
   local T="$1"
   mkdir -p "$T/repo/.githooks" "$T/repo/scripts" "$T/repo/specs"
   cp "$HOOK" "$T/repo/.githooks/pre-commit"
-  # El lint viaja con `scripts/lib/` (story 8.12, R3) y NO se copia el reemplazo de su ruta vieja: así el hook y el
+  # El lint viaja con `scripts/lib/` y NO se copia el reemplazo de su ruta vieja: así el hook y el
   # portón (C-06/C-07, T25) tienen que resolverlo en su ruta nueva — con el reemplazo al lado, un `require` viejo
   # seguiría andando y la prueba no lo vería.
   cp -R "$RAIZ/scripts/lib" "$T/repo/scripts/" 2>/dev/null
@@ -73,7 +71,7 @@ montar() {
 correr_hook() { ( cd "$1/repo" && bash .githooks/pre-commit ) > "$1/out.txt" 2>&1; echo $?; }
 
 # ── caso 1 · una story ROTA en el commit → el hook FRENA ──────────────────────────────────────
-# 🔴 rojo previo: sacar del hook el bloque del lint. Verificado: da exit 0.
+# 🔴 Sin el bloque del lint en el hook, da exit 0.
 T=$(mktemp -d); montar "$T"
 printf '%s' "$STORY_ROTA" > "$T/repo/specs/story-9.8-rota.md"
 ( cd "$T/repo" && git add specs/story-9.8-rota.md )
@@ -86,8 +84,8 @@ fi
 rm -rf "$T"
 
 # ── caso 1b · la misma story ROTA con espacios y una tilde en el nombre → también FRENA ─────────
-# 🔴 rojo previo (pase adversarial de la 8.41): la lista iba sin comillas, el nombre se partía en pedazos que no existen y el
-# lint salía «0 revisadas · OK». Verificado contra el hook de antes: exit 0.
+# 🔴 Con la lista sin comillas, el nombre se parte en pedazos que no existen y el
+# lint sale «0 revisadas · OK»: exit 0.
 T=$(mktemp -d); montar "$T"
 printf '%s' "$STORY_ROTA" > "$T/repo/specs/story 9.8 ñandú rota.md"
 ( cd "$T/repo" && git add "specs/story 9.8 ñandú rota.md" )
@@ -137,7 +135,7 @@ fi
 rm -rf "$T"
 
 # ── caso 5 · las stories legítimas pasan ──────────────────────────────────────────────────────
-# La medición que decidió que esto entre BLOQUEANTE y no avisando. Si un día deja de valer, el
+# La medición que sostiene que esto sea BLOQUEANTE y no sólo avise. Si un día deja de valer, el
 # arreglo hay que reconsiderarlo — no bajarle el volumen a este caso.
 # Un repo con stories propias (specs/, como el de mantenimiento) se mide con las suyas. El público no trae stories:
 # ahí se mide con stories de muestra que arma esta prueba, una por cada forma que un commit legítimo trae (la mínima,
@@ -166,10 +164,8 @@ else
 fi
 
 # ── C-06 · el PORTÓN también corre al commitear: una story a `done` sin evidencia FRENA ──────
-# 🔴 rojo previo: sin el bloque del portón en el hook, exit 0. PENDIENTE-1 (2026-09-06): el freno
-# equivalente vive en un hook de Claude Code, así que un commit desde la terminal, VS Code, Codex o
-# la web de ADO se lo salteaba sin rastro. Medido antes de cablear: 0 commits frenados hoy (la
-# evidencia de 1.1 y 2.1 ya está commiteada y el roster reconoce las fuentes del pipeline).
+# 🔴 Sin el bloque del portón en el hook, exit 0. El freno equivalente vive en un hook de Claude Code,
+# así que un commit desde la terminal, VS Code, Codex o la web de ADO se lo saltearía sin rastro.
 T=$(mktemp -d); montar "$T"
 printf '%s' "$STORY_SANA" | sed 's/^status: draft/status: in-progress/' > "$T/repo/specs/story-9.9-sana.md"
 ( cd "$T/repo" && git add specs/story-9.9-sana.md && git -c user.email=b@b -c user.name=b commit -q -m "nace" )
@@ -178,9 +174,9 @@ printf '%s' "$STORY_SANA" | sed 's/^status: draft/status: done/' > "$T/repo/spec
 RC=$(correr_hook "$T")
 # La aserción exige la REGLA que rechazó (`sin-evidencia-de-cierre`), no una palabra suelta: la salida
 # VERDE del portón también dice «tycon-ci-gate», y el pie de error del lint dice «evidencia» — con el
-# grep laxo, un portón mutado a «línea verde + exit 1» y un lint roto sobre una story sana pasaban
-# los dos por este caso (revisión adversarial 2026-09-06, dos mutantes sobrevivientes).
-# T25 R3_CiGate_RequiresLib (story 8.12, AC 21): el banco no lleva el reemplazo de la ruta vieja del lint, así que
+# grep laxo, un portón mutado a «línea verde + exit 1» y un lint roto sobre una story sana pasarían
+# los dos por este caso.
+# T25 R3_CiGate_RequiresLib: el banco no lleva el reemplazo de la ruta vieja del lint, así que
 # el portón sólo llega a juzgar si su `require` del detector apunta a `scripts/lib/`.
 if [ "$RC" != "0" ] && grep -q "sin-evidencia-de-cierre" "$T/out.txt"; then
   ok "C-06 (T25 R3_CiGate_RequiresLib) una story a done SIN evidencia ni revisores frena en el commit (exit $RC)"
@@ -200,8 +196,8 @@ RC=$(correr_hook "$T")
 rm -rf "$T"
 
 # ── C-08 · la story se RENOMBRA (`git mv`) y cierra en el mismo commit → el portón la ve igual ─
-# 🔴 rojo previo: con `--diff-filter=ACM` el rename (R) no entraba en CHANGED_MD y el hook salía 0
-# mudo — ni lint ni portón — con `status: done` sin evidencia (revisión adversarial 2026-09-06).
+# 🔴 Con `--diff-filter=ACM` el rename (R) no entra en CHANGED_MD y el hook sale 0
+# mudo — ni lint ni portón — con `status: done` sin evidencia.
 T=$(mktemp -d); montar "$T"
 printf '%s' "$STORY_SANA" | sed 's/^status: draft/status: in-progress/' > "$T/repo/specs/story-9.9-sana.md"
 ( cd "$T/repo" && git add specs/story-9.9-sana.md && git -c user.email=b@b -c user.name=b commit -q -m "nace" )
@@ -216,9 +212,9 @@ else
 fi
 rm -rf "$T"
 
-# ── C-09 · `review → done` sin evidencia: el hook AVISA y deja pasar (decisión del dev) ──────
-# 🔴 rojo previo: el portón `--staged` frenaba (exit 1) la misma transición que el hook del skill
-# deja pasar avisando — la decisión «avisando dos semanas» vivía en una sola de las dos copias.
+# ── C-09 · `review → done` sin evidencia: el hook AVISA y deja pasar ──────
+# 🔴 Si el portón `--staged` frenara (exit 1) la misma transición que el hook del skill deja pasar avisando,
+# la decisión de sólo avisar viviría en una sola de las dos copias.
 T=$(mktemp -d); montar "$T"
 printf '%s' "$STORY_SANA" | sed 's/^status: draft/status: review/' > "$T/repo/specs/story-9.9-sana.md"
 # El commit de armado va SIN hooks (`core.hooksPath=/dev/null`): el hooksPath global delega en el
@@ -254,9 +250,9 @@ else
 fi
 rm -rf "$T"
 
-# ── C-11 · T24 R3_LintStory_ProductPreCommitOldPath_SameOutput (story 8.12, AC 21) ──────────────────────────────
-# Los pre-commit de los repos de PRODUCTO no se tocan hasta la story de retiro: siguen llamando al lint por su ruta
-# vieja, que desde la R3 es un reemplazo generado. El hook de abajo es copia literal del de un producto; sólo la línea
+# ── C-11 · T24 R3_LintStory_ProductPreCommitOldPath_SameOutput ──────────────────────────────
+# Los pre-commit de los repos de PRODUCTO no se tocan hasta su retiro: siguen llamando al lint por su ruta
+# vieja, que es un reemplazo generado. El hook de abajo es copia literal del de un producto; sólo la línea
 # de FM_LINT lleva una marca que se completa con la ruta del mapa (la ruta vieja no se escribe en este archivo: la copia
 # pública no lleva ni el mapa ni los reemplazos). Se corre por la ruta vieja y por la nueva sobre una story legible y
 # una ilegible: misma salida, mismo código. Con TF_BUILD=True (Azure), la vieja deja además el warning con los dos
@@ -293,9 +289,9 @@ else
 # haya dos versiones que se separen. El onboarding clona ese repo en una ruta fija y el hook de
 # arranque de sesión le hace `git pull`, así que está en la máquina de todo el equipo.
 #
-# 🔴 Por qué este archivo recién sirve desde 2026-08-23: con `core.hooksPath` global, git IGNORA
-# los `.githooks/` de cada repo. Este hook sólo corre porque el hook global del arnés ahora DELEGA
-# en él. Antes de eso, un `.githooks/pre-commit` era decorativo: estaba, y no se ejecutaba nunca.
+# 🔴 Por qué este archivo sirve: con `core.hooksPath` global, git IGNORA los `.githooks/` de cada repo.
+# Este hook sólo corre porque el hook global del arnés DELEGA en él. Sin esa delegación, un
+# `.githooks/pre-commit` sería decorativo: estaría, y no se ejecutaría nunca.
 #
 # Fail-open RUIDOSO: si falta el repo de guías avisa pero no bloquea — un repo hermano ausente es
 # un problema de setup de la máquina, no de este commit.
@@ -306,8 +302,8 @@ TYCON_GUIDES_DIR="${TYCON_GUIDES_DIR:-$HOME/SourceCode/tycon-claude-guides}"
 FM_LINT="$TYCON_GUIDES_DIR/@@FM_LINT@@"
 
 # Se le pasan TODOS los `.md` del commit: el filtro "esto es una story" lo hace el lint, que es el
-# que sabe. Filtrarlos acá por ruta fue el bug de la primera versión — en un repo cuyas stories no
-# viven en `specs/stories/`, el hook no le pasaba nada y el lint decía "OK" sin mirar una sola.
+# que sabe. Filtrarlos acá por ruta sería un bug: en un repo cuyas stories no
+# viven en `specs/stories/`, el hook no le pasaría nada y el lint diría "OK" sin mirar una sola.
 CHANGED_MD="$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.md$' || true)"
 [ -n "$CHANGED_MD" ] || exit 0
 

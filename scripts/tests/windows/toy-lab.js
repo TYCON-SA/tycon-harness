@@ -9,7 +9,7 @@
  * una carpeta de usuario que represente una máquina con Claude Code, y un ambiente que no traiga nada de quien lanza.
  * Cada pieza tiene una forma de mentir que acá se cierra una sola vez:
  *   · EL AMBIENTE SE ARMA DESDE LIMPIO. `lab.labEnv` copia el ambiente de quien lanza: en la máquina de quien mantiene
- *     el arnés eso enchufaría otra herramienta o escribiría fuera del laboratorio. Antes se borran todas las variables
+ *     el arnés eso enchufaría otra herramienta o escribiría fuera del laboratorio. Primero se borran todas las variables
  *     del arnés y de sus herramientas, y lo que se pone es una lista cerrada, que va entera al reporte.
  *   · EL GIT DEL LABORATORIO USA SU PROPIA CARPETA DE USUARIO. Después del paso de los hooks de git de la página, la
  *     carpeta de la variante tiene una carpeta global de hooks: con ella, publicar una versión de juguete correría los

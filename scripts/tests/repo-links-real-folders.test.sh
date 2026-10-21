@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# repo-links-real-folders.test.sh — ~/.claude/skills y ~/.claude/agents siempre carpetas REALES (story 8.35).
+# repo-links-real-folders.test.sh — ~/.claude/skills y ~/.claude/agents siempre carpetas REALES.
 #
-# El caso: con la carpeta ausente al instalar, el arnés hacía `~/.claude/skills` un enlace a la carpeta ENTERA de su árbol.
-# Lo que Claude Code sincroniza ahí (`skills/synced`, cada ~10 min) y lo que el dev crea (una skill o un agente propio)
-# caía adentro del arnés, y la actualización lo perdía. Ahora son carpetas del dev con un enlace por cada skill y agente
-# del arnés, y una máquina con la forma vieja se convierte sola la próxima vez que corre el aplicador, moviendo lo propio
-# a la carpeta real.
+# Si `~/.claude/skills` fuera un enlace a la carpeta ENTERA del árbol del arnés, lo que Claude Code sincroniza ahí
+# (`skills/synced`, cada ~10 min) y lo que el dev crea (una skill o un agente propio) caería adentro del arnés, y la
+# actualización lo perdería. Por eso son carpetas del dev con un enlace por cada skill y agente del arnés, y una máquina
+# con un enlace entero se convierte sola la próxima vez que corre el aplicador, moviendo lo propio a la carpeta real.
 #
 # Lo que no se puede perder:
 #   T2  · FreshInstall_RealFolders — sin las carpetas, quedan reales con un enlace por entrada (del arnés y de terceros).
@@ -18,7 +17,7 @@
 #         reintenta y la corrida siguiente convierte.
 #   T7  · Clash_OwnWins — una entrada propia con el nombre de una del arnés queda y se nombra.
 #   T8  · OtherCloneLink_NotConverted — un enlace entero a OTRO clon del arnés no se toca.
-#   T9  · Update_KeepsOwnAndSynced — después de convertir, una versión nueva (con la forma de enlaces de la 8.33): lo
+#   T9  · Update_KeepsOwnAndSynced — después de convertir, una versión nueva (con la forma de un enlace por skill): lo
 #         propio y synced/ siguen, la skill nueva queda enlazada, los enlaces llevan a la versión nueva.
 #   T10 · Uninstall_KeepsRealFolders — uninstall quita los enlaces del arnés y deja las carpetas con lo propio.
 #   T11 · Doctor_OldForm_SaysConversion · Migrate_BornReal — doctor dice la forma vieja; la mudanza deja carpetas reales.
@@ -32,7 +31,7 @@
 #   T20 · TwoClonesTransition_Untouched — la máquina con el clon viejo de agent-skills aparte no se convierte.
 #
 # Laboratorio: un árbol de juguete y una HOME de juguete bajo mktemp; para T10 y T11 el de scripts/tests/lib/harness-lab.sh.
-# Nunca ~/.claude ni el checkout real. 🔴 Sin pipes sobre lo medido. «Tomado» se simula como en la 8.33: una envoltura de
+# Nunca ~/.claude ni el checkout real. 🔴 Sin pipes sobre lo medido. «Tomado» se simula con una envoltura de
 # fs.renameSync (NODE_OPTIONS) que falla con EPERM sobre lo que nombra TYCON_TEST_HELD.
 # @story-8.35
 # Uso: bash scripts/tests/repo-links-real-folders.test.sh [--only T2|T3|…]
@@ -399,7 +398,7 @@ if corre T26; then
   fi
 fi
 
-# ───────────────────────────────────────────── T10 / T11 (laboratorio de la 8.23) ─────────────
+# ───────────────────────────────────────────── T10 / T11 (laboratorio) ─────────────
 if corre T10 || corre T11; then
   source "$RAIZ/scripts/tests/lib/harness-lab.sh"
   export TYCON_UPDATE_APPLY=auto

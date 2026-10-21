@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # portable-suites.test.sh — las suites que dicen no necesitar nada (`requiere: []` en suites.json) dan verde
-# en una HOME VACÍA y con un PATH sin ninguna herramienta del vocabulario (story 8.3, AC 13 · T13
+# en una HOME VACÍA y con un PATH sin ninguna herramienta del vocabulario (T13
 # Suites_PortablesVerdesEnHomeVacia).
 #
 # Qué mide: la CLASIFICACIÓN de `suites.json`, no el arnés. Una suite marcada portable que en este entorno
 # necesita `az`, `engram`, `codegraph`, `codex`, `claude`, el perfil del equipo o algo del HOME de quien la
-# corre es un rojo de la story: se corrige su `requiere` (y se entiende por qué), nunca esta prueba.
+# corre es un rojo de la clasificación: se corrige su `requiere` (y se entiende por qué), nunca esta prueba.
 #
 # El entorno:
 #   · HOME temporal vacía — sin settings.json, sin tycon.json — con los dos enlaces de instalación y nada más:
@@ -15,7 +15,7 @@
 #     script); TYCON_MAILBOX_JSON a un archivo inexistente (la llave del buzón viene con el clon interno, afuera no está).
 #   · PATH armado con ENLACES a todo lo que hay en el PATH real MENOS az, engram, codegraph, codex y claude.
 #     Enlaces y no copias: un binario copiado pierde sus dylibs. Se verifica que ninguna de las cinco quede.
-#   · TYCON_GUIDES_DIR / TYCON_SKILLS_DIR apuntan a los clones: es layout, no un servicio (AC 12). TYCON_CHROME=0: la
+#   · TYCON_GUIDES_DIR / TYCON_SKILLS_DIR apuntan a los clones: es layout, no un servicio. TYCON_CHROME=0: la
 #     máquina vacía no tiene navegador (Chrome sin sesión se cuelga en una HOME sin perfil; el caso que lo usa sale NO MEDIDO).
 #   · Cada suite corre en su proceso, desde la raíz del arnés (como en el portón y el nocturno), con SU PROPIA
 #     HOME vacía y su TMPDIR (cuatro a la vez sobre una misma HOME se pisan: settings.json, sellos, registros),
@@ -25,12 +25,12 @@
 # Las entradas de agent-skills se declaran NO MEDIDAS si el árbol no está; nunca se cuentan como verdes.
 # Se excluye a sí misma (correrse adentro de sí misma sería infinito).
 # Costo: una segunda pasada de las portables (~100 suites, 5-6 min con 4 en paralelo). Por eso NO está en suites.json
-# (decisión del dev, 2026-09-26: para el equipo no puede haber más espera en el portón ni en el nocturno): se corre a
+# (para el equipo no puede haber más espera en el portón ni en el nocturno): se corre a
 # mano, y en el gate del commit de toda story que toque suites.json o el instalador. suites-coverage.test.js la lista
 # como excepción declarada, con este motivo.
 # Correr: bash scripts/tests/portable-suites.test.sh  (para probar la lista entera, no sólo las portables: TYCON_PORTABLE_ALL=1)
 #
-# UNA PARTE de las portables (TYCON_PORTABLE_SHARD=<i>/<n>, 2026-10-14): la CI pública de GitHub reparte este paso en
+# UNA PARTE de las portables (TYCON_PORTABLE_SHARD=<i>/<n>): la CI pública de GitHub reparte este paso en
 # <n> trabajos que corren a la vez (scripts/ci/public-ci.sh, TYCON_PUBLIC_CI_PART=suites-<i>-of-<n>). El reparto es el
 # de la validación de Azure: scripts/ci/suites-shard.js, por peso, con el juego `pr` de scripts/ci/suites-weights.json;
 # las <n> partes juntas son todas las portables y ninguna queda en dos. Dentro de la parte arrancan primero las más
@@ -38,7 +38,7 @@
 # entre 1 y n, o un reparto que no se puede hacer (falta suites-shard.js, los pesos no se dejan leer), es ROJO: correr
 # todas, o ninguna, en silencio daría otro veredicto que el pedido. Una parte sin ninguna suite es rojo (cero no es verde).
 #
-# SÓLO ALGUNAS (TYCON_PORTABLE_ONLY=<ruta>,<ruta>…, 2026-10-16): corre sólo esas portables, con la misma HOME vacía. Lo
+# SÓLO ALGUNAS (TYCON_PORTABLE_ONLY=<ruta>,<ruta>…): corre sólo esas portables, con la misma HOME vacía. Lo
 # usa la parte installer-floor de la CI pública (el Node más viejo que acepta el instalador). Una ruta que no es una
 # portable declarada es rojo.
 
@@ -47,18 +47,17 @@ RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SUITES="$RAIZ/scripts/tests/suites.json"
 T="$(mktemp -d)"
 # 🔴 La HOME vacía NO va bajo /tmp ni /var/folders: va bajo .advisors/ del clon (git la ignora: `**/.advisors/*`).
-#    Motivo medido: deploy-codex-copies.test.sh distingue «un Codex temporal» de «el de la máquina» por la ruta
-#    (build/deploy-codex-hooks.js trata /tmp y /var/folders como temporales), y con la HOME ahí su caso C-04 daba
+#    Motivo: deploy-codex-copies.test.sh distingue «un Codex temporal» de «el de la máquina» por la ruta
+#    (build/deploy-codex-hooks.js trata /tmp y /var/folders como temporales), y con la HOME ahí su caso C-04 daría
 #    rojo por el entorno de esta prueba, no por la suite.
 #    Si el propio clon vive bajo una carpeta temporal (una sesión que trabaja desde un clon descartable en /tmp),
 #    TYCON_PORTABLE_HOME=<carpeta> la pone en otro lado; se crea y se borra entera al terminar.
 CASA="${TYCON_PORTABLE_HOME:-$RAIZ/.advisors/portables-home-$$}"
 trap 'rm -rf "$T" "$CASA"' EXIT
 
-# Dónde están las skills lo dice LA función que usan todos los lectores de suites.json (story 8.18, AC 13): la
+# Dónde están las skills lo dice LA función que usan todos los lectores de suites.json: la
 # variable › este clon si es unido › lo instalado. Pedida por su modo de línea de comandos, que sale 1 con el motivo
-# si la carpeta no existe: ese motivo es el que acompaña a cada «NO MEDIDA» (antes el error se tiraba y la línea
-# decía sólo «no está en esta máquina»).
+# si la carpeta no existe: ese motivo es el que acompaña a cada «NO MEDIDA».
 SK_REPO=""; SK_SOURCE=""; SK_WHY=""
 if SK_REPO="$(node "$RAIZ/scripts/lib/skills-dir.js" --repo 2>"$T/skills-dir.err")"; then
   SK_SOURCE="$(node "$RAIZ/scripts/lib/skills-dir.js" --source 2>>"$T/skills-dir.err")" || SK_SOURCE="sin dato"
@@ -96,11 +95,11 @@ PATH="$BIN" command -v node >/dev/null 2>&1 || { echo "❌ suites-portables: no 
 
 # ── ninguna suite escribe en el árbol: skills/ ni el .bench/ del banco ──────────────────────────────────────────
 #    La foto se toma antes de lanzar nada y se compara al final: una suite que deja (o borra) algo ahí le cambia el
-#    árbol a las que corren a la vez. Pasó con integrations-off y no-hardcoded-paths, que corrían el instalador con
-#    el paso de terceros prendido sobre el agent-skills de su HOME, que es este clon (DEF-8.40-carrera-skills-de-terceros);
-#    y con harness-uninstall, harness-snapshot, installer-shared-pieces, install-third-party, no-hardcoded-paths,
-#    integrations-off y engram-autoheal, que dejaban el reporte de paridad en .bench/, y bench-git-deterministic, el
-#    registro del corredor del banco. Por eso las skills de terceros NO se instalan antes de lanzar (el #144 lo hacía):
+#    árbol a las que corren a la vez. Es lo que harían integrations-off y no-hardcoded-paths si corrieran el instalador con
+#    el paso de terceros prendido sobre el agent-skills de su HOME, que es este clon;
+#    o harness-uninstall, harness-snapshot, installer-shared-pieces, install-third-party, no-hardcoded-paths,
+#    integrations-off y engram-autoheal si dejaran el reporte de paridad en .bench/, o bench-git-deterministic, el
+#    registro del corredor del banco. Por eso las skills de terceros NO se instalan antes de lanzar:
 #    con el árbol ya completo, una suite que las vuelva a bajar no deja nada nuevo y la foto no la ve.
 skills_foto() { local d; for d in "$RAIZ/skills" ${SK_REPO:+"$SK_REPO/skills"} "$RAIZ/scripts/controls-bench/.bench"; do [ -d "$d" ] && (cd "$d" && find . \( -type f -o -type l \) | sed "s|^\.|$d|"); done | LC_ALL=C sort -u; }
 skills_foto > "$T/skills-antes.txt"

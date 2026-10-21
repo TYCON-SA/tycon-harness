@@ -1,4 +1,4 @@
-# La máquina limpia del núcleo (story 8.7, AC 17): la lista de requisitos de la portada, hecha ejecutable.
+# La máquina limpia del núcleo: la lista de requisitos de la portada, hecha ejecutable.
 #
 # Trae EXACTAMENTE lo que declara el bloque `<!-- requirements -->` de la portada pública
 # (getting-started/reference.md) y nada más: `clean-machine.test.sh` (T24) comprueba que cada
@@ -7,12 +7,12 @@
 #
 # La base va fijada por el digest de su ÍNDICE multi-arquitectura (linux/amd64 para la CI, linux/arm64 para la Mac del
 # dev), no por el de una plataforma: con el de una sola, la otra máquina no puede bajarla.
-#   Leído el 2026-10-03 con:  docker buildx imagetools inspect node:22-bookworm-slim
+#   Se lee con:  docker buildx imagetools inspect node:22-bookworm-slim
 #   Para renovarlo: el mismo comando, y copiar el `Digest:` de arriba (el del índice), no el de un `Manifests:`.
 #
-# Medido ese día sobre la imagen chica: trae `bash` (5.2), `node` (22.x), `npm` y el usuario sin privilegios `node`
+# La imagen chica trae `bash` (5.2), `node` (22.x), `npm` y el usuario sin privilegios `node`
 # (uid 1000); NO trae `git`, `python3`, certificados, `curl`, `wget` ni compiladores. Por eso es la chica y no la
-# completa: la completa ya trae git y Python y escondería un requisito no declarado (decisión C15 de la story).
+# completa: la completa ya trae git y Python y escondería un requisito no declarado.
 FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
 
 # Lo que la base no trae y la portada declara, instalado a la vista. `ca-certificates` no es una herramienta (no va en

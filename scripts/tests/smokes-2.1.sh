@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # =============================================================================
-# smokes-2.1.sh — la verificación RUNTIME de la story 2.1, por criterio.
+# smokes-2.1.sh — la verificación RUNTIME del medidor de etapas, por criterio.
 #
 # Por qué existe: el portón de Definición de Terminado exige que cada criterio se
-# ejercite CORRIENDO el producto, no leyendo el código. Esta story no tiene pantalla ni
-# endpoint HTTP: su producto es el medidor, y su "runtime" es correrlo contra repos de
+# ejercite CORRIENDO el producto, no leyendo el código. Acá no hay pantalla ni
+# endpoint HTTP: el producto es el medidor, y su "runtime" es correrlo contra repos de
 # verdad y mirar lo que publica. Cada smoke va por `smoke-run.sh`, que captura el EXIT
 # CODE REAL y lo deja en el ledger del repo Y en el registro global (la matriz sólo
 # cuenta lo que aparece en los dos: un ledger escrito a mano no sirve).
 #
 # Uso:  bash scripts/tests/smokes-2.1.sh [<repo-real>]
-#       (default: ~/SourceCode/Ceibo/CeiboProject — 275 stories con 4 meses de historia)
+#       (default: un repo real del disco del dev, con meses de historia)
 # =============================================================================
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -40,11 +40,10 @@ node "$MEDIDOR" --repo "$REPO_REAL" --json > "$TMP/real.json" 2>/dev/null || {
   echo "🛑 el medidor no pudo correr sobre el repo real"; exit 1; }
 
 # 🔴 `corre` ACUMULA el resultado y el guion sale distinto de 0 si alguno falló. Sin esto el
-#    script terminaba siempre en verde aunque un criterio rompiera: el portón de Definición de
-#    Terminado no se engañaba —lee el código de salida real de cada smoke desde el ledger que
-#    escribe smoke-run.sh— pero sí quien lo corriera a mano, o cualquier automatización que
-#    mirara el exit code. Lo cazó el revisor de fallos silenciosos el 2026-09-05, sobre el
-#    guion gemelo de la story 2.2, donde el defecto estaba copiado.
+#    script termina siempre en verde aunque un criterio rompa: el portón de Definición de
+#    Terminado no se engaña —lee el código de salida real de cada smoke desde el ledger que
+#    escribe smoke-run.sh— pero sí quien lo corra a mano, o cualquier automatización que
+#    mire el exit code.
 FALLAS=0
 CORRIDOS=0
 corre() {
@@ -53,7 +52,7 @@ corre() {
   "$SMOKE" "$EVID" "$SID" "$@" || FALLAS=$((FALLAS + 1))
 }
 
-# ── AC 1, 3, 4, 5 · la serie sale del historial, con fecha de autor y commit ──
+# ── la serie sale del historial, con fecha de autor y commit ──
 corre "AC 1/3/4/5 · serie derivada del historial real" --acs 1,3,4,5 -- \
   python3 -c "
 import json,sys,re
@@ -64,7 +63,7 @@ assert r['stories_medidas'] and r['stories_medidas']>100, f\"pocas stories con s
 print(f\"{r['stories_medidas']} stories con serie derivada de {r['stories_total']}\")
 "
 
-# ── AC 2 · nadie se pierde: el invariante cierra LEÍDO DEL ARCHIVO ──
+# ── nadie se pierde: el invariante cierra LEÍDO DEL ARCHIVO ──
 corre "AC 2 · el invariante cierra desde el snapshot publicado" --acs 2 -- \
   python3 -c "
 import json
@@ -75,7 +74,7 @@ assert r['sin_transiciones']>0, 'ninguna story sin transiciones: el caso no se e
 print(f\"{s} = {r['stories_total']} · sin transiciones: {r['sin_transiciones']}\")
 "
 
-# ── AC 6 · mediana y n por etapa ──
+# ── mediana y n por etapa ──
 corre "AC 6 · tiempo por etapa con mediana y n" --acs 6 -- \
   python3 -c "
 import json
@@ -88,7 +87,7 @@ for k,v in t.items():
 print(' · '.join(f\"{k} {v['median']:.1f}d n={v['n']}\" for k,v in t.items()))
 "
 
-# ── AC 7 · ninguna etapa recibe un 0 imputado ──
+# ── ninguna etapa recibe un 0 imputado ──
 corre "AC 7 · ninguna etapa con 0 imputado" --acs 7 -- \
   python3 -c "
 import json
@@ -98,7 +97,7 @@ assert not malas, f'etapas con 0 imputado: {malas}'
 print(f'{len(t)} etapas, ninguna con 0')
 "
 
-# ── AC 8 · presupuesto agotado → null con motivo, sin colgarse ──
+# ── presupuesto agotado → null con motivo, sin colgarse ──
 corre "AC 8 · presupuesto agotado sale no medido" --acs 8 -- \
   bash -c "
 node '$MEDIDOR' --repo '$REPO_REAL' --transitions-budget-ms 1 --json 2>/dev/null > '$TMP/agotado.json' || exit 1
@@ -112,11 +111,11 @@ assert m, r['not_measured']
 print(m[0][:110])
 \""
 
-# ── AC 9 · los estados fuera del diccionario se publican (se EJECUTA la escritura) ──
+# ── los estados fuera del diccionario se publican (se EJECUTA la escritura) ──
 corre "AC 9 · estados desconocidos publicados en el archivo escrito" --acs 9 --mutates -- \
   bash "$RAIZ/scripts/tests/smokes-2.1/ac9-unknowns-published.sh" "$MEDIDOR" "$REPO_REAL"
 
-# ── AC 10, 11, 12 · el tablero: ficha medida, ficha con trama, y el gráfico intacto ──
+# ── el tablero: ficha medida, ficha con trama, y el gráfico intacto ──
 corre "AC 10/11/12 · la ficha del tablero y el gráfico mensual" --acs 10,11,12 -- \
   bash -c "
 set -e
@@ -164,7 +163,7 @@ print('AC10 ficha medida · AC11 ficha con trama y motivo · AC12 gráfico idén
 PY"
 
 # Los tres siguientes viven en scripts propios: el escapado de bash-dentro-de-bash-dentro-de-
-# python se volvió el riesgo principal del archivo, y un smoke que falla por comillas no prueba
+# python es el riesgo principal del archivo, y un smoke que falla por comillas no prueba
 # nada. Cada uno sale != 0 cuando su criterio no se cumple.
 AUX="$RAIZ/scripts/tests/smokes-2.1"
 
@@ -177,7 +176,7 @@ corre "AC 14 · la serie es retroactiva, no arranca el día de la corrida" --acs
 corre "AC 15 · las cuatro métricas, idénticas contra origin/main" --acs 15 -- \
   bash "$AUX/ac15-metrics-intact.sh" "$RAIZ" "$REPO_REAL" "$TMP/real.json"
 
-# ── AC 16, 17 · las suites de antes siguen verdes ──
+# ── las suites existentes siguen verdes ──
 corre "AC 16/17 · la suite vieja y la del tablero, verdes" --acs 16,17 -- \
   bash -c "
 set -e

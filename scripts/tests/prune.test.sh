@@ -4,17 +4,17 @@
 #    línea mezclaría el material real de la máquina con el de los casos.
 HOME="$(mktemp -d)"; export HOME
 #
-# prune.test.sh — el cruce hallazgos × oportunidades × banco, y los siete estados (story 2.9).
+# prune.test.sh — el cruce hallazgos × oportunidades × banco, y los siete estados.
 #
-# 🔴 LA PRECEDENCIA (y por qué no es la que la story escribió primero):
+# 🔴 LA PRECEDENCIA (y por qué `sin_examinar` va después de `rota`):
 #      sin_revisor → rota → revision_humana → activa → sin_examinar → candidata_a_retiro
 #      → sin_oportunidades_suficientes
 #    El banco sólo hace falta para juzgar reglas que NUNCA encontraron nada: una regla con hallazgos
 #    reales ya demostró que detecta, y una rota o que grita en falso tiene que verse aunque el banco
-#    no la haya examinado. Con `sin_examinar` antes de `rota`, la única regla rota medida hoy
-#    (una del paquete de clientes, con un caso «no debe marcar» que falló) quedaba escondida.
+#    no la haya examinado. Con `sin_examinar` antes de `rota`, una regla rota
+#    (con un caso «no debe marcar» que falla) quedaría escondida.
 #
-# 🔴 REGLA DE ADMISIÓN: cada caso trae escrito su rojo previo. El exit code se lee ANTES de cualquier
+# 🔴 REGLA DE ADMISIÓN: cada caso trae escrita la mutación que lo pone en rojo. El exit code se lee ANTES de cualquier
 #    pipe. bash 3.2 (macOS): siempre `${v}`.
 
 set -uo pipefail
@@ -415,7 +415,7 @@ podar "${C2}"; RC=$?
 [ "$(estado_de R-C5)" = "activa" ] && ok "T21 con 2 refutados (menos que el mínimo declarado) sigue activa" \
   || mal "T21 R-C5 con 2 refutados → $(estado_de R-C5) — un solo par de refutados no es una tendencia"
 
-# ════════════════════════ vuelta 2 — lo que encontraron los revisores y el pase adversarial ════════
+# ════════════════════════ casos de los revisores y del pase adversarial ════════
 # Máquina del buzón: $1 = caso ; $2 = nombre ; $3 = fecha de su cobertura ; $4 = estado de hallazgos
 #                    $5 = líneas de hallazgos (jsonl) ; $6 = resumen del recolector (JSON)
 maquina_buzon() {
@@ -540,8 +540,8 @@ DS="$(q "d['cobertura']['corridas']['duplicadas']")"
   || mal "V2 oportunidades=${V} duplicadas=${DS}, esperaba 32 y 1 — rojo previo: 33, la misma sesión sumada dos veces"
 
 # ── una serie con líneas de otro formato deja a su máquina sin medir ─────────────────────────────
-# 🔴 rojo previo: la serie de la vuelta 1 (sin `corrida`) con un sello de hoy se leía «medida» con cero
-#    hallazgos legibles, y todo lo probado salía candidata.
+# 🔴 Mutación que lo pone en rojo: leer «medida» una serie sin `corrida` con un sello de hoy y cero
+#    hallazgos legibles, con lo que todo lo probado saldría candidata.
 C="$(escenario v2-formato-viejo)"
 printf '{"ts":"2026-08-10T10:00:00Z","regla":"R-C2","dueno":"adv-a","severidad":"WARNING","disposicion":"fixed"}\n' >> "${C}/hallazgos.jsonl"
 podar "${C}"; RC=$?
@@ -621,10 +621,10 @@ for malo in 2026-13-45 hoy; do
     || mal "V2 --today ${malo} salió ${RC} — rojo previo: se usaba la fecha de hoy sin avisar"
 done
 
-# ════════════════════════ vuelta 2, segunda revisión ═══════════════════════════════════════════════
+# ════════════════════════ casos de la segunda revisión ═══════════════════════════════════════════════
 # ── V3 · dentro de una máquina medida, sólo cuenta la corrida cuyos hallazgos se LEYERON ──────────
-# 🔴 rojo previo: el denominador se filtraba por máquina — medido, 49 de 113 corridas sin archivo legible
-#    sumaban oportunidades con «cero hallazgos».
+# 🔴 Mutación que lo pone en rojo: filtrar el denominador por máquina, con lo que las corridas sin archivo legible
+#    sumarían oportunidades con «cero hallazgos».
 C="$(escenario v3-sin-leer)"
 volcado "${C}/historia" "sin-leer" "2026-09-11T10:00:00Z" '{"adv-a":50}'
 podar "${C}"; RC=$?
@@ -693,8 +693,8 @@ MM="$(q "d['cobertura']['hallazgos']['maquinas']")"; SM="$(q "len(d['cobertura']
 [ "${RC}" = "0" ] && [ "${MM}" = "1" ] && [ "${SM}" = "0" ] && ok "V4 entra por su copia del buzón y no figura como «no entró»" \
   || mal "V4 rc=${RC} maquinas=${MM} sin_medir=${SM}, esperaba 0, 1 y 0 — rojo previo: contada y nombrada como sin medir a la vez"
 
-# ── 2.12-T16 · Podar_SinMaquinaLocal (story 2.12) · --without-local: el nocturno no cuenta el disco del agente como una máquina (AC 3) ─────
-# 🔴 rojo previo: el cruce agrega SIEMPRE la máquina local → en el nocturno el agente de Azure figura «sin medir», o sus
+# ── T16 · Podar_SinMaquinaLocal · --without-local: el nocturno no cuenta el disco del agente como una máquina ─────
+# 🔴 Mutación que lo pone en rojo: el cruce agrega SIEMPRE la máquina local → en el nocturno el agente de Azure figura «sin medir», o sus
 #    hallazgos y su historia suman, y las dos puntas dejan de contar sólo las máquinas del buzón.
 C="$(escenario t16-sin-local)"
 maquina_buzon "${C}" "equipo-de-fulana" "2026-09-15" "medido" "$(printf '%s\n%s' "${LINEA_B}" "${LEIDO_F1}")"
@@ -717,9 +717,9 @@ podar "${C}" --without-local; RC=$?
 [ "${RC}" = "2" ] && ! grep -q 'esta máquina' "${ERR}" && ok "2.12-T16 --without-local sin nada en el buzón: exit 2 y el motivo no habla de «esta máquina»" \
   || mal "2.12-T16 vacío: rc=${RC} · $(head -c 200 "${ERR}")"
 
-# ── 2.12-T16b · Podar_SinMaquinaLocal · la misma corrida en dos carpetas del buzón cuenta por la máquina medida, en cualquier orden (AC 3) ──
-# 🔴 rojo previo (pase adversarial 2026-09-17): se deduplicaba por nombre ANTES de mirar si la máquina estaba medida → con una
-#    máquina renombrada, la carpeta vieja (sin medir) se quedaba con el volcado o no según el orden alfabético, y con ella el
+# ── T16b · Podar_SinMaquinaLocal · la misma corrida en dos carpetas del buzón cuenta por la máquina medida, en cualquier orden ──
+# 🔴 Mutación que lo pone en rojo: deduplicar por nombre ANTES de mirar si la máquina está medida → con una
+#    máquina renombrada, la carpeta vieja (sin medir) se quedaría con el volcado o no según el orden alfabético, y con ella el
 #    denominador. En el nocturno no hay disco local que lo tape.
 for orden in vieja-primero nueva-primero; do
   C="$(escenario "t16b-${orden}")"
@@ -737,8 +737,8 @@ for orden in vieja-primero nueva-primero; do
   fi
 done
 
-# 2.12-T16b (segundo escalón) · entre dos máquinas MEDIDAS con el mismo volcado, cuenta la que lo tiene leído en su serie
-# 🔴 rojo previo (mutación, revisión de cobertura 2026-09-17): con un rango que sólo mira «medida o no», la primera en orden
+# T16b (segundo escalón) · entre dos máquinas MEDIDAS con el mismo volcado, cuenta la que lo tiene leído en su serie
+# 🔴 Mutación que lo pone en rojo: con un rango que sólo mira «medida o no», la primera en orden
 #    alfabético se queda con el volcado aunque su serie no lo nombre → la corrida sale «no leída» y el denominador se pierde.
 C="$(escenario t16b-medida-sin-leerla-primero)"
 maquina_buzon "${C}" "a-equipo-uno" "2026-09-15" "medido" "$(printf '%s\n%s' "${LINEA_B}" '{"volcado":"f-2.json","medida":"con_hallazgos"}')"
@@ -753,13 +753,13 @@ else
   mal "2.12-T16b medida-sin-leerla-primero: rc=${RC} R-C2 oportunidades=${V2} (esperaba 0 y 5) · $(head -c 200 "${ERR}")"
 fi
 
-# ── 2.28-T40 · 2.28-Poda_CarpetaViejaNoSeCuentaAparte (AC 26, 27) ──────────────────────────────────
-# Esta máquina sube ahora a `macbook-pro-1a2b3c4d` (su machine-code.json; sin TYCON_MACHINE ni --machine). En el buzón:
+# ── T40 · Poda_CarpetaViejaNoSeCuentaAparte ──────────────────────────────────
+# Esta máquina sube a `macbook-pro-1a2b3c4d` (su machine-code.json; sin TYCON_MACHINE ni --machine). En el buzón:
 # su copia, su carpeta vieja `macbook-pro` (unida) y una vieja `mac-mini` compartida por dos máquinas, las tres con los
-# MISMOS hallazgos y volcados (los registros suben enteros). Y una vieja `imac` que siguió recibiendo después de la mudanza:
+# MISMOS hallazgos y volcados (los registros suben enteros). Y una vieja `imac` que siguió recibiendo después de renombrar la máquina:
 # es OTRA máquina que no actualizó, con un hallazgo propio, y cuenta como una máquina más. El bajador deja
 # `.carpetas-de-maquina.json` (fabricado acá).
-# 🔴 rojo previo: la vieja y la compartida entran como dos máquinas más (sus 9 hallazgos contados como duplicados); con la
+# 🔴 Mutación que lo pone en rojo: la vieja y la compartida entran como dos máquinas más (sus 9 hallazgos contados como duplicados); con la
 #    carpeta local tomada del nombre sin código, la copia de la nueva en el buzón también; y saltear la que siguió
 #    recibiendo pierde su hallazgo (R-C3 con 1 en vez de 2, «1 máquina medida»).
 t40() {                    # $1 = caso
@@ -802,8 +802,8 @@ else
 fi
 if grep -qE 'macbook|mac-mini|imac|1a2b3c4d' "${OUT}" "${ERR}"; then mal "2.28-T40 🔴 un nombre de carpeta llegó a la salida"
 else ok "2.28-T40 ningún nombre de carpeta en la salida"; fi
-# Sin el archivo del bajador: cada carpeta como hoy, y lo dice.
-# 🔴 rojo previo: contar las carpetas viejas como máquinas sin decir por qué.
+# Sin el archivo del bajador: cada carpeta es una máquina, y lo dice.
+# 🔴 Mutación que lo pone en rojo: contar las carpetas viejas como máquinas sin decir por qué.
 rm -f "${C}/buzon/.carpetas-de-maquina.json"
 podar_t40 "${C}" --json; RC=$?
 CU="$(q "(d['cobertura']['hallazgos']['maquinas'], d['cobertura']['hallazgos']['contados'], d['cobertura']['hallazgos']['uniones_de_carpetas']['estado'])")"

@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * suite-parts.test.js — una suite que pasa de 45 s se parte SIN mover sus pruebas (story 8.22, tramo F, AC 34).
+ * suite-parts.test.js — una suite que pasa de 45 s se parte SIN mover sus pruebas.
  *
  * El archivo de la suite queda entero y, corrido a mano, corre todo. Cada parte es un archivo `<suite>.p<k>.test.<js|sh>`
  * de una línea, registrado en suites.json, que carga el entero y corre sólo lo suyo:
@@ -14,7 +14,7 @@
  *   · que una parte quede sin registrar, o que el entero siga registrado al lado de sus partes (correría dos veces);
  *   · que la variable con que una parte de consola pide su bloque la herede un proceso hijo (otra suite partida, lanzada
  *     desde adentro, correría un solo bloque sin que nadie lo pida);
- *   · que una parte pese más que el límite, o pierda el criterio con que se elegía el entero.
+ *   · que una parte pese más que el límite, o pierda el criterio con que se elige el entero.
  *
  * Correr: node --test scripts/tests/suite-parts.test.js
  */
@@ -172,8 +172,8 @@ test('T41 — una parte que no existe, una variable mal escrita o un entero que 
   assert.strictEqual(beyond.status, 2, beyond.stdout + beyond.stderr);
   assert.match(beyond.stderr, /SUITE_PART=4\/3/);
   assert.deepStrictEqual(blocks(beyond.stdout), []);
-  // (con un cero adelante el número vale lo mismo y el texto no: antes pasaba la validación, no corría ningún bloque y
-  // salía verde — pase adversarial del tramo F)
+  // (con un cero adelante el número vale lo mismo y el texto no: si pasara la validación, no correría ningún bloque y
+  // saldría verde)
   for (const bad of ['dos', '0/3', '1/', '/3', '1/3/5', '2/5', '01/3', '1/03', '00/3', '+1/3', ' 1/3']) {
     const r = bash(path.join(dir, 'toy.test.sh'), { SUITE_PART: bad });
     assert.strictEqual(r.status, 2, `SUITE_PART=${bad}: ${r.stdout}${r.stderr}`);
@@ -226,7 +226,7 @@ test('T42 SuiteParts_RealSuites_AllPartsRegisteredAndUnderLimit — cada suite p
   }
 });
 
-// Pase adversarial del tramo F: que el lector LLEGUE al entero no alcanza si el selector no lo usa. Con el selector de
+// Que el lector LLEGUE al entero no alcanza si el selector no lo usa. Con el selector de
 // verdad sobre este repo: un cambio en el archivo entero de cada suite partida corre TODAS sus partes.
 test('T42 — con el selector de verdad, editar el archivo entero de cada suite partida corre todas sus partes', () => {
   const skills = require(path.join(ROOT, 'scripts', 'lib', 'skills-dir.js')).resolveSkillsDirs(process.env.TYCON_SKILLS_DIR || '').skills;
@@ -235,7 +235,7 @@ test('T42 — con el selector de verdad, editar el archivo entero de cada suite 
   const photo = path.join(tmp, 'photo.json');
   fs.writeFileSync(photo, JSON.stringify({ kind: 'bash-tests', ts: new Date().toISOString(), complete: true, failures: [] }));
   // UNA corrida del selector con todos los archivos enteros en el cambio: «lo propio» se mira parte por parte, así que
-  // alcanza. Con una corrida por suite, esta prueba sola tardaba 129 s en el agente de la validación (#12355).
+  // alcanza. Con una corrida por suite, esta prueba sola tardaría más de dos minutos en el agente de la validación.
   const all = [...partitioned(TESTS)];
   const list = path.join(tmp, 'changed.txt');
   fs.writeFileSync(list, all.map(([base]) => `scripts/tests/${base}\n`).join(''));
@@ -333,8 +333,8 @@ test('T42 — rojo previo: un entero que no usa la biblioteca, una parte que no 
   }
 });
 
-// ── Revisores del tramo F (fallos silenciosos, vuelta 1): lo que rompía «cada prueba en una parte, y sólo en una» sin
-// que nadie se enterara ───────────────────────────────────────────────────────────────────────────────────────────
+// ── Fallos silenciosos: lo que rompe «cada prueba en una parte, y sólo en una» sin
+// que nadie se entere ───────────────────────────────────────────────────────────────────────────────────────────
 function lateLab() {
   const dir = fs.mkdtempSync(path.join(tmp, 'late-'));
   put(dir, 'lib/suite-parts.js', fs.readFileSync(LIB_JS, 'utf8'));
@@ -396,7 +396,7 @@ test('T42 — un archivo que existe y no se deja leer no se da por «no existe»
   fs.chmodSync(path.join(ctx.dir, 'dos.test.sh'), 0o644);
 });
 
-// Revisor de cobertura (vuelta 1): `test.todo` y `test.only` también se reparten, como `test.skip`.
+// `test.todo` y `test.only` también se reparten, como `test.skip`.
 test('T40 — `test.todo` y `test.only` se reparten como cualquier prueba: cada una en una sola parte, con su marca', () => {
   const dir = fs.mkdtempSync(path.join(tmp, 'kinds-'));
   put(dir, 'lib/suite-parts.js', fs.readFileSync(LIB_JS, 'utf8'));
@@ -425,7 +425,7 @@ test.skip('salteada', () => { throw new Error('no corre'); });
   assert.strictEqual((all.match(/ok \d+ - sola/g) || []).length, 1, 'la marcada `only` corre una vez');
 });
 
-// ── Pase adversarial del tramo F (5b): lo menor de las dos bibliotecas ──────────────────────────────────────────────
+// ── lo menor de las dos bibliotecas ──────────────────────────────────────────────
 test('T40 — en una parte, `test()` devuelve algo que se puede encadenar, como el de node: una suite que hace `test(…).then(…)` no revienta al cargar', () => {
   const dir = fs.mkdtempSync(path.join(tmp, 'chain-'));
   put(dir, 'lib/suite-parts.js', fs.readFileSync(LIB_JS, 'utf8'));

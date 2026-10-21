@@ -2,7 +2,7 @@
 'use strict';
 /**
  * build-sources.js — los DOS repos internos del arnés, entregados como bundles de git para el ensayo en Windows
- * (story 8.17, tanda W0: los escenarios `onboarding` y `update`). Corre en el trabajo de Linux del pipeline.
+ * (los escenarios `onboarding` y `update`). Corre en el trabajo de Linux del pipeline.
  *
  * POR QUÉ EXISTE. El escenario `measure` instala la copia pública, que es un solo repo. El equipo se instala distinto:
  * con sus dos repos internos (el arnés y agent-skills), clonados cada uno en su lugar. Para ensayar eso en un agente
@@ -16,7 +16,7 @@
  *   main     el commit que se ensaya («hoy»): el pedido con --harness-ref / --skills-ref, o `origin/main`
  *   friday   el commit de la marca del viernes (--friday-tag): desde dónde arranca el escenario `update`
  *   base     el «antes» de lo que se ensaya: el antepasado común con la rama principal (`origin/main`). De ahí arranca
- *            «el clon que ya existía» del escenario `portable`: un dev parado en la rama principal que trae la tanda con
+ *            «el clon que ya existía» del escenario `portable`: un dev parado en la rama principal que trae el cambio con
  *            su `git pull`. Si lo que se ensaya ES la rama principal no hay un antes propio, y `base` es el viernes.
  * y `sources-info.json`: qué commits son, cuántos hay entre uno y otro, si «hoy» desciende del viernes (si no, una
  * actualización sin reescribir historia no puede llegar) y qué archivos se borraron o renombraron en el medio.
@@ -202,7 +202,7 @@ function build({ output, harness, skills, harnessRef = null, skillsRef = null, s
   try { wipe(); } catch (e) { return { ok: false, reason: `no pude limpiar la entrega anterior de ${output}: ${e.code || e.message}` }; }
   const info = { schema: L.SCHEMA, made_by: 'scripts/tests/windows/build-sources.js', at: L.nowIso(), friday_tag: fridayTag || null };
   if (singleRepo) info.single_repo = true;
-  // En el repo unido (story 8.18) ~/.claude/agent-skills es un enlace al propio arnés: ese «agent-skills» no trae la marca
+  // En el repo unido ~/.claude/agent-skills es un enlace al propio arnés: ese «agent-skills» no trae la marca
   // del viernes de agent-skills (una etiqueta con ese nombre, ahí, es la del arnés) y el ensayo saldría con dos copias del
   // mismo repo sin decirlo. Las dos fuentes tienen que ser dos repos.
   const realGitDir = (dir) => { const r = git(dir, ['rev-parse', '--git-common-dir'], { env }); try { return r.exit === 0 ? fs.realpathSync(path.resolve(dir, L.firstLine(r.stdout))) : null; } catch (e) { return null; } };
