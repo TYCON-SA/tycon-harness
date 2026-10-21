@@ -47,7 +47,7 @@ function huellaDeCorreo(correo) {
 }
 
 function renglon(correo) {
-  return `Tu máquina le informa al equipo tu correo de git (${correo}) para que veas tus corridas en el sitio de la organización. `
+  return `Tu máquina le informa al equipo tu correo de git (${correo}) para que veas tus ejecuciones en el sitio de la organización. `
     + 'Es tu correo global de git: lo ves con `git config --global user.email` y lo cambiás con `git config --global user.email <otro>`.';
 }
 

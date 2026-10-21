@@ -352,7 +352,7 @@ printf '{ roto' > "$RECF"; make_dist "$V2"; write_list "$V2"; printf '500\n' > "
 TYCON_HARNESS_NODE_BUDGET_S=2 hn manual >/dev/null; echo ok > "$MODE"
 ls "$RECF".ilegible-* >/dev/null 2>&1 && ok "el registro ilegible se aparta, no se pisa" || bad "el registro ilegible se pisó sin apartarlo"
 hn startup >/dev/null
-[ -d "$NDIR/versions/v1.0.0" ] && ok "sin la versión anterior anotada, la corrida siguiente no borra versiones" || bad "la corrida siguiente borró una versión sin saber cuál era la anterior"
+[ -d "$NDIR/versions/v1.0.0" ] && ok "sin la versión anterior anotada, la ejecución siguiente no borra versiones" || bad "la ejecución siguiente borró una versión sin saber cuál era la anterior"
 rm -rf "$NDIR"; rm -f "$RECF" "$RECF".ilegible-*
 
 # ─── T15 (completo) · current roto: el aplicador vuelve los hooks a node en esa misma corrida ─────────────────────

@@ -60,7 +60,7 @@ for (const f of archivos) {
   console.log(`🔴 ${f}: lee de $(System.ArtifactsDirectory) y NADA en este archivo la llena`);
   for (const { n, l } of lecturas) console.log(`     línea ${n}: ${l.trim().slice(0, 110)}`);
   if (baja) console.log(`     el artefacto de este pipeline baja a: ${baja}`);
-  console.log('     → esa carpeta queda VACÍA en la corrida: el paso no encuentra nada y falla, o peor, sigue con la ruta vacía');
+  console.log('     → esa carpeta queda VACÍA en la ejecución: el paso no encuentra nada y falla, o peor, sigue con la ruta vacía');
   hallazgos += lecturas.length;
 }
 

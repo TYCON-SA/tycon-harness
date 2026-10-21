@@ -27,7 +27,7 @@ on:
   workflow_dispatch:
     inputs:
       effects:
-        description: 'Con efectos fuera de la corrida (guardar el punto del día)'
+        description: 'Con efectos fuera de la ejecución (guardar el punto del día)'
         type: boolean
         default: true
       harness_ref:

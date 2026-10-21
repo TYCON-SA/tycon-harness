@@ -387,7 +387,7 @@ function revisarAprobaciones(repo, storyId, storyPath) {
           mensaje: `\`${nombre}/\` llegó a los revisores y no trae \`${approvalsLib.FILE}\` (qué se aprobó, cuándo y si fue una persona o un agente). Lo escribe marker.js al aprobar el plan. Si está en disco y no en el commit, el \`.gitignore\` lo traga: falta \`!**/.advisors/pipeline-runs/*/approvals.jsonl\` (el arranque del pipeline la agrega). Si la story se cerró sin pipeline, declaralo con \`advisors_exempt: true\` + su razón.` });
       } else if (llegoARevisores) {
         avisos.push({ regla: 'sin-registro-de-aprobaciones',
-          mensaje: `\`${nombre}/\` no trae \`${approvalsLib.FILE}\`, y su registro de revisores no declara que la corrida anote aprobaciones (un arnés anterior al registro de aprobaciones): no se sabe quién aprobó el plan. Avisa y no frena.` });
+          mensaje: `\`${nombre}/\` no trae \`${approvalsLib.FILE}\`, y su registro de revisores no declara que la ejecución anote aprobaciones (un arnés anterior al registro de aprobaciones): no se sabe quién aprobó el plan. Avisa y no frena.` });
       }
       continue;
     }
@@ -400,7 +400,7 @@ function revisarAprobaciones(repo, storyId, storyPath) {
     resumen.manual += r.manual; resumen.automatica += r.automatica; resumen.sinNombrar += r.sinNombrar;
     if (exigible && !reg.lineas.some((l) => l && l.que === 'plan')) {
       hallazgos.push({ regla: 'sin-aprobacion-del-plan',
-        mensaje: `\`${nombre}/${approvalsLib.FILE}\` existe pero no trae la aprobación del plan, y la corrida llegó a los revisores: el plan se aprobó (marker.js no deja pasar sin eso) y no quedó anotado quién lo aprobó.` });
+        mensaje: `\`${nombre}/${approvalsLib.FILE}\` existe pero no trae la aprobación del plan, y la ejecución llegó a los revisores: el plan se aprobó (marker.js no deja pasar sin eso) y no quedó anotado quién lo aprobó.` });
     }
   }
   return { hallazgos, avisos, resumen };
@@ -1240,7 +1240,7 @@ function main() {
   const avisosDeStory = (r.avisos || []).filter((h) => !/^indice-de-memoria/.test(h.regla) && h.regla !== 'roster-incoherente' && h.regla !== 'storyid-sin-story' && !/^reviewer-/.test(h.regla) && h.regla !== 'sin-registro-de-aprobaciones');
   const avisosDeAprobaciones = (r.avisos || []).filter((h) => h.regla === 'sin-registro-de-aprobaciones');
   if (avisosDeAprobaciones.length) {
-    console.error('\n⚠️  AVISO — corridas sin registro de aprobaciones (no frena):');
+    console.error('\n⚠️  AVISO — ejecuciones sin registro de aprobaciones (no frena):');
     for (const h of avisosDeAprobaciones) console.error(`   · [${h.regla}] ${h.archivo}: ${h.mensaje}`);
   }
   // Este aviso tiene su propio encabezado: el de `review → done` no le corresponde, porque no depende de

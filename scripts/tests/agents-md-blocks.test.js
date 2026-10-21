@@ -114,7 +114,7 @@ test('un espejo viejo (copia del CLAUDE.md, marcas de antes): los bloques se act
   assert.ok(t.indexOf('más texto personal') > t.indexOf(endOf('style')), 'y sigue en su lugar');
 });
 
-test('idempotente: la segunda corrida no escribe', () => {
+test('idempotente: la segunda ejecución no escribe', () => {
   const l = lab();
   run(l);
   const stat = fs.statSync(l.target);

@@ -42,11 +42,11 @@ SK="$AQUI/skills/tycon-pipeline/scripts"
 CI="$AQUI/scripts/ci/tycon-ci-gate.js"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 fallos=0; pasaron=0
-ok(){ echo "✅ corrida: $1"; pasaron=$((pasaron+1)); }
-no(){ echo "❌ corrida: $1"; fallos=$((fallos+1)); }
+ok(){ echo "✅ ejecución: $1"; pasaron=$((pasaron+1)); }
+no(){ echo "❌ ejecución: $1"; fallos=$((fallos+1)); }
 
-command -v node >/dev/null || { echo "❌ corrida: sin node no se puede medir nada"; exit 1; }
-command -v git >/dev/null || { echo "❌ corrida: sin git no se puede armar un repo de prueba"; exit 1; }
+command -v node >/dev/null || { echo "❌ ejecución: sin node no se puede medir nada"; exit 1; }
+command -v git >/dev/null || { echo "❌ ejecución: sin git no se puede armar un repo de prueba"; exit 1; }
 unset NODE_TEST_CONTEXT TYCON_EVIDENCE_KEY CLAUDE_CODE_SESSION_ID
 
 export HOME="$TMP/casa"; mkdir -p "$HOME/.claude/.tycon-pipeline/active"

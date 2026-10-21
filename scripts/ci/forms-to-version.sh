@@ -111,7 +111,7 @@ base_cambios() {     # (a) desde dónde mirar qué cambió
   base_de_corrida HEAD '^chore: update form versions' '^chore: update versions'
   case "$BASE_MODO" in
     marca)
-      echo "[versionar] qué cambió: desde el commit del que partió la corrida anterior ($(git rev-parse --short "$BASE_SHA")), anotado en $(git rev-parse --short "$BASE_BOT")" >&2 ;;
+      echo "[versionar] qué cambió: desde el commit del que partió la ejecución anterior ($(git rev-parse --short "$BASE_SHA")), anotado en $(git rev-parse --short "$BASE_BOT")" >&2 ;;
     marca-invalida)
       echo "[versionar] AVISO: el commit de versiones $(git rev-parse --short "$BASE_BOT") anota Commit: $BASE_MARCA, pero ese commit no está o no es ancestro de HEAD — se mira desde el commit de versiones y PUEDE perderse un formulario si hubo un rebase" >&2 ;;
     bot-sin-marca)

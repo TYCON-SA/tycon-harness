@@ -85,7 +85,7 @@ try {
   try { fs.writeFileSync(stateFile, String(Date.now())); } catch { /* fail-open */ }
 
   console.log(
-    `⚠️ retro capturer: última corrida hace ${staleDays} días (threshold ${thresholdDays}). ` +
+    `⚠️ retro capturer: última ejecución hace ${staleDays} días (threshold ${thresholdDays}). ` +
     `Los merges a main de esa ventana pueden haber quedado sin retrospectiva — el trigger es el ` +
     `step 10b de /tycon-merge-to-main y ya se salteó en silencio otras veces. ` +
     `Si hay merges recientes sin retro, correr el capturer sobre ellos (uno por merge, con repo + ` +

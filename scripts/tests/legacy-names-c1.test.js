@@ -121,7 +121,7 @@ test('T37 BatchC1_BenchKeysMigrated_NoFalseRed — --migrate-bench migra lo muda
     assert.strictEqual(c.script, '${FIXTURE}/tcg/scripts/hooks/fresh-notice.js');
     assert.strictEqual(c.hook, 'fresh-notice.js (avisa algo)');
     const again = migrate(root);
-    assert.match(again.stdout, /migrados: 0 archivo/, 'la segunda corrida no cambia nada');
+    assert.match(again.stdout, /migrados: 0 archivo/, 'la segunda ejecución no cambia nada');
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 

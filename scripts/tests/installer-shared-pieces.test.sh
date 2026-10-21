@@ -151,7 +151,7 @@ if corre S1 && suite_part 1; then
     && ok "S1 isShared reconoce las piezas compartidas y no un hook ni un ajuste ajeno" || mal "S1 isShared no distingue las piezas compartidas"
   # lo que escribió esta corrida, para el resumen de quien llama
   [ "$(q "$T/s1.json" 'r.changed')" = "[\"cleanupPeriodDays\",\"env.${VAR_ENV}\",\"command:lab-one.md\",\"command:lab-two.md\"]" ] \
-    && ok "S1 «changed» nombra lo que escribió esta corrida" || mal "S1 changed = $(q "$T/s1.json" 'r.changed')"
+    && ok "S1 «changed» nombra lo que escribió esta ejecución" || mal "S1 changed = $(q "$T/s1.json" 'r.changed')"
 fi
 
 if corre S2 && suite_part 1; then
@@ -226,13 +226,13 @@ if corre S4 && suite_part 1; then
   # 🔴 Sin el módulo las dos corridas fallan igual y la primera no deja las piezas (lo ve el primer chequeo).
   H="$T/s4"; new_home "$H"; printf '{\n    "permissions": {"allow": ["Bash(ls:*)"]},\n    "hooks": {}\n}\n' > "$H/.claude/settings.json"
   call "$H" "$T/s4a.json"; A="$(home_hash "$H")"
-  [ "$(q "$T/s4a.json" 'r.changed.length')" = "4" ] && ok "S4 la primera corrida escribe las cuatro piezas" || mal "S4 la primera corrida escribió $(q "$T/s4a.json" 'r.changed')"
+  [ "$(q "$T/s4a.json" 'r.changed.length')" = "4" ] && ok "S4 la primera ejecución escribe las cuatro piezas" || mal "S4 la primera ejecución escribió $(q "$T/s4a.json" 'r.changed')"
   call "$H" "$T/s4b.json"; B="$(home_hash "$H")"
   [ "$A" = "$B" ] && [ -f "$H/.claude/commands/lab-one.md" ] && [ "$(baks "$H")" = "1" ] \
-    && ok "S4 la segunda corrida no cambia ni un byte de la HOME (ni un .bak nuevo: queda el de la primera)" || mal "S4 la segunda corrida cambió la HOME (o la primera no dejó nada)"
+    && ok "S4 la segunda ejecución no cambia ni un byte de la HOME (ni un .bak nuevo: queda el de la primera)" || mal "S4 la segunda ejecución cambió la HOME (o la primera no dejó nada)"
   [ "$(q "$T/s4a.json" 'r.pieces')" = "$(q "$T/s4b.json" 'r.pieces')" ] && [ "$(q "$T/s4b.json" 'r.changed')" = "[]" ] \
-    && ok "S4 la segunda corrida devuelve las mismas piezas (las que ya estaban también son del arnés) y «changed» vacío" \
-    || mal "S4 la segunda corrida devolvió otras piezas o dijo que cambió algo: $(q "$T/s4b.json" 'r.changed')"
+    && ok "S4 la segunda ejecución devuelve las mismas piezas (las que ya estaban también son del arnés) y «changed» vacío" \
+    || mal "S4 la segunda ejecución devolvió otras piezas o dijo que cambió algo: $(q "$T/s4b.json" 'r.changed')"
 fi
 
 if corre S5 && suite_part 1; then

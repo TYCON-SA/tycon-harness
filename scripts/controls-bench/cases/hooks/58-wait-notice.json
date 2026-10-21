@@ -2,7 +2,7 @@
   "__doc": "Aviso de espera (story 7.20, 2026-10-17): con una corrida del pipeline activa, el cierre de turno abre una espera y un proceso desprendido avisa por Telegram si en el plazo nadie se movió. Lo que el banco fija: el hook nunca frena ni imprime (los controles del cierre deciden igual con él instalado, AC 11), abre la espera también con stop_hook_active, y sin Telegram no escribe nada. Telegram apunta a un puerto cerrado y sin bot: el proceso del plazo termina en no-channel sin mandar nada. La suite completa (envíos, ediciones, plazos) es scripts/tests/wait-notice.test.js.",
   "hooks": [
     {
-      "hook": "wait-notice.js (la corrida avisa cuando espera a una persona)",
+      "hook": "wait-notice.js (la ejecución avisa cuando espera a una persona)",
       "script": "${TCG}/scripts/hooks/wait-notice.js",
       "event": "Stop",
       "matcher": "*",

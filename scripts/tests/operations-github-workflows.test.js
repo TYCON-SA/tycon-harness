@@ -139,13 +139,13 @@ test('T2 GhModels_SecurityRules: los tres cumplen, y una copia alterada por regl
   }
 });
 
-test('T3 GhModels_EffectsGateEveryWrite: EFFECTS con la forma que vale en una corrida programada; todo paso con efectos lo pide', () => {
+test('T3 GhModels_EffectsGateEveryWrite: EFFECTS con la forma que vale en una ejecución programada; todo paso con efectos lo pide', () => {
   const writers = [{ re: /push-nightly-data\.js save/, main: true }, { re: /work-items\.js run/, main: false }, { re: /daily-summary\.js deliver/, main: false }];
   let seen = 0;
   for (const f of WORKFLOWS) {
     const t = read(f);
     assert.match(t, /^ {6}EFFECTS: \$\{\{ github\.event_name == 'schedule' \|\| inputs\.effects \}\}$/m, `${f}: EFFECTS no tiene la forma literal`);
-    assert.doesNotMatch(t, /if: .*inputs\.effects/, `${f}: un if: con inputs.effects directo (en una corrida programada está vacío)`);
+    assert.doesNotMatch(t, /if: .*inputs\.effects/, `${f}: un if: con inputs.effects directo (en una ejecución programada está vacío)`);
     for (const s of steps(t)) {
       for (const w of writers) {
         if (!w.re.test(s)) continue;
@@ -307,7 +307,7 @@ test('T7 PrepareTree_And_PickHarness_Red: otro repo de operaciones, un team-repo
   let p = elegir(teamRepos(), { VAR_REF: 'v1.2.3' });
   assert.strictEqual(p.code, 0, p.out); assert.strictEqual(p.outputs, 'repository=acme/harness\nref=v1.2.3\n');
   p = elegir(teamRepos(), { INPUT_REF: 'mi-rama', VAR_REF: 'v1' });
-  assert.match(p.outputs, /ref=mi-rama/, 'la corrida a mano gana');
+  assert.match(p.outputs, /ref=mi-rama/, 'la ejecución a mano gana');
   assert.match(elegir(teamRepos(), {}).outputs, /ref=main/);
   for (const ref of ['refs/pull/1/head', 'a;b', '../x', '-x']) {
     p = elegir(teamRepos(), { INPUT_REF: ref });

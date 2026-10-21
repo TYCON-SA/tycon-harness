@@ -104,7 +104,7 @@ const FORMS = {
   // sin `docs/`: una rama `docs/8.25-…` no se distingue de una ruta `docs/v2/…` (límite conocido)
   'work-branch': { re: /(?<![\w./-])(?:story|fix|feat|feature|chore|hotfix|bugfix)\/[0-9a-z][\w.-]*[0-9][\w.-]*/g, key: (v) => v.toLowerCase() },
   // «corrida» seguida de una fecha no es una corrida: el número no puede seguir con un guion
-  'azure-run': { re: /(?<![\w&/#])#[0-9]{5}\b|\b(?:corridas?|builds?) #?[0-9]{4,6}\b(?!-)/gi, key: pick(/[0-9]{4,6}/) },
+  'azure-run': { re: /(?<![\w&/#])#[0-9]{5}\b|\b(?:corridas?|ejecuci(?:ón|on|ones)|builds?) #?[0-9]{4,6}\b(?!-)/gi, key: pick(/[0-9]{4,6}/) },
   // sólo con la palabra adelante: un identificador hexadecimal suelto entre comillas invertidas no es un commit
   'private-commit': { re: /\b(?:[Cc]ommits?|[Mm]erge|sha|SHA|[Hh]ash) `?(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}`?(?![0-9A-Za-z])/g, key: pick(/[0-9a-f]{7,40}(?=`?$)/) },
   'debt-id': { re: /\bDEF-[0-9][\w.]*-[\w-]+/g, key: (v) => v.toLowerCase() },
@@ -1194,7 +1194,7 @@ const COMMENT_HINTS = {
   'incident-log': 'sacá el caso: decí el error en presente («sin esto, X pasa en silencio»)',
   'incident-log-path': 'sacá la ruta al registro: decí el porqué en presente',
   'debt-id': 'sacá el código de la deuda: decí el límite que queda («Limitación: …»)',
-  'azure-run': 'sacá la corrida: decí lo que se midió, sin cuándo',
+  'azure-run': 'sacá la ejecución: decí lo que se midió, sin cuándo',
   'pr-number': 'sacá el número del pedido: decí el porqué',
   'private-commit': 'sacá el commit: decí qué cambia esta parte',
   'work-branch': 'sacá la rama, o escribila como marcador (`feature/<nombre>`)',
@@ -1225,7 +1225,7 @@ function report(findings, blocks, publicProblem = null) {
     `  (c) Si es un dato o un ejemplo que tiene que quedar tal cual: declararlo en ${ALLOWED_PATH}`,
     '      con su archivo (la ruta con que sale), su forma, el valor exacto y el motivo (nunca un archivo entero).',
     '  (d) Si nombra un pedido o un commit del repo público: el pedido con numeral (`#N`); el control le pregunta al',
-    '      repo público si existen. Un número de Azure («PR N», «PR !N», una corrida) sigue siendo interno.',
+    '      repo público si existen. Un número de Azure («PR N», «PR !N», una ejecución) sigue siendo interno.',
     '', 'Guía: guides/maintaining/publicacion-espejo.md §«La historia interna».');
   const distinguishable = new Set(['pr-number', 'azure-run', 'private-commit']);
   if (publicProblem && findings.some((f) => distinguishable.has(f.form))) {
@@ -1348,7 +1348,7 @@ function main() {
     record(args, { mode: 'off', lowered: true });
     return 0;
   }
-  if (m.lowered) say(`⚠️  historia interna: ${config ? `el control frena (${CONFIG_PATH})` : 'no pude leer el modo escrito del control'} y ${SWITCH}=${shown(process.env[SWITCH])} lo deja en aviso en esta corrida`);
+  if (m.lowered) say(`⚠️  historia interna: ${config ? `el control frena (${CONFIG_PATH})` : 'no pude leer el modo escrito del control'} y ${SWITCH}=${shown(process.env[SWITCH])} lo deja en aviso en esta ejecución`);
 
   let r;
   try {

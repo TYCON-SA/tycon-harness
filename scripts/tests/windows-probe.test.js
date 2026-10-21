@@ -128,7 +128,7 @@ test('WindowsPipeline_Yaml_NoPushNoPr_TwoJobs_BundleIsCloned', { skip: !fs.exist
   // la lista de huecos propuesta, impresa en el registro y conservando la de los pasos no medidos: nadie puede bajar el artefacto
   assert.match(windows, /run\.js propose-gaps "\$\(report\)\\windows-report\.json" --keep scripts\\tests\\windows\\known-gaps\.json\n\s+displayName: .*\n\s+workingDirectory: .*\n\s+condition: always\(\)/, 'el paso que imprime la lista propuesta corre siempre');
   assert.match(windows, /PublishPipelineArtifact@1[\s\S]*artifact: windows-report/, 'el reporte se publica como artefacto windows-report');
-  assert.ok(windows.indexOf('artifact: windows-report') < windows.indexOf('run.js verdict'), 'el reporte se publica ANTES del veredicto: una corrida roja también lo entrega');
+  assert.ok(windows.indexOf('artifact: windows-report') < windows.indexOf('run.js verdict'), 'el reporte se publica ANTES del veredicto: una ejecución roja también lo entrega');
   // ningún secreto ni grupo de variables, salvo la credencial bajo realSession; nada tolerante; no escribe en ningún repo
   assert.doesNotMatch(code, /^\s*- group:/m, 'sin grupos de variables');
   assert.doesNotMatch(code, /continueOnError/, 'ningún paso tolerante');
@@ -426,11 +426,11 @@ test('Probe_CountHooks_SameFileTwiceInAnEvent_IdsCarryTheMatcher_MisplacedPrefer
 // los pasos que esa corrida no mide, tal cual, y reemplaza los de los pasos que sí midió.
 test('Probe_ProposeGaps_KeepsTheDeclaredGapsOfStepsTheReportDoesNotMeasure', () => {
   const report = fixture('report-no-session.json');
-  const bench = { id: 'bench:red:x.sh::y', step: 'bench', closes: 'W4', match: '^stdout no matchea', note: 'medido en la corrida 1' };
-  const stale = { id: 'hooks:missing:Stop:@tcg:old.js', step: 'count-hooks', closes: 'W4', note: 'de una corrida vieja' };
+  const bench = { id: 'bench:red:x.sh::y', step: 'bench', closes: 'W4', match: '^stdout no matchea', note: 'medido en la ejecución 1' };
+  const stale = { id: 'hooks:missing:Stop:@tcg:old.js', step: 'count-hooks', closes: 'W4', note: 'de una ejecución vieja' };
   const kept = run.proposeGaps(report, { baseline: null, gaps: [bench, stale] });
   assert.deepStrictEqual(kept.gaps.find((g) => g.id === bench.id), bench, 'el hueco del banco queda tal cual, con su match');
-  assert.ok(!kept.gaps.some((g) => g.id === stale.id), 'un hueco de un paso que la corrida midió se reemplaza por lo que midió');
+  assert.ok(!kept.gaps.some((g) => g.id === stale.id), 'un hueco de un paso que la ejecución midió se reemplaza por lo que midió');
   assert.deepStrictEqual(kept.gaps.filter((g) => g.step !== 'bench').map((g) => g.id).sort(), run.proposeGaps(report).gaps.map((g) => g.id).sort());
   assert.ok(kept.baseline && kept.baseline.run === '4242');
   // un paso que aparece pero no midió («no medido» o «error») tampoco dice nada de sus huecos: se conservan
@@ -459,7 +459,7 @@ test('Probe_ProposeGaps_KeepsTheDeclaredGapsOfStepsTheReportDoesNotMeasure', () 
 test('Probe_Verdict_EmptyReportRed_NewFindingRed_StaleGapRed_CappedStepRed', () => {
   const report = fixture('report-no-session.json');
   const declared = run.proposeGaps(report);
-  assert.ok(declared.baseline && declared.baseline.run === '4242', 'la lista propuesta lleva su corrida de base');
+  assert.ok(declared.baseline && declared.baseline.run === '4242', 'la lista propuesta lleva su ejecución de base');
   assert.ok(declared.gaps.length === 5 && declared.gaps.every((g) => run.BATCHES.includes(g.closes) && g.step), 'cada hueco, con su tanda y su paso');
 
   // verde: todo medido (la sesión, «no medido» con su motivo) y la lista al día
@@ -530,7 +530,7 @@ test('Probe_Verdict_EmptyReportRed_NewFindingRed_StaleGapRed_CappedStepRed', () 
   for (const g of shipped.gaps) assert.ok(g.id && g.step && run.BATCHES.includes(g.closes), `${g.id}: cada hueco dice su paso y su tanda`);
   // sin línea de base, los únicos huecos escritos son los del banco (`bench:red:…`): los lee además
   // scripts/controls-bench/runner.js y cada uno trae el motivo con que falla su caso, medido en una corrida
-  if (shipped.baseline === null) for (const g of shipped.gaps) assert.ok(g.step === 'bench' && /^bench:red:/.test(g.id) && g.match && /corrida \d+/.test(g.note || ''), `${g.id}: sin línea de base sólo hay huecos del banco, con su motivo y su corrida`);
+  if (shipped.baseline === null) for (const g of shipped.gaps) assert.ok(g.step === 'bench' && /^bench:red:/.test(g.id) && g.match && /ejecución \d+/.test(g.note || ''), `${g.id}: sin línea de base sólo hay huecos del banco, con su motivo y su ejecución`);
   // el resumen legible sale de cualquier reporte, también del rojo
   const md = run.renderMarkdown(Object.assign(clone(extra), { verdict: v2 }));
   assert.match(md, /## Veredicto: ROJO/);
@@ -756,12 +756,12 @@ test('Facts_EveryUnknownIsAFactWithRunOrNotMeasuredWithReason', () => {
     for (const p of points) {
       assert.ok(['fact', 'not-measured'].includes(p.state), `${name} #${p.n}: estado ${p.state}`);
       assert.ok(p.text && p.text.length > 10, `${name} #${p.n}: sin texto`);
-      if (p.state === 'fact') assert.strictEqual(p.run, '4242', `${name} #${p.n}: un hecho lleva su número de corrida`);
-      else assert.strictEqual(p.run, null, `${name} #${p.n}: un «no medido» no lleva corrida`);
+      if (p.state === 'fact') assert.strictEqual(p.run, '4242', `${name} #${p.n}: un hecho lleva su número de ejecución`);
+      else assert.strictEqual(p.run, null, `${name} #${p.n}: un «no medido» no lleva ejecución`);
     }
     const md = facts.render(report);
     assert.strictEqual((md.match(/^\| \d+ \| /gm) || []).length, 15, `${name}: una fila por punto`);
-    assert.strictEqual((md.match(/\*\*Hecho \(corrida 4242\)\*\*/g) || []).length, points.filter((p) => p.state === 'fact').length);
+    assert.strictEqual((md.match(/\*\*Hecho \(ejecución 4242\)\*\*/g) || []).length, points.filter((p) => p.state === 'fact').length);
     assert.strictEqual((md.match(/\*\*No medido\*\* — \S/g) || []).length, points.filter((p) => p.state === 'not-measured').length, `${name}: cada «no medido», con su motivo`);
     assert.deepStrictEqual(facts.assumptions(report).map((s) => s.id), ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8']);
   }
@@ -902,7 +902,7 @@ else process.exit(2);
 `,
 };
 
-test('Probe_LabRun_ToyHarness_BundleCloneInstallCountFireReport', { skip: (process.platform === 'win32' && 'el recorrido de juguete es del modo de laboratorio: en Windows mide la corrida de verdad') || (!has('git') && 'NO MEDIDO — sin git') || (!has('bash') && 'NO MEDIDO — sin bash') }, () => {
+test('Probe_LabRun_ToyHarness_BundleCloneInstallCountFireReport', { skip: (process.platform === 'win32' && 'el recorrido de juguete es del modo de laboratorio: en Windows mide la ejecución de verdad') || (!has('git') && 'NO MEDIDO — sin git') || (!has('bash') && 'NO MEDIDO — sin bash') }, () => {
   const base = tmp('lab');
   try {
     // el arnés de juguete, como un repo; y su bundle, armado por build-bundle.sh
@@ -1031,7 +1031,7 @@ test('Probe_LabRun_ToyHarness_BundleCloneInstallCountFireReport', { skip: (proce
     assert.strictEqual(node([path.join(DIR, 'run.js'), 'verdict', '--out', out]).status, 0);
     const twice = node([path.join(DIR, 'run.js'), 'init', '--lab', lab, '--out', out, '--bundle', path.join(base, 'bundle', 'harness.bundle'), '--allow-temp']);
     assert.strictEqual(twice.status, 2);
-    assert.match(twice.stderr, /el laboratorio es de una sola corrida/);
+    assert.match(twice.stderr, /el laboratorio es de una sola ejecución/);
     assert.strictEqual(node([path.join(DIR, 'run.js'), 'verdict', '--out', path.join(base, 'no-report')]).status, 2, 'sin reporte no hay veredicto verde');
   } finally { fs.rmSync(base, { recursive: true, force: true }); }
 });
@@ -1041,7 +1041,7 @@ test('Probe_LabRun_ToyHarness_BundleCloneInstallCountFireReport', { skip: (proce
 // start`, `mech-check`, `advisors` y `test-gate.sh`— sobre el repo de ejemplo de Node, con la instalación que dejó el
 // paso `install`. Acá esa instalación es de mentira: un clon de este repo (su HEAD, como el bundle) y los dos enlaces
 // que deja el instalador. En el agente Windows corre de verdad (T74); en Linux, la máquina limpia (T75 / T27).
-test('Win_PipelineSkeleton_OnExampleNodeRepo', { skip: (process.platform === 'win32' && 'modo de laboratorio: en Windows mide la corrida de verdad') || (!has('git') && 'NO MEDIDO — sin git') || (!has('bash') && 'NO MEDIDO — sin bash') }, async (t) => {
+test('Win_PipelineSkeleton_OnExampleNodeRepo', { skip: (process.platform === 'win32' && 'modo de laboratorio: en Windows mide la ejecución de verdad') || (!has('git') && 'NO MEDIDO — sin git') || (!has('bash') && 'NO MEDIDO — sin bash') }, async (t) => {
   const skeleton = require(path.join(DIR, 'pipeline-skeleton.js'));
 
   await t.test('sobre una instalación con el pipeline: los cinco pasos salen como en Linux, y queda tests-result.json', () => {
@@ -1385,7 +1385,7 @@ test('Probe_NoClone_DeclaresRealGithubScenario_8_34_T16', () => {
     'no-clone:real-check-fails', 'no-clone:real-check-api', 'no-clone:real-check-needs-api', 'no-clone:real-get-harness-needs-api']) {
     assert.ok(sec.includes(`'${id}'`), `la sonda nombra el hallazgo ${id}`);
   }
-  assert.match(sec, /rec\.fact\('real_github_spike'/, 'el sondeo queda como hecho (T1, con el número de corrida)');
+  assert.match(sec, /rec\.fact\('real_github_spike'/, 'el sondeo queda como hecho (T1, con el número de ejecución)');
   // sin permiso y sin red hacia el GitHub real, en esta máquina: no sale a la red
   const facts = {}; const notes = [];
   const P = require(path.join(ROOT, 'scripts', 'tests', 'windows', 'no-clone-probe.js'));

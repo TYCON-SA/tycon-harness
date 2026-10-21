@@ -190,7 +190,7 @@ function freshClone(ctx) {
   const repos = {};
   for (const [key, folder] of reposOf(state)) {
     const dir = where.fresh[key];
-    if (fs.existsSync(dir)) return { status: L.STATUS.error, reason: `no pude medir: ${dir} ya existe — el laboratorio es de una sola corrida` };
+    if (fs.existsSync(dir)) return { status: L.STATUS.error, reason: `no pude medir: ${dir} ya existe — el laboratorio es de una sola ejecución` };
     fs.mkdirSync(path.dirname(dir), { recursive: true });
     // 🔴 `git clone`, no una copia: el clon aplica core.autocrlf como en la máquina de un dev
     const c = runner.run(`clone-${key}`, `clonar ${folder} en lo que se mide`, 'git', ['clone', state.remotes[key].dir, dir], { env, cap: CAP.git, line: `git clone <remoto del laboratorio> ${folder}` });
@@ -260,7 +260,7 @@ function existingClone(ctx) {
   if (pointed) return { status: L.STATUS.error, reason: `no pude medir: ${pointed}` };
   for (const [key, folder] of reposOf(state)) {
     const dir = where.existing[key];
-    if (fs.existsSync(dir)) return { status: L.STATUS.error, reason: `no pude medir: ${dir} ya existe — el laboratorio es de una sola corrida` };
+    if (fs.existsSync(dir)) return { status: L.STATUS.error, reason: `no pude medir: ${dir} ya existe — el laboratorio es de una sola ejecución` };
     fs.mkdirSync(path.dirname(dir), { recursive: true });
     const c = runner.run(`clone-${key}-at-base`, `clonar ${folder} como lo tiene hoy un dev (antes de la tanda)`, 'git', ['clone', state.remotes[key].dir, dir], { env, cap: CAP.git, line: `git clone <remoto del laboratorio, en el antes> ${folder}` });
     if (c.error || c.exit !== 0) return { status: L.STATUS.error, reason: `no pude medir: git clone de ${folder} ${c.timed_out ? 'venció su tope' : `salió ${c.error || c.exit}`} — ${L.firstLine(c.text)}` };

@@ -728,7 +728,7 @@ elif [ -d "$SK_REAL/skills" ]; then
     TIEMPOS="$TIEMPOS $(( $(node -e 'console.log(Date.now())') - T0 ))"
   done
   MEDIANA=$(printf '%s\n' $TIEMPOS | sort -n | sed -n 3p)
-  if [ "$MEDIANA" -le 5000 ]; then ok "C-23 T13 SpanishNames_TimeBudget: mediana de 5 corridas ${MEDIANA} ms (≤ 5000; corridas:${TIEMPOS})"
+  if [ "$MEDIANA" -le 5000 ]; then ok "C-23 T13 SpanishNames_TimeBudget: mediana de 5 ejecuciones ${MEDIANA} ms (≤ 5000; corridas:${TIEMPOS})"
   else mal "C-23 T13 la mediana es ${MEDIANA} ms (> 5000; corridas:${TIEMPOS})"; fi
   git -C "$RAIZ" worktree remove --force "$W" >/dev/null 2>&1; rm -f "$W.t15"
 else

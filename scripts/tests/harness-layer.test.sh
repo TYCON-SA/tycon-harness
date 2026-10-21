@@ -151,9 +151,9 @@ grep -q 'cat-file --batch' "$BASE/git-1.log" && ok "T5 …y es cat-file --batch"
 # ── segunda corrida igual ────────────────────────────────────────────────────────────────────────────────────────────
 ANTES="$(tree_hash "$ARBOL")"; M_ANTES="$(mtime "$MANIFIESTO")"; E_ANTES="$(mtime "$ARBOL/.git/info/exclude")"
 layer_apply "$BASE/git-2.log" "$BASE/capa-1.json"
-[ "$RC" = 0 ] && case "$SALIDA" in *"nada que escribir"*) ok "T5 segunda corrida: «nada que escribir»" ;; *) mal "T5 segunda corrida no lo dice: $SALIDA" ;; esac || mal "T5 segunda corrida rc $RC"
+[ "$RC" = 0 ] && case "$SALIDA" in *"nada que escribir"*) ok "T5 segunda ejecución: «nada que escribir»" ;; *) mal "T5 segunda ejecución no lo dice: $SALIDA" ;; esac || mal "T5 segunda ejecución rc $RC"
 [ "$(tree_hash "$ARBOL")" = "$ANTES" ] && [ "$(mtime "$MANIFIESTO")" = "$M_ANTES" ] && [ "$(mtime "$ARBOL/.git/info/exclude")" = "$E_ANTES" ] \
-  && ok "T5 segunda corrida: no escribió nada (árbol, manifiesto y exclude)" || mal "T5 la segunda corrida escribió"
+  && ok "T5 segunda ejecución: no escribió nada (árbol, manifiesto y exclude)" || mal "T5 la segunda ejecución escribió"
 
 # ── editado a mano y escritores ──────────────────────────────────────────────────────────────────────────────────────
 printf 'a mano\n' >> "$ARBOL/scripts/tests/suites.json"
@@ -204,7 +204,7 @@ ST="$(g "$ARBOL" status --porcelain)"
 # Si se avisara UNA vez y saliera del manifiesto, la carpeta seguiría excluida y nadie lo vería más. Queda en el
 # manifiesto marcado («held») y se avisa en cada corrida (y verify sale 1), hasta que la persona lo resuelve.
 layer_apply "$BASE/git-5.log" "$BASE/capa-2.json"
-case "$SALIDA" in *tasks/vieja-editada.md*) ok "T5 clase 6: la corrida siguiente sigue avisando el borrado editado a mano" ;; *) mal "T5 clase 6: dejó de avisarlo: $SALIDA" ;; esac
+case "$SALIDA" in *tasks/vieja-editada.md*) ok "T5 clase 6: la ejecución siguiente sigue avisando el borrado editado a mano" ;; *) mal "T5 clase 6: dejó de avisarlo: $SALIDA" ;; esac
 [ "$(j "$MANIFIESTO" "[f.get('held') for f in d['files'] if f['path']=='tasks/vieja-editada.md']")" = "[True]" ] \
   && ok "T5 clase 6: …queda en el manifiesto, marcado" || mal "T5 clase 6: en el manifiesto: $(j "$MANIFIESTO" "[f for f in d['files'] if f['path']=='tasks/vieja-editada.md']")"
 [ "$(sha "$ARBOL/tasks/vieja-editada.md")" = "$VIEJA_EDITADA" ] && ok "T5 clase 6: …y el archivo, intacto" || mal "T5 clase 6: tocó el archivo editado"
@@ -243,7 +243,7 @@ layer_apply "$BASE/git-9.log" "$BASE/capa-3.json"
 [ "$(j "$MANIFIESTO" "[f.get('held') for f in d['files'] if f['path']=='scripts/tests/suites.json']")" = "[True]" ] \
   && ok "T5 clase 13: …queda en el manifiesto, marcado" || mal "T5 clase 13: en el manifiesto: $(j "$MANIFIESTO" "[f for f in d['files'] if f['path']=='scripts/tests/suites.json']")"
 layer_apply "$BASE/git-10.log" "$BASE/capa-3.json"
-case "$SALIDA" in *scripts/tests/suites.json*) ok "T5 clase 13: …y se sigue avisando en la corrida siguiente" ;; *) mal "T5 clase 13: dejó de avisarlo: $SALIDA" ;; esac
+case "$SALIDA" in *scripts/tests/suites.json*) ok "T5 clase 13: …y se sigue avisando en la ejecución siguiente" ;; *) mal "T5 clase 13: dejó de avisarlo: $SALIDA" ;; esac
 g "$ARBOL" checkout -q -- scripts/tests/suites.json
 layer_apply "$BASE/git-11.log" "$BASE/capa-3.json"
 [ "$(j "$MANIFIESTO" "any(f['path']=='scripts/tests/suites.json' for f in d['files'])")" = False ] && [ -z "$(g "$ARBOL" status --porcelain)" ] \
@@ -273,9 +273,9 @@ PY
 layer_apply "$BASE/git-15.log" "$BASE/capa-4.json"
 E1="$(mtime "$EXF")"
 layer_apply "$BASE/git-16.log" "$BASE/capa-4.json"
-[ "$(begins)" = 1 ] && [ "$(own_lines)" = 3 ] && ok "T5 clase 4: con CRLF, un solo bloque y las líneas de la persona intactas (dos corridas)" \
+[ "$(begins)" = 1 ] && [ "$(own_lines)" = 3 ] && ok "T5 clase 4: con CRLF, un solo bloque y las líneas de la persona intactas (dos ejecuciones)" \
   || mal "T5 clase 4: CRLF: $(begins) bloques, $(own_lines) líneas de la persona: $(cat -A "$EXF" 2>/dev/null || cat "$EXF")"
-[ "$(mtime "$EXF")" = "$E1" ] && ok "T5 clase 4: con CRLF, la segunda corrida no reescribe el exclude" || mal "T5 clase 4: con CRLF, la segunda corrida reescribió el exclude"
+[ "$(mtime "$EXF")" = "$E1" ] && ok "T5 clase 4: con CRLF, la segunda ejecución no reescribe el exclude" || mal "T5 clase 4: con CRLF, la segunda ejecución reescribió el exclude"
 [ -z "$(g "$ARBOL" status --porcelain)" ] && ok "T5 clase 4: con CRLF, el bloque sigue excluyendo" || mal "T5 clase 4: git status con CRLF: «$(g "$ARBOL" status --porcelain)»"
 # lo que dejó la versión anterior: dos bloques completos con una línea de la persona en el medio
 { cat "$BASE/exclude-bien"; printf 'mis-cosas/\n'; sed -n '/^# tycon-layer begin/,/^# tycon-layer end/p' "$BASE/exclude-bien"; } > "$EXF"
@@ -286,7 +286,7 @@ layer_apply "$BASE/git-17.log" "$BASE/capa-4.json"
 { sed 's/^# tycon-layer end$/# tycon-layer end   /' "$BASE/exclude-bien"; printf 'mis-cosas/\n'; } > "$EXF"
 layer_apply "$BASE/git-18.log" "$BASE/capa-4.json"
 layer_apply "$BASE/git-19.log" "$BASE/capa-4.json"
-[ "$(begins)" = 1 ] && [ "$(own_lines)" = 3 ] && ok "T5 clase 14: un fin con espacios al final se reconoce (dos corridas)" \
+[ "$(begins)" = 1 ] && [ "$(own_lines)" = 3 ] && ok "T5 clase 14: un fin con espacios al final se reconoce (dos ejecuciones)" \
   || mal "T5 clase 14: fin con espacios: $(begins) bloques, $(own_lines) líneas de la persona: $(cat "$EXF")"
 # un bloque que empieza y no cierra: frena antes de escribir nada
 { grep -v '^# tycon-layer end' "$BASE/exclude-bien"; printf 'mis-cosas/\n'; } > "$EXF"

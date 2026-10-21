@@ -7,7 +7,7 @@ Primero cuenta qué es y cómo se usa; después, cómo se instala.
   cada persona y los problemas comunes.
 - **[Instalarlo](#qué-hace-falta-antes):** qué hace falta, cómo probarlo en tu máquina y cómo dejarlo andando.
 
-Cada paso de esta guía sale del código o de una corrida real. Lo que todavía no se probó en real lo dice en la misma
+Cada paso de esta guía sale del código o de una ejecución real. Lo que todavía no se probó en real lo dice en la misma
 línea.
 
 Las capturas salen de un sitio de laboratorio con una organización inventada, **Acme**: sus personas, máquinas y
@@ -16,7 +16,7 @@ productos no existen. Tu sitio se ve igual, con tus nombres.
 ## Qué es y para qué sirve
 
 Es una página web para toda la organización. Cada persona entra con la cuenta de la organización y ve lo suyo: sus
-tareas, sus pedidos de cambio, sus corridas. Quienes mantienen el arnés ven todo, y además tienen la pestaña
+tareas, sus pedidos de cambio, sus ejecuciones. Quienes mantienen el arnés ven todo, y además tienen la pestaña
 **Configuración**, donde se personaliza la organización (quién es responsable de qué, el canal del aviso, los umbrales).
 
 **Las palabras que usa el sitio**, para quien no programa:
@@ -24,35 +24,35 @@ tareas, sus pedidos de cambio, sus corridas. Quienes mantienen el arnés ven tod
 - **El arnés:** el conjunto de reglas, controles y ayudantes con que el equipo programa con Claude. Este sitio muestra
   lo que el arnés mide.
 - **Una story:** una tarea de programación descrita por escrito, con lo que tiene que cumplir.
-- **El pipeline y una corrida:** el pipeline es el recorrido por pasos con que el arnés acompaña a alguien a hacer una
-  story (validarla, planear, programar, probar, revisar). Una **corrida** es una vez que alguien hizo ese recorrido.
+- **El pipeline y una ejecución:** el pipeline es el recorrido por pasos con que el arnés acompaña a alguien a hacer una
+  story (validarla, planear, programar, probar, revisar). Una **ejecución** es una vez que alguien hizo ese recorrido.
 - **Un repo:** la carpeta compartida donde vive el código o la configuración, con su historia de cambios. Su **rama
   principal** es la versión que vale.
 - **Un pedido de cambio** (en inglés, *pull request*): una propuesta para cambiar un repo. Otra persona la mira y, si
   está bien, la **mergea**: la suma a la rama principal.
-- **Los revisores** (también «agentes»): ayudantes automáticos que revisan el trabajo de cada corrida.
-- **Los tokens:** la medida de cuánto texto leyó y escribió el modelo; es lo que cuesta una corrida.
+- **Los revisores** (también «agentes»): ayudantes automáticos que revisan el trabajo de cada ejecución.
+- **Los tokens:** la medida de cuánto texto leyó y escribió el modelo; es lo que cuesta una ejecución.
 - **La foto de la noche:** lo que los procesos de la noche midieron y dejaron guardado. En las fichas aparece como
   «fuente del» y una fecha.
 - **El refresco:** cada cuánto el sitio vuelve a leer todo (15 minutos, salvo que la organización elija otro plazo).
-- **La mediana:** el valor del medio; la mitad de las corridas está por debajo y la otra mitad por encima.
+- **La mediana:** el valor del medio; la mitad de las ejecuciones está por debajo y la otra mitad por encima.
 
-Cada máquina del equipo sube sus corridas a un lugar compartido, el **buzón de corridas**. Por la noche, unos procesos
+Cada máquina del equipo sube sus ejecuciones a un lugar compartido, el **buzón de ejecuciones**. Por la noche, unos procesos
 del arnés revisan las dependencias (los paquetes de otros que usa cada producto), las pruebas y los productos, y dejan
 lo que midieron en el **repo de operaciones** de la organización. El sitio lee esos dos lugares y los muestra.
 
 **Un día de quien mantiene.** A las 4 de la mañana corren los procesos de la noche y dejan su foto en el repo de
 operaciones. Al rato llega el aviso de la mañana (Telegram, Slack o Teams), con cantidades y el enlace al sitio. Quien
 mantiene abre el enlace y cae en **Inicio**, en «Qué decidir hoy»: una ficha amarilla es algo que espera una decisión
-(una dependencia nueva, una prueba que se puso roja anoche) y dice dónde se decide. Si una corrida de alguien quedó
-trabada, la busca en **Corridas** y abre su detalle: ahí ve en qué paso se fue el tiempo y qué control encontró algo.
-Si una máquina nueva empezó a mandar corridas, Inicio lo cuenta y **Configuración** pide confirmar de quién es: la
+(una dependencia nueva, una prueba que se puso roja anoche) y dice dónde se decide. Si una ejecución de alguien quedó
+trabada, la busca en **Ejecuciones** y abre su detalle: ahí ve en qué paso se fue el tiempo y qué control encontró algo.
+Si una máquina nueva empezó a mandar ejecuciones, Inicio lo cuenta y **Configuración** pide confirmar de quién es: la
 confirma, el cambio se propone como un pedido al repo de operaciones, y cuando el pedido entra (solo, con la regla de la
 organización; si no, cuando alguien lo aprueba), esa persona empieza a ver lo suyo.
 
 **Un día de un dev.** Entra desde el mismo enlace, o desde la dirección del sitio que guardó. En **Inicio** ve lo suyo:
-cuántas corridas hizo en la semana, sus pull requests abiertos y lo que tiene asignado. En **Corridas** ve sólo sus
-corridas, y en **Proyectos**, los productos en los que trabaja. Nadie tiene que clonar nada ni correr nada en su
+cuántas ejecuciones hizo en la semana, sus pull requests abiertos y lo que tiene asignado. En **Ejecuciones** ve sólo sus
+ejecuciones, y en **Proyectos**, los productos en los que trabaja. Nadie tiene que clonar nada ni correr nada en su
 máquina para verlo.
 
 **Quién lo usa:**
@@ -60,7 +60,7 @@ máquina para verlo.
 - **Quien mantiene el arnés:** lo instala una vez, lo actualiza a conciencia, y edita la configuración desde la pestaña
   Configuración.
 - **Cada persona de la organización que programa con el arnés:** entra y ve lo suyo, si está en la lista del sitio.
-  Quien no usa el arnés en una máquina no tiene corridas propias, pero ve igual lo demás que es suyo.
+  Quien no usa el arnés en una máquina no tiene ejecuciones propias, pero ve igual lo demás que es suyo.
 - **Alguien que no está en la lista:** no ve nada. Con «cualquier cuenta de Microsoft» puede pasar el inicio de sesión,
   pero el sitio le muestra sólo una página sin datos.
 
@@ -99,14 +99,14 @@ repos, productos y máquinas, lo que escribió cada uno) se ve como está. La ay
 **Lo que ves la primera vez** depende de quién sos para el sitio:
 
 - **Quien mantiene** ve las cinco pestañas, y en Inicio lo que espera una decisión de toda la organización.
-- **Una persona confirmada** ve tres pestañas (Inicio, Corridas y Proyectos), con lo suyo.
+- **Una persona confirmada** ve tres pestañas (Inicio, Ejecuciones y Proyectos), con lo suyo.
 - **Alguien que no está en la lista** ve sólo una página que dice con qué cuenta entró, que esa cuenta no está en la
   lista, a quién pedírselo y cómo entrar con otra. No ve el menú de la izquierda ni ningún dato.
 
 ![La página de quien no está en la lista: «Tu cuenta no está en la lista»](sitio-de-la-organizacion/capturas/sin-rol.png)
 
-**Tu máquina, todavía sin confirmar.** Cada máquina del equipo sube sus corridas con el correo de git de quien la usa.
-Quien mantiene tiene que confirmar que esa máquina es tuya. Hasta que te confirmen, tus corridas las ven sólo quienes
+**Tu máquina, todavía sin confirmar.** Cada máquina del equipo sube sus ejecuciones con el correo de git de quien la usa.
+Quien mantiene tiene que confirmar que esa máquina es tuya. Hasta que te confirmen, tus ejecuciones las ven sólo quienes
 mantienen; vos entrás igual, si estás en la lista, y ves lo demás. Pedíselo a quien mantiene el arnés
 (si no sabés quién es, a quien te pasó el enlace o a quien instaló el arnés en tu máquina). Lo confirma en
 Configuración, el cambio entra (solo o cuando alguien lo aprueba, según la organización), y a partir del próximo
@@ -139,40 +139,40 @@ deciden en el repo de operaciones, donde la noche dejó su foto. Las fichas son:
 - **Suites rojas** y **casos del banco rojos esta noche:** las pruebas del arnés y los controles del arnés que se
   pusieron rojos anoche.
 - **Datos declarados que vencen:** números que alguien anotó a mano con una fecha para revisarlos.
-- **Máquinas sin confirmar con corridas** y **retrospectivas pendientes**.
+- **Máquinas sin confirmar con ejecuciones** y **retrospectivas pendientes**.
 
 ![Inicio de quien mantiene: «Qué decidir hoy», con fichas en Decidir, Nada y No medido](sitio-de-la-organizacion/capturas/inicio-quien-mantiene.png)
 
-Para **una persona** es «Lo tuyo»: sus corridas de los últimos 7 días (con un enlace a Corridas), sus pedidos de cambio
+Para **una persona** es «Lo tuyo»: sus ejecuciones de los últimos 7 días (con un enlace a Ejecuciones), sus pedidos de cambio
 abiertos, lo que tiene asignado (con hasta un día de atraso, porque sale de la foto de la noche) y sus proyectos.
 
-![Inicio de una persona: tus corridas, tus pull requests abiertos, lo que tenés asignado y tus proyectos](sitio-de-la-organizacion/capturas/inicio-persona.png)
+![Inicio de una persona: tus ejecuciones, tus pull requests abiertos, lo que tenés asignado y tus proyectos](sitio-de-la-organizacion/capturas/inicio-persona.png)
 
 **Qué hacer:** una ficha en Decidir se resuelve donde dice su enlace, no en el sitio. Cuando se resuelve, la ficha pasa
 a Nada con la foto de la noche siguiente.
 
-### Corridas
+### Ejecuciones
 
-**Qué contesta:** ¿cómo vienen las corridas del pipeline? ¿Dónde se fue el tiempo y qué encontraron los controles?
+**Qué contesta:** ¿cómo vienen las ejecuciones del pipeline? ¿Dónde se fue el tiempo y qué encontraron los controles?
 
-Arriba, el alcance: cuántas corridas se leyeron y de qué máquinas. Después, «Lo que se mira primero» explica los dos
+Arriba, el alcance: cuántas ejecuciones se leyeron y de qué máquinas. Después, «Lo que se mira primero» explica los dos
 resultados de un control: **encontró un error** (una prueba o la compilación no pasaron y se arreglaron ahí mismo) y
 **frenó** (el control no dejó pasar algo). Los dos son el control haciendo su trabajo, no un problema. Al lado de cada
-mediana, **n=** dice de cuántas corridas sale el número.
+mediana, **n=** dice de cuántas ejecuciones sale el número.
 
 Debajo hay un **filtro** (fechas, producto, máquina, sólo las que tienen consumo medido, sólo las que llegaron al último
-paso) y fichas con los números del filtro: cuántas llegaron al final, cuánto dura una corrida, en cuántas un control
-encontró un error, cuántos agentes se lanzaron y cuánto se consumió. Quien mantiene ve después las tres fichas de Corridas
-del tablero de la noche: la duración y los pasos de una corrida (medianas) y las veces que un control bloqueó.
+paso) y fichas con los números del filtro: cuántas llegaron al final, cuánto dura una ejecución, en cuántas un control
+encontró un error, cuántos agentes se lanzaron y cuánto se consumió. Quien mantiene ve después las tres fichas de Ejecuciones
+del tablero de la noche: la duración y los pasos de una ejecución (medianas) y las veces que un control bloqueó.
 
-![Corridas: el alcance, «Lo que se mira primero» y las fichas del filtro](sitio-de-la-organizacion/capturas/corridas-tabla.png)
+![Ejecuciones: el alcance, «Lo que se mira primero» y las fichas del filtro](sitio-de-la-organizacion/capturas/corridas-tabla.png)
 
-Más abajo está **«Corrida por corrida»**: una fila por corrida, de la más nueva a la más vieja. La barra de cada fila
+Más abajo está **«Ejecución por ejecución»**: una fila por ejecución, de la más nueva a la más vieja. La barra de cada fila
 reparte el tiempo entre los pasos del pipeline, con los colores de la leyenda: 0 Arranque, 1 Validar la historia, 2 Armar
 el plan, 3 Aprobar el plan, 4 Implementar y correr las pruebas, 5 Revisores, 6 Hallazgos: el informe, 7 Hallazgos: la
-decisión y 8 Preparar el commit. «Sin marca» es un tramo que la corrida no anotó.
+decisión y 8 Preparar el commit. «Sin marca» es un tramo que la ejecución no anotó.
 
-![La leyenda de los pasos y la tabla «Corrida por corrida»](sitio-de-la-organizacion/capturas/corridas-leyenda.png)
+![La leyenda de los pasos y la tabla «Ejecución por ejecución»](sitio-de-la-organizacion/capturas/corridas-leyenda.png)
 
 **Un clic en una fila** abre su detalle: la línea de tiempo con cada paso y cada control en su carril, qué encontraron
 los controles, los revisores que corrieron, el consumo en tokens por paso y los archivos que tocó. La leyenda de la
@@ -181,12 +181,12 @@ error; un **cuadrado negro**, que no dejó pasar; un **círculo punteado**, que 
 **raya naranja**, que arranca otra vuelta de revisores; una **raya vertical**, un paso marcado junto con el anterior; el
 **gris**, el tiempo entre pasos; y un **recuadro naranja**, el tiempo esperando a una persona (una pregunta sin
 contestar). Si el detalle muestra un comando para correr, es para quien mantiene el arnés. Los archivos se ven
-sólo si la organización decidió bajar las conversaciones (sección «Conversaciones de las corridas»).
+sólo si la organización decidió bajar las conversaciones (sección «Conversaciones de las ejecuciones»).
 
-![El detalle de una corrida: la línea de tiempo, los controles, los revisores y el consumo](sitio-de-la-organizacion/capturas/corridas-detalle.png)
+![El detalle de una ejecución: la línea de tiempo, los controles, los revisores y el consumo](sitio-de-la-organizacion/capturas/corridas-detalle.png)
 
-**Qué hacer:** una corrida que «quedó en el 4» puede estar en curso o abandonada; su detalle dice hasta dónde llegó.
-Una persona ve sólo las corridas de sus máquinas confirmadas; quien mantiene ve todas.
+**Qué hacer:** una ejecución que «quedó en el 4» puede estar en curso o abandonada; su detalle dice hasta dónde llegó.
+Una persona ve sólo las ejecuciones de sus máquinas confirmadas; quien mantiene ve todas.
 
 ### Proyectos
 
@@ -221,7 +221,7 @@ fichas del tablero»).
 ### Las fichas del tablero
 
 El tablero de la noche mide el arnés y los proyectos en seis preguntas. El sitio muestra esas fichas en su pestaña, con
-el mismo número que el tablero: Arnés las agrupa por pregunta, y Proyectos y Corridas las ponen en una grilla arriba de su
+el mismo número que el tablero: Arnés las agrupa por pregunta, y Proyectos y Ejecuciones las ponen en una grilla arriba de su
 tabla. Son 26, todas de la organización: sólo las ve quien mantiene. Una persona ve sus pestañas como antes.
 
 **En Arnés:**
@@ -233,7 +233,7 @@ tabla. Son 26, todas de la organización: sólo las ve quien mantiene. Una perso
 - **Por qué volvió: defecto nuestro contra cambio de requisito** (`rework_por_causa`). Separa lo que volvió por un error nuestro de lo que volvió porque cambió lo que se pedía.
 - **¿Vuelve menos lo que pasó por el pipeline?** (`rework_por_carril`). Compara, por repo, lo que volvió con constancia del pipeline contra lo que no la tiene.
 - **Puntaje de mutación: proporción de mutantes que las pruebas matan** (`mutacion`). Si las pruebas se rompen cuando se rompe el código a propósito.
-- **Corridas de pruebas que evaluaron el umbral del 75 % sobre las líneas tocadas** (`cobertura_tocada_evaluo`). Cuántas veces la cobertura de lo que se tocó se midió de verdad.
+- **Ejecuciones de pruebas que evaluaron el umbral del 75 % sobre las líneas tocadas** (`cobertura_tocada_evaluo`). Cuántas veces la cobertura de lo que se tocó se midió de verdad.
 - **Cierres que necesitaban guía para probar a mano, y la tenían** (`qa_guia`). El puente entre las pruebas automáticas y una persona que prueba.
 - **Cuánto tarda verificar: duración de la suite de pruebas** (`gates_dur`). Una suite que tarda horas no se corre antes de commitear: se saltea.
 - **Los frenos previos a la herramienta: cuántas veces frenaron y cuántas los saltearon** (`frenos`). Los dos números de la misma regla juntos: sin el primero, un freno que funcionó parece que no sirvió.
@@ -253,11 +253,11 @@ tabla. Son 26, todas de la organización: sólo las ve quien mantiene. Una perso
 - **Productos donde una sola persona hizo el 75 % o más de los commits del último año** (`bus_factor`). El riesgo de ingeniería no es el código: es quién es la única persona que sabe tocarlo.
 - **Productos sin pipeline de producción** (`sin_pipeline_de_prod`). No es calidad: es exposición. Para ellos «despliegues» es cero porque no hay a dónde mirar.
 
-**En Corridas:**
+**En Ejecuciones:**
 
 - **Veces que un control del pipeline bloqueó una acción** (`bloqueos`). Cuántas veces un control frenó de verdad algo del trabajo.
-- **Una corrida del pipeline, de punta a punta (mediana, horas)** (`corridas`). Cuánto dura una corrida completa.
-- **Pasos de una corrida del pipeline (mediana)** (`pasos`). Una corrida consume según cuántos pasos da: la variable que explica lo que cuesta.
+- **Una ejecución del pipeline, de punta a punta (mediana, horas)** (`corridas`). Cuánto dura una ejecución completa.
+- **Pasos de una ejecución del pipeline (mediana)** (`pasos`). Una ejecución consume según cuántos pasos da: la variable que explica lo que cuesta.
 
 **Cómo se oculta una.** En Configuración, sección «Avisos y la noche», «Fichas que muestra el sitio» tiene una casilla
 por ficha. Destildá las que no uses y proponé el cambio: queda en `operations.json` del repo de operaciones
@@ -271,8 +271,8 @@ fuentes que no siempre están:
 - Las del contrato de las historias y las fechas declaradas necesitan los registros del capturador de la noche.
 - Las de la mejora del proceso, el retrabajo, el backlog y el tiempo por etapa necesitan la foto de etapas de la noche; la
   edad en el estado, además, las fotos por proyecto.
-- Las de calidad y control (mutantes, cobertura, guía del tester, frenos, escapes, carriles) y las tres de Corridas salen
-  del buzón de corridas: sin buzón leído, quedan no medidas.
+- Las de calidad y control (mutantes, cobertura, guía del tester, frenos, escapes, carriles) y las tres de Ejecuciones salen
+  del buzón de ejecuciones: sin buzón leído, quedan no medidas.
 - El bus factor necesita los productos declarados (`repos.json`), y los productos sin pipeline de producción, la deuda
   declarada de pipelines.
 
@@ -323,9 +323,9 @@ que no se puede usar, se arregla a mano en el repo del perfil: hasta entonces el
 siguiente la cuenta sección por sección.
 
 Arriba hay cuatro fichas: las máquinas por confirmar, las secciones con algo para arreglar, las secciones al día y las
-máquinas con una versión vieja del arnés o «sin noticias» (que no mandan corridas hace un tiempo, así que no se sabe qué
+máquinas con una versión vieja del arnés o «sin noticias» (que no mandan ejecuciones hace un tiempo, así que no se sabe qué
 versión tienen). Debajo, cinco pestañas: **Personas**, **Repos y productos**, **Avisos y la
-noche**, **Cómo trabaja Claude** e **Instalación y actualización**. Un número al lado de una pestaña dice cuántas cosas
+noche**, **Cómo trabaja el agente** e **Instalación y actualización**. Un número al lado de una pestaña dice cuántas cosas
 esperan ahí.
 
 ![Configuración: las cuatro fichas de arriba y la pestaña Personas](sitio-de-la-organizacion/capturas/configuracion-personas.png)
@@ -391,14 +391,14 @@ Las secciones, en el orden de la pantalla:
   mantenían y cada persona con una máquina confirmada) y avisa que todavía no está guardada: se guarda al proponerla.
   Si alguien sale de la lista, en cuanto se aprueba el pedido y el sitio se actualiza (a lo sumo 15 minutos), su
   próxima página es la de «Tu cuenta no está en la lista», sin datos. Arriba de la lista se ve con qué se entra al
-  sitio; eso se cambia en la instalación. También van acá el buzón de corridas, el refresco y la dirección del sitio.
+  sitio; eso se cambia en la instalación. También van acá el buzón de ejecuciones, el refresco y la dirección del sitio.
   Queda en `operations.json`, en el repo de operaciones. Lo revisa otra persona que mantiene. **«Cada cuánto se
   actualiza el sitio»** acepta de 5 a 120 minutos; sin declarar, 15. Más corto, un cambio se ve antes, pero el sitio
   vuelve a leer el repo de operaciones, el del perfil y el buzón más seguido mientras está despierto: más lecturas a
   la nube, que en una instalación que cobra por uso cuestan algo más. No lo mantiene despierto: dormido no lee nada, y
   al despertar lee todo.
 - **Cada cuánto el sitio relee sus datos** (`site.refresh_minutes`, también en «Quién entra al sitio»): cada cuántos
-  minutos el sitio vuelve a leer la configuración (este repo de operaciones), el buzón de corridas y el perfil del
+  minutos el sitio vuelve a leer la configuración (este repo de operaciones), el buzón de ejecuciones y el perfil del
   equipo. Va de 5 a 120 minutos; si no lo declarás, son 15. No instala versiones: eso es «Cómo se actualiza el sitio»,
   en Instalación y actualización.
 - **Los cambios de un mantenedor**: si un cambio que propone quien mantiene el sitio entra solo, o queda un pedido para
@@ -417,7 +417,7 @@ Las secciones, en el orden de la pantalla:
 - **Cómo se actualiza el sitio**: si el sitio se pone al día solo con la versión nueva del arnés o sólo avisa (`site.update`
   de `operations.json`). Sin declarar, sólo aviso. «Automático» pide el nocturno de actualización y su permiso: la receta,
   en «Cómo se mantiene al día».
-- **Personas y máquinas**: de quién es cada máquina que manda corridas, y en qué proyectos trabaja cada persona. Una
+- **Personas y máquinas**: de quién es cada máquina que manda ejecuciones, y en qué proyectos trabaja cada persona. Una
   máquina nueva aparece en «Por confirmar» con el correo que dice ser; **Confirmar** la pone a nombre de esa persona.
   Queda en `operations.json`, en el repo de operaciones. Lo revisa quien mantiene.
 - **A quién le llegan los avisos y los pedidos**: a quién se asigna lo que la noche encuentra (una dependencia vieja,
@@ -448,12 +448,12 @@ en su repo.
 
 - **Dónde llega el resumen de cada mañana**: el canal del aviso (Telegram, Slack o Teams). Queda en `operations.json`,
   en el repo de operaciones. Lo revisa quien mantiene.
-- **Aviso de espera**: cuántos minutos espera una corrida a una persona antes de avisar. Llega a todas las máquinas.
+- **Aviso de espera**: cuántos minutos espera una ejecución a una persona antes de avisar. Llega a todas las máquinas.
   Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Umbrales: cuándo algo se pinta verde o rojo**: los límites con que el tablero colorea cada número; entre los dos,
   amarillo. Queda en `scripts/nightly/dashboard/sources.json`, en el repo de operaciones. Lo revisa quien mantiene.
 - **Fichas que muestra el sitio**: una casilla por cada ficha del tablero de la noche que el sitio muestra en Arnés,
-  Proyectos y Corridas. Destildá las que no uses: dejan de armarse y de mostrarse, y Arnés dice cuántas hay ocultas.
+  Proyectos y Ejecuciones. Destildá las que no uses: dejan de armarse y de mostrarse, y Arnés dice cuántas hay ocultas.
   Queda en `operations.json`, en el repo de operaciones (`site.hidden_cards`). Lo revisa quien mantiene.
 - **Pedidos de vulnerabilidades**: con qué tipo y qué campos crea la revisión de la noche el pedido de trabajo de una
   vulnerabilidad en cada proyecto de Azure DevOps. Arriba, en un recuadro, el **tipo** (vacío, cada proyecto usa su
@@ -474,9 +474,9 @@ en su repo.
 
 ![Avisos y la noche](sitio-de-la-organizacion/capturas/configuracion-avisos.png)
 
-### Cómo trabaja Claude
+### Cómo trabaja el agente
 
-- **Cómo contesta Claude**: el idioma, el estilo y el largo de las respuestas en todas las máquinas. Queda en
+- **Cómo contesta el agente**: el idioma, el estilo y el largo de las respuestas en todas las máquinas. Queda en
   `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Qué modelo usa cada trabajo del pipeline**: el nivel de los revisores, del pase adversarial, de los ayudantes y de
   la sesión, en una tabla por grupo con el valor por defecto de cada trabajo al lado; «el por defecto» deja el que trae
@@ -514,11 +514,11 @@ en su repo.
   código de CodeGraph); una máquina puede apagar una para ella sola. Con CodeGraph prendido, el instalador se lo instala
   a cada dev y el arnés avisa si una máquina no lo tiene. Telegram no está acá: es de cada máquina. Queda en
   `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
-- **Conversaciones de las corridas**: si el sitio baja también lo que se habló en cada corrida; con eso, el detalle de
-  Corridas muestra los archivos que tocó. Queda en `operations.json`, en el repo de operaciones. Lo revisa quien
+- **Conversaciones de las ejecuciones**: si el sitio baja también lo que se habló en cada ejecución; con eso, el detalle de
+  Ejecuciones muestra los archivos que tocó. Queda en `operations.json`, en el repo de operaciones. Lo revisa quien
   mantiene.
 
-![Cómo trabaja Claude](sitio-de-la-organizacion/capturas/configuracion-claude.png)
+![Cómo trabaja el agente](sitio-de-la-organizacion/capturas/configuracion-claude.png)
 
 ### Tu tecnología
 
@@ -536,7 +536,7 @@ Lo que la persona ve en la sección y lo que hace el agente cuando le piden una 
   1. Mira el proyecto: qué herramienta corre las pruebas, el **archivo que la detecta** (el que está en la carpeta del
      proyecto, por ejemplo `Cargo.toml`), el comando, qué reporte deja (JUnit o el JSON de Vitest/Jest) y dónde, y si
      mide la cobertura y en qué formato (Cobertura, lcov, istanbul, JaCoCo o el perfil de Go). `{results}` es la
-     carpeta de la corrida.
+     carpeta de la ejecución.
   2. Arma la entrada de `stack.test_runners` en `team-repos.json` del repo del perfil: `name` (minúsculas y guiones),
      `detect`, `command`, `results` y, si mide, `coverage`.
   3. La valida con el lector de las máquinas antes de proponer:
@@ -553,7 +553,7 @@ Lo que la persona ve en la sección y lo que hace el agente cuando le piden una 
 - **Paquetes de la organización**: qué paquetes del arnés (los revisores y las guías de un producto o de un cliente)
   se activan en todas las máquinas. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
 
-Debajo está **Qué versión del arnés tiene cada máquina**, la que informó cada una con su última corrida. Es para mirar:
+Debajo está **Qué versión del arnés tiene cada máquina**, la que informó cada una con su última ejecución. Es para mirar:
 las máquinas se actualizan solas al arrancar.
 
 ![Instalación y actualización](sitio-de-la-organizacion/capturas/configuracion-instalacion.png)
@@ -562,18 +562,18 @@ las máquinas se actualizan solas al arrancar.
 
 El sitio decide quién sos por tu correo, y sólo con la lista de «Quién entra al sitio»:
 
-| Rol | Inicio | Corridas | Proyectos | Arnés | Cómo trabaja | Configuración |
+| Rol | Inicio | Ejecuciones | Proyectos | Arnés | Cómo trabaja | Configuración |
 |---|---|---|---|---|---|---|
-| **Quien mantiene** | «Qué decidir hoy», de toda la organización | todas las corridas | todos los productos | sí | sí, y propone cambios a sus revisores | sí, y propone cambios |
+| **Quien mantiene** | «Qué decidir hoy», de toda la organización | todas las ejecuciones | todos los productos | sí | sí, y propone cambios a sus revisores | sí, y propone cambios |
 | **Persona confirmada** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas | los productos en los que trabaja | no | no | no |
 | **Persona con la máquina sin confirmar** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas; las de la máquina nueva, todavía no | los productos en los que trabaja | no | no | no |
 | **Sin rol** (no está en la lista) | sólo la página «Tu cuenta no está en la lista» | no | no | no | no | no |
 
 **Cómo se pasa de un rol a otro.** Lo decide quien mantiene, en Configuración, y entra cuando alguien aprueba el pedido:
 
-- Para entrar como **dev**, tu correo tiene que estar en «Quién entra al sitio» con el rol «Dev». Para ver tus corridas,
+- Para entrar como **dev**, tu correo tiene que estar en «Quién entra al sitio» con el rol «Dev». Para ver tus ejecuciones,
   además, una máquina tuya tiene que estar confirmada a tu nombre («Personas y máquinas»): aparece sola en «Por
-  confirmar» cuando sube su primera corrida.
+  confirmar» cuando sube su primera ejecución.
 - Para **mantener**, tu correo tiene que estar en «Quién entra al sitio» con el rol «Mantiene el sitio». La primera
   persona la pone quien instala el sitio, mientras la lista no tiene a nadie que mantenga.
 - Para dejar de ver, se saca el correo de la lista.
@@ -607,9 +607,9 @@ estás con otro correo que el de la lista.
 **Qué hacer:** si tenés otra cuenta, usá «entrá con esa». Si no, pedile a quien mantiene el sitio que te sume, con el
 correo con que entrás. Entra cuando alguien aprueba el pedido y el sitio se actualiza (a lo sumo 15 minutos).
 
-### No veo mis corridas
+### No veo mis ejecuciones
 
-**Lo que se ve:** entrás, pero en Corridas faltan corridas tuyas.
+**Lo que se ve:** entrás, pero en Ejecuciones faltan ejecuciones tuyas.
 
 **Por qué pasa:** la máquina de donde salieron todavía no está confirmada a tu nombre. O el correo con que entrás no es
 el correo de git de esa máquina: por ejemplo, la cuenta de Microsoft tiene un nombre de usuario distinto del correo.
@@ -630,16 +630,16 @@ el refresco siguiente.
 
 ![El sitio frenado](sitio-de-la-organizacion/capturas/sitio-frenado.png)
 
-### Cargando las corridas
+### Cargando las ejecuciones
 
-**Lo que se ve:** «cargando las fuentes» o «cargando las corridas», y la página se recarga sola.
+**Lo que se ve:** «cargando las fuentes» o «cargando las ejecuciones», y la página se recarga sola.
 
 **Por qué pasa:** el sitio acaba de arrancar y todavía está leyendo el repo de operaciones o bajando el buzón de
-corridas. La primera bajada del buzón puede tardar unos minutos.
+ejecuciones. La primera bajada del buzón puede tardar unos minutos.
 
 **Qué hacer:** esperar. Si sigue igual más de diez minutos, avisale a quien mantiene.
 
-![Corridas mientras el sitio baja el buzón](sitio-de-la-organizacion/capturas/cargando-corridas.png)
+![Ejecuciones mientras el sitio baja el buzón](sitio-de-la-organizacion/capturas/cargando-corridas.png)
 
 ### No se pudo actualizar
 
@@ -702,7 +702,7 @@ visita la despierta.
 - **El repo de operaciones** de la organización, y una identidad que lo pueda leer (sólo ese repo). Si todavía no lo
   tenés: cómo se crea y qué archivos lleva, en `pipelines/operations/README.md` §2 del arnés (los ejemplos, en
   `pipelines/operations/examples/`). Para el sitio alcanza con `operations.json`; lo mínimo, en la prueba con Docker.
-- **Opcional: el buzón de corridas**, si la organización junta las corridas de las máquinas.
+- **Opcional: el buzón de ejecuciones**, si la organización junta las ejecuciones de las máquinas.
 - **Un lugar donde correr un contenedor** con HTTPS delante: una nube, un servicio gratis o una máquina propia.
 
 ## Probarlo en tu máquina con Docker
@@ -792,19 +792,19 @@ El TLS lo pone quien instala: la plataforma, un proxy o un túnel. El contenedor
 ### El disco
 
 Un volumen persistente montado como carpeta en `SITE_DATA_DIR`. Ahí viven el espejo del buzón (los volcados de las
-corridas y, con `site.mailbox.threads: true`, un resumen chico de cada conversación) y la última configuración buena.
+ejecuciones y, con `site.mailbox.threads: true`, un resumen chico de cada conversación) y la última configuración buena.
 Las conversaciones no se guardan: cada una se baja una vez, se resume y se borra, y la pasada no baja más de 300 MB de
 conversaciones por vez. Los clones de los repos y los textos de los cambios van al disco del contenedor, nunca al volumen
 (un disco de red montado por SMB no admite el `chmod` que git hace al clonar). Medido con un buzón de 6,9 GB: sin
-las conversaciones, ocupa 163 MB, a los que se suman los resúmenes (unos kilobytes por corrida) y, mientras dura una
+las conversaciones, ocupa 163 MB, a los que se suman los resúmenes (unos kilobytes por ejecución) y, mientras dura una
 pasada, hasta 300 MB de conversaciones por resumir. **2 GB alcanzan**, con lugar para crecer. **Sin volumen el sitio igual anda**: usa
-una carpeta temporal y lo dice. Pero lo que sale de las conversaciones en la pestaña Corridas queda «no medido», cada
+una carpeta temporal y lo dice. Pero lo que sale de las conversaciones en la pestaña Ejecuciones queda «no medido», cada
 reinicio vuelve a bajar todo, y un reinicio reinicia el plazo de 24 horas que tiene una configuración rota antes de que
 el sitio se frene (y levanta el freno hasta que vuelva a vencer).
 
 ### La memoria
 
-1 GB. Armar la vista de corridas con sus conversaciones mide unos 700 MB de pico.
+1 GB. Armar la vista de ejecuciones con sus conversaciones mide unos 700 MB de pico.
 
 ### El inicio de sesión de la organización
 
@@ -871,7 +871,7 @@ Cada instalación dice dónde se guarda cada uno y por dónde entra su valor. **
 | `SITE_SESSION_KEY` | firmar la sesión | 32 bytes al azar, sólo del sitio |
 | `SITE_OIDC_CLIENT_SECRET` | el inicio de sesión | un registro sólo para el sitio, sin permisos de API más allá de `openid email profile` (con `github`, que no es OIDC, el sitio pide `read:user user:email read:org`: leer la cuenta, sus correos y si es de la organización); vence en 6 meses como máximo |
 | `SITE_OPERATIONS_TOKEN` (o la identidad de la plataforma, `SITE_OPERATIONS_IDENTITY=managed`, sin secreto) | leer el repo de operaciones | una identidad propia con lectura sólo en ese repo; si es un token, de una organización, sólo lectura de código, 90 días; en GitHub, de grano fino, de un solo repo, `contents: read` |
-| `SITE_MAILBOX_SAS` (o `SITE_MAILBOX_IDENTITY=managed`) | leer las corridas del buzón | una SAS de sólo leer y listar (`rl`) atada a una política guardada del contenedor, 6 meses como máximo; o la identidad de la plataforma con un rol de lectura sobre el contenedor |
+| `SITE_MAILBOX_SAS` (o `SITE_MAILBOX_IDENTITY=managed`) | leer las ejecuciones del buzón | una SAS de sólo leer y listar (`rl`) atada a una política guardada del contenedor, 6 meses como máximo; o la identidad de la plataforma con un rol de lectura sobre el contenedor |
 | el canal del aviso | mandar el aviso de la mañana | no llega al sitio: lo usa el proceso de la noche. Telegram: el token sirve para todo el bot, usá uno dedicado. Slack o Teams: la dirección del webhook ES la credencial |
 | `SITE_OPERATIONS_WRITE_TOKEN` | proponer cambios de configuración desde el sitio | en GitHub, de grano fino sobre el repo de operaciones con `contents: write` y `pull_requests: write`; en Azure DevOps, una cuenta dedicada con *Contribute*, *Create branch* y *Contribute to pull requests* sólo en ese repo, *Force push* negado y sin permiso de saltar políticas |
 | `SITE_PROFILE_REPO` y `SITE_PROFILE_TOKEN` | leer el perfil del equipo (dónde vive cada repo, los paquetes) | parte de la instalación normal: sin ellos la pestaña Configuración dice «falta el repo del perfil». La dirección del repo del perfil y un token de sólo lectura de código sobre ese repo (puede ser el mismo permiso que el del repo de operaciones, si los dos viven en la misma organización) |
@@ -1120,7 +1120,7 @@ huella de la versión que instalás.
 - **Disco:** el plan gratis no tiene. Sin `SITE_DATA_DIR`, lo que sale de las conversaciones queda «no medido» y un
   reinicio reinicia el plazo de 24 horas de una configuración rota. Con un disco de Render (pago) montado en `/data` y
   `SITE_DATA_DIR=/data`, queda completo.
-- **Memoria:** 512 MB en el plan gratis, menos que el 1 GB que pide el sitio para armar la vista de corridas con sus
+- **Memoria:** 512 MB en el plan gratis, menos que el 1 GB que pide el sitio para armar la vista de ejecuciones con sus
   conversaciones. Sin medir todavía si el armado sin conversaciones entra: si no, un plan pago.
 - **Secretos:** en el panel del servicio. El plano los pregunta sólo al crear el servicio (`sync: false`); rotar uno se
   hace en el panel. El buzón, con la SAS de sólo leer y listar.
@@ -1213,7 +1213,7 @@ de Codex.
 - **Un solo camino para los datos**: la tabla de rutas de `server.js`. Una ruta que no declara quién puede verla hace
   que el sitio no arranque, y cada ruta recibe el modelo ya filtrado para quien pide.
 - **Lee directo de las fuentes** (`sources.js`): el repo de operaciones, clonado con la credencial en una cabecera
-  (nunca en el disco), y el buzón de corridas con una SAS de sólo lectura o la identidad administrada. Lo de cada nube
+  (nunca en el disco), y el buzón de ejecuciones con una SAS de sólo lectura o la identidad administrada. Lo de cada nube
   vive sólo en `cloud/`. Las fotos se copian con lista blanca: ningún título, diagnóstico ni mensaje llega al modelo. En
   pantalla se ve un estado de lista cerrada, y el motivo crudo va sólo al registro.
 - **El refresco** es cada 15 minutos y conserva el último bueno. Si `operations.json` deja de validar, vale el último
@@ -1221,7 +1221,7 @@ de Codex.
   `SITE_DATA_DIR`. La imagen deja `/data` del usuario del sitio y la declara volumen, así un volumen nuevo nace
   escribible. La bajada del buzón va de a varios archivos a la vez dentro de su tope de 2 minutos; si corta, la pasada
   siguiente sale a los 10 segundos y retoma donde quedó. La navegación no espera todo: con el repo de operaciones
-  leído, las pestañas se ven, y sólo Corridas espera el buzón. Toda página de carga se recarga sola cada 5 segundos.
+  leído, las pestañas se ven, y sólo Ejecuciones espera el buzón. Toda página de carga se recarga sola cada 5 segundos.
 - **Las pestañas** (`views.js`) las arma el servidor, sin JavaScript de afuera y sin `<script>` en línea. «No medido»
   nunca es 0.
 - **Los textos, en los dos idiomas** (`scripts/site/texts.js`): todo texto que el sitio muestra vive en esa tabla, una
@@ -1230,10 +1230,10 @@ de Codex.
   y una página armada en inglés que trae castellano. El idioma de cada pedido lo decide `language.js`: la preferencia
   guardada de la persona (en `SITE_DATA_DIR/idiomas.json`, por huella del correo), la cookie `sitio-idioma`, el
   navegador y, al final, castellano. Los mensajes que el servidor de Configuración arma en castellano se traducen al
-  salir con el mismo molde de la tabla. El cuerpo de Corridas y el catálogo de lo que instala el arnés todavía salen en
+  salir con el mismo molde de la tabla. El cuerpo de Ejecuciones y el catálogo de lo que instala el arnés todavía salen en
   castellano.
 - **Lo que no hace:** no escribe en ningún repo salvo los pedidos de la pestaña Configuración, no acciona nada, y no
-  baja conversaciones salvo para la pestaña Corridas, con `site.mailbox.threads` y un disco.
+  baja conversaciones salvo para la pestaña Ejecuciones, con `site.mailbox.threads` y un disco.
 
 ### La pestaña Configuración
 
@@ -1266,22 +1266,22 @@ un dato). Es la configuración de la organización, no la de ninguna máquina.
 - **Umbrales sólo cuando el proceso de la noche los lee de verdad:** la sección los edita recién cuando la noche dejó la
   marca `.dashboard/applied-config.json` con ese archivo adentro.
 
-### La pestaña Corridas
+### La pestaña Ejecuciones
 
-La vista de corridas en el sitio, cada uno lo suyo (`tabs/runs.js` sobre `scripts/nightly/dashboard/runs.js`: un solo
+La vista de ejecuciones en el sitio, cada uno lo suyo (`tabs/runs.js` sobre `scripts/nightly/dashboard/runs.js`: un solo
 código para la vista local y la del sitio).
 
-- **El filtro lo hace el servidor, antes de cada respuesta** (`filtrarCorridas` de `access.js`). Una corrida ajena, una
+- **El filtro lo hace el servidor, antes de cada respuesta** (`filtrarCorridas` de `access.js`). Una ejecución ajena, una
   sin máquina y un id que no existe contestan igual: 404 sin cuerpo.
-- **Lo que viaja, por partes:** la lista, el detalle al abrir una corrida y los textos al abrir un cambio. Cada corrida
+- **Lo que viaja, por partes:** la lista, el detalle al abrir una ejecución y los textos al abrir un cambio. Cada ejecución
   tiene un id estable (16 hexadecimales del sha256 de máquina y sesión).
-- **El armado en un hilo aparte**, con techo de memoria: medido con 551 corridas, 34 segundos y unos 690 MB de pico.
+- **El armado en un hilo aparte**, con techo de memoria: medido con 551 ejecuciones, 34 segundos y unos 690 MB de pico.
   Mientras rearma, o si falla, sirve el anterior entero con su hora.
 - **Las conversaciones, sólo con disco** (`site.mailbox.threads: true` y `SITE_DATA_DIR`). Sin eso, lo que sale del hilo
   dice «no medido». Con eso, cada conversación se baja una vez, por tandas de hasta 300 MB, y se resume: la
-  descripción de la corrida, el reparto del tiempo y la lista de cambios. Después se borra del disco. La tabla y el
+  descripción de la ejecución, el reparto del tiempo y la lista de cambios. Después se borra del disco. La tabla y el
   detalle salen del resumen. Los textos de los cambios (los parches) se bajan cuando alguien abre los cambios de una
-  corrida, y quedan en un caché de 200 MB en el disco del contenedor; al llenarse, se borran los abiertos hace más
+  ejecución, y quedan en un caché de 200 MB en el disco del contenedor; al llenarse, se borran los abiertos hace más
   tiempo. El espejo borra lo que ya no está en el buzón.
 
 ### El aviso de la mañana y la prueba sin sesión

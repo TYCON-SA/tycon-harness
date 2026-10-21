@@ -219,11 +219,11 @@ const sinTags = (h) => String(h).replace(/<svg[\s\S]*?<\/svg>/g, ' ').replace(/<
 test('T1 Cabecera_SelloYBandas_IgualQueLaVista @story-2.27 @ac-1 @ac-18', async () => {
   await conPestana({ fuentes: fuentesCon({ espejo: mundo() }) }, async ({ h, entrar }) => {
     const p = (await h.pedir('/corridas', { cookie: await entrar(LEAD) })).texto;
-    for (const rot of ['Corridas:', 'Con consumo medido:', 'Con controles:', 'Llegaron al paso 8:', 'Generado:', 'Alcance:']) assert.ok(p.includes(`<b>${rot}</b>`), `el sello trae «${rot}»`);
+    for (const rot of ['Ejecuciones:', 'Con consumo medido:', 'Con controles:', 'Llegaron al paso 8:', 'Generado:', 'Alcance:']) assert.ok(p.includes(`<b>${rot}</b>`), `el sello trae «${rot}»`);
     assert.match(p, /versión del sitio/, 'el sello dice la versión del sitio, no el commit');
-    assert.doesNotMatch(p, /Sin registro de corridas propio/, 'el sitio no tiene registro propio y no lo declara como faltante');
+    assert.doesNotMatch(p, /Sin registro de ejecuciones propio/, 'el sitio no tiene registro propio y no lo declara como faltante');
     assert.doesNotMatch(p, /~\/\.claude\/\.tycon-pipeline\/timing-history/, 'la nota «De dónde sale» es la del sitio');
-    assert.match(p, /del espejo del buzón de corridas que el sitio baja con su identidad de sólo lectura/);
+    assert.match(p, /del espejo del buzón de ejecuciones que el sitio baja con su identidad de sólo lectura/);
     // la página vieja del tablero ya no se sirve: el eyebrow lleva a Arnés, donde están sus fichas
     assert.match(p, /href="\/arnes"/, 'el eyebrow enlaza Arnés para quien mantiene');
     assert.doesNotMatch(p, /href="\/arnes\/tablero"/, 'nada enlaza la página vieja del tablero');
@@ -237,10 +237,10 @@ test('T1 Cabecera_SelloYBandas_IgualQueLaVista @story-2.27 @ac-1 @ac-18', async 
   const r = spawnSync(process.execPath, ['-e', `const r=require(${JSON.stringify(path.join(copia, 'scripts', 'nightly', 'dashboard', 'runs.js'))});const M=r.modelo(${JSON.stringify(tmp('vacia-'))},{buzon:${JSON.stringify(mundo())},soloBuzon:true});process.stdout.write(r.cabecera(M,{sitio:{rol:'maintainer',version:'1'}}))`], { encoding: 'utf8' });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(r.stdout, /tokens-digest\.js/, 'sin el saneado, la banda lo dice');
-  assert.doesNotMatch(r.stdout, /Sin registro de corridas propio/);
+  assert.doesNotMatch(r.stdout, /Sin registro de ejecuciones propio/);
 });
 
-test('T9 2.36-Corridas_FichasArribaDeLaTabla @story-2.36 @ac-8 — las tres de Corridas, entre el resumen y la tabla, para quien mantiene', async () => {
+test('T9 2.36-Corridas_FichasArribaDeLaTabla @story-2.36 @ac-8 — las tres de Ejecuciones, entre el resumen y la tabla, para quien mantiene', async () => {
   const cards = require(path.join(H.SITE, 'tabs', 'cards.js'));
   const f = fuentesCon({ espejo: mundo() });
   // el modelo de fichas que arma el cálculo común del tablero (la misma cuenta la prueba site-cards: UnaSolaCuenta)
@@ -253,8 +253,8 @@ test('T9 2.36-Corridas_FichasArribaDeLaTabla @story-2.36 @ac-8 — las tres de C
     const p = (await h.pedir('/corridas', { cookie: await entrar(LEAD) })).texto;
     const deCorridas = cards.FICHAS.filter((x) => x.pestana === 'corridas').map((x) => x.id);
     assert.deepStrictEqual(deCorridas.sort(), ['bloqueos', 'corridas', 'pasos']);
-    for (const id of deCorridas) assert.match(p, new RegExp(`data-ficha="${id}"`), `${id} sale en Corridas`);
-    for (const x of cards.FICHAS.filter((y) => y.pestana !== 'corridas')) assert.ok(!p.includes(`data-ficha="${x.id}"`), `${x.id} no es de Corridas`);
+    for (const id of deCorridas) assert.match(p, new RegExp(`data-ficha="${id}"`), `${id} sale en Ejecuciones`);
+    for (const x of cards.FICHAS.filter((y) => y.pestana !== 'corridas')) assert.ok(!p.includes(`data-ficha="${x.id}"`), `${x.id} no es de Ejecuciones`);
     // entre el resumen (las fichas del filtro) y la tabla
     const grilla = p.indexOf('id="fichas-corridas"');
     assert.ok(grilla > 0 && grilla > p.indexOf('id="fichas"') && grilla < p.indexOf('<table'), 'la grilla va entre el resumen y la tabla');
@@ -291,7 +291,7 @@ test('T2 CapaEjecutiva_FiltrosYDiezFichas @story-2.27 @ac-2', async () => {
     assert.match(fichas, /n=\d+ de \d+/, 'las medianas llevan n=');
     assert.match(c.pagina.texto, /id="f-maquina"/, 'el filtro por máquina para quien ve varias');
     c.nodos.fc.checked = true; c.w.__aplicar();
-    assert.match(c.nodos.cuenta.textContent, /^\d+ de \d+ corridas a la vista$/);
+    assert.match(c.nodos.cuenta.textContent, /^\d+ de \d+ ejecuciones a la vista$/);
     c.nodos.fc.checked = false;
     c.nodos['f-desde'].value = '2030-01-01'; c.nodos['f-hasta'].value = '2030-12-31'; c.w.__aplicar();
     assert.strictEqual((c.nodos.fichas.innerHTML.match(/class="tile/g) || []).length, 1, 'con el filtro imposible, la ficha gris única');
@@ -310,7 +310,7 @@ test('2.45-T4 FiltroSaleEnElIdioma @story-2.45 @ac-4', async () => {
     assert.match(en, /data-molde="\{n\} of \{t\} runs shown"/, 'el molde de la cuenta, en inglés');
     const es = filtro((await h.pedir('/corridas', { cookie: `${ses}; sitio-idioma=es` })).texto);
     for (const t of ['desde', 'hasta', 'producto', 'máquina', 'hoy', 'esta semana', 'este mes', 'limpiar']) assert.match(sinTags(es), new RegExp(`(^| )${t}( |$)`), `en castellano: «${t}»`);
-    assert.match(es, /data-molde="\{n\} de \{t\} corridas a la vista"/);
+    assert.match(es, /data-molde="\{n\} de \{t\} ejecuciones a la vista"/);
     // el cliente dibuja la cuenta con el molde del idioma
     const c = await clienteDelSitio(h, `${ses}; sitio-idioma=en`);
     c.w.__aplicar();
@@ -329,9 +329,9 @@ test('T3 Graficos_SemanaVaciaEnCero_MesSinMedirRayado @story-2.27 @ac-3', async 
     const c = await clienteDelSitio(h, await entrar(DEV_A));
     const sem = c.nodos.gsem.innerHTML;
     // dev-a corrió en la S32 y en la S34: la S33 sale dibujada en cero, con su barra
-    assert.match(sem, /<title>2026-S33: 0 corridas<\/title>/, `la semana vacía, en cero: ${sinTags(sem).slice(0, 200)}`);
+    assert.match(sem, /<title>2026-S33: 0 ejecuciones<\/title>/, `la semana vacía, en cero: ${sinTags(sem).slice(0, 200)}`);
     const pasos = c.nodos.gpasos.innerHTML;
-    assert.match(pasos, /fill="var\(--hatch\)"[^>]*><title>2026-07: sin corridas medidas<\/title>/, 'el mes sin medir: hueco rayado');
+    assert.match(pasos, /fill="var\(--hatch\)"[^>]*><title>2026-07: sin ejecuciones medidas<\/title>/, 'el mes sin medir: hueco rayado');
     assert.doesNotMatch(pasos, /<title>2026-07: mediana/, 'nunca en cero');
     assert.match(pasos, /<title>2026-08: mediana \d+ · n=1<\/title>/, 'el mes medido, con su n=');
     assert.match(pasos, /línea base|sin línea base|stroke-dasharray/, 'la línea base, o lo que dice que no hay');
@@ -405,7 +405,7 @@ test('T6 Enlaces_AbrirVerGitMaquinaSolo_ConIdEstable @story-2.27 @ac-6', async (
     const a2 = lista.corridas.find((x) => x.story === '3.2');
     const c = await clienteDelSitio(h, dev, { search: `?abrir=${a2.id}&ver=1&git=0` });
     const abierta = c.rows.find((r) => r._cl.has('abierta'));
-    assert.ok(abierta, 'abrió una corrida');
+    assert.ok(abierta, 'abrió una ejecución');
     assert.strictEqual(abierta.dataset.id, a2.id, 'la del id, no la del índice');
     assert.deepStrictEqual(c.w.__enlace(), { abrir: lista.corridas.indexOf(a2), ver: 1, git: 0, solo: null, maquina: null });
     const solo = await clienteDelSitio(h, dev, { search: `?solo=${a2.id}` });
@@ -448,7 +448,7 @@ test('T7 Equivalencia_VistaLocalYPestana_MismoTexto @story-2.27 @ac-7', async ()
     assert.strictEqual(lista.corridas.length, modeloLocal.corridas.length);
     for (let i = 0; i < lista.corridas.length; i++) {
       const det = (await h.pedir(`/api/corridas/${lista.corridas[i].id}`, { cookie: lead })).json;
-      assert.strictEqual(sinTags(c.w.__detalle(det)), sinTags(wl.__detalle(modeloLocal.corridas[i])), `el detalle de la corrida ${i}, igual`);
+      assert.strictEqual(sinTags(c.w.__detalle(det)), sinTags(wl.__detalle(modeloLocal.corridas[i])), `el detalle de la ejecución ${i}, igual`);
     }
   });
 });
@@ -466,7 +466,7 @@ test('T8 Dev_SoloSusCorridas_SinConteosGlobales @story-2.27 @ac-8', async () => 
     assert.deepStrictEqual(l.maquinas.lista.map((m) => m.nombre), ['maq-a'], 'las opciones de máquina, sólo las suyas');
     const p = (await h.pedir('/corridas', { cookie: dev })).texto;
     const sello = /<div class="stamp">([\s\S]*?)<\/div>/.exec(p)[1];
-    assert.match(sinTags(sello), /^Corridas: 2 Con consumo medido: 1 de 2 Con controles: 2 de 2 Llegaron al paso 8: 2 de 2 Generado: \d{4}-\d\d-\d\d \d\d:\d\d UTC · versión del sitio Alcance: maq-a 2$/);
+    assert.match(sinTags(sello), /^Ejecuciones: 2 Con consumo medido: 1 de 2 Con controles: 2 de 2 Llegaron al paso 8: 2 de 2 Generado: \d{4}-\d\d-\d\d \d\d:\d\d UTC · versión del sitio Alcance: maq-a 2$/);
     assert.doesNotMatch(sello, /archivos|esta máquina|undefined/);
     assert.doesNotMatch(p, /href="\/arnes\/tablero"/, 'el eyebrow no enlaza una página que el dev no puede abrir');
   });
@@ -505,7 +505,7 @@ test('T11 PersonaSinCorridasTodavia_FichaGris_SinRolComoLa2_23 @story-2.27 @ac-1
     const l = (await h.pedir('/api/corridas', { cookie: d })).json;
     assert.deepStrictEqual(l.corridas, []);
     const c = await clienteDelSitio(h, d);
-    assert.match(sinTags(c.nodos.fichas.innerHTML), /todavía no hay corridas de tus máquinas en el buzón \(maq-d\): la primera llega sola al terminar un pipeline/);
+    assert.match(sinTags(c.nodos.fichas.innerHTML), /todavía no hay ejecuciones de tus máquinas en el buzón \(maq-d\): la primera llega sola al terminar un pipeline/);
     assert.doesNotMatch(c.nodos.fichas.innerHTML, /t-val">0/);
     const sinRol = await entrar('nadie@ejemplo.test');
     assert.strictEqual((await h.pedir('/api/corridas', { cookie: sinRol })).status, 403);
@@ -531,7 +531,7 @@ test('T13 SinSesion_NadaDeDatos @story-2.27 @ac-13', async () => {
     for (const ruta of ['/corridas', '/api/corridas', `/api/corridas/${id}`, `/api/corridas/${id}/textos`, '/corridas/cliente.js', '/corridas/vista.css']) {
       const r = await h.pedir(ruta);
       if (ruta.startsWith('/api/')) assert.strictEqual(r.status, 401, ruta); else assert.strictEqual(r.status, 302, ruta);
-      assert.doesNotMatch(r.texto, /maq-a|3\.1|corridas/i, `${ruta}: sin un byte del modelo`);
+      assert.doesNotMatch(r.texto, /maq-a|3\.1|ejecuciones/i, `${ruta}: sin un byte del modelo`);
     }
   });
 });
@@ -550,7 +550,7 @@ test('T14 Fuga_NingunMarcadorDeOtroLlegaAlDev @story-2.27 @ac-14', async () => {
     const junto = textos.join('\n').toLowerCase();
     for (let k = 1; k <= 8; k++) assert.ok(!junto.includes(`zqx-fuga-b${k}`), `zqx-fuga-b${k} no llega al dev`);
     assert.ok(!junto.includes('sin forma.local'), 'la carpeta sin forma tampoco');
-    assert.strictEqual(l.corridas.find((c) => c.story === '3.2').producto, 'RepoComun', 'el producto de su corrida sigue siendo el suyo');
+    assert.strictEqual(l.corridas.find((c) => c.story === '3.2').producto, 'RepoComun', 'el producto de su ejecución sigue siendo el suyo');
   });
 });
 
@@ -619,7 +619,7 @@ test('T18 Buzon_NoLeidoOParcial_BandaConMotivo @story-2.27 @ac-19', async () => 
       const l = (await h.pedir('/api/corridas', { cookie: dev })).json;
       assert.deepStrictEqual(l.buzon, { estado: 'leido', parcial: true });
       const p = (await h.pedir('/corridas', { cookie: dev })).texto;
-      assert.match(p, /puede faltar alguna corrida tuya: el buzón no se leyó entero/);
+      assert.match(p, /puede faltar alguna ejecución tuya: el buzón no se leyó entero/);
       assert.doesNotMatch(p, /carpeta de máquina del buzón no se pudo leer/);
       const pl = (await h.pedir('/corridas', { cookie: await entrar(LEAD) })).texto;
       assert.match(pl, /1 carpeta de máquina del buzón no se pudo leer/);
@@ -628,11 +628,11 @@ test('T18 Buzon_NoLeidoOParcial_BandaConMotivo @story-2.27 @ac-19', async () => 
   // el espejo no se pudo leer: la banda con su motivo para quien mantiene; al dev, que puede faltar alguna suya
   await conPestana({ fuentes: fuentesCon({ espejo: path.join(tmp('site-runs-nada-'), 'no-existe') }) }, async ({ h, entrar }) => {
     const pl = (await h.pedir('/corridas', { cookie: await entrar(LEAD) })).texto;
-    assert.match(pl, /No se leyó la carpeta bajada del buzón\.<\/b> la carpeta bajada del buzón de corridas no se pudo leer \(ENOENT\)/);
-    assert.doesNotMatch(pl, /0 corridas/);
+    assert.match(pl, /No se leyó la carpeta bajada del buzón\.<\/b> la carpeta bajada del buzón de ejecuciones no se pudo leer \(ENOENT\)/);
+    assert.doesNotMatch(pl, /0 ejecuciones/);
     const dev = await entrar(DEV_A);
     assert.deepStrictEqual((await h.pedir('/api/corridas', { cookie: dev })).json.buzon, { estado: 'no_medido', parcial: true });
-    assert.match((await h.pedir('/corridas', { cookie: dev })).texto, /puede faltar alguna corrida tuya: el buzón no se leyó entero/);
+    assert.match((await h.pedir('/corridas', { cookie: dev })).texto, /puede faltar alguna ejecución tuya: el buzón no se leyó entero/);
   });
   // sin buzón configurado: gris «no medido»
   const sinBuzon = fuentesCon({ espejo: mundo(), config: { ...opsCon(), site: { maintainers: [LEAD] } } });
@@ -640,7 +640,7 @@ test('T18 Buzon_NoLeidoOParcial_BandaConMotivo @story-2.27 @ac-19', async () => 
     const p = await h.pedir('/corridas', { cookie: await entrar(LEAD) });
     assert.strictEqual(p.status, 200);
     assert.match(p.texto, /sin buzón configurado: no medido/);
-    assert.doesNotMatch(p.texto, /0 corridas/);
+    assert.doesNotMatch(p.texto, /0 ejecuciones/);
     // el detalle tampoco: «no medido», no el 404 mudo de «no es tuya»
     const d = await h.pedir('/api/corridas/0123456789abcdef', { cookie: await entrar(LEAD) });
     assert.strictEqual(d.status, 404);
@@ -656,7 +656,7 @@ test('T19 ModeloQueTira_503ConCodigo_LasOtrasPestanasAndan @story-2.27 @ac-20', 
     for (const ruta of ['/corridas', '/api/corridas']) {
       const r = await h.pedir(ruta, { cookie: lead });
       assert.strictEqual(r.status, 503, ruta);
-      assert.match(r.texto, /no se pudo armar la vista de corridas/);
+      assert.match(r.texto, /no se pudo armar la vista de ejecuciones/);
       assert.match(r.texto, /EACCES/);
       assert.doesNotMatch(r.texto, /secreto|\/ruta\//, 'sin rutas');
     }
@@ -707,7 +707,7 @@ test('T20 Rearmado_SirveElAnteriorEntero @story-2.27 @ac-20', async () => {
     const tras = await h.pedir('/api/corridas', { cookie: lead });
     assert.strictEqual(tras.status, 200);
     assert.deepStrictEqual(tras.json, despues);
-    assert.match((await h.pedir('/corridas', { cookie: lead })).texto, /no se pudo rearmar la vista de corridas/i, 'y lo dice');
+    assert.match((await h.pedir('/corridas', { cookie: lead })).texto, /no se pudo rearmar la vista de ejecuciones/i, 'y lo dice');
   });
 });
 
@@ -775,18 +775,18 @@ test('T27b CorridasCargando_LoDiceYSeRecarga @story-2.27 @ac-20', async () => {
     const lead = await entrar(LEAD);
     const p = await h.pedir('/corridas', { cookie: lead });
     assert.strictEqual(p.status, 503);
-    assert.match(p.texto, /cargando las corridas/);
+    assert.match(p.texto, /cargando las ejecuciones/);
     assert.match(p.texto, /<meta http-equiv="refresh" content="5">/, 'se recarga sola');
     assert.doesNotMatch(p.texto, /no medido/, 'mientras carga, no es «no medido»');
     assert.doesNotMatch(p.texto, /<script(?![^>]*\bsrc=)[^>]*>/, 'sin script en línea');
     const api = await h.pedir('/api/corridas', { cookie: lead });
     assert.strictEqual(api.status, 503);
-    assert.match(api.texto, /cargando las corridas/);
+    assert.match(api.texto, /cargando las ejecuciones/);
     // una pasada que cortó y ya sigue: también «cargando»
     fuentes.st.modelo = { corridas: { estado: 'no_medido', codigo: 'parcial', motivo: null, lista: [] } };
     fuentes.bajada = { completo: false, generacion: 0, siguiendo: true };
-    assert.match((await h.pedir('/corridas', { cookie: lead })).texto, /cargando las corridas/);
-    assert.strictEqual((await h.pedir('/', { cookie: lead })).status, 200, 'Inicio no espera las corridas');
+    assert.match((await h.pedir('/corridas', { cookie: lead })).texto, /cargando las ejecuciones/);
+    assert.strictEqual((await h.pedir('/', { cookie: lead })).status, 200, 'Inicio no espera las ejecuciones');
   });
 });
 
@@ -904,13 +904,13 @@ test('2.27-A3 BajadaAMedias_NoRearma_YDiceQuePuedeFaltar @story-2.27 @ac-19 @ac-
     assert.match((await h.pedir('/corridas', { cookie: lead })).texto, /La última bajada del buzón no terminó entera/);
     const dev = await entrar(DEV_A);
     assert.strictEqual((await h.pedir('/api/corridas', { cookie: dev })).json.buzon.parcial, true);
-    assert.match((await h.pedir('/corridas', { cookie: dev })).texto, /puede faltar alguna corrida tuya/);
+    assert.match((await h.pedir('/corridas', { cookie: dev })).texto, /puede faltar alguna ejecución tuya/);
     // la privacidad: maq-b pasó a otra persona y su corrida nueva bajó en una bajada A MEDIAS, cuando
     // lo informado todavía es el de la última entera (dice dev-b). dev-b no la ve: el espejo a medias no se arma
     escribir(path.join(espejo, 'maq-b'), 'b9.json', volcado('bbbbbbbb-0000-4000-8000-000000000009', '2026-08-23T09:00:00.000Z', { marker: { storyId: 'de-la-persona-nueva' } }));
     fuentes.avisar(); await vista.listo();
     const b = (await h.pedir('/api/corridas', { cookie: await entrar(DEV_B) })).json;
-    assert.ok(!JSON.stringify(b).includes('de-la-persona-nueva'), 'el dueño anterior de maq-b no ve la corrida de la persona nueva');
+    assert.ok(!JSON.stringify(b).includes('de-la-persona-nueva'), 'el dueño anterior de maq-b no ve la ejecución de la persona nueva');
     // la bajada siguiente termina entera, con lo informado al día (maq-b informa otro correo): ahí sí se rearma, y la
     // confirmación de dev-b cae, así que dev-b tampoco la ve
     fuentes.st.personas = { informados: H.informados({ ...INFORMADOS, 'maq-b': 'persona-nueva@ejemplo.test' }), repos: null };
@@ -952,7 +952,7 @@ test('2.27-A4 FilaPorId_LaListaCambioEntreLosDosPedidos @story-2.27 @ac-4 @ac-6'
     const fila = c.rows[0];
     c.w.__abrirFila(fila); await c.esperar();
     const pedido = c.pedidos.filter((u) => /^\/api\/corridas\/[0-9a-f]{16}$/.test(u)).pop();
-    assert.strictEqual(pedido, `/api/corridas/${fila.dataset.id}`, 'pidió el detalle de la corrida de esa fila');
+    assert.strictEqual(pedido, `/api/corridas/${fila.dataset.id}`, 'pidió el detalle de la ejecución de esa fila');
   });
 });
 
@@ -999,7 +999,7 @@ test('2.30-T49 Detalle_ResumidaBajaSusTextosADemanda_ConCacheConTope @story-2.30
       assert.strictEqual(t.status, 200, t.texto);
       assert.match(descomprimir(t.json.texto), /NUEVO_DE_A/, 'el cambio de la conversación, bajado a demanda');
       assert.match(descomprimir(t.json.textoGit), /PARCHE_DE_A/, 'y el parche de git');
-      assert.strictEqual(pedidosA(), 2, 'se bajaron las dos partes de esa corrida');
+      assert.strictEqual(pedidosA(), 2, 'se bajaron las dos partes de esa ejecución');
       // la segunda vez, del caché: el buzón no se vuelve a tocar
       const t2 = await h.pedir(`/api/corridas/${idA}/textos`, { cookie: lead });
       assert.deepStrictEqual(t2.json, t.json);
@@ -1063,7 +1063,7 @@ test('Navegar_LoArmadoPorPersonaSeGuarda_HastaQueCambianLosDatos', async () => {
       // lo guardado para el mantenedor nunca le llega a otra persona: el dev ve sólo lo suyo, en la lista y en la página
       const ld = (await h.pedir('/api/corridas', { cookie: dev })).json;
       assert.strictEqual(n, 2, 'otra persona, su propio filtrado');
-      assert.deepStrictEqual([...new Set(ld.corridas.map((c) => c.maquina))], ['maq-a'], 'el dev, sólo sus corridas');
+      assert.deepStrictEqual([...new Set(ld.corridas.map((c) => c.maquina))], ['maq-a'], 'el dev, sólo sus ejecuciones');
       assert.ok(a.json.corridas.some((c) => c.maquina !== 'maq-a'), 'el mantenedor ve más que eso');
       const pd = (await h.pedir('/corridas', { cookie: dev })).texto;
       assert.notStrictEqual(pd, p.texto, 'la página del dev no es la del mantenedor');

@@ -449,7 +449,7 @@ test('Export_VersionJson_OnlyWhenTreeChanged_Deterministic_VerifyIgnores — los
   const leido = JSON.parse(bytes.toString('utf8'));
   assert.deepStrictEqual(Object.keys(leido), ['version', 'source']);
   assert.deepStrictEqual(Object.keys(leido.source), ['harness', 'agent_skills']);
-  assert.ok(!('built_at' in leido) && !('channel' in leido), 'sin built_at (la fecha de la corrida) ni channel (el mismo archivo llega a main)');
+  assert.ok(!('built_at' in leido) && !('channel' in leido), 'sin built_at (la fecha de la ejecución) ni channel (el mismo archivo llega a main)');
   // `source` es un mapa de fuente → commit: se escriben las claves que llegan (hoy son esas dos; la función no las cuenta)
   assert.deepStrictEqual(Object.keys(JSON.parse(ex.versionFileBytes({ version: '2026.10.03.2', source: { harness: A } }).toString('utf8')).source), ['harness']);
   // la forma del número, exportada: la usa quien lee el archivo

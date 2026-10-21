@@ -79,7 +79,7 @@ function trackedRuns(repo, problems) {
   const r = spawnSync('git', ['-C', repo, 'ls-files', '-z', '--', '.advisors/pipeline-runs'], { encoding: 'utf8', windowsHide: true, timeout: 20000, maxBuffer: 64 * 1024 * 1024 });
   if (r.status !== 0) {
     const why = r.error ? r.error.message : String(r.stderr || '').trim().split('\n')[0] || `salió ${r.status}`;
-    problems.push(`${repo}: no pude preguntarle a git qué corridas conoce (${why}); sus corridas sin renglones en el gates.log no se miraron`);
+    problems.push(`${repo}: no pude preguntarle a git qué ejecuciones conoce (${why}); sus ejecuciones sin renglones en el gates.log no se miraron`);
     return null;
   }
   const names = new Set();
@@ -115,7 +115,7 @@ function findUnclosed(opts = {}) {
         if (m && String(m.storyId) === key && Number.isFinite(t)) out.starts.push(t);
       } catch (e) {
         out.unreadable = true;
-        problems.push(`${path.join(histDir, f)}: cierre ilegible (${e.message}); las corridas de la story ${key} no se miraron`);
+        problems.push(`${path.join(histDir, f)}: cierre ilegible (${e.message}); las ejecuciones de la story ${key} no se miraron`);
       }
     }
     closes.set(key, out);
@@ -128,10 +128,10 @@ function findUnclosed(opts = {}) {
     for (const f of fs.readdirSync(path.join(stateDir, 'active')).filter((x) => x.endsWith('.json'))) {
       try { const m = JSON.parse(fs.readFileSync(path.join(stateDir, 'active', f), 'utf8')); if (m && m.storyId) live.push(m); } catch (e) {
         liveUnreadable = true;
-        problems.push(`${path.join(stateDir, 'active', f)}: marcador ilegible (${e.message}); no se tomó ninguna corrida sin cerrar`);
+        problems.push(`${path.join(stateDir, 'active', f)}: marcador ilegible (${e.message}); no se tomó ninguna ejecución sin cerrar`);
       }
     }
-  } catch (e) { if (e.code !== 'ENOENT') { liveUnreadable = true; problems.push(`${path.join(stateDir, 'active')}: ${e.message}; no se tomó ninguna corrida sin cerrar`); } }
+  } catch (e) { if (e.code !== 'ENOENT') { liveUnreadable = true; problems.push(`${path.join(stateDir, 'active')}: ${e.message}; no se tomó ninguna ejecución sin cerrar`); } }
   if (liveUnreadable) return { runs: [], problems };
   let gates = [];
   try { gates = readJsonLines(path.join(stateDir, 'gates.log')); } catch (e) { problems.push(`gates.log: ${e.message}`); }
@@ -190,9 +190,9 @@ function readIfThere(file, parse) {
 /** El volcado de una corrida sin cerrar: sólo lo que hay; lo que falta, en `no_medido` con el motivo. */
 function buildDump(run) {
   const no = {
-    pasos: 'corrida sin cerrar: el marcador desapareció sin su cierre, que es lo que anota los pasos',
-    consumo: 'corrida sin cerrar: el consumo se rescata al cerrar el marcador',
-    costo: 'corrida sin cerrar: los agentes lanzados se cuentan al cerrar el marcador',
+    pasos: 'ejecución sin cerrar: el marcador desapareció sin su cierre, que es lo que anota los pasos',
+    consumo: 'ejecución sin cerrar: el consumo se rescata al cerrar el marcador',
+    costo: 'ejecución sin cerrar: los agentes lanzados se cuentan al cerrar el marcador',
   };
   const counts = new Map();
   for (const g of run.gates) if (g.sessionId) counts.set(g.sessionId, (counts.get(g.sessionId) || 0) + 1);
@@ -200,7 +200,7 @@ function buildDump(run) {
   sessionId = sessionId ? sessionId[0] : null;
   if (!sessionId) {
     sessionId = `sin-cerrar-${crypto.createHash('sha256').update(`${run.repo}\n${run.name}`).digest('hex').slice(0, 12)}`;
-    no.sesion = 'el gates.log de esta máquina no tiene renglones de esta corrida: la sesión no se conoce; el identificador sale del repo y del run dir';
+    no.sesion = 'el gates.log de esta máquina no tiene renglones de esta ejecución: la sesión no se conoce; el identificador sale del repo y del run dir';
   }
   // Lo que sale de la máquina es una lista cerrada de campos, como en un cierre normal: nada de texto libre de la carpeta
   // de corrida (motivos, citas de aprobaciones) ni renglones de otras sesiones de la misma story.
@@ -214,7 +214,7 @@ function buildDump(run) {
     marker: { sessionId, storyId: run.key, repoPath: run.repo, startedAt: new Date(run.start).toISOString() },
     gates,
   };
-  if (!gates.length) no.gates = 'el gates.log de esta máquina no tiene renglones de esta corrida';
+  if (!gates.length) no.gates = 'el gates.log de esta máquina no tiene renglones de esta ejecución';
   const f = readIfThere(path.join(run.dir, 'findings.json'), JSON.parse);
   if (f.ok && Array.isArray(f.value)) dump.hallazgos = f.value.map((x) => pick(x, ['rule_id', 'severity', 'advisor', 'disposition']));
   else no.hallazgos = f.ok ? 'el findings.json del run dir no es una lista' : f.why;
@@ -255,7 +255,7 @@ if (require.main === module) {
     const r = argv.includes('--write') ? materialize({}) : { ...findUnclosed({}), written: [] };
     if (argv.includes('--json')) console.log(JSON.stringify({ runs: r.runs.map((x) => ({ repo: x.repo, name: x.name, story: x.key, porque: x.why })), written: r.written, problems: r.problems }, null, 2));
     else {
-      console.log(r.runs.length ? `${r.runs.length} corrida(s) sin cerrar:` : 'ninguna corrida sin cerrar');
+      console.log(r.runs.length ? `${r.runs.length} ejecución(es) sin cerrar:` : 'ninguna ejecución sin cerrar');
       for (const x of r.runs) console.log(`  · ${x.key} · ${x.repo} · ${x.name} (${x.why})`);
       for (const p of r.problems) console.log(`  ⚠️ ${p}`);
     }

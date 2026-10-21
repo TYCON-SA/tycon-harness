@@ -122,7 +122,7 @@ function stepMedians(dir, unreadable) {
       (samples[p.paso] = samples[p.paso] || []).push(p.ms);
     }
   }
-  if (broken) unreadable.push(`${broken} corrida(s) archivada(s) en ${dir}: no se pudieron leer`);
+  if (broken) unreadable.push(`${broken} ejecución(es) archivada(s) en ${dir}: no se pudieron leer`);
   const out = {};
   for (const [k, v] of Object.entries(samples)) out[k] = median(v);
   return out;

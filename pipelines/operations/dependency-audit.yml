@@ -42,7 +42,7 @@ schedules:
 # requests, no crea pedidos de trabajo, no manda el resumen y no guarda nada.
 parameters:
   - name: efectos
-    displayName: 'Con efectos fuera de la corrida (pull requests, pedidos de trabajo, resumen y guardar)'
+    displayName: 'Con efectos fuera de la ejecución (pull requests, pedidos de trabajo, resumen y guardar)'
     type: boolean
     default: true
   - name: dotnetSdks
@@ -442,7 +442,7 @@ jobs:
       # El rojo de «los pedidos no se intentaron» va ACÁ, después de guardar y de abrir los pull requests: la noche no se
       # pierde por no poder hablar con los tableros de los proyectos.
       - script: |
-          echo "##vso[task.logissue type=error]Los pedidos de trabajo no se intentaron esta noche. El snapshot y las fichas ya se guardaron; la corrida queda en rojo para que no pase por una noche sin novedad."
+          echo "##vso[task.logissue type=error]Los pedidos de trabajo no se intentaron esta noche. El snapshot y las fichas ya se guardaron; la ejecución queda en rojo para que no pase por una noche sin novedad."
           exit 1
         displayName: 'Denunciar que los pedidos no se intentaron'
         condition: and(succeededOrFailed(), eq(variables['PEDIDOS_NO_INTENTADOS'], '1'))

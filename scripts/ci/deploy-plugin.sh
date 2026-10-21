@@ -177,7 +177,7 @@ if [ "$REGISTRO_OK" = si ]; then
   command -v unzip >/dev/null 2>&1 && HASH_ZIP=$(unzip -p "$ZIP" plugin.json 2>/dev/null | jq -r '.commitHash // empty' 2>/dev/null)
   registro_despliegue intentado plugin "$NOMBRE_PLUGIN" "$VERSION_ZIP" "$HASH_ZIP" || true
 elif [ "${TF_BUILD:-}" = "True" ]; then
-  echo "##vso[task.logissue type=warning]registro-despliegue: no está deploy-record.sh al lado del guion (¿el artefacto arnes-ci llegó incompleto?) — esta corrida queda SIN registro de despliegue"
+  echo "##vso[task.logissue type=warning]registro-despliegue: no está deploy-record.sh al lado del guion (¿el artefacto arnes-ci llegó incompleto?) — esta ejecución queda SIN registro de despliegue"
 fi
 
 api() { # api <método> <ruta> [datos-curl-extra...]

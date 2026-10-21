@@ -312,7 +312,7 @@ test('T43 Carga_PorFuente_YLaPaginaDeCargaSeRecarga', async () => {
       const s = (await H.ingresar(h, emisor, { sub: 's-lead', email: lead, email_verified: true })).sesion;
       const p = await h.pedir('/', { cookie: s });
       assert.strictEqual(p.status, 200, 'Inicio, sin esperar el buzón');
-      assert.match(p.texto, /cargando las corridas/, 'lo de las corridas dice que está cargando, no «0»');
+      assert.match(p.texto, /cargando las ejecuciones/, 'lo de las ejecuciones dice que está cargando, no «0»');
       assert.strictEqual((await h.pedir('/readyz')).status, 503, '/readyz sigue esperando todo');
     } finally { await h.cerrar(); }
   } finally { await emisor.cerrar(); }

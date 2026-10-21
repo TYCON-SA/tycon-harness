@@ -29,7 +29,7 @@ correr() {
   if [ -x "$SMOKE" ]; then
     "$SMOKE" "$EVID" 2.3 --acs "$2" -- bash "$DIR/smokes-2.3/$1"
   else
-    echo "⚠️  falta smoke-run.sh: la corrida NO queda registrada como evidencia" >&2
+    echo "⚠️  falta smoke-run.sh: la ejecución NO queda registrada como evidencia" >&2
     bash "$DIR/smokes-2.3/$1"
   fi
   local rc=$?

@@ -1672,6 +1672,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.87: las palabras que lee una persona — «ejecución» y no «corrida» en los textos del sitio y de los programas, y «el agente» cuando el texto habla del agente en general; los nombres de la máquina siguen.",
+      "raiz": "arnes",
+      "ruta": "tests/human-words.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.23: la prueba de fuga del sitio — marcadores de otra persona, de una máquina sin confirmar y texto libre en las fuentes; ninguna ruta de la tabla los trae a quien no corresponde, y los motivos crudos (blobs, rutas) no llegan a ninguna pantalla.",
       "raiz": "arnes",
       "ruta": "tests/site-leak.test.js",

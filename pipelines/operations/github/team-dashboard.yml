@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       effects:
-        description: 'Con efectos fuera de la corrida (guardar la página y verificar la publicada)'
+        description: 'Con efectos fuera de la ejecución (guardar la página y verificar la publicada)'
         type: boolean
         default: true
       harness_ref:

@@ -123,19 +123,19 @@ function againVerdict({ exit, out, treeSame, timedOut = false, installedCommit =
   // está o una respuesta que no es la de git son del paquete o de su estado. Va antes que «hay una versión nueva»
   const look = /no pude mirar si hay una versión nueva \((.*)\): para actualizarlo/.exec(said);
   if (look) return notThePackage(look[1]) || /sin red o sin respuesta|GitHub contestó (?:429|5\d\d)\b/.test(look[1])
-    ? { notMeasured: `la segunda corrida no pudo mirar la punta de main: ${look[1]}` }
-    : { finding: `la segunda corrida no pudo mirar la punta por algo que no es la red: ${look[1]}` };
+    ? { notMeasured: `la segunda ejecución no pudo mirar la punta de main: ${look[1]}` }
+    : { finding: `la segunda ejecución no pudo mirar la punta por algo que no es la red: ${look[1]}` };
   if (exit !== 0 || timedOut) {
-    if (installFailureKind(said, { timedOut }) === 'not-measured') return { notMeasured: `la segunda corrida no llegó al registro o a GitHub: ${lastLines(said, 2) || 'sin salida, cortada por el tope'}` };
-    return { finding: `la segunda corrida salió ${exit} y no dijo «al día»: ${lastLines(said, 3)}` };
+    if (installFailureKind(said, { timedOut }) === 'not-measured') return { notMeasured: `la segunda ejecución no llegó al registro o a GitHub: ${lastLines(said, 2) || 'sin salida, cortada por el tope'}` };
+    return { finding: `la segunda ejecución salió ${exit} y no dijo «al día»: ${lastLines(said, 3)}` };
   }
   const fresh = /hay una versión nueva \(([0-9a-f]{7,40})\)/.exec(said);
   // la «nueva» es el commit que quedó instalado: no se movió nada, la comparación del paquete está mal
-  if (fresh && installedCommit && installedCommit.startsWith(fresh[1])) return { finding: `la segunda corrida dice que hay una versión nueva (${fresh[1]}), pero es el mismo commit que quedó instalado` };
-  if (/hay una versión nueva/.test(said)) return { notMeasured: 'la punta de main del arnés se movió entre las dos corridas: el «al día» no se pudo comparar (volvé a encolar)' };
+  if (fresh && installedCommit && installedCommit.startsWith(fresh[1])) return { finding: `la segunda ejecución dice que hay una versión nueva (${fresh[1]}), pero es el mismo commit que quedó instalado` };
+  if (/hay una versión nueva/.test(said)) return { notMeasured: 'la punta de main del arnés se movió entre las dos ejecuciones: el «al día» no se pudo comparar (volvé a encolar)' };
   // el paquete baja la punta y dice «No cambié nada» (o «No bajé nada»): lo que se mide es el árbol
-  if (/está al día\. No (?:bajé|cambié) nada/.test(said)) return treeSame ? { ok: true } : { finding: 'dijo «al día», pero el árbol instalado cambió entre las dos corridas' };
-  return { finding: `la segunda corrida salió ${exit} y no dijo «al día»: ${lastLines(said, 3)}` };
+  if (/está al día\. No (?:bajé|cambié) nada/.test(said)) return treeSame ? { ok: true } : { finding: 'dijo «al día», pero el árbol instalado cambió entre las dos ejecuciones' };
+  return { finding: `la segunda ejecución salió ${exit} y no dijo «al día»: ${lastLines(said, 3)}` };
 }
 
 /** El entorno de la medición de lo publicado: la carpeta de juguete, la caché de npm en el laboratorio, sin el GitHub de juguete. */

@@ -1706,7 +1706,7 @@ test('Report_GuidedRun_RendersItsSectionsAndIsGreen', () => {
   // y si NINGÚN paso llegó a anotar la lista de lo no ensayado, no sale una tabla vacía como si se hubiera ensayado todo
   const blank = guidedReport();
   for (const s of blank.steps) delete s.facts.not_rehearsed;
-  assert.match(rehearse.renderMarkdown(blank), /## No ensayado\n\nNingún paso de esta corrida llegó a anotar la lista[\s\S]*NO quiere decir que se ensayó todo/);
+  assert.match(rehearse.renderMarkdown(blank), /## No ensayado\n\nNingún paso de esta ejecución llegó a anotar la lista[\s\S]*NO quiere decir que se ensayó todo/);
   // una variante que tiró: se dice dónde, y su fila corta no la da por medida
   const threw = guidedReport();
   Object.assign(threw.steps.find((s) => s.name === 'update').facts.variants.ask, { threw: 'no pude leer el estado del arnés', threw_at: 'at stateOf (toy-lab.js:333:11)' });

@@ -291,7 +291,7 @@ test('T47e · BatchD_StateFilesMigrateOnWrite — download-runs.js: el índice d
     assert.ok(fs.existsSync(path.join(stateOf(home, 'corridas-buzon'), nueva)), `bajó a la carpeta de la juguete: ${r.stderr}`);
     const nuevo = JSON.parse(readOr(stateOf(home, base(idx.new))) || '{}');
     assert.deepStrictEqual(Object.keys(nuevo.blobs || {}).sort(), [nueva, 'viejo/1.1-2026-01-01T1000.json'],
-      `${base(idx.new)}: trae lo del viejo y lo de esta corrida`);
+      `${base(idx.new)}: trae lo del viejo y lo de esta ejecución`);
     assert.strictEqual(readOr(stateOf(home, base(idx.old))), viejo, `${base(idx.old)}: intacto`);
     // 2 · sin permiso, con un sello viejo de otro día: el nuevo nace con lo de hoy (se reescribe entero por diseño)
     const home2 = toyHomeW('dl-sello');
@@ -341,11 +341,11 @@ test('T47f · BatchD_StateFilesMigrateOnWrite — upload-runs.js: el registro de
     sembrar(home, selloViejo);
     const r = await run(process.execPath, [script, '--json'], { env: env(home) });
     assert.strictEqual(r.status, 0, r.stderr);
-    assert.ok(srv.puts.some((p) => p.endsWith('/maq-juguete/9.9-2026-09-14T1000.json')), `subió la corrida: ${r.stderr}`);
+    assert.ok(srv.puts.some((p) => p.endsWith('/maq-juguete/9.9-2026-09-14T1000.json')), `subió la ejecución: ${r.stderr}`);
     const nuevo = JSON.parse(readOr(stateOf(home, base(reg.new))) || '{}');
     const claves = Object.keys(nuevo.archivos || {});
     assert.ok(claves.includes('maq-juguete/viejo.json') && claves.includes('maq-juguete/9.9-2026-09-14T1000.json'),
-      `${base(reg.new)}: trae lo del viejo y lo de esta corrida (tiene: ${claves.join(', ')})`);
+      `${base(reg.new)}: trae lo del viejo y lo de esta ejecución (tiene: ${claves.join(', ')})`);
     assert.strictEqual(readOr(stateOf(home, base(reg.old))), viejo, `${base(reg.old)}: intacto`);
     assert.strictEqual(json(r).aviso_vence, 'emitido', 'un sello de otro día no calla el aviso');
     assert.ok((readOr(stateOf(home, base(seal.new))) || '').startsWith(`${TODAY()} `), `${base(seal.new)}: existe con lo de hoy`);
@@ -398,8 +398,8 @@ test('T47g · BatchD_StateFilesMigrateOnWrite — collect-findings.js: el sello 
   assert.strictEqual(json(r).estado, 'recolectado', r.stdout);
   assert.strictEqual(jsonlOf(stateOf(home2, 'hallazgos.jsonl')).length, 1, 'la serie conserva su nombre y trae el hallazgo');
   const nuevo = JSON.parse(readOr(stateOf(home2, base(seal.new))) || '{}');
-  assert.strictEqual(nuevo.fecha, HOY, `${base(seal.new)}: existe con lo de esta corrida`);
-  assert.strictEqual(nuevo.marca, undefined, `${base(seal.new)}: es el resumen de esta corrida, no una copia del viejo`);
+  assert.strictEqual(nuevo.fecha, HOY, `${base(seal.new)}: existe con lo de esta ejecución`);
+  assert.strictEqual(nuevo.marca, undefined, `${base(seal.new)}: es el resumen de esta ejecución, no una copia del viejo`);
   assert.strictEqual(readOr(stateOf(home2, base(seal.old))), viejoAntes, `${base(seal.old)}: intacto`);
 });
 
@@ -420,7 +420,7 @@ test('T47h · BatchD_StateFilesMigrateOnWrite — reviewer-rules.js: la medició
   const r = await run(process.execPath, [path.join(RAIZ, 'scripts', 'ci', 'reviewer-rules.js'), '--repo', repo], { env, cwd: repo });
   assert.strictEqual(r.status, 0, r.stderr);
   const filas = jsonlOf(stateOf(home, base(e.new)));
-  assert.strictEqual(filas.length, 2, `${base(e.new)}: la línea vieja y la de esta corrida (${filas.length})`);
+  assert.strictEqual(filas.length, 2, `${base(e.new)}: la línea vieja y la de esta ejecución (${filas.length})`);
   assert.strictEqual(filas[0].marca, 'linea-vieja');
   assert.strictEqual(filas[1].repo, 'repo-reglas');
   assert.strictEqual(readOr(stateOf(home, base(e.old))), linea, `${base(e.old)}: intacto`);
@@ -444,7 +444,7 @@ test('T47i · BatchD_StateFilesMigrateOnWrite — sql-compile.js: la medición s
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(r.stdout, /055_ok\.sql compila/, 'el doble de sqlcmd contestó «compila»');
   const filas = jsonlOf(stateOf(home, base(e.new)));
-  assert.strictEqual(filas.length, 2, `${base(e.new)}: la línea vieja y la de esta corrida (${filas.length})`);
+  assert.strictEqual(filas.length, 2, `${base(e.new)}: la línea vieja y la de esta ejecución (${filas.length})`);
   assert.strictEqual(filas[0].marca, 'linea-vieja');
   assert.deepStrictEqual([filas[1].archivo, filas[1].resultado], ['database/055_ok.sql', 'compila']);
   assert.strictEqual(readOr(stateOf(home, base(e.old))), linea, `${base(e.old)}: intacto`);
@@ -475,7 +475,7 @@ function examBench(p) {
   return { raiz, casa, repo, cfg, runner, sonda, env };
 }
 
-test('T47j · BatchD_StateFilesMigrateOnWrite — periodic-exam.js: el sello de la última corrida, el registro de launchd y el aviso del arranque', { skip: SKIP_PUBLIC }, async () => {
+test('T47j · BatchD_StateFilesMigrateOnWrite — periodic-exam.js: el sello de la última ejecución, el registro de launchd y el aviso del arranque', { skip: SKIP_PUBLIC }, async () => {
   const seal = byNew('periodic-exam-last-run');
   const log = byNew('periodic-exam.log');
   const EXAM = path.join(RAIZ, 'scripts', 'controls-bench', 'periodic-exam.js');
@@ -491,7 +491,7 @@ test('T47j · BatchD_StateFilesMigrateOnWrite — periodic-exam.js: el sello de 
   const r = await run(process.execPath, [EXAM, '--force'], { env });
   assert.strictEqual(r.status, 0, `${r.stdout}\n${r.stderr}`);
   const nuevo = (readOr(path.join(b.casa, '.claude', '.tycon-pipeline', base(seal.new))) || '').trim();
-  assert.ok(Date.parse(nuevo) >= antes - 1000, `${base(seal.new)}: existe con el fin de esta corrida (tiene «${nuevo}»)`);
+  assert.ok(Date.parse(nuevo) >= antes - 1000, `${base(seal.new)}: existe con el fin de esta ejecución (tiene «${nuevo}»)`);
   assert.strictEqual(readOr(path.join(b.casa, '.claude', '.tycon-pipeline', base(seal.old))), selloViejo, `${base(seal.old)}: intacto`);
 
   // 2 · el disparador: el plist nombra el registro nuevo, y al instalarlo el viejo pasa al nuevo ANTES (launchd lo abre
@@ -545,7 +545,7 @@ test('T47j · BatchD_StateFilesMigrateOnWrite — periodic-exam.js: el sello de 
   assert.match(conViejo.stdout, /examen de revisores: el sello de HOY/, `con sólo el sello viejo, el aviso lo ve:\n${conViejo.stdout}`);
 });
 
-test('T47k · BatchD_StateFilesMigrateOnWrite — la vista de corridas escribe runs-dashboard.html en la HOME (se reescribe entera por diseño)', { skip: SKIP_PUBLIC }, async () => {
+test('T47k · BatchD_StateFilesMigrateOnWrite — la vista de ejecuciones escribe runs-dashboard.html en la HOME (se reescribe entera por diseño)', { skip: SKIP_PUBLIC }, async () => {
   const e = byNew('runs-dashboard.html');
   const home = toyHomeW('runs');
   const vieja = '<!-- la página de antes del renombre -->\n';
@@ -554,7 +554,7 @@ test('T47k · BatchD_StateFilesMigrateOnWrite — la vista de corridas escribe r
   const r = await run(process.execPath, [path.join(RAIZ, 'scripts', 'nightly', 'dashboard', 'dashboard.js'), '--view', 'runs', '--runs-dir', runs], { env: cleanEnv({ HOME: home }) });
   assert.strictEqual(r.status, 0, r.stderr);
   const nueva = readOr(stateOf(home, base(e.new))) || '';
-  assert.ok(/<html/i.test(nueva) && !nueva.includes('la página de antes'), `${base(e.new)}: existe con la página de esta corrida`);
+  assert.ok(/<html/i.test(nueva) && !nueva.includes('la página de antes'), `${base(e.new)}: existe con la página de esta ejecución`);
   assert.strictEqual(readOr(stateOf(home, base(e.old))), vieja, `${base(e.old)}: intacto`);
 });
 
@@ -573,7 +573,7 @@ test('T47l · BatchD_StateFilesMigrateOnWrite — la puerta de la consola (agent
   const r = spawnSync(process.execPath, ['-e', code], { env: cleanEnv({ HOME: home, TYCON_GUIDES_DIR: RAIZ, TYCON_STORY_GATE: 'off', TYCON_STORY_SKILL_GATE: 'off' }), encoding: 'utf8', timeout: 20000 });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.strictEqual(readOr(path.join(newD, 'otra-sesion.jsonl')), otra, `${base(e.new)}/: trae lo de la otra sesión`);
-  assert.deepStrictEqual(jsonlOf(path.join(newD, 's-t47l.jsonl')).map((x) => x.path), [path.join(trabajo, 'a.ts')], `${base(e.new)}/: la anotación de esta corrida`);
+  assert.deepStrictEqual(jsonlOf(path.join(newD, 's-t47l.jsonl')).map((x) => x.path), [path.join(trabajo, 'a.ts')], `${base(e.new)}/: la anotación de esta ejecución`);
   assert.deepStrictEqual(tree(oldD), { 'otra-sesion.jsonl': otra }, `${base(e.old)}/: intacta`);
 });
 
@@ -617,7 +617,7 @@ test('T47n · BatchD_StateFilesMigrateOnWrite — el instalador copia los cuatro
   // entero arrastra decenas de dependencias ajenas. SCRIPT_DIR es un temporal con dobles de los cuatro pasos, y la
   // biblioteca y el mapa reales enlazados en su lugar.
   const src = fs.readFileSync(path.join(RAIZ, 'scripts', 'install-tycon-hooks.sh'), 'utf8');
-  let i = src.indexOf('# Rescate del hilo y el consumo de las corridas del pipeline');
+  let i = src.indexOf('# Rescate del hilo y el consumo de las ejecuciones del pipeline');
   assert.ok(i >= 0, 'no encontré el bloque de fondo en el instalador');
   i = src.lastIndexOf('# ====', i);
   let j = src.indexOf('# Hook de git PRE-COMMIT global', i);
@@ -634,7 +634,7 @@ test('T47n · BatchD_StateFilesMigrateOnWrite — el instalador copia los cuatro
   for (const f of ['legacy-names.js', 'renames.json']) fs.symlinkSync(path.join(RAIZ, 'scripts', 'lib', f), path.join(sd, 'lib', f));
   const orden = path.join(w, 'orden.txt');
   for (const [f, paso] of [['tokens-digest.js', 'rescate'], ['collect-findings.js', 'recoleccion'], ['upload-runs.js', 'subida'], ['download-runs.js', 'bajada']]) {
-    fs.writeFileSync(path.join(sd, 'metrics', f), `console.log('${paso} de esta corrida'); require('fs').appendFileSync(process.env.ORDER_LOG, '${paso}\\n');\n`);
+    fs.writeFileSync(path.join(sd, 'metrics', f), `console.log('${paso} de esta ejecución'); require('fs').appendFileSync(process.env.ORDER_LOG, '${paso}\\n');\n`);
   }
   for (const e of logs) fs.writeFileSync(path.join(st, base(e.old)), `antes: ${base(e.new)}\n`);
   const r = spawnSync('bash', ['-c', 'source "$1"', '_', bloque], { encoding: 'utf8', timeout: 20000,
@@ -645,9 +645,9 @@ test('T47n · BatchD_StateFilesMigrateOnWrite — el instalador copia los cuatro
   assert.strictEqual(readOr(orden), 'rescate\nrecoleccion\nsubida\nbajada\n', 'la tanda de fondo corrió los cuatro pasos, en orden');
   await new Promise((ok) => setTimeout(ok, 300));   // el último paso termina de escribir su registro
   for (const [nuevo, paso] of [['download-runs.log', 'bajada'], ['upload-runs.log', 'subida'], ['collect-findings.log', 'recoleccion']]) {
-    assert.strictEqual(readOr(path.join(st, nuevo)), `antes: ${nuevo}\n${paso} de esta corrida\n`, `${nuevo}: lo del viejo y lo de esta corrida`);
+    assert.strictEqual(readOr(path.join(st, nuevo)), `antes: ${nuevo}\n${paso} de esta ejecución\n`, `${nuevo}: lo del viejo y lo de esta ejecución`);
   }
-  assert.strictEqual(readOr(path.join(st, 'thread-rescue.log')), 'rescate de esta corrida\n', 'thread-rescue.log: se reescribe por diseño, con lo de esta corrida');
+  assert.strictEqual(readOr(path.join(st, 'thread-rescue.log')), 'rescate de esta ejecución\n', 'thread-rescue.log: se reescribe por diseño, con lo de esta ejecución');
   for (const e of logs) assert.strictEqual(readOr(path.join(st, base(e.old))), `antes: ${base(e.new)}\n`, `${base(e.old)}: intacto`);
 });
 
@@ -685,7 +685,7 @@ test('T47p · BatchD_StateFilesMigrateOnWrite — un estado viejo que no se deja
 /** El bloque de fondo del instalador real en un temporal, como en T47n; `prep(st)` siembra el estado antes de correrlo. */
 async function installerBlock(p, prep) {
   const src = fs.readFileSync(path.join(RAIZ, 'scripts', 'install-tycon-hooks.sh'), 'utf8');
-  let i = src.indexOf('# Rescate del hilo y el consumo de las corridas del pipeline');
+  let i = src.indexOf('# Rescate del hilo y el consumo de las ejecuciones del pipeline');
   i = src.lastIndexOf('# ====', i);
   let j = src.indexOf('# Hook de git PRE-COMMIT global', i);
   j = src.lastIndexOf('# ====', j);
@@ -701,7 +701,7 @@ async function installerBlock(p, prep) {
   for (const f of ['legacy-names.js', 'renames.json']) fs.symlinkSync(path.join(RAIZ, 'scripts', 'lib', f), path.join(sd, 'lib', f));
   const orden = path.join(w, 'orden.txt');
   for (const [f, paso] of [['tokens-digest.js', 'rescate'], ['collect-findings.js', 'recoleccion'], ['upload-runs.js', 'subida'], ['download-runs.js', 'bajada']]) {
-    fs.writeFileSync(path.join(sd, 'metrics', f), `console.log('${paso} de esta corrida'); require('fs').appendFileSync(process.env.ORDER_LOG, '${paso}\\n');\n`);
+    fs.writeFileSync(path.join(sd, 'metrics', f), `console.log('${paso} de esta ejecución'); require('fs').appendFileSync(process.env.ORDER_LOG, '${paso}\\n');\n`);
   }
   prep(st);
   const r = spawnSync('bash', ['-c', 'source "$1"', '_', bloque], { encoding: 'utf8', timeout: 20000,
@@ -781,7 +781,7 @@ test('T47s · BatchD_StateFilesMigrateOnWrite — collect-findings.js: una recol
 });
 
 // la página de corridas se regenera entera; no poder llevar la vieja no la frena.
-test('T47t · BatchD_StateFilesMigrateOnWrite — la vista de corridas se escribe aunque la página vieja no se pueda copiar', { skip: SKIP_PUBLIC || (ROOT_USER && 'como root los permisos no frenan') }, async () => {
+test('T47t · BatchD_StateFilesMigrateOnWrite — la vista de ejecuciones se escribe aunque la página vieja no se pueda copiar', { skip: SKIP_PUBLIC || (ROOT_USER && 'como root los permisos no frenan') }, async () => {
   const e = byNew('runs-dashboard.html');
   const home = toyHomeW('runs-err');
   const vieja = stateOf(home, base(e.old));

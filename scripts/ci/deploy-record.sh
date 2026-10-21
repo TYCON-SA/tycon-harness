@@ -161,20 +161,20 @@ registro_despliegue() {
   local build="${BUILD_BUILDID:-}" build_ci="${RESOURCES_PIPELINE_CI_RUNID:-${BUILD_BUILDID:-}}"
   local nombre; nombre=$(registro_sanear "$artefacto")
 
-  command -v jq >/dev/null 2>&1 || { registro_aviso "falta jq — esta corrida queda SIN registro de despliegue para $nombre"; return 1; }
-  case "$estado" in desplegado|intentado) ;; *) registro_aviso "estado desconocido — esta corrida queda SIN registro de despliegue para $nombre"; return 1 ;; esac
-  case "$tipo" in plugin|formulario) ;; *) registro_aviso "tipo desconocido — esta corrida queda SIN registro de despliegue para $nombre"; return 1 ;; esac
+  command -v jq >/dev/null 2>&1 || { registro_aviso "falta jq — esta ejecución queda SIN registro de despliegue para $nombre"; return 1; }
+  case "$estado" in desplegado|intentado) ;; *) registro_aviso "estado desconocido — esta ejecución queda SIN registro de despliegue para $nombre"; return 1 ;; esac
+  case "$tipo" in plugin|formulario) ;; *) registro_aviso "tipo desconocido — esta ejecución queda SIN registro de despliegue para $nombre"; return 1 ;; esac
   if [ -n "${SYSTEM_STAGENAME:-}" ] || [ -n "${SYSTEM_JOBNAME:-}" ]; then
     destino="${SYSTEM_STAGENAME:-sin-stage}/${SYSTEM_JOBNAME:-sin-job}"
   fi
 
-  _reg_valido '^[A-Za-z0-9._-]{1,100}$' "$artefacto" || { registro_aviso "el nombre del artefacto ($nombre) tiene caracteres fuera de su juego — esta corrida queda SIN registro de despliegue para él"; return 1; }
-  _reg_valido '^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.]+)?$' "$version" || { registro_aviso "la versión de $nombre ($(registro_sanear "$version")) no tiene forma de versión — esta corrida queda SIN registro de despliegue para $nombre"; return 1; }
+  _reg_valido '^[A-Za-z0-9._-]{1,100}$' "$artefacto" || { registro_aviso "el nombre del artefacto ($nombre) tiene caracteres fuera de su juego — esta ejecución queda SIN registro de despliegue para él"; return 1; }
+  _reg_valido '^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.]+)?$' "$version" || { registro_aviso "la versión de $nombre ($(registro_sanear "$version")) no tiene forma de versión — esta ejecución queda SIN registro de despliegue para $nombre"; return 1; }
   if [ -n "$destino" ]; then
-    _reg_valido '^[A-Za-z0-9._-]{1,100}/[A-Za-z0-9._-]{1,100}$' "$destino" || { registro_aviso "el stage o el job ($(registro_sanear "$destino")) tiene caracteres fuera de su juego — esta corrida queda SIN registro de despliegue para $nombre"; return 1; }
+    _reg_valido '^[A-Za-z0-9._-]{1,100}/[A-Za-z0-9._-]{1,100}$' "$destino" || { registro_aviso "el stage o el job ($(registro_sanear "$destino")) tiene caracteres fuera de su juego — esta ejecución queda SIN registro de despliegue para $nombre"; return 1; }
   fi
-  if [ -n "$proyecto" ]; then _reg_valido '^[A-Za-z0-9 ._-]{1,64}$' "$proyecto" || { registro_aviso "el nombre del proyecto tiene caracteres fuera de su juego — esta corrida queda SIN registro de despliegue para $nombre"; return 1; }; fi
-  if [ -n "$repo" ]; then _reg_valido '^[A-Za-z0-9 ._-]{1,64}$' "$repo" || { registro_aviso "el nombre del repo tiene caracteres fuera de su juego — esta corrida queda SIN registro de despliegue para $nombre"; return 1; }; fi
+  if [ -n "$proyecto" ]; then _reg_valido '^[A-Za-z0-9 ._-]{1,64}$' "$proyecto" || { registro_aviso "el nombre del proyecto tiene caracteres fuera de su juego — esta ejecución queda SIN registro de despliegue para $nombre"; return 1; }; fi
+  if [ -n "$repo" ]; then _reg_valido '^[A-Za-z0-9 ._-]{1,64}$' "$repo" || { registro_aviso "el nombre del repo tiene caracteres fuera de su juego — esta ejecución queda SIN registro de despliegue para $nombre"; return 1; }; fi
   _reg_valido '^[0-9]{1,20}$' "$build" || build=""
   _reg_valido '^[0-9]{1,20}$' "$build_ci" || build_ci=""
   _reg_valido '^[0-9a-fA-F]{7,40}$' "$hash" || hash=""
@@ -183,7 +183,7 @@ registro_despliegue() {
   local hash7="sin-hash"
   [ -n "$hash" ] && hash7=$(printf '%s' "$hash" | cut -c1-7 | tr 'A-F' 'a-f')
   local huella
-  huella=$(_reg_sha256 "$estado|$tipo|$proyecto|$repo|$destino|$REG_ENTORNO|$artefacto|$version|$hash7") || { registro_aviso "no hay sha256sum ni shasum para calcular la clave — esta corrida queda SIN registro de despliegue para $nombre"; return 1; }
+  huella=$(_reg_sha256 "$estado|$tipo|$proyecto|$repo|$destino|$REG_ENTORNO|$artefacto|$version|$hash7") || { registro_aviso "no hay sha256sum ni shasum para calcular la clave — esta ejecución queda SIN registro de despliegue para $nombre"; return 1; }
   local clave="d-$huella"
 
   _reg_dir_job || true
@@ -199,7 +199,7 @@ registro_despliegue() {
     {v: 1, ts: $ts, estado: $estado, tipo: $tipo, entorno: $entorno, entorno_fuente: $fuente,
      proyecto: ($proyecto|n), repo: ($repo|n), destino: ($destino|n), artefacto: $artefacto,
      version: $version, hash: ($hash|n), build: ($build|n), build_ci: ($build_ci|n), clave: $clave}' 2>/dev/null)
-  if [ -z "$json" ]; then registro_aviso "no pude armar la línea — esta corrida queda SIN registro de despliegue para $nombre"; return 1; fi
+  if [ -z "$json" ]; then registro_aviso "no pude armar la línea — esta ejecución queda SIN registro de despliegue para $nombre"; return 1; fi
 
   [ -n "$REG_DIR_JOB" ] && { : > "$REG_DIR_JOB/$clave"; } 2>/dev/null
   echo "[registro-despliegue] $json"

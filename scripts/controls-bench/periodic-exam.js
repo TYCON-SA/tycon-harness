@@ -298,7 +298,7 @@ function latirCandado(ruta, maquina) {
       // latir en silencio, el candado se vencería solo a las 48 h y arrancaría una segunda corrida
       // encima — lo que existe para impedir— sin una sola pista de por qué. Se avisa UNA vez: son
       // ~33 latidos en una corrida completa y repetirlo sería ruido que se aprende a ignorar.
-      if (!yaAvisado) { yaAvisado = true; console.error(`examen: el candado dejó de latir (${e && e.message}) — si esto persiste, el candado puede vencerse con la corrida viva`); }
+      if (!yaAvisado) { yaAvisado = true; console.error(`examen: el candado dejó de latir (${e && e.message}) — si esto persiste, el candado puede vencerse con la ejecución viva`); }
     }
   }, cada);
   if (typeof t.unref === 'function') t.unref();
@@ -439,7 +439,7 @@ function decidir(ctx, opciones = {}) {
       detalle: `esta máquina es ${ctx.identidades.join(' / ') || '(sin nombre)'}; la designada es ${ctx.cfg.designated_machine || '(ninguna)'}` };
   if (!opciones.forzar && !periodoCumplido(ctx.sello, ctx.ahora, ctx.cfg.days_between_runs))
     return { correr: false, motivo: 'periodo-no-cumplido', exit: 0,
-      detalle: `la última corrida completa fue el ${String(ctx.sello).slice(0, 10)}; el período es de ${ctx.cfg.days_between_runs || 3} días` };
+      detalle: `la última ejecución completa fue el ${String(ctx.sello).slice(0, 10)}; el período es de ${ctx.cfg.days_between_runs || 3} días` };
   const candado = estadoDelCandado(ctx.rutaCandado, ctx.ahora.getTime());
   if (!candado.libre)
     return { correr: false, motivo: candado.motivo, exit: 0, detalle: `pid ${candado.pid}, desde ${candado.desde}` };
@@ -754,7 +754,7 @@ function ayuda() {
     '',
     '  (sin flags)   decide solo si le toca (máquina designada · período · candado) y corre',
     '  --dry-run     dice qué haría y por qué, SIN gastar nada',
-    '  --force       corrida manual: saltea máquina designada y período (respeta el candado)',
+    '  --force       ejecución manual: saltea máquina designada y período (respeta el candado)',
     '  --install-task [--check]     instala/retira el disparador del sistema (lo llama el instalador)',
     '                sale 2 si no instala porque no alcanza a claude/codex',
     '  --help        esto',
@@ -920,7 +920,7 @@ async function main(argv) {
       const motivo = casos === 0
         ? 'el examen dejó un reporte sin un solo caso medido'
         : `ninguno de los ${ranuras} pares caso×herramienta llegó a medirse `
-          + `(${Number(medicion.erroresDeCorrida || 0)} en error de corrida, ${Number(medicion.skippedMcp || 0)} salteados por MCP ausente)`;
+          + `(${Number(medicion.erroresDeCorrida || 0)} en error de ejecución, ${Number(medicion.skippedMcp || 0)} salteados por MCP ausente)`;
       log(`NO PUDE MEDIR: ${motivo}`);
       registrarIntento(benchDir, { estado: 'incompleto', motivo, fase: 'corrida', inicio });
       return 4;

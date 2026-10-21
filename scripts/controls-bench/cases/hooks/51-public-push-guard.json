@@ -7954,7 +7954,7 @@
           "env": {
             "TYCON_PUBLISH_DENYLIST": "${FIXTURE}/lista.json"
           },
-          "_por_que": "El registro de frenos sube al buzón de corridas: lleva el freno, la regla y el veredicto. El comando trae el cuerpo del pedido, así que no va ni su huella.",
+          "_por_que": "El registro de frenos sube al buzón de ejecuciones: lleva el freno, la regla y el veredicto. El comando trae el cuerpo del pedido, así que no va ni su huella.",
           "stdin": {
             "tool_name": "Bash",
             "tool_input": {

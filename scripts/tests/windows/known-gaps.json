@@ -11,14 +11,14 @@
       "step": "bench",
       "closes": "W4",
       "match": "^stdout no matchea /(huérfanos|pids: 9001 9002)/$",
-      "note": "Medido en la corrida 11694 (stdout no dice «huérfanos»): el barrido de procesos huérfanos del plugin de Telegram no anda en Windows: compara la salida de `ps` con la carpeta del plugin bajo `$HOME`, que en el bash de Git es `/c/…` y no la ruta de Windows del proceso, y el `ps` de Git Bash no ve los procesos de Windows. Queda afuera de Windows a propósito (story 8.17, «Qué queda afuera en Windows»): la tanda W4 lo declara en windows-support.json y deja de correr sus casos ahí."
+      "note": "Medido en la ejecución 11694 (stdout no dice «huérfanos»): el barrido de procesos huérfanos del plugin de Telegram no anda en Windows: compara la salida de `ps` con la carpeta del plugin bajo `$HOME`, que en el bash de Git es `/c/…` y no la ruta de Windows del proceso, y el `ps` de Git Bash no ve los procesos de Windows. Queda afuera de Windows a propósito (story 8.17, «Qué queda afuera en Windows»): la tanda W4 lo declara en windows-support.json y deja de correr sus casos ahí."
     },
     {
       "id": "bench:red:telegram-zombie-sweep.sh::mata-de-verdad",
       "step": "bench",
       "closes": "W4",
       "match": "^stdout no matchea /huérfanos cerrados ",
-      "note": "Medido en la corrida 11694 (no cerró el proceso de prueba): el barrido de procesos huérfanos del plugin de Telegram no anda en Windows: compara la salida de `ps` con la carpeta del plugin bajo `$HOME`, que en el bash de Git es `/c/…` y no la ruta de Windows del proceso, y el `ps` de Git Bash no ve los procesos de Windows. Queda afuera de Windows a propósito (story 8.17, «Qué queda afuera en Windows»): la tanda W4 lo declara en windows-support.json y deja de correr sus casos ahí."
+      "note": "Medido en la ejecución 11694 (no cerró el proceso de prueba): el barrido de procesos huérfanos del plugin de Telegram no anda en Windows: compara la salida de `ps` con la carpeta del plugin bajo `$HOME`, que en el bash de Git es `/c/…` y no la ruta de Windows del proceso, y el `ps` de Git Bash no ve los procesos de Windows. Queda afuera de Windows a propósito (story 8.17, «Qué queda afuera en Windows»): la tanda W4 lo declara en windows-support.json y deja de correr sus casos ahí."
     },
     {
       "id": "fire:no-portable-case:PostToolUse:@tcg:retro-pending.js",

@@ -295,7 +295,7 @@ function renderMarkdown(report) {
   const run = report.run || {};
   const M = [];
   M.push('# El arnés en Windows — la base portable (story 8.17, W1)', '');
-  M.push(`Corrida **${run.id === null || run.id === undefined ? 'sin número' : run.id}**${run.number ? ` (${run.number})` : ''} · escenario \`${run.scenario || '—'}\` · ${run.platform || '—'}${run.lab_mode ? ' — **modo de laboratorio: esto NO es un Windows**' : ''} · Node ${run.node || '—'}`, '');
+  M.push(`Ejecución **${run.id === null || run.id === undefined ? 'sin número' : run.id}**${run.number ? ` (${run.number})` : ''} · escenario \`${run.scenario || '—'}\` · ${run.platform || '—'}${run.lab_mode ? ' — **modo de laboratorio: esto NO es un Windows**' : ''} · Node ${run.node || '—'}`, '');
   if (run.commits) {
     M.push('| Repo | Lo que se mide | Antes (de donde arranca el clon que ya existía) | Commits en el medio |', '|---|---|---|---|');
     // un repo por cada uno que se midió: con un solo repo (las skills adentro) no hay fila de un segundo

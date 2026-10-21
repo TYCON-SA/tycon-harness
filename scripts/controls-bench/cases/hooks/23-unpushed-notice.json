@@ -545,14 +545,14 @@
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
             "mkdir -p \"${SANDBOX_HOME}/.claude/.tycon-pipeline/active\" && printf '{\"storyId\":\"2.7\",\"sessionId\":\"bench-s27\"}' > \"${SANDBOX_HOME}/.claude/.tycon-pipeline/active/bench-s27.json\"",
-            "mkdir -p repo && cd repo && git init -q -b main . && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'feat: con corrida'"
+            "mkdir -p repo && cd repo && git init -q -b main . && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'feat: con ejecución'"
           ],
           "stdin": {
             "session_id": "bench-s27",
             "tool_name": "Bash",
             "cwd": "${FIXTURE}/repo",
             "tool_input": {
-              "command": "git commit -qm 'feat: con corrida'"
+              "command": "git commit -qm 'feat: con ejecución'"
             }
           },
           "expect": {

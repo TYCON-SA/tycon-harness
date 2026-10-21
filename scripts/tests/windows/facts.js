@@ -138,13 +138,13 @@ function render(report) {
   const run = report.run || {};
   const L = [];
   L.push('# Windows — los hechos de W0 (story 8.17)', '');
-  L.push(`Corrida **${run.id !== undefined && run.id !== null ? run.id : 'sin número'}**${run.number ? ` (${run.number})` : ''} · ${run.finished || run.started || 'sin fecha'} · arnés \`${run.harness_ref || '—'}\` · ${run.platform || '—'}${run.lab_mode ? ' (modo de laboratorio: NO es un Windows)' : ''} · sesión real: ${run.real_session ? 'sí' : 'no'}`, '');
+  L.push(`Ejecución **${run.id !== undefined && run.id !== null ? run.id : 'sin número'}**${run.number ? ` (${run.number})` : ''} · ${run.finished || run.started || 'sin fecha'} · arnés \`${run.harness_ref || '—'}\` · ${run.platform || '—'}${run.lab_mode ? ' (modo de laboratorio: NO es un Windows)' : ''} · sesión real: ${run.real_session ? 'sí' : 'no'}`, '');
   L.push('Generado por `scripts/tests/windows/facts.js` desde `windows-report.json`. No se edita a mano.', '');
   L.push('## Lo que no se sabía sin una máquina Windows', '');
   L.push('| # | Qué no se sabía | Respuesta |', '|---|---|---|');
-  for (const p of points(report)) L.push(`| ${p.n} | ${cell(p.question)} | ${p.state === 'fact' ? `**Hecho (corrida ${p.run})** — ${cell(p.text)}` : `**No medido** — ${cell(p.text)}`} |`);
+  for (const p of points(report)) L.push(`| ${p.n} | ${cell(p.question)} | ${p.state === 'fact' ? `**Hecho (ejecución ${p.run})** — ${cell(p.text)}` : `**No medido** — ${cell(p.text)}`} |`);
   L.push('', '## Los supuestos de la story', '');
-  L.push('| # | Supuesto | Qué dijo la corrida | Detalle |', '|---|---|---|---|');
+  L.push('| # | Supuesto | Qué dijo la ejecución | Detalle |', '|---|---|---|---|');
   for (const s of assumptions(report)) L.push(`| ${s.id} | ${cell(s.text)} | ${VERDICT_TEXT[s.verdict]} | ${cell(s.detail)} |`);
   const findings = (report.steps || []).flatMap((s) => (s.findings || []).map((f) => Object.assign({ step: s.name }, f)));
   L.push('', `## Hallazgos (${findings.length})`, '');

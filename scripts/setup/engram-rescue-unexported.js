@@ -513,7 +513,7 @@ function resolverDestino(r) {
 
   for (const r of objetivo) {
     if (presupuestoAgotado()) {
-      problemas.push(`la corrida se quedó sin presupuesto de tiempo (${PRESUPUESTO_MS / 1000}s) antes de tocar ${r.repo} — sin empezar, nada a medias. Volvé a correr (es idempotente) o subí --budget <segundos>`);
+      problemas.push(`la ejecución se quedó sin presupuesto de tiempo (${PRESUPUESTO_MS / 1000}s) antes de tocar ${r.repo} — sin empezar, nada a medias. Volvé a correr (es idempotente) o subí --budget <segundos>`);
       continue;
     }
     const { destino, pin } = destinos.get(r.repo);
@@ -543,7 +543,7 @@ function resolverDestino(r) {
     anotar({ fase: 'tocado', repo: r.repo, ok, fallos: fallos.length, cortadoPorTiempo });
 
     if (cortadoPorTiempo) {
-      problemas.push(`${r.repo}: la corrida se quedó sin presupuesto de tiempo (${PRESUPUESTO_MS / 1000}s) con ${pendientes.length - ok} observación(es) sin tocar — NO se sincronizó. Volvé a correr (es idempotente) o subí --budget <segundos>`);
+      problemas.push(`${r.repo}: la ejecución se quedó sin presupuesto de tiempo (${PRESUPUESTO_MS / 1000}s) con ${pendientes.length - ok} observación(es) sin tocar — NO se sincronizó. Volvé a correr (es idempotente) o subí --budget <segundos>`);
       console.error('   ⛔ presupuesto agotado → sin sync de este repo.');
       continue;
     }
@@ -607,9 +607,9 @@ function resolverDestino(r) {
     console.log('   (el script exporta; commitear es decisión tuya, repo por repo)');
   }
   if (problemas.length) {
-    console.error(`\n⛔ La corrida NO fue limpia — ${problemas.length} problema(s):`);
+    console.error(`\n⛔ La ejecución NO fue limpia — ${problemas.length} problema(s):`);
     for (const p of problemas) console.error(`   · ${p}`);
-    console.error(`\n   Journal de la corrida: ${JOURNAL}`);
+    console.error(`\n   Journal de la ejecución: ${JOURNAL}`);
     console.error('   El script es idempotente: arreglá lo de arriba y volvé a correrlo.');
     anotar({ fase: 'cierre', ok: false, problemas: problemas.length, commitear: paraCommitear });
     process.exit(1);
@@ -618,7 +618,7 @@ function resolverDestino(r) {
   anotar({ fase: 'cierre', ok: true, commitear: paraCommitear });
 })().catch((e) => {
   // Una excepción no atrapada no puede terminar la corrida sin resumen ni rastro.
-  console.error(`\n⛔ La corrida se cortó: ${String(e && e.message || e)}`);
+  console.error(`\n⛔ La ejecución se cortó: ${String(e && e.message || e)}`);
   console.error(`   Journal: ${JOURNAL} — dice hasta dónde se llegó.`);
   try { anotar({ fase: 'cierre', ok: false, excepcion: String(e && e.message || e).slice(0, 300) }); } catch (_e) { /* ya está */ }
   process.exit(1);

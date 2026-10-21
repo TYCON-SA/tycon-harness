@@ -253,7 +253,7 @@ function main() {
   if (rutaSuitesAhora) {
     const ahora = leerJson(rutaSuitesAhora);
     if (!ahora.ok) {
-      console.error(`⛔ veredicto — NO PUDE DECIDIR: el reporte de suites de esta corrida ${ahora.motivo} (${rutaSuitesAhora}). No medido no es verde.`);
+      console.error(`⛔ veredicto — NO PUDE DECIDIR: el reporte de suites de esta ejecución ${ahora.motivo} (${rutaSuitesAhora}). No medido no es verde.`);
       return 2;
     }
     const foto = leerJson(fotoSuitesRuta);
@@ -290,11 +290,11 @@ function main() {
   if (rutaBancoAhora) {
     const ahora = leerJson(rutaBancoAhora);
     if (!ahora.ok) {
-      console.error(`⛔ veredicto — NO PUDE DECIDIR: el reporte del banco de esta corrida ${ahora.motivo} (${rutaBancoAhora}). No medido no es verde.`);
+      console.error(`⛔ veredicto — NO PUDE DECIDIR: el reporte del banco de esta ejecución ${ahora.motivo} (${rutaBancoAhora}). No medido no es verde.`);
       return 2;
     }
     const base = leerJson(baselineRuta);
-    if (!base.ok) salida.avisos.push(`banco: no pude leer la baseline (${base.motivo}) — las regresiones contra ella no se juzgan en esta corrida`);
+    if (!base.ok) salida.avisos.push(`banco: no pude leer la baseline (${base.motivo}) — las regresiones contra ella no se juzgan en esta ejecución`);
     const foto = leerJson(fotoBancoRuta);
     if (!foto.ok) salida.sinFoto.push('banco');
     const baseUnida = base.ok ? bancoUnido(base.datos, renombres) : null;
@@ -328,12 +328,12 @@ function main() {
   };
   const sinFoto = salida.sinFoto.length > 0;
 
-  for (const a of salida.avisos) aviso('warning', '🟡', a, 'aviso del veredicto: el detalle, en el registro de la corrida');
+  for (const a of salida.avisos) aviso('warning', '🟡', a, 'aviso del veredicto: el detalle, en el registro de la ejecución');
   // No es un problema ni un verde: se dice, sin `##vso` (no ensucia la lista de avisos de la corrida).
   for (const n of salida.noCorrieron) console.log(`⏭ no corrió: el cambio no toca lo que mide — ${saneadoParaAzure(n)}`);
   for (const n of salida.noViajan) console.log(`⏭ no corrió: no viaja — ${saneadoParaAzure(n)} (es del repo de mantenimiento: corre en el nocturno)`);
   if (salida.nomedidos.length) {
-    const m = `${salida.nomedidos.length} caso(s) NO MEDIDO(s) (se les agotó el tiempo): no son rojos, pero la corrida no está completa — ${salida.nomedidos.slice(0, 5).join(' · ')}`;
+    const m = `${salida.nomedidos.length} caso(s) NO MEDIDO(s) (se les agotó el tiempo): no son rojos, pero la ejecución no está completa — ${salida.nomedidos.slice(0, 5).join(' · ')}`;
     aviso('warning', '🟡', m, `${salida.nomedidos.length} caso(s) del banco NO MEDIDO(s) (se les agotó el tiempo): los nombres, en el registro`);
   }
   for (const v of salida.viejos) aviso('warning', '🟡', `ya estaba rojo en main antes de este cambio: ${v}`, 'ya estaba rojo en main antes de este cambio: el nombre, en el registro');
@@ -350,8 +350,8 @@ function main() {
   if (salida.suitesSinMedir.length) {
     const lista = salida.suitesSinMedir.slice(0, 5).join(' · ') + (salida.suitesSinMedir.length > 5 ? ' …' : '');
     // También llega no medida la suite que pasó su tope, desde un trabajo que sí terminó.
-    const m = `${salida.suitesSinMedir.length} suite(s) NO SE MIDIERON en esta corrida (un trabajo de suites no terminó, o la suite pasó su tope: el motivo de cada una, en su salida): no son un rojo nuevo, pero tampoco un verde — ${lista}`;
-    aviso('error', '⛔', m, `${salida.suitesSinMedir.length} suite(s) NO SE MIDIERON en esta corrida: no son un rojo nuevo, pero tampoco un verde (los nombres, en el registro)`);
+    const m = `${salida.suitesSinMedir.length} suite(s) NO SE MIDIERON en esta ejecución (un trabajo de suites no terminó, o la suite pasó su tope: el motivo de cada una, en su salida): no son un rojo nuevo, pero tampoco un verde — ${lista}`;
+    aviso('error', '⛔', m, `${salida.suitesSinMedir.length} suite(s) NO SE MIDIERON en esta ejecución: no son un rojo nuevo, pero tampoco un verde (los nombres, en el registro)`);
   }
 
   const cola = `${salida.viejos.length} ya estaban rojos en main`

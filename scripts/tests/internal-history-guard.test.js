@@ -40,7 +40,7 @@ const RED = {
   'pr-number': j('el PR', ' 1234'),
   'work-branch': j('story/', '8.26-G'),
   'incident-log': j('incident-log.md', '#caso-x'),
-  'azure-run': j('la corrida #', '12511'),
+  'azure-run': j('la ejecución #', '12511'),
   'private-commit': j('hasta el commit ', '`c6cbe1d4`'),
   'story-number': j('(story ', '8.12)'),
   'story-bare': j('desde la ', '8.9 es así'),
@@ -54,7 +54,7 @@ const GREEN = {
   'pr-number': 'un pull request, el pedido de cambio (2026-09-05)',
   'work-branch': 'la rama `story/<id>` o `feature/mi-cambio`',
   'incident-log': 'el registro de incidentes (`guides/maintaining/incident-log.md`)',
-  'azure-run': 'la corrida de la validación, con 12511 líneas (corrida 2026-05-23)',
+  'azure-run': 'la ejecución de la validación, con 12511 líneas (ejecución 2026-05-23)',
   'private-commit': 'el commit que lo retiró',
   'story-number': 'una story, `story <N.M>`, la story que se implementa',
   'story-bare': 'la versión 3 de la lista',
@@ -534,7 +534,7 @@ test('InternalHistoryGuard_FormInWarn_NeverBlocks — una forma que quedó sólo
   assert.match(r.stdout, /^internal-history: findings=0 cannot_look=0 mode=block warnings=1$/m);
 });
 
-test('InternalHistoryGuard_CountLine_WrittenWithoutTheText — cada corrida con algo deja una línea de cuentas, nunca el texto', () => {
+test('InternalHistoryGuard_CountLine_WrittenWithoutTheText — cada ejecución con algo deja una línea de cuentas, nunca el texto', () => {
   const l = publicLab();
   stage(l.repo, { 'guides/a.md': `# Guía\n\n${RED['product-story']}\n${RED['batch-code']}\n` });
   assert.strictEqual(guard(l, { mode: 'warn' }).code, 0);
@@ -634,7 +634,7 @@ test('InternalHistoryGuard_Scan_SentenceStartAndOtherSpellings — al empezar un
   assert.strictEqual(found(j('Commit ', '`ad4f498` y merge ', '12946bf1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7'), 'private-commit'), 2, 'con mayúscula, y el hash entero');
   assert.strictEqual(found(j('Pull request ', '1234 y pull Request ', '#5678'), 'pr-number'), 2);
   assert.strictEqual(found(j('(2026-10-06, ', 'decisión del dueño)'), 'owner-decision'), 1, 'la fecha antes, dentro del paréntesis');
-  assert.strictEqual(found(j('(build ', '8995) y builds ', '9003'), 'azure-run'), 2, 'una corrida dicha «build»');
+  assert.strictEqual(found(j('(build ', '8995) y builds ', '9003'), 'azure-run'), 2, 'una ejecución dicha «build»');
   assert.strictEqual(found('un commit de prueba, el merge final y la build 2026-05-23', 'private-commit') + found('la build 2026-05-23', 'azure-run'), 0);
 });
 
@@ -870,7 +870,7 @@ test('InternalHistoryGuard_Keys_WhatIdentifiesEachForm — lo neto cuenta por lo
   same('incident-log', j('[caso](incident-log.md', '#caso-x)'), j('`guides/maintaining/incident-log.md', '#caso-x`'));
   other('incident-log', j('incident-log.md', '#caso-x'), j('incident-log.md', '#caso-y'));
   same('private-commit', j('commit ', '`ad4f498`'), j('Merge ', 'ad4f498'));
-  same('azure-run', j('corrida ', '11738'), j('builds #', '11738'));
+  same('azure-run', j('ejecución ', '11738'), j('builds #', '11738'));
   same('story-number', j('story ', '8.12'), j('Stories ', '8.12'));
   other('story-number', j('story ', '8.12'), j('épica ', '8'));
   same('batch-code', j('tanda ', 'B2'), j('Tandas ', 'B2'));
@@ -1139,7 +1139,7 @@ test('InternalHistoryGuard_GuardRecord_EveryDecision_ByCode — cada decisión d
   assert.strictEqual(last(), 'internal-history:finding:aviso');
   const softCount = decisions().length;
   assert.strictEqual(guard(l, { mode: 'warn', args: ['--config', softForm] }).code, 0);
-  assert.strictEqual(decisions().length, softCount + 1, 'esa corrida también anotó');
+  assert.strictEqual(decisions().length, softCount + 1, 'esa ejecución también anotó');
   assert.strictEqual(last(), 'internal-history:finding:aviso', 'bajado por la variable y sin nada que frenar: no es un escape');
   // la misma, con el control escrito en `block` y bajado a aviso por la variable: se escapó
   const blockConfig = configWith({});
@@ -1303,7 +1303,7 @@ const NO_PR_YAML = !fs.existsSync(PR_YAML) && 'NO MEDIDO — no está pipelines/
 test('InternalHistoryGuard_ValidationStep_OneRun_NoticesWithFixedTextAndTheCount — en la validación corre una vez y avisando se ve', { skip: NO_PR_YAML }, () => {
   const yml = fs.readFileSync(path.join(RAIZ, 'pipelines/azure-pipelines-maintainers-pr.yml'), 'utf8').split('\n');
   const runs = yml.filter((l) => /node scripts\/publishing\/internal-history\.js/.test(l));
-  assert.strictEqual(runs.length, 1, 'una sola corrida para las dos fuentes');
+  assert.strictEqual(runs.length, 1, 'una sola ejecución para las dos fuentes');
   assert.match(runs[0], /--range "\$\(baseDelCambio\)\.\.\.HEAD"/, 'sobre el diff del pedido');
   assert.ok(!/--source/.test(runs[0]), 'sin fuente: mira las dos');
   const at = yml.indexOf(runs[0]);
@@ -1566,7 +1566,7 @@ test('PublishedGuidesAndCovers_MeasurementScripts (T26) — los dos guiones de l
     ['asked', j('El dueño', ' firmó la clase entera'), 'lo firma el dueño del repo'],
     ['adversarial', j('Revisión adversarial', ' 2026-08-19 (14 hallazgos)'), 'una revisión adversarial'],
     ['lettered', j('un pipeline real de la story', ' CO-3'), 'una story de backend'],
-    ['numberedRun', j('medido en el run', ' 9.4 del pipeline'), 'medido en una corrida del pipeline'],
+    ['numberedRun', j('medido en el run', ' 9.4 del pipeline'), 'medido en una ejecución del pipeline'],
     ['numberedRun', j('(caso', ' 2.15: una suite de consola)'), 'en ese caso, 2.5 veces más lento'],
   ];
   for (const [kind, red, green] of cases) {
@@ -1677,9 +1677,9 @@ test('SkillsReviewersAndBlocks_CountBeforeAfter (T58) — la cuenta de antes y d
   }
   // el skill del pipeline se midió con una corrida sobre una story de juguete: el papel dice qué hizo de cada lado
   const toy = fs.readFileSync(path.join(MEASUREMENT, 'toy-run-g3.md'), 'utf8');
-  assert.match(toy, /\| # \| Con el texto de antes \| Con el texto de después \|/, 'la corrida de juguete, de los dos lados');
+  assert.match(toy, /\| # \| Con el texto de antes \| Con el texto de después \|/, 'la ejecución de juguete, de los dos lados');
   for (const step of ['pipeline.js start', 'agente tycon-story-validator', 'skill bmad-dev-story', 'pipeline.js risk-class']) {
-    assert.ok(toy.split(step).length >= 3, `«${step}» está en las dos corridas`);
+    assert.ok(toy.split(step).length >= 3, `«${step}» está en las dos ejecuciones`);
   }
   // lo que no se pudo medir queda dicho, no callado
   assert.ok(Array.isArray(m.notMeasured) && m.notMeasured.length > 0 && m.notMeasured.every((x) => x.what && x.why), 'lo que no se midió, con su motivo');

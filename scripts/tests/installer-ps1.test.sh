@@ -300,7 +300,7 @@ else no "(b) instalando, el paso de terceros recibió «$(grep 'install-third-pa
 # lo sano: sobre lo ya instalado, una segunda corrida no cambia settings.json y -Check no encuentra nada que falte
 cp "$HB/.claude/settings.json" "$T/b.settings.json"
 installer "$HB" > "$T/b2.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && cmp -s "$HB/.claude/settings.json" "$T/b.settings.json"; then ok "(b) una segunda corrida sale 0 y deja settings.json byte a byte igual (reconoce lo ya registrado)"
+if [ "$RC" -eq 0 ] && cmp -s "$HB/.claude/settings.json" "$T/b.settings.json"; then ok "(b) una segunda ejecución sale 0 y deja settings.json byte a byte igual (reconoce lo ya registrado)"
 else no "(b) una segunda corrida (rc $RC) cambió settings.json o falló: $(brief "$T/b2.out")"; fi
 : > "$NODE_CALLS"
 installer "$HB" -- -Check > "$T/b3.out" 2>&1; RC=$?
@@ -775,7 +775,7 @@ if [ -z "$BAD" ]; then ok "(o) T91 el intérprete sale de la extensión: un .sh 
 else no "(o) T91 el comando no es <intérprete> \"<ruta>\":$BAD"; fi
 cp "$ST" "$T/t.settings.json"
 installer "$HT" "${HELD[@]}" "${TEAM[@]}" > "$T/t2.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && [ "$(hook_n "$ST" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)" = 1 ] && cmp -s "$ST" "$T/t.settings.json"; then ok "(o) T91 con los .sh registrados, una segunda corrida deja settings.json byte a byte igual"
+if [ "$RC" -eq 0 ] && [ "$(hook_n "$ST" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)" = 1 ] && cmp -s "$ST" "$T/t.settings.json"; then ok "(o) T91 con los .sh registrados, una segunda ejecución deja settings.json byte a byte igual"
 else no "(o) T91 la segunda corrida (rc $RC) cambió settings.json o no había .sh registrado: $(brief "$T/t2.out")"; fi
 # un espacio en la carpeta (la del usuario y la del clon): cada ruta en un nivel de comillas, sin `$`, sin acento grave,
 # sin comillas adentro
@@ -787,7 +787,7 @@ if [ "$RC" -eq 0 ] && [ "$CK" -eq 0 ] && [ "$R" = "$TEAM_HOOKS 3" ]; then ok "(o
 else no "(o) T91 con un espacio en la carpeta (rc $RC, esperaba «$TEAM_HOOKS 3»): $R · $(brief "$T/s.out" 200)"; fi
 cp "$HS/.claude/settings.json" "$T/s.settings.json"
 LAB_INSTALLER="$SPACED/clone/scripts/install-tycon-hooks.ps1" installer "$HS" "${HELD[@]}" "${TEAM[@]}" > "$T/s2.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && cmp -s "$HS/.claude/settings.json" "$T/s.settings.json"; then ok "(o) T91 con un espacio en la carpeta, la segunda corrida deja settings.json byte a byte igual"
+if [ "$RC" -eq 0 ] && cmp -s "$HS/.claude/settings.json" "$T/s.settings.json"; then ok "(o) T91 con un espacio en la carpeta, la segunda ejecución deja settings.json byte a byte igual"
 else no "(o) T91 con un espacio en la carpeta, la segunda corrida (rc $RC) cambió settings.json: $(brief "$T/s2.out")"; fi
 # un .sh que ya estaba registrado con OTRA forma de ruta (la de Git Bash) y el matcher de antes (`Bash`): «ya está» se
 # decide por la ruta del guion dentro del repo, no se duplica, y pasa al matcher nuevo (`Bash|PowerShell`,
@@ -804,8 +804,8 @@ else no "(o) T91 un .sh ya registrado con otra forma de ruta (rc $RC): safety-gu
 cp "$SO" "$T/o.settings.json"
 installer "$HO" "${HELD[@]}" > "$T/o2.out" 2>&1; RC2=$?
 if [ "$RC" -eq 0 ] && same_cmd "$T/o.settings.json" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh 'bash "/c/lab/.claude/tycon-claude-guides/scripts/hooks/safety-guard-pre.sh"' && [ "$RC2" -eq 0 ] && cmp -s "$SO" "$T/o.settings.json"; then
-  ok "(o) ese .sh con otra forma de ruta y el matcher de antes conserva su comando tal cual (sólo cambia el matcher); la siguiente corrida no cambia nada"
-else no "(o) un .sh con otra forma de ruta y el matcher de antes: tras la primera corrida quedó «$(hook_cmd "$T/o.settings.json" PreToolUse '*' safety-guard-pre.sh)» (esperaba el de antes, bash \"/c/lab/…/safety-guard-pre.sh\"); la segunda (rc $RC2) $(cmp -s "$SO" "$T/o.settings.json" && echo 'no cambió nada' || echo "lo cambió a «$(hook_cmd "$SO" PreToolUse '*' safety-guard-pre.sh)»")"; fi
+  ok "(o) ese .sh con otra forma de ruta y el matcher de antes conserva su comando tal cual (sólo cambia el matcher); la siguiente ejecución no cambia nada"
+else no "(o) un .sh con otra forma de ruta y el matcher de antes: tras la primera ejecución quedó «$(hook_cmd "$T/o.settings.json" PreToolUse '*' safety-guard-pre.sh)» (esperaba el de antes, bash \"/c/lab/…/safety-guard-pre.sh\"); la segunda (rc $RC2) $(cmp -s "$SO" "$T/o.settings.json" && echo 'no cambió nada' || echo "lo cambió a «$(hook_cmd "$SO" PreToolUse '*' safety-guard-pre.sh)»")"; fi
 # la forma actual: los .sh con el matcher nuevo y `bash "<ruta>"`, entre dos hooks ajenos. Quedan
 # una vez cada uno, en su mismo lugar y con su mismo matcher; lo ajeno queda; la segunda corrida no cambia nada.
 HW3A="$(new_home w3a-bare-bash)"; mkdir -p "$HW3A/.claude"; ln -s "$CLONE" "$HW3A/.claude/agent-skills"; SW3A="$HW3A/.claude/settings.json"
@@ -818,8 +818,8 @@ if [ "$RC" -eq 0 ] && [ "$RC2" -eq 0 ] && [ -z "$(wrong_counts "$SW3A" 1 "PreToo
    && same_cmd "$T/w3a.settings.json" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh "$SH_PREFIX\"$CLONE/scripts/hooks/safety-guard-pre.sh\"" \
    && same_cmd "$T/w3a.settings.json" PreToolUse 'Bash|PowerShell' test-scope-guard-pre.sh "$SH_PREFIX\"$CLONE/scripts/hooks/test-scope-guard-pre.sh\"" \
    && [ "$(w3a_order "$T/w3a.settings.json")" = "lab-antes safety-guard-pre.sh test-scope-guard-pre.sh lab-despues" ] && cmp -s "$SW3A" "$T/w3a.settings.json"; then
-  ok "(o) los .sh registrados como «bash \"<ruta>\"» quedan una vez cada uno, en su lugar y con su matcher; lo ajeno queda; la segunda corrida no cambia nada"
-else no "(o) los .sh registrados como «bash \"<ruta>\"» (rc $RC y $RC2): $(wrong_counts "$SW3A" 1 "PreToolUse|Bash|PowerShell|safety-guard-pre.sh" "PreToolUse|Bash|PowerShell|test-scope-guard-pre.sh") · safety «$(hook_cmd "$T/w3a.settings.json" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)» · orden «$(w3a_order "$T/w3a.settings.json")» · segunda corrida $(cmp -s "$SW3A" "$T/w3a.settings.json" && echo igual || echo CAMBIÓ) · $(brief "$T/w3a1.out" 200)"; fi
+  ok "(o) los .sh registrados como «bash \"<ruta>\"» quedan una vez cada uno, en su lugar y con su matcher; lo ajeno queda; la segunda ejecución no cambia nada"
+else no "(o) los .sh registrados como «bash \"<ruta>\"» (rc $RC y $RC2): $(wrong_counts "$SW3A" 1 "PreToolUse|Bash|PowerShell|safety-guard-pre.sh" "PreToolUse|Bash|PowerShell|test-scope-guard-pre.sh") · safety «$(hook_cmd "$T/w3a.settings.json" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)» · orden «$(w3a_order "$T/w3a.settings.json")» · segunda ejecución $(cmp -s "$SW3A" "$T/w3a.settings.json" && echo igual || echo CAMBIÓ) · $(brief "$T/w3a1.out" 200)"; fi
 # (El aplicador no busca el bash de Git ni manda avisos por su ausencia, así que no hay nada que medir.)
 
 # ── (p) T92 · Ps1_OptIn_OffRemoves_BrokenConfigKeeps ────────────────────────────────────────────────────────────
@@ -928,8 +928,8 @@ if [ "$(hook_n "$SR" Stop '*' large-read-meter.js)$(hook_n "$SR" PreToolUse '*' 
 else no "(q) T93 un guion que falta: $(grep -c 'no está en el disco' "$T/r.out") línea(s) de aviso · $(grep 'no está en el disco' "$T/r.out" | head -2 | tr '\n' ' ' | cut -c1-240)"; fi
 cp "$SR" "$T/r.settings.json"
 crlf_installer "$HR" "${HELD[@]}" > "$T/r2.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && cmp -s "$SR" "$T/r.settings.json" && [ "$(crlf_notice "$T/r2.out")" = 1 ] && [ "$(grep -c 'no está en el disco' "$T/r2.out")" = 2 ]; then ok "(q) T93 la segunda corrida no cambia settings.json y lo vuelve a decir (el .sh con \\r\\n y los dos que faltan)"
-else no "(q) T93 la segunda corrida con un .sh con \\r\\n (rc $RC): $(crlf_notice "$T/r2.out") aviso(s) de \\r\\n, $(grep -c 'no está en el disco' "$T/r2.out") de guion que falta · $(brief "$T/r2.out" 200)"; fi
+if [ "$RC" -eq 0 ] && cmp -s "$SR" "$T/r.settings.json" && [ "$(crlf_notice "$T/r2.out")" = 1 ] && [ "$(grep -c 'no está en el disco' "$T/r2.out")" = 2 ]; then ok "(q) T93 la segunda ejecución no cambia settings.json y lo vuelve a decir (el .sh con \\r\\n y los dos que faltan)"
+else no "(q) T93 la segunda ejecución con un .sh con \\r\\n (rc $RC): $(crlf_notice "$T/r2.out") aviso(s) de \\r\\n, $(grep -c 'no está en el disco' "$T/r2.out") de guion que falta · $(brief "$T/r2.out" 200)"; fi
 # ya estaba registrado (con el matcher de antes): queda —pasa al matcher nuevo— y avisa. Su comando, `bash "<ruta>"`,
 # queda tal cual
 HK="$(new_home crlf-registered)"; mkdir -p "$HK/.claude"; ln -s "$CRLF_CLONE" "$HK/.claude/agent-skills"; SK="$HK/.claude/settings.json"
@@ -968,16 +968,16 @@ UNREAD_HOW="sin permiso de lectura"
 make_unreadable() { chmod 000 "$UNREAD_SH"; if [ -r "$UNREAD_SH" ]; then rm -f "$UNREAD_SH"; mkdir "$UNREAD_SH"; UNREAD_HOW="una carpeta con su nombre (corre como root)"; fi; }
 make_readable() { if [ -d "$UNREAD_SH" ]; then rmdir "$UNREAD_SH"; else rm -f "$UNREAD_SH"; fi; cp "$CLONE/scripts/hooks/safety-guard-pre.sh" "$UNREAD_SH"; }
 unread_installer() { LAB_INSTALLER="$UNREAD_CLONE/scripts/install-tycon-hooks.ps1" installer "$@"; }
-unread_notice() { grep 'safety-guard-pre\.sh' "$1" | grep 'no pude leer' | grep -c 'se vuelve a intentar en la próxima corrida'; }   # <salida>: las líneas que lo nombran, con el motivo y el reintento
+unread_notice() { grep 'safety-guard-pre\.sh' "$1" | grep 'no pude leer' | grep -c 'se vuelve a intentar en la próxima ejecución'; }   # <salida>: las líneas que lo nombran, con el motivo y el reintento
 make_unreadable
 HQ="$(new_home unreadable)"; SQ="$HQ/.claude/settings.json"
 unread_installer "$HQ" "${HELD[@]}" > "$T/q.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && [ "$(hook_n "$SQ" PreToolUse '*' safety-guard-pre.sh)" = 0 ] && [ "$(unread_notice "$T/q.out")" = 1 ] && grep 'safety-guard-pre\.sh' "$T/q.out" | grep 'NO quedó registrado' >/dev/null; then
-  ok "(s) un .sh de la lista que no se puede leer (${UNREAD_HOW}) NO se registra, y UNA línea lo nombra con el motivo y «se vuelve a intentar en la próxima corrida»"
+  ok "(s) un .sh de la lista que no se puede leer (${UNREAD_HOW}) NO se registra, y UNA línea lo nombra con el motivo y «se vuelve a intentar en la próxima ejecución»"
 else no "(s) un .sh que no se puede leer (${UNREAD_HOW}; rc $RC): está registrado $(hook_n "$SQ" PreToolUse '*' safety-guard-pre.sh) vez/veces, $(unread_notice "$T/q.out") línea(s) con el motivo y el reintento · $(grep 'safety-guard-pre\.sh' "$T/q.out" | head -1 | cut -c1-240)"; fi
 if [ "$(hook_n "$SQ" PreToolUse '*' test-scope-guard-pre.sh)$(hook_n "$SQ" Stop '*' blocking-meter.js)" = 11 ] && ! grep 'test-scope-guard-pre\.sh' "$T/q.out" | grep 'no pude leer' >/dev/null; then
-  ok "(s) el espejo, en la misma corrida: el .sh legible de al lado se registra sin aviso, y los demás controles también"
-else no "(s) el espejo en la misma corrida: test-scope $(hook_n "$SQ" PreToolUse '*' test-scope-guard-pre.sh), blocking-meter $(hook_n "$SQ" Stop '*' blocking-meter.js) · $(grep -c 'no pude leer' "$T/q.out") aviso(s) de ilegible"; fi
+  ok "(s) el espejo, en la misma ejecución: el .sh legible de al lado se registra sin aviso, y los demás controles también"
+else no "(s) el espejo en la misma ejecución: test-scope $(hook_n "$SQ" PreToolUse '*' test-scope-guard-pre.sh), blocking-meter $(hook_n "$SQ" Stop '*' blocking-meter.js) · $(grep -c 'no pude leer' "$T/q.out") aviso(s) de ilegible"; fi
 # con -Check: lo dice, no lo cuenta entre «los que faltan» (correr el instalador no lo registraría) y no escribe nada
 HQC="$(new_home unreadable-check)"
 unread_installer "$HQC" "${HELD[@]}" -- -Check > "$T/qc.out" 2>&1; RC=$?
@@ -988,7 +988,7 @@ else no "(s) -Check con un .sh que no se puede leer (rc $RC): $(unread_notice "$
 make_readable
 unread_installer "$HQ" "${HELD[@]}" > "$T/q2.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && [ "$(hook_n "$SQ" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)" = 1 ] && same_cmd "$SQ" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh "$SH_PREFIX\"$UNREAD_CLONE/scripts/hooks/safety-guard-pre.sh\"" && [ "$(grep -c 'no pude leer' "$T/q2.out")" = 0 ]; then
-  ok "(s) el espejo: legible y sano en la corrida siguiente, queda registrado y sin aviso"
+  ok "(s) el espejo: legible y sano en la ejecución siguiente, queda registrado y sin aviso"
 else no "(s) el espejo, legible y sano (rc $RC): está $(hook_n "$SQ" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh) vez/veces, $(grep -c 'no pude leer' "$T/q2.out") aviso(s) de ilegible · $(brief "$T/q2.out" 200)"; fi
 # ya estaba registrado y deja de poder leerse: queda registrado, settings.json no cambia, y una línea avisa
 cp "$SQ" "$T/q.settings.json"
@@ -1018,14 +1018,14 @@ if [ "$(unsafe_notice "$T/p.out" '«\$»')" = 8 ] && [ "$(unsafe_notice "$T/p.ou
   ok "(t) …y una línea por cada uno lo dice: el guion y el carácter (\$)"
 else no "(t) con \$ en la carpeta de usuario: $(unsafe_notice "$T/p.out" '«\$»') línea(s) que nombran el carácter (esperaba 8) · $(grep 'su ruta trae' "$T/p.out" | head -1 | cut -c1-240)"; fi
 if [ "$(hook_n "$SP" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)$(hook_n "$SP" Stop '*' large-read-meter.js)" = 11 ] && ! grep 'su ruta trae' "$T/p.out" | grep 'safety-guard-pre\.sh' >/dev/null; then
-  ok "(t) el espejo, en la misma corrida: los guiones del clon (su ruta no trae \$) se registran sin aviso, .sh y .js"
+  ok "(t) el espejo, en la misma ejecución: los guiones del clon (su ruta no trae \$) se registran sin aviso, .sh y .js"
 else no "(t) el espejo en la misma corrida: safety-guard $(hook_n "$SP" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh), large-read-meter $(hook_n "$SP" Stop '*' large-read-meter.js)"; fi
 cp "$SP" "$T/p.settings.json"
 installer "$HP" "${HELD[@]}" "${TEAM[@]}" > "$T/p2.out" 2>&1; RC=$?
 installer "$HP" "${HELD[@]}" "${TEAM[@]}" -- -Check > "$T/p3.out" 2>&1; RC3=$?
 if [ "$RC" -eq 0 ] && [ "$RC3" -eq 0 ] && cmp -s "$SP" "$T/p.settings.json" && [ "$(unsafe_notice "$T/p2.out" '«\$»')" = 8 ] && [ "$(unsafe_notice "$T/p3.out" '«\$»')" = 8 ] && ! grep -q 'hooks faltan' "$T/p3.out"; then
-  ok "(t) la segunda corrida no cambia settings.json y lo vuelve a decir; -Check lo dice y no los cuenta entre los que faltan"
-else no "(t) la segunda corrida o -Check con \$ en la carpeta de usuario (rc $RC y $RC3): $(unsafe_notice "$T/p2.out" '«\$»') y $(unsafe_notice "$T/p3.out" '«\$»') línea(s) · $(grep -c 'hooks faltan' "$T/p3.out") aviso(s) de faltantes"; fi
+  ok "(t) la segunda ejecución no cambia settings.json y lo vuelve a decir; -Check lo dice y no los cuenta entre los que faltan"
+else no "(t) la segunda ejecución o -Check con \$ en la carpeta de usuario (rc $RC y $RC3): $(unsafe_notice "$T/p2.out" '«\$»') y $(unsafe_notice "$T/p3.out" '«\$»') línea(s) · $(grep -c 'hooks faltan' "$T/p3.out") aviso(s) de faltantes"; fi
 # (2) el clon trae `$` en su ruta: los guiones del clon —los tres .sh entre ellos— no se registran; los de las skills, sí
 cp -R "$CLONE" "$DOLLAR_DIR/clone"
 HPC="$(new_home dollar-clone)"; SPC="$HPC/.claude/settings.json"
@@ -1076,7 +1076,7 @@ if [ "$RC" -eq 0 ] && [ "$(legacy_state "$SL")" = "0 0 1 1 1" ] && same_cmd "$SL
 else no "(r) las formas viejas con engram prendido (rc $RC): quedó «$(legacy_state "$SL")» (esperaba «0 0 1 1 1»: vieja, a mano, del arnés, propia, ajena) · $(legacy_lines "$T/l.out") renglón(es) de aviso · $(brief "$T/l.out" 200)"; fi
 cp "$SL" "$T/l.settings.json"
 installer "$HL" "${HELD[@]}" "${TEAM[@]}" > "$T/l2.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && cmp -s "$SL" "$T/l.settings.json" && [ "$(legacy_lines "$T/l2.out")" = 0 ]; then ok "(r) la segunda corrida deja settings.json byte a byte igual y no vuelve a sacar nada"
+if [ "$RC" -eq 0 ] && cmp -s "$SL" "$T/l.settings.json" && [ "$(legacy_lines "$T/l2.out")" = 0 ]; then ok "(r) la segunda ejecución deja settings.json byte a byte igual y no vuelve a sacar nada"
 else no "(r) la segunda corrida tras sacar las formas viejas (rc $RC) cambió settings.json: «$(legacy_state "$SL")» · $(brief "$T/l2.out" 200)"; fi
 # con la integración engram apagada, y con TYCON_ENGRAM_HOOK=0: las formas viejas se sacan igual (como el .sh), la del
 # arnés no entra, y el hook propio que se llama igual NO se toca
@@ -1115,19 +1115,19 @@ sh_state() { local s="$1" r out=""; for r in "${SH_HOOKS[@]}"; do out="$out$(hoo
 # los registrados son un id menos; sin los .sh, otros tres menos — los dos números, de la lista declarada)
 REPORT_IDS=$((TEAM_HOOKS - 1)); NO_SH_IDS=$((REPORT_IDS - ${#SH_HOOKS[@]}))
 report_sh() { node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.filter((p)=>p.kind==="hook"&&/\.sh$/.test(p.id)).length+" de "+r.filter((p)=>p.kind==="hook").length)}catch(e){console.log("ilegible: "+e.message)}' "$1"; }   # <reporte> → «<hooks .sh> de <hooks>»
-deferred_notice() { grep 'se registran en la corrida siguiente' "$1" | grep -c 'harness.js de una versión anterior'; }   # <salida>
+deferred_notice() { grep 'se registran en la ejecución siguiente' "$1" | grep -c 'harness.js de una versión anterior'; }   # <salida>
 HM="$(new_home old-harness)"; SM="$HM/.claude/settings.json"
 installer "$HM" "$OLD_HARNESS" "${TEAM[@]}" -- -ReportJson "$T/m1.report.json" > "$T/m1.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && [ "$(sh_state "$SM")" = 000 ] && [ "$(report_sh "$T/m1.report.json")" = "0 de $NO_SH_IDS" ] && [ "$(deferred_notice "$T/m1.out")" = 1 ] \
-   && grep 'se registran en la corrida siguiente' "$T/m1.out" | grep 'safety-guard-pre\.sh' >/dev/null; then
-  ok "(u) lanzado por un harness.js de antes (sin TYCON_HARNESS_GIT_BASH_HEALTH): ningún .sh en settings.json ni en el reporte (sus $NO_SH_IDS ids de hook son .js), y UNA línea dice que se registran en la corrida siguiente"
+   && grep 'se registran en la ejecución siguiente' "$T/m1.out" | grep 'safety-guard-pre\.sh' >/dev/null; then
+  ok "(u) lanzado por un harness.js de antes (sin TYCON_HARNESS_GIT_BASH_HEALTH): ningún .sh en settings.json ni en el reporte (sus $NO_SH_IDS ids de hook son .js), y UNA línea dice que se registran en la ejecución siguiente"
 else no "(u) lanzado por un harness.js de antes (rc $RC): .sh registrados «$(sh_state "$SM")» (esperaba 000), reporte «$(report_sh "$T/m1.report.json")» (esperaba «0 de ${NO_SH_IDS}»), $(deferred_notice "$T/m1.out") línea(s) · $(brief "$T/m1.out" 200)"; fi
-if [ "$(hook_n "$SM" Stop '*' large-read-meter.js)$(hook_n "$SM" PreToolUse 'Bash|PowerShell' push-phantom-ref-notice.js)$(hook_n "$SM" UserPromptSubmit '*' rebuild-before-verify.js)" = 111 ]; then ok "(u) …en esa misma corrida los .js se registran como siempre"
+if [ "$(hook_n "$SM" Stop '*' large-read-meter.js)$(hook_n "$SM" PreToolUse 'Bash|PowerShell' push-phantom-ref-notice.js)$(hook_n "$SM" UserPromptSubmit '*' rebuild-before-verify.js)" = 111 ]; then ok "(u) …en esa misma ejecución los .js se registran como siempre"
 else no "(u) lanzado por un harness.js de antes, los .js no quedaron: large-read-meter $(hook_n "$SM" Stop '*' large-read-meter.js), push-phantom $(hook_n "$SM" PreToolUse 'Bash|PowerShell' push-phantom-ref-notice.js)"; fi
 # la corrida siguiente, ya con un harness.js actual: quedan los tres, una vez cada uno, en el reporte y sin la línea
 installer "$HM" "${HELD[@]}" "${TEAM[@]}" -- -ReportJson "$T/m2.report.json" > "$T/m2.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && [ "$(sh_state "$SM")" = 111 ] && [ "$(report_sh "$T/m2.report.json")" = "${#SH_HOOKS[@]} de $REPORT_IDS" ] && [ "$(deferred_notice "$T/m2.out")" = 0 ]; then
-  ok "(u) el espejo: la corrida siguiente con TYCON_HARNESS_GIT_BASH_HEALTH=1 registra los tres .sh una vez cada uno, los reporta y no dice nada"
+  ok "(u) el espejo: la ejecución siguiente con TYCON_HARNESS_GIT_BASH_HEALTH=1 registra los tres .sh una vez cada uno, los reporta y no dice nada"
 else no "(u) la corrida siguiente con la variable (rc $RC): .sh «$(sh_state "$SM")» (esperaba 111), reporte «$(report_sh "$T/m2.report.json")» (esperaba «${#SH_HOOKS[@]} de ${REPORT_IDS}»), $(deferred_notice "$T/m2.out") línea(s) · $(brief "$T/m2.out" 200)"; fi
 # otra vez un harness.js anterior, con los .sh ya registrados: no los saca (settings.json byte a byte igual) y no los reporta
 cp "$SM" "$T/m.settings.json"
@@ -1217,7 +1217,7 @@ if [ "$N" = 12 ] && same_cmd "$SW" PreToolUse 'Bash|PowerShell' safety-guard-pre
 else no "(v) el reporte nombra $N matcher(s) ampliado(s) (esperaba 12); safety-guard quedó «$(hook_cmd "$SW" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)» (antes «${OLD_SG}»)"; fi
 cp "$SW" "$T/n.after.json"
 installer "$HW" "${HELD[@]}" "${TEAM[@]}" > "$T/n2.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && cmp -s "$SW" "$T/n.after.json"; then ok "(v) una segunda corrida deja settings.json byte a byte igual"
+if [ "$RC" -eq 0 ] && cmp -s "$SW" "$T/n.after.json"; then ok "(v) una segunda ejecución deja settings.json byte a byte igual"
 else no "(v) la segunda corrida (rc $RC) cambió settings.json: $(diff <(hook_order "$T/n.after.json") <(hook_order "$SW") | head -4 | tr '\n' ' ')"; fi
 # el viejo y el nuevo a la vez (una máquina que volvió a una versión anterior y después avanzó): queda uno, y se dice
 HW2="$(new_home widen-both)"; SW2="$HW2/.claude/settings.json"
@@ -1313,7 +1313,7 @@ sync_section() {
   LAB_INSTALLER="$BCL/scripts/install-tycon-hooks.ps1" installer "$P4" "${HELD[@]}" "${SYNC_ENV[@]}" -- -ReportJson "$T/s4a.report.json" > "$T/s4a.out" 2>&1; RC=$?
   LAB_INSTALLER="$BCL/scripts/install-tycon-hooks.ps1" installer "$P4" "${HELD[@]}" "${SYNC_ENV[@]}" -- -ReportJson "$T/s4b.report.json" > "$T/s4b.out" 2>&1; RC2=$?
   if [ -n "$WANT" ] && [ "$RC" -eq 0 ] && [ "$RC2" -eq 0 ] && [ "$(report_blocks "$T/s4a.report.json")" = "$WANT" ] && [ "$(report_blocks "$T/s4b.report.json")" = "$WANT" ] && [ "$(names "$T/s2.ps1.pieces")" = "$WANT" ]; then
-    ok "el registro del .ps1 (-ReportJson, dos corridas: la segunda sin nada que cambiar) y el sync .ps1 anotan «en su lugar» los mismos bloques que el sync .sh ($WANT)"
+    ok "el registro del .ps1 (-ReportJson, dos ejecuciones: la segunda sin nada que cambiar) y el sync .ps1 anotan «en su lugar» los mismos bloques que el sync .sh ($WANT)"
   else no "el registro de los bloques: el sync .sh anota «${WANT}», el sync .ps1 «$(names "$T/s2.ps1.pieces")», el instalador .ps1 «$(report_blocks "$T/s4a.report.json")» y en la segunda corrida «$(report_blocks "$T/s4b.report.json")» (rc $RC y $RC2) $(brief "$T/s4b.out" 160)"; fi
 }
 blocks_clone() { # <nombre> <carpeta de bloques> → una copia del clon de laboratorio con ESOS bloques de CLAUDE.md
@@ -1483,7 +1483,7 @@ sync_profile_section() {
   LAB_INSTALLER="$BCL/scripts/install-tycon-hooks.ps1" installer "$P" "${HELD[@]}" "${SYNC_ENV[@]}" TYCON_INSTALL_PROFILE=full -- -ReportJson "$T/sp-rec1.report.json" > "$T/sp-rec1.out" 2>&1; RC=$?
   LAB_INSTALLER="$BCL/scripts/install-tycon-hooks.ps1" installer "$P" "${HELD[@]}" "${SYNC_ENV[@]}" TYCON_INSTALL_PROFILE=full -- -ReportJson "$T/sp-rec2.report.json" > "$T/sp-rec.out" 2>&1; RC2=$?
   if printf '%s' "$WANT" | grep 'de-full' >/dev/null && [ "$RC" -eq 0 ] && [ "$RC2" -eq 0 ] && [ "$(report_blocks "$T/sp-rec1.report.json")" = "$WANT" ] && [ "$(report_blocks "$T/sp-rec2.report.json")" = "$WANT" ]; then
-    ok "(w) T39 el registro del instalador .ps1 (dos corridas) anota «en su lugar» los bloques con requires-profile ($WANT)"
+    ok "(w) T39 el registro del instalador .ps1 (dos ejecuciones) anota «en su lugar» los bloques con requires-profile ($WANT)"
   else no "(w) T39 bloques con requires-profile en su lugar: el sync .sh «${WANT}», el instalador .ps1 «$(report_blocks "$T/sp-rec1.report.json")» y en la segunda corrida «$(report_blocks "$T/sp-rec2.report.json")» (rc $RC y $RC2) $(brief "$T/sp-rec.out" 160)"; fi
 }
 
@@ -1575,8 +1575,8 @@ w4_defects_section() {
   local up="$h/.claude/.tycon-pipeline/upload-runs.log"; i=0
   while ! grep -q 'sin_config' "$up" 2>/dev/null && [ "$i" -lt 40 ]; do sleep 0.5; i=$((i+1)); done
   if [ "$rc" -eq 0 ] && grep -q 'sin_config' "$up" 2>/dev/null && grep -qF "upload-runs.js --budget-ms 90000 --log $up" "$NODE_CALLS"; then
-    ok "(x) la subida de corridas al buzón: el arranque de Windows la lanza de fondo, con la ruta entera, y deja su registro"
-  else no "(x) la subida de corridas al buzón (rc $rc): $([ -f "$up" ] && echo "registro: $(head -c 160 "$up")" || echo 'no quedó registro') · $(grep -F 'upload-runs' "$NODE_CALLS" | tail -1 | cut -c1-200) · $(brief "$W/x4b.out" 200)"; fi
+    ok "(x) la subida de ejecuciones al buzón: el arranque de Windows la lanza de fondo, con la ruta entera, y deja su registro"
+  else no "(x) la subida de ejecuciones al buzón (rc $rc): $([ -f "$up" ] && echo "registro: $(head -c 160 "$up")" || echo 'no quedó registro') · $(grep -F 'upload-runs' "$NODE_CALLS" | tail -1 | cut -c1-200) · $(brief "$W/x4b.out" 200)"; fi
   # …y no se lanza con la llave de apagado, con -Check, dentro de un agente de CI ni con el buzón apagado
   local variante lanzadas=""
   for variante in apagada check ci sin-buzon; do
@@ -1593,7 +1593,7 @@ w4_defects_section() {
     sleep 1
     if grep -qF 'upload-runs.js' "$NODE_CALLS" || [ -e "$h/.claude/.tycon-pipeline/upload-runs.log" ]; then lanzadas="$lanzadas $variante"; fi
   done
-  [ -z "$lanzadas" ] && ok "(x) la subida de corridas al buzón NO se lanza con TYCON_NO_UPLOAD_RUNS=1, con -Check, dentro de un agente de CI ni con el buzón apagado" \
+  [ -z "$lanzadas" ] && ok "(x) la subida de ejecuciones al buzón NO se lanza con TYCON_NO_UPLOAD_RUNS=1, con -Check, dentro de un agente de CI ni con el buzón apagado" \
     || no "(x) la subida de corridas se lanzó donde no debía:$lanzadas"
   # (x5) un error de requisitos sale como UNA línea limpia, no como un error de PowerShell (con su «Line |» y sus
   # colores). 🔴 Write-Error con $ErrorActionPreference='Stop' imprimiría siete renglones de PowerShell.
@@ -1631,7 +1631,7 @@ w4_defects_section() {
     else no "(x) AC 36 · bloque con \\r\\n ($mode): el CLAUDE.md del .ps1 no es el del .sh: $(cmp "$s/.claude/CLAUDE.md" "$p/.claude/CLAUDE.md" 2>&1 | head -1) · \\r en el del .ps1: $(LC_ALL=C grep -c $'\r' "$p/.claude/CLAUDE.md" 2>/dev/null)"; fi
     cp "$p/.claude/CLAUDE.md" "$W/x6-$mode.before"
     lab_env "$p" TYCON_NO_CLAUDEMD_SYNC=0 -- pwsh -NoProfile -NonInteractive -File "$SL/scripts/setup/sync-claude-md-blocks.ps1" > "$W/x6-$mode.again.out" 2>&1
-    if cmp -s "$W/x6-$mode.before" "$p/.claude/CLAUDE.md" && [ ! -s "$W/x6-$mode.again.out" ]; then ok "(x) AC 36 · bloque con \\r\\n ($mode): la segunda corrida del .ps1 no toca nada y calla"
+    if cmp -s "$W/x6-$mode.before" "$p/.claude/CLAUDE.md" && [ ! -s "$W/x6-$mode.again.out" ]; then ok "(x) AC 36 · bloque con \\r\\n ($mode): la segunda ejecución del .ps1 no toca nada y calla"
     else no "(x) AC 36 · bloque con \\r\\n ($mode): la segunda corrida cambió el CLAUDE.md o habló: $(brief "$W/x6-$mode.again.out" 200)"; fi
   done
 }
@@ -2197,7 +2197,7 @@ ab_fresh() { mkdir -p "$1/.claude"; printf '# mío\n@~/.claude/tycon-harness/REA
 # (la tanda de lectura, la de aplicación y la línea del índice, que queda suelta)
 ab_pair steady "$CLONE_NB" ab_installed
 N_A=$(wc -l < "$T/ab-steady-a.counted" | tr -d ' '); N_B=$(wc -l < "$T/ab-steady-b.counted" | tr -d ' ')
-echo "ℹ installer-ps1: (ab) procesos de Node en una corrida del arranque — con la tanda: $N_A ($(sort "$T/ab-steady-a.counted" | uniq -c | awk '{printf "%s %s · ", $2, $1}')) · sin ella: $N_B"
+echo "ℹ installer-ps1: (ab) procesos de Node en una ejecución del arranque — con la tanda: $N_A ($(sort "$T/ab-steady-a.counted" | uniq -c | awk '{printf "%s %s · ", $2, $1}')) · sin ella: $N_B"
 # El tope es 3. Con la capa del equipo (el árbol trae scripts/lib/renames.json, como en cada máquina del equipo y en el
 # nocturno, que pone el público encima del privado) es 4: la llamada a legacy-names.js queda afuera de la tanda,
 # y ése es el cuarto. Con capa, el de más tiene que ser ése y no otro.
@@ -2205,7 +2205,7 @@ AB_CAP=3; AB_WHY="≤ 3"
 if [ -f "$CLONE/scripts/lib/renames.json" ]; then AB_CAP=4; AB_WHY="≤ 4 con la capa del equipo: legacy-names.js va afuera de la tanda"; fi
 if [ "$AB_CAP" = 4 ] && [ "$N_A" = 4 ] && ! grep -qx 'legacy-names.js' "$T/ab-steady-a.counted"; then
   no "T4 con la capa del equipo el cuarto proceso de Node tenía que ser legacy-names.js: $(sort "$T/ab-steady-a.counted" | tr '\n' ' ')"
-elif [ "$AB_RC_A" = 0 ] && [ "$N_A" -gt 0 ] && [ "$N_A" -le "$AB_CAP" ]; then ok "T4 una corrida del arranque lanza $N_A procesos de Node ($AB_WHY; sin la tanda, $N_B)"
+elif [ "$AB_RC_A" = 0 ] && [ "$N_A" -gt 0 ] && [ "$N_A" -le "$AB_CAP" ]; then ok "T4 una ejecución del arranque lanza $N_A procesos de Node ($AB_WHY; sin la tanda, $N_B)"
 else no "T4 una corrida del arranque lanzó $N_A procesos de Node (tope $AB_CAP; salió $AB_RC_A) · $(brief "$T/ab-steady-a.out" 200)"; fi
 ab_same steady "$AB_A" "$AB_B" "T6 máquina ya instalada, con la tanda y sin ella"
 
@@ -2229,7 +2229,7 @@ N_REST="$(grep -c -v -x -F -- 'upload-runs.js' "$T/ab-upload.counted" 2>/dev/nul
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ -f "$T/upload-started" ] && break; sleep 0.5; done
 if [ "$AB_RC" = 0 ] && [ "$N_UP" = 1 ] && [ -f "$T/upload-started" ] && [ ! -f "$T/upload-done" ] && [ "${N_REST:-99}" -le "$AB_CAP" ]; then
   ok "T4b con el buzón prendido, la subida sale de fondo (el arranque terminó antes que ella), una sola vez, y lo demás queda en $N_REST procesos (tope $AB_CAP)"
-else no "T4b la subida de corridas (rc $AB_RC): lanzada $N_UP vez/veces, $( [ -f "$T/upload-started" ] && echo arrancó || echo 'no arrancó'), $( [ -f "$T/upload-done" ] && echo 'el arranque la ESPERÓ' || echo 'no la esperó'), el resto $N_REST procesos (tope $AB_CAP) · $(brief "$T/ab-upload.out" 200)"; fi
+else no "T4b la subida de ejecuciones (rc $AB_RC): lanzada $N_UP vez/veces, $( [ -f "$T/upload-started" ] && echo arrancó || echo 'no arrancó'), $( [ -f "$T/upload-done" ] && echo 'el arranque la ESPERÓ' || echo 'no la esperó'), el resto $N_REST procesos (tope $AB_CAP) · $(brief "$T/ab-upload.out" 200)"; fi
 [ -f "$T/upload-started" ] && kill "$(cat "$T/upload-started")" 2>/dev/null
 # en Windows, oculta y desprendida: el bloque de la subida la lanza con Start-Process y WindowStyle Hidden (fuera de
 # Windows no hay ventana que ocultar; se lee el guion, como el resto de las pruebas por lectura de esta suite)
@@ -2248,7 +2248,7 @@ AB_FRESH_A="$AB_A"
 
 # ── T8 · Sync_UsesGivenConfig_NoNode: el sync llamado por el aplicador no le pregunta a Node; suelto, sí ─────────────
 TC_A=$(grep -c -x -F -- tycon-config.js "$T/ab-fresh-a.counted" 2>/dev/null || true)
-if [ "$TC_A" = 0 ]; then ok "T8 con el sync prendido, ninguna corrida de tycon-config.js en un proceso propio (la configuración se lee una vez, en la tanda)"
+if [ "$TC_A" = 0 ]; then ok "T8 con el sync prendido, ninguna ejecución de tycon-config.js en un proceso propio (la configuración se lee una vez, en la tanda)"
 else no "T8 con el sync prendido, tycon-config.js arrancó $TC_A vez/veces en un proceso propio"; fi
 SYNC_H="$(new_home ab-sync)"; ab_fresh "$SYNC_H"
 : > "$COUNTED"

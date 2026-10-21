@@ -333,7 +333,7 @@ const COMO_SE_PRENDE = Object.freeze({
   clockify: 'Clockify apagado en esta máquina — prender: integrations.clockify=true en ~/.claude/tycon.json (o TYCON_CLOCKIFY=1)',
   engram: 'engram apagado en esta máquina — prender: integrations.engram=true en ~/.claude/tycon.json (o TYCON_ENGRAM=1)',
   codegraph: 'CodeGraph apagado en esta máquina — prender: integrations.codegraph=true en ~/.claude/tycon.json (o TYCON_CODEGRAPH=1)',
-  mailbox: 'buzón de corridas apagado en esta máquina: sin la llave — prender: la llave scripts/metrics/corridas-buzon.json del arnés interno (TYCON_MAILBOX_JSON=<ruta>), o integrations.mailbox=true en ~/.claude/tycon.json (TYCON_MAILBOX=1)',
+  mailbox: 'buzón de ejecuciones apagado en esta máquina: sin la llave — prender: la llave scripts/metrics/corridas-buzon.json del arnés interno (TYCON_MAILBOX_JSON=<ruta>), o integrations.mailbox=true en ~/.claude/tycon.json (TYCON_MAILBOX=1)',
   codex: 'Codex apagado en esta máquina — prender: integrations.codex=true o "detect" en ~/.claude/tycon.json (o TYCON_CODEX=1)',
   nightly: 'nocturnos del equipo apagados en esta máquina — prender: integrations.nightly=true en ~/.claude/tycon.json (o TYCON_NIGHTLY=1)',
   instincts: 'grabadora de instintos apagada en esta máquina — la prende el perfil del equipo (integrations.instincts=true); para probarla en una máquina: integrations.instincts=true en ~/.claude/tycon.json (o TYCON_INSTINCTS=1)',

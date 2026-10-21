@@ -223,7 +223,7 @@ node "$TMP/lab/scripts/ci/suites-report.js" --rep "$TMP/rep.json" --build 1012 -
 printf '❌ lab-limpia: se rompió de verdad\n' > "$TMP/r7/lab-limpia.test.sh.txt"
 node "$SCRIPT" --rep "$TMP/rep.json" --build 1013 --runs 2 --failures "lab-limpia.test.sh" --detail "$TMP/r7" --registry "$TMP/r10-decl.json" 2>/dev/null; rc=$?
 { [ "$rc" -eq 0 ] && [ "$(campo 'r.failures.join()')" = "lab-limpia.test.sh" ] && [ "$(campo 'JSON.stringify(r.measuredElsewhere)')" = '{}' ]; } \
-  && ok "R11 MeasuredElsewhere_RojaSigueRoja @story-2.21 @ac-3: la declaración cubre sólo «no medida»; corrida y roja, sigue en failures" \
+  && ok "R11 MeasuredElsewhere_RojaSigueRoja @story-2.21 @ac-3: la declaración cubre sólo «no medida»; ejecución y roja, sigue en failures" \
   || no "R11: rc=$rc · $(cat "$TMP/rep.json" 2>/dev/null)"
 
 # ── R12. una declaración que no se puede leer no reclasifica nada ──────────────────────────────

@@ -41,7 +41,7 @@ REPO="."; HASTA="HEAD"; RESUMEN=""
 
 log(){ echo "[etiquetar] $*" >&2; }
 avisar(){ # nunca frena: dice por qué no etiquetó y sale 0
-  echo "##vso[task.logissue type=warning]etiquetar-prs: esta corrida queda SIN etiquetas de pull request — $*"
+  echo "##vso[task.logissue type=warning]etiquetar-prs: esta ejecución queda SIN etiquetas de pull request — $*"
   log "no etiqueté: $*"
   exit 0
 }
@@ -80,7 +80,7 @@ fi
 
 base_de_corrida "$PUNTA" '^chore: update form versions' '^chore: update versions' '^chore: bump version'
 case "$BASE_MODO" in
-  marca)           COMO="desde el commit del que partió la corrida anterior, anotado en el commit de versión $(git rev-parse --short "$BASE_BOT")" ;;
+  marca)           COMO="desde el commit del que partió la ejecución anterior, anotado en el commit de versión $(git rev-parse --short "$BASE_BOT")" ;;
   bot-sin-marca)   COMO="desde el commit de versión $(git rev-parse --short "$BASE_BOT"), que no anota de qué commit partió: si hubo un rebase puede faltar un pull request" ;;
   marca-invalida)  COMO="desde el commit de versión $(git rev-parse --short "$BASE_BOT"): su marca Commit: no es un ancestro válido; si hubo un rebase puede faltar un pull request" ;;
   punta-menos-uno) COMO="desde HEAD~1 de la punta: no hay commit de versión previo, así que sólo se ve el último merge" ;;
@@ -90,7 +90,7 @@ log "base $(git rev-parse --short "$BASE_SHA"): $COMO"
 
 ASUNTOS=$(git log --first-parent --merges --format=%s "$BASE_SHA..$PUNTA" 2>/dev/null) || avisar "git no pudo recorrer la historia desde la base"
 if [ -z "$ASUNTOS" ]; then
-  log "la corrida no trae merges (push directo o corrida manual): nada que etiquetar"
+  log "la ejecución no trae merges (push directo o ejecución manual): nada que etiquetar"
   exit 0
 fi
 
@@ -175,14 +175,14 @@ if [ -z "$RESUMEN" ]; then
 fi
 case "$RESUMEN" in /*) ;; *) RESUMEN="$(pwd)/$RESUMEN" ;; esac
 {
-  echo "### Pull requests de esta corrida"
+  echo "### Pull requests de esta ejecución"
   echo
   if [ "$N_PR" -gt 0 ]; then
-    echo "Esta corrida incluye $N_PR pull request(s):"
+    echo "Esta ejecución incluye $N_PR pull request(s):"
     echo
     printf '%s' "$LINEAS"
   else
-    echo "Esta corrida no incluye pull requests con número."
+    echo "Esta ejecución no incluye pull requests con número."
   fi
   if [ "$SIN_NUMERO" -gt 0 ]; then
     echo

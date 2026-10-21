@@ -540,14 +540,14 @@ test('T40 TableroGuarda_LaMarcaLlegaAOperaciones_DosVecesElMismoDia @story-2.29 
     assert.strictEqual(sync.status, 0, `${sync.stdout}${sync.stderr}`);
     // el tablero escribe su página; después, el paso de guardar devuelve la marca: la línea real de Azure en la primera
     // corrida y la de GitHub (con RUNNER_TEMP) en la segunda, así las dos se ejecutan de verdad
-    write(w.s, { 'artifacts/tablero-del-arnes.html': `<p>corrida ${n}</p>\n` });
+    write(w.s, { 'artifacts/tablero-del-arnes.html': `<p>ejecución ${n}</p>\n` });
     const linea = n === 1 ? pasos[0].split('$(Agent.TempDirectory)').join(tmp) : pasos[1];
     const dev = spawnSync('bash', ['-c', `set -eu; ${linea}`], { cwd: w.s, env: { ...env, RUNNER_TEMP: tmp }, encoding: 'utf8' });
     assert.strictEqual(dev.status, 0, dev.stderr);
     const save = spawnSync(process.execPath, [PUSH, 'save', '--wait-ms', '0', '--message', `tablero ${n}`, '--', 'artifacts/tablero-del-arnes.html', '.dashboard/applied-config.json'], { cwd: w.s, env, encoding: 'utf8' });
-    assert.strictEqual(save.status, 0, `corrida ${n}: ${save.stdout}${save.stderr}`);
+    assert.strictEqual(save.status, 0, `ejecución ${n}: ${save.stdout}${save.stderr}`);
     const enMain = JSON.parse(git(w.opsRemote, ['show', `main:${APPLIED}`]));
-    assert.deepStrictEqual(enMain, JSON.parse(fs.readFileSync(path.join(tmp, 'applied-config.json'), 'utf8')), `corrida ${n}: main de operaciones tiene la marca de esta corrida`);
+    assert.deepStrictEqual(enMain, JSON.parse(fs.readFileSync(path.join(tmp, 'applied-config.json'), 'utf8')), `ejecución ${n}: main de operaciones tiene la marca de esta ejecución`);
     assert.ok(enMain.files['scripts/nightly/dashboard/sources.json'], 'nombra el sources.json, que es lo que habilita Umbrales');
     return w;
   };
@@ -714,7 +714,7 @@ test('T9 1.26-Nocturno_BarridoAntesDelResumen @story-1.26 @ac-6: el barrido de l
   assert.match(s, /--team-repos "\$\(Build\.SourcesDirectory\)\/team-repos\.json"/, 'los repos, de team-repos.json');
   assert.match(s, /--out "\$\(Build\.SourcesDirectory\)\/\.dashboard\/retros"/, 'los latidos en .dashboard/retros de operaciones');
   assert.match(s, /--report "[^"]*retro-sweep-\$HOY\.json"/, 'deja su informe del día');
-  assert.match(s, /CLONE_TOKEN: \$\(System\.AccessToken\)/, 'clona con la credencial de la corrida');
+  assert.match(s, /CLONE_TOKEN: \$\(System\.AccessToken\)/, 'clona con la credencial de la ejecución');
   assert.match(s, /exit 0\s*$/m, 'un repo que no se pudo mirar no corta la noche: lo dice el resumen');
   assert.match(all[deliver], /--retros "[^"]*retro-sweep-\$HOY\.json"/, 'el resumen recibe el informe');
   const save = all.find((x) => /push-nightly-data\.js save/.test(x) && /\.dashboard\/dependencias/.test(x));

@@ -68,7 +68,7 @@ anunciados(){ sed -n '/^--- anunciar ---$/,$p' "$TMP/o.txt" | tail -n +2 | grep 
 rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$DOS" > "$TMP/fix/A.json"; config "$TMP/c.json" 2 A
 rc=$(noche "$TMP/c.json" 2026-09-01)
 { [ "$rc" -eq 0 ] && [ "$(anunciados)" -eq 0 ] && grep -qi "LÍNEA BASE" "$TMP/o.txt"; } \
-  && ok "la primera corrida es línea base y no anuncia nada" || no "línea base: rc=$rc anunció $(anunciados)"
+  && ok "la primera ejecución es línea base y no anuncia nada" || no "línea base: rc=$rc anunció $(anunciados)"
 
 # ── 2. lo que aparece DESPUÉS sí se anuncia ─────────────────────────────────────────────────
 rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; config "$TMP/c.json" 2 A
@@ -122,11 +122,11 @@ config "$TMP/c2.json" 2 A Fantasma      # Fantasma no existe en el mundo
 rc=$(noche "$TMP/c2.json" 2026-09-01)
 { [ "$rc" -eq 0 ] && grep -q "NO MEDIDO" "$TMP/o.txt" \
   && node -e "process.exit(require('$TMP/out/dependencias-2026-09-01.json').corrida_completa?1:0)"; } \
-  && ok "un repo ausente sale como NO MEDIDO y la corrida no queda 'completa'" \
+  && ok "un repo ausente sale como NO MEDIDO y la ejecución no queda 'completa'" \
   || no "no-medido: rc=$rc · $(cat "$TMP/o.txt")"
 
 # ── 7. un repo caído NO tumba la vigilancia de los otros ────────────────────────────────────
-[ "$rc" -eq 0 ] && ok "con 1 de 2 repos medidos la noche sigue en verde" || no "un repo caído tumbó la corrida"
+[ "$rc" -eq 0 ] && ok "con 1 de 2 repos medidos la noche sigue en verde" || no "un repo caído tumbó la ejecución"
 
 # ── 8. 🔴 …pero si NO SE PUDO MEDIR NADA, eso no puede salir en verde ────────────────────────
 rm -rf "$TMP/out" "$TMP/pend"; mundo; config "$TMP/c3.json" 2 Fantasma1 Fantasma2
@@ -769,7 +769,7 @@ nC=$(sed -n '/^ids:/,/^[a-z_]*:/p' "$TMP/pend/pending/$IDC.yaml" 2>/dev/null | g
 { [ "$rc18" -eq 0 ] && [ -f "$TMP/pend/pending/$IDC.yaml" ] \
   && [ "$(ls "$TMP/pend"/*/*.yaml | wc -l | tr -d ' ')" -eq 1 ] && [ "$nC" -eq 3 ] \
   && grep -q "^reaparecido: 2026-09-04$" "$TMP/pend/pending/$IDC.yaml"; } \
-  && ok "🔴 dos avisos que reactivan la misma ficha cerrada no rompen la corrida: una reactivación, los dos ids" \
+  && ok "🔴 dos avisos que reactivan la misma ficha cerrada no rompen la ejecución: una reactivación, los dos ids" \
   || no "T18b: la corrida se cayó o duplicó la ficha — rc=$rc18 ids=$nC · $(ls "$TMP/pend"/*/*.yaml 2>/dev/null | tr '\n' ' ')"
 
 # ── T19. 🔴 un repo que NO SE MIDIÓ no puede desaparecer de la ficha ───────────────────────────
@@ -1590,7 +1590,7 @@ echo "$LIMPIO" > "$TMP/fix/A.json"; echo "$UNA" > "$TMP/fix/F5.json"; echo "$LIM
 configsub "$TMP/c48x.json" '{"producto":"A","ruta":"A","tipo":"npm","activo":true,"exclude":[{"path":"F5"}]}'
 rc=$(noche "$TMP/c48x.json" 2026-09-01)
 { [ "$rc" -eq 2 ] && grep -q "exclude" "$TMP/o.txt" && grep -q "F5" "$TMP/o.txt" && grep -q "reason" "$TMP/o.txt" && [ ! -f "$TMP/out/dependencias-2026-09-01.json" ]; } \
-  && ok "T5 4.8 una exclusión sin motivo hace salir la corrida con 2 y lo dice" \
+  && ok "T5 4.8 una exclusión sin motivo hace salir la ejecución con 2 y lo dice" \
   || no "T5 4.8 sin motivo: rc=$rc · $(cat "$TMP/o.txt")"
 configsub "$TMP/c48x.json" '{"producto":"A","ruta":"A","tipo":"npm","activo":true,"exclude":[{"path":"F5","reason":"es una demo que no se publica"}]}'
 rc=$(noche "$TMP/c48x.json" 2026-09-01)

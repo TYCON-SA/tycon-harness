@@ -31,7 +31,7 @@ on:
   workflow_dispatch:
     inputs:
       effects:
-        description: 'Con efectos fuera de la corrida (issues, resumen y guardar)'
+        description: 'Con efectos fuera de la ejecución (issues, resumen y guardar)'
         type: boolean
         default: true
       harness_ref:
@@ -346,5 +346,5 @@ jobs:
       - name: Denunciar que los issues no se intentaron
         if: always() && env.PEDIDOS_NO_INTENTADOS == '1'
         run: |
-          echo "::error::Los issues no se intentaron esta noche. La foto y las fichas ya se guardaron; la corrida queda en rojo para que no pase por una noche sin novedad."
+          echo "::error::Los issues no se intentaron esta noche. La foto y las fichas ya se guardaron; la ejecución queda en rojo para que no pase por una noche sin novedad."
           exit 1

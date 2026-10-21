@@ -260,7 +260,7 @@ test('T30u un revisor que pasa de la capa a la versión (MANIFEST) no se borra: 
 test('T30u un archivo generado por el arnés (con su cabecera) que no está en el registro se toma como del arnés, no del dev', () => {
   const root = toyTree(casa('cabecera'));
   const codex = casa('codexhome');
-  write(path.join(codex, 'rev-capa-uno.config.toml'), '# ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)\nmodel = "viejo"\n');
+  write(path.join(codex, 'rev-capa-uno.config.toml'), '# ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima ejecución)\nmodel = "viejo"\n');
   const r = GEN.deployTeam({ root, codexHome: codex, recordFile: path.join(casa('estado'), TOOLS.CODEX_TEAM_RECORD) });
   assert.deepEqual(r.devFiles, []);
   assert.match(fs.readFileSync(path.join(codex, 'rev-capa-uno.config.toml'), 'utf8'), /modelo-de-juguete-s/);

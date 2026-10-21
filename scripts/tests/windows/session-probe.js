@@ -194,7 +194,7 @@ function measure({ lab, realSession = false, credential = null, platform = proce
   const scenarios = [
     { id: 'default', settingsEnv: null, env: {} },
     { id: 'powershell-tool-off', settingsEnv: { CLAUDE_CODE_USE_POWERSHELL_TOOL: '0' }, env: {} },
-    { id: 'git-bash-off-path', settingsEnv: null, env: { [key]: dirs.filter((d) => !hasBash(d)).join(path.delimiter) }, note: 'Git sigue instalado en su carpeta: sólo se sacó su bash del PATH (desinstalarlo dejaría a la corrida sin git)' },
+    { id: 'git-bash-off-path', settingsEnv: null, env: { [key]: dirs.filter((d) => !hasBash(d)).join(path.delimiter) }, note: 'Git sigue instalado en su carpeta: sólo se sacó su bash del PATH (desinstalarlo dejaría a la ejecución sin git)' },
   ];
   const results = [];
   let measured = 0;

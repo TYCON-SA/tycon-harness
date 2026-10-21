@@ -118,7 +118,7 @@ const HARNESS_GITIGNORE = [
   '',
 ].join('\n');
 const SKILLS_GITIGNORE = [
-  '# Artefactos de las corridas: en este repo no se versionan.',
+  '# Artefactos de las ejecuciones: en este repo no se versionan.',
   '# Sólo aparecen al correr guiones durante las pruebas.',
   '.advisors/',
   '',

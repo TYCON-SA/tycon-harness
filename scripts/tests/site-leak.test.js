@@ -123,7 +123,7 @@ test('T32 Fuga_PersonaA_NoVeNadaDeB', async () => {
     assert.deepStrictEqual(buscar(pA, [...DE_B, ...SIN_CONFIRMAR, ...LIBRE]), [], 'A no ve nada de B, de la máquina sin confirmar ni texto libre');
     // control positivo: A sí ve lo suyo (si no, la prueba no prueba nada)
     assert.ok(pA['/'].includes('#9101') && pA['/'].includes('#9102'), 'A ve su PR y su pedido');
-    assert.match(pA['/'], /1 corridas en 7 días/, 'A ve su corrida');
+    assert.match(pA['/'], /1 ejecuciones en 7 días/, 'A ve su ejecución');
 
     const pB = await todo(await entrar(B));
     assert.ok(pB['/'].includes('#9001') && pB['/'].includes('#9002'), 'B ve su PR y su pedido');
@@ -133,7 +133,7 @@ test('T32 Fuga_PersonaA_NoVeNadaDeB', async () => {
     const pL = await todo(await entrar(LEAD));
     const unido = Object.values(pL).join('\n');
     for (const m of ['Producto Solo B', 'Producto A']) assert.ok(unido.includes(m), `quien mantiene ve ${m}`);
-    assert.match(pL['/'], /Máquinas sin confirmar con corridas[\s\S]*?t-val">1</, 'quien mantiene ve la máquina sin confirmar (la cuenta)');
+    assert.match(pL['/'], /Máquinas sin confirmar con ejecuciones[\s\S]*?t-val">1</, 'quien mantiene ve la máquina sin confirmar (la cuenta)');
     assert.deepStrictEqual(buscar(pL, LIBRE), [], 'nadie ve el texto libre, tampoco quien mantiene');
 
     // sin sesión: ninguna ruta de la tabla contesta 200; lo que contesta 200 son las sondas y los estáticos, sin datos
@@ -204,7 +204,7 @@ test('T28 2.28-Fuga_CorreoInformadoDeOtraMaquina', async () => {
       }
     }
     // y B, confirmada por esa huella, sí ve su corrida: la lectura llegó a la regla
-    assert.match((await h.pedir('/', { cookie: await entrar(B) })).texto, /1 corridas en 7 días/);
+    assert.match((await h.pedir('/', { cookie: await entrar(B) })).texto, /1 ejecuciones en 7 días/);
   } finally { if (h) await h.cerrar(); await emisor.cerrar(); fs.rmSync(raiz, { recursive: true, force: true }); }
 });
 

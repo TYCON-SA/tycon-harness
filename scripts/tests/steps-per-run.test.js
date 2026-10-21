@@ -64,10 +64,10 @@ function escenario() {
   return path.join(tmp, 'buzon');
 }
 
-t('la mediana y los percentiles salen de las corridas medidas', () => {
+t('la mediana y los percentiles salen de las ejecuciones medidas', () => {
   const { medir } = require(MOD);
   const r = medir({ buzon: escenario() });
-  assert.strictEqual(r.corridas, 4, 'cuatro corridas con consumo medido');
+  assert.strictEqual(r.corridas, 4, 'cuatro ejecuciones con consumo medido');
   assert.strictEqual(r.pasos.mediana, 400, 'mediana de 100/300/500/700');
   assert.strictEqual(r.pasos.min, 100);
   assert.strictEqual(r.pasos.max, 700);
@@ -87,10 +87,10 @@ t('story 2.28: no entra a registros/ — place.json trae el correo de git de la 
   let r;
   try { r = medir({ buzon }); } finally { fs.readFileSync = orig; }
   assert.ok(!abiertos.some((p) => p.endsWith('place.json')), `abrió place.json: ${abiertos.filter((p) => /registros/.test(p)).join(', ')}`);
-  assert.strictEqual(r.corridas, 4, 'las corridas se cuentan igual');
+  assert.strictEqual(r.corridas, 4, 'las ejecuciones se cuentan igual');
 });
 
-t('story 2.28: la misma corrida en la carpeta vieja y en la nueva de una máquina cuenta UNA vez', () => {
+t('story 2.28: la misma ejecución en la carpeta vieja y en la nueva de una máquina cuenta UNA vez', () => {
   // 🔴 rojo: cada máquina vuelve a subir lo de su disco a su carpeta nueva
   //    `<nombre>-<código>`, y un recorrido que sume la copia vieja y la nueva cuenta de más: corridas 2, mediana corrida.
   const { medir } = require(MOD);
@@ -99,7 +99,7 @@ t('story 2.28: la misma corrida en la carpeta vieja y en la nueva de una máquin
   fs.mkdirSync(nueva, { recursive: true });
   for (const f of fs.readdirSync(path.join(buzon, 'maquina-1'))) fs.copyFileSync(path.join(buzon, 'maquina-1', f), path.join(nueva, f));
   const r = medir({ buzon });
-  assert.strictEqual(r.corridas, 4, `las cuatro corridas medidas, una vez cada una (fueron ${r.corridas})`);
+  assert.strictEqual(r.corridas, 4, `las cuatro ejecuciones medidas, una vez cada una (fueron ${r.corridas})`);
   assert.strictEqual(r.sin_medir, 1, 'y la sin medir también una vez');
   // entre una copia sin medir (la vieja) y una medida (la nueva) de la MISMA corrida, vale la medida
   // 🔴 rojo: la primera copia, sin medir, tapaba a la medida
@@ -114,12 +114,12 @@ t('story 2.28: la misma corrida en la carpeta vieja y en la nueva de una máquin
   assert.strictEqual(r2.sin_medir, 0, 'y ya no cuenta como sin medir');
 });
 
-t('una corrida sin consumo medido se cuenta aparte y NO se estima', () => {
+t('una ejecución sin consumo medido se cuenta aparte y NO se estima', () => {
   // 🔴 La regla que el arnés ya pagó dos veces: un dato que no se pudo leer no vale cero ni se
   // promedia con los demás. Si entrara al cociente, bajaría la mediana y nadie sabría por qué.
   const { medir, resumen } = require(MOD);
   const r = medir({ buzon: escenario() });
-  assert.strictEqual(r.sin_medir, 1, 'la corrida sin medir se cuenta');
+  assert.strictEqual(r.sin_medir, 1, 'la ejecución sin medir se cuenta');
   assert.ok(!r.filas.some((f) => f.story === '1.5'), 'y no entra en las filas');
   assert.ok(/sin medir/i.test(resumen(r)), 'y el resumen lo dice');
 });
@@ -139,7 +139,7 @@ t('un buzón vacío lo DICE en vez de publicar un cero', () => {
   fs.mkdirSync(path.join(tmp, 'buzon'), { recursive: true });
   const r = medir({ buzon: path.join(tmp, 'buzon') });
   assert.strictEqual(r.corridas, 0);
-  assert.strictEqual(r.pasos.mediana, null, 'sin corridas no hay mediana: null, no 0');
+  assert.strictEqual(r.pasos.mediana, null, 'sin ejecuciones no hay mediana: null, no 0');
   assert.ok(/no hay línea base/i.test(resumen(r)), 'y el resumen lo declara');
 });
 
@@ -172,7 +172,7 @@ t('@story-7.12 @ac-2 NoMedidasSeCuentanAparte — la ficha las cuenta aparte, no
   assert.strictEqual(f.estado, 'medido');
   assert.strictEqual(f.valor, 400, 'la mediana sale de las 4 medidas (100/300/500/700), no de las 5');
   assert.strictEqual(f.medidos, 4, 'n = las que tienen consumo medido');
-  assert.strictEqual(f.total, 5, 'de N = todas las corridas del buzón: la sin medir sigue en el denominador');
+  assert.strictEqual(f.total, 5, 'de N = todas las ejecuciones del buzón: la sin medir sigue en el denominador');
   assert.ok(/1 sin consumo medido/.test(f.detalle), `el detalle tiene que decir cuántas quedaron afuera — dice: ${f.detalle}`);
 });
 
@@ -191,7 +191,7 @@ t('@story-7.12 @ac-3 la ficha trae la fecha del número y la línea base contra 
   assert.strictEqual(LINEA_BASE.mediana, 345);
   assert.strictEqual(LINEA_BASE.fecha, '2026-09-20');
   const f = pasosPorCorrida(cfgReal(), { estado: 'no_aplica' }, { dir: escenario(), hoy: HOY });
-  assert.strictEqual(f.fecha, '2026-09-15', 'la fecha del número es la de la corrida medida más nueva');
+  assert.strictEqual(f.fecha, '2026-09-15', 'la fecha del número es la de la ejecución medida más nueva');
   assert.ok(f.detalle.includes('2026-09-15'), 'y se ve en la ficha');
   assert.ok(f.detalle.includes(`${LINEA_BASE.mediana}`) && f.detalle.includes(LINEA_BASE.fecha), 'la línea base sale del medidor, con su fecha');
   assert.ok(new RegExp(`${LINEA_BASE.mediana}`).test(fs.readFileSync(MOD, 'utf8').split("'use strict'")[0]), 'y está escrita en la cabecera del medidor (Task 6)');
@@ -215,7 +215,7 @@ t('@story-7.12 @ac-5 BuzonVacioNoEsCero — «no medido» con su motivo; ningún
   const sinMedir = pasosPorCorrida(cfgReal(), { estado: 'no_aplica' }, { dir: path.join(tmp, 'sin-medir'), hoy: HOY });
   assert.strictEqual(sinMedir.estado, 'no_medido');
   assert.strictEqual(sinMedir.valor, null);
-  assert.ok(/2 corrida/.test(sinMedir.motivo), `dice cuántas hay sin medir — dice: ${sinMedir.motivo}`);
+  assert.ok(/2 ejecución/.test(sinMedir.motivo), `dice cuántas hay sin medir — dice: ${sinMedir.motivo}`);
 
   // Y el tercero: la carpeta del buzón ni existe (una máquina sin permiso de lectura).
   const ausente = pasosPorCorrida(cfgReal(), { estado: 'no_aplica' }, { dir: path.join(tmp, 'no-existe'), hoy: HOY });
@@ -240,7 +240,7 @@ t('@story-7.12 @ac-6 FuenteDeclarada — sin la entrada en sources.json, la fich
   // La antigüedad máxima tiene dientes: pasado el umbral, el número se calla (una foto vieja tranquiliza).
   const viejo = pasosPorCorrida(real, { estado: 'no_aplica' }, { dir: escenario(), hoy: HOY + (f.max_age_days + 10) * 86400000 });
   assert.strictEqual(viejo.estado, 'no_medido');
-  assert.ok(/2026-09-15/.test(viejo.motivo), `y dice desde cuándo no hay corridas medidas — dice: ${viejo.motivo}`);
+  assert.ok(/2026-09-15/.test(viejo.motivo), `y dice desde cuándo no hay ejecuciones medidas — dice: ${viejo.motivo}`);
 });
 
 t('@story-7.12 @ac-3 en el nocturno, sin el buzón leído entero, la ficha dice que no lo pudo leer', () => {
@@ -270,7 +270,7 @@ t('@story-7.12 @ac-2 una carpeta de máquina que no se puede leer se CUENTA, y l
   sinPermiso(otra, () => {
     const r = medir({ buzon: b });
     assert.strictEqual(r.carpetas_ilegibles, 1, 'el medidor cuenta la carpeta que no pudo leer');
-    assert.strictEqual(r.corridas, 4, 'y no inventa sus corridas');
+    assert.strictEqual(r.corridas, 4, 'y no inventa sus ejecuciones');
     const f = pasosPorCorrida(cfgReal(), { estado: 'no_aplica' }, { dir: b, hoy: HOY });
     assert.strictEqual(f.estado, 'no_medido', 'sin una máquina, la mediana no es la del equipo: no se publica');
     assert.ok(/1 carpeta/.test(f.motivo) && /no se pud/.test(f.motivo), `y dice por qué — dice: ${f.motivo}`);
@@ -303,7 +303,7 @@ t('@story-7.12 @ac-2 un volcado cortado (JSON roto) sigue en el denominador y se
   fs.writeFileSync(path.join(m1, 'cobertura.json'), JSON.stringify({ maquina: 'maquina-1', archivos: 3 }));   // JSON sano que NO es un volcado
   const r = medir({ buzon: b });
   assert.strictEqual(r.ilegibles, 1, 'el volcado cortado se cuenta');
-  assert.strictEqual(r.corridas, 4); assert.strictEqual(r.sin_medir, 1, 'y cobertura.json no es una corrida: ni medida ni sin medir');
+  assert.strictEqual(r.corridas, 4); assert.strictEqual(r.sin_medir, 1, 'y cobertura.json no es una ejecución: ni medida ni sin medir');
   const f = pasosPorCorrida(cfgReal(), { estado: 'no_aplica' }, { dir: b, hoy: HOY });
   assert.strictEqual(f.estado, 'medido'); assert.strictEqual(f.valor, 400);
   assert.strictEqual(f.total, 6, 'N = 4 medidas + 1 sin medir + 1 ilegible: no desaparece del denominador');
@@ -318,7 +318,7 @@ t('@story-7.12 @ac-6 una antigüedad máxima mal declarada NO apaga el control e
   for (const malo of [null, '14', -1, 0, undefined]) {
     const cfg = { ...real, sources: real.sources.map((x) => (x.id === 'pasos-corrida' ? { ...x, max_age_days: malo } : x)) };
     const f = pasosPorCorrida(cfg, { estado: 'no_aplica' }, { dir: escenario(), hoy: HOY + 400 * 86400000 });
-    assert.strictEqual(f.estado, 'no_medido', `max_age_days=${JSON.stringify(malo)} y publicó igual, con la última corrida de hace más de un año`);
+    assert.strictEqual(f.estado, 'no_medido', `max_age_days=${JSON.stringify(malo)} y publicó igual, con la última ejecución de hace más de un año`);
     assert.ok(/antigüedad máxima/.test(f.motivo), `dice qué está mal declarado — dice: ${f.motivo}`);
   }
 });
@@ -331,7 +331,7 @@ t('@story-7.12 el motivo de una falla de carga nunca publica el mensaje del erro
   assert.ok(!/e\.message/.test(fn), 'pasosPorCorrida() interpola e.message en un motivo que va a la página');
 });
 
-t('@story-7.12 @ac-4 sin línea base, la vista de corridas lo DICE (con su motivo) en vez de no dibujarla y listo', () => {
+t('@story-7.12 @ac-4 sin línea base, la vista de ejecuciones lo DICE (con su motivo) en vez de no dibujarla y listo', () => {
   // 🔴 rojo: `catch (e) {}` → null → el cliente omite la línea y la frase: «no pude cargarla» se ve igual que «no hay».
   const corridas = require(path.resolve(__dirname, '..', 'nightly', 'dashboard', 'runs.js'));
   assert.strictEqual(typeof corridas.lineaBasePasos, 'function', 'runs.js exporta lineaBasePasos()');
@@ -358,7 +358,7 @@ t('@story-7.12 @ac-2 [adversarial] una carpeta de máquina que es un ENLACE se r
   const b = path.join(tmp, 'buzon'); fs.mkdirSync(b);
   fs.symlinkSync(real, path.join(b, 'maquina-enlace'), 'dir');
   let r = medir({ buzon: b });
-  assert.strictEqual(r.corridas, 1, 'la corrida detrás del enlace se cuenta');
+  assert.strictEqual(r.corridas, 1, 'la ejecución detrás del enlace se cuenta');
   assert.strictEqual(r.pasos.mediana, 999);
   // Un volcado suelto que es un enlace a un archivo también se lee.
   fs.symlinkSync(path.join(real, '3.1-2026-09-10.json'), path.join(b, 'suelto.json'), 'file');
@@ -374,7 +374,7 @@ t('@story-7.12 @ac-2 [adversarial] una carpeta de máquina que es un ENLACE se r
   assert.strictEqual(r.corridas, 2, `un ciclo de enlaces no duplica — dio ${r.corridas}`);
 });
 
-t('@story-7.12 @ac-2 [adversarial] un `respuestas` absurdo (negativo, infinito, texto) NO es una corrida medida', () => {
+t('@story-7.12 @ac-2 [adversarial] un `respuestas` absurdo (negativo, infinito, texto) NO es una ejecución medida', () => {
   // 🔴 rojo: `if (!pasos)` sólo atrapa 0/null/NaN — un negativo es «verdadero» en JS y entraba a la mediana.
   //    El cliente de runs.js exige `> 0`: los dos lados tienen que tener el mismo criterio.
   const { medir } = require(MOD);

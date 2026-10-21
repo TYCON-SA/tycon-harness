@@ -127,7 +127,7 @@ caso_roto() { # caso_roto <id> <deny|syntax|harness|suite> <reasons aceptadas, s
 
   # dos arranques seguidos que sí salen a la red: no repiten el intento sobre las mismas puntas
   arranque >/dev/null 2>&1; arranque >/dev/null 2>&1
-  [ "$(corridas_v 2)" = "$N2" ] && [ "$(head_de "$LAB_TREE")" = "$V1_T" ] && ok "$id dos startup seguidos NO reintentan el mismo commit" || mal "$id startup reintentó: corridas v2 $(corridas_v 2) (antes $N2), HEAD $(head_de "$LAB_TREE")"
+  [ "$(corridas_v 2)" = "$N2" ] && [ "$(head_de "$LAB_TREE")" = "$V1_T" ] && ok "$id dos startup seguidos NO reintentan el mismo commit" || mal "$id startup reintentó: ejecuciones v2 $(corridas_v 2) (antes $N2), HEAD $(head_de "$LAB_TREE")"
   [ "$(estado "((d.get('failed') or {}).get('sources') or {}).get('harness')")" = "$V2_T" ] && ok "$id …y failed sigue anotado" || mal "$id failed se perdió: $(estado "d.get('failed')")"
 
   # update --yes sí reintenta (y como sigue rota, vuelve a restaurar)

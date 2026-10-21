@@ -325,7 +325,7 @@ test('W4 ApplyHooks_Windows_ShWithGitBashPath_OldFormRewrittenOnce_CrlfAndUnsafe
   // segunda corrida: nada cambia
   const h = sha(L.settingsPath);
   assert.strictEqual(run(L, ['--platform', 'windows']).status, 0);
-  assert.strictEqual(sha(L.settingsPath), h, 'la segunda corrida no cambia nada');
+  assert.strictEqual(sha(L.settingsPath), h, 'la segunda ejecución no cambia nada');
   // una carpeta del clon con `$`: el hook no se registra y se dice (el comando lo lee un shell)
   const L2 = lab(t, { list: LIST_OF([H('Stop', '', '@tcg:s.js')]), settings: { hooks: {} } });
   L2.hooksDir = path.join(L2.base, 'clon$raro', 'scripts', 'hooks');
@@ -347,7 +347,7 @@ test('W4 ApplyHooks_Windows_NarrowMatcher_WidenedInOneRun_CommandKept', (t) => {
   assert.deepStrictEqual(settingsOf(L).hooks.PreToolUse, [{ matcher: 'Bash|PowerShell', hooks: [{ type: 'command', command: cmd }] }]);
   const h = sha(L.settingsPath);
   assert.strictEqual(run(L, ['--platform', 'windows']).status, 0);
-  assert.strictEqual(sha(L.settingsPath), h, 'la segunda corrida no cambia nada');
+  assert.strictEqual(sha(L.settingsPath), h, 'la segunda ejecución no cambia nada');
 });
 
 // ── Casos del pase adversarial y de los revisores ─────────────────────────────
@@ -528,7 +528,7 @@ test('T16 ApplyHooks_NodeDelArnes_FormaDelComando @story-8.39 @ac-5', (t) => {
     // el instalador corrido suelto otra vez (sin harness.js ni TYCON_NODE_BIN): la misma forma, nada que cambiar
     const h = sha(L.settingsPath);
     assert.strictEqual(run(L, [], env).status, 0);
-    assert.strictEqual(sha(L.settingsPath), h, `${c.name}: una corrida suelta no cambia la forma`);
+    assert.strictEqual(sha(L.settingsPath), h, `${c.name}: una ejecución suelta no cambia la forma`);
   }
   // sin Node del arnés, o con otra versión, o apagado: `node`, como siempre
   for (const [name, prep, extra] of [['sin current', () => null, {}], ['otra versión', (casa) => fakeHarnessNode(casa, { version: 'v1.0.0' }), {}], ['apagado', (casa) => fakeHarnessNode(casa), { TYCON_HARNESS_NODE: '0' }]]) {

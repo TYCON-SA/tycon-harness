@@ -174,9 +174,9 @@ case "$1" in
   # Un candado de un proceso MUERTO no frena.
   node -e "require('fs').writeFileSync('$W/repo/scripts/controls-bench/.bench/examen.lock',
     JSON.stringify({pid:2147483646,ts:new Date().toISOString(),maquina:'x'}))"
-  correr --force >"$W/out" 2>&1 || fail "un candado huérfano frenó la corrida: $(cat "$W/out")"
+  correr --force >"$W/out" 2>&1 || fail "un candado huérfano frenó la ejecución: $(cat "$W/out")"
   [ -f "$W/invocado.json" ] || fail "no corrió el examen"
-  ok "el candado frena una segunda corrida viva, y uno huérfano no frena nada" ;;
+  ok "el candado frena una segunda ejecución viva, y uno huérfano no frena nada" ;;
 
 5) armar
   F="$(reporte_de 9 7)"
@@ -193,7 +193,7 @@ case "$1" in
   node -e "const r=require('$INTENTO'); if(r.estado!=='incompleto'||!r.motivo) process.exit(1)" || fail "no quedó registrada como incompleta"
   avisar | grep -qi 'INCOMPLETO' || fail "el aviso no la trata como no medida"
   avisar | grep -q '✅' && fail "la mostró en verde"
-  ok "una corrida incompleta queda registrada con su motivo y nunca se ve verde" ;;
+  ok "una ejecución incompleta queda registrada con su motivo y nunca se ve verde" ;;
 
 7) armar
   SONDA="$W/sonda-vencida.sh" correr --force >"$W/out" 2>&1 && fail "salió 0 con la sesión vencida"
@@ -239,7 +239,7 @@ case "$1" in
   N="$(node -e "console.log(require('$TCG/scripts/controls-bench/report-name.js').nombreDeReporte({tool:'both',only:[]}).nombre)")"
   [ "$N" = "advisors-both.json" ] || fail "cambió el nombre histórico del reporte completo: $N"
   A="$(node -e "const n=require('$TCG/scripts/controls-bench/report-name.js').nombreDeReporte({tool:'claude',only:['tycon-story-validator']});console.log(n.nombre+' '+n.alcance)")"
-  case "$A" in advisors-claude.json*) fail "la corrida acotada pisa la completa";; esac
+  case "$A" in advisors-claude.json*) fail "la ejecución acotada pisa la completa";; esac
   case "$A" in *acotado) : ;; *) fail "no se marca como acotada: $A";; esac
   for f in --tool --only --runs --jobs --baseline --json; do
     grep -q -- "'$f'" "$TCG/scripts/controls-bench/advisor-runner.js" || fail "el examen perdió el flag $f"
@@ -271,23 +271,23 @@ case "$1" in
   # AC 20: live-fire bajo Codex se lanza; el banco determinista no — corre en Azure DevOps
   # (pipelines/azure-pipelines-banco.yml). Se verifica que la invocación EXISTA, no cómo está escrita:
   # buscar una línea textual se rompería con otras comillas aunque el comportamiento siguiera.
-  grep -vE '^[[:space:]]*#' "$I" | grep -qE "live-fire\.js['\"[:space:]]+--tool codex" || fail "se llevó puesta la corrida de live-fire (una línea comentada no cuenta)"
+  grep -vE '^[[:space:]]*#' "$I" | grep -qE "live-fire\.js['\"[:space:]]+--tool codex" || fail "se llevó puesta la ejecución de live-fire (una línea comentada no cuenta)"
   grep -vE '^[[:space:]]*#' "$I" | grep nohup | grep -qE 'BENCH_RUNNER|BENCH_JOB|run-controls-bench-job|runner\.js' \
     && fail "el instalador sigue lanzando el banco determinista: corre en Azure y su reporte viaja por git"
   B="$(awk '/^EXAMEN_PERIODICO=/,/^fi$/' "$I")"
   echo "$B" | grep -qE 'LAST_CB|TODAY_CB' && fail "el examen quedó colgado del sello diario ajeno"
   echo "$B" | grep -q 'TYCON_CODEX' && fail "el examen quedó colgado de la llave de Codex"
   echo "$B" | grep -q 'nohup' && fail "el instalador es un segundo disparador"
-  ok "una sola implementación, un solo disparador, y las otras corridas intactas" ;;
+  ok "una sola implementación, un solo disparador, y las otras ejecuciones intactas" ;;
 
 17) armar
   SMOKE_MODE=dies correr --force >/dev/null 2>&1 && fail "salió 0 sin haber terminado"
-  [ ! -f "$SELLO" ] || fail "selló el período con una corrida que murió"
+  [ ! -f "$SELLO" ] || fail "selló el período con una ejecución que murió"
   SMOKE_MODE=skipped correr --force >"$W/out" 2>&1 && fail "salió 0 con todo salteado"
   [ ! -f "$SELLO" ] || fail "selló con cero revisores evaluados"
   correr --force >/dev/null 2>&1 || fail "no corrió la buena"
-  [ -f "$SELLO" ] || fail "una corrida COMPLETA no selló"
-  ok "sólo una corrida completa marca el período como hecho" ;;
+  [ -f "$SELLO" ] || fail "una ejecución COMPLETA no selló"
+  ok "sólo una ejecución completa marca el período como hecho" ;;
 
 22) armar
   reporte_de 1 3 >/dev/null
@@ -316,8 +316,8 @@ case "$1" in
   node -e "require('fs').writeFileSync('$SELLO', new Date(Date.now()-3*864e5).toISOString())"
   rm -f "$W/invocado.json"
   correr >/dev/null 2>&1 || fail "no corrió a los 3 días"
-  [ -f "$W/invocado.json" ] || fail "la segunda corrida de la semana no arrancó"
-  ok "el sello es por corrida: a los 3 días vuelve a tocarle" ;;
+  [ -f "$W/invocado.json" ] || fail "la segunda ejecución de la semana no arrancó"
+  ok "el sello es por ejecución: a los 3 días vuelve a tocarle" ;;
 
 *) echo "exam-smoke.sh: no hay caso para '$1'" >&2; exit 2 ;;
 esac

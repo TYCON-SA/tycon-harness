@@ -195,7 +195,7 @@ grep -q "difieren en" "$TMP/out" "$TMP/err" && no "🔴 avisó con los pesos igu
 # no constante: nula. Por eso el peso no es un aviso sino un freno: un formulario cuyo código
 # servido pesa distinto del que trae el paquete de esta corrida NO es el que se acaba de instalar.
 echo '200 99999' > "$TMP/code.http"
-run_hf "$TMP/z2" && no "🔴 el host sirve un peso distinto al del paquete y el humo lo aprobó — es el 'verde que no miró'" || ok "🔴 formularios: peso distinto al del paquete → 1 (el código servido no es el de esta corrida)"
+run_hf "$TMP/z2" && no "🔴 el host sirve un peso distinto al del paquete y el humo lo aprobó — es el 'verde que no miró'" || ok "🔴 formularios: peso distinto al del paquete → 1 (el código servido no es el de esta ejecución)"
 grep -q "difieren en" "$TMP/out" "$TMP/err" && ok "…y dice cuánto difieren" || no "🔴 frenó sin decir por qué"
 
 # …y lo que NO cambia: un manifiesto sin peso declarado no puede frenar por peso (no hay con qué
@@ -235,7 +235,7 @@ grep -n '^\[humo\] ✅' "$TMP/out" >/dev/null && [ "$(grep -n '^\[humo\] ✅' "$
 
 # ── T3 · el mismo job no duplica; otro job repite la misma clave
 reg_hp "$J" http://stub u p totorabackend 1.0.214 abc1234
-[ "$(lineas "$TMP/out")" = "0" ] && [ "$(etiquetas "$TMP/out")" = "0" ] && ok "2.10 T3 segunda corrida en el mismo job: ni línea ni etiquetas" || no "🔴 2.10 T3 el mismo job anotó dos veces ($(lineas "$TMP/out") líneas, $(etiquetas "$TMP/out") etiquetas)"
+[ "$(lineas "$TMP/out")" = "0" ] && [ "$(etiquetas "$TMP/out")" = "0" ] && ok "2.10 T3 segunda ejecución en el mismo job: ni línea ni etiquetas" || no "🔴 2.10 T3 el mismo job anotó dos veces ($(lineas "$TMP/out") líneas, $(etiquetas "$TMP/out") etiquetas)"
 J2=$(job); reg_hp "$J2" http://stub u p totorabackend 1.0.214 abc1234
 L2=$(grep '^\[registro-despliegue\] ' "$TMP/out" | sed 's/^\[registro-despliegue\] //')
 [ -n "$L2" ] && [ "$(printf '%s' "$L2" | jq -r .clave)" = "$(printf '%s' "$L" | jq -r .clave)" ] && ok "2.10 T3 otro job anota de nuevo, con la MISMA clave" || no "2.10 T3 otro job: línea '$L2' vs '$L'"
@@ -282,7 +282,7 @@ reg_hf "$(job)" "$Z6"; rc=$?
 [ "$(lineas "$TMP/out")" = "2" ] && grep '^\[registro-despliegue\]' "$TMP/out" | grep '"artefacto":"a"' >/dev/null && grep '^\[registro-despliegue\]' "$TMP/out" | grep '"artefacto":"c"' >/dev/null && ! grep '^\[registro-despliegue\]' "$TMP/out" | grep '"artefacto":"b"' >/dev/null && ok "2.10 T6 dos líneas: a (mismo commit) y c (prefijo, sin mayúsculas); b ya estaba" || no "🔴 2.10 T6 líneas: $(grep '^\[registro-despliegue\]' "$TMP/out" | sed 's/^\[registro-despliegue\] //' | jq -rc '.artefacto' 2>/dev/null | tr '\n' ' ') — esperaba a y c"
 grep '^\[registro-despliegue\]' "$TMP/out" | sed 's/^\[registro-despliegue\] //' | jq -e 'select(.artefacto=="a") | .tipo=="formulario" and .estado=="desplegado" and .hash=="abc1234def5678"' >/dev/null && ok "2.10 T6 la línea de formulario trae tipo formulario y el commit del manifest" || no "2.10 T6 línea de formulario fuera de contrato"
 [ "$(grep -c '^##vso\[build.addbuildtag\]desplegado$' "$TMP/out")" = "1" ] && grep -qx '##vso\[build.addbuildtag\]a-1.0.2' "$TMP/out" && grep -qx '##vso\[build.addbuildtag\]c-1.0.2' "$TMP/out" && [ "$(etiquetas "$TMP/out")" = "3" ] && ok "2.10 T6 etiquetas: desplegado una vez + a-1.0.2 + c-1.0.2" || no "🔴 2.10 T6 etiquetas: $(grep addbuildtag "$TMP/out" | tr '\n' ' ')"
-grep -q '2 desplegado(s) en esta corrida · 1 ya estaban · 0 sin constancia · 0 sin anotar' "$TMP/err" && ok "2.10 T6 el resumen por stderr cuenta 2 · 1 · 0 · 0" || no "2.10 T6 resumen: $(grep '\[registro\]' "$TMP/err")"
+grep -q '2 desplegado(s) en esta ejecución · 1 ya estaban · 0 sin constancia · 0 sin anotar' "$TMP/err" && ok "2.10 T6 el resumen por stderr cuenta 2 · 1 · 0 · 0" || no "2.10 T6 resumen: $(grep '\[registro\]' "$TMP/err")"
 
 # ── T7 · sin constancia: avisa una vez y sale 0
 Z7="$TMP/z7"; rm -rf "$Z7"
@@ -301,8 +301,8 @@ reg_hf "$(job)" "$Z7"; rc=$?
 Z8="$TMP/z8"; rm -rf "$Z8"; mkc "$Z8" a 1.0.2 abc1234 10; mkc "$Z8" b 1.0.2 abc1234 10
 formularios_al_dia a b; cur a 1111111; cur b 2222222
 reg_hf "$(job)" "$Z8"; rc=$?
-[ $rc -eq 0 ] && [ "$(lineas "$TMP/out")" = "0" ] && [ "$(etiquetas "$TMP/out")" = "0" ] && ok "2.10 T8 nada subido → 0, sin líneas y SIN etiqueta desplegado" || no "🔴 2.10 T8 una corrida que no subió nada quedó anotada (rc=$rc, $(etiquetas "$TMP/out") etiquetas)"
-grep -q '0 desplegado(s) en esta corrida · 2 ya estaban · 0 sin constancia · 0 sin anotar' "$TMP/err" && ok "2.10 T8 el resumen dice 2 ya estaban" || no "2.10 T8 resumen: $(grep '\[registro\]' "$TMP/err")"
+[ $rc -eq 0 ] && [ "$(lineas "$TMP/out")" = "0" ] && [ "$(etiquetas "$TMP/out")" = "0" ] && ok "2.10 T8 nada subido → 0, sin líneas y SIN etiqueta desplegado" || no "🔴 2.10 T8 una ejecución que no subió nada quedó anotada (rc=$rc, $(etiquetas "$TMP/out") etiquetas)"
+grep -q '0 desplegado(s) en esta ejecución · 2 ya estaban · 0 sin constancia · 0 sin anotar' "$TMP/err" && ok "2.10 T8 el resumen dice 2 ya estaban" || no "2.10 T8 resumen: $(grep '\[registro\]' "$TMP/err")"
 
 # ── T13 · un nombre de formulario fuera de su juego no se mete en NINGUNA consulta.
 # Con el nombre crudo yendo a /code el humo lo aprobaría y sólo el registro lo saltearía como
@@ -336,7 +336,7 @@ fallo_forms "$R4" && ok "2.10 T4 manifest roto → 1 y sin registro" || no "🔴
 Z6b="$TMP/z6b"; rm -rf "$Z6b"; mkc "$Z6b" demo-form-a 1.0.2 1111111aaaa 10; mkc "$Z6b" demo-form-b 1.0.2 1111111aaaa 10
 formularios_al_dia demo-form-a demo-form-b; cur demo-form-a 1111111aaaa; cur demo-form-b 1111111aaaa
 reg_hf "$(job)" "$Z6b"; rc=$?
-[ $rc -eq 0 ] && [ "$(lineas "$TMP/out")" = "2" ] && grep -q '2 desplegado(s) en esta corrida · 0 ya estaban · 0 sin constancia · 0 sin anotar' "$TMP/err" && ok "2.10 T6b la misma versión publicada otra vez por esta corrida se anota (publicado ≠ cambiado: lo cuenta la 2.11)" || no "2.10 T6b republicación: rc=$rc líneas=$(lineas "$TMP/out") $(grep '\[registro\]' "$TMP/err")"
+[ $rc -eq 0 ] && [ "$(lineas "$TMP/out")" = "2" ] && grep -q '2 desplegado(s) en esta ejecución · 0 ya estaban · 0 sin constancia · 0 sin anotar' "$TMP/err" && ok "2.10 T6b la misma versión publicada otra vez por esta ejecución se anota (publicado ≠ cambiado: lo cuenta la 2.11)" || no "2.10 T6b republicación: rc=$rc líneas=$(lineas "$TMP/out") $(grep '\[registro\]' "$TMP/err")"
 
 # ── T5 · la dirección, el usuario y la clave no viajan
 plugin_sano; J=$(job)
@@ -381,7 +381,7 @@ Z11="$TMP/z11"; rm -rf "$Z11"; for f in a b c; do mkc "$Z11" $f 1.0.2 abc1234def
 formularios_al_dia a b c; cur a abc1234def; cur b abc1234def; cur c abc1234def
 for c in unzip zip; do p=$(command -v "$c" 2>/dev/null) && ln -sf "$p" "$GRANJA/$c"; done
 env -i HOME="$TMP" PATH="$GRANJA" STUB_DIR="$TMP" "${REG[@]}" AGENT_TEMPDIRECTORY="$(job)" "$BASH" "$HF" http://stub u p "$Z11" >"$TMP/out" 2>"$TMP/err"; rc=$?
-[ $rc -eq 0 ] && [ "$(lineas "$TMP/out")" = "0" ] && [ "$(grep -c 'logissue type=warning.*registro-despliegue' "$TMP/out")" = "1" ] && grep -q '0 desplegado(s) en esta corrida · 0 ya estaban · 0 sin constancia · 3 sin anotar' "$TMP/err" && ok "2.10 T11b sin herramienta de huella: un solo aviso y los 3 cuentan como sin anotar" || no "🔴 2.10 T11b formularios sin huella: rc=$rc avisos=$(grep -c logissue "$TMP/out") $(grep '\[registro\]' "$TMP/err")"
+[ $rc -eq 0 ] && [ "$(lineas "$TMP/out")" = "0" ] && [ "$(grep -c 'logissue type=warning.*registro-despliegue' "$TMP/out")" = "1" ] && grep -q '0 desplegado(s) en esta ejecución · 0 ya estaban · 0 sin constancia · 3 sin anotar' "$TMP/err" && ok "2.10 T11b sin herramienta de huella: un solo aviso y los 3 cuentan como sin anotar" || no "🔴 2.10 T11b formularios sin huella: rc=$rc avisos=$(grep -c logissue "$TMP/out") $(grep '\[registro\]' "$TMP/err")"
 
 # ══ SEC-C1 · EL NOMBRE NO SE METE CRUDO EN UNA CONSULTA AL HOST ══════════════════════
 # El nombre del plugin (plugin.json del ZIP) y el de cada formulario (manifest.json del ZIP) irían tal

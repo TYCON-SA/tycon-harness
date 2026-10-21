@@ -73,7 +73,7 @@ function crear({ cmd = process.env.TYCON_ADO_CMD || 'az', org, deadline, ventana
 
   function corridas({ proyecto, id }) {
     const l = az(['pipelines', 'runs', 'list', '--pipeline-ids', String(id), '--project', proyecto, '--top', String(ventana)]);
-    if (!Array.isArray(l)) throw noMedido('respuesta_no_json', 'la lista de corridas no es una lista');
+    if (!Array.isArray(l)) throw noMedido('respuesta_no_json', 'la lista de ejecuciones no es una lista');
     return l.filter(Boolean)
       .sort((a, b) => fecha(b.queueTime) - fecha(a.queueTime) || Number(b.id) - Number(a.id))
       .slice(0, ventana);

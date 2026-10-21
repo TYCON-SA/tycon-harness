@@ -607,7 +607,7 @@ test('T61 — con dos entradas del mismo nombre vale la más reciente; si no se 
   assert.strictEqual(wait(t, [view(t.head, {}, [old, fresh])]).code, 0);
   assert.strictEqual(wait(t, [view(t.head, {}, [fresh, old])]).code, 0);
   const rerun = wait(t, [view(t.head, {}, [run(CHECK, 'SUCCESS', { startedAt: '2030-01-15T10:00:00Z' }), run(CHECK, 'FAILURE', { startedAt: '2030-01-15T11:00:00Z' })])]);
-  assert.strictEqual(rerun.code, 1, 'la última corrida es la roja');
+  assert.strictEqual(rerun.code, 1, 'la última ejecución es la roja');
   const unordered = wait(t, [view(t.head, {}, [run(CHECK, 'SUCCESS', { startedAt: '' }), run(CHECK, 'FAILURE', { startedAt: '' })])], { timeoutMin: 2 });
   assert.strictEqual(unordered.code, 3);
   assert.match(unordered.reason, /ordenar/);

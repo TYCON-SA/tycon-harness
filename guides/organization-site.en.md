@@ -331,7 +331,7 @@ goes through it section by section.
 At the top there are four cards: machines to confirm, sections with something to fix, sections up to date, and machines
 with an old harness version or "no news" (*sin noticias*: they have not sent runs for a while, so their version is not
 known). Below, five tabs: **People** (*Personas*), **Repos and products** (*Repos y productos*),
-**Notices and night runs** (*Avisos y la noche*), **How Claude works** (*Cómo trabaja Claude*) and **Installation and
+**Notices and night runs** (*Avisos y la noche*), **How the agent works** (*Cómo trabaja el agente*) and **Installation and
 updates** (*Instalación y actualización*). A number next to a tab says how many things are waiting there.
 
 ![Configuration: the four cards at the top and the People tab](sitio-de-la-organizacion/capturas/configuracion-personas.png)
@@ -493,9 +493,9 @@ only: they are changed with a request in their repo.
 
 ![Notices and night runs](sitio-de-la-organizacion/capturas/configuracion-avisos.png)
 
-### How Claude works (Cómo trabaja Claude)
+### How the agent works (Cómo trabaja el agente)
 
-- **How Claude answers** (*Cómo contesta Claude*): the language, style and length of the answers on every machine. It
+- **How the agent answers** (*Cómo contesta el agente*): the language, style and length of the answers on every machine. It
   lives in `team-profile.json`, in the profile repo. A maintainer reviews it.
 - **Which model each pipeline job uses** (*Qué modelo usa cada trabajo del pipeline*): the model of the reviewers, the
   adversarial pass, the helpers and the session, as a level, in one table per group with each job's default next to it;
@@ -539,7 +539,7 @@ only: they are changed with a request in their repo.
   with that, the Runs detail shows the files it touched. It lives in `operations.json`, in the operations repo. A
   maintainer reviews it.
 
-![How Claude works](sitio-de-la-organizacion/capturas/configuracion-claude.png)
+![How the agent works](sitio-de-la-organizacion/capturas/configuracion-claude.png)
 
 ### Your technology
 

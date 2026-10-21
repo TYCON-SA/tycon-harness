@@ -343,7 +343,7 @@ function tripwireDiff(before, nonce, markers) {
     if (markers.some((m) => body.includes(m)) || (nonce && body.includes(nonce)))
       fails.push(`CONTAMINACIÓN: el dashboard REAL recibió ${before.dash[f] ? 'cambios en' : 'el archivo'} "${f}" con contenido del banco`);
   }
-  if (before.gates !== null && after.gates === null) fails.push(`CONTAMINACIÓN: el gates.log REAL (${before.P.gates}) desapareció durante la corrida`);
+  if (before.gates !== null && after.gates === null) fails.push(`CONTAMINACIÓN: el gates.log REAL (${before.P.gates}) desapareció durante la ejecución`);
   else if (before.gates !== null && after.gates < before.gates) fails.push(`CONTAMINACIÓN: el gates.log REAL se achicó (append-only violado)`);
   else if (after.gates !== null && after.gates > (before.gates || 0)) {
     let delta = '';
@@ -456,7 +456,7 @@ function benchSettingsPath() {
     // sigue sin nombre, y sólo se puede cazar en la máquina donde pasa (la máquina del examen), corriendo un
     // caso con los hooks puestos y `--save-output`. Nunca en una corrida que vaya a reportar.
     const conHooks = process.env.TYCON_BENCH_HOOKS === '1';
-    if (conHooks) console.log('⚠️  TYCON_BENCH_HOOKS=1 — hooks PRENDIDOS: corrida de diagnóstico, sus resultados NO son comparables');
+    if (conHooks) console.log('⚠️  TYCON_BENCH_HOOKS=1 — hooks PRENDIDOS: ejecución de diagnóstico, sus resultados NO son comparables');
     require('fs').writeFileSync(_benchSettings, JSON.stringify(Object.assign({
       effortLevel: 'high',
       permissions: { deny: reglasDeCorral() },
@@ -622,10 +622,10 @@ function codexInvokePreamble(name) {
   }
   if (!tools.length) return '';
   return (
-    `CHEQUEOS OBLIGATORIOS DE ESTA CORRIDA (no negociables): este perfil declara las tools MCP ` +
+    `CHEQUEOS OBLIGATORIOS DE ESTA EJECUCIÓN (no negociables): este perfil declara las tools MCP ` +
     `${tools.join(', ')}. Donde tu procedimiento pide usarlas, las USÁS de verdad — sustituirlas ` +
     `por un comando de consola o saltearlas está prohibido (un veredicto correcto por un camino ` +
-    `no declarado cuenta como corrida rota). Si una llamada falla, seguí con el resto y decilo. ` +
+    `no declarado cuenta como ejecución rota). Si una llamada falla, seguí con el resto y decilo. ` +
     `Tu reporte DEBE terminar con una línea por tool, textual:\n` +
     tools.map((t) => `CHEQUEOS-MCP: ${t}=<ok|falló: <motivo>|no-aplica: <por qué el procedimiento no la pedía en este caso>>`).join('\n') +
     `\n\n---\n\n`
@@ -902,7 +902,7 @@ function reglasDeCorral(opts = {}) {
   // encierro vacío no encierra: las corridas quedarían leyendo el disco del dev y el examen
   // produciría veredictos irreproducibles — 5h30 de reloj para medir otra cosa.
   if (!deny.length) {
-    throw new Error(`no se pudo armar el encierro de las corridas: nada que negar bajo ${raiz} `
+    throw new Error(`no se pudo armar el encierro de las ejecuciones: nada que negar bajo ${raiz} `
       + '— sin encierro los veredictos dependen de qué tiene el dev en el disco y no son reproducibles');
   }
   return deny;
@@ -982,7 +982,7 @@ const sinLintDePermisos = (s) => String(s || '')
 function avisoDeSospecha(vida, rojos) {
   if (!vida || !rojos.length) return null;
   return `   🔬 Un rojo acá es una SOSPECHA, no un veredicto: el chequeo de vida corre UNA sola `
-    + `corrida y con una no se distingue un defecto de una moneda al aire.\n`
+    + `ejecución y con una no se distingue un defecto de una moneda al aire.\n`
     + `      Confirmalo ANTES de tocarle la prosa a ningún revisor:\n`
     + `        node scripts/controls-bench/advisor-runner.js --tool claude --runs 3 --only ${rojos.join(',')}\n`
     + `      Medido hasta hoy: 2 de 2 rojos del chequeo de vida fueron variación, ninguno defecto real.`;
@@ -1020,7 +1020,7 @@ function fugaDelCorral(res, corral) {
     raices.add(h.split('/').slice(0, 5).join('/'));
   }
   if (!raices.size) return [];
-  return [`el corral se escapó: la corrida leyó ${raices.size} ruta(s) reales de la máquina ` +
+  return [`el corral se escapó: la ejecución leyó ${raices.size} ruta(s) reales de la máquina ` +
     `(${[...raices].slice(0, 3).join(', ')}${raices.size > 3 ? ', …' : ''}) — el veredicto pasa a ` +
     `depender de qué tiene el dev en el disco y deja de ser reproducible en otra máquina`];
 }
@@ -1235,7 +1235,7 @@ function selftestRetro() {
       checkVeredicto({ rule: 'VAL-C1', expect_veredicto: 'hallazgos' }, '- [VAL-C1] x\n\nVeredicto: limpio').length === 1]);
     checks.push(['VEREDICTO: hallazgos que no nombra la regla del caso → cae (el renglón no cuadra con el informe)',
       checkVeredicto({ rule: 'VAL-C1', expect_veredicto: 'hallazgos' }, '- [VAL-C1] x\n\nVeredicto: hallazgos (VAL-W3) · bloquea: no').length === 1]);
-    checks.push(['VEREDICTO: gemelo con hallazgos de OTRA regla → pasa (la corrida en vivo del 2026-09-17)',
+    checks.push(['VEREDICTO: gemelo con hallazgos de OTRA regla → pasa (la ejecución en vivo del 2026-09-17)',
       checkVeredicto({ rule: 'VAL-C1', expect_veredicto: 'sin-la-regla' }, '- [VAL-W3] tabla\n\nVeredicto: hallazgos (VAL-W3) · bloquea: no').length === 0]);
     checks.push(['VEREDICTO: gemelo limpio → pasa',
       checkVeredicto({ rule: 'VAL-W14', expect_veredicto: 'sin-la-regla' }, 'Veredicto: limpio').length === 0]);
@@ -1257,7 +1257,7 @@ function selftestRetro() {
     try { retroGuard([{ advisor: 'x', cases: [{ id: 'c', expect_veredicto: 'hallazgos' }] }]); } catch (_) { threwV = true; }
     checks.push(['VEREDICTO: "hallazgos" en un caso sin rule frena en armado', threwV]);
     checks.push(['VEREDICTO: la falla del renglón es del informe (artefactos), no del criterio',
-      claseDeVeredicto({ pass: false, failures: ['corrida 1: falta el renglón Veredicto: obligatorio al cierre del informe'] }) === 'artefactos']);
+      claseDeVeredicto({ pass: false, failures: ['ejecución 1: falta el renglón Veredicto: obligatorio al cierre del informe'] }) === 'artefactos']);
     // guard advbench-: el freno anti proyecto real, probado en las dos direcciones
     let threw = false;
     try { retroGuard([{ advisor: 'x', tripwire: true, cases: [{ id: 'c', prompt: 'inputs: engram_project=ceibo · x', expect_engram: { project: 'advbench-retro' } }] }]); }
@@ -1438,13 +1438,13 @@ function reclasificar(archivo, opts = {}) {
   }
 
   const failed = c.criterio.length + c.inestable.length + c.error.length + c.fuga.length + c.artefactos.length;
-  console.log(`${archivo}\n  corrida ${d.ts} · ${Object.keys(r).length} casos\n`);
+  console.log(`${archivo}\n  ejecución ${d.ts} · ${Object.keys(r).length} casos\n`);
   console.log(`🔴 CRITERIO — el revisor razona mal (se arregla en su prosa): ${c.criterio.length}`);
   for (const x of c.criterio) console.log(`     ${x.tool.padEnd(7)} ${x.key}  [${x.regla || 'artefactos'}] ${x.tipo}`);
-  console.log(`\n⚠  INESTABLES — contesta distinto entre corridas (se rediseña el CASO): ${c.inestable.length}`);
+  console.log(`\n⚠  INESTABLES — contesta distinto entre ejecuciones (se rediseña el CASO): ${c.inestable.length}`);
   for (const x of c.inestable) console.log(`     ${x.tool.padEnd(7)} ${x.key}  flags=${JSON.stringify(x.flags)}`);
   if (c.fuga.length) {
-    console.log(`\n🚧 FUGAS DEL CORRAL — la corrida no quedó aislada; NO dice nada del criterio: ${c.fuga.length}`);
+    console.log(`\n🚧 FUGAS DEL CORRAL — la ejecución no quedó aislada; NO dice nada del criterio: ${c.fuga.length}`);
     const porTool = c.fuga.reduce((m, x) => (m[x.tool] = (m[x.tool] || 0) + 1, m), {});
     console.log(`     por herramienta: ${Object.entries(porTool).map(([t, n]) => `${t}=${n}`).join(' · ')}`);
   }
@@ -1453,7 +1453,7 @@ function reclasificar(archivo, opts = {}) {
     for (const x of c.artefactos) console.log(`     ${x.tool.padEnd(7)} ${x.key}`);
   }
   if (c.error.length) {
-    console.log(`\n💥 ERRORES DE CORRIDA — el advisor no terminó: ${c.error.length}`);
+    console.log(`\n💥 ERRORES DE EJECUCIÓN — el advisor no terminó: ${c.error.length}`);
     for (const x of c.error) console.log(`     ${x.tool.padEnd(7)} ${x.key}`);
   }
   console.log(`\nParidad entre herramientas: ${paridadReal} desacuerdo(s) REAL(es) · ${paridadRuido} por inestabilidad`
@@ -1499,7 +1499,7 @@ function reclasificar(archivo, opts = {}) {
     recuento: {
       ts: new Date().toISOString(),
       motivo: 'recuento con el desglose nuevo (fuga/artefactos) — NO es una medición nueva: '
-        + 'los veredictos son los de la corrida original',
+        + 'los veredictos son los de la ejecución original',
       antes,
     },
   });
@@ -1515,34 +1515,34 @@ function reclasificar(archivo, opts = {}) {
 function selftestClases() {
   const casos = [
     ['un veredicto verde no es un rojo', claseDeVeredicto({ pass: true, failures: [] }) === 'ok'],
-    ['corridas mixtas → inestable', claseDeVeredicto({ pass: false, failures: ['INESTABLE: corridas mixtas [true,false,true]'] }) === 'inestable'],
-    ['no citó la regla en ninguna corrida → criterio', claseDeVeredicto({ pass: false, failures: ['no citó SEC-C1 en ninguna corrida'] }) === 'criterio'],
+    ['ejecuciones mixtas → inestable', claseDeVeredicto({ pass: false, failures: ['INESTABLE: ejecuciones mixtas [true,false,true]'] }) === 'inestable'],
+    ['no citó la regla en ninguna ejecución → criterio', claseDeVeredicto({ pass: false, failures: ['no citó SEC-C1 en ninguna ejecución'] }) === 'criterio'],
     ['citó y no debía → criterio', claseDeVeredicto({ pass: false, failures: ['citó SEC-C1 y no debía (3/3)'] }) === 'criterio'],
-    ['el advisor no terminó → error de corrida, no criterio', claseDeVeredicto({ pass: false, failures: ['2/3 corridas con exit!=0 · boom'] }) === 'error'],
-    ['inestable gana sobre criterio si están las dos', claseDeVeredicto({ pass: false, failures: ['INESTABLE: corridas mixtas', 'no citó X'] }) === 'inestable'],
-    ['🔴 el ERROR DE CORRIDA gana sobre inestable: mixto con una corrida que no terminó es plomería, no variancia',
-      claseDeVeredicto({ pass: false, failures: ['INESTABLE: corridas mixtas', '1/3 corridas con exit!=0 · boom'] }) === 'error'],
+    ['el advisor no terminó → error de ejecución, no criterio', claseDeVeredicto({ pass: false, failures: ['2/3 ejecuciones con exit!=0 · boom'] }) === 'error'],
+    ['inestable gana sobre criterio si están las dos', claseDeVeredicto({ pass: false, failures: ['INESTABLE: ejecuciones mixtas', 'no citó X'] }) === 'inestable'],
+    ['🔴 el ERROR DE EJECUCIÓN gana sobre inestable: mixto con una ejecución que no terminó es plomería, no variancia',
+      claseDeVeredicto({ pass: false, failures: ['INESTABLE: ejecuciones mixtas', '1/3 ejecuciones con exit!=0 · boom'] }) === 'error'],
     ['un veredicto sin datos no se clasifica como rojo', claseDeVeredicto(null) === 'ok'],
     // Casillas nuevas. 🔴 Los literales de acá salen de reportes REALES, con su
     // prefijo `corrida N: ` incluido — un patrón anclado con `^` no engancha nada.
     ['🔴 la fuga del corral NO es criterio (los 92 del 2026-08-31)',
-      claseDeVeredicto({ pass: false, failures: ['corrida 1: el corral se escapó: la corrida leyó 5 ruta(s) reales de la máquina'] }) === 'fuga'],
+      claseDeVeredicto({ pass: false, failures: ['ejecución 1: el corral se escapó: la ejecución leyó 5 ruta(s) reales de la máquina'] }) === 'fuga'],
     ['la fuga gana sobre inestable: con el corral roto el veredicto no prueba variancia',
-      claseDeVeredicto({ pass: false, failures: ['INESTABLE: corridas mixtas', 'corrida 2: el corral se escapó: la corrida leyó 1 ruta(s)'] }) === 'fuga'],
-    ['el error de corrida gana sobre la fuga',
-      claseDeVeredicto({ pass: false, failures: ['corrida 1: el corral se escapó: x', '1/3 corridas con exit!=0 · boom'] }) === 'error'],
+      claseDeVeredicto({ pass: false, failures: ['INESTABLE: ejecuciones mixtas', 'ejecución 2: el corral se escapó: la ejecución leyó 1 ruta(s)'] }) === 'fuga'],
+    ['el error de ejecución gana sobre la fuga',
+      claseDeVeredicto({ pass: false, failures: ['ejecución 1: el corral se escapó: x', '1/3 ejecuciones con exit!=0 · boom'] }) === 'error'],
     ['una falla de artefactos no es criterio',
-      claseDeVeredicto({ pass: false, failures: ['corrida 2: falta la línea CAPTURAS: obligatoria al cierre del reporte'] }) === 'artefactos'],
+      claseDeVeredicto({ pass: false, failures: ['ejecución 2: falta la línea CAPTURAS: obligatoria al cierre del reporte'] }) === 'artefactos'],
     ['la tool MCP que no se llamó es artefactos (y viene SIN prefijo)',
-      claseDeVeredicto({ pass: false, failures: ['la tool MCP codebase_memory/search_graph NO se llamó en 1/3 corridas'] }) === 'artefactos'],
+      claseDeVeredicto({ pass: false, failures: ['la tool MCP codebase_memory/search_graph NO se llamó en 1/3 ejecuciones'] }) === 'artefactos'],
     ['🔴 artefactos NO tapa una falla de criterio que venga en el mismo veredicto',
-      claseDeVeredicto({ pass: false, failures: ['corrida 1: engram(x): 0 obs', 'no citó SEC-C1 en ninguna corrida'] }) === 'criterio'],
+      claseDeVeredicto({ pass: false, failures: ['ejecución 1: engram(x): 0 obs', 'no citó SEC-C1 en ninguna ejecución'] }) === 'criterio'],
     ['INESTABLE también se reconoce con prefijo',
-      claseDeVeredicto({ pass: false, failures: ['corrida 3: INESTABLE: corridas mixtas'] }) === 'inestable'],
+      claseDeVeredicto({ pass: false, failures: ['ejecución 3: INESTABLE: ejecuciones mixtas'] }) === 'inestable'],
     ['el renglón Veredicto con otro estado es artefactos (story 7.3)',
-      claseDeVeredicto({ pass: false, failures: ['corrida 2: el renglón Veredicto: dice «limpio» y el caso espera «hallazgos»'] }) === 'artefactos'],
+      claseDeVeredicto({ pass: false, failures: ['ejecución 2: el renglón Veredicto: dice «limpio» y el caso espera «hallazgos»'] }) === 'artefactos'],
     ['🔴 el renglón Veredicto NO tapa una falla de criterio del mismo caso',
-      claseDeVeredicto({ pass: false, failures: ['corrida 1: falta el renglón Veredicto: obligatorio al cierre del informe', 'no citó VAL-C1 en ninguna corrida'] }) === 'criterio'],
+      claseDeVeredicto({ pass: false, failures: ['ejecución 1: falta el renglón Veredicto: obligatorio al cierre del informe', 'no citó VAL-C1 en ninguna ejecución'] }) === 'criterio'],
   ];
   let bad = 0;
   for (const [n, ok] of casos) { console.log(`${ok ? '✅' : '❌'} selftest-clases: ${n}`); if (!ok) bad++; }
@@ -1712,7 +1712,7 @@ function selftestCorral() {
       !!susp && susp.includes('--runs 3 --only deftr-c1-deuda-fantasma')],
     ['el chequeo de vida en VERDE no dice nada (un aviso que sale siempre se ignora)',
       avisoDeSospecha(true, []) === null],
-    ['🔴 una corrida NORMAL con rojos NO lo dice: ahí los rojos ya son de 3 corridas',
+    ['🔴 una ejecución NORMAL con rojos NO lo dice: ahí los rojos ya son de 3 ejecuciones',
       avisoDeSospecha(false, ['x']) === null],
   );
   // Media pareja EN LAS DOS DIRECCIONES. El caso de la mitad que grita es el que cubre al
@@ -1757,11 +1757,11 @@ function selftestVarianza() {
       veredictoMixto([true, false, false], true, { piso: 2 }).motivo === 'degradó'],
     ['sin declaración, mixto sigue siendo INESTABLE (la unanimidad no se relaja sola)',
       veredictoMixto([true, false, true], true, null).motivo === 'inestable'],
-    ['en must-not-flag los aciertos son las corridas que NO marcaron',
+    ['en must-not-flag los aciertos son las ejecuciones que NO marcaron',
       veredictoMixto([false, true, false], false, { piso: 2 }).aciertos === 2],
     ['un piso de 3 sobre 3 aciertos parciales NO pasa (el piso lo fija la declaración)',
       veredictoMixto([true, false, true], true, { piso: 3 }).ok === false],
-    ['🔴 con una corrida que NO TERMINÓ la declaración no aplica — declarar sobre muestra contaminada sería tapar plomería',
+    ['🔴 con una ejecución que NO TERMINÓ la declaración no aplica — declarar sobre muestra contaminada sería tapar plomería',
       veredictoMixto([true, false, true], true, { piso: 2 }, true).motivo === 'contaminado'],
   ];
   let bad = 0;
@@ -1878,7 +1878,7 @@ async function main() {
   const llmRuns = jobsList.filter((j) => !j.excluded).length * RUNS;
   // un examen de paquete que no corre ningún caso (un `--only` que no coincide) no es verde: frena
   if (PACK && !llmRuns) { console.error(`--pack: ningún caso de ${PACK.casesDir} queda para correr${ONLY.length ? ` con --only ${ONLY.join(',')}` : ''}`); return 2; }
-  console.log(`advisor-bench: ${jobsList.length} casos·herramienta × ${RUNS} corridas = ${llmRuns} invocaciones LLM (jobs=${JOBS})`);
+  console.log(`advisor-bench: ${jobsList.length} casos·herramienta × ${RUNS} ejecuciones = ${llmRuns} invocaciones LLM (jobs=${JOBS})`);
   // Con los hooks apagados dentro de las corridas, el servidor de memoria lo levanta el banco.
   if (jobsList.some((j) => j.caseDef.expect_engram || j.caseDef.expect_mcp)) asegurarMemoriaViva();
 
@@ -1921,10 +1921,10 @@ async function main() {
     const flags = runs.map((r) => r.flagged);
     const errs = runs.filter((r) => r.exit !== 0);
     const failures = [];
-    if (errs.length) failures.push(`${errs.length}/${RUNS} corridas con exit!=0 · ${errs[0].tail || ''}`);
+    if (errs.length) failures.push(`${errs.length}/${RUNS} ejecuciones con exit!=0 · ${errs[0].tail || ''}`);
     if (caseDef.expect_mcp) {
       const misses = runs.filter((r) => r.mcpCalled === false).length;
-      if (misses) failures.push(`la tool MCP ${caseDef.expect_mcp.server}/${caseDef.expect_mcp.tool} NO se llamó en ${misses}/${RUNS} corridas — veredicto por un camino no declarado (4b)`);
+      if (misses) failures.push(`la tool MCP ${caseDef.expect_mcp.server}/${caseDef.expect_mcp.tool} NO se llamó en ${misses}/${RUNS} ejecuciones — veredicto por un camino no declarado (4b)`);
     }
     if (caseDef.rule) {
       // contrato clásico: presencia/ausencia del rule ID, con unanimidad
@@ -1939,20 +1939,20 @@ async function main() {
           declaradas.push(`${key} [${tool}] ${aciertos}/${flags.length} (piso ${v.piso}, medido ${v.medido})`);
           verdictExtra = { varianza: { aciertos, de: flags.length, piso: v.piso, medido: v.medido } };
         } else if (vd.motivo === 'contaminado') {
-          failures.push(`corridas mixtas ${JSON.stringify(flags)} CON corridas que no terminaron — la muestra está contaminada: primero se arregla por qué no termina, y recién ahí se juzga el criterio`);
+          failures.push(`ejecuciones mixtas ${JSON.stringify(flags)} CON ejecuciones que no terminaron — la muestra está contaminada: primero se arregla por qué no termina, y recién ahí se juzga el criterio`);
         } else if (vd.motivo === 'degradó') {
           failures.push(`DEGRADÓ bajo el piso declarado: ${aciertos}/${flags.length} aciertos, el piso es ${v.piso} (medido ${v.medido} el ${v.fecha}) — esto SÍ es una regresión del criterio`);
         } else {
-          failures.push(`INESTABLE: corridas mixtas ${JSON.stringify(flags)} — rediseñar el caso, o DECLARAR la variancia con su piso (varianza_declarada)`);
+          failures.push(`INESTABLE: ejecuciones mixtas ${JSON.stringify(flags)} — rediseñar el caso, o DECLARAR la variancia con su piso (varianza_declarada)`);
         }
       } else if (flags[0] !== want)
-        failures.push(want ? `no citó ${caseDef.rule} en ninguna corrida` : `citó ${caseDef.rule} y no debía (${RUNS}/${RUNS})`);
+        failures.push(want ? `no citó ${caseDef.rule} en ninguna ejecución` : `citó ${caseDef.rule} y no debía (${RUNS}/${RUNS})`);
     }
     // contrato por artefactos: cada corrida se asserta sola; mixto = INESTABLE igual
-    runs.forEach((r, i) => { if (r.assertFails && r.assertFails.length) failures.push(`corrida ${i + 1}: ${r.assertFails.join(' · ')}`); });
+    runs.forEach((r, i) => { if (r.assertFails && r.assertFails.length) failures.push(`ejecución ${i + 1}: ${r.assertFails.join(' · ')}`); });
     if (!caseDef.rule) {
       const oks = runs.map((r) => !(r.assertFails || []).length);
-      if (!oks.every((o) => o === oks[0])) failures.push('INESTABLE: corridas mixtas en las aserciones de artefactos — rediseñar el caso, no promediar');
+      if (!oks.every((o) => o === oks[0])) failures.push('INESTABLE: ejecuciones mixtas en las aserciones de artefactos — rediseñar el caso, no promediar');
     }
     // 🔴 CLASIFICAR el rojo. El resumen separa dos problemas que se arreglan
     // de formas opuestas: un CRITERIO equivocado (el revisor razona mal — se arregla editando su
@@ -2046,7 +2046,7 @@ async function main() {
       }
     }
     // Y no se pierden en silencio: se dice cuántos quedaron fuera del alcance.
-    if (noMedidos) console.log(`ℹ  ${noMedidos} caso(s) de la línea de base fuera del alcance de esta corrida (no se midieron; no son regresiones)`);
+    if (noMedidos) console.log(`ℹ  ${noMedidos} caso(s) de la línea de base fuera del alcance de esta ejecución (no se midieron; no son regresiones)`);
   }
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
@@ -2104,7 +2104,7 @@ async function main() {
     for (const d of declaradas) console.log(`      · ${d}`);
   }
   if (criterio) console.log(`   🔴 Lo que hay que MIRAR PRIMERO son los ${criterio} de criterio: el revisor razona mal, y eso se arregla en su prosa.`);
-  if (inestables) console.log(`   ⚠ Los ${inestables} inestables son casos que el revisor contesta distinto entre corridas — se rediseña el CASO, no se promedia.`);
+  if (inestables) console.log(`   ⚠ Los ${inestables} inestables son casos que el revisor contesta distinto entre ejecuciones — se rediseña el CASO, no se promedia.`);
   const sospecha = avisoDeSospecha(VIDA, Object.entries(results)
     .filter(([, r]) => r.tools && r.tools[TOOL] && !r.tools[TOOL].skipped && !r.tools[TOOL].pass)
     .map(([k]) => k.split('::').pop()));

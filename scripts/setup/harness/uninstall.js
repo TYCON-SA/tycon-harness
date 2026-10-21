@@ -232,7 +232,7 @@ function describePlan(p) {
   for (const l of summarize(p.remove, { home: p.home })) L.push(`  - ${l}`);
   L.push(`  - el estado ${p.stateFile}`);
   if (p.failing && p.failing.length) {
-    L.push('no se pueden quitar ahora (se reintentan; si siguen fallando, quedan en el estado para otra corrida):');
+    L.push('no se pueden quitar ahora (se reintentan; si siguen fallando, quedan en el estado para otra ejecución):');
     for (const w of p.failing) L.push(`  ✗ ${w}`);
   }
   L.push('deja:');

@@ -41,8 +41,8 @@ corrida() {  # $1 = archivo de salida, $2 = diccionario (vacío = el canónico)
   if [ -n "${2:-}" ]; then export TYCON_STATES_PATH="$2"; else unset TYCON_STATES_PATH; fi
   node "$MEDIDOR" --scan "$RAIZ_REPOS" --json --transitions-budget-ms 1 > "$1" 2>/dev/null
 }
-corrida "$TMP/nuevo.json" ""            || { echo "🛑 la corrida con el diccionario nuevo falló"; exit 1; }
-corrida "$TMP/viejo.json.out" "$TMP/viejo.json" || { echo "🛑 la corrida con el criterio viejo falló"; exit 1; }
+corrida "$TMP/nuevo.json" ""            || { echo "🛑 la ejecución con el diccionario nuevo falló"; exit 1; }
+corrida "$TMP/viejo.json.out" "$TMP/viejo.json" || { echo "🛑 la ejecución con el criterio viejo falló"; exit 1; }
 
 python3 - "$TMP/nuevo.json" "$TMP/viejo.json.out" <<'PY'
 import json, sys

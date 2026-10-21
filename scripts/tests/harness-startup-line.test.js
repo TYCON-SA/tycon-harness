@@ -137,7 +137,7 @@ test('T8 · classify por estructura: flags en cualquier orden, con o sin redirec
 // ─── migrate: una vez por forma, con copia, atómica, ajenos intactos; segunda corrida sin cambios ──────────────────────
 
 for (const form of KNOWN) {
-  test(`T8 · migrate reemplaza UNA vez la forma «${form.id}» (${form.platform}) y la segunda corrida no cambia nada`, () => {
+  test(`T8 · migrate reemplaza UNA vez la forma «${form.id}» (${form.platform}) y la segunda ejecución no cambia nada`, () => {
     const { migrate } = mod();
     const file = settingsWith(form);
     const before = fs.readFileSync(file, 'utf8');
@@ -166,10 +166,10 @@ for (const form of KNOWN) {
     // segunda corrida: nada
     const after1 = fs.readFileSync(file, 'utf8');
     const r2 = migrate(file, { home: homeOf(form), platform: platformOf(form), nodeOk: true, nodeVersion: '20.19.6' });
-    assert.strictEqual(r2.changed, false, `${form.id}: la segunda corrida cambió algo: ${r2.reason}`);
+    assert.strictEqual(r2.changed, false, `${form.id}: la segunda ejecución cambió algo: ${r2.reason}`);
     assert.ok(/ya es la nueva|sin cambios/i.test(r2.reason), r2.reason);
-    assert.strictEqual(fs.readFileSync(file, 'utf8'), after1, 'la segunda corrida reescribió el archivo');
-    assert.strictEqual(backups(file).length, 1, 'la segunda corrida dejó otra copia');
+    assert.strictEqual(fs.readFileSync(file, 'utf8'), after1, 'la segunda ejecución reescribió el archivo');
+    assert.strictEqual(backups(file).length, 1, 'la segunda ejecución dejó otra copia');
   });
 }
 
@@ -262,7 +262,7 @@ test('T8 · install sobre una HOME sin settings.json lo crea con la línea nueva
     { hooks: { SessionStart: [{ hooks: [{ type: 'command', command: newLine(HOME_POSIX, 'darwin').command, async: true }] }] } });
   assert.strictEqual(backups(file).length, 0);
   const r2 = migrate(file, { home: HOME_POSIX, platform: 'darwin', nodeOk: true, nodeVersion: '20.19.6', addIfMissing: true });
-  assert.strictEqual(r2.changed, false, 'la segunda corrida no cambia nada');
+  assert.strictEqual(r2.changed, false, 'la segunda ejecución no cambia nada');
   // el espejo: con un Node que no alcanza no se crea nada, aunque sea install
   const other = path.join(BASE, 'fresh-home-old-node', 'settings.json');
   const r3 = migrate(other, { home: HOME_POSIX, platform: 'darwin', nodeOk: false, nodeVersion: '18.0.0', addIfMissing: true });
@@ -434,7 +434,7 @@ test('W-S2 · StartupLine_SupersededWindows_IsRewrittenOnce: la forma anterior p
 });
 
 const PWSH_BIN = String(process.env.PATH || '').split(path.delimiter).map((d) => path.join(d, process.platform === 'win32' ? 'pwsh.exe' : 'pwsh')).find((p) => { try { return fs.statSync(p).isFile(); } catch (_) { return false; } });
-test('W-S3 · StartupLine_Windows_RunsTheSameThroughBash: corrida de verdad, directa y por `bash -c`, con la copia fija de juguete', { skip: PWSH_BIN ? false : 'NO MEDIDO: no hay pwsh en el PATH (lo mide el pipeline de Windows)' }, () => {
+test('W-S3 · StartupLine_Windows_RunsTheSameThroughBash: ejecución de verdad, directa y por `bash -c`, con la copia fija de juguete', { skip: PWSH_BIN ? false : 'NO MEDIDO: no hay pwsh en el PATH (lo mide el pipeline de Windows)' }, () => {
   const { spawnSync } = require('child_process');
   const { newLine } = mod();
   const lab = (name, bootstrapExit) => {

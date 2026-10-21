@@ -280,7 +280,7 @@ JSON="$(TYCON_UPDATE_CHANNEL=latest TYCON_UPDATE_APPLY=auto harness doctor --jso
 [ "$(recuerda "$JSON")" = True ] && ok "T37 copia pública en latest + auto: doctor recuerda «recibís lo que el equipo del arnés empuja, en minutos, sin revisión tuya»" || mal "T37 sin el recordatorio: $(printf '%s' "$JSON" | jtxt "d['warn']")"
 [ "$(printf '%s' "$JSON" | jtxt "any('recibís lo que el equipo del arnés empuja, en minutos, sin revisión tuya' in w for w in d['warn'])")" = True ] && ok "T37 …con la frase del AC entera" || mal "T37 la frase no está entera: $(printf '%s' "$JSON" | jtxt "d['warn']")"
 JSON2="$(TYCON_UPDATE_CHANNEL=latest TYCON_UPDATE_APPLY=auto harness doctor --json 2>/dev/null)"
-[ "$(recuerda "$JSON2")" = True ] && ok "T37 …y lo repite en la corrida siguiente" || mal "T37 la segunda corrida no lo recuerda"
+[ "$(recuerda "$JSON2")" = True ] && ok "T37 …y lo repite en la ejecución siguiente" || mal "T37 la segunda ejecución no lo recuerda"
 [ "$(printf '%s' "$JSON" | jtxt "len(d['fail'])")" = 0 ] && ok "T37 …como aviso, no en rojo" || mal "T37 el recordatorio (u otra cosa) salió en rojo: $(printf '%s' "$JSON" | jtxt "d['fail']")"
 # espejos: en la copia pública, latest + ask y stable + auto no lo traen
 JSON="$(TYCON_UPDATE_CHANNEL=latest TYCON_UPDATE_APPLY=ask harness doctor --json 2>/dev/null)"
@@ -960,7 +960,7 @@ harness_lab_git "$READ6" fetch -q origin '+refs/heads/*:refs/heads/*' >/dev/null
 state6 internal.layer:minimum=true
 doctor6
 [ "$(printf '%s' "$JSON" | jtxt "any('capa al mínimo' in t and '30 horas' in t for t in d['warn'])")" = True ] && ok "T6 layer.minimum con main interno 30 h adelante: amarillo con las horas" || mal "T6 mínimo: $(printf '%s' "$JSON" | jtxt "[t for t in d['ok']+d['warn']+d['fail'] if 'mínimo' in t]")"
-[ "$RO6" = 1 ] && ok "T6 doctor no escribió nada en ninguna corrida (HOME, árbol e índice idénticos por hash)" || mal "T6 alguna corrida de doctor escribió algo"
+[ "$RO6" = 1 ] && ok "T6 doctor no escribió nada en ninguna ejecución (HOME, árbol e índice idénticos por hash)" || mal "T6 alguna ejecución de doctor escribió algo"
 # la línea de comandos: `layer` con una opción que no existe es 2; install --harness-clone con una ruta que no es un clon, 2
 harness layer --bogus >/dev/null 2>&1; RC=$?
 [ "$RC" = 2 ] && ok "T6 layer con una opción que no existe: 2" || mal "T6 layer --bogus: rc $RC"

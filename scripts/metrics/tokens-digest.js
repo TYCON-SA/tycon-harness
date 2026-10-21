@@ -425,7 +425,7 @@ function mensajesDeError(usos, resultados, gates, home) {
  */
 function ubicarTranscripcion(sessionId, projectsDir) {
   if (!sessionId) {
-    return { estado: 'no_medido', motivo: 'la corrida no anotó a qué sesión pertenece' };
+    return { estado: 'no_medido', motivo: 'la ejecución no anotó a qué sesión pertenece' };
   }
   // El identificador sale de un archivo JSON y se concatena a una ruta. Hoy el origen es confiable
   // —lo escribe el propio arnés— pero eso es una propiedad de hoy, no del código: sin esta guarda,
@@ -449,7 +449,7 @@ function ubicarTranscripcion(sessionId, projectsDir) {
   }
   return {
     estado: 'borrada',
-    motivo: `la conversación de esta corrida ya no está (Claude Code las borra según cleanupPeriodDays); se buscó ${sessionId}.jsonl en las ${carpetas.length} carpetas de conversaciones`,
+    motivo: `la conversación de esta ejecución ya no está (Claude Code las borra según cleanupPeriodDays); se buscó ${sessionId}.jsonl en las ${carpetas.length} carpetas de conversaciones`,
   };
 }
 
@@ -536,7 +536,7 @@ function encadenarMedidor(volcado, opciones) {
   try {
     medidor = require('./reviewers-cost.js');
   } catch (e) {
-    return anotar(`reviewers-cost.js no se pudo cargar (${e.code || e.message}): los revisores de esta corrida no se midieron; el rescate del hilo se escribió igual`);
+    return anotar(`reviewers-cost.js no se pudo cargar (${e.code || e.message}): los revisores de esta ejecución no se midieron; el rescate del hilo se escribió igual`);
   }
   try {
     const r = medidor.procesarCorrida(volcado, { projectsDir: opciones.projectsDir, runsDir: opciones.runsDir, home: opciones.home });
@@ -816,7 +816,7 @@ function resumenLegible(rs) {
 }
 
 function resumenBarrido(s) {
-  return `corridas archivadas: ${s.total} · procesadas ahora: ${s.procesadas.length}\n`
+  return `ejecuciones archivadas: ${s.total} · procesadas ahora: ${s.procesadas.length}\n`
     + `  salvadas (conversación viva): ${s.salvadas}\n`
     + `  sin conversación (ya se había borrado): ${s.sin_conversacion}\n`
     + `  no medidas (no pude mirar): ${s.no_medidas}\n`

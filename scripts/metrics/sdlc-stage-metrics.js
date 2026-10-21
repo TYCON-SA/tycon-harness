@@ -252,11 +252,11 @@ function reworkPorCarril(repo, done, cierreDe, claveDe = (s) => s.id) {
   const lista = git(repo, ['ls-tree', '-d', '--name-only', 'HEAD', '.advisors/pipeline-runs/']);
   if (lista === null) return { valor: null, motivo: 'rework por carril: no se pudo leer el árbol del repo' };
   const corridas = lista.split('\n').map((l) => path.basename(l.trim())).filter(Boolean);
-  if (!corridas.length) return { valor: null, motivo: 'rework por carril: el repo no guarda las corridas del pipeline (.advisors/pipeline-runs/) — no se puede separar lo que pasó por él' };
+  if (!corridas.length) return { valor: null, motivo: 'rework por carril: el repo no guarda las ejecuciones del pipeline (.advisors/pipeline-runs/) — no se puede separar lo que pasó por él' };
   const altas = git(repo, ['log', '--diff-filter=A', '--format=%aI', '--', '.advisors/pipeline-runs']);
   const primera = altas ? altas.split('\n').filter(Boolean).pop() : null;
   const desde = primera ? primera.slice(0, 10) : null;
-  if (!desde) return { valor: null, motivo: 'rework por carril: no se pudo fechar la primera corrida guardada' };
+  if (!desde) return { valor: null, motivo: 'rework por carril: no se pudo fechar la primera ejecución guardada' };
   const con = { num: 0, den: 0 };
   const sin = { num: 0, den: 0 };
   let fuera = 0;

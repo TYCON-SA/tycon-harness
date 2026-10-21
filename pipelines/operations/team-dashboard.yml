@@ -30,11 +30,11 @@ schedules:
 
 parameters:
   - name: efectos
-    displayName: 'Con efectos fuera de la corrida (guardar la página y verificar la publicada)'
+    displayName: 'Con efectos fuera de la ejecución (guardar la página y verificar la publicada)'
     type: boolean
     default: true
   - name: mailboxConnection
-    displayName: 'Conexión de servicio de Azure con lectura sobre el buzón de corridas (vacío: sin buzón)'
+    displayName: 'Conexión de servicio de Azure con lectura sobre el buzón de ejecuciones (vacío: sin buzón)'
     type: string
     default: ''
 

@@ -298,8 +298,8 @@ const api = async (p, body) => { try { const r = await fetch('/api/' + p, { meth
 const S = { targets: [], site: null, notice: '', coreProblem: null, mailbox: null };
 // el buzón de corridas, sólo lectura — la página nunca recibe la firma
 function mailboxSection(m) {
-  const s = el('section', {}, el('h2', { text: 'El buzón de corridas' }), el('p', { class: 'muted', text: 'Sólo lectura: la llave es una credencial y esta página no la muestra ni la guarda. Se cambia en el archivo de la capa del equipo (scripts/metrics/corridas-buzon.json).' }));
-  if (!m || !m.hay) { s.append(el('p', { text: m && m.problema ? 'El buzón no se pudo leer: ' + m.problema : 'sin buzón: esta organización no sube corridas' })); return s; }
+  const s = el('section', {}, el('h2', { text: 'El buzón de ejecuciones' }), el('p', { class: 'muted', text: 'Sólo lectura: la llave es una credencial y esta página no la muestra ni la guarda. Se cambia en el archivo de la capa del equipo (scripts/metrics/corridas-buzon.json).' }));
+  if (!m || !m.hay) { s.append(el('p', { text: m && m.problema ? 'El buzón no se pudo leer: ' + m.problema : 'sin buzón: esta organización no sube ejecuciones' })); return s; }
   s.append(el('ul', {},
     el('li', { text: 'Cuenta: ' + m.cuenta }), el('li', { text: 'Contenedor: ' + m.contenedor }),
     el('li', { text: 'Política: ' + (m.politica || 'sin nombre') }), el('li', { text: 'Vence: ' + m.vence }),

@@ -84,7 +84,7 @@ test('T1 Barrido_MergeSinArchivo_CorreElLatido @story-1.26 @ac-1: corre el latid
   for (const sha of shas.slice(1)) assert.ok(written.some((f) => f.endsWith(`-${sha.slice(0, 7)}.json`)), `latido de ${sha}`);
 });
 
-test('T2 Barrido_DosVeces_NoDuplica @story-1.26 @ac-2: la segunda corrida no corre latidos ni escribe archivos', () => {
+test('T2 Barrido_DosVeces_NoDuplica @story-1.26 @ac-2: la segunda ejecución no corre latidos ni escribe archivos', () => {
   const { dir } = repo([{ subject: 'Merge branch r0' }, { subject: 'Merge branch r1' }]);
   const out = path.join(tmp(), 'retros');
   const rep = path.join(tmp(), 'barrido.json');
