@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * wait-notice.js — la corrida avisa por Telegram cuando queda esperando a una persona.
+ * wait-notice.js — la ejecución avisa por los canales de la organización cuando queda esperando a una persona.
  *
  * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────────────────────────
  * La espera por una persona es buena parte del reloj de una corrida y sin aviso nadie se entera: quien deja
@@ -9,7 +9,8 @@
  * ── QUÉ HACE ─────────────────────────────────────────────────────────────────────────────────────────────────────
  * Abre una ESPERA por sesión cuando una corrida del pipeline queda parada esperando a la persona, y la cierra cuando
  * vuelve. Si en el plazo (5 minutos; `wait_notice.minutes` de team-repos.json; `TYCON_WAIT_NOTICE_MS` en la máquina)
- * nadie se movió, manda UN mensaje por Telegram con el id de la story, el paso por su nombre llano y qué se espera.
+ * nadie se movió, manda UN mensaje por cada canal con el id de la story, el paso por su nombre llano y qué se espera.
+ * Los canales los elige la organización en el perfil (`integrations.notify.channels`); sin la lista, Telegram.
  *
  *   Stop (también con stop_hook_active) · PreToolUse de las tres herramientas que esperan a la persona ·
  *   Notification con permission_prompt                                        → abre la espera
@@ -20,9 +21,9 @@
  * «Siguió» se decide contando los registros DE VERDAD del hilo (prompts genuinos de la persona, mensajes del agente
  * con texto o con una herramienta), nunca por el tamaño del archivo: el hilo recibe registros que no son de nadie.
  *
- * Lo que NO hace, a propósito: con la integración de Telegram apagada no hace NADA (ni archivos ni procesos); no
- * frena nada (todo error sale 0 sin salida); no tiene cliente de Telegram (la única salida a la red es
- * scripts/lib/tycon-telegram-notify.sh); no reintenta; no manda más que el id de la story, el nombre del paso y una
+ * Lo que NO hace, a propósito: sin ningún canal por donde avisar no hace NADA (ni archivos ni procesos); no
+ * frena nada (todo error sale 0 sin salida); no tiene cliente de ningún canal (la única salida a la red es
+ * scripts/lib/notify.js, con las credenciales del dev); no reintenta; no manda más que el id de la story, el nombre del paso y una
  * línea de 200 caracteres con las credenciales tapadas; no anota el chat ni el permiso del bot.
  *
  * Estado (en la carpeta de estado del arnés, `stateDir` de tycon-home.js): wait-notice/waits/<sesión>.json (la espera
@@ -35,11 +36,11 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawn, spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SKILL_LIB = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib');
-const TELEGRAM_SCRIPT = path.join(ROOT, 'scripts', 'lib', 'tycon-telegram-notify.sh');
+const NOTIFY = path.join(ROOT, 'scripts', 'lib', 'notify.js');
 const DEFAULT_MINUTES = 5;
 const STALE_MS = 12 * 3600 * 1000;
 const ALIVE_MARGIN_MS = 2 * 60 * 1000;
@@ -344,10 +345,20 @@ function openWait(sid, tp, kind, waiting) {
   writeJsonAtomic(waitPath(sid), { ...wait, pid: child.pid });
 }
 
-// el texto va por la entrada estándar, nunca en la línea de comandos: en Windows, lo que cruza una línea de comandos
-// hacia un programa nativo pasa por la página de códigos del sistema y los acentos llegan rotos (tycon-telegram-notify.sh)
-function runTelegram(args, text) {
-  return spawnSync('bash', [TELEGRAM_SCRIPT, ...args, '--stdin'], { input: Buffer.from(text, 'utf8'), encoding: 'utf8', timeout: 30000, env: process.env, windowsHide: true });
+/**
+ * Por dónde avisa esta máquina: `{ ok, channels, mail, chat }`. Los canales que eligió la organización en el perfil; sin
+ * la lista, Telegram si está prendido en la máquina (lo de siempre). `ok: false` es una configuración que no se lee.
+ */
+function channels() {
+  const N = require(NOTIFY);
+  const s = N.canalesDeLaSesion({ env: process.env, home: home() });
+  if (s.problema) return { ok: false, channels: [] };
+  if (s.origen === 'antes') {
+    const tg = require(path.join(ROOT, 'scripts', 'lib', 'tycon-config.js')).integracionParaHook('telegram', { env: process.env, home: home() });
+    if (!tg.ok) return { ok: false, channels: [] };
+    if (!tg.prendida) return { ok: true, channels: [] };
+  }
+  return { ok: true, channels: s.canales, mail: s.mail, chat: s.chat };
 }
 
 /** El proceso del plazo: duerme, mira si la espera sigue igual y, si corresponde, avisa. */
@@ -364,14 +375,14 @@ function timer(sid, openedAt) {
   if (!mtime || Date.now() - mtime > ms + ALIVE_MARGIN_MS) { closeWait(sid, 'session-ended'); return; }
   if (backgroundPending(w.transcript)) { closeWait(sid, 'kept-working', { reason: 'background-task' }); return; }
 
-  const tg = require(path.join(ROOT, 'scripts', 'lib', 'tycon-config.js')).integracionParaHook('telegram', { env: process.env, home: home() });
-  if (!tg.ok) { closeWait(sid, 'config-error'); return; }
-  if (!tg.prendida) { closeWait(sid, 'no-channel'); return; }
-  const chat = tg.config && tg.config.valores && tg.config.valores.telegram && tg.config.valores.telegram.chat_id;
-  const chatArgs = chat ? ['--chat-id', String(chat)] : [];
+  const via = channels();
+  if (!via.ok) { closeWait(sid, 'config-error'); return; }
+  if (!via.channels.length) { closeWait(sid, 'no-channel'); return; }
+  const N = require(NOTIFY);
+  const send = { lado: 'sesion', mail: via.mail, chat: via.chat };
   const botToken = process.env.TELEGRAM_BOT_TOKEN || '';
 
-  const why = (r) => oneLine(r.stderr || (r.error && r.error.message) || `salió ${r.status}`, botToken);
+  const why = (motivos) => oneLine(motivos.join(' · ') || 'sin motivo', botToken);
   let after = null;   // lo que hay que cerrar, fuera del candado (closeWait también lo toma)
   withSharedLock(() => {
     const shared = readShared();
@@ -379,18 +390,23 @@ function timer(sid, openedAt) {
     const entries = [...others, w].map((x) => ({ story: x.story, step: x.step, waiting: x.waiting }));
     const text = buildMessage(entries, { botToken });
 
-    const dry = runTelegram(['--dry-run', ...chatArgs], text);
-    if (dry.status === 3) { after = ['no-channel']; return; }
-    if (dry.status !== 0) { after = ['failed', { reason: why(dry) }]; return; }
+    // el ensayo de cada canal: los que no pueden mandar (sin bot, sin credencial) no se intentan
+    const dry = via.channels.map((canal) => ({ canal, e: N.ensayo({ canal, texto: text, ...send }) }));
+    const ready = dry.filter((x) => x.e.codigo === 0).map((x) => x.canal);
+    if (!ready.length) { after = ['no-channel', { reason: why(dry.map((x) => `${x.canal}: ${x.e.error}`)) }]; return; }
     const pre = readWait(sid);
     if (pre && pre.openedAt === openedAt) writeJsonAtomic(waitPath(sid), { ...pre, sending: true });   // que nadie lo corte mandando
-    const real = runTelegram([...chatArgs], text);
-    if (real.status !== 0) {
+    // un intento por canal: este aviso no reintenta (la espera puede cerrarse mientras tanto)
+    const real = N.avisar({ canales: ready, texto: text, ...send, reintentar: false });
+    const failed = real.resultados.filter((x) => !x.entregado).map((x) => `${x.canal}: ${x.motivo}`);
+    if (!real.resultados.some((x) => x.entregado)) {
       const cur0 = readWait(sid);
       if (cur0 && cur0.openedAt === openedAt) writeJsonAtomic(waitPath(sid), { ...cur0, sending: false });
-      after = ['failed', { reason: why(real) }];
+      after = ['failed', { reason: why(failed) }];
       return;
     }
+    if (failed.length) logLine({ session: sid, event: 'channel-failed', reason: why(failed) });
+    const tgResult = real.resultados.find((x) => x.canal === 'telegram' && x.entregado) || null;
     const notifiedAt = new Date().toISOString();
     try { afterSend(); } catch (e) {
       // el aviso salió: que quede anotado aunque lo que sigue falle
@@ -398,12 +414,13 @@ function timer(sid, openedAt) {
     }
     return;
     function afterSend() {
-    const messageId = String(real.stdout || '').trim().split('\n').pop();
-    if (!/^\d+$/.test(messageId)) logLine({ session: sid, event: 'message-id-unknown' });
+    // sólo Telegram edita: el aviso anterior se reescribe para que no queden dos con las mismas esperas
+    const messageId = tgResult && tgResult.message_id !== null ? String(tgResult.message_id) : '';
+    if (tgResult && !/^\d+$/.test(messageId)) logLine({ session: sid, event: 'message-id-unknown' });
 
-    if (shared.messageId && others.length) {
-      const ed = runTelegram(['--edit', String(shared.messageId), ...chatArgs], '⏳ Esperas actualizadas: ver el mensaje siguiente.');
-      if (ed.status !== 0) logLine({ session: sid, event: 'edit-failed', reason: why(ed) });
+    if (tgResult && shared.messageId && others.length) {
+      const ed = N.entregar({ canal: 'telegram', texto: '⏳ Esperas actualizadas: ver el mensaje siguiente.', editarId: String(shared.messageId), ...send, reintentar: false, nuevoSiNoEdita: false });
+      if (!ed.entregado) logLine({ session: sid, event: 'edit-failed', reason: why([ed.motivo]) });
     }
     writeJsonAtomic(dirs().shared, { messageId: /^\d+$/.test(messageId) ? Number(messageId) : null, sessions: [...others.map((x) => x.session), sid] });
     const cur = readWait(sid);
@@ -447,8 +464,8 @@ module.exports = { WAIT_TOOLS, stepLabel, currentStep, buildMessage, thresholdMs
 if (require.main === module) {
   try {
     if (process.env.TYCON_WAIT_NOTICE === '0') process.exit(0);
-    // sin la integración de Telegram prendida, nada: ni archivos ni procesos
-    const tg = require(path.join(ROOT, 'scripts', 'lib', 'tycon-config.js')).integracionParaHook('telegram', { env: process.env, home: home() });
+    // sin ningún canal por donde avisar, nada: ni archivos ni procesos
+    const tg = channels();
     const args = process.argv.slice(2);
     if (args[0] === '--timer') {
       timer(args[1], args[2]);
@@ -457,7 +474,7 @@ if (require.main === module) {
       try { payload = fs.readFileSync(0, 'utf8'); } catch { process.exit(0); }
       const d = JSON.parse(payload || '{}');
       if (!tg.ok) { if (d.hook_event_name === 'Stop' && readMarker(d.session_id)) logLine({ session: d.session_id, result: 'config-error' }); process.exit(0); }
-      if (!tg.prendida) process.exit(0);
+      if (!tg.channels.length) process.exit(0);
       handle(d);
     }
   } catch { /* fail-open: nunca rompe un cierre ni una pregunta */ }

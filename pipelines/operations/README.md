@@ -108,6 +108,9 @@ Los pipelines corren con la identidad de compilación del proyecto, `<proyecto> 
 - **Sobre el repo de operaciones**: *Contribute*, *Contribute to pull requests* y *Create branch* en «Allow». Sin eso,
   guardar y abrir pull requests salen en rojo.
 - **Sobre los repos que se miden**: *Read*. Si están en otros proyectos, también ahí.
+- **Sobre el repo del perfil del equipo** (el que declara `team-repos.json → profile`): *Read*. De ahí saca la noche los
+  canales del aviso que eligió la organización (`integrations.notify.channels`). Sin ese permiso el resumen sale igual,
+  por el canal de `operations.json → notify.channel`, y dice «no se pudo leer el perfil del equipo».
 
 Y en *Project settings → Pipelines → Settings* del proyecto donde corren los pipelines:
 
@@ -188,12 +191,18 @@ Variables opcionales de cada definición (*Edit → Variables*):
 |---|---|---|
 | `stage-metrics` | `METRICS_PROJECTS` | Los proyectos a medir, separados por `;`. Vacía: todos los que la identidad puede ver |
 | `dependency-audit` | `TYCON_TELEGRAM_CHAT_ID` y `TELEGRAM_BOT_TOKEN` (secreta) | El resumen diario, si el canal es `telegram`. Usá un bot dedicado al aviso: el token de un bot sirve para mandar a cualquier chat y para leer lo que le escriben |
-| `dependency-audit` | `TYCON_NOTIFY_WEBHOOK_URL` (secreta) | El resumen diario, si el canal es `slack` o `teams`: la dirección del webhook entrante (en Teams, la de un flujo de trabajo «When a Teams webhook request is received»). La dirección ES la credencial: nunca va en un archivo |
+| `dependency-audit` | `TYCON_SLACK_WEBHOOK_URL` y `TYCON_TEAMS_WEBHOOK_URL` (secretas) | El resumen diario, si se eligió `slack` o `teams`: la dirección del webhook entrante de cada uno (en Teams, la de un flujo de trabajo «When a Teams webhook request is received»). La dirección ES la credencial: nunca va en un archivo. `TYCON_NOTIFY_WEBHOOK_URL` es el nombre de antes, de cuando había un solo canal: sigue valiendo |
+| `dependency-audit` | `TYCON_MAIL_USER` y `TYCON_MAIL_PASSWORD` (secretas) | El resumen diario, si se eligió `mail`: el usuario y la clave del servidor de correo del perfil (`integrations.notify.mail_host`). El remitente y los destinatarios van en `operations.json → notify.mail_from` y `mail_to` |
 
-**El canal del aviso.** Lo elige `operations.json → notify`: `{ "channel": "telegram" }`, `"slack"` o `"teams"`. **Sin
-`notify`, no se manda**, y la constancia de la noche lo dice («canal sin configurar en operations.json → notify»). El
-destino (el chat, el token, el webhook) va sólo en las variables secretas de arriba. El aviso lleva sólo cantidades y,
-si `operations.json → site.url` está y el sitio pasó esa mañana la prueba sin sesión, el enlace al sitio.
+**Los canales del aviso.** Los elige la organización en el perfil del equipo, `integrations.notify.channels` (desde el
+sitio: Configuración → Integraciones → «Avisos»): uno o más de `telegram`, `slack`, `teams` y `mail`; una lista vacía no
+manda nada. La noche baja el perfil del repo que declara `team-repos.json → profile` (por eso el permiso de lectura del
+punto 3). Sin la lista, o sin poder leer el perfil, vale el nombre de antes, `operations.json → notify`:
+`{ "channel": "telegram" }`, `"slack"`, `"teams"` o `"mail"`, y si fue por no poder leer el perfil el resumen lo dice. **Sin
+ninguno de los dos, no se manda**, y la constancia de la noche lo dice («canal sin configurar en operations.json →
+notify»). El destino (el chat, el token, el webhook, la clave del correo) va sólo en las variables secretas de arriba. El
+aviso lleva sólo cantidades y, si `operations.json → site.url` está y el sitio pasó esa mañana la prueba sin sesión, el
+enlace al sitio.
 
 Las copias del repo del arnés ya no van en variables de la definición: van en `team-repos.json` (punto 2). Si tu
 definición de `stage-metrics` todavía tiene `HARNESS_COPIES` o `HARNESS_MEASURED_COPY`, borralas: la corrida lo avisa, y

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# nightly-dod-notice.sh — avisa por Telegram cuando la evidencia DoD que medimos CAMBIA.
+# nightly-dod-notice.sh — avisa por los canales de la organización cuando la evidencia DoD que medimos CAMBIA.
 #
 # POR QUÉ EXISTE
 # La evidencia de cierre viaja por git, pero el nocturno clona la rama por defecto (`main`): el
@@ -29,7 +29,7 @@
 # VARIABLES
 #   TYCON_GUIDES_DIR        el repo de donde se leen los snapshots y sale el envío (sin ella, ver «DOS COSAS» abajo)
 #   TYCON_NOTICE_DRYRUN=1   no manda nada: imprime "[dry-run] <texto>" y no toca los pendientes
-#   TYCON_NOTICE_NOTIFY     script de envío (default <repo>/scripts/lib/tycon-telegram-notify.sh)
+#   TYCON_NOTICE_NOTIFY     script de envío (sin ella, <repo>/scripts/lib/notify.js por los canales de la organización)
 #   TYCON_NOTICE_TODAY      fecha UTC de hoy (AAAA-MM-DD); para las pruebas
 #   TYCON_NOTICE_STATE_DIR  dónde viven los pendientes (default ~/.claude/.tycon-pipeline/aviso-dod)
 #   TYCON_NOTICE_RETRIES    intentos de envío en total (default 3)
@@ -94,7 +94,13 @@ fi
 . "$SELF_ROOT/scripts/lib/legacy-names.sh"
 legacy_env TYCON_NOTICE_DRYRUN; legacy_env TYCON_NOTICE_NOTIFY; legacy_env TYCON_NOTICE_TODAY
 legacy_env TYCON_NOTICE_STATE_DIR; legacy_env TYCON_NOTICE_RETRIES; legacy_env TYCON_NOTICE_WAIT_S
-NOTIFY="${TYCON_NOTICE_NOTIFY:-$CODE_ROOT/scripts/lib/tycon-telegram-notify.sh}"
+# Sin TYCON_NOTICE_NOTIFY, el aviso sale por notify.js del lado de la sesión: los canales del perfil y las credenciales
+# de esta máquina (sin la lista en el perfil, Telegram, como siempre).
+NOTIFY="${TYCON_NOTICE_NOTIFY:-}"
+NOTIFY_JS="$CODE_ROOT/scripts/lib/notify.js"
+enviar() { # <mensaje>
+  if [ -n "$NOTIFY" ]; then "$NOTIFY" "$1"; else node "$NOTIFY_JS" --side session -- "$1"; fi
+}
 HOY="${TYCON_NOTICE_TODAY:-$(date -u +%Y-%m-%d)}"
 ESTADO_DIR="${TYCON_NOTICE_STATE_DIR:-$HOME/.claude/.tycon-pipeline/aviso-dod}"
 PENDIENTES="$ESTADO_DIR/pendientes.tsv"
@@ -426,14 +432,25 @@ fi
 MOTIVO_ENVIO=""
 INTENTO=1
 PUEDE_ENVIAR=1
-if [ ! -x "$NOTIFY" ]; then
+if [ -n "$NOTIFY" ] && [ ! -x "$NOTIFY" ]; then
   PUEDE_ENVIAR=0
   MOTIVO_ENVIO="falta el script de envío $NOTIFY (o no es ejecutable)"
-  log "no puedo avisar: $MOTIVO_ENVIO"
+elif [ -z "$NOTIFY" ] && [ ! -f "$NOTIFY_JS" ]; then
+  PUEDE_ENVIAR=0
+  MOTIVO_ENVIO="falta el envío del arnés $NOTIFY_JS"
+elif [ -z "$NOTIFY" ] && ! command -v node >/dev/null 2>&1; then
+  PUEDE_ENVIAR=0
+  MOTIVO_ENVIO="no encontré node en el PATH para mandar el aviso"
 fi
+[ "$PUEDE_ENVIAR" -eq 1 ] || log "no puedo avisar: $MOTIVO_ENVIO"
 while [ "$PUEDE_ENVIAR" -eq 1 ]; do
-  RESP="$("$NOTIFY" "$MENSAJE" 2>&1)"
+  RESP="$(enviar "$MENSAJE" 2>&1)"
   RC_ENVIO=$?
+  # la organización no eligió ningún canal: no es un fallo, pero tampoco se entregó nada; los pendientes quedan
+  if [ "$RC_ENVIO" -eq 0 ] && [ -z "$NOTIFY" ] && case "$RESP" in *"ningún canal elegido"*) true ;; *) false ;; esac; then
+    log "no se mandó: la organización no eligió ningún canal de aviso (integrations.notify.channels vacía); los pendientes quedan guardados"
+    exit "$SALIDA"
+  fi
   if [ "$RC_ENVIO" -eq 0 ]; then
     if [ -n "${RESP//[[:space:]]/}" ]; then log "entregado (intento $INTENTO de $REINTENTOS): $(motivo_de "$RESP")"
     else log "entregado (intento $INTENTO de $REINTENTOS)"; fi

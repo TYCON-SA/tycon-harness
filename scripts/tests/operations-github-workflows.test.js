@@ -56,8 +56,10 @@ function brokenRules(text) {
   const perms = [...text.matchAll(/^( *)permissions:/gm)];
   if (perms.length !== 1 || perms[0][1] !== '' || !/^permissions:\n {2}contents: write\n(?! {2}\S)/m.test(text)) broken.push('permissions');
   const secrets = [...text.matchAll(/secrets\.([A-Za-z_]+)/g)].map((x) => x[1]);
-  // la dirección del webhook del aviso (Slack o Teams) es el único secreto nuevo
-  if (secrets.some((s) => !['HARNESS_ORG_TOKEN', 'HARNESS_APP_PRIVATE_KEY', 'TELEGRAM_BOT_TOKEN', 'TYCON_NOTIFY_WEBHOOK_URL'].includes(s))) broken.push('secrets');
+  // los del aviso: la dirección del webhook (la de antes, una sola, y la de cada canal), la credencial del correo y el
+  // permiso de lectura del repo del perfil, de donde salen los canales elegidos
+  const AVISO = ['TELEGRAM_BOT_TOKEN', 'TYCON_NOTIFY_WEBHOOK_URL', 'TYCON_SLACK_WEBHOOK_URL', 'TYCON_TEAMS_WEBHOOK_URL', 'TYCON_MAIL_USER', 'TYCON_MAIL_PASSWORD', 'TYCON_PROFILE_READ_TOKEN'];
+  if (secrets.some((s) => !['HARNESS_ORG_TOKEN', 'HARNESS_APP_PRIVATE_KEY', ...AVISO].includes(s))) broken.push('secrets');
   // cada secreto (y el token del workflow, y el de la App) sólo como valor de una variable de env de un paso; la llave de
   // la App, sólo como `private-key` del paso que pide el token; el token de la App, sólo solo o con HARNESS_ORG_TOKEN de
   // respaldo, o comparado en un `if:`
@@ -65,7 +67,7 @@ function brokenRules(text) {
   const KEY_LINE = '          private-key: ${{ secrets.HARNESS_APP_PRIVATE_KEY }}';
   for (const l of text.split('\n')) {
     if (!/secrets\.|github\.token|outputs\.token/.test(l)) continue;
-    const env = /^ {10}[A-Z_]+: \$\{\{ (secrets\.(HARNESS_ORG_TOKEN|TELEGRAM_BOT_TOKEN|TYCON_NOTIFY_WEBHOOK_URL)|github\.token|steps\.[a-z-]+\.outputs\.token( \|\| secrets\.HARNESS_ORG_TOKEN)?) \}\}$/.test(l);
+    const env = new RegExp(`^ {10}[A-Z_]+: \\$\\{\\{ (secrets\\.(HARNESS_ORG_TOKEN|${AVISO.join('|')})|github\\.token|steps\\.[a-z-]+\\.outputs\\.token( \\|\\| secrets\\.HARNESS_ORG_TOKEN)?) \\}\\}$`).test(l);
     const key = l === KEY_LINE && appSteps.some((x) => x.split('\n').includes(l));
     const cond = /^ {8}if: always\(\) && steps\.[a-z-]+\.outputs\.token != ''$/.test(l);
     if (!env && !key && !cond) { broken.push('secret-scope'); break; }

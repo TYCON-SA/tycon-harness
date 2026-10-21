@@ -308,7 +308,9 @@ jobs:
           [ "${CODIGO}" = 0 ] || echo "::warning::La prueba sin sesión del sitio no pasó (código ${CODIGO}): el aviso sale sin el enlace."
           exit 0
 
-      # El canal lo decide notify.js con operations.json → notify: sin `notify` no se manda, y la constancia lo dice.
+      # Los canales los decide notify.js con el perfil del equipo (integrations.notify.channels), que este paso baja del
+      # repo que declara team-repos.json → profile con TYCON_PROFILE_READ_TOKEN (un permiso de sólo lectura sobre ese repo).
+      # Sin la lista, o sin poder bajar el perfil, el canal de operations.json → notify.channel, y el resumen lo dice.
       - name: Entregar el resumen
         if: env.EFFECTS == 'true'
         continue-on-error: true
@@ -317,6 +319,11 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TYCON_TELEGRAM_CHAT_ID: ${{ vars.TYCON_TELEGRAM_CHAT_ID }}
           TYCON_NOTIFY_WEBHOOK_URL: ${{ secrets.TYCON_NOTIFY_WEBHOOK_URL }}
+          TYCON_SLACK_WEBHOOK_URL: ${{ secrets.TYCON_SLACK_WEBHOOK_URL }}
+          TYCON_TEAMS_WEBHOOK_URL: ${{ secrets.TYCON_TEAMS_WEBHOOK_URL }}
+          TYCON_MAIL_USER: ${{ secrets.TYCON_MAIL_USER }}
+          TYCON_MAIL_PASSWORD: ${{ secrets.TYCON_MAIL_PASSWORD }}
+          GITHUB_CLONE_TOKEN: ${{ secrets.TYCON_PROFILE_READ_TOKEN }}
         run: |
           set -uo pipefail
           set +e   # GitHub corre el paso con bash -e: el código de salida se lee abajo, no corta acá
@@ -325,7 +332,8 @@ jobs:
           [ -d .dashboard/site-update ] && SU=(--site-update ".dashboard/site-update/site-update-${HOY_NOCTURNO}.json")
           node scripts/nightly/dependencies/daily-summary.js deliver --source dependencies --today "${HOY_NOCTURNO}" ${SU[@]+"${SU[@]}"} \
             --out .dashboard/dependencias --pending inbox/dependencies \
-            --operations operations.json --site-check "${RUNNER_TEMP}/site-check.json" 2>&1 | bash pipelines/operations/github/annotate.sh
+            --operations operations.json --site-check "${RUNNER_TEMP}/site-check.json" \
+            --team-repos team-repos.json --clone-dir "${RUNNER_TEMP}/perfil" 2>&1 | bash pipelines/operations/github/annotate.sh
           CODIGO=${PIPESTATUS[0]}
           if [ "${CODIGO}" != 0 ]; then echo "::warning::El resumen NO se entregó (código ${CODIGO})"; exit 1; fi
 

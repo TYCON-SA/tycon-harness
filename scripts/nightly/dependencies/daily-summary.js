@@ -59,6 +59,9 @@
  *       («dudas de revisores: N», y nada si no hay); el revisor, la regla y cuántas veces quedan en `dudas_revisores` del
  *       `--json` y de la constancia. Sin carpeta que leer es `null` con su motivo, nunca un 0
  *     --operations: el operations.json de donde salen el canal y `site.url` (por defecto, el de la raíz del árbol)
+ *     --profile: el perfil del equipo que la noche ya bajó; o --team-repos y --clone-dir, para que lo baje del repo que
+ *       declara `profile` (con la credencial de CLONE_TOKEN). Los canales salen de su `integrations.notify.channels`; sin
+ *       la lista, o sin poder leerlo, del canal de --operations (el nombre viejo), y en el segundo caso el mensaje lo dice
  *     --site-check: el resultado de scripts/site/check-deploy.js --out de esa mañana (sólo dependencias)
  *     [--out <snapshots>] [--pending <fichas>] [--config <repos.json>] [--summary-config <summary.json>]
  *     [--watcher-out <snapshots del vigilante>] [--deps-out <snapshots de dependencias>]
@@ -175,6 +178,8 @@ const tieneValor = (v) => {
 /** ¿El resumen de ese snapshot consta como entregado? (el aviso del arranque aplica la misma regla) */
 function entregado(r) {
   if (!r || typeof r !== 'object') return false;
+  // la organización eligió no avisar por ningún canal: no hay nada que entregar, y no es un fallo
+  if (r.sin_canales === true) return true;
   return !!r.entregado_el || (r.message_id !== null && r.message_id !== undefined && !r.motivo);
 }
 
@@ -927,9 +932,15 @@ function entregar(a) {
     if (e instanceof NoSePuede) { console.error(`🔴 resumen-diario: ${e.message} — no se entregó nada (no hay dónde dejar constancia)`); return 3; }
     throw e;
   }
-  // El canal sale de operations.json → notify. Sin canal no se manda nada, y la constancia lo dice.
-  const { canal, motivo: sinCanal } = NOTIFY.canalDe(a.operations);
+  // Los canales salen del perfil del equipo que trajo la noche; sin la lista, de operations.json → notify.channel. Sin
+  // ninguno no se manda nada, y la constancia lo dice. Sólo Telegram edita: `canal` es el que decide la edición.
+  const traido = perfilDeLaNoche(a);
+  const noche = NOTIFY.canalesDeLaNoche({ perfil: traido.archivo, perfilProblema: traido.problema, operations: a.operations });
+  const canales = noche.canales;
+  const sinCanal = noche.motivo || (canales.length ? null : 'ningún canal elegido en el perfil del equipo (integrations.notify.channels vacía)');
+  const canal = canales.includes('telegram') ? 'telegram' : canales[0] || null;
   let final = res.texto;
+  let finalOtros = null;   // el texto de los canales que no editan, cuando Telegram edita el de la mañana
   let editarId = null;
   let notaArmado = null;
   let sitio = a.fuente === 'dependencias' ? lineaSitio(a) : null;
@@ -945,6 +956,10 @@ function entregar(a) {
     if (yaLlego && mid && d.seccion && canal === 'telegram') {
       editarId = mid;
       final = `${d.seccion}\n\n${res.texto}`;
+      // los otros canales no editan: ya recibieron la sección de dependencias a la mañana, así que les va sólo la del
+      // vigilante, diciéndolo, como cuando Telegram no está
+      const otros = canales.filter((c) => c !== 'telegram');
+      if (otros.length) finalOtros = [recortar(`ℹ️ dependencias ya entregó su resumen hoy; el del vigilante va aparte (${otros.join(', ')} no edita)`, 200), res.texto].join('\n');
     } else if (yaLlego) {
       // 🔴 El resumen de dependencias SÍ llegó: no se dice que no, y no se edita a ciegas. Editar reemplaza el
       // mensaje entero, así que sin su sección rearmada la edición BORRABA lo que el responsable ya había recibido a
@@ -963,11 +978,12 @@ function entregar(a) {
       final = [aviso, ...(d.seccion ? [d.seccion, ''] : []), res.texto].join('\n');
     }
   }
-  final = acotar(final, TOPE_MENSAJE);
-  if (a.extra !== null) final = `${final}\n\n${seccionExtra(a.extra)}`;
-  if (a.retros !== null) final = `${final}\n${lineaRetros(a.retros)}`;
+  // lo que va después del cuerpo, igual en todos los canales
+  let cola = '';
+  if (a.extra !== null) cola = `${cola}\n\n${seccionExtra(a.extra)}`;
+  if (a.retros !== null) cola = `${cola}\n${lineaRetros(a.retros)}`;
   const semanal = a.weekly !== null ? lineaSemanal(a.weekly, a.hoy) : null;
-  if (semanal) final = `${final}\n${semanal}`;
+  if (semanal) cola = `${cola}\n${semanal}`;
   // la versión del sitio, en su lugar fijo: antes de la línea del sitio, que sigue siendo la última
   if (a.siteUpdate) {
     let actualizacion = null;
@@ -977,23 +993,41 @@ function entregar(a) {
       // ausente es «sin resultado»; uno que está y no se lee se dice aparte (no es lo mismo que un nocturno que no corrió)
       if (!(e && e.code === 'ENOENT')) { console.error(`resumen-diario: el resultado del nocturno del sitio no se pudo leer (${(e && e.code) || 'no es JSON'})`); actualizacion = { ilegible: true }; }
     }
-    final = `${final}\n${lineaVersion({ actualizacion, hoy: a.hoy })}`;
+    cola = `${cola}\n${lineaVersion({ actualizacion, hoy: a.hoy })}`;
   }
-  final = `${final}\n${sitio.linea}`;
+  // la noche no pudo leer el perfil: salió por el canal viejo, y quien lo lee tiene que saberlo
+  if (noche.aviso) cola = `${cola}\n⚠️ ${noche.aviso}`;
+  cola = `${cola}\n${sitio.linea}`;
+  final = `${acotar(final, TOPE_MENSAJE)}${cola}`;
+  if (finalOtros !== null) finalOtros = `${acotar(finalOtros, TOPE_MENSAJE)}${cola}`;
+  const textoDe = (c) => (c !== 'telegram' && finalOtros !== null ? finalOtros : final);
 
   if (a.dryRun) {
     console.log(final);
-    if (!canal) { console.error(`🔴 resumen-diario: ${sinCanal} (ensayo: no se mandó nada)`); return 3; }
-    const e = NOTIFY.ensayo({ canal, texto: final, editarId });
-    if (e.salida) console.log(`— ${e.salida} (ensayo: no se mandó nada ni se escribió el snapshot)`);
-    if (e.codigo !== 0) { console.error(limpiar(e.error)); return 3; }
-    return 0;
+    if (!canal) { console.error(`🔴 resumen-diario: ${sinCanal} (ensayo: no se mandó nada)`); return noche.motivo ? 3 : 0; }
+    let codigo = 0;
+    for (const c of canales) {
+      const e = NOTIFY.ensayo({ canal: c, texto: textoDe(c), editarId: c === 'telegram' ? editarId : null, mail: noche.mail });
+      if (e.salida) console.log(`— ${e.salida} (ensayo: no se mandó nada ni se escribió el snapshot)`);
+      if (e.codigo !== 0) { console.error(limpiar(`${c}: ${e.error}`)); codigo = 3; }
+    }
+    return codigo;
   }
 
-  const intento = canal ? NOTIFY.entregar({ canal, texto: final, editarId })
-    : { canal: null, entregado: false, message_id: null, editado: false, motivo: sinCanal, nota: null };
+  // cada canal con su texto: Telegram (que edita) y los demás, por separado sólo si sus textos difieren
+  const envio = () => {
+    if (finalOtros === null) return NOTIFY.avisar({ canales, texto: final, editarId, mail: noche.mail });
+    const tg = NOTIFY.avisar({ canales: ['telegram'], texto: final, editarId, mail: noche.mail });
+    const resto = NOTIFY.avisar({ canales: canales.filter((c) => c !== 'telegram'), texto: finalOtros, mail: noche.mail });
+    return { resultados: [...tg.resultados, ...resto.resultados] };
+  };
+  const intento = canal ? resultadoDeLaNoche(envio(), canal)
+    : { canal: null, entregado: false, message_id: null, editado: false, motivo: sinCanal, nota: null, canales: [] };
   const resumen = {
+    // una lista vacía en el perfil: no se manda, y no es un fallo (entregado() lo lee así)
+    ...(canal === null && !noche.motivo ? { sin_canales: true } : {}),
     canal: intento.canal,
+    canales: intento.canales,
     message_id: intento.message_id,
     editado: a.fuente === 'vigilante' ? intento.editado : null,
     entregado_el: intento.entregado ? new Date().toISOString() : null,
@@ -1013,17 +1047,75 @@ function entregar(a) {
     return 3;
   }
   if (intento.entregado) {
-    console.log(`✅ resumen de ${a.fuente} ${a.hoy} entregado por ${intento.canal} (${intento.editado ? 'editado' : 'mensaje nuevo'}${intento.message_id !== null ? `, message_id ${intento.message_id}` : ''})${intento.nota ? ` — ${intento.nota}` : ''}`);
+    console.log(`✅ resumen de ${a.fuente} ${a.hoy} entregado por ${intento.canal} (${intento.editado ? 'editado' : 'mensaje nuevo'}${intento.message_id !== null ? `, message_id ${intento.message_id}` : ''})${intento.nota ? ` — ${limpiar(intento.nota)}` : ''}`);
     return 0;
   }
+  // una lista vacía en el perfil es «ningún canal»: no se manda, y no es un error
+  if (canal === null && !noche.motivo) { console.log(`ℹ️ resumen de ${a.fuente} ${a.hoy}: ${sinCanal}; no se mandó`); return 0; }
   console.error(`🔴 resumen de ${a.fuente} ${a.hoy} NO se entregó: ${limpiar(intento.motivo)}`);
   return 3;
+}
+
+/**
+ * Lo que dejó el envío por cada canal, en la forma de la constancia: `canal`, `message_id` y `editado` son los del
+ * canal que decide la edición (Telegram, si está) o, si ése falló, los del primero que salió; `canales` trae cada uno.
+ * Un canal que falló con otro que salió va en la nota: el resumen se entregó, y se dice cuál no.
+ */
+function resultadoDeLaNoche(r, canal) {
+  const salio = r.resultados.filter((x) => x.entregado);
+  const fallo = r.resultados.filter((x) => !x.entregado);
+  const principal = salio.find((x) => x.canal === canal) || salio[0] || r.resultados.find((x) => x.canal === canal) || r.resultados[0];
+  const motivos = fallo.map((x) => `${x.canal}: ${x.motivo}`).join(' · ');
+  const notas = [...r.resultados.filter((x) => x.nota).map((x) => `${x.canal}: ${x.nota}`), ...(salio.length && fallo.length ? [`no salió por ${motivos}`] : [])];
+  return {
+    canal: principal ? principal.canal : canal, entregado: salio.length > 0,
+    message_id: principal && principal.entregado ? principal.message_id : null, editado: Boolean(principal && principal.entregado && principal.editado),
+    motivo: salio.length ? null : (r.resultados.length === 1 ? r.resultados[0].motivo : motivos),
+    nota: notas.length ? notas.join(' · ') : null,
+    canales: r.resultados.map((x) => ({ canal: x.canal, entregado: x.entregado, motivo: x.motivo ? limpiar(x.motivo) : null })),
+  };
+}
+
+/**
+ * El perfil del equipo para la noche: `{ archivo, problema }`. El que pasó quien llama (`--profile`), o el que se baja
+ * del repo que declara `team-repos.json → profile` (`--team-repos` y `--clone-dir`, con la credencial de CLONE_TOKEN,
+ * como el barrido de retrospectivas). Sin ninguna de las dos opciones, ninguno: la noche usa el canal de operations.json.
+ */
+function perfilDeLaNoche(a) {
+  if (a.profile) return { archivo: path.resolve(a.profile), problema: null };
+  if (!a.teamRepos) return { archivo: null, problema: null };
+  try {
+    const TR = require('../../lib/team-repos.js');
+    const r = TR.load(a.teamRepos);
+    if (!r.ok) return { archivo: null, problema: 'team-repos.json no se pudo leer' };
+    if (!r.data.profile) return { archivo: null, problema: 'team-repos.json no declara el repo del perfil' };
+    if (!a.cloneDir) return { archivo: null, problema: 'falta --clone-dir para bajarlo' };
+    const RS = require('../../metrics/retro-sweep.js');
+    const o = RS.obtain({ nombre: r.data.profile.repo, fuente: TR.url(r.data.profile) }, a.cloneDir);
+    if (!o.dir) return { archivo: null, problema: RS.clean(o.motivo) };
+    for (const nombre of ['team-profile.json', 'perfil-equipo.json']) {
+      const g = spawnSync('git', ['-C', o.dir, 'show', `${o.ref}:${nombre}`], { encoding: 'utf8', windowsHide: true, timeout: 60000 });
+      if (g.status !== 0) {
+        // que el archivo no esté en main es probar el otro nombre; cualquier otra falla de git se dice como tal
+        if (/does not exist|exists on disk, but not in/i.test(String(g.stderr || ''))) continue;
+        const porque = String(g.stderr || '').trim().split('\n')[0] || (g.error && (g.error.code || g.error.message)) || `git salió ${g.status}`;
+        return { archivo: null, problema: `git no pudo leer el perfil (${RS.clean(porque)})` };
+      }
+      const archivo = path.join(a.cloneDir, `perfil-de-la-noche-${nombre}`);
+      fs.writeFileSync(archivo, g.stdout);
+      return { archivo, problema: null };
+    }
+    return { archivo: null, problema: 'el repo del perfil no tiene team-profile.json en main' };
+  } catch (e) {
+    return { archivo: null, problema: `no se pudo bajar (${recortar((e && e.code) || (e && e.message) || String(e), 80)})` };
+  }
 }
 
 // ── CLI ────────────────────────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
   const a = { cmd: argv[0], fuente: null, hoy: null, out: null, pending: null, config: null, resumenConfig: null,
-    vigOut: null, depsOut: null, extra: null, retros: null, weekly: null, runs: null, operations: null, siteCheck: null, siteUpdate: null, json: false, dryRun: false, ayuda: false, error: null };
+    vigOut: null, depsOut: null, extra: null, retros: null, weekly: null, runs: null, operations: null, profile: null, teamRepos: null, cloneDir: null,
+    siteCheck: null, siteUpdate: null, json: false, dryRun: false, ayuda: false, error: null };
   const valor = (i) => { if (i >= argv.length || String(argv[i]).startsWith('--')) { a.error = `falta el valor de ${argv[i - 1]}`; return null; } return argv[i]; };
   for (let i = 1; i < argv.length; i++) {
     const v = argv[i];
@@ -1040,6 +1132,9 @@ function parseArgs(argv) {
     else if (v === '--weekly') a.weekly = valor(++i);
     else if (v === '--runs') a.runs = valor(++i);
     else if (v === '--operations') a.operations = valor(++i);
+    else if (v === '--profile') a.profile = valor(++i);
+    else if (v === '--team-repos') a.teamRepos = valor(++i);
+    else if (v === '--clone-dir') a.cloneDir = valor(++i);
     else if (v === '--site-check') a.siteCheck = valor(++i);
     else if (v === '--site-update') a.siteUpdate = valor(++i);
     else if (v === '--json') a.json = true;
@@ -1053,7 +1148,8 @@ function parseArgs(argv) {
 function uso() {
   console.error('uso: daily-summary.js build|deliver --source dependencies|vigilante --today <YYYY-MM-DD> [--json] [--dry-run]\n' +
     '       [--out <dir>] [--pending <dir>] [--config <repos.json>] [--summary-config <summary.json>] [--watcher-out <dir>] [--deps-out <dir>] [--extra <archivo>] [--retros <informe de retro-sweep.js>] [--weekly <informe de weekly-review.js>] [--runs <.advisors/pipeline-runs>]\n' +
-    '       [--operations <operations.json>] [--site-check <resultado de check-deploy.js>] [--site-update <resultado de update-site.js>]');
+    '       [--operations <operations.json>] [--site-check <resultado de check-deploy.js>] [--site-update <resultado de update-site.js>]\n' +
+    '       [--profile <team-profile.json> | --team-repos <team-repos.json> --clone-dir <dir>]');
 }
 
 // El nombre de la fuente en la línea de comandos (en inglés) → el de adentro, que no cambia: nombra los

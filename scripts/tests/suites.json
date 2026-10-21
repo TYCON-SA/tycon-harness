@@ -2047,6 +2047,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 7.40: los avisos por varios canales — el perfil elige los canales (lista vacía = ninguno; sin lista, Telegram como antes), la sesión usa las credenciales del dev y la noche las del servidor, el correo por un servidor SMTP local, un canal que falla no frena a los otros, la noche cae al canal de operations.json sin la lista o sin poder leer el perfil (y el resumen lo dice), y ninguna otra pieza llama a un canal (la grabadora de instintos, sin el token en la línea de comandos). Servidores locales en otro proceso; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/notify-channels.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la imagen del sitio, armada de verdad: con un volumen con nombre NUEVO montado en /data (el comando de la guía), el usuario del sitio (node) crea la carpeta del clon y escribe su estado. Rojo previo (2026-10-16): el volumen nacía de root y el sitio se frenaba con Permission denied. Sin Docker se saltea y lo dice. Arma una imagen (~1-2 min).",
       "raiz": "arnes",
       "ruta": "tests/site-image.test.js",

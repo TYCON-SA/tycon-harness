@@ -345,8 +345,10 @@ jobs:
 
       - script: |
           # El resumen diario. Va después de los pedidos y antes de guardar: la constancia de entrega viaja en el mismo
-          # commit. Si no se entregó, la corrida queda naranja y guardar corre igual. El canal lo decide notify.js con
-          # operations.json → notify: sin `notify` no se manda, y la constancia lo dice.
+          # commit. Si no se entregó, la corrida queda naranja y guardar corre igual. Los canales los decide notify.js
+          # con el perfil del equipo (integrations.notify.channels), que este paso baja del repo que declara
+          # team-repos.json → profile con la identidad de la ejecución (necesita LECTURA sobre ese repo). Sin la lista, o sin
+          # poder bajar el perfil, el canal de operations.json → notify.channel, y el resumen lo dice.
           set -uo pipefail
           cd "$(Build.SourcesDirectory)"
           HOY="${HOY_NOCTURNO:-}"
@@ -393,6 +395,7 @@ jobs:
             --pending "$(Build.SourcesDirectory)/inbox/dependencies" \
             --operations "$(Build.SourcesDirectory)/operations.json" \
             --site-check "${AGENT_TEMPDIRECTORY:-${TMPDIR:-/tmp}}/site-check.json" \
+            --team-repos "$(Build.SourcesDirectory)/team-repos.json" --clone-dir "${AGENT_TEMPDIRECTORY:-${TMPDIR:-/tmp}}/retro-sweep" \
             --retros "$(Build.SourcesDirectory)/.dashboard/retros/barrido/retro-sweep-$HOY.json" 2> "$ERR"
           CODIGO=$?
           cat "$ERR" >&2
@@ -407,6 +410,11 @@ jobs:
           TELEGRAM_BOT_TOKEN: $(TELEGRAM_BOT_TOKEN)
           TYCON_TELEGRAM_CHAT_ID: $(TYCON_TELEGRAM_CHAT_ID)
           TYCON_NOTIFY_WEBHOOK_URL: $(TYCON_NOTIFY_WEBHOOK_URL)
+          TYCON_SLACK_WEBHOOK_URL: $(TYCON_SLACK_WEBHOOK_URL)
+          TYCON_TEAMS_WEBHOOK_URL: $(TYCON_TEAMS_WEBHOOK_URL)
+          TYCON_MAIL_USER: $(TYCON_MAIL_USER)
+          TYCON_MAIL_PASSWORD: $(TYCON_MAIL_PASSWORD)
+          CLONE_TOKEN: $(System.AccessToken)
 
       - script: |
           set -eu

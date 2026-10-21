@@ -371,7 +371,13 @@ test('T16 OperationsConfig_NotifyYSiteUrl @story-2.30 @ac-14', () => {
   assert.strictEqual(OPS.parse(JSON.stringify(opsWithExtra({ notify: { channel: 'slack', __doc: 'el webhook va en secretos' } }))).ok, true);
   assert.ok(OPS.KEYS.includes('notify'), 'la clave nace con su lector');
   assert.ok(OPS.SITE_KEYS.includes('url'));
-  assert.deepStrictEqual(OPS.NOTIFY_CHANNELS, ['telegram', 'slack', 'teams']);
+  assert.deepStrictEqual(OPS.NOTIFY_CHANNELS, ['telegram', 'slack', 'teams', 'mail']);
+  // el correo de la noche: el remitente y los destinatarios, direcciones de la organización (no credenciales)
+  const correo = OPS.parse(JSON.stringify(opsWithExtra({ notify: { channel: 'mail', mail_from: 'avisos@acme.example', mail_to: 'lead@acme.example, dev@acme.example' } })));
+  assert.deepStrictEqual(correo.problems, []);
+  assert.deepStrictEqual(OPS.parse(JSON.stringify(opsWithExtra({ notify: { mail_to: 'lead@acme.example' } }))).problems, [], 'sin canal viejo: los canales los elige el perfil');
+  assert.deepStrictEqual(OPS.parse(JSON.stringify(opsWithExtra({ notify: { channel: 'mail', mail_to: 'no-es-correo' } }))).problems.map((p) => p.path), ['notify.mail_to']);
+  assert.deepStrictEqual(OPS.parse(JSON.stringify(opsWithExtra({ notify: { channel: 'mail', mail_to: '' } }))).problems.map((p) => p.path), ['notify.mail_to']);
 });
 
 test('T17 OperationsConfig_NotifySinSecretos @story-2.30 @ac-14', () => {

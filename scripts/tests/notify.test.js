@@ -166,7 +166,8 @@ test('T19 Notify_SlackYTeamsPorWebhook_SinDireccionALaVista @story-2.30 @ac-15',
   for (const ausente of [undefined, '', '$(TYCON_NOTIFY_WEBHOOK_URL)']) {
     r = entregar({ canal: 'slack', texto: 'x' }, entorno(ausente === undefined ? {} : { TYCON_NOTIFY_WEBHOOK_URL: ausente }));
     assert.strictEqual(r.resultado.entregado, false);
-    assert.strictEqual(r.resultado.motivo, 'falta la dirección del webhook (TYCON_NOTIFY_WEBHOOK_URL)');
+    // la variable de cada canal, o la del único webhook de antes
+    assert.strictEqual(r.resultado.motivo, 'falta la dirección del webhook (TYCON_SLACK_WEBHOOK_URL o TYCON_NOTIFY_WEBHOOK_URL)');
   }
   // sin conexión (un puerto cerrado)
   r = entregar({ canal: 'slack', texto: 'x' }, entorno({ TYCON_NOTIFY_WEBHOOK_URL: `http://127.0.0.1:9${RUTA_SECRETA}` }));

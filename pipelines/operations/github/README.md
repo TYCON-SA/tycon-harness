@@ -155,12 +155,17 @@ En el repo de operaciones, *Settings → Secrets and variables → Actions*:
 | Variable | `METRICS_OWNERS` | Los dueños cuyos repos miden las métricas, separados por `;`. Vacía: el dueño de este repo |
 | Variable | `METRICS_REPO_PREFIX` | Si la organización mezcla repos de otros equipos: sólo los que empiezan así |
 | Variable y secreto | `TYCON_TELEGRAM_CHAT_ID` y `TELEGRAM_BOT_TOKEN` | El resumen diario de dependencias, si el canal es `telegram`. Usá un bot dedicado al aviso |
-| Secreto | `TYCON_NOTIFY_WEBHOOK_URL` | El resumen diario, si el canal es `slack` o `teams`: la dirección del webhook entrante. La dirección ES la credencial |
+| Secretos | `TYCON_SLACK_WEBHOOK_URL` y `TYCON_TEAMS_WEBHOOK_URL` | El resumen diario, si se eligió `slack` o `teams`: la dirección del webhook entrante de cada uno. La dirección ES la credencial. `TYCON_NOTIFY_WEBHOOK_URL` es el nombre de antes, de cuando había un solo canal: sigue valiendo |
+| Secretos | `TYCON_MAIL_USER` y `TYCON_MAIL_PASSWORD` | El resumen diario, si se eligió `mail`: el usuario y la clave del servidor de correo del perfil. El remitente y los destinatarios van en `operations.json → notify.mail_from` y `mail_to` |
+| Secreto | `TYCON_PROFILE_READ_TOKEN` | **Paso del alta**: un permiso de sólo lectura (*Contents: read*) sobre el repo del perfil del equipo (`team-repos.json → profile`). De ahí saca la noche los canales del aviso. Sin él, el resumen sale por el canal de `operations.json` y dice «no se pudo leer el perfil del equipo» |
 
-**El canal del aviso.** Lo elige `operations.json → notify`: `{ "channel": "telegram" }`, `"slack"` o `"teams"`. **Sin
-`notify`, no se manda**, y la constancia de la noche lo dice («canal sin configurar en operations.json → notify»). El
-aviso lleva sólo cantidades y, si `operations.json → site.url` está y el sitio pasó esa mañana la prueba sin sesión, el
-enlace al sitio.
+**Los canales del aviso.** Los elige la organización en el perfil del equipo, `integrations.notify.channels` (desde el
+sitio: Configuración → Integraciones → «Avisos»): uno o más de `telegram`, `slack`, `teams` y `mail`; una lista vacía no
+manda nada. Sin la lista, o sin poder leer el perfil, vale el nombre de antes, `operations.json → notify`:
+`{ "channel": "telegram" }`, `"slack"`, `"teams"` o `"mail"`, y si fue por no poder leer el perfil el resumen lo dice.
+**Sin ninguno de los dos, no se manda**, y la constancia de la noche lo dice («canal sin configurar en operations.json →
+notify»). El aviso lleva sólo cantidades y, si `operations.json → site.url` está y el sitio pasó esa mañana la prueba sin
+sesión, el enlace al sitio.
 
 **La protección de `operations.json` y de los workflows.** La regla de la organización es **«todo automático»**: lo que
 guarda la noche y lo que propone el sitio entra a `main` sin que lo apruebe una persona. Es la misma que dicen la guía
