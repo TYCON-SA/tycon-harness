@@ -297,17 +297,34 @@ function ubicarRepoDeGithub(entrada, raiz, directo) {
 // ── la corrida ─────────────────────────────────────────────────────────────────────────────────
 
 function auditarRepo(entrada, raiz, guion, hoy) {
-  const ubic = ubicarRepo(entrada, raiz);
-  const dir = ubic.dir;
+  const p = prepararPublicado(entrada, raiz);
+  if (!p.pub) return { ...p.base, medido: false, motivo_no_medido: p.motivo };
+  try {
+    return auditarEn(p.base, p.pub, entrada, guion, hoy);
+  } finally {
+    p.pub.limpiar();
+  }
+}
+
+/** La parte común de una entrada medida: producto, ruta, tipo y su subruta si la tiene. */
+function baseDe(entrada) {
   const base = { producto: entrada.producto, ruta: entrada.ruta, tipo: entrada.tipo };
   if (entrada.subruta) base.subruta = entrada.subruta;
+  return base;
+}
+
+/** Ubica el repo de una entrada y prepara lo publicado. Devuelve `{ base, pub }` o `{ base, motivo }` (no medido). */
+function prepararPublicado(entrada, raiz) {
+  const ubic = ubicarRepo(entrada, raiz);
+  const dir = ubic.dir;
+  const base = baseDe(entrada);
   // 🔴 Si el repo no estaba donde decía `ruta`, el informe lo dice: un número medido en otra
   // carpeta que la declarada no puede parecer medido en la declarada.
   if (ubic.reubicado) base.carpeta_real = dir;
   if (!fs.existsSync(dir)) {
     // 🔴 Un repo que no está en la máquina NO se lee como "coincide" ni como "limpio": se cuenta
     // aparte y se dice. Misma regla que check-product-parity.js.
-    return { ...base, medido: false, motivo_no_medido: `el repo no está en ${dir}` };
+    return { base, motivo: `el repo no está en ${dir}` };
   }
   // 🔴 SE AUDITA LO PUBLICADO, NO LA RAMA QUE QUEDÓ EN EL DISCO.
   //
@@ -323,34 +340,165 @@ function auditarRepo(entrada, raiz, guion, hoy) {
   // `origin/main`, o que no es un repo git, no se audita desde el disco "por las dudas": eso sería
   // auditar la rama equivocada, y en silencio.
   const pub = arbolPublicado(dir);
-  if (!pub.ok) return { ...base, medido: false, motivo_no_medido: `no se pudo preparar lo publicado (origin/main): ${pub.motivo}` };
-  base.rama_auditada = 'origin/main';
-  base.commit_auditado = pub.commit;
-  base.es_lo_publicado = true;
-  base.trajo_lo_ultimo = pub.fetch;   // false = se auditó el origin/main que había en el disco
+  if (!pub.ok) return { base, motivo: `no se pudo preparar lo publicado (origin/main): ${pub.motivo}` };
+  return { base: { ...base, ...datosDeLoPublicado(pub) }, pub };
+}
 
-  try {
-    // 🔴 SUBCARPETA: el árbol se prepara desde la RAÍZ (`ruta`) y lo que se audita es
-    // `subruta` adentro de ese árbol. Si la subcarpeta no está en lo publicado, es NO MEDIDO con el
-    // motivo — nunca "limpio", y nunca la raíz por consuelo: eso sería un número de otra cosa con
-    // la etiqueta del gateway, que es exactamente la mentira que este campo evita.
-    let dirAuditado = pub.dir;
-    if (entrada.subruta) {
-      const sub = path.resolve(pub.dir, entrada.subruta);
-      if (!(sub + path.sep).startsWith(pub.dir + path.sep)) {
-        return { ...base, medido: false, motivo_no_medido: `la subruta "${entrada.subruta}" sale del repo: no se audita` };
-      }
-      let esCarpeta = false;
-      try { esCarpeta = fs.statSync(sub).isDirectory(); } catch (_) { esCarpeta = false; }
-      if (!esCarpeta) {
-        return { ...base, medido: false, motivo_no_medido: `la subruta "${entrada.subruta}" no existe en origin/main (${pub.commit.slice(0, 8)}) — no se audita la raíz en su lugar` };
-      }
-      dirAuditado = sub;
+function datosDeLoPublicado(pub) {
+  // trajo_lo_ultimo: false = se auditó el origin/main que había en el disco
+  return { rama_auditada: 'origin/main', commit_auditado: pub.commit, es_lo_publicado: true, trajo_lo_ultimo: pub.fetch };
+}
+
+/** Audita una entrada adentro de un árbol publicado ya preparado (la raíz o su `subruta`). */
+function auditarEn(base, pub, entrada, guion, hoy) {
+  // 🔴 SUBCARPETA: el árbol se prepara desde la RAÍZ (`ruta`) y lo que se audita es
+  // `subruta` adentro de ese árbol. Si la subcarpeta no está en lo publicado, es NO MEDIDO con el
+  // motivo — nunca "limpio", y nunca la raíz por consuelo: eso sería un número de otra cosa con
+  // la etiqueta del gateway, que es exactamente la mentira que este campo evita.
+  let dirAuditado = pub.dir;
+  if (entrada.subruta) {
+    const sub = path.resolve(pub.dir, entrada.subruta);
+    if (!(sub + path.sep).startsWith(pub.dir + path.sep)) {
+      return { ...base, medido: false, motivo_no_medido: `la subruta "${entrada.subruta}" sale del repo: no se audita` };
     }
-    return auditarArbol({ ...base, dirAuditado }, entrada, guion, hoy);
-  } finally {
-    pub.limpiar();
+    let esCarpeta = false;
+    try { esCarpeta = fs.statSync(sub).isDirectory(); } catch (_) { esCarpeta = false; }
+    if (!esCarpeta) {
+      return { ...base, medido: false, motivo_no_medido: `la subruta "${entrada.subruta}" no existe en origin/main (${pub.commit.slice(0, 8)}) — no se audita la raíz en su lugar` };
+    }
+    dirAuditado = sub;
   }
+  return auditarArbol({ ...base, dirAuditado }, entrada, guion, hoy);
+}
+
+// ── cada formulario ────────────────────────────────────────────────────────────────────────────
+//
+// Un repo de formularios tiene un `package-lock.json` POR FORMULARIO. Mirar sólo el de la raíz deja afuera
+// una alta en un formulario, y el resumen dice «nada esperando decisión» mientras el análisis de un pull
+// request la encuentra. Declarar cada formulario en repos.json no alcanza: el día que nace uno nuevo nadie
+// se acuerda, y queda afuera sin que nada lo diga. La lista sale del repo publicado.
+//
+// Se descubre sólo en un repo cuya RAÍZ está declarada como npm: un repo que sólo declara subcarpetas
+// puede tener la raíz de otro tipo (un backend nuget), y una raíz npm descubierta chocaría con su etiqueta.
+
+/** `path` de una exclusión o de una subruta, comparable: sin `./` adelante ni `/` al final. */
+const carpetaNormal = (c) => String(c || '').trim().replace(/^\.\/+/, '').replace(/\/+$/, '');
+
+/** Lo que está mal en las `exclude` de repos.json: cada una necesita `path` y `reason`. Lista vacía = bien. */
+function problemasDeExclusiones(cfg) {
+  const P = [];
+  for (const r of (cfg && cfg.repos) || []) {
+    if (r.exclude === undefined) continue;
+    const et = etiqueta(r);
+    if (!Array.isArray(r.exclude)) { P.push(`${et}: "exclude" tiene que ser una lista de { "path", "reason" }`); continue; }
+    r.exclude.forEach((x, i) => {
+      const ruta = x && typeof x.path === 'string' ? carpetaNormal(x.path) : '';
+      const motivo = x && typeof x.reason === 'string' ? x.reason.trim() : '';
+      if (!ruta) P.push(`${et}: exclude[${i}] sin "path"`);
+      else if (!motivo) P.push(`${et}: exclude[${i}] ("${ruta}") sin "reason" — una carpeta no se deja de mirar sin decir por qué`);
+    });
+  }
+  return P;
+}
+
+/**
+ * Las carpetas con `package-lock.json` en un commit, fuera de `node_modules` ('' es la raíz). `raras` son las que
+ * tienen un carácter de control en el nombre: git lo permite, y escrita en una ficha una carpeta con un salto de línea
+ * agregaría claves. No se auditan: salen NO MEDIDO.
+ */
+function carpetasConLockfile(dir, commit) {
+  const r = spawnSync('git', ['-C', dir, 'ls-tree', '-r', '-z', '--name-only', commit], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 120000 });
+  if (r.status !== 0) return { ok: false, motivo: `git ls-tree falló: ${(r.stderr || (r.error && r.error.message) || '').trim().slice(0, 200)}` };
+  const todas = [...new Set(String(r.stdout || '').split('\0').filter(Boolean)
+    .filter((f) => path.posix.basename(f) === 'package-lock.json' && !f.split('/').includes('node_modules'))
+    .map((f) => (path.posix.dirname(f) === '.' ? '' : path.posix.dirname(f))))].sort();
+  const rara = (c) => /[\x00-\x1f\x7f]/.test(c);
+  return { ok: true, carpetas: todas.filter((c) => !rara(c)), raras: todas.filter(rara) };
+}
+
+/**
+ * Un repo con la raíz npm: la raíz, sus subcarpetas declaradas y cada carpeta con lockfile que el repo
+ * publicado trae, en UN árbol temporal. Devuelve `{ resultados, carpetas }`; `carpetas` es la cuenta del
+ * resumen: `{ repo, miradas, total, excluidas, sin_efecto }` (`total: null` = no se pudo contar). Una subcarpeta
+ * apagada a propósito (`activo: false`) no vuelve por el descubrimiento: no se audita ni se cuenta.
+ */
+function auditarRepoConFormularios(entrada, declaradas, apagadas, raiz, guion, hoy) {
+  const pedidas = (entrada.exclude || []).map((x) => ({ path: carpetaNormal(x.path), reason: String(x.reason).trim() }));
+  const cuenta = { repo: etiqueta(entrada), miradas: 0, total: null, excluidas: [], sin_efecto: [] };
+  const p = prepararPublicado(entrada, raiz);
+  if (!p.pub) {
+    const resultados = [entrada, ...declaradas].map((e) => ({ ...baseDe(e), ...(p.base.carpeta_real ? { carpeta_real: p.base.carpeta_real } : {}), medido: false, motivo_no_medido: p.motivo }));
+    return { resultados, carpetas: cuenta };
+  }
+  try {
+    const comun = datosDeLoPublicado(p.pub);
+    if (p.base.carpeta_real) comun.carpeta_real = p.base.carpeta_real;
+    const en = (e) => auditarEn({ ...baseDe(e), ...comun }, p.pub, e, guion, hoy);
+    const resultados = [en(entrada), ...declaradas.map(en)];
+    const lista = carpetasConLockfile(p.pub.dir, p.pub.commit);
+    if (!lista.ok) {
+      // 🔴 No poder listar no es «no hay formularios»: se dice, con la raíz medida igual.
+      resultados.push({ ...baseDe(entrada), ...comun, subruta: '*', medido: false, motivo_no_medido: `no se pudieron listar los lockfiles de los formularios: ${lista.motivo}` });
+      return { resultados, carpetas: cuenta };
+    }
+    const declaradasPorCarpeta = new Map(declaradas.map((e, i) => [carpetaNormal(e.subruta), resultados[i + 1]]));
+    const apagadasSet = new Set(apagadas.map((e) => carpetaNormal(e.subruta)));
+    // 🔴 Una exclusión se cuenta como tal sólo si se aplicó: sobre una carpeta sin lockfile, o declarada como entrada
+    // (que se mira igual), no tuvo efecto y se dice. Si no, el informe diría «excluida» de algo que se auditó.
+    const conLockfile = new Set(lista.carpetas);
+    for (const x of pedidas) {
+      if (declaradasPorCarpeta.has(x.path) || x.path === '') cuenta.sin_efecto.push({ ...x, motivo: 'la carpeta es una entrada declarada: se mira igual' });
+      else if (!conLockfile.has(x.path)) cuenta.sin_efecto.push({ ...x, motivo: 'no hay package-lock.json en esa carpeta' });
+      else cuenta.excluidas.push(x);
+    }
+    const fuera = new Set(cuenta.excluidas.map((x) => x.path));
+    const miradas = [];
+    for (const c of lista.raras) {
+      const r = { ...baseDe(entrada), ...comun, subruta: JSON.stringify(c).slice(1, -1), medido: false,
+        motivo_no_medido: 'el nombre de la carpeta tiene caracteres de control: no se audita (escrito en una ficha agregaría líneas)' };
+      resultados.push(r);
+      miradas.push(r);
+    }
+    for (const c of lista.carpetas) {
+      if (c === '') { miradas.push(resultados[0]); continue; }
+      if (declaradasPorCarpeta.has(c)) { miradas.push(declaradasPorCarpeta.get(c)); continue; }
+      if (fuera.has(c) || apagadasSet.has(c)) continue;
+      // La carpeta nace de la entrada de la raíz: mismo producto y proyecto (ado/github). `proyecto` es la opción de
+      // nuget y pip, y `exclude` es de la raíz: no se heredan.
+      const { proyecto, exclude, ...resto } = entrada;
+      const r = en({ ...resto, subruta: c });
+      r.descubierta = true;
+      resultados.push(r);
+      miradas.push(r);
+    }
+    cuenta.total = miradas.length;
+    cuenta.miradas = miradas.filter((r) => r.medido).length;
+    return { resultados, carpetas: cuenta };
+  } finally {
+    p.pub.limpiar();
+  }
+}
+
+/** Todas las entradas activas: las raíces npm descubren sus formularios; el resto, como siempre. */
+function auditarTodo(todas, raiz, guion, hoy) {
+  const activos = todas.filter((r) => r.activo !== false);
+  const esRaizNpm = (e) => e.tipo === 'npm' && !e.subruta;
+  const rutasDescubiertas = new Set(activos.filter(esRaizNpm).map((e) => e.ruta));
+  const repos = [];
+  const carpetas = [];
+  for (const e of activos) {
+    if (esRaizNpm(e)) {
+      const subDe = (x) => x !== e && x.ruta === e.ruta && x.tipo === 'npm' && x.subruta;
+      const declaradas = activos.filter(subDe);
+      const apagadas = todas.filter((x) => subDe(x) && x.activo === false);
+      const r = auditarRepoConFormularios(e, declaradas, apagadas, raiz, guion, hoy);
+      repos.push(...r.resultados);
+      carpetas.push(r.carpetas);
+    } else if (!(rutasDescubiertas.has(e.ruta) && e.tipo === 'npm')) {
+      repos.push(auditarRepo(e, raiz, guion, hoy));
+    }
+  }
+  return { repos, carpetas };
 }
 
 /**
@@ -465,8 +613,18 @@ function agruparPresencias(repos) {
  * `js-yaml` en Globex y en Acme son dos fichas porque el pedido de trabajo es uno por
  * proyecto). La reusa work-items.js — por eso va en `module.exports`.
  */
+/**
+ * La entrada de repos.json de una etiqueta. Una carpeta descubierta no está en la lista: es de la
+ * entrada npm de la raíz de su repo, y su proyecto es ése. Sin esto, sus pedidos irían a un proyecto inventado.
+ */
+function entradaDe(etiquetaRepo, cfg) {
+  const repos = (cfg && cfg.repos) || [];
+  return repos.find((r) => etiqueta(r) === etiquetaRepo)
+    || repos.find((r) => r.tipo === 'npm' && !r.subruta && String(etiquetaRepo).startsWith(`${etiqueta(r)}/`));
+}
+
 function proyectoDe(etiquetaRepo, cfg) {
-  const e = ((cfg && cfg.repos) || []).find((r) => etiqueta(r) === etiquetaRepo);
+  const e = entradaDe(etiquetaRepo, cfg);
   // En GitHub el «proyecto» es el repo (`github: <dueño>/<repo>`): un issue vive en un repo, como un Bug en
   // su proyecto. Una ficha de GitHub es (paquete, repo).
   if (e && !e.ado && e.github) return String(e.github);
@@ -485,7 +643,7 @@ function proyectoDe(etiquetaRepo, cfg) {
  * proyecto inexistente que fallaría todas las noches.
  */
 function proyectoAzureDe(etiquetaRepo, cfg) {
-  const e = ((cfg && cfg.repos) || []).find((r) => etiqueta(r) === etiquetaRepo);
+  const e = entradaDe(etiquetaRepo, cfg);
   // El lugar al que se le PIDE, también en GitHub (el repo `<dueño>/<repo>`, donde se abre el issue). El
   // nombre se conserva: lo usan los guiones de pedidos de las dos plataformas, y cada uno rechaza la entrada ajena.
   if (e && !e.ado && e.github) return String(e.github);
@@ -494,8 +652,12 @@ function proyectoAzureDe(etiquetaRepo, cfg) {
   try { return decodeURIComponent(crudo); } catch { return crudo; }
 }
 
-/** El snapshot completo más reciente ANTERIOR a `hoy`. Si no hay, la corrida es la línea base. */
-function snapshotAnterior(outDir, hoy) {
+/**
+ * El snapshot completo más reciente ANTERIOR a `hoy`. Si no hay, la corrida es la línea base.
+ * Con `{ completa: false }`, el más reciente aunque haya quedado incompleto: sirve para saber qué carpetas ya
+ * se vieron, no para comparar hallazgos.
+ */
+function snapshotAnterior(outDir, hoy, { completa = true } = {}) {
   if (!fs.existsSync(outDir)) return null;
   const files = fs.readdirSync(outDir)
     .filter((f) => /^dependencias-\d{4}-\d{2}-\d{2}\.json$/.test(f))
@@ -505,7 +667,7 @@ function snapshotAnterior(outDir, hoy) {
     const j = leerJson(path.join(outDir, files[i]), null);
     // 🔴 Sólo una corrida COMPLETA sirve de línea base. Comparar contra una noche que sólo pudo
     // mirar 2 de los repos declarados haría ver el resto como "novedad" y abriría un aluvión de avisos.
-    if (j && j.corrida_completa) return j;
+    if (j && (j.corrida_completa || !completa)) return j;
   }
   return null;
 }
@@ -513,6 +675,11 @@ function snapshotAnterior(outDir, hoy) {
 function correr(a) {
   const cfg = leerJson(a.config, null);
   if (!cfg) { console.error(`error: no se pudo leer la configuración ${a.config}`); return 2; }
+  const malas = problemasDeExclusiones(cfg);
+  if (malas.length) {
+    for (const m of malas) console.error(`error: ${a.config}: ${m}`);
+    return 2;
+  }
   const hoy = a.hoy || new Date().toISOString().slice(0, 10);
   const raiz = expandir(a.raiz || cfg.raiz_por_defecto || '~/SourceCode');
   const pres = cfg.presupuesto_de_ruido || {};
@@ -524,7 +691,7 @@ function correr(a) {
   // ruta (su forma no cambia), pero la ficha dice `producto/repo`, y hay que comparar eso.
   const apagadosEtiq = new Set((cfg.repos || []).filter((r) => r.activo === false).map(etiqueta));
 
-  const repos = activos.map((e) => auditarRepo(e, raiz, a.guion, hoy));
+  const { repos, carpetas } = auditarTodo(cfg.repos || [], raiz, a.guion, hoy);
   const medidos = repos.filter((r) => r.medido);
   const noMedidos = repos.filter((r) => !r.medido);
   // "Completa" quiere decir que se pudo mirar TODO lo activo. Una corrida a medias sigue siendo
@@ -550,9 +717,27 @@ function correr(a) {
 
   // A anunciar: lo detectado que todavía no se anunció. Los que el tope postergó anoche entran
   // PRIMERO hoy (llevan más noches encima) — por eso el orden es por noches y después gravedad.
+  // 🔴 LA PRIMERA NOCHE DE UNA CARPETA DESCUBIERTA NO ES NOVEDAD. Encender decenas de formularios de golpe
+  // traería semanas de altas viejas por el tope de ruido. Las altas que
+  // sólo aparecen en carpetas nuevas no se anuncian esa noche: el resumen dice cuántas hay por repo y quedan sin
+  // anunciar, así que la noche siguiente entran con el tope y primero (ya suman noches). Una crítica no espera.
+  // Las carpetas ya vistas salen de la última noche aunque haya quedado incompleta: con un formulario que nunca se
+  // puede auditar, ninguna noche es completa, y las altas de los demás formularios nuevos esperarían para siempre.
+  const ultima = previo ? (snapshotAnterior(a.out, hoy, { completa: false }) || previo) : null;
+  const vistasAntes = new Set(ultima ? [...(previo.repos || []), ...(ultima.repos || [])].map(etiqueta) : []);
+  const nuevas = new Set(previo ? repos.filter((r) => r.descubierta && !vistasAntes.has(etiqueta(r))).map(etiqueta) : []);
+  const enEspera = new Set(hallazgos
+    .filter((h) => h.nuevo && h.severidad !== 'critical' && h.repos.every((r) => nuevas.has(r)))
+    .map((h) => h.id));
+  for (const c of carpetas) {
+    const suyas = new Set([...nuevas].filter((et) => et.startsWith(`${c.repo}/`)));
+    c.nuevas = suyas.size;
+    c.altas_nuevas = hallazgos.filter((h) => h.repos.some((r) => suyas.has(r))).length;
+  }
+
   const orden = { critical: 2, high: 1 };
   const pendientesDeAnuncio = hallazgos
-    .filter((h) => !h.anunciado)
+    .filter((h) => !h.anunciado && !enEspera.has(h.id))
     .sort((x, y) => (y.noches - x.noches) || (orden[y.severidad] - orden[x.severidad]) || (y.repos.length - x.repos.length));
 
   // 🔴 ANTES DE CREAR NADA se busca en las tres carpetas: un hecho no puede tener dos fichas.
@@ -625,6 +810,12 @@ function correr(a) {
     repos_apagados: apagados,
     repos,
     no_medidos: noMedidos.map((r) => ({ ruta: rutaCompleta(r), motivo: r.motivo_no_medido })),
+    // Por repo con la raíz npm, cuántas carpetas con lockfile miró de cuántas, las excluidas con su
+    // motivo, y las nuevas de esta noche con sus altas/críticas. El resumen diario lo dice: así un hueco se ve.
+    carpetas,
+    // el total para el resumen, sin contar dos veces un hallazgo que aparece en carpetas nuevas de varios repos
+    graves_en_carpetas_nuevas: hallazgos.filter((h) => h.repos.some((r) => nuevas.has(r))).length,
+    primera_noche_de_carpeta: [...enEspera].sort(),
     hallazgos,
     // 🔴 `hallazgos` es lo que DESPIERTA a alguien (sin lo declarado). `presencias` es lo que HAY
     // en cada repo, declarado o no: es lo único con lo que se puede decidir si una ficha se
@@ -1350,7 +1541,16 @@ function motivoParaNoIgnorar(pedidos, volcado, hoy) {
 
 function imprimirCorrida(s, aAnunciar, postergados) {
   console.log(`Revisión nocturna de dependencias — ${s.fecha}`);
-  console.log(`Repos mirados: ${s.repos.filter((r) => r.medido).length}/${s.repos_activos}${s.repos_apagados.length ? ` (${s.repos_apagados.length} apagado[s] a propósito)` : ''}`);
+  // Con los formularios descubiertos hay más carpetas medidas que entradas: se cuenta sobre lo auditado.
+  console.log(`Repos mirados: ${s.repos.filter((r) => r.medido).length}/${s.repos.length}${s.repos_apagados.length ? ` (${s.repos_apagados.length} apagado[s] a propósito)` : ''}`);
+  if ((s.carpetas || []).length) {
+    console.log(`Carpetas con lockfile: ${s.carpetas.map((c) => (c.total === null ? `${c.repo} sin contar` : `${c.repo} ${c.miradas} de ${c.total}`)).join(' · ')}`);
+    for (const c of s.carpetas) for (const x of c.excluidas) console.log(`   ${c.repo}/${x.path} excluida: ${x.reason}`);
+    for (const c of s.carpetas) for (const x of c.sin_efecto || []) console.log(`   ⚠️ ${c.repo}/${x.path}: exclusión sin efecto — ${x.motivo}`);
+    for (const c of s.carpetas.filter((x) => x.nuevas)) {
+      console.log(`🆕 ${c.repo}: ${c.nuevas} carpeta(s) nueva(s), ${c.altas_nuevas} alta(s) o crítica(s) que nadie miraba — las altas entran a la cola desde mañana`);
+    }
+  }
   if (s.linea_base) console.log('🟡 Primera corrida: esto es la LÍNEA BASE. No se anuncia nada — no hay contra qué comparar.');
   else console.log(`Comparado contra ${s.comparado_contra}.`);
   for (const nm of s.no_medidos) console.log(`🚧 NO MEDIDO — ${nm.ruta}: ${nm.motivo}`);
@@ -1730,6 +1930,11 @@ Una entrada de repos.json puede llevar "subruta" (2026-09-05): "ruta" sigue sien
 —de ahí se prepara el árbol de origin/main— y se audita la subcarpeta adentro de ese árbol, con su
 propio lockfile y su propio vulnerabilidades-pendientes.json (caso: el gateway de mensajería de
 Acme, tools/chat-gateway). Si la subcarpeta no está en lo publicado: NO MEDIDO, nunca la raíz.
+
+En un repo cuya raíz es una entrada npm, la noche audita además cada carpeta con package-lock.json
+de origin/main, fuera de node_modules (cada formulario, con la etiqueta producto/repo/carpeta). Para
+no mirar una: "exclude": [{ "path": "<carpeta>", "reason": "<motivo>" }] en esa entrada; sin
+"reason" la corrida sale 2.
 
   --root <dir>     dónde están los repos (por defecto, el de repos.json)
   --out <dir>      dónde va el snapshot (por defecto .dashboard/dependencias)

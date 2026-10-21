@@ -565,10 +565,37 @@ function veredicto(fuente, rubros, cambios, fallos, cuando) {
   return recortar(partes.join(' · '), 120);
 }
 
-function componer({ fuente, rubros, cambios, base, fallos, comparadoCon, hoy, empezaron = [], modo = null }) {
+/**
+ * Cuántas carpetas con lockfile miró la noche, en cuántos repos y cuántos con hueco, y las nuevas de esa
+ * noche con sus altas (que no se anunciaron: entran a la cola desde la noche siguiente). Sólo cantidades, como el
+ * resto del texto (2.30, T21): el detalle por repo está en la foto. Va siempre que la foto lo trae: un hueco que no
+ * cambia de un día a otro no aparecería entre los cambios, y es justo el que hay que ver. Una foto de antes no trae nada.
+ */
+function lineasCarpetas(snap) {
+  const C = (snap && Array.isArray(snap.carpetas) ? snap.carpetas : []).filter((c) => c && typeof c === 'object');
+  if (!C.length) return [];
+  const contadas = C.filter((c) => Number.isInteger(c.total) && Number.isInteger(c.miradas));
+  const suma = (xs, k) => xs.reduce((n, c) => n + c[k], 0);
+  const notas = [];
+  const conHueco = contadas.filter((c) => c.miradas < c.total).length;
+  if (conHueco) notas.push(`${conHueco} con hueco`);
+  if (C.length > contadas.length) notas.push(`${C.length - contadas.length} sin contar`);
+  // sin ningún repo contado, «0 de 0» se leería como vacío y limpio: se dice que no se contó
+  const cuenta = contadas.length ? `${suma(contadas, 'miradas')} de ${suma(contadas, 'total')}` : 'sin contar';
+  if (!contadas.length) notas.length = 0;
+  const L = [`Carpetas: ${cuenta}, en ${C.length} repo(s)${notas.length ? ` (${notas.join(', ')})` : ''}`];
+  const conNuevas = C.filter((c) => Number.isInteger(c.nuevas) && c.nuevas > 0);
+  if (conNuevas.length) {
+    const graves = Number.isInteger(snap.graves_en_carpetas_nuevas) ? String(snap.graves_en_carpetas_nuevas) : '?';
+    L.push(`Carpetas nuevas: ${suma(conNuevas, 'nuevas')} en ${conNuevas.length} repo(s), ${graves} alta(s) o crítica(s) que nadie miraba`);
+  }
+  return L;
+}
+
+function componer({ fuente, rubros, cambios, base, fallos, comparadoCon, hoy, empezaron = [], modo = null, carpetas = [] }) {
   const cuando = comparadoCon === null ? null : comparadoCon === menosUnDia(hoy) ? 'ayer' : `el ${comparadoCon}`;
   const nombres = RUBROS[fuente];
-  const L = [veredicto(fuente, rubros, cambios, fallos, cuando)];
+  const L = [veredicto(fuente, rubros, cambios, fallos, cuando), ...carpetas];
   if (cambios === null) {
     L.push('Foto completa (sin ayer con qué comparar):');
     for (const n of nombres) L.push(`• ${detalle(n, rubros[n])}`);
@@ -667,7 +694,7 @@ function armar(a) {
   const comp = comparar(a.fuente, a.out, a.hoy, rubros);
   const dudas = dudasDeRevisores(a.runs, a.hoy);
   const base = texto({ fuente: a.fuente, rubros, cambios: comp.cambios, base: comp.base, fallos, comparadoCon: comp.comparado_con, hoy: a.hoy,
-    empezaron: comp.empezaron, modo: comp.modo });
+    empezaron: comp.empezaron, modo: comp.modo, carpetas: a.fuente === 'dependencias' ? lineasCarpetas(snap) : [] });
   // Sin dudas, o sin fuente, el texto no cambia: la fuente que falta se dice en `dudas_revisores.motivo`, no con un 0.
   const t = dudas.valor && dudas.valor.length ? `${base}\ndudas de revisores: ${dudas.valor.length}` : base;
   return { fuente: a.fuente, fecha: a.hoy, rubros, cambios: comp.cambios, cambios_motivo: comp.cambios_motivo,
@@ -702,7 +729,7 @@ function dependenciasDeHoy(a) {
       const fallos = Array.isArray(r.fallos) ? r.fallos.map(String)
         : fallosDependencias({ snap: s, dir: a.depsOut, hoy: a.hoy, vigOut: a.out });
       seccion = texto({ fuente: 'dependencias', rubros: r.rubros, cambios: c.cambios, base: c.base, fallos, comparadoCon: c.comparado_con, hoy: a.hoy,
-        empezaron: c.empezaron, modo: c.modo });
+        empezaron: c.empezaron, modo: c.modo, carpetas: lineasCarpetas(s) });
     } catch (e) {
       sinSeccion = `sus rubros no se pudieron volver a escribir (${recortar(e.message, 80)})`;
     }
