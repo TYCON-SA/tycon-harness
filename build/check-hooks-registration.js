@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * build/check-hooks-registration.js — paridad de REGISTRO de hooks Claude ↔ Codex
- * (Etapa E1, 2026-08-22; adelanta el check #2 de la Etapa H del plan codex-migration.md).
+ * (adelanta el check #2 de la Etapa H del plan codex-migration.md).
  *
  * El drift que ataca: el registro de hooks vive dos veces (settings.json de Claude vía
  * install-tycon-hooks.sh · hooks.json de Codex vía adapters/) y ese par es exactamente el tipo
@@ -57,10 +57,10 @@ function codexEntries(hooksJsonPath) {
   for (const p of (d.divergences || []).concat(d.pending_e2 || [])) {
     for (const e of out)
       if (JSON.stringify(p).includes(e.base)) pending.add(e.base);
-    // 🔴 Los `scripts` de la declaración entran DIRECTO (2026-08-25): el match de arriba sólo
+    // 🔴 Los `scripts` de la declaración entran DIRECTO: el match de arriba sólo
     // recorre lo REGISTRADO en codex, así que un hook ausente-a-propósito (invocado por git,
-    // launchd o el instalador — no por la herramienta) nunca entraba al set aunque su divergencia
-    // estuviera escrita. La regla 1 lo seguía acusando de silencio con la declaración a la vista.
+    // launchd o el instalador — no por la herramienta) no entraría al set aunque su divergencia
+    // estuviera escrita. La regla 1 lo acusaría de silencio con la declaración a la vista.
     for (const sc of (p.scripts || [])) pending.add(basename(sc));
   }
   return { out, pending };
@@ -74,10 +74,10 @@ function compare(bank, codex, pending) {
   const bankByBase = new Map();
   for (const e of bank) { if (!bankByBase.has(e.base)) bankByBase.set(e.base, []); bankByBase.get(e.base).push(e); }
 
-  // 1) todo hook del banco está registrado en codex — SALVO divergencia declarada (2026-08-25):
-  // esta regla no consultaba `pending`, así que un script del banco que legítimamente NO es un
+  // 1) todo hook del banco está registrado en codex — SALVO divergencia declarada:
+  // sin consultar `pending`, un script del banco que legítimamente NO es un
   // hook de herramienta (lo invoca git, launchd o el instalador — el mismo invocador bajo las dos
-  // herramientas) no se podía declarar: fallaba siempre. La doctrina del propio archivo es "la
+  // herramientas) no se podría declarar: fallaría siempre. La doctrina del propio archivo es "la
   // asimetría se permite; el silencio no" — y una divergencia escrita con su motivo es lo
   // contrario del silencio.
   for (const [base, entries] of bankByBase) {

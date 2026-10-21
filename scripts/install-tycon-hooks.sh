@@ -6,25 +6,25 @@
 #   - Idempotente: corre N veces sin duplicar entries.
 #   - Silencioso si todo OK; 1 línea por hook agregado si hubo cambio.
 #   - Backup automático `settings.json.bak.<timestamp>` ANTES del primer cambio — salvo lanzado por `harness.js`
-#     (`TYCON_HARNESS_SNAPSHOT_DIR` puesta, story 8.13 AC 18): ahí la copia ya la tomó el mecanismo y no queda `.bak`.
-#   - Tres piezas son COMPARTIDAS con `harness.js` (story 8.13 AC 28): `cleanupPeriodDays`, la variable de `env` y los
-#     comandos de barra. Suelto las hace este script, como siempre. Lanzado por un `harness.js` que YA las hizo
+#     (`TYCON_HARNESS_SNAPSHOT_DIR` puesta): ahí la copia ya la tomó el mecanismo y no queda `.bak`.
+#   - Tres piezas son COMPARTIDAS con `harness.js`: `cleanupPeriodDays`, la variable de `env` y los
+#     comandos de barra. Suelto las hace este script. Lanzado por un `harness.js` que YA las hizo
 #     (`TYCON_HARNESS_SHARED_DONE=1`) las saltea y no las reporta; con sólo `TYCON_HARNESS_LOCK_HELD=1` (un programa
 #     viejo, que no conoce esa variable) las sigue haciendo.
 #   - Opt-out via env var: `TYCON_NO_AUTOINSTALL=1` → exit 0 silencioso.
 #   - Atomic write (tmp + mv).
 #   - Cross-platform: bash + python3 + node (sin dependencia de jq).
 #
-# Hooks que instala: los de scripts/setup/hooks-list.json, que es LA lista (story 8.17, tanda W3), y los registra
+# Hooks que instala: los de scripts/setup/hooks-list.json, que es LA lista, y los registra
 # scripts/setup/apply-hooks.js — el mismo aplicador que llama el instalador de Windows. Acá no hay lista propia.
 #
 # El SessionStart `git pull` de los repos team-wide y el bloque codegraph
 # NO se tocan acá — son out-of-scope para evitar pisar config personalizada
-# del dev. (engram-pre-commit SÍ se gestiona acá desde 2026-07-13: la regla
-# de commitear .engram/ es team-wide en engram-workflow.md, así que el hook
-# que la automatiza va default-ON — apagable con TYCON_ENGRAM_HOOK=0.)
+# del dev. (engram-pre-commit SÍ se gestiona acá: la regla de commitear .engram/ es team-wide en
+# engram-workflow.md, así que el hook que la automatiza va default-ON — apagable con
+# TYCON_ENGRAM_HOOK=0.)
 #
-# Al final delega en `sync-claude-md-blocks.sh` (2026-07-25), que sincroniza los
+# Al final delega en `sync-claude-md-blocks.sh`, que sincroniza los
 # bloques team-wide de `~/.claude/CLAUDE.md` desde `claude-md-blocks/*.md`. Eso NO
 # contradice el párrafo de arriba: el sync es quirúrgico sobre sus propios marcadores
 # `TYCON_BLOCK:<nombre>` y no mira el resto del archivo. Opt-out independiente:
@@ -34,13 +34,12 @@
 #   ./install-tycon-hooks.sh         # corre el install
 #   TYCON_NO_AUTOINSTALL=1 ./install-tycon-hooks.sh  # skip silencioso
 #   ./install-tycon-hooks.sh --check # solo reporta qué falta, no modifica
-#   ./install-tycon-hooks.sh --report-json <archivo>  # además, la lista de piezas que deja (story 8.13, AC 15)
+#   ./install-tycon-hooks.sh --report-json <archivo>  # además, la lista de piezas que deja
 #   ./install-tycon-hooks.sh --check --plan-json <archivo>  # el plan para un programa: cada pieza con su acción
-#                                                           # (add/update/remove/keep), sin escribir nada más (story 8.16)
+#                                                           # (add/update/remove/keep), sin escribir nada más
 #
-# Caso disparador: la Story 4.2 de un producto del equipo, 2026-05-20 — el fix robusto cross-session
-# requería que cada dev del equipo agregara manualmente el bloque PreToolUse
-# `Write|Edit` apuntando a `on-write-collision.js`. Este script lo automatiza.
+# Registra el bloque PreToolUse `Write|Edit` que apunta a `on-write-collision.js`: el arreglo robusto entre sesiones
+# lo necesita en cada dev del equipo, y este script lo automatiza.
 
 set -euo pipefail
 
@@ -55,11 +54,11 @@ fi
 # Args
 # ============================================================
 CHECK_ONLY=0
-REPORT_JSON=""     # --report-json <archivo>: la lista de piezas del arnés que quedan en la máquina (story 8.13, AC 15)
-# --link <ruta>: la ÚNICA forma de re-apuntar el lugar del arnés (~/.claude/tycon-harness) a otro clon (stories 8.3 y 8.19)
+REPORT_JSON=""     # --report-json <archivo>: la lista de piezas del arnés que quedan en la máquina
+# --link <ruta>: la ÚNICA forma de re-apuntar el lugar del arnés (~/.claude/tycon-harness) a otro clon
 ENLACE_FORZAR=""
-PLAN_JSON=""       # --plan-json <archivo>: con --check, el plan como datos para harness.js install (story 8.16, AC 11)
-# Los nombres viejos de las opciones siguen andando (story 8.9, tanda B3a). Sin argumentos —como corre en cada arranque de
+PLAN_JSON=""       # --plan-json <archivo>: con --check, el plan como datos para harness.js install
+# Los nombres viejos de las opciones siguen andando. Sin argumentos —como corre en cada arranque de
 # sesión— ni se carga la biblioteca: no suma nada al arranque.
 if [[ $# -gt 0 && -f "$(dirname "${BASH_SOURCE[0]}")/lib/legacy-names.sh" ]]; then
   . "$(dirname "${BASH_SOURCE[0]}")/lib/legacy-names.sh"
@@ -92,20 +91,20 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
-# el plan es una mirada: sin --check escribiría la máquina mientras dice que sólo la describe (story 8.16, AC 11)
+# el plan es una mirada: sin --check escribiría la máquina mientras dice que sólo la describe
 if [[ -n "$PLAN_JSON" && "$CHECK_ONLY" != "1" ]]; then
   echo "install-tycon-hooks.sh: --plan-json va con --check (el plan se arma sin escribir nada)" >&2
   exit 2
 fi
 
 # ============================================================
-# Requisitos: python3 y node (story 8.7, tanda C · AC 24)
+# Requisitos: python3 y node
 # ============================================================
-# Sin `python3` este archivo moría más abajo con el error crudo de bash (el python que aplica los hooks), con
-# settings.json ya escrito; sin `node`, los bloques guardados por `command -v node` se salteaban callados y quedaba una
-# instalación a medias que nadie anunciaba. Acá, ANTES del candado y de escribir nada: UNA línea que nombra lo que falta
+# Sin `python3` este archivo muere más abajo con el error crudo de bash (el python que aplica los hooks), con
+# settings.json ya escrito; sin `node`, los bloques guardados por `command -v node` se saltean callados y queda una
+# instalación a medias que nadie anuncia. Acá, ANTES del candado y de escribir nada: UNA línea que nombra lo que falta
 # y remite a los requisitos de la portada, y salida 1. El de `node` mira presencia, no versión (el piso lo comprueba
-# harness.js). Para el equipo no cambia nada: todas sus máquinas tienen los dos.
+# harness.js).
 for _req in python3 node; do
   if ! command -v "$_req" >/dev/null 2>&1; then
     echo "✗ tycon: falta $_req en el PATH — el instalador lo necesita y no escribió nada (ver los requisitos de la portada)" >&2
@@ -113,24 +112,23 @@ for _req in python3 node; do
   fi
 done
 # Un `python3` que está y no arranca (el alias de la tienda de Windows visto desde Git Bash, un stub) cuenta como
-# faltante, igual que en harness.js: pasaba el chequeo de arriba y el instalador moría más abajo con el error crudo,
-# con el esqueleto y los enlaces ya escritos (pase adversarial de la tanda C).
+# faltante, igual que en harness.js: pasaría el chequeo de arriba y el instalador moriría más abajo con el error crudo,
+# con el esqueleto y los enlaces ya escritos.
 if ! python3 -c 'pass' >/dev/null 2>&1; then
   echo "✗ tycon: python3 está en el PATH ($(command -v python3)) pero no arranca — el instalador lo necesita y no escribió nada (ver los requisitos de la portada)" >&2
   exit 1
 fi
 
 # ============================================================
-# Lock anti-concurrencia (2026-08-23)
+# Lock anti-concurrencia
 # ============================================================
-# Desde que el mantenimiento corre desde el arranque de LAS DOS herramientas, abrir Claude
-# Code y Codex juntos lanza dos instaladores a la vez: uno sincroniza el espejo AGENTS.md
-# mientras el otro ya está midiendo la paridad → rojo transitorio "agents-md" en cada
-# reinicio (medido 2 veces el 2026-08-23). Un solo instalador por máquina a la vez; el
-# segundo se va en silencio (el que corre hace el mismo trabajo). --check no toma el lock:
-# no escribe. Lock por mkdir (atómico) + mtime: uno viejo (>10 min: crash/kill) se pisa.
-# Story 8.13 (tanda A): lanzado por `scripts/setup/harness.js` el candado ya lo tiene el padre
-# (TYCON_HARNESS_LOCK_HELD=1) y acá no se toma otro; corrido suelto sigue tomándolo.
+# Con el mantenimiento corriendo desde el arranque de LAS DOS herramientas, abrir Claude Code y Codex juntos lanza
+# dos instaladores a la vez: uno sincroniza el espejo AGENTS.md mientras el otro ya está midiendo la paridad → rojo
+# transitorio "agents-md" en cada reinicio. Un solo instalador por máquina a la vez; el segundo se va en silencio (el
+# que corre hace el mismo trabajo). --check no toma el lock: no escribe. Lock por mkdir (atómico) + mtime: uno viejo
+# (>10 min: crash/kill) se pisa.
+# Lanzado por `scripts/setup/harness.js` el candado ya lo tiene el padre (TYCON_HARNESS_LOCK_HELD=1) y acá no se toma
+# otro; corrido suelto lo toma.
 if [[ "$CHECK_ONLY" != "1" && "${TYCON_HARNESS_LOCK_HELD:-0}" != "1" ]]; then
   INSTALL_LOCK="$HOME/.claude/.tycon-pipeline/install-tycon-hooks.lock"
   mkdir -p "$(dirname "$INSTALL_LOCK")" 2>/dev/null || true
@@ -138,9 +136,8 @@ if [[ "$CHECK_ONLY" != "1" && "${TYCON_HARNESS_LOCK_HELD:-0}" != "1" ]]; then
   if ! mkdir "$INSTALL_LOCK" 2>/dev/null; then
     # Otro instalador lo tiene. Si es FRESCO, está corriendo ahora mismo: me voy, el trabajo lo
     # hace ése. Si es VIEJO (>10 min: crash/SIGKILL sin trap), hay que tomarlo — y tomarlo es
-    # la parte delicada: `rmdir+mkdir` a secas dejaba pasar a dos (8/20 en laboratorio, ronda
-    # adversarial), y un `mv` atómico abría una ventana sin lock por la que un TERCERO entraba
-    # por la puerta normal (11/100). Lo que sí mide 0 solapamientos en 160 contendientes: un
+    # la parte delicada: `rmdir+mkdir` a secas deja pasar a dos, y un `mv` atómico abre una ventana sin lock por la
+    # que un TERCERO entra por la puerta normal. Lo que no solapa: un
     # MUTEX de takeover (mkdir, sección crítica de microsegundos, vida 1 min) y re-verificar la
     # vejez ADENTRO del mutex — el que llegó tarde ve el lock ya renovado y se va.
     _lock_stale || exit 0
@@ -156,8 +153,8 @@ if [[ "$CHECK_ONLY" != "1" && "${TYCON_HARNESS_LOCK_HELD:-0}" != "1" ]]; then
   echo "$$" > "$INSTALL_LOCK/pid" 2>/dev/null || true   # diagnóstico: quién lo tiene
 fi
 # UN solo handler de salida para todo el script: bash NO encadena traps — un segundo
-# `trap ... EXIT` más abajo PISA al anterior (así el lock quedaba tomado tras un exit 0 limpio,
-# medido 2026-08-23). Todo lo que haya que limpiar al salir se agrega ACÁ, no con otro trap.
+# `trap ... EXIT` más abajo PISA al anterior (así el lock quedaría tomado tras un exit 0 limpio). Todo lo que haya
+# que limpiar al salir se agrega ACÁ, no con otro trap.
 # Un instalador matado a mitad (timeout, Ctrl-C) suelta el lock igual vía EXIT; si aun así
 # queda huérfano (SIGKILL), la regla de los 10 min lo pisa.
 _tycon_cleanup() {
@@ -167,12 +164,12 @@ _tycon_cleanup() {
   [[ -n "${INSTALL_LOCK:-}" ]] && rm -rf "$INSTALL_LOCK" 2>/dev/null
   return 0
 }
-# SOLO EXIT: bash corre el trap EXIT también al morir por señal; atrapar INT/TERM además hacía
-# que el instalador soltara el lock Y SIGUIERA corriendo tras un kill (ronda adversarial).
+# SOLO EXIT: bash corre el trap EXIT también al morir por señal; atrapar INT/TERM además haría
+# que el instalador soltara el lock Y SIGUIERA corriendo tras un kill.
 trap _tycon_cleanup EXIT
 
 # ============================================================
-# El registro de lo instalado (story 8.13, tanda B · AC 15)
+# El registro de lo instalado
 # ============================================================
 # Con --report-json <archivo>, cada pieza del arnés que queda en la máquina al terminar —la que escribió esta corrida Y la
 # que ya estaba— se anota como `kind<TAB>where<TAB>id` (un `setting` suma un 4º campo: su valor en JSON, que va a
@@ -195,14 +192,14 @@ record() { # record <kind> <where> <id>
 }
 
 # ============================================================
-# El plan para un programa (story 8.16, tanda B · AC 11)
+# El plan para un programa
 # ============================================================
 # Con --check --plan-json <archivo>, cada pieza que esta corrida escribiría, sacaría o dejaría como está se anota como
 # `kind<TAB>where<TAB>id<TAB>action` (action: add · update · remove · keep) en un temporal gemelo del de --report-json, con
 # los mismos `kind` e `id`; al final un python arma `[{kind, where, id, action}]` sin repetidos y lo escribe atómico. Lo
 # lee `harness.js install` para mostrar el plan ANTES de escribir. El python de settings.json, sync-claude-md-blocks.sh y
 # canonical-path.js anotan en el mismo temporal por TYCON_PLAN_PIECES. Lo que se decidió no escribir (integración u
-# opt-in apagados) no se anota. Vale el contrato de --check (story 8.7, AC 24): la HOME no se toca. Sin la opción, ni el
+# opt-in apagados) no se anota. Vale el contrato de --check: la HOME no se toca. Sin la opción, ni el
 # temporal existe y la salida de --check es la de siempre.
 PLAN_PIECES_TMP=""
 if [[ -n "$PLAN_JSON" ]]; then
@@ -214,7 +211,7 @@ plan_record() { # plan_record <kind> <where> <id> <action>
   printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$PLAN_PIECES_TMP" 2>/dev/null || PLAN_INCOMPLETE=1
 }
 # Una pieza que no se pudo anotar deja el plan incompleto: al final, sin plan (sale 1) — mostrar un plan al que le falta
-# algo sería pedir conformidad sobre una lista mentirosa (revisor de fallos silenciosos, tanda B). Lo mismo si el python de
+# algo sería pedir conformidad sobre una lista mentirosa. Lo mismo si el python de
 # settings.json, el sync de bloques o canonical-path.js dicen que no pudieron anotar (su línea «… en el plan»).
 PLAN_INCOMPLETE=0
 plan_copy() { # plan_copy <kind> <origen> <destino> <id>: igual → keep · distinto → update · falta → add
@@ -237,7 +234,7 @@ SETTINGS="${TYCON_SETTINGS_PATH:-$HOME/.claude/settings.json}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TCG_HOOKS_DIR="$SCRIPT_DIR/hooks"
 
-# ── Con qué Node corren las llamadas de este instalador (story 8.39, AC 8) ──────────────────────────────────────────
+# ── Con qué Node corren las llamadas de este instalador ──────────────────────────────────────────────────────────────
 # El arnés baja su propio Node a <casa>/node/current (harness-node.js). Si está y es ejecutable, las llamadas a `node` de
 # ESTE guion van con él; si no, con el del PATH, como siempre. `node` es una función de este guion, no exportada: no
 # cambia el PATH ni llega a lo que el guion lance (install-codegraph.sh sigue con el `npm` del dev). `nohup` y un
@@ -248,23 +245,23 @@ _hn="$SCRIPT_DIR/lib/harness-node.sh"
 HNODE="$(harness_node_bin)"
 if [[ "$HNODE" != "node" ]]; then node() { "$HNODE" "$@"; }; fi
 
-# ── Dónde están las skills: lo contesta la regla, no una ruta escrita (story 8.18, AC 12 · 2026-10-04) ──────────
-# Este archivo traía `AGENT_SKILLS="$HOME/.claude/agent-skills/skills"` y de ahí salía todo: los hooks que registra y las
-# seis suites rápidas que corre en cada arranque. Con los dos repos internos unidos, un clon de trabajo trae sus propias
-# skills, y el instalador corrido desde él probaba las INSTALADAS: daba verde sin haber probado el cambio. La regla vive
-# en scripts/lib/skills-dir.js (contrato C3 de la story) y acá se le pregunta de las dos formas que tiene:
+# ── Dónde están las skills: lo contesta la regla, no una ruta escrita ───────────────────────────────────────────────
+# Una ruta escrita (`AGENT_SKILLS="$HOME/.claude/agent-skills/skills"`) de la que salga todo —los hooks que registra y
+# las seis suites rápidas que corre en cada arranque— haría que, con un clon de trabajo que trae sus propias skills, el
+# instalador corrido desde él probara las INSTALADAS: daría verde sin haber probado el cambio. La regla vive
+# en scripts/lib/skills-dir.js (contrato C3) y acá se le pregunta de las dos formas que tiene:
 #   _skills_dir read  <campo>   para CORRER (las suites rápidas): la variable TYCON_SKILLS_DIR › el propio clon si es
 #                               unido › lo instalado.
 #   _skills_dir write <campo>   para ESCRIBIR en la máquina (los hooks de settings.json, el paso de terceros, el informe de
 #                               piezas): lo instalado mientras exista; si no, el propio clon. Es la variante `--installed`,
-#                               y SIN la variable: hasta hoy este archivo nunca la leyó, y una variable que apunta a un clon
+#                               y SIN la variable: este archivo no la lee, porque una variable que apunta a un clon
 #                               de trabajo no puede re-apuntar los hooks de la máquina a una carpeta que mañana se borra
 #                               (lo mismo que el enlace del arnés, que sólo se mueve con --link). Si escribiera con la
 #                               primera forma, apenas el clon del arnés trae skills/ cambiarían los hooks registrados en
-#                               una máquina con dos clones (hallazgo I12; lo cuida harness-install.test.sh, T30 y CANARY).
+#                               una máquina con dos clones (lo cuida harness-install.test.sh, T30 y CANARY).
 # <campo>: --skills (la carpeta de skills) · --repo (su raíz) · --source (variable | own-clone | installed).
 # Sale como la biblioteca: 0 con una línea · 1 si esa carpeta no existe (nada por stdout, el motivo por stderr) · 2 por uso.
-# Sin la biblioteca al lado (una copia parcial de este archivo) no hay a quién preguntarle: vale la ruta de siempre.
+# Sin la biblioteca al lado (una copia parcial de este archivo) no hay a quién preguntarle: vale la ruta instalada.
 SKILLS_DIR_JS="$SCRIPT_DIR/lib/skills-dir.js"
 _skills_dir() { # _skills_dir read|write <campo>
   case "$1" in
@@ -273,11 +270,11 @@ _skills_dir() { # _skills_dir read|write <campo>
   esac
 }
 
-# Los nombres viejos de las variables (story 8.9): cada interruptor renombrado que se lee acá pasa antes por
+# Los nombres viejos de las variables: cada interruptor renombrado que se lee acá pasa antes por
 # `legacy_env`, así el nombre en castellano sigue apagando hasta su retiro. Sin la biblioteca, sólo el nombre nuevo.
 if [[ -f "$SCRIPT_DIR/lib/legacy-names.sh" ]]; then . "$SCRIPT_DIR/lib/legacy-names.sh"; else legacy_env() { :; }; fi
 
-# ── El lugar del arnés: ~/.claude/tycon-harness, y el nombre viejo (stories 8.3, AC 4, y 8.19) ─────────────
+# ── El lugar del arnés: ~/.claude/tycon-harness, y el nombre viejo ─────────────────────────────────────────
 # Los prompts de revisores, pasos y skills nombran al arnés por este lugar (un prompt no lee una
 # variable) y el clon puede vivir en cualquier carpeta. La regla de nacimiento vive en canonical-path.js: el lugar nace
 # apuntando a donde apunta el nombre viejo (o a lo que dice el estado) y no al clon que corre este instalador; el viejo
@@ -291,22 +288,22 @@ if [[ -f "$SCRIPT_DIR/lib/canonical-path.js" ]] && command -v node >/dev/null 2>
   _RC_ENLACE=0
   node "$SCRIPT_DIR/lib/canonical-path.js" "${_ENLACE_ARGS[@]}" || _RC_ENLACE=$?
   # sólo un --link que no se puede cumplir sale 2 (no es un clon, o el lugar es una carpeta real); un enlace que no se
-  # pudo escribir AVISA y el instalador sigue: un aviso que rompe el arranque se apaga (pase adversarial, vuelta 1)
+  # pudo escribir AVISA y el instalador sigue: un aviso que rompe el arranque se apaga
   [[ "$_RC_ENLACE" == "2" ]] && exit 2
 elif [[ -n "$ENLACE_FORZAR" ]]; then
   echo "install-tycon-hooks.sh: --link necesita node y scripts/lib/canonical-path.js" >&2
   exit 2
 fi
 # los dos nombres del lugar son del arnés aunque esta corrida no los haya tocado (los creó una anterior): una pieza `link`
-# por cada nombre que ES un enlace, y lo pregunta Node (story 8.19, AC 11 y 13: en el bash de Git para Windows no se
+# por cada nombre que ES un enlace, y lo pregunta Node (en el bash de Git para Windows no se
 # pregunta desde el shell si algo es un enlace)
 if [[ -n "$REPORT_PIECES_TMP" && -f "$SCRIPT_DIR/lib/canonical-path.js" ]] && command -v node >/dev/null 2>&1; then
   # sin --home, como --ensure-link: las dos miran la misma carpeta (os.homedir()), también con HOME ≠ USERPROFILE en
-  # Windows (segunda vuelta, M2)
+  # Windows
   node "$SCRIPT_DIR/lib/canonical-path.js" --place-pieces >> "$REPORT_PIECES_TMP" 2>/dev/null || true
 fi
 
-# ── Los enlaces del repo único (story 8.7, tanda C · AC 18) ─────────────────────────────────
+# ── Los enlaces del repo único ──────────────────────────────────────────────────────────────
 # Cuando ESTE clon trae skills/ y agents/ en su raíz (el repo público: el arnés y agent-skills juntos), todo lo que
 # busca a agent-skills tiene que encontrarlo acá sin ninguna variable puesta: ~/.claude/agent-skills → el clon,
 # ~/.claude/agents → <clon>/agents y ~/.claude/skills → <clon>/skills, con las mismas reglas del enlace de arriba (se
@@ -315,10 +312,10 @@ fi
 # necesitan); agents y skills DESPUÉS del paso de terceros, para que las skills bajadas tengan su entrada en la primera
 # corrida. En el clon del equipo (sin skills/ en la raíz) no imprime ni toca nada. Respeta --check; las piezas `link` las
 # anota el propio guion en TYCON_REPORT_PIECES. Detalle y casos: scripts/lib/canonical-path.js.
-# Story 8.18 (AC 28): desde que los dos repos internos se unieron, el clon del equipo TAMBIÉN trae skills/ y agents/, y
-# la máquina sigue un tiempo con su clon viejo de agent-skills en ~/.claude/agent-skills (dos clones: la transición). Ahí
-# tampoco imprime ni toca nada: lo decide canonical-path.js (`separateSkillsClone`), igual para este archivo y para el
-# .ps1. Una carpeta real en ese lugar que NO es un clon de agent-skills sigue avisando.
+# El clon del equipo TAMBIÉN trae skills/ y agents/, y la máquina puede tener además su clon viejo de agent-skills en
+# ~/.claude/agent-skills (dos clones). Ahí tampoco imprime ni toca nada: lo decide canonical-path.js
+# (`separateSkillsClone`), igual para este archivo y para el .ps1. Una carpeta real en ese lugar que NO es un clon de
+# agent-skills sigue avisando.
 _repo_links() { # _repo_links agent-skills|entries
   # sólo si el clon trae skills/ y agents/: en un clon sin ellas ni se lanza node (este archivo corre en cada arranque)
   [[ -d "$SCRIPT_DIR/../skills/tycon-pipeline" && -d "$SCRIPT_DIR/../agents" ]] || return 0
@@ -329,7 +326,7 @@ _repo_links() { # _repo_links agent-skills|entries
 }
 _repo_links agent-skills
 
-# ── ¿El arnés está donde el arnés cree que está? (2026-09-05; desde la 8.3 mira el enlace) ────
+# ── ¿El arnés está donde el arnés cree que está? (mira el enlace) ────
 # Si el clon que corre este instalador no es el que apunta el enlace —o el enlace falta, está colgado
 # o es una carpeta—, los revisores y el pipeline leerían otro clon, o nada, sin error. Aviso, nunca
 # freno: sale 0 siempre. Detalle y casos: scripts/lib/canonical-path.js.
@@ -338,7 +335,7 @@ if [[ "${TYCON_NO_CANONICAL_PATH:-0}" != "1" && -f "$SCRIPT_DIR/lib/canonical-pa
   node "$SCRIPT_DIR/lib/canonical-path.js" 2>/dev/null || true
 fi
 
-# Si no existe settings.json → crear skeleton mínimo. Con --check no se escribe (story 8.7, AC 24): el python de más
+# Si no existe settings.json → crear skeleton mínimo. Con --check no se escribe: el python de más
 # abajo lee un settings.json que falta como vacío y reporta lo que faltaría.
 if [[ ! -f "$SETTINGS" && "$CHECK_ONLY" != "1" ]]; then
   mkdir -p "$HOME/.claude"
@@ -353,11 +350,11 @@ fi
 # Verificar que agent-skills está: dónde ESCRIBE esta corrida (ver `_skills_dir`, arriba). Va acá y no antes: en el repo
 # único, `_repo_links agent-skills` acaba de dejar el enlace ~/.claude/agent-skills, que es «lo instalado».
 #   · lo instalado existe            → ésa es la ruta de siempre, la que queda en settings.json (dos clones, o el enlace).
-#   · no existe y el clon es unido   → sólo con --check (story 8.7, decisión C16): --check no crea los enlaces, así que
+#   · no existe y el clon es unido   → sólo con --check: --check no crea los enlaces, así que
 #                                      esta corrida mira las skills en el propio clon —donde el enlace las va a dejar—.
 #                                      Sin --check es que el enlace no se pudo crear (ya se avisó arriba): sale 1, como
 #                                      siempre; no se registran hooks hacia la carpeta del clon por un enlace que falta.
-#   · no existe en ningún lado       → sale 1 con la línea de siempre, que ahora trae el motivo que da la biblioteca.
+#   · no existe en ningún lado       → sale 1 con una línea que trae el motivo que da la biblioteca.
 AGENT_SKILLS=""; _SKILLS_FROM=""; _SKILLS_WHY=""
 if [[ -f "$SKILLS_DIR_JS" ]]; then
   AGENT_SKILLS="$(_skills_dir write --skills 2>/dev/null)" || AGENT_SKILLS=""
@@ -387,7 +384,7 @@ if [[ "$_SKILLS_FROM" != "installed" ]]; then
   echo "(--check) tycon: ~/.claude/agent-skills todavía no está: esta revisión mira las skills en $AGENT_SKILLS (el instalador crea el enlace)"
 fi
 
-# ── Las skills de terceros vuelven a su lugar (story 8.5) ──────────────────────────────────────────────────────────
+# ── Las skills de terceros vuelven a su lugar ──────────────────────────────────────────────────────────────────────
 # Lo ajeno no viaja en agent-skills: el manifiesto (publishing/third-party-skills.json) fija cada skill por commit y
 # hash de árbol, y este paso la restituye —primero desde la historia de git del clon, sin red; desde su origen sólo
 # con el retiro hecho y con tope de 20 s—, sin borrar ni pisar nada. Va acá, apenas se sabe que agent-skills está:
@@ -397,14 +394,14 @@ if command -v node >/dev/null 2>&1 && [[ -f "$SCRIPT_DIR/publishing/install-thir
   _TP_ARGS=()
   [[ "$CHECK_ONLY" == "1" ]] && _TP_ARGS+=(--check)
   if [[ -n "${_CHECK_IN_CLONE:-}" ]]; then
-    # --check en el repo único sin el enlace todavía (decisión C16): la revisión de terceros mira el clon, como el resto
-    # de esta corrida. Con la ruta del enlace (que no existe) decía «no es un clon de agent-skills» y no revisaba nada.
+    # --check en el repo único sin el enlace todavía: la revisión de terceros mira el clon, como el resto
+    # de esta corrida. Con la ruta del enlace (que no existe) diría «no es un clon de agent-skills» y no revisaría nada.
     node "$SCRIPT_DIR/publishing/install-third-party.js" --repo "$_CHECK_IN_CLONE" --check || true
   else
     node "$SCRIPT_DIR/publishing/install-third-party.js" --repo "$AGENT_SKILLS_REPO" ${_TP_ARGS[@]+"${_TP_ARGS[@]}"} || true
   fi
 fi
-# ~/.claude/agents y ~/.claude/skills del repo único (story 8.7): después del paso de terceros, ver arriba
+# ~/.claude/agents y ~/.claude/skills del repo único: después del paso de terceros, ver arriba
 _repo_links entries
 # Las skills de terceros que quedaron en su lugar, según el estado del paso (entradas completas cuyo destino existe).
 # Apagado el paso (TYCON_THIRD_PARTY=0), no se anotan: decidió no tocarlas.
@@ -421,11 +418,11 @@ for target, e in sorted(entries.items()):
         print("third-party\t%s\t%s" % (dst, os.path.basename(target.rstrip("/"))))
 PY
 fi
-# El plan (story 8.16, AC 11): cada skill de terceros que el paso restituiría (las de `install: download` del
+# El plan: cada skill de terceros que el paso restituiría (las de `install: download` del
 # manifiesto): completa y en su lugar → keep; si no → add (sin red puede quedar pendiente: lo dice el cierre de install).
 if [[ -n "$PLAN_PIECES_TMP" && "${TYCON_THIRD_PARTY:-1}" != "0" && -f "$SCRIPT_DIR/publishing/third-party-skills.json" ]]; then
   # dónde mira si ya está (el clon, en el repo único sin el enlace todavía) y con qué ruta la anota: la del reporte y el
-  # estado, ~/.claude/agent-skills/…, aunque el enlace todavía no exista (pase adversarial de la tanda B, clase 3)
+  # estado, ~/.claude/agent-skills/…, aunque el enlace todavía no exista
   _TP_WHERE="$AGENT_SKILLS_REPO"; [[ -n "${_CHECK_IN_CLONE:-}" ]] && _TP_WHERE="$HOME/.claude/agent-skills"
   python3 - "$SCRIPT_DIR/publishing/third-party-skills.json" "$HOME/.claude/.tycon-pipeline/third-party-state.json" "${_CHECK_IN_CLONE:-$AGENT_SKILLS_REPO}" "$_TP_WHERE" >> "$PLAN_PIECES_TMP" 2>/dev/null <<'PY' || PLAN_INCOMPLETE=1
 import json, os, sys
@@ -450,7 +447,7 @@ PY
 fi
 
 # ============================================================
-# Integraciones (story 8.3, tanda B) — cada una tiene su llave en la configuración del arnés
+# Integraciones — cada una tiene su llave en la configuración del arnés
 # (scripts/lib/tycon-config.js: variable › ~/.claude/tycon.json › perfil del equipo › APAGADA) y, apagada, este
 # instalador no registra sus hooks ni llama a su servicio. Un hook compartido con el núcleo no se desregistra:
 # saltea su parte adentro (el despachador de ediciones con clocki-enforce; bench-notice con lo nocturno).
@@ -463,9 +460,9 @@ fi
 #   telegram, codegraph → nada acá: se configuran por dev (el chat por el plugin; CodeGraph con install-codegraph.sh)
 # 🔴 Configuración ROTA (ilegible, clave desconocida, tipo equivocado): se dice con archivo · clave · motivo y las
 #    integraciones quedan COMO ESTÁN — no se registran ni se remueven sus hooks y no se llama a nada. Un archivo roto
-#    no se lee como «todo apagado» (AC 2). Sin el lector (una copia parcial de este archivo): lo mismo, y se dice.
-# El equipo no nota nada: su perfil (team-profile.json, o perfil-equipo.json) prende lo de siempre. Afuera todo nace apagado hasta que se
-# configura. `|| _RC=$?` y nunca `; _RC=$?`: este archivo corre con set -e (pase adversarial de la tanda A).
+#    no se lee como «todo apagado». Sin el lector (una copia parcial de este archivo): lo mismo, y se dice.
+# El perfil del equipo (team-profile.json, o perfil-equipo.json) prende las integraciones; afuera todo nace apagado hasta que
+# se configura. `|| _RC=$?` y nunca `; _RC=$?`: este archivo corre con set -e.
 # ============================================================
 INTEG_ESTADO="sin-lector"   # ok · rota · sin-lector
 TYCON_INTEG_ADO=0; TYCON_INTEG_CLOCKIFY=0; TYCON_INTEG_ENGRAM=0; TYCON_INTEG_CODEGRAPH=0
@@ -489,14 +486,14 @@ if [[ -f "$SCRIPT_DIR/lib/tycon-config.js" ]] && command -v node >/dev/null 2>&1
 else
   echo "⚠ tycon: sin scripts/lib/tycon-config.js (o sin node): no sé qué integraciones están prendidas — quedan como estaban"
 fi
-# Los interruptores por hook que ya existían mandan por encima de la llave, en los dos sentidos (AC 1).
+# Los interruptores por hook que ya existían mandan por encima de la llave, en los dos sentidos.
 ENGRAM_HOOK_ON="$TYCON_INTEG_ENGRAM"
 if [[ -n "${TYCON_ENGRAM_HOOK-}" ]]; then if [[ "$TYCON_ENGRAM_HOOK" == "0" ]]; then ENGRAM_HOOK_ON=0; else ENGRAM_HOOK_ON=1; fi; fi
 # ============================================================
-# El perfil de instalación (story 8.16, tanda C · AC 23): `minimal` o `full`, de la configuración del arnés
+# El perfil de instalación: `minimal` o `full`, de la configuración del arnés
 # (`install.profile`: TYCON_INSTALL_PROFILE › ~/.claude/tycon.json › perfil del equipo). Se lee UNA vez.
-#   · full, o SIN VALOR → lo de siempre, byte a byte (el perfil del equipo fija full; sin elegir se comporta como full).
-#   · minimal → sólo los hooks que scripts/setup/install-effects.json marca `minimal` (hoy ocho, con el freno de
+#   · full, o SIN VALOR → todo, byte a byte (el perfil del equipo fija full; sin elegir se comporta como full).
+#   · minimal → sólo los hooks que scripts/setup/install-effects.json marca `minimal` (ocho, con el freno de
 #     comandos destructivos, que está en los dos perfiles y sólo lo apaga TYCON_SAFETY_GUARD=0, y el portón de edición,
 #     también en los dos, que apaga TYCON_STORY_GATE=off) más los de una
 #     integración prendida; los demás se SACAN si estaban (con el motivo en la línea del reporte); los dos opt-in de
@@ -504,9 +501,9 @@ if [[ -n "${TYCON_ENGRAM_HOOK-}" ]]; then if [[ "$TYCON_ENGRAM_HOOK" == "0" ]]; 
 #     ajustes de settings.json, sin los hooks de git (ni el core.hooksPath de ningún repo) y sin las tareas de fondo
 #     de full. Los enlaces, los comandos, las skills de terceros, la suite rápida y los nombres viejos, igual.
 #   · ROTA (valor fuera de la lista, archivo ilegible) o sin lector → lo que depende del perfil QUEDA COMO ESTÁ: ni se
-#     registra ni se saca, y se dice (la regla de las integraciones, 8.3 AC 2). Rota nunca se lee como full. La
-#     excepción son los dos frenos de comandos (safety-guard y test-scope-guard): se registran igual, como antes de los
-#     perfiles, para que una máquina nueva con la configuración rota no quede sin frenos (decisión del dueño, 2026-10-04).
+#     registra ni se saca, y se dice (la regla de las integraciones). Rota nunca se lee como full. La
+#     excepción son los dos frenos de comandos (safety-guard y test-scope-guard): se registran igual,
+#     para que una máquina nueva con la configuración rota no quede sin frenos.
 # Una variable puesta a mano manda sobre el perfil, en los dos sentidos (TYCON_SAFETY_GUARD=1 en minimal registra el freno).
 # ============================================================
 PROFILE_STATE="sin-lector"   # ok · rota · sin-lector
@@ -545,19 +542,17 @@ esac
 PROFILE_FULL=0; [[ "$PROFILE_STATE" == "ok" && "$TYCON_PROFILE_VALUE" != "minimal" ]] && PROFILE_FULL=1
 PROFILE_IS_MINIMAL=0; [[ "$PROFILE_STATE" == "ok" && "$TYCON_PROFILE_VALUE" == "minimal" ]] && PROFILE_IS_MINIMAL=1
 # ============================================================
-# Los hooks de settings.json (story 8.17, tanda W3 · AC 23 a 26)
+# Los hooks de settings.json
 # ============================================================
 # La lista de hooks vive en scripts/setup/hooks-list.json y la aplica scripts/setup/apply-hooks.js: el mismo aplicador
-# que llama install-tycon-hooks.ps1. Este archivo ya no lleva una lista propia ni código propio para settings.json.
-# Hasta la W3 tenía las dos (la lista canónica, las de opt-in y un bloque de Python de ~600 líneas), y el .ps1 tenía
-# las suyas escritas aparte: se desfasaron sin que nada lo dijera (medido en un agente Windows el 2026-10-04: el .ps1
-# registraba 29 de los 42 controles de éste). El aplicador decide cada hook por su `when` (integraciones, perfil de
-# instalación, variables de opt-in) con la misma lógica que tenía este archivo, y escribe el informe que se imprime
+# que llama install-tycon-hooks.ps1. Este archivo no lleva una lista propia ni código propio para settings.json: con
+# dos listas escritas aparte, se desfasan sin que nada lo diga. El aplicador decide cada hook por su `when`
+# (integraciones, perfil de instalación, variables de opt-in) y escribe el informe que se imprime
 # más abajo (ADDED/EXISTED/REMOVED/MISSING/NORMALIZED/BACKUP). Lista rota o settings.json roto: sale distinto de 0
 # nombrando el archivo, no escribe nada, y este instalador corta acá (set -e).
 TMP_REPORT=$(mktemp)   # lo limpia _tycon_cleanup (el handler único de salida — no re-trapear acá)
 
-# ── Los nombres viejos (story 8.9, AC 21): las rutas de archivos renombrados, a su nombre nuevo ────────────────
+# ── Los nombres viejos: las rutas de archivos renombrados, a su nombre nuevo ────────────────────────────────
 # El renombre a inglés deja un reemplazo en cada ruta vieja (sigue andando), pero cada máquina tiene esas rutas
 # escritas en settings.json (hooks y permisos), settings.local.json, ~/.codex/hooks.json, ~/.git-hooks/* y el
 # LaunchAgent del examen. Se reescriben ANTES del bloque de hooks, así éste encuentra el hook nuevo ya registrado y no
@@ -581,7 +576,7 @@ _APPLY_ARGS=(--settings "$SETTINGS" --hooks-dir "$TCG_HOOKS_DIR" --skills "$AGEN
 [[ "$CHECK_ONLY" == "1" ]] && _APPLY_ARGS+=(--check)
 node "$SCRIPT_DIR/setup/apply-hooks.js" "${_APPLY_ARGS[@]}"
 
-# ── El mecanismo de instalación (story 8.13, tanda A · AC 8) ─────────────────────────────────────────
+# ── El mecanismo de instalación ─────────────────────────────────────────────────────────────────────
 # En una máquina que todavía no tiene estado (`~/.claude/.tycon-pipeline/harness-state.json`), este
 # aplicador —que la línea de arranque vieja SÍ llama— crea el estado sobre el clon, el enlace y el
 # agent-skills que ya están, copia el arranque fijo y migra la línea de arranque una sola vez (si el
@@ -590,12 +585,12 @@ node "$SCRIPT_DIR/setup/apply-hooks.js" "${_APPLY_ARGS[@]}"
 # corre otro aplicador: el candado lo tiene este script (TYCON_HARNESS_LOCK_HELD=1). Con --check no se
 # llama. Desde la sesión siguiente actualiza `harness.js startup`, por la copia fija.
 # Lanzado POR harness.js (TYCON_HARNESS_LOCK_HELD=1) no se llama: el estado lo escribe quien lo lanzó, y durante su
-# `install` el estado todavía no existe — se escribía dos veces y quedaba una copia de seguridad de más (tanda B).
+# `install` el estado todavía no existe — se escribiría dos veces y quedaría una copia de seguridad de más.
 if [[ "$CHECK_ONLY" != "1" && "${TYCON_HARNESS_LOCK_HELD:-0}" != "1" && -f "$SCRIPT_DIR/setup/harness.js" && ! -f "$HOME/.claude/.tycon-pipeline/harness-state.json" ]] && command -v node >/dev/null 2>&1; then
   TYCON_HARNESS_LOCK_HELD=1 node "$SCRIPT_DIR/setup/harness.js" install --from-existing || true
 fi
 
-# El reporte suma los nombres viejos reescritos (story 8.9): una línea, sólo si hubo alguno o la migración falló.
+# El reporte suma los nombres viejos reescritos: una línea, sólo si hubo alguno o la migración falló.
 echo "RENAMED:${RENAMED_N}" >> "$TMP_REPORT"
 if [[ "$RENAMED_N" != "0" ]]; then
   if [[ "$CHECK_ONLY" == "1" ]]; then
@@ -629,10 +624,10 @@ if [[ -s "$TMP_REPORT" ]]; then
     grep '^  ! ' "$TMP_REPORT" || true
     echo "   Falta el script en el disco → tu copia del arnés está atrasada. Para arreglarlo:"
     _tcg_root=$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd) || _tcg_root="$SCRIPT_DIR/.."   # el propio clon, nunca una carpeta escrita a mano
-    # en una versión BAJADA (story 8.23, tanda B) no hay git que tirar: la actualiza el programa. La carpeta del estado la
-    # sabe tycon-home.js (una sola pieza, A1): no se escribe acá
-    # `|| true`: con `set -e`, una asignación cuyo `$(…)` falla (copia parcial sin tycon-home.js) cortaba el instalador
-    # entero justo acá, antes del chequeo de Codex (installer-codex-evidence, caso 5; 170 #12315)
+    # en una versión BAJADA no hay git que tirar: la actualiza el programa. La carpeta del estado la
+    # sabe tycon-home.js (una sola pieza): no se escribe acá
+    # `|| true`: con `set -e`, una asignación cuyo `$(…)` falla (copia parcial sin tycon-home.js) cortaría el instalador
+    # entero justo acá, antes del chequeo de Codex (installer-codex-evidence, caso 5)
     _state_dir="$(node -e 'process.stdout.write(require(process.argv[1]).stateDir())' "$SCRIPT_DIR/setup/harness/tycon-home.js" 2>/dev/null || true)"
     _state_file="${_state_dir:-/nonexistent}/harness-state.json"
     if grep -q '"kind":[[:space:]]*"release"' "$_state_file" 2>/dev/null; then
@@ -643,7 +638,7 @@ if [[ -s "$TMP_REPORT" ]]; then
     echo "   y volvé a abrir la sesión. (Estos controles NO están corriendo mientras tanto.)"
   fi
   # Una ruta que un shell leería mal (`$`, acento grave, comilla doble en la carpeta del clon o de la de usuario): el
-  # aplicador no escribe un comando roto (story 8.17, revisor de seguridad de la W3W4). Se dice, como lo que falta.
+  # aplicador no escribe un comando roto. Se dice, como lo que falta.
   UNSAFE_LINE=$(grep '^UNSAFE:' "$TMP_REPORT" || true)
   if [[ -n "$UNSAFE_LINE" ]]; then
     echo "🔴 TYCON hooks — ${UNSAFE_LINE#UNSAFE:} control(es) del arnés NO quedaron instalados: su ruta trae un carácter que el shell que lanza el hook leería de otra forma:"
@@ -651,7 +646,7 @@ if [[ -s "$TMP_REPORT" ]]; then
     echo "   Remedio: que ni la carpeta del clon ni la de usuario traigan \$, acento grave o comilla doble en su nombre. (Estos controles NO están corriendo.)"
   fi
 
-  # Línea de arranque normalizada (2026-09-03): el pull de los dos repos con --ff-only --autostash.
+  # Línea de arranque normalizada: el pull de los dos repos con --ff-only --autostash.
   NORMALIZED_LINE=$(grep '^NORMALIZED:' "$TMP_REPORT" || true)
   if [[ -n "$NORMALIZED_LINE" ]]; then
     if [[ "$CHECK_ONLY" == "1" ]]; then
@@ -662,7 +657,7 @@ if [[ -s "$TMP_REPORT" ]]; then
     fi
   fi
 
-  # El cambio de forma de los hooks .js (story 8.39, AC 6): del `node` del PATH al Node propio del arnés, o de vuelta
+  # El cambio de forma de los hooks .js: del `node` del PATH al Node propio del arnés, o de vuelta
   REFORMED_LINE=$(grep '^REFORMED:' "$TMP_REPORT" || true)
   if [[ -n "$REFORMED_LINE" ]]; then
     if [[ "$CHECK_ONLY" == "1" ]]; then echo "⚠ tycon: ${REFORMED_LINE#REFORMED:} hook(s) .js con otro intérprete que el que corresponde (el Node del arnés o el del PATH) — corré install-tycon-hooks.sh"
@@ -687,11 +682,11 @@ if [[ -s "$TMP_REPORT" ]]; then
 fi
 
 # ============================================================
-# Detección de features muertos (auditoría 2026-06-09): hooks registrados
+# Detección de features muertos: hooks registrados
 # en settings.json cuya env var de activación está apagada salen en silencio
-# (exit 0) y el feature parece vivo pero no produce NADA. Caso real:
-# instinct-mining estuvo 17 días con hooks registrados y 0 observations
-# porque TYCON_INSTINCT_MINING nunca se exportó en esta máquina.
+# (exit 0) y el feature parece vivo pero no produce NADA. Ejemplo:
+# instinct-mining con hooks registrados y 0 observations
+# cuando TYCON_INSTINCT_MINING no está exportada en la máquina.
 # ============================================================
 if grep -q 'instinct-observe.sh' "$SETTINGS" 2>/dev/null && [[ "${TYCON_INSTINCT_MINING:-0}" != "1" ]]; then
   echo "⚠ tycon: instinct-mining REGISTRADO pero APAGADO — el hook está en settings.json pero TYCON_INSTINCT_MINING≠1 (no graba nada). Agregá 'export TYCON_INSTINCT_MINING=1' a tu shell rc o removelo. Ver guides/integrations/instinct-mining.md"
@@ -701,27 +696,24 @@ if grep -q 'instinct-observer' "$SETTINGS" 2>/dev/null && [[ "${TYCON_INSTINCT_O
 fi
 
 # ============================================================
-# Suite de tests de la capa determinista (auditoría 2026-06-09).
+# Suite de tests de la capa determinista.
 # Corre tras cada git pull (~300ms, node:test 0-deps). Silenciosa si verde;
 # si una regresión rompe isGitCommit/matchGlob/check-count se ve EL MISMO DÍA,
 # no en la próxima auditoría manual. Skip si node no está (improbable).
 # ============================================================
-# 2026-08-15: `story-discovery.test.js` se separó de `unit.test.js` para que el chequeo de
+# `story-discovery.test.js` está separado de `unit.test.js` para que el chequeo de
 # mutantes pueda correrlo (unit.test.js lanza herramientas reales y con la máquina cargada pasa
 # el tope de 120s por corrida). Se listan los dos: una suite que nadie corre es indistinguible
 # de una suite verde — el mismo motivo por el que existe este bloque.
-# 2026-08-25: `advisor-ledger.test.js` (parte PURA del registro de corridas de revisores) entra acá
+# `advisor-ledger.test.js` (parte PURA del registro de corridas de revisores) entra acá
 # —55ms, sin spawns—. Lo que lanza procesos va abajo, en el throttle diario.
-# 🔴 2026-09-01 — MEDIDO: este bloque tardaba 47 s, no los ~300 ms que decía el comentario, y
-# `unit.test.js` sola se comía 36,6 de esos 47 (las otras seis suman 3,8). Corre en CADA arranque
-# de sesión, así que esa demora se pagaba entera cada vez que alguien abría Claude — y sumada al
-# banco de controles dejó a la extensión de VS Code, que se rinde a los 60 s, sin poder abrir.
-# La suite no es mala: es que "lanza herramientas reales" (lo dice el comentario de su propia
-# separación, 2026-08-15) y por la doctrina de este archivo eso va al throttle diario, no acá.
-# Se mudó a BACKFILL_TESTS. Lo que queda en línea son las seis rápidas, que sí son milisegundos.
-# 2026-10-04 (story 8.18, AC 12): de DÓNDE salen lo dice la regla para quien lee (`_skills_dir read`: la variable › el
+# 🔴 Este bloque tiene que ser rápido: corre en CADA arranque de sesión, y una demora se paga entera cada vez que
+# alguien abre Claude (la extensión de VS Code se rinde a los 60 s). `unit.test.js` lanza herramientas reales (lo dice
+# el comentario de su propia separación) y por la doctrina de este archivo eso va al throttle diario (BACKFILL_TESTS),
+# no acá. Lo que queda en línea son las seis rápidas, que sí son milisegundos.
+# De DÓNDE salen lo dice la regla para quien lee (`_skills_dir read`: la variable › el
 # propio clon si es unido › lo instalado), no la ruta donde se registran los hooks: corridas desde un clon de trabajo
-# probaban las instaladas, un verde que no había probado nada. La línea del rojo dice de qué raíz salieron. Si la
+# probarían las instaladas, un verde que no habría probado nada. La línea del rojo dice de qué raíz salieron. Si la
 # carpeta que da la regla no existe (una variable que quedó apuntando a un clon borrado), la suite NO corrió y se dice:
 # no es un verde. Con --check no se pregunta nada (no corren).
 UT_SKILLS=""; UT_PRESENT=()
@@ -743,13 +735,13 @@ if [[ -n "$UT_SKILLS" ]]; then
     "$UT_SKILLS/tycon-pipeline/scripts/tests/advisor-ledger.test.js"
     "$UT_SKILLS/tycon-pipeline/scripts/tests/config-lint.test.js"
     "$UT_SKILLS/tycon-pipeline/scripts/tests/navigation-drift.test.js"
-    # 2026-08-26: honestidad del registro de ediciones (parte PURA, ~10ms, sin spawns). Lo que
+    # honestidad del registro de ediciones (parte PURA, ~10ms, sin spawns). Lo que
     # cuida: que un registro lleno de ruido del pase adversarial no pase por registro sano.
     "$UT_SKILLS/tycon-pipeline/scripts/tests/ledger-honesty.test.js"
   )
   for t in "${UNIT_TESTS[@]}"; do [[ -f "$t" ]] && UT_PRESENT+=("$t"); done
 fi
-# Con --check no corren (story 8.7, AC 24: --check no escribe). Medido el 2026-10-03 sobre una HOME vacía: estas suites
+# Con --check no corren (--check no escribe): sobre una HOME vacía, estas suites
 # dejan ~/.claude/.tycon-pipeline/file-events/ y story-dirs-cache.json. El aviso no se pierde: lo da la corrida normal de
 # cada arranque.
 if [[ ${#UT_PRESENT[@]} -gt 0 ]]; then
@@ -762,30 +754,27 @@ if [[ ${#UT_PRESENT[@]} -gt 0 ]]; then
 fi
 
 # ============================================================
-# Suite del descubridor de stories del backfill — throttle DIARIO (2026-08-15).
-# Por qué existe: `tycon-backfill-followups.js` tenía su PROPIO buscador de stories (un readdir
-# plano) mientras el resto del arnés usaba el de tycon-pipeline. En un repo del equipo eso se veía como
-# "0 stories Mary+GOLD encontradas" — y como los dos buscadores viven en repos distintos, arreglar
-# uno dejaba el otro roto. Ahora el backfill delega en `lib/story-discovery.js`; esta suite es lo
-# que impide que la unificación se deshaga sin que nadie se entere. Spawnea procesos → 1 vez/día.
+# Suite del descubridor de stories del backfill — throttle DIARIO.
+# Por qué existe: dos buscadores de stories en repos distintos se desfasan —en un repo del equipo eso se vería como
+# "0 stories Mary+GOLD encontradas"—. `tycon-backfill-followups.js` delega en `lib/story-discovery.js`, y esta suite es
+# lo que impide que la unificación se deshaga sin que nadie se entere. Spawnea procesos → 1 vez/día.
 # ============================================================
 # 🔴 Los archivos se listan UNO POR UNO a propósito: `node --test <dir>` no resuelve el require
 # por ruta de estos tests y falla con MODULE_NOT_FOUND — un rojo que no es del código. Al agregar
 # una suite nueva acá, agregarla también a esta lista.
-# 2026-08-19: `story-gate-cli.test.js` (portón de carril — la parte que lanza git + marker.js CLI) va
-# acá, en el throttle diario, y NO en UNIT_TESTS: medido ~1 min bajo carga en SessionStart (H8 del
-# review adversarial). La parte pura del portón (story-gate.test.js) sí corre en cada arranque.
-# 🔴 2026-09-05 (segunda tanda): las suites "backfill" (descubrimiento de stories, lints, métricas,
-# examen, freno de story-a-mano…) y "matrix" (la matriz runtime) TAMPOCO se lanzan ya desde las
-# máquinas: están en scripts/tests/suites.json y corren en Azure DevOps con el resto (job `Suites`).
-# Eran familias aparte sólo porque lanzan git y procesos de verdad y había que espaciarlas en la
-# máquina del dev; allá no le cuestan a nadie. Su reporte viaja en ultimo-suites.json.
+# `story-gate-cli.test.js` (portón de carril — la parte que lanza git + marker.js CLI) va
+# acá, en el throttle diario, y NO en UNIT_TESTS: tarda ~1 min bajo carga en SessionStart.
+# La parte pura del portón (story-gate.test.js) sí corre en cada arranque.
+# 🔴 Las suites "backfill" (descubrimiento de stories, lints, métricas, examen, freno de story-a-mano…) y "matrix" (la
+# matriz runtime) NO se lanzan desde las máquinas: están en scripts/tests/suites.json y corren en Azure DevOps con el
+# resto (job `Suites`), donde lanzar git y procesos de verdad no le cuesta a nadie. Su reporte viaja en
+# ultimo-suites.json.
 BACKFILL_TESTS=()
-# ── Reporte de las suites diarias que corren EN LÍNEA (2026-08-25, §5.3) ──────────────────────
-# Las suites de fondo ya dejan su `{kind:"bash-tests"}` en .bench/, y por eso la detección de
+# ── Reporte de las suites diarias que corren EN LÍNEA ──────────────────────────────────────────
+# Las suites de fondo dejan su `{kind:"bash-tests"}` en .bench/, y por eso la detección de
 # sello-trucho de bench-notice puede cruzar "sello de hoy" contra "reporte de hoy". Las dos que
-# corren en línea (backfill/lint/portón-CLI y matriz runtime) sellaban SIN dejar reporte, así que
-# un sello escrito a mano en ésas era indetectable. Ahora dejan el suyo, con el mismo shape.
+# corren en línea (backfill/lint/portón-CLI y matriz runtime) también dejan el suyo, con el mismo shape: sin
+# reporte, un sello escrito a mano sería indetectable.
 tycon_report() { # tycon_report <kind> <fallas...>
   local kind="$1"; shift
   local bench="$TCG_HOOKS_DIR/../controls-bench/.bench"
@@ -804,17 +793,15 @@ BACKFILL_STAMP="$HOME/.claude/.tycon-pipeline/backfill-tests-last-run"
 BF_PRESENT=()
 
 # ============================================================
-# Suite de la matriz runtime (DODRT-C6/C8) — throttle DIARIO (2026-08-13).
-# Por qué existe: esta suite NO estaba wireada a ningún arranque y estuvo 8 días
-# en rojo sin que nadie lo viera (fecha hardcodeada que se pudrió el 2026-08-06;
-# la cazó una corrida manual durante la Story 4.34 de un repo del equipo). Una suite que
-# nada corre es indistinguible de una suite verde. Tarda ~3.5s (spawnea procesos
-# reales) → corre a lo sumo 1 vez por día por máquina, no en cada sesión.
+# Suite de la matriz runtime (DODRT-C6/C8) — throttle DIARIO.
+# Por qué existe: una suite que no está wireada a ningún arranque puede estar en rojo sin que nadie lo vea (por
+# ejemplo, por una fecha hardcodeada que se pudre). Una suite que nada corre es indistinguible de una suite verde.
+# Tarda ~3.5s (spawnea procesos reales) → corre a lo sumo 1 vez por día por máquina, no en cada sesión.
 # ============================================================
 # (matrix: ver la nota de backfill, arriba — corre en ADO)
 
 # ============================================================
-# Banco de pruebas de controles (Etapa B Codex, 2026-08-21) — throttle DIARIO.
+# Banco de pruebas de controles — throttle DIARIO.
 # Corre los casos de los ~20 hooks contra los scripts REALES (sandbox, sin LLM,
 # ~45s) y compara contra la línea de base Claude: un control que se rompe suena
 # acá, no en producción. El lado Codex (paridad + live-fire con sesiones reales)
@@ -823,37 +810,36 @@ BF_PRESENT=()
 # Ver guides/maintaining/controls-bench.md. Opt-out: TYCON_BENCH_DAILY=0.
 # ============================================================
 # ============================================================
-# Despliegue del lado Codex (2026-08-23; endurecido por la revisión del mismo día).
+# Despliegue del lado Codex.
 #
 # UN solo entrypoint — build/deploy-codex-all.js — con una sola política, compartida con el
-# instalador de Windows (.ps1 llama el MISMO script: la revisión probó que dos copias inline
-# del bloque driftean en la primera edición). Qué garantiza el entrypoint:
+# instalador de Windows (.ps1 llama el MISMO script: dos copias inline del bloque driftean en la primera
+# edición). Qué garantiza el entrypoint:
 #   · fingerprint contra un stamp → el arranque estable cuesta ~5ms y cero spawns;
-#   · respeta --check (NO escribe — el bloque anterior violaba el contrato del header);
+#   · respeta --check (NO escribe);
 #   · silencioso si no hay nada que hacer; ante un fallo imprime la CAUSA + el comando;
 #   · clon incompleto (git pull fallado) se dice como tal, no como "deploy roto".
-# Por qué existe el bloque: los 4 deployers vivían ANIDADOS bajo el stamp diario del banco —
-# con el stamp puesto no desplegaban nada y no decían nada (bug vivo hasta hoy).
+# Por qué existe el bloque: los 4 deployers viven ANIDADOS bajo el stamp diario del banco —
+# con el stamp puesto no desplegarían nada y no dirían nada.
 #
-# ¿Esta máquina usa Codex? (2026-09-19, deuda INSTALADOR-CODEX-PREGUNTA-AL-AMBIENTE)
-# Se preguntaba sólo por la llave TYCON_CODEX, y la llave vive en el rc del shell: a este
-# instalador, que corre desde el arranque de sesión, no le llega. Medido el 2026-09-06: la llave
-# puesta en el .zshrc y en launchctl, y VACÍA acá — el despliegue no corría en ninguna máquina y
-# el lado Codex quedaba atrás en silencio. La pregunta la contesta el DISCO, con la misma función
+# ¿Esta máquina usa Codex?
+# La llave TYCON_CODEX vive en el rc del shell y a este instalador, que corre desde el arranque de sesión, no le llega:
+# puesta en el .zshrc y en launchctl, acá llega VACÍA. Preguntar sólo por ella dejaría el lado Codex atrás en silencio.
+# La pregunta la contesta el DISCO, con la misma función
 # que usa el chequeo de paridad (codexDeployed() de scripts/lib/harness-parity.js), no una copia:
 #   · TYCON_CODEX=1           → sí. Hace falta la PRIMERA vez, cuando todavía no hay nada desplegado.
 #   · TYCON_CODEX=0 explícito → no, aunque haya evidencia (apagado a propósito; las suites aíslan así).
 #   · sin la variable         → lo que diga el disco.
 # Alcanza al despliegue y al AGENTS.md puntero. El LaunchAgent de apps gráficas y las corridas
 # caras de Codex (más abajo) siguen pidiendo la llave: publican la llave misma o gastan sesiones.
-# Un chequeo que FALLA no se lee como «no usa Codex»: sería el mismo silencio de la deuda con otra
+# Un chequeo que FALLA no se lee como «no usa Codex»: sería un silencio con otra
 # causa. 0 = sí · 10 = no · cualquier otra cosa = no pude saberlo → se avisa con la causa.
 # ============================================================
 CODEX_ON=0
-# Desde la story 8.3 la llave es `integrations.codex` (TYCON_CODEX › ~/.claude/tycon.json › perfil del equipo › apagada):
-# `1` sí · `0` no · `detect` lo que diga el disco (lo de siempre; es lo que trae el perfil). Sin configuración: apagada —
+# La llave es `integrations.codex` (TYCON_CODEX › ~/.claude/tycon.json › perfil del equipo › apagada):
+# `1` sí · `0` no · `detect` lo que diga el disco (es lo que trae el perfil). Sin configuración: apagada —
 # afuera nadie despliega Codex sin pedirlo. Configuración ROTA: nada de Codex hasta arreglarla (ya se avisó arriba).
-# Sin lector (copia parcial de este archivo): la variable, como antes.
+# Sin lector (copia parcial de este archivo): la variable.
 case "$INTEG_ESTADO" in
   ok) _CODEX_LLAVE="$TYCON_INTEG_CODEX" ;;
   rota) _CODEX_LLAVE=0 ;;
@@ -876,7 +862,7 @@ case "$_CODEX_LLAVE" in
        echo "⚠ tycon: no pude saber si esta máquina usa Codex (no hay node en el PATH) — sigo como si no; para desplegarlo igual: TYCON_CODEX=1"
      fi ;;
 esac
-# Bajo el mecanismo de instalación (story 8.23, tanda C): qué herramientas enchufa la máquina lo dice SU ESTADO, y a
+# Bajo el mecanismo de instalación: qué herramientas enchufa la máquina lo dice SU ESTADO, y a
 # Codex lo enchufa harness.js en Node (el mismo camino en Mac y en Windows, y el único en una máquina sin Claude Code).
 # `TYCON_HARNESS_CODEX` se lo dice a este instalador, y gana sobre la llave de arriba:
 #   · done → la máquina usa Codex y su despliegue YA LO HIZO harness.js: acá se saltea (ni se despliega ni se anota);
@@ -893,7 +879,7 @@ if [[ "$CODEX_ON" == "1" && "$CODEX_BY_HARNESS" != "1" ]] && command -v node >/d
   CODEX_DEPLOY_ALL="$(cd "$TCG_HOOKS_DIR/../.." && pwd)/build/deploy-codex-all.js"
   if [[ -f "$CODEX_DEPLOY_ALL" ]]; then
     if [[ "$CHECK_ONLY" == "1" ]]; then
-      # la salida va tal cual, como siempre; el plan (story 8.16) sólo necesita saber si dijo que el despliegue está pendiente
+      # la salida va tal cual, como siempre; el plan sólo necesita saber si dijo que el despliegue está pendiente
       _CODEX_CHECK_OUT="$(node "$CODEX_DEPLOY_ALL" --check)" || true
       [[ -n "$_CODEX_CHECK_OUT" ]] && printf '%s\n' "$_CODEX_CHECK_OUT"
       case "$_CODEX_CHECK_OUT" in *PENDIENTE*) CODEX_PENDING=1 ;; *) CODEX_PENDING=0 ;; esac
@@ -901,7 +887,7 @@ if [[ "$CODEX_ON" == "1" && "$CODEX_BY_HARNESS" != "1" ]] && command -v node >/d
       node "$CODEX_DEPLOY_ALL" || true
     fi
   fi
-  # El plan (story 8.16, AC 11 · pase adversarial de la tanda B, clase 2): lo que el despliegue escribiría en $CODEX_HOME,
+  # El plan: lo que el despliegue escribiría en $CODEX_HOME,
   # con los mismos `kind` e `id` que el reporte de abajo — un perfil y un subagente nativo por revisor, hooks.json,
   # config.toml y un enlace por skill de agent-skills (los enlaces del dev a otro lado no son del arnés). Falta → add;
   # está → keep, salvo hooks.json y config.toml cuando --check dijo que el despliegue está pendiente sin que falte nada
@@ -942,7 +928,7 @@ for rel, action in rows:
     print("codex\t%s\t%s\t%s" % (os.path.join(home, rel), rel, action))
 PY
   fi
-  # Lo que el despliegue deja en $CODEX_HOME y es del arnés (story 8.13, AC 15): un perfil y un subagente nativo por cada
+  # Lo que el despliegue deja en $CODEX_HOME y es del arnés: un perfil y un subagente nativo por cada
   # revisor generado en adapters/codex/, hooks.json y config.toml (con sus entradas adentro), y los enlaces de
   # ~/.codex/skills que apuntan a agent-skills (los que el dev puso a mano no). El espejo AGENTS.md lo anota el sync.
   if [[ -n "$REPORT_PIECES_TMP" ]]; then
@@ -971,20 +957,20 @@ PY
   fi
 fi
 
-# ── AGENTS.md puntero en los repos de proyecto (2026-08-23) ──────────────────────────────
+# ── AGENTS.md puntero en los repos de proyecto ──────────────────────────────
 # El espejo automático cubre SOLO el CLAUDE.md GLOBAL; los de proyecto no se traducen
 # (asimetría declarada en el inventario). Este bloque la cierra SIN segunda copia: deposita
 # un AGENTS.md de puntero ("las reglas viven en CLAUDE.md — leelo y aplicalo") en cada repo
 # bajo la raíz de repos de esta máquina que tenga CLAUDE.md y NO tenga AGENTS.md. Nunca pisa un
 # AGENTS.md existente (propio o de otro origen). El dev lo commitea una vez y le llega al equipo.
-# Desde la story 8.3 la raíz sale de scripts/lib/repos-root.js (TYCON_REPOS_ROOT, ~/.claude/tycon.json,
+# La raíz sale de scripts/lib/repos-root.js (TYCON_REPOS_ROOT, ~/.claude/tycon.json,
 # las sesiones) y «repo del equipo» se decide con la organización configurada (ado.org): sin raíz o
 # sin organización no se deposita nada, y se dice. Opt-out: TYCON_NO_AGENTSMD_POINTER=1.
 if [[ "$CODEX_ON" == "1" && "${TYCON_NO_AGENTSMD_POINTER:-0}" != "1" ]]; then
   # rc 2 = la configuración del arnés está ROTA (tycon.json / perfil): se dice tal cual y no se deposita nada —
-  # un archivo roto no se lee como «sin raíz» ni como «sin organización» (story 8.3, AC 2). rc 3 = sin valor.
+  # un archivo roto no se lee como «sin raíz» ni como «sin organización». rc 3 = sin valor.
   # 🔴 `|| _RC=$?` y no `; _RC=$?`: este archivo corre con `set -e`, y una asignación `X="$(cmd)"` con cmd ≠ 0
-  # aborta el instalador ENTERO antes de leer el código (lo cazó el escéptico del pase adversarial, vuelta 1).
+  # aborta el instalador ENTERO antes de leer el código.
   _CFG_ERR="$(mktemp)"; _RC_RAIZ=0; _RC_ORG=0
   _REPOS_ROOT="$(node "$SCRIPT_DIR/lib/repos-root.js" --plain 2>"$_CFG_ERR")" || _RC_RAIZ=$?
   _ADO_ORG="$(node "$SCRIPT_DIR/lib/tycon-config.js" get ado.org 2>>"$_CFG_ERR")" || _RC_ORG=$?
@@ -1002,14 +988,14 @@ if [[ "$CODEX_ON" == "1" && "${TYCON_NO_AGENTSMD_POINTER:-0}" != "1" ]]; then
   elif [[ -z "$_ORG_NOMBRE" ]]; then
     echo "ℹ tycon/codex: sin organización de Azure DevOps configurada (ado.org): no sé cuáles repos son del equipo, no deposito punteros AGENTS.md"
   else
-  # Dos niveles: hay repos anidados en contenedores (ej. Totora/Backend, Totora/Project).
+  # Dos niveles: hay repos anidados en contenedores (ej. Cliente/Backend, Cliente/Project).
   for repo in "$_REPOS_ROOT"/*/ "$_REPOS_ROOT"/*/*/; do
     # ! -L además de ! -e: un AGENTS.md symlink ROTO da -e falso y el write saldría POR el
-    # symlink, fuera del repo (ronda adversarial 2026-08-23).
+    # symlink, fuera del repo.
     [[ -d "$repo/.git" && -f "$repo/CLAUDE.md" && ! -e "$repo/AGENTS.md" && ! -L "$repo/AGENTS.md" ]] || continue
-    # Solo repos DEL EQUIPO (origin en la organización configurada): en el barrido real aparecieron
-    # un fork ajeno y un repo personal — depositar ahí no corresponde, y borrar el puntero no servía
-    # porque cada arranque lo re-creaba. La guarda por origin lo resuelve sin opt-out manual.
+    # Solo repos DEL EQUIPO (origin en la organización configurada): en un fork ajeno o un repo personal depositar no
+    # corresponde, y borrar el puntero no serviría porque cada arranque lo re-crearía. La guarda por origin lo resuelve
+    # sin opt-out manual.
     origen="$(git -C "$repo" remote get-url origin 2>/dev/null || true)"
     case "$origen" in
       *"dev.azure.com/$_ORG_NOMBRE"*|*"$_ORG_NOMBRE.visualstudio.com"*) ;;
@@ -1038,7 +1024,7 @@ AGENTSMD
   fi
 fi
 
-# ── Ambiente para apps GRÁFICAS en macOS (2026-08-23) ────────────────────────────────────
+# ── Ambiente para apps GRÁFICAS en macOS ────────────────────────────────────
 # Los secretos de los MCP bajo Codex se leen del ambiente; el panel de Codex en VSCode no pasa
 # por ~/.zshrc y no los ve (Clockify sin key aunque el export esté). Un LaunchAgent invoca en
 # cada login scripts/setup/harness-env-publish.sh, que publica TYCON_CODEX y los env de
@@ -1085,28 +1071,23 @@ BENCH_STAMP="$HOME/.claude/.tycon-pipeline/controls-bench-last-run"
 if [[ "${TYCON_BENCH_DAILY:-1}" != "0" ]] && command -v node >/dev/null 2>&1 && [[ -f "$BENCH_RUNNER" ]]; then
   TODAY_CB="$(date +%Y-%m-%d)"
   LAST_CB="$(cat "$BENCH_STAMP" 2>/dev/null || true)"
-  # 🔴 2026-09-01: DE FONDO y con reintento diario, no en línea y en cada arranque.
-  # El banco tardaba ~3 min con la línea de base sin sellar, y como corría EN LÍNEA se llevaba
-  # puesto el arranque: la extensión de VS Code, que se rinde a los 60 s, dejó de abrir. Dos
-  # decisiones (del lanzador de fondo que existió hasta el 2026-09-15): el arranque no espera a ninguna
-  # batería, y un rojo se reintenta UNA VEZ POR DÍA en vez de en cada sesión. El aviso no se
-  # pierde — lo cobra bench-notice.js al arranque siguiente, leyendo el reporte de .bench/.
+  # 🔴 DE FONDO y con reintento diario, no en línea y en cada arranque. Un banco de ~3 min con la línea de base sin
+  # sellar, corrido EN LÍNEA, se lleva puesto el arranque: la extensión de VS Code, que se rinde a los 60 s, deja de
+  # abrir. Dos decisiones: el arranque no espera a ninguna batería, y un rojo se reintenta UNA VEZ POR DÍA en vez de en
+  # cada sesión. El aviso no se pierde — lo cobra bench-notice.js al arranque siguiente, leyendo el reporte de .bench/.
   BENCH_TRY_STAMP="$HOME/.claude/.tycon-pipeline/controls-bench-last-try"
   LAST_TRY_CB="$(cat "$BENCH_TRY_STAMP" 2>/dev/null || true)"
-  # 🔴 2026-09-05: el banco determinista YA NO se lanza desde las máquinas. Corre de noche en Azure
-  # DevOps (pipelines/azure-pipelines-banco.yml) sobre lo publicado en main, y su reporte viaja por git:
-  # `scripts/controls-bench/ultimo-banco.json`, que bench-notice.js lee y denuncia si envejece.
-  # Motivo medido esa noche: acá corría DOS veces por arranque en la máquina del dev (este bloque y
-  # el de las dos herramientas, más abajo), y el segundo se relanzaba en CADA sesión porque su
-  # gatillo era el sello verde — que un caso frágil mantenía en rojo desde el 1/9. Dos bancos
-  # superpuestos agotaban el tiempo de los casos y fabricaban las regresiones falsas que el aviso
-  # gritó durante días. A mano sigue disponible: `node scripts/controls-bench/runner.js --tool claude`.
-  # `run-controls-bench-job.sh` quedó sin invocador ese día y se borró el 2026-09-15
-  # (plan: tasks/plan-banco-a-ado-2026-09-05.md).
+  # 🔴 El banco determinista NO se lanza desde las máquinas. Corre de noche en Azure DevOps
+  # (pipelines/azure-pipelines-banco.yml) sobre lo publicado en main, y su reporte viaja por git:
+  # `scripts/controls-bench/ultimo-banco.json`, que bench-notice.js lee y denuncia si envejece. Lanzarlo acá lo correría
+  # DOS veces por arranque (este bloque y el de las dos herramientas, más abajo), y el segundo se relanzaría en CADA
+  # sesión si su gatillo fuera el sello verde, que un caso frágil mantiene en rojo. Dos bancos superpuestos agotan el
+  # tiempo de los casos y fabrican regresiones falsas. A mano sigue disponible:
+  # `node scripts/controls-bench/runner.js --tool claude`.
   :
   if [[ "$LAST_CB" != "$TODAY_CB" ]]; then
-    # Frescura del generador (Etapa C): ¿adapters/codex/agents/*.toml refleja el canónico?
-    # Sin LLM, ~50ms. OJO alcance (revisión 2026-08-23): en máquinas TYCON_CODEX=1 el deploy de
+    # Frescura del generador: ¿adapters/codex/agents/*.toml refleja el canónico?
+    # Sin LLM, ~50ms. OJO alcance: en máquinas TYCON_CODEX=1 el deploy de
     # arriba regenera ANTES, así que acá no puede dar rojo — y el nudge de "commitear los .toml
     # regenerados" lo imprime deploy-codex-all. Este check protege a las máquinas SIN Codex y
     # al que commitea (vía pre-commit).
@@ -1114,19 +1095,17 @@ if [[ "${TYCON_BENCH_DAILY:-1}" != "0" ]] && command -v node >/dev/null 2>&1 && 
     if [[ -f "$GEN_CHECK" ]] && ! node "$GEN_CHECK" >/dev/null 2>&1; then
       echo "🛑 tycon: adapters/codex DESACTUALIZADO vs el canónico — corré: node $(cd "$TCG_HOOKS_DIR/../.." && pwd)/build/generate.js"
     fi
-    # con --check no se sella ni se lanza nada (story 8.7, AC 24: --check no escribe)
+    # con --check no se sella ni se lanza nada (--check no escribe)
     if [[ "${TYCON_CODEX:-0}" == "1" && "$CHECK_ONLY" != "1" ]]; then
       # Sólo las corridas CARAS (sesiones LLM reales) quedan bajo el stamp diario. El despliegue
-      # se mudó a su propio bloque, más arriba: ver "Despliegue del lado Codex".
-      # 2026-08-31 (Story 1.1): los casos de ADVISORS ya NO se lanzan desde acá. Vivían pegados
-      # a este bloque, o sea bajo TRES condiciones anidadas —el stamp diario de arriba, este
-      # TYCON_CODEX, y TYCON_BENCH_DAILY—, y sellaban la semana ANTES de correr. En la máquina
-      # del dev la llave de Codex no está puesta, así que ahí nunca corrieron. Ahora los lanza
-      # `periodic-exam.js`, en su propio bloque de abajo. Estas DOS corridas no cambian.
-      # 2026-09-05: `runner.js --tool both` se fue a ADO con el resto del banco (ver arriba). Lo
-      # único que tiene que correr en una máquina es el disparo REAL dentro de Codex — y con su
-      # PROPIO sello diario: hasta hoy heredaba el sello verde del banco, que un rojo cualquiera
-      # dejaba viejo, y entonces esto se relanzaba en cada arranque de sesión.
+      # está en su propio bloque, más arriba: ver "Despliegue del lado Codex".
+      # Los casos de ADVISORS no se lanzan desde acá: los lanza `periodic-exam.js`, en su propio bloque de abajo. Un
+      # lanzador pegado a este bloque quedaría bajo TRES condiciones anidadas —el stamp diario de arriba, este
+      # TYCON_CODEX, y TYCON_BENCH_DAILY— y, si sellara la semana ANTES de correr, nunca correría en la máquina del dev,
+      # donde la llave de Codex no está puesta.
+      # `runner.js --tool both` corre en ADO con el resto del banco (ver arriba). Lo único que tiene que correr en una
+      # máquina es el disparo REAL dentro de Codex — y con su PROPIO sello diario: si heredara el sello verde del banco,
+      # un rojo cualquiera lo dejaría viejo y esto se relanzaría en cada arranque de sesión.
       LIVE_FIRE_STAMP="$HOME/.claude/.tycon-pipeline/live-fire-codex-last-try"
       if [[ "$(cat "$LIVE_FIRE_STAMP" 2>/dev/null || true)" != "$TODAY_CB" ]]; then
         echo "$TODAY_CB" > "$LIVE_FIRE_STAMP" 2>/dev/null || true
@@ -1137,18 +1116,18 @@ if [[ "${TYCON_BENCH_DAILY:-1}" != "0" ]] && command -v node >/dev/null 2>&1 && 
 fi
 
 # ============================================================
-# El examen periódico de los 28 revisores (Story 1.1, 2026-08-31).
+# El examen periódico de los 28 revisores.
 #
-# 🔴 Este bloque es de PRIMER NIVEL a propósito. El lanzador anterior vivía dentro del bloque de
-# arriba, bajo tres condiciones anidadas; la de afuera era el sello DIARIO del banco determinista,
-# así que si ese banco ya había corrido hoy, el examen semanal ni se evaluaba. Un control que sólo
-# se pregunta si le toca cuando OTRO control no corrió es un control que no corre.
+# 🔴 Este bloque es de PRIMER NIVEL a propósito. Un lanzador dentro del bloque de arriba quedaría bajo tres
+# condiciones anidadas; la de afuera es el sello DIARIO del banco determinista, así que si ese banco ya corrió hoy, el
+# examen semanal ni se evaluaría. Un control que sólo se pregunta si le toca cuando OTRO control no corrió es un
+# control que no corre.
 #
 # Acá el instalador no decide nada: sólo invoca. Quién corre (máquina designada), cada cuánto y a
 # qué hora lo decide `exam-config.json`, y el propio script se ocupa del candado, del sello (que
 # se escribe al TERMINAR) y de que el resultado viaje por git.
 # 🔴 Y el instalador NO lanza el examen: sólo instala (o retira) el disparador. Lanzarlo también
-# desde acá serían DOS programadores para lo mismo —lo que la story prohíbe por escrito— y haría
+# desde acá crearía DOS programadores para lo mismo y haría
 # que cada máquina del equipo ejecutara la pieza en cada arranque, cuando para el resto del equipo
 # lo único que tiene que cambiar es el texto del aviso. Si el mini estaba dormido a las 2, launchd
 # corre igual el trabajo perdido al despertar; y si aun así no corre, la denuncia a los 8 días lo dice.
@@ -1157,7 +1136,7 @@ fi
 # ============================================================
 EXAMEN_PERIODICO="$TCG_HOOKS_DIR/../controls-bench/periodic-exam.js"
 legacy_env TYCON_NO_NIGHTLY_EXAM
-# sólo en full (story 8.16): fuera de full ni se instala ni se retira (si quedó, lo saca el cambio de perfil de harness.js)
+# sólo en full: fuera de full ni se instala ni se retira (si quedó, lo saca el cambio de perfil de harness.js)
 if [[ "${TYCON_NO_NIGHTLY_EXAM:-0}" != "1" && "$PROFILE_FULL" == "1" ]] && command -v node >/dev/null 2>&1 && [[ -f "$EXAMEN_PERIODICO" ]]; then
   if [[ "$CHECK_ONLY" == "1" ]]; then
     node "$EXAMEN_PERIODICO" --install-task --check 2>/dev/null || true
@@ -1165,7 +1144,7 @@ if [[ "${TYCON_NO_NIGHTLY_EXAM:-0}" != "1" && "$PROFILE_FULL" == "1" ]] && comma
     node "$EXAMEN_PERIODICO" --install-task 2>/dev/null || true
   fi
   # su disparador, si quedó (sólo en la máquina designada: en las demás periodic-exam.js lo retira); la variable tiene
-  # nombre viejo en el mapa (story 8.9): se lee por la biblioteca, como las demás
+  # nombre viejo en el mapa: se lee por la biblioteca, como las demás
   legacy_env TYCON_EXAM_LAUNCHAGENTS
   _EXAM_PLIST="${TYCON_EXAM_LAUNCHAGENTS:-$HOME/Library/LaunchAgents}/ar.com.tycon.examen-periodico.plist"
   if [[ -f "$_EXAM_PLIST" ]]; then record launch-agent "$_EXAM_PLIST" ar.com.tycon.examen-periodico; fi
@@ -1174,7 +1153,7 @@ if [[ "${TYCON_NO_NIGHTLY_EXAM:-0}" != "1" && "$PROFILE_FULL" == "1" ]] && comma
 fi
 
 # ============================================================
-# Bloques team-wide de ~/.claude/CLAUDE.md (2026-07-25).
+# Bloques team-wide de ~/.claude/CLAUDE.md.
 # `CLAUDE.md` no está versionado (archivo suelto en el home de cada dev) y las
 # guías de este repo son lectura on-demand — así que una regla que tiene que estar
 # SIEMPRE cargada necesita este puente. El sync es QUIRÚRGICO: solo toca lo que
@@ -1191,7 +1170,7 @@ if [[ -f "$SYNC_BLOCKS" ]]; then
   fi
 fi
 
-# La línea de ~/.claude/CLAUDE.md que carga el índice de guías: desde 2026-10-14 el índice es INDEX.md y README.md es la
+# La línea de ~/.claude/CLAUDE.md que carga el índice de guías: el índice es INDEX.md y README.md es la
 # portada. Este aplicador es el del árbol NUEVO aunque la actualización la haya decidido el programa instalado antes, así
 # que la misma actualización deja la línea nueva (la vieja, reescrita en su lugar; nunca dos). No la agrega si no está:
 # eso es de harness.js. Fail-open: si no puede, la reescribe el próximo arranque. Detalle: setup/harness/import-line.js.
@@ -1204,18 +1183,17 @@ if [[ -f "$SCRIPT_DIR/setup/harness/import-line.js" ]] && command -v node >/dev/
 fi
 
 # ============================================================
-# Los comandos de barra del equipo (2026-08-31). Mismo problema que los bloques de
+# Los comandos de barra del equipo. Mismo problema que los bloques de
 # CLAUDE.md: viven versionados en `commands/` pero Claude Code los lee de
-# `~/.claude/commands/`, y hasta hoy el puente era copiarlos A MANO — o sea que
-# `/tycon-instincts` existía sólo en la máquina de quien lo escribió. Una pieza que
-# depende de que alguien se acuerde es una pieza que la mitad del equipo no tiene.
+# `~/.claude/commands/`, y copiarlos A MANO haría que `/tycon-instincts` existiera sólo en la máquina de quien lo
+# escribió. Una pieza que depende de que alguien se acuerde es una pieza que la mitad del equipo no tiene.
 # Copia sólo si cambió, no pisa comandos propios del dev que no estén en el repo.
 # Opt-out: TYCON_NO_COMMANDS_SYNC=1.
-# Pieza compartida (story 8.13, AC 28): bajo un `harness.js` que ya los copió y los anotó
+# Pieza compartida: bajo un `harness.js` que ya los copió y los anotó
 # (TYCON_HARNESS_SHARED_DONE=1) este bloque se saltea, con su reporte.
 # ============================================================
 if [[ "${TYCON_HARNESS_SHARED_DONE:-0}" != "1" && "${TYCON_NO_COMMANDS_SYNC:-0}" != "1" && -d "$SCRIPT_DIR/../commands" ]]; then
-  # con --check ni la carpeta se crea (story 8.7, AC 24): sólo se dice qué comando falta o cambió
+  # con --check ni la carpeta se crea: sólo se dice qué comando falta o cambió
   [[ "$CHECK_ONLY" == "1" ]] || mkdir -p "$HOME/.claude/commands" 2>/dev/null || true
   for _cmd in "$SCRIPT_DIR"/../commands/*.md; do
     [[ -f "$_cmd" ]] || continue
@@ -1234,18 +1212,17 @@ if [[ "${TYCON_HARNESS_SHARED_DONE:-0}" != "1" && "${TYCON_NO_COMMANDS_SYNC:-0}"
 fi
 
 # ============================================================
-# Versión de engram vs el pin del equipo (2026-07-25). AVISA, nunca actualiza —
+# Versión de engram vs el pin del equipo. AVISA, nunca actualiza —
 # los chunks de `.engram/` se comparten por git y la deriva de versiones puede
 # partir la memoria en dos formatos con falla silenciosa. Ver el header de
 # check-engram-version.sh. Silencioso si coincide. Opt-out:
 # TYCON_NO_ENGRAM_VERSION_CHECK=1.
 # ============================================================
 # ============================================================
-# Paridad de INSTALACIÓN Claude↔Codex (Etapa H). Corre en CADA arranque, DE FONDO (~0.3s,
-# cero costo en el critical path) y DESPUÉS del sync de bloques — la revisión 2026-08-23 la
-# encontró (a) anidada bajo el stamp diario del banco, el mismo anti-patrón que dejó a los
-# deployers sin correr, y (b) ANTES del sync, con lo que gritaba un rojo de AGENTS.md que el
-# propio arranque arreglaba dos líneas más abajo. Se auto-gatea si la máquina no tiene lado
+# Paridad de INSTALACIÓN Claude↔Codex. Corre en CADA arranque, DE FONDO (~0.3s,
+# cero costo en el critical path) y DESPUÉS del sync de bloques: anidada bajo el stamp diario del banco sería el mismo
+# anti-patrón que deja a los deployers sin correr, y ANTES del sync gritaría un rojo de AGENTS.md que el propio
+# arranque arregla dos líneas más abajo. Se auto-gatea si la máquina no tiene lado
 # Codex desplegado; el rojo lo cobra bench-notice en el próximo arranque. Respeta --check.
 # ============================================================
 if [[ "$CHECK_ONLY" != "1" && "$PROFILE_FULL" == "1" ]] && command -v node >/dev/null 2>&1 && [[ -f "$SCRIPT_DIR/lib/harness-parity.js" ]]; then
@@ -1253,10 +1230,10 @@ if [[ "$CHECK_ONLY" != "1" && "$PROFILE_FULL" == "1" ]] && command -v node >/dev
 fi
 
 ENGRAM_VER_CHECK="$SCRIPT_DIR/setup/check-engram-version.sh"
-# Los tres chequeos de engram (versión, sqlite3, nombre de proyecto) sólo con la integración prendida (story 8.3).
+# Los tres chequeos de engram (versión, sqlite3, nombre de proyecto) sólo con la integración prendida.
 if [[ "$TYCON_INTEG_ENGRAM" == "1" && -f "$ENGRAM_VER_CHECK" ]]; then
   if [[ "$CHECK_ONLY" == "1" ]]; then
-    # --check no escribe (story 8.7, AC 24): el `--check` de ese script fuerza los avisos, no frena su auto-alineación
+    # --check no escribe: el `--check` de ese script fuerza los avisos, no frena su auto-alineación
     # (que actualiza engram con una versión atrasada). Con la variable queda el aviso y no se actualiza nada.
     TYCON_ENGRAM_AUTO_UPGRADE=0 bash "$ENGRAM_VER_CHECK" --check 2>/dev/null || true
   else
@@ -1276,18 +1253,17 @@ fi
 # ============================================================
 SQLITE_ENSURE="$SCRIPT_DIR/setup/ensure-sqlite3.sh"
 if [[ "$TYCON_INTEG_ENGRAM" == "1" && -f "$SQLITE_ENSURE" && "$CHECK_ONLY" != "1" ]]; then
-  # 🔴 SIN `2>/dev/null` (corregido 2026-08-25, revisión adversarial). Con el redirect, el helper
-  # avisaba correctamente por stderr —309 bytes medidos— y el instalador los tiraba: el aviso
-  # existía y no lo veía nadie. O sea, el arreglo de "no te quedes callado" quedaba anulado por
+  # 🔴 SIN `2>/dev/null`. Con el redirect, el helper avisaría por stderr y el instalador lo tiraría: el aviso
+  # existiría y no lo vería nadie. O sea, el arreglo de "no te quedes callado" quedaría anulado por
   # quien lo invoca. El `|| true` se conserva: esto nunca puede romper el arranque.
   bash "$SQLITE_ENSURE" || true
 fi
 
 # ============================================================
-# Nombre de proyecto de engram: UNO por repo (ENGRAM-PROJECT-NAME-DRIFT-1, 2026-08-25).
+# Nombre de proyecto de engram: UNO por repo.
 # `.engram/config.json → project_name` (lo usa la sesión) y `.engram-project` (lo usa el hook
-# de commit) pueden desacordar sin ningún error — y la memoria se parte en dos cajones. Caso:
-# los 6 repos de Totora, días después de consolidar a `totora`. AVISA sobre el repo de la
+# de commit) pueden desacordar sin ningún error — y la memoria se parte en dos cajones.
+# AVISA sobre el repo de la
 # sesión ($PWD), nunca bloquea, silencioso si coinciden. Opt-out: TYCON_NO_ENGRAM_PROJECT_CHECK=1.
 # ============================================================
 ENGRAM_PROJECT_CHECK="$SCRIPT_DIR/setup/check-engram-project.sh"
@@ -1296,48 +1272,42 @@ if [[ "$TYCON_INTEG_ENGRAM" == "1" && -f "$ENGRAM_PROJECT_CHECK" ]]; then
 fi
 
 # ============================================================
-# Suites de prueba del arnés — YA NO CORREN ACÁ (2026-09-05)
+# Suites de prueba del arnés — NO CORREN ACÁ
 #
 # Corren de noche en Azure DevOps: pipelines/azure-pipelines-banco.yml, job `Suites`, sobre lo publicado en
 # main y con los repos de los productos clonados. El reporte viaja por git
 # (scripts/controls-bench/ultimo-suites.json) y bench-notice.js denuncia si dejan de correr.
 #
-# 🔴 Por qué se fueron: corriendo en la máquina del dev, el veredicto dependía de qué tenía en el
-# disco y en qué rama. Medido el 2026-09-05: `tolerant-steps` daba ROJO con 9 hallazgos que en
-# `main` no existen — 6 salían de ramas `dev` de tres frontends y 3 de repos que ni siquiera son
-# del arnés. Un control que acusa a pipelines que no corren es un control que se apaga.
+# 🔴 Por qué no corren acá: corriendo en la máquina del dev, el veredicto depende de qué tiene en el disco y en qué
+# rama: `tolerant-steps` da ROJO con hallazgos que en `main` no existen (ramas `dev` de frontends, repos que ni
+# siquiera son del arnés). Un control que acusa a pipelines que no corren es un control que se apaga.
 #
 # LA lista de suites vive en scripts/tests/suites.json (la lee el pipeline). A mano, cualquiera:
 #   bash scripts/tests/<suite>.test.sh
-#
-# `scripts/hooks/run-bash-tests-job.sh` quedó sin invocador ese día, igual que
-# run-controls-bench-job.sh: los dos se borraron el 2026-09-15.
 # ============================================================
 
 # ============================================================
-# Snapshot de las MÉTRICAS DE ETAPA del SDLC — throttle DIARIO, DE FONDO (2026-08-30).
+# Snapshot de las MÉTRICAS DE ETAPA del SDLC — throttle DIARIO, DE FONDO.
 #
 # Escribe un punto de serie por día en `<tcg>/.dashboard/sdlc-stage-<fecha>.json`: lead time
 # story→cierre, first-pass del pipeline, rework por follow-ups y evidencia de cierre.
-# Nace de la Tanda 1 del plan vs el AI-Native SDLC Playbook — la brecha era que estas
-# métricas NO SE MEDÍAN, teniendo toda la materia prima en el disco.
+# Existe porque estas métricas NO SE MIDEN solas, teniendo toda la materia prima en el disco.
 #
 # De fondo y con sello diario por el mismo motivo que las suites de arriba: barre los repos
 # con git log y tarda minutos; colgado del arranque bloquearía la sesión. Sólo LEE (git log +
 # frontmatter) y escribe su propio snapshot — no toca ningún repo de trabajo.
 #
-# 🔴 Descubre los repos SOLO (`--scan`): la lista a mano falló dos veces el día que se escribió
-# —midió los repos de implementación, que no contienen las stories— y el escaneo encontró 2
-# repos y 56 stories más. Raíz por defecto: el padre del clon del arnés (donde vive la raíz de repos);
+# 🔴 Descubre los repos SOLO (`--scan`): una lista a mano falla —mide los repos de implementación, que no contienen
+# las stories— y el escaneo encuentra más repos y stories.
 # override con TYCON_METRICS_SCAN_ROOT. Off: TYCON_STAGE_METRICS=0.
 # ============================================================
 STAGE_METRICS_JS="$SCRIPT_DIR/metrics/sdlc-stage-metrics.js"
 STAGE_STAMP="$HOME/.claude/.tycon-pipeline/stage-metrics-last-run"
 STAGE_ROOT="${TYCON_METRICS_SCAN_ROOT:-$(dirname "$(dirname "$SCRIPT_DIR")")}"
-# con --check no se sella ni se lanza el barrido (story 8.7, AC 24: --check no escribe; antes dejaba el sello en
-# ~/.claude/.tycon-pipeline/ y lanzaba el respaldo, que escribe su punto del día en el clon)
-# 🔴 Sólo donde el arnés corre desde un CLON (2026-10-13): en una versión instalada el árbol no es un clon, la foto del
-# día nunca está en `<árbol>/.dashboard/` y este respaldo corría todos los días, barriendo una carpeta sin repos y
+# con --check no se sella ni se lanza el barrido (--check no escribe: dejaría el sello en
+# ~/.claude/.tycon-pipeline/ y lanzaría el respaldo, que escribe su punto del día en el clon)
+# 🔴 Sólo donde el arnés corre desde un CLON: en una versión instalada el árbol no es un clon, la foto del
+# día nunca está en `<árbol>/.dashboard/` y este respaldo correría todos los días, barriendo una carpeta sin repos y
 # dejando una foto vacía con el nombre de la del nocturno. La pregunta vive en scripts/lib/meter-backup.sh.
 # shellcheck source=lib/meter-backup.sh
 if [[ -f "$SCRIPT_DIR/lib/meter-backup.sh" ]]; then . "$SCRIPT_DIR/lib/meter-backup.sh"
@@ -1345,14 +1315,12 @@ else echo "⚠️  falta scripts/lib/meter-backup.sh: el respaldo local del medi
 if [[ "$CHECK_ONLY" != "1" && "${TYCON_STAGE_METRICS:-1}" == "1" && "$PROFILE_FULL" == "1" ]] && command -v node >/dev/null 2>&1 \
    && [[ -f "$STAGE_METRICS_JS" && -d "$STAGE_ROOT" ]] && meter_backup_has_own_tree "$(dirname "$SCRIPT_DIR")"; then
   TODAY_SM="$(date +%Y-%m-%d)"
-  # Escritor ÚNICO (STAGE-METRICS-CI-1, 2026-08-30): el punto del día lo escribe el pipeline
-  # nocturno de ADO; esta corrida local es el RESPALDO — sólo actúa si el snapshot de hoy no
-  # llegó con el pull (pipeline caído o repo sin red). Dos escritores del mismo archivo por día
-  # = conflictos de merge en la serie, que es justo lo que la serie no puede tener.
-  # 🔴 La decisión vive en scripts/lib/meter-backup.sh y mira también la HORA (2026-09-06):
-  # antes de las 03:00 el archivo de hoy nunca está —el nocturno no corrió todavía—, y este
-  # respaldo corría en toda sesión de madrugada aunque nada hubiera fallado. Después el nocturno
-  # commiteaba el suyo y el `git pull` de la mañana rebotaba contra el suelto.
+  # Escritor ÚNICO: el punto del día lo escribe el pipeline nocturno de ADO; esta corrida local es el RESPALDO — sólo
+  # actúa si el snapshot de hoy no llegó con el pull (pipeline caído o repo sin red). Dos escritores del mismo archivo
+  # por día = conflictos de merge en la serie, que es justo lo que la serie no puede tener.
+  # 🔴 La decisión vive en scripts/lib/meter-backup.sh y mira también la HORA: antes de las 03:00 el archivo de hoy
+  # nunca está —el nocturno no corrió todavía—, y el respaldo correría en toda sesión de madrugada aunque nada hubiera
+  # fallado. Después el nocturno commitearía el suyo y el `git pull` de la mañana rebotaría contra el suelto.
   _SM_EXISTE=0; [[ -f "$(dirname "$SCRIPT_DIR")/.dashboard/sdlc-stage-$TODAY_SM.json" ]] && _SM_EXISTE=1
   _SM_SELLO_HOY=0; [[ "$(cat "$STAGE_STAMP" 2>/dev/null || true)" == "$TODAY_SM" ]] && _SM_SELLO_HOY=1
   if [[ "$_SM_EXISTE" == "1" ]]; then
@@ -1368,11 +1336,10 @@ if [[ "$CHECK_ONLY" != "1" && "${TYCON_STAGE_METRICS:-1}" == "1" && "$PROFILE_FU
 fi
 
 # ============================================================
-# Rescate del hilo y el consumo de las corridas del pipeline (2026-09-09, story 2.13).
+# Rescate del hilo y el consumo de las corridas del pipeline.
 #
 # El archivador del pipeline guarda por corrida los tiempos, los frenos y los agentes, pero el
 # CONSUMO y el HILO viven sólo en la conversación de Claude Code, que se borra a los 30 días.
-# Medido el 2026-09-09: de 215 corridas archivadas quedaban 67 con su conversación viva.
 #
 # 🔴 Por qué acá y no sólo en el cierre del pipeline: el archivador corre en el `clear`, y DESPUÉS
 # siguen la preparación del commit, el cierre y el resumen. O sea que lo guardado al cerrar es un
@@ -1386,7 +1353,7 @@ fi
 # acota por tiempo (--budget-ms), no por sello, y va en segundo plano: nunca bloquea el arranque.
 # Apagar: TYCON_NO_THREAD_RESCUE=1
 #
-# Y DESPUÉS, en la misma tanda de fondo, las corridas al BUZÓN de Azure Storage (story 2.16):
+# Y DESPUÉS, en la misma tanda de fondo, las corridas al BUZÓN de Azure Storage:
 #   · `upload-runs.js` sube lo nuevo o lo que creció, bajo la carpeta de esta máquina, con la llave de
 #     SÓLO ESCRITURA commiteada en scripts/metrics/corridas-buzon.json. Todas las máquinas suben; nada
 #     que configurar. Va después del barrido para que lo rescatado en este arranque suba en este arranque.
@@ -1395,7 +1362,7 @@ fi
 #     no hace nada, no crea la carpeta y nunca abre un login. Va después de la subida para que la vista
 #     de esta máquina incluya lo de hoy.
 #
-# Y ENTRE el barrido y la subida, la recolección de HALLAZGOS (story 2.9):
+# Y ENTRE el barrido y la subida, la recolección de HALLAZGOS:
 #   · `collect-findings.js` recorre los repos de esta máquina (dos niveles bajo la raíz de repos),
 #     proyecta cada hallazgo de los revisores a seis claves y deja ~/.claude/.tycon-pipeline/hallazgos.jsonl,
 #     que la subida sube como un registro más. Va ANTES de la subida para que lo de hoy suba hoy. Tiene su
@@ -1403,9 +1370,9 @@ fi
 #   🔴 No depende de la subida: el cruce de poda de ESTA máquina lo lee aunque la subida esté apagada.
 # Registros: ~/.claude/.tycon-pipeline/{collect-findings,upload-runs,download-runs}.log
 #            (se agregan; pasado ~512 KB, el viejo va a .1) y thread-rescue.log (el del barrido: se reescribe)
-#   🔴 Story 8.9, tanda D2: tenían nombre en castellano. Los abre bash con `>>` antes de que corra node, así que lo que
-#      traían se copia ANTES de abrirlos (`legacy-names.js --prepare-state`, una sola llamada, también de fondo); el
-#      viejo queda intacto hasta el retiro del mapa.
+#   🔴 Los registros con nombre en castellano se copian ANTES de abrirlos: los abre bash con `>>` antes de que corra
+#      node (`legacy-names.js --prepare-state`, una sola llamada, también de fondo); el viejo queda intacto hasta el
+#      retiro del mapa.
 # Apagar: TYCON_NO_UPLOAD_RUNS=1 · TYCON_NO_DOWNLOAD_RUNS=1 · TYCON_NO_COLLECT_FINDINGS=1
 #         (cada llave apaga sólo lo suyo)
 # ============================================================
@@ -1418,16 +1385,16 @@ _RESCATAR=0; _SUBIR=0; _BAJAR=0; _RECOLECTAR=0
 legacy_env TYCON_NO_THREAD_RESCUE; legacy_env TYCON_NO_UPLOAD_RUNS
 legacy_env TYCON_NO_DOWNLOAD_RUNS; legacy_env TYCON_NO_COLLECT_FINDINGS
 if [[ "$CHECK_ONLY" != "1" ]] && command -v node >/dev/null 2>&1; then
-  # el rescate y la recolección son de full (story 8.16); la subida y la bajada, de su integración (en los dos perfiles)
+  # el rescate y la recolección son de full; la subida y la bajada, de su integración (en los dos perfiles)
   [[ "${TYCON_NO_THREAD_RESCUE:-0}" != "1" && "$PROFILE_FULL" == "1" && -f "$TOKENS_DIGEST_JS" ]] && _RESCATAR=1
-  # el buzón sólo con su llave prendida (story 8.3): sin la llave del buzón, ni subida ni bajada — y se ve en el resumen
+  # el buzón sólo con su llave prendida: sin la llave del buzón, ni subida ni bajada — y se ve en el resumen
   [[ "$TYCON_INTEG_MAILBOX" == "1" && "${TYCON_NO_UPLOAD_RUNS:-0}" != "1" && -f "$SUBIR_CORRIDAS_JS" ]] && _SUBIR=1
   [[ "$TYCON_INTEG_MAILBOX" == "1" && "${TYCON_NO_DOWNLOAD_RUNS:-0}" != "1" && -f "$BAJAR_CORRIDAS_JS" ]] && _BAJAR=1
   [[ "${TYCON_NO_COLLECT_FINDINGS:-0}" != "1" && "$PROFILE_FULL" == "1" && -f "$RECOLECTAR_JS" ]] && _RECOLECTAR=1
 fi
-# 🔴 Un agente de CI no es una máquina del equipo (story 2.12). Una prueba del banco nocturno corría este instalador
-#    con el HOME del agente de Azure, y el agente subió sus registros al buzón como si fuera una máquina
-#    (`runnervmg34hb/`, 2026-09-17 05:01 UTC). Dentro de una corrida de Azure DevOps (TF_BUILD) la tanda no se lanza.
+# 🔴 Un agente de CI no es una máquina del equipo. Una prueba del banco nocturno que corre este instalador con el
+#    HOME del agente de Azure haría que el agente subiera sus registros al buzón como si fuera una máquina. Dentro de
+#    una corrida de Azure DevOps (TF_BUILD) la tanda no se lanza.
 if [[ "${TF_BUILD:-}" =~ ^[Tt][Rr][Uu][Ee]$ ]] && [[ "$_RESCATAR" == "1" || "$_SUBIR" == "1" || "$_BAJAR" == "1" || "$_RECOLECTAR" == "1" ]]; then
   echo "tycon: dentro de una corrida de Azure DevOps (TF_BUILD) — el rescate del hilo, la recolección de hallazgos y la subida/bajada de corridas no se lanzan: un agente de CI no es una máquina del equipo" >&2
   _RESCATAR=0; _SUBIR=0; _BAJAR=0; _RECOLECTAR=0
@@ -1441,11 +1408,11 @@ if [[ "$_RESCATAR" == "1" || "$_SUBIR" == "1" || "$_BAJAR" == "1" || "$_RECOLECT
   # 🔴 La salida NO va a /dev/null: el barrido puede reportar corridas que no se pudieron escribir, y la
   # subida o la bajada pueden decir «no» con su motivo. Sin rastro, nadie se entera nunca.
   # Una sola tanda de fondo, en serie: el orden (barrido → recolección → subida → bajada) es parte del contrato
-  # (2.16 AC7/AC12; la recolección, story 2.9: va antes de la subida para que lo de hoy suba hoy).
+  # (la recolección va antes de la subida para que lo de hoy suba hoy).
   # 🔴 La subida y la bajada AGREGAN a su registro (con tope: pasado ~512 KB el viejo se mueve a .1). Con `>` la
-  #    segunda sesión del día borraba el aviso de vencimiento de la llave, que sale una sola vez por día (pase
-  #    adversarial). El barrido sigue con `>`: su registro es el estado de este arranque, no un historial.
-  # (este bash nuevo no ve la función `node` del instalador: el Node del arnés le llega como argumento, `${11}` — story 8.39)
+  #    segunda sesión del día borraría el aviso de vencimiento de la llave, que sale una sola vez por día.
+  #    El barrido sigue con `>`: su registro es el estado de este arranque, no un historial.
+  # (este bash nuevo no ve la función `node` del instalador: el Node del arnés le llega como argumento, `${11}`)
   nohup bash -c '
     N="${11:-node}"
     rotar() { [ -f "$1" ] && [ "$(wc -c < "$1" | tr -d " ")" -gt 524288 ] && mv -f "$1" "$1.1"; return 0; }
@@ -1465,7 +1432,7 @@ if [[ "$_RESCATAR" == "1" || "$_SUBIR" == "1" || "$_BAJAR" == "1" || "$_RECOLECT
 fi
 
 # ============================================================
-# Hook de git PRE-COMMIT global (2026-08-23, Etapa H de la migración Codex).
+# Hook de git PRE-COMMIT global.
 #
 # 🔴 Por qué el instalador tiene que meterse con esto: varias guías documentan el
 # patrón "el repo referencia su linter desde `.githooks/pre-commit`" — el lint de
@@ -1477,16 +1444,16 @@ fi
 #
 # El hook global versionado en este repo arregla eso DELEGANDO en el del repo antes
 # de su propia tarea. Se instala con backup, y sólo si el destino difiere.
-# Story 8.13 (AC 18): lanzado por harness.js (TYCON_HARNESS_SNAPSHOT_DIR puesta) no hay `.bak-<ts>` propio: la copia del
+# Lanzado por harness.js (TYCON_HARNESS_SNAPSHOT_DIR puesta) no hay `.bak-<ts>` propio: la copia del
 # mecanismo (scripts/setup/harness/snapshot.js) ya guardó pre-commit, post-commit y sus `.local` tal cual, ANTES de este
 # aplicador. 🔴 SALVO el caso «hook ajeno + ya hay .local»: el ajeno no tiene otro lugar que su `.bak` (la copia del
 # mecanismo rota tras 5 y se perdería con ella), así que ESE `.bak-<ts>` se hace siempre, también bajo harness.js, y el
-# aviso lo dice como siempre (F11 del pase adversarial de la tanda B). Los demás `.bak` de acá, no.
+# aviso lo dice como siempre. Los demás `.bak` de acá, no.
 # Opt-out: TYCON_NO_GIT_HOOKS=1.
 # ============================================================
 GIT_HOOK_SRC="$SCRIPT_DIR/hooks/git-pre-commit-global.sh"
 GIT_HOOKS_DIR="${TYCON_GIT_HOOKS_DIR:-$HOME/.git-hooks}"
-# Sólo en full (story 8.16): fuera de full ni se instalan ni se mira el core.hooksPath de ningún repo; si estaban, los
+# Sólo en full: fuera de full ni se instalan ni se mira el core.hooksPath de ningún repo; si estaban, los
 # saca el cambio de perfil de harness.js (vuelve el propio desde su .local), o quedan como están.
 if [[ "${TYCON_NO_GIT_HOOKS:-0}" != "1" && "$PROFILE_FULL" == "1" && -f "$GIT_HOOK_SRC" ]]; then
   GIT_HOOK_DST="$GIT_HOOKS_DIR/pre-commit"
@@ -1517,8 +1484,8 @@ if [[ "${TYCON_NO_GIT_HOOKS:-0}" != "1" && "$PROFILE_FULL" == "1" && -f "$GIT_HO
   # El hooksPath global es lo que hace que ese archivo se use. Si NO está seteado, el
   # hook no corre en ningún lado y el sync de engram tampoco: se avisa, no se fuerza
   # (tocar la config global de git de otro sin avisar es peor que el problema).
-  # ── post-commit global: UNA línea con lo que quedó afuera del commit (COMMIT-DEJA-AFUERA-1, 2026-09-06) ──
-  # Tres veces en 24 h quedó trabajo sin commitear y nadie lo dijo; el commit siguiente tampoco.
+  # ── post-commit global: UNA línea con lo que quedó afuera del commit ──
+  # Sin esto queda trabajo sin commitear y nadie lo dice; el commit siguiente tampoco.
   # Lo dispara git (no la herramienta), así que habla igual desde la terminal, VS Code, Claude o Codex.
   # Nunca frena; lo ignorado por git no cuenta; `.tycon/post-commit-ignore` excluye por repo.
   POST_HOOK_SRC="$SCRIPT_DIR/hooks/git-post-commit-global.sh"
@@ -1547,7 +1514,7 @@ if [[ "${TYCON_NO_GIT_HOOKS:-0}" != "1" && "$PROFILE_FULL" == "1" && -f "$GIT_HO
     fi
   fi
   if [[ -f "$POST_HOOK_SRC" ]] && cmp -s "$POST_HOOK_SRC" "$POST_HOOK_DST" 2>/dev/null; then record git-hook "$POST_HOOK_DST" post-commit; fi
-  # ── pre-push global: el freno antes de publicar (story 8.26, tanda F1 · AC 52) ──────────────────────────────────
+  # ── pre-push global: el freno antes de publicar ──────────────────────────────────
   # El arnés se mantiene en un repo público: una rama empujada ya es pública. El freno (scripts/hooks/public-push-guard.js)
   # tiene que correr en CUALQUIER clon, y con `core.hooksPath` global el `.githooks/pre-push` de un repo no lo llama nadie:
   # por eso va acá, con el pre-commit. Si el empuje no es del arnés no hace nada (un repo de producto empuja como siempre).
@@ -1561,8 +1528,8 @@ if [[ "${TYCON_NO_GIT_HOOKS:-0}" != "1" && "$PROFILE_FULL" == "1" && -f "$GIT_HO
       echo "⚠ el pre-push global de git está desactualizado (o falta): $PUSH_HOOK_DST"
     else
       mkdir -p "$GIT_HOOKS_DIR"
-      # 🔴 Lo ajeno se conserva ANTES de copiar encima, y si no se pudo conservar NO se copia: el instalador decía
-      # «no pude conservar tu pre-push» y en la línea siguiente lo pisaba (con la carpeta sin permiso de escritura el
+      # 🔴 Lo ajeno se conserva ANTES de copiar encima, y si no se pudo conservar NO se copia: si no, el instalador diría
+      # «no pude conservar tu pre-push» y en la línea siguiente lo pisaría (con la carpeta sin permiso de escritura el
       # `mv` falla y el `cp` sobre el archivo que ya existe no).
       PUSH_KEPT=1
       if [[ -f "$PUSH_HOOK_DST" ]] && ! grep -q 'git-pre-push-global.sh' "$PUSH_HOOK_DST" 2>/dev/null; then
@@ -1609,10 +1576,10 @@ if [[ "${TYCON_NO_GIT_HOOKS:-0}" != "1" && "$PROFILE_FULL" == "1" && -f "$GIT_HO
     echo "⚠ el pre-push global de git no tiene permiso de ejecución (git no lo corre): $PUSH_HOOK_DST"
   fi
   if [[ -f "$PUSH_HOOK_SRC" ]] && cmp -s "$PUSH_HOOK_SRC" "$PUSH_HOOK_DST" 2>/dev/null; then record git-hook "$PUSH_HOOK_DST" pre-push; fi
-  # La carpeta GLOBAL de hooks de git, ¿es la que este instalador llena? (story 8.26, tanda H1c · AC 65 e)
-  # El caso: los hooks de arriba —entre ellos el pre-push, el freno antes de publicar— corren sólo si git usa ESTA
-  # carpeta. Acá se avisaba únicamente cuando git no tenía ninguna: con OTRA (la de otra herramienta, una vieja) el
-  # instalador llenaba la suya, no decía nada, y ningún hook del arnés corría sin que nadie lo supiera.
+  # La carpeta GLOBAL de hooks de git, ¿es la que este instalador llena?
+  # Los hooks de arriba —entre ellos el pre-push, el freno antes de publicar— corren sólo si git usa ESTA carpeta. Avisar
+  # únicamente cuando git no tiene ninguna dejaría pasar el caso de OTRA (la de otra herramienta, una vieja): el
+  # instalador llenaría la suya, no diría nada, y ningún hook del arnés correría sin que nadie lo supiera.
   # Cuatro respuestas además de «git no tiene ninguna», cada una con su texto:
   #   · es la del instalador                 → no se dice nada;
   #   · es otra                              → las dos rutas y el comando para apuntarla;
@@ -1624,13 +1591,13 @@ if [[ "${TYCON_NO_GIT_HOOKS:-0}" != "1" && "$PROFILE_FULL" == "1" && -f "$GIT_HO
   # `~`) y con `--includes` (con `--global` solo, git no sigue los archivos incluidos y diría «no tiene»), y las dos
   # carpetas se comparan con `-ef` (el mismo dispositivo y el mismo inodo; bash 3.2 lo trae y no trae `realpath`): un
   # enlace a la del instalador es LA MISMA, y también la misma carpeta escrita con otras mayúsculas en un disco que no
-  # las distingue (medido en una Mac: `cd … && pwd -P` devuelve la ruta con las mayúsculas con que se la escribió, y la
-  # daba por otra).
+  # las distingue (`cd … && pwd -P` devuelve la ruta con las mayúsculas con que se la escribió, y la
+  # daría por otra).
   # 🔴 Nunca la cambia, en ningún modo: esa clave es de la persona y puede ser de otra herramienta. Sólo avisa (también
   # con --check). Lo cuida scripts/tests/harness-install.test.sh (T79); el .ps1 lleva la misma regla.
   # «Git no contestó» no es «git no tiene»: `git config` sale 1 cuando la clave no está, y con OTRO código cuando falló
-  # (128 con la configuración rota, 127 si git no está en el PATH). Leer los dos como «no tiene» afirmaba algo que no se
-  # midió y mandaba a pisar la clave con el comando del aviso. Con otro código se dice «no pude leer», con el código y lo
+  # (128 con la configuración rota, 127 si git no está en el PATH). Leer los dos como «no tiene» afirmaría algo que no se
+  # midió y mandaría a pisar la clave con el comando del aviso. Con otro código se dice «no pude leer», con el código y lo
   # que git dijo, y nada más. `|| X=$?` y no `; X=$?`: este archivo corre con `set -e`.
   GLOBAL_HOOKS_RC=0
   GLOBAL_HOOKS_RAW="$(git config --global --includes core.hooksPath 2>/dev/null)" || GLOBAL_HOOKS_RC=$?
@@ -1673,19 +1640,18 @@ if [[ "${TYCON_NO_GIT_HOOKS:-0}" != "1" && "$PROFILE_FULL" == "1" && -f "$GIT_HO
   fi
 
   # Un core.hooksPath LOCAL eclipsa al global — y con eso a la delegación entera — sin error
-  # ni aviso (caso: incident-log#hookspath-eclipse — el pre-commit de AgentSkills nació muerto
-  # por una config vestigial que apuntaba al .git/hooks propio, solo con *.sample adentro).
+  # ni aviso (por ejemplo, el pre-commit de un repo nace muerto por una config vestigial que apunta al .git/hooks
+  # propio, solo con *.sample adentro).
   # Se destapa SOLO cuando es vestigial comprobado: apunta dentro del repo y no tiene ningún
   # hook real (solo samples). Cualquier otra cosa (husky, un dir con hooks de verdad) se
   # respeta y se avisa — el dev decide.
   #
-  # «No tiene ningún hook real» se mira en el disco Y en lo que el repo sigue (pase adversarial del tramo 3 de la story
-  # 8.18, clase 21 · 2026-10-04). El caso: un clon viejo de agent-skills con `core.hooksPath = .githooks` (el repo sigue
-  # esa carpeta, con un hook de verdad), re-apuntado al repo unido: la vista reducida (sparse-checkout) esconde
-  # `.githooks/`. Este lazo miraba sólo el disco. Acá `find` fallaba sobre la carpeta que no está y, con `set -e` y
-  # `pipefail`, el aplicador MORÍA en esta línea sin decir nada (salida 1: `harness.js update` no podía aplicar ninguna
-  # versión mientras el clon siguiera re-apuntado); el gemelo de Windows la daba por vestigial y borraba la clave, y la
-  # vuelta no la reponía. Ahora son tres respuestas, no dos:
+  # «No tiene ningún hook real» se mira en el disco Y en lo que el repo sigue. Ejemplo: un clon viejo de agent-skills con
+  # `core.hooksPath = .githooks` (el repo sigue esa carpeta, con un hook de verdad), re-apuntado al repo unido: la vista
+  # reducida (sparse-checkout) esconde `.githooks/`. Mirar sólo el disco no alcanza: `find` falla sobre la carpeta que no
+  # está y, con `set -e` y `pipefail`, el aplicador MORIRÍA en esta línea sin decir nada (salida 1: `harness.js update`
+  # no podría aplicar ninguna versión mientras el clon siguiera re-apuntado); el gemelo de Windows la daría por
+  # vestigial y borraría la clave. Son tres respuestas, no dos:
   #   · la carpeta está y se puede leer      → se cuentan sus hooks, como siempre;
   #   · la carpeta no está pero el repo la sigue con archivos que no son *.sample (la esconde la vista reducida, o se
   #     borró sin commitear)                 → NO es vestigial: se avisa y no se toca;
@@ -1740,12 +1706,12 @@ if [[ "${TYCON_NO_GIT_HOOKS:-0}" != "1" && "$PROFILE_FULL" == "1" && -f "$GIT_HO
 fi
 
 
-# ── la lista de proyectos de Azure DevOps para failed-query-notice.js (2026-09-06) ─────────────
-# La segunda mirada del hook (--project inexistente) sólo habla si hay lista cacheada, y nadie la
-# refrescaba: estaba viva en UNA máquina, donde el dev corrió --refresh a mano. Cada 7 días, en
+# ── la lista de proyectos de Azure DevOps para failed-query-notice.js ─────────────
+# La segunda mirada del hook (--project inexistente) sólo habla si hay lista cacheada, y sin refresco automático la
+# lista sólo existe donde el dev corrió --refresh a mano. Cada 7 días, en
 # segundo plano (sale a la red: nunca bloquea el arranque), si hay `az`. Vencida a los 30 días el
 # hook la ignora. Off: TYCON_NO_AZ_PROJECTS_REFRESH=1.
-# Desde la story 8.3 sólo con Azure DevOps prendida (ado.org configurada): afuera, con `az` instalado por otro motivo,
+# Sólo con Azure DevOps prendida (ado.org configurada): afuera, con `az` instalado por otro motivo,
 # el instalador no le pregunta a ninguna organización. La organización se le pasa: la del lector, no la de `az devops configure`.
 if [[ "$TYCON_INTEG_ADO" == "1" && "${TYCON_NO_AZ_PROJECTS_REFRESH:-0}" != "1" && "$CHECK_ONLY" != "1" ]] && command -v az >/dev/null 2>&1; then
   AZ_CACHE="$HOME/.claude/.tycon-pipeline/az-projects.json"
@@ -1755,7 +1721,7 @@ if [[ "$TYCON_INTEG_ADO" == "1" && "${TYCON_NO_AZ_PROJECTS_REFRESH:-0}" != "1" &
   fi
 fi
 
-# ── una línea con el estado de las ocho integraciones (story 8.3; la lee T9) ─────────────────────
+# ── una línea con el estado de las ocho integraciones (la lee T9) ─────────────────────
 if [[ "$INTEG_ESTADO" == "ok" ]]; then
   _PREND=""; _APAG=""
   for _i in ado clockify engram codegraph mailbox codex nightly telegram; do
@@ -1769,7 +1735,7 @@ if [[ "$INTEG_ESTADO" == "ok" ]]; then
   echo "tycon: integraciones — prendidas:${_PREND:- (ninguna)} · apagadas:${_APAG:- (ninguna)} — detalle: node $SCRIPT_DIR/lib/tycon-config.js explain"
 fi
 
-# ── el reporte de piezas (story 8.13, AC 15): el arreglo JSON, sin duplicados, escrito atómico ──────────────────────
+# ── el reporte de piezas: el arreglo JSON, sin duplicados, escrito atómico ──────────────────────
 # Si no se pudo escribir se dice por stderr y el instalador sale 0 igual (hizo su trabajo): quien lo llamó encuentra el
 # archivo ausente y no funde nada.
 if [[ -n "$REPORT_PIECES_TMP" ]]; then
@@ -1807,7 +1773,7 @@ except Exception:
 PY
 fi
 
-# ── el plan (story 8.16, AC 11): el arreglo JSON, sin repetidos, escrito atómico ─────────────────────────────────────
+# ── el plan: el arreglo JSON, sin repetidos, escrito atómico ─────────────────────────────────────
 # A diferencia del reporte, si no se puede escribir el instalador sale 1: quien pidió el plan no puede instalar sin él.
 if [[ -n "$PLAN_PIECES_TMP" && "$PLAN_INCOMPLETE" == "1" ]]; then
   echo "install-tycon-hooks.sh: el plan quedó incompleto (alguna pieza no se pudo anotar): no lo escribo" >&2

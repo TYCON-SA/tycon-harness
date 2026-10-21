@@ -25,7 +25,7 @@ PARENT="$(dirname "$REPO")"
 
 # Repos del harness: no se worktree-an (safety-guard matchea por path literal;
 # el SessionStart los auto-pullea solo en su ruta fija). Ver guides/git-worktrees.md §1.
-# (los dos nombres del arnés —el repo interno y el público, que se clona con el nombre del lugar: story 8.19— como
+# (los dos nombres del arnés —el repo interno y el público, que se clona con el nombre del lugar— como
 # segmento de ruta: una carpeta que sólo EMPIEZA igual no es el arnés)
 case "$REPO" in
   *"/.claude/agent-skills"*|*"/tycon-claude-guides"|*"/tycon-claude-guides/"*|*"/tycon-harness"|*"/tycon-harness/"*)

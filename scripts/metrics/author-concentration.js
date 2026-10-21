@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * author-concentration.js — en qué productos una sola persona hizo el 75 % o más de los commits del último año
- * (story 2.26). Se publica la concentración, nunca el nombre.
+ * author-concentration.js — en qué productos una sola persona hizo el 75 % o más de los commits del último año.
+ * Se publica la concentración, nunca el nombre.
  *
- * Antes la medía sólo la máquina que generaba el tablero, contando por NOMBRE (dos alias de una persona la partían en
- * dos y escondían la concentración) y con los commits de los pipelines adentro (los «bump version» del CI bajaban la
- * parte de la persona: medido el 2026-10-15, la identidad del pipeline era el 17-21 % del año en tres backends). El
- * nocturno de métricas ya baja todos los repos de la organización: se mide ahí, con la misma regla en la corrida local.
+ * Se cuenta por PERSONA, no por nombre (dos alias de una persona partirían la concentración y la esconderían), y sin los
+ * commits de los pipelines (los «bump version» del CI bajan la parte de la persona: la identidad del pipeline es el
+ * 17-21 % del año en tres backends).
+ * El nocturno de métricas baja todos los repos de la organización: se mide ahí, con la misma regla en la corrida local.
  *
- * La regla (la de siempre, `dashboard.js#localExtra`): por repo con 20 commits o más en los 12 meses hasta hoy, la
+ * La regla (la de siempre, `dashboard.js#localExtra`): por repo con 20 commits o más en los 12 meses hasta la fecha de la corrida, la
  * parte del autor principal; el producto toma el máximo de sus repos medidos; en riesgo con 0,75 o más.
  *   - Una persona: las identidades que comparten nombre o correo (el correo en minúsculas) se unen, y se aplica el
  *     `.mailmap` del repo leído del OBJETO (`git -c mailmap.blob=HEAD:.mailmap log …`): el clon del nocturno es
@@ -100,7 +100,7 @@ function medirRepo(dir, v, maq) {
   return { estado: 'medido', motivo: null, commits: p.commits, maquina: p.maquina, top: p.top };
 }
 
-// Truncado, no redondeado: 0,745 redondeado se publicaba 0,75 con `en_riesgo: false` (pase adversarial). Truncado, el
+// Truncado, no redondeado: 0,745 redondeado se publicaría 0,75 con `en_riesgo: false`. Truncado, el
 // número publicado y el riesgo dicen lo mismo.
 const truncado = (x) => Math.floor(x * 100 + 1e-9) / 100;
 
@@ -156,11 +156,11 @@ const adentro = (raiz, dir) => { const r = path.resolve(raiz); const d = path.re
 /**
  * El nocturno: cada entrada de `repos.json` por su `ado` decodificado, bajo `<scan>/<Proyecto>__<Repo>`. La carpeta se
  * busca sin distinguir mayúsculas: el nocturno la nombra como la devuelve Azure DevOps, y `repos.json` puede escribirla
- * distinto (en un disco que distingue, salía «no está» — pase adversarial).
+ * distinto (en un disco que distingue, daría «no está»).
  */
 function resolverNocturno(entries, scan) {
   let carpetas = []; let noLei = null;
-  // «no pude listar las copias» no es «no está entre las copias» (revisor de fallas silenciosas, vuelta 2)
+  // «no pude listar las copias» no es «no está entre las copias»
   try { carpetas = fs.readdirSync(scan); } catch (e) { noLei = `no pude leer la carpeta de las copias del nocturno (${e.code || e.name})`; }
   const porMinusculas = new Map(carpetas.map((c) => [c.toLowerCase(), c]));
   return entries.filter((e) => e && e.producto).map((e) => {

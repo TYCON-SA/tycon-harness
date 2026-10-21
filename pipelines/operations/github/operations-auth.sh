@@ -1,5 +1,4 @@
-# pipelines/operations/github/operations-auth.sh — la credencial para hablar con el repo de operaciones, SÓLO en este paso
-# (story 8.31, decisión 14).
+# pipelines/operations/github/operations-auth.sh — la credencial para hablar con el repo de operaciones, SÓLO en este paso.
 #
 # Se carga con `source` (no se ejecuta) en el paso que guarda, trae o publica en el repo de operaciones. Deja la
 # credencial del workflow (`OPS_TOKEN`, que el paso recibe de `github.token` por `env:`) en las variables `GIT_CONFIG_*`

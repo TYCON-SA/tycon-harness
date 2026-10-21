@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# La imagen del sitio de la organización (story 2.23, AC 3; decisión 25).
+# La imagen del sitio de la organización.
 #
 #   docker buildx build -f scripts/site/Dockerfile -t site:local .
 #
@@ -9,8 +9,8 @@
 #
 # Node LTS sobre Alpine con la versión FIJADA por etiqueta y por huella (sin npm, npx, yarn ni corepack), `git` adentro (el sitio clona el repo de operaciones), un usuario sin
 # privilegios, y sólo lo que el sitio ejecuta: scripts/site, los lectores que usa (scripts/lib, scripts/metrics,
-# scripts/nightly/dashboard, scripts/setup/harness, y de scripts/ci el lector de la paridad) y los títulos de los pasos del pipeline (los lee la vista de corridas,
-# 2.27). Ningún secreto en la imagen: llegan como variables de entorno desde el almacén de cada plataforma (2.30).
+# scripts/nightly/dashboard, scripts/setup/harness, y de scripts/ci el lector de la paridad) y los títulos de los pasos del pipeline (los lee la vista de corridas).
+# Ningún secreto en la imagen: llegan como variables de entorno desde el almacén de cada plataforma.
 # La misma orden arranca el sitio con Node solo, sin Docker: node scripts/site/server.js
 #
 # 🔴 Poné SITE_DATA_DIR en un VOLUMEN: `docker run -v sitio-datos:/data -e SITE_DATA_DIR=/data …`. Ahí quedan el espejo
@@ -65,8 +65,8 @@ COPY packs* packs/
 
 ENV NODE_ENV=production PORT=8080 TYCON_SKILLS_DIR=/app/skills
 
-# /data es del usuario del sitio y es un VOLUME: un volumen con nombre nuevo montado ahí copia este dueño. Sin esto nacía
-# de root, y el sitio (que corre como node) no podía clonar ni guardar su estado: se frenaba.
+# /data es del usuario del sitio y es un VOLUME: un volumen con nombre nuevo montado ahí copia este dueño. Sin esto nace
+# de root, y el sitio (que corre como node) no puede clonar ni guardar su estado: se frena.
 RUN mkdir -p /data && chown node:node /data
 VOLUME /data
 

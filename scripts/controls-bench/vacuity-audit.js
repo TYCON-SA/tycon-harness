@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 /**
- * vacuity-audit.js — ¿los casos del banco prueban lo que dicen probar? (§5.6, 2026-08-25)
+ * vacuity-audit.js — ¿los casos del banco prueban lo que dicen probar?
  *
  * ── LA PREGUNTA QUE CONTESTA ────────────────────────────────────────────────────────────────────
- * El plan de controles apagables dejó escrito: *"se contó cuántos scripts no tienen casos; NO se
- * verificó que los 86 casos existentes prueben lo que dicen probar"*. Y el riesgo no es teórico:
- * ya se cazaron DOS formas de caso-que-pasa-siempre (las claves de `expect` escritas como cadena,
- * que se iteraban letra por letra; y un caso cuyo laboratorio ya cumplía la condición por otra
- * vía). Un caso que no puede fallar se cuenta como cobertura y no cubre nada.
+ * Contar cuántos scripts no tienen casos no verifica que los casos existentes prueben lo que dicen probar. Y el
+ * riesgo no es teórico: hay DOS formas de caso-que-pasa-siempre (las claves de `expect` escritas como cadena, que se
+ * iteran letra por letra; y un caso cuyo laboratorio ya cumple la condición por otra vía). Un caso que no puede
+ * fallar se cuenta como cobertura y no cubre nada.
  *
  * ── EL MÉTODO: el control que no hace nada ──────────────────────────────────────────────────────
  * Cada caso AFIRMATIVO (must-block / must-run / must-emit) se vuelve a correr con su script
@@ -62,13 +61,12 @@ function noopPaths() {
 const noopPara = (noop, control) => (/\.(js|mjs|cjs)$/.test(control) ? noop.js : noop.sh);
 
 /**
- * Neutraliza en el SETUP del caso todo control que el hook DECLARA (`controles`, 2026-09-17): cada
- * mención literal del control se reemplaza por su no-op. Caso real: los 10 de la foto de iteración
- * corren `marker.js snapshot-iter` en su setup y assertan lo que ÉSE escribe; con sólo `script`
- * neutralizado, el auditor los veía vacuos — 9 falsos positivos desde el 2026-09-15, y un auditor
- * que grita en falso es un auditor que se apaga. Es literal a propósito: los casos escriben
- * `${SKILLS}/…/marker.js` tal cual; un control mencionado de otra forma no se neutraliza y el caso
- * sale vacuo, que es el lado seguro.
+ * Neutraliza en el SETUP del caso todo control que el hook DECLARA (`controles`): cada mención literal del control
+ * se reemplaza por su no-op. Ejemplo: los casos de la foto de iteración corren `marker.js snapshot-iter` en su setup
+ * y assertan lo que ÉSE escribe; con sólo `script` neutralizado, el auditor los vería vacuos — falsos positivos, y un
+ * auditor que grita en falso es un auditor que se apaga. Es literal a propósito: los casos escriben
+ * `${SKILLS}/…/marker.js` tal cual; un control mencionado de otra forma no se neutraliza y el caso sale vacuo, que es
+ * el lado seguro.
  */
 function neutralizarSetup(setup, controles, noop) {
   return (setup || []).map((cmd) => controles.reduce((s, c) => s.split(c).join(noopPara(noop, c)), String(cmd)));
@@ -116,11 +114,10 @@ function selftest() {
       setup: ['echo hecho > salida.txt'], stdin: {},
       expect: { file_contains: [{ path: '${FIXTURE}/salida.txt', re: 'hecho' }] } }],
   };
-  // Un caso cuya evidencia la produce OTRO control del mismo hook, invocado desde el setup — el
-  // caso real: los 10 de la foto de iteración corren `marker.js snapshot-iter` ahí, y el auditor,
-  // que sólo neutralizaba `script`, los vio vacuos (9 falsos positivos desde el 2026-09-15). Con
-  // `controles` declarados los neutraliza a todos: la evidencia desaparece y el caso falla, que es
-  // lo que prueba que no es vacuo.
+  // Un caso cuya evidencia la produce OTRO control del mismo hook, invocado desde el setup — por ejemplo los de la foto
+  // de iteración, que corren `marker.js snapshot-iter` ahí: un auditor que sólo neutraliza `script` los ve vacuos
+  // (falsos positivos). Con `controles` declarados los neutraliza a todos: la evidencia desaparece y el caso falla,
+  // que es lo que prueba que no es vacuo.
   const control2 = path.join(tmp, 'control2.js');
   fs.writeFileSync(control2, 'require("fs").writeFileSync(process.cwd() + "/salida.txt", "hecho\\n");\n');
   const declarado = {
@@ -179,9 +176,8 @@ function main(ctx) {
 }
 
 // 🔴 `process.exitCode`, NO `process.exit()`: en Node las escrituras a una tubería son
-// ASINCRÓNICAS y `process.exit()` mata el proceso con parte de lo escrito en el aire. Medido con
-// la forma de este guión (una escritura grande y salir): a 41 KB llega cortado en 8192 y el JSON
-// se rompe; el consumidor lo lee como «no pude», nunca como un error.
-// Caso: guides/maintaining/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
+// ASINCRÓNICAS y `process.exit()` mata el proceso con parte de lo escrito en el aire: una escritura grande
+// seguida de salir llega cortada en 8192 bytes y el JSON se rompe; el consumidor lo lee como «no pude», nunca
+// como un error.
 if (require.main === module) process.exitCode = main();
 module.exports = { auditar, main };

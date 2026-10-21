@@ -183,7 +183,7 @@ if (!filePath.endsWith('.md')) process.exit(0);
 
 const home = os.homedir();
 if (filePath.startsWith(path.join(home, '.claude'))) process.exit(0);
-// el arnés por cualquiera de sus dos nombres, como segmento de ruta (story 8.19, AC 12; escritos acá: las skills pueden
+// el arnés por cualquiera de sus dos nombres, como segmento de ruta (escritos acá: las skills pueden
 // vivir en un clon aparte sin scripts/ al lado — copia declarada en scripts/tests/fixtures/harness-place-names.json)
 if (/(^|[\\/])(tycon-claude-guides|tycon-harness)([\\/]|$)/.test(filePath)) process.exit(0);
 

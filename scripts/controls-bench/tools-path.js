@@ -1,16 +1,13 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * tools-path.js —dónde están `claude` y `codex`, sin depender del PATH.
+ * tools-path.js — dónde están `claude` y `codex`, sin depender del PATH.
  *
- * ── EL INCIDENTE (2026-09-04) ───────────────────────────────────────────────────────────────────
- * El examen de los revisores no corrió el viernes, y no fue por el horario: el disparador arrancó
- * puntual (02:00:04) y murió cuatro segundos después. launchd lanza sus trabajos con el PATH mínimo
- * de macOS —`/usr/bin:/bin:/usr/sbin:/sbin`— y los binarios `claude` y `codex` viven en el bin de
- * Node (nvm), que no está ahí. El plist llevaba la ruta ABSOLUTA de node —por eso node sí arrancó—
- * pero todo lo que el examen lanza después iba por NOMBRE PELADO: `spawnSync('claude', …)` →
- * `ENOENT`. No es un evento: el disparador, tal como se generaba, NUNCA pudo completar un examen.
- * La única corrida completa que existía (31/8) la lanzó una sesión de shell, que sí tiene PATH.
+ * ── EL PROBLEMA ─────────────────────────────────────────────────────────────────────────────────
+ * launchd lanza sus trabajos con el PATH mínimo de macOS —`/usr/bin:/bin:/usr/sbin:/sbin`— y los binarios `claude` y
+ * `codex` viven en el bin de Node (nvm), que no está ahí. Si el plist lleva la ruta ABSOLUTA de node, node arranca,
+ * pero todo lo que el examen lanza después por NOMBRE PELADO (`spawnSync('claude', …)`) falla con `ENOENT`: el
+ * disparador así generado NUNCA puede completar un examen. Una sesión de shell sí tiene PATH y por eso no lo nota.
  *
  * ── POR QUÉ LA RUTA ABSOLUTA Y NO "ESCRIBIR UN PATH EN EL PLIST" ────────────────────────────────
  * Escribirle un PATH al plist arregla el síntoma y agrega dos problemas. Uno: el plist se compara
@@ -29,13 +26,13 @@
  * 🔴 EL PLAN B ES EL NOMBRE PELADO, NO UN ERROR. Si al lado de node no está la herramienta (un
  * `npm i -g` con otro prefijo, un Homebrew, Windows con `.cmd`), se devuelve el nombre tal cual y
  * `spawnSync` lo resuelve por PATH como siempre. El arreglo AGREGA un camino; no saca el que ya
- * funcionaba. Fallar acá sería romper las máquinas que hoy andan para arreglar la que no.
+ * funciona. Fallar acá rompería las máquinas con PATH normal para arreglar la que no lo tiene.
  *
  * ── POR QUÉ ES UN ARCHIVO PROPIO ────────────────────────────────────────────────────────────────
  * Lo consumen `periodic-exam.js` (la sonda y el instalador) y `advisor-runner.js` (las ~580
- * invocaciones del examen — que habrían fallado TODAS por lo mismo, una por una). No puede vivir en
- * `advisor-runner.js` porque requerirlo ARRANCA EL BANCO ENTERO (el mismo motivo por el que se
- * extrajo `report-name.js`), y ponerlo en `periodic-exam.js` obligaría al runner a
+ * invocaciones del examen, que fallarían TODAS por lo mismo, una por una). No puede vivir en
+ * `advisor-runner.js` porque requerirlo ARRANCA EL BANCO ENTERO (el mismo motivo por el que
+ * `report-name.js` es un archivo aparte), y ponerlo en `periodic-exam.js` obligaría al runner a
  * requerir a quien lo envuelve. Mismo patrón de la casa: la lógica que hay que poder probar barato
  * vive afuera.
  */
@@ -44,12 +41,12 @@ const os = require('os');
 const path = require('path');
 
 /*
- * ── EL NODE DEL ARNÉS (story 8.39, decisión 23) ──────────────────────────────────────────────────
- * Desde la 8.39 el disparador corre con el Node propio del arnés (`<casa>/node/current`), que NO es
+ * ── EL NODE DEL ARNÉS ────────────────────────────────────────────────────────────────────────────
+ * El disparador corre con el Node propio del arnés (`<casa>/node/current`), que NO es
  * el paquete de npm global donde viven `claude` y `codex`: al lado de ese node no están. Por eso,
  * al instalar el disparador, `periodic-exam.js` anota en `<estado>/exam-tools.json` la carpeta donde
  * el PATH de quien instala tiene a cada una, y acá se busca: primero al lado del node, después en
- * esa carpeta, y por último el nombre pelado (el plan B de siempre). La carpeta va en un archivo
+ * esa carpeta, y por último el nombre pelado (el plan B). La carpeta va en un archivo
  * aparte y no en el plist, por la misma razón de arriba: el plist se compara byte a byte.
  */
 const EXAM_TOOLS = 'exam-tools.json';
@@ -99,13 +96,13 @@ function rutaDeHerramienta(bin, opts = {}) {
   if (!bin || path.isAbsolute(bin)) return bin;          // ya viene resuelto: no se toca
   const candidatas = [];
   if (nodeBin) candidatas.push(path.join(path.dirname(nodeBin), bin));
-  // la carpeta anotada al instalar el disparador (story 8.39): ahí quedó la herramienta en el PATH de quien instaló
+  // la carpeta anotada al instalar el disparador: ahí quedó la herramienta en el PATH de quien instaló
   const anotada = (opts.anotadas || carpetasAnotadas())[bin];
   if (anotada) candidatas.push(path.join(anotada, bin));
   return candidatas.find((c) => ejecutable(c)) || bin;
 }
 
-/** ¿Se puede LANZAR? Responde el ENOENT del incidente — NO si la sesión puede trabajar (eso es la sonda). */
+/** ¿Se puede LANZAR? Responde el ENOENT, NO si la sesión puede trabajar (eso es la sonda). */
 function seAlcanza(bin, opts = {}) {
   const spawnSync = opts.spawnSync || require('child_process').spawnSync;
   const ruta = rutaDeHerramienta(bin, opts);
@@ -117,7 +114,7 @@ function seAlcanza(bin, opts = {}) {
 /**
  * Repara el PATH DEL PROCESO: antepone el directorio de node si no está.
  *
- * 🔴 La ruta absoluta NO alcanza sola, y esto se MIDIÓ (2026-09-05): `codex` no es un binario, es
+ * 🔴 La ruta absoluta NO alcanza sola: `codex` no es un binario, es
  * un script `#!/usr/bin/env node` — se lo puede lanzar por ruta absoluta y aun así muere con 127,
  * porque `env` busca `node` EN EL PATH, que bajo launchd no lo tiene. (`claude` zafa de casualidad:
  * es un Mach-O nativo.) Lo mismo vale para cualquier subproceso que las herramientas lancen por
@@ -126,7 +123,7 @@ function seAlcanza(bin, opts = {}) {
  * arranque, y un PATH escrito ahí volvería a depender de quién invocó al instalador.
  */
 function asegurarPathDeHerramientas(env = process.env, nodeBin = process.execPath, anotadas = carpetasAnotadas()) {
-  // primero las carpetas anotadas (story 8.39): con el Node del arnés en el disparador, `codex` (`#!/usr/bin/env node`)
+  // primero las carpetas anotadas: con el Node del arnés en el disparador, `codex` (`#!/usr/bin/env node`)
   // tiene que encontrar el `node` de SU carpeta, el del dev; después la del node que corre, como siempre
   const dirs = [...new Set([anotadas.codex, anotadas.claude, path.dirname(nodeBin)].filter(Boolean))];
   let partes = String(env.PATH || '').split(path.delimiter).filter(Boolean);

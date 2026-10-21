@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-# Métricas del ciclo — MODELO de GitHub Actions para una organización que vive en GitHub (story 8.31)
+# Métricas del ciclo — MODELO de GitHub Actions para una organización que vive en GitHub
 #
 # Cómo darlo de alta: pipelines/operations/github/README.md. Se copia a `.github/workflows/` del repo de operaciones,
 # sin cambiar nada: qué arnés corre lo dice `team-repos.json` del repo de operaciones.

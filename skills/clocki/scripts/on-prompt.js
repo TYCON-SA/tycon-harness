@@ -27,8 +27,7 @@ const {
 
 // Keywords de intent/stop: FUENTE ÚNICA en lib.js (DEFAULT_SETTINGS, narrow/precision-first).
 // readSettings() las provee siempre — si el disco trae `[]` o nada, cae al narrow default.
-// (Antes había acá una lista ANCHA duplicada — 'plan'/'fix'/'add'/'build'/'setup' pelados —
-//  que disparaba sobre charla/meta-discusión. Eliminada 2026-05-21, ver H14 del audit.)
+// (Una lista ANCHA duplicada acá —'plan'/'fix'/'add'/'build'/'setup' pelados— dispararía sobre charla/meta-discusión.)
 
 function detectIntent(prompt, keywords) {
   if (!prompt || typeof prompt !== 'string') return null;
@@ -45,12 +44,12 @@ function detectIntent(prompt, keywords) {
   return null;
 }
 
-// 🔇 Sandbox de EVALS (2026-07-30): las corridas del banco de pruebas spawnean `claude -p` y CADA
+// 🔇 Sandbox de EVALS: las corridas del banco de pruebas spawnean `claude -p` y CADA
 // hook UserPromptSubmit del harness le inyecta su reminder AL PROMPT del agente simulado — que lo
 // lee como parte de la conversación y lo contesta ahí adentro ("No corresponde timer de Clockify"
 // en medio de una entrevista simulada). Eso no es cosmético: le come turnos al presupuesto
-// de la entrevista y SESGA la medición, con distinta intensidad por brazo (medido en la Story 3.40:
-// 0-1 menciones en un brazo contra 6-10 en el otro, sobre la misma cantidad de turnos).
+// de la entrevista y SESGA la medición, con distinta intensidad por brazo (unas pocas menciones en un brazo
+// contra muchas en el otro, sobre la misma cantidad de turnos).
 // El arnés setea TYCON_EVAL_SANDBOX=1 al spawnear; acá nos callamos.
 if (process.env.TYCON_EVAL_SANDBOX === '1') process.exit(0);
 
@@ -61,16 +60,16 @@ function main() {
   const sessionKey = sessionId || '_nosession';
   const prompt = hookInput.prompt || hookInput.user_prompt || '';
 
-  // Contenido NO humano (fix auditoría 2026-06-11): task-notifications de background/
+  // Contenido NO humano: task-notifications de background/
   // workflows y outputs de slash-commands llegan como "prompt" y pueden citar keywords
-  // de cierre ("listo", "pusheado") → STOP-detect en falso (caso real: notificación de
-  // un workflow citaba "listo" del transcript). Salir en silencio.
+  // de cierre ("listo", "pusheado") → STOP-detect en falso (por ejemplo, la notificación de
+  // un workflow que cita "listo" del transcript). Salir en silencio.
   if (/<task-notification>|<local-command-stdout>|<command-name>|SYSTEM NOTIFICATION - NOT USER INPUT|<system-reminder>/.test(prompt)) {
     process.exit(0);
   }
 
   // 🔴 Heartbeat: marca esta sesión como VIVA ahora (housekeeping + visibilidad
-  // para /clocki status). El sweep ya NO lo usa como gate — ahora scopea por
+  // para /clocki status). El sweep no lo usa como gate: scopea por
   // sessionId (solo cierra el timer de ESTA sesión, ver abajo).
   touchHeartbeat(sessionKey);
 
@@ -89,12 +88,12 @@ function main() {
   const keywords = settings.intentKeywords;
   const stopKeywords = settings.stopKeywords;
 
-  // Multi-sesión sin race (2026-05-17): cada sesión tiene su archivo propio.
+  // Multi-sesión sin race: cada sesión tiene su archivo propio.
   // El timer de esta sesión vive en este archivo, con forma { "<cwd>": <entry> }:
   const sessionFile = `~/.claude/clocki/active/${sessionKey}.json`;
 
   // 1. Sweep — SOLO el timer idle de ESTA sesión.
-  //    🔴 POLÍTICA (2026-06-05): el sweep NUNCA toca timers de OTRAS sesiones (ni
+  //    🔴 POLÍTICA: el sweep NUNCA toca timers de OTRAS sesiones (ni
   //    los cierra ni los lista), aunque luzcan muertos. Cerrar el timer de otra
   //    sesión es un anti-pattern (ver sweep.js + CLAUDE.md global). Solo el propio:
   //    caso típico, esta sesión volvió a actividad tras estar idle >timeout.
@@ -138,7 +137,7 @@ timers de otras sesiones (fix race 2026-05-17). NO toques active/*.json de otras
   const found = findActiveEntryForCwd(active, cwd, sessionId);
   const activeForCwd = found ? found.entry : null;
 
-  // 2. STOP-DETECTION (2026-05-14) — si HAY timer activo de esta sesión y el prompt
+  // 2. STOP-DETECTION — si HAY timer activo de esta sesión y el prompt
   //    contiene stop-keywords, emitir reminder para cierre/transición.
   if (activeForCwd && activeForCwd.entryId) {
     const matchedStop = detectIntent(prompt, stopKeywords);
@@ -168,7 +167,7 @@ NUNCA dejes el timer corriendo si la tarea ya terminó. El user MARCÓ ESTO COMO
       process.exit(0);
     }
 
-    // 3. TASK-CHANGE-DETECTION (2026-05-14) — timer activo + nuevo intent que NO matchea
+    // 3. TASK-CHANGE-DETECTION — timer activo + nuevo intent que NO matchea
     //    la descripción current. Heurística: keyword de intent presente + ninguna palabra
     //    significativa de la descripción está en el prompt (excluye stopwords cortos).
     const matchedIntentMidTask = detectIntent(prompt, keywords);

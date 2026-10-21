@@ -13,7 +13,7 @@
  *   descartados/ → lo que la revisión del observer descartó por repetir algo que ya existe
  *                  (local, fuera de git; `list` lo resume para que un descarte de más se vea)
  *
- * DÓNDE (story 8.27): las propuestas viven en `inbox/instincts/` del árbol si el árbol trae su buzón (el clon de
+ * DÓNDE: las propuestas viven en `inbox/instincts/` del árbol si el árbol trae su buzón (el clon de
  * mantenedor); si no, en el del clon del repo privado de mantenimiento que la máquina declara, si lo trae; si no, en
  * la casa de la persona. Este guion LEE en todos los lugares que dice instinct-dirs.js (el de escritura, el clon
  * privado, lo que haya quedado en el árbol, la casa, el clon que la máquina mantiene) y no crea ninguna
@@ -119,7 +119,7 @@ function listPending() {
 }
 
 // Lo que la revisión del observer descartó en los últimos días, con lo que dijo que lo cubre. Sin esto, «no
-// hay pending» se ve igual si no hubo nada nuevo que si la revisión descartó de más (OBSERVADOR-SIN-CATALOGO-2).
+// hay pending» se ve igual si no hubo nada nuevo que si la revisión descartó de más.
 // Se cuenta por propuesta (hash), no por archivo: la misma repetición vuelve en cada corrida. Mira `descartados/` de
 // todos los lugares de lectura.
 function resumirDescartados(dias = 14) {
@@ -312,9 +312,9 @@ function main() {
   const cmd = args[0] || 'list';
   try {
     if (cmd === 'status') return status();
-    // Los descartados que quedaron en la carpeta de antes de la mudanza (story 8.12, R2) pasan a inbox/instincts/descartados/
+    // Los descartados que quedaron en la carpeta de datos anterior pasan a inbox/instincts/descartados/
     // antes de leerlos. La misma función que usa el observador; ver su comentario. Sólo corre en un árbol que trae su
-    // buzón: es el único caso en que un comando que lee crea algo (story 8.27).
+    // buzón: es el único caso en que un comando que lee crea algo.
     require('./instinct-observer.js').migrarDescartadosViejos((m) => process.stderr.write(`[instinct-promote] ${m}\n`));
 
     // «no hay pendientes» o «no encontrado» no pueden decirse callando que un lugar entero quedó sin mirar: todo
@@ -339,5 +339,5 @@ function main() {
   process.exit(1);
 }
 
-// Requerir este archivo no corre ningún comando (antes corría `list` y creaba carpetas).
+// Requerir este archivo no corre ningún comando (ni lista ni crea carpetas).
 if (require.main === module) main();

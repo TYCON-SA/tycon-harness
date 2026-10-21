@@ -4,10 +4,10 @@
 # scripts/tests/public-ci.test.sh), regla por regla. Cambiarlo sin leer ese control termina en un rojo:
 #   · corre en un pull request, en la cola de merge (merge_group) y en un push a main, y en nada más. Un pull request de
 #     un fork corre SIN permisos de escritura y sin ningún dato reservado del repo: por eso el disparador es el común y
-#     nunca el que corre con los permisos del repo de destino. La cola (2026-10-15) prueba cada pedido combinado con los
+#     nunca el que corre con los permisos del repo de destino. La cola prueba cada pedido combinado con los
 #     que entraron antes que él, en orden, antes de que llegue a main: corre sobre una rama temporal
 #     gh-readonly-queue/main/…, con la misma CI que un pedido y el freno de nombres comparando contra main;
-#   · el push a main que hace la cola al entrar un pedido NO corre nada (2026-10-15): la cola ya probó exactamente ese
+#   · el push a main que hace la cola al entrar un pedido NO corre nada: la cola ya probó exactamente ese
 #     commit. Cada job lleva la misma condición: se saltea sólo cuando el evento es `push` y quien empujó es
 #     `github-merge-queue[bot]`. Cualquier otro push a main corre entero, como el merge directo de un administrador que
 #     salteó la cola (la salida de urgencia). En un pedido y en la cola la condición es siempre verdadera: no cambia nada;
@@ -16,12 +16,12 @@
 #     puede mover; un sha, no;
 #   · el checkout trae la historia completa (fetch-depth: 0): el freno de nombres compara contra la rama de destino;
 #   · la corrida entera con Node 24, el que el arnés se instala, y un trabajo chico aparte (`installer-floor`) con Node
-#     22, el más viejo que acepta el instalador (2026-10-16, decisión del dueño). Lo que corre con el Node del SISTEMA,
+#     22, el más viejo que acepta el instalador. Lo que corre con el Node del SISTEMA,
 #     antes de que el arnés tenga el suyo —el arranque, la actualización, el Node propio, la versión bajada y su número—
 #     se prueba con ese piso; el resto corre siempre con Node 24 y no necesita la matriz de dos. Cuando el piso del
 #     instalador suba a 24, este trabajo se saca (y su regla en el control);
-#   · la corrida va PARTIDA en trabajos que corren a la vez (2026-10-14: una sola corrida por Node tardaba ~30 min, y con
-#     el merge automático ese es el tiempo que tarda en entrar cada cambio): la matriz es Node × parte. La parte `checks`
+#   · la corrida va PARTIDA en trabajos que corren a la vez (una sola corrida por Node tardaría ~30 min, y con
+#     el merge automático ese es el tiempo que tardaría en entrar cada cambio): la matriz es Node × parte. La parte `checks`
 #     corre todos los pasos menos las portables; cada `suites-<i>-of-<n>` corre la parte <i> de las portables, repartidas
 #     por peso con scripts/ci/suites-shard.js. Las partes juntas son la corrida entera (public-ci.sh,
 #     TYCON_PUBLIC_CI_PART); la lista tiene que traer `checks` y TODAS las `suites-<i>-of-<n>`, de 1 a n: una que falta

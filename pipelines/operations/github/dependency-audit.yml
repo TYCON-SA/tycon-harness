@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-# Revisión nocturna de dependencias — MODELO de GitHub Actions para una organización que vive en GitHub (story 8.31)
+# Revisión nocturna de dependencias — MODELO de GitHub Actions para una organización que vive en GitHub
 #
 # Cómo darlo de alta: pipelines/operations/github/README.md. Se copia a `.github/workflows/` del repo de operaciones,
 # sin cambiar nada: qué arnés corre lo dice `team-repos.json` del repo de operaciones.
@@ -165,7 +165,7 @@ jobs:
         run: |
           set -uo pipefail
           node scripts/nightly/dependencies/nightly-dependencies.js clone-list | bash pipelines/operations/github/clone-repos.sh --declared "${RUNNER_TEMP}/repos"
-          # Lo que la lista de productos declara y la revisión no trajo (story 2.25), con la credencial todavía viva. En otra
+          # Lo que la lista de productos declara y la revisión no trajo, con la credencial todavía viva. En otra
           # invocación, DESPUÉS: en la misma tubería, clone-list no vería los clones de arriba y los pediría de nuevo. Y nunca
           # corta el paso (GitHub lo corre con bash -e): una lista rota no puede llevarse la revisión de dependencias.
           LISTA="$(node scripts/ci/check-product-parity.js clone-list --root "${RUNNER_TEMP}/repos" --platform github)" \
@@ -213,7 +213,7 @@ jobs:
           fi
           echo "${OUT}"
 
-      # ¿Los workflows de los productos hacen lo mismo? (story 2.25). Antes de correr código de los productos, sobre los
+      # ¿Los workflows de los productos hacen lo mismo? Antes de correr código de los productos, sobre los
       # mismos clones. Nunca pone roja la noche: el aviso sale de lo que dice el archivo, no del código de salida solo.
       - name: Comparar los pipelines de los productos (paridad)
         working-directory: harness

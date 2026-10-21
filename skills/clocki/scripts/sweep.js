@@ -4,34 +4,24 @@
 // Invocado por el hook SessionStart. Cierra (vía reminder a Claude) timers idle:
 // el de ESTA sesión, y los HUÉRFANOS de sesiones demostrablemente MUERTAS.
 //
-// 🔴 POLÍTICA — evolución en dos pasos, leer completo antes de tocar:
+// 🔴 POLÍTICA — leer completo antes de tocar:
 //
-// (2026-06-05, pedido del usuario) El sweep NUNCA debe tocar el timer de otra sesión
-// VIVA. Disparador: cerró un timer `_legacy` de una sesión de otro producto que estaba
-// trabajando en paralelo — guides/maintaining/incident-log.md#case-sweep-closed-live-session-timer-2026-06-05. La regla que se escribió fue "nunca tocar otra sesión,
-// aunque luzca muerta", y delegaba los zombies a que "ESA misma sesión resuma".
+// El sweep NUNCA toca el timer de otra sesión VIVA: si cerrara el `_legacy` de una sesión de otro producto que
+// trabaja en paralelo, le cortaría horas en curso. Pero tampoco puede dejar los timers huérfanos para que "ESA misma
+// sesión resuma": un sessionId no se reusa (cerrás la ventana y ese id no vuelve), así que un timer huérfano no lo
+// cerraría nadie jamás, y quedarían horas de trabajo sin facturar y archivos de estado acumulados.
 //
-// (2026-07-25, auditoría con el dev — guides/maintaining/incident-log.md#case-orphan-timers-never-closed-2026-07-25) Esa delegación no ocurre NUNCA: un sessionId no
-// se reusa — cerrás la ventana y ese id no vuelve. O sea que un timer huérfano no lo
-// cerraba nadie jamás. Encontrados 3 timers de julio en 0 segundos (~14h de trabajo
-// real sin facturar) y 87 archivos de estado acumulados.
-//
-// Lo que faltaba ya estaba construido: el HEARTBEAT por sesión (lib.js) existe
-// literalmente para esto — su comentario dice que distingue "timer idle de sesión
-// muerta (cerrable)" de "timer idle de sesión viva trabajando (NO cerrable)". Estaba
-// exportado y sin usar acá. Cuando se escribió la regla de 2026-06-05 no había forma
-// de saber si la otra sesión seguía viva; ahora sí, así que la regla se ajusta a su
-// intención original en vez de quedar más amplia de lo necesario:
+// Lo que distingue a una sesión viva de una muerta es el HEARTBEAT por sesión (lib.js): separa el "timer idle de
+// sesión muerta (cerrable)" del "timer idle de sesión viva trabajando (NO cerrable)". La regla es:
 //
 //   - Timer de ESTA sesión, idle >idleTimeout           → cerrable (trim a lastActivity).
 //   - Timer de OTRA sesión SIN heartbeat reciente
 //     (>deadSessionMinutes, default 2h)                 → cerrable (trim a lastActivity).
-//   - Timer de OTRA sesión CON heartbeat reciente       → 🔴 INTOCABLE. Sigue vigente
-//     la regla vieja: es una sesión trabajando en paralelo.
+//   - Timer de OTRA sesión CON heartbeat reciente       → 🔴 INTOCABLE: es una
+//     sesión trabajando en paralelo.
 //   - `_legacy` / `_nosession` (pseudo-sesiones)        → 🔴 NUNCA auto-cerrar. Se listan
 //     aparte para que decida el humano. No son sesiones reales, así que JAMÁS tienen
-//     heartbeat y siempre "lucen muertas": ése fue literalmente el bug de 2026-06-05.
-//     El heartbeat resuelve el caso de sesiones REALES, no éste.
+//     heartbeat y siempre "lucen muertas". El heartbeat resuelve el caso de sesiones REALES, no éste.
 //
 // El cierre SIEMPRE trimea a `lastActivity`, nunca a "ahora": un huérfano de hace
 // 3 semanas no puede inventar 3 semanas de trabajo.
@@ -99,8 +89,7 @@ function main() {
 
     // 🔴 PSEUDO-SESIONES (`_legacy` del formato single-file viejo, `_nosession`): NUNCA
     // se auto-cierran. No son sesiones reales, así que JAMÁS tienen heartbeat y por lo
-    // tanto siempre "lucen muertas" — ese es EXACTAMENTE el bug de 2026-06-05, donde el
-    // gate de liveness cerró un `_legacy` de Totora que estaba vivo. Se listan aparte
+    // tanto siempre "lucen muertas": el gate de liveness cerraría un `_legacy` que está vivo. Se listan aparte
     // para que decida el humano; el script no las toca solo.
     if (sessionId === '_legacy' || sessionId === '_nosession') {
       pseudo.push(row);

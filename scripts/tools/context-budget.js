@@ -26,14 +26,14 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-// Los nombres viejos de las opciones (story 8.9) se traducen ANTES de leer argv, y sólo por línea de comandos:
+// Los nombres viejos de las opciones se traducen ANTES de leer argv, y sólo por línea de comandos:
 // harness-audit.js carga este archivo como biblioteca, con su propio argv.
 if (require.main === module) require('../lib/legacy-names.js').aliasArgv('scripts/tools/context-budget.js');
 
 const HOME = os.homedir();
 const VERBOSE = process.argv.includes('--verbose');
 const JSON_OUT = process.argv.includes('--json');
-// `--measured [--days N]`: el piso REAL de los lanzamientos, al lado del estimado (story 7.4).
+// `--measured [--days N]`: el piso REAL de los lanzamientos, al lado del estimado.
 const MEDIDO = process.argv.includes('--measured');
 const DIAS = (() => { const i = process.argv.indexOf('--days'); const v = i >= 0 ? Number(process.argv[i + 1]) : NaN; return Number.isFinite(v) && v > 0 ? v : 7; })();
 const CWD = process.cwd();
@@ -55,15 +55,14 @@ const tokensFor = (s) => Math.round(s.length / 4);
 
 // Average tokens por tool schema MCP (ECC: ~500 tokens/tool).
 const TOKENS_PER_MCP_TOOL = 500;
-// 🔴 Un servidor que la cuenta NO tiene autorizado no carga sus esquemas (CONTEXT-BUDGET-TOOLS-
-// DIFERIDAS-1, 2026-09-06): cobrarlo a 500/tool inflaba la cuenta a 48.500, puntuaba 0/10 y
-// recomendaba desconectar conectores — se estuvo a punto de hacerlo. Claude Code escribe la lista
+// 🔴 Un servidor que la cuenta NO tiene autorizado no carga sus esquemas: cobrarlo a 500/tool
+// inflaría la cuenta a 48.500, puntuaría 0/10 y recomendaría desconectar conectores. Claude Code escribe la lista
 // de los que piden autorización en `~/.claude/mcp-needs-auth-cache.json`; ésos se cobran un
 // MÍNIMO (el nombre, no el esquema). Cuánto cuesta exactamente un nombre diferido NO se midió: el
 // número de abajo es un piso declarado, no una medición — y el reporte lo dice.
 // 🔴 Esta cuenta está COPIADA en scripts/lib/harness-audit.js (su categoría «Context Efficiency»): quien
 // toque el precio de una herramienta o el criterio de «sin autorizar» toca las dos, y el caso C-05 de
-// scripts/tests/context-budget.test.sh compara los dos números (2026-09-06).
+// scripts/tests/context-budget.test.sh compara los dos números.
 const TOKENS_PER_UNLOADED_TOOL = 12;
 function serversSinAutorizar() {
   try {
@@ -284,11 +283,10 @@ function inventoryMCPs() {
   return { items, totalTokens, count: items.length, pluginCount };
 }
 
-// 🔴 Los `@imports` se SIGUEN (story 7.4, 2026-09-17). Antes esta función leía sólo los archivos
-// `CLAUDE.md` y no sus imports: reportaba 4.724 tokens para una cadena de ~276 KB, con el README del
-// arnés —235.771 bytes ≈ 76 mil tokens, el 61 % del piso de un revisor— INVISIBLE. La herramienta con
-// la que se decide qué recortar del arranque no veía el ítem más grande.
-// Medición: tasks/medicion-7.4-piso-de-contexto-2026-09-17.md.
+// 🔴 Los `@imports` se SIGUEN. Si esta función leyera sólo los archivos `CLAUDE.md` y no sus imports,
+// reportaría 4.724 tokens para una cadena de ~276 KB, con el README del arnés —235.771 bytes ≈ 76 mil
+// tokens, el 61 % del piso de un revisor— INVISIBLE: la herramienta con la que se decide qué recortar
+// del arranque no vería el ítem más grande.
 const MAX_PROFUNDIDAD = 5;
 
 // Las líneas `@ruta` de un archivo, resueltas contra HOME o contra la carpeta del que importa.
@@ -326,10 +324,8 @@ function inventoryClaudeMd() {
     if (profundidad >= MAX_PROFUNDIDAD) return;
     for (const imp of importsDe(content, archivo)) {
       const desde = `import de ${path.basename(archivo)}`;
-      // 🔴 Un `@import` puede apuntar a donde sea, incluso fuera del home (hallazgo SEC-C7 del
-      // revisor de seguridad, 7.4). NO se excluye: Claude Code lo carga igual, y saltearlo haría que
-      // esta medición subestime lo que de verdad pesa el arranque — que es el defecto que esta
-      // herramienta acaba de dejar de tener. Se MARCA, para que se vea en el reporte.
+      // 🔴 Un `@import` puede apuntar a donde sea, incluso fuera del home. NO se excluye: Claude Code lo carga igual, y saltearlo haría que
+      // esta medición subestime lo que de verdad pesa el arranque. Se MARCA, para que se vea en el reporte.
       const fueraDeCasa = path.relative(HOME, imp).startsWith('..');
       if (!exists(imp)) {
         // Un import que no está NO corta el reporte: se lista, con 0 tokens y dicho.
@@ -361,7 +357,7 @@ function inventoryClaudeMd() {
   return { items, totalTokens, count: items.length };
 }
 
-// ── El piso MEDIDO de cada lanzamiento (`--measured`, story 7.4) ─────────────────────────────────
+// ── El piso MEDIDO de cada lanzamiento (`--measured`) ─────────────────────────────────
 // Todo lo de arriba es una ESTIMACIÓN (`chars/4`). Medido, el contenido del arnés tokeniza a 3,08
 // bytes/token: la estimación queda ~30 % por debajo, y con ella se decide qué recortar. Esto pone al
 // lado el número REAL: los tokens del PRIMER pedido de cada subagente —lo que carga antes de leer un
@@ -376,20 +372,18 @@ function medirPiso({ home = HOME, dias = 7 } = {}) {
   let sinConsumo = 0;   // primer pedido con el consumo en cero: no es un piso de 0, es «no se pudo medir»
   let huboRaiz = false;
 
-  // 🔴 `.sort()` en cada listado de directorio: sin él, dos tipos con la MISMA mediana salían en el
+  // 🔴 `.sort()` en cada listado de directorio: sin él, dos tipos con la MISMA mediana saldrían en el
   // orden incidental con que el sistema de archivos devuelve las carpetas, y con más de 8 tipos un
-  // empate en el borde del corte hacía aparecer o desaparecer un tipo del listado. Las otras dos
-  // lecturas de directorio de este archivo (inventorySkills, inventoryAgents) ya ordenaban; ésta era
-  // la única que no. Hallazgo del pase adversarial de la 7.4.
+  // empate en el borde del corte haría aparecer o desaparecer un tipo del listado. Las otras dos
+  // lecturas de directorio de este archivo (inventorySkills, inventoryAgents) también ordenan.
   const dirs = (p) => { try { return fs.readdirSync(p, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort(); } catch { return null; } };
 
   // 🔴 Las transcripciones de subagentes NO están todas en `subagents/*.jsonl`: las de los lanzados
   // por la tool Workflow (los hunters del pase adversarial, por ejemplo) viven un nivel más abajo, en
-  // `subagents/workflows/<id>/*.jsonl`. La primera versión de esta función sólo miraba los hijos
-  // directos y se salteaba EN SILENCIO el 63 % de los lanzamientos reales de esta máquina (513
-  // contados contra 874 ignorados): el «piso medido» salía de una minoría no aleatoria y sin un solo
-  // aviso — el mismo «verde que significa no miré nada» que esta story existe para cerrar, cometido
-  // en el código de la story. Lo cazó su propio pase adversarial. Caso: C-07c.
+  // `subagents/workflows/<id>/*.jsonl`. Mirar sólo los hijos directos se saltearía EN SILENCIO la mayoría
+  // de los lanzamientos reales (513 contados contra 874 ignorados en una máquina): el «piso medido»
+  // saldría de una minoría no aleatoria y sin un solo aviso — un «verde que significa no miré nada».
+  // Caso: C-07c.
   const transcripciones = (raizSub) => {
     const out = [];
     const bajar = (d, prof) => {
@@ -426,9 +420,9 @@ function medirPiso({ home = HOME, dias = 7 } = {}) {
         if (primero === null) { if (roto) ilegibles++; continue; }
         if (ts && ts < desde) continue;
         // 🔴 Un primer pedido de 0 tokens es imposible: el agente nunca llegó a pedir nada. Medido:
-        // 120 de 1.372 transcripciones de esta máquina vienen así, y entraban a la muestra arrastrando
-        // el mínimo a 0 y la mediana hacia abajo. Se cuentan APARTE — un cero publicado como medición
-        // es el mismo pecado que esta story persigue. Caso: C-07c2.
+        // 120 de 1.372 transcripciones de una máquina vienen así, y entrarían a la muestra arrastrando
+        // el mínimo a 0 y la mediana hacia abajo. Se cuentan APARTE: un cero publicado como medición
+        // sería un dato falso. Caso: C-07c2.
         if (primero === 0) { sinConsumo++; continue; }
         let tipo = '?';
         try { tipo = JSON.parse(fs.readFileSync(ruta.replace(/\.jsonl$/, '.meta.json'), 'utf8')).agentType || '?'; } catch { /* sin meta: '?' */ }
@@ -530,14 +524,14 @@ function renderReport({ skills, agents, mcps, claudemd, medido }) {
     lines.push(`    ~${String(md.tokens).padStart(6)} tok  ${String(md.lines).padStart(5)} líneas  ${md.path}  [${md.scope}]${nota}`);
   }
   lines.push(`    ── cadena completa (con sus @imports): ~${fmt(claudemd.totalTokens)} tok  (ESTIMADO chars/4)`);
-  // 🔴 Este número es un ESTIMADO y subestima. Medido con claude -p sobre el README del arnés
-  // (2026-09-17): 3,02–3,08 bytes/token contra los 4 que asume chars/4, o sea ~30 % de más real.
+  // 🔴 Este número es un ESTIMADO y subestima. Medido con claude -p sobre el README del arnés:
+  // 3,02–3,08 bytes/token contra los 4 que asume chars/4, o sea ~30 % de más real.
   // Se dice acá porque con esta cuenta se decide qué recortar, y la del techo de harness-audit sale
   // de la misma función. El número que NO estima es `--measured`.
   lines.push('       ⚠ chars/4 SUBESTIMA ~30 % (medido: 3,02–3,08 bytes/token en el contenido del arnés).');
   lines.push('         El número real de lo que carga un lanzamiento: --measured.');
 
-  // El piso MEDIDO, al lado del estimado (story 7.4). Un estimado solo decide recortes a ciegas.
+  // El piso MEDIDO, al lado del estimado. Un estimado solo decide recortes a ciegas.
   if (medido) {
     lines.push('');
     lines.push('  Piso MEDIDO de cada lanzamiento (primer pedido de cada subagente — no estimado):');
@@ -561,8 +555,8 @@ function renderReport({ skills, agents, mcps, claudemd, medido }) {
 
   const recs = [];
 
-  // El archivo IMPORTADO más pesado de la cadena (story 7.4): antes ni figuraba en la cuenta ni en
-  // las recomendaciones, así que el ítem más grande del arranque no podía salir sugerido nunca.
+  // El archivo IMPORTADO más pesado de la cadena entra en la cuenta y en las recomendaciones: sin esto,
+  // el ítem más grande del arranque no podría salir sugerido nunca.
   const importados = claudemd.items.filter((i) => String(i.scope).startsWith('import de') && !i.missing);
   const peor = importados.sort((a, b) => b.tokens - a.tokens)[0];
   if (peor && peor.tokens > 20000) {
@@ -679,5 +673,5 @@ function main() {
 
 module.exports = { inventoryClaudeMd, inventorySkills, inventoryAgents, inventoryMCPs, medirPiso, tokensFor, importsDe };
 // 🔴 La guarda es necesaria para que `harness-audit.js` pueda IMPORTAR la cuenta de la cadena en vez
-// de copiarla: sin ella, requerir este archivo imprimía el reporte entero (story 7.4).
+// de copiarla: sin ella, requerir este archivo imprimiría el reporte entero.
 if (require.main === module) main();

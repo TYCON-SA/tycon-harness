@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 /**
  * reviewers-cost.js — cuánto cuesta la REVISIÓN de cada corrida del pipeline.
- * Story 2.15 del arnés (2026-09-09).
  *
  * QUÉ PUBLICA, POR CORRIDA (bloque `revisores` adentro del volcado de `timing-history/`)
  * ------------------------------------------------------------------------------------
@@ -13,11 +12,11 @@
  *     a la vista (rango por lanzamiento, de dónde sale, cuándo se midió y cuándo vence).
  *
  * 🔴 LA REGLA QUE ORDENA TODO: lo medido y lo estimado no se suman en el mismo número. Ni entre sí,
- * ni al consumo del hilo del padre (`consumo.tokens`, de la story 2.13), que es OTRO consumo.
+ * ni al consumo del hilo del padre (`consumo.tokens`), que es OTRO consumo.
  * `verificarSeparacion()` lo chequea y `--run` sale 2 si no pasa.
  *
- * DE DÓNDE SALE CADA COSA (medido el 2026-09-09, no supuesto)
- * -----------------------------------------------------------
+ * DE DÓNDE SALE CADA COSA (medido, no supuesto)
+ * ---------------------------------------------
  *   · LANZAMIENTOS: el registro `advisor-runs/<sessionId>.jsonl` que escribe el hook del pipeline
  *     ({ts, advisor, model} por lanzamiento; {event:"step5-start", iter} por vuelta). Es el padrón.
  *     No trae identificador de lanzamiento, así que cada línea se empareja con el `tool_use`
@@ -28,7 +27,7 @@
  *   · RESULTADOS: por IDENTIFICADOR, nunca por orden — el pipeline lanza revisores en paralelo y
  *     las notificaciones llegan en cualquier orden. Dos formas (y la primera vive en tres lugares,
  *     ver `resultadosDeConversacion`):
- *       (a) segundo plano (el modo obligatorio desde el 2026-07-30): un mensaje `user` con
+ *       (a) segundo plano (el modo obligatorio): un mensaje `user` con
  *           `<task-notification>` que cita `<tool-use-id>` y trae `<result>` y, al final,
  *           `<usage><subagent_tokens/><tool_uses/><duration_ms/></usage>` — 338 de 341 medidas.
  *           El `tool_result` inmediato de ese lanzamiento dice «Async agent launched…»: es el
@@ -36,7 +35,7 @@
  *       (b) bloqueante: el informe vuelve en el `tool_result` con `tool_use_id`. Sin bloque de
  *           uso → duración por hora de ida y vuelta, tamaño del informe, y tokens `no_medido`.
  *   · LA CONVERSACIÓN: la viva (`~/.claude/projects/<carpeta>/<sessionId>.jsonl`, ubicada por
- *     tokens-digest.js) o, si ya no está, el HILO que guardó la 2.13 (`<volcado>.hilo.jsonl.gz`),
+ *     tokens-digest.js) o, si ya no está, el HILO guardado (`<volcado>.hilo.jsonl.gz`),
  *     que conserva lanzamientos y notificaciones. Se dice de cuál salió (`fuente`).
  *
  * REGLA CARDINAL (la misma de toda la familia): nunca un cero donde hubo ausencia. Sin conversación
@@ -55,14 +54,14 @@
  * `require` perezoso: sin este archivo, el rescate del hilo se escribe igual y `revisores` queda
  * con motivo.
  *
- * EL VEREDICTO DEL VALIDADOR DE STORIES (story 7.3, 2026-09-17)
- * -------------------------------------------------------------
+ * EL VEREDICTO DEL VALIDADOR DE STORIES
+ * -------------------------------------
  *   · Cada lanzamiento de `tycon-story-validator` lleva `veredicto` (el renglón `Veredicto:` con que
  *     cierra su informe, leído por `scripts/lib/validator-verdict.js`), `veredicto_reglas`,
  *     `veredicto_bloquea` y `sobre_otra_story`; `revisores.validador` lo resume por fase.
  *   · Un informe entregado por TRASPASO (la notificación sólo dice «se entregó como mensaje de
  *     <agente>») se lee del mensaje `<agent-message>` de ese agente: para el veredicto y para
- *     `devuelto_bytes`, que antes medía el aviso.
+ *     `devuelto_bytes`, que de otro modo mediría el aviso.
  *   · `veredictosDeConversacion` es la misma lectura para `pipeline.js` (agent-skills), que decide si
  *     relanza al validador en un re-loop: una sola lectura de la conversación, no dos.
  */
@@ -72,7 +71,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -95,9 +94,8 @@ const ESTADOS_VEREDICTO = ['limpio', 'hallazgos', 'inconsistente', 'sin_veredict
 // El aviso con que Claude Code reemplaza el informe cuando el agente lo entregó por traspaso.
 const AVISO_TRASPASO = /delivered to you as a message from "([^"]+)"/;
 // `.md` que un prompt nombra y NO son una story (contexto de revisores, guías, planificación, evidencia).
-// 🔴 Por NOMBRE EXACTO de archivo o por CARPETA, nunca por un pedazo del nombre (pase adversarial
-// 2026-09-17): con `catalog`, `README` o `-pasos.md` sueltos, una story real con esa palabra en el slug
-// («…-armar-el-catalogo-de-productos.md») salía «no sé», su veredicto contaba como propio y podía soltar
+// 🔴 Por NOMBRE EXACTO de archivo o por CARPETA, nunca por un pedazo del nombre: con `catalog`, `README` o `-pasos.md` sueltos, una story real con esa palabra en el slug
+// («…-armar-el-catalogo-de-productos.md») saldría «no sé», su veredicto contaría como propio y podría soltar
 // al validador con la mitad de la evidencia. Lo que no se reconoce acá cuenta como OTRA story: sale de la
 // racha, que es la dirección segura.
 const NO_ES_STORY_NOMBRE = /^(?:readme|skill|claude|agents|todo|epics|story-format|advisor-rules-catalog|incident-log|guide-update-proposals|sprint-status|rubrica)\.md$|^step-\d{2}[a-z]?-/i;
@@ -188,7 +186,7 @@ function lanzamientosDeConversacion(lineas) {
 function notificacionDe(txt) {
   if (typeof txt !== 'string' || !txt.includes('<task-notification>') || !txt.includes('<tool-use-id>')) return null;
   // 🔴 El informe del revisor es texto LIBRE y puede contener `</result>` o un `<usage>` de ejemplo
-  // (pase adversarial 2026-09-10: en este mismo repo los revisores citan los fixtures de esta
+  // (en este mismo repo los revisores citan los fixtures de esta
   // pieza). Por eso: el identificador se busca sólo ANTES del primer `<result>`, el informe va del
   // primer `<result>` al ÚLTIMO `</result>`, y el uso se busca sólo DESPUÉS de ese cierre — que es
   // donde Claude Code lo escribe.
@@ -225,9 +223,9 @@ function notificacionDe(txt) {
  * del informe sangrado dos espacios, cerrado por `</agent-message>`; después del cierre el arnés agrega
  * texto propio. 🔴 Se lee SÓLO de adentro del marco (ese texto de después podría decir cualquier cosa) y
  * un marco sin cierre o sin «The report follows:» no se adivina: `null`, y el aviso queda como informe.
- * 🔴 El cierre es el renglón `</agent-message>` SIN sangría (medido 2026-09-17: 78 de 78 traspasos reales
+ * 🔴 El cierre es el renglón `</agent-message>` SIN sangría (medido: 78 de 78 traspasos reales
  * cierran así y 353 de 353 renglones del informe van sangrados). Ni el primero a secas —un informe que cita
- * el tag perdía su renglón `Veredicto:`— ni el último, que fundiría dos marcos seguidos.
+ * el tag perdería su renglón `Veredicto:`— ni el último, que fundiría dos marcos seguidos.
  */
 function traspasoDe(txt) {
   if (typeof txt !== 'string' || !txt.includes('<agent-message from=') || !txt.includes('[Subagent hand-back]')) return null;
@@ -270,18 +268,18 @@ const { esNotificacionEncolada } = digest;
  * Los resultados de la conversación, por identificador de lanzamiento.
  * Map id → {ts, bytes, tokens|null, tool_uses|null, duracion_ms|null, fuente}.
  *
- * 🔴 La notificación de un agente vive en TRES lugares posibles, medido el 2026-09-10 sobre las 300
+ * 🔴 La notificación de un agente vive en TRES lugares posibles, medido sobre las 300
  * conversaciones más recientes: como mensaje `user` (273) cuando el padre estaba libre, y —cuando
  * estaba ocupado— ENCOLADA: una línea `queue-operation` (`operation: enqueue`, el texto en
  * `content`) y una `attachment` (`attachment.type: queued_command`, el texto en `prompt`), sin
- * ninguna línea `user` (173 sólo así: el 39 %). Leer sólo los mensajes `user` daba 769 «sin
+ * ninguna línea `user` (173 sólo así: el 39 %). Leer sólo los mensajes `user` daría 769 «sin
  * resultado» sobre 1930 lanzamientos reales. La misma notificación puede aparecer hasta tres
  * veces (encolada, adjunta, quitada de la cola): cuenta UNA, con la hora más temprana.
  * La notificación gana sobre el tool_result; el acuse «Async agent launched» no cuenta.
  */
 function resultadosDeConversacion(lineas) {
   const out = new Map();
-  const traspasos = new Map(); // agente → texto del informe entregado por traspaso (story 7.3)
+  const traspasos = new Map(); // agente → texto del informe entregado por traspaso
   const anotar = (n, ts, fuente) => {
     const prev = out.get(n.id);
     if (prev && prev.fuente !== 'tool_result') {
@@ -309,7 +307,7 @@ function resultadosDeConversacion(lineas) {
     if (o.type === 'attachment') {
       const a = o.attachment;
       // Sólo el adjunto que Claude Code usa para entregar lo encolado (`queued_command`): otro adjunto
-      // cuyo texto se parezca a una notificación no es una notificación (pase adversarial 2026-09-10).
+      // cuyo texto se parezca a una notificación no es una notificación.
       const prompt = a && typeof a === 'object' && a.type === 'queued_command' && typeof a.prompt === 'string' ? a.prompt : null;
       const n = prompt ? notificacionDe(prompt) : null;
       if (n) anotar(n, o.timestamp, 'notificacion_encolada');
@@ -332,8 +330,8 @@ function resultadosDeConversacion(lineas) {
       out.set(id, { ts: o.timestamp || null, bytes: Buffer.byteLength(t, 'utf8'), tokens: null, tool_uses: null, duracion_ms: null, fuente: 'tool_result', informe: t });
     }
   }
-  // 🔴 El informe por traspaso reemplaza al aviso: sin esto, el tamaño medido era el del aviso y el
-  // veredicto se buscaba en un texto que dice «leelo en otro lado» (story 7.3).
+  // 🔴 El informe por traspaso reemplaza al aviso: sin esto, el tamaño medido es el del aviso y el
+  // veredicto se busca en un texto que dice «leelo en otro lado».
   for (const r of out.values()) {
     const m = typeof r.informe === 'string' ? r.informe.match(AVISO_TRASPASO) : null;
     if (!m || !traspasos.has(m[1])) continue;
@@ -377,9 +375,8 @@ function veredictosDeConversacion(lineas, { tipo = VALIDADOR, storyPath = null }
 /**
  * Empareja cada línea del registro con un `tool_use` de la conversación: mismo tipo, dentro de la
  * ventana, cada `tool_use` una sola vez — y de CARDINALIDAD MÁXIMA (Kuhn con caminos aumentantes,
- * candidatos ordenados por cercanía). El greedy «el más cercano primero» dejaba `no_ubicado` a un
- * lanzamiento cuya única pareja se la había llevado el anterior aunque éste tuviera otra (pase
- * adversarial 2026-09-10). Los grafos son chicos (≤ decenas por corrida): el costo es nulo.
+ * candidatos ordenados por cercanía). El greedy «el más cercano primero» dejaría `no_ubicado` a un
+ * lanzamiento cuya única pareja se la llevó el anterior aunque éste tuviera otra. Los grafos son chicos (≤ decenas por corrida): el costo es nulo.
  *
  * Devuelve {lanzamientos: [{...reg, id|null, en_registro: true}], fuera_del_registro: [conv...]} —
  * los `tool_use` que ningún registro reclama se DEVUELVEN (no sólo se cuentan): son lanzamientos
@@ -440,7 +437,7 @@ function estimar(sinMedir, supuesto, hoy) {
       lanzamientos_sin_medir: sinMedir,
     };
   }
-  // La salida conserva sus claves de siempre (story 8.9, pregunta decidida 2): el archivo se lee en inglés.
+  // La salida conserva sus claves: el archivo se lee en inglés.
   return {
     estado: 'estimado',
     lanzamientos_cubiertos: sinMedir,
@@ -502,7 +499,7 @@ function medir({ registro, conversacion, costo, supuesto, hoy, consumo, storyPat
       const e = emparejar(reg, convLanz);
       // Los lanzamientos que la conversación muestra y el registro no tiene ENTRAN al padrón
       // (vuelta «sin registro»): un revisor real que el hook no anotó no puede quedar fuera de
-      // todos los totales sin que nada lo diga (pase adversarial 2026-09-10).
+      // todos los totales sin que nada lo diga.
       lanzamientos = e.lanzamientos.concat(e.fuera_del_registro);
       fueraDelRegistro = e.fuera_del_registro.length;
       if (fueraDelRegistro) out.fuente_lanzamientos = 'registro+conversacion';
@@ -549,7 +546,7 @@ function medir({ registro, conversacion, costo, supuesto, hoy, consumo, storyPat
   let noUbicados = 0;
   for (const l of (lanzamientos || [])) {
     const item = { tipo: l.tipo, modelo: l.modelo, vuelta: l.vuelta, lanzado: l.ts || null, en_registro: l.en_registro !== false };
-    // Story 7.3: el validador de stories deja su veredicto. Se decide ANTES de medir y se completa
+    // El validador de stories deja su veredicto. Se decide ANTES de medir y se completa
     // abajo; los demás revisores no ganan campos.
     const esValidador = l.tipo === VALIDADOR;
     if (!hayConv) {
@@ -656,8 +653,8 @@ function verificarSeparacion(dump) {
   if (dump.consumo && dump.consumo.tokens) {
     const h = hashDe(dump.consumo.tokens);
     if (!r.consumo_visto) {
-      // Sin huella no hay contra qué comparar: no es «pasa», es «no se puede saber» (pase adversarial
-      // 2026-09-10: se medía sin consumo, el consumo aparecía después, y el chequeo se salteaba).
+      // Sin huella no hay contra qué comparar: no es «pasa», es «no se puede saber» (si se mide sin consumo y el consumo
+      // aparece después, el chequeo se saltea).
       motivos.push('los revisores se midieron cuando el consumo del hilo todavía no existía (sin huella `consumo_visto`): no se puede verificar la separación — hay que re-medir los revisores');
     } else if (h !== r.consumo_visto) {
       motivos.push('el consumo del hilo (`consumo.tokens`) cambió después de medir los revisores: si le sumaron el estimado, esto lo detecta; si el rescate volvió a correr, hay que re-medir los revisores');
@@ -831,9 +828,9 @@ function barrer(volcados, o, procesar = procesarCorrida) {
     try {
       r = procesar(v, o);
     } catch (e) {
-      // 🔴 Un fallo del PROPIO medidor no es un volcado ilegible (Step 5, cazador de fallos
-      // silenciosos): se cuenta aparte, con el mensaje, y el resumen lo dice. Antes caía en
-      // «no medidas (volcado ilegible)», que es cierto sólo para el camino `r.error`.
+      // 🔴 Un fallo del PROPIO medidor no es un volcado ilegible:
+      // se cuenta aparte, con el mensaje, y el resumen lo dice. Contarlo en
+      // «no medidas (volcado ilegible)» sería cierto sólo para el camino `r.error`.
       s.fallas_del_medidor += 1;
       s.errores.push(`${path.basename(v)}: ${e && e.message ? e.message : String(e)}`);
       continue;
@@ -885,7 +882,7 @@ function main(argv) {
 module.exports = {
   lanzamientosDelRegistro, lanzamientosDeConversacion, resultadosDeConversacion, notificacionDe, esNotificacionEncolada, emparejar, estimar,
   medir, verificarSeparacion, leerSupuesto, leerHilo, conversacionDe, procesarCorrida, barrer, resumenBarrido, mediana,
-  // story 7.3 — el veredicto del validador de stories
+  // el veredicto del validador de stories
   traspasoDe, sobreOtraStory, veredictosDeConversacion, faseDelValidador, VALIDADOR,
 };
 

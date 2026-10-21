@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pipelines/operations/github/clone-repos.sh — los clones de los repos de la organización en GitHub (story 8.31).
+# pipelines/operations/github/clone-repos.sh — los clones de los repos de la organización en GitHub.
 #
 #   clone-repos.sh --declared <destino>
 #       Para la revisión de dependencias. Lee de la entrada las líneas `<ruta>\t<dueño>/<repo>` (lo que imprime
@@ -26,8 +26,8 @@
 # de máquina). Habla con GitHub por TYCON_GH_CMD (por defecto gh; un `.js` corre con node) y clona desde GITHUB_SERVER_URL
 # (las pruebas usan una carpeta local).
 # Un repo que no se pudo listar o clonar se NOMBRA (un barrido que se achica en silencio se lee igual que uno completo), y
-# cero repos vistos es un aviso, nunca un verde mudo (DEF-8.31-metricas-no-ven-privados-de-un-usuario: en una cuenta de
-# usuario el camino de `users/` no trae los privados y la corrida salía verde con «repos vistos: 0»).
+# cero repos vistos es un aviso, nunca un verde mudo (en una cuenta de
+# usuario el camino de `users/` no trae los privados, y la corrida saldría verde con «repos vistos: 0»).
 # Salida: 0 (lo que falló va como ::warning::) · 1 sin credencial, sin poder listar a un dueño, o error de uso.
 set -uo pipefail
 

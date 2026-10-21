@@ -1,7 +1,7 @@
-// Los pasos del pipeline de una story, como los muestra el cartel (story 7.27).
+// Los pasos del pipeline de una story, como los muestra el cartel.
 //
 // Copia de `STEP_SEQUENCE` y `SUBSTEP_FLAG` de skills/tycon-pipeline/scripts/pipeline.js, con los nombres llanos de
-// skills/tycon-pipeline/scripts/lib/steps.js (story 7.23): el plugin corre sin Node y no puede leer esos archivos.
+// skills/tycon-pipeline/scripts/lib/steps.js: el plugin corre sin Node y no puede leer esos archivos.
 // scripts/tests/harness-mods.test.js (T16) frena si los ids o los nombres se separan.
 
 /** Cada paso: su id (el del marker) y el nombre que lee el dev — el único que se le muestra, sin el id. */

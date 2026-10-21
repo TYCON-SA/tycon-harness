@@ -1,26 +1,25 @@
 #!/usr/bin/env node
 /**
  * tokens-digest.js — rescata de cada corrida del pipeline lo que hoy se borra al mes.
- * Story 2.13 del arnés (2026-09-09).
  *
  * QUÉ RESCATA, y por qué importa
  * ------------------------------
  * El archivador del pipeline (`marker.js cmdClear`) ya guarda por corrida los tiempos de cada paso,
  * los frenos y cuántos agentes lanzó. Lo que NO guarda es el CONSUMO ni el HILO: eso vive sólo en la
- * conversación de Claude Code, que se borra a los 30 días. Medido el 2026-09-09: de 215 corridas
- * archivadas quedaban 67 con su conversación viva, y cada semana se perdían las de esa semana.
+ * conversación de Claude Code, que se borra a los 30 días. Medido sobre 215 corridas archivadas:
+ * sólo 67 tienen su conversación viva, y cada semana se pierden las de esa semana.
  *
  * Tres cosas, entonces:
  *   1. El RESUMEN de consumo (tokens por modelo y por paso) → adentro del volcado, bajo `consumo`.
  *   2. El HILO de la conversación, comprimido → `<volcado sin .json>.hilo.jsonl.gz`, al lado.
  *   3. El MENSAJE REAL del error de cada freno en rojo → `gates[i].mensaje`.
  *
- * 🔴 DE DÓNDE SALE EL MENSAJE (2026-09-17). Desde el 2026-09-14, 0 de 43 frenos en rojo tenían
- * mensaje (antes, 22 de 79 desde el 27-08). Medido sobre los volcados locales y del buzón: en los 43
+ * 🔴 DE DÓNDE SALE EL MENSAJE. Medido sobre los volcados locales y del buzón, buscarlo en la
+ * conversación no alcanza: en 43 frenos en rojo
  * el comando registrado NO aparece en la conversación —lo lanza un script (`test-gate.sh` →
  * `run-suites-json.js`, `runtime-matrix.js`)— y 26 corrieron en segundo plano, donde la
  * conversación sólo dice «Command running in background» y la salida va a un archivo que se borra.
- * Buscarlo en la conversación no podía funcionar. Ahora `marker.js run-check` guarda en su línea de
+ * Buscarlo en la conversación no puede funcionar. Por eso `marker.js run-check` guarda en su línea de
  * `gates.log` la COLA de la salida, ya saneada con `colaDeSalida` de este archivo (campo `cola`, sólo
  * en rojo), y acá se usa primero esa cola. El rescate por conversación queda para las corridas
  * anteriores, que no la tienen.
@@ -30,16 +29,15 @@
  * Todo va a `~/.claude/.tycon-pipeline/timing-history/`, fuera de todo repositorio: el hilo contiene
  * prompts, rutas del disco y código de cliente, y no va a ningún repo. La copia del volcado que `marker.js`
  * deja en `.advisors/pipeline-runs/` la ignora git (verificado: `.gitignore:14`). Desde ahí SÍ viaja al
- * buzón de corridas de la organización: lo sube `upload-runs.js` (el volcado y el hilo desde la story 2.16;
- * el cambio de git desde la 2.19), a un contenedor que leen sólo quienes tienen el rol de lectura, y se
- * guarda entero y sin vencimiento (decisión del dueño, 2026-10-15, story 2.24).
+ * buzón de corridas de la organización: lo sube `upload-runs.js` (el volcado, el hilo y el cambio de git), a un contenedor que leen sólo quienes tienen el rol de lectura, y se
+ * guarda entero y sin vencimiento.
  *
  * 🔴 CUATRO COSAS QUE SE MIDIERON ANTES DE ESCRIBIRLAS, no se supusieron:
  *
  *   (a) El mismo `usage` se repite en cada línea de una respuesta. Claude Code parte una respuesta
  *       en 1..9 líneas `type=assistant` (una por bloque: pensamiento, texto, cada herramienta) y
  *       TODAS repiten el mismo `message.id` y el mismo `usage`. Sumar por línea da 3,22× en la
- *       corrida de la 2.3 (579 líneas → 251 respuestas). Se deduplica por `message.id`.
+ *       una corrida medida (579 líneas → 251 respuestas). Se deduplica por `message.id`.
  *
  *   (b) La marca de un freno es la hora de FIN del comando, no la de inicio. `marker.js cmdRunCheck`
  *       toma `t0`, ejecuta, y recién entonces escribe la línea (por eso trae `durationMs`). O sea
@@ -52,11 +50,11 @@
  *       (`node /Users/…/marker.js …`); la conversación guarda el de la terminal, con un `cd`
  *       adelante, salto de línea y `~` sin expandir. Se empareja por contención DIRIGIDA (el del
  *       registro adentro del de la conversación) — que no es «por cercanía temática», lo único
- *       prohibido: eso daba 169 casos de basura.
+ *       prohibido: eso daría 169 casos de basura.
  *
  *   (d) La conversación de una corrida se ubica por `sessionId` buscando en TODAS las carpetas de
- *       `~/.claude/projects/`. El `repoPath` del volcado no la deduce: en la corrida de la 2.3 era
- *       un clon del scratchpad y la transcripción estaba bajo la carpeta del cwd real.
+ *       `~/.claude/projects/`. El `repoPath` del volcado no la deduce: puede ser un clon del scratchpad
+ *       mientras la transcripción está bajo la carpeta del cwd real.
  *
  * REGLA CARDINAL: nunca un cero donde hubo ausencia. Si la conversación no está, `consumo` sale con
  * `estado` y `motivo` en castellano y SIN la clave `tokens` — un cero se lee como «no consumió nada».
@@ -67,7 +65,7 @@
  *   node tokens-digest.js --run <volcado.json> [--projects-dir D] [--json]
  *   node tokens-digest.js --pending [--history-dir D] [--projects-dir D] [--budget-ms N] [--json]
  *   node tokens-digest.js --all     [--history-dir D] [--projects-dir D] [--budget-ms N] [--json]
- *   (--runs-dir D: el registro de lanzamientos que usa el medidor de revisores encadenado — story 2.15)
+ *   (--runs-dir D: el registro de lanzamientos que usa el medidor de revisores encadenado)
  *
  * Salidas: 0 procesó (aunque alguna corrida quede `no_medido` — eso también es medir) · 2 no pudo
  * arrancar (argumentos mal, volcado ilegible). Nunca lanza: quien lo llama archiva igual.
@@ -78,7 +76,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -145,10 +143,9 @@ function esNombreDeCredencial(nombre) {
 
 /**
  * Tapa el VALOR de todo `nombre=valor` / `nombre: valor` / `"nombre":"valor"` cuyo nombre sea de
- * credencial. Es un bucle manual y no un `.replace` con callback a propósito (cuarta vuelta de
- * seguridad, 2026-09-09): con un regex que capturaba nombre Y valor, en `user=admin&password=secreto`
- * el valor de `user=` —que no es credencial— se tragaba `admin&password=secreto` entero, y
- * `password=` no se miraba nunca. Acá lo inocente NO se consume: el escaneo sigue justo después
+ * credencial. Es un bucle manual y no un `.replace` con callback a propósito: con un regex que capture nombre Y valor, en `user=admin&password=secreto`
+ * el valor de `user=` —que no es credencial— se tragaría `admin&password=secreto` entero, y
+ * `password=` no se miraría nunca. Acá lo inocente NO se consume: el escaneo sigue justo después
  * del `=` y encuentra al siguiente.
  */
 function taparCredencialesConNombre(txt) {
@@ -168,8 +165,8 @@ function taparCredencialesConNombre(txt) {
       tapado = `${q}<oculto>${q}`;
     } else {
       // El valor termina en espacio, `&` o comilla: en un cuerpo o una consulta el `&` separa
-      // parámetros (un `&` DENTRO de una contraseña viaja codificado, `%26`), y tragárselo borraba
-      // los parámetros inocentes que seguían (`&page=2`).
+      // parámetros (un `&` DENTRO de una contraseña viaja codificado, `%26`), y tragárselo borraría
+      // los parámetros inocentes que siguen (`&page=2`).
       const r = /[^\s&"']+/y;
       r.lastIndex = ini;
       fin = r.exec(txt) ? r.lastIndex : ini;
@@ -191,10 +188,9 @@ function sanear(txt, home) {
   const casa = home || os.homedir();
   const tmp = os.tmpdir();
   return String(txt || '')
-    // 🔴 EL ORDEN ES EL ARREGLO (Step 5, revisor de seguridad, 2026-09-09). La versión anterior
-    // colapsaba el home a `~` en el PRIMER paso, y entonces la regla que borra rutas absolutas ya
-    // no reconocía lo que quedaba: `/Users/<dev>/Proyectos/Cliente/a.cs` salía publicado como
-    // `~/Proyectos/Cliente/a.cs` — o sea, sobrevivía exactamente el tramo que nombra al cliente.
+    // 🔴 EL ORDEN IMPORTA. Si el home se colapsara a `~` en el PRIMER paso, la regla que borra rutas
+    // absolutas no reconocería lo que queda: `/Users/<dev>/Proyectos/Cliente/a.cs` se publicaría como
+    // `~/Proyectos/Cliente/a.cs` — o sea, sobreviviría exactamente el tramo que nombra al cliente.
     // Las rutas se borran ENTERAS primero; el colapso del home queda de respaldo, al final.
     // Credenciales SIN nombre de variable adelante: `Bearer x`, `Basic x`, `https://user:pass@host`.
     .replace(/\b(Bearer|Basic)\s+[^\s'"]+/gi, '$1 <oculto>')
@@ -207,8 +203,8 @@ function sanear(txt, home) {
     .split('\u0000').map(taparCredencialesConNombre).join('\u0000')
     // Rutas, ENTERAS. Un espacio adentro cuenta como parte de la ruta si hasta la PRÓXIMA barra hay
     // puros caracteres de nombre de carpeta (`/Users/x/Cliente Grande SA/a.ts`): mejor tapar de más
-    // que dejar el nombre del cliente a medias — pero sin tragarse el resto del renglón: la primera
-    // versión miraba «¿hay una barra más adelante?» y un `PATH=/usr/bin` al final se llevaba puesto
+    // que dejar el nombre del cliente a medias — pero sin tragarse el resto del renglón: una regla
+    // que sólo mire «¿hay una barra más adelante?» dejaría que un `PATH=/usr/bin` al final se llevara puesto
     // todo lo del medio, credenciales y texto legítimo del error incluidos.
     .replace(/\/private\/tmp\/(?:[^\s'"]|\s(?=[\w .()-]*\/))*/g, '<carpeta temporal>')
     .replace(/\/tmp\/(?:[^\s'"]|\s(?=[\w .()-]*\/))*/g, '<carpeta temporal>')
@@ -256,8 +252,7 @@ function mensajesDeSalida(gates, home) {
  *
  * 🔴 Dos pasos cuyas marcas están INVERTIDAS (el 6 cerrado antes que el 5) se publican FUSIONADOS en
  * un balde `5+6`, con el consumo entre la marca anterior y la mayor de las dos. Pasa de verdad: 20
- * de 230 volcados, y en el de la 2.3 el paso 6 cierra 23:49:54 y el 5 a las 23:50:33. Es lo que la
- * story 2.7 arregla; acá se DECLARA en vez de fingir un reparto que las marcas no sostienen —
+ * de 230 volcados medidos. Acá se DECLARA en vez de fingir un reparto que las marcas no sostienen —
  * asignar cada respuesta al primer corte que alcanza deja el 6 en cero y el 5 absorbiéndolo, callado.
  */
 function cortesDePaso(stepTimings) {
@@ -272,8 +267,7 @@ function cortesDePaso(stepTimings) {
     let fin = marcas[i].hasta;
     const nombres = [marcas[i].paso];
     // Absorbe a los siguientes mientras vengan con la marca hacia atrás — o EMPATADA: dos pasos con
-    // la misma hora exacta dejan un intervalo de ancho cero, y el segundo saldría en cero, callado
-    // (pase adversarial 2026-09-09).
+    // la misma hora exacta dejan un intervalo de ancho cero, y el segundo saldría en cero, callado.
     while (i + 1 < marcas.length && marcas[i + 1].hasta <= fin) {
       i += 1;
       nombres.push(marcas[i].paso);
@@ -345,7 +339,7 @@ function consumo(lineas, cortes) {
 /**
  * ¿Es la línea con que Claude Code ENCOLA la notificación de un agente que terminó mientras el padre
  * estaba ocupado? Es un `queue-operation` (tipo descartado del hilo) y es la ÚNICA copia del
- * resultado de ese agente: no hay línea `user` (story 2.15, medido 2026-09-10: 173 de 446
+ * resultado de ese agente: no hay línea `user` (medido: 173 de 446
  * notificaciones de agente sólo viven así). Pesa ~2 KB (máximo medido 16 KB): se conserva.
  */
 function esNotificacionEncolada(o) {
@@ -377,16 +371,15 @@ function mensajesDeError(usos, resultados, gates, home) {
     if (!objetivo) continue;
 
     // Contención DIRIGIDA con BORDE: el comando del REGISTRO adentro del de la CONVERSACIÓN, y
-    // delimitado — `npm test` no es `npm testx` (pase adversarial 2026-09-09: la subcadena plana
-    // atribuía la salida de otro comando). Al revés sobre-empareja: un `npm test` suelto en la
+    // delimitado — `npm test` no es `npm testx` (la subcadena plana
+    // atribuiría la salida de otro comando). Al revés sobre-empareja: un `npm test` suelto en la
     // conversación no prueba nada sobre un freno cuyo comando es más largo.
     const contiene = new RegExp(`(?:^|[\\s;&|(])${objetivo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:$|[\\s;&|)])`);
     // Orden de preferencia, de mayor a menor: exacto > antes de la marca > después. Dentro de cada
     // grupo, el más cercano. 🔴 «Antes» le gana a «después» AUNQUE esté más lejos: la ventana hacia
     // adelante es mucho más chica (15 s) que hacia atrás (2 min), así que un candidato espurio
-    // posterior casi siempre ganaría por cercanía absoluta — pasó de verdad (volcado QA-1, freno 1:
-    // el triage a +7,3 s le ganó al compilador a −11,8 s y se publicó «NINGUNO de mis archivos» sin
-    // un solo error adentro).
+    // posterior casi siempre ganaría por cercanía absoluta: un triage a +7,3 s le ganaría a un
+    // compilador a −11,8 s y se publicaría «NINGUNO de mis archivos» sin un solo error adentro.
     let elegido = null;
     let mejorRango = Infinity; // 0 exacto · 1 antes · 2 después
     let mejorDist = Infinity;
@@ -410,13 +403,13 @@ function mensajesDeError(usos, resultados, gates, home) {
     if (!crudo) continue;
     // El aviso de que el comando corre en segundo plano NO es el mensaje del error: la salida real
     // se fue a un archivo del scratchpad, que se borra. Publicarlo haría pasar un preámbulo por
-    // evidencia (AC10).
+    // evidencia.
     if (/^Command running in background/.test(crudo)) continue;
     // Se guarda la COLA, no la cabeza. El freno suele correr al final de un Bash compuesto
     // (`baseline | tail; echo ===; pipeline.js next; echo ===; <freno>`) y el resultado concatena
-    // todas las salidas: recortar los primeros 700 caracteres publicaba el listado de próximos pasos
-    // y cortaba justo ANTES del veredicto (volcado 4.56, freno 9 — el «🔴 ROJO» empezaba en el
-    // carácter 807). Los veredictos y los errores viven al final; los preámbulos, al principio.
+    // todas las salidas: recortar los primeros 700 caracteres publicaría el listado de próximos pasos
+    // y cortaría justo ANTES del veredicto (un «🔴 ROJO» puede empezar pasado el carácter 800).
+    // Los veredictos y los errores viven al final; los preámbulos, al principio.
     const texto = colaDeSalida(crudo, home);
     if (!texto) continue;
     out.set(i, texto);
@@ -513,8 +506,8 @@ function rutaHilo(volcado) {
 // ── Una corrida ──────────────────────────────────────────────────────────────────────────────────
 
 /**
- * El MEDIDOR de revisores (story 2.15) corre encadenado a cada corrida que este rescate procesa —
- * decisión del dev al aprobar el plan de la 2.15 (2026-09-09): así toda corrida nueva queda medida
+ * El MEDIDOR de revisores corre encadenado a cada corrida que este rescate procesa:
+ * así toda corrida nueva queda medida
  * sola en el barrido del arranque, sin correr `reviewers-cost.js` a mano.
  *
  * 🔴 `require` PEREZOSO y fail-open CON MOTIVO: este archivo lo llama `marker.js` desde OTRO repo
@@ -530,7 +523,7 @@ function encadenarMedidor(volcado, opciones) {
       const dump = JSON.parse(fs.readFileSync(volcado, 'utf8'));
       const previo = dump.revisores;
       // Sólo se anota la ausencia sobre NADA o sobre un `no_medido` anterior: `medido`, `parcial` y
-      // `borrada` (terminal, con sus conteos) no se pisan (pase adversarial 2026-09-10).
+      // `borrada` (terminal, con sus conteos) no se pisan.
       if (!previo || previo.estado === 'no_medido') {
         dump.revisores = { estado: 'no_medido', motivo, medido_en: new Date().toISOString() };
         escribirVolcado(volcado, dump);
@@ -567,7 +560,7 @@ function procesarCorrida(volcado, opciones) {
   if (res.error) return res;
   res.revisores = encadenarMedidor(volcado, opciones);
   // Si el medidor no pudo ESCRIBIR su bloque, la corrida NO quedó rescatada entera: sube al
-  // resultado para que `--run` salga ≠ 0 y el barrido lo cuente (pase adversarial 2026-09-10).
+  // resultado para que `--run` salga ≠ 0 y el barrido lo cuente.
   if (res.revisores && res.revisores.no_persistido && !res.no_persistido) res.no_persistido = `revisores: ${res.revisores.no_persistido}`;
   return res;
 }
@@ -598,10 +591,10 @@ function rescatarCorrida(volcado, opciones) {
 
   const ubi = ubicarTranscripcion(sessionId, projectsDir);
   if (!ubi.ruta) {
-    // 🔴 Lo que YA se midió no se pisa (pase adversarial 2026-09-09): `--all` reprocesa sin
-    // condición, y si en ESA pasada la carpeta de conversaciones estaba mal apuntada o inaccesible,
-    // sobreescribía tokens reales e hilo guardado con `estado: borrada` — y como «borrada» es
-    // terminal para el barrido, no se recuperaba nunca. El resumen medido es una foto válida aunque
+    // 🔴 Lo que YA se midió no se pisa: `--all` reprocesa sin
+    // condición, y si en ESA pasada la carpeta de conversaciones está mal apuntada o inaccesible,
+    // se sobreescribirían tokens reales e hilo guardado con `estado: borrada` — y como «borrada» es
+    // terminal para el barrido, no se recuperarían nunca. El resumen medido es una foto válida aunque
     // la conversación se haya ido después: se conserva, y se anota desde cuándo no está.
     if (dump.consumo && dump.consumo.estado === 'medido') {
       dump.consumo.conversacion = { estado: ubi.estado, motivo: ubi.motivo, desde: new Date().toISOString() };
@@ -643,11 +636,10 @@ function rescatarCorrida(volcado, opciones) {
       mensajes: mensajes.length,
       descartadas: leido.lineas.length - mensajes.length,
     };
-    // 🔴 `hilo_hasta` SÓLO avanza si el archivo llegó a escribirse (Step 5, cazador de fallos
-    // silenciosos, 2026-09-09). Antes se fijaba con lo leído de la transcripción, sin mirar el
-    // resultado de la escritura: con el disco lleno o un permiso mal, ese tramo de conversación se
-    // perdía PARA SIEMPRE —`estaPendiente` lo daba por resuelto— y el barrido lo contaba como
-    // salvado. Un número diciendo «todo bien» sobre algo que no se guardó.
+    // 🔴 `hilo_hasta` SÓLO avanza si el archivo llegó a escribirse. Si se fijara con lo leído de la
+    // transcripción, sin mirar el resultado de la escritura, con el disco lleno o un permiso mal ese
+    // tramo de conversación se perdería PARA SIEMPRE —`estaPendiente` lo daría por resuelto— y el barrido lo
+    // contaría como salvado. Un número diciendo «todo bien» sobre algo que no se guardó.
     // Y se calcula sobre los MENSAJES que entran al archivo, no sobre todas las líneas: si la
     // última fuera un adjunto (que se descarta), avanzaría sin haber guardado ese contenido.
     c.hilo_hasta = ultimaHora(mensajes);
@@ -672,10 +664,9 @@ function rescatarCorrida(volcado, opciones) {
 /**
  * Escribe el volcado de forma atómica. Devuelve `null` si pudo, o el motivo si no.
  *
- * 🔴 No lanza (Step 5, cazador de fallos silenciosos, 2026-09-09). Antes propagaba, y en el barrido
- * —que corre en CADA arranque de sesión— eso significaba que una corrida sin poder persistirse no
- * dejaba rastro en ningún lado y se reintentaba para siempre, callada. Ahora el motivo vuelve al
- * llamador, que lo cuenta aparte y lo dice en el resumen: «no pude» tiene que verse.
+ * 🔴 No lanza. Si propagara, en el barrido —que corre en CADA arranque de sesión— una corrida sin
+ * poder persistirse no dejaría rastro en ningún lado y se reintentaría para siempre, callada. El
+ * motivo vuelve al llamador, que lo cuenta aparte y lo dice en el resumen: «no pude» tiene que verse.
  */
 function escribirVolcado(ruta, dump) {
   const tmp = `${ruta}.${process.pid}.tmp`;
@@ -700,7 +691,7 @@ function estaPendiente(volcado, projectsDir) {
   try { dump = JSON.parse(fs.readFileSync(volcado, 'utf8')); } catch { return false; }
   const c = dump.consumo;
   if (!c) return true;
-  // Sin bloque `revisores` (story 2.15) también está pendiente: el medidor lo escribe SIEMPRE (medido o
+  // Sin bloque `revisores` también está pendiente: el medidor lo escribe SIEMPRE (medido o
   // con motivo), así que esto pasa una sola vez por corrida — no se reprocesa para siempre.
   if (!dump.revisores) return true;
   if (c.estado === 'borrada') return false;
@@ -713,7 +704,7 @@ function estaPendiente(volcado, projectsDir) {
   // La MISMA vara que usó `procesarCorrida` para escribir `hilo_hasta`: los mensajes que entran al
   // archivo, no todas las líneas. Con dos varas distintas nunca coincidirían y se reprocesaría siempre.
   const ultima = ultimaHora(hilo(leido.lineas));
-  // Sin `hilo_hasta` sólo vale la pena volver si AHORA hay algo con hora: una conversación sin una
+  // Sin `hilo_hasta` sólo vale la pena volver si hay algo con hora: una conversación sin una
   // sola marca de tiempo se re-procesaría en cada arranque, para siempre, sin cambiar nada.
   if (!c.hilo_hasta) return ultima !== null;
   return ultima !== null && ms(ultima) > ms(c.hilo_hasta);
@@ -742,9 +733,9 @@ function main(argv) {
     }
     const r = procesarCorrida(volcado, opciones);
     process.stdout.write(comoJson ? `${JSON.stringify(r, null, 2)}\n` : resumenLegible([r]));
-    // 🔴 No poder PERSISTIR sale ≠ 0 (segunda vuelta del cazador de fallos silenciosos): `marker.js`
+    // 🔴 No poder PERSISTIR sale ≠ 0: `marker.js`
     // llama a esto en CADA cierre del pipeline con la salida ignorada y sólo mira el código de
-    // salida — con 0, creía que la corrida quedó rescatada mientras el volcado seguía sin `consumo`.
+    // salida — con 0, creería que la corrida quedó rescatada mientras el volcado seguía sin `consumo`.
     // Un error al guardar el HILO, en cambio, ya quedó escrito adentro del volcado (`hilo.error`)
     // y el resumen sí se midió: ahí 0 es honesto, y ≠ 0 haría que marker.js pisara los tokens
     // reales con «no medido».

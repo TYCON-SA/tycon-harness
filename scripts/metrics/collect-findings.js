@@ -1,20 +1,19 @@
 #!/usr/bin/env node
 /**
  * collect-findings.js — junta los hallazgos que dejan las corridas del pipeline en TODOS los
- * repos de esta máquina y los normaliza a una serie que puede viajar (story 2.9).
+ * repos de esta máquina y los normaliza a una serie que puede viajar.
  *
  * POR QUÉ EXISTE
  * --------------
  * El arnés sabe qué regla saltó en cada corrida, pero ese dato no sale del disco donde corrió:
- * medido el 2026-09-16, hay **143 archivos en 10 repos** y **sólo 3 repos los commitean**. Los otros
+ * hay **143 archivos en 10 repos** y **sólo 3 repos los commitean** (medido). Los otros
  * viven en una sola máquina y el buzón compartido no trae ninguno. Sin esto, cualquier tabla por regla
  * sería de una persona y de un proyecto.
  *
  * LA REGLA QUE LO ORDENA: «UNA LECTURA QUE FALLA NUNCA ES UN DATO BUENO»
  * --------------------------------------------------------------------
- * La primera versión cumplía la lista blanca y fallaba en todo lo demás: la revisión de la vuelta 1
- * (un cazador de fallos silenciosos y un pase adversarial de 50 agentes) confirmó ~20 caminos por los
- * que una lectura rota, vacía, vieja o duplicada terminaba contada como hallazgo o como cero. Cada
+ * Cumplir la lista blanca no alcanza: quedan ~20 caminos por los
+ * que una lectura rota, vacía, vieja o duplicada termina contada como hallazgo o como cero. Cada
  * decisión de abajo cierra uno de ellos, y cada una tiene su caso en `collect-findings.test.sh`.
  *
  * 1. 🔴 **Lista blanca de SEIS claves** — `{ts, corrida, regla, dueno, severidad, disposicion}`.
@@ -24,13 +23,13 @@
  *    `corrida` es una huella opaca (ver 5): no dice qué repo ni qué story.
  *
  * 2. 🔴 **UN archivo por corrida.** Las corridas guardan la misma lista varias veces
- *    (`findings-input`, `-iterN`, `-final` y `findings.json`): sumarlas contaba cada hallazgo hasta
- *    cinco veces, y un único refutado real mandaba una regla a revisión humana. Se lee `findings.json`
+ *    (`findings-input`, `-iterN`, `-final` y `findings.json`): sumarlas contaría cada hallazgo hasta
+ *    cinco veces, y un único refutado real mandaría una regla a revisión humana. Se lee `findings.json`
  *    (el que escribe el paso 6); si no está, `findings-final`; si no, el `-iterN` más alto. Nunca
  *    `findings-input` (es la foto de ANTES de arreglar). Medido: 129 canónicos, 17 copias.
  *
  * 3. 🔴 **Fecha del nombre de la corrida, en sus dos formas** (`AAAAMMDD` y `AAAA-MM-DD`). Una corrida
- *    sin fecha legible **no emite** hallazgos: se cuenta. Inventarle «hoy» la metía en la ventana
+ *    sin fecha legible **no emite** hallazgos: se cuenta. Inventarle «hoy» la metería en la ventana
  *    actual en una máquina y afuera en otra.
  *
  * 4. 🔴 **Cada corrida cae en exactamente un balde**, y los baldes suman el total:
@@ -39,7 +38,7 @@
  *    sueltos o el consolidado del paso 6) nunca es «cero hallazgos».
  *
  * 5. 🔴 **La identidad de una corrida es la misma en todas las máquinas.** Un `findings.json` commiteado
- *    existe en cada clon del repo: sin identidad, el total del equipo lo contaba una vez por máquina.
+ *    existe en cada clon del repo: sin identidad, el total del equipo lo contaría una vez por máquina.
  *    `corrida` = huella de (dirección del remoto `origin` + nombre de la carpeta de la corrida). El
  *    remoto es el mismo en cualquier clon; el nombre de la carpeta local no.
  *
@@ -49,12 +48,12 @@
  *
  * 7. 🔴 **«Está medido» tiene UNA definición**: `estadoDeLaSerie()`. La usan la subida (para decidir si
  *    declara la fuente medida), el reductor y el cruce. Sin ella, un archivo viejo —el recolector
- *    apagado— se subía como medido todos los días. Medida = sello de hace no más de
+ *    apagado— se subiría como medido todos los días. Medida = sello de hace no más de
  *    `max_findings_days` días, con al menos un repo, y una serie cuyas líneas tienen TODAS forma y
  *    suman lo que el sello dice (una serie vacía o a medio escribir con un sello bueno no es «0»).
  *
- * 8. 🔴 **Qué corridas midió, para el denominador** (vuelta 2). El cruce cuenta oportunidades con los
- *    volcados de `timing-history/`; una corrida cuyo archivo de hallazgos no se pudo leer sumaba
+ * 8. 🔴 **Qué corridas midió, para el denominador**. El cruce cuenta oportunidades con los
+ *    volcados de `timing-history/`; una corrida cuyo archivo de hallazgos no se pudo leer sumaría
  *    oportunidades con cero hallazgos — medido: 49 de 113. Acá, que están las dos cosas en el mismo
  *    disco, cada volcado se empareja con su carpeta de corrida (mismo repo, misma story, dentro de la
  *    ventana de la sesión) y sale una línea `{volcado, medida}` sólo si esa corrida se leyó. El
@@ -68,9 +67,9 @@
  * `~/.claude/.tycon-pipeline/hallazgos.jsonl` + `findings-seal.json`, junto a `gates.log` y
  * `bypass.log`, sin carpeta propia: la subida lo manda como un registro más, con una sola cobertura.
  * Los dos se escriben de forma atómica (primero la serie, después el sello). La salida tiene que
- * terminar en `.jsonl`: una ruta equivocada no se pisa ni se borra. El sello cambió de nombre en la
- * story 8.9 (tanda D2): mientras dura el renombre, si sólo está el de antes se lee ése, y antes de
- * escribir el nuevo se le pasa su contenido (scripts/lib/renames.json); el viejo queda intacto.
+ * terminar en `.jsonl`: una ruta equivocada no se pisa ni se borra. El sello se lee por su nombre
+ * actual y, si sólo está el del mapa de renombres (scripts/lib/renames.json), por ése; antes de
+ * escribir el actual se le pasa su contenido, y el otro queda intacto.
  *
  * USO
  *   node scripts/metrics/collect-findings.js [--json] [--dry-run] [--budget-ms N]
@@ -87,7 +86,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -96,7 +95,7 @@ const crypto = require('crypto');
 const catalogoDeReglas = require('../lib/rules-catalog.js');
 const { readEnv, resolveFile, prepareStateWrite } = require('../lib/legacy-names.js');
 const DONDE = 'scripts/metrics/collect-findings.js';
-/** Una variable renombrada a inglés (story 8.9): el nombre viejo sigue valiendo hasta el retiro. */
+/** Una variable renombrada a inglés: el nombre viejo sigue valiendo hasta el retiro. */
 const variable = (nombre) => readEnv(nombre, { where: DONDE });
 
 const RAIZ_REPO = path.resolve(__dirname, '..', '..');
@@ -138,13 +137,13 @@ function dia(opt) {
 
 /**
  * El `ts` sale del NOMBRE de la carpeta de la corrida, en sus dos formas reales:
- *   `2.9-20260916T012515` · `3.25-2026-07-27-2308` · `D.6.6-2026-05-02T21-56-13` · `R-7-2026-05-20`
+ *   `2.9-AAAAMMDDTHHMMSS` · `3.25-AAAA-MM-DD-HHMM` · `D.6.6-AAAA-MM-DDTHH-MM-SS` · `R-7-AAAA-MM-DD`
  * Devuelve null si no hay una fecha válida: la corrida no emite (no se inventa «hoy»).
  */
 /**
  * ¿La carpeta de corrida `nombre` es de la story `storyId`? `<número>-<sello>`, o `<tema>__<número>-<sello>` cuando el
- * número se repite en el repo (story 1.17.1). El volcado sólo trae el número: se aceptan las dos formas, como los
- * otros medidores (es una medición, no un freno; con número repetido sigue siendo ambiguo, como antes).
+ * número se repite en el repo. El volcado sólo trae el número: se aceptan las dos formas, como los
+ * otros medidores (es una medición, no un freno; con número repetido sigue siendo ambiguo).
  */
 function esCorridaDe(nombre, storyId) {
   return String(nombre).startsWith(`${storyId}-`) || String(nombre).includes(`__${storyId}-`);
@@ -223,7 +222,7 @@ function serieCoincide(texto, sello) {
 
 // 🔴 Los conteos del sello que pueden salir de la máquina: una LISTA de claves, no «todo lo que sea número».
 //    El resumen de otra máquina llega por el buzón (la llave de escritura la tiene cualquiera con el repo):
-//    filtrar sólo por valor dejaba pasar texto en el NOMBRE de una clave, y `__proto__`.
+//    filtrar sólo por valor dejaría pasar texto en el NOMBRE de una clave, y `__proto__`.
 const CONTEOS_SELLO = ['repos', 'profundidad', 'run_dirs', 'hallazgos', 'fuera_de_catalogo', 'ambiguos',
   'elementos_sin_regla', 'elementos_otro_esquema', 'archivos_ilegibles', 'copias_ignoradas',
   'carpetas_ilegibles', 'worktrees_salteados', 'enlaces_salteados'];
@@ -282,7 +281,7 @@ function leerVocabularios(rutaFuentes) {
     throw new NoMedido('sources.json no declara prune.vocabularies.severity y prune.vocabularies.disposition');
   }
   const maxDias = cfg.prune.max_findings_days;
-  // Los nombres de lo que devuelve son internos (story 8.9: cambian las claves del archivo, no las del código).
+  // Los nombres de lo que devuelve son internos: si se renombran las claves de sources.json, éstos no cambian.
   return {
     severidad: v.severity,
     disposicion: v.disposition,
@@ -332,7 +331,7 @@ function buscarRepos(raiz, cuenta, reloj) {
         if (git.isFile() && WORKTREE.test(e.name)) { cuenta.worktrees_salteados += 1; continue; }
         repos.push(ruta);
       }
-      // 🔴 Se sigue bajando AUNQUE sea repo: `Totora/` es un contenedor y `Totora/Backend` el repo.
+      // 🔴 Se sigue bajando AUNQUE sea repo: `Acme/` es un contenedor y `Acme/Backend` el repo.
       bajar(ruta, nivel + 1);
     }
   };
@@ -437,10 +436,10 @@ function recolectar({ raiz, salida, catalogo, revisores, hoy, dryRun, fuentes, b
 
   const fallar = (motivo) => {
     // 🔴 Si no se pudo medir, lo de ayer NO se queda (se subiría como de hoy). Pero una SIMULACIÓN no
-    //    toca nada: antes, un --dry-run que fallaba borraba la serie real del día.
+    //    toca nada: un --dry-run que fallara borraría la serie real del día.
     if (!dryRun) {
       try { fs.unlinkSync(rutaSalida); } catch (_) { /* no estaba */ }
-      // 🔴 Story 8.9, tanda D2: el sello con su nombre de antes queda intacto hasta el retiro, y borrar el nuevo lo hacía
+      // 🔴 El sello con su nombre anterior queda intacto hasta el retiro, y borrar el nuevo lo haría
       //    volver a contestar por la serie (con su fecha vieja). El nuevo queda diciendo que la última falló.
       let fecha = null;
       try { fecha = dia(hoy); } catch (_) { /* sin fecha legible */ }
@@ -579,7 +578,7 @@ function recolectar({ raiz, salida, catalogo, revisores, hoy, dryRun, fuentes, b
           if (crudo.length === 0) continue;
 
           for (const h of crudo) {
-            // Un elemento que no es un objeto es de OTRO esquema (AC 3), no «sin regla».
+            // Un elemento que no es un objeto es de OTRO esquema, no «sin regla».
             if (!h || typeof h !== 'object' || Array.isArray(h)) { items.elementos_otro_esquema += 1; continue; }
             if (typeof h.rule_id !== 'string') {
               // Un tercer esquema existe (`ruleId`, `resolved`): no se traduce inventando la disposición.
@@ -591,7 +590,7 @@ function recolectar({ raiz, salida, catalogo, revisores, hoy, dryRun, fuentes, b
             let dueno = duenos[0];
             if (duenos.length > 1) {
               // Identificador con dos dueños (SEC-C1/SEC-C2): se atribuye sólo si el `advisor` declarado
-              // coincide con uno de ellos; si no, se cuenta como ambiguo y NO se inventa (AC 1, AC 6).
+              // coincide con uno de ellos; si no, se cuenta como ambiguo y NO se inventa.
               const decl = typeof h.advisor === 'string' ? h.advisor : null;
               if (!decl || !duenos.includes(decl)) { items.ambiguos += 1; continue; }
               dueno = decl;
