@@ -7,15 +7,14 @@
 # Este test falla si alguien REINTRODUCE el patrón peligroso: un guard de salteo atado al nombre
 # EXACTO con guiones, o la desaparición de la nota agnóstica.
 #
-# Fail-open: si agent-skills no está en la máquina, skip (exit 0). Corre en la pasada diaria.
+# El guard vive en la skill de la integración (§«Arranque desde el pipeline»): el paso 0b del pipeline no nombra
+# ninguna herramienta, y el caso 5 lo vigila.
 set -uo pipefail
-AS="${AGENT_SKILLS:-$HOME/.claude/agent-skills}"
-# la skill viaja dentro de su integración, en el arnés (este clon); el paso del pipeline, en las skills
 RAIZ="$(cd "$(dirname "$0")/../.." && pwd)"
 SKILL="$RAIZ/integrations/clockify/skills/clocki/SKILL.md"
-STEP="$AS/skills/tycon-pipeline/steps/step-00b-clocki-start.md"
+STEP="$RAIZ/skills/tycon-pipeline/steps/step-00b-work-start.md"
 [[ -f "$SKILL" ]] || { echo "❌ clocki-codex-toolnames: falta $SKILL (la skill de la integración de Clockify)"; exit 1; }
-[[ -f "$STEP" ]] || { echo "⚪ clocki-codex-toolnames: agent-skills no presente, skip"; exit 0; }
+[[ -f "$STEP" ]] || { echo "❌ clocki-codex-toolnames: falta $STEP (el paso 0b del pipeline)"; exit 1; }
 
 fallos=0
 ok(){ echo "✅ $1"; }
@@ -31,17 +30,28 @@ grep -qiE "guiones bajos|_clockify_" "$SKILL" \
   && ok "la nota menciona la variante Codex (guiones bajos)" \
   || bad "variante Codex ausente" "la nota no menciona guiones bajos / _clockify_"
 
-# 3. El guard de step-00b NO saltea por el nombre EXACTO con guiones sin caveat.
+# el guard del arranque desde el pipeline: desde su título hasta el próximo de su nivel
+GUARD="$(awk '/^### Arranque desde el pipeline/{on=1;print;next} on&&/^##/{exit} on' "$SKILL")"
+[[ -n "$GUARD" ]] || bad "sección ausente" "clocki/SKILL.md perdió «Arranque desde el pipeline»"
+
+# 3. El guard NO saltea por el nombre EXACTO con guiones sin caveat.
 #    Patrón peligroso: 'mcp__clockify__list-clockify-workspaces` no está disponible → saltear'
-if grep -qE 'mcp__clockify__list-clockify-workspaces`? no está disponible → saltear' "$STEP"; then
-  bad "guard peligroso reintroducido" "step-00b saltea por el nombre exacto con guiones (no-track silencioso en Codex)"
+if grep -qE 'mcp__clockify__list-clockify-workspaces`? no está disponible → saltear' <<<"$GUARD"; then
+  bad "guard peligroso reintroducido" "el arranque desde el pipeline saltea por el nombre exacto con guiones (no-track silencioso en Codex)"
 else
-  ok "step-00b no saltea por nombre exacto con guiones"
+  ok "el arranque desde el pipeline no saltea por nombre exacto con guiones"
 fi
 
-# 4. El guard nuevo menciona ambas variantes / guiones bajos
-grep -qiE "guiones bajos|AMBAS variantes|ambas variantes|list_clockify_workspaces" "$STEP" \
-  && ok "step-00b chequea ambas variantes de nombre" \
-  || bad "caveat ausente en el guard" "step-00b no aclara la variante Codex"
+# 4. El guard menciona ambas variantes / guiones bajos
+grep -qiE "guiones bajos|AMBAS variantes|ambas variantes|list_clockify_workspaces" <<<"$GUARD" \
+  && ok "el arranque desde el pipeline chequea ambas variantes de nombre" \
+  || bad "caveat ausente en el guard" "el arranque desde el pipeline no aclara la variante Codex"
+
+# 5. El paso 0b no nombra la herramienta: el guard no puede volver a él
+if grep -qiE 'clockify|clocki' "$STEP"; then
+  bad "el paso 0b nombra la herramienta" "lo propio de Clockify va en su integración, no en el paso del pipeline"
+else
+  ok "el paso 0b no nombra ninguna herramienta de horas"
+fi
 
 echo; [[ "$fallos" = "0" ]] && { echo "✅ clocki-codex-toolnames: verde"; exit 0; } || { echo "❌ clocki-codex-toolnames: $fallos fallo(s)"; exit 1; }

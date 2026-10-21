@@ -15,6 +15,8 @@
  *   T10 · sin URL o sin token: dice cuál falta y dónde se pone; sale 0.
  *   T11 · 401, 422, red caída y tiempo agotado: aviso con el código, sale 0, el token no sale en ningún lado.
  *   T25 · `activity` no llama a la API; `stop` cierra con un PUT.
+ *   T49 · los hooks de la integración: un uso de herramienta anota la actividad, un mensaje del dev cierra lo quieto.
+ *   T50 · el `stop` de la historia desde otra sesión cierra su entrada, y suma lo que ya se había cerrado.
  */
 
 const test = require('node:test');
@@ -397,5 +399,142 @@ test('Solidtime_LostSecondsAndDamagedState_AreSaid @story-7.40 @ac-8 @ac-12', as
     assert.strictEqual(r.status, 0);
     assert.match(r.stderr, /archivo de tu token está dañado/);
     assert.doesNotMatch(r.stderr, /falta tu token/);
+  } finally { api.server.close(); }
+});
+
+const HOOKS = { PostToolUse: 'on-activity.js', UserPromptSubmit: 'on-prompt.js' };
+
+/** Corre el hook de la integración de ese evento con lo que manda la herramienta del agente por la entrada estándar. */
+function hook(l, payload, env = l.env) {
+  const script = path.join(ROOT, 'integrations', 'solidtime', 'scripts', HOOKS[payload.hook_event_name || 'PostToolUse']);
+  return new Promise((resolve) => {
+    const p = spawn(process.execPath, [script], { env });
+    let stdout = '', stderr = '';
+    p.stdout.on('data', (c) => { stdout += c; });
+    p.stderr.on('data', (c) => { stderr += c; });
+    p.on('close', (status) => resolve({ status, stdout, stderr }));
+    p.stdin.end(JSON.stringify(payload));
+  });
+}
+
+test('Solidtime_Hooks_ActivityAndSweep @story-7.40 @ac-2 @ac-8', async () => {
+  // los dos hooks del manifiesto son éstos
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'integrations', 'solidtime', 'integration.json'), 'utf8'));
+  assert.deepStrictEqual(manifest.hooks.map((h) => [h.event, h.script]).sort(), Object.entries(HOOKS).map(([e, s]) => [e, `scripts/${s}`]).sort());
+  // los dos de fondo: el del mensaje llama a la instancia, y una que no contesta no puede demorar cada mensaje
+  for (const h of manifest.hooks) assert.strictEqual(h.async, true, `${h.script} corre de fondo`);
+  const api = await fakeApi();
+  try {
+    const l = lab({ url: api.url });
+    assert.strictEqual((await run('start', l)).status, 0);
+    const file = path.join(l.tyconHome, 'state', 'time-tracking', 'solidtime', 'sessions', 'ses-1.json');
+    const old = new Date(Date.now() - 30 * 60000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+    fs.writeFileSync(file, JSON.stringify(Object.assign(JSON.parse(fs.readFileSync(file, 'utf8')), { lastActivity: old })));
+    // un uso de herramienta: anota la actividad sin llamar a la API
+    const calls = api.state.calls.length;
+    const a = await hook(l, { session_id: 'ses-1', hook_event_name: 'PostToolUse', tool_name: 'Edit', cwd: '/tmp/acme-repo' });
+    assert.strictEqual(a.status, 0, a.stderr);
+    assert.strictEqual(a.stdout, '', 'el hook no le habla al agente');
+    assert.strictEqual(api.state.calls.length, calls, 'la actividad no llama a la API');
+    const touched = JSON.parse(fs.readFileSync(file, 'utf8')).lastActivity;
+    assert.ok(touched > old, 'la última actividad avanzó');
+    // un mensaje del dev con actividad reciente: no cierra nada
+    assert.strictEqual((await hook(l, { session_id: 'ses-1', hook_event_name: 'UserPromptSubmit', prompt: 'seguí' })).status, 0);
+    assert.strictEqual(puts(api.state).length, 0);
+    // quieta hace 20 minutos: el mensaje la cierra con el fin en su última actividad
+    const last = new Date(Date.now() - 20 * 60000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+    fs.writeFileSync(file, JSON.stringify(Object.assign(JSON.parse(fs.readFileSync(file, 'utf8')), { lastActivity: last })));
+    api.state.active.start = old;
+    const s = await hook(l, { session_id: 'ses-2', hook_event_name: 'UserPromptSubmit', prompt: 'otra cosa' });
+    assert.strictEqual(s.status, 0, s.stderr);
+    const put = puts(api.state).find((c) => c.body.end);
+    assert.ok(put, 'la cerró');
+    assert.strictEqual(put.body.end, last);
+    assert.ok(!fs.existsSync(file));
+    // sin sesiones guardadas ni token, el mensaje del dev no avisa nada: no hay nada que cerrar
+    const sinToken = lab({ url: api.url, token: null });
+    const q = await hook(sinToken, { session_id: 'ses-9', hook_event_name: 'UserPromptSubmit', prompt: 'hola' });
+    assert.strictEqual(q.status, 0);
+    assert.strictEqual(q.stderr, '', 'nada que cerrar: callado');
+    // con otra herramienta elegida, el hook no toca el estado de Solidtime
+    const otra = lab({ url: api.url });
+    assert.strictEqual((await run('start', otra)).status, 0);
+    const otraFile = path.join(otra.tyconHome, 'state', 'time-tracking', 'solidtime', 'sessions', 'ses-1.json');
+    const before = fs.readFileSync(otraFile, 'utf8');
+    const n = await hook(otra, { session_id: 'ses-1', hook_event_name: 'PostToolUse', tool_name: 'Edit' }, Object.assign({}, otra.env, { TYCON_TIME_TRACKING: 'none' }));
+    assert.strictEqual(n.status, 0);
+    assert.strictEqual(fs.readFileSync(otraFile, 'utf8'), before, 'sin la integración elegida no hace nada');
+    // una entrada que no se lee no rompe el hook
+    const roto = await hook(l, 'no es json');
+    assert.strictEqual(roto.stderr, '');
+    assert.strictEqual(roto.status, 0);
+  } finally { api.server.close(); }
+});
+
+test('Solidtime_StopFromOtherSession_SumsClosedTime @story-7.40 @ac-2 @ac-8', async () => {
+  const api = await fakeApi();
+  try {
+    const l = lab({ url: api.url });
+    const sessions = path.join(l.tyconHome, 'state', 'time-tracking', 'solidtime', 'sessions');
+    const ago = (min) => new Date(Date.now() - min * 60000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+    // la primera parte del trabajo: la sesión del 0b la abre y queda quieta; el cierre por inactividad la cierra
+    assert.strictEqual((await run('start', l)).status, 0);
+    const first = path.join(sessions, 'ses-1.json');
+    fs.writeFileSync(first, JSON.stringify(Object.assign(JSON.parse(fs.readFileSync(first, 'utf8')), { lastActivity: ago(30) })));
+    api.state.active.start = ago(90);
+    assert.strictEqual((await run('sweep', l)).status, 0);
+    assert.strictEqual(api.state.active, null, 'el cierre por inactividad la cerró');
+    // la segunda parte, en otra sesión de la misma historia, sigue abierta
+    assert.strictEqual((await run('start', l, { session: 'ses-2' })).status, 0);
+    api.state.active.start = ago(20);
+    // el paso 9 corre en una sesión que no abrió nada: cierra la de la historia y suma las dos partes (60 + 20 min)
+    const r = await run('stop', l, { session: 'ses-9' });
+    assert.strictEqual(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout.trim());
+    assert.ok(out.seconds >= 80 * 60 - 5 && out.seconds <= 80 * 60 + 5, `las dos partes: ${out.seconds} s`);
+    assert.strictEqual(api.state.active, null, 'la entrada de la historia quedó cerrada');
+    assert.ok(!fs.existsSync(path.join(sessions, 'ses-2.json')));
+    // lo cerrado ya salió: otro stop no lo vuelve a sumar, y sin nada abierto no llama a la API
+    const calls = api.state.calls.length;
+    assert.deepStrictEqual(JSON.parse((await run('stop', l, { session: 'ses-9' })).stdout.trim()), {});
+    assert.strictEqual(api.state.calls.length, calls);
+    // una historia sin entrada abierta, con tiempo ya cerrado: sale sin llamar a la API, aun sin token
+    const otra = lab({ url: api.url });
+    assert.strictEqual((await run('start', otra, { story: '7.41' })).status, 0);
+    const own = path.join(otra.tyconHome, 'state', 'time-tracking', 'solidtime', 'sessions', 'ses-1.json');
+    fs.writeFileSync(own, JSON.stringify(Object.assign(JSON.parse(fs.readFileSync(own, 'utf8')), { lastActivity: ago(30) })));
+    api.state.active.start = ago(40);
+    assert.strictEqual((await run('sweep', otra)).status, 0);
+    const n = api.state.calls.length;
+    delete otra.env.TYCON_SOLIDTIME_TOKEN;
+    const solo = await run('stop', otra, { story: '7.41', session: 'ses-7' });
+    assert.strictEqual(solo.status, 0, solo.stderr);
+    const s = JSON.parse(solo.stdout.trim()).seconds;
+    assert.ok(s >= 10 * 60 - 5 && s <= 10 * 60 + 5, `lo cerrado por inactividad: ${s} s`);
+    assert.strictEqual(api.state.calls.length, n, 'sin entrada abierta no llama a la API');
+    // otra historia no se lleva esos segundos
+    assert.deepStrictEqual(JSON.parse((await run('stop', otra, { story: '7.99', session: 'ses-7' })).stdout.trim()), {});
+    // abrir otra historia cierra la que corría: sus segundos salen en el stop de ESA historia
+    const cambio = lab({ url: api.url });
+    assert.strictEqual((await run('start', cambio, { story: '7.50' })).status, 0);
+    api.state.active.start = ago(30);
+    assert.strictEqual((await run('start', cambio, { story: '7.51', session: 'ses-2' })).status, 0);
+    const s50 = JSON.parse((await run('stop', cambio, { story: '7.50', session: 'ses-9' })).stdout.trim()).seconds;
+    assert.ok(s50 >= 30 * 60 - 5 && s50 <= 30 * 60 + 5, `lo cerrado al abrir otra historia: ${s50} s`);
+    // la entrada de la sesión ya no corre en la instancia: lo ya cerrado sale igual, y se dice
+    const cerrado = path.join(cambio.tyconHome, 'state', 'time-tracking', 'solidtime', 'closed.json');
+    fs.writeFileSync(cerrado, JSON.stringify({ '7.51': 120 }));
+    api.state.active = null;
+    const ya = await run('stop', cambio, { story: '7.51', session: 'ses-2' });
+    assert.strictEqual(JSON.parse(ya.stdout.trim()).seconds, 120);
+    assert.match(ya.stderr, /ya no estaba abierta/);
+    // un closed.json dañado no se pisa: se dice, y los segundos nuevos no se pierden en silencio
+    fs.writeFileSync(cerrado, '{ dañado');
+    assert.strictEqual((await run('start', cambio, { story: '7.52', session: 'ses-3' })).status, 0);
+    api.state.active.start = ago(10);
+    const pisa = await run('start', cambio, { story: '7.53', session: 'ses-4' });
+    assert.strictEqual(pisa.status, 0);
+    assert.match(pisa.stderr, /closed\.json\) está dañado/);
+    assert.strictEqual(fs.readFileSync(cerrado, 'utf8'), '{ dañado', 'no se pisa');
   } finally { api.server.close(); }
 });

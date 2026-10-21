@@ -12,7 +12,7 @@ las REGLAS; el porqué de cada una (con su medición) vive en el archivo de su p
 
 Toda transición de campo contractual de una story Mary+GOLD (`status:`, `sprint:`/`signed_for_sprint:`,
 `pipelines.*.status:`, `ado_work_item:`) va por este orchestrator, NUNCA con Edit/Write a mano: el
-orquestador coordina side-effects atómicos (Clockify, cierre del WI de ADO con `CompletedWork` ≠ `Effort`,
+orquestador coordina side-effects atómicos (las horas, cierre del WI de ADO con `CompletedWork` ≠ `Effort`,
 engram, re-corrida de advisors, verificación cross-repo).
 
 | Operación | Cómo |
@@ -261,10 +261,10 @@ Estado persistente por sesión en `~/.claude/.tycon-pipeline/active/<sessionId>.
   (`--out-of-order` queda logueado). `complete-step 5` exige `checks.advisors` verde por run-check de
   esta iteración.
 - `pipeline.js next` anota el arranque del paso: cerrar el anterior → `next` → trabajar.
-- Checks: `marker.js run-check <name> -- <cmd>` (exit code real). Flags: `marker.js set-flag clockiStarted|adoMarkedActive true`.
+- Checks: `marker.js run-check <name> -- <cmd>` (exit code real). Flags: `marker.js set-flag workSignalStarted|adoMarkedActive true`.
 - Recovery: `marker.js adopt-session <sid-viejo>` · `list-all` · `find-by-story <id>` ·
   `clear-session <sid>` · `update-story-status <spec> <estado>`.
-- Preparar el commit: arma el mensaje (NO commitea) y termina con `marker.js clear` + `marker.js update-story-status <spec> review` (el timer de Clockify NO se cierra ahí).
+- Preparar el commit: arma el mensaje (NO commitea) y termina con `marker.js clear` + `marker.js update-story-status <spec> review` (las horas NO se cierran ahí).
 
 Hooks: `on-prompt.js` (intención de story, conflicto cross-sesión, "listo" con pasos pendientes),
 `on-edit.js` (registra ediciones), `on-write-collision.js`, `on-story-gate.js` + `on-bash-write-gate.js`

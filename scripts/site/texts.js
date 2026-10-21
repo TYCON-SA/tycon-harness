@@ -1403,7 +1403,7 @@ const TEXTOS = {
   'pestana.comoTrabaja': { es: 'Cómo trabaja', en: 'How it works' },
   // los nombres de los pasos (los de steps.js, en los dos idiomas)
   'paso.0': { es: 'Arranque', en: 'Start' },
-  'paso.0b': { es: 'Arranque: reloj de Clockify', en: 'Start: Clockify timer' },
+  'paso.0b': { es: 'Arranque: aviso de trabajo', en: 'Start: work notice' },
   'paso.0c': { es: 'Arranque: pedido en ADO', en: 'Start: ADO work item' },
   'paso.1': { es: 'Validar la historia', en: 'Validate the story' },
   'paso.2': { es: 'Armar el plan', en: 'Draft the plan' },
@@ -1480,6 +1480,8 @@ const TEXTOS = {
   'control.ado-story-create': { es: 'Anota que una historia nueva necesita su pedido de trabajo en ADO.', en: 'Records that a new story needs its work item in ADO.' },
   'control.browser-test-offer': { es: 'Ofrece preparar la prueba con navegador cuando la historia cambia una pantalla y el repo no la tiene.', en: 'Offers to set up the browser test when the story changes a screen and the repo has none.' },
   'control.clocki-enforce': { es: 'Avisa si estás editando archivos sin un registro de horas abierto.', en: 'Warns when you edit files with no time entry running.' },
+  'control.@int:solidtime/scripts/on-activity.js': { es: 'Anota que sigue habiendo actividad, para que el registro de horas no se cierre por inactividad.', en: 'Records ongoing activity so the time entry is not closed for inactivity.' },
+  'control.@int:solidtime/scripts/on-prompt.js': { es: 'Cierra el registro de horas que quedó quince minutos sin actividad, con el fin en la última actividad.', en: 'Closes a time entry left idle for fifteen minutes, ending it at the last activity.' },
   'control.@int:clockify/scripts/on-prompt.js': { es: 'Avisa de un registro de horas olvidado, o de que falta abrir uno al empezar.', en: 'Warns about a forgotten open time entry, or when one should be opened as work starts.' },
   'control.@int:clockify/scripts/touch-activity.js': { es: 'Anota que sigue habiendo actividad, para que el registro de horas no se cierre por inactividad.', en: 'Records ongoing activity so the time entry is not closed for inactivity.' },
   'control.followup-story-create': { es: 'Anota qué historias previas hay que enlazar cuando se crea una historia de seguimiento.', en: 'Records which earlier stories must be linked when a follow-up story is created.' },

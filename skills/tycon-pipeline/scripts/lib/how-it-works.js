@@ -37,7 +37,7 @@ const DENY_RX = /permissionDecision|['"]deny['"]|exit\(2\)|exitCode|\bexit 2\b|d
 const PER_REPO_INTEGRATIONS = Object.freeze(['ado']);
 function stepFile(archivo) { return `${STEPS_DIR.split(path.sep).join('/')}/${archivo}`; }
 const INTEGRATION_PIECES = Object.freeze([
-  { id: 'timeTrackingStart', step: '0', integration: 'clockify', textKey: 'piezaOrg.registroDeHorasAbre', code: stepFile('step-00b-clocki-start.md') },
+  { id: 'timeTrackingStart', step: '0', integration: 'clockify', textKey: 'piezaOrg.registroDeHorasAbre', code: stepFile('step-00b-work-start.md') },
   { id: 'adoWorkItemActive', step: '0', integration: 'ado', textKey: 'piezaOrg.pedidoAdoActivo', code: stepFile('step-00c-ado-mark-active.md') },
   { id: 'adoWorkItemClose', step: '9', integration: 'ado', textKey: 'piezaOrg.pedidoAdoCierra', code: stepFile('step-09-ado-story-closure.md') },
   { id: 'timeTrackingClose', step: '9', integration: 'clockify', textKey: 'piezaOrg.registroDeHorasCierra', code: stepFile('step-09-ado-story-closure.md') },

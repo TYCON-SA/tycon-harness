@@ -180,14 +180,15 @@ else
 fi
 
 # C-13 · la paridad Claude↔Codex espera lo MISMO que se despliega: sobre el Codex de C-09, la superficie de hooks en
-# verde y diciendo cuántos no van por su integración apagada
+# verde y diciendo cuántos no van por su integración apagada (los dos de Solidtime cuentan: sin herramienta de horas
+# elegida, tampoco van)
 # shellcheck disable=SC2086
 PAR="$(env -u TYCON_ENGRAM_HOOK HOME="$CASA9" USERPROFILE="$CASA9" CODEX_HOME="$T/h9" $APAGADAS node -e '
   const p = require(process.argv[1]);
   const s = p.collect(p.buildCtx({ tools: ["claude", "codex"], recorded: true })).find((x) => x.name === "hooks");
   console.log(`${s.ok}|${s.detail}`);' "$RAIZ/scripts/lib/harness-parity.js" 2>&1)"
 case "$PAR" in
-  "true|"*"10 sin registrar por su integración apagada"*) ok "C-13 la paridad da verde la superficie de hooks y cuenta los 10 que no van ($PAR)" ;;
+  "true|"*"12 sin registrar por su integración apagada"*) ok "C-13 la paridad da verde la superficie de hooks y cuenta los 12 que no van ($PAR)" ;;
   *) mal "C-13 la paridad de hooks dice: $PAR" ;;
 esac
 

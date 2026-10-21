@@ -3,7 +3,7 @@
 //
 // Nunca muestra dinero, a propósito.
 
-import { STEPS, SUBSTEP_FLAG, ASKS_DEV, MAIN_TOTAL } from './steps.mjs';
+import { STEPS, SUBSTEP_FLAG, SUBSTEP_OLD_FLAG, ASKS_DEV, MAIN_TOTAL } from './steps.mjs';
 
 export const NO_RUN_TEXT = 'No hay una corrida del pipeline en esta sesión.';
 
@@ -49,6 +49,8 @@ export function readRun(text, now) {
     if (endOf(id) !== null || completed.has(id)) return true;
     const flag = SUBSTEP_FLAG[id];
     if (flag && m[flag] === true) return true;
+    const old = SUBSTEP_OLD_FLAG[id];
+    if (old && m[old] === true) return true;
     // un sub-paso que no anota su fin está hecho si ya se tocó uno posterior; un principal, si quedó viejo
     return isMain(id) ? stale(id) : laterTouched(id);
   };

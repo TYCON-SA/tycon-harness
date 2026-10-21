@@ -101,7 +101,7 @@ test('T4 Board_PipelineTable_NoCostColumn — /pipeline: Paso | Estado | Tiempo,
   assert.doesNotMatch(t, /gasto|USD|\$/i);
   const fila = (name) => t.split('\n').find((l) => l.startsWith(`| ${name} |`));
   assert.match(fila('Validar la historia'), /\| hecho \| 8 min \|/);
-  assert.match(fila('Arranque: reloj de Clockify'), /\| hecho \|/, 'sub-paso por bandera');
+  assert.match(fila('Arranque: aviso de trabajo'), /\| hecho \|/, 'sub-paso por bandera (la vieja, de una corrida en vuelo)');
   assert.match(fila('Implementar y correr las pruebas'), /\| corriendo \| 12 min \|/);
   assert.match(fila('Revisores'), /\| pendiente \| — \|/);
   assert.match(t.split('\n')[0], /Story 9\.9/);
@@ -349,9 +349,10 @@ test('T16 Steps_MatchPipelineSequence — los pasos del plugin son los del pipel
   const P = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js'));
   assert.ok(Array.isArray(P.STEP_SEQUENCE), 'pipeline.js exporta STEP_SEQUENCE');
   assert.ok(P.SUBSTEP_FLAG && typeof P.SUBSTEP_FLAG === 'object', 'pipeline.js exporta SUBSTEP_FLAG');
-  const { STEPS, SUBSTEP_FLAG, MAIN_TOTAL } = await mod('steps.mjs');
+  const { STEPS, SUBSTEP_FLAG, SUBSTEP_OLD_FLAG, MAIN_TOTAL } = await mod('steps.mjs');
   assert.deepStrictEqual(STEPS.map((s) => s.id), P.STEP_SEQUENCE.map((s) => String(s.id)));
   assert.deepStrictEqual(SUBSTEP_FLAG, { ...P.SUBSTEP_FLAG, '7c': 'dodRuntimeChecked' });
+  assert.deepStrictEqual(SUBSTEP_OLD_FLAG, P.SUBSTEP_OLD_FLAG, 'el cartel lee los mismos nombres viejos que next');
   assert.strictEqual(MAIN_TOTAL, P.STEP_SEQUENCE.filter((s) => /^\d$/.test(String(s.id))).length);
   // T2 Mod_NamesMatchStepsTable: los MISMOS nombres que la tabla del pipeline — un nombre distinto la pone roja
   const T = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));

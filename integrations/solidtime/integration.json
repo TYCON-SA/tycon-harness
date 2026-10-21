@@ -4,7 +4,10 @@
   "label": "Solidtime",
   "kind": "timeTracking",
   "onWork": "scripts/on-work.js",
-  "hooks": [],
+  "hooks": [
+    { "event": "PostToolUse", "matcher": "", "script": "scripts/on-activity.js", "async": true, "platforms": { "windows": true }, "steps": ["all"], "effect": "records", "label": "reloj de horas: anota la última actividad (de fondo)", "tools": ["claude", "codex"] },
+    { "event": "UserPromptSubmit", "matcher": "", "script": "scripts/on-prompt.js", "async": true, "platforms": { "windows": true }, "steps": ["all"], "effect": "records", "label": "reloj de horas: cierra lo que quedó sin actividad", "tools": ["claude", "codex"] }
+  ],
   "dispatch": [],
   "settings": [
     { "key": "integrations.solidtime.url", "type": "url", "from": "profile" },

@@ -98,7 +98,7 @@
  *                                                  --tests k --deferred d --reason "…" (k+d=N,
  *                                                  k = lo promovido acá, no lo declarado).
  *   marker.js set-flag <flag> <true|false>       → flags de sub-steps no-enteros
- *                                                  (clockiStarted | adoMarkedActive) para que
+ *                                                  (workSignalStarted | adoMarkedActive) para que
  *                                                  resume/`pipeline.js next` no re-ejecute 0b/0c.
  *                                                  `deepReviewDone` NO: el 5b lo cierran
  *                                                  los dos comandos de abajo, con constancia.
@@ -332,7 +332,7 @@ function cmdSet(payloadJson) {
   // CORRIDA se resetean (la identidad de sesión y el startedAt se conservan).
   if (existing && payload.storyId !== existing.storyId) {
     const {
-      adversarial, deepReviewDone, clockiStarted, adoMarkedActive, atddBypass,
+      adversarial, deepReviewDone, workSignalStarted, clockiStarted, adoMarkedActive, atddBypass,
       checks, checksProvenance, dodRuntimeChecked, iterations, fileEvents, filesTouched, filesTouchedAt,
       stepsCompleted, stepsPending, startedAt, evidenceDir, baseSha,
       // Los arranques y fines de paso son de la corrida. Heredarlos le daría a la story
@@ -389,7 +389,7 @@ function cmdSet(payloadJson) {
   const marker = {
     // 🔴 Los campos DESCONOCIDOS del marker existente se PRESERVAN. Con una lista cerrada de campos,
     // todo lo que no estuviera enumerado acá se perdería en silencio: `checks`,
-    // `checksProvenance`, `dodRuntimeChecked`, `deepReviewDone`, `clockiStarted`, `adoMarkedActive`,
+    // `checksProvenance`, `dodRuntimeChecked`, `deepReviewDone`, `workSignalStarted`, `adoMarkedActive`,
     // `autonomous`, `iter`, `noProgressStreak`, `lastFailures`, `stepTimings`… O sea que un `set`
     // mid-pipeline borraría toda la evidencia de verificación (los checks con provenance `run-check`,
     // el gate de DoD) y el pipeline quedaría obligado a re-correr suites enteras — o, peor, tentado a
@@ -2058,7 +2058,10 @@ function registrarRunCheck(name, cmdArgv, marker, exitCode, durationMs, salida) 
 // la cierra sin anotar qué encontró el pase, y el paso 8 la da por buena. La escriben sólo los dos
 // comandos que cierran el 5b con constancia: `mark-adversarial-result` (el pase corrió y se anota su
 // resultado) y `mark-adversarial-skipped` (el portón decidió que no corre).
-const VALID_FLAGS = ['clockiStarted', 'adoMarkedActive', 'atddBypass', 'waitingForHuman', 'heavyValidationRequested'];
+const VALID_FLAGS = ['workSignalStarted', 'adoMarkedActive', 'atddBypass', 'waitingForHuman', 'heavyValidationRequested'];
+// El nombre viejo de la bandera del 0b, de cuando el paso era el reloj de una herramienta: se sigue aceptando y escribe la
+// nueva. `next` y el cartel también leen la vieja en un marker de una corrida en vuelo (no se reabre el aviso de trabajo).
+const OLD_FLAGS = { clockiStarted: 'workSignalStarted' };
 
 function cmdSetFlag(flag, valRaw) {
   if (flag === 'deepReviewDone') {
@@ -2068,6 +2071,10 @@ function cmdSetFlag(flag, valRaw) {
     console.error('  el pase no corre → marker.js mark-adversarial-skipped --files <archivos de código del diff>   (decide el portón)');
     console.error('  (story 1.8: con la bandera suelta, 4 de 9 corridas cerraron el 5b sin anotar qué encontró el pase)');
     process.exit(2);
+  }
+  if (OLD_FLAGS[flag]) {
+    console.error(`marker.js set-flag: «${flag}» es el nombre viejo; escribo ${OLD_FLAGS[flag]}`);
+    flag = OLD_FLAGS[flag];
   }
   if (!flag || !VALID_FLAGS.includes(flag)) {
     console.error(`marker.js set-flag: flag inválido '${flag}' — válidos: ${VALID_FLAGS.join(' | ')}`);

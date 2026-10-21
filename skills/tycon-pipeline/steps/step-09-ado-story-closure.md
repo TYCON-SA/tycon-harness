@@ -66,7 +66,7 @@ Si alguna condición falla → STOP. Pedir al dev que complete la pre-condición
 - `ci_run` — número/link del CI run post-merge que validó el build verde (ver "Recolección de CI run")
 - `pr_link` — URL del PR si la story se mergeó vía PR (opcional — algunos proyectos pushean directo a `main`)
 - `ado_org` y `ado_project` — del config del repo (ver "Configuración ADO" abajo)
-- `time_tracked` — suma de duraciones de las entries de Clockify que matchean la story (ver "Recolección de tiempo Clockify")
+- `time_tracked` — el tiempo registrado para la story en la herramienta de horas de la organización (ver "Recolección de tiempo: el aviso de trabajo")
 
 ## Recolección de commits
 
@@ -107,44 +107,30 @@ Tomar el primer run verde (`result=succeeded` / `conclusion=success`) post-merge
 
 **Repo sin CI** (2026-10-05): si el repo no tiene NINGÚN archivo de CI (ni `azure-pipelines*.yml`, ni `.github/workflows/*.yml`, ni `.gitlab-ci.yml`), no hay corrida que buscar: **no es STOP**. `ci_run` queda «sin CI en el repo» y el cierre sigue con la evidencia local (build y pruebas del paso 4). El STOP de arriba vale para un repo que SÍ tiene CI y no muestra una corrida verde.
 
-## Recolección de tiempo Clockify
+## Recolección de tiempo: el aviso de trabajo
 
-Sumar TODAS las entries de Clockify (del workspace + project del repo) cuya descripción contenga el story ID o un match razonable del título, en el rango temporal del trabajo (desde el primer commit hasta el merge a main).
-
-Estrategia:
+El pipeline no sabe con qué herramienta se registran las horas: le avisa a la integración elegida que el trabajo de la
+story terminó, y ella cierra lo que tenga abierto e informa el tiempo.
 
 ```bash
-# 1. Resolver workspaceId + projectId desde ~/.claude/clocki/project-cache.json para el cwd actual.
-#    (Lectura, NO escritura — el cache es del flujo normal de clocki.)
-
-# 2. Definir ventana temporal:
-story_start=$(git log --reverse --pretty=format:"%aI" -- <story_path> | head -1)
-merge_end=$(git log -1 --pretty=format:"%aI" <merge-commit-sha>)
-
-# 3. Query Clockify entries en esa ventana, project + user actual:
-#    (bajo Codex los nombres de tool van con guiones bajos, no guiones; ver clocki/SKILL.md)
-#    mcp__clockify__list-clockify-time-entries con:
-#      - workspaceId
-#      - userId (del usuario actual; obtenido con mcp__clockify__get-clockify-user)
-#      - projectId
-#      - start = story_start
-#      - end = merge_end + 24h (para capturar entries posteriores al merge si aplica)
-
-# 4. Filtrar por descripción: matchear si contiene "Story <id>" (case-insensitive) o
-#    una palabra clave fuerte del título (ej. "urgentes"). Mostrar todas las
-#    candidatas al dev y pedir confirmación: "Estas son las entries que matcheo para
-#    esta story. ¿Correcto? ¿Quitás alguna o agregás otra?"
-
-# 5. Sumar durationSeconds de cada entry y formatear como "Xh YYm".
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js work-signal stop --story <abs spec.md> --repo <repo>
+# → { ran, seconds?, hours?, action?, warnings }
 ```
+
+1. **`hours`** (los `seconds` que informó la herramienta, en horas) → es el tiempo a sumar a `CompletedWork`.
+2. **`action`** → una herramienta que maneja el agente (con su servidor de MCP) dice qué hacer: cerrar su entrada
+   abierta y sumar las de la story, con su skill. El total que da es el tiempo a sumar.
+3. **Ninguno de los dos** (sin herramienta elegida, o nada registrado) → no hay tiempo: el comment va sin el campo.
+
+Si vienen los dos, se suman: lo informado más lo que da la acción. Mostrarle al dev el total y lo que lo compone antes
+de postear.
 
 Formato del output: `Xh YYm` (ej. `4h 32m`). Si la story tomó menos de 1h, mostrar `XX min` (ej. `47 min`).
 
 **Casos a manejar**:
 
-- **Sin entries matcheadas**: log "no se encontró tracking Clockify para esta story". Comment va sin el campo de tiempo. NO inventar duración. NO calcular `merge_date - first_commit` (eso es wall-clock, no trabajo real).
-- **Entries con descripción genérica** (ej. "fix typo" sin story ID): el dev decide en la confirmación si las incluye.
-- **Workspace/project no resueltos**: skip el campo, log el motivo.
+- **Sin tiempo registrado**: log "no se encontró tiempo registrado para esta story". Comment va sin el campo de tiempo. NO inventar duración. NO calcular `merge_date - first_commit` (eso es wall-clock, no trabajo real).
+- **Un aviso de la integración** (falta configurar algo, la herramienta no contestó): decirlo en una línea y seguir sin el campo; el cierre no se frena por las horas.
 - **El dev quiere overridear el total**: aceptar override manual (ej. "ponele 5h en vez de 4h32m" — el dev sabe si hubo trabajo offline no trackeado).
 
 ## Configuración ADO
@@ -173,7 +159,7 @@ Disparado por pre-condición 6.a. Cuando la story está `done`/`review`, NO tien
    `ado_wi_type`, `ado_area_path`, `ado_state_closed`, `epic_links`, `ado_default_tags`.
 2. **Resolver el Epic padre**: leer `epic:` del frontmatter de la story → buscar en
    `epic_links[epic]` el WI id del Epic. Si no hay entrada → crear suelto + warning.
-3. **Calcular CompletedWork** desde Clockify (ver "Recolección de tiempo Clockify").
+3. **Calcular CompletedWork** con el aviso de trabajo (ver "Recolección de tiempo: el aviso de trabajo").
 4. **Crear el PBI**:
    ```bash
    WI=$(az boards work-item create \
@@ -217,7 +203,7 @@ Armar el comment en este formato fijo:
   - ...
 - **CI run que validó** (post-merge a `main`): [<run-id>](<run-url>) — `<status>`
 - **PR**: [<pr-id>](<pr-url>) <!-- omitir esta línea si la story se mergeó directo a main -->
-- **Tiempo dedicado** (Clockify): `Xh YYm` sobre `<N>` entries <!-- omitir si no se encontró tracking -->
+- **Tiempo dedicado** (<herramienta de horas>): `Xh YYm` <!-- omitir si no se encontró tiempo registrado -->
 - **DoD gate**: ✅ smoke + E2E fail-loud + cross-check
 - **Cerrada por**: <dev-name> el <YYYY-MM-DD>
 
@@ -256,6 +242,7 @@ gastadas en la story van en el campo **`Microsoft.VSTS.Scheduling.CompletedWork`
 
 ```bash
 # time_tracked "6h 23m" → 6 + 23/60 = 6.38 → redondeo a 1 decimal = 6.4
+# (con el aviso de trabajo, `hours` ya viene en horas: pipeline.js completedWorkHours)
 hours_decimal=$(python3 -c "print(round($total_seconds / 3600, 1))")
 
 az boards work-item update \
@@ -276,7 +263,7 @@ az boards work-item update --id <id> --organization <org> \
 (`Microsoft.VSTS.Scheduling.OriginalEstimate` para el estimado).
 
 **Cuándo NO setear CompletedWork**:
-- Si el time_tracked no se pudo calcular (skip Clockify) → omitir, no inventar valor.
+- Si el time_tracked no se pudo calcular (sin herramienta de horas, o sin tiempo registrado) → omitir, no inventar valor.
 - Si el proyecto declara explícitamente que `CompletedWork` se usa para otra cosa (raro
   pero posible) → respetar la decisión del proyecto, dejarlo libre.
 
@@ -288,40 +275,22 @@ az boards work-item update --id <id> --organization <org> \
 - Si `az boards` falla con 401/403 → token vencido / sin permisos. Pedir al dev que renueve `AZURE_DEVOPS_EXT_PAT`.
 - Si el state name no matchea (ej. el process usa `Resolved` en vez de `Closed`) → listar states válidos con `az boards work-item update --help` o pedir al dev qué state usar.
 
-## Acción — cerrar clocki timer (2026-05-13)
+## Acción — cerrar el registro de horas (2026-05-13)
 
-Después de transicionar el state del WI a `Closed`, **cerrar el timer activo de Clockify para el cwd actual**. La story está done, no hay más trabajo lógico — dejar el timer abierto sería ruido en el dashboard.
-
-Estrategia:
-
-```bash
-# 1. Leer ~/.claude/clocki/active.json. Buscar entry para cwd actual.
-#    Si no hay entry → skip (no había timer activo, OK).
-#
-# 2. Cerrar el time entry con end=now (story terminada en este preciso momento,
-#    NO usar lastActivity como hace el sweep idle — acá el cierre es explícito
-#    por finalización del trabajo, no por inactividad).
-#
-#    mcp__clockify__update-clockify-time-entry con:
-#      - timeEntryId = active.json[cwd].entryId
-#      - workspaceId = active.json[cwd].workspaceId
-#      - projectId = active.json[cwd].projectId
-#      - description = active.json[cwd].description (preservar)
-#      - start = active.json[cwd].startedAt (preservar)
-#      - end = now (ISO local sin TZ suffix; el wrapper MCP lo interpreta como local)
-#
-# 3. Remover la entry de active.json (escribir el JSON sin el cwd actual).
-#
-# 4. Log al dev: "✓ Timer cerrado: duración Xh YYm".
-```
+El registro de la story se cierra con el mismo `work-signal stop` de "Recolección de tiempo: el aviso de trabajo": la
+integración cierra su entrada abierta en ese momento (o, si la maneja el agente, se lo pide en `action`, con el fin
+ahora). No hay un segundo paso: la story está done y no hay más trabajo lógico.
 
 **Casos a manejar**:
 
-- **No hay timer activo**: skip silencioso, no es error.
-- **Timer activo en OTRO cwd** (no el de la story): NO tocar — pertenece a otro flujo.
-- **update-clockify falla** (red, 401): log warning, NO bloquear el cierre del step. La trazabilidad ADO ya quedó posteada; el timer queda abierto y el sweep idle (>15min) lo cerrará retroactivamente.
+- **No había nada abierto**: la integración no tiene nada que cerrar; no es error.
+- **Algo abierto en OTRA carpeta o sesión**: la integración no lo toca — pertenece a otro flujo.
+- **La herramienta falla** (red, 401): un aviso de una línea, NO bloquear el cierre del step. La trazabilidad ADO queda
+  posteada igual; lo abierto lo cierra el cierre por inactividad de la integración.
 
-**Por qué `end=now` y no `end=lastActivity`**: el sweep idle usa `lastActivity` para no contar tiempo idle (consistente con su propósito: detectar abandono). Acá el cierre es **explícito por finalización del trabajo** — el dev acaba de pasar la story a `done`, todo el tiempo hasta ahora es trabajo real (incluyendo el closing en ADO).
+**Por qué el fin es ahora y no la última actividad**: el cierre por inactividad usa la última actividad para no contar
+tiempo quieto (detecta abandono). Acá el cierre es **explícito por finalización del trabajo** — el dev acaba de pasar la
+story a `done`, todo el tiempo hasta ahora es trabajo real.
 
 ## Acción — setear `status: done` en el frontmatter (MANDATORY fix robusto 2026-05-20)
 
@@ -413,7 +382,7 @@ Mensaje al dev al final:
 - Work item: <ado_org>/<ado_project>/_workitems/edit/<wi_id>
 - Comment posteado con: <N> commits + CI run #<run-id> + PR <pr-id-o-N/A> + tiempo <Xh YYm>
 - State: → Closed
-- Timer Clockify cerrado: duración total <Xh YYm>   (omitir línea si no había timer activo)
+- Registro de horas cerrado: duración total <Xh YYm>   (omitir línea si no había herramienta ni tiempo registrado)
 - Story → status: done: commit <sha> · <«en main» si se empujó directo | «pedido <n>, entra solo» si quedó en un pedido> · CI: <no dispara | dispara <pipeline> | no pude saber si dispara la CI (<motivo>)>
   (sin el ok, o si falló: «acción pendiente: llevar el done a main» con los comandos ya armados)
 - Marker pipeline → cleared.
@@ -430,8 +399,8 @@ Listo.
 - ❌ NO postear comment sin confirmar la lista de commits con el dev — falsos positivos del grep llenan ADO de basura.
 - ❌ NO cerrar work items que NO sean User Story (Epic, Feature, Task siguen reglas distintas — este step es específico a stories).
 - ❌ NO ejecutar este step sobre una story en `ready-for-dev` o `in-progress` — es señal de que el flujo no completó el Step 8. `review` (lo normal, post Step 8) y `done` (si el dev ya lo movió a mano) son los DOS estados válidos de entrada, y están en la pre-condición 5.
-- ❌ NO inventar `time_tracked` cuando Clockify no devuelve entries. Mejor omitir el campo que postear un número fabricado — la trazabilidad de horas es billing-grade.
-- ❌ NO usar wall-clock (`merge_date - first_commit_date`) como sustituto del tiempo Clockify. Eso es lead time, NO trabajo real.
+- ❌ NO inventar `time_tracked` cuando la herramienta de horas no informa tiempo. Mejor omitir el campo que postear un número fabricado — la trazabilidad de horas es billing-grade.
+- ❌ NO usar wall-clock (`merge_date - first_commit_date`) como sustituto del tiempo registrado. Eso es lead time, NO trabajo real.
 
 ## Por qué existe
 

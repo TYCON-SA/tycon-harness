@@ -128,7 +128,7 @@ Editá `~/.claude/clocki/settings.json`:
 
 **No se abre timer cuando empiezo una story con `tycon-pipeline`:**
 - Verificá que el MCP esté instalado: `claude mcp list | grep clockify` (debe decir ✓ Connected).
-- Mirá el log del pipeline: `.advisors/pipeline-runs/<story-id>-*/step-00b-clocki.md` debería existir y decir `status: ok`.
+- Mirá el log del pipeline: `.advisors/pipeline-runs/<story-id>-*/step-00b-work-start.md` debería existir y decir `integración: clockify` y `status: ok`.
 
 **Cuando empiezo a trabajar el agente no me pregunta nada:**
 - Mirá `~/.claude/clocki/active.json` — si ya hay timer activo en este cwd, no propone otro.

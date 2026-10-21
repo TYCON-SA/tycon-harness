@@ -167,9 +167,9 @@ test('PlanVisible_InstruccionesLoDicen @story-8.62 @ac-9 @ac-10', () => {
   assert.doesNotMatch(pendiente[0], /\bsmoke\b|\bDoD\b|\bADO\b|clocki/);
   assert.match(pendiente[0], /probala andando/);
   // el reloj y el pedido de Azure DevOps van sólo si los hay: en la plantilla, entre llaves, y la regla lo dice
-  assert.match(pendiente[0], /\{ · el reloj de Clockify[^}]*\}/);
+  assert.match(pendiente[0], /\{ · el reloj de horas[^}]*\}/);
   assert.match(pendiente[0], /\{ · el pedido de Azure DevOps[^}]*\}/);
-  assert.match(paso8, /Sólo los que aplican: el del reloj si hay un timer de Clockify abierto[^]*si\s+la story tiene `ado_work_item`/);
+  assert.match(paso8, /Sólo los que aplican: el del reloj si el paso 0b avisó el trabajo[^]*si\s+la story tiene `ado_work_item`/);
 });
 
 test('Paso8_CierreSinJerga @story-8.64 @ac-2: el cierre no nombra lo que no aplicó, no usa jerga y dice qué sigue en llano', () => {
@@ -178,7 +178,7 @@ test('Paso8_CierreSinJerga @story-8.64 @ac-2: el cierre no nombra lo que no apli
   assert.ok(reglas.length > 40, 'no encontré las «Reglas del cierre»');
   assert.match(reglas, /no corrió porque no aplicaba[^]*no se nombra/);
   const noAplico = reglas.slice(reglas.indexOf('no corrió porque no aplicaba'));
-  for (const ejemplo of ['pase adversarial', 'Clockify', 'Azure DevOps']) assert.ok(noAplico.slice(0, 300).includes(ejemplo), `la regla no da el ejemplo ${ejemplo}`);
+  for (const ejemplo of ['pase adversarial', 'herramienta de horas', 'Azure DevOps']) assert.ok(noAplico.slice(0, 300).includes(ejemplo), `la regla no da el ejemplo ${ejemplo}`);
   for (const palabra of ['«gate»', '«matriz»', '«done»', '«riesgo LOW»', '`/tycon-']) assert.ok(reglas.includes(palabra), `las reglas no prohíben ${palabra}`);
   assert.match(reglas, /mergeala a main/);
 });

@@ -2712,7 +2712,9 @@ const STEPS_TABLE = require('./lib/steps.js');
 const STEP_SEQUENCE = STEPS_TABLE.STEPS.filter((s) => s.inSequence !== false).map(({ id, file }) => ({ id, file }));
 const STEPS_DIR = path.join(os.homedir(), '.claude', 'agent-skills', 'skills', 'tycon-pipeline', 'steps');
 // Sub-steps que se cierran con un marker FLAG (no con complete-step N): computeNext lo usa para el hint.
-const SUBSTEP_FLAG = { '0b': 'clockiStarted', '0c': 'adoMarkedActive', '5b': 'deepReviewDone' };
+const SUBSTEP_FLAG = { '0b': 'workSignalStarted', '0c': 'adoMarkedActive', '5b': 'deepReviewDone' };
+// El nombre viejo de una bandera, que todavía puede traer el marker de una corrida en vuelo: también da el sub-paso por hecho.
+const SUBSTEP_OLD_FLAG = { '0b': 'clockiStarted' };
 // El 5b NO se cierra con `set-flag`: `deepReviewDone` la escriben sólo los dos comandos
 // que dejan constancia. `SUBSTEP_FLAG` dice QUÉ bandera mira `next` para darlo por hecho;
 // el texto le dice al orquestador cómo cerrarlo — sin esto, `next` mandaría a correr un
@@ -2840,20 +2842,17 @@ function computeNext() {
 
   const stepState = [];
   let nextStep = null;
-  let clockifyOff = null;
+  let timeTool;
   for (const s of STEP_SEQUENCE) {
     let done = false;
     let skip = null;
     if (s.id === '0b') {
-      done = marker.clockiStarted === true;
-      // Con la integración clockify apagada (la copia pública sin perfil, o quien no la usa) el paso dice
-      // «saltear»; `next` lo repetiría hasta un `set-flag clockiStarted true` que dejaría dicho «timer abierto» sin timer.
-      // `harnessIntegrations` es null si no se sabe (sin arnés o configuración rota): ahí, el texto general.
-      if (!done && clockifyOff === null) {
-        const integ = harnessIntegrations();
-        clockifyOff = !!integ && integ.clockify === false;
-      }
-      if (!done && clockifyOff) skip = 'Clockify apagada en esta máquina (integración clockify) — skip-condition documentada del step';
+      done = marker[SUBSTEP_FLAG['0b']] === true || marker[SUBSTEP_OLD_FLAG['0b']] === true;
+      // Sin herramienta de horas elegida (ninguna, una desconocida o una con el manifiesto roto) el paso dice «saltear»
+      // con el motivo; `next` lo repetiría hasta una bandera que dejaría dicho «aviso dado» sin aviso.
+      // `harnessTimeTool` es null si no se sabe (sin arnés o configuración rota): ahí, el texto general.
+      if (!done && timeTool === undefined) timeTool = harnessTimeTool();
+      if (!done && timeTool && !timeTool.chosen) skip = `${timeTool.reason} — skip-condition documentada del step`;
     } else if (s.id === '0c') {
       done = marker.adoMarkedActive === true;
       if (!done && story && !fm.ado_work_item) {
@@ -3242,7 +3241,7 @@ function computeStart(args) {
     actions_done: actions,
     e2e_gap: e2eCfg.gap ? e2eCfg.warning : null,
     spec_stale: stale,
-    next: 'pipeline.js next te dice el próximo paso (el reloj de Clockify, el pedido en ADO o validar la story)',
+    next: 'pipeline.js next te dice el próximo paso (el aviso de trabajo, el pedido en ADO o validar la story)',
   };
 }
 
@@ -3486,6 +3485,94 @@ function harnessIntegrations(opts = {}) {
     const all = cfg.integraciones(cfg.leer({ env, home: opts.home }));
     return all && typeof all === 'object' ? all : null;
   } catch (_) { return null; }   // rota o lector que no carga: la configuración la reclama el instalador; acá, todo esperado
+}
+
+/**
+ * El evento neutro de trabajo del arnés que ve esta corrida (`scripts/lib/work-signal.js`), con su lector de
+ * configuración: `{ ws, TC }`, o null si no está (arnés viejo, o sin arnés). El pipeline no sabe con qué herramienta se
+ * registran las horas: se lo pregunta a ese evento.
+ */
+function harnessWorkSignal(opts = {}) {
+  const env = opts.env || process.env;
+  const dir = require('./lib/harness-path.js').rutaArnesHook({ env, home: opts.home }).dir;
+  if (!dir) return null;
+  const file = path.join(dir, 'scripts', 'lib', 'work-signal.js');
+  if (!fs.existsSync(file)) return null;
+  // presente y que no carga no es «no está»: se devuelve el motivo para que el aviso lo diga
+  try {
+    const ws = require(file);
+    let TC = null;
+    try { TC = require(path.join(dir, 'scripts', 'lib', 'tycon-config.js')); } catch (_) { TC = null; }
+    if (typeof ws.chosen === 'function' && typeof ws.emit === 'function') return { ws, TC };
+    return { loadError: 'no exporta chosen y emit' };
+  } catch (e) { return { loadError: e.code || String(e.message || e).split('\n')[0] }; }
+}
+
+/**
+ * La herramienta de horas que eligió la organización: `{ chosen: true, name }`, `{ chosen: false, reason }` (ninguna,
+ * desconocida o con el manifiesto roto, con el motivo) o null si no se sabe (sin el evento, o la configuración rota).
+ * `next` la pregunta en cada consulta: no anota el uso del nombre viejo de la llave.
+ */
+function harnessTimeTool(opts = {}) {
+  const env = opts.env || process.env;
+  const h = harnessWorkSignal(opts);
+  if (!h || h.loadError) return null;
+  let c;
+  try {
+    const ask = () => h.ws.chosen({ env, home: opts.home });
+    c = h.TC && typeof h.TC.sinAnotar === 'function' ? h.TC.sinAnotar(ask) : ask();
+  } catch (_) { return null; }
+  if (c.manifest) return { chosen: true, name: c.manifest.name };
+  if (c.value === 'none') return { chosen: false, reason: 'ninguna herramienta de horas elegida (integrations.timeTracking: none)' };
+  if (!c.value) return null;
+  return { chosen: false, reason: `ninguna herramienta de horas: ${c.warning}` };
+}
+
+/** Las horas para `CompletedWork` del pedido después de un `stop`: las que tenía más los segundos informados, o null. */
+function completedWorkHours(current, stopResult) {
+  const s = stopResult && stopResult.seconds;
+  if (!Number.isInteger(s) || s < 0) return null;
+  return Math.round(((Number(current) || 0) + s / 3600) * 100) / 100;
+}
+
+/**
+ * `pipeline.js work-signal <start|stop> [--story <spec> --repo <dir>]`: el evento de trabajo de una historia (paso 0b y
+ * paso 9), con la historia, el título, el repo y la sesión. Sin `--story`, los de la corrida (el marker); el paso 9 corre
+ * después del merge, cuando el marker ya se borró, y pasa la story. → `{ ran, seconds?, hours?, action?, warnings }`;
+ * `hours` son los segundos de `stop` en horas, para sumar a `CompletedWork`. Una herramienta que falla nunca frena la
+ * historia.
+ */
+function workSignalForRun(event, opts = {}) {
+  // un renglón por clave, sin cruzar al siguiente: una clave vacía es vacía, no la clave de abajo
+  const field = (fm, key) => ((new RegExp(`^${key}:[ \\t]*(.*?)[ \\t]*$`, 'm').exec(fm) || [])[1] || '').replace(/^(["'])(.*)\1$/, '$2');
+  // con los finales de renglón de Windows y la marca de orden de bytes, como los demás lectores de frontmatter
+  const frontmatter = (p) => ((/^﻿?---\r?\n([\s\S]*?)\r?\n---/.exec(p ? readText(p) : '') || [])[1] || '').replace(/\r/g, '');
+  // la sesión, con la misma cadena que el marker (Claude Code, el banco y Codex): el 0b abrió con ésa
+  const sid = resolveSessionId();
+  const session = sid === '_nosession' ? null : sid;
+  let run;
+  if (opts.storyPath) {
+    const fm = frontmatter(opts.storyPath);
+    const storyId = field(fm, 'story');
+    if (!storyId) return { error: `la story ${opts.storyPath} no tiene \`story:\` en el frontmatter` };
+    run = { storyId, title: field(fm, 'title'), repo: opts.repo || null, sessionId: session };
+  } else {
+    const marker = opts.marker || readSessionMarker();
+    if (!marker || !marker.storyId) return { error: 'sin marker activo en esta sesión — pasá la story: pipeline.js work-signal <start|stop> --story <spec> --repo <dir>' };
+    run = { storyId: String(marker.storyId), title: field(frontmatter(marker.storyPath), 'title'), repo: marker.repoPath || null,
+      sessionId: marker.sessionId || session };
+  }
+  const h = harnessWorkSignal(opts);
+  if (!h) return { ran: false, warnings: ['aviso de trabajo: el arnés de esta máquina no trae el evento de trabajo (scripts/lib/work-signal.js); sigo sin registrar'] };
+  if (h.loadError) return { ran: false, warnings: [`aviso de trabajo: el evento de trabajo del arnés no carga (${h.loadError}); sigo sin registrar`] };
+  const r = h.ws.emit(event, { storyId: run.storyId, title: run.title || null, repo: run.repo, sessionId: run.sessionId }, { env: opts.env || process.env });
+  const out = { ran: r.ran, warnings: r.warnings };
+  if (r.result.action) out.action = r.result.action;
+  if (event === 'stop' && Number.isInteger(r.result.seconds)) {
+    out.seconds = r.result.seconds;
+    out.hours = completedWorkHours(0, r.result);
+  }
+  return out;
 }
 
 /**
@@ -6133,6 +6220,19 @@ function main() {
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(result.error ? 1 : 0);
   }
+  if (cmd === 'work-signal') {
+    const event = process.argv[3];
+    if (!['start', 'stop'].includes(event)) {
+      process.stderr.write('uso: pipeline.js work-signal <start|stop> [--story <spec> --repo <dir>]   (paso 0b: start · paso 9: stop)\n');
+      process.exit(2);
+    }
+    let r;
+    try { r = workSignalForRun(event, args.story ? { storyPath: path.resolve(args.story), repo: args.repo ? path.resolve(args.repo) : null } : {}); } catch (e) { r = { ran: false, warnings: [`aviso de trabajo: falló (${e.code || e.message}); sigo sin registrar`] }; }
+    if (r.error) { process.stderr.write(`work-signal: ${r.error}\n`); process.exit(1); }
+    for (const w of r.warnings) process.stderr.write(`${w}\n`);
+    process.stdout.write(JSON.stringify(r) + '\n');
+    process.exit(0);
+  }
   if (cmd === 'start') {
     const conModelos = conModelosDeLaCorrida(args);
     const result = computeStart(conModelos);
@@ -6667,7 +6767,7 @@ module.exports = {
   aplicarModelosDeRevisores,
   // El cartel de la corrida (mods/harness-mods) copia la lista de pasos; harness-mods.test.js T16 la ata a ésta.
   STEP_SEQUENCE,
-  SUBSTEP_FLAG,
+  SUBSTEP_FLAG, SUBSTEP_OLD_FLAG, completedWorkHours, harnessTimeTool,
   // tests/unit.test.js «T43 ThirdPartyManifestPath_*».
   thirdPartyManifestPath,
   // El hook on-advisor-run.js escribe el review-roster en el MISMO run dir que usa el pipeline:

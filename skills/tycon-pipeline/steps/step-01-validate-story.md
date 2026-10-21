@@ -29,11 +29,11 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js followups-
 ## Acción
 
 **🔀 Fan-out del arranque (2026-07-30)**: los subagentes de este step se lanzan en background
-**al principio de 0b** (después de resolver el project de clocki — ver step-00b §Fan-out), y
-0b/0c completan inline mientras corren. Este step es entonces el **JOIN**: al llegar la
+**al principio de 0b** (después de emitir el aviso de trabajo y resolver lo que su acción pregunte — ver step-00b
+§Fan-out), y 0b/0c completan inline mientras corren. Este step es entonces el **JOIN**: al llegar la
 notificación del validator (y de los revisores de validación de los paquetes, si aplican), se procesan los reportes y las
-decisiones de abajo. La reversión si acá se decide cancelar: cerrar el timer clocki con
-descripción `[cancelado]` y devolver el WI de ADO a su estado previo (los side-effects de 0b/0c
+decisiones de abajo. La reversión si acá se decide cancelar: cerrar el registro de horas (`work-signal stop`; si la
+integración devuelve una acción, con descripción `[cancelado]`) y devolver el WI de ADO a su estado previo (los side-effects de 0b/0c
 ya corrieron — mismo tratamiento que una cancelación en Step 3). Si por cualquier razón el
 fan-out no ocurrió (0b/0c skippeados, orden secuencial), lanzar los subagentes acá como siempre.
 

@@ -11,7 +11,7 @@
 
 const STEPS = [
   { id: '0', name: 'Arranque', file: 'step-00-preflight.md' },
-  { id: '0b', name: 'Arranque: reloj de Clockify', file: 'step-00b-clocki-start.md' },
+  { id: '0b', name: 'Arranque: aviso de trabajo', file: 'step-00b-work-start.md' },
   { id: '0c', name: 'Arranque: pedido en ADO', file: 'step-00c-ado-mark-active.md' },
   { id: '1', name: 'Validar la historia', file: 'step-01-validate-story.md' },
   { id: '2', name: 'Armar el plan', file: 'step-02-invoke-bmad.md' },

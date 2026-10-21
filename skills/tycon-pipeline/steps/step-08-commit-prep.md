@@ -229,36 +229,34 @@ cierre (regla COMM.ii). El bloque de 5 líneas que estaba acá quedó consolidad
 - `status: prepared | committed | committed-and-pushed`
 
 Fin de la preparación del commit. 🔴 **El step NO termina acá**: faltan las tres secciones de abajo
-(el timer de Clockify NO se cierra · `marker.js clear` · dejar la story en `status: review`). Recién
+(el registro de horas NO se cierra · `marker.js clear` · dejar la story en `status: review`). Recién
 con las tres el step está cerrado.
 
-## 🚨 CRITICAL — NO cerrar el clocki timer
+## 🚨 CRITICAL — NO cerrar el registro de horas
 
-**El pipeline NO cierra el timer de Clockify al finalizar Step 8.** Este es un error
+**El pipeline NO cierra el registro de horas al finalizar Step 8.** Este es un error
 recurrente que rompe el tracking de horas reales.
 
 **Reglas explícitas (NO violar):**
 
-1. **NO ejecutar** `mcp__clockify__update-clockify-time-entry` (bajo Codex: `..._update_clockify_time_entry` con guiones bajos) con un `end` que sea el
-   tiempo actual al final del pipeline. El timer queda **running**.
-2. **NO borrar** `~/.claude/clocki/active.json` al terminar Step 8. El estado local
-   refleja que sigue activo.
-3. El timer **solo se cierra** en estas 4 condiciones, en este orden de precedencia:
-   - **(a)** El usuario tipea explícitamente `/clocki stop` → cerrar con `end = lastActivity`.
-   - **(b)** El usuario arranca otra tarea con `/clocki start "..."` o invoca otra
-     story con `tycon-pipeline` → el `clocki:start` del nuevo flujo **cierra el previo**
-     automáticamente (ver `~/.claude/skills/clocki/SKILL.md` flujo `start` paso 2).
-   - **(c)** El sweep idle del hook (15min sin activity) lo cierra retroactivamente
-     a `lastActivity`.
-   - **(d)** El **Step 9** cierra la story en ADO (`step-09-ado-story-closure.md` §"cerrar clocki
-     timer"). Ahí sí terminó el trabajo lógico, y por eso es la única vía del pipeline que lo cierra.
+1. **NO emitir** `work-signal stop` ni cerrar la entrada a mano con la herramienta de horas al final del pipeline. El
+   registro queda **abierto**.
+2. **NO borrar** el estado local de la integración de horas al terminar Step 8: refleja que sigue abierto.
+3. El registro **solo se cierra** en estas 4 condiciones, en este orden de precedencia:
+   - **(a)** El usuario lo cierra explícitamente con lo que su integración le da (su skill o su comando).
+   - **(b)** El usuario arranca otra tarea o invoca otra story con `tycon-pipeline` → el `start` del nuevo flujo
+     **cierra el previo** (lo hace la integración).
+   - **(c)** El cierre por inactividad de la integración (15 min sin actividad) lo cierra con el fin en la última
+     actividad.
+   - **(d)** El **Step 9** cierra la story en ADO (`step-09-ado-story-closure.md` §"Acción — cerrar el registro de
+     horas"). Ahí sí terminó el trabajo lógico, y por eso es la única vía del pipeline que lo cierra.
 
 **Por qué importa:** después del commit pipeline, el usuario suele pedir trabajo
 adicional (smoke check DoD Gate 2, debugging, ajustes a la spec, integration tests
-fix-up). Si el timer ya se cerró, ese trabajo no se trackea y el dev pierde horas
+fix-up). Si el registro ya se cerró, ese trabajo no se trackea y el dev pierde horas
 facturables.
 
-**Patrón observado (2026-05-12):** post-Step 8 commit prep, Claude cerró el timer
+**Patrón observado (2026-05-12):** post-Step 8 commit prep, Claude cerró el registro
 "por prolijidad". Después el usuario pidió 27min adicionales de DoD smoke + commits +
 integration tests, todos sin tracking. Tuvo que recuperarse manualmente con un entry
 retroactivo. **No vuelva a pasar.**
@@ -278,7 +276,7 @@ idénticos en cada corrida y enterraban el resumen real (feedback del dev 2026-0
 
 Está listo para commitear — decime y lo hago.
 
-Pendiente tuyo: antes de darla por terminada, probala andando (que compile y pasen las pruebas no alcanza){ · el reloj de Clockify sigue abierto}{ · el pedido de Azure DevOps se cierra después de mergear}.
+Pendiente tuyo: antes de darla por terminada, probala andando (que compile y pasen las pruebas no alcanza){ · el reloj de horas sigue abierto}{ · el pedido de Azure DevOps se cierra después de mergear}.
 Detalle técnico (findings, archivos, mensaje de commit completo) — pedímelo y te lo pego.
 ```
 
@@ -304,19 +302,20 @@ queda la ruta para copiar—, y debajo la línea
 - **El mensaje de commit SÍ va completo al chat** — es lo que el dev tiene que leer para aprobar.
   Es la única excepción al "detalle a pedido".
 - **Los recordatorios van en UNA línea combinada y en llano**, no en 3 bloques con emoji y sangría.
-  Sólo los que aplican: el del reloj si hay un timer de Clockify abierto para esta carpeta; el de Azure DevOps si
-  la story tiene `ado_work_item`. Sin «smoke», «DoD» ni «ADO» (caso 2026-10-19: un dev solo, sin Clockify ni Azure
-  DevOps, leía «smoke de DoD» y «cierre en ADO» en su primera historia). El contenido normativo no cambia —
-  sigue vigente todo lo de arriba (el timer NO se cierra, probarla andando es obligatorio, el pedido se cierra
+  Sólo los que aplican: el del reloj si el paso 0b avisó el trabajo a una herramienta de horas
+  (`workSignalStarted`); el de Azure DevOps si la story tiene `ado_work_item`. Sin «smoke», «DoD» ni «ADO» (caso
+  2026-10-19: un dev solo, sin herramienta de horas ni Azure DevOps, leía «smoke de DoD» y «cierre en ADO» en su
+  primera historia). El contenido normativo no cambia —
+  sigue vigente todo lo de arriba (el registro de horas NO se cierra, probarla andando es obligatorio, el pedido se cierra
   después del merge); lo que cambia es cuánto espacio ocupan y cómo se dicen.
 - **Sin conteos de líneas, sin listas de archivos tocados, sin rule IDs** en el cierre. Todo eso
   vive en `.advisors/pipeline-runs/<run-dir>/` y en el diff.
-- **Lo que no corrió porque no aplicaba no se nombra**: el pase adversarial que no corrió por riesgo bajo, Clockify o
-  Azure DevOps cuando no están. El cierre dice lo que pasó, no lo que no hacía falta.
+- **Lo que no corrió porque no aplicaba no se nombra**: el pase adversarial que no corrió por riesgo bajo, la herramienta de horas
+  o Azure DevOps cuando no están. El cierre dice lo que pasó, no lo que no hacía falta.
 - **Sin jerga del arnés**: el cierre no dice «gate», «matriz», «done», «riesgo LOW» ni nombres de comandos
   (`/tycon-…`). Se dice lo que significa: «las pruebas de cada criterio corrieron», «para darla por terminada».
   Caso 2026-10-19 (noche): un dev solo leyó «el gate lo salteó por riesgo LOW», «la matriz por criterio da verde» y
-  «Clockify y ADO no aplicaron» en su primera historia.
+  «el reloj de horas y ADO no aplicaron» en su primera historia.
 - **Después del commit, lo que sigue en una línea llana** con la frase que lo pide: «Cuando quieras subirla a main,
   decime "mergeala a main"». Nada de cerrarla con un comando.
 

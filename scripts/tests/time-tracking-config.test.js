@@ -189,6 +189,7 @@ const INTS = path.join(ROOT, 'integrations');
 const intSpecs = (hooks) => hooks.map((h) => h.spec).filter((s) => s.startsWith('@int:')).sort();
 const decideFor = (list, timeTracking) => AH.decide(list, { env: {}, integ: { state: 'ok', values: {}, timeTracking }, profile: { state: 'ok', value: 'full' }, minimalIds: null, platform: 'posix' });
 const CLOCKIFY_CLAUDE = ['@int:clockify/scripts/on-prompt.js', '@int:clockify/scripts/touch-activity.js'];
+const SOLIDTIME_CLAUDE = ['@int:solidtime/scripts/on-activity.js', '@int:solidtime/scripts/on-prompt.js'];
 // la carpeta de skills de una instalación de hoy, donde vivía clocki (una carpeta temporal, no la de nadie)
 const OLD_SKILLS = path.join(os.tmpdir(), 'acme-casa', '.claude', 'agent-skills', 'skills');
 
@@ -196,18 +197,20 @@ test('Installer_RegistersOnlyChosenHooks @story-7.40 @ac-3 @ac-16', () => {
   const list = AH.loadList(LIST, { integrationsDir: INTS });
   assert.deepStrictEqual(intSpecs(decideFor(list, 'none').active), [], 'sin herramienta: ningún hook de horas');
   assert.deepStrictEqual(intSpecs(decideFor(list, 'clockify').active), CLOCKIFY_CLAUDE, 'con Clockify: los suyos');
-  assert.deepStrictEqual(intSpecs(decideFor(list, 'solidtime').active), [], 'con Solidtime: ninguno de Clockify');
-  for (const s of CLOCKIFY_CLAUDE) assert.ok(decideFor(list, 'none').known.includes(s), `${s}: sin elegir, se saca si estaba`);
+  assert.deepStrictEqual(intSpecs(decideFor(list, 'solidtime').active), SOLIDTIME_CLAUDE, 'con Solidtime: los suyos, ninguno de Clockify');
+  for (const s of [...CLOCKIFY_CLAUDE, ...SOLIDTIME_CLAUDE]) assert.ok(decideFor(list, 'none').known.includes(s), `${s}: sin elegir, se saca si estaba`);
   assert.ok(!list.hooks.some((h) => /(^|\/)clocki\//.test(h.spec)), 'la lista del núcleo ya no nombra la carpeta vieja');
   // el lado Codex, con la configuración de una casa de laboratorio
   const DCH = require(path.join(ROOT, 'build', 'deploy-codex-hooks.js'));
   const raw = JSON.parse(fs.readFileSync(path.join(ROOT, 'adapters', 'codex', 'hooks.json'), 'utf8'));
   const commands = (frag) => Object.values(frag.hooks || {}).flat().flatMap((g) => g.hooks || []).map((h) => h.command);
-  for (const [value, n] of [['none', 0], ['clockify', 3], ['solidtime', 0]]) {
+  for (const [value, n, s] of [['none', 0, 0], ['clockify', 3, 0], ['solidtime', 0, 2]]) {
     const home = casa();
     const r = DCH.activeFragment(raw, { env: env(home, { TYCON_TIME_TRACKING: value }), tcg: ROOT });
     const ours = commands(r.fragment).filter((c) => c.includes('integrations/clockify/'));
     assert.strictEqual(ours.length, n, `Codex con ${value}: ${n} hooks de Clockify (dio ${ours.length})`);
+    const theirs = commands(r.fragment).filter((c) => c.includes('integrations/solidtime/'));
+    assert.strictEqual(theirs.length, s, `Codex con ${value}: ${s} hooks de Solidtime (dio ${theirs.length})`);
     assert.ok(!commands(r.fragment).some((c) => /skills\/clocki\//.test(c)), 'Codex ya no nombra la carpeta vieja');
   }
   // la llave vieja sola sigue eligiendo Clockify
@@ -290,10 +293,12 @@ test('Clockify_OldStateStillFound @story-7.40 @ac-5', () => {
   assert.match(out.action, /update-clockify-time-entry/, 'y se le dice al agente cómo cerrarla con el MCP');
   const start = JSON.parse(run('start').stdout.trim());
   assert.match(start.action || '', /create-clockify-time-entry|ya hay una entrada abierta/, 'start le dice al agente qué hacer');
-  // sin estado, stop no tiene nada que cerrar
+  assert.match(out.action, /list-clockify-time-entries/, 'y que sume las entradas de la historia para CompletedWork');
+  // sin estado, stop no tiene nada que cerrar, pero las entradas de la historia (cerradas por inactividad) se suman igual
   const vacio = casa();
-  const r = run('stop', vacio);
-  assert.deepStrictEqual(JSON.parse(r.stdout.trim()), {});
+  const r = JSON.parse(run('stop', vacio).stdout.trim());
+  assert.doesNotMatch(r.action || '', /update-clockify-time-entry/);
+  assert.match(r.action || '', /list-clockify-time-entries.*7\.40|7\.40.*list-clockify-time-entries/);
 });
 
 // ── Los manifiestos y sus rutas: un manifiesto mal escrito queda roto con aviso, nunca frena la instalación ─────────
