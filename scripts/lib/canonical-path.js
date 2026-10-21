@@ -1089,6 +1089,57 @@ function ensureRepoLinks({ clone, home, check = false, only = null, links = null
  * no se puede saber qué activa la organización, no se agrega ni se saca nada de ningún paquete (y se dice).
  */
 function packEntries({ tree, given, home }) {
+  const out = packOnlyEntries({ tree, given, home });
+  integrationSkillEntries({ tree, given, home, out });
+  return out;
+}
+
+/**
+ * Las skills de las integraciones (`skills` de su manifiesto en integrations/): las de la integración de horas elegida se
+ * enlazan como las de un paquete activo; las de las demás se retiran. Con la configuración ilegible, no se toca ninguna.
+ */
+function integrationSkillEntries({ tree, given, home, out }) {
+  let INT;
+  const dir = path.join(tree, 'integrations');
+  try { INT = require('./integrations.js'); } catch (e) {
+    // la biblioteca está y no carga: no se sabe qué skills trae cada integración, así que no se saca nada ahí
+    if (fs.existsSync(path.join(__dirname, 'integrations.js'))) {
+      out.lines.push(`⚠️ tycon: no pude cargar integrations.js (${e.code || e.message}): las skills de las integraciones quedan como están`);
+      out.protect.push(dir);
+    }
+    return;
+  }
+  const listing = INT.listManifests({ dir });
+  // un manifiesto roto: no se sabe qué skills trae, así que en integrations/ no se saca nada esta vez, y se dice
+  if (listing.problems.length) {
+    for (const b of listing.problems) out.lines.push(`⚠️ tycon: la integración «${b.name}» tiene el manifiesto roto (${b.reasons.join('; ')}): sus skills quedan como están`);
+    out.protect.push(dir);
+  }
+  const manifests = listing.manifests.filter((m) => m.skills.length);
+  if (!manifests.length) return;
+  out.written.skills.push(dir, path.join(given, 'integrations'));
+  let chosen = null;
+  try {
+    const TC = require('./tycon-config.js');
+    chosen = TC.timeTracking(TC.leer({ home: home || os.homedir(), arnes: tree })).value;
+  } catch (e) {
+    out.lines.push(`⚠️ tycon: no pude leer qué integración de horas está elegida (${(e && e.message ? e.message.split('\n')[0] : 'error')}): no agrego ni saco sus skills`);
+    out.protect.push(dir);
+    return;
+  }
+  for (const m of manifests) {
+    for (const rel of m.skills) {
+      const src = path.join(m.dir, rel);
+      const name = path.basename(rel);
+      if (m.name === chosen) { if (fs.existsSync(path.join(src, 'SKILL.md'))) out.extra.skills.push({ name, src }); continue; }
+      out.retire.skills.push(src, path.join(given, path.relative(tree, src)));
+      out.retireNames.skills.push(name);
+      out.owner[`skills/${name}`] = m.name;
+    }
+  }
+}
+
+function packOnlyEntries({ tree, given, home }) {
   const PP = require('./pack-pieces.js');
   // `owner`: de qué paquete inactivo es cada entrada (`skills/<n>` → paquete), para nombrar en la línea sólo los que perdieron algo
   // `protect`: carpetas en las que esta corrida no saca nada (la configuración no se pudo leer)
@@ -1594,6 +1645,6 @@ if (require.main === module) {
   aliasArgv('scripts/lib/canonical-path.js', { exitCode: 2 });   // los nombres viejos siguen andando
   cli(process.argv.slice(2));
 }
-module.exports = { aviso, asegurarEnlace, estadoEnlace, rutaEnlace, esClonDelArnes, ensurePlace, placePieces, placePlan, nameState, pointName, removeName, takePlaceLock, LEGACY_FOR_NEW_MACHINES, ensureRepoLinks, isSingleRepo, REPO_LINKS, separateSkillsClone, ignoreSyncedSkills, ownHardLink, forgetHardLink, hardLinksFile, cli };
+module.exports = { aviso, asegurarEnlace, estadoEnlace, rutaEnlace, esClonDelArnes, ensurePlace, placePieces, placePlan, nameState, pointName, removeName, takePlaceLock, LEGACY_FOR_NEW_MACHINES, ensureRepoLinks, isSingleRepo, REPO_LINKS, separateSkillsClone, ignoreSyncedSkills, ownHardLink, forgetHardLink, hardLinksFile, packEntries, cli };
 // el nombre del lugar, que sale de place.js, cargada al pedirlo
 Object.defineProperty(module.exports, 'NOMBRE_ENLACE', { enumerable: true, get: () => PLACE().PLACE_NAME });

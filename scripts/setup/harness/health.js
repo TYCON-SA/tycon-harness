@@ -64,9 +64,18 @@ function launchError(r) {
   return r.error.code === 'EPIPE' && typeof r.status === 'number' ? null : r.error;
 }
 
-/** El archivo de un hook desde su id: `@tcg:x` vive en scripts/hooks/ del árbol; lo demás en agent-skills/skills. */
+/**
+ * El archivo de un hook desde su id: `@tcg:x` vive en scripts/hooks/ del árbol, `@int:<n>/x` en integrations/<n>/ del
+ * árbol; lo demás en agent-skills/skills. Un `@int:` con una ruta que no cumple la regla del manifiesto (`..`, `\`,
+ * espacios, comillas) da null: no se revisa un archivo fuera de su carpeta.
+ */
 function hookFile(relpath, { tree, skillsDir }) {
   if (relpath.startsWith('@tcg:')) return path.join(tree, 'scripts', 'hooks', relpath.slice(5));
+  if (relpath.startsWith('@int:')) {
+    const m = /^@int:([a-z0-9][a-z0-9-]*)\/([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*)$/.exec(relpath);
+    if (!m || m[2].split('/').some((s) => s === '..' || s === '.')) return null;
+    return path.join(tree, 'integrations', m[1], ...m[2].split('/'));
+  }
   return path.join(skillsDir, ...relpath.replace(/^\/+/, '').split('/'));
 }
 
@@ -191,6 +200,7 @@ function check(ctx = {}, opts = {}) {
     const gitBash = () => (foundBash = foundBash || findGitBash({ tree, platform, env }));
     for (const h of hooks) {
       const file = hookFile(h.relpath, { tree, skillsDir });
+      if (file === null) { fail(`hook ${h.id}: su ruta sale de la carpeta de la integración o tiene caracteres que no van`); continue; }
       if (checked.has(file)) continue;
       checked.add(file);
       if (!fs.existsSync(file)) { fail(`hook ${h.id}: registrado y su archivo no está (${file})`); continue; }

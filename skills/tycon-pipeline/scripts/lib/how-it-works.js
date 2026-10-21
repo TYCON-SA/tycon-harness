@@ -113,9 +113,38 @@ function readSteps(treeDir) {
 
 // ── los controles ──
 
-/** La ruta del guion de un registro de la lista: `@tcg:x` es scripts/hooks/x; si no, va bajo skills/. */
-function scriptOf(spec) { return spec.startsWith('@tcg:') ? `scripts/hooks/${spec.slice(5)}` : `skills/${spec}`; }
-const integrationOf = (when) => (typeof when === 'string' && when.startsWith('integration:') ? when.slice('integration:'.length) : null);
+/** La ruta del guion de un registro de la lista: `@tcg:x` es scripts/hooks/x, `@int:<n>/x` integrations/<n>/x; si no, skills/. */
+function scriptOf(spec) {
+  if (spec.startsWith('@tcg:')) return `scripts/hooks/${spec.slice(5)}`;
+  if (spec.startsWith('@int:')) return `integrations/${spec.slice(5)}`;
+  return `skills/${spec}`;
+}
+// la integración de la que depende un control: una llave (`integration:<llave>`) o la herramienta de horas (`time:<n>`)
+const integrationOf = (when) => {
+  const m = typeof when === 'string' ? /^(?:integration|time):([a-z0-9-]+)$/.exec(when) : null;
+  return m ? m[1] : null;
+};
+/**
+ * Los hooks (lado Claude Code) y las entradas del despachador de las integraciones del árbol, de sus manifiestos.
+ * `problems`: un manifiesto roto o la biblioteca que no carga (sin ella, sólo se calla si el árbol no la trae).
+ */
+function integrationPieces(treeDir) {
+  const lib = path.join(treeDir, 'scripts', 'lib', 'integrations.js');
+  try {
+    const INT = require(lib);
+    const listing = INT.listManifests({ dir: path.join(treeDir, 'integrations') });
+    const manifests = listing.manifests;
+    const timeKinds = new Set(manifests.filter((m) => m.kind === 'timeTracking').map((m) => m.name));
+    return {
+      hooks: manifests.flatMap((m) => INT.hookEntries(m, { tool: 'claude' })),
+      dispatch: (mode) => manifests.flatMap((m) => INT.dispatchEntries(m, mode).map((d) => Object.assign(d, { timeTool: timeKinds.has(m.name) }))),
+      problems: listing.problems.map((b) => ({ spec: `integrations/${b.name}`, message: `el manifiesto está roto (${b.reasons.join('; ')}): sus controles no se muestran` })),
+    };
+  } catch (e) {
+    const problems = fs.existsSync(lib) ? [{ spec: 'scripts/lib/integrations.js', message: `no se pudo cargar (${e.code || e.message}): los controles de las integraciones no se muestran` }] : [];
+    return { hooks: [], dispatch: () => [], problems };
+  }
+}
 // un control que hay que prender a mano (`optin:<VARIABLE>` con `default: off`): no corre salvo que alguien lo prenda
 const optionalOf = (h) => (typeof h.when === 'string' && h.when.startsWith('optin:') && h.default === 'off' ? h.when.slice('optin:'.length) : null);
 
@@ -130,6 +159,13 @@ function readControls(treeDir) {
   try { lista = JSON.parse(fs.readFileSync(path.join(treeDir, HOOKS_LIST), 'utf8')).hooks || []; } catch (e) { problems.push({ spec: HOOKS_LIST, message: `no se pudo leer (${e.code || e.message})` }); }
   let chains = {};
   try { chains = require(path.join(treeDir, PIPELINE_SCRIPTS, 'dispatch.js')).CHAINS || {}; } catch (e) { problems.push({ spec: 'dispatch.js', message: `no se pudo leer (${e.code || e.message})` }); }
+  // las integraciones: sus hooks se suman a la lista, y sus entradas del despachador van delante de cada cadena
+  const ints = integrationPieces(treeDir);
+  problems.push(...ints.problems);
+  lista = lista.concat(ints.hooks);
+  const withInts = {};
+  for (const [mode, chain] of Object.entries(chains)) withInts[mode] = ints.dispatch(mode).concat(chain);
+  chains = withInts;
   const controls = [];
   for (const h of lista) {
     const script = scriptOf(h.spec);
@@ -141,11 +177,11 @@ function readControls(treeDir) {
     if (cadena && !chains[cadena[1]]) problems.push({ spec: h.spec, message: `despacha la cadena «${cadena[1]}», que dispatch.js no tiene` });
     if (cadena && chains[cadena[1]]) {
       for (const c of chains[cadena[1]]) {
-        controls.push({ spec: c.name, script: rel(path.relative(treeDir, c.path)), event: h.event, steps: c.steps, effect: c.effect, integration: c.integration || null, optional: null, viaDispatcher: h.spec });
+        controls.push({ spec: c.name, script: rel(path.relative(treeDir, c.path)), event: h.event, steps: c.steps, effect: c.effect, integration: c.integration || null, optional: null, viaDispatcher: h.spec, timeTool: Boolean(c.timeTool) });
       }
       continue;
     }
-    controls.push({ spec: h.spec, script, event: h.event, steps: h.steps, effect: h.effect, integration: integrationOf(h.when), optional: optionalOf(h), viaDispatcher: null });
+    controls.push({ spec: h.spec, script, event: h.event, steps: h.steps, effect: h.effect, integration: integrationOf(h.when), optional: optionalOf(h), viaDispatcher: null, timeTool: String(h.when || '').startsWith('time:') });
   }
   return { controls, problems };
 }
@@ -261,12 +297,14 @@ function readOrg({ treeDir, profileDir }) {
   const SC = require(path.join(CODE, PIPELINE_SCRIPTS, 'lib', 'stack-config.js'));
   const perfil = ['team-profile.json', 'perfil-equipo.json'].map((f) => path.join(profileDir, f)).find((f) => fs.existsSync(f)) || path.join(profileDir, 'team-profile.json');
   const hogar = fs.mkdtempSync(path.join(os.tmpdir(), 'how-it-works-home-'));
-  let integrations = {}; let packsDefault = null; const problems = [];
+  let integrations = {}; let packsDefault = null; let timeTracking = null; const problems = [];
   // sin el archivo del perfil, o sin poder leerlo, no se sabe qué integraciones tiene la organización (no «todas apagadas»)
   let integrationsKnown = false;
   try {
     const cfg = TC.cargar({ env: { TYCON_PROFILE: perfil }, home: hogar });
     integrations = TC.integraciones(cfg);
+    // la herramienta de horas elegida (con la llave vieja leída): los controles de las otras no se muestran
+    if (typeof TC.timeTracking === 'function') timeTracking = TC.timeTracking(cfg).value;
     // Telegram es de cada máquina (el perfil rechaza un chat): no es una integración de la organización
     delete integrations.telegram;
     // un error del archivo entero (sin clave: ilegible) es no haberlo leído; uno de una clave deja leído el resto
@@ -275,7 +313,7 @@ function readOrg({ treeDir, profileDir }) {
     for (const e of cfg.errores || []) problems.push(`${e.clave || path.basename(e.archivo)}: ${e.motivo}`);
   } catch (e) { problems.push(`no se pudo leer la configuración (${String(e.message || e).split('\n')[0]})`); } finally { fs.rmSync(hogar, { recursive: true, force: true }); }
   const reglas = SC.orgRules({ file: path.join(profileDir, 'team-repos.json') });
-  return { integrations, integrationsKnown, packsDefault, rules: reglas.rules, problems: [...problems, ...reglas.problems] };
+  return { integrations, integrationsKnown, timeTracking, packsDefault, rules: reglas.rules, problems: [...problems, ...reglas.problems] };
 }
 
 // ── los paquetes ──
@@ -390,7 +428,13 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
   const org = readOrg({ treeDir, profileDir });
   // una integración que la organización tiene apagada: sus piezas y sus controles no se muestran. Sin perfil, o con el
   // perfil sin su archivo, no se sabe qué tiene, y se muestra todo
-  const apagada = (integration) => Boolean(org && org.integrationsKnown && integration && !PER_REPO_INTEGRATIONS.includes(integration) && org.integrations[integration] === false);
+  const llaveApagada = (integration) => Boolean(org && org.integrationsKnown && integration && !PER_REPO_INTEGRATIONS.includes(integration) && org.integrations[integration] === false);
+  // un control de una herramienta de horas: apagado si la organización eligió otra (o ninguna); sin perfil no se sabe, y
+  // se muestra como los demás, «según tu organización»
+  const horasDeOtra = (c) => Boolean(c && c.timeTool && org && org.integrationsKnown && typeof org.timeTracking === 'string' && org.timeTracking !== c.integration);
+  // la de horas se decide sólo por la herramienta elegida: la llave vieja (`integrations.clockify`) no la apaga, porque una
+  // organización que elige Clockify en `timeTracking` puede no tener esa llave
+  const apagada = (x) => (x && typeof x === 'object' ? (x.timeTool ? horasDeOtra(x) : llaveApagada(x.integration)) : llaveApagada(x));
   // un mismo mapa para las dos carpetas: un revisor declarado en dos paquetes sale como problema, como en el pipeline
   const yaDeclarados = new Map();
   const packs = [
@@ -433,7 +477,7 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
     };
     // los controles del paso: uno por guion, con el efecto más fuerte de sus registros
     const propios = new Map();
-    for (const c of controls.filter((x) => Array.isArray(x.steps) && x.steps.some((id) => propiosIds.includes(id)) && !apagada(x.integration))) {
+    for (const c of controls.filter((x) => Array.isArray(x.steps) && x.steps.some((id) => propiosIds.includes(id)) && !apagada(x))) {
       const ya = propios.get(c.spec);
       if (!ya || EFFECT_RANK[c.effect] > EFFECT_RANK[ya.effect]) propios.set(c.spec, c);
     }
@@ -446,7 +490,7 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
     };
   });
   const enTodo = new Map();
-  for (const c of controls.filter((x) => Array.isArray(x.steps) && x.steps.includes('all') && !apagada(x.integration))) {
+  for (const c of controls.filter((x) => Array.isArray(x.steps) && x.steps.includes('all') && !apagada(x))) {
     const ya = enTodo.get(c.spec);
     if (!ya || EFFECT_RANK[c.effect] > EFFECT_RANK[ya.effect]) enTodo.set(c.spec, c);
   }

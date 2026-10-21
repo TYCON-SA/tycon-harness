@@ -122,7 +122,7 @@ done
 # cada integración la fija su variable, que gana sobre el perfil del equipo. Sin esto, con Codex
 # enchufado y engram apagada, doctor correría engram-pre-commit.sh.
 # el aviso del correo (owner-email-notice.js) es de la integración del buzón, y entra en la cuenta.
-DE_INTEGRACION="engram-pre-commit.sh engram-drift-notice.js clocki/scripts/on-prompt.js clocki/scripts/touch-activity.js clocki/scripts/sweep.js dependencies-notice.js dashboard-notice.js retro-staleness-notice.js owner-email-notice.js"
+DE_INTEGRACION="engram-pre-commit.sh engram-drift-notice.js integrations/clockify/scripts/on-prompt.js integrations/clockify/scripts/touch-activity.js integrations/clockify/scripts/sweep.js dependencies-notice.js dashboard-notice.js retro-staleness-notice.js owner-email-notice.js"
 CASA9="$T/casa9"; mkdir -p "$CASA9"
 APAGADAS="TYCON_ENGRAM=0 TYCON_CLOCKIFY=0 TYCON_NIGHTLY=0 TYCON_CODEGRAPH=0 TYCON_MAILBOX=0"
 PRENDIDAS="TYCON_ENGRAM=1 TYCON_CLOCKIFY=1 TYCON_NIGHTLY=1 TYCON_CODEGRAPH=1 TYCON_MAILBOX=1"
@@ -146,23 +146,26 @@ else
   mal "C-09 salida $RC; quedaron registrados:${SOBRAN:- (ninguno)}; safety-guard $(cuantos safety-guard-pre.sh "$T/h9/hooks.json") y codegraph $(cuantos codegraph-session-hook.sh "$T/h9/hooks.json") vez/veces"; tail -3 "$T/out9"
 fi
 
-# C-10 · con las cuatro prendidas, el fragmento entero
+# C-10 · con las cuatro prendidas, el fragmento entero, más los hooks de Codex de la integración de horas elegida
+# (Clockify, por la llave vieja), que declara su manifiesto
+DE_HORAS=$(node -e 'const m=require(process.argv[1]);console.log(m.hooks.filter((h)=>!h.tools||h.tools.includes("codex")).length)' "$RAIZ/integrations/clockify/integration.json")
 # shellcheck disable=SC2086
 desplegar_arbol "$T/h10" $PRENDIDAS
 N10=$(comandos "$T/h10/hooks.json")
-[ "$N10" = "$TOTAL_FRAG" ] && ok "C-10 con las integraciones prendidas se registra el fragmento entero ($N10 de $TOTAL_FRAG)" \
-  || mal "C-10 con las integraciones prendidas quedaron $N10 de los $TOTAL_FRAG hooks del fragmento"
+# (`comandos` cuenta dos renglones por hook: el de «type» y el de «command»)
+[ "$N10" = "$((TOTAL_FRAG + 2 * DE_HORAS))" ] && ok "C-10 con las integraciones prendidas se registra el fragmento entero y los $DE_HORAS de Clockify ($N10)" \
+  || mal "C-10 con las integraciones prendidas quedaron $N10 hooks; esperaba los $TOTAL_FRAG del fragmento y $DE_HORAS de Clockify"
 
 # C-11 · apagar después de haber desplegado los saca del hooks.json que ya estaba, y lo propio del dev se queda
 cp "$T/h10/hooks.json" "$T/h11.json"; mkdir -p "$T/h11"
 node -e 'const fs=require("fs");const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));j.hooks.PreToolUse.push({matcher:"Bash",hooks:[{type:"command",command:"bash /home/dev/mio.sh"}]});fs.writeFileSync(process.argv[2],JSON.stringify(j));' "$T/h11.json" "$T/h11/hooks.json"
 # shellcheck disable=SC2086
 desplegar_arbol "$T/h11" $APAGADAS
-if [ "$(cuantos engram-pre-commit.sh "$T/h11/hooks.json")" = 0 ] && [ "$(cuantos clocki/scripts/on-prompt.js "$T/h11/hooks.json")" = 0 ] \
+if [ "$(cuantos engram-pre-commit.sh "$T/h11/hooks.json")" = 0 ] && [ "$(cuantos integrations/clockify/scripts/on-prompt.js "$T/h11/hooks.json")" = 0 ] \
    && [ "$(cuantos /home/dev/mio.sh "$T/h11/hooks.json")" = 1 ]; then
   ok "C-11 apagar una integración saca sus hooks del Codex ya desplegado, y el hook propio del dev se queda"
 else
-  mal "C-11 tras apagar: engram-pre-commit $(cuantos engram-pre-commit.sh "$T/h11/hooks.json") · on-prompt de clocki $(cuantos clocki/scripts/on-prompt.js "$T/h11/hooks.json") · el del dev $(cuantos /home/dev/mio.sh "$T/h11/hooks.json")"
+  mal "C-11 tras apagar: engram-pre-commit $(cuantos engram-pre-commit.sh "$T/h11/hooks.json") · on-prompt de clocki $(cuantos integrations/clockify/scripts/on-prompt.js "$T/h11/hooks.json") · el del dev $(cuantos /home/dev/mio.sh "$T/h11/hooks.json")"
 fi
 
 # C-12 · el interruptor del aplicador manda igual que del lado Claude Code: TYCON_ENGRAM_HOOK=1 registra el hook del

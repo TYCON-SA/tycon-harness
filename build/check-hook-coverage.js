@@ -80,12 +80,33 @@ function missingRoots(faltantes, skills, requested) {
 
 /** Los directorios donde viven hooks, con el filtro de qué archivo de ahí ES un hook. */
 function raices(tcg, skills) {
-  return [
+  const out = [
     { dir: path.join(tcg, 'scripts', 'hooks'), filtro: (f) => /\.(js|sh|py)$/.test(f) },
     { dir: path.join(skills, 'tycon-pipeline', 'scripts'), filtro: (f) => /^(on-|hook-).*\.js$/.test(f) },
-    // De clocki sólo los que el instalador registra como hooks; `lib.js` y los `install-*` no lo son.
-    { dir: path.join(skills, 'clocki', 'scripts'), filtro: (f) => ['clocki-enforce.js', 'on-prompt.js', 'sweep.js', 'touch-activity.js'].includes(f) },
   ];
+  // de cada integración, los guiones que su manifiesto registra como hooks o como entradas del despachador (sus
+  // bibliotecas no lo son). Un manifiesto que no se lee no esconde sus hooks: la raíz entera se censa.
+  const dir = path.join(tcg, 'integrations');
+  let names = [];
+  // una carpeta que está y no se puede leer no es «sin integraciones»: va como raíz, y el censo la da por faltante
+  try { names = fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch (e) {
+    if (e.code !== 'ENOENT') out.push({ dir, filtro: () => true });
+    names = [];
+  }
+  // las rutas, con la regla del manifiesto (scripts/lib/integrations.js): una que sale de la carpeta no elige qué se censa
+  const SAFE = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
+  const safe = (s) => SAFE.test(s) && !s.split('/').some((x) => x === '..' || x === '.');
+  for (const n of names) {
+    let m = null;
+    try { m = JSON.parse(fs.readFileSync(path.join(dir, n, 'integration.json'), 'utf8')); } catch (_) { m = null; }
+    const listed = m && Array.isArray(m.hooks) ? [...m.hooks.map((h) => h && h.script), ...(Array.isArray(m.dispatch) ? m.dispatch.map((d) => d && d.script) : [])].filter((s) => typeof s === 'string') : null;
+    const own = listed && listed.every(safe) ? listed : null;
+    const byDir = new Map();
+    for (const s of own || []) { const d = path.dirname(s); if (!byDir.has(d)) byDir.set(d, new Set()); byDir.get(d).add(path.basename(s)); }
+    if (own === null) out.push({ dir: path.join(dir, n, 'scripts'), filtro: (f) => /\.(js|sh|py)$/.test(f) });
+    for (const [d, files] of byDir) out.push({ dir: path.join(dir, n, d), filtro: (f) => files.has(f) });
+  }
+  return out;
 }
 
 /** Un reemplazo generado de un nombre viejo no es un hook propio: sólo lanza al nuevo, que es el que tiene
@@ -229,10 +250,10 @@ function selftest() {
         ? path.join(TCG, 'skills') : path.join(os.homedir(), '.claude', 'agent-skills', 'skills'))
         && skillsRoot({}).requested === false],
     ['una raíz de skills PEDIDA que no se puede enumerar BLOQUEA (no censar lo que se pidió no es un verde)',
-      missingRoots([path.join(tmp, 'sk', 'clocki', 'scripts')], path.join(tmp, 'sk'), true).blocking.length === 1],
+      missingRoots([path.join(tmp, 'sk', 'acme', 'scripts')], path.join(tmp, 'sk'), true).blocking.length === 1],
     ['la misma raíz sin haberla pedido es un aviso (otra máquina)',
-      missingRoots([path.join(tmp, 'sk', 'clocki', 'scripts')], path.join(tmp, 'sk'), false).blocking.length === 0
-        && missingRoots([path.join(tmp, 'sk', 'clocki', 'scripts')], path.join(tmp, 'sk'), false).notices.length === 1],
+      missingRoots([path.join(tmp, 'sk', 'acme', 'scripts')], path.join(tmp, 'sk'), false).blocking.length === 0
+        && missingRoots([path.join(tmp, 'sk', 'acme', 'scripts')], path.join(tmp, 'sk'), false).notices.length === 1],
     ['una raíz que falta y NO es de las skills pedidas es un aviso',
       missingRoots([path.join(tmp, 'otro', 'scripts', 'hooks')], path.join(tmp, 'sk'), true).blocking.length === 0],
   ];

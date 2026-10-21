@@ -633,7 +633,8 @@ function ajustesDeIntegracion(nombre) {
 /** Los motivos por los que el manifiesto de la integración `nombre` no vale, o null si no hay uno roto con ese nombre. */
 function problemaDeIntegracion(nombre) {
   if (!integ) return null;
-  try { const p = integ.listManifests().problems.find((x) => x.name === nombre); return p ? p.reasons : null; } catch (_) { return null; }
+  // si los manifiestos no se pueden leer, el motivo es ése (no «no hay uno roto»)
+  try { const p = integ.listManifests().problems.find((x) => x.name === nombre); return p ? p.reasons : null; } catch (e) { return [`no se pudieron leer los manifiestos (${e.code || e.message})`]; }
 }
 /** Los secretos (`nombre.clave`) que declara la integración `nombre`. */
 function secretosDeSeccion(nombre) {
@@ -1440,6 +1441,14 @@ function cli(argv) {
     if (argv.includes('--json')) { process.stdout.write(JSON.stringify(ocho) + '\n'); process.exit(0); }
     // forma shell: una asignación por integración, sólo `0` · `1` · `detect` (el instalador las evalúa tal cual)
     for (const k of LAS_OCHO) process.stdout.write(`TYCON_INTEG_${k.toUpperCase()}=${ocho[k] === DETECT ? DETECT : (ocho[k] ? '1' : '0')}\n`);
+    process.exit(0);
+  }
+  // `time-tracking`: la integración de horas elegida (`none` o su nombre, con la llave vieja leída), para el instalador.
+  // Rota: nada por stdout y exit 2, como `integrations`.
+  if (cmd === 'time-tracking') {
+    let c;
+    try { c = leer(); } catch (e) { process.stderr.write(e.message + '\n'); process.exit(2); }
+    process.stdout.write(timeTracking(c).value + '\n');
     process.exit(0);
   }
   // `response --json`: idioma, estilo y tope del bloque de respuesta, ya resueltos (lo leen los

@@ -152,7 +152,8 @@ function compararHooks(hBase, hNuevo) {
 // ── el estado de las ocho integraciones ─────────────────────────────────────────────────
 /** Los hooks que el instalador registra por cada integración (los mismos que gatea por su llave). */
 const HOOKS_DE_INTEGRACION = Object.freeze({
-  clockify: ['clocki/scripts/on-prompt.js', 'clocki/scripts/touch-activity.js'],
+  // cada hook, con su nombre de antes y el de hoy (la base puede ser un instalador de antes de la mudanza a integrations/)
+  clockify: [['clocki/scripts/on-prompt.js', '@int:clockify/scripts/on-prompt.js'], ['clocki/scripts/touch-activity.js', '@int:clockify/scripts/touch-activity.js']],
   engram: ['@tcg:engram-pre-commit.sh', '@tcg:engram-drift-notice.js'],
   nightly: ['@tcg:dashboard-notice.js', '@tcg:dependencies-notice.js', '@tcg:retro-staleness-notice.js'],
 });
@@ -161,7 +162,7 @@ const HOOKS_DE_INTEGRACION = Object.freeze({
 function estadoPorHooks(nombres, llave) {
   const h = HOOKS_DE_INTEGRACION[llave];
   if (!h) throw new Error(`integración sin hooks conocidos: ${llave}`);
-  const n = h.filter((x) => nombres.some((nm) => String(nm).includes(x))).length;
+  const n = h.filter((x) => [].concat(x).some((alt) => nombres.some((nm) => String(nm).includes(alt)))).length;
   return n === h.length ? 'prendida' : n === 0 ? 'apagada' : `parcial (${n}/${h.length})`;
 }
 /** Las ocho, base vs nuevo. `conf` es la salida de `tycon-config.js explain --json` con el perfil (sus `integraciones` son
@@ -400,6 +401,8 @@ function isStartupLine(cmd) { return /\bgit\s+(?:-C\s+\S+\s+)?pull\b|\.tycon-pip
 function scriptName(command) {
   const s = /agent-skills\/skills\/([\w./-]+\.(?:js|sh|ps1|py|command))\b/.exec(command);
   if (s) return s[1];
+  const i = /\/integrations\/([\w./-]+\.(?:js|sh|ps1|py|command))\b/.exec(command);
+  if (i) return `integrations/${i[1]}`;
   const h = /\/scripts\/hooks\/([\w.-]+\.(?:js|sh|ps1|py|command))\b/.exec(command);
   if (h) return `hooks/${h[1]}`;
   const m = /([\w.-]+\.(?:js|sh|ps1|py|command))\b/.exec(command);

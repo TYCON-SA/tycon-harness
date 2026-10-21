@@ -191,11 +191,7 @@
       "transform": "skill-rename"
     },
     {
-      "path": "skills/clocki/SKILL.md",
-      "transform": "rutas-del-otro-repo"
-    },
-    {
-      "path": "skills/clocki/scripts/install-clocki-hooks.sh",
+      "path": "integrations/clockify/skills/clocki/SKILL.md",
       "transform": "rutas-del-otro-repo"
     },
     {

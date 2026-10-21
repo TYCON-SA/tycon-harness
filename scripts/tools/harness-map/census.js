@@ -16,7 +16,8 @@
  *           scripts/nightly/* (el nocturno de dependencias incluido) · scripts/tools y scripts/tools/* (el mapa mismo, en
  *           scripts/tools/harness-map/) · build/ · commands/ · azure-pipelines*.yml · pipelines/ y pipelines/templates/
  *           (si existen) · inbox/ e inbox/* (sólo datos: un ejecutable ahí no tiene lugar)
- *   skills: skills/tycon-pipeline/scripts/ · los hooks de clocki · las carpetas de las skills propias
+ *   skills: skills/tycon-pipeline/scripts/ · las carpetas de las skills propias
+ *   integraciones: cada carpeta de integrations/ (sus guiones los declara su manifiesto)
  * Qué cuenta como citada: la ruta exacta en «Repo y archivo» (sin la aclaración entre paréntesis).
  * Una carpeta citada con comodín (las skills `tycon-*`) cubre carpetas, nunca los archivos de adentro.
  *
@@ -30,7 +31,7 @@
  * repo). Si una ficha cita archivos de dos tipos —un hook y su biblioteca—, manda el primero de la lista:
  * el orden de `archivos` ya dice cuál es la pieza y cuál su apoyo. Reglas, en orden (gana la primera):
  *   agents/*.md y packs/**                                   → revisor
- *   scripts/hooks/**, skills/tycon-pipeline/scripts/{on-,hook-}* y los cuatro hooks de clocki
+ *   scripts/hooks/**, skills/tycon-pipeline/scripts/{on-,hook-}*
  *                                                            → control de sesión
  *   skills/<x>/**                                            → skill
  *   guides/**                                                → guía
@@ -92,7 +93,8 @@ const REGLAS = [
   [/^packs\//, 'revisor'],
   [/^scripts\/hooks\//, 'control de sesión'],
   [/^skills\/tycon-pipeline\/scripts\/(on-|hook-)[^/]*$/, 'control de sesión'],
-  [/^skills\/clocki\/scripts\/(clocki-enforce|on-prompt|sweep|touch-activity)\.js$/, 'control de sesión'],
+  // una integración se instala como una skill: sólo si la organización la elige
+  [/^integrations\/[^/]+\//, 'skill'],
   [/^skills\/[^/]+\//, 'skill'],
   [/^guides\//, 'guía'],
   [/^claude-md-blocks\//, 'bloque'],
@@ -239,10 +241,9 @@ function piezas() {
     const rel = `skills/tycon-pipeline/scripts/${n}`;
     if (!reemplazo(null, rel, path.join(pipeline, n))) out.push(rel);
   }
-  for (const n of ['clocki-enforce.js', 'on-prompt.js', 'sweep.js', 'touch-activity.js']) {
-    if (fs.existsSync(path.join(SKILLS, 'clocki', 'scripts', n))) out.push(`skills/clocki/scripts/${n}`);
-  }
-  for (const n of listar(SKILLS, (d) => d.isDirectory() && /^(tycon-|clocki$|check-story-drift$)/.test(d.name)) || []) out.push(`skills/${n}/`);
+  for (const n of listar(SKILLS, (d) => d.isDirectory() && /^(tycon-|check-story-drift$)/.test(d.name)) || []) out.push(`skills/${n}/`);
+  // cada integración es una pieza: su carpeta, porque lo que trae lo declara su manifiesto
+  for (const n of listar(path.join(TCG, 'integrations'), (d) => d.isDirectory()) || []) out.push(`integrations/${n}/`);
   return out;
 }
 

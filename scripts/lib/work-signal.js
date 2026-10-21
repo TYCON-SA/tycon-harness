@@ -14,7 +14,8 @@
 //   · `settings`: los ajustes que declara su manifiesto, por su última parte (`url`, `token`); `missing`, los que faltan,
 //     con dónde se ponen. Los secretos viajan por la entrada estándar: el núcleo nunca los pone en un argumento.
 //
-// `stop` devuelve por la salida lo que informe la integración (`{"seconds":1080}`) o `{}`. Sin integración elegida, con
+// `stop` devuelve por la salida lo que informe la integración (`{"seconds":1080}`) o `{}`; cualquier evento puede traer
+// además `{"action":"…"}`: lo que el agente tiene que hacer con una herramienta que maneja él. Sin integración elegida, con
 // `none`, o con una que no existe, no corre nada y devuelve `{}`. Nunca sale distinto de 0 por la herramienta: una
 // historia no se frena porque la herramienta de horas falla o falta configurarla (2 sólo para un uso mal escrito).
 //
@@ -72,7 +73,12 @@ function settingsFor(manifest, { config, env = process.env }) {
     const name = s.key.split('.').pop();
     if (s.type === 'secreto') {
       const v = INT.readSecret(s.key, { env });
-      if (v) settings[name] = v; else missing.push({ key: s.key, where: 'machine', how: `harness.js config set ${s.key}` });
+      if (v) settings[name] = v;
+      else {
+        // un archivo de secretos dañado no es «falta»: guardar encima no se puede (no se pisa), hay que arreglarlo
+        const damaged = /dañado/.test(INT.secretState(s.key, { env }));
+        missing.push(damaged ? { key: s.key, where: 'machine', damaged: true, file: INT.secretsFile(manifest.name, env) } : { key: s.key, where: 'machine', how: `harness.js config set ${s.key}` });
+      }
     } else if (s.from === 'profile') {
       const v = own[name];
       if (typeof v === 'string' && v.trim()) settings[name] = v.trim(); else missing.push({ key: s.key, where: 'profile' });
@@ -112,8 +118,11 @@ function emit(event, fields = {}, { env = process.env, home } = {}) {
   const last = String(r.stdout || '').trim().split('\n').pop();
   if (last) { try { const j = JSON.parse(last); if (j && typeof j === 'object' && !Array.isArray(j)) result = j; } catch (_) { /* una salida que no es JSON no es un resultado */ } }
   if (r.status !== 0) warnings.push(`${c.manifest.name}: la integración salió ${r.status}; sigo sin registrar`);
+  // lo que el núcleo deja pasar de la integración: los segundos registrados (`stop`) y, para una herramienta que maneja el
+  // agente (su MCP), la acción que tiene que hacer
   const out = {};
   if (event === 'stop' && Number.isInteger(result.seconds) && result.seconds >= 0) out.seconds = result.seconds;
+  if (typeof result.action === 'string' && result.action.trim()) out.action = result.action.trim().slice(0, 600);
   return { ran: true, result: out, warnings };
 }
 

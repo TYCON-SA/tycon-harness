@@ -102,8 +102,6 @@
     { "path": "scripts/hooks/engram-drift-notice.js", "why": "los comandos que el aviso de arranque propone (engram-autoheal.js, harness-audit.js): un hook que el banco copia suelto" },
     { "path": "scripts/tools/context-budget.js", "why": "el comando para volver a correrlo, en el reporte que lee la persona" },
     { "path": "scripts/tools/rules-distill.js", "why": "el comando para volver a correrlo, en el reporte que lee la persona" },
-    { "path": "skills/clocki/scripts/install-clocki-hooks.sh", "why": "el comando que el instalador de clocki le propone a la persona: un guion de shell, no importa JavaScript" },
-    { "path": "skills/clocki/scripts/install-clocki-hooks.ps1", "why": "ídem, en PowerShell" },
     { "path": "skills/tycon-pipeline/scripts/on-frontmatter-write.js", "why": "la guía que el freno le manda leer al modelo: skills, que puede vivir en un clon aparte sin scripts/ al lado" },
     { "path": "skills/tycon-pipeline/scripts/on-pre-commit.js", "why": "ídem: la guía que el freno del commit le manda leer al modelo" },
     { "path": "skills/tycon-pipeline/scripts/lib/portable-tools.js", "why": "ídem: el motivo cuando no encuentra el arnés (story 8.17 W6, sumado en la tanda E de la 8.19)" },

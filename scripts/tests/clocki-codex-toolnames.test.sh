@@ -10,9 +10,12 @@
 # Fail-open: si agent-skills no está en la máquina, skip (exit 0). Corre en la pasada diaria.
 set -uo pipefail
 AS="${AGENT_SKILLS:-$HOME/.claude/agent-skills}"
-SKILL="$AS/skills/clocki/SKILL.md"
+# la skill viaja dentro de su integración, en el arnés (este clon); el paso del pipeline, en las skills
+RAIZ="$(cd "$(dirname "$0")/../.." && pwd)"
+SKILL="$RAIZ/integrations/clockify/skills/clocki/SKILL.md"
 STEP="$AS/skills/tycon-pipeline/steps/step-00b-clocki-start.md"
-[[ -f "$SKILL" && -f "$STEP" ]] || { echo "⚪ clocki-codex-toolnames: agent-skills no presente, skip"; exit 0; }
+[[ -f "$SKILL" ]] || { echo "❌ clocki-codex-toolnames: falta $SKILL (la skill de la integración de Clockify)"; exit 1; }
+[[ -f "$STEP" ]] || { echo "⚪ clocki-codex-toolnames: agent-skills no presente, skip"; exit 0; }
 
 fallos=0
 ok(){ echo "✅ $1"; }

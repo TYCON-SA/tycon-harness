@@ -45,9 +45,15 @@ function bankEntries(casesDir) {
   return out;
 }
 
-/** hooks.json → [{event, matcher, base}] + set de bases declaradas en pending_e2 */
+/**
+ * hooks.json → [{event, matcher, base}] + set de bases declaradas en pending_e2. Con los hooks de Codex de las
+ * integraciones (sus manifiestos en integrations/) sumados como los suma el despliegue: el fragmento no los trae escritos.
+ */
 function codexEntries(hooksJsonPath) {
-  const d = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf8'));
+  const raw = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf8'));
+  const w = require('./deploy-codex-hooks.js').withIntegrationHooks(raw, TCG);
+  for (const b of w.broken || []) console.log(`⚠ registro-hooks: ${b}`);
+  const d = w.raw;
   const out = [];
   for (const [event, groups] of Object.entries(d.hooks || {}))
     for (const g of groups)

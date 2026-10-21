@@ -124,7 +124,7 @@ async function start(api, ev) {
   if (running) {
     // otra historia corriendo: se cierra antes de abrir (una sola abierta por persona); si la seguían sesiones de esta
     // máquina, con la actividad más reciente de todas ellas
-    const prev = listSessions(ev.stateDir).filter((s) => s.data.entryId === running.id);
+    const prev = listSessions(ev.stateDir).filter((s) => !s.damaged && s.data.entryId === running.id);
     await close(api, id.organization, running.id, prev.length ? latest(prev) : ev.at);
     for (const s of prev) fs.rmSync(s.file, { force: true });
   }
@@ -161,14 +161,15 @@ const latest = (list) => list.map(lastOf).sort().pop();
 /**
  * Cierra la entrada de la sesión. Si otra sesión con actividad reciente comparte la entrada (dos sesiones con la misma
  * historia), no la cierra: sólo deja de seguirla. El archivo de la sesión se borra recién con el cierre hecho; si el
- * cierre falla queda, y el próximo stop o sweep lo reintenta.
+ * cierre falla queda, y el próximo stop o sweep lo reintenta. Una entrada que ya no corre en la herramienta, o un cierre
+ * sin duración, se avisa: los segundos no se pierden en silencio.
  */
-async function stop(api, ev) {
+async function stop(api, ev, warnings) {
   const file = sessionFile(ev.stateDir, ev.sessionId);
   const own = readSession(file);
   if (!own) return {};
   const now = Date.parse(ev.at);
-  const others = listSessions(ev.stateDir).filter((s) => s.file !== file && s.data.entryId === own.entryId);
+  const others = listSessions(ev.stateDir).filter((s) => !s.damaged && s.file !== file && s.data.entryId === own.entryId);
   if (others.some((s) => !isIdle(s, now))) { fs.rmSync(file, { force: true }); return {}; }
   const id = await identity(api, ev.stateDir);
   const running = await active(api);
@@ -176,26 +177,40 @@ async function stop(api, ev) {
   if (running && running.id === own.entryId) {
     const seconds = await close(api, id.organization, running.id, ev.at);
     if (seconds !== null) out = { seconds };
+    else warnings.push('solidtime: cerré la entrada, pero la instancia no informó su duración; no hay segundos que sumar');
+  } else {
+    warnings.push(`solidtime: la entrada de esta sesión (${own.entryId}) ya no estaba abierta en la instancia; no hay segundos que sumar`);
   }
   for (const f of [file, ...others.map((s) => s.file)]) fs.rmSync(f, { force: true });
   return out;
 }
 
+/** Las sesiones guardadas: `[{ file, data, damaged }]`; una que no se lee viene con `damaged: true` (nunca se descarta). */
 function listSessions(stateDir) {
   const dir = path.join(stateDir, 'sessions');
   let names = [];
-  try { names = fs.readdirSync(dir).filter((n) => n.endsWith('.json')); } catch (_) { return []; }
-  return names.map((n) => ({ file: path.join(dir, n), data: readJson(path.join(dir, n)) })).filter((s) => s.data && s.data.entryId);
+  try { names = fs.readdirSync(dir).filter((n) => n.endsWith('.json') && !n.includes('.tmp-')); } catch (_) { return []; }
+  return names.map((n) => {
+    const data = readJson(path.join(dir, n));
+    return { file: path.join(dir, n), data: data && data.entryId ? data : null, damaged: !(data && data.entryId) };
+  });
 }
 
 /**
  * Cierra las entradas que quedaron sin actividad hace más de 15 minutos. Las sesiones se agrupan por entrada: una
- * entrada se cierra sólo si TODAS sus sesiones están quietas, una sola vez, con la actividad más reciente de todas.
+ * entrada se cierra sólo si TODAS sus sesiones están quietas, una sola vez, con la actividad más reciente de todas. Una
+ * sesión dañada se anota y se borra: no se sabe qué entrada seguía, y dejarla trabaría el cierre de las demás.
  */
-async function sweep(api, ev) {
+async function sweep(api, ev, warnings) {
   const now = Date.parse(ev.at);
   const byEntry = new Map();
   for (const s of listSessions(ev.stateDir)) {
+    if (s.damaged) {
+      logError(ev.stateDir, 'leer el estado de la sesión', `${path.basename(s.file)} está dañado`);
+      warnings.push(`solidtime: el estado de la sesión ${path.basename(s.file, '.json')} está dañado; lo saco (si quedó una entrada abierta, la cierra el próximo start)`);
+      fs.rmSync(s.file, { force: true });
+      continue;
+    }
     if (!byEntry.has(s.data.entryId)) byEntry.set(s.data.entryId, []);
     byEntry.get(s.data.entryId).push(s);
   }
@@ -215,6 +230,7 @@ function missingLines(ev) {
   const out = [];
   for (const m of Array.isArray(ev.missing) ? ev.missing : []) {
     if (m.where === 'profile') out.push('solidtime: falta la URL de la instancia — la pone la organización en el sitio (Configuración → Integraciones → Registro de horas); sigo sin registrar');
+    else if (m.damaged) out.push(`solidtime: el archivo de tu token está dañado (${m.file || 'secrets/solidtime.json'}): arreglalo o borralo y volvé a guardarlo con harness.js config set solidtime.token; sigo sin registrar`);
     else out.push(`solidtime: falta tu token — guardalo con: ${m.how || 'harness.js config set solidtime.token'} (se pega en la terminal, sin eco); sigo sin registrar`);
   }
   return out;
@@ -237,8 +253,11 @@ async function dispatch(ev, timeoutMs) {
   if (!/^(https:\/\/|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$))/.test(url)) return { result: {}, warnings: ['solidtime: la URL de la instancia tiene que empezar con https:// (o http://localhost para probar): el token no viaja en claro; sigo sin registrar'] };
   const api = { url, token: String(settings.token), timeoutMs };
   if (ev.event === 'start') return { result: await start(api, ev), warnings: [] };
-  if (ev.event === 'stop') return { result: await stop(api, ev), warnings: [] };
-  if (ev.event === 'sweep') return { result: await sweep(api, ev), warnings: [] };
+  if (ev.event === 'stop' || ev.event === 'sweep') {
+    const warnings = [];
+    const result = ev.event === 'stop' ? await stop(api, ev, warnings) : await sweep(api, ev, warnings);
+    return { result, warnings };
+  }
   return { result: {}, warnings: [`solidtime: evento desconocido «${String(ev.event).slice(0, 20)}»`] };
 }
 

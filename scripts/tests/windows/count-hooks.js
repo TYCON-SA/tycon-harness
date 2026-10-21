@@ -213,6 +213,20 @@ function expectedHooks(installerText, { integrations = {}, env = {}, home = '', 
  * configuración. Misma forma que `expectedHooks`. `null` si el clon no trae la lista (uno de antes de la W3: se lee el
  * instalador, como en W0).
  */
+/**
+ * La integración de horas elegida: la que trae `integrations.timeTracking`, o la que contesta el lector del clon
+ * (`tycon-config.js time-tracking`, con la HOME de la máquina). `null` si no se sabe: sus hooks no se cuentan.
+ */
+function timeTrackingOf(clone, integrations, { env = {}, home = '' } = {}) {
+  if (integrations && typeof integrations.timeTracking === 'string') return integrations.timeTracking;
+  const lib = path.join(clone, 'scripts', 'lib', 'tycon-config.js');
+  if (!fs.existsSync(lib)) return null;
+  const e = Object.assign({}, process.env, env, home ? { HOME: home, USERPROFILE: home } : {});
+  const r = require('child_process').spawnSync(process.execPath, [lib, 'time-tracking'], { env: e, encoding: 'utf8', windowsHide: true, timeout: 15000 });
+  const v = String(r.stdout || '').trim();
+  return r.status === 0 && /^[a-z0-9][a-z0-9-]*$/.test(v) ? v : null;
+}
+
 function expectedFromList(clone, { integrations = {}, env = {}, home = '', exists = fs.existsSync, profile = { state: 'ok', value: 'full' }, platform = process.platform } = {}) {
   const listFile = path.join(clone, 'scripts', 'setup', 'hooks-list.json');
   if (!fs.existsSync(listFile)) return null;
@@ -220,12 +234,14 @@ function expectedFromList(clone, { integrations = {}, env = {}, home = '', exist
   let mod; let list;
   try { mod = require(path.join(clone, 'scripts', 'setup', 'apply-hooks.js')); } catch (e) { return { hooks: [], superseded: [], skipped: [], problems: [`no pude cargar apply-hooks.js del clon: ${e.message}`] }; }
   try { list = mod.loadList(listFile); } catch (e) { return { hooks: [], superseded: [], skipped: [], problems: [e.message] }; }
+  // un manifiesto roto: sus hooks no están en lo esperado, y se dice
+  problems.push(...(list.warnings || []));
   const effects = path.join(clone, 'scripts', 'setup', 'install-effects.json');
   const values = {};
-  for (const [k, v] of Object.entries(integrations || {})) values[k] = v === true ? '1' : '0';
+  for (const [k, v] of Object.entries(integrations || {})) if (k !== 'timeTracking') values[k] = v === true ? '1' : '0';
   const decision = mod.decide(list, {
     env,
-    integ: integrations ? { state: 'ok', values } : { state: 'rota', values: {} },
+    integ: integrations ? { state: 'ok', values, timeTracking: timeTrackingOf(clone, integrations, { env, home }) } : { state: 'rota', values: {} },
     profile: { state: profile.state, value: profile.value },
     minimalIds: mod.loadMinimalIds(effects),
     platform: platform === 'win32' ? 'windows' : 'posix',
@@ -238,7 +254,8 @@ function expectedFromList(clone, { integrations = {}, env = {}, home = '', exist
     why: platform === 'win32' && h.platforms.windows === false ? 'fuera en Windows (scripts/setup/windows-support.json → excluded)'
       : decision.leave.has(h.spec) ? 'el perfil de instalación no se pudo leer: el aplicador lo deja como está'
         : decision.profileOff.has(h.spec) ? 'fuera del perfil minimal'
-          : h.when.startsWith('integration:') ? `integración ${h.when.slice('integration:'.length)} apagada` : `opt-in apagado (${h.when})`,
+          : h.when.startsWith('integration:') ? `integración ${h.when.slice('integration:'.length)} apagada`
+            : h.when.startsWith('time:') ? `la integración de horas elegida no es ${h.when.slice('time:'.length)}` : `opt-in apagado (${h.when})`,
   }));
   return { hooks, superseded: list.superseded, skipped, problems };
 }
@@ -275,7 +292,8 @@ function registeredHooks(settings) {
 }
 
 const matcherKey = (m) => String(m || '').split('|').map((t) => t.trim()).filter(Boolean).sort().join('|');
-const suffixOf = (relpath) => (relpath.startsWith(TCG) ? `/scripts/hooks/${relpath.slice(TCG.length)}` : `/skills/${relpath}`);
+// la ruta con que termina el archivo de un hook esperado: scripts/hooks/, integrations/ o skills/
+const suffixOf = (relpath) => (relpath.startsWith(TCG) ? `/scripts/hooks/${relpath.slice(TCG.length)}` : (relpath.startsWith('@int:') ? `/integrations/${relpath.slice(5)}` : `/skills/${relpath}`));
 
 /**
  * Compara. Un hook registrado «es» uno esperado si su archivo termina en la ruta de ése (los del arnés bajo

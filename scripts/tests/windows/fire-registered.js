@@ -48,11 +48,13 @@ const BASH_BRAKES = [
 const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
 const sha = (file) => { try { return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); } catch (_) { return null; } };
 
-/** Cómo se nombra un hook: `@tcg:<archivo>` los del arnés, la ruta bajo `skills/` los de las skills. */
+/** Cómo se nombra un hook: `@tcg:<archivo>` los del arnés, `@int:<integración>/…` los de una integración, la ruta bajo `skills/` los de las skills. */
 function hookName(file, platform) {
   const p = L.comparable(file, platform);
   const tcg = /\/scripts\/hooks\/([^/]+)$/.exec(p);
   if (tcg) return `@tcg:${tcg[1]}`;
+  const int = /\/integrations\/([a-z0-9-]+\/.+)$/.exec(p);
+  if (int) return `@int:${int[1]}`;
   const sk = /\/skills\/(.+)$/.exec(p);
   return sk ? sk[1] : path.posix.basename(p);
 }

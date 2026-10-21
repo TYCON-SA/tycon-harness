@@ -1,4 +1,4 @@
-// clocki/scripts/lib.js — helpers compartidos por sweep.js, on-prompt.js, touch-activity.js
+// integrations/clockify/scripts/lib.js — helpers compartidos por sweep.js, on-prompt.js, touch-activity.js y on-work.js
 // Cross-platform (Mac/Linux/Windows). Solo depende de Node stdlib.
 
 const fs = require('fs');

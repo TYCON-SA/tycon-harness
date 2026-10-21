@@ -450,9 +450,10 @@ fi
 # Integraciones — cada una tiene su llave en la configuración del arnés
 # (scripts/lib/tycon-config.js: variable › ~/.claude/tycon.json › perfil del equipo › APAGADA) y, apagada, este
 # instalador no registra sus hooks ni llama a su servicio. Un hook compartido con el núcleo no se desregistra:
-# saltea su parte adentro (el despachador de ediciones con clocki-enforce; bench-notice con lo nocturno).
+# saltea su parte adentro (el despachador de ediciones con el control de la integración de horas; bench-notice con lo
+# nocturno).
 #   ado        → el refresco de la lista de proyectos con `az` (al final del archivo)
-#   clockify   → clocki/scripts/on-prompt.js y touch-activity.js
+#   la herramienta de horas (integrations.timeTracking) → los hooks que declara su manifiesto en integrations/<nombre>/
 #   engram     → @tcg:engram-pre-commit.sh, @tcg:engram-drift-notice.js y los chequeos de versión / nombre de proyecto / sqlite3
 #   nightly    → @tcg:dashboard-notice.js, dependencies-notice.js y retro-staleness-notice.js
 #   mailbox    → la subida y la bajada de corridas (tanda de fondo)

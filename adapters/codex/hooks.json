@@ -22,10 +22,6 @@
           },
           {
             "type": "command",
-            "command": "node ${SKILLS}/skills/clocki/scripts/sweep.js"
-          },
-          {
-            "type": "command",
             "command": "node ${TCG}/scripts/hooks/bench-notice.js"
           },
           {
@@ -82,10 +78,6 @@
     "UserPromptSubmit": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "node ${SKILLS}/skills/clocki/scripts/on-prompt.js"
-          },
           {
             "type": "command",
             "command": "node ${SKILLS}/skills/tycon-pipeline/scripts/on-prompt.js"
@@ -181,10 +173,6 @@
           {
             "type": "command",
             "command": "bash ${TCG}/scripts/hooks/instinct-observe.sh"
-          },
-          {
-            "type": "command",
-            "command": "node ${SKILLS}/skills/clocki/scripts/touch-activity.js"
           }
         ]
       },

@@ -111,7 +111,14 @@ function shellToolProblems({ list }) {
   return problems;
 }
 
-const real = () => ({ list: JSON.parse(read(FILES.list)), support: JSON.parse(read(FILES.support)), pieces: JSON.parse(read(FILES.pieces)) });
+// la lista real con los hooks del lado Claude Code de las integraciones (de sus manifiestos): el aplicador los suma así
+const listWithIntegrations = () => {
+  const list = JSON.parse(read(FILES.list));
+  const INT = require(path.join(ROOT, 'scripts', 'lib', 'integrations.js'));
+  const extra = INT.listManifests({ dir: path.join(ROOT, 'integrations') }).manifests.flatMap((m) => INT.hookEntries(m, { tool: 'claude' }));
+  return Object.assign({}, list, { hooks: list.hooks.concat(extra) });
+};
+const real = () => ({ list: listWithIntegrations(), support: JSON.parse(read(FILES.support)), pieces: JSON.parse(read(FILES.pieces)) });
 /** Una copia de lo real con un cambio: los tres insumos viven en memoria, ningún archivo se toca. */
 const copy = (change) => { const c = real(); change(c); return c; };
 const row = (c, spec, event) => { const h = c.list.hooks.find((x) => x.spec === spec && (!event || x.event === event)); assert.ok(h, `no hay registro ${spec}`); return h; };

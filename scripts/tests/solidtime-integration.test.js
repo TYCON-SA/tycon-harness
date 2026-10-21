@@ -369,3 +369,33 @@ test('Solidtime_ActivityNoApi_StopCloses @story-7.40 @ac-8', async () => {
     assert.deepStrictEqual(JSON.parse(s2.stdout.trim()), {});
   } finally { api.server.close(); }
 });
+
+test('Solidtime_LostSecondsAndDamagedState_AreSaid @story-7.40 @ac-8 @ac-12', async () => {
+  const api = await fakeApi();
+  try {
+    const l = lab({ url: api.url });
+    // la entrada ya no corre en la instancia (la cerró otro lado): stop lo dice, no devuelve segundos inventados
+    await run('start', l);
+    api.state.active = null;
+    const s = await run('stop', l);
+    assert.deepStrictEqual(JSON.parse(s.stdout.trim()), {});
+    assert.match(s.stderr, /ya no estaba abierta/);
+    // una sesión dañada: el cierre por inactividad la anota y la saca, sin trabar a las demás
+    const dir = path.join(l.tyconHome, 'state', 'time-tracking', 'solidtime', 'sessions');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'rota.json'), '{ no es json');
+    const sw = await run('sweep', l);
+    assert.strictEqual(sw.status, 0);
+    assert.match(sw.stderr, /dañado/);
+    assert.ok(!fs.existsSync(path.join(dir, 'rota.json')));
+    assert.ok(fs.existsSync(path.join(l.tyconHome, 'state', 'time-tracking', 'solidtime', 'errors.jsonl')));
+    // el archivo del token dañado se dice como dañado, no como «falta»
+    const d = lab({ url: api.url, token: null });
+    fs.mkdirSync(path.join(d.tyconHome, 'secrets'), { recursive: true });
+    fs.writeFileSync(path.join(d.tyconHome, 'secrets', 'solidtime.json'), '{ dañado');
+    const r = await run('start', d);
+    assert.strictEqual(r.status, 0);
+    assert.match(r.stderr, /archivo de tu token está dañado/);
+    assert.doesNotMatch(r.stderr, /falta tu token/);
+  } finally { api.server.close(); }
+});
