@@ -29,7 +29,8 @@
 //       "reviewers"?: <modelo>, "reviewer"?: { "<revisor>": <modelo> }, "reviewers_reloop"?: <modelo>,
 //       "adversarial"?: { "model"?, "heavy"?: <modelo>, "fable_question"?: «ask» | «never» }, "helpers"?: <modelo>,
 //       "session"?: { "low"?, "normal"?, "heavy"?: <modelo> } }
-//   <modelo> = «haiku» | «sonnet» | «opus» | «fable» (MODEL_NAMES, copia de models.js del skill). Quien la resuelve
+//   <modelo> = un nivel, «economico» | «equilibrado» | «potente» | «maximo» (MODEL_LEVELS), o el nombre de
+//   antes, «haiku» | «sonnet» | «opus» | «fable» (MODEL_NAMES), en el mismo orden; copias de models.js del skill. Quien la resuelve
 //   es skills/tycon-pipeline/scripts/lib/models.js (`readOrgModels`, el único que la lee).
 //     "weekly_review": {                opcional — la revisión de la semana (scripts/nightly/weekly-review/)
 //       "enabled"?: <bool>, "budget_usd"?: <número, más de 0 y hasta 100>, "max_chars"?: <entero, 10.000 a 2.000.000> }
@@ -125,6 +126,12 @@ function runnersProblems(value) {
 // Copia de `MODELS` de skills/tycon-pipeline/scripts/lib/models.js, en su orden (story 7.29, decisión 12): este lector
 // no puede cargar el skill —lo valida el instalador con el lector del árbol que va a quedar— y T21 compara las dos.
 const MODEL_NAMES = ['haiku', 'sonnet', 'opus', 'fable'];
+// Copia de `LEVELS` de models.js: lo que escribe la organización, en el mismo orden que MODEL_NAMES. Los nombres de
+// Claude también valen, así un archivo guardado con ellos se lee sin tocarlo
+const MODEL_LEVELS = ['economico', 'equilibrado', 'potente', 'maximo'];
+/** La posición de un nivel o de un nombre (los dos en el mismo orden); -1 si no es ninguno. */
+const modelRank = (v) => (MODEL_LEVELS.includes(v) ? MODEL_LEVELS.indexOf(v) : MODEL_NAMES.indexOf(v));
+const levelName = (v) => MODEL_LEVELS[modelRank(v)];
 const MODELS_KEYS = ['mandatory_ceiling', 'ceiling', 'reviewers', 'reviewer', 'reviewers_reloop', 'adversarial', 'helpers', 'session'];
 const MODELS_SUBKEYS = { adversarial: ['model', 'heavy', 'fable_question'], session: ['low', 'normal', 'heavy'] };
 const FABLE_QUESTION = ['ask', 'never'];
@@ -235,7 +242,7 @@ function mergeSuitesFor(data, identity) {
   return { declared: true, rule: 'automatico', ruleFrom: 'default', pipeline };
 }
 
-const modelProblem = (v, at) => (MODEL_NAMES.includes(v) ? [] : [{ path: at, message: `tiene que ser ${MODEL_NAMES.map((m) => `«${m}»`).join(', ')} (es ${JSON.stringify(v)})` }]);
+const modelProblem = (v, at) => (modelRank(v) >= 0 ? [] : [{ path: at, message: `tiene que ser ${MODEL_LEVELS.map((m) => `«${m}»`).join(', ')} (es ${JSON.stringify(v)})` }]);
 
 /** Los problemas de `models` (story 7.29); `[]` si está bien. Cada uno con la ruta de su clave. */
 function modelsProblems(value) {
@@ -280,10 +287,11 @@ function modelsProblems(value) {
  * sitio, que no deja proponerlo.
  */
 function modelsAboveCeiling(value) {
-  if (!isObject(value) || value.mandatory_ceiling !== true || !MODEL_NAMES.includes(value.ceiling)) return [];
-  const tope = MODEL_NAMES.indexOf(value.ceiling);
+  if (!isObject(value) || value.mandatory_ceiling !== true || modelRank(value.ceiling) < 0) return [];
+  // por posición: un nivel y un nombre se comparan igual, de cualquier lado; el tope se nombra por su nivel
+  const tope = modelRank(value.ceiling);
   const out = [];
-  const ver = (m, at) => { if (MODEL_NAMES.includes(m) && MODEL_NAMES.indexOf(m) > tope) out.push({ path: at, message: `pasa el tope obligatorio (${value.ceiling})` }); };
+  const ver = (m, at) => { if (modelRank(m) > tope) out.push({ path: at, message: `pasa el tope obligatorio (${levelName(value.ceiling)})` }); };
   for (const k of ['reviewers', 'reviewers_reloop', 'helpers']) ver(value[k], `models.${k}`);
   for (const k of Object.keys(MODELS_SUBKEYS)) {
     if (!isObject(value[k])) continue;
@@ -551,7 +559,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, reviewProblems, modelsAboveCeiling, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, parse, load, url, privateRepoRef, repoProblems, harnessCopies, mergeSuitesFor };
+module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, reviewProblems, modelsAboveCeiling, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, parse, load, url, privateRepoRef, repoProblems, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
