@@ -1157,7 +1157,7 @@ function cabecera(M, opts = {}) {
   const origen = sitio ? 'versión del sitio' : `commit ${esc((() => { try { return execSync('git rev-parse --short HEAD', { cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch (e) { return 'desconocido'; } })())}`;
   const selloCorridas = Number.isFinite(M.archivos) ? `${N} de ${M.archivos} archivos · ${M.duplicados} duplicado${M.duplicados === 1 ? '' : 's'} · ${M.ilegibles} no se pudieron leer` : String(N);
   const eyebrow = !sitio ? 'Tablero del arnés · vista de corridas · el arnés en seis preguntas: <span class="mono">artifacts/tablero-del-arnes.html</span>, en el repo del arnés'
-    : sitio.rol === 'maintainer' ? 'Sitio de la organización · vista de corridas · el arnés en seis preguntas: <a href="/arnes/tablero">el tablero del arnés</a>'
+    : sitio.rol === 'maintainer' ? 'Sitio de la organización · vista de corridas · el arnés en seis preguntas: <a href="/arnes">sus fichas, en Arnés</a>'
       : 'Sitio de la organización · tus corridas';
   const alcance = !M.multi || (M.maquinas && M.maquinas.solo_esta)
     ? 'esta máquina'

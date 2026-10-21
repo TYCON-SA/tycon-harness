@@ -424,27 +424,7 @@ function paginaArnes(ctx) {
   // `null`: el sitio todavía no las calculó (el primer refresco); aparecen solas
   const calculando = m.fichas === null ? `<p class="q-note" id="fichas-calculando">${esc(T('fichas.calculando'))}</p>` : '';
   const fichas = calculando + porPregunta + (ocultas ? `<p class="q-note" id="fichas-ocultas">${esc(ocultas)}</p>` : '');
-  return layout(ctx, T('pestana.arnes'), seccion(T('arnes.comoEsta'), `<ul class="lista">${li}</ul><a class="enlace-fuerte" href="/arnes/tablero">${esc(T('arnes.enlaceTablero'))}</a>`) + fichas, T('arnes.lede'));
-}
-
-/** La página de las seis preguntas, tal cual pero sin nada de afuera ni scripts en línea. */
-function tableroServido(ctx) {
-  const idioma = idiomaDe(ctx);
-  const tb = ctx.modelo && ctx.modelo.tablero;
-  if (!medida(tb) || typeof tb.html !== 'string') return layout(ctx, t(idioma, 'arnes.sello'), seccion(t(idioma, 'vista.noMedidoTitulo'), `<p class="q-note">${esc(conFecha(tb, idioma))}</p>`));
-  // la página de la noche es de afuera del sitio: se sirve como la armó el nocturno
-  return tb.html
-    .replace(/<link\b[^>]*>/gi, (tag) => (/href\s*=\s*["']?(https?:)?\/\//i.test(tag) ? '' : tag))
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, (tag) => (/^<script\b[^>]*\bsrc\s*=\s*["']\/(?!\/)/i.test(tag) ? tag : ''))
-    // el separador de un atributo puede ser un espacio o una `/` (`<img/src=…>`); el valor, con o sin comillas y con
-    // espacios adelante
-    .replace(/([\s/](?:src|href)\s*=\s*["']\s*)(https?:)?\/\/[^"']*(["'])/gi, '$1#$3')
-    .replace(/([\s/](?:src|href)\s*=\s*)(https?:)?\/\/[^\s>]*/gi, '$1#')
-    // ningún <meta http-equiv>, sin mirar su valor: escrito con entidades («&#114;efresh») también redirige
-    .replace(/<meta\b[^>]*http-equiv[^>]*>/gi, '')
-    // un manejador `on…=` con comillas o sin ellas, pegado con espacio o con `/` (`<img/src=x/onerror=…>`): fuera. La
-    // política de contenido ya bloquea los manejadores en línea; esto es la segunda capa.
-    .replace(/[\s/]on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  return layout(ctx, T('pestana.arnes'), seccion(T('arnes.comoEsta'), `<ul class="lista">${li}</ul>`) + fichas, T('arnes.lede'));
 }
 
 /** Lo mismo que Inicio, como datos (para /api/inicio). */
@@ -493,7 +473,7 @@ const paginaCargando = (ctx = {}) => layout({ ...ctx, recargar: 5 }, t(idiomaDe(
 
 module.exports = {
   hora, FRASES, frasesEn, fraseDe, conFecha, filasInicioMantenedor, inicioDev, filasProyectos, filasArnes,
-  paginaInicio, paginaProyectos, paginaArnes, tableroServido, inicioJson,
+  paginaInicio, paginaProyectos, paginaArnes, inicioJson,
   paginaSimple, paginaEntrar, paginaNoEntro, paginaSinRol, paginaSaliste, paginaSinMantenedores, paginaFrenado, paginaCargando, layout, umbralValido,
   idiomaDe, selectorDeIdioma,
 };

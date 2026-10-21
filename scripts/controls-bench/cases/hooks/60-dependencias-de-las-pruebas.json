@@ -1,0 +1,73 @@
+{
+  "__doc": "Lo que las pruebas de una story necesitan instalar se mira al validarla (story 1.15, 2026-10-21). El caso del 2026-10-01, con nombres inventados: una story arma pruebas vitest TypeScript que usan Node y una prueba Playwright sobre un producto que no declara ni la cobertura que exige el portón, ni @types/node, ni Playwright. El paso 1 corre `pipeline.js validators`, que tiene que traer los tres en `dependencias_de_pruebas` (el aviso VAL-W18); con el proyecto completo, la lista sale vacía. Sin paquetes de revisores: este control es del núcleo.",
+  "hooks": [
+    {
+      "hook": "pipeline.js validators (dependencias de las pruebas)",
+      "script": "${FIXTURE}/correr.sh",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "env": {
+        "PIPELINE_JS": "${SKILLS}/skills/tycon-pipeline/scripts/pipeline.js",
+        "TYCON_PACKS_DEFAULT": "none",
+        "TYCON_SESSION_ID": "bench-test-deps"
+      },
+      "cases": [
+        {
+          "id": "faltan-los-tres-del-caso-real",
+          "type": "must-run",
+          "__doc": "El proyecto tiene vitest y typescript, nada más: salen el proveedor de cobertura, @types/node y @playwright/test.",
+          "files": {
+            "package.json": "{\n  \"name\": \"producto-de-juguete\",\n  \"devDependencies\": {\n    \"vitest\": \"^2.1.0\",\n    \"typescript\": \"^5.6.0\"\n  }\n}\n",
+            "tsconfig.json": "{ \"compilerOptions\": { \"strict\": true } }\n",
+            "specs/story-9.96-exportar.md": "---\nstory: \"9.96\"\ntitle: \"exportar\"\nfiles_to_create:\n  - src/__tests__/exportador.test.ts\n  - e2e/exportar.spec.ts\n  - src/exportador.ts\n---\n\n# Story 9.96\n\n### Tests\n\n| # | Test | Escenario |\n|---|---|---|\n| T1 | `Exportador_EscribeElArchivo` | escribe con `node:fs` en una carpeta temporal |\n| T2 | `Exportar_DesdeLaPantalla` | Playwright: botón Exportar, descarga el archivo |\n",
+            "correr.sh": "node \"$PIPELINE_JS\" validators --story \"$FIXTURE/specs/story-9.96-exportar.md\" --repo \"$FIXTURE\"\n"
+          },
+          "setup": [
+            "git init -q -b main . && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "true"
+            },
+            "session_id": "bench-test-deps"
+          },
+          "expect": {
+            "stdout_re": [
+              "\"dependencias_de_pruebas\": \\[",
+              "\"paquete\": \"@vitest/coverage-v8\"",
+              "\"paquete\": \"@types/node\"",
+              "\"paquete\": \"@playwright/test\""
+            ]
+          }
+        },
+        {
+          "id": "proyecto-completo-lista-vacia",
+          "type": "must-run",
+          "__doc": "El mismo proyecto con los tres paquetes declarados: la lista sale vacía, y el campo está.",
+          "files": {
+            "package.json": "{\n  \"name\": \"producto-de-juguete\",\n  \"devDependencies\": {\n    \"vitest\": \"^2.1.0\",\n    \"typescript\": \"^5.6.0\",\n    \"@vitest/coverage-v8\": \"^2.1.0\",\n    \"@types/node\": \"^22.0.0\",\n    \"@playwright/test\": \"^1.48.0\"\n  }\n}\n",
+            "tsconfig.json": "{ \"compilerOptions\": { \"strict\": true } }\n",
+            "specs/story-9.96-exportar.md": "---\nstory: \"9.96\"\ntitle: \"exportar\"\nfiles_to_create:\n  - src/__tests__/exportador.test.ts\n  - e2e/exportar.spec.ts\n  - src/exportador.ts\n---\n\n# Story 9.96\n\n### Tests\n\n| # | Test | Escenario |\n|---|---|---|\n| T1 | `Exportador_EscribeElArchivo` | escribe con `node:fs` en una carpeta temporal |\n| T2 | `Exportar_DesdeLaPantalla` | Playwright: botón Exportar, descarga el archivo |\n",
+            "correr.sh": "node \"$PIPELINE_JS\" validators --story \"$FIXTURE/specs/story-9.96-exportar.md\" --repo \"$FIXTURE\"\n"
+          },
+          "setup": [
+            "git init -q -b main . && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "true"
+            },
+            "session_id": "bench-test-deps"
+          },
+          "expect": {
+            "stdout_re": [
+              "\"dependencias_de_pruebas\": \\[\\]"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -15,6 +15,7 @@
 #   T30 — sin snapshot (Claude Code 2.1.272 ya no lo escribe) se le pregunta al shell de login en vivo:
 #         limpio pasa; secuestrado, mudo, colgado o de un shell que no sé leer frena
 #   T31 — se mira el snapshot de ESTA sesión, no el más nuevo
+#   T35 — la consulta de un archivo cerca del tope llega entera por una tubería
 #   T32 — la guía declara que la regla de firewall es de cortesía
 #
 # 🔴 HOME falso siempre: el hook lee ~/.claude (snapshots, índice, registros).
@@ -814,6 +815,24 @@ case "$t27" in
   OK*) ok "8.14 T27 BasesCriterion_Unchanged (${t27#OK })" ;;
   *)   no "8.14 T27 BasesCriterion_Unchanged — ${t27#NO }" ;;
 esac
+
+# ── T35 · la consulta de un archivo cerca del tope llega ENTERA por una tubería ─────────────
+# El anfitrión lee el mensaje por una tubería: si el freno sale antes de terminar de escribirlo, llegan los primeros
+# 64 KB y el resto de la consulta no se muestra.
+mundo
+snapshot "" ""
+# 1920 renglones: el archivo queda justo bajo los 64 KB y el mensaje, con sus saltos escapados, pasa el búfer de la
+# tubería; el lector espera antes de leer, como un anfitrión ocupado.
+{ echo 'select 1'; for _ in $(seq 1920); do echo '-- relleno para acercarse al tope'; done; echo '-- FIN-DE-LA-CONSULTA'; } > "$TMP/cerca.sql"
+huella="$(shasum -a 256 "$TMP/cerca.sql" | cut -d' ' -f1)"
+payload="$(CMD="$PUERTA $PROD --file $TMP/cerca.sql --sha256 $huella" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",hook_event_name:"PreToolUse",cwd:"/tmp",tool_input:{command:process.env.CMD}}))')"
+printf '%s' "$payload" | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE=0 node "$HOOK" 2>"$TMP/err" | { sleep 1; cat; } > "$TMP/out"
+rc="${PIPESTATUS[1]}"
+if [ "$rc" = 0 ] && node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).systemMessage; process.exit(/FIN-DE-LA-CONSULTA/.test(m)?0:1)' "$TMP/out" 2>/dev/null; then
+  ok "6.2 T35 · la consulta de un archivo de $(wc -c < "$TMP/cerca.sql" | tr -d ' ') bytes llega entera por una tubería"
+else
+  no "6.2 T35 · el mensaje llegó cortado o no salió (rc=$rc, $(wc -c < "$TMP/out" | tr -d ' ') bytes) — err: $(head -c 120 "$TMP/err")"
+fi
 
 # ── T32 · la guía declara la cortesía de la regla de firewall ─────────────────────────
 if [ -f "$GUIA" ] && grep -qi "cortes" "$GUIA" && grep -qi "firewall" "$GUIA"; then

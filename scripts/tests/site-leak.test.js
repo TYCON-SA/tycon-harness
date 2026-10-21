@@ -111,7 +111,7 @@ test('T32 Fuga_PersonaA_NoVeNadaDeB', async () => {
     const ahoraSeg = Math.floor(Date.parse(`${HOY}T12:00:00Z`) / 1000);
     const entrar = async (email) => (await H.ingresar(h, emisor, { sub: `s-${email}`, email, email_verified: true, iat: ahoraSeg, exp: ahoraSeg + 3600 })).sesion;
     const rutas = h.sitio.rutas;
-    assert.ok(rutas.length >= 5, 'la tabla de rutas del servidor');
+    assert.ok(['/', '/proyectos', '/arnes', '/api/inicio'].every((p) => rutas.some((r) => r.path === p)), 'la tabla de rutas del servidor');
     const todo = async (sesion) => {
       const out = {};
       for (const r of rutas) out[r.path] = (await h.pedir(r.path, { cookie: sesion, method: r.method })).texto;

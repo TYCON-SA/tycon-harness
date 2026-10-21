@@ -86,6 +86,7 @@
     "scripts/tests/suite-parts.json",
     "scripts/tests/suites.json",
     "scripts/tests/windows/known-gaps.json",
+    "skills/tycon-pipeline/scripts/lib/test-deps.json",
     "version.json"
   ],
   "workflows": [

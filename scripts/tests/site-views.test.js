@@ -128,7 +128,7 @@ test('T30 Arnes_SuitesYSoloMantenedor', async () => {
   assert.strictEqual(lineas.find((l) => l.clave === 'suites').texto, '24 rojas · 1 sin medir, de 280');
   await conSitio(modelo, CONFIG, async ({ h, entrar }) => {
     const sA = await entrar(A);
-    for (const ruta of ['/arnes', '/arnes/tablero']) {
+    for (const ruta of ['/arnes']) {
       const r = await h.pedir(ruta, { cookie: sA });
       assert.strictEqual(r.status, 403, ruta);
       assert.ok(!r.texto.includes('24 rojas') && !r.texto.includes('s0.test.js'), `${ruta}: sin datos`);
@@ -142,8 +142,7 @@ test('T30 Arnes_SuitesYSoloMantenedor', async () => {
 });
 
 test('T31 Cabeceras_EnCadaRespuestaConDatos', async () => {
-  const tablero = '<!doctype html><html><head><link rel="preconnect" href="https://fonts.gstatic.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans&display=swap" rel="stylesheet"><style>body{color:red}</style><script type="application/json" id="tablero-sello">{"esquema":1}</script></head><body><h1>Seis preguntas</h1><img/src=x/onerror=alert(1)><meta http-equiv="refresh" content="0;url=https://afuera.example/"><meta http-equiv="&#114;efresh" content="0;url=https://afuera.example/"><img src=//afuera.example/x.png><img/src=//afuera.example/y.png><a/href=//afuera.example/z>z</a><script>alert(1)</script></body></html>';
-  const modelo = modeloCompleto({ tablero: leida({ html: tablero, sello: { generado: `${HOY}T06:00:00Z`, completo: true } }) });
+  const modelo = modeloCompleto({ tablero: leida({ sello: { generado: `${HOY}T06:00:00Z`, completo: true } }) });
   const { RUTAS, CSP } = require(path.join(H.SITE, 'server.js'));
   assert.strictEqual(CSP, "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
   await conSitio(modelo, CONFIG, async ({ h, entrar }) => {
@@ -169,12 +168,27 @@ test('T31 Cabeceras_EnCadaRespuestaConDatos', async () => {
         assert.doesNotMatch(res.texto, /fonts\.googleapis|fonts\.gstatic/, `${r.path}: tampoco la tipografía`);
       }
     }
+  });
+});
+
+test('T13 2.36-Arnes_SinEnlaceConSello @story-2.36 @ac-9 — Arnés no enlaza la página vieja del tablero, y su sello sigue', async () => {
+  const modelo = modeloCompleto({ tablero: leida({ sello: { generado: `${HOY}T06:00:00Z`, completo: true } }) });
+  const html = views.paginaArnes({ modelo: access.filtrar(modelo, { rol: 'maintainer' }, access.crearReglas({})), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
+  assert.doesNotMatch(html, /\/arnes\/tablero/, 'sin enlace a la página vieja');
+  assert.match(html, new RegExp(`${HOY} · completa`), 'el sello dice si el nocturno corrió, con su fecha');
+  assert.strictEqual(views.tableroServido, undefined, 'la vista que servía la página ya no existe');
+});
+
+test('T14 2.36-RutaTablero_404 @story-2.36 @ac-9 — GET /arnes/tablero contesta 404, como cualquier ruta que no existe', async () => {
+  const { RUTAS } = require(path.join(H.SITE, 'server.js'));
+  assert.ok(!RUTAS.some((r) => r.path === '/arnes/tablero'), 'la ruta no está declarada');
+  await conSitio(modeloCompleto({ tablero: leida({ sello: { generado: `${HOY}T06:00:00Z`, completo: true } }) }), CONFIG, async ({ h, entrar }) => {
+    const s = await entrar(LEAD);
     const t = await h.pedir('/arnes/tablero', { cookie: s });
-    assert.match(t.texto, /<style>body\{color:red\}<\/style>/, 'el <style> en línea de la página se conserva');
-    assert.match(t.texto, /Seis preguntas/);
-    assert.doesNotMatch(t.texto, /onerror/i, 'un manejador pegado con / tampoco pasa');
-    assert.doesNotMatch(t.texto, /http-equiv/i, 'ni una redirección por <meta>, tampoco escrita con entidades');
-    assert.doesNotMatch(t.texto, /afuera\.example/, 'ni una carga de afuera sin comillas');
+    const otra = await h.pedir('/no-existe', { cookie: s });
+    assert.strictEqual(t.status, 404);
+    assert.strictEqual(t.status, otra.status, 'la misma respuesta que una ruta que no existe');
+    assert.doesNotMatch(t.texto, /Seis preguntas|tablero-sello/, 'nada de la página vieja');
   });
 });
 
