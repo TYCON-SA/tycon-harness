@@ -605,6 +605,36 @@ test('ACCOV-C5: un AC diferido en acs_pending NO se marca como sin-cobertura', (
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
+// La story del arnés vive en el privado y el código en el público: la deuda se anota en el tasks/todo.md del repo de
+// la story. Mirar sólo el del código daba DEFTR-C1 en falso (8.87, 7.40 C y D1).
+test('DEFTR-C1: la deuda anotada en el tasks/todo.md del repo de la STORY cuenta cuando el código vive en otro repo', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deftr-c1-'));
+  const codigo = path.join(tmp, 'codigo');
+  const stories = path.join(tmp, 'stories');
+  for (const r of [codigo, stories]) fs.mkdirSync(path.join(r, '.git'), { recursive: true });
+  fs.mkdirSync(path.join(stories, 'specs'));
+  const story = path.join(stories, 'specs', 'story-9.91.md');
+  fs.writeFileSync(story, '---\nstory: "9.91"\npipelines:\n  - name: A-hecha\n    status: done\n    acs: [1]\n'
+    + '  - name: B-pendiente\n    status: pending\n    acs_pending: [2]\n---\n\n## Acceptance Criteria\n\n1. uno\n2. dos\n');
+  const deftr = () => {
+    const r = checks.runStoryChecks({ repo: codigo, storyPath: story });
+    return { falla: r.findings.find((f) => f.rule === 'DEFTR-C1'), ok: r.ok.find((f) => f.rule === 'DEFTR-C1') };
+  };
+  try {
+    const sinNada = deftr();
+    assert.ok(sinNada.falla, 'sin la deuda anotada en ningún repo, DEFTR-C1 sigue frenando');
+    assert.match(sinNada.falla.detail, /ni en el del código ni en el de la story/);
+    fs.mkdirSync(path.join(stories, 'tasks'));
+    // la deuda de OTRA story cuyo número empieza igual no cuenta
+    fs.writeFileSync(path.join(stories, 'tasks', 'todo.md'), '- [ ] [DEF-9.911-B] Tanda B de la story 9.911\n- [ ] [DEF-9.91.2-A] la 9.91.2\n');
+    assert.ok(deftr().falla, 'una línea de la 9.911 o de la 9.91.2 no cubre la deuda de la 9.91');
+    fs.writeFileSync(path.join(stories, 'tasks', 'todo.md'), '- [ ] [DEF-9.91-B] Tanda B de la story 9.91 (AC#2)\n');
+    const conDeuda = deftr();
+    assert.equal(conDeuda.falla, undefined, `la deuda del repo de la story cuenta: ${JSON.stringify(conDeuda.falla)}`);
+    assert.ok(conDeuda.ok, 'y queda la constancia de que pasó');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
 test('computeDeepReviewGate: --story inválido → run:true legible, NO stack trace', () => {
   // Un rc sin `criteria` haría tirar TypeError con stack (fail-ugly en un gate = bypass); el gate falla en voz alta,
   // legible, con run por default seguro.

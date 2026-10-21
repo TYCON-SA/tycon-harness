@@ -490,6 +490,17 @@ function companionRoots(repo) {
   } catch { return []; }
 }
 
+/** La raíz del repo git donde vive la story (la carpeta con `.git`, archivo o carpeta), o null fuera de un repo. */
+function repoDeLaStory(storyPath) {
+  let d = path.dirname(path.resolve(storyPath));
+  for (;;) {
+    if (fs.existsSync(path.join(d, '.git'))) return d;
+    const arriba = path.dirname(d);
+    if (arriba === d) return null;
+    d = arriba;
+  }
+}
+
 function walkFiles(root, predicate, cap = 8000) {
   const out = [];
   const stack = [root];
@@ -672,18 +683,26 @@ function runStoryChecks({ repo, storyPath, files = [] }) {
   const pipelines = parsePipelinesBlock(story);
   const pendingPipelines = pipelines.filter((p) => p.status && p.status !== 'done');
   if (pendingPipelines.length) {
-    const todoMd = readText(path.join(repo, 'tasks', 'todo.md'));
+    // la deuda se anota en el repo de la story: si la story vive en otro repo que el código (las del arnés viven en el
+    // privado), se lee también su tasks/todo.md
+    const raices = [path.resolve(repo)];
+    const raizStory = repoDeLaStory(storyPath);
+    if (raizStory && !raices.includes(raizStory)) raices.push(raizStory);
+    const todoMd = raices.map((r) => readText(path.join(r, 'tasks', 'todo.md'))).join('\n');
     const deferralTag = fmStoryId ? `Story-${fmStoryId}-deferral` : null;
     const codeHasTag = deferralTag
       ? testFiles.some((f) => (contentsCache.get(f) || '').includes(deferralTag)) ||
         walkFiles(repo, (n) => CODE_EXT_RE.test(n) && !TEST_FILE_RE.test(n), 4000)
           .some((f) => readText(f).includes(deferralTag))
       : false;
-    const todoHasStory = fmStoryId ? todoMd.includes(fmStoryId) : false;
+    // el número entero de la story: el de otra story que empieza igual (uno más largo, o con un punto más) no cuenta
+    const todoHasStory = fmStoryId
+      ? new RegExp(`(^|[^\\w.])${fmStoryId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w]|\\.\\d)`, 'm').test(todoMd)
+      : false;
     if (!codeHasTag && !todoHasStory) {
       findings.push({
         rule: 'DEFTR-C1', severity: 'CRITICAL', status: 'fail',
-        detail: `pipelines pending (${pendingPipelines.map((p) => p.name).join(', ')}) sin trazabilidad: no hay TODO(${deferralTag || 'Story-N-deferral'}) en código ni mención de la story en tasks/todo.md. Deuda fantasma.`,
+        detail: `pipelines pending (${pendingPipelines.map((p) => p.name).join(', ')}) sin trazabilidad: no hay TODO(${deferralTag || 'Story-N-deferral'}) en código ni mención de la story en tasks/todo.md (${raices.length > 1 ? 'ni en el del código ni en el de la story' : 'del repo'}). Deuda fantasma.`,
       });
     } else {
       ok.push({ rule: 'DEFTR-C1', detail: `pipelines pending con trazabilidad (${codeHasTag ? 'TODO en código' : ''}${codeHasTag && todoHasStory ? ' + ' : ''}${todoHasStory ? 'tasks/todo.md' : ''}).` });
