@@ -231,7 +231,7 @@ test('T6 Birth_Matrix49Cells_PlaceFirst_RealCloneUntouched_CycleResolved_Idempot
     if (iP >= 0 && iV >= 0) assert.ok(iP < iV, `${label}: el viejo se escribió antes que el lugar`);
     // la segunda corrida no escribe
     const again = observeWrites(() => CP.ensurePlace({ clon: running, home: h }));
-    assert.deepStrictEqual(again.order, [], `${label}: la segunda corrida escribió (${again.result.mensaje})`);
+    assert.deepStrictEqual(again.order, [], `${label}: la segunda ejecución escribió (${again.result.mensaje})`);
   }
   // el ciclo: el viejo apunta al lugar y el lugar al viejo (los dos colgados) → el lugar a D, el viejo al lugar
   const h = home('ciclo');
@@ -257,7 +257,7 @@ test('T41 FreshMachine_NoLegacyAfterTandaC_OnboardingAgain', () => {
   assert.ok(!exists(legacyOf(fresh)), 'una máquina nueva recibió el nombre viejo');
   assert.ok(!fs.existsSync(path.join(fresh, '.claude', '.tycon-pipeline', 'legacy-place-born.json')), 'se anotó un viejo que no nació');
   const again = observeWrites(() => CP.ensurePlace({ clon: running, home: fresh }));
-  assert.deepStrictEqual(again.order, [], 'la segunda corrida escribió');
+  assert.deepStrictEqual(again.order, [], 'la segunda ejecución escribió');
   // por la línea de comandos, como la llama el instalador
   const fresh2 = home('nueva-c-cli');
   const r = cli(['--ensure-link', '--clone', running, '--home', fresh2]);

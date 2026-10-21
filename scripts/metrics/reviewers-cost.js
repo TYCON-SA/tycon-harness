@@ -749,7 +749,7 @@ function procesarCorrida(volcado, opciones) {
 
   const conversacion = sessionId
     ? conversacionDe(volcado, sessionId, projectsDir)
-    : { estado: 'no_medido', motivo: 'la corrida no anotó a qué sesión pertenece' };
+    : { estado: 'no_medido', motivo: 'la ejecución no anotó a qué sesión pertenece' };
   const registro = leerRegistro(runsDir, sessionId);
   dump.revisores = medir({ registro, conversacion, costo: dump.costo, supuesto, hoy, consumo: dump.consumo, storyPath: marker.storyPath || null });
   res.revisores = dump.revisores;
@@ -797,7 +797,7 @@ function resumenLegible(r) {
 }
 
 function resumenBarrido(s) {
-  return `corridas archivadas: ${s.total} · procesadas: ${s.procesadas}\n`
+  return `ejecuciones archivadas: ${s.total} · procesadas: ${s.procesadas}\n`
     + `  con duración medida: ${s.con_duracion_medida}\n`
     + `  con tokens medidos (la notificación los trajo): ${s.con_tokens_medidos}\n`
     + `  sólo con estimación (nada medido): ${s.solo_estimacion}\n`

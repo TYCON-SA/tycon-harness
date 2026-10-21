@@ -661,9 +661,20 @@ function cuadroMejora(boton) {
     if (r.cut) aviso.removeAttribute('hidden'); else aviso.setAttribute('hidden', 'hidden');
   }
   ta.addEventListener('input', act); act();
-  var panel = el('li', { class: 'ct-panel' }, el('label', {}, el('span', { text: T('comoTrabaja.mejoraQue') }), ta), el('p', { class: 'ct-nota', text: T('comoTrabaja.mejoraNota') }), aviso,
+  // el cuadro no va adentro de un <label>: el editor le agrega botones, y un clic en la vista previa activaría el primero
+  // (el nombre del cuadro lo da su aria-label)
+  var panel = el('li', { class: 'ct-panel' }, el('div', { class: 'ct-campo' }, el('span', { text: T('comoTrabaja.mejoraQue') }), ta), el('p', { class: 'ct-nota', text: T('comoTrabaja.mejoraNota') }), aviso,
     el('div', { class: 'ct-pie' }, ir, el('button', { type: 'button', class: 'btn', text: T('comoTrabaja.cerrar'), onclick: cerrarPaneles })));
-  despuesDe(boton, panel); setTimeout(function () { ta.focus(); }, 0);
+  despuesDe(boton, panel);
+  // el editor de texto largo del sitio: con vista previa (el issue se lee así) y sin «Ver qué cambió», que no tiene original
+  if (window.LongTextEditor) window.LongTextEditor.montar(ta, { vistaPrevia: true, queCambio: false, alCambiar: act, textos: textosLargo() });
+  setTimeout(function () { ta.focus(); }, 0);
+}
+// los textos del editor de texto largo, en el idioma de la página
+function textosLargo() {
+  return { escribir: T('comoTrabaja.lte.escribir'), vistaPrevia: T('comoTrabaja.lte.vistaPrevia'), buscar: T('comoTrabaja.lte.buscar'), buscarQue: T('comoTrabaja.lte.buscarQue'),
+    siguiente: T('comoTrabaja.lte.siguiente'), unaVez: T('comoTrabaja.lte.unaVez'), vecesN: T('comoTrabaja.lte.vecesN'), queCambio: T('comoTrabaja.lte.queCambio'),
+    sinCambios: T('comoTrabaja.lte.sinCambios'), ampliar: T('comoTrabaja.lte.ampliar'), volver: T('comoTrabaja.lte.volver') };
 }
 function pedir(ruta, cuerpo) {
   return fetch(ruta, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-site-token': token }, body: JSON.stringify(cuerpo) })
@@ -820,10 +831,7 @@ function editor(boton, draft, firmadas, modelos) {
     el('div', { class: 'ct-pie' }, revisar, proponer, el('button', { type: 'button', class: 'btn', text: T('comoTrabaja.cerrar'), onclick: cerrarPaneles })), motivo);
   despuesDe(boton, panel);
   // el editor de texto largo, compartido con el resto del sitio: vista previa y qué cambió contra lo que se abrió
-  if (window.LongTextEditor) window.LongTextEditor.montar(texto, { vistaPrevia: true, queCambio: true, alCambiar: cambio, textos: {
-    escribir: T('comoTrabaja.lte.escribir'), vistaPrevia: T('comoTrabaja.lte.vistaPrevia'), buscar: T('comoTrabaja.lte.buscar'), buscarQue: T('comoTrabaja.lte.buscarQue'),
-    siguiente: T('comoTrabaja.lte.siguiente'), unaVez: T('comoTrabaja.lte.unaVez'), vecesN: T('comoTrabaja.lte.vecesN'), queCambio: T('comoTrabaja.lte.queCambio'),
-    sinCambios: T('comoTrabaja.lte.sinCambios'), ampliar: T('comoTrabaja.lte.ampliar'), volver: T('comoTrabaja.lte.volver') } });
+  if (window.LongTextEditor) window.LongTextEditor.montar(texto, { vistaPrevia: true, queCambio: true, alCambiar: cambio, textos: textosLargo() });
   else texto.addEventListener('input', cambio);
   setTimeout(function () { nombre.focus(); }, 0);
 }

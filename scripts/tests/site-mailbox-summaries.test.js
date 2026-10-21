@@ -109,8 +109,8 @@ test('T48 Sitio_ConConversacionesNuncaPasaDelTope @story-2.30 @ac-25', { skip: S
     assert.ok(maximo <= tope, `las conversaciones en el disco nunca pasaron del tope: ${maximo} de ${tope}`);
     assert.deepStrictEqual(conversacionesEn(path.join(datos, 'buzon')), [], 'ninguna conversación quedó en el disco');
     const resumenes = fs.readdirSync(path.join(datos, 'buzon', 'maq-a')).filter((f) => f.endsWith(runs.RESUMEN.sufijo));
-    assert.strictEqual(resumenes.length, N, 'cada corrida, con su resumen');
-    assert.ok(registro.some((l) => /corrida\(s\) resumida\(s\)/.test(l)), 'el registro dice que resumió');
+    assert.strictEqual(resumenes.length, N, 'cada ejecución, con su resumen');
+    assert.ok(registro.some((l) => /ejecución\(es\) resumida\(s\)/.test(l)), 'el registro dice que resumió');
     // y con el disco del tamaño de hoy: el espejo entero (volcados y resúmenes) es chico
     // el espejo entero: los volcados, los resúmenes (unos kilos cada uno) y lo chico de la bajada; nunca una conversación
     const volcados = Object.entries(blobs).filter(([n]) => n.endsWith('.json')).reduce((t, [, b]) => t + Buffer.from(b).length, 0);
@@ -189,7 +189,7 @@ test('T46 Bajada_PodaLoQueYaNoEstaEnElBuzon @story-2.30 @ac-25', async () => {
     assert.ok(!fs.existsSync(path.join(dir, 'maq-z')), 'la carpeta de una máquina sin nada en el buzón se va entera, registros incluidos');
     assert.ok(fs.existsSync(path.join(vieja, 'registros', 'gates.jsonl.gz')), 'los registros no se podan acá');
     assert.ok(fs.existsSync(path.join(vieja, 'r1.json')) && fs.existsSync(path.join(vieja, 'r2.json')), 'lo que está en el buzón queda');
-    assert.strictEqual(r.res.podados, 6, 'cinco archivos de corridas y una carpeta de máquina');
+    assert.strictEqual(r.res.podados, 6, 'cinco archivos de ejecuciones y una carpeta de máquina');
     // sin `podar`, nada se borra
     fs.writeFileSync(path.join(vieja, 'r8.json'), 'viejo');
     await bajada(buzon, dir, { sinHilos: false, resumenes: true, topeBytesHilos: 1 << 30 });
@@ -229,7 +229,7 @@ test('T47 Resumir_LaTablaQuedaIgualYLaConversacionSeVa @story-2.30 @ac-25', () =
   assert.ok(despues.corridas.every((c) => c.cambios && c.cambios.estado === 'leido'), 'los cambios, leídos del resumen');
   // los textos (los parches) no se guardan: se bajan a demanda
   assert.ok(despues.corridas.every((c) => !runs.textosDe(c).texto && !runs.textosDe(c).textoGit));
-  assert.ok(despues.corridas.every((c) => c._volcado && c._volcado.endsWith('.json')), 'cada corrida sabe de qué volcado salió (para bajar su detalle)');
+  assert.ok(despues.corridas.every((c) => c._volcado && c._volcado.endsWith('.json')), 'cada ejecución sabe de qué volcado salió (para bajar su detalle)');
   // una segunda pasada no hace nada
   assert.deepStrictEqual(runs.resumirEspejo(espejo).resumidas, 0);
 });
@@ -299,7 +299,7 @@ test('T53 Hilos_ResumenYTextosConTopeDeTiempo @story-2.30 @ac-25', async () => {
   for (const [f, b] of Object.entries(blobsDe(2))) fs.writeFileSync(path.join(espejo, f), b);
   const volcadoR1 = path.join(espejo, 'maq-a', 'r1.json');
   const t = await textosEnWorker({ volcado: volcadoR1 });
-  assert.match(zlib.gunzipSync(Buffer.from(String(t.textoGit || ''), 'base64')).toString('utf8'), /PARCHE_1/, 'el parche de la corrida');
+  assert.match(zlib.gunzipSync(Buffer.from(String(t.textoGit || ''), 'base64')).toString('utf8'), /PARCHE_1/, 'el parche de la ejecución');
   await assert.rejects(textosEnWorker({ volcado: path.join(espejo, 'maq-a', 'no-esta.json') }), (e) => /ENOENT/.test(e.message));
   await assert.rejects(textosEnWorker({ volcado: volcadoR1, tiempoMs: 1 }), (e) => e.code === 'TIEMPO_AGOTADO');
   const r = await resumirEnWorker({ buzon: espejo });
@@ -362,7 +362,7 @@ test('T54 Sitio_ResumiendoElBuzonGrande_LivezContestaYElHiloPrincipalNoTocaElEsp
     await sondear;
     for (const [n, f] of Object.entries(originales)) fs[n] = f;
     assert.ok(fuentes.buzonEstado().completo, 'la bajada terminó entera');
-    assert.strictEqual(vista.modelo() && vista.modelo().corridas.length, N, 'la vista de Corridas, armada con todas');
+    assert.strictEqual(vista.modelo() && vista.modelo().corridas.length, N, 'la vista de Ejecuciones, armada con todas');
     assert.deepStrictEqual(conversacionesEn(espejo), [], 'todo resumido');
     assert.ok(pings >= 5, `se sondeó durante el trabajo (${pings} veces)`);
     assert.ok(maximo < 1000, `/livez tardó a lo sumo ${Math.round(maximo)} ms`);

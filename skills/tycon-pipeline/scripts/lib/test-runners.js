@@ -14,8 +14,13 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
-const RESULT_FORMATS = Object.freeze(['junit', 'jest-json']);
+const RESULT_FORMATS = Object.freeze(['junit', 'jest-json', 'trx']);
+// hasta dónde puede buscar su archivo detector una herramienta (`detect_depth`): 0 es sólo la carpeta que se prueba
+const DETECT_DEPTH_MAX = 3;
+// el detalle de un repo (`args`) va entre comillas en el comando: no puede cerrarlas ni expandir nada
+const ARGS_PROHIBIDO = /["'$`\\\r\n]/;
 const COVERAGE_FORMATS = Object.freeze(['cobertura', 'lcov', 'istanbul-json', 'jacoco', 'go-cover']);
 const NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -119,10 +124,55 @@ function validateRunners(value, base = 'stack.test_runners') {
     if (r.coverage !== undefined && (!r.coverage || !COVERAGE_FORMATS.includes(r.coverage.format) || typeof r.coverage.path !== 'string')) {
       mios.push({ path: `${p}.coverage.format`, message: `la cobertura tiene que ser ${COVERAGE_FORMATS.join(', ')}, con su path` });
     }
+    mios.push(...detalleProblemas(r, p));
     if (typeof r.name === 'string') nombres.add(r.name);
     if (mios.length) problems.push(...mios); else runners.push(r);
   });
   return { runners, problems };
+}
+
+// Una nota en una entrada: `__x` con cualquier valor, o `_x` con texto (y un nombre que no parece una credencial). La
+// misma regla que `fieldComment` de team-repos.js, que no se puede cargar acá sin el árbol del arnés.
+const NOTA_SECRETO = /token|secret|sas|password|passwd|pwd|key|credential/i;
+const esNota = (k, v) => k.startsWith('__')
+  || (k.startsWith('_') && !NOTA_SECRETO.test(k) && (typeof v === 'string' || (Array.isArray(v) && v.every((s) => typeof s === 'string'))));
+
+/**
+ * Los problemas de `label`, `detect_depth`, `args_default` y `repos` de una herramienta, con la ruta `<p>.<campo>`.
+ * Las mismas reglas que `team-repos.js` (`runnersProblems`), que las repite porque no carga el skill.
+ */
+function detalleProblemas(r, p) {
+  const out = [];
+  // el nombre para personas que muestra el sitio: texto de 1 a 80 caracteres
+  if (r.label !== undefined && (typeof r.label !== 'string' || !r.label.trim() || r.label.length > 80)) {
+    out.push({ path: `${p}.label`, message: 'el nombre para personas: texto de 1 a 80 caracteres' });
+  }
+  if (r.detect_depth !== undefined && (!Number.isInteger(r.detect_depth) || r.detect_depth < 0 || r.detect_depth > DETECT_DEPTH_MAX)) {
+    out.push({ path: `${p}.detect_depth`, message: `un entero de 0 a ${DETECT_DEPTH_MAX} (es ${JSON.stringify(r.detect_depth)})` });
+  }
+  const argsMalo = (v) => typeof v !== 'string' || ARGS_PROHIBIDO.test(v);
+  const ARGS_MSG = 'texto sin comillas, $, comillas invertidas, barra invertida ni saltos de línea (va entre comillas en el comando)';
+  if (r.args_default !== undefined && argsMalo(r.args_default)) out.push({ path: `${p}.args_default`, message: ARGS_MSG });
+  if (r.repos === undefined) return out;
+  if (!Array.isArray(r.repos)) return [...out, { path: `${p}.repos`, message: 'tiene que ser una lista de entradas { repo, args }' }];
+  let lector = null;
+  try { lector = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'team-repos.js')); } catch (_) { lector = null; }
+  if (!lector) return [...out, { path: `${p}.repos`, message: 'no encontré el lector team-repos.js del arnés para validar los repos' }];
+  const vistos = new Set();
+  r.repos.forEach((e, j) => {
+    const at = `${p}.repos.${j}`;
+    if (!e || typeof e !== 'object' || Array.isArray(e)) { out.push({ path: at, message: 'tiene que ser un objeto { repo, args }' }); return; }
+    for (const k of Object.keys(e)) if (k !== 'repo' && k !== 'args' && !esNota(k, e[k])) out.push({ path: `${at}.${k}`, message: 'clave desconocida' });
+    const malos = lector.repoProblems(e.repo, `${at}.repo`);
+    if (malos.length) out.push(...malos);
+    else {
+      const clave = lector.identityKey(e.repo);
+      if (vistos.has(clave)) out.push({ path: `${at}.repo`, message: 'este repo ya tiene una entrada en repos' });
+      vistos.add(clave);
+    }
+    if (argsMalo(e.args)) out.push({ path: `${at}.args`, message: ARGS_MSG });
+  });
+  return out;
 }
 
 const conResults = (s, results) => String(s).split('{results}').join(results);
@@ -143,7 +193,8 @@ function resolve(projectDir, opts = {}) {
 function inspect(projectDir, { results, stack } = {}) {
   const v = validateRunners(stack && stack.test_runners);
   const problems = v.problems.map((p) => `${p.path}: ${p.message}; no se usa`);
-  return { runner: elegir(projectDir, { results, org: v.runners }), problems };
+  const runner = elegir(projectDir, { results, org: v.runners, problems });
+  return { runner, problems: [...new Set(problems)] };
 }
 
 /** El binario de un comando declarado: la primera palabra que no es una variable de entorno (`VAR=valor npx …` → npx). */
@@ -152,13 +203,87 @@ function herramientaDelComando(command) {
   return palabras.find((w) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w)) || palabras[0];
 }
 
-function elegir(projectDir, { results, org }) {
+// las carpetas donde no se busca un archivo detector: lo que deja una compilación, las dependencias y lo oculto
+const SIN_BUSCAR = new Set(['bin', 'obj', 'node_modules']);
+
+/**
+ * ¿Está el archivo `nombre` en `dir` o en sus subcarpetas, hasta `hondo` niveles? Una carpeta que no se pudo leer (que no
+ * es lo mismo que no tenerlo) va a `problems`.
+ */
+function hallar(dir, nombre, hondo, problems) {
+  try { fs.statSync(path.join(dir, nombre)); return true; } catch (e) {
+    if (e && e.code !== 'ENOENT' && e.code !== 'ENOTDIR') {
+      problems.push(`no pude leer ${dir} buscando ${nombre} (${e.code || e})`);
+      return false;
+    }
+  }
+  if (!hondo) return false;
+  let entradas;
+  try { entradas = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) {
+    problems.push(`no pude leer ${dir} buscando ${nombre} (${e && e.code ? e.code : e})`);
+    return false;
+  }
+  return entradas.some((e) => e.isDirectory() && !e.name.startsWith('.') && !SIN_BUSCAR.has(e.name.toLowerCase())
+    && hallar(path.join(dir, e.name), nombre, hondo - 1, problems));
+}
+
+/**
+ * El repo de `dir` como lo declara `team-repos.json` (`{ platform, org, project?, repo }`), sacado de su remoto `origin`
+ * (siguiendo la cadena si es el clon de un clon, como `resolverRemoto` de harness-repo.js): `{ id }`, con `id: null` sin
+ * remoto o con uno que no es de Azure ni de GitHub, o `{ id: null, problema }` si no se pudo mirar. El remoto sólo elige
+ * la entrada de la configuración: del repo probado no sale nada más.
+ */
+function repoDe(dir) {
+  if (spawnSync('git', ['--version'], { encoding: 'utf8' }).error) return { id: null, problema: `no pude correr git para leer el remoto de ${dir}` };
+  let r;
+  try { r = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'harness-repo.js')).resolverRemoto(dir); } catch (e) {
+    return { id: null, problema: `no pude cargar harness-repo.js del arnés para reconocer el remoto (${e && e.code ? e.code : e})` };
+  }
+  if (r.por === 'remoto-ilegible' || r.por === 'tope-de-saltos') return { id: null, problema: `no reconozco el remoto de ${dir} (${r.por}${r.url ? `: ${r.url}` : ''})` };
+  const id = r.id;
+  if (!id) return { id: null };
+  if (id.proyecto) return { id: { platform: 'azure', org: id.org, project: id.proyecto, repo: id.repo } };
+  const partes = String(id.ruta || '').split('/');
+  return { id: id.host === 'github.com' && partes.length === 2 ? { platform: 'github', org: partes[0], repo: partes[1] } : null };
+}
+
+/**
+ * El `{args}` de una herramienta para el repo de `dir`: el de su entrada en `repos`, si no `args_default`, si no vacío.
+ * Si no se pudo saber qué repo es, se usa el de por defecto y el motivo va a `problems`.
+ */
+function argsPara(r, dir, problems) {
+  const porDefecto = typeof r.args_default === 'string' ? r.args_default : '';
+  if (!Array.isArray(r.repos) || !r.repos.length) return porDefecto;
+  const { id, problema } = repoDe(dir);
+  if (problema) problems.push(`${r.name}: ${problema}; uso args_default`);
+  if (!id) return porDefecto;
+  const { identityKey } = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'team-repos.js'));
+  const quiero = identityKey(id);
+  const entrada = r.repos.find((e) => identityKey(e.repo) === quiero);
+  return entrada ? entrada.args : porDefecto;
+}
+
+/**
+ * ¿La carpeta ya es el proyecto de otra herramienta (Vitest, Jest, `node --test`, las suites del arnés o una de
+ * fábrica)? Un archivo detector encontrado sólo en una subcarpeta no le quita la carpeta a esa herramienta.
+ */
+function esDeOtraHerramienta(dir) {
+  const pkg = lee(dir, 'package.json');
+  if (pkg && (/"(vitest|jest)"/.test(pkg) || /"test"\s*:\s*"[^"]*node --test/.test(pkg))) return true;
+  if (existe(dir, path.join('scripts', 'tests', 'suites.json'))) return true;
+  return FACTORY.some((f) => { try { return f.detect(dir); } catch (_) { return false; } });
+}
+
+function elegir(projectDir, { results, org, problems = [] }) {
   const res = results || '{results}';
   for (const r of org) {
-    if (!existe(projectDir, r.detect)) continue;
+    if (!hallar(projectDir, r.detect, 0, problems)) {
+      // encontrado sólo más abajo: vale si la carpeta no es ya de otra herramienta
+      if (!r.detect_depth || !hallar(projectDir, r.detect, r.detect_depth, problems) || esDeOtraHerramienta(projectDir)) continue;
+    }
     return {
       name: r.name, source: 'organizacion', tool: herramientaDelComando(r.command),
-      command: conResults(r.command, res),
+      command: conResults(r.command, res).split('{args}').join(argsPara(r, projectDir, problems)),
       results: { ...r.results, path: conResults(r.results.path, res) },
       coverage: r.coverage ? { ...r.coverage, path: conResults(r.coverage.path, res) } : null,
     };

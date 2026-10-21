@@ -387,7 +387,7 @@ foto --scan "$R" --only-harness --out "$TMP/t1-out" >/dev/null 2>&1
 ARCH2="$(cd "$TMP/t1-out" 2>/dev/null && ls -A | tr '\n' ' ')"
 G2="$(j "$TMP/t1-out/A__S.json" 'j.generated_at' 2>/dev/null)"
 [ "$ARCH2" = "A__S.json B__P.json " ] && [ -n "$G1" ] && [ "$G1" != "$G2" ] \
-  && ok "T13 dos corridas: los mismos dos archivos, reemplazados" || mal "T13 tras dos corridas: «${ARCH2}» (${G1} → ${G2})"
+  && ok "T13 dos ejecuciones: los mismos dos archivos, reemplazados" || mal "T13 tras dos ejecuciones: «${ARCH2}» (${G1} → ${G2})"
 
 # ── T14 · Registro_SuitesMapaYPiezas ──
 # 🔴 Mutación que lo pone en rojo: olvidar registrar la pieza en alguno de los tres.

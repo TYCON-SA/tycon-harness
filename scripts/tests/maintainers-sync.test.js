@@ -349,7 +349,7 @@ test('T16 Hook_LaunchesInBackground_E2E — el aviso lanza de fondo, no espera, 
   waitFor(() => !fs.existsSync(lockFile(lab)) && readResult(lab) && readResult(lab).status === 'al-dia');
   git(lab, lab.mant, ['checkout', '-q', '-b', 'feat/y']);
   runHook(lab);
-  assert.ok(waitFor(() => { const r = readResult(lab); return r && r.status === 'otra-rama'; }), 'la corrida tenía que anotar otra-rama');
+  assert.ok(waitFor(() => { const r = readResult(lab); return r && r.status === 'otra-rama'; }), 'la ejecución tenía que anotar otra-rama');
   waitFor(() => !fs.existsSync(lockFile(lab)));
   next = runHook(lab);
   const lines = mantLine(next.out);

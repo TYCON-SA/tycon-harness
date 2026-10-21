@@ -170,6 +170,10 @@ function casaVacia() {
     // el instalador lanza de FONDO el chequeo de paridad, que en un clon deja su reporte en scripts/controls-bench/.bench/
     // del árbol, a veces cuando la suite ya terminó: cada suite lo manda a su carpeta temporal (la foto del final lo controla)
     TYCON_PARITY_BENCH_DIR: path.join(tmp, 'parity-bench'),
+    // sin el mantenimiento automático de git en los repos de juguete de las suites: git puede dejar de fondo un
+    // empaquetado que se cruza con el clon que lo copia («failed to copy file … tmp_idx», visto en la CI de Linux). Lo
+    // reciben las suites que heredan el entorno; las que arman el suyo lo ponen en su propia configuración de git.
+    GIT_CONFIG_COUNT: '2', GIT_CONFIG_KEY_0: 'gc.auto', GIT_CONFIG_VALUE_0: '0', GIT_CONFIG_KEY_1: 'maintenance.auto', GIT_CONFIG_VALUE_1: 'false',
   } };
 }
 const POOL = Math.max(1, Number(process.env.TYCON_PORTABLE_PARALLEL || 4));

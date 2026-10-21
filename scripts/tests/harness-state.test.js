@@ -1368,7 +1368,7 @@ test('T12 · report: log va a startup.log con fecha y rota al pasar 1 MB; setNot
   const same = report.installSummary({ version: 'x', channel: 'stable', apply: 'ask', changed: false, baseline: '/h/backups/primera' });
   assert.match(same.join('\n'), /sin cambios/);
   assert.match(same.join('\n'), /copia de antes de instalar: \/h\/backups\/primera/);
-  assert.ok(!/qué sigue/.test(same.join('\n')), 'una segunda corrida no repite «qué sigue»');
+  assert.ok(!/qué sigue/.test(same.join('\n')), 'una segunda ejecución no repite «qué sigue»');
   // a medias
   const failed = report.installFailure({ what: 'el aplicador salió 1', log: '/h/startup.log', backup: '/h/backups/b' }).join('\n');
   for (const s of ['el aplicador salió 1', 'quedó a medias', 'doctor', 'registro: /h/startup.log', 'copia de respaldo: /h/backups/b', 'install otra vez', 'uninstall']) assert.ok(failed.includes(s), `installFailure no dice «${s}»:\n${failed}`);
@@ -3146,7 +3146,7 @@ test('T39 · StartupUpdate_Detached_HookCutDoesNotKillIt_EarlyErrorStillReported
   fs.writeFileSync(script, [
     "'use strict';",
     `const D = require(${JSON.stringify(path.join(MODULES, 'detach.js'))});`,
-    'if (!D.adoptDetachedRun()) throw new Error("no llegó como corrida desprendida");',
+    'if (!D.adoptDetachedRun()) throw new Error("no llegó como ejecución desprendida");',
     `if (process.env.${'TYCON_STARTUP_DETACHED'} || process.env.${'TYCON_STARTUP_RESULT'}) throw new Error('la marca quedó en el ambiente: la heredan los nietos');`,
     "const [what, out] = process.argv.slice(2);",
     "if (what === 'throw') throw new Error('roto a propósito');",
@@ -3224,7 +3224,7 @@ test('T39b · StartupDetached_WindowsShim_WorkerIsGrandchild_ResultAndStartedFro
   fs.writeFileSync(script, [
     "'use strict';",
     `const D = require(${JSON.stringify(path.join(MODULES, 'detach.js'))});`,
-    'if (!D.adoptDetachedRun()) throw new Error("no llegó como corrida desprendida");',
+    'if (!D.adoptDetachedRun()) throw new Error("no llegó como ejecución desprendida");',
     `if (process.env.${'TYCON_STARTUP_WORKER'}) throw new Error('la marca del relevo quedó en el ambiente');`,
     `require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid) + ' ' + String(process.ppid));`,
     "D.writeResult(0, ['trabajé detrás del relevo']);",

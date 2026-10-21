@@ -474,7 +474,7 @@ if [ -n "$AVISO" ] && [ "$YA_PENDIENTE" -eq 0 ]; then
     && { [ ! -s "$PENDIENTES" ] || [ -z "$(tail -c 1 "$PENDIENTES")" ] || printf '\n' >> "$PENDIENTES"; } \
     && printf '%s\t%s\n' "$HOY" "$AVISO_1L" >> "$PENDIENTES"; } 2>&1 )"
   if [ $? -eq 0 ]; then
-    log "quedó pendiente en $PENDIENTES; se manda en la próxima corrida que logre entregar"
+    log "quedó pendiente en $PENDIENTES; se manda en la próxima ejecución que logre entregar"
   else
     log "tampoco pude guardarlo como pendiente en $PENDIENTES: $(motivo_de "$ERR_GUARDAR")"
   fi

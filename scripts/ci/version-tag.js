@@ -62,7 +62,7 @@ function nextNumber({ today, tags = [], floor = null }) {
 function decide({ sha, isTip, tipTags = [], today, tags = [], floor = null }) {
   const own = VO.bestTag(tipTags);
   if (own) return { action: 'skip', reason: `${String(sha).slice(0, 7)} ya tiene su número (${VO.tagName(own)})` };
-  if (!isTip) return { action: 'skip', reason: `${String(sha).slice(0, 7)} ya no es la punta de main: la corrida del merge siguiente numera la punta` };
+  if (!isTip) return { action: 'skip', reason: `${String(sha).slice(0, 7)} ya no es la punta de main: la ejecución del merge siguiente numera la punta` };
   const version = nextNumber({ today, tags, floor });
   return { action: 'tag', name: VO.tagName(version), version };
 }
@@ -127,7 +127,7 @@ function cmdTag(root, { sha, dryRun, today }) {
   const made = git(root, ['tag', d.name, sha]);
   if (!made.ok) return fail(`tag: no pude crear ${d.name}: ${made.err}`);
   const pushed = git(root, ['push', '-q', 'origin', `refs/tags/${d.name}`]);
-  if (!pushed.ok) return fail(`tag: no pude empujar ${d.name}: ${pushed.err} (la etiqueta quedó sólo en esta copia; la corrida del merge siguiente numera la punta)`);
+  if (!pushed.ok) return fail(`tag: no pude empujar ${d.name}: ${pushed.err} (la etiqueta quedó sólo en esta copia; la ejecución del merge siguiente numera la punta)`);
   console.log(`version-tag: ${d.name} sobre ${sha.slice(0, 7)}`);
   return 0;
 }

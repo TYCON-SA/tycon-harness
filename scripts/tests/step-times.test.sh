@@ -45,7 +45,7 @@ r=$(calc "$ST3" "$(H 10:00)" 't.espera_humana_ms')
 r=$(calc "$ST3" "$(H 10:00)" 't.trabajo_ms')
 [ "$r" = "$((50*M))" ] && ok "T3 el trabajo NO suma la espera (50 min)" || no "T3 trabajo esperado 50 min, dio $r"
 r=$(calc "$ST3" "$(H 10:00)" 't.estado')
-[ "$r" = "medida" ] && ok "T3 la corrida con todos los arranques sale medida" || no "T3 estado: $r"
+[ "$r" = "medida" ] && ok "T3 la ejecución con todos los arranques sale medida" || no "T3 estado: $r"
 
 # ── T4 — el caso SR-1: 2 h 40 min sin nada y 50 min de cierre ───────────────────────────────────
 ST4=$(cat <<EOF
@@ -60,7 +60,7 @@ r=$(calc "$ST4" "$(H 10:00)" 't.pasos.find((p) => p.paso === "8").ms')
 r=$(calc "$ST4" "$(H 10:00)" 't.entre_pasos_ms')
 [ "$r" = "$((160*M))" ] && ok "T4 las 2 h 40 min salen como hueco entre pasos" || no "T4 hueco = $r"
 r=$(calc "$ST4" "$(H 10:00)" 't.trabajo_ms + t.espera_humana_ms + t.entre_pasos_ms')
-[ "$r" = "$((255*M))" ] && ok "T4 trabajo + espera + hueco = la corrida entera" || no "T4 la suma no cierra: $r"
+[ "$r" = "$((255*M))" ] && ok "T4 trabajo + espera + hueco = la ejecución entera" || no "T4 la suma no cierra: $r"
 
 # ── T5 — corrida vieja: sólo completedAt ───────────────────────────────────────────────────────
 ST5=$(cat <<EOF
@@ -117,7 +117,7 @@ EOF
 r=$(calc "$ST6c" "$(H 10:00)" 't.estimados.join(",")')
 [ "$r" = "1,2" ] && ok "T6c arranque ilegible o posterior al fin → estimado" || no "T6c estimados: $r"
 r=$(calc "{}" "no-es-fecha" 't.estado')
-[ "$r" = "sin_inicio" ] && ok "T6c sin hora de inicio de la corrida no hay eje" || no "T6c sin inicio: $r"
+[ "$r" = "sin_inicio" ] && ok "T6c sin hora de inicio de la ejecución no hay eje" || no "T6c sin inicio: $r"
 
 # ── T6d — el sub-paso 5b es trabajo, no hueco ─────────────
 ST6d=$(cat <<EOF

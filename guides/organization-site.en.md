@@ -331,7 +331,7 @@ goes through it section by section.
 At the top there are four cards: machines to confirm, sections with something to fix, sections up to date, and machines
 with an old harness version or "no news" (*sin noticias*: they have not sent runs for a while, so their version is not
 known). Below, five tabs: **People** (*Personas*), **Repos and products** (*Repos y productos*),
-**Notices and night runs** (*Avisos y la noche*), **How Claude works** (*Cómo trabaja Claude*) and **Installation and
+**Notices and night runs** (*Avisos y la noche*), **How the agent works** (*Cómo trabaja el agente*) and **Installation and
 updates** (*Instalación y actualización*). A number next to a tab says how many things are waiting there.
 
 ![Configuration: the four cards at the top and the People tab](sitio-de-la-organizacion/capturas/configuracion-personas.png)
@@ -493,9 +493,9 @@ only: they are changed with a request in their repo.
 
 ![Notices and night runs](sitio-de-la-organizacion/capturas/configuracion-avisos.png)
 
-### How Claude works (Cómo trabaja Claude)
+### How the agent works (Cómo trabaja el agente)
 
-- **How Claude answers** (*Cómo contesta Claude*): the language, style and length of the answers on every machine. It
+- **How the agent answers** (*Cómo contesta el agente*): the language, style and length of the answers on every machine. It
   lives in `team-profile.json`, in the profile repo. A maintainer reviews it.
 - **Which model each pipeline job uses** (*Qué modelo usa cada trabajo del pipeline*): the model of the reviewers, the
   adversarial pass, the helpers and the session, as a level, in one table per group with each job's default next to it;
@@ -539,17 +539,24 @@ only: they are changed with a request in their repo.
   with that, the Runs detail shows the files it touched. It lives in `operations.json`, in the operations repo. A
   maintainer reviews it.
 
-![How Claude works](sitio-de-la-organizacion/capturas/configuracion-claude.png)
+![How the agent works](sitio-de-la-organizacion/capturas/configuracion-claude.png)
 
 ### Your technology
 
 What the person sees in the section, and what the agent does when asked for a tool that is not there.
 
 - **On the site**: the languages the harness already recognizes, the endings your team adds, the test tools table and
-  the three rules. The ones the test gate runs internally (.NET, Vitest, Jest and Node) show as «built in · the
-  harness runs it internally» and cannot be changed here. pytest, Go, Maven, Gradle, Karma and Playwright can be changed: the form arrives filled with the
-  built-in one, and saving leaves an organization copy with the same name that replaces it. «Back to the built-in one»
-  deletes the copy. A tool's command runs on every team member's computer.
+  the three rules. Each tool shows its name, the file that detects it, its origin and what can be done:
+  - **included in the harness · not editable**: .NET, Vitest, Jest and Node, which the test gate runs internally.
+    «Replace» explains how: an organization recipe detected by the same file wins.
+  - **built in · can be changed**: pytest, Go, Maven, Gradle, Karma and Playwright. «Change» brings the form filled
+    with the built-in one, and saving leaves an organization copy with the same name that replaces it.
+  - **changed by your organization**: that copy. «Back to the built-in one» deletes it.
+  - **added by your organization**: a new tool, like the .NET Framework one with vstest.
+  A tool's command runs on every team member's computer.
+
+  ![How the tests run](sitio-de-la-organizacion/capturas/configuracion-tecnologia.png)
+
 - **«Ask your agent»** leaves the sentence «set up my project's tests in the harness configuration». The person pastes
   it into their coding agent, opened in the project.
 - **What the agent does** with that sentence:
@@ -558,11 +565,30 @@ What the person sees in the section, and what the agent does when asked for a to
      measures coverage and in what format (Cobertura, lcov, istanbul, JaCoCo or the Go profile). `{results}` is the
      run's folder.
   2. Writes the `stack.test_runners` entry in `team-repos.json` of the profile repo: `name` (lowercase and hyphens),
-     `detect`, `command`, `results` and, if it measures, `coverage`.
+     `label` (the name a person sees on the site, for example «.NET Framework (vstest)»), `detect`, `command`,
+     `results` and, if it measures, `coverage`.
   3. Validates it with the machines' reader before proposing:
      `node -e 'console.log(JSON.stringify(require("<harness>/scripts/lib/team-repos.js").parse(require("fs").readFileSync("team-repos.json","utf8")).sectionProblems || {}))'`.
      With no problems in `stack`, it proposes it as a request to the profile repo.
   4. An admin approves the request and the tool shows up in the list, where it can be changed.
+- **What the recipe allows**, so the agent does not propose something the reader rejects or that never applies:
+  - **The report** is `junit`, `jest-json` or `trx` (vstest's, `/Logger:trx`); `path` may use `*` and `**`.
+  - **The detection file** is an exact name. It is looked for in the folder under test and, with `detect_depth` (0 to
+    3), in its subfolders, skipping `bin`, `obj`, `node_modules` and dot folders. Pick one that belongs to the tool:
+    `packages.config` is .NET Framework's; a bare `.sln` or `.csproj` is any .NET's and would take `dotnet test`'s
+    place in the other repos.
+  - **An organization tool wins over .NET** when its detection file is in the solution's folder (or its subfolders,
+    with `detect_depth`). It runs once, from the solution.
+  - **What changes from one repo to another** (a category filter, say) does not go in the command: it goes in `repos`,
+    one `{ "repo": <repo>, "args": "…" }` entry per repo, with this same file's `<repo>` shape. The command uses it as
+    `{args}`; a repo with no entry uses `args_default`, or nothing. `args` cannot hold quotes, `$`, backticks,
+    backslashes or line breaks, because it goes inside quotes in the command. The repo is recognized by its `origin`
+    remote.
+  - **The command runs with bash** and its first word has to be on the PATH (otherwise the gate says it is missing).
+    Nothing is read from the repo under test.
+- **Where the profile clone is**: `harness.js team-config --no-open` says which folder this machine uses (the
+  `paths.team` key). If there is none, clone the `profile` repo from `team-repos.json` into a folder of your own.
+- **The request** goes to the profile repo's main branch, **without auto-complete**: an admin reads and approves it.
 
 ### Installation and updates (Instalación y actualización)
 

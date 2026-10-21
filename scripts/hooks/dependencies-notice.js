@@ -480,7 +480,7 @@ function redactar(v, o = {}) {
   const cab = `dependencias (${v.fecha})`;
   const noEntregado = lineaResumen(cab, v.resumen);
   if (v.no_medidos.length) L.push(`⚠️ ${cab}: ${v.no_medidos.length} repo(s) NO MEDIDO(s) — ${v.no_medidos.join(', ')}. No medido ≠ limpio.`);
-  if (!v.completa && !v.no_medidos.length) L.push(`⚠️ ${cab}: la corrida quedó incompleta.`);
+  if (!v.completa && !v.no_medidos.length) L.push(`⚠️ ${cab}: la ejecución quedó incompleta.`);
 
   // 🔴 Las deudas que vencen van ANTES de los hallazgos del día: una deuda vencida no es un aviso
   // nuevo que alguien pueda decidir, es un repo que ya empezó a frenarse solo. Las vencidas y las

@@ -181,7 +181,7 @@ function readState(repo, head, env, say) {
   }
   let st;
   try { st = JSON.parse(text); } catch (e) {
-    throw new Red(`la constancia de los guardados está ilegible (${file}): no sé qué se guardó ya en esta corrida`);
+    throw new Red(`la constancia de los guardados está ilegible (${file}): no sé qué se guardó ya en esta ejecución`);
   }
   if (!st || st.key !== runKey(env) || st.head !== head || typeof st.base !== 'string') return fresh;
   const ref = git(repo, ['rev-parse', '--verify', '--quiet', `${BASE_REF}^{commit}`], { env });
@@ -232,7 +232,7 @@ function checkTree(repo, env, say) {
   const said = quiet(`${r.stdout || ''}${r.stderr || ''}`);
   if (said) say(said);
   // el rojo nombra el guion que corrió: con el de la corrida, buscar el motivo en el del checkout es buscar en otro
-  const which = script === saved ? `el guion de la corrida, ${RUN_TREE_CHECK}` : own;
+  const which = script === saved ? `el guion de la ejecución, ${RUN_TREE_CHECK}` : own;
   if (r.status !== 0) throw new Red(`el árbol ya no es el que dejó la superposición (${which} --check-tree salió ${r.status === null ? 'sin código' : r.status}): no se guarda`);
 }
 

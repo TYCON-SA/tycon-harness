@@ -290,7 +290,7 @@ test('T7 TelegramFails_NoRetry — 500 y sin respuesta: un intento, failed con e
 });
 
 // ── T8 ──────────────────────────────────────────────────────────────────────────────────────────────────
-test('T8 NoRunOrFinishedRun_Nothing — sin marcador · corrida terminada · SessionEnd · espera de 13 horas', async () => {
+test('T8 NoRunOrFinishedRun_Nothing — sin marcador · ejecución terminada · SessionEnd · espera de 13 horas', async () => {
   const tg = await fakeTelegram();
   try {
     const w = world({ api: tg.url });

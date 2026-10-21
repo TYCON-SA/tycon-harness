@@ -1296,7 +1296,7 @@ function selftest() {
   casos.push(['AC18 …las piezas llevan la ruta SIN resolver (la de la HOME), como las anota el instalador',
     q.pieces.every((x) => x.where === at(k1, x.id))]);
   q = ensureRepoLinks({ clone: u, home: k1 });
-  casos.push(['AC18 segunda corrida sin cambios: ninguna línea, y los enlaces siguen contando como piezas en su lugar',
+  casos.push(['AC18 segunda ejecución sin cambios: ninguna línea, y los enlaces siguen contando como piezas en su lugar',
     q.lines.length === 0 && ids(q) === `agent-skills,${ENTRY_IDS}`]);
 
   const k2 = casa('k2');
@@ -1335,7 +1335,7 @@ function selftest() {
     && q.lines.filter((l) => /carpeta propia/.test(l) && /no lo muevo/.test(l)).length === 2 && q.lines.length === 3
     && ids(q).includes('skills/tycon-pipeline') && ids(q).includes('agents/rev-a.md') && !q.pieces.some((x) => x.id === 'skills' || x.id === 'agents')]);
   q = ensureRepoLinks({ clone: u, home: k5 });
-  casos.push(['AC18 …y la segunda corrida no la confunde con «otro clon» (ya tiene tycon-pipeline adentro, como enlace): ninguna línea, las mismas piezas',
+  casos.push(['AC18 …y la segunda ejecución no la confunde con «otro clon» (ya tiene tycon-pipeline adentro, como enlace): ninguna línea, las mismas piezas',
     q.lines.length === 0 && real(at(k5, 'skills')) === noClon && ids(q).includes('skills/tycon-pipeline') && ids(q).includes('agents/rev-b.md')]);
   const k6 = casa('k6');
   for (const n of ['agent-skills', 'skills', 'agents']) fs.symlinkSync(path.join(t, 'borrado', n), at(k6, n));
@@ -1368,13 +1368,13 @@ function selftest() {
   mk('publico', 'harness', 'skills', 'new-one'); fs.rmSync(path.join(u, 'agents', 'rev-b.md'));
   fs.symlinkSync(path.join(t, 'de-la-persona', 'ya-no-esta'), at(k8, 'skills', 'theirs'));
   q = ensureRepoLinks({ clone: u, home: k8 });
-  casos.push(['AC18 segunda corrida: agrega la entrada nueva y saca el enlace SUYO que quedó colgado; el colgado ajeno queda (espejo)',
+  casos.push(['AC18 segunda ejecución: agrega la entrada nueva y saca el enlace SUYO que quedó colgado; el colgado ajeno queda (espejo)',
     real(at(k8, 'skills', 'new-one')) === path.join(u, 'skills', 'new-one') && !lexists(at(k8, 'agents', 'rev-b.md')) && isLink(at(k8, 'skills', 'theirs'))
     && lexists(at(k8, 'agents', 'mine.md')) && ids(q) === 'agent-skills,agents/rev-a.md,skills/new-one,skills/tycon-pipeline']);
   casos.push(['AC18 …y lo dice: en skills «1 … agregad», en agents «1 sacad»',
     q.lines.some((l) => /skills/.test(l) && /1 enlace\(s\) por entrada agregad/.test(l)) && q.lines.some((l) => /agents/.test(l) && /1 sacad/.test(l))]);
   q = ensureRepoLinks({ clone: u, home: k8 });
-  casos.push(['AC18 tercera corrida sin cambios: sólo la línea del choque', q.lines.length === 1 && /no las piso/.test(q.lines[0])]);
+  casos.push(['AC18 tercera ejecución sin cambios: sólo la línea del choque', q.lines.length === 1 && /no las piso/.test(q.lines[0])]);
   // en una entrada del clon: un colgado se repara; un enlace vivo a OTRO lado choca y no se toca
   const k9 = casa('k9'); fs.mkdirSync(at(k9, 'skills')); fs.mkdirSync(at(k9, 'agents'));
   const theirs = W(path.join(t, 'de-la-persona', 'rev-a.md'), '# el de la persona\n');
@@ -1391,7 +1391,7 @@ function selftest() {
   q = ensureRepoLinks({ clone: u2, home: k18, only: 'entries' });
   const firstRun = { dangling: lexists(at(k18, 'skills', 'dangling')), piece: q.pieces.some((x) => x.id === 'skills/dangling'), linked: real(at(k18, 'skills', 'tycon-pipeline')) === path.join(u2, 'skills', 'tycon-pipeline') };
   q = ensureRepoLinks({ clone: u2, home: k18, only: 'entries' });
-  casos.push(['AC18 por entrada: una entrada del clon que es un enlace colgado no se enlaza ni es pieza; las sanas sí, y la segunda corrida no dice nada',
+  casos.push(['AC18 por entrada: una entrada del clon que es un enlace colgado no se enlaza ni es pieza; las sanas sí, y la segunda ejecución no dice nada',
     !firstRun.dangling && !firstRun.piece && firstRun.linked && q.lines.length === 0 && !q.pieces.some((x) => x.id === 'skills/dangling')]);
   // una entrada que no se puede escribir (la carpeta real no deja crear nada adentro): se dice, no tira, y no es pieza
   if (typeof process.getuid === 'function' && process.getuid() !== 0) {
@@ -1468,7 +1468,7 @@ function selftest() {
   casos.push(['T29 separateSkillsClone: en la máquina del equipo devuelve el clon viejo; con un clon del arnés sin skills/, null',
     separate({ clone: u, home: m1 }) === real(at(m1, 'agent-skills')) && separate({ clone: a, home: m1 }) === null]);
   const runs = [0, 1, 2].map(() => ensureRepoLinks({ clone: u, home: m1 }));
-  casos.push(['T29 la máquina del equipo, tres corridas seguidas: cero líneas, ninguna pieza, y no aplica (como antes de traer skills/)',
+  casos.push(['T29 la máquina del equipo, tres ejecuciones seguidas: cero líneas, ninguna pieza, y no aplica (como antes de traer skills/)',
     runs.every((r) => r.lines.length === 0 && r.pieces.length === 0 && r.applies === false)]);
   q = ensureRepoLinks({ clone: u, home: m1, check: true });
   casos.push(['T29 …con --check: cero líneas', q.lines.length === 0 && q.pieces.length === 0]);
@@ -1539,7 +1539,7 @@ function selftest() {
     casos.push(['T30 --check en el clon viejo que no ignora skills/synced/: una línea «agregaría» y no escribe',
       !ignored(g1) && q.lines.length === 1 && /^\(--check\) .*agregaría skills\/synced\//.test(q.lines[0]) && readOr(exclude(g1)) === before1]);
     q = ensureRepoLinks({ clone: u, home: g1, only: 'entries' });
-    casos.push(['T30 la llamada de las entradas no lo hace (una vez por corrida, con la de agent-skills)',
+    casos.push(['T30 la llamada de las entradas no lo hace (una vez por ejecución, con la de agent-skills)',
       q.lines.length === 0 && readOr(exclude(g1)) === before1]);
     q = ensureRepoLinks({ clone: u, home: g1, only: 'agent-skills' });
     casos.push(['T30 la llamada de agent-skills lo agrega al exclude local: una línea, y git ya lo ignora',
@@ -1547,7 +1547,7 @@ function selftest() {
       && readOr(exclude(g1)).startsWith(before1 || '') && readOr(exclude(g1)).split('\n').filter((l) => l === 'skills/synced/').length === 1]);
     const after1 = readOr(exclude(g1));
     const runs30 = [0, 1].map(() => ensureRepoLinks({ clone: u, home: g1 }));
-    casos.push(['T30 con la línea ya puesta: dos corridas más, cero líneas, el archivo igual byte a byte',
+    casos.push(['T30 con la línea ya puesta: dos ejecuciones más, cero líneas, el archivo igual byte a byte',
       runs30.every((r) => r.lines.length === 0) && readOr(exclude(g1)) === after1]);
     const g2 = gitHome('g2');
     W(path.join(at(g2, 'agent-skills'), '.gitignore'), 'skills/synced/\n');

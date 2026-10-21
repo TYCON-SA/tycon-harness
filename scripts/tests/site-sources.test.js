@@ -552,7 +552,7 @@ test('T45 2.28-Fuentes_InformadosFueraDelModelo_YCorridasConRepos', { skip: SIN_
     assert.strictEqual(personas.informados.maquinas[MAQ].correo, MARCA, 'lo informado queda aparte, para la regla');
     assert.deepStrictEqual(personas.repos.map((r) => r.producto), ['Producto X'], 'la lista de repos.json, para dondeTrabaja');
     assert.strictEqual(modelo.corridas.estado, 'medido');
-    assert.strictEqual(modelo.corridas.lista[0].producto, 'Alfa/Web', 'la corrida con su producto (la carpeta del volcado)');
+    assert.strictEqual(modelo.corridas.lista[0].producto, 'Alfa/Web', 'la ejecución con su producto (la carpeta del volcado)');
     assert.strictEqual(modelo.corridas.lista[0].cambio, undefined, 'sin el cambio de git: el sitio no lo baja');
     // operations.json deja de validar: a las 2 horas, la banda; a las 25, el freno desde el primer fallo + 24 horas
     m.repo.cambiar({ 'operations.json': { ...config, clave_nueva: 1 } });

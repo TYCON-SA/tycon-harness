@@ -194,7 +194,7 @@ function carpetasFijasConNombreViejo(fijas) {
 const EXCLUIDOS_SIEMPRE = Object.freeze([
   { fuente: 'arnes', glob: '.engram/**', motivo: 'la memoria del equipo (engram): decisiones y casos nominados' },
   { fuente: 'arnes', glob: '.dashboard/**', motivo: 'series del medidor y tableros de las máquinas del equipo' },
-  { fuente: 'arnes', glob: '.advisors/**', motivo: 'evidencia de las corridas del pipeline sobre este repo' },
+  { fuente: 'arnes', glob: '.advisors/**', motivo: 'evidencia de las ejecuciones del pipeline sobre este repo' },
   // el buzón de decisiones del equipo: `inbox/instincts/`, `inbox/watcher/` (los hallazgos de la mirada nocturna de la
   // producción) e `inbox/dependencies/` (las fichas de vulnerabilidades de los repos del equipo)
   { fuente: 'arnes', glob: 'inbox/**', motivo: 'el buzón de decisiones del equipo: instintos minados de sus sesiones y lo que espera que alguien decida' },
@@ -210,7 +210,7 @@ const EXCLUIDOS_SIEMPRE = Object.freeze([
   { fuente: 'arnes', glob: 'scripts/metrics/censo-*.json', motivo: 'censos fechados de los repos del equipo' },
   { fuente: 'arnes', glob: PARIDAD, motivo: 'los productos de los clientes y dónde viven' },
   { fuente: 'arnes', glob: 'scripts/ci/pipeline-debt.json', motivo: 'la deuda de pipelines por repo de cliente (la copia lleva un sintético)' },
-  { fuente: 'arnes', glob: 'scripts/metrics/corridas-buzon.json', motivo: 'la llave del buzón de corridas del equipo' },
+  { fuente: 'arnes', glob: 'scripts/metrics/corridas-buzon.json', motivo: 'la llave del buzón de ejecuciones del equipo' },
   // el perfil con su nombre actual y el anterior, que sigue valiendo: el clon tiene uno de los dos (o, en la transición,
   // los dos), así que a ninguno se le exige archivo (`clase`)
   { fuente: 'arnes', glob: 'team-profile.json', motivo: 'el perfil del equipo: organización e integraciones', clase: true },
@@ -225,7 +225,7 @@ const EXCLUIDOS_SIEMPRE = Object.freeze([
   // Del equipo queda sólo la lista de sus repos, en el repo de mantenimiento: como clase (el público no la trae)
   { fuente: 'arnes', glob: 'scripts/nightly/dependencies/repos.json', motivo: NOCTURNO_DEPENDENCIAS.motivo, clase: true },
   { fuente: 'arnes', glob: 'commands/tycon-vigilante.md', motivo: 'su sujeto (el vigilante) no viaja' },
-  { fuente: 'arnes', glob: 'scripts/controls-bench/ultimo-*.json', motivo: 'resultados de las corridas del equipo' },
+  { fuente: 'arnes', glob: 'scripts/controls-bench/ultimo-*.json', motivo: 'resultados de las ejecuciones del equipo' },
   { fuente: 'arnes', glob: '**/denylist*.json', motivo: 'lo privado de la publicación: la lista de denegación' },
   { fuente: 'arnes', glob: '**/replacements*.json', motivo: 'lo privado de la publicación: la tabla de reemplazos' },
   { fuente: 'arnes', glob: 'scripts/lib/renames.json', motivo: 'el mapa de renombres a inglés (story 8.9): los nombres viejos no viajan; sin él, legacy-names.* es paso directo', clase: true },

@@ -136,7 +136,7 @@ function motivoDe(nombre, detalleDir) {
   if (/\(ausente\)$/.test(nombre)) return 'la suite no está en el clon: no se midió';
   let txt;
   try { txt = fs.readFileSync(path.join(detalleDir || '', `${nombre}.txt`), 'utf8'); }
-  catch { return UNMEASURED.test(nombre) ? 'no medida: el trabajo que la corría no terminó' : 'sin salida guardada de esta corrida'; }
+  catch { return UNMEASURED.test(nombre) ? 'no medida: el trabajo que la corría no terminó' : 'sin salida guardada de esta ejecución'; }
   const lineas = txt.split('\n').map((l) => l.trim()).filter(Boolean);
   const deFallo = lineas.filter((l) => LINEA_DE_FALLO.test(l));
   const elegidas = (deFallo.length ? deFallo : lineas.slice(-3)).slice(0, 3).map((l) => l.slice(0, 200));
@@ -196,7 +196,7 @@ function main() {
   const rutaRan = arg('--ran');
   if (rutaRan) {
     try { ran = [...new Set(fs.readFileSync(rutaRan, 'utf8').split('\n').map((l) => l.trim()).filter(Boolean))].sort(); }
-    catch (e) { console.error(`⚠️  suites-report: no pude leer la lista de suites corridas (${rutaRan}): ${e.message} — el reporte sale sin ella y sin comparar`); }
+    catch (e) { console.error(`⚠️  suites-report: no pude leer la lista de suites ejecutadas (${rutaRan}): ${e.message} — el reporte sale sin ella y sin comparar`); }
   }
   const anterior = ran ? fotoAnterior(arg('--previous') || rep) : null;
   let failures = String(arg('--failures') || '').trim().split(/\s+/).filter(Boolean);

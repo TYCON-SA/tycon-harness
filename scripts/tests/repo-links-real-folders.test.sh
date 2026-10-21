@@ -130,7 +130,7 @@ if corre T3; then
     case "$out" in *"carpeta tuya"*) ok "$modo · una línea lo dice" ;; *) mal "$modo · no lo dice: $out" ;; esac
     ls -d "$H/.claude/"*.tycon-new-* >/dev/null 2>&1 && mal "$modo · quedó una temporal" || ok "$modo · no quedan temporales"
     out2="$(enlaza "$T" "$H" 2>&1)"
-    [ -z "$out2" ] && ok "$modo · una segunda corrida no hace ni dice nada" || mal "$modo · la segunda corrida dijo: $out2"
+    [ -z "$out2" ] && ok "$modo · una segunda ejecución no hace ni dice nada" || mal "$modo · la segunda ejecución dijo: $out2"
   done
 fi
 
@@ -164,7 +164,7 @@ if corre T6; then
   case "$out" in *mia*) ok "nombra lo tomado: $out" ;; *) mal "no nombra lo tomado: $out" ;; esac
   ls -d "$H/.claude/"skills.tycon-new-* >/dev/null 2>&1 && mal "quedó una temporal" || ok "no quedó temporal"
   enlaza "$T" "$H" >/dev/null 2>&1
-  es_carpeta "$H/.claude/skills" && [ -f "$H/.claude/skills/mia/SKILL.md" ] && ok "suelta, la corrida siguiente convierte" || mal "suelta no convirtió"
+  es_carpeta "$H/.claude/skills" && [ -f "$H/.claude/skills/mia/SKILL.md" ] && ok "suelta, la ejecución siguiente convierte" || mal "suelta no convirtió"
 fi
 
 # ───────────────────────────────────────────── T7 ─────────────────────────────────────────────
@@ -221,7 +221,7 @@ if corre T16; then
   case "$out" in *"distinto contenido"*"tycon-aparte"*) ok "distinto: dice qué quedó aparte y dónde" ;; *) mal "distinto: no lo dice: $out" ;; esac
   case "$out" in *"lo tiene abierto"*) mal "distinto: culpa a un programa: $out" ;; *) ok "distinto: no culpa a un programa" ;; esac
   out2="$(enlaza "$T" "$H" 2>&1)"
-  [ -z "$out2" ] && ok "distinto: la corrida siguiente no lo repite" || mal "distinto: la siguiente dijo: $out2"
+  [ -z "$out2" ] && ok "distinto: la ejecución siguiente no lo repite" || mal "distinto: la siguiente dijo: $out2"
   # distinto, con la carpeta ya real (Claude Code la recreó): queda la de la carpeta; la de la temporal, aparte
   T="$BASE/t15c/arbol"; H="$BASE/t15c/home"; arbol "$T" release; mkdir -p "$H/.claude/skills/mia" "$H/.claude/skills.tycon-new-993/mia"
   printf 'nueva\n' > "$H/.claude/skills/mia/SKILL.md"; printf 'vieja\n' > "$H/.claude/skills.tycon-new-993/mia/SKILL.md"
@@ -249,7 +249,7 @@ if corre T17; then
   case "$out" in *"pasó a carpeta tuya"*) mal "dice que pasó con algo tomado: $out" ;; *"no pude mover"*) ok "dice que no pudo mover" ;; *) mal "no lo dice: $out" ;; esac
   [ -f "$H/.claude/skills.tycon-new-992/mia/SKILL.md" ] && ok "lo tomado sigue en la temporal" || mal "se perdió lo tomado"
   enlaza "$T" "$H" >/dev/null 2>&1
-  [ -f "$H/.claude/skills/mia/SKILL.md" ] && [ ! -e "$H/.claude/skills.tycon-new-992" ] && ok "suelto, la corrida siguiente lo junta" || mal "suelto no juntó"
+  [ -f "$H/.claude/skills/mia/SKILL.md" ] && [ ! -e "$H/.claude/skills.tycon-new-992" ] && ok "suelto, la ejecución siguiente lo junta" || mal "suelto no juntó"
   # lo movido no puede volver: queda en la temporal (de un corte anterior), se dice, y la corrida siguiente termina
   T="$BASE/t16b/arbol"; H="$BASE/t16b/home"; arbol "$T" release; siembra_vieja "$T" "$H"
   TMPD="$H/.claude/skills.tycon-new-991"; mkdir -p "$TMPD"
@@ -258,7 +258,7 @@ if corre T17; then
   case "$out" in *"no pude devolver"*) ok "dice lo que no pudo devolver" ;; *) mal "no lo dice: $out" ;; esac
   [ -f "$TMPD/synced/org_cuenta/de-la-cuenta/SKILL.md" ] && [ -f "$T/skills/mia/SKILL.md" ] && ok "nada se perdió" || mal "se perdió algo"
   enlaza "$T" "$H" >/dev/null 2>&1
-  es_carpeta "$H/.claude/skills" && [ -f "$H/.claude/skills/mia/SKILL.md" ] && [ -d "$H/.claude/skills/synced" ] && [ ! -e "$TMPD" ] && ok "la corrida siguiente termina" || mal "no terminó: $(ls -a "$H/.claude" "$H/.claude/skills" 2>&1 | tr '\n' ' ')"
+  es_carpeta "$H/.claude/skills" && [ -f "$H/.claude/skills/mia/SKILL.md" ] && [ -d "$H/.claude/skills/synced" ] && [ ! -e "$TMPD" ] && ok "la ejecución siguiente termina" || mal "no terminó: $(ls -a "$H/.claude" "$H/.claude/skills" 2>&1 | tr '\n' ' ')"
 fi
 
 # ───────────────────────────────────────────── T18 ────────────────────────────────────────────
@@ -337,15 +337,15 @@ fi
 
 # ───────────────────────────────────────────── T22 ────────────────────────────────────────────
 if corre T22; then
-  echo "T22 · Dangling_BecomesRealFolder — un enlace colgado pasa a carpeta real en la primera corrida (nunca la forma vieja)"
+  echo "T22 · Dangling_BecomesRealFolder — un enlace colgado pasa a carpeta real en la primera ejecución (nunca la forma vieja)"
   T="$BASE/t22/arbol"; H="$BASE/t22/home"; arbol "$T" release; mkdir -p "$H/.claude"
   ln -s "$BASE/t22/borrado/skills" "$H/.claude/skills"; ln -s "$BASE/t22/borrado/agents" "$H/.claude/agents"
   out="$(enlaza "$T" "$H" 2>&1)"
-  es_carpeta "$H/.claude/skills" && es_carpeta "$H/.claude/agents" && ok "carpetas reales en la primera corrida" || mal "no: $(ls -la "$H/.claude" | tr '\n' ' ') — $out"
+  es_carpeta "$H/.claude/skills" && es_carpeta "$H/.claude/agents" && ok "carpetas reales en la primera ejecución" || mal "no: $(ls -la "$H/.claude" | tr '\n' ' ') — $out"
   lleva "$H/.claude/skills/tycon-pipeline" "$T/skills/tycon-pipeline" && lleva "$H/.claude/agents/rev-a.md" "$T/agents/rev-a.md" && ok "con un enlace por entrada" || mal "faltan los enlaces por entrada"
   case "$out" in *"enlace colgado"*) ok "lo dice" ;; *) mal "no lo dice: $out" ;; esac
   out2="$(enlaza "$T" "$H" 2>&1)"
-  [ -z "$out2" ] && ok "la segunda corrida no hace ni dice nada" || mal "la segunda dijo: $out2"
+  [ -z "$out2" ] && ok "la segunda ejecución no hace ni dice nada" || mal "la segunda dijo: $out2"
 fi
 
 # ───────────────────────────────────────────── T23 ────────────────────────────────────────────
@@ -358,7 +358,7 @@ if corre T23; then
   lleva "$H/.claude/skills" "$T/skills" && ok "el enlace entero queda" || mal "el enlace cambió"
   [ -f "$T/skills/vieja-mia/SKILL.md" ] && [ ! -e "$TMPD" ] && ok "lo del corte volvió con lo demás; no quedó temporal escondida" || mal "quedó escondido: $(ls -a "$H/.claude" "$T/skills" 2>&1 | tr '\n' ' ')"
   enlaza "$T" "$H" >/dev/null 2>&1
-  [ -f "$H/.claude/skills/vieja-mia/SKILL.md" ] && [ -f "$H/.claude/skills/mia/SKILL.md" ] && ok "suelto, la corrida siguiente convierte todo" || mal "suelto no convirtió"
+  [ -f "$H/.claude/skills/vieja-mia/SKILL.md" ] && [ -f "$H/.claude/skills/mia/SKILL.md" ] && ok "suelto, la ejecución siguiente convierte todo" || mal "suelto no convirtió"
 fi
 
 # ───────────────────────────────────────────── T24 ────────────────────────────────────────────

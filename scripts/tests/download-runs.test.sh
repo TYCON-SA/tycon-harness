@@ -177,7 +177,7 @@ blob "${T}/b" "Mac Con Espacios/4.1-2026-09-04T0800.json" 100
 blob "${T}/b" "equipo-deva/pagina.html" 100
 blob "${T}/b" "equipo-deva/sub/5.1-2026-09-05T0700.json" 100
 bajar "${T}" "${T}/bin/az"
-[ "${RC}" -eq 0 ] && [ "$(campo "${T}" ignorados)" = "4" ] && ok "T10 cuatro nombres sin forma de <maquina>/<corrida> se cuentan como ignorados" || mal "T10 ignorados=$(campo "${T}" ignorados) rc=${RC}"
+[ "${RC}" -eq 0 ] && [ "$(campo "${T}" ignorados)" = "4" ] && ok "T10 cuatro nombres sin forma de <maquina>/<ejecución> se cuentan como ignorados" || mal "T10 ignorados=$(campo "${T}" ignorados) rc=${RC}"
 [ ! -e "${T}/estado/corridas-buzon/suelto-en-la-raiz.json" ] && [ ! -e "${T}/estado/corridas-buzon/equipo-deva/pagina.html" ] && [ ! -d "${T}/estado/corridas-buzon/Mac Con Espacios" ] && [ ! -d "${T}/estado/corridas-buzon/equipo-deva/sub" ] && ok "T10 y ninguno se escribió" || mal "T10 se escribió algún nombre sin forma"
 [ -z "$(find "${T}/estado" -name '*.tmp-*' 2>/dev/null)" ] && ok "T10 no quedaron temporales" || mal "T10 quedaron temporales"
 
@@ -199,7 +199,7 @@ for n in gates.log.gz bypass.log.gz frenos.jsonl.gz cobertura.json; do cmp -s "$
 [ "${RC}" -eq 0 ] && [ "${IGUALES}" = "4" ] && ok "2.5-T3 + 2.6-T11 los TRES registros y la cobertura bajaron a devb-mbp/registros/, idénticos" || mal "2.5-T3 + 2.6-T11 rc=${RC}, ${IGUALES} de 4: $(ls -R "${T}/estado/corridas-buzon" 2>&1 | head -8)"
 [ "$(campo "${T}" ignorados)" = "3" ] && [ ! -e "${T}/estado/corridas-buzon/devb-mbp/registros/otro.txt" ] && [ ! -d "${T}/estado/corridas-buzon/devb-mbp/registros/sub" ] && [ ! -d "${T}/estado/corridas-buzon/devb-mbp/agregados" ] \
   && ok "2.5-T3 lo que no tiene forma de registro (otro archivo, otra subcarpeta, agregados) se ignora y no se escribe" || mal "2.5-T3 ignorados=$(campo "${T}" ignorados)"
-python3 - "${RAIZ}/scripts/nightly/dashboard/runs.js" "${T}/estado/corridas-buzon" <<'PY' && ok "2.5-T3 la vista de corridas cuenta lo mismo con y sin la carpeta de registros" || mal "2.5-T3 la vista de corridas cambió con los registros bajados"
+python3 - "${RAIZ}/scripts/nightly/dashboard/runs.js" "${T}/estado/corridas-buzon" <<'PY' && ok "2.5-T3 la vista de ejecuciones cuenta lo mismo con y sin la carpeta de registros" || mal "2.5-T3 la vista de ejecuciones cambió con los registros bajados"
 import json, subprocess, sys, shutil, os
 js = "const c=require(process.argv[1]); const r=c.leerRegistro(process.argv[2]+'/../vacio', [], {buzon: process.argv[2]}); console.log(JSON.stringify({n:r.corridas.length, ile:r.ilegibles, arch:r.archivos, sin:r.corridas.filter(x=>!x.maquina).length, b:r.buzon}))"
 leer = lambda: json.loads(subprocess.check_output(['node', '-e', js, sys.argv[1], sys.argv[2]]).decode())
@@ -221,7 +221,7 @@ blob "${T}/b" "lab-mini/registros/bypass.log.gz" 100; blob "${T}/b" "lab-mini/re
 echo 250 > "${T}/b/demora"
 bajar "${T}" "${T}/bin/az" --budget-ms 900
 [ -f "${T}/estado/corridas-buzon/lab-mini/registros/bypass.log.gz" ] && [ -f "${T}/estado/corridas-buzon/lab-mini/registros/gates.log.gz" ] && [ -f "${T}/estado/corridas-buzon/lab-mini/registros/cobertura.json" ] \
-  && ok "2.5-T3b con presupuesto chico y 6 corridas, los tres archivos de registros bajaron primero" || mal "2.5-T3b rc=${RC} sin_tiempo=$(campo "${T}" sin_tiempo): $(ls -R "${T}/estado/corridas-buzon" 2>&1 | head -6)"
+  && ok "2.5-T3b con presupuesto chico y 6 ejecuciones, los tres archivos de registros bajaron primero" || mal "2.5-T3b rc=${RC} sin_tiempo=$(campo "${T}" sin_tiempo): $(ls -R "${T}/estado/corridas-buzon" 2>&1 | head -6)"
 T="${BASE}/t3c-25"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 blob "${T}/b" "lab-mini/registros/bypass.log.gz" 100; blob "${T}/b" "lab-mini/registros/cobertura.json" 100; blob "${T}/b" "lab-mini/registros/gates.log.gz" 100
 echo "lab-mini/registros/gates.log.gz" > "${T}/b/corromper"
@@ -391,7 +391,7 @@ printf "setTimeout(() => require('fs').appendFileSync(process.env.ORDER_LOG, 're
 : > "${T}/orden.txt"; rm -rf "${T}/home/.claude"
 env HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 PROFILE_FULL=1 TF_BUILD=True bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
 sleep 2
-[ ! -s "${T}/orden.txt" ] && [ ! -e "${T}/home/.claude/.tycon-pipeline/upload-runs.log" ] && grep -q 'corrida de Azure DevOps' "${T}/inst.log" \
+[ ! -s "${T}/orden.txt" ] && [ ! -e "${T}/home/.claude/.tycon-pipeline/upload-runs.log" ] && grep -q 'ejecución de Azure DevOps' "${T}/inst.log" \
   && ok "2.12-T14 InstaladorEnCi_NoLanzaLaTanda: con TF_BUILD=True el bloque no lanza barrido, recolección, subida ni bajada, y lo dice por stderr" \
   || mal "2.12-T14 InstaladorEnCi_NoLanzaLaTanda con TF_BUILD=True se lanzó: $(tr '\n' '|' < "${T}/orden.txt") · salida: $(head -c 200 "${T}/inst.log")"
 : > "${T}/orden.txt"; rm -rf "${T}/home/.claude"
@@ -413,7 +413,7 @@ echo 250 > "${T7D}/b/demora"
 bajar "${T7D}" "${T7D}/bin/az" --budget-ms 1300
 H="${T7D}/estado/corridas-buzon/lab-mini/registros/hallazgos.jsonl.gz"
 [ -f "${H}" ] && [ -f "${T7D}/estado/corridas-buzon/lab-mini/registros/cobertura.json" ] \
-  && ok "T7 hallazgos.jsonl.gz baja con los registros, antes que las corridas (presupuesto chico)" \
+  && ok "T7 hallazgos.jsonl.gz baja con los registros, antes que las ejecuciones (presupuesto chico)" \
   || mal "T7 hallazgos no bajó primero (rc=${RC}): $(ls -R "${T7D}/estado/corridas-buzon" 2>&1 | head -8)"
 [ ! -e "${T7D}/estado/corridas-buzon/lab-mini/hallazgos" ] && ok "T7 una carpeta hermana <maq>/hallazgos/ se ignora" \
   || mal "T7 se bajó una carpeta hermana de hallazgos — la forma válida es <maq>/registros/"
@@ -704,7 +704,7 @@ print(json.dumps(f(json.JSONDecoder().raw_decode(t[i:])[0]), sort_keys=True, ind
 done
 if [ "$(campo "${T}/plano" completo)" = "true" ] && [ "$(campo "${T}/versionado" completo)" = "true" ] && diff -r "${T}/plano/estado/corridas-buzon/maq-x" "${T}/versionado/estado/corridas-buzon/maq-x" >/dev/null \
    && [ -s "${T}/plano-runs.json" ] && cmp -s "${T}/plano-runs.json" "${T}/versionado-runs.json" && [ -s "${T}/plano-noche.json" ] && cmp -s "${T}/plano-noche.json" "${T}/versionado-noche.json"; then
-  ok "2.24-T20 un buzón versionado y uno plano con el mismo contenido dan el mismo espejo, la misma vista de corridas y la misma página del equipo (completo en los dos)"
+  ok "2.24-T20 un buzón versionado y uno plano con el mismo contenido dan el mismo espejo, la misma vista de ejecuciones y la misma página del equipo (completo en los dos)"
 else
   mal "2.24-T20 completo plano=$(campo "${T}/plano" completo) versionado=$(campo "${T}/versionado" completo) · espejos: $(diff -rq "${T}/plano/estado/corridas-buzon/maq-x" "${T}/versionado/estado/corridas-buzon/maq-x" 2>&1 | head -3) · runs $(cmp "${T}/plano-runs.json" "${T}/versionado-runs.json" 2>&1) · noche $(cmp "${T}/plano-noche.json" "${T}/versionado-noche.json" 2>&1) $(wc -c < "${T}/plano-noche.json") · $(head -c 300 "${T}/plano-noche.crudo")"
 fi
@@ -935,7 +935,7 @@ pl228 "${E}" macbook-pro-aaaaaaaa aaaaaaaa macbook-pro 2026-10-15 2026-10-15
 node -e 'const fs=require("fs"); const f=process.argv[1]; const p=JSON.parse(fs.readFileSync(f)); p.folder.previous_runs_sha256=require("crypto").createHash("sha256").update("adivinada").digest("hex"); fs.writeFileSync(f, JSON.stringify(p))' "${E}/macbook-pro-aaaaaaaa/registros/place.json"
 U="$(uniones_de "${E}")"
 echo "${U}" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['macbook-pro']['estado']=='siguio_recibiendo' and d['macbook-pro']['nueva'] is None, d" 2>/dev/null \
-  && ok "2.28-adv sin la huella de las corridas de la carpeta vieja, la carpeta no se une" || mal "2.28-adv huella: ${U}"
+  && ok "2.28-adv sin la huella de las ejecuciones de la carpeta vieja, la carpeta no se une" || mal "2.28-adv huella: ${U}"
 pl228 "${E}" macbook-pro-aaaaaaaa aaaaaaaa macbook-pro 2026-10-15 2026-10-15
 echo "$(uniones_de "${E}")" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['macbook-pro']['estado']=='unida', d" 2>/dev/null \
   && ok "2.28-adv con la huella correcta, se une" || mal "2.28-adv huella correcta: $(uniones_de "${E}")"

@@ -18,7 +18,7 @@ hace falta instalar nada en una máquina: todo pasa en GitHub.
 - **Permiso de dueño (owner) de la organización**, o de administrador del repo de operaciones y de los repos a mirar.
 - **Una identidad para la noche, con su credencial.** Los workflows necesitan leer los repos de la organización y
   escribir issues en los de los productos; el token propio de un workflow sólo ve su repo. Hay dos caminos:
-  - **Recomendado: una GitHub App** de la organización (punto 1.1). Cada corrida le pide a GitHub un token que vence en
+  - **Recomendado: una GitHub App** de la organización (punto 1.1). Cada ejecución le pide a GitHub un token que vence en
     una hora, con los permisos justos para cada paso y sólo de los repos donde la App está instalada. No hay un token
     fijo que se pueda filtrar ni que venza un día cualquiera, y no ocupa una cuenta de persona.
   - **Alternativa: un usuario de máquina** (punto 1.2): una cuenta de GitHub sólo para esto, con un token de acceso
@@ -57,8 +57,8 @@ la App. Para cortarle el acceso a la noche, borrá la llave o desinstalá la App
 
 Con la App, las métricas miden los repos donde la App está **instalada**, privados incluidos, sea el dueño una
 organización o una cuenta de usuario: instalala en todos los repos a medir. Miran **un** dueño, el del repo de
-operaciones; si `METRICS_OWNERS` nombra a otros, la corrida avisa que la App no está instalada en sus repos y no los
-mide; para varios dueños, usá el usuario de máquina. Si no ven ningún repo, la corrida lo dice con un aviso.
+operaciones; si `METRICS_OWNERS` nombra a otros, la ejecución avisa que la App no está instalada en sus repos y no los
+mide; para varios dueños, usá el usuario de máquina. Si no ven ningún repo, la ejecución lo dice con un aviso.
 
 ### 1.2 El usuario de máquina (alternativa)
 
@@ -118,10 +118,10 @@ Azure DevOps.
 ### Quién es quién: la clave `people` (opcional)
 
 `people` dice de quién es cada máquina del equipo, para que en el sitio de la organización cada persona vea sólo sus
-corridas. Sin `people`, nadie ve corridas ajenas y las de una máquina sin confirmar las ve sólo quien mantiene. Acá van
+ejecuciones. Sin `people`, nadie ve ejecuciones ajenas y las de una máquina sin confirmar las ve sólo quien mantiene. Acá van
 **correos**, no usuarios de GitHub: el sitio compara con el correo con que la persona inicia sesión.
 
-- **`people.machines`**: una entrada por máquina, con el nombre de su carpeta en el buzón de corridas
+- **`people.machines`**: una entrada por máquina, con el nombre de su carpeta en el buzón de ejecuciones
   (`<nombre>-<código>`, por ejemplo `maq-uno-1a2b3c4d`). Cada máquina informa el correo de git de su dev; un
   mantenedor lo revisa y confirma la máquina escribiendo `person` (el correo de la persona en la organización, que puede
   no ser el informado), `reported_sha256`, `confirmed_by` (quién confirma) y `confirmed_on` (el día, `AAAA-MM-DD`).
@@ -130,7 +130,7 @@ corridas. Sin `people`, nadie ve corridas ajenas y las de una máquina sin confi
   espejo del buzón. Si la máquina no informaba correo, va `null`. Si la máquina empieza a informar otro correo, la
   confirmación se cae hasta que alguien la vuelva a confirmar.
 - **`people.projects`**: corrige en qué productos trabaja cada persona (los productos de `repos.json`). `add` suma
-  productos a los que se deducen de sus corridas y sus issues; `remove` los saca. Un producto no va en las dos.
+  productos a los que se deducen de sus ejecuciones y sus issues; `remove` los saca. Un producto no va en las dos.
 
 La huella se calcula así, con el correo tal como lo informa la máquina (se pasa a minúsculas y sin espacios alrededor):
 
@@ -195,7 +195,7 @@ protección, el token del workflow tiene que poder empujar ahí (o los guardados
 restringe qué acciones se pueden usar, permití `actions/checkout`, `actions/setup-node`, `actions/setup-dotnet`, `actions/setup-python` (sólo la usa
 si algún repo es pip) y `actions/create-github-app-token` (van fijadas por el commit).
 
-## 4. La primera corrida: sin efectos
+## 4. La primera ejecución: sin efectos
 
 En *Actions*, cada workflow → *Run workflow*, con **effects** destildado. Mide y escribe en el disco del runner, pero no
 guarda nada, no crea ni comenta issues y no manda el resumen. `harness_ref` deja probar otra versión del arnés sin
@@ -203,7 +203,7 @@ cambiar la variable.
 
 Mirá que termine en verde. Si dice «Repos NO medidos» o «NO MEDIDO», es la credencial: no puede leer esos repos.
 
-## 5. La primera corrida de verdad, en orden
+## 5. La primera ejecución de verdad, en orden
 
 Con efectos, a mano, en este orden (es el mismo de la noche):
 
@@ -219,7 +219,7 @@ Los issues nacen **apagados**: con `github.issues_enabled: false` la revisión n
 
 Después quedan programados solos: dependencias 04:17 UTC, métricas 06:17 UTC, tablero 08:47 UTC (minutos no redondos:
 GitHub demora o saltea las programaciones en punto cuando tiene carga). Para cambiar el horario, el `cron` de cada
-workflow. GitHub deja una sola corrida esperando por workflow: una corrida a mano mientras otra espera reemplaza a la
+workflow. GitHub deja una sola ejecución esperando por workflow: una ejecución a mano mientras otra espera reemplaza a la
 que esperaba.
 
 ## 6. Qué mirar después
@@ -231,10 +231,10 @@ que esperaba.
   arreglo es declarar la deuda). La noche reabre un issue que cerró ella si la vulnerabilidad vuelve; uno que cerró una
   persona, no.
 - **La página del tablero**: `artifacts/tablero-del-arnes.html` del repo de operaciones (bajala y abrila en el navegador).
-- **Una corrida en rojo** dice en su primer error por qué. Las causas de siempre: la credencial (el token vencido, sin
+- **Una ejecución en rojo** dice en su primer error por qué. Las causas de siempre: la credencial (el token vencido, sin
   permiso, o la App sin instalar en ese repo), un JSON que no valida, `team-repos.json` que no nombra este repo como
   `operations`, o el repo de operaciones sin rama `main`. Lo que en Azure es «naranja» acá es un aviso amarillo con la
-  corrida en verde: mirá los avisos.
+  ejecución en verde: mirá los avisos.
 
 ## 7. La copia para el sitio de la organización (opcional)
 
@@ -251,7 +251,7 @@ administrada (`SITE_OPERATIONS_SOURCE=copy`). Qué forma conviene, y lo que cues
    y cargá las variables `SITE_COPY_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `SITE_COPY_ACCOUNT` y
    `SITE_COPY_CONTAINER`. Corre en cada push a `main`, al terminar cada nocturno (su guardado no dispara un `push`) y
    una vez por día.
-4. **La primera corrida** tiene que salir verde y decir «subida la foto de <commit>». Recién entonces el sitio pasa a
+4. **La primera ejecución** tiene que salir verde y decir «subida la foto de <commit>». Recién entonces el sitio pasa a
    `SITE_OPERATIONS_SOURCE=copy`.
 
 ## 8. El sitio al día con stable (opcional)
@@ -270,7 +270,7 @@ mantiene al día»).
 
 - Los avisos de dependencias son **issues en el repo del producto**, no Bugs de Azure Boards, y **no hay pull request por
   hallazgo** en el repo de operaciones: el issue es el lugar de decidir. Ninguna ficha pasa a `promoted/`.
-- No hay buzón de corridas en el tablero: las fichas del equipo salen «no leído».
+- No hay buzón de ejecuciones en el tablero: las fichas del equipo salen «no leído».
 - Lo que deja la noche para el sitio de la organización (story 2.23): `team-dashboard` escribe igual
   `.dashboard/open-prs/open-prs-<día>.json` y `.dashboard/assigned/assigned-<día>.json`, los dos con `estado: no_medido`
   y «los pull requests y los pedidos de GitHub todavía no se leen». El sitio lo muestra así, nunca como cero.

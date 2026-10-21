@@ -118,7 +118,7 @@ function makeRemotes({ lab, sources, env }) {
     const bundle = path.join(sources, `${name}.bundle`);
     if (!fs.existsSync(bundle)) return { ok: false, reason: `no encuentro el bundle ${bundle}` };
     const dir = path.join(lab, 'remotes', `${name}.git`);
-    if (fs.existsSync(dir)) return { ok: false, reason: `${dir} ya existe: el laboratorio es de una sola corrida` };
+    if (fs.existsSync(dir)) return { ok: false, reason: `${dir} ya existe: el laboratorio es de una sola ejecución` };
     fs.mkdirSync(path.dirname(dir), { recursive: true });
     const r = L.run('git', ['clone', '--quiet', '--bare', bundle, dir], { env, timeoutMs: 10 * 60 * 1000 });
     if (r.error || r.exit !== 0) return { ok: false, reason: `git clone --bare de ${name}.bundle salió ${r.error || r.exit}: ${L.firstLine(r.stderr)}` };

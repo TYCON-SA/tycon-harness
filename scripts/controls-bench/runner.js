@@ -744,7 +744,7 @@ function main(ctx) {
   const outPath = JSON_OUT || path.join(OUT_DIR, nombre);
   fs.writeFileSync(outPath, JSON.stringify(report, null, 2) + '\n');
   console.log(`\n${failed + staleGaps === 0 ? '✅' : '❌'} ${ran} corridos · ${failed} rojos ·${platform === 'win32' ? ` ${known} rojos conocidos (known-gaps.json) ·` : ''} ${nomedido} NO MEDIDOS · ${skipped} skip-con-asimetría · paridad rota: ${parityBreaks} · regresiones vs baseline: ${baselineRegressions}`);
-  if (nomedido > 0) console.log(`🟡 ${nomedido} caso(s) NO MEDIDO(s): se les agotó el tiempo dos veces (o les faltó con qué correr: lo dice cada uno). No son rojos, pero la corrida NO está completa — volver a correrla con la máquina libre.`);
+  if (nomedido > 0) console.log(`🟡 ${nomedido} caso(s) NO MEDIDO(s): se les agotó el tiempo dos veces (o les faltó con qué correr: lo dice cada uno). No son rojos, pero la ejecución NO está completa — volver a correrla con la máquina libre.`);
   console.log(`reporte: ${outPath}`);
   return failed + parityBreaks + baselineRegressions + staleGaps > 0 ? 1 : 0;
 }

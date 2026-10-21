@@ -100,7 +100,7 @@ catch (e) { motivoSinRescate = `scripts/metrics/tokens-digest.js no se pudo carg
 let cambios = null;
 let motivoSinCambios = null;
 try { cambios = require('./changes.js'); }
-catch (e) { motivoSinCambios = `scripts/nightly/dashboard/changes.js no se pudo cargar (${e.code || e.message}): el detalle no muestra los archivos que tocó cada corrida`; }
+catch (e) { motivoSinCambios = `scripts/nightly/dashboard/changes.js no se pudo cargar (${e.code || e.message}): el detalle no muestra los archivos que tocó cada ejecución`; }
 
 // La cuenta de trabajo, espera y hueco vive en UN archivo, el mismo para la corrida nueva
 // (con arranque por paso) y la vieja (sin arranque: estimada). Sin él, los tramos se cortan sin esa cuenta.
@@ -384,7 +384,7 @@ function modeloDeCorrida(d, nombresPasos) {
   let motivoTramos = null;
   let tiempos = null;
   if (!rescate) motivoTramos = 'los pasos no se cortan: el saneado y el corte de pasos (tokens-digest.js) no están en esta máquina';
-  else if (!Number.isFinite(ini)) motivoTramos = 'la corrida no anotó su hora de inicio: sin eje de tiempo';
+  else if (!Number.isFinite(ini)) motivoTramos = 'la ejecución no anotó su hora de inicio: sin eje de tiempo';
   else if (cuentaTiempos) {
     // Con arranque, el paso dura fin − arranque y el hueco previo es un tramo PROPIO
     // (`tipo: 'entre'`), nunca parte del paso. Sin arranque, la cuenta lo estima como siempre y lo dice.
@@ -461,7 +461,7 @@ function modeloDeCorrida(d, nombresPasos) {
 
   const c = d.consumo && typeof d.consumo === 'object' ? d.consumo : null;
   let consumo;
-  if (!c) consumo = { estado: 'no_medido', motivo: 'esta corrida es anterior al rescate del consumo (story 2.13): no se registró' };
+  if (!c) consumo = { estado: 'no_medido', motivo: 'esta ejecución es anterior al rescate del consumo (story 2.13): no se registró' };
   else if (c.estado !== 'medido' || !c.tokens) consumo = { estado: String(c.estado || 'no_medido'), motivo: limpio(c.motivo, 'el volcado no trae el consumo medido') };
   else {
     const tk = c.tokens;
@@ -486,7 +486,7 @@ function modeloDeCorrida(d, nombresPasos) {
     : { estado: 'no_medido', motivo: limpio(x && x.motivo, alt) });
   let revisores;
   if (!rv) {
-    revisores = { estado: 'sin_medir', motivo: 'esta corrida no tiene medidos los revisores: los mide el barrido del arranque, o a mano `scripts/metrics/reviewers-cost.js --run <volcado>`' };
+    revisores = { estado: 'sin_medir', motivo: 'esta ejecución no tiene medidos los revisores: los mide el barrido del arranque, o a mano `scripts/metrics/reviewers-cost.js --run <volcado>`' };
   } else {
     const est = rv.estimado && typeof rv.estimado === 'object' ? rv.estimado : null;
     revisores = {
@@ -534,8 +534,8 @@ function modeloDeCorrida(d, nombresPasos) {
     validador = {
       estado: 'no_medido',
       motivo: !rv
-        ? 'sin medir los revisores de esta corrida; el veredicto del validador existe desde la story 7.3'
-        : !vr ? 'la corrida es anterior a la story 7.3: el validador no dejaba veredicto'
+        ? 'sin medir los revisores de esta ejecución; el veredicto del validador existe desde la story 7.3'
+        : !vr ? 'la ejecución es anterior a la story 7.3: el validador no dejaba veredicto'
           : limpio(vr.motivo, 'el volcado no trae el veredicto del validador medido'),
     };
   }
@@ -699,7 +699,7 @@ function leerResumen(volcado) {
     const r = JSON.parse(require('zlib').gunzipSync(fs.readFileSync(RESUMEN.nombre(volcado))).toString('utf8'));
     return r && r.v === 1 && r.cambios && typeof r.cambios === 'object' ? r : null;
   } catch (e) {
-    if (e.code !== 'ENOENT') process.stderr.write(`corridas: el resumen de ${path.basename(volcado)} no se pudo leer (${e.code || e.message})\n`);
+    if (e.code !== 'ENOENT') process.stderr.write(`ejecuciones: el resumen de ${path.basename(volcado)} no se pudo leer (${e.code || e.message})\n`);
     return null;
   }
 }
@@ -847,7 +847,7 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
   else try {
     for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json')).sort()) copias.push({ ruta: path.join(dir, f), origen: maquinaLocal, maquina: maquinaLocal, motivo: motivoLocal });
   } catch (e) {
-    out.registro = { estado: 'no_medido', motivo: `esta página se generó donde no está el registro de corridas (${e.code || 'ilegible'}): vive en ~/.claude/.tycon-pipeline/timing-history, en el disco de cada máquina, fuera de todo repo`, dir: null };
+    out.registro = { estado: 'no_medido', motivo: `esta página se generó donde no está el registro de ejecuciones (${e.code || 'ilegible'}): vive en ~/.claude/.tycon-pipeline/timing-history, en el disco de cada máquina, fuera de todo repo`, dir: null };
     if (!multi) return out;
   }
   if (multi) {
@@ -855,7 +855,7 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
     let entradas = [];
     // 🔴 Ordenado: «la primera copia que declara la máquina» no puede depender del orden del disco.
     try { entradas = fs.readdirSync(opts.buzon, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)); }
-    catch (e) { out.buzon = { estado: 'no_medido', motivo: `la carpeta bajada del buzón de corridas no se pudo leer (${e.code || 'ilegible'})`, carpetas_ilegibles: 0 }; }
+    catch (e) { out.buzon = { estado: 'no_medido', motivo: `la carpeta bajada del buzón de ejecuciones no se pudo leer (${e.code || 'ilegible'})`, carpetas_ilegibles: 0 }; }
     // La corrida de una carpeta vieja `unida` es de su nueva («antes, <vieja>»); una `compartida` o
     // `siguio_recibiendo` queda en su carpeta, marcada. Sin el archivo del bajador no se une nada, y se dice.
     const uniones = out.buzon.estado === 'leido' ? leerUniones(opts.buzon) : null;
@@ -978,9 +978,9 @@ function umbrales(archivo = path.join(__dirname, 'sources.json')) {
 function lineaBasePasos(ruta = '../../metrics/steps-per-run.js') {
   let lb;
   try { lb = require(ruta).LINEA_BASE; }
-  catch (e) { return { estado: 'sin_linea_base', motivo: `el medidor de pasos por corrida no se pudo cargar (${e.code || e.name || 'error'})` }; }
+  catch (e) { return { estado: 'sin_linea_base', motivo: `el medidor de pasos por ejecución no se pudo cargar (${e.code || e.name || 'error'})` }; }
   if (!lb || !Number.isFinite(lb.mediana) || !/^\d{4}-\d{2}-\d{2}$/.test(String(lb.fecha))) {
-    return { estado: 'sin_linea_base', motivo: 'el medidor de pasos por corrida no declara una línea base con su mediana y su fecha' };
+    return { estado: 'sin_linea_base', motivo: 'el medidor de pasos por ejecución no declara una línea base con su mediana y su fecha' };
   }
   return { estado: 'medida', mediana: lb.mediana, fecha: String(lb.fecha), corridas: Number.isFinite(lb.corridas) ? lb.corridas : null };
 }
@@ -1096,7 +1096,7 @@ function barraTramos(c, escala) {
 function colTrabajo(c) {
   const t = c.tiempos;
   if (!t || t.trabajo_ms === null) return `<span class="nd" title="${esc((t && t.motivo) || c.motivo_tramos || 'sin tiempos por paso')}">—</span>`;
-  return t.trabajo_medido ? dur(t.trabajo_ms) : `<span title="estimada por diferencia: la corrida no anotó el arranque de todos sus pasos">~${dur(t.trabajo_ms)}</span>`;
+  return t.trabajo_medido ? dur(t.trabajo_ms) : `<span title="estimada por diferencia: la ejecución no anotó el arranque de todos sus pasos">~${dur(t.trabajo_ms)}</span>`;
 }
 function colEspera(c) {
   const t = c.tiempos;
@@ -1109,8 +1109,8 @@ function colEspera(c) {
   return hilo ? `<span title="incluye ${dur(hilo)} esperando una respuesta fuera de los pasos de aprobación (una pregunta o un turno que esperó al dev)">${dur(t.espera_humana_ms)}</span>` : dur(t.espera_humana_ms);
 }
 
-const TITULO_SIN_PASOS = 'la corrida trabajó pero el marcador sólo anotó el arranque: no es una corrida abandonada';
-const TITULO_SIN_CERRAR = 'el marcador desapareció sin su cierre: lo que se ve sale de su carpeta de corrida y del registro de controles';
+const TITULO_SIN_PASOS = 'la ejecución trabajó pero el marcador sólo anotó el arranque: no es una ejecución abandonada';
+const TITULO_SIN_CERRAR = 'el marcador desapareció sin su cierre: lo que se ve sale de su carpeta de ejecución y del registro de controles';
 
 function colArchivos(c) {
   const x = c.cambios;
@@ -1121,7 +1121,7 @@ function colArchivos(c) {
     if (!x.git.total_archivos && sinMedir.length) {
       return `<span class="nd" title="${esc(`no se pudo mirar ${sinMedir.length} de ${nR} repo(s): ${sinMedir.map((r) => `${r.n} (${r.motivo || 'sin motivo'})`).join(' · ')}`)} — no es cero">—</span>`;
     }
-    return `<span title="según git: ${x.git.total_archivos} archivo${x.git.total_archivos === 1 ? '' : 's'} en ${nR} repo${nR === 1 ? '' : 's'}${sinMedir.length ? `, ${sinMedir.length} sin poder mirar` : ''} (commits de la corrida y lo que quedó sin commitear)">${x.git.total_archivos}</span>`;
+    return `<span title="según git: ${x.git.total_archivos} archivo${x.git.total_archivos === 1 ? '' : 's'} en ${nR} repo${nR === 1 ? '' : 's'}${sinMedir.length ? `, ${sinMedir.length} sin poder mirar` : ''} (commits de la ejecución y lo que quedó sin commitear)">${x.git.total_archivos}</span>`;
   }
   if (!x || x.estado !== 'leido') return `<span class="nd" title="${esc((x && x.motivo) || 'no se sabe qué archivos tocó')} — no es cero">—</span>`;
   const n = x.archivos.filter((a) => !/^script por consola/.test(a.f)).length;
@@ -1132,7 +1132,7 @@ function colArchivos(c) {
 }
 
 function filaControles(c) {
-  if (!c.controles) return '<span class="nd" title="esta corrida no registró controles — no quiere decir que hayan salido verdes">sin controles registrados</span>';
+  if (!c.controles) return '<span class="nd" title="esta ejecución no registró controles — no quiere decir que hayan salido verdes">sin controles registrados</span>';
   const peso = (v) => v.error * 1000 + v.freno * 10 + v.n / 1000;
   return Object.entries(c.controles.por_control).sort((a, b) => peso(b[1]) - peso(a[1])).slice(0, 3).map(([k, v]) => {
     const cls = v.error ? 'f-error' : v.freno ? 'f-freno' : (v.paso === 0 && v.sin_estado) ? 'f-sin' : '';
@@ -1156,19 +1156,19 @@ function cabecera(M, opts = {}) {
   const alFinal = C.filter((c) => c.llego_al_final).length;
   const origen = sitio ? 'versión del sitio' : `commit ${esc((() => { try { return execSync('git rev-parse --short HEAD', { cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch (e) { return 'desconocido'; } })())}`;
   const selloCorridas = Number.isFinite(M.archivos) ? `${N} de ${M.archivos} archivos · ${M.duplicados} duplicado${M.duplicados === 1 ? '' : 's'} · ${M.ilegibles} no se pudieron leer` : String(N);
-  const eyebrow = !sitio ? 'Tablero del arnés · vista de corridas · el arnés en seis preguntas: <span class="mono">artifacts/tablero-del-arnes.html</span>, en el repo del arnés'
-    : sitio.rol === 'maintainer' ? 'Sitio de la organización · vista de corridas · el arnés en seis preguntas: <a href="/arnes">sus fichas, en Arnés</a>'
-      : 'Sitio de la organización · tus corridas';
+  const eyebrow = !sitio ? 'Tablero del arnés · vista de ejecuciones · el arnés en seis preguntas: <span class="mono">artifacts/tablero-del-arnes.html</span>, en el repo del arnés'
+    : sitio.rol === 'maintainer' ? 'Sitio de la organización · vista de ejecuciones · el arnés en seis preguntas: <a href="/arnes">sus fichas, en Arnés</a>'
+      : 'Sitio de la organización · tus ejecuciones';
   const alcance = !M.multi || (M.maquinas && M.maquinas.solo_esta)
     ? 'esta máquina'
     : [...M.maquinas.lista.map((x) => `${x.nombre} ${x.corridas}`), ...(M.maquinas.sin_declarar ? [`sin declarar ${M.maquinas.sin_declarar}`] : [])].join(' · ') || (sitio ? 'ninguna máquina' : '');
   const bandaBuzon = !M.multi || !M.buzon ? ''
     // al dev del sitio le llega sólo si se leyó entero, sin el número de carpetas
-    : M.buzon.parcial !== undefined && !M.buzon.incompleto ? (M.buzon.estado !== 'leido' || M.buzon.parcial ? '<div class="banda gris"><b>Ojo:</b> puede faltar alguna corrida tuya: el buzón no se leyó entero. Lo que falta no es cero.</div>' : '')
+    : M.buzon.parcial !== undefined && !M.buzon.incompleto ? (M.buzon.estado !== 'leido' || M.buzon.parcial ? '<div class="banda gris"><b>Ojo:</b> puede faltar alguna ejecución tuya: el buzón no se leyó entero. Lo que falta no es cero.</div>' : '')
     // quien mantiene, en el sitio, cuando la última bajada no terminó entera: se sirve el último armado entero
-    : M.buzon.incompleto && M.buzon.estado === 'leido' && !M.buzon.carpetas_ilegibles ? '<div class="banda gris"><b>La última bajada del buzón no terminó entera.</b> Se muestra la última entera: pueden faltar las corridas más nuevas, y eso no es cero.</div>'
-    : M.buzon.estado !== 'leido' ? `<div class="banda gris"><b>No se leyó la carpeta bajada del buzón.</b> ${esc(M.buzon.motivo)} — las corridas de otras máquinas faltan, no son cero.</div>`
-    : M.buzon.carpetas_ilegibles ? `<div class="banda gris"><b>${M.buzon.carpetas_ilegibles} carpeta${M.buzon.carpetas_ilegibles === 1 ? '' : 's'} de máquina del buzón no se pudo leer.</b> Sus corridas no están en esta página ni en ningún número: faltan, no son cero.</div>`
+    : M.buzon.incompleto && M.buzon.estado === 'leido' && !M.buzon.carpetas_ilegibles ? '<div class="banda gris"><b>La última bajada del buzón no terminó entera.</b> Se muestra la última entera: pueden faltar las ejecuciones más nuevas, y eso no es cero.</div>'
+    : M.buzon.estado !== 'leido' ? `<div class="banda gris"><b>No se leyó la carpeta bajada del buzón.</b> ${esc(M.buzon.motivo)} — las ejecuciones de otras máquinas faltan, no son cero.</div>`
+    : M.buzon.carpetas_ilegibles ? `<div class="banda gris"><b>${M.buzon.carpetas_ilegibles} carpeta${M.buzon.carpetas_ilegibles === 1 ? '' : 's'} de máquina del buzón no se pudo leer.</b> Sus ejecuciones no están en esta página ni en ningún número: faltan, no son cero.</div>`
     : '';
   // Sin el archivo de uniones del bajador, la carpeta vieja de una máquina que se mudó sale como otra máquina
   const bandaUniones = M.multi && M.buzon && M.buzon.uniones && M.buzon.uniones.estado === 'no_medidas'
@@ -1178,8 +1178,8 @@ function cabecera(M, opts = {}) {
   // con lo bajado. Decir «salen con trama» ahí sería una alarma falsa al lado de números.
   const bandaRegistro = M.registro.estado === 'medido' || M.registro.estado === 'no_aplica' ? ''
     : M.multi && M.corridas.length
-      ? `<div class="banda gris"><b>Sin registro de corridas propio en esta máquina.</b> ${esc(M.registro.motivo)} La página sale sólo con lo bajado del buzón: las corridas de esta máquina, si las hay, faltan.</div>`
-      : `<div class="banda gris"><b>Sin registro de corridas en esta máquina.</b> ${esc(M.registro.motivo)} Las fichas salen con trama, y eso no es cero.</div>`;
+      ? `<div class="banda gris"><b>Sin registro de ejecuciones propio en esta máquina.</b> ${esc(M.registro.motivo)} La página sale sólo con lo bajado del buzón: las ejecuciones de esta máquina, si las hay, faltan.</div>`
+      : `<div class="banda gris"><b>Sin registro de ejecuciones en esta máquina.</b> ${esc(M.registro.motivo)} Las fichas salen con trama, y eso no es cero.</div>`;
   // 'skill': la tabla de pasos que trae la imagen del sitio — con nombre, como 'tabla'
   const bandaPasos = (M.pasos.fuente !== 'tabla' && M.pasos.fuente !== 'skill') || M.pasos.motivo ? `<div class="banda gris">${esc(M.pasos.motivo)}</div>` : '';
   const bandaRescate = M.sin_rescate ? `<div class="banda gris">${esc(M.sin_rescate)}</div>` : '';
@@ -1187,9 +1187,9 @@ function cabecera(M, opts = {}) {
   const bandaUmbrales = M.umbrales_motivo ? `<div class="banda gris">${esc(M.umbrales_motivo)}</div>` : '';
   return `<header class="head">
   <div class="eyebrow">${eyebrow}</div>
-  <h1>Las corridas del pipeline</h1>
-  <p class="lede">Una fila por corrida: <b>en qué paso se fue el tiempo</b>, qué control encontró un error o frenó, cuántas vueltas dio y cuánto consumió. Los números salen del resumen que el archivador deja por corrida, y lo que no está registrado se dice, no se rellena. <b>De la conversación sólo se toman los archivos que tocó y sus cambios</b>, en el detalle de cada corrida.</p>
-  <div class="stamp"><span><b>Corridas:</b> ${selloCorridas}</span><span><b>Con consumo medido:</b> ${conConsumo} de ${N}</span><span><b>Con controles:</b> ${conControles} de ${N}</span><span><b>Llegaron al paso 8:</b> ${alFinal} de ${N}</span><span><b>Generado:</b> ${esc(M.generado.slice(0, 16).replace('T', ' '))} UTC · ${origen}</span><span><b>Alcance:</b> ${esc(alcance)}</span></div>
+  <h1>Las ejecuciones del pipeline</h1>
+  <p class="lede">Una fila por ejecución: <b>en qué paso se fue el tiempo</b>, qué control encontró un error o frenó, cuántas vueltas dio y cuánto consumió. Los números salen del resumen que el archivador deja por ejecución, y lo que no está registrado se dice, no se rellena. <b>De la conversación sólo se toman los archivos que tocó y sus cambios</b>, en el detalle de cada ejecución.</p>
+  <div class="stamp"><span><b>Ejecuciones:</b> ${selloCorridas}</span><span><b>Con consumo medido:</b> ${conConsumo} de ${N}</span><span><b>Con controles:</b> ${conControles} de ${N}</span><span><b>Llegaron al paso 8:</b> ${alFinal} de ${N}</span><span><b>Generado:</b> ${esc(M.generado.slice(0, 16).replace('T', ' '))} UTC · ${origen}</span><span><b>Alcance:</b> ${esc(alcance)}</span></div>
   ${bandaBuzon}${bandaUniones}${bandaRegistro}${bandaPasos}${bandaRescate}${bandaTiempos}${bandaUmbrales}
 </header>
 `;
@@ -1199,7 +1199,7 @@ function cabecera(M, opts = {}) {
 const TEXTOS_FILTRO = {
   filtro: 'Filtro', desde: 'desde', hasta: 'hasta', producto: 'producto', maquina: 'máquina',
   sinConsumo: 'sólo con consumo medido', llegaron: 'sólo las que llegaron al paso 8',
-  limpiar: 'limpiar', hoy: 'hoy', semana: 'esta semana', mes: 'este mes', cuenta: '{n} de {t} corridas a la vista',
+  limpiar: 'limpiar', hoy: 'hoy', semana: 'esta semana', mes: 'este mes', cuenta: '{n} de {t} ejecuciones a la vista',
 };
 
 /** `opts.textos`: las etiquetas del filtro en otro idioma (el sitio las pone en el idioma elegido); sin ellas, en castellano. */
@@ -1210,8 +1210,8 @@ function ejecutiva(M, opts = {}) {
   <div class="claves">
     <div><b>Encontró un error</b><span>una prueba o la compilación no pasaron, y se arreglaron ahí mismo. <b>Es el control haciendo su trabajo.</b></span></div>
     <div><b>Frenó</b><span>el control vio algo y no dejó pasar. También es el control funcionando.</span></div>
-    <div><b>Trama</b><span>«no medido»: esa corrida no registró ese dato. <b>No es cero ni es verde.</b></span></div>
-    <div><b>n=</b><span>al lado de cada mediana: de cuántas corridas sale el número, sobre cuántas hay.</span></div>
+    <div><b>Trama</b><span>«no medido»: esa ejecución no registró ese dato. <b>No es cero ni es verde.</b></span></div>
+    <div><b>n=</b><span>al lado de cada mediana: de cuántas ejecuciones sale el número, sobre cuántas hay.</span></div>
   </div>
   <div class="filtrera"><span class="fl">${esc(X.filtro)}</span>
     <label>${esc(X.desde)} <input type="date" id="f-desde"></label><label>${esc(X.hasta)} <input type="date" id="f-hasta"></label>
@@ -1223,9 +1223,9 @@ function ejecutiva(M, opts = {}) {
     <button id="f-limpiar">${esc(X.limpiar)}</button><span class="fcount" id="cuenta" data-molde="${esc(X.cuenta)}"></span></div>
   <div class="grid" id="fichas"></div>
   <div class="dos">
-    <div class="card"><h3>Corridas por semana</h3><div id="gsem"></div><p>Semana ISO. Una semana sin corridas se dibuja en cero: una barra ausente y una barra en cero no son lo mismo.</p></div>
-    <div class="card"><h3>Pasos por corrida, mes a mes (mediana)</h3><div id="gpasos"></div><p>Cuántas respuestas dio el modelo en cada corrida: <b>es lo que explica su consumo</b>, porque en cada paso relee todo lo anterior. Un punto por mes, con su <span class="mono">n</span>; un mes sin corridas medidas se deja en blanco y se dice — no es cero. La línea punteada es la línea base contra la que se compara. No tiene tope: primero la serie.</p></div>
-    <div class="card"><h3>Dónde se va el TIEMPO, por paso (mediana)</h3><div id="ppt"></div><p>Del arranque al fin de cada paso cuando la corrida lo anotó; en las corridas anteriores a esa marca, estimado del fin del paso anterior al fin de éste. El tiempo entre pasos no entra en ningún paso. Los pasos con marcas invertidas o empatadas salen fusionados y no entran en la mediana de ninguno de los dos (se dicen aparte).</p></div>
+    <div class="card"><h3>Ejecuciones por semana</h3><div id="gsem"></div><p>Semana ISO. Una semana sin ejecuciones se dibuja en cero: una barra ausente y una barra en cero no son lo mismo.</p></div>
+    <div class="card"><h3>Pasos por ejecución, mes a mes (mediana)</h3><div id="gpasos"></div><p>Cuántas respuestas dio el modelo en cada ejecución: <b>es lo que explica su consumo</b>, porque en cada paso relee todo lo anterior. Un punto por mes, con su <span class="mono">n</span>; un mes sin ejecuciones medidas se deja en blanco y se dice — no es cero. La línea punteada es la línea base contra la que se compara. No tiene tope: primero la serie.</p></div>
+    <div class="card"><h3>Dónde se va el TIEMPO, por paso (mediana)</h3><div id="ppt"></div><p>Del arranque al fin de cada paso cuando la ejecución lo anotó; en las ejecuciones anteriores a esa marca, estimado del fin del paso anterior al fin de éste. El tiempo entre pasos no entra en ningún paso. Los pasos con marcas invertidas o empatadas salen fusionados y no entran en la mediana de ninguno de los dos (se dicen aparte).</p></div>
     <div class="card"><h3>Dónde se van los TOKENS, por paso (mediana)</h3><div id="ppk"></div><p id="nota-tokens"></p></div>
   </div>
 </section>
@@ -1259,7 +1259,7 @@ function tabla(M) {
 
   const leyenda = M.pasos.nombres.map((p, i) => `<span class="lg"><i style="background:${RAMPA[i]}"></i>${i} ${esc(p)}</span>`).join('');
   return `<section>
-  <div class="q-head"><span class="q-n">02</span><h2>Corrida por corrida</h2></div>
+  <div class="q-head"><span class="q-n">02</span><h2>Ejecución por ejecución</h2></div>
   <p class="note">Ordenadas de la más nueva a la más vieja. La barra reparte el tiempo por paso con la rampa de abajo. <b>Clic en una fila</b> abre el detalle: la línea de tiempo con cada control en su carril, la tabla de controles y el consumo por paso.</p>
   <div class="leyenda">${leyenda}<span class="lg"><i class="falta"></i>sin marca</span></div>
   <div class="tabla"><table>
@@ -1272,15 +1272,15 @@ function tabla(M) {
 /** El pie: las notas de la vista. En el sitio, «De dónde sale» dice el espejo del buzón. */
 function pie(M, opts = {}) {
   const deDondeSale = opts.sitio
-    ? 'del espejo del buzón de corridas que el sitio baja con su identidad de sólo lectura; la máquina de cada corrida es su carpeta. Una corrida por sesión: si la misma corrida se subió dos veces, vale la más nueva.'
-    : `del registro global del archivador del pipeline (<span class="mono">~/.claude/.tycon-pipeline/timing-history</span>), una corrida por sesión: si la misma corrida se archivó dos veces, vale la más nueva. Lo ilegible se cuenta arriba.${M.multi ? ' <b>Y de la carpeta bajada del buzón de corridas</b> (story 2.16): la máquina de cada corrida es la carpeta que la contiene; lo que no está bajo una carpeta de máquina sale «sin declarar».' : ''}`;
+    ? 'del espejo del buzón de ejecuciones que el sitio baja con su identidad de sólo lectura; la máquina de cada ejecución es su carpeta. Una ejecución por sesión: si la misma ejecución se subió dos veces, vale la más nueva.'
+    : `del registro global del archivador del pipeline (<span class="mono">~/.claude/.tycon-pipeline/timing-history</span>), una ejecución por sesión: si la misma ejecución se archivó dos veces, vale la más nueva. Lo ilegible se cuenta arriba.${M.multi ? ' <b>Y de la carpeta bajada del buzón de ejecuciones</b> (story 2.16): la máquina de cada ejecución es la carpeta que la contiene; lo que no está bajo una carpeta de máquina sale «sin declarar».' : ''}`;
   return `<footer><div class="pie">
   <div><b>De dónde sale</b><span>${deDondeSale}</span></div>
-  <div><b>Lo que se publica de git</b><span>los commits que la corrida creó y lo que dejó sin commitear, en cada repo donde escribió, con su parche: es el cambio real, venga de una edición, de la consola o de un subagente. Credenciales, correos, rutas absolutas y UUID salen tapados; tope de largo por archivo y por corrida, dicho donde corta. Las corridas anteriores a la story 2.19 no lo tienen y muestran sólo la conversación.</span></div>
-  <div><b>Lo que se publica del hilo</b><span>sólo los archivos que tocó cada corrida, su cambio y sus commits: rutas relativas al repo, credenciales y rutas absolutas tapadas, con tope de largo. Los prompts, las respuestas, los comandos y los identificadores de sesión no. Esta página no se commitea, pero se comparte. El mensaje de cada error llega del rescate de la story 2.13, saneado dos veces.</span></div>
+  <div><b>Lo que se publica de git</b><span>los commits que la ejecución creó y lo que dejó sin commitear, en cada repo donde escribió, con su parche: es el cambio real, venga de una edición, de la consola o de un subagente. Credenciales, correos, rutas absolutas y UUID salen tapados; tope de largo por archivo y por ejecución, dicho donde corta. Las ejecuciones anteriores a la story 2.19 no lo tienen y muestran sólo la conversación.</span></div>
+  <div><b>Lo que se publica del hilo</b><span>sólo los archivos que tocó cada ejecución, su cambio y sus commits: rutas relativas al repo, credenciales y rutas absolutas tapadas, con tope de largo. Los prompts, las respuestas, los comandos y los identificadores de sesión no. Esta página no se commitea, pero se comparte. El mensaje de cada error llega del rescate de la story 2.13, saneado dos veces.</span></div>
   <div><b>Tokens, no plata</b><span>el registro trae tokens; una tabla de precios adentro del arnés envejece sin que nadie lo note.</span></div>
   <div><b>Lo que se mide de un revisor</b><span>cuánto tardó, cuánto devolvió y —si su notificación lo trajo— cuánto consumió; no lo que leyó. Lo que no se pudo medir se estima aparte y lleva la palabra «estimado», con la fecha de su supuesto: nunca se suma a lo medido.</span></div>
-  <div><b>Trabajo, espera y tiempo entre pasos</b><span>cada paso anota cuándo arranca y cuándo termina. <b>Espera</b> es lo que duraron los dos pasos que aguardan a una persona (aprobar el plan y aprobar los hallazgos); <b>trabajo</b>, todos los demás; lo que pasa entre el fin de un paso y el arranque del siguiente es un tramo aparte, rayado, que no se le cobra a ninguno. Las corridas anteriores a esa marca salen <b>estimadas por diferencia</b> y lo dicen; un paso de menos de un minuto se dibuja como una raya: se marcó junto con el anterior.</span></div>
+  <div><b>Trabajo, espera y tiempo entre pasos</b><span>cada paso anota cuándo arranca y cuándo termina. <b>Espera</b> es lo que duraron los dos pasos que aguardan a una persona (aprobar el plan y aprobar los hallazgos); <b>trabajo</b>, todos los demás; lo que pasa entre el fin de un paso y el arranque del siguiente es un tramo aparte, rayado, que no se le cobra a ninguno. Las ejecuciones anteriores a esa marca salen <b>estimadas por diferencia</b> y lo dicen; un paso de menos de un minuto se dibuja como una raya: se marcó junto con el anterior.</span></div>
 </div></footer>`;
 }
 
@@ -1291,7 +1291,7 @@ function render(M) {
   const modeloJson = JSON.stringify(M, (k, v) => (k === '_texto' || k === '_textoGit' ? undefined : v)).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
   return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Las corridas del pipeline</title>
+<title>Las ejecuciones del pipeline</title>
 <style>
 ${CSS_BASE}
 ${CSS_PROPIO}
@@ -1443,7 +1443,7 @@ const CLIENTE = String.raw`(function () {
       // la tabla vino con la página: si el sitio rearmó entre la página y la lista, se recarga (nunca una mezcla)
       if (FE.dataset.generado && M.generado !== FE.dataset.generado) { location.reload(); return; }
       vista(M, fuenteRed(M));
-    }).catch(function (err) { var f = document.getElementById('fichas'); if (f) f.textContent = 'no se pudo traer la lista de corridas: ' + err.message; });
+    }).catch(function (err) { var f = document.getElementById('fichas'); if (f) f.textContent = 'no se pudo traer la lista de ejecuciones: ' + err.message; });
   } else {
     var M0 = JSON.parse(document.getElementById('modelo').textContent);
     vista(M0, fuenteEmbebida(M0));
@@ -1505,18 +1505,18 @@ const CLIENTE = String.raw`(function () {
   function timeline(c) {
     var notas = []; c._notas = notas;
     if (c.consumo.estado === 'medido' && c.consumo.fuera_de_ventana) notas.push('+' + miles(c.consumo.fuera_de_ventana) + ' tokens se consumieron <b>después del último paso</b> registrado: quedan fuera del eje y no se reparten.');
-    if (c.eventos_previos) notas.push(c.eventos_previos + ' evaluación(es) de control son <b>anteriores al inicio</b> de esta corrida (la misma sesión corrió otro pipeline antes): no se dibujan.');
+    if (c.eventos_previos) notas.push(c.eventos_previos + ' evaluación(es) de control son <b>anteriores al inicio</b> de esta ejecución (la misma sesión corrió otro pipeline antes): no se dibujan.');
     var durMin = c.dur_ms ? c.dur_ms / 60000 : null;
     var finTramos = c.tramos.reduce(function (a, t) { return a + t.ms / 60000; }, 0);
     var conT = c.eventos.filter(function (e) { return e.t !== null; });
     var sinT = c.eventos.length - conT.length;
-    if (sinT) notas.push(sinT + ' evaluación(es) <b>sin minuto</b>: la corrida no anotó su hora de inicio, así que no se dibujan en el eje pero sí cuentan en la tabla y en la lista.');
+    if (sinT) notas.push(sinT + ' evaluación(es) <b>sin minuto</b>: la ejecución no anotó su hora de inicio, así que no se dibujan en el eje pero sí cuentan en la tabla y en la lista.');
     var eds = (c.cambios && c.cambios.estado === 'leido') ? c.cambios.lista.filter(function (e) { return e.t !== null && e.t >= 0; }) : [];
     var maxT = Math.max(durMin || 0, finTramos,
       conT.reduce(function (a, e) { return Math.max(a, e.t); }, 0),
       eds.reduce(function (a, e) { return Math.max(a, e.t); }, 0),
       c.vueltas_ts.reduce(function (a, t) { return Math.max(a, t); }, 0));
-    if (!Number.isFinite(maxT) || maxT <= 0) return '<p class="tlnota">no se pudo calcular la escala de tiempo de esta corrida — no se dibuja un eje inventado</p>';
+    if (!Number.isFinite(maxT) || maxT <= 0) return '<p class="tlnota">no se pudo calcular la escala de tiempo de esta ejecución — no se dibuja un eje inventado</p>';
     var W = 1080, x0 = 300, x1 = W - 14;
     var X = function (t) { return x0 + (t / maxT) * (x1 - x0); };
     var tipos = [], conteo = {};
@@ -1530,7 +1530,7 @@ const CLIENTE = String.raw`(function () {
     var y = 16, ys = {};
     lanes.forEach(function (l, i3) { if (l.ctl && (i3 === 0 || !lanes[i3 - 1].ctl)) y += 12; ys[l.k] = y; y += l.h + (l.ctl ? 3 : 12); });
     var H = y + 40;
-    var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="min-width:760px;display:block" role="img" aria-label="Línea de tiempo de la corrida.">';
+    var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="min-width:760px;display:block" role="img" aria-label="Línea de tiempo de la ejecución.">';
     ejeTicks(maxT).forEach(function (t) {
       s += '<line x1="' + X(t).toFixed(1) + '" y1="10" x2="' + X(t).toFixed(1) + '" y2="' + (H - 34) + '" stroke="var(--line)"></line>';
       s += '<text x="' + X(t).toFixed(1) + '" y="' + (H - 18) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="var(--ink-3)">' + (t >= 60 ? n1(t / 60) + ' h' : t + '′') + '</text>';
@@ -1600,10 +1600,10 @@ const CLIENTE = String.raw`(function () {
           + '<rect x="' + tx.toFixed(1) + '" y="' + (ys.tok + 34 - th).toFixed(1) + '" width="' + tw.toFixed(1) + '" height="' + th.toFixed(1) + '" fill="var(--accent)"></rect>'
           + '<title>' + miles(b2[k2]) + ' tokens entre el minuto ' + d2 + ' y el ' + h2 + ' — clic para ver en qué se fue</title></g>';
       });
-      if (post) notas.push(miles(post) + ' tokens del hilo son <b>posteriores al cierre</b> de la corrida: quedan fuera del eje.');
+      if (post) notas.push(miles(post) + ' tokens del hilo son <b>posteriores al cierre</b> de la ejecución: quedan fuera del eje.');
     } else if (c.cambios) {
       s += '<rect x="' + x0 + '" y="' + ys.tok + '" width="' + (x1 - x0) + '" height="34" fill="url(#hatch)"></rect>';
-      s += '<text x="' + (x0 + 8) + '" y="' + (ys.tok + 21) + '" font-family="IBM Plex Sans,sans-serif" font-size="11" fill="var(--ink-3)">' + (c.cambios.estado === 'sin_hilo' ? 'sin hilo: no hay consumo minuto a minuto que mostrar, y eso no es cero' : 'sin consumo minuto a minuto en el hilo de esta corrida') + '</text>';
+      s += '<text x="' + (x0 + 8) + '" y="' + (ys.tok + 21) + '" font-family="IBM Plex Sans,sans-serif" font-size="11" fill="var(--ink-3)">' + (c.cambios.estado === 'sin_hilo' ? 'sin hilo: no hay consumo minuto a minuto que mostrar, y eso no es cero' : 'sin consumo minuto a minuto en el hilo de esta ejecución') + '</text>';
     }
     // controles, cada uno en su carril
     if (conT.length) {
@@ -1618,7 +1618,7 @@ const CLIENTE = String.raw`(function () {
       });
     } else {
       s += '<rect x="' + x0 + '" y="' + ys['c:'] + '" width="' + (x1 - x0) + '" height="22" fill="url(#hatch)"></rect>';
-      s += '<text x="' + (x0 + 8) + '" y="' + (ys['c:'] + 15) + '" font-family="IBM Plex Sans,sans-serif" font-size="11" fill="var(--ink-3)">' + (c.controles ? 'ninguna evaluación cae dentro de esta corrida' : 'esta corrida no registró controles — no quiere decir que hayan salido verdes') + '</text>';
+      s += '<text x="' + (x0 + 8) + '" y="' + (ys['c:'] + 15) + '" font-family="IBM Plex Sans,sans-serif" font-size="11" fill="var(--ink-3)">' + (c.controles ? 'ninguna evaluación cae dentro de esta ejecución' : 'esta ejecución no registró controles — no quiere decir que hayan salido verdes') + '</text>';
     }
     c.vueltas_ts.forEach(function (t, i) {
       var x = X(t);
@@ -1630,7 +1630,7 @@ const CLIENTE = String.raw`(function () {
   }
 
   function tarjetaControles(c) {
-    if (!c.controles) return '<div class="mini blind ancha"><h4>Controles</h4><p>esta corrida no registró controles — no quiere decir que hayan salido verdes. Gris con motivo, nunca verde.</p></div>';
+    if (!c.controles) return '<div class="mini blind ancha"><h4>Controles</h4><p>esta ejecución no registró controles — no quiere decir que hayan salido verdes. Gris con motivo, nunca verde.</p></div>';
     var f = c.controles.por_control;
     var peso = function (v) { return v.error * 1000 + v.freno * 10 + v.n / 1000; };
     var filas = Object.keys(f).sort(function (a, b) { return peso(f[b]) - peso(f[a]); }).map(function (k) {
@@ -1703,7 +1703,7 @@ const CLIENTE = String.raw`(function () {
   }
 
   function tarjetaAgentes(c) {
-    if (!c.costo) return '<div class="mini blind"><h4>Revisores</h4><p>esta corrida no registra agentes lanzados (es anterior al conteo mecánico) — no es «cero agentes»</p>' + loQueGastaron(c) + delValidador(c) + '</div>';
+    if (!c.costo) return '<div class="mini blind"><h4>Revisores</h4><p>esta ejecución no registra agentes lanzados (es anterior al conteo mecánico) — no es «cero agentes»</p>' + loQueGastaron(c) + delValidador(c) + '</div>';
     var t = c.costo.por_tipo, ks = Object.keys(t).sort(function (a, b) { return t[b] - t[a]; });
     var mx = Math.max.apply(null, [1].concat(ks.map(function (k) { return t[k]; })));
     return '<div class="mini"><h4>Revisores — ' + c.costo.agentes + ' agentes' + (c.costo.vueltas !== null ? ' en ' + c.costo.vueltas + ' vuelta(s)' : '') + (c.costo.calculos_del_set !== null && c.costo.calculos_del_set !== undefined ? ' <span class="rev-nd">(set de revisores calculado ' + c.costo.calculos_del_set + ' veces)</span>' : '') + '</h4>'
@@ -1729,7 +1729,7 @@ const CLIENTE = String.raw`(function () {
   function tarjetaLoQueEncontraron(c) {
     if (!c.controles) return '';
     var g = c.eventos_agrupados;
-    if (!g.length) return '<div class="mini"><h4>Qué encontraron los controles</h4><p>en esta corrida ningún control encontró un error ni tuvo que frenar nada</p></div>';
+    if (!g.length) return '<div class="mini"><h4>Qué encontraron los controles</h4><p>en esta ejecución ningún control encontró un error ni tuvo que frenar nada</p></div>';
     var PAL = { error: 'encontró un error', freno: 'no dejó pasar' };
     return '<div class="mini"><h4>Qué encontraron los controles — ' + c.controles.error + ' con error · ' + c.controles.freno + ' frenaron</h4>'
       + '<ul class="nopaso">' + g.map(function (e) {
@@ -1752,7 +1752,7 @@ const CLIENTE = String.raw`(function () {
     var t = c.tiempos;
     if (!t) return '';
     var partes = [];
-    if (t.estado === 'estimada') partes.push(' <b>Duraciones estimadas por diferencia</b>: esta corrida no anotó el arranque de sus pasos, así que cada paso va del fin del anterior al fin de éste y el tiempo muerto queda adentro.');
+    if (t.estado === 'estimada') partes.push(' <b>Duraciones estimadas por diferencia</b>: esta ejecución no anotó el arranque de sus pasos, así que cada paso va del fin del anterior al fin de éste y el tiempo muerto queda adentro.');
     else if (t.estado === 'parcial') partes.push(' <b>Algunas duraciones estimadas por diferencia</b> (paso' + (t.estimados.length === 1 ? ' ' : 's ') + esc(t.estimados.join(', ')) + '): no anotaron su arranque.');
     if (t.trabajo_ms !== null) partes.push(' Trabajo ' + dt(t.trabajo_ms / 60000) + (t.espera_humana_ms !== null ? ' · espera ' + dt(t.espera_humana_ms / 60000) : ' · espera sin medir') + (t.entre_pasos_ms !== null ? ' · entre pasos ' + dt(t.entre_pasos_ms / 60000) : '') + '.');
     return partes.join('');
@@ -1773,12 +1773,12 @@ const CLIENTE = String.raw`(function () {
   function bloqueGit(g, idx, conLista) {
     var nC = g.commits.length, nR = g.repos.length, s = function (n) { return n === 1 ? '' : 's'; };
     var h = '<h4>Cómo quedó cada archivo · según git</h4><p>' + g.total_archivos + ' archivo' + s(g.total_archivos) + ' en ' + nR + ' repo' + s(nR) + ': '
-      + (nC ? nC + ' commit' + s(nC) + ' de la corrida' : 'ningún commit de la corrida') + ' y lo que quedó sin commitear al cerrar. '
+      + (nC ? nC + ' commit' + s(nC) + ' de la ejecución' : 'ningún commit de la ejecución') + ' y lo que quedó sin commitear al cerrar. '
       + 'Es el cambio real, venga de una edición, de la consola o de un subagente. Las credenciales, los correos, las rutas absolutas y los UUID salen tapados.'
-      + (g.sin_parche_por_tope ? ' <b>' + g.sin_parche_por_tope + ' parte' + s(g.sin_parche_por_tope) + ' sin texto</b>: pasan del tope por corrida.' : '') + '</p>';
+      + (g.sin_parche_por_tope ? ' <b>' + g.sin_parche_por_tope + ' parte' + s(g.sin_parche_por_tope) + ' sin texto</b>: pasan del tope por ejecución.' : '') + '</p>';
     var avisos = [];
     g.repos.forEach(function (r) {
-      if (r.previo) avisos.push('en <b>' + esc(r.n) + '</b>, ' + r.previo + ' archivo' + (r.previo === 1 ? ' que ya estaba' : 's que ya estaban') + ' sin commitear antes de la corrida no se muestra' + (r.previo === 1 ? '' : 'n'));
+      if (r.previo) avisos.push('en <b>' + esc(r.n) + '</b>, ' + r.previo + ' archivo' + (r.previo === 1 ? ' que ya estaba' : 's que ya estaban') + ' sin commitear antes de la ejecución no se muestra' + (r.previo === 1 ? '' : 'n'));
       if (r.otras === null) avisos.push('en <b>' + esc(r.n) + '</b> no se sabe si escribió otra sesión: ' + esc(r.otras_motivo || 'sin motivo declarado'));
       else if (r.otras) avisos.push('en <b>' + esc(r.n) + '</b> escribió también otra sesión mientras corría (' + r.otras + '): lo no commiteado puede ser de la otra');
       // Copia compartida: lo que el hilo atribuyó a otra sesión se dice con su asunto (no se esconde), y lo que
@@ -1797,8 +1797,8 @@ const CLIENTE = String.raw`(function () {
     var noMedidos = g.repos.filter(function (r) { return r.estado !== 'medido'; });
     if (!g.archivos.length) {
       return h + '<p>' + (noMedidos.length
-        ? 'no se pudo mirar ' + (noMedidos.length === g.repos.length ? 'ningún repo' : noMedidos.length + ' de los ' + g.repos.length + ' repos') + ' de esta corrida: por eso no hay archivos, y eso no es «no cambió nada»'
-        : 'según git, esta corrida no dejó cambios: ningún commit propio y nada sin commitear') + '.</p>';
+        ? 'no se pudo mirar ' + (noMedidos.length === g.repos.length ? 'ningún repo' : noMedidos.length + ' de los ' + g.repos.length + ' repos') + ' de esta ejecución: por eso no hay archivos, y eso no es «no cambió nada»'
+        : 'según git, esta ejecución no dejó cambios: ningún commit propio y nada sin commitear') + '.</p>';
     }
     return h + '<ol class="cg">' + g.archivos.map(function (a, ai) {
       var p0 = a.partes[0];
@@ -1816,13 +1816,13 @@ const CLIENTE = String.raw`(function () {
     if (x.estado !== 'leido') return h + '<p class="nd">' + (x.estado === 'sin_hilo' ? '<b>sin hilo</b> — ' : '') + esc(x.motivo || '') + '</p>';
     var consola = x.por_consola ? ' <b>Corrió ' + x.por_consola + ' comando' + (x.por_consola === 1 ? '' : 's') + ' de consola que escriben archivos</b> (un script, un reemplazo en el lugar): de eso el hilo guarda el comando, no un antes y después, así que en la lista salen «por consola», con el comando como cambio y el minuto aproximado.' + (x.en_commits ? ' Sus commits llevaron <b>' + x.en_commits + ' archivo' + (x.en_commits === 1 ? '' : 's') + '</b>.' : '') : '';
     var aprox = hayGit ? '' : ' <b>según la conversación: lo hecho por consola se reconoce por aproximación y lo de los subagentes no está</b>.';
-    if (!x.lista.length) return h + '<p>según su hilo, esta corrida no editó ni escribió archivos' + (x.anteriores_al_inicio ? ' (' + x.anteriores_al_inicio + ' ediciones de la misma sesión son anteriores a su inicio y no cuentan)' : '') + '.</p>' + commitsHtml(x);
+    if (!x.lista.length) return h + '<p>según su hilo, esta ejecución no editó ni escribió archivos' + (x.anteriores_al_inicio ? ' (' + x.anteriores_al_inicio + ' ediciones de la misma sesión son anteriores a su inicio y no cuentan)' : '') + '.</p>' + commitsHtml(x);
     var vis = x.lista.filter(function (e) { return !e.o; });
     h += '<p>' + (hayGit ? '' : x.archivos.length + ' archivo' + (x.archivos.length === 1 ? '' : 's') + ' · ') + vis.length + ' cambio' + (vis.length === 1 ? '' : 's') + ', en orden. Cada cambio se abre a pedido y se muestra <b>entero</b> (sólo un cambio de más de ' + miles(x.topes.edicion) + ' caracteres, un archivo generado, se corta, y se dice). Las credenciales y las rutas absolutas salen tapadas. Las barritas del gráfico, arriba, filtran esta lista por momento.'
       + aprox + consola
       + (x.no_confirmados ? ' ' + x.no_confirmados + (x.no_confirmados === 1 ? ' nombre de la consola que git no confirma no se muestra' : ' nombres de la consola que git no confirma no se muestran') + ' (texto del comando que parecía un archivo).' : '')
       + (x.sin_cambio_por_tope ? ' <b>Los últimos ' + x.sin_cambio_por_tope + ' cambios no traen el texto</b>.' : '')
-      + (x.anteriores_al_inicio ? ' ' + x.anteriores_al_inicio + ' ediciones de la misma sesión, anteriores a esta corrida, no se muestran.' : '')
+      + (x.anteriores_al_inicio ? ' ' + x.anteriores_al_inicio + ' ediciones de la misma sesión, anteriores a esta ejecución, no se muestran.' : '')
       + (x.posteriores_al_cierre ? ' ' + x.posteriores_al_cierre + ' ediciones posteriores al cierre (la conversación siguió con otro trabajo) tampoco.' : '') + '</p>';
     if (!hayGit) h += '<table class="mt arch"><tr><th>archivo</th><th>cambios</th><th>+</th><th>−</th></tr>' + x.archivos.map(function (a) {
       return '<tr><td class="ruta">' + esc(a.f) + (a.escrito ? ' <span class="nd">(escrito entero)</span>' : '') + (a.consola ? ' <span class="nd">(por consola' + (a.consola < a.veces ? ': ' + a.consola + ' de ' + a.veces : '') + ')</span>' : '') + '</td><td class="num">' + a.veces + '</td><td class="num mas">' + (a.mas ? '+' + a.mas : '·') + '</td><td class="num menos">' + (a.menos ? '−' + a.menos : '·') + '</td></tr>';
@@ -1832,7 +1832,7 @@ const CLIENTE = String.raw`(function () {
       var cab = '<span class="cz-t">' + (e.t === null ? '—' : (e.k ? '≈ ' : '') + e.t + ' min') + '</span> <span class="cz-p">' + esc(nombrePaso(e.p)) + '</span> <span class="ruta">' + esc(x.archivos[e.a].f) + '</span> ' + (e.k ? '<span class="nd">por consola · aproximado</span>' : '<span class="mas">+' + e.mas + '</span>' + (e.w ? ' <span class="nd">escrito entero</span>' : ' <span class="menos">−' + e.menos + '</span>'));
       return '<li data-t="' + (e.t === null ? '' : e.t) + '" data-g="' + (e.g === undefined ? '' : e.g) + '">' + (e.x
         ? '<details data-cz="' + idx + '" data-k="' + k + '"><summary>' + cab + (e.c ? ' <span class="nd">cortado</span>' : '') + '</summary><div class="cz-txt">abriendo…</div></details>'
-        : '<div class="cz-sin">' + cab + ' <span class="nd">sin texto: pasa del tope por corrida</span></div>') + '</li>';
+        : '<div class="cz-sin">' + cab + ' <span class="nd">sin texto: pasa del tope por ejecución</span></div>') + '</li>';
     }).join('') + '</ol>';
     return h + commitsHtml(x);
   }
@@ -1842,7 +1842,7 @@ const CLIENTE = String.raw`(function () {
     return String(p).split('+').map(function (n) { return 'paso ' + n + ((M.pasos.nombres || [])[+n] ? ' ' + M.pasos.nombres[+n] : ''); }).join(' + ');
   }
   function commitsHtml(x) {
-    if (!x.commits || !x.commits.length) return '<p class="nd">sin commits en el hilo de esta corrida</p>';
+    if (!x.commits || !x.commits.length) return '<p class="nd">sin commits en el hilo de esta ejecución</p>';
     return '<h4>Commits</h4><ul class="commits">' + x.commits.map(function (m) { return '<li><span class="mono">' + esc(m.h) + '</span> <span class="cz-p">' + esc(nombrePaso(m.paso)) + '</span> ' + (m.archivos ? '<span class="nd">' + m.archivos + ' archivo' + (m.archivos === 1 ? '' : 's') + '</span> ' : '') + esc(m.s) + '</li>'; }).join('') + '</ul>';
   }
   // Los parches de git (story 2.19): mismo mecanismo que los cambios del hilo, en su propio bloque «cg-N».
@@ -1856,7 +1856,7 @@ const CLIENTE = String.raw`(function () {
   function textosGit(idx) {
     if (cgCache[idx]) return cgCache[idx];
     cgCache[idx] = FUENTE.texto('cg', idx).then(function (b64) {
-      if (!b64) throw new Error(FUENTE.forma === 'red' ? 'el cambio de git de esta corrida no está' : 'el cambio de git de esta corrida no está en la página');
+      if (!b64) throw new Error(FUENTE.forma === 'red' ? 'el cambio de git de esta ejecución no está' : 'el cambio de git de esta ejecución no está en la página');
       return abrirGzip(b64);
     });
     cgCache[idx].catch(function () { delete cgCache[idx]; });
@@ -1881,7 +1881,7 @@ const CLIENTE = String.raw`(function () {
           : ' · <b>sin confirmar</b>: no se pudo saber si lo hizo esta sesión';
         var cab = (cm ? 'commit <span class="mono">' + esc(cm.h) + '</span>' + (cm.t === null ? '' : ' · min ' + cm.t) + ' · ' + esc(cm.s) + marca : 'sin commitear al cerrar')
           + ' · ' + (NOMBRE[p.e] || esc(p.e)) + (p.ant ? ' (antes ' + esc(p.ant) + ')' : '') + (p.b || p.mas === null ? '' : ' · +' + p.mas + ' −' + p.menos);
-        var cuerpo = p.b ? '<div class="nd">binario: sin texto</div>' : p.tope ? '<div class="nd">sin texto: pasa del tope por corrida</div>'
+        var cuerpo = p.b ? '<div class="nd">binario: sin texto</div>' : p.tope ? '<div class="nd">sin texto: pasa del tope por ejecución</div>'
           : p.om ? '<div class="nd">' + esc(p.om) + '</div>' : tx[k] ? '<pre class="diff">' + diffHtml(tx[k]) + '</pre>' : '<div class="nd">sin texto</div>';
         return '<div class="cz-lbl">' + cab + '</div>' + cuerpo + (p.cor ? '<div class="nd">cortado: ' + p.cor + ' caracteres más no se muestran</div>' : '');
       }).join('');
@@ -1905,7 +1905,7 @@ const CLIENTE = String.raw`(function () {
   function textosDe(idx) {
     if (czCache[idx]) return czCache[idx];
     czCache[idx] = FUENTE.texto('cz', idx).then(function (b64) {
-      if (!b64) throw new Error(FUENTE.forma === 'red' ? 'el texto de esta corrida no está' : 'el texto de esta corrida no está en la página');
+      if (!b64) throw new Error(FUENTE.forma === 'red' ? 'el texto de esta ejecución no está' : 'el texto de esta ejecución no está en la página');
       return abrirGzip(b64);
     });
     czCache[idx].catch(function () { delete czCache[idx]; });
@@ -1957,7 +1957,7 @@ const CLIENTE = String.raw`(function () {
   // C[idx]): buscarlo con indexOf daba -1 y ningún cambio ni parche se podía abrir (pase adversarial)
   function detalle(c, idx) {
     if (idx === undefined) idx = C.indexOf(c);
-    var chips = (c.sin_cerrar ? '<span class="chip warn" title="el marcador desapareció sin su cierre: lo que se ve sale de su carpeta de corrida y del registro de controles"><span class="g">◆</span>sin cerrar</span>' : '') + '<span class="chip ' + (c.llego_al_final ? 'ok' : 'warn') + '"' + (!c.llego_al_final && c.sin_pasos_anotados ? ' title="la corrida trabajó pero el marcador sólo anotó el arranque: no es una corrida abandonada"' : '') + '><span class="g">' + (c.llego_al_final ? '●' : '◆') + '</span>' + (c.llego_al_final ? 'llegó al paso 8' : c.sin_pasos_anotados ? 'no anotó sus pasos' : 'quedó en el paso ' + (c.ultimo_paso === null ? '?' : c.ultimo_paso)) + '</span>'
+    var chips = (c.sin_cerrar ? '<span class="chip warn" title="el marcador desapareció sin su cierre: lo que se ve sale de su carpeta de ejecución y del registro de controles"><span class="g">◆</span>sin cerrar</span>' : '') + '<span class="chip ' + (c.llego_al_final ? 'ok' : 'warn') + '"' + (!c.llego_al_final && c.sin_pasos_anotados ? ' title="la ejecución trabajó pero el marcador sólo anotó el arranque: no es una ejecución abandonada"' : '') + '><span class="g">' + (c.llego_al_final ? '●' : '◆') + '</span>' + (c.llego_al_final ? 'llegó al paso 8' : c.sin_pasos_anotados ? 'no anotó sus pasos' : 'quedó en el paso ' + (c.ultimo_paso === null ? '?' : c.ultimo_paso)) + '</span>'
       + (c.controles && c.controles.error ? '<span class="chip bad"><span class="g">▲</span>' + c.controles.error + ' con error</span>' : '')
       + (c.controles && c.controles.freno ? '<span class="chip warn"><span class="g">◆</span>frenó ' + c.controles.freno + '</span>' : '')
       + (c.costo && c.costo.vueltas !== null ? '<span class="chip neutro"><span class="g">○</span>' + c.costo.vueltas + ' vueltas</span>' : '')
@@ -1966,7 +1966,7 @@ const CLIENTE = String.raw`(function () {
     return '<div class="det">'
       + '<div class="det-head"><div><b>Story ' + esc(c.story || '—') + '</b> <span class="mono">' + esc(c.producto || 'producto sin registrar') + '</span>'
       + (M.multi ? ' <span class="mono">· ' + (c.maquina ? esc(c.maquina) + (c.maquina_nota ? ' (' + esc(c.maquina_nota) + ')' : '') : 'máquina sin declarar: ' + esc(c.maquina_motivo || '')) + '</span>' : '')
-      + (c.descripcion ? '<div class="det-desc">' + esc(c.descripcion.texto) + ' <span class="nd">— ' + esc(c.descripcion.fuente) + '</span></div>' : '<div class="det-desc nd">sin descripción: la corrida no guardó su conversación ni el archivo de su story</div>')
+      + (c.descripcion ? '<div class="det-desc">' + esc(c.descripcion.texto) + ' <span class="nd">— ' + esc(c.descripcion.fuente) + '</span></div>' : '<div class="det-desc nd">sin descripción: la ejecución no guardó su conversación ni el archivo de su story</div>')
       + '<div class="mono sub">' + esc((c.inicio || '').slice(0, 16).replace('T', ' ')) + ' UTC · ' + (c.dur_ms ? dt(c.dur_ms / 60000) : 'sin duración registrada') + '</div></div>'
       + '<div class="det-chips">' + chips + '<button class="cerrar">cerrar ✕</button></div></div>'
       + '<div class="tl">' + tl + '</div><div class="qtok" hidden></div>'
@@ -2035,10 +2035,10 @@ const CLIENTE = String.raw`(function () {
     // Una corrida medida sin fecha de arranque no tiene mes: no entra en la serie, y se CUENTA — la ficha sí la
     // incluye, y un n que no coincide con la suma de los puntos sin explicación es un número que nadie puede auditar.
     F.filter(pasosMedidos).forEach(function (c) { if (c.inicio) { var k = c.inicio.slice(0, 7); (porMes[k] = porMes[k] || []).push(c.consumo.respuestas); } else sinFecha += 1; });
-    var notas = (sinFecha ? '<p class="tlnota">' + sinFecha + ' corrida' + (sinFecha === 1 ? ' medida no trae' : 's medidas no traen') + ' su fecha de arranque: está' + (sinFecha === 1 ? '' : 'n') + ' en la mediana de la ficha y no en esta serie.</p>' : '')
+    var notas = (sinFecha ? '<p class="tlnota">' + sinFecha + ' ejecución' + (sinFecha === 1 ? ' medida no trae' : 's medidas no traen') + ' su fecha de arranque: está' + (sinFecha === 1 ? '' : 'n') + ' en la mediana de la ficha y no en esta serie.</p>' : '')
       + (LB ? '' : '<p class="tlnota">' + sinLB + '.</p>');
     var con = Object.keys(porMes).sort();
-    if (!con.length) return '<p class="tlnota">ninguna corrida del filtro tiene sus pasos medidos con fecha: no hay serie que dibujar (y no es cero)</p>' + notas;
+    if (!con.length) return '<p class="tlnota">ninguna ejecución del filtro tiene sus pasos medidos con fecha: no hay serie que dibujar (y no es cero)</p>' + notas;
     var ks = [], y = Number(con[0].slice(0, 4)), m = Number(con[0].slice(5, 7)), fin = con[con.length - 1];
     while (ks.length < 120) { var k = y + '-' + String(m).padStart(2, '0'); ks.push(k); if (k >= fin) break; m += 1; if (m > 12) { m = 1; y += 1; } }
     var pts = ks.map(function (k) { return porMes[k] ? { k: k, v: mediana(porMes[k]), n: porMes[k].length } : { k: k, v: null, n: 0 }; });
@@ -2047,7 +2047,7 @@ const CLIENTE = String.raw`(function () {
     var W = 720, H = 190, x0 = 40, x1 = 706, base = 148, top = 16, paso = (x1 - x0) / ks.length;
     var Y = function (v) { return base - (v / max) * (base - top); };
     var X = function (i) { return x0 + paso * i + paso / 2; };
-    var s2 = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-width:' + W + 'px;min-width:520px;display:block" role="img" aria-label="Pasos por corrida, mediana por mes.">';
+    var s2 = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-width:' + W + 'px;min-width:520px;display:block" role="img" aria-label="Pasos por ejecución, mediana por mes.">';
     [0, max / 2, max].forEach(function (t) {
       s2 += '<line x1="' + x0 + '" y1="' + Y(t) + '" x2="' + x1 + '" y2="' + Y(t) + '" stroke="var(--line)"></line><text x="' + (x0 - 7) + '" y="' + (Y(t) + 4) + '" text-anchor="end" font-family="IBM Plex Mono,monospace" font-size="10.5" fill="var(--ink-3)">' + t + '</text>';
     });
@@ -2060,7 +2060,7 @@ const CLIENTE = String.raw`(function () {
     pts.forEach(function (p, i) {
       var cx = X(i);
       s2 += p.v === null
-        ? '<rect x="' + (cx - Math.min(15, paso * 0.31)).toFixed(1) + '" y="' + top + '" width="' + Math.min(30, paso * 0.62).toFixed(1) + '" height="' + (base - top) + '" fill="var(--hatch)" opacity=".18" rx="2"><title>' + p.k + ': sin corridas medidas</title></rect>'
+        ? '<rect x="' + (cx - Math.min(15, paso * 0.31)).toFixed(1) + '" y="' + top + '" width="' + Math.min(30, paso * 0.62).toFixed(1) + '" height="' + (base - top) + '" fill="var(--hatch)" opacity=".18" rx="2"><title>' + p.k + ': sin ejecuciones medidas</title></rect>'
         : '<circle cx="' + cx.toFixed(1) + '" cy="' + Y(p.v).toFixed(1) + '" r="4.5" fill="var(--accent)"><title>' + p.k + ': mediana ' + Math.round(p.v) + ' · n=' + p.n + '</title></circle>'
           + '<text x="' + cx.toFixed(1) + '" y="' + (Y(p.v) - 9).toFixed(1) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10.5" fill="var(--ink)">' + Math.round(p.v) + '</text>';
       s2 += '<text x="' + cx.toFixed(1) + '" y="164" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9.5" fill="var(--ink-3)">' + p.k + '</text>'
@@ -2072,8 +2072,8 @@ const CLIENTE = String.raw`(function () {
   function resumen(F) {
     var N = F.length;
     // story 2.27 (AC 11): quien todavía no tiene corridas en el buzón no ve «0 corridas» como una medida
-    if (!C.length && M.vacio_motivo) return ficha('Todavía no hay corridas', gris(M.vacio_motivo));
-    if (!N) return ficha('El filtro no deja ninguna corrida', gris(M.registro.estado !== 'medido' && M.registro.motivo ? M.registro.motivo : 'sin corridas en el filtro: ampliá el rango o cambiá de producto'));
+    if (!C.length && M.vacio_motivo) return ficha('Todavía no hay ejecuciones', gris(M.vacio_motivo));
+    if (!N) return ficha('El filtro no deja ninguna ejecución', gris(M.registro.estado !== 'medido' && M.registro.motivo ? M.registro.motivo : 'sin ejecuciones en el filtro: ampliá el rango o cambiá de producto'));
     var dur = F.filter(function (c) { return c.dur_ms; });
     var fin = F.filter(function (c) { return c.llego_al_final; });
     var gz = F.filter(function (c) { return c.controles; });
@@ -2095,11 +2095,11 @@ const CLIENTE = String.raw`(function () {
     // Las corridas sin la espera de los pasos medida pero con espera en su conversación dan un PISO: va en una
     // línea aparte, nunca adentro de la mediana (lo medido y lo estimado no se suman en el mismo número).
     var ePiso = F.filter(function (c) { return c.tiempos && c.tiempos.espera_humana_ms === null && c.tiempos.espera_del_hilo_ms; });
-    var pisoEspera = ePiso.length ? '. <b>Aparte</b>, en otras ' + ePiso.length + ' corridas sin la espera de los pasos medida, la conversación muestra <b>al menos ' + dt(mediana(ePiso.map(function (c) { return c.tiempos.espera_del_hilo_ms; })) / 60000) + '</b> de espera (mediana): es un piso y no entra en el número de arriba' : '';
+    var pisoEspera = ePiso.length ? '. <b>Aparte</b>, en otras ' + ePiso.length + ' ejecuciones sin la espera de los pasos medida, la conversación muestra <b>al menos ' + dt(mediana(ePiso.map(function (c) { return c.tiempos.espera_del_hilo_ms; })) / 60000) + '</b> de espera (mediana): es un piso y no entra en el número de arriba' : '';
     // story 2.27: sin las conversaciones (un sitio sin disco), la espera leída del hilo no se midió: se dice, no es cero
     var sinHilo = M.sin_hilos ? '. La espera leída de la conversación: <b>' + esc(M.sin_hilos) + '</b>' : '';
     pisoEspera += sinHilo;
-    var sinArranque = 'ninguna corrida del filtro anotó el arranque de sus pasos (las anteriores a la story 2.7 no lo tienen): se estimaría por diferencia, y eso no se publica como medida';
+    var sinArranque = 'ninguna ejecución del filtro anotó el arranque de sus pasos (las anteriores a la story 2.7 no lo tienen): se estimaría por diferencia, y eso no se publica como medida';
     // story 7.3: el validador de stories por fase. Denominador = los lanzamientos que DEJARON veredicto
     // (limpio, con hallazgos o inconsistente); los sin veredicto y los que no volvieron (no_medido) se
     // cuentan aparte, nunca como limpios ni en silencio (pase adversarial 2026-09-17: los que no volvieron
@@ -2125,21 +2125,21 @@ const CLIENTE = String.raw`(function () {
         + (relDec ? ' · no se relanzó en ' + relSin + ' de ' + relDec + ' re-loops' : '');
     };
     var fichaValidador = conVer
-      ? med(halVer + ' de ' + conVer + ' con hallazgos', 'n=' + val.length + ' de ' + N + ' corridas con el veredicto medido', {
+      ? med(halVer + ' de ' + conVer + ' con hallazgos', 'n=' + val.length + ' de ' + N + ' ejecuciones con el veredicto medido', {
         detalle: FASES_VAL.filter(function (p) { return porFaseVal[p[0]].con; }).map(function (p) { return esc(p[1]) + ' ' + porFaseVal[p[0]].hal + ' de ' + porFaseVal[p[0]].con; }).join(' · ')
           + aparte(function (n) { return '<b>' + n + '</b>'; }) })
-      : gris('las corridas del filtro no dejan veredicto del validador (existe desde la story 7.3)' + aparte(function (n) { return n; }).replace(/^ · /, ': '));
+      : gris('las ejecuciones del filtro no dejan veredicto del validador (existe desde la story 7.3)' + aparte(function (n) { return n; }).replace(/^ · /, ': '));
     return [
-      ficha('Corridas que llegaron al último paso', med(Math.round(pf * 100) + '%', fin.length + ' de ' + N + ' corridas', { est: juzgar('corridas_al_final', pf).est, palabra: juzgar('corridas_al_final', pf).palabra, detalle: '<b>' + (N - fin.length) + '</b> quedaron a mitad de camino' + (juzgar('corridas_al_final', pf).nota ? ' · <b>' + esc(juzgar('corridas_al_final', pf).nota) + '</b>' : '') })),
-      ficha('Cuánto dura una corrida, de punta a punta (mediana)', dur.length ? med(n1(mediana(dur.map(function (c) { return c.dur_ms; })) / 3600000) + ' h', 'n=' + dur.length + ' de ' + N + ' corridas', { detalle: 'la más larga ' + n1(Math.max.apply(null, dur.map(function (c) { return c.dur_ms; })) / 3600000) + ' h' }) : gris('ninguna corrida del filtro dejó su duración')),
-      ficha('Corridas donde un control encontró un error', gz.length ? med(Math.round((roj.length / gz.length) * 100) + '%', roj.length + ' de ' + gz.length + ' corridas con controles', { est: juzgar('corridas_con_error', roj.length / gz.length).est, palabra: juzgar('corridas_con_error', roj.length / gz.length).palabra, detalle: 'una prueba o la compilación que no pasaron y se arreglaron. En otras <b>' + fre.length + '</b> el control frenó antes de seguir. Las dos son el control funcionando.' + (N - gz.length ? ' ' + (N - gz.length) + ' corridas no registraron controles.' : '') + (juzgar('corridas_con_error', roj.length / gz.length).nota ? ' <b>' + esc(juzgar('corridas_con_error', roj.length / gz.length).nota) + '</b>' : '') }) : gris('ninguna corrida del filtro registró controles')),
-      ficha('Agentes lanzados por corrida (mediana)', ag.length ? med(String(mediana(ag)), 'n=' + ag.length + ' de ' + N + ' corridas', { detalle: 'máximo ' + Math.max.apply(null, ag) + ' · ' + (N - ag.length) + ' no lo registran (anteriores al conteo mecánico)' }) : gris('ninguna corrida del filtro registró cuántos agentes lanzó')),
-      ficha('Vueltas de revisión por corrida (mediana)', vu.length ? med(String(mediana(vu)), 'n=' + vu.length + ' de ' + N + ' corridas', { detalle: 'máximo ' + Math.max.apply(null, vu) + ' · la última vuelta de los revisores medidos (o de las fotos de iteración): la misma cuenta que el latido de la retrospectiva' }) : gris('ninguna corrida del filtro registró sus vueltas')),
+      ficha('Ejecuciones que llegaron al último paso', med(Math.round(pf * 100) + '%', fin.length + ' de ' + N + ' ejecuciones', { est: juzgar('corridas_al_final', pf).est, palabra: juzgar('corridas_al_final', pf).palabra, detalle: '<b>' + (N - fin.length) + '</b> quedaron a mitad de camino' + (juzgar('corridas_al_final', pf).nota ? ' · <b>' + esc(juzgar('corridas_al_final', pf).nota) + '</b>' : '') })),
+      ficha('Cuánto dura una ejecución, de punta a punta (mediana)', dur.length ? med(n1(mediana(dur.map(function (c) { return c.dur_ms; })) / 3600000) + ' h', 'n=' + dur.length + ' de ' + N + ' ejecuciones', { detalle: 'la más larga ' + n1(Math.max.apply(null, dur.map(function (c) { return c.dur_ms; })) / 3600000) + ' h' }) : gris('ninguna ejecución del filtro dejó su duración')),
+      ficha('Ejecuciones donde un control encontró un error', gz.length ? med(Math.round((roj.length / gz.length) * 100) + '%', roj.length + ' de ' + gz.length + ' ejecuciones con controles', { est: juzgar('corridas_con_error', roj.length / gz.length).est, palabra: juzgar('corridas_con_error', roj.length / gz.length).palabra, detalle: 'una prueba o la compilación que no pasaron y se arreglaron. En otras <b>' + fre.length + '</b> el control frenó antes de seguir. Las dos son el control funcionando.' + (N - gz.length ? ' ' + (N - gz.length) + ' ejecuciones no registraron controles.' : '') + (juzgar('corridas_con_error', roj.length / gz.length).nota ? ' <b>' + esc(juzgar('corridas_con_error', roj.length / gz.length).nota) + '</b>' : '') }) : gris('ninguna ejecución del filtro registró controles')),
+      ficha('Agentes lanzados por ejecución (mediana)', ag.length ? med(String(mediana(ag)), 'n=' + ag.length + ' de ' + N + ' ejecuciones', { detalle: 'máximo ' + Math.max.apply(null, ag) + ' · ' + (N - ag.length) + ' no lo registran (anteriores al conteo mecánico)' }) : gris('ninguna ejecución del filtro registró cuántos agentes lanzó')),
+      ficha('Vueltas de revisión por ejecución (mediana)', vu.length ? med(String(mediana(vu)), 'n=' + vu.length + ' de ' + N + ' ejecuciones', { detalle: 'máximo ' + Math.max.apply(null, vu) + ' · la última vuelta de los revisores medidos (o de las fotos de iteración): la misma cuenta que el latido de la retrospectiva' }) : gris('ninguna ejecución del filtro registró sus vueltas')),
       ficha('El validador de stories, por fase', fichaValidador),
-      ficha('Trabajo por corrida (mediana)', tMed.length ? med(dt(mediana(tMed.map(function (c) { return c.tiempos.trabajo_ms; })) / 60000), 'n=' + tMed.length + ' de ' + N + ' corridas', { detalle: 'los pasos con trabajo, del arranque al fin; sin la espera ni el tiempo entre pasos' + (M.sin_hilos ? ' (incluye las esperas que sólo se ven en la conversación: ' + esc(M.sin_hilos) + ')' : '') }) : gris(sinArranque + sinHilo)),
-      ficha('Espera humana por corrida (mediana)', eMed.length ? med(dt(mediana(eMed.map(function (c) { return c.tiempos.espera_humana_ms; })) / 60000), 'n=' + eMed.length + ' de ' + N + ' corridas', { detalle: 'aprobar el plan y los hallazgos, más las preguntas y los turnos que esperaron una respuesta del dev (leídos de la conversación)' + pisoEspera }) : gris(sinArranque + pisoEspera)),
-      ficha('Pasos de una corrida (mediana)', pa.length ? med(String(Math.round(mediana(pa))), 'n=' + pa.length + ' de ' + N + ' corridas', { detalle: (N - pa.length ? '<b>' + (N - pa.length) + '</b> no tienen sus pasos medidos (sin consumo medido): no entran en la mediana ni se estiman. ' : '') + 'Los tokens de al lado son su consecuencia: en cada paso el modelo relee todo lo anterior.' + (LB ? ' Línea base del ' + esc(LB.fecha) + ': <b>' + LB.mediana + '</b>' + (LB.corridas ? ' (n=' + LB.corridas + ')' : '') + '.' : ' <b>' + sinLB + '</b>.') }) : gris('ninguna corrida del filtro tiene sus pasos medidos: salen del consumo medido, y sin él no se estiman')),
-      ficha('Tokens de una corrida (mediana)', tk.length ? med(miles(Math.round(mediana(tk))), 'n=' + tk.length + ' de ' + N + ' corridas', { detalle: 'de otras <b>' + (N - tk.length) + '</b> no hay consumo medido (conversación borrada antes del rescate, o corrida anterior a él)' }) : gris('ninguna corrida del filtro tiene su consumo medido'))
+      ficha('Trabajo por ejecución (mediana)', tMed.length ? med(dt(mediana(tMed.map(function (c) { return c.tiempos.trabajo_ms; })) / 60000), 'n=' + tMed.length + ' de ' + N + ' ejecuciones', { detalle: 'los pasos con trabajo, del arranque al fin; sin la espera ni el tiempo entre pasos' + (M.sin_hilos ? ' (incluye las esperas que sólo se ven en la conversación: ' + esc(M.sin_hilos) + ')' : '') }) : gris(sinArranque + sinHilo)),
+      ficha('Espera humana por ejecución (mediana)', eMed.length ? med(dt(mediana(eMed.map(function (c) { return c.tiempos.espera_humana_ms; })) / 60000), 'n=' + eMed.length + ' de ' + N + ' ejecuciones', { detalle: 'aprobar el plan y los hallazgos, más las preguntas y los turnos que esperaron una respuesta del dev (leídos de la conversación)' + pisoEspera }) : gris(sinArranque + pisoEspera)),
+      ficha('Pasos de una ejecución (mediana)', pa.length ? med(String(Math.round(mediana(pa))), 'n=' + pa.length + ' de ' + N + ' ejecuciones', { detalle: (N - pa.length ? '<b>' + (N - pa.length) + '</b> no tienen sus pasos medidos (sin consumo medido): no entran en la mediana ni se estiman. ' : '') + 'Los tokens de al lado son su consecuencia: en cada paso el modelo relee todo lo anterior.' + (LB ? ' Línea base del ' + esc(LB.fecha) + ': <b>' + LB.mediana + '</b>' + (LB.corridas ? ' (n=' + LB.corridas + ')' : '') + '.' : ' <b>' + sinLB + '</b>.') }) : gris('ninguna ejecución del filtro tiene sus pasos medidos: salen del consumo medido, y sin él no se estiman')),
+      ficha('Tokens de una ejecución (mediana)', tk.length ? med(miles(Math.round(mediana(tk))), 'n=' + tk.length + ' de ' + N + ' ejecuciones', { detalle: 'de otras <b>' + (N - tk.length) + '</b> no hay consumo medido (conversación borrada antes del rescate, o ejecución anterior a él)' }) : gris('ninguna ejecución del filtro tiene su consumo medido'))
     ].join('');
   }
 
@@ -2157,17 +2157,17 @@ const CLIENTE = String.raw`(function () {
     var porSem = {};
     F.forEach(function (c) { if (c.semana) porSem[c.semana] = (porSem[c.semana] || 0) + 1; });
     var ks = semanasDelRango(F);
-    if (!ks.length) return '<p class="tlnota">sin corridas en el filtro</p>';
+    if (!ks.length) return '<p class="tlnota">sin ejecuciones en el filtro</p>';
     var max = Math.max.apply(null, [1].concat(ks.map(function (k) { return porSem[k] || 0; })));
     var W = 720, H = 190, x0 = 34, x1 = 706, base = 148, top = 16, paso = (x1 - x0) / ks.length;
     var Y = function (v) { return base - (v / max) * (base - top); };
-    var s2 = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-width:' + W + 'px;min-width:520px;display:block" role="img" aria-label="Corridas por semana.">';
+    var s2 = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-width:' + W + 'px;min-width:520px;display:block" role="img" aria-label="Ejecuciones por semana.">';
     [0, Math.round(max / 2), max].forEach(function (t) {
       s2 += '<line x1="' + x0 + '" y1="' + Y(t) + '" x2="' + x1 + '" y2="' + Y(t) + '" stroke="var(--line)"></line><text x="' + (x0 - 7) + '" y="' + (Y(t) + 4) + '" text-anchor="end" font-family="IBM Plex Mono,monospace" font-size="10.5" fill="var(--ink-3)">' + t + '</text>';
     });
     ks.forEach(function (k, i) {
       var n = porSem[k] || 0, cx = x0 + paso * i + paso / 2, bw = Math.min(30, paso * 0.62);
-      s2 += '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + Y(n).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, base - Y(n)).toFixed(1) + '" fill="' + (n ? 'var(--accent)' : 'var(--line-strong)') + '" rx="2"><title>' + k + ': ' + n + ' corridas</title></rect>'
+      s2 += '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + Y(n).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, base - Y(n)).toFixed(1) + '" fill="' + (n ? 'var(--accent)' : 'var(--line-strong)') + '" rx="2"><title>' + k + ': ' + n + ' ejecuciones</title></rect>'
         + '<text x="' + cx.toFixed(1) + '" y="' + (Y(n) - 5).toFixed(1) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10.5" fill="var(--ink)">' + n + '</text>'
         + (ks.length <= 26 || i % 2 === 0 ? '<text x="' + cx.toFixed(1) + '" y="166" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9.5" fill="var(--ink-3)">' + k.slice(5) + '</text>' : '');
     });
@@ -2186,7 +2186,7 @@ const CLIENTE = String.raw`(function () {
       return '<div class="pfila' + (f.v === null ? ' sinDato' : '') + '"><span class="pn"><b>' + f.i + '</b> ' + esc(PASOS[f.i]) + '</span>'
         + '<span class="pb">' + (f.v === null ? '<i class="hatch" style="width:100%"></i>' : '<i style="width:' + Math.max(1.5, (f.v / max) * 100).toFixed(1) + '%;background:' + RAMPA[f.i] + '"></i>') + '</span>'
         + '<span class="pv">' + (f.v === null ? 'sin dato' : fmt(f.v)) + '</span><span class="pnn">n=' + f.n + ' de ' + universo + '</span></div>';
-    }).join('') + (fusionados ? '<p class="tlnota">' + fusionados + ' corrida(s) tienen pasos con marcas invertidas o empatadas (por ejemplo «5+6»): lo de esos tramos va fusionado y no entra en la mediana de ningún paso — se ve en el detalle de cada una.</p>' : '') + '</div>';
+    }).join('') + (fusionados ? '<p class="tlnota">' + fusionados + ' ejecución(es) tienen pasos con marcas invertidas o empatadas (por ejemplo «5+6»): lo de esos tramos va fusionado y no entra en la mediana de ningún paso — se ve en el detalle de cada una.</p>' : '') + '</div>';
   }
 
   // ─── el filtro ───
@@ -2271,15 +2271,15 @@ const CLIENTE = String.raw`(function () {
     var dentro = 0, fuera = 0;
     cs.forEach(function (c) { fuera += c.consumo.fuera_de_ventana; Object.keys(c.consumo.por_paso).forEach(function (k) { dentro += c.consumo.por_paso[k]; }); });
     $('nota-tokens').innerHTML = cs.length
-      ? 'Sólo de las <b>' + cs.length + '</b> corridas del filtro con consumo medido (n= al lado de cada paso). <b>' + n1((fuera / Math.max(1, fuera + dentro)) * 100) + ' % del consumo cae fuera de los pasos</b> — trabajo posterior al último paso registrado; se cuenta aparte, no se reparte.'
-      : 'Ninguna corrida del filtro tiene su consumo medido: no hay consumo que mostrar, y eso <b>no es cero</b>.';
+      ? 'Sólo de las <b>' + cs.length + '</b> ejecuciones del filtro con consumo medido (n= al lado de cada paso). <b>' + n1((fuera / Math.max(1, fuera + dentro)) * 100) + ' % del consumo cae fuera de los pasos</b> — trabajo posterior al último paso registrado; se cuenta aparte, no se reparte.'
+      : 'Ninguna ejecución del filtro tiene su consumo medido: no hay consumo que mostrar, y eso <b>no es cero</b>.';
     var n = 0;
     for (var i = 0; i < cuerpo.rows.length; i++) {
       var tr = cuerpo.rows[i];
       if (tr.classList.contains('fila-det')) { tr.hidden = tr.previousElementSibling.hidden; continue; }
       var k = enC(tr), ok = k !== null && pasa(C[k]); tr.hidden = !ok; if (ok) n++;
     }
-    var molde = (elCuenta.dataset && elCuenta.dataset.molde) || '{n} de {t} corridas a la vista';
+    var molde = (elCuenta.dataset && elCuenta.dataset.molde) || '{n} de {t} ejecuciones a la vista';
     elCuenta.textContent = molde.replace('{n}', n).replace('{t}', C.length);
   }
   // Escribe en la dirección los filtros que difieren de su valor por defecto; lo demás (solo, abrir, ver, git) queda como estaba.
@@ -2325,9 +2325,9 @@ const CLIENTE = String.raw`(function () {
     if (FUENTE.forma === 'red' && !FUENTE.cargado(i)) {
       cerrarAbierta();
       var espera = document.createElement('tr'); espera.className = 'fila-det';
-      espera.innerHTML = '<td colspan="' + tr.children.length + '"><span class="nd" role="status">bajando el detalle de esta corrida…</span></td>';
+      espera.innerHTML = '<td colspan="' + tr.children.length + '"><span class="nd" role="status">bajando el detalle de esta ejecución…</span></td>';
       tr.after(espera); tr.classList.add('abierta');
-      setTimeout(function () { var n = espera.querySelector('.nd'); if (mio === turno && espera.parentNode && n) n.textContent = 'sigue bajando el detalle de esta corrida: el sitio lo está preparando y puede tardar unos segundos más…'; }, ESPERA_LARGA_MS);
+      setTimeout(function () { var n = espera.querySelector('.nd'); if (mio === turno && espera.parentNode && n) n.textContent = 'sigue bajando el detalle de esta ejecución: el sitio lo está preparando y puede tardar unos segundos más…'; }, ESPERA_LARGA_MS);
     }
     FUENTE.detalle(i, function (c) {
       if (mio !== turno) return;
@@ -2453,7 +2453,7 @@ function dentroDelRepoDelEquipo(ruta, dep = { path, fs, raiz: RAIZ }) {
 /** Devuelve el código de salida; dashboard.js hace el exit. */
 function main(opts = {}) {
   if (opts.clonRetirado) {
-    console.error('--clone ya no existe (story 2.16, rediseño): las corridas de otras máquinas se leen de la carpeta bajada del buzón — usá --mailbox <dir>, o nada para ~/.claude/.tycon-pipeline/corridas-buzon');
+    console.error('--clone ya no existe (story 2.16, rediseño): las ejecuciones de otras máquinas se leen de la carpeta bajada del buzón — usá --mailbox <dir>, o nada para ~/.claude/.tycon-pipeline/corridas-buzon');
     return 2;
   }
   const runsDir = path.resolve(opts.runsDir || RUNS_DEFAULT);
@@ -2462,7 +2462,7 @@ function main(opts = {}) {
   const M = modelo(runsDir, buzon ? { buzon, maquina } : {});
   const N = M.corridas.length;
   const log = opts.json ? console.error : console.log;
-  log(`Corridas: ${N} corrida${N === 1 ? '' : 's'} de ${M.archivos} archivos · ${M.duplicados} duplicado${M.duplicados === 1 ? '' : 's'} · ${M.ilegibles} no se pudieron leer`);
+  log(`Ejecuciones: ${N} ejecución${N === 1 ? '' : 's'} de ${M.archivos} archivos · ${M.duplicados} duplicado${M.duplicados === 1 ? '' : 's'} · ${M.ilegibles} no se pudieron leer`);
   log(`  con consumo medido: ${M.corridas.filter((c) => c.consumo.estado === 'medido').length} · con controles: ${M.corridas.filter((c) => c.controles).length} · llegaron al paso 8: ${M.corridas.filter((c) => c.llego_al_final).length}`);
   if (M.registro.estado !== 'medido') log(`  registro NO MEDIDO: ${M.registro.motivo}`);
   if (M.pasos.fuente !== 'tabla' || M.pasos.motivo) log(`  pasos por número: ${M.pasos.motivo}`);
@@ -2481,7 +2481,7 @@ function main(opts = {}) {
   //    commiteada una foto de UNA máquina que cambia según quién la armó.
   const salida = path.resolve(opts.salida || (M.multi ? path.join(buzon, 'runs-dashboard.html') : SALIDA_DEFAULT));
   if (dentroDelRepoDelEquipo(salida)) {
-    console.error(`se niega a escribir ${path.relative(RAIZ, salida) || salida}: esa ruta es del repo del equipo, que lo clona todo el equipo${M.multi ? ', y la página tiene corridas del buzón' : ''}. La vista de corridas no se commitea: sin --output va a ${M.multi ? '<carpeta bajada>/runs-dashboard.html' : '~/.claude/.tycon-pipeline/runs-dashboard.html'}.`);
+    console.error(`se niega a escribir ${path.relative(RAIZ, salida) || salida}: esa ruta es del repo del equipo, que lo clona todo el equipo${M.multi ? ', y la página tiene ejecuciones del buzón' : ''}. La vista de ejecuciones no se commitea: sin --output va a ${M.multi ? '<carpeta bajada>/runs-dashboard.html' : '~/.claude/.tycon-pipeline/runs-dashboard.html'}.`);
     return 2;
   }
   if (!opts.salida) { try { fs.mkdirSync(path.dirname(salida), { recursive: true }); } catch (_) { /* lo dice el write */ } }

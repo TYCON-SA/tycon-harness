@@ -151,7 +151,7 @@ test('8.54 T6 First_NoFresca · first_install con fresh: false (había rastros d
 
 // ─── la oferta ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-test('8.54 T8 Oferta_PrimerCierre · el clear de la primera corrida cerrada imprime la oferta y la anota', () => {
+test('8.54 T8 Oferta_PrimerCierre · el clear de la primera ejecución cerrada imprime la oferta y la anota', () => {
   const home = casa();
   const r = clear(home);
   assert.strictEqual(r.rc, 0, r.err);

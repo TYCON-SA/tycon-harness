@@ -201,7 +201,7 @@ function clasesDelPase(pase, repos, diag) {
   }
   if (!candidatos.length) {
     const existe = pase.repoPath && fs.existsSync(pase.repoPath);
-    return { motivo: existe ? 'la corrida no dejó sus hallazgos en el repo' : `el repo de la corrida no está en esta máquina (${corto(pase.repoPath) || 'sin declarar'})` };
+    return { motivo: existe ? 'la ejecución no dejó sus hallazgos en el repo' : `el repo de la ejecución no está en esta máquina (${corto(pase.repoPath) || 'sin declarar'})` };
   }
   // 🔴 Un pase lanzado temprano escribe en la carpeta de ESE momento y el reporte se consolida en la
   // de la corrida: la misma story deja DOS carpetas hermanas y sólo una tiene los datos.
@@ -216,9 +216,9 @@ function clasesDelPase(pase, repos, diag) {
     // Si el filtro de arriba ya anotó un ilegible, la corrida SÍ dejó algo — ilegible. Decir «no
     // dejó nada» acá es el mismo error que se evita a nivel de resumen, repetido por fila.
     if (diag && diag.lista.length > antesDelFiltro) {
-      return { motivo: `la corrida dejó sus archivos pero son ILEGIBLES: ${diag.lista[diag.lista.length - 1].motivo}` };
+      return { motivo: `la ejecución dejó sus archivos pero son ILEGIBLES: ${diag.lista[diag.lista.length - 1].motivo}` };
     }
-    return { motivo: 'la corrida existe pero no dejó ni el volcado del pase ni sus hallazgos consolidados' };
+    return { motivo: 'la ejecución existe pero no dejó ni el volcado del pase ni sus hallazgos consolidados' };
   }
   candidatos.length = 0;
   candidatos.push(...conDatos);
@@ -228,7 +228,7 @@ function clasesDelPase(pase, repos, diag) {
   let elegido = candidatos[0];
   if (candidatos.length > 1) {
     const ts = pase.startedAt ? Date.parse(pase.startedAt) : NaN;
-    if (!Number.isFinite(ts)) return { motivo: `${candidatos.length} corridas de la story ${pase.story} y el volcado no dice cuál` };
+    if (!Number.isFinite(ts)) return { motivo: `${candidatos.length} ejecuciones de la story ${pase.story} y el volcado no dice cuál` };
     let mejor = null;
     for (const c of candidatos) {
       let m = null;
@@ -236,7 +236,7 @@ function clasesDelPase(pase, repos, diag) {
       const d = Math.abs(m - ts);
       if (!mejor || d < mejor.d) mejor = { ...c, d };
     }
-    if (!mejor) return { motivo: `${candidatos.length} corridas de la story ${pase.story} y ninguna legible` };
+    if (!mejor) return { motivo: `${candidatos.length} ejecuciones de la story ${pase.story} y ninguna legible` };
     elegido = mejor;
   }
 
@@ -257,9 +257,9 @@ function clasesDelPase(pase, repos, diag) {
   // Si algo se rompió al leer, el motivo lo DICE: «no dejó nada» y «dejó algo ilegible» son cosas
   // distintas y sólo una de las dos es culpa de la corrida.
   if (diag && diag.lista.length > antes) {
-    return { motivo: `la corrida dejó sus archivos pero son ILEGIBLES: ${diag.lista[diag.lista.length - 1].motivo}` };
+    return { motivo: `la ejecución dejó sus archivos pero son ILEGIBLES: ${diag.lista[diag.lista.length - 1].motivo}` };
   }
-  return { motivo: 'la corrida existe pero no dejó ni el volcado del pase ni sus hallazgos consolidados' };
+  return { motivo: 'la ejecución existe pero no dejó ni el volcado del pase ni sus hallazgos consolidados' };
 }
 
 function percentil(xs, p) {
@@ -321,7 +321,7 @@ function medir(opts) {
       story: p.story, repo: corto(p.repoPath), hallazgos: p.hallazgos, clases, ratio: p.hallazgos / clases,
       fuente, corrida: corto(c.corrida), medible: true,
       repo_confirmado: c.repo_confirmado !== false,
-      ...(c.repo_confirmado === false ? { nota: 'el repo declarado no está en esta máquina: la corrida se resolvió por coincidencia de número de story' } : {}),
+      ...(c.repo_confirmado === false ? { nota: 'el repo declarado no está en esta máquina: la ejecución se resolvió por coincidencia de número de story' } : {}),
     });
   }
 
@@ -382,12 +382,12 @@ function resumen(r) {
   const porCoincidencia = r.filas.filter((f) => f.medible && f.repo_confirmado === false);
   if (porCoincidencia.length) {
     lineas.push(`🔶 En ${porCoincidencia.length} de las ${r.medidos} filas medidas el repo declarado NO está en esta máquina y la` +
-      ` corrida se resolvió por COINCIDENCIA de número de story (${porCoincidencia.map((f) => f.story).join(', ')}).` +
+      ` ejecución se resolvió por COINCIDENCIA de número de story (${porCoincidencia.map((f) => f.story).join(', ')}).` +
       ` Si dos repos usan el mismo número, esas causas podrían no ser las suyas.`);
   }
   if (!r.muestra_suficiente) {
     lineas.push(`🔴 La muestra NO alcanza para sostener ese porcentaje: ${r.medidos} pase(s) medido(s), mínimo ${r.muestra_minima}.` +
-      (r.medidos === 1 ? ' Con n=1 el número es una anécdota, no una medición: queda declarado así, y las corridas futuras anotan sus causas solas (`mark-adversarial-result --classes`).' : ''));
+      (r.medidos === 1 ? ' Con n=1 el número es una anécdota, no una medición: queda declarado así, y las ejecuciones futuras anotan sus causas solas (`mark-adversarial-result --classes`).' : ''));
   }
   return lineas.join('\n');
 }

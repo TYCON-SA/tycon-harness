@@ -260,7 +260,7 @@ function estadoDeLasSuitesNocturnas() {
     const idas = Array.isArray(rep.disappeared) ? rep.disappeared.length : 0;
     if (!corridas) return [`🟡 ${cab}: la foto no dice que haya corrido ninguna suite — no es verde${foto.nota}`];
     if (idas) return [`🟡 ${cab}: ninguna en rojo, pero ${idas} suite(s) de la foto anterior no corrieron — la noche no está completa · detalle: scripts/controls-bench/ultimo-suites.json${foto.nota}`];
-    return [`✅ ${cab}: ${corridas} corrida(s), ninguna en rojo${foto.nota}`];
+    return [`✅ ${cab}: ${corridas} ejecución(es), ninguna en rojo${foto.nota}`];
   }
   // El MOTIVO al lado del nombre: con el nombre solo, saber por qué
   // está roja exige volver a correrla. Corto a propósito; el reporte trae hasta tres líneas.
@@ -327,7 +327,7 @@ function estadoDelBancoNocturno() {
   }
   return [`${rojos ? '🔴' : '🟡'} banco de controles nocturno (${fecha}): ${rep.failed || 0} rojos`
     + ` · paridad rota ${rep.parityBreaks || 0} · regresiones ${rep.baselineRegressions || 0}`
-    + (nm ? ` · 🟡 ${nm} NO MEDIDO(s) (se les agotó el tiempo — la corrida no está completa)` : '')
+    + (nm ? ` · 🟡 ${nm} NO MEDIDO(s) (se les agotó el tiempo — la ejecución no está completa)` : '')
     + ' · detalle: scripts/controls-bench/ultimo-banco.json' + foto.nota];
 }
 
@@ -410,7 +410,7 @@ function estadoDelExamen(benchDir) {
     const nm = rubrosNoMedidos({ tool: rep.tool, runs: rep.runs });
     const inestables = nm.inestables
       ? `inestables NO MEDIDOS (${nm.inestables})`
-      : `${rep.inestables || 0} inestables (cambia de opinión entre corridas)`;
+      : `${rep.inestables || 0} inestables (cambia de opinión entre ejecuciones)`;
     const paridad = nm.paridad
       ? `paridad NO MEDIDA (${nm.paridad})`
       : `paridad rota ${rep.paridadReal || 0}`;
@@ -418,8 +418,8 @@ function estadoDelExamen(benchDir) {
       lineas.push(`examen de revisores (${fecha}, hace ${dias} día(s), máquina ${rep.maquina || '?'}):`
         + ` ${rep.criterio || 0} de criterio (el revisor razona mal) · ${inestables}`
         + ` · ${paridad} · regresiones ${rep.baselineRegressions || 0}`
-        + (fugas ? ` · 🚧 ${fugas} corridas que se escaparon del corral (NO están medidas: el veredicto depende de qué tiene el dev en el disco)` : '')
-        + (errores ? ` · ${errores} en error de corrida (no llegaron a correr — esa parte del examen NO está medida)` : '')
+        + (fugas ? ` · 🚧 ${fugas} ejecuciones que se escaparon del corral (NO están medidas: el veredicto depende de qué tiene el dev en el disco)` : '')
+        + (errores ? ` · ${errores} en error de ejecución (no llegaron a correr — esa parte del examen NO está medida)` : '')
         + (salteados ? ` · ${salteados} salteados por MCP ausente (constancia, no verde)` : ''));
     }
   }
@@ -431,7 +431,7 @@ function estadoDelExamen(benchDir) {
       for (const f of fs.readdirSync(benchDir).filter((x) => /^advisors-.*-parcial-.*\.json$/.test(x))) {
         const p = readJson(path.join(benchDir, f));
         if (!p) continue;
-        lineas.push(`   ℹ️ hay además una corrida PARCIAL (${(p.only || []).join(', ') || 'alcance acotado'}, ${String(p.ts || '').slice(0, 10)})`
+        lineas.push(`   ℹ️ hay además una ejecución PARCIAL (${(p.only || []).join(', ') || 'alcance acotado'}, ${String(p.ts || '').slice(0, 10)})`
           + ' — es complementaria; no dice nada de los revisores que no cubrió');
       }
     } catch { /* sin .bench/, nada que agregar */ }
@@ -539,7 +539,7 @@ try {
           + ` — el resto del equipo no lo ve; hay que pushearlo a mano`);
       } else if (r.estado !== 'completo') {
         problems.push(`el examen de revisores quedó INCOMPLETO (${String(r.ts || '').slice(0, 16)}): ${r.motivo || 'sin motivo registrado'}`
-          + ` — es una corrida que NO midió, no un resultado`);
+          + ` — es una ejecución que NO midió, no un resultado`);
       }
       continue;
     }
@@ -570,7 +570,7 @@ try {
         const nm = rubrosNoMedidos({ tool: r.tool, runs: r.runs });
         const desglose = typeof r.criterio === 'number'
           ? `${r.criterio} de criterio (el revisor razona mal) · `
-            + (nm.inestables ? `inestables NO MEDIDOS (${nm.inestables})` : `${r.inestables || 0} inestables (cambia de opinión entre corridas)`)
+            + (nm.inestables ? `inestables NO MEDIDOS (${nm.inestables})` : `${r.inestables || 0} inestables (cambia de opinión entre ejecuciones)`)
             + (r.fugas ? ` · 🚧 ${r.fugas} que se escaparon del corral (NO medidas)` : '')
           : `${r.failed} rojos`;
         const par = nm.paridad
@@ -585,7 +585,7 @@ try {
         const dias = r.ts ? Math.floor((Date.now() - new Date(r.ts).getTime()) / 86400000) : null;
         const edad = dias === null ? '' : dias >= 1 ? ` — FOTO DE HACE ${dias} DÍA(S), anterior a lo que se arregló después` : '';
         problems.push(`${f}: ${desglose} · ${par} · regresiones ${r.baselineRegressions}`
-          + (noMedidos ? ` · 🟡 ${noMedidos} NO MEDIDO(s) (se les agotó el tiempo — la corrida no está completa)` : '')
+          + (noMedidos ? ` · 🟡 ${noMedidos} NO MEDIDO(s) (se les agotó el tiempo — la ejecución no está completa)` : '')
           + ` (${r.ts})${edad}`
           + (r.nota ? `\n     ℹ️ ${r.nota}` : ''));
       }
@@ -644,7 +644,7 @@ try {
     }
   }
   if (problems.length) {
-    console.log('🔴 controls-bench EN ROJO — el banco de pruebas de controles detectó fallas en la última corrida:');
+    console.log('🔴 controls-bench EN ROJO — el banco de pruebas de controles detectó fallas en la última ejecución:');
     for (const p of problems) console.log(`   · ${p}`);
     console.log(`   Correr: node ${path.join(BENCH, '..', 'runner.js')} --tool claude --baseline check · detalle en ${BENCH}/`);
   }

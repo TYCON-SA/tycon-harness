@@ -372,7 +372,7 @@ test('A2 2.33-Adv_VersionesIncomparables @story-2.33 @ac-12 — versiones que no
   } finally { await reg.cerrar(); }
 });
 
-test('A3 2.33-Adv_DosCorridasALaVez @story-2.33 @ac-12 — si otra corrida cambió la imagen en el medio, ésta no toca nada', async () => {
+test('A3 2.33-Adv_DosCorridasALaVez @story-2.33 @ac-12 — si otra ejecución cambió la imagen en el medio, ésta no toca nada', async () => {
   // 🔴 rojo: una corrida vieja instala su stable sobre una versión más nueva que otra acaba de poner.
   const reg = await registro();
   try {
@@ -384,7 +384,7 @@ test('A3 2.33-Adv_DosCorridasALaVez @story-2.33 @ac-12 — si otra corrida cambi
     };
     const r = await UP.actualizar({ ...base(reg), plataforma: 'azure', modo: 'auto', azure: AZURE, correr, probar: async () => ({ ok: true }) });
     assert.strictEqual(r.resultado, 'no_pudo', JSON.stringify(r));
-    assert.strictEqual(r.motivo, 'la imagen que corre cambió durante la corrida');
+    assert.strictEqual(r.motivo, 'la imagen que corre cambió durante la ejecución');
     assert.deepStrictEqual(az.updates(), []);
   } finally { await reg.cerrar(); }
 });

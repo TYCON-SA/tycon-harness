@@ -461,7 +461,7 @@ function fallosDependencias({ snap, dir, hoy, vigOut }) {
   for (const x of Array.isArray(snap.no_medidos) ? snap.no_medidos : []) {
     F.push(`no medido: ${(x && (x.ruta || x.repo)) || '(repo sin nombre)'} — ${recortar((x && x.motivo) || 'sin motivo', 160)}`);
   }
-  if (snap.corrida_completa === false) F.push('la corrida quedó incompleta');
+  if (snap.corrida_completa === false) F.push('la ejecución quedó incompleta');
   F.push(...fallosDeResumenAnterior(dir, 'dependencias', hoy));
   const p = hasOwn(snap, 'pedidos') && snap.pedidos && typeof snap.pedidos === 'object' ? snap.pedidos : null;
   if (p) {
@@ -658,7 +658,7 @@ function leerConfig(archivo, nombre, fallos) {
  * El texto del mensaje lleva sólo la cantidad: el revisor y la regla quedan en el `--json` y en la constancia.
  */
 function dudasDeRevisores(runs, hoy) {
-  if (!runs) return { valor: null, motivo: 'no se indicó la carpeta de corridas del repo', no_leidas: 0 };
+  if (!runs) return { valor: null, motivo: 'no se indicó la carpeta de ejecuciones del repo', no_leidas: 0 };
   // La librería vive con el pipeline: una copia del resumen sin ella al lado (un laboratorio, una instalación parcial)
   // no tiene con qué leer las constancias, y eso es «no medido», no «sin dudas» ni una caída del resumen entero.
   const lib = path.join(__dirname, '..', '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'refutation.js');

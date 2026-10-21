@@ -406,7 +406,7 @@ function escribirAtomico(destino, texto) {
 /** ¿Le toca? `{ toca, motivo }`. El sello es la hora de la última corrida completa. */
 function leToca(sello, ahora) {
   const t = Date.parse(String(sello || '').trim());
-  if (!Number.isFinite(t)) return { toca: true, motivo: 'no hay corrida completa anterior' };
+  if (!Number.isFinite(t)) return { toca: true, motivo: 'no hay ejecución completa anterior' };
   const dias = (ahora - t) / DAY;
   return dias >= PERIODO_DIAS ? { toca: true, motivo: `la última fue hace ${dias.toFixed(1)} días` }
     : { toca: false, motivo: `la última fue hace ${dias.toFixed(1)} días; corre cada ${PERIODO_DIAS}` };

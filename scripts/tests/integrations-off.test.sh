@@ -352,8 +352,8 @@ if has_block "$MD_N" response-style && has_block "$MD_N" tool-names && has_block
 else no "T32 con Azure DevOps apagado faltan bloques que no requieren nada: $(grep -c 'TYCON_BLOCK:.* START' "$MD_N" 2>/dev/null) de 3"; fi
 cp "$MD_N" "$T/t32-never.md"
 SAL="$(sync32 "$N" 2>&1)"
-if [ -z "$SAL" ] && cmp -s "$MD_N" "$T/t32-never.md"; then ok "T32 apagada y ausente: la segunda corrida no dice nada ni toca el archivo"
-else no "T32 apagada y ausente, la segunda corrida habló o escribió: $(echo "$SAL" | head -2 | tr '\n' ' ')"; fi
+if [ -z "$SAL" ] && cmp -s "$MD_N" "$T/t32-never.md"; then ok "T32 apagada y ausente: la segunda ejecución no dice nada ni toca el archivo"
+else no "T32 apagada y ausente, la segunda ejecución habló o escribió: $(echo "$SAL" | head -2 | tr '\n' ' ')"; fi
 
 # ── prendida: el bloque está, sin el comentario; apagada otra vez: se va y el resto queda byte a byte ──
 V="$(home32 cycle seed)"; MD_V="$V/.claude/CLAUDE.md"

@@ -22,12 +22,12 @@ function resumirAca({ buzon, skillsDir = null }) {
 
 /** Lo mismo en un hilo aparte, con techo de memoria (`memoriaMb`) y de tiempo (`tiempoMs`). */
 function resumirEnWorker({ buzon, skillsDir = null, memoriaMb = 512, tiempoMs = 600000 }) {
-  return enWorker({ __resumir: true, buzon, skillsDir }, { memoriaMb, tiempoMs, frase: 'el resumen de las corridas no terminó a tiempo' });
+  return enWorker({ __resumir: true, buzon, skillsDir }, { memoriaMb, tiempoMs, frase: 'el resumen de las ejecuciones no terminó a tiempo' });
 }
 
 /** Los textos de una corrida (`volcado`, con su conversación y su cambio al lado), en un hilo aparte: { texto, textoGit }. */
 function textosEnWorker({ volcado, skillsDir = null, memoriaMb = 512, tiempoMs = 120000 }) {
-  return enWorker({ __textos: true, volcado, skillsDir }, { memoriaMb, tiempoMs, frase: 'los textos de la corrida no se armaron a tiempo' });
+  return enWorker({ __textos: true, volcado, skillsDir }, { memoriaMb, tiempoMs, frase: 'los textos de la ejecución no se armaron a tiempo' });
 }
 
 /**

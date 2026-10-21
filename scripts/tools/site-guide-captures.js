@@ -48,7 +48,7 @@ const CAPTURAS = [
   { nombre: 'inicio-persona', sitio: 'normal', quien: ANA, ruta: '/', espera: 'Lo tuyo' },
   { nombre: 'corridas-tabla', sitio: 'normal', quien: LEAD, ruta: '/corridas', espera: 'Lo que se mira primero', barras: true },
   { nombre: 'corridas-detalle', sitio: 'normal', quien: LEAD, ruta: '/corridas', pasos: 'abrirCorrida', espera: 'Qué encontraron los controles' },
-  { nombre: 'corridas-leyenda', sitio: 'normal', quien: LEAD, ruta: '/corridas', pasos: 'leyenda', espera: 'Corrida por corrida', barras: true },
+  { nombre: 'corridas-leyenda', sitio: 'normal', quien: LEAD, ruta: '/corridas', pasos: 'leyenda', espera: 'Ejecución por ejecución', barras: true },
   { nombre: 'proyectos', sitio: 'normal', quien: LEAD, ruta: '/proyectos', espera: 'Cómo va cada producto' },
   { nombre: 'arnes', sitio: 'normal', quien: LEAD, ruta: '/arnes', espera: 'Cómo está el arnés' },
   { nombre: 'como-trabaja', sitio: 'normal', quien: LEAD, ruta: '/como-trabaja', espera: 'Tu organización' },
@@ -59,7 +59,8 @@ const CAPTURAS = [
   { nombre: 'configuracion-repos', sitio: 'normal', quien: LEAD, ruta: '/configuracion#pestana-repos', pasos: 'config', espera: 'Dónde vive cada repo' },
   { nombre: 'configuracion-avisos', sitio: 'normal', quien: LEAD, ruta: '/configuracion#pestana-avisos', pasos: 'config', espera: 'Aviso de espera' },
   { nombre: 'configuracion-pedidos', sitio: 'normal', quien: LEAD, ruta: '/configuracion#seccion-pedidos', pasos: 'config', espera: 'Valores leídos de la plataforma' },
-  { nombre: 'configuracion-claude', sitio: 'normal', quien: LEAD, ruta: '/configuracion#pestana-claude', pasos: 'config', espera: 'Cómo contesta Claude' },
+  { nombre: 'configuracion-claude', sitio: 'normal', quien: LEAD, ruta: '/configuracion#pestana-claude', pasos: 'config', espera: 'Cómo contesta el agente' },
+  { nombre: 'configuracion-tecnologia', sitio: 'normal', quien: LEAD, ruta: '/configuracion#seccion-tecnologia', pasos: 'config', espera: 'Cómo se corren las pruebas' },
   { nombre: 'configuracion-instalacion', sitio: 'normal', quien: LEAD, ruta: '/configuracion#pestana-instalacion', pasos: 'config', espera: 'Perfil de instalación' },
   { nombre: 'configuracion-revisado', sitio: 'normal', quien: LEAD, ruta: '/configuracion#seccion-respuesta', pasos: 'revisar', espera: 'Revisado: está bien escrito' },
   { nombre: 'configuracion-diferencia', sitio: 'normal', quien: LEAD, ruta: '/configuracion#seccion-respuesta', pasos: 'proponer', espera: 'Mirá la diferencia antes de confirmar' },
@@ -67,7 +68,7 @@ const CAPTURAS = [
   { nombre: 'sin-rol', sitio: 'normal', quien: BRUNO, ruta: '/', espera: 'Tu cuenta no está en la lista' },
   { nombre: 'no-se-pudo-actualizar', sitio: 'falla', quien: LEAD, ruta: '/', espera: 'no se pudo actualizar' },
   { nombre: 'sitio-frenado', sitio: 'frenado', quien: LEAD, ruta: '/', espera: 'Sitio frenado' },
-  { nombre: 'cargando-corridas', sitio: 'cargando', quien: LEAD, ruta: '/corridas', espera: 'cargando las corridas' },
+  { nombre: 'cargando-corridas', sitio: 'cargando', quien: LEAD, ruta: '/corridas', espera: 'cargando las ejecuciones' },
   { nombre: 'proponer-apagado', sitio: 'sinPolitica', quien: LEAD, ruta: '/configuracion#seccion-respuesta', pasos: 'config', espera: 'no tiene una política' },
 ];
 
@@ -178,7 +179,14 @@ const PERFIL = {
   integrations: { clockify: false, engram: true, mailbox: true, codex: 'detect', nightly: true },
   update: { channel: 'latest', apply: 'auto' }, packs: { default: 'all' }, install: { profile: 'full' },
 };
-const REPOS = { version: 1, public: GH('arnes'), profile: GH('perfil'), operations: GH('operaciones') };
+// una herramienta de prueba agregada por la organización: la tabla de «Cómo se corren las pruebas» la muestra junto a
+// las internas y las recetas de fábrica
+const RECETA_NETFX = {
+  name: 'netfx-vstest', label: '.NET Framework (vstest)', detect: 'packages.config', detect_depth: 1,
+  command: 'bash -c \'vstest.console.exe $(find . -path "*/bin/Debug/*Tests.dll") --logger:trx "--ResultsDirectory:{results}"\'',
+  results: { format: 'trx', path: '{results}/**/*.trx' },
+};
+const REPOS = { version: 1, public: GH('arnes'), profile: GH('perfil'), operations: GH('operaciones'), stack: { test_runners: [RECETA_NETFX] } };
 
 /**
  * Un laboratorio: el sitio real con las fuentes reales sobre los datos de arriba. `variante`:

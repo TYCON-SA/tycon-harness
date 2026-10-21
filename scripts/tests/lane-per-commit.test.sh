@@ -62,7 +62,7 @@ rc3=$(registrar s-nada "chore: sin carril")
 if [ -f "$CARR" ]; then
   n=$(wc -l < "$CARR" | tr -d ' ')
   [ "$n" = "3" ] && ok "T9 una línea por commit" || no "T9 esperaba 3 líneas, hay $n"
-  [ "$(campo "$CARR" 1 'o.carril + "|" + o.story')" = "pipeline|2.7" ] && ok "T9 el commit con corrida cae en pipeline con su story" || no "T9 línea 1: $(sed -n 1p "$CARR")"
+  [ "$(campo "$CARR" 1 'o.carril + "|" + o.story')" = "pipeline|2.7" ] && ok "T9 el commit con ejecución cae en pipeline con su story" || no "T9 línea 1: $(sed -n 1p "$CARR")"
   [ "$(campo "$CARR" 2 'o.carril + "|" + o.story')" = "adhoc|null" ] && ok "T9 el commit con atajo cae en adhoc, sin story" || no "T9 línea 2: $(sed -n 2p "$CARR")"
   [ "$(campo "$CARR" 3 'o.carril + "|" + o.story')" = "ninguno|null" ] && ok "T9 el commit sin carril cae en ninguno" || no "T9 línea 3: $(sed -n 3p "$CARR")"
   [ "$(campo "$CARR" 1 'Object.keys(o).sort().join(",")')" = "carril,story,ts" ] && ok "T9 la línea lleva sólo ts, carril y story" || no "T9 claves: $(campo "$CARR" 1 'Object.keys(o).join(",")')"
@@ -119,10 +119,10 @@ fs.writeFileSync(process.argv[1]+"/2.9-vieja.json", JSON.stringify({archivedAt:h
 ' "$CASA/$EST/timing-history"
 gcommit "feat: después del cierre"
 registrar s-cerrada "feat: después del cierre" >/dev/null
-[ "$(campo "$CARR" 8 'o.carril + "|" + o.story')" = "pipeline|2.8" ] && ok "T9f el commit de hace 10 min tras cerrar la corrida cuenta como pipeline, con su story" || no "T9f línea 8: $(sed -n 8p "$CARR" 2>/dev/null)"
+[ "$(campo "$CARR" 8 'o.carril + "|" + o.story')" = "pipeline|2.8" ] && ok "T9f el commit de hace 10 min tras cerrar la ejecución cuenta como pipeline, con su story" || no "T9f línea 8: $(sed -n 8p "$CARR" 2>/dev/null)"
 gcommit "feat: mucho después"
 registrar s-vieja "feat: mucho después" >/dev/null
-[ "$(campo "$CARR" 9 'o.carril')" = "ninguno" ] && ok "T9f una corrida cerrada hace 5 h ya no le da carril al commit" || no "T9f línea 9: $(sed -n 9p "$CARR" 2>/dev/null)"
+[ "$(campo "$CARR" 9 'o.carril')" = "ninguno" ] && ok "T9f una ejecución cerrada hace 5 h ya no le da carril al commit" || no "T9f línea 9: $(sed -n 9p "$CARR" 2>/dev/null)"
 
 # ── T10 — un commit que ningún hook vio ────────────────────────────────────────────────────────
 antes=$(nlin)

@@ -112,7 +112,7 @@ test('SuitesShard_SameInput_SameOutput_WhateverTheOrderOfTheWeightsFile', () => 
   const b = lab({ weights: reversed });
   for (let i = 1; i <= 3; i += 1) {
     const first = list(a, i, 3);
-    assert.deepStrictEqual(list(a, i, 3).lines, first.lines, 'dos corridas iguales dan lo mismo');
+    assert.deepStrictEqual(list(a, i, 3).lines, first.lines, 'dos ejecuciones iguales dan lo mismo');
     assert.deepStrictEqual(list(b, i, 3).lines, first.lines, 'el orden de las claves del archivo de pesos no cambia el reparto');
   }
 });
@@ -297,7 +297,7 @@ test('SuitesWeights_PrSetHasMeasuredValues', () => {
   const pr = JSON.parse(fs.readFileSync(REAL_WEIGHTS, 'utf8')).pr;
   assert.ok(pr && typeof pr === 'object', 'suites-weights.json trae el juego `pr` de la validación');
   assert.ok(Array.isArray(pr.runs) && pr.runs.length > 0 && pr.runs.every((n) => Number.isInteger(n) && n > 0),
-    `el juego cita las corridas de la 170 de donde salen sus pesos: ${JSON.stringify(pr.runs)}`);
+    `el juego cita las ejecuciones de la 170 de donde salen sus pesos: ${JSON.stringify(pr.runs)}`);
   assert.ok(Number.isFinite(pr.default) && pr.default > 0, 'el juego trae su peso por defecto');
   // (export-real, que pesa distinto en la validación y de noche, no está: la copia armada no existe;
   // que cada juego use sus pesos lo mide el caso de juguete de SuitesShard_PrWeightsOnlyInPr)
@@ -544,7 +544,7 @@ test('SuitesShard_Merge_SuiteCutByItsCap_IsNotMeasuredWithItsMotive', () => {
   assert.match(fs.readFileSync(path.join(bare.dir, 'red-output', `${cut}(no-medida).txt`), 'utf8'), /no medida/);
 
   // Una «no medida» que el trabajo no corrió, o que no era de su lista, no cuadra: no se le cree a nada del trabajo.
-  for (const [name, ran, what] of [[cut, two.slice(1), 'que no figura entre las corridas'], [expected(dir, 1, 2)[0], two, 'ajena']]) {
+  for (const [name, ran, what] of [[cut, two.slice(1), 'que no figura entre las ejecuciones'], [expected(dir, 1, 2)[0], two, 'ajena']]) {
     fs.rmSync(path.join(dir, 'artifacts'), { recursive: true, force: true });
     artifact(dir, 1, 2);
     artifact(dir, 2, 2, { ran, failures: [`${name}(no-medida)`] });
@@ -560,11 +560,11 @@ test('SuitesShard_Merge_ShardWithoutArtifact_ItsSuitesAreNotMeasuredNeverGreen',
   assert.strictEqual(m.code, 0, 'juntó: el reporte sale, con las no medidas adentro');
   const two = expected(dir, 2, 2);
   assert.deepStrictEqual(m.failures, two.map((n) => `${n}(no-medida)`), 'cada suite del trabajo ausente cuenta como falla');
-  assert.deepStrictEqual(m.ran, ['a-slow.test.sh'], 'y ninguna se da por corrida');
+  assert.deepStrictEqual(m.ran, ['a-slow.test.sh'], 'y ninguna se da por ejecución');
   for (const n of two) {
     assert.strictEqual(fs.readFileSync(path.join(m.dir, 'red-output', `${n}(no-medida).txt`), 'utf8').trim(), MOTIVE(2));
   }
-  assert.match(m.out, /##vso\[task\.logissue type=error\].*trabajo 2 de 2/, 'y lo denuncia como error de la corrida');
+  assert.match(m.out, /##vso\[task\.logissue type=error\].*trabajo 2 de 2/, 'y lo denuncia como error de la ejecución');
 });
 
 test('SuitesShard_Merge_ShardCutHalfway_KeepsWhatItMeasuredAndTheRestIsNotMeasured', () => {
@@ -633,11 +633,11 @@ function wholeShardUnmeasured(m, dir, i, of, what) {
   const its = expected(dir, i, of);
   for (const n of its) {
     assert.ok(m.failures.includes(`${n}(no-medida)`), `${what}: ${n} tenía que quedar no medida — ${m.failures}`);
-    assert.ok(!m.ran.includes(n), `${what}: ${n} no puede figurar entre las corridas`);
+    assert.ok(!m.ran.includes(n), `${what}: ${n} no puede figurar entre las ejecuciones`);
     assert.strictEqual(fs.readFileSync(path.join(m.dir, 'red-output', `${n}(no-medida).txt`), 'utf8').trim(), BROKEN(i));
   }
   assert.strictEqual(m.failures.length, its.length, `${what}: sólo las de ese trabajo — ${m.failures}`);
-  assert.match(m.out, new RegExp(`##vso\\[task\\.logissue type=error\\].*trabajo ${i} de ${of}`), `${what}: la corrida lo denuncia`);
+  assert.match(m.out, new RegExp(`##vso\\[task\\.logissue type=error\\].*trabajo ${i} de ${of}`), `${what}: la ejecución lo denuncia`);
 }
 
 test('SuitesShard_Merge_ArtifactWithoutItsFailuresFile_IsNotReadAsGreen', () => {
@@ -662,7 +662,7 @@ test('SuitesShard_Merge_ArtifactWithoutItsRanFile_IsNotReadAsGreen', () => {
 test('SuitesShard_Merge_FinishedMarkThatDoesNotMatchWhatWasPublished_IsNotBelieved', () => {
   // La marca dice cuántas corrió y cuántas fallas anotó. Si lo publicado trae otra cuenta, algo se perdió en el camino.
   for (const [what, options] of [
-    ['la marca dice 5 corridas y hay 6', { mark: '5 0\n' }],
+    ['la marca dice 5 ejecuciones y hay 6', { mark: '5 0\n' }],
     ['la marca dice 1 falla y no hay ninguna (la roja se perdió)', { mark: '6 1\n' }],
     ['la marca no trae la cuenta', { mark: 'listo\n' }],
     ['la marca está vacía', { mark: '' }],
@@ -689,7 +689,7 @@ test('SuitesShard_Merge_NamesThatWereNotInItsList_AreNotCounted', () => {
   const never = lab();
   artifact(never, 1, 2);
   artifact(never, 2, 2, { ran: ['b-fast.test.js'], failures: ['c-skill.test.js'], finished: false });
-  wholeShardUnmeasured(merge(never, 2), never, 2, 2, 'una roja que no figura entre las corridas');
+  wholeShardUnmeasured(merge(never, 2), never, 2, 2, 'una roja que no figura entre las ejecuciones');
 });
 
 // ── un trabajo reintentado desde Azure publica otro artefacto ──────────────────────
@@ -758,7 +758,7 @@ test('SuitesShard_Merge_EverySuiteEndsInTheReportOneWayOrAnother', () => {
     const m = merge(dir, 3);
     assert.strictEqual(m.code, 0, m.err);
     const named = new Set([...m.ran, ...m.failures.map((f) => f.replace(/\((ausente|no-medida)\)$/, ''))]);
-    assert.deepStrictEqual([...named].sort(), ALL, `escenario ${k}: alguna suite no quedó ni corrida ni en la lista de fallas`);
+    assert.deepStrictEqual([...named].sort(), ALL, `escenario ${k}: alguna suite no quedó ni ejecución ni en la lista de fallas`);
   }
 });
 
@@ -927,7 +927,7 @@ test('T47 SuitesShard_ExclusiveApart_MergeJoinsTheBenchJob — el veredicto junt
   assert.strictEqual(m.code, 0, m.err);
   assert.deepStrictEqual([...m.ran].sort(), [...ALL].sort(), 'corrieron todas: las de los trabajos de suites y las del banco');
   assert.deepStrictEqual(m.failures, []);
-  assert.match(m.out, /trabajo del banco: terminó · 2 corrida\(s\)/);
+  assert.match(m.out, /trabajo del banco: terminó · 2 ejecución\(es\)/);
   // una exclusiva roja en el trabajo del banco conserva su nombre y su salida
   fs.rmSync(path.join(dir, 'artifacts'), { recursive: true, force: true });
   shards(); bench({ failures: ['a-slow.test.sh'] });

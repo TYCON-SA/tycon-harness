@@ -113,7 +113,7 @@ rc=$(corre --suites-actual "$TMP/ahora-s.json" --suites-snapshot "$TMP/no-existe
 suites "$TMP/foto-s5.json" "$(hoy)"
 rc=$(corre --suites-actual "$TMP/ahora-s.json" --suites-snapshot "$TMP/foto-s5.json" --current-bench "$TMP/ahora-b5.json" --bench-snapshot "$TMP/no-existe.json")
 { [ "$rc" = 2 ] && grep -q 'ROJO NUEVO (no está en la foto nocturna): suite publish-bump' "$TMP/out.txt" && grep -q 'sin foto nocturna de banco' "$TMP/out.txt"; } \
-  && ok "V5f: con la foto de suites y sin la del banco, la roja de suite nueva se nombra nueva (y la corrida sale 2)" || no "V5f: rc=$rc · $(cat "$TMP/out.txt")"
+  && ok "V5f: con la foto de suites y sin la del banco, la roja de suite nueva se nombra nueva (y la ejecución sale 2)" || no "V5f: rc=$rc · $(cat "$TMP/out.txt")"
 
 # ── V6. (espejo de V5) la foto VIEJA sigue sirviendo de excusa, con el aviso de su edad ──────────
 suites "$TMP/foto-vieja.json" "$(hace_dias 9)" publish-bump.test.sh
@@ -125,7 +125,7 @@ rc=$(corre --suites-actual "$TMP/ahora-s.json" --suites-snapshot "$TMP/foto-viej
 # ── V7. el reporte de ESTA corrida ilegible o ausente ⇒ exit 2, nunca 0 ──────────────────────────
 rc=$(corre --suites-actual "$TMP/no-existe-ahora.json" --suites-snapshot "$TMP/foto-s.json")
 { [ "$rc" = 2 ] && grep -qi 'no pude decidir' "$TMP/out.txt"; } \
-  && ok "V7: sin el reporte de esta corrida no se midió ⇒ 2, no verde" || no "V7: rc=$rc · $(cat "$TMP/out.txt")"
+  && ok "V7: sin el reporte de esta ejecución no se midió ⇒ 2, no verde" || no "V7: rc=$rc · $(cat "$TMP/out.txt")"
 rc=$(corre --current-bench "$TMP/rota.json" --bench-snapshot "$TMP/foto-b.json")
 [ "$rc" = 2 ] && ok "V7b: reporte del banco ilegible ⇒ 2" || no "V7b: rc=$rc · $(cat "$TMP/out.txt")"
 rc=$(corre --suites-snapshot "$TMP/foto-s.json")
@@ -168,7 +168,7 @@ node "$SCRIPT" --suites-actual "$TMP/ahora-s.json" --suites-snapshot "$TMP/foto-
 { [ "$rc" = 1 ] && [ "$(grep -o '##vso\[' "$TMP/out.txt" | wc -l | tr -d ' ')" = 1 ] \
   && [ "$(grep -c . "$TMP/out.txt")" -ge 1 ] && grep -q 'mala.test.sh' "$TMP/out.txt" \
   && grep -q 'setvariable' "$TMP/out.txt"; } \
-  && ok "V10: 🔴 un motivo con ##vso adentro no fija variables de la corrida, y el hallazgo se sigue leyendo entero" \
+  && ok "V10: 🔴 un motivo con ##vso adentro no fija variables de la ejecución, y el hallazgo se sigue leyendo entero" \
   || no "V10: rc=$rc · $(cat "$TMP/out.txt")"
 
 # ── V11. el pipeline de PR llama a este guion y no escribe en el repo ───────────────────────────
@@ -487,12 +487,12 @@ STUB
     # … «no pude mirar» (2) tampoco es verde …
     rc=$(lint16 "$L16/src" "skills/lab-skill/SKILL.md" "new-names.js $R --source agent-skills" 2)
     { [ "$rc" = 1 ] && grep -q 'no pude mirar' "$L16/lint.txt"; } \
-      && ok "V16c: un «no pude mirar» de la corrida de agent-skills frena igual: no medido no es verde" \
+      && ok "V16c: un «no pude mirar» de la ejecución de agent-skills frena igual: no medido no es verde" \
       || no "V16c (no pude mirar): rc=$rc · $(tail -3 "$L16/lint.txt" | tr '\n' ' ')"
     # … y (espejo) la corrida del arnés sigue frenando por su cuenta
     rc=$(lint16 "$L16/src" "scripts/lab.js" "spanish-names.js $R --source arnes" 1)
     { [ "$rc" = 1 ] && grep -q '1 control(es) en rojo' "$L16/lint.txt"; } \
-      && ok "V16c: (espejo) la corrida de la fuente arnes sigue frenando por su cuenta" || no "V16c (espejo): rc=$rc · $(tail -3 "$L16/lint.txt" | tr '\n' ' ')"
+      && ok "V16c: (espejo) la ejecución de la fuente arnes sigue frenando por su cuenta" || no "V16c (espejo): rc=$rc · $(tail -3 "$L16/lint.txt" | tr '\n' ' ')"
 
     # V16d — «nada ajeno sin declarar», el otro control de la parte de skills del pre-commit: corre si el cambio toca
     # skills/ o agents/, no corre con uno de sólo documentación, y su rojo frena
@@ -652,7 +652,7 @@ if [ -f "$YAML" ]; then
       step17m manual-two; TWO17="$(code17)"; TWO_LIST17="$(list17)"
       step17m manual-skill; SKILL17="$(code17)"
       { [ "$MD17" = no ] && [ "$MDTODO17" = no ] && [ "$TWO17" = si ] && [ "$TWO_LIST17" = "guides/otra.md scripts/lab-pub/lab-tool.js " ] && [ "$SKILL17" = si ]; } \
-        && ok "V17f: corrida a mano sobre una rama: se compara la rama entera contra main (no corre todo); .md (también bajo scripts/) no es código; un SKILL.md sí" \
+        && ok "V17f: ejecución a mano sobre una rama: se compara la rama entera contra main (no corre todo); .md (también bajo scripts/) no es código; un SKILL.md sí" \
         || no "V17f: .md → hayCodigo=$MD17 todo=$MDTODO17 · rama con el cambio en un commit anterior → hayCodigo=$TWO17 (lista: $TWO_LIST17) · SKILL.md → hayCodigo=$SKILL17 · $(tail -2 "$L17/step.txt" | tr '\n' ' ')"
     else
       no "V17f: NO MEDIDO — no pude armar los repos de juguete: $(tr '\n' ' ' < "$L17/arm.txt" | cut -c1-200)"
@@ -762,7 +762,7 @@ if [ -f "$YAML" ]; then
       suites17 si 'corrida de main a mano: no hay rama destino contra la cual comparar'; RCS17=$?
       RUN17="$(grep -c . "$L17/tmp/staging/suites-plan/run.txt" 2>/dev/null || echo 0)"
       { [ "$HEAD17" = 0 ] && [ "$RCS17" = 0 ] && [ "$RUN17" = "$TOTAL17" ] && ! grep -q '^⏭' "$L17/suites.txt" \
-        && grep -q 'corren todas — corrida de main a mano' "$L17/suites.txt"; } \
+        && grep -q 'corren todas — ejecución de main a mano' "$L17/suites.txt"; } \
         && ok "V17d: sin último commit: ningún HEAD^1 en el yml; con todoElRepo=si corren las $TOTAL17 suites, con el motivo" \
         || no "V17d: HEAD^1 fuera de comentarios=$HEAD17 · rc=$RCS17 · corren $RUN17 de $TOTAL17 · $(tail -3 "$L17/suites.txt" | tr '\n' ' ' | cut -c1-300)"
     fi

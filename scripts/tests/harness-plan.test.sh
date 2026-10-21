@@ -262,8 +262,8 @@ if corre T18; then
   else mal "T18 con terminal: salió ${RC}, ${N} preguntas: $(tail -n 4 "$T/t18-1.out" | tr '\n' ' ')"; fi
   grep -q '^escribe:' "$T/t18-1.out" && ok "T18 el plan se imprime antes de la pregunta" || mal "T18 sin plan antes de preguntar"
   RC=0; harness_lab_pty - harness install > "$T/t18-2.out" 2>&1 || RC=$?
-  if [ "$RC" = 0 ] && grep -q 'sin cambios' "$T/t18-2.out" && ! grep -q '¿Instalo?' "$T/t18-2.out"; then ok "T18 segunda corrida: «sin cambios» y no pregunta"
-  else mal "T18 segunda corrida: salió ${RC}: $(tail -n 3 "$T/t18-2.out" | tr '\n' ' ')"; fi
+  if [ "$RC" = 0 ] && grep -q 'sin cambios' "$T/t18-2.out" && ! grep -q '¿Instalo?' "$T/t18-2.out"; then ok "T18 segunda ejecución: «sin cambios» y no pregunta"
+  else mal "T18 segunda ejecución: salió ${RC}: $(tail -n 3 "$T/t18-2.out" | tr '\n' ' ')"; fi
 fi
 
 if corre T19; then

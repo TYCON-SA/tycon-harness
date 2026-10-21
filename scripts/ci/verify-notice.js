@@ -128,11 +128,11 @@ function setAside({ exit }, data, findings) {
 
 /** El aviso y lo que quedó aparte: `{ text, accepted }`. `text` vacío es «nada que avisar». */
 function compose({ exit, run, unfinished = false }, data) {
-  const where = `Arnés — verificación de lo publicado${run ? ` (corrida ${run})` : ''}`;
+  const where = `Arnés — verificación de lo publicado${run ? ` (ejecución ${run})` : ''}`;
   const only = (text) => ({ text, accepted: 0 });
   if (unfinished) {
-    return only([`${where}: NO PUDO MIRAR — tenía que correr en esta corrida y no llegó a terminar (un paso anterior falló, o la cortaron).`,
-      'Eso NO es «limpio»: hasta que vuelva a correr bien, lo publicado no lo mira nadie. El motivo está en el registro de la corrida.'].join('\n'));
+    return only([`${where}: NO PUDO MIRAR — tenía que correr en esta ejecución y no llegó a terminar (un paso anterior falló, o la cortaron).`,
+      'Eso NO es «limpio»: hasta que vuelva a correr bien, lo publicado no lo mira nadie. El motivo está en el registro de la ejecución.'].join('\n'));
   }
   // Una lista del informe que falta es una lista vacía (el informe de un `verify` que frenó antes de mirar trae sólo el
   // código y el motivo); una que está y NO es una lista es un informe que no se puede leer.
@@ -143,7 +143,7 @@ function compose({ exit, run, unfinished = false }, data) {
   // cuando se lo piden, así que un 0 sin informe no es una verificación limpia, es una que no se sabe qué miró.
   if (!data || allFindings === null || allBlind === null) {
     return only([`${where}: NO PUDO MIRAR — terminó con código ${exit} y no dejó un informe que se pueda leer.`,
-      'Eso NO es «limpio»: no se sabe qué miró. El motivo está en el registro de la corrida.'].join('\n'));
+      'Eso NO es «limpio»: no se sabe qué miró. El motivo está en el registro de la ejecución.'].join('\n'));
   }
   const blind = allBlind.filter((x) => x && typeof x === 'object');
   // lo que no es un objeto en «no pude mirar» no se pierde: cuenta como una parte sin nombre
@@ -179,17 +179,17 @@ function compose({ exit, run, unfinished = false }, data) {
     if (unmeasured.length) lines.push(`Además quedó sin medir: ${unmeasuredText}`);
   } else if (blind.length || (exit === 2 && data.exit === 2)) {
     lines.push(`${where}: NO PUDO MIRAR${parts ? ` ${parts}` : ''}.`);
-    lines.push(`Motivo: ${reason || 'está en el registro de la corrida'}`);
+    lines.push(`Motivo: ${reason || 'está en el registro de la ejecución'}`);
     lines.push('«No pude mirar» no es «limpio»: hasta que vuelva a correr bien, eso no lo mira nadie.');
     if (unmeasured.length) lines.push(`Además quedó sin medir: ${unmeasuredText}`);
   } else if (unmeasured.length) {
     // sólo pasa con algo aparte: lo único que hay, además de la historia aceptada, es una parte que no se midió
     lines.push(`${where}: quedó sin medir ${unmeasuredText}`);
-    lines.push('«Sin medir» no es «limpio»: esa parte no la miró nadie en esta corrida.');
+    lines.push('«Sin medir» no es «limpio»: esa parte no la miró nadie en esta ejecución.');
   } else {
     // la corrida salió mal y el informe no dice por qué (dice otra cosa, o es el de otra corrida): no se da por bueno
     lines.push(`${where}: NO PUDO MIRAR — terminó con código ${exit} y su informe (que dice ${Number.isInteger(data.exit) ? data.exit : '?'}) no trae hallazgos ni partes sin mirar.`);
-    lines.push('Algo no cierra, y eso no es «limpio»: el motivo está en el registro de la corrida.');
+    lines.push('Algo no cierra, y eso no es «limpio»: el motivo está en el registro de la ejecución.');
   }
   // lo que cierra el aviso: cuántos quedaron aparte (si alguno) y dónde está el paso a paso
   const closing = [...(accepted ? [`Aparte: ${accepted} hallazgo(s) en la historia del repo privado, aceptados hasta el corte (no se listan).`] : []), `Paso a paso: ${GUIDE}.`];
@@ -205,7 +205,7 @@ function compose({ exit, run, unfinished = false }, data) {
     kept.push(line);
     size += line.length + 1;
   }
-  if (dropped) kept.push(`… y ${dropped} más (están en el registro de la corrida).`);
+  if (dropped) kept.push(`… y ${dropped} más (están en el registro de la ejecución).`);
   return { text: [...kept, ...closing].join('\n'), accepted };
 }
 
@@ -215,8 +215,8 @@ const build = (args, data) => compose(args, data).text;
 function main(argv) {
   const args = parseArgs(argv);
   if (!args) {
-    process.stderr.write('uso: verify-notice.js --report <archivo> --exit <código de verify> [--run <número de corrida>]\n'
-      + '     verify-notice.js --did-not-finish [--run <número de corrida>]\n');
+    process.stderr.write('uso: verify-notice.js --report <archivo> --exit <código de verify> [--run <número de ejecución>]\n'
+      + '     verify-notice.js --did-not-finish [--run <número de ejecución>]\n');
     return 2;
   }
   const { text, accepted } = compose(args, args.unfinished ? null : readReport(args.report));

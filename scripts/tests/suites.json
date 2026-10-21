@@ -422,6 +422,12 @@
       "requiere": []
     },
     {
+      "__nota": "la receta de una herramienta de la organización alcanza para .NET Framework con vstest: el reporte TRX, el archivo detector en una subcarpeta y un detalle por repo (herramienta falsa en el PATH); y el camino del agente hasta la receta.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-runners-dotnet-framework.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la puerta de pruebas con pytest, Go, Maven, Gradle, Karma y una herramienta de la organización (herramientas falsas en el PATH), y una story que toca dos proyectos.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/test-gate-runners.test.js",
@@ -1199,6 +1205,12 @@
       "requiere": []
     },
     {
+      "__nota": "el freno de pruebas sin alcance frena el comando corrido y no un texto entre comillas que sólo se busca.",
+      "raiz": "arnes",
+      "ruta": "tests/test-scope-guard.test.sh",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/evidence-key-collision.test.sh",
       "requiere": [],
@@ -1669,6 +1681,12 @@
       "__nota": "story 2.42: la tabla única de textos del sitio — cada clave en castellano y en inglés, y ninguna página armada en inglés trae texto en castellano.",
       "raiz": "arnes",
       "ruta": "tests/site-texts.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.87: las palabras que lee una persona — «ejecución» y no «corrida» en los textos del sitio y de los programas, y «el agente» cuando el texto habla del agente en general; los nombres de la máquina siguen.",
+      "raiz": "arnes",
+      "ruta": "tests/human-words.test.js",
       "requiere": []
     },
     {

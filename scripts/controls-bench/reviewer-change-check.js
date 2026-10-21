@@ -188,7 +188,7 @@ function checkReviewerChange({ repo, base, staged }) {
     if (problem) { add('reviewer-exam-malformed', `el resultado del examen está mal formado: ${problem}.`); continue; }
 
     const hash = (gitOrNull(repo, ['rev-parse', `${tree}:${archivo}`]) || '').trim();
-    if (!hash || res.hash !== hash) { add('reviewer-exam-stale', 'la corrida es de otra versión del archivo.'); continue; }
+    if (!hash || res.hash !== hash) { add('reviewer-exam-stale', 'la ejecución es de otra versión del archivo.'); continue; }
 
     const mine = scoreOf(res.cases);
     if (res.passed !== mine.passed || res.total !== mine.total || res.score !== mine.score) {

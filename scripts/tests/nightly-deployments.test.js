@@ -475,7 +475,7 @@ test('R1 Revisores_NumeroDeCorridaSinTextoLibre_ResultadoDesconocidoNoEsRoto', (
   pipeline(m, { nombre: 'Acme Prod', id: 2, runs: [{ run: corrida({ buildNumber: '20261014.3' }), records: [stage('P', 'succeeded', '2026-10-14T06:00:00Z')] }] });
   correr(m);
   const t = fs.readFileSync(path.join(m.out, `deployments-${HOY}.json`), 'utf8');
-  assert.ok(!t.includes('Persona Secreta'), 'el nombre de la corrida no viaja');
+  assert.ok(!t.includes('Persona Secreta'), 'el nombre de la ejecución no viaja');
   const p = JSON.parse(t).productos.Acme;
   assert.strictEqual(p.staging.corrida, null);
   assert.strictEqual(p.produccion.corrida, '20261014.3', 'control positivo');

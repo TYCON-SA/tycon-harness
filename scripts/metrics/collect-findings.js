@@ -215,7 +215,7 @@ function serieCoincide(texto, sello) {
   const hallazgos = sello && sello.hallazgos;
   const medidos = sello && sello.volcados && sello.volcados.medidos;
   if (serie.hallazgos.length !== hallazgos || serie.volcados.length !== medidos) {
-    return { ok: false, motivo: `la serie no coincide con su sello (${serie.hallazgos.length} hallazgos y ${serie.volcados.length} corridas contra ${hallazgos} y ${medidos})` };
+    return { ok: false, motivo: `la serie no coincide con su sello (${serie.hallazgos.length} hallazgos y ${serie.volcados.length} ejecuciones contra ${hallazgos} y ${medidos})` };
   }
   return { ok: true, serie };
 }
@@ -716,10 +716,10 @@ function main() {
     return;
   }
   if (!process.argv.includes('--json')) {
-    console.log(`${res.estado} · ${res.hallazgos} hallazgo(s) de ${res.repos} repo(s), ${res.run_dirs} corrida(s)`);
+    console.log(`${res.estado} · ${res.hallazgos} hallazgo(s) de ${res.repos} repo(s), ${res.run_dirs} ejecución(es)`);
     console.log(`  baldes: ${Object.entries(res.baldes).map(([k, v]) => `${k} ${v}`).join(' · ')}`);
     console.log(`  fuera de catálogo ${res.fuera_de_catalogo} · ambiguos ${res.ambiguos} · sin regla ${res.elementos_sin_regla} · copias ignoradas ${res.copias_ignoradas} · carpetas ilegibles ${res.carpetas_ilegibles}`);
-    if (res.volcados) console.log(`  corridas del registro: ${Object.entries(res.volcados).map(([k, v]) => `${k} ${v}`).join(' · ')}`);
+    if (res.volcados) console.log(`  ejecuciones del registro: ${Object.entries(res.volcados).map(([k, v]) => `${k} ${v}`).join(' · ')}`);
   }
   process.exitCode = 0;
 }

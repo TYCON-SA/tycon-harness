@@ -549,7 +549,7 @@ cp "$ACTUAL" "$E1/inbox/instincts/descartados/${AYER}${ACTUAL##*/[0-9][0-9][0-9]
 LISTA2=$(en_e1 list 2>&1)
 if [ "$N_DESC" = 1 ] && [ "$VECES_OK" = 1 ] \
   && echo "$LISTA2" | grep -F "1 propuesta(s) que la revisión del observer descartó" >/dev/null && echo "$LISTA2" | grep -F "(descartada 2 veces)" >/dev/null; then
-  ok "C-28 la misma repetición en otra corrida deja un solo archivo, con cuántas veces se descartó, y la lista la cuenta una vez (también si quedó una copia vieja)"
+  ok "C-28 la misma repetición en otra ejecución deja un solo archivo, con cuántas veces se descartó, y la lista la cuenta una vez (también si quedó una copia vieja)"
 else
   bad "C-28 descartes repetidos" "archivos=$N_DESC · $(echo "$LISTA2" | tail -4 | tr '\n' ' ')"
 fi
@@ -749,9 +749,9 @@ else
   if [ "$RC2" = 0 ] && ! grep -qF "descartado(s) de" "$LAB/migra3.log" && [ ! -e "$M/$V_CARPETA/descartados" ] \
     && grep -qF 'veces_descartada: 5' "$(grep -l '^trigger: "PROPUESTA-CUBIERTA' "$M/inbox/instincts/descartados/"*.yaml)" \
     && [ -f "$M/inbox/instincts/descartados/20260920-otro-d4d4d4d4d4.yaml" ]; then
-    ok "T18b adversarial R2: la segunda corrida no migra nada (idempotente) y el contador sigue sumando"
+    ok "T18b adversarial R2: la segunda ejecución no migra nada (idempotente) y el contador sigue sumando"
   else
-    bad "T18b segunda corrida" "rc=$RC2 · $(tail -4 "$LAB/migra3.log" | tr '\n' ' ')"
+    bad "T18b segunda ejecución" "rc=$RC2 · $(tail -4 "$LAB/migra3.log" | tr '\n' ' ')"
   fi
 
   # 2) Choque con instinct-promote: el mismo nombre en las dos carpetas. Gana el de más veces descartada; empate, el

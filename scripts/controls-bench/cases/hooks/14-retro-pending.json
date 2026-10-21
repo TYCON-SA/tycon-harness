@@ -1428,7 +1428,7 @@
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q --bare \"$HOME/remoto.git\" && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin \"$HOME/remoto.git\" && git push -q origin main",
-            "mkdir -p .advisors/pipeline-runs/1.1-x && echo r > .advisors/pipeline-runs/1.1-x/RESUMEN.md && git add -A && git -c user.email=b@b -c user.name=b commit -q -m \"docs(1.1): evidencia de la corrida\" && git push -q origin main"
+            "mkdir -p .advisors/pipeline-runs/1.1-x && echo r > .advisors/pipeline-runs/1.1-x/RESUMEN.md && git add -A && git -c user.email=b@b -c user.name=b commit -q -m \"docs(1.1): evidencia de la ejecución\" && git push -q origin main"
           ],
           "stdin": {
             "session_id": "bench-s1",

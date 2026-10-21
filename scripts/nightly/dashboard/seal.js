@@ -62,8 +62,8 @@ function validar(s) {
   if (!instanteValido(s.generado)) return 'la fecha de generación no es un instante UTC válido';
   if (s.snapshot !== null && !fechaValida(s.snapshot)) return 'la fecha del snapshot no es un día AAAA-MM-DD válido';
   if (!MODOS.has(s.modo)) return `modo desconocido (${JSON.stringify(s.modo)})`;
-  if (s.corrida !== null && !(typeof s.corrida === 'string' && /^\d{1,20}$/.test(s.corrida))) return 'la corrida no es un número de compilación';
-  if (s.modo === 'local' && s.corrida !== null) return 'una página local no puede traer corrida';
+  if (s.corrida !== null && !(typeof s.corrida === 'string' && /^\d{1,20}$/.test(s.corrida))) return 'la ejecución no es un número de compilación';
+  if (s.modo === 'local' && s.corrida !== null) return 'una página local no puede traer ejecución';
   if (!objeto(s.fuentes) || !entero(s.fuentes.esperadas) || !entero(s.fuentes.al_dia) || Object.keys(s.fuentes).length !== 2) return 'las fuentes no traen esperadas y al_dia enteros';
   if (s.fuentes.al_dia > s.fuentes.esperadas) return 'hay más fuentes al día que esperadas';
   const b = s.buzon;
@@ -115,7 +115,7 @@ function verificar({ html, hoy, dashboard, corrida }) {
   const s = l.sello;
   if (!isNightly(s.modo)) return { ok: false, motivo: `la página no la generó el nocturno (modo ${s.modo})` };
   if (corrida !== undefined && corrida !== null && s.corrida !== String(corrida)) {
-    return { ok: false, motivo: `la página es de la corrida ${s.corrida === null ? '(ninguna)' : s.corrida}, no de ésta (${corrida})` };
+    return { ok: false, motivo: `la página es de la ejecución ${s.corrida === null ? '(ninguna)' : s.corrida}, no de ésta (${corrida})` };
   }
   if (s.generado.slice(0, 10) !== hoy) return { ok: false, motivo: `la página se generó el ${s.generado.slice(0, 10)}, no hoy (${hoy})` };
   const snap = snapshotMasNuevo(dashboard);

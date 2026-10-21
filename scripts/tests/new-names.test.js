@@ -2553,7 +2553,7 @@ test(`${T79} — l · el pre-commit corre el freno por las dos fuentes: una sola
   let [a, s] = twice(l);
   assert.strictEqual(a.code, 1, a.out);
   assert.strictEqual(s.code, 0, s.out);
-  assert.strictEqual(s.out, '', 'la corrida de agent-skills calla');
+  assert.strictEqual(s.out, '', 'la ejecución de agent-skills calla');
   for (const where of [/guides\/x\.md:4\b/g, /skills\/tycon-x\/SKILL\.md:3\b/g, /agents\/revisor-nucleo\.md:\d+/g]) {
     assert.strictEqual(((a.out + s.out).match(where) || []).length, 1, `${where}: una vez\n${a.out}${s.out}`);
   }

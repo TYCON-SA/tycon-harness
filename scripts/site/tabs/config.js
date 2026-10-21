@@ -877,7 +877,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const html = views.layout(ctx, TX.t(idioma, 'pestana.configuracion'), `<div id="config-app"><p class="q-note">${TX.t(idioma, 'config.cargando')}</p></div>`, TX.t(idioma, 'config.lede'));
     // el token de doble envío y el código de la pestaña en el idioma de la página, sin nada en línea (la CSP
     // del sitio no lo admite)
-    return html.replace('</head>', `<meta name="site-token" content="${tok.replace(/[^A-Za-z0-9_-]/g, '')}"><script src="/static/config.js?l=${idioma}" defer></script></head>`);
+    return html.replace('</head>', `<meta name="site-token" content="${tok.replace(/[^A-Za-z0-9_-]/g, '')}"><script src="/static/long-text-editor.js" defer></script><script src="/static/config.js?l=${idioma}" defer></script></head>`);
   }
 
   // lo que cuesta armar —cada sección leída de su clon y validada con su lector, y el permiso de proponer, que pregunta

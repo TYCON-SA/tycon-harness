@@ -1,7 +1,7 @@
 'use strict';
 /*
  * long-text-editor.js — el editor de texto largo del sitio: una sola pieza para los cuadros de texto largo (las
- * instrucciones de un revisor en «Cómo trabaja»; después, «Proponer una mejora» y los bloques de Configuración).
+ * instrucciones de un revisor y «Proponer una mejora» en «Cómo trabaja», y los bloques de texto de Configuración).
  *
  * Toma un <textarea> y le pone alrededor: «Escribir / Vista previa», «Buscar», «Ver qué cambió» (contra el texto con
  * que se abrió) y «Ampliar» (a pantalla completa, con números de renglón; «Volver» o Esc lo devuelven). El cuadro
@@ -80,7 +80,8 @@
    * y `queCambio` (si llevan esas solapas), `alCambiar` (se llama en cada cambio del texto). Devuelve el contenedor.
    */
   function montar(ta, opciones) {
-    var o = opciones || {}; var T = o.textos || {}; var original = ta.value;
+    // el original de «Ver qué cambió»: el que pase quien lo monta (si la pantalla se redibuja con un borrador), o el de hoy
+    var o = opciones || {}; var T = o.textos || {}; var original = originalDe(ta.value, o);
     var doc = ta.ownerDocument;
     function el(tag, a, hijos) { var e = doc.createElement(tag); for (var k in a || {}) { if (a[k] == null) continue; if (k === 'text') e.textContent = a[k]; else if (k.slice(0, 2) === 'on') e[k] = a[k]; else e.setAttribute(k, a[k]); } (hijos || []).forEach(function (h) { if (h) e.appendChild(h); }); return e; }
     var caja = el('div', { class: 'lte' });
@@ -131,10 +132,19 @@
     bVolver.onclick = reducir;
     caja.addEventListener('keydown', function (e) { if (e.key === 'Escape' && caja.classList.contains('ampliado')) { e.preventDefault(); reducir(); } });
     crecer(); numerar();
+    // montado fuera de la página o adentro de algo cerrado (un desplegable, una sección oculta) no se puede medir: cuando
+    // la caja pasa a verse, se vuelve a medir el alto (ResizeObserver avisa al pasar de ancho 0 a uno de verdad)
+    var ancho = 0;
+    if (typeof ResizeObserver === 'function') new ResizeObserver(function () { var w = caja.clientWidth; if (hayQueMedir(ancho, w)) { ancho = w; crecer(); } }).observe(caja);
     return caja;
   }
 
-  var api = { vistaPrevia: vistaPrevia, queCambio: queCambio, hayCambios: hayCambios, buscar: buscar, siguiente: siguiente, montar: montar };
+  /** El texto contra el que compara «Ver qué cambió»: el que pase quien monta el editor, o el que tiene el cuadro. */
+  function originalDe(valor, opciones) { return opciones && typeof opciones.original === 'string' ? opciones.original : valor; }
+  /** ¿Se vuelve a medir el alto? Cuando la caja se ve (ancho distinto de 0) y su ancho cambió desde la última medida. */
+  function hayQueMedir(antes, ahora) { return Boolean(ahora) && ahora !== antes; }
+
+  var api = { vistaPrevia: vistaPrevia, queCambio: queCambio, hayCambios: hayCambios, buscar: buscar, siguiente: siguiente, originalDe: originalDe, hayQueMedir: hayQueMedir, montar: montar };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else raiz.LongTextEditor = api;
 })(typeof window !== 'undefined' ? window : this);

@@ -160,7 +160,7 @@ test('MaquinasSinActividad_NoSeOfrecenParaConfirmar', () => {
     corridas: { 'nueva': 2 },
   });
   const por = P.maquinasPorConfirmar(c).map((x) => x.maquina).sort();
-  assert.deepEqual(por, ['maq-a', 'nueva', 'sin-git'], 'sin place.json pero con corridas, o con fecha, sigue por confirmar');
+  assert.deepEqual(por, ['maq-a', 'nueva', 'sin-git'], 'sin place.json pero con ejecuciones, o con fecha, sigue por confirmar');
   assert.deepEqual(P.maquinasSinActividad(c), [{ maquina: 'lab-1' }, { maquina: 'lab-2' }]);
   // «no pude contar» (corridas null) no es «ninguna corrida»: sigue por confirmar
   c.informados.maquinas['lab-1'].corridas = null;
@@ -339,7 +339,7 @@ test('2.28 adversarial: una cadena de uniones con ciclo no revienta y no confirm
   assert.doesNotThrow(() => P.maquinasPorConfirmar(c));
 });
 
-test('2.28 adversarial: otras sale ordenada, corridas null sigue null, el empate de ruta queda sin ubicar, y las claves __ no cuentan', () => {
+test('2.28 adversarial: otras sale ordenada, ejecuciones null sigue null, el empate de ruta queda sin ubicar, y las claves __ no cuentan', () => {
   // 🔴 Falla si: `otras` sale en el orden del disco; «no pude contar» vuelve a 0; el empate de la
   //    ruta exacta cae al paso del padre y elige un producto; una clave de comentario `__…` hace persona.
   const c = ctx({

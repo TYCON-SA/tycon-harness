@@ -351,6 +351,9 @@ function readTestsResults(paths, fePaths) {
 // Lo que el mecanismo garantiza: anti-forja (nadie inventa una corrida que no ocurrió). Lo que NO
 // garantiza: que la corrida sea la corrida correcta. Eso es lo que agrega esta clasificación.
 const CMD_TEST_RE = /\b(node\s+--test|npm\s+(run\s+)?test|yarn\s+test|pnpm\s+test|vitest|jest|dotnet\s+test|pytest|go\s+test)\b/;
+// `vstest.console` es el corredor de pruebas de .NET Framework (la receta netfx-vstest): lo mismo que `dotnet test`. Sin
+// mirar mayúsculas: en Windows el ejecutable es `VSTest.Console.exe` y el nombre no distingue mayúsculas
+const CMD_VSTEST_RE = /\bvstest\.console\b/i;
 const CMD_GATE_RE = /\bnpm\s+run\s+(lint|typecheck|build|audit|tokens|format)|\b(tsc|eslint)\b/;
 
 // 'unit-test' → el código revisándose a sí mismo · 'build-gate' → lint/typecheck/build
@@ -360,7 +363,7 @@ const CMD_GATE_RE = /\bnpm\s+run\s+(lint|typecheck|build|audit|tokens|format)|\b
 // clasificar de menos deja al gate sin esta distinción, y clasificar de más bloquearía trabajo válido.
 function classifyCmd(cmd) {
   const s = typeof cmd === 'string' ? cmd : '';
-  if (CMD_TEST_RE.test(s)) return 'unit-test';
+  if (CMD_TEST_RE.test(s) || CMD_VSTEST_RE.test(s)) return 'unit-test';
   if (CMD_GATE_RE.test(s)) return 'build-gate';
   return 'app-run';
 }

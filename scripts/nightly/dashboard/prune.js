@@ -398,7 +398,7 @@ function leerBanco({ casos, examen, hoy, maxDias }) {
   catch (e) { return noUsable(e.code === 'ENOENT' ? 'no hay reporte del examen periódico' : `el reporte del examen no se pudo leer (${e.code || 'ilegible'})`); }
   // 🔴 El valor de `alcance` sale en el motivo publicado: sólo si es uno de los conocidos.
   const alcance = ex && ['completo', 'acotado', 'vida', 'parcial'].includes(ex.alcance) ? ex.alcance : 'otro';
-  if (!ex || ex.alcance !== 'completo') return noUsable(`el último examen es una corrida acotada (alcance «${alcance}»): no dice nada de los revisores que no cubrió`);
+  if (!ex || ex.alcance !== 'completo') return noUsable(`el último examen es una ejecución acotada (alcance «${alcance}»): no dice nada de los revisores que no cubrió`);
   if (!Array.isArray(ex.only) || ex.only.length > 0) return noUsable('el último examen se corrió con un recorte (only)');
   const fechaEx = typeof ex.ts === 'string' ? ex.ts.slice(0, 10) : '';
   if (!fechaValida(fechaEx)) return noUsable('el reporte del examen no tiene una fecha legible');
@@ -483,7 +483,7 @@ function podar(opts = {}) {
     claveLocal, buzon, ventana, fuera, noRevisores: conf.no_revisores, medidas: hall.medidas, viejas,
   });
   if (hist.conDenominador === 0) {
-    throw new NoMedido(`ninguna corrida de las máquinas medidas trae el conteo de sus revisores, y sin denominador no hay poda${hist.carpetasIlegibles ? ` (${hist.carpetasIlegibles} carpeta(s) de corridas no se pudieron leer)` : ''}`);
+    throw new NoMedido(`ninguna ejecución de las máquinas medidas trae el conteo de sus revisores, y sin denominador no hay poda${hist.carpetasIlegibles ? ` (${hist.carpetasIlegibles} carpeta(s) de ejecuciones no se pudieron leer)` : ''}`);
   }
   const banco = leerBanco({
     casos: opts.casos || variable('TYCON_CASES_DIR') || path.join(RAIZ, 'scripts', 'controls-bench', 'cases', 'advisors'),
@@ -625,12 +625,12 @@ function main() {
   const c = res.cobertura;
   console.log(`Ventana ${res.ventana.desde} → ${res.ventana.hasta} · ${res.total} reglas (pares dueño+regla)`);
   for (const e of ESTADOS) console.log(`  ${e.padEnd(31)} ${res.resumen[e]}`);
-  console.log(`Denominador: ${c.corridas.con_denominador} de ${c.corridas.total} corridas · hallazgos: ${c.hallazgos.contados} de ${c.hallazgos.maquinas} máquina(s) medida(s)`);
+  console.log(`Denominador: ${c.corridas.con_denominador} de ${c.corridas.total} ejecuciones · hallazgos: ${c.hallazgos.contados} de ${c.hallazgos.maquinas} máquina(s) medida(s)`);
   for (const m of c.hallazgos.maquinas_sin_medir) console.log(`  sin medir: ${m.alias} — ${m.motivo}`);
   const un = c.hallazgos.uniones_de_carpetas;
   if (un && un.estado === 'no_medidas') console.log(`  uniones de carpetas no medidas (${un.motivo}): cada carpeta del buzón cuenta como una máquina`);
   else if (un && un.viejas_no_contadas) console.log(`  ${un.viejas_no_contadas} carpeta(s) vieja(s) del buzón no se cuentan aparte: lo suyo está en las carpetas nuevas`);
-  if (c.corridas.descartadas_sin_hallazgos) console.log(`  ${c.corridas.descartadas_sin_hallazgos} corrida(s) descartadas: son de máquinas sin hallazgos medidos`);
+  if (c.corridas.descartadas_sin_hallazgos) console.log(`  ${c.corridas.descartadas_sin_hallazgos} ejecución(es) descartadas: son de máquinas sin hallazgos medidos`);
   console.log(c.examen.estado === 'medido'
     ? `Banco: ${c.banco.con_caso} con caso · ${c.banco.examinadas} examinadas · ${c.banco.rotas} rotas · ${c.banco.huerfanos} caso(s) huérfano(s) · examen del ${c.examen.fecha}`
     : `Banco: ${c.banco.con_caso} con caso · examen NO MEDIDO — ${c.examen.motivo}`);

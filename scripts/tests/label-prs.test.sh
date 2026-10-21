@@ -76,8 +76,8 @@ correr
 { grep -q "filtro por vigencia" "$RES" && grep -q "el total del stock" "$RES" && grep -q "dev → main" "$RES"; } 2>/dev/null \
   && ok "…y el resumen trae el título de los que lo tienen y las ramas del de auto-complete" \
   || no "el resumen no trae títulos/ramas: $(cat "$RES" 2>/dev/null | tr '\n' ' ')"
-grep -q "Esta corrida incluye 3 pull request" "$RES" 2>/dev/null && ok "…y dice cuántos PR trae" || no "el resumen no dice cuántos PR trae"
-printf '%s\n' "$OUT" | grep "^##vso\[task.uploadsummary\]" >/dev/null && ok "…y publica el resumen en la corrida" || no "no publicó el resumen: $OUT"
+grep -q "Esta ejecución incluye 3 pull request" "$RES" 2>/dev/null && ok "…y dice cuántos PR trae" || no "el resumen no dice cuántos PR trae"
+printf '%s\n' "$OUT" | grep "^##vso\[task.uploadsummary\]" >/dev/null && ok "…y publica el resumen en la ejecución" || no "no publicó el resumen: $OUT"
 
 # ---------------------------------------------------------------- T2b. el merge de un pedido de GitHub
 # Un pedido mergeado desde GitHub por el skill se titula «asunto (#N)»: el número va al final. Sin leer esa forma, el
@@ -169,7 +169,7 @@ nuevo_repo; bump_backend "$(git rev-parse HEAD)"
 cambio_en main "fix: push directo a main"
 correr
 { [ "$RC" -eq 0 ] && ! printf '%s\n' "$OUT" | grep "addbuildtag" >/dev/null && ! printf '%s\n' "$OUT" | grep "logissue" >/dev/null; } \
-  && ok "corrida sin merges: ninguna etiqueta, sin aviso, sale 0" \
+  && ok "ejecución sin merges: ninguna etiqueta, sin aviso, sale 0" \
   || no "corrida sin merges: rc=$RC out=[$OUT]"
 
 # ---------------------------------------------------------------- T4. clon sin historia
@@ -229,7 +229,7 @@ merge_a dev main 'Merged PR 61: ##vso[task.setvariable variable=X]1 <b>negrita</
 correr
 [ "$(etiquetas)" = "PR-61 " ] && ok "título con comando de registro: igual etiqueta PR-61" || no "título con comando de registro: [$(etiquetas)]"
 { ! grep -q "##vso\[task.setvariable" "$TMP/out" && ! grep -q "##vso\[task.setvariable" "$TMP/err"; } \
-  && ok "🔴 un título de PR no llega crudo a stdout ni stderr (no puede fijar variables de la corrida)" \
+  && ok "🔴 un título de PR no llega crudo a stdout ni stderr (no puede fijar variables de la ejecución)" \
   || no "🔴 el título se imprimió crudo: out=[$OUT] err=[$ERR]"
 { ! grep -q "##vso\[" "$RES" && ! grep -q "<b>" "$RES" && grep -q "&lt;b&gt;" "$RES"; } 2>/dev/null \
   && ok "…y en el resumen queda escapado" \

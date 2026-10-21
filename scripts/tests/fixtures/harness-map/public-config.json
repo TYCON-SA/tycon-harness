@@ -68,7 +68,7 @@
       "patron": "acme-harness-interno"
     },
     {
-      "motivo": "el horario de una corrida desatendida",
+      "motivo": "el horario de una ejecución desatendida",
       "patron": "\\b([01]?\\d|2[0-3]):[0-5]\\d\\b|martes|viernes"
     },
     {

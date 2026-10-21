@@ -9,7 +9,7 @@
     {
       "script": "unclosed-runs-notice.js",
       "date": "2026-10-20",
-      "reason": "Aviso de arranque de las corridas sin cerrar (story 2.67). Sus casos necesitan un repo de trabajo fuera de la carpeta temporal del sistema: el lector de sesiones (repos-root.js, sessionRepos) descarta a propósito los repos de la temporal, y el banco corre cada caso adentro de ella. Mientras tanto lo cubren T6 y T7 de scripts/tests/unclosed-runs.test.js, que lo corren como proceso con un HOME de juguete y otra temporal declarada: dice el renglón una vez por día, calla sin nada, calla apagado y dice cuando no pudo mirar. Se salda cuando el banco sepa declarar otra temporal por caso."
+      "reason": "Aviso de arranque de las ejecuciones sin cerrar (story 2.67). Sus casos necesitan un repo de trabajo fuera de la carpeta temporal del sistema: el lector de sesiones (repos-root.js, sessionRepos) descarta a propósito los repos de la temporal, y el banco corre cada caso adentro de ella. Mientras tanto lo cubren T6 y T7 de scripts/tests/unclosed-runs.test.js, que lo corren como proceso con un HOME de juguete y otra temporal declarada: dice el renglón una vez por día, calla sin nada, calla apagado y dice cuando no pudo mirar. Se salda cuando el banco sepa declarar otra temporal por caso."
     },
     {
       "script": "advisor-liveness-on-change.js",

@@ -1124,7 +1124,7 @@ test('Mensajes_EnLlano_SinRutasNiClaves — la pantalla muestra dónde con los n
   const r = await pantallaConPestanas({ secciones: TODAS.map((id) => SEC(id, id === 'sitio' ? { problems } : {})) });
   const textos = []; const walk = (n) => { if (n.textContent) textos.push(n.textContent); (n.hijos || []).forEach(walk); }; walk(r.panelDe('seccion-sitio'));
   const err = textos.filter((t) => / › /.test(t)).join('\n');
-  assert.match(err, /el sitio › dónde dejan sus corridas › cuenta: tiene que tener la forma de una cuenta/);
+  assert.match(err, /el sitio › dónde dejan sus ejecuciones › cuenta: tiene que tener la forma de una cuenta/);
   assert.match(err, /personas › máquinas › «mac-1» › persona: el arnés no conoce este dato/);
   assert.match(err, /modelos › techo: con el techo obligatorio, falta elegir el modelo del techo/);
   assert.match(err, /despliegues › productos › «acme»: tiene que tener el paso de prueba, el de producción o los dos/);
@@ -1378,7 +1378,7 @@ async function conEquipo({ profile = PERFIL_TYCON, layer = capa(ORG.RESPONSE_SIN
 
 test('2.31-T1 ResponseSection_ShowsCurrentValueAndSource @story-2.31 @ac-1 — idioma, estilo y largo, con el valor vigente y de dónde sale', async () => {
   const s = ORG.seccionPorId('respuesta');
-  assert.ok(s, 'hay una sección «Cómo contesta Claude»');
+  assert.ok(s, 'hay una sección «Cómo contesta el agente»');
   assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves], ['team-profile.json', 'perfil', 'harness-config', ['response']]);
   await conEquipo({ profile: CON_RESPUESTA }, async ({ seccion }) => {
     const v = await seccion('respuesta');
@@ -1609,7 +1609,7 @@ test('T12 7.31-Cobertura_SeccionConSuPorton @story-7.31 @ac-11 @ac-12 — el umb
   }
 });
 
-test('T13 7.31-Cobertura_EnSuBloque @story-7.31 @ac-11 — la sección va en «Cómo trabaja Claude», después de «Pruebas al mergear»', async () => {
+test('T13 7.31-Cobertura_EnSuBloque @story-7.31 @ac-11 — la sección va en «Cómo trabaja el agente», después de «Pruebas al mergear»', async () => {
   // 🔴 rojo: la sección en otra pestaña, o fuera de su lugar.
   const r = await pantallaConPestanas({ secciones: [...TODAS, 'cobertura'].map((id) => SEC(id)) });
   const panel = r.panelDe('seccion-cobertura');
@@ -1665,7 +1665,7 @@ test('Review_MaxRounds_EditableOnSite @story-7.37 @ac-4 — el tope de vueltas d
     assert.strictEqual(malo.ok, false, JSON.stringify(lista));
     assert.deepStrictEqual(malo.problems.map((p) => p.path), [ruta]);
   }
-  // el campo está en la pantalla, dentro de «Cómo trabaja Claude»
+  // el campo está en la pantalla, dentro de «Cómo trabaja el agente»
   const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('revision', { repo: 'perfil', borrador: {} })] });
   const caja = r.creados.filter((n) => n.attrs.id === 'seccion-revision').pop();
   const hallados = []; const walk = (x) => { if (x.tag === 'input' && x.attrs['data-path'] === 'review.max_rounds') hallados.push(x); (x.hijos || []).forEach(walk); }; walk(caja);
@@ -1767,8 +1767,8 @@ test('Perfil_PorTema_ElMinimoYLoQueSumaElCompleto — grupos con su cuenta, una 
   const grupos = p.todo(p.sec('instalacion')).filter((n) => n.tag === 'details' && n.attrs.class === 'grupo').map((d) => d.hijos[0].textContent);
   assert.deepStrictEqual(grupos, ['Frenos de seguridad (1)', 'Registro de tiempo (1)', 'Frenos de seguridad (1)', 'Instalación y actualización (1)'], 'por grupo, con su cuenta');
   assert.ok(p.todo(p.sec('instalacion')).filter((n) => n.tag === 'details' && n.attrs.class === 'grupo').every((d) => !d.attrs.open), 'cerrados');
-  assert.match(t, /Viene con su integración\. Se cambia en Configuración → Cómo trabaja Claude → Integraciones\./, 'lo de la organización, en su sección');
-  assert.match(t, /Viene prendido\. Sólo en tu máquina, con TYCON_SAFETY_GUARD=0\. Pendiente: que se pueda cambiar desde Configuración → Cómo trabaja Claude\./);
+  assert.match(t, /Viene con su integración\. Se cambia en Configuración → Cómo trabaja el agente → Integraciones\./, 'lo de la organización, en su sección');
+  assert.match(t, /Viene prendido\. Sólo en tu máquina, con TYCON_SAFETY_GUARD=0\. Pendiente: que se pueda cambiar desde Configuración → Cómo trabaja el agente\./);
   assert.match(t, /Viene apagado\. Sólo en tu máquina, con TYCON_SESSION_GUARD=1 lo prende\./);
   assert.match(t, /Viene prendido\. Es parte del arnés: no se apaga\./);
   const titulos = p.todo(p.sec('instalacion')).filter((n) => n.tag === 'summary').map((n) => n.textContent);
@@ -2338,7 +2338,7 @@ test('T17b 2.36-Editor_CasillaPorFicha @story-2.36 @ac-2 — una casilla por fic
   const p = await pantallaFalsa([sec]);
   assert.strictEqual(p.error, null);
   const casillas = p.todo(p.sec('fichas')).filter((n) => n.tag === 'input' && n.attrs.type === 'checkbox');
-  assert.deepStrictEqual(casillas.map((c) => c.attrs['data-path']), ['site.hidden_cards.mutacion', 'site.hidden_cards.backlog', 'site.hidden_cards.pasos'], 'agrupadas por pestaña: Arnés, Proyectos, Corridas');
+  assert.deepStrictEqual(casillas.map((c) => c.attrs['data-path']), ['site.hidden_cards.mutacion', 'site.hidden_cards.backlog', 'site.hidden_cards.pasos'], 'agrupadas por pestaña: Arnés, Proyectos, Ejecuciones');
   assert.deepStrictEqual(casillas.map((c) => Boolean(c.checked)), [true, true, false], 'la oculta viene destildada');
   assert.match(p.textoDe('fichas'), /ficha_de_otra_version/, 'una oculta que esta versión no conoce se nombra y se conserva');
   // destildar una la agrega al borrador; volver a tildar la oculta la saca
@@ -2448,14 +2448,14 @@ test('T28 SiteConfig_StackSection_ShowsCurrentAndDefault @story-8.48 @ac-25 — 
   // 🔴 rojo: la sección no muestra los lenguajes que ya conoce, las herramientas con su origen o las reglas; o falta un idioma.
   const con = await pantallaTec({ stack: { code_extensions: ['.ex'], test_runners: [GO_ORG, CARGO], rules: { test_names: 'pascal' } } });
   const t = con.texto();
-  for (const re of [/Python/, /Svelte/, /pytest/, /de fábrica/, /cambiada por tu organización/, /agregada por tu organización/, /el arnés la corre por dentro/, /Vitest/]) assert.match(t, re);
+  for (const re of [/Python/, /Svelte/, /pytest/, /de fábrica/, /cambiada por tu organización/, /agregada por tu organización/, /incluida en el arnés · no se edita/, /Vitest/]) assert.match(t, re);
   assert.ok(con.todos().some((n) => n.tag === 'input' && n.attrs.value === '.ex'), 'la terminación de la organización');
   const regla = con.todos().find((n) => n.tag === 'select' && n.attrs['data-path'] === 'stack.rules.test_names');
   assert.strictEqual(regla.value, 'pascal');
   assert.ok(con.todos().some((n) => n.tag === 'select' && n.attrs['data-path'] === 'stack.rules.screen_test'));
   assert.ok(con.todos().some((n) => n.attrs['data-path'] === 'stack.rules.ui_language'));
-  // las de la puerta no se cambian desde acá: una línea dice cómo reemplazar una
-  assert.match(t, /herramienta propia.*mismo archivo/);
+  // las de la puerta no se cambian desde acá: «Reemplazar» dice cómo (el detalle, en T30b)
+  assert.match(t, /Reemplazar/);
   const sin = await pantallaTec({});
   assert.match(sin.texto(), /no tenés que configurar nada/);
   const en = await pantallaTec({ stack: { test_runners: [CARGO] } }, 'en');
@@ -2508,10 +2508,71 @@ test('T30 SiteConfig_FactoryRunner_ChangeAndRevert @story-8.48 @ac-28 — «Camb
   assert.match(p.texto(), /cambiada por tu organización/);
   p.boton(/Volver a la de fábrica/).on.click(); await p.esperar();
   assert.strictEqual((await p.revisado()).stack, undefined, 'sin la copia, `stack` vacío no se propone');
-  // las cuatro que corre la puerta por dentro no tienen «Cambiar»
+  // las cuatro que corre la puerta por dentro no tienen «Cambiar»: sólo «Reemplazar», que explica cómo
   const dotnet = p.todos().find((n) => n.attrs['data-runner'] === 'dotnet');
   const deDotnet = (() => { const out = []; const walk = (x) => { out.push(x); (x.hijos || []).forEach(walk); }; walk(dotnet); return out; })();
-  assert.ok(!deDotnet.some((n) => n.tag === 'button'), '.NET sin botones');
+  assert.deepStrictEqual(deDotnet.filter((n) => n.tag === 'button').map((n) => n.textContent), ['Reemplazar'], '.NET sólo con «Reemplazar»');
+});
+
+test('T30b SiteConfig_RunnerTable_SameColumnsAndClearOrigin — todas las filas con las mismas columnas y el origen en palabras claras', async () => {
+  // 🔴 rojo: las internas con una columna menos (la tabla queda corrida), las internas y las recetas con el mismo
+  //    «de fábrica», o sin «Reemplazar» en las internas.
+  const p = await pantallaTec({ stack: { test_runners: [CARGO] } });
+  const fila = (n) => p.todos().find((x) => x.attrs['data-runner'] === n);
+  const celdas = (n) => (fila(n).hijos || []).filter((x) => x.tag === 'span');
+  for (const n of ['dotnet', 'vitest', 'go', 'cargo']) assert.strictEqual(celdas(n).length, 4, `${n}: nombre, archivo, origen y acción`);
+  const origen = (n) => celdas(n)[2].textContent;
+  assert.strictEqual(origen('dotnet'), 'incluida en el arnés · no se edita');
+  assert.strictEqual(origen('go'), 'de fábrica · se puede cambiar');
+  assert.strictEqual(origen('cargo'), 'agregada por tu organización');
+  // «Reemplazar» despliega cómo hacerlo, en la fila
+  const reemplazar = (() => { const out = []; (function walk(x) { out.push(x); (x.hijos || []).forEach(walk); })(fila('dotnet')); return out.find((x) => x.tag === 'button'); })();
+  assert.strictEqual(reemplazar.textContent, 'Reemplazar');
+  assert.doesNotMatch(p.texto(), /agregá una receta que se detecte con el mismo archivo/i, 'plegado hasta que se toca');
+  reemplazar.on.click(); await p.esperar();
+  assert.match(p.texto(), /Agregá una receta que se detecte con el mismo archivo y gana la de tu organización/);
+  // una de fábrica cambiada lo dice
+  const cambiada = await pantallaTec({ stack: { test_runners: [{ name: 'go', detect: 'go.mod', command: 'go test ./...', results: { format: 'junit', path: '{results}/j.xml' } }] } });
+  const celdasGo = (cambiada.todos().find((x) => x.attrs['data-runner'] === 'go').hijos || []).filter((x) => x.tag === 'span');
+  assert.strictEqual(celdasGo[2].textContent, 'cambiada por tu organización');
+  // y en inglés
+  const en = await pantallaTec({}, 'en');
+  const celdasEn = (n) => (en.todos().find((x) => x.attrs['data-runner'] === n).hijos || []).filter((x) => x.tag === 'span');
+  assert.strictEqual(celdasEn('dotnet')[2].textContent, 'included in the harness · not editable');
+  assert.strictEqual(celdasEn('go')[2].textContent, 'built in · can be changed');
+});
+
+test('T30c SiteConfig_OrgRunner_LabelAndRepoFiltersSurviveChange — el nombre para personas, el filtro de cada repo a la vista y conservado al guardar', async () => {
+  // 🔴 rojo: la fila o el formulario muestran el id en vez del nombre; el formulario no muestra el filtro de un repo; o
+  //    «Guardar» pierde `repos`/`args_default` (la máquina volvería a correr sin el filtro).
+  const NETFX = {
+    name: 'netfx-vstest', label: '.NET Framework (vstest)', detect: 'packages.config', detect_depth: 1, command: 'bash -c x', results: { format: 'trx', path: '{results}/**/*.trx' },
+    args_default: 'TestCategory!=Slow',
+    repos: [{ repo: { platform: 'azure', org: 'acme', project: 'Prod', repo: 'api' }, args: 'TestCategory=Unit' }],
+  };
+  const p = await pantallaTec({ stack: { test_runners: [NETFX] } });
+  const fila = p.todos().find((x) => x.attrs['data-runner'] === 'netfx-vstest');
+  assert.strictEqual((fila.hijos || []).filter((x) => x.tag === 'span')[0].textContent, '.NET Framework (vstest)', 'la fila con el nombre para personas');
+  const cambiar = (() => { const out = []; (function walk(x) { out.push(x); (x.hijos || []).forEach(walk); })(fila); return out.find((x) => x.tag === 'button' && x.textContent === 'Cambiar'); })();
+  cambiar.on.click(); await p.esperar();
+  assert.match(p.texto(), /Cambiar la herramienta \.NET Framework \(vstest\)/);
+  const campoDe = (k) => p.todos().filter((n) => n.attrs['data-path'] === `runner.${k}`).pop();
+  assert.ok(campoDe('repos.0.args'), 'el filtro del repo, a la vista');
+  assert.strictEqual(campoDe('repos.0.args').attrs.value, 'TestCategory=Unit');
+  assert.match(p.texto(), /azure · acme\/Prod\/api/, 'el repo de ese filtro, con su nombre');
+  assert.strictEqual(campoDe('args_default').attrs.value, 'TestCategory!=Slow');
+  // la cobertura dice que es un formato
+  assert.ok(p.todos().some((n) => n.tag === 'option' && n.textContent === 'Cobertura (formato XML)'), 'la opción «Cobertura» aclara que es un formato');
+  // guardar sin tocar el filtro lo conserva entero; editarlo cambia sólo el args
+  p.boton(/^Guardar$/).on.click(); await p.esperar();
+  assert.deepStrictEqual((await p.revisado()).stack.test_runners[0], NETFX, 'guardar sin cambios no pierde nada');
+  cambiar.on.click(); await p.esperar();
+  campoDe('repos.0.args').on.input({ target: { value: '(TestCategory=Unit|TestCategory=Component)&TestCategory!=PendingSeed' } });
+  p.boton(/^Guardar$/).on.click(); await p.esperar();
+  const guardada = (await p.revisado()).stack.test_runners[0];
+  assert.deepStrictEqual(guardada.repos, [{ repo: NETFX.repos[0].repo, args: '(TestCategory=Unit|TestCategory=Component)&TestCategory!=PendingSeed' }]);
+  assert.strictEqual(guardada.args_default, 'TestCategory!=Slow');
+  assert.strictEqual(guardada.label, '.NET Framework (vstest)');
 });
 
 test('T30a SiteConfig_AskYourAgent_CopiesPhrase @story-8.48 @ac-36 — «Pedíselo a tu agente» deja la frase y la guía dice qué hace el agente', async () => {
@@ -2526,8 +2587,9 @@ test('T30a SiteConfig_AskYourAgent_CopiesPhrase @story-8.48 @ac-36 — «Pedíse
   } finally {
     if (antes) Object.defineProperty(globalThis, 'navigator', antes); else delete globalThis.navigator;
   }
-  assert.strictEqual(copiado, 'configurá las pruebas de mi proyecto en la configuración del arnés');
-  assert.match(p.texto(), /configurá las pruebas de mi proyecto en la configuración del arnés/);
+  // la frase lleva al agente a la receta: nombra la sección de la guía
+  assert.strictEqual(copiado, 'configurá las pruebas de mi proyecto en la configuración del arnés (la receta está en la sección «Tu tecnología» de guides/organization-site.md del arnés)');
+  assert.match(p.texto(), /configurá las pruebas de mi proyecto en la configuración del arnés \(la receta está en la sección «Tu tecnología»/);
   assert.match(p.texto(), /después la herramienta aparece en esta lista/i);
   const guia = fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.md'), 'utf8');
   const sec = guia.split(/\n### Tu tecnología\n/)[1];
@@ -2538,7 +2600,7 @@ test('T30a SiteConfig_AskYourAgent_CopiesPhrase @story-8.48 @ac-36 — «Pedíse
 });
 
 test('E1 SiteConfig_TuTecnologia_RendersInPage @story-8.48 @ac-25 @ac-28 @ac-36 — la sección en su pestaña, al lado de Cobertura, de punta a punta', async () => {
-  // 🔴 rojo: la sección no está en «Cómo trabaja Claude» o el recorrido se corta.
+  // 🔴 rojo: la sección no está en «Cómo trabaja el agente» o el recorrido se corta.
   const r = await pantallaConPestanas({ secciones: [...TODAS, 'cobertura', 'tecnologia'].map((id) => SEC(id, id === 'tecnologia' ? { repo: 'perfil', extras: TEC_EXTRAS } : {})) });
   const panel = r.panelDe('seccion-tecnologia');
   assert.strictEqual((panel || { attrs: {} }).attrs.id, 'pestana-claude');
@@ -3137,7 +3199,7 @@ test('T4 Repos_QueHace_HojaConTema @story-2.59.2 @ac-4', () => {
 });
 
 // ── Quién puede reenviar el ok de un dev (approvals.relay_session) ─────────────────────────────────────
-test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el lector de la máquina y va en «Cómo trabaja Claude»', () => {
+test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el lector de la máquina y va en «Cómo trabaja el agente»', () => {
   const s = ORG.seccionPorId('aprobaciones');
   assert.ok(s, 'la sección existe');
   assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas], ['team-profile.json', 'perfil', 'harness-config', ['approvals'], ['approvals.relay_session']]);
@@ -3148,7 +3210,7 @@ test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el
   const malo = rev({ approvals: { relay_session: 42 } });
   assert.strictEqual(malo.ok, false);
   assert.ok(malo.problems.some((p) => p.path === 'approvals.relay_session'), JSON.stringify(malo.problems));
-  // la pantalla la dibuja en «Cómo trabaja Claude», con sus textos en las dos lenguas
+  // la pantalla la dibuja en «Cómo trabaja el agente», con sus textos en las dos lenguas
   for (const idioma of ['es', 'en']) {
     const js = ORG.pantalla(idioma);
     assert.match(js, /aprobaciones: editorAprobaciones/);

@@ -134,7 +134,7 @@ test('T10 — el valor pasado por argumento manda sobre el entorno; vacío es «
   assert.strictEqual(call(l, { arg: other }).repo, other);
 });
 
-test('T10 — el propio clon de ESTA corrida: unido → él mismo; si no, lo instalado', () => {
+test('T10 — el propio clon de ESTA ejecución: unido → él mismo; si no, lo instalado', () => {
   const { resolveSkillsDirs } = require(path.join(LIB, 'skills-dir.js'));
   const { isSingleRepo } = require(path.join(LIB, 'canonical-path.js'));
   const r = resolveSkillsDirs('');

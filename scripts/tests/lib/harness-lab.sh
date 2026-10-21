@@ -1008,7 +1008,7 @@ harness_lab_team_repo() { # harness_lab_team_repo [<org> <name>]
   mkdir -p "$LAB/seed/team/scripts/metrics" || return 1
   printf '{ "schema": 1, "name": "equipo-lab", "requires": { "harness": ">= 2026.10.01.1" } }\n' > "$LAB/seed/team/team-layer.json"
   printf '{ "ado": { "org": "https://dev.azure.com/acme" }, "integrations": { "engram": true, "nightly": true, "mailbox": true }, "update": { "channel": "latest", "apply": "auto" }, "packs": { "default": "all" }, "install": { "profile": "full" } }\n' > "$LAB/seed/team/perfil-equipo.json"
-  printf '{ "_que_es": "la llave de JUGUETE del buzón de corridas (laboratorio): no abre nada", "cuenta": "labcorridas", "contenedor": "corridas", "sas": "sv=lab&sig=juguete", "vence": "2099-01-01" }\n' > "$LAB/seed/team/scripts/metrics/corridas-buzon.json"
+  printf '{ "_que_es": "la llave de JUGUETE del buzón de ejecuciones (laboratorio): no abre nada", "cuenta": "labcorridas", "contenedor": "corridas", "sas": "sv=lab&sig=juguete", "vence": "2099-01-01" }\n' > "$LAB/seed/team/scripts/metrics/corridas-buzon.json"
   printf '# el repo del equipo de juguete (harness-lab.sh)\n' > "$LAB/seed/team/README.md"
   harness_lab_git "$LAB/seed/team" init -q -b main >/dev/null
   harness_lab_git "$LAB/seed/team" add -A >/dev/null

@@ -95,7 +95,7 @@
       "file": "scripts/tests/tycon-config.test.js",
       "form": "pr-number",
       "value": "PR 34821",
-      "reason": "un texto inventado con números largos (corrida, pull request, sha) que la prueba usa para ver que no se confunden con una fecha"
+      "reason": "un texto inventado con números largos (ejecución, pull request, sha) que la prueba usa para ver que no se confunden con una fecha"
     },
     {
       "file": "scripts/setup/hooks-list.json",

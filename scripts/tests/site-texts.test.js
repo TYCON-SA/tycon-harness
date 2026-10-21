@@ -410,6 +410,7 @@ test('2.57 · Textos_LasFuentesConSuNombreEnIngles @story-2.57 @ac-7 @ac-8', () 
   for (const id of ['dependencias', 'vigilante', 'banco', 'suites', 'paridad', 'corridas', 'pasos-corrida', 'concentracion']) {
     assert.ok(!en.includes(`Source ${id}`), `«Source ${id}» en inglés`);
   }
-  // en castellano, como siempre: «Fuente <id>»
-  assert.deepStrictEqual(titulos('es'), [...ids, 'propia-de-acme'].map((id) => `Fuente ${id}`));
+  // en castellano: «Fuente <su nombre>», que es el id salvo donde la tabla le da otro (corridas → ejecuciones)
+  const nombreEs = (id) => (TEXTS().TEXTOS[`fuente.${id}`] || {}).es || id;
+  assert.deepStrictEqual(titulos('es'), [...ids, 'propia-de-acme'].map((id) => `Fuente ${nombreEs(id)}`));
 });

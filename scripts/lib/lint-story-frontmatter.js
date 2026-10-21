@@ -318,11 +318,11 @@ function avisarNumerosRepetidos(soloEstos) {
   if (!discovery || !REPO_ROOT) return;
   let d;
   try { d = discovery.discoverStories(REPO_ROOT, { budgetMs: 15000, cache: false }); } catch (e) {
-    console.log(`ℹ️  no pude recorrer las stories del repo: el aviso de números repetidos NO se hizo en esta corrida (${e.message}).`);
+    console.log(`ℹ️  no pude recorrer las stories del repo: el aviso de números repetidos NO se hizo en esta ejecución (${e.message}).`);
     return;
   }
   if (d.partial) {
-    console.log('ℹ️  no pude recorrer todas las stories del repo: el aviso de números repetidos NO se hizo en esta corrida.');
+    console.log('ℹ️  no pude recorrer todas las stories del repo: el aviso de números repetidos NO se hizo en esta ejecución.');
     return;
   }
   const porId = new Map();
@@ -404,7 +404,7 @@ function main() {
   //    con un vocabulario VACÍO, rechazando causas perfectamente válidas.
   if (vocab.motivo) {
     console.error(`⚠️  ${vocab.motivo} (${CAUSAS_PATH}).`);
-    console.error('    La regla de `followup_reason:` NO se aplica en esta corrida — es un hueco declarado, no un OK.');
+    console.error('    La regla de `followup_reason:` NO se aplica en esta ejecución — es un hueco declarado, no un OK.');
   }
   let sinCausaExistentes = 0;
 

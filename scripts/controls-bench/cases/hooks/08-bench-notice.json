@@ -808,7 +808,7 @@
           "expect": {
             "stdout_re": [
               "✅ banco de controles nocturno \\([0-9-]+\\): 380 caso\\(s\\), sin rojos",
-              "✅ suites de prueba nocturnas \\(foto del [^)]*\\): 2 corrida\\(s\\), ninguna en rojo"
+              "✅ suites de prueba nocturnas \\(foto del [^)]*\\): 2 ejecución\\(es\\), ninguna en rojo"
             ],
             "stdout_not_re": [
               "NO EST",

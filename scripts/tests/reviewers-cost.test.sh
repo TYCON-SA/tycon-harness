@@ -573,7 +573,7 @@ else
   fi
   echo "${DA}" | grep 'n=2 de 3' >/dev/null && ok "T7 · el denominador de los tokens medidos está al lado (n=2 de 3)" || bad "T7 · sin denominador" "$(echo "${DA}" | head -c 400)"
   if echo "${DB}" | grep -i 'sin medir' >/dev/null && ! echo "${DB}" | grep '0 tokens' >/dev/null; then
-    ok "T7 · la corrida sin bloque de revisores dice «sin medir», no cero"
+    ok "T7 · la ejecución sin bloque de revisores dice «sin medir», no cero"
   else
     bad "T7 · ausencia ≠ cero en la vista" "$(echo "${DB}" | head -c 400)"
   fi
