@@ -448,6 +448,18 @@ _(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)_
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsciaffected-formsjs)
 
+## scripts/ci/typecheck-forms.js
+
+**Qué es:** El chequeo de tipos (`tsc --noEmit`) de cada formulario que se prueba. Dice limpio, con errores, sin tsconfig o no medido.
+
+**Por qué existe:** El empaquetado de los formularios no chequea tipos, así que un error de tipos podía vivir meses en `main` con las pruebas en verde. Un paquete que tsc no encuentra sale «no medido», nunca como error; por eso instala antes los formularios de los que importa cada uno.
+
+**Quién la usa:** La etapa de pruebas de los pipelines de formularios, en modo aviso con fecha de revisión.
+
+**Dónde se prueba:** `scripts/tests/typecheck-forms.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscitypecheck-formsjs)
+
 ## scripts/ci/forms-to-version.sh
 
 **Qué es:** El cálculo de a qué formularios subirles la versión en una corrida.
