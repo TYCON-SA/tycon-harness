@@ -139,5 +139,15 @@ correr "$T"
   || mal "C-05 con todo salteado el gate devolvió $(cat "$T/exit.txt") en vez de 4"
 rm -rf "$T"
 
+# ── C-06 · Gate_RegistraTodosLosFiltros: la constancia nombra todos los filtros ──────────────────
+# Con sólo el primero, la matriz atribuye a un spec y los otros quedan invisibles en la constancia.
+T="$(mktemp -d)"; montar "$T" 1 0
+for s in alfa beta gama; do echo "// $s" > "$T/repo/front/tests/e2e/$s.spec.ts"; done
+( export PATH="$T/bin:$PATH"; bash "$GATE" "$T/repo/front" probe "$T/ev" alfa.spec.ts beta.spec.ts gama.spec.ts > "$T/salida.txt" 2>&1 )
+grep -q '^\*\*Spec filter\*\*: alfa.spec.ts beta.spec.ts gama.spec.ts$' <<< "$(evidencia "$T")" \
+  && ok "C-06 Gate_RegistraTodosLosFiltros: la constancia nombra los tres filtros" \
+  || mal "C-06 Gate_RegistraTodosLosFiltros: la constancia no nombra los tres filtros ($(grep 'Spec filter' <<< "$(evidencia "$T")"))"
+rm -rf "$T"
+
 echo
 [ "$FALLOS" = "0" ] && { echo "todo verde"; exit 0; } || { echo "$FALLOS caso(s) en rojo"; exit 1; }

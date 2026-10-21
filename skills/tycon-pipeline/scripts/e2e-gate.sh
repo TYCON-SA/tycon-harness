@@ -79,7 +79,8 @@ escribir_evidencia() {
     echo "# E2E Gate — $STORY_ID — $TS"
     echo ""
     echo "verdict=$verdict"
-    echo "**Spec filter**: ${SPEC_FILTERS[0]:-}"
+    # Todos los filtros: con sólo el primero, los demás specs corridos quedan invisibles en la constancia.
+    echo "**Spec filter**: ${SPEC_FILTERS[*]:-}"
     echo ""
     echo "## Playwright Run"
     echo "- verdict: $verdict"
