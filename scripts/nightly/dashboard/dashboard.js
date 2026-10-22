@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('../../lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 /*
  * dashboard.js — EL LECTOR DEL TABLERO
  *
@@ -224,7 +226,7 @@ function encuentra(por) {
     const productos = Object.keys(d.productos || {});
     const ok = productos.filter((p) => d.productos[p] && d.productos[p].ok).length;
     if (ok === 0) return noMedida('ningún producto pudo medirse esta noche');
-    return medida((d.hallazgos || []).length, ok, productos.length, { unidad: 'conteo', den_etiqueta: 'productos vigilados', detalle: `${d.nuevos ?? '?'} nuevos · ${d.repetidos ?? '?'} repetidos` });
+    return medida((d.hallazgos || []).length, ok, productos.length, { unidad: 'conteo', den_etiqueta: 'productos vigilados', detalle: `${d.nuevos === undefined || d.nuevos === null ? '?' : d.nuevos} nuevos · ${d.repetidos === undefined || d.repetidos === null ? '?' : d.repetidos} repetidos` });
   });
   return m;
 }

@@ -2400,6 +2400,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.93, tanda A (T6, T7, T9, T10): el piso de Node del arnés (scripts/lib/node-floor.js) — con un Node viejo vuelve a lanzar con el del arnés o lo dice en una línea, los frenos fallan cerrados y los avisos salen una vez por sesión; y cada script que las instrucciones mandan correr con `node <ruta>` arranca por el piso. Con HOME de prueba.",
+      "raiz": "arnes",
+      "ruta": "tests/node-floor.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.93, tanda A (T8, T12): lo mismo con un Node 12 de verdad, bajado de nodejs.org con su huella: los scripts de las instrucciones y un freno con Node 12 en el PATH, y los hooks cuando el Node del PATH cambia a mitad de sesión. Sin red o sin Rosetta en una Mac con Apple Silicon sale NO MEDIDO.",
+      "raiz": "arnes",
+      "ruta": "tests/node-old-real.test.sh",
+      "requiere": ["red"]
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/harness-doctor.test.sh",
       "requiere": []

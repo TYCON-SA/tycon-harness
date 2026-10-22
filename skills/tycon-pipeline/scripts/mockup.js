@@ -22,6 +22,8 @@
  * validación es determinística. Es la misma con Claude y con Codex: se abre con doble clic y se mira en el chat.
  */
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -298,7 +300,7 @@ function readApproval(file) {
   }
   let data;
   try { data = JSON.parse(raw); } catch (e) { return { state: 'bad', error: `JSON inválido (${e.message})` }; }
-  if (!data || data.schema !== 1 || !/^[0-9a-f]{64}$/.test(String(data.sha256)) || !isStr(data.file) || !isStr(String(data.story ?? ''))) {
+  if (!data || data.schema !== 1 || !/^[0-9a-f]{64}$/.test(String(data.sha256)) || !isStr(data.file) || !isStr(String(data.story === undefined || data.story === null ? '' : data.story))) {
     return { state: 'bad', error: 'no tiene la forma { schema: 1, story, file, sha256, approvedAt }' };
   }
   return { state: 'ok', data };

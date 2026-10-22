@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('../lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 /**
  * retro-heartbeat.js — el latido de la retrospectiva: un archivo por merge a main, en un segundo y sin
  * modelo.

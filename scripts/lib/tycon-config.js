@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 /**
  * scripts/lib/tycon-config.js — LA configuración del arnés: rutas, servicios e integraciones, en un
  * solo lugar y con un solo orden (story 8.3, 2026-09-26).

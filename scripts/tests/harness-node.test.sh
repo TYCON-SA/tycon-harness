@@ -364,8 +364,8 @@ mkdir -p "$NDIR/versions/$V1/bin"; printf '#!/bin/sh\nexit 1\n' > "$NDIR/version
 printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s \\"%s\\""}]}]}}\n' "$NDIR/current/bin/node" "$BASE/t15/hooks/s.js" > "$BASE/t15/home/.claude/settings.json"
 TYCON_PROFILE=0 TYCON_HARNESS_SHARED_DONE=1 node "$RAIZ/scripts/setup/apply-hooks.js" --settings "$BASE/t15/home/.claude/settings.json" --hooks-dir "$BASE/t15/hooks" --skills "$BASE/t15/skills" \
   --list "$BASE/t15/list.json" --effects "$RAIZ/scripts/setup/install-effects.json" >/dev/null 2>&1
-[ "$(node -e 'const s=require(process.argv[1]);process.stdout.write(s.hooks.Stop[0].hooks.map(h=>h.command).join("|"))' "$BASE/t15/home/.claude/settings.json")" = "node \"$BASE/t15/hooks/s.js\"" ] \
-  && ok "T15 con current roto el aplicador vuelve el hook a node, en su lugar y sin duplicar" || bad "T15 el aplicador dejó: $(cat "$BASE/t15/home/.claude/settings.json")"
+[ "$(node -e 'const s=require(process.argv[1]);process.stdout.write(s.hooks.Stop[0].hooks.map(h=>h.command).join("|"))' "$BASE/t15/home/.claude/settings.json")" = "node \"$RAIZ/scripts/lib/node-floor.js\" \"$BASE/t15/hooks/s.js\"" ] \
+  && ok "T15 con current roto el aplicador vuelve el hook a node por el piso, en su lugar y sin duplicar" || bad "T15 el aplicador dejó: $(cat "$BASE/t15/home/.claude/settings.json")"
 rm -rf "$NDIR"
 
 # ─── casos de borde de las llamadas de fondo y de la lista (una prueba por caso) ──────────────────────────────

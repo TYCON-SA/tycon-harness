@@ -157,7 +157,8 @@ test('T34 ApplyHooks_ByWhen_InterpreterByExtension_RemovesReplacedOldAndOptinOff
   const s = settingsOf(L);
   const pre = commandsOf(s, 'PreToolUse');
   assert.strictEqual(pre[0], alien.command, 'lo ajeno queda primero, intacto');
-  assert.ok(pre.includes(`node "${L.abs('tycon-pipeline/scripts/a.js')}"`), '.js con node');
+  // sin el Node del arnés en el laboratorio, el .js va por el piso de Node
+  assert.ok(pre.includes(`node "${path.join(ROOT, 'scripts', 'lib', 'node-floor.js')}" "${L.abs('tycon-pipeline/scripts/a.js')}"`), '.js con node, por el piso');
   assert.ok(pre.includes(`bash "${L.abs('@tcg:b.sh')}"`), '.sh con bash');
   assert.ok(pre.includes(`python3 "${L.abs('@tcg:c.py')}"`), '.py con python3');
   assert.ok(!pre.some((c) => c.includes('freno.sh')), 'el opt-in apagado por su variable se saca');
@@ -451,14 +452,20 @@ test('W4 ApplyHooks_Windows_SameHookByRepoPath_NotDuplicatedByOtherRoot', (t) =>
     { type: 'command', command: 'node "/c/Users/x/.claude/tycon-claude-guides/scripts/hooks/s.js"' },
     { type: 'command', command: 'node "C:/otra/raiz/skills/tycon-pipeline/scripts/k.js"' },
   ] }] } }, null, 2) + '\n');
-  const h = sha(L.settingsPath);
   const r = run(L, ['--platform', 'windows']);
   assert.strictEqual(r.status, 0, r.stderr);
-  assert.strictEqual(sha(L.settingsPath), h, 'ya están: no se duplican');
-  // y en Mac/Linux, otra carpeta es otro archivo (la regla del .sh)
+  // ya están: no se duplican (se reescriben en su lugar, al piso de Node y, como esas raíces no existen en
+  // esta máquina, a la ruta estable)
+  const once = commandsOf(settingsOf(L), 'Stop');
+  assert.strictEqual(once.length, 2, `ya están: no se duplican: ${JSON.stringify(once)}`);
+  const h = sha(L.settingsPath);
+  assert.strictEqual(run(L, ['--platform', 'windows']).status, 0);
+  assert.strictEqual(sha(L.settingsPath), h, 'una segunda corrida no cambia nada');
+  // y en Mac/Linux, una carpeta que existe es otro archivo (la regla del .sh); una que ya no existe y termina en la misma
+  // ruta del repo es el mismo hook, re-arraigado
   const r2 = run(L, ['--platform', 'posix']);
   assert.strictEqual(r2.status, 0);
-  assert.strictEqual(commandsOf(settingsOf(L), 'Stop').length, 4);
+  assert.strictEqual(commandsOf(settingsOf(L), 'Stop').length, 2);
 });
 
 test('decide: el perfil minimal, el perfil sin saber, los frenos y engram (la lógica del bash, en una función pura)', () => {
@@ -517,7 +524,8 @@ test('T16 ApplyHooks_NodeDelArnes_FormaDelComando @story-8.39 @ac-5', (t) => {
   const cases = [
     { name: 'casa simple', dir: 'casa', want: (bin) => `${bin} ` },
     { name: 'casa con espacios', dir: 'mi casa', want: (bin) => `"${bin}" ` },
-    { name: 'casa con $', dir: 'ca$a', want: () => 'node ' },
+    // la ruta no se puede escribir en un comando: va por el piso de Node, que lanza el del arnés sin pasar por un shell
+    { name: 'casa con $', dir: 'ca$a', want: () => `node "${path.join(ROOT, 'scripts', 'lib', 'node-floor.js')}" ` },
   ];
   for (const c of cases) {
     const L = lab(t, { list, files: ['@tcg:s.js', '@tcg:b.sh'], settings: { hooks: {} } });
@@ -534,13 +542,18 @@ test('T16 ApplyHooks_NodeDelArnes_FormaDelComando @story-8.39 @ac-5', (t) => {
     assert.strictEqual(run(L, [], env).status, 0);
     assert.strictEqual(sha(L.settingsPath), h, `${c.name}: una ejecución suelta no cambia la forma`);
   }
-  // sin Node del arnés, o con otra versión, o apagado: `node`, como siempre
-  for (const [name, prep, extra] of [['sin current', () => null, {}], ['otra versión', (casa) => fakeHarnessNode(casa, { version: 'v1.0.0' }), {}], ['apagado', (casa) => fakeHarnessNode(casa), { TYCON_HARNESS_NODE: '0' }]]) {
+  // sin Node del arnés, o con uno por debajo del piso: por el piso de Node; apagado a propósito: `node`
+  const floorJs = path.join(ROOT, 'scripts', 'lib', 'node-floor.js');
+  for (const [name, prep, extra, want] of [
+    ['sin current', () => null, {}, (s) => `node "${floorJs}" "${s}"`],
+    ['debajo del piso', (casa) => fakeHarnessNode(casa, { version: 'v1.0.0' }), {}, (s) => `node "${floorJs}" "${s}"`],
+    ['apagado', (casa) => fakeHarnessNode(casa), { TYCON_HARNESS_NODE: '0' }, (s) => `node "${s}"`],
+  ]) {
     const L = lab(t, { list, files: ['@tcg:s.js', '@tcg:b.sh'], settings: { hooks: {} } });
     const casa = path.join(L.base, 'casa', '.tycon');
     prep(casa);
     assert.strictEqual(run(L, [], { TYCON_HOME: casa, TYCON_HARNESS_SHARED_DONE: '1', ...extra }).status, 0);
-    assert.deepStrictEqual(commandsOf(settingsOf(L), 'Stop'), [`node "${L.abs('@tcg:s.js')}"`], `${name}: node`);
+    assert.deepStrictEqual(commandsOf(settingsOf(L), 'Stop'), [want(L.abs('@tcg:s.js'))], `${name}`);
   }
   // Windows: la forma sin comillas sólo con la medición en verde y una ruta C:/ sin espacios
   const winBare = 'C:/Users/dev/.tycon/node/current/node.exe';
@@ -572,18 +585,19 @@ test('T17 ApplyHooks_CambioDeForma_EnElLugarSinDuplicar @story-8.39 @ac-6', (t) 
   assert.strictEqual(hooks[0].hooks[1].async, true, 'el async queda');
   assert.match(r.report, /^REFORMED:1$/m, 'se informa como cambio de forma');
   assert.match(r.report, /superseded by H10 dispatcher/, 'el reemplazado se reconoce en la forma nueva');
-  // y de vuelta: sin current, al `node`
+  // y de vuelta: sin current, al piso de Node
+  const viaFloor = `node "${path.join(ROOT, 'scripts', 'lib', 'node-floor.js')}" "${L.abs('@tcg:p.js')}"`;
   fs.unlinkSync(path.join(casa, 'node', 'current'));
   r = run(L, [], { TYCON_HOME: casa, TYCON_HARNESS_SHARED_DONE: '1' });
   hooks = settingsOf(L).hooks.PostToolUse;
-  assert.deepStrictEqual(hooks[0].hooks.map((h) => h.command), [before.command, `node "${L.abs('@tcg:p.js')}"`, after.command], 'de vuelta a node, en su lugar');
+  assert.deepStrictEqual(hooks[0].hooks.map((h) => h.command), [before.command, viaFloor, after.command], 'de vuelta al piso, en su lugar');
   assert.strictEqual(hooks[0].hooks[1].async, true);
   // la forma con comillas (una casa con espacios) también se reconoce
   const casa2 = path.join(L.base, 'mi casa', '.tycon');
   const bin2 = fakeHarnessNode(casa2);
   write(`"${bin2}" "${L.abs('@tcg:p.js')}"`);
   r = run(L, [], { TYCON_HOME: casa, TYCON_HARNESS_SHARED_DONE: '1' });
-  assert.deepStrictEqual(settingsOf(L).hooks.PostToolUse[0].hooks.map((h) => h.command), [before.command, `node "${L.abs('@tcg:p.js')}"`, after.command], 'la forma con comillas pasa a node en su lugar');
+  assert.deepStrictEqual(settingsOf(L).hooks.PostToolUse[0].hooks.map((h) => h.command), [before.command, viaFloor, after.command], 'la forma con comillas pasa al piso en su lugar');
   // otro comando que empieza distinto (no un Node) no se toca
   assert.strictEqual(after.command, 'bash "/ajeno/despues.sh"');
 });
@@ -655,4 +669,190 @@ test('T18 ApplyHooks_FormaNueva_ElAplicadorViejoNoDuplica @story-8.39 @ac-18', (
   fs.writeFileSync(L.settingsPath, JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: `C:/Users/dev/.tycon/node/current/node.exe "${fwd(L.abs('@tcg:s.js'))}"` }] }] } }, null, 2) + '\n');
   assert.strictEqual(runOld(L, ['--platform', 'windows']).status, 0);
   assert.strictEqual(commandsOf(settingsOf(L), 'Stop').length, 1, 'windows: cero duplicados con el aplicador viejo');
+});
+
+// ── el Node del arnés, siempre ───────────────────────────────────────────────────────────────────────────────────────
+/** Un Node del arnés de juguete en la HOME del laboratorio: una copia del Node que corre las pruebas. */
+function withHarnessNode(L) {
+  const bin = path.join(L.home, '.tycon', 'node', 'current', 'bin', 'node');
+  fs.mkdirSync(path.dirname(bin), { recursive: true });
+  fs.copyFileSync(process.execPath, bin);
+  fs.chmodSync(bin, 0o755);
+  return bin;
+}
+const FLOOR = path.join(ROOT, 'scripts', 'lib', 'node-floor.js');
+const LIST_A = () => LIST_OF([
+  H('PreToolUse', 'Bash|PowerShell', 'tycon-pipeline/scripts/freno.js', { effect: 'blocks' }),
+  H('PostToolUse', 'Edit|Write', 'tycon-pipeline/scripts/anota.js'),
+  H('Stop', '', 'tycon-pipeline/scripts/cierre.js', { effect: 'blocks' }),
+]);
+const FILES_A = ['tycon-pipeline/scripts/freno.js', 'tycon-pipeline/scripts/anota.js', 'tycon-pipeline/scripts/cierre.js'];
+
+test('T1 ApplyHooks_ConNodeDelArnes_DesdeLaInstalacion @story-8.93 @ac-1', { skip: process.platform === 'win32' && 'la copia del Node en la HOME de juguete se mide en la 182' }, (t) => {
+  const L = lab(t, { list: LIST_A(), files: FILES_A, settings: {} });
+  const bin = withHarnessNode(L);
+  const r = run(L, ['--platform', 'posix']);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const s = settingsOf(L);
+  const all = ['PreToolUse', 'PostToolUse', 'Stop'].flatMap((ev) => commandsOf(s, ev));
+  assert.strictEqual(all.length, 3);
+  for (const c of all) assert.ok(c.startsWith(`${bin} "`), `con la ruta absoluta del Node del arnés: ${c}`);
+  assert.doesNotMatch(r.stderr, /piso de Node/, 'con el Node del arnés no hay aviso rojo');
+});
+
+test('T2 ApplyHooks_SinNodeDelArnes_LanzadorYLineaRoja @story-8.93 @ac-2', (t) => {
+  for (const platform of ['posix', 'windows']) {
+    const L = lab(t, { list: LIST_A(), files: FILES_A, settings: {} });
+    const r = run(L, ['--platform', platform]);
+    assert.strictEqual(r.status, 0, r.stderr);
+    const fl = platform === 'windows' ? FLOOR.replace(/\\/g, '/') : FLOOR;
+    const ab = (spec) => (platform === 'windows' ? L.abs(spec).replace(/\\/g, '/') : L.abs(spec));
+    const s = settingsOf(L);
+    assert.deepStrictEqual(commandsOf(s, 'PreToolUse'), [`node "${fl}" --gate "${ab('tycon-pipeline/scripts/freno.js')}"`], `${platform}: el freno antes de una herramienta, por el piso y cerrado`);
+    assert.deepStrictEqual(commandsOf(s, 'PostToolUse'), [`node "${fl}" "${ab('tycon-pipeline/scripts/anota.js')}"`], `${platform}: un hook que no frena, por el piso`);
+    assert.deepStrictEqual(commandsOf(s, 'Stop'), [`node "${fl}" "${ab('tycon-pipeline/scripts/cierre.js')}"`], `${platform}: un Stop no falla cerrado`);
+    assert.match(r.stderr, /✗ tycon: los hooks \.js quedan por el piso de Node: sin Node del arnés \(.+\): corré `.+install-tycon-hooks\.(sh|ps1)/);
+    assert.doesNotMatch(r.stderr + r.stdout + r.report, /próximo arranque/);
+    // una segunda corrida reconoce el mismo hook en la forma del piso: no duplica
+    assert.strictEqual(run(L, ['--platform', platform]).status, 0);
+    assert.strictEqual(commandsOf(settingsOf(L), 'PreToolUse').length, 1, `${platform}: sin duplicados`);
+  }
+});
+
+test('T3 ApplyHooks_RutaVieja_SeReArraiga @story-8.93 @ac-3', (t) => {
+  for (const platform of ['posix', 'windows']) {
+    const L = lab(t, { list: LIST_A(), files: FILES_A });
+    const dead = platform === 'windows'
+      ? 'C:/Users/dev/.tycon/versions/2026.10.20.36/skills/tycon-pipeline/scripts/anota.js'
+      : path.join(L.base, '.tycon', 'versions', '2026.10.20.36', 'skills', 'tycon-pipeline', 'scripts', 'anota.js');
+    fs.writeFileSync(L.settingsPath, JSON.stringify({ hooks: { PostToolUse: [{ matcher: 'Edit|Write', hooks: [{ type: 'command', command: `node "${dead}"` }] }] } }, null, 2) + '\n');
+    const r = run(L, ['--platform', platform]);
+    assert.strictEqual(r.status, 0, r.stderr);
+    const cmds = commandsOf(settingsOf(L), 'PostToolUse');
+    const live = platform === 'windows' ? L.abs('tycon-pipeline/scripts/anota.js').replace(/\\/g, '/') : L.abs('tycon-pipeline/scripts/anota.js');
+    assert.strictEqual(cmds.length, 1, `${platform}: uno solo, no el muerto al lado del nuevo: ${JSON.stringify(cmds)}`);
+    assert.ok(cmds[0].endsWith(`"${live}"`), `${platform}: la ruta estable: ${cmds[0]}`);
+    assert.ok(!cmds[0].includes('2026.10.20.36'), `${platform}: la carpeta borrada no queda`);
+    // la muerta al lado de la viva (lo que dejaba el aplicador anterior), en los dos órdenes: queda una sola, la viva
+    for (const order of [[dead, live], [live, dead]]) {
+      fs.writeFileSync(L.settingsPath, JSON.stringify({ hooks: { PostToolUse: [{ matcher: 'Edit|Write', hooks: order.map((p) => ({ type: 'command', command: `node "${p}"` })) }] } }, null, 2) + '\n');
+      assert.strictEqual(run(L, ['--platform', platform]).status, 0);
+      const two = commandsOf(settingsOf(L), 'PostToolUse');
+      assert.strictEqual(two.length, 1, `${platform} ${order[0] === dead ? 'muerta primero' : 'viva primero'}: ${JSON.stringify(two)}`);
+      assert.ok(two[0].endsWith(`"${live}"`));
+    }
+  }
+});
+
+test('T3 ApplyHooks_TrasladadoDeMatcherChico_RutaYFormaBien @story-8.93 @ac-3', (t) => {
+  // un hook escrito con un matcher más chico se traslada al de la lista: sale con su guion (nunca «undefined») y en la
+  // forma que corresponde; con la ruta muerta, en la estable
+  for (const withNode of [false, true]) {
+    const L = lab(t, { list: LIST_A(), files: FILES_A });
+    if (withNode) withHarnessNode(L);
+    const dead = path.join(L.base, '.tycon', 'versions', 'vieja', 'skills', 'tycon-pipeline', 'scripts', 'anota.js');
+    fs.writeFileSync(L.settingsPath, JSON.stringify({ hooks: { PostToolUse: [{ matcher: 'Edit', hooks: [{ type: 'command', command: `node "${dead}"` }] }] } }, null, 2) + '\n');
+    const r = run(L, ['--platform', 'posix']);
+    assert.strictEqual(r.status, 0, r.stderr);
+    const cmds = commandsOf(settingsOf(L), 'PostToolUse');
+    assert.strictEqual(cmds.length, 1, JSON.stringify(cmds));
+    assert.ok(!cmds[0].includes('undefined'), cmds[0]);
+    assert.ok(cmds[0].endsWith(`"${L.abs('tycon-pipeline/scripts/anota.js')}"`), cmds[0]);
+  }
+});
+
+test('T5 Update_ListaMasNuevaQueElNodeBajado_HooksConElDelArnes @story-8.93 @ac-3', { skip: process.platform === 'win32' && 'se mide en la 182' }, (t) => {
+  // La actualización trae una lista con otra versión y la bajada todavía no corrió: el Node que está sirve igual
+  // (camino del «0 de 43 hooks usan el Node del arnés»).
+  const HN = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'harness-node.js'));
+  const L = lab(t, { list: LIST_A(), files: FILES_A, settings: {} });
+  const bin = withHarnessNode(L);
+  const list = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'production', 'node-official.json'), 'utf8'));
+  assert.notStrictEqual(list.version, process.version, 'la prueba necesita una lista con otra versión que el Node que corre');
+  const interp = HN.interpreter({ env: { HOME: L.home, TYCON_HOME: path.join(L.home, '.tycon') }, platform: 'darwin' });
+  assert.strictEqual(interp.present, true, interp.reason);
+  assert.strictEqual(interp.own, true, interp.reason);
+  assert.match(interp.reason, /se usa igual hasta la próxima bajada/);
+  const r = run(L, ['--platform', 'posix']);
+  assert.strictEqual(r.status, 0, r.stderr);
+  for (const c of commandsOf(settingsOf(L), 'PreToolUse')) assert.ok(c.startsWith(`${bin} "`), c);
+});
+
+test('T1 Codex_SinNodeDelArnes_PisoConGateYBarrasNormales @story-8.93 @ac-1', () => {
+  const C = require(path.join(ROOT, 'build', 'deploy-codex-hooks.js'));
+  const gate = 'tycon-pipeline/scripts/on-pre-commit.js';
+  const frag = { hooks: {
+    PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: `node \${SKILLS}/${gate}` }] }],
+    Stop: [{ hooks: [{ type: 'command', command: `node \${SKILLS}/${gate}` }] }],
+  } };
+  const floorFwd = path.join(ROOT, 'scripts', 'lib', 'node-floor.js').replace(/\\/g, '/');
+  // sin Node del arnés: el piso, con --gate sólo en el freno antes de una herramienta
+  const out = C.substitute(frag, ROOT, 'C:\\Users\\dev\\skills', { interp: { prefix: 'node', own: false, switch: 'on' } });
+  const pre = out.hooks.PreToolUse[0].hooks[0].command;
+  const stop = out.hooks.Stop[0].hooks[0].command;
+  assert.ok(pre.startsWith(`node ${floorFwd} --gate `), pre);
+  assert.ok(stop.startsWith(`node ${floorFwd} `) && !stop.includes('--gate'), stop);
+  // la forma del piso, escrita desde otro árbol de Windows (barras invertidas), se reconoce como del arnés: no se duplica
+  const formas = C.plantillas(frag);
+  const otra = `node C:\\Users\\dev\\copia\\harness\\scripts\\lib\\node-floor.js --gate C:\\Users\\dev\\copia\\skills/${gate}`;
+  assert.ok(formas.some((re) => re.test(otra)), 'la forma del piso de otro árbol de Windows es del arnés');
+  assert.ok(formas.some((re) => re.test(pre)), 'y la que acaba de escribir también');
+  // con el Node del arnés, ese Node; apagado a propósito, `node`
+  assert.ok(C.substitute(frag, ROOT, '/s', { interp: { prefix: '/h/node', own: true, switch: 'on' } }).hooks.PreToolUse[0].hooks[0].command.startsWith('/h/node /s/'));
+  assert.ok(C.substitute(frag, ROOT, '/s', { interp: { prefix: 'node', own: false, switch: 'off' } }).hooks.PreToolUse[0].hooks[0].command.startsWith('node /s/'));
+});
+
+test('T2 Doctor_HooksPorElPiso_CuentanComoProblema @story-8.93 @ac-2', (t) => {
+  const HN = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'harness-node.js'));
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-893-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const s = path.join(base, 'settings.json');
+  const floorJs = path.join(ROOT, 'scripts', 'lib', 'node-floor.js');
+  fs.writeFileSync(s, JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: `node "${floorJs}" "${path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'on-edit.js')}"` }] }] } }));
+  const n = HN.countHooks(s, { own: true, prefix: '/h/node' });
+  assert.strictEqual(n.own, 0, 'un hook por el piso no cuenta como con el Node del arnés');
+  assert.ok(n.path_node + n.other >= 1, `cuenta como problema: ${JSON.stringify(n)}`);
+});
+
+test('T11 HooksList_CadaFrenoDeclarado @story-8.93 @ac-5', () => {
+  // cada hook antes de una herramienta cuyo guion puede salir 2 se declara `effect: blocks`: es lo que el aplicador lee
+  // para registrarlo con `--gate` cuando el arnés no tiene Node propio
+  const list = JSON.parse(fs.readFileSync(LIST, 'utf8'));
+  const sinMarca = [];
+  for (const h of list.hooks.filter((x) => x.event === 'PreToolUse' && x.spec.endsWith('.js'))) {
+    const file = h.spec.startsWith('@tcg:') ? path.join(ROOT, 'scripts', 'hooks', h.spec.slice(5)) : path.join(ROOT, 'skills', h.spec);
+    // un freno que la lista nombra y no está es un rojo, no un salteo: se movió o se renombró sin la lista
+    if (!fs.existsSync(file)) { sinMarca.push(`${h.spec}: la lista lo nombra y no está`); continue; }
+    const text = fs.readFileSync(file, 'utf8');
+    if (/process\.exit\(\s*2\s*\)|exitCode\s*=\s*2|"decision"\s*:\s*"block"|permissionDecision['"]?\s*:\s*['"]deny/.test(text) && h.effect !== 'blocks') sinMarca.push(h.spec);
+  }
+  assert.deepStrictEqual(sinMarca, [], 'cada freno lleva effect: blocks');
+});
+
+test('T4 Health_ScriptDelHookInexistente_Rojo @story-8.93 @ac-3', (t) => {
+  const HL = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'health.js'));
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'health-893-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const settings = path.join(base, 'settings.json');
+  const dead = path.join(base, '.tycon', 'versions', '2026.10.20.36', 'skills', 'tycon-pipeline', 'scripts', 'on-prompt.js');
+  const alive = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'on-edit.js');
+  const foreign = path.join(base, 'mis-hooks', 'no-existe.js');
+  fs.writeFileSync(settings, JSON.stringify({ hooks: {
+    UserPromptSubmit: [{ hooks: [{ type: 'command', command: `node "${dead}"` }] }],
+    PostToolUse: [{ hooks: [{ type: 'command', command: `node "${alive}"` }, { type: 'command', command: `node "${foreign}"` }] }],
+  } }));
+  const r = HL.check({ home: base, env: Object.assign({}, process.env, { TYCON_SETTINGS_PATH: settings }), platform: process.platform }, { tree: ROOT, report: [], applierOut: '' });
+  const ours = r.failures.filter((f) => f.includes('apunta a un guion que no existe'));
+  assert.strictEqual(ours.length, 1, JSON.stringify(r.failures));
+  assert.match(ours[0], /UserPromptSubmit.*2026\.10\.20\.36/);
+  // la forma del piso con el piso muerto: también rojo; una ruta que expande el shell: aviso, no falla
+  const deadFloor = path.join(base, '.tycon', 'versions', 'vieja', 'scripts', 'lib', 'node-floor.js');
+  fs.writeFileSync(settings, JSON.stringify({ hooks: {
+    Stop: [{ hooks: [{ type: 'command', command: `node "${deadFloor}" "${alive}"` }] }],
+    PreToolUse: [{ hooks: [{ type: 'command', command: 'node "$HOME/.tycon/harness/skills/tycon-pipeline/scripts/on-edit.js"' }] }],
+  } }));
+  const r2 = HL.check({ home: base, env: Object.assign({}, process.env, { TYCON_SETTINGS_PATH: settings }), platform: process.platform }, { tree: ROOT, report: [], applierOut: '' });
+  assert.ok(r2.failures.some((f) => f.includes('node-floor.js') && f.includes('no existe')), JSON.stringify(r2.failures));
+  assert.ok(!r2.failures.some((f) => f.includes('$HOME')), 'una ruta con $HOME no es una falla');
+  assert.ok(r2.warnings.some((w) => w.includes('$HOME') && w.includes('la expande el shell')));
 });

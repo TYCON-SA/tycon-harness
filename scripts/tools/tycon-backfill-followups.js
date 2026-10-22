@@ -41,6 +41,8 @@
  */
 
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('../lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 
 const fs = require('fs');
 const os = require('os');
@@ -628,8 +630,8 @@ let issues = analyze(index);
 if (filterStory) {
   issues = issues.filter((iss) => {
     const ids = [
-      iss.child?.id,
-      iss.parent?.id,
+      iss.child && iss.child.id,
+      iss.parent && iss.parent.id,
       iss.parentId,
       iss.childId,
     ].filter(Boolean);

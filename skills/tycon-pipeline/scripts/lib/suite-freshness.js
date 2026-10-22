@@ -1,4 +1,6 @@
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 /**
  * suite-freshness.js — ¿el verde de la suite completa sigue midiendo ESTE código?
  *
