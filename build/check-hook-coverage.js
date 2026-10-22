@@ -99,7 +99,10 @@ function raices(tcg, skills) {
   for (const n of names) {
     let m = null;
     try { m = JSON.parse(fs.readFileSync(path.join(dir, n, 'integration.json'), 'utf8')); } catch (_) { m = null; }
-    const listed = m && Array.isArray(m.hooks) ? [...m.hooks.map((h) => h && h.script), ...(Array.isArray(m.dispatch) ? m.dispatch.map((d) => d && d.script) : [])].filter((s) => typeof s === 'string') : null;
+    // un manifiesto que se lee y no declara hooks (un conector de plataforma, una integración de horas sin hooks) no
+    // aporta ninguno: sus guiones son bibliotecas; uno con `hooks` que no es una lista no se entiende y se censa entero
+    const hooksOk = m && (m.hooks === undefined || Array.isArray(m.hooks));
+    const listed = hooksOk ? [...(m.hooks || []).map((h) => h && h.script), ...(Array.isArray(m.dispatch) ? m.dispatch.map((d) => d && d.script) : [])].filter((s) => typeof s === 'string') : null;
     const own = listed && listed.every(safe) ? listed : null;
     const byDir = new Map();
     for (const s of own || []) { const d = path.dirname(s); if (!byDir.has(d)) byDir.set(d, new Set()); byDir.get(d).add(path.basename(s)); }
@@ -228,9 +231,22 @@ function selftest() {
     { script: 'borrado.js', reason: 'un script que ya no existe en disco, la línea sobra' },
   ]);
 
+  // las integraciones: la que no declara hooks no aporta guiones; la que no se lee se censa entera
+  const tcgFalso = path.join(tmp, 'tcg');
+  const integracion = (n, manifiesto) => {
+    fs.mkdirSync(path.join(tcgFalso, 'integrations', n, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(tcgFalso, 'integrations', n, 'scripts', `${n}.js`), '// x\n');
+    fs.writeFileSync(path.join(tcgFalso, 'integrations', n, 'integration.json'), manifiesto);
+  };
+  integracion('conector', JSON.stringify({ name: 'conector', kind: 'platform', connector: 'scripts/conector.js' }));
+  integracion('ilegible', '{ esto no es json');
+  const censoIntegraciones = enumerarDisco(raices(tcgFalso, path.join(tmp, 'sin-skills')).filter((r) => r.dir.includes(`${path.sep}integrations${path.sep}`))).scripts;
+
   fs.rmSync(tmp, { recursive: true, force: true });
 
   const checks = [
+    ['una integración que no declara hooks no aporta guiones al censo', !censoIntegraciones.includes('conector.js')],
+    ['una integración con el manifiesto ilegible se censa entera', censoIntegraciones.includes('ilegible.js')],
     ['un hook con casos propios no bloquea', !sinDeuda.bloqueantes.some((b) => b.includes('con-casos.js'))],
     ['un handler nombrado por su despachador cuenta como cubierto', !sinDeuda.bloqueantes.some((b) => b.includes('por-despachador.js'))],
     ['un hook sin casos ni deuda BLOQUEA', sinDeuda.bloqueantes.some((b) => b.includes('sin-nada.js'))],
