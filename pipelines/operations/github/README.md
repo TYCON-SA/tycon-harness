@@ -239,6 +239,11 @@ se toca: lo decide la medición. Una persona que no está de acuerdo con lo que 
    organización lo bloquea, el del repo aparece apagado y no se puede prender. Se prende primero en la organización.
    Ese ajuste habilita también **aprobar** pull requests a todo workflow del repo de operaciones.
 
+> ⚠️ **Prender el ajuste en la organización lo prende en TODOS sus repos**, salvo en los que lo tienen fijado por su
+> cuenta: cada repo que no lo fijó lo hereda. Así, el workflow de cualquier producto podría crear y aprobar pull
+> requests. Antes de prenderlo en la organización, fijalo apagado en cada repo de producto. Si no, apenas lo prendas,
+> apagalo repo por repo en todos menos en el de operaciones, y verificá en cada uno que quedó apagado.
+
 Sin ellos, la ejecución sale **en rojo** con el motivo («GitHub Actions is not permitted to create or approve pull
 requests»), no en verde sin pull requests.
 
