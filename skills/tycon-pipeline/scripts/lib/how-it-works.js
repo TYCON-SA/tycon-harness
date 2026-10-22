@@ -233,8 +233,8 @@ const conStory = (fn) => (mod, probe, ctx) => fn(mod, ctx.story, ctx.content, ct
 const STORY_CONDITIONALS = Object.freeze([
   { id: 'adoWorkItem', steps: ['start'], code: 'skills/tycon-pipeline/steps/step-01-start.md', guide: 'guides/integrations/ado-projects.md', textKey: 'segun.pedidoAdo',
     decider: { module: 'skills/tycon-pipeline/scripts/pipeline.js', fn: 'parseFrontmatterPipeline' },
-    decide: conStory((fn, story, content) => Boolean(fn(content).ado_work_item)),
-    probes: { yes: { story: '---\nstory: "9.9"\nado_work_item: 1234\n---\n' }, no: { story: '---\nstory: "9.9"\n---\n' } } },
+    decide: conStory((fn, story, content) => Boolean(require(path.join(CODE, 'scripts', 'lib', 'platform', 'work-item-field.js')).idOf(fn(content)))),
+    probes: { yes: { story: '---\nstory: "9.9"\nwork_item: 1234\n---\n' }, no: { story: '---\nstory: "9.9"\n---\n' } } },
   { id: 'mockup', steps: ['plan'], code: 'skills/tycon-pipeline/scripts/mockup.js', guide: 'skills/tycon-pipeline/steps/step-04-approve-plan.md', textKey: 'segun.pantalla',
     decider: { module: 'skills/tycon-pipeline/scripts/mockup.js', fn: 'screenStory' },
     decide: conStory((fn, story) => fn(story).screen === true), probes: { yes: PROBE_SCREEN, no: PROBE_NO_SCREEN } },

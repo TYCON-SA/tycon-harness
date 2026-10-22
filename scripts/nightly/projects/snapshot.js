@@ -83,6 +83,7 @@ const { esEvidenciaDeCierre } = require(path.join(RAIZ, 'scripts', 'ci', 'tycon-
 const SKILLS = require(path.join(RAIZ, 'scripts', 'lib', 'skills-dir.js')).resolveSkillsDirs().skills;
 const LIB = path.join(SKILLS, 'tycon-pipeline', 'scripts', 'lib');
 const discovery = require(path.join(LIB, 'story-discovery.js'));
+const WORK_ITEM = require(path.join(RAIZ, 'scripts', 'lib', 'platform', 'work-item-field.js'));
 const evidenceKey = require(path.join(LIB, 'evidence-key.js'));
 const evidenceConfig = require(path.join(LIB, 'evidence-config.js'));
 
@@ -441,7 +442,8 @@ function fotoDeRepo(repo, opts) {
       epica: valorEpica(sanear(escalar(fm, 'epic'))),
       sprint: entero(escalar(fm, 'sprint')),
       prioridad: sanear(escalar(fm, 'priority')),
-      ado_work_item: entero(escalar(fm, 'ado_work_item')),
+      // el pedido de trabajo: `work_item`, o su nombre viejo (la clave del contrato no cambia)
+      ado_work_item: entero(WORK_ITEM.idOf(fm)),
       depends_on: listaDeIds(fm, 'depends_on').map(sanear),
       followup_of: listaDeIds(fm, 'followup_of').map(sanear),
       followup_reason: sanear(s.followupReason),
@@ -491,7 +493,7 @@ function fotoDeRepo(repo, opts) {
       alertas.push({ tipo: 'done_sin_evidencia', story: st.id, detalle: 'cerrada sin evidencia de cierre en .advisors/dod-runtime (criterio del portón)' });
     }
     if (st.ado_work_item === null && st.grupo !== 'sin_entrega') {
-      alertas.push({ tipo: 'sin_work_item', story: st.id, detalle: 'sin ado_work_item' });
+      alertas.push({ tipo: 'sin_work_item', story: st.id, detalle: 'sin pedido de trabajo (work_item)' });
     }
     if (!dic.motivo && st.grupo === 'desconocido') {
       alertas.push({ tipo: 'estado_desconocido', story: st.id, detalle: `el estado «${st.estado}» no está en el diccionario de estados` });

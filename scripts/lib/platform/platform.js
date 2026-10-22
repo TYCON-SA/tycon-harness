@@ -14,8 +14,11 @@
 // Toda respuesta es `{ok:true, value}` o `{ok:false, reason, detail}` con un motivo del vocabulario cerrado; una
 // excepción del conector, una respuesta con otra forma o un motivo inventado salen no_medido, nunca vacío.
 //
-// Uso: node scripts/lib/platform/platform.js <operación> [--repo <org/repo | JSON de la identidad>] [--args <JSON>]
-//   Imprime el resultado en JSON y sale 0 siempre que el contrato se cumplió (aunque diga que no); 2 si se usó mal.
+// Uso: node scripts/lib/platform/platform.js <operación> [--repo <org/repo | JSON de la identidad>] [--args <JSON | @archivo>]
+//   La operación va en una palabra o en dos (`work-item.close` o `work-item close`).
+//   node scripts/lib/platform/platform.js choose <operación> [--repo …]: qué conector la atendería, sin pedirle nada.
+//   Imprime el resultado en JSON y sale 0 siempre que el contrato se cumplió (aunque diga que no); 2 si se usó mal. Las
+//   operaciones del pedido de trabajo traen además `summary`: la línea que el paso muestra y lleva al cierre.
 //
 // Casos: scripts/tests/platform-contract.test.js.
 
@@ -220,12 +223,41 @@ async function call(manifest, operation, args, opts) {
   return r.ok ? r : no(r.reason, r.detail);
 }
 
-/** Elige el conector de la operación y le pasa el pedido. */
+/**
+ * La línea que el paso del agente muestra de una operación del pedido de trabajo, y que llega al mensaje de cierre de la
+ * ejecución: qué pasó, lo que la plataforma no tiene y dónde quedaron las horas. Una sola línea.
+ */
+function summary(operation, r, label) {
+  // un «no» que llega a medias (el conector ya publicó algo) no se dice «no se tocó»: reintentar lo duplicaría
+  if (!r.ok) return limpiar(/^a medias: /.test(r.detail) ? `pedido de trabajo: quedó a medias — ${r.detail.replace(/^a medias: /, '')}` : `pedido de trabajo: no se tocó — ${r.detail}`);
+  const v = r.value || {};
+  const en = label ? ` en ${label}` : '';
+  let t;
+  if (operation === 'work-item.create') t = `pedido de trabajo #${v.id} creado${en}`;
+  else if (operation === 'work-item.update') t = v.changed ? `pedido de trabajo #${v.id}${en}: ${v.previo} → ${v.estado}` : `pedido de trabajo #${v.id}${en}: sin cambios (${v.estado})`;
+  else {
+    t = `pedido de trabajo #${v.id} cerrado${en}`;
+    if (v.hours === null || v.hours === undefined) t += ' · sin horas';
+    else if (v.hoursAs === 'comment') t += ` · ${v.hours} h como comentario (${label || 'la plataforma'} no tiene un campo de horas)`;
+    else t += ` · ${v.hours} h en ${v.hoursField || 'el campo de horas'}`;
+  }
+  const faltan = (Array.isArray(v.unsupported) ? v.unsupported : []).map((u) => u && u.field).filter(Boolean).sort();
+  if (faltan.length) t += ` · no soportado${en}: ${faltan.join(', ')}`;
+  for (const w of Array.isArray(v.warnings) ? v.warnings : []) t += ` · ${w}`;
+  // los avisos pueden traer el texto de un error de la plataforma: pasan por la misma limpieza que un «no»
+  return limpiar(t);
+}
+
+/** Elige el conector de la operación y le pasa el pedido. Las del pedido de trabajo traen además su `summary`. */
 async function run(operation, args = {}, opts = {}) {
   const c = choose(operation, opts);
-  if (!c.ok) return c;
   const env = opts.env || process.env;
-  return call(INT.find(c.value.connector, { kind: 'platform', env }), operation, args, opts);
+  const manifest = c.ok ? INT.find(c.value.connector, { kind: 'platform', env }) : null;
+  const r = c.ok ? await call(manifest, operation, args, opts) : c;
+  if (!operation.startsWith('work-item.')) return r;
+  // los avisos del conector pueden traer el texto de un error de la plataforma: pasan por la misma limpieza que un «no»
+  const v = r.ok && r.value && Array.isArray(r.value.warnings) ? { ...r, value: { ...r.value, warnings: r.value.warnings.map(limpiar) } } : r;
+  return { ...v, summary: summary(operation, v, manifest && manifest.label) };
 }
 
 /**
@@ -248,19 +280,33 @@ async function conformance(name, opts = {}) {
 }
 
 function main(argv) {
-  const [operation, ...rest] = argv;
+  // `choose <operación>`: qué conector la atendería, sin pedirle nada (un paso que tiene un camino propio de una
+  // plataforma lo pregunta antes de tomarlo)
+  if (argv[0] === 'choose') {
+    const op = argv.length > 2 && OPERATIONS.includes(`${argv[1]}.${argv[2]}`) ? `${argv[1]}.${argv[2]}` : argv[1];
+    if (!OPERATIONS.includes(op)) { process.stderr.write(`uso: platform.js choose <operación>\noperaciones: ${OPERATIONS.join(', ')}\n`); return Promise.resolve(2); }
+    const i = argv.indexOf('--repo');
+    process.stdout.write(`${JSON.stringify(choose(op, { repo: i >= 0 ? argv[i + 1] : undefined }))}\n`);
+    return Promise.resolve(0);
+  }
+  // la operación en una palabra (`work-item.create`) o en dos (`work-item create`)
+  const dos = argv.length > 1 && OPERATIONS.includes(`${argv[0]}.${argv[1]}`);
+  const operation = dos ? `${argv[0]}.${argv[1]}` : argv[0];
+  const rest = argv.slice(dos ? 2 : 1);
   const opt = (n) => { const i = rest.indexOf(n); return i >= 0 ? rest[i + 1] : undefined; };
   if (!operation || !OPERATIONS.includes(operation)) {
-    process.stderr.write(`uso: platform.js <operación> [--repo <org/repo|JSON>] [--args <JSON>]\noperaciones: ${OPERATIONS.join(', ')}\n`);
+    process.stderr.write(`uso: platform.js <operación> [--repo <org/repo|JSON>] [--args <JSON | @archivo.json>]\noperaciones: ${OPERATIONS.join(', ')}\n`);
     return Promise.resolve(2);
   }
   let args = {};
   if (opt('--args') !== undefined) {
-    try { args = JSON.parse(opt('--args')); } catch (e) { process.stderr.write(`--args no es JSON (${e.message})\n`); return Promise.resolve(2); }
+    // `@archivo`: los argumentos en un archivo (un texto largo, como la descripción de una historia, no entra cómodo en la línea)
+    const crudo = opt('--args');
+    try { args = JSON.parse(crudo.startsWith('@') ? fs.readFileSync(crudo.slice(1), 'utf8') : crudo); } catch (e) { process.stderr.write(`--args no es JSON (${e.message})\n`); return Promise.resolve(2); }
   }
   return run(operation, args, { repo: opt('--repo') }).then((r) => { process.stdout.write(`${JSON.stringify(r)}\n`); return 0; });
 }
 
 if (require.main === module) main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
 
-module.exports = { choose, run, call, conformance, connector, identityFromRemote, limpiar, main, OPERATIONS, REASONS };
+module.exports = { choose, run, call, conformance, connector, identityFromRemote, limpiar, summary, main, OPERATIONS, REASONS };

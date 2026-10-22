@@ -4,7 +4,7 @@
   "label": "GitHub",
   "kind": "platform",
   "connector": "scripts/connector.js",
-  "operations": ["deployments.read"],
+  "operations": ["work-item.create", "work-item.update", "work-item.close", "deployments.read"],
   "capabilities": { "completedHours": "comment", "workItemType": "label", "autoComplete": "auto-or-wait" },
-  "rawCommands": ["gh pr create", "gh pr merge", "gh issue create"]
+  "rawCommands": ["gh pr create", "gh pr merge", "gh issue create", "gh issue edit", "gh issue close"]
 }
