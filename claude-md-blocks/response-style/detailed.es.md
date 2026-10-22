@@ -15,6 +15,11 @@ escribe para que pueda seguir el razonamiento sin abrir el código.
    cambia la decisión.
 3. **La acción que le toca a la persona**, si la hay — en una línea, con la recomendación primero.
 
+**Decisión importante** (difícil de deshacer; cambia alcance o diseño; adopta o descarta una idea o un plan; cuesta
+plata o semanas; toca a otras personas o a un cliente): recomendación en una línea, el contexto, cada opción con lo que
+gana y lo que cuesta, y la pregunta; en el cuadro de opciones, eso va en cada descripción. Nombres, orden, un arreglo
+chico o lo obvio: como siempre.
+
 ## Tope y forma
 
 - Hasta unos **{{max_chars}} caracteres de prosa** (≈{{max_lines}} renglones; código y tablas no

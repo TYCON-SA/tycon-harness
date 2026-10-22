@@ -90,6 +90,31 @@ test('T4 Sync_TyconProfile_SameBlockAsTodayExceptTitle @story-2.31 @ac-3 @ac-19 
   }
 });
 
+// La decisión importante: la lista cerrada, lo que no lo es y la forma, en su orden (la recomendación primero)
+const DECISION = {
+  es: { titulo: '**Decisión importante**', lista: ['difícil de deshacer', 'alcance o diseño', 'una idea o un plan', 'plata o semanas', 'cliente'],
+    chico: ['un arreglo chico', 'lo obvio'], forma: ['recomendación en una línea', 'contexto', 'lo que gana y lo que cuesta', 'la pregunta'], cuadro: 'cuadro de opciones' },
+  en: { titulo: '**Important decision**', lista: ['hard to undo', 'scope or design', 'an idea or a plan', 'money or weeks', 'client'],
+    chico: ['a small fix', 'the obvious'], forma: ['recommendation in one line', 'context', 'what it gains and what it costs', 'the question'], cuadro: 'options box' },
+};
+
+test('T1 Bloques_DefinenLaDecisionImportante @story-1.28 @ac-1 @ac-2 — las seis variantes traen la lista cerrada, lo chico y la forma en su orden', () => {
+  for (const style of STYLES) {
+    for (const lang of LANGS) {
+      const b = bodyOf(path.join(BLOCKS, 'response-style', `${style}.${lang}.md`));
+      const d = DECISION[lang];
+      const i = b.indexOf(d.titulo);
+      assert.ok(i >= 0, `${style}.${lang}: define «${d.titulo}»`);
+      // en un renglón: los cortes de línea del archivo no parten una frase
+      const p = b.slice(i, b.indexOf('\n\n', i) === -1 ? undefined : b.indexOf('\n\n', i)).replace(/\s+/g, ' ');
+      for (const x of [...d.lista, ...d.chico, d.cuadro]) assert.ok(p.includes(x), `${style}.${lang}: trae «${x}»`);
+      const pos = d.forma.map((x) => p.indexOf(x));
+      assert.ok(pos.every((x) => x >= 0), `${style}.${lang}: la forma entera (${d.forma.join(' → ')})`);
+      assert.deepStrictEqual([...pos].sort((a, c) => a - c), pos, `${style}.${lang}: la forma en su orden`);
+    }
+  }
+});
+
 test('T5 Meter_UsesMaxCharsFromProfile @story-2.31 @ac-4 —el tope del medidor sale del perfil; sin valor, del estilo', () => {
   const prose = Array.from({ length: 15 }, (_, i) => `Oración ${i} con algunas palabras para sumar prosa medible en el turno.`).join(' ');
   assert.ok(prose.length > 800 && prose.length < 1300, `prosa de prueba: ${prose.length}`);

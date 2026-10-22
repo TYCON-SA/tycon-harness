@@ -153,14 +153,21 @@ fan-out no ocurrió (0b/0c skippeados, orden secuencial), lanzar los subagentes 
   Con modo autónomo y coordinadora, la pregunta va a quien aprueba (la coordinadora), no se decide sola.
 
 - **Si hay WARNING (sin CRITICAL)**: chequear primero la **whitelist de formato cosmético**: si TODOS los warnings son `VAL-W1` (frontmatter incompleto no-contractual), `VAL-W2` o `VAL-W9` (reglas de formato puro) → el pipeline **AUTO-CONTINÚA** a Step 2 sin pausa, registrando `warnings_acknowledged: <lista de rule IDs>` en el log del step y listándolos en el anuncio al usuario. Si hay CUALQUIER warning fuera de la whitelist → PAUSAR y preguntar al usuario:
+  Si lo que se pregunta es una decisión importante (cambia el alcance o el diseño de la story, o adopta o descarta una
+  idea: la lista del bloque de estilo), la plantilla lleva su forma: la recomendación primero, el contexto y, por
+  opción, lo que gana y lo que cuesta. Si no lo es, van sólo la recomendación y las opciones.
   ```
+  Recomiendo {la opción}: {por qué, en una línea}.
+
   La story tiene {N} warnings (no bloquean implementación pero afectan calidad/formato Mary+GOLD):
 
   {listar warnings con su rule ID y descripción breve, máximo 1 línea cada uno}
 
+  {decisión importante: el contexto — qué choca y por qué se pregunta}
+
   ¿Cómo procedemos?
-  (a) Arreglar los warnings antes de implementar (recomendado — re-escribir la story al formato canónico)
-  (b) Continuar al Step 2 sin arreglar (los warnings quedan registrados en el log del pipeline)
+  (a) Arreglar los warnings antes de implementar (re-escribir la story al formato canónico) — {gana: … · cuesta: …}
+  (b) Continuar al Step 2 sin arreglar (los warnings quedan registrados en el log del pipeline) — {gana: … · cuesta: …}
   (c) Cancelar el pipeline
   ```
 

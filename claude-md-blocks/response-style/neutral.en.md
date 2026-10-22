@@ -12,3 +12,8 @@
   rows, are written to a file and the answer gives the path.
 - **Guide limit**: about {{max_chars}} characters of prose per answer (≈{{max_lines}} lines; code and
   tables do not count). If more is needed, offer the detail instead of dumping it.
+
+**Important decision** (hard to undo; changes scope or design; adopts or drops an idea or a plan; costs money or
+weeks; affects other people or a client): recommendation in one line, the context, each option with what it gains and
+what it costs, and the question; in an options box, that goes in each description. Names, order, a small fix or the
+obvious: as usual.

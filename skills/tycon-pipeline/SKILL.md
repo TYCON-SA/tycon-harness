@@ -64,22 +64,21 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 
 - **COMM.i — checkpoints HITL**: resumen llano arriba (2-5 bullets sin rule IDs, `file:line` ni nombres
   de advisor) → UNA pregunta con la recomendación primero → detalle técnico abajo o diferido. Aplica a
-  validar la story, aprobar el plan, «Hallazgos», dep-gate, spec-first y toda pausa HITL.
+  validar la story, aprobar el plan, «Hallazgos», dep-gate, spec-first y toda pausa HITL. En una decisión importante
+  (bloque de estilo): el contexto y, por opción, lo que gana y lo que cuesta.
 - **COMM.ii — cierre ejecutivo** (hallazgos, commit, cierre en ADO): qué quedó hecho en 3-6 bullets llanos (verificado
   corriendo, no leído; qué quedó pendiente), la acción del dev en UNA línea, el detalle diferido (vive en
   `.advisors/pipeline-runs/<run>/`). NUNCA volcar el informe consolidado al chat. El detalle
   sube solo si hay CRITICAL sin resolver, algo falló y el dev necesita el error crudo, o el dev lo pidió.
 - **COMM.iii — pasos largos**: anunciar todo paso ≥30s y cuánto tarda (test-gate ~90s, advisor 3-7 min, pase
   adversarial 20-40 min); ≥2 min va en segundo plano salvo gates cortos de `run-check`; al volver, contestar
-  PRIMERO lo que el dev escribió. **Todo `Agent(...)` del pipeline corre en segundo plano** (jamás
-  `run_in_background: false`).
+  PRIMERO lo que el dev escribió. **Todo `Agent(...)` del pipeline corre en segundo plano**.
 - **A.i**: siempre corren los advisors aplicables; no hay flag para saltear advisors individuales.
 - **H.ii — pase adversarial** (`steps/step-05b-adversarial-verify.md`): reproduce-or-refute que
   EJECUTA el código. Gate `pipeline.js deep-review-gate`: NORMAL → corre; LOW o liviana → skip. Overrides:
   `--no-deep-review`/`TYCON_NO_DEEP_REVIEW=1`, `.tycon/advisors.yaml deep_review: always|off|auto`,
   `--deep-review`/`--ultracode`. Modelo `sonnet`; story pesada → `opus` (anunciado); **`fable` no se ofrece ni se
-  pregunta**: corre sólo con `--deep-review-fable`, pedido explícito de quien corre el pipeline. UNA vez por
-  corrida. Se lanza temprano al cerrar la implementación (`early_launch`; kill-switch `TYCON_5B_EARLY=0`)
+  pregunta**: sólo con `--deep-review-fable`, a pedido. UNA vez por corrida. Se lanza temprano al cerrar la implementación (`early_launch`; kill-switch `TYCON_5B_EARLY=0`)
   y su paso es el JOIN. Los CONFIRMED se foldean a «Hallazgos» y disparan D.i. La prueba que confirmó cada hallazgo
   se promueve a la suite: `marker.js promote-probe`; `mark-adversarial-result` exige `--tests k`
   (+ `--own p --in <rutas>`, `--deferred d --reason`), k+p+d=N. El pase se cierra con constancia
@@ -91,7 +90,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   cualquier otro WARNING pausa: (a) arreglar, (b) continuar, (c) cancelar.
 - **D.i — re-loop post-fix (HARD)**: todo fix de código después de «Hallazgos» obliga a re-correr «Revisores»
   sobre el diff actualizado antes del commit, hasta que no haya fixes nuevos o los CRITICAL estén waived.
-  - **D.i.1**: NO cherry-pick por inferencia del LLM. El único recorte válido es mecánico:
+  - **D.i.1**: nada se recorta por inferencia; el único recorte válido es mecánico:
     `pipeline.js smart-reloop --iter N` (SPEED-1: delta por `marker.fileEvents` contra la
     `audited_surface` de cada advisor; anuncia `rerun` y `skipped` con razón). `--force-full-reloop`
     devuelve el set completo.
@@ -107,7 +106,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
     del diff es follow-up documentado (engram `type: project` + nota en la spec), no re-loop.
   - **D.i.4 — tercera vuelta**: sin su nota (`marker.js rethink --iter N`) no hay set (step 7b).
 - **E.i — no-skip-by-inference (HARD)**: ningún paso se saltea por inferencia conversacional ("no lo
-  mencionó", "arrancá rápido", "parece molesto"). Sólo por la skip-condition documentada en el paso y
+  mencionó", "arrancá rápido"). Sólo por la skip-condition documentada en el paso y
   verificable; si la condición tiene un gap, se arregla el paso, no se saltea.
 - **F.i — DoD runtime gate (HARD)**: sin «Probar en vivo» (`steps/step-07c-dod-runtime-gate.md`) no hay commit ni
   `pipelines.X.status: done`. Hooks de respaldo: `on-frontmatter-write.js` y `on-pre-commit.js`. Un run

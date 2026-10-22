@@ -62,7 +62,9 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js risk-class
 Presentar al usuario:
 1. El plan generado por BMAD en Step 2
 2. La lista de archivos que va a modificar/crear
-3. Pregunta explícita: "¿Apruebo el plan para proceder con la implementación?"
+3. Pregunta explícita. Aprobar un plan es una decisión importante (fija el diseño de la story), así que lleva su forma:
+   «Recomiendo aprobarlo: {por qué}. {El contexto: qué hace el plan y qué deja afuera.} {Si hay caminos alternativos,
+   cada uno con lo que gana y lo que cuesta.} ¿Apruebo el plan para proceder con la implementación?»
 
 Usar la tool `AskUserQuestion` si está disponible, o simplemente pedir respuesta en texto.
 
