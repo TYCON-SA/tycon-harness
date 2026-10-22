@@ -48,7 +48,7 @@ la fila aplica.
 | Crear/reescribir un artefacto de planning (UX spec, navigation map, architecture, PRD) sobre dominio ya cubierto por un artefacto aprobado | `guides/workflow-orchestration.md` §12 — frontmatter `reconciles:`/`supersedes_in:` OBLIGATORIO; sin eso no pasa de `draft` (caso UX spec V7 que ignoró el catálogo firmado) |
 | Story que crea/modifica layout o navegación de pantalla | `guides/workflow-orchestration.md` §11 — validar contra el artefacto de IA antes de `done` (enforced por `WIRING-C5` desde 2026-06-10) |
 | Pipeline de agentes, invocar advisors, integración BMAD | `guides/agent-architecture.md` |
-| Entender qué hace el pase adversarial del pipeline (paso 5b), leer las pruebas con las que confirmó un hallazgo, o promoverlas a la suite (`marker.js promote-probe`) | `skills/tycon-pipeline/steps/step-05b-adversarial-verify.md` |
+| Entender qué hace el pase adversarial del pipeline (paso 5b), leer las pruebas con las que confirmó un hallazgo, o promoverlas a la suite (`marker.js promote-probe`) | `skills/tycon-pipeline/steps/step-08-adversarial-pass.md` |
 | Entender por qué un advisor reportó X, agregar/retirar reglas | `guides/advisor-rules-catalog.md` |
 | Armar un paquete de revisores propio para el stack de tu organización: qué archivos lleva, cuándo corre un revisor, cómo se activa y cómo se examina (con un ejemplo para Svelte y FastAPI) | `guides/reviewer-packs.md` (en inglés, `guides/reviewer-packs.en.md`) + `examples/packs/svelte-fastapi/` |
 | Cerrar una story (transición a `review`/`done`) — protocolo ACCOV-C7..C10 | `guides/accov-governance-protocol.md` |

@@ -52,7 +52,7 @@ Step 6 en la máquina de estados, decide qué hacer según `marker.adversarial` 
   `TYCON_NO_DEEP_REVIEW=1 marker.js mark-adversarial-skipped --files …` (queda en `bypass.log` como
   `ADVERSARIAL_ABANDONADO`, con el runId).
 
-La bandera que lee `pipeline.js next` no se escribe a mano, y `complete-step 8` **frena** si el pase
+La bandera que lee `pipeline.js next` no se escribe a mano, y `complete-step prepare-commit` **frena** si el pase
 se lanzó y su resultado no está (freno `adversarial-result-gate`; `DOD_BYPASS` no lo abre). Medido antes
 de cablearlo: 4 de 9 corridas que lanzaron el pase lo cerraron con la bandera y sin
 anotar qué encontró, y 3 de esas 4 pasaron el paso 8 igual. Anotar el resultado sin haber procesado la
@@ -176,7 +176,7 @@ su tope, un pase que no revisó nada salió «6 lentes limpias». Ahora:
 - Un hallazgo cuyo verificador no contestó queda **`sin-veredicto`** en `detalle`, con su texto entero. Nunca es
   refutado ni limpio.
 - Con alguno de los dos, el pase sale **`medido: false`** y su `aviso` lo dice. **No medido no es verde**:
-  `mark-adversarial-result` lo anota `no-medido` y no cierra el 5b, `complete-step 8` frena (`pase-no-medido`, y
+  `mark-adversarial-result` lo anota `no-medido` y no cierra el 5b, `complete-step prepare-commit` frena (`pase-no-medido`, y
   `DOD_BYPASS` no lo abre), `deep-review-gate` dice que corre (el salteo se niega) y `next` pide relanzarlo.
 - Para destrabar: relanzar (`mark-adversarial-launched <runId nuevo> 5b --relaunch`) y anotar el resultado nuevo con
   `--result`. Abandonarlo sigue siendo una decisión del dev con el interruptor (`TYCON_NO_DEEP_REVIEW=1`, queda en
@@ -321,7 +321,7 @@ rojo: el fix del re-loop la pone en verde. Así el resultado se anota en el join
 
 **Después, anotar el resultado** — una línea en `gates.log` con el número de confirmados,
 de la que sale el veredicto (`listo` con 0, `no-listo` con más). Anotarlo **cierra el 5b** y
-es lo que `complete-step 8` busca. Con confirmados, el comando **se niega** si no se declara el destino de
+es lo que `complete-step prepare-commit` busca. Con confirmados, el comando **se niega** si no se declara el destino de
 cada uno: `--tests k` tiene que coincidir con lo promovido para el lanzamiento vigente (tras un
 relanzamiento, las del pase anterior no cuentan), `--own p` va con
 `--in` (las rutas), `k + p + d = N`, y todo diferido lleva `--reason`:

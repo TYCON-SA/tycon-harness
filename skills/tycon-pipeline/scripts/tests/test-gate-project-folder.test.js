@@ -236,6 +236,6 @@ test('T8 CoverageReviewer_NoStack_W11NotC1 @story-7.45 @ac-8 @ac-9 — el reviso
   assert.match(fila('TEST-C1'), /no_stack.*TEST-W11/, 'TEST-C1 deja `no_stack` a TEST-W11');
   const catalogo = fs.readFileSync(path.join(RAIZ_ARNES, 'guides', 'advisor-rules-catalog.md'), 'utf8');
   assert.match(catalogo, /\| \*\*TEST-W11\*\* \|/);
-  const paso8 = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-08-commit-prep.md'), 'utf8');
+  const paso8 = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-11-prepare-commit.md'), 'utf8');
   assert.match(paso8, /pruebas no medidas: el portón no sabe correr/);
 });

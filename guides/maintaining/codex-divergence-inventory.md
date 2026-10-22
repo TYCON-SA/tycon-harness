@@ -140,13 +140,13 @@ sobre un fixture con secreto hardcodeado (~29K tokens la corrida).
 
 | Paso | Qué usa | Cat. | Cómo se resuelve |
 |---|---|---|---|
-| `step-00-preflight` | `Workflow` | ③ | Sale afuera: el orquestador Node ya existe |
-| `step-01-validate-story` | `subagent_type` | ② | Codex tiene subagentes propios; cambia cómo se los nombra |
-| `step-02-invoke-bmad` | plan mode | ③ | **Sin equivalente.** Nivelar hacia abajo: plan escrito + confirmación explícita |
-| `step-03-hitl-plan` | **`AskUserQuestion`** | ③ | Nivelar hacia abajo: pregunta numerada en texto con opción por defecto |
-| `step-04-execute` | `Workflow` + `subagent_type` | ③/② | Sale afuera |
-| `step-05-advisors-parallel` | `subagent_type` | ② | Codex paraleliza, pero **solo si se lo piden explícito** → el paso tiene que decirlo con todas las letras |
-| `step-05b-adversarial-verify` | `Workflow` | ③ | Sale afuera — el caso más caro |
+| `step-01-start` | `Workflow` | ③ | Sale afuera: el orquestador Node ya existe |
+| `step-02-validate-story` | `subagent_type` | ② | Codex tiene subagentes propios; cambia cómo se los nombra |
+| `step-03-plan` | plan mode | ③ | **Sin equivalente.** Nivelar hacia abajo: plan escrito + confirmación explícita |
+| `step-04-approve-plan` | **`AskUserQuestion`** | ③ | Nivelar hacia abajo: pregunta numerada en texto con opción por defecto |
+| `step-05-implement` | `Workflow` + `subagent_type` | ③/② | Sale afuera |
+| `step-07-reviewers` | `subagent_type` | ② | Codex paraleliza, pero **solo si se lo piden explícito** → el paso tiene que decirlo con todas las letras |
+| `step-08-adversarial-pass` | `Workflow` | ③ | Sale afuera — el caso más caro |
 | `step-00b`, `00c`, `06`, `07`, `07b`, `07c`, `08`, `09` | nada específico | ① | Portan directo |
 
 **9 de 16 pasos no usan nada específico de Claude.** El riesgo está concentrado en 4.

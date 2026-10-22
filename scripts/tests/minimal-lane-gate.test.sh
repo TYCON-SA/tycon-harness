@@ -69,8 +69,8 @@ grep -q '"ready": true' <<<"$S1" || mal "pipeline.js start no abrió el recorrid
 editar s874c "$R/src/formato.js"
 if negado && grep -q 'Aprobar el plan' <<<"$OUT"; then ok "con el recorrido abierto y sin plan aprobado, se niega por el plan"
 else mal "sin plan aprobado no se negó por el plan: rc=$RC $(head -c 300 <<<"$OUT")"; fi
-( cd "$R" && for n in 1 2; do HOME="$H" CLAUDE_CODE_SESSION_ID=s874c node "$SKILL/marker.js" complete-step $n || exit 1; done
-  HOME="$H" CLAUDE_CODE_SESSION_ID=s874c node "$SKILL/marker.js" complete-step 3 --approved "dale, implementala" --approved-by prueba@ejemplo.invalid ) >"$T/pasos.out" 2>&1 \
+( cd "$R" && for n in validate-story plan; do HOME="$H" CLAUDE_CODE_SESSION_ID=s874c node "$SKILL/marker.js" complete-step $n || exit 1; done
+  HOME="$H" CLAUDE_CODE_SESSION_ID=s874c node "$SKILL/marker.js" complete-step approve-plan --approved "dale, implementala" --approved-by prueba@ejemplo.invalid ) >"$T/pasos.out" 2>&1 \
   || mal "no se pudieron cerrar los pasos 1 a 3: $(tail -c 300 "$T/pasos.out")"
 editar s874c "$R/test/formato.test.js"
 pasa && ok "con el plan aprobado, la edición pasa" || mal "con el plan aprobado, la prueba no se pudo escribir: rc=$RC $(head -c 300 <<<"$OUT")"

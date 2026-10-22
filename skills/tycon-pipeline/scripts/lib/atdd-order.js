@@ -181,7 +181,7 @@ function computeAtddOrder(fileEvents, repoPath) {
 /** Texto del bloqueo, en el idioma del harness: qué pasó, por qué frena, y qué hacer. */
 function atddBlockMessage(r) {
   return [
-    'marker.js complete-step 4 BLOQUEADO — el código se escribió ANTES que los tests (sub-paso 4.0, ATDD).',
+    'marker.js complete-step implement BLOQUEADO — el código se escribió ANTES que los tests (ATDD).',
     '',
     `  Primer archivo de CÓDIGO: ${r.firstImpl}  (${r.firstImplTs})`,
     `  Primer archivo de TEST:   ${r.firstTest}  (${r.firstTestTs})`,
@@ -195,7 +195,7 @@ function atddBlockMessage(r) {
     '   (a) Escribir el/los test(s) que faltan AHORA y verificar que fallan contra el código actual',
     '       (o, si ya pasan, que fallan al romper la pieza a propósito). Después reintentar.',
     '   (b) Si el orden fue legítimo y podés justificarlo, saltealo explícitamente:',
-    '         marker.js complete-step 4 --no-atdd',
+    '         marker.js complete-step implement --no-atdd',
     '       Queda registrado en bypass.log con el detalle — no es un skip silencioso.',
   ].join('\n');
 }

@@ -475,7 +475,7 @@ test('8.54 T20 ClonDeSkillsAparte · el árbol del arnés sale del estado de la 
 // ─── lo que se lee ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 test('8.54 T15 Paso8_DiceQueHacer · el paso «preparar el commit» dice qué hacer con la oferta', () => {
-  const t = fs.readFileSync(path.join(RAIZ, 'skills', 'tycon-pipeline', 'steps', 'step-08-commit-prep.md'), 'utf8');
+  const t = fs.readFileSync(path.join(RAIZ, 'skills', 'tycon-pipeline', 'steps', 'step-11-prepare-commit.md'), 'utf8');
   const sec = t.slice(t.indexOf('instalación completa'));
   assert.ok(t.includes('instalación completa'), 'el paso no nombra la oferta');
   assert.match(sec, /offer accept/);

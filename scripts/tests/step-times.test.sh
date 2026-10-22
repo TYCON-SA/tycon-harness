@@ -170,5 +170,42 @@ EOF
 r=$(calc "$ST6h" "$(H 10:00)" 't.estimados.join(",")')
 [ "$r" = "1" ] && ok "T6h un arranque de antes del inicio (heredado) se descarta" || no "T6h: $r"
 
+# ── T15 Metrics_EquivalenceWithoutSplitting @story-7.23 @ac-13 — esquema nuevo y viejo con la misma cuenta ────────────
+# Nuevo: los pasos por nombre, Implementar y Correr las pruebas partidos, y la espera de Hallazgos sólo desde que
+# preguntó (waitStartedAt). Viejo: el 4 en una sola fila «Implementar + pruebas», sin repartir.
+ST15N=$(cat <<EOF
+{"start":{"startedAt":"$(H 10:00)","completedAt":"$(H 10:01)"},
+ "validate-story":{"startedAt":"$(H 10:01)","completedAt":"$(H 10:06)"},
+ "plan":{"startedAt":"$(H 10:06)","completedAt":"$(H 10:10)"},
+ "approve-plan":{"startedAt":"$(H 10:10)","completedAt":"$(H 10:30)"},
+ "implement":{"startedAt":"$(H 10:30)","completedAt":"$(H 11:00)"},
+ "run-tests":{"startedAt":"$(H 11:00)","completedAt":"$(H 11:10)"},
+ "reviewers":{"startedAt":"$(H 11:10)","completedAt":"$(H 11:20)"},
+ "findings":{"startedAt":"$(H 11:20)","waitStartedAt":"$(H 11:25)","completedAt":"$(H 11:45)"}}
+EOF
+)
+r=$(calc "$ST15N" "$(H 10:00)" 't.esquema + "|" + t.espera_humana_ms + "|" + t.estado')
+[ "$r" = "2|$((40*M))|medida" ] && ok "T15 esquema 2: espera = Aprobar el plan (20) + Hallazgos desde que preguntó (20)" || no "T15 nuevo: $r"
+r=$(calc "$ST15N" "$(H 10:00)" 't.pasos.filter((p) => !p.subpaso).map((p) => p.nombre).join("|")')
+[ "$r" = "Arranque|Validar la historia|Armar el plan|Aprobar el plan|Implementar|Correr las pruebas|Revisores|Hallazgos" ] && ok "T15 esquema 2: cada paso con su nombre, implementar y pruebas partidos" || no "T15 nombres nuevos: $r"
+r=$(calc "$ST15N" "$(H 10:00)" 't.trabajo_ms')
+[ "$r" = "$((65*M))" ] && ok "T15 esquema 2: los 5 min de Hallazgos antes de preguntar son trabajo" || no "T15 trabajo nuevo: $r"
+ST15S=$(cat <<EOF
+{"approve-plan":{"startedAt":"$(H 10:00)","completedAt":"$(H 10:10)"},
+ "findings":{"startedAt":"$(H 10:10)","completedAt":"$(H 10:20)"}}
+EOF
+)
+r=$(calc "$ST15S" "$(H 10:00)" 't.espera_humana_ms + "|" + t.trabajo_ms')
+[ "$r" = "$((10*M))|$((10*M))" ] && ok "T15 Hallazgos sin pregunta no es espera" || no "T15 sin pregunta: $r"
+ST15V=$(cat <<EOF
+{"3":{"startedAt":"$(H 10:00)","completedAt":"$(H 10:10)"},
+ "4":{"startedAt":"$(H 10:10)","completedAt":"$(H 11:00)"},
+ "6":{"startedAt":"$(H 11:00)","completedAt":"$(H 11:05)"},
+ "7":{"startedAt":"$(H 11:05)","completedAt":"$(H 11:15)"}}
+EOF
+)
+r=$(calc "$ST15V" "$(H 10:00)" 't.esquema + "|" + t.pasos.map((p) => p.nombre).join("|") + "|" + t.espera_humana_ms')
+[ "$r" = "1|Aprobar el plan|Implementar + pruebas|Hallazgos|Hallazgos|$((20*M))" ] && ok "T15 esquema 1: el 4 viejo en una fila, los nombres nuevos, la espera de antes (3 y 7)" || no "T15 viejo: $r"
+
 echo "tiempos: $pasaron bien · $fallos mal"
 [ "$fallos" -eq 0 ]

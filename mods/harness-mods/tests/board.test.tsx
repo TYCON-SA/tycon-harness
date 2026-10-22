@@ -52,7 +52,7 @@ test('el cartel se dibuja con la ejecución de la sesión y sin dinero', async (
   await start($)
   const ui = await mount($)
   expect(await ui.find({ type: 'Text', text: /Story 9\.9/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Implementar y correr las pruebas/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Implementar/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /paso 4/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /contexto usado 21 %/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /USD|\$/ })).toBeUndefined()
@@ -121,7 +121,7 @@ test('el cartel trae el título corto de la story desde su spec, y el completo a
   const ui = await mount($)
   expect(await ui.find({ type: 'Text', text: /El video de 0 a 100…/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /del arnés instalado al primer código/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Implementar y correr las pruebas/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Implementar/ })).toBeDefined()
 })
 
 test('sin la spec, el cartel sigue con el número solo', async ($, on) => {

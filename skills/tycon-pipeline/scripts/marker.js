@@ -98,6 +98,7 @@
  *                                                  --tests k --deferred d --reason "…" (k+d=N,
  *                                                  k = lo promovido acá, no lo declarado).
  *   marker.js set-flag <flag> <true|false>       → flags de sub-steps no-enteros
+ *   marker.js start-warning <time-tracking|ado> "<mensaje>" → una parte del Arranque que falló (queda a la vista)
  *                                                  (workSignalStarted | adoMarkedActive) para que
  *                                                  resume/`pipeline.js next` no re-ejecute 0b/0c.
  *                                                  `deepReviewDone` NO: el 5b lo cierran
@@ -134,6 +135,8 @@ const path = require('path');
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const { resolveSessionId } = require('./lib/session-id.js');
+// la tabla de los pasos: nombres, orden, equivalencia con el marcador viejo
+const STEPS_LIB = require('./lib/steps.js');
 // la carpeta de Claude Code (la de sus archivos de sesión) la sabe state-dir.js, con el mismo respaldo
 const { claudeDir: claudeDirOf } = require('./lib/state-dir.js');
 
@@ -317,6 +320,11 @@ function cmdSet(payloadJson) {
     console.error('marker.js set: payload.storyId requerido');
     process.exit(2);
   }
+  // Pasos por nombre sin `stepScheme` (un `set` a mano para retomar): es el esquema 2.
+  if (payload.stepScheme === undefined) {
+    const items = [payload.stepsCompleted, payload.stepsPending].filter(Array.isArray).flat().map(String);
+    if (items.length && items.every((x) => STEPS_LIB.byId(x))) payload.stepScheme = STEPS_LIB.SCHEME;
+  }
   // La aprobación de la maqueta la escriben sólo `complete-step 3` y `approve-mockup`.
   for (const k of ['mockupApproval', 'mockupDecision']) {
     if (payload[k] !== undefined) console.error(`marker.js set: «${k}» no se acepta en el payload (lo escriben sólo complete-step 3 y approve-mockup): descartado.`);
@@ -335,6 +343,8 @@ function cmdSet(payloadJson) {
       adversarial, deepReviewDone, workSignalStarted, clockiStarted, adoMarkedActive, atddBypass,
       checks, checksProvenance, dodRuntimeChecked, iterations, fileEvents, filesTouched, filesTouchedAt,
       stepsCompleted, stepsPending, startedAt, evidenceDir, baseSha,
+      // el esquema de los pasos y los avisos del Arranque son de la corrida
+      stepScheme, startWarnings,
       // Los arranques y fines de paso son de la corrida. Heredarlos le daría a la story
       // nueva arranques de la vieja, y `anotarArranque` se niega a pisar uno existente.
       stepTimings,
@@ -362,8 +372,8 @@ function cmdSet(payloadJson) {
   // tras una compactación): NO reabrir steps ya completados. Sin esto, `start` pisaría stepsPending con
   // [0..8] y el portón de plan volvería a cerrar en medio del Step 4, obligando a re-aprobar el plan.
   if (existing && payload.storyId === existing.storyId && Array.isArray(payload.stepsPending)) {
-    const done = new Set((existing.stepsCompleted || []).map(Number));
-    payload.stepsPending = payload.stepsPending.filter((n) => !done.has(Number(n)));
+    const done = new Set((existing.stepsCompleted || []).map(String));
+    payload.stepsPending = payload.stepsPending.filter((n) => !done.has(String(n)));
   }
   // Marker NUEVO que arranca sin el Step 3 (plan aprobado) pendiente ni completado = un pipeline
   // "manual" que se saltea el HITL del plan. No se bloquea (adopt/resume legítimos pasan por acá),
@@ -372,18 +382,22 @@ function cmdSet(payloadJson) {
   // OTRA story) que arranca sin 3 pendiente ni completado, y un set de la MISMA story que OMITE el 3 que
   // estaba pendiente. Ninguna se bloquea (adopt/resume legítimos), pero las dos quedan en bypass.log.
   if (Array.isArray(payload.stepsPending)) {
-    const pend = payload.stepsPending.map(Number);
-    const done = (payload.stepsCompleted || []).map(Number);
+    // el plan aprobado es `approve-plan` en un marcador nuevo y el 3 en uno viejo: lo dice lib/steps.js
+    const scheme = payload.stepScheme !== undefined ? payload.stepScheme : (existingBefore && existingBefore.storyId === payload.storyId ? existingBefore.stepScheme : undefined);
+    const conPlan = (pend, done) => {
+      const m = { stepScheme: scheme, stepsPending: pend || [], stepsCompleted: done || [] };
+      return STEPS_LIB.isPending(m, 'approve-plan') || STEPS_LIB.isDone(m, 'approve-plan');
+    };
     const sameStory = existingBefore && existingBefore.storyId === payload.storyId;
-    const freshWithoutPlan = !sameStory && !pend.includes(3) && !done.includes(3);
-    const dropsPlan = sameStory && (existingBefore.stepsPending || []).map(Number).includes(3)
-      && !pend.includes(3) && !(existingBefore.stepsCompleted || []).map(Number).includes(3) && !done.includes(3);
+    const freshWithoutPlan = !sameStory && !conPlan(payload.stepsPending, payload.stepsCompleted);
+    const dropsPlan = sameStory && STEPS_LIB.isPending(existingBefore, 'approve-plan')
+      && !conPlan(payload.stepsPending, payload.stepsCompleted);
     if (freshWithoutPlan || dropsPlan) {
       appendLog('bypass.log', { kind: dropsPlan ? 'MARKER_DROPS_PLAN' : 'MARKER_SKIPS_PLAN', storyId: payload.storyId, stepsPending: payload.stepsPending, cwd: process.cwd() });
-      console.error(`⚠️  marker.js set: el marker queda SIN el Step 3 (plan aprobado) ${dropsPlan ? 'que estaba pendiente' : 'desde el arranque'} — el portón de carril`);
+      console.error(`⚠️  marker.js set: el marker queda SIN el Step 3 («Aprobar el plan») ${dropsPlan ? 'que estaba pendiente' : 'desde el arranque'} — el portón de carril`);
       console.error(`    no va a exigir aprobación del plan en esta sesión. Queda en bypass.log (${dropsPlan ? 'MARKER_DROPS_PLAN' : 'MARKER_SKIPS_PLAN'}).`);
-      console.error('    Pipeline real → `pipeline.js start` (deja 1..8 pendientes). Retomando una corrida que YA aprobó el plan →');
-      console.error('    pasá `stepsCompleted` con los steps hechos (incluido 3) en el mismo set: así no avisa.');
+      console.error('    Pipeline real → `pipeline.js start` (deja pendientes los pasos que siguen al Arranque). Retomando una ejecución que YA aprobó');
+      console.error('    el plan → pasá `stepsCompleted` con los pasos hechos (incluido approve-plan) en el mismo set: así no avisa.');
     }
   }
   const marker = {
@@ -422,6 +436,8 @@ function cmdSet(payloadJson) {
     sessionId: SID,
     startedAt: existing?.startedAt || nowIso(),
     lastTouch: nowIso(),
+    // el esquema lo trae `pipeline.js start` (2: pasos por nombre); un marcador viejo sigue sin él hasta terminar
+    ...(payload.stepScheme !== undefined ? { stepScheme: payload.stepScheme } : {}),
     stepsCompleted: payload.stepsCompleted || existing?.stepsCompleted || [],
     stepsPending: payload.stepsPending || existing?.stepsPending || [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
     filesTouched: payload.filesTouched || existing?.filesTouched || [],
@@ -449,10 +465,17 @@ function cmdSet(payloadJson) {
       return out;
     })(),
   };
+  // Un marcador que no es de ningún esquema (números y nombres mezclados, o un paso que la tabla no conoce) no se
+  // escribe: los portones no sabrían si el plan está aprobado.
+  if (STEPS_LIB.schemeOf(marker) === null) {
+    console.error('marker.js set: el marcador quedaría sin esquema de pasos legible (números y nombres mezclados, o un paso que lib/steps.js no conoce): no se escribe.');
+    console.error(`  stepsCompleted=${JSON.stringify(marker.stepsCompleted)} stepsPending=${JSON.stringify(marker.stepsPending)}${marker.stepScheme !== undefined ? ` stepScheme=${marker.stepScheme}` : ''}`);
+    process.exit(2);
+  }
   // El paso 0 arranca cuando nace la corrida. Nadie lo pide con `next` (start lo cierra
   // enseguida); sin esto el paso 0 sale siempre «estimado» y toda corrida real «parcial».
-  if ((marker.stepsPending || []).map(Number).includes(0) && !(marker.stepsCompleted || []).map(Number).includes(0)) {
-    const conArranque = anotarArranque(marker, '0', marker.startedAt);
+  if (STEPS_LIB.isPending(marker, 'start')) {
+    const conArranque = anotarArranque(marker, STEPS_LIB.schemeOf(marker) === 2 ? 'start' : '0', marker.startedAt);
     if (conArranque) marker.stepTimings = conArranque.stepTimings;
   }
   writeMarker(marker);
@@ -487,7 +510,7 @@ function cmdSnapshotIter(nRaw, flags) {
   marker.iterations = marker.iterations || {};
   // Los probes transitorios del pase adversarial NO entran a la foto: son archivos `__probe*`/`_probe_*`
   // que nadie escribió y se borran solos. Contaminan el insumo del re-loop y hacen parecer sano un
-  // registro ciego. Convención de nombres: steps/step-05b-adversarial-verify.md.
+  // registro ciego. Convención de nombres: steps/step-08-adversarial-pass.md.
   const honesty = require('./lib/ledger-honesty.js');
   const todos = [...(marker.filesTouched || [])];
   const foto = honesty.sinProbes(todos);
@@ -666,17 +689,17 @@ function mensajeDelPaseAdversarial(v) {
   const cmdSalteo = 'node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-skipped --files <archivos de código del diff>';
   const e = (s) => console.error(s);
   if (v.motivo === 'registro-ilegible') {
-    e(`marker.js complete-step 8 BLOQUEADO — no pude leer el registro de pases adversariales: el campo \`${v.campo}\` del marker no es una lista.`);
+    e(`marker.js complete-step prepare-commit BLOQUEADO — no pude leer el registro de pases adversariales: el campo \`${v.campo}\` del marker no es una lista.`);
     e('  «No lo pude leer» no es «está». Revisá el marker (marker.js get): ese campo lo escriben sólo los comandos del pase.');
     return;
   }
   if (v.motivo === 'lanzamiento-sin-fecha') {
-    e(`marker.js complete-step 8 BLOQUEADO — el lanzamiento del pase adversarial no tiene fecha legible (\`${v.campo}\` = ${JSON.stringify(v.launchedAt)}).`);
+    e(`marker.js complete-step prepare-commit BLOQUEADO — el lanzamiento del pase adversarial no tiene fecha legible (\`${v.campo}\` = ${JSON.stringify(v.launchedAt)}).`);
     e('  Sin esa fecha no se puede saber si el resultado anotado es de este lanzamiento. Lo escribe mark-adversarial-launched.');
     return;
   }
   if (v.motivo === 'no-atendido') {
-    e('marker.js complete-step 8 BLOQUEADO — el 5b no está atendido: ni lanzado ni salteado por el portón.');
+    e('marker.js complete-step prepare-commit BLOQUEADO — el 5b no está atendido: ni lanzado ni salteado por el portón (el pase adversarial).');
     e('  (la bandera deepReviewDone sola no cuenta: es la que se escribía suelta y dejaba el pase sin constancia)');
     e('  Si el pase corrió, anotá su resultado:');
     e(`    ${cmdResultado}`);
@@ -689,7 +712,7 @@ function mensajeDelPaseAdversarial(v) {
     // El pase corrió pero no revisó todo. Es un pase que falta, no uno «sin hallazgos».
     const { SALIDA_APROBADA } = require('./lib/adversarial-verdict.js');
     const p = v.pase || {};
-    e(`marker.js complete-step 8 BLOQUEADO — el pase adversarial (${cuando}) quedó NO MEDIDO: ${p.motivo_no_medido || 'no revisó todo'}.`);
+    e(`marker.js complete-step prepare-commit BLOQUEADO — el pase adversarial (${cuando}) quedó NO MEDIDO: ${p.motivo_no_medido || 'no revisó todo'}.`);
     if (p.resultado) e(`  El resultado, con el texto de cada hallazgo: ${p.resultado}`);
     e('  Un pase que no revisó todo es un pase que falta. Relanzalo y anotá el resultado nuevo:');
     e('    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-launched <runId nuevo> 5b --relaunch');
@@ -699,9 +722,9 @@ function mensajeDelPaseAdversarial(v) {
     return;
   }
   if (v.motivo === 'resultado-de-otro-lanzamiento') {
-    e(`marker.js complete-step 8 BLOQUEADO — el pase adversarial se relanzó (${cuando}) y el resultado anotado es del lanzamiento anterior.`);
+    e(`marker.js complete-step prepare-commit BLOQUEADO — el pase adversarial se relanzó (${cuando}) y el resultado anotado es del lanzamiento anterior.`);
   } else {
-    e(`marker.js complete-step 8 BLOQUEADO — el pase adversarial se lanzó (${cuando}) y su resultado no está anotado.`);
+    e(`marker.js complete-step prepare-commit BLOQUEADO — el pase adversarial se lanzó (${cuando}) y su resultado no está anotado.`);
   }
   e('  Cada confirmado va a la suite (prueba promovida o prueba propia) o se difiere con motivo:');
   e(`    ${cmdResultado}`);
@@ -791,27 +814,49 @@ function quienDeLasOpciones(optVal, extra) {
   });
 }
 
+// Los controles que corren al cerrar cada paso. En un marcador nuevo, por nombre; en uno viejo, por su número de
+// entonces (el 4 viejo cerraba implementar y correr las pruebas juntos; el 7, la decisión de los hallazgos).
+const CONTROLES_DEL_PASO = {
+  'approve-plan': ['plan'], implement: ['atdd'], 'run-tests': ['tests'], reviewers: ['advisors'],
+  findings: ['waivers', 'findings-close'], 'prepare-commit': ['waivers', 'commit'],
+  3: ['plan'], 4: ['atdd', 'tests'], 5: ['advisors'], 7: ['waivers', 'findings-close'], 8: ['waivers', 'commit'],
+};
+// El orden del marcador viejo (cadena: 3 ← {1,2} · 4 ← {3} · 5 ← {4} · 8 ← {5}); el nuevo es STEPS_LIB.ORDER_REQUIRES.
+const ORDER_REQUIRES_OLD = { 3: ['1', '2'], 4: ['3'], 5: ['4'], 8: ['5'] };
+
 function cmdCompleteStep(nRaw, flags) {
-  const n = parseInt(nRaw, 10);
-  if (Number.isNaN(n)) {
-    console.error('marker.js complete-step: N debe ser entero');
-    process.exit(2);
-  }
   const marker = readMarker();
   if (!marker) {
     console.error('marker.js complete-step: no hay marker activo para esta sesión');
     process.exit(1);
   }
+  // El paso por su nombre de máquina. Con el marcador nuevo un número se niega: con la numeración nueva el mismo
+  // número es otro paso, y cerrarlo en silencio sería cerrar el equivocado.
+  const resuelto = STEPS_LIB.resolveStepArg(marker, nRaw);
+  if (!resuelto.ok) {
+    appendLog('gates.log', { name: 'step-arg', status: 'blocked', story: marker.storyId, arg: String(nRaw) });
+    console.error(`marker.js complete-step: ${resuelto.message}`);
+    process.exit(2);
+  }
+  const ids = resuelto.ids;
+  const nuevo = resuelto.scheme === 2;
+  // el paso como lo tipeó el agente, para los mensajes; `paso` es la clave del marcador (la última, si son dos)
+  const n = String(nRaw);
+  const paso = ids[ids.length - 1];
+  const controles = new Set(ids.flatMap((id) => CONTROLES_DEL_PASO[id] || []));
   const opts = Array.isArray(flags) ? flags : [];
   const optVal = (name) => { const i = opts.indexOf(name); return i >= 0 ? (opts[i + 1] ?? '') : null; };
 
-  // ── ORDEN — no se cierra un step con su predecesor GATEADO todavía pendiente ────────
+  // El aviso de una parte del Arranque que falló sale en el resumen del cierre: queda a la vista hasta el final.
+  if (controles.has('commit')) for (const l of STEPS_LIB.startWarningLines(marker)) console.error(`⚠️  ${l}`);
+
+  // ── ORDEN — no se cierra un paso con su predecesor GATEADO todavía pendiente ────────
   // Frena el patrón "empieza el pipeline, toma confianza y se saltea etapas".
-  // Sólo se exige contra los steps que tienen gate real: exigir "todo k<N" volvería rutina el --out-of-order. Cadena: 3 ← {1,2} · 4 ← {3} · 5 ← {4} · 8 ← {5}.
+  // Sólo se exige contra los pasos que tienen control real: exigir «todo lo anterior» volvería rutina el --out-of-order.
   // Se mira stepsPending (no stepsCompleted): un marker manual/adoptado con pending parcial no traba.
-  const ORDER_REQUIRES = { 3: [1, 2], 4: [3], 5: [4], 8: [5] };
-  const pendingNow = (marker.stepsPending || []).map(Number);
-  const missing = (ORDER_REQUIRES[n] || []).filter((k) => pendingNow.includes(k));
+  const pendingNow = (marker.stepsPending || []).map(String);
+  const requeridos = nuevo ? (STEPS_LIB.ORDER_REQUIRES[paso] || []) : ids.flatMap((id) => ORDER_REQUIRES_OLD[id] || []);
+  const missing = requeridos.filter((k) => pendingNow.includes(k));
   if (missing.length) {
     if (opts.includes('--out-of-order')) {
       appendLog('bypass.log', { kind: 'STEP_OUT_OF_ORDER', storyId: marker.storyId, step: n, pendingBefore: missing });
@@ -830,14 +875,14 @@ function cmdCompleteStep(nRaw, flags) {
   // con risk-class, no se declara). Sin esto, cerrar el 3 sería un comando vacío y el
   // portón de carril (código antes del plan) se abría sin que nadie hubiera aprobado nada.
   let planParaMostrar = null;
-  if (n === 3) {
+  if (controles.has('plan')) {
     const approved = optVal('--approved');
     const auto = optVal('--auto-approved');
     if (!approved && !auto) {
-      console.error('marker.js complete-step 3 BLOQUEADO — falta la aprobación del plan.');
-      console.error('  HITL:     marker.js complete-step 3 --approved "<cita textual de la aprobación del user>"');
-      console.error('  Nivel 2:  marker.js complete-step 3 --auto-approved "<criterios LOW-risk>"  (sólo si risk-class = LOW)');
-      console.error('  No se cierra el Step 3 sin decir QUIÉN aprobó. Ver steps/step-03-hitl-plan.md.');
+      console.error(`marker.js complete-step ${n} BLOQUEADO — falta la aprobación del plan.`);
+      console.error(`  HITL:     marker.js complete-step ${n} --approved "<cita textual de la aprobación del user>"`);
+      console.error(`  Nivel 2:  marker.js complete-step ${n} --auto-approved "<criterios LOW-risk>"  (sólo si risk-class = LOW)`);
+      console.error(`  No se aprueba el plan sin decir QUIÉN aprobó. Ver steps/${STEPS_LIB.byId('approve-plan').file}.`);
       process.exit(1);
     }
     // ── En una story con pantalla, la maqueta y su aprobación (también con LOW) ──
@@ -847,7 +892,7 @@ function cmdCompleteStep(nRaw, flags) {
     const mk = require('./mockup.js');
     const bloquear3 = (motivo, extra = []) => {
       appendLog('gates.log', { name: 'mockup-approval', status: 'blocked', story: marker.storyId, motivo });
-      console.error(`marker.js complete-step 3 BLOQUEADO — ${motivo}`);
+      console.error(`marker.js complete-step ${n} BLOQUEADO — ${motivo}`);
       for (const l of extra) console.error(`  ${l}`);
       process.exit(1);
     };
@@ -864,7 +909,7 @@ function cmdCompleteStep(nRaw, flags) {
       try { html = fs.readFileSync(p.mockup, 'utf8'); } catch (_e) {
         bloquear3(`story con pantalla: falta su maqueta (${p.mockup}).`, [
           `Armala: node ${path.join(__dirname, 'mockup.js')} render --data <modelo.json> --story ${sc.story}   (la forma: mockup.js schema)`,
-          'Mostrásela al dueño con el plan (la ruta y la lista de mockup.js texts) y cerrá con --mockup-approved "<cita>". Ver steps/step-03-hitl-plan.md.',
+          'Mostrásela al dueño con el plan (la ruta y la lista de mockup.js texts) y cerrá con --mockup-approved "<cita>". Ver steps/step-04-approve-plan.md.',
         ]);
       }
       const v = mk.validateMockupHtml(html);
@@ -886,9 +931,9 @@ function cmdCompleteStep(nRaw, flags) {
       } catch (e) { rc = { risk: 'NORMAL', error: e.message }; }
       if (!rc || rc.risk !== 'LOW') {
         appendLog('gates.log', { name: 'plan-auto-approve', status: 'blocked', story: marker.storyId, risk: rc && rc.risk, error: rc && rc.error });
-        console.error(`marker.js complete-step 3 BLOQUEADO — --auto-approved pero risk-class = ${(rc && rc.risk) || '?'}${rc && rc.error ? ` (${rc.error})` : ''}.`);
+        console.error(`marker.js complete-step ${n} BLOQUEADO — --auto-approved pero risk-class = ${(rc && rc.risk) || '?'}${rc && rc.error ? ` (${rc.error})` : ''}.`);
         console.error('  La auto-aprobación Nivel 2 es SOLO para stories LOW-risk. Esta necesita aprobación del user:');
-        console.error('    marker.js complete-step 3 --approved "<cita textual>"');
+        console.error(`    marker.js complete-step ${n} --approved "<cita textual>"`);
         process.exit(1);
       }
       // Aprobado solo no es aprobado a escondidas: el plan tiene que estar escrito y la persona lo tiene que haber visto
@@ -897,7 +942,7 @@ function cmdCompleteStep(nRaw, flags) {
       const plan = planDeLaCorrida(marker);
       if (plan.error) {
         appendLog('gates.log', { name: 'plan-auto-approve', status: 'blocked', story: marker.storyId, motivo: 'sin carpeta de corrida' });
-        console.error(`marker.js complete-step 3 BLOQUEADO — el plan se aprueba solo, pero se muestra igual, y no pude calcular la carpeta de la corrida donde va (${plan.error}).`);
+        console.error(`marker.js complete-step ${n} BLOQUEADO — el plan se aprueba solo, pero se muestra igual, y no pude calcular la carpeta de la corrida donde va (${plan.error}).`);
         console.error('  Revisá la story del marcador (storyId y storyPath) o aprobá el plan con --approved "<cita>".');
         process.exit(1);
       }
@@ -905,7 +950,7 @@ function cmdCompleteStep(nRaw, flags) {
       try { planTxt = fs.readFileSync(plan.file, 'utf8'); } catch (_e) { /* falta: se dice abajo */ }
       if (!planTxt.trim()) {
         appendLog('gates.log', { name: 'plan-auto-approve', status: 'blocked', story: marker.storyId, motivo: 'plan sin escribir' });
-        console.error(`marker.js complete-step 3 BLOQUEADO — el plan se aprueba solo, pero se muestra igual: falta escribirlo en ${plan.file}.`);
+        console.error(`marker.js complete-step ${n} BLOQUEADO — el plan se aprueba solo, pero se muestra igual: falta escribirlo en ${plan.file}.`);
         console.error('  Escribí ahí el plan del paso 2, mostráselo a la persona en tu respuesta y volvé a correr este comando.');
         process.exit(1);
       }
@@ -916,11 +961,11 @@ function cmdCompleteStep(nRaw, flags) {
         // (medido: el agente creyó haberlo mostrado porque el plan estaba en esos lugares)
         const queVe = '  La persona sólo ve tus mensajes de texto (y lo que trae una pregunta con opciones): no ve la salida de este comando, ni el archivo del plan, ni lo que pensaste.';
         if (visto.legible) {
-          console.error('marker.js complete-step 3 BLOQUEADO — el plan se aprueba solo, pero la persona tiene que verlo: ninguno de tus mensajes de texto lo trae.');
+          console.error(`marker.js complete-step ${n} BLOQUEADO — el plan se aprueba solo, pero la persona tiene que verlo: ninguno de tus mensajes de texto lo trae.`);
           console.error(queVe);
           console.error('  Escribí ahora un mensaje con el plan TAL CUAL (éste, entero, no un resumen) y después volvé a correr este comando:');
         } else {
-          console.error(`marker.js complete-step 3 BLOQUEADO — no puedo leer la conversación de esta sesión (${visto.motivo}), así que no sé si la persona vio el plan: no se aprueba solo.`);
+          console.error(`marker.js complete-step ${n} BLOQUEADO — no puedo leer la conversación de esta sesión (${visto.motivo}), así que no sé si la persona vio el plan: no se aprueba solo.`);
           console.error(queVe);
           console.error('  Escribí un mensaje con el plan TAL CUAL (éste, entero, no un resumen), preguntale si lo aprueba y cerrá con --approved "<su respuesta>":');
         }
@@ -953,7 +998,7 @@ function cmdCompleteStep(nRaw, flags) {
         }
         if (rc && rc.risk === 'LOW') {
           appendLog('gates.log', { name: 'plan-approval', status: 'blocked', story: marker.storyId, motivo: 'ok sin plan a la vista' });
-          console.error('marker.js complete-step 3 BLOQUEADO — la persona aprobó sin ver el plan: ninguno de tus mensajes ni tus preguntas lo trae.');
+          console.error(`marker.js complete-step ${n} BLOQUEADO — la persona aprobó sin ver el plan: ninguno de tus mensajes ni tus preguntas lo trae.`);
           console.error('  Mostráselo entero (en un mensaje o dentro de la pregunta), preguntale de nuevo y cerrá con --approved "<su respuesta>".');
           planParaLaPersona(planTxt);
           process.exit(1);
@@ -972,9 +1017,9 @@ function cmdCompleteStep(nRaw, flags) {
     // `--approved` sin `--approved-by` ni `--delegated-by` queda automática «sin nombrar»; `--auto-approved`
     // es la regla de riesgo bajo. La maqueta la aprueba quien aprobó el plan, en el mismo comando.
     const quienPlan = approved ? quienDeLasOpciones(optVal) : quienDeLasOpciones(() => null, { regla: 'risk-class LOW' });
-    anotarAprobacion(marker, { que: 'plan', cuando: at3, via: approved ? 'complete-step 3 --approved' : 'complete-step 3 --auto-approved', ...quienPlan });
+    anotarAprobacion(marker, { que: 'plan', cuando: at3, via: `complete-step ${n} ${approved ? '--approved' : '--auto-approved'}`, ...quienPlan });
     if (mockupPlan) {
-      anotarAprobacion(marker, { que: 'maqueta', cuando: at3, via: 'complete-step 3 --mockup-approved', ...quienDeLasOpciones(optVal) });
+      anotarAprobacion(marker, { que: 'maqueta', cuando: at3, via: `complete-step ${n} --mockup-approved`, ...quienDeLasOpciones(optVal) });
     }
     // La decisión se anota SIEMPRE, para que el paso 8 vea una pantalla que apareció después del plan.
     marker.mockupDecision = { screen: sc.screen, signal: sc.signal || null, at: at3 };
@@ -995,18 +1040,19 @@ function cmdCompleteStep(nRaw, flags) {
   // en rojo (ausente = pasa). Se rechaza `trust-ran` (self-report) y el green de una iteración
   // anterior: al re-cerrar el 5 tras fixes (loop D.i) el check tiene que ser posterior
   // al cierre previo del 5. Escape consciente: `set-check advisors green --force-manual`.
-  if (n === 5) {
+  if (controles.has('advisors')) {
     const st = marker.checks && marker.checks.advisors;
     const prov = (marker.checksProvenance && marker.checksProvenance.advisors) || null;
     const at = (marker.checksAt && marker.checksAt.advisors) || null;
-    const prevClose = marker.stepTimings && marker.stepTimings['5'] && marker.stepTimings['5'].completedAt;
+    const tPaso = marker.stepTimings && marker.stepTimings[paso];
+    const prevClose = tPaso && (tPaso.lastCompletedAt || tPaso.completedAt);
     const okProv = prov === 'run-check' || prov === 'manual-forced';
     const fresh = !prevClose || (at && new Date(at).getTime() > new Date(prevClose).getTime());
     if (st !== 'green' || !okProv || !fresh) {
       appendLog('gates.log', { name: 'advisors-complete', status: 'blocked', story: marker.storyId, checks_advisors: st || '(ausente)', provenance: prov || '(ausente)', fresh });
-      console.error('marker.js complete-step 5 BLOQUEADO — el check `advisors` no está en verde por conteo real'
-        + (st === 'green' && !fresh ? ' de ESTA iteración' : '') + '.');
-      console.error(`  Estado: checks.advisors=${st || '(ausente)'} provenance=${prov || '(ausente)'}${prevClose ? ` · cierre previo del 5: ${prevClose}` : ''}`);
+      console.error(`marker.js complete-step ${n} BLOQUEADO — el check \`advisors\` no está en verde por conteo real`
+        + (st === 'green' && !fresh ? ' de ESTA vuelta' : '') + '.');
+      console.error(`  Estado: checks.advisors=${st || '(ausente)'} provenance=${prov || '(ausente)'}${prevClose ? ` · cierre previo de los revisores: ${prevClose}` : ''}`);
       console.error('  Registralo con el exit code REAL de check-count (lee el log de spawns, no tu --ran):');
       console.error('    marker.js run-check advisors -- node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js check-count \\');
       console.error('      --repo <repo> --story <story_path> --files <archivos modificados…>');
@@ -1017,11 +1063,11 @@ function cmdCompleteStep(nRaw, flags) {
     }
   }
 
-  // ── Step 4 (implementación) — freno ATDD: los tests se escriben ANTES del código ───────────────
+  // ── Implementar — freno ATDD: los tests se escriben ANTES del código ───────────────
   // Sin gate mecánico el ATDD es la regla que se saltea.
   // La evidencia NO es nueva: `marker.fileEvents` ya registra cada edición con `{path, ts}`. Detalle del calibrado (qué bloquea y qué sólo avisa, para no dar falsos
   // positivos con un refactor legítimo): `lib/atdd-order.js`.
-  if (n === 4) {
+  if (controles.has('atdd')) {
     const { computeAtddOrder, atddBlockMessage } = require('./lib/atdd-order.js');
     // 🔴 Stories de dos repos: el código vive en un repo hermano declarado
     //    (`evidence.companion_repos`). Si se mira sólo el repo de la story, toda edición del hermano queda
@@ -1070,7 +1116,10 @@ function cmdCompleteStep(nRaw, flags) {
       // verdad" pasa a tener respuesta en vez de impresión.
       console.error(`⚠️  ATDD: ${r.reason}`);
     }
+  }
 
+  // ── Correr las pruebas — la suite completa, «sin acotar», «sin medir» y los mutantes ─────────
+  if (controles.has('tests')) {
     // ── El verde de `tests` tiene que salir de la suite COMPLETA ──────────────────────────────
     // Con sólo los tests que una story declara, el check puede quedar verde mientras la
     // suite entera está en rojo (por ejemplo, 872 tests verdes y 13 fallas en una suite de 2400,
@@ -1088,7 +1137,7 @@ function cmdCompleteStep(nRaw, flags) {
         provenance: testsProv || '(ausente)',
         reason: 'el verde de tests no vino de test-gate.sh (suite completa)',
       });
-      console.error('marker.js complete-step 4 BLOQUEADO — el verde de `tests` no salió de la suite completa.');
+      console.error(`marker.js complete-step ${n} BLOQUEADO — el verde de \`tests\` no salió de la suite completa.`);
       console.error('');
       console.error(`  Estado actual: checks.tests=green provenance=${testsProv || '(ausente)'}`);
       console.error('  Correr sólo los tests que la story declara deja afuera las regresiones que');
@@ -1145,7 +1194,9 @@ function cmdCompleteStep(nRaw, flags) {
   // Cada CRITICAL `waived` de findings.json tiene que tener su constancia (`waive-critical`, con el ok de una persona).
   // No hay exención automática «sin nombrar»: dejaría que el agente se eximiera solo. El 8 lo vuelve a mirar porque el 7 sólo corre con críticos y findings.json se puede
   // reescribir a mano después. No poder leer los hallazgos se dice (en el 7 siempre tienen que estar).
-  if (n === 7 || n === 8) {
+  // Hallazgos frena sin findings.json; Preparar el commit lo vuelve a mirar (como hoy el 7 y el 8 del marcador viejo).
+  if (controles.has('waivers')) {
+    const cierraHallazgos = controles.has('findings-close');
     let rd = null;
     let motivo = null;
     try {
@@ -1155,20 +1206,20 @@ function cmdCompleteStep(nRaw, flags) {
     } catch (e) { motivo = `no pude calcular la carpeta de la corrida (${e.message || e})`; }
     const cw = require('./lib/critical-waivers.js');
     const v = rd ? cw.verificarExenciones(rd, { story: marker.storyId }) : { faltan: [], ilegibles: 0, existe: false };
-    if (n === 7 && !motivo && rd && !v.existe) motivo = 'falta findings.json (pipeline.js write-findings)';
+    if (cierraHallazgos && !motivo && rd && !v.existe) motivo = 'falta findings.json (pipeline.js write-findings)';
     if (motivo) {
-      // el 7 corre sólo con críticos: sin hallazgos que mirar, no se cierra;
-      // el 8 lo dice y sigue (un paso 8 sin corrida que mirar lo frenan sus propios portones)
-      appendLog('gates.log', { name: 'critical-waivers', status: n === 7 ? 'blocked' : 'not-checked', story: marker.storyId, step: n, error: motivo });
-      if (n === 7) {
-        console.error(`marker.js complete-step 7 BLOQUEADO — ${motivo}: el paso 7 corre con críticos y no puedo mirar si alguno quedó eximido sin el ok de una persona.`);
+      // Hallazgos no se cierra sin hallazgos que mirar; Preparar el commit lo dice y sigue (sin corrida que mirar lo
+      // frenan sus propios portones)
+      appendLog('gates.log', { name: 'critical-waivers', status: cierraHallazgos ? 'blocked' : 'not-checked', story: marker.storyId, step: n, error: motivo });
+      if (cierraHallazgos) {
+        console.error(`marker.js complete-step ${n} BLOQUEADO — ${motivo}: Hallazgos no puede mirar si algún crítico quedó eximido sin el ok de una persona.`);
         process.exit(1);
       }
       console.error(`⚠️  complete-step ${n}: ${motivo}: no pude mirar si hay críticos eximidos sin el ok de una persona.`);
     }
-    // un findings.json que está y no se lee frena: es justo el que se pudo reescribir a mano. En el 8 lo frena con su propio
-    // mensaje el control de findings.json que sigue (computeFindingsStatus); acá, el 7
-    if (v.error && v.existe && n === 7) {
+    // un findings.json que está y no se lee frena: es justo el que se pudo reescribir a mano. En Preparar el commit lo
+    // frena con su propio mensaje el control de findings.json que sigue (computeFindingsStatus); acá, Hallazgos
+    if (v.error && v.existe && cierraHallazgos) {
       appendLog('gates.log', { name: 'critical-waivers', status: 'blocked', story: marker.storyId, step: n, error: v.error });
       console.error(`marker.js complete-step ${n} BLOQUEADO — ${v.error}: no puedo saber si hay críticos eximidos sin el ok de una persona. Volvé a escribirlo con pipeline.js write-findings.`);
       process.exit(1);
@@ -1192,7 +1243,7 @@ function cmdCompleteStep(nRaw, flags) {
   //     explícito y logueado). NO alcanza `dodRuntimeChecked` — ese flag lo satisface un archivo de
   //     evidencia de texto (agente-escribible), un agujero que esta regla cierra.
   //   - Story no-UI: mantiene el gate `dodRuntimeChecked` (Step 7c corrido).
-  if (n === 8) {
+  if (controles.has('commit')) {
     // Un crítico de seguridad o de datos abierto o diferido no cierra callado: lo arregla una vuelta (extra, si se llegó al
     // tope, con el ok de una persona) o lo exime una persona (waive-critical). Venga del revisor o del pase adversarial.
     {
@@ -1205,13 +1256,13 @@ function cmdCompleteStep(nRaw, flags) {
       // falta o no se lee lo frena el control de findings.json que sigue, con su propio mensaje.
       if (noMirado) {
         appendLog('gates.log', { name: 'review-cap-blocking', status: 'blocked', story: marker.storyId, step: 8, error: noMirado });
-        console.error(`marker.js complete-step 8 BLOQUEADO — ${noMirado}: no puedo saber si quedó abierto un crítico de seguridad o de datos. Volvé a escribir los hallazgos con pipeline.js write-findings.`);
+        console.error(`marker.js complete-step ${n} BLOQUEADO — ${noMirado}: no puedo saber si quedó abierto un crítico de seguridad o de datos. Volvé a escribir los hallazgos con pipeline.js write-findings.`);
         process.exit(1);
       }
       const bloquean = rr.abiertos(h.lista).filter((a) => a.bloquea);
       if (bloquean.length) {
         appendLog('gates.log', { name: 'review-cap-blocking', status: 'blocked', story: marker.storyId, step: 8, abiertos: bloquean.map((a) => a.regla) });
-        console.error(`marker.js complete-step 8 BLOQUEADO — ${bloquean.length} crítico(s) de seguridad o de datos abierto(s) o diferido(s):`);
+        console.error(`marker.js complete-step ${n} BLOQUEADO — ${bloquean.length} crítico(s) de seguridad o de datos abierto(s) o diferido(s):`);
         for (const l of rr.resumen(bloquean)) console.error(`   · ${l}`);
         console.error('   Lo decide una persona: arreglarlo (con su ok para una vuelta más, si se llegó al tope: smart-reloop --extra-round');
         console.error('   --approved-by "<la persona>" --quote "<sus palabras>"), o eximirlo (marker.js waive-critical, con su ok a ese crítico).');
@@ -1230,14 +1281,14 @@ function cmdCompleteStep(nRaw, flags) {
     if (maqueta.block) {
       bloqueoMaqueta = maqueta.block;
       appendLog('gates.log', { name: 'mockup-new-screen', status: 'blocked', story: marker.storyId || null, step: 8 });
-      console.error(`marker.js complete-step 8 BLOQUEADO — ${maqueta.block}`);
+      console.error(`marker.js complete-step ${n} BLOQUEADO — ${maqueta.block}`);
     }
     // Con la maqueta aprobada y la story que no se encuentra, la comparación no puede correr: frena y lo dice
     // (Sin esto, un DOD_BYPASS de otro bloqueo lo dejaría pasar callado.)
     if (!bloqueoMaqueta && marker.mockupApproval && maqueta.compare && !resolveStoryPath(marker.storyPath, marker)) {
       bloqueoMaqueta = `la story tenía maqueta aprobada y no la encuentro (${marker.storyPath || '(sin ruta en el marcador)'}): no puedo compararla con la pantalla. Arreglá la ruta (\`marker.js set\` con \`storyPath\`) y volvé a cerrar.`;
       appendLog('gates.log', { name: 'mockup-compare', status: 'blocked', motivo: 'story-ilegible', story: marker.storyId || null, step: 8 });
-      console.error(`marker.js complete-step 8 BLOQUEADO — ${bloqueoMaqueta}`);
+      console.error(`marker.js complete-step ${n} BLOQUEADO — ${bloqueoMaqueta}`);
     }
     if (maqueta.skip) {
       console.error('ℹ️  la story tenía maqueta aprobada y ya no se detecta pantalla: no se compara');
@@ -1273,7 +1324,7 @@ function cmdCompleteStep(nRaw, flags) {
         anotar('no-medido', 'sin run dir');
       } else if (!st.exists || !st.valid) {
         blocked = 'findings';
-        console.error(`marker.js complete-step 8 BLOQUEADO — ${st.exists ? 'el findings.json NO es un array JSON válido' : 'FALTA el findings.json del Step 6'} en ${st.run_dir}.`);
+        console.error(`marker.js complete-step ${n} BLOQUEADO — ${st.exists ? 'el findings.json NO es un array JSON válido' : 'FALTA el findings.json del Step 6'} en ${st.run_dir}.`);
         console.error('  Sin ese archivo, «no encontré nada» y «no lo escribí» son lo mismo: el criterio de poda del catálogo');
         console.error('  decide retiros de reglas con media muestra. Un run sin hallazgos igual lo escribe, con [].');
         console.error(`    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js write-findings --story ${storyPathF} --findings -`);
@@ -1312,7 +1363,7 @@ function cmdCompleteStep(nRaw, flags) {
       } else if (!okUi) {
         if (deuda && deuda.motivo && !/no declara/.test(deuda.motivo)) console.error(`marker.js complete-step 8: la prueba con navegador pendiente no vale — ${deuda.motivo}.`);
         blocked = 'ui';
-        console.error('marker.js complete-step 8 BLOQUEADO — story de UI sin el gate `dod` en verde por run-check.');
+        console.error(`marker.js complete-step ${n} BLOQUEADO — story de UI sin el gate \`dod\` en verde por run-check.`);
         console.error('');
         console.error(`  Estado actual: checks.dod=${dodCheck || '(ausente)'} provenance=${dodProv || '(ausente)'}`);
         console.error('  Una story de UI exige el EXIT CODE REAL del Playwright — no un flag ni un archivo de texto:');
@@ -1323,7 +1374,7 @@ function cmdCompleteStep(nRaw, flags) {
       }
     } else if (marker.dodRuntimeChecked !== true) {
       blocked = 'non-ui';
-      console.error('marker.js complete-step 8 BLOQUEADO — DoD runtime check (Step 7c) no se ejecutó.');
+      console.error(`marker.js complete-step ${n} BLOQUEADO — «Probar en vivo» no se ejecutó.`);
       console.error('');
       console.error('El marker no tiene dodRuntimeChecked=true. Acciones permitidas:');
       console.error('  (a) Correr Step 7c — invocar tycon-dod-runtime-checker advisor +');
@@ -1346,7 +1397,7 @@ function cmdCompleteStep(nRaw, flags) {
       const storyPath = resolveStoryPath(marker.storyPath, marker);
       if (!storyPath) {
         blocked = 'acmatrix-nostory';
-        console.error(`marker.js complete-step 8 BLOQUEADO — no puedo computar la matriz runtime: marker.storyPath ausente o inexistente (crudo: ${marker.storyPath ?? '(vacío)'}; base: ${marker.repoPath ?? process.cwd()}).`);
+        console.error(`marker.js complete-step ${n} BLOQUEADO — no puedo computar la matriz runtime: marker.storyPath ausente o inexistente (crudo: ${marker.storyPath ?? '(vacío)'}; base: ${marker.repoPath ?? process.cwd()}).`);
         console.error('  Seteá el path de la story en el marker (pipeline.js start lo hace) y reintentá.');
       } else {
         let matrix;
@@ -1354,14 +1405,14 @@ function cmdCompleteStep(nRaw, flags) {
           matrix = require('./runtime-matrix.js').compute({ storyPath });
         } catch (e) {
           blocked = 'acmatrix-error';
-          console.error(`marker.js complete-step 8 BLOQUEADO — la matriz runtime no computó (fail-closed): ${e.message}`);
+          console.error(`marker.js complete-step ${n} BLOQUEADO — la matriz runtime no computó (fail-closed): ${e.message}`);
         }
         if (matrix && matrix.structuralError) {
           blocked = 'acmatrix-struct';
-          console.error(`marker.js complete-step 8 BLOQUEADO — matriz runtime no computable: ${matrix.structuralError}`);
+          console.error(`marker.js complete-step ${n} BLOQUEADO — matriz runtime no computable: ${matrix.structuralError}`);
         } else if (matrix && !matrix.green) {
           blocked = 'acmatrix';
-          console.error('marker.js complete-step 8 BLOQUEADO — matriz de verificación runtime (DODRT-C6) ROJA.');
+          console.error(`marker.js complete-step ${n} BLOQUEADO — matriz de verificación runtime (DODRT-C6) ROJA.`);
           console.error('');
           console.error(`  (${matrix.stats.runtime}/${matrix.stats.total} corridos · ${matrix.stats.notRun} SIN CORRER · ${matrix.stats.notVerifiable} imposibles-declarados · ${matrix.stats.waived} waiveados)`);
           if ((matrix.notRun || []).length) {
@@ -1396,7 +1447,7 @@ function cmdCompleteStep(nRaw, flags) {
       } catch (e) {
         blocked = 'qaguide';
         console.error('');
-        console.error('marker.js complete-step 8 BLOQUEADO — la guía de prueba manual del tester (DODRT-C7) NO está lista (ver arriba).');
+        console.error(`marker.js complete-step ${n} BLOQUEADO — la guía de prueba manual del tester (DODRT-C7) NO está lista (ver arriba).`);
         console.error('  Escribí/corregí los pasos en criollo en specs/qa/<sid>-pasos.md y corré la review de legibilidad.');
         // La pantalla también se revisa; sus marcas se arreglan en el código, no reescribiendo la guía.
         console.error('  Y la de la PANTALLA (specs/qa/<sid>-legibilidad-ui.md, paso 7c.7): sus marcas se resuelven EN LA PANTALLA, no en la guía.');
@@ -1413,12 +1464,12 @@ function cmdCompleteStep(nRaw, flags) {
         if (f.status === 'blocked') {
           blocked = 'manualcheck';
           console.error('');
-          console.error('marker.js complete-step 8 BLOQUEADO — falta la marca a mano de una persona.');
+          console.error(`marker.js complete-step ${n} BLOQUEADO — falta la marca a mano de una persona.`);
           for (const l of f.mensaje) console.error(`  ${l}`);
         }
       } catch (e) {
         blocked = 'manualcheck';
-        console.error(`marker.js complete-step 8 BLOQUEADO — no pude mirar si falta la marca a mano (${e.message}).`);
+        console.error(`marker.js complete-step ${n} BLOQUEADO — no pude mirar si falta la marca a mano (${e.message}).`);
       }
     }
     if (bloqueoMaqueta) {
@@ -1445,11 +1496,11 @@ function cmdCompleteStep(nRaw, flags) {
       }
       console.error('  Bypass excepcional: setear DOD_BYPASS=1 (queda had_dod_bypass=true en bypass.log).');
       console.error('');
-      console.error('Ver: ~/.claude/agent-skills/skills/tycon-pipeline/steps/step-07c-dod-runtime-gate.md');
+      console.error(`Ver: ~/.claude/agent-skills/skills/tycon-pipeline/steps/${STEPS_LIB.byId('live-check').file}`);
       if (process.env.DOD_BYPASS !== '1') {
         process.exit(2);
       }
-      console.error('⚠ DOD_BYPASS=1 detectado — permitiendo complete-step 8 con flag had_dod_bypass=true');
+      console.error(`⚠ DOD_BYPASS=1 detectado — permitiendo complete-step ${n} con flag had_dod_bypass=true`);
       marker.hadDodBypass = true;
       // Rastro DURABLE del bypass: el marker se borra al cerrar el pipeline;
       // bypass.log sobrevive y on-prompt puede reportarlo.
@@ -1462,18 +1513,29 @@ function cmdCompleteStep(nRaw, flags) {
     }
   }
 
-  marker.stepsPending = marker.stepsPending.filter((s) => s !== n);
-  if (!marker.stepsCompleted.includes(n)) {
-    marker.stepsCompleted.push(n);
-    marker.stepsCompleted.sort((a, b) => a - b);
-  }
+  // El marcador viejo guarda sus pasos principales como números; el nuevo, por nombre.
+  const comoSeGuarda = (id) => (!nuevo && /^\d+$/.test(id) ? Number(id) : id);
+  marker.stepsPending = (marker.stepsPending || []).filter((s) => !ids.includes(String(s)));
+  marker.stepsCompleted = Array.isArray(marker.stepsCompleted) ? marker.stepsCompleted : [];
+  for (const id of ids) if (!marker.stepsCompleted.map(String).includes(id)) marker.stepsCompleted.push(comoSeGuarda(id));
+  if (nuevo) marker.stepsCompleted.sort((a, b) => STEPS_LIB.STEPS.findIndex((s) => s.id === a) - STEPS_LIB.STEPS.findIndex((s) => s.id === b));
+  else marker.stepsCompleted.sort((a, b) => a - b);
   // Timestamp por step para que
   // `pipeline.js timing-report` desglose dónde se va el wall-clock de la corrida.
   marker.stepTimings = marker.stepTimings || {};
   // Se CONSERVA el arranque (y cualquier otro campo del paso): pisar el objeto entero con
   // `{completedAt}` perdería el arranque que `start-step`/`next` hubieran anotado.
-  const previo = marker.stepTimings[String(n)];
-  marker.stepTimings[String(n)] = { ...(previo && typeof previo === 'object' ? previo : {}), completedAt: nowIso() };
+  for (const id of ids) {
+    const previo = marker.stepTimings[id] && typeof marker.stepTimings[id] === 'object' ? marker.stepTimings[id] : {};
+    // Cada cierre de los revisores es una vuelta: `next` pide la siguiente si hubo arreglos después de Hallazgos. La
+    // primera vuelta conserva su `completedAt` (la cuenta de tiempos corta por ahí; moverlo después de Hallazgos
+    // juntaría los dos pasos y se comería la espera); las siguientes van en `lastCompletedAt`.
+    if (nuevo && id === 'reviewers' && previo.completedAt) {
+      marker.stepTimings[id] = { ...previo, lastCompletedAt: nowIso(), rounds: (Number(previo.rounds) || 1) + 1 };
+    } else {
+      marker.stepTimings[id] = { ...previo, completedAt: nowIso(), ...(nuevo && id === 'reviewers' ? { rounds: 1 } : {}) };
+    }
+  }
   marker.lastTouch = nowIso();
   writeMarker(marker);
   process.stdout.write(JSON.stringify(marker, null, 2));
@@ -1492,10 +1554,12 @@ function cmdCompleteStep(nRaw, flags) {
 // Los sub-pasos (0b, 0c, 5b, 7c) se cierran con una BANDERA, no con complete-step: tienen arranque y
 // no fin propio. Sin arranque, su trabajo (el pase adversarial del 5b dura ~30 min) caería como «tiempo
 // entre pasos» en la cuenta.
+// En un marcador nuevo arranca cualquier paso de la tabla, por su nombre.
 const PASO_ARRANCABLE = /^(\d|0b|0c|5b|7c)$/;
+const arrancable = (marker, k) => (STEPS_LIB.schemeOf(marker) === 2 ? !!STEPS_LIB.byId(k) : PASO_ARRANCABLE.test(k));
 function anotarArranque(marker, n, ts) {
   const k = String(n);
-  if (!marker || !PASO_ARRANCABLE.test(k)) return null;
+  if (!marker || !arrancable(marker, k)) return null;
   const completos = (marker.stepsCompleted || []).map(String);
   if (completos.includes(k)) return null;
   const st = marker.stepTimings && typeof marker.stepTimings === 'object' ? marker.stepTimings : {};
@@ -1505,13 +1569,28 @@ function anotarArranque(marker, n, ts) {
 }
 
 function cmdStartStep(nRaw) {
-  const n = String(nRaw || '');
-  if (!PASO_ARRANCABLE.test(n)) {
+  let n = String(nRaw || '').trim();
+  const marker = readMarker();
+  // sin corrida no hay nada que medir: no es un error, pero un argumento que no es un paso sí
+  if (!marker) {
+    if (!STEPS_LIB.byId(n) && !PASO_ARRANCABLE.test(n)) {
+      console.error(`marker.js start-step: «${n}» no es un paso. Los pasos: ${STEPS_LIB.STEPS.map((s) => s.id).join(', ')}.`);
+      process.exit(2);
+    }
+    process.exit(0);
+  }
+  if (STEPS_LIB.schemeOf(marker) === 2) {
+    if (!STEPS_LIB.byId(n)) {
+      console.error(`marker.js start-step: ${STEPS_LIB.resolveStepArg(marker, n).message || `«${n}» no es un paso.`}`);
+      process.exit(2);
+    }
+  } else if (STEPS_LIB.byId(n)) {
+    // un marcador viejo, con el nombre nuevo: el arranque va a su número de entonces
+    n = STEPS_LIB.byId(n).old[0];
+  } else if (!PASO_ARRANCABLE.test(n)) {
     console.error('marker.js start-step: N debe ser un paso (0..9) o un sub-paso (0b, 0c, 5b, 7c)');
     process.exit(2);
   }
-  const marker = readMarker();
-  if (!marker) process.exit(0);   // sin corrida no hay nada que medir: no es un error
   const nuevo = anotarArranque(marker, n, nowIso());
   if (!nuevo) process.exit(0);
   nuevo.lastTouch = nowIso();
@@ -1689,8 +1768,8 @@ function cmdApproveMockup(flags) {
   const opts = Array.isArray(flags) ? flags : [];
   const i = opts.indexOf('--approved');
   const cita = i >= 0 ? (opts[i + 1] || '') : '';
-  if (!(marker.stepsCompleted || []).map(Number).includes(3)) {
-    console.error('marker.js approve-mockup: la maqueta se aprueba con el plan: complete-step 3 --approved "<cita>" --mockup-approved "<cita>"');
+  if (!STEPS_LIB.isDone(marker, 'approve-plan')) {
+    console.error(`marker.js approve-mockup: la maqueta se aprueba con el plan: complete-step ${STEPS_LIB.schemeOf(marker) === 2 ? 'approve-plan' : '3'} --approved "<cita>" --mockup-approved "<cita>"`);
     process.exit(2);
   }
   const no = (msg, extra = []) => {
@@ -2089,6 +2168,26 @@ function cmdSetFlag(flag, valRaw) {
   marker.lastTouch = nowIso();
   writeMarker(marker);
   process.stdout.write(`${flag}: ${marker[flag]}\n`);
+}
+
+// Una parte opcional del Arranque que corrió y falló: `start-warning <time-tracking|ado> "<mensaje>"`. El Arranque
+// cierra igual (la falla de una parte nunca frenó la ejecución), pero el aviso queda a la vista hasta el cierre: en
+// `next`, en el cartel, en /pipeline y en la salida de `complete-step prepare-commit`.
+function cmdStartWarning(part, mensaje) {
+  if (!STEPS_LIB.START_PARTS[part]) {
+    console.error(`marker.js start-warning: parte inválida '${part}' — válidas: ${Object.keys(STEPS_LIB.START_PARTS).join(' | ')}`);
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js start-warning: no hay marker activo para esta sesión');
+    process.exit(1);
+  }
+  const previos = Array.isArray(marker.startWarnings) ? marker.startWarnings.filter((w) => w && w.part !== part) : [];
+  marker.startWarnings = [...previos, { part, message: String(mensaje || '').slice(0, 300) }];
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  process.stdout.write(`${STEPS_LIB.startWarningLines({ startWarnings: [{ part }] })[0]}\n`);
 }
 
 // Forzar el tamaño de la corrida a mano: `set-size liviana|completa --reason "<texto>"`. Sin motivo no se
@@ -2942,7 +3041,8 @@ function guardarCambioDeCorrida(archivo, dump) {
  */
 function avisarCierreSinPasos(marker) {
   try {
-    const arranque = (s) => String(s).startsWith('0');
+    // el Arranque: `start` en un marcador nuevo; el 0, 0b y 0c en uno viejo
+    const arranque = (s) => String(s) === 'start' || String(s).startsWith('0');
     if ((marker.stepsCompleted || []).some((s) => !arranque(s))) return;
     const repo = marker.repoPath && fs.existsSync(marker.repoPath) ? marker.repoPath : null;
     const mostrar = (f) => (repo && f.startsWith(repo + path.sep) ? path.relative(repo, f) : f);
@@ -4241,6 +4341,9 @@ switch (cmd) {
     break;
   case 'set-flag':
     cmdSetFlag(arg1, arg2);
+    break;
+  case 'start-warning':
+    cmdStartWarning(arg1, arg2);
     break;
   case 'set-size':
     cmdSetSize(process.argv.slice(3));

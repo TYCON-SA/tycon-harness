@@ -200,7 +200,7 @@ function estimate({ size, historyDir }) {
     let m;
     try { m = JSON.parse(fs.readFileSync(path.join(historyDir, n), 'utf8')).marker; } catch (_) { unreadable += 1; continue; }
     // sólo las que llegaron a preparar el commit: una abandonada a la mitad tira la mediana para abajo
-    if (!m || !(m.stepsCompleted || []).map(String).includes('8') || archivedSize(m) !== sizeName) continue;
+    if (!m || !require('./steps.js').isDone(m, 'prepare-commit') || archivedSize(m) !== sizeName) continue;
     const min = runMinutes(m);
     if (min !== null) mins.push(min);
   }

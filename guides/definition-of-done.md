@@ -318,7 +318,7 @@ Diferido por D3 (Story {N}). Requiere también el código que dispara los scans
 
 ## Cómo integrar al pipeline TYCON
 
-El skill `tycon-pipeline` termina en `step-08-commit-prep` con el commit hecho pero la story todavía en `review`. Sin embargo, dos checks SÍ están automatizados en el pipeline:
+El skill `tycon-pipeline` termina en `step-11-prepare-commit` con el commit hecho pero la story todavía en `review`. Sin embargo, dos checks SÍ están automatizados en el pipeline:
 
 1. **Gate 1 (deferrals abiertos)** — `tycon-story-validator` rule `VAL-C5`. Step 5 del pipeline re-corre el validator post-implementación con flag de deferral check; si encuentra TODOs `Story-{N}-deferral` en archivos modificados, retorna CRITICAL y bloquea el commit prep. **Esto evita marcar review con deferrals abiertos**.
 

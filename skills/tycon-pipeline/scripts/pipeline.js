@@ -13,7 +13,7 @@
  *     → exit 0 si `ran` ⊇ `all` esperado; exit 2 + lista de faltantes si no.
  *       Es el post-flight count-check, sin que el LLM lo haga a mano (Regla C).
  *
- * Fuente de verdad de la matriz: este archivo. step-05-advisors-parallel.md la
+ * Fuente de verdad de la matriz: este archivo. step-07-reviewers.md la
  * describe en prosa pero la AUTORIDAD es computeAdvisorSet() acá (el step la referencia).
  *
  * Determinismo de SELECCIÓN (mismo diff → mismo set), NO de output (los advisors son LLMs).
@@ -1473,7 +1473,9 @@ function decidirValidadorEnReloop({ args, marker, sessionId, guidesDir, projects
   try {
     if (!(Number(args && args.iter) >= 2)) return { ...invoca('vuelta 1: el validador corre siempre'), anotar: false };
     if (args.forceFullReloop) return invoca('re-loop forzado');
-    const desde = Date.parse((marker && marker.stepTimings && marker.stepTimings['5'] && marker.stepTimings['5'].startedAt) || '');
+    // los revisores: `reviewers` en un marcador nuevo, el 5 en uno viejo
+    const tRev = marker && marker.stepTimings && (marker.stepTimings.reviewers || marker.stepTimings['5']);
+    const desde = Date.parse((tRev && tRev.startedAt) || '');
     if (!Number.isFinite(desde)) return invoca('no sé cuándo arrancó el paso 5 (el marcador no lo anotó): se invoca');
     const libs = libsDelArnes(guidesDir);
     if (libs.error) return invoca(`${libs.error}: se invoca`);
@@ -2736,20 +2738,14 @@ function parseFrontmatterList(content, key) {
 // pero le PREGUNTA al script cuál es el próximo step y qué
 // skip-conditions se cumplen mecánicamente, en vez de derivarlo de la prosa del
 // SKILL (fuente de los skips-por-inferencia E.i).
-// La secuencia sale de la tabla única de pasos: los trece que recorre `next`, sin el 7b ni el 9.
+// La secuencia, los nombres, las banderas que dan un paso por hecho y la equivalencia con el marcador viejo salen de la
+// tabla única de pasos (lib/steps.js): los once que recorre `next`; el cierre en ADO va aparte.
 const STEPS_TABLE = require('./lib/steps.js');
-const STEP_SEQUENCE = STEPS_TABLE.STEPS.filter((s) => s.inSequence !== false).map(({ id, file }) => ({ id, file }));
 const STEPS_DIR = path.join(os.homedir(), '.claude', 'agent-skills', 'skills', 'tycon-pipeline', 'steps');
-// Sub-steps que se cierran con un marker FLAG (no con complete-step N): computeNext lo usa para el hint.
-const SUBSTEP_FLAG = { '0b': 'workSignalStarted', '0c': 'adoMarkedActive', '5b': 'deepReviewDone' };
-// El nombre viejo de una bandera, que todavía puede traer el marker de una corrida en vuelo: también da el sub-paso por hecho.
-const SUBSTEP_OLD_FLAG = { '0b': 'clockiStarted' };
-// El 5b NO se cierra con `set-flag`: `deepReviewDone` la escriben sólo los dos comandos
-// que dejan constancia. `SUBSTEP_FLAG` dice QUÉ bandera mira `next` para darlo por hecho;
-// el texto le dice al orquestador cómo cerrarlo — sin esto, `next` mandaría a correr un
-// comando que sale 2.
+// El pase adversarial NO se cierra con `set-flag`: `deepReviewDone` la escriben sólo los dos comandos que dejan
+// constancia, y el texto de `next` le dice al orquestador cuáles — sin esto, mandaría a correr un comando que sale 2.
 // ¿La story lleva maqueta? Con la detección de la revisión de la pantalla (mockup.screenStory, perezoso).
-// Ante un error, el que frena «no pude leer la story» es `complete-step 3`, no este texto.
+// Ante un error, el que frena «no pude leer la story» es `complete-step approve-plan`, no este texto.
 function storyNeedsMockup(storyPath) {
   try { return !!storyPath && require('./mockup.js').screenStory(storyPath).screen === true; } catch { return false; }
 }
@@ -2758,9 +2754,9 @@ function notaCierre3(marker) {
   const sp = marker && marker.storyPath;
   const abs = sp && !path.isAbsolute(sp) ? path.join(marker.repoPath || process.cwd(), sp) : sp;
   const maqueta = storyNeedsMockup(abs)
-    ? ' + --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>" (story con pantalla: la maqueta la ve una persona, también con LOW — steps/step-03-hitl-plan.md §La maqueta)'
+    ? ` + --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>" (story con pantalla: la maqueta la ve una persona, también con LOW — steps/${STEPS_TABLE.byId('approve-plan').file} §La maqueta)`
     : '';
-  return `marker.js complete-step 3 --approved "<cita textual de la aprobación del user>" (Nivel 2 LOW-risk: --auto-approved "<criterios>")${maqueta}. Hasta entonces el portón de carril DENIEGA cualquier Edit/Write de código`;
+  return `marker.js complete-step approve-plan --approved "<cita textual de la aprobación del user>" (Nivel 2 LOW-risk: --auto-approved "<criterios>")${maqueta}. Hasta entonces el portón de carril DENIEGA cualquier Edit/Write de código`;
 }
 const NOTA_CIERRE_5B = 'si el pase corrió, marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> '
   + '--tests <k> [--own <p> --in "<rutas>"] [--deferred <d> --reason "…"]; si no corre, marker.js mark-adversarial-skipped '
@@ -2834,11 +2830,11 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
   }
   if (gate.run !== true) return {};
   const archivos = Array.isArray(gate.files) ? gate.files : [];
-  const cuando = String(nextStep) === '5' ? 'AHORA, antes del primer revisor' : 'AHORA';
+  const cuando = String(nextStep) === 'reviewers' ? 'AHORA, antes del primer revisor' : 'AHORA';
   return {
     pending_action: {
       kind: 'lanzar-pase',
-      message: `el portón dice que el pase CORRE (${archivos.length} archivo(s)): lanzalo ${cuando} — tool Workflow con los args de step-05b-adversarial-verify.md §Acción y esos archivos — y en el mismo turno: node ${path.join(__dirname, 'marker.js')} mark-adversarial-launched <runId> 4`,
+      message: `el portón dice que el pase CORRE (${archivos.length} archivo(s)): lanzalo ${cuando} — tool Workflow con los args de step-08-adversarial-pass.md §Acción y esos archivos — y en el mismo turno: node ${path.join(__dirname, 'marker.js')} mark-adversarial-launched <runId> 4`,
       files: archivos,
     },
   };
@@ -2851,8 +2847,8 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
  */
 function notaDelTamano(marker, nextStep) {
   if (!marker || marker.size !== 'liviana' || !nextStep) return null;
-  if (String(nextStep.step) === '4') return 'Corrida liviana: las tandas van juntas en esta corrida (una sola implementación, una sola vuelta de pruebas).';
-  if (String(nextStep.step) === '8') {
+  if (String(nextStep.step) === 'implement') return 'Corrida liviana: las tandas van juntas en esta corrida (una sola implementación, una sola vuelta de pruebas).';
+  if (String(nextStep.step) === 'prepare-commit') {
     return marker.heavyValidationRequested
       ? 'Corrida liviana, pero el dev nombró la validación pesada del repo: pedila antes del merge.'
       : 'Corrida liviana: no pidas la validación pesada del repo; se corre sólo si el dev la nombra (marker.js set-flag heavyValidationRequested true).';
@@ -2865,52 +2861,50 @@ function computeNext() {
   if (!marker || !marker.storyId) {
     return { error: 'sin marker activo en esta sesión — arrancá con `pipeline.js start --story <spec> --repo <dir>` (o marker.js set en el «Arranque»)' };
   }
+  // Los dos marcadores se leen con la misma tabla: el viejo, con la equivalencia. Uno que no es ninguno de los dos no
+  // se adivina.
+  const scheme = STEPS_TABLE.schemeOf(marker);
+  if (scheme === null) {
+    return { error: 'el marcador de esta ejecución es ilegible o de un esquema desconocido (sus listas de pasos no son de la tabla de lib/steps.js): no sé qué paso sigue. Mirá `marker.js get`.' };
+  }
   const story = marker.storyPath ? readText(marker.storyPath) : '';
   const fm = parseFrontmatterPipeline(story);
-  const completedNums = new Set((marker.stepsCompleted || []).map(String));
+
+  // Las partes opcionales del Arranque: el aviso de trabajo, si la organización eligió una herramienta de horas
+  // (`harnessTimeTool` es null si no se sabe: ahí se pide, como antes); el pedido en ADO, si la story lo trae.
+  const timeTool = harnessTimeTool();
+  const startParts = STEPS_TABLE.startPartsPending(marker, {
+    'time-tracking': timeTool === null || timeTool.chosen === true,
+    ado: !!(story && fm.ado_work_item),
+  });
+  const warnings = STEPS_TABLE.startWarningLines(marker);
+
+  // Un arreglo después de Hallazgos (una edición posterior al último cierre de los revisores) pide otra vuelta.
+  const { isTestPath, isImplPath } = require('./lib/atdd-order.js');
+  const reloop = STEPS_TABLE.reviewersRound(marker, (p) => isImplPath(p) || isTestPath(p));
 
   const stepState = [];
   let nextStep = null;
-  let timeTool;
-  for (const s of STEP_SEQUENCE) {
-    let done = false;
+  for (const s of STEPS_TABLE.STEPS) {
+    let done = STEPS_TABLE.isDone(marker, s.id);
     let skip = null;
-    if (s.id === '0b') {
-      done = marker[SUBSTEP_FLAG['0b']] === true || marker[SUBSTEP_OLD_FLAG['0b']] === true;
-      // Sin herramienta de horas elegida (ninguna, una desconocida o una con el manifiesto roto) el paso dice «saltear»
-      // con el motivo; `next` lo repetiría hasta una bandera que dejaría dicho «aviso dado» sin aviso.
-      // `harnessTimeTool` es null si no se sabe (sin arnés o configuración rota): ahí, el texto general.
-      if (!done && timeTool === undefined) timeTool = harnessTimeTool();
-      if (!done && timeTool && !timeTool.chosen) skip = `${timeTool.reason} — skip-condition documentada del step`;
-    } else if (s.id === '0c') {
-      done = marker.adoMarkedActive === true;
-      if (!done && story && !fm.ado_work_item) {
-        skip = 'frontmatter sin ado_work_item: — skip-condition documentada del step (verificable)';
-      }
-    } else if (s.id === '5b') {
-      // deepReviewDone lo setea el orquestador SIEMPRE que manejó el step (corrió el workflow O
-      // el gate dio run:false → skip). El skip real lo decide `deep-review-gate` (necesita --files,
-      // que computeNext no tiene), por eso acá no se recomputa: el flag marca "5b atendido".
-      done = marker.deepReviewDone === true;
-    } else if (s.id === '7c') {
-      done = marker.dodRuntimeChecked === true;
-      if (!done && story) {
-        if (storyIsExemptCheck(story)) skip = 'dod_runtime_exempt: true en frontmatter';
-        else if (!storyRequiresRuntimeEvidenceCheck(story)) skip = 'story NO declara runtime tests (sin tests_done_*, sin E2E, sin tests/e2e/)';
-      }
-    } else {
-      done = completedNums.has(s.id);
+    if (s.id === 'reviewers' && reloop) done = false;
+    if (s.id === 'live-check' && !done && story) {
+      // el único salteo que deja constancia: sin ella «Preparar el commit» no cierra (ver NOTA_CIERRE_7C)
+      if (storyIsExemptCheck(story)) skip = 'dod_runtime_exempt: true en frontmatter';
+      else if (!storyRequiresRuntimeEvidenceCheck(story)) skip = 'story NO declara runtime tests (sin tests_done_*, sin E2E, sin tests/e2e/)';
     }
-    const entry = { step: s.id, name: STEPS_TABLE.stepName(s.id), file: path.join(STEPS_DIR, s.file), done, ...(skip ? { skip_mechanical: skip } : {}) };
+    const round = s.id === 'reviewers' && reloop ? reloop.round : undefined;
+    const entry = { step: s.id, number: s.number, name: STEPS_TABLE.stepName(s.id, round), file: path.join(STEPS_DIR, s.file), done, ...(skip ? { skip_mechanical: skip } : {}) };
     stepState.push(entry);
-    // El 7c es el único sub-paso cuyo salteo deja constancia: sin ella el paso 8 no cierra (ver NOTA_CIERRE_7C).
-    if (!nextStep && !done && (!skip || s.id === '7c')) nextStep = entry;
+    if (!nextStep && !done) nextStep = { ...entry, ...(round ? { round } : {}) };
   }
-  const exempt7c = !!nextStep && nextStep.step === '7c' && storyIsExemptCheck(story);
+  const exempt7c = !!nextStep && nextStep.step === 'live-check' && storyIsExemptCheck(story);
+  const etiqueta = nextStep ? `«${nextStep.name}» (paso ${nextStep.number} de ${STEPS_TABLE.TOTAL})` : null;
 
   // Pre-condiciones del next conocidas por el script.
   const preconditions = [];
-  if (nextStep && nextStep.step === '8') {
+  if (nextStep && nextStep.step === 'prepare-commit') {
     preconditions.push({ id: 'dodRuntimeChecked', satisfied: marker.dodRuntimeChecked === true, detail: '«Probar en vivo» debe haber pasado (marker.dodRuntimeChecked)' });
     const checks = marker.checks || {};
     for (const c of ['build', 'tests', 'advisors']) {
@@ -2929,8 +2923,21 @@ function computeNext() {
   const adv = marker.adversarial || null;
   const sidNow = resolveSessionId();
   const advIsOurs = adv ? adv.sessionId === sidNow : null;
-  const pase = completedNums.has('4') ? accionDelPase(marker, story, { sidNow, nextStep: nextStep ? nextStep.step : null }) : {};
+  const pase = STEPS_TABLE.isDone(marker, 'run-tests') ? accionDelPase(marker, story, { sidNow, nextStep: nextStep ? nextStep.step : null }) : {};
   const pending = pase.pending_action || null;
+
+  // Cómo se cierra el paso que sigue.
+  const cierre = (st) => {
+    if (st.step === 'adversarial-pass') return NOTA_CIERRE_5B;
+    if (st.step === 'live-check') return NOTA_CIERRE_7C;
+    if (st.step === 'approve-plan') return notaCierre3(marker);
+    if (st.step === 'reviewers') return 'marker.js run-check advisors -- pipeline.js check-count … y recién después marker.js complete-step reviewers (bloquea sin el verde real)';
+    return `marker.js complete-step ${st.step}`;
+  };
+  // Las partes del Arranque que corren y faltan se hacen antes de seguir (o mientras valida la story, como dice su paso).
+  const partes = startParts.length
+    ? `ANTES, lo que falta del Arranque: ${startParts.map((p) => p.name).join(' y ')} (${STEPS_TABLE.byId('start').file}); si una parte falla, marker.js start-warning <time-tracking|ado> "<motivo>" y seguí. `
+    : '';
 
   return {
     story_id: marker.storyId,
@@ -2940,20 +2947,27 @@ function computeNext() {
     checks_provenance: marker.checksProvenance || {},
     adversarial: adv,
     adversarial_is_ours: advIsOurs,
+    // el paso por su nombre de máquina (lo que tipean los comandos), su número seguido y su nombre llano (lo que se le
+    // dice al dueño)
     next_step: nextStep ? nextStep.step : null,
-    // el nombre llano del paso: es lo que se le dice al dueño; `next_step` queda para los comandos
+    step_number: nextStep ? nextStep.number : null,
+    step_total: STEPS_TABLE.TOTAL,
+    // la vuelta de los revisores viaja en el nombre («Revisores, vuelta 2»)
     step_name: nextStep ? nextStep.name : null,
     next_step_file: nextStep ? nextStep.file : null,
+    step_scheme: scheme,
     preconditions,
     steps: stepState,
+    ...(startParts.length ? { start_parts: startParts } : {}),
+    ...(warnings.length ? { warnings } : {}),
     ...(pending ? { pending_action: pending } : {}),
     ...(pase.adversarial_note ? { adversarial_note: pase.adversarial_note } : {}),
     ...(notaDelTamano(marker, nextStep) ? { run_size_note: notaDelTamano(marker, nextStep) } : {}),
     note: exempt7c
-      ? `Sigue «${nextStep.name}». ${NOTA_7C_EXENTA}`
+      ? `${partes}Sigue ${etiqueta}. ${NOTA_7C_EXENTA}`
       : nextStep
-      ? `${pending && ['consultar-porton', 'lanzar-pase'].includes(pending.kind) ? `ANTES, pase adversarial: ${pending.message} ` : ''}Sigue «${nextStep.name}». Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${nextStep.step === '5b' ? NOTA_CIERRE_5B : nextStep.step === '7c' ? NOTA_CIERRE_7C : SUBSTEP_FLAG[nextStep.step] ? `marker.js set-flag ${SUBSTEP_FLAG[nextStep.step]} true` : nextStep.step === '3' ? notaCierre3(marker) : nextStep.step === '5' ? 'marker.js run-check advisors -- pipeline.js check-count … y recién después marker.js complete-step 5 (bloquea sin el verde real)' : `marker.js complete-step ${nextStep.step}`}.${pending && pending.kind.endsWith('-pase-ajeno') ? ` ⚠️ ${pending.message} Regla: ${pending.rule} (${pending.why}).` : ''}${notaDelTamano(marker, nextStep) ? ` ${notaDelTamano(marker, nextStep)}` : ''}`
-      : 'No quedan pasos pendientes — cerrá con marker.js clear (o step-09-ado-story-closure.md si vas a cerrar la story en ADO: «Cerrar la historia»).',
+      ? `${partes}${pending && ['consultar-porton', 'lanzar-pase'].includes(pending.kind) ? `ANTES, pase adversarial: ${pending.message} ` : ''}Sigue ${etiqueta}. Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${cierre(nextStep)}.${pending && pending.kind.endsWith('-pase-ajeno') ? ` ⚠️ ${pending.message} Regla: ${pending.rule} (${pending.why}).` : ''}${notaDelTamano(marker, nextStep) ? ` ${notaDelTamano(marker, nextStep)}` : ''}${warnings.length ? ` ${warnings.join(' · ')}.` : ''}`
+      : `No quedan pasos pendientes — cerrá con marker.js clear (o ${STEPS_TABLE.CLOSE_STEP.file} si vas a cerrar la story en ADO: «${STEPS_TABLE.CLOSE_STEP.name}»).`,
   };
 }
 
@@ -3198,9 +3212,19 @@ function computeStart(args) {
 
   // PIPE-C4: marker set (vía marker.js — único owner de writes del marker).
   const markerJs = path.join(os.homedir(), '.claude', 'agent-skills', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  // Una ejecución nueva nace con los pasos por nombre (esquema 2). Retomar la misma story sobre un marcador viejo lo
+  // deja viejo: no se reescribe a mitad de ejecución.
+  const previo = readSessionMarker();
+  const sigueVieja = !!previo && String(previo.storyId) === String(storyId) && STEPS_TABLE.schemeOf(previo) === 1;
+  const esquema = sigueVieja
+    ? { stepsPending: [0, 1, 2, 3, 4, 5, 6, 7, 8], arranque: '0' }
+    // los que se cierran con su bandera no van en la lista: ninguna bandera la vacía, y una ejecución terminada tiene que
+    // quedar con la lista vacía para todos los que la miran (como el 5b y el 7c en el marcador viejo)
+    : { stepScheme: STEPS_TABLE.SCHEME, stepsPending: STEPS_TABLE.STEPS.filter((s) => !s.flag).map((s) => s.id), arranque: 'start' };
   try {
     // marker.js con el mismo Node que corre este programa, no el del PATH
     execFileSync(process.execPath, [markerJs, 'set', JSON.stringify({
+      ...(esquema.stepScheme ? { stepScheme: esquema.stepScheme } : {}),
       // storyPath ABSOLUTO: si `start` lo validara contra el cwd y el marker lo guardara
       // crudo, on-advisor-run.js y marker.js lo resolverían contra repoPath — coinciden sólo si
       // cwd == --repo. Con `--repo backend --story project/specs/x.md` desde el padre, la proyección
@@ -3218,14 +3242,14 @@ function computeStart(args) {
           return null;
         }
       })(),
-      stepsPending: [0, 1, 2, 3, 4, 5, 6, 7, 8],
-      // las vueltas de revisores son de esta corrida: una corrida anterior de la misma sesión no las hereda
+      stepsPending: esquema.stepsPending,
+      // las vueltas de revisores son de esta ejecución: una ejecución anterior de la misma sesión no las hereda
       iterations: {},
       size: runSize.size, size_reason: runSize.reason, estimate_min: runSize.estimate_min, estimate_source: runSize.estimate_source,
     })], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    execFileSync(process.execPath, [markerJs, 'complete-step', '0'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync(process.execPath, [markerJs, 'complete-step', esquema.arranque], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     logRunStart(storyId);
-    actions.push('PIPE-C4: marker seteado (step 0 completado)');
+    actions.push(`PIPE-C4: marker seteado (Arranque cerrado${sigueVieja ? '; sigue el marcador viejo de esta ejecución' : ''})`);
   } catch (e) {
     return { ready: false, story_id: storyId, pauses: [{ id: 'marker-set-failed', detail: String(e.message || e) }], actions_done: actions };
   }
@@ -3428,8 +3452,8 @@ function computeRiskClass(args) {
     auto_approve_plan: allPass,
     criteria,
     note: allPass
-      ? 'LOW-risk: step-03 puede auto-aprobarse (Nivel 2), pero el plan se muestra siempre: primero un mensaje con el plan tal cual, después complete-step 3 --auto-approved (lee la conversación; sin poder leerla, se le pregunta a la persona). Push y scope firmado siguen human-gate SIEMPRE.'
-      : 'NORMAL: checkpoint HITL del plan (step-03) como siempre.',
+      ? 'LOW-risk: «Aprobar el plan» puede auto-aprobarse (Nivel 2), pero el plan se muestra siempre: primero un mensaje con el plan tal cual, después complete-step approve-plan --auto-approved (lee la conversación; sin poder leerla, se le pregunta a la persona). Push y scope firmado siguen human-gate SIEMPRE.'
+      : 'NORMAL: «Aprobar el plan» con la persona, como siempre.',
   };
 }
 
@@ -3864,7 +3888,7 @@ function equivalenciasDeModelos() {
 }
 
 // ── pipeline.js deep-review-gate — Step 5b adversarial ──
-// Decide si corre el pase adversarial reproduce-or-refute (step-05b-adversarial-verify.md),
+// Decide si corre el pase adversarial reproduce-or-refute (step-08-adversarial-pass.md),
 // que EJECUTA el código (bundlea/parsea/probe) en vez de LEER el diff como los 6 advisors
 // single-pass: así encuentra falsos negativos (p.ej. un traversal en lanes/participants) que ellos no ven.
 //
@@ -6243,7 +6267,8 @@ function main() {
     // hora. Lo escribe marker.js (un solo escritor del marker); él decide no mover un arranque ya
     // anotado ni arrancar un paso completo. Los sub-pasos (0b/0c/5b/7c) también: su trabajo no puede
     // caer como «tiempo entre pasos». Best-effort: medir nunca puede romper la consulta.
-    if (!result.error && /^(\d|0b|0c|5b|7c)$/.test(String(result.next_step || ''))) {
+    // el paso por su nombre de máquina (o el número de un marcador viejo): marker.js decide qué arranque anotar
+    if (!result.error && (STEPS_TABLE.byId(result.next_step) || /^(\d|0b|0c|5b|7c)$/.test(String(result.next_step || '')))) {
       try {
         require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'start-step', String(result.next_step)],
           { stdio: 'ignore', timeout: 10000 });
@@ -6298,7 +6323,7 @@ function main() {
     // solo. `computeRiskClass` es pura (no sabe la raíz del repo): la maqueta se suma acá, sin tocar el riesgo.
     if (storyNeedsMockup(args.story)) {
       result.mockup_required = true;
-      if (result.risk === 'LOW') result.note = `${result.note} Story con pantalla: el plan se aprueba solo; la maqueta no (--mockup-approved, steps/step-03-hitl-plan.md §La maqueta).`;
+      if (result.risk === 'LOW') result.note = `${result.note} Story con pantalla: el plan se aprueba solo; la maqueta no (--mockup-approved, steps/${STEPS_TABLE.byId('approve-plan').file} §La maqueta).`;
     }
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(0);
@@ -6390,7 +6415,7 @@ function main() {
         result.previous_pass = 'no-medido';
       }
     }
-    if (corrida && corrida.storyId && mismaStory && (corrida.stepsCompleted || []).map(String).includes('4')
+    if (corrida && corrida.storyId && mismaStory && STEPS_TABLE.isDone(corrida, 'run-tests')
         && Array.isArray(args.files) && args.files.length && typeof result.run === 'boolean') {
       try {
         const out = require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'mark-adversarial-gate',
@@ -6819,8 +6844,7 @@ module.exports = {
   orgModels,
   aplicarModelosDeRevisores,
   // El cartel de la corrida (mods/harness-mods) copia la lista de pasos; harness-mods.test.js T16 la ata a ésta.
-  STEP_SEQUENCE,
-  SUBSTEP_FLAG, SUBSTEP_OLD_FLAG, completedWorkHours, harnessTimeTool,
+  completedWorkHours, harnessTimeTool,
   // tests/unit.test.js «T43 ThirdPartyManifestPath_*».
   thirdPartyManifestPath,
   // El hook on-advisor-run.js escribe el review-roster en el MISMO run dir que usa el pipeline:

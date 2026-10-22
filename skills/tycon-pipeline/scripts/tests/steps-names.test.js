@@ -22,24 +22,25 @@ const SCRIPTS = path.join(__dirname, '..');
 const SKILL = path.join(SCRIPTS, '..');
 const RAIZ = path.join(SKILL, '..', '..');
 
-// La tabla, escrita acá a propósito: es la de la story, no la del código que se prueba.
+// La tabla, escrita acá a propósito: es la de la story, no la del código que se prueba. Los pasos van por
+// su nombre de máquina; los números del marcador viejo se leen con el nombre nuevo de la equivalencia.
 const ESPERADOS = {
-  0: 'Arranque',
-  '0b': 'Arranque: aviso de trabajo',
-  '0c': 'Arranque: pedido en ADO',
-  1: 'Validar la historia',
-  2: 'Armar el plan',
-  3: 'Aprobar el plan',
-  4: 'Implementar y correr las pruebas',
-  5: 'Revisores',
-  '5b': 'Pase adversarial',
-  6: 'Hallazgos: el informe',
-  7: 'Hallazgos: la decisión',
-  '7b': 'Revisores, otra vuelta',
-  '7c': 'Probar en vivo',
-  8: 'Preparar el commit',
-  9: 'Cerrar la historia',
+  start: 'Arranque',
+  'validate-story': 'Validar la historia',
+  plan: 'Armar el plan',
+  'approve-plan': 'Aprobar el plan',
+  implement: 'Implementar',
+  'run-tests': 'Correr las pruebas',
+  reviewers: 'Revisores',
+  'adversarial-pass': 'Pase adversarial',
+  findings: 'Hallazgos',
+  'live-check': 'Probar en vivo',
+  'prepare-commit': 'Preparar el commit',
+  'close-work-item': 'Cerrar la historia',
 };
+const VIEJOS = { 0: 'Arranque', '0b': 'Arranque', '0c': 'Arranque', 1: 'Validar la historia', 2: 'Armar el plan', 3: 'Aprobar el plan',
+  4: 'Implementar + pruebas', 5: 'Revisores', '5b': 'Pase adversarial', 6: 'Hallazgos', 7: 'Hallazgos', '7b': 'Revisores', '7c': 'Probar en vivo',
+  8: 'Preparar el commit', 9: 'Cerrar la historia' };
 
 // Un paso nombrado por su número: «Step 5», «step 4», «steps 1-2», «paso 8», «sub-paso 4.0», «5b», «7c»…
 const POR_NUMERO = /\bsteps? ?\d|\bsub-?pasos? ?\d|\bpasos? \d|\b(?:0b|0c|5b|7b|7c)\b/i;
@@ -99,28 +100,32 @@ function entorno() {
   return { base, home, repo, story, correr, activo };
 }
 
-const ORDEN = ['0', '0b', '0c', '1', '2', '3', '4', '5', '5b', '6', '7', '7c', '8'];
-const BANDERA = { '0b': 'workSignalStarted', '0c': 'adoMarkedActive', '5b': 'deepReviewDone', '7c': 'dodRuntimeChecked' };
+const ORDEN = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'adversarial-pass', 'findings', 'live-check', 'prepare-commit'];
+const BANDERA = { 'adversarial-pass': 'deepReviewDone', 'live-check': 'dodRuntimeChecked' };
 
 test('T1 Display_PlainNamesOnly — lo que ve el dueño nombra cada paso por su nombre llano, sin número', () => {
   // la tabla
   const S = require(path.join(SCRIPTS, 'lib', 'steps.js'));
-  assert.deepStrictEqual(Object.fromEntries(S.STEPS.map((s) => [s.id, s.name])), Object.fromEntries(Object.entries(ESPERADOS).map(([k, v]) => [String(k), v])));
-  for (const s of S.STEPS) {
-    assert.strictEqual(S.stepName(s.id), s.name);
-    assert.strictEqual(S.stepName(Number.isNaN(Number(s.id)) ? s.id : Number(s.id)), s.name, `stepName acepta el número suelto del marcador (${s.id})`);
+  assert.deepStrictEqual(Object.fromEntries([...S.STEPS, S.CLOSE_STEP].map((s) => [s.id, s.name])), ESPERADOS);
+  for (const s of S.STEPS) assert.strictEqual(S.stepName(s.id), s.name);
+  for (const [id, name] of Object.entries(VIEJOS)) {
+    assert.strictEqual(S.stepName(id), name, `el id viejo ${id}, con el nombre nuevo`);
+    if (/^\d$/.test(id)) assert.strictEqual(S.stepName(Number(id)), name, `stepName acepta el número suelto del marcador viejo (${id})`);
   }
   assert.strictEqual(S.stepName('zz'), null, 'un id que no existe: null, no un nombre inventado');
+  assert.strictEqual(S.stepName('reviewers', 2), 'Revisores, vuelta 2');
   assert.strictEqual(S.stepNames([5, '5b', 8]), 'Revisores, Pase adversarial, Preparar el commit');
+  assert.strictEqual(S.stepNames(['reviewers', 'findings']), 'Revisores, Hallazgos');
+  assert.strictEqual(S.stepNames([6, 7]), 'Hallazgos', 'los dos viejos de Hallazgos, una vez');
   assert.strictEqual(S.stepNames([3, 'zz']), 'Aprobar el plan, «zz»', 'un id desconocido se muestra tal cual, marcado');
   assert.strictEqual(S.stepNames(undefined), '', 'sin lista: vacío, sin romper');
   assert.strictEqual(S.stepNames('5'), '', 'algo que no es lista: vacío, sin romper');
 
-  // los títulos de los quince archivos de paso
+  // los títulos de los doce archivos de paso
   const archivos = fs.readdirSync(path.join(SKILL, 'steps')).filter((f) => f.endsWith('.md'));
-  assert.strictEqual(archivos.length, 15, 'quince archivos de paso');
+  assert.strictEqual(archivos.length, 12, 'doce archivos de paso');
   for (const f of archivos) {
-    const fila = S.STEPS.find((s) => s.file === f);
+    const fila = [...S.STEPS, S.CLOSE_STEP].find((s) => s.file === f);
     assert.ok(fila, `${f} tiene su fila en lib/steps.js`);
     assert.strictEqual(fs.readFileSync(path.join(SKILL, 'steps', f), 'utf8').split('\n')[0], `# ${fila.name}`, `título de ${f}`);
   }
@@ -136,19 +141,19 @@ test('T1 Display_PlainNamesOnly — lo que ve el dueño nombra cada paso por su 
   const base = JSON.parse(fs.readFileSync(E.activo(sid), 'utf8'));
   for (let i = 1; i < ORDEN.length; i++) {
     const hechos = ORDEN.slice(0, i);
-    const m = { ...base, stepsCompleted: hechos.filter((id) => /^\d$/.test(id)).map(Number), stepsPending: ORDEN.slice(i).filter((id) => /^\d$/.test(id)).map(Number) };
+    const m = { ...base, workSignalStarted: true, adoMarkedActive: true, stepsCompleted: hechos.filter((id) => !BANDERA[id]), stepsPending: ORDEN.slice(i) };
     for (const [id, flag] of Object.entries(BANDERA)) m[flag] = hechos.includes(id);
     fs.writeFileSync(E.activo(sid), JSON.stringify(m));
     const r = E.correr('pipeline.js', ['next'], sid);
     assert.strictEqual(r.status, 0, r.stderr);
     const n = JSON.parse(r.stdout);
-    assert.strictEqual(n.next_step, ORDEN[i], `next_step sigue con el número de hoy (${ORDEN[i]})`);
+    assert.strictEqual(n.next_step, ORDEN[i], `next_step por nombre de máquina (${ORDEN[i]})`);
     assert.strictEqual(n.step_name, ESPERADOS[ORDEN[i]], `step_name del paso ${ORDEN[i]}`);
     assert.ok(n.note.includes(ESPERADOS[ORDEN[i]]), `el note nombra el paso: ${n.note}`);
-    sinNumero(n.note, `el note del paso ${ORDEN[i]}`);
+    sinNumero(n.note.replace(/\(paso \d+ de 11\)/g, ' '), `el note del paso ${ORDEN[i]}`);
     for (const s of n.steps) assert.strictEqual(s.name, ESPERADOS[s.step], `steps[].name del paso ${s.step}`);
   }
-  const fin = { ...base, stepsCompleted: [0, 1, 2, 3, 4, 5, 6, 7, 8], stepsPending: [] };
+  const fin = { ...base, stepsCompleted: ORDEN.filter((id) => !BANDERA[id]), stepsPending: [] };
   for (const flag of Object.values(BANDERA)) fin[flag] = true;
   fs.writeFileSync(E.activo(sid), JSON.stringify(fin));
   const nf = JSON.parse(E.correr('pipeline.js', ['next'], sid).stdout);
@@ -159,7 +164,7 @@ test('T1 Display_PlainNamesOnly — lo que ve el dueño nombra cada paso por su 
   const salida = (r) => r.stdout + r.stderr;
   //   on-prompt: «listo» con los revisores pendientes
   const sidStop = 's-stop';
-  fs.writeFileSync(E.activo(sidStop), JSON.stringify({ ...base, sessionId: sidStop, stepsCompleted: [0, 1, 2, 3, 4], stepsPending: [5, 6, 7, 8] }));
+  fs.writeFileSync(E.activo(sidStop), JSON.stringify({ ...base, sessionId: sidStop, stepsCompleted: ORDEN.slice(0, 6), stepsPending: ORDEN.slice(6) }));
   const stop = salida(E.correr('on-prompt.js', [], sidStop, JSON.stringify({ prompt: 'listo, ya está', session_id: sidStop })));
   assert.match(stop, /STOP-detect/);
   assert.match(stop, /Revisores/);
@@ -196,22 +201,22 @@ test('T1 Display_PlainNamesOnly — lo que ve el dueño nombra cada paso por su 
   }
 });
 
-test('T3 TandaA_MarkerAndHooksUnchanged — el marcador y las decisiones de los hooks, iguales que hoy', () => {
+test('T3 TandaA_MarkerAndHooksUnchanged — el marcador viejo sigue andando: las decisiones de los hooks, iguales que antes', () => {
   const E = entorno();
   const sid = 's-forma';
   const r = E.correr('pipeline.js', ['start', '--story', E.story, '--repo', E.repo, '--brief'], sid);
   assert.strictEqual(r.status, 0, r.stderr + r.stdout);
-  const m = JSON.parse(fs.readFileSync(E.activo(sid), 'utf8'));
-  // las claves que deja `start`, más las cuatro del tamaño de la corrida: size, size_reason,
-  // estimate_min, estimate_source), y ni una más
-  assert.deepStrictEqual(Object.keys(m).sort(), [
+  const nuevo = JSON.parse(fs.readFileSync(E.activo(sid), 'utf8'));
+  // las claves que deja `start`, más las cuatro del tamaño de la ejecución (size, size_reason, estimate_min,
+  // estimate_source) y el esquema de los pasos, y ni una más
+  assert.deepStrictEqual(Object.keys(nuevo).sort(), [
     'autonomous', 'baseSha', 'checks', 'estimate_min', 'estimate_source', 'evidenceDir', 'fileEvents', 'filesTouched',
     'filesTouchedAt', 'iter', 'iterations', 'lastFailures', 'lastTouch', 'noProgressStreak', 'repoPath', 'sessionId',
-    'size', 'size_reason', 'sprint', 'startedAt', 'stepTimings', 'stepsCompleted', 'stepsPending', 'storyId', 'storyPath',
+    'size', 'size_reason', 'sprint', 'startedAt', 'stepScheme', 'stepTimings', 'stepsCompleted', 'stepsPending', 'storyId', 'storyPath',
   ]);
-  assert.strictEqual(m.stepScheme, undefined, 'sin stepScheme: eso es la tanda B');
-  assert.deepStrictEqual(m.stepsCompleted, [0]);
-  assert.deepStrictEqual(m.stepsPending, [1, 2, 3, 4, 5, 6, 7, 8], 'los pendientes, por número como hoy');
+  // un marcador viejo, como el de una ejecución en vuelo al actualizar el arnés
+  const m = { ...nuevo, stepsCompleted: [0], stepsPending: [1, 2, 3, 4, 5, 6, 7, 8] };
+  delete m.stepScheme;
 
   // el portón de carril: plan pendiente frena; plan aprobado deja pasar
   const gate = require(path.join(SCRIPTS, 'lib', 'story-gate.js'));

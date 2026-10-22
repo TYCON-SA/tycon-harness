@@ -55,7 +55,7 @@ const { execFile, spawnSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..');
 const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
-const { stepName } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));
+const { stepName, isDone, byId } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));
 const { tiempos } = require(path.join(ROOT, 'scripts', 'metrics', 'step-times.js'));
 
 const TITLE_MAX = 50;
@@ -125,6 +125,12 @@ function stepMedians(dir, unreadable) {
   if (broken) unreadable.push(`${broken} ejecución(es) archivada(s) en ${dir}: no se pudieron leer`);
   const out = {};
   for (const [k, v] of Object.entries(samples)) out[k] = median(v);
+  // Un paso por nombre de máquina sin ejecuciones propias todavía usa la mediana de su equivalente viejo.
+  // El 4 viejo era implementar y correr las pruebas: va entero a Implementar y Correr las pruebas suma 0, sin repartir.
+  const sum = (...ks) => (ks.every((k) => out[k] != null) ? ks.reduce((a, k) => a + out[k], 0) : undefined);
+  const viejo = { start: sum('0'), 'validate-story': sum('1'), plan: sum('2'), 'approve-plan': sum('3'), implement: sum('4'),
+    'run-tests': out['4'] != null ? 0 : undefined, reviewers: sum('5'), findings: sum('6', '7'), 'prepare-commit': sum('8') };
+  for (const [k, v] of Object.entries(viejo)) if (out[k] == null && v !== undefined) out[k] = v;
   return out;
 }
 
@@ -241,7 +247,9 @@ function entryNote(entry) {
 // Pasado el estimado del paso en curso, dice «atrasada» con esa hora; nunca corre con el reloj (si corriera, un paso
 // pasado de su mediana mostraría la hora actual y escondería el atraso).
 function estimateEnd(marker, medians, nowMs, entry) {
-  const pending = (marker.stepsPending || []).map(String);
+  // los pasos que se dan por hechos con una bandera (el pase adversarial, la prueba en vivo) no tienen mediana propia:
+  // su tiempo cae en el paso que acompañan, como los sub-pasos viejos
+  const pending = (marker.stepsPending || []).map(String).filter((s) => !(byId(s) && (byId(s).flag || !byId(s).number)));
   if (!pending.length) return 'sin datos (no quedan pasos)';
   const missing = pending.find((s) => medians[s] == null);
   if (missing !== undefined) return `sin datos (${stateOf(missing)})`;
@@ -268,9 +276,9 @@ function enteringEnd(marker, entry, nowMs) {
   if (!entry || !entry.repos || entry.missing.length) {
     return `sin estimación (espera la CI o la cola; sin merges medidos en ${entry && entry.missing.length ? entry.missing.join(', ') : 'sus repos'})`;
   }
-  const t8 = (marker.stepTimings || {})['8'];
+  const t8 = (marker.stepTimings || {})['prepare-commit'] || (marker.stepTimings || {})['8'];
   const done = Date.parse(t8 && t8.completedAt);
-  if (!Number.isFinite(done)) return 'sin estimación (espera la CI o la cola; sin la hora de cierre del paso 8)';
+  if (!Number.isFinite(done)) return 'sin estimación (espera la CI o la cola; sin la hora de cierre de «Preparar el commit»)';
   const fixed = done + entry.ms;
   return nowMs > fixed ? `atrasada (estimado ${hhmm(fixed)})` : `${hhmm(fixed)}${entryNote(entry)}`;
 }
@@ -678,7 +686,7 @@ function latestClosures(dir, nowMs, unreadable) {
   for (const { m } of closed) {
     if (seen.has(m.sessionId)) continue;
     seen.add(m.sessionId);
-    if ((Array.isArray(m.stepsCompleted) ? m.stepsCompleted : []).map(String).includes('8')) out.set(m.sessionId, m);
+    if (isDone(m, 'prepare-commit')) out.set(m.sessionId, m);
   }
   return out;
 }
@@ -753,7 +761,7 @@ function buildWip(opts = {}) {
     try { m = readObject(file); } catch (e) { unreadable.push(`${file}: ${e.message}`); continue; }
     if (!Array.isArray(m.stepsPending)) { unreadable.push(`${file}: sin lista de pasos pendientes`); continue; }
     const closed = !m.stepsPending.length;
-    if (closed && !(Array.isArray(m.stepsCompleted) ? m.stepsCompleted : []).map(String).includes('8')) continue;
+    if (closed && !isDone(m, 'prepare-commit')) continue;
     // Sin lastTouch legible, la fecha del archivo; si tampoco se lee, se dice y no se lo da por reciente.
     let touched = Date.parse(m.lastTouch);
     if (!Number.isFinite(touched)) {

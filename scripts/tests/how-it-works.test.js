@@ -68,10 +68,10 @@ const perfilCon = ({ profile = {}, repos = null, paquete = PAQUETE(), extra = {}
 // ════════════════════════════════════════ el modelo ════════════════════════════════════════
 
 test('T2 ComoTrabaja_PasosDeLaTabla @story-2.61 @ac-2 — los pasos de steps.js, en orden, con su objetivo', () => {
-  const { STEPS } = require(path.join(SCRIPTS, 'lib', 'steps.js'));
+  const { STEPS, CLOSE_STEP } = require(path.join(SCRIPTS, 'lib', 'steps.js'));
   const pasos = HIW().readSteps(ROOT);
-  assert.deepStrictEqual(pasos.map((p) => p.id), STEPS.map((s) => s.id), 'los mismos ids, en el mismo orden');
-  assert.deepStrictEqual(pasos.filter((p) => !p.inSequence).map((p) => p.id), ['7b', '9'], 'los dos fuera del recorrido');
+  assert.deepStrictEqual(pasos.map((p) => p.id), [...STEPS, CLOSE_STEP].map((s) => s.id), 'los mismos ids, en el mismo orden, con el cierre al final');
+  assert.deepStrictEqual(pasos.filter((p) => !p.inSequence).map((p) => p.id), ['close-work-item'], 'el cierre, fuera del recorrido');
   for (const p of pasos) {
     const texto = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', p.file), 'utf8');
     const objetivo = /^\*\*Objetivo\*\*:\s*(.+)$/m.exec(texto)[1].trim();
@@ -79,11 +79,11 @@ test('T2 ComoTrabaja_PasosDeLaTabla @story-2.61 @ac-2 — los pasos de steps.js,
   }
   // un paso nuevo en la tabla aparece solo: un árbol de juguete con un paso más
   const arbol = carpeta({
-    'skills/tycon-pipeline/scripts/lib/steps.js': `module.exports = { STEPS: [{ id: '0', name: 'Arranque', file: 'a.md' }, { id: 'x', name: 'Nuevo', file: 'x.md' }] };\n`,
+    'skills/tycon-pipeline/scripts/lib/steps.js': `module.exports = { STEPS: [{ id: 'start', name: 'Arranque', file: 'a.md' }, { id: 'x', name: 'Nuevo', file: 'x.md' }] };\n`,
     'skills/tycon-pipeline/steps/a.md': '# Arranque\n\n**Objetivo**: arrancar.\n',
     'skills/tycon-pipeline/steps/x.md': '# Nuevo\n\n**Objetivo**: un paso que no existía.\n',
   });
-  assert.deepStrictEqual(HIW().readSteps(arbol).map((p) => [p.id, p.goal]), [['0', 'arrancar.'], ['x', 'un paso que no existía.']]);
+  assert.deepStrictEqual(HIW().readSteps(arbol).map((p) => [p.id, p.goal]), [['start', 'arrancar.'], ['x', 'un paso que no existía.']]);
 });
 
 test('T3 ComoTrabaja_GuiasQueCita @story-2.61 @ac-3 — el archivo del paso y las guías que cita, sin repetir', () => {
@@ -94,7 +94,7 @@ test('T3 ComoTrabaja_GuiasQueCita @story-2.61 @ac-3 — el archivo del paso y la
   });
   const [uno, dos] = HIW().readSteps(arbol);
   assert.deepStrictEqual(uno.guides, ['skills/tycon-pipeline/steps/uno.md', 'guides/b.md', 'guides/a.md', 'story-format.md']);
-  // una guía nombrada sola, como la escriben los pasos 4 y 7b del arnés, se reconoce si existe bajo guides/
+  // una guía nombrada sola, como la escriben los pasos del arnés, se reconoce si existe bajo guides/
   const conSuelta = carpeta({
     'skills/tycon-pipeline/scripts/lib/steps.js': `module.exports = { STEPS: [{ id: '4', name: 'Cuatro', file: 'c.md' }] };\n`,
     'skills/tycon-pipeline/steps/c.md': '# C\n\n**Objetivo**: c.\n\nAntes de correr leé `test-execution-discipline.md`; no-existe.md no cuenta, ni otro-paso.md.\n',
@@ -108,8 +108,8 @@ test('T3 ComoTrabaja_GuiasQueCita @story-2.61 @ac-3 — el archivo del paso y la
     fs.chmodSync(path.join(cerrada, 'guides', 'privadas'), 0o000);
     try { assert.match(HIW().readSteps(cerrada)[0].problems.join(' '), /guides\/privadas no se pudo leer/); } finally { fs.chmodSync(path.join(cerrada, 'guides', 'privadas'), 0o755); }
   }
-  // en el árbol real: el paso 4 la cita así
-  assert.ok(HIW().readSteps(ROOT).find((s) => s.id === '4').guides.includes('guides/test-execution-discipline.md'));
+  // en el árbol real: el paso de correr las pruebas la cita así
+  assert.ok(HIW().readSteps(ROOT).find((s) => s.id === 'run-tests').guides.includes('guides/test-execution-discipline.md'));
   // un archivo de paso que no se puede leer se dice, no queda como «sin objetivo»
   const sinArchivo = carpeta({ 'skills/tycon-pipeline/scripts/lib/steps.js': `module.exports = { STEPS: [{ id: '1', name: 'Uno', file: 'falta.md' }] };\n` });
   assert.match(HIW().readSteps(sinArchivo)[0].problems.join(' '), /falta\.md no se pudo leer/);
@@ -152,10 +152,10 @@ test('T6 Paquetes_EnSuPaso @story-2.61 @ac-5 — validacion en Validar, base y c
   const perfil = carpeta(perfilCon({ paquete: { ...PAQUETE(), reviewers: [...PAQUETE().reviewers, { agent: 'acme-base-reviewer', group: 'base', surface: { paths: ['**/*.py'] }, depth: 'lean', prefixes: ['ACMEB'] }] }, extra: { 'packs/acme-pagos/agents/acme-base-reviewer.md': AGENTE('acme-base-reviewer') } }));
   const m = HIW().buildModel({ treeDir: ROOT, packsTreeDir: arbol, profileDir: perfil });
   const en = (id) => m.steps.find((s) => s.id === id).reviewers.packs;
-  assert.deepStrictEqual(en('1').map((r) => [r.agent, r.origin]), [['arbol-validador', 'harness']]);
-  assert.deepStrictEqual(en('5').map((r) => [r.agent, r.origin]).sort(), [['acme-base-reviewer', 'organization'], ['acme-pagos-reviewer', 'organization']]);
-  assert.deepStrictEqual(en('7b').map((r) => r.agent).sort(), ['acme-base-reviewer', 'acme-pagos-reviewer']);
-  const pagos = en('5').find((r) => r.agent === 'acme-pagos-reviewer');
+  assert.deepStrictEqual(en('validate-story').map((r) => [r.agent, r.origin]), [['arbol-validador', 'harness']]);
+  assert.deepStrictEqual(en('reviewers').map((r) => [r.agent, r.origin]).sort(), [['acme-base-reviewer', 'organization'], ['acme-pagos-reviewer', 'organization']]);
+  assert.deepStrictEqual(en('reviewers').map((r) => r.agent).sort(), ['acme-base-reviewer', 'acme-pagos-reviewer'], 'cada revisor, una vez: la otra vuelta es de este mismo paso');
+  const pagos = en('reviewers').find((r) => r.agent === 'acme-pagos-reviewer');
   assert.deepStrictEqual(pagos.when, { detection: 'pyModified' }, 'la condición del manifiesto');
   const html = TAB().renderPage(m, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
   assert.ok(html.includes(TX().t('es', 'bandera.pyModified')), 'la condición dicha en llano');
@@ -203,8 +203,8 @@ test('T8 Controles_EnSuPaso @story-2.61 @ac-6 — cada control en sus pasos; los
   for (const c of [...m.allSteps.controls, ...m.steps.flatMap((s) => s.controls)]) assert.ok(['blocks', 'warns', 'records'].includes(c.effect), c.spec);
   // la página dibuja «frena» y «avisa» en sus controles, y un control opcional apagado de fábrica no dice que frena
   const html = TAB().renderPage(m, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
-  const paso4 = html.slice(html.indexOf('id="paso-4"'), html.indexOf('id="paso-5"'));
-  assert.ok(paso4.includes(`ct-chip frena">${TX().t('es', 'comoTrabaja.frena')}<`) && paso4.includes('on-atdd-preedit'), 'el paso 4 muestra un control que frena');
+  const paso4 = html.slice(html.indexOf('id="paso-implement"'), html.indexOf('id="paso-run-tests"'));
+  assert.ok(paso4.includes(`ct-chip frena">${TX().t('es', 'comoTrabaja.frena')}<`) && paso4.includes('on-atdd-preedit'), 'el paso Implementar muestra un control que frena');
   const guardia = html.split('data-origin="harness"').find((x) => x.includes('session-collision-guard.js'));
   assert.ok(guardia && guardia.includes(TX().t('es', 'comoTrabaja.opcional', { variable: 'TYCON_SESSION_GUARD' })) && !guardia.split('</li>')[0].includes('ct-chip frena'), 'opcional, apagado de fábrica');
 });
@@ -225,11 +225,9 @@ test('T9 ArnesSoloLectura @story-2.61 @ac-3 @ac-7 — lo del arnés no tiene cam
   // la lista: los del recorrido en su orden y, aparte al final, los que no van en él (la tabla los tiene intercalados)
   const lista = html.slice(html.indexOf('<ol class="ct-pasos'), html.indexOf('</ol>'));
   const ids = [...lista.matchAll(/data-step="([^"]+)"/g)].map((x) => x[1]);
-  const { STEPS } = require(path.join(SCRIPTS, 'lib', 'steps.js'));
-  const plegados = HIW().FOLDED_STEPS;
-  const visibles = STEPS.filter((s) => !plegados.includes(s.id));
-  assert.deepStrictEqual(ids, [...visibles.filter((s) => s.inSequence !== false), ...visibles.filter((s) => s.inSequence === false)].map((s) => s.id).concat('todo'));
-  assert.ok(lista.indexOf('ct-aparte') < lista.indexOf('data-step="7b"'), '«Fuera del recorrido» antes de los de afuera');
+  const { STEPS, CLOSE_STEP } = require(path.join(SCRIPTS, 'lib', 'steps.js'));
+  assert.deepStrictEqual(ids, [...STEPS, CLOSE_STEP].map((s) => s.id).concat('todo'));
+  assert.ok(lista.indexOf('ct-aparte') < lista.indexOf('data-step="close-work-item"'), '«Fuera del recorrido» antes de los de afuera');
 });
 
 test('T16 ProponerMejora_IssueCompleto @story-2.61 @ac-7 — un issue del público con título y cuerpo, sin credencial', () => {
@@ -344,7 +342,7 @@ test('T1 Perfil_RevisorEnAgentsDeLaRaiz_Activo @story-2.64 @ac-1 — el paquete 
   const p = m.packs.find((x) => x.name === 'acme-clientes');
   assert.deepStrictEqual(p.problems, []);
   assert.ok(m.org.packs.active.includes('acme-clientes'), 'activo con packs.default all');
-  const [cond] = deClientes(m, '5');
+  const [cond] = deClientes(m, 'reviewers');
   assert.ok(cond && cond.active === true && cond.editable === true, 'el uso condicional, activo y editable');
   assert.strictEqual(cond.md, 'packs/acme-clientes/agents/acme-hermanos-reviewer.md');
 });
@@ -506,8 +504,8 @@ test('T17 ComoTrabaja_DosOrganizaciones @story-2.61 @ac-15 — cada organizació
     const delArbol = fs.existsSync(path.join(ROOT, 'packs')) ? fs.readdirSync(path.join(ROOT, 'packs'), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name) : [];
     assert.deepStrictEqual([...mA.org.packs.active].sort(), [...new Set(['acme-pagos', ...delArbol])].sort());
     assert.deepStrictEqual(mB.org.packs.active, []);
-    assert.ok(paso(mA, '5').reviewers.packs.some((r) => r.agent === 'acme-pagos-reviewer' && r.active));
-    assert.ok(paso(mB, '5').reviewers.packs.every((r) => !r.active), 'B no tiene activo el paquete');
+    assert.ok(paso(mA, 'reviewers').reviewers.packs.some((r) => r.agent === 'acme-pagos-reviewer' && r.active));
+    assert.ok(paso(mB, 'reviewers').reviewers.packs.every((r) => !r.active), 'B no tiene activo el paquete');
     const hB = TAB().renderPage(mB, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
     assert.ok(!hB.includes('clocki/'), 'B: nada del registro de horas en la página');
   } finally { process.env.HOME = viejo; }
@@ -524,9 +522,9 @@ test('T18 SegunLaHistoria_LaDecideElArnes @story-2.61 @ac-16 — cada pieza cond
   assert.deepStrictEqual(checkConditionals(alReves).map((p) => p.id), ['al-reves', 'al-reves'], 'no dispara con «sí» y dispara con «no»');
   const m = HIW().buildModel({ treeDir: ROOT, profileDir: null });
   const paso = (id) => m.steps.find((s) => s.id === id).storyPieces.map((p) => p.id);
-  assert.ok(paso('2').includes('mockup'));
-  assert.ok(paso('3').includes('mockupApproval'));
-  for (const id of ['browserTest', 'screenReadability']) assert.ok(paso('7c').includes(id), id);
+  assert.ok(paso('plan').includes('mockup'));
+  assert.ok(paso('approve-plan').includes('mockupApproval'));
+  for (const id of ['browserTest', 'screenReadability']) assert.ok(paso('live-check').includes(id), id);
   const html = TAB().renderPage(m, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
   assert.ok(html.includes(TX().t('es', 'segun.pantalla')), 'la condición en llano');
   assert.ok(html.includes(`${PUBLICO}/blob/main/skills/tycon-pipeline/scripts/mockup.js`), 'el código de la maqueta');
@@ -565,7 +563,7 @@ test('T1 ComoTrabaja_SoloMantenedores @story-2.61 @ac-1 — el mantenedor la ve;
     const p = await h.pedir('/como-trabaja', { cookie: lead });
     assert.strictEqual(p.status, 200);
     assert.ok(p.texto.includes('href="/como-trabaja"'), 'la pestaña en la barra');
-    assert.ok(p.texto.includes(TX().t('es', 'paso.5')));
+    assert.ok(p.texto.includes(TX().t('es', 'paso.reviewers')));
     // el editor pide el revisor de hoy; uno que no está da 404 con su motivo
     const hoy = await h.pedir('/api/como-trabaja/revisor?pack=acme-pagos&agent=acme-pagos-reviewer', { cookie: lead });
     assert.strictEqual(hoy.status, 200);
@@ -806,17 +804,17 @@ test('T25 ComoTrabaja_NingunNombreViejoDePaso @story-2.61.3 @ac-1 — ningún «
   // «Validar la story en …» es el pedido al validador, no el nombre del paso
   const archivos = ['scripts/site/texts.js', 'skills/tycon-pipeline/scripts/on-prompt.js', 'skills/tycon-pipeline/scripts/lib/story-gate.js',
     'skills/tycon-pipeline/scripts/pipeline.js', 'skills/tycon-pipeline/scripts/lib/steps.js', 'mods/harness-mods/hooks/steps.mjs',
-    'skills/tycon-pipeline/SKILL.md', 'skills/tycon-pipeline/steps/step-00-preflight.md', 'skills/tycon-pipeline/steps/step-01-validate-story.md',
-    'skills/tycon-pipeline/steps/step-09-ado-story-closure.md', 'guides/organization-site.md'];
+    'skills/tycon-pipeline/SKILL.md', 'skills/tycon-pipeline/steps/step-01-start.md', 'skills/tycon-pipeline/steps/step-02-validate-story.md',
+    'skills/tycon-pipeline/steps/close-work-item.md', 'guides/organization-site.md'];
   for (const a of archivos) {
     const texto = fs.readFileSync(path.join(ROOT, a), 'utf8');
     const linea = texto.split('\n').find((l) => VIEJOS.test(l));
     assert.ok(!linea, `${a}: ${linea}`);
   }
-  const { STEPS } = require(path.join(SCRIPTS, 'lib', 'steps.js'));
-  assert.strictEqual(STEPS.find((x) => x.id === '1').name, 'Validar la historia');
-  assert.strictEqual(STEPS.find((x) => x.id === '9').name, 'Cerrar la historia');
-  assert.deepStrictEqual(['1', '9'].map((id) => TX().t('en', `paso.${id}`)), ['Validate the story', 'Close the story']);
+  const { STEPS, CLOSE_STEP } = require(path.join(SCRIPTS, 'lib', 'steps.js'));
+  assert.strictEqual(STEPS.find((x) => x.id === 'validate-story').name, 'Validar la historia');
+  assert.strictEqual(CLOSE_STEP.name, 'Cerrar la historia');
+  assert.deepStrictEqual(['validate-story', 'close-work-item'].map((id) => TX().t('en', `paso.${id}`)), ['Validate the story', 'Close the story']);
 });
 
 // ADO se prende con su organización (ado.org), las demás con su llave en integrations
@@ -831,8 +829,8 @@ test('T28 ComoTrabaja_IntegracionesSonPiezasDeSuPaso @story-2.61.3 @ac-3 — el 
   const H2 = HIW();
   const m = H2.buildModel({ treeDir: ROOT, profileDir: null });
   const ids = m.steps.map((x) => x.id);
-  assert.ok(!ids.includes('0b') && !ids.includes('0c'), `sin 0b ni 0c: ${ids.join(',')}`);
-  assert.deepStrictEqual([...H2.FOLDED_STEPS].sort(), ['0b', '0c']);
+  assert.ok(!ids.some((x) => /^\d/.test(x)), `ningún id de la numeración vieja: ${ids.join(',')}`);
+  assert.strictEqual(H2.FOLDED_STEPS, undefined, 'no hay pasos que se plieguen en otro: el aviso de trabajo y el pedido son piezas de «Arranque»');
   // la tabla: cada fila nombra un paso que existe, una integración del lector, su texto y un archivo del árbol
   const integraciones = TC.integraciones(TC.cargar({ env: {}, home: tmp('hiw-home-') }));
   for (const f of H2.INTEGRATION_PIECES) {
@@ -843,21 +841,21 @@ test('T28 ComoTrabaja_IntegracionesSonPiezasDeSuPaso @story-2.61.3 @ac-3 — el 
     for (const idioma of ['es', 'en']) assert.ok(TX().t(idioma, f.textKey), `${f.id}: su texto en ${idioma}`);
   }
   const deUnPaso = (id) => (m.steps.find((x) => x.id === id).orgPieces || []).map((x) => x.id);
-  assert.deepStrictEqual(deUnPaso('0').sort(), H2.INTEGRATION_PIECES.filter((f) => f.step === '0').map((f) => f.id).sort());
-  assert.deepStrictEqual(deUnPaso('9').sort(), H2.INTEGRATION_PIECES.filter((f) => f.step === '9').map((f) => f.id).sort());
-  assert.ok(deUnPaso('0').length >= 2 && deUnPaso('9').length >= 2);
-  // lo que un paso plegado llevaba pasa a su anfitrión: sus controles y lo que se suma según la historia (si no, la
-  // pieza «pedido en ADO», declarada en el 0c, no aparece en ningún paso)
-  const arranque = m.steps.find((x) => x.id === '0');
-  for (const c of H2.STORY_CONDITIONALS.filter((x) => x.steps.some((id) => H2.FOLDED_STEPS.includes(id)))) {
+  assert.deepStrictEqual(deUnPaso('start').sort(), H2.INTEGRATION_PIECES.filter((f) => f.step === 'start').map((f) => f.id).sort());
+  assert.deepStrictEqual(deUnPaso('close-work-item').sort(), H2.INTEGRATION_PIECES.filter((f) => f.step === 'close-work-item').map((f) => f.id).sort());
+  assert.ok(deUnPaso('start').length >= 2 && deUnPaso('close-work-item').length >= 2);
+  // lo que se declara en «Arranque» aparece en él: sus controles y lo que se suma según la historia (si no, la pieza
+  // «pedido en ADO» no aparece en ningún paso)
+  const arranque = m.steps.find((x) => x.id === 'start');
+  for (const c of H2.STORY_CONDITIONALS.filter((x) => x.steps.includes('start'))) {
     assert.ok(arranque.storyPieces.some((x) => x.id === c.id), `${c.id} (de ${c.steps}) en «Arranque»`);
   }
   const { controls } = H2.readControls(ROOT);
-  for (const c of controls.filter((x) => Array.isArray(x.steps) && x.steps.some((id) => H2.FOLDED_STEPS.includes(id)))) {
+  for (const c of controls.filter((x) => Array.isArray(x.steps) && x.steps.includes('start'))) {
     assert.ok(arranque.controls.some((x) => x.spec === c.spec), `el control ${c.spec} (de ${c.steps}) en «Arranque»`);
   }
   const html = TAB().renderPage(m, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
-  for (const id of ['0', '9']) {
+  for (const id of ['start', 'close-work-item']) {
     const sec = seccionDe(html, id);
     assert.ok(sec.includes(`<h3>${TX().t('es', 'comoTrabaja.segunTuOrganizacion')}</h3>`), `el paso ${id} tiene su bloque`);
     for (const f of H2.INTEGRATION_PIECES.filter((x) => x.step === id)) {
@@ -939,10 +937,10 @@ test('T29 ComoTrabaja_SoloLoQueTuOrganizacionUsa @story-2.61.3 @ac-4 — apagada
   assert.ok(todos(nada).some((c) => c.integration === 'ado'), 'y su control');
   assert.ok(!todos(nada).some((c) => c.integration === 'clockify'));
   // un paso con piezas declaradas y ninguna visible lo dice; uno sin filas no tiene el bloque
-  const vacio = { ...nada, steps: nada.steps.map((x) => (x.id === '0' ? { ...x, orgPieces: [] } : x)) };
+  const vacio = { ...nada, steps: nada.steps.map((x) => (x.id === 'start' ? { ...x, orgPieces: [] } : x)) };
   const hNada = TAB().renderPage(vacio, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
-  assert.ok(seccionDe(hNada, '0').includes(TX().t('es', 'comoTrabaja.sinPiezasOrg')), 'el paso dice que no tiene');
-  assert.ok(!seccionDe(hNada, '2').includes(TX().t('es', 'comoTrabaja.segunTuOrganizacion')), 'un paso sin filas no tiene el bloque');
+  assert.ok(seccionDe(hNada, 'start').includes(TX().t('es', 'comoTrabaja.sinPiezasOrg')), 'el paso dice que no tiene');
+  assert.ok(!seccionDe(hNada, 'plan').includes(TX().t('es', 'comoTrabaja.segunTuOrganizacion')), 'un paso sin filas no tiene el bloque');
   // un clon del perfil sin su archivo: no se sabe qué tiene la organización, se muestra todo (como sin perfil)
   const sinArchivo = H2.buildModel({ treeDir: ROOT, profileDir: carpeta({ 'LEEME.md': 'perfil sin configurar\n' }) });
   assert.strictEqual(piezas(sinArchivo).length, H2.INTEGRATION_PIECES.length, 'todas las piezas');
@@ -1257,12 +1255,12 @@ const conUsos = (d, cambiar) => ({ ...d, uses: d.uses.map((u) => cambiar(JSON.pa
 test('T1 Revisor_UnaVezPorPaso @story-2.63 @ac-1 — un revisor de dos usos, una vez en cada paso, y los dos «Editar» abren el mismo editor en su solapa', () => {
   // 🔴 rojo: el uso que valida la historia no se edita, y el editor abre una entrada del manifiesto, no el revisor.
   const m = HIW().buildModel({ treeDir: ROOT, profileDir: perfilDosUsos() });
-  const [en5, en1] = ['5', '1'].map((id) => deClientes(m, id));
+  const [en5, en1] = ['reviewers', 'validate-story'].map((id) => deClientes(m, id));
   assert.deepStrictEqual([en5.length, en1.length], [1, 1], 'una vez en Revisores y una vez en Validar la historia');
   assert.deepStrictEqual([en5[0].use, en1[0].use], ['cambio', 'validacion']);
   assert.ok(en5[0].editable && en1[0].editable, 'los dos usos se editan');
   const html = TAB().renderPage(m, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
-  for (const [id, uso] of [['5', 'cambio'], ['1', 'validacion']]) {
+  for (const [id, uso] of [['reviewers', 'cambio'], ['validate-story', 'validacion']]) {
     const botones = seccionDe(html, id).match(/data-action="edit"[^>]*data-agent="acme-hermanos-reviewer"[^>]*/g) || [];
     assert.strictEqual(botones.length, 1, `paso ${id}: un «Editar»`);
     assert.match(botones[0], new RegExp(`data-use="${uso}"`), `paso ${id}: abre la solapa «${uso}»`);

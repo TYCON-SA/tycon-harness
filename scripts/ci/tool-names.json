@@ -23,8 +23,8 @@
       "reason": "lee la bandera vieja del aviso de trabajo de los marcadores de sesiones en curso"
     },
     {
-      "path": "skills/tycon-pipeline/scripts/pipeline.js",
-      "reason": "la misma bandera vieja del marcador, para dar el paso 0b por hecho en una sesión en curso"
+      "path": "skills/tycon-pipeline/scripts/lib/steps.js",
+      "reason": "la misma bandera vieja del marcador, para dar por hecho el aviso de trabajo del arranque en una sesión en curso"
     },
     {
       "path": "mods/harness-mods/hooks/steps.mjs",

@@ -524,11 +524,11 @@ test('Regresion_PaseAdversarial_CitaConDolarNumeroYCarpetaRaros @story-8.67 @ac-
 });
 
 test('Instrucciones_PasoTresSieteYGuia_DicenLaOfertaYComoSeDeshace @story-8.67 @ac-8', () => {
-  const paso3 = fs.readFileSync(path.join(STEPS, 'step-03-hitl-plan.md'), 'utf8');
+  const paso3 = fs.readFileSync(path.join(STEPS, 'step-04-approve-plan.md'), 'utf8');
   assert.match(paso3, /e2e-setup\.js prepare[^\n]*--ok/);
   assert.match(paso3, /e2e-setup\.js defer[^\n]*--no/);
   assert.match(paso3, /la muestra el arnés/);
-  const paso7c = fs.readFileSync(path.join(STEPS, 'step-07c-dod-runtime-gate.md'), 'utf8');
+  const paso7c = fs.readFileSync(path.join(STEPS, 'step-10-live-check.md'), 'utf8');
   assert.match(paso7c, /browser_test: deferred/);
   assert.match(paso7c, /e2e-setup\.js prepare/);
   for (const g of ['reference.es.md', 'reference.md']) {

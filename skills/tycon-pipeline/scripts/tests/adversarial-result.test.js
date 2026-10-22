@@ -598,10 +598,10 @@ function next(home, sid, repo, extra) {
 test('T32 Next_5bAtendidoSoloConLaBandera @story-1.8 @ac-30', () => {
   const repo = mkRepo();
   const con = next(casa(), 't32', repo, { deepReviewDone: true });
-  assert.equal(con.steps.find((s) => s.step === '5b').done, true);
-  assert.notEqual(con.next_step, '5b');
+  assert.equal(con.steps.find((s) => s.step === 'adversarial-pass').done, true);
+  assert.notEqual(con.next_step, 'adversarial-pass');
   const sin = next(casa(), 't32', repo, {});
-  assert.equal(sin.next_step, '5b');
+  assert.equal(sin.next_step, 'adversarial-pass');
 });
 
 test('T33 Regresion_LanzamientoYPromoteComoHoy @story-1.8 @ac-29', () => {
@@ -644,12 +644,12 @@ test('T40 Textos_SinSetFlagDeepReviewDone @story-1.8 @ac-27', () => {
   for (const t of textos) {
     assert.ok(!fs.readFileSync(t, 'utf8').includes('set-flag deepReviewDone'), `${path.basename(t)} todavía dice set-flag deepReviewDone`);
   }
-  const s8 = fs.readFileSync(path.join(dir, 'step-08-commit-prep.md'), 'utf8');
+  const s8 = fs.readFileSync(path.join(dir, 'step-11-prepare-commit.md'), 'utf8');
   assert.match(s8, /adversarial-result-gate/);
   assert.match(s8, /mark-adversarial-result/);
-  const s4 = fs.readFileSync(path.join(dir, 'step-04-execute.md'), 'utf8');
+  const s4 = fs.readFileSync(path.join(dir, 'step-06-run-tests.md'), 'utf8');
   assert.match(s4, /mark-adversarial-skipped/);
-  const s5b = fs.readFileSync(path.join(dir, 'step-05b-adversarial-verify.md'), 'utf8');
+  const s5b = fs.readFileSync(path.join(dir, 'step-08-adversarial-pass.md'), 'utf8');
   assert.match(s5b, /mark-adversarial-skipped/);
   assert.match(s5b, /--own/);
   assert.match(fs.readFileSync(path.join(SKILL, 'SKILL.md'), 'utf8'), /mark-adversarial-skipped/);
@@ -658,7 +658,7 @@ test('T40 Textos_SinSetFlagDeepReviewDone @story-1.8 @ac-27', () => {
 test('T42 Next_NotaDel5b_NombraLosComandos @story-1.8 @ac-27 @ac-30', () => {
   // El `note` del 5b no puede decir «Al completar: marker.js set-flag deepReviewDone true»: ese comando sale 2.
   const d = next(casa(), 't42', mkRepo(), {});
-  assert.equal(d.next_step, '5b');
+  assert.equal(d.next_step, 'adversarial-pass');
   assert.ok(!d.note.includes('set-flag deepReviewDone'), d.note);
   assert.match(d.note, /mark-adversarial-result/);
   assert.match(d.note, /mark-adversarial-skipped/);

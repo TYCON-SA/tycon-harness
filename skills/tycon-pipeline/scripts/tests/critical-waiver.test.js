@@ -433,7 +433,7 @@ test('Guias_DicenElOrdenEnLlano @story-8.63 @ac-13', () => {
   const leer = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
   const skill = leer('skills/tycon-pipeline/SKILL.md');
   const fii = skill.slice(skill.indexOf('**F.ii'), skill.indexOf('**F.iii'));
-  for (const [nombre, texto] of [['F.ii', fii], ['paso 7', leer('skills/tycon-pipeline/steps/step-07-hitl-approve.md')], ['paso 7c', leer('skills/tycon-pipeline/steps/step-07c-dod-runtime-gate.md')]]) {
+  for (const [nombre, texto] of [['F.ii', fii], ['paso 7', leer('skills/tycon-pipeline/steps/step-09-findings.md')], ['paso 7c', leer('skills/tycon-pipeline/steps/step-10-live-check.md')]]) {
     assert.match(texto, /nunca se exime solo|nunca firma por su cuenta/i, `${nombre}: el agente no decide solo`);
     const chat = texto.search(/ok del dev/i);
     const terminal = texto.search(/--terminal|desde su terminal|en su terminal/i);

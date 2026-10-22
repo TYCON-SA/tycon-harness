@@ -30,18 +30,18 @@ const EFFECT_RANK = { records: 0, warns: 1, blocks: 2 };
 const DENY_RX = /permissionDecision|['"]deny['"]|exit\(2\)|exitCode|\bexit 2\b|decision:\s*['"]block['"]|"decision":\s*"block"|\bblock:\s|\breturn 2\b/;
 // Las piezas de una integración de la organización, cada una en el paso de la pantalla que la lleva: id estable, paso,
 // integración (la clave del lector de configuración), clave del texto y archivo del árbol. Los textos dicen qué hace sin
-// nombrar el servicio, así que cambiar de servicio es cambiar la integración de una fila. Un paso del pipeline cuyo
-// archivo es el de una pieza de otro paso no se muestra como paso: se muestra como esa pieza (FOLDED_STEPS).
+// nombrar el servicio, así que cambiar de servicio es cambiar la integración de una fila. El aviso de trabajo y el pedido
+// en ADO son piezas de «Arranque»; el cierre del pedido y de las horas, de «Cerrar la historia».
 // Las integraciones que un repo puede prender por su cuenta aunque la organización no las tenga (ADO, con su
 // .tycon/ado-config.yaml): apagadas en la organización no se esconden, porque en algún repo pueden correr.
 const PER_REPO_INTEGRATIONS = Object.freeze(['ado']);
 function stepFile(archivo) { return `${STEPS_DIR.split(path.sep).join('/')}/${archivo}`; }
 const INTEGRATION_PIECES = Object.freeze([
   // las dos de horas son de la herramienta que elija la organización (`timeTool`): el núcleo no las ata a ninguna
-  { id: 'timeTrackingStart', step: '0', integration: null, timeTool: true, textKey: 'piezaOrg.registroDeHorasAbre', code: stepFile('step-00b-work-start.md') },
-  { id: 'adoWorkItemActive', step: '0', integration: 'ado', textKey: 'piezaOrg.pedidoAdoActivo', code: stepFile('step-00c-ado-mark-active.md') },
-  { id: 'adoWorkItemClose', step: '9', integration: 'ado', textKey: 'piezaOrg.pedidoAdoCierra', code: stepFile('step-09-ado-story-closure.md') },
-  { id: 'timeTrackingClose', step: '9', integration: null, timeTool: true, textKey: 'piezaOrg.registroDeHorasCierra', code: stepFile('step-09-ado-story-closure.md') },
+  { id: 'timeTrackingStart', step: 'start', integration: null, timeTool: true, textKey: 'piezaOrg.registroDeHorasAbre', code: stepFile('step-01-start.md') },
+  { id: 'adoWorkItemActive', step: 'start', integration: 'ado', textKey: 'piezaOrg.pedidoAdoActivo', code: stepFile('step-01-start.md') },
+  { id: 'adoWorkItemClose', step: 'close-work-item', integration: 'ado', textKey: 'piezaOrg.pedidoAdoCierra', code: stepFile('close-work-item.md') },
+  { id: 'timeTrackingClose', step: 'close-work-item', integration: null, timeTool: true, textKey: 'piezaOrg.registroDeHorasCierra', code: stepFile('close-work-item.md') },
 ].map(Object.freeze));
 
 const rel = (p) => p.split(path.sep).join('/');
@@ -97,18 +97,19 @@ function citedGuides(text, treeDir = null, porNombreDado = null) {
 /** Los pasos de la tabla del árbol, en su orden: id, nombre, si van en el recorrido, archivo, objetivo y guías. */
 function readSteps(treeDir) {
   treeDir = path.resolve(treeDir);
-  const { STEPS } = require(path.join(treeDir, STEPS_FILE));
+  const { STEPS, CLOSE_STEP } = require(path.join(treeDir, STEPS_FILE));
   // las guías por nombre, una sola vez; lo que no se pudo leer de guides/ va con el primer paso (se muestra una vez)
   const problemasDeGuias = [];
   const porNombre = guidesByName(treeDir, problemasDeGuias);
-  return STEPS.map((s, i) => {
+  // el cierre en ADO corre aparte, después del merge: va al final y fuera del recorrido
+  return [...STEPS, ...(CLOSE_STEP ? [CLOSE_STEP] : [])].map((s, i) => {
     const archivo = rel(path.join(STEPS_DIR, s.file));
     const leido = leer(path.join(treeDir, STEPS_DIR, s.file));
     // un archivo de paso que no se pudo leer no es «un paso sin objetivo ni guías»: se dice
     const problems = [...(i === 0 ? problemasDeGuias : []), ...(leido === null ? [`${archivo} no se pudo leer: su objetivo y sus guías faltan`] : [])];
     const texto = leido || '';
     const objetivo = /^\*\*Objetivo\*\*:\s*(.+)$/m.exec(texto);
-    return { id: s.id, name: s.name, inSequence: s.inSequence !== false, file: s.file, goal: objetivo ? objetivo[1].trim() : null, guides: [archivo, ...citedGuides(texto, treeDir, porNombre).filter((g) => g !== archivo)], problems };
+    return { id: s.id, name: s.name, inSequence: s !== CLOSE_STEP, file: s.file, goal: objetivo ? objetivo[1].trim() : null, guides: [archivo, ...citedGuides(texto, treeDir, porNombre).filter((g) => g !== archivo)], problems };
   });
 }
 
@@ -223,38 +224,38 @@ const conStory = (fn) => (mod, probe, ctx) => fn(mod, ctx.story, ctx.content, ct
  * (`yes`) y una que no (`no`). checkConditionals las corre por la función real.
  */
 const STORY_CONDITIONALS = Object.freeze([
-  { id: 'adoWorkItem', steps: ['0c'], code: 'skills/tycon-pipeline/steps/step-00c-ado-mark-active.md', guide: 'guides/integrations/ado-projects.md', textKey: 'segun.pedidoAdo',
+  { id: 'adoWorkItem', steps: ['start'], code: 'skills/tycon-pipeline/steps/step-01-start.md', guide: 'guides/integrations/ado-projects.md', textKey: 'segun.pedidoAdo',
     decider: { module: 'skills/tycon-pipeline/scripts/pipeline.js', fn: 'parseFrontmatterPipeline' },
     decide: conStory((fn, story, content) => Boolean(fn(content).ado_work_item)),
     probes: { yes: { story: '---\nstory: "9.9"\nado_work_item: 1234\n---\n' }, no: { story: '---\nstory: "9.9"\n---\n' } } },
-  { id: 'mockup', steps: ['2'], code: 'skills/tycon-pipeline/scripts/mockup.js', guide: 'skills/tycon-pipeline/steps/step-03-hitl-plan.md', textKey: 'segun.pantalla',
+  { id: 'mockup', steps: ['plan'], code: 'skills/tycon-pipeline/scripts/mockup.js', guide: 'skills/tycon-pipeline/steps/step-04-approve-plan.md', textKey: 'segun.pantalla',
     decider: { module: 'skills/tycon-pipeline/scripts/mockup.js', fn: 'screenStory' },
     decide: conStory((fn, story) => fn(story).screen === true), probes: { yes: PROBE_SCREEN, no: PROBE_NO_SCREEN } },
-  { id: 'mockupApproval', steps: ['3'], code: 'skills/tycon-pipeline/scripts/mockup.js', guide: 'skills/tycon-pipeline/steps/step-03-hitl-plan.md', textKey: 'segun.pantallaAprobar',
+  { id: 'mockupApproval', steps: ['approve-plan'], code: 'skills/tycon-pipeline/scripts/mockup.js', guide: 'skills/tycon-pipeline/steps/step-04-approve-plan.md', textKey: 'segun.pantallaAprobar',
     decider: { module: 'skills/tycon-pipeline/scripts/mockup.js', fn: 'screenStory' },
     decide: conStory((fn, story) => fn(story).screen === true), probes: { yes: PROBE_SCREEN, no: PROBE_NO_SCREEN } },
-  { id: 'runSize', steps: ['4'], code: 'skills/tycon-pipeline/scripts/lib/run-size.js', guide: 'skills/tycon-pipeline/steps/step-04-execute.md', textKey: 'segun.liviana',
+  { id: 'runSize', steps: ['implement'], code: 'skills/tycon-pipeline/scripts/lib/run-size.js', guide: 'skills/tycon-pipeline/steps/step-05-implement.md', textKey: 'segun.liviana',
     decider: { module: 'skills/tycon-pipeline/scripts/lib/run-size.js', fn: 'classifyStory' },
     decide: (fn, probe) => fn({ files: probe.files }).size === 'liviana',
     probes: { yes: { files: ['docs/guia.md'] }, no: { files: ['src/a.js'] } } },
-  { id: 'adversarial', steps: ['5b'], code: 'skills/tycon-pipeline/scripts/pipeline.js', guide: 'skills/tycon-pipeline/steps/step-05b-adversarial-verify.md', textKey: 'segun.adversarial',
+  { id: 'adversarial', steps: ['adversarial-pass'], code: 'skills/tycon-pipeline/scripts/pipeline.js', guide: 'skills/tycon-pipeline/steps/step-08-adversarial-pass.md', textKey: 'segun.adversarial',
     decider: { module: 'skills/tycon-pipeline/scripts/pipeline.js', fn: 'computeDeepReviewGate' },
     decide: (fn, probe, ctx) => fn({ story: ctx.story, repo: ctx.repo, files: probe.files }).run === true,
     probes: { yes: { story: STORY_PANTALLA('src/auth/sesion.js'), files: ['src/auth/sesion.js'] }, no: { story: STORY_PANTALLA('docs/guia.md'), files: ['docs/guia.md'] } } },
-  { id: 'liveTest', steps: ['7c'], code: 'skills/tycon-pipeline/scripts/runtime-matrix.js', guide: 'guides/definition-of-done.md', textKey: 'segun.enVivo',
+  { id: 'liveTest', steps: ['live-check'], code: 'skills/tycon-pipeline/scripts/runtime-matrix.js', guide: 'guides/definition-of-done.md', textKey: 'segun.enVivo',
     decider: { module: 'skills/tycon-pipeline/scripts/pipeline.js', fn: 'storyRequiresRuntimeEvidenceCheck' },
     decide: conStory((fn, story, content) => fn(content) === true),
     probes: { yes: { story: '---\nstory: "9.9"\n---\n\n### Tests\n\n| # | Nombre | AC | Nivel |\n|---|---|---|---|\n| T1 | `Vivo` | 1 | e2e |\n\nVer tests/e2e/vivo.spec.ts\n' }, no: { story: '---\nstory: "9.9"\n---\n\nSólo documentación.\n' } } },
-  { id: 'browserTest', steps: ['7c'], code: 'skills/tycon-pipeline/scripts/runtime-matrix.js', guide: 'skills/tycon-pipeline/steps/step-07c-dod-runtime-gate.md', textKey: 'segun.pantallaNavegador',
+  { id: 'browserTest', steps: ['live-check'], code: 'skills/tycon-pipeline/scripts/runtime-matrix.js', guide: 'skills/tycon-pipeline/steps/step-10-live-check.md', textKey: 'segun.pantallaNavegador',
     decider: { module: 'skills/tycon-pipeline/scripts/lib/ui-signal.js', fn: 'storyTouchesUi' },
     decide: conStory((fn, story, content, repo) => fn(content, repo) === true), probes: { yes: PROBE_SCREEN, no: PROBE_NO_SCREEN } },
-  { id: 'testerGuide', steps: ['7c'], code: 'skills/tycon-pipeline/scripts/qa-guide.js', guide: 'skills/tycon-pipeline/steps/step-07c-dod-runtime-gate.md', textKey: 'segun.aMano',
+  { id: 'testerGuide', steps: ['live-check'], code: 'skills/tycon-pipeline/scripts/qa-guide.js', guide: 'skills/tycon-pipeline/steps/step-10-live-check.md', textKey: 'segun.aMano',
     decider: { module: 'skills/tycon-pipeline/scripts/lib/atdd-commit-gate.js', fn: 'storyIsHandOperable' },
     decide: conStory((fn, story, content, repo) => fn(content, repo) === true), probes: { yes: PROBE_SCREEN, no: PROBE_NO_SCREEN } },
-  { id: 'screenReadability', steps: ['7c'], code: 'skills/tycon-pipeline/scripts/qa-guide.js', guide: 'skills/tycon-pipeline/steps/step-07c-dod-runtime-gate.md', textKey: 'segun.pantallaLegible',
+  { id: 'screenReadability', steps: ['live-check'], code: 'skills/tycon-pipeline/scripts/qa-guide.js', guide: 'skills/tycon-pipeline/steps/step-10-live-check.md', textKey: 'segun.pantallaLegible',
     decider: { module: 'skills/tycon-pipeline/scripts/qa-guide.js', fn: 'isUiStory' },
     decide: conStory((fn, story, content, repo) => fn(content, (/^---\r?\n([\s\S]*?)\r?\n---/.exec(content) || [])[1] || '', repo) === true), probes: { yes: PROBE_SCREEN, no: PROBE_NO_SCREEN } },
-  { id: 'sqlCompile', steps: ['8'], code: 'scripts/ci/sql-compile.js', guide: 'guides/definition-of-done.md', textKey: 'segun.sql',
+  { id: 'sqlCompile', steps: ['prepare-commit'], code: 'scripts/ci/sql-compile.js', guide: 'guides/definition-of-done.md', textKey: 'segun.sql',
     decider: { module: 'scripts/ci/sql-compile.js', fn: 'isMigration' },
     decide: (fn, probe) => probe.files.some((f) => fn(f)),
     probes: { yes: { files: ['database/014_cobros.sql'] }, no: { files: ['src/a.js', 'docs/consultas.sql'] } } },
@@ -394,20 +395,6 @@ function readPacks({ treeDir, packsDir, origin, agentsDir = path.join(treeDir, '
 // ── el modelo ──
 
 /**
- * Los pasos que la pantalla muestra como pieza de otro (su archivo es el de una pieza de INTEGRATION_PIECES de otro
- * paso), cada uno con el paso que lo lleva: `{ <id>: <id del anfitrión> }`.
- */
-function foldedInto(pasos) {
-  const out = {};
-  for (const s of pasos) {
-    const f = INTEGRATION_PIECES.find((x) => x.step !== s.id && x.code === stepFile(s.file));
-    if (f) out[s.id] = f.step;
-  }
-  return out;
-}
-const foldedSteps = (pasos) => Object.keys(foldedInto(pasos));
-
-/**
  * El recorrido entero para la pantalla. `profileDir`: el clon del perfil (o null, con `profileState` y `profileReason`
  * diciendo por qué); `packsTreeDir`: de dónde salen los paquetes del árbol (por defecto, el árbol).
  */
@@ -451,12 +438,9 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
     }
   })();
   const pasos = readSteps(treeDir);
-  const plegados = foldedInto(pasos);
-  const steps = pasos.filter((s) => !(s.id in plegados)).map((s) => {
-    // sus controles y los de los pasos que lleva como pieza
-    const propiosIds = [s.id, ...Object.keys(plegados).filter((id) => plegados[id] === s.id)];
-    const core = (grupo) => (s.id === '5' || s.id === '7b' ? PIPE.CORE_REVIEWERS.filter((r) => r.group === grupo).map((r) => ({ agent: r.agent, whenKey: r.whenKey, file: `agents/${r.agent}.md` })) : []);
-    const grupos = s.id === '1' ? ['validacion'] : (s.id === '5' || s.id === '7b') ? ['base', 'condicional'] : [];
+  const steps = pasos.map((s) => {
+    const core = (grupo) => (s.id === 'reviewers' ? PIPE.CORE_REVIEWERS.filter((r) => r.group === grupo).map((r) => ({ agent: r.agent, whenKey: r.whenKey, file: `agents/${r.agent}.md` })) : []);
+    const grupos = s.id === 'validate-story' ? ['validacion'] : s.id === 'reviewers' ? ['base', 'condicional'] : [];
     const dePaquetes = packs.flatMap((p) => p.reviewers.filter((r) => grupos.includes(r.group)).map((r) => ({
       ...r, pack: p.name, origin: p.origin, active: activos === null ? null : activos.includes(p.name), editable: p.origin === 'organization' && !p.problems.length,
       // el uso que abre «Editar»: la solapa que revisa el cambio o la que valida la historia
@@ -466,13 +450,13 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
     })));
     const bloque = {
       always: core('always'),
-      story: s.id === '1' ? validadores.map((a) => ({ agent: a, whenKey: 'revisorCuando.hayHistoria', file: `agents/${a}.md` })) : core('story'),
+      story: s.id === 'validate-story' ? validadores.map((a) => ({ agent: a, whenKey: 'revisorCuando.hayHistoria', file: `agents/${a}.md` })) : core('story'),
       change: core('change'),
       packs: dePaquetes,
     };
     // los controles del paso: uno por guion, con el efecto más fuerte de sus registros
     const propios = new Map();
-    for (const c of controls.filter((x) => Array.isArray(x.steps) && x.steps.some((id) => propiosIds.includes(id)) && !apagada(x))) {
+    for (const c of controls.filter((x) => Array.isArray(x.steps) && x.steps.includes(s.id) && !apagada(x))) {
       const ya = propios.get(c.spec);
       if (!ya || EFFECT_RANK[c.effect] > EFFECT_RANK[ya.effect]) propios.set(c.spec, c);
     }
@@ -481,7 +465,7 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
       ...s, reviewers: bloque, controls: [...propios.values()],
       orgPiecesDeclared: declaradas.length,
       orgPieces: declaradas.filter((f) => !piezaApagada(f)).map((f) => ({ id: f.id, integration: f.timeTool ? (toolLabel ? org.timeTracking : null) : f.integration, timeTool: Boolean(f.timeTool), textKey: f.textKey, code: f.code })),
-      storyPieces: STORY_CONDITIONALS.filter((c) => c.steps.some((id) => propiosIds.includes(id))).map((c) => ({ id: c.id, code: c.code, guide: c.guide, textKey: c.textKey })),
+      storyPieces: STORY_CONDITIONALS.filter((c) => c.steps.includes(s.id)).map((c) => ({ id: c.id, code: c.code, guide: c.guide, textKey: c.textKey })),
     };
   });
   const enTodo = new Map();
@@ -500,4 +484,4 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
   };
 }
 
-module.exports = { readSteps, citedGuides, readControls, controlProblems, STORY_CONDITIONALS, checkConditionals, readOrg, readPacks, agentsFolderOf, agentFileOf, withoutAbsolutePaths, buildModel, INTEGRATION_PIECES, PER_REPO_INTEGRATIONS, FOLDED_STEPS: Object.freeze(foldedSteps(require('./steps.js').STEPS)), DENY_RX };
+module.exports = { readSteps, citedGuides, readControls, controlProblems, STORY_CONDITIONALS, checkConditionals, readOrg, readPacks, agentsFolderOf, agentFileOf, withoutAbsolutePaths, buildModel, INTEGRATION_PIECES, PER_REPO_INTEGRATIONS, DENY_RX };

@@ -296,20 +296,53 @@ function clasificar(status) {
 }
 
 /**
- * Los nombres de los pasos salen de la tabla única del pipeline (`skills/tycon-pipeline/scripts/lib/steps.js`),
- * no se tipean ni se leen del título de cada archivo de paso. Son los de 0 a 8: los que tienen marca en
- * `stepTimings`. Si la tabla no se puede cargar, van los números y la página lo declara con el motivo.
+ * Las filas de la vista: los pasos que tienen marca en `stepTimings`, en el orden del pipeline. Conviven dos esquemas:
+ * las ejecuciones nuevas anotan sus pasos por nombre de máquina y las de antes por número (0 a 8). Cada paso
+ * de cualquiera de los dos cae en una fila; el 4 viejo era implementar y correr las pruebas juntos y tiene su fila
+ * propia, «Implementar + pruebas», sin repartir. El pase adversarial y la prueba en vivo (y los sub-pasos viejos) no
+ * tienen fila: van en la del paso al que acompañan.
+ */
+const FILAS = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', '4', 'reviewers', 'findings', 'prepare-commit'];
+const FILA_DE_PASO = {
+  start: 0, 'validate-story': 1, plan: 2, 'approve-plan': 3, implement: 4, 'run-tests': 5, reviewers: 7,
+  'adversarial-pass': 7, findings: 8, 'live-check': 8, 'prepare-commit': 9,
+  0: 0, '0b': 0, '0c': 0, 1: 1, 2: 2, 3: 3, 4: 6, 5: 7, '5b': 7, '7b': 7, 6: 8, 7: 8, '7c': 8, 8: 9,
+};
+const FILA_FINAL = 9;
+// los pasos que se cierran con una bandera (y los sub-pasos viejos) acompañan a otra fila: no cuentan como fila propia
+const SIN_FILA = new Set(['adversarial-pass', 'live-check', '0b', '0c', '5b', '7b', '7c']);
+/** El paso de una edición o un commit (`5`, `reviewers`, `5+6`, `después`) como fila de la vista, en texto. */
+const filaDeTexto = (p) => (p === null || p === undefined || p === 'después' ? p : clavePublica(filasDelTramo(p).pasos));
+/** Las filas de un tramo (`5+6`, `reviewers+findings`), sin repetir, y su nombre. */
+function filasDelTramo(paso, nombres) {
+  const pasos = [];
+  for (const id of String(paso).split('+')) { const f = filaDePaso(id); if (f !== null && !pasos.includes(f)) pasos.push(f); }
+  // la clave cruda del volcado no se publica: lo que no cae en una fila conocida sale «paso desconocido»
+  return { pasos, nombre: pasos.map((f) => (nombres && nombres[f]) || String(f)).join(' + ') || PASO_DESCONOCIDO };
+}
+const PASO_DESCONOCIDO = 'paso desconocido';
+/** La clave publicable de un tramo: sus filas, nunca el texto crudo del volcado. */
+const clavePublica = (pasos) => (pasos.length ? pasos.join('+') : PASO_DESCONOCIDO);
+/** La fila de un paso (nombre de máquina o número viejo); `null` si no es un paso. */
+const filaDePaso = (id) => (Object.prototype.hasOwnProperty.call(FILA_DE_PASO, String(id)) ? FILA_DE_PASO[String(id)] : null);
+/** 2 si la ejecución anota sus pasos por nombre de máquina, 1 si por número (el marcador viejo). */
+const esquemaDe = (m) => (m && (m.stepScheme === 2 || Object.keys(m.stepTimings || {}).some((k) => !/^\d+[a-z]?$/.test(k))) ? 2 : 1);
+
+/**
+ * Los nombres de las filas salen de la tabla única del pipeline (`skills/tycon-pipeline/scripts/lib/steps.js`),
+ * no se tipean ni se leen del título de cada archivo de paso. Si la tabla no se puede cargar, van los números de fila y
+ * la página lo declara con el motivo.
  */
 const TABLA_DE_PASOS = path.join(__dirname, '..', '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js');
 function nombresDePasos(tabla = TABLA_DE_PASOS) {
-  const nombres = Array.from({ length: 9 }, (_, i) => String(i));
+  const nombres = FILAS.map((_, i) => String(i));
   const faltan = [];
   try {
     const T = require(tabla);
     // una tabla que carga pero está mal armada (exporta null, `stepName` que lanza) degrada igual que una que no
     // carga: el tablero no se cae entero por los nombres
     for (let i = 0; i < nombres.length; i++) {
-      const n = T && typeof T.stepName === 'function' ? T.stepName(i) : null;
+      const n = T && typeof T.stepName === 'function' ? T.stepName(FILAS[i]) : null;
       if (typeof n === 'string' && n) nombres[i] = n; else faltan.push(i);
     }
   } catch (e) {
@@ -320,7 +353,7 @@ function nombresDePasos(tabla = TABLA_DE_PASOS) {
     return { nombres: nombres.map((_, i) => String(i)), fuente: 'numeros', motivo: `la tabla de pasos del pipeline no se pudo cargar (${codigo}, ${donde}): los pasos van por número, sin nombre` };
   }
   if (faltan.length === nombres.length) {
-    return { nombres, fuente: 'numeros', motivo: 'la tabla de pasos del pipeline no trae los nombres de 0 a 8: los pasos van por número, sin nombre' };
+    return { nombres, fuente: 'numeros', motivo: 'la tabla de pasos del pipeline no trae los nombres de los pasos: van por número, sin nombre' };
   }
   return { nombres, fuente: 'tabla', motivo: faltan.length ? `la tabla de pasos no nombra el/los paso(s) ${faltan.join(', ')}: van por número` : null };
 }
@@ -461,9 +494,13 @@ function modeloDeCorrida(d, nombresPasos) {
     const t = cuentaTiempos.tiempos(m.stepTimings || {}, { inicio: m.startedAt });
     for (const p of t.pasos) {
       if (p.hueco_previo_ms > 0) tramos.push({ tipo: 'entre', paso: 'entre', pasos: [], ms: p.hueco_previo_ms, nombre: 'entre pasos' });
-      tramos.push(p.subpaso
-        ? { tipo: 'paso', paso: p.paso, pasos: [Number(p.paso[0])], ms: p.ms, medida: true, subpaso: true, nombre: `sub-paso ${p.paso}` }
-        : { tipo: 'paso', paso: p.paso, pasos: p.pasos, ms: p.ms, medida: p.medida, nombre: p.pasos.map((x) => nombresPasos[x] || String(x)).join(' + ') });
+      if (p.subpaso) {
+        const pasos = [filaDePaso(p.paso)].filter((x) => x !== null);
+        tramos.push({ tipo: 'paso', paso: clavePublica(pasos), pasos, ms: p.ms, medida: true, subpaso: true, nombre: SIN_FILA.has(String(p.paso)) && p.nombre ? p.nombre : PASO_DESCONOCIDO });
+      } else {
+        const f = filasDelTramo(p.paso, nombresPasos);
+        tramos.push({ tipo: 'paso', paso: clavePublica(f.pasos), ...f, ms: p.ms, medida: p.medida });
+      }
     }
     tiempos = {
       estado: t.estado,
@@ -473,18 +510,21 @@ function modeloDeCorrida(d, nombresPasos) {
       espera_humana_ms: t.espera_humana_ms,
       entre_pasos_ms: t.entre_pasos_ms,
       sin_repartir_ms: t.sin_repartir_ms,
-      estimados: t.estimados.filter((x) => /^\d$/.test(x)),
+      // los pasos estimados, como filas (sin los sub-pasos, que no tienen fila propia)
+      estimados: [...new Set(t.estimados.filter((x) => !SIN_FILA.has(String(x))).map(filaDePaso).filter((x) => x !== null))],
     };
   } else {
     let ant = ini;
     for (const c of rescate.cortesDePaso(m.stepTimings || {})) {
-      const pasos = String(c.paso).split('+').map(Number);
-      tramos.push({ paso: String(c.paso), pasos, ms: Math.max(0, c.hasta - ant), nombre: pasos.map((p) => nombresPasos[p] || String(p)).join(' + ') });
+      const f = filasDelTramo(c.paso, nombresPasos);
+      tramos.push({ paso: clavePublica(f.pasos), ...f, ms: Math.max(0, c.hasta - ant) });
       ant = c.hasta;
     }
   }
+  const esquema = esquemaDe(m);
   const marcados = new Set(tramos.filter((t) => !t.subpaso).flatMap((t) => t.pasos));
-  const sinMarca = [0, 1, 2, 3, 4, 5, 6, 7, 8].filter((i) => !marcados.has(i));
+  // las filas que la ejecución tiene que marcar: la de «Implementar + pruebas» en las viejas; las dos partidas en las nuevas
+  const sinMarca = FILAS.map((_, i) => i).filter((i) => (esquema === 2 ? i !== 6 : i !== 4 && i !== 5)).filter((i) => !marcados.has(i));
 
   // Evaluaciones de los controles: veredicto, duración, código de salida y —si el volcado lo trae—
   // el mensaje rescatado, SANEADO de nuevo. Jamás el comando.
@@ -540,7 +580,12 @@ function modeloDeCorrida(d, nombresPasos) {
       respuestas: Number.isFinite(c.respuestas) ? c.respuestas : null,
       tokens: { in: tk.in || 0, out: tk.out || 0, cache_new: tk.cache_new || 0, cache_read: tk.cache_read || 0 },
       por_modelo: Object.fromEntries(Object.entries(c.por_modelo || {}).map(([k, v]) => [String(k), { respuestas: (v && v.respuestas) || 0, out: (v && v.out) || 0, cache_new: (v && v.cache_new) || 0 }])),
-      por_paso: Object.fromEntries(Object.entries(c.por_paso || {}).filter(([, v]) => Number.isFinite(v)).map(([k, v]) => [String(k), v])),
+      // por fila (con los dos esquemas en las mismas filas): dos pasos que caen en la misma fila se suman
+      por_paso: Object.entries(c.por_paso || {}).filter(([, v]) => Number.isFinite(v)).reduce((acc, [k, v]) => {
+        const fila = clavePublica(filasDelTramo(k).pasos);
+        acc[fila] = (acc[fila] || 0) + v;
+        return acc;
+      }, {}),
       fuera_de_ventana: Number.isFinite(c.fuera_de_ventana) ? c.fuera_de_ventana : 0,
     };
   }
@@ -619,13 +664,15 @@ function modeloDeCorrida(d, nombresPasos) {
     inicio: Number.isFinite(ini) ? new Date(ini).toISOString() : null,
     semana: Number.isFinite(ini) ? semanaIso(new Date(ini).toISOString()) : null,
     dur_ms: (Number.isFinite(ini) && Number.isFinite(fin) && fin > ini) ? fin - ini : null,
+    // con qué pasos corrió: 1 = por número (el marcador viejo), 2 = por nombre de máquina
+    esquema,
     tramos, sin_marca: sinMarca, motivo_tramos: motivoTramos,
     tiempos,
     pasos_completos: completados.length,
-    // El ÚLTIMO paso completado, no `length - 1`: stepsCompleted tiene huecos
+    // La fila del ÚLTIMO paso completado, no `length - 1`: stepsCompleted tiene huecos
     // ([0,1,4,5,6,7] diría «quedó en el 5» y quedó en el 7).
-    ultimo_paso: completados.length ? Math.max(...completados.map(Number).filter(Number.isFinite)) : null,
-    llego_al_final: completados.map(Number).includes(8),
+    ultimo_paso: (() => { const fs_ = completados.map(filaDePaso).filter((x) => x !== null); return fs_.length ? Math.max(...fs_) : null; })(),
+    llego_al_final: completados.some((p) => filaDePaso(p) === FILA_FINAL),
     dod: m.dodRuntime && m.dodRuntime.verdict ? String(m.dodRuntime.verdict) : null,
     controles,
     eventos,
@@ -876,7 +923,7 @@ function leerCambios(rutas, marker, nombresPasos, cambioDelVolcado) {
     }
     if (!idx.has(f)) { idx.set(f, archivos.length); archivos.push({ f, veces: 0, mas: 0, menos: 0, escrito: 0, consola: 0 }); }
     const a = archivos[idx.get(f)]; a.veces += 1; a.mas += e.mas; a.menos += e.menos; if (e.w) a.escrito = 1; if (e.k) a.consola += 1;
-    return { t: e.t, p: e.paso, a: idx.get(f), w: e.w, k: e.k ? 1 : 0, r: e.ref, mas: e.mas, menos: e.menos,
+    return { t: e.t, p: filaDeTexto(e.paso), a: idx.get(f), w: e.w, k: e.k ? 1 : 0, r: e.ref, mas: e.mas, menos: e.menos,
       x: e.nuevo !== undefined ? 1 : 0, c: (e.nuevo_cortado || 0) + (e.viejo_cortado || 0), ...(g !== undefined ? { g } : {}), ...(o ? { o } : {}) };
   });
   const texto = x.ediciones.map((e) => (e.nuevo === undefined ? null : [e.viejo, e.nuevo]));
@@ -884,7 +931,7 @@ function leerCambios(rutas, marker, nombresPasos, cambioDelVolcado) {
   const minutos = [...new Set([...Object.keys(x.consumo.serie), ...Object.keys(x.consumo.que)])].map(Number).sort((a, b) => a - b)
     .map((mi) => { const q = x.consumo.que[mi] || { h: {}, ag: {}, out: 0, cache: 0 }; return [mi, x.consumo.serie[mi] || 0, q.out, q.cache, q.h, q.ag]; });
   const ini = Date.parse((marker || {}).startedAt || '');
-  return { estado: 'leido', motivo: null, lista, archivos, commits: x.commits, titulo: x.titulo, minutos, git: git.modelo, _textoGit: git.texto, no_confirmados: noConfirmados,
+  return { estado: 'leido', motivo: null, lista, archivos, commits: x.commits.map((k) => ({ ...k, paso: filaDeTexto(k.paso) })), titulo: x.titulo, minutos, git: git.modelo, _textoGit: git.texto, no_confirmados: noConfirmados,
     _esperas: x.esperas || [],
     esperas_min: Number.isFinite(ini) ? (x.esperas || []).map(([a, b]) => [Math.round((a - ini) / 600) / 100, Math.round((b - ini) / 600) / 100]) : [], por_consola: x.por_consola,
     en_commits: x.commits.reduce((a, k) => a + (k.archivos || 0), 0),
@@ -1007,8 +1054,9 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
  * haya trabajo: archivos cambiados, o consumo fuera del paso 0 (en un paso posterior o después del último anotado).
  */
 function sinPasosAnotados(c, marker) {
-  const hechos = Array.isArray(marker && marker.stepsCompleted) ? marker.stepsCompleted.map(Number) : [];
-  if (hechos.length !== 1 || hechos[0] !== 0) return false;
+  // sólo el Arranque: el 0 en el marcador viejo, `start` en el nuevo
+  const hechos = Array.isArray(marker && marker.stepsCompleted) ? marker.stepsCompleted.map(String) : [];
+  if (hechos.length !== 1 || (hechos[0] !== '0' && hechos[0] !== 'start')) return false;
   const x = c.cambios;
   const enGit = x && x.git && x.git.estado === 'medido' ? Number(x.git.total_archivos) || 0 : 0;
   const enHilo = x && x.estado === 'leido' && Array.isArray(x.archivos) ? x.archivos.filter((a) => !/^script por consola/.test(a.f)).length : 0;
@@ -1085,6 +1133,9 @@ function modelo(runsDir, opts = {}) {
     registro: reg.registro,
     archivos: reg.archivos, duplicados: reg.duplicados, ilegibles: reg.ilegibles,
     pasos,
+    // desde qué día los pasos están partidos (la primera ejecución con los nombres de máquina); antes, «Implementar +
+    // pruebas» va en una sola fila
+    pasos_partidos_desde: reg.corridas.filter((c) => c.esquema === 2 && c.inicio).map((c) => c.inicio.slice(0, 10)).sort()[0] || null,
     controles_nombres: CONTROLES,
     sin_rescate: motivoSinRescate,
     sin_tiempos: motivoSinTiempos,
@@ -1123,7 +1174,7 @@ const elegir = (o, claves) => (o && typeof o === 'object' ? Object.fromEntries(c
 function paraLista(c) {
   return {
     id: c.id, story: c.story, producto: c.producto, maquina: c.maquina === undefined ? null : c.maquina, maquina_motivo: c.maquina_motivo === undefined ? null : c.maquina_motivo,
-    inicio: c.inicio, semana: c.semana, dur_ms: c.dur_ms, llego_al_final: c.llego_al_final, ultimo_paso: c.ultimo_paso, sin_pasos_anotados: c.sin_pasos_anotados === true, sin_cerrar: c.sin_cerrar === true,
+    inicio: c.inicio, semana: c.semana, dur_ms: c.dur_ms, esquema: c.esquema === 2 ? 2 : 1, llego_al_final: c.llego_al_final, ultimo_paso: c.ultimo_paso, sin_pasos_anotados: c.sin_pasos_anotados === true, sin_cerrar: c.sin_cerrar === true,
     tramos: copiar(c.tramos), sin_marca: copiar(c.sin_marca),
     tiempos: elegir(c.tiempos, ['trabajo_ms', 'trabajo_medido', 'espera_humana_ms', 'espera_del_hilo_ms']),
     controles: elegir(c.controles, ['total', 'error', 'freno', 'por_control']),
@@ -1146,7 +1197,8 @@ function textosDe(c) {
 
 // ───────────────────────────── la página ─────────────────────────────
 
-const RAMPA = ['#BEE0DE', '#9CD0CE', '#79BFBE', '#57ADAE', '#3D9799', '#2C8084', '#1E6A70', '#14555C', '#0D4148'];
+// un color por fila de pasos (las diez de FILAS), del más claro al más oscuro
+const RAMPA = ['#BEE0DE', '#9CD0CE', '#79BFBE', '#57ADAE', '#3D9799', '#348C8E', '#2C8084', '#1E6A70', '#14555C', '#0D4148'];
 // la coma decimal es del castellano: en inglés va el punto
 const decimal = (x, idioma) => (idioma && idioma !== ES ? String(Math.round(x * 10) / 10) : num1(x));
 const miles = (n, idioma) => n == null ? '—' : n >= 1e6 ? `${decimal(n / 1e6, idioma)} M` : n >= 1e3 ? `${Math.round(n / 1e3)} k` : String(n);
@@ -1158,7 +1210,7 @@ function barraTramos(c, escala, idioma) {
   const ancho = Math.max(2, Math.min(100, (total / escala) * 100));
   const segs = c.tramos.map((t) => (t.tipo === 'entre'
     ? `<i class="entre" style="width:${((t.ms / total) * 100).toFixed(2)}%" title="${esc(L(idioma, 'v.entrePasos', { dur: dur(t.ms, idioma) }))}"></i>`
-    : `<i style="width:${((t.ms / total) * 100).toFixed(2)}%;background:${RAMPA[t.pasos[0]] || RAMPA[8]}" title="${esc(t.paso)} · ${esc(enIdioma(idioma, t.nombre))} — ${dur(t.ms, idioma)}${t.pasos.length > 1 ? ` (${esc(L(idioma, 'v.fusionados'))})` : ''}${t.medida === false ? ` (${esc(L(idioma, 'v.estimadaPorDiferencia'))})` : ''}"></i>`)).join('');
+    : `<i style="width:${((t.ms / total) * 100).toFixed(2)}%;background:${RAMPA[t.pasos[0]] || RAMPA[RAMPA.length - 1]}" title="${esc(t.paso)} · ${esc(enIdioma(idioma, t.nombre))} — ${dur(t.ms, idioma)}${t.pasos.length > 1 ? ` (${esc(L(idioma, 'v.fusionados'))})` : ''}${t.medida === false ? ` (${esc(L(idioma, 'v.estimadaPorDiferencia'))})` : ''}"></i>`)).join('');
   const faltan = c.sin_marca.length;
   return `<span class="bar" style="width:${ancho.toFixed(1)}%">${segs}${faltan ? `<i class="falta" style="width:6px" title="${esc(L(idioma, 'v.pasosSinMarca', { n: faltan }))}"></i>` : ''}</span>`;
 }
@@ -1174,7 +1226,7 @@ function colEspera(c, idioma) {
   const t = c.tiempos;
   const hilo = t && t.espera_del_hilo_ms ? t.espera_del_hilo_ms : 0;
   if (!t || t.espera_humana_ms === null) {
-    // Sin la espera de los pasos 3 y 7 medida, lo que el hilo muestra es un piso: se dice «al menos».
+    // Sin la espera de «Aprobar el plan» y «Hallazgos» medida, lo que el hilo muestra es un piso: se dice «al menos».
     if (hilo) return `<span title="${esc(L(idioma, 'v.esperaAlMenos'))}">≥ ${dur(hilo, idioma)}</span>`;
     return `<span class="nd" title="${esc(enIdioma(idioma, (t && t.motivo) || 'sin tiempos por paso'))}">${esc(L(idioma, 'v.sinMedir'))}</span>`;
   }
@@ -1264,6 +1316,7 @@ function cabecera(M, opts = {}) {
   // 'skill': la tabla de pasos que trae la imagen del sitio — con nombre, como 'tabla'
   const gris = (t) => `<div class="banda gris">${esc(enIdioma(I, t))}</div>`;
   const bandaPasos = (M.pasos.fuente !== 'tabla' && M.pasos.fuente !== 'skill') || M.pasos.motivo ? gris(M.pasos.motivo) : '';
+  const bandaPartidos = M.pasos_partidos_desde ? `<div class="banda gris">${x('v.pasosPartidos', { desde: M.pasos_partidos_desde })}</div>` : '';
   const bandaRescate = M.sin_rescate ? gris(M.sin_rescate) : '';
   const bandaTiempos = M.sin_tiempos ? gris(M.sin_tiempos) : '';
   const bandaUmbrales = M.umbrales_motivo ? gris(M.umbrales_motivo) : '';
@@ -1271,8 +1324,8 @@ function cabecera(M, opts = {}) {
   <div class="eyebrow">${eyebrow}</div>
   <h1>${x('v.titulo')}</h1>
   <p class="lede">${x('v.lede1')} <b>${x('v.lede2')}</b>${x('v.lede3')} <b>${x('v.lede4')}</b>${x('v.lede5')}</p>
-  <div class="stamp"><span><b>${x('v.selloEjecuciones')}</b> ${selloCorridas}</span><span><b>${x('v.selloConsumo')}</b> ${x('v.deN', { n: conConsumo, t: N })}</span><span><b>${x('v.selloControles')}</b> ${x('v.deN', { n: conControles, t: N })}</span><span><b>${x('v.selloPaso8')}</b> ${x('v.deN', { n: alFinal, t: N })}</span><span><b>${x('v.selloGenerado')}</b> ${esc(M.generado.slice(0, 16).replace('T', ' '))} UTC · ${origen}</span><span><b>${x('v.selloAlcance')}</b> ${esc(alcance)}</span></div>
-  ${bandaBuzon}${bandaUniones}${bandaRegistro}${bandaPasos}${bandaRescate}${bandaTiempos}${bandaUmbrales}
+  <div class="stamp"><span><b>${x('v.selloEjecuciones')}</b> ${selloCorridas}</span><span><b>${x('v.selloConsumo')}</b> ${x('v.deN', { n: conConsumo, t: N })}</span><span><b>${x('v.selloControles')}</b> ${x('v.deN', { n: conControles, t: N })}</span><span><b>${x('v.selloAlFinal')}</b> ${x('v.deN', { n: alFinal, t: N })}</span><span><b>${x('v.selloGenerado')}</b> ${esc(M.generado.slice(0, 16).replace('T', ' '))} UTC · ${origen}</span><span><b>${x('v.selloAlcance')}</b> ${esc(alcance)}</span></div>
+  ${bandaBuzon}${bandaUniones}${bandaRegistro}${bandaPasos}${bandaPartidos}${bandaRescate}${bandaTiempos}${bandaUmbrales}
 </header>
 `;
 }
@@ -1327,7 +1380,7 @@ function tabla(M, opts = {}) {
       <td class="dur">${dur(c.dur_ms, I)}</td>
       <td class="dur tr">${colTrabajo(c, I)}</td>
       <td class="dur es">${colEspera(c, I)}</td>
-      <td class="pasos-n">${c.sin_cerrar ? `<span class="parcial" title="${x('v.tituloSinCerrar')}">${x('v.sinCerrar')}</span>` : c.llego_al_final ? `<span class="ok9">${x('v.llegoAl8')}</span>` : c.sin_pasos_anotados ? `<span class="parcial" title="${x('v.tituloSinPasos')}">${x('v.sinPasosAnotados')}</span>` : `<span class="parcial">${x('v.quedoEn', { p: c.ultimo_paso === null ? '—' : c.ultimo_paso })}</span>`}</td>
+      <td class="pasos-n">${c.sin_cerrar ? `<span class="parcial" title="${x('v.tituloSinCerrar')}">${x('v.sinCerrar')}</span>` : c.llego_al_final ? `<span class="ok9">${x('v.llegoAlFinal')}</span>` : c.sin_pasos_anotados ? `<span class="parcial" title="${x('v.tituloSinPasos')}">${x('v.sinPasosAnotados')}</span>` : `<span class="parcial">${x('v.quedoEn', { p: c.ultimo_paso === null ? '—' : enIdioma(I, M.pasos.nombres[c.ultimo_paso] || String(c.ultimo_paso)) })}</span>`}</td>
       <td class="ag">${c.costo ? c.costo.agentes : `<span class="nd" title="${x('v.sinAgentes')}">—</span>`}</td>
       <td class="vu">${c.costo && c.costo.vueltas !== null ? c.costo.vueltas : '<span class="nd">—</span>'}</td>
       <td class="tk">${tk}</td>
@@ -1336,7 +1389,7 @@ function tabla(M, opts = {}) {
     </tr>`;
   }).join('\n');
 
-  const leyenda = M.pasos.nombres.map((p, i) => `<span class="lg"><i style="background:${RAMPA[i]}"></i>${i} ${esc(enIdioma(I, p))}</span>`).join('');
+  const leyenda = M.pasos.nombres.map((p, i) => `<span class="lg"><i style="background:${RAMPA[i]}"></i>${esc(enIdioma(I, p))}</span>`).join('');
   const th = (k, chico) => `<th>${x(k)}${chico ? `<small>${x(chico)}</small>` : ''}</th>`;
   return `<section>
   <div class="q-head"><span class="q-n">02</span><h2>${x('v.porEjecucion')}</h2></div>
@@ -1578,7 +1631,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
   var POR_ID = {};
   C.forEach(function (c, k) { if (c.id) POR_ID[c.id] = k; });
   var enC = function (tr) { var id = tr.dataset && tr.dataset.id; if (id) return Object.prototype.hasOwnProperty.call(POR_ID, id) ? POR_ID[id] : null; return +tr.dataset.i; };
-  var RAMPA = ['#BEE0DE','#9CD0CE','#79BFBE','#57ADAE','#3D9799','#2C8084','#1E6A70','#14555C','#0D4148'];
+  var RAMPA = ['#BEE0DE','#9CD0CE','#79BFBE','#57ADAE','#3D9799','#348C8E','#2C8084','#1E6A70','#14555C','#0D4148'];
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
   var n1 = function (x) { return (Math.round(x * 10) / 10).toString().replace('.', T('sepDecimal')); };
   var miles = function (n) { return n == null ? '—' : n >= 1e6 ? n1(n / 1e6) + ' M' : n >= 1e3 ? Math.round(n / 1e3) + ' k' : String(n); };
@@ -1654,7 +1707,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
         s += '<line x1="' + a.toFixed(1) + '" y1="' + (ys.pasos - 3) + '" x2="' + a.toFixed(1) + '" y2="' + (ys.pasos + 29) + '" stroke="var(--ink-3)" stroke-width="1.2"><title>' + T('paso') + ' ' + esc(p.paso) + ' · ' + esc(p.nombre) + ' — ' + T('marcadoJunto') + '</title></line>';
         return;
       }
-      s += '<rect x="' + a.toFixed(1) + '" y="' + ys.pasos + '" width="' + w.toFixed(1) + '" height="26" fill="' + (RAMPA[i] || RAMPA[8]) + '" rx="1.5"><title>' + T('paso') + ' ' + esc(p.paso) + ' · ' + esc(p.nombre) + ' — ' + dt(p.ms / 60000) + (p.pasos.length > 1 ? ' (' + T('fusionados') + ')' : '') + (p.medida === false ? ' (' + T('estimada') + ')' : '') + '</title></rect>';
+      s += '<rect x="' + a.toFixed(1) + '" y="' + ys.pasos + '" width="' + w.toFixed(1) + '" height="26" fill="' + (RAMPA[i] || RAMPA[RAMPA.length - 1]) + '" rx="1.5"><title>' + T('paso') + ' ' + esc(p.paso) + ' · ' + esc(p.nombre) + ' — ' + dt(p.ms / 60000) + (p.pasos.length > 1 ? ' (' + T('fusionados') + ')' : '') + (p.medida === false ? ' (' + T('estimada') + ')' : '') + '</title></rect>';
       if (w > 26) s += '<text x="' + (a + w / 2).toFixed(1) + '" y="' + (ys.pasos + 17) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10.5" font-weight="600" fill="' + (i > 4 ? '#fff' : '#0D4148') + '">' + esc(p.paso) + '</text>';
     });
     // La espera por una persona que salió del hilo: una banda rayada sobre los pasos, con su duración.
@@ -1816,7 +1869,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
     return '<div class="mini"><h4>' + T('consumoTitulo', { n: miles(tokensDe(c)) }) + '</h4>'
       + '<p class="kv">' + T('consumoDetalle', { o: miles(k.tokens.out), n: miles(k.tokens.cache_new), l: miles(k.tokens.cache_read), r: k.respuestas == null ? '?' : k.respuestas }) + '</p>'
       + '<p class="kv">' + T('modelos') + ': ' + Object.keys(k.por_modelo).map(function (m) { return esc(m) + ' ' + k.por_modelo[m].respuestas; }).join(' · ') + '</p>'
-      + '<div class="bars">' + ks.map(function (i) { return '<div class="b"><span>' + esc(i) + ' ' + esc(nombrePaso(i)) + '</span><i style="width:' + ((pp[i] / mx) * 100).toFixed(0) + '%;background:' + (RAMPA[+i.split('+')[0]] || RAMPA[8]) + '"></i><b>' + miles(pp[i]) + '</b></div>'; }).join('') + '</div>'
+      + '<div class="bars">' + ks.map(function (i) { return '<div class="b"><span>' + esc(i) + ' ' + esc(nombrePaso(i)) + '</span><i style="width:' + ((pp[i] / mx) * 100).toFixed(0) + '%;background:' + (RAMPA[+i.split('+')[0]] || RAMPA[RAMPA.length - 1]) + '"></i><b>' + miles(pp[i]) + '</b></div>'; }).join('') + '</div>'
       + (k.fuera_de_ventana ? '<p class="kv">' + T('fueraDeTodoPaso', { n: miles(k.fuera_de_ventana) }) + '</p>' : '')
       + '</div>';
   }
@@ -1934,7 +1987,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
   function nombrePaso(p) {
     if (p === null || p === undefined) return T('sinPaso');
     if (p === 'después') return T('fueraVentana2');
-    return String(p).split('+').map(function (n) { return T('paso') + ' ' + n + ((M.pasos.nombres || [])[+n] ? ' ' + M.pasos.nombres[+n] : ''); }).join(' + ');
+    return String(p).split('+').map(function (n) { return (M.pasos.nombres || [])[+n] || (T('paso') + ' ' + n); }).join(' + ');
   }
   function commitsHtml(x) {
     if (!x.commits || !x.commits.length) return '<p class="nd">' + T('sinCommits') + '</p>';
@@ -2052,7 +2105,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
   // C[idx]): buscarlo con indexOf daba -1 y ningún cambio ni parche se podía abrir (pase adversarial)
   function detalle(c, idx) {
     if (idx === undefined) idx = C.indexOf(c);
-    var chips = (c.sin_cerrar ? '<span class="chip warn" title="' + T('tituloSinCerrar') + '"><span class="g">◆</span>' + T('sinCerrar') + '</span>' : '') + '<span class="chip ' + (c.llego_al_final ? 'ok' : 'warn') + '"' + (!c.llego_al_final && c.sin_pasos_anotados ? ' title="' + T('tituloSinPasos') + '"' : '') + '><span class="g">' + (c.llego_al_final ? '●' : '◆') + '</span>' + (c.llego_al_final ? T('llegoAlPaso8') : c.sin_pasos_anotados ? T('noAnotoSusPasos') : T('quedoEnElPaso', { p: c.ultimo_paso === null ? '?' : c.ultimo_paso })) + '</span>'
+    var chips = (c.sin_cerrar ? '<span class="chip warn" title="' + T('tituloSinCerrar') + '"><span class="g">◆</span>' + T('sinCerrar') + '</span>' : '') + '<span class="chip ' + (c.llego_al_final ? 'ok' : 'warn') + '"' + (!c.llego_al_final && c.sin_pasos_anotados ? ' title="' + T('tituloSinPasos') + '"' : '') + '><span class="g">' + (c.llego_al_final ? '●' : '◆') + '</span>' + (c.llego_al_final ? T('llegoAlFinal') : c.sin_pasos_anotados ? T('noAnotoSusPasos') : T('quedoEn', { p: c.ultimo_paso === null ? '?' : (PASOS[c.ultimo_paso] || c.ultimo_paso) })) + '</span>'
       + (c.controles && c.controles.error ? '<span class="chip bad"><span class="g">▲</span>' + T('conErrorN', { n: c.controles.error }) + '</span>' : '')
       + (c.controles && c.controles.freno ? '<span class="chip warn"><span class="g">◆</span>' + T('frenoN', { n: c.controles.freno }) + '</span>' : '')
       + (c.costo && c.costo.vueltas !== null ? '<span class="chip neutro"><span class="g">○</span>' + T('vueltasN', { n: c.costo.vueltas }) + '</span>' : '')
@@ -2272,13 +2325,13 @@ const CLIENTE_FUENTE = String.raw`(function () {
   // Un tramo fusionado (5+6) no da un valor a ninguno de los dos pasos: se declara aparte.
   function porPaso(F, valorDe, fmt, universo, fusionados) {
     var filas = [];
-    for (var i = 0; i <= 8; i++) {
+    for (var i = 0; i < PASOS.length; i++) {
       var vs = F.map(function (c) { return valorDe(c, i); }).filter(function (v) { return isFinite(v) && v > 0; });
       filas.push({ i: i, v: vs.length ? mediana(vs) : null, n: vs.length });
     }
     var max = Math.max.apply(null, [1].concat(filas.map(function (f) { return f.v || 0; })));
     return '<div class="pasos">' + filas.map(function (f) {
-      return '<div class="pfila' + (f.v === null ? ' sinDato' : '') + '"><span class="pn"><b>' + f.i + '</b> ' + esc(PASOS[f.i]) + '</span>'
+      return '<div class="pfila' + (f.v === null ? ' sinDato' : '') + '"><span class="pn">' + esc(PASOS[f.i]) + '</span>'
         + '<span class="pb">' + (f.v === null ? '<i class="hatch" style="width:100%"></i>' : '<i style="width:' + Math.max(1.5, (f.v / max) * 100).toFixed(1) + '%;background:' + RAMPA[f.i] + '"></i>') + '</span>'
         + '<span class="pv">' + (f.v === null ? T('sinDato') : fmt(f.v)) + '</span><span class="pnn">n=' + T('nDe', { n: f.n, t: universo }) + '</span></div>';
     }).join('') + (fusionados ? '<p class="tlnota">' + T('fusionadosNota', { n: fusionados }) + '</p>' : '') + '</div>';
@@ -2356,7 +2409,8 @@ const CLIENTE_FUENTE = String.raw`(function () {
     $('gsem').innerHTML = graficoSemanas(F);
     $('gpasos').innerHTML = graficoPasos(F);
     var fus = F.filter(function (c) { return c.tramos.some(function (t) { return t.pasos.length > 1; }); }).length;
-    var tramoDe = function (c, i) { var t = c.tramos.filter(function (x) { return !x.subpaso && x.pasos.length === 1 && x.pasos[0] === i; })[0]; return t ? t.ms / 60000 : null; };
+    // dos tramos de la misma fila (el 6 y el 7 viejos caen los dos en Hallazgos) se suman
+    var tramoDe = function (c, i) { var ts = c.tramos.filter(function (x) { return !x.subpaso && x.pasos.length === 1 && x.pasos[0] === i; }); return ts.length ? ts.reduce(function (a, t) { return a + t.ms; }, 0) / 60000 : null; };
     $('ppt').innerHTML = porPaso(F, tramoDe, function (v) { return n1(v) + ' min'; }, F.length, fus);
     var cs = F.filter(function (c) { return c.consumo.estado === 'medido'; });
     // Los tokens de un tramo fusionado ('5+6') no son de ningún paso: se DECLARAN, como en el de tiempo
@@ -2560,7 +2614,7 @@ function main(opts = {}) {
   const N = M.corridas.length;
   const log = opts.json ? console.error : console.log;
   log(`Ejecuciones: ${N} ejecución${N === 1 ? '' : 's'} de ${M.archivos} archivos · ${M.duplicados} duplicado${M.duplicados === 1 ? '' : 's'} · ${M.ilegibles} no se pudieron leer`);
-  log(`  con consumo medido: ${M.corridas.filter((c) => c.consumo.estado === 'medido').length} · con controles: ${M.corridas.filter((c) => c.controles).length} · llegaron al paso 8: ${M.corridas.filter((c) => c.llego_al_final).length}`);
+  log(`  con consumo medido: ${M.corridas.filter((c) => c.consumo.estado === 'medido').length} · con controles: ${M.corridas.filter((c) => c.controles).length} · llegaron al final: ${M.corridas.filter((c) => c.llego_al_final).length}`);
   if (M.registro.estado !== 'medido') log(`  registro NO MEDIDO: ${M.registro.motivo}`);
   if (M.pasos.fuente !== 'tabla' || M.pasos.motivo) log(`  pasos por número: ${M.pasos.motivo}`);
   if (M.umbrales_motivo) log(`  umbrales NO LEÍDOS: ${M.umbrales_motivo}`);

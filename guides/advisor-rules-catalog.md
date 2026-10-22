@@ -222,7 +222,7 @@ Anti-patterns (lo que NO hace este advisor):
 
 ## Pipeline Preflight (Step 0 del pipeline) — `tycon-pipeline`
 
-Archivo del step: `~/.claude/agent-skills/skills/tycon-pipeline/steps/step-00-preflight.md`
+Archivo del step: `~/.claude/agent-skills/skills/tycon-pipeline/steps/step-01-start.md`
 
 Reglas que se ejecutan ANTES de arrancar el pipeline. Guards de workflow, no del código.
 
@@ -247,7 +247,7 @@ Forma canónica: `pipeline.js start --story <spec> --repo <dir>` corre C0/C1/C2/
 | **PIPE-C6** | Modo autónomo Nivel 1 no se pudo activar (`marker.js set-autonomous`) — default ON desde 2026-06-23 | Avisar y NO bloquear: cae a HITL puro. Opt-out: `--no-autonomous` / `TYCON_PIPELINE_NO_AUTONOMOUS=1`. |
 | **PIPE-C7** | Repo TIENE specs Playwright pero NO declaró su gate E2E en `.tycon/advisors.yaml` (discoverability 2026-06-23) | Avisar al arrancar (`pipeline.js start` emite `E2E-GAP`): declarar `e2e.gate` + `frontend_dir` en `.tycon/advisors.yaml` — sin eso el Step 7c no puede correr los E2E scoped. |
 | **PIPE-C9** | Tooling esperado no disponible (codegraph / engram / workflow-tool / MCPs declarados por el repo) | AVISAR SIEMPRE (nunca degradar en silencio — regla TOOL.i) + escalera `raise_it`: CLI vía Bash si el binario está, fallback documentado si no. `workflow-tool` ausente → PREGUNTAR (se pierde el Step 5b adversarial). |
-| **VAL-W18** | (2026-10-21) **Las pruebas de la story piden algo que el proyecto no declara** — lo calcula un programa, no el validador: `pipeline.js validators` devuelve `dependencias_de_pruebas` comparando las pruebas declaradas y el texto de la story con el `package.json` y el `tsconfig.json` más cercanos (`skills/tycon-pipeline/scripts/lib/test-deps.js`, tabla en `test-deps.json`). Hoy mira: el proveedor de cobertura de vitest (lo exige el portón, que corre `vitest run --coverage`), `@playwright/test`, `@types/node` y `node` en `compilerOptions.types` para pruebas TypeScript que usan Node, y los paquetes `@scope/nombre` que la story nombra en sus pruebas. No avisa si la story pone ese `package.json` en sus archivos y nombra el paquete. Un archivo ilegible sale «no medido», nunca lista vacía. Por qué: una story armada con pruebas nuevas dejó sin verificar tres paquetes; el pase adversarial vio uno por criterio propio. Lo suma el pipeline en el paso 1 (`steps/step-01-validate-story.md`), no un revisor; pausa como cualquier WARNING. Pasa a bloqueante cuando el tablero muestre que no da falsas alarmas. Owner: `pipeline.js validators` (programa). | Sumar el paquete al `package.json` (o `node` a `compilerOptions.types`), o poner ese archivo en la story con el paquete nombrado |
+| **VAL-W18** | (2026-10-21) **Las pruebas de la story piden algo que el proyecto no declara** — lo calcula un programa, no el validador: `pipeline.js validators` devuelve `dependencias_de_pruebas` comparando las pruebas declaradas y el texto de la story con el `package.json` y el `tsconfig.json` más cercanos (`skills/tycon-pipeline/scripts/lib/test-deps.js`, tabla en `test-deps.json`). Hoy mira: el proveedor de cobertura de vitest (lo exige el portón, que corre `vitest run --coverage`), `@playwright/test`, `@types/node` y `node` en `compilerOptions.types` para pruebas TypeScript que usan Node, y los paquetes `@scope/nombre` que la story nombra en sus pruebas. No avisa si la story pone ese `package.json` en sus archivos y nombra el paquete. Un archivo ilegible sale «no medido», nunca lista vacía. Por qué: una story armada con pruebas nuevas dejó sin verificar tres paquetes; el pase adversarial vio uno por criterio propio. Lo suma el pipeline en el paso 1 (`steps/step-02-validate-story.md`), no un revisor; pausa como cualquier WARNING. Pasa a bloqueante cuando el tablero muestre que no da falsas alarmas. Owner: `pipeline.js validators` (programa). | Sumar el paquete al `package.json` (o `node` a `compilerOptions.types`), o poner ese archivo en la story con el paquete nombrado |
 
 ### ADVISORY (nunca bloquea)
 
@@ -441,7 +441,7 @@ Archivo del advisor: `~/.claude/agent-skills/agents/tycon-plugin-tests-coverage.
 
 Archivo del advisor: `signalr-hub-reviewer.md`, en la carpeta de agentes de su paquete (llega con la capa del equipo)
 
-**Naturaleza condicional**: a diferencia de los otros advisors Core, `signalr-hub-reviewer` NO se invoca por default en cada corrida del `tycon-pipeline`. Se agrega al set paralelo **solo si** el diff incluye `**/Hubs/*.cs`, declara `IHubContext<`, o usa `Clients.X.SendAsync(...)`. Ver `~/.claude/agent-skills/skills/tycon-pipeline/steps/step-05-advisors-parallel.md` (sección "Advisors condicionales").
+**Naturaleza condicional**: a diferencia de los otros advisors Core, `signalr-hub-reviewer` NO se invoca por default en cada corrida del `tycon-pipeline`. Se agrega al set paralelo **solo si** el diff incluye `**/Hubs/*.cs`, declara `IHubContext<`, o usa `Clients.X.SendAsync(...)`. Ver `~/.claude/agent-skills/skills/tycon-pipeline/steps/step-07-reviewers.md` (sección "Advisors condicionales").
 
 ### CRITICAL — tenant isolation y auth
 
@@ -473,7 +473,7 @@ Archivo del advisor: `signalr-hub-reviewer.md`, en la carpeta de agentes de su p
 
 Archivo del advisor: `migration-impact-analyzer.md`, en la carpeta de agentes de su paquete (llega con la capa del equipo)
 
-**Naturaleza condicional**: igual que `signalr-hub-reviewer`, NO se invoca en cada corrida del `tycon-pipeline`. Se agrega al set paralelo **solo si** el diff incluye archivos `database/*.sql`. Ver `~/.claude/agent-skills/skills/tycon-pipeline/steps/step-05-advisors-parallel.md` (sección "Advisors condicionales").
+**Naturaleza condicional**: igual que `signalr-hub-reviewer`, NO se invoca en cada corrida del `tycon-pipeline`. Se agrega al set paralelo **solo si** el diff incluye archivos `database/*.sql`. Ver `~/.claude/agent-skills/skills/tycon-pipeline/steps/step-07-reviewers.md` (sección "Advisors condicionales").
 
 ### CRITICAL — breakage de schema o code
 
@@ -499,7 +499,7 @@ Archivo del advisor: `migration-impact-analyzer.md`, en la carpeta de agentes de
 
 Archivo del advisor: `http-resilience-reviewer.md`, en la carpeta de agentes de su paquete (llega con la capa del equipo)
 
-**Naturaleza condicional**: igual que `signalr-hub-reviewer` y `migration-impact-analyzer`, NO se invoca en cada corrida del `tycon-pipeline`. Se agrega al set paralelo **solo si** el diff toca código HTTP cliente .NET (`HttpClient`, `IHttpClientFactory`, `AddHttpClient`, `AddResilienceHandler`/`AddStandardResilienceHandler`, `ResiliencePipeline`, `Polly`). Ver `~/.claude/agent-skills/skills/tycon-pipeline/steps/step-05-advisors-parallel.md` (sección "Advisors condicionales").
+**Naturaleza condicional**: igual que `signalr-hub-reviewer` y `migration-impact-analyzer`, NO se invoca en cada corrida del `tycon-pipeline`. Se agrega al set paralelo **solo si** el diff toca código HTTP cliente .NET (`HttpClient`, `IHttpClientFactory`, `AddHttpClient`, `AddResilienceHandler`/`AddStandardResilienceHandler`, `ResiliencePipeline`, `Polly`). Ver `~/.claude/agent-skills/skills/tycon-pipeline/steps/step-07-reviewers.md` (sección "Advisors condicionales").
 
 **Scope**: solo .NET. Clientes HTTP en JS/TS (`fetch`, `axios`) NO están cubiertos por este advisor.
 
@@ -531,7 +531,7 @@ Archivo del advisor: `http-resilience-reviewer.md`, en la carpeta de agentes de 
 
 Archivo del advisor: `worker-lifecycle-reviewer.md`, en la carpeta de agentes de su paquete (llega con la capa del equipo)
 
-**Naturaleza condicional**: NO se invoca en cada corrida del `tycon-pipeline`. Se agrega al set paralelo **solo si** el diff toca código que herede de `BackgroundService` o implemente `IHostedService` (.NET). Ver `step-05-advisors-parallel.md` (sección "Advisors condicionales").
+**Naturaleza condicional**: NO se invoca en cada corrida del `tycon-pipeline`. Se agrega al set paralelo **solo si** el diff toca código que herede de `BackgroundService` o implemente `IHostedService` (.NET). Ver `step-07-reviewers.md` (sección "Advisors condicionales").
 
 **Scope**: solo .NET. Workers en JS/TS (Node.js BullMQ, RabbitMQ consumers) NO están cubiertos por este advisor.
 
@@ -560,7 +560,7 @@ Archivo del advisor: `worker-lifecycle-reviewer.md`, en la carpeta de agentes de
 
 Archivo del advisor: `tycon-feature-wiring-checker.md`, en la carpeta de agentes de su paquete (llega con la capa del equipo)
 
-**Naturaleza condicional + stack-specific**: NO se invoca en cada corrida del `tycon-pipeline`. Se agrega al set paralelo **solo si** el diff toca `**/*.tsx` (mount detection), agrega componente / hook / store action exportado, **O** agrega endpoint `MapGet/MapPost/MapPut/MapDelete/MapPatch` en `.cs`. Ver `~/.claude/agent-skills/skills/tycon-pipeline/steps/step-05-advisors-parallel.md` (sección "Advisors condicionales").
+**Naturaleza condicional + stack-specific**: NO se invoca en cada corrida del `tycon-pipeline`. Se agrega al set paralelo **solo si** el diff toca `**/*.tsx` (mount detection), agrega componente / hook / store action exportado, **O** agrega endpoint `MapGet/MapPost/MapPut/MapDelete/MapPatch` en `.cs`. Ver `~/.claude/agent-skills/skills/tycon-pipeline/steps/step-07-reviewers.md` (sección "Advisors condicionales").
 
 **Stack soportado V1**: React 18 + TypeScript + Zustand + esbuild + vitest **+** .NET 9 + Minimal API + Bizuit Plugin (`IPluginEndpointBuilder` + `BizuitUserContext`). Otros stacks (Vue, Angular, Blazor, Razor, Svelte, mobile nativo, Express/Node.js) NO soportados — advisor separado pendiente.
 

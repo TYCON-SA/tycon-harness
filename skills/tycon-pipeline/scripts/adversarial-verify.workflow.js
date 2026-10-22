@@ -65,7 +65,7 @@ const AGRUPAR = (A && A.agrupar === false)
 
 // 🔴 Copia LITERAL de `SALIDA_APROBADA` de lib/adversarial-verdict.js (la caja no tiene `require`). La prueba T9 de
 // tests/adversarial-unmeasured.test.js compara las dos: si una cambia, se cambia la otra.
-const SALIDA_APROBADA = 'la salida aprobada: un pase propio con agentes de Claude — cazadores con Sonnet, un verificador aparte por hallazgo que corre el código, juicio con Opus, nunca Fable (workflow-lite.js --agents-dir, step-05b-adversarial-verify.md §«Sin Codex ni Workflow»)'
+const SALIDA_APROBADA = 'la salida aprobada: un pase propio con agentes de Claude — cazadores con Sonnet, un verificador aparte por hallazgo que corre el código, juicio con Opus, nunca Fable (workflow-lite.js --agents-dir, step-08-adversarial-pass.md §«Sin Codex ni Workflow»)'
 
 // El aviso de un pase que no revisó todo. Nunca «limpio»: no medido, con qué faltó y cómo seguir.
 function avisoNoMedido(sinMedir, sinVeredicto) {

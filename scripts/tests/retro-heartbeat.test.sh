@@ -376,7 +376,7 @@ RC=$?
 
 # ── T8 · los dos textos de agent-skills ──────────────────────────────────────────────────────────
 SKILL="${AS_DIR}/skills/tycon-merge-to-main/SKILL.md"
-STEP8="${AS_DIR}/skills/tycon-pipeline/steps/step-08-commit-prep.md"
+STEP8="${AS_DIR}/skills/tycon-pipeline/steps/step-11-prepare-commit.md"
 if [ ! -f "${SKILL}" ] || [ ! -f "${STEP8}" ]; then
   echo "⏭️  T8 salteado: esta máquina no tiene agent-skills en ${AS_DIR} (no es verde: no se midió)"
 else

@@ -65,7 +65,7 @@ function handle(event, opts = {}) {
 function mostrar({ sessionId, stateDir, home = os.homedir(), archivo = null }) {
   const marker = leerMarcador(stateDir, sessionId);
   if (!marker || !marker.storyId) return null;
-  if ((marker.stepsCompleted || []).map(String).includes('3')) return null;
+  if (require('./steps.js').isDone(marker, 'approve-plan')) return null;
   const story = rutaDeLaStory(marker);
   const repo = marker.repoPath || process.cwd();
   const runDir = require('../pipeline.js').resolveRunDir(repo, String(marker.storyId), false, story || undefined);

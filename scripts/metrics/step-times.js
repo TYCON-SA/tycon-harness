@@ -40,10 +40,22 @@
 const fs = require('fs');
 const path = require('path');
 const { cortesDePaso } = require('./tokens-digest.js');
+// la tabla de los pasos: nombres, y la equivalencia del esquema viejo. Sin ella (una copia suelta de
+// scripts/), la cuenta sale igual: el esquema se reconoce por la forma de las claves y los pasos van sin nombre.
+let STEPS_LIB = null;
+try { STEPS_LIB = require('../../skills/tycon-pipeline/scripts/lib/steps.js'); } catch (_) { STEPS_LIB = null; }
 
 const JUNTO_MS = 60000;          // menos de un minuto: «marcado junto con el anterior» — una marca, no una banda
-const PASOS_DE_ESPERA = new Set(['3', '7']);
-const SUBPASOS = ['0b', '0c', '5b', '7c'];
+// Esquema viejo (pasos por número): el 3 y el 7 son espera enteros; 0b, 0c, 5b y 7c son sub-pasos.
+// Esquema 2 (pasos por nombre): Aprobar el plan es espera entero; Hallazgos lo es sólo desde que preguntó
+// (`waitStartedAt`); el pase adversarial y la prueba en vivo se cierran con bandera, como los sub-pasos.
+const ESQUEMA = {
+  1: { espera: new Set(['3', '7']), subpasos: ['0b', '0c', '5b', '7c'] },
+  2: { espera: new Set(['approve-plan']), subpasos: ['adversarial-pass', 'live-check'] },
+};
+/** El esquema de una ejecución por las claves de sus tiempos: con un nombre de la tabla nueva, el 2. */
+const esquemaDe = (st) => (Object.keys(st).some((k) => (STEPS_LIB ? STEPS_LIB.byId(k) : !/^\d+[a-z]?$/.test(k))) ? 2 : 1);
+const nombreDe = (ids) => [...new Set(ids.map((i) => (STEPS_LIB && STEPS_LIB.stepName(i)) || i))].join(' + ');
 
 const aMs = (iso) => {
   if (typeof iso !== 'string') return null;
@@ -62,6 +74,15 @@ function tiempos(stepTimings, opts = {}) {
       trabajo_ms: null, espera_humana_ms: null, entre_pasos_ms: null, sin_repartir_ms: null, estimados: [], trabajo_medido: false };
   }
   const st = stepTimings && typeof stepTimings === 'object' ? stepTimings : {};
+  const esquema = esquemaDe(st);
+  const PASOS_DE_ESPERA = ESQUEMA[esquema].espera;
+  const SUBPASOS = ESQUEMA[esquema].subpasos;
+  // Hallazgos (esquema 2): espera sólo desde que preguntó, si la marca cae adentro del paso
+  const preguntoEn = (k, desde, hasta) => {
+    if (esquema !== 2 || k !== 'findings') return null;
+    const w = st[k] && typeof st[k] === 'object' ? aMs(st[k].waitStartedAt) : null;
+    return w !== null && w >= desde && w <= hasta ? w : null;
+  };
   // Un arranque sirve si es legible y no es anterior al inicio de la corrida: uno de antes es heredado
   // de otra story de la misma sesión.
   const arranque = (k) => {
@@ -96,7 +117,10 @@ function tiempos(stepTimings, opts = {}) {
     const arr = ids.length === 1 ? arranque(ids[0]) : null;
     const pisado = arr !== null && arranquesEnteros.some((x) => x.paso !== ids[0] && x.t > arr && x.t < fin);
     const medida = arr !== null && arr <= fin && arr >= ant && !pisado;
-    const esEspera = ids.some((i) => PASOS_DE_ESPERA.has(i));
+    // Hallazgos (esquema 2) que preguntó pero no se puede medir (sin arranque, o fusionado con otro paso) es una espera
+    // sin medir, no trabajo
+    const preguntoSinMedir = (i) => esquema === 2 && i === 'findings' && !medida && Boolean(st[i] && st[i].waitStartedAt);
+    const esEspera = ids.some((i) => PASOS_DE_ESPERA.has(i) || preguntoSinMedir(i));
     let desde = ant;
     let hueco = 0;
     if (medida) {
@@ -109,7 +133,7 @@ function tiempos(stepTimings, opts = {}) {
         hueco += Math.max(0, sp.t - cursor);
         const hasta = i + 1 < adentro.length ? adentro[i + 1].t : arr;
         const ms = Math.max(0, hasta - sp.t);
-        pasos.push({ paso: sp.paso, pasos: [], inicio: sp.t, fin: hasta, ms, hueco_previo_ms: Math.max(0, sp.t - cursor),
+        pasos.push({ paso: sp.paso, pasos: [], nombre: nombreDe([sp.paso]), inicio: sp.t, fin: hasta, ms, hueco_previo_ms: Math.max(0, sp.t - cursor),
           medida: true, junto: ms < JUNTO_MS, espera: false, subpaso: true });
         trabajo += ms;
         cursor = hasta;
@@ -121,10 +145,12 @@ function tiempos(stepTimings, opts = {}) {
     }
     const dur = Math.max(0, fin - desde);
     entre += hueco;
-    if (esEspera && medida) { espera += dur; esperaMedida = true; }
+    const pregunto = medida && ids.length === 1 ? preguntoEn(ids[0], desde, fin) : null;
+    if (pregunto !== null) { espera += fin - pregunto; trabajo += pregunto - desde; esperaMedida = true; }
+    else if (esEspera && medida) { espera += dur; esperaMedida = true; }
     else if (esEspera) {
       sinRepartir += dur;
-      esperaSinMedir.push(...ids.filter((i) => PASOS_DE_ESPERA.has(i)));
+      esperaSinMedir.push(...ids.filter((i) => PASOS_DE_ESPERA.has(i) || preguntoSinMedir(i)).map((i) => (i === 'findings' ? 'Hallazgos' : i)));
       // Un tramo que junta un paso de espera con uno de trabajo no se puede partir: el trabajo que
       // quedó adentro tampoco está medido.
       if (ids.some((i) => !PASOS_DE_ESPERA.has(i))) trabajoMedido = false;
@@ -132,8 +158,9 @@ function tiempos(stepTimings, opts = {}) {
     const huecoPrevio = pasos.length && pasos[pasos.length - 1].subpaso && pasos[pasos.length - 1].fin === arr
       ? 0 : hueco;
     pasos.push({
-      paso: String(c.paso), pasos: ids.map(Number), inicio: desde, fin, ms: dur,
-      hueco_previo_ms: medida ? huecoPrevio : 0, medida, junto: dur < JUNTO_MS, espera: esEspera,
+      paso: String(c.paso), pasos: ids.map((i) => (/^\d+$/.test(i) ? Number(i) : i)), nombre: nombreDe(ids), inicio: desde, fin, ms: dur,
+      hueco_previo_ms: medida ? huecoPrevio : 0, medida, junto: dur < JUNTO_MS, espera: esEspera || pregunto !== null,
+      ...(pregunto !== null ? { espera_desde: pregunto } : {}),
     });
     ant = Math.max(ant, fin);
   }
@@ -146,8 +173,10 @@ function tiempos(stepTimings, opts = {}) {
   const esperaCompleta = esperaMedida && !esperaSinMedir.length;
   if (!algunoMedido) motivo = 'la ejecución no anotó el arranque de ningún paso (es anterior a la story 2.7): las duraciones son estimadas por diferencia';
   else if (esperaSinMedir.length) motivo = `la espera no se puede medir: el paso ${[...new Set(esperaSinMedir)].join(' y el ')} no tiene arranque medido`;
-  else if (!esperaMedida) motivo = 'los pasos de espera (3 y 7) no tienen arranque: la espera no se puede medir';
+  else if (!esperaMedida) motivo = esquema === 2 ? 'Aprobar el plan no tiene arranque: la espera no se puede medir' : 'los pasos de espera (3 y 7) no tienen arranque: la espera no se puede medir';
   return {
+    // con qué pasos corrió: 1 = por número (el marcador viejo), 2 = por nombre de máquina
+    esquema,
     estado,
     motivo,
     pasos,

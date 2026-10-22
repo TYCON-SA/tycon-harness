@@ -13,7 +13,7 @@ const { execFileSync, spawnSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SCRIPT = path.join(ROOT, 'scripts', 'ci', 'check-trigger-without-docs.js');
-const STEP9 = path.join(ROOT, 'skills', 'tycon-pipeline', 'steps', 'step-09-ado-story-closure.md');
+const STEP9 = path.join(ROOT, 'skills', 'tycon-pipeline', 'steps', 'close-work-item.md');
 
 const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 const ID = ['-c', 'user.name=t', '-c', `user.email=t${'@'}acme.example`, '-c', 'maintenance.auto=false'];

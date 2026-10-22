@@ -404,7 +404,7 @@ test('T9 Arranque_GitignoreDejaViajarElRegistro @story-2.43 @ac-6', () => {
 // ── T7: las guías ───────────────────────────────────────────────────────────────────────────────
 
 test('T7 Guia_ManualOAutomatica @story-2.43 @ac-5', () => {
-  for (const rel of [path.join('skills', 'tycon-pipeline', 'steps', 'step-03-hitl-plan.md'), path.join('guides', 'ci-gate.md')]) {
+  for (const rel of [path.join('skills', 'tycon-pipeline', 'steps', 'step-04-approve-plan.md'), path.join('guides', 'ci-gate.md')]) {
     const txt = fs.readFileSync(path.join(RAIZ, rel), 'utf8');
     assert.match(txt, /approvals\.jsonl/, `${rel}: nombra el registro`);
     assert.match(txt, /\*\*manual\*\*/i, `${rel}: define manual`);

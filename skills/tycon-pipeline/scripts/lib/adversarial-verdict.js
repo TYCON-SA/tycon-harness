@@ -128,7 +128,7 @@ function reglaPaseAjeno(adv, opts = {}) {
   }
   return {
     kind: 'relanzar-pase-ajeno',
-    message: `${cuando}: se RELANZA en el paso del pase adversarial (5b, §JOIN de step-05b-adversarial-verify.md).`,
+    message: `${cuando}: se RELANZA en el paso del pase adversarial (5b, §JOIN de step-08-adversarial-pass.md).`,
     rule: REGLA_PASE_AJENO,
     why: !reciente ? `${edad} (tope ${ESPERA_MAX_MIN} min)` : `${edad}, pero ${hilo} (tope ${HILO_VIVO_MIN} min)`,
   };
@@ -137,7 +137,7 @@ function reglaPaseAjeno(adv, opts = {}) {
 // La salida aprobada cuando Codex no contesta y la sesión no tiene la herramienta Workflow.
 // 🔴 El guion del pase lleva una copia LITERAL (corre en una caja sin `require`):
 // `tests/adversarial-unmeasured.test.js` T9 compara las dos.
-const SALIDA_APROBADA = 'la salida aprobada: un pase propio con agentes de Claude — cazadores con Sonnet, un verificador aparte por hallazgo que corre el código, juicio con Opus, nunca Fable (workflow-lite.js --agents-dir, step-05b-adversarial-verify.md §«Sin Codex ni Workflow»)';
+const SALIDA_APROBADA = 'la salida aprobada: un pase propio con agentes de Claude — cazadores con Sonnet, un verificador aparte por hallazgo que corre el código, juicio con Opus, nunca Fable (workflow-lite.js --agents-dir, step-08-adversarial-pass.md §«Sin Codex ni Workflow»)';
 
 /**
  * ¿El resultado del pase revisó todo? Pura: recibe el objeto que devolvió el guion y devuelve

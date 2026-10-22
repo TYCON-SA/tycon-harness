@@ -273,6 +273,6 @@ test('Close_SaysRoundsAndOpen @story-7.37 @ac-8', () => {
   const r = lab.cmd(PIPELINE, ['review-rounds', '--story', lab.story, '--repo', lab.repo]);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /2 vueltas de revisores \(tope 2\); quedó abierto: 1 como deuda \(REACT-W3\)\./);
-  const paso8 = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-08-commit-prep.md'), 'utf8');
+  const paso8 = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-11-prepare-commit.md'), 'utf8');
   assert.match(paso8, /pipeline\.js review-rounds/);
 });

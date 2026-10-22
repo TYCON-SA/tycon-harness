@@ -131,6 +131,9 @@ function main() {
   // De un solo uso: se consume acá, igual que `ALLOW_DOD_EVIDENCE_WRITE`.
   if (marker.waitingForHuman === true) {
     delete marker.waitingForHuman;
+    // Con «Hallazgos» abierto, ésta es la espera de una persona: se anota su arranque (una sola vez). Sin pregunta
+    // no hay espera que contar.
+    try { require('./lib/steps.js').noteFindingsWait(marker, new Date().toISOString()); } catch (_) { /* la medición no frena el cierre */ }
     writeMarker(sessionId, marker);
     return allowStop();
   }

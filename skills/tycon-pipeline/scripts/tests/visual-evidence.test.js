@@ -559,7 +559,7 @@ test('Matriz_Backend_SigueIgual — un AC que no es de pantalla no pide imagen; 
 
 // Mutación: sacar una de las dos guías, o `--capture` de su texto. Si la definición de hecho no está, falla (no se saltea).
 test('Guia_PantallaPideImagen — el paso «Probar en vivo» y la definición de hecho piden captura o grabación', () => {
-  const paso = path.join(SCRIPTS, '..', 'steps', 'step-07c-dod-runtime-gate.md');
+  const paso = path.join(SCRIPTS, '..', 'steps', 'step-10-live-check.md');
   const guia = path.join(SCRIPTS, '..', '..', '..', 'guides', 'definition-of-done.md');
   assert.ok(fs.existsSync(paso), `no encontré el paso en ${paso}`);
   assert.ok(fs.existsSync(guia), `no encontré la definición de hecho en ${guia}: sin ella esta prueba no mide nada`);

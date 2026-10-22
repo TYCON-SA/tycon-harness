@@ -21,7 +21,7 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js risk-class
   LOW, el orden es: (1) el plan escrito en `step-02-bmad-plan.md` de la carpeta de la corrida; (2) **un mensaje de texto
   tuyo** con una línea «El plan se aprobó solo (riesgo bajo: <criterios en llano>)» y debajo ese plan tal cual, sin
   resumirlo — la persona no ve el archivo, ni la salida de los comandos, ni tu razonamiento: sólo tus mensajes;
-  (3) recién después, `complete-step 3 --auto-approved`. El comando lee la conversación de la sesión y no cierra si el
+  (3) recién después, `complete-step approve-plan --auto-approved`. El comando lee la conversación de la sesión y no cierra si el
   plan no está en tus mensajes. Si no puede leer la conversación (Codex, u otra herramienta que no la guarda), falla
   cerrado: el plan no se aprueba solo, se le muestra a la persona, se le pregunta y se cierra con `--approved`. Por
   qué: medido en la primera historia de un dev nuevo, con riesgo bajo el plan se aprobaba y no aparecía, aunque el
@@ -33,7 +33,7 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js risk-class
   conversación se lee y el plan no está en lo que la persona vio, no cierra. Por qué: medido en un laboratorio, el
   agente dijo que el plan ya estaba en sus mensajes sin haberlo mostrado, preguntó a secas y la persona aprobó sin
   verlo.
-- 🖥️ **Si no lo mostraste, lo muestra el arnés.** En Claude Code, antes de que corra `complete-step 3`, el arnés le
+- 🖥️ **Si no lo mostraste, lo muestra el arnés.** En Claude Code, antes de que corra `complete-step approve-plan`, el arnés le
   pone el plan en pantalla a la persona («El plan de la historia … (te lo muestra el arnés, tal cual está escrito)») y
   lo anota; el paso lo cuenta como mostrado. No reemplaza tu mensaje: si la persona pregunta por el plan, es ése. Por
   qué: en el mismo laboratorio el agente recibió el plan tres veces y no lo escribió nunca.
@@ -102,7 +102,7 @@ compara lo construido contra ella.
 5. **Quién la aprueba**: quien aprueba el plan. Es el dueño o, si el dueño dejó el modo autónomo, quien tenga su
    **delegación** (la coordinadora). La cita dice quién aprobó y por qué vía, por ejemplo «aprobada por la
    coordinadora, por delegación del dueño». El guion no valida quién es: la cita es la constancia.
-6. **Cierre**: `complete-step 3 --approved "<cita del plan>" --mockup-approved "<cita de la maqueta>"` (o
+6. **Cierre**: `complete-step approve-plan --approved "<cita del plan>" --mockup-approved "<cita de la maqueta>"` (o
    `--auto-approved "<criterios>" --mockup-approved "<cita>"` con LOW). Sin la maqueta, con una maqueta que no pasa
    `mockup.js check`, o sin `--mockup-approved`, el paso 3 no cierra. Queda la huella en el marcador y en
    `<clave>-mockup-approval.json` (sin la cita), que va en el commit con la maqueta.
@@ -190,9 +190,9 @@ Antes de presentar el plan, con cualquier stack:
 
 ```bash
 # HITL — el user aprobó con palabras claras de proceder:
-node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step 3 --approved "<cita textual de la aprobación>"
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step approve-plan --approved "<cita textual de la aprobación>"
 # Nivel 2 — auto-aprobación: SOLO si risk-class = LOW (se verifica en proceso; si no es LOW, bloquea):
-node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step 3 --auto-approved "<criterios LOW cumplidos>"
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step approve-plan --auto-approved "<criterios LOW cumplidos>"
 # Story con pantalla (con cualquiera de los dos): además la aprobación de la maqueta (§La maqueta):
 #   … --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>"
 ```
@@ -211,9 +211,9 @@ el tipo y quién. Hay dos tipos:
 
 ```bash
 # la aprobó el dueño:
-… complete-step 3 --approved "<cita>" --approved-by ana@example.com
+… complete-step approve-plan --approved "<cita>" --approved-by ana@example.com
 # la aprobó la coordinadora por delegación del dueño:
-… complete-step 3 --approved "<cita>" --delegated-by ana@example.com --agent "coordinadora (claude-opus-5-5)"
+… complete-step approve-plan --approved "<cita>" --delegated-by ana@example.com --agent "coordinadora (claude-opus-5-5)"
 ```
 
 La aprobación de un agente nunca cuenta como la de una persona: un agente anotado con `--approved-by` queda
@@ -226,7 +226,7 @@ que pasa por la terminal (la firma de los AC imposibles de verificar, `runtime-w
 aprueba quien aprobó el plan, en el mismo comando; `approve-mockup` acepta las mismas opciones. No se pide nada nuevo:
 si la línea no se puede escribir, el marcador avisa y el paso sigue. El portón de CI la exige en el merge (ver
 `guides/ci-gate.md`, «Registro de aprobaciones»). La misma forma vale para la exención de un CRITICAL al cerrar el
-paso 7 (`complete-step 7 --approved-by …` o `--delegated-by …`); los AC firmados por terminal (`runtime-waiver`) son
+paso Hallazgos (`complete-step findings --approved-by …` o `--delegated-by …`); los AC firmados por terminal (`runtime-waiver`) son
 manuales, a nombre del usuario de la terminal.
 
 ## Output de este step
@@ -234,6 +234,6 @@ manuales, a nombre del usuario de la terminal.
 - `approved: true|false`
 - Feedback del usuario si pidió cambios
 - Path al plan aprobado (para referencia en Step 4)
-- `marker.planApproval` seteado (`complete-step 3 --approved|--auto-approved`) y la línea `plan` en `approvals.jsonl`
+- `marker.planApproval` seteado (`complete-step approve-plan --approved|--auto-approved`) y la línea `plan` en `approvals.jsonl`
 
 Pasar al Step 4 solo si `approved: true`.

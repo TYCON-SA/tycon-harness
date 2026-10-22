@@ -71,26 +71,31 @@ const dirs = () => {
 const safeSid = (sid) => String(sid || '_nosession').replace(/[^A-Za-z0-9._-]/g, '_');
 
 // ── la tabla de pasos ────────────────────────────────────────────────────────────────────────────────────────────
-let STEPS = null;
-function steps() {
-  if (STEPS) return STEPS;
-  try { STEPS = require(path.join(SKILL_LIB, 'steps.js')).STEPS; } catch { STEPS = []; }
-  return STEPS;
+let STEPS_LIB;
+function stepsLib() {
+  if (STEPS_LIB !== undefined) return STEPS_LIB;
+  try { STEPS_LIB = require(path.join(SKILL_LIB, 'steps.js')); } catch { STEPS_LIB = null; }
+  return STEPS_LIB;
 }
-/** El nombre llano de un paso; con un id que la tabla no conoce, el id tal cual y `unknown`. */
+/** El nombre llano de un paso (nombre de máquina, o id del marcador viejo); con uno que la tabla no conoce, el id tal cual y `unknown`. */
 function stepLabel(id) {
-  const s = steps().find((x) => x.id === String(id));
-  return s ? { id: s.id, name: s.name, unknown: false } : { id: String(id), name: String(id), unknown: true };
+  const lib = stepsLib();
+  const name = lib ? lib.stepName(id) : null;
+  return name ? { id: String(id), name, unknown: false } : { id: String(id), name: String(id), unknown: true };
 }
 
 /** El paso en que quedó la corrida: el primero de la secuencia sin cerrar. `null` si la corrida terminó. */
 function currentStep(marker) {
-  const pend = new Set((Array.isArray(marker.stepsPending) ? marker.stepsPending : []).map(String));
-  if (!pend.size) return null;
-  const enSecuencia = steps().filter((s) => s.inSequence !== false && pend.has(s.id));
-  if (enSecuencia.length) return stepLabel(enSecuencia[0].id);
-  const desconocido = [...pend].find((id) => !steps().some((s) => s.id === id));
-  return desconocido ? stepLabel(desconocido) : null;   // sólo quedan pasos fuera de la secuencia (7b, 9): terminó
+  const pend = (Array.isArray(marker.stepsPending) ? marker.stepsPending : []).map(String);
+  if (!pend.length) return null;
+  const lib = stepsLib();
+  // un marcador que la tabla no sabe leer: el primer pendiente tal cual, marcado como desconocido
+  if (!lib || lib.schemeOf(marker) === null) return stepLabel(pend[0]);
+  const enSecuencia = lib.pendingSteps(marker).filter((id) => id !== lib.CLOSE_STEP.id);
+  // los pasos de bandera cuentan como pendientes mientras quede CUALQUIER paso, también el cierre en ADO: si sólo quedan
+  // ellos, la secuencia terminó
+  const conLista = enSecuencia.filter((id) => !(lib.STEPS.find((s) => s.id === id) || {}).flag);
+  return conLista.length ? stepLabel(enSecuencia[0]) : null;   // sólo queda el cierre en ADO: terminó
 }
 
 function readMarker(sid) {
@@ -459,20 +464,52 @@ function handle(d) {
   if (ev === 'SessionEnd') return closeWait(sid, 'session-ended');
 }
 
-module.exports = { WAIT_TOOLS, stepLabel, currentStep, buildMessage, thresholdMs, timerSpawnOptions, countRecords, isGenuineUserPrompt, backgroundPending };
+/**
+ * La pregunta a la persona con «Hallazgos» abierto es el arranque de su espera: se anota en el marcador de la ejecución
+ * (una sola vez), con o sin Telegram. Es una medición del tiempo de la ejecución, no un aviso.
+ */
+function noteFindingsWait(sid) {
+  const m = readMarker(sid);
+  if (!m) return false;
+  let steps;
+  // sin la tabla, o sin poder escribir el marcador, la espera queda sin medir: se dice en el registro, sin frenar
+  try { steps = require(path.join(SKILL_LIB, 'steps.js')); } catch (e) {
+    try { logLine({ session: sid, event: 'findings-wait-not-noted', reason: `lib/steps.js no carga (${e.code || e.name || 'error'})` }); } catch { /* sin registro tampoco */ }
+    return false;
+  }
+  if (!steps.noteFindingsWait(m, new Date().toISOString())) return false;
+  const file = path.join(dirs().active, `${safeSid(sid)}.json`);
+  const tmp = `${file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(m, null, 2));
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    try { logLine({ session: sid, event: 'findings-wait-not-noted', reason: `no pude escribir el marcador (${e.code || 'error'})` }); } catch { /* sin registro tampoco */ }
+    return false;
+  }
+  return true;
+}
+
+module.exports = { WAIT_TOOLS, stepLabel, currentStep, buildMessage, thresholdMs, timerSpawnOptions, countRecords, isGenuineUserPrompt, backgroundPending, noteFindingsWait };
 
 if (require.main === module) {
   try {
+    const args = process.argv.slice(2);
+    let d = null;
+    if (args[0] !== '--timer') {
+      let payload = '';
+      try { payload = fs.readFileSync(0, 'utf8'); } catch { process.exit(0); }
+      d = JSON.parse(payload || '{}');
+      if (d.hook_event_name === 'PreToolUse' && WAIT_TOOLS.has(d.tool_name) && d.session_id) {
+        try { noteFindingsWait(d.session_id); } catch { /* la medición no frena la pregunta */ }
+      }
+    }
     if (process.env.TYCON_WAIT_NOTICE === '0') process.exit(0);
     // sin ningún canal por donde avisar, nada: ni archivos ni procesos
     const tg = channels();
-    const args = process.argv.slice(2);
     if (args[0] === '--timer') {
       timer(args[1], args[2]);
     } else {
-      let payload = '';
-      try { payload = fs.readFileSync(0, 'utf8'); } catch { process.exit(0); }
-      const d = JSON.parse(payload || '{}');
       if (!tg.ok) { if (d.hook_event_name === 'Stop' && readMarker(d.session_id)) logLine({ session: d.session_id, result: 'config-error' }); process.exit(0); }
       if (!tg.channels.length) process.exit(0);
       handle(d);

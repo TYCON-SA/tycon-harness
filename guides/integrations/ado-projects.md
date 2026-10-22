@@ -17,8 +17,8 @@ cerrar       ──►  tycon-pipeline step-09   ──►  WI → Closed  +  co
 | Momento | Componente | Acción ADO |
 |---|---|---|
 | Se crea la story `.md` | hook `on-story-create.js` → skill `tycon-ado-story-wi` | **Crea** el WI, lo linkea al Epic, escribe `ado_work_item:` |
-| Empieza la implementación | `tycon-pipeline` `step-00c-ado-mark-active` | Transiciona el WI a `Active` |
-| Se cierra la story (post-merge) | `tycon-pipeline` `step-09-ado-story-closure` | Transiciona a `Closed` + postea comment con commits/CI/PR/tiempo |
+| Empieza la implementación | `tycon-pipeline` `step-01-start` | Transiciona el WI a `Active` |
+| Se cierra la story (post-merge) | `tycon-pipeline` `close-work-item` | Transiciona a `Closed` + postea comment con commits/CI/PR/tiempo |
 
 El skill `tycon-ado-story-wi` cierra el único eslabón que faltaba: la **creación**. Antes
 era manual (web de ADO + copiar el id al frontmatter).

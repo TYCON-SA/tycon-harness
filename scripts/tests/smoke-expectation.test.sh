@@ -266,7 +266,7 @@ else
 fi
 
 # ── T17 — el paso 7c dice la regla ───────────────────────────────────────────────────────────────────────────
-P7="$SK/../steps/step-07c-dod-runtime-gate.md"
+P7="$SK/../steps/step-10-live-check.md"
 parrafo="$(awk '/^#+ .*Sembrar el «Given»/{f=1;next} f&&/^#/{exit} f' "$P7")"
 # Sin `| grep -q` con pipefail: grep -q corta la tubería al primer calce y el echo puede salir por SIGPIPE (rojo al azar).
 if [ -n "$parrafo" ] && echo "$parrafo" | grep 'sin `--acs`' >/dev/null && echo "$parrafo" | grep '«Then»' >/dev/null \
