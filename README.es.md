@@ -246,6 +246,7 @@ Las palabras del arnés (historia, recorrido, freno, procesos de la noche…), u
 | Saber qué escribe en tu máquina y cómo apagar cada cosa | [Qué escribe en tu máquina](getting-started/reference.es.md#qué-escribe-en-tu-máquina-y-qué-hace-solo) |
 | Actualizar, volver atrás o desinstalar | [Cómo se actualiza](getting-started/reference.es.md#cómo-se-actualiza) |
 | Usarlo con Codex | [Qué es opcional](getting-started/reference.es.md#qué-es-opcional) |
+| Usarlo con un modelo abierto por Ollama, en cualquiera de las dos herramientas | [Usar el arnés con modelos de Ollama](guides/integrations/ollama.md) |
 | Entender una palabra del arnés | [Las palabras del arnés](getting-started/reference.es.md#las-palabras-del-arnés) |
 | Cambiar el arnés | [CONTRIBUTING.md](.github/CONTRIBUTING.md) |
 

@@ -248,6 +248,7 @@ The harness's words (story, workflow, guard, nightly jobs…), one line each, in
 | Know what it writes on your machine and how to turn each thing off | [What it writes on your machine](getting-started/reference.md#what-it-writes-on-your-machine-and-what-it-does-on-its-own) |
 | Update, go back or uninstall | [How it updates](getting-started/reference.md#how-it-updates) |
 | Use it with Codex | [What is optional](getting-started/reference.md#what-is-optional) |
+| Use it with an open model through Ollama, in either tool | [Use the harness with Ollama models](guides/integrations/ollama.en.md) |
 | Understand a word of the harness | [The harness's words](getting-started/reference.md#the-harnesss-words) |
 | Change the harness | [CONTRIBUTING.md](.github/CONTRIBUTING.md) |
 
