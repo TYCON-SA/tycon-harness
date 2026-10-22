@@ -56,6 +56,22 @@ function logStep5Start(expected, meta) {
     }) + '\n', 'utf8');
   } catch { /* best-effort */ }
 }
+// `run-start`: la corrida nueva corta la ronda de la anterior en el mismo registro (lib/advisor-round.js →
+// inicioDeLaRonda). Sin la marca, el set esperado de la última vuelta de la corrida anterior seguía abierto.
+function logRunStart(story) {
+  try {
+    fs.mkdirSync(RUNS_DIR, { recursive: true });
+    fs.appendFileSync(sessionLogPath(), JSON.stringify({
+      ts: new Date().toISOString(),
+      event: 'run-start',
+      story: story || null,
+    }) + '\n', 'utf8');
+  } catch (e) {
+    // no frena el arranque, pero se dice: sin la marca, la ronda de la corrida anterior sigue abierta en ésta
+    process.stderr.write(`⚠️ start: no pude anotar el inicio de la ejecución en el registro de revisores (${e && e.message}); ` +
+      'la última ronda de la ejecución anterior de esta sesión puede tomarse como de ésta.\n');
+  }
+}
 // Estado del log DESDE el último step5-start. Devuelve:
 //   { sawStart: bool, expected: string[]|null, ran: string[] }
 // — sawStart=false → no hay log/marca (hook no instalado o pipeline.js no corrió).
@@ -68,9 +84,9 @@ function advisorsRunSinceStart() {
   try { raw = fs.readFileSync(sessionLogPath(), 'utf8'); } catch { return { sawStart: false, expected: null, ran: [] }; }
   const lines = raw.split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
   if (lines.length === 0) return { sawStart: false, expected: null, ran: [] };
-  let startIdx = -1;
-  for (let i = lines.length - 1; i >= 0; i--) { if (lines[i].event === 'step5-start') { startIdx = i; break; } }
-  if (startIdx === -1) return { sawStart: false, expected: null, ran: [] };
+  const startIdx = require('./lib/advisor-round.js').inicioDeLaRonda(lines);
+  // `nuevaCorrida`: el registro tiene una ronda, pero de la corrida anterior; ésta todavía no corrió `advisors`
+  if (startIdx === -1) return { sawStart: false, expected: null, ran: [], nuevaCorrida: lines.some((e) => e.event === 'step5-start') };
   const ran = lines.slice(startIdx).filter((e) => e.advisor).map((e) => e.advisor);
   const expected = Array.isArray(lines[startIdx].expected) ? lines[startIdx].expected : null;
   return { sawStart: true, expected, ran: [...new Set(ran)] };
@@ -3190,9 +3206,12 @@ function computeStart(args) {
         }
       })(),
       stepsPending: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+      // las vueltas de revisores son de esta corrida: una corrida anterior de la misma sesión no las hereda
+      iterations: {},
       size: runSize.size, size_reason: runSize.reason, estimate_min: runSize.estimate_min, estimate_source: runSize.estimate_source,
     })], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     execFileSync(process.execPath, [markerJs, 'complete-step', '0'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    logRunStart(storyId);
     actions.push('PIPE-C4: marker seteado (step 0 completado)');
   } catch (e) {
     return { ready: false, story_id: storyId, pauses: [{ id: 'marker-set-failed', detail: String(e.message || e) }], actions_done: actions };
@@ -5942,6 +5961,13 @@ function main() {
 
   if (cmd === 'check-count') {
     const state = advisorsRunSinceStart();
+    // Una corrida nueva sin `advisors`: la ronda que hay en el registro es de la anterior. Ni se cuenta (sus
+    // revisores no vieron este código) ni se acepta el `--ran` declarado: se frena, como sin ningún spawn.
+    if (state.nuevaCorrida) {
+      process.stderr.write('check-count: esta ejecución todavía no lanzó revisores (la última ronda del registro es de la ejecución anterior de la sesión).\n' +
+        '   Corré `pipeline.js advisors` y lanzá los revisores que devuelve.\n');
+      process.exit(2);
+    }
     // Expected: el set persistido en el step5-start de ESTA
     // iteración — en smart-reloop legítimo es el subset `rerun`, así el gate y
     // el smart-reloop no se anulan mutuamente. Fallback: recomputar set completo

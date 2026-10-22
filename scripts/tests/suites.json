@@ -584,6 +584,12 @@
       "requiere": []
     },
     {
+      "__nota": "una corrida nueva no hereda la ronda de revisores de la anterior: start anota run-start y vacía las vueltas, el validador del paso 1 no completa la ronda vieja, y una foto rechazada sella la ronda en vez de reintentarse.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/phantom-round.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.81: el núcleo resuelve los hermanos declarados de los paquetes contra la raíz de repos sin recorrer nada ({siblings} en el pedido de validación y pipeline.js siblings); con el perfil del equipo (TYCON_TEAM_PROFILE_DIR), el revisor de hermanos sólo entra en un plugin y su agente no rastrea el disco.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/declared-siblings.test.js",

@@ -225,21 +225,32 @@ function main() {
       // repo grande, marker.js con exit ≠ 0) tragaría todo y el roster no se escribiría NI dejaría
       // constancia, que es justo la falla que esta pieza predica evitar.
       escribirRoster({ logPath, repo, story, sessionId, transcriptPath: event.transcript_path });
+      let rechazada = false;
       if (process.env.TYCON_AUTO_SNAPSHOT !== '0') {
         const { execFileSync } = require('child_process');
-        execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'snapshot-iter', String(r.iter)], {
-          stdio: 'ignore', timeout: 10000, env: { ...process.env, CLAUDE_CODE_SESSION_ID: sessionId },
-        });
-        process.stderr.write(
-          `📸 tycon-pipeline: foto del estado auditado tomada sola (iteración ${r.iter}, ${r.esperados} advisors).\n` +
-          '   Es el insumo del re-loop reducido. Si arreglás algo ahora, el delta de la próxima vuelta sale bien.\n',
-        );
+        try {
+          execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'snapshot-iter', String(r.iter)], {
+            stdio: 'ignore', timeout: 10000, env: { ...process.env, CLAUDE_CODE_SESSION_ID: sessionId },
+          });
+        } catch (e) {
+          // Salida 2 es una DECISIÓN de snapshot-iter, ya anotada en gates.log: hay código posterior al último
+          // revisor y no hay foto buena que conservar, así que el re-loop corre el set completo. Reintentarla en
+          // cada spawn siguiente no la cambia, y el reintento que llegaba después del `start` de otra corrida
+          // tomaba la foto sobre el marcador nuevo. Cualquier otra falla (sin marcador, tiempo agotado) se reintenta.
+          if (!(e && e.status === 2)) throw e;
+          rechazada = true;
+        }
+        process.stderr.write(rechazada
+          ? `📸 tycon-pipeline: la foto de la iteración ${r.iter} no se tomó (hay código editado después del último revisor; ` +
+            'el motivo quedó en gates.log). La próxima vuelta corre el set completo de revisores.\n'
+          : `📸 tycon-pipeline: foto del estado auditado tomada sola (iteración ${r.iter}, ${r.esperados} advisors).\n` +
+            '   Es el insumo del re-loop reducido. Si arreglás algo ahora, el delta de la próxima vuelta sale bien.\n');
       }
       // El sello que impide repetir la ronda. Va DESPUÉS de las dos: si alguna falla, la ronda
       // queda sin sellar y el próximo spawn lo reintenta.
       fs.appendFileSync(
         logPath,
-        JSON.stringify({ ts: new Date().toISOString(), event: 'auto-snapshot', iter: r.iter }) + '\n',
+        JSON.stringify({ ts: new Date().toISOString(), event: 'auto-snapshot', iter: r.iter, ...(rechazada ? { foto: 'rechazada' } : {}) }) + '\n',
         'utf8',
       );
     } else if (r.completa && r.yaFotografiada && !ADHOC.has(advisor)) {
