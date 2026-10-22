@@ -340,7 +340,7 @@ volvé a instalar con `--team <dirección>`.
 Hay dos, `minimal` y `full`, y no hay una por defecto: `install` te pregunta si no elegís; sin terminal, pasá `--profile`.
 
 - **`minimal`**: las guías, las skills, los revisores, el recorrido de las historias y el aviso de versión nueva. No
-  cambia cómo contesta el asistente. Registra ocho hooks (seis que sólo anotan, el freno de comandos destructivos y el de editar código sin
+  cambia cómo contesta el asistente. Registra nueve hooks (seis que sólo anotan, el que dice los avisos de los paquetes, el freno de comandos destructivos y el de editar código sin
   historia ni ajuste puntual),
   más los de cada conexión opcional que prendas, y trae los enlaces, los comandos y las skills de terceros.
 - **`full`**: todo lo de `minimal`, y además los otros frenos (el mismo portón para el código que se escribe por la
