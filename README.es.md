@@ -2,6 +2,10 @@
 
 [English](README.md) · Castellano
 
+**El arnés en cuatro minutos.**
+
+https://github.com/user-attachments/assets/04dba346-c992-4b24-9667-63aa58dd4d5e
+
 **Un ciclo de desarrollo para agentes de código: completo, consistente, controlado y adaptable.**
 
 - **Completo:** va del pedido a producción y a la medición; no se queda en escribir código.
@@ -36,7 +40,7 @@ Para quien usa el arnés en su máquina: de instalarlo a sumar las reglas de tu 
 
 **0. Qué es y qué ganás**
 
-https://github.com/user-attachments/assets/1340479f-1da3-4716-8bd5-7c5b1ae05b4a
+https://github.com/user-attachments/assets/916e33d9-5e58-44de-9367-8a8c7c16c4ea
 
 **1. Instalarlo**
 
