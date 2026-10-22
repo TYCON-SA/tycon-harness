@@ -2406,7 +2406,11 @@ test('T24 2.33-LectorSabe_RutaConPunto @story-2.33 @ac-18 — un lector sin `upd
 
 // ── «Tu tecnología»: la clave `stack` de team-repos.json ──
 const RUNNERS = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'test-runners.js'));
-const TEC_EXTRAS = { fabrica: RUNNERS.factoryTable(), internos: ['dotnet', 'vitest', 'jest', 'node'] };
+// los repos de la organización que el servidor ofrece para «El filtro de cada repo» (reposDeLaOrganizacion)
+const REPO_API = { platform: 'azure', org: 'acme', project: 'Prod', repo: 'api' };
+const REPO_WEB = { platform: 'azure', org: 'acme', project: 'Prod', repo: 'web' };
+const REPO_SITIO = { platform: 'github', org: 'acme', repo: 'sitio' };
+const TEC_EXTRAS = { fabrica: RUNNERS.factoryTable(), internos: ['dotnet', 'vitest', 'jest', 'node'], repos: [REPO_API, REPO_WEB, REPO_SITIO] };
 const GO_ORG = { name: 'go', detect: 'go.mod', command: 'go test ./...', results: { format: 'junit', path: '{results}/junit.xml' } };
 const CARGO = { name: 'cargo', detect: 'Cargo.toml', command: 'cargo nextest run', results: { format: 'junit', path: '{results}/junit.xml' } };
 async function pantallaTec(borrador, idioma = 'es', respuesta = {}) {
@@ -2540,6 +2544,92 @@ test('T30b SiteConfig_RunnerTable_SameColumnsAndClearOrigin — todas las filas 
   const celdasEn = (n) => (en.todos().find((x) => x.attrs['data-runner'] === n).hijos || []).filter((x) => x.tag === 'span');
   assert.strictEqual(celdasEn('dotnet')[2].textContent, 'included in the harness · not editable');
   assert.strictEqual(celdasEn('go')[2].textContent, 'built in · can be changed');
+});
+
+test('SiteConfig_RepoFilter_AddFromOrgReposAndRemove — «Agregar un repo» elige de los repos de la organización, cada renglón tiene su filtro y su «Quitar»', async () => {
+  // 🔴 rojo: no hay forma de sumar un renglón al filtro de cada repo, o hay que escribir la ruta del repo a mano.
+  const NETFX = { name: 'netfx-vstest', label: '.NET Framework (vstest)', detect: 'packages.config', command: 'bash -c x', results: { format: 'trx', path: '{results}/**/*.trx' },
+    repos: [{ repo: REPO_API, args: 'TestCategory=Unit' }] };
+  const p = await pantallaTec({ stack: { test_runners: [NETFX] } });
+  const de = (n) => { const out = []; (function walk(x) { out.push(x); (x.hijos || []).forEach(walk); })(n); return out; };
+  de(p.todos().find((x) => x.attrs['data-runner'] === 'netfx-vstest')).find((x) => x.tag === 'button' && x.textContent === 'Cambiar').on.click(); await p.esperar();
+  // el renglón que ya está tiene su «Quitar»; el selector ofrece sólo los que no están, por su nombre y sin escribir rutas
+  assert.ok(p.todos().some((n) => n.tag === 'button' && n.textContent === 'Quitar' && n.attrs['aria-label'] === 'Quitar azure · acme/Prod/api'), 'el renglón de api con su «Quitar»');
+  p.boton(/^Agregar un repo$/).on.click(); await p.esperar();
+  const sel = p.todos().find((n) => n.tag === 'select' && n.attrs['data-path'] === 'runner.repos.nuevo');
+  assert.ok(sel, 'el selector de repos');
+  const opciones = sel.hijos.map((o) => o.textContent);
+  assert.deepStrictEqual(opciones, ['Elegí un repo', 'azure · acme/Prod/web', 'github · acme/sitio'], 'api ya está: no se ofrece');
+  sel.on.change({ target: { value: sel.hijos[1].attrs.value } }); await p.esperar();
+  const campoWeb = p.todos().find((n) => n.tag === 'input' && n.attrs['aria-label'] === 'azure · acme/Prod/web');
+  assert.ok(campoWeb, 'el renglón nuevo con su recuadro de filtro');
+  campoWeb.on.input({ target: { value: 'TestCategory=Smoke' } });
+  p.todos().find((n) => n.tag === 'button' && n.attrs['aria-label'] === 'Quitar azure · acme/Prod/api').on.click(); await p.esperar();
+  p.boton(/^Guardar$/).on.click(); await p.esperar();
+  const guardada = (await p.revisado()).stack.test_runners[0];
+  assert.deepStrictEqual(guardada.repos, [{ repo: REPO_WEB, args: 'TestCategory=Smoke' }]);
+  // una herramienta sin renglones también deja agregar; sin repos de la organización, lo dice
+  const q = await pantallaTec({});
+  de(q.todos().find((x) => x.attrs['data-runner'] === 'go')).find((x) => x.tag === 'button' && x.textContent === 'Cambiar').on.click(); await q.esperar();
+  assert.ok(q.boton(/^Agregar un repo$/), 'una de fábrica sin renglones también tiene «Agregar un repo»');
+  q.boton(/^Agregar un repo$/).on.click(); await q.esperar();
+  assert.ok(q.todos().some((n) => n.tag === 'select' && n.attrs['data-path'] === 'runner.repos.nuevo'), 'el selector, aunque no haya renglones');
+  // sin repos de la organización para ofrecer, lo dice en vez de un selector vacío
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('tecnologia', { repo: 'perfil', borrador: {}, extras: { ...TEC_EXTRAS, repos: [], reposMotivo: 'no pude leer la lista de repos' } })], idioma: 'es', hash: '#seccion-tecnologia' });
+  const todosR = () => de(r.creados.filter((n) => n.attrs.id === 'seccion-tecnologia').pop());
+  de(todosR().find((x) => x.attrs['data-runner'] === 'go')).find((x) => x.tag === 'button' && x.textContent === 'Cambiar').on.click(); await q.esperar();
+  todosR().filter((n) => n.tag === 'button' && n.textContent === 'Agregar un repo').pop().on.click(); await q.esperar();
+  const textoR = todosR().map((n) => n.textContent || '').join(' | ');
+  assert.match(textoR, /No hay más repos de la organización para agregar \(no pude leer la lista de repos\)/);
+  assert.ok(!todosR().some((n) => n.tag === 'select' && n.attrs['data-path'] === 'runner.repos.nuevo'), 'sin selector vacío');
+  // el selector abierto en una herramienta no aparece abierto al cambiar otra
+  const z = await pantallaTec({ stack: { test_runners: [NETFX] } });
+  de(z.todos().find((x) => x.attrs['data-runner'] === 'netfx-vstest')).find((x) => x.tag === 'button' && x.textContent === 'Cambiar').on.click(); await z.esperar();
+  z.boton(/^Agregar un repo$/).on.click(); await z.esperar();
+  de(z.todos().find((x) => x.attrs['data-runner'] === 'go')).find((x) => x.tag === 'button' && x.textContent === 'Cambiar').on.click(); await z.esperar();
+  assert.ok(!z.todos().some((n) => n.tag === 'select' && n.attrs['data-path'] === 'runner.repos.nuevo'), 'en Go, el selector cerrado');
+  assert.ok(z.boton(/^Agregar un repo$/), 'y su botón a la vista');
+  // un repo ya usado con %20 en el nombre (copiado de la web) no se ofrece otra vez
+  const conEspacio = { platform: 'azure', org: 'acme', project: 'Proyecto Uno', repo: 'forms' };
+  const y = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('tecnologia', { repo: 'perfil', borrador: { stack: { test_runners: [{ ...NETFX, repos: [{ repo: { ...conEspacio, project: 'Proyecto%20Uno' }, args: '' }] }] } }, extras: { ...TEC_EXTRAS, repos: [conEspacio] } })], idioma: 'es', hash: '#seccion-tecnologia' });
+  const todosY = () => de(y.creados.filter((n) => n.attrs.id === 'seccion-tecnologia').pop());
+  de(todosY().find((x) => x.attrs['data-runner'] === 'netfx-vstest')).find((x) => x.tag === 'button' && x.textContent === 'Cambiar').on.click(); await q.esperar();
+  todosY().filter((n) => n.tag === 'button' && n.textContent === 'Agregar un repo').pop().on.click(); await q.esperar();
+  assert.match(todosY().map((n) => n.textContent || '').join(' | '), /No hay más repos de la organización para agregar/, 'el de %20 cuenta como ya usado');
+  const en = await pantallaTec({ stack: { test_runners: [NETFX] } }, 'en');
+  de(en.todos().find((x) => x.attrs['data-runner'] === 'netfx-vstest')).find((x) => x.tag === 'button' && x.textContent === 'Change').on.click(); await en.esperar();
+  assert.ok(en.boton(/^Add a repo$/), 'en inglés');
+});
+
+test('Config_ReposDeLaOrganizacion_DeLosLectoresDelSitio — los de la revisión de dependencias (con la organización del repo de operaciones) y los que nombra team-repos.json, sin repetir', async () => {
+  // 🔴 rojo: el selector no tiene de dónde sacar los repos, o mezcla una entrada mal escrita.
+  const ops = clon({ 'operations.json': opsBase(), 'scripts/nightly/dependencies/repos.json': { repos: [
+    { producto: 'A', ruta: 'A/Front', ado: 'Prod/web', tipo: 'npm' },
+    { producto: 'B', ruta: 'B/x', github: 'acme/sitio', tipo: 'npm' },
+    { producto: 'C', ruta: 'C/x', ado: 'malformado', tipo: 'npm' },
+    { producto: 'D', ruta: 'D/x', ado: 'Prod/web', tipo: 'dotnet' },
+  ] } });
+  const perfil = clon({ 'team-repos.json': { ...TR_BASE, merge_suites: { repos: [{ repo: REPO_API, rule: 'automatico' }] } }, 'team-layer.json': { requires: { harness: `>= ${ORG.TEAM_REPOS_SINCE}` } } });
+  const remotos = { operaciones: { platform: 'azure', org: 'acme', project: 'Ops', repo: 'ops', web: 'https://dev.azure.example/acme/Ops/_git/ops' } };
+  await conPestana({ fuentes: fuentesCon({ ops, perfil }), env: { SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: ['tok', 'perfil'].join('-') }, opciones: { remotos } }, async ({ h, entrar }) => {
+    const r = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json;
+    const tec = r.secciones.find((s) => s.id === 'tecnologia');
+    const claves = tec.extras.repos.map((x) => [x.platform, x.org, x.project || '', x.repo].join('/')).sort();
+    assert.deepStrictEqual(claves, ['azure/acme/Prod/api', 'azure/acme/Prod/web', 'github/acme//harness', 'github/acme//ops', 'github/acme//profile', 'github/acme//sitio'].sort());
+    // la entrada «C» (ado sin la forma proyecto/repo) no se ofrece, y se dice
+    assert.strictEqual(tec.extras.reposMotivo, '1 entrada(s) de repos.json no nombran un repo («ado» o «github») y no se ofrecen');
+  });
+  // sin copia de operaciones, o con la lista ilegible: lo dice, y ofrece los de team-repos.json
+  const opsRota = clon({ 'operations.json': opsBase(), 'scripts/nightly/dependencies/repos.json': '{ roto' });
+  await conPestana({ fuentes: fuentesCon({ ops: opsRota, perfil }), env: { SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: ['tok', 'perfil'].join('-') }, opciones: { remotos } }, async ({ h, entrar }) => {
+    const tec = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'tecnologia');
+    assert.match(tec.extras.reposMotivo, /repos\.json\) no se pudo leer: sólo se ofrecen los repos que nombra team-repos\.json/);
+    assert.ok(tec.extras.repos.some((x) => x.repo === 'api'), 'los de team-repos.json, igual');
+  });
+  await conPestana({ fuentes: fuentesCon({ perfil }), env: { SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: ['tok', 'perfil'].join('-') }, opciones: { remotos } }, async ({ h, entrar }) => {
+    const tec = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'tecnologia');
+    assert.match(tec.extras.reposMotivo || '', /todavía no hay copia del repo de operaciones/);
+  });
 });
 
 test('T30c SiteConfig_OrgRunner_LabelAndRepoFiltersSurviveChange — el nombre para personas, el filtro de cada repo a la vista y conservado al guardar', async () => {
