@@ -10,8 +10,9 @@ English · [Castellano](README.es.md)
   minimal install brings one (against destructive commands); the full install adds the rest.
 - **Adaptable:** each organization adds its own reviewers, skills and configuration.
 
-Your coding agent writes fast; the harness makes it work with method. It works with Claude Code and with Codex. The
-AI software development life cycle (AI SDLC), step by step:
+Your coding agent writes fast; the harness makes it work with method. It works with Claude Code and Codex, also with
+open models through [Ollama](guides/integrations/ollama.en.md), and on trial with
+[Cursor](guides/integrations/cursor.en.md). The AI software development life cycle (AI SDLC), step by step:
 
 1. **Request and story:** you say what you want and the agent writes it as a story: what has to be done and how it is
    tested. For a small fix, asking for it in your own words is enough.
@@ -249,6 +250,7 @@ The harness's words (story, workflow, guard, nightly jobs…), one line each, in
 | Update, go back or uninstall | [How it updates](getting-started/reference.md#how-it-updates) |
 | Use it with Codex | [What is optional](getting-started/reference.md#what-is-optional) |
 | Use it with an open model through Ollama, in either tool | [Use the harness with Ollama models](guides/integrations/ollama.en.md) |
+| Use it with Cursor (trial) | [Use the harness with Cursor](guides/integrations/cursor.en.md) |
 | Understand a word of the harness | [The harness's words](getting-started/reference.md#the-harnesss-words) |
 | Change the harness | [CONTRIBUTING.md](.github/CONTRIBUTING.md) |
 
