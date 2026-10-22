@@ -53,9 +53,14 @@ function writeMarker(sessionId, m) {
   } catch { /* best-effort */ }
 }
 
-function allowStop() { process.exit(0); }                 // sin output → Claude para
+// Lo que la persona tiene que ver al cerrar (una historia que quedó en borrador sin validar): va con la salida que toque.
+let toPerson = null;
+function allowStop() {                                    // sin output → Claude para
+  if (toPerson) process.stdout.write(JSON.stringify({ systemMessage: toPerson }) + '\n');
+  process.exit(0);
+}
 function blockStop(reason) {                              // Claude NO para, continúa con `reason`
-  process.stdout.write(JSON.stringify({ decision: 'block', reason }) + '\n');
+  process.stdout.write(JSON.stringify({ decision: 'block', reason, ...(toPerson ? { systemMessage: toPerson } : {}) }) + '\n');
   process.exit(0);
 }
 
@@ -115,6 +120,16 @@ function main() {
   } catch { return allowStop(); }
 
   const sessionId = resolveSessionId(event.session_id);
+
+  // Un borrador de la sesión sin validar: la orden concreta al agente, hasta un tope; después, el aviso a la persona.
+  try {
+    const r = require('./lib/story-claim-check.js').insistir(event, { stateDir: STATE_DIR, home: os.homedir() });
+    if (r && r.aviso) toPerson = r.aviso;
+    if (r && r.block) return blockStop(r.block);
+  } catch (e) {
+    // fail-open: un error acá no traba el cierre, pero queda anotado (no es «no había borradores»)
+    try { require('./lib/story-gate-io.js').appendLog(STATE_DIR, 'gates.log', sessionId, { repoPath: null, name: 'story-claim-check', status: 'unknown', kind: 'unknown-error', reason: String(e && e.message) }); } catch { /* el registro tampoco traba */ }
+  }
 
   // «Creé la historia» sin la historia escrita: vale para toda sesión que corrió la skill, no sólo el modo autónomo.
   try {

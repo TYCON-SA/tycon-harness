@@ -52,6 +52,12 @@ ado_work_item: 12345  # auto-poblado al crear la story (ver nota abajo); ID del 
   entrega**: `cancelled`, `abandoned`, `superseded` y `reverted`. Ese archivo trae además los
   alias de lo que ya se usa en los repos (`pending` → `backlog`, `implementation-complete` →
   `review`, `merged` → `done`, …) y el motivo escrito de cada decisión no obvia.
+  - **`draft` es una historia que el validador todavía no revisó.** Una historia nueva nace en `draft`; el arnés no
+    deja escribir una historia nueva en otro estado, ni pasar un borrador a `ready-for-dev`, sin que el validador de
+    historias (`tycon-story-validator`) haya corrido sobre ese archivo después de su última escritura. Lo hace la skill
+    `tycon-create-story` en su paso 6 (o el agente después de `story-without-bmad.js write`); saltearlo lo autoriza la
+    persona con «autorizo story-skill-bypass». El pipeline no arranca sobre un borrador, y si la sesión deja uno sin
+    validar, el cierre del turno le da al agente la orden de validarlo y, si no avanza, se lo dice a la persona.
   - 🔴 **La lista es CERRADA a propósito, y lo que no está NO se descarta**: sale como
     `desconocido:<valor>`, se cuenta aparte y aparece con su nombre en el tablero. Escribir un
     estado que no está en el diccionario no rompe nada y no da error — sólo hace que la story

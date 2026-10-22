@@ -1,14 +1,16 @@
 /**
  * story-skill-gate-io.js — la capa con I/O del freno de story-a-mano (lógica pura y porqué en
  * `story-skill-gate.js`). La comparten el handler de Edit|Write (`on-story-skill-gate.js`), el guard
- * de Bash (`on-bash-write-gate.js`) y el escritor de la constancia (`on-skill-invoke.js` + el bypass
- * de `marker.js`): UN solo cálculo y UN solo formato de marca para todas las puertas.
+ * de Bash (`on-bash-write-gate.js`) y el escritor de la marca de la skill (`on-skill-invoke.js`): UN solo
+ * cálculo para todas las puertas. La constancia que abre el freno es la del validador, leída de la conversación
+ * (`validator-record.js`); la marca de la skill ya no lo abre, y la sigue usando el cierre del turno.
  *
  * Estado (bajo ~/.claude/.tycon-pipeline/):
  *   skill-marks/<sid>.json   { skill, at, sessionId, cwd, reason? } — la escribe on-skill-invoke.js
- *                            (PostToolUse Skill) (las marcas `skill:'bypass'` de antes siguen leyéndose).
- *   gates.log                cada bloqueo (status: blocked) y cada "no se frena pero se mide" (unknown).
- *   bypass.log               cada bypass declarado (kind: STORY_SKILL_BYPASS) — lo escribe marker.js.
+ *                            (PostToolUse Skill).
+ *   gates.log                cada bloqueo (status: blocked), cada borrador que pasó con la constancia
+ *                            (validated) y cada "no se frena pero se mide" (unknown).
+ *   bypass.log               cada vez que la frase de la persona abrió el freno (kind: STORY_SKILL_BYPASS_USED).
  */
 
 'use strict';
@@ -75,40 +77,62 @@ function isCodexEvent(event, env = process.env) {
   return !!env.CODEX_SESSION_ID && !env.CLAUDE_CODE_SESSION_ID;
 }
 
+/** El texto que queda después de un Edit: el reemplazo aplicado sobre el disco (null si no se puede calcular). */
+function afterEdit(disk, edit) {
+  if (typeof disk !== 'string' || !edit || typeof edit.old_string !== 'string' || typeof edit.new_string !== 'string') return null;
+  if (!edit.old_string) return null;
+  return edit.replace_all ? disk.split(edit.old_string).join(edit.new_string) : disk.replace(edit.old_string, () => edit.new_string);
+}
+
 /**
  * Decide sobre UN archivo que un tool call quiere escribir.
  *
  * @param {object} p
  * @param {string}      p.absPath        destino, absoluto
  * @param {string|null} p.content        el texto que se va a escribir (Write.content / cuerpo del heredoc), o null si no se tiene
+ * @param {object}      [p.edit]         (Edit) { old_string, new_string, replace_all }: el texto nuevo sale de aplicarlo al disco
  * @param {boolean}     [p.nameHint]     (puerta Bash, sin content) el nombre/carpeta sugiere story
  * @param {string}      p.sessionId
  * @param {string}      [p.via]          'Write' | 'Bash: <cmd recortado>' — mensaje/log
- * @param {object}      [p.event]        el evento crudo (detección de Codex)
+ * @param {object}      [p.event]        el evento crudo (detección de Codex; sesión y pedido para leer la conversación)
  * @param {string}      [p.stateDir]
- * @param {number}      [p.nowMs]
  * @returns {{ verdict:{action,kind,reason}, message:string|null }}
  */
-function evaluate({ absPath, content, nameHint = false, sessionId, via, event, stateDir = DEFAULT_STATE_DIR, nowMs = Date.now() }) {
+function evaluate({ absPath, content, edit, nameHint = false, sessionId, via, event, stateDir = DEFAULT_STATE_DIR }) {
   const abs = String(absPath);
   const quiet = { verdict: { action: 'pass', kind: 'not-story', reason: 'no es .md' }, message: null };
   if (!/\.md$/i.test(abs)) return quiet;
 
-  // Camino barato: existe → editar, no crear. Antes que cualquier lectura de contenido o repo.
-  let existsOnDisk = false;
-  try { existsOnDisk = fs.existsSync(abs); } catch { existsOnDisk = false; }
-  if (existsOnDisk) return { verdict: { action: 'pass', kind: 'exists', reason: 'la story ya existe — editar no es crear' }, message: null };
-
   let discovery = null;
   try { discovery = require('./story-discovery.js'); } catch { discovery = null; }
+  const declares = (t) => (discovery ? discovery.declaresStoryIdentity(t) : /^---[\s\S]*?^\s*story\s*:/m.test(t));
 
-  // ¿Declara identidad de story? Por contenido (canónico); por nombre sólo si no hay contenido
-  // (puerta Bash con `cp`/`printf` opaco) y el llamador lo pidió.
+  // Camino barato: existe y no es un borrador → editar, no crear. Antes que cualquier lectura de repo.
+  let existsOnDisk = false;
+  try { existsOnDisk = fs.existsSync(abs); } catch { existsOnDisk = false; }
+  let prevStatus = null;
   let declaredId = null;
   let isStoryCandidate = false;
-  if (typeof content === 'string' && content.length) {
-    isStoryCandidate = discovery ? discovery.declaresStoryIdentity(content) : /^---[\s\S]*?^\s*story\s*:/m.test(content);
+  let status = null;
+  if (existsOnDisk) {
+    let disk = null;
+    try { disk = fs.readFileSync(abs, 'utf8'); } catch (e) {
+      // no se pudo leer: no se frena (el freno no traba por lo que no puede mirar), pero queda medido
+      logUnknown({ absPath: abs, sessionId, via, stateDir, kind: 'unknown-unreadable', reason: `no pude leer el archivo (${e.code || e.message})` });
+      return { verdict: { action: 'pass', kind: 'unknown-unreadable', reason: 'no pude leer el archivo' }, message: null };
+    }
+    prevStatus = declares(disk.replace(/^﻿/, '')) ? gate.statusOf(disk) : null;
+    if (!gate.isDraftStatus(prevStatus)) return { verdict: { action: 'pass', kind: 'exists', reason: 'la story ya existe y no está en borrador — editar no es crear' }, message: null };
+    isStoryCandidate = true;
+    declaredId = discovery ? discovery.declaredStoryId(disk) : null;
+    const after = typeof content === 'string' ? content : afterEdit(disk, edit);
+    status = after == null ? null : gate.statusOf(after);
+  } else if (typeof content === 'string' && content.length) {
+    // ¿Declara identidad de story? Por contenido (canónico); por nombre sólo si no hay contenido
+    // (puerta Bash con `cp`/`printf` opaco) y el llamador lo pidió.
+    isStoryCandidate = declares(content);
     declaredId = discovery && isStoryCandidate ? discovery.declaredStoryId(content) : null;
+    status = gate.statusOf(content);
   } else if (nameHint) {
     isStoryCandidate = true;
   }
@@ -130,20 +154,27 @@ function evaluate({ absPath, content, nameHint = false, sessionId, via, event, s
     if (repoUnderHarness) gateEnabled = io.gateEnabledForRepo(repo.repoRoot, 'story_skill_gate');
   }
 
-  const ttlMs = gate.ttlMsFrom(process.env.TYCON_STORY_SKILL_MARK_TTL_MIN);
-  const mark = readMark(stateDir, sessionId);
-  let verdict = gate.computeStorySkillGate({
-    filePath: abs, existsOnDisk, isStoryCandidate, isHarness, repoUnderHarness, idIsWork,
-    mark, nowMs, ttlMs, gateEnabled, isCodex: isCodexEvent(event),
-  });
+  const isCodex = isCodexEvent(event);
+  const args = { filePath: abs, existsOnDisk, prevStatus, status, isStoryCandidate, isHarness, repoUnderHarness, idIsWork, gateEnabled, isCodex };
+  let verdict = gate.computeStorySkillGate(args);
+  // La constancia del validador se busca sólo cuando hace falta: leer la conversación cuesta.
+  let recordNote = null;
+  if (verdict.action === 'block' && !isCodex) {
+    let rec = null;
+    try {
+      rec = require('./validator-record.js').constancia({ sesion: (event && event.session_id) || sessionId, ruta: abs, repoRoot: repo.repoRoot, pedido: event && event.tool_use_id });
+    } catch (e) { recordNote = `no pude leer la constancia del validador (${e.message})`; }
+    if (rec && rec.hay) verdict = gate.computeStorySkillGate({ ...args, record: true });
+    else if (rec && !rec.legible) recordNote = `no pude leer la conversación (${rec.motivo})`;
+  }
 
   // Veredicto por NOMBRE (sin contenido legible): se distingue en el log —para poder medir cuánto
   // ruido mete— y en el mensaje, que no puede afirmar "ES una story" cuando sólo lo parece (F3).
-  const byName = !(typeof content === 'string' && content.length) && nameHint;
+  const byName = !existsOnDisk && !(typeof content === 'string' && content.length) && nameHint;
   // Escribirla sin la skill lo decide la persona: «autorizo story-skill-bypass» en un turno suyo (o reenviada por la
   // sesión designada) abre el freno para este pedido. El agente no la puede escribir por ella (escape-ok.js).
   let escapeRoto = null;   // la búsqueda de la frase falló: se frena igual, y se dice por qué en el registro y el mensaje
-  if (verdict.action === 'block' && !isCodexEvent(event)) {
+  if (verdict.action === 'block' && !isCodex) {
     let ok = null;
     try {
       ok = require('./escape-ok.js').escapeAutorizado({ variable: 'story-skill-bypass', sesion: event && event.session_id, pedido: event && event.tool_use_id });
@@ -156,16 +187,16 @@ function evaluate({ absPath, content, nameHint = false, sessionId, via, event, s
   if (verdict.action === 'block' && byName) verdict = { ...verdict, kind: `${verdict.kind}-by-name` };
   const line = { repoPath: repo.repoRoot || null, name: 'story-skill-gate', file: abs, via: via || null, kind: verdict.kind, reason: verdict.reason, storyId: declaredId };
   if (verdict.action === 'block') {
-    io.appendLog(stateDir, 'gates.log', sessionId, { ...line, status: 'blocked', ...(escapeRoto ? { escape: escapeRoto } : {}) });
-    const message = gate.blockMessage(verdict, { filePath: abs, via, ttlMs, byName });
+    io.appendLog(stateDir, 'gates.log', sessionId, { ...line, status: 'blocked', ...(escapeRoto ? { escape: escapeRoto } : {}), ...(recordNote ? { record: recordNote } : {}) });
+    const message = gate.blockMessage(verdict, { filePath: abs, via, byName });
     return { verdict, message: escapeRoto ? `${message}\n   ⚠ ${escapeRoto}: la frase de la persona no se pudo verificar.` : message };
   }
   // "No se frena pero se mide" (trampa 5 del handoff: ante la duda no bloquear, y dejar el caso
   // registrado para poder decidir después si valía la pena).
   if (verdict.kind.startsWith('unknown')) io.appendLog(stateDir, 'gates.log', sessionId, { ...line, status: 'unknown' });
-  // El bypass se audita sólo cuando evitó un bloqueo real (sin esto, una línea por cada story).
-  if (verdict.kind === 'bypass') io.appendLog(stateDir, 'bypass.log', sessionId, { repoPath: repo.repoRoot || null, kind: 'STORY_SKILL_BYPASS_USED', file: abs, reason: mark && mark.reason });
+  // El paso de un borrador a otro estado con la constancia queda anotado: es lo que mide si la regla se cumple.
+  if (verdict.kind === 'validated') io.appendLog(stateDir, 'gates.log', sessionId, { ...line, status: 'validated' });
   return { verdict, message: null };
 }
 
-module.exports = { DEFAULT_STATE_DIR, MARKS_DIR, markPath, readMark, writeMark, purgeStaleMarks, logUnknown, isCodexEvent, evaluate };
+module.exports = { DEFAULT_STATE_DIR, MARKS_DIR, markPath, readMark, writeMark, purgeStaleMarks, logUnknown, isCodexEvent, afterEdit, evaluate };

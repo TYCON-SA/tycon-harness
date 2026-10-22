@@ -28,7 +28,9 @@
  * un hook que sólo mirara Edit|Write no habría frenado nada. Sobre los MISMOS targets extraídos
  * arriba, para cada `.md` que NO existe: si el contenido (cuerpo del heredoc, o el texto inline
  * de un `printf`/`echo -e` con `\n`) declara identidad de story, o —sin contenido legible— el
- * nombre lo sugiere (`story-*.md`, `stories/*.md`), corre `lib/story-skill-gate-io.js#evaluate`.
+ * nombre lo sugiere (`story-*.md`, `stories/*.md`), corre `lib/story-skill-gate-io.js#evaluate`. Lo mismo
+ * para cada `.md` que existe: si es una historia en borrador, escribirle encima desde acá (`sed -i`, un heredoc)
+ * pide la constancia del validador, porque desde un comando no se ve qué estado queda.
  * Por Bash se acepta ser MÁS conservador (nombre + ruta) cuando el
  * contenido no se puede parsear (`cp plantilla.md specs/story-x.md`); el costo es un `.md` con
  * nombre de story que no lo es, en un repo del arnés, escrito por Bash sin el skill — raro, y
@@ -368,7 +370,12 @@ function handle(event, opts = {}) {
     const real = installedTree.realPath(abs);
     return isInside(stateDir, abs) || isInside(stateReal, real) || installedTree.inside(installedRoots, real, { real: true });
   };
-  const keep = (t) => protegido(resolveTarget(expandirRuta(cmd, t).valor, cwd, process.platform, { homeVariable: true }));
+  // un `.md` también se mira en un `sed -i`: puede ser una historia en borrador (el freno de historia sin validar)
+  // (con las variables del comando expandidas: `sed -i … "$F"` con `F=story.md`)
+  const keep = (t) => {
+    const valor = expandirRuta(cmd, t).valor;
+    return /\.md$/i.test(t) || /\.md$/i.test(String(valor)) || protegido(resolveTarget(valor, cwd, process.platform, { homeVariable: true }));
+  };
   const targets = extractWriteTargets(cmd, { keep });
   if (!targets.length) return null;
 
@@ -467,6 +474,20 @@ function handle(event, opts = {}) {
   // ── Freno de STORY A MANO — la puerta Bash ─────────────────────────────────────
   if (!skillOff) {
     const mdNew = absTargets.filter((abs) => /\.md$/i.test(abs) && !fs.existsSync(abs));
+    // una historia que existe y está en borrador: escribirle encima desde acá puede pasarla a ready-for-dev sin el validador
+    const mdDraft = absTargets.filter((abs) => /\.md$/i.test(abs) && fs.existsSync(abs));
+    if (mdDraft.length) {
+      const sio = require('./lib/story-skill-gate-io.js');
+      const hds = heredocs(cmd);
+      const sameFile = (a, b) => String(a).replace(/\\/g, '/').toLowerCase() === String(b).replace(/\\/g, '/').toLowerCase();
+      const resolveT = (t) => { const d = resueltos.find((x) => x.raw === t); return d ? d.abs : resolveTarget(t, cwd); };
+      for (const abs of mdDraft) {
+        const own = hds.find((h) => h.target && sameFile(resolveT(h.target), abs));
+        // con `>>` el cuerpo del heredoc no es el archivo entero: no se sabe qué estado queda
+        const r = sio.evaluate({ absPath: abs, content: own && !/>>/.test(cmd) ? own.body : null, sessionId, via, event, stateDir });
+        if (r.verdict.action === 'block') return { block: r.message + '\n' };
+      }
+    }
     if (mdNew.length) {
       const sio = require('./lib/story-skill-gate-io.js');
       let declares = (t) => /^---[\s\S]*?^[ \t]*story[ \t]*:/m.test(t);

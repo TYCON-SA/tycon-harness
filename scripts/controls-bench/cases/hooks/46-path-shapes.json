@@ -791,7 +791,7 @@
           "expect": {
             "exit": 2,
             "stderr_re": [
-              "STORY A MANO"
+              "HISTORIA SIN VALIDAR"
             ],
             "file_contains": [
               {
@@ -829,7 +829,7 @@
           "expect": {
             "exit": 2,
             "stderr_re": [
-              "STORY A MANO"
+              "HISTORIA SIN VALIDAR"
             ],
             "file_contains": [
               {
@@ -867,7 +867,7 @@
           "expect": {
             "exit": 2,
             "stderr_re": [
-              "STORY A MANO"
+              "HISTORIA SIN VALIDAR"
             ],
             "file_contains": [
               {
@@ -905,7 +905,7 @@
           "expect": {
             "exit": 2,
             "stderr_re": [
-              "STORY A MANO"
+              "HISTORIA SIN VALIDAR"
             ],
             "file_contains": [
               {

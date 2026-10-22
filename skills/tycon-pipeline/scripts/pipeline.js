@@ -3191,6 +3191,19 @@ function computeStart(args) {
     pauses.push({ id: 'PIPE-C1-branch-guard', detail: `Estás en rama protegida '${branch}' — NO implementar acá. Creá/checkout una rama de trabajo primero.${aMano}` });
   }
 
+  // PIPE-C5 (lectura): una historia en borrador no está validada; la pasa a ready-for-dev quien corre el validador.
+  // El estado se lee como lo lee el freno de historia (statusOf): si leyeran distinto, un borrador arrancaría como listo.
+  let draftStatus = String(fm.status || '').toLowerCase() === 'draft';
+  try { draftStatus = draftStatus || require('./lib/story-skill-gate.js').isDraftStatus(require('./lib/story-skill-gate.js').statusOf(fs.readFileSync(storyPath, 'utf8'))); } catch (e) {
+    actions.push(`PIPE-C5-draft: no pude leer el estado como lo lee el freno (${e.message}); vale sólo el del frontmatter`);
+  }
+  if (draftStatus) {
+    pauses.push({
+      id: 'PIPE-C5-draft',
+      detail: `La historia está en borrador (status: draft): no está validada. Corré el validador de historias (tycon-story-validator) sobre ${storyPath} y, si pasa, pasala a ready-for-dev; después volvé a correr start.`,
+    });
+  }
+
   // PIPE-C5 (lectura): pipeline abandonado.
   if (fm.status === 'in-progress' && !others.length) {
     pauses.push({
