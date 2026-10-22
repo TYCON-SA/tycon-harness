@@ -156,7 +156,7 @@ const VOCABULARIO = Object.freeze({
   telegram: Object.freeze({ chat_id: 'texto' }),
   integraciones: Object.freeze({
     clockify: 'llave', engram: 'llave', codegraph: 'llave', mailbox: 'llave', codex: 'llave-o-detectar', nightly: 'llave',
-    // `instincts`: la grabadora de instintos (scripts/hooks/instinct-observe.js). Para el equipo la prende el perfil; la
+    // `instincts`: la grabadora de instintos (integrations/instincts/scripts/instinct-observe.js). Para el equipo la prende el perfil; la
     // variable y el archivo de la máquina sirven para apagarla o para probarla en una máquina.
     instincts: 'llave',
     // `claude` (story 8.23, tanda C · AC 24): la llave de la OTRA herramienta, con el vocabulario de `codex` (true, false o

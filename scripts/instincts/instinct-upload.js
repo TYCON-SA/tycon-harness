@@ -2,7 +2,7 @@
 /**
  * instinct-upload.js — LOS DÍAS DE INSTINTOS, ARMADOS PARA EL BUZÓN
  *
- * Arma un archivo comprimido por día UTC cerrado con lo que grabó `scripts/hooks/instinct-observe.js` en esta máquina,
+ * Arma un archivo comprimido por día UTC cerrado con lo que grabó `integrations/instincts/scripts/instinct-observe.js` en esta máquina,
  * para que `scripts/metrics/upload-runs.js` lo suba como `<carpeta>/instincts/v<versión>/<AAAA-MM-DD>.jsonl.gz`. Lo
  * llama la preparación diaria de los registros; no sube nada por su cuenta.
  *

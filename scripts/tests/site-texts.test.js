@@ -70,7 +70,7 @@ function modeloAcme() {
 }
 const configAcme = () => ({ version: 1, owners: { default: MANTIENE }, site: { access: [{ emails: [MANTIENE], role: 'maintainer' }, { emails: [PERSONA], role: 'dev' }], brand: { name: 'Acme Corp' } } });
 
-test('T7 Textos_CadaClaveEnLosDosIdiomas @story-2.42 @ac-5 @ac-9', () => {
+test('T7 Textos_CadaClaveEnLosDosIdiomas @story-2.42 @ac-5 @ac-9 @story-2.60 @ac-3', () => {
   const T = TEXTS();
   const claves = Object.keys(T.TEXTOS);
   assert.ok(claves.length > 100, `la tabla trae los textos del sitio (${claves.length})`);
@@ -116,7 +116,7 @@ async function conLaboratorio(fn) {
   } finally { await h.cerrar(); await emisor.cerrar(); }
 }
 
-test('T8 Textos_NingunaPaginaEnInglesTraeCastellano @story-2.42 @ac-4 @ac-5 @ac-9', async () => {
+test('T8 Textos_NingunaPaginaEnInglesTraeCastellano @story-2.42 @ac-4 @ac-5 @ac-9 @story-2.60 @ac-2', async () => {
   // el detector, contra un texto escrito en una vista: rojo con la página y el texto
   assert.deepStrictEqual(enCastellano(textosVisibles('<main><p>Esa página no existe.</p><p>Nothing here.</p></main>')), ['Esa página no existe.']);
   assert.deepStrictEqual(enCastellano(['Acme Web: 3 items'], DATOS), [], 'los datos de afuera no cuentan');
@@ -133,11 +133,9 @@ test('T8 Textos_NingunaPaginaEnInglesTraeCastellano @story-2.42 @ac-4 @ac-5 @ac-
       // cada página se arma de verdad: un 302 al inicio de sesión no es una página en inglés
       const esperado = ruta === '/no-existe' ? 404 : (ses === ana && ruta === '/arnes' ? 403 : 200);
       assert.strictEqual(r.status, esperado, `${ruta}: ${r.status}`);
-      // la ayuda trae la guía en inglés: su cuerpo es de la guía, no de la tabla
-      // y el cuerpo de Corridas lo arma la vista de corridas de la noche, compartida con la página de la noche: todavía
-      // sale sólo en castellano
-      let html = ruta === '/ayuda' ? r.texto.replace(/<article[\s\S]*<\/article>/, '') : r.texto;
-      if (ruta === '/corridas') html = html.replace(/<div class="corridas">[\s\S]*(?=<footer class="pie">)/, '');
+      // la ayuda trae la guía en inglés: su cuerpo es de la guía, no de la tabla. El cuerpo de la pestaña
+      // de ejecuciones sale en el idioma de la página; con ejecuciones de verdad lo mira Corridas_ElCuerpoEnIngles (site-runs.test.js)
+      const html = ruta === '/ayuda' ? r.texto.replace(/<article[\s\S]*<\/article>/, '') : r.texto;
       for (const t of enCastellano(textosVisibles(html), DATOS)) hallazgos.push(`${ruta}: «${t}»`);
     }
     // las páginas del freno y de la carga

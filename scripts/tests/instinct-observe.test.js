@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * instinct-observe.test.js — la grabadora de instintos en Node (scripts/hooks/instinct-observe.js), su reenvío desde el
- * `.sh` viejo y el aviso de una vez al arrancar (scripts/hooks/instincts-notice.js).
+ * instinct-observe.test.js — la grabadora de instintos en Node (integrations/instincts/scripts/instinct-observe.js), su
+ * reenvío desde el `.sh` viejo y el aviso de una vez al arrancar (integrations/instincts/scripts/instincts-notice.js).
  *
  * Lo que no se puede perder:
  *   · Que con la integración prendida cada herramienta deje UNA línea con los seis campos de siempre más `repo` y
@@ -26,9 +26,9 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
-const HOOK = path.join(RAIZ, 'scripts', 'hooks', 'instinct-observe.js');
+const HOOK = path.join(RAIZ, 'integrations', 'instincts', 'scripts', 'instinct-observe.js');
 const FORWARDER = path.join(RAIZ, 'scripts', 'hooks', 'instinct-observe.sh');
-const NOTICE = path.join(RAIZ, 'scripts', 'hooks', 'instincts-notice.js');
+const NOTICE = path.join(RAIZ, 'integrations', 'instincts', 'scripts', 'instincts-notice.js');
 const obs = require(HOOK);
 const j = (...parts) => parts.join('');
 

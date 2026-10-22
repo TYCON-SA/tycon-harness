@@ -747,6 +747,19 @@ test('T5 Models_LevelsValid @story-2.70 @ac-1', () => {
   }
 });
 
+test('T5b Models_CodexReviewersInherit — «codex_reviewers» acepta sólo «inherit», y no cuenta para el tope', () => {
+  const models = { reviewers: 'balanced', codex_reviewers: 'inherit', mandatory_ceiling: true, ceiling: 'strong' };
+  assert.deepStrictEqual(problemasDeModels(models), []);
+  assert.deepStrictEqual(conModels(models).data.models, models, 'el lector no lo descarta');
+  assert.deepStrictEqual(TEAM.modelsAboveCeiling(models), [], 'no es un modelo: el tope no lo mira');
+  for (const malo of ['balanced', 'gpt-oss', true, { reviewers: 'inherit' }]) {
+    const p = problemasDeModels({ codex_reviewers: malo });
+    assert.strictEqual(p.length, 1, JSON.stringify(malo));
+    assert.strictEqual(p[0].path, 'models.codex_reviewers');
+    assert.match(p[0].message, /inherit/);
+  }
+});
+
 test('T6 Models_MixedAndCeilingByLevel @story-2.70 @ac-3', () => {
   const mezclado = { reviewers: 'balanced', helpers: 'haiku', adversarial: { model: 'sonnet', heavy: 'strong' } };
   assert.deepStrictEqual(problemasDeModels(mezclado), []);

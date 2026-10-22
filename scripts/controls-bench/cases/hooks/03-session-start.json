@@ -266,7 +266,7 @@
     },
     {
       "hook": "instinct-observe.js",
-      "script": "${TCG}/scripts/hooks/instinct-observe.js",
+      "script": "${TCG}/integrations/instincts/scripts/instinct-observe.js",
       "event": "PostToolUse",
       "matcher": "*",
       "cases": [
@@ -323,7 +323,7 @@
           },
           "setup": [
             "mkdir -p obs",
-            "printf '#!/bin/sh\\nnode \"$TCG/scripts/hooks/instinct-observe.js\"\\ncat \"$FIXTURE\"/obs/*.jsonl >> \"$FIXTURE/testigo.txt\" 2>/dev/null\\necho FIN >> \"$FIXTURE/testigo.txt\"\\n' > wrapper.sh && chmod +x wrapper.sh"
+            "printf '#!/bin/sh\\nnode \"$TCG/integrations/instincts/scripts/instinct-observe.js\"\\ncat \"$FIXTURE\"/obs/*.jsonl >> \"$FIXTURE/testigo.txt\" 2>/dev/null\\necho FIN >> \"$FIXTURE/testigo.txt\"\\n' > wrapper.sh && chmod +x wrapper.sh"
           ],
           "stdin": {
             "tool_name": "Read",
@@ -401,7 +401,7 @@
     },
     {
       "hook": "instincts-notice.js",
-      "script": "${TCG}/scripts/hooks/instincts-notice.js",
+      "script": "${TCG}/integrations/instincts/scripts/instincts-notice.js",
       "event": "SessionStart",
       "matcher": "*",
       "cases": [

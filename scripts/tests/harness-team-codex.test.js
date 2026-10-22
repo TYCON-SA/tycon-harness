@@ -395,6 +395,24 @@ test('T24 Codex_DespliegueConModeloDeLaOrganizacion @story-7.29 @ac-16', () => {
   }
 });
 
+test('T25b Codex_ReviewersInherit_NoModelLine_MachineDefault — con «codex_reviewers: inherit» los revisores usan el modelo de la máquina', () => {
+  // con Codex sobre otro proveedor (Ollama), el modelo de OpenAI que fija el perfil no existe: «inherit» saca la línea y
+  // el revisor usa el modelo y el proveedor del config.toml de la máquina
+  const root = treeConModelos('inherit', equipoModels({ reviewers: 'haiku', codex_reviewers: 'inherit' }));
+  for (const n of ['rev-version', 'tycon-spec-first-checker']) {
+    const org = GEN.orgCodexModel(root, n);
+    assert.equal(org.declared, true, n);
+    assert.equal(org.slug, null, n);
+    assert.deepEqual(org.lines, [], `${n}: sin avisos de «sin equivalente»`);
+    const g = GEN.generateOne(root, n);
+    for (const toml of [GEN.deployedContent(g.toml, org), GEN.deployedContent(g.nativeToml, org)]) assert.equal(modelLine(toml), null, `${n}: sin línea model =`);
+  }
+  const home = casa('home-inherit');
+  const codex = path.join(home, '.codex');
+  GEN.deployTeam({ root, codexHome: codex, recordFile: TOOLS.codexTeamRecordPath({ home }) });
+  assert.equal(modelLine(fs.readFileSync(path.join(codex, 'rev-capa-uno.config.toml'), 'utf8')), null, 'la capa del equipo, también');
+});
+
 test('T25 Codex_SinEquivalente_SinLineaDeModelo @story-7.29 @ac-17', () => {
   const sinHaiku = { opus: 'gpt-5.6-terra', sonnet: 'gpt-5.6-luna', fable: 'gpt-5.6-sol' };
   const root = treeConModelos('sin-haiku', equipoModels({ reviewers: 'haiku' }), sinHaiku);

@@ -38,6 +38,44 @@ const startOf = (name) => `<!-- TYCON_BLOCK:${name} START`;
 const endOf = (name) => `<!-- TYCON_BLOCK:${name} END -->`;
 const between = (text, name) => { const i = text.indexOf(startOf(name)); const j = text.indexOf(endOf(name), i); return i === -1 || j === -1 ? null : text.slice(text.indexOf('\n', i) + 1, j); };
 
+test('perfil minimal: el bloque del índice del arnés está igual, con la ruta del árbol, su INDEX.md y las skills', () => {
+  // Codex no resuelve el @import con que Claude Code carga el índice: sin este bloque, una máquina sólo con Codex en el
+  // perfil minimal arrancaba con un AGENTS.md sin nada del arnés, y el modelo no encontraba ni el índice ni las skills
+  const l = lab();
+  fs.writeFileSync(path.join(l.dir, 'INDEX.md'), '# Índice\n');
+  // una HOME que no contiene el árbol: su ruta sale entera; las skills (bajo esa HOME) salen con `~`
+  const minimal = { integrations: { clockify: false }, profile: 'minimal', tree: l.dir, home: path.join(l.dir, 'otra-casa'), env: {} };
+  run(l, minimal);
+  const cuerpo = between(read(l.target), 'harness-index');
+  assert.ok(cuerpo, 'el bloque del índice está en el perfil minimal');
+  assert.ok(cuerpo.includes(`${l.dir.split(path.sep).join('/')}/INDEX.md`), 'nombra el INDEX.md del árbol instalado');
+  assert.ok(cuerpo.includes('`~/.codex/skills/tycon-pipeline/SKILL.md`'), 'dice dónde está la skill del pipeline');
+  assert.ok(!cuerpo.includes('@'), 'ningún @import: Codex no lo resuelve');
+  assert.ok(!between(read(l.target), 'brakes'), 'los bloques de full siguen sin agregarse');
+  assert.strictEqual(run(l, minimal).changed, false, 'idempotente');
+});
+
+test('el bloque del índice nombra las skills de CODEX_HOME y abrevia con ~ lo que cuelga de HOME', () => {
+  const l = lab();
+  fs.writeFileSync(path.join(l.dir, 'INDEX.md'), '# Índice\n');
+  run(l, { tree: l.dir, home: l.dir, env: { CODEX_HOME: path.join(l.dir, 'codex-propio') } });
+  const cuerpo = between(read(l.target), 'harness-index');
+  assert.ok(cuerpo.includes('`~/INDEX.md`'), 'el índice, abreviado');
+  assert.ok(cuerpo.includes('`~/codex-propio/skills/tycon-pipeline/SKILL.md`'), 'las skills, en CODEX_HOME');
+});
+
+test('sin INDEX.md en el árbol: el bloque del índice no se escribe, se saca si estaba, y se avisa', () => {
+  const l = lab();
+  fs.writeFileSync(path.join(l.dir, 'INDEX.md'), '# Índice\n');
+  run(l, { tree: l.dir });
+  assert.ok(between(read(l.target), 'harness-index'), 'con el índice, está');
+  fs.rmSync(path.join(l.dir, 'INDEX.md'));
+  const r = run(l, { tree: l.dir });
+  assert.ok(!read(l.target).includes(startOf('harness-index')), 'sin el índice, se saca entre sus marcas');
+  assert.ok(r.lines.some((x) => /sin el bloque del índice/.test(x)), 'y lo dice');
+  assert.ok(between(read(l.target), 'style'), 'lo demás queda');
+});
+
 test('sin AGENTS.md: lo crea con cada bloque entre sus marcas, la variante de Codex y ningún @import', () => {
   const l = lab();
   const r = run(l);
