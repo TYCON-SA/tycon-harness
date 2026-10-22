@@ -115,6 +115,16 @@ function problemsOf(m, folder) {
     if (d.effect !== undefined && !EFFECTS.includes(d.effect)) out.push(`${d.script}: «effect» es ${EFFECTS.join(', ')}`);
   }
   for (const s of Array.isArray(m.skills) ? m.skills : []) if (!inside(s)) out.push(`la skill «${s}» es una carpeta dentro de la integración`);
+  // `mcp`: el servidor MCP de la integración (su tabla en Codex y su clave en `~/.claude.json`), definido en cada máquina.
+  // Hoy sólo se sabe resolver el que sale de cada máquina: `machine` va en true (uno sin definición nadie lo registraría,
+  // y el despliegue sacaría su tabla en cada vuelta)
+  // Sólo lo declaran las de horas y las de prender y apagar: son las que el despliegue sabe si están prendidas. `null` es
+  // «sin servidor»
+  if (m.mcp !== undefined && m.mcp !== null) {
+    if (!isObject(m.mcp) || typeof m.mcp.server !== 'string' || !/^[A-Za-z0-9_-]+$/.test(m.mcp.server)) out.push('«mcp» es { "server": "<letras, números, - o _>", "machine": true }');
+    else if (m.mcp.machine !== true) out.push('«mcp.machine» va en true: hoy sólo se registra el servidor que se define en cada máquina');
+    else if (m.kind !== 'timeTracking' && m.kind !== 'toggle') out.push(`«mcp» sólo va en una integración de horas o de prender y apagar (ésta es «${m.kind}»): de otro tipo, el despliegue no sabe si está prendida`);
+  }
   for (const s of Array.isArray(m.settings) ? m.settings : []) {
     if (!isObject(s) || typeof s.key !== 'string') { out.push('un ajuste sin «key»'); continue; }
     const parts = s.key.split('.');
@@ -158,6 +168,7 @@ function listManifests({ env = process.env, dir = integrationsDir(env) } = {}) {
       onWork: m.onWork ? path.join(dir, name, m.onWork) : null,
       hooks: Array.isArray(m.hooks) ? m.hooks : [], dispatch: Array.isArray(m.dispatch) ? m.dispatch : [],
       skills: Array.isArray(m.skills) ? m.skills : [], settings: Array.isArray(m.settings) ? m.settings : [],
+      mcp: m.mcp ? { server: m.mcp.server, machine: m.mcp.machine === true } : null,
     });
   }
   const result = { manifests, problems };

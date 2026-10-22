@@ -85,7 +85,6 @@ const MCP_KNOWN_TOOL_COUNTS = {
   'codegraph': 9,
   'codegraph-frontend': 9,
   'codegraph-backend': 9,
-  'clockify': 8,
   'telegram': 4,
   'plugin_telegram': 4,
   'plugin_telegram_telegram': 4,
@@ -102,8 +101,15 @@ const DEFAULT_MCP_TOOL_COUNT = 8;
 const TYCON_CORE_MCPS = new Set([
   'engram', 'plugin_engram', 'plugin_engram_engram',
   'codegraph', 'codegraph-frontend', 'codegraph-backend',
-  'clockify', 'telegram', 'plugin_telegram', 'plugin_telegram_telegram',
+  'telegram', 'plugin_telegram', 'plugin_telegram_telegram',
   'claude_ai_Docu_de_MS', // .NET docs útil
+  // los servidores que declaran las integraciones del arnés (`mcp` de su manifiesto)
+  ...(() => {
+    try {
+      const INT = require(path.join(__dirname, '..', 'lib', 'integrations.js'));
+      return INT.listManifests({ dir: path.join(__dirname, '..', '..', 'integrations') }).manifests.filter((m) => m.mcp).map((m) => m.mcp.server);
+    } catch (_) { return []; }
+  })(),
 ]);
 const TYCON_IRRELEVANT_MCPS = new Set([
   'claude_ai_Wix', 'claude_ai_Gamma', 'claude_ai_Gmail',

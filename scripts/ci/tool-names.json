@@ -48,7 +48,6 @@
     }
   ],
   "ceiling": {
-    "build/deploy-codex-mcp.js": 59,
     "claude-md-blocks/names/tool-names.codex.md": 21,
     "claude-md-blocks/tool-names.md": 14,
     "getting-started/reference.es.md": 1,
@@ -68,10 +67,8 @@
     "guides/sitio-de-la-organizacion/capturas/proponer-apagado.html": 12,
     "scripts/install-tycon-hooks.ps1": 1,
     "scripts/install-tycon-hooks.sh": 3,
-    "scripts/lib/harness-audit.js": 1,
     "scripts/setup/harness/managed.js": 1,
     "scripts/setup/install-effects.json": 28,
-    "scripts/site/texts.js": 1,
-    "scripts/tools/context-budget.js": 2
+    "scripts/site/texts.js": 1
   }
 }
