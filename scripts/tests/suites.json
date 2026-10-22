@@ -1719,6 +1719,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.75: el registro de estimaciones (scripts/lib/estimates.js) — sólo agrega, nunca reescribe; la vigente es la última; las quince claves fijas de la línea; una línea ilegible se cuenta y no tira el resto; entrada inválida sale 2 sin escribir; la unidad de la organización por el lector del árbol; unidades mezcladas a horas y, con puntos sin tasa, sin marca de rango. Laboratorios con acme, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/estimates.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.22: la foto de despliegues de cada noche (scripts/nightly/deployments/) — qué llegó a staging y a producción en cada producto, leído del stage EXACTO declarado de cada corrida (succeeded sí; skipped, ausente o un pedazo de texto como «Prod», no), la aprobación pendiente, vencida o no aprobada, main roto o no, el segundo proveedor GitHub, «no medido» con motivo de lista cerrada que nunca es «sin despliegue», el detalle saneado, la lista blanca del archivo y la ficha del tablero. Con fake-az.sh y fake-gh.js: sin red.",
       "raiz": "arnes",
       "ruta": "tests/nightly-deployments.test.js",
@@ -1908,6 +1914,12 @@
       "__nota": "La foto de cómo habla hoy el arnés con Azure DevOps (scripts/tests/lib/record-platform-golden.js): la normalización, qué cuenta como núcleo y que la foto grabada siga valiendo para el árbol, sin escribir nada.",
       "raiz": "arnes",
       "ruta": "tests/platform-golden.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "El pedido de trabajo de la historia por la capa de plataforma: crear, activar y cerrar con Azure DevOps (las mismas llamadas a az de los pasos) y con GitHub (issue, etiquetas, horas en un comentario), el campo work_item con su alias, la configuración con su nombre viejo y lo que GitHub no tiene. Sin red: el az y el gh de mentira.",
+      "raiz": "arnes",
+      "ruta": "tests/platform-work-item.test.js",
       "requiere": []
     },
     {
@@ -2403,6 +2415,18 @@
       "raiz": "arnes",
       "ruta": "tests/harness-node.test.sh",
       "requiere": []
+    },
+    {
+      "__nota": "story 8.93, tanda A (T6, T7, T9, T10): el piso de Node del arnés (scripts/lib/node-floor.js) — con un Node viejo vuelve a lanzar con el del arnés o lo dice en una línea, los frenos fallan cerrados y los avisos salen una vez por sesión; y cada script que las instrucciones mandan correr con `node <ruta>` arranca por el piso. Con HOME de prueba.",
+      "raiz": "arnes",
+      "ruta": "tests/node-floor.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.93, tanda A (T8, T12): lo mismo con un Node 12 de verdad, bajado de nodejs.org con su huella: los scripts de las instrucciones y un freno con Node 12 en el PATH, y los hooks cuando el Node del PATH cambia a mitad de sesión. Sin red o sin Rosetta en una Mac con Apple Silicon sale NO MEDIDO.",
+      "raiz": "arnes",
+      "ruta": "tests/node-old-real.test.sh",
+      "requiere": ["red"]
     },
     {
       "raiz": "arnes",

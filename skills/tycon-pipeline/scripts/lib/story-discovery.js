@@ -1,3 +1,5 @@
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 /**
  * story-discovery.js — el ÚNICO descubridor de stories Mary+GOLD del arnés.
  *
@@ -57,6 +59,8 @@ const DEFAULT_BUDGET_MS = 500;
 // del arranque en «FALLÓ» y el arnés sin actualizarse.
 const BUDGET_MS = Number(process.env.TYCON_STORY_SCAN_BUDGET_MS) || DEFAULT_BUDGET_MS;
 const MAX_DEPTH = 6;
+/** `v`, o `d` si `v` es null o undefined (sin `??`: este guion lo tiene que poder leer un Node viejo). */
+const nn = (v, d) => (v === undefined || v === null ? d : v);
 
 /** Bytes de cabecera que se leen para ver el frontmatter. Es una optimización, no un límite. */
 const HEAD_BYTES = 8192;
@@ -352,8 +356,8 @@ function cmpStories(a, b) {
  * @returns {{stories: Array, excluded: Array, partial: boolean, stats: object}}
  */
 function scanTree(root, opts = {}) {
-  const budget = opts.budgetMs ?? BUDGET_MS;
-  const maxDepth = opts.maxDepth ?? MAX_DEPTH;
+  const budget = nn(opts.budgetMs, BUDGET_MS);
+  const maxDepth = nn(opts.maxDepth, MAX_DEPTH);
   const pattern = opts.idPattern || null;
   const start = Date.now();
   const expired = () => Date.now() - start >= budget;
@@ -455,9 +459,9 @@ function discoverStories(repoRoot, opts = {}) {
 
   const useCache = opts.cache !== false;
   const cachePath = opts.cachePath || CACHE_PATH;
-  const now = opts.now ?? Date.now();
+  const now = nn(opts.now, Date.now());
   // Firma del criterio: si el repo cambia su `id_pattern`, el índice cacheado deja de servir.
-  const sig = `${cfg.source || 'default'}|${opts.maxDepth ?? MAX_DEPTH}`;
+  const sig = `${cfg.source || 'default'}|${nn(opts.maxDepth, MAX_DEPTH)}`;
 
   if (useCache) {
     const cache = readCache(cachePath);
@@ -485,7 +489,7 @@ function discoverStories(repoRoot, opts = {}) {
 
   if (scanned.partial) {
     warnings.push(
-      `escaneo INCOMPLETO de ${repoRoot} (presupuesto ${opts.budgetMs ?? BUDGET_MS}ms, ` +
+      `escaneo INCOMPLETO de ${repoRoot} (presupuesto ${nn(opts.budgetMs, BUDGET_MS)}ms, ` +
       `${scanned.stats.dirs} carpetas / ${scanned.stats.files} .md vistos) — puede faltar alguna story. ` +
       'Subilo con TYCON_STORY_SCAN_BUDGET_MS si el repo es grande.',
     );
@@ -526,7 +530,7 @@ function declaredFiles(content) {
  * Devuelve `{ storyId, storyPath }` o null.
  */
 function findStoryReferencing(editedAbsPath, opts = {}) {
-  const repoRoot = opts.repoRoot ?? findRepoRoot(editedAbsPath);
+  const repoRoot = opts.repoRoot === undefined || opts.repoRoot === null ? findRepoRoot(editedAbsPath) : opts.repoRoot;
   if (!repoRoot) return null;
 
   const rel = path.relative(repoRoot, editedAbsPath);
@@ -534,8 +538,8 @@ function findStoryReferencing(editedAbsPath, opts = {}) {
   const relPosix = rel.split(path.sep).join('/');
 
   const start = Date.now();
-  const budget = opts.budgetMs ?? BUDGET_MS;
-  const stories = opts.stories ?? discoverStories(repoRoot, opts).stories;
+  const budget = nn(opts.budgetMs, BUDGET_MS);
+  const stories = opts.stories === undefined || opts.stories === null ? discoverStories(repoRoot, opts).stories : opts.stories;
 
   for (const story of stories) {
     if (Date.now() - start >= budget) return null;

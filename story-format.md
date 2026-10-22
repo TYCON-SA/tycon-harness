@@ -42,7 +42,7 @@ sprint: 1
 priority: "P0"        # P0 = blocker, P1 = must, P2 = should, P3 = nice
 approach: "[ADAPT]"   # [EXTRACT] = copiar de fuente | [ADAPT] = adaptar | [CREATE] = nuevo
 depends_on: ["2.1", "2.2", "1.3"]
-ado_work_item: 12345  # auto-poblado al crear la story (ver nota abajo); ID del work item en Azure DevOps
+work_item: 12345  # auto-poblado al crear la story (ver nota abajo); id del pedido de trabajo
 ---
 ```
 
@@ -89,7 +89,7 @@ ado_work_item: 12345  # auto-poblado al crear la story (ver nota abajo); ID del 
   la busca, y por eso el lint del frontmatter **avisa** cada número repetido con sus rutas (no
   frena: al escribir esto había 23 en un repo y 8 en otro).
 - `depends_on` lista stories que deben estar implementadas antes
-- `ado_work_item` — ID del work item en Azure DevOps. **Se auto-puebla al crear la story**: el hook `on-story-create.js` detecta la story nueva sin este campo e invoca el skill `tycon-ado-story-wi`, que crea el work item en ADO (con confirmación del dev) y escribe el id acá. Lo consumen después `tycon-pipeline` step-00c (transiciona el WI a `Active` al implementar) y step-09 (postea comment de trazabilidad con commit SHAs + CI run + PR link y lo transiciona a `Closed` al cerrar). Si el repo NO trackea en ADO (sin `.tycon/ado-config.yaml` ni env vars), el campo simplemente no aparece — el skill hace silent-skip. Detalle completo del flujo y del schema de config: `guides/integrations/ado-projects.md`.
+- `work_item` — id del pedido de trabajo de la story en la plataforma del equipo (un work item de Azure DevOps, un issue de GitHub). El nombre viejo, `ado_work_item`, se sigue leyendo (con los dos gana `work_item`) y nadie lo escribe; el lint de frontmatter avisa si una story nueva nace con él. **Se auto-puebla al crear la story**: el hook `on-story-create.js` detecta la story nueva sin este campo e invoca el skill `tycon-ado-story-wi`, que crea el work item en ADO (con confirmación del dev) y escribe el id acá. Lo consumen después `tycon-pipeline` step-00c (transiciona el WI a `Active` al implementar) y step-09 (postea comment de trazabilidad con commit SHAs + CI run + PR link y lo transiciona a `Closed` al cerrar). Si el repo NO trackea en ADO (sin `.tycon/ado-config.yaml` ni env vars), el campo simplemente no aparece — el skill hace silent-skip. Detalle completo del flujo y del schema de config: `guides/integrations/ado-projects.md`.
 
 #### 1.0 🔴 El frontmatter tiene que ser LEGIBLE — una story mal formada es una story invisible
 

@@ -127,6 +127,20 @@ function probe(bin, { cache = true } = {}) {
   return out;
 }
 
+/**
+ * El piso de Node del arnés (scripts/lib/node-floor.js). Un árbol copiado a medias (las pruebas del instalador copian
+ * sólo lo que usan) puede no traerlo: el piso es el mismo número y el arreglo, el instalador de siempre.
+ */
+function nodeFloor() {
+  try { return require('../../lib/node-floor.js'); } catch (_) {
+    return {
+      MIN_MAJOR: 20,
+      major: (v) => { const m = /^v?(\d+)\./.exec(String(v || '')); return m ? parseInt(m[1], 10) : 0; },
+      repairCommand: (env, platform) => (platform === 'win32' ? 'pwsh -File "<arnés>/scripts/install-tycon-hooks.ps1"' : 'bash "<arnés>/scripts/install-tycon-hooks.sh"'),
+    };
+  }
+}
+
 // ── el intérprete de los hooks ─────────────────────────────────────────────────────────────────────────
 /** La forma del comando para esa ruta: `{ prefix, form, reason }`. `prefix` es lo que va antes de `"<guion>"`. */
 function formFor(bin, platform = process.platform) {
@@ -162,10 +176,15 @@ function interpreter({ tree = DEFAULT_TREE, env = process.env, platform = proces
   const pr = shortcut ? { ok: true, version: L.list.version } : probe(p.bin);
   if (!pr.ok) return Object.assign(out, { reason: `sin Node del arnés (${pr.reason})` });
   out.version = pr.version;
-  if (pr.version !== L.list.version) return Object.assign(out, { reason: `el Node del arnés dice ${pr.version} y la lista pide ${L.list.version}` });
+  // Una lista más nueva que el Node que ya está bajado (la actualización trajo la lista y la bajada todavía no corrió) no
+  // deja los hooks con el Node del PATH: el que está sirve si arranca con el piso del arnés. La versión exacta la pone
+  // `ensure` en la bajada siguiente; acá sólo queda dicho.
+  const floor = nodeFloor();
+  if (pr.version !== L.list.version && floor.major(pr.version) < floor.MIN_MAJOR) return Object.assign(out, { reason: `el Node del arnés dice ${pr.version} y la lista pide ${L.list.version}` });
   out.present = true;
   const f = formFor(p.bin, platform);
-  return Object.assign(out, { own: f.prefix !== 'node', prefix: f.prefix, form: f.form, reason: f.reason });
+  const differs = pr.version !== L.list.version ? `el Node del arnés dice ${pr.version} y la lista pide ${L.list.version}: se usa igual hasta la próxima bajada` : null;
+  return Object.assign(out, { own: f.prefix !== 'node', prefix: f.prefix, form: f.form, reason: f.reason || differs });
 }
 
 // ── el registro ──────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -498,7 +517,7 @@ function doctorFacts({ tree = DEFAULT_TREE, env = process.env, platform = proces
     }
     const parts = [`Node del arnés: ${interp.version}, el propio (${json.path})`];
     parts.push(json.verified === null ? 'huella del binario sin recalcular (comprobación de salud)' : json.verified ? 'huella del binario igual a la de la lista' : 'la huella del binario NO es la de la lista');
-    if (hooks && (hooks.path_node > 0 || hooks.other > 0)) parts.push(`hooks: ${hooks.own} de ${hooks.total} con el Node del arnés${hooks.other ? ` (${hooks.other} con otro Node)` : ''}: el próximo arranque los pasa`);
+    if (hooks && (hooks.path_node > 0 || hooks.other > 0)) parts.push(`hooks: ${hooks.own} de ${hooks.total} con el Node del arnés${hooks.other ? ` (${hooks.other} con otro Node)` : ''}: corré \`${nodeFloor().repairCommand(env, platform)}\``);
     else parts.push(`hooks: ${k} con él`);
     // un manifiesto roto (sus hooks no se cuentan) se dice también en la línea, y la sube a aviso
     if (deLaLista.length) parts.push(deLaLista.join(' · '));

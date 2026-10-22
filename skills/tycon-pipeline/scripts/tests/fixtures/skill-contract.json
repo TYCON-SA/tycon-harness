@@ -394,6 +394,50 @@
   {
    "id": "STORY_ID",
    "motivo": "story 7.23 tanda B (2026-10-21): el Arranque (steps/step-01-start.md) dejó de describir a mano los chequeos que `pipeline.js start` hace en un comando; el comando sigue haciéndolos."
+  },
+  {
+   "id": "--area",
+   "motivo": "story 8.85 tanda B1 (2026-10-22): los pasos del pedido de trabajo (la parte del Arranque y close-work-item.md) piden a la capa de plataforma (`platform.js work-item create|update|close`) y no arman comandos `az boards`; las opciones viven en el conector (integrations/azure-devops/scripts/work-items.js)."
+  },
+  {
+   "id": "--assigned-to",
+   "motivo": "story 8.85 tanda B1 (2026-10-22): los pasos del pedido de trabajo piden a la capa de plataforma y no arman comandos `az boards`; las opciones viven en el conector (integrations/azure-devops/scripts/work-items.js)."
+  },
+  {
+   "id": "--discussion",
+   "motivo": "story 8.85 tanda B1 (2026-10-22): los pasos del pedido de trabajo piden a la capa de plataforma y no arman comandos `az boards`; las opciones viven en el conector (integrations/azure-devops/scripts/work-items.js)."
+  },
+  {
+   "id": "--fields",
+   "motivo": "story 8.85 tanda B1 (2026-10-22): los pasos del pedido de trabajo piden a la capa de plataforma y no arman comandos `az boards`; las opciones viven en el conector (integrations/azure-devops/scripts/work-items.js)."
+  },
+  {
+   "id": "--help",
+   "motivo": "story 8.85 tanda B1 (2026-10-22): el cierre ya no lista los estados válidos con `az boards work-item update --help`; si el estado no existe, la capa lo dice en su `summary`."
+  },
+  {
+   "id": "--id",
+   "motivo": "story 8.85 tanda B1 (2026-10-22): los pasos del pedido de trabajo piden a la capa de plataforma y no arman comandos `az boards`; el id va en los argumentos de `platform.js work-item` y las opciones viven en el conector."
+  },
+  {
+   "id": "--org",
+   "motivo": "story 8.85 tanda B1 (2026-10-22): los pasos del pedido de trabajo piden a la capa de plataforma y no arman comandos `az boards`; la organización la resuelve el conector desde la configuración del repo o `ado.org`."
+  },
+  {
+   "id": "--relation-type",
+   "motivo": "story 8.85 tanda B1 (2026-10-22): colgar el pedido de su Epic lo hace el conector (integrations/azure-devops/scripts/work-items.js), no el paso."
+  },
+  {
+   "id": "--state",
+   "motivo": "story 8.85 tanda B1 (2026-10-22): activar y cerrar el pedido lo hace la capa de plataforma (`platform.js work-item update|close`); los estados salen de `state_active`/`state_closed` de la configuración del repo."
+  },
+  {
+   "id": "--target-id",
+   "motivo": "story 8.85 tanda B1 (2026-10-22): colgar el pedido de su Epic lo hace el conector (integrations/azure-devops/scripts/work-items.js), no el paso."
+  },
+  {
+   "id": "--title",
+   "motivo": "story 8.85 tanda B1 (2026-10-22): crear el pedido va por `platform.js work-item create` con el título en sus argumentos; las opciones de `az` viven en el conector."
   }
  ],
  "parrafos": [

@@ -217,6 +217,8 @@ if ((m = base.match(/^repos\/([^/]+\/[^/]+)\/issues\/(\d+)(\/comments|\/timeline
   if (method === 'PATCH') {
     if (cuerpo.state === 'closed') Object.assign(i, { state: 'closed', state_reason: cuerpo.state_reason || 'completed', closed_at: st.now, closed_by: st.user });
     if (cuerpo.state === 'open') Object.assign(i, { state: 'open', state_reason: 'reopened', closed_at: null, closed_by: null });
+    // las etiquetas, como GitHub: la lista que llega reemplaza a la que había
+    if (Array.isArray(cuerpo.labels)) i.labels = cuerpo.labels.map(String);
     save(); out(issueApi(repo, i));
   }
 }

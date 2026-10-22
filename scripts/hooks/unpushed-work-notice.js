@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('../lib/node-floor.js').guard({ hook: true }); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 // unpushed-work-notice.js — "trabajo commiteado que no está en origin". Cubre el caso en que el commit del backend
 // queda SOLO local (el push nunca se ejecuta) y el frontend que lo consume se promueve a main: el smoke da verde
 // contra ese backend local, así que ningún control pregunta "¿esto existe en el remoto?".

@@ -69,6 +69,8 @@
 
 // ── el piso de Node, ANTES de cargar nada: un node viejo imprime una línea y sale 2 ────────────────────────────
 const NODE_FLOOR = 20;
+// con el Node propio del arnés presente, un Node viejo vuelve a lanzar con él; sin él, sigue la línea de abajo
+if (require.main === module) { try { require('../lib/node-floor.js').guard({ onlyReexec: true }); } catch (_) { /* un árbol sin el piso: la línea de abajo */ } }
 {
   const major = parseInt(String(process.versions.node).split('.')[0], 10);
   if (!(major >= NODE_FLOOR)) {

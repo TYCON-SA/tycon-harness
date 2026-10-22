@@ -9,7 +9,7 @@
 - "post-DoD, cerrar ADO"
 - "/tycon-pipeline close <story-path>"
 
-Si el dev solo dice "marcá done en el frontmatter", también disparar este step (cuando la story tiene `ado_work_item:` en frontmatter — ver más abajo).
+Si el dev solo dice "marcá done en el frontmatter", también disparar este step (cuando la story tiene id de pedido de trabajo, `work_item:` o su nombre viejo `ado_work_item:` — ver más abajo).
 
 ## 🔴 Pre-condiciones (NO skipear)
 
@@ -49,23 +49,23 @@ Antes de postear nada en ADO, validar que se cumple TODO esto:
    hallazgos en todo el registro.
 4. **Merge a main hecho** (vía `/tycon-merge-to-main` o manual) — para tener el CI run definitivo y, si aplica, el PR link.
 5. **Frontmatter `status:`** debe estar en `review` (después de «Preparar el commit») o `done` (si dev ya lo movió manualmente). NO ejecutar este cierre sobre `ready-for-dev`/`in-progress` — es señal de que el flujo no completó «Preparar el commit».
-6. **Si la story NO tiene `ado_work_item:` en frontmatter** → NO skipear ADO con "N/A". Resolver en este orden (ver sección "Creación retroactiva del WI" abajo):
-   a. Si el repo tiene `.tycon/ado-config.yaml` (integración ADO activa) → **CREAR el WI retroactivamente** (PBI hijo del Epic mapeado en `epic_links`), escribir `ado_work_item:` en el frontmatter, y continuar con el cierre normal (comment + Done + CompletedWork). NO preguntar al dev por un ID que no existe.
+6. **Si la story NO tiene id de pedido de trabajo** → NO skipear el pedido con "N/A". Resolver en este orden (ver sección "Creación retroactiva del pedido" abajo):
+   a. Si el repo tiene la configuración del pedido de trabajo (`.tycon/work-items.yaml` o `.tycon/ado-config.yaml`) → **CREAR el pedido retroactivamente** (hijo del Epic mapeado en `epic_links`), escribir `work_item:` en el frontmatter, y continuar con el cierre normal (comment + cierre + horas). NO preguntar al dev por un ID que no existe.
    b. Si el dev SABE que ya existe un WI (creado a mano fuera del flujo) → preguntar el ID, NO grep por título (puede haber WIs con títulos similares).
-   c. Si el repo NO tiene `.tycon/ado-config.yaml` → ADO genuinamente N/A, skip la parte ADO (solo entonces).
+   c. Si el repo NO tiene ninguno de los dos archivos → el pedido genuinamente N/A, skip esa parte (solo entonces).
 
-   **🔴 Anti-pattern**: leer "sin `ado_work_item:` → ADO N/A" y skipear toda la parte ADO cuando el repo SÍ tiene `.tycon/ado-config.yaml` con `epic_links` (y las stories hermanas tienen WI). El skip deja stories `done` y mergeadas sin WI ni horas cargadas. **"Sin `ado_work_item:`" NO significa "ADO no aplica" — significa "falta crear el WI" cuando hay config ADO.** El fix es crear retroactivamente, no skipear.
+   **🔴 Anti-pattern**: leer "sin id → el pedido no aplica" y skipear toda esa parte cuando el repo SÍ tiene su configuración con `epic_links` (y las stories hermanas tienen pedido). El skip deja stories `done` y mergeadas sin pedido ni horas cargadas. **"Sin id" NO significa "no aplica" — significa "falta crear el pedido" cuando hay configuración.** El fix es crear retroactivamente, no skipear.
 
 Si alguna condición falla → STOP. Pedir al dev que complete la pre-condición faltante. No postear comment parcial.
 
 ## Inputs
 
 - `story_path` — path al .md de la story
-- `ado_work_item_id` — del frontmatter o preguntado al dev
+- `id` del pedido de trabajo — del frontmatter (`work-item-field.js get`) o preguntado al dev
 - `commit_shas[]` — lista de commit SHAs que implementaron la story (ver "Recolección de commits")
 - `ci_run` — número/link del CI run post-merge que validó el build verde (ver "Recolección de CI run")
 - `pr_link` — URL del PR si la story se mergeó vía PR (opcional — algunos proyectos pushean directo a `main`)
-- `ado_org` y `ado_project` — del config del repo (ver "Configuración ADO" abajo)
+- dónde vive el pedido — lo resuelve la capa de plataforma (ver "Dónde vive el pedido" abajo)
 - `time_tracked` — el tiempo registrado para la story en la herramienta de horas de la organización (ver "Recolección de tiempo: el aviso de trabajo")
 
 ## Recolección de commits
@@ -133,61 +133,48 @@ Formato del output: `Xh YYm` (ej. `4h 32m`). Si la story tomó menos de 1h, most
 - **Un aviso de la integración** (falta configurar algo, la herramienta no contestó): decirlo en una línea y seguir sin el campo; el cierre no se frena por las horas.
 - **El dev quiere overridear el total**: aceptar override manual (ej. "ponele 5h en vez de 4h32m" — el dev sabe si hubo trabajo offline no trackeado).
 
-## Configuración ADO
+## Dónde vive el pedido
 
-El skill necesita saber `org` + `project` para invocar `az boards`. Resolver en este orden:
+El paso no arma comandos de ninguna plataforma: le pide a la capa de plataforma
+(`node ~/.claude/tycon-harness/scripts/lib/platform/platform.js work-item create|close`). La plataforma la elige el perfil
+del equipo (`integrations.platform`); el destino (organización, proyecto o repo, tipo, estados, épicas), la
+configuración del repo: `.tycon/work-items.yaml`, o `.tycon/ado-config.yaml` (el nombre viejo, que se sigue leyendo; con
+los dos gana el nuevo). En Azure DevOps la organización es la del archivo y, si no la tiene, `ado.org` de la máquina.
 
-1. **Config del repo** — buscar `.tycon/ado-config.yaml` en el repo root (manda: un repo de cliente puede vivir en otra organización):
-   ```yaml
-   ado_org: https://dev.azure.com/<organizacion>
-   ado_project: Ceibo
-   ```
-2. **La configuración del arnés** — `ado.org`: `node ~/.claude/tycon-harness/scripts/lib/tycon-config.js get ado.org`
-   (lee `TYCON_ADO_ORG`, `~/.claude/tycon.json` y el perfil del equipo, en ese orden; exit 3 = sin organización; exit 2 =
-   configuración rota, y se dice con archivo, clave y motivo). El proyecto: `TYCON_ADO_PROJECT`, o preguntar al dev.
-3. **Sin organización = Azure DevOps apagada en esta máquina** — el step lo dice en UNA línea («Azure DevOps apagado en
-   esta máquina — el work item no se cierra; prender: ado.org en ~/.claude/tycon.json o TYCON_ADO_ORG»), no llama a `az`
-   y se saltea (exit 0). Ya no hay un nivel «tabla por proyecto»: la tabla de `guides/integrations/ado-projects.md` es referencia
-   para personas, no algo que el pipeline lee.
+**Sin plataforma elegida o sin credencial** la capa contesta `ok: false` con un `summary` de una línea que dice qué falta
+y cómo ponerlo: se muestra esa línea, el pedido no se toca y el resto del cierre sigue (exit 0).
+**Azure DevOps apagado** (sin `ado.org` en la configuración del arnés ni organización en la del repo) es el mismo caso:
+una línea, sin llamar a `az`.
 
-## Creación retroactiva del WI (cuando `ado_work_item:` falta + hay config ADO)
+El id, con el lector común (lee `work_item:` y su nombre viejo `ado_work_item:`; una historia vieja con sólo el viejo
+se cierra igual): `node ~/.claude/tycon-harness/scripts/lib/platform/work-item-field.js get <story_path>` (sale 3 si no
+tiene).
 
-Disparado por pre-condición 6.a. Cuando la story está `done`/`review`, NO tiene
-`ado_work_item:` en frontmatter, y el repo tiene `.tycon/ado-config.yaml`:
+## Creación retroactiva del pedido (cuando la historia no tiene id y el repo tiene configuración)
 
-1. **Resolver config** desde `.tycon/ado-config.yaml`: `ado_org`, `ado_project`,
-   `ado_wi_type`, `ado_area_path`, `ado_state_closed`, `epic_links`, `ado_default_tags`.
-2. **Resolver el Epic padre**: leer `epic:` del frontmatter de la story → buscar en
-   `epic_links[epic]` el WI id del Epic. Si no hay entrada → crear suelto + warning.
-3. **Calcular CompletedWork** con el aviso de trabajo (ver "Recolección de tiempo: el aviso de trabajo").
-4. **Crear el PBI**:
+Disparado por pre-condición 6.a. Cuando la story está `done`/`review`, no tiene id de pedido y el repo tiene su
+configuración del pedido de trabajo:
+
+1. **El título**: `Story <id>: <title>`. **La épica**: `epic:` del frontmatter (la capa la cuelga de su Epic si la
+   configuración la mapea en `epic_links`; si no, la crea suelta y lo dice en `warnings`).
+2. **Crear**:
    ```bash
-   WI=$(az boards work-item create \
-     --org "$ado_org" --project "$ado_project" \
-     --type "$ado_wi_type" \
-     --title "Story <id>: <title>" \
-     --area "$ado_area_path" \
-     --fields "Microsoft.VSTS.Scheduling.CompletedWork=$hours_decimal" "System.Tags=$ado_default_tags" \
-     --query "id" -o tsv)
+   node ~/.claude/tycon-harness/scripts/lib/platform/platform.js work-item create \
+     --args '{"repoDir": "<repo>", "title": "Story <id>: <title>", "epic": "<epic>", "sprint": <sprint>}'
+   # → {"ok": true, "value": {"id", "url", "warnings", "unsupported"}, "summary": "…"}
    ```
-5. **Linkear al Epic padre**:
-   ```bash
-   az boards work-item relation add --org "$ado_org" --id "$WI" \
-     --relation-type "parent" --target-id "<epic_wi_id>"
-   ```
-6. **Escribir `ado_work_item: <WI>`** en el frontmatter de la story (línea tras
-   `signed_for_sprint:` o `parent_story:`), via Edit. NO dispara el hook
+3. **Escribir el id** en el frontmatter, con el campo neutro (nadie escribe `ado_work_item`):
+   `node ~/.claude/tycon-harness/scripts/lib/platform/work-item-field.js set <story_path> <id>`. NO dispara el hook
    `on-frontmatter-write.js` (no es transición de `status:`/`pipelines.status:`).
-7. **Continuar con el cierre normal** (postear comment + state Done + CompletedWork
-   ya seteado en el create). El comment debe anotar "**WI creado retroactivamente**
-   <fecha> (gap del pipeline corregido — la story se cerró sin tycon-ado-story-wi)".
-8. **Preparar** el commit del frontmatter actualizado y **pedir autorización al dev** antes de
+4. **Continuar con el cierre normal** (comment + cierre con las horas). El comment anota "**Pedido creado
+   retroactivamente** <fecha> (la story se cerró sin la skill de creación)".
+5. **Preparar** el commit del frontmatter actualizado y **pedir autorización al dev** antes de
    ejecutarlo — igual que «Preparar el commit», y por la misma regla (`SKILL.md` §"Anti-patterns (lo que NO
    hace)" y `guides/git-commit-conventions.md`: el pipeline NO ejecuta `git commit` ni `git push`
-   sin aprobación explícita). Mensaje sugerido: `chore(story-<id>): link ado_work_item`.
+   sin aprobación explícita). Mensaje sugerido: `chore(story-<id>): link work_item`.
 
-**Idempotencia**: si ya existe un WI para esa story (el dev confirma ID en 6.b), saltear
-la creación y usar ese ID. NO crear duplicados.
+**Idempotencia**: si ya existe un pedido para esa story (el dev confirma el id en 6.b), saltear
+la creación y usar ese id. NO crear duplicados.
 
 ## Acción — postear closing comment
 
@@ -210,70 +197,35 @@ Armar el comment en este formato fijo:
 🤖 Cierre automático vía tycon-pipeline close-work-item.
 ```
 
-Postear a ADO:
+Cerrar el pedido con el comment y las horas, en un solo pedido a la capa:
 
 ```bash
-az boards work-item update \
-  --organization <ado_org> \
-  --id <ado_work_item_id> \
-  --discussion "<comment-text>"
+node ~/.claude/tycon-harness/scripts/lib/platform/platform.js work-item close \
+  --args @<run dir>/cierre-pedido.json
+# cierre-pedido.json: {"repoDir": "<repo>", "id": <id>, "comment": "<comment-text>", "hours": <horas>}
+# → {"ok": true, "value": {"id", "hours", "hoursAs", "unsupported", "warnings"}, "summary": "…"}
 ```
 
-Después transicionar state:
+La capa postea el comment, pasa el pedido al estado cerrado (`state_closed` de la configuración; por defecto `Closed`) y
+carga las horas donde la plataforma las tiene: en Azure DevOps, en el campo de horas completadas (`CompletedWork`, en
+**horas**; NUNCA en `Effort`, que son story points), en la misma invocación que el estado; en GitHub, como un comentario
+de formato fijo («Horas completadas: N h»), porque un issue no tiene ese campo (`hoursAs: "comment"`).
 
-```bash
-az boards work-item update \
-  --organization <ado_org> \
-  --id <ado_work_item_id> \
-  --state "Closed"   # o "Done" según el process template del proyecto
-```
+### 🔴 Las horas, MANDATORY
 
-### 🔴 Acción MANDATORY — popular `CompletedWork` con horas reales
+**Cerrar el pedido SIN cargar las horas es un cierre incompleto.** `hours` sale de "Recolección de tiempo: el aviso de
+trabajo" (`pipeline.js work-signal stop`, ya en horas). Sin tiempo registrado, `hours` no se manda (no inventar un
+valor) y el `summary` dice «sin horas».
 
-**Cerrar el work item SIN cargar las horas es un cierre incompleto.** Las horas reales
-gastadas en la story van en el campo **`Microsoft.VSTS.Scheduling.CompletedWork`**
-(decimal en **horas**).
+### 🔴 La línea del cierre llega al dev
 
-- ⚠️ `CompletedWork` **NO es `Effort`**. `Effort` (`Microsoft.VSTS.Scheduling.Effort`)
-  son story points — NO horas. Las horas SIEMPRE van en `CompletedWork`.
-- Funciona **directo sobre el Product Backlog Item** — no hace falta crear una Task hija.
-- Método canónico: `az boards work-item update --fields` (mismo `az` que el resto del
-  step — NO usar curl + PAT, es más frágil).
+El `summary` de la capa va TAL CUAL al mensaje de cierre al dev (sección «Output»), no sólo al registro: dice dónde
+quedaron las horas (en el campo, o como comentario cuando la plataforma no tiene el campo) y lo que la plataforma no
+soporta (`no soportado en GitHub: …`). Así nadie cree que se cargaron horas o campos que no se cargaron.
 
-```bash
-# time_tracked "6h 23m" → 6 + 23/60 = 6.38 → redondeo a 1 decimal = 6.4
-# (con el aviso de trabajo, `hours` ya viene en horas: pipeline.js completedWorkHours)
-hours_decimal=$(python3 -c "print(round($total_seconds / 3600, 1))")
-
-az boards work-item update \
-  --id <ado_work_item_id> \
-  --organization <ado_org> \
-  --fields "Microsoft.VSTS.Scheduling.CompletedWork=$hours_decimal"
-```
-
-Se puede combinar con la transición de state en una sola invocación:
-
-```bash
-az boards work-item update --id <id> --organization <org> \
-  --state "Done" \
-  --fields "Microsoft.VSTS.Scheduling.CompletedWork=$hours_decimal"
-```
-
-**Caso Agile process** (en lugar de Scrum): igual `CompletedWork` para horas gastadas
-(`Microsoft.VSTS.Scheduling.OriginalEstimate` para el estimado).
-
-**Cuándo NO setear CompletedWork**:
-- Si el time_tracked no se pudo calcular (sin herramienta de horas, o sin tiempo registrado) → omitir, no inventar valor.
-- Si el proyecto declara explícitamente que `CompletedWork` se usa para otra cosa (raro
-  pero posible) → respetar la decisión del proyecto, dejarlo libre.
-
-> Por qué: transicionar el state a `Done` a mano **sin** correr este step deja el WI sin
-> `CompletedWork`. Por eso esta acción es MANDATORY y `CompletedWork` figura en la checklist
-> de side-effects del SKILL.md.
-
-**Manejo de errores**:
-- Si `az boards` falla con 401/403 → token vencido / sin permisos. Pedir al dev que renueve `AZURE_DEVOPS_EXT_PAT`.
-- Si el state name no matchea (ej. el process usa `Resolved` en vez de `Closed`) → listar states válidos con `az boards work-item update --help` o pedir al dev qué state usar.
+**Un «no» no frena el cierre**: `ok: false` (sin plataforma, sin credencial, el pedido no existe, la plataforma lo
+rechazó) → la línea del `summary` y seguir con el resto del cierre; el pedido queda como «acción pendiente» en el
+mensaje final.
 
 ## Acción — cerrar el registro de horas (2026-05-13)
 
@@ -378,10 +330,10 @@ vez por día (`guides/git-worktrees.md` §7).
 Mensaje al dev al final:
 
 ```
-✅ Story <id> cerrada en ADO.
-- Work item: <ado_org>/<ado_project>/_workitems/edit/<wi_id>
+✅ Story <id> cerrada.
+- Pedido de trabajo: <url del pedido>
+- <el `summary` de la capa, tal cual: «pedido de trabajo #<id> cerrado en <plataforma> · <horas y dónde> · no soportado: …»>
 - Comment posteado con: <N> commits + CI run #<run-id> + PR <pr-id-o-N/A> + tiempo <Xh YYm>
-- State: → Closed
 - Registro de horas cerrado: duración total <Xh YYm>   (omitir línea si no había herramienta ni tiempo registrado)
 - Story → status: done: commit <sha> · <«en main» si se empujó directo | «pedido <n>, entra solo» si quedó en un pedido> · CI: <no dispara | dispara <pipeline> | no pude saber si dispara la CI (<motivo>)>
   (sin el ok, o si falló: «acción pendiente: llevar el done a main» con los comandos ya armados)
