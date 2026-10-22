@@ -306,10 +306,10 @@ const APPROVALS_SINCE = '2026.10.20.3';
  */
 const QA_SINCE = '2026.10.20.39';
 /**
- * 🔴 La primera versión del arnés cuyo lector conoce `guard` y `approvals.delegated_signing`. Se fija con la
- * etiqueta real del merge que las trae, como QA_SINCE; hasta entonces, el primer número que seguro las trae.
+ * 🔴 La primera versión del arnés cuyo lector conoce `guard` y `approvals.delegated_signing`: la etiqueta del merge que
+ * las trae, como QA_SINCE.
  */
-const GUARD_SINCE = '2026.10.23.1';
+const GUARD_SINCE = '2026.10.22.46';
 /**
  * 🔴 La primera versión del arnés cuyo lector conoce `integrations.timeTracking` (la etiqueta del merge que trajo ese
  * lector). El selector de la herramienta de horas saca la llave vieja `integrations.clockify` del perfil: una máquina
@@ -332,10 +332,9 @@ const NOTIFY_SINCE = '2026.10.21.52';
 const cambiaAvisos = cambiaIntegracion('notify');
 /**
  * 🔴 La primera versión del arnés cuyo lector conoce `integrations.platform` (la plataforma del equipo por área). Una
- * máquina anterior rechazaría el perfil entero con la clave nueva. Se fija con la etiqueta real del merge que trae el
- * lector; mientras tanto, una cota que ninguna versión anterior alcanza (una máquina al día espera hasta esa versión).
+ * máquina anterior rechazaría el perfil entero con la clave nueva. Es la etiqueta del merge que trajo el lector.
  */
-const PLATFORM_SINCE = '2026.10.23.1';
+const PLATFORM_SINCE = '2026.10.22.42';
 const cambiaPlataforma = cambiaIntegracion('platform');
 /** La versión que tiene que pedir la capa para el pedido: la mayor de las claves nuevas que cambia, o null. */
 function versionDeLaCapa({ actual, doc }) {
