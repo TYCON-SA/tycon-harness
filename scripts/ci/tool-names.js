@@ -131,6 +131,11 @@ function check({ repo, skipThin = false }) {
   const notes = [];
   // las reglas dicen cuántos nombres hay por lo menos: un manifiesto de horas que desaparece o cambia de tipo no apaga el
   // control en silencio
+  // un árbol sin ninguna integración (un repo de juguete con el pre-commit del arnés) no tiene nada que contar; con
+  // integraciones, el mínimo vale
+  const ls = git(repo, ['ls-files', '-z', '--', 'integrations/*/integration.json']);
+  if (ls.status !== 0) throw new LookError(`git ls-files salió con ${ls.status}: ${(ls.stderr || '').trim().slice(0, 200)}`);
+  if (!ls.stdout.split('\0').some(Boolean)) return { ok: true, problems, perFile: {}, mentions: [], terms, notes: ['el árbol no trae integraciones: nada que contar'] };
   if (terms.length < termsAtLeast) throw new LookError(`encontré ${terms.length} nombre(s) de herramientas de horas en los manifiestos y las reglas esperan al menos ${termsAtLeast} (terms_at_least de ${RULES}): ¿se borró o cambió de tipo una integración de horas?`);
   if (!terms.length) return { ok: true, problems, perFile: {}, mentions: [], terms, notes: ['no hay integraciones de horas: nada que contar'] };
   const re = termsRegex(terms);

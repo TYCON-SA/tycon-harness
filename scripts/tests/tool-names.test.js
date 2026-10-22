@@ -148,6 +148,15 @@ test('T63 ToolNames_Exceptions_ReasonAndStale @story-7.40 @ac-29', () => {
   const m = cli(menos);
   assert.strictEqual(m.status, 2, m.stdout + m.stderr);
   assert.match(m.stderr, /al menos 3/);
+  // un árbol sin ninguna integración (un repo de juguete con el pre-commit del arnés) no tiene nada que contar
+  const vacio = fs.mkdtempSync(path.join(os.tmpdir(), 'tool-names-'));
+  git(vacio, ['init', '-q', '-b', 'main']);
+  fs.mkdirSync(path.join(vacio, 'scripts/ci'), { recursive: true });
+  fs.writeFileSync(path.join(vacio, 'scripts/ci/tool-names.json'), JSON.stringify({ terms_at_least: 3, exceptions: [], ceiling: {} }));
+  fs.writeFileSync(path.join(vacio, 'a.md'), 'acmetime\n');
+  git(vacio, ['add', '-A']);
+  const v = TN.check({ repo: vacio });
+  assert.ok(v.ok && /no trae integraciones/.test(v.notes.join(' ')), JSON.stringify(v));
   // un archivo que git toma por binario (con un NUL) también se lee; una imagen no
   const binario = toyRepo({ 'scripts/lib/raro.dat': 'a\0b acmetime\n', 'docs/foto.png': 'acmetime' }, { exceptions: [], ceiling: {} });
   const r = TN.check({ repo: binario });
