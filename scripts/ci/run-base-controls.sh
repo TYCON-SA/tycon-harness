@@ -459,9 +459,15 @@ function analyze() {
   const mbR = git(root, ['merge-base', rangeBase, tip], { allowFail: true });
   if (mbR.status !== 0) notRun(`no hay ancestro común entre ${m[1]} y ${m[2]}`);
   const mb = trimNl(mbR.stdout);
-  // el commit revisado en GitHub es un merge (la base más el pedido): el pedido propiamente dicho es su segundo padre
+  // el commit revisado en GitHub es un merge cuyo PRIMER padre es la base (o una versión anterior de ella: main pudo
+  // avanzar entre que GitHub armó el merge y la revisión, o el trabajo se volvió a correr): el pedido propiamente dicho es
+  // su segundo padre. Una rama que termina en «merge de main» también es un merge, pero su primer padre es la rama, que
+  // no está en la base, y el segundo es main: ahí el pedido es la punta misma (si no, las entradas a firmar saldrían con
+  // los contenidos de main)
   const parents = trimNl(git(root, ['rev-list', '--parents', '-n', '1', tip]).stdout).split(' ').slice(1);
-  const prHead = parents.length === 2 ? parents[1] : null;
+  const primeroEnLaBase = parents.length === 2
+    && git(root, ['merge-base', '--is-ancestor', parents[0], rangeBase], { allowFail: true }).status === 0;
+  const prHead = primeroEnLaBase ? parents[1] : null;
   const read = readInventory(root, base);
   if (read.missing) notRun(`la base ${short(base)} no trae ${INVENTORY}: no sé qué controles correr desde ella`);
   if (read.error) notRun(`el inventario de la base (${INVENTORY}) no se lee: ${read.error}`);
@@ -657,19 +663,31 @@ function readFromTty(prompt) {
   return text.split('\n')[0].trim();
 }
 function cmdApprove() {
-  if (process.env.BASE_CONTROLS_STDIN_INTERACTIVE !== '1') {
-    console.error('🔒 run-base-controls approve: pide una terminal interactiva de verdad (la constancia es del dueño, no de un agente). Correlo vos, en tu terminal.');
-    process.exit(2);
-  }
   const root = path.resolve(opt('--root') || '.');
   let entries;
   if (opt('--entries')) {
     try { entries = JSON.parse(opt('--entries')); } catch (e) { console.error(`run-base-controls approve: --entries no es JSON: ${e.message}`); process.exit(2); }
     if (!Array.isArray(entries) || !entries.length || entries.some((e) => !e || typeof e.path !== 'string' || typeof e.blob !== 'string')) { console.error('run-base-controls approve: --entries es una lista de {path, blob}'); process.exit(2); }
-  } else if (opt('--file')) {
+    // la constancia sólo sirve si firma lo que el pedido trae en su punta: una entrada de otra versión (por ejemplo, la de
+    // main, cuando la rama termina en un merge con main) haría firmar algo que la revisión no acepta. Se mira antes que
+    // la terminal, así quien prepara el comando también se entera
+    const head = git(root, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], { allowFail: true });
+    if (head.status !== 0) { console.error(`run-base-controls approve: no pude leer la punta de ${root} (no es un repo, o no tiene commits): no sé si las entradas son las del pedido. No se firmó nada.`); process.exit(2); }
+    const distintas = entries.filter((e) => (blobOf(root, 'HEAD', e.path) || 'borrado') !== e.blob);
+    if (distintas.length) {
+      console.error(`run-base-controls approve: las entradas no coinciden con la punta de ${root} (HEAD ${short(trimNl(git(root, ['rev-parse', 'HEAD']).stdout))}): ${distintas.map((e) => `${e.path} (firma ${short(e.blob)}, la punta tiene ${short(blobOf(root, 'HEAD', e.path) || 'borrado')})`).join(', ')}. No se firmó nada: pedí el comando de nuevo con \`pending\` sobre la rama del pedido al día.`);
+      process.exit(1);
+    }
+  }
+  if (process.env.BASE_CONTROLS_STDIN_INTERACTIVE !== '1') {
+    console.error('🔒 run-base-controls approve: pide una terminal interactiva de verdad (la constancia es del dueño, no de un agente). Correlo vos, en tu terminal.');
+    process.exit(2);
+  }
+  // con --file la entrada sale de --rev, así que coincide con ella por construcción
+  if (!entries && opt('--file')) {
     const p = opt('--file'); const rev = opt('--rev') || 'HEAD';
     entries = [{ path: p, blob: blobOf(root, rev, p) || 'borrado' }];
-  } else {
+  } else if (!entries) {
     usage(2);
   }
   const read = readInventory(root, 'HEAD');
