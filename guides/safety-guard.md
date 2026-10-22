@@ -84,6 +84,8 @@ Cada regla tiene un rule ID estable (citado en el mensaje de bloqueo).
 | **SQL-C2** | `DROP TABLE` inline (no en `.sql`) | Modificaciones de schema van por migration numerada |
 | **SEC-C1** | `cat ~/.ssh/...` / `cat .../aws/credentials` | Secretos al contexto del LLM |
 | **SEC-C2** | `cat .env` / `cat .env.*` | Secretos al contexto del LLM |
+| **ESC-C1** | `TYCON_PROD_LINT` o `TYCON_NEW_NAMES` asignadas en cualquier parte del comando, con cualquier valor salvo `=1` (también `export`, `declare`, `printf -v`, el nombre partido con comillas, o `$env:` en PowerShell) | Apagan, al commitear, la revisión del catálogo de producción y el freno de nombres reales. Vale con la frase de la persona (abajo). Nombrarlas sin asignar no frena; un texto que trae la asignación sí (como GIT-C2) |
+| **ESC-C2** | Un comando que nombra `~/.claude/projects` (también tras un `cd`) y trae una forma de escribir: redirección (salvo a `/dev/null`), `tee`, `sponge`, `sed -i`, `awk -i`, `dd`, `truncate`, `cp`, `mv`, un intérprete con código en la línea; en PowerShell `Add-Content`, `Set-Content`, `Out-File`, `Copy-Item`, `Move-Item` | Las conversaciones guardadas son de donde se lee la frase que autoriza un escape. Leer con `tail`, `grep`, `ls` o `wc` no frena |
 
 **Lo que NO bloquea (a propósito):**
 
@@ -94,27 +96,49 @@ Cada regla tiene un rule ID estable (citado en el mensaje de bloqueo).
 - `git push --force-with-lease` a branches que NO son `main`/`master`/`dev`/`release/*` — rebase de feature branch propia es válido.
 - Lectura de `.env` vía `grep`/`awk`/`sed` — el bloqueo es solo sobre `cat`/`less`/`more`/`head`/`tail` (modos típicos de "miremos qué hay acá"). Workflows automatizados que extraen una key específica con `grep` siguen funcionando.
 
-## Override de emergencia
+## Saltear el freno: lo decide la persona
 
-Hay 2 formas, según alcance:
+Hay dos formas, y ninguna la puede usar el agente solo:
 
-**Por comando** (recomendada — explícita, no se olvida):
+**Por comando, con la frase de la persona.** La persona escribe en el chat de la sesión:
 
-```bash
-TYCON_SAFETY_OFF=1 rm -rf ~/Downloads/junk
+```text
+autorizo TYCON_SAFETY_OFF
 ```
 
-El hook detecta el prefijo `TYCON_SAFETY_OFF=1` en el propio comando y deja pasar SOLO ese.
+y después se repite el comando con el prefijo (`TYCON_SAFETY_OFF=1 <comando>`; en PowerShell,
+`$env:TYCON_SAFETY_OFF=1; <comando>`). El freno deja pasar ese comando sólo si encuentra la frase:
 
-**Por sesión** (cuando hacés varios destructivos legítimos seguidos, ej: limpiar entornos de dev):
+- en un turno **tipeado por la persona** en esta conversación: no cuenta lo que escribió el agente, la salida de una
+  herramienta, un archivo leído, un subagente ni un texto pegado;
+- o textual dentro de un mensaje de la **sesión que la organización designó** para reenviar el ok de un dev
+  (`approvals.relay_session` del perfil del equipo, y la designación de la máquina);
+- **de los últimos 30 minutos**. Una frase negada («no autorizo …») o retirada en un mensaje posterior no vale.
+- y **en la cadena de la conversación** que lleva al pedido del comando: Claude Code guarda cada registro con el de su
+  padre y le pasa al freno el id del pedido. Un renglón agregado al archivo por fuera no está en esa cadena, así que no
+  cuenta; y escribir en las conversaciones lo frena `ESC-C2`. Reescribir con un guion un mensaje que ya está en la
+  cadena es el límite conocido: Claude Code no firma sus registros.
+
+Lo mismo para `ESC-C1`: «autorizo TYCON_PROD_LINT» o «autorizo TYCON_NEW_NAMES».
+
+Por qué: el prefijo lo puede escribir el agente. Un modelo frenado por `--no-verify` reescribió el comando con
+`TYCON_SAFETY_OFF=1` por su cuenta y commiteó, aunque la orden decía que no buscara otra forma. Con la frase, saltear
+el freno vuelve a ser una decisión de una persona.
+
+Cada escape queda en `~/.claude/.tycon-pipeline/frenos.jsonl`, con la regla esquivada y el camino (`persona`,
+`reenvio` con la sesión que lo reenvió, o `ambiente`), sin el texto del comando.
+
+**Por sesión, desde la terminal del dev** (cuando hacés varios destructivos legítimos seguidos): la variable en el
+ambiente **antes de abrir la sesión**. El agente no la puede poner: el prefijo de un comando no llega al freno, y
+escribirla en el `.zshrc` la frena `HARNESS-C1`.
 
 ```bash
-export TYCON_SAFETY_OFF=1
-# ... varios comandos ...
-unset TYCON_SAFETY_OFF
+TYCON_SAFETY_OFF=1 claude
 ```
 
-⚠️ El override de sesión es peligroso porque queda activo hasta que cierres la terminal. Preferí el override por comando.
+⚠️ Apaga el freno para toda esa sesión. Preferí la frase por comando.
+
+**Codex** no deja leer su conversación: ahí el escape por comando no vale y queda sólo el de la sesión.
 
 ## Log de bloqueos
 
@@ -150,7 +174,7 @@ Cada bloqueo se loggea en `~/.claude/safety-guard.log`:
 
 **El hook bloquea algo legítimo (false positive):**
 
-1. Override por comando: `TYCON_SAFETY_OFF=1 <cmd>`.
+1. Que la persona escriba «autorizo TYCON_SAFETY_OFF» en el chat y repetir el comando con `TYCON_SAFETY_OFF=1` adelante.
 2. Si la regla está mal calibrada (bloquea muchos legítimos), abrí un issue en el arnés con el caso. La regla puede refinarse o exceptarse.
 
 **Quiero probar reglas nuevas sin afectar el real:**

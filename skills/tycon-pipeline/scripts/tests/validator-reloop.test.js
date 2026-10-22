@@ -215,6 +215,7 @@ test('T8d · un arnés que trae el medidor sólo con su nombre de hoy: la decisi
 // ── T8c · check-count sin step5-start recalcula lo mismo que decidió el re-loop ──────
 // Mutación: recalcular el set sólo con el descuento MECH-2 — exige al validador que el re-loop soltó y
 // check-count da un rojo falso. Control: con UN limpio, el recálculo lo sigue exigiendo.
+// Sin step5-start, check-count sólo cuenta con el override consciente (--trust-ran): sin él falla cerrado.
 test('T8c · check-count sin step5-start aplica la decisión del validador al recalcular', (t) => {
   if (!TCG) return t.skip(SIN_ARNES);
   const OTROS = ['tycon-plugin-tests-coverage', 'tycon-plugin-security-basics', 'tycon-spec-first-checker', 'tycon-ac-coverage-checker',
@@ -222,13 +223,16 @@ test('T8c · check-count sin step5-start aplica la decisión del validador al re
     'tycon-plugin-nextjs-conventions', 'tycon-plugin-dotnet-conventions'].join(',');
   const repo = mkRepo();
   const home = mkHome(repo, [{ min: 5, dice: LIMPIO }, { min: 20, dice: LIMPIO }]);
-  const r = correr(home, repo, ['check-count', '--iter', '3', '--ran', OTROS]);
+  const sinOverride = correr(home, repo, ['check-count', '--iter', '3', '--ran', OTROS]);
+  assert.equal(sinOverride.status, 2, `sin step5-start y sin --trust-ran, check-count no confía en --ran: ${sinOverride.stdout}`);
+  assert.match(sinOverride.stderr, /no hay step5-start/);
+  const r = correr(home, repo, ['check-count', '--iter', '3', '--trust-ran', '--ran', OTROS]);
   assert.equal(r.status, 0, `con dos limpios el recálculo no exige al validador: ${r.stdout}${r.stderr}`);
   assert.equal(lineasValidador(home).length, 0, 'check-count no anota decisiones en gates.log');
 
   const repo1 = mkRepo();
   const home1 = mkHome(repo1, [{ min: 5, dice: LIMPIO }]);
-  const r1 = correr(home1, repo1, ['check-count', '--iter', '3', '--ran', OTROS]);
+  const r1 = correr(home1, repo1, ['check-count', '--iter', '3', '--trust-ran', '--ran', OTROS]);
   assert.notEqual(r1.status, 0, `con un solo limpio el validador sigue siendo exigido: ${r1.stdout}`);
 });
 

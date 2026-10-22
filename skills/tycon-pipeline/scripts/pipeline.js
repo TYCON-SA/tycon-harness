@@ -6086,10 +6086,21 @@ function main() {
     let ran;
     let source;
     if (!state.sawStart) {
-      // Sin marca step5-start: pipeline.js advisors no corrió (o log inaccesible).
-      // Único caso donde el --ran del LLM es admisible — con warning fuerte.
-      ran = args.ran;
-      source = '⚠️ --ran self-reportado por el LLM (sin step5-start en el log — ¿corriste pipeline.js advisors?)';
+      // Sin marca step5-start: `pipeline.js advisors` no corrió en esta corrida (o el registro no se puede leer). No
+      // hay nada contra qué contar: un OK acá es un verde sobre nada, y la lista que pasa el agente (--ran) no es
+      // evidencia. Falla cerrado; el único camino es el override consciente, que queda a la vista en la salida.
+      if (args.trustRan && args.ran.length) {
+        ran = args.ran;
+        source = '⚠️⚠️ --trust-ran EXPLÍCITO sin step5-start: el caller pidió confiar en --ran (sin verificación real)';
+      } else {
+        process.stderr.write(
+          '🛑 check-count FALLÓ CERRADO — no hay step5-start en el registro: `pipeline.js advisors` no corrió en esta corrida.\n' +
+          'Sin ese registro no hay set esperado ni spawns contra qué contar, y un OK sería un verde sobre nada.\n' +
+          'Corré `pipeline.js advisors --repo <r> --story <s> --files <…>`, lanzá los revisores y volvé a contar.\n' +
+          'Override consciente (queda auditable): re-corré con --trust-ran --ran a,b,c\n',
+        );
+        process.exit(2);
+      }
     } else if (state.ran.length === 0 && expected.length === 0) {
       ran = [];
       source = 'set esperado vacío — nada que correr';

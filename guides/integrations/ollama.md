@@ -173,13 +173,12 @@ quien usa los modelos de OpenAI; con él, el despliegue saca la línea `model =`
 
 ## Advertencias
 
-- **Un modelo puede escribir el escape de un freno.** Los frenos funcionan: cortan la suite completa, el commit con
-  `--no-verify` y el código sin pipeline. Pero el escape de varios frenos es una variable de entorno, y un modelo puede
-  escribirla solo. `gpt-oss` lo hizo con el freno de seguridad (escribió `TYCON_SAFETY_OFF=1` y commiteó con
-  `--no-verify`), aunque la orden decía que no buscara otra salida; `beam` lo hizo con el de pruebas. El arnés lo está
-  cerrando: el escape del freno de seguridad y los de la revisión de producción y de nombres van a pedir la frase
-  **«autorizo <variable>»** escrita por la persona en el chat. Mientras tanto, un freno solo detiene a un modelo que
-  obedece: no lo uses sin mirar sobre repos que te importan.
+- **Un modelo puede intentar escribir el escape de un freno.** En el laboratorio, `gpt-oss` escribió
+  `TYCON_SAFETY_OFF=1` delante de un commit con `--no-verify`, aunque la orden decía que no buscara otra salida. Eso ya
+  no alcanza: el escape del freno de seguridad, y los de la revisión de producción (`TYCON_PROD_LINT`) y de nombres
+  (`TYCON_NEW_NAMES`), valen sólo si la persona escribió en el chat **«autorizo <variable>»** en los últimos 30 minutos
+  ([guía del freno](../safety-guard.md)). El freno de pruebas sigue con su escape liviano: `beam` lo usó por su cuenta,
+  y sólo cuida la carga de la máquina. Codex no deja leer su conversación: ahí el escape por comando no vale.
 - **Mirá el estado, no el relato.** `gpt-oss` cargó la skill del pipeline y contó en cinco vueltas los pasos 1 a 7
   «completados» sin correr un guion ni escribir un archivo. Los controles no lo frenaron porque no había nada que
   frenar. Lo que lo delata es el estado: la story seguía en `ready-for-dev` y no había archivos nuevos. Revisá
