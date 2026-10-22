@@ -436,15 +436,56 @@ test('T12 2.34-Bajar_CambiaDeUnaVez @story-2.34 @ac-6 — el sitio cambia de fot
     await f.refrescar();
     const segunda = f.clones().operaciones.dir;
     assert.notStrictEqual(segunda, primera, 'otra carpeta');
-    await COPIA.podaPendiente(path.join(dataDir, 'operaciones-copia'));
+    // la foto se abre en el disco del contenedor, no en SITE_DATA_DIR (un disco compartido lento en la nube)
+    assert.ok(!segunda.startsWith(dataDir) && !fs.existsSync(path.join(dataDir, 'operaciones-copia')), 'nada en el disco de datos');
+    await COPIA.podaPendiente(path.dirname(segunda));
     assert.ok(!fs.existsSync(primera), 'la anterior se borró después del cambio (de fondo)');
     assert.ok(fs.existsSync(path.join(segunda, '.dashboard', 'nuevo.json')) && !fs.existsSync(path.join(segunda, '.dashboard', 'viejo.json')), 'sólo los archivos del commit nuevo');
     assert.strictEqual(f.clones().operaciones.indice.commit, git(repo, 'rev-parse', 'HEAD'));
-    const sueltas = fs.readdirSync(path.join(dataDir, 'operaciones-copia'));
+    const sueltas = fs.readdirSync(path.dirname(segunda));
     assert.deepStrictEqual(sueltas, [path.basename(segunda)], 'ninguna carpeta a medio abrir ni vieja');
     assert.strictEqual(f.estado().cargado, true);
     assert.strictEqual(f.config().site.maintainers[0], 'lead@acme.example');
   } finally { f.detener(); }
+});
+
+test('Fuentes_FotoEnDiscoLocal_PodaLasViejasDelDiscoDeDatos — la foto se abre fuera del disco de datos, y las copias que quedaron ahí se borran de fondo', async () => {
+  // 🔴 rojo: la foto se escribe en SITE_DATA_DIR (archivo por archivo sobre un disco compartido, ~55 s en un arranque en
+  //    frío), o las copias que versiones anteriores dejaron ahí quedan para siempre.
+  const repo = repoDeJuguete({ 'operations.json': OPS_VALIDO });
+  const al = almacenDeJuguete();
+  assert.strictEqual((await COPIA.subir({ repo, almacen: al, log: sinLog })).ok, true);
+  const { dataDir, f } = fuentesConCopia(al, () => T0);
+  const viejas = path.join(dataDir, 'operaciones-copia');
+  const hace = new Date(Date.now() - 300 * 60000);
+  for (const s of ['000001', '000002']) { const c = path.join(viejas, `copia-${'a'.repeat(12)}-${s}`); fs.mkdirSync(c, { recursive: true }); fs.utimesSync(c, hace, hace); }
+  try {
+    await f.refrescar();
+    const abierta = f.clones().operaciones.dir;
+    assert.ok(!abierta.startsWith(dataDir), `abierta en el disco local: ${abierta}`);
+    await COPIA.podaPendiente(viejas);
+    for (let i = 0; i < 20 && fs.existsSync(viejas); i++) await new Promise((r) => setTimeout(r, 10));
+    assert.ok(!fs.existsSync(viejas), 'las del disco de datos, borradas, y la carpeta vacía también');
+    // un reinicio: otro proceso con el mismo SITE_DATA_DIR y un disco local nuevo vuelve a bajar la foto
+    f.detener();
+    const env2 = H.envBase({ SITE_OPERATIONS_SOURCE: 'copy', SITE_OPERATIONS_COPY: 'acmeops/copia' }); delete env2.SITE_OPERATIONS_TOKEN;
+    const v = validarConfiguracion(env2); const f2 = crearFuentes({ cfg: v.cfg, dataDir, log: sinLog, ahora: () => T0, almacenCopia: al, opcionesPodaCopia: { demoraMs: 0, pausaMs: 0 } });
+    try {
+      await f2.refrescar();
+      const otra = f2.clones().operaciones;
+      assert.ok(otra && otra.dir !== abierta && fs.existsSync(path.join(otra.dir, 'operations.json')), 'tras el reinicio, la foto otra vez en disco local');
+    } finally { f2.detener(); }
+  } finally { f.detener(); }
+  // si la bajada falla, no se poda nada: las viejas quedan para cuando ande
+  const vacio = almacenDeJuguete();
+  const otro = fuentesConCopia(vacio, () => T0);
+  const viejas2 = path.join(otro.dataDir, 'operaciones-copia', `copia-${'b'.repeat(12)}-000001`);
+  fs.mkdirSync(viejas2, { recursive: true }); fs.utimesSync(viejas2, hace, hace);
+  try {
+    await otro.f.refrescar();
+    await COPIA.podaPendiente(path.dirname(viejas2));
+    assert.ok(fs.existsSync(viejas2), 'sin foto bajada, la vieja sigue');
+  } finally { otro.f.detener(); }
 });
 
 test('T17 2.34-Edad_BandaYFreno @story-2.34 @ac-9 — 23 h nada, 25 h la banda, 49 h el sitio frenado', async () => {
