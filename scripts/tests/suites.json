@@ -1719,6 +1719,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.75: el registro de estimaciones (scripts/lib/estimates.js) — sólo agrega, nunca reescribe; la vigente es la última; las quince claves fijas de la línea; una línea ilegible se cuenta y no tira el resto; entrada inválida sale 2 sin escribir; la unidad de la organización por el lector del árbol; unidades mezcladas a horas y, con puntos sin tasa, sin marca de rango. Laboratorios con acme, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/estimates.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.22: la foto de despliegues de cada noche (scripts/nightly/deployments/) — qué llegó a staging y a producción en cada producto, leído del stage EXACTO declarado de cada corrida (succeeded sí; skipped, ausente o un pedazo de texto como «Prod», no), la aprobación pendiente, vencida o no aprobada, main roto o no, el segundo proveedor GitHub, «no medido» con motivo de lista cerrada que nunca es «sin despliegue», el detalle saneado, la lista blanca del archivo y la ficha del tablero. Con fake-az.sh y fake-gh.js: sin red.",
       "raiz": "arnes",
       "ruta": "tests/nightly-deployments.test.js",

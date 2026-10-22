@@ -76,7 +76,7 @@ const CONNECTORS = Object.freeze({ azure: 'azure-devops', github: 'github' });
 function connectorOf(platform) { return Object.prototype.hasOwnProperty.call(CONNECTORS, platform) ? CONNECTORS[platform] : null; }
 const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'] };
 const REQUIRED = ['public', 'profile', 'operations'];
-const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review'];
+const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review', 'estimates'];
 // La revisión de la semana: prendida o no, el tope en dólares de su única corrida del agente y el tope de material en
 // caracteres. Lo lee scripts/nightly/weekly-review/weekly-review.js; sin la clave, prendida, 5 y 600.000: con 600.000
 // entra casi toda una semana de mucho movimiento por menos de la mitad del tope en dólares.
@@ -84,6 +84,11 @@ const WEEKLY_REVIEW_KEYS = ['enabled', 'budget_usd', 'max_chars'];
 const WEEKLY_REVIEW_DEFAULTS = Object.freeze({ enabled: true, budget_usd: 5, max_chars: 600000 });
 const WEEKLY_REVIEW_MAX_USD = 100;
 const WEEKLY_REVIEW_CHARS = [10000, 2000000];
+// La unidad en que estima la organización y sus tasas a horas. Lo lee scripts/lib/estimates.js; sin la clave, horas,
+// 8 horas por día y ninguna tasa por punto (con puntos sin tasa no se pasa a horas). Una clave mal escrita va aparte,
+// en `sectionProblems.estimates`, como `models`.
+const ESTIMATES_KEYS = ['unit', 'hours_per_day', 'hours_per_point'];
+const ESTIMATES_UNITS = ['hours', 'days', 'points'];
 // El plazo del aviso de espera: minutos enteros de 1 a 120. Lo lee scripts/hooks/wait-notice.js.
 const WAIT_NOTICE_KEYS = ['minutes'];
 const WAIT_NOTICE_MAX = 120;
@@ -484,6 +489,19 @@ function suitesWithRule(rule) {
   return null;
 }
 
+/** Los problemas de `estimates`; `[]` si está bien. Casos: scripts/tests/estimates.test.js T5. */
+function estimatesProblems(value) {
+  if (!isObject(value)) return [{ path: 'estimates', message: 'tiene que ser un objeto (la unidad de las estimaciones)' }];
+  const out = [];
+  for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !ESTIMATES_KEYS.includes(k)) out.push({ path: `estimates.${k}`, message: 'clave desconocida' });
+  if (value.unit !== undefined && !ESTIMATES_UNITS.includes(value.unit)) out.push({ path: 'estimates.unit', message: `tiene que ser ${ESTIMATES_UNITS.join(', ')} (es ${JSON.stringify(value.unit)})` });
+  for (const k of ['hours_per_day', 'hours_per_point']) {
+    const n = value[k];
+    if (n !== undefined && !(typeof n === 'number' && Number.isFinite(n) && n > 0)) out.push({ path: `estimates.${k}`, message: `tiene que ser un número de horas mayor que 0 (es ${JSON.stringify(n)})` });
+  }
+  return out;
+}
+
 /** Los problemas de `wait_notice`; `[]` si está bien. */
 function waitNoticeProblems(value) {
   if (!isObject(value)) return [{ path: 'wait_notice', message: 'tiene que ser un objeto (el plazo del aviso de espera)' }];
@@ -650,12 +668,15 @@ function parse(text) {
   const sectionStack = isObject(doc) && doc.stack !== undefined ? stackProblems(doc.stack) : [];
   // y con `weekly_review`: un tope mal escrito deja la revisión con los valores por defecto, y lo dice
   const sectionWeekly = isObject(doc) && doc.weekly_review !== undefined ? weeklyReviewProblems(doc.weekly_review) : [];
+  // y con `estimates`: una unidad mal escrita no deja sin el archivo; quien estima lo dice y no escribe
+  const sectionEstimates = isObject(doc) && doc.estimates !== undefined ? estimatesProblems(doc.estimates) : [];
   let data = problems.length ? null : doc;
-  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length || sectionReview.length || sectionStack.length || sectionWeekly.length)) {
+  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length || sectionReview.length || sectionStack.length || sectionWeekly.length || sectionEstimates.length)) {
     data = { ...doc };
     if (sectionModels.length) delete data.models;
     if (sectionWait.length) delete data.wait_notice;
     if (sectionWeekly.length) delete data.weekly_review;
+    if (sectionEstimates.length) delete data.estimates;
     if (sectionCoverage.length) delete data.coverage;
     if (sectionReview.length) delete data.review;
     if (sectionStack.length) {
@@ -670,6 +691,7 @@ function parse(text) {
     ...(sectionReview.length ? { review: sectionReview } : {}),
     ...(sectionStack.length ? { stack: sectionStack } : {}),
     ...(sectionWeekly.length ? { weekly_review: sectionWeekly } : {}),
+    ...(sectionEstimates.length ? { estimates: sectionEstimates } : {}),
   };
   return { ok: problems.length === 0, data, problems, ...(Object.keys(sections).length ? { sectionProblems: sections } : {}) };
 }
@@ -717,7 +739,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, reviewProblems, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
+module.exports = { VERSION, PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, reviewProblems, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
