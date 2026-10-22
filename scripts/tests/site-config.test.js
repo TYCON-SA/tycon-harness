@@ -2741,6 +2741,19 @@ test('T30a SiteConfig_AskYourAgent_CopiesPhrase @story-8.48 @ac-36 — «Pedíse
   assert.match(fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.en.md'), 'utf8'), /\n### Your technology\n/);
 });
 
+test('Config_ParaQueSirve_EnCadaSeccion — cada sección dice para qué sirve y cuándo tocarla, en las dos lenguas, y se ve en su encabezado', async () => {
+  // 🔴 rojo: una persona que entra por primera vez no sabe para qué es una sección ni si tiene que tocarla.
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  for (const s of ORG.SECCIONES) for (const idioma of ['es', 'en']) {
+    const t = textos.t(idioma, `pantalla.para.${s.id}`);
+    assert.ok(t && t !== `pantalla.para.${s.id}`, `${idioma} ${s.id} sin «para qué»`);
+    assert.match(t, idioma === 'es' ? /^Para qué: .*(Cuándo tocarla|No hace falta tocar nada)/ : /^What for: .*(When to change it|Nothing to change)/, `${idioma} ${s.id}`);
+  }
+  const p = await pantallaTec({});
+  const para = p.todos().find((n) => n.tag === 'p' && /\bpara\b/.test(n.attrs.class || ''));
+  assert.ok(para && para.textContent === textos.t('es', 'pantalla.para.tecnologia'), 'en el encabezado de la sección');
+});
+
 test('SiteConfig_TerminacionesQueReconoce_YaLaReconoce — «Ver las terminaciones que ya reconoce» las muestra por lenguaje, del lector; sumar una que ya está avisa', async () => {
   // 🔴 rojo: el renglón gris nombra lenguajes pero no dice qué terminaciones cuenta como código, y sumar «.cs» no avisa.
   const p = await pantallaTec({});
@@ -3500,8 +3513,8 @@ test('7.46 Config_PruebaAMano_SeccionYPedido @story-7.46 @ac-7 @ac-15 — la sec
   // la pantalla, en las dos lenguas: el título, el selector con sus dos opciones y la ayuda
   const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   const esperado = {
-    es: ['Prueba a mano de cada criterio', 'Una persona marca cada criterio como probado a mano', 'No (de fábrica): la guía dice qué probó el arnés', 'Sí: la historia no se cierra sin la marca de una persona'],
-    en: ['Hand-testing each criterion', 'A person marks each criterion as tested by hand', 'No (default): the guide says what the harness tested', "Yes: the story does not close without a person's mark"],
+    es: ['Prueba a mano de cada criterio', 'Una persona marca cada criterio como probado a mano', 'No: alcanza con lo que probó el arnés (de fábrica)', 'Sí: no se cierra sin la marca de una persona'],
+    en: ['Hand-testing each criterion', 'A person marks each criterion as tested by hand', 'No: what the harness tested is enough (default)', "Yes: it does not close without a person's mark"],
   };
   for (const idioma of ['es', 'en']) {
     for (const k of ['pantalla.pruebaAManoTitulo', 'pantalla.pruebaAMano', 'pantalla.pruebaAManoNo', 'pantalla.pruebaAManoSi']) assert.ok(esperado[idioma].includes(textos.t(idioma, k)), `${idioma} ${k}: ${textos.t(idioma, k)}`);

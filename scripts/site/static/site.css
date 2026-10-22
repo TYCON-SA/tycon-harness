@@ -137,6 +137,8 @@ a.kpi:hover{background:var(--wash)}
 .fb-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap}
 .fb-head h4{margin:0;font:600 21px/1.2 var(--serif)}
 .fb-head .reach{margin:4px 0 0;font-size:13.5px;color:var(--ink-2)}
+/* «para qué sirve y cuándo tocarla»: una línea en llano, apenas separada de la descripción */
+.fb-head .para{margin:6px 0 0;font-size:13px;color:var(--ink-2);padding-left:10px;border-left:2px solid var(--line-strong)}
 /* un texto largo de una tarjeta corta renglón dentro de ella, aunque traiga una palabra muy larga */
 .form-block p{overflow-wrap:break-word;min-width:0}
 /* «sub» y «bar» son de la pantalla de Configuración; en Corridas los mismos nombres son otra cosa (la barra de tiempo por
