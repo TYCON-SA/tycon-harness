@@ -1027,7 +1027,9 @@ function pantalla(idioma = 'es') {
   // un cambio de afuera; recuperar: lo que quedó guardado de antes de recargar, hasta que la persona elige
   // abiertos: el texto con que se abrió cada bloque de texto de una sección (por sección y clave): «Ver qué cambió»
   // compara contra él aunque la pantalla se vuelva a dibujar con el borrador
-  var S = { pestana: null, secciones: [], borradores: {}, originales: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null, diferencias: {}, resumenes: {}, marcas: {}, proponiendo: {}, terminadas: {}, bases: {}, conflictos: {}, recuperar: {}, abiertos: {} };
+  // «fila»: la máquina de «Por confirmar» cuyo «Confirmar» está en curso ({ maquina, persona }); mientras tanto, la nota
+  // y la propuesta de la sección Personas se dibujan en su renglón y no al pie
+  var S = { pestana: null, secciones: [], borradores: {}, originales: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null, diferencias: {}, resumenes: {}, marcas: {}, proponiendo: {}, terminadas: {}, bases: {}, conflictos: {}, recuperar: {}, abiertos: {}, fila: null };
   function olvidarAbiertos(id) { Object.keys(S.abiertos).forEach(function (k) { if (k.indexOf(id + '\u0000') === 0) delete S.abiertos[k]; }); }
   // cuánto espera la página antes de cada consulta por el pedido de una propuesta cortada; la prueba pasa los suyos
   var ESPERAS = typeof esperasConsulta !== 'undefined' && esperasConsulta ? esperasConsulta : [2000, 5000, 10000];
@@ -1466,6 +1468,36 @@ function pantalla(idioma = 'es') {
     else { var ent = lista.filter(function (e) { return e.pipeline === nombre; })[0]; if (ent) { if (ent.stages.indexOf(id) < 0) ent.stages.push(id); } else lista.push({ pipeline: nombre, stages: [id] }); }
     render();
   }
+  // lo escrito en un campo; el documento de las pruebas sólo tiene el atributo
+  function valorDe(campo) { return campo.value !== undefined && campo.value !== null ? campo.value : (campo.attrs ? campo.attrs.value : ''); }
+  /** «Confirmar» de una máquina: revisa y, si está bien, deja en su renglón la confirmación del pedido. */
+  function confirmarMaquina(s, d, maquina, persona) {
+    if (S.proponiendo[s.id]) return;
+    S.fila = { maquina: maquina, persona: String(persona || '') };
+    S.notas[s.id] = null;
+    return revisarSeccion(s, { accion: 'confirm', maquina: maquina, person: persona, people: d.people }).then(function (r) {
+      if (!r || !r.ok || !S.fila || S.fila.maquina !== maquina) return;
+      S.marcas[s.id] = nuevaMarca();
+      S.notas[s.id] = { confirmar: true, ok: true, text: T('pantalla.estoAbreUnPedidoMaquina', { maquina: maquina, persona: String(persona || '').trim().toLowerCase() }) };
+      render();
+    });
+  }
+  /** Lo de la confirmación en curso, para su renglón: la propuesta con su botón, «proponiendo…», o el resultado. */
+  function resultadoDeLaFila(s) {
+    var caja = el('div', { class: 'fila-resultado', role: 'status' });
+    var n = S.notas[s.id];
+    if (!n) return caja;
+    var proponiendo = !!S.proponiendo[s.id];
+    if (n.text && !proponiendo) {
+      var nota = el('div', { class: 'msg ' + (n.ok ? 'ok' : 'bad') }, el('b', { text: n.text }));
+      if (n.enlace) nota.appendChild(el('a', { href: n.enlace, text: T('pantalla.verElPedidoDeCambio') }));
+      caja.appendChild(nota);
+    }
+    if (!n.ok) (S.problemas[s.id] || []).forEach(function (x) { caja.appendChild(el('div', { class: 'err', text: (x.donde ? x.donde + ': ' : '') + x.message })); });
+    if (proponiendo) caja.appendChild(el('div', { class: 'msg ok' }, el('b', { text: T('pantalla.proponiendo') })));
+    if (n.confirmar) caja.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: T('pantalla.confirmarYProponer'), disabled: proponiendo ? 'disabled' : undefined, onclick: function () { confirmarPropuesta(s); } }), el('button', { class: 'sec', type: 'button', text: T('pantalla.cancelar'), disabled: proponiendo ? 'disabled' : undefined, onclick: function () { S.notas[s.id] = null; S.fila = null; render(); } })));
+    return caja;
+  }
   function editorPersonas(s, d, pr) {
     d.people = d.people || {};
     var box = el('div', { class: 'pila' });
@@ -1473,11 +1505,18 @@ function pantalla(idioma = 'es') {
     if (ex.vencido) box.appendChild(aviso('bad', T('pantalla.laListaDePersonasEsta'), ex.vencido));
     if (ex.ultimoBueno) box.appendChild(aviso('warn', T('pantalla.seMuestraLaUltimaVersion'), ex.ultimoBueno));
     var pc = el('ul', { class: 'renglones' });
+    var enCurso = S.fila;
+    var sigue = enCurso && (ex.porConfirmar || []).some(function (m) { return m.maquina === enCurso.maquina; });
     (ex.porConfirmar || []).forEach(function (m) {
-      var persona = el('input', { value: m.correo || '', placeholder: T('pantalla.correoDeLaPersona'), 'aria-label': T('pantalla.correoDeLaPersona2') });
-      pc.appendChild(el('li', {}, el('span', { class: 'quien', text: m.maquina }), el('span', { class: 'dato', text: (m.correo ? T('pantalla.diceSerDe') + m.correo : T('pantalla.noDiceDeQuienEs')) + T('pantalla.ultimaNoticia') + (m.dia || T('pantalla.sinFecha')) + ' · ' + (m.corridas == null ? T('pantalla.corridasSinContar') : m.corridas + (m.corridas === 1 ? T('pantalla.unaCorrida') : T('pantalla.corridas'))) }),
-        el('span', { class: 'acc' }, persona, el('button', { type: 'button', text: T('pantalla.confirmar'), onclick: function () { revisarSeccion(s, { accion: 'confirm', maquina: m.maquina, person: persona.value, people: d.people }); } }))));
+      var mia = enCurso && enCurso.maquina === m.maquina;
+      var persona = el('input', { value: mia ? enCurso.persona : (m.correo || ''), placeholder: T('pantalla.correoDeLaPersona'), 'aria-label': T('pantalla.correoDeLaPersona2') });
+      var li = el('li', {}, el('span', { class: 'quien', text: m.maquina }), el('span', { class: 'dato', text: (m.correo ? T('pantalla.diceSerDe') + m.correo : T('pantalla.noDiceDeQuienEs')) + T('pantalla.ultimaNoticia') + (m.dia || T('pantalla.sinFecha')) + ' · ' + (m.corridas == null ? T('pantalla.corridasSinContar') : m.corridas + (m.corridas === 1 ? T('pantalla.unaCorrida') : T('pantalla.corridas'))) }),
+        el('span', { class: 'acc' }, persona, el('button', { type: 'button', text: T('pantalla.confirmar'), onclick: function () { confirmarMaquina(s, d, m.maquina, valorDe(persona)); } })));
+      if (mia) li.appendChild(resultadoDeLaFila(s));
+      pc.appendChild(li);
     });
+    // la máquina ya no está por confirmar (el pedido entró y se releyó): su resultado queda arriba de la lista
+    if (enCurso && !sigue) box.appendChild(resultadoDeLaFila(s));
     box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: T('pantalla.porConfirmar2') }), (ex.porConfirmar || []).length ? pc : el('p', { class: 'muted', text: T('pantalla.ninguna') })));
     // las que nunca dieron señales (sin place.json, sin fecha, sin corridas): suelen ser laboratorios o pruebas que
     // escribieron en el buzón; se nombran, sin ofrecer confirmarlas
@@ -2916,6 +2955,9 @@ function pantalla(idioma = 'es') {
     // story 2.30: con una política con filtro de ruta, el estado del archivo de la sección manda sobre el del repo
     if (prop && prop.porArchivo && prop.porArchivo[s.archivo]) prop = prop.porArchivo[s.archivo];
     var habilitado = prop && prop.habilitado;
+    // la confirmación de una máquina se dibuja en su renglón (editorPersonas): acá no va nada de ella.
+    var enLaFila = s.id === 'personas' && !!S.fila;
+    if (enLaFila) n = null;
     var confirmando = n && n.confirmar;
     if (!confirmando && n && n.text) {
       var nota = el('div', { class: 'msg ' + (n.ok ? 'ok' : 'bad') }, el('b', { text: n.text }));
@@ -2923,7 +2965,7 @@ function pantalla(idioma = 'es') {
       sec.appendChild(nota);
     }
     if (!s.soloLectura && !bloqueada(s) && s.id !== 'paridad') {
-      var bar = el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.revisarCambios'), onclick: function () { revisarSeccion(s); } }));
+      var bar = el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.revisarCambios'), onclick: function () { if (s.id === 'personas') S.fila = null; revisarSeccion(s); } }));
       bar.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.descargar'), disabled: S.textos[s.id] ? undefined : 'disabled', title: S.textos[s.id] ? undefined : T('pantalla.descargarSePrende'), onclick: function () { descargar(s); } }));
       if (habilitado) bar.appendChild(el('button', { type: 'button', text: T('pantalla.proponerElCambio'), disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { empezarAProponer(s); } }));
       bar.appendChild(el('span', { class: 'por-que', text: !habilitado ? motivoProponer(prop && prop.motivo) : (S.textos[s.id] ? textoProponer(s, prop) : T('pantalla.primeroRevisaAsiSabesSi')) }));

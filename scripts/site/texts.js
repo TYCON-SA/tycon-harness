@@ -1340,6 +1340,7 @@ const TEXTOS = {
   'pantalla.todaviaNoHayNadaGuardado2': { es: '(todavía no hay nada guardado)', en: '(nothing saved yet)' },
   'pantalla.despuesDelCambio': { es: 'Después del cambio', en: 'After the change' },
   'pantalla.confirmarYProponer': { es: 'Confirmar y proponer', en: 'Confirm and propose' },
+  'pantalla.estoAbreUnPedidoMaquina': { es: 'Esto abre un pedido para confirmar que la máquina {maquina} es de {persona}.', en: 'This opens a request to confirm that machine {maquina} belongs to {persona}.' },
   'pantalla.nRenglonesIguales': { es: '… {n} renglones iguales', en: '… {n} unchanged lines' },
   'pantalla.verLosArchivosEnteros': { es: 'Ver los archivos enteros', en: 'See the full files' },
   'pantalla.pedidoAbierto': { es: 'Pedido abierto.', en: 'Request opened.' },
