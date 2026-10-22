@@ -382,7 +382,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (s.id === 'integraciones') { const h = herramientasDeHoras(); v.extras = { horas: h.horas, horasProblemas: h.problemas }; }
     // las herramientas de prueba de fábrica de esta versión, para que «Cambiar» arranque desde ellas; las que la puerta
     // corre por dentro se listan sin poder cambiarse
-    if (s.id === 'tecnologia') v.extras = tecnologiaDeFabrica();
+    if (s.id === 'tecnologia') { const rs = reposDeLaOrganizacion(cl.operaciones && cl.operaciones.dir, doc); v.extras = { ...tecnologiaDeFabrica(), repos: rs.lista, reposMotivo: rs.motivo }; }
     // la lista de fichas es la de este sitio; un lector que no conoce la clave deja la sección en «no sabe leer»
     if (s.id === 'fichas') {
       if (!(Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('hidden_cards'))) return { ...base, estado: 'no_reader', motivo: 'esta versión del arnés todavía no sabe leer las fichas que muestra el sitio (site.hidden_cards)' };
@@ -522,6 +522,44 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const dep = opsDoc && isObject(opsDoc.deployments) && isObject(opsDoc.deployments.products) ? opsDoc.deployments.products : {};
     for (const k of Object.keys(dep)) if (!k.startsWith('__')) out.push({ producto: k, origen: 'deployments', repo: null, activo: true, motivo: null });
     return { lista: out, motivo };
+  }
+  /**
+   * Los repos de la organización para elegir en «El filtro de cada repo»: los que mira la revisión de dependencias
+   * (`ado: "<proyecto>/<repo>"` con la organización del repo de operaciones, o `github: "<org>/<repo>"`) y los que ya
+   * nombra team-repos.json, sin repetir. `{ lista, motivo }`: una lista que no se pudo leer lo dice.
+   */
+  function reposDeLaOrganizacion(dirOps, doc) {
+    const out = new Map();
+    const sumar = (x) => {
+      if (!isObject(x) || typeof x.platform !== 'string' || typeof x.org !== 'string' || typeof x.repo !== 'string' || !x.org || !x.repo) return false;
+      // la forma de cada plataforma (con proyecto o sin él) la juzga el lector al revisar; acá sólo se arma la identidad
+      const e = typeof x.project === 'string' && x.project ? { platform: x.platform, org: x.org, project: x.project, repo: x.repo } : { platform: x.platform, org: x.org, repo: x.repo };
+      out.set([e.platform, e.org, e.project || '', e.repo].join('\0').toLowerCase(), e);
+      return true;
+    };
+    const motivos = [];
+    const r = dirOps ? leerDe(dirOps, 'scripts/nightly/dependencies/repos.json') : { estado: 'sin_copia' };
+    const d = r.estado === 'leido' ? docDe(r.texto) : null;
+    if (r.estado === 'sin_copia') motivos.push(M('config.reposSinOperaciones'));
+    else if (r.estado === 'ilegible' || (r.estado === 'leido' && (!d || !Array.isArray(d.repos)))) motivos.push(M('config.reposListaIlegible'));
+    const ops = remoteDe('operaciones') || {};
+    let ignoradas = 0;
+    for (const x of (d && Array.isArray(d.repos) ? d.repos : [])) {
+      // una entrada es un repo si su «ado» («<proyecto>/<repo>», en la plataforma y la organización del repo de
+      // operaciones, que tiene proyectos) o su «github» lo nombran
+      const ado = isObject(x) && typeof x.ado === 'string' ? x.ado.split('/') : [];
+      const gh = isObject(x) && typeof x.github === 'string' ? x.github.split('/') : [];
+      const okAdo = ado.length === 2 && Boolean(ops.project) && sumar({ platform: ops.platform, org: ops.org, project: ado[0], repo: ado[1] });
+      const okGh = gh.length === 2 && sumar({ platform: 'github', org: gh[0], repo: gh[1] });
+      if (!okAdo && !okGh) ignoradas++;
+    }
+    if (ignoradas) motivos.push(M('config.reposIgnorados', { n: ignoradas }));
+    if (isObject(doc)) {
+      for (const k of ['public', 'profile', 'operations']) sumar(doc[k]);
+      if (isObject(doc.merge_suites) && Array.isArray(doc.merge_suites.repos)) for (const e of doc.merge_suites.repos) sumar(isObject(e) ? e.repo : null);
+    }
+    const lista = [...out.values()].sort((a, b) => [a.platform, a.org, a.project || '', a.repo].join('/').localeCompare([b.platform, b.org, b.project || '', b.repo].join('/')));
+    return { lista, motivo: motivos.length ? motivos.join('; ') : null };
   }
   const enlaceArchivo = (rel) => RP.enlaceArchivo(remoteDe('operaciones'), rel);
 

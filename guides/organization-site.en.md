@@ -596,6 +596,8 @@ What the person sees in the section, and what the agent does when asked for a to
     `{args}`; a repo with no entry uses `args_default`, or nothing. `args` cannot hold quotes, `$`, backticks,
     backslashes or line breaks, because it goes inside quotes in the command. The repo is recognized by its `origin`
     remote.
+    On the site, «Change» shows «Each repo's filter»: «Add a repo» picks from the organization's repos (those in the
+    dependency review and those this file already names), and each row has its filter and its «Remove».
   - **The command runs with bash** and its first word has to be on the PATH (otherwise the gate says it is missing).
     Nothing is read from the repo under test.
 - **Where the profile clone is**: `harness.js team-config --no-open` says which folder this machine uses (the
