@@ -495,7 +495,7 @@ function estadoDeGit(stderr) {
 /** Saca los caracteres de control de una línea que va al registro (saltos, escape de la consola). */
 function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}, ahora = Date.now, spawn = correr, urlBuzon, git = 'git', nubes: nubesDadas, presupuestoBuzonMs = 120000,
   topeConversacionesBytes = TOPE_CONVERSACIONES_BYTES, resumir = (o) => require('./summaries.js').resumirEnWorker({ ...o, skillsDir: process.env.TYCON_SKILLS_DIR || null }),
-  leerEspejo = (o) => require('./summaries.js').leerEspejoEnWorker(o), calcularFichasEn = (o) => require('./summaries.js').fichasEnWorker(o), almacenCopia = null, urlCopia = null }) {
+  leerEspejo = (o) => require('./summaries.js').leerEspejoEnWorker(o), calcularFichasEn = (o) => require('./summaries.js').fichasEnWorker(o), almacenCopia = null, urlCopia = null, opcionesPodaCopia = {} }) {
   // 🔴 todo lo que este módulo registra puede traer texto del repo de operaciones o del buzón (valores de operations.json,
   //    stderr de git, nombres de archivo): sale sin caracteres de control
   const log = (l) => logCrudo(limpiarLinea(l));
@@ -503,11 +503,14 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   // los clones, en el disco del contenedor y nunca en SITE_DATA_DIR: git hace chmod al clonar, y un disco montado por
   // SMB lo rechaza y deja el sitio frenado. Son copias que se vuelven a armar: no necesitan persistir
   const raizClones = dirClones || fs.mkdtempSync(path.join(os.tmpdir(), 'site-clones-'));
-  // con la copia no hay clon: `clon` es la carpeta de la última foto abierta, dentro de SITE_DATA_DIR (no
-  // lleva git, así que el disco montado no la rechaza). Cambia de una vez cuando llega una foto nueva
+  // con la copia no hay clon: `clon` es la carpeta de la última foto abierta, en el disco del contenedor como los
+  // clones. En SITE_DATA_DIR (un disco compartido en la nube) escribir sus ~1.200 archivos llevaba casi un minuto en
+  // cada arranque en frío; acá, segundos, y bajar la foto es un solo archivo. Cambia de una vez cuando llega una nueva
   const conCopia = cfg.operationsSource === 'copy';
   let clon = path.join(raizClones, 'operaciones');
-  const dirCopias = path.join(dataDir, 'operaciones-copia');
+  const dirCopias = path.join(raizClones, 'operaciones-copia');
+  // las copias que versiones anteriores dejaron en SITE_DATA_DIR: se borran de fondo, ninguna se conserva
+  const dirCopiasViejas = path.join(dataDir, 'operaciones-copia');
   const dirBuzon = path.join(dataDir, 'buzon');
   const dirPerfil = path.join(raizClones, 'perfil');
   // el candado de los clones: una cola de promesas; un trabajo que falla no traba a los siguientes
@@ -594,8 +597,10 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       try { almacen = nube.almacenDeCopia({ ...cfg.operationsCopy, urlBase: urlCopia }); }
       catch (e) { return { estado: 'sin_configurar', motivo: `la copia de operaciones no está configurada (${e.message})` }; }
     }
-    const r = await COPIA.bajar({ almacen, dir: dirCopias, previo: st.copia ? { commit: st.copia.indice.commit, huella: st.copia.indice.huella, carpeta: st.copia.carpeta } : null, log });
+    const r = await COPIA.bajar({ almacen, dir: dirCopias, previo: st.copia ? { commit: st.copia.indice.commit, huella: st.copia.indice.huella, carpeta: st.copia.carpeta } : null, log, opcionesPoda: opcionesPodaCopia });
     if (!r.ok) return { estado: r.codigo, motivo: `copia de operaciones: ${r.motivo}` };
+    // vacía, la carpeta se borra: un refresco no vuelve a listar el disco compartido para nada
+    if (fs.existsSync(dirCopiasViejas)) COPIA.programarPoda({ dir: dirCopiasViejas, actual: null, conservar: 0, log, ...opcionesPodaCopia }).then(() => fs.promises.rmdir(dirCopiasViejas)).catch(() => { /* con algo adentro todavía: la próxima */ });
     st.copia = { carpeta: r.carpeta, indice: r.indice };
     const hora = Date.parse(r.indice.hora);
     if (Number.isFinite(hora) && hora !== st.copiaHora) { st.copiaHora = hora; guardarEstado(); }

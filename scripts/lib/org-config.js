@@ -657,27 +657,51 @@ const CARPETA_CON_FECHA = /^v(\d{4})(\d{2})(\d{2})T\d{6}\d{3}Z$/;
  * Del espejo del buzón (`<espejo>/<máquina>/registros[/v<AAAAMMDDTHHMMSSmmmZ>]/place.json`), una fila por máquina:
  * `{ maquina, version, dia, diaTexto, estado: 'al_dia' | 'atrasada' | 'sin_noticias' | 'no_medido', texto }`. La
  * referencia es la versión de la imagen del sitio; sin ella, todas «no medido». Sin red.
+ * El día: el de la carpeta con fecha; con el place.json suelto (la forma que deja el buzón), su `day` si es una fecha
+ * real y no posterior a mañana; si no, la fecha del archivo. Una carpeta vieja que `.carpetas-de-maquina.json` (la
+ * unión que deja el bajador) declara `unida` a su carpeta nueva no es otra fila; sin ese archivo, cada carpeta cuenta.
  */
 function versionesDeMaquinas({ espejo, versionImagen, ahora = Date.now(), personas = null }) {
   let maquinas = [];
   try { maquinas = fs.readdirSync(espejo, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith('.')).map((d) => d.name).sort(); } catch { return []; }
+  // vieja → nueva; la vieja sale de la tabla sólo si su nueva tiene fila (abajo)
+  let unidas = new Map();
+  try {
+    const u = JSON.parse(fs.readFileSync(path.join(espejo, '.carpetas-de-maquina.json'), 'utf8'));
+    const c = u && isObject(u.carpetas) ? u.carpetas : {};
+    unidas = new Map(Object.keys(c).filter((k) => isObject(c[k]) && c[k].estado === 'unida' && typeof c[k].nueva === 'string' && maquinas.includes(c[k].nueva)).map((k) => [k, c[k].nueva]));
+  } catch { /* sin el archivo, o ilegible: sin uniones, cada carpeta es una fila (se ve, repetida; no desaparece ninguna) */ }
+  const manana = new Date(ahora + 86400000).toISOString().slice(0, 10);
+  // `{ dia, delArchivo }`: el `day` que declara la máquina, o la fecha del archivo (la de la bajada, no la de la máquina:
+  // se muestra como tal)
+  const diaDe = (doc, ruta) => {
+    const d = doc && typeof doc.day === 'string' ? doc.day : '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d && d <= manana) return { dia: d, delArchivo: false };
+    try { return { dia: new Date(fs.lstatSync(ruta).mtimeMs).toISOString().slice(0, 10), delArchivo: true }; } catch { return { dia: null, delArchivo: false }; }
+  };
+  // un enlace del espejo no se sigue: lo que se lee queda adentro
+  const esArchivo = (p) => { try { return fs.lstatSync(p).isFile(); } catch { return false; } };
   const out = [];
   for (const m of maquinas) {
     const reg = path.join(espejo, m, 'registros');
+    try { if (fs.lstatSync(reg).isSymbolicLink()) continue; } catch { /* sin registros: lo dice el listado de abajo */ }
     let carpetas = [];
-    try { carpetas = fs.readdirSync(reg).filter((n) => CARPETA_CON_FECHA.test(n) && fs.existsSync(path.join(reg, n, 'place.json'))).sort(); } catch (e) {
+    try { carpetas = fs.readdirSync(reg).filter((n) => CARPETA_CON_FECHA.test(n) && esArchivo(path.join(reg, n, 'place.json'))).sort(); } catch (e) {
       // sin registros no es una máquina; con registros que no se pueden leer, sí: sale «no medido», no desaparece
       if (e && e.code !== 'ENOENT') { out.push({ maquina: m, persona: personas && personas[m] ? personas[m] : null, version: null, dia: null, diaTexto: M('org.sinFecha'), estado: 'no_medido', texto: M('org.registrosIlegibles', { codigo: e.code || 'error' }) }); continue; }
     }
     let ruta = null; let dia = null;
     if (carpetas.length) { const c = carpetas[carpetas.length - 1]; ruta = path.join(reg, c, 'place.json'); const d = CARPETA_CON_FECHA.exec(c); dia = `${d[1]}-${d[2]}-${d[3]}`; }
-    else if (fs.existsSync(path.join(reg, 'place.json'))) ruta = path.join(reg, 'place.json');
+    else if (esArchivo(path.join(reg, 'place.json'))) ruta = path.join(reg, 'place.json');
     if (!ruta) continue;
     let doc = null;
     try { doc = JSON.parse(fs.readFileSync(ruta, 'utf8')); } catch { doc = null; }
-    const version = doc && isObject(doc.install) && typeof doc.install.version === 'string' ? doc.install.version : null;
+    let delArchivo = false;
+    if (!dia) ({ dia, delArchivo } = diaDe(doc, ruta));
+    // la versión viene de otra máquina: acotada (la pantalla la dibuja como texto)
+    const version = doc && isObject(doc.install) && typeof doc.install.version === 'string' ? doc.install.version.slice(0, 40) : null;
     const persona = personas && typeof personas === 'object' && personas[m] ? personas[m] : null;
-    const fila = { maquina: m, persona, version, dia, diaTexto: dia || M('org.sinFecha'), estado: 'no_medido', texto: '' };
+    const fila = { maquina: m, persona, version, dia, diaTexto: dia ? (delArchivo ? M('org.diaSegunElArchivo', { dia }) : dia) : M('org.sinFecha'), estado: 'no_medido', texto: '' };
     if (!versionImagen) { fila.estado = 'no_medido'; fila.texto = M('org.imagenSinVersion'); }
     else if (!doc) { fila.texto = M('org.placeIlegible'); }
     else if (!version) { fila.texto = M('org.placeSinVersion'); }
@@ -687,7 +711,8 @@ function versionesDeMaquinas({ espejo, versionImagen, ahora = Date.now(), person
     else { fila.texto = M('org.sinFormaDeVersion', { version }); }
     out.push(fila);
   }
-  return out;
+  const conFila = new Set(out.map((f) => f.maquina));
+  return out.filter((f) => !(unidas.has(f.maquina) && conFila.has(unidas.get(f.maquina))));
 }
 
 // ── la paridad por producto ──────────────────────────────────────────────────────────────────────────────
@@ -1700,10 +1725,18 @@ function pantalla(idioma = 'es') {
     return fila;
   }
   function editorAprobaciones(s, d, pr) {
-    // sólo sí o no: el valor es el nombre del rol (el que ya tenga, o «coordinadora»); la sesión se designa en la máquina
+    // sí o no, y con «sí» el nombre del rol (el que ya tenga, o «coordinadora»): es el valor que se guarda, y la frase que
+    // designa la sesión en cada máquina lo nombra
     var rol = (d.approvals || {}).relay_session;
-    var box = el('div', { class: 'pila' }, selector(T('pantalla.quienReenviaElOk'), rol ? 'si' : '', [['', T('pantalla.quienReenviaElOkNo')], ['si', T('pantalla.quienReenviaElOkSi')]], function (x) { hoja(d, 'approvals', 'relay_session', x === 'si' ? (rol || 'coordinadora') : ''); }, 'approvals.relay_session', pr));
-    box.appendChild(el('p', { class: 'muted', text: T('pantalla.quienReenviaElOkAyuda') }));
+    var box = el('div', { class: 'pila' }, selector(T('pantalla.quienReenviaElOk'), rol ? 'si' : '', [['', T('pantalla.quienReenviaElOkNo')], ['si', T('pantalla.quienReenviaElOkSi')]], function (x) { hoja(d, 'approvals', 'relay_session', x === 'si' ? (rol || 'coordinadora') : ''); render(); }, 'approvals.relay_session', pr));
+    var ayuda = el('p', { class: 'muted', text: T('pantalla.quienReenviaElOkAyuda', { nombre: rol || 'coordinadora' }) });
+    // sin volver a dibujar mientras se escribe (se perdería el foco): la ayuda se actualiza en el lugar
+    if (rol) box.appendChild(campo(T('pantalla.quienReenviaElOkComoLaLlaman'), rol, function (v) {
+      var nombre = String(v).trim() || 'coordinadora';
+      hoja(d, 'approvals', 'relay_session', nombre);
+      ayuda.textContent = T('pantalla.quienReenviaElOkAyuda', { nombre: nombre });
+    }, 'approvals.relay_session.nombre', pr, { placeholder: T('pantalla.quienReenviaElOkEjemplo') }));
+    box.appendChild(ayuda);
     return box;
   }
   function editorPruebaAMano(s, d, pr) {
@@ -2044,11 +2077,13 @@ function pantalla(idioma = 'es') {
       if (v) m[k][sub] = v; else { delete m[k][sub]; if (!Object.keys(m[k]).length) delete m[k]; }
     }
     // un renglón de modelo: «que» es el contenido de la primera celda; «quitarlo», la ✕ de un revisor en particular
-    // «h» es el valor por defecto como viene (un modelo); con «conEquiv», el renglón lleva la línea de equivalencias
+    // «h» es el valor por defecto como viene (un modelo); con «conEquiv», el renglón lleva la línea de equivalencias:
+    // «true» la calcula del valor elegido, y un nivel la deja fija en ese nivel (un renglón que no elige modelo)
     function fila(t, que, label, k, sub, opciones, h, quitarlo, conEquiv) {
       var p = 'models.' + k + (sub ? '.' + sub : '');
+      var fijo = typeof conEquiv === 'string' ? conEquiv : null;
       var linea = conEquiv ? el('small', { class: 'equiv muted' }) : null;
-      var pintar = function (v) { if (linea) linea.textContent = lineaEquiv(v || h); };
+      var pintar = function (v) { if (linea) linea.textContent = lineaEquiv(fijo || v || h); };
       var c = corto(label, sub ? de(m[k], sub) : m[k], opciones, function (v) { poner(k, sub, v); pintar(v); }, p, pr);
       pintar(sub ? de(m[k], sub) : m[k]);
       var acc = el('div', { class: 'acc', role: 'cell' }, c.sel);
@@ -2056,7 +2091,7 @@ function pantalla(idioma = 'es') {
       if (quitarlo) acc.appendChild(el('button', { class: 'quitar-fila', type: 'button', text: '✕', title: T('pantalla.quitarEsteRevisor'), 'aria-label': T('pantalla.quitarEsteRevisor') + ': ' + label, onclick: quitarlo }));
       var celda = el('div', { class: 'que', role: 'cell' });
       [].concat(que).forEach(function (n) { celda.appendChild(n); });
-      t.appendChild(renglon([celda, el('div', { class: 'hoy', role: 'cell', text: h == null ? '—' : (conEquiv ? nombreNivel(h) : h) }), acc], c.mios));
+      t.appendChild(renglon([celda, el('div', { class: 'hoy', role: 'cell', text: h == null ? '—' : (conEquiv === true ? nombreNivel(h) : h) }), acc], c.mios));
     }
     function trabajo(t, label, k, sub) { fila(t, el('span', { text: label }), label, k, sub, DE_MODELOS, sub ? de(de(hoy, k), sub) : de(hoy, k), null, true); }
 
@@ -2088,9 +2123,6 @@ function pantalla(idioma = 'es') {
     var adv = cabeza(T('pantalla.elPaseAdversarial'));
     trabajo(adv, T('pantalla.unaStoryNormal'), 'adversarial', 'model');
     trabajo(adv, T('pantalla.unaStoryPesada'), 'adversarial', 'heavy');
-    var fq = de(de(hoy, 'adversarial'), 'fable_question');
-    fila(adv, el('span', { text: T('pantalla.preguntarAntesDeUsarFable') }), T('pantalla.preguntarAntesDeUsarFable'), 'adversarial', 'fable_question',
-      [['', T('pantalla.elPorDefecto')], ['ask', T('pantalla.preguntar')], ['never', T('pantalla.nunca')]], fq ? (fq === 'ask' ? T('pantalla.preguntar') : T('pantalla.nunca')) : null);
     box.appendChild(adv);
 
     var ayu = cabeza(T('pantalla.losAyudantesYLaSesion'));
@@ -2331,7 +2363,8 @@ function pantalla(idioma = 'es') {
   // fábrica, cambiadas o agregadas) y las tres reglas. Una clave que queda vacía se saca: no se propone un «{}»
   var TEC_FORM = null;     // la herramienta que se está cambiando: { name, r, fabrica }
   var TEC_AGENTE = false;  // se tocó «Pedíselo a tu agente»
-  var TEC_REEMPLAZAR = null;  // la interna cuya explicación de «Reemplazar» está abierta
+  var TEC_REEMPLAZAR = null;  // la interna cuya frase de «Reemplazar» está a la vista
+  var TEC_AGREGAR_REPO = null;  // la herramienta del formulario abierto donde se tocó «Agregar un repo»: se ve el selector
   var TEC_NOMBRES = { dotnet: '.NET', vitest: 'Vitest', jest: 'Jest', node: 'Node (node --test)', pytest: 'pytest (Python)', go: 'Go', maven: 'Maven (Java)', gradle: 'Gradle (Java, Kotlin)', karma: 'Karma (Angular)', playwright: 'Playwright (punta a punta)' };
   var TEC_ARCHIVOS = { dotnet: '.sln, .csproj', vitest: 'package.json (vitest)', jest: 'package.json (jest)', node: 'package.json (node --test)' };
   // el nombre para personas: el de fábrica, o el «label» que le puso la organización a su receta; si no, el id
@@ -2358,20 +2391,38 @@ function pantalla(idioma = 'es') {
     limpiarStack(d);
   }
   function boton(texto, onclick) { return el('button', { class: 'sec', type: 'button', text: texto, onclick: onclick }); }
-  function formRunner(d) {
+  function formRunner(d, ex) {
     var f = TEC_FORM; var r = f.r;
     var upd = function (k) { return function (v) { r[k] = v; }; };
     var dentro = function (o, k) { return function (v) { if (!esObjeto(r[o])) r[o] = {}; r[o][k] = v; }; };
     var res = esObjeto(r.results) ? r.results : {}; var cov = esObjeto(r.coverage) ? r.coverage : null;
-    // el filtro de cada repo y el de por defecto: se ven y se editan; lo demás de la receta viaja intacto en la copia
+    // el filtro de cada repo y el de por defecto: se ven y se editan, cada renglón con su «Quitar», y «Agregar un repo»
+    // elige de los repos de la organización (los da el servidor); lo demás de la receta viaja intacto en la copia
     var repos = Array.isArray(r.repos) ? r.repos : [];
-    var porRepo = null;
-    if (repos.length || r.args_default !== undefined) {
-      porRepo = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecFiltroPorRepo') }), el('p', { class: 'sub-d', text: T('pantalla.tecFiltroPorRepoAyuda') }),
-        campo(T('pantalla.tecFiltroPorDefecto'), r.args_default, function (v) { if (v === '') delete r.args_default; else r.args_default = v; }, 'runner.args_default', []));
-      repos.forEach(function (x, i) {
-        porRepo.appendChild(campo(repoEnTexto(x && x.repo), x && x.args, function (v) { if (esObjeto(r.repos[i])) r.repos[i].args = v; }, 'runner.repos.' + i + '.args', []));
-      });
+    // como la identidad del lector: sin mayúsculas y con los %20 de una ruta copiada de la web leídos como espacio
+    var sinEscapes = function (v) { try { return decodeURIComponent(String(v || '')); } catch (e) { return String(v || ''); } };
+    var clave = function (x) { return esObjeto(x) ? [x.platform, x.org, x.project || '', x.repo].map(sinEscapes).join('/').toLowerCase() : ''; };
+    var porRepo = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecFiltroPorRepo') }), el('p', { class: 'sub-d', text: T('pantalla.tecFiltroPorRepoAyuda') }),
+      campo(T('pantalla.tecFiltroPorDefecto'), r.args_default, function (v) { if (v === '') delete r.args_default; else r.args_default = v; }, 'runner.args_default', []));
+    repos.forEach(function (x, i) {
+      var nombre = repoEnTexto(x && x.repo);
+      porRepo.appendChild(el('div', { class: 'fila filtro-repo' }, campo(nombre, x && x.args, function (v) { if (esObjeto(r.repos[i])) r.repos[i].args = v; }, 'runner.repos.' + i + '.args', []),
+        el('button', { class: 'sec', type: 'button', text: T('pantalla.tecQuitarRepo'), 'aria-label': T('pantalla.tecQuitarRepo') + ' ' + nombre, onclick: function () { r.repos.splice(i, 1); if (!r.repos.length) delete r.repos; render(); } })));
+    });
+    var usados = repos.map(function (x) { return clave(x && x.repo); });
+    var libres = (Array.isArray(ex.repos) ? ex.repos : []).filter(function (x) { return usados.indexOf(clave(x)) < 0; });
+    var agregando = TEC_AGREGAR_REPO === f.name;
+    if (agregando && libres.length) {
+      porRepo.appendChild(selector(T('pantalla.tecElegiUnRepo'), '', [['', T('pantalla.tecElegiUnRepo')]].concat(libres.map(function (x) { return [clave(x), repoEnTexto(x)]; })), function (v) {
+        var e = libres.filter(function (x) { return clave(x) === v; })[0];
+        if (!e) return;
+        r.repos = (Array.isArray(r.repos) ? r.repos : []).concat([{ repo: copia(e), args: '' }]);
+        TEC_AGREGAR_REPO = null; render();
+      }, 'runner.repos.nuevo', []));
+    } else if (agregando) {
+      porRepo.appendChild(el('p', { class: 'muted', text: T('pantalla.tecNoHayMasRepos') + (ex.reposMotivo ? ' (' + ex.reposMotivo + ')' : '') }));
+    } else {
+      porRepo.appendChild(el('div', { class: 'fila' }, boton(T('pantalla.tecAgregarUnRepo'), function () { TEC_AGREGAR_REPO = f.name; render(); })));
     }
     return el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecCambiarLaHerramienta', { nombre: nombreDe(r) }) }),
       el('div', { class: 'msg warn' }, el('b', { text: T('pantalla.tecElComandoCorreEnCadaComputadora') })),
@@ -2401,12 +2452,18 @@ function pantalla(idioma = 'es') {
     var fabrica = ex.fabrica || [];
     var tabla = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecComoSeCorrenLasPruebas') }), el('p', { class: 'sub-d', text: T('pantalla.tecComoSeCorrenAyuda') }));
     // cada fila con las mismas cuatro columnas: nombre, archivo que la detecta, origen y acción. Las internas no se
-    // editan: «Reemplazar» despliega, en la fila, cómo ganarle con una receta de la organización
+    // editan: «Reemplazar» hace lo de «Pedíselo a tu agente» con la frase armada para esa herramienta (la copia si el
+    // navegador deja) y la muestra en la fila, con lo que pasa después
     (ex.internos || []).forEach(function (n) {
       var abierta = TEC_REEMPLAZAR === n;
+      var frase = T('pantalla.tecFraseReemplazar', { nombre: TEC_NOMBRES[n] || n, archivo: String(TEC_ARCHIVOS[n] || '').replace(/ \(.*\)$/, '') });
       tabla.appendChild(el('div', { class: 'fila', 'data-runner': n }, el('span', { text: TEC_NOMBRES[n] || n }), el('span', { class: 'muted', text: TEC_ARCHIVOS[n] || '' }), el('span', { text: T('pantalla.tecIncluidaEnElArnes') }),
-        el('span', {}, boton(T('pantalla.tecReemplazar'), function () { TEC_REEMPLAZAR = abierta ? null : n; render(); }))));
-      if (abierta) tabla.appendChild(el('p', { class: 'sub-d', 'data-reemplazar': n, text: T('pantalla.tecComoReemplazarUnaDeLaPuerta') }));
+        el('span', {}, boton(T('pantalla.tecReemplazar'), function () {
+          TEC_REEMPLAZAR = n;
+          try { if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(frase).catch(function () {}); } catch (e) { /* sin portapapeles, la frase queda a la vista */ }
+          render();
+        }))));
+      if (abierta) tabla.appendChild(el('div', { class: 'msg ok', 'data-reemplazar': n }, el('b', { text: T('pantalla.tecPegaEstaFrase') }), el('p', { text: '«' + frase + '»' }), el('p', { text: T('pantalla.tecAlReemplazarPasa') })));
     });
     // el motivo exacto, plegado: lo arma el servidor y no está traducido
     if (!ex.fabrica) tabla.appendChild(aviso('nm', T('pantalla.tecSinListaDeFabrica'), ex.motivo || null));
@@ -2423,7 +2480,8 @@ function pantalla(idioma = 'es') {
     });
     (pr || []).filter(function (x) { return String(x.path).indexOf('stack.test_runners') === 0; }).forEach(function (x) { MOSTRADOS.push(x); tabla.appendChild(el('div', { class: 'err', text: x.donde + ': ' + x.message })); });
     box.appendChild(tabla);
-    if (TEC_FORM) box.appendChild(formRunner(d));
+    if (TEC_FORM) box.appendChild(formRunner(d, ex));
+    else TEC_AGREGAR_REPO = null;
     // pedirle al agente una herramienta que no está: la frase, y qué pasa después
     var frase = T('pantalla.tecFraseParaElAgente');
     var agente = el('div', { class: 'sub' }, el('p', { class: 'sub-d', text: T('pantalla.tecUsanOtraHerramienta') }), boton(T('pantalla.tecPediseloATuAgente'), function () {

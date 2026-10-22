@@ -200,6 +200,106 @@ test('T13 2.34-Bajar_MismoCommitNoBaja @story-2.34 @ac-6 — el índice no cambi
   assert.deepStrictEqual(al.ops, [['get', 'actual.json']], 'sólo el índice');
 });
 
+test('Bajar_PodaLasCopiasViejas — tras un reinicio (sin «previo») la carpeta guarda sólo las últimas; lo reciente y lo ajeno no se tocan', async () => {
+  // 🔴 rojo: sin la poda, cada arranque del sitio deja la copia anterior en el disco de datos (cuál era sólo lo sabe la
+  //    memoria del proceso), el disco se llena y el sitio deja de leer la configuración.
+  const { al, idx } = await conFotoSubida();
+  const dir = tmp();
+  const ahora = Date.now();
+  const hace = (min) => new Date(ahora - min * 60000);
+  const copia = (sufijo, min) => { const c = path.join(dir, `copia-${'a'.repeat(12)}-${sufijo}`); fs.mkdirSync(c); fs.writeFileSync(path.join(c, 'operations.json'), '{}'); fs.utimesSync(c, hace(min), hace(min)); return c; };
+  const viejas = ['000001', '000002', '000003', '000004', '000005'].map((s, i) => copia(s, 120 + i * 60));
+  const reciente = copia('00000a', 5);          // otra réplica puede estar leyéndola: dentro de la hora de gracia
+  const abriendo = path.join(dir, '.abriendo-zzz'); fs.mkdirSync(abriendo); fs.utimesSync(abriendo, hace(180), hace(180));
+  const abriendoAhora = path.join(dir, '.abriendo-yyy'); fs.mkdirSync(abriendoAhora);
+  const ajeno = path.join(dir, 'otra-cosa'); fs.mkdirSync(ajeno); fs.utimesSync(ajeno, hace(600), hace(600));
+  const lineas = [];
+  const r = await COPIA.bajar({ almacen: al, dir, previo: null, log: (l) => lineas.push(l), opcionesPoda: { demoraMs: 0, pausaMs: 0 } });
+  assert.strictEqual(r.ok, true, r.motivo);
+  await r.poda;
+  const quedan = fs.readdirSync(dir).sort();
+  // se quedan: la abierta, las dos más nuevas de las otras (la reciente y la vieja más nueva), lo que se está abriendo
+  // ahora y lo que no es una copia
+  assert.deepStrictEqual(quedan, [path.basename(abriendoAhora), path.basename(r.carpeta), path.basename(reciente), path.basename(viejas[0]), path.basename(ajeno)].sort());
+  assert.ok(lineas.some((l) => /borradas 5 carpeta\(s\) viejas de la copia/.test(l)), lineas.join('\n'));
+  // otro reinicio con el mismo commit: abre otra y la carpeta sigue acotada
+  const r2 = await COPIA.bajar({ almacen: al, dir, previo: null, log: sinLog, opcionesPoda: { demoraMs: 0, pausaMs: 0 } });
+  assert.strictEqual(r2.ok, true, r2.motivo);
+  await r2.poda;
+  // quedan la nueva, la anterior (dentro de la gracia) y la reciente; la vieja queda cuarta y se borra
+  assert.deepStrictEqual(fs.readdirSync(dir).filter((n) => /^copia-/.test(n)).sort(), [path.basename(r2.carpeta), path.basename(r.carpeta), path.basename(reciente)].sort());
+  // sin cambio de commit también poda (un sitio que no se reinicia ni recibe commits nuevos no acumula)
+  copia('000009', 300);
+  const r3 = await COPIA.bajar({ almacen: al, dir, previo: { commit: idx.commit, huella: idx.huella, carpeta: r2.carpeta }, log: sinLog, opcionesPoda: { demoraMs: 0, pausaMs: 0 } });
+  assert.strictEqual(r3.cambio, false);
+  await r3.poda;
+  assert.ok(!fs.existsSync(path.join(dir, `copia-${'a'.repeat(12)}-000009`)), 'la vieja de más, borrada aunque no haya foto nueva');
+});
+
+test('PodarCopias_SinCarpetaOIlegible_NoFalla — una carpeta que no existe o no se lista no frena la bajada', async () => {
+  const lineas = [];
+  assert.deepStrictEqual((await COPIA.podarCopias({ dir: path.join(tmp(), 'no-existe'), actual: null, log: (l) => lineas.push(l) })).borradas, []);
+  assert.deepStrictEqual(lineas, [], 'que no exista no es un problema');
+  // un archivo donde va la carpeta: no se lista, lo dice y sigue
+  const archivo = path.join(tmp(), 'es-un-archivo'); fs.writeFileSync(archivo, 'x');
+  assert.deepStrictEqual((await COPIA.podarCopias({ dir: archivo, actual: null, log: (l) => lineas.push(l) })).borradas, []);
+  assert.ok(lineas.some((l) => /no se pudo listar .* para borrar las copias viejas \(ENOTDIR\)/.test(l)), lineas.join('\n'));
+});
+
+test('Bajar_PodaDeFondo_NoBloquea — bajar vuelve sin esperar la poda; la poda empieza después de su demora', async () => {
+  // 🔴 rojo: la poda corre dentro de la bajada; borrar miles de archivos de un disco compartido traba al servidor que
+  //    arranca y vence sus pruebas de disponibilidad.
+  const { al } = await conFotoSubida();
+  const dir = tmp();
+  const hace = new Date(Date.now() - 300 * 60000);
+  const viejas = ['000001', '000002', '000003', '000004'].map((s) => { const c = path.join(dir, `copia-${'b'.repeat(12)}-${s}`); fs.mkdirSync(c); fs.utimesSync(c, hace, hace); return c; });
+  const r = await COPIA.bajar({ almacen: al, dir, previo: null, log: sinLog, opcionesPoda: { demoraMs: 200, pausaMs: 0 } });
+  assert.strictEqual(r.ok, true, r.motivo);
+  assert.ok(viejas.every((c) => fs.existsSync(c)), 'al volver de bajar, nada borrado todavía');
+  assert.strictEqual(COPIA.programarPoda({ dir, actual: r.carpeta }), r.poda, 'una a la vez: pedir otra devuelve la que ya está en curso');
+  const p = await r.poda;
+  assert.deepStrictEqual(p.borradas.sort(), viejas.slice(2).map((c) => path.basename(c)).sort(), 'quedan la abierta y las dos más nuevas');
+});
+
+test('PodarCopias_PorPartes_TopePorPasada — una pasada borra hasta el tope, de a una con pausa, y dice cuántas quedan', async () => {
+  const dir = tmp();
+  const hace = new Date(Date.now() - 300 * 60000);
+  for (let i = 0; i < 15; i++) { const c = path.join(dir, `copia-${'c'.repeat(12)}-${String(i).padStart(6, '0')}`); fs.mkdirSync(c); fs.utimesSync(c, hace, hace); }
+  const lineas = [];
+  const t0 = Date.now();
+  const p = await COPIA.podarCopias({ dir, actual: null, log: (l) => lineas.push(l), tope: 5, pausaMs: 20, conservar: 3 });
+  assert.strictEqual(p.borradas.length, 5, 'hasta el tope');
+  assert.strictEqual(p.quedan, 7, '15 - 3 que se conservan - 5 borradas');
+  assert.ok(Date.now() - t0 >= 4 * 20 - 10, 'con la pausa entre carpeta y carpeta');
+  assert.ok(lineas.some((l) => /borradas 5 carpeta\(s\) viejas de la copia; quedan 7 para la próxima pasada/.test(l)), lineas.join('\n'));
+  // la carpeta que este proceso dejó de usar se borra sin esperar la gracia
+  const previo = path.join(dir, `copia-${'d'.repeat(12)}-000001`); fs.mkdirSync(previo);
+  const q = await COPIA.podarCopias({ dir, actual: null, previo, log: sinLog, tope: 1, pausaMs: 0 });
+  assert.deepStrictEqual(q.borradas, [path.basename(previo)], 'la anterior primero');
+  // una «anterior» fuera de la carpeta de copias no se toca
+  const afuera = path.join(tmp(), `copia-${'e'.repeat(12)}-000001`); fs.mkdirSync(afuera);
+  await COPIA.podarCopias({ dir, actual: null, previo: afuera, log: sinLog, tope: 50, pausaMs: 0 });
+  assert.ok(fs.existsSync(afuera), 'la de afuera sigue');
+});
+
+test('ProgramarPoda_SiFalla_LoDiceYLibera — una poda que falla se registra, no rechaza y deja programar la siguiente', async () => {
+  const dir = tmp();
+  const lineas = [];
+  const p = COPIA.programarPoda({ dir, demoraMs: 0, log: (l) => lineas.push(l), ahora: () => { throw new Error('reloj roto'); } });
+  assert.deepStrictEqual(await p, { borradas: [], quedan: 0 });
+  assert.ok(lineas.some((l) => /la poda de copias viejas falló \(reloj roto\); queda para la próxima/.test(l)), lineas.join('\n'));
+  assert.notStrictEqual(COPIA.programarPoda({ dir, demoraMs: 0, log: sinLog }), p, 'la carpeta quedó libre para otra poda');
+  await COPIA.podaPendiente(dir);
+  // un registro que falla tampoco la deja rechazada
+  assert.deepStrictEqual(await COPIA.programarPoda({ dir, demoraMs: 0, log: () => { throw new Error('sin registro'); }, ahora: () => { throw new Error('reloj roto'); } }), { borradas: [], quedan: 0 });
+  // una segunda pedida mientras hay una en curso lo dice, y devuelve la que ya está
+  const enCurso = COPIA.programarPoda({ dir, demoraMs: 50, log: sinLog });
+  const otra = [];
+  assert.strictEqual(COPIA.programarPoda({ dir, previo: path.join(dir, 'copia-aaaaaaaaaaaa-000001'), log: (l) => otra.push(l) }), enCurso);
+  assert.ok(otra.some((l) => /ya hay una poda en curso; la carpeta anterior queda para la próxima pasada/.test(l)), otra.join('\n'));
+  await enCurso;
+});
+
 test('T14 2.34-Bajar_HuellaDistinta @story-2.34 @ac-8 — una foto con otra huella no se abre', async () => {
   const { al, idx } = await conFotoSubida();
   al.blobs.set('actual.json', { cuerpo: Buffer.from(JSON.stringify({ ...idx, huella: '0'.repeat(64) })), modificado: Date.now() });
@@ -316,7 +416,7 @@ function fuentesConCopia(almacen, ahora) {
   const v = validarConfiguracion(env);
   assert.ok(v.ok, JSON.stringify(v.problemas));
   const dataDir = tmp();
-  return { dataDir, f: crearFuentes({ cfg: v.cfg, dataDir, log: sinLog, ahora, almacenCopia: almacen }) };
+  return { dataDir, f: crearFuentes({ cfg: v.cfg, dataDir, log: sinLog, ahora, almacenCopia: almacen, opcionesPodaCopia: { demoraMs: 0, pausaMs: 0 } }) };
 }
 
 test('T12 2.34-Bajar_CambiaDeUnaVez @story-2.34 @ac-6 — el sitio cambia de foto entera, nunca una mezcla', async () => {
@@ -336,14 +436,56 @@ test('T12 2.34-Bajar_CambiaDeUnaVez @story-2.34 @ac-6 — el sitio cambia de fot
     await f.refrescar();
     const segunda = f.clones().operaciones.dir;
     assert.notStrictEqual(segunda, primera, 'otra carpeta');
-    assert.ok(!fs.existsSync(primera), 'la anterior se borró después del cambio');
+    // la foto se abre en el disco del contenedor, no en SITE_DATA_DIR (un disco compartido lento en la nube)
+    assert.ok(!segunda.startsWith(dataDir) && !fs.existsSync(path.join(dataDir, 'operaciones-copia')), 'nada en el disco de datos');
+    await COPIA.podaPendiente(path.dirname(segunda));
+    assert.ok(!fs.existsSync(primera), 'la anterior se borró después del cambio (de fondo)');
     assert.ok(fs.existsSync(path.join(segunda, '.dashboard', 'nuevo.json')) && !fs.existsSync(path.join(segunda, '.dashboard', 'viejo.json')), 'sólo los archivos del commit nuevo');
     assert.strictEqual(f.clones().operaciones.indice.commit, git(repo, 'rev-parse', 'HEAD'));
-    const sueltas = fs.readdirSync(path.join(dataDir, 'operaciones-copia'));
+    const sueltas = fs.readdirSync(path.dirname(segunda));
     assert.deepStrictEqual(sueltas, [path.basename(segunda)], 'ninguna carpeta a medio abrir ni vieja');
     assert.strictEqual(f.estado().cargado, true);
     assert.strictEqual(f.config().site.maintainers[0], 'lead@acme.example');
   } finally { f.detener(); }
+});
+
+test('Fuentes_FotoEnDiscoLocal_PodaLasViejasDelDiscoDeDatos — la foto se abre fuera del disco de datos, y las copias que quedaron ahí se borran de fondo', async () => {
+  // 🔴 rojo: la foto se escribe en SITE_DATA_DIR (archivo por archivo sobre un disco compartido, ~55 s en un arranque en
+  //    frío), o las copias que versiones anteriores dejaron ahí quedan para siempre.
+  const repo = repoDeJuguete({ 'operations.json': OPS_VALIDO });
+  const al = almacenDeJuguete();
+  assert.strictEqual((await COPIA.subir({ repo, almacen: al, log: sinLog })).ok, true);
+  const { dataDir, f } = fuentesConCopia(al, () => T0);
+  const viejas = path.join(dataDir, 'operaciones-copia');
+  const hace = new Date(Date.now() - 300 * 60000);
+  for (const s of ['000001', '000002']) { const c = path.join(viejas, `copia-${'a'.repeat(12)}-${s}`); fs.mkdirSync(c, { recursive: true }); fs.utimesSync(c, hace, hace); }
+  try {
+    await f.refrescar();
+    const abierta = f.clones().operaciones.dir;
+    assert.ok(!abierta.startsWith(dataDir), `abierta en el disco local: ${abierta}`);
+    await COPIA.podaPendiente(viejas);
+    for (let i = 0; i < 20 && fs.existsSync(viejas); i++) await new Promise((r) => setTimeout(r, 10));
+    assert.ok(!fs.existsSync(viejas), 'las del disco de datos, borradas, y la carpeta vacía también');
+    // un reinicio: otro proceso con el mismo SITE_DATA_DIR y un disco local nuevo vuelve a bajar la foto
+    f.detener();
+    const env2 = H.envBase({ SITE_OPERATIONS_SOURCE: 'copy', SITE_OPERATIONS_COPY: 'acmeops/copia' }); delete env2.SITE_OPERATIONS_TOKEN;
+    const v = validarConfiguracion(env2); const f2 = crearFuentes({ cfg: v.cfg, dataDir, log: sinLog, ahora: () => T0, almacenCopia: al, opcionesPodaCopia: { demoraMs: 0, pausaMs: 0 } });
+    try {
+      await f2.refrescar();
+      const otra = f2.clones().operaciones;
+      assert.ok(otra && otra.dir !== abierta && fs.existsSync(path.join(otra.dir, 'operations.json')), 'tras el reinicio, la foto otra vez en disco local');
+    } finally { f2.detener(); }
+  } finally { f.detener(); }
+  // si la bajada falla, no se poda nada: las viejas quedan para cuando ande
+  const vacio = almacenDeJuguete();
+  const otro = fuentesConCopia(vacio, () => T0);
+  const viejas2 = path.join(otro.dataDir, 'operaciones-copia', `copia-${'b'.repeat(12)}-000001`);
+  fs.mkdirSync(viejas2, { recursive: true }); fs.utimesSync(viejas2, hace, hace);
+  try {
+    await otro.f.refrescar();
+    await COPIA.podaPendiente(path.dirname(viejas2));
+    assert.ok(fs.existsSync(viejas2), 'sin foto bajada, la vieja sigue');
+  } finally { otro.f.detener(); }
 });
 
 test('T17 2.34-Edad_BandaYFreno @story-2.34 @ac-9 — 23 h nada, 25 h la banda, 49 h el sitio frenado', async () => {

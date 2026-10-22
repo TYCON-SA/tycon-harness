@@ -33,7 +33,7 @@ const SHAPES = Object.freeze([
 const WINDOWS_SHAPES = SHAPES.filter((s) => s.id !== 'native');
 // Lo que el informe midió en una Mac: sólo referencia.
 const REFERENCE = Object.freeze({
-  tests: { 'line-endings': 6, 'git-bash': 7, 'windows-support': 4, 'bench-portable': 7 },
+  tests: { 'line-endings': 6, 'git-bash': 7, 'windows-support': 4, 'bench-portable': 7, 'test-scope-table': 2 },
   bench: 'el informe de W1 esperaba 919 casos en la lista y 721 con veredicto en Windows',
 });
 // Lo que el informe pide y un agente no puede dar, con su motivo. Va entero al reporte.
@@ -258,14 +258,15 @@ function shortRows(report) {
     if (h) row('5', 'El aviso de ruta inexistente sin la variable HOME', '1 corrido, 0 rojos', h.readable ? `${h.ran} corridos · ${h.red} rojos · ${h.not_measured} no medidos` : `no se pudo leer: ${h.problem}`, h.readable ? (h.ran >= 1 && h.red === 0 && h.not_measured === 0) : false);
   } else gone('5', 'Los portones que deciden por ruta', 'path-shapes');
 
-  // 6 · las dos suites
+  // 6 · las suites (la del freno de pruebas, sólo si el commit la trae)
   const su = factsOf(report, 'suites');
   if (su.tests) {
-    for (const name of ['bench-portable', 'windows-support']) {
+    for (const name of ['bench-portable', 'windows-support', 'test-scope-table']) {
       const t = su.tests[name];
+      if (!t && name === 'test-scope-table') continue;
       row('6', `\`${name}.test.js\``, testExpected(name), testText(t), testMatch(t));
     }
-  } else gone('6', '`bench-portable.test.js` y `windows-support.test.js`', 'suites');
+  } else gone('6', '`bench-portable.test.js`, `windows-support.test.js` y `test-scope-table.test.js`', 'suites');
   return rows;
 }
 
@@ -371,7 +372,7 @@ function renderMarkdown(report) {
   // 6 va antes que 4: si `bench-portable` falla, el banco no es de fiar
   const su = stepOf(report, 'suites');
   if (su) {
-    M.push('## 6 · Las suites `bench-portable` y `windows-support`', '');
+    M.push('## 6 · Las suites `bench-portable`, `windows-support` y `test-scope-table`', '');
     const f = su.facts || {};
     const bp = f.tests && f.tests['bench-portable'];
     if (bp && !testPassed(bp)) M.push('🔴 `bench-portable.test.js` no pasó: lo que diga el banco entero (punto 4) NO es de fiar hasta arreglar eso.', '');

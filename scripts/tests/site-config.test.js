@@ -163,12 +163,60 @@ test('T14 Versiones_AlDiaAtrasadaSinNoticiasNoMedido @story-2.29 @ac-13 — cont
   assert.match(por['maq-c'].texto, /sin noticias desde 2026-09-30/);
   assert.strictEqual(por['maq-d'].estado, 'no_medido');
   assert.match(por['maq-d'].texto, /no declara/);
-  assert.strictEqual(por['maq-e'].estado, 'al_dia', 'sin carpeta con fecha, se juzga sólo por la versión');
-  assert.strictEqual(por['maq-e'].dia, null);
-  assert.strictEqual(por['maq-e'].diaTexto, 'sin fecha');
+  assert.strictEqual(por['maq-e'].estado, 'al_dia', 'sin carpeta con fecha y sin «day»: el día sale de la fecha del archivo');
+  assert.strictEqual(por['maq-e'].dia, new Date(fs.statSync(path.join(espejo, 'maq-e', 'registros', 'place.json')).mtimeMs).toISOString().slice(0, 10));
   // la imagen sin versión: todas «no medido»
   const sin = ORG.versionesDeMaquinas({ espejo, versionImagen: null, ahora });
   assert.ok(sin.every((f) => f.estado === 'no_medido' && /la imagen no declara su versión/.test(f.texto)));
+});
+
+test('Versiones_DiaDelPlaceSuelto_YUniones — el place.json suelto da su día (o la fecha del archivo), «sin noticias» funciona con él, y una carpeta vieja unida no se repite', () => {
+  // 🔴 rojo: con registros/place.json suelto (la forma que deja el buzón hoy) todas las máquinas salen «sin fecha», y
+  //    las carpetas viejas unidas a su carpeta nueva aparecen dos veces.
+  const espejo = tmp('site-config-espejo-suelto-');
+  const pon = (maq, doc, mtime) => { const d = path.join(espejo, maq, 'registros'); fs.mkdirSync(d, { recursive: true }); const f = path.join(d, 'place.json'); fs.writeFileSync(f, JSON.stringify(doc)); if (mtime) fs.utimesSync(f, new Date(mtime), new Date(mtime)); };
+  pon('nueva-1a2b3c4d', { day: '2026-10-21', install: { version: '2026.10.21.57' } });
+  pon('vieja', { day: '2026-10-15', install: { version: '2026.10.15.41' } });
+  pon('sin-day', { install: { version: '2026.10.21.57' } }, '2026-10-20T10:00:00Z');
+  pon('dormida', { day: '2026-09-01', install: { version: '2026.10.21.57' } });
+  pon('day-roto', { day: '2026-13-45', install: { version: '2026.10.21.57' } }, '2026-10-19T10:00:00Z');
+  pon('day-futuro', { day: '2027-01-01', install: { version: '2026.10.21.57' } }, '2026-10-18T10:00:00Z');
+  pon('vieja-dormida-por-mtime', { install: { version: '2026.10.21.57' } }, '2026-09-01T10:00:00Z');
+  fs.writeFileSync(path.join(espejo, '.carpetas-de-maquina.json'), JSON.stringify({ schema: 1, carpetas: { vieja: { estado: 'unida', nueva: 'nueva-1a2b3c4d', declarantes: 1, desde: '2026-10-16' }, otra: { estado: 'compartida' } }, regeneradas: {}, no_leidas: [] }));
+  const ahora = Date.parse('2026-10-22T12:00:00Z');
+  const filas = ORG.versionesDeMaquinas({ espejo, versionImagen: '2026.10.21.57', ahora });
+  const por = Object.fromEntries(filas.map((f) => [f.maquina, f]));
+  assert.ok(!por.vieja, 'la carpeta vieja unida no es otra fila');
+  assert.deepStrictEqual([por['nueva-1a2b3c4d'].dia, por['nueva-1a2b3c4d'].estado], ['2026-10-21', 'al_dia'], 'el «day» del place.json');
+  assert.strictEqual(por['sin-day'].dia, '2026-10-20', 'sin «day»: la fecha del archivo');
+  assert.strictEqual(por['day-roto'].dia, '2026-10-19', 'un «day» que no es una fecha real: la fecha del archivo');
+  assert.strictEqual(por['day-futuro'].dia, '2026-10-18', 'un «day» a futuro no se cree: la fecha del archivo');
+  assert.deepStrictEqual([por.dormida.estado, por.dormida.texto], ['sin_noticias', 'sin noticias desde 2026-09-01']);
+  assert.strictEqual(por['vieja-dormida-por-mtime'].estado, 'sin_noticias', '«sin noticias» también con la fecha del archivo');
+  // los bordes del «day»: mañana se cree, pasado mañana no; un «day» que no es texto, tampoco
+  pon('day-manana', { day: '2026-10-23', install: { version: '2026.10.21.57' } }, '2026-10-17T10:00:00Z');
+  pon('day-pasado', { day: '2026-10-24', install: { version: '2026.10.21.57' } }, '2026-10-17T10:00:00Z');
+  pon('day-numero', { day: 20261020, install: { version: '2026.10.21.57' } }, '2026-10-16T10:00:00Z');
+  // una unión cuya carpeta nueva no está en el espejo no esconde a la vieja
+  pon('huerfana', { day: '2026-10-21', install: { version: '2026.10.21.57' } });
+  fs.writeFileSync(path.join(espejo, '.carpetas-de-maquina.json'), JSON.stringify({ schema: 1, carpetas: { vieja: { estado: 'unida', nueva: 'nueva-1a2b3c4d' }, huerfana: { estado: 'unida', nueva: 'no-esta-12345678' } } }));
+  const bordes = Object.fromEntries(ORG.versionesDeMaquinas({ espejo, versionImagen: '2026.10.21.57', ahora }).map((f) => [f.maquina, f]));
+  assert.deepStrictEqual([bordes['day-manana'].dia, bordes['day-pasado'].dia, bordes['day-numero'].dia], ['2026-10-23', '2026-10-17', '2026-10-16']);
+  assert.ok(bordes.huerfana && !bordes.vieja, 'la unida sin su nueva sigue; la unida con su nueva, no');
+  // la fecha del archivo se dice como tal; la que declara la máquina, no
+  assert.deepStrictEqual([bordes['sin-day'].diaTexto, bordes['nueva-1a2b3c4d'].diaTexto], ['2026-10-20 (según el archivo)', '2026-10-21']);
+  // una nueva que existe pero no da fila (sin place.json) no esconde a la vieja
+  fs.mkdirSync(path.join(espejo, 'nueva-sin-place-1234abcd', 'registros'), { recursive: true });
+  pon('vieja-2', { day: '2026-10-21', install: { version: '2026.10.21.57' } });
+  fs.writeFileSync(path.join(espejo, '.carpetas-de-maquina.json'), JSON.stringify({ schema: 1, carpetas: { 'vieja-2': { estado: 'unida', nueva: 'nueva-sin-place-1234abcd' } } }));
+  assert.ok(ORG.versionesDeMaquinas({ espejo, versionImagen: '2026.10.21.57', ahora }).some((f) => f.maquina === 'vieja-2'));
+  // un place.json que es un enlace no se sigue (lo que se lee queda dentro del espejo)
+  const afuera = path.join(tmp('site-config-afuera-'), 'place.json'); fs.writeFileSync(afuera, JSON.stringify({ day: '2026-10-21', install: { version: '9999.1.1.1' } }));
+  fs.mkdirSync(path.join(espejo, 'enlace', 'registros'), { recursive: true }); fs.symlinkSync(afuera, path.join(espejo, 'enlace', 'registros', 'place.json'));
+  assert.ok(!ORG.versionesDeMaquinas({ espejo, versionImagen: '2026.10.21.57', ahora }).some((f) => f.maquina === 'enlace'), 'el enlace no da fila');
+  // sin el archivo de uniones (o ilegible), cada carpeta es una fila: no se pierde ninguna
+  fs.writeFileSync(path.join(espejo, '.carpetas-de-maquina.json'), '{ roto');
+  assert.ok(ORG.versionesDeMaquinas({ espejo, versionImagen: '2026.10.21.57', ahora }).some((f) => f.maquina === 'vieja'));
 });
 
 test('T31 Paridad_PorProducto_FaltaTieneDeclaradoVencido @story-2.29 @ac-25 — por producto, lo que le falta, lo declarado y lo vencido', () => {
@@ -2406,7 +2454,11 @@ test('T24 2.33-LectorSabe_RutaConPunto @story-2.33 @ac-18 — un lector sin `upd
 
 // ── «Tu tecnología»: la clave `stack` de team-repos.json ──
 const RUNNERS = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'test-runners.js'));
-const TEC_EXTRAS = { fabrica: RUNNERS.factoryTable(), internos: ['dotnet', 'vitest', 'jest', 'node'] };
+// los repos de la organización que el servidor ofrece para «El filtro de cada repo» (reposDeLaOrganizacion)
+const REPO_API = { platform: 'azure', org: 'acme', project: 'Prod', repo: 'api' };
+const REPO_WEB = { platform: 'azure', org: 'acme', project: 'Prod', repo: 'web' };
+const REPO_SITIO = { platform: 'github', org: 'acme', repo: 'sitio' };
+const TEC_EXTRAS = { fabrica: RUNNERS.factoryTable(), internos: ['dotnet', 'vitest', 'jest', 'node'], repos: [REPO_API, REPO_WEB, REPO_SITIO] };
 const GO_ORG = { name: 'go', detect: 'go.mod', command: 'go test ./...', results: { format: 'junit', path: '{results}/junit.xml' } };
 const CARGO = { name: 'cargo', detect: 'Cargo.toml', command: 'cargo nextest run', results: { format: 'junit', path: '{results}/junit.xml' } };
 async function pantallaTec(borrador, idioma = 'es', respuesta = {}) {
@@ -2525,12 +2577,12 @@ test('T30b SiteConfig_RunnerTable_SameColumnsAndClearOrigin — todas las filas 
   assert.strictEqual(origen('dotnet'), 'incluida en el arnés · no se edita');
   assert.strictEqual(origen('go'), 'de fábrica · se puede cambiar');
   assert.strictEqual(origen('cargo'), 'agregada por tu organización');
-  // «Reemplazar» despliega cómo hacerlo, en la fila
+  // «Reemplazar» deja, en la fila, la frase para el agente (el detalle, en T30d)
   const reemplazar = (() => { const out = []; (function walk(x) { out.push(x); (x.hijos || []).forEach(walk); })(fila('dotnet')); return out.find((x) => x.tag === 'button'); })();
   assert.strictEqual(reemplazar.textContent, 'Reemplazar');
-  assert.doesNotMatch(p.texto(), /agregá una receta que se detecte con el mismo archivo/i, 'plegado hasta que se toca');
+  assert.doesNotMatch(p.texto(), /quiero reemplazar la herramienta de pruebas/, 'plegado hasta que se toca');
   reemplazar.on.click(); await p.esperar();
-  assert.match(p.texto(), /Agregá una receta que se detecte con el mismo archivo y gana la de tu organización/);
+  assert.match(p.texto(), /quiero reemplazar la herramienta de pruebas \.NET de mi proyecto/);
   // una de fábrica cambiada lo dice
   const cambiada = await pantallaTec({ stack: { test_runners: [{ name: 'go', detect: 'go.mod', command: 'go test ./...', results: { format: 'junit', path: '{results}/j.xml' } }] } });
   const celdasGo = (cambiada.todos().find((x) => x.attrs['data-runner'] === 'go').hijos || []).filter((x) => x.tag === 'span');
@@ -2540,6 +2592,92 @@ test('T30b SiteConfig_RunnerTable_SameColumnsAndClearOrigin — todas las filas 
   const celdasEn = (n) => (en.todos().find((x) => x.attrs['data-runner'] === n).hijos || []).filter((x) => x.tag === 'span');
   assert.strictEqual(celdasEn('dotnet')[2].textContent, 'included in the harness · not editable');
   assert.strictEqual(celdasEn('go')[2].textContent, 'built in · can be changed');
+});
+
+test('SiteConfig_RepoFilter_AddFromOrgReposAndRemove — «Agregar un repo» elige de los repos de la organización, cada renglón tiene su filtro y su «Quitar»', async () => {
+  // 🔴 rojo: no hay forma de sumar un renglón al filtro de cada repo, o hay que escribir la ruta del repo a mano.
+  const NETFX = { name: 'netfx-vstest', label: '.NET Framework (vstest)', detect: 'packages.config', command: 'bash -c x', results: { format: 'trx', path: '{results}/**/*.trx' },
+    repos: [{ repo: REPO_API, args: 'TestCategory=Unit' }] };
+  const p = await pantallaTec({ stack: { test_runners: [NETFX] } });
+  const de = (n) => { const out = []; (function walk(x) { out.push(x); (x.hijos || []).forEach(walk); })(n); return out; };
+  de(p.todos().find((x) => x.attrs['data-runner'] === 'netfx-vstest')).find((x) => x.tag === 'button' && x.textContent === 'Cambiar').on.click(); await p.esperar();
+  // el renglón que ya está tiene su «Quitar»; el selector ofrece sólo los que no están, por su nombre y sin escribir rutas
+  assert.ok(p.todos().some((n) => n.tag === 'button' && n.textContent === 'Quitar' && n.attrs['aria-label'] === 'Quitar azure · acme/Prod/api'), 'el renglón de api con su «Quitar»');
+  p.boton(/^Agregar un repo$/).on.click(); await p.esperar();
+  const sel = p.todos().find((n) => n.tag === 'select' && n.attrs['data-path'] === 'runner.repos.nuevo');
+  assert.ok(sel, 'el selector de repos');
+  const opciones = sel.hijos.map((o) => o.textContent);
+  assert.deepStrictEqual(opciones, ['Elegí un repo', 'azure · acme/Prod/web', 'github · acme/sitio'], 'api ya está: no se ofrece');
+  sel.on.change({ target: { value: sel.hijos[1].attrs.value } }); await p.esperar();
+  const campoWeb = p.todos().find((n) => n.tag === 'input' && n.attrs['aria-label'] === 'azure · acme/Prod/web');
+  assert.ok(campoWeb, 'el renglón nuevo con su recuadro de filtro');
+  campoWeb.on.input({ target: { value: 'TestCategory=Smoke' } });
+  p.todos().find((n) => n.tag === 'button' && n.attrs['aria-label'] === 'Quitar azure · acme/Prod/api').on.click(); await p.esperar();
+  p.boton(/^Guardar$/).on.click(); await p.esperar();
+  const guardada = (await p.revisado()).stack.test_runners[0];
+  assert.deepStrictEqual(guardada.repos, [{ repo: REPO_WEB, args: 'TestCategory=Smoke' }]);
+  // una herramienta sin renglones también deja agregar; sin repos de la organización, lo dice
+  const q = await pantallaTec({});
+  de(q.todos().find((x) => x.attrs['data-runner'] === 'go')).find((x) => x.tag === 'button' && x.textContent === 'Cambiar').on.click(); await q.esperar();
+  assert.ok(q.boton(/^Agregar un repo$/), 'una de fábrica sin renglones también tiene «Agregar un repo»');
+  q.boton(/^Agregar un repo$/).on.click(); await q.esperar();
+  assert.ok(q.todos().some((n) => n.tag === 'select' && n.attrs['data-path'] === 'runner.repos.nuevo'), 'el selector, aunque no haya renglones');
+  // sin repos de la organización para ofrecer, lo dice en vez de un selector vacío
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('tecnologia', { repo: 'perfil', borrador: {}, extras: { ...TEC_EXTRAS, repos: [], reposMotivo: 'no pude leer la lista de repos' } })], idioma: 'es', hash: '#seccion-tecnologia' });
+  const todosR = () => de(r.creados.filter((n) => n.attrs.id === 'seccion-tecnologia').pop());
+  de(todosR().find((x) => x.attrs['data-runner'] === 'go')).find((x) => x.tag === 'button' && x.textContent === 'Cambiar').on.click(); await q.esperar();
+  todosR().filter((n) => n.tag === 'button' && n.textContent === 'Agregar un repo').pop().on.click(); await q.esperar();
+  const textoR = todosR().map((n) => n.textContent || '').join(' | ');
+  assert.match(textoR, /No hay más repos de la organización para agregar \(no pude leer la lista de repos\)/);
+  assert.ok(!todosR().some((n) => n.tag === 'select' && n.attrs['data-path'] === 'runner.repos.nuevo'), 'sin selector vacío');
+  // el selector abierto en una herramienta no aparece abierto al cambiar otra
+  const z = await pantallaTec({ stack: { test_runners: [NETFX] } });
+  de(z.todos().find((x) => x.attrs['data-runner'] === 'netfx-vstest')).find((x) => x.tag === 'button' && x.textContent === 'Cambiar').on.click(); await z.esperar();
+  z.boton(/^Agregar un repo$/).on.click(); await z.esperar();
+  de(z.todos().find((x) => x.attrs['data-runner'] === 'go')).find((x) => x.tag === 'button' && x.textContent === 'Cambiar').on.click(); await z.esperar();
+  assert.ok(!z.todos().some((n) => n.tag === 'select' && n.attrs['data-path'] === 'runner.repos.nuevo'), 'en Go, el selector cerrado');
+  assert.ok(z.boton(/^Agregar un repo$/), 'y su botón a la vista');
+  // un repo ya usado con %20 en el nombre (copiado de la web) no se ofrece otra vez
+  const conEspacio = { platform: 'azure', org: 'acme', project: 'Proyecto Uno', repo: 'forms' };
+  const y = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('tecnologia', { repo: 'perfil', borrador: { stack: { test_runners: [{ ...NETFX, repos: [{ repo: { ...conEspacio, project: 'Proyecto%20Uno' }, args: '' }] }] } }, extras: { ...TEC_EXTRAS, repos: [conEspacio] } })], idioma: 'es', hash: '#seccion-tecnologia' });
+  const todosY = () => de(y.creados.filter((n) => n.attrs.id === 'seccion-tecnologia').pop());
+  de(todosY().find((x) => x.attrs['data-runner'] === 'netfx-vstest')).find((x) => x.tag === 'button' && x.textContent === 'Cambiar').on.click(); await q.esperar();
+  todosY().filter((n) => n.tag === 'button' && n.textContent === 'Agregar un repo').pop().on.click(); await q.esperar();
+  assert.match(todosY().map((n) => n.textContent || '').join(' | '), /No hay más repos de la organización para agregar/, 'el de %20 cuenta como ya usado');
+  const en = await pantallaTec({ stack: { test_runners: [NETFX] } }, 'en');
+  de(en.todos().find((x) => x.attrs['data-runner'] === 'netfx-vstest')).find((x) => x.tag === 'button' && x.textContent === 'Change').on.click(); await en.esperar();
+  assert.ok(en.boton(/^Add a repo$/), 'en inglés');
+});
+
+test('Config_ReposDeLaOrganizacion_DeLosLectoresDelSitio — los de la revisión de dependencias (con la organización del repo de operaciones) y los que nombra team-repos.json, sin repetir', async () => {
+  // 🔴 rojo: el selector no tiene de dónde sacar los repos, o mezcla una entrada mal escrita.
+  const ops = clon({ 'operations.json': opsBase(), 'scripts/nightly/dependencies/repos.json': { repos: [
+    { producto: 'A', ruta: 'A/Front', ado: 'Prod/web', tipo: 'npm' },
+    { producto: 'B', ruta: 'B/x', github: 'acme/sitio', tipo: 'npm' },
+    { producto: 'C', ruta: 'C/x', ado: 'malformado', tipo: 'npm' },
+    { producto: 'D', ruta: 'D/x', ado: 'Prod/web', tipo: 'dotnet' },
+  ] } });
+  const perfil = clon({ 'team-repos.json': { ...TR_BASE, merge_suites: { repos: [{ repo: REPO_API, rule: 'automatico' }] } }, 'team-layer.json': { requires: { harness: `>= ${ORG.TEAM_REPOS_SINCE}` } } });
+  const remotos = { operaciones: { platform: 'azure', org: 'acme', project: 'Ops', repo: 'ops', web: 'https://dev.azure.example/acme/Ops/_git/ops' } };
+  await conPestana({ fuentes: fuentesCon({ ops, perfil }), env: { SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: ['tok', 'perfil'].join('-') }, opciones: { remotos } }, async ({ h, entrar }) => {
+    const r = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json;
+    const tec = r.secciones.find((s) => s.id === 'tecnologia');
+    const claves = tec.extras.repos.map((x) => [x.platform, x.org, x.project || '', x.repo].join('/')).sort();
+    assert.deepStrictEqual(claves, ['azure/acme/Prod/api', 'azure/acme/Prod/web', 'github/acme//harness', 'github/acme//ops', 'github/acme//profile', 'github/acme//sitio'].sort());
+    // la entrada «C» (ado sin la forma proyecto/repo) no se ofrece, y se dice
+    assert.strictEqual(tec.extras.reposMotivo, '1 entrada(s) de repos.json no nombran un repo («ado» o «github») y no se ofrecen');
+  });
+  // sin copia de operaciones, o con la lista ilegible: lo dice, y ofrece los de team-repos.json
+  const opsRota = clon({ 'operations.json': opsBase(), 'scripts/nightly/dependencies/repos.json': '{ roto' });
+  await conPestana({ fuentes: fuentesCon({ ops: opsRota, perfil }), env: { SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: ['tok', 'perfil'].join('-') }, opciones: { remotos } }, async ({ h, entrar }) => {
+    const tec = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'tecnologia');
+    assert.match(tec.extras.reposMotivo, /repos\.json\) no se pudo leer: sólo se ofrecen los repos que nombra team-repos\.json/);
+    assert.ok(tec.extras.repos.some((x) => x.repo === 'api'), 'los de team-repos.json, igual');
+  });
+  await conPestana({ fuentes: fuentesCon({ perfil }), env: { SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: ['tok', 'perfil'].join('-') }, opciones: { remotos } }, async ({ h, entrar }) => {
+    const tec = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'tecnologia');
+    assert.match(tec.extras.reposMotivo || '', /todavía no hay copia del repo de operaciones/);
+  });
 });
 
 test('T30c SiteConfig_OrgRunner_LabelAndRepoFiltersSurviveChange — el nombre para personas, el filtro de cada repo a la vista y conservado al guardar', async () => {
@@ -2597,6 +2735,54 @@ test('T30a SiteConfig_AskYourAgent_CopiesPhrase @story-8.48 @ac-36 — «Pedíse
   assert.match(sec, /team-repos\.js/);
   assert.match(sec, /archivo que la detecta|detect/);
   assert.match(fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.en.md'), 'utf8'), /\n### Your technology\n/);
+});
+
+test('T30d SiteConfig_ReplaceBuiltIn_CopiesPhraseForThatTool — «Reemplazar» de una incluida deja la frase armada para esa herramienta y qué pasa después', async () => {
+  // 🔴 rojo: «Reemplazar» sólo despliega una explicación, o la frase no nombra la herramienta y su archivo.
+  const antes = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const copiado = [];
+  Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { writeText: (t) => { copiado.push(t); return Promise.resolve(); } } }, configurable: true, writable: true });
+  try {
+    for (const [idioma, frase, despues] of [
+      ['es', 'quiero reemplazar la herramienta de pruebas Node (node --test) de mi proyecto por una receta propia en la configuración del arnés, detectada por package.json (la receta está en la sección «Tu tecnología» de guides/organization-site.md del arnés)',
+        'El agente arma el pedido, lo aprueba un admin y desde la próxima ejecución se usa la tuya.'],
+      ['en', 'I want to replace the Node (node --test) test tool in my project with our own recipe in the harness configuration, detected by package.json (the recipe is in the «Your technology» section of the harness guides/organization-site.en.md)',
+        'The agent builds the request, an admin approves it, and from the next execution on yours is used.'],
+    ]) {
+      const p = await pantallaTec({}, idioma);
+      const fila = p.todos().find((n) => n.attrs['data-runner'] === 'node');
+      const deFila = []; (function walk(x) { deFila.push(x); (x.hijos || []).forEach(walk); })(fila);
+      deFila.find((n) => n.tag === 'button').on.click(); await p.esperar();
+      assert.strictEqual(copiado.pop(), frase, `${idioma}: la frase copiada nombra la herramienta y su archivo`);
+      const msg = p.todos().find((n) => n.attrs['data-reemplazar'] === 'node');
+      assert.ok(msg, `${idioma}: la frase queda a la vista debajo de la fila`);
+      assert.ok(p.texto().includes('«' + frase + '»'), `${idioma}: la frase, entera`);
+      assert.ok(p.texto().includes(despues), `${idioma}: qué pasa después`);
+    }
+  } finally {
+    if (antes) Object.defineProperty(globalThis, 'navigator', antes); else delete globalThis.navigator;
+  }
+  // .NET: dos archivos que la detectan, sin el agregado entre paréntesis
+  const q = await pantallaTec({});
+  const filaNet = q.todos().find((n) => n.attrs['data-runner'] === 'dotnet');
+  const deNet = []; (function walk(x) { deNet.push(x); (x.hijos || []).forEach(walk); })(filaNet);
+  deNet.find((n) => n.tag === 'button').on.click(); await q.esperar();
+  assert.match(q.texto(), /herramienta de pruebas \.NET de mi proyecto .* detectada por \.sln, \.csproj \(la receta/);
+  // sin portapapeles, la frase igual queda a la vista; un segundo clic no la pliega
+  const sinPortapapeles = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  delete globalThis.navigator;
+  try {
+    const z = await pantallaTec({});
+    const filaJest = z.todos().find((n) => n.attrs['data-runner'] === 'jest');
+    const deJest = []; (function walk(x) { deJest.push(x); (x.hijos || []).forEach(walk); })(filaJest);
+    const b = deJest.find((n) => n.tag === 'button');
+    b.on.click(); await z.esperar();
+    assert.match(z.texto(), /herramienta de pruebas Jest de mi proyecto/, 'sin portapapeles, la frase a la vista');
+    const filaJest2 = z.todos().find((n) => n.attrs['data-runner'] === 'jest');
+    const deJest2 = []; (function walk(x) { deJest2.push(x); (x.hijos || []).forEach(walk); })(filaJest2);
+    deJest2.find((n) => n.tag === 'button').on.click(); await z.esperar();
+    assert.match(z.texto(), /herramienta de pruebas Jest de mi proyecto/, 'el segundo clic la deja a la vista');
+  } finally { if (sinPortapapeles) Object.defineProperty(globalThis, 'navigator', sinPortapapeles); }
 });
 
 test('E1 SiteConfig_TuTecnologia_RendersInPage @story-8.48 @ac-25 @ac-28 @ac-36 — la sección en su pestaña, al lado de Cobertura, de punta a punta', async () => {
@@ -2841,7 +3027,7 @@ test('T1 Modelos_TresTablasUnRenglonPorTrabajo @story-2.59 @ac-1', async () => {
   assert.strictEqual(t.length, 3, 'una tabla por grupo');
   assert.ok(t.every((x) => p.clases(x).includes('modelos')));
   const [rev, adv, ayu] = t.map((x) => p.renglones(x));
-  assert.deepStrictEqual([rev.length, adv.length, ayu.length], [4, 3, 4], 'revisores: 2 vueltas + 2 particulares · pase: normal, pesada, preguntar · ayudantes + 3 sesiones');
+  assert.deepStrictEqual([rev.length, adv.length, ayu.length], [4, 2, 4], 'revisores: 2 vueltas + 2 particulares · pase: normal y pesada · ayudantes + 3 sesiones');
   for (const fila of [...rev, ...adv, ...ayu]) {
     assert.strictEqual(p.de(fila, 'hoy').length, 1, `${p.texto(fila)}: su valor por defecto`);
     assert.strictEqual(p.todo(fila).filter((n) => n.tag === 'select').length, 1, `${p.texto(fila)}: un selector`);
@@ -3040,8 +3226,11 @@ test('T9 Compacta_HojaConTemaYTelefono @story-2.59 @ac-9 @ac-10', () => {
   const reglas = css.match(/[^{}]*\.(tabla2|tope|repo-t|ic|pc|integ)\b[^{}]*\{[^{}]*\}/g) || [];
   assert.ok(reglas.length >= 8, `las reglas de las tablas (${reglas.length})`);
   for (const r of reglas) assert.doesNotMatch(r.slice(r.indexOf('{')), /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i, `sin colores fijos: ${r.trim().slice(0, 80)}`);
-  // las columnas de Modelos: el mismo ancho fijo en las tres tablas
-  assert.match(css, /\.tabla2\.modelos\{[^}]*grid-template-columns:minmax\(0,1fr\) \d+px \d+px/);
+  // las columnas de Modelos: el trabajo con un ancho acotado y el resto para el selector y su equivalencia; el selector,
+  // del mismo ancho en todos los renglones de las tres tablas, y la equivalencia en un renglón
+  assert.match(css, /\.tabla2\.modelos\{[^}]*grid-template-columns:minmax\(\d+em,\d+em\) max-content minmax\(0,1fr\)/);
+  assert.match(css, /\.tabla2\.modelos select\.corto\{[^}]*width:\d+em/);
+  assert.match(css, /\.tabla2\.modelos \.equiv\{[^}]*white-space:nowrap/);
   // nada cortado en Repos: sin puntos suspensivos
   for (const r of reglas.filter((x) => /\.(repo-t|pc)\b/.test(x))) assert.doesNotMatch(r, /text-overflow:ellipsis/, r.trim().slice(0, 80));
   const tel = /@media \(max-width:640px\)\{([\s\S]*?)\n\}/.exec(css);
@@ -3216,16 +3405,52 @@ test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el
     const js = ORG.pantalla(idioma);
     assert.match(js, /aprobaciones: editorAprobaciones/);
     assert.match(js, /'respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones'/);
-    // sólo sí o no: el «sí» escribe el rol que ya tenga o «coordinadora»; la sesión se designa en la máquina
+    // sí o no: el «sí» escribe el rol que ya tenga o «coordinadora» (su nombre se cambia aparte; la prueba de abajo);
+    // la sesión se designa en la máquina, así que la pantalla nunca pide el nombre de una sesión
     assert.match(js, /selector\(T\('pantalla\.quienReenviaElOk'\), rol \? 'si' : ''/);
     assert.match(js, /x === 'si' \? \(rol \|\| 'coordinadora'\) : ''/);
-    assert.doesNotMatch(js, /campo\(T\('pantalla\.quienReenviaElOk'\)/, 'ya no pide el nombre de una sesión');
+    assert.doesNotMatch(js, /campo\(T\('pantalla\.quienReenviaElOk'\)/, 'no pide el nombre de una sesión');
   }
   const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   assert.match(textos.t('es', 'pantalla.quienReenviaElOkAyuda'), /se designa en cada máquina/);
   for (const k of ['pantalla.quienReenviaElOk', 'pantalla.quienReenviaElOkNo', 'pantalla.quienReenviaElOkSi', 'pantalla.quienReenviaElOkAyuda', 'org.capaSinApprovals']) {
     assert.ok(textos.t('es', k, { req: 'x', version: 'y' }) !== textos.t('en', k, { req: 'x', version: 'y' }), `${k} en las dos lenguas`);
   }
+});
+
+test('Seccion_ReenvioDelOk_ElNombreDelRol — con «Sí», el nombre del rol se cambia y la frase de la ayuda lo usa', async () => {
+  // 🔴 rojo: no hay dónde poner el nombre, la ayuda dice siempre «coordinadora», o se lee «Cuál sesión es se designa».
+  const abrir = async (borrador, idioma = 'es') => {
+    const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('aprobaciones', { repo: 'perfil', borrador })], idioma, hash: '#seccion-aprobaciones' });
+    const todos = () => { const out = []; (function walk(x) { out.push(x); (x.hijos || []).forEach(walk); })(r.creados.filter((n) => n.attrs.id === 'seccion-aprobaciones').pop()); return out; };
+    const esperar = async () => { for (let i = 0; i < 10; i++) await new Promise((x) => setImmediate(x)); };
+    return { r, todos, esperar, texto: () => todos().map((n) => n.textContent || '').join(' | ') };
+  };
+  // con «No» no se pide el nombre, y la ayuda sale sin la errata
+  const no = await abrir({});
+  assert.ok(!no.todos().some((n) => n.tag === 'input'), 'sin «Sí», no hay campo');
+  assert.match(no.texto(), /La sesión se designa en cada máquina: el dev escribe en el chat de esa sesión «Esta sesión es la coordinadora»/);
+  assert.doesNotMatch(no.texto(), /Cuál sesión es se designa/);
+  // elegir «Sí» trae el campo con «coordinadora», el nombre de fábrica
+  no.todos().find((n) => n.tag === 'select' && n.attrs['data-path'] === 'approvals.relay_session').on.change({ target: { value: 'si' } }); await no.esperar();
+  const deFabrica = no.todos().find((n) => n.tag === 'input' && n.attrs['aria-label'] === '¿Cómo la llaman?');
+  assert.ok(deFabrica, 'con «Sí», aparece el campo');
+  assert.strictEqual(deFabrica.attrs.value, 'coordinadora');
+  // con un nombre propio: el campo lo trae, la ayuda lo nombra y avisa que cambiarlo pide designar de nuevo
+  const si = await abrir({ approvals: { relay_session: 'líder' } });
+  const campoNombre = si.todos().find((n) => n.tag === 'input' && n.attrs['aria-label'] === '¿Cómo la llaman?');
+  assert.ok(campoNombre, 'con «Sí», el campo del nombre');
+  assert.strictEqual(campoNombre.attrs.value, 'líder');
+  assert.match(si.texto(), /«Esta sesión es la líder»/);
+  assert.match(si.texto(), /Si cambiás el nombre, la designación anterior deja de valer/);
+  // escribir otro nombre lo guarda y la ayuda cambia en el lugar; vacío vuelve a «coordinadora»
+  campoNombre.on.input({ target: { value: '  jefa  ' } }); await si.esperar();
+  assert.match(si.texto(), /«Esta sesión es la jefa»/);
+  campoNombre.on.input({ target: { value: '' } }); await si.esperar();
+  assert.match(si.texto(), /«Esta sesión es la coordinadora»/);
+  const en = await abrir({ approvals: { relay_session: 'lead' } }, 'en');
+  assert.ok(en.todos().some((n) => n.tag === 'input' && n.attrs['aria-label'] === 'What do you call it?'));
+  assert.match(en.texto(), /names the role \(lead\)/);
 });
 
 // ── Una persona marca cada criterio como probado a mano (qa.manual_check) ───────────────────────────────
@@ -3782,6 +4007,16 @@ test('T8 Modelos_SelectoresConNiveles @story-2.70 @ac-6', async () => {
   }
   const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   assert.deepStrictEqual(MOD_JS.LEVELS.map((n) => t('en', `pantalla.nivel.${n}`)), ['economy', 'balanced', 'strong', 'max']);
+});
+
+test('Modelos_SinPreguntaDeFable — la pregunta retirada no tiene fila ni selector, aunque el perfil la traiga', async () => {
+  // 🔴 rojo: vuelve la fila «Preguntar antes de usar el nivel máximo», que ya no hace nada.
+  const p = await compacta(secNiveles({ reviewers: 'balanced', adversarial: { heavy: 'max', fable_question: 'never' } }));
+  const filas = p.tablas().map((t) => p.renglones(t)).flat();
+  assert.ok(!filas.some((r) => /Preguntar antes de usar el nivel máximo/.test(p.texto(r))), 'sin la fila');
+  assert.ok(!p.todo(p.sec('modelos')).some((n) => /fable_question/.test(String(n.attrs['data-path'] || ''))), 'sin selector para la clave');
+  const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.throws(() => t('es', 'pantalla.preguntarAntesDelNivelMaximo'), /no hay texto/, 'el texto de la fila ya no existe');
 });
 
 test('T9 Modelos_EquivalenciasDebajo @story-2.70 @ac-7', async () => {

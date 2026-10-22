@@ -481,8 +481,8 @@ en su repo.
 - **Qué modelo usa cada trabajo del pipeline**: el nivel de los revisores, del pase adversarial, de los ayudantes y de
   la sesión, en una tabla por grupo con el valor por defecto de cada trabajo al lado; «el por defecto» deja el que trae
   la versión instalada. Los niveles son cuatro: económico, equilibrado, potente y máximo (en el archivo, en inglés:
-  `economy`, `balanced`, `strong`, `max`). Cada herramienta los traduce a sus modelos, y debajo de cada selector, en
-  chico, dice a cuál: «Claude: sonnet · Codex: gpt-5.6-luna». Una
+  `economy`, `balanced`, `strong`, `max`). Cada herramienta los traduce a sus modelos, y al costado de cada selector,
+  en chico, dice a cuál: «Claude: sonnet · Codex: gpt-5.6-luna». Una
   configuración guardada con los nombres de Claude (sonnet, opus) sigue valiendo: se ve en niveles y el próximo cambio
   de la sección la guarda en niveles. Con niveles, el perfil tiene que pedir la versión del arnés que los lee; si no, el
   sitio no deja proponer y dice cuál pedir. Con el tope obligatorio, un trabajo elegido por encima del tope se marca en
@@ -538,7 +538,9 @@ Lo que la persona ve en la sección y lo que hace el agente cuando le piden una 
   herramientas de prueba y las tres reglas. Cada herramienta muestra su nombre, el archivo que la detecta, su origen y
   qué se puede hacer:
   - **incluida en el arnés · no se edita**: .NET, Vitest, Jest y Node, que la puerta de pruebas corre por dentro.
-    «Reemplazar» explica cómo: una receta de la organización que se detecte con el mismo archivo le gana.
+    «Reemplazar» copia (si el navegador deja) y muestra la frase para el agente, armada para esa herramienta: el agente
+    arma una receta de la organización que se detecta con el mismo archivo y le gana, la aprueba un admin y desde la
+    próxima ejecución se usa la tuya.
   - **de fábrica · se puede cambiar**: pytest, Go, Maven, Gradle, Karma y Playwright. «Cambiar» trae el formulario lleno
     con la de fábrica, y al guardar queda una copia de la organización con el mismo nombre que la reemplaza.
   - **cambiada por tu organización**: esa copia. «Volver a la de fábrica» la borra.
@@ -573,6 +575,8 @@ Lo que la persona ve en la sección y lo que hace el agente cuando le piden una 
     como `{args}`; un repo sin entrada usa `args_default`, o nada. `args` no puede traer comillas, `$`, comillas
     invertidas, barra invertida ni saltos de línea, porque va entre comillas en el comando. El repo se reconoce por su
     remoto `origin`.
+    En el sitio, «Cambiar» muestra «El filtro de cada repo»: «Agregar un repo» elige de los repos de la organización (los
+    de la revisión de dependencias y los que ya nombra este archivo), y cada renglón tiene su filtro y su «Quitar».
   - **El comando corre con bash** y la primera palabra tiene que estar en el PATH (si no, la puerta dice que falta).
     Nada se lee del repo que se prueba.
 - **Dónde está el clon del perfil**: `harness.js team-config --no-open` dice qué carpeta usa esta máquina (la clave

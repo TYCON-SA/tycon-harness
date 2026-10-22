@@ -61,13 +61,7 @@
     },
     "gate-heavy": {
       "model": "opus",
-      "model_reason": "story pesada (2 señales model-hint) → hunters escalan a Opus (anunciar)",
-      "fable_upsell": {
-        "model": "fable",
-        "requires_user_approval": true,
-        "reason": "story pesada (superficie-grande, muchos-acs) — Fable caza más en el pase adversarial, a ~2x el costo de Opus",
-        "how": "preguntar al user en 1 línea (COMM.i); si aprueba → pasar model:\"fable\" al Workflow. Sin respuesta afirmativa → usar `model` de este output."
-      }
+      "model_reason": "story pesada (2 señales model-hint) → hunters escalan a Opus (anunciar)"
     },
     "gate-normal-opus": {
       "model": "opus",
@@ -75,23 +69,11 @@
     },
     "gate-heavy-opus": {
       "model": "opus",
-      "model_reason": "--deep-review-opus",
-      "fable_upsell": {
-        "model": "fable",
-        "requires_user_approval": true,
-        "reason": "story pesada (superficie-grande, muchos-acs) — Fable caza más en el pase adversarial, a ~2x el costo de Opus",
-        "how": "preguntar al user en 1 línea (COMM.i); si aprueba → pasar model:\"fable\" al Workflow. Sin respuesta afirmativa → usar `model` de este output."
-      }
+      "model_reason": "--deep-review-opus"
     },
     "gate-heavy-ultracode": {
       "model": "opus",
-      "model_reason": "ultracode ON → hunters en Opus",
-      "fable_upsell": {
-        "model": "fable",
-        "requires_user_approval": true,
-        "reason": "story pesada (superficie-grande, muchos-acs) — Fable caza más en el pase adversarial, a ~2x el costo de Opus",
-        "how": "preguntar al user en 1 línea (COMM.i); si aprueba → pasar model:\"fable\" al Workflow. Sin respuesta afirmativa → usar `model` de este output."
-      }
+      "model_reason": "ultracode ON → hunters en Opus"
     },
     "gate-heavy-fable": {
       "model": "fable",

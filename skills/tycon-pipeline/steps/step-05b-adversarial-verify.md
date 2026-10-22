@@ -32,7 +32,7 @@ Step 6 en la máquina de estados, decide qué hacer según `marker.adversarial` 
   atendido y no se relanza (relanzar un pase cerrado bloquea el paso 8). Para relanzar, ANUNCIAR en 1
   línea *"el pase adversarial de la sesión <id> quedó sin resultado — lo relanzo (~20-40 min): <why>"*
   y, como en un retome NO están en contexto ni el gate ni las decisiones: **(a)** re-evaluar el gate
-  (§Cuándo corre) para obtener `model` + `fable_upsell` frescos, **(b)** recuperar `decisions` del
+  (§Cuándo corre) para obtener el `model` fresco, **(b)** recuperar `decisions` del
   Change Log / Completion Notes de la story y de `<RUN_DIR>/step-03-*.md`, **(c)** recién ahí relanzar
   con §Acción y registrar `mark-adversarial-launched <runId nuevo> 5b` (el overwrite cross-session está
   permitido).
@@ -77,18 +77,11 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js deep-revie
   (fuerza `run` + sube el modelo a Opus).
 - **Modelo de los hunters (escalación por complejidad — 2026-07-06)**: el gate lo resuelve solo y lo devuelve
   en `model` + `model_reason`: `sonnet` default · story pesada (model-hint ≥2 señales) o ultracode → `opus`
-  automático (anunciarlo en 1 línea) · **`fable` NUNCA automático**. Con `adversarial.model_question: never`
-  en la configuración (gana el perfil del equipo) el gate no ofrece el modelo mayor: trae
-  `model_question` en vez de `fable_upsell` y no se pregunta nada. Si el gate devuelve `fable_upsell`
-  (story pesada sin `--deep-review-fable`), **PREGUNTAR al user en 1 línea** (COMM.i):
-  *"Story pesada — ¿corro los hunters adversariales en Fable? (~2x el costo de Opus, caza más). Si no, van en Opus."*
-  Solo con respuesta afirmativa pasar `model: "fable"` al Workflow; cualquier otra respuesta → usar el `model`
-  del gate. `--deep-review-fable` en el comando ES la autorización explícita (con el flag ya no hay upsell).
-  **Con la configuración de la organización** (`team-repos.json → models`): el `model` y la pregunta
-  salen del gate igual —`models.adversarial.model`/`heavy`, el pedido de la corrida (`marker.js set-models
-  adversarial=<x>`), el techo— y `model_reason` dice de dónde salió. `models.adversarial.fable_question` gana sobre
-  la clave de la máquina (`model_question_note` lo dice); con un techo obligatorio debajo de `fable`, nunca hay
-  `fable_upsell` (`model_question.origin: ceiling`). No elijas el modelo por tu cuenta: usá el que da el gate.
+  automático (anunciarlo en 1 línea). **Fable no se ofrece ni se pregunta**: corre
+  sólo con `--deep-review-fable` en el comando, el pedido explícito de quien corre el pipeline.
+  **Con la configuración de la organización** (`team-repos.json → models`): el `model` sale del gate igual
+  —`models.adversarial.model`/`heavy`, el pedido de la corrida (`marker.js set-models adversarial=<x>`), el techo— y
+  `model_reason` dice de dónde salió. No elijas el modelo por tu cuenta: usá el que da el gate.
 - **`run: false`** → **SKIP mecánico legítimo** (documentado, verificable — no es inferencia). Anunciarlo en 1 línea
   con el `reason` que devuelve el gate, anotarlo (abajo) y saltar al Step 6.
 
@@ -150,7 +143,7 @@ Workflow({
     files:     ["<archivos de CÓDIGO del diff — no docs/fixtures>"],
     storyPath: "<abs story .md>",
     decisions: "<las decisiones aprobadas, textual — ej: 'D3: escanea solo $attrs bizuit:*; R2: sidecar fail-loud; ...'>",
-    model:     "<el `model` que devolvió deep-review-gate: sonnet|opus — o 'fable' SOLO si el user aprobó el fable_upsell>",
+    model:     "<el `model` que devolvió deep-review-gate: sonnet|opus — o 'fable' SOLO con --deep-review-fable>",
     runDir:    "<abs RUN_DIR — .advisors/pipeline-runs/<clave>-<sello>/ de ESTA corrida>",
     agrupar:   <false SÓLO si TYCON_5B_GROUP vale 0 — leela con la biblioteca del arnés, que acepta también su nombre viejo:
                `. "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/lib/legacy-names.sh"; legacy_env TYCON_5B_GROUP; echo "${TYCON_5B_GROUP:-}"`; si no, omitirlo>
@@ -415,8 +408,7 @@ es una capa real de tokens. Escala con la cantidad de findings (más hallazgos �
 escape por corrida; `.tycon/advisors.yaml deep_review: off` lo apaga para un repo entero.
 
 Escalación de modelo (2026-07-06): story pesada → Opus (~1.7x sonnet) automático — es el run donde el pase adversarial
-más paga. Fable (~2x opus) SOLO con aprobación explícita del user (`fable_upsell` respondido que sí, o
-`--deep-review-fable`) — ese tier nunca se gasta en silencio.
+más paga. Fable (~2x opus) no se ofrece: corre sólo con `--deep-review-fable` — ese nivel nunca se gasta en silencio.
 
 ## Output de este step
 

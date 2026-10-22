@@ -501,7 +501,7 @@ only: they are changed with a request in their repo.
   adversarial pass, the helpers and the session, as a level, in one table per group with each job's default next to it;
   «the default» keeps the one the installed version comes with. There are four levels, written in the file as
   `economy`, `balanced`, `strong` and `max` (the Spanish page shows económico, equilibrado, potente, máximo). Each tool translates them to its own models,
-  and a small line under each selector says which: «Claude: sonnet · Codex: gpt-5.6-luna». A configuration saved with
+  and a small line next to each selector says which: «Claude: sonnet · Codex: gpt-5.6-luna». A configuration saved with
   Claude's names (sonnet, opus) still works: it shows as levels and the next change to the section saves it as levels.
   With levels, the profile has to require the harness version that reads them; otherwise the site does not let you
   propose and says which one to require. With the required ceiling, a job set above the ceiling is marked in red and
@@ -558,7 +558,9 @@ What the person sees in the section, and what the agent does when asked for a to
 - **On the site**: the languages the harness already recognizes, the endings your team adds, the test tools table and
   the three rules. Each tool shows its name, the file that detects it, its origin and what can be done:
   - **included in the harness · not editable**: .NET, Vitest, Jest and Node, which the test gate runs internally.
-    «Replace» explains how: an organization recipe detected by the same file wins.
+    «Replace» copies (if the browser allows it) and shows the phrase for the agent, built for that tool: the agent
+    builds an organization recipe detected by the same file, which wins; an admin approves it, and from the next
+    execution on yours is used.
   - **built in · can be changed**: pytest, Go, Maven, Gradle, Karma and Playwright. «Change» brings the form filled
     with the built-in one, and saving leaves an organization copy with the same name that replaces it.
   - **changed by your organization**: that copy. «Back to the built-in one» deletes it.
@@ -594,6 +596,8 @@ What the person sees in the section, and what the agent does when asked for a to
     `{args}`; a repo with no entry uses `args_default`, or nothing. `args` cannot hold quotes, `$`, backticks,
     backslashes or line breaks, because it goes inside quotes in the command. The repo is recognized by its `origin`
     remote.
+    On the site, «Change» shows «Each repo's filter»: «Add a repo» picks from the organization's repos (those in the
+    dependency review and those this file already names), and each row has its filter and its «Remove».
   - **The command runs with bash** and its first word has to be on the PATH (otherwise the gate says it is missing).
     Nothing is read from the repo under test.
 - **Where the profile clone is**: `harness.js team-config --no-open` says which folder this machine uses (the

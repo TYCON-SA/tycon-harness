@@ -106,6 +106,27 @@ variables ya no prenden nada.
 Si la grabadora falla (evento ilegible, carpeta sin permiso, disco lleno), sale 0 sin escribir en pantalla y anota el
 motivo en `~/.claude/tycon-observations/instinct-observe.errors.log` (tope 100 KB).
 
+### La subida al buzón
+
+Con el buzón de la organización configurado, la subida de cada arranque (`scripts/metrics/upload-runs.js`) manda también
+un archivo comprimido por día cerrado (en hora universal), desde el día del aviso. Lo arma `scripts/instincts/instinct-upload.js`:
+
+- **Sólo lo de la organización.** Sube la línea cuyo `origin` es la organización del perfil (`ado.org`). Una línea de
+  GitHub, de otra organización, sin repo o que nombra `/clients/` no sale. Se cuenta por motivo en la cobertura del día.
+- **Seis campos.** `ts`, `session_id`, `tool`, `repo`, `summary` y `status`: ni el proyecto ni el remoto.
+- **Ni lo de antes del aviso ni el día en curso.** El día del aviso sube sólo lo grabado después de la hora del aviso.
+- **Sin pisar.** Cada día va a `<carpeta>/instincts/v<versión>/<día>.jsonl.gz`. Un día ya subido no se manda otra vez.
+  Si llegó una línea tarde, sube el día entero con otra versión. Un corte a mitad no deja el día como subido.
+- **Con tope.** Un día que pasa de 5 MB comprimido sube hasta el tope, y la cobertura lo dice (`truncado`).
+- **«No pude» no es «nada».** Sin `ado.org` en el perfil, o con lo grabado ilegible, la cobertura dice `no_medido`
+  con el motivo.
+
+Una máquina con la integración prendida y sin buzón (sin la llave, o con `mailbox` apagada) graba igual, pero no sube
+nada. Lo dice una vez al arrancar, y otra vez sólo si eso cambia.
+
+La bajada (`scripts/metrics/download-runs.js`) trae los días sólo con `--instincts`, la versión más nueva de cada uno. El
+nocturno del tablero y el sitio no los bajan: los cuentan en `omitidos`.
+
 ### El observador, en la máquina principal (y en cualquier máquina secundaria 50/50)
 
 ```bash

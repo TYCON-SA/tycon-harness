@@ -1,0 +1,1363 @@
+{
+ "__doc": "Story 6.3: cada forma de borrado en Azure y lo que tiene que hacer el freno de producción. La suite prod-guard-azure-delete.test.sh las lee de acá: el archivo de la suite no lleva ningún comando de borrado escrito, porque el freno instalado lee el contenido de los guiones que un comando ejecuta. catalog: prod (un servidor de producción y uno no-producción declarados), noprod (sólo el no-producción) o vacio (ningún catálogo). expect: block (sale 2) o pass (sale 0).",
+ "prod_host": "acme-sql.database.windows.net",
+ "staging_host": "acme-sql-staging.database.windows.net",
+ "rows": [
+  {
+   "test": "T1",
+   "cmd": "az group delete --name tycon-prueba-puerta-6-2 --yes",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T1",
+   "cmd": "az group delete -n G --yes --no-wait",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T1",
+   "cmd": "az group delete -n g -y --force-deletion-types Microsoft.Compute/virtualMachines",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T1",
+   "cmd": "az group delete --subscription S -n g",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T1",
+   "cmd": "az group delete -n g",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T2",
+   "cmd": "az group delete -n g --yes",
+   "expect": "block",
+   "catalog": "vacio",
+   "tool": "Bash"
+  },
+  {
+   "test": "T2",
+   "cmd": "az group delete -n g --yes",
+   "expect": "block",
+   "catalog": "noprod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T2",
+   "cmd": "az group delete -n prueba --yes",
+   "expect": "block",
+   "catalog": "noprod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T2",
+   "cmd": "az group delete -n test --yes",
+   "expect": "block",
+   "catalog": "noprod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T2",
+   "cmd": "az group delete -n x --yes",
+   "expect": "block",
+   "catalog": "noprod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T3",
+   "cmd": "az --subscription S group delete -n g",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T3",
+   "cmd": "az -o none group delete -n g",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T3",
+   "cmd": "az --only-show-errors group delete -n g --yes",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T3",
+   "cmd": "sudo az group delete -n g",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T3",
+   "cmd": "env X=1 az group delete -n g",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T3",
+   "cmd": "X=1 az group delete -n g",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T3",
+   "cmd": "/opt/homebrew/bin/az group delete -n g",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T3",
+   "cmd": "az.cmd group delete -n g",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T3",
+   "cmd": "az.exe group delete -n g",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T3",
+   "cmd": "AZ.EXE group delete -n g",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T4",
+   "cmd": "az group delete -n \"$G\" --yes",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T4",
+   "cmd": "az group delete -n \"$(cat g.txt)\" --yes",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T4",
+   "cmd": "bash -c 'az group delete -n g --yes'",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T4",
+   "cmd": "eval \"az group delete -n g --yes\"",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T4",
+   "cmd": "bash <<'FIN'\naz group delete -n g --yes\nFIN",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T4",
+   "cmd": "echo g | xargs -I{} az group delete -n {} --yes",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T4",
+   "cmd": "echo y | az group delete -n g",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T5",
+   "cmd": "az resource delete --ids /subscriptions/s/resourceGroups/G/providers/Microsoft.Sql/servers/acme-sql",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T5",
+   "cmd": "az resource delete --ids /subscriptions/s/resourceGroups/G/providers/Microsoft.Sql/servers/acme-sql/databases/base",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T5",
+   "cmd": "az resource delete -g G -n acme-sql --resource-type Microsoft.Sql/servers",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T5",
+   "cmd": "az resource delete -g G -n acme-sql --resource-type microsoft.sql/servers",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T5",
+   "cmd": "az resource delete -g G -n base --parent servers/acme-sql --resource-type Microsoft.Sql/servers/databases",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T5",
+   "cmd": "az resource delete -g G -n acme-sql --namespace Microsoft.Sql --resource-type servers",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T5",
+   "cmd": "az resource delete -g G -n otro-sql --resource-type Microsoft.Sql/servers",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "desconocido"
+  },
+  {
+   "test": "T5",
+   "cmd": "az resource delete -g G -n acme-sql-staging --resource-type Microsoft.Sql/servers",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "no-producción declarado"
+  },
+  {
+   "test": "T5",
+   "cmd": "az resource delete --ids /subscriptions/s/resourceGroups/G/providers/Microsoft.Sql/servers/acme-sql-staging",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "no-producción declarado"
+  },
+  {
+   "test": "T5",
+   "cmd": "az resource delete -g G -n base --parent servers/acme-sql-staging --resource-type Microsoft.Sql/servers/databases",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T6",
+   "cmd": "az resource delete --ids /subscriptions/s/resourceGroups/G/providers/Microsoft.Web/sites/app",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T6",
+   "cmd": "az resource delete --ids /subscriptions/s/resourceGroups/G/providers/Microsoft.Storage/storageAccounts/st",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T6",
+   "cmd": "az resource delete -g G -n app --resource-type Microsoft.Web/sites",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T6",
+   "cmd": "az resource delete -g G -n app --namespace Microsoft.Web --resource-type sites",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T6",
+   "cmd": "az resource delete --ids /subscriptions/s/resourceGroups/G/providers/Microsoft.Web/sites/app /subscriptions/s/resourceGroups/G/providers/Microsoft.Sql/servers/acme-sql",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T6",
+   "cmd": "az resource delete --ids /subscriptions/s/resourceGroups/G/providers/Microsoft.Web/sites/app /subscriptions/s/resourceGroups/G/providers/Microsoft.Sql/servers/acme-sql-staging",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T7",
+   "cmd": "az resource delete --ids \"$ID\"",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T7",
+   "cmd": "az resource delete --ids \"$(az resource list --query [].id -o tsv)\"",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T7",
+   "cmd": "az resource delete -g G -n x --resource-type \"$T\"",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T7",
+   "cmd": "az resource delete -g G -n x",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T7",
+   "cmd": "az resource delete --ids '/subscriptions/s/resourceGroups/G/providers/Microsoft.Web/sites/*'",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T7",
+   "cmd": "az resource delete -g G -n x --resource-type Microsoft.Sql/servers/databases",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T8",
+   "cmd": "az lock delete --name l --resource-group G",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T8",
+   "cmd": "az lock delete --ids /subscriptions/s/providers/Microsoft.Authorization/locks/l",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T8",
+   "cmd": "az lock create --name l -g G --lock-type CanNotDelete",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T8",
+   "cmd": "az lock list",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T8",
+   "cmd": "az lock show -n l -g G",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T9",
+   "cmd": "az rest --method delete --url https://management.azure.com/subscriptions/s/resourcegroups/G?api-version=2021-04-01",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T9",
+   "cmd": "az rest -m DELETE --url https://management.azure.com/subscriptions/s/resourcegroups/G?api-version=2021-04-01",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T9",
+   "cmd": "az rest --method=delete --url https://management.azure.com/subscriptions/s/resourcegroups/G?api-version=2021-04-01",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T9",
+   "cmd": "az rest --url https://management.azure.com/subscriptions/s/resourcegroups/G?api-version=2021-04-01 --method DeLeTe",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T9",
+   "cmd": "az rest --method get --url https://management.azure.com/subscriptions/s/resourcegroups/G?api-version=2021-04-01",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T9",
+   "cmd": "az rest -m post --url https://management.azure.com/subscriptions/s/resourcegroups/G?api-version=2021-04-01",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T9",
+   "cmd": "az rest --method put --url https://management.azure.com/subscriptions/s/resourcegroups/G?api-version=2021-04-01 --body {}",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T9",
+   "cmd": "az rest --method patch --url https://management.azure.com/subscriptions/s/resourcegroups/G?api-version=2021-04-01",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T9",
+   "cmd": "az rest --url https://management.azure.com/subscriptions/s/resourcegroups/G?api-version=2021-04-01",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T10",
+   "cmd": "Remove-AzResourceGroup -Name g -Force",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T10",
+   "cmd": "remove-azresourcegroup -name g",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T10",
+   "cmd": "Remove-AzResource -ResourceId /x -Force",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T10",
+   "cmd": "Remove-AzSqlServer -ServerName s -ResourceGroupName g",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T10",
+   "cmd": "Remove-AzSqlDatabase -ServerName s -DatabaseName d -ResourceGroupName g",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T10",
+   "cmd": "Remove-AzResourceLock -LockName l -ResourceGroupName g",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T10",
+   "cmd": "REMOVE-AZRESOURCEGROUP -Name g -WhatIf",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T10",
+   "cmd": "pwsh -Command \"Remove-AzResourceGroup -Name g -Force\"",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T10",
+   "cmd": "Get-AzResourceGroup",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T10",
+   "cmd": "Get-AzSqlServer -ResourceGroupName g",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T11",
+   "cmd": "az sql server delete -n acme-sql --yes",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T11",
+   "cmd": "az sql server delete --name acme-sql.database.windows.net --yes",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T11",
+   "cmd": "az sql db delete -s acme-sql -n base",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T11",
+   "cmd": "az sql db delete --server acme-sql.database.windows.net -n base",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T11",
+   "cmd": "az sql server delete --ids /subscriptions/s/resourceGroups/G/providers/Microsoft.Sql/servers/acme-sql",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T11",
+   "cmd": "az sql server delete -n acme-sql-staging --yes",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T11",
+   "cmd": "az sql db delete -s acme-sql-staging -n base",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T12",
+   "cmd": "sqlcmd -S acme-sql.database.windows.net -Q \"DROP DATABASE base\"",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T12",
+   "cmd": "sqlcmd -S acme-sql.database.windows.net -Q \"drop database base\"",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T12",
+   "cmd": "sqlcmd -S acme-sql.database.windows.net -Q \"Drop DataBase base\"",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T6",
+   "cmd": "az resource delete -g G -n G --resource-type Microsoft.Resources/resourceGroups",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "el grupo por az resource"
+  },
+  {
+   "test": "T6",
+   "cmd": "az resource delete --ids /subscriptions/s/resourceGroups/G/providers/Microsoft.Authorization/locks/L",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "el candado por az resource"
+  },
+  {
+   "test": "T6",
+   "cmd": "az resource delete -n L --namespace Microsoft.Authorization --resource-type locks -g G",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T9",
+   "cmd": "az rest --method \"$M\" --url https://management.azure.com/subscriptions/s/resourcegroups/G?api-version=2021-04-01",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "el método sale de una variable"
+  },
+  {
+   "test": "T9",
+   "cmd": "az rest -m=delete --url https://management.azure.com/subscriptions/s/resourcegroups/G?api-version=2021-04-01",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T9",
+   "cmd": "az rest -mDELETE --url https://management.azure.com/subscriptions/s/resourcegroups/G?api-version=2021-04-01",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T9",
+   "cmd": "az rest -m get --url https://management.azure.com/subscriptions/s/resourcegroups/G?api-version=2021-04-01",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T4",
+   "cmd": "awk 'BEGIN{system(\"az group delete -n g --yes\")}'",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "awk ejecuta con system()"
+  },
+  {
+   "test": "T4",
+   "cmd": "A=az; $A group delete -n g --yes",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "el programa sale de una variable"
+  },
+  {
+   "test": "T4",
+   "cmd": "ls\naz group delete -n g --yes",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "en la segunda línea del comando"
+  },
+  {
+   "test": "T1",
+   "cmd": "azd down --force --purge",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "azd down borra los recursos del entorno"
+  },
+  {
+   "test": "T10",
+   "cmd": "Invoke-AzRestMethod -Path /subscriptions/s/resourcegroups/G?api-version=2021-04-01 -Method DELETE",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T10",
+   "cmd": "Invoke-AzRestMethod -Path /subscriptions/s?api-version=2021-04-01 -Method GET",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T5",
+   "cmd": "az.cmd resource delete -g G -n acme-sql --resource-type Microsoft.Sql/servers",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "az.cmd: el servidor lo decide el catálogo"
+  },
+  {
+   "test": "T5",
+   "cmd": "az.exe resource delete -g G -n acme-sql --resource-type Microsoft.Sql/servers",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T5",
+   "cmd": "az.cmd resource delete -g G -n base --parent servers/acme-sql --resource-type Microsoft.Sql/servers/databases",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T5",
+   "cmd": "az.cmd resource delete -g G -n otro-sql --resource-type Microsoft.Sql/servers",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "desconocido"
+  },
+  {
+   "test": "T5",
+   "cmd": "az.cmd resource delete -g G -n acme-sql-staging --resource-type Microsoft.Sql/servers",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "no-producción declarado"
+  },
+  {
+   "test": "T5",
+   "cmd": "echo x | xargs /opt/homebrew/bin/az resource delete -g G -n acme-sql --resource-type Microsoft.Sql/servers",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T11",
+   "cmd": "az.cmd sql server delete -n acme-sql --yes",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T5",
+   "cmd": "az resource delete -g G -n app --resource-type Microsoft.Web/sites --resource-type Microsoft.Sql/servers -n acme-sql",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "bandera repetida: gana la última"
+  },
+  {
+   "test": "T10",
+   "cmd": "powershell.exe -Command \"Remove-AzResourceGroup -Name g -Force\"",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T10",
+   "cmd": "pwsh.exe -Command \"Remove-AzResourceGroup -Name g -Force\"",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T10",
+   "cmd": "pwsh -command 'Remove-AzResourceGroup -Name g -Force'",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T10",
+   "cmd": "pwsh.exe -Command \"az group delete -n g --yes\"",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T10",
+   "cmd": "Get-AzResourceGroup -Name 'tmp-*' | ForEach-Object {Remove-AzResourceGroup -Name $_.ResourceGroupName -Force -AsJob}",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T10",
+   "cmd": "$gs|%{Remove-AzResourceGroup -Name $_ -Force}",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T10",
+   "cmd": "Invoke-Command -ScriptBlock {Remove-AzResourceGroup -Name g -Force}",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T10",
+   "cmd": "Az.Resources\\Remove-AzResourceGroup -Name g -Force",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T10",
+   "cmd": "Invoke-Expression \"Remove-AzResourceGroup -Name g -Force\"",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T10",
+   "cmd": "iex \"az group delete -n g --yes\"",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T3",
+   "cmd": "az group del\\ete -n g --yes",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "escapada: el shell corre delete"
+  },
+  {
+   "test": "T3",
+   "cmd": "C:\\Program Files\\Microsoft SDKs\\Azure\\CLI2\\wbin\\az.cmd group delete -n g --yes",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T3",
+   "cmd": "'C:\\Program Files\\Azure\\az.cmd' group delete -n g --yes",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T9",
+   "cmd": "az rest --meth delete --url https://management.azure.com/subscriptions/s/resourcegroups/G?api-version=2021-04-01",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "opción abreviada"
+  },
+  {
+   "test": "T9",
+   "cmd": "az rest --metho=delete --url https://management.azure.com/subscriptions/s/resourcegroups/G?api-version=2021-04-01",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T4",
+   "cmd": "az $SUB -n g --yes",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "el subcomando sale de una variable"
+  },
+  {
+   "test": "T4",
+   "cmd": "az group \"$V\" -n g --yes",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T4",
+   "cmd": "echo group delete -n g | xargs az",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "xargs agrega el subcomando"
+  },
+  {
+   "test": "T20",
+   "cmd": "git commit -F - <<'FIN'\nel freno frena az group delete de un grupo\nFIN",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "el mensaje de un commit no es un comando"
+  },
+  {
+   "test": "T20",
+   "cmd": "gh pr create --title t --body-file - <<'FIN'\nfrena az lock delete y az group delete\nFIN",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T4",
+   "cmd": "python3 -c \"import os; os.system('az group delete -n g --yes')\"",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "código de un intérprete"
+  },
+  {
+   "test": "T4",
+   "cmd": "node -e \"require('child_process').execSync('az group delete -n g --yes')\"",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T4",
+   "cmd": "ssh host 'az group delete -n g --yes'",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "por ssh borra igual en Azure"
+  },
+  {
+   "test": "T4",
+   "cmd": "printf 'group delete -n g' | xargs -I{} az {}",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "xargs con marcador"
+  },
+  {
+   "test": "T4",
+   "cmd": "echo delete -n g | xargs az group",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "xargs agrega el verbo"
+  },
+  {
+   "test": "T5",
+   "cmd": "az resource delete --namespace Microsoft.Sql --resource-type servers --name acme-sql",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "--name no es abreviatura de --namespace"
+  },
+  {
+   "test": "T5",
+   "cmd": "az resource delete --name acme-sql-staging --resource-type Microsoft.Sql/servers",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "no-producción declarado por --name"
+  },
+  {
+   "test": "T9",
+   "cmd": "az rest --m delete --url https://management.azure.com/subscriptions/s/resourcegroups/G?api-version=2021-04-01",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T20",
+   "cmd": "git commit -m \"el freno corta Remove-AzResourceGroup y az group delete\"",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "un mensaje de commit no es un comando"
+  },
+  {
+   "test": "T10",
+   "cmd": "Invoke-AzRestMethod -Path /x -Meth DELETE",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell",
+   "note": "parámetro abreviado"
+  },
+  {
+   "test": "T10",
+   "cmd": "Invoke-AzRestMethod -Path /x -M DELETE",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T10",
+   "cmd": "Invoke-AzRestMethod -Path /x -Method:Delete",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T10",
+   "cmd": "Invoke-AzRestMethod @p",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell",
+   "note": "splatting: el método no se lee"
+  },
+  {
+   "test": "T10",
+   "cmd": "$(Remove-AzResourceGroup -Name g -Force)",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "PowerShell"
+  },
+  {
+   "test": "T4",
+   "cmd": "ssh h az rest --m delete --url u",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T20",
+   "cmd": "az group list -o tsv | xargs -I{} az group show -n {}",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "xargs que sólo lee"
+  },
+  {
+   "test": "T4",
+   "cmd": "cat > /tmp/borra-63.py <<'FIN'\nimport os\nos.system('az group delete -n g --yes')\nFIN\npython3 /tmp/borra-63.py",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "escrito y corrido en el mismo comando"
+  },
+  {
+   "test": "T10",
+   "cmd": "cat > /tmp/borra-63.ps1 <<'FIN'\nRemove-AzResourceGroup -Name g -Force\nFIN\npwsh -File /tmp/borra-63.ps1",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T20",
+   "cmd": "az group list",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T20",
+   "cmd": "az group show -n g",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T20",
+   "cmd": "az group create -n g -l eastus",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T20",
+   "cmd": "az group exists -n g",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T20",
+   "cmd": "az group wait -n g --created",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T20",
+   "cmd": "az sql server list",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T20",
+   "cmd": "az sql server show -n acme-sql-staging -g g --subscription S",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T20",
+   "cmd": "az resource list -g G",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T20",
+   "cmd": "az resource show --ids /subscriptions/s/resourceGroups/G/providers/Microsoft.Web/sites/app",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T20",
+   "cmd": "az lock create --name l -g G --lock-type CanNotDelete",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T20",
+   "cmd": "az lock list",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T20",
+   "cmd": "az account show",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T20",
+   "cmd": "az graph query -q \"Resources | take 1\"",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T20",
+   "cmd": "git status",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T20",
+   "cmd": "grep -rn \"group delete\" notes.md",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash"
+  },
+  {
+   "test": "T21",
+   "cmd": "\"$B\" scripts/x.sh > \"$S/salida-$(basename \"$B\").txt\" 2>&1",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "el caso real: un guion de pruebas con el bash en una variable"
+  },
+  {
+   "test": "T21",
+   "cmd": "${NODE} script.js \"$ARG\"",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "programa con llaves y un argumento variable"
+  },
+  {
+   "test": "T21",
+   "cmd": "$(command -v node) x.js \"$Y\"",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "programa que sale de una sustitución"
+  },
+  {
+   "test": "T21",
+   "cmd": "\"$X\" run \"$Y\" > \"$OUT\"",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "ninguna palabra escrita es un borrado"
+  },
+  {
+   "test": "T21",
+   "cmd": "\"$GIT\" branch -D \"$RAMA\"",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "borra una rama de git, no algo de Azure"
+  },
+  {
+   "test": "T21",
+   "cmd": "\"$B\" x.sh delete",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "delete solo, sin grupo, candado ni recurso adelante"
+  },
+  {
+   "test": "T21",
+   "cmd": "az group list > \"$OUT\"",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "el destino de la redirección no es un subcomando"
+  },
+  {
+   "test": "T21",
+   "cmd": "az group list --output json >\"$OUT\" 2>&1",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "redirección pegada a su destino"
+  },
+  {
+   "test": "T21",
+   "cmd": "$A group delete -n x --yes",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "el programa es una variable y lo escrito es un borrado de grupo"
+  },
+  {
+   "test": "T21",
+   "cmd": "\"$AZ\" lock delete --name l -g g",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "borrado de candado con el programa entre comillas"
+  },
+  {
+   "test": "T21",
+   "cmd": "$(command -v az) group delete -n x",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "el programa sale de una sustitución"
+  },
+  {
+   "test": "T21",
+   "cmd": "${AZ} rest --method delete --url u",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "az rest con delete"
+  },
+  {
+   "test": "T21",
+   "cmd": "$A $B delete -n x",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "el subcomando no se lee y lo escrito termina en delete"
+  },
+  {
+   "test": "T21",
+   "cmd": "az group delete -n x > \"$OUT\"",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "la redirección no esconde el borrado"
+  },
+  {
+   "test": "T21",
+   "cmd": "az $SUB delete -n x",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "az escrito con un subcomando que no se lee sigue frenando"
+  }
+ ],
+ "message": {
+  "__doc": "T13: un corte de cada familia; el mensaje dice qué, por qué y el único camino, y no nombra la puerta ni el grupo de una variable",
+  "cases": [
+   {
+    "cmd": "az group delete -n \"$GRUPO\" --yes",
+    "tool": "Bash",
+    "not_contains": [
+     "GRUPO"
+    ]
+   },
+   {
+    "cmd": "az lock delete --name l --resource-group G",
+    "tool": "Bash",
+    "not_contains": []
+   },
+   {
+    "cmd": "az rest --method delete --url https://management.azure.com/x",
+    "tool": "Bash",
+    "not_contains": []
+   },
+   {
+    "cmd": "Remove-AzResourceGroup -Name g -Force",
+    "tool": "PowerShell",
+    "not_contains": []
+   },
+   {
+    "cmd": "az resource delete -g G -n x",
+    "tool": "Bash",
+    "not_contains": []
+   },
+   {
+    "cmd": "azd down --force",
+    "tool": "Bash",
+    "not_contains": []
+   },
+   {
+    "cmd": "Invoke-AzRestMethod -Path /x -Method DELETE",
+    "tool": "PowerShell",
+    "not_contains": []
+   }
+  ],
+  "contains": [
+   "puede llevarse un servidor de producción",
+   "no puedo saber qué contiene",
+   "una persona",
+   "su propia terminal"
+  ],
+  "never": [
+   "tycon-prod-sql",
+   "borrado-de-azure",
+   "TYCON_SAFETY_OFF"
+  ]
+ },
+ "family": {
+  "__doc": "T16-T19: un comando de cada familia, crudo (la caída del freno, el tope de 32 KB y el lanzador lo juzgan sin leer el comando)",
+  "block": [
+   "az group delete -n g --yes",
+   "az resource delete --ids /x",
+   "az lock delete -n l -g G",
+   "az rest --method delete --url u",
+   "az rest -m DELETE --url u",
+   "Remove-AzResourceGroup -Name g",
+   "Remove-AzResource -ResourceId x",
+   "Remove-AzSqlServer -ServerName s",
+   "Remove-AzSqlDatabase -DatabaseName d",
+   "Remove-AzResourceLock -LockName l",
+   "az --subscription S group delete -n g",
+   "az.exe group delete -n g",
+   "ls\naz group delete -n g",
+   "azd down",
+   "az rest -mDELETE --url u",
+   "Invoke-AzRestMethod -Path p -Method DELETE",
+   "awk 'BEGIN{system(\"az group delete -n g\")}'",
+   "\"az\" group delete -n g",
+   "az 'group' delete -n g",
+   "az group \"delete\" -n g",
+   "az rest --meth delete --url u",
+   "azd.exe down",
+   "Invoke-AzRestMethod -Path p -Method $m"
+  ],
+  "pass": [
+   "git status",
+   "az group list",
+   "az lock list",
+   "az rest --method get --url u"
+  ]
+ },
+ "guide": {
+  "__doc": "T26: las frases del AC 18 en guides/produccion-con-permiso.md",
+  "file": "guides/produccion-con-permiso.md",
+  "phrases": [
+   "no sabe qué grupo contiene qué",
+   "az group delete",
+   "az lock delete",
+   "az rest",
+   "Remove-AzResourceGroup",
+   "una persona, en su propia terminal",
+   "el portal",
+   "Terraform",
+   "--mode Complete",
+   "CanNotDelete",
+   "azd down",
+   "Invoke-AzRestMethod",
+   "Microsoft.Resources",
+   "Microsoft.Authorization"
+  ]
+ }
+}
