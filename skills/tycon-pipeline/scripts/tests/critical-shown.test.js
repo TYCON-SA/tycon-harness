@@ -597,3 +597,145 @@ test('CriticalShown_RetractaMismaRegla @story-8.82 @ac-5', () => {
   for (const t of ['Para.', 'Esperá.', 'Espera, eximir no.', 'Mejor espera.', 'Y espera, eximir', 'Eximir — para']) assert.equal(j.retracta(t), true, t);
   for (const t of ['Sobre la CI: corre para todos los repos.', 'El pedido queda en espera de la CI.']) assert.equal(j.retracta(t), false, t);
 });
+
+// ── eximir sin trabas: el comando con una variable, todos los críticos juntos, los códigos largos ────────────────────
+
+const LARGO = 'ADV-false-negative-classification';
+const PIPE_JS = 'skills/tycon-pipeline/scripts/pipeline.js';
+const CRITICOS_273 = [{ rule_id: REGLA, file: ARCHIVO, summary: 'la suite completa no corrió' }, { rule_id: LARGO, file: PIPE_JS, summary: 'allowed.anthropic en los caminos del pipeline', reason: 'ningún criterio lo pide' }];
+const stateDirDe = (lab) => path.join(lab.home, '.claude', '.tycon-pipeline');
+const muestras = (lab) => gates(lab).filter((x) => x.name === 'critical-shown');
+
+test('CriticalShown_8_94_ComandoConVariable_LoMuestra @story-8.94 @ac-1', () => {
+  const cd = require(path.join(SCRIPTS, 'lib', 'critical-display.js'));
+  const esperado = [{ rule: 'A-C1', file: 'f.json', reason: 'por qué' }];
+  for (const ej of ['node "$M"', 'node $M', 'node ${M}', '$M', '"$M"']) {
+    assert.deepEqual(cd.pedidosDelComando(`M=/x/marker.js; ${ej} waive-critical --rule A-C1 --file f.json --reason "por qué"`), esperado, ej);
+  }
+  // y por la puerta de verdad: el comando con la variable muestra el crítico
+  const lab = laboratorio({ sid: 's-cs-var' });
+  const p = puertaBash(lab, `M=${MARKER}; node "$M" waive-critical --rule ${REGLA} --file ${sh(ARCHIVO)} --reason ${sh(MOTIVO)}`);
+  assert.equal(p.status, 0, p.stderr);
+  assert.match(JSON.parse(p.stdout).systemMessage, /TEST-C1/);
+  assert.equal(muestras(lab).length, 1);
+});
+
+test('CriticalShown_8_94_VariableEnLoQueSeExime_NoSeMuestra @story-8.94 @ac-1 @ac-6', () => {
+  const cd = require(path.join(SCRIPTS, 'lib', 'critical-display.js'));
+  for (const c of ['node "$M" waive-critical --rule $R --file f --reason "x"', 'node "$M" waive-critical --rule A-C1 --file f --reason "$(cat motivo)"', '$M waive-critical --rule A-C1 --file "$F" --reason x']) {
+    assert.deepEqual(cd.pedidosDelComando(c), [], c);
+  }
+  // un ejecutable que no es una variable sola no se toma por el marcador
+  assert.deepEqual(cd.pedidosDelComando('node otro.js waive-critical --rule A-C1 --file f --reason x'), []);
+});
+
+test('CriticalShown_8_94_TodosLosCriticosJuntos @story-8.94 @ac-2', () => {
+  const lab = laboratorio({ sid: 's-cs-todos', criticos: [...CRITICOS_273, { rule_id: 'SEC-C2', file: 'app.js', summary: 'un secreto' }] });
+  // SEC-C2 ya está eximido: no se vuelve a mostrar
+  fs.writeFileSync(path.join(lab.runDir, 'critical-waivers.jsonl'), `${JSON.stringify({ rule_id: 'SEC-C2', file: 'app.js', reason: 'r', tipo: 'manual', quien: 'Dev de Prueba', cita: 'eximo SEC-C2', via: 'ok del dev en el chat', ts: new Date().toISOString() })}\n`);
+  const aviso = mostrar(lab);
+  assert.match(aviso, /TEST-C1/);
+  assert.ok(aviso.includes(LARGO), aviso);
+  assert.ok(aviso.includes('ningún criterio lo pide'), 'con el motivo del hallazgo');
+  assert.doesNotMatch(aviso, /SEC-C2/);
+  assert.match(aviso, /«eximo TEST-C1\. eximo ADV-false-negative-classification»/, 'cómo contestar todos en un mensaje');
+  assert.deepEqual(muestras(lab).map((g) => g.rule).sort(), [LARGO, REGLA].sort(), 'una constancia por cada crítico mostrado');
+});
+
+test('CriticalShown_8_94_MostradoNoSeRepite @story-8.94 @ac-2', () => {
+  const lab = laboratorio({ sid: 's-cs-repite', criticos: CRITICOS_273 });
+  mostrar(lab);
+  // otro motivo para TEST-C1: se vuelve a mostrar ése, pero no el otro, que ya se vio en esta corrida
+  const aviso = mostrar(lab, REGLA, ARCHIVO, 'otro motivo');
+  assert.match(aviso, /otro motivo/);
+  assert.ok(!aviso.includes(LARGO), aviso);
+  assert.equal(muestras(lab).filter((g) => g.rule === LARGO).length, 1);
+});
+
+test('CriticalShown_8_94_OtrosAbiertos_RamasYAviso @story-8.94 @ac-2', () => {
+  const cd = require(path.join(SCRIPTS, 'lib', 'critical-display.js'));
+  // un hallazgo repetido (misma regla y archivo) se muestra una vez, y sin motivo ni resumen lleva el texto fijo
+  const lab = laboratorio({ sid: 's-cs-otros', criticos: [{ rule_id: REGLA, file: ARCHIVO }, { rule_id: 'ADV-C2', file: 'a.js' }, { rule_id: 'ADV-C2', file: 'a.js' }] });
+  const o = cd.otrosAbiertos({ sessionId: lab.sid, stateDir: stateDirDe(lab), pedidos: [{ rule: REGLA, file: ARCHIVO }] });
+  assert.deepEqual(o, { lista: [{ rule: 'ADV-C2', file: 'a.js', reason: 'el crítico abierto de la corrida' }], aviso: null });
+  // las exenciones ilegibles: ninguno, y el aviso llega a la muestra
+  fs.mkdirSync(path.join(lab.runDir, 'critical-waivers.jsonl'));
+  const ile = cd.otrosAbiertos({ sessionId: lab.sid, stateDir: stateDirDe(lab), pedidos: [] });
+  assert.deepEqual(ile.lista, []);
+  assert.match(ile.aviso, /no pude leer las exenciones de la corrida.*puede haber otros críticos/);
+  assert.match(mostrar(lab), /Aviso del arnés: no pude leer las exenciones/);
+  // findings.json ilegible: el mismo aviso, por su lado
+  const lab2 = laboratorio({ sid: 's-cs-otros2' });
+  fs.writeFileSync(path.join(lab2.runDir, 'findings.json'), '{ no es json');
+  assert.match(cd.otrosAbiertos({ sessionId: lab2.sid, stateDir: stateDirDe(lab2), pedidos: [] }).aviso, /no pude leer findings\.json/);
+  // sin marcador de la sesión: nada, sin aviso
+  assert.deepEqual(cd.otrosAbiertos({ sessionId: 'otra-sesion', stateDir: stateDirDe(lab2), pedidos: [] }), { lista: [], aviso: null });
+});
+
+test('CriticalShown_8_94_UnMensajeConTodos @story-8.94 @ac-3 @ac-6', () => {
+  const arnes = tmp('cs-todos-');
+  const cd = require(path.join(SCRIPTS, 'lib', 'critical-display.js'));
+  const uno = cd.juez({ rule: REGLA, file: ARCHIVO, arnes });
+  const otro = cd.juez({ rule: 'ADV-C1', file: PIPE_JS, arnes });
+  const ok = 'eximo TEST-C1. eximo ADV-C1 de pipeline.js.';
+  assert.equal(uno(ok), null);
+  assert.equal(otro(ok), null);
+  const conNo = 'eximo TEST-C1. eximo ADV-C1 de pipeline.js, no el resto.';
+  assert.ok(uno(conNo) && otro(conNo), 'con una negación no exime ninguno');
+});
+
+test('CriticalShown_8_94_CodigoLargo_SeNombraEntero @story-8.94 @ac-4', () => {
+  const cd = require(path.join(SCRIPTS, 'lib', 'critical-display.js'));
+  const j = cd.juez({ rule: LARGO, file: PIPE_JS, arnes: tmp('cs-largo-') });
+  assert.equal(j(`eximo ${LARGO} de pipeline.js`), null);
+  assert.equal(j(`Eximo ${LARGO.toUpperCase()}: queda como deuda.`), null);
+  assert.match(j('eximo ADV-false de pipeline.js'), /no nombra este crítico/);
+  assert.match(j('eximo ADV-false-negative-classification-2 de pipeline.js'), /no nombra este crítico/);
+  assert.match(j('eximo ADV-traversal-completeness de pipeline.js'), /no nombra este crítico/);
+  // la forma corta sigue igual
+  assert.equal(cd.juez({ rule: REGLA, file: ARCHIVO, arnes: tmp('cs-largo2-') })('eximo TEST-C1'), null);
+});
+
+test('CriticalShown_8_94_FraseRepetida_LaMasNueva @story-8.94 @ac-5 @ac-6', () => {
+  const frase = 'eximo TEST-C1, la corrí a mano';
+  // la misma frase antes y después de la muestra: cuenta la de después, con su hora
+  const lab = laboratorio({ sid: 's-cs-repetida' });
+  const antes = new Date().toISOString();
+  mostrar(lab);
+  const despues = T(3);
+  lab.conversar([delAgente('Hay un crítico abierto.', antes), delDev(frase, antes), delDev(frase, despues)]);
+  const r = waive(lab, frase);
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.equal(eximidos(lab)[0].cita_cuando, despues);
+  // sólo antes: no cuenta
+  const solo = laboratorio({ sid: 's-cs-soloantes' });
+  const antes2 = new Date().toISOString();
+  mostrar(solo);
+  solo.conversar([delAgente('Hay un crítico abierto.', antes2), delDev(frase, antes2)]);
+  const r2 = waive(solo, frase);
+  assert.notEqual(r2.status, 0);
+  assert.match(`${r2.stdout}${r2.stderr}`, /de antes de que se le mostrara/);
+});
+
+test('CriticalShown_8_94_CasoReal273 @story-8.94 @ac-1 @ac-2 @ac-3 @ac-4 @ac-5', () => {
+  const cw = require(path.join(SCRIPTS, 'lib', 'critical-waivers.js'));
+  const lab = laboratorio({ sid: 's-cs-273', criticos: CRITICOS_273 });
+  // el agente pide la muestra con el ejecutable en una variable: el arnés muestra los dos
+  const p = puertaBash(lab, `M=${MARKER}; node "$M" waive-critical --rule ${REGLA} --file ${sh(ARCHIVO)} --reason ${sh(MOTIVO)}`);
+  assert.equal(p.status, 0, p.stderr);
+  const aviso = JSON.parse(p.stdout).systemMessage;
+  assert.ok(aviso.includes(REGLA) && aviso.includes(LARGO), aviso);
+  // la coordinadora contesta los dos en un mensaje, después de la muestra
+  const cuerpo = `Eximo TEST-C1. Eximo ${LARGO} de pipeline.js.`;
+  lab.conversar([deOtraSesion('coordinadora', cuerpo)]);
+  designarCoordinadora(lab.home);
+  const arnes = arnesConRelevo();
+  for (const [rule, file, quote] of [[REGLA, ARCHIVO, 'Eximo TEST-C1'], [LARGO, PIPE_JS, `Eximo ${LARGO} de pipeline.js`]]) {
+    const r = cw.okDeUnaPersona({
+      approvedBy: 'Dev de Prueba', quote, relayedBy: 'coordinadora', arnes, home: lab.home,
+      env: { HOME: lab.home, CLAUDE_CODE_SESSION_ID: lab.sid, TYCON_PROFILE: '0' }, desde: new Date(Date.now() - 60000).toISOString(),
+      critico: { rule, file, reason: rule === REGLA ? MOTIVO : 'ningún criterio lo pide', storyId: '9.93', sessionId: lab.sid, stateDir: stateDirDe(lab), runDir: lab.runDir },
+    });
+    assert.equal(r.ok, true, `${rule}: ${r.motivo}`);
+  }
+});

@@ -158,7 +158,8 @@ function juez({ rule, file, archivos = [], arnes }) {
   // si otro archivo abierto comparte el nombre, el nombre solo no alcanza: va la ruta
   const comoNombrar = varios && archivos.filter((a) => path.basename(a) === base).length > 1 ? archivo : base;
   const codigosDe = (s) => [...String(s).matchAll(RE_CODIGO)].map((m) => m[1].toUpperCase());
-  const nombraEsta = (s) => codigosDe(s).includes(r) || (!!llano && norm(s).includes(norm(llano)));
+  // un código sin la forma `XXX-C1` (los del pase adversarial: ADV-false-negative-classification) se nombra entero
+  const nombraEsta = (s) => codigosDe(s).includes(r) || nombraEntero(s, r) || (!!llano && norm(s).includes(norm(llano)));
   const RE_EXIM = /(?<![\p{L}\p{N}])exim\p{L}*|exenci[oó]n/iu;
   // un freno sin «no» («Esperá.», «Pará.», «Frená») también se echa atrás
   // Con tilde frena en cualquier lugar. Sin tilde frena salvo en un solo caso: va después de una palabra que no es un
@@ -189,7 +190,7 @@ function juez({ rule, file, archivos = [], arnes }) {
     const codigos = codigosDe(t);
     const otros = [...new Set(codigos)].filter((c) => c !== r);
     // el nombre en llano no alcanza si el mensaje nombra otro código y no éste
-    if (!codigos.includes(r) && otros.length) return `el ok nombra ${otros.join(', ')}, no ${r}`;
+    if (!codigos.includes(r) && !nombraEntero(t, r) && otros.length) return `el ok nombra ${otros.join(', ')}, no ${r}`;
     if (!nombraEsta(t)) return `el ok no nombra este crítico (${nombre}): un ok genérico no exime`;
     // El ok tiene que DECIR que lo exime, sin vueltas: leer bien todas las formas de negar en texto libre no cierra, así
     // que ante la duda no exime. Cualquier negación, freno, excepción o condición en el mensaje lo descarta, aunque esté
@@ -317,6 +318,9 @@ function palabras(cmd) {
   return out;
 }
 
+// una palabra que es sólo una variable de la terminal (`$M`, `${M}`; las comillas ya las sacó `palabras`)
+const ES_VARIABLE = /^\$(?:\{\w+\}|\w+)$/;
+
 /**
  * Los `marker.js waive-critical` del comando (también dentro de `bash -c "…"`), sin los que van por `--terminal`.
  * Uno con variables o sustituciones de la terminal en lo que se exime no entra: su valor no se sabe hasta que corre.
@@ -326,7 +330,8 @@ function pedidosDelComando(command, profundidad = 0) {
   const out = [];
   for (let i = 0; i < w.length; i++) {
     if (profundidad < 2 && /\bmarker\.js\b/.test(w[i]) && /\swaive-critical\b/.test(w[i])) out.push(...pedidosDelComando(w[i], profundidad + 1));
-    if (!/(^|[\\/])marker\.js$/.test(w[i]) || w[i + 1] !== 'waive-critical') continue;
+    // el ejecutable puede venir en una variable de la terminal (`node "$M" waive-critical …`): lo que se exime, no
+    if (!(/(^|[\\/])marker\.js$/.test(w[i]) || ES_VARIABLE.test(w[i])) || w[i + 1] !== 'waive-critical') continue;
     const args = [];
     for (let j = i + 2; j < w.length && w[j] !== '\u0000'; j++) args.push(w[j]);
     if (args.includes('--terminal')) continue;
@@ -338,10 +343,56 @@ function pedidosDelComando(command, profundidad = 0) {
   return out;
 }
 
-function paraMostrar({ command, sessionId, stateDir, home = os.homedir(), arnes }) {
-  const listos = pedidosDelComando(command).map((p) => preparar({ sessionId, stateDir, home, arnes, ...p })).filter(Boolean);
+/**
+ * Los otros CRITICAL abiertos de la corrida, para mostrarlos junto con los pedidos: sin exención en
+ * critical-waivers.jsonl ni muestra en esta corrida, con el motivo de su hallazgo. `{ lista, aviso }`: sin poder leer
+ * findings.json o las exenciones, ninguno, y el aviso lo dice (la persona no cree que no hay otros).
+ */
+function otrosAbiertos({ sessionId, stateDir, pedidos }) {
+  const marker = leerMarcador(stateDir, sessionId);
+  if (!marker || !marker.storyId) return { lista: [], aviso: null };
+  const runDir = carpetaDeLaCorrida(marker);
+  const cs = criticosDe(runDir);
+  if (cs.error) return { lista: [], aviso: `no pude leer findings.json de la corrida (${cs.error}): puede haber otros críticos abiertos que no se muestran acá` };
+  const ex = require('./critical-waivers.js').leer(runDir);
+  if (ex.error) return { lista: [], aviso: `no pude leer las exenciones de la corrida (${ex.error}): puede haber otros críticos abiertos que no se muestran acá` };
+  const clave = (rule, file) => `${String(rule || '').trim()}|${String(file || '').trim()}`;
+  const vistas = new Set([...pedidos.map((p) => clave(p.rule, p.file)), ...ex.lineas.map((e) => clave(reglaDe(e), e.file))]);
+  const out = [];
+  for (const f of cs.lista) {
+    const rule = reglaDe(f);
+    const file = String(f.file || '').trim();
+    if (!rule || vistas.has(clave(rule, file))) continue;
+    vistas.add(clave(rule, file));
+    const ya = primeraMuestra({ stateDir, sessionId, storyId: String(marker.storyId), rule, file, desde: marker.startedAt });
+    if (ya) continue;
+    out.push({ rule, file, reason: String(f.reason || f.summary || f.title || 'el crítico abierto de la corrida').trim().replace(/\s+/g, ' ') });
+  }
+  return { lista: out, aviso: null };
+}
+
+/**
+ * La muestra de los pedidos y de los demás críticos abiertos de la corrida, juntos. Con uno solo, su bloque; con varios,
+ * cada bloque y cómo contestar todos en un mensaje. `{ systemMessage, anotar }` o null.
+ */
+function mostrarJuntos({ pedidos, sessionId, stateDir, home = os.homedir(), arnes }) {
+  const otros = otrosAbiertos({ sessionId, stateDir, pedidos });
+  const listos = [...pedidos, ...otros.lista]
+    .map((p) => ({ p, r: preparar({ sessionId, stateDir, home, arnes, ...p }) })).filter((x) => x.r);
   if (!listos.length) return null;
-  return { systemMessage: listos.map((r) => r.systemMessage).join('\n\n'), anotar: () => { for (const r of listos) r.anotar(); } };
+  const partes = listos.map((x) => x.r.systemMessage);
+  if (otros.aviso) partes.push(`(Aviso del arnés: ${otros.aviso}.)`);
+  if (listos.length > 1) {
+    const todas = listos.map((x) => `eximo ${String(x.p.rule).trim()}`).join('. ');
+    partes.push(`Son ${listos.length} críticos: podés contestar uno por mensaje, o todos en uno («${todas}»).`);
+  }
+  return { systemMessage: partes.join('\n\n'), anotar: () => { for (const x of listos) x.r.anotar(); } };
+}
+
+function paraMostrar({ command, sessionId, stateDir, home = os.homedir(), arnes }) {
+  const pedidos = pedidosDelComando(command);
+  if (!pedidos.length) return null;
+  return mostrarJuntos({ pedidos, sessionId, stateDir, home, arnes });
 }
 
 const mismaRuta = (a, b) => path.resolve(String(a)).replace(/\\/g, '/').toLowerCase() === path.resolve(String(b)).replace(/\\/g, '/').toLowerCase();
@@ -363,8 +414,9 @@ function handle(event, opts = {}) {
     return { reminder: `${PEDIDO} no se pudo leer como JSON (${e.message}): tiene que traer { "rule", "file", "reason" }.` };
   }
   if (!p || typeof p !== 'object' || Array.isArray(p)) return { reminder: `${PEDIDO} tiene que ser un objeto con { "rule", "file", "reason" }.` };
-  const r = preparar({ sessionId, stateDir, home: opts.home, arnes: opts.arnes, rule: String(p.rule || '').trim(), file: String(p.file || '').trim(), reason: String(p.reason || '').trim() });
+  const pedido = { rule: String(p.rule || '').trim(), file: String(p.file || '').trim(), reason: String(p.reason || '').trim() };
+  const r = mostrarJuntos({ pedidos: [pedido], sessionId, stateDir, home: opts.home, arnes: opts.arnes });
   return r ? { systemMessage: r.systemMessage, alMostrar: r.anotar } : null;
 }
 
-module.exports = { PEDIDO, EN_LLANO, nombreEnLlano, huella, mostrado, primeraMuestra, archivosDeLaRegla, juez, bloque, palabras, pedidosDelComando, paraMostrar, handle };
+module.exports = { PEDIDO, EN_LLANO, nombreEnLlano, huella, mostrado, primeraMuestra, archivosDeLaRegla, juez, bloque, palabras, pedidosDelComando, otrosAbiertos, paraMostrar, handle };
