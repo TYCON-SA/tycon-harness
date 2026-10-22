@@ -1,0 +1,154 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ejecuciones · Sitio de la organización</title><link rel="stylesheet" href="/static/site.css"><script src="/static/site.js"></script></head><body><header class="barra"><span class="producto">Arnés</span><span class="lema">Sitio de la organización</span><span class="esp"></span><form class="salir" method="post" action="/auth/logout"><span>lead@ejemplo.test</span> <input type="hidden" name="tok" value="X"> <button type="submit">Salir</button></form></header><div class="shell"><aside class="side"><nav class="tabs" aria-label="Pestañas"><a href="/"><span class="ix">01</span>Inicio</a><a href="/corridas" class="activa" aria-current="page"><span class="ix">02</span>Ejecuciones</a><a href="/proyectos"><span class="ix">03</span>Proyectos</a><a href="/arnes"><span class="ix">04</span>Arnés</a></nav><div class="side-foot"><span class="lab-tema">Tema</span><div class="theme" role="group" aria-label="Tema"><button type="button" data-tema="auto" aria-pressed="true">Auto</button><button type="button" data-tema="light" aria-pressed="false">Claro</button><button type="button" data-tema="dark" aria-pressed="false">Oscuro</button></div><span class="lab-tema">Idioma</span><form class="idioma" method="post" action="/idioma" aria-label="Idioma"><input type="hidden" name="volver" value="/corridas"><button type="submit" name="idioma" value="es" lang="es" aria-pressed="true">Español</button><button type="submit" name="idioma" value="en" lang="en" aria-pressed="false">English</button></form></div></aside><main><header class="s-head"><div><h1>Ejecuciones</h1><p>Cada ejecución del pipeline: cuánto tardó, dónde esperó a una persona y qué encontraron los controles.</p></div></header><link rel="stylesheet" href="/corridas/vista.css"><div class="corridas"><header class="head">
+  <div class="eyebrow">Sitio de la organización · vista de ejecuciones · el arnés en seis preguntas: <a href="/arnes">sus fichas, en Arnés</a></div>
+  <h1>Las ejecuciones del pipeline</h1>
+  <p class="lede">Una fila por ejecución: <b>en qué paso se fue el tiempo</b>, qué control encontró un error o frenó, cuántas vueltas dio y cuánto consumió. Los números salen del resumen que el archivador deja por ejecución, y lo que no está registrado se dice, no se rellena. <b>De la conversación sólo se toman los archivos que tocó y sus cambios</b>, en el detalle de cada ejecución.</p>
+  <div class="stamp"><span><b>Ejecuciones:</b> 7 de 7 archivos · 0 duplicados · 0 no se pudieron leer</span><span><b>Con consumo medido:</b> 6 de 7</span><span><b>Con controles:</b> 7 de 7</span><span><b>Llegaron al paso 8:</b> 7 de 7</span><span><b>Generado:</b> X</span><span><b>Alcance:</b> maq-a 2 · maq-b 1 · maq-c 1 · zqx-fuga-b8 1 · sin declarar 2</span></div>
+  <div class="banda gris"><b>Carpetas de máquina:</b> uniones de carpetas no medidas (el bajador no dejó el archivo de uniones). Cada carpeta del buzón sale como una máquina aparte, también la vieja de una máquina que se mudó a su carpeta con código.</div>
+</header>
+
+<section id="ejecutiva">
+  <div class="q-head"><span class="q-n">01</span><h2>Lo que se mira primero</h2></div>
+  <div class="claves">
+    <div><b>Encontró un error</b><span>una prueba o la compilación no pasaron, y se arreglaron ahí mismo. <b>Es el control haciendo su trabajo.</b></span></div>
+    <div><b>Frenó</b><span>el control vio algo y no dejó pasar. También es el control funcionando.</span></div>
+    <div><b>Trama</b><span>«no medido»: esa ejecución no registró ese dato. <b>No es cero ni es verde.</b></span></div>
+    <div><b>n=</b><span>al lado de cada mediana: de cuántas ejecuciones sale el número, sobre cuántas hay.</span></div>
+  </div>
+  <div class="filtrera"><span class="fl">Filtro</span>
+    <label>desde <input type="date" id="f-desde"></label><label>hasta <input type="date" id="f-hasta"></label>
+    <button type="button" id="f-hoy">hoy</button><button type="button" id="f-semana">esta semana</button><button type="button" id="f-mes">este mes</button>
+    <label>producto <select id="f-repo"></select></label>
+    <label>máquina <select id="f-maquina"></select></label>
+    <label><input type="checkbox" id="fc"> sólo con consumo medido</label>
+    <label><input type="checkbox" id="ff"> sólo las que llegaron al paso 8</label>
+    <button id="f-limpiar">limpiar</button><span class="fcount" id="cuenta" data-molde="{n} de {t} ejecuciones a la vista"></span></div>
+  <div class="grid" id="fichas"></div>
+  <div class="dos">
+    <div class="card"><h3>Ejecuciones por semana</h3><div id="gsem"></div><p>Semana ISO. Una semana sin ejecuciones se dibuja en cero: una barra ausente y una barra en cero no son lo mismo.</p></div>
+    <div class="card"><h3>Pasos por ejecución, mes a mes (mediana)</h3><div id="gpasos"></div><p>Cuántas respuestas dio el modelo en cada ejecución: <b>es lo que explica su consumo</b>, porque en cada paso relee todo lo anterior. Un punto por mes, con su <span class="mono">n</span>; un mes sin ejecuciones medidas se deja en blanco y se dice — no es cero. La línea punteada es la línea base contra la que se compara. No tiene tope: primero la serie.</p></div>
+    <div class="card"><h3>Dónde se va el TIEMPO, por paso (mediana)</h3><div id="ppt"></div><p>Del arranque al fin de cada paso cuando la ejecución lo anotó; en las ejecuciones anteriores a esa marca, estimado del fin del paso anterior al fin de éste. El tiempo entre pasos no entra en ningún paso. Los pasos con marcas invertidas o empatadas salen fusionados y no entran en la mediana de ninguno de los dos (se dicen aparte).</p></div>
+    <div class="card"><h3>Dónde se van los TOKENS, por paso (mediana)</h3><div id="ppk"></div><p id="nota-tokens"></p></div>
+  </div>
+</section>
+
+<p class="q-note" id="fichas-calculando">Las fichas del tablero se están calculando: aparecen en la próxima actualización.</p><section>
+  <div class="q-head"><span class="q-n">02</span><h2>Ejecución por ejecución</h2></div>
+  <p class="note">Ordenadas de la más nueva a la más vieja. La barra reparte el tiempo por paso con la rampa de abajo. <b>Clic en una fila</b> abre el detalle: la línea de tiempo con cada control en su carril, la tabla de controles y el consumo por paso.</p>
+  <div class="leyenda"><span class="lg"><i style="background:#BEE0DE"></i>0 Arranque</span><span class="lg"><i style="background:#9CD0CE"></i>1 Validar la historia</span><span class="lg"><i style="background:#79BFBE"></i>2 Armar el plan</span><span class="lg"><i style="background:#57ADAE"></i>3 Aprobar el plan</span><span class="lg"><i style="background:#3D9799"></i>4 Implementar y correr las pruebas</span><span class="lg"><i style="background:#2C8084"></i>5 Revisores</span><span class="lg"><i style="background:#1E6A70"></i>6 Hallazgos: el informe</span><span class="lg"><i style="background:#14555C"></i>7 Hallazgos: la decisión</span><span class="lg"><i style="background:#0D4148"></i>8 Preparar el commit</span><span class="lg"><i class="falta"></i>sin marca</span></div>
+  <div class="tabla"><table>
+    <thead><tr><th>fecha<small>semana ISO</small></th><th>story<small>producto</small></th><th>máquina<small>su carpeta</small></th><th>tiempo por paso</th><th>duró</th><th>trabajo<small>pasos con trabajo</small></th><th>espera<small>por una persona</small></th><th>pasos</th><th>agentes</th><th>vueltas</th><th>tokens</th><th>archivos<small>tocados</small></th><th>controles<small>los 3 que más pesan</small></th></tr></thead>
+    <tbody id="cuerpo"><tr data-i="0" data-id="e4c955f3121d037e" id="c-0">
+      <td class="fecha">2026-08-19<small>2026-S34</small></td>
+      <td class="story"><b>3.2</b><span class="desc" title="cosa">cosa</span><small>zqx-fuga-b3/RepoComun</small></td>
+      <td class="maq-td"><span class="maq">maq-a</span></td>
+      <td class="barra"><span class="bar" style="width:100.0%"><i style="width:0.85%;background:#BEE0DE" title="0 · Arranque — 1 min (estimada por diferencia)"></i><i style="width:7.63%;background:#9CD0CE" title="1 · Validar la historia — 9 min (estimada por diferencia)"></i><i style="width:1.69%;background:#79BFBE" title="2 · Armar el plan — 2 min (estimada por diferencia)"></i><i style="width:1.69%;background:#57ADAE" title="3 · Aprobar el plan — 2 min (estimada por diferencia)"></i><i style="width:22.03%;background:#3D9799" title="4 · Implementar y correr las pruebas — 26 min (estimada por diferencia)"></i><i style="width:46.61%;background:#2C8084" title="5 · Revisores — 55 min (estimada por diferencia)"></i><i style="width:4.24%;background:#1E6A70" title="6 · Hallazgos: el informe — 5 min (estimada por diferencia)"></i><i style="width:1.69%;background:#14555C" title="7 · Hallazgos: la decisión — 2 min (estimada por diferencia)"></i><i style="width:13.56%;background:#0D4148" title="8 · Preparar el commit — 16 min (estimada por diferencia)"></i></span></td>
+      <td class="dur">2 h</td>
+      <td class="dur tr"><span title="estimada por diferencia: la ejecución no anotó el arranque de todos sus pasos">~1,9 h</span></td>
+      <td class="dur es"><span class="nd" title="la ejecución no anotó el arranque de ningún paso (es anterior a la story 2.7): las duraciones son estimadas por diferencia">sin medir</span></td>
+      <td class="pasos-n"><span class="ok9">llegó al 8</span></td>
+      <td class="ag">9</td>
+      <td class="vu"><span class="nd">—</span></td>
+      <td class="tk"><span class="nd" title="sin hilo">no medido</span></td>
+      <td class="ar"><span class="nd" title="esta ejecución no tiene hilo guardado (anterior a la story 2.13, o la conversación ya se había borrado): no se sabe qué archivos tocó — no es cero">—</span></td>
+      <td class="frenos"><span class="f f-error" title="tests — 1 vez: 0 pasó, 1 encontró un error, 0 frenó">pruebas <b>1 con error</b></span><span class="f " title="build — 1 vez: 1 pasó, 0 encontró un error, 0 frenó">compila</span></td>
+    </tr>
+<tr data-i="1" data-id="7b2fefd17ff40b4f" id="c-1">
+      <td class="fecha">2026-08-10<small>2026-S33</small></td>
+      <td class="story"><b>2.1</b><span class="desc" title="cosa">cosa</span><small>Alfa/FrontEnd</small></td>
+      <td class="maq-td"><span class="nd" title="la carpeta «Sin Forma.local» del buzón no tiene la forma de un nombre de máquina (minúsculas, sin espacios ni .local)">sin declarar</span></td>
+      <td class="barra"><span class="bar" style="width:100.0%"><i style="width:0.85%;background:#BEE0DE" title="0 · Arranque — 1 min (estimada por diferencia)"></i><i style="width:7.63%;background:#9CD0CE" title="1 · Validar la historia — 9 min (estimada por diferencia)"></i><i style="width:1.69%;background:#79BFBE" title="2 · Armar el plan — 2 min (estimada por diferencia)"></i><i style="width:1.69%;background:#57ADAE" title="3 · Aprobar el plan — 2 min (estimada por diferencia)"></i><i style="width:22.03%;background:#3D9799" title="4 · Implementar y correr las pruebas — 26 min (estimada por diferencia)"></i><i style="width:46.61%;background:#2C8084" title="5 · Revisores — 55 min (estimada por diferencia)"></i><i style="width:4.24%;background:#1E6A70" title="6 · Hallazgos: el informe — 5 min (estimada por diferencia)"></i><i style="width:1.69%;background:#14555C" title="7 · Hallazgos: la decisión — 2 min (estimada por diferencia)"></i><i style="width:13.56%;background:#0D4148" title="8 · Preparar el commit — 16 min (estimada por diferencia)"></i></span></td>
+      <td class="dur">2 h</td>
+      <td class="dur tr"><span title="estimada por diferencia: la ejecución no anotó el arranque de todos sus pasos">~1,9 h</span></td>
+      <td class="dur es"><span class="nd" title="la ejecución no anotó el arranque de ningún paso (es anterior a la story 2.7): las duraciones son estimadas por diferencia">sin medir</span></td>
+      <td class="pasos-n"><span class="ok9">llegó al 8</span></td>
+      <td class="ag">9</td>
+      <td class="vu"><span class="nd">—</span></td>
+      <td class="tk">131 k</td>
+      <td class="ar"><span class="nd" title="esta ejecución no tiene hilo guardado (anterior a la story 2.13, o la conversación ya se había borrado): no se sabe qué archivos tocó — no es cero">—</span></td>
+      <td class="frenos"><span class="f f-error" title="tests — 1 vez: 0 pasó, 1 encontró un error, 0 frenó">pruebas <b>1 con error</b></span><span class="f " title="build — 1 vez: 1 pasó, 0 encontró un error, 0 frenó">compila</span></td>
+    </tr>
+<tr data-i="2" data-id="676f1d6d65dad329" id="c-2">
+      <td class="fecha">2026-08-09<small>2026-S32</small></td>
+      <td class="story"><b>7.1</b><span class="desc" title="cosa">cosa</span><small>Alfa/FrontEnd</small></td>
+      <td class="maq-td"><span class="maq">zqx-fuga-b8</span></td>
+      <td class="barra"><span class="bar" style="width:100.0%"><i style="width:0.85%;background:#BEE0DE" title="0 · Arranque — 1 min (estimada por diferencia)"></i><i style="width:7.63%;background:#9CD0CE" title="1 · Validar la historia — 9 min (estimada por diferencia)"></i><i style="width:1.69%;background:#79BFBE" title="2 · Armar el plan — 2 min (estimada por diferencia)"></i><i style="width:1.69%;background:#57ADAE" title="3 · Aprobar el plan — 2 min (estimada por diferencia)"></i><i style="width:22.03%;background:#3D9799" title="4 · Implementar y correr las pruebas — 26 min (estimada por diferencia)"></i><i style="width:46.61%;background:#2C8084" title="5 · Revisores — 55 min (estimada por diferencia)"></i><i style="width:4.24%;background:#1E6A70" title="6 · Hallazgos: el informe — 5 min (estimada por diferencia)"></i><i style="width:1.69%;background:#14555C" title="7 · Hallazgos: la decisión — 2 min (estimada por diferencia)"></i><i style="width:13.56%;background:#0D4148" title="8 · Preparar el commit — 16 min (estimada por diferencia)"></i></span></td>
+      <td class="dur">2 h</td>
+      <td class="dur tr"><span title="estimada por diferencia: la ejecución no anotó el arranque de todos sus pasos">~1,9 h</span></td>
+      <td class="dur es"><span class="nd" title="la ejecución no anotó el arranque de ningún paso (es anterior a la story 2.7): las duraciones son estimadas por diferencia">sin medir</span></td>
+      <td class="pasos-n"><span class="ok9">llegó al 8</span></td>
+      <td class="ag">9</td>
+      <td class="vu"><span class="nd">—</span></td>
+      <td class="tk">131 k</td>
+      <td class="ar"><span class="nd" title="esta ejecución no tiene hilo guardado (anterior a la story 2.13, o la conversación ya se había borrado): no se sabe qué archivos tocó — no es cero">—</span></td>
+      <td class="frenos"><span class="f f-error" title="tests — 1 vez: 0 pasó, 1 encontró un error, 0 frenó">pruebas <b>1 con error</b></span><span class="f " title="build — 1 vez: 1 pasó, 0 encontró un error, 0 frenó">compila</span></td>
+    </tr>
+<tr data-i="3" data-id="1b02b51046c18119" id="c-3">
+      <td class="fecha">2026-08-08<small>2026-S32</small></td>
+      <td class="story"><b>zqx-fuga-b1</b><span class="desc" title="cosa">cosa</span><small>Alfa/FrontEnd</small></td>
+      <td class="maq-td"><span class="nd" title="volcado suelto en la raíz de la carpeta bajada del buzón: no está bajo la carpeta de ninguna máquina">sin declarar</span></td>
+      <td class="barra"><span class="bar" style="width:100.0%"><i style="width:0.85%;background:#BEE0DE" title="0 · Arranque — 1 min (estimada por diferencia)"></i><i style="width:7.63%;background:#9CD0CE" title="1 · Validar la historia — 9 min (estimada por diferencia)"></i><i style="width:1.69%;background:#79BFBE" title="2 · Armar el plan — 2 min (estimada por diferencia)"></i><i style="width:1.69%;background:#57ADAE" title="3 · Aprobar el plan — 2 min (estimada por diferencia)"></i><i style="width:22.03%;background:#3D9799" title="4 · Implementar y correr las pruebas — 26 min (estimada por diferencia)"></i><i style="width:46.61%;background:#2C8084" title="5 · Revisores — 55 min (estimada por diferencia)"></i><i style="width:4.24%;background:#1E6A70" title="6 · Hallazgos: el informe — 5 min (estimada por diferencia)"></i><i style="width:1.69%;background:#14555C" title="7 · Hallazgos: la decisión — 2 min (estimada por diferencia)"></i><i style="width:13.56%;background:#0D4148" title="8 · Preparar el commit — 16 min (estimada por diferencia)"></i></span></td>
+      <td class="dur">2 h</td>
+      <td class="dur tr"><span title="estimada por diferencia: la ejecución no anotó el arranque de todos sus pasos">~1,9 h</span></td>
+      <td class="dur es"><span class="nd" title="la ejecución no anotó el arranque de ningún paso (es anterior a la story 2.7): las duraciones son estimadas por diferencia">sin medir</span></td>
+      <td class="pasos-n"><span class="ok9">llegó al 8</span></td>
+      <td class="ag">9</td>
+      <td class="vu"><span class="nd">—</span></td>
+      <td class="tk">131 k</td>
+      <td class="ar"><span class="nd" title="esta ejecución no tiene hilo guardado (anterior a la story 2.13, o la conversación ya se había borrado): no se sabe qué archivos tocó — no es cero">—</span></td>
+      <td class="frenos"><span class="f f-error" title="tests — 1 vez: 0 pasó, 1 encontró un error, 0 frenó">pruebas <b>1 con error</b></span><span class="f " title="build — 1 vez: 1 pasó, 0 encontró un error, 0 frenó">compila</span></td>
+    </tr>
+<tr data-i="4" data-id="92c1efbf7137bd68" id="c-4">
+      <td class="fecha">2026-08-07<small>2026-S32</small></td>
+      <td class="story"><b>5.1</b><span class="desc" title="cosa">cosa</span><small>Alfa/FrontEnd</small></td>
+      <td class="maq-td"><span class="maq">maq-c</span></td>
+      <td class="barra"><span class="bar" style="width:100.0%"><i style="width:0.85%;background:#BEE0DE" title="0 · Arranque — 1 min (estimada por diferencia)"></i><i style="width:7.63%;background:#9CD0CE" title="1 · Validar la historia — 9 min (estimada por diferencia)"></i><i style="width:1.69%;background:#79BFBE" title="2 · Armar el plan — 2 min (estimada por diferencia)"></i><i style="width:1.69%;background:#57ADAE" title="3 · Aprobar el plan — 2 min (estimada por diferencia)"></i><i style="width:22.03%;background:#3D9799" title="4 · Implementar y correr las pruebas — 26 min (estimada por diferencia)"></i><i style="width:46.61%;background:#2C8084" title="5 · Revisores — 55 min (estimada por diferencia)"></i><i style="width:4.24%;background:#1E6A70" title="6 · Hallazgos: el informe — 5 min (estimada por diferencia)"></i><i style="width:1.69%;background:#14555C" title="7 · Hallazgos: la decisión — 2 min (estimada por diferencia)"></i><i style="width:13.56%;background:#0D4148" title="8 · Preparar el commit — 16 min (estimada por diferencia)"></i></span></td>
+      <td class="dur">2 h</td>
+      <td class="dur tr"><span title="estimada por diferencia: la ejecución no anotó el arranque de todos sus pasos">~1,9 h</span></td>
+      <td class="dur es"><span class="nd" title="la ejecución no anotó el arranque de ningún paso (es anterior a la story 2.7): las duraciones son estimadas por diferencia">sin medir</span></td>
+      <td class="pasos-n"><span class="ok9">llegó al 8</span></td>
+      <td class="ag">9</td>
+      <td class="vu"><span class="nd">—</span></td>
+      <td class="tk">131 k</td>
+      <td class="ar"><span class="nd" title="esta ejecución no tiene hilo guardado (anterior a la story 2.13, o la conversación ya se había borrado): no se sabe qué archivos tocó — no es cero">—</span></td>
+      <td class="frenos"><span class="f f-error" title="tests — 1 vez: 0 pasó, 1 encontró un error, 0 frenó">pruebas <b>1 con error</b></span><span class="f " title="build — 1 vez: 1 pasó, 0 encontró un error, 0 frenó">compila</span></td>
+    </tr>
+<tr data-i="5" data-id="2f1429eb28c82f46" id="c-5">
+      <td class="fecha">2026-08-06<small>2026-S32</small></td>
+      <td class="story"><b>zqx-fuga-b1</b><span class="desc" title="feat: un commit">feat: un commit</span><small>zqx-fuga-b3/RepoComun</small></td>
+      <td class="maq-td"><span class="maq">maq-b</span></td>
+      <td class="barra"><span class="bar" style="width:100.0%"><i style="width:0.85%;background:#BEE0DE" title="0 · Arranque — 1 min (estimada por diferencia)"></i><i style="width:7.63%;background:#9CD0CE" title="1 · Validar la historia — 9 min (estimada por diferencia)"></i><i style="width:1.69%;background:#79BFBE" title="2 · Armar el plan — 2 min (estimada por diferencia)"></i><i style="width:1.69%;background:#57ADAE" title="3 · Aprobar el plan — 2 min (estimada por diferencia)"></i><i style="width:22.03%;background:#3D9799" title="4 · Implementar y correr las pruebas — 26 min (estimada por diferencia)"></i><i style="width:46.61%;background:#2C8084" title="5 · Revisores — 55 min (estimada por diferencia)"></i><i style="width:4.24%;background:#1E6A70" title="6 · Hallazgos: el informe — 5 min (estimada por diferencia)"></i><i style="width:1.69%;background:#14555C" title="7 · Hallazgos: la decisión — 2 min (estimada por diferencia)"></i><i style="width:13.56%;background:#0D4148" title="8 · Preparar el commit — 16 min (estimada por diferencia)"></i></span></td>
+      <td class="dur">2 h</td>
+      <td class="dur tr"><span title="estimada por diferencia: la ejecución no anotó el arranque de todos sus pasos">~1,9 h</span></td>
+      <td class="dur es"><span class="nd" title="la ejecución no anotó el arranque de ningún paso (es anterior a la story 2.7): las duraciones son estimadas por diferencia">sin medir</span></td>
+      <td class="pasos-n"><span class="ok9">llegó al 8</span></td>
+      <td class="ag">9</td>
+      <td class="vu"><span class="nd">—</span></td>
+      <td class="tk">131 k</td>
+      <td class="ar"><span title="según git: 1 archivo en 1 repo (commits de la ejecución y lo que quedó sin commitear)">1</span></td>
+      <td class="frenos"><span class="f f-error" title="tests — 1 vez: 0 pasó, 1 encontró un error, 0 frenó">pruebas <b>1 con error</b></span></td>
+    </tr>
+<tr data-i="6" data-id="aa7715155a175365" id="c-6">
+      <td class="fecha">2026-08-05<small>2026-S32</small></td>
+      <td class="story"><b>3.1</b><span class="desc" title="feat: un commit">feat: un commit</span><small>Alfa/FrontEnd</small></td>
+      <td class="maq-td"><span class="maq">maq-a</span></td>
+      <td class="barra"><span class="bar" style="width:100.0%"><i style="width:0.85%;background:#BEE0DE" title="0 · Arranque — 1 min (estimada por diferencia)"></i><i style="width:7.63%;background:#9CD0CE" title="1 · Validar la historia — 9 min (estimada por diferencia)"></i><i style="width:1.69%;background:#79BFBE" title="2 · Armar el plan — 2 min (estimada por diferencia)"></i><i style="width:1.69%;background:#57ADAE" title="3 · Aprobar el plan — 2 min (estimada por diferencia)"></i><i style="width:22.03%;background:#3D9799" title="4 · Implementar y correr las pruebas — 26 min (estimada por diferencia)"></i><i style="width:46.61%;background:#2C8084" title="5 · Revisores — 55 min (estimada por diferencia)"></i><i style="width:4.24%;background:#1E6A70" title="6 · Hallazgos: el informe — 5 min (estimada por diferencia)"></i><i style="width:1.69%;background:#14555C" title="7 · Hallazgos: la decisión — 2 min (estimada por diferencia)"></i><i style="width:13.56%;background:#0D4148" title="8 · Preparar el commit — 16 min (estimada por diferencia)"></i></span></td>
+      <td class="dur">2 h</td>
+      <td class="dur tr"><span title="estimada por diferencia: la ejecución no anotó el arranque de todos sus pasos">~1,9 h</span></td>
+      <td class="dur es"><span class="nd" title="la ejecución no anotó el arranque de ningún paso (es anterior a la story 2.7): las duraciones son estimadas por diferencia">sin medir</span></td>
+      <td class="pasos-n"><span class="ok9">llegó al 8</span></td>
+      <td class="ag">9</td>
+      <td class="vu"><span class="nd">—</span></td>
+      <td class="tk">131 k</td>
+      <td class="ar"><span title="según git: 1 archivo en 1 repo (commits de la ejecución y lo que quedó sin commitear)">1</span></td>
+      <td class="frenos"><span class="f f-error" title="tests — 1 vez: 0 pasó, 1 encontró un error, 0 frenó">pruebas <b>1 con error</b></span><span class="f " title="build — 1 vez: 1 pasó, 0 encontró un error, 0 frenó">compila</span></td>
+    </tr></tbody></table></div>
+</section>
+
+<footer><div class="pie">
+  <div><b>De dónde sale</b><span>del espejo del buzón de ejecuciones que el sitio baja con su identidad de sólo lectura; la máquina de cada ejecución es su carpeta. Una ejecución por sesión: si la misma ejecución se subió dos veces, vale la más nueva.</span></div>
+  <div><b>Lo que se publica de git</b><span>los commits que la ejecución creó y lo que dejó sin commitear, en cada repo donde escribió, con su parche: es el cambio real, venga de una edición, de la consola o de un subagente. Credenciales, correos, rutas absolutas y UUID salen tapados; tope de largo por archivo y por ejecución, dicho donde corta. Las ejecuciones anteriores a la story 2.19 no lo tienen y muestran sólo la conversación.</span></div>
+  <div><b>Lo que se publica del hilo</b><span>sólo los archivos que tocó cada ejecución, su cambio y sus commits: rutas relativas al repo, credenciales y rutas absolutas tapadas, con tope de largo. Los prompts, las respuestas, los comandos y los identificadores de sesión no. Esta página no se commitea, pero se comparte. El mensaje de cada error llega del rescate de la story 2.13, saneado dos veces.</span></div>
+  <div><b>Tokens, no plata</b><span>el registro trae tokens; una tabla de precios adentro del arnés envejece sin que nadie lo note.</span></div>
+  <div><b>Lo que se mide de un revisor</b><span>cuánto tardó, cuánto devolvió y —si su notificación lo trajo— cuánto consumió; no lo que leyó. Lo que no se pudo medir se estima aparte y lleva la palabra «estimado», con la fecha de su supuesto: nunca se suma a lo medido.</span></div>
+  <div><b>Trabajo, espera y tiempo entre pasos</b><span>cada paso anota cuándo arranca y cuándo termina. <b>Espera</b> es lo que duraron los dos pasos que aguardan a una persona (aprobar el plan y aprobar los hallazgos); <b>trabajo</b>, todos los demás; lo que pasa entre el fin de un paso y el arranque del siguiente es un tramo aparte, rayado, que no se le cobra a ninguno. Las ejecuciones anteriores a esa marca salen <b>estimadas por diferencia</b> y lo dicen; un paso de menos de un minuto se dibuja como una raya: se marcó junto con el anterior.</span></div>
+</div></footer></div><div id="fuente-corridas" data-api="/api/corridas" data-generado="X" hidden></div><script src="/corridas/cliente.js"></script><footer class="pie"><span>Arnés v2026.10.15.48</span><a href="/licencia">Licencia Apache 2.0</a><a href="/creditos">Créditos y componentes de terceros</a><span class="esp"></span></footer></main></div></body></html>

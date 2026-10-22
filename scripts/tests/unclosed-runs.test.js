@@ -191,7 +191,9 @@ test('T5 Vista_DiceSinCerrar @story-2.67 @ac-4: la vista de ejecuciones marca «
   assert.strictEqual(M.corridas[0].sin_cerrar, true);
   const html = V.render(M);
   assert.match(html, /<span class="parcial"[^>]*>sin cerrar<\/span>/, 'la fila');
-  assert.match(html, /◆<\/span>sin cerrar/, 'el detalle');
+  // el detalle lo arma el navegador con los textos que la página le pasa: la pieza y su texto
+  assert.match(html, /◆<\/span>' \+ T\('sinCerrar'\)/, 'el detalle');
+  assert.match(html, /"sinCerrar":"sin cerrar"/, 'el texto del detalle');
 });
 
 test('T6 Aviso_UnaVezPorDia @story-2.67 @ac-5: un renglón al arrancar; después calla; apagado calla', () => {
