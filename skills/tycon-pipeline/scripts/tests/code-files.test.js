@@ -231,3 +231,15 @@ test('@story-8.48 @ac-3 Adversarial_falsoNegativo3_EmptyCatchInMjsCallsHunter', 
     assert.ok(set.all.includes('tycon-silent-failure-hunter'), `${f}: ${set.all.join(', ')}`);
   }
 });
+
+test('CodeFiles_PorLenguaje_CubreTodas — cada terminación que el núcleo cuenta como código tiene su lenguaje, y la lista agrupada no repite ni pierde ninguna', () => {
+  // 🔴 rojo: el sitio no puede mostrar qué terminaciones reconoce el arnés sin escribirlas a mano.
+  const cf = require('../lib/code-files.js');
+  const todas = [...cf.SOURCE_EXTS, ...cf.CODE_ONLY_EXTS];
+  for (const e of todas) assert.ok(typeof cf.LANGUAGES[e] === 'string' && cf.LANGUAGES[e], `${e} sin lenguaje`);
+  assert.deepStrictEqual(Object.keys(cf.LANGUAGES).sort(), [...todas].sort(), 'ni una de más');
+  const grupos = cf.byLanguage();
+  assert.deepStrictEqual(grupos.flatMap((g) => g.exts).sort(), [...todas].sort(), 'agrupadas, todas una vez');
+  assert.ok(grupos.every((g) => g.language && g.exts.length), 'cada grupo con su nombre y sus terminaciones');
+  assert.deepStrictEqual(grupos.find((g) => g.exts.includes('.tsx')).exts.sort(), ['.cts', '.mts', '.ts', '.tsx']);
+});

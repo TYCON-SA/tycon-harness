@@ -298,8 +298,6 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
   const views = require('../views.js');
   const { t: tx } = require('../texts.js');
   const idiomaDe = (ctx) => views.idiomaDe(ctx);
-  // las etiquetas del filtro de la vista, en el idioma del pedido (la cuenta queda como molde: la llena el cliente)
-  const textosFiltro = (idioma) => Object.fromEntries(['filtro', 'desde', 'hasta', 'producto', 'maquina', 'sinConsumo', 'llegaron', 'limpiar', 'hoy', 'semana', 'mes', 'cuenta'].map((k) => [k, tx(idioma, `corridas.filtro.${k}`)]));
   const vista = crearVista({ cfg, fuentes, armar, skillsDir, demora, log, ahora, ...(topeCacheBytes ? { topeCacheBytes } : {}) });
   const json = (status, obj, extra) => ({ status, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(obj), ...(extra ? { extra } : {}) });
   const texto = (status, t, extra) => ({ status, tipo: 'text/plain; charset=utf-8', cuerpo: t, ...(extra ? { extra } : {}) });
@@ -374,7 +372,7 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
         const idioma = idiomaDe(ctx);
         const llave = `pagina\0${idioma}\0${r.error ? `${r.error.codigo}\0${r.error.desde}` : ''}`;
         if (r.salidas[llave]) return pagina(ctx, r.salidas[llave]);
-        const opts = { sitio: { rol: ctx.quien.rol, version } };
+        const opts = { sitio: { rol: ctx.quien.rol, version }, idioma };
         const rearmado = r.error ? `<div class="banda gris"><b>${runsEsc(tx(idioma, 'corridas.rearmado', { desde: hora(r.error.desde), codigo: r.error.codigo }))}</b>${runsEsc(tx(idioma, 'corridas.rearmadoSeMuestra', { generado: hora(V.generado) }))}</div>` : '';
         // las fichas de Corridas del tablero nocturno (de la organización: sólo quien mantiene), entre el resumen y la
         // tabla; salen del mismo modelo de fichas que Arnés y Proyectos. Sin fichas todavía (el primer refresco), lo dice como
@@ -385,8 +383,8 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
         const fichasTablero = !esQuienMantiene ? ''
           : modeloFondo.fichas == null ? `<p class="q-note" id="fichas-calculando">${runsEsc(tx(idioma, 'fichas.calculando'))}</p>`
             : (grilla ? `<div id="fichas-corridas">${grilla.html}</div>` : '');
-        const cuerpo = `<link rel="stylesheet" href="/corridas/vista.css"><div class="corridas">${rearmado}${runs.cabecera(V, opts)}\n${runs.ejecutiva(V, { textos: textosFiltro(idioma) })}\n${fichasTablero}${runs.tabla(V)}\n${runs.pie(V, opts)}</div>`
-          + `<div id="fuente-corridas" data-api="/api/corridas" data-generado="${runsEsc(V.generado)}" hidden></div><script src="/corridas/cliente.js"></script>`;
+        const cuerpo = `<link rel="stylesheet" href="/corridas/vista.css"><div class="corridas">${rearmado}${runs.cabecera(V, opts)}\n${runs.ejecutiva(V, opts)}\n${fichasTablero}${runs.tabla(V, opts)}\n${runs.pie(V, opts)}</div>`
+          + `<div id="fuente-corridas" data-api="/api/corridas" data-generado="${runsEsc(V.generado)}" hidden></div>${runs.bloqueDeTextos(idioma)}<script src="/corridas/cliente.js"></script>`;
         r.salidas[llave] = cuerpo;
         return pagina(ctx, cuerpo);
       },
@@ -396,8 +394,11 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
         const r = loSuyo(ctx, true);
         if (r.sinBuzon) return json(200, { estado: 'no_medido', motivo: tx(idiomaDe(ctx), 'corridas.sinBuzon'), corridas: [] });
         if (r.falla) return r.falla;
-        if (!r.salidas.lista) r.salidas.lista = JSON.stringify({ ...r.vis, corridas: r.vis.corridas.map(runs.paraLista) });
-        return { status: 200, tipo: 'application/json; charset=utf-8', cuerpo: r.salidas.lista };
+        // las frases de la casa que trae el modelo, en el idioma del pedido (una lista por idioma)
+        const idioma = idiomaDe(ctx);
+        const llave = `lista\0${idioma}`;
+        if (!r.salidas[llave]) r.salidas[llave] = JSON.stringify(runs.todoEnIdioma(idioma, { ...r.vis, corridas: r.vis.corridas.map(runs.paraLista) }));
+        return { status: 200, tipo: 'application/json; charset=utf-8', cuerpo: r.salidas[llave] };
       },
     },
     {
@@ -406,7 +407,7 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
         if (r.sinBuzon) return SIN_BUZON;
         if (r.falla) return r.falla;
         const c = corrida(r.vis, ctx.params.id);
-        return c ? json(200, runs.paraDetalle(c)) : NO_EXISTE;
+        return c ? json(200, runs.todoEnIdioma(idiomaDe(ctx), runs.paraDetalle(c))) : NO_EXISTE;
       },
     },
     {

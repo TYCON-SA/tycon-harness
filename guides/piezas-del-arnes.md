@@ -654,6 +654,16 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscicheck-trigger-without-docsjs)
 
+## scripts/ci/check-tests-without-ci.js
+
+**Qué es:** Un control que dice, repo por repo, si hay pruebas de navegador que ningún pipeline corre, y si al menos las cubre el portón del merge.
+
+**Por qué existe:** Pruebas escritas quedaron casi un mes sin correr porque el pipeline nunca las cableó; el aviso de antes miraba el portón, no el pipeline.
+
+**Quién la usa:** Quien escribe pruebas de navegador, a mano; los repos salen de `product-parity.json`. Avisa y no frena.
+
+**Dónde se prueba:** `scripts/tests/tests-without-ci.test.sh`
+
 ## skills/tycon-pipeline/scripts/lib/first-story.js — la primera historia de la máquina
 
 **Qué es:** Dice si una historia es la primera que cierra la máquina, por evidencia, y al cerrarla ofrece una sola vez la instalación completa en tres renglones.
@@ -1403,6 +1413,18 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 **Dónde se prueba:** `scripts/tests/worktree-sweep.test.js`
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksworktree-sweepjs)
+
+## scripts/hooks/dev-behind-main-notice.js
+
+**Qué es:** Avisa al abrir la sesión, en una línea, si a `dev` le faltan commits de `main` o si hay trabajo en `dev` que hace una semana no llega a `main`.
+
+**Por qué existe:** El paso de los pipelines de producto que lo avisaba escribía en el log de una ejecución verde, que nadie abre. Calla lo que es de diseño (los commits de versión del bot, el trabajo en curso) y dice «no sé» con datos viejos.
+
+**Quién la usa:** El arranque de sesión, en los repos de producto de la organización del equipo. La oferta de poner `dev` al día sigue `guides/git-commit-conventions.md` §«Poner `dev` al día». Se apaga con `TYCON_DEV_BEHIND_NOTICE=0`.
+
+**Dónde se prueba:** `scripts/tests/dev-behind-main-notice.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksdev-behind-main-noticejs)
 
 ## scripts/hooks/missing-path-notice.js
 

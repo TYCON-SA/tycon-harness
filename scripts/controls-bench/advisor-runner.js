@@ -85,7 +85,19 @@ const { siblingsFromPacks } = require('../lib/installed-packs.js');
 
 const BENCH_DIR = __dirname;
 const TCG = path.resolve(BENCH_DIR, '..', '..');
-const AGENTS_DIR = process.env.TYCON_AGENTS_DIR || path.join(os.homedir(), '.claude', 'agent-skills', 'agents');
+// La carpeta de los revisores: TYCON_AGENTS_DIR; si no, la `agents` del árbol del arnés (la que resuelve skills-dir.js,
+// como el pipeline); si no está, la de Claude Code. Una máquina sólo con Codex no tiene la de Claude Code.
+// El examen dice cuál eligió y por qué, y frena si no existe (ver main).
+const { dir: AGENTS_DIR, origen: AGENTS_ORIGEN } = (() => {
+  if (process.env.TYCON_AGENTS_DIR) return { dir: process.env.TYCON_AGENTS_DIR, origen: 'TYCON_AGENTS_DIR' };
+  let por = '';
+  try {
+    const dir = path.join(require(path.join(TCG, 'scripts', 'lib', 'skills-dir.js')).resolveSkillsDirs().repo, 'agents');
+    if (fs.existsSync(dir)) return { dir, origen: 'el árbol del arnés' };
+    por = `el árbol no trae ${dir}`;
+  } catch (e) { por = `no pude leer skills-dir.js (${(e && e.message) || e})`; }
+  return { dir: path.join(os.homedir(), '.claude', 'agent-skills', 'agents'), origen: `la carpeta de Claude Code: ${por}` };
+})();
 const ADAPTERS_DIR = path.join(TCG, 'adapters', 'codex', 'agents');
 const CODEX_HOME = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
 const CASES_DIR = path.join(BENCH_DIR, 'cases', 'advisors');
@@ -1794,6 +1806,14 @@ async function main() {
   if (argv.includes('--selftest-retro')) return selftestRetro();
   if (argv.includes('--check-apps-off')) return checkAppsOff();
   if (PACK && PACK.error) { console.error(PACK.error); return 2; }
+  // de dónde salen los revisores, por stderr (la salida de --list la leen otros guiones); sin la carpeta, frena con su motivo
+  if (!PACK && !argv.includes('--list')) {
+    if (!fs.existsSync(AGENTS_DIR)) {
+      console.error(`advisor-runner: no encuentro la carpeta de los revisores ${AGENTS_DIR} (de ${AGENTS_ORIGEN}); TYCON_AGENTS_DIR elige otra`);
+      return 2;
+    }
+    console.error(`advisor-runner: los revisores salen de ${AGENTS_DIR} (de ${AGENTS_ORIGEN})`);
+  }
   const casesDir = PACK ? PACK.casesDir : CASES_DIR;
   if (!fs.existsSync(casesDir)) { console.error(`sin casos: ${casesDir}`); return 1; }
   const archivosDeCasos = fs.readdirSync(casesDir).filter((f) => f.endsWith('.json')).sort();
@@ -2113,4 +2133,5 @@ async function main() {
   return failed + parityBreaks + baselineRegressions > 0 ? 1 : 0;
 }
 
-main().then((c) => process.exit(c)).catch((e) => { console.error(`advisor-runner: ${e.message}`); process.exit(1); });
+module.exports = { AGENTS_DIR, AGENTS_ORIGEN };
+if (require.main === module) main().then((c) => process.exit(c)).catch((e) => { console.error(`advisor-runner: ${e.message}`); process.exit(1); });
