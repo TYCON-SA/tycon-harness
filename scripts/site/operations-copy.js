@@ -328,38 +328,77 @@ async function subir({ repo, almacen, ahora = Date.now, log = () => {}, dryRun =
 const CONSERVAR_COPIAS = 3;
 const GRACIA_COPIAS_MS = 60 * 60 * 1000;
 const FORMA_COPIA = /^copia-[0-9a-f]{7,12}-[0-9a-f]{6}$/;
+// la poda corre de fondo: un minuto después de abrir la foto (el servidor ya atiende), de a una carpeta con una pausa
+// entre cada una y hasta un tope por pasada; lo que queda, en el próximo refresco. Borrar decenas de miles de archivos
+// de un disco compartido de una vez traba al servidor y vence las pruebas de disponibilidad de la nube
+const DEMORA_PODA_MS = 60 * 1000;
+const PAUSA_PODA_MS = 1000;
+const TOPE_PODA = 10;
+const podasEnCurso = new Map();  // por carpeta: una poda a la vez en cada una
 /**
  * Poda la carpeta de las copias abiertas: quedan `actual` y las más nuevas hasta `conservar` en total; las demás, y los
- * `.abriendo-` que dejó un corte, se borran si se abrieron hace más de `gracia`. La gracia y las copias que se conservan
- * cuidan a otra réplica del sitio que abrió la suya hace poco (un cambio de revisión); una réplica que sigue con una copia
- * más vieja que esas la vuelve a bajar en su próximo refresco, porque la suya ya no existe. Sin esto, cada reinicio dejaba
- * la copia anterior para siempre: quién era la anterior sólo lo sabe la memoria del proceso. Lo que no tiene la forma de
- * una copia no se toca. `{ borradas }`.
+ * `.abriendo-` que dejó un corte, se borran si se abrieron hace más de `gracia`; `previo` (la copia que este proceso dejó
+ * de usar) se borra sin esperar la gracia. La gracia y las copias que se conservan cuidan a otra réplica del sitio que
+ * abrió la suya hace poco (un cambio de revisión); una réplica que sigue con una copia más vieja que esas la vuelve a bajar
+ * en su próximo refresco, porque la suya ya no existe. Sin esto, cada reinicio dejaba la copia anterior para siempre:
+ * quién era la anterior sólo lo sabe la memoria del proceso. Lo que no tiene la forma de una copia no se toca. Todo es
+ * asíncrono, de a una carpeta, con `pausaMs` entre cada una y hasta `tope` por pasada. `{ borradas, quedan }`.
  */
-function podarCopias({ dir, actual, conservar = CONSERVAR_COPIAS, gracia = GRACIA_COPIAS_MS, ahora = Date.now, log = () => {} }) {
+async function podarCopias({ dir, actual, previo = null, conservar = CONSERVAR_COPIAS, gracia = GRACIA_COPIAS_MS, ahora = Date.now, log = () => {}, tope = TOPE_PODA, pausaMs = PAUSA_PODA_MS }) {
   let nombres;
-  try { nombres = fs.readdirSync(dir); } catch (e) { if (e.code !== 'ENOENT') log(`copia de operaciones: no se pudo listar ${dir} para borrar las copias viejas (${e.code || e.message})`); return { borradas: [] }; }
-  const fecha = (n) => { try { return fs.lstatSync(path.join(dir, n)).mtimeMs; } catch { return NaN; } };
-  const copias = nombres.filter((n) => FORMA_COPIA.test(n)).map((n) => ({ n, t: fecha(n) })).filter((x) => Number.isFinite(x.t)).sort((a, b) => b.t - a.t);
-  const quedan = new Set(actual ? [path.basename(actual)] : []);
+  try { nombres = await fs.promises.readdir(dir); } catch (e) { if (e.code !== 'ENOENT') log(`copia de operaciones: no se pudo listar ${dir} para borrar las copias viejas (${e.code || e.message})`); return { borradas: [], quedan: 0 }; }
+  const fecha = async (n) => { try { return (await fs.promises.lstat(path.join(dir, n))).mtimeMs; } catch { return NaN; } };
+  const copias = [];
+  for (const n of nombres.filter((x) => FORMA_COPIA.test(x))) { const t = await fecha(n); if (Number.isFinite(t)) copias.push({ n, t }); }
+  copias.sort((a, b) => b.t - a.t);
+  const enUso = actual ? path.basename(actual) : null;
+  const quedan = new Set(enUso ? [enUso] : []);
   for (const c of copias) { if (quedan.size >= conservar) break; quedan.add(c.n); }
   const limite = ahora() - gracia;
-  const candidatas = copias.filter((c) => !quedan.has(c.n)).concat(nombres.filter((n) => n.startsWith('.abriendo-')).map((n) => ({ n, t: fecha(n) })));
+  const aBorrar = [];
+  const anterior = previo && path.dirname(previo) === dir ? path.basename(previo) : null;
+  if (anterior && anterior !== enUso && FORMA_COPIA.test(anterior) && nombres.includes(anterior)) aBorrar.push(anterior);
+  for (const c of copias) if (!quedan.has(c.n) && c.t <= limite && !aBorrar.includes(c.n)) aBorrar.push(c.n);
+  for (const n of nombres.filter((x) => x.startsWith('.abriendo-'))) { const t = await fecha(n); if (Number.isFinite(t) && t <= limite) aBorrar.push(n); }
   const borradas = [];
-  for (const c of candidatas) {
-    if (!Number.isFinite(c.t) || c.t > limite) continue;
-    try { fs.rmSync(path.join(dir, c.n), { recursive: true, force: true }); borradas.push(c.n); } catch (e) { log(`copia de operaciones: ${c.n} no se pudo borrar (${e.code || e.message}); queda para la próxima`); }
+  for (const n of aBorrar.slice(0, tope)) {
+    if (borradas.length && pausaMs) await new Promise((r) => setTimeout(r, pausaMs));
+    try { await fs.promises.rm(path.join(dir, n), { recursive: true, force: true }); borradas.push(n); } catch (e) { log(`copia de operaciones: ${n} no se pudo borrar (${e.code || e.message}); queda para la próxima`); }
   }
-  if (borradas.length) log(`copia de operaciones: borradas ${borradas.length} carpeta(s) viejas de la copia`);
-  return { borradas };
+  const pendientes = Math.max(0, aBorrar.length - tope);
+  if (borradas.length) log(`copia de operaciones: borradas ${borradas.length} carpeta(s) viejas de la copia${pendientes ? `; quedan ${pendientes} para la próxima pasada` : ''}`);
+  return { borradas, quedan: pendientes };
 }
+/**
+ * Programa una poda de fondo de `dir`, sin esperarla: corre después de `demoraMs`, una a la vez por carpeta (si ya hay
+ * una en curso, devuelve ésa). La promesa nunca falla: un error se registra.
+ */
+function programarPoda({ dir, demoraMs = DEMORA_PODA_MS, log = () => {}, ...resto }) {
+  if (podasEnCurso.has(dir)) {
+    if (resto.previo) log('copia de operaciones: ya hay una poda en curso; la carpeta anterior queda para la próxima pasada');
+    return podasEnCurso.get(dir);
+  }
+  const p = new Promise((listo) => { const t = setTimeout(listo, demoraMs); if (t.unref) t.unref(); })
+    .then(() => podarCopias({ dir, log, ...resto }))
+    .catch((e) => {
+      try { log(`copia de operaciones: la poda de copias viejas falló (${(e && (e.code || e.message)) || e}); queda para la próxima`); } catch { /* sin registro, igual no rechaza */ }
+      return { borradas: [], quedan: 0 };
+    })
+    .finally(() => { podasEnCurso.delete(dir); });
+  podasEnCurso.set(dir, p);
+  return p;
+}
+/** La poda en curso de `dir`, o una promesa ya cumplida si no hay ninguna (para esperarla, las pruebas). */
+function podaPendiente(dir) { return podasEnCurso.get(dir) || Promise.resolve({ borradas: [], quedan: 0 }); }
 
 /**
- * `{ ok: true, cambio, carpeta, indice }` o `{ ok: false, codigo, motivo }`. `previo`: `{ commit, huella, carpeta }` de la
- * bajada anterior. Con el mismo commit y la misma huella no baja la foto. Con uno nuevo, la abre en `<dir>/copia-<commit>-<azar>` y recién entonces
- * borra la carpeta anterior: quien lee nunca ve una mezcla.
+ * `{ ok: true, cambio, carpeta, indice, poda }` o `{ ok: false, codigo, motivo }`. `previo`: `{ commit, huella, carpeta }` de
+ * la bajada anterior. Con el mismo commit y la misma huella no baja la foto. Con uno nuevo, la abre en
+ * `<dir>/copia-<commit>-<azar>` (escribiendo sin trabar al servidor) y recién entonces programa la poda de fondo, que borra
+ * la carpeta anterior y las viejas: quien lee nunca ve una mezcla. `poda` es la promesa de esa poda (nadie la espera; las
+ * pruebas sí) y `opcionesPoda` cambia su demora, su pausa y su tope.
  */
-async function bajar({ almacen, dir, previo = null, log = () => {} }) {
+async function bajar({ almacen, dir, previo = null, log = () => {}, opcionesPoda = {} }) {
   const r = await almacen.get(INDICE);
   if (r.error || r.status !== 200) return { ok: false, codigo: codigoDe(r), motivo: `el índice de la copia no se pudo bajar (${r.error ? r.error.code || r.error.message : r.status})` };
   let indice;
@@ -376,8 +415,8 @@ async function bajar({ almacen, dir, previo = null, log = () => {} }) {
   if (!nombre) return { ok: false, codigo: 'ilegible', motivo: 'el índice de la copia nombra una foto que no tiene la forma de una foto' };
   // sin cambio sólo con el mismo commit Y la misma huella: una foto re-subida con el mismo commit trae otra
   if (previo && previo.commit === indice.commit && previo.huella === indice.huella && previo.carpeta && fs.existsSync(previo.carpeta)) {
-    podarCopias({ dir, actual: previo.carpeta, log });
-    return { ok: true, cambio: false, carpeta: previo.carpeta, indice };
+    const poda = programarPoda({ dir, actual: previo.carpeta, log, ...opcionesPoda });
+    return { ok: true, cambio: false, carpeta: previo.carpeta, indice, poda };
   }
   const f = await almacen.get(nombre);
   if (f.error || f.status !== 200) return { ok: false, codigo: f.status === 404 ? 'ilegible' : codigoDe(f), motivo: `la foto que nombra el índice no se pudo bajar (${f.error ? f.error.code || f.error.message : f.status})` };
@@ -385,25 +424,24 @@ async function bajar({ almacen, dir, previo = null, log = () => {} }) {
   const foto = leerFoto(f.cuerpo);
   if (!foto.ok) return { ok: false, codigo: 'ilegible', motivo: foto.motivo };
   if (foto.ignorados.length) log(`copia de operaciones: ${foto.ignorados.length} archivo(s) de la foto que el sitio no lee, ignorados: ${foto.ignorados.slice(0, 10).join(', ').slice(0, 400)}`);
-  fs.mkdirSync(dir, { recursive: true });
-  const abriendo = fs.mkdtempSync(path.join(dir, '.abriendo-'));
+  // asíncrono, archivo por archivo: sobre un disco compartido escribir miles de archivos de una vez traba al servidor
+  let abriendo = null;
   try {
+    await fs.promises.mkdir(dir, { recursive: true });
+    abriendo = await fs.promises.mkdtemp(path.join(dir, '.abriendo-'));
     for (const a of foto.archivos) {
       const destino = path.join(abriendo, a.rel);
-      fs.mkdirSync(path.dirname(destino), { recursive: true });
-      fs.writeFileSync(destino, a.cuerpo);
+      await fs.promises.mkdir(path.dirname(destino), { recursive: true });
+      await fs.promises.writeFile(destino, a.cuerpo);
     }
     const carpeta = path.join(dir, `copia-${indice.commit.slice(0, 12)}-${crypto.randomBytes(3).toString('hex')}`);
-    fs.renameSync(abriendo, carpeta);
+    await fs.promises.rename(abriendo, carpeta);
     log(`copia de operaciones: abierta la foto de ${indice.commit.slice(0, 12)} (${foto.archivos.length} archivo(s))`);
-    // la anterior se borra DESPUÉS: si el borrado falla, la foto nueva ya está abierta y es la que vale
-    if (previo && previo.carpeta && previo.carpeta !== carpeta && path.dirname(previo.carpeta) === dir) {
-      try { fs.rmSync(previo.carpeta, { recursive: true, force: true }); } catch (e) { log(`copia de operaciones: la carpeta anterior no se pudo borrar (${e.code || e.message}); queda para la próxima`); }
-    }
-    podarCopias({ dir, actual: carpeta, log });
-    return { ok: true, cambio: true, carpeta, indice };
+    // la anterior se borra DESPUÉS y de fondo: si el borrado falla, la foto nueva ya está abierta y es la que vale
+    const poda = programarPoda({ dir, actual: carpeta, previo: previo && previo.carpeta !== carpeta ? previo.carpeta : null, log, ...opcionesPoda });
+    return { ok: true, cambio: true, carpeta, indice, poda };
   } catch (e) {
-    try { fs.rmSync(abriendo, { recursive: true, force: true }); } catch { /* lo dice el motivo de abajo */ }
+    if (abriendo) { try { await fs.promises.rm(abriendo, { recursive: true, force: true }); } catch { /* lo dice el motivo de abajo */ } }
     return { ok: false, codigo: 'ilegible', motivo: `la foto no se pudo abrir en el disco (${e.code || e.message})` };
   }
 }
@@ -437,7 +475,7 @@ async function main(argv) {
   return r.ok ? 0 : 1;
 }
 
-module.exports = { RUTAS, INDICE, rutaSana, rutaSegura, logoDe, armarFoto, leerFoto, juntar, almacenDeLaNube, codigoDe, subir, bajar, borrarViejas, podarCopias };
+module.exports = { RUTAS, INDICE, rutaSana, rutaSegura, logoDe, armarFoto, leerFoto, juntar, almacenDeLaNube, codigoDe, subir, bajar, borrarViejas, podarCopias, programarPoda, podaPendiente };
 
 if (require.main === module) {
   main(process.argv.slice(2)).then((c) => process.exit(c), (e) => { process.stderr.write(`[copia] falló: ${e && e.stack ? e.stack : e}\n`); process.exit(1); });
