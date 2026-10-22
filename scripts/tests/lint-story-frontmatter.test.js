@@ -301,3 +301,39 @@ test('T45 FilesToModify_NotasYComodines_NoSeJuzgan: lo que no es una ruta clara 
   const r = run([f], proj);
   assert.strictEqual(r.code, 0, r.out);
 });
+
+test('T46 FilesToModify_DesdeUnWorktree_LeeElCompaneroDeclarado: la ruta relativa del compañero se resuelve desde el checkout principal', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'lint-wt-'));
+  const code = path.join(base, 'code');
+  write(base, 'code/scripts/lib/real.js', '// real\n');
+  execFileSync('git', ['init', '-q'], { cwd: code });
+  const priv = path.join(base, 'privado');
+  fs.mkdirSync(priv);
+  execFileSync('git', ['init', '-q'], { cwd: priv });
+  write(priv, '.tycon/advisors.yaml', 'evidence:\n  companion_repos:\n    - ../code\n');
+  write(priv, 'scripts/x.js', '// el privado también tiene scripts/\n');
+  execFileSync('git', ['add', '.'], { cwd: priv });
+  commit(priv, '-m', 'inicio');
+  const wt = path.join(base, 'worktrees', 'privado-wt');
+  execFileSync('git', ['-c', 'maintenance.auto=false', 'worktree', 'add', '-q', wt], { cwd: priv, env: GIT_ENV });
+  const f = story(wt, 'specs/story-9.1-algo.md', ['story: "9.1"', 'epic: 9', 'status: ready-for-dev', 'files_to_modify:', '  - "scripts/lib/real.js"']);
+  const r = run([f], wt);
+  assert.strictEqual(r.code, 0, r.out);
+});
+
+test('T47 FilesToModify_SoloEnElRemoto_NoFrena: un clon atrasado no hace inventado un archivo que ya está en su rama principal', () => {
+  const { prod, proj } = productoConCodigo();
+  const back = path.join(prod, 'Backend');
+  fs.rmSync(path.join(back, '.git'), { recursive: true, force: true });
+  execFileSync('git', ['init', '-q'], { cwd: back });
+  execFileSync('git', ['remote', 'add', 'origin', 'https://dev.azure.com/acme/Acme/_git/Backend'], { cwd: back });
+  write(prod, 'Backend/src/AcmeBackend/Features/Nuevo/NuevoService.cs', '// nuevo\n');
+  execFileSync('git', ['add', '.'], { cwd: back });
+  commit(back, '-m', 'con el archivo');
+  execFileSync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: back });
+  fs.rmSync(path.join(back, 'src', 'AcmeBackend', 'Features', 'Nuevo'), { recursive: true, force: true });
+  const f = story(proj, 'specs/story-6.5-cbu-del-gestor.md', HISTORIA_65(['src/AcmeBackend/Features/Nuevo/NuevoService.cs']));
+  const r = run([f], proj);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /al día/);
+});
