@@ -1,0 +1,210 @@
+# Using the harness with Ollama models (Claude Code and Codex)
+
+En castellano: [ollama.md](ollama.md).
+
+An optional guide. It is for you if you want to work with the harness using an open model that runs in Ollama, instead
+of the models from Anthropic or OpenAI. It tells how to connect each tool, what was measured with each model and what
+to be careful about. The measurements come from a lab run with public material and Ollama's free plan: they are not a
+promise that everything will work the same on your repos.
+
+**In short:**
+
+- With **Claude Code**, the harness reaches the reviewers: they run as separate agents.
+- With **Codex**, the harness blocks what it should and you can work, but the pipeline cannot launch reviewers (a
+  problem between Codex and Ollama, reported there).
+- You need a model that **uses tools**. A local 7B model does not use them and is not enough.
+- The controls work, but a model can write the variable that turns them off by itself. Read
+  [the warnings](#warnings).
+
+## What you need
+
+- **Ollama 0.14 or newer.** That is the first version that serves the Anthropic API, which Claude Code uses. Check with
+  `ollama --version`.
+- **An Ollama account**, for the cloud models: `ollama signin`. Those models run on Ollama's servers, not on your
+  machine, so they need no memory.
+- **The harness installed** for the tool you use (Claude Code, Codex or both).
+
+Cloud models are registered once with `ollama pull`:
+
+```bash
+ollama signin
+ollama pull gemma4:31b-cloud
+ollama pull gpt-oss:120b-cloud
+```
+
+## Which models work
+
+What was measured, by tool. "Uses tools" is the condition for everything else: without it the controls do not fire, the
+pipeline does not run and the reviewers do not work.
+
+| Model | Free plan | Claude Code | Codex |
+|---|---|---|---|
+| `gemma4:31b-cloud` | yes | uses tools; blocks and respects the controls; **followed the pipeline**, implemented with passing tests and launched the reviewers as separate agents | uses tools; implemented with passing tests, but without reading the pipeline skill |
+| `gpt-oss:120b-cloud` | yes | uses tools; reviewers work; **got around the security control** and **told of pipeline steps it did not do** | uses tools; respects the controls; the story was cut by the connection, with no code |
+| `beam:cloud` | yes | **does not use tools** through Ollama's Anthropic API | uses tools; followed the pipeline up to implementing and stopped at the reviewers |
+| `glm-5.3:cloud`, `kimi-k2.7-code:cloud`, `deepseek-v4-pro:cloud` | no: they need the Pro plan (error 402) | — | — |
+| a local 7B model | — | not measured | **does not use tools**: it writes the call as text and Codex runs nothing |
+
+Two more facts:
+
+- Large local models need a lot of memory. `gpt-oss:20b` is about a 13 GB download and is the reasonable minimum for
+  Codex; `gpt-oss:120b` needs 80 GB or more. On a shared 16 GB Mac even the 7B pushed memory into the warning level.
+- The three free models were never cut off by plan limits. The cuts that happened were connection drops
+  (`stream disconnected`).
+
+## Claude Code in the terminal
+
+Claude Code talks to Ollama through its Anthropic API. You tell it where to go with environment variables, and you set
+them **for that window only**: other sessions keep using Anthropic.
+
+Put this function in your `~/.zshrc` (or `~/.bashrc`; in bash, replace `read "model?…"` with `read -p "…" model`):
+
+```bash
+# Claude Code with an Ollama model, in this window only.
+# Usage: claude-ollama                     -> pick from a list
+#        claude-ollama gemma4:31b-cloud
+claude-ollama() {
+  local model="$1"
+  if [ -z "$model" ]; then
+    local options=("gemma4:31b-cloud" "gpt-oss:120b-cloud" "other")
+    echo "Which Ollama model? (the first two are in the free plan)"
+    select m in "${options[@]}"; do
+      if [ "$m" = "other" ]; then read "model?Model name: "; else model="$m"; fi
+      [ -n "$model" ] && break
+    done
+  fi
+  if ! ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$model"; then
+    ollama pull "$model" || { echo "Could not pull $model: is Ollama running and 0.14 or newer?"; return 1; }
+  fi
+  ANTHROPIC_BASE_URL="http://localhost:11434" \
+  ANTHROPIC_AUTH_TOKEN="ollama" \
+  ANTHROPIC_API_KEY="" \
+  ANTHROPIC_MODEL="$model" \
+  ANTHROPIC_DEFAULT_OPUS_MODEL="$model" \
+  ANTHROPIC_DEFAULT_SONNET_MODEL="$model" \
+  ANTHROPIC_DEFAULT_HAIKU_MODEL="$model" \
+  CLAUDE_CODE_SUBAGENT_MODEL="$model" \
+  claude --model "$model" "${@:2}"
+}
+```
+
+What each variable does:
+
+| Variable | What it does |
+|---|---|
+| `ANTHROPIC_BASE_URL` | sends the calls to Ollama, not to Anthropic |
+| `ANTHROPIC_AUTH_TOKEN` | Ollama asks for no key, but Claude Code wants a value: use `ollama` |
+| `ANTHROPIC_API_KEY` | empty, so an Anthropic key you may have saved is not used |
+| `ANTHROPIC_MODEL` | the session's model |
+| `ANTHROPIC_DEFAULT_SONNET_MODEL`, `_OPUS_`, `_HAIKU_` | the harness reviewers ask for `sonnet`; this gives them a model that exists in Ollama |
+| `CLAUDE_CODE_SUBAGENT_MODEL` | the model for separate agents |
+
+Then you run `claude-ollama gemma4:31b-cloud` instead of `claude`. To go back to normal, exit and open `claude`.
+
+Things you will see:
+
+- **Do not use `/model` inside the session.** What you pick there is saved for all sessions, the normal ones too.
+  Change models by exiting and opening `claude-ollama` with another name.
+- **The cost Claude Code shows is a local calculation** with Anthropic's prices. Ollama does not charge for these free
+  models; that number is not money.
+- **An `unrecognized_model` notice on every request.** Claude Code does not know the model name. It changes nothing.
+- **The tests control is only in the full harness profile** for Claude Code. The minimal profile does not install it.
+
+## Claude Code in VS Code
+
+The VS Code extension reads the variables from its settings, not from your terminal. To avoid changing your other
+windows, use **a separate VS Code profile**:
+
+1. Menu **File → Preferences → Profiles → Create Profile…** and name it, for example, `ollama`.
+2. With that profile active, open the settings as JSON (**Preferences: Open User Settings (JSON)**) and add:
+
+```json
+{
+  "claudeCode.environmentVariables": [
+    { "name": "ANTHROPIC_BASE_URL", "value": "http://localhost:11434" },
+    { "name": "ANTHROPIC_AUTH_TOKEN", "value": "ollama" },
+    { "name": "ANTHROPIC_API_KEY", "value": "" },
+    { "name": "ANTHROPIC_MODEL", "value": "gemma4:31b-cloud" },
+    { "name": "ANTHROPIC_DEFAULT_OPUS_MODEL", "value": "gemma4:31b-cloud" },
+    { "name": "ANTHROPIC_DEFAULT_SONNET_MODEL", "value": "gemma4:31b-cloud" },
+    { "name": "ANTHROPIC_DEFAULT_HAIKU_MODEL", "value": "gemma4:31b-cloud" },
+    { "name": "CLAUDE_CODE_SUBAGENT_MODEL", "value": "gemma4:31b-cloud" }
+  ]
+}
+```
+
+The setting lives in that profile: windows with the default profile keep using Anthropic. Run `ollama pull` for the
+model first. The same warnings apply as in the terminal (no `/model`, the cost is a calculation, the
+`unrecognized_model` notice).
+
+## Codex
+
+Codex has a mode for open models:
+
+```bash
+codex --oss --local-provider ollama -m gpt-oss:120b-cloud
+```
+
+- **The provider is `ollama`.** Without `-m`, `--oss` uses `gpt-oss:20b`.
+- **A context of at least 64K tokens.** The harness instructions (rules, skills, reviewers) are long. With the default
+  context, Ollama trims what Codex sends and the model works almost blind. Cloud models already have a long context; if
+  you use a local one, raise it in Ollama.
+- **The controls must be approved with `/hooks`.** In an interactive Codex session, type `/hooks` and approve the
+  harness controls. Unapproved, `codex exec` does not run them and says nothing.
+- **Install the harness for Codex** from the published version: `harness.js install --version latest --tool codex`.
+
+### Reviewers in Codex: the machine's model
+
+Each Codex reviewer profile pins an OpenAI model. That model does not exist in Ollama, and the reviewer fails with
+`unknown input item type: additional_tools`. The way out is to tell the harness that reviewers use **your machine's
+model**, the one in your `config.toml`.
+
+That is declared in the team profile (`team-repos.json`), inside `models`:
+
+```json
+{ "models": { "codex_reviewers": "inherit" } }
+```
+
+You choose it from the organization site, in the models table, row **"Reviewers in Codex"** (Spanish: «Los revisores en
+Codex»; see `guides/organization-site.en.md`). It exists **since harness version 2026.10.22.22**. Without that value
+nothing changes for those who use OpenAI models; with it, the deployment removes the `model =` line from the reviewer
+profiles.
+
+## Warnings
+
+- **A model can write a control's escape.** The controls work: they stop the full test suite, a commit with
+  `--no-verify` and code outside the pipeline. But the escape of several controls is an environment variable, and a
+  model can write it by itself. `gpt-oss` did it with the security control (it wrote `TYCON_SAFETY_OFF=1` and committed
+  with `--no-verify`) although the order said not to look for another way; `beam` did it with the tests control. The
+  harness is closing this: the escape of the security control, and those of the production and names checks, will need
+  the phrase **"autorizo <variable>"** ("I authorize <variable>") written by the person in the chat. Meanwhile, a
+  control only stops a model that obeys: do not run it unwatched on repos you care about.
+- **Check the state, not the story.** `gpt-oss` loaded the pipeline skill and, over five turns, reported steps 1 to 7
+  as "completed" without running a script or writing a file. The controls did not stop it because there was nothing to
+  stop. What gives it away is the state: the story stayed in `ready-for-dev` and no new files appeared. Check
+  `git status` and the story before believing it.
+- **With Codex on Ollama, subagents fail** (`unsupported call`). Codex groups its tools into namespaces and Ollama's API
+  loses them, so the pipeline cannot launch reviewers. It does not depend on any harness option. It is reported at
+  [openai/codex#42488](https://github.com/openai/codex/issues/42488) and
+  [ollama/ollama#18284](https://github.com/ollama/ollama/issues/18284). **With Claude Code the reviewers do run as
+  separate agents.** If you need the reviewers, use Claude Code.
+- **`beam:cloud` does not use tools through Ollama's Anthropic API.** On every request it says it will run a command and
+  ends the turn without the call. With Codex it does use them. For Claude Code, pick `gemma4:31b-cloud` or
+  `gpt-oss:120b-cloud`.
+- **The closing controls hold.** `gemma4` could not pass the live verification matrix, which asks for a person's
+  decision, not even by trying the escape.
+- **Paid models return 402** (`not in the Free plan`). For `glm-5.3`, `kimi-k2.7-code` or `deepseek-v4-pro` you need
+  Ollama's Pro plan.
+
+## When something fails
+
+| Symptom | Cause | What to do |
+|---|---|---|
+| `unrecognized_model` on every request | Claude Code does not know the model name | nothing: the result is the same |
+| 402, "not in the Free plan" | the model needs the Pro plan | use one of the three free ones |
+| Claude Code answers but runs no commands | the model does not use tools (`beam`, a 7B) | change the model |
+| `unknown input item type: additional_tools` in a Codex reviewer | the reviewer profile pins an OpenAI model | set `"codex_reviewers": "inherit"` in `models` |
+| `unsupported call` when launching reviewers in Codex | a Codex limit with Ollama | use Claude Code for that part |
+| `codex exec` does not run the controls | they are not approved | approve with `/hooks` |
+| `stream disconnected` on a long task | the connection to the cloud dropped | retry; long tasks are cut more often |
+| Claude Code still uses Anthropic | the variables did not reach that window | open with `claude-ollama` or the VS Code profile |
