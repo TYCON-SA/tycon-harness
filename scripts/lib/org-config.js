@@ -183,7 +183,7 @@ const CODEX_REVIEWERS_SINCE = '2026.10.22.22';
 // los modelos por proveedor (`models.providers`, `allowed`, `nightly`): un lector anterior los ve como claves
 // desconocidas y descarta toda la configuración de modelos (techo incluido). Se pide sólo si el archivo trae alguna.
 // Provisoria hasta la etiqueta del merge que los trae al lector: está puesta para frenar de más, no de menos
-const MODEL_PROVIDERS_SINCE = '2026.10.23.1';
+const MODEL_PROVIDERS_SINCE = '2026.10.22.48';
 const CLAVES_DE_PROVEEDORES = Object.freeze(['providers', 'allowed', 'nightly']);
 const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE], ['coverage', COVERAGE_SINCE], ['review', REVIEW_SINCE], ['stack', STACK_SINCE]]);
 /** La versión que tiene que pedir el perfil para este `team-repos.json` (sin archivo, la de siempre), y las claves por las que la pide. */
