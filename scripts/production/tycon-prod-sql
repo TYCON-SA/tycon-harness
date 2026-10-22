@@ -26,6 +26,7 @@
 #   tycon-prod-sql --cargar-clave <host>      deja el archivo para cargar la clave, sin consultar nada
 #   tycon-prod-sql --open-firewall <host>     abre la regla de firewall de esta máquina en un Azure SQL de producción
 #   tycon-prod-sql --close-firewall <host>    la cierra (el hook de fin de sesión agrega --session <id>)
+#   tycon-prod-sql --locks                    dice qué servidores de producción tienen el candado de Azure (sólo lee)
 #
 # EL FIREWALL Y SU LÍMITE, ESCRITO: abrir y cerrar llaman a `az`, que NO es un binario de root con huella (es del
 # usuario: Homebrew o el instalador de Microsoft). Rompe la regla de «sólo binarios de root» y se acepta con tres
@@ -144,7 +145,7 @@ anotar(){ # $1 = json parcial (sólo valores ya validados: host y llavero pasaro
 }
 
 # ── argumentos ────────────────────────────────────────────────────────────────────────────────
-[ $# -ge 1 ] || muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-filas N]  ·  --cargar-clave <host>  ·  --reclasificar <host>  ·  --verificar  ·  --open-firewall <host>  ·  --close-firewall <host>"
+[ $# -ge 1 ] || muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-filas N]  ·  --cargar-clave <host>  ·  --reclasificar <host>  ·  --verificar  ·  --open-firewall <host>  ·  --close-firewall <host>  ·  --locks"
 
 MODO=consulta; HOST=""; SENTENCIA=""; SESION_CIERRE=""; ARCHIVO=""; ORIGEN=""
 SESION_VALIDA='^[A-Za-z0-9-]{8,64}$'
@@ -157,11 +158,13 @@ case "${1:-}" in
                     elif [ $# -ne 2 ] || [ -z "$HOST" ]; then muere "uso: tycon-prod-sql --close-firewall <host>  (sólo el host: cierra la regla de esta máquina y ninguna otra)"; fi ;;
   --reclasificar) MODO=reclasificar; HOST="${2:-}"; [ $# -eq 2 ] || muere "uso: tycon-prod-sql --reclasificar <host>" ;;
   --verificar)    MODO=verificar; [ $# -eq 1 ] || muere "uso: tycon-prod-sql --verificar" ;;
+  # los candados: sola, sin host ni nada más (mira todos los servidores de producción declarados)
+  --locks)        MODO=locks; [ $# -eq 1 ] || muere "uso: tycon-prod-sql --locks  (sola: dice qué servidores de producción tienen el candado de Azure)" ;;
   # 🔴 Cargar la clave SIN tener que fallar una consulta primero (2026-09-15, pedido del dev: el
   # disparador era «corré algo que falle», que es un rodeo). La clave la sigue tipeando la persona en
   # el archivo que deja la puerta: nunca pasa por la conversación ni la escribe el asistente.
   --cargar-clave) MODO=cargar-clave; HOST="${2:-}"; [ $# -eq 2 ] || muere "uso: tycon-prod-sql --cargar-clave <host>" ;;
-  -*)             muere "primer argumento inválido: sólo <host>, --cargar-clave, --reclasificar, --verificar, --open-firewall o --close-firewall" ;;
+  -*)             muere "primer argumento inválido: sólo <host>, --cargar-clave, --reclasificar, --verificar, --open-firewall, --close-firewall o --locks" ;;
   *)              HOST="$1"; SENTENCIA="${2:-}"
                   [ $# -ge 2 ] || muere "falta la sentencia: tycon-prod-sql <host> 'select …'"
                   if [ "${2:-}" = "--file" ]; then
@@ -331,6 +334,102 @@ if [ "$MODO" = verificar ]; then
   exit 0
 fi
 
+# ── az, para el firewall y los candados ─────────────────────────────────────────────────────────────────────────
+# El tope de cada llamada: fijo instalada (un cierre hace 3 o 4 llamadas y el hook tiene 110 s en total); la variable
+# sólo vale con la raíz de prueba. az se busca en rutas fijas, nunca en el PATH.
+AZ_TOPE=25; [ -n "$RAIZ" ] && [ -n "${TYCON_PROD_AZ_TIMEOUT:-}" ] && AZ_TOPE="$TYCON_PROD_AZ_TIMEOUT"
+AZ=""; for c in "$RAIZ/opt/homebrew/bin/az" "$RAIZ/usr/local/bin/az" "$RAIZ/usr/bin/az"; do [ -x "$c" ] && { AZ="$c"; break; }; done
+# az con un entorno limpio (nada del Llavero ni de la base), con tope de tiempo; 142 = el tope lo cortó
+correr_az(){ env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=C /usr/bin/perl -e 'alarm shift @ARGV; exec @ARGV or exit 127' "$AZ_TOPE" "$AZ" "$@"; }
+# Deja SUB y RG del servidor CORTO. Ante una falla llama a $FALLA_AZ con el motivo y devuelve 1: el firewall sale ahí
+# (fallo_fw); los candados anotan «no sé» y siguen con el próximo servidor. $TOPE_DICE completa el motivo del tope.
+ubicar_servidor(){
+  local subs salida rc s rg encontrados=0; SUB=""; RG=""
+  subs="$(correr_az account list --query "[?state=='Enabled'].id" -o tsv 2>"$_ESTADO/.az-err-$$")"; rc=$?
+  salida="$(cat "$_ESTADO/.az-err-$$" 2>/dev/null)"; rm -f "$_ESTADO/.az-err-$$"
+  [ "$rc" = 142 ] && { "$FALLA_AZ" "az no contestó en ${AZ_TOPE} s (tope): ${TOPE_DICE}. Reintentá."; return 1; }
+  [ "$rc" = 0 ] || { "$FALLA_AZ" "az no pudo listar las suscripciones (código $rc): $(printf '%s' "$salida" | head -1). Si no iniciaste sesión: az login"; return 1; }
+  for s in $subs; do
+    printf '%s' "$s" | grep -qE '^[A-Za-z0-9-]+$' || continue
+    rg="$(correr_az sql server list --subscription "$s" --query "[?name=='$CORTO'].resourceGroup" -o tsv 2>/dev/null)"; rc=$?
+    [ "$rc" = 142 ] && { "$FALLA_AZ" "az no contestó en ${AZ_TOPE} s (tope) al buscar el servidor. Reintentá."; return 1; }
+    for g in $rg; do encontrados=$((encontrados+1)); SUB="$s"; RG="$g"; done
+  done
+  [ "$encontrados" = 1 ] || { "$FALLA_AZ" "el servidor «${CORTO}» aparece en $encontrados lugar(es) entre tus suscripciones: necesito exactamente uno, no elijo a ciegas."; return 1; }
+  printf '%s' "$RG" | grep -qE '^[A-Za-z0-9._()-]+$' || { "$FALLA_AZ" "el grupo de recursos que devolvió az («${RG}») no tiene forma de nombre."; return 1; }
+}
+
+# ── los candados: qué servidores de producción declarados tienen el candado de Azure ───────────────────────────
+# Sólo lee: `account list`, `sql server list` y `lock list`. Cuenta un candado CanNotDelete o ReadOnly sobre el servidor
+# o sobre su grupo; uno de suscripción no se ve desde el grupo. A un servidor sin candado le imprime el comando para que
+# lo corra una persona con permiso de locks: la puerta nunca crea ni quita un candado.
+if [ "$MODO" = locks ]; then
+  LISTA="$("$NODE" -e '
+    const m = require(process.argv[1]); let i;
+    try { i = m.leer({ home: process.env.HOME }); } catch (e) { process.stdout.write("ilegible|" + e.message); process.exit(0); }
+    const prod = Object.keys(i.hosts || {}).filter((h) => i.hosts[h].ambiente === "produccion").sort();
+    // un catálogo roto no deja ciegos a los demás: sus servidores se revisan y el roto se nombra como «no sé»
+    const rotos = (i.errores || []).map((e) => `${String(e.repo).replace(/[^\w./-]/g, "?")}: ${String(e.motivo).replace(/[\r\n|]/g, " ")}`);
+    process.stdout.write("ok|" + prod.join(" ") + "|" + rotos.join("\t"));
+  ' "$INDICE_JS" 2>/dev/null)" || LISTA="ilegible|el intérprete falló"
+  case "$LISTA" in
+    ilegible\|*) anotar "\"accion\":\"candados\",\"exit\":2"; muere "no pude leer el índice de servidores (${LISTA#ilegible|}): no digo qué tiene candado sin saber qué es producción." ;;
+  esac
+  LISTA="${LISTA#ok|}"; PROD_HOSTS="${LISTA%%|*}"; ROTOS="${LISTA#*|}"
+  if [ -z "$PROD_HOSTS" ] && [ -z "$ROTOS" ]; then
+    echo "no hay servidores de producción declarados en esta máquina."
+    anotar "\"accion\":\"candados\",\"servidores\":0,\"exit\":0"; exit 0
+  fi
+  NO_SE=0; CON=0; SIN=0
+  FALLA_AZ=no_se_candado; TOPE_DICE="no sé si tiene candado"
+  no_se_candado(){ echo "$H: no sé — $1"; NO_SE=$((NO_SE+1)); }
+  for H in $PROD_HOSTS; do
+    case "$H" in
+      *.database.windows.net) CORTO="${H%.database.windows.net}" ;;
+      *) echo "$H: no se maneja desde acá (no es un Azure SQL: el candado lo pone su administrador)"; continue ;;
+    esac
+    [[ "$CORTO" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { no_se_candado "el nombre corto no tiene forma de nombre de Azure SQL"; continue; }
+    [ -n "$AZ" ] || { no_se_candado "no encuentro az en las rutas fijas (/opt/homebrew/bin, /usr/local/bin, /usr/bin). NO uso el del PATH."; continue; }
+    ubicar_servidor || continue
+    LOCKS="$(correr_az lock list --subscription "$SUB" -g "$RG" -o json 2>"$_ESTADO/.az-err-$$")"; rc=$?
+    salida="$(cat "$_ESTADO/.az-err-$$" 2>/dev/null)"; rm -f "$_ESTADO/.az-err-$$"
+    [ "$rc" = 142 ] && { no_se_candado "az no contestó en ${AZ_TOPE} s (tope) al leer los candados."; continue; }
+    [ "$rc" = 0 ] || { no_se_candado "az no pudo leer los candados (código $rc): $(printf '%s' "$salida" | head -1)"; continue; }
+    VEREDICTO="$(printf '%s' "$LOCKS" | "$NODE" -e '
+      let t = ""; process.stdin.on("data", (d) => { t += d; }); process.stdin.on("end", () => {
+        const [rg, srv] = process.argv.slice(1);
+        let l; try { l = JSON.parse(t); if (!Array.isArray(l)) throw new Error("no es una lista"); } catch (e) { process.stdout.write("ilegible|" + e.message); return; }
+        const base = `/resourcegroups/${rg.toLowerCase()}/providers/microsoft.authorization/locks/`;
+        const delServidor = `/resourcegroups/${rg.toLowerCase()}/providers/microsoft.sql/servers/${srv.toLowerCase()}/providers/microsoft.authorization/locks/`;
+        const sirve = l.find((x) => x && /^(CanNotDelete|ReadOnly)$/i.test(String(x.level || "")) && (String(x.id || "").toLowerCase().includes(base) || String(x.id || "").toLowerCase().includes(delServidor)));
+        if (!sirve) { process.stdout.write("sin|"); return; }
+        const donde = String(sirve.id).toLowerCase().includes(delServidor) ? "en el servidor" : "en el grupo";
+        process.stdout.write(`con|${String(sirve.name || "?").replace(/[^\w.-]/g, "?")} (${sirve.level}, ${donde})`);
+      });
+    ' "$RG" "$CORTO" 2>/dev/null)" || VEREDICTO="ilegible|el intérprete falló"
+    case "$VEREDICTO" in
+      con\|*) echo "$H: con candado — ${VEREDICTO#con|}"; CON=$((CON+1)) ;;
+      sin\|*) echo "$H: sin candado — lo corre una persona con permiso de locks, fuera del asistente:"
+              # el grupo entre comillas: puede traer paréntesis, y el comando se pega en una terminal
+              echo "  az lock create --name tycon-no-borrar --lock-type CanNotDelete --resource-group '$RG' --resource-name $CORTO --resource-type Microsoft.Sql/servers --subscription $SUB"
+              SIN=$((SIN+1)) ;;
+      *) no_se_candado "la respuesta de az no se pudo leer (${VEREDICTO#ilegible|})" ;;
+    esac
+  done
+  # los catálogos que no se pudieron leer: sus servidores pueden ser de producción y no se miraron
+  if [ -n "$ROTOS" ]; then
+    while IFS= read -r roto; do
+      [ -n "$roto" ] || continue
+      echo "${roto%%: *}: no sé — su catálogo no se pudo leer (${roto#*: }): sus servidores no se revisaron"; NO_SE=$((NO_SE+1))
+    done <<EOF
+$(printf '%s' "$ROTOS" | tr '\t' '\n')
+EOF
+  fi
+  RC=0; [ "$NO_SE" = 0 ] || RC=2
+  anotar "\"accion\":\"candados\",\"con\":$CON,\"sin\":$SIN,\"no_se\":$NO_SE,\"exit\":$RC"
+  exit "$RC"
+fi
+
 # ── el host tiene que ser producción (para lo demás no hace falta la puerta) ──────────────────
 EST="$("$NODE" -e '
   const m = require(process.argv[1]);
@@ -350,10 +449,6 @@ if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
   # escrito de otra forma es la misma regla y la misma entrada del estado
   HOST="$("$NODE" -e 'const m = require(process.argv[1]); process.stdout.write(m.normalizar(process.argv[2]) || "")' "$INDICE_JS" "$HOST" 2>/dev/null)"
   [[ "$HOST" =~ $HOST_VALIDO ]] || muere "el host no tiene forma de nombre de host."
-  # el tope de cada llamada a az: fijo instalada (un cierre hace 3 o 4 llamadas y el hook tiene 110 s en total); la
-  # variable sólo vale con la raíz de prueba
-  AZ_TOPE=25; [ -n "$RAIZ" ] && [ -n "${TYCON_PROD_AZ_TIMEOUT:-}" ] && AZ_TOPE="$TYCON_PROD_AZ_TIMEOUT"
-  AZ=""; for c in "$RAIZ/opt/homebrew/bin/az" "$RAIZ/usr/local/bin/az" "$RAIZ/usr/bin/az"; do [ -x "$c" ] && { AZ="$c"; break; }; done
 
   # El estado de las reglas abiertas: host, regla, IP, desde cuándo, qué sesiones la usan y una versión (`rev`) que
   # sube con cada apertura. Lo escriben sólo la puerta y su hook, de a uno (un candado): dos puertas a la vez se
@@ -408,8 +503,6 @@ if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
       }
     ' "$FIREWALL" "$@"
   }
-  # az con un entorno limpio (nada del Llavero ni de la base), con tope de tiempo; 142 = el tope lo cortó
-  correr_az(){ env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=C /usr/bin/perl -e 'alarm shift @ARGV; exec @ARGV or exit 127' "$AZ_TOPE" "$AZ" "$@"; }
   ACCION="$MODO"; POR=""; [ -n "$SESION_CIERRE" ] && POR=',"por":"fin-de-sesion"'
   fallo_fw(){ # $1 = motivo · anota el intento y sale 2
     anotar "\"host\":\"$HOST\",\"accion\":\"$ACCION\",\"regla\":\"${REGLA:-}\",\"sesion\":\"$SESION\"$POR,\"exit\":2"
@@ -439,22 +532,7 @@ if [ "$MODO" = open-firewall ] || [ "$MODO" = close-firewall ]; then
 
   [ -n "$AZ" ] || fallo_fw "no encuentro az en las rutas fijas (/opt/homebrew/bin, /usr/local/bin, /usr/bin). NO uso el del PATH. Instalalo con: brew install azure-cli"
 
-  ubicar_servidor(){ # deja SUB y RG, o sale 2 diciendo por qué
-    local subs salida rc s rg; SUB=""; RG=""
-    subs="$(correr_az account list --query "[?state=='Enabled'].id" -o tsv 2>"$_ESTADO/.az-err-$$")"; rc=$?
-    salida="$(cat "$_ESTADO/.az-err-$$" 2>/dev/null)"; rm -f "$_ESTADO/.az-err-$$"
-    [ "$rc" = 142 ] && fallo_fw "az no contestó en ${AZ_TOPE} s (tope): no sé si el firewall cambió. Reintentá."
-    [ "$rc" = 0 ] || fallo_fw "az no pudo listar las suscripciones (código $rc): $(printf '%s' "$salida" | head -1). Si no iniciaste sesión: az login"
-    local encontrados=0
-    for s in $subs; do
-      printf '%s' "$s" | grep -qE '^[A-Za-z0-9-]+$' || continue
-      rg="$(correr_az sql server list --subscription "$s" --query "[?name=='$CORTO'].resourceGroup" -o tsv 2>/dev/null)"; rc=$?
-      [ "$rc" = 142 ] && fallo_fw "az no contestó en ${AZ_TOPE} s (tope) al buscar el servidor. Reintentá."
-      for g in $rg; do encontrados=$((encontrados+1)); SUB="$s"; RG="$g"; done
-    done
-    [ "$encontrados" = 1 ] || fallo_fw "el servidor «${CORTO}» aparece en $encontrados lugar(es) entre tus suscripciones: necesito exactamente uno, no elijo a ciegas."
-    printf '%s' "$RG" | grep -qE '^[A-Za-z0-9._()-]+$' || fallo_fw "el grupo de recursos que devolvió az («${RG}») no tiene forma de nombre."
-  }
+  FALLA_AZ=fallo_fw; TOPE_DICE="no sé si el firewall cambió"   # ubicar_servidor (el bloque común) sale por acá
   regla_az(){ correr_az sql server firewall-rule "$1" --subscription "$SUB" -g "$RG" -s "$CORTO" -n "$REGLA" "${@:2}"; }
 
   if [ "$MODO" = close-firewall ]; then

@@ -216,6 +216,38 @@ despliegue con `az deployment group create --mode Complete` (borra lo que la pla
 persona. La protección de verdad en Azure es un candado `CanNotDelete` en el servidor de producción, que pone una persona
 con permiso de candados; el freno impide que el asistente lo quite.
 
+## El candado: que nadie borre el servidor por descuido
+
+El freno corta los borrados que corre el asistente, pero no ve el portal, Terraform ni a otra persona. La protección de
+verdad la da Azure: un candado `CanNotDelete` sobre el servidor de producción (o sobre su grupo) hace que Azure rechace
+el borrado, venga de donde venga. El candado **lo pone una persona** con permiso de locks
+(`Microsoft.Authorization/locks/write`): cambia el Azure del cliente, y el asistente no lo hace.
+
+La puerta dice cuáles lo tienen, sin cambiar nada:
+
+```bash
+/opt/tycon/bin/tycon-prod-sql --locks     # sin nada más; abre el cuadro de aprobación, como toda forma de la puerta, y sólo lee
+```
+
+Por cada servidor de producción declarado en Azure SQL dice `con candado` (con su nombre y si está en el servidor o en el
+grupo), `sin candado` o `no sé` (con el motivo: sin `az`, sin sesión, el servidor en dos suscripciones o en ninguna, o el
+catálogo de un repo que no se pudo leer: los demás se revisan igual).
+Cuenta un candado `CanNotDelete` o `ReadOnly` sobre el servidor o su grupo. A uno sin candado le imprime el comando, para
+que lo corra una persona con permiso de locks, fuera del asistente:
+
+```bash
+az lock create --name tycon-no-borrar --lock-type CanNotDelete --resource-group <grupo> --resource-name <servidor> \
+  --resource-type Microsoft.Sql/servers --subscription <suscripción>
+```
+
+Lo medido: `az lock list` devuelve cada candado con su `id`, `level` y `name`, y el `id` dice si es del grupo o del
+servidor. Un candado tarda unos segundos en irse: borrar el grupo justo después de sacarlo falló con `ScopeLocked`, así
+que hay que esperar o reintentar. Los límites: un candado lo puede quitar cualquiera con permiso de locks (el asistente
+no, porque el freno corta `az lock delete`); la puerta no ve los candados de suscripción, y un servidor con uno de esos
+puede salir `sin candado`. Sale 2 si algún servidor quedó en `no sé`.
+Todavía no está medido si un candado sobre el servidor impide cerrar la regla de firewall de la puerta: hasta medirlo,
+poné el candado primero en un servidor de prueba y no en uno real.
+
 ## Los límites, dichos antes
 
 - 🔴 **La regla que pregunta por `az sql server firewall-rule` es de CORTESÍA**, no un freno: se

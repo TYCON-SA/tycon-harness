@@ -96,8 +96,19 @@ case "$1 $2 $3" in
     case "${FAKE_AZ:-ok}:$s" in
       ninguna:*) : ;;
       dos:*) echo "rg-acme" ;;
-      *:sub-1) echo "rg-acme" ;;
+      # cada servidor en su grupo (para los candados); el de siempre, en rg-acme
+      *:sub-1) n="$(printf '%s' "$(arg --query "$@")" | sed -n "s/.*name=='\([^']*\)'.*/\1/p")"
+               if [ -z "$n" ] || [ "$n" = acme-sql ]; then echo "rg-acme"; else echo "rg-$n"; fi ;;
     esac; exit 0 ;;
+esac
+case "$1 $2" in
+  # los candados de un grupo: lo que haya en fake-locks/<grupo> (el arreglo que devuelve az), o ninguno
+  "lock list")
+    g="$(arg -g "$@")"; f="$TMPLOG/fake-locks/$g"
+    if [ "$FAKE_AZ" = lock-error ] || { [ "$FAKE_AZ" = lock-error-b ] && [ "$g" = rg-prod-b ]; }; then
+      echo "ERROR: (AuthorizationFailed) The client does not have authorization to perform action 'Microsoft.Authorization/locks/read'." >&2; exit 1
+    fi
+    if [ -f "$f" ]; then cat "$f"; else echo "[]"; fi; exit 0 ;;
 esac
 case "$1 $2 $3 $4" in
   "sql server firewall-rule show")
@@ -412,6 +423,142 @@ FAKE_AZ=sin-sesion; gancho SessionEnd "$SES_A" >/dev/null; unset FAKE_AZ
 if grep -q "🔴" "$TMP/hook.out" && grep -q -- "--close-firewall $PROD" "$TMP/hook.out" && estado | grep "$PROD" >/dev/null; then
   ok "T12 · un cierre de fin de sesión que falla se dice en rojo con el comando, y la regla sigue anotada"
 else no "T12 · fin de sesión fallido: $(cat "$TMP/hook.out" "$TMP/hook.err")"; fi
+
+# ══ Los candados: `--locks` dice qué servidores de producción tienen el candado de Azure ══════════════════════════
+# un repo más con tres servidores de producción, cada uno en su grupo: x con el candado en el servidor, prod-b en
+# el grupo, otro sin candado
+mundo_candados(){
+  mundo
+  mkdir -p "$REPOS/candados/.tycon" "$TMP/fake-locks"; ( cd "$REPOS/candados" && git init -q . ) >/dev/null 2>&1
+  printf '{"servers":[{"host":"x.database.windows.net","environment":"produccion","keychain":"tycon-prod-x"},{"host":"prod-b.database.windows.net","environment":"produccion","keychain":"tycon-prod-b"},{"host":"otro.database.windows.net","environment":"produccion","keychain":"tycon-prod-otro"}]}' \
+    > "$REPOS/candados/.tycon/production.json"
+  rm -f "$TMP"/fake-locks/*
+}
+candado(){ # $1 = grupo, $2 = dónde (grupo | servidor:<nombre> | otro:<nombre>), $3 = nivel, $4 = nombre
+  local id="/subscriptions/sub-1/resourceGroups/$1"
+  case "$2" in
+    servidor:*) id="$id/providers/Microsoft.Sql/servers/${2#servidor:}" ;;
+    otro:*) id="$id/providers/Microsoft.Web/sites/${2#otro:}" ;;
+  esac
+  printf '[{"id":"%s/providers/Microsoft.Authorization/locks/%s","level":"%s","name":"%s","notes":null,"owners":null,"resourceGroup":"%s","type":"Microsoft.Authorization/locks"}]\n' \
+    "$id" "$4" "$3" "$4" "$1" > "$TMP/fake-locks/$1"
+}
+linea(){ grep "^$1" "$TMP/out" | head -1; }
+
+# ── T1 · con y sin candado, por servidor ───────────────────────────────────────────────────────────────────────
+mundo_candados
+candado rg-x servidor:x CanNotDelete en-el-servidor
+candado rg-prod-b grupo ReadOnly en-el-grupo
+rc="$(puerta --locks)"
+if [ "$rc" = 0 ] && [[ "$(linea x.database.windows.net)" == *"con candado"*"en-el-servidor"* ]] \
+   && [[ "$(linea prod-b.database.windows.net)" == *"con candado"*"en-el-grupo"* ]] \
+   && [[ "$(linea otro.database.windows.net)" == *"sin candado"* ]]; then
+  ok "6.4 T1 Candados_ListsProductionServers_WithAndWithout · el del servidor, el del grupo (ReadOnly) y el que no tiene"
+else no "6.4 T1 · rc=$rc · $(cat "$TMP/out" "$TMP/err")"; fi
+
+# ── T2 · el comando de crear se imprime y nunca se corre ────────────────────────────────────────────────────────
+if grep -q "az lock create --name tycon-no-borrar --lock-type CanNotDelete --resource-group 'rg-otro' --resource-name otro --resource-type Microsoft.Sql/servers --subscription sub-1" "$TMP/out" \
+   && grep -q "lo corre una persona con permiso de locks, fuera del asistente" "$TMP/out" && ! grep -q "lock create" "$TMP/az.log"; then
+  ok "6.4 T2 Candados_PrintsCreateCommand_NeverRunsIt · el comando con la suscripción y la frase; az no recibió ningún lock create"
+else no "6.4 T2 · $(cat "$TMP/out") · az: $(grep lock "$TMP/az.log")"; fi
+
+# un candado de otro recurso del grupo, o uno de nivel desconocido, no protege al servidor
+mundo_candados
+candado rg-x otro:una-app CanNotDelete de-la-app
+candado rg-prod-b grupo NotSpecified sin-nivel
+rc="$(puerta --locks)"
+if [[ "$(linea x.database.windows.net)" == *"sin candado"* ]] && [[ "$(linea prod-b.database.windows.net)" == *"sin candado"* ]]; then
+  ok "6.4 T1 Candados_OtherResourceOrUnknownLevel_NotCounted · ni el de otro recurso del grupo ni uno de nivel desconocido"
+else no "6.4 T1 · candado de otro recurso o nivel desconocido: $(cat "$TMP/out")"; fi
+
+# un repo con el catálogo roto no deja ciegos a los demás: sus servidores se revisan y el roto sale «no sé»
+mundo_candados
+mkdir -p "$REPOS/otro-roto/.tycon"; ( cd "$REPOS/otro-roto" && git init -q . ) >/dev/null 2>&1
+printf '{ roto' > "$REPOS/otro-roto/.tycon/production.json"
+candado rg-x servidor:x CanNotDelete en-el-servidor
+rc="$(puerta --locks)"
+if [ "$rc" = 2 ] && [[ "$(linea x.database.windows.net)" == *"con candado"* ]] && grep -q "otro-roto" "$TMP/out" && grep "otro-roto" "$TMP/out" | grep "no sé" >/dev/null; then
+  ok "6.4 T5 Candados_IndexUnreadableOrEmpty · un catálogo roto: los demás se revisan, el roto sale «no sé» y sale 2"
+else no "6.4 T5 · catálogo roto de otro repo · rc=$rc · $(cat "$TMP/out" "$TMP/err")"; fi
+
+# ── T3 · la forma va sola ───────────────────────────────────────────────────────────────────────────────────────
+for extra in "acme-sql" "--x"; do
+  mundo_candados
+  rc="$(puerta --locks "$extra")"
+  if [ "$rc" = 2 ] && grep -q "uso: tycon-prod-sql --locks" "$TMP/err" && [ ! -s "$TMP/az.log" ]; then
+    ok "6.4 T3 Candados_ExtraArgument_Exit2 · --locks $extra: sale 2 con el uso, sin tocar az"
+  else no "6.4 T3 · --locks $extra · rc=$rc · $(cat "$TMP/err")"; fi
+done
+
+# ── T4 · no-producción y sin declarar no aparecen; el SQL propio, aparte ────────────────────────────────────────
+mundo_candados
+rc="$(puerta --locks)"
+# acme-sin-declarar no está en ningún catálogo: no aparece
+if ! grep -q "$STAGING" "$TMP/out" && ! grep -q "acme-sin-declarar" "$TMP/out" && grep -q "$PROPIO" "$TMP/out" \
+   && [[ "$(linea "$PROPIO")" == *"no se maneja desde acá"* ]] && ! grep -q -- "--name acme-onprem" "$TMP/az.log"; then
+  ok "6.4 T4 Candados_NonProductionOrNonAzure_NotPending · el no-producción no aparece; el propio sale «no se maneja desde acá»"
+else no "6.4 T4 · $(cat "$TMP/out")"; fi
+
+# ── T5 · índice ilegible o sin producción ───────────────────────────────────────────────────────────────────────
+mundo_candados
+printf '{ esto no es json' > "$REPOS/candados/.tycon/production.json"
+printf '{ esto no es json' > "$REPOS/backend-acme/.tycon/production.json"
+rc="$(puerta --locks)"
+r1="$rc"
+mundo; printf '{"servers":[{"host":"%s","environment":"no-produccion"}]}' "$STAGING" > "$REPOS/backend-acme/.tycon/production.json"
+rc="$(puerta --locks)"
+if [ "$r1" = 2 ] && [ "$rc" = 0 ] && grep -q "no hay servidores de producción declarados" "$TMP/out"; then
+  ok "6.4 T5 Candados_IndexUnreadableOrEmpty · ilegible: 2; sin producción: 0 con el mensaje"
+else no "6.4 T5 · ilegible=$r1 vacío=$rc · $(cat "$TMP/out" "$TMP/err")"; fi
+
+# ── T6 · lo que az no contesta es «no sé», con su motivo, y los demás siguen ────────────────────────────────────
+for modo in sin-sesion lento dos ninguna lock-error; do
+  mundo_candados; FAKE_AZ=$modo; AZ_TOPE=2
+  rc="$(puerta --locks)"
+  # cada «no sé» trae su motivo después de la raya
+  if [ "$rc" = 2 ] && [[ "$(linea otro.database.windows.net)" == *"no sé — "?* ]] && [ "$(grep -c "no sé — " "$TMP/out")" -ge 3 ]; then
+    ok "6.4 T6 Candados_AzFailures_NoSabeWithReason · $modo: «no sé» con motivo, sale 2"
+  else no "6.4 T6 · $modo · rc=$rc · $(cat "$TMP/out" "$TMP/err")"; fi
+  unset FAKE_AZ AZ_TOPE
+done
+# los demás siguen: falla sólo el de un grupo, y los otros se informan
+mundo_candados; FAKE_AZ=lock-error-b
+candado rg-x servidor:x CanNotDelete en-el-servidor
+rc="$(puerta --locks)"
+if [ "$rc" = 2 ] && [[ "$(linea prod-b.database.windows.net)" == *"no sé — "* ]] \
+   && [[ "$(linea x.database.windows.net)" == *"con candado"* ]] && [[ "$(linea otro.database.windows.net)" == *"sin candado"* ]]; then
+  ok "6.4 T6 · falla sólo uno: ése sale «no sé» y los demás se informan"
+else no "6.4 T6 · falla mixta · rc=$rc · $(cat "$TMP/out")"; fi
+unset FAKE_AZ
+# sin az en las rutas fijas
+mundo_candados; rm -f "$RAIZ/opt/homebrew/bin/az"
+rc="$(puerta --locks)"
+if [ "$rc" = 2 ] && grep -q "no sé" "$TMP/out" && [ ! -s "$TMP/impostor.log" ]; then
+  ok "6.4 T6 · sin az en las rutas fijas: «no sé», sale 2, y no usa el del PATH"
+else no "6.4 T6 · sin az · rc=$rc · $(cat "$TMP/out" "$TMP/err")"; fi
+
+# ── T7 · sólo las lecturas de la lista, el az de la ruta fija y sin la clave ────────────────────────────────────
+mundo_candados
+rc="$(puerta --locks)"
+otras="$(cut -d' ' -f1-2 "$TMP/az.log" | sort -u | grep -vE '^(account list|sql server|lock list)$')"
+if [ "$rc" = 0 ] && [ -z "$otras" ] && grep -q '^lock list' "$TMP/az.log" && [ ! -s "$TMP/impostor.log" ] \
+   && ! grep -q "$CLAVE_MARCA" "$TMP/az-env.log" && [ ! -s "$TMP/security.log" ] && ! grep -qv '^sql server list' <(grep '^sql' "$TMP/az.log"); then
+  ok "6.4 T7 Candados_OnlyListedAzOperations_FixedPaths_CleanEnv · sólo account list, sql server list y lock list; sin la clave"
+else no "6.4 T7 · otras=«${otras}» · $(cat "$TMP/az.log")"; fi
+
+# ── T8 · la línea del registro ──────────────────────────────────────────────────────────────────────────────────
+l="$(registro | grep '"accion":"candados"' | tail -1)"
+if [[ "$l" == *'"exit":0'* ]] && [[ "$l" != *"lock create"* ]] && ! registro | grep "$CLAVE_MARCA" >/dev/null; then
+  ok "6.4 T8 Candados_RegistroLine_NoSecrets · accion candados, sin comando ni credenciales"
+else no "6.4 T8 · registro: $(registro | tail -2)"; fi
+
+# ── T9 · la guía ────────────────────────────────────────────────────────────────────────────────────────────────
+GUIA="$AQUI/guides/produccion-con-permiso.md"
+faltan=""
+for f in "CanNotDelete" "--locks" "lo pone una persona" "permiso de locks" "az lock create" "ScopeLocked" "suscripción"; do
+  grep -q -- "$f" "$GUIA" || faltan="${faltan} «${f}»"
+done
+[ -z "$faltan" ] && ok "6.4 T9 Guide_DeclaresCandadoAndLimits" || no "6.4 T9 · la guía no dice:$faltan"
 
 echo "— prod-firewall: $pasaron ok, $fallos fallos —"
 [ "$fallos" = 0 ]

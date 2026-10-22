@@ -307,6 +307,8 @@ const CANONICA_CARGA = new RegExp(`^${RUTA_PUERTA} --cargar-clave (${HOST_CANONI
 // el host: `--session <id>` lo pasa el hook de fin de sesión, que no pasa por acá, y cualquier otro argumento (un
 // rango, una IP, un nombre de regla) no es canónico.
 const CANONICA_FIREWALL = new RegExp(`^${RUTA_PUERTA} --(?:open|close)-firewall (${HOST_CANONICO})$`);
+// `--locks`, sola: dice qué servidores de producción tienen el candado de Azure (sólo lee)
+const CANONICA_CANDADOS = new RegExp(`^${RUTA_PUERTA} --locks$`);
 // `<host> --file <ruta> --sha256 <sha256>`: la consulta desde un archivo. Una consulta larga en una línea, con cada
 // comilla escapada, no se puede leer en el cuadro; desde un archivo, el freno la muestra entera antes del cuadro y la
 // huella ata lo que la persona vio a lo que corre la puerta. La ruta sin comillas, espacios ni nada que el shell expanda.
@@ -465,7 +467,7 @@ function decidir(entrada) {
       ], { cmd });
       mensajeArchivo = `Consulta a ${fa[1]} desde ${fa[2]} (huella ${v.sha}):\n${v.texto}`;
     }
-    const canonica = unSoloSegmento && (CANONICA.test(limpio) || CANONICA_RECLAS.test(limpio) || CANONICA_VERIF.test(limpio) || CANONICA_CARGA.test(limpio) || CANONICA_FIREWALL.test(limpio) || CANONICA_ARCHIVO.test(limpio));
+    const canonica = unSoloSegmento && (CANONICA.test(limpio) || CANONICA_RECLAS.test(limpio) || CANONICA_VERIF.test(limpio) || CANONICA_CARGA.test(limpio) || CANONICA_FIREWALL.test(limpio) || CANONICA_CANDADOS.test(limpio) || CANONICA_ARCHIVO.test(limpio));
     if (!canonica) {
       frenar('la puerta se invocó de una forma que no es la canónica.', [
         'Sólo se acepta la ruta absoluta, sin nada antes ni después, y la sentencia en UN argumento',

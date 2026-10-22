@@ -151,6 +151,9 @@ snapshot "" ""
 PUERTA="/opt/tycon/bin/tycon-prod-sql"
 pasa  "T6a · la forma canónica pasa" "$PUERTA $PROD 'select 1'"
 pasa  "T6b · canónica con --max-filas" "$PUERTA $PROD 'select 1' --max-filas 50"
+# 6.4 · T10: `--locks` sola es una forma canónica (pasa al cuadro); con cualquier argumento más, se corta
+pasa  "6.4 T10 · la puerta --locks sola pasa al cuadro" "$PUERTA --locks"
+frena "6.4 T10 · la puerta --locks con un argumento se corta" "$PUERTA --locks acme-sql"
 # 6.3 · T12: la misma sentencia de borrado de base, por la puerta, pasa al cuadro como hoy (la ve una persona)
 pasa  "6.3 T12 · la puerta con la sentencia de borrado de base pasa al cuadro" "$PUERTA $PROD '$BORRA base'"
 frena "T6c · bash -c" "bash -c '$PUERTA $PROD \"select 1\"'"
