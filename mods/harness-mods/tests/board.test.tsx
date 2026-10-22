@@ -58,14 +58,19 @@ test('el cartel se dibuja con la ejecución de la sesión y sin dinero', async (
   expect(await ui.find({ type: 'Text', text: /USD|\$/ })).toBeUndefined()
 })
 
-for (const surface of ['terminal', 'vscode'] as const) {
+// la terminal tiene un solo tamaño y no lo mira; la extensión de VS Code dibuja «footnote» grande: ahí va el más chico,
+// también en el botón, que sin texto propio sale con el tamaño del cuerpo
+for (const [surface, size] of [['terminal', 'footnote'], ['vscode', 'caption']] as const) {
   test(`el cartel va con la letra chica de los avisos (${surface})`, async ($, on) => {
     world(on, { [MARKER_PATH]: MARKER })
     await $.session.start({ cwd: HOME, surface, isInteractive: true })
     const ui = await $.ui.mount({ plugin: 'harness-mods', surface, component: 'AbovePrompt', props: PROPS })
     const texts = await ui.findAll({ type: 'Text' })
     expect(texts.length).toBeGreaterThan(0)
-    for (const t of texts) expect((t.props as any).size).toBe('footnote')
+    for (const t of texts) expect((t.props as any).size).toBe(size)
+    expect(await ui.find({ type: 'Button', text: 'Ocultar' })).toBeDefined()
+    // la etiqueta del botón es un Text propio, con el mismo tamaño (el recorrido de arriba ya lo mide)
+    expect(await ui.find({ type: 'Text', text: 'Ocultar' })).toBeDefined()
   })
 }
 

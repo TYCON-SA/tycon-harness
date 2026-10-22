@@ -15,8 +15,9 @@ import { runModsCommand, isActive, isShown } from './mods.mjs'
 
 const BOARD = 'pipeline-board'
 const EVERY_MS = 30000
-// la letra del cartel, la de los avisos de Claude Code de abajo del prompt (la terminal tiene un solo tamaño)
-const SIZE = 'footnote' as const
+// la letra del cartel, la de los avisos de Claude Code de abajo del prompt. La terminal tiene un solo tamaño; la
+// extensión de VS Code dibuja «footnote» con la letra del cuerpo, así que ahí va el escalón más chico
+const sizeFor = (surface: string) => (surface === 'vscode' ? 'caption' as const : 'footnote' as const)
 const OFF_TEXT = `${BOARD} está apagado: para verlo, \`/mods on ${BOARD}\`.`
 
 const snapshot = atom({ plugin: 'harness-mods', key: 'snapshot' } as const, null as Snapshot | null)
@@ -173,10 +174,11 @@ export const register: Register = on => {
     if (!snap.run) {
       if (!snap.readError) return next(e)
       const { Text: T } = $.ui.resolve(e)
-      return <T size={SIZE} color="yellow">Hay una ejecución en esta sesión, pero no pude leer su archivo: {snap.readError}</T>
+      return <T size={sizeFor(e.surface)} color="yellow">Hay una ejecución en esta sesión, pero no pude leer su archivo: {snap.readError}</T>
     }
 
     const { Box, Button, Text } = $.ui.resolve(e)
+    const SIZE = sizeFor(e.surface)
     const run = snap.run
     const { story, title, step, rest } = boardParts(run, snap.context ?? undefined)
     // el título completo va abajo sólo si arriba quedó recortado
@@ -196,7 +198,10 @@ export const register: Register = on => {
               await update($, hidden, (h) => (asList(h).includes(BOARD) ? asList(h) : [...asList(h), BOARD]))
               $.ui.toast(`El cartel quedó oculto en esta sesión. Para verlo de nuevo: /mods show ${BOARD}`)
             }}
-          />
+          >
+            {/* la etiqueta como Text propio, para que lleve el tamaño del cartel y no el del cuerpo */}
+            <Text size={SIZE}>Ocultar</Text>
+          </Button>
         </Box>
         {full ? <Text size={SIZE} dimColor wrap="truncate-end">{full}</Text> : null}
       </Box>
