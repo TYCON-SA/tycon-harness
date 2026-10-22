@@ -12,6 +12,7 @@
     "tycon-e2e-realness-checker",
     "tycon-deferral-tracker",
     "tycon-dod-runtime-checker",
-    "tycon-retrospective-capturer"
+    "tycon-retrospective-capturer",
+    "tycon-story-adversarial-reviewer"
   ]
 }

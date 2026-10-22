@@ -1,0 +1,21 @@
+{
+  "agent": "tycon-story-adversarial-reviewer",
+  "file": "agents/tycon-story-adversarial-reviewer.md",
+  "hash": "a88ede917ce4edaef280459106ed2c82f5854ad3",
+  "passed": 5,
+  "total": 5,
+  "score": 1,
+  "baseline": {
+    "passed": 5,
+    "total": 5,
+    "score": 1
+  },
+  "regressions": [],
+  "cases": {
+    "tycon-story-adversarial-reviewer::sadv-c1-dos-criterios-chocan": true,
+    "tycon-story-adversarial-reviewer::sadv-c2-la-columna-no-existe": true,
+    "tycon-story-adversarial-reviewer::sadv-c3-falla-sin-criterio": true,
+    "tycon-story-adversarial-reviewer::sadv-w1-supuesto-sin-marcar": true,
+    "tycon-story-adversarial-reviewer::limpio-historia-completa": true
+  }
+}

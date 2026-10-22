@@ -254,7 +254,7 @@ test('T1 Defaults_UnSoloLugar_CopiasVerificadas @story-7.29 @ac-1', () => {
     reviewers: 'sonnet',
     reviewer: { 'tycon-spec-first-checker': 'opus' },
     reviewers_reloop: 'sonnet',
-    adversarial: { model: 'sonnet', heavy: 'opus' },
+    adversarial: { model: 'sonnet', heavy: 'opus', story: 'sonnet' },
     helpers: 'haiku',
     // una story pesada sugiere opus: el arnés no sugiere fable solo; una organización lo elige con session.heavy
     session: { low: 'sonnet', normal: 'opus', heavy: 'opus' },
@@ -273,7 +273,8 @@ test('T1 Defaults_UnSoloLugar_CopiasVerificadas @story-7.29 @ac-1', () => {
     assert.equal(m, conDefaults, `${f}: model: ${m} y DEFAULTS dice ${conDefaults}`);
     assert.equal(M.defaultFor(nombre, { agentsDir: agentes }), m, f);
   }
-  // las copias: el pase adversarial y el generador de Codex
+  // las copias: el revisor de historias, el pase adversarial y el generador de Codex
+  assert.equal(M.frontmatterModel(M.STORY_REVIEWER, { agentsDir: path.join(RAIZ, 'agents') }), M.DEFAULTS.adversarial.story);
   const wf = fs.readFileSync(path.join(SCRIPTS, 'adversarial-verify.workflow.js'), 'utf8');
   assert.equal((wf.match(/const MODEL = \(A && A\.model\) \|\| '(\w+)'/) || [])[1], M.DEFAULTS.adversarial.model);
   const gen = require(path.join(RAIZ, 'build', 'generate.js'));
@@ -800,4 +801,32 @@ test('T4 Resolvers_SameWithLevelOrName @story-2.70 @ac-1 @ac-10', () => {
   assert.equal(conNiveles.session.recommended, 'fable');
   // sin configuración, los valores de hoy (decisión 3: DEFAULTS no cambia)
   assert.deepStrictEqual(M.resolveModels(opts(null)).helpers, { model: M.DEFAULTS.helpers, origin: 'default' });
+});
+
+// ── el revisor de historias, antes de programar ──────────────────────────────────────────────────────────────────
+
+test('Models_AdversarialStory_SonnetPorDefecto @story-8.84 @ac-14 — sin configuración, sonnet y el origen dicho', () => {
+  const M = models();
+  const r = M.resolveStoryReview({ org: null, requests: null });
+  assert.equal(r.model, 'sonnet');
+  assert.equal(r.origin, 'default');
+  assert.match(r.reason, /valor de hoy/);
+});
+
+test('Models_AdversarialStory_TechoYOrganizacion @story-8.84 @ac-14 — el techo baja, la organización se respeta, nunca fable solo', () => {
+  const M = models();
+  const warnings = [];
+  const conTecho = M.resolveStoryReview({ org: { mandatory_ceiling: true, ceiling: 'sonnet', adversarial: { story: 'opus' } }, warnings });
+  assert.equal(conTecho.model, 'sonnet');
+  assert.match(conTecho.reason, /techo/);
+  assert.equal(warnings.length, 1);
+  const haiku = M.resolveStoryReview({ org: { adversarial: { story: 'haiku' } } });
+  assert.equal(haiku.model, 'haiku');
+  assert.equal(haiku.origin, 'organization');
+  // un pedido para el revisor por su nombre gana sobre la organización
+  const pedido = M.resolveStoryReview({ org: { adversarial: { story: 'haiku' } }, requests: { 'tycon-story-adversarial-reviewer': 'opus' } });
+  assert.equal(pedido.model, 'opus');
+  assert.equal(pedido.origin, 'run');
+  // fable sólo si alguien lo escribió: ni el valor de hoy ni el de una story pesada lo eligen
+  assert.notEqual(M.resolveStoryReview({ org: { adversarial: { heavy: 'fable', model: 'fable' } } }).model, 'fable');
 });

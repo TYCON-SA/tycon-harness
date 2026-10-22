@@ -299,7 +299,7 @@ function frontmatter(md) {
   return out;
 }
 
-test('T8 Agentes_OmitClaudeMd_Decidido — 24 del núcleo con el campo (más los del paquete de clientes), exactamente dos exceptuados por nombre, límites en los que tienen Bash', (t) => {
+test('T8 Agentes_OmitClaudeMd_Decidido — 25 del núcleo con el campo (más los del paquete de clientes), exactamente dos exceptuados por nombre, límites en los que tienen Bash', (t) => {
   // las definiciones de la raíz y las de la carpeta de agentes de cada paquete instalado (los revisores de un
   // stack viven en su paquete, que viaja con el perfil del equipo)
   const PACKS = path.join(AGENTS, '..', 'packs');
@@ -310,10 +310,10 @@ test('T8 Agentes_OmitClaudeMd_Decidido — 24 del núcleo con el campo (más los
     const md = fs.readFileSync(path.join(dir, f), 'utf8');
     return { file: f, md, fm: frontmatter(md) };
   }));
-  // sin los paquetes del equipo (la copia pública) quedan las 13 del núcleo, 11 con el campo
-  const DEL_NUCLEO = SKIP_PUBLIC ? 13 : 26;
+  // sin los paquetes del equipo (la copia pública) quedan las 14 del núcleo, 12 con el campo
+  const DEL_NUCLEO = SKIP_PUBLIC ? 14 : 27;
   // La copia pública sale sin las definiciones de los revisores del paquete de clientes. Los números
-  // de este caso son los del núcleo (26 definiciones, 24 con el campo), que valen en los dos lados; en el repo del equipo
+  // de este caso son los del núcleo (27 definiciones, 25 con el campo), que valen en los dos lados; en el repo del equipo
   // se les suman los revisores que declara el manifiesto de ese paquete, leídos de él y no escritos acá (un número
   // fijo haría que sacar un revisor de ese paquete ponga rojo este caso). Que falte la definición de uno de ellos en el repo
   // del equipo es un rojo. (Sin sus nombres escritos: al que no viaja se lo reconoce porque le falta su

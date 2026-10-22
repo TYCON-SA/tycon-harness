@@ -572,6 +572,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.84: la revisión adversarial de la historia antes de programar — el portón, la constancia y su huella, validators y el volcado.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/story-review.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.51: la historia de primera vez arranca sola — sin git, git init; en main/master, la rama story/<n>; sólo con la marca y la constancia del guion (la marca a mano pausa como siempre).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/start-first-story.test.js",

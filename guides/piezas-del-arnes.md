@@ -702,6 +702,18 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Guía:** [harness-cost-tiering](harness-cost-tiering.md#el-tamaño-de-la-corrida-liviana-o-completa)
 
+## skills/tycon-pipeline/scripts/lib/story-review-record.js — la revisión de la historia antes de programar
+
+**Qué es:** La constancia de la revisión de una historia antes de programar: un revisor la lee una vez y quien orquesta la corrige. La escribe sólo `story-review-record`; `story-review-gate` decide si corre.
+
+**Por qué existe:** La única revisión adversarial corría después de programar: una historia rota se descubría programando.
+
+**Quién la usa:** El paso 6 de `tycon-create-story`, el paso 1 del pipeline y el cierre de la ejecución.
+
+**Dónde se prueba:** `skills/tycon-pipeline/scripts/tests/story-review.test.js` y el examen del revisor (`scripts/controls-bench/reviewer-exams/tycon-story-adversarial-reviewer.json`)
+
+**Guía:** [harness-cost-tiering](harness-cost-tiering.md#de-dónde-sale-cada-modelo-y-cómo-lo-cambia-una-organización)
+
 ## skills/tycon-pipeline/scripts/lib/runtime-waiver.js — el registro de firmas de la matriz
 
 **Qué es:** El registro de firmas con el que el dev perdona un criterio que no se puede verificar corriendo, en `.tycon/runtime-waivers.jsonl`.

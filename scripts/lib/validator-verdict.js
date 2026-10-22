@@ -21,7 +21,8 @@
  */
 
 const RENGLON = /^[\s>]*[*_`]*\s*veredicto\s*[*_`]*\s*:\s*[*_`]*\s*(.*)$/i;
-const REGLA = /\bVAL-[CW]\d+\b/gi;
+// las del validador y las del revisor de historias (`agents/tycon-story-adversarial-reviewer.md`), que cierra igual
+const REGLA = /\b(?:VAL|SADV)-[CW]\d+\b/gi;
 
 /** Minúsculas y sin tildes, para comparar palabras sin depender de cómo se tipearon. */
 function plano(s) {

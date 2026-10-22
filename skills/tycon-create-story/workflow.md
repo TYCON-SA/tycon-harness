@@ -363,8 +363,8 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
   <template-output file="{default_output_file}">
   story_completion_status</template-output>
 
-  <!-- CRITICAL: Set status to ready-for-dev -->
-  <action>Set story Status to: "ready-for-dev"</action>
+  <!-- CRITICAL: ready-for-dev is set in step 6, after the adversarial review of the story is recorded -->
+  <action>Leave story Status as "backlog": step 6 sets "ready-for-dev" once the review record is written</action>
   <action>Add completion note: "Ultimate
   context engine analysis completed - comprehensive developer guide created"</action>
 </step>
@@ -382,6 +382,37 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
     <action>HALT — skip the rest of this step</action>
   </check>
   <action>Save story document unconditionally</action>
+
+  <!-- The adversarial review of the story, before coding: once, after the validator and VAL-W17, before ready-for-dev -->
+  <action>Run `node <this skill's directory>/../tycon-pipeline/scripts/pipeline.js story-review-gate --story {default_output_file}`.
+  With `run: false`, record the skip and say it in one line: `pipeline.js story-review-record --story
+  {default_output_file} --result saltado --reason <the gate's motivo> --risk <riesgo>` (with `record: current` there
+  is nothing to record: say the gate's `linea`).</action>
+  <check if="the gate says run: true">
+    <action>Launch the `tycon-story-adversarial-reviewer` subagent ONCE, in the background, with `model:` = the gate's
+    `model`. Prompt: «Revisá la historia {default_output_file} contra el repo {project-root}, antes de programarla. Una
+    sola pasada, de sólo lectura. El validador ya corrió y emitió: <its VAL-* rule IDs, or "nada">. No repitas eso.
+    Cada hallazgo con su regla SADV, el criterio o la sección, y su evidencia; sin evidencia no es hallazgo. Cerrá con
+    el renglón «Veredicto:».» Never relaunch it: not for its findings, not after fixing them.</action>
+    <action>Fix in the story every finding that what the story or the repo already says can settle, without asking:
+    one `## Change Log` line per finding (`Revisión adversarial previa (SADV-xx): <what changed>`). When the fix
+    touches a criterion or a test, update the tests table and the counts together. A finding that duplicates exactly
+    what the validator already reported is dropped.</action>
+    <check if="a CRITICAL finding cannot be fixed without a decision (two opposite criteria and nothing in the repo says which wins; a data item that does not exist and someone has to decide whether to create it)">
+      <action>Ask the user ONE question only: the one that unblocks, in plain words, what it clashes with, what
+      happens with each option, and the recommended one. Settle the rest after the answer, with no other question.
+      In autonomous mode under a coordinator, the question goes to whoever approves, never to a blocking dialog.
+      Until the answer arrives, record `--result pendiente` and do NOT set ready-for-dev.</action>
+    </check>
+    <action>Record it: `pipeline.js story-review-record --story {default_output_file} --result <limpio | corregido |
+    preguntado> --findings '<JSON list of {regla, criterio, severidad, destino: corregido|preguntado|descartado}>'
+    --model <model> --model-reason "<model_reason>" --risk <riesgo> --tokens <subagent tokens> --duration-ms
+    <subagent duration>` (tokens and duration from the subagent tool result; leave them out if it does not give them:
+    the record says `medido: false`). A reviewer that died or did not answer what was asked is `--result no-medido`:
+    say it in one line and go on (step 1 of the pipeline launches it again).</action>
+  </check>
+  <action>Only after the record is written (and nothing is `pendiente`), set the story Status and the sprint status
+  to "ready-for-dev"</action>
 
   <!-- Update sprint status -->
   <check if="sprint status file exists">
