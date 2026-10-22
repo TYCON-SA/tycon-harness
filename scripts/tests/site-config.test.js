@@ -3084,7 +3084,8 @@ async function compacta(seccion) {
 
 test('T1 Modelos_TresTablasUnRenglonPorTrabajo @story-2.59 @ac-1', async () => {
   const p = await compacta(secModelos(MODELOS_2));
-  const t = p.tablas();
+  // las tablas de los trabajos (las de cada proveedor y la de la noche van aparte: T35 y T38)
+  const t = p.tablas().filter((x) => !p.clases(x).includes('proveedores') && !p.clases(x).includes('noche'));
   assert.strictEqual(t.length, 5, 'el nivel general, los revisores (un solo grupo), el pase, los ayudantes y los revisores en Codex');
   assert.ok(t.every((x) => p.clases(x).includes('modelos')));
   const [rev, cada, adv, ayu, cdx] = t.map((x) => p.renglones(x));
@@ -4155,7 +4156,8 @@ const opcionesDe = (p, n) => p.todo(n).filter((x) => x.tag === 'option');
 
 test('T8 Modelos_SelectoresConNiveles @story-2.70 @ac-6', async () => {
   const p = await compacta(secNiveles(enNiveles(MODELOS_2)));
-  const selectores = p.todo(p.sec('modelos')).filter((n) => n.tag === 'select' && !/fable_question|codex_reviewers/.test(String(n.attrs['data-path'] || '')) && n.attrs['aria-label'] !== 'Revisor');
+  // el proveedor de la noche elige un proveedor, no un nivel
+  const selectores = p.todo(p.sec('modelos')).filter((n) => n.tag === 'select' && !/fable_question|codex_reviewers|nightly\.provider/.test(String(n.attrs['data-path'] || '')) && n.attrs['aria-label'] !== 'Revisor');
   assert.ok(selectores.length >= 10, `${selectores.length} selectores de modelo`);
   for (const sel of selectores) {
     const ops = opcionesDe(p, sel).filter((o) => o.attrs.value !== '');
@@ -4163,8 +4165,9 @@ test('T8 Modelos_SelectoresConNiveles @story-2.70 @ac-6', async () => {
     assert.deepStrictEqual(ops.map((o) => o.textContent), NIVELES_ES, `${sel.attrs['data-path']}: en pantalla con tilde`);
   }
   assert.ok(selectores.some((s) => s.attrs['data-path'] === 'models.ceiling'), 'el del tope incluido');
-  // «Por defecto» en niveles: ningún renglón muestra un nombre de Claude en esa columna
-  for (const fila of p.tablas().flatMap((t) => p.renglones(t))) {
+  // «Por defecto» en niveles: ningún renglón de los trabajos muestra un nombre de Claude en esa columna (la tabla de
+  // Anthropic muestra sus alias a propósito; la de la noche no tiene esa columna)
+  for (const fila of p.tablas().filter((t) => !p.clases(t).includes('proveedores') && !p.clases(t).includes('noche')).flatMap((t) => p.renglones(t))) {
     const hoy = p.de(fila, 'hoy')[0].textContent;
     assert.doesNotMatch(hoy, /^(haiku|sonnet|opus|fable)$/, p.texto(fila));
   }
@@ -4185,16 +4188,18 @@ test('Modelos_SinPreguntaDeFable — la pregunta retirada no tiene fila ni selec
 test('T9 Modelos_EquivalenciasDebajo @story-2.70 @ac-7', async () => {
   const lineas = (p) => p.de(p.sec('modelos'), 'equiv').map((n) => n.textContent);
   let p = await compacta(secNiveles({ reviewers: 'balanced' }));
-  assert.ok(lineas(p).includes('Claude: sonnet · Codex: gpt-5.6-luna'), lineas(p).join('\n'));
+  // la línea con los cuatro proveedores: Anthropic y OpenAI como antes Claude y Codex
+  const LINEA = (anthropic, openai) => `Anthropic: ${anthropic} · OpenAI: ${openai} · Ollama: el del dev · Cursor: el del dev`;
+  assert.ok(lineas(p).includes(LINEA('sonnet', 'gpt-5.6-luna')), lineas(p).join('\n'));
   // cambiar el selector cambia la línea
   const sel = p.todo(p.renglones(p.tablas()[0])[0]).find((n) => n.tag === 'select');
   sel.on.change({ target: { value: 'max' } }); await p.esperar();
-  assert.ok(lineas(p).includes(`Claude: fable · Codex: ${EQUIV.fable}`), lineas(p).join('\n'));
+  assert.ok(lineas(p).includes(LINEA('fable', EQUIV.fable)), lineas(p).join('\n'));
   // un árbol sin la equivalencia (o sin el archivo): «sin equivalencia en este árbol»
   p = await compacta(secNiveles({ reviewers: 'balanced' }, { equivalencias: { opus: 'gpt-x' } }));
-  assert.ok(lineas(p).includes('Claude: sonnet · Codex: sin equivalencia en este árbol'), lineas(p).join('\n'));
+  assert.ok(lineas(p).includes(LINEA('sonnet', 'sin equivalencia en este árbol')), lineas(p).join('\n'));
   p = await compacta(secNiveles({ reviewers: 'balanced' }, { equivalencias: null }));
-  assert.ok(lineas(p).includes('Claude: sonnet · Codex: sin equivalencia en este árbol'));
+  assert.ok(lineas(p).includes(LINEA('sonnet', 'sin equivalencia en este árbol')));
   // un archivo que está pero no se lee no se confunde con uno que falta: la línea dice por qué (fallas silenciosas)
   const roto = tmp('site-config-equiv-roto-');
   fs.mkdirSync(path.join(roto, 'build'), { recursive: true });
@@ -4204,7 +4209,7 @@ test('T9 Modelos_EquivalenciasDebajo @story-2.70 @ac-7', async () => {
   assert.match(leido.motivo, /^no pude leer las equivalencias de este árbol \(/);
   assert.deepStrictEqual(ORG.equivalenciasDe(tmp('site-config-sin-equiv-')), { equivalencias: null, motivo: null }, 'sin el archivo: sin motivo');
   p = await compacta(secNiveles({ reviewers: 'balanced' }, { equivalencias: null, motivoEquivalencias: leido.motivo }));
-  assert.ok(lineas(p).some((l) => l.startsWith('Claude: sonnet · Codex: no pude leer las equivalencias de este árbol (')), lineas(p).join('\n'));
+  assert.ok(lineas(p).some((l) => l.startsWith('Anthropic: sonnet · OpenAI: no pude leer las equivalencias de este árbol (')), lineas(p).join('\n'));
   // el servidor las lee de build/equivalences.json del árbol que sirve el sitio
   await conPerfil({ repos: { ...TR_BASE, models: { reviewers: 'balanced' } }, layer: capa(ORG.MODEL_LEVELS_SINCE) }, async ({ seccion }) => {
     const v = await seccion('modelos');
@@ -4290,6 +4295,178 @@ test('T13 Modelos_NivelesPidenSuVersion @story-2.70 @ac-11', async () => {
   assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { _nota: 'economy', reviewers: 'haiku' } }).version, ORG.MODELS_SINCE);
   const TEAM = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
   assert.deepStrictEqual(ORG.modelosEnNiveles({ _nota: 'opus', helpers: 'haiku' }, TEAM), { _nota: 'opus', helpers: 'economy' });
+});
+
+// ── los modelos por proveedor ───────────────────────────────────────────────────────────────────────────
+const PROVS = ['anthropic', 'openai', 'ollama', 'cursor'];
+/** La sección de modelos con los valores por defecto de cada proveedor, como los manda el servidor. */
+const secProveedores = (models, extras = {}) => {
+  const base = secNiveles(models);
+  return { ...base, extras: { ...base.extras, proveedores: ORG.proveedoresDe(ROOT), ...extras } };
+};
+const tablaDe = (p, prov) => p.tablas().find((t) => p.clases(t).includes('proveedores') && t.attrs['data-proveedor'] === prov);
+const celdaDe = (p, prov, nivel) => p.todo(p.sec('modelos')).find((n) => n.attrs['data-path'] === `models.providers.${prov}.${nivel}`);
+const revisarModelos = (models) => ORG.revisar({ seccion: 'modelos', texto: ORG.formatJson(TR_BASE), borrador: { models }, lectores: { 'team-repos.js': TR } });
+
+test('T35 Proveedores_CuatroTablas_AnthropicFija @story-2.73 @ac-27', async () => {
+  const p = await compacta(secProveedores({ reviewers: 'balanced' }));
+  for (const prov of PROVS) {
+    const t = tablaDe(p, prov);
+    assert.ok(t, `la tabla de ${prov}`);
+    assert.strictEqual(p.renglones(t).length, 4, `${prov}: un renglón por nivel`);
+  }
+  assert.strictEqual(p.todo(tablaDe(p, 'anthropic')).filter((n) => n.tag === 'input' || n.tag === 'select').length, 0, 'Anthropic, de sólo lectura');
+  assert.deepStrictEqual(p.renglones(tablaDe(p, 'anthropic')).map((r) => p.de(r, 'hoy')[0].textContent), ['haiku', 'sonnet', 'opus', 'fable']);
+  assert.deepStrictEqual(p.renglones(tablaDe(p, 'openai')).map((r) => p.de(r, 'hoy')[0].textContent), ['haiku', 'sonnet', 'opus', 'fable'].map((m) => EQUIV[m]), 'OpenAI: los de hoy');
+  for (const prov of ['ollama', 'cursor']) assert.deepStrictEqual(p.renglones(tablaDe(p, prov)).map((r) => p.de(r, 'hoy')[0].textContent), Array(4).fill('el del dev'), prov);
+  assert.match(p.texto(p.sec('modelos')), /Cursor está en prueba: la tabla se guarda pero todavía no se aplica/);
+});
+
+test('T36 Proveedores_EditarEscribeProviders @story-2.73 @ac-28', async () => {
+  const p = await compacta(secProveedores({ reviewers: 'balanced', providers: { ollama: { balanced: 'gpt-oss:120b-cloud' } } }));
+  celdaDe(p, 'ollama', 'economy').on.input({ target: { value: 'gemma4:31b-cloud' } });
+  celdaDe(p, 'ollama', 'balanced').on.input({ target: { value: '' } });
+  const propuesto = (await p.revisado()).models;
+  assert.deepStrictEqual(propuesto.providers, { ollama: { economy: 'gemma4:31b-cloud' } }, 'la escrita entra; la vaciada sale');
+  const ok = revisarModelos({ providers: { ollama: { economy: 'gemma4:31b-cloud' } } });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  assert.match(ok.texto, /"economy": "gemma4:31b-cloud"/);
+  const mal = revisarModelos({ providers: { ollama: { economy: 'a b' } } });
+  assert.strictEqual(mal.ok, false);
+  assert.deepStrictEqual(mal.problems.map((x) => x.path), ['models.providers.ollama.economy']);
+  assert.match(mal.problems[0].message, /sin espacios/, 'el mensaje del lector');
+  // vaciar la última celda saca la tabla entera
+  const q = await compacta(secProveedores({ providers: { ollama: { economy: 'x' } } }));
+  celdaDe(q, 'ollama', 'economy').on.input({ target: { value: '' } });
+  assert.strictEqual((await q.revisado()).models.providers, undefined);
+});
+
+test('T37 Permitidos_FueraDeLaListaFrenaProponer @story-2.73 @ac-29', async () => {
+  const fuera = revisarModelos({ providers: { ollama: { economy: 'gemma4:31b-cloud' } }, allowed: { ollama: ['gpt-oss:120b-cloud'] } });
+  assert.strictEqual(fuera.ok, false);
+  assert.strictEqual(fuera.texto, null);
+  assert.deepStrictEqual(fuera.problems.map((x) => x.path), ['models.providers.ollama.economy']);
+  assert.match(fuera.problems[0].message, /no está entre los permitidos de ollama/);
+  const dentro = revisarModelos({ providers: { ollama: { economy: 'gpt-oss:120b-cloud' } }, allowed: { ollama: ['gpt-oss:120b-cloud'] } });
+  assert.strictEqual(dentro.ok, true, JSON.stringify(dentro.problems));
+  // la lista se ofrece como sugerencias de cada celda de ese proveedor, y se edita en su campo
+  const p = await compacta(secProveedores({ allowed: { ollama: ['gpt-oss:120b-cloud', 'gemma4:31b-cloud'] } }));
+  const celda = celdaDe(p, 'ollama', 'economy');
+  const lista = p.todo(p.sec('modelos')).find((n) => n.tag === 'datalist' && n.attrs.id === celda.attrs.list);
+  assert.ok(lista, 'un datalist enlazado');
+  assert.deepStrictEqual(lista.hijos.map((o) => o.attrs.value), ['gpt-oss:120b-cloud', 'gemma4:31b-cloud']);
+  const campoLista = p.todo(p.sec('modelos')).find((n) => n.attrs['data-path'] === 'models.allowed.ollama');
+  campoLista.on.input({ target: { value: 'gpt-oss:120b-cloud, qwen3:480b-cloud' } });
+  assert.deepStrictEqual((await p.revisado()).models.allowed, { ollama: ['gpt-oss:120b-cloud', 'qwen3:480b-cloud'] });
+  campoLista.on.input({ target: { value: ' ' } });
+  assert.strictEqual((await p.revisado()).models.allowed, undefined, 'vacío saca la lista');
+});
+
+test('T38 Noche_FilaProveedorYNivel @story-2.73 @ac-30', async () => {
+  const fila = (p) => p.renglones(p.tablas().find((t) => p.clases(t).includes('noche')))[0];
+  const selProv = (p) => p.todo(p.sec('modelos')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'models.nightly.provider');
+  let p = await compacta(secProveedores({ providers: { ollama: { economy: 'gemma4:31b-cloud' } }, nightly: { provider: 'ollama', level: 'economy' } }));
+  assert.deepStrictEqual(p.todo(selProv(p)).filter((n) => n.tag === 'option').map((o) => o.attrs.value), ['', 'anthropic', 'ollama'], 'sólo Anthropic y Ollama');
+  assert.match(p.texto(fila(p)), /hoy: gemma4:31b-cloud/);
+  assert.match(p.texto(fila(p)), /OLLAMA_API_KEY/);
+  selProv(p).on.change({ target: { value: 'anthropic' } }); await p.esperar();
+  assert.match(p.texto(fila(p)), /hoy: haiku/);
+  assert.match(p.texto(fila(p)), /ANTHROPIC_API_KEY/);
+  assert.deepStrictEqual((await p.revisado()).models.nightly, { provider: 'anthropic', level: 'economy' });
+  p = await compacta(secProveedores({ nightly: { provider: 'ollama', level: 'balanced' } }));
+  assert.match(p.texto(fila(p)), /sin modelo cargado para este nivel/);
+  const frenado = revisarModelos({ nightly: { provider: 'ollama', level: 'balanced' } });
+  assert.strictEqual(frenado.ok, false);
+  assert.deepStrictEqual(frenado.problems.map((x) => x.path), ['models.nightly']);
+  assert.match(frenado.problems[0].message, /sin modelo cargado/);
+  assert.strictEqual(revisarModelos({ nightly: { provider: 'anthropic' } }).ok, true);
+});
+
+test('T38b Noche_ConTope_ElSitioMiraElNivelRecortado @story-2.73 @ac-25 @ac-30 — el sitio y la noche deciden igual', async () => {
+  // falso negativo de antes: con tope economy y sin modelo en economy, la noche no corre: el sitio frena
+  const sinModelo = revisarModelos({ mandatory_ceiling: true, ceiling: 'economy', providers: { ollama: { strong: 'acme-good' } }, nightly: { provider: 'ollama', level: 'strong' } });
+  assert.strictEqual(sinModelo.ok, false);
+  assert.deepStrictEqual(sinModelo.problems.map((x) => x.path), ['models.nightly']);
+  assert.match(sinModelo.problems[0].message, /economy/);
+  // falso positivo de antes: con modelo en economy, la noche corre aunque strong esté vacío: el sitio deja proponer
+  const conModelo = revisarModelos({ mandatory_ceiling: true, ceiling: 'economy', providers: { ollama: { economy: 'acme-good' } }, nightly: { provider: 'ollama', level: 'strong' } });
+  assert.strictEqual(conModelo.ok, true, JSON.stringify(conModelo.problems));
+  // la fila dice el modelo que va a usar, con el tope aplicado
+  const p = await compacta(secProveedores({ mandatory_ceiling: true, ceiling: 'economy', providers: { ollama: { economy: 'acme-good' } }, nightly: { provider: 'ollama', level: 'strong' } }));
+  const fila = p.renglones(p.tablas().find((t) => p.clases(t).includes('noche')))[0];
+  assert.match(p.texto(fila), /hoy: acme-good/);
+});
+
+test('T36b Proveedores_NoReordenaLasClavesDelArchivo @story-2.73 @ac-28 — cambiar otra cosa no mueve las tablas', async () => {
+  const p = await compacta(secProveedores({ providers: { ollama: { economy: 'acme-x' } }, nightly: { provider: 'ollama' }, mandatory_ceiling: true, ceiling: 'strong', reviewers: 'balanced' }));
+  p.todo(p.sec('modelos')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'models.ceiling').on.change({ target: { value: 'max' } });
+  assert.deepStrictEqual(Object.keys((await p.revisado()).models), ['providers', 'nightly', 'mandatory_ceiling', 'ceiling', 'reviewers']);
+});
+
+test('T39 Equivalencias_LineaConLosCuatroProveedores @story-2.73 @ac-31', async () => {
+  const lineas = (p) => p.de(p.sec('modelos'), 'equiv').map((n) => n.textContent);
+  let p = await compacta(secProveedores({ reviewers: 'balanced', providers: { ollama: { balanced: 'gpt-oss:120b-cloud' } } }));
+  assert.ok(lineas(p).includes(`Anthropic: sonnet · OpenAI: ${EQUIV.sonnet} · Ollama: gpt-oss:120b-cloud · Cursor: el del dev`), lineas(p).join('\n'));
+  p = await compacta(secProveedores({ reviewers: 'strong' }));
+  assert.ok(lineas(p).includes(`Anthropic: opus · OpenAI: ${EQUIV.opus} · Ollama: el del dev · Cursor: el del dev`), lineas(p).join('\n'));
+  const sinEq = await compacta({ ...secProveedores({ reviewers: 'balanced' }), extras: { ...secProveedores({ reviewers: 'balanced' }).extras, equivalencias: null, motivoEquivalencias: 'no pude leer las equivalencias de este árbol (x)' } });
+  assert.ok(lineas(sinEq).includes('Anthropic: sonnet · OpenAI: no pude leer las equivalencias de este árbol (x) · Ollama: el del dev · Cursor: el del dev'), lineas(sinEq).join('\n'));
+});
+
+test('T40 Proveedores_PidenSuVersion @story-2.73 @ac-32', () => {
+  assert.ok(ORG.versionAtLeast(ORG.MODEL_PROVIDERS_SINCE, ORG.MODEL_LEVELS_SINCE));
+  assert.ok(ORG.versionAtLeast(ORG.MODEL_PROVIDERS_SINCE, ORG.CODEX_REVIEWERS_SINCE));
+  assert.notStrictEqual(ORG.MODEL_PROVIDERS_SINCE, ORG.CODEX_REVIEWERS_SINCE);
+  for (const models of [{ providers: { ollama: { economy: 'x' } } }, { allowed: { ollama: ['x'] } }, { nightly: { provider: 'anthropic' } }]) {
+    assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models }).version, ORG.MODEL_PROVIDERS_SINCE, JSON.stringify(models));
+    assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.CODEX_REVIEWERS_SINCE)), { ...TR_BASE, models })), new RegExp(ORG.MODEL_PROVIDERS_SINCE.replace(/\./g, '\\.')));
+  }
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'balanced' } }).version, ORG.MODEL_LEVELS_SINCE);
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'sonnet' } }).version, ORG.MODELS_SINCE);
+});
+
+test('T41 Textos_ProveedoresEnEsYEn @story-2.73 @ac-33', () => {
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
+  const claves = ['pantalla.porProveedor', 'pantalla.porProveedorAyuda', 'pantalla.proveedor.anthropic', 'pantalla.proveedor.openai', 'pantalla.proveedor.ollama',
+    'pantalla.proveedor.cursor', 'pantalla.nivel2', 'pantalla.elDelDev', 'pantalla.anthropicFija', 'pantalla.cursorNoSeAplica', 'pantalla.permitidos',
+    'pantalla.permitidosAyuda', 'pantalla.elProcesoDeLaNoche', 'pantalla.nocheProveedor', 'pantalla.nocheSinConfigurar', 'pantalla.nocheHoy',
+    'pantalla.nocheSinModelo', 'pantalla.nocheLlave', 'pantalla.equivalenciaDelNivel', 'org.nocheSinModelo'];
+  for (const k of claves) {
+    // los nombres de proveedor se arman con su prefijo y el proveedor
+    const usado = k.startsWith('pantalla.proveedor.') ? src.includes("'pantalla.proveedor.'") : src.includes(`'${k}'`);
+    assert.ok(usado, `el código usa ${k}`);
+    assert.ok(TEXTOS[k] && TEXTOS[k].es && TEXTOS[k].en, `falta ${k} en los dos idiomas`);
+  }
+});
+
+test('T42 Guias_MencionanProveedoresYModelsEnv @story-2.73 @ac-34', () => {
+  const leer = (f) => fs.readFileSync(path.join(ROOT, 'guides', f), 'utf8');
+  for (const f of ['organization-site.md', 'organization-site.en.md']) {
+    const g = leer(f);
+    assert.match(g, /models\.providers/, `${f}: las tablas`);
+    assert.match(g, /models\.allowed/, `${f}: los permitidos`);
+    assert.match(g, /models\.nightly/, `${f}: la fila de la noche`);
+  }
+  for (const f of ['integrations/ollama.md', 'integrations/ollama.en.md']) {
+    const g = leer(f);
+    assert.match(g, /eval "\$\(node .*models-env\.js/, `${f}: la función con models-env.js`);
+    assert.match(g, /codex_reviewers: inherit/, `${f}: la relación con codex_reviewers`);
+    assert.match(g, /models\.providers\.ollama|tabla de Ollama|Ollama table/, f);
+  }
+});
+
+test('T43 SinProveedores_PantallaIgualALaFoto @story-2.73 @ac-35', async () => {
+  const p = await compacta(secProveedores({ reviewers: 'balanced' }));
+  const deTrabajos = p.tablas().filter((t) => !p.clases(t).includes('proveedores') && !p.clases(t).includes('noche'));
+  assert.deepStrictEqual(deTrabajos.map((t) => p.renglones(t).length), [2, 3, 3, 4, 1], 'las tablas de trabajos como antes');
+  const sel = p.todo(p.renglones(deTrabajos[0])[0]).find((n) => n.tag === 'select');
+  assert.strictEqual(sel.value, 'balanced');
+  assert.match(p.texto(p.renglones(deTrabajos[0])[0]), /Primera vuelta \| la primera revisión del trabajo terminado \| equilibrado/);
+  // sin tocar nada, lo que viaja no trae ninguna de las claves nuevas
+  const viaja = (await p.revisado()).models;
+  for (const k of ['providers', 'allowed', 'nightly']) assert.strictEqual(viaja[k], undefined, k);
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: viaja }).version, ORG.MODEL_LEVELS_SINCE);
 });
 
 // ── la herramienta de horas se elige en Integraciones ────────────────────────────────────────────────────────────────

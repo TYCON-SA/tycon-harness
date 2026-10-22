@@ -483,8 +483,8 @@ en su repo.
 - **Qué modelo usa cada trabajo del pipeline**: el nivel de los revisores, del pase adversarial, de los ayudantes y de
   la sesión, en una tabla por grupo con el valor por defecto de cada trabajo al lado; «el por defecto» deja el que trae
   la versión instalada. Los niveles son cuatro: económico, equilibrado, potente y máximo (en el archivo, en inglés:
-  `economy`, `balanced`, `strong`, `max`). Cada herramienta los traduce a sus modelos, y al costado de cada selector,
-  en chico, dice a cuál: «Claude: sonnet · Codex: gpt-5.6-luna». Una
+  `economy`, `balanced`, `strong`, `max`). Cada proveedor los traduce a sus modelos, y al costado de cada selector,
+  en chico, dice a cuál: «Anthropic: sonnet · OpenAI: gpt-5.6-luna · Ollama: el del dev · Cursor: el del dev». Una
   configuración guardada con los nombres de Claude (sonnet, opus) sigue valiendo: se ve en niveles y el próximo cambio
   de la sección la guarda en niveles. Con niveles, el perfil tiene que pedir la versión del arnés que los lee; si no, el
   sitio no deja proponer y dice cuál pedir. Con el tope obligatorio, un trabajo elegido por encima del tope se marca en
@@ -493,6 +493,21 @@ en su repo.
   y su desplegable; «como la primera vuelta» lo deja seguir el nivel general. La lista viene plegada y se abre sola si la
   organización cambió alguno. Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene, mirando el
   costo.
+- **Qué modelo es cada nivel, por proveedor**: debajo de las tablas de trabajos, una tabla por proveedor (Anthropic,
+  OpenAI, Ollama, Cursor) con una fila por nivel (`models.providers.<proveedor>.<nivel>`). Los trabajos siguen eligiendo
+  un nivel; esta tabla dice qué modelo es ese nivel en cada proveedor, y cada máquina usa la de su proveedor
+  (`models.provider` en `~/.claude/tycon.json`, o `TYCON_MODEL_PROVIDER`; sin declarar, Codex es OpenAI y lo demás
+  Anthropic). La de Anthropic es fija: cada nivel es su alias. La de OpenAI trae los de hoy. Las de Ollama y Cursor
+  vienen en «el del dev» (`inherit`): sin modelo cargado, cada dev sigue con el suyo. La de Cursor se guarda pero
+  todavía no se aplica. Debajo de cada tabla, la **lista de modelos permitidos** del proveedor (`models.allowed`,
+  separados por coma): con una lista, el sitio no deja proponer un modelo que no esté en ella, y una máquina que igual
+  lo reciba usa el del dev y avisa. Con tablas, permitidos o la fila de la noche, el perfil tiene que pedir la versión
+  del arnés que los lee.
+- **El proceso de la noche**: una fila con su proveedor (Anthropic u Ollama) y su nivel (`models.nightly`). El modelo
+  sale de la misma tabla: «hoy: gemma4:31b-cloud», o «sin modelo cargado para este nivel», que no deja proponer (de
+  noche no hay dev, así que «el del dev» no vale). Pasar de Ollama a Haiku es elegir Anthropic en esa fila. La fila
+  dice también el nombre de la variable secreta que el pipeline de la noche necesita (`OLLAMA_API_KEY` o
+  `ANTHROPIC_API_KEY`); la llave se crea en el pipeline y nunca pasa por el perfil. Sin la fila, la noche no corre.
 - **Dónde corren las pruebas completas antes de sumar un cambio** (antes de mergear: de sumarlo a la rama principal): en la máquina o en el servidor, repo por repo, un renglón por repo
   (✎ abre sus datos). Un repo sin pipeline de pruebas completas dice qué pasa con su regla. Queda en
   `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.

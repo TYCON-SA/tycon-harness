@@ -76,15 +76,12 @@ claude-ollama() {
   if ! ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$model"; then
     ollama pull "$model" || { echo "Could not pull $model: is Ollama running and 0.14 or newer?"; return 1; }
   fi
-  ANTHROPIC_BASE_URL="http://localhost:11434" \
-  ANTHROPIC_AUTH_TOKEN="ollama" \
-  ANTHROPIC_API_KEY="" \
-  ANTHROPIC_MODEL="$model" \
-  ANTHROPIC_DEFAULT_OPUS_MODEL="$model" \
-  ANTHROPIC_DEFAULT_SONNET_MODEL="$model" \
-  ANTHROPIC_DEFAULT_HAIKU_MODEL="$model" \
-  CLAUDE_CODE_SUBAGENT_MODEL="$model" \
-  claude --model "$model" "${@:2}"
+  (
+    export ANTHROPIC_BASE_URL="http://localhost:11434" ANTHROPIC_AUTH_TOKEN="ollama" ANTHROPIC_API_KEY="" \
+           ANTHROPIC_MODEL="$model" TYCON_MODEL_PROVIDER="ollama"
+    eval "$(node "$HOME/.claude/tycon-harness/scripts/lib/models-env.js" --provider ollama)"
+    claude --model "$model" "${@:2}"
+  )
 }
 ```
 
@@ -97,7 +94,16 @@ Para qué sirve cada variable:
 | `ANTHROPIC_API_KEY` | vacía, para que no se use una clave de Anthropic que tengas guardada |
 | `ANTHROPIC_MODEL` | el modelo de la sesión |
 | `ANTHROPIC_DEFAULT_SONNET_MODEL`, `_OPUS_`, `_HAIKU_` | los revisores del arnés piden `sonnet`; con esto reciben un modelo que existe en Ollama |
-| `CLAUDE_CODE_SUBAGENT_MODEL` | el modelo de los agentes aparte |
+
+`models-env.js` pone las tres `ANTHROPIC_DEFAULT_<ALIAS>_MODEL` desde la **tabla de Ollama** de tu organización (en el
+sitio, «Qué modelo es cada nivel, por proveedor»; en el archivo, `models.providers.ollama`). Un nivel sin modelo cargado
+(o en `inherit`) usa el modelo de la sesión, el que elegiste al abrir. Así, si la organización dice que el nivel
+económico es `gemma4:31b-cloud` y el equilibrado `gpt-oss:120b-cloud`, los revisores del nivel económico corren con el
+primero y los del equilibrado con el segundo. Sin tabla cargada, todo usa el modelo que elegiste, como antes. Para ver
+qué va a poner: `node ~/.claude/tycon-harness/scripts/lib/models-env.js --provider ollama`. La función no fija
+`CLAUDE_CODE_SUBAGENT_MODEL`: pisaría la tabla. `TYCON_MODEL_PROVIDER` le dice al arnés que esta sesión es de Ollama
+(también se puede declarar para la máquina con `node scripts/lib/tycon-config.js set models.provider ollama`), y
+`pipeline.js start` avisa si las variables de la sesión no coinciden con la tabla.
 
 Después usás `claude-ollama gemma4:31b-cloud` en lugar de `claude`. Para volver a lo normal, salís y abrís `claude`.
 
@@ -139,6 +145,8 @@ La configuración queda en ese perfil: las ventanas con el perfil por defecto si
 `ollama pull` del modelo. Valen las mismas advertencias que en la terminal (no `/model`, el costo es un cálculo, el
 aviso `unrecognized_model`).
 
+Con la tabla de Ollama de tu organización cargada, las tres `ANTHROPIC_DEFAULT_<ALIAS>_MODEL` salen de ahí: `node ~/.claude/tycon-harness/scripts/lib/models-env.js --provider ollama --format vscode` imprime esas entradas (las de un nivel en `inherit` no van: quedan con `ANTHROPIC_MODEL`).
+
 ## Codex
 
 Codex tiene un modo para modelos abiertos:
@@ -166,6 +174,11 @@ Eso se declara en el perfil del equipo (`team-repos.json`), dentro de `models`:
 ```json
 { "models": { "codex_reviewers": "inherit" } }
 ```
+
+Para una sola máquina hay otra salida: con `models.provider` en `ollama`, los revisores de Codex toman la **tabla de
+Ollama**, y un nivel en `inherit` (o sin cargar) se despliega sin `model =`. Es lo mismo que `codex_reviewers: inherit`
+hace para toda la organización, pero sólo en esa máquina; si la organización tiene `codex_reviewers: inherit`, gana eso.
+
 
 Se elige desde el sitio de la organización, en la tabla de modelos, fila **«Los revisores en Codex»**
 (`guides/organization-site.md`). Existe **desde la versión 2026.10.22.22** del arnés. Sin ese valor, nada cambia para

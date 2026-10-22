@@ -1959,3 +1959,57 @@ test('T31 TyconConfig_InstinctsIntegration_EnvProfileOrder @story-4.7 @ac-1 @ac-
   assert.equal(hook.ok, true);
   assert.equal(hook.prendida, true, 'el gancho la ve prendida por el perfil');
 });
+
+// ── el proveedor de modelos de la máquina ──────────────────────────────────────────────
+
+test('T8 ModelProvider_CadenaEnvMaquinaDerivado @story-2.73 @ac-7', () => {
+  const C = lib();
+  const home = casa();
+  maquina(home, { models: { provider: 'cursor' } });
+  const arnes = arnesCon(null);
+  assert.deepEqual(C.modelProvider({ home, arnes, env: { TYCON_MODEL_PROVIDER: 'ollama' } }), { provider: 'ollama', origin: 'env', problem: null }, 'la variable gana');
+  assert.deepEqual(C.modelProvider({ home, arnes, env: {} }), { provider: 'cursor', origin: 'maquina', problem: null }, 'después el archivo de la máquina');
+  const sin = casa();
+  assert.deepEqual(C.modelProvider({ home: sin, arnes, env: { CODEX_SESSION_ID: 'x' } }), { provider: 'openai', origin: 'derivado', problem: null }, 'sesión de Codex');
+  assert.deepEqual(C.modelProvider({ home: sin, arnes, env: { CODEX_SESSION_ID: 'x', CLAUDE_CODE_SESSION_ID: 'y' } }), { provider: 'anthropic', origin: 'derivado', problem: null }, 'Claude Code dentro de Codex sigue siendo Claude Code');
+  assert.deepEqual(C.modelProvider({ home: sin, arnes, env: {} }), { provider: 'anthropic', origin: 'derivado', problem: null });
+  // la función recibe también una configuración ya cargada
+  const c = cargar({ home, arnes });
+  assert.deepEqual(C.modelProvider({ config: c, env: {} }), { provider: 'cursor', origin: 'maquina', problem: null });
+});
+
+test('T9 ModelProvider_ValorInvalidoYPerfil @story-2.73 @ac-8', () => {
+  const C = lib();
+  const home = casa();
+  maquina(home, { models: { provider: 'gemma' } });
+  const c = cargar({ home, arnes: arnesCon(null) });
+  const err = c.errores.find((e) => e.clave === 'models.provider');
+  assert.ok(err, JSON.stringify(c.errores));
+  for (const p of ['anthropic', 'openai', 'ollama', 'cursor']) assert.match(err.motivo, new RegExp(p));
+  const r = C.modelProvider({ home, arnes: arnesCon(null), env: {} });
+  assert.equal(r.provider, null, 'no cae en el derivado');
+  assert.equal(r.origin, 'rota');
+  assert.match(r.problem, /models\.provider/);
+  // la variable con un valor fuera de la lista, tampoco
+  const v = C.modelProvider({ home: casa(), arnes: arnesCon(null), env: { TYCON_MODEL_PROVIDER: 'gemma' } });
+  assert.deepEqual([v.provider, v.origin], [null, 'rota']);
+  assert.match(v.problem, /TYCON_MODEL_PROVIDER/);
+  // en el perfil del equipo es un error: es de la máquina
+  const p = cargar({ home: casa(), arnes: arnesCon({ models: { provider: 'ollama' } }) });
+  const enPerfil = p.errores.find((e) => e.clave === 'models.provider');
+  assert.ok(enPerfil, JSON.stringify(p.errores));
+  assert.match(enPerfil.motivo, /es de la máquina/);
+});
+
+test('T10 ModelProvider_SetEscribe @story-2.73 @ac-8', () => {
+  const sinFreno = path.join(tmp('tcfg-set-prov-'), 'no-esta.js');
+  const home = casa();
+  const env = { TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: sinFreno };
+  const out = cli(['set', 'models.provider', 'ollama'], { home, env });
+  assert.equal(out.status, 0, out.stderr);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(home, '.claude', 'tycon.json'), 'utf8')).models.provider, 'ollama');
+  const ex = cli(['explain'], { home, env });
+  assert.equal(ex.status, 0, ex.stderr);
+  assert.match(ex.stdout, /^ {2}models\.provider = ollama \(maquina\)$/m);
+  assert.equal(cli(['set', 'models.provider', 'gemma'], { home, env }).status, 2, 'un valor fuera de la lista no se escribe');
+});

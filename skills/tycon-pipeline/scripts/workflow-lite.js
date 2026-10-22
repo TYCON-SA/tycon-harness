@@ -143,9 +143,23 @@ function spawnAgent(cmdline, prompt, cwd, timeoutMs) {
  * lib/models.js) traducido. Sin equivalente → null: `codex exec` corre sin `-m` (el modelo por defecto de Codex) y se
  * dice por `decir` (la salida de error).
  */
-function slugFor(model, models, decir = (t) => process.stderr.write(`${t}\n`)) {
+function slugFor(model, models, decir = (t) => process.stderr.write(`${t}\n`), { org = null, provider = null } = {}) {
   const map = models || {};
-  const pedido = model || require('./lib/models.js').DEFAULTS.adversarial.model;
+  const M = require('./lib/models.js');
+  const pedido = model || M.DEFAULTS.adversarial.model;
+  // la tabla del proveedor de Codex:Ollama si la máquina lo declara; si no, OpenAI. Sin tabla de OpenAI,
+  // lo de siempre (abajo)
+  const prov = provider === 'ollama' ? 'ollama' : 'openai';
+  // con tabla o con lista de permitidos de OpenAI, el traductor único (la lista también vale sin tabla)
+  const conTabla = prov === 'ollama' || Boolean(org && ((org.providers && org.providers.openai) || (org.allowed && org.allowed.openai)));
+  if (conTabla && M.levelOf(pedido)) {
+    const r = M.resolveProviderModel({ org, provider: prov, model: pedido, equivalences: map });
+    if (r.model && r.model !== M.INHERIT) return r.model;
+    decir(r.outside ? `${r.outside} no está entre los permitidos de ${prov}: lanzo codex exec sin -m (el modelo del config.toml de la máquina)`
+      : prov === 'ollama' ? `la tabla de Ollama no trae modelo para ${r.level}: lanzo codex exec sin -m (el modelo del config.toml de la máquina)`
+        : `el modelo ${pedido} no tiene equivalente en Codex: uso el modelo por defecto de Codex`);
+    return null;
+  }
   if (map[pedido]) return map[pedido];
   if (Object.values(map).includes(pedido)) return pedido;
   decir(`el modelo ${pedido} no tiene equivalente en Codex: uso el modelo por defecto de Codex`);
@@ -218,8 +232,28 @@ function makeDirAgent(opts, corredor) {
   return agent;
 }
 
+/**
+ * El proveedor de Codex de la máquina y los modelos de la organización, una vez por corrida: `{ org, provider }`.
+ * Sin arnés o con la configuración ilegible, `{ org: null, provider: null }` (lo de siempre) y se dice.
+ */
+function providerContext() {
+  try {
+    const TCG = require('./lib/harness-path.js').rutaArnes();
+    const M = require('./lib/models.js');
+    const org = M.readOrgModels({ dir: TCG, teamRepos: require(path.join(TCG, 'scripts', 'lib', 'team-repos.js')) });
+    if (org.problem) process.stderr.write(`${org.problem}\n`);
+    const prov = require(path.join(TCG, 'scripts', 'lib', 'tycon-config.js')).modelProvider({ env: process.env });
+    if (prov.problem) process.stderr.write(`el proveedor de modelos de la máquina no se pudo leer (${prov.problem}): uso la tabla de OpenAI\n`);
+    return { org: org.declared ? org.data : null, provider: prov.provider };
+  } catch (e) {
+    process.stderr.write(`no pude leer el proveedor de modelos (${String((e && e.message) || e).split('\n')[0]}): uso la tabla de OpenAI\n`);
+    return { org: null, provider: null };
+  }
+}
+
 function makeAgent(opts, corredor) {
   const models = modelMap();
+  const proveedor = providerContext();
   const seq = { n: 0 };
   const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'wflite-io-'));
   return async function agent(prompt, aopts) {
@@ -230,7 +264,7 @@ function makeAgent(opts, corredor) {
     const muerto = (causa, hora = horaCorta()) => { corredor.muertos.push({ label, causa, hora }); return null; };
     // Con el tope ya visto, no se lanza nada más: se anota con la causa y la hora del tope.
     if (corredor.tope) return muerto(`no se lanzó: ${corredor.tope.causa}`, corredor.tope.hora);
-    const slug = slugFor(aopts.model, models);
+    const slug = slugFor(aopts.model, models, undefined, proveedor);
     // 🔴 Salida estructurada NATIVA de codex: pedir el JSON por
     // prompt y pescarlo de stdout con un escáner de llaves balanceadas se rompe cuando el
     // JSON trae llaves DESBALANCEADAS dentro de strings (los `repro` con snippets de código).

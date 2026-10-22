@@ -180,6 +180,11 @@ const MODEL_LEVELS_SINCE = '2026.10.21.9';
 // `models.codex_reviewers` («inherit»): un lector anterior la ve como clave desconocida y descarta toda la configuración
 // de modelos. Se pide sólo si el archivo la trae. Provisoria hasta la etiqueta del merge que la trae al lector
 const CODEX_REVIEWERS_SINCE = '2026.10.22.22';
+// los modelos por proveedor (`models.providers`, `allowed`, `nightly`): un lector anterior los ve como claves
+// desconocidas y descarta toda la configuración de modelos (techo incluido). Se pide sólo si el archivo trae alguna.
+// Provisoria hasta la etiqueta del merge que los trae al lector: está puesta para frenar de más, no de menos
+const MODEL_PROVIDERS_SINCE = '2026.10.23.1';
+const CLAVES_DE_PROVEEDORES = Object.freeze(['providers', 'allowed', 'nightly']);
 const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE], ['coverage', COVERAGE_SINCE], ['review', REVIEW_SINCE], ['stack', STACK_SINCE]]);
 /** La versión que tiene que pedir el perfil para este `team-repos.json` (sin archivo, la de siempre), y las claves por las que la pide. */
 function versionQuePide(doc) {
@@ -191,6 +196,7 @@ function versionQuePide(doc) {
   }
   if (isObject(doc) && conNivelDeModelo(doc.models) && !versionAtLeast(version, MODEL_LEVELS_SINCE)) version = MODEL_LEVELS_SINCE;
   if (isObject(doc) && isObject(doc.models) && doc.models.codex_reviewers !== undefined && !versionAtLeast(version, CODEX_REVIEWERS_SINCE)) version = CODEX_REVIEWERS_SINCE;
+  if (isObject(doc) && isObject(doc.models) && CLAVES_DE_PROVEEDORES.some((k) => doc.models[k] !== undefined) && !versionAtLeast(version, MODEL_PROVIDERS_SINCE)) version = MODEL_PROVIDERS_SINCE;
   return { version, claves };
 }
 /** ¿`models` trae algún nivel (en cualquier clave, también adentro de un objeto)? Un comentario («_…») no cuenta. */
@@ -202,11 +208,43 @@ function conNivelDeModelo(v) {
  * `models` con cada nombre de Claude pasado a su nivel, con el lector del árbol (`MODEL_NAMES` y `MODEL_LEVELS`, en el
  * mismo orden): lo que la pantalla muestra y propone. Un lector sin niveles lo deja como está.
  */
-function modelosEnNiveles(v, lector) {
+function modelosEnNiveles(v, lector, top = true) {
   if (!lector || !Array.isArray(lector.MODEL_LEVELS) || !Array.isArray(lector.MODEL_NAMES)) return v;
   if (typeof v === 'string') return lector.MODEL_NAMES.includes(v) ? lector.MODEL_LEVELS[lector.MODEL_NAMES.indexOf(v)] : v;
   if (!isObject(v)) return v;
-  return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === 'fable_question' || k.startsWith('_') ? x : modelosEnNiveles(x, lector)]));
+  // las tablas por proveedor, la lista de permitidos y la noche traen nombres de modelos de cada proveedor: no se tocan
+  return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === 'fable_question' || k.startsWith('_') || (top && CLAVES_DE_PROVEEDORES.includes(k)) ? x : modelosEnNiveles(x, lector, false)]));
+}
+/**
+ * Lo que la pantalla necesita de cada proveedor, del árbol que sirve el sitio: `{ porDefecto, secretos,
+ * noche, motivo }`. `porDefecto.<proveedor>.<nivel>` = el modelo sin tabla cargada (con el traductor de models.js del
+ * árbol: Anthropic fija, OpenAI de build/equivalences.json, Ollama y Cursor «inherit»); `secretos` = el nombre de la
+ * llave de cada proveedor de la noche (scripts/lib/nightly-model.js). Un árbol sin esas piezas trae `motivo`.
+ */
+function proveedoresDe(tree) {
+  const out = { porDefecto: null, secretos: null, noche: null, motivo: null };
+  const archivo = buscarModelsJs(tree);
+  if (!archivo) { out.motivo = M('org.sinModelosDeHoy'); return out; }
+  try {
+    const Mod = require(archivo);
+    if (typeof Mod.resolveProviderModel !== 'function' || !Array.isArray(Mod.PROVIDERS)) { out.motivo = M('org.sinModelosDeHoy'); return out; }
+    // las equivalencias que no se pudieron leer dejan la tabla de OpenAI sin valores de hoy: el motivo se dice
+    const e = equivalenciasDe(tree);
+    if (e.motivo) out.motivo = e.motivo;
+    out.porDefecto = Object.fromEntries(Mod.PROVIDERS.map((p) => [p, Object.fromEntries(Mod.LEVELS.map((n) => [n, Mod.resolveProviderModel({ org: null, provider: p, level: n, equivalences: e.equivalencias || {} }).model]))]));
+  } catch (e) { out.motivo = M('org.skillsIlegibles', { codigo: (e && e.code) || 'error' }); return out; }
+  const nm = path.join(String(tree), 'scripts', 'lib', 'nightly-model.js');
+  try {
+    const NM = require(nm);
+    out.secretos = { ...NM.NIGHTLY_SECRETS };
+    out.noche = Object.keys(NM.NIGHTLY_SECRETS);
+  } catch (e) {
+    // un árbol anterior sin la pieza no trae la llave de la noche; una pieza que está y no carga, se dice
+    out.secretos = null;
+    // (la primera línea nombra el archivo que falta; las siguientes, la cadena de quién lo pidió)
+    if (!(e && e.code === 'MODULE_NOT_FOUND' && String(e.message).split('\n')[0].includes(nm))) out.motivo = M('org.modelsNoCarga', { archivo: 'scripts/lib/nightly-model.js', error: String((e && e.message) || e).split('\n')[0] });
+  }
+  return out;
 }
 /**
  * Las equivalencias de Codex del árbol que sirve el sitio (`build/equivalences.json → models`, por modelo de Claude):
@@ -619,7 +657,25 @@ function problemasDeSeccion(seccion, r, actual, doc) {
  */
 function problemasDelTope(seccion, lector, doc) {
   if (!seccion || seccion.id !== 'modelos' || !lector || typeof lector.modelsAboveCeiling !== 'function' || !isObject(doc)) return [];
-  return lector.modelsAboveCeiling(doc.models);
+  return [...lector.modelsAboveCeiling(doc.models), ...problemasDeProveedores(lector, doc.models)];
+}
+/**
+ * Lo que el sitio no deja proponer de los modelos por proveedor, como el tope: un modelo fuera de la lista
+ * de permitidos (`modelsOutsideAllowed` del lector) y una noche de Ollama sin modelo cargado para su nivel (en la noche
+ * «inherit» no vale). Ninguno de los dos anula la configuración en las máquinas: lo frena sólo el sitio.
+ */
+function problemasDeProveedores(lector, models) {
+  if (!isObject(models)) return [];
+  const out = typeof lector.modelsOutsideAllowed === 'function' ? [...lector.modelsOutsideAllowed(models)] : [];
+  const noche = models.nightly;
+  if (isObject(noche) && noche.provider === 'ollama' && !out.some((p) => p.path === 'models.nightly')) {
+    // el nivel con que va a correr: recortado al tope, como lo recorta la noche
+    const nivel = typeof lector.nightlyLevel === 'function' ? lector.nightlyLevel(models) : (noche.level === undefined ? 'economy' : noche.level);
+    const tabla = isObject(models.providers) && isObject(models.providers.ollama) ? models.providers.ollama : {};
+    const m = tabla[nivel];
+    if (typeof m !== 'string' || !m || m === 'inherit') out.push({ path: 'models.nightly', message: M('org.nocheSinModelo', { proveedor: 'Ollama', nivel }) });
+  }
+  return out;
 }
 
 /**
@@ -652,6 +708,17 @@ function canonico(v) {
  * único skill que lo trae; se busca por el archivo para no nombrar el skill acá). `null` si el árbol no lo trae.
  * `motivoDeHoy(tree)` dice por qué no están: «no pude leer» nunca se muestra igual que «no hay».
  */
+/** La ruta del `models.js` del skill del pipeline en el árbol (el primero que lo trae), o null. */
+function buscarModelsJs(tree) {
+  if (!tree) return null;
+  let skills = [];
+  try { skills = fs.readdirSync(path.join(String(tree), 'skills')).sort(); } catch (_) { return null; }
+  for (const n of skills) {
+    const f = path.join(String(tree), 'skills', n, 'scripts', 'lib', 'models.js');
+    if (fs.existsSync(f)) return f;
+  }
+  return null;
+}
 function modelosDeHoy(tree) { return buscarModelosDeHoy(tree).hoy; }
 function motivoDeHoy(tree) { return buscarModelosDeHoy(tree).motivo; }
 function buscarModelosDeHoy(tree) {
@@ -2196,16 +2263,29 @@ function pantalla(idioma = 'es') {
       box.appendChild(restoYTexto(s, d, pr, 'models', T('pantalla.losModelosComoTexto')));
       return box;
     }
-    d.models = enNiveles(d.models || {});
+    // las tablas por proveedor, los permitidos y la noche traen nombres de modelos de cada proveedor: no pasan a niveles
+    // (se convierte en su lugar, clave por clave: el archivo propuesto conserva el orden de las claves)
+    if (!esObjeto(d.models)) d.models = {};
+    Object.keys(d.models).forEach(function (k) { if (['providers', 'allowed', 'nightly'].indexOf(k) < 0 && k !== 'fable_question' && k.charAt(0) !== '_') d.models[k] = enNiveles(d.models[k]); });
     var m = d.models;
     var equiv = (s.extras && s.extras.equivalencias) || null;
-    // la línea chica debajo de un selector: a qué modelo equivale el nivel en cada herramienta (sin nivel, ninguna)
+    // story 2.73: lo que el servidor sabe de cada proveedor (el modelo de cada nivel sin tabla, la llave de la noche)
+    var prov = (s.extras && s.extras.proveedores) || {};
+    var porDefecto = prov.porDefecto || null;
+    var PROVEEDORES = ['anthropic', 'openai', 'ollama', 'cursor'];
+    function tablaDelProveedor(p) { return esObjeto(m.providers) && esObjeto(m.providers[p]) ? m.providers[p] : {}; }
+    function permitidosDe(p) { return esObjeto(m.allowed) && Array.isArray(m.allowed[p]) ? m.allowed[p] : []; }
+    function mostrarModelo(v) { return !v || v === 'inherit' ? T('pantalla.elDelDev') : v; }
+    // la línea chica debajo de un selector: a qué modelo equivale el nivel en cada proveedor (sin nivel, ninguna)
     var motivoEquiv = (s.extras && s.extras.motivoEquivalencias) || null;
     function lineaEquiv(v) {
       var mod = modeloDe(v);
       if (!mod) return '';
-      var codex = equiv && Object.prototype.hasOwnProperty.call(equiv, mod) && equiv[mod] ? equiv[mod] : (motivoEquiv || T('pantalla.sinEquivalenciaCodex'));
-      return T('pantalla.equivalenciaDelNivel', { claude: mod, codex: codex });
+      var nivel = nivelDe(mod);
+      var deOpenai = tablaDelProveedor('openai')[nivel];
+      var openai = typeof deOpenai === 'string' && deOpenai ? mostrarModelo(deOpenai)
+        : equiv && Object.prototype.hasOwnProperty.call(equiv, mod) && equiv[mod] ? equiv[mod] : (motivoEquiv || T('pantalla.sinEquivalenciaCodex'));
+      return T('pantalla.equivalenciaDelNivel', { anthropic: mod, openai: openai, ollama: mostrarModelo(tablaDelProveedor('ollama')[nivel]), cursor: mostrarModelo(tablaDelProveedor('cursor')[nivel]) });
     }
     if (!hoy) box.appendChild(el('p', { class: 'muted', text: T('pantalla.noSeLosModelosDe') + ((s.extras && s.extras.motivoHoy) || T('pantalla.sinMotivo')) + T('pantalla.sinDeclararUsaLosDe') }));
     var DE_MODELOS = [['', T('pantalla.elPorDefecto')]].concat(NIVELES.map(function (x) { return [x, T('pantalla.nivel.' + x)]; }));
@@ -2319,6 +2399,88 @@ function pantalla(idioma = 'es') {
     fila(cdx, el('span', { text: T('pantalla.losRevisoresEnCodex') }), T('pantalla.losRevisoresEnCodex'), 'codex_reviewers', null,
       [['', T('pantalla.elEquivalenteDeCadaNivel')], ['inherit', T('pantalla.elModeloDeCadaMaquina')]], T('pantalla.elEquivalenteDeCadaNivel'), null, false);
     box.appendChild(cdx);
+
+    // story 2.73: qué modelo es cada nivel en cada proveedor. Anthropic es fija (sus alias); OpenAI trae los de hoy;
+    // Ollama y Cursor, «el del dev». Una celda es texto libre: vacía, el de por defecto. Debajo, la lista de permitidos
+    // del proveedor (también las sugerencias de sus celdas)
+    function ponerCelda(p, n, v) {
+      v = String(v == null ? '' : v).trim();
+      m.providers = esObjeto(m.providers) ? m.providers : {};
+      var t = esObjeto(m.providers[p]) ? m.providers[p] : (m.providers[p] = {});
+      if (v) t[n] = v; else delete t[n];
+      if (!Object.keys(t).length) delete m.providers[p];
+      if (!Object.keys(m.providers).length) delete m.providers;
+    }
+    function ponerPermitidos(p, v) {
+      var lista = String(v == null ? '' : v).split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+      m.allowed = esObjeto(m.allowed) ? m.allowed : {};
+      if (lista.length) m.allowed[p] = lista; else delete m.allowed[p];
+      if (!Object.keys(m.allowed).length) delete m.allowed;
+    }
+    box.appendChild(el('p', { class: 'sub-t', text: T('pantalla.porProveedor') }));
+    box.appendChild(el('p', { class: 'sub-d', text: T('pantalla.porProveedorAyuda') }));
+    PROVEEDORES.forEach(function (p) {
+      var nombreP = T('pantalla.proveedor.' + p);
+      var t = tabla('modelos proveedores', nombreP, [T('pantalla.nivel2'), T('pantalla.porDefecto2'), T('pantalla.tuOrganizacionUsa')]);
+      t.setAttribute('data-proveedor', p);
+      var permitidos = permitidosDe(p);
+      var listaId = 'permitidos-' + p;
+      NIVELES.forEach(function (n) {
+        var ruta = 'models.providers.' + p + '.' + n;
+        var mios = problemasEn(pr, ruta);
+        var hoyTxt = porDefecto && porDefecto[p] ? mostrarModelo(porDefecto[p][n]) : '—';
+        var acc = el('div', { class: 'acc', role: 'cell' });
+        if (p === 'anthropic') acc.appendChild(el('span', { class: 'muted', text: hoyTxt }));
+        else {
+          var attrs = { value: tablaDelProveedor(p)[n] || '', 'aria-label': nombreP + ' · ' + T('pantalla.nivel.' + n), 'data-path': ruta, placeholder: hoyTxt, oninput: function (e) { ponerCelda(p, n, e.target.value); } };
+          if (permitidos.length) attrs.list = listaId;
+          var inp = el('input', attrs);
+          if (mios.length) inp.setAttribute('class', 'bad');
+          acc.appendChild(inp);
+        }
+        t.appendChild(renglon([el('div', { class: 'que', role: 'cell', text: nombreNivel(n) }), el('div', { class: 'hoy', role: 'cell', text: hoyTxt }), acc], mios));
+      });
+      box.appendChild(t);
+      if (p === 'anthropic') box.appendChild(el('p', { class: 'muted', text: T('pantalla.anthropicFija') }));
+      // «no pude leer» no se ve igual que «no hay»: sin las equivalencias, la tabla de OpenAI dice por qué está vacía
+      if (p === 'openai' && prov.motivo) box.appendChild(el('p', { class: 'err', text: prov.motivo }));
+      if (p === 'cursor') box.appendChild(el('p', { class: 'muted', text: T('pantalla.cursorNoSeAplica') }));
+      if (permitidos.length) {
+        var dl = el('datalist', { id: listaId });
+        permitidos.forEach(function (x) { dl.appendChild(el('option', { value: x })); });
+        box.appendChild(dl);
+      }
+      box.appendChild(campo(T('pantalla.permitidos') + ' · ' + nombreP, permitidos.join(', '), function (v) { ponerPermitidos(p, v); }, 'models.allowed.' + p, pr, { placeholder: T('pantalla.permitidosAyuda') }));
+    });
+
+    // el proceso de la noche: su proveedor y su nivel; el modelo sale de la misma tabla. Sin modelo para ese nivel, el
+    // servidor no deja proponer (en la noche «inherit» no vale)
+    var secretos = prov.secretos || {};
+    var tn = tabla('modelos noche', T('pantalla.elProcesoDeLaNoche'), [T('pantalla.trabajo'), T('pantalla.nocheProveedor'), T('pantalla.nivel2')]);
+    var lineaNoche = el('small', { class: 'glosa noche-hoy' });
+    function pintarNoche() {
+      var n0 = esObjeto(m.nightly) ? m.nightly : null;
+      if (!n0 || !n0.provider) { lineaNoche.textContent = T('pantalla.nocheSinConfigurar'); return; }
+      var nivel = n0.level || 'economy';
+      // con el tope obligatorio, el nivel con que va a correr (como lo recorta la noche)
+      var tope = m.mandatory_ceiling === true ? NIVELES.indexOf(nivelDe(m.ceiling)) : -1;
+      if (tope >= 0 && NIVELES.indexOf(nivel) > tope) nivel = NIVELES[tope];
+      var mod = n0.provider === 'anthropic' ? modeloDe(nivel) : tablaDelProveedor(n0.provider)[nivel];
+      var hoyN = mod && mod !== 'inherit' ? T('pantalla.nocheHoy', { modelo: mod }) : T('pantalla.nocheSinModelo');
+      lineaNoche.textContent = hoyN + (secretos[n0.provider] ? ' · ' + T('pantalla.nocheLlave', { variable: secretos[n0.provider] }) : '');
+    }
+    var noche = esObjeto(m.nightly) ? m.nightly : null;
+    var deNoche = [['', T('pantalla.nocheSinConfigurar')]].concat((prov.noche || ['anthropic', 'ollama']).map(function (x) { return [x, T('pantalla.proveedor.' + x)]; }));
+    var selP = corto(T('pantalla.nocheProveedor'), noche ? noche.provider : '', deNoche, function (v) {
+      if (!v) delete m.nightly;
+      else { m.nightly = esObjeto(m.nightly) ? m.nightly : {}; m.nightly.provider = v; if (!m.nightly.level) m.nightly.level = 'economy'; }
+      pintarNoche();
+    }, 'models.nightly.provider', pr);
+    var selN = corto(T('pantalla.nivel2'), noche && noche.level ? noche.level : 'economy', NIVELES.map(function (x) { return [x, T('pantalla.nivel.' + x)]; }), function (v) { if (esObjeto(m.nightly)) m.nightly.level = v; pintarNoche(); }, 'models.nightly.level', pr);
+    pintarNoche();
+    tn.appendChild(renglon([el('div', { class: 'que', role: 'cell' }, el('span', { text: T('pantalla.elProcesoDeLaNoche') }), lineaNoche),
+      el('div', { class: 'acc', role: 'cell' }, selP.sel), el('div', { class: 'acc', role: 'cell' }, selN.sel)], problemasEn(pr, 'models.nightly').concat(selP.mios, selN.mios)));
+    box.appendChild(tn);
 
     // el tope obligatorio, un renglón al pie: la casilla, «ningún trabajo pasa de» y el modelo
     var techo = el('input', { type: 'checkbox', 'aria-label': T('pantalla.topeObligatorio'), 'data-path': 'models.mandatory_ceiling', onchange: function (e) { if (e.target.checked) m.mandatory_ceiling = true; else { delete m.mandatory_ceiling; delete m.ceiling; } render(); } });
@@ -3104,8 +3266,8 @@ function pantalla(idioma = 'es') {
 }
 
 module.exports = {
-  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
-  problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, modelosEnNiveles, equivalenciasDe,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS,
 };

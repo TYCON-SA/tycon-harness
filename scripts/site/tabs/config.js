@@ -434,7 +434,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (s.id === 'sitio') v.campos = { url: Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('url') };
     // la marca es una parte de site que un lector anterior no conoce: la sección dice «todavía no sabe leer»
     if (s.id === 'organizacion' && !(Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('brand'))) return { ...base, estado: 'no_reader', motivo: M('config.noLeeMarca') };
-    if (s.id === 'modelos') { const hoy = ORG.modelosDeHoy(TREE); v.extras = { hoy, motivoHoy: hoy ? null : ORG.motivoDeHoy(TREE), revisores: revisoresDelArbol(cl.perfil && cl.perfil.dir), porPaquete: revisoresPorPaquete(cl.perfil && cl.perfil.dir) }; const eq = ORG.equivalenciasDe(TREE); v.extras.equivalencias = eq.equivalencias; v.extras.motivoEquivalencias = eq.motivo; }
+    if (s.id === 'modelos') { const hoy = ORG.modelosDeHoy(TREE); v.extras = { hoy, motivoHoy: hoy ? null : ORG.motivoDeHoy(TREE), revisores: revisoresDelArbol(cl.perfil && cl.perfil.dir), porPaquete: revisoresPorPaquete(cl.perfil && cl.perfil.dir) }; const eq = ORG.equivalenciasDe(TREE); v.extras.equivalencias = eq.equivalencias; v.extras.motivoEquivalencias = eq.motivo; v.extras.proveedores = ORG.proveedoresDe(TREE); }
     // lo guardado con nombres de Claude se carga en niveles; el original también, así abrir no es un cambio y
     // el próximo «Proponer» de la sección lo escribe con niveles
     if (s.id === 'modelos' && v.borrador.models !== undefined) v.borrador.models = ORG.modelosEnNiveles(v.borrador.models, lec);

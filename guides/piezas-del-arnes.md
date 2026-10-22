@@ -690,6 +690,30 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibmodelsjs--el-modelo-de-cada-trabajo-del-pipeline)
 
+## scripts/lib/models-env.js — las variables de Claude Code sobre otro proveedor
+
+**Qué es:** Imprime las variables `ANTHROPIC_DEFAULT_<ALIAS>_MODEL` que Claude Code necesita para que cada nivel use el modelo de la tabla del proveedor de la máquina (`team-repos.json → models.providers`). Con `--format json` o `vscode`, las mismas en JSON.
+
+**Por qué existe:** Los revisores piden `haiku`, `sonnet` u `opus`. Con Claude Code sobre Ollama, cada alias recibe un modelo que existe sólo si su variable está puesta, y el arnés no puede ponerla: el entorno de la sesión vive antes de que arranque.
+
+**Quién la usa:** La función `claude-ollama` de la guía de Ollama, y quien quiera ver qué modelo es cada nivel en su máquina.
+
+**Dónde se prueba:** `scripts/tests/models-env.test.js`
+
+**Guía:** [ollama](integrations/ollama.md)
+
+## scripts/lib/nightly-model.js — el modelo del proceso de la noche
+
+**Qué es:** Dice con qué proveedor y qué modelo corre un proceso de la noche (`team-repos.json → models.nightly`, traducido con la tabla de su proveedor, con el tope y la lista de permitidos) y qué llave necesita. Sin configuración, sin modelo, fuera de la lista o sin llave devuelve un estado y no corre.
+
+**Por qué existe:** Un proceso de la noche no es la máquina de un dev: no tiene proveedor ni sesión, así que «el modelo del dev» no vale. El modelo se cambia desde el sitio, no con un pedido de código.
+
+**Quién la usa:** El proceso de la noche que redacta los aprendizajes del equipo.
+
+**Dónde se prueba:** `scripts/tests/nightly-model.test.js`
+
+**Guía:** [organization-site](organization-site.md)
+
 ## skills/tycon-pipeline/scripts/lib/run-size.js — el tamaño de la corrida
 
 **Qué es:** Decide si una corrida del pipeline es liviana (la story sólo declara documentación o textos) o completa (lo demás), y estima cuánto va a tardar con las corridas anteriores de la máquina.

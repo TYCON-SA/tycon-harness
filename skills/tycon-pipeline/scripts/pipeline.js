@@ -1576,6 +1576,52 @@ function orgModels(opts = {}) {
   }
 }
 
+/**
+ * El proveedor de modelos de esta máquina y lo que su entorno no dice igual que la tabla:
+ * `{ models_provider: { provider, origin }, warnings }`. Con Ollama, cada `ANTHROPIC_DEFAULT_<ALIAS>_MODEL` distinta del
+ * modelo de la tabla para su nivel es un aviso (`provider-env:<VARIABLE>`); sin proveedor declarado y con
+ * `ANTHROPIC_BASE_URL` en otro host que api.anthropic.com, un aviso que dice cómo declararlo (`provider-undeclared`). El
+ * arnés no cambia el proveedor ni el entorno: avisa. Nunca tira ni frena. opts: env · home · tree.
+ */
+const VARIABLES_DE_NIVEL = [['economy', 'ANTHROPIC_DEFAULT_HAIKU_MODEL'], ['balanced', 'ANTHROPIC_DEFAULT_SONNET_MODEL'], ['strong', 'ANTHROPIC_DEFAULT_OPUS_MODEL']];
+function proveedorDeModelos(org, opts = {}) {
+  const env = opts.env || process.env;
+  const warnings = [];
+  let prov = { provider: 'anthropic', origin: 'derivado', problem: null };
+  try {
+    const dir = opts.tree || require('./lib/harness-path.js').rutaArnesHook({ env, home: opts.home }).dir;
+    const lector = dir ? path.join(dir, 'scripts', 'lib', 'tycon-config.js') : null;
+    // sin el lector, «no pude consultar» no se lee como «Anthropic»: se dice
+    if (lector && fs.existsSync(lector)) prov = require(lector).modelProvider({ env, home: opts.home });
+    else prov = { provider: 'anthropic', origin: 'derivado', problem: `no encontré el lector de la configuración de la máquina (${lector || 'sin arnés'})` };
+  } catch (e) {
+    prov = { provider: null, origin: 'rota', problem: String((e && e.message) || e).split('\n')[0] };
+  }
+  if (prov.problem) {
+    warnings.push({ key: 'provider-unreadable', message: `el proveedor de modelos de la máquina no se pudo leer (${prov.problem}): sigo como Anthropic` });
+    prov = { ...prov, provider: 'anthropic' };
+  }
+  const data = org && org.declared ? org.data : null;
+  if (prov.provider === 'ollama') {
+    for (const [level, variable] of VARIABLES_DE_NIVEL) {
+      const r = MODELOS.resolveProviderModel({ org: data, provider: 'ollama', level, warnings });
+      if (!r.model || r.model === MODELOS.INHERIT) continue;
+      const tiene = env[variable];
+      if (tiene !== r.model) {
+        warnings.push({ key: `provider-env:${variable}`, message: `${variable} es ${tiene ? tiene : '(sin poner)'} y la tabla de Ollama dice ${r.model} para ${level}: abrí la sesión con la función claude-ollama de la guía (usa \`eval "$(node scripts/lib/models-env.js)"\`)` });
+      }
+    }
+  }
+  if (prov.origin === 'derivado' && env.ANTHROPIC_BASE_URL) {
+    let host = null;
+    try { host = new URL(env.ANTHROPIC_BASE_URL).hostname; } catch (_) { host = String(env.ANTHROPIC_BASE_URL); }
+    if (host && host !== 'api.anthropic.com') {
+      warnings.push({ key: 'provider-undeclared', message: `ANTHROPIC_BASE_URL apunta a ${host}: si es Ollama, declaralo con \`node scripts/lib/tycon-config.js set models.provider ollama\`` });
+    }
+  }
+  return { models_provider: { provider: prov.provider, origin: prov.origin }, warnings };
+}
+
 /** El pedido del dev para esta corrida (`marker.js set-models`), o null. */
 function pedidosDeModelos(marker) {
   const v = marker && marker.modelRequests && marker.modelRequests.values;
@@ -3351,6 +3397,7 @@ function recortarStart(result) {
   if (result.models) breve.models = result.models;
   if (result.models_problem) breve.models_problem = result.models_problem;
   if (result.models_warnings) breve.models_warnings = result.models_warnings;
+  if (result.models_provider) breve.models_provider = result.models_provider;
   if (result.model_hint) {
     breve.modelo = result.model_hint.recommended_session_model;
     breve.effort = result.model_hint.effort || null;
@@ -6305,7 +6352,9 @@ function main() {
     const conModelos = conModelosDeLaCorrida(args);
     const result = computeStart(conModelos);
     if (result.model_hint && result.model_hint.session_warning) process.stderr.write(`start: ${result.model_hint.session_warning}\n`);
-    decirModelos(result, conModelos.orgModels, (result.model_hint && result.model_hint._avisos) || []);
+    const proveedor = proveedorDeModelos(conModelos.orgModels);
+    result.models_provider = proveedor.models_provider;
+    decirModelos(result, conModelos.orgModels, [...((result.model_hint && result.model_hint._avisos) || []), ...proveedor.warnings]);
     const salida = args.breve ? recortarStart(result) : result;
     process.stdout.write(JSON.stringify(salida, null, 2) + '\n');
     // exitCode y no exit(): con la salida en un pipe, exit() corta lo que todavía no se

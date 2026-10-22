@@ -147,7 +147,8 @@ test('T2 HumanWords_SiteNamesTheAgentNotClaude @story-8.87 @ac-4', () => {
 test('T3 HumanWords_ToolExceptionsStay @story-8.87 @ac-4', () => {
   assert.match(TABLA['pantalla.tecPegaEstaFrase'].es, /Claude Code o Codex/);
   assert.match(TABLA['pantalla.tecPegaEstaFrase'].en, /Claude Code or Codex/);
-  assert.strictEqual(TABLA['pantalla.equivalenciaDelNivel'].es, 'Claude: {claude} · Codex: {codex}');
+  // la línea nombra a los cuatro proveedores (antes, «Claude: … · Codex: …»)
+  assert.strictEqual(TABLA['pantalla.equivalenciaDelNivel'].es, 'Anthropic: {anthropic} · OpenAI: {openai} · Ollama: {ollama} · Cursor: {cursor}');
 });
 
 test('T4 HumanWords_ProgramTextsWithoutCorrida @story-8.87 @ac-2 @ac-7', () => {
