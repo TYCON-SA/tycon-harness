@@ -40,6 +40,9 @@ printf '#!/usr/bin/env bash\necho "doble de sqlcmd"; exit 0\n' > "$TMP/bin/sqlcm
 TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 
 # la huella de todo lo que hay en una raíz falsa: «intacto» = la misma huella antes y después
+# los permisos de un archivo, en macOS (stat -f) y en Linux (stat -c), donde corre la CI pública
+#   (primero la de Linux: en macOS falla sin imprimir nada; al revés, en Linux `stat -f` imprime aunque falle)
+modo(){ [ "$1" = -- ] && shift; stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null; }
 foto(){ ( cd "$1" 2>/dev/null && find . \( -type f -o -type l \) -print0 | sort -z | xargs -0 shasum 2>/dev/null; find . -print | sort ) | shasum | cut -d' ' -f1; }
 
 # ── la versión bajada: un repo que sirve el «GitHub» de juguete y una ~/.tycon/harness con su manifiesto ────────────────
@@ -114,15 +117,15 @@ if [ ! -f "$GUION" ]; then no "update-guard.sh no existe todavía ($GUION)"; fi
 # ── T37 · InstallGuard_AllowAutoUpdate_InstallsScriptAndRule ────────────────────────────────────────────────────────
 if inst --allow-auto-update; then
   REGLA="$SYS/etc/sudoers.d/tycon-guard"
-  if [ -f "$SETUP/update-guard.sh" ] && [ "$(stat -f '%Lp' "$SETUP/update-guard.sh")" = 755 ] && [ -f "$REGLA" ] \
-     && grep -q "^$YO ALL=(root) NOPASSWD: /opt/tycon/setup/update-guard.sh \"\"$" "$REGLA" && [ "$(stat -f '%Lp' "$REGLA")" = 440 ]; then
+  if [ -f "$SETUP/update-guard.sh" ] && [ "$(modo -- "$SETUP/update-guard.sh")" = 755 ] && [ -f "$REGLA" ] \
+     && grep -q "^$YO ALL=(root) NOPASSWD: /opt/tycon/setup/update-guard.sh \"\"$" "$REGLA" && [ "$(modo -- "$REGLA")" = 440 ]; then
     ok "T37 · --allow-auto-update deja el guion (755) y la regla escrita desde la plantilla con el usuario puesto (440)"
   else no "T37 · falta el guion o la regla: $(ls -l "$SETUP" 2>&1 | tr '\n' ' ') — regla: $(cat "$REGLA" 2>&1)"; fi
 else no "T37 · --allow-auto-update con la organización en «auto» falló: $(grep '⛔' "$TMP/inst.out" | head -2 | tr '\n' ' ') $(tail -2 "$TMP/inst.out" | tr '\n' ' ')"; fi
 
 # ── T56 · InstallGuard_AllowAutoUpdate_WritesAndRemovesMarker (la mitad que escribe) ────────────────────────────────
 MARCA="$SYS/opt/tycon/production/auto-update.json"
-if [ -f "$MARCA" ] && [ "$(stat -f '%Lp' "$MARCA")" = 644 ] && python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$MARCA" 2>/dev/null; then
+if [ -f "$MARCA" ] && [ "$(modo -- "$MARCA")" = 644 ] && python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$MARCA" 2>/dev/null; then
   ok "T56a · la marca de root auto-update.json queda escrita (644)"
 else no "T56a · falta la marca $MARCA o no es JSON"; fi
 
@@ -148,7 +151,7 @@ assert r.get("to_version") and r.get("from_version")
 PY
 then ok "T36b · el renglón trae de y a qué versión, el usuario y la hora"
 else no "T36b · el renglón no trae lo pedido: $(tail -1 "$LOG" 2>&1)"; fi
-[ "$(stat -f '%Lp' "$LOG" 2>/dev/null)" = 644 ] && ok "T36c · update-log.jsonl queda 644" || no "T36c · el registro no quedó 644"
+[ "$(modo -- "$LOG" 2>/dev/null)" = 644 ] && ok "T36c · update-log.jsonl queda 644" || no "T36c · el registro no quedó 644"
 F1="$(foto "$SYS")"
 if upd && dice "sin versión nueva" && [ "$(foto "$SYS")" = "$F1" ]; then ok "T36d · una segunda corrida sin versión nueva no cambia nada y lo dice"
 else no "T36d · la segunda corrida: $(salida)"; fi
