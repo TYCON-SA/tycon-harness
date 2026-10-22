@@ -2458,7 +2458,9 @@ const RUNNERS = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', '
 const REPO_API = { platform: 'azure', org: 'acme', project: 'Prod', repo: 'api' };
 const REPO_WEB = { platform: 'azure', org: 'acme', project: 'Prod', repo: 'web' };
 const REPO_SITIO = { platform: 'github', org: 'acme', repo: 'sitio' };
-const TEC_EXTRAS = { fabrica: RUNNERS.factoryTable(), internos: ['dotnet', 'vitest', 'jest', 'node'], repos: [REPO_API, REPO_WEB, REPO_SITIO] };
+// las terminaciones que reconoce el arnés, del mismo lector (code-files.js)
+const CODE_FILES = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'code-files.js'));
+const TEC_EXTRAS = { fabrica: RUNNERS.factoryTable(), internos: ['dotnet', 'vitest', 'jest', 'node'], reconocidas: CODE_FILES.byLanguage(), repos: [REPO_API, REPO_WEB, REPO_SITIO] };
 const GO_ORG = { name: 'go', detect: 'go.mod', command: 'go test ./...', results: { format: 'junit', path: '{results}/junit.xml' } };
 const CARGO = { name: 'cargo', detect: 'Cargo.toml', command: 'cargo nextest run', results: { format: 'junit', path: '{results}/junit.xml' } };
 async function pantallaTec(borrador, idioma = 'es', respuesta = {}) {
@@ -2664,6 +2666,8 @@ test('Config_ReposDeLaOrganizacion_DeLosLectoresDelSitio — los de la revisión
     const tec = r.secciones.find((s) => s.id === 'tecnologia');
     const claves = tec.extras.repos.map((x) => [x.platform, x.org, x.project || '', x.repo].join('/')).sort();
     assert.deepStrictEqual(claves, ['azure/acme/Prod/api', 'azure/acme/Prod/web', 'github/acme//harness', 'github/acme//ops', 'github/acme//profile', 'github/acme//sitio'].sort());
+    // las terminaciones que ya reconoce, del lector del árbol (code-files.js), no escritas en el sitio
+    assert.deepStrictEqual([tec.extras.reconocidas, tec.extras.reconocidasMotivo], [CODE_FILES.byLanguage(), null]);
     // la entrada «C» (ado sin la forma proyecto/repo) no se ofrece, y se dice
     assert.strictEqual(tec.extras.reposMotivo, '1 entrada(s) de repos.json no nombran un repo («ado» o «github») y no se ofrecen');
   });
@@ -2735,6 +2739,36 @@ test('T30a SiteConfig_AskYourAgent_CopiesPhrase @story-8.48 @ac-36 — «Pedíse
   assert.match(sec, /team-repos\.js/);
   assert.match(sec, /archivo que la detecta|detect/);
   assert.match(fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.en.md'), 'utf8'), /\n### Your technology\n/);
+});
+
+test('SiteConfig_TerminacionesQueReconoce_YaLaReconoce — «Ver las terminaciones que ya reconoce» las muestra por lenguaje, del lector; sumar una que ya está avisa', async () => {
+  // 🔴 rojo: el renglón gris nombra lenguajes pero no dice qué terminaciones cuenta como código, y sumar «.cs» no avisa.
+  const p = await pantallaTec({});
+  const det = p.todos().find((n) => n.tag === 'details' && n.attrs['data-reconocidas'] !== undefined);
+  assert.ok(det, 'un desplegable');
+  const textoDet = (function t(x) { return [x.textContent || '', ...(x.hijos || []).map(t)].join(' '); })(det);
+  assert.match(textoDet, /Ver las terminaciones que ya reconoce/);
+  for (const g of CODE_FILES.byLanguage()) {
+    assert.ok(textoDet.includes(g.language), `el lenguaje ${g.language}`);
+    for (const e of g.exts) assert.ok(textoDet.includes(e), `la terminación ${e}`);
+  }
+  // sumar una que ya reconoce avisa mientras se escribe; una nueva, no
+  p.boton(/Agregar terminación/).on.click(); await p.esperar();
+  const campo = p.todos().filter((n) => n.tag === 'input' && n.attrs['data-path'] === 'stack.code_extensions.0').pop();
+  campo.on.input({ target: { value: '.cs' } });
+  const aviso = () => p.todos().find((n) => n.attrs['data-ya-reconoce'] !== undefined);
+  assert.match(aviso().textContent, /\.cs: ya la reconoce/);
+  campo.on.input({ target: { value: '.ex' } });
+  assert.strictEqual(aviso().textContent, '');
+  // sin la lista (un árbol que no la trae), lo dice en vez de un desplegable vacío
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('tecnologia', { repo: 'perfil', borrador: {}, extras: { ...TEC_EXTRAS, reconocidas: null, reconocidasMotivo: 'no pude leer la lista de terminaciones (x)' } })], idioma: 'en', hash: '#seccion-tecnologia' });
+  const todosR = []; (function walk(x) { todosR.push(x); (x.hijos || []).forEach(walk); })(r.creados.filter((n) => n.attrs.id === 'seccion-tecnologia').pop());
+  assert.ok(!todosR.some((n) => n.tag === 'details' && n.attrs['data-reconocidas'] !== undefined), 'sin lista, sin desplegable');
+  assert.ok(todosR.some((n) => n.attrs['data-reconocidas-motivo'] !== undefined && /no pude leer la lista de terminaciones/.test(n.textContent)), 'y dice por qué');
+  // sin la tabla de fábrica tampoco se rompe: el aviso de «no pude mostrar las herramientas» sigue saliendo
+  const sinFabrica = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('tecnologia', { repo: 'perfil', borrador: {}, extras: { ...TEC_EXTRAS, fabrica: null, motivo: 'sin tabla' } })], idioma: 'es', hash: '#seccion-tecnologia' });
+  const todosF = []; (function walk(x) { todosF.push(x); (x.hijos || []).forEach(walk); })(sinFabrica.creados.filter((n) => n.attrs.id === 'seccion-tecnologia').pop());
+  assert.ok(todosF.some((n) => /No pude mostrar las herramientas de fábrica/.test(n.textContent || '')), 'el aviso de la tabla de fábrica');
 });
 
 test('T30d SiteConfig_ReplaceBuiltIn_CopiesPhraseForThatTool — «Reemplazar» de una incluida deja la frase armada para esa herramienta y qué pasa después', async () => {

@@ -596,6 +596,8 @@ const TEXTOS = {
   'pantalla.tecTuTecnologia2': { es: 'tu tecnología', en: 'your technology' },
   'pantalla.tecLlegaATodasLasMaquinas': { es: 'Lo que guardás acá se aplica a todas las máquinas del equipo: qué lenguajes son código, cómo se corren las pruebas de cada proyecto y las reglas de tu equipo.', en: 'What you save here applies to every machine on the team: which languages are code, how each project\'s tests run, and your team\'s rules.' },
   'pantalla.tecYaReconoce': { es: 'El arnés ya reconoce el código de .NET, JavaScript, TypeScript, Python, Go, Java, Ruby, Kotlin, Swift, Svelte y Vue. Si tu equipo usa eso, no tenés que configurar nada.', en: 'The harness already recognizes .NET, JavaScript, TypeScript, Python, Go, Java, Ruby, Kotlin, Swift, Svelte and Vue code. If your team uses those, you don\'t have to configure anything.' },
+  'pantalla.tecVerTerminaciones': { es: 'Ver las terminaciones que ya reconoce', en: 'See the file extensions it already recognizes' },
+  'pantalla.tecYaLaReconoce': { es: '{ext}: ya la reconoce, no hace falta agregarla', en: '{ext}: already recognized, no need to add it' },
   'pantalla.tecLenguajesQueNoConoce': { es: '1. Lenguajes que el arnés no conoce', en: '1. Languages the harness doesn\'t know' },
   'pantalla.tecLenguajesAyuda': { es: 'Si programan en otro lenguaje, agregá la terminación de sus archivos. Así los cambios en esos archivos pasan por los revisores.', en: 'If you code in another language, add its file extension. That way changes to those files go through the reviewers.' },
   'pantalla.tecTerminacionEjemplo': { es: 'por ejemplo .ex para Elixir', en: 'for example .ex for Elixir' },

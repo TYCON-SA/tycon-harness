@@ -138,6 +138,23 @@ function respuestaVigente(lector, doc) {
  */
 // las herramientas que la puerta de pruebas corre por dentro, con su propia lógica: se muestran, no se cambian
 const RUNNERS_INTERNOS = Object.freeze(['dotnet', 'vitest', 'jest', 'node']);
+/**
+ * Las terminaciones que el arnés ya cuenta como código, por lenguaje, del mismo lector que usan los controles
+ * (`code-files.js` de la skill, buscado por su archivo); `null` si esta versión no lo trae: la pantalla no las inventa.
+ */
+function terminacionesQueReconoce() {
+  let skills = [];
+  try { skills = fs.readdirSync(path.join(TREE, 'skills')).sort(); }
+  catch (e) { return { lista: null, motivo: `no pude listar las skills de esta versión (${(e && e.code) || 'error'})` }; }
+  let motivo = 'esta versión del arnés no trae la lista de terminaciones';
+  for (const n of skills) {
+    const f = path.join(TREE, 'skills', n, 'scripts', 'lib', 'code-files.js');
+    if (!fs.existsSync(f)) continue;
+    try { const c = require(f); if (typeof c.byLanguage === 'function') return { lista: c.byLanguage(), motivo: null }; }
+    catch (e) { motivo = `no pude leer la lista de terminaciones (${String((e && e.message) || e).split('\n')[0]})`; }
+  }
+  return { lista: null, motivo };
+}
 /** Lo de fábrica para la sección «Tu tecnología»; sin la tabla en esta versión, `fabrica: null` y el motivo. */
 function tecnologiaDeFabrica() {
   try {
@@ -382,7 +399,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (s.id === 'integraciones') { const h = herramientasDeHoras(); v.extras = { horas: h.horas, horasProblemas: h.problemas }; }
     // las herramientas de prueba de fábrica de esta versión, para que «Cambiar» arranque desde ellas; las que la puerta
     // corre por dentro se listan sin poder cambiarse
-    if (s.id === 'tecnologia') { const rs = reposDeLaOrganizacion(cl.operaciones && cl.operaciones.dir, doc); v.extras = { ...tecnologiaDeFabrica(), repos: rs.lista, reposMotivo: rs.motivo }; }
+    if (s.id === 'tecnologia') { const rs = reposDeLaOrganizacion(cl.operaciones && cl.operaciones.dir, doc); const tr = terminacionesQueReconoce(); v.extras = { ...tecnologiaDeFabrica(), reconocidas: tr.lista, reconocidasMotivo: tr.motivo, repos: rs.lista, reposMotivo: rs.motivo }; }
     // la lista de fichas es la de este sitio; un lector que no conoce la clave deja la sección en «no sabe leer»
     if (s.id === 'fichas') {
       if (!(Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('hidden_cards'))) return { ...base, estado: 'no_reader', motivo: 'esta versión del arnés todavía no sabe leer las fichas que muestra el sitio (site.hidden_cards)' };
