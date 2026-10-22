@@ -173,6 +173,25 @@ git log --format='%ad %an %s' --date=short origin/dev..origin/main | head -20
   para probar lo mismo más una línea: con dos carriles para toda la organización, seis tandas sobre
   cinco repos son la diferencia entre veinte minutos y tres horas.
 
+## Poner `dev` al día
+
+El aviso de arranque `scripts/hooks/dev-behind-main-notice.js` dice cuándo a `dev` le faltan commits de `main`, y le
+pide al agente que lo ofrezca. **Sin un sí de la persona no se hace.** Con el sí, en este orden:
+
+1. `git fetch origin` y volver a contar: si ya está al día, decirlo y parar.
+2. El árbol de trabajo limpio, o parar y decirlo: no se guarda nada ajeno en un stash.
+3. `git switch dev && git pull --ff-only`.
+4. `git merge --no-ff origin/main -m "chore: bajar main a dev (queda al día)"`. Con conflicto, `git merge --abort` y
+   avisar: no se resuelve sin la persona (el caso típico es el archivo de versión).
+5. `git push origin dev`. Si lo rechaza una política o un non-fast-forward, no se fuerza: se ofrece un pull request
+   `main → dev`.
+6. Volver a la rama en la que estaba la persona.
+
+**Por qué no se automatiza:** mover `origin/dev` mientras alguien trabaja le rebota el push y le arma un conflicto con
+el archivo de versión. Ese merge ya no vuelve a versionar los formularios: el detector de cambios no cuenta los merges
+(`scripts/ci/forms-to-version.sh`). Poner `dev` al día **no** lleva a `main` el trabajo trabado en `dev`: eso es un
+merge a `main` con `/tycon-merge-to-main`, y el aviso lo ofrece aparte.
+
 ## Lo que NO hay que hacer — nunca, bajo ninguna circunstancia
 
 ### Flags prohibidos

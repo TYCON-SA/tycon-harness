@@ -70,6 +70,10 @@
           },
           {
             "type": "command",
+            "command": "node ${TCG}/scripts/hooks/dev-behind-main-notice.js"
+          },
+          {
+            "type": "command",
             "command": "node ${TCG}/scripts/hooks/worktree-sweep.js"
           },
           {

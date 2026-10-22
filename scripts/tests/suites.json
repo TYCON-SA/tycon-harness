@@ -1580,6 +1580,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 1.11: el aviso de arranque de dev atrasada habla sólo con atraso real o trabajo trabado, dice «no sé» con datos viejos, no sale a la red, no rompe el arranque y ofrece una vez por estado.",
+      "raiz": "arnes",
+      "ruta": "tests/dev-behind-main-notice.test.sh",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.5: cada skill de terceros sigue estando en su origen, en el commit y con el árbol del manifiesto. Con red (GitHub); sin red sale NO MEDIDO, nunca verde.",
       "raiz": "arnes",
       "ruta": "tests/third-party-origin.test.sh",
