@@ -115,6 +115,14 @@ function main() {
   } catch { return allowStop(); }
 
   const sessionId = resolveSessionId(event.session_id);
+
+  // «Creé la historia» sin la historia escrita: vale para toda sesión que corrió la skill, no sólo el modo autónomo.
+  try {
+    const { readMark } = require('./lib/story-skill-gate-io.js');
+    const reason = require('./lib/story-claim-check.js').claimWithoutStory(event, { hasMark: !!readMark(STATE_DIR, sessionId) });
+    if (reason) return blockStop(reason);
+  } catch { /* fail-open: un error acá no traba el cierre */ }
+
   const marker = readMarker(sessionId);
 
   // Scoping: solo el modo autónomo es atrapado por el portón.

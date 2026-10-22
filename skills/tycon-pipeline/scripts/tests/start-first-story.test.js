@@ -25,7 +25,13 @@ const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
 const GUION = path.join(RAIZ, 'skills', 'tycon-create-story', 'scripts', 'story-without-bmad.js');
 const SID = 'lab-primera-historia-851';
 
-const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), `primera-${p}-`));
+// Cada carpeta en su propia carpeta de arriba: los repos de las pruebas no son hermanos entre sí (la skill de historias
+// mira los repos de al lado antes de decir que un producto empieza de cero).
+const tmp = (p) => {
+  const d = path.join(fs.mkdtempSync(path.join(os.tmpdir(), `primera-${p}-`)), p);
+  fs.mkdirSync(d);
+  return d;
+};
 
 function laboratorio() {
   const home = tmp('home');

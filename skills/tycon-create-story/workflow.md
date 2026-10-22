@@ -26,6 +26,13 @@ node <this skill's directory>/scripts/story-without-bmad.js mode --repo {project
 - `{"mode":"bmad"}` → continue with «Configuration Loading» below, unchanged.
 - `{"mode":"first-time",...}` → the repo has no BMAD project. Read fully and follow `./first-time.md` instead of the
   rest of this workflow, and STOP here: do not load the config, do not ask for an epic or a sprint.
+- `{"mode":"existing",...}` → this product already has stories: in this repo with its own numbering, in the stories
+  repo it declares, or in a sibling repo. Tell the person the `message`, as is, and STOP. With `ask: true`, ask where
+  the new story goes and wait: never choose a place yourself. Never offer to initialize BMAD here, and never write a
+  first-time story in this repo. If the person says this repo starts on its own, run `mode` again with `--this-repo`.
+  To create the story in another place, run this skill again with that repo as `{project-root}`.
+- The script exits 2 when the product's stories repo is declared but not cloned: tell the person what it says (which
+  repo to clone) and STOP.
 
 The script decides the mode from the repo. Never decide it yourself.
 
