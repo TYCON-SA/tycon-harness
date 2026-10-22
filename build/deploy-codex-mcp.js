@@ -4,7 +4,7 @@
  * Lo invoca install-tycon-hooks.sh dentro del bloque TYCON_CODEX=1.
  *
  * Por qué TRADUCE en vez de copiar un fragmento estático: los comandos de los MCP son
- * ESPECÍFICOS de cada máquina (paths absolutos de node, ubicación del server de Clockify) —
+ * ESPECÍFICOS de cada máquina (paths absolutos de node, ubicación del server de una integración) —
  * la fuente única real es el registro de Claude de ESA máquina (~/.claude.json) más la tabla
  * canónica de equivalences.json (engram/codebase_memory, cuyas etiquetas replican las de
  * Claude para que el nombre de la tool salga byte-igual).
@@ -13,16 +13,17 @@
  * /KEY|TOKEN|PAT|SECRET/ NUNCA se copia al TOML — el server lo hereda del ambiente del
  * proceso de codex. Si el ambiente no lo tiene, este script lo dice A GRITOS con la
  * instrucción exacta (export a ~/.zshrc) y sigue (fail-open: el resto de los servers quedan).
- * Hoy la key de Clockify viaja EN CLARO dentro de ~/.claude.json — esto no la duplica.
+ * Hoy la key del servidor de una integración viaja EN CLARO dentro de ~/.claude.json — esto no la duplica.
  *
  * Splicing quirúrgico del TOML por SECCIONES: solo se tocan las tablas [mcp_servers.<label>]
  * de las etiquetas PROPIAS; cualquier server que el dev haya registrado a mano queda intacto.
  * Backup una vez (config.toml.bak-tycon-mcp) · atomic write · idempotente · --dry-run.
  *
  * SIN CLAUDE CODE. Qué servidores ESPERA el arnés sale de su configuración (las
- * integraciones prendidas: engram, codegraph, clockify) y de la tabla de equivalences.json; `~/.claude.json` es sólo de
- * donde se toma la definición de los que son de cada máquina (clockify, spokenly), SI EXISTE. Sin ese archivo este
- * guion callaría: un dev que sólo usa Codex quedaría sin Clockify y sin una palabra. Por eso un servidor esperado que no se
+ * integraciones prendidas: engram, codegraph, la herramienta de horas elegida) y de la tabla de equivalences.json;
+ * `~/.claude.json` es sólo de donde se toma la definición de los que son de cada máquina (el de una integración que lo
+ * declara con `mcp.machine`, spokenly), SI EXISTE. Sin ese archivo este guion callaría: un dev que sólo usa Codex quedaría
+ * sin el servidor de su herramienta y sin una palabra. Por eso un servidor esperado que no se
  * puede registrar SE DICE, con su motivo (`missingServers`). Y `writable_roots` lleva el estado vigente y además
  * `~/.tycon/state` (la casa propia del arnés: donde vive el estado de una máquina sin Claude Code), para que el pipeline bajo Codex pueda escribir su marcador en cualquiera de las dos.
  *
@@ -46,11 +47,47 @@ const TCG = path.resolve(__dirname, '..');
 // substring — /PAT/ a secas clasificaría PATH y DATA_PATH como secretos: la variable se dropearía
 // del TOML y se le gritaría al dev que exporte algo que nunca fue secreto.
 const SECRET_RE = /(^|[_-])(KEY|TOKEN|PAT|SECRET)([_-]|$)/i;
-const OWN_LABELS = ['plugin_engram_engram', 'codebase_memory', 'clockify', 'spokenly', 'codegraph'];
+/**
+ * Los servidores MCP que declaran las integraciones (`mcp` de su manifiesto): `[{ integration, kind, server, machine }]`.
+ * Sin la biblioteca o sin poder leer los manifiestos, ninguno (los fijos del arnés siguen).
+ */
+// lo que no se pudo leer de las integraciones: el despliegue lo dice (sin ellas, su servidor no se registra ni se saca)
+const MCP_PROBLEMS = [];
+const FIXED_LABELS = ['plugin_engram_engram', 'codebase_memory', 'spokenly', 'codegraph'];
+function integrationMcps(tcg = TCG, problems = MCP_PROBLEMS) {
+  let listing;
+  try {
+    const INT = require(path.join(tcg, 'scripts', 'lib', 'integrations.js'));
+    listing = INT.listManifests({ dir: path.join(tcg, 'integrations') });
+  } catch (e) {
+    problems.push(`no pude leer las integraciones (${e.code || e.message}): el servidor MCP de cada una no se registra ni se saca`);
+    return [];
+  }
+  for (const b of listing.problems) problems.push(`la integración «${b.name}» tiene el manifiesto roto (${b.reasons.join('; ')}): su servidor MCP no se registra ni se saca`);
+  const out = [];
+  for (const m of listing.manifests.filter((x) => x.mcp)) {
+    // un servidor que choca con uno fijo del arnés o con el de otra integración no se toma: se pisarían las tablas
+    if (FIXED_LABELS.includes(m.mcp.server) || out.some((e) => e.server === m.mcp.server)) {
+      problems.push(`la integración «${m.name}» declara el servidor MCP «${m.mcp.server}», que ya es de otra pieza: no se toma`);
+      continue;
+    }
+    out.push({ integration: m.name, kind: m.kind, server: m.mcp.server, machine: m.mcp.machine });
+  }
+  return out;
+}
+const MCPS = integrationMcps();
+const OWN_LABELS = [...FIXED_LABELS, ...MCPS.map((e) => e.server)];
 // los que se definen EN CADA MÁQUINA (salen de ~/.claude.json): si el despliegue no los resolvió y la tabla ya está en
 // config.toml (la persona la escribió a mano, como manda el aviso), se queda — si se borrara en cada despliegue, el
 // aviso se repetiría para siempre
-const MACHINE_LABELS = ['clockify', 'spokenly'];
+const MACHINE_LABELS = ['spokenly', ...MCPS.filter((e) => e.machine).map((e) => e.server)];
+/** ¿La integración del servidor está prendida? La de horas, si es la elegida; otra, por su llave. Sin configuración, sí. */
+function mcpOn(e, integrations) {
+  if (!integrations) return true;
+  return e.kind === 'timeTracking' ? integrations.timeTracking === e.integration : integrations[e.integration] === true;
+}
+/** La llave de la configuración que prende el servidor, para decirla en un aviso. */
+const mcpKey = (e) => (e.kind === 'timeTracking' ? 'timeTracking' : e.integration);
 
 function tomlStr(s) { return JSON.stringify(String(s)); }
 
@@ -96,10 +133,13 @@ function resolveServers(claudeCfg, eq, integrations = readIntegrations(), has = 
   }
   // traducidos del registro de Claude de la máquina
   const srv = (claudeCfg && claudeCfg.mcpServers) || {};
-  if (srv.clockify && srv.clockify.command && prendida('clockify')) {
-    out.clockify = { command: srv.clockify.command, args: srv.clockify.args || [], approval: 'approve', env: srv.clockify.env || {} };
-    for (const k of Object.keys(srv.clockify.env || {}))
-      if (SECRET_RE.test(k) && !process.env[k]) missingEnv.push([k, 'clockify', '~/.claude.json → mcpServers.clockify.env']);
+  // los de las integraciones que se definen en cada máquina: el de la prendida
+  for (const e of MCPS.filter((x) => x.machine)) {
+    const def = srv[e.server];
+    if (!def || !def.command || !mcpOn(e, integrations)) continue;
+    out[e.server] = { command: def.command, args: def.args || [], approval: 'approve', env: def.env || {} };
+    for (const k of Object.keys(def.env || {}))
+      if (SECRET_RE.test(k) && !process.env[k]) missingEnv.push([k, e.server, `~/.claude.json → mcpServers.${e.server}.env`]);
   }
   if (srv.spokenly && srv.spokenly.url) out.spokenly = { url: srv.spokenly.url };
   // codegraph: global por convención — el server resuelve el índice por cwd.
@@ -136,11 +176,12 @@ function missingServers({ integrations, servers, claudeJson, has, target, regist
   if (!integrations) return out;
   const cant = (label, key, why, fix) => out.push(`⚠ tycon/codex: el servidor MCP «${label}» está prendido (integrations.${key}) y no lo puedo registrar en Codex: ${why} — ${fix}`);
   // ya registrado a mano en config.toml (lo que el propio aviso manda a hacer): no hay nada que avisar
-  if (integrations.clockify && !servers.clockify && !registered('clockify')) {
-    cant('clockify', 'clockify', claudeJson === 'missing'
+  for (const e of MCPS.filter((x) => x.machine)) {
+    if (!mcpOn(e, integrations) || servers[e.server] || registered(e.server)) continue;
+    cant(e.server, mcpKey(e), claudeJson === 'missing'
       ? 'su definición es de cada máquina y sale de ~/.claude.json, que no existe en ésta'
-      : 'su definición es de cada máquina y ~/.claude.json no lo trae (mcpServers.clockify)',
-    `registralo a mano en ${target} ([mcp_servers.clockify], con su command y sus args), o apagá la integración`);
+      : `su definición es de cada máquina y ~/.claude.json no lo trae (mcpServers.${e.server})`,
+    `registralo a mano en ${target} ([mcp_servers.${e.server}], con su command y sus args), o elegí otra herramienta`);
   }
   if (integrations.codegraph && !servers.codegraph) cant('codegraph', 'codegraph', 'el ejecutable `codegraph` no está en el PATH', 'instalalo (guides/integrations/codegraph-mcp.md) o apagá la integración');
   // codebase-memory no tiene integración: se declara si su ejecutable está, y si no está se dice
@@ -162,8 +203,10 @@ function readIntegrations() {
     const read = () => {
       const cfg = C.leer();
       const out = C.integraciones(cfg);
-      // el registro de horas se elige con `timeTracking` (la llave `clockify` es el nombre viejo): clockify va si es ése
-      if (typeof C.timeTracking === 'function') out.clockify = C.timeTracking(cfg).value === 'clockify';
+      // la herramienta de horas elegida (`timeTracking`, que ya lee la llave vieja): su servidor va si es ésa. Un lector
+      // que no la sabe decir no deja decidir: sin esto, la tabla del servidor de la herramienta se sacaría
+      if (typeof C.timeTracking !== 'function') return null;
+      out.timeTracking = C.timeTracking(cfg).value;
       return out;
     };
     return typeof C.sinAnotar === 'function' ? C.sinAnotar(read) : read();
@@ -178,11 +221,17 @@ function spliceToml(existing, servers, quitar = []) {
   const lines = String(existing || '').split('\n');
   const isHeader = (l) => /^\s*\[/.test(l);
   const ownHeader = (l) => {
-    const m = l.match(/^\s*\[mcp_servers\.("?)([A-Za-z0-9_-]+)\1(\.env)?\]\s*$/);
-    // una tabla propia se reemplaza; la de un servidor de la máquina que este despliegue NO resolvió se deja como está,
-    // salvo que su integración esté apagada
-    return Boolean(m && OWN_LABELS.includes(m[2])
-      && (Object.prototype.hasOwnProperty.call(servers, m[2]) || !MACHINE_LABELS.includes(m[2]) || quitar.includes(m[2])));
+    // el encabezado de la tabla, de su `.env` o de una subtabla más honda (`.tools.<herramienta>`), con o sin comentario
+    // al final: las mismas formas que reconoce `serverRegistered`
+    const m = l.match(/^\s*\[mcp_servers\.("?)([A-Za-z0-9_-]+)\1((?:\.(?:"[^"]*"|[^\]\s#."]+))*)\]\s*(?:#.*)?$/);
+    if (!m || !OWN_LABELS.includes(m[2])) return false;
+    const rewritten = Object.prototype.hasOwnProperty.call(servers, m[2]);
+    // un servidor que se saca, se saca entero: el de la integración apagada, y uno propio que no es de la máquina y este
+    // despliegue no resolvió (el de la máquina sin resolver se deja como está)
+    if (quitar.includes(m[2]) || (!rewritten && !MACHINE_LABELS.includes(m[2]))) return true;
+    // al reescribirla, la tabla y su `.env` se reemplazan; una subtabla más honda es de la persona (la aprobación de cada
+    // herramienta) y queda
+    return rewritten && (!m[3] || m[3] === '.env');
   };
   const kept = [];
   let skipping = false;
@@ -445,30 +494,36 @@ function serverRegistered(toml, label) {
 
 function selftest() {
   const eq = { mcp_servers: { plugin_engram_engram: { command: 'engram', args: ['mcp', '--tools=agent'], approval_mode: 'approve' }, codebase_memory: { command: 'codebase-memory-mcp', args: [], approval_mode: 'approve' } } };
-  const claude = { mcpServers: { clockify: { command: '/opt/x/node', args: ['/opt/x/srv.js'], env: { CLOCKIFY_API_KEY: 'sekreto123' } }, spokenly: { type: 'http', url: 'http://localhost:51089' } } };
+  // el servidor de cada máquina de una integración (el que declara su manifiesto): S es su nombre, KEY su secreto de prueba
+  const M = MCPS.find((e) => e.machine) || { integration: 'acme', kind: 'timeTracking', server: 'acme', machine: true };
+  const S = M.server;
+  const KEY = `${S.toUpperCase()}_API_KEY`;
+  const on = M.kind === 'timeTracking' ? { timeTracking: M.integration } : { [M.integration]: true };
+  const off = M.kind === 'timeTracking' ? { timeTracking: 'none' } : { [M.integration]: false };
+  const claude = { mcpServers: { [S]: { command: '/opt/x/node', args: ['/opt/x/srv.js'], env: { [KEY]: 'sekreto123' } }, spokenly: { type: 'http', url: 'http://localhost:51089' } } };
   // con las integraciones prendidas y los ejecutables presentes: el resultado no depende de la configuración de la máquina
-  const todas = { engram: true, clockify: true, codegraph: true };
+  const todas = { engram: true, codegraph: true, ...on };
   const { servers, missingEnv } = resolveServers(claude, eq, todas, () => true);
   const toml = Object.entries(servers).map(([l, c]) => serverToml(l, c)).join('\n');
-  const existing = '# config del dev\nmodel = "gpt-5.6-terra"\n\n[mcp_servers]\n\n[mcp_servers.mi_server_propio]\ncommand = "propio"\nargs = []\n\n[mcp_servers.clockify]\ncommand = "viejo"\nargs = []\n\n[projects."/x"]\ntrust_level = "trusted"\n';
+  const existing = `# config del dev\nmodel = "gpt-5.6-terra"\n\n[mcp_servers]\n\n[mcp_servers.mi_server_propio]\ncommand = "propio"\nargs = []\n\n[mcp_servers.${S}]\ncommand = "viejo"\nargs = []\n\n[projects."/x"]\ntrust_level = "trusted"\n`;
   const merged = spliceToml(existing, servers);
   const merged2 = spliceToml(merged, servers);
-  const apagadas = Object.keys(resolveServers(claude, eq, { engram: false, clockify: false, codegraph: false }, () => true).servers);
+  const apagadas = Object.keys(resolveServers(claude, eq, { engram: false, codegraph: false, ...off }, () => true).servers);
   const sinBinario = Object.keys(resolveServers(claude, eq, todas, () => false).servers);
   const sinConfig = Object.keys(resolveServers(claude, eq, null, () => false).servers);
   const checks = [
-    ['integraciones apagadas: ni engram, ni clockify, ni codegraph', !apagadas.some((l) => ['plugin_engram_engram', 'clockify', 'codegraph'].includes(l))],
+    ['integraciones apagadas: ni engram, ni el servidor de la integración, ni codegraph', !apagadas.some((l) => ['plugin_engram_engram', S, 'codegraph'].includes(l))],
     ['codebase-memory sin su ejecutable no se declara', !sinBinario.includes('codebase_memory')],
     ['sin poder leer la configuración, se declara como siempre', sinConfig.includes('plugin_engram_engram') && sinConfig.includes('codebase_memory')],
-    ['clockify apagado: su tabla escrita a mano se saca', !spliceToml(existing, {}, ['clockify']).includes('[mcp_servers.clockify]')
-      && spliceToml(existing, {}, []).includes('[mcp_servers.clockify]') && spliceToml(existing, {}, ['clockify']).includes('[mcp_servers.mi_server_propio]')],
+    ['la integración apagada: su tabla escrita a mano se saca', !spliceToml(existing, {}, [S]).includes(`[mcp_servers.${S}]`)
+      && spliceToml(existing, {}, []).includes(`[mcp_servers.${S}]`) && spliceToml(existing, {}, [S]).includes('[mcp_servers.mi_server_propio]')],
     ['codebase-memory sin su ejecutable: se dice', missingServers({ integrations: {}, servers: {}, claudeJson: 'present', has: () => false, target: 't' }).some((l) => /codebase_memory/.test(l))],
     ['el secreto NO viaja al TOML', !toml.includes('sekreto123') && !merged.includes('sekreto123')],
-    ['la key faltante en ambiente se reporta', missingEnv.some(([k]) => k === 'CLOCKIFY_API_KEY') || !!process.env.CLOCKIFY_API_KEY],
+    ['la key faltante en ambiente se reporta', missingEnv.some(([k]) => k === KEY) || !!process.env[KEY]],
     ['etiquetas canónicas presentes (nombre de tool byte-igual)', merged.includes('[mcp_servers.plugin_engram_engram]') && merged.includes('[mcp_servers.codebase_memory]')],
     ['spokenly HTTP con url', merged.includes('url = "http://localhost:51089"')],
     ['el server PROPIO del dev queda intacto', merged.includes('mi_server_propio')],
-    ['el clockify viejo se reemplaza (no se acumula)', !merged.includes('"viejo"')],
+    ['el servidor viejo de la integración se reemplaza (no se acumula)', !merged.includes('"viejo"')],
     ['la config ajena (model, projects) queda', merged.includes('model = "gpt-5.6-terra"') && merged.includes('[projects."/x"]')],
     ['idempotente', merged2 === merged],
   ];
@@ -498,13 +553,13 @@ function selftest() {
     })()],
     // clases 3 y 24: la tabla de un servidor de la máquina escrita a mano (lo que manda el aviso) se queda si el despliegue
     // no lo resolvió, y el aviso no se repite
-    ['tabla de clockify a mano: spliceToml la deja si no la resolvió, y la reemplaza si sí', (() => {
-      const toml = '[mcp_servers]\n\n[mcp_servers.clockify]\ncommand = "mio"\n';
+    ['tabla de la integración a mano: spliceToml la deja si no la resolvió, y la reemplaza si sí', (() => {
+      const toml = `[mcp_servers]\n\n[mcp_servers.${S}]\ncommand = "mio"\n`;
       const kept = spliceToml(toml, { codegraph: { command: 'z' } });
-      const replaced = spliceToml(toml, { clockify: { command: 'nuevo' } });
+      const replaced = spliceToml(toml, { [S]: { command: 'nuevo' } });
       return kept.includes('command = "mio"') && !replaced.includes('command = "mio"') && replaced.includes('command = "nuevo"');
     })()],
-    ['clockify ya registrado a mano: missingServers no avisa', missingServers({ integrations: { clockify: true }, servers: {}, claudeJson: 'missing', has: () => true, target: 't', registered: (l) => l === 'clockify' }).length === 0],
+    ['servidor de la integración ya registrado a mano: missingServers no avisa', missingServers({ integrations: on, servers: {}, claudeJson: 'missing', has: () => true, target: 't', registered: (l) => l === S }).length === 0],
     ['wr: la forma inline SIN array no se toca (duplicar la definición mata el TOML)', (() => {
       const raro = 'sandbox_workspace_write = { network_access = true }\n';
       return ensureWritableRoots(raro) === raro;
@@ -577,13 +632,13 @@ function selftest() {
     })(),
     ['wr: markerRoots trae el estado vigente primero y la casa propia, sin repetir', markerRoots()[0] === root && new Set(markerRoots()).size === markerRoots().length && markerRoots().some((r) => /[\\/]\.tycon[\\/]state$/.test(r) || process.env.TYCON_HOME)],
     // AC 23: un servidor esperado que no se puede registrar se dice, con su motivo; uno apagado o registrado, no
-    ['faltante: clockify prendido y sin ~/.claude.json → se dice', (() => {
-      const m = missingServers({ integrations: { clockify: true }, servers: {}, claudeJson: 'missing', has: () => true, target: '/c/config.toml' });
-      return m.length === 1 && /clockify/.test(m[0]) && /no lo puedo registrar/.test(m[0]) && /no existe/.test(m[0]);
+    ['faltante: la integración prendida y sin ~/.claude.json → se dice', (() => {
+      const m = missingServers({ integrations: on, servers: {}, claudeJson: 'missing', has: () => true, target: '/c/config.toml' });
+      return m.length === 1 && m[0].includes(`«${S}»`) && /no lo puedo registrar/.test(m[0]) && /no existe/.test(m[0]);
     })()],
-    ['faltante: clockify prendido, con ~/.claude.json que no lo trae → se dice con ese motivo', /no lo trae/.test(missingServers({ integrations: { clockify: true }, servers: {}, claudeJson: 'present', has: () => true, target: 't' })[0] || '')],
-    ['faltante: apagado, o registrado, o sin poder leer la configuración → no se afirma nada', missingServers({ integrations: { clockify: false }, servers: {}, claudeJson: 'missing', has: () => true, target: 't' }).length === 0
-      && missingServers({ integrations: { clockify: true }, servers: { clockify: { command: 'x' } }, claudeJson: 'present', has: () => true, target: 't' }).length === 0
+    ['faltante: la integración prendida, con ~/.claude.json que no lo trae → se dice con ese motivo', /no lo trae/.test(missingServers({ integrations: on, servers: {}, claudeJson: 'present', has: () => true, target: 't' })[0] || '')],
+    ['faltante: apagado, o registrado, o sin poder leer la configuración → no se afirma nada', missingServers({ integrations: off, servers: {}, claudeJson: 'missing', has: () => true, target: 't' }).length === 0
+      && missingServers({ integrations: on, servers: { [S]: { command: 'x' } }, claudeJson: 'present', has: () => true, target: 't' }).length === 0
       && missingServers({ integrations: null, servers: {}, claudeJson: 'missing', has: () => false, target: 't' }).length === 0],
     ['faltante: engram registrado sin su ejecutable en el PATH → se dice (y no dice «no lo puedo registrar»)', (() => {
       const m = missingServers({ integrations: { engram: true }, servers: { plugin_engram_engram: { command: 'engram' } }, claudeJson: 'missing', has: () => false, target: 't' });
@@ -608,8 +663,10 @@ function main() {
   const integrations = readIntegrations();
   const { servers, missingEnv } = resolveServers(claudeCfg, eq, integrations);
   // un servidor de la máquina con la integración apagada se saca del config.toml
-  const quitar = integrations && integrations.clockify !== true ? ['clockify'] : [];
+  const quitar = integrations ? MCPS.filter((e) => e.machine && !mcpOn(e, integrations)).map((e) => e.server) : [];
   // un servidor que el arnés espera y no se puede registrar se dice
+  for (const p of MCP_PROBLEMS) console.log(`⚠ tycon/codex: ${p}`);
+  if (!integrations && MCPS.length) console.log('⚠ tycon/codex: no pude leer qué integraciones están prendidas: el servidor MCP de cada una no se saca ni se avisa si falta');
   for (const line of missingServers({ integrations, servers, claudeJson, has: (b) => inPath(b), target, registered: (label) => serverRegistered(fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : '', label) })) console.log(line);
   for (const [k, srv, dónde] of missingEnv)
     console.log(`🛑 tycon: el server MCP "${srv}" necesita ${k} en el AMBIENTE y no está — agregá \`export ${k}=<valor>\` a ~/.zshrc (el valor actual vive en ${dónde}). Sin eso, ese server va a fallar bajo codex. El secreto NO se copia a ningún archivo.`);
@@ -637,5 +694,5 @@ function main() {
   return 0;
 }
 
-module.exports = { OWN_LABELS, resolveServers, serverToml, spliceToml, ensureWritableRoots, writableRootsHas, writableRootsList, linkedRoots, linkComponent, dropWritableRoot, markerRoot, markerRoots, legacyRoot, missingServers, serverRegistered };
+module.exports = { OWN_LABELS, integrationMcps, mcpOn, resolveServers, serverToml, spliceToml, ensureWritableRoots, writableRootsHas, writableRootsList, linkedRoots, linkComponent, dropWritableRoot, markerRoot, markerRoots, legacyRoot, missingServers, serverRegistered };
 if (require.main === module) process.exit(main());

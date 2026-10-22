@@ -234,7 +234,7 @@ function checkContextEfficiency() {
   // MCP tools: heurística hardcoded (mismo set que context-budget)
   const knownMCPTokens = {
     'engram': 6500, 'codegraph-frontend': 4500, 'codegraph-backend': 4500,
-    'clockify': 4000, 'chrome-devtools': 12500, 'telegram': 2000,
+    'chrome-devtools': 12500, 'telegram': 2000,
   };
   const s = readSettings();
   const servers = s.mcpServers || (s.mcp && s.mcp.servers) || {};
