@@ -1,12 +1,12 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-retrospective-capturer.md
-# source_sha256: ea29f4d95af92875e3dc489c6fae12f553135b3d8571cac9aab8b199b684934b
+# source_sha256: 3505dcb473a749c5ed31a3ba7618efc814be38e07047a4f002ed65de5e567078
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-retrospective-capturer.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-retrospective-capturer").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
 
 name = "tycon-retrospective-capturer"
-description = "Advisor Core post-commit async. Captura learnings, correlaciona warnings ignorados con incidentes, emite las metricas del dashboard (tabla en este doc). Unico observer del sistema. Usar post-merge, no interactivo. Alimenta engram con decisiones arquitectonicas y gotchas."
+description = "Observer post-commit asíncrono. Captura learnings, correlaciona warnings con incidentes, emite métricas y alimenta engram. Usar post-merge, no interactivo."
 model = "gpt-5.6-luna"
 sandbox_mode = "workspace-write"
 

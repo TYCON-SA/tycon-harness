@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-story-validator.md
-# source_sha256: 361a03f99d81012c400ad192ff2024ea8ff44316ade2b5125c85d372cb5ada81
+# source_sha256: e742ad1f4eb507b779fd71c45efdf9d27369726da3ab2ce1bcc2a89726e3a920
 # Se despliega como $CODEX_HOME/tycon-story-validator.config.toml y se invoca: codex exec -p tycon-story-validator
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 # ⚠️ ASIMETRÍA DECLARADA — servidor MCP "codegraph" NO se declara acá: La ruta del índice cambia por repo (`codegraph serve --mcp --path <repo>`), y el perfil de advisor es un archivo fijo: no hay dónde poner la ruta. Del lado Claude codegraph ya es opt-in por repo (la mayoría corre sin él) y los fixtures del banco son repos efímeros SIN índice, así que ningún caso lo mide. El advisor cae al escalón siguiente de su cascada de lookup. Revisar en la Etapa F junto con el instalador.

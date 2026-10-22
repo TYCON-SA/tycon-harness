@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/i18n-hardcoded-text-reviewer.md
-# source_sha256: 234933cb4a39352772733b05cf79033c320c9c8c9bffb3718fe65231a0079f6c
+# source_sha256: f35b1119ae22d8fc80c439d78150007e6408de66c0da43e54524ea2236e6a35f
 # Se despliega como $CODEX_HOME/i18n-hardcoded-text-reviewer.config.toml y se invoca: codex exec -p i18n-hardcoded-text-reviewer
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 

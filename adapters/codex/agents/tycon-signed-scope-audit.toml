@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-signed-scope-audit.md
-# source_sha256: 5b2fd2ac150e60ad0d8aeaaa883dec2594b6ad6527a35a648e0baee3a18f9bc0
+# source_sha256: 930ff8f287176d8812e468b7e3ac878db79f6ed790965e035db560a4392e5983
 # Se despliega como $CODEX_HOME/tycon-signed-scope-audit.config.toml y se invoca: codex exec -p tycon-signed-scope-audit
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 

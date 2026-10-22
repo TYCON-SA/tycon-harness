@@ -2,7 +2,7 @@
 name: tycon-story-validator
 tools: Read, Grep, Glob, mcp__codegraph__codegraph_search, mcp__codegraph__codegraph_callers, mcp__codegraph__codegraph_node
 model: sonnet
-description: Advisor Core pre-BMAD + post-implementación. Valida stories contra Mary+GOLD antes de implementar (Step 1) y re-valida post-build para detectar deferrals abiertos (Step 5, Gate 1 DoD). Verifica frontmatter, ACs, tests, archivos/métodos referenciados, y `TODO(Story-{N}-deferral)`. Usar antes de bmad-dev-story, en validación de tycon-create-story, o cuando el user pide 'validar esta story'.
+description: Valida stories antes de implementar y re-valida post-build (deferrals abiertos). Usar antes de bmad-dev-story, al validar con tycon-create-story, o si piden validar esta story
 omitClaudeMd: true
 ---
 

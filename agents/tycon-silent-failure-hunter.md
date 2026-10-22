@@ -1,6 +1,6 @@
 ---
 name: tycon-silent-failure-hunter
-description: Advisor Core condicional. Caza fallos silenciosos en código TYCON (.NET y TS/React/Next.js): catch vacíos, return null sin log, log-and-forget, async void, fire-and-forget en paths críticos, .catch(()=>[]) en TS, HttpClient sin EnsureSuccess, transactions sin rollback, JSON.parse sin try, SignalR handlers que tragan throws. Reglas SILENT-C1..C5/W1..W7. Solo invocar si el diff toca `.cs`, `.ts`, `.tsx` con `try|catch|async|await|Task\.Run|\.catch\(|EnsureSuccess|BackgroundService`. Stack-aware: conoce el patrón Worker BackgroundService TYCON, Polly resilience, SafeQueryBuilder transactions, SignalR Hub/Client, Server Actions Next.js. Inspirado en ECC silent-failure-hunter.
+description: Caza fallos silenciosos en .NET y TS/React (catch vacíos, fire-and-forget). Solo invocar si el diff toca .cs, .ts o .tsx con try, catch, async, await o BackgroundService
 model: sonnet
 tools: [Read, Grep, Glob, Bash]
 omitClaudeMd: true

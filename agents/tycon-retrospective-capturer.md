@@ -2,7 +2,7 @@
 name: tycon-retrospective-capturer
 tools: Read, Grep, Glob, Bash, Write, mcp__plugin_engram_engram__mem_save, mcp__plugin_engram_engram__mem_search, mcp__plugin_engram_engram__mem_context
 model: sonnet
-description: Advisor Core post-commit async. Captura learnings, correlaciona warnings ignorados con incidentes, emite las metricas del dashboard (tabla en este doc). Unico observer del sistema. Usar post-merge, no interactivo. Alimenta engram con decisiones arquitectonicas y gotchas.
+description: Observer post-commit asíncrono. Captura learnings, correlaciona warnings con incidentes, emite métricas y alimenta engram. Usar post-merge, no interactivo.
 ---
 
 # tycon-retrospective-capturer

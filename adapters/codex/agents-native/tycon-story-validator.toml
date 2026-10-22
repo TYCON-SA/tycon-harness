@@ -1,13 +1,13 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-story-validator.md
-# source_sha256: 361a03f99d81012c400ad192ff2024ea8ff44316ade2b5125c85d372cb5ada81
+# source_sha256: e742ad1f4eb507b779fd71c45efdf9d27369726da3ab2ce1bcc2a89726e3a920
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-story-validator.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-story-validator").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
 # ⚠️ ASIMETRÍA DECLARADA — servidor MCP "codegraph" NO se declara acá: La ruta del índice cambia por repo (`codegraph serve --mcp --path <repo>`), y el perfil de advisor es un archivo fijo: no hay dónde poner la ruta. Del lado Claude codegraph ya es opt-in por repo (la mayoría corre sin él) y los fixtures del banco son repos efímeros SIN índice, así que ningún caso lo mide. El advisor cae al escalón siguiente de su cascada de lookup. Revisar en la Etapa F junto con el instalador.
 
 name = "tycon-story-validator"
-description = "Advisor Core pre-BMAD + post-implementación. Valida stories contra Mary+GOLD antes de implementar (Step 1) y re-valida post-build para detectar deferrals abiertos (Step 5, Gate 1 DoD). Verifica frontmatter, ACs, tests, archivos/métodos referenciados, y `TODO(Story-{N}-deferral)`. Usar antes de bmad-dev-story, en validación de tycon-create-story, o cuando el user pide 'validar esta story'."
+description = "Valida stories antes de implementar y re-valida post-build (deferrals abiertos). Usar antes de bmad-dev-story, al validar con tycon-create-story, o si piden validar esta story"
 model = "gpt-5.6-luna"
 sandbox_mode = "read-only"
 

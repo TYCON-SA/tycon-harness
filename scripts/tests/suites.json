@@ -1634,6 +1634,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 7.53: la descripción de cada agente tiene 200 caracteres o menos y, si es condicional, sigue nombrando su disparador.",
+      "raiz": "arnes",
+      "ruta": "tests/agent-descriptions.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.5: cada skill de terceros sigue estando en su origen, en el commit y con el árbol del manifiesto. Con red (GitHub); sin red sale NO MEDIDO, nunca verde.",
       "raiz": "arnes",
       "ruta": "tests/third-party-origin.test.sh",

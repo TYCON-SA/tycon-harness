@@ -1,12 +1,12 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-plugin-tests-coverage.md
-# source_sha256: 7bd85c808629ddff0cd5565856de546718bf2088bea6fefcda52c97080a300fa
+# source_sha256: c9531cf0ac83b60324516be5eb1c7854a8dc84c763f798d13e8c6725328c54a5
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-plugin-tests-coverage.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-plugin-tests-coverage").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
 
 name = "tycon-plugin-tests-coverage"
-description = "Advisor Core during/post. Verifica que tests cubran los ACs de la story, que la suite haya pasado y coverage > 75% sobre las líneas tocadas (o los archivos nuevos, según threshold_basis) LEYENDO el artefacto .advisors/tests-result.json (escrito por test-gate.sh al cierre del Step 4 — este advisor NO ejecuta tests), y que methods publicos tengan tests directos (no solo mock). Cada finding cita rule ID (TEST-C1..C3, TEST-W1..W4, TEST-W9, TEST-W10, TEST-W11). Usar en pipeline post-implementacion para validar cobertura antes del commit."
+description = "Verifica que los tests cubran los ACs, que la suite pasó y coverage >75%, leyendo .advisors/tests-result.json. Usar post-implementación antes del commit."
 model = "gpt-5.6-luna"
 sandbox_mode = "read-only"
 

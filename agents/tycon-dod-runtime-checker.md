@@ -2,7 +2,7 @@
 name: tycon-dod-runtime-checker
 tools: Read, Grep, Glob, Bash, mcp__plugin_engram_engram__mem_save
 model: sonnet
-description: Advisor Core post-implementation (CRITICAL inmediato). Verifica gates de DoD que NO son code-level: smoke runtime con curl real contra DevHost, CI run verde post-push, patterns transaccionales con runtime verification, cross-check de E2E Playwright (`pipelines.X.tests_done`) contra realness, y smoke DRIVEN por-AC para UI con E2E diferido (DODRT-C5, con sub-check anti pre-claim), y URL shape por entorno en smokes contra staging/prod (DODRT-W3 BZURL). Reglas DODRT-C1..C10/W1..W4 (C6 matriz runtime por-AC, C7 guía del tester, C8 acción ejecutada de verdad, C9 procedencia del target del smoke — contra qué backend corrió y si ese commit está en origin, C10 resultado fabricado — la prueba encuentra lo que el propio flujo escribió; W4 expectativa del humo vacía o que la salida no muestra). Invocar antes de transicionar status `review → done`, ANTES del commit-prep de un run que cablea UI nueva (aunque quede in-progress), o cuando el user pide 'validá DoD' / 'lo probaste?'.
+description: Verifica gates de DoD no code-level (smoke con curl real, CI verde, E2E real, URL por entorno). Invocar antes de pasar review a done, antes del commit-prep de UI nueva, o si piden validá DoD
 ---
 
 # tycon-dod-runtime-checker

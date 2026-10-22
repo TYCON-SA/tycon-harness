@@ -1,12 +1,12 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-plugin-security-basics.md
-# source_sha256: 06833a07c3e2655fd2aa5536ebad2c221c9f7f5e6a0cb4ee37a1b0de96baaf1e
+# source_sha256: cad9551aad33195d2fbf88c09a8a5d6b259b5018e8b0148c02af935934ba3fa1
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-plugin-security-basics.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-plugin-security-basics").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
 
 name = "tycon-plugin-security-basics"
-description = "Advisor Core during/post. Scan de seguridad sobre el diff: secretos hardcoded, inputs sin validación, datos sensibles en respuestas, cripto incorrecto, path traversal/injection, webhooks sin firma/idempotency, config de seguridad con fallback hardcodeado (fail-fast), bind a todas las interfaces. Reglas SEC-C1..C9/W1..W7 (todo CRITICAL salvo lista WARNING). Usar en pipeline post-implementación antes del commit/merge."
+description = "Scan de seguridad sobre el diff (secretos hardcoded, inputs sin validar, injection, webhooks sin firma, cripto). Usar post-implementación antes del commit o merge."
 model = "gpt-5.6-luna"
 sandbox_mode = "read-only"
 

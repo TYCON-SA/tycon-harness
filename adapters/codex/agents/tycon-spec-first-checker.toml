@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-spec-first-checker.md
-# source_sha256: 561983acc61263c69616377a337761f41c722a9c35ef254ab878cb9fb79cbd57
+# source_sha256: 51d64929bce1d67a966b2eb515171d2381a4483086d8b0b516fcb3c8aecaf410
 # Se despliega como $CODEX_HOME/tycon-spec-first-checker.config.toml y se invoca: codex exec -p tycon-spec-first-checker
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 

@@ -2,7 +2,7 @@
 name: llm-cost-reviewer
 tools: Read, Grep, Glob
 model: sonnet
-description: Advisor Core condicional. Audita uso de Anthropic/Voyage/OpenAI SDK contra costo multi-tenant: llamadas sin max_tokens, loops sin cap, falta de prompt caching/batch/cache cross-tenant/timeout/fallback ante 529, API keys sin rotación, falta de rate-limit. Reglas LLMCOST-C1..C6/W1..W4. Solo invocar si el diff importa `@anthropic-ai/sdk`/`voyageai`/`openai` o toca `src/lib/llm/**`, `src/lib/embeddings/**`, `src/matcher/**`.
+description: Audita uso de SDK LLM y su costo multi-tenant. Solo invocar si el diff importa @anthropic-ai/sdk, voyageai u openai, o toca src/lib/llm, src/lib/embeddings o src/matcher
 omitClaudeMd: true
 ---
 
