@@ -238,9 +238,14 @@ function checkContextEfficiency() {
   };
   const s = readSettings();
   const servers = s.mcpServers || (s.mcp && s.mcp.servers) || {};
+  // Con las herramientas diferidas (lo dicen las transcripciones), cada herramienta cuesta su nombre, no su esquema:
+  // la misma regla que context-budget.js, leída de su misma función.
+  let diferidos = false;
+  try { diferidos = require('../tools/context-budget.js').mcpsDiferidos({ home: HOME }); } catch { /* sin el medidor al lado: como antes */ }
+  const costo = (tokensDelEsquema) => (diferidos ? Math.round(tokensDelEsquema / 500) * 12 : tokensDelEsquema);
   let mcpTokens = 0;
   for (const name of Object.keys(servers)) {
-    mcpTokens += knownMCPTokens[name] ?? 4000;
+    mcpTokens += costo(knownMCPTokens[name] ?? 4000);
   }
   // Anthropic Connectors inferidos
   const inferredConnectors = ['claude_ai_Docu_de_MS', 'claude_ai_Gamma', 'claude_ai_Gmail', 'claude_ai_Google_Calendar', 'claude_ai_Google_Drive', 'claude_ai_Wix'];
@@ -257,7 +262,7 @@ function checkContextEfficiency() {
   const TOKENS_PER_UNLOADED_TOOL = 12;
   for (const c of inferredConnectors) {
     const nombre = c.replace(/^claude_ai_/, '').replace(/_/g, ' ');
-    mcpTokens += sinAutorizar.has(nombre) ? Math.round(connectorTokens[c] / 500) * TOKENS_PER_UNLOADED_TOOL : connectorTokens[c];
+    mcpTokens += sinAutorizar.has(nombre) ? Math.round(connectorTokens[c] / 500) * TOKENS_PER_UNLOADED_TOOL : costo(connectorTokens[c]);
   }
 
   const totalOverhead = skillsTokens + agentsTokens + mcpTokens;

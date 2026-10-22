@@ -35,6 +35,8 @@ const VERBOSE = process.argv.includes('--verbose');
 const JSON_OUT = process.argv.includes('--json');
 // `--measured [--days N]`: el piso REAL de los lanzamientos, al lado del estimado.
 const MEDIDO = process.argv.includes('--measured');
+// `--main-session`: el arranque REAL de la sesión principal (el primer pedido de cada sesión), al lado del estimado.
+const SESION_PRINCIPAL = process.argv.includes('--main-session');
 const DIAS = (() => { const i = process.argv.indexOf('--days'); const v = i >= 0 ? Number(process.argv[i + 1]) : NaN; return Number.isFinite(v) && v > 0 ? v : 7; })();
 const CWD = process.cwd();
 
@@ -210,7 +212,70 @@ function inventoryAgents() {
   return { items, totalTokens, count: items.length };
 }
 
-function inventoryMCPs() {
+/** Las transcripciones de las sesiones principales (`projects/<proyecto>/<sesión>.jsonl`, no las de subagentes),
+ *  de la más nueva a la más vieja, de los últimos `dias`. */
+function transcripcionesPrincipales({ home = HOME, dias = 7 } = {}) {
+  const raiz = path.join(home, '.claude/projects');
+  const desde = Date.now() - dias * 864e5;
+  let proyectos;
+  try { proyectos = fs.readdirSync(raiz, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort(); } catch { return null; }
+  const out = [];
+  for (const p of proyectos) {
+    let entradas;
+    try { entradas = fs.readdirSync(path.join(raiz, p), { withFileTypes: true }); } catch { continue; }
+    for (const e of entradas) {
+      if (!e.isFile() || !e.name.endsWith('.jsonl')) continue;
+      const ruta = path.join(raiz, p, e.name);
+      let mtime; try { mtime = fs.statSync(ruta).mtimeMs; } catch { continue; }
+      if (mtime >= desde) out.push({ ruta, mtime });
+    }
+  }
+  return out.sort((a, b) => b.mtime - a.mtime || a.ruta.localeCompare(b.ruta)).map((x) => x.ruta);
+}
+
+/**
+ * ¿Claude Code difiere las herramientas de los MCP en esta máquina? Lo dice la transcripción: con las herramientas
+ * diferidas, el arranque trae un adjunto `deferred_tools_delta` con sus nombres y no sus esquemas. Mira las 20 sesiones
+ * más nuevas; difiere si la mayoría lo trae. Sin transcripciones, no se sabe: se cobra como antes.
+ */
+function mcpsDiferidos({ home = HOME, dias = 7 } = {}) {
+  const rutas = (transcripcionesPrincipales({ home, dias }) || []).slice(0, 20);
+  if (!rutas.length) return false;
+  let con = 0;
+  for (const r of rutas) {
+    try { if (fs.readFileSync(r, 'utf8').includes('"deferred_tools_delta"')) con++; } catch { /* ilegible: no cuenta */ }
+  }
+  return con * 2 > rutas.length;
+}
+
+/**
+ * El arranque REAL de la sesión principal (`--main-session`): el total del primer pedido de cada sesión (entrada +
+ * caché creada + caché leída), que es todo lo fijo más el primer mensaje. Sólo números; ninguna ruta ni texto.
+ */
+function medirSesionPrincipal({ home = HOME, dias = 7 } = {}) {
+  const desde = new Date(Date.now() - dias * 864e5).toISOString();
+  const rutas = transcripcionesPrincipales({ home, dias });
+  if (rutas === null) return { estado: 'no_medido', motivo: `no pude leer ${path.join(home, '.claude/projects').replace(home, '~')}`, n: null, mediana: null, desde };
+  const totales = [];
+  let ilegibles = 0;
+  for (const r of rutas) {
+    let txt; try { txt = fs.readFileSync(r, 'utf8'); } catch { ilegibles++; continue; }
+    for (const linea of txt.split('\n')) {
+      if (!linea.includes('"assistant"')) continue;
+      let o; try { o = JSON.parse(linea); } catch { continue; }
+      if (o.type !== 'assistant' || !o.message || !o.message.usage) continue;
+      const u = o.message.usage;
+      const t = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
+      if (t > 0) totales.push(t);
+      break;
+    }
+  }
+  if (!totales.length) return { estado: 'no_medido', motivo: `sin sesiones principales con un primer pedido en los últimos ${dias} día(s)`, n: null, mediana: null, ilegibles, desde };
+  const s = [...totales].sort((a, b) => a - b);
+  return { estado: 'medido', n: s.length, mediana: s[Math.floor(s.length / 2)], p90: s[Math.floor(s.length * 0.9)], min: s[0], max: s[s.length - 1], ilegibles, desde };
+}
+
+function inventoryMCPs({ diferidos = false } = {}) {
   const sources = [];
 
   // User-global settings.json
@@ -266,7 +331,7 @@ function inventoryMCPs() {
     .map(s => {
       const toolCount = MCP_KNOWN_TOOL_COUNTS[s.name] ?? DEFAULT_MCP_TOOL_COUNT;
       const noAutorizado = s.source === 'inferred-anthropic-connector' && sinAutorizar.has(nombreDeConector(s.name));
-      const tokens = toolCount * (noAutorizado ? TOKENS_PER_UNLOADED_TOOL : TOKENS_PER_MCP_TOOL);
+      const tokens = toolCount * (noAutorizado || diferidos ? TOKENS_PER_UNLOADED_TOOL : TOKENS_PER_MCP_TOOL);
       return {
         name: s.name,
         source: s.source,
@@ -280,7 +345,7 @@ function inventoryMCPs() {
     });
 
   const totalTokens = items.reduce((a, x) => a + x.tokens, 0);
-  return { items, totalTokens, count: items.length, pluginCount };
+  return { items, totalTokens, count: items.length, pluginCount, diferidos };
 }
 
 // 🔴 Los `@imports` se SIGUEN. Si esta función leyera sólo los archivos `CLAUDE.md` y no sus imports,
@@ -452,7 +517,7 @@ function medirPiso({ home = HOME, dias = 7 } = {}) {
 function fmt(n) { return n.toLocaleString('en-US'); }
 function pct(part, total) { return total === 0 ? '0%' : `${Math.round((part / total) * 100)}%`; }
 
-function renderReport({ skills, agents, mcps, claudemd, medido }) {
+function renderReport({ skills, agents, mcps, claudemd, medido, sesion }) {
   const grand = skills.totalTokens + agents.totalTokens + mcps.totalTokens + claudemd.totalTokens;
   // Presupuesto que se fija el arnés, NO la ventana del modelo: Sonnet 5, Opus 5 y Fable 5.1 llegan a
   // 1M; 200K es la ventana de Haiku 4.5, el modelo de los revisores baratos (subagentes, que sí cargan
@@ -493,7 +558,9 @@ function renderReport({ skills, agents, mcps, claudemd, medido }) {
 
   // Top 5 MCPs (biggest lever — ECC dixit)
   lines.push('');
-  lines.push('  MCP servers (~500 tok por tool schema; «sin autorizar» = esquemas NO cargados, se cobra un piso):');
+  lines.push(mcps.diferidos
+    ? '  MCP servers (herramientas DIFERIDAS: Claude Code trae el esquema a pedido; se cobra sólo el nombre):'
+    : '  MCP servers (~500 tok por tool schema; «sin autorizar» = esquemas NO cargados, se cobra un piso):');
   for (const m of mcps.items.sort((a,b) => b.tokens - a.tokens).slice(0, 8)) {
     const tag = (m.sinAutorizar ? '⏸ sin autorizar (esquemas no cargados) · ' : '') + (m.isCore ? '✓ core' : (m.isIrrelevant ? '✗ irrelevante TYCON' : '— neutral'));
     const inferred = m.source === 'inferred-anthropic-connector' ? ' [Anthropic Connector]' : '';
@@ -531,6 +598,14 @@ function renderReport({ skills, agents, mcps, claudemd, medido }) {
   lines.push('       ⚠ chars/4 SUBESTIMA ~30 % (medido: 3,02–3,08 bytes/token en el contenido del arnés).');
   lines.push('         El número real de lo que carga un lanzamiento: --measured.');
 
+  // El arranque REAL de la sesión principal: todo lo fijo (la herramienta, el arnés y lo del dev) más el primer mensaje.
+  if (sesion) {
+    lines.push('');
+    lines.push('  Arranque MEDIDO de la sesión principal (primer pedido de cada sesión — no estimado):');
+    if (sesion.estado !== 'medido') lines.push(`    arranque: no medido — ${sesion.motivo}`);
+    else lines.push(`    mediana ${fmt(sesion.mediana)} tok  ·  p90 ${fmt(sesion.p90)}  ·  min ${fmt(sesion.min)}  ·  max ${fmt(sesion.max)}  ·  n=${sesion.n} desde ${String(sesion.desde).slice(0, 10)}`);
+  }
+
   // El piso MEDIDO, al lado del estimado. Un estimado solo decide recortes a ciegas.
   if (medido) {
     lines.push('');
@@ -553,6 +628,26 @@ function renderReport({ skills, agents, mcps, claudemd, medido }) {
   lines.push('───────────────────────────────────────────────────────────────');
   lines.push('');
 
+  const recs = recomendaciones({ skills, agents, mcps, claudemd });
+
+  if (recs.length === 0) {
+    lines.push('  ✓ No se detectaron optimizaciones obvias. El harness está bien dimensionado.');
+  } else {
+    const totalSavings = recs.reduce((a,x) => a + x.savings, 0);
+    recs.forEach((r, i) => {
+      lines.push(`  ${i+1}. ${r.action}`);
+      lines.push(`     → ahorro estimado: ~${fmt(r.savings)} tokens (${pct(r.savings, grand)})`);
+      lines.push(`     → ${r.how}`);
+      lines.push('');
+    });
+    lines.push(`  Ahorro potencial total: ~${fmt(totalSavings)} tokens (${pct(totalSavings, grand)} del overhead actual)`);
+    lines.push(`  Overhead final estimado: ~${fmt(grand - totalSavings)} tokens (${pct(grand - totalSavings, contextWindow)} del presupuesto)`);
+  }
+  return cerrarReporte(lines, { skills, agents });
+}
+
+/** Las recomendaciones de recorte, de mayor a menor ahorro. Las comparten el reporte y la salida JSON. */
+function recomendaciones({ skills, agents, mcps, claudemd }) {
   const recs = [];
 
   // El archivo IMPORTADO más pesado de la cadena entra en la cuenta y en las recomendaciones: sin esto,
@@ -567,7 +662,8 @@ function renderReport({ skills, agents, mcps, claudemd, medido }) {
     });
   }
 
-  const irrelevantMCPs = mcps.items.filter(m => m.isIrrelevant);
+  // Con las herramientas diferidas, desconectar un MCP no ahorra lo que pesaba su esquema: sólo su nombre
+  const irrelevantMCPs = mcps.diferidos ? [] : mcps.items.filter(m => m.isIrrelevant);
   if (irrelevantMCPs.length > 0) {
     const savings = irrelevantMCPs.reduce((a,x) => a + x.tokens, 0);
     recs.push({
@@ -606,21 +702,10 @@ function renderReport({ skills, agents, mcps, claudemd, medido }) {
       how: 'Idem agents. Top: ' + heavySkills.sort((a,b)=>b.descChars-a.descChars).slice(0,3).map(s => s.name).join(', '),
     });
   }
+  return recs.sort((a,b) => b.savings - a.savings);
+}
 
-  if (recs.length === 0) {
-    lines.push('  ✓ No se detectaron optimizaciones obvias. El harness está bien dimensionado.');
-  } else {
-    const totalSavings = recs.reduce((a,x) => a + x.savings, 0);
-    recs.sort((a,b) => b.savings - a.savings).forEach((r, i) => {
-      lines.push(`  ${i+1}. ${r.action}`);
-      lines.push(`     → ahorro estimado: ~${fmt(r.savings)} tokens (${pct(r.savings, grand)})`);
-      lines.push(`     → ${r.how}`);
-      lines.push('');
-    });
-    lines.push(`  Ahorro potencial total: ~${fmt(totalSavings)} tokens (${pct(totalSavings, grand)} del overhead actual)`);
-    lines.push(`  Overhead final estimado: ~${fmt(grand - totalSavings)} tokens (${pct(grand - totalSavings, contextWindow)} del presupuesto)`);
-  }
-
+function cerrarReporte(lines, { skills, agents }) {
   // Verbose mode: per-file breakdown
   if (VERBOSE) {
     lines.push('');
@@ -645,7 +730,8 @@ function renderReport({ skills, agents, mcps, claudemd, medido }) {
   lines.push('───────────────────────────────────────────────────────────────');
   lines.push('');
   lines.push('  • Las estimaciones usan chars/4 (precision ±15% vs tokenizer real).');
-  lines.push('  • MCP tools por server: hardcoded para servers conocidos; default 8 para unknown.');
+  lines.push('  • MCP tools por server: hardcoded para servers conocidos; default 8 para unknown. Si las');
+  lines.push('    transcripciones muestran herramientas diferidas, se cobra sólo el nombre de cada una.');
   lines.push('  • Esto mide LO QUE SE CARGA SIEMPRE (descripciones, schemas). El body de');
   lines.push('    las skills solo se carga si el agente las invoca activamente.');
   lines.push('  • Engram observations cargadas en SessionStart no están incluidas (rotan).');
@@ -663,15 +749,18 @@ function main() {
   const data = {
     skills: inventorySkills(),
     agents: inventoryAgents(),
-    mcps: inventoryMCPs(),
+    mcps: inventoryMCPs({ diferidos: mcpsDiferidos({ home: HOME, dias: DIAS }) }),
     claudemd: inventoryClaudeMd(),
   };
   if (MEDIDO) data.medido = medirPiso({ home: HOME, dias: DIAS });
-  if (JSON_OUT) console.log(JSON.stringify(data, null, 2));
-  else console.log(renderReport(data));
+  if (SESION_PRINCIPAL) data.sesion = medirSesionPrincipal({ home: HOME, dias: DIAS });
+  if (JSON_OUT) {
+    const { sesion, ...resto } = data;
+    console.log(JSON.stringify({ ...resto, ...(sesion ? { sesion_principal: sesion } : {}), recomendaciones: recomendaciones(data) }, null, 2));
+  } else console.log(renderReport(data));
 }
 
-module.exports = { inventoryClaudeMd, inventorySkills, inventoryAgents, inventoryMCPs, medirPiso, tokensFor, importsDe };
+module.exports = { inventoryClaudeMd, inventorySkills, inventoryAgents, inventoryMCPs, mcpsDiferidos, medirSesionPrincipal, medirPiso, tokensFor, importsDe };
 // 🔴 La guarda es necesaria para que `harness-audit.js` pueda IMPORTAR la cuenta de la cadena en vez
 // de copiarla: sin ella, requerir este archivo imprimiría el reporte entero.
 if (require.main === module) main();

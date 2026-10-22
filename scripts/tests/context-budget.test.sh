@@ -363,6 +363,41 @@ else
   echo "  NO MEDIDO — T17 detector: copia pública sin la lista de denegación"
 fi
 
+# ── Lo que de verdad viaja: los MCP diferidos y la sesión principal ──────────
+# Claude Code ya no carga los esquemas de los MCP al arrancar: los difiere y los trae a pedido (el adjunto
+# `deferred_tools_delta` de la transcripción). Cobrarlos a ~500 tokens por herramienta inflaba el total en ~36.000 y
+# recomendaba desconectarlos por un ahorro que no existe. Y el número que importa es el del primer pedido de la sesión
+# principal, no sólo el de los subagentes.
+H5=$(mktemp -d); mkdir -p "$H5/.claude/projects/-p-uno" "$H5/x"
+printf '{"mcpServers":{"engram":{"command":"x"}}}' > "$H5/.claude/settings.json"
+sesion() { # sesion <archivo> <total del primer pedido> [con diferidas]
+  { [ -n "${3:-}" ] && printf '{"type":"attachment","timestamp":"%s","attachment":{"type":"deferred_tools_delta","addedLines":["mcp__engram__mem_save"]}}\n' "$(node -e 'console.log(new Date().toISOString())')"
+    printf '{"type":"user","timestamp":"%s","message":{"role":"user","content":"hola"}}\n' "$(node -e 'console.log(new Date().toISOString())')"
+    printf '{"type":"assistant","timestamp":"%s","message":{"usage":{"input_tokens":2,"cache_creation_input_tokens":%s,"cache_read_input_tokens":0}}}\n' "$(node -e 'console.log(new Date().toISOString())')" "$2"; } > "$1"
+}
+sesion "$H5/.claude/projects/-p-uno/a.jsonl" 90000 diferidas
+sesion "$H5/.claude/projects/-p-uno/b.jsonl" 100000 diferidas
+sesion "$H5/.claude/projects/-p-uno/c.jsonl" 110000 diferidas
+J5=$(cd "$H5/x" && HOME="$H5" node "$RAIZ/scripts/tools/context-budget.js" --json --main-session 2>/dev/null)
+T1=$(node -e '
+const d=JSON.parse(process.argv[1]); const m=d.mcps;
+const recs=JSON.stringify(d.recomendaciones||[]);
+const ok = m && m.diferidos === true && m.items.every((i) => i.tokens <= i.toolCount * 12) && !/Desconectar/.test(recs);
+console.log(ok ? "OK" : `MAL diferidos=${m && m.diferidos} total=${m && m.totalTokens}`);' "$J5" 2>&1)
+[ "$T1" = OK ] && ok "T1 McpDiferidos_NoSeCobranComoCargados" || mal "T1 McpDiferidos_NoSeCobranComoCargados — $T1"
+T2=$(node -e '
+const d=JSON.parse(process.argv[1]); const s=d.sesion_principal||{};
+console.log(s.estado==="medido" && s.n===3 && s.mediana===100002 ? "OK" : "MAL "+JSON.stringify(s));' "$J5" 2>&1)
+[ "$T2" = OK ] && ok "T2 SesionPrincipal_TotalDelPrimerPedido" || mal "T2 SesionPrincipal_TotalDelPrimerPedido — $T2"
+H6=$(mktemp -d); mkdir -p "$H6/.claude/projects" "$H6/x"
+J6=$(cd "$H6/x" && HOME="$H6" node "$RAIZ/scripts/tools/context-budget.js" --json --main-session 2>/dev/null)
+T3=$(node -e '
+const d=JSON.parse(process.argv[1]); const s=d.sesion_principal||{};
+console.log(s.estado==="no_medido" && s.mediana==null && s.motivo ? "OK" : "MAL "+JSON.stringify(s));' "$J6" 2>&1)
+TXT6=$(cd "$H6/x" && HOME="$H6" node "$RAIZ/scripts/tools/context-budget.js" --main-session 2>/dev/null)
+[ "$T3" = OK ] && grep -q "no medido" <<<"$TXT6" && ok "T3 SinTranscripciones_NoMedido" || mal "T3 SinTranscripciones_NoMedido — $T3"
+rm -rf "$H5" "$H6"
+
 echo
 if [ "$FALLOS" -gt 0 ]; then echo "FALLARON $FALLOS chequeo(s)"; exit 1; fi
 echo "todo verde"; exit 0
