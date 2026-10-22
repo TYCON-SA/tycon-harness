@@ -42,6 +42,7 @@
     { "path": "scripts/setup/harness/remove.js", "member": "hookRoots", "imports": true, "why": "las raíces de los hooks del arnés que se pueden quitar" },
     { "path": "scripts/lib/legacy-names.js", "member": "repoForms / rootNormalizer", "imports": false, "why": "las formas de la raíz al reescribir la máquina; copia declarada (viaja a /opt)" },
     { "path": "scripts/publishing/profile-equivalence.js", "member": "isHarnessHook", "imports": true, "why": "reconoce un hook del arnés por su ruta" },
+    { "path": "scripts/nightly/runs-review/rules.js", "member": "RUTAS_DEL_ARNES", "imports": true, "why": "reconoce un guion del arnés por su ruta en un comando de la conversación (la regla RR-NODE de la revisión de las ejecuciones)" },
     { "path": "scripts/publishing/export.js", "member": "PREFIJOS_COMANDO / candidatosDeComando", "imports": true, "why": "reconoce y normaliza un comando que corre un script del arnés" },
     { "path": "scripts/lib/harness-repo.js", "member": "SEGMENTOS_DEL_ARNES", "imports": false, "why": "el respaldo por nombre de carpeta cuando no hay origin; escritos: el banco y varias suites copian este archivo suelto" },
     { "path": "scripts/hooks/session-collision-guard.js", "member": "SIN_WORKTREE", "imports": false, "why": "los repos donde el worktree está prohibido; escritos: el banco copia este hook suelto" },

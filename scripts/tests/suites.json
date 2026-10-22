@@ -1012,6 +1012,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/runs-review.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/reviewers-cost.test.sh",
       "requiere": []
     },
