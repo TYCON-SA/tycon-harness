@@ -236,11 +236,11 @@ function transcripcionesPrincipales({ home = HOME, dias = 7 } = {}) {
 /**
  * ¿Claude Code difiere las herramientas de los MCP en esta máquina? Lo dice la transcripción: con las herramientas
  * diferidas, el arranque trae un adjunto `deferred_tools_delta` con sus nombres y no sus esquemas. Mira las 20 sesiones
- * más nuevas; difiere si la mayoría lo trae. Sin transcripciones, no se sabe: se cobra como antes.
+ * más nuevas; difiere si la mayoría lo trae. Sin transcripciones devuelve `null`: no se sabe, y no es «no diferidos».
  */
 function mcpsDiferidos({ home = HOME, dias = 7 } = {}) {
   const rutas = (transcripcionesPrincipales({ home, dias }) || []).slice(0, 20);
-  if (!rutas.length) return false;
+  if (!rutas.length) return null;
   let con = 0;
   for (const r of rutas) {
     try { if (fs.readFileSync(r, 'utf8').includes('"deferred_tools_delta"')) con++; } catch { /* ilegible: no cuenta */ }
@@ -560,7 +560,9 @@ function renderReport({ skills, agents, mcps, claudemd, medido, sesion }) {
   lines.push('');
   lines.push(mcps.diferidos
     ? '  MCP servers (herramientas DIFERIDAS: Claude Code trae el esquema a pedido; se cobra sólo el nombre):'
-    : '  MCP servers (~500 tok por tool schema; «sin autorizar» = esquemas NO cargados, se cobra un piso):');
+    : mcps.diferidos === null
+      ? '  MCP servers (no medido si están diferidos — sin transcripciones; se cobra el esquema entero, ~500 tok por tool):'
+      : '  MCP servers (~500 tok por tool schema; «sin autorizar» = esquemas NO cargados, se cobra un piso):');
   for (const m of mcps.items.sort((a,b) => b.tokens - a.tokens).slice(0, 8)) {
     const tag = (m.sinAutorizar ? '⏸ sin autorizar (esquemas no cargados) · ' : '') + (m.isCore ? '✓ core' : (m.isIrrelevant ? '✗ irrelevante TYCON' : '— neutral'));
     const inferred = m.source === 'inferred-anthropic-connector' ? ' [Anthropic Connector]' : '';
@@ -662,8 +664,9 @@ function recomendaciones({ skills, agents, mcps, claudemd }) {
     });
   }
 
-  // Con las herramientas diferidas, desconectar un MCP no ahorra lo que pesaba su esquema: sólo su nombre
-  const irrelevantMCPs = mcps.diferidos ? [] : mcps.items.filter(m => m.isIrrelevant);
+  // Con las herramientas diferidas, desconectar un MCP no ahorra lo que pesaba su esquema: sólo su nombre. Si no se
+  // sabe (sin transcripciones), tampoco se promete el ahorro.
+  const irrelevantMCPs = mcps.diferidos === false ? mcps.items.filter(m => m.isIrrelevant) : [];
   if (irrelevantMCPs.length > 0) {
     const savings = irrelevantMCPs.reduce((a,x) => a + x.tokens, 0);
     recs.push({

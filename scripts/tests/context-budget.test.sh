@@ -395,7 +395,10 @@ T3=$(node -e '
 const d=JSON.parse(process.argv[1]); const s=d.sesion_principal||{};
 console.log(s.estado==="no_medido" && s.mediana==null && s.motivo ? "OK" : "MAL "+JSON.stringify(s));' "$J6" 2>&1)
 TXT6=$(cd "$H6/x" && HOME="$H6" node "$RAIZ/scripts/tools/context-budget.js" --main-session 2>/dev/null)
-[ "$T3" = OK ] && grep -q "no medido" <<<"$TXT6" && ok "T3 SinTranscripciones_NoMedido" || mal "T3 SinTranscripciones_NoMedido — $T3"
+# sin transcripciones tampoco se sabe si los MCP están diferidos: «no medido», nunca «no diferidos» con su ahorro
+T3b=$(node -e 'const d=JSON.parse(process.argv[1]); console.log(d.mcps.diferidos===null && !/Desconectar/.test(JSON.stringify(d.recomendaciones||[])) ? "OK" : "MAL diferidos="+d.mcps.diferidos);' "$J6" 2>&1)
+[ "$T3" = OK ] && [ "$T3b" = OK ] && grep -q "no medido" <<<"$TXT6" && grep -q "no medido si están diferidos" <<<"$TXT6" \
+  && ok "T3 SinTranscripciones_NoMedido" || mal "T3 SinTranscripciones_NoMedido — $T3 / $T3b"
 rm -rf "$H5" "$H6"
 
 echo
