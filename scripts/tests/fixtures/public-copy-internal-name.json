@@ -234,6 +234,11 @@
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
   },
   {
+   "path": "scripts/tests/fixtures/platform-golden/az-commands.json",
+   "kind": "test",
+   "why": "foto medida: los comandos az escritos en el arnés, copiados tal cual, con el de la guía de publicación que corre la validación en el proyecto interno"
+  },
+  {
    "path": "scripts/tests/fixtures/product-pipeline/backend-azure-pipelines.yml",
    "kind": "azure",
    "why": "pipeline de producto de juguete: el checkout del repo del arnés en Azure DevOps"
