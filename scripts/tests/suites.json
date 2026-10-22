@@ -102,6 +102,12 @@
       "requiere": []
     },
     {
+      "__nota": "El examen de revisores arranca cada sesión sin la configuración del usuario (scripts/controls-bench/isolation.js): Claude sin la fuente user y con el corral; Codex con una casa propia por ejecución; engram con su propia base y su propio puerto, que se limpian al salir. Sin modelo ni red: HOME y CODEX_HOME de laboratorio.",
+      "raiz": "arnes",
+      "ruta": "tests/bench-isolation.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/canonical-path.test.sh",
       "requiere": []

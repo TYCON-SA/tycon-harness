@@ -104,7 +104,7 @@ function codexHome({ codexHome: real = process.env.CODEX_HOME || path.join(os.ho
     if (fs.existsSync(authReal)) {
       authAntes = fs.readFileSync(authReal);
       fs.writeFileSync(authCorrida, authAntes, { mode: 0o600 });
-    } else warning = `no está la llave de Codex (${authReal}): la corrida va a fallar al iniciar sesión, no por el revisor`;
+    } else warning = `no está la llave de Codex (${authReal}): la ejecución va a fallar al iniciar sesión, no por el revisor`;
   } catch (e) { borrar(); throw e; }
   const env = {
     CODEX_HOME: dir, HOME: casa, USERPROFILE: casa,
