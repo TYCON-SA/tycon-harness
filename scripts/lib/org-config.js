@@ -2098,9 +2098,6 @@ function pantalla(idioma = 'es') {
     var adv = cabeza(T('pantalla.elPaseAdversarial'));
     trabajo(adv, T('pantalla.unaStoryNormal'), 'adversarial', 'model');
     trabajo(adv, T('pantalla.unaStoryPesada'), 'adversarial', 'heavy');
-    var fq = de(de(hoy, 'adversarial'), 'fable_question');
-    fila(adv, el('span', { text: T('pantalla.preguntarAntesDelNivelMaximo') }), T('pantalla.preguntarAntesDelNivelMaximo'), 'adversarial', 'fable_question',
-      [['', T('pantalla.elPorDefecto')], ['ask', T('pantalla.preguntar')], ['never', T('pantalla.nunca')]], fq ? (fq === 'ask' ? T('pantalla.preguntar') : T('pantalla.nunca')) : null, null, 'max');
     box.appendChild(adv);
 
     var ayu = cabeza(T('pantalla.losAyudantesYLaSesion'));

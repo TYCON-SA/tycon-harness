@@ -26,7 +26,7 @@
 //     "models": {                       opcional — el modelo de cada trabajo del pipeline
 //       "mandatory_ceiling"?: <bool>, "ceiling"?: <modelo>,   techo obligatorio (paga la organización): van juntos
 //       "reviewers"?: <modelo>, "reviewer"?: { "<revisor>": <modelo> }, "reviewers_reloop"?: <modelo>,
-//       "adversarial"?: { "model"?, "heavy"?: <modelo>, "fable_question"?: «ask» | «never» }, "helpers"?: <modelo>,
+//       "adversarial"?: { "model"?, "heavy"?: <modelo> }, "helpers"?: <modelo>,   ("fable_question": retirada, se acepta)
 //       "session"?: { "low"?, "normal"?, "heavy"?: <modelo> } }
 //   <modelo> = un nivel, «economy» | «balanced» | «strong» | «max» (MODEL_LEVELS), o el nombre del
 //   modelo, «haiku» | «sonnet» | «opus» | «fable» (MODEL_NAMES), en el mismo orden; copias de models.js del skill. Quien la resuelve
@@ -171,7 +171,6 @@ const modelRank = (v) => (MODEL_LEVELS.includes(v) ? MODEL_LEVELS.indexOf(v) : M
 const levelName = (v) => MODEL_LEVELS[modelRank(v)];
 const MODELS_KEYS = ['mandatory_ceiling', 'ceiling', 'reviewers', 'reviewer', 'reviewers_reloop', 'adversarial', 'helpers', 'session'];
 const MODELS_SUBKEYS = { adversarial: ['model', 'heavy', 'fable_question'], session: ['low', 'normal', 'heavy'] };
-const FABLE_QUESTION = ['ask', 'never'];
 const REVIEWER_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MERGE_RULES = ['automatico', 'siempre-en-la-maquina', 'confiar-en-el-servidor'];
 const MERGE_ENTRY_KEYS = ['repo', 'rule', 'full_tests_pipeline'];
@@ -304,9 +303,10 @@ function modelsProblems(value) {
       for (const [s, m] of Object.entries(v)) {
         if (fieldComment(s, m)) continue;
         if (!MODELS_SUBKEYS[k].includes(s)) out.push({ path: `${at}.${s}`, message: 'clave desconocida' });
-        else if (s === 'fable_question') {
-          if (!FABLE_QUESTION.includes(m)) out.push({ path: `${at}.${s}`, message: `tiene que ser «ask» o «never» (es ${JSON.stringify(m)})` });
-        } else out.push(...modelProblem(m, `${at}.${s}`));
+        // la pregunta de Fable está retirada: un perfil viejo que la tiene sigue validando con cualquier valor (el
+        // pipeline avisa que ya no hace nada)
+        else if (s === 'fable_question') continue;
+        else out.push(...modelProblem(m, `${at}.${s}`));
       }
     } else out.push(...modelProblem(v, at));
   }

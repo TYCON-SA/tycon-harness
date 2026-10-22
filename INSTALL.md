@@ -155,8 +155,8 @@ Nada de la máquina ni de la organización está escrito en el código. Cada val
    de antes, perfil-equipo.json, sigue valiendo, con un aviso de una línea que dice cómo renombrarlo;
 4. si nada lo dice: **apagado** o sin valor.
 
-Dos claves invierten el 2 y el 3 cuando el perfil las declara: `packs.default` (sólo `TYCON_PACKS_DEFAULT` le gana al
-perfil) y `adversarial.model_question` (no tiene variable). Qué puede pisar cada máquina sobre lo del equipo, en
+Una clave invierte el 2 y el 3 cuando el perfil la declara: `packs.default` (sólo `TYCON_PACKS_DEFAULT` le gana al
+perfil). Qué puede pisar cada máquina sobre lo del equipo, en
 [Con sitio o sin sitio](getting-started/reference.es.md#con-sitio-o-sin-sitio).
 
 ```json

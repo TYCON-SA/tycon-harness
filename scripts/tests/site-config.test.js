@@ -2889,7 +2889,7 @@ test('T1 Modelos_TresTablasUnRenglonPorTrabajo @story-2.59 @ac-1', async () => {
   assert.strictEqual(t.length, 3, 'una tabla por grupo');
   assert.ok(t.every((x) => p.clases(x).includes('modelos')));
   const [rev, adv, ayu] = t.map((x) => p.renglones(x));
-  assert.deepStrictEqual([rev.length, adv.length, ayu.length], [4, 3, 4], 'revisores: 2 vueltas + 2 particulares · pase: normal, pesada, preguntar · ayudantes + 3 sesiones');
+  assert.deepStrictEqual([rev.length, adv.length, ayu.length], [4, 2, 4], 'revisores: 2 vueltas + 2 particulares · pase: normal y pesada · ayudantes + 3 sesiones');
   for (const fila of [...rev, ...adv, ...ayu]) {
     assert.strictEqual(p.de(fila, 'hoy').length, 1, `${p.texto(fila)}: su valor por defecto`);
     assert.strictEqual(p.todo(fila).filter((n) => n.tag === 'select').length, 1, `${p.texto(fila)}: un selector`);
@@ -3871,17 +3871,14 @@ test('T8 Modelos_SelectoresConNiveles @story-2.70 @ac-6', async () => {
   assert.deepStrictEqual(MOD_JS.LEVELS.map((n) => t('en', `pantalla.nivel.${n}`)), ['economy', 'balanced', 'strong', 'max']);
 });
 
-test('Modelos_PreguntarAntesDelNivelMaximo_GenericoConSuEquivalencia — la fila no nombra un modelo; la equivalencia del máximo va al costado y no cambia con la respuesta', async () => {
-  // 🔴 rojo: la etiqueta vuelve a nombrar un modelo, o la fila no dice a qué modelo equivale el nivel máximo.
-  const p = await compacta(secNiveles({ reviewers: 'balanced' }));
-  const fila = p.tablas().map((t) => p.renglones(t)).flat().find((r) => p.todo(r).some((n) => n.textContent === 'Preguntar antes de usar el nivel máximo'));
-  assert.ok(fila, 'la fila, con su etiqueta genérica');
-  const equiv = () => p.todo(fila).filter((n) => /\bequiv\b/.test(n.attrs.class || '')).map((n) => n.textContent);
-  assert.deepStrictEqual(equiv(), [`Claude: fable · Codex: ${EQUIV.fable}`]);
-  p.todo(fila).find((n) => n.tag === 'select').on.change({ target: { value: 'never' } }); await p.esperar();
-  assert.deepStrictEqual(equiv(), [`Claude: fable · Codex: ${EQUIV.fable}`], 'responder «nunca» no la cambia');
+test('Modelos_SinPreguntaDeFable — la pregunta retirada no tiene fila ni selector, aunque el perfil la traiga', async () => {
+  // 🔴 rojo: vuelve la fila «Preguntar antes de usar el nivel máximo», que ya no hace nada.
+  const p = await compacta(secNiveles({ reviewers: 'balanced', adversarial: { heavy: 'max', fable_question: 'never' } }));
+  const filas = p.tablas().map((t) => p.renglones(t)).flat();
+  assert.ok(!filas.some((r) => /Preguntar antes de usar el nivel máximo/.test(p.texto(r))), 'sin la fila');
+  assert.ok(!p.todo(p.sec('modelos')).some((n) => /fable_question/.test(String(n.attrs['data-path'] || ''))), 'sin selector para la clave');
   const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
-  for (const idioma of ['es', 'en']) assert.doesNotMatch(t(idioma, 'pantalla.preguntarAntesDelNivelMaximo'), /fable/i, `${idioma}: sin el nombre de un modelo`);
+  assert.throws(() => t('es', 'pantalla.preguntarAntesDelNivelMaximo'), /no hay texto/, 'el texto de la fila ya no existe');
 });
 
 test('T9 Modelos_EquivalenciasDebajo @story-2.70 @ac-7', async () => {
