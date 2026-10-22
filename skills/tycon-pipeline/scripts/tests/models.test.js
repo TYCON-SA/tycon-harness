@@ -139,7 +139,7 @@ const leerGates = (home) => {
 const CAMPOS = {
   advisors: ['model_hints', 'reloop_model_hints', 'reloop_model_hints_note', 'cost_tier'],
   'smart-reloop': ['reloop_model_hints', 'reloop_model_hints_note'],
-  'deep-review-gate': ['model', 'model_reason', 'fable_upsell'],
+  'deep-review-gate': ['model', 'model_reason'],
   start: ['model_hint'],
   'model-hint': null,
 };
@@ -425,9 +425,9 @@ test('T6 Adversarial_ModeloComunPesadoYBanderas @story-7.29 @ac-8', () => {
 });
 
 test('T7 Adversarial_PreguntaDeFable_OrganizacionY719 @story-7.29 @ac-8', () => {
-  // ask: fable_upsell; never: model_question + gates.log
+  // ask: la salida de siempre (Fable no se ofrece); never: model_question + gates.log
   const ask = conConfig('deep-review-gate', 'heavy', [], { adversarial: { fable_question: 'ask' } });
-  assert.ok(ask.json.fable_upsell);
+  assert.equal(ask.json.fable_upsell, undefined);
   assert.equal(ask.json.model_question, undefined);
   const home = tmp('home');
   const never = conConfig('deep-review-gate', 'heavy', [], { adversarial: { fable_question: 'never' } }, { home });
@@ -439,7 +439,7 @@ test('T7 Adversarial_PreguntaDeFable_OrganizacionY719 @story-7.29 @ac-8', () => 
   const tree = labTree(equipo({ adversarial: { fable_question: 'ask' } }));
   execFileSync(process.execPath, [path.join(tree, 'scripts', 'lib', 'tycon-config.js'), 'set', 'adversarial.model_question', 'never'], { env: ambiente({ home: home2, tree }), stdio: 'ignore' });
   const ambas = conConfig('deep-review-gate', 'heavy', [], null, { tree, home: home2 });
-  assert.ok(ambas.json.fable_upsell, 'gana la organización');
+  assert.equal(ambas.json.model_question, undefined, 'gana la organización (ask)');
   assert.match(JSON.stringify(ambas.json) + ambas.stderr, /model_question.*no se usa|no se usa.*model_question/);
   // la de la pregunta de modelo sola: decide ella
   const home3 = tmp('home');
@@ -614,7 +614,7 @@ test('T15 Fable_TechoDebajo_NuncaSeOfrece @story-7.29 @ac-14', () => {
   const r = conConfig('deep-review-gate', 'heavy', [], { mandatory_ceiling: true, ceiling: 'opus', adversarial: { fable_question: 'ask' } });
   assert.equal(r.json.fable_upsell, undefined);
   assert.deepStrictEqual(r.json.model_question, { value: 'never', origin: 'ceiling' });
-  assert.ok(conConfig('deep-review-gate', 'heavy', [], { mandatory_ceiling: true, ceiling: 'fable' }).json.fable_upsell);
+  assert.equal(conConfig('deep-review-gate', 'heavy', [], { mandatory_ceiling: true, ceiling: 'fable' }).json.fable_upsell, undefined, 'ni con el techo en fable');
 });
 
 test('T16 Control_LanzamientoArribaDelTecho_AvisaSinCambiar @story-7.29 @ac-15', () => {

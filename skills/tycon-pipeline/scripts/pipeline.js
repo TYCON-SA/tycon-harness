@@ -3980,9 +3980,8 @@ function computeDeepReviewGate(args) {
   }
   // Modelo — escalación mecánica por complejidad.
   // Default sonnet (recorta el $ ~5x vs Opus); story pesada (model-hint ≥2 señales)
-  // → opus AUTOMÁTICO (anunciado). Fable NUNCA automático: --deep-review-fable es la
-  // autorización EXPLÍCITA del user; sin el flag, el gate emite `fable_upsell` y el
-  // orquestador PREGUNTA en 1 línea (el user decide). Precedencia:
+  // → opus AUTOMÁTICO (anunciado). Fable no se ofrece nunca: sólo corre con --deep-review-fable,
+  // el pedido explícito de quien corre el pipeline. Precedencia:
   // fable(flag) > opus(flag) > opus(ultracode) > opus(story pesada) > sonnet.
   const hint = computeModelHint({ ...args, orgModels: null });
   // El modelo y la pregunta salen de lib/models.js con la configuración de la organización y el pedido de
@@ -4004,18 +4003,9 @@ function computeDeepReviewGate(args) {
   else if (args.ultracode) modelReason = 'ultracode ON → hunters en Opus';
   else if (hint.heavy) modelReason = `story pesada (${hint.heavy_signal_count} señales model-hint) → hunters escalan a Opus (anunciar)`;
   else modelReason = 'default (recorta $ ~5x vs Opus)';
-  // Con la pregunta en `never` no se ofrece el modelo mayor ni se manda a preguntar; corre el que
-  // eligió el portón. Se dice en la salida (`model_question`, sólo con un valor que no es el de por defecto); la línea
-  // de gates.log la escribe la rama de línea de comandos. Con un techo debajo de fable, nunca.
+  // La clave de la pregunta (`model_question`) se sigue informando en la salida cuando no es la de por defecto; la línea
+  // de gates.log la escribe la rama de línea de comandos.
   const pregunta = adv.question;
-  const fableUpsell = adv.upsell
-    ? {
-        model: MODELOS.MODELS[3],
-        requires_user_approval: true,
-        reason: `story pesada (${hint.signals.filter((s) => s.hit).map((s) => s.name).join(', ')}) — Fable caza más en el pase adversarial, a ~2x el costo de Opus`,
-        how: `preguntar al user en 1 línea (COMM.i); si aprueba → pasar model:"${MODELOS.MODELS[3]}" al Workflow. Sin respuesta afirmativa → usar \`model\` de este output.`,
-      }
-    : null;
   // Lanzamiento temprano del 5b al cierre del Step 4 — DEFAULT ON con
   // kill-switch (las mitigaciones
   // están cableadas — cap 2 de ventana, verificadores en ventana de 3, candado
@@ -4025,7 +4015,6 @@ function computeDeepReviewGate(args) {
   const extras = {
     model_reason: modelReason,
     early_launch: process.env.TYCON_5B_EARLY !== '0',
-    ...(fableUpsell ? { fable_upsell: fableUpsell } : {}),
     ...(pregunta.value !== 'ask' ? { model_question: { value: pregunta.value, origin: pregunta.origin } } : {}),
     ...(adv.otherQuestion ? { model_question_note: `adversarial.model_question (${adv.otherQuestion.origin}: ${adv.otherQuestion.value}) no se usa: decide la configuración de la organización (models.adversarial.fable_question: ${pregunta.value})` } : {}),
   };
@@ -6693,14 +6682,13 @@ function main() {
     '       esperado no está disponible ANTES de degradar al fallback. `start` ya lo incluye.)\n' +
     '  node pipeline.js model-hint     --story <spec.md> [--files ...]\n' +
     '       (sugerencia de modelo de SESIÓN por complejidad: LOW→sonnet · NORMAL→opus ·\n' +
-    '       NORMAL+≥2 señales pesadas→fable. Advisory: el orquestador compara con su modelo\n' +
+    '       NORMAL+≥2 señales pesadas→opus. Advisory: el orquestador compara con su modelo\n' +
     '       real y sugiere /model al user en Step 0. NUNCA bloquea. `start` ya lo incluye.)\n' +
     '  node pipeline.js deep-review-gate --repo <dir> --story <spec.md> [--files ...]\n' +
     '                                  [--deep-review|--no-deep-review|--ultracode|--deep-review-opus|--deep-review-fable]\n' +
     '       (Step 5b: ¿corre el pase adversarial reproduce-or-refute? Gate = risk-class NORMAL.\n' +
-    '       {run, model, model_reason, fable_upsell?, reason}. Modelo: sonnet default; story pesada\n' +
-    '       → opus automático; FABLE solo con --deep-review-fable (autorización explícita del user\n' +
-    '       — sin flag el gate emite fable_upsell y el orquestador PREGUNTA).\n' +
+    '       {run, model, model_reason, reason}. Modelo: sonnet default; story pesada → opus\n' +
+    '       automático. Fable no se ofrece nunca: sólo corre con --deep-review-fable.\n' +
     '       Kill-switch: TYCON_NO_DEEP_REVIEW=1. Repo: .tycon/advisors.yaml deep_review:)\n' +
     '  node pipeline.js advisors       --repo <dir> --story <spec.md> --files a.cs b.tsx ...\n' +
     '                                  [--iter N] [--cost-tier lean|standard|deep] [--allow-missing-files]\n' +

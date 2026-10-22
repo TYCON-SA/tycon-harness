@@ -27,19 +27,35 @@ const TEXT_ON = [
   '   Para bajarte: TYCON_INSTINCTS=0 (o integrations.instincts=false en ~/.claude/tycon.json).',
 ].join('\n');
 
-const TEXT_LEGACY = '🔎 instintos — TYCON_INSTINCT_MINING y TYCON_INSTINCT_OBSERVER ya no prenden nada: la grabación la decide la integración instincts del perfil del equipo.';
+const TEXT_NO_MAILBOX = '🔎 instintos — grabás, pero esta máquina no tiene buzón: lo que el agente aprende acá no le llega a nadie; tu organización lo configura en su capa del equipo.';
+
+const TEXT_LEGACY ='🔎 instintos — TYCON_INSTINCT_MINING y TYCON_INSTINCT_OBSERVER ya no prenden nada: la grabación la decide la integración instincts del perfil del equipo.';
 
 function readSeal(stateDir) {
   try { return JSON.parse(fs.readFileSync(path.join(stateDir, SEAL), 'utf8')); } catch (_) { return null; }
 }
 
-/** Qué decir en este arranque: `{ text, seal }` (`text: null` = nada). */
-function decide({ prendida, env, stateDir, now }) {
+/**
+ * Qué decir en este arranque: `{ text, seal }` (`text: null` = nada; `seal: null` = el sello no cambia). `mailbox` es
+ * `con_buzon` o `sin_buzon`: sin buzón se dice una vez, y otra vez sólo si el estado cambia.
+ */
+function decide({ prendida, env, stateDir, now, mailbox }) {
   const prev = readSeal(stateDir) || {};
-  const day = (now || new Date()).toISOString().slice(0, 10);
+  const at = now || new Date();
+  const day = at.toISOString().slice(0, 10);
   if (prendida) {
-    if (prev.said_on) return { text: null, seal: null };
-    return { text: TEXT_ON, seal: { ...prev, schema: 1, said_on: day, state: 'prendida' } };
+    const texts = [];
+    const next = { ...prev, schema: 1 };
+    if (!prev.said_on) {
+      texts.push(TEXT_ON);
+      Object.assign(next, { said_on: day, said_at: at.toISOString(), state: 'prendida' });
+    }
+    if (mailbox && prev.mailbox !== mailbox) {
+      next.mailbox = mailbox;
+      if (mailbox === 'sin_buzon') texts.push(TEXT_NO_MAILBOX);
+    }
+    if (next.said_on === prev.said_on && next.mailbox === prev.mailbox) return { text: null, seal: null };
+    return { text: texts.length ? texts.join('\n') : null, seal: next };
   }
   const legacy = LEGACY_VARS.some((v) => String((env || {})[v] || '') === '1');
   if (!legacy || prev.legacy_said_on) return { text: null, seal: null };
@@ -74,13 +90,19 @@ if (require.main === module) {
     const cfg = require('../lib/tycon-config.js');
     let prendida = false;
     try { const r = cfg.integracionParaHook('instincts', { env: process.env, home }); prendida = !!(r && r.ok && r.prendida); } catch (_) { prendida = false; }
-    const stateDir = require('../setup/harness/tycon-home.js').stateDir(home);
-    const d = decide({ prendida, env: process.env, stateDir });
-    if (d.text) {
-      // el aviso sale aunque el sello no se pueda escribir: grabar sin haber avisado es peor que avisar dos veces
-      process.stdout.write(`<system-reminder>\n${d.text}\n</system-reminder>\n`);
-      try { seal(stateDir, d.seal); } catch (e) { noteFailure(home, `no pude escribir el sello del aviso (${e.code || e.message})`); }
+    // con buzón = la integración prendida y la llave presente; sin una de las dos, lo grabado no sale de la máquina
+    let mailbox;
+    if (prendida) {
+      try {
+        const m = cfg.integracionParaHook('mailbox', { env: process.env, home });
+        mailbox = m.ok && m.prendida && m.config && m.config.buzon && m.config.buzon.presente ? 'con_buzon' : 'sin_buzon';
+      } catch (_) { mailbox = undefined; }
     }
+    const stateDir = require('../setup/harness/tycon-home.js').stateDir(home);
+    const d = decide({ prendida, env: process.env, stateDir, mailbox });
+    // el aviso sale aunque el sello no se pueda escribir: grabar sin haber avisado es peor que avisar dos veces
+    if (d.text) process.stdout.write(`<system-reminder>\n${d.text}\n</system-reminder>\n`);
+    if (d.seal) { try { seal(stateDir, d.seal); } catch (e) { noteFailure(home, `no pude escribir el sello del aviso (${e.code || e.message})`); } }
   } catch (_) { /* un aviso que no se pudo decir no frena la sesión */ }
   process.exitCode = 0;
 }

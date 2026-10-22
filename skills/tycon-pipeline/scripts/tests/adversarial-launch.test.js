@@ -427,13 +427,13 @@ test('T10 ModelQuestion_AskNeverAbsent — sin clave y ask preguntan; never no o
   let r = portonPesado(sinClave);
   assert.strictEqual(r.status, 0, r.stderr);
   let o = JSON.parse(r.stdout);
-  assert.ok(o.fable_upsell, 'sin clave: se ofrece');
+  assert.strictEqual(o.fable_upsell, undefined, 'sin clave: Fable no se ofrece');
   assert.strictEqual(o.model_question, undefined, 'sin clave: la salida de siempre');
 
   const ask = casa();
   escribirClave(ask, 'ask');
   o = JSON.parse(portonPesado(ask).stdout);
-  assert.ok(o.fable_upsell, 'ask: se ofrece');
+  assert.strictEqual(o.fable_upsell, undefined, 'ask: Fable tampoco se ofrece');
   assert.strictEqual(o.model_question, undefined, 'ask es el valor por defecto: no se agrega nada');
 
   const never = casa();
@@ -455,14 +455,14 @@ test('T11 ModelQuestion_BrokenConfig_SaysSo — configuración rota pregunta y l
   fs.writeFileSync(archivo, '{ esto no es json');
   let r = portonPesado(rota);
   let o = JSON.parse(r.stdout);
-  assert.ok(o.fable_upsell, 'ilegible: como sin la clave');
+  assert.strictEqual(o.fable_upsell, undefined, 'ilegible: como sin la clave');
   assert.strictEqual(o.model_question, undefined, 'el JSON es el de sin clave');
   assert.match(r.stderr, /model_question/, 'y lo dice por la salida de error');
 
   fs.writeFileSync(archivo, JSON.stringify({ adversarial: { model_question: 'siempre' } }));
   r = portonPesado(rota);
   o = JSON.parse(r.stdout);
-  assert.ok(o.fable_upsell, 'fuera del vocabulario: como sin la clave');
+  assert.strictEqual(o.fable_upsell, undefined, 'fuera del vocabulario: como sin la clave');
   assert.match(r.stderr, /model_question.*siempre|siempre.*model_question/, 'con el motivo');
 
   const perfil = casa();
@@ -471,7 +471,7 @@ test('T11 ModelQuestion_BrokenConfig_SaysSo — configuración rota pregunta y l
   fs.writeFileSync(rutaPerfil, JSON.stringify({ adversarial: { model_question: 'ask' } }));
   r = portonPesado(perfil, { TYCON_PROFILE: rutaPerfil });
   o = JSON.parse(r.stdout);
-  assert.ok(o.fable_upsell, 'el perfil del equipo (ask) le gana al archivo de la máquina (never)');
+  assert.strictEqual(o.fable_upsell, undefined, 'el perfil del equipo (ask) le gana al archivo de la máquina (never)');
   assert.strictEqual(o.model_question, undefined);
 
   // Un lector presente que no sabe cargar (uno de antes), o que tira: pregunta como sin la clave, y lo dice.
@@ -485,7 +485,7 @@ test('T11 ModelQuestion_BrokenConfig_SaysSo — configuración rota pregunta y l
     fs.writeFileSync(path.join(arnes, 'scripts', 'lib', 'tycon-config.js'), `${cuerpo}\n`);
     r = portonPesado(casa(), { TYCON_GUIDES_DIR: arnes });
     o = JSON.parse(r.stdout);
-    assert.ok(o.fable_upsell, `lector ${nombre}: como sin la clave`);
+    assert.strictEqual(o.fable_upsell, undefined, `lector ${nombre}: como sin la clave`);
     assert.match(r.stderr, motivo, `lector ${nombre}: lo dice por la salida de error`);
   }
 });

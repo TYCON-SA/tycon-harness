@@ -69,7 +69,7 @@ test('T1 Tabla_UnaFilaPorTrabajo: dos marcadores y un ad-hoc dan tres filas de c
   for (const [i, sid] of ['aaaaaaaa-1', 'bbbbbbbb-2', 'cccccccc-3'].entries()) session(m, process.pid, sid, `s${i}`);
   const r = run(m);
   assert.strictEqual(r.rows.length, 3);
-  for (const row of r.rows) assert.deepStrictEqual(Object.keys(row).sort(), ['end', 'session', 'state', 'work']);
+  for (const row of r.rows) assert.deepStrictEqual(Object.keys(row).sort(), ['end', 'folder', 'session', 'state', 'work']);
   const first = r.rows.find((x) => x.work.startsWith('9.1'));
   assert.strictEqual(Array.from(first.work.slice('9.1 · '.length)).length, 50, first.work);
   assert.ok(first.work.endsWith('…'));
@@ -344,10 +344,10 @@ test('T22 ConsultaFalla_SeDiceYQuedaOcupada: una consulta que falla o se pasa de
   assert.strictEqual(r.rows[0].state, 'Entrando a los repos (no se pudo consultar los pedidos)');
   assert.ok(r.unreadable.some((u) => /pedidos de x \(story\/x\): gh: no está instalado/.test(u)), r.unreadable.join(' | '));
   assert.deepStrictEqual(r.free, []);
-  // reading the repos has its own cap: past it, nothing more is read and it is said
-  const capped = run(m, { prs: () => ({ prs: [] }), repoBudgetMs: -1 });
-  assert.strictEqual(capped.rows[0].state, 'Entrando a los repos (no se pudo consultar los pedidos)');
-  assert.ok(capped.unreadable.some((u) => /se pasó del tope de 3 s leyendo los repos/.test(u)), capped.unreadable.join(' | '));
+  // locating the repo reads its git files, not git: with no time left for git the pedidos are still asked
+  const capped = run(m, { prs: () => ({ prs: [{ number: 7, draft: false }] }), repoBudgetMs: -1 });
+  assert.strictEqual(capped.rows[0].state, 'Entrando a los repos · x #7');
+  assert.ok(!capped.unreadable.some((u) => /se pasó del tope de 3 s leyendo los repos/.test(u)), capped.unreadable.join(' | '));
   // the real query, against a gh that takes longer than its cap: it gives up instead of hanging
   const bin = fakeBin(m.root, 'gh', 'setTimeout(() => {}, 5000);');
   const t0 = Date.now();
@@ -552,7 +552,7 @@ test('T30 SinPipeline_Busy_Ocupada: una sesión busy sin marcador sale trabajand
   const m = toyMachine();
   session(m, process.pid, 'sp000000-1', 'videos', { status: 'busy', statusUpdatedAt: minsBefore(2) });
   const r = runP(m);
-  assert.deepStrictEqual(r.rows, [{ work: '(carpeta desconocida)', state: `Trabajando sin pipeline · última actividad ${localHhmm(minsBefore(2))}`, end: 'sin estimación (no tiene pasos)', session: 'videos' }]);
+  assert.deepStrictEqual(r.rows, [{ work: '(carpeta desconocida)', state: `Trabajando sin pipeline · última actividad ${localHhmm(minsBefore(2))}`, end: 'sin estimación (no tiene pasos)', session: 'videos', folder: '(carpeta desconocida)' }]);
   assert.deepStrictEqual(r.free, []);
 });
 
@@ -644,17 +644,19 @@ test('T36 Origin_CuatroFormasNuevas: puerto, ssh.github.com, «@» en la ruta y 
   assert.strictEqual(parseRemote('git@github.com:acme/x.git').slug, 'acme/x');
 });
 
-test('T37 GitFalso_SePasaDelTope: un git que no contesta se dice y la fila sale sin pedidos', { skip: onWindows }, () => {
+test('T37 GitFalso_SePasaDelTope: un git que no contesta no cuelga el comando; el repo se ubica igual y sus pedidos se consultan', { skip: onWindows }, () => {
   const m = toyMachine();
   entering(m, 'ent00000-g', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
+  // git hangs (it is only used for the history of merges); gh answers one open pull request, without the network
   const bin = fakeBin(m.root, 'git', 'setTimeout(() => {}, 10000);');
+  fs.writeFileSync(path.join(bin, 'gh'), "#!/usr/bin/env node\nprocess.stdout.write('[{\"number\":5,\"isDraft\":false}]');\n", { mode: 0o755 });
   const start = Date.now();
   const out = execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
     { input: '', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
   assert.ok(Date.now() - start < 9000, 'el tope cortó a git');
   const r = JSON.parse(out);
-  assert.strictEqual(r.rows[0].state, 'Entrando a los repos (no se pudo consultar los pedidos)');
-  assert.ok(r.unreadable.some((u) => /git se pasó del tope leyendo los repos/.test(u)), r.unreadable.join(' | '));
+  assert.strictEqual(r.rows[0].state, 'Entrando a los repos · x #5');
+  assert.match(r.rows[0].end, /sin merges medidos/);
 });
 
 test('T39 SinPipeline_RamaDeStory_LaMuestra: la carpeta de la sesión en una rama de story la nombra', () => {
@@ -666,9 +668,10 @@ test('T39 SinPipeline_RamaDeStory_LaMuestra: la carpeta de la sesión en una ram
   const r = runP(m);
   const by = Object.fromEntries(r.rows.map((x) => [x.session, x.state]));
   assert.strictEqual(by.arrancando, `Trabajando sin pipeline · story 8.48 en preparación · última actividad ${localHhmm(minsBefore(1))}`);
-  assert.strictEqual(by['en-main'], `Trabajando sin pipeline · última actividad ${localHhmm(minsBefore(1))}`);
+  // in the main branch with nothing else to go on, the row says so in plain words
+  assert.strictEqual(by['en-main'], `Trabajando sin pipeline · no tocó archivos en las últimas 3 h · última actividad ${localHhmm(minsBefore(1))}`);
   const work = Object.fromEntries(r.rows.map((x) => [x.session, x.work]));
-  assert.deepStrictEqual([work.arrancando, work['en-main']], ['wt · story/8.48-algo', 'principal · main']);
+  assert.deepStrictEqual([work.arrancando, work['en-main']], ['wt · story/8.48-algo', 'no se ve qué hace']);
   // another branch, a folder that is gone and a detached HEAD: no story
   const other = gitRepo(m.root, 'otra', 'feature/x', GH);
   const detached = gitRepo(m.root, 'suelto', 'main', GH);
@@ -996,19 +999,19 @@ test('T7 DiezCarpetasDeUnRepo_UnaConsulta @story-2.49.2 @ac-5: diez carpetas del
   entering(m, 'one00000-1', { repoPath: repo, filesTouched: files });
   const gitCtx = { until: Date.now() + 60000, cache: new Map() };
   run(m, { prs: () => ({ prs: [] }), gitCtx });
-  const asked = [...gitCtx.cache.keys()].filter((k) => k.endsWith('\0rev-parse --show-toplevel'));
-  assert.strictEqual(asked.length, 1, asked.join('\n'));
+  // one walk up to the root: the folder that was asked and, cached with it, the root itself (by its real path)
+  const asked = [...gitCtx.cache.entries()].filter(([k]) => k.startsWith('repo\0'));
+  assert.strictEqual(new Set(asked.map(([, v]) => v && v.root)).size, 1, asked.map(([k]) => k).join('\n'));
+  assert.ok(asked.length <= 2, asked.map(([k]) => k).join('\n'));
 });
 
-test('T8 TopeDeTiempo_UnSoloRenglon @story-2.49.2 @ac-6: varias carpetas sin leer por el tope dan un renglón con la cuenta', () => {
+test('T8 TopeDeTiempo_UnSoloRenglon @story-2.49.2 @ac-6: sin tiempo para git, ninguna carpeta queda sin leer (se ubican por sus archivos de git)', () => {
   const m = toyMachine();
   const dirs = [];
   for (let i = 0; i < 5; i++) { const d = path.join(m.root, `c${i}`); fs.mkdirSync(d); dirs.push(path.join(d, 'f.js')); }
   entering(m, 'one00000-2', { filesTouched: dirs });
   const r = run(m, { prs: () => ({ prs: [] }), repoBudgetMs: -1 });
-  const capped = r.unreadable.filter((u) => /tope/.test(u));
-  assert.strictEqual(capped.length, 1, capped.join('\n'));
-  assert.match(capped[0], /5 carpeta\(s\)/);
+  assert.deepStrictEqual(r.unreadable.filter((u) => /tope/.test(u)), [], r.text);
 });
 
 test('T9 AgentesInternos_SinFilaYUnRenglon @story-2.49.2 @ac-7: carpeta en la temporal y nombre derivado no tienen fila', () => {
@@ -1100,12 +1103,12 @@ test('T4 ArchivosTocados_SinScratchpadMemoriaNiViejos @story-2.49.3 @ac-4: el sc
   touched(m, 'arc00000-4', [[inRepo(difusion, 'videos/x.md'), 20], [memory, 2], [scratch, 1]]);
   const r = runP(m, { home: m.root });
   assert.strictEqual(r.rows[0].work, 'difusion · videos', r.text);
-  // only old, scratchpad or memory files: the row as before (the session's folder)
+  // only old, scratchpad or memory files, and the session's folder in main: the row says it cannot tell
   const n = toyMachine();
   const nMain = gitRepo(n.root, 'principal', 'main', GH);
   session(n, process.pid, 'arc00000-5', 'Angelito', busyAt(nMain));
   touched(n, 'arc00000-5', [[inRepo(gitRepo(n.root, 'difusion', 'main', GH), 'videos/x.md'), 4 * 60], [path.join(n.root, '.claude', 'projects', 'p', 'memory', 'a.md'), 2]]);
-  assert.strictEqual(runP(n, { home: n.root }).rows[0].work, 'principal · main');
+  assert.strictEqual(runP(n, { home: n.root }).rows[0].work, 'no se ve qué hace');
 });
 
 test('T5 Doing_GanaSobreLoDeducido @story-2.49.3 @ac-5: una nota anotada manda sobre los archivos tocados', () => {
@@ -1137,12 +1140,12 @@ test('T7 ArchivosTocados_FueraDeRepoRotoYGitSinRespuesta @story-2.49.3 @ac-4: el
   const r = runP(m, { home: m.root });
   assert.strictEqual(r.rows[0].work, 'difusion · videos', r.text);
   assert.deepStrictEqual(r.unreadable, [], r.text);
-  // git with no time left, two sessions: the rows fall back to their folders and the footer says it once, with the count
+  // no time left for git, two sessions: both are still placed, because placing reads the git files
   session(m, process.pid, 'arc00000-9', 'Burrito', busyAt(main));
   touched(m, 'arc00000-9', [[inRepo(difusion, 'videos/y.md'), 3]]);
   const capped = runP(m, { home: m.root, repoBudgetMs: -1 });
-  const capLines = capped.unreadable.filter((u) => /tope/.test(u));
-  assert.deepStrictEqual(capLines, ['2 sesión(es) sin deducir qué hacen: se pasó del tope de 3 s leyendo los repos'], capped.text);
+  assert.deepStrictEqual(capped.unreadable.filter((u) => /tope/.test(u)), [], capped.text);
+  assert.deepStrictEqual(capped.rows.map((x) => x.work), ['difusion · videos', 'difusion · videos'], capped.text);
 });
 
 test('T8 ArchivosTocados_SinStory_LaDeLaRamaDeLaSesion @story-2.49.3 @ac-3: si el archivo no nombra story, vale la rama de story de la carpeta de la sesión', () => {
@@ -1180,4 +1183,214 @@ test('T9 BordesDeLaDeduccion @story-2.49.3 @ac-1 @ac-2: cierre sin archivedAt us
   session(n, process.pid, 'bor00000-2', 'Angelito', busyAt(other));
   touched(n, 'bor00000-2', [[inRepo(repo, 'README.md'), 9], ...Array.from({ length: 25 }, () => [loose, 1])]);
   assert.strictEqual(runP(n, { home: n.root }).rows[0].work, 'difusion');
+});
+
+// ── The tab name, the folder each session edits in, and placing without git ─────────────────────────────────────
+
+// A conversation log of a toy session: lines of conversation and `custom-title` lines, the way Claude Code writes them.
+function conversation(m, cwd, sid, lines) {
+  const dir = path.join(m.root, 'projects', cwd.replace(/[^A-Za-z0-9-]/g, '-'));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${sid}.jsonl`), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+}
+// Every file under a folder, as text (to check that nothing of the conversation was written there).
+function allText(dir) {
+  let out = '';
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    out += e.isDirectory() ? allText(p) : fs.readFileSync(p, 'utf8');
+  }
+  return out;
+}
+const MARCADA = ['FRASE', 'MARCADA', 'QUE', 'NO', 'SALE'].join('-');
+
+test('T1 Sesion_NombreDeRename_ElUltimo @story-2.49.4 @ac-1: la sesión sale con el último nombre de /rename; sin él, el de su archivo o el id; nada más de la conversación sale', () => {
+  const m = toyMachine();
+  const cwd = gitRepo(m.root, 'principal', 'main', GH);
+  conversation(m, cwd, 'tit00000-1', [
+    { type: 'user', message: { content: `algo con ${MARCADA}` } },
+    { type: 'custom-title', customTitle: 'Beto', sessionId: 'tit00000-1' },
+    { type: 'assistant', message: { content: `respuesta con ${MARCADA}` } },
+    { type: 'custom-title', customTitle: 'Enzo', sessionId: 'tit00000-1' },
+    { type: 'user', message: { content: MARCADA } },
+    // a line that names «custom-title» without being one is not a title
+    { type: 'user', kind: 'custom-title', customTitle: 'Falso' },
+  ]);
+  conversation(m, cwd, 'tit00000-2', [{ type: 'user', message: { content: MARCADA } }]);
+  // the only title, on the very first line of the log
+  conversation(m, cwd, 'tit00000-4', [{ type: 'custom-title', customTitle: 'Centurion' }, { type: 'user', message: { content: MARCADA } }]);
+  session(m, process.pid, 'tit00000-1', 'principal-ea', busyAt(cwd));
+  session(m, process.pid, 'tit00000-2', 'principal-03', busyAt(cwd));
+  session(m, process.pid, 'tit00000-3', null, busyAt(cwd));
+  session(m, process.pid, 'tit00000-4', 'principal-11', busyAt(cwd));
+  const r = runP(m, { home: m.root });
+  assert.deepStrictEqual(r.rows.map((x) => x.session).sort(), ['Centurion', 'Enzo', 'principal-03', 'tit00000'], r.text);
+  assert.ok(!r.text.includes(MARCADA) && !JSON.stringify(r).includes(MARCADA), 'nada de la conversación sale en la tabla ni en el --json');
+  assert.ok(!allText(m.state).includes(MARCADA), 'ni en la carpeta de estado');
+  // without the conversations folder, the session file's name
+  assert.deepStrictEqual(run(m, { home: m.root, projectsDir: null }).rows.map((x) => x.session).sort(), ['principal-03', 'principal-11', 'principal-ea', 'tit00000']);
+  // only the last 256 KB are read: a title past that window does not count; one inside it does
+  const n = toyMachine();
+  const big = gitRepo(n.root, 'grande', 'main', GH);
+  const filler = Array.from({ length: 3000 }, (_, i) => ({ type: 'user', message: { content: `${MARCADA} ${i} ${'x'.repeat(80)}` } }));
+  conversation(n, big, 'big00000-1', [{ type: 'custom-title', customTitle: 'Viejo' }, ...filler]);
+  conversation(n, big, 'big00000-2', [{ type: 'custom-title', customTitle: 'Viejo' }, ...filler, { type: 'custom-title', customTitle: 'Nuevo' }]);
+  session(n, process.pid, 'big00000-1', 'grande-1', busyAt(big));
+  session(n, process.pid, 'big00000-2', 'grande-2', busyAt(big));
+  assert.ok(fs.statSync(path.join(n.root, 'projects', big.replace(/[^A-Za-z0-9-]/g, '-'), 'big00000-1.jsonl')).size > 256 * 1024);
+  assert.deepStrictEqual(runP(n, { home: n.root }).rows.map((x) => x.session).sort(), ['Nuevo', 'grande-1']);
+  // an id that is not plain letters, digits and dashes does not go into a path: its conversation is not read
+  conversation(n, big, 'bad.0000-1', [{ type: 'custom-title', customTitle: 'NoSeLee' }]);
+  session(n, process.pid, 'bad.0000-1', 'grande-3', busyAt(big));
+  const unsafe = runP(n, { home: n.root });
+  assert.ok(unsafe.rows.some((x) => x.session === 'grande-3') && !unsafe.text.includes('NoSeLee'), unsafe.text);
+});
+
+test('T1b Sesion_ConversacionIlegible_SeDiceAlPie @story-2.49.4 @ac-1: una conversación que está y no se lee va al pie y el nombre cae al de siempre', { skip: process.platform === 'win32' || process.getuid() === 0 ? 'chmod no quita la lectura' : false }, () => {
+  const m = toyMachine();
+  const cwd = gitRepo(m.root, 'principal', 'main', GH);
+  conversation(m, cwd, 'ile00000-1', [{ type: 'custom-title', customTitle: 'Oculto' }]);
+  session(m, process.pid, 'ile00000-1', 'principal-ea', busyAt(cwd));
+  const file = path.join(m.root, 'projects', cwd.replace(/[^A-Za-z0-9-]/g, '-'), 'ile00000-1.jsonl');
+  fs.chmodSync(file, 0o000);
+  let r;
+  try { r = runP(m, { home: m.root }); } finally { fs.chmodSync(file, 0o644); }
+  assert.deepStrictEqual(r.rows.map((x) => x.session), ['principal-ea'], r.text);
+  assert.ok(r.unreadable.some((u) => u.includes('su conversación no se puede leer (EACCES)')), r.text);
+});
+
+test('T2 Sesion_Codex_NombreDeLaBase @story-2.49.4 @ac-2: un marcador de Codex sale con el nombre de su base; sin nombre, el id; una base que no abre se dice', () => {
+  const { DatabaseSync } = require('node:sqlite');
+  const m = toyMachine();
+  const codex = path.join(m.root, 'codex');
+  fs.mkdirSync(codex);
+  const db = new DatabaseSync(path.join(codex, 'state_5.sqlite'));
+  db.exec('CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT NOT NULL, name TEXT)');
+  db.prepare('INSERT INTO threads (id, title, name) VALUES (?, ?, ?)').run('cdx00000-1111', 'el primer pedido', 'Muñe');
+  db.prepare('INSERT INTO threads (id, title, name) VALUES (?, ?, ?)').run('cdx00000-2222', 'otro pedido', null);
+  db.close();
+  for (const sid of ['cdx00000-1111', 'cdx00000-2222']) marker(m, sid, { storyId: '6.1', storyPath: story(m.root, '6.1', 'Una de Codex'), stepsCompleted: [0], stepsPending: [4], lastTouch: NOW });
+  const r = run(m, { codexHome: codex });
+  assert.ok(r.halfway.some((h) => h.includes('· Muñe ·')), r.text);
+  assert.ok(r.halfway.some((h) => h.includes('· cdx00000 ·')), r.text);
+  assert.ok(!r.text.includes('el primer pedido'), 'el resumen automático de Codex no es el nombre');
+  // a base that does not open: the id, and the footer says it
+  fs.writeFileSync(path.join(codex, 'state_9.sqlite'), 'no es una base');
+  const roto = run(m, { codexHome: codex });
+  assert.ok(roto.halfway.some((h) => h.includes('· cdx00000 ·')) && !roto.text.includes('Muñe'), roto.text);
+  assert.ok(roto.unreadable.some((u) => /Codex/.test(u)), roto.text);
+  // a Codex folder that is there and cannot be listed is said too
+  if (process.platform !== 'win32' && process.getuid() !== 0) {
+    fs.chmodSync(codex, 0o000);
+    let closed;
+    try { closed = run(m, { codexHome: codex }); } finally { fs.chmodSync(codex, 0o755); }
+    assert.ok(closed.halfway.some((h) => h.includes('· cdx00000 ·')), closed.text);
+    assert.ok(closed.unreadable.some((u) => u.includes('nombres de las sesiones de Codex') && u.includes('EACCES')), closed.text);
+  }
+});
+
+test('T3 Ubicar_SinGit_RepoWorktreeYRama @story-2.49.4 @ac-3: la raíz, la rama y la story salen de los archivos de git, sin lanzar git ni gastar el tope', () => {
+  const m = toyMachine();
+  const main = gitRepo(m.root, 'principal', 'main', GH);
+  const fixed = { ...process.env, GIT_AUTHOR_DATE: NOW, GIT_COMMITTER_DATE: NOW };
+  execFileSync('git', ['-C', main, '-c', 'user.name=t', '-c', `user.email=${at('t', 'acme.example')}`, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', 'commit', '-q', '--allow-empty', '-m', 'x'], { env: fixed });
+  const expected = [];
+  for (let i = 0; i < 20; i += 1) {
+    const wt = path.join(m.root, `wt-${i}`);
+    execFileSync('git', ['-C', main, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', 'worktree', 'add', '-q', '-b', `story/9.${i}-algo`, wt], { env: fixed });
+    const sid = `ubi000${String(i).padStart(2, '0')}-x`;
+    session(m, process.pid, sid, `s${i}`, busyAt(main));
+    touched(m, sid, [[inRepo(wt, 'scripts/a.js'), 2]]);
+    expected.push([`s${i}`, `wt-${i} · story/9.${i}-algo`, `story 9.${i} en preparación`]);
+  }
+  // git out of the PATH and no time left: placing still works, because it does not run git
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'sin-git-'));
+  const savedPath = process.env.PATH;
+  process.env.PATH = empty;
+  let r;
+  try { r = runP(m, { home: m.root, repoBudgetMs: -1 }); } finally { process.env.PATH = savedPath; }
+  const got = Object.fromEntries(r.rows.map((x) => [x.session, x]));
+  for (const [s, work, storyText] of expected) {
+    assert.strictEqual(got[s].work, work, r.text);
+    assert.ok(got[s].state.includes(storyText), got[s].state);
+  }
+  assert.ok(!r.unreadable.some((u) => /tope/.test(u)), r.text);
+  // a broken .git (a file with no gitdir line) is said, not taken as «outside a repo»; a detached HEAD has no branch
+  const n = toyMachine();
+  const broken = path.join(n.root, 'roto');
+  fs.mkdirSync(path.join(broken, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(broken, '.git'), 'esto no es un gitdir');
+  const suelto = gitRepo(n.root, 'suelto', 'main', GH);
+  execFileSync('git', ['-C', suelto, '-c', 'user.name=t', '-c', `user.email=${at('t', 'acme.example')}`, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', 'commit', '-q', '--allow-empty', '-m', 'x'], { env: fixed });
+  execFileSync('git', ['-C', suelto, 'checkout', '-q', '--detach']);
+  session(n, process.pid, 'rot00000-1', 'roto', busyAt(main));
+  touched(n, 'rot00000-1', [[inRepo(broken, 'src/a.js'), 2]]);
+  session(n, process.pid, 'rot00000-2', 'suelto', busyAt(main));
+  touched(n, 'rot00000-2', [[inRepo(suelto, 'src/a.js'), 2]]);
+  const b = runP(n, { home: n.root });
+  assert.ok(b.unreadable.some((u) => u.includes('su .git no dice dónde está la carpeta git')), b.text);
+  assert.strictEqual(b.rows.find((x) => x.session === 'suelto').work, 'suelto · src', b.text);
+});
+
+test('T3b Ubicar_HeadYCommondirIlegibles_SeDicenUnaVez @story-2.49.4 @ac-3: un HEAD o un commondir que están y no se leen van al pie, una vez cada uno', { skip: process.platform === 'win32' || process.getuid() === 0 ? 'chmod no quita la lectura' : false }, () => {
+  const m = toyMachine();
+  const fixed = { ...process.env, GIT_AUTHOR_DATE: NOW, GIT_COMMITTER_DATE: NOW };
+  const main = gitRepo(m.root, 'cerrado', 'main', GH);
+  execFileSync('git', ['-C', main, '-c', 'user.name=t', '-c', `user.email=${at('t', 'acme.example')}`, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', 'commit', '-q', '--allow-empty', '-m', 'x'], { env: fixed });
+  const wt = path.join(m.root, 'cerrado-wt');
+  execFileSync('git', ['-C', main, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', 'worktree', 'add', '-q', '-b', 'story/9.1-algo', wt], { env: fixed });
+  // two sessions on the same repo with an unreadable HEAD: the footer says it once
+  for (const sid of ['hed00000-1', 'hed00000-2']) {
+    session(m, process.pid, sid, sid.slice(0, 10), busyAt(main));
+    touched(m, sid, [[inRepo(main, 'src/a.js'), 2]]);
+  }
+  session(m, process.pid, 'com00000-1', 'comun', busyAt(main));
+  touched(m, 'com00000-1', [[inRepo(wt, 'src/a.js'), 2]]);
+  const head = path.join(main, '.git', 'HEAD');
+  const commondir = fs.readFileSync(path.join(wt, '.git'), 'utf8').replace(/^gitdir:\s*/, '').trim();
+  const locked = [head, path.join(commondir, 'commondir')];
+  for (const f of locked) fs.chmodSync(f, 0o000);
+  let r;
+  try { r = runP(m, { home: m.root }); } finally { for (const f of locked) fs.chmodSync(f, 0o644); }
+  assert.strictEqual(r.unreadable.filter((u) => u.includes('no se lee su HEAD (EACCES)')).length, 1, r.text);
+  assert.ok(r.unreadable.some((u) => u.includes('su commondir no se puede leer (EACCES)')), r.text);
+  assert.strictEqual(r.rows.length, 3, r.text);
+});
+
+test('T4 Carpeta_ColumnaConLaRaizDondeEdita @story-2.49.4 @ac-4: la columna Carpeta dice el worktree donde edita, con ~; sin archivos, su carpeta de arranque', () => {
+  const m = toyMachine();
+  const main = gitRepo(m.root, 'principal', 'main', GH);
+  const wt = gitRepo(path.join(m.root, 'trabajos'), 'wt-7', 'story/7.7-algo', GH);
+  session(m, process.pid, 'car00000-1', 'Beto', busyAt(main));
+  touched(m, 'car00000-1', [[inRepo(wt, 'scripts/a.js'), 2]]);
+  session(m, process.pid, 'car00000-2', 'Enzo', busyAt(main));
+  const r = runP(m, { home: m.root });
+  const folder = Object.fromEntries(r.rows.map((x) => [x.session, x.folder]));
+  assert.deepStrictEqual(folder, { Beto: path.join('~', 'trabajos', 'wt-7'), Enzo: path.join('~', 'principal') }, r.text);
+  assert.match(r.text, /\| Trabajo \| Estado \| Fin estimado \| Sesión \| Carpeta \|/);
+});
+
+test('T5 SinDeducir_LoDiceEnLlano @story-2.49.4 @ac-5: trabajando sin marcador, nota ni archivos en un repo en main, la fila dice que no se ve qué hace y por qué', () => {
+  const m = toyMachine();
+  const main = gitRepo(m.root, 'principal', 'main', GH);
+  session(m, process.pid, 'sin00000-1', 'Muñe', busyAt(main));
+  const r = runP(m, { home: m.root });
+  assert.strictEqual(r.rows[0].work, 'no se ve qué hace', r.text);
+  assert.match(r.rows[0].state, /no tocó archivos en las últimas 3 h/);
+  // the other reason: it touched files, but none of them is in a repo
+  const loose = path.join(m.root, 'suelta', 'nota.txt');
+  fs.mkdirSync(path.dirname(loose), { recursive: true });
+  fs.writeFileSync(loose, 'x\n');
+  touched(m, 'sin00000-1', [[loose, 2]]);
+  const t = runP(m, { home: m.root });
+  assert.strictEqual(t.rows[0].work, 'no se ve qué hace', t.text);
+  assert.match(t.rows[0].state, /los archivos que tocó no están en un repo/);
+});
+
+test('T6 Ayuda_NombreYCarpeta @story-2.49.4 @ac-6: la ayuda dice de dónde sale el nombre y qué es la columna Carpeta', () => {
+  const help = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', 'wip.md'), 'utf8').replace(/\s+/g, ' ');
+  assert.match(help, /\*\*Sesión\*\* es el nombre que le puso la persona a la pestaña con `\/rename`/);
+  assert.match(help, /lee sólo ese renglón del título/);
+  assert.match(help, /\*\*Carpeta\*\* es dónde edita cada sesión/);
+  assert.match(help, /sin lanzar git/);
 });

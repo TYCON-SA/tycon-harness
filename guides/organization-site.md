@@ -575,6 +575,8 @@ Lo que la persona ve en la sección y lo que hace el agente cuando le piden una 
     como `{args}`; un repo sin entrada usa `args_default`, o nada. `args` no puede traer comillas, `$`, comillas
     invertidas, barra invertida ni saltos de línea, porque va entre comillas en el comando. El repo se reconoce por su
     remoto `origin`.
+    En el sitio, «Cambiar» muestra «El filtro de cada repo»: «Agregar un repo» elige de los repos de la organización (los
+    de la revisión de dependencias y los que ya nombra este archivo), y cada renglón tiene su filtro y su «Quitar».
   - **El comando corre con bash** y la primera palabra tiene que estar en el PATH (si no, la puerta dice que falta).
     Nada se lee del repo que se prueba.
 - **Dónde está el clon del perfil**: `harness.js team-config --no-open` dice qué carpeta usa esta máquina (la clave

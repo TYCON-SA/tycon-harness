@@ -33,6 +33,17 @@ nombra_bases() {
   printf '%s' "$ENTRADA" | grep -qiE '(^|[^A-Za-z0-9_-])(sqlcmd|bcp|mssql-cli|sqlps|osql|tsql|mssql|usql|invoke-sqlcmd|sqlpackage)([^A-Za-z0-9_-]|$)|SQLCMDSERVER[[:space:]]*=|MSSQL_HOST[[:space:]]*=|PGHOST[[:space:]]*=|DBSERVER[[:space:]]*=|(^|[^A-Za-z0-9_])Server[[:space:]]*=|Data[[:space:]]+Source[[:space:]]*=|Addr(ess)?[[:space:]]*=|Network[[:space:]]+Address[[:space:]]*=|az[[:space:]]+sql|Microsoft\.Sql/servers|(jdbc:)?(sqlserver|mssql|tds)://|tycon-prod-sql|\.tycon/production\.json|production-(index|memory)\.json|\.tycon/produccion\.json|produccion-(indice|memoria)\.json|security[[:space:]]+(-i|find-|dump-keychain|export|[a-z-]*generic-password)'
 }
 
+# ¿el comando borra un grupo, un candado o un recurso de Azure? (mismo criterio que nombraBorradoAzure() en prod-access-guard.js;
+# la T18 de prod-guard-azure-delete.test.sh compara los dos). Va aparte de nombra_bases(), que fija la T27.
+nombra_borrado() {
+  # el separador incluye `\n`, `\t` y `\r` escritos (el lanzador lee el JSON crudo del evento), y cada palabra puede venir
+  # entre comillas, con su escape del JSON. El patrón va en un heredoc entre comillas: lleva comillas simples.
+  IFS= read -r _patron <<'PATRON'
+(^|[^A-Za-z0-9_.-]|\\[ntr]|[\\\"'])az(\.cmd|\.exe)?[\\\"']*(([[:space:]]|\\[ntr])[^;|&]*)?([[:space:]]|\\[ntr])[\\\"']*(group|lock|resource)[\\\"']*([[:space:]]|\\[ntr])([^;|&]*([[:space:]]|\\[ntr]))?[\\\"']*delete([^A-Za-z0-9_-]|$)|(^|[^A-Za-z0-9_.-]|\\[ntr]|[\\\"'])az(\.cmd|\.exe)?[\\\"']*(([[:space:]]|\\[ntr])[^;|&]*)?([[:space:]]|\\[ntr])[\\\"']*rest[\\\"']*([[:space:]]|\\[ntr])([^;|&]*([[:space:]]|\\[ntr]))?(--m[a-z]*|-m)[^A-Za-z0-9]{0,4}delete([^A-Za-z0-9_-]|$)|(^|[^A-Za-z0-9_.-]|\\[ntr])azd(\.exe)?([[:space:]]|\\[ntr])+down([^A-Za-z0-9_-]|$)|Remove-Az(ResourceGroup|ResourceLock|Resource|SqlServer|SqlDatabase)([^A-Za-z0-9_]|$)|Invoke-AzRestMethod[^;|&]*[[:space:]]-M[a-z]*[^A-Za-z0-9$]{1,4}(delete([^A-Za-z0-9_-]|$)|\$)|Invoke-AzRestMethod[^;|&]*[[:space:]]@[A-Za-z_]
+PATRON
+  printf '%s' "$ENTRADA" | grep -qiE "$_patron"
+}
+
 frenar() {
   # 🔴 Queda constancia donde el aviso de arranque la lee. Sin esto, «el freno no se pudo ejecutar»
   # sólo existía en la pantalla del momento: se frenaba bien, pero nadie se enteraba de que el freno
@@ -47,7 +58,7 @@ frenar() {
   exit 2
 }
 
-ok_o_frenar() { if nombra_bases; then frenar "$1"; else exit 0; fi }
+ok_o_frenar() { if nombra_bases || nombra_borrado; then frenar "$1"; else exit 0; fi }
 
 [ -x "$NODE" ] || ok_o_frenar "no está el intérprete de root ($NODE)"
 if [ -z "$RAIZ" ]; then
