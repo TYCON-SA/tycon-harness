@@ -89,8 +89,8 @@ Resueltas durante la implementación 2026-05-23 (cierre de la especificación or
 
 ### La grabadora: la prende el perfil del equipo
 
-La grabadora es `scripts/hooks/instinct-observe.js` y la registra el instalador del arnés, en Mac y en Windows (no hace
-falta Python). Graba sólo con la integración `instincts` prendida: para el equipo, la prende el perfil
+La grabadora es `integrations/instincts/scripts/instinct-observe.js` (una integración de prender y apagar) y la
+registra el instalador del arnés, en Mac y en Windows (no hace falta Python). Graba sólo con la integración `instincts` prendida: para el equipo, la prende el perfil
 (`integrations.instincts: true`); `TYCON_INSTINCTS=0` o `~/.claude/tycon.json` la apagan en una máquina (o la prenden
 para probar). `TYCON_INSTINCT_MINING` ya no decide nada. Corre de fondo: no demora la herramienta.
 

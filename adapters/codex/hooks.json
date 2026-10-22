@@ -18,10 +18,6 @@
           },
           {
             "type": "command",
-            "command": "node ${TCG}/scripts/hooks/instincts-notice.js"
-          },
-          {
-            "type": "command",
             "command": "bash ${TCG}/scripts/hooks/telegram-zombie-sweep.sh"
           },
           {
@@ -172,14 +168,6 @@
       }
     ],
     "PostToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${TCG}/scripts/hooks/instinct-observe.js"
-          }
-        ]
-      },
       {
         "matcher": "Bash",
         "hooks": [

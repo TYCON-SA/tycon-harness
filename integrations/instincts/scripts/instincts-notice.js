@@ -71,10 +71,10 @@ if (require.main === module) {
   if (process.env.TYCON_EVAL_SANDBOX === '1') process.exit(0);
   try {
     const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
-    const cfg = require('../lib/tycon-config.js');
+    const cfg = require('../../../scripts/lib/tycon-config.js');
     let prendida = false;
     try { const r = cfg.integracionParaHook('instincts', { env: process.env, home }); prendida = !!(r && r.ok && r.prendida); } catch (_) { prendida = false; }
-    const stateDir = require('../setup/harness/tycon-home.js').stateDir(home);
+    const stateDir = require('../../../scripts/setup/harness/tycon-home.js').stateDir(home);
     const d = decide({ prendida, env: process.env, stateDir });
     if (d.text) {
       // el aviso sale aunque el sello no se pueda escribir: grabar sin haber avisado es peor que avisar dos veces

@@ -183,17 +183,21 @@ test('T34 ApplyHooks_ByWhen_InterpreterByExtension_RemovesReplacedOldAndOptinOff
 });
 
 test('T8 HooksList_RegistersNodeRecorderAndNotice_DropsShell @story-4.7 @ac-5 @ac-8 — la grabadora en node, de fondo, y su aviso; la registración vieja del .sh sale, en Mac y en Windows', (t) => {
+  // los dos vienen del manifiesto de la integración (integrations/instincts/), que el aplicador suma a la lista
   const real = JSON.parse(fs.readFileSync(LIST, 'utf8'));
-  const rec = real.hooks.filter((h) => h.spec === '@tcg:instinct-observe.js');
-  const not = real.hooks.filter((h) => h.spec === '@tcg:instincts-notice.js');
+  const all = mod.loadList(LIST).hooks;
+  const rec = all.filter((h) => h.spec === '@int:instincts/scripts/instinct-observe.js');
+  const not = all.filter((h) => h.spec === '@int:instincts/scripts/instincts-notice.js');
   assert.strictEqual(rec.length, 1, 'la grabadora está una vez');
   assert.deepStrictEqual([rec[0].event, rec[0].matcher, rec[0].when, rec[0].async, rec[0].platforms.windows], ['PostToolUse', '', 'integration:instincts', true, true]);
   assert.strictEqual(not.length, 1, 'el aviso está una vez');
   assert.deepStrictEqual([not[0].event, not[0].when, not[0].platforms.windows], ['SessionStart', 'always', true]);
   assert.ok(real.legacy_fragments.includes('scripts/hooks/instinct-observe.sh'), 'la ruta pelada del .sh viejo sale por legacy_fragments');
   for (const platform of ['posix', 'windows']) {
-    const list = LIST_OF([rec[0], not[0]], { legacy_fragments: ['scripts/hooks/instinct-observe.sh'] });
-    const L = lab(t, { list, files: ['@tcg:instinct-observe.js', '@tcg:instincts-notice.js'] });
+    const list = LIST_OF([H('SessionStart', '', '@tcg:a.js')], { legacy_fragments: ['scripts/hooks/instinct-observe.sh'] });
+    const L = lab(t, { list, files: ['@tcg:a.js'] });
+    // el aplicador lee las integraciones del mismo árbol que los hooks del núcleo
+    fs.cpSync(path.join(ROOT, 'integrations', 'instincts'), path.join(L.base, 'tcg', 'integrations', 'instincts'), { recursive: true });
     fs.writeFileSync(L.settingsPath, JSON.stringify({
       hooks: { PostToolUse: [{ hooks: [{ type: 'command', command: '/Users/x/.claude/tycon-harness/scripts/hooks/instinct-observe.sh' }] }] },
     }, null, 2) + '\n');

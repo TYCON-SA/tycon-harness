@@ -148,14 +148,16 @@ else
 fi
 
 # C-10 · con las cuatro prendidas, el fragmento entero, más los hooks de Codex de la integración de horas elegida
-# (Clockify, por la llave vieja), que declara su manifiesto
-DE_HORAS=$(node -e 'const m=require(process.argv[1]);console.log(m.hooks.filter((h)=>!h.tools||h.tools.includes("codex")).length)' "$RAIZ/integrations/clockify/integration.json")
+# (Clockify, por la llave vieja) y los de los instintos, que declaran sus manifiestos
+de_codex() { node -e 'const m=require(process.argv[1]);console.log(m.hooks.filter((h)=>!h.tools||h.tools.includes("codex")).length)' "$1"; }
+DE_HORAS=$(de_codex "$RAIZ/integrations/clockify/integration.json")
+DE_INSTINTOS=$(de_codex "$RAIZ/integrations/instincts/integration.json")
 # shellcheck disable=SC2086
 desplegar_arbol "$T/h10" $PRENDIDAS
 N10=$(comandos "$T/h10/hooks.json")
 # (`comandos` cuenta dos renglones por hook: el de «type» y el de «command»)
-[ "$N10" = "$((TOTAL_FRAG + 2 * DE_HORAS))" ] && ok "C-10 con las integraciones prendidas se registra el fragmento entero y los $DE_HORAS de Clockify ($N10)" \
-  || mal "C-10 con las integraciones prendidas quedaron $N10 hooks; esperaba los $TOTAL_FRAG del fragmento y $DE_HORAS de Clockify"
+[ "$N10" = "$((TOTAL_FRAG + 2 * (DE_HORAS + DE_INSTINTOS)))" ] && ok "C-10 con las integraciones prendidas se registra el fragmento entero, los $DE_HORAS de Clockify y los $DE_INSTINTOS de los instintos ($N10)" \
+  || mal "C-10 con las integraciones prendidas quedaron $N10 hooks; esperaba los $TOTAL_FRAG del fragmento, $DE_HORAS de Clockify y $DE_INSTINTOS de los instintos"
 
 # C-11 · apagar después de haber desplegado los saca del hooks.json que ya estaba, y lo propio del dev se queda
 cp "$T/h10/hooks.json" "$T/h11.json"; mkdir -p "$T/h11"
