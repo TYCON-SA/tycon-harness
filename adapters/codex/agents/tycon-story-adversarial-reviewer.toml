@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-story-adversarial-reviewer.md
-# source_sha256: 5515fdee55dfe1b2de1c6412bfc24608a5195bf7dba21d9f724f3e50a8258c4d
+# source_sha256: c16fdc733a27da0c96bd9e9e6da17ded607d0cbd49de99874b77bd9ae855f30e
 # Se despliega como $CODEX_HOME/tycon-story-adversarial-reviewer.config.toml y se invoca: codex exec -p tycon-story-adversarial-reviewer
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 # ⚠️ ASIMETRÍA DECLARADA — servidor MCP "codegraph" NO se declara acá: La ruta del índice cambia por repo (`codegraph serve --mcp --path <repo>`), y el perfil de advisor es un archivo fijo: no hay dónde poner la ruta. Del lado Claude codegraph ya es opt-in por repo (la mayoría corre sin él) y los fixtures del banco son repos efímeros SIN índice, así que ningún caso lo mide. El advisor cae al escalón siguiente de su cascada de lookup. Revisar en la Etapa F junto con el instalador.

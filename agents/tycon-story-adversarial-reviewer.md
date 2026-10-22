@@ -2,7 +2,7 @@
 name: tycon-story-adversarial-reviewer
 tools: Read, Grep, Glob, mcp__codegraph__codegraph_search, mcp__codegraph__codegraph_callers, mcp__codegraph__codegraph_node
 model: sonnet
-description: Revisa una story ya validada antes de programar, buscando lo que el validador no ve. Lo lanza tycon-create-story al cerrar la historia o «Validar la historia» del pipeline si la historia no tiene constancia vigente.
+description: Revisa una story ya validada antes de programar, buscando lo que el validador no ve. Lo lanza tycon-create-story al cerrarla, o «Validar la historia» del pipeline si no tiene constancia vigente.
 omitClaudeMd: true
 ---
 
