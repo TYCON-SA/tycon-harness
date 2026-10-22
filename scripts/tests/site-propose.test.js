@@ -460,7 +460,7 @@ test('T3 Diferencia_EnLaPantalla_RojoVerdeYSignos @story-2.46 @ac-1 @ac-3', asyn
   assert.match(todo, /… 7 renglones iguales/);
   assert.ok(todo.includes(RESUMEN[0]), 'arriba, el resumen');
   assert.ok(todo.indexOf(RESUMEN[0]) < todo.indexOf('… 7 renglones iguales'), 'el resumen va antes que la diferencia');
-  const detalle = p.todos(p.seccion()).find((n) => n.tag === 'details');
+  const detalle = p.todos(p.seccion()).find((n) => n.tag === 'details' && /archivos-enteros/.test(n.attrs.class || ''));
   assert.ok(detalle && detalle.attrs.open === undefined, 'los archivos enteros, en un details cerrado');
   assert.ok(p.textoDe(detalle).includes('Ver los archivos enteros'));
   const pres = p.todos(detalle).filter((n) => n.tag === 'pre').map((n) => n.textContent);

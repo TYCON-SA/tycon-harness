@@ -1234,8 +1234,8 @@ function pantalla(idioma = 'es') {
     var np = el('input', { placeholder: T('pantalla.nombreDelProyecto'), 'aria-label': T('pantalla.proyectoNuevo') });
     sub.appendChild(el('div', { class: 'fila quitar' }, np, el('button', { class: 'sec', type: 'button', text: T('pantalla.agregarProyecto'), onclick: function () { var v = np.value.trim(); if (!v) return; d.owners.by_project = d.owners.by_project || {}; d.owners.by_project[v] = ''; render(); } })));
     box.appendChild(sub);
-    box.appendChild(listaDeTextos(T('pantalla.revisanLosPedidosDeDependencias'), null, d.reviewers.dependencies = d.reviewers.dependencies || [], function (l) { d.reviewers.dependencies = l; }, 'reviewers.dependencies', pr, T('pantalla.usuario'), T('pantalla.agregarPersona')));
-    box.appendChild(listaDeTextos(T('pantalla.revisanLosHallazgosDelVigilante'), null, d.reviewers.watcher = d.reviewers.watcher || [], function (l) { d.reviewers.watcher = l; }, 'reviewers.watcher', pr, T('pantalla.usuario'), T('pantalla.agregarPersona')));
+    box.appendChild(listaDeTextos(T('pantalla.revisanLosPedidosDeDependencias'), T('pantalla.revisanDependenciasAyuda'), d.reviewers.dependencies = d.reviewers.dependencies || [], function (l) { d.reviewers.dependencies = l; }, 'reviewers.dependencies', pr, T('pantalla.usuario'), T('pantalla.agregarPersona'), T('pantalla.nadieVaAlResponsable')));
+    box.appendChild(listaDeTextos(T('pantalla.revisanLosHallazgosDelVigilante'), T('pantalla.revisanVigilanteAyuda'), d.reviewers.watcher = d.reviewers.watcher || [], function (l) { d.reviewers.watcher = l; }, 'reviewers.watcher', pr, T('pantalla.usuario'), T('pantalla.agregarPersona'), T('pantalla.nadieVaAlResponsable')));
     return box;
   }
   // quién entra al sitio y con qué rol: una tabla con un renglón por persona: el rol, sus
@@ -1324,8 +1324,11 @@ function pantalla(idioma = 'es') {
       lista.appendChild(mant);
     }
     var refresco = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.cadaCuantoSeActualizaEl') }), el('p', { class: 'sub-d', text: T('pantalla.queReleeElSitio') }), campo(T('pantalla.minutosEntre5Y120'), site.refresh_minutes, function (v) { site.refresh_minutes = v === '' ? undefined : numOTexto(v); }, 'site.refresh_minutes', pr, { inputmode: 'numeric' }), el('p', { class: 'sub-d', text: T('pantalla.siNoLoDeclarasQuinceMinutos') }));
-    lista.appendChild(refresco);
-    if (s.campos && s.campos.url) lista.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.laDireccionDelSitio') }), campo('', site.url, function (v) { site.url = v || undefined; }, 'site.url', pr)));
+    // lo que no hace falta tocar: plegado, con su motivo en el título
+    var avanzado = el('details', { class: 'mas-info avanzado' }, el('summary', { text: T('pantalla.avanzadoNoHaceFalta') }));
+    lista.appendChild(avanzado);
+    avanzado.appendChild(refresco);
+    if (s.campos && s.campos.url) avanzado.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.laDireccionDelSitio') }), campo('', site.url, function (v) { site.url = v || undefined; }, 'site.url', pr)));
     var mb = site.mailbox || {};
     var buzon = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.dondeDejanSusCorridasLas') }), el('p', { class: 'sub-d', text: T('pantalla.lasContrasenasNoVanAca') }));
     var f = el('div', { class: 'fila' });
@@ -1337,9 +1340,32 @@ function pantalla(idioma = 'es') {
       else f.appendChild(campo(par[1], mb[k], function (v) { site.mailbox = site.mailbox || {}; site.mailbox[k] = v; }, 'site.mailbox.' + k, pr));
     });
     buzon.appendChild(f);
-    lista.appendChild(buzon);
+    avanzado.appendChild(buzon);
     if (s.avisoLista) lista.appendChild(el('div', { class: 'aviso', text: s.avisoLista }));
     return lista;
+  }
+  // el canal del resumen de la mañana: un selector y, para el correo, remitente y destinatarios. El destino (el chat,
+  // la dirección del canal, la contraseña del correo) es un secreto y nunca se pide acá
+  function editorCanal(s, d, pr) {
+    var n = esObjeto(d.notify) ? d.notify : {};
+    var canal = n.channel || (n.mail_from !== undefined || n.mail_to !== undefined ? 'mail' : '');
+    var box = el('div', { class: 'pila' }, selector(T('pantalla.porDondeLlegaElResumen'), canal, [['', T('pantalla.canalNinguno')], ['telegram', 'Telegram'], ['slack', 'Slack'], ['teams', 'Teams'], ['mail', T('pantalla.canalCorreo')]], function (v) {
+      if (!v) { delete d.notify; render(); return; }
+      var m = esObjeto(d.notify) ? d.notify : {};
+      d.notify = v === 'mail' ? { channel: 'mail', mail_from: m.mail_from, mail_to: m.mail_to } : { channel: v };
+      if (d.notify.mail_from === undefined) delete d.notify.mail_from;
+      if (d.notify.mail_to === undefined) delete d.notify.mail_to;
+      render();
+    }, 'notify.channel', pr));
+    if (canal === 'mail') {
+      var poner = function (k) { return function (v) { v = String(v).trim(); if (!esObjeto(d.notify)) d.notify = { channel: 'mail' }; if (v) d.notify[k] = v; else delete d.notify[k]; }; };
+      box.appendChild(el('div', { class: 'fila' },
+        campo(T('pantalla.correoRemitente'), n.mail_from, poner('mail_from'), 'notify.mail_from', pr, { type: 'email', placeholder: 'avisos@acme.example' }),
+        campo(T('pantalla.correoDestinatarios'), n.mail_to, poner('mail_to'), 'notify.mail_to', pr, { placeholder: 'ana@acme.example, beto@acme.example' })));
+    }
+    box.appendChild(el('p', { class: 'muted', text: canal ? T('pantalla.canalElDestinoNoVaAca') : T('pantalla.canalSinNadaNoLlega') }));
+    box.appendChild(restoYTexto(s, d, pr, 'notify', T('pantalla.elCanalComoTexto')));
+    return box;
   }
   function editorGenerico(s, d, pr, clave, titulo) {
     // una sección sin formulario propio: se edita como texto de esa parte
@@ -1424,7 +1450,7 @@ function pantalla(idioma = 'es') {
     var pc = el('ul', { class: 'renglones' });
     (ex.porConfirmar || []).forEach(function (m) {
       var persona = el('input', { value: m.correo || '', placeholder: T('pantalla.correoDeLaPersona'), 'aria-label': T('pantalla.correoDeLaPersona2') });
-      pc.appendChild(el('li', {}, el('span', { class: 'quien', text: m.maquina }), el('span', { class: 'dato', text: (m.correo ? T('pantalla.diceSerDe') + m.correo : T('pantalla.noDiceDeQuienEs')) + T('pantalla.ultimaNoticia') + (m.dia || T('pantalla.sinFecha')) + ' · ' + (m.corridas == null ? T('pantalla.corridasSinContar') : m.corridas + T('pantalla.corridas')) }),
+      pc.appendChild(el('li', {}, el('span', { class: 'quien', text: m.maquina }), el('span', { class: 'dato', text: (m.correo ? T('pantalla.diceSerDe') + m.correo : T('pantalla.noDiceDeQuienEs')) + T('pantalla.ultimaNoticia') + (m.dia || T('pantalla.sinFecha')) + ' · ' + (m.corridas == null ? T('pantalla.corridasSinContar') : m.corridas + (m.corridas === 1 ? T('pantalla.unaCorrida') : T('pantalla.corridas'))) }),
         el('span', { class: 'acc' }, persona, el('button', { type: 'button', text: T('pantalla.confirmar'), onclick: function () { revisarSeccion(s, { accion: 'confirm', maquina: m.maquina, person: persona.value, people: d.people }); } }))));
     });
     box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: T('pantalla.porConfirmar2') }), (ex.porConfirmar || []).length ? pc : el('p', { class: 'muted', text: T('pantalla.ninguna') })));
@@ -1473,7 +1499,7 @@ function pantalla(idioma = 'es') {
       });
       acciones.appendChild(agregar);
       acciones.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.agregar'), onclick: function () { var v = agregar.value.trim(); if (!v) return; var f = deLaPersona(); if (f.add.indexOf(v) < 0) f.add.push(v); render(); } }));
-      donde.appendChild(el('li', {}, el('span', { class: 'quien', text: p.correo }), el('span', { class: 'dato', text: T('pantalla.ve') + (declarados.join(', ') || T('pantalla.nada2')) + (p.caida ? T('pantalla.susMaquinasNoMandanNoticias') : '') }), acciones));
+      donde.appendChild(el('li', {}, el('span', { class: 'quien', text: p.correo }), el('span', { class: 'dato', text: (declarados.length ? T('pantalla.ve') + declarados.join(', ') : T('pantalla.todaviaNoVeNingun')) + (p.caida ? T('pantalla.susMaquinasNoMandanNoticias') : '') }), acciones));
     });
     var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.enQueProyectosTrabajaCada') }), el('p', { class: 'sub-d', text: T('pantalla.elSitioLoDeduceDe') }));
     if (ex.quitadosViejos) sub.appendChild(aviso('warn', T('pantalla.quitadosViejos'), T('pantalla.quitadosViejosDetalle')));
@@ -1491,7 +1517,8 @@ function pantalla(idioma = 'es') {
   };
   var CANTIDADES = { bus_factor_productos_en_riesgo: 1, banco_rojos: 1, suites_rojas: 1, deps_hallazgos: 1 };
   function editorUmbrales(s, d, pr) {
-    var box = el('div', {}, el('div', { class: 'thr h' }, el('span', { text: T('pantalla.numero') }), el('span', { text: T('pantalla.mejorSiEs2') }), el('span', { text: T('pantalla.verde') }), el('span', { text: T('pantalla.rojo') })));
+    var conLimite = Object.keys(d).filter(function (k) { return k.charAt(0) !== '_' && d[k] && typeof d[k] === 'object'; });
+    var box = el('div', {}, conLimite.length ? el('div', { class: 'thr h' }, el('span', { text: T('pantalla.numero') }), el('span', { text: T('pantalla.mejorSiEs2') }), el('span', { text: T('pantalla.verde') }), el('span', { text: T('pantalla.rojo') })) : el('p', { class: 'muted', text: T('pantalla.umbralesNinguno') }));
     Object.keys(d).forEach(function (k) {
       if (k.charAt(0) === '_' || !d[k] || typeof d[k] !== 'object') return;
       var u = d[k];
@@ -1560,11 +1587,13 @@ function pantalla(idioma = 'es') {
     var box = el('div', {});
     var ex = s.extras || {};   // los paquetes de la versión del sitio y los que activa el valor de hoy
     box.appendChild(el('p', { class: 'muted', text: T('pantalla.losPaquetesSumanRevisoresY') + ((ex.activos || []).join(', ') || T('pantalla.ninguno')) + '.' }));
+    // sin paquetes instalados, cualquier opción activa lo mismo: nada. La frase lo dice según lo elegido
+    if (!(ex.instalados || []).length) box.appendChild(el('p', { class: 'muted', text: d.packs && d.packs.default !== undefined ? T('pantalla.paquetesNingunoInstaladoDaLoMismo') : T('pantalla.paquetesNingunoInstalado') }));
     d.packs = d.packs || {};
     var actual = Array.isArray(d.packs.default) ? d.packs.default.join(', ') : (d.packs.default || '');
     var val = d.packs.default;
     var modo = val === undefined ? '' : val === 'all' || val === 'none' ? val : 'some';
-    box.appendChild(selector(T('pantalla.quePaquetesSeActivan'), modo, [['', T('pantalla.sinDeclararNinguno')], ['all', T('pantalla.todosLosInstalados')], ['none', T('pantalla.ninguno')], ['some', T('pantalla.soloLosQueMarco')]], function (v) {
+    box.appendChild(selector(T('pantalla.quePaquetesSeActivan'), modo, [['', T('pantalla.sinDeclararNinguno')], ['all', (ex.instalados || []).length ? T('pantalla.todosLosInstalados') : T('pantalla.todosLosInstaladosHoyNinguno')], ['none', T('pantalla.ninguno')], ['some', T('pantalla.soloLosQueMarco')]], function (v) {
       if (!v) delete d.packs.default; else if (v === 'some') d.packs.default = Array.isArray(val) ? val : []; else d.packs.default = v;
       render();
     }, 'packs.default', pr));
@@ -1697,7 +1726,8 @@ function pantalla(idioma = 'es') {
         box.appendChild(campo(T('pantalla.servidorDeCorreo'), av.mail_host, function (v) { var o = deAvisos(); if (v === '') delete o.mail_host; else o.mail_host = v; }, 'integrations.notify.mail_host', pr));
         box.appendChild(campo(T('pantalla.puertoDelCorreo'), av.mail_port, function (v) { var o = deAvisos(); if (v === '') delete o.mail_port; else o.mail_port = numOTexto(v); }, 'integrations.notify.mail_port', pr, { inputmode: 'numeric' }));
       }
-      box.appendChild(el('p', { class: 'muted', text: T('pantalla.avisosCredenciales') }));
+      box.appendChild(el('p', { class: 'muted', text: T('pantalla.avisosSinCredenciales') }));
+      box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: T('pantalla.detalleTecnico') }), el('p', { class: 'muted', text: T('pantalla.avisosCredenciales') })));
     }
     if (modoAv !== '') box.appendChild(el('p', { class: 'muted', text: T('pantalla.avisosSubeLaCapa') }));
     return box;
@@ -1749,8 +1779,10 @@ function pantalla(idioma = 'es') {
   function editorAdo(s, d, pr) {
     var ex = s.extras || {};
     var box = el('div', { class: 'pila' }, campo(T('pantalla.laOrganizacionSuDireccionEn', { plataforma: 'Azure DevOps' }), (d.ado || {}).org, function (v) { hoja(d, 'ado', 'org', v); }, 'ado.org', pr));
-    if (ex.proyecto) box.appendChild(el('p', { class: 'muted', text: T('pantalla.elProyecto') + ex.proyecto + '.' }));
-    if (ex.pedidos) box.appendChild(el('p', { class: 'muted', text: T('pantalla.losPedidosDeTrabajo') + ex.pedidos + '.' }));
+    // de dónde sale cada dato: nombres de archivos que sólo le sirven a quien mantiene el arnés
+    if (ex.proyecto || ex.pedidos) box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: T('pantalla.detalleTecnico') }),
+      ex.proyecto ? el('p', { class: 'muted', text: T('pantalla.elProyecto') + ex.proyecto + '.' }) : null,
+      ex.pedidos ? el('p', { class: 'muted', text: T('pantalla.losPedidosDeTrabajo') + ex.pedidos + '.' }) : null));
     return box;
   }
   function editorActualizacion(s, d, pr) {
@@ -1767,8 +1799,11 @@ function pantalla(idioma = 'es') {
     var clave = function (f) { return f.title + '\u0000' + f.does; };
     var enMin = {}; min.forEach(function (f) { enMin[clave(f)] = true; });
     var suma = full.filter(function (f) { return !enMin[clave(f)]; });
-    box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: T('pantalla.elMinimoTrae') + min.length + T('pantalla.cosas') }), porGrupo(min)));
-    box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: T('pantalla.elCompletoSumaEstas') + suma.length }), porGrupo(suma)));
+    // las dos listas, plegadas; a la vista, cuántas son y tres ejemplos de lo que se pierde con el mínimo
+    var ejemplos = suma.slice(0, 3).map(function (f) { return dePieza(f, 'title'); }).filter(Boolean);
+    if (suma.length) box.appendChild(el('p', { class: 'muted', text: T('pantalla.instalacionQueSePierde', { n: suma.length, total: min.length + suma.length }) + (ejemplos.length ? T('pantalla.instalacionPorEjemplo') + ejemplos.join(' · ') + '.' : '') }));
+    box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: T('pantalla.elMinimoTrae', { n: min.length }) }), porGrupo(min)));
+    box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: T('pantalla.elCompletoSumaEstas', { n: suma.length }) }), porGrupo(suma)));
     return box;
   }
   // los grupos de lo que instala el arnés, en el orden en que se muestran; uno que la pantalla no conoce va al final
@@ -1817,7 +1852,7 @@ function pantalla(idioma = 'es') {
   }
   function editorHilos(s, d, pr) {
     var mb = (d.site || {}).mailbox || {};
-    return el('div', { class: 'pila' }, selector(T('pantalla.bajarLasConversaciones'), mb.threads === undefined ? '' : String(mb.threads), [['', T('pantalla.sinDeclararNo')], ['true', T('pantalla.siBajaTambienLoQue')], ['false', T('pantalla.noSoloLosNumerosDe')]], function (v) {
+    return el('div', { class: 'pila' }, selector(T('pantalla.bajarLasConversaciones'), mb.threads === undefined ? '' : String(mb.threads), [['', T('pantalla.hilosDeFabrica')], ['true', T('pantalla.siBajaTambienLoQue')], ['false', T('pantalla.noSoloLosNumerosDe')]], function (v) {
       if (!esObjeto(d.site)) d.site = {};
       if (v === '') { if (esObjeto(d.site.mailbox)) delete d.site.mailbox.threads; return; }
       if (!esObjeto(d.site.mailbox)) d.site.mailbox = {};
@@ -1826,7 +1861,7 @@ function pantalla(idioma = 'es') {
   }
   function editorAplicar(s, d, pr) {
     var st = d.site || {};
-    return el('div', { class: 'pila' }, selector(T('pantalla.losCambiosDeQuienMantiene'), st.auto_apply === undefined ? '' : String(st.auto_apply), [['', T('pantalla.sinDeclararNo')], ['true', T('pantalla.siSeAplicanSolosEl')], ['false', T('pantalla.noQuedaElPedidoPara')]], function (v) {
+    return el('div', { class: 'pila' }, selector(T('pantalla.losCambiosDeQuienMantiene'), st.auto_apply === undefined ? '' : String(st.auto_apply), [['', T('pantalla.aplicarDeFabrica')], ['false', T('pantalla.noQuedaElPedidoPara')], ['true', T('pantalla.siSeAplicanSolosEl')]], function (v) {
       if (!esObjeto(d.site)) d.site = {};
       if (v === '') { delete d.site.auto_apply; return; }
       d.site.auto_apply = v === 'true';
@@ -1843,7 +1878,9 @@ function pantalla(idioma = 'es') {
     grupos.forEach(function (g) {
       var fs = todas.filter(function (f) { return f.pestana === g[0]; });
       if (!fs.length) return;
-      box.appendChild(el('p', { class: 'sub-t', text: g[1] }));
+      // cada grupo plegado: todas vienen marcadas y casi nadie las toca
+      var grupo = el('details', { class: 'mas-info fichas-grupo' }, el('summary', { text: g[1] + ' · ' + T('pantalla.fichasDelGrupo', { n: fs.length, visibles: fs.filter(function (f) { return ocultas.indexOf(f.id) < 0; }).length }) }));
+      box.appendChild(grupo);
       fs.forEach(function (f) {
         var c = el('input', { type: 'checkbox', 'aria-label': f.titulo, 'data-path': 'site.hidden_cards.' + f.id, onchange: function (e) {
           var ya = ((d.site || {}).hidden_cards || []).filter(function (x) { return x !== f.id; });
@@ -1854,7 +1891,9 @@ function pantalla(idioma = 'es') {
           if (ya.length) d.site.hidden_cards = ya; else { delete d.site.hidden_cards; if (!Object.keys(d.site).length) delete d.site; }
         } });
         c.checked = ocultas.indexOf(f.id) < 0;
-        box.appendChild(el('label', {}, c, el('span', { text: ' ' + f.titulo }), el('span', { class: 'muted', text: ' — ' + f.paraQue })));
+        // el nombre en llano; al lado, cómo se llama en el tablero, para encontrarla ahí
+        var llano = Object.prototype.hasOwnProperty.call(TX, 'fichaLlana.' + f.id) ? TX['fichaLlana.' + f.id] : f.titulo;
+        grupo.appendChild(el('label', {}, c, el('span', { text: ' ' + llano }), llano !== f.titulo ? el('span', { class: 'muted', text: ' — ' + T('pantalla.fichaEnElTablero', { titulo: f.titulo }) }) : el('span', { class: 'muted', text: ' — ' + f.paraQue })));
       });
     });
     var raras = ocultas.filter(function (id) { return !todas.some(function (f) { return f.id === id; }); });
@@ -1984,7 +2023,7 @@ function pantalla(idioma = 'es') {
     if (!ms.repos.length) sub.appendChild(el('p', { class: 'muted', text: T('pantalla.ningunRepoTodavia') }));
     // story 2.59: un renglón por repo (dónde, el repo entero, la regla, las pruebas completas, ✎ y ✕); ✎ abre los campos
     // debajo. Se abre solo un repo con un problema en su ruta o sin organización o nombre (el recién agregado)
-    var t = tabla('repos', T('pantalla.porRepo'), [T('pantalla.donde'), T('pantalla.repo2'), T('pantalla.regla2'), T('pantalla.pruebasCompletas'), '']);
+    var t = tabla('repos', T('pantalla.porRepo'), ms.repos.length ? [T('pantalla.donde'), T('pantalla.repo2'), T('pantalla.regla2'), T('pantalla.pruebasCompletas'), ''] : null);
     var sp = s.extras && s.extras.sinPipeline;
     ms.repos.forEach(function (e, i) {
       var at = 'merge_suites.repos.' + i;
@@ -2043,7 +2082,7 @@ function pantalla(idioma = 'es') {
     'plugin-nextjs-conventions': T('pantalla.convencionesDeNextJs'), 'sibling-pattern-reviewer': T('pantalla.queSigaLoQueYa'),
     'feature-wiring-checker': T('pantalla.queLoHechoEsteConectado'),
   };
-  function nombreRevisor(id) { var n = REVISOR[id] || REVISOR[String(id).slice(String(id).indexOf('-') + 1)]; return n ? n + ' (' + id + ')' : id; }
+  function nombreRevisor(id) { var n = REVISOR[id] || REVISOR[String(id).slice(String(id).indexOf('-') + 1)]; return n || id; }
   // story 2.59: tres tablas (revisores; pase adversarial; ayudantes y sesión), un renglón por trabajo: el trabajo, su
   // valor por defecto y un selector corto. Los revisores en particular son renglones de la tabla de revisores; el tope,
   // un renglón al pie. Un trabajo por encima del tope llega como problema de su ruta y su renglón se ve en rojo
@@ -2080,55 +2119,94 @@ function pantalla(idioma = 'es') {
     // un renglón de modelo: «que» es el contenido de la primera celda; «quitarlo», la ✕ de un revisor en particular
     // «h» es el valor por defecto como viene (un modelo); con «conEquiv», el renglón lleva la línea de equivalencias:
     // «true» la calcula del valor elegido, y un nivel la deja fija en ese nivel (un renglón que no elige modelo)
-    function fila(t, que, label, k, sub, opciones, h, quitarlo, conEquiv) {
+    // «base»: el nivel que el trabajo tomaría sin valor propio; elegir ése no cambia nada, y el renglón lo dice
+    // «origen»: de dónde sale el valor de hoy, en una línea chica debajo
+    function fila(t, que, label, k, sub, opciones, h, quitarlo, conEquiv, base, origen) {
       var p = 'models.' + k + (sub ? '.' + sub : '');
       var fijo = typeof conEquiv === 'string' ? conEquiv : null;
       var linea = conEquiv ? el('small', { class: 'equiv muted' }) : null;
-      var pintar = function (v) { if (linea) linea.textContent = lineaEquiv(fijo || v || h); };
+      var igual = base ? el('small', { class: 'igual muted', 'data-igual': '' }) : null;
+      var pintar = function (v) {
+        if (linea) linea.textContent = lineaEquiv(fijo || v || h);
+        if (igual) igual.textContent = v && nivelDe(v) === nivelDe(base) ? T('pantalla.noCambiaNadaPodesQuitarlo') : '';
+      };
       var c = corto(label, sub ? de(m[k], sub) : m[k], opciones, function (v) { poner(k, sub, v); pintar(v); }, p, pr);
       pintar(sub ? de(m[k], sub) : m[k]);
       var acc = el('div', { class: 'acc', role: 'cell' }, c.sel);
       if (linea) acc.appendChild(linea);
+      if (igual) acc.appendChild(igual);
       if (quitarlo) acc.appendChild(el('button', { class: 'quitar-fila', type: 'button', text: '✕', title: T('pantalla.quitarEsteRevisor'), 'aria-label': T('pantalla.quitarEsteRevisor') + ': ' + label, onclick: quitarlo }));
       var celda = el('div', { class: 'que', role: 'cell' });
       [].concat(que).forEach(function (n) { celda.appendChild(n); });
-      t.appendChild(renglon([celda, el('div', { class: 'hoy', role: 'cell', text: h == null ? '—' : (conEquiv === true ? nombreNivel(h) : h) }), acc], c.mios));
+      var hoyCelda = el('div', { class: 'hoy', role: 'cell', text: h == null ? '—' : (conEquiv === true ? nombreNivel(h) : h) });
+      if (origen) hoyCelda.appendChild(el('small', { class: 'glosa origen', text: origen }));
+      return t.appendChild(renglon([celda, hoyCelda, acc], c.mios));
     }
-    function trabajo(t, label, k, sub) { fila(t, el('span', { text: label }), label, k, sub, DE_MODELOS, sub ? de(de(hoy, k), sub) : de(hoy, k), null, true); }
+    // «glosa»: qué es ese trabajo, en una línea, al lado de su nombre
+    function trabajo(t, label, k, sub, glosa) { fila(t, [el('span', { text: label }), glosa ? el('small', { class: 'glosa', text: glosa }) : null].filter(Boolean), label, k, sub, DE_MODELOS, sub ? de(de(hoy, k), sub) : de(hoy, k), null, true); }
 
-    var rev = cabeza(T('pantalla.losRevisores'));
-    trabajo(rev, T('pantalla.primeraVuelta'), 'reviewers');
-    trabajo(rev, T('pantalla.lasVueltasSiguientes'), 'reviewers_reloop');
-    // los revisores en particular: los declarados (con su ✕) y los que tienen un valor por defecto propio
+    var rev = cabeza(T('pantalla.losRevisoresNivelGeneral'));
+    trabajo(rev, T('pantalla.primeraVuelta'), 'reviewers', null, T('pantalla.glosa.primeraVuelta'));
+    trabajo(rev, T('pantalla.lasVueltasSiguientes'), 'reviewers_reloop', null, T('pantalla.glosa.vueltasSiguientes'));
+    box.appendChild(rev);
+    // cada revisor instalado, en su renglón y agrupado por paquete: el nivel que usa hoy y de dónde sale, el modelo real
+    // y su desplegable. Sin valor propio, un revisor toma la primera vuelta de la organización; si no hay, el suyo de
+    // fábrica (el de models.js o el «model:» de su archivo), y si no tiene, la primera vuelta de fábrica
     var rv = esObjeto(m.reviewer) ? m.reviewer : null;
-    var conHoy = Object.keys(de(hoy, 'reviewer') || {});
-    if (m.reviewer !== undefined && !rv) box.appendChild(rev);
-    else {
-      Object.keys(rv || {}).concat(conHoy.filter(function (id) { return !rv || !(id in rv); })).forEach(function (id) {
-        var nombre = nombreRevisor(id);
-        var declarado = !!rv && (id in rv);
-        fila(rev, [el('span', { text: nombre }), el('small', { text: ' · ' + T('pantalla.unRevisorEnParticular2') })], nombre, 'reviewer', id, DE_MODELOS, de(de(hoy, 'reviewer'), id),
-          declarado ? function () { delete m.reviewer[id]; if (!Object.keys(m.reviewer).length) delete m.reviewer; render(); } : null, true);
-      });
-      box.appendChild(rev);
-      var conocidos = ((s.extras && s.extras.revisores) || []).filter(function (id) { return (!rv || !(id in rv)) && conHoy.indexOf(id) < 0; });
-      if (conocidos.length) {
-        var elegir = el('select', { class: 'corto', 'aria-label': T('pantalla.revisor2') }, el('option', { value: '', text: T('pantalla.elegiUnRevisor') }));
-        conocidos.forEach(function (id) { elegir.appendChild(el('option', { value: id, text: nombreRevisor(id) })); });
-        box.appendChild(el('div', { class: 'agregar-revisor' }, elegir, el('button', { class: 'mas', type: 'button', text: T('pantalla.agregarUnRevisorEnParticular'), onclick: function () { if (!elegir.value) return; m.reviewer = rv || {}; m.reviewer[elegir.value] = 'balanced'; render(); } })));
-      }
-    }
     if (m.reviewer !== undefined && !rv) box.appendChild(editorGenerico(s, m, pr, 'reviewer', T('pantalla.revisorYModeloComoTexto')));
+    else {
+      var grupos = ((s.extras && s.extras.porPaquete) || []).map(function (g) { return { paquete: g.paquete, propios: !!g.propios, ilegible: !!g.ilegible, revisores: (g.revisores || []).slice() }; });
+      if (!grupos.length) grupos = [{ paquete: null, revisores: ((s.extras && s.extras.revisores) || []).map(function (id) { return { id: id, fabrica: null }; }) }];
+      // un revisor que la organización declaró y esta versión no trae se ve igual, para poder sacarlo
+      var conocidos = {}; grupos.forEach(function (g) { g.revisores.forEach(function (r) { conocidos[r.id] = true; }); });
+      var sueltos = Object.keys(rv || {}).filter(function (id) { return !conocidos[id]; });
+      if (sueltos.length) grupos.push({ paquete: null, sueltos: true, revisores: sueltos.map(function (id) { return { id: id, fabrica: null }; }) });
+      var cambiados = Object.keys(rv || {}).length;
+      var total = grupos.reduce(function (n, g) { return n + g.revisores.length; }, 0);
+      box.appendChild(el('p', { class: 'sub-t', text: T('pantalla.cadaRevisor') }));
+      box.appendChild(el('p', { class: 'sub-d', text: (cambiados ? T('pantalla.cadaRevisorCambiados', { n: cambiados, total: total }) : T('pantalla.cadaRevisorNinguno', { total: total })) + ' ' + T('pantalla.cadaRevisorCuando') }));
+      // la lista, plegada: casi nadie la toca. Se abre sola con algo cambiado o con un problema que mostrar
+      var lista = el('details', { class: 'mas-info lista-revisores' }, el('summary', { text: T('pantalla.verLosRevisores', { total: total }) }));
+      if (cambiados || problemasEn(pr, 'models.reviewer').length || (pr || []).some(function (x) { return String(x.path).indexOf('models.reviewer.') === 0; })) lista.setAttribute('open', 'open');
+      box.appendChild(lista);
+      var renglones = [];
+      if (total > 8) lista.appendChild(el('input', { type: 'search', class: 'buscar-revisor', placeholder: T('pantalla.buscarRevisor'), 'aria-label': T('pantalla.buscarRevisor'), oninput: function (e) {
+        var q = String(e.target.value || '').toLowerCase().trim();
+        renglones.forEach(function (x) { x.fila.hidden = !!q && x.texto.indexOf(q) < 0; });
+      } }));
+      grupos.forEach(function (g) {
+        var t = tabla('modelos revisores', g.paquete || T('pantalla.revisoresDelArnes'), [T('pantalla.revisor2'), T('pantalla.usaHoy'), T('pantalla.cambiarloA')]);
+        // lo cambiado por la organización, primero
+        g.revisores.sort(function (x, y) { return (rv && y.id in rv ? 1 : 0) - (rv && x.id in rv ? 1 : 0); });
+        g.revisores.forEach(function (r) {
+          var id = r.id;
+          var nombre = nombreRevisor(id);
+          var propio = rv && rv[id];
+          var deFabrica = de(de(hoy, 'reviewer'), id) || r.fabrica;
+          var base = m.reviewers || deFabrica || de(hoy, 'reviewers');
+          var origen = m.reviewers ? T('pantalla.origenVueltaOrg') : deFabrica ? T('pantalla.origenFabricaPropio') : r.ilegible ? T('pantalla.origenIlegible') : T('pantalla.origenVuelta');
+          var opciones = [['', T(!m.reviewers && deFabrica ? 'pantalla.elSuyoSinCambiar' : 'pantalla.igualQueSuVuelta', { nivel: nombreNivel(base) })]].concat(NIVELES.map(function (x) { return [x, T('pantalla.nivel.' + x)]; }));
+          var que = [el('span', { text: nombre })];
+          que.push(el('small', { class: 'glosa', text: nombre !== id ? id : T('pantalla.revisorSinNombre') }));
+          var f = fila(t, que, nombre, 'reviewer', id, opciones, propio || base, null, true, base, propio ? T('pantalla.origenOrg') : origen);
+          if (propio) f.setAttribute('class', (f.getAttribute ? f.getAttribute('class') : f.attrs.class) + ' cambiado');
+          renglones.push({ fila: f, texto: (nombre + ' ' + id).toLowerCase() });
+        });
+        lista.appendChild(el('p', { class: 'sub-d paquete-t', text: g.paquete ? T('pantalla.delPaquete', { paquete: g.paquete }) : g.sueltos ? T('pantalla.revisoresQueNoTraeEstaVersion') : g.propios ? T('pantalla.revisoresDeTuOrganizacion') : T('pantalla.revisoresDelArnes') }));
+        if (g.ilegible) lista.appendChild(el('p', { class: 'err', text: T('pantalla.paqueteIlegible') }));
+        else lista.appendChild(t);
+      });
+    }
     problemasEn(pr, 'models.reviewer').forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
 
     var adv = cabeza(T('pantalla.elPaseAdversarial'));
-    trabajo(adv, T('pantalla.unaStoryNormal'), 'adversarial', 'model');
-    trabajo(adv, T('pantalla.unaStoryPesada'), 'adversarial', 'heavy');
+    trabajo(adv, T('pantalla.unaStoryNormal'), 'adversarial', 'model', T('pantalla.glosa.adversarial'));
+    trabajo(adv, T('pantalla.unaStoryPesada'), 'adversarial', 'heavy', T('pantalla.glosa.historiaPesada'));
     box.appendChild(adv);
 
     var ayu = cabeza(T('pantalla.losAyudantesYLaSesion'));
-    trabajo(ayu, T('pantalla.losAyudantes'), 'helpers');
-    trabajo(ayu, T('pantalla.sesionStoryLiviana'), 'session', 'low');
+    trabajo(ayu, T('pantalla.losAyudantes'), 'helpers', null, T('pantalla.glosa.ayudantes'));
+    trabajo(ayu, T('pantalla.sesionStoryLiviana'), 'session', 'low', T('pantalla.glosa.sesion'));
     trabajo(ayu, T('pantalla.sesionStoryNormal'), 'session', 'normal');
     trabajo(ayu, T('pantalla.sesionStoryPesada'), 'session', 'heavy');
     box.appendChild(ayu);
@@ -2153,7 +2231,7 @@ function pantalla(idioma = 'es') {
       if (v === '') { if (esObjeto(d.wait_notice)) { delete d.wait_notice.minutes; if (!Object.keys(d.wait_notice).length) delete d.wait_notice; } return; }
       if (!esObjeto(d.wait_notice)) d.wait_notice = {};
       d.wait_notice.minutes = numOTexto(v);
-    }, 'wait_notice.minutes', pr, { inputmode: 'numeric' }));
+    }, 'wait_notice.minutes', pr, { inputmode: 'numeric', placeholder: T('pantalla.esperaDeFabrica') }));
   }
   // los pedidos de vulnerabilidades, según la maqueta que aprobó el dueño: arriba el tipo y los campos fijos, abajo una
   // sola tabla con una fila por campo y una columna por gravedad. Con las listas que leyó el sitio, cada campo se ve con
@@ -2327,6 +2405,7 @@ function pantalla(idioma = 'es') {
     // abajo: una fila por campo y una columna por gravedad
     var leidos = catalogo && C.r.proyecto ? el('span', { class: 'muted', text: T('pantalla.pedidosLeidosDe', { proyecto: C.r.proyecto }) }) : null;
     box.appendChild(el('div', { class: 'pedidos-gravedad' }, el('div', { class: 'pedidos-t' }, el('p', { class: 'sub-t', text: T('pantalla.pedidosPorGravedad') }), leidos),
+      el('p', { class: 'solo-celular muted', text: T('pantalla.pedidosDeslizar') }),
       el('div', { class: 'tbl-wrap' }, tablaPorGravedad(d, w, limpiar, porRef, catalogo, actual.type, pr)),
       el('p', { class: 'pedidos-pie', text: T('pantalla.pedidosCeldasAyuda') })));
     problemasEn(pr, 'work_items.by_severity').forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
@@ -2366,7 +2445,7 @@ function pantalla(idioma = 'es') {
   var TEC_AGENTE = false;  // se tocó «Pedíselo a tu agente»
   var TEC_REEMPLAZAR = null;  // la interna cuya frase de «Reemplazar» está a la vista
   var TEC_AGREGAR_REPO = null;  // la herramienta del formulario abierto donde se tocó «Agregar un repo»: se ve el selector
-  var TEC_NOMBRES = { dotnet: '.NET', vitest: 'Vitest', jest: 'Jest', node: 'Node (node --test)', pytest: 'pytest (Python)', go: 'Go', maven: 'Maven (Java)', gradle: 'Gradle (Java, Kotlin)', karma: 'Karma (Angular)', playwright: 'Playwright (punta a punta)' };
+  var TEC_NOMBRES = { dotnet: '.NET', vitest: 'Vitest', jest: 'Jest', node: 'Node (node --test)', pytest: 'pytest (Python)', go: 'Go', maven: 'Maven (Java)', gradle: 'Gradle (Java, Kotlin)', karma: 'Karma (Angular)', playwright: 'Playwright (pruebas de pantallas completas)' };
   var TEC_ARCHIVOS = { dotnet: '.sln, .csproj', vitest: 'package.json (vitest)', jest: 'package.json (jest)', node: 'package.json (node --test)' };
   // el nombre para personas: el de fábrica, o el «label» que le puso la organización a su receta; si no, el id
   function nombreDe(r) { return TEC_NOMBRES[r.name] || (typeof r.label === 'string' && r.label) || r.name; }
@@ -2465,7 +2544,7 @@ function pantalla(idioma = 'es') {
       avisoYaReconoce.textContent = repetidas.length ? T('pantalla.tecYaLaReconoce', { ext: repetidas.join(', ') }) : '';
     };
     pintarAviso(exts);
-    var lista = listaDeTextos(T('pantalla.tecLenguajesQueNoConoce'), T('pantalla.tecLenguajesAyuda'), exts, function (l) { stackDe(d).code_extensions = l; limpiarStack(d); pintarAviso(l); }, 'stack.code_extensions', pr, T('pantalla.tecTerminacionEjemplo'), T('pantalla.tecAgregarTerminacion'));
+    var lista = listaDeTextos(T('pantalla.tecLenguajesQueNoConoce'), T('pantalla.tecLenguajesAyuda'), exts, function (l) { stackDe(d).code_extensions = l; limpiarStack(d); pintarAviso(l); }, 'stack.code_extensions', pr, T('pantalla.tecTerminacionEjemplo'), T('pantalla.tecAgregarTerminacion'), T('pantalla.ningunaAgregadaLoNormal'));
     lista.appendChild(avisoYaReconoce);
     box.appendChild(lista);
     // 2. las herramientas de prueba
@@ -2473,34 +2552,40 @@ function pantalla(idioma = 'es') {
     var deOrg = {}; org.forEach(function (r) { if (r && r.name) deOrg[r.name] = r; });
     var fabrica = ex.fabrica || [];
     var tabla = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecComoSeCorrenLasPruebas') }), el('p', { class: 'sub-d', text: T('pantalla.tecComoSeCorrenAyuda') }));
+    // las herramientas, plegadas: casi nadie las toca. Se abren solas si la organización tiene alguna propia, una fila
+    // espera su frase o hay un problema que mostrar
+    var abiertas = TEC_REEMPLAZAR || org.length || !ex.fabrica || (pr || []).some(function (x) { return String(x.path).indexOf('stack.test_runners') === 0; });
+    var filas = el('details', { class: 'mas-info herramientas' }, el('summary', { text: T('pantalla.tecVerHerramientas', { n: (ex.internos || []).length + fabrica.length + org.length }) }));
+    if (abiertas) filas.setAttribute('open', 'open');
+    tabla.appendChild(filas);
     // cada fila con las mismas cuatro columnas: nombre, archivo que la detecta, origen y acción. Las internas no se
     // editan: «Reemplazar» hace lo de «Pedíselo a tu agente» con la frase armada para esa herramienta (la copia si el
     // navegador deja) y la muestra en la fila, con lo que pasa después
     (ex.internos || []).forEach(function (n) {
       var abierta = TEC_REEMPLAZAR === n;
       var frase = T('pantalla.tecFraseReemplazar', { nombre: TEC_NOMBRES[n] || n, archivo: String(TEC_ARCHIVOS[n] || '').replace(/ \(.*\)$/, '') });
-      tabla.appendChild(el('div', { class: 'fila', 'data-runner': n }, el('span', { text: TEC_NOMBRES[n] || n }), el('span', { class: 'muted', text: TEC_ARCHIVOS[n] || '' }), el('span', { text: T('pantalla.tecIncluidaEnElArnes') }),
+      filas.appendChild(el('div', { class: 'fila', 'data-runner': n }, el('span', { text: TEC_NOMBRES[n] || n }), el('span', { class: 'muted', text: TEC_ARCHIVOS[n] || '' }), el('span', { text: T('pantalla.tecIncluidaEnElArnes') }),
         el('span', {}, boton(T('pantalla.tecReemplazar'), function () {
           TEC_REEMPLAZAR = n;
           try { if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(frase).catch(function () {}); } catch (e) { /* sin portapapeles, la frase queda a la vista */ }
           render();
         }))));
-      if (abierta) tabla.appendChild(el('div', { class: 'msg ok', 'data-reemplazar': n }, el('b', { text: T('pantalla.tecPegaEstaFrase') }), el('p', { text: '«' + frase + '»' }), el('p', { text: T('pantalla.tecAlReemplazarPasa') })));
+      if (abierta) filas.appendChild(el('div', { class: 'msg ok', 'data-reemplazar': n }, el('b', { text: T('pantalla.tecPegaEstaFrase') }), el('p', { text: '«' + frase + '»' }), el('p', { text: T('pantalla.tecAlReemplazarPasa') })));
     });
     // el motivo exacto, plegado: lo arma el servidor y no está traducido
-    if (!ex.fabrica) tabla.appendChild(aviso('nm', T('pantalla.tecSinListaDeFabrica'), ex.motivo || null));
+    if (!ex.fabrica) filas.appendChild(aviso('nm', T('pantalla.tecSinListaDeFabrica'), ex.motivo || null));
     fabrica.forEach(function (f) {
       var mia = deOrg[f.name];
       var acciones = el('span', {}, boton(T('pantalla.tecCambiar'), function () { TEC_FORM = { name: f.name, r: copia(mia || { name: f.name, detect: f.detect, command: f.command, results: f.results, coverage: f.coverage }), fabrica: f }; if (!TEC_FORM.r.coverage) delete TEC_FORM.r.coverage; render(); }));
       if (mia) acciones.appendChild(boton(T('pantalla.tecVolverALaDeFabrica'), function () { quitarRunner(d, f.name); render(); }));
-      tabla.appendChild(el('div', { class: 'fila', 'data-runner': f.name }, el('span', { text: TEC_NOMBRES[f.name] || f.name }), el('span', { class: 'muted', text: (f.files || []).join(', ') }), el('span', { text: mia ? T('pantalla.tecCambiadaPorTuOrganizacion') : T('pantalla.tecDeFabricaSeCambia') }), acciones));
+      filas.appendChild(el('div', { class: 'fila', 'data-runner': f.name }, el('span', { text: TEC_NOMBRES[f.name] || f.name }), el('span', { class: 'muted', text: (f.files || []).join(', ') }), el('span', { text: mia ? T('pantalla.tecCambiadaPorTuOrganizacion') : T('pantalla.tecDeFabricaSeCambia') }), acciones));
     });
     org.forEach(function (r) {
       if (!r || !r.name || fabrica.some(function (f) { return f.name === r.name; })) return;
-      tabla.appendChild(el('div', { class: 'fila', 'data-runner': r.name }, el('span', { text: nombreDe(r) }), el('span', { class: 'muted', text: r.detect || '' }), el('span', { text: T('pantalla.tecAgregadaPorTuOrganizacion') }),
+      filas.appendChild(el('div', { class: 'fila', 'data-runner': r.name }, el('span', { text: nombreDe(r) }), el('span', { class: 'muted', text: r.detect || '' }), el('span', { text: T('pantalla.tecAgregadaPorTuOrganizacion') }),
         el('span', {}, boton(T('pantalla.tecCambiar'), function () { TEC_FORM = { name: r.name, r: copia(r), fabrica: null }; render(); }), boton(T('pantalla.tecBorrar'), function () { quitarRunner(d, r.name); render(); }))));
     });
-    (pr || []).filter(function (x) { return String(x.path).indexOf('stack.test_runners') === 0; }).forEach(function (x) { MOSTRADOS.push(x); tabla.appendChild(el('div', { class: 'err', text: x.donde + ': ' + x.message })); });
+    (pr || []).filter(function (x) { return String(x.path).indexOf('stack.test_runners') === 0; }).forEach(function (x) { MOSTRADOS.push(x); filas.appendChild(el('div', { class: 'err', text: x.donde + ': ' + x.message })); });
     box.appendChild(tabla);
     if (TEC_FORM) box.appendChild(formRunner(d, ex));
     else TEC_AGREGAR_REPO = null;
@@ -2523,7 +2608,7 @@ function pantalla(idioma = 'es') {
       el('p', { class: 'sub-d', text: T('pantalla.tecIdiomaVacio') })));
     return box;
   }
-  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, revision: editorRevision, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, pruebaAMano: editorPruebaAMano, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', T('pantalla.elCanalComoTexto')); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, revision: editorRevision, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, pruebaAMano: editorPruebaAMano, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada
@@ -2734,7 +2819,7 @@ function pantalla(idioma = 'es') {
     var sec = el('section', { class: 'card form-block', id: 'seccion-' + s.id }, el('div', { class: 'fb-head' }, el('div', {}, el('h4', { text: p.t }), el('p', { class: 'reach', text: p.d }), paraQue), el('span', { class: 'pill ' + est[0], text: est[1] })));
     if (s.estado === 'no_reader') { sec.appendChild(aviso('nm', T('pantalla.estaVersionDelArnesTodavia'), s.motivo)); if (s.id !== 'paridad') return sec; }
     if (s.estado === 'ilegible') { sec.appendChild(aviso('bad', T('pantalla.loGuardadoEnEstaParte'), s.motivo)); if (s.id !== 'paridad') return sec; }
-    if (s.estado === 'no_configurado') { sec.appendChild(aviso('nm', T('pantalla.estaParteTodaviaNoEsta'), s.motivo)); if (s.id !== 'paridad') return sec; }
+    if (s.estado === 'no_configurado') { sec.appendChild(aviso('nm', s.id === 'paridad' ? T('pantalla.paridadEsNormal') : T('pantalla.estaParteTodaviaNoEsta'), s.motivo)); if (s.id !== 'paridad') return sec; }
     if (s.estado === 'nuevo') sec.appendChild(el('p', { class: 'muted', text: T('pantalla.todaviaNoHayNadaGuardado') }));
     if (s.soloLectura) sec.appendChild(aviso('nm', T('pantalla.porAhoraSePuedeMirar'), s.motivo));
     if (S.recuperar[s.id]) {

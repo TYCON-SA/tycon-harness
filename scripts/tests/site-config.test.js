@@ -504,7 +504,7 @@ test('T5b Paquetes_YRevisores_TambienDelPerfil — los paquetes y los revisores 
   const perfil = clon({
     'team-profile.json': { version: 1, packs: { default: ['acme-pack'] } },
     'packs/acme-pack/pack.json': { reviewers: [{ agent: 'acme-pack-reviewer' }] },
-    'agents/acme-team-reviewer.md': '# un revisor del equipo\n',
+    'agents/acme-team-reviewer.md': '---\nname: acme-team-reviewer\nmodel: opus\n---\n# un revisor del equipo\n',
   });
   await conPestana({ fuentes: fuentesCon({ ops, perfil }), env: { SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: ['tok', 'perfil'].join('-') } }, async ({ h, entrar }) => {
     const r = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json;
@@ -516,6 +516,14 @@ test('T5b Paquetes_YRevisores_TambienDelPerfil — los paquetes y los revisores 
     assert.ok(revisores.includes('acme-team-reviewer'), 'el revisor del perfil');
     assert.ok(revisores.includes('acme-pack-reviewer'), 'el revisor del paquete del perfil');
     assert.deepStrictEqual(revisores, [...revisores].sort(), 'ordenados');
+    // agrupados para la lista de «Cada revisor»: los del arnés primero, después cada paquete; cada uno con su modelo de fábrica
+    const grupos = por.modelos.extras.porPaquete;
+    assert.strictEqual(grupos[0].paquete, null, 'primero, los del arnés');
+    assert.ok(!grupos[0].propios && !grupos[0].revisores.some((x) => x.id === 'acme-team-reviewer'), 'el del perfil no va con los del arnés');
+    const propios = grupos.find((g) => g.propios);
+    assert.deepStrictEqual(grupos.find((g) => g.paquete === 'acme-pack').revisores, [{ id: 'acme-pack-reviewer', fabrica: null }], 'el del paquete, en su grupo');
+    assert.deepStrictEqual(propios.revisores, [{ id: 'acme-team-reviewer', fabrica: 'opus' }], 'los propios de la organización, aparte, con el model: de su archivo');
+    assert.ok(!grupos[0].revisores.some((x) => x.id === 'acme-pack-reviewer'), 'sin repetir entre grupos');
   });
 });
 
@@ -674,7 +682,7 @@ test('T11 Personas_DeclaradoBajoOtroCorreo_SeVeYSeEdita', async () => {
   const seccion = { id: 'personas', titulo: 'personas', repo: 'operaciones', estado: 'cargado', soloLectura: false, motivo: null, problems: [], avisos: [],
     borrador: { people: { projects: { 'Segundo.Correo@acme.example': { add: ['Alfa'] } } } }, extras: { personas: [{ correo: DEV, clave: 'Segundo.Correo@acme.example', sugeridos: ['Beta'], caida: false }] } };
   const pa = await pantallaFalsa([seccion]);
-  assert.ok(pa.textoDe('personas').includes('ve: Alfa'), pa.textoDe('personas'));
+  assert.ok(pa.textoDe('personas').includes('ve los productos: Alfa'), pa.textoDe('personas'));
   await pa.click('Aceptar', 'personas');
   await pa.click('Revisar cambios', 'personas');
   const rev = pa.pedidos.filter((x) => x.ruta === '/api/config/revisar').pop();
@@ -810,7 +818,7 @@ test('T32 Paridad_SinArchivoDeHoy_SinListaOListaIlegible @story-2.29 @ac-25 @ac-
   const lista = { grupos: { web: { repos: [{ ruta: 'a/f', producto: 'A' }] } }, rasgos: [], diferencias_declaradas: [] };
   const casos = [
     [{ 'scripts/ci/product-parity.json': lista }, /no medido: la noche no dejó la paridad/],
-    [{}, /la lista de paridad no está en el repo de operaciones/],
+    [{}, /todavía no hay una lista de qué se compara entre los productos/],
     [{ 'scripts/ci/product-parity.json': { sin_productos: 'copia pública', grupos: {}, rasgos: [], diferencias_declaradas: [] } }, /sin productos/],
     [{ 'scripts/ci/product-parity.json': '{ rota' }, /no se pudo leer|no es JSON/],
   ];
@@ -1282,7 +1290,7 @@ test('7.29-T22 Config_Modelos_SeccionPorLosDosTransportes @story-7.29 @ac-5 — 
   // columna «Por defecto» de su renglón
   const p = await pantallaFalsa([{ id: 'modelos', titulo: 'm', repo: 'perfil', estado: 'cargado', borrador: {}, problems: [], avisos: [], extras: { hoy: MOD.DEFAULTS } }]);
   const porDefecto = Object.fromEntries(p.todo(p.sec('modelos')).filter((n) => String(n.attrs.class || '').split(' ').includes('r'))
-    .map((f) => [f.hijos[0].hijos.map((x) => x.textContent).join(''), f.hijos[1].textContent]));
+    .map((f) => [f.hijos[0].hijos.filter((x) => x.attrs.class !== 'glosa').map((x) => x.textContent).join(''), f.hijos[1].textContent]));
   // la columna habla en niveles: el valor de hoy, con el nombre de su nivel en el idioma de la página
   const enPantalla = (m) => require(path.join(ROOT, 'scripts', 'site', 'texts.js')).t('es', `pantalla.nivel.${MOD.levelOf(m)}`);
   assert.strictEqual(porDefecto['Primera vuelta'], enPantalla(MOD.DEFAULTS.reviewers), JSON.stringify(porDefecto));
@@ -1810,8 +1818,9 @@ test('Perfil_PorTema_ElMinimoYLoQueSumaElCompleto — grupos con su cuenta, una 
   const p = await pantallaFalsa([sec]);
   assert.strictEqual(p.error, null);
   const t = p.textoDe('instalacion');
-  assert.match(t, /El mínimo trae 2 cosas/);
-  assert.match(t, /El completo suma estas 2/, 'el completo no repite lo del mínimo');
+  assert.match(t, /Ver las 2 piezas del mínimo/);
+  assert.match(t, /Ver las 2 piezas que agrega el completo/, 'el completo no repite lo del mínimo');
+  assert.match(t, /El completo tiene 4 piezas; con el mínimo te quedás sin 2 de ellas/, 'cuánto se pierde, a la vista');
   const grupos = p.todo(p.sec('instalacion')).filter((n) => n.tag === 'details' && n.attrs.class === 'grupo').map((d) => d.hijos[0].textContent);
   assert.deepStrictEqual(grupos, ['Frenos de seguridad (1)', 'Registro de tiempo (1)', 'Frenos de seguridad (1)', 'Instalación y actualización (1)'], 'por grupo, con su cuenta');
   assert.ok(p.todo(p.sec('instalacion')).filter((n) => n.tag === 'details' && n.attrs.class === 'grupo').every((d) => !d.attrs.open), 'cerrados');
@@ -1888,9 +1897,10 @@ test('Nombres_PaquetesModelosBuzonParidad_SinClavesDelArchivo — casillas, fila
   assert.deepStrictEqual(cajas.map((c) => [c.attrs['aria-label'], Boolean(c.checked)]), [['ventas', true], ['compras', false]]);
   assert.doesNotMatch(p.textoDe('paquetes'), /packs\.default|all, none/);
   const tm = p.textoDe('modelos');
-  assert.match(tm, /Fallas que pasan en silencio \(acme-silent-failure-hunter\)/, 'el revisor con su nombre llano');
+  assert.match(tm, /Fallas que pasan en silencio/, 'el revisor con su nombre llano');
+  assert.ok(p.todo(p.sec('modelos')).some((n) => n.tag === 'small' && n.attrs.class === 'glosa' && n.textContent === 'acme-silent-failure-hunter'), 'el nombre técnico, chico, debajo');
   // la pantalla dice «historia» en castellano
-  assert.ok(p.todo(p.sec('modelos')).some((n) => n.tag === 'option' && n.textContent === 'Que la historia esté completa antes de empezar (acme-story-validator)'), 'y los demás, para agregar');
+  assert.ok(p.todo(p.sec('modelos')).some((n) => n.tag === 'span' && n.textContent === 'Que la historia esté completa antes de empezar'), 'y los demás, en su renglón');
   assert.ok(!p.todo(p.sec('modelos')).some((n) => n.tag === 'textarea' && n.attrs['data-path'] === 'reviewer'), 'sin JSON para un revisor');
   const serv = p.todo(p.sec('sitio')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'site.mailbox.provider');
   assert.ok(serv && serv.hijos.some((o) => o.textContent === 'Azure Blob Storage'), 'el servicio del buzón, de una lista');
@@ -1926,7 +1936,7 @@ test('Marca_LaOrganizacionEnPersonas_ConVistaPrevia — se edita en Configuraci�
   assert.deepStrictEqual(campos, ['site.brand.name', 'site.brand.logo', 'site.brand.dark']);
   const img = p.todo(p.sec('organizacion')).find((n) => n.tag === 'img');
   assert.deepStrictEqual([img.attrs.src, img.attrs.class], ['/marca/logo', 'logo logo-previa invierte'], 'la vista previa, como se ve en la barra');
-  assert.match(p.textoDe('organizacion'), /El archivo del logo entra con un pedido al repo de operaciones/);
+  assert.match(p.textoDe('organizacion'), /pedile a quien mantiene el sitio que suba la imagen/);
   // el lector de una versión anterior no conoce site.brand: la sección no se edita y lo dice
   const viejo = { ...OPS, SITE_KEYS: OPS.SITE_KEYS.filter((k) => k !== 'brand') };
   const ops = clon({ 'operations.json': opsBase() });
@@ -2065,7 +2075,7 @@ test('T2 Seccion_AutoApply_CambiaSoloSuHoja @story-2.39 @ac-2', () => {
   const codigo = pantallaEnCastellano();
   assert.match(codigo, /\['personas', 'Personas', \['organizacion', 'sitio', 'aplicar',/);
   assert.match(codigo, /aplicar: editorAplicar/);
-  for (const t of ['sin declarar (no)', 'sí: se aplican solos', 'no: queda el pedido para aprobar']) assert.ok(codigo.includes(t), t);
+  for (const t of ['Otra persona lo aprueba (de fábrica)', 'Entra directo: el sitio lo aprueba solo', 'Otra persona lo aprueba: el cambio espera su visto bueno']) assert.ok(codigo.includes(t), t);
 });
 
 /** El repo de operaciones por HTTP, Azure de juguete que deja completar y mueve main, y la pestaña encima. */
@@ -2432,7 +2442,7 @@ test('T23 2.33-Seccion_ProponeComoLasDemas @story-2.33 @ac-18 — «Cómo se act
   const codigo = pantallaEnCastellano();
   assert.match(codigo, /\['personas', 'Personas', \['organizacion', 'sitio', 'aplicar', 'aldia',/);
   assert.match(codigo, /aldia: editorActualizacionSitio/);
-  for (const t of ['sin declarar (sólo aviso)', 'automático: el nocturno instala la versión nueva, la prueba y vuelve atrás si falla', 'sólo aviso: el sitio dice que hay una versión nueva y se instala a mano']) assert.ok(codigo.includes(t), t);
+  for (const t of ['Sólo aviso (de fábrica, recomendado)', 'Automático: cada noche instala la versión nueva y, si algo falla, vuelve a la anterior', 'Sólo aviso: el sitio dice que hay una versión nueva y alguien la instala a mano']) assert.ok(codigo.includes(t), t);
   // la pestaña muestra el valor que hay
   const ops = clon({ 'operations.json': opsBase({ site: { maintainers: [LEAD], update: 'auto' } }) });
   await conPestana({ fuentes: fuentesCon({ ops }) }, async ({ h, entrar }) => {
@@ -3071,21 +3081,38 @@ async function compacta(seccion) {
 test('T1 Modelos_TresTablasUnRenglonPorTrabajo @story-2.59 @ac-1', async () => {
   const p = await compacta(secModelos(MODELOS_2));
   const t = p.tablas();
-  assert.strictEqual(t.length, 3, 'una tabla por grupo');
+  assert.strictEqual(t.length, 4, 'el nivel general, los revisores (un solo grupo), el pase y los ayudantes');
   assert.ok(t.every((x) => p.clases(x).includes('modelos')));
-  const [rev, adv, ayu] = t.map((x) => p.renglones(x));
-  assert.deepStrictEqual([rev.length, adv.length, ayu.length], [4, 2, 4], 'revisores: 2 vueltas + 2 particulares · pase: normal y pesada · ayudantes + 3 sesiones');
-  for (const fila of [...rev, ...adv, ...ayu]) {
+  const [rev, cada, adv, ayu] = t.map((x) => p.renglones(x));
+  assert.deepStrictEqual([rev.length, cada.length, adv.length, ayu.length], [2, 3, 2, 4], 'las 2 vueltas · los 3 revisores instalados · pase: normal y pesada · ayudantes + 3 sesiones');
+  for (const fila of [...rev, ...cada, ...adv, ...ayu]) {
     assert.strictEqual(p.de(fila, 'hoy').length, 1, `${p.texto(fila)}: su valor por defecto`);
     assert.strictEqual(p.todo(fila).filter((n) => n.tag === 'select').length, 1, `${p.texto(fila)}: un selector`);
   }
   // la columna «Por defecto» en niveles
-  assert.match(p.texto(rev[0]), /Primera vuelta \| equilibrado/);
-  assert.match(p.texto(adv[1]), /pesada \| potente/);
+  assert.match(p.texto(rev[0]), /Primera vuelta \| la primera revisión del trabajo terminado \| equilibrado/);
+  assert.match(p.texto(adv[1]), /pesada \| una historia grande o delicada \| potente/);
   assert.match(p.texto(ayu[3]), /pesada \| potente/, 'la sesión pesada: opus (potente) por defecto (7.35)');
-  // los particulares: su ✕; las vueltas, no
-  assert.deepStrictEqual(rev.map((f) => p.de(f, 'quitar-fila').length), [0, 0, 1, 1]);
-  assert.match(p.texto(rev[2]) + p.texto(rev[3]), /silent-failure-hunter/);
+  // cada revisor instalado: lo cambiado por la organización primero y resaltado, con lo que usa hoy y de dónde sale
+  assert.deepStrictEqual(cada.map((f) => p.clases(f).includes('cambiado')), [true, true, false]);
+  assert.match(p.texto(cada[0]), /Fallas que pasan en silencio \| tycon-silent-failure-hunter \| potente \| cambiado por tu organización/);
+  assert.match(p.texto(cada[2]), /Que la historia esté completa antes de empezar \| tycon-story-validator \| equilibrado \| igual que la primera vuelta/);
+  const sinValor = p.todo(cada[2]).find((n) => n.tag === 'select');
+  assert.deepStrictEqual([sinValor.value, sinValor.hijos[0].textContent], ['', 'como la primera vuelta (equilibrado)'], 'sin valor propio: «como la primera vuelta»');
+  // la lista, abierta porque la organización cambió dos; sin cambios, plegada
+  const lista = p.todo(p.sec('modelos')).find((n) => n.tag === 'details' && /lista-revisores/.test(n.attrs.class || ''));
+  assert.strictEqual(lista.attrs.open, 'open', 'con cambios, abierta');
+  const sinCambios = await compacta(secModelos({}));
+  assert.strictEqual(sinCambios.todo(sinCambios.sec('modelos')).find((n) => n.tag === 'details' && /lista-revisores/.test(n.attrs.class || '')).attrs.open, undefined, 'sin cambios, plegada');
+  assert.ok(!p.todo(p.sec('modelos')).some((n) => n.tag === 'select' && n.attrs['aria-label'] === 'Revisor'), 'sin selector para agregar: están todos');
+  // un revisor que trae su propio nivel lo dice así, no «como la primera vuelta»
+  const propio = p.todo(cada[1]).find((n) => n.tag === 'select');
+  assert.match(propio.hijos[0].textContent, /^el suyo, sin cambiar \(/, 'spec-first trae el suyo');
+  // elegir el mismo nivel que ya toma no cambia nada, y el renglón lo dice
+  sinValor.on.change({ target: { value: 'balanced' } });
+  assert.match(p.texto(cada[2]), /no cambia nada: es lo que ya toma; podés quitarlo/);
+  sinValor.on.change({ target: { value: 'strong' } });
+  assert.doesNotMatch(p.texto(cada[2]), /no cambia nada/);
   // el tope, un renglón al pie, fuera de las tablas
   const tope = p.de(p.sec('modelos'), 'tope');
   assert.strictEqual(tope.length, 1);
@@ -3105,21 +3132,21 @@ test('T2 Modelos_TextosDelDueno @story-2.59 @ac-2', async () => {
   assert.match(p.textoDe('modelos'), /«el por defecto»/, 'la ayuda de arriba dice qué hace «el por defecto»');
   // «historia», nunca «story», en castellano (los identificadores de los revisores, entre paréntesis, no son texto)
   const s = await compacta(secSuites(SUITES_5)); const i = await compacta(secInteg(INTEG));
-  for (const [id, x] of [['modelos', p], ['suites', s], ['integraciones', i]]) assert.doesNotMatch(x.textoDe(id).replace(/\(tycon-[a-z0-9-]+\)/g, ''), /\bstor(y|ies)\b/i, id);
+  for (const [id, x] of [['modelos', p], ['suites', s], ['integraciones', i]]) assert.doesNotMatch(x.textoDe(id).replace(/\(?\btycon-[a-z0-9-]+\)?/g, ''), /\bstor(y|ies)\b/i, id);
   assert.match(p.textoDe('modelos'), /Sesión, historia pesada/);
 });
 
 test('T3 Modelos_CambiarYVolverAlPorDefecto @story-2.59 @ac-3', async () => {
   const sel = (p, tabla, fila) => p.todo(p.renglones(p.tablas()[tabla])[fila]).find((n) => n.tag === 'select');
   let p = await compacta(secModelos(MODELOS_2));
-  sel(p, 2, 0).on.change({ target: { value: 'balanced' } });   // los ayudantes
+  sel(p, 3, 0).on.change({ target: { value: 'balanced' } });   // los ayudantes
   assert.deepStrictEqual((await p.revisado()).models, { ...enNiveles(MODELOS_2), helpers: 'balanced' });
   p = await compacta(secModelos(MODELOS_2));
-  sel(p, 1, 1).on.change({ target: { value: '' } });        // la historia pesada vuelve al por defecto: adversarial queda vacío y sale
+  sel(p, 2, 1).on.change({ target: { value: '' } });        // la historia pesada vuelve al por defecto: adversarial queda vacío y sale
   const sinPesada = enNiveles(MODELOS_2); delete sinPesada.adversarial;
   assert.deepStrictEqual((await p.revisado()).models, sinPesada);
   p = await compacta(secModelos(MODELOS_2));
-  p.de(p.renglones(p.tablas()[0])[2], 'quitar-fila')[0].on.click({}); await p.esperar();
+  sel(p, 1, 0).on.change({ target: { value: '' } });        // un revisor vuelve a «igual que su vuelta»: sale su valor propio
   const sinUno = enNiveles(MODELOS_2); delete sinUno.reviewer[Object.keys(MODELOS_2.reviewer)[0]];
   assert.deepStrictEqual((await p.revisado()).models, sinUno, 'sacar un revisor particular');
 });
@@ -3288,7 +3315,7 @@ test('T10 Compacta_TextosEnLosDosIdiomas @story-2.59 @ac-10', () => {
   const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   const claves = ['pantalla.porDefecto2', 'pantalla.tuOrganizacionUsa', 'pantalla.elPorDefecto', 'pantalla.llegaATodasLasMaquinas3', 'pantalla.cadaRepoUsaLaRegla',
     'pantalla.correnEnLaMaquinaDelDev', 'pantalla.elServidorSiLaRama', 'pantalla.sinPipeline', 'pantalla.pasaElTopeObligatorio', 'pantalla.editarElRepo',
-    'pantalla.quitarElRepo', 'pantalla.listo', 'pantalla.pruebasCompletas', 'pantalla.unRevisorEnParticular2'];
+    'pantalla.quitarElRepo', 'pantalla.listo', 'pantalla.pruebasCompletas', 'pantalla.usaHoy'];
   for (const k of claves) {
     assert.notStrictEqual(t('es', k), k, `${k} en castellano`);
     assert.notStrictEqual(t('en', k), k, `${k} en inglés`);
@@ -3459,7 +3486,7 @@ test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el
     assert.doesNotMatch(js, /campo\(T\('pantalla\.quienReenviaElOk'\)/, 'no pide el nombre de una sesión');
   }
   const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
-  assert.match(textos.t('es', 'pantalla.quienReenviaElOkAyuda'), /se designa en cada máquina/);
+  assert.match(textos.t('es', 'pantalla.quienReenviaElOkAyuda'), /escribe en el chat de esa sesión/);
   for (const k of ['pantalla.quienReenviaElOk', 'pantalla.quienReenviaElOkNo', 'pantalla.quienReenviaElOkSi', 'pantalla.quienReenviaElOkAyuda', 'org.capaSinApprovals']) {
     assert.ok(textos.t('es', k, { req: 'x', version: 'y' }) !== textos.t('en', k, { req: 'x', version: 'y' }), `${k} en las dos lenguas`);
   }
@@ -3476,7 +3503,7 @@ test('Seccion_ReenvioDelOk_ElNombreDelRol — con «Sí», el nombre del rol se 
   // con «No» no se pide el nombre, y la ayuda sale sin la errata
   const no = await abrir({});
   assert.ok(!no.todos().some((n) => n.tag === 'input'), 'sin «Sí», no hay campo');
-  assert.match(no.texto(), /La sesión se designa en cada máquina: el dev escribe en el chat de esa sesión «Esta sesión es la coordinadora»/);
+  assert.match(no.texto(), /el programador escribe en el chat de esa sesión «Esta sesión es la coordinadora»/);
   assert.doesNotMatch(no.texto(), /Cuál sesión es se designa/);
   // elegir «Sí» trae el campo con «coordinadora», el nombre de fábrica
   no.todos().find((n) => n.tag === 'select' && n.attrs['data-path'] === 'approvals.relay_session').on.change({ target: { value: 'si' } }); await no.esperar();
@@ -3489,7 +3516,7 @@ test('Seccion_ReenvioDelOk_ElNombreDelRol — con «Sí», el nombre del rol se 
   assert.ok(campoNombre, 'con «Sí», el campo del nombre');
   assert.strictEqual(campoNombre.attrs.value, 'líder');
   assert.match(si.texto(), /«Esta sesión es la líder»/);
-  assert.match(si.texto(), /Si cambiás el nombre, la designación anterior deja de valer/);
+  assert.match(si.texto(), /Si cambiás el nombre, hay que volver a escribirlo con el nombre nuevo/);
   // escribir otro nombre lo guarda y la ayuda cambia en el lugar; vacío vuelve a «coordinadora»
   campoNombre.on.input({ target: { value: '  jefa  ' } }); await si.esperar();
   assert.match(si.texto(), /«Esta sesión es la jefa»/);
@@ -3513,12 +3540,12 @@ test('7.46 Config_PruebaAMano_SeccionYPedido @story-7.46 @ac-7 @ac-15 — la sec
   // la pantalla, en las dos lenguas: el título, el selector con sus dos opciones y la ayuda
   const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   const esperado = {
-    es: ['Prueba a mano de cada criterio', 'Una persona marca cada criterio como probado a mano', 'No: alcanza con lo que probó el arnés (de fábrica)', 'Sí: no se cierra sin la marca de una persona'],
-    en: ['Hand-testing each criterion', 'A person marks each criterion as tested by hand', 'No: what the harness tested is enough (default)', "Yes: it does not close without a person's mark"],
+    es: ['Prueba a mano de cada punto', '¿Una persona confirma a mano cada punto?', 'No (de fábrica, recomendado)', 'Sí: no se cierra sin su marca'],
+    en: ['Hand-testing each point', 'Does a person confirm each point by hand?', 'No (default, recommended)', 'Yes: it does not close without their mark'],
   };
   for (const idioma of ['es', 'en']) {
     for (const k of ['pantalla.pruebaAManoTitulo', 'pantalla.pruebaAMano', 'pantalla.pruebaAManoNo', 'pantalla.pruebaAManoSi']) assert.ok(esperado[idioma].includes(textos.t(idioma, k)), `${idioma} ${k}: ${textos.t(idioma, k)}`);
-    assert.match(textos.t(idioma, 'pantalla.pruebaAManoAyuda'), idioma === 'es' ? /el agente no puede\s+ponerla/ : /the agent cannot set it/);
+    assert.match(textos.t(idioma, 'pantalla.pruebaAManoAyuda'), idioma === 'es' ? /nunca el agente/ : /never the agent/);
     assert.match(ORG.pantalla(idioma), /pruebaAMano: editorPruebaAMano/);
   }
   const p = await pantallaFalsa([seccionPerfil('pruebaAMano', {})]);
@@ -3526,7 +3553,7 @@ test('7.46 Config_PruebaAMano_SeccionYPedido @story-7.46 @ac-7 @ac-15 — la sec
   const sel = p.todo(p.sec('pruebaAMano')).find((n) => n.tag === 'select');
   assert.ok(sel, 'hay un selector');
   assert.deepStrictEqual(p.todo(sel).filter((n) => n.tag === 'option').map((n) => n.attrs.value), ['', 'required']);
-  assert.match(p.textoDe('pruebaAMano'), /el agente no puede/);
+  assert.match(p.textoDe('pruebaAMano'), /nunca el agente/);
   // con qa en el perfil, la capa tiene que pedir la versión que la lee
   const CON = { ...PERFIL_TYCON, qa: { manual_check: 'required' } };
   const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.APPROVALS_SINCE)), versionImagen: '2026.10.15.48', doc: CON });
@@ -3731,7 +3758,7 @@ test('T16d Tabla_UnaFilaPorCampo_DesplegablesConElGuardado @story-4.9 @ac-10 —
   const fijo = t.en('work_items.fixed_fields.Custom.Categoria');
   assert.strictEqual(fijo.tag, 'select', 'un campo fijo con valores también se elige');
   assert.deepStrictEqual(t.opcionesDe(fijo).filter((o) => o[2]).map((o) => o[0]), ['Seguridad']);
-  assert.match(texto, /Categoría \| · igual para todas/, 'el campo fijo con su nombre para personas');
+  assert.match(texto, /Categoría \| · igual en todas las gravedades/, 'el campo fijo con su nombre para personas');
   // «+ campo»: los campos del tipo que todavía no están en la tabla
   const nuevo = t.en('work_items.campos.nuevo');
   assert.deepStrictEqual(t.opcionesDe(nuevo).map((o) => o[0]), ['', 'Custom.Categoria', 'Custom.Probabilidad']);
@@ -3785,7 +3812,7 @@ test('T16g Tabla_CampoSinValores_CampoDeTexto @story-4.9 @ac-10 — un campo sin
   const enviado = await t.revisado();
   assert.strictEqual(enviado.by_severity.critical['Custom.Disparador'], 'un paquete');
   assert.strictEqual(enviado.by_severity.low['Custom.Disparador'], 'una dependencia');
-  assert.match(t.textoDe('pedidos'), /Un campo sin valores fijos se escribe/);
+  assert.match(t.textoDe('pedidos'), /Un dato sin valores fijos se escribe/);
 });
 
 test('T16h Tabla_SinLista_TextoAvisoYGuardadoIntacto @story-4.9 @ac-10 — sin las listas, campos de texto, el aviso con el motivo y lo guardado sin cambios', async () => {
@@ -4319,4 +4346,77 @@ test('T54 Config_NotifyChannels_RaisesRequires @story-7.40 @ac-18', { skip: SIN_
       assert.strictEqual(JSON.parse(r.archivoEn(ref, 'team-layer.json')).requires.harness, `>= ${ORG.NOTIFY_SINCE}`, 'y el mismo pedido sube la versión que pide el perfil');
     });
   } finally { await cerrarTodos(ado, r); }
+});
+
+// ── la tanda de pantalla: el canal con campos, la lista de revisores y los mensajes que dicen «es lo normal» ──────────
+const secOps = (id, borrador, extras) => ({ id, titulo: id, repo: 'operaciones', archivo: 'operations.json', estado: 'cargado', soloLectura: false, motivo: null, borrador, problems: [], avisos: [], extras });
+
+test('Canal_SelectorYCorreo_SinEditorDeTexto — elegir el canal, el correo con sus dos campos, cambiar de canal y «ninguno»', async () => {
+  const p = await compacta(secOps('canal', { notify: { channel: 'telegram' } }));
+  const sel = () => p.todo(p.sec('canal')).filter((n) => n.tag === 'select' && n.attrs['data-path'] === 'notify.channel').pop();
+  assert.strictEqual(sel().value, 'telegram', 'el canal guardado, elegido');
+  assert.deepStrictEqual(sel().hijos.map((o) => o.attrs.value), ['', 'telegram', 'slack', 'teams', 'mail']);
+  assert.ok(!p.todo(p.sec('canal')).some((n) => n.attrs['data-path'] === 'notify.mail_to'), 'sin correo, sin sus campos');
+  assert.match(p.textoDe('canal'), /no van acá: son secretos/, 'dice que el destino no se pide acá');
+  // el correo: aparecen remitente y destinatarios, y se guardan
+  sel().on.change({ target: { value: 'mail' } }); await p.esperar();
+  const campo = (k) => p.todo(p.sec('canal')).filter((n) => n.tag === 'input' && n.attrs['data-path'] === k).pop();
+  campo('notify.mail_from').on.input({ target: { value: ' avisos@acme.example ' } });
+  campo('notify.mail_to').on.input({ target: { value: 'ana@acme.example, beto@acme.example' } });
+  assert.deepStrictEqual((await p.revisado()).notify, { channel: 'mail', mail_from: 'avisos@acme.example', mail_to: 'ana@acme.example, beto@acme.example' });
+  // otro canal descarta los campos del correo; «ninguno» saca la clave entera
+  sel().on.change({ target: { value: 'slack' } }); await p.esperar();
+  assert.deepStrictEqual((await p.revisado()).notify, { channel: 'slack' });
+  sel().on.change({ target: { value: '' } }); await p.esperar();
+  assert.ok(!('notify' in (await p.revisado())), '«ninguno»: sin notify');
+  assert.match(p.textoDe('canal'), /no llega a ningún lado/);
+  // el texto con formato sigue, plegado, para lo que el formulario no dibuja
+  assert.ok(p.todo(p.sec('canal')).some((n) => n.tag === 'details' && n.hijos[0].textContent === 'Editar como texto'));
+});
+
+test('Revisores_Lista_BuscadorSueltosYVueltaDeLaOrganizacion — buscar, los declarados que no vienen y la primera vuelta elegida', async () => {
+  const ids = ['tycon-silent-failure-hunter', 'tycon-spec-first-checker', 'tycon-story-validator', 'tycon-ac-coverage-checker', 'tycon-deferral-tracker', 'tycon-dod-runtime-checker', 'tycon-e2e-realness-checker', 'tycon-plugin-security-basics', 'tycon-plugin-tests-coverage'];
+  const sec = { ...secModelos({ reviewers: 'strong', reviewer: { 'acme-ya-no-esta': 'economy' } }), extras: { hoy: MOD_DEFAULTS, revisores: ids } };
+  const p = await compacta(sec);
+  // más de 8: buscador; lo que no coincide se esconde
+  const buscar = p.todo(p.sec('modelos')).find((n) => n.tag === 'input' && n.attrs.type === 'search');
+  assert.ok(buscar, 'con más de 8 revisores, el buscador');
+  buscar.on.input({ target: { value: 'SILENCIO' } });
+  const filas = p.tablas().slice(1, -2).flatMap((t) => p.renglones(t));
+  assert.deepStrictEqual(filas.filter((f) => !f.hidden).map((f) => f.hijos[0].hijos[0].textContent), ['Fallas que pasan en silencio']);
+  buscar.on.input({ target: { value: '' } });
+  assert.ok(filas.every((f) => !f.hidden), 'sin texto, todos');
+  // el declarado que esta versión no trae: en su grupo, para poder sacarlo
+  assert.match(p.textoDe('modelos'), /Cambiados por tu organización que esta versión no trae/);
+  assert.ok(filas.some((f) => f.hijos[0].hijos[0].textContent === 'acme-ya-no-esta'));
+  // la organización eligió la primera vuelta: los demás la siguen, y así lo dicen
+  const sv = filas.find((f) => f.hijos[0].hijos[0].textContent === 'Que la historia esté completa antes de empezar');
+  assert.match(p.texto(sv), /potente \| igual que la primera vuelta, que eligió tu organización/);
+  assert.strictEqual(p.todo(sv).find((n) => n.tag === 'select').hijos[0].textContent, 'como la primera vuelta (potente)');
+  // con un cambio, la lista viene abierta
+  assert.strictEqual(p.todo(p.sec('modelos')).find((n) => n.tag === 'details' && /lista-revisores/.test(n.attrs.class || '')).attrs.open, 'open');
+});
+
+test('Revisores_PaqueteOArchivoIlegible_SeDice — un paquete sin lista legible y un revisor sin archivo legible no se hacen pasar por datos', async () => {
+  const sec = { ...secModelos({}), extras: { hoy: MOD_DEFAULTS, revisores: [], porPaquete: [{ paquete: null, revisores: [{ id: 'tycon-story-validator', fabrica: null, ilegible: true }] }, { paquete: 'roto', ilegible: true, revisores: [] }] } };
+  const p = await compacta(sec);
+  const t = p.textoDe('modelos');
+  assert.match(t, /no pude leer su archivo: muestro la primera vuelta/);
+  assert.match(t, /Del paquete «roto» \| No pude leer la lista de revisores de este paquete/);
+});
+
+test('Pantalla_LoNormalSeDice — umbrales vacíos, paquetes sin instalar, fichas con nombre llano y pedidos que se deslizan', async () => {
+  const p = await pantallaFalsa([
+    { ...secOps('umbrales', {}), lector: 'thresholds' },
+    { ...secOps('paquetes', { packs: { default: 'all' } }, { instalados: [], activos: [] }), repo: 'perfil' },
+    secOps('fichas', {}, { fichas: [{ id: 'mutacion', pestana: 'arnes', titulo: 'Puntaje de mutación: proporción de mutantes que las pruebas matan', paraQue: 'x' }] }),
+  ]);
+  assert.strictEqual(p.error, null);
+  assert.match(p.textoDe('umbrales'), /Todavía no hay números con límites propios: el tablero usa los de fábrica\. Es lo normal\./);
+  assert.ok(!p.todo(p.sec('umbrales')).some((n) => /\bthr h\b/.test(n.attrs.class || '')), 'sin encabezados sueltos');
+  assert.match(p.textoDe('paquetes'), /elijas lo que elijas, hoy no se activa ninguno/);
+  assert.ok(p.todo(p.sec('paquetes')).some((n) => n.tag === 'option' && n.textContent === 'todos los instalados (hoy no hay ninguno)'));
+  assert.match(p.textoDe('fichas'), /Qué tan bien detectan las pruebas un error puesto a propósito \|\s+— en el tablero: «Puntaje de mutación/);
+  assert.match(ORG.pantalla(), /pantalla\.pedidosDeslizar/, 'el aviso de deslizar, en la tabla de pedidos');
+  assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8'), /@media \(max-width:640px\)\{\.solo-celular\{display:block/, 'y sólo se ve en el celular');
 });

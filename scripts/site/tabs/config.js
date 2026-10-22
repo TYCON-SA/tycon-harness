@@ -184,6 +184,44 @@ function revisoresDelArbol(perfilDir) {
   return [...ids].sort();
 }
 
+/**
+ * Los mismos revisores, agrupados: los del arnés (`paquete: null`) y los de cada paquete, en el orden de su pack.json.
+ * Cada uno con su modelo de fábrica, el `model:` de su archivo (como lo lee models.js), para que la pantalla diga qué
+ * nivel toma sin que la organización lo elija.
+ */
+function revisoresPorPaquete(perfilDir) {
+  const raices = [TREE, perfilDir].filter(Boolean);
+  // { fabrica, ilegible }: sin archivo en una raíz se busca en la otra; un archivo que está y no se puede leer se dice
+  const deFabrica = (id) => {
+    let ilegible = false;
+    for (const raiz of raices) {
+      try {
+        const fm = (fs.readFileSync(path.join(raiz, 'agents', `${id}.md`), 'utf8').match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
+        const m = (fm.match(/^model:\s*["']?([\w.-]+)/m) || [])[1];
+        if (['haiku', 'sonnet', 'opus', 'fable'].includes(m)) return { fabrica: m };
+      } catch (e) { if (!e || e.code !== 'ENOENT') ilegible = true; }
+    }
+    return ilegible ? { fabrica: null, ilegible: true } : { fabrica: null };
+  };
+  const revisor = (id) => ({ id, ...deFabrica(id) });
+  const grupos = []; const vistos = new Set();
+  for (const p of paquetesLegibles(perfilDir)) {
+    // un paquete que no se puede leer va igual, vacío y marcado: la pantalla dice que no pudo leer su lista
+    let doc = null; try { doc = JSON.parse(fs.readFileSync(p.file, 'utf8')); } catch { grupos.push({ paquete: p.name, ilegible: true, revisores: [] }); continue; }
+    const ids = (Array.isArray(doc && doc.reviewers) ? doc.reviewers : []).map((r) => r && r.agent).filter((id) => typeof id === 'string' && /^[a-z0-9-]+$/.test(id) && !vistos.has(id));
+    ids.forEach((id) => vistos.add(id));
+    if (ids.length) grupos.push({ paquete: p.name, revisores: ids.map(revisor) });
+  }
+  // los del arnés y, aparte, los que trae sólo el perfil del equipo (los propios de la organización)
+  const delArbol = new Set(revisoresDelArbol(null));
+  const todos = revisoresDelArbol(perfilDir).filter((id) => !vistos.has(id));
+  const propios = todos.filter((id) => !delArbol.has(id));
+  if (propios.length) grupos.unshift({ paquete: null, propios: true, revisores: propios.map(revisor) });
+  const nucleo = todos.filter((id) => delArbol.has(id));
+  if (nucleo.length) grupos.unshift({ paquete: null, revisores: nucleo.map(revisor) });
+  return grupos;
+}
+
 /** Qué trae cada perfil de instalación, leído de install-effects.json del árbol (`profiles` de cada entrada). */
 function perfilesDeInstalacion() {
   try {
@@ -388,7 +426,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (s.id === 'sitio') v.campos = { url: Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('url') };
     // la marca es una parte de site que un lector anterior no conoce: la sección dice «todavía no sabe leer»
     if (s.id === 'organizacion' && !(Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('brand'))) return { ...base, estado: 'no_reader', motivo: M('config.noLeeMarca') };
-    if (s.id === 'modelos') { const hoy = ORG.modelosDeHoy(TREE); v.extras = { hoy, motivoHoy: hoy ? null : ORG.motivoDeHoy(TREE), revisores: revisoresDelArbol(cl.perfil && cl.perfil.dir) }; const eq = ORG.equivalenciasDe(TREE); v.extras.equivalencias = eq.equivalencias; v.extras.motivoEquivalencias = eq.motivo; }
+    if (s.id === 'modelos') { const hoy = ORG.modelosDeHoy(TREE); v.extras = { hoy, motivoHoy: hoy ? null : ORG.motivoDeHoy(TREE), revisores: revisoresDelArbol(cl.perfil && cl.perfil.dir), porPaquete: revisoresPorPaquete(cl.perfil && cl.perfil.dir) }; const eq = ORG.equivalenciasDe(TREE); v.extras.equivalencias = eq.equivalencias; v.extras.motivoEquivalencias = eq.motivo; }
     // lo guardado con nombres de Claude se carga en niveles; el original también, así abrir no es un cambio y
     // el próximo «Proponer» de la sección lo escribe con niveles
     if (s.id === 'modelos' && v.borrador.models !== undefined) v.borrador.models = ORG.modelosEnNiveles(v.borrador.models, lec);
