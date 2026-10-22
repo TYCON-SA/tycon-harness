@@ -429,7 +429,7 @@ test('Examen_SadvCuatroMustFlagYUnLimpio @story-8.84 @ac-7 @ac-8 @ac-18 — el b
   assert.equal(examen.passed, 5);
   assert.equal(examen.total, 5);
   // el examen es del revisor de hoy: un cambio al .md sin volver a examinarlo deja esto en rojo
-  assert.equal(examen.hash, blob(path.join(RAIZ, 'agents', `${AGENTE}.md`)), 'el examen es de otra versión del revisor: correr reviewer-change-check.js run');
+  assert.ok(examenVale(examen.hash, path.join(RAIZ, 'agents', `${AGENTE}.md`)), 'el examen es de otra versión del revisor: correr reviewer-change-check.js run');
 });
 
 /** El hash de git de un archivo (el que guarda el examen). */
@@ -437,11 +437,23 @@ function blob(f) {
   return spawnSync('git', ['hash-object', f], { encoding: 'utf8' }).stdout.trim();
 }
 
+/**
+ * El examen vale para el revisor de hoy: es de esta misma versión, o de una que sólo difiere en la línea `description:`
+ * (la misma regla con que el control de cambios de revisores excusa ese cambio: el examen no lee la descripción).
+ */
+function examenVale(hash, archivo) {
+  if (hash === blob(archivo)) return true;
+  const antes = spawnSync('git', ['cat-file', '-p', hash], { cwd: RAIZ, encoding: 'utf8' });
+  if (antes.status !== 0) return false;
+  const { onlyDescriptionChanged } = require(path.join(RAIZ, 'scripts', 'controls-bench', 'reviewer-change-check.js'));
+  return onlyDescriptionChanged(antes.stdout, fs.readFileSync(archivo, 'utf8'));
+}
+
 test('NoRegresion_ValidadorYCincoB @story-8.84 @ac-19 — el examen del validador sigue en 13 de 13', () => {
   const examen = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'controls-bench', 'reviewer-exams', 'tycon-story-validator.json'), 'utf8'));
   assert.equal(examen.passed, 13);
   assert.equal(examen.total, 13);
-  assert.equal(examen.hash, blob(path.join(RAIZ, 'agents', 'tycon-story-validator.md')), 'el validador cambió sin volver a examinarlo');
+  assert.ok(examenVale(examen.hash, path.join(RAIZ, 'agents', 'tycon-story-validator.md')), 'el validador cambió sin volver a examinarlo');
   const md = fs.readFileSync(path.join(RAIZ, 'agents', 'tycon-story-validator.md'), 'utf8');
   assert.doesNotMatch(md, /SADV/);
 });
