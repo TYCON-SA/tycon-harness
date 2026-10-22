@@ -58,12 +58,13 @@ const blockSource = (name) => {
 };
 
 /**
- * El bloque que le dice a Codex dónde está el arnés. Claude Code carga el índice (`INDEX.md`) con un `@import` en su
- * CLAUDE.md, en cualquier perfil; Codex no resuelve `@import`, y los bloques de reglas exigen el perfil full: sin este
- * bloque, una máquina sólo con Codex en el perfil minimal arranca con un AGENTS.md sin nada del arnés. Va corto (el
- * índice entero pasaría el tope de lo que Codex lee de AGENTS.md): dónde está el índice, que se lee antes de cada tarea,
- * y dónde están las skills. Sin INDEX.md en el árbol el bloque queda apagado: no se escribe, se saca si estaba (no
- * apunta a algo que no existe) y se avisa.
+ * El bloque que le da a Codex el índice del arnés. Claude Code carga el índice (`INDEX.md`) con un `@import` en su
+ * CLAUDE.md, en cualquier perfil; Codex no expande las líneas `@` del AGENTS.md, y los bloques de reglas exigen el perfil
+ * full: sin este bloque, una máquina sólo con Codex arranca sin saber qué guía leer. Por eso el índice va ENTERO
+ * adentro, debajo de dónde está el arnés y dónde están las skills: con sólo su ruta, el modelo tenía que ir a leerlo, y
+ * no lo hacía. El tope de 32 KiB de Codex vale para los AGENTS.md del proyecto, no para el de su carpeta: un AGENTS.md
+ * global de más de 40 KB se lee completo. Una línea del índice que empiece con `@` no se copia (nunca un `@import`). Sin
+ * INDEX.md en el árbol el bloque queda apagado: no se escribe, se saca si estaba y se avisa.
  */
 function harnessIndexBlock(tree, home, env = process.env) {
   const index = path.join(tree, 'INDEX.md');
@@ -73,13 +74,18 @@ function harnessIndexBlock(tree, home, env = process.env) {
   const corto = (p) => (home && (p === home || p.startsWith(home + path.sep)) ? `~${p.slice(home.length)}` : p).split(path.sep).join('/');
   // las skills van a la carpeta de Codex (CODEX_HOME, o ~/.codex), como las despliega deploy-shared-skills.js
   const skills = corto(path.join(env.CODEX_HOME || path.join(home, '.codex'), 'skills'));
-  const body = [
+  let body = [
     '# El arnés',
     '',
     `El arnés de desarrollo está instalado en \`${corto(tree)}\`. Antes de cada tarea leé su índice, \`${corto(index)}\`: dice`,
     `qué guía leer según la tarea, y sus rutas son relativas a esa carpeta. Sus skills están en \`${skills}/\`; para`,
     `implementar una story, la del pipeline: \`${skills}/tycon-pipeline/SKILL.md\`.`,
   ].join('\n');
+  let indice;
+  try { indice = fs.readFileSync(index, 'utf8'); } catch (e) { return Object.assign(block, { off: `no se pudo leer ${index}: ${e.message}` }); }
+  if (indice.charCodeAt(0) === 0xfeff) indice = indice.slice(1);
+  indice = trimNewlines(indice.replace(/\r\n/g, '\n').split('\n').filter((l) => !l.startsWith('@')).join('\n'));
+  if (indice) body += `\n\nEl índice, tal como está en esa carpeta:\n\n${indice}`;
   return Object.assign(block, { body });
 }
 

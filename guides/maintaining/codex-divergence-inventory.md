@@ -346,3 +346,16 @@ del plazo decide igual que del lado Claude, contando los registros de verdad del
 **Lo que Codex NO cubre, dicho y no prometido**: el aviso por un pedido de permiso, y el cierre inmediato de la espera
 cuando la persona contesta. Sin `UserPromptSubmit` registrado, la vuelta la detecta el proceso del plazo por el hilo:
 cierra con `answered` o `kept-working` y no avisa. Caso: T19 de `scripts/tests/wait-notice.test.js`.
+
+## El índice de guías en el AGENTS.md — ① resuelto (2026-10-22)
+
+**Claude Code**: el `CLAUDE.md` global carga el índice de guías (`INDEX.md`) con una línea `@`, que Claude Code expande
+al arrancar.
+
+**Codex**: no expande las líneas `@` del AGENTS.md: las lee como texto. Medido sobre 319 sesiones de Codex de una
+semana, el índice nunca llegó a su contexto. Por eso el arnés escribe el índice **entero** adentro del bloque
+`harness-index` de `~/.codex/AGENTS.md` (`scripts/setup/agents-md-blocks.js`), debajo de dónde está el arnés y dónde
+están las skills, y nunca copia una línea que empiece con `@`. El tope de 32 KiB de Codex vale para los AGENTS.md del
+proyecto, no para el de su carpeta: un AGENTS.md global de 41.717 bytes se leyó completo (Codex 0.162.1, con una
+palabra clave al final). Casos: `IndiceEntero_VaAdentroDelBloque` y `IndiceConArroba_NoEscribeImport` de
+`scripts/tests/agents-md-blocks.test.js`.
