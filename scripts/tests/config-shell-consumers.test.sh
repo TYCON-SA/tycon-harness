@@ -4,7 +4,7 @@
 #
 # Qué defiende, MIDIENDO y no leyendo: `scripts/ci/validate-pipeline-in-ado.sh` resuelve las dos
 # variables de la organización en el MISMO orden que el lector (con las dos definidas y distintas consulta
-# la organización que muestra `tycon-config.js explain`), y `scripts/hooks/instinct-observe.js`
+# la organización que muestra `tycon-config.js explain`), y `integrations/instincts/scripts/instinct-observe.js`
 # expande una `~` literal en TYCON_REPOS_ROOT (si no, atribuye la observación al último nombre de
 # carpeta del cwd en vez de al repo). Un consumidor que lee la misma variable que el lector tiene que llegar
 # al MISMO valor: si no, «una sola cadena, siempre la misma» es mentira en ese consumidor.
@@ -16,7 +16,7 @@
 set -u
 TCG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VALIDAR="$TCG/scripts/ci/validate-pipeline-in-ado.sh"
-OBSERVE="$TCG/scripts/hooks/instinct-observe.js"
+OBSERVE="$TCG/integrations/instincts/scripts/instinct-observe.js"
 BASE="$(mktemp -d "${TMPDIR:-/tmp}/config-consumidores.XXXXXX")"
 trap 'rm -rf "$BASE"' EXIT
 FALLAS=0

@@ -19,7 +19,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
-const HOOK = path.join(ROOT, 'scripts', 'hooks', 'instinct-observe.js');
+const HOOK = path.join(ROOT, 'integrations', 'instincts', 'scripts', 'instinct-observe.js');
 const LIMIT_MS = 150;
 
 function arg(name, fallback) {

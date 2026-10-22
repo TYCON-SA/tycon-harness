@@ -570,7 +570,8 @@ test('T21 LegacyNames_ShimMarkerExempt', () => {
     const p = require(${JSON.stringify(path.join(RAIZ, 'scripts', 'lib', 'harness-parity.js'))});
     const pol = require(${JSON.stringify(path.join(RAIZ, 'build', 'deploy-codex-hooks.js'))});
     const ctx = p.buildCtx();
-    const esperado = pol.substitute(JSON.parse(require('fs').readFileSync(pol.FRAGMENT, 'utf8')).hooks, pol.TCG, pol.SKILLS);
+    // lo que el desplegador registra en esta casa: el fragmento más los hooks de las integraciones que van
+    const esperado = pol.substitute(pol.activeFragment(JSON.parse(require('fs').readFileSync(pol.FRAGMENT, 'utf8'))).fragment.hooks, pol.TCG, pol.SKILLS);
     const first = Object.values(esperado)[0][0].hooks[0];
     const m = /"(\\/[^"]+)"/.exec(first.command) || /(\\/[^\\s"']+)/.exec(first.command);
     require('fs').writeFileSync(${JSON.stringify(path.join(lab, 'parity-shim.js'))}, '#!/usr/bin/env node\\n// tycon-legacy-shim: ' + m[1] + '\\n');

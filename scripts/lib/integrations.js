@@ -28,8 +28,8 @@ const ENV_RE = /^TYCON_[A-Z0-9_]+$/;
 // `canales`: una lista de canales de aviso (los del canal único de los avisos); `puerto`: un entero de 1 a 65535
 const PROFILE_TYPES = Object.freeze(['texto', 'url', 'canales', 'puerto']);
 const KIND_RE = /^[a-z][A-Za-z0-9]*$/;
-// los tipos que el núcleo busca por nombre
-const KINDS = Object.freeze(['timeTracking', 'notify']);
+// los tipos que el núcleo busca por nombre; `toggle` es el de prender y apagar: está o no está, según su llave
+const KINDS = Object.freeze(['timeTracking', 'notify', 'toggle']);
 const TOOLS = Object.freeze(['claude', 'codex']);
 const DISPATCH_ON = Object.freeze(['post-edit']);
 // Un hook de una integración, en la lista del instalador: `@int:<integración>/<ruta dentro de su carpeta>`.
@@ -52,6 +52,18 @@ const EVENTS = Object.freeze(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', '
 const STEP_RE = /^(all|\d+[a-z]?)$/;
 const EFFECTS = Object.freeze(['blocks', 'warns', 'records']);
 
+/**
+ * El motivo por el que `name` no puede ser una integración de prender y apagar (null si puede): tiene que ser una llave
+ * del lector de configuración. El lector se carga recién acá porque él también carga esta biblioteca.
+ */
+function toggleKeyProblem(name) {
+  let cfg;
+  try { cfg = require('./tycon-config.js'); } catch (e) { return `no pude cargar el lector de configuración para saber si «${name}» es una llave (${e.code || e.message})`; }
+  if (typeof cfg.esIntegracion !== 'function') return `el lector de configuración no dice cuáles son sus llaves: no sé si «${name}» es una`;
+  return cfg.esIntegracion(name) ? null
+    : `«${name}» no es una llave del lector de configuración (integrations.<llave>): una integración de prender y apagar se prende con la suya`;
+}
+
 /** Los motivos por los que un manifiesto no vale (vacío si vale). */
 function problemsOf(m, folder) {
   const out = [];
@@ -64,8 +76,15 @@ function problemsOf(m, folder) {
   else for (const k of KINDS) if (m.kind !== k && m.kind.toLowerCase() === k.toLowerCase()) out.push(`«kind» se escribe ${k}`);
   if (m.onWork !== undefined && !(inside(m.onWork) && /\.js$/.test(m.onWork))) out.push('«onWork» es un .js dentro de la carpeta');
   for (const k of ['hooks', 'dispatch', 'skills', 'settings']) if (m[k] !== undefined && !Array.isArray(m[k])) out.push(`«${k}» es una lista`);
+  // el aplicador rechaza dos registros con el mismo evento, matcher (sin importar el orden de sus partes) y guion
+  const seen = new Set();
   for (const h of Array.isArray(m.hooks) ? m.hooks : []) {
     const who = h && typeof h.script === 'string' ? h.script : 'un hook';
+    if (h && typeof h === 'object') {
+      const key = `${h.event}\0${String(h.matcher || '').split('|').map((x) => x.trim()).filter(Boolean).sort().join('|')}\0${h.script}`;
+      if (seen.has(key)) out.push(`${who}: está dos veces para ${h.event}${h.matcher ? ` (${h.matcher})` : ''}`);
+      seen.add(key);
+    }
     if (!h || typeof h !== 'object' || !inside(h.script) || !/\.(js|sh|py)$/.test(h.script)) { out.push(`${who}: «script» es un .js, .sh o .py dentro de la carpeta (letras, números, «.», «-», «_» y «/»)`); continue; }
     if (!EVENTS.includes(h.event)) out.push(`${who}: «event» fuera del vocabulario (${EVENTS.join(', ')})`);
     if (h.matcher !== undefined && typeof h.matcher !== 'string') out.push(`${who}: «matcher» es un texto`);
@@ -75,6 +94,18 @@ function problemsOf(m, folder) {
     if (h.steps !== undefined && !(Array.isArray(h.steps) && h.steps.length && h.steps.every((s) => typeof s === 'string' && STEP_RE.test(s)))) out.push(`${who}: «steps» es una lista de pasos del pipeline o ["all"]`);
     if (h.effect !== undefined && !EFFECTS.includes(h.effect)) out.push(`${who}: «effect» es ${EFFECTS.join(', ')}`);
     if (h.tools !== undefined && !(Array.isArray(h.tools) && h.tools.length && h.tools.every((t) => TOOLS.includes(t)))) out.push(`${who}: «tools» es una lista de ${TOOLS.join(', ')}`);
+    // `always`: el hook corre también con la integración apagada (para decir algo de ese estado)
+    if (h.always !== undefined) {
+      if (h.always !== true) out.push(`${who}: «always» sólo puede ser true`);
+      else if (m.kind !== 'toggle') out.push(`${who}: «always» va sólo en una integración de prender y apagar (kind toggle)`);
+    }
+  }
+  if (m.kind === 'toggle') {
+    // la llave que la prende es la del lector de configuración (`integrations.<nombre>`, con su variable): una integración
+    // nueva de este tipo suma su llave al vocabulario del lector
+    const key = toggleKeyProblem(m.name);
+    if (key) out.push(key);
+    if ((Array.isArray(m.settings) ? m.settings : []).some((s) => isObject(s) && s.from === 'profile')) out.push(`una integración de prender y apagar no lleva ajustes del perfil: integrations.${m.name} es su llave`);
   }
   for (const d of Array.isArray(m.dispatch) ? m.dispatch : []) {
     if (!d || typeof d !== 'object' || !inside(d.script) || !/\.js$/.test(d.script)) { out.push('una entrada del despachador: «script» es un .js dentro de la carpeta'); continue; }
@@ -260,13 +291,15 @@ function intSpecPath(spec, dir) { const p = parseIntSpec(spec); return p ? path.
 
 /**
  * Los hooks de una integración como registros de la lista del instalador: `spec` = `@int:<integración>/<script>` y
- * `when` = `time:<integración>` para una de horas (el instalador los prende sólo si es la elegida). `tool` filtra por
- * herramienta (`claude` o `codex`; un hook sin `tools` es de las dos).
+ * `when` = `time:<integración>` para una de horas (el instalador los prende sólo si es la elegida) o
+ * `integration:<integración>` para una de prender y apagar (sólo prendida; `always` en uno con `always: true`). `tool`
+ * filtra por herramienta (`claude` o `codex`; un hook sin `tools` es de las dos).
  */
 function hookEntries(m, { tool = null } = {}) {
-  if (m.kind !== 'timeTracking') return [];
+  if (m.kind !== 'timeTracking' && m.kind !== 'toggle') return [];
   return m.hooks.filter((h) => !tool || !h.tools || h.tools.includes(tool)).map((h) => {
-    const e = { event: h.event, matcher: h.matcher || '', spec: `${INT_PREFIX}${m.name}/${h.script}`, when: `time:${m.name}`, platforms: { windows: h.platforms.windows }, label: h.label };
+    const when = m.kind === 'toggle' ? (h.always ? 'always' : `integration:${m.name}`) : `time:${m.name}`;
+    const e = { event: h.event, matcher: h.matcher || '', spec: `${INT_PREFIX}${m.name}/${h.script}`, when, platforms: { windows: h.platforms.windows }, label: h.label };
     for (const k of ['async', 'steps', 'effect']) if (h[k] !== undefined) e[k] = h[k];
     return e;
   });

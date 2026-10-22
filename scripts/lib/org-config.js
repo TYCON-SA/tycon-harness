@@ -174,6 +174,9 @@ const STACK_SINCE = '2026.10.19.11';
 // adentro, descarta toda la configuración de modelos (techo incluido). Se pide sólo si el archivo trae algún nivel; con
 // nombres, sigue MODELS_SINCE. Es la etiqueta del merge que trajo los niveles al lector
 const MODEL_LEVELS_SINCE = '2026.10.21.9';
+// `models.codex_reviewers` («inherit»): un lector anterior la ve como clave desconocida y descarta toda la configuración
+// de modelos. Se pide sólo si el archivo la trae. Provisoria hasta la etiqueta del merge que la trae al lector
+const CODEX_REVIEWERS_SINCE = '2026.10.22.22';
 const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE], ['coverage', COVERAGE_SINCE], ['review', REVIEW_SINCE], ['stack', STACK_SINCE]]);
 /** La versión que tiene que pedir el perfil para este `team-repos.json` (sin archivo, la de siempre), y las claves por las que la pide. */
 function versionQuePide(doc) {
@@ -184,6 +187,7 @@ function versionQuePide(doc) {
     if (!versionAtLeast(version, min)) version = min;
   }
   if (isObject(doc) && conNivelDeModelo(doc.models) && !versionAtLeast(version, MODEL_LEVELS_SINCE)) version = MODEL_LEVELS_SINCE;
+  if (isObject(doc) && isObject(doc.models) && doc.models.codex_reviewers !== undefined && !versionAtLeast(version, CODEX_REVIEWERS_SINCE)) version = CODEX_REVIEWERS_SINCE;
   return { version, claves };
 }
 /** ¿`models` trae algún nivel (en cualquier clave, también adentro de un objeto)? Un comentario («_…») no cuenta. */
@@ -1130,7 +1134,7 @@ function pantalla(idioma = 'es') {
     deployments: T('pantalla.palabraDespliegues'), products: T('pantalla.palabraProductos'), staging: T('pantalla.prueba'), production: T('pantalla.produccion'), pipeline: T('pantalla.pipeline'), stages: T('pantalla.pasos'), environment: T('pantalla.entorno'), workflow: T('pantalla.workflow'),
     work_items: T('pantalla.pedidosDeVulnerabilidades'), type: T('pantalla.pedidosTipo'), fixed_fields: T('pantalla.pedidosCamposFijos'), by_severity: T('pantalla.pedidosPorGravedad'),
     notify: T('pantalla.avisoDiario2'), channel: T('pantalla.palabraCanal'), thresholds: T('pantalla.palabraUmbrales'), direction: T('pantalla.mejorSiEs'), ok_min: T('pantalla.verdeDesde'), ok_max: T('pantalla.verdeHasta'), bad_max: T('pantalla.rojoHasta'), bad_min: T('pantalla.rojoDesde'),
-    merge_suites: T('pantalla.pruebasAlMergear2'), rule: T('pantalla.regla'), full_tests_pipeline: T('pantalla.pipelineDeLasPruebasCompletas'), models: T('pantalla.palabraModelos'), mandatory_ceiling: T('pantalla.techoObligatorio'), ceiling: T('pantalla.techo'), reviewer: T('pantalla.revisor'), reviewers_reloop: T('pantalla.revisoresDeLaSegundaVuelta'), adversarial: T('pantalla.paseAdversarial'), helpers: T('pantalla.ayudantes'), session: T('pantalla.sesion'), model: T('pantalla.modelo'), heavy: T('pantalla.pesado'), fable_question: T('pantalla.preguntaAntesDeUsarFable'), low: T('pantalla.liviano'), normal: T('pantalla.normal'),
+    merge_suites: T('pantalla.pruebasAlMergear2'), rule: T('pantalla.regla'), full_tests_pipeline: T('pantalla.pipelineDeLasPruebasCompletas'), models: T('pantalla.palabraModelos'), mandatory_ceiling: T('pantalla.techoObligatorio'), ceiling: T('pantalla.techo'), reviewer: T('pantalla.revisor'), reviewers_reloop: T('pantalla.revisoresDeLaSegundaVuelta'), adversarial: T('pantalla.paseAdversarial'), helpers: T('pantalla.ayudantes'), session: T('pantalla.sesion'), model: T('pantalla.modelo'), heavy: T('pantalla.pesado'), fable_question: T('pantalla.preguntaAntesDeUsarFable'), low: T('pantalla.liviano'), normal: T('pantalla.normal'), codex_reviewers: T('pantalla.losRevisoresEnCodex'),
     wait_notice: T('pantalla.avisoDeEspera2'), minutes: T('pantalla.minutos'), coverage: T('pantalla.coberturaDeLasPruebas2'), min_touched_lines_pct: T('pantalla.porcentajeMinimoDeLasLineas'), review: T('pantalla.vueltasDeRevisores2'), max_rounds: T('pantalla.topeDeVueltas'), blocking_prefixes: T('pantalla.prefijosDeSeguridadODatos'), public: T('pantalla.repoPublico'), profile: T('pantalla.repoDelEquipo'), operations: T('pantalla.repoDeOperaciones'), org: T('pantalla.organizacion'), project: T('pantalla.proyecto'), repo: T('pantalla.repo'), repos: T('pantalla.palabraRepos'), platform: T('pantalla.plataforma'),
     // las hojas de «Cómo contesta Claude» y «Cómo se actualizan»: con el nombre de su campo, también en un valor que se pisó
     style: T('pantalla.estilo'), language: T('pantalla.idioma'), max_chars: T('pantalla.largoMaximoDeProsaEn').split(' (')[0], apply: T('pantalla.comoSeAplica'),
@@ -2133,6 +2137,13 @@ function pantalla(idioma = 'es') {
     trabajo(ayu, T('pantalla.sesionStoryPesada'), 'session', 'heavy');
     box.appendChild(ayu);
 
+    // los revisores en Codex: el equivalente de cada nivel (como hoy) o el modelo de cada máquina («inherit»), para
+    // Codex sobre otro proveedor (Ollama), donde el modelo de OpenAI no existe. Sin la clave, nada cambia
+    var cdx = cabeza(T('pantalla.losRevisoresEnCodex'));
+    fila(cdx, el('span', { text: T('pantalla.losRevisoresEnCodex') }), T('pantalla.losRevisoresEnCodex'), 'codex_reviewers', null,
+      [['', T('pantalla.elEquivalenteDeCadaNivel')], ['inherit', T('pantalla.elModeloDeCadaMaquina')]], T('pantalla.elEquivalenteDeCadaNivel'), null, false);
+    box.appendChild(cdx);
+
     // el tope obligatorio, un renglón al pie: la casilla, «ningún trabajo pasa de» y el modelo
     var techo = el('input', { type: 'checkbox', 'aria-label': T('pantalla.topeObligatorio'), 'data-path': 'models.mandatory_ceiling', onchange: function (e) { if (e.target.checked) m.mandatory_ceiling = true; else { delete m.mandatory_ceiling; delete m.ceiling; } render(); } });
     techo.checked = m.mandatory_ceiling === true;
@@ -2907,7 +2918,7 @@ function pantalla(idioma = 'es') {
 }
 
 module.exports = {
-  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, modelosEnNiveles, equivalenciasDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS,

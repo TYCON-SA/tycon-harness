@@ -3071,11 +3071,11 @@ async function compacta(seccion) {
 test('T1 Modelos_TresTablasUnRenglonPorTrabajo @story-2.59 @ac-1', async () => {
   const p = await compacta(secModelos(MODELOS_2));
   const t = p.tablas();
-  assert.strictEqual(t.length, 3, 'una tabla por grupo');
+  assert.strictEqual(t.length, 4, 'una tabla por grupo, y la de los revisores en Codex');
   assert.ok(t.every((x) => p.clases(x).includes('modelos')));
-  const [rev, adv, ayu] = t.map((x) => p.renglones(x));
-  assert.deepStrictEqual([rev.length, adv.length, ayu.length], [4, 2, 4], 'revisores: 2 vueltas + 2 particulares · pase: normal y pesada · ayudantes + 3 sesiones');
-  for (const fila of [...rev, ...adv, ...ayu]) {
+  const [rev, adv, ayu, cdx] = t.map((x) => p.renglones(x));
+  assert.deepStrictEqual([rev.length, adv.length, ayu.length, cdx.length], [4, 2, 4, 1], 'revisores: 2 vueltas + 2 particulares · pase: normal y pesada · ayudantes + 3 sesiones · Codex: un renglón');
+  for (const fila of [...rev, ...adv, ...ayu, ...cdx]) {
     assert.strictEqual(p.de(fila, 'hoy').length, 1, `${p.texto(fila)}: su valor por defecto`);
     assert.strictEqual(p.todo(fila).filter((n) => n.tag === 'select').length, 1, `${p.texto(fila)}: un selector`);
   }
@@ -4039,7 +4039,7 @@ const opcionesDe = (p, n) => p.todo(n).filter((x) => x.tag === 'option');
 
 test('T8 Modelos_SelectoresConNiveles @story-2.70 @ac-6', async () => {
   const p = await compacta(secNiveles(enNiveles(MODELOS_2)));
-  const selectores = p.todo(p.sec('modelos')).filter((n) => n.tag === 'select' && !/fable_question/.test(String(n.attrs['data-path'] || '')) && n.attrs['aria-label'] !== 'Revisor');
+  const selectores = p.todo(p.sec('modelos')).filter((n) => n.tag === 'select' && !/fable_question|codex_reviewers/.test(String(n.attrs['data-path'] || '')) && n.attrs['aria-label'] !== 'Revisor');
   assert.ok(selectores.length >= 10, `${selectores.length} selectores de modelo`);
   for (const sel of selectores) {
     const ops = opcionesDe(p, sel).filter((o) => o.attrs.value !== '');
@@ -4125,6 +4125,40 @@ test('T11 Modelos_TopeSigueFrenando @story-2.70 @ac-9', () => {
   assert.deepStrictEqual(r.problems.map((x) => x.path), ['models.reviewers']);
   assert.match(r.problems[0].message, /balanced/);
   assert.doesNotMatch(r.problems[0].message, /sonnet|opus/);
+});
+
+test('T13b Modelos_CodexReviewersInherit_PideSuVersion · se revisa con el lector · no cambia nada sin la clave', () => {
+  const TEAM = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
+  assert.ok(ORG.versionAtLeast(ORG.CODEX_REVIEWERS_SINCE, ORG.MODEL_LEVELS_SINCE), 'posterior a los niveles');
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { codex_reviewers: 'inherit' } }).version, ORG.CODEX_REVIEWERS_SINCE);
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'balanced', codex_reviewers: 'inherit' } }).version, ORG.CODEX_REVIEWERS_SINCE, 'con niveles, la mayor');
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'balanced' } }).version, ORG.MODEL_LEVELS_SINCE, 'sin la clave, como hoy');
+  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_LEVELS_SINCE)), { ...TR_BASE, models: { codex_reviewers: 'inherit' } })), new RegExp(ORG.CODEX_REVIEWERS_SINCE.replace(/\./g, '\\.')));
+  const ok = ORG.revisar({ seccion: 'modelos', texto: ORG.formatJson(TR_BASE), borrador: { models: { codex_reviewers: 'inherit' } }, lectores: { 'team-repos.js': TEAM } });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  assert.match(ok.texto, /"codex_reviewers": "inherit"/);
+  const mal = ORG.revisar({ seccion: 'modelos', texto: ORG.formatJson(TR_BASE), borrador: { models: { codex_reviewers: 'otro' } }, lectores: { 'team-repos.js': TEAM } });
+  assert.strictEqual(mal.ok, false);
+  assert.deepStrictEqual(mal.problems.map((x) => x.path), ['models.codex_reviewers']);
+});
+
+test('T13c Modelos_PantallaOfreceLosRevisoresDeCodex — la tabla de modelos trae el renglón de Codex, con «el modelo de cada máquina»', async () => {
+  const selCodex = (p) => p.todo(p.sec('modelos')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'models.codex_reviewers');
+  let p = await compacta(secModelos(MODELOS_2));
+  assert.deepStrictEqual(opcionesDe(p, selCodex(p)).map((o) => o.attrs.value), ['', 'inherit'], 'el por defecto y «inherit»');
+  selCodex(p).on.change({ target: { value: 'inherit' } });
+  assert.deepStrictEqual((await p.revisado()).models, { ...enNiveles(MODELOS_2), codex_reviewers: 'inherit' }, 'elegir «inherit» escribe la clave');
+  p = await compacta(secModelos({ ...MODELOS_2, codex_reviewers: 'inherit' }));
+  selCodex(p).on.change({ target: { value: '' } });
+  assert.deepStrictEqual((await p.revisado()).models, enNiveles(MODELOS_2), 'volver al por defecto la saca');
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
+  assert.match(src, /'codex_reviewers'/, 'el editor de modelos pone la clave');
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const claves = ['pantalla.losRevisoresEnCodex', 'pantalla.elEquivalenteDeCadaNivel', 'pantalla.elModeloDeCadaMaquina'];
+  for (const k of claves) {
+    assert.ok(src.includes(`'${k}'`), `el editor usa ${k}`);
+    assert.ok(TEXTOS[k] && TEXTOS[k].es && TEXTOS[k].en, `falta el texto ${k} en los dos idiomas`);
+  }
 });
 
 test('T13 Modelos_NivelesPidenSuVersion @story-2.70 @ac-11', async () => {

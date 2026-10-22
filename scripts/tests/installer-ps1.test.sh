@@ -728,8 +728,8 @@ else no "(n) T90 registró lo que no va:$BAD"; fi
 cat > "$T/doctor-count.js" <<'JS'
 'use strict';
 // doctor-count.js <árbol> <home> <integraciones.json> [drop-bash-rebuild] → «<esperados> <faltantes> <etiquetas>»
-// (el árbol es el repo: el clon de laboratorio no copia scripts/tests/, donde vive la lista de condiciones; las dos
-// listas de hooks son las mismas)
+// (el árbol es el clon de laboratorio del que instaló el .ps1, con la lista de condiciones copiada de scripts/tests/:
+// lo que cuenta es lo de ESE árbol, que no trae las integraciones del repo)
 const fs = require('fs');
 const path = require('path');
 const [clone, home, integFile, drop] = process.argv.slice(2);
@@ -744,11 +744,12 @@ const r = M.expectedControls({ platform: 'win32', tree: clone, integrations: JSO
 console.log(`${r.expected.length} ${r.missing.length} ${r.missing.map((c) => c.label).join(' · ')}`);
 JS
 HDC="$(new_home doctor-count)"
+mkdir -p "$CLONE/scripts/tests/fixtures" && cp "$ROOT/scripts/tests/fixtures/harness-managed-pieces.json" "$CLONE/scripts/tests/fixtures/"
 installer "$HDC" "${HELD[@]}" "${TEAM[@]}" > "$T/dc.out" 2>&1; RC=$?
-DC="$(lab_env "$HDC" -- node "$T/doctor-count.js" "$ROOT" "$HDC" "$T/integrations-team.json" 2>&1)"
+DC="$(lab_env "$HDC" -- node "$T/doctor-count.js" "$CLONE" "$HDC" "$T/integrations-team.json" 2>&1)"
 if [ "$RC" -eq 0 ] && [ "$DC" = "$TEAM_HOOKS 0 " ]; then ok "(n) la cuenta de doctor sobre lo que dejó el instalador es la suya: $TEAM_HOOKS controles esperados, ninguno falta"
 else no "(n) la cuenta de doctor no es la del instalador (rc $RC): «${DC}» (esperaba «$TEAM_HOOKS 0 »)"; fi
-DC="$(lab_env "$HDC" -- node "$T/doctor-count.js" "$ROOT" "$HDC" "$T/integrations-team.json" drop-bash-rebuild 2>&1)"
+DC="$(lab_env "$HDC" -- node "$T/doctor-count.js" "$CLONE" "$HDC" "$T/integrations-team.json" drop-bash-rebuild 2>&1)"
 CK="$(installer "$HDC" "${HELD[@]}" "${TEAM[@]}" -- -Check 2>&1 | grep -c "+ PostToolUse (matcher='Bash|PowerShell') → @tcg:rebuild-before-verify.js")"   # (W4: el .ps1 imprime el spec de la lista)
 case "$DC" in "$TEAM_HOOKS 1 PostToolUse [Bash|PowerShell] @tcg:rebuild-before-verify.js") ok "(n) sin la fila PostToolUse/Bash de rebuild-before-verify.js, doctor dice que falta ESA (con su matcher), como -Check" ;;
   *) no "(n) sin la fila Bash de rebuild-before-verify.js doctor dice «${DC}» (esperaba «$TEAM_HOOKS 1 PostToolUse [Bash|PowerShell] @tcg:rebuild-before-verify.js»); -Check la nombra $CK vez/veces" ;; esac

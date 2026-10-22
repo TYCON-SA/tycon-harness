@@ -27,7 +27,8 @@
 //       "mandatory_ceiling"?: <bool>, "ceiling"?: <modelo>,   techo obligatorio (paga la organización): van juntos
 //       "reviewers"?: <modelo>, "reviewer"?: { "<revisor>": <modelo> }, "reviewers_reloop"?: <modelo>,
 //       "adversarial"?: { "model"?, "heavy"?: <modelo> }, "helpers"?: <modelo>,   ("fable_question": retirada, se acepta)
-//       "session"?: { "low"?, "normal"?, "heavy"?: <modelo> } }
+//       "session"?: { "low"?, "normal"?, "heavy"?: <modelo> },
+//       "codex_reviewers"?: «inherit» }   los revisores de Codex con el modelo de cada máquina (lo lee build/generate.js)
 //   <modelo> = un nivel, «economy» | «balanced» | «strong» | «max» (MODEL_LEVELS), o el nombre del
 //   modelo, «haiku» | «sonnet» | «opus» | «fable» (MODEL_NAMES), en el mismo orden; copias de models.js del skill. Quien la resuelve
 //   es skills/tycon-pipeline/scripts/lib/models.js (`readOrgModels`, el único que la lee).
@@ -169,7 +170,10 @@ const MODEL_LEVELS = ['economy', 'balanced', 'strong', 'max'];
 /** La posición de un nivel o de un nombre (los dos en el mismo orden); -1 si no es ninguno. */
 const modelRank = (v) => (MODEL_LEVELS.includes(v) ? MODEL_LEVELS.indexOf(v) : MODEL_NAMES.indexOf(v));
 const levelName = (v) => MODEL_LEVELS[modelRank(v)];
-const MODELS_KEYS = ['mandatory_ceiling', 'ceiling', 'reviewers', 'reviewer', 'reviewers_reloop', 'adversarial', 'helpers', 'session'];
+const MODELS_KEYS = ['mandatory_ceiling', 'ceiling', 'reviewers', 'reviewer', 'reviewers_reloop', 'adversarial', 'helpers', 'session', 'codex_reviewers'];
+// `codex_reviewers: "inherit"`: los revisores de Codex usan el modelo de cada máquina (su config.toml), no el equivalente
+// del nivel. Sirve con Codex sobre otro proveedor, como Ollama, donde el modelo de OpenAI no existe. Es el único valor
+const CODEX_REVIEWERS = ['inherit'];
 const MODELS_SUBKEYS = { adversarial: ['model', 'heavy', 'fable_question'], session: ['low', 'normal', 'heavy'] };
 const REVIEWER_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MERGE_RULES = ['automatico', 'siempre-en-la-maquina', 'confiar-en-el-servidor'];
@@ -291,6 +295,8 @@ function modelsProblems(value) {
     const at = `models.${k}`;
     if (k === 'mandatory_ceiling') {
       if (typeof v !== 'boolean') out.push({ path: at, message: `tiene que ser true o false (es ${JSON.stringify(v)})` });
+    } else if (k === 'codex_reviewers') {
+      if (!CODEX_REVIEWERS.includes(v)) out.push({ path: at, message: `el único valor es «inherit» (los revisores de Codex usan el modelo de cada máquina); sin la clave, el equivalente de cada nivel (es ${JSON.stringify(v)})` });
     } else if (k === 'reviewer') {
       if (!isObject(v)) { out.push({ path: at, message: 'tiene que ser un objeto { "<revisor>": <modelo> }' }); continue; }
       for (const [r, m] of Object.entries(v)) {

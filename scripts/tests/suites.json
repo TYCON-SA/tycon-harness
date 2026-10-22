@@ -61,7 +61,7 @@
       "requiere": []
     },
     {
-      "__nota": "La grabadora de instintos en Node (scripts/hooks/instinct-observe.js): la línea con el repo y la organización del remoto, el saneado, lo que no se graba, la integración apagada, los fallos callados y anotados, el reenvío del .sh y la herramienta PowerShell. Sin red: repos de laboratorio y HOME temporal.",
+      "__nota": "La grabadora de instintos en Node (integrations/instincts/scripts/instinct-observe.js): la línea con el repo y la organización del remoto, el saneado, lo que no se graba, la integración apagada, los fallos callados y anotados, el reenvío del .sh y la herramienta PowerShell. Sin red: repos de laboratorio y HOME temporal.",
       "raiz": "arnes",
       "ruta": "tests/instinct-observe.test.js",
       "requiere": []
@@ -1776,6 +1776,12 @@
       "__nota": "La clave de la herramienta de horas (con la llave vieja de Clockify) y los secretos de las integraciones: aparte de config.json, carpeta 700 y archivo 600, nunca por argumento ni impresos.",
       "raiz": "arnes",
       "ruta": "tests/time-tracking-config.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Las integraciones de prender y apagar (kind toggle): el manifiesto y sus motivos de rotura, los instintos desde integrations/instincts/ con los mismos hooks prendidos y apagados (Mac y Windows), la actualización desde la instalación de hoy sin rutas muertas, Codex desde el manifiesto y los ids nuevos en la tabla de efectos, el sitio y «Cómo trabaja».",
+      "raiz": "arnes",
+      "ruta": "tests/integrations-toggle.test.js",
       "requiere": []
     },
     {

@@ -3,7 +3,7 @@
 /**
  * instinct-upload.test.js — los días de instintos, al buzón y de vuelta (scripts/instincts/instinct-upload.js, su lugar
  * en la cola de scripts/metrics/upload-runs.js, la forma nueva de scripts/metrics/download-runs.js y el aviso de la
- * máquina sin buzón de scripts/hooks/instincts-notice.js).
+ * máquina sin buzón de integrations/instincts/scripts/instincts-notice.js).
  *
  * Lo que no se puede perder:
  *   · Que suba un archivo por día UTC cerrado, desde el aviso, y nunca lo de antes ni el día en curso.
@@ -31,7 +31,7 @@ const { spawn, spawnSync } = require('child_process');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
 const UPLOAD = path.join(RAIZ, 'scripts', 'metrics', 'upload-runs.js');
-const NOTICE = path.join(RAIZ, 'scripts', 'hooks', 'instincts-notice.js');
+const NOTICE = path.join(RAIZ, 'integrations', 'instincts', 'scripts', 'instincts-notice.js');
 const INSTINCT_UPLOAD = path.join(RAIZ, 'scripts', 'instincts', 'instinct-upload.js');
 const { stateDir } = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'tycon-home.js'));
 
