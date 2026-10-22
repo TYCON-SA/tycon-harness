@@ -17,7 +17,8 @@
  *                    que normaliza, y la cuenta otra vez. `eol.test.js` antes y después del paso.
  *   git-bash         qué devuelve `findGitBash()` (`scripts/lib/git-bash.js --json`), la versión de ese bash, las tres
  *                    variantes del informe (sólo en Windows) y `git-bash.test.js`.
- *   suites           `bench-portable.test.js` y `windows-support.test.js`.
+ *   suites           `bench-portable.test.js`, `windows-support.test.js` y `test-scope-table.test.js` (la tabla del freno
+ *                    de pruebas sin alcance, corrida con el bash de Git).
  *   bench            el banco entero (`runner.js --tool claude`): un veredicto por caso. No abre ninguna sesión del
  *                    asistente: el banco dispara hooks; las sesiones las abren `live-fire.js` y `advisor-runner.js`,
  *                    que acá NO se corren y quedan como «no medido». Además: que el banco no escriba en la carpeta de
@@ -75,6 +76,7 @@ const TEST_FILES = Object.freeze({
   'git-bash': 'scripts/tests/git-bash.test.js',
   'bench-portable': 'scripts/tests/bench-portable.test.js',
   'windows-support': 'scripts/tests/windows-support.test.js',
+  'test-scope-table': 'scripts/tests/test-scope-table.test.js',
 });
 const FINDER = 'scripts/lib/git-bash.js';
 const RUNNER = 'scripts/controls-bench/runner.js';
@@ -383,17 +385,17 @@ function gitBash(ctx) {
   return { status: L.STATUS.measured, reason: null };
 }
 
-/** 6 · las dos suites que no usan bash para armar nada. */
+/** 6 · las suites de Node: dos que no usan bash para armar nada, y la tabla del freno de pruebas por el bash de Git. */
 function suites(ctx) {
   const { rec, runner, env, clone } = ctx;
   const tests = {};
-  for (const name of ['bench-portable', 'windows-support']) {
+  for (const name of ['bench-portable', 'windows-support', 'test-scope-table']) {
     tests[name] = runTest(runner, name, { clone, env });
     rec.fact('tests', tests);
     const t = tests[name];
     if (!t.not_run && !P.testPassed(t)) rec.finding(`suites:${name}-failed`, 'test', `${name}.test.js ${t.timed_out ? 'venció su tope' : `salió ${t.error || t.exit}`}${t.first_failure ? ` — la primera que falla: ${t.first_failure}` : ''}${name === 'bench-portable' ? '. Con esta suite en rojo, lo que diga el banco entero no es de fiar' : ''}`, 'W1');
   }
-  if (Object.values(tests).every((t) => t.not_run)) return { status: L.STATUS.notMeasured, reason: `el commit que se mide no trae ninguna de las dos suites (¿es anterior a la tanda W1?): ${Object.values(tests).map((t) => t.not_run).join(' · ')}` };
+  if (Object.values(tests).every((t) => t.not_run)) return { status: L.STATUS.notMeasured, reason: `el commit que se mide no trae ninguna de las suites (¿es anterior a la tanda W1?): ${Object.values(tests).map((t) => t.not_run).join(' · ')}` };
   return { status: L.STATUS.measured, reason: null };
 }
 

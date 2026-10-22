@@ -22,6 +22,7 @@ on:
       - 'scripts/site/**'
       - 'scripts/lib/**'
       - 'scripts/metrics/**'
+      - 'scripts/instincts/instinct-upload.js'
       - 'scripts/nightly/**'
       - 'scripts/setup/harness/**'
       - 'scripts/setup/install-effects.json'

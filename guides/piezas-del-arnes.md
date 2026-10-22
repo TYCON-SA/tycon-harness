@@ -1414,6 +1414,18 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksworktree-sweepjs)
 
+## scripts/hooks/dev-behind-main-notice.js
+
+**Qué es:** Avisa al abrir la sesión, en una línea, si a `dev` le faltan commits de `main` o si hay trabajo en `dev` que hace una semana no llega a `main`.
+
+**Por qué existe:** El paso de los pipelines de producto que lo avisaba escribía en el log de una ejecución verde, que nadie abre. Calla lo que es de diseño (los commits de versión del bot, el trabajo en curso) y dice «no sé» con datos viejos.
+
+**Quién la usa:** El arranque de sesión, en los repos de producto de la organización del equipo. La oferta de poner `dev` al día sigue `guides/git-commit-conventions.md` §«Poner `dev` al día». Se apaga con `TYCON_DEV_BEHIND_NOTICE=0`.
+
+**Dónde se prueba:** `scripts/tests/dev-behind-main-notice.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksdev-behind-main-noticejs)
+
 ## scripts/hooks/missing-path-notice.js
 
 **Qué es:** Avisa cuando un comando de lectura nombró una ruta que no existe.

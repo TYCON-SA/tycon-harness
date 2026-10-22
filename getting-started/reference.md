@@ -283,9 +283,8 @@ files in repos, and there are two ways to change it:
 
 **What your machine can override.** For almost everything the order is `TYCON_…` variable › `~/.claude/tycon.json` ›
 team repo (`team-profile.json`). So your machine can turn off, for itself only, a connection the team turns on, or
-stay on `ask` while the team says `auto`. Two keys belong to the team when its `team-profile.json` declares them: in
-`packs.default` the team wins over your file and only `TYCON_PACKS_DEFAULT` overrides it;
-`adversarial.model_question` cannot be overridden by any machine. What is personal cannot go in the team repo: the
+stay on `ask` while the team says `auto`. One key belongs to the team when its `team-profile.json` declares it: in
+`packs.default` the team wins over your file and only `TYCON_PACKS_DEFAULT` overrides it. What is personal cannot go in the team repo: the
 reader rejects it. What is in
 `team-repos.json` and `operations.json` cannot be overridden from a machine, except the test coverage threshold. `tycon-config.js explain` says where each value came from, and what is written in
 your file but not used.
@@ -443,7 +442,7 @@ writes three blocks of rules into `~/.claude/CLAUDE.md`, between their own marke
 - `background-execution`: steps longer than two minutes run in the background and are announced first. Another hook
   measures what kept the conversation blocked (`TYCON_BLOCKING_METER=0`).
 - `tool-names`: the table with the exact name of every tool those rules mention.
-- The import line loads the harness `INDEX.md` in every session: about 13 KB, in Spanish, with the index of the
+- The import line loads the harness `INDEX.md` in every session: about 15 KB, in Spanish, with the index of the
   guides and the always-on rules.
 - The links in `~/.claude/skills` and `~/.claude/agents` make the harness skills and reviewers available in all your
   sessions: the name and description of each one load in every session.
@@ -520,7 +519,13 @@ to graphical apps (`TYCON_NO_GUI_ENV=1` skips it). Once a day it runs, in the ba
 spends model sessions (`TYCON_BENCH_DAILY=0`). With Azure DevOps configured, it also leaves a one-line `AGENTS.md` in
 your team's repos that have a `CLAUDE.md` and no `AGENTS.md`; you commit it with the repo
 (`TYCON_NO_AGENTSMD_POINTER=1` skips it). One step stays manual: open
-a `codex` session, run `/hooks` and approve them; without that the hooks do not run and give no error.
+a `codex` session, run `/hooks` and approve them; without that the hooks do not run and give no error. The approval
+belongs to Codex, not to the harness, and is saved from an interactive session. With no one at the keyboard (a
+container, `codex exec` in a scheduled task) unapproved checks do not run; `codex exec --dangerously-bypass-hook-trust`
+runs them without the saved approval, meant for checks you already vetted (measured with Codex 0.162: without the
+option a full test suite ran; with it, the brake stopped it).
+With an open model (`codex --oss`) you also need one that can use tools: a 7B coding model answered without running
+any command, and without commands no check fires.
 
 **Network**: the harness sends no usage data. Out of the box it talks to GitHub (the repo, to check for a new version,
 and the origins of the third-party skills listed in `scripts/publishing/third-party-skills.json`) and, if one of your

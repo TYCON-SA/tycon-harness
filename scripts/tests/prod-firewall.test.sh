@@ -93,11 +93,42 @@ esac
 case "$1 $2 $3" in
   "sql server list")
     s="$(arg --subscription "$@")"
+    # con -g: los servidores de un grupo de mentira (fake-groups/<suscripción>/<grupo>/servers)
+    g="$(arg -g "$@")"
+    if [ -n "$g" ]; then
+      [ "$FAKE_AZ" = listado-error ] && { echo "ERROR: (InternalServerError) Encountered an internal server error." >&2; exit 1; }
+      f="$TMPLOG/fake-groups/$s/$g/servers"; [ -f "$f" ] && cat "$f"; exit 0
+    fi
     case "${FAKE_AZ:-ok}:$s" in
       ninguna:*) : ;;
       dos:*) echo "rg-acme" ;;
-      *:sub-1) echo "rg-acme" ;;
+      # cada servidor en su grupo (para los candados); el de siempre, en rg-acme
+      *:sub-1) n="$(printf '%s' "$(arg --query "$@")" | sed -n "s/.*name=='\([^']*\)'.*/\1/p")"
+               if [ -z "$n" ] || [ "$n" = acme-sql ]; then echo "rg-acme"; else echo "rg-$n"; fi ;;
     esac; exit 0 ;;
+esac
+case "$1 $2" in
+  # los grupos de mentira: fake-groups/<suscripción>/<grupo>/ existe, con sus servidores y los tipos de sus recursos
+  "group show")
+    g="$(arg -n "$@")"; s="$(arg --subscription "$@")"
+    [ "$FAKE_AZ" = sin-permiso ] && { echo "ERROR: (AuthorizationFailed) The client does not have authorization to perform action 'Microsoft.Resources/subscriptions/resourcegroups/read'." >&2; exit 1; }
+    [ -d "$TMPLOG/fake-groups/$s/$g" ] && { echo "$g"; exit 0; }
+    echo "ERROR: (ResourceGroupNotFound) Resource group '$g' could not be found." >&2; exit 3 ;;
+  "resource list")
+    g="$(arg -g "$@")"; s="$(arg --subscription "$@")"
+    [ "$FAKE_AZ" = listado-error ] && { echo "ERROR: (InternalServerError) Encountered an internal server error." >&2; exit 1; }
+    f="$TMPLOG/fake-groups/$s/$g/types"; [ -f "$f" ] && cat "$f"; exit 0 ;;
+  "group delete")
+    printf '%s\n' "$*" >> "$TMPLOG/az-borrados.log"
+    [ "$FAKE_AZ" = scope-locked ] && { echo "ERROR: (ScopeLocked) The scope '/subscriptions/sub-1/resourceGroups/$(arg -n "$@")' cannot perform delete operation because following scope(s) are locked: '/subscriptions/sub-1/resourceGroups/$(arg -n "$@")'." >&2; exit 1; }
+    exit 0 ;;
+  # los candados de un grupo: lo que haya en fake-locks/<grupo> (el arreglo que devuelve az), o ninguno
+  "lock list")
+    g="$(arg -g "$@")"; f="$TMPLOG/fake-locks/$g"
+    if [ "$FAKE_AZ" = lock-error ] || { [ "$FAKE_AZ" = lock-error-b ] && [ "$g" = rg-prod-b ]; }; then
+      echo "ERROR: (AuthorizationFailed) The client does not have authorization to perform action 'Microsoft.Authorization/locks/read'." >&2; exit 1
+    fi
+    if [ -f "$f" ]; then cat "$f"; else echo "[]"; fi; exit 0 ;;
 esac
 case "$1 $2 $3 $4" in
   "sql server firewall-rule show")
@@ -412,6 +443,288 @@ FAKE_AZ=sin-sesion; gancho SessionEnd "$SES_A" >/dev/null; unset FAKE_AZ
 if grep -q "🔴" "$TMP/hook.out" && grep -q -- "--close-firewall $PROD" "$TMP/hook.out" && estado | grep "$PROD" >/dev/null; then
   ok "T12 · un cierre de fin de sesión que falla se dice en rojo con el comando, y la regla sigue anotada"
 else no "T12 · fin de sesión fallido: $(cat "$TMP/hook.out" "$TMP/hook.err")"; fi
+
+# ══ Los candados: `--locks` dice qué servidores de producción tienen el candado de Azure ══════════════════════════
+# un repo más con tres servidores de producción, cada uno en su grupo: x con el candado en el servidor, prod-b en
+# el grupo, otro sin candado
+mundo_candados(){
+  mundo
+  mkdir -p "$REPOS/candados/.tycon" "$TMP/fake-locks"; ( cd "$REPOS/candados" && git init -q . ) >/dev/null 2>&1
+  printf '{"servers":[{"host":"x.database.windows.net","environment":"produccion","keychain":"tycon-prod-x"},{"host":"prod-b.database.windows.net","environment":"produccion","keychain":"tycon-prod-b"},{"host":"otro.database.windows.net","environment":"produccion","keychain":"tycon-prod-otro"}]}' \
+    > "$REPOS/candados/.tycon/production.json"
+  rm -f "$TMP"/fake-locks/*
+}
+candado(){ # $1 = grupo, $2 = dónde (grupo | servidor:<nombre> | otro:<nombre>), $3 = nivel, $4 = nombre
+  local id="/subscriptions/sub-1/resourceGroups/$1"
+  case "$2" in
+    servidor:*) id="$id/providers/Microsoft.Sql/servers/${2#servidor:}" ;;
+    otro:*) id="$id/providers/Microsoft.Web/sites/${2#otro:}" ;;
+  esac
+  printf '[{"id":"%s/providers/Microsoft.Authorization/locks/%s","level":"%s","name":"%s","notes":null,"owners":null,"resourceGroup":"%s","type":"Microsoft.Authorization/locks"}]\n' \
+    "$id" "$4" "$3" "$4" "$1" > "$TMP/fake-locks/$1"
+}
+linea(){ grep "^$1" "$TMP/out" | head -1; }
+
+# ── T1 · con y sin candado, por servidor ───────────────────────────────────────────────────────────────────────
+mundo_candados
+candado rg-x servidor:x CanNotDelete en-el-servidor
+candado rg-prod-b grupo ReadOnly en-el-grupo
+rc="$(puerta --locks)"
+if [ "$rc" = 0 ] && [[ "$(linea x.database.windows.net)" == *"con candado"*"en-el-servidor"* ]] \
+   && [[ "$(linea prod-b.database.windows.net)" == *"con candado"*"en-el-grupo"* ]] \
+   && [[ "$(linea otro.database.windows.net)" == *"sin candado"* ]]; then
+  ok "6.4 T1 Candados_ListsProductionServers_WithAndWithout · el del servidor, el del grupo (ReadOnly) y el que no tiene"
+else no "6.4 T1 · rc=$rc · $(cat "$TMP/out" "$TMP/err")"; fi
+
+# ── T2 · el comando de crear se imprime y nunca se corre ────────────────────────────────────────────────────────
+if grep -q "az lock create --name tycon-no-borrar --lock-type CanNotDelete --resource-group 'rg-otro' --resource-name otro --resource-type Microsoft.Sql/servers --subscription sub-1" "$TMP/out" \
+   && grep -q "lo corre una persona con permiso de locks, fuera del asistente" "$TMP/out" && ! grep -q "lock create" "$TMP/az.log"; then
+  ok "6.4 T2 Candados_PrintsCreateCommand_NeverRunsIt · el comando con la suscripción y la frase; az no recibió ningún lock create"
+else no "6.4 T2 · $(cat "$TMP/out") · az: $(grep lock "$TMP/az.log")"; fi
+
+# un candado de otro recurso del grupo, o uno de nivel desconocido, no protege al servidor
+mundo_candados
+candado rg-x otro:una-app CanNotDelete de-la-app
+candado rg-prod-b grupo NotSpecified sin-nivel
+rc="$(puerta --locks)"
+if [[ "$(linea x.database.windows.net)" == *"sin candado"* ]] && [[ "$(linea prod-b.database.windows.net)" == *"sin candado"* ]]; then
+  ok "6.4 T1 Candados_OtherResourceOrUnknownLevel_NotCounted · ni el de otro recurso del grupo ni uno de nivel desconocido"
+else no "6.4 T1 · candado de otro recurso o nivel desconocido: $(cat "$TMP/out")"; fi
+
+# un repo con el catálogo roto no deja ciegos a los demás: sus servidores se revisan y el roto sale «no sé»
+mundo_candados
+mkdir -p "$REPOS/otro-roto/.tycon"; ( cd "$REPOS/otro-roto" && git init -q . ) >/dev/null 2>&1
+printf '{ roto' > "$REPOS/otro-roto/.tycon/production.json"
+candado rg-x servidor:x CanNotDelete en-el-servidor
+rc="$(puerta --locks)"
+if [ "$rc" = 2 ] && [[ "$(linea x.database.windows.net)" == *"con candado"* ]] && grep -q "otro-roto" "$TMP/out" && grep "otro-roto" "$TMP/out" | grep "no sé" >/dev/null; then
+  ok "6.4 T5 Candados_IndexUnreadableOrEmpty · un catálogo roto: los demás se revisan, el roto sale «no sé» y sale 2"
+else no "6.4 T5 · catálogo roto de otro repo · rc=$rc · $(cat "$TMP/out" "$TMP/err")"; fi
+
+# ── T3 · la forma va sola ───────────────────────────────────────────────────────────────────────────────────────
+for extra in "acme-sql" "--x"; do
+  mundo_candados
+  rc="$(puerta --locks "$extra")"
+  if [ "$rc" = 2 ] && grep -q "uso: tycon-prod-sql --locks" "$TMP/err" && [ ! -s "$TMP/az.log" ]; then
+    ok "6.4 T3 Candados_ExtraArgument_Exit2 · --locks $extra: sale 2 con el uso, sin tocar az"
+  else no "6.4 T3 · --locks $extra · rc=$rc · $(cat "$TMP/err")"; fi
+done
+
+# ── T4 · no-producción y sin declarar no aparecen; el SQL propio, aparte ────────────────────────────────────────
+mundo_candados
+rc="$(puerta --locks)"
+# acme-sin-declarar no está en ningún catálogo: no aparece
+if ! grep -q "$STAGING" "$TMP/out" && ! grep -q "acme-sin-declarar" "$TMP/out" && grep -q "$PROPIO" "$TMP/out" \
+   && [[ "$(linea "$PROPIO")" == *"no se maneja desde acá"* ]] && ! grep -q -- "--name acme-onprem" "$TMP/az.log"; then
+  ok "6.4 T4 Candados_NonProductionOrNonAzure_NotPending · el no-producción no aparece; el propio sale «no se maneja desde acá»"
+else no "6.4 T4 · $(cat "$TMP/out")"; fi
+
+# ── T5 · índice ilegible o sin producción ───────────────────────────────────────────────────────────────────────
+mundo_candados
+printf '{ esto no es json' > "$REPOS/candados/.tycon/production.json"
+printf '{ esto no es json' > "$REPOS/backend-acme/.tycon/production.json"
+rc="$(puerta --locks)"
+r1="$rc"
+mundo; printf '{"servers":[{"host":"%s","environment":"no-produccion"}]}' "$STAGING" > "$REPOS/backend-acme/.tycon/production.json"
+rc="$(puerta --locks)"
+if [ "$r1" = 2 ] && [ "$rc" = 0 ] && grep -q "no hay servidores de producción declarados" "$TMP/out"; then
+  ok "6.4 T5 Candados_IndexUnreadableOrEmpty · ilegible: 2; sin producción: 0 con el mensaje"
+else no "6.4 T5 · ilegible=$r1 vacío=$rc · $(cat "$TMP/out" "$TMP/err")"; fi
+
+# ── T6 · lo que az no contesta es «no sé», con su motivo, y los demás siguen ────────────────────────────────────
+for modo in sin-sesion lento dos ninguna lock-error; do
+  mundo_candados; FAKE_AZ=$modo; AZ_TOPE=2
+  rc="$(puerta --locks)"
+  # cada «no sé» trae su motivo después de la raya
+  if [ "$rc" = 2 ] && [[ "$(linea otro.database.windows.net)" == *"no sé — "?* ]] && [ "$(grep -c "no sé — " "$TMP/out")" -ge 3 ]; then
+    ok "6.4 T6 Candados_AzFailures_NoSabeWithReason · $modo: «no sé» con motivo, sale 2"
+  else no "6.4 T6 · $modo · rc=$rc · $(cat "$TMP/out" "$TMP/err")"; fi
+  unset FAKE_AZ AZ_TOPE
+done
+# los demás siguen: falla sólo el de un grupo, y los otros se informan
+mundo_candados; FAKE_AZ=lock-error-b
+candado rg-x servidor:x CanNotDelete en-el-servidor
+rc="$(puerta --locks)"
+if [ "$rc" = 2 ] && [[ "$(linea prod-b.database.windows.net)" == *"no sé — "* ]] \
+   && [[ "$(linea x.database.windows.net)" == *"con candado"* ]] && [[ "$(linea otro.database.windows.net)" == *"sin candado"* ]]; then
+  ok "6.4 T6 · falla sólo uno: ése sale «no sé» y los demás se informan"
+else no "6.4 T6 · falla mixta · rc=$rc · $(cat "$TMP/out")"; fi
+unset FAKE_AZ
+# sin az en las rutas fijas
+mundo_candados; rm -f "$RAIZ/opt/homebrew/bin/az"
+rc="$(puerta --locks)"
+if [ "$rc" = 2 ] && grep -q "no sé" "$TMP/out" && [ ! -s "$TMP/impostor.log" ]; then
+  ok "6.4 T6 · sin az en las rutas fijas: «no sé», sale 2, y no usa el del PATH"
+else no "6.4 T6 · sin az · rc=$rc · $(cat "$TMP/out" "$TMP/err")"; fi
+
+# ── T7 · sólo las lecturas de la lista, el az de la ruta fija y sin la clave ────────────────────────────────────
+mundo_candados
+rc="$(puerta --locks)"
+otras="$(cut -d' ' -f1-2 "$TMP/az.log" | sort -u | grep -vE '^(account list|sql server|lock list)$')"
+if [ "$rc" = 0 ] && [ -z "$otras" ] && grep -q '^lock list' "$TMP/az.log" && [ ! -s "$TMP/impostor.log" ] \
+   && ! grep -q "$CLAVE_MARCA" "$TMP/az-env.log" && [ ! -s "$TMP/security.log" ] && ! grep -qv '^sql server list' <(grep '^sql' "$TMP/az.log"); then
+  ok "6.4 T7 Candados_OnlyListedAzOperations_FixedPaths_CleanEnv · sólo account list, sql server list y lock list; sin la clave"
+else no "6.4 T7 · otras=«${otras}» · $(cat "$TMP/az.log")"; fi
+
+# ── T8 · la línea del registro ──────────────────────────────────────────────────────────────────────────────────
+l="$(registro | grep '"accion":"candados"' | tail -1)"
+if [[ "$l" == *'"exit":0'* ]] && [[ "$l" != *"lock create"* ]] && ! registro | grep "$CLAVE_MARCA" >/dev/null; then
+  ok "6.4 T8 Candados_RegistroLine_NoSecrets · accion candados, sin comando ni credenciales"
+else no "6.4 T8 · registro: $(registro | tail -2)"; fi
+
+# ── T9 · la guía ────────────────────────────────────────────────────────────────────────────────────────────────
+GUIA="$AQUI/guides/produccion-con-permiso.md"
+faltan=""
+for f in "CanNotDelete" "--locks" "lo pone una persona" "permiso de locks" "az lock create" "ScopeLocked" "suscripción"; do
+  grep -q -- "$f" "$GUIA" || faltan="${faltan} «${f}»"
+done
+[ -z "$faltan" ] && ok "6.4 T9 Guide_DeclaresCandadoAndLimits" || no "6.4 T9 · la guía no dice:$faltan"
+
+# ══ Borrar un grupo: `--delete-group <grupo>` borra sólo lo que puede probar que no es producción ══════════════════
+GRUPO=acme-prueba-rg
+grupo(){ # $1 = suscripción, $2 = grupo; después, «servidores» y «tipos» separados por «--»
+  local s="$1" g="$2"; shift 2
+  mkdir -p "$TMP/fake-groups/$s/$g"; : > "$TMP/fake-groups/$s/$g/servers"; : > "$TMP/fake-groups/$s/$g/types"
+  local destino=servers
+  for x in "$@"; do
+    [ "$x" = "--" ] && { destino=types; continue; }
+    printf '%s\n' "$x" >> "$TMP/fake-groups/$s/$g/$destino"
+  done
+}
+mundo_grupo(){ mundo; rm -rf "$TMP/fake-groups"; mkdir -p "$TMP/fake-groups"; }
+borrados(){ cat "$TMP/az-borrados.log" 2>/dev/null; }
+
+# ── T1 · un grupo seguro se borra: un servidor no-producción, o ninguno ─────────────────────────────────────────
+mundo_grupo; SES=$SES_A
+grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers Microsoft.Web/sites
+rc="$(puerta --delete-group "$GRUPO")"
+if [ "$rc" = 0 ] && [ "$(borrados | grep -c "group delete -n $GRUPO --subscription sub-1 --yes --no-wait")" = 1 ] \
+   && grep -q "$STAGING" "$TMP/out" && grep -q "2 recurso" "$TMP/out" && grep -q "az group exists -n $GRUPO --subscription sub-1" "$TMP/out" \
+   && grep -qi "pedido" "$TMP/out"; then
+  ok "6.5 T1 BorrarGrupo_SafeGroup_Deletes · pide el borrado una vez, dice qué había y cómo confirmar que terminó"
+else no "6.5 T1 · rc=$rc · $(cat "$TMP/out" "$TMP/err") · borrados: $(borrados)"; fi
+mundo_grupo; grupo sub-1 vacio-rg --
+rc="$(puerta --delete-group vacio-rg)"
+[ "$rc" = 0 ] && [ "$(borrados | grep -c "group delete -n vacio-rg")" = 1 ] && ok "6.5 T1 · un grupo sin servidores ni recursos también" || no "6.5 T1 · vacío · rc=$rc · $(cat "$TMP/err")"
+mundo_grupo; grupo sub-1 'acme(prueba)' --
+rc="$(puerta --delete-group 'acme(prueba)')"
+[ "$rc" = 0 ] && [ "$(borrados | grep -c 'group delete -n acme(prueba)')" = 1 ] && ok "6.5 T1 · un grupo con paréntesis en el nombre (Azure los permite)" || no "6.5 T1 · paréntesis · rc=$rc · $(cat "$TMP/err")"
+# las suscripciones Warned y PastDue siguen activas: la búsqueda del grupo las mira
+mundo_grupo; grupo sub-1 "$GRUPO" --
+puerta --delete-group "$GRUPO" >/dev/null
+grep '^account list' "$TMP/az.log" | grep 'Warned' | grep 'PastDue' >/dev/null && ok "6.5 T9 · la búsqueda del grupo mira también las suscripciones Warned y PastDue" || no "6.5 T9 · suscripciones: $(grep '^account list' "$TMP/az.log")"
+
+# ── T2 · la línea del registro ──────────────────────────────────────────────────────────────────────────────────
+mundo_grupo; SES=$SES_A; grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers
+puerta --delete-group "$GRUPO" >/dev/null
+l="$(registro | grep '"accion":"borrar-grupo"' | tail -1)"
+if [[ "$l" == *"\"grupo\":\"$GRUPO\""* ]] && [[ "$l" == *'"servidores":1'* ]] && [[ "$l" == *"\"sesion\":\"$SES_A\""* ]] \
+   && [[ "$l" == *'"exit":0'* ]] && ! registro | grep "$CLAVE_MARCA" >/dev/null; then
+  ok "6.5 T2 BorrarGrupo_RegistroLine_NoSecrets · grupo, servidores, sesión y exit; sin credenciales"
+else no "6.5 T2 · registro: $(registro | tail -1)"; fi
+
+# ── T3 · un nombre que no es de grupo: sale 2 sin llamar a az ──────────────────────────────────────────────────
+for nombre in 'rg-*' 'rg$x' "rg'x" 'rg x' '-x' '' "$(printf 'a%.0s' $(seq 1 91))"; do
+  mundo_grupo
+  rc="$(puerta --delete-group "$nombre")"
+  if [ "$rc" = 2 ] && [ ! -s "$TMP/az.log" ]; then ok "6.5 T3 BorrarGrupo_InvalidName_Exit2NoAz · «${nombre:0:12}»"
+  else no "6.5 T3 · «${nombre:0:12}» · rc=$rc · az: $(cat "$TMP/az.log" 2>/dev/null)"; fi
+done
+
+# ── T4 · sólo el nombre ─────────────────────────────────────────────────────────────────────────────────────────
+for extra in "--yes" "--subscription sub-1" "--no-wait" "otro-rg"; do
+  mundo_grupo
+  # shellcheck disable=SC2086
+  rc="$(puerta --delete-group "$GRUPO" $extra)"
+  if [ "$rc" = 2 ] && grep -q "uso: tycon-prod-sql --delete-group" "$TMP/err" && [ ! -s "$TMP/az.log" ]; then
+    ok "6.5 T4 BorrarGrupo_ExtraArguments_Exit2 · con «${extra}»"
+  else no "6.5 T4 · ${extra} · rc=$rc · $(cat "$TMP/err")"; fi
+done
+
+# ── T5 · un servidor de producción: se niega y lo nombra ───────────────────────────────────────────────────────
+mundo_grupo; grupo sub-1 "$GRUPO" "$STAGING" "$PROD" -- Microsoft.Sql/servers Microsoft.Sql/servers
+rc="$(puerta --delete-group "$GRUPO")"
+if [ "$rc" = 2 ] && [ -z "$(borrados)" ] && grep -q "$PROD" "$TMP/err" && grep -q "una persona" "$TMP/err"; then
+  ok "6.5 T5 BorrarGrupo_ProductionServer_Refuses · no borra, nombra el servidor y dice quién lo borra"
+else no "6.5 T5 · rc=$rc · $(cat "$TMP/err") · borrados: $(borrados)"; fi
+
+# ── T6 · un servidor sin declarar: se niega ─────────────────────────────────────────────────────────────────────
+mundo_grupo; grupo sub-1 "$GRUPO" x.database.windows.net -- Microsoft.Sql/servers
+rc="$(puerta --delete-group "$GRUPO")"
+if [ "$rc" = 2 ] && [ -z "$(borrados)" ] && grep -q "x.database.windows.net" "$TMP/err"; then
+  ok "6.5 T6 BorrarGrupo_UndeclaredServer_Refuses"
+else no "6.5 T6 · rc=$rc · $(cat "$TMP/err")"; fi
+
+# ── T7 · un tipo de base que el catálogo no cubre: se niega ────────────────────────────────────────────────────
+for tipo in Microsoft.DBforPostgreSQL/flexibleServers Microsoft.DBforMySQL/flexibleServers Microsoft.DBforMariaDB/servers \
+            Microsoft.Sql/managedInstances Microsoft.Sql/instancePools Microsoft.SqlVirtualMachine/sqlVirtualMachines \
+            Microsoft.DocumentDB/databaseAccounts Microsoft.Synapse/workspaces; do
+  mundo_grupo; grupo sub-1 "$GRUPO" -- Microsoft.Web/sites "$tipo"
+  rc="$(puerta --delete-group "$GRUPO")"
+  if [ "$rc" = 2 ] && [ -z "$(borrados)" ] && grep -q "$tipo" "$TMP/err"; then ok "6.5 T7 BorrarGrupo_UncoveredDbType_Refuses · ${tipo}"
+  else no "6.5 T7 · ${tipo} · rc=$rc · $(cat "$TMP/err")"; fi
+done
+
+# ── T8 · un catálogo ilegible: se niega ─────────────────────────────────────────────────────────────────────────
+mundo_grupo; grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers
+printf '{ roto' > "$REPOS/backend-acme/.tycon/production.json"
+rc="$(puerta --delete-group "$GRUPO")"
+if [ "$rc" = 2 ] && [ -z "$(borrados)" ]; then ok "6.5 T8 BorrarGrupo_IndexUnreadable_Refuses"
+else no "6.5 T8 · rc=$rc · $(cat "$TMP/err")"; fi
+# la memoria de producción tocada a mano: tampoco borra
+mundo_grupo; grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers
+printf '{ roto' > "$CASA/.claude/.tycon-pipeline/production-memory.json"
+rc="$(puerta --delete-group "$GRUPO")"
+if [ "$rc" = 2 ] && [ -z "$(borrados)" ] && grep -q "memoria" "$TMP/err"; then ok "6.5 T8 · con la memoria de producción tocada a mano, no borra"
+else no "6.5 T8 · memoria tocada · rc=$rc · $(cat "$TMP/err")"; fi
+
+# ── T9 · lo que az no contesta: 2 con el motivo, sin borrar, y el intento anotado ──────────────────────────────
+for modo in sin-sesion sin-permiso lento dos ninguna; do
+  mundo_grupo; FAKE_AZ=$modo; AZ_TOPE=2
+  grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers
+  [ "$modo" = dos ] && grupo sub-2 "$GRUPO" -- Microsoft.Web/sites
+  [ "$modo" = ninguna ] && rm -rf "$TMP/fake-groups/sub-1"
+  rc="$(puerta --delete-group "$GRUPO")"
+  l="$(registro | grep '"accion":"borrar-grupo"' | tail -1)"
+  if [ "$rc" = 2 ] && [ -z "$(borrados)" ] && [ -s "$TMP/err" ] && [[ "$l" == *'"exit":2'* ]]; then
+    ok "6.5 T9 BorrarGrupo_AzFailures_Exit2WithReason · ${modo}"
+  else no "6.5 T9 · ${modo} · rc=$rc · $(cat "$TMP/err") · registro: ${l}"; fi
+  unset FAKE_AZ AZ_TOPE
+done
+mundo_grupo; grupo sub-1 "$GRUPO" -- ; rm -f "$RAIZ/opt/homebrew/bin/az"
+rc="$(puerta --delete-group "$GRUPO")"
+l="$(registro | grep '"accion":"borrar-grupo"' | tail -1)"
+if [ "$rc" = 2 ] && [ ! -s "$TMP/impostor.log" ] && grep -q "no encuentro az" "$TMP/err" && [[ "$l" == *'"exit":2'* ]]; then
+  ok "6.5 T9 · sin az en las rutas fijas: 2 con el motivo, anotado, y no usa el del PATH"
+else no "6.5 T9 · sin az · rc=$rc · $(cat "$TMP/err") · ${l}"; fi
+
+# ── T10 · un listado con error, o cortado: «no sé» ──────────────────────────────────────────────────────────────
+mundo_grupo; FAKE_AZ=listado-error; grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers
+rc="$(puerta --delete-group "$GRUPO")"; r1="$rc"; unset FAKE_AZ
+# cortado: el listado de recursos trae dos servidores SQL y el de servidores, uno
+mundo_grupo; grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers Microsoft.Sql/servers
+rc="$(puerta --delete-group "$GRUPO")"; r2="$rc"
+# al revés: el de servidores trae uno y el de recursos ninguno
+mundo_grupo; grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Web/sites
+rc="$(puerta --delete-group "$GRUPO")"
+if [ "$r1" = 2 ] && [ "$r2" = 2 ] && [ "$rc" = 2 ] && [ -z "$(borrados)" ]; then ok "6.5 T10 BorrarGrupo_TruncatedOrErrorListing_Refuses · con error, y cortado de los dos lados"
+else no "6.5 T10 · error=$r1 cortado=$r2 al-revés=$rc · $(cat "$TMP/err")"; fi
+
+# ── T11 · un grupo con candado: Azure lo rechaza y la puerta lo dice ───────────────────────────────────────────
+mundo_grupo; FAKE_AZ=scope-locked; grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers
+rc="$(puerta --delete-group "$GRUPO")"
+l="$(registro | grep '"accion":"borrar-grupo"' | tail -1)"
+if [ "$rc" = 2 ] && grep -qi "candado" "$TMP/err" && [[ "$l" == *'"exit":2'* ]]; then ok "6.5 T11 BorrarGrupo_LockedGroup_ReportsExit2"
+else no "6.5 T11 · rc=$rc · $(cat "$TMP/err") · ${l}"; fi
+unset FAKE_AZ
+
+# ── T12 · sólo las operaciones de la lista, el az de la ruta fija y sin la clave ───────────────────────────────
+mundo_grupo; grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers
+rc="$(puerta --delete-group "$GRUPO")"
+otras="$(cut -d' ' -f1-2 "$TMP/az.log" | sort -u | grep -vE '^(account list|group show|sql server|resource list|group delete)$')"
+if [ "$rc" = 0 ] && [ -z "$otras" ] && [ ! -s "$TMP/impostor.log" ] && ! grep "$CLAVE_MARCA" "$TMP/az-env.log" >/dev/null && [ ! -s "$TMP/security.log" ]; then
+  ok "6.5 T12 BorrarGrupo_OnlyListedAzOperations_FixedPaths_CleanEnv"
+else no "6.5 T12 · otras=«${otras}» · $(cat "$TMP/az.log")"; fi
 
 echo "— prod-firewall: $pasaron ok, $fallos fallos —"
 [ "$fallos" = 0 ]

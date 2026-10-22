@@ -147,6 +147,21 @@ function unirTramos(tramos) {
 
 function lineasDe(x) { return x ? String(x).split('\n').length : 0; }
 
+/**
+ * Los renglones de un buffer, de a uno: sin armar el texto entero ni la lista de renglones. Una conversación de 110 MB
+ * comprimidos son 224 MB de texto; como string y partida en renglones ocupaba más de 1 GB a la vez, y el contenedor del
+ * sitio (1 GiB) moría al resumirla.
+ */
+function* renglonesDe(buf) {
+  let i = 0;
+  while (i < buf.length) {
+    let j = buf.indexOf(10, i);
+    if (j < 0) j = buf.length;
+    yield buf.toString('utf8', i, j);
+    i = j + 1;
+  }
+}
+
 function cortar(x, tope) {
   const s = String(x || '');
   return s.length <= tope ? { txt: s, cortado: 0 } : { txt: s.slice(0, tope), cortado: s.length - tope };
@@ -163,8 +178,8 @@ function cambiosDeCorrida(volcado, marker, deps = {}) {
   const hiloRuta = rutaDeHilo(volcado);
   if (!fs.existsSync(hiloRuta)) return { estado: 'sin_hilo', motivo: 'esta ejecución no tiene hilo guardado (anterior a la story 2.13, o la conversación ya se había borrado): no se sabe qué archivos tocó' };
   if (!deps.sanear) return { estado: 'no_publicado', motivo: 'el saneado (scripts/metrics/tokens-digest.js) no está en esta máquina: los cambios no se publican sin sanear' };
-  let texto;
-  try { texto = zlib.gunzipSync(fs.readFileSync(hiloRuta)).toString('utf8'); }
+  let crudo;
+  try { crudo = zlib.gunzipSync(fs.readFileSync(hiloRuta)); }
   catch (e) { return { estado: 'ilegible', motivo: `el hilo no se pudo leer (${e.code || e.message})` }; }
 
   const m = marker || {};
@@ -206,7 +221,7 @@ function cambiosDeCorrida(volcado, marker, deps = {}) {
   let previas = 0;
   let porConsola = 0;
   let ilegibles = 0;
-  for (const linea of texto.split('\n')) {
+  for (const linea of renglonesDe(crudo)) {
     if (!linea) continue;
     const esUso = linea.includes('"tool_use"');
     const esResultado = linea.includes('"tool_result"');
@@ -332,4 +347,4 @@ function cambiosDeCorrida(volcado, marker, deps = {}) {
   };
 }
 
-module.exports = { unirTramos, cambiosDeCorrida, relativa, destinosDeConsola, rutaDeHilo, rutaDeCambio, rutaDeResumen, leerCambioDeGit, emparejar, TOPE_EDICION, TOPE_ESCRITURA, TOPE_EDICIONES_CON_CAMBIO };
+module.exports = { unirTramos, cambiosDeCorrida, renglonesDe, relativa, destinosDeConsola, rutaDeHilo, rutaDeCambio, rutaDeResumen, leerCambioDeGit, emparejar, TOPE_EDICION, TOPE_ESCRITURA, TOPE_EDICIONES_CON_CAMBIO };

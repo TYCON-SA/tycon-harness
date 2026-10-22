@@ -131,8 +131,68 @@ function stepMedians(dir, unreadable) {
 // La fecha de la transcripción de una sesión (sólo la fecha: nunca se abre). Claude Code la guarda en una carpeta con el
 // nombre de la carpeta de la sesión, cada carácter que no es letra, número ni guion cambiado por un guion.
 function transcriptMs(projectsDir, cwd, sid) {
-  if (!projectsDir || typeof cwd !== 'string' || !cwd) return null;
+  if (!projectsDir || typeof cwd !== 'string' || !cwd || !SAFE_SID.test(String(sid))) return null;
   try { return fs.statSync(path.join(projectsDir, cwd.replace(/[^A-Za-z0-9-]/g, '-'), `${sid}.jsonl`)).mtimeMs; } catch { return null; }
+}
+
+// El nombre que le puso la persona a la pestaña con /rename: el `customTitle` del último renglón `custom-title` de su
+// conversación, que Claude Code vuelve a escribir cada pocos renglones. Se mira sólo el final del archivo y, de ahí, sólo
+// esos renglones: nada más de la conversación se lee ni se guarda. Sin ninguno, null.
+const ABSENT_FILE = ['ENOENT', 'ENOTDIR'];
+const TITLE_TAIL_BYTES = 256 * 1024;
+const NAME_MAX = 40;
+// un id de sesión entra en una ruta: sólo letras, números, guion y guion bajo (nada de `../`)
+const SAFE_SID = /^[A-Za-z0-9_-]+$/;
+function sessionTitle(projectsDir, cwd, sid, unreadable = []) {
+  if (!projectsDir || typeof cwd !== 'string' || !cwd || !SAFE_SID.test(String(sid))) return null;
+  const file = path.join(projectsDir, cwd.replace(/[^A-Za-z0-9-]/g, '-'), `${sid}.jsonl`);
+  let text;
+  try {
+    const fd = fs.openSync(file, 'r');
+    try {
+      const size = fs.fstatSync(fd).size;
+      const len = Math.min(size, TITLE_TAIL_BYTES);
+      const buf = Buffer.alloc(len);
+      fs.readSync(fd, buf, 0, len, size - len);
+      text = buf.toString('utf8');
+    } finally { fs.closeSync(fd); }
+  } catch (e) {
+    // sin conversación guardada no hay título; una que está y no se lee se dice (el nombre cae al de siempre)
+    if (!ABSENT_FILE.includes(e && e.code)) unreadable.push(`el nombre de la sesión ${shortId(sid)}: su conversación no se puede leer (${(e && e.code) || 'error'})`);
+    return null;
+  }
+  const lines = text.split('\n');
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    if (!lines[i].includes('"custom-title"')) continue;
+    let t;
+    try { t = JSON.parse(lines[i]); } catch { continue; }
+    if (t && t.type === 'custom-title' && typeof t.customTitle === 'string' && t.customTitle.trim()) return cut(oneLine(t.customTitle), NAME_MAX);
+  }
+  return null;
+}
+
+// Los nombres que les puso la persona a las sesiones de Codex (`threads.name` de su base `state_<n>.sqlite`, la de número
+// más alto; `title` es el resumen automático y no se usa), abierta en sólo lectura. Sin Codex, vacío; una base que no se
+// abre, vacío y una línea al pie.
+function codexNames(codexHome, unreadable) {
+  const out = new Map();
+  let bases;
+  try { bases = fs.readdirSync(codexHome).filter((f) => /^state_\d+\.sqlite$/.test(f)); } catch (e) {
+    // sin Codex, nada que decir; una carpeta de Codex que no se puede leer, sí
+    if (!ABSENT_FILE.includes(e && e.code)) unreadable.push(`los nombres de las sesiones de Codex: ${codexHome} no se puede leer (${(e && e.code) || 'error'})`);
+    return out;
+  }
+  const newest = bases.sort((a, b) => Number(/\d+/.exec(a)[0]) - Number(/\d+/.exec(b)[0])).pop();
+  if (!newest) return out;
+  let db = null;
+  try {
+    const { DatabaseSync } = require('node:sqlite');
+    db = new DatabaseSync(path.join(codexHome, newest), { readOnly: true });
+    for (const r of db.prepare("SELECT id, name FROM threads WHERE name IS NOT NULL AND name <> ''").all()) out.set(String(r.id), cut(oneLine(String(r.name)), NAME_MAX));
+  } catch (e) {
+    unreadable.push(`los nombres de las sesiones de Codex (${newest}) no se pudieron leer: ${oneLine((e && e.message) || e).slice(0, 120)}`);
+  } finally { try { if (db) db.close(); } catch { /* ya cerrada */ } }
+  return out;
 }
 
 // Un agente interno de otra sesión (un examen o un pase que lanza su propio Claude): corre en la carpeta temporal del
@@ -157,7 +217,7 @@ function sessionsBySid(dir, unreadable, projectsDir) {
     try { process.kill(pid, 0); alive = true; } catch (e) { alive = e.code === 'EPERM'; }
     const dates = [Number(s.statusUpdatedAt), Number(s.updatedAt), transcriptMs(projectsDir, s.cwd, s.sessionId)].filter((v) => Number.isFinite(v) && v > 0);
     const cwd = typeof s.cwd === 'string' ? s.cwd : null;
-    const cur = { name: s.name || null, alive, busy: s.status === 'busy', cwd, last: dates.length ? Math.max(...dates) : null, internal: isInternalAgent(cwd, s.nameSource) };
+    const cur = { name: sessionTitle(projectsDir, cwd, s.sessionId, unreadable) || s.name || null, alive, busy: s.status === 'busy', cwd, last: dates.length ? Math.max(...dates) : null, internal: isInternalAgent(cwd, s.nameSource) };
     // Dos archivos con la misma sesión: manda el vivo, y la actividad es la más nueva de los dos.
     const prev = out.get(s.sessionId);
     if (!prev || (!prev.alive && alive)) out.set(s.sessionId, prev && prev.last > (cur.last ?? -1) ? { ...cur, last: prev.last } : cur);
@@ -221,7 +281,6 @@ const PER_QUERY_MS = 5000;
 const ALL_QUERIES_MS = 6000;
 const GIT_MS = 2000;
 const GIT_BUDGET_MS = 3000;
-const NOT_A_REPO = /not a git repository/i;
 
 // git con tope: `{ out }` si salió bien; si no, `{ err, status }` con el motivo. `ctx.until` es el tope de toda la
 // lectura de repos y `ctx.cache` guarda lo leído, para que la segunda pasada no vuelva a preguntar.
@@ -240,6 +299,76 @@ function gitNow(dir, args, ms) {
   if (r.status === 0) return { out: r.stdout.trim() };
   if (r.error) return { err: r.error.code === 'ETIMEDOUT' ? 'git se pasó del tope leyendo los repos' : `git: ${r.error.message}`, status: null };
   return { err: oneLine(r.stderr || `git salió con ${r.status}`).slice(0, 200), status: r.status };
+}
+
+// ── El repo de una carpeta, leído de sus archivos de git (sin lanzar git) ────────────────────────────────────────
+// Ubicar una carpeta (su raíz, su rama, su `origin`) es leer tres archivos; lanzar git por cada carpeta agotaba el tope
+// de 3 s con muchos worktrees. git queda para la historia de merges (`entryMedianMs`).
+// Un archivo de git: `{ text }`, `{ missing: true }` si no está, o `{ err }` si está y no se puede leer (con su código).
+const ABSENT = ABSENT_FILE;
+function readText(file) {
+  try { return { text: fs.readFileSync(file, 'utf8') }; } catch (e) {
+    return ABSENT.includes(e && e.code) ? { missing: true } : { err: (e && e.code) || 'error de lectura' };
+  }
+}
+
+// `{ root, gitDir, commonDir }` de la carpeta (subiendo hasta un `.git`: una carpeta, o el archivo `gitdir: <ruta>` de un
+// worktree o un submódulo), o null fuera de un repo. Un `.git` que no se puede leer, o un archivo sin esa línea, es un
+// repo roto: `{ root, err }`. La raíz va por su ruta real (`/private/var/…` en la Mac).
+function repoOf(dir, ctx) {
+  const key = `repo\0${dir}`;
+  if (ctx.cache.has(key)) return ctx.cache.get(key);
+  let found = null;
+  for (let d = dir; ; d = path.dirname(d)) {
+    const dotgit = path.join(d, '.git');
+    let st = null;
+    try { st = fs.statSync(dotgit); } catch (e) {
+      // sin `.git` se sigue subiendo; uno que está y no se puede mirar no es «fuera de un repo»
+      if (!ABSENT.includes(e && e.code)) { found = { root: d, err: `${d}: su .git no se puede leer (${(e && e.code) || 'error'})` }; break; }
+    }
+    if (st && st.isDirectory()) { found = { root: d, gitDir: dotgit }; break; }
+    if (st && st.isFile()) {
+      const r = readText(dotgit);
+      const pointer = r.text !== undefined && /^gitdir:\s*(.+?)\s*$/m.exec(r.text);
+      found = pointer ? { root: d, gitDir: path.resolve(d, pointer[1]) }
+        : { root: d, err: r.err ? `${d}: su .git no se puede leer (${r.err})` : `${d}: su .git no dice dónde está la carpeta git` };
+      break;
+    }
+    if (path.dirname(d) === d) break;
+  }
+  if (found && !found.err) {
+    // en un worktree, `commondir` lleva a la carpeta git común (la del `config` con su `origin`)
+    const common = readText(path.join(found.gitDir, 'commondir'));
+    if (common.err) found.err = `${found.root}: su commondir no se puede leer (${common.err})`;
+    found.commonDir = common.text && common.text.trim() ? path.resolve(found.gitDir, common.text.trim()) : found.gitDir;
+    try { found.root = fs.realpathSync(found.root); } catch { /* queda la escrita */ }
+    // quien pregunte después por la raíz misma no vuelve a subir
+    ctx.cache.set(`repo\0${found.root}`, found);
+  }
+  ctx.cache.set(key, found);
+  return found;
+}
+
+// La rama del repo: `{ branch }` (vacía con HEAD suelto), o `{ err }` si HEAD no se lee.
+function branchOf(repo) {
+  const head = readText(path.join(repo.gitDir, 'HEAD'));
+  if (head.text === undefined) return { err: `${repo.root}: no se lee su HEAD (${head.err || 'no está'})` };
+  const ref = /^ref:\s*refs\/heads\/(.+?)\s*$/.exec(head.text.trim());
+  return { branch: ref ? ref[1] : '' };
+}
+
+// La dirección de `origin` en el `config` común del repo: `{ url }`, `{ none: true }` sin `origin`, o `{ err }`.
+function originOf(repo) {
+  const config = readText(path.join(repo.commonDir, 'config'));
+  if (config.text === undefined) return { err: `no se lee su config (${config.err || 'no está'})` };
+  let inOrigin = false;
+  for (const line of config.text.split(/\r?\n/)) {
+    const section = /^\s*\[\s*([^\]]+?)\s*\]/.exec(line);
+    if (section) { inOrigin = /^remote\s+"origin"$/.test(section[1]); continue; }
+    const url = inOrigin && /^\s*url\s*=\s*(.+?)\s*$/.exec(line);
+    if (url) return { url: url[1] };
+  }
+  return { none: true };
 }
 
 // La entrada a un repo (CI, cola y merge), medida en su historia de git: de los últimos merges a la rama principal, el
@@ -284,8 +413,6 @@ function storyRepos(m, failures, ctx) {
   // Una pregunta por repo: de la más corta a la más larga, una carpeta que ya está dentro de una raíz encontrada no se
   // vuelve a preguntar. Las que no se leyeron por el tope de tiempo van en un solo renglón, con la cuenta.
   const dirs = [...new Set([m.repoPath, ...touched])].filter((d) => typeof d === 'string' && path.isAbsolute(d)).sort((a, b) => a.length - b.length);
-  let capped = 0;
-  let cappedWhy = '';
   for (const dir of dirs) {
     if (!fs.existsSync(dir)) continue;
     // git da la raíz por su ruta real (`/private/var/…` en la Mac): se compara con la carpeta por la suya
@@ -298,16 +425,10 @@ function storyRepos(m, failures, ctx) {
       return true;
     };
     if (roots.some((r) => inside(dir, r) || inside(real, r))) continue;
-    const top = git(dir, ['rev-parse', '--show-toplevel'], ctx);
-    if (top.err) {
-      if (/tope/.test(top.err)) { capped += 1; cappedWhy = top.err; }
-      else if (!NOT_A_REPO.test(top.err)) failures.push(`${dir}: ${top.err}`);
-      continue;
-    }
-    const root = path.resolve(top.out);
-    if (!roots.includes(root)) roots.push(root);
+    const repo = repoOf(dir, ctx);
+    if (repo && repo.err) { failures.push(repo.err); continue; }
+    if (repo && !roots.includes(repo.root)) roots.push(repo.root);
   }
-  if (capped) failures.push(`${capped} carpeta(s) no se leyeron: ${cappedWhy}`);
   return roots;
 }
 
@@ -351,12 +472,15 @@ function parseRemote(url) {
 
 // Qué preguntar por cada raíz con rama propia: `null` si está en su rama principal o sin rama (HEAD suelto).
 function repoQuery(root, failures, ctx) {
-  const head = git(root, ['symbolic-ref', '-q', '--short', 'HEAD'], ctx);
-  if (head.err) { if (head.status !== 1) failures.push(`${root}: ${head.err}`); return null; }
-  if (MAIN_BRANCHES.includes(head.out)) return null;
-  const origin = git(root, ['remote', 'get-url', 'origin'], ctx);
-  if (origin.err) return { root, branch: head.out, kind: null, host: /no such remote/i.test(origin.err) ? 'ningún servidor (el repo no tiene origin)' : `ningún servidor (no pude leer origin: ${origin.err})` };
-  return { root, branch: head.out, ...parseRemote(origin.out) };
+  const repo = repoOf(root, ctx);
+  if (!repo) return null;
+  if (repo.err) { failures.push(repo.err); return null; }
+  const head = branchOf(repo);
+  if (head.err) { failures.push(head.err); return null; }
+  if (!head.branch || MAIN_BRANCHES.includes(head.branch)) return null;
+  const origin = originOf(repo);
+  if (!origin.url) return { root, branch: head.branch, kind: null, host: origin.none ? 'ningún servidor (el repo no tiene origin)' : `ningún servidor (no pude leer origin: ${origin.err})` };
+  return { root, branch: head.branch, ...parseRemote(origin.url) };
 }
 
 function commandFor(q) {
@@ -413,20 +537,28 @@ function queryAll(queries, { perMs = PER_QUERY_MS, totalMs = ALL_QUERIES_MS, env
   return Promise.all(queries.map((q) => Promise.race([runQuery(q, perMs, env, children), late]))).finally(() => clearTimeout(timer));
 }
 
-// La story de la rama de la carpeta de una sesión (`story/<id>…`), o `null`: sin repo, en otra rama o sin respuesta de
-// git dentro del tope, la fila sale sin la story.
-function storyBranch(dir, ctx) {
-  if (!path.isAbsolute(dir) || !fs.existsSync(dir)) return null;
-  const head = git(dir, ['symbolic-ref', '-q', '--short', 'HEAD'], ctx);
-  const x = !head.err && /^story\/(\d+(?:\.\d+)+)(?:[-/]|$)/.exec(head.out);
+// La rama de una carpeta, o '' (sin repo, sin rama, o que no existe). Un repo roto o un HEAD que no se lee van a
+// `unreadable` (una vez cada uno), no se callan.
+function branchAt(dir, ctx, unreadable) {
+  if (!dir || !path.isAbsolute(dir) || !fs.existsSync(dir)) return '';
+  const repo = repoOf(dir, ctx);
+  const head = repo && !repo.err ? branchOf(repo) : null;
+  const err = (repo && repo.err) || (head && head.err);
+  if (err && unreadable && !unreadable.includes(err)) unreadable.push(err);
+  return head && !head.err ? head.branch : '';
+}
+
+// La story de la rama de la carpeta de una sesión (`story/<id>…`), o `null`.
+function storyBranch(dir, ctx, unreadable) {
+  const x = /^story\/(\d+(?:\.\d+)+)(?:[-/]|$)/.exec(branchAt(dir, ctx, unreadable));
   return x ? x[1] : null;
 }
 
 // Qué hace una sesión sin pipeline: su carpeta y la rama en que está (sin rama: sólo la carpeta).
-function sessionPlace(cwd, ctx) {
+function sessionPlace(cwd, ctx, unreadable) {
   if (!cwd) return '(carpeta desconocida)';
-  const head = path.isAbsolute(cwd) && fs.existsSync(cwd) ? git(cwd, ['symbolic-ref', '-q', '--short', 'HEAD'], ctx) : { err: 'no existe' };
-  return head.err || !head.out ? path.basename(cwd) : `${path.basename(cwd)} · ${head.out}`;
+  const branch = branchAt(cwd, ctx, unreadable);
+  return branch ? `${path.basename(cwd)} · ${branch}` : path.basename(cwd);
 }
 
 // Los últimos archivos que tocó una sesión, del más nuevo al más viejo, del registro que escribe el arnés
@@ -436,6 +568,7 @@ function sessionPlace(cwd, ctx) {
 const TOUCHED_TAIL_BYTES = 64 * 1024;
 const TOUCHED_MAX = 20;
 function lastTouched(sdir, sid, home, nowMs, unreadable) {
+  if (!SAFE_SID.test(String(sid))) return [];
   const file = path.join(sdir, 'file-events', `${sid}.jsonl`);
   let text;
   try {
@@ -469,31 +602,29 @@ function lastTouched(sdir, sid, home, nowMs, unreadable) {
 }
 
 // Qué hace una sesión según un archivo que tocó: el repo, y la rama si no es la principal o la primera carpeta dentro del
-// repo si lo es; la story, de una rama `story/<id>…` o de un archivo `specs/story-<id>-…`. Fuera de un repo, `null`; si
-// git no contesta, `null` y el motivo al pie.
+// repo si lo es; la story, de una rama `story/<id>…` o de un archivo `specs/story-<id>-…`; `root`, la raíz del repo o
+// worktree. Fuera de un repo, `null`; un HEAD que no se lee, al pie.
 function touchedPlace(file, ctx, unreadable) {
   let dir = path.dirname(file);
   while (!fs.existsSync(dir) && path.dirname(dir) !== dir) dir = path.dirname(dir);
-  const top = git(dir, ['rev-parse', '--show-toplevel'], ctx);
-  // el tope de tiempo lo cuenta quien llama, en un solo renglón; otra falla de git va al pie
-  if (top.err && !NOT_A_REPO.test(top.err) && top.status !== null) unreadable.push(`${dir}: ${top.err}`);
-  if (top.err || !top.out) return null;
-  const root = path.resolve(top.out);
-  // git da la raíz por su ruta real (`/private/var/…` en la Mac): el archivo se mide desde la suya
+  const repo = repoOf(dir, ctx);
+  if (!repo) return null;
+  if (repo.err) { if (!unreadable.includes(repo.err)) unreadable.push(repo.err); return null; }
+  const root = repo.root;
+  // la raíz va por su ruta real (`/private/var/…` en la Mac): el archivo se mide desde la suya
   let real = dir;
   try { real = fs.realpathSync(dir); } catch { /* se mide desde la escrita */ }
   const rel = path.relative(root, path.join(real, path.relative(dir, file)));
   if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
-  const head = git(root, ['symbolic-ref', '-q', '--short', 'HEAD'], ctx);
-  // sin rama (HEAD suelto) git sale 1; cualquier otra falla va al pie
-  if (head.err && head.status !== 1 && head.status !== null) unreadable.push(`${root}: ${head.err}`);
-  const branch = head.err ? '' : head.out;
+  const head = branchOf(repo);
+  if (head.err && !unreadable.includes(head.err)) unreadable.push(head.err);
+  const branch = head.err ? '' : head.branch;
   const fromBranch = /^story\/(\d+(?:\.\d+)+)(?:[-/]|$)/.exec(branch);
   const fromSpec = /(?:^|[\\/])specs[\\/]story-(\d+(?:\.\d+)+)-/.exec(rel);
   const parts = rel.split(/[\\/]/);
   const base = path.basename(root);
   const work = branch && !MAIN_BRANCHES.includes(branch) ? `${base} · ${branch}` : parts.length > 1 ? `${base} · ${parts[0]}` : base;
-  return { work, story: (fromBranch && fromBranch[1]) || (fromSpec && fromSpec[1]) || null };
+  return { work, root, story: (fromBranch && fromBranch[1]) || (fromSpec && fromSpec[1]) || null };
 }
 
 // El estado de una story con el paso 8 cerrado: `null` si ya entró (nada abierto y todo contestado).
@@ -581,6 +712,39 @@ function buildWip(opts = {}) {
     const s = sessions.get(sid);
     return s && s.alive ? (s.name || shortId(sid)) : null;
   };
+  // una sesión sin archivo de sesión (cerrada, o de Codex, que no lo escribe): el nombre que le puso la persona en Codex,
+  // o el id corto. La base de Codex se lee una vez y sólo si hace falta.
+  let codex = null;
+  const nameOf = (sid) => {
+    if (!codex) codex = codexNames(opts.codexHome || path.join(home, '.codex'), unreadable);
+    return codex.get(sid) || shortId(sid);
+  };
+  // La carpeta donde edita una sesión: la raíz del repo o worktree de su último archivo tocado; sin uno, `fallback` o su
+  // carpeta de arranque. Con `~` en lugar del HOME.
+  let realHome = home;
+  try { realHome = fs.realpathSync(home); } catch { /* queda el escrito */ }
+  const tilde = (p) => {
+    if (!p) return '(carpeta desconocida)';
+    for (const h of [home, realHome]) if (p === h || p.startsWith(h + path.sep)) return path.join('~', p.slice(h.length + 1));
+    return p;
+  };
+  const touchedCache = new Map();
+  const touchedOf = (sid) => {
+    if (!touchedCache.has(sid)) touchedCache.set(sid, lastTouched(sdir, sid, home, nowMs, unreadable));
+    return touchedCache.get(sid);
+  };
+  const folderOf = (sid, fallback) => {
+    for (const f of touchedOf(sid)) {
+      let d = path.dirname(f);
+      while (!fs.existsSync(d) && path.dirname(d) !== d) d = path.dirname(d);
+      const repo = repoOf(d, gitCtx);
+      if (repo && repo.err) { if (!unreadable.includes(repo.err)) unreadable.push(repo.err); continue; }
+      if (repo) return tilde(repo.root);
+    }
+    const s = sessions.get(sid);
+    const usable = (p) => typeof p === 'string' && path.isAbsolute(p);
+    return tilde(usable(fallback) ? fallback : s && usable(s.cwd) ? s.cwd : null);
+  };
 
   let stale = 0;
   let staleWaiting = 0;
@@ -622,9 +786,9 @@ function buildWip(opts = {}) {
     const label = liveName(sid);
     if (label) {
       const entry = storyEntry(m, gitCtx);
-      rows.push({ work, state: step, end: entering ? enteringEnd(m, entry, nowMs) : estimateEnd(m, medians, nowMs, entry), session: label });
+      rows.push({ work, state: step, end: entering ? enteringEnd(m, entry, nowMs) : estimateEnd(m, medians, nowMs, entry), session: label, folder: folderOf(sid, m.repoPath) });
     }
-    else halfway.push(`${work} · ${shortId(sid)} · quedó en: ${step} · limpiar: node ${MARKER_JS} clear-session ${sid}`);
+    else halfway.push(`${work} · ${nameOf(sid)} · quedó en: ${step} · limpiar: node ${MARKER_JS} clear-session ${sid}`);
   }
 
   // Después del cierre: `marker.js clear` borra el marcador y deja el cierre en timing-history/. Una sesión viva sin
@@ -643,7 +807,7 @@ function buildWip(opts = {}) {
       title = '(título ilegible)';
       unreadable.push(`${m.storyPath || '(sin ruta de story)'}: ${e.code === 'ENOENT' ? 'no existe' : e.message}`);
     }
-    rows.push({ work: `${m.storyId || '?'} · ${cut(title, TITLE_MAX)}`, state: entering, end: enteringEnd(m, storyEntry(m, gitCtx), nowMs), session: liveName(sid) });
+    rows.push({ work: `${m.storyId || '?'} · ${cut(title, TITLE_MAX)}`, state: entering, end: enteringEnd(m, storyEntry(m, gitCtx), nowMs), session: liveName(sid), folder: folderOf(sid, m.repoPath) });
   }
 
   if (stale) unreadable.push(`${stale} marcador(es) sin tocar hace más de 24 h: no cuentan (marker.js list-all los descarta)`);
@@ -662,7 +826,7 @@ function buildWip(opts = {}) {
       const parts = ['Trabajo suelto'];
       if (last !== undefined) parts.push(`sin tocar desde ${hhmm(last)}`);
       if (last !== undefined && nowMs - last > LOOSE_STALE_MS) parts.push(`¿terminó? cerralo desde su sesión: node ${MARKER_JS} adhoc clear`);
-      rows.push({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label });
+      rows.push({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) });
     }
     else {
       // Se limpia con `adhoc clear-orphan`, que sólo borra pasadas las 24 h sin tocarse: antes, se dice desde cuándo.
@@ -670,14 +834,14 @@ function buildWip(opts = {}) {
       if (touched === undefined) {
         try { touched = fs.statSync(file).mtimeMs; } catch (e) {
           unreadable.push(`${file}: sin fecha legible (${e.message})`);
-          halfway.push(`ad-hoc «${work}» · ${shortId(sid)} · fecha ilegible: no se sabe desde cuándo se puede limpiar`);
+          halfway.push(`ad-hoc «${work}» · ${nameOf(sid)} · fecha ilegible: no se sabe desde cuándo se puede limpiar`);
           continue;
         }
       }
       const how = nowMs - touched > STALE_MS
         ? `limpiar: node ${MARKER_JS} adhoc clear-orphan ${sid}`
         : `se podrá limpiar después de las ${hhmm(touched + STALE_MS)}`;
-      halfway.push(`ad-hoc «${work}» · ${shortId(sid)} · ${how}`);
+      halfway.push(`ad-hoc «${work}» · ${nameOf(sid)} · ${how}`);
     }
   }
 
@@ -696,21 +860,20 @@ function buildWip(opts = {}) {
       let touched = at;
       if (!Number.isFinite(touched)) { try { touched = fs.statSync(file).mtimeMs; } catch { touched = nowMs; } }
       const how = nowMs - touched > STALE_MS ? `borrar: node ${MARKER_JS} doing clear-orphan ${sid}` : `se podrá borrar después de las ${hhmm(touched + STALE_MS)}`;
-      halfway.push(`nota «${work}» · ${shortId(sid)} · ${how}`);
+      halfway.push(`nota «${work}» · ${nameOf(sid)} · ${how}`);
       continue;
     }
     busy.add(sid);
     const parts = ['Anotado por la sesión'];
     if (Number.isFinite(at)) parts.push(`sin tocar desde ${hhmm(at)}`);
     if (Number.isFinite(at) && nowMs - at > LOOSE_STALE_MS) parts.push(`¿terminó? borrala desde su sesión: node ${MARKER_JS} doing clear`);
-    rows.push({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label });
+    rows.push({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: folderOf(sid) });
   }
 
   const free = [];
   const noData = [];
   const idle = [];
   let internal = 0;
-  let notDeduced = 0;
   for (const [sid, s] of sessions) {
     if (s.alive && s.internal && !busy.has(sid)) { internal += 1; continue; }
     if (!s.alive || busy.has(sid)) continue;
@@ -718,29 +881,31 @@ function buildWip(opts = {}) {
     if (s.busy || (s.last != null && nowMs - s.last < WORKING_MS)) {
       // lo que hace sale del último archivo que tocó dentro de un repo; sin uno, de la carpeta donde arrancó
       let place = null;
-      const files = lastTouched(sdir, sid, home, nowMs, unreadable);
+      const files = touchedOf(sid);
       for (const file of files) {
-        // sin tiempo para git, los que siguen fallarían igual: se cuenta la sesión y va un solo renglón al pie
-        if (Date.now() > gitCtx.until) { notDeduced += 1; break; }
         place = touchedPlace(file, gitCtx, unreadable);
         if (place) break;
       }
-      const story = (place && place.story) || (s.cwd && storyBranch(s.cwd, gitCtx));
-      const parts = ['Trabajando sin pipeline', story && `story ${story} en preparación`, s.last != null && `última actividad ${hhmm(s.last)}`].filter(Boolean);
-      rows.push({ work: place ? place.work : sessionPlace(s.cwd, gitCtx), state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label });
+      const story = (place && place.story) || (s.cwd && storyBranch(s.cwd, gitCtx, unreadable));
+      // sin archivo en un repo ni story, y con la carpeta de arranque en la rama principal de su repo, no se sabe qué
+      // hace: se dice en llano, con el motivo, en lugar de «<repo> · main», que dice lo mismo para todas
+      const startBranch = s.cwd ? branchAt(s.cwd, gitCtx, unreadable) : '';
+      const unknown = !place && !story && MAIN_BRANCHES.includes(startBranch);
+      const why = unknown && (files.length ? 'los archivos que tocó no están en un repo' : `no tocó archivos en las últimas ${IDLE_MS / 3600000} h`);
+      const parts = ['Trabajando sin pipeline', why, story && `story ${story} en preparación`, s.last != null && `última actividad ${hhmm(s.last)}`].filter(Boolean);
+      rows.push({ work: place ? place.work : unknown ? 'no se ve qué hace' : sessionPlace(s.cwd, gitCtx, unreadable), state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label, folder: place ? tilde(place.root) : tilde(s.cwd) });
     } else if (s.last == null) { free.push(label); noData.push(label); }
     else if (nowMs - s.last > IDLE_MS) idle.push(`${label} (desde ${hhmm(s.last)})`);
     else free.push(label);
   }
-  if (notDeduced) unreadable.push(`${notDeduced} sesión(es) sin deducir qué hacen: se pasó del tope de ${GIT_BUDGET_MS / 1000} s leyendo los repos`);
   return { rows, free, idle, halfway, unreadable, wanted, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal) };
 }
 
 function render(rows, free, noData, idle, halfway, unreadable, internal = 0) {
   const esc = (s) => oneLine(s).replace(/\|/g, '\\|');
-  const lines = ['| Trabajo | Estado | Fin estimado | Sesión |', '|---|---|---|---|'];
-  if (!rows.length) lines.push('| (nada en curso) | | | |');
-  for (const r of rows) lines.push(`| ${esc(r.work)} | ${esc(r.state)} | ${esc(r.end)} | ${esc(r.session)} |`);
+  const lines = ['| Trabajo | Estado | Fin estimado | Sesión | Carpeta |', '|---|---|---|---|---|'];
+  if (!rows.length) lines.push('| (nada en curso) | | | | |');
+  for (const r of rows) lines.push(`| ${esc(r.work)} | ${esc(r.state)} | ${esc(r.end)} | ${esc(r.session)} | ${esc(r.folder || '')} |`);
   const freeText = free.map((f) => (noData.includes(f) ? `${f} (sin dato de actividad)` : f));
   lines.push('', `Libres: ${freeText.length ? freeText.join(', ') : 'ninguna'}`);
   if (idle.length) lines.push(`Sin uso hace más de ${IDLE_MS / 3600000} h: ${idle.join(', ')}`);

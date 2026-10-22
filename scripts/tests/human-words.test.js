@@ -154,7 +154,8 @@ test('T4 HumanWords_ProgramTextsWithoutCorrida @story-8.87 @ac-2 @ac-7', () => {
   const malas = [];
   for (const f of programas()) {
     for (const s of cadenas(leer(f))) {
-      if (/^corridas?$/i.test(s)) continue; // una cadena que es sólo la palabra es un identificador
+      // una cadena que es sólo la palabra, o el prefijo de unas claves («corridas.»), es un identificador
+      if (/^corridas?\.?$/i.test(s)) continue;
       if (CORRIDA.test(s.replace(/["'`]corridas?["'`]/gi, ''))) malas.push(`${f}: ${s.slice(0, 100)}`);
     }
     // el texto de una página armada en una plantilla: lo que va entre una etiqueta y la siguiente

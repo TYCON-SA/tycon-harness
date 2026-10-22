@@ -278,9 +278,8 @@ siempre en archivos de repos, y hay dos caminos para cambiarla:
 
 **Qué puede pisar tu máquina.** Para casi todo, el orden es variable `TYCON_…` › `~/.claude/tycon.json` › repo del
 equipo (`team-profile.json`). Así, tu máquina puede apagar para ella sola una conexión que el equipo prende, o quedarse
-en `ask` aunque el equipo diga `auto`. Dos claves son del equipo cuando su `team-profile.json` las declara: en
-`packs.default` el equipo le gana a tu archivo y sólo `TYCON_PACKS_DEFAULT` lo pisa; `adversarial.model_question` no
-la pisa ninguna máquina. Lo personal no puede ir en el repo del equipo: el lector lo rechaza. Lo de `team-repos.json` y `operations.json` no se pisa desde una máquina,
+en `ask` aunque el equipo diga `auto`. Una clave es del equipo cuando su `team-profile.json` la declara: en
+`packs.default` el equipo le gana a tu archivo y sólo `TYCON_PACKS_DEFAULT` lo pisa. Lo personal no puede ir en el repo del equipo: el lector lo rechaza. Lo de `team-repos.json` y `operations.json` no se pisa desde una máquina,
 salvo el umbral de cobertura de las pruebas. `tycon-config.js explain` dice de dónde salió
 cada valor, y qué quedó escrito en tu archivo sin usarse.
 
@@ -436,7 +435,7 @@ tres bloques de reglas en `~/.claude/CLAUDE.md`, entre sus propios marcadores, y
 - `background-execution`: los pasos de más de dos minutos corren en segundo plano y se anuncian antes. Otro hook mide
   lo que dejó bloqueada la conversación (`TYCON_BLOCKING_METER=0`).
 - `tool-names`: la tabla con el nombre exacto de cada herramienta que nombran esas reglas.
-- La línea de import carga en cada sesión el `INDEX.md` del arnés: unos 13 KB, en castellano, con el índice de las
+- La línea de import carga en cada sesión el `INDEX.md` del arnés: unos 15 KB, en castellano, con el índice de las
   guías y las reglas siempre activas.
 - Los enlaces de `~/.claude/skills` y `~/.claude/agents` dejan disponibles en todas tus sesiones las skills y los
   revisores del arnés: el nombre y la descripción de cada uno se cargan en cada sesión.
@@ -514,7 +513,12 @@ secretos MCP para las aplicaciones gráficas (`TYCON_NO_GUI_ENV=1` lo saltea). U
 dentro de Codex, que gasta sesiones de modelo (`TYCON_BENCH_DAILY=0`). Con Azure DevOps configurado, deja además un
 `AGENTS.md` de una línea en los repos de tu equipo que tienen `CLAUDE.md` y no tienen `AGENTS.md`; se commitea con el
 repo (`TYCON_NO_AGENTSMD_POINTER=1` lo saltea). Queda un paso a mano: abrir una sesión de `codex`, correr `/hooks` y aprobarlos; sin eso los hooks no corren y no
-dan error.
+dan error. La aprobación es de Codex, no del arnés, y se guarda desde una sesión interactiva. Sin nadie delante
+(un contenedor, `codex exec` en una tarea programada) los controles sin aprobar no corren; `codex exec
+--dangerously-bypass-hook-trust` los corre sin la aprobación guardada, pensado para controles ya revisados (medido con
+Codex 0.162: sin la opción, una suite completa pasó; con ella, el freno la cortó). Con un modelo abierto
+(`codex --oss`) hace falta además uno que sepa usar herramientas: uno de código de 7B contestó sin correr ningún
+comando, y sin comandos ningún control se dispara.
 
 **La red**: el arnés no manda datos de uso. De fábrica habla con GitHub —el repo, para mirar si hay versión nueva, y
 los orígenes de las skills de terceros que lista `scripts/publishing/third-party-skills.json`— y, si alguno de tus

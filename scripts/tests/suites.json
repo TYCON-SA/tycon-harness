@@ -67,6 +67,12 @@
       "requiere": []
     },
     {
+      "__nota": "Los días de instintos al buzón y de vuelta (scripts/instincts/instinct-upload.js, su lugar en upload-runs.js, la forma nueva de download-runs.js y el aviso de la máquina sin buzón): un archivo por día cerrado desde el aviso, sólo lo de la organización y con seis campos, la versión nueva para una línea tardía, el corte a mitad sin anotar, el tope, «no medido» y la bajada sólo con --instincts. Sin red: un buzón de mentira local y HOME temporal.",
+      "raiz": "arnes",
+      "ruta": "tests/instinct-upload.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.27: el observador, el comando de revisión y el disparador del arranque sobre un árbol que NO trae su buzón (una versión bajada, la copia pública) — nada se crea por ensayar o listar, se escribe en la casa, se lee en todos los lugares. Con un claude de mentira en el PATH.",
       "raiz": "arnes",
       "ruta": "tests/instinct-outside-tree.test.sh",
@@ -334,6 +340,12 @@
     {
       "raiz": "arnes",
       "ruta": "tests/open-prs.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.32: el pull request por hallazgo en GitHub (open-pr-per-finding.sh --platform github) contra un repo bare local y el gh de mentira; la del guion en Azure vive en el privado.",
+      "raiz": "arnes",
+      "ruta": "tests/open-pr-per-finding-github.test.sh",
       "requiere": []
     },
     {
@@ -1216,6 +1228,12 @@
       "requiere": []
     },
     {
+      "__nota": "la tabla de casos del freno de pruebas sin alcance, con el bash con el que el arnés corre sus guiones (en Windows, el de Git): es la que corre el ensayo de Windows.",
+      "raiz": "arnes",
+      "ruta": "tests/test-scope-table.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/evidence-key-collision.test.sh",
       "requiere": [],
@@ -1564,6 +1582,12 @@
       "__nota": "story 8.5.1: el consejo del aviso de arranque para un clon trabado se CORRE y tiene que destrabarlo — DU (el retiro borró lo que el dev tocó) + UU, sólo UU, y rutas/carpetas con espacio citadas.",
       "raiz": "arnes",
       "ruta": "tests/branch-guard-notice.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "story 1.11: el aviso de arranque de dev atrasada habla sólo con atraso real o trabajo trabado, dice «no sé» con datos viejos, no sale a la red, no rompe el arranque y ofrece una vez por estado.",
+      "raiz": "arnes",
+      "ruta": "tests/dev-behind-main-notice.test.sh",
       "requiere": []
     },
     {
@@ -2360,6 +2384,12 @@
       "__nota": "story 8.14, tanda A (T1-T6): el expansor y el partidor de scripts/lib/shell-parse.js — las llaves contra zsh y bash de verdad (un shell que falta sale NO MEDIDO), lo literal queda literal, los agrupamientos cortan por profundidad y las palabras quedan enteras, formas de zsh, $'…', variables y arreglos (lo desconocido vale *), y el presupuesto global calculado antes de generar.",
       "raiz": "arnes",
       "ruta": "tests/shell-parse-expand.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 6.3, tanda A (T1-T20, T26): el freno corta el borrado del grupo, del candado, del recurso que no se puede probar que no es SQL y `az rest` con delete, más los `Remove-Az…` de PowerShell; las formas vienen de fixtures/prod-guard-azure-delete.json. Corre en un HOME de laboratorio.",
+      "raiz": "arnes",
+      "ruta": "tests/prod-guard-azure-delete.test.sh",
       "requiere": []
     },
     {

@@ -54,12 +54,6 @@
         "model": "opus",
         "model_reason": "story pesada (2 señales model-hint) → hunters escalan a Opus (anunciar)",
         "early_launch": true,
-        "fable_upsell": {
-          "model": "fable",
-          "requires_user_approval": true,
-          "reason": "story pesada (superficie-grande, muchos-acs) — Fable caza más en el pase adversarial, a ~2x el costo de Opus",
-          "how": "preguntar al user en 1 línea (COMM.i); si aprueba → pasar model:\"fable\" al Workflow. Sin respuesta afirmativa → usar `model` de este output."
-        },
         "reason": ".tycon/advisors.yaml deep_review: always"
       }
     },
@@ -72,12 +66,6 @@
         "model": "opus",
         "model_reason": "story pesada (2 señales model-hint) → hunters escalan a Opus (anunciar)",
         "early_launch": true,
-        "fable_upsell": {
-          "model": "fable",
-          "requires_user_approval": true,
-          "reason": "story pesada (superficie-grande, muchos-acs) — Fable caza más en el pase adversarial, a ~2x el costo de Opus",
-          "how": "preguntar al user en 1 línea (COMM.i); si aprueba → pasar model:\"fable\" al Workflow. Sin respuesta afirmativa → usar `model` de este output."
-        },
         "reason": "risk-class NORMAL → deep-review corre (criterios NORMAL: superficie-chica)"
       }
     },
@@ -89,12 +77,6 @@
         "model": "opus",
         "model_reason": "story pesada (2 señales model-hint) → hunters escalan a Opus (anunciar)",
         "early_launch": false,
-        "fable_upsell": {
-          "model": "fable",
-          "requires_user_approval": true,
-          "reason": "story pesada (superficie-grande, muchos-acs) — Fable caza más en el pase adversarial, a ~2x el costo de Opus",
-          "how": "preguntar al user en 1 línea (COMM.i); si aprueba → pasar model:\"fable\" al Workflow. Sin respuesta afirmativa → usar `model` de este output."
-        },
         "reason": ".tycon/advisors.yaml deep_review: always"
       }
     },

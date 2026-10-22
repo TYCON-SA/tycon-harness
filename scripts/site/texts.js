@@ -280,19 +280,6 @@ const TEXTOS = {
   'corridas.textosIlegibles': { es: 'los textos de esta ejecución no se pudieron leer del disco del sitio', en: "this run's texts could not be read from the site's disk" },
   'corridas.vacioSinInforme': { es: 'no medido: todavía no se pudo saber de quién es cada máquina (lo que informan las máquinas se lee con la primera bajada entera del buzón); tus ejecuciones faltan, no son cero', en: 'not measured: it is not known yet who owns each machine (what the machines report is read with the first full download of the mailbox); your runs are missing, not zero' },
   'corridas.vacioTodavia': { es: 'todavía no hay ejecuciones de tus máquinas en el buzón ({maquinas}): la primera llega sola al terminar un pipeline', en: 'there are no runs from your machines in the mailbox yet ({maquinas}): the first one arrives automatically when a pipeline finishes' },
-  // el filtro de la vista (las etiquetas, los atajos y la cuenta; `{n}` y `{t}` los llena el cliente)
-  'corridas.filtro.filtro': { es: 'Filtro', en: 'Filter' },
-  'corridas.filtro.desde': { es: 'desde', en: 'from' },
-  'corridas.filtro.hasta': { es: 'hasta', en: 'to' },
-  'corridas.filtro.producto': { es: 'producto', en: 'product' },
-  'corridas.filtro.maquina': { es: 'máquina', en: 'machine' },
-  'corridas.filtro.sinConsumo': { es: 'sólo con consumo medido', en: 'only with measured usage' },
-  'corridas.filtro.llegaron': { es: 'sólo las que llegaron al paso 8', en: 'only those that reached step 8' },
-  'corridas.filtro.limpiar': { es: 'limpiar', en: 'clear' },
-  'corridas.filtro.hoy': { es: 'hoy', en: 'today' },
-  'corridas.filtro.semana': { es: 'esta semana', en: 'this week' },
-  'corridas.filtro.mes': { es: 'este mes', en: 'this month' },
-  'corridas.filtro.cuenta': { es: '{n} de {t} ejecuciones a la vista', en: '{n} of {t} runs shown' },
   'corridas.ningunaConfirmada': { es: 'ninguna confirmada', en: 'none confirmed' },
   // ── el inicio de sesión: lo que dicen los proveedores (auth-providers/, oidc.js); se arman en castellano y se traducen al mostrarse ──
   'proveedor.oidc': { es: 'un proveedor OpenID Connect propio de la organización', en: "the organization's own OpenID Connect provider" },
@@ -474,6 +461,9 @@ const TEXTOS = {
   'config.sinPlataforma': { es: 'no reconozco la plataforma del repo: descargá el archivo y abrí el pedido a mano', en: 'I do not recognize the repo\'s platform: download the file and open the request by hand' },
   'config.sinPolitica': { es: 'no pude leer la política de la rama principal ({codigo})', en: 'I could not read the main branch\'s policy ({codigo})' },
   'config.reposIlegible': { es: 'la lista de la revisión de dependencias (repos.json) no se pudo leer: los productos de ahí no se muestran', en: 'the dependency review list (repos.json) could not be read: its products are not shown' },
+  'config.reposListaIlegible': { es: 'la lista de la revisión de dependencias (repos.json) no se pudo leer: sólo se ofrecen los repos que nombra team-repos.json', en: 'the dependency review list (repos.json) could not be read: only the repos team-repos.json names are offered' },
+  'config.reposSinOperaciones': { es: 'todavía no hay copia del repo de operaciones: sólo se ofrecen los repos que nombra team-repos.json', en: 'there is no copy of the operations repo yet: only the repos team-repos.json names are offered' },
+  'config.reposIgnorados': { es: '{n} entrada(s) de repos.json no nombran un repo («ado» o «github») y no se ofrecen', en: '{n} repos.json entr(y/ies) do not name a repo («ado» or «github») and are not offered' },
   'config.espejoIlegible': { es: 'el espejo del buzón no se pudo leer ({codigo}): la versión de cada máquina no se sabe', en: 'the mailbox mirror could not be read ({codigo}): the version of each machine is unknown' },
   'config.perfilNoConfigurado': { es: 'el perfil del equipo no está configurado en el sitio', en: 'the team profile is not set up on the site' },
   'config.noEstas': { es: 'no estás en la lista que proponés: al mergear perdés el acceso a esta pestaña', en: 'you are not on the list you are proposing: once it merges, you will lose access to this tab' },
@@ -544,6 +534,7 @@ const TEXTOS = {
   'org.modelsSinValores': { es: '{archivo} no trae los valores de hoy', en: '{archivo} does not include the current values' },
   'org.modelsNoCarga': { es: 'no pude cargar {archivo} ({error})', en: 'I could not load {archivo} ({error})' },
   'org.sinFecha': { es: 'sin fecha', en: 'no date' },
+  'org.diaSegunElArchivo': { es: '{dia} (según el archivo)', en: '{dia} (from the file)' },
   'org.registrosIlegibles': { es: 'no medido: sus registros no se pudieron leer ({codigo})', en: 'not measured: its records could not be read ({codigo})' },
   'org.imagenSinVersion': { es: 'no medido: la imagen no declara su versión', en: 'not measured: the image does not declare its version' },
   'org.placeIlegible': { es: 'no medido: su place.json no se pudo leer', en: 'not measured: its place.json could not be read' },
@@ -617,6 +608,10 @@ const TEXTOS = {
   'pantalla.tecFormatoCobertura': { es: 'Cobertura (formato XML)', en: 'Cobertura (XML format)' },
   'pantalla.tecFiltroPorRepo': { es: 'El filtro de cada repo', en: 'Each repo\'s filter' },
   'pantalla.tecFiltroPorRepoAyuda': { es: 'Lo que cambia de un repo a otro (por ejemplo, qué categorías de pruebas corren): el comando lo recibe como {args}. Un repo sin su línea usa el de por defecto.', en: 'What changes from one repo to another (for example, which test categories run): the command receives it as {args}. A repo without its own line uses the default one.' },
+  'pantalla.tecAgregarUnRepo': { es: 'Agregar un repo', en: 'Add a repo' },
+  'pantalla.tecElegiUnRepo': { es: 'Elegí un repo', en: 'Choose a repo' },
+  'pantalla.tecQuitarRepo': { es: 'Quitar', en: 'Remove' },
+  'pantalla.tecNoHayMasRepos': { es: 'No hay más repos de la organización para agregar', en: 'There are no more organization repos to add' },
   'pantalla.tecFiltroPorDefecto': { es: 'Por defecto (vacío: ninguno)', en: 'Default (empty: none)' },
   'pantalla.tecCambiadaPorTuOrganizacion': { es: 'cambiada por tu organización', en: 'changed by your organization' },
   'pantalla.tecAgregadaPorTuOrganizacion': { es: 'agregada por tu organización', en: 'added by your organization' },
@@ -624,7 +619,8 @@ const TEXTOS = {
   'pantalla.tecVolverALaDeFabrica': { es: 'Volver a la de fábrica (descarta tus cambios)', en: 'Back to the built-in one (discards your changes)' },
   'pantalla.tecBorrar': { es: 'Borrar esta herramienta', en: 'Delete this tool' },
   'pantalla.tecSinListaDeFabrica': { es: 'No pude mostrar las herramientas de fábrica de esta versión.', en: 'I couldn\'t show this version\'s built-in tools.' },
-  'pantalla.tecComoReemplazarUnaDeLaPuerta': { es: 'Agregá una receta que se detecte con el mismo archivo y gana la de tu organización: la arma el agente con «Pedíselo a tu agente», y desde la próxima ejecución se usa la tuya.', en: "Add a recipe detected by the same file and your organization's wins: the agent builds it with «Ask your agent», and from the next execution on yours is used." },
+  'pantalla.tecFraseReemplazar': { es: 'quiero reemplazar la herramienta de pruebas {nombre} de mi proyecto por una receta propia en la configuración del arnés, detectada por {archivo} (la receta está en la sección «Tu tecnología» de guides/organization-site.md del arnés)', en: 'I want to replace the {nombre} test tool in my project with our own recipe in the harness configuration, detected by {archivo} (the recipe is in the «Your technology» section of the harness guides/organization-site.en.md)' },
+  'pantalla.tecAlReemplazarPasa': { es: 'El agente arma el pedido, lo aprueba un admin y desde la próxima ejecución se usa la tuya.', en: 'The agent builds the request, an admin approves it, and from the next execution on yours is used.' },
   'pantalla.tecCambiarLaHerramienta': { es: 'Cambiar la herramienta {nombre}', en: 'Change the {nombre} tool' },
   'pantalla.tecElComandoCorreEnCadaComputadora': { es: 'Cada persona del equipo va a correr este comando en su computadora: revisá que sea seguro.', en: 'Every team member will run this command on their computer: check that it is safe.' },
   'pantalla.tecArchivoQueLaDetecta': { es: 'Se usa cuando el proyecto tiene este archivo', en: 'Used when the project has this file' },
@@ -682,7 +678,9 @@ const TEXTOS = {
   'pantalla.quienReenviaElOk': { es: '¿Tu organización usa una sesión que reenvía el ok de un dev?', en: 'Does your organization use a session that relays a developer\'s OK?' },
   'pantalla.quienReenviaElOkNo': { es: 'No (de fábrica): el ok lo escribe el dev en el chat de su sesión', en: 'No (default): the developer writes the OK in their own session\'s chat' },
   'pantalla.quienReenviaElOkSi': { es: 'Sí: una sesión coordinadora lo reenvía', en: 'Yes: a coordinating session relays it' },
-  'pantalla.quienReenviaElOkAyuda': { es: 'Cuál sesión es se designa en cada máquina: el dev escribe en el chat de esa sesión «Esta sesión es la coordinadora». Una sesión que se llama igual no puede reenviar.', en: 'Which session it is gets designated on each machine: in that session\'s chat, the developer writes a sentence that names the role and says it is this session. A session with the same name cannot relay.' },
+  'pantalla.quienReenviaElOkAyuda': { es: 'La sesión se designa en cada máquina: el dev escribe en el chat de esa sesión «Esta sesión es la {nombre}». Una sesión que se llama igual no puede reenviar. Si cambiás el nombre, la designación anterior deja de valer hasta que el dev vuelva a designarla con el nombre nuevo.', en: 'The session is designated on each machine: in that session\'s chat, the developer writes a sentence that names the role ({nombre}) and says it is this session. A session with the same name cannot relay. If you change the name, the previous designation stops counting until the developer designates the session again with the new name.' },
+  'pantalla.quienReenviaElOkComoLaLlaman': { es: '¿Cómo la llaman?', en: 'What do you call it?' },
+  'pantalla.quienReenviaElOkEjemplo': { es: 'coordinadora, líder…', en: 'coordinadora, lead…' },
   'pantalla.comoContestaClaude': { es: 'Cómo contesta el agente', en: 'How the agent answers' },
   'pantalla.elIdiomaElEstiloY': { es: 'El idioma, el estilo y el largo de las respuestas en todas las máquinas. Llega a cada una con su próxima actualización, sin que el dev haga nada.', en: 'The language, the style and the length of the answers on every machine. Each one picks it up on its next update, with nothing for the dev to do.' },
   'pantalla.integraciones': { es: 'Integraciones', en: 'Integrations' },
@@ -769,7 +767,7 @@ const TEXTOS = {
   'pantalla.sesion': { es: 'sesión', en: 'session' },
   'pantalla.modelo': { es: 'modelo', en: 'model' },
   'pantalla.pesado': { es: 'pesado', en: 'heavy' },
-  'pantalla.preguntaAntesDeUsarFable': { es: 'pregunta antes de usar Fable', en: 'ask before using Fable' },
+  'pantalla.preguntaAntesDeUsarFable': { es: 'pregunta antes de usar Fable (ya no hace nada)', en: 'ask before using Fable (no longer does anything)' },
   'pantalla.liviano': { es: 'liviano', en: 'light' },
   'pantalla.normal': { es: 'normal', en: 'normal' },
   'pantalla.avisoDeEspera2': { es: 'aviso de espera', en: 'waiting notice' },
@@ -1130,9 +1128,6 @@ const TEXTOS = {
   'pantalla.elPaseAdversarial': { es: 'El pase adversarial', en: 'The adversarial pass' },
   'pantalla.unaStoryNormal': { es: 'Una historia normal', en: 'A normal story' },
   'pantalla.unaStoryPesada': { es: 'Una historia pesada', en: 'A heavy story' },
-  'pantalla.preguntarAntesDeUsarFable': { es: 'Preguntar antes de usar fable', en: 'Ask before using Fable' },
-  'pantalla.preguntar': { es: 'preguntar', en: 'ask' },
-  'pantalla.nunca': { es: 'nunca', en: 'never' },
   'pantalla.losAyudantesYLaSesion': { es: 'Los ayudantes y la sesión', en: 'The helpers and the session' },
   'pantalla.losAyudantes': { es: 'Los ayudantes', en: 'The helpers' },
   'pantalla.sesionStoryLiviana': { es: 'Sesión, historia liviana', en: 'Session, light story' },
@@ -1530,6 +1525,7 @@ const TEXTOS = {
   'control.@tcg:session-collision-guard.js': { es: 'Frena operar con git cuando otra sesión trabaja sobre el mismo repositorio local.', en: 'Blocks git operations when another session is working on the same local repository.' },
   'control.@tcg:telegram-zombie-sweep.sh': { es: 'Cierra los procesos huérfanos del bot de Telegram que se pelean los mensajes.', en: 'Closes orphaned Telegram bot processes that fight over incoming messages.' },
   'control.@tcg:test-scope-guard-pre.sh': { es: 'Frena correr todas las pruebas de golpe, que congelan la máquina, en vez de las necesarias.', en: 'Blocks running the whole test suite at once, which freezes the machine, instead of just what is needed.' },
+  'control.@tcg:dev-behind-main-notice.js': { es: 'En un repo de producto, avisa al abrir la sesión si a dev le faltan cambios de main o si tiene trabajo trabado hace una semana.', en: 'In a product repo, warns at session start when dev is missing changes from main or holds work stuck for a week.' },
   'control.@tcg:unpushed-work-notice.js': { es: 'Avisa si hay trabajo guardado en local que todavía no llegó al repositorio remoto.', en: 'Warns when committed work exists only locally and has not reached the remote repository.' },
   'control.@tcg:wait-notice.js': { es: 'Avisa por Telegram cuando una ejecución lleva rato esperando una respuesta tuya.', en: 'Sends a Telegram message when a run has been waiting on you for a while.' },
   'control.@tcg:worktree-sweep.js': { es: 'Borra solas las carpetas de trabajo que ya se mergearon a main.', en: 'Automatically deletes working folders whose changes are already merged into main.' },
@@ -1618,6 +1614,10 @@ for (const f of require('fs').readdirSync(require('path').join(__dirname, 'auth-
 // lo que dice el armado del pedido de Configuración (scripts/lib/repo-proposal.js, `rp.*`) vive en ese archivo, que nombra
 // las plataformas: la tabla también lo suma
 for (const [k, v] of Object.entries(require('../lib/repo-proposal.js').TEXTOS || {})) { if (TEXTOS[k]) throw new Error(`texts.js: la clave «${k}» está dos veces`); TEXTOS[k] = v; }
+
+// los textos de la vista de ejecuciones (`corridas.v.*`, `.filtro.*`, `.c.*`, `.m.*`) viven al lado de la vista, que viaja
+// sin el sitio (scripts/nightly/dashboard/runs-texts.js): la tabla también los suma
+for (const [k, v] of Object.entries(require('../nightly/dashboard/runs-texts.js').TEXTOS || {})) { if (TEXTOS[k]) throw new Error(`texts.js: la clave «${k}» está dos veces`); TEXTOS[k] = v; }
 
 /** Los valores con nombre de un texto, ordenados: `{n}`, `{fecha}`. */
 function valoresDe(texto) {

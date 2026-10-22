@@ -23,7 +23,7 @@ trae el comando todavía y que se actualiza con `/tycon-harness`. No corras nada
 
 ## Qué le mostrás
 
-La salida **tal cual**: la tabla (trabajo, estado, fin estimado, sesión), la línea de las sesiones libres, y si
+La salida **tal cual**: la tabla (trabajo, estado, fin estimado, sesión, carpeta), la línea de las sesiones libres, y si
 aparecen, «Quedaron a medio camino» y «No se pudo leer». No agregues listas de terminados, ni resúmenes de lo que hace
 cada sesión, ni horas que la tabla no trae: «sin datos» se deja como está.
 
@@ -46,10 +46,18 @@ nombre puesto) no tienen fila: al pie va un renglón con cuántos hay.
 que todavía no armó su marcador): su archivo de sesión dice que está ocupada, o tuvo actividad hace menos de 5
 minutos. Qué hace sale de los archivos que tocó en las últimas 3 h (el último que no sea de su carpeta temporal ni de
 la memoria): el repo, y su rama o la primera carpeta dentro del repo; la story, de una rama `story/<id>…` o de un
-archivo `specs/story-<id>-…`. Sin ninguno, sale la carpeta donde arrancó. Una nota con `doing` corrige lo deducido.
+archivo `specs/story-<id>-…`. Sin ninguno, sale la carpeta donde arrancó, o «no se ve qué hace» con el motivo si esa
+carpeta está en su rama principal. Una nota con `doing` corrige lo deducido.
 «Libres» son las que no hacen nada hace más de 5 minutos; «Sin uso hace más de 3 h», las que siguen abiertas pero
-nadie usa. La última actividad sale de las fechas del archivo de sesión y de la fecha de su conversación guardada: el
-programa no lee lo que dice ninguna conversación.
+nadie usa. La última actividad sale de las fechas del archivo de sesión y de la fecha de su conversación guardada.
+
+**Sesión** es el nombre que le puso la persona a la pestaña con `/rename` (en Codex, el nombre de su sesión); sin
+nombre, el id corto. De la conversación guardada el programa lee sólo ese renglón del título, al final del archivo:
+nada más de lo que dice una conversación se lee ni se guarda.
+
+**Carpeta** es dónde edita cada sesión: la raíz del repo o del worktree de su último archivo tocado o, sin uno, la
+carpeta donde arrancó, con `~` en lugar de la carpeta personal. El repo, la rama y el servidor de cada carpeta salen de
+sus archivos de git, sin lanzar git.
 
 Si hay trabajo a medio camino, la salida trae el comando para limpiar cada uno. **No lo corras**: limpiar lo decide
 quien lee.

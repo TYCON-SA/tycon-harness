@@ -139,7 +139,7 @@ const leerGates = (home) => {
 const CAMPOS = {
   advisors: ['model_hints', 'reloop_model_hints', 'reloop_model_hints_note', 'cost_tier'],
   'smart-reloop': ['reloop_model_hints', 'reloop_model_hints_note'],
-  'deep-review-gate': ['model', 'model_reason', 'fable_upsell'],
+  'deep-review-gate': ['model', 'model_reason'],
   start: ['model_hint'],
   'model-hint': null,
 };
@@ -254,7 +254,7 @@ test('T1 Defaults_UnSoloLugar_CopiasVerificadas @story-7.29 @ac-1', () => {
     reviewers: 'sonnet',
     reviewer: { 'tycon-spec-first-checker': 'opus' },
     reviewers_reloop: 'sonnet',
-    adversarial: { model: 'sonnet', heavy: 'opus', fable_question: 'ask' },
+    adversarial: { model: 'sonnet', heavy: 'opus' },
     helpers: 'haiku',
     // una story pesada sugiere opus: el arnés no sugiere fable solo; una organización lo elige con session.heavy
     session: { low: 'sonnet', normal: 'opus', heavy: 'opus' },
@@ -424,30 +424,29 @@ test('T6 Adversarial_ModeloComunPesadoYBanderas @story-7.29 @ac-8', () => {
   assert.equal(conConfig('deep-review-gate', 'heavy', [], { helpers: 'haiku' }).json.model, 'opus');
 });
 
-test('T7 Adversarial_PreguntaDeFable_OrganizacionY719 @story-7.29 @ac-8', () => {
-  // ask: fable_upsell; never: model_question + gates.log
-  const ask = conConfig('deep-review-gate', 'heavy', [], { adversarial: { fable_question: 'ask' } });
-  assert.ok(ask.json.fable_upsell);
-  assert.equal(ask.json.model_question, undefined);
-  const home = tmp('home');
-  const never = conConfig('deep-review-gate', 'heavy', [], { adversarial: { fable_question: 'never' } }, { home });
-  assert.equal(never.json.fable_upsell, undefined);
-  assert.deepStrictEqual(never.json.model_question, { value: 'never', origin: 'organization' });
-  assert.ok(leerGates(home).some((g) => g.check === 'model-question' && g.origin === 'organization'));
-  // la clave de la pregunta de modelo en la máquina (never) y la de la organización (ask): gana la organización y se nombra la otra
-  const home2 = tmp('home');
-  const tree = labTree(equipo({ adversarial: { fable_question: 'ask' } }));
-  execFileSync(process.execPath, [path.join(tree, 'scripts', 'lib', 'tycon-config.js'), 'set', 'adversarial.model_question', 'never'], { env: ambiente({ home: home2, tree }), stdio: 'ignore' });
-  const ambas = conConfig('deep-review-gate', 'heavy', [], null, { tree, home: home2 });
-  assert.ok(ambas.json.fable_upsell, 'gana la organización');
-  assert.match(JSON.stringify(ambas.json) + ambas.stderr, /model_question.*no se usa|no se usa.*model_question/);
-  // la de la pregunta de modelo sola: decide ella
+/** Escribe a mano la clave vieja de la pregunta en el archivo de la máquina (`set` ya no la escribe). */
+function claveViejaEnLaMaquina(home, valor) {
+  const archivo = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'tycon-home.js')).configFile(home);
+  fs.mkdirSync(path.dirname(archivo), { recursive: true });
+  fs.writeFileSync(archivo, JSON.stringify({ adversarial: { model_question: valor } }));
+}
+
+test('T7 Adversarial_PreguntaDeFable_Retirada — la clave vieja de la organización o de la máquina no cambia nada; la de la organización se avisa', () => {
+  for (const v of ['ask', 'never']) {
+    const home = tmp('home');
+    const r = conConfig('deep-review-gate', 'heavy', [], { adversarial: { fable_question: v } }, { home });
+    assert.equal(r.json.model, 'opus', `${v}: la story pesada sigue con opus`);
+    for (const k of ['fable_upsell', 'model_question', 'model_question_note']) assert.equal(r.json[k], undefined, `${v}: sin ${k}`);
+    assert.ok((r.json.models_warnings || []).some((m) => /fable_question[^\n]*ya no hace nada/.test(m)), `${v}: se avisa que ya no hace nada — ${JSON.stringify(r.json.models_warnings)}`);
+    assert.ok(!leerGates(home).some((g) => g.check === 'model-question'), `${v}: sin línea en gates.log`);
+  }
+  // la de la máquina sola: tampoco
   const home3 = tmp('home');
   const tree3 = labTree(equipo({ helpers: 'haiku' }));
-  execFileSync(process.execPath, [path.join(tree3, 'scripts', 'lib', 'tycon-config.js'), 'set', 'adversarial.model_question', 'never'], { env: ambiente({ home: home3, tree: tree3 }), stdio: 'ignore' });
+  claveViejaEnLaMaquina(home3, 'never');
   const sola = conConfig('deep-review-gate', 'heavy', [], null, { tree: tree3, home: home3 });
-  assert.equal(sola.json.fable_upsell, undefined);
-  assert.deepStrictEqual(sola.json.model_question, { value: 'never', origin: 'maquina' });
+  assert.equal(sola.json.model, 'opus');
+  assert.equal(sola.json.model_question, undefined);
 });
 
 test('T8 Ayudantes_EnStartYNotaDelControl @story-7.29 @ac-9', () => {
@@ -613,8 +612,8 @@ test('T14 Sesion_ArribaDelTecho_AvisaYNoCambia @story-7.29 @ac-13', () => {
 test('T15 Fable_TechoDebajo_NuncaSeOfrece @story-7.29 @ac-14', () => {
   const r = conConfig('deep-review-gate', 'heavy', [], { mandatory_ceiling: true, ceiling: 'opus', adversarial: { fable_question: 'ask' } });
   assert.equal(r.json.fable_upsell, undefined);
-  assert.deepStrictEqual(r.json.model_question, { value: 'never', origin: 'ceiling' });
-  assert.ok(conConfig('deep-review-gate', 'heavy', [], { mandatory_ceiling: true, ceiling: 'fable' }).json.fable_upsell);
+  assert.equal(r.json.model_question, undefined, 'la clave vieja no se informa');
+  assert.equal(conConfig('deep-review-gate', 'heavy', [], { mandatory_ceiling: true, ceiling: 'fable' }).json.fable_upsell, undefined, 'ni con el techo en fable');
 });
 
 test('T16 Control_LanzamientoArribaDelTecho_AvisaSinCambiar @story-7.29 @ac-15', () => {
@@ -725,8 +724,7 @@ test('T29 Suites_NoLeenLaConfiguracionDeLaMaquina @story-7.29 @ac-21', () => {
     const limpio = medir();
     process.env.HOME = home;
     process.env.TYCON_GUIDES_DIR = tree;
-    execFileSync(process.execPath, [path.join(tree, 'scripts', 'lib', 'tycon-config.js'), 'set', 'adversarial.model_question', 'never'], { env: ambiente({ home, tree }), stdio: 'ignore' });
-    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    claveViejaEnLaMaquina(home, 'never');
     const conCapa = medir();
     assert.deepStrictEqual(conCapa, limpio);
   } finally {

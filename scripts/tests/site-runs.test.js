@@ -187,7 +187,7 @@ function domMinimo(htmlTabla) {
  * Corre el cliente de la pestaña: pide la página, el cliente y la lista al sitio con la cookie, como el navegador.
  * Devuelve { nodos, rows, w, pagina, lista }.
  */
-async function clienteDelSitio(h, cookie, { search = '', alterar = null } = {}) {
+async function clienteDelSitio(h, cookie, { search = '', alterar = null, textos } = {}) {
   const pagina = await h.pedir(`/corridas${search}`, { cookie });
   assert.strictEqual(pagina.status, 200, `la página: ${pagina.status}`);
   const js = await h.pedir('/corridas/cliente.js', { cookie });
@@ -196,6 +196,12 @@ async function clienteDelSitio(h, cookie, { search = '', alterar = null } = {}) 
   const { nodos, rows, documento } = domMinimo(tbody);
   const fuente = /<div id="fuente-corridas"[^>]*data-api="([^"]+)"[^>]*data-generado="([^"]*)"/.exec(pagina.texto);
   nodos['fuente-corridas'] = { dataset: { api: fuente && fuente[1], generado: fuente && fuente[2] } };
+  // los textos del cliente, en el idioma de la página (el atributo que pone el sitio)
+  const textosCliente = /<div id="corridas-textos" data-textos="([^"]*)"/.exec(pagina.texto);
+  if (textosCliente) nodos['corridas-textos'] = { dataset: { textos: textosCliente[1].replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&') } };
+  // `textos`: null saca el bloque (una página sin él); un texto lo reemplaza (una página de otra versión)
+  if (textos === null) delete nodos['corridas-textos'];
+  else if (typeof textos === 'string') nodos['corridas-textos'] = { dataset: { textos } };
   // el molde de la cuenta viaja en un atributo de la página (el cliente lo lee de ahí)
   const molde = /<span[^>]*id="cuenta"[^>]*data-molde="([^"]*)"/.exec(pagina.texto);
   nodos.cuenta = { innerHTML: '', textContent: '', value: '', dataset: molde ? { molde: molde[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>') } : {} };
@@ -232,7 +238,9 @@ test('T1 Cabecera_SelloYBandas_IgualQueLaVista @story-2.27 @ac-1 @ac-18', async 
   const copia = tmp('site-runs-copia-');
   fs.mkdirSync(path.join(copia, 'scripts', 'nightly', 'dashboard'), { recursive: true });
   fs.mkdirSync(path.join(copia, 'scripts', 'lib'), { recursive: true });
-  for (const f of ['runs.js', 'common.js', 'sources.json']) fs.copyFileSync(path.join(ROOT, 'scripts', 'nightly', 'dashboard', f), path.join(copia, 'scripts', 'nightly', 'dashboard', f));
+  for (const f of ['runs.js', 'runs-texts.js', 'common.js', 'sources.json']) fs.copyFileSync(path.join(ROOT, 'scripts', 'nightly', 'dashboard', f), path.join(copia, 'scripts', 'nightly', 'dashboard', f));
+  // la vista pide sus textos a la tabla del sitio, que carga lo suyo de la carpeta del sitio
+  fs.cpSync(path.join(ROOT, 'scripts', 'site'), path.join(copia, 'scripts', 'site'), { recursive: true });
   for (const f of fs.readdirSync(path.join(ROOT, 'scripts', 'lib'))) if (f.endsWith('.js') || f.endsWith('.json')) fs.copyFileSync(path.join(ROOT, 'scripts', 'lib', f), path.join(copia, 'scripts', 'lib', f));
   const r = spawnSync(process.execPath, ['-e', `const r=require(${JSON.stringify(path.join(copia, 'scripts', 'nightly', 'dashboard', 'runs.js'))});const M=r.modelo(${JSON.stringify(tmp('vacia-'))},{buzon:${JSON.stringify(mundo())},soloBuzon:true});process.stdout.write(r.cabecera(M,{sitio:{rol:'maintainer',version:'1'}}))`], { encoding: 'utf8' });
   assert.strictEqual(r.status, 0, r.stderr);
@@ -1082,4 +1090,259 @@ test('Navegar_LoArmadoPorPersonaSeGuarda_HastaQueCambianLosDatos', async () => {
       assert.strictEqual(n, 4);
     });
   } finally { access.filtrarCorridas = real; }
+});
+
+// ── 2.60: la pestaña en el idioma de la página, y lo de hoy en castellano igual ─────────────────────────────────────
+//
+// Las fotos de `fixtures/runs-2.60/` se tomaron con el runs.js de antes de la story: la página de la noche, la pestaña
+// en castellano y lo que el cliente dibuja en castellano (fichas, gráficos, cuenta y el detalle de una ejecución).
+// Se comparan normalizadas: la hora de armado, el commit o la versión, las carpetas temporales, el código de pantalla
+// (que cambia de forma, no de lo que muestra) y el bloque de textos que se le inyecta. Regenerarlas es una decisión
+// explícita: TYCON_RUNS_FOTO_WRITE=1, sobre el runs.js de partida.
+const FOTOS_260 = path.join(__dirname, 'fixtures', 'runs-2.60');
+const { textosVisibles, enCastellano } = require('./lib/spanish-text.js');
+function normalizar260(s) {
+  const tmps = [...new Set([os.tmpdir(), fs.realpathSync(os.tmpdir())])].sort((a, b) => b.length - a.length);
+  let t = String(s);
+  for (const d of tmps) t = t.split(d).join('<TMP>');
+  return t
+    .replace(/<TMP>\/[\w.-]+/g, '<TMP>/x')
+    .replace(/<b>Generated:<\/b>[^<]*|<b>Generado:<\/b>[^<]*/g, '<b>Generado:</b> X')
+    .replace(/data-generado="[^"]*"/g, 'data-generado="X"')
+    .replace(/name="tok" value="[^"]*"/g, 'name="tok" value="X"')
+    .replace(/nonce="[^"]*"/g, 'nonce="X"')
+    .replace(/"generado":"[^"]*"/g, '"generado":"X"')
+    .replace(/<script>\s*\(function \(\) \{[\s\S]*?<\/script>/g, '<script>CLIENTE</script>')
+    .replace(/<div id="corridas-textos" data-textos="[^"]*" hidden><\/div>/g, '');
+}
+function foto260(nombre, texto) {
+  const f = path.join(FOTOS_260, nombre);
+  const n = normalizar260(texto);
+  if (process.env.TYCON_RUNS_SNAPSHOT_WRITE === '1') { fs.mkdirSync(FOTOS_260, { recursive: true }); fs.writeFileSync(f, n); return; }
+  assert.ok(fs.existsSync(f), `falta la foto ${nombre}`);
+  // los textos comprimidos de la página llevan en su cabecera el sistema que los comprimió (macOS o Linux): el contenido
+  // es el mismo y ese dato no se compara
+  const sinSistema = (s) => s.replace(/H4sIAAAAAAAA[A-Za-z0-9+/]/g, 'H4sIAAAAAAAA_');
+  const foto = sinSistema(fs.readFileSync(f, 'utf8'));
+  if (sinSistema(n) === foto) return;
+  // el primer renglón distinto, con los dos lados: la página entera no entra en el mensaje
+  const a = foto.split('\n'); const b = sinSistema(n).split('\n');
+  let i = 0; while (i < a.length && a[i] === b[i]) i++;
+  let c = 0; while (c < Math.min((a[i] || '').length, (b[i] || '').length) && a[i][c] === b[i][c]) c++;
+  const tramo = (s) => JSON.stringify((s || '').slice(Math.max(0, c - 120), c + 200));
+  assert.fail(`${nombre}: cambió lo que se ve en castellano — renglón ${i + 1} (de ${a.length} y ${b.length}), columna ${c + 1}:\n  antes: ${tramo(a[i])}\n  ahora: ${tramo(b[i])}`);
+}
+
+/** Lo que dibuja el cliente: fichas, gráficos, la cuenta y el detalle de la primera ejecución de dev-a. */
+async function dibujado(h, cookie, devCookie, opts) {
+  const c = await clienteDelSitio(h, cookie, opts);
+  c.w.__aplicar();
+  const partes = ['fichas', 'gsem', 'gpasos', 'ppt', 'ppk', 'nota-tokens', 'cuenta'].map((k) => `## ${k}\n${(c.nodos[k] && (c.nodos[k].innerHTML || c.nodos[k].textContent)) || ''}`);
+  const lista = (await h.pedir('/api/corridas', { cookie: devCookie })).json;
+  const a1 = lista.corridas.find((x) => x.story === '3.1');
+  const det = (await h.pedir(`/api/corridas/${a1.id}`, { cookie: devCookie })).json;
+  partes.push(`## detalle\n${c.w.__detalle(det)}`);
+  return partes.join('\n');
+}
+
+test('2.60-T5 Corridas_LaPaginaDeLaNocheIgual @story-2.60 @ac-5 — la página de la noche, lo mismo que antes', () => {
+  const M = runs.modelo(tmp('vacia-'), { buzon: mundo(), soloBuzon: true });
+  foto260('noche.html', runs.render(M));
+});
+
+test('2.60-T6 Corridas_EnCastellanoIgual @story-2.60 @ac-6 — la pestaña en castellano, la página y lo que dibuja el cliente', async () => {
+  await conPestana({ fuentes: fuentesCon({ espejo: mundo() }) }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    const dev = await entrar(DEV_A);
+    foto260('pestana-es.html', (await h.pedir('/corridas', { cookie: lead })).texto);
+    foto260('cliente-es.txt', await dibujado(h, lead, dev));
+  });
+});
+
+test('2.60-T1 Corridas_ElCuerpoEnIngles @story-2.60 @ac-1 @ac-2 — la página y lo que dibuja el cliente, sin castellano', async () => {
+  // lo de afuera no se traduce: stories, productos, máquinas, correos, archivos y el mensaje rescatado de una prueba
+  const DATOS = ['maq-a', 'maq-b', 'maq-c', 'zqx-fuga', 'RepoComun', 'FrontEnd', 'Alfa', 'Pago.ts', 'src/', 'esperaba 2, salió 3', 'caso 3', LEAD, DEV_A, DEV_B, 'Sin Forma.local', 'tycon-story-validator', 'modelo-x', 'una-cosa', 'sin hilo'];
+  await conPestana({ fuentes: fuentesCon({ espejo: mundo() }) }, async ({ h, entrar }) => {
+    const lead = `${await entrar(LEAD)}; sitio-idioma=en`;
+    const dev = `${await entrar(DEV_A)}; sitio-idioma=en`;
+    const pagina = (await h.pedir('/corridas', { cookie: lead })).texto;
+    // la de una dev arma otras partes (su encabezado, sólo lo suyo): también en inglés
+    const deDev = (await h.pedir('/corridas', { cookie: dev })).texto;
+    const enPagina = enCastellano([...textosVisibles(pagina), ...textosVisibles(deDev)], DATOS);
+    // (las etiquetas «## …» separan las partes del dibujo en la prueba: no son de la página)
+    const enCliente = enCastellano(textosVisibles((await dibujado(h, lead, dev)).replace(/^## .*$/gm, '')), DATOS);
+    assert.deepStrictEqual([...enPagina, ...enCliente], [], `castellano en la pestaña en inglés:\n${[...enPagina, ...enCliente].join('\n')}`);
+    assert.doesNotMatch(sinTags(pagina), /\bcorridas?\b/i, 'el inglés no usa el nombre viejo');
+    assert.match(sinTags(pagina), /\bruns?\b/i, 'dice «run»');
+    // la coma decimal es del castellano: en inglés, «1.5 h» y «1.8 M»
+    const todo = `${sinTags(pagina)}\n${sinTags(await dibujado(h, lead, dev))}`;
+    assert.doesNotMatch(todo, /\d,\d\s?(?:h|M)\b/, 'ningún número con coma decimal');
+    assert.match(todo, /\d\.\d\s?(?:h|M)\b/, 'los decimales llevan punto');
+  });
+});
+
+test('2.60-T7 ModeloViejo_LaFraseSeVeIgual @story-2.60 @ac-6 — el modelo guarda la frase; en inglés se traduce al pintar', () => {
+  // el modelo no cambia de forma: guarda la frase en castellano, como antes, y un archivo de la noche ya escrito se lee
+  // igual. Al pintar en inglés, una frase de la casa se reconoce por su molde; lo que no es de la casa pasa tal cual.
+  const T = require(path.join(H.SITE, 'texts.js'));
+  const frase = 'sin tiempos por paso';
+  assert.ok(Object.values(T.TEXTOS).some((v) => v.es === frase), 'la frase del modelo tiene su molde');
+  assert.strictEqual(runs.enIdioma('es', frase), frase);
+  assert.notStrictEqual(runs.enIdioma('en', frase), frase);
+  assert.doesNotMatch(runs.enIdioma('en', frase), /\b(?:sin|por|paso)\b/);
+  assert.strictEqual(runs.enIdioma('en', 'FAIL src/x.test.ts › caso 3'), 'FAIL src/x.test.ts › caso 3', 'un dato de afuera pasa tal cual');
+  // un modelo de antes (con sus frases en castellano) se pinta en inglés por la API sin cambiar lo guardado
+  const M = runs.modelo(tmp('vacia-'), { buzon: mundo(), soloBuzon: true });
+  const antes = JSON.stringify(M);
+  const enIngles = runs.todoEnIdioma('en', M);
+  assert.strictEqual(JSON.stringify(M), antes, 'el modelo guardado no cambia');
+  assert.notStrictEqual(JSON.stringify(enIngles), antes, 'lo que sale en inglés sí');
+  assert.strictEqual(runs.todoEnIdioma('es', M), M, 'en castellano sale el mismo modelo');
+  // los textos de los cambios son de afuera: aunque digan una frase de la casa, pasan tal cual
+  const cambio = runs.todoEnIdioma('en', { _texto: frase, _textoGit: frase, motivo: frase });
+  assert.strictEqual(cambio._texto, frase);
+  assert.strictEqual(cambio._textoGit, frase);
+  assert.notStrictEqual(cambio.motivo, frase, 'el motivo, que es de la casa, sí se traduce');
+});
+
+test('2.60-T11 FrasesDeLaCasa_CadaRama @story-2.60 @ac-1 @ac-3 — los tramos fundidos, la espera sin medir, los cambios ilegibles y los módulos que faltan, en inglés', () => {
+  const D = path.join(ROOT, 'scripts', 'nightly', 'dashboard');
+  const ST = require(path.join(ROOT, 'scripts', 'metrics', 'step-times.js'));
+  const ch = require(path.join(D, 'changes.js'));
+  const enEspanol = (t) => enCastellano([t]).length > 0;
+  const frases = [];
+  // tramos: dos pasos con la misma marca (se funden), un sub-paso y un hueco entre pasos
+  const c = runs.modeloDeCorrida({ marker: { startedAt: '2026-10-01T10:00:00Z', lastTouch: '2026-10-01T12:00:00Z', stepTimings: {
+    1: { completedAt: '2026-10-01T10:05:00Z' }, 4: { completedAt: '2026-10-01T10:30:00Z' }, '5b': { startedAt: '2026-10-01T10:31:00Z' },
+    5: { startedAt: '2026-10-01T10:40:00Z', completedAt: '2026-10-01T11:25:00Z' }, 6: { completedAt: '2026-10-01T11:25:00Z' },
+    '7c': { startedAt: '2026-10-01T11:27:00Z' }, 8: { startedAt: '2026-10-01T11:35:00Z', completedAt: '2026-10-01T11:50:00Z' } } } }, runs.nombresDePasos().nombres);
+  const nombres = c.tramos.map((t) => t.nombre);
+  assert.ok(nombres.some((n) => n.includes(' + ')), `hay un tramo fundido: ${nombres.join(' · ')}`);
+  assert.ok(nombres.some((n) => /^sub-paso /.test(n)), 'hay un sub-paso');
+  frases.push(...nombres);
+  // la espera sin medir: sin el arranque del 7; sin el del 3 y el 7
+  const base = Date.parse('2026-10-20T10:00:00Z');
+  const m = (n) => new Date(base + n * 60000).toISOString();
+  for (const sin of [[7], [3, 7]]) {
+    const st = {};
+    for (let i = 0; i <= 8; i++) st[i] = { completedAt: m(i * 10 + 9), ...(sin.includes(i) ? {} : { startedAt: m(i * 10 + 1) }) };
+    frases.push(ST.tiempos(st, { inicio: m(0) }).motivo);
+  }
+  // los cambios: hilo y cambio de git ilegibles, sin cambio guardado, sin saneado
+  const dir = tmp('cambios-');
+  const v = path.join(dir, 'a.json');
+  fs.writeFileSync(v, '{}');
+  fs.writeFileSync(ch.rutaDeHilo(v), 'no es gzip');
+  fs.writeFileSync(ch.rutaDeCambio(v), 'no es gzip');
+  fs.writeFileSync(ch.rutaDeHilo(path.join(dir, 'c.json')), 'x');
+  frases.push(ch.cambiosDeCorrida(v, {}, { sanear: (x) => x }).motivo, ch.leerCambioDeGit(v).motivo,
+    ch.leerCambioDeGit(path.join(dir, 'b.json')).motivo, ch.cambiosDeCorrida(path.join(dir, 'c.json'), {}, {}).motivo);
+  // los módulos de la vista que faltan: una copia sin scripts/metrics ni changes.js
+  const copia = tmp('site-runs-sin-modulos-');
+  const dash = path.join(copia, 'scripts', 'nightly', 'dashboard');
+  fs.cpSync(D, dash, { recursive: true });
+  fs.rmSync(path.join(dash, 'changes.js'));
+  for (const sub of ['lib', 'site']) fs.cpSync(path.join(ROOT, 'scripts', sub), path.join(copia, 'scripts', sub), { recursive: true });
+  const r = spawnSync(process.execPath, ['-e', `const V = require(${JSON.stringify(path.join(dash, 'runs.js'))});
+    const M = V.modelo(${JSON.stringify(tmp('vacia-'))}, { buzon: ${JSON.stringify(mundo())}, soloBuzon: true });
+    const c = M.corridas[0];
+    process.stdout.write(JSON.stringify([M.sin_rescate, M.sin_tiempos, c.costo && c.costo.vueltas_fuente, V.paraDetalle(c).cambios.motivo]));`], { encoding: 'utf8' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const sinModulos = JSON.parse(r.stdout).filter(Boolean);
+  assert.ok(sinModulos.length >= 3, `la copia sin módulos los nombra: ${r.stdout}`);
+  frases.push(...sinModulos);
+  // cada frase de la casa en castellano sale en inglés, sin castellano
+  const quedan = frases.filter((f) => enEspanol(f) && runs.enIdioma('en', f) === f);
+  assert.deepStrictEqual(quedan, [], `frases de la casa sin molde:\n${quedan.join('\n')}`);
+});
+
+test('2.60-T12 DatosDeAfuera_NoSeTraducen @story-2.60 @ac-1 — la API traduce sólo los campos de la casa', () => {
+  // lo de afuera que coincide con un molde: un producto, una story, el título, los asuntos de los commits, un archivo
+  const det = { story: 'Revisores', producto: 'pruebas', maquina: 'pruebas', descripcion: { texto: 'Pago confirmado', fuente: 'el título de la story' },
+    cambios: { titulo: 'antes, el login fallaba', commits: [{ h: 'a', s: 'pruebas' }, { h: 'b', s: 'fix: el pedido queda confirmado' }],
+      archivos: [{ f: 'Arranque' }, { f: 'fuera del repo: x.txt' }], motivo: 'el hilo no se pudo leer (Z_DATA_ERROR)' },
+    tramos: [{ nombre: 'Revisores + Hallazgos: el informe' }] };
+  const en = runs.todoEnIdioma('en', det);
+  assert.strictEqual(en.story, 'Revisores');
+  assert.strictEqual(en.producto, 'pruebas');
+  assert.strictEqual(en.maquina, 'pruebas');
+  assert.strictEqual(en.descripcion.texto, 'Pago confirmado');
+  assert.strictEqual(en.cambios.titulo, 'antes, el login fallaba');
+  assert.deepStrictEqual(en.cambios.commits.map((x) => x.s), ['pruebas', 'fix: el pedido queda confirmado']);
+  assert.strictEqual(en.cambios.archivos[0].f, 'Arranque', 'un nombre de archivo no se traduce');
+  // y lo de la casa sí
+  assert.notStrictEqual(en.descripcion.fuente, det.descripcion.fuente);
+  assert.strictEqual(en.cambios.archivos[1].f, 'outside the repo: x.txt');
+  assert.strictEqual(en.cambios.motivo, 'the thread could not be read (Z_DATA_ERROR)');
+  assert.doesNotMatch(en.tramos[0].nombre, /Revisores|Hallazgos/, 'un paso fundido se traduce de a uno');
+});
+
+test('2.60-T10 ClienteSinTextos_SaleEnCastellano @story-2.60 @ac-6 — sin el bloque de textos, o con uno incompleto, el navegador muestra castellano y nunca una clave', async () => {
+  await conPestana({ fuentes: fuentesCon({ espejo: mundo() }) }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    const dev = await entrar(DEV_A);
+    const foto = fs.readFileSync(path.join(FOTOS_260, 'cliente-es.txt'), 'utf8');
+    // una página sin el bloque (la de la noche, una vieja en caché): el castellano que el cliente lleva adentro
+    assert.strictEqual(normalizar260(await dibujado(h, lead, dev, { textos: null })), foto, 'sin el bloque');
+    // un bloque de otra versión al que le faltan claves: cada una que falta sale en castellano
+    assert.strictEqual(normalizar260(await dibujado(h, lead, dev, { textos: '{}' })), foto, 'con el bloque vacío');
+    // un bloque que no se puede leer: castellano, y lo avisa
+    assert.strictEqual(normalizar260(await dibujado(h, lead, dev, { textos: '{roto' })), foto, 'con el bloque roto');
+  });
+});
+
+test('2.60-T9 TablaDelSitioRota_LaNocheSigueEnCastellano @story-2.60 @ac-5 — una tabla del sitio que no carga no tumba la vista', () => {
+  const copia = tmp('site-runs-tabla-rota-');
+  const dash = path.join(copia, 'scripts', 'nightly', 'dashboard');
+  fs.mkdirSync(dash, { recursive: true });
+  fs.cpSync(path.join(ROOT, 'scripts', 'nightly', 'dashboard'), dash, { recursive: true });
+  fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(copia, 'scripts', 'lib'), { recursive: true });
+  fs.mkdirSync(path.join(copia, 'scripts', 'site'), { recursive: true });
+  fs.writeFileSync(path.join(copia, 'scripts', 'site', 'texts.js'), "throw new Error('tabla rota');\n");
+  const r = require('child_process').spawnSync(process.execPath, ['-e',
+    `const V = require(${JSON.stringify(path.join(dash, 'runs.js'))}); const h = V.render(V.modelo(${JSON.stringify(tmp('vacia-'))}, { buzon: ${JSON.stringify(mundo())}, soloBuzon: true })); process.stdout.write(String(h.includes('<html lang="es"')) + ' ' + V.enIdioma('en', 'sin tiempos por paso'));`], { encoding: 'utf8' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(r.stdout, 'true sin tiempos por paso', 'la página sale, en castellano');
+  assert.match(r.stderr, /la tabla de textos del sitio no cargó/, 'y lo dice');
+});
+
+test('2.60-T8 FrasesDelModelo_TodasCalzanConSuMolde @story-2.60 @ac-3 — si alguien cambia una frase, el inglés no queda en castellano callado', () => {
+  // Cada texto que arma el modelo, en mundos que tocan sus ramas (con y sin hilo, sin pasos anotados, sin cerrar, sin
+  // marcador, máquinas sin declarar, buzón sin uniones): el que está en castellano tiene que salir en inglés por su molde.
+  // Lo de afuera (lo que vino en el volcado) se nombra acá y pasa tal cual.
+  const espejo = mundo();
+  escribir(path.join(espejo, 'maq-a'), 'sp.json', volcado('aaaaaaaa-0000-4000-8000-0000000000f1', '2026-08-21T09:00:00.000Z',
+    { marker: { storyId: '3.5', stepsCompleted: [0], stepTimings: { 0: null, 1: null, 2: null, 3: null, 4: null, 5: null, 6: null, 7: null, 8: null } }, consumo: null, costo: null, gates: [] }));
+  escribir(path.join(espejo, 'maq-a'), 'sm.json', volcado('aaaaaaaa-0000-4000-8000-0000000000f2', '2026-08-22T09:00:00.000Z', { marker: null }));
+  const DE_AFUERA = new Set(['sin hilo', 'zqx-prohibido-prompt aprobado', 'FAIL src/x.test.ts › caso 3\n  esperaba 2, salió 3']);
+  const sinMolde = new Set();
+  // se compara con lo que sale por la API en inglés (todoEnIdioma): una frase de la casa en un campo que la API no
+  // traduce también queda en castellano, aunque tenga su molde
+  const recorrer = (v, e, ruta) => {
+    if (typeof v === 'string') {
+      if (!DE_AFUERA.has(v) && !/^[\w./:@-]*$/.test(v) && enCastellano([v]).length && e === v) sinMolde.add(`${ruta}: «${v}»`);
+      return;
+    }
+    if (Array.isArray(v)) v.forEach((x, i) => recorrer(x, e && e[i], `${ruta}[${i}]`));
+    else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) if (k !== '_texto' && k !== '_textoGit') recorrer(x, e && e[k], `${ruta}.${k}`);
+  };
+  // con las conversaciones y sin ellas (el sitio no las baja), la lista y el detalle de cada ejecución
+  for (const sinHilos of [false, true]) {
+    const M = runs.modelo(tmp('vacia-'), { buzon: espejo, soloBuzon: true, sinHilos });
+    recorrer(M, runs.todoEnIdioma('en', M), `M${sinHilos ? '(sin hilos)' : ''}`);
+    for (const c of M.corridas) { const d = runs.paraDetalle(c); recorrer(d, runs.todoEnIdioma('en', d), `D(${c.story})`); }
+  }
+  assert.deepStrictEqual([...sinMolde], [], `frases del modelo sin molde en texts.js (el inglés quedaría en castellano):\n${[...sinMolde].join('\n')}`);
+});
+
+test('Cambios_RenglonesDelHilo_SinElTextoEntero — los renglones de la conversación salen de a uno, iguales a partir el texto', () => {
+  // 🔴 rojo: resumir una conversación grande arma el texto entero y su lista de renglones; con una de 110 MB
+  //    comprimidos el sitio pasaba de 1 GiB y el contenedor moría.
+  const { renglonesDe } = require(path.join(__dirname, '..', 'nightly', 'dashboard', 'changes.js'));
+  const casos = ['', '\n', 'a', 'a\n', 'a\nb', 'a\n\nb\n', '{"x":"ñandú 😀"}\n{"y":1}\r\n', `${'z'.repeat(70000)}\nfin`];
+  for (const t of casos) {
+    // igual que partir el texto, renglones vacíos incluidos; sólo el vacío después del último salto no sale
+    const esperado = t.split('\n'); if (esperado[esperado.length - 1] === '') esperado.pop();
+    assert.deepStrictEqual([...renglonesDe(Buffer.from(t, 'utf8'))], esperado, JSON.stringify(t.slice(0, 30)));
+  }
 });

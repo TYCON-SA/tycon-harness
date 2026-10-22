@@ -3576,40 +3576,6 @@ function workSignalForRun(event, opts = {}) {
 }
 
 /**
- * La pregunta del modelo mayor en el pase adversarial: `adversarial.model_question`, `ask`
- * (por defecto) o `never`. Mismo camino que `harnessIntegrations`, pero con `cargar()` y no `leer()`: trae el origen
- * del valor y los errores sin tirar. Con la configuración rota o un valor fuera del vocabulario se comporta como sin
- * la clave (pregunta) y lo dice en `aviso`: no se apaga una pregunta por una configuración que no se pudo leer.
- * Gana el perfil del equipo (`PROFILE_WINS`). → `{ value, origin, aviso? }`
- */
-function preguntaDelModelo(opts = {}) {
-  const env = opts.env || process.env;
-  const porDefecto = { value: 'ask', origin: 'default' };
-  // Sin arnés o sin lector no hay dónde estar escrita la clave: es «sin clave», no una configuración que no se leyó (el
-  // mismo criterio que `harnessIntegrations`). Un lector presente que no sabe cargar sí se dice: ahí pudo estar escrita.
-  const dir = require('./lib/harness-path.js').rutaArnesHook({ env, home: opts.home }).dir;
-  if (!dir) return porDefecto;
-  const lector = path.join(dir, 'scripts', 'lib', 'tycon-config.js');
-  if (!fs.existsSync(lector)) return porDefecto;
-  try {
-    const cfg = require(lector);
-    if (typeof cfg.cargar !== 'function') {
-      return { ...porDefecto, aviso: `adversarial.model_question: el lector de configuración de ${dir} no sabe cargar (es de antes) — se pregunta como sin la clave` };
-    }
-    const r = cfg.cargar({ env, home: opts.home });
-    if (r.errores && r.errores.length) {
-      const e = r.errores[0];
-      return { ...porDefecto, aviso: `adversarial.model_question: la configuración no se pudo leer (${e.archivo || '?'}${e.clave ? ` · ${e.clave}` : ''}: ${e.motivo}) — se pregunta como sin la clave` };
-    }
-    const sec = (r.valores && r.valores.adversarial) || {};
-    if (!Object.prototype.hasOwnProperty.call(sec, 'model_question')) return porDefecto;   // un lector viejo, sin la sección
-    return { value: sec.model_question || 'ask', origin: (r.origenes && r.origenes['adversarial.model_question']) || 'default' };
-  } catch (e) {
-    return { ...porDefecto, aviso: `adversarial.model_question: el lector de configuración falló (${e.message}) — se pregunta como sin la clave` };
-  }
-}
-
-/**
  * @param {string} repo
  * @param {object} [opts] skillsDir · manifestPath (las skills de terceros) · integrations: objeto del lector o `null`
  *   («no se sabe»), para las pruebas; sin la clave se le pregunta al arnés (`env` y `home` van a esa pregunta).
@@ -3980,21 +3946,18 @@ function computeDeepReviewGate(args) {
   }
   // Modelo — escalación mecánica por complejidad.
   // Default sonnet (recorta el $ ~5x vs Opus); story pesada (model-hint ≥2 señales)
-  // → opus AUTOMÁTICO (anunciado). Fable NUNCA automático: --deep-review-fable es la
-  // autorización EXPLÍCITA del user; sin el flag, el gate emite `fable_upsell` y el
-  // orquestador PREGUNTA en 1 línea (el user decide). Precedencia:
+  // → opus AUTOMÁTICO (anunciado). Fable no se ofrece nunca: sólo corre con --deep-review-fable,
+  // el pedido explícito de quien corre el pipeline. Precedencia:
   // fable(flag) > opus(flag) > opus(ultracode) > opus(story pesada) > sonnet.
   const hint = computeModelHint({ ...args, orgModels: null });
-  // El modelo y la pregunta salen de lib/models.js con la configuración de la organización y el pedido de
-  // la corrida, que llegan por argumento (`args.orgModels`, `args.modelRequests`); la clave de la pregunta llega en
-  // `args.modelQuestion` (la lee la rama de línea de comandos con `preguntaDelModelo`). Esta función no lee la máquina.
+  // El modelo sale de lib/models.js con la configuración de la organización y el pedido de la corrida, que llegan por
+  // argumento (`args.orgModels`, `args.modelRequests`). Esta función no lee la máquina.
   // Precedencia: fable(flag) > opus(flag) > opus(ultracode) > pedido > organización > opus(pesada) > sonnet.
   const org = args.orgModels && args.orgModels.declared ? args.orgModels.data : null;
   const avisos = [];
   const adv = MODELOS.resolveAdversarial({
     org, requests: args.modelRequests || null, heavy: hint.heavy, warnings: avisos,
     flags: { fable: !!args.deepReviewFable, opus: !!args.deepReviewOpus, ultracode: !!args.ultracode },
-    modelQuestion: args.modelQuestion || { value: MODELOS.DEFAULTS.adversarial.fable_question, origin: 'default' },
   });
   const model = adv.model;
   let modelReason;
@@ -4004,18 +3967,6 @@ function computeDeepReviewGate(args) {
   else if (args.ultracode) modelReason = 'ultracode ON → hunters en Opus';
   else if (hint.heavy) modelReason = `story pesada (${hint.heavy_signal_count} señales model-hint) → hunters escalan a Opus (anunciar)`;
   else modelReason = 'default (recorta $ ~5x vs Opus)';
-  // Con la pregunta en `never` no se ofrece el modelo mayor ni se manda a preguntar; corre el que
-  // eligió el portón. Se dice en la salida (`model_question`, sólo con un valor que no es el de por defecto); la línea
-  // de gates.log la escribe la rama de línea de comandos. Con un techo debajo de fable, nunca.
-  const pregunta = adv.question;
-  const fableUpsell = adv.upsell
-    ? {
-        model: MODELOS.MODELS[3],
-        requires_user_approval: true,
-        reason: `story pesada (${hint.signals.filter((s) => s.hit).map((s) => s.name).join(', ')}) — Fable caza más en el pase adversarial, a ~2x el costo de Opus`,
-        how: `preguntar al user en 1 línea (COMM.i); si aprueba → pasar model:"${MODELOS.MODELS[3]}" al Workflow. Sin respuesta afirmativa → usar \`model\` de este output.`,
-      }
-    : null;
   // Lanzamiento temprano del 5b al cierre del Step 4 — DEFAULT ON con
   // kill-switch (las mitigaciones
   // están cableadas — cap 2 de ventana, verificadores en ventana de 3, candado
@@ -4025,9 +3976,6 @@ function computeDeepReviewGate(args) {
   const extras = {
     model_reason: modelReason,
     early_launch: process.env.TYCON_5B_EARLY !== '0',
-    ...(fableUpsell ? { fable_upsell: fableUpsell } : {}),
-    ...(pregunta.value !== 'ask' ? { model_question: { value: pregunta.value, origin: pregunta.origin } } : {}),
-    ...(adv.otherQuestion ? { model_question_note: `adversarial.model_question (${adv.otherQuestion.origin}: ${adv.otherQuestion.value}) no se usa: decide la configuración de la organización (models.adversarial.fable_question: ${pregunta.value})` } : {}),
   };
   // los avisos del techo los dice la línea de comandos (una vez por corrida): se dejan a mano, sin tocar la salida
   avisosDelPorton = avisos;
@@ -6299,16 +6247,10 @@ function main() {
     if (wsErr) { process.stderr.write(wsErr); process.exit(2); }
     const fantasmaErr = archivosFantasma(args);   // …y la de archivos fantasma
     if (fantasmaErr) { process.stderr.write(fantasmaErr); process.exit(2); }
-    // Sólo esta rama lee la máquina —la configuración de la organización, el pedido de la
-    // corrida y la clave de la pregunta del modelo— y se los pasa al portón; la línea de gates.log y el aviso también salen de acá.
+    // Sólo esta rama lee la máquina —la configuración de la organización y el pedido de la corrida— y se los pasa al
+    // portón; los avisos también salen de acá.
     const conModelos = conModelosDeLaCorrida({ ...args, runSize: runSizeDelMarcador(args.story) });
-    const pregunta = preguntaDelModelo();
-    if (pregunta.aviso) process.stderr.write(`deep-review-gate: ${pregunta.aviso}\n`);
-    conModelos.modelQuestion = pregunta;
     const result = computeDeepReviewGate(conModelos);
-    if (result && result.model_question && result.model_question.value === 'never') {
-      logGate({ repoPath: args.repo, name: 'deep-review-gate', check: 'model-question', value: 'never', origin: result.model_question.origin, heavy: !!computeModelHint(args).heavy });
-    }
     if (result) decirModelos(result, conModelos.orgModels, avisosDelPorton);
     if (result && result.run === null) {
       // 🔴 No se pudo medir: se dice y se CORTA. «Correr por las dudas» tampoco es gratis — una
@@ -6693,14 +6635,13 @@ function main() {
     '       esperado no está disponible ANTES de degradar al fallback. `start` ya lo incluye.)\n' +
     '  node pipeline.js model-hint     --story <spec.md> [--files ...]\n' +
     '       (sugerencia de modelo de SESIÓN por complejidad: LOW→sonnet · NORMAL→opus ·\n' +
-    '       NORMAL+≥2 señales pesadas→fable. Advisory: el orquestador compara con su modelo\n' +
+    '       NORMAL+≥2 señales pesadas→opus. Advisory: el orquestador compara con su modelo\n' +
     '       real y sugiere /model al user en Step 0. NUNCA bloquea. `start` ya lo incluye.)\n' +
     '  node pipeline.js deep-review-gate --repo <dir> --story <spec.md> [--files ...]\n' +
     '                                  [--deep-review|--no-deep-review|--ultracode|--deep-review-opus|--deep-review-fable]\n' +
     '       (Step 5b: ¿corre el pase adversarial reproduce-or-refute? Gate = risk-class NORMAL.\n' +
-    '       {run, model, model_reason, fable_upsell?, reason}. Modelo: sonnet default; story pesada\n' +
-    '       → opus automático; FABLE solo con --deep-review-fable (autorización explícita del user\n' +
-    '       — sin flag el gate emite fable_upsell y el orquestador PREGUNTA).\n' +
+    '       {run, model, model_reason, reason}. Modelo: sonnet default; story pesada → opus\n' +
+    '       automático. Fable no se ofrece nunca: sólo corre con --deep-review-fable.\n' +
     '       Kill-switch: TYCON_NO_DEEP_REVIEW=1. Repo: .tycon/advisors.yaml deep_review:)\n' +
     '  node pipeline.js advisors       --repo <dir> --story <spec.md> --files a.cs b.tsx ...\n' +
     '                                  [--iter N] [--cost-tier lean|standard|deep] [--allow-missing-files]\n' +
