@@ -519,7 +519,12 @@ to graphical apps (`TYCON_NO_GUI_ENV=1` skips it). Once a day it runs, in the ba
 spends model sessions (`TYCON_BENCH_DAILY=0`). With Azure DevOps configured, it also leaves a one-line `AGENTS.md` in
 your team's repos that have a `CLAUDE.md` and no `AGENTS.md`; you commit it with the repo
 (`TYCON_NO_AGENTSMD_POINTER=1` skips it). One step stays manual: open
-a `codex` session, run `/hooks` and approve them; without that the hooks do not run and give no error.
+a `codex` session, run `/hooks` and approve them; without that the hooks do not run and give no error. The approval
+belongs to Codex, not to the harness, and needs an interactive session: on a machine with no one at the keyboard (a
+container, `codex exec` in a scheduled task) there is nowhere to approve them (seen in a lab with Codex 0.162 on
+2026-10-22).
+With an open model (`codex --oss`) you also need one that can use tools: a 7B coding model answered without running
+any command, and without commands no check fires.
 
 **Network**: the harness sends no usage data. Out of the box it talks to GitHub (the repo, to check for a new version,
 and the origins of the third-party skills listed in `scripts/publishing/third-party-skills.json`) and, if one of your
