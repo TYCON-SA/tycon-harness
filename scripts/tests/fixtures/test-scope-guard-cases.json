@@ -1,0 +1,2863 @@
+{
+ "__doc": "Los casos del freno de pruebas sin alcance (story 7.52). Cada comando dice lo que tiene que dar: «frena» (el freno sale 2) o «pasa» (sale 0). «grupo»: hueco-medido = los que el probador de la 7.51 vio pasar y tenían que frenar; frenaba-7.51 y pasan-7.51 = el resto de esa medición; los demás se sumaron en la 7.52. «herramienta»: PowerShell cuando el comando llega por esa herramienta (si falta, Bash). «nota»: por qué, cuando no es obvio; las que empiezan con «decidido en la 7.52» corrigen lo que esperaba el probador.",
+ "casos": [
+  {
+   "cmd": "npm test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "npm run test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "npm run test:coverage",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "npm test -- Foo",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test --filter \"FullyQualifiedName~X\"",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "dotnet test a/b.csproj",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "dotnet test a/b.sln",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "npx vitest run",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "vitest",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "npx vitest run src/a.test.ts",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "vitest --coverage",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "pytest",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest tests/a.py",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "pytest -x",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest -k foo",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "python -m pytest",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "python3 -m pytest -q",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest \"-x\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest \"tests/a b.py\"",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "pytest -m \"not slow\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest \"\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest '-k' foo",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "cd x && dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "cd x; npm test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo hi || dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo a | npm test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "(dotnet test)",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "( cd x && dotnet test )",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "{ dotnet test; }",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "{ cd x; npm test; }",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "time dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "time npm test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "env FOO=x dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "FOO=x npm test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "CI=1 npx vitest run",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "bash -c \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "bash -c 'npm test'",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "sh -c \"cd x && dotnet test\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "eval \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "eval 'npm test'",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "zsh -c \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "bash -lc \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo $(dotnet test)",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"$(dotnet test)\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo `dotnet test`",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"`dotnet test`\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "x=$(npm test)",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"a $(echo b; dotnet test)\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo ok\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo ok\r\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo a \\\n&& dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test \\\n  -v n",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "npm test \\\n  --silent",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "# comentario\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "# dotnet test",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "echo hi # dotnet test",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "echo \"it's\"; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo 'a'; npm test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "cat <<'EOF'\nhola\nEOF\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "cat <<'EOF'\ndotnet test\nEOF",
+   "espera": "pasa",
+   "grupo": "pasan-7.51",
+   "nota": "es el texto de un heredoc que va a cat"
+  },
+  {
+   "cmd": "cat <<EOF > f\nx\nEOF\nnpm test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "git commit -m \"x\"; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "git commit -m \"it's\" && dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"a\" && npm test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"dotnet test\"",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "grep \"npm test\" a.md",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "git commit -m \"docs: npm test sin scope\"",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "pnpm test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "yarn test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "pnpm run test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "yarn run test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "bun test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "npx jest",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "jest",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "npm  test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "npm\ttest",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "npm -s test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "npm --silent test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "npm t",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "npm run-script test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "npm run test --silent",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "npm --prefix web test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "npm test --workspaces",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "npm test -w web",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet  test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test -c Release",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test --no-build",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test --logger trx",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "/usr/bin/dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "dotnet.exe test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "dotnet build && dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet -d test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "dotnet test .",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test ./",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "dotnet test -c Release --filter X",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "dotnet test --filter",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "npx --yes vitest run",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "npx -y vitest",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "pnpm exec vitest run",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "pnpm vitest",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "yarn vitest run",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "node_modules/.bin/vitest run",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "vitest run --reporter=verbose",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "vitest run --reporter verbose src/a.test.ts",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "cd web && npx vitest run --coverage",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "python -m pytest --cov app",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest -n auto",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest --co",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "py.test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "python -m  pytest",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "uv run pytest",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "poetry run pytest",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "pipenv run pytest",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "python3.11 -m pytest",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": ".venv/bin/pytest",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": ".venv/bin/python -m pytest",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "source .venv/bin/activate && pytest",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo 'x' | dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "true && (dotnet test)",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "if true; then dotnet test; fi",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "for i in 1; do npm test; done",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "while true; do dotnet test; done",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "! dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "nohup dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "timeout 60 dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "nice dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "sudo dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "exec dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "command dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "xargs dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "echo x &\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test &",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test 2>&1 | tail",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test > out.txt",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"x\"\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"x\" ; \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "echo '$(x)' ; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"a;b\" ; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"a|b\"; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "bash -c \"echo 'x'; dotnet test\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "bash -c 'echo \"x\"; npm test'",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "bash -c \"echo hi && dotnet test\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "bash -c \"(dotnet test)\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "eval \"echo a; dotnet test\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "ssh host \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "ssh host 'npm test'",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pwsh -c \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "powershell -Command \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "cmd /c \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "docker exec c dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "docker run img dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "bash -c \"$(echo dotnet test)\"",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "sh -c dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "bash <<< \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "echo \"dotnet test\" | bash",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "echo \"dotnet test\" | sh",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "bash <<EOF\ndotnet test\nEOF",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "bash -c \"dotnet test\" # c",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "$'x'; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo $'it\\'s'; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"a\" \"b\" ; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"# not comment\"; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo a#b; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo '#'; npm test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"x\" # c \"\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "# it's a note\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo foo #bar's\nnpm test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \\\"; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \\'; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"\\\"\"; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo 'a\\'; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"a; dotnet test\"; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"a; dotnet test\"",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "echo 'a; dotnet test'",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "printf \"%s\" \"x | npm test\"",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "echo hi && echo \"x\" && vitest run",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "FOO=\"a b\" dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "FOO='a b' npm test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "FOO=\"a;b\" dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "FOO=\"a b\" vitest run",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "FOO=\"x y\" pytest",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "export A=1; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "A=$(date) dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "A=\"$(date)\" npm test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "cd \"my dir\" && dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "cd 'my dir'; npm test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "cd \"a;b\" && dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"x\" ; dotnet test # nota",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test # nota con \"comilla",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "npm test # nota con 'comilla",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test # --filter X",
+   "espera": "frena",
+   "grupo": "pasan-7.51",
+   "nota": "decidido en la 7.52, el probador esperaba otra cosa: lo que sigue a # es un comentario: el shell corre la suite entera"
+  },
+  {
+   "cmd": "npm test # -- Foo",
+   "espera": "frena",
+   "grupo": "pasan-7.51",
+   "nota": "decidido en la 7.52, el probador esperaba otra cosa: lo que sigue a # es un comentario: el shell corre la suite entera"
+  },
+  {
+   "cmd": "dotnet test --filter X # c",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "dotnet test -- --filter X",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "npm test -- --grep foo",
+   "espera": "frena",
+   "grupo": "pasan-7.51",
+   "nota": "decidido en la 7.52, el probador esperaba otra cosa: filtrar por nombre no acota: el corredor igual carga todos los archivos de prueba, en paralelo"
+  },
+  {
+   "cmd": "npm test -- --watch",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "npm test -- --coverage",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "npm test -- src/a.test.ts",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "npm test -- -t \"name\"",
+   "espera": "frena",
+   "grupo": "pasan-7.51",
+   "nota": "decidido en la 7.52, el probador esperaba otra cosa: filtrar por nombre no acota: el corredor igual carga todos los archivos de prueba, en paralelo"
+  },
+  {
+   "cmd": "dotnet test tests/Foo.Tests",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "dotnet test .\\\\tests\\\\Foo",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "dotnet test \"tests/Foo.Tests/Foo.Tests.csproj\"",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "dotnet test --project tests/a",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "TYCON_FULL_SUITE=1 dotnet test",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "echo hi; TYCON_FULL_SUITE=1 dotnet test",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "echo TYCON_FULL_SUITE=1 ; dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "git commit -m \"TYCON_FULL_SUITE=1\"; dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "dotnet test\n",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "   dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "\tdotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": ";dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo;;dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo a\\\nb; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"a\\\nb\"; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"multi\nline\"; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"multi\nline\" && npm test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo 'multi\nline'\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"a\"\n# c\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "cat <<'EOF' > f\nx\nEOF\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "git commit -m \"$(cat <<'EOF'\nmsg\nEOF\n)\" && dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "git commit -m \"$(cat <<'EOF'\nfix: dotnet test sin scope\nEOF\n)\"",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "git commit -m \"fix: pytest sin args\"",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "echo dotnet test",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "ls npm test",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "man dotnet test",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "which pytest",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "pip install pytest",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "npm install",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "dotnet build",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "npm run build",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "npm run testing",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "npm run test-e2e-setup",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "rm -rf test",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "cd pytest",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "cat vitest.config.ts",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "echo npm test > note.md",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "grep -r \"dotnet test\" .",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "rg dotnet test",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "git log --grep=\"dotnet test\"",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "git commit -m 'run npm test'",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "cat <<'EOF' > a.md\nrun npm test\nEOF",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "echo \"x\" > a.sh # npm test",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "echo \"run npm test later\" && ls",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "echo \"a\" && echo \"dotnet test\" && ls",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "echo hi | grep \"npm test|x\"",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "cat <<EOF\n$(echo hi)\nEOF",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "npm test:foo",
+   "espera": "pasa",
+   "grupo": "pasan-7.51",
+   "nota": "npm no tiene ese comando: no corre nada"
+  },
+  {
+   "cmd": "npm run test:unit",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "npm run test:e2e",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "echo \"$(date)\"",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "ls $(pwd)",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "echo `date`",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "echo \"dotnet test\" ; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo 'dotnet test' && dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "FOO=bar bash -c \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "env -i bash -c \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "env bash -c 'dotnet test'",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "/bin/bash -c \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "bash --login -c \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "bash -e -c \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "bash -c \"set -e; dotnet test\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "bash -c \"dotnet test\" arg0",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "bash -c 'dotnet test' _",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "eval dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "eval \"$CMD\"; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "eval \"echo hi\" && dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "xargs -I{} sh -c \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "find . -exec sh -c \"dotnet test\" \\;",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "watch dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "script -c \"dotnet test\" /dev/null",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "su -c \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "su user -c 'npm test'",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "nohup sh -c \"dotnet test\" &",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "screen -dm dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "tmux new -d \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "tmux send-keys \"dotnet test\" Enter",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "echo $((1+1)); dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"$((1+1))\" && npm test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "(cd x; dotnet test)",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "(cd x && (npm test))",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "echo \"$(cd x; dotnet test)\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo $( dotnet test )",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo $(echo a;dotnet test)",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "FOO=$(echo \"a b\") dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "echo \"$FOO\" \"$BAR\" && vitest run",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"(\" ; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \")\" ; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"`\" ; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo '`' ; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"a\" ; dotnet test --no-build",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"dotnet\" \"test\"; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test --collect:\"XPlat Code Coverage\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test -- RunConfiguration.MaxCpuCount=2",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test -v:n",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test \"-c\" \"Release\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test --configuration Release",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test ./x",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "dotnet test -c Release ./",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "dotnet test --logger \"console;verbosity=detailed\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test --logger \"trx;LogFileName=a/b.trx\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test -r results/out",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "dotnet test --results-directory out/dir",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "dotnet test -o bin/out",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "dotnet test --no-restore -c a/b",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "dotnet test --blame-hang-timeout 1m",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test --settings x/y.runsettings",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "pytest --junitxml=out/a.xml",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest --cov=app/x",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest -p no:cacheprovider",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest --tb=short -q",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest -rA",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest -v",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest -s",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest --durations 5",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest --maxfail=1",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest --ignore=tests/a",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest --ignore tests/a",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest -m slow",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest -c pytest.ini",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest tests/",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "pytest .",
+   "espera": "frena",
+   "grupo": "pasan-7.51",
+   "nota": "decidido en la 7.52, el probador esperaba otra cosa: el punto es la carpeta actual: corre todas las pruebas"
+  },
+  {
+   "cmd": "pytest a.py::test_x",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "pytest -x tests/a.py",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "pytest -n 4 tests/a.py",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "pytest -n 4",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "vitest --run",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "vitest run --coverage --reporter=dot",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "vitest run --dir src",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "vitest run -t \"x\" src/a.test.ts",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "vitest run -t \"x\"",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "vitest run -t x",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "vitest run --project web",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "vitest run --config vitest.config.ts",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "vitest run --testNamePattern foo",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "vitest --watch=false",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "vitest watch",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "vitest related",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "vitest list",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "vitest bench",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "echo a \\\\\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "# nota \\\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo hi # c \\\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo it's; dotnet test; echo 'x'",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "echo \"a\" 'b; dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "echo a; # c's\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo $#; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo ${#x}; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"a\\\"; dotnet test",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "echo \"'\"; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo '\"'; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo a'b'c; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "case x in x) dotnet test;; esac",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "[ -f a ] && dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "[[ a == b ]] || npm test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo a |& dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo a;;dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo x >&2; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo a\r\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "# c\r\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo a #b\n\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"a\n\"dotnet test",
+   "espera": "pasa",
+   "grupo": "hueco-medido",
+   "nota": "decidido en la 7.52, el probador esperaba otra cosa: el shell lo lee como un echo: imprime el texto, no corre pruebas"
+  },
+  {
+   "cmd": "echo \"x\" \\\n  \"y\" ; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"x \\\n y\"; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo 'x \\\n y'; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo '\\'; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"\\\\\"; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo a\\;b; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo a\\ b ; npm test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"a\" ; echo \"b;c\" ; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"a;b\" dotnet test",
+   "espera": "pasa",
+   "grupo": "hueco-medido",
+   "nota": "decidido en la 7.52, el probador esperaba otra cosa: el shell lo lee como un echo: imprime el texto, no corre pruebas"
+  },
+  {
+   "cmd": "echo \";\" && npm test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo ';' ; npm test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"&\" ; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"a\" #x; dotnet test",
+   "espera": "pasa",
+   "grupo": "hueco-medido",
+   "nota": "decidido en la 7.52, el probador esperaba otra cosa: lo que sigue a # es un comentario: el dotnet no corre"
+  },
+  {
+   "cmd": "echo \"a\"#x; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo a;#x\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo a ; #x\ndotnet test #y",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"$(echo a)\" ; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo a <(echo b); dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo 1<<2; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo $((1<<2)); dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo a > \"f;g\"; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"x\" > f && vitest run",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "printf '%s\n' \"a\" \"b\"; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "git commit -m \"feat: x (y)\" && dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "git commit -m \"feat: don't\" && dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "git commit -m 'feat: \"x\"' && dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "git commit -m \"a\" -m \"b\" && pytest",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "git add . && git commit -m \"x\"\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"#!/bin/bash\" > a.sh; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo '#' \"x\"; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo x #\"\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo x #'\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "ls \"#\"; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "ls a/#b; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "ls #b\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "ls\t#b\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "ls;\tdotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "ls &&\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "ls ||\ndotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "ls |\nnpm test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "if x; then\n  dotnet test\nfi",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "f() {\n  dotnet test\n}; f",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "f() { dotnet test; }; f",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "alias t='dotnet test'; t",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "echo ok && echo \"x\" ||dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"a\" && dotnet test \"b\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest \"-x\" -q",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest -x \"\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest -m \"not slow\" -x",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest -m \"not slow\" tests/a.py",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "pytest -k",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "pytest '--tb=short'",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest 'tests/a b.py' -x",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "pytest \"x\" ; pytest",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest -x; echo \"done\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest -x | tee \"o;ut\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "pytest -x 2>&1 | tail -5",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "pytest a.py | tail -5",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "pytest a.py; pytest",
+   "espera": "frena",
+   "grupo": "pasan-7.51",
+   "nota": "decidido en la 7.52, el probador esperaba otra cosa: el segundo comando corre la suite entera"
+  },
+  {
+   "cmd": "pytest -k \"a or b\"",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "pytest \"a b\" ; ls",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "pytest -q \"$X\"",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "pytest $X",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "pytest ${X}/a.py",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "python -m pytest -k",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "python -m pytest a.py",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "python -m pytest -x \"-q\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "vitest run \"--coverage\"",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "vitest run -- --coverage",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "npx vitest run -u",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "npm test -- \"--watch\"",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "npm test -- -u",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "npm test -- \"-u\"",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "npm test --if-present",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "npm test --silent",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "npm test -- \"Foo\"",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "npm test -- 'Foo'",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "dotnet test --filter \"\"",
+   "espera": "frena",
+   "grupo": "pasan-7.51",
+   "nota": "decidido en la 7.52, el probador esperaba otra cosa: un filtro vacío no acota"
+  },
+  {
+   "cmd": "dotnet test -c \"Release;Debug\"",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test -c \"a/b\"",
+   "espera": "frena",
+   "grupo": "hueco-medido"
+  },
+  {
+   "cmd": "dotnet test --filter \"A|B\"",
+   "espera": "pasa",
+   "grupo": "hueco-medido",
+   "nota": "decidido en la 7.52, el probador esperaba otra cosa: es un filtro: corre las pruebas que nombran A o B"
+  },
+  {
+   "cmd": "echo a | dotnet test --filter \"x\"; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "dotnet test x.csproj && dotnet test y.csproj",
+   "espera": "pasa",
+   "grupo": "pasan-7.51"
+  },
+  {
+   "cmd": "dotnet test x.csproj && dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "cd \"a b\" && cd c && dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "cd /tmp/it\\'s && dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "cd 'it'\"'\"'s' && dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "echo \"a\" ; echo 'b' ; npm test -- \"x\" ; dotnet test",
+   "espera": "frena",
+   "grupo": "frenaba-7.51"
+  },
+  {
+   "cmd": "export TYCON_FULL_SUITE=1; dotnet test",
+   "espera": "pasa",
+   "grupo": "escape"
+  },
+  {
+   "cmd": "TYCON_FULL_SUITE=1 bash -c \"dotnet test\"",
+   "espera": "pasa",
+   "grupo": "escape"
+  },
+  {
+   "cmd": "env TYCON_FULL_SUITE=1 npm test",
+   "espera": "pasa",
+   "grupo": "escape"
+  },
+  {
+   "cmd": "TYCON_FULL_SUITE=1 true; dotnet test",
+   "espera": "frena",
+   "grupo": "escape",
+   "nota": "la variable vale sólo para true"
+  },
+  {
+   "cmd": "cd web && TYCON_FULL_SUITE=1 npm test",
+   "espera": "pasa",
+   "grupo": "escape"
+  },
+  {
+   "cmd": "bash -c \"set -o pipefail; TYCON_FULL_SUITE=1 npm test 2>&1 | tee out.txt\"",
+   "espera": "pasa",
+   "grupo": "escape",
+   "nota": "la forma del portón (test-gate.sh)"
+  },
+  {
+   "cmd": "& dotnet test",
+   "espera": "frena",
+   "grupo": "powershell",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "& \"C:\\Program Files\\dotnet\\dotnet.exe\" test",
+   "espera": "frena",
+   "grupo": "powershell",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "DOTNET TEST",
+   "espera": "frena",
+   "grupo": "powershell",
+   "nota": "PowerShell no distingue mayúsculas",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "iex \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "powershell",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "Invoke-Expression 'npm test'",
+   "espera": "frena",
+   "grupo": "powershell",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "cmd /c \"dotnet test\"",
+   "espera": "frena",
+   "grupo": "powershell",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "pwsh -Command \"cd app; dotnet test\"",
+   "espera": "frena",
+   "grupo": "powershell",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "powershell.exe -command 'npm test'",
+   "espera": "frena",
+   "grupo": "powershell",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "Start-Process dotnet -ArgumentList 'test' -Wait",
+   "espera": "frena",
+   "grupo": "powershell",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "Start-Process -FilePath npx -ArgumentList 'vitest','run'",
+   "espera": "frena",
+   "grupo": "powershell",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "Start-Process dotnet -ArgumentList 'test','--filter','X'",
+   "espera": "pasa",
+   "grupo": "powershell",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "cd web; npx vitest run",
+   "espera": "frena",
+   "grupo": "powershell",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "dotnet test --filter X",
+   "espera": "pasa",
+   "grupo": "powershell",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "dotnet test tests\\Acme.Tests\\Acme.Tests.csproj",
+   "espera": "pasa",
+   "grupo": "powershell",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "Write-Host \"dotnet test\"",
+   "espera": "pasa",
+   "grupo": "powershell",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "$env:TYCON_FULL_SUITE=1; dotnet test",
+   "espera": "pasa",
+   "grupo": "powershell",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "Write-Host \"$env:TYCON_FULL_SUITE=1\"; dotnet test",
+   "espera": "frena",
+   "grupo": "powershell",
+   "nota": "nombrar el escape no es usarlo",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "\"C:/Program Files/dotnet/dotnet.exe\" test",
+   "espera": "frena",
+   "grupo": "windows"
+  },
+  {
+   "cmd": "/c/Program\\ Files/dotnet/dotnet.exe test",
+   "espera": "frena",
+   "grupo": "windows"
+  },
+  {
+   "cmd": "npm.cmd test",
+   "espera": "frena",
+   "grupo": "windows"
+  },
+  {
+   "cmd": "npx.cmd vitest run src/a.test.ts",
+   "espera": "pasa",
+   "grupo": "windows"
+  },
+  {
+   "cmd": "bash -c \"$CMD dotnet test\"",
+   "espera": "frena",
+   "grupo": "opaco",
+   "nota": "el texto del shell depende de una variable"
+  },
+  {
+   "cmd": "node node_modules/vitest/vitest.mjs run",
+   "espera": "frena",
+   "grupo": "rutas"
+  },
+  {
+   "cmd": "dotnet test --treenode-filter \"/*/*/Foo/*\"",
+   "espera": "pasa",
+   "grupo": "opciones",
+   "nota": "filtro de la plataforma nueva de pruebas"
+  },
+  {
+   "cmd": "jest --listTests",
+   "espera": "pasa",
+   "grupo": "opciones",
+   "nota": "sólo lista: no corre"
+  },
+  {
+   "cmd": "jest src/a.test.ts",
+   "espera": "pasa",
+   "grupo": "opciones"
+  },
+  {
+   "cmd": "pnpm test src/a.test.ts",
+   "espera": "pasa",
+   "grupo": "gestores"
+  },
+  {
+   "cmd": "yarn test -t foo",
+   "espera": "frena",
+   "grupo": "gestores",
+   "nota": "filtrar por nombre no acota: el corredor igual carga todos los archivos de prueba, en paralelo"
+  },
+  {
+   "cmd": "bun test src/a.test.ts",
+   "espera": "pasa",
+   "grupo": "gestores"
+  },
+  {
+   "cmd": "uv run pytest tests/a.py",
+   "espera": "pasa",
+   "grupo": "gestores"
+  },
+  {
+   "cmd": "docker run --rm -v \"$PWD:/w\" img dotnet test --filter X",
+   "espera": "pasa",
+   "grupo": "envoltorios"
+  },
+  {
+   "cmd": "ssh build \"cd app && dotnet test tests/Foo.Tests\"",
+   "espera": "pasa",
+   "grupo": "envoltorios"
+  },
+  {
+   "cmd": "T=dotnet; $T test",
+   "espera": "frena",
+   "grupo": "revisores",
+   "nota": "el programa es una variable"
+  },
+  {
+   "cmd": "CMD=\"npm test\"; eval \"$CMD\"",
+   "espera": "frena",
+   "grupo": "revisores",
+   "nota": "eval de una variable: no se puede leer"
+  },
+  {
+   "cmd": "bash -c \"$CMD\"; npm test -- Foo",
+   "espera": "frena",
+   "grupo": "revisores",
+   "nota": "el texto del shell es una variable"
+  },
+  {
+   "cmd": "eval \"$(ssh-agent -s)\"; npm test -- Foo",
+   "espera": "pasa",
+   "grupo": "revisores",
+   "nota": "lo que imprime una sustitución que no nombra herramientas no se cuenta"
+  },
+  {
+   "cmd": "$EDITOR notas.md; npm test -- Foo",
+   "espera": "pasa",
+   "grupo": "revisores",
+   "nota": "un programa variable que no corre pruebas"
+  },
+  {
+   "cmd": "\"$PYTHON\" -m pytest tests/a.py",
+   "espera": "pasa",
+   "grupo": "revisores"
+  },
+  {
+   "cmd": "pytest --timeout 30",
+   "espera": "frena",
+   "grupo": "revisores",
+   "nota": "el valor de una opción que no está en la lista no es alcance"
+  },
+  {
+   "cmd": "pytest --reruns 2",
+   "espera": "frena",
+   "grupo": "revisores"
+  },
+  {
+   "cmd": "vitest run --coverage.provider v8",
+   "espera": "frena",
+   "grupo": "revisores"
+  },
+  {
+   "cmd": "dotnet test --artifacts-path test-out",
+   "espera": "frena",
+   "grupo": "revisores"
+  },
+  {
+   "cmd": "dotnet test --list-tests",
+   "espera": "pasa",
+   "grupo": "revisores",
+   "nota": "sólo lista"
+  },
+  {
+   "cmd": "nice nice nice nice nice nice nice nice nice nice npm test",
+   "espera": "frena",
+   "grupo": "revisores"
+  },
+  {
+   "cmd": "find . -exec dotnet test a.Tests \\; -exec dotnet test \\;",
+   "espera": "frena",
+   "grupo": "revisores",
+   "nota": "cada -exec se mira"
+  },
+  {
+   "cmd": "parallel ::: 'dotnet test a.Tests' 'dotnet test'",
+   "espera": "frena",
+   "grupo": "revisores",
+   "nota": "cada comando de parallel se mira"
+  },
+  {
+   "cmd": "yarn workspace web test",
+   "espera": "frena",
+   "grupo": "revisores"
+  },
+  {
+   "cmd": "yarn workspaces foreach -A run test",
+   "espera": "frena",
+   "grupo": "revisores"
+  },
+  {
+   "cmd": "pnpm recursive test",
+   "espera": "frena",
+   "grupo": "revisores"
+  },
+  {
+   "cmd": "(export TYCON_FULL_SUITE=1); npm test",
+   "espera": "frena",
+   "grupo": "revisores",
+   "nota": "la variable de una subshell no sale"
+  },
+  {
+   "cmd": "docker exec app ls /jest",
+   "espera": "pasa",
+   "grupo": "revisores",
+   "nota": "el comando es ls"
+  },
+  {
+   "cmd": "tmux new -s pytest",
+   "espera": "pasa",
+   "grupo": "revisores",
+   "nota": "pytest es el nombre de la sesión"
+  },
+  {
+   "cmd": "screen -S jest",
+   "espera": "pasa",
+   "grupo": "revisores",
+   "nota": "jest es el nombre de la sesión"
+  },
+  {
+   "cmd": "docker logs pytest",
+   "espera": "pasa",
+   "grupo": "revisores",
+   "nota": "pytest es el contenedor"
+  },
+  {
+   "cmd": "docker run --rm --foo bar img dotnet test",
+   "espera": "frena",
+   "grupo": "revisores",
+   "nota": "una opción desconocida no esconde el comando"
+  },
+  {
+   "cmd": "cat guion.sh | bash; npm test -- Foo",
+   "espera": "frena",
+   "grupo": "revisores",
+   "nota": "no se sabe qué le llega al shell"
+  },
+  {
+   "cmd": "npx vitest@latest run",
+   "espera": "frena",
+   "grupo": "adversarial",
+   "nota": "la herramienta con versión"
+  },
+  {
+   "cmd": "npx jest@29",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "pnpm dlx vitest@1.6.0 run",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "yarn dlx jest@29 src/a.test.ts",
+   "espera": "pasa",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "Measure-Command { npm test }",
+   "espera": "frena",
+   "grupo": "adversarial",
+   "nota": "el bloque después de un cmdlet corre",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "Get-ChildItem | ForEach-Object { dotnet test }",
+   "espera": "frena",
+   "grupo": "adversarial",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "try { npm test } catch { }",
+   "espera": "frena",
+   "grupo": "adversarial",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "$r = (npm test)",
+   "espera": "frena",
+   "grupo": "adversarial",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "Start-Job -ScriptBlock { dotnet test --filter X }",
+   "espera": "pasa",
+   "grupo": "adversarial",
+   "herramienta": "PowerShell"
+  },
+  {
+   "cmd": "cross-env CI=1 npm test",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "npx cross-env NODE_ENV=test jest",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "corepack pnpm test",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "wsl npm test",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "wsl -e dotnet test",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "dotenv -e .env.test -- npm test",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "volta run npm test",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "mise exec node@20 -- npm test",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "nvm exec 20 npm test",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "git rebase -x \"npm test\" main",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "git bisect run npm test",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "setsid npm test",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "arch -arm64 npm test",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "taskset -c 0 npm test",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "/usr/bin/time -v npm test",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "sudo CI=1 npm test",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "vitest run --hookTimeout 1000",
+   "espera": "frena",
+   "grupo": "adversarial",
+   "nota": "el valor de una opción desconocida no es alcance"
+  },
+  {
+   "cmd": "vitest --watch false",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "jest --bail 1",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "jest --coverageReporters text",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "npm test -- --hookTimeout 5000",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "yarn test --watchAll false",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "vitest run --coverage src/a.test.ts",
+   "espera": "pasa",
+   "grupo": "adversarial",
+   "nota": "una opción sin valor no se lleva el archivo"
+  },
+  {
+   "cmd": "dotnet test --configfile nuget.test.config",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "dotnet test --packages tests/pkgs",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "dotnet test --no-build tests/Foo.Tests",
+   "espera": "pasa",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "pytest --reruns-delay 0.5",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "pytest --lf tests/a.py",
+   "espera": "pasa",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "export TYCON_FULL_SUITE=1; unset TYCON_FULL_SUITE; npm test",
+   "espera": "frena",
+   "grupo": "adversarial",
+   "nota": "después del unset el escape ya no vale"
+  },
+  {
+   "cmd": "yarn workspaces run test",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "time -p dotnet test",
+   "espera": "frena",
+   "grupo": "adversarial"
+  },
+  {
+   "cmd": "npm test a.test.ts",
+   "espera": "pasa",
+   "grupo": "adversarial",
+   "nota": "npm le pasa al script los argumentos sueltos"
+  },
+  {
+   "cmd": "npm test -- run",
+   "espera": "frena",
+   "grupo": "adversarial",
+   "nota": "un subcomando de vitest no es alcance"
+  },
+  {
+   "cmd": "cat <<EOF\n$(npm test)\nEOF",
+   "espera": "frena",
+   "grupo": "adversarial",
+   "nota": "el cuerpo sin comillas ejecuta su sustitución"
+  },
+  {
+   "cmd": "cat <<\\EOF\nnpm test\nEOF",
+   "espera": "pasa",
+   "grupo": "adversarial",
+   "nota": "con el delimitador comillado el cuerpo es texto"
+  }
+ ]
+}

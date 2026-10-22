@@ -1217,6 +1217,12 @@
       "requiere": []
     },
     {
+      "__nota": "la tabla de casos del freno de pruebas sin alcance, con el bash con el que el arnés corre sus guiones (en Windows, el de Git): es la que corre el ensayo de Windows.",
+      "raiz": "arnes",
+      "ruta": "tests/test-scope-table.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/evidence-key-collision.test.sh",
       "requiere": [],
