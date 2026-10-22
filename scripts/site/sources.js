@@ -495,7 +495,7 @@ function estadoDeGit(stderr) {
 /** Saca los caracteres de control de una línea que va al registro (saltos, escape de la consola). */
 function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}, ahora = Date.now, spawn = correr, urlBuzon, git = 'git', nubes: nubesDadas, presupuestoBuzonMs = 120000,
   topeConversacionesBytes = TOPE_CONVERSACIONES_BYTES, resumir = (o) => require('./summaries.js').resumirEnWorker({ ...o, skillsDir: process.env.TYCON_SKILLS_DIR || null }),
-  leerEspejo = (o) => require('./summaries.js').leerEspejoEnWorker(o), calcularFichasEn = (o) => require('./summaries.js').fichasEnWorker(o), almacenCopia = null, urlCopia = null }) {
+  leerEspejo = (o) => require('./summaries.js').leerEspejoEnWorker(o), calcularFichasEn = (o) => require('./summaries.js').fichasEnWorker(o), almacenCopia = null, urlCopia = null, opcionesPodaCopia = {} }) {
   // 🔴 todo lo que este módulo registra puede traer texto del repo de operaciones o del buzón (valores de operations.json,
   //    stderr de git, nombres de archivo): sale sin caracteres de control
   const log = (l) => logCrudo(limpiarLinea(l));
@@ -594,7 +594,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       try { almacen = nube.almacenDeCopia({ ...cfg.operationsCopy, urlBase: urlCopia }); }
       catch (e) { return { estado: 'sin_configurar', motivo: `la copia de operaciones no está configurada (${e.message})` }; }
     }
-    const r = await COPIA.bajar({ almacen, dir: dirCopias, previo: st.copia ? { commit: st.copia.indice.commit, huella: st.copia.indice.huella, carpeta: st.copia.carpeta } : null, log });
+    const r = await COPIA.bajar({ almacen, dir: dirCopias, previo: st.copia ? { commit: st.copia.indice.commit, huella: st.copia.indice.huella, carpeta: st.copia.carpeta } : null, log, opcionesPoda: opcionesPodaCopia });
     if (!r.ok) return { estado: r.codigo, motivo: `copia de operaciones: ${r.motivo}` };
     st.copia = { carpeta: r.carpeta, indice: r.indice };
     const hora = Date.parse(r.indice.hora);
