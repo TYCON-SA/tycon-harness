@@ -13,7 +13,7 @@ que todo ande igual con tus repos.
 - Con **Codex**, el arnés frena y se puede trabajar, pero el pipeline no puede lanzar revisores (es un problema de
   Codex y Ollama, reportado allá).
 - Hace falta un modelo que **use herramientas**. Un modelo local de 7B no las usa y no sirve.
-- Los frenos funcionan, pero un modelo puede escribir por su cuenta la variable que los apaga. Leé
+- Los frenos funcionan, y un modelo los intenta saltear: sus escapes los decide la persona. Leé
   [las advertencias](#advertencias).
 
 ## Qué hace falta
@@ -179,6 +179,10 @@ quien usa los modelos de OpenAI; con él, el despliegue saca la línea `model =`
   (`TYCON_NEW_NAMES`), valen sólo si la persona escribió en el chat **«autorizo <variable>»** en los últimos 30 minutos
   ([guía del freno](../safety-guard.md)). El freno de pruebas sigue con su escape liviano: `beam` lo usó por su cuenta,
   y sólo cuida la carga de la máquina. Codex no deja leer su conversación: ahí el escape por comando no vale.
+- **Un modelo puede saltearse los pasos de la skill de historias.** En el laboratorio, `gemma4` llamó a
+  `tycon-create-story` sin seguir sus pasos, se autorizó solo el bypass del freno de historia a mano y escribió la
+  historia igual. Ya no alcanza: escribir una historia sin la skill vale sólo si la persona escribió
+  **«autorizo story-skill-bypass»** en el chat.
 - **Mirá el estado, no el relato.** `gpt-oss` cargó la skill del pipeline y contó en cinco vueltas los pasos 1 a 7
   «completados» sin correr un guion ni escribir un archivo. Los controles no lo frenaron porque no había nada que
   frenar. Lo que lo delata es el estado: la story seguía en `ready-for-dev` y no había archivos nuevos. Revisá
