@@ -302,7 +302,11 @@
         "re": "STORY_SKILL_BYPASS_USED.*\"via\":\"persona\""
        }
       ]
-     }
+     },
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "La frase de la persona se lee de la conversación que guarda Claude Code; bajo Codex no hay conversación legible ni evento de skill, y el freno no frena (caso codex-no-frena-pero-queda-medido)."
     },
     {
      "id": "bypass-con-razon-inventada-no-abre-el-freno",
