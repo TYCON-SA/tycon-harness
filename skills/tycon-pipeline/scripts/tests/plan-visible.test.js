@@ -169,7 +169,7 @@ test('PlanVisible_InstruccionesLoDicen @story-8.62 @ac-9 @ac-10', () => {
   // el reloj y el pedido de Azure DevOps van sólo si los hay: en la plantilla, entre llaves, y la regla lo dice
   assert.match(pendiente[0], /\{ · el reloj de horas[^}]*\}/);
   assert.match(pendiente[0], /\{ · el pedido de Azure DevOps[^}]*\}/);
-  assert.match(paso8, /Sólo los que aplican: el del reloj si el paso 0b avisó el trabajo[^]*si\s+la story tiene `ado_work_item`/);
+  assert.match(paso8, /Sólo los que aplican: el del reloj si el paso 0b avisó el trabajo[^]*si\s+la story tiene `work_item`/);
 });
 
 test('Paso8_CierreSinJerga @story-8.64 @ac-2: el cierre no nombra lo que no aplicó, no usa jerga y dice qué sigue en llano', () => {

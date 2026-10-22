@@ -42,6 +42,7 @@
  */
 'use strict';
 const fs = require('fs');
+const path = require('path');
 
 /* ----------------------------- helpers ----------------------------- */
 function esc(s) {
@@ -79,7 +80,8 @@ function pillsFromFrontmatter(fm) {
   if (fm.sprint) p.push('Sprint ' + fm.sprint);
   if (fm.epic) p.push('Epic ' + fm.epic);
   if (fm.approach) p.push(fm.approach.replace(/[\[\]"']/g, ''));
-  if (fm.ado_work_item) p.push('ADO #' + fm.ado_work_item);
+  const pedido = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'platform', 'work-item-field.js')).idOf(fm);
+  if (pedido) p.push('Pedido #' + pedido);
   return p;
 }
 

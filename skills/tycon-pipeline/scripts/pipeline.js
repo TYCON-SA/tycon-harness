@@ -2855,8 +2855,8 @@ function computeNext() {
       if (!done && timeTool && !timeTool.chosen) skip = `${timeTool.reason} — skip-condition documentada del step`;
     } else if (s.id === '0c') {
       done = marker.adoMarkedActive === true;
-      if (!done && story && !fm.ado_work_item) {
-        skip = 'frontmatter sin ado_work_item: — skip-condition documentada del step (verificable)';
+      if (!done && story && !require(path.join(packsLib.raizAgentSkills(), 'scripts', 'lib', 'platform', 'work-item-field.js')).idOf(fm)) {
+        skip = 'frontmatter sin work_item: — skip-condition documentada del step (verificable)';
       }
     } else if (s.id === '5b') {
       // deepReviewDone lo setea el orquestador SIEMPRE que manejó el step (corrió el workflow O

@@ -138,6 +138,7 @@ else if (tiene('devops', 'security', 'group', 'membership', 'list')) paso = 'mie
 else if (tiene('devops', 'security', 'group', 'list')) paso = 'grupo';
 else if (tiene('devops', 'project', 'show')) paso = 'equipo';
 else if (tiene('boards', 'iteration', 'team', 'list')) paso = 'iteracion';
+else if (tiene('boards', 'work-item', 'relation', 'add')) paso = 'relacion';
 else if (tiene('boards', 'work-item', 'show')) paso = 'wi';
 else if (tiene('boards', 'work-item', 'create')) paso = 'crear';
 else if (tiene('boards', 'work-item', 'update')) paso = args.includes('--discussion') ? 'comentario' : 'actualizar';
@@ -169,6 +170,8 @@ if (coincide(process.env.TYCON_AZ_FAIL)) {
   if (paso === 'rol') falla("(AuthorizationFailed) The client does not have authorization to perform action 'Microsoft.Authorization/roleAssignments/write' over scope (403)");
   falla(`falla fabricada en el paso ${paso}`);
 }
+// sin sesión, los comandos de boards fallan como az sin `az login`
+if (process.env.TYCON_AZ_WITHOUT_SESSION === '1' && ['wi', 'crear', 'comentario', 'actualizar', 'relacion'].includes(paso)) falla("Please run 'az login' to setup account.");
 if (coincide(process.env.TYCON_AZ_GARBAGE)) { process.stdout.write('esto no es JSON, es lo que devuelve un proxy caído\n'); process.exit(0); }
 
 if (paso === 'version') { process.stdout.write('azure-cli 2.79.0 (doble de pruebas)\n'); process.exit(0); }
@@ -251,7 +254,9 @@ if (!args.includes('--org') && !args.includes('--organization')) {
   falla('sin --org: el default de `az devops configure` apunta a un proyecto que ya no existe');
 }
 const salida = arg('-o') || arg('--output');
-if (salida !== 'json') falla('sin -o json: la salida por defecto depende de la configuración de cada máquina');
+// la única consulta en texto plano que usa el arnés: el estado de un pedido de trabajo (`--query … -o tsv`)
+const estadoEnTexto = paso === 'wi' && salida === 'tsv' && /System\.State/.test(String(arg('--query') || ''));
+if (salida !== 'json' && !estadoEnTexto) falla('sin -o json: la salida por defecto depende de la configuración de cada máquina');
 
 const dirCreados = path.join(FIX, 'creados');
 const creados = () => {
@@ -283,6 +288,8 @@ switch (paso) {
   }
   case 'wi': {
     const id = arg('--id');
+    // el estado en texto: el último que le puso un update, si no `estado-<id>` del escenario, si no «New»
+    if (estadoEnTexto) { process.stdout.write(`${String(leerFix(`estado-${id}`) || 'New').trim()}\n`); process.exit(0); }
     const f = fixJson(`wi-${id}.json`, null);
     if (f) out(f);
     const c = creados().find((x) => String(x.id) === String(id));
@@ -391,6 +398,11 @@ switch (paso) {
     out({ id: n, fields: { 'System.Title': arg('--title'), 'System.Tags': tags, 'System.TeamProject': arg('--project') } });
     break;
   }
+  case 'relacion': {
+    for (const k of ['--id', '--relation-type', '--target-id']) if (!arg(k)) falla(`work-item relation add: falta ${k}`);
+    out({ id: Number(arg('--id')), relations: [{ rel: arg('--relation-type'), target: Number(arg('--target-id')) }] });
+    break;
+  }
   case 'comentario': {
     if (!arg('--id')) falla('work-item update: falta --id');
     out({ id: Number(arg('--id')), fields: {} });
@@ -401,6 +413,7 @@ switch (paso) {
     // (medido el 2026-09-15 con validateOnly: «Fixed and verified» desde New en Agile).
     if (!arg('--id')) falla('work-item update: falta --id');
     const st = arg('--state');
+    if (st) fs.writeFileSync(path.join(FIX, `estado-${arg('--id')}`), st);
     out({ id: Number(arg('--id')), fields: st ? { 'System.State': st, 'System.Reason': String(leerFix(`motivo-${arg('--id')}`) || 'Fixed and verified').trim() } : {} });
     break;
   }

@@ -222,7 +222,7 @@ Each miss below is a Critical Issue: the harness tools read these fields and ski
 
 - Frontmatter opens and closes with `---` and has `epic`, `story` (quoted), `title`, `status`, `sprint`, `priority`, `approach`, `depends_on`, `files_to_create`, `files_to_modify`
 - No double quotes inside YAML comments or inside the `title` value (§1.0)
-- `status` is a value from `scripts/metrics/states.json`; `ado_work_item` is NOT written by hand
+- `status` is a value from `scripts/metrics/states.json`; `work_item` (formerly `ado_work_item`) is NOT written by hand
 - Follow-up stories declare `followup_of` + `followup_reason` from the closed vocabulary (§1.2)
 - Behavior ACs use Given/When/Then; there are failure-mode ACs and a `### No-regresión` group
 - `### Tests` table has the `#`, `AC` and `Nivel` columns; every AC appears in at least one row; stories that touch a screen (the organization's `screen_test` rule) have an `E*` row with a real spec path (§6.1); test names follow the `test_names` rule

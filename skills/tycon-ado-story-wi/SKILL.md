@@ -1,6 +1,6 @@
 ---
 name: tycon-ado-story-wi
-description: Crea el work item en Azure DevOps cuando se crea una story Mary+GOLD y escribe el `ado_work_item:` de vuelta en el frontmatter. Resuelve la config ADO del repo (.tycon/ado-config.yaml → env vars → preguntar), auto-detecta el tipo de WI por process template, pide confirmación al dev antes de crear, y linkea el WI como hijo del Epic. Usar cuando un hook emite el reminder "tycon-ado-story-wi STORY-CREATE-detect", cuando el usuario pide "crear el work item en ADO para esta story", o tras crear stories con tycon-create-story / bmad-create-epics-and-stories.
+description: Crea el work item en Azure DevOps cuando se crea una story Mary+GOLD y escribe el `work_item:` de vuelta en el frontmatter (el nombre viejo `ado_work_item:` se sigue leyendo). Resuelve la config ADO del repo (.tycon/ado-config.yaml → env vars → preguntar), auto-detecta el tipo de WI por process template, pide confirmación al dev antes de crear, y linkea el WI como hijo del Epic. Usar cuando un hook emite el reminder "tycon-ado-story-wi STORY-CREATE-detect", cuando el usuario pide "crear el work item en ADO para esta story", o tras crear stories con tycon-create-story / bmad-create-epics-and-stories.
 ---
 
 # tycon-ado-story-wi — Crear el Work Item en ADO al crear la story
@@ -9,36 +9,36 @@ description: Crea el work item en Azure DevOps cuando se crea una story Mary+GOL
 
 Cuando se crea una story Mary+GOLD (vía `tycon-create-story`, `bmad-create-epics-and-stories`,
 `gds-create-story`, o a mano), este skill crea el **work item correspondiente en Azure
-DevOps** y escribe `ado_work_item: <id>` de vuelta en el frontmatter de la story.
+DevOps** (o la plataforma que elige el perfil del equipo) y escribe `work_item: <id>` de vuelta en el frontmatter de la story.
 
 Cierra el gap que tenía el pipeline TYCON: hasta ahora `step-00c-ado-mark-active` y
-`step-09-ado-story-closure` (de `tycon-pipeline`) **consumían** `ado_work_item:` pero nadie
+`step-09-ado-story-closure` (de `tycon-pipeline`) **consumían** el id del pedido pero nadie
 lo **creaba** — el dev tenía que crear el WI a mano en la web de ADO y linkearlo. Este skill
 automatiza esa creación, manteniendo el dev en el loop con una confirmación.
 
 ```
-tycon-create-story  ──►  story.md (sin ado_work_item)
+tycon-create-story  ──►  story.md (sin work_item)
                               │
                    hook on-story-create.js detecta
                               │
                               ▼
-                   tycon-ado-story-wi  ──►  az boards work-item create
+                   tycon-ado-story-wi  ──►  platform.js work-item create
                               │                      │
                               ▼                      ▼
-              ado_work_item: <id> escrito      WI en ADO (hijo del Epic)
+              work_item: <id> escrito          WI en ADO (hijo del Epic)
               en el frontmatter
 ```
 
 ## Cuándo se ejecuta
 
 1. **Disparado por hook** — el hook `scripts/on-story-create.js` (`PostToolUse` matcher
-   `Write`) detecta una story Mary+GOLD recién creada sin `ado_work_item:` y emite el
+   `Write`) detecta una story Mary+GOLD recién creada sin `work_item:` (ni el nombre viejo) y emite el
    reminder `tycon-ado-story-wi STORY-CREATE-detect`. El agente invoca este skill.
 2. **Invocación manual** — el usuario pide "crear el WI en ADO para esta story" /
    "linkeá esta story a ADO".
 3. **Batch** — tras `bmad-create-epics-and-stories` (varias stories de una): invocar el
    skill UNA vez con cualquiera de las stories; escanea el directorio y procesa todas las
-   que falten `ado_work_item:`.
+   que falten `work_item:`.
 
 **Argumento**: ruta absoluta de la story `.md` (la pasa el hook). Si no se pasa argumento,
 preguntar al dev cuál es la story / directorio.
@@ -172,7 +172,7 @@ Para evitar que los WIs caigan en el backlog general cuando la story ya declara 
 
 ## Paso 4 — Confirmar con el dev (OBLIGATORIO)
 
-Antes de ejecutar `az boards work-item create`, mostrar al dev un resumen y **esperar
+Antes de pedir la creación a la capa, mostrar al dev un resumen y **esperar
 confirmación explícita** (`dale` / `sí` / `ok`):
 
 ```
@@ -196,75 +196,50 @@ para el lote (o dejar que el dev excluya algunas).
 
 ---
 
-## Paso 5 — Crear el work item
+## Paso 5 — Crear el pedido de trabajo (y colgarlo de su Epic)
+
+La skill no arma comandos de la plataforma: le pide a la capa de plataforma, que crea el pedido donde lo elige el perfil
+del equipo (`integrations.platform`), con el destino de la configuración del repo (`.tycon/work-items.yaml`, o
+`.tycon/ado-config.yaml` con el nombre viejo).
 
 ```bash
-az boards work-item create \
-  --organization "<ado_org>" \
-  --project "<ado_project>" \
-  --type "<wi_type>" \
-  --title "Story <story>: <title>" \
-  --fields \
-    "System.Description=<html>" \
-    "Microsoft.VSTS.Common.AcceptanceCriteria=<html>" \
-    "Microsoft.VSTS.Common.Priority=<1..4>" \
-    "System.AreaPath=<area_path>" \
-    "System.IterationPath=<iteration_path>" \
-    "System.Tags=<tags>" \
-  --output json
+node ~/.claude/tycon-harness/scripts/lib/platform/platform.js work-item create --args @<archivo>.json
+# <archivo>.json:
+#   {"repoDir": "<repo>", "title": "Story <story>: <title>", "description": "<html>", "acceptance": "<html>",
+#    "priority": <1..4>, "epic": "<epic del frontmatter>", "sprint": <sprint>, "tags": [<etiquetas de la story>]}
+#   (+ "assignTo": "<git config user.email>" si la configuración dice auto_assign: true)
+# → {"ok": true, "value": {"id", "url", "warnings", "unsupported"}, "summary": "…"}
 ```
 
-El JSON de respuesta trae `.id` → es el `ado_work_item`.
+En Azure DevOps crea el work item con el tipo, el área, la iteración y las etiquetas de la configuración y lo cuelga
+del Epic mapeado en `epic_links` (los mismos comandos `az` que escribía esta skill); en GitHub abre un issue con la
+etiqueta `tipo:<Tipo>`. Lo que la plataforma no tiene (la prioridad o un campo propio en GitHub) vuelve en
+`unsupported` y el `summary` lo dice: mostrárselo al dev en el reporte, nunca callarlo.
 
-Si `ado_auto_assign: true` → agregar `--assigned-to "$(git config user.email)"`.
+**Sin mapeo de la épica**: la capa crea el pedido **suelto** y lo dice en `warnings` (agregar el Epic a `epic_links` y
+vincularlo, o hacerlo en el tablero). No bloquear por esto: el pedido igual queda creado y trackeable.
 
-**Manejo de errores** (ninguno bloquea — log y avisar al dev):
-- `401` / `403` → token vencido o sin scope Work Items R/W. Avisar "renová `AZURE_DEVOPS_EXT_PAT`".
-- Campo inválido (`AreaPath`/`IterationPath` no existe en el project) → reintentar sin ese
-  campo y avisar al dev qué path usar.
-- Tipo de WI inválido → pedir al dev el tipo correcto y sugerir fijar `ado_wi_type` en la
-  config (ver el comando `az devops invoke ... workitemtypes` del Paso 2 para enumerarlos).
+**Un «no»** (`ok: false`: sin plataforma, sin credencial, la plataforma lo rechazó): el `summary` en una línea y seguir;
+no bloquea nada. Un campo inválido o un tipo que el proyecto no tiene vuelven como `rechazado` con el motivo de la
+plataforma: corregir la configuración del repo y reintentar.
 
 ---
 
-## Paso 6 — Linkear como hijo del Epic
-
-Si la story tiene `epic: <N>` en el frontmatter **y** la config tiene `epic_links[<N>]`:
+## Paso 7 — Escribir el id de vuelta en el frontmatter
 
 ```bash
-az boards work-item relation add \
-  --organization "<ado_org>" \
-  --id <nuevo_wi_id> \
-  --relation-type parent \
-  --target-id <epic_links[N]> \
-  --output json
+node ~/.claude/tycon-harness/scripts/lib/platform/work-item-field.js set <story.md> <id>
 ```
 
-Si **no** hay entrada en `epic_links` para ese epic → crear el WI **suelto** (sin parent)
-y avisar al dev una línea:
-
-```
-WI #<id> creado suelto — no hay mapeo `epic_links: { <N>: ... }` en .tycon/ado-config.yaml.
-Si querés la jerarquía: agregá el WI id del Epic <N> de ADO al config y re-linkeo, o
-linkealo a mano en el board.
-```
-
-No bloquear por esto: el WI igual queda creado y trackeable.
-
----
-
-## Paso 7 — Escribir `ado_work_item:` de vuelta en el frontmatter
-
-Editar la story `.md`: insertar `ado_work_item: <id>` en el frontmatter. Ubicación:
-inmediatamente después de la línea `depends_on:` (o antes del bloque `pipelines:` si existe,
-o como última línea del frontmatter si no hay ninguno de los dos).
+Escribe `work_item: <id>` (nunca el nombre viejo `ado_work_item`): en la línea del campo si ya estaba, si no después de
+`depends_on:` (y su lista), antes del bloque `pipelines:`, o al final del frontmatter.
 
 ```yaml
 depends_on: ["2.1", "2.2"]
-ado_work_item: 4571          # ← agregado por tycon-ado-story-wi
+work_item: 4571          # ← agregado por tycon-ado-story-wi
 ```
 
-Esto es lo que hace que `step-00c` (marcar Active al implementar) y `step-09` (cerrar con
+Esto es lo que hace que `step-00c` (marcar activo al implementar) y `step-09` (cerrar con
 trazabilidad) funcionen sin búsqueda fallback por título.
 
 ---
@@ -291,7 +266,7 @@ Si hubo skip:
   en el board del cliente.
 - ❌ NO bloquear ningún flujo (creación de story, pipeline) por errores de ADO. Log + avisar
   + seguir.
-- ❌ NO crear un WI si la story YA tiene `ado_work_item:`. El hook ya filtra esto, pero
+- ❌ NO crear un WI si la story YA tiene `work_item:` (o el nombre viejo `ado_work_item:`). El hook ya filtra esto, pero
   re-chequear en el skill por si se invoca a mano.
 - ❌ NO inventar el WI id del Epic para el parent link. Si no está en `epic_links` → suelto + warn.
 - ❌ NO duplicar: antes de crear, si la config resuelve, considerar una `az boards query` por
@@ -301,12 +276,12 @@ Si hubo skip:
 ## Referencia cruzada
 
 - `tycon-pipeline/steps/step-00c-ado-mark-active.md` — transiciona el WI a `Active` al
-  empezar a implementar. Consume el `ado_work_item:` que este skill escribe.
+  empezar a implementar. Consume el `work_item:` que este skill escribe.
 - `tycon-pipeline/steps/step-09-ado-story-closure.md` — cierra el WI con trazabilidad
-  post-merge. Otro consumidor de `ado_work_item:`.
+  post-merge. Otro consumidor de `work_item:`.
 - `~/.claude/tycon-harness/guides/integrations/ado-projects.md` — schema de `.tycon/ado-config.yaml`,
   tabla de mapeo proyecto→ADO, y bloque de registro del hook.
-- `~/.claude/tycon-harness/story-format.md` §1 — el campo `ado_work_item` del frontmatter.
+- `~/.claude/tycon-harness/story-format.md` §1 — el campo `work_item` del frontmatter (antes `ado_work_item`).
 
 ## Por qué existe
 

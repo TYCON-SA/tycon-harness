@@ -36,6 +36,10 @@
  *      leer, se avisa a los gritos y la regla no corre en esa corrida (fail-open RUIDOSO: es un
  *      hueco declarado, no un OK).
  *
+ *   5. El nombre del campo del pedido de trabajo: una story que NACE con `ado_work_item:` (el nombre viejo) y sin
+ *      `work_item:` recibe un aviso; no frena, y a las que ya existían no se les dice nada (el viejo se sigue leyendo,
+ *      scripts/lib/platform/work-item-field.js).
+ *
  * IMPORTANTE: el chequeo naive `awk '/^---$/'` NO alcanza — cualquier regla
  * horizontal del cuerpo lo satisface. Por eso acá se replica el parser real.
  *
@@ -407,6 +411,8 @@ function main() {
     console.error('    La regla de `followup_reason:` NO se aplica en esta ejecución — es un hueco declarado, no un OK.');
   }
   let sinCausaExistentes = 0;
+  // las historias que NACEN con el nombre viejo del pedido de trabajo: se avisa, no se frena (el viejo se sigue leyendo)
+  const campoViejo = [];
 
   for (const abs of files) {
     if (!fs.existsSync(abs)) continue; // borrado en el commit
@@ -451,6 +457,10 @@ function main() {
       });
       continue;
     }
+
+    // 5. (antes que el 4, que corta con `continue`) El campo del pedido de trabajo se llama `work_item`; a una que ya
+    //    existía con el nombre viejo no se le dice nada
+    if (/^ado_work_item:/m.test(parsed.fm) && !/^work_item:/m.test(parsed.fm) && naceAhora(abs, scalar(parsed.fm, 'story'))) campoViejo.push(rel);
 
     // 4. La causa del reproceso. El por qué de cada rama, en la cabecera del archivo.
     if (!vocab.motivo) {
@@ -499,6 +509,9 @@ function main() {
     (skippedNoFm ? ` (${skippedNoFm} sin frontmatter, legado — no se chequean)` : '') +
     (checkYaml ? '' : ' · aviso: sin PyYAML, se saltea el parse YAML'));
 
+  for (const rel of campoViejo) {
+    console.log(`⚠️  ${rel}: nace con \`ado_work_item:\`; el campo se llama \`work_item:\` (el nombre viejo se sigue leyendo, no frena).`);
+  }
   if (sinCausaExistentes > 0) {
     // Aviso, NO freno: son stories que ya existían cuando nació la regla. Al tocarlas, se declara.
     console.log(`⚠️  ${sinCausaExistentes} story(s) con seguimiento (\`followup_of:\`) sin causa declarada ` +

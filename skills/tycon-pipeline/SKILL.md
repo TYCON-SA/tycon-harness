@@ -11,7 +11,7 @@ las REGLAS; el porqué de cada una (con su medición) vive en el archivo de su p
 ## ⚠️ NO bypass del orchestrator
 
 Toda transición de campo contractual de una story Mary+GOLD (`status:`, `sprint:`/`signed_for_sprint:`,
-`pipelines.*.status:`, `ado_work_item:`) va por este orchestrator, NUNCA con Edit/Write a mano: el
+`pipelines.*.status:`, `work_item:`) va por este orchestrator, NUNCA con Edit/Write a mano: el
 orquestador coordina side-effects atómicos (las horas, cierre del WI de ADO con `CompletedWork` ≠ `Effort`,
 engram, re-corrida de advisors, verificación cross-repo).
 
@@ -20,7 +20,7 @@ engram, re-corrida de advisors, verificación cross-repo).
 | `ready-for-dev → in-progress` + codear | `/tycon-pipeline implement <spec>` |
 | `review → done` post-merge | `/tycon-pipeline close <N.M>` (step-09) |
 | Cambio de sprint | `change-requests/cr-NNN-*.md` + commit firmado, no el pipeline |
-| Re-asignar `ado_work_item` | `az boards work-item update` + commit, no el pipeline |
+| Re-asignar `work_item` | `scripts/lib/platform/work-item-field.js set` + commit, no el pipeline |
 
 "Mi caso es excepción" → NO. Si el orchestrator no cubre el caso, se extiende; no se bypasea.
 
