@@ -110,23 +110,30 @@ fi
 # Pausa entre formularios: con ingreso único no hace falta esperar por el límite de
 # ingresos, pero se deja 1s para no ametrallar al host con decenas de consultas seguidas.
 PRIMERO=1
+# 🔴 FORMULARIOS NUEVOS. Uno que se publica por primera vez no tiene versiones: el host contesta 404 al pedírselas
+# aunque contestó bien por los demás. Sin distinguirlo, el primer despliegue de cada formulario nuevo deja el paso
+# naranja con «no se pudo preguntar». Por eso un 404 se deja para el final: si el MISMO host contestó bien por algún
+# otro formulario de la corrida, se recalcula avisándole a release-notes.sh (BZ_HOST_ANSWERED_FORMS=1) y la nota dice
+# «primera publicación»; si no contestó bien por ninguno, cuenta como degradado, como siempre.
+CONTESTO=0
+PENDIENTES=()
 
-for ZIP in "$DIR"/*.zip; do
-  [ -f "$ZIP" ] || continue
-  if [ "$PRIMERO" = "1" ]; then PRIMERO=0; else sleep "${PAUSA_ENTRE_FORMS:-1}"; fi
+# procesar_zip <zip> <segunda>: recalcula la nota de un ZIP. En la primera pasada, un 404 queda pendiente (sale 2).
+procesar_zip() {
+  local ZIP="$1" SEGUNDA="$2" TMP FORM NUEVAS
   TMP=$(mktemp -d)
 
   # El formulario NO se deduce del nombre del archivo: sale del manifiesto, que es el dato
   # que el servidor va a leer.
   if ! unzip -q -o "$ZIP" manifest.json -d "$TMP" 2>/dev/null || [ ! -f "$TMP/manifest.json" ]; then
     echo "[notas] $(basename "$ZIP") no tiene manifest.json; se deja como está" >&2
-    rm -rf "$TMP"; continue
+    rm -rf "$TMP"; return 0
   fi
 
   FORM=$(jq -r '.forms[0].formName // ""' "$TMP/manifest.json" 2>/dev/null)
   if [ -z "$FORM" ] || [ "$FORM" = "null" ]; then
     echo "[notas] $(basename "$ZIP") no declara formName; se deja como está" >&2
-    rm -rf "$TMP"; continue
+    rm -rf "$TMP"; return 0
   fi
 
   # Los cambios se acotan a la carpeta del formulario: un cambio en el de pedidos no tiene
@@ -135,17 +142,27 @@ for ZIP in "$DIR"/*.zip; do
   # `--type form`: acá hay un formulario por ZIP, y el guion unificado sin bandera pregunta por PLUGINS
   # (`/api/admin/plugins`), donde un formulario no figura → sin commit publicado → la nota se calcula contra el build
   # anterior aunque el servidor haya contestado perfecto.
-  NUEVAS=$(bash "$NOTAS_SH" --type form --from-server "$URL" "$USUARIO" "$CLAVE" "$FORM" "$FORM/src" "$FORM/package.json" 2>&1 >"$TMP/notas.txt" | sed 's/^/    /' )
+  if [ "$SEGUNDA" = 1 ] && [ "$CONTESTO" = 1 ]; then
+    NUEVAS=$(BZ_HOST_ANSWERED_FORMS=1 bash "$NOTAS_SH" --type form --from-server "$URL" "$USUARIO" "$CLAVE" "$FORM" "$FORM/src" "$FORM/package.json" 2>&1 >"$TMP/notas.txt" | sed 's/^/    /' )
+  else
+    NUEVAS=$(bash "$NOTAS_SH" --type form --from-server "$URL" "$USUARIO" "$CLAVE" "$FORM" "$FORM/src" "$FORM/package.json" 2>&1 >"$TMP/notas.txt" | sed 's/^/    /' )
+  fi
+  if [ "$SEGUNDA" = 0 ] && printf '%s' "$NUEVAS" | grep 'HTTP 404 al pedirle las versiones' >/dev/null; then
+    rm -rf "$TMP"; return 2
+  fi
   [ -n "$NUEVAS" ] && echo "$NUEVAS" >&2
   if [ ! -s "$TMP/notas.txt" ]; then
     echo "[notas] no se pudo calcular la nota de $FORM; se deja la del empaquetado" >&2
     DEGRADADAS=$((DEGRADADAS+1))
-    rm -rf "$TMP"; continue
+    rm -rf "$TMP"; return 0
   fi
   # release-notes.sh dice contra QUÉ calculó: "…la versión que está publicada…" cuando el servidor
-  # contestó, "…el build anterior…" cuando no (o "Últimos cambios" si ni eso). Sólo la primera es
-  # la nota que este paso promete; cualquier otra se escribe igual —es mejor que nada— pero cuenta.
-  if ! grep -q 'la versión que está publicada' "$TMP/notas.txt"; then
+  # contestó, "…el build anterior…" cuando no (o "Últimos cambios" si ni eso). Sólo la primera —o la de un
+  # formulario que se publica por primera vez— es la nota que este paso promete; cualquier otra se escribe igual
+  # —es mejor que nada— pero cuenta.
+  if grep -q 'la versión que está publicada' "$TMP/notas.txt"; then
+    CONTESTO=1
+  elif ! grep -q 'Primera publicación de este formulario' "$TMP/notas.txt"; then
     echo "[notas] $FORM: el servidor no dijo qué versión tiene publicada — la nota quedó calculada contra el build anterior" >&2
     DEGRADADAS=$((DEGRADADAS+1))
   fi
@@ -153,11 +170,12 @@ for ZIP in "$DIR"/*.zip; do
   if ! jq --rawfile n "$TMP/notas.txt" '.forms[0].releaseNotes = $n' "$TMP/manifest.json" > "$TMP/manifest.new.json" \
      || [ ! -s "$TMP/manifest.new.json" ]; then
     echo "[notas] no se pudo actualizar el manifiesto de $FORM; se deja la nota original" >&2
-    rm -rf "$TMP"; continue
+    rm -rf "$TMP"; return 0
   fi
 
   mv "$TMP/manifest.new.json" "$TMP/manifest.json"
   # Con ruta absoluta: `zip` corre dentro de $TMP y el ZIP puede venir por ruta relativa.
+  local ZIP_ABS
   ZIP_ABS="$(cd "$(dirname "$ZIP")" && pwd)/$(basename "$ZIP")"
   if ( cd "$TMP" && zip -q "$ZIP_ABS" manifest.json ) 2>/dev/null; then
     # Neutro a propósito: si el servidor no contestó, la nota es la del build anterior y
@@ -168,6 +186,18 @@ for ZIP in "$DIR"/*.zip; do
     echo "[notas] no se pudo reescribir $(basename "$ZIP"); se deja la nota original" >&2
   fi
   rm -rf "$TMP"
+  return 0
+}
+
+for ZIP in "$DIR"/*.zip; do
+  [ -f "$ZIP" ] || continue
+  if [ "$PRIMERO" = "1" ]; then PRIMERO=0; else sleep "${PAUSA_ENTRE_FORMS:-1}"; fi
+  procesar_zip "$ZIP" 0
+  [ $? -eq 2 ] && PENDIENTES+=("$ZIP")
+done
+for ZIP in ${PENDIENTES[@]+"${PENDIENTES[@]}"}; do
+  sleep "${PAUSA_ENTRE_FORMS:-1}"
+  procesar_zip "$ZIP" 1
 done
 
 if [ "$DEGRADADAS" -gt 0 ]; then
