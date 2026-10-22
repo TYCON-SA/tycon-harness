@@ -195,13 +195,10 @@ const VOCABULARIO = Object.freeze({
   // de hoy: el clon en la carpeta de Claude Code; `tycon` hace que el arranque de cada máquina la mude sola a `~/.tycon`,
   // una vez. La prende el dueño en el perfil del equipo DESPUÉS de migrar su máquina a mano; hasta entonces no está.
   install: Object.freeze({ profile: 'opcion:minimal|full', home: 'opcion:claude|tycon' }),
-  // La pregunta del modelo mayor en el pase adversarial: `ask` (por defecto) = el portón la ofrece
-  // en una story pesada y el orquestador le pregunta a la persona; `never` = no se ofrece, corre el modelo que eligió el
-  // portón. Cerrada y no un sí/no, para sumar un tercer valor sin romper archivos si el dueño lo pide; hoy no hay
-  // `always` («Fable NUNCA automático» es una decisión de costo). Gana el perfil del equipo (PROFILE_WINS).
-  // 🔴 El lector del freno de producción (/opt) no la conoce hasta reinstalarlo: escrita en el archivo de una máquina
-  // con una copia vieja, ésta lee la configuración como ROTA. En el perfil no choca: no lo lee.
-  adversarial: Object.freeze({ model_question: 'opcion:ask|never' }),
+  // La pregunta del modelo mayor en el pase adversarial ya no existe: el pase no ofrece Fable. La clave queda RETIRADA:
+  // un archivo viejo que la tiene sigue validando (con cualquier valor), no da valor y se avisa (`retiradas`); `set` no
+  // la escribe. Sin la sección, ese archivo se leería como roto.
+  adversarial: Object.freeze({ model_question: 'retirada' }),
   // Cómo contesta el asistente: el idioma y el estilo del bloque de respuesta del CLAUDE.md (y del AGENTS.md),
   // y el tope de prosa que mide el medidor de estilo. Cerrados: cada estilo es un texto revisado en
   // claude-md-blocks/response-style/<estilo>.<idioma>.md, y un valor fuera de la lista es configuración ROTA (el
@@ -227,7 +224,6 @@ const TOPE_POR_ESTILO = Object.freeze({ executive: 1300, detailed: 3000, neutral
 const DEFAULTS = Object.freeze({
   'update.channel': 'stable', 'update.apply': 'ask', 'update.skills_source': 'separate', 'packs.default': 'none',
   'update.source': 'public', 'rutas.tree': '~/.claude/.tycon-pipeline/harness/tree',
-  'adversarial.model_question': 'ask',
   'response.language': 'es', 'response.style': 'neutral',
 });
 // Las claves en las que el PERFIL DEL EQUIPO le gana al archivo de la máquina (story 8.29, decisión del dueño del
@@ -239,9 +235,11 @@ const DEFAULTS = Object.freeze({
 // máquina NO se toca: lo que tiene escrito queda ahí, sin efecto mientras el perfil declare la clave, y `explain` lo dice.
 // Una integración apagada en la máquina, en cambio, sigue apagada aunque el perfil la prenda: eso no cambió.
 // Quien quiera otros paquetes en UNA máquina del equipo usa la variable (`TYCON_PACKS_DEFAULT`), o `packs:` en el repo.
-// La segunda: la pregunta del modelo mayor en el pase adversarial.
-// Apagarla es una decisión de costo del equipo, no de una máquina.
-const PROFILE_WINS = Object.freeze(['packs.default', 'adversarial.model_question']);
+const PROFILE_WINS = Object.freeze(['packs.default']);
+// Las claves retiradas (tipo `retirada`): por qué ya no hacen nada. Un archivo que todavía las tiene valida y se avisa.
+const RETIRADAS = Object.freeze({
+  'adversarial.model_question': 'ya no hace nada: el pase adversarial no ofrece Fable — se puede borrar',
+});
 // Las claves que vale SÓLO el perfil del equipo: ni una variable ni el archivo de la máquina las cambian. El
 // perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
 // implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
@@ -666,6 +664,7 @@ function validarAjustes(ajustes, valor, rutaEnArchivo) {
 function validarArchivo(datos0, { archivo, esPerfil, home }) {
   const errores = [];
   const plano = {};
+  const retiradas = [];
   const { datos, vista } = seccionesDeArchivo(datos0, archivo, errores, home);
   // los errores nombran la sección como está escrita en ESE archivo (la persona busca lo que escribió)
   const comoVino = (seccion) => vista[seccion] || enArchivo(seccion);
@@ -741,6 +740,7 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
         errores.push({ archivo, clave: rutaEnArchivo,motivo });
         continue;
       }
+      if (tipo === 'retirada') { retiradas.push({ archivo, clave: rutaEnArchivo, motivo: RETIRADAS[ruta] || 'ya no hace nada' }); continue; }
       const err = validarTipo(tipo, valor);
       if (err) { errores.push({ archivo, clave: rutaEnArchivo,motivo: err }); continue; }
       if (esPerfil) {
@@ -751,7 +751,7 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
       plano[ruta] = normalizarValor(tipo, valor, home, ruta);
     }
   }
-  return { errores, plano };
+  return { errores, plano, retiradas };
 }
 
 /** null si el valor es del tipo; si no, el motivo. */
@@ -888,6 +888,7 @@ function cargar(opts = {}) {
   const home = opts.home || os.homedir();
   const arnes = opts.arnes || RAIZ_ARNES;
   const errores = [];
+  const retiradas = [];
 
   const rm = rutaMaquina(home);
   const lm = leerJson(rm);
@@ -895,7 +896,7 @@ function cargar(opts = {}) {
   if (lm.estado === 'roto') errores.push({ archivo: rm, clave: null, motivo: lm.motivo });
   else if (lm.estado === 'leido') {
     const v = validarArchivo(lm.datos, { archivo: rm, esPerfil: false, home });
-    errores.push(...v.errores); planoMaquina = v.plano;
+    errores.push(...v.errores); planoMaquina = v.plano; retiradas.push(...v.retiradas);
   }
 
   const rp = rutaPerfil(env, arnes, home);
@@ -908,7 +909,7 @@ function cargar(opts = {}) {
     else if (lp.estado === 'leido') {
       estadoPerfil = 'leido';
       const v = validarArchivo(lp.datos, { archivo: rp.ruta, esPerfil: true, home });
-      errores.push(...v.errores); planoPerfil = v.plano;
+      errores.push(...v.errores); planoPerfil = v.plano; retiradas.push(...v.retiradas);
     }
   }
 
@@ -1000,7 +1001,7 @@ function cargar(opts = {}) {
   };
 
   return {
-    valores, origenes, variables, errores, entorno, shadowed,
+    valores, origenes, variables, errores, retiradas, entorno, shadowed,
     archivos: { maquina: { ruta: rm, estado: lm.estado }, perfil: { ruta: rp.ruta, estado: estadoPerfil, aviso: estadoPerfil === 'ausente' ? null : avisoNombrePerfil(rp) } },
     enlace: estadoEnlace({ home, arnes }),
     buzon: { llave: llaveBuzon, presente: hayLlaveBuzon },
@@ -1169,7 +1170,7 @@ function explicar(opts = {}) {
 
   if (opts.json) {
     // `shadowed` (story 8.29): lo que el archivo de la máquina tiene escrito y no se usa porque el perfil del equipo gana
-    return { valores: v, origenes: o, variables: c.variables, integraciones, archivos: c.archivos, enlace: c.enlace, entorno: c.entorno, errores: c.errores, shadowed: c.shadowed };
+    return { valores: v, origenes: o, variables: c.variables, integraciones, archivos: c.archivos, enlace: c.enlace, entorno: c.entorno, errores: c.errores, retiradas: c.retiradas, shadowed: c.shadowed };
   }
   // lo que la máquina tiene escrito y no se usa (story 8.29): se dice sólo cuando lo vigente sale del perfil y DIFIERE
   // —toda máquina instalada con la página pública tiene `all` escrito, y el perfil del equipo también dice `all`: decirlo
@@ -1205,8 +1206,8 @@ function explicar(opts = {}) {
   L.push(`  install.profile = ${v.install.profile ? `${v.install.profile} (${o['install.profile']})` : 'sin elegir'}`);
   // dónde vive el arnés (story 8.23, tanda D): sin valor es `claude` (el clon de hoy); `tycon` muda cada máquina sola
   L.push(`  install.home = ${v.install.home ? `${v.install.home} (${o['install.home']})` : 'claude (sin valor: el clon en la carpeta de Claude Code; con tycon, cada máquina se muda sola a ~/.tycon en el arranque)'}`);
-  // la pregunta del modelo mayor en el pase adversarial: siempre con valor, siempre con origen
-  L.push(`  adversarial.model_question = ${fmt(v.adversarial.model_question)} (${o['adversarial.model_question']}${unused('adversarial.model_question')})`);
+  // las claves retiradas que un archivo todavía tiene: no hacen nada, se pueden borrar
+  for (const r of c.retiradas || []) L.push(`  ${r.clave} (${r.archivo}): ${r.motivo}`);
   // quién puede reenviar el ok de un dev: sólo del perfil; lo que diga la máquina se nombra y no se usa
   {
     const s = c.shadowed['approvals.relay_session'];
@@ -1310,6 +1311,7 @@ function setKey(home = os.homedir(), clave, valorNuevo, { env = process.env, gua
   // un secreto no pasa por acá (quedaría en el argv de quien llama y en su historial): lo escribe quien lo lee por stdin
   if (PROFILE_ONLY.includes(`${seccion}.${k}`)) return { ok: false, file, reason: `${enArchivo(seccion)}.${k} vale sólo desde el perfil del equipo (team-profile.json, con un pedido al repo del perfil o desde la pestaña Configuración del sitio): en el archivo de la máquina no se usa` };
   if (tipo === 'secreto') return { ok: false, file, reason: `${enArchivo(seccion)}.${k} no se escribe por acá: harness.js config set ${enArchivo(seccion)}.${k} (lee el valor por stdin y nunca lo muestra)` };
+  if (tipo === 'retirada') return { ok: false, file, reason: `${enArchivo(seccion)}.${k} ${RETIRADAS[`${seccion}.${k}`] || 'ya no hace nada'}` };
   const err = validarTipo(tipo, valorNuevo);
   if (err) return { ok: false, file, reason: `${enArchivo(seccion)}.${k}: ${err}` };
   const valorEscrito = typeof valorNuevo === 'string' ? valorNuevo.trim() : valorNuevo;
@@ -1504,6 +1506,7 @@ function cli(argv) {
     const c = cargar();
     if (c.errores.length) { process.stderr.write(new ConfigError(c.errores).message + '\n'); process.exit(2); }
     process.stdout.write(`✅ configuración válida (máquina: ${c.archivos.maquina.estado} · perfil: ${c.archivos.perfil.estado})\n`);
+    for (const r of c.retiradas || []) process.stdout.write(`ojo: ${r.clave} en ${r.archivo}: ${r.motivo}\n`);
     process.exit(0);
   }
   process.stderr.write(`${usage}\n`);

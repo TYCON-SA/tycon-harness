@@ -81,9 +81,7 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js deep-revie
   sólo con `--deep-review-fable` en el comando, el pedido explícito de quien corre el pipeline.
   **Con la configuración de la organización** (`team-repos.json → models`): el `model` sale del gate igual
   —`models.adversarial.model`/`heavy`, el pedido de la corrida (`marker.js set-models adversarial=<x>`), el techo— y
-  `model_reason` dice de dónde salió. `models.adversarial.fable_question` y la clave de la máquina
-  (`adversarial.model_question`) se siguen leyendo e informando, pero ya no cambian nada. No elijas el modelo por tu
-  cuenta: usá el que da el gate.
+  `model_reason` dice de dónde salió. No elijas el modelo por tu cuenta: usá el que da el gate.
 - **`run: false`** → **SKIP mecánico legítimo** (documentado, verificable — no es inferencia). Anunciarlo en 1 línea
   con el `reason` que devuelve el gate, anotarlo (abajo) y saltar al Step 6.
 

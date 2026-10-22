@@ -283,9 +283,8 @@ files in repos, and there are two ways to change it:
 
 **What your machine can override.** For almost everything the order is `TYCON_…` variable › `~/.claude/tycon.json` ›
 team repo (`team-profile.json`). So your machine can turn off, for itself only, a connection the team turns on, or
-stay on `ask` while the team says `auto`. Two keys belong to the team when its `team-profile.json` declares them: in
-`packs.default` the team wins over your file and only `TYCON_PACKS_DEFAULT` overrides it;
-`adversarial.model_question` cannot be overridden by any machine. What is personal cannot go in the team repo: the
+stay on `ask` while the team says `auto`. One key belongs to the team when its `team-profile.json` declares it: in
+`packs.default` the team wins over your file and only `TYCON_PACKS_DEFAULT` overrides it. What is personal cannot go in the team repo: the
 reader rejects it. What is in
 `team-repos.json` and `operations.json` cannot be overridden from a machine, except the test coverage threshold. `tycon-config.js explain` says where each value came from, and what is written in
 your file but not used.
