@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('../lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
+/** `v`, o `d` si `v` es null o undefined (sin `??`: este guion lo tiene que poder leer un Node viejo). */
+function nn(v, d) { return v === undefined || v === null ? d : v; }
 /*
  * work-in-progress.js — el trabajo en curso de esta máquina, en una tabla (el comando /wip).
  *
@@ -226,8 +230,8 @@ function sessionsBySid(dir, unreadable, projectsDir) {
     const cur = { name: sessionTitle(projectsDir, cwd, s.sessionId, unreadable) || s.name || null, alive, busy: s.status === 'busy', cwd, last: dates.length ? Math.max(...dates) : null, internal: isInternalAgent(cwd, s.nameSource) };
     // Dos archivos con la misma sesión: manda el vivo, y la actividad es la más nueva de los dos.
     const prev = out.get(s.sessionId);
-    if (!prev || (!prev.alive && alive)) out.set(s.sessionId, prev && prev.last > (cur.last ?? -1) ? { ...cur, last: prev.last } : cur);
-    else if (prev.last == null || (cur.last != null && cur.last > prev.last)) prev.last = cur.last ?? prev.last;
+    if (!prev || (!prev.alive && alive)) out.set(s.sessionId, prev && prev.last > nn(cur.last, -1) ? { ...cur, last: prev.last } : cur);
+    else if (prev.last == null || (cur.last != null && cur.last > prev.last)) prev.last = nn(cur.last, prev.last);
   }
   return out;
 }
@@ -521,7 +525,7 @@ function runQuery(q, perMs, env, children) {
         if (!Array.isArray(list)) throw new Error('no es una lista');
         // choca con main: lo dice el servidor (GitHub DIRTY o CONFLICTING, Azure `conflicts`); UNKNOWN o sin el dato, nada
         const prs = list.map((p) => ({
-          number: p && (p.number ?? p.pullRequestId), draft: Boolean(p && p.isDraft === true),
+          number: p && nn(p.number, p.pullRequestId), draft: Boolean(p && p.isDraft === true),
           conflict: Boolean(p && (p.mergeStateStatus === 'DIRTY' || p.mergeable === 'CONFLICTING' || p.mergeStatus === 'conflicts')),
         }));
         if (!prs.every((p) => Number.isInteger(p.number))) throw new Error('un pedido sin número');
@@ -713,7 +717,7 @@ function buildWip(opts = {}) {
   const rows = [];
   const busy = new Set();
   const wanted = [];
-  const gitCtx = opts.gitCtx || { until: Date.now() + (opts.repoBudgetMs ?? GIT_BUDGET_MS), cache: new Map() };
+  const gitCtx = opts.gitCtx || { until: Date.now() + nn(opts.repoBudgetMs, GIT_BUDGET_MS), cache: new Map() };
 
   const halfway = [];
   const liveName = (sid) => {

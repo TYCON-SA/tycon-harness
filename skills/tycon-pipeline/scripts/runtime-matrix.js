@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 /**
  * runtime-matrix.js — Matriz de verificación RUNTIME por AC (regla DODRT-C6).
  *

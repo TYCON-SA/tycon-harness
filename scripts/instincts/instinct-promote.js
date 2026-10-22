@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('../lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 /**
  * instinct-promote.js — gestión de instincts pending: list, show, approve, reject, status.
  *
@@ -100,7 +102,7 @@ function listPending() {
   for (const { lugar, parsed, tambienEn } of items) {
     if (variosLugares && lugar !== actual) { actual = lugar; console.log(`En ${DIRS.shown(lugar)}:\n`); }
     const hash = parsed.hash || '?';
-    const conf = parsed.confidence ?? '?';
+    const conf = parsed.confidence === undefined || parsed.confidence === null ? '?' : parsed.confidence;
     const dom = parsed.domain || '?';
     const trig = parsed.trigger || '?';
     console.log(`  [${hash}] (${dom}, conf=${conf})`);

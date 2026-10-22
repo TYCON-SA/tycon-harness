@@ -45,20 +45,51 @@ function substitute(fragment, tcg, skills, { interp = harnessInterpreter() } = {
   // harness-node.js#interpreter MIRANDO EL DISCO (el Node propio del arnés, o `node`): la misma regla que el aplicador de
   // Claude Code, así quien despliega y quien audita (harness-parity.js, que llama a esta función) no se contradicen
   const prefix = (interp && interp.prefix) || 'node';
-  const withInterp = (orig, str) => (prefix !== 'node' && /^node \$\{(?:TCG|SKILLS)\}/.test(orig) ? `${prefix}${str.slice('node'.length)}` : str);
+  // sin el Node del arnés (y sin apagarlo a propósito), un comando del arnés va por el piso de Node, como en el aplicador
+  // de Claude Code: con un Node viejo en el PATH vuelve a lanzar con el del arnés o lo dice
+  const floor = path.join(tcg, 'scripts', 'lib', 'node-floor.js');
+  const viaFloor = prefix === 'node' && interp && interp.switch !== 'off' && fs.existsSync(floor);
+  // barras normales en las dos plataformas, como el prefijo del Node propio: así `plantillas` reconoce la forma venga del
+  // árbol que venga
+  const floorFwd = floor.replace(/\\/g, '/');
+  const floorHead = `node ${/\s/.test(floorFwd) ? `"${floorFwd}"` : floorFwd}`;
+  // un freno antes de una herramienta (en la lista de Claude Code, PreToolUse con effect: blocks) va con --gate: con un
+  // Node viejo falla cerrado
+  const gates = viaFloor ? codexGateTails(tcg) : [];
+  const headFor = (orig, ev) => (!viaFloor ? prefix : ev === 'PreToolUse' && gates.some((t) => orig.endsWith(`/${t}`)) ? `${floorHead} --gate` : floorHead);
+  const withInterp = (orig, str, ev) => { const head = headFor(orig, ev); return head !== 'node' && /^node \$\{(?:TCG|SKILLS)\}/.test(orig) ? `${head}${str.slice('node'.length)}` : str; };
   // una ruta con espacio («C:\\Users\\Nombre Apellido»): el trozo del comando que la lleva va entre comillas dobles, si no el
   // hook queda escrito y no corre nunca
   const quoted = (str, name, value) => {
     if (!/\s/.test(value)) return str.split(name).join(value);
     return str.replace(new RegExp(`(\\S*)${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\S*)`, 'g'), (m0, pre, post) => (pre.startsWith('"') ? m0.split(name).join(value) : `"${pre}${value}${post}"`));
   };
-  const walk = (x) => {
-    if (typeof x === 'string') return withInterp(x, quoted(quoted(x, '${TCG}', tcg), '${SKILLS}', skills));
-    if (Array.isArray(x)) return x.map(walk);
-    if (x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, walk(v)]));
+  // `ev`: el evento del bloque `hooks.<evento>` en el que está el comando
+  const walk = (x, ev) => {
+    if (typeof x === 'string') return withInterp(x, quoted(quoted(x, '${TCG}', tcg), '${SKILLS}', skills), ev);
+    if (Array.isArray(x)) return x.map((v) => walk(v, ev));
+    if (x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, walk(v, ev)]));
     return x;
   };
-  return walk(fragment);
+  const byEvent = (m) => Object.fromEntries(Object.entries(m).map(([ev, v]) => [ev, walk(v, ev)]));
+  if (fragment && fragment.hooks && typeof fragment.hooks === 'object' && !Array.isArray(fragment.hooks)) {
+    const out = walk(Object.assign({}, fragment, { hooks: undefined }), null);
+    out.hooks = byEvent(fragment.hooks);
+    return out;
+  }
+  // el mapa de eventos solo (`{ PreToolUse: [...], Stop: [...] }`), como lo pide la auditoría de paridad
+  if (fragment && typeof fragment === 'object' && !Array.isArray(fragment) && Object.keys(fragment).length
+    && Object.entries(fragment).every(([k, v]) => /^[A-Z][A-Za-z]+$/.test(k) && Array.isArray(v))) return byEvent(fragment);
+  return walk(fragment, null);
+}
+
+/** La cola de ruta de cada freno antes de una herramienta de la lista de Claude Code (`scripts/hooks/x.js`, `tycon-pipeline/…`). */
+function codexGateTails(tcg) {
+  try {
+    const list = JSON.parse(fs.readFileSync(path.join(tcg, 'scripts', 'setup', 'hooks-list.json'), 'utf8'));
+    return list.hooks.filter((h) => h.event === 'PreToolUse' && h.effect === 'blocks' && /\.js$/.test(h.spec))
+      .map((h) => (h.spec.startsWith('@tcg:') ? `scripts/hooks/${h.spec.slice(5)}` : h.spec));
+  } catch (_) { return []; }
 }
 
 /** El intérprete de los hooks `.js` de esta máquina o `node` si el módulo no está (un árbol viejo). */
@@ -210,7 +241,8 @@ function plantillas(fragmentoCrudo) {
     if (!x || typeof x !== 'object') return;
     if (typeof x.command === 'string' && /\$\{(TCG|SKILLS)\}/.test(x.command)) {
       // el `node` del principio puede estar escrito como la ruta del Node del arnés, con o sin comillas
-      const head = /^node /.test(x.command) ? '(?:node|[^\\s"]*/node(?:\\.exe)?|"[^"]*/node(?:\\.exe)?") ' : '';
+      // …y, sin el Node del arnés, con el piso de Node en el medio
+      const head = /^node /.test(x.command) ? '(?:node|[^\\s"]*/node(?:\\.exe)?|"[^"]*/node(?:\\.exe)?") (?:(?:"[^"]*[\\\\/]node-floor\\.js"|\\S*[\\\\/]node-floor\\.js)(?: --gate)? )?' : '';
       const body = head ? x.command.slice('node '.length) : x.command;
       out.push(new RegExp('^' + head + body.split(/\$\{(?:TCG|SKILLS)\}/).map(escapar).join('\\S+') + '$'));
     }

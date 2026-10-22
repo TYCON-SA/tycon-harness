@@ -398,8 +398,15 @@ function invokesRepoPath(cmd, repoPath) {
   if (!cmd || !repoPath) return false;
   const c = String(cmd).replace(/\\/g, '/').trim();
   const rel = repoPath.replace(/\\/g, '/').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`^(?:"[^"]+"|[^\\s"]+)\\s+"[^"]*/${rel}"(?:\\s|$)`, 'i').test(c);
+  return new RegExp(`^(?:"[^"]+"|[^\\s"]+)\\s+(?:"[^"]*/node-floor\\.js"\\s+(?:--gate\\s+)?)?"[^"]*/${rel}"(?:\\s|$)`, 'i').test(c);
 }
+/** El guion que un comando de hook corre: la última ruta entre comillas (después del intérprete o del piso de Node). */
+function scriptOf(cmd) {
+  const q = quotedPaths(cmd);
+  return q.length ? q[q.length - 1] : null;
+}
+/** El piso de Node del mismo árbol que este aplicador: con él se registran los `.js` cuando el arnés no tiene Node propio. */
+const NODE_FLOOR = path.join(__dirname, '..', 'lib', 'node-floor.js');
 
 // ── Aplicar ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -502,6 +509,15 @@ function applyToSettings(settings, o) {
   // con qué se escribe un hook `.js`: lo decide harness-node.js#interpreter mirando el disco; quien no
   // lo pasa (una prueba, un llamador viejo) queda con `node`
   const jsPrefix = (o.interp && o.interp.prefix) || 'node';
+  // sin el Node del arnés, un `.js` no se registra con `node` pelado: va por el piso de Node, que con un Node viejo
+  // vuelve a lanzar con el del arnés o lo dice, y en un freno antes de una herramienta falla cerrado (`--gate`)
+  const ownNode = Boolean(o.interp && o.interp.own);
+  const floorAbs = o.floor === undefined ? NODE_FLOOR : o.floor;
+  // apagado a propósito (TYCON_HARNESS_NODE=0): el dev pidió el Node del PATH y queda `node` a secas
+  const switchedOff = Boolean(o.interp && o.interp.switch === 'off');
+  const useFloor = !ownNode && !switchedOff && Boolean(floorAbs) && fs.existsSync(floorAbs);
+  const isGate = (h) => h.event === 'PreToolUse' && h.effect === 'blocks';
+  const jsHead = (h) => (useFloor ? `node "${windows ? fwd(floorAbs) : floorAbs}"${isGate(h) ? ' --gate' : ''}` : jsPrefix);
   // se copia: un hook que queda como está pero cuyo archivo de antes ya no existe vuelve en su ruta nueva (abajo)
   const active = o.decision.active.slice();
   const activeSpecs = new Set(active.map((h) => h.spec));
@@ -590,15 +606,22 @@ function applyToSettings(settings, o) {
   }
   const isStrictSubset = (a, b) => { const A = a.split('|').filter(Boolean); const B = new Set(b.split('|').filter(Boolean)); return A.length > 0 && A.length < B.size && A.every((x) => B.has(x)); };
   // un `.js` es el mismo hook en las dos formas del intérprete: se reconoce y se reescribe en su lugar
-  const sameHook = (cmd, h, abs, runner) => (windows ? invokesRepoPath(cmd, repoPathOf(h.spec)) : namesFile(cmd, abs) && (runner === 'node' ? JS_RUNNER.test(cmd) : cmd.includes(`${runner} "`)));
+  // una ruta muerta que termina en la misma ruta del repo (una carpeta de versión que ya se borró) es el mismo hook: se
+  // re-arraiga en vez de quedar al lado, dando error en cada evento
+  const deadSame = (cmd, h) => { const sc = scriptOf(cmd); return Boolean(sc) && fwd(sc).endsWith(`/${repoPathOf(h.spec)}`) && !fs.existsSync(sc); };
+  const sameHook = (cmd, h, abs, runner) => (windows ? invokesRepoPath(cmd, repoPathOf(h.spec)) : (namesFile(cmd, abs) || deadSame(cmd, h)) && (runner === 'node' ? JS_RUNNER.test(cmd) : cmd.includes(`${runner} "`)));
   // el comando con el intérprete que corresponde, si el de hoy es otro: sólo se cambia el intérprete (el guion queda escrito
   // como estaba); null si ya está bien o no es un `.js`
-  const reform = (cmd, runner) => {
+  const reform = (cmd, runner, h, absCmd) => {
     if (runner !== 'node') return null;
     const now = leadingInterpreter(cmd);
     // sólo un intérprete que es un Node (`node`, o una ruta que termina en node/node.exe): otro comando no se toca
-    if (!now || now === jsPrefix || !/(?:^|[/"])node(?:\.exe)?"?$/i.test(now)) return null;
-    return `${jsPrefix}${String(cmd).replace(/^\s*/, '').slice(now.length)}`;
+    if (!now || !/(?:^|[/"])node(?:\.exe)?"?$/i.test(now)) return null;
+    // el guion queda como estaba escrito si existe; una ruta que ya no está (una versión borrada) vuelve a la estable
+    const old = scriptOf(cmd);
+    const script = old && fs.existsSync(old) ? old : absCmd;
+    const next = `${jsHead(h)} "${script}"`;
+    return next === String(cmd).trim() ? null : next;
   };
   const takeNarrower = (bucket, h, abs, runner) => {
     const taken = [];
@@ -638,7 +661,7 @@ function applyToSettings(settings, o) {
     // lanza cada hook con el bash de Git, donde `bash` es ese mismo bash: la ruta absoluta no suma nada.
     // un `.js` con el Node del arnés si está (sin comillas, o con comillas en Mac y Linux si la ruta trae
     // espacios); si no, `node`. La ruta del intérprete nunca deja un hook sin registrar: lo decide sólo la del guion
-    const command = `${runner === 'node' ? jsPrefix : runner} "${absCmd}"`;
+    const command = `${runner === 'node' ? jsHead(h) : runner} "${absCmd}"`;
     const eol = windows && isSh ? crlfOnDisk(abs) : null;
     const crlf = !!(eol && eol.ok && eol.crlf);
     const unverified = !!(eol && !eol.ok);
@@ -667,8 +690,17 @@ function applyToSettings(settings, o) {
     if (found) {
       // el mismo hook en la otra forma del intérprete: se reescribe ESE comando, en su lugar (misma posición, matcher y
       // `async`), y se informa como cambio de forma
-      const next = reform(cmdOf(found), runner);
-      if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(found)), to: jsPrefix }); found.command = next; }
+      const next = reform(cmdOf(found), runner, h, absCmd);
+      if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(found)), to: jsHead(h) }); found.command = next; }
+      // el mismo hook escrito otra vez en el grupo (la ruta de una versión borrada al lado de la viva, lo que dejaba el
+      // aplicador anterior): queda uno solo, el ya reescrito, sin importar en qué orden estaban
+      for (const entry of bucket) {
+        if (!entry || normMatcher(entry.matcher) !== target || !Array.isArray(entry.hooks)) continue;
+        const kept = scriptOf(found.command);
+        const keep = entry.hooks.filter((hk) => hk === found || !sameHook(cmdOf(hk), h, abs, runner)
+          || (cmdOf(hk) !== found.command && !deadSame(cmdOf(hk), h) && scriptOf(cmdOf(hk)) !== kept));
+        if (keep.length !== entry.hooks.length) { r.removed.push({ event: h.event, relpath: h.spec, why: 'repetido con una ruta que ya no existe: queda el de la ruta estable' }); entry.hooks = keep; }
+      }
       r.existed.push({ event: h.event, relpath: h.spec });
       r.present.push(id);
       warnRegistered();
@@ -687,8 +719,8 @@ function applyToSettings(settings, o) {
     let hookObj; let label = h.label;
     if (carried) {
       hookObj = carried.hook; label = `${h.label} — matcher ampliado de «${carried.matcher}» a «${h.matcher}»`;
-      const next = reform(cmdOf(hookObj), runner);
-      if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(hookObj)), to: jsPrefix }); hookObj.command = next; }
+      const next = reform(cmdOf(hookObj), runner, h, absCmd);
+      if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(hookObj)), to: jsHead(h) }); hookObj.command = next; }
     }
     else { hookObj = { type: 'command', command }; if (h.async) hookObj.async = true; }
     let appended = false;
@@ -796,6 +828,18 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   // el intérprete de los hooks `.js`: mirando el disco, también si este instalador corre suelto
   const interp = require('./harness/harness-node.js').interpreter({ env, platform: windows ? 'win32' : (process.platform === 'win32' ? 'linux' : process.platform) });
   const r = applyToSettings(settings, { list, decision, platform, hooksDir, skills, integrationsDir, check: a.check, env, settingsPath, interp });
+  // sin el Node del arnés, se dice en rojo y con el arreglo: nunca «en el próximo arranque»
+  if (!interp.own && interp.switch !== 'off') {
+    let repair = windows ? 'pwsh -File "<arnés>/scripts/install-tycon-hooks.ps1"' : 'bash "<arnés>/scripts/install-tycon-hooks.sh"';
+    try { repair = require('../lib/node-floor.js').repairCommand(env, windows ? 'win32' : process.platform); } catch (_) { /* un árbol copiado sin el piso: el texto genérico */ }
+    // tres casos, cada uno dicho como es: el Node del arnés está pero su ruta no entra en un comando; no está; o no está
+    // y tampoco el piso (los hooks quedan con `node` a secas, los frenos incluidos)
+    const why = interp.present ? `el Node del arnés está, pero ${interp.reason}` : (interp.reason || 'sin Node del arnés');
+    const text = fs.existsSync(NODE_FLOOR)
+      ? `✗ tycon: los hooks .js quedan por el piso de Node: ${why}`
+      : `✗ tycon: los hooks .js quedan con el Node del PATH, frenos incluidos, sin piso de Node en este árbol: ${why}`;
+    process.stderr.write(`${text}: corré \`${repair}\`\n`);
+  }
 
   // las dos claves del arnés (posix): como el .sh, salvo que las haya hecho harness.js o el perfil no sea full
   // fuera de full (minimal, o el perfil sin saber) las dos claves tampoco se escriben ni se anotan; en
@@ -906,6 +950,6 @@ function cli(argv, opts = {}) {
   }
 }
 
-module.exports = { TOP_CANONICAL, ENV_CANONICAL, lugarCanonico, harnessIndexOf, validateList, loadList, loadMinimalIds, readConfig, decide, applyToSettings, normMatcher, invokesRepoPath, namesFile, runnerFor, normalizePullLine, main, cli, ApplyError };
+module.exports = { scriptOf, NODE_FLOOR, TOP_CANONICAL, ENV_CANONICAL, lugarCanonico, harnessIndexOf, validateList, loadList, loadMinimalIds, readConfig, decide, applyToSettings, normMatcher, invokesRepoPath, namesFile, runnerFor, normalizePullLine, main, cli, ApplyError };
 
 if (require.main === module) process.exitCode = cli(process.argv.slice(2));
