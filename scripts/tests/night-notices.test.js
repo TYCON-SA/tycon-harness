@@ -754,6 +754,21 @@ test('T85 TextFromAPublishedPhoto_IsSanitizedBeforeTheScreen', () => {
   assert.doesNotMatch(d.deps, /[\u0000-\u0009\u000b-\u001f\u007f]/, `un carácter de control de la foto llegó a la pantalla:\n${JSON.stringify(d.deps)}`);
 });
 
+// ── 19b · con muchas suites rojas el aviso nombra tres y cuenta el resto: viaja en cada arranque ──────────────────────
+test('T87 ManyRedSuites_NamesThreeCountsTheRest_PointsToTheDetail @story-7.53', () => {
+  const at = Date.now() - HOUR;
+  const base = night(at);
+  const names = ['a.test.js', 'b.test.js', 'c.test.js', 'd.test.js', 'e.test.js', 'f.test.js'];
+  const s = startup(machine({ published: { ...base, [SUITES]: edit(base, SUITES, (j) => {
+    j.failures = names; j.motivos = Object.fromEntries(names.map((n) => [n, `✖ T1 ${'x'.repeat(130)}`]));
+  }) } }));
+  const l = line(s, /suites de prueba nocturnas/);
+  assert.match(l, /6 en rojo — a\.test\.js \(.*\) · b\.test\.js \(.*\) · c\.test\.js \(.*\) · y 3 más/, s.all);
+  assert.doesNotMatch(l, /d\.test\.js|e\.test\.js|f\.test\.js/, `nombró más de tres:\n${l}`);
+  assert.match(l, /detalle: scripts\/controls-bench\/ultimo-suites\.json/, l);
+  assert.ok(Buffer.byteLength(l) < 900, `la línea pesa ${Buffer.byteLength(l)} bytes:\n${l}`);
+});
+
 // ── 20 · el aviso de vejez de los registros de la máquina los busca donde se escriben, y calla donde no viajan ────────
 test('T85 StalenessOfMachineRecords_ReadsWhereTheyAreWritten_SilentWhereTheyDoNotTravel', () => {
   const old = 'metrics-2026-01-05-un-producto-adhoc-abc1234.json';
