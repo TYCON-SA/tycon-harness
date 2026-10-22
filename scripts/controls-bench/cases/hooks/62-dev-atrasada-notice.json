@@ -1,0 +1,89 @@
+{
+  "hooks": [
+    {
+      "hook": "dev-behind-main-notice.js (a dev le faltan commits de main, o tiene trabajo trabado hace 7 días o más; sólo repos de la organización del equipo, sin red)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/dev-behind-main-notice.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "env": {
+        "TYCON_ADO_ORG": "https://dev.azure.com/acme",
+        "TYCON_PROFILE": "0",
+        "TYCON_HARNESS_IDENTITIES": "https://dev.azure.com/acme/Harness/_git/harness"
+      },
+      "cases": [
+        {
+          "id": "grita-dev-atrasada-con-commits-reales",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/dev-behind-main-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/",
+            "git init -q --bare -b main o.git",
+            "git init -q -b main prod && cd prod && git -c user.email=b@b -c user.name=b -c core.hooksPath=/dev/null commit -q --allow-empty -m base && git remote add origin ../o.git && git push -q origin main && git push -q origin main:dev && git fetch -q origin",
+            "cd prod && git -c user.email=b@b -c user.name=b -c core.hooksPath=/dev/null commit -q --allow-empty -m 'feat: real' && git -c user.email=b@b -c user.name=b -c core.hooksPath=/dev/null commit -q --allow-empty -m 'chore: bump version to 1.0.1 [skip ci]' && git push -q origin main && git fetch -q origin",
+            "cd prod && git remote set-url origin https://dev.azure.com/acme/Prod/_git/Backend"
+          ],
+          "stdin": {
+            "source": "startup",
+            "session_id": "bench",
+            "cwd": "${FIXTURE}/prod"
+          },
+          "expect": {
+            "stdout_re": [
+              "dev atrasada en",
+              "le falta 1 commit de main \\(y 1 de versión del bot\\)",
+              "Para el agente"
+            ]
+          }
+        },
+        {
+          "id": "quiet-dev-al-dia",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/dev-behind-main-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/",
+            "git init -q --bare -b main o.git",
+            "git init -q -b main prod && cd prod && git -c user.email=b@b -c user.name=b -c core.hooksPath=/dev/null commit -q --allow-empty -m base && git remote add origin ../o.git && git push -q origin main && git push -q origin main:dev && git fetch -q origin",
+            "cd prod && git remote set-url origin https://dev.azure.com/acme/Prod/_git/Backend"
+          ],
+          "stdin": {
+            "source": "startup",
+            "session_id": "bench",
+            "cwd": "${FIXTURE}/prod"
+          },
+          "expect": {}
+        },
+        {
+          "id": "quiet-solo-commits-del-bot",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/dev-behind-main-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/",
+            "git init -q --bare -b main o.git",
+            "git init -q -b main prod && cd prod && git -c user.email=b@b -c user.name=b -c core.hooksPath=/dev/null commit -q --allow-empty -m base && git remote add origin ../o.git && git push -q origin main && git push -q origin main:dev && git fetch -q origin",
+            "cd prod && git -c user.email=b@b -c user.name=b -c core.hooksPath=/dev/null commit -q --allow-empty -m 'chore: update form versions' && git push -q origin main && git fetch -q origin",
+            "cd prod && git remote set-url origin https://dev.azure.com/acme/Prod/_git/Backend"
+          ],
+          "stdin": {
+            "source": "startup",
+            "session_id": "bench",
+            "cwd": "${FIXTURE}/prod"
+          },
+          "expect": {}
+        },
+        {
+          "id": "quiet-remoto-de-afuera",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/dev-behind-main-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/",
+            "git init -q --bare -b main o.git",
+            "git init -q -b main prod && cd prod && git -c user.email=b@b -c user.name=b -c core.hooksPath=/dev/null commit -q --allow-empty -m base && git remote add origin ../o.git && git push -q origin main && git push -q origin main:dev && git fetch -q origin",
+            "cd prod && git -c user.email=b@b -c user.name=b -c core.hooksPath=/dev/null commit -q --allow-empty -m 'feat: real' && git push -q origin main && git fetch -q origin && git remote set-url origin https://github.com/acme/prod.git"
+          ],
+          "stdin": {
+            "source": "startup",
+            "session_id": "bench",
+            "cwd": "${FIXTURE}/prod"
+          },
+          "expect": {}
+        }
+      ]
+    }
+  ]
+}
