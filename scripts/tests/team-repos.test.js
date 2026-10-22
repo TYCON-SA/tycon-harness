@@ -512,7 +512,6 @@ test('T20 TeamRepos_Models_ValidoAusenteYProblemasDeSeccion @story-7.29 @ac-3', 
     [{ reviewer: [] }, 'models.reviewer'],
     [{ session: { heavy: 'xl' } }, 'models.session.heavy'],
     [{ session: { enorme: 'opus' } }, 'models.session.enorme'],
-    [{ adversarial: { fable_question: 'quizas' } }, 'models.adversarial.fable_question'],
     [{ adversarial: { otro: 'opus' } }, 'models.adversarial.otro'],
     [{ budget: 3 }, 'models.budget'],
   ];
@@ -522,6 +521,14 @@ test('T20 TeamRepos_Models_ValidoAusenteYProblemasDeSeccion @story-7.29 @ac-3', 
     assert.ok(r.data && !('models' in r.data), `${ruta}: data sin models`);
     assert.deepStrictEqual(r.problems, []);
     assert.ok(r.sectionProblems && r.sectionProblems.models.some((p) => p.path === ruta), `${ruta}: ${JSON.stringify(r.sectionProblems)}`);
+  }
+  // la pregunta de Fable ya no hace nada: un perfil viejo que la tiene, con cualquier valor, sigue validando entero (el
+  // aviso lo da el pipeline al leerla)
+  for (const v of ['ask', 'never', 'quizas']) {
+    const r = TEAM.parse(JSON.stringify(withModels({ adversarial: { heavy: 'opus', fable_question: v } })));
+    assert.equal(r.ok, true, v);
+    assert.equal(r.sectionProblems, undefined, `${v}: nunca un problema`);
+    assert.deepStrictEqual(r.data.models.adversarial, { heavy: 'opus', fable_question: v }, `${v}: se conserva tal cual`);
   }
   // un problema fuera de models sigue dejando data: null, y el de models igual sale aparte
   const doble = withModels({ reviewers: 'xl' });

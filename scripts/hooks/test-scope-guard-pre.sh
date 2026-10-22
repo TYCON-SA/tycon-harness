@@ -20,6 +20,11 @@
 #     /tycon-merge-to-main o un pedido del dev; la del pipeline va por test-gate.sh — queda
 #     registrada en bypass.log para audit).
 #
+# Cómo lee el comando: si nombra una herramienta de pruebas, lo corta como el shell con scripts/lib/test-scope.js
+# (prefijos, agrupaciones, envoltorios, otros gestores, las opciones de cada herramienta; lo que vale y lo que no está en
+# guides/test-execution-discipline.md §«El freno de pruebas sin alcance»). Sin Node, el corte simple de abajo, que frena
+# de más.
+#
 # Fail-open: error inesperado → exit 0 (no romper la sesión por un bug del hook).
 #
 # 🔴 La entrada se lee SIN depender de `jq`: con `command -v jq || exit 0`, en una máquina sin `jq` la suite completa
@@ -180,8 +185,31 @@ EOF
   exit 2
 }
 
-# Analizar cada segmento del comando (manejo de && ; |).
-# Nota: split simple — suficiente para los patrones reales de npm/dotnet test.
+# Puerta rápida: este freno corre en cada comando, y casi ninguno nombra una herramienta de pruebas. Sin nombrarla no
+# hay nada que decidir y se sale sin arrancar Node. La lista es la misma que NOMBRA en scripts/lib/test-scope.js.
+NOMBRA_PRUEBAS='dotnet|npm|pnpm|pnpx|yarn|bunx?|npx|vitest|jest|pytest|py\.test|(pwsh|powershell).*[[:space:]]-e'
+shopt -s nocasematch
+if ! [[ "$CMD" =~ $NOMBRA_PRUEBAS ]]; then exit 0; fi
+shopt -u nocasematch
+
+# El lector en Node corta el comando como el shell: prefijos, agrupaciones, envoltorios (`bash -c`, `ssh`, `docker
+# exec`, `pwsh -Command`…), otros gestores y las opciones de cada herramienta. Su primer renglón es el veredicto; el
+# segundo, el comando que lo decidió. Si no está o falla, se sigue con el corte de abajo, que frena de más.
+_LECTOR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/test-scope.js"
+if [[ "$HAS_NODE" == "1" && -f "$_LECTOR" ]]; then
+  _HERRAMIENTA="$(read_field tool_name 2>/dev/null)" || _HERRAMIENTA=""
+  if _R="$(printf '%s' "$CMD" | "$HNODE" "$_LECTOR" --tool "${_HERRAMIENTA:-Bash}" 2>/dev/null)"; then
+    _VEREDICTO="${_R%%$'\n'*}"; _QUE="${_R#*$'\n'}"; _QUE="${_QUE%$'\n'}"
+    case "$_VEREDICTO" in
+      frena) HUBO_ESCAPE=0; block "$_QUE" ;;
+      escape) constancia suite-completa escape; exit 0 ;;
+      pasa) constancia suite-completa paso; exit 0 ;;
+      nada) exit 0 ;;
+    esac
+  fi
+fi
+
+# Sin Node (o con el lector roto): cada segmento del comando (manejo de && ; |), con un corte simple.
 IFS=$'\n'
 # ¿Alguno de los segmentos era un comando de pruebas? Sólo entonces este freno «tuvo algo que
 # decidir» y anota un `paso` (el denominador no son todos los comandos).

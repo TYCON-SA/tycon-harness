@@ -1324,3 +1324,15 @@ test('2.60-T8 FrasesDelModelo_TodasCalzanConSuMolde @story-2.60 @ac-3 — si alg
   }
   assert.deepStrictEqual([...sinMolde], [], `frases del modelo sin molde en texts.js (el inglés quedaría en castellano):\n${[...sinMolde].join('\n')}`);
 });
+
+test('Cambios_RenglonesDelHilo_SinElTextoEntero — los renglones de la conversación salen de a uno, iguales a partir el texto', () => {
+  // 🔴 rojo: resumir una conversación grande arma el texto entero y su lista de renglones; con una de 110 MB
+  //    comprimidos el sitio pasaba de 1 GiB y el contenedor moría.
+  const { renglonesDe } = require(path.join(__dirname, '..', 'nightly', 'dashboard', 'changes.js'));
+  const casos = ['', '\n', 'a', 'a\n', 'a\nb', 'a\n\nb\n', '{"x":"ñandú 😀"}\n{"y":1}\r\n', `${'z'.repeat(70000)}\nfin`];
+  for (const t of casos) {
+    // igual que partir el texto, renglones vacíos incluidos; sólo el vacío después del último salto no sale
+    const esperado = t.split('\n'); if (esperado[esperado.length - 1] === '') esperado.pop();
+    assert.deepStrictEqual([...renglonesDe(Buffer.from(t, 'utf8'))], esperado, JSON.stringify(t.slice(0, 30)));
+  }
+});

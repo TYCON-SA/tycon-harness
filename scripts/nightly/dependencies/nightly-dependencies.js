@@ -45,7 +45,7 @@
  *   node nightly-dependencies.js run       [--root <dir>] [--config <f>] [--out <dir>]
  *                                           [--pending <dir>] [--json] [--dry-run] [--today <fecha>]
  *                                           [--bugs <bugs-<fecha>.json>]   (por defecto <out>/bugs-<hoy>.json)
- *   node nightly-dependencies.js pr-text   --draft <archivo>
+ *   node nightly-dependencies.js pr-text   --draft <archivo> [--destination pr|pr-github] [--pr-repo <dueño>/<repo>]
  *   node nightly-dependencies.js report    [--pending <dir>] [--json]
  *   node nightly-dependencies.js clone-list [--config <f>]   (lo que el pipeline clona, cada ruta una vez)
  *
@@ -90,6 +90,9 @@ function parseArgs(argv) {
     // y delega acá — nunca hace `sed` sobre una ficha, porque el formato lo conoce esta cola.
     else if (v === '--card') a.ficha = path.resolve(argv[++i]);
     else if (v === '--pr') a.pr = argv[++i];
+    else if (v === '--pr-repo') a.prRepo = argv[++i];
+    else if (v === '--aligned') a.alineado = argv[++i];
+    else if (v === '--destination') a.destino = argv[++i];
     else if (v === '--rejected') a.rechazado = argv[++i];
     else if (v === '--reason') a.motivo = argv[++i];
     else if (v === '--pr-closed') a.prCerrado = argv[++i];
@@ -126,9 +129,9 @@ const CLAVES_LISTA = ['ids', 'repos', 'declarada_en', 'avisos'];
 const ORDEN_FICHA = ['id', 'detectado', 'veredicto', 'paquete', 'severidad', 'noches',
   // La identidad del pull request y la decisión que una persona tomó sobre él. Van
   // juntas y arriba porque son lo que el pipeline lee ANTES de decidir si abre uno nuevo.
-  'pr', 'rechazado', 'motivo_rechazo', 'pr_cerrado',
+  'pr', 'pr_repo', 'rechazado', 'motivo_rechazo', 'pr_cerrado', 'alineado',
   'reaparecido', 'bloqueada_por', 'resuelto', 'resuelto_antes', 'descartado', 'descartado_antes',
-  'motivo', 'motivo_antes', 'pr_antes', 'rechazado_antes', 'motivo_rechazo_antes',
+  'motivo', 'motivo_antes', 'pr_antes', 'pr_repo_antes', 'rechazado_antes', 'motivo_rechazo_antes',
   'ids', 'repos', 'declarada_en', 'avisos'];
 
 const reLista = (k) => new RegExp(`^${k}:[ \\t]*\\n((?:[ \\t]+-[ \\t].*\\n)*)`, 'm');
@@ -1012,11 +1015,12 @@ function reactivarFicha(f, h, hoy, pendingDir) {
   // decidirse. La historia no se pierde, se renombra, y `pr-text` la cuenta en el texto del PR
   // nuevo para que nadie vuelva a decidir a ciegas lo que ya decidió una vez.
   for (const [de, a] of [['resuelto', 'resuelto_antes'], ['descartado', 'descartado_antes'],
-    ['motivo', 'motivo_antes'], ['pr', 'pr_antes'], ['rechazado', 'rechazado_antes'],
+    ['motivo', 'motivo_antes'], ['pr', 'pr_antes'], ['pr_repo', 'pr_repo_antes'], ['rechazado', 'rechazado_antes'],
     ['motivo_rechazo', 'motivo_rechazo_antes']]) {
     txt = renombrarClave(txt, de, a);
   }
-  txt = quitarClave(txt, 'pr_cerrado');
+  // `alineado:` dice qué decisión del pull request ya se reflejó en los issues: la ficha que vuelve tiene otra por tomar.
+  txt = quitarClave(quitarClave(txt, 'pr_cerrado'), 'alineado');
   // Los marcadores del CRUCE son de un episodio: una ficha que vuelve empieza de cero. Si no, el
   // Bug cerrado con la vulnerabilidad de vuelta saldría «ya avisado» y el aviso nuevo no saldría nunca. `pedidos:`
   // se conserva: el Bug es el mismo. 🔴 `pagado_avisado:` NO se borra acá: es por proyecto, y borrarlo entero
@@ -1617,10 +1621,16 @@ function anotar(a) {
   if (!a.ficha || !fs.existsSync(a.ficha)) {
     console.error(`error: falta --card <archivo existente>\n\n${AYUDA}`); return 2;
   }
-  const acciones = [a.pr !== null, a.rechazado !== null, a.prCerrado !== null, a.quitarRechazo];
+  const acciones = [a.pr !== null, a.rechazado !== null, a.prCerrado !== null, a.quitarRechazo, !!a.alineado];
   if (!acciones.some(Boolean)) { console.error(`error: note sin acción\n\n${AYUDA}`); return 2; }
   if (a.pr !== null && !/^\d+$/.test(String(a.pr))) {
     console.error(`error: --pr tiene que ser el número del pull request, no «${a.pr}»`); return 2;
+  }
+  if (a.prRepo !== undefined && !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(String(a.prRepo))) {
+    console.error(`error: --pr-repo espera <dueño>/<repo>, no «${a.prRepo}»`); return 2;
+  }
+  if (a.alineado !== undefined && !/^\d+:(merged|closed|reopened)$/.test(String(a.alineado))) {
+    console.error(`error: --aligned espera <número>:<merged|closed|reopened>, no «${a.alineado}»`); return 2;
   }
   if (a.rechazado !== null && !/^\d{4}-\d{2}-\d{2}$/.test(a.rechazado)) {
     console.error(`error: --rejected espera una fecha YYYY-MM-DD, no «${a.rechazado}»`); return 2;
@@ -1628,6 +1638,9 @@ function anotar(a) {
 
   let txt = fs.readFileSync(a.ficha, 'utf8');
   if (a.pr !== null) txt = ponerEscalar(txt, 'pr', String(Number(a.pr)));
+  // El repo del pull request (GitHub): sin él, el `pr:` es de Azure o de otro repo y no se consulta.
+  if (a.prRepo !== undefined) txt = ponerEscalar(txt, 'pr_repo', a.prRepo);
+  if (a.alineado) txt = ponerEscalar(txt, 'alineado', a.alineado);
   if (a.quitarRechazo) { txt = quitarClave(txt, 'rechazado'); txt = quitarClave(txt, 'motivo_rechazo'); }
   if (a.rechazado !== null) {
     // Idempotente a propósito: la segunda noche vuelve a ver el mismo PR abandonado y no puede
@@ -1658,6 +1671,10 @@ function unaLinea(t) {
 
 function prTexto(a) {
   if (!a.borrador || !fs.existsSync(a.borrador)) { console.error('error: falta --draft <archivo> existente'); return 2; }
+  const destino = a.destino === undefined ? 'pr' : a.destino;
+  if (destino !== 'pr' && destino !== 'pr-github') {
+    console.error(`error: --destination espera pr o pr-github, no «${destino}»`); return 2;
+  }
   const txt = fs.readFileSync(a.borrador, 'utf8');
   const campo = (k) => (txt.match(new RegExp(`^${k}:\\s*(.+)$`, 'm')) || [, ''])[1].trim();
   const lista = (k) => {
@@ -1672,7 +1689,10 @@ function prTexto(a) {
   console.log('---CUERPO---');
   const prAntes = campo('pr_antes'), rechAntes = campo('rechazado_antes');
   const porQue = campo('motivo_rechazo_antes').replace(/^"([\s\S]*)"$/, '$1');
-  for (const l of cuerpoDeFicha({ paquete, sev, noches, repos, avisos, prAntes, rechAntes, porQue }, { destino: 'pr' })) {
+  const prRepoAntes = campo('pr_repo_antes');
+  const pedidos = leerPedidos(txt);
+  const d = { paquete, sev, noches, repos, avisos, prAntes, rechAntes, porQue, prRepoAntes, prRepo: a.prRepo, pedidos };
+  for (const l of cuerpoDeFicha(d, { destino })) {
     console.log(l);
   }
   return 0;
@@ -1687,6 +1707,9 @@ function prTexto(a) {
  *
  *   destino 'pr'      → markdown. 🔴 La salida de `pr-text` es BYTE A BYTE la del texto dorado
  *                       (caso T26 de scripts/tests/work-items.test.sh).
+ *   destino 'pr-github' → el pull request de GitHub: los nombres de afuera escapados como en 'issue',
+ *                       `#N` en vez de `!N` y los issues de la ficha (`pedidos:`) en una lista sin
+ *                       palabras de cierre: mergearlo no cierra el issue del producto.
  *   destino 'pedido'  → las mismas líneas para el Bug; `aHtml` las convierte, porque Repro Steps y
  *                       Descripción son campos HTML y el markdown se vería crudo en el formulario.
  *
@@ -1697,9 +1720,13 @@ function cuerpoDeFicha(d, { destino = 'pr' } = {}) {
   // En un issue de GitHub, un `@algo` de un nombre de paquete menciona a una cuenta y un `#123` enlaza otro
   // issue. Los nombres que vienen de afuera van en código: ahí GitHub no hace ninguna de las dos cosas.
   const issue = destino === 'issue';
-  const cod = (s) => (issue ? `\`${String(s).replace(/`/g, "'")}\`` : s);
+  const github = destino === 'pr-github';
+  const cod = (s) => (issue || github ?`\`${String(s).replace(/`/g, "'")}\`` : s);
+  // En el pull request de GitHub, además, todo lo que la ficha trae como texto libre va en código: la severidad, las
+  // noches y el motivo de un rechazo anterior (que escribió cualquiera que comente) no pueden mencionar a nadie.
+  const gh = (s) => (github ? cod(s) : s);
   const L = [
-    `Se publicó un aviso de seguridad que alcanza a **${cod(d.paquete)}** (severidad ${d.sev}) y que`,
+    `Se publicó un aviso de seguridad que alcanza a **${cod(d.paquete)}** (severidad ${gh(d.sev)}) y que`,
     `hoy toca ${repos.length} repo(s) del equipo. El código no cambió: cambió lo que se sabe del paquete.`,
     '',
     '**Repos alcanzados**',
@@ -1712,7 +1739,7 @@ function cuerpoDeFicha(d, { destino = 'pr' } = {}) {
     ...(avisos.length ? avisos.map((u) => (/^https:\/\/github\.com\/advisories\/GHSA-[A-Za-z0-9-]+$/.test(String(u)) ? u : cod(u)))
       : ['(el informe no trajo enlace)']).map((u) => `- ${u}`),
     '',
-    `Detectado hace ${d.noches} noche(s) seguida(s).`,
+    `Detectado hace ${gh(d.noches)} noche(s) seguida(s).`,
     '',
   ];
   if (issue) {
@@ -1750,7 +1777,16 @@ function cuerpoDeFicha(d, { destino = 'pr' } = {}) {
   // decirlo, quien recibe este pull request vuelve a decidir a ciegas lo mismo que ya decidió, y
   // el arnés parece insistir sin memoria — la forma más rápida de que se deje de mirar la lista.
   if (d.prAntes && d.rechAntes) {
-    L.push(`⚠️ Ya se había rechazado el ${d.rechAntes} (PR !${d.prAntes}): «${d.porQue}»`, '');
+    // En GitHub el número va con `#`; si el pull request anterior era de otro repo, con el repo delante.
+    const antes = github
+      ? `${d.prRepoAntes && d.prRepoAntes !== d.prRepo ? d.prRepoAntes : ''}#${d.prAntes}` : `!${d.prAntes}`;
+    L.push(`⚠️ Ya se había rechazado el ${gh(d.rechAntes)} (PR ${antes}): «${gh(d.porQue)}»`, '');
+  }
+  // sólo los pedidos que nombran un repo `<dueño>/<repo>`: el enlace al issue es lo único que se escribe sin código
+  const issuesGh = github ? (d.pedidos || []).filter((p) => /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(p.proyecto)) : [];
+  if (issuesGh.length) {
+    L.push('**Issues de este hallazgo**', ...issuesGh.map((p) => `- ${p.proyecto}#${p.id}`),
+      '_Mergear o cerrar este pull request decide el hallazgo; la revisión nocturna actualiza esos issues para que coincidan._', '');
   }
   L.push(
     '**Qué decidir acá**',
@@ -1921,7 +1957,8 @@ function report(a) {
 const AYUDA = `nightly-dependencies.js — la revisión nocturna de dependencias del arnés.
 
   run       mira los repos de repos.json, compara contra anoche y deja los borradores
-  pr-text   --draft <archivo>      arma título y cuerpo del pull request
+  pr-text   --draft <archivo> [--destination pr|pr-github] [--pr-repo <dueño>/<repo>]
+                                   arma título y cuerpo del pull request (por defecto el de Azure)
   note      --card <archivo>       escribe en la ficha lo que decidió una persona sobre su PR
   report    ¿sirve esta pieza? — desglosado, con criterio de retiro
   clone-list lista "ruta<TAB>ado" de lo que el pipeline tiene que clonar (cada ruta una vez)
@@ -1949,6 +1986,8 @@ pipelines nocturnos; ninguna toca la red):
   --rejected <fecha> --reason <texto> [--pr <n>]
                                  una persona lo rechazó: se anota y la ficha SIGUE VIVA (la
                                  vulnerabilidad es un hecho medido; rechazar el aviso no la arregla)
+  --pr-repo <dueño>/<repo>       con --pr: el repo de GitHub donde vive el pull request
+  --aligned <n>:<estado>         el issue ya sigue la decisión del pull request n (merged, closed o reopened)
   --clear-rejection              alguien reactivó el pull request en Azure: se borra el rechazo
   --pr-closed <fecha>            cuándo se cerró el pull request de una ficha archivada
 Exit en note: 0 escribio (idempotente) · 2 error de uso
