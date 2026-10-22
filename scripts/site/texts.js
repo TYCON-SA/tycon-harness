@@ -544,6 +544,7 @@ const TEXTOS = {
   'org.modelsSinValores': { es: '{archivo} no trae los valores de hoy', en: '{archivo} does not include the current values' },
   'org.modelsNoCarga': { es: 'no pude cargar {archivo} ({error})', en: 'I could not load {archivo} ({error})' },
   'org.sinFecha': { es: 'sin fecha', en: 'no date' },
+  'org.diaSegunElArchivo': { es: '{dia} (según el archivo)', en: '{dia} (from the file)' },
   'org.registrosIlegibles': { es: 'no medido: sus registros no se pudieron leer ({codigo})', en: 'not measured: its records could not be read ({codigo})' },
   'org.imagenSinVersion': { es: 'no medido: la imagen no declara su versión', en: 'not measured: the image does not declare its version' },
   'org.placeIlegible': { es: 'no medido: su place.json no se pudo leer', en: 'not measured: its place.json could not be read' },

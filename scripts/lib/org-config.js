@@ -657,27 +657,51 @@ const CARPETA_CON_FECHA = /^v(\d{4})(\d{2})(\d{2})T\d{6}\d{3}Z$/;
  * Del espejo del buzón (`<espejo>/<máquina>/registros[/v<AAAAMMDDTHHMMSSmmmZ>]/place.json`), una fila por máquina:
  * `{ maquina, version, dia, diaTexto, estado: 'al_dia' | 'atrasada' | 'sin_noticias' | 'no_medido', texto }`. La
  * referencia es la versión de la imagen del sitio; sin ella, todas «no medido». Sin red.
+ * El día: el de la carpeta con fecha; con el place.json suelto (la forma que deja el buzón), su `day` si es una fecha
+ * real y no posterior a mañana; si no, la fecha del archivo. Una carpeta vieja que `.carpetas-de-maquina.json` (la
+ * unión que deja el bajador) declara `unida` a su carpeta nueva no es otra fila; sin ese archivo, cada carpeta cuenta.
  */
 function versionesDeMaquinas({ espejo, versionImagen, ahora = Date.now(), personas = null }) {
   let maquinas = [];
   try { maquinas = fs.readdirSync(espejo, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith('.')).map((d) => d.name).sort(); } catch { return []; }
+  // vieja → nueva; la vieja sale de la tabla sólo si su nueva tiene fila (abajo)
+  let unidas = new Map();
+  try {
+    const u = JSON.parse(fs.readFileSync(path.join(espejo, '.carpetas-de-maquina.json'), 'utf8'));
+    const c = u && isObject(u.carpetas) ? u.carpetas : {};
+    unidas = new Map(Object.keys(c).filter((k) => isObject(c[k]) && c[k].estado === 'unida' && typeof c[k].nueva === 'string' && maquinas.includes(c[k].nueva)).map((k) => [k, c[k].nueva]));
+  } catch { /* sin el archivo, o ilegible: sin uniones, cada carpeta es una fila (se ve, repetida; no desaparece ninguna) */ }
+  const manana = new Date(ahora + 86400000).toISOString().slice(0, 10);
+  // `{ dia, delArchivo }`: el `day` que declara la máquina, o la fecha del archivo (la de la bajada, no la de la máquina:
+  // se muestra como tal)
+  const diaDe = (doc, ruta) => {
+    const d = doc && typeof doc.day === 'string' ? doc.day : '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d && d <= manana) return { dia: d, delArchivo: false };
+    try { return { dia: new Date(fs.lstatSync(ruta).mtimeMs).toISOString().slice(0, 10), delArchivo: true }; } catch { return { dia: null, delArchivo: false }; }
+  };
+  // un enlace del espejo no se sigue: lo que se lee queda adentro
+  const esArchivo = (p) => { try { return fs.lstatSync(p).isFile(); } catch { return false; } };
   const out = [];
   for (const m of maquinas) {
     const reg = path.join(espejo, m, 'registros');
+    try { if (fs.lstatSync(reg).isSymbolicLink()) continue; } catch { /* sin registros: lo dice el listado de abajo */ }
     let carpetas = [];
-    try { carpetas = fs.readdirSync(reg).filter((n) => CARPETA_CON_FECHA.test(n) && fs.existsSync(path.join(reg, n, 'place.json'))).sort(); } catch (e) {
+    try { carpetas = fs.readdirSync(reg).filter((n) => CARPETA_CON_FECHA.test(n) && esArchivo(path.join(reg, n, 'place.json'))).sort(); } catch (e) {
       // sin registros no es una máquina; con registros que no se pueden leer, sí: sale «no medido», no desaparece
       if (e && e.code !== 'ENOENT') { out.push({ maquina: m, persona: personas && personas[m] ? personas[m] : null, version: null, dia: null, diaTexto: M('org.sinFecha'), estado: 'no_medido', texto: M('org.registrosIlegibles', { codigo: e.code || 'error' }) }); continue; }
     }
     let ruta = null; let dia = null;
     if (carpetas.length) { const c = carpetas[carpetas.length - 1]; ruta = path.join(reg, c, 'place.json'); const d = CARPETA_CON_FECHA.exec(c); dia = `${d[1]}-${d[2]}-${d[3]}`; }
-    else if (fs.existsSync(path.join(reg, 'place.json'))) ruta = path.join(reg, 'place.json');
+    else if (esArchivo(path.join(reg, 'place.json'))) ruta = path.join(reg, 'place.json');
     if (!ruta) continue;
     let doc = null;
     try { doc = JSON.parse(fs.readFileSync(ruta, 'utf8')); } catch { doc = null; }
-    const version = doc && isObject(doc.install) && typeof doc.install.version === 'string' ? doc.install.version : null;
+    let delArchivo = false;
+    if (!dia) ({ dia, delArchivo } = diaDe(doc, ruta));
+    // la versión viene de otra máquina: acotada (la pantalla la dibuja como texto)
+    const version = doc && isObject(doc.install) && typeof doc.install.version === 'string' ? doc.install.version.slice(0, 40) : null;
     const persona = personas && typeof personas === 'object' && personas[m] ? personas[m] : null;
-    const fila = { maquina: m, persona, version, dia, diaTexto: dia || M('org.sinFecha'), estado: 'no_medido', texto: '' };
+    const fila = { maquina: m, persona, version, dia, diaTexto: dia ? (delArchivo ? M('org.diaSegunElArchivo', { dia }) : dia) : M('org.sinFecha'), estado: 'no_medido', texto: '' };
     if (!versionImagen) { fila.estado = 'no_medido'; fila.texto = M('org.imagenSinVersion'); }
     else if (!doc) { fila.texto = M('org.placeIlegible'); }
     else if (!version) { fila.texto = M('org.placeSinVersion'); }
@@ -687,7 +711,8 @@ function versionesDeMaquinas({ espejo, versionImagen, ahora = Date.now(), person
     else { fila.texto = M('org.sinFormaDeVersion', { version }); }
     out.push(fila);
   }
-  return out;
+  const conFila = new Set(out.map((f) => f.maquina));
+  return out.filter((f) => !(unidas.has(f.maquina) && conFila.has(unidas.get(f.maquina))));
 }
 
 // ── la paridad por producto ──────────────────────────────────────────────────────────────────────────────

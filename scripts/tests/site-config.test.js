@@ -163,12 +163,60 @@ test('T14 Versiones_AlDiaAtrasadaSinNoticiasNoMedido @story-2.29 @ac-13 — cont
   assert.match(por['maq-c'].texto, /sin noticias desde 2026-09-30/);
   assert.strictEqual(por['maq-d'].estado, 'no_medido');
   assert.match(por['maq-d'].texto, /no declara/);
-  assert.strictEqual(por['maq-e'].estado, 'al_dia', 'sin carpeta con fecha, se juzga sólo por la versión');
-  assert.strictEqual(por['maq-e'].dia, null);
-  assert.strictEqual(por['maq-e'].diaTexto, 'sin fecha');
+  assert.strictEqual(por['maq-e'].estado, 'al_dia', 'sin carpeta con fecha y sin «day»: el día sale de la fecha del archivo');
+  assert.strictEqual(por['maq-e'].dia, new Date(fs.statSync(path.join(espejo, 'maq-e', 'registros', 'place.json')).mtimeMs).toISOString().slice(0, 10));
   // la imagen sin versión: todas «no medido»
   const sin = ORG.versionesDeMaquinas({ espejo, versionImagen: null, ahora });
   assert.ok(sin.every((f) => f.estado === 'no_medido' && /la imagen no declara su versión/.test(f.texto)));
+});
+
+test('Versiones_DiaDelPlaceSuelto_YUniones — el place.json suelto da su día (o la fecha del archivo), «sin noticias» funciona con él, y una carpeta vieja unida no se repite', () => {
+  // 🔴 rojo: con registros/place.json suelto (la forma que deja el buzón hoy) todas las máquinas salen «sin fecha», y
+  //    las carpetas viejas unidas a su carpeta nueva aparecen dos veces.
+  const espejo = tmp('site-config-espejo-suelto-');
+  const pon = (maq, doc, mtime) => { const d = path.join(espejo, maq, 'registros'); fs.mkdirSync(d, { recursive: true }); const f = path.join(d, 'place.json'); fs.writeFileSync(f, JSON.stringify(doc)); if (mtime) fs.utimesSync(f, new Date(mtime), new Date(mtime)); };
+  pon('nueva-1a2b3c4d', { day: '2026-10-21', install: { version: '2026.10.21.57' } });
+  pon('vieja', { day: '2026-10-15', install: { version: '2026.10.15.41' } });
+  pon('sin-day', { install: { version: '2026.10.21.57' } }, '2026-10-20T10:00:00Z');
+  pon('dormida', { day: '2026-09-01', install: { version: '2026.10.21.57' } });
+  pon('day-roto', { day: '2026-13-45', install: { version: '2026.10.21.57' } }, '2026-10-19T10:00:00Z');
+  pon('day-futuro', { day: '2027-01-01', install: { version: '2026.10.21.57' } }, '2026-10-18T10:00:00Z');
+  pon('vieja-dormida-por-mtime', { install: { version: '2026.10.21.57' } }, '2026-09-01T10:00:00Z');
+  fs.writeFileSync(path.join(espejo, '.carpetas-de-maquina.json'), JSON.stringify({ schema: 1, carpetas: { vieja: { estado: 'unida', nueva: 'nueva-1a2b3c4d', declarantes: 1, desde: '2026-10-16' }, otra: { estado: 'compartida' } }, regeneradas: {}, no_leidas: [] }));
+  const ahora = Date.parse('2026-10-22T12:00:00Z');
+  const filas = ORG.versionesDeMaquinas({ espejo, versionImagen: '2026.10.21.57', ahora });
+  const por = Object.fromEntries(filas.map((f) => [f.maquina, f]));
+  assert.ok(!por.vieja, 'la carpeta vieja unida no es otra fila');
+  assert.deepStrictEqual([por['nueva-1a2b3c4d'].dia, por['nueva-1a2b3c4d'].estado], ['2026-10-21', 'al_dia'], 'el «day» del place.json');
+  assert.strictEqual(por['sin-day'].dia, '2026-10-20', 'sin «day»: la fecha del archivo');
+  assert.strictEqual(por['day-roto'].dia, '2026-10-19', 'un «day» que no es una fecha real: la fecha del archivo');
+  assert.strictEqual(por['day-futuro'].dia, '2026-10-18', 'un «day» a futuro no se cree: la fecha del archivo');
+  assert.deepStrictEqual([por.dormida.estado, por.dormida.texto], ['sin_noticias', 'sin noticias desde 2026-09-01']);
+  assert.strictEqual(por['vieja-dormida-por-mtime'].estado, 'sin_noticias', '«sin noticias» también con la fecha del archivo');
+  // los bordes del «day»: mañana se cree, pasado mañana no; un «day» que no es texto, tampoco
+  pon('day-manana', { day: '2026-10-23', install: { version: '2026.10.21.57' } }, '2026-10-17T10:00:00Z');
+  pon('day-pasado', { day: '2026-10-24', install: { version: '2026.10.21.57' } }, '2026-10-17T10:00:00Z');
+  pon('day-numero', { day: 20261020, install: { version: '2026.10.21.57' } }, '2026-10-16T10:00:00Z');
+  // una unión cuya carpeta nueva no está en el espejo no esconde a la vieja
+  pon('huerfana', { day: '2026-10-21', install: { version: '2026.10.21.57' } });
+  fs.writeFileSync(path.join(espejo, '.carpetas-de-maquina.json'), JSON.stringify({ schema: 1, carpetas: { vieja: { estado: 'unida', nueva: 'nueva-1a2b3c4d' }, huerfana: { estado: 'unida', nueva: 'no-esta-12345678' } } }));
+  const bordes = Object.fromEntries(ORG.versionesDeMaquinas({ espejo, versionImagen: '2026.10.21.57', ahora }).map((f) => [f.maquina, f]));
+  assert.deepStrictEqual([bordes['day-manana'].dia, bordes['day-pasado'].dia, bordes['day-numero'].dia], ['2026-10-23', '2026-10-17', '2026-10-16']);
+  assert.ok(bordes.huerfana && !bordes.vieja, 'la unida sin su nueva sigue; la unida con su nueva, no');
+  // la fecha del archivo se dice como tal; la que declara la máquina, no
+  assert.deepStrictEqual([bordes['sin-day'].diaTexto, bordes['nueva-1a2b3c4d'].diaTexto], ['2026-10-20 (según el archivo)', '2026-10-21']);
+  // una nueva que existe pero no da fila (sin place.json) no esconde a la vieja
+  fs.mkdirSync(path.join(espejo, 'nueva-sin-place-1234abcd', 'registros'), { recursive: true });
+  pon('vieja-2', { day: '2026-10-21', install: { version: '2026.10.21.57' } });
+  fs.writeFileSync(path.join(espejo, '.carpetas-de-maquina.json'), JSON.stringify({ schema: 1, carpetas: { 'vieja-2': { estado: 'unida', nueva: 'nueva-sin-place-1234abcd' } } }));
+  assert.ok(ORG.versionesDeMaquinas({ espejo, versionImagen: '2026.10.21.57', ahora }).some((f) => f.maquina === 'vieja-2'));
+  // un place.json que es un enlace no se sigue (lo que se lee queda dentro del espejo)
+  const afuera = path.join(tmp('site-config-afuera-'), 'place.json'); fs.writeFileSync(afuera, JSON.stringify({ day: '2026-10-21', install: { version: '9999.1.1.1' } }));
+  fs.mkdirSync(path.join(espejo, 'enlace', 'registros'), { recursive: true }); fs.symlinkSync(afuera, path.join(espejo, 'enlace', 'registros', 'place.json'));
+  assert.ok(!ORG.versionesDeMaquinas({ espejo, versionImagen: '2026.10.21.57', ahora }).some((f) => f.maquina === 'enlace'), 'el enlace no da fila');
+  // sin el archivo de uniones (o ilegible), cada carpeta es una fila: no se pierde ninguna
+  fs.writeFileSync(path.join(espejo, '.carpetas-de-maquina.json'), '{ roto');
+  assert.ok(ORG.versionesDeMaquinas({ espejo, versionImagen: '2026.10.21.57', ahora }).some((f) => f.maquina === 'vieja'));
 });
 
 test('T31 Paridad_PorProducto_FaltaTieneDeclaradoVencido @story-2.29 @ac-25 — por producto, lo que le falta, lo declarado y lo vencido', () => {
