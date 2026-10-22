@@ -17,8 +17,10 @@ const STEPS = require('../../../skills/tycon-pipeline/scripts/lib/steps.js');
 const INTEGRATIONS = require('../../lib/integrations.js');
 
 const CODIGOS = ['RR-HOOK', 'RR-NODE', 'RR-APAGO', 'RR-BANDERA', 'RR-CIERRE', 'RR-ESCAPE'];
-// Dónde vive un guion del arnés, en Mac, Linux y Windows.
-const RUTAS_DEL_ARNES = ['tycon-pipeline/scripts/', 'tycon-pipeline\\scripts\\', 'tycon-harness/', '.tycon/harness/', '.tycon\\harness\\'];
+// Dónde vive un guion del arnés, en Mac, Linux y Windows: los dos nombres del lugar salen de su constante.
+const { PLACE_NAME, LEGACY_PLACE_NAME } = require('../../setup/harness/place.js');
+const RUTAS_DEL_ARNES = ['tycon-pipeline/scripts/', 'tycon-pipeline\\scripts\\', `${PLACE_NAME}/`, `${PLACE_NAME}\\`,
+  `${LEGACY_PLACE_NAME}/`, `${LEGACY_PLACE_NAME}\\`, '.tycon/harness/', '.tycon\\harness\\'];
 // Las variables de escape de los frenos. Dónde las lee el arnés: la tabla «Interruptor» de INSTALL.md
 // (TYCON_PR_BY_HAND, TYCON_SAFETY_OFF, TYCON_FULL_SUITE), scripts/setup/hooks-list.json (TYCON_SESSION_GUARD_OK),
 // scripts/hooks/engram-pre-commit.sh (TYCON_ENGRAM_MANIFEST_OK), steps/step-08-adversarial-pass.md
