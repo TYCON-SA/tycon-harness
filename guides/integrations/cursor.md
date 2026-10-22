@@ -1,4 +1,4 @@
-# Usar el arnés con Cursor (en prueba)
+# Usar el arnés con Cursor
 
 En inglés: [cursor.en.md](cursor.en.md).
 

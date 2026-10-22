@@ -11,7 +11,7 @@
 - **Adaptable:** cada organización suma sus revisores, sus skills y su configuración.
 
 Tu agente de código escribe rápido; el arnés hace que lo haga con método. Anda con Claude Code y Codex, también con
-modelos abiertos vía [Ollama](guides/integrations/ollama.md), y en prueba con [Cursor](guides/integrations/cursor.md).
+modelos abiertos vía [Ollama](guides/integrations/ollama.md), y con [Cursor](guides/integrations/cursor.md).
 El ciclo de desarrollo con IA (AI SDLC), paso por paso:
 
 1. **Pedido e historia:** contás qué querés y el agente lo escribe como una historia (story): qué hay que hacer y cómo
@@ -248,7 +248,7 @@ Las palabras del arnés (historia, recorrido, freno, procesos de la noche…), u
 | Actualizar, volver atrás o desinstalar | [Cómo se actualiza](getting-started/reference.es.md#cómo-se-actualiza) |
 | Usarlo con Codex | [Qué es opcional](getting-started/reference.es.md#qué-es-opcional) |
 | Usarlo con un modelo abierto por Ollama, en cualquiera de las dos herramientas | [Usar el arnés con modelos de Ollama](guides/integrations/ollama.md) |
-| Usarlo con Cursor (en prueba) | [Usar el arnés con Cursor](guides/integrations/cursor.md) |
+| Usarlo con Cursor | [Usar el arnés con Cursor](guides/integrations/cursor.md) |
 | Entender una palabra del arnés | [Las palabras del arnés](getting-started/reference.es.md#las-palabras-del-arnés) |
 | Cambiar el arnés | [CONTRIBUTING.md](.github/CONTRIBUTING.md) |
 

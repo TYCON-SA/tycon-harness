@@ -1,4 +1,4 @@
-# Use the harness with Cursor (trial)
+# Use the harness with Cursor
 
 In Spanish: [cursor.md](cursor.md).
 
