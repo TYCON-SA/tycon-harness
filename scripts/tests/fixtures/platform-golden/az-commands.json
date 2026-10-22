@@ -159,15 +159,7 @@
   "skills/tycon-pipeline/SKILL.md": [
     "| Re-asignar `ado_work_item` | `az boards work-item update` + commit, no el pipeline |"
   ],
-  "skills/tycon-pipeline/steps/step-00c-ado-mark-active.md": [
-    "Detección: el primer `az boards work-item show` devuelve el state actual. Si está en alguno de la columna izquierda, transicionar al equivalente de la columna derecha.",
-    "Si el frontmatter no tiene `ado_work_item:` pero la config ADO sí resuelve (`.tycon/ado-config.yaml` del repo, o `ado.org` de la configuración del arnés — ver «Pre-condiciones»), ejecutar `az boards query` por título antes de skipear:",
-    "az boards query \\",
-    "az boards work-item show \\",
-    "az boards work-item update \\",
-    "current_state=$(az boards work-item show --organization <ado_org> --id <wi_id> \\"
-  ],
-  "skills/tycon-pipeline/steps/step-09-ado-story-closure.md": [
+  "skills/tycon-pipeline/steps/close-work-item.md": [
     "- Método canónico: `az boards work-item update --fields` (mismo `az` que el resto del",
     "- Si `az boards` falla con 401/403 → token vencido / sin permisos. Pedir al dev que renueve `AZURE_DEVOPS_EXT_PAT`.",
     "- Si el state name no matchea (ej. el process usa `Resolved` en vez de `Closed`) → listar states válidos con `az boards work-item update --help` o pedir al dev qué state usar.",
@@ -177,5 +169,10 @@
     "az boards work-item update --id <id> --organization <org> \\",
     "az boards work-item update \\",
     "az pipelines runs list --organization https://dev.azure.com/<org> --project <project> \\"
+  ],
+  "skills/tycon-pipeline/steps/step-01-start.md": [
+    "`az boards work-item show --organization <ado_org> --id <id> --query \"fields.\\\"System.State\\\"\" --output tsv`.",
+    "`az boards work-item update --organization <ado_org> --id <id> --state \"Active\"`.",
+    "az boards query --organization <ado_org> --project <ado_project> --output json \\"
   ]
 }
