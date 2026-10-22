@@ -1,0 +1,13 @@
+{
+  "archivedAt": "2026-10-22T15:19:00.000Z",
+  "marker": {
+    "storyId": "1.1",
+    "sessionId": "cccccccc-0000-4000-8000-000000000001",
+    "startedAt": "2026-10-22T14:10:00.000Z",
+    "stepsCompleted": [0, 1, 2, 3],
+    "stepsPending": [4, 5, 6, 7, 8],
+    "checks": { "tests": "red:exit=1" },
+    "autonomous": false
+  },
+  "gates": []
+}
