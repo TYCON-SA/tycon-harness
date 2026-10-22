@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/llm-cost-reviewer.md
-# source_sha256: 62af9bca1d588300a3dacac62c791cc6dcca93734ea23ae1cea5ce8a5e3add0e
+# source_sha256: 672732fb1c610f8207963cecf1f21573d00bec81e096fba583f776d9562e04c0
 # Se despliega como $CODEX_HOME/llm-cost-reviewer.config.toml y se invoca: codex exec -p llm-cost-reviewer
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 

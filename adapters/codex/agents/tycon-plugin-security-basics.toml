@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-plugin-security-basics.md
-# source_sha256: 06833a07c3e2655fd2aa5536ebad2c221c9f7f5e6a0cb4ee37a1b0de96baaf1e
+# source_sha256: cad9551aad33195d2fbf88c09a8a5d6b259b5018e8b0148c02af935934ba3fa1
 # Se despliega como $CODEX_HOME/tycon-plugin-security-basics.config.toml y se invoca: codex exec -p tycon-plugin-security-basics
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 

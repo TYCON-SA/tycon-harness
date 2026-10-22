@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-e2e-realness-checker.md
-# source_sha256: 006b7f2acb09fd35ae4e4aefb5ea5ab8b2a1c99ef1b0b567c3e3598b3b2bca9e
+# source_sha256: b0b72453c6c00fa272b64b8bb597a94b4c3293f9345bd250cfbdb663a562dd75
 # Se despliega como $CODEX_HOME/tycon-e2e-realness-checker.config.toml y se invoca: codex exec -p tycon-e2e-realness-checker
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 

@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-dod-runtime-checker.md
-# source_sha256: 85e970d70cb3d6ba8141df1a42dd3dbb51e87cee1f905296262c8bb454f4d4ea
+# source_sha256: a8f44f62577cda70d21664a1c8ec3699cb0d6a849ee12adbcc6757fcd899e509
 # Se despliega como $CODEX_HOME/tycon-dod-runtime-checker.config.toml y se invoca: codex exec -p tycon-dod-runtime-checker
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 

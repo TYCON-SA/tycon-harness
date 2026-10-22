@@ -2,7 +2,7 @@
 name: tycon-plugin-tests-coverage
 tools: Read, Grep, Glob
 model: sonnet
-description: Advisor Core during/post. Verifica que tests cubran los ACs de la story, que la suite haya pasado y coverage > 75% sobre las líneas tocadas (o los archivos nuevos, según threshold_basis) LEYENDO el artefacto .advisors/tests-result.json (escrito por test-gate.sh al cierre del Step 4 — este advisor NO ejecuta tests), y que methods publicos tengan tests directos (no solo mock). Cada finding cita rule ID (TEST-C1..C3, TEST-W1..W4, TEST-W9, TEST-W10, TEST-W11). Usar en pipeline post-implementacion para validar cobertura antes del commit.
+description: Verifica que los tests cubran los ACs, que la suite pasó y coverage >75%, leyendo .advisors/tests-result.json. Usar post-implementación antes del commit.
 omitClaudeMd: true
 ---
 

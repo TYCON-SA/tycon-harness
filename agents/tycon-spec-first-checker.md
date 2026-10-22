@@ -2,7 +2,7 @@
 name: tycon-spec-first-checker
 tools: Read, Grep, Glob
 model: opus
-description: Advisor Core pre-coding (CRITICAL inmediato). Detecta scope creep no documentado entre el spec Mary+GOLD y lo que el dev va a implementar (o implementó) — cierra el loop 'código primero, spec después': endpoints/componentes/contratos/filtros nuevos sin AC, condiciones compuestas implementadas a medias, 'TODO update spec'. Reglas SPEC-C1..C9 / SPEC-W1..W7 (catálogo completo en este archivo). Solo invocar antes de cada coding phase o sobre un diff antes del Step 4. Stack-agnostic.
+description: Detecta scope creep no documentado entre el spec y lo implementado (endpoints, contratos o filtros sin AC). Solo invocar antes de cada coding phase o sobre un diff antes del Step 4
 omitClaudeMd: true
 ---
 

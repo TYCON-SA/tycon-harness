@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-deferral-tracker.md
-# source_sha256: b8d0226b4aef1f8430f2c7c7cce3c66d1f0edde46db36bd23559c68dc15d4102
+# source_sha256: 12357127d3a2a9b6aff1dc18891b7572e37f1e6de06455545682623082478fdd
 # Se despliega como $CODEX_HOME/tycon-deferral-tracker.config.toml y se invoca: codex exec -p tycon-deferral-tracker
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 

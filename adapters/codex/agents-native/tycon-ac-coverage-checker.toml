@@ -1,12 +1,12 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-ac-coverage-checker.md
-# source_sha256: 4e0442a0d1629c64bacf4bf5a5d22e86404218df98c4737888388c559ed443af
+# source_sha256: 8cb7410f91ca383a7dff12b98643bf93440c8b1beed166a7d2aea5b10f18c2a0
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-ac-coverage-checker.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-ac-coverage-checker").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
 
 name = "tycon-ac-coverage-checker"
-description = "Advisor Core post-build (CRITICAL inmediato). Cross-checkea CADA AC + CADA Test de la tabla `### Tests` Mary+GOLD contra implementación grep-able (atrapa gaps invisibles al smoke: AC dice X pero el service no llama Y). Bloquea transición a `done` si hay ACs/Tests sin evidencia. Solo invocar post-implementación cuando la story pasa a `review`/`done`."
+description = "Cruza cada AC y cada Test de la story contra la implementación y bloquea el paso a done sin evidencia. Solo invocar post-implementación cuando la story pasa a review o done"
 model = "gpt-5.6-luna"
 sandbox_mode = "read-only"
 

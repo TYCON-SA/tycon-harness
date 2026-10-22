@@ -1,12 +1,12 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-deferral-tracker.md
-# source_sha256: b8d0226b4aef1f8430f2c7c7cce3c66d1f0edde46db36bd23559c68dc15d4102
+# source_sha256: 12357127d3a2a9b6aff1dc18891b7572e37f1e6de06455545682623082478fdd
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-deferral-tracker.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-deferral-tracker").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
 
 name = "tycon-deferral-tracker"
-description = "Advisor Core post-build (CRITICAL inmediato). Cierra el loop entre lo que la story declaró diferir (bloque `pipelines:` con acs/tasks/tests_pending) y la trazabilidad en código, `tasks/todo.md` y engram. Bloquea commit prep si la deuda es fantasma. Reglas DEFTR-C1..C2/W1..W2. Solo invocar si la story tiene bloque `pipelines:` o el diff tiene `*.skip()`/`[Fact(Skip=...)]`."
+description = "Verifica que lo diferido por la story tenga trazabilidad en código, todo.md y engram. Solo invocar si la story tiene bloque pipelines o el diff tiene .skip() o tests con Skip"
 model = "gpt-5.6-luna"
 sandbox_mode = "read-only"
 

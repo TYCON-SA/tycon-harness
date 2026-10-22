@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-plugin-tests-coverage.md
-# source_sha256: 7bd85c808629ddff0cd5565856de546718bf2088bea6fefcda52c97080a300fa
+# source_sha256: c9531cf0ac83b60324516be5eb1c7854a8dc84c763f798d13e8c6725328c54a5
 # Se despliega como $CODEX_HOME/tycon-plugin-tests-coverage.config.toml y se invoca: codex exec -p tycon-plugin-tests-coverage
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 

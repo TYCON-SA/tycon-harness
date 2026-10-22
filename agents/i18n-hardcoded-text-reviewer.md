@@ -2,7 +2,7 @@
 name: i18n-hardcoded-text-reviewer
 tools: Read, Grep, Glob
 model: sonnet
-description: Advisor Core condicional PROJECT-gated. Audita texto visible al usuario hardcodeado (sin pasar por i18n) en proyectos que declaran requerir i18n: labels/títulos/botones/placeholders en JSX, mapas de labels (etapa/estado/rol), toasts/errores, texto en librerías compartidas agnósticas, y mensajes user-facing de backend. Solo marca lo NUEVO del diff (no el backlog). Reglas I18N-C1..C2/W1..W4. Solo invocar si el repo tiene `.tycon/advisors.yaml` con `i18n.required: true` Y el diff toca `.tsx/.ts/.jsx/.js/.cs`.
+description: Audita texto visible hardcodeado sin i18n, solo lo nuevo del diff. Solo invocar si el repo tiene .tycon/advisors.yaml con i18n.required=true y el diff toca .tsx, .ts, .jsx, .js o .cs
 omitClaudeMd: true
 ---
 
