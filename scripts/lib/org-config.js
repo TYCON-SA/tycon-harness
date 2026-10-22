@@ -1197,9 +1197,10 @@ function pantalla(idioma = 'es') {
     return box;
   }
   function quitar(onclick) { return el('button', { class: 'sec', type: 'button', text: '✕', title: T('pantalla.quitar'), 'aria-label': T('pantalla.quitar'), onclick: onclick }); }
-  function listaDeTextos(titulo, ayuda, lista, set, p, problemas, nombre, agregar) {
+  // «vacio»: qué dice la lista sin nada (de fábrica, «Nadie todavía»)
+  function listaDeTextos(titulo, ayuda, lista, set, p, problemas, nombre, agregar, vacio) {
     var box = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: titulo }), ayuda ? el('p', { class: 'sub-d', text: ayuda }) : null);
-    if (!(lista || []).length) box.appendChild(el('p', { class: 'muted', text: T('pantalla.nadieTodavia') }));
+    if (!(lista || []).length) box.appendChild(el('p', { class: 'muted', text: vacio || T('pantalla.nadieTodavia') }));
     (lista || []).forEach(function (v, i) {
       box.appendChild(el('div', { class: 'fila quitar' }, campo('', v, function (nv) { lista[i] = nv; set(lista); }, p + '.' + i, problemas, { placeholder: nombre }), quitar(function () { lista.splice(i, 1); set(lista); render(); })));
     });
@@ -2356,7 +2357,7 @@ function pantalla(idioma = 'es') {
       if (!l.length) { if (esObjeto(d.review)) { delete d.review.blocking_prefixes; limpiar(); } return; }
       if (!esObjeto(d.review)) d.review = {};
       d.review.blocking_prefixes = l;
-    }, 'review.blocking_prefixes', pr, T('pantalla.prefijoEjemplo'), T('pantalla.agregarPrefijo')));
+    }, 'review.blocking_prefixes', pr, T('pantalla.prefijoEjemplo'), T('pantalla.agregarPrefijo'), T('pantalla.ningunaAgregadaLoNormal')));
     return box;
   }
   // «Tu tecnología»: lo que el arnés ya conoce, las terminaciones de la organización, las herramientas de prueba (de
@@ -2707,7 +2708,9 @@ function pantalla(idioma = 'es') {
   function dibujarSeccion(s) {
     var p = plano(s);
     var est = estadoDe(s);
-    var sec = el('section', { class: 'card form-block', id: 'seccion-' + s.id }, el('div', { class: 'fb-head' }, el('div', {}, el('h4', { text: p.t }), el('p', { class: 'reach', text: p.d })), el('span', { class: 'pill ' + est[0], text: est[1] })));
+    // «para qué sirve y cuándo tocarla», en llano, debajo de la descripción: para quien entra por primera vez
+    var paraQue = Object.prototype.hasOwnProperty.call(TX, 'para.' + s.id) ? el('p', { class: 'para', text: TX['para.' + s.id] }) : null;
+    var sec = el('section', { class: 'card form-block', id: 'seccion-' + s.id }, el('div', { class: 'fb-head' }, el('div', {}, el('h4', { text: p.t }), el('p', { class: 'reach', text: p.d }), paraQue), el('span', { class: 'pill ' + est[0], text: est[1] })));
     if (s.estado === 'no_reader') { sec.appendChild(aviso('nm', T('pantalla.estaVersionDelArnesTodavia'), s.motivo)); if (s.id !== 'paridad') return sec; }
     if (s.estado === 'ilegible') { sec.appendChild(aviso('bad', T('pantalla.loGuardadoEnEstaParte'), s.motivo)); if (s.id !== 'paridad') return sec; }
     if (s.estado === 'no_configurado') { sec.appendChild(aviso('nm', T('pantalla.estaParteTodaviaNoEsta'), s.motivo)); if (s.id !== 'paridad') return sec; }
