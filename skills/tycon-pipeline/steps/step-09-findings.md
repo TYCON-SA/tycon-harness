@@ -297,7 +297,10 @@ quita la fricción, no la trazabilidad.
      pone en pantalla un bloque «Te piden eximir un crítico» con la regla, su nombre en llano, el archivo, lo que dijo
      el revisor y tu motivo. El comando frena hasta que el dev conteste a ESE bloque. Si el bloque no apareció (la
      instalación mínima no trae la puerta de comandos), escribí con Write `exencion-pedida.json` en la carpeta de la
-     corrida con `{ "rule", "file", "reason" }` y el arnés lo muestra. Con su respuesta,
+     corrida con `{ "rule", "file", "reason" }` y el arnés lo muestra. El bloque trae, además, **todos los otros
+     críticos abiertos de la corrida** que todavía no se mostraron ni se eximieron: pedí la muestra UNA vez, antes de
+     pedirle el ok a nadie, y la persona contesta uno por mensaje o todos en uno («eximo TEST-C1. eximo ADV-C1»). Un
+     código largo del pase adversarial se nombra entero, tal como está en findings.json. Con su respuesta,
      `marker.js waive-critical … --approved-by "<el dev>" --quote "<sus palabras, textuales>"`. La cita vale si está
      en un mensaje escrito por el dev (no en lo que escribiste vos, una herramienta, un subagente u otra sesión),
      **posterior a la muestra**, y si ese mensaje **dice que exime ese crítico**: una frase con «exim…» y su regla
