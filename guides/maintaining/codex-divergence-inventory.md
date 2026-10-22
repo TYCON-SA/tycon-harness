@@ -274,7 +274,8 @@ de Claude Code:
 
 Arreglados el mismo día (stderr + exit 2): `missing-path-notice.js` · `retro-pending.js` (el
 registro de push a main) · `unpushed-work-notice.js` (el grito al promover a main). El aviso de
-`unpushed-work-notice` de **SessionStart quedó en stdout a propósito** — ahí stdout es el canal
+`unpushed-work-notice` de **SessionStart quedó en stdout a propósito** (igual que `dev-behind-main-notice`, que
+sólo corre en SessionStart y en las dos herramientas) — ahí stdout es el canal
 correcto, y el banco cazó el error de "arreglarlo" también (exit 2 en SessionStart rompería el
 arranque). **Verificado también en Codex** (2026-08-27, misma tarde): `live-fire.js` sumó una sonda del
 canal stderr+exit2 (una segunda entrada de PostToolUse que emite su código por stderr y sale 2) y

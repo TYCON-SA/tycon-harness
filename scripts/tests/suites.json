@@ -191,6 +191,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/tests-without-ci.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/label-prs.test.sh",
       "requiere": []
     },
@@ -1217,6 +1222,12 @@
       "requiere": []
     },
     {
+      "__nota": "el examen de revisores encuentra los revisores donde el arnés los instala, también en una máquina sólo con Codex.",
+      "raiz": "arnes",
+      "ruta": "tests/advisor-runner-agents-dir.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el freno de pruebas sin alcance frena el comando corrido y no un texto entre comillas que sólo se busca.",
       "raiz": "arnes",
       "ruta": "tests/test-scope-guard.test.sh",
@@ -1577,6 +1588,12 @@
       "__nota": "story 8.5.1: el consejo del aviso de arranque para un clon trabado se CORRE y tiene que destrabarlo — DU (el retiro borró lo que el dev tocó) + UU, sólo UU, y rutas/carpetas con espacio citadas.",
       "raiz": "arnes",
       "ruta": "tests/branch-guard-notice.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "story 1.11: el aviso de arranque de dev atrasada habla sólo con atraso real o trabajo trabado, dice «no sé» con datos viejos, no sale a la red, no rompe el arranque y ofrece una vez por estado.",
+      "raiz": "arnes",
+      "ruta": "tests/dev-behind-main-notice.test.sh",
       "requiere": []
     },
     {

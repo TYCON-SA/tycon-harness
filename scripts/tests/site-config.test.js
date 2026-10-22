@@ -2458,7 +2458,9 @@ const RUNNERS = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', '
 const REPO_API = { platform: 'azure', org: 'acme', project: 'Prod', repo: 'api' };
 const REPO_WEB = { platform: 'azure', org: 'acme', project: 'Prod', repo: 'web' };
 const REPO_SITIO = { platform: 'github', org: 'acme', repo: 'sitio' };
-const TEC_EXTRAS = { fabrica: RUNNERS.factoryTable(), internos: ['dotnet', 'vitest', 'jest', 'node'], repos: [REPO_API, REPO_WEB, REPO_SITIO] };
+// las terminaciones que reconoce el arnés, del mismo lector (code-files.js)
+const CODE_FILES = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'code-files.js'));
+const TEC_EXTRAS = { fabrica: RUNNERS.factoryTable(), internos: ['dotnet', 'vitest', 'jest', 'node'], reconocidas: CODE_FILES.byLanguage(), repos: [REPO_API, REPO_WEB, REPO_SITIO] };
 const GO_ORG = { name: 'go', detect: 'go.mod', command: 'go test ./...', results: { format: 'junit', path: '{results}/junit.xml' } };
 const CARGO = { name: 'cargo', detect: 'Cargo.toml', command: 'cargo nextest run', results: { format: 'junit', path: '{results}/junit.xml' } };
 async function pantallaTec(borrador, idioma = 'es', respuesta = {}) {
@@ -2664,6 +2666,8 @@ test('Config_ReposDeLaOrganizacion_DeLosLectoresDelSitio — los de la revisión
     const tec = r.secciones.find((s) => s.id === 'tecnologia');
     const claves = tec.extras.repos.map((x) => [x.platform, x.org, x.project || '', x.repo].join('/')).sort();
     assert.deepStrictEqual(claves, ['azure/acme/Prod/api', 'azure/acme/Prod/web', 'github/acme//harness', 'github/acme//ops', 'github/acme//profile', 'github/acme//sitio'].sort());
+    // las terminaciones que ya reconoce, del lector del árbol (code-files.js), no escritas en el sitio
+    assert.deepStrictEqual([tec.extras.reconocidas, tec.extras.reconocidasMotivo], [CODE_FILES.byLanguage(), null]);
     // la entrada «C» (ado sin la forma proyecto/repo) no se ofrece, y se dice
     assert.strictEqual(tec.extras.reposMotivo, '1 entrada(s) de repos.json no nombran un repo («ado» o «github») y no se ofrecen');
   });
@@ -2735,6 +2739,49 @@ test('T30a SiteConfig_AskYourAgent_CopiesPhrase @story-8.48 @ac-36 — «Pedíse
   assert.match(sec, /team-repos\.js/);
   assert.match(sec, /archivo que la detecta|detect/);
   assert.match(fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.en.md'), 'utf8'), /\n### Your technology\n/);
+});
+
+test('Config_ParaQueSirve_EnCadaSeccion — cada sección dice para qué sirve y cuándo tocarla, en las dos lenguas, y se ve en su encabezado', async () => {
+  // 🔴 rojo: una persona que entra por primera vez no sabe para qué es una sección ni si tiene que tocarla.
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  for (const s of ORG.SECCIONES) for (const idioma of ['es', 'en']) {
+    const t = textos.t(idioma, `pantalla.para.${s.id}`);
+    assert.ok(t && t !== `pantalla.para.${s.id}`, `${idioma} ${s.id} sin «para qué»`);
+    assert.match(t, idioma === 'es' ? /^Para qué: .*(Cuándo tocarla|No hace falta tocar nada)/ : /^What for: .*(When to change it|Nothing to change)/, `${idioma} ${s.id}`);
+  }
+  const p = await pantallaTec({});
+  const para = p.todos().find((n) => n.tag === 'p' && /\bpara\b/.test(n.attrs.class || ''));
+  assert.ok(para && para.textContent === textos.t('es', 'pantalla.para.tecnologia'), 'en el encabezado de la sección');
+});
+
+test('SiteConfig_TerminacionesQueReconoce_YaLaReconoce — «Ver las terminaciones que ya reconoce» las muestra por lenguaje, del lector; sumar una que ya está avisa', async () => {
+  // 🔴 rojo: el renglón gris nombra lenguajes pero no dice qué terminaciones cuenta como código, y sumar «.cs» no avisa.
+  const p = await pantallaTec({});
+  const det = p.todos().find((n) => n.tag === 'details' && n.attrs['data-reconocidas'] !== undefined);
+  assert.ok(det, 'un desplegable');
+  const textoDet = (function t(x) { return [x.textContent || '', ...(x.hijos || []).map(t)].join(' '); })(det);
+  assert.match(textoDet, /Ver las terminaciones que ya reconoce/);
+  for (const g of CODE_FILES.byLanguage()) {
+    assert.ok(textoDet.includes(g.language), `el lenguaje ${g.language}`);
+    for (const e of g.exts) assert.ok(textoDet.includes(e), `la terminación ${e}`);
+  }
+  // sumar una que ya reconoce avisa mientras se escribe; una nueva, no
+  p.boton(/Agregar terminación/).on.click(); await p.esperar();
+  const campo = p.todos().filter((n) => n.tag === 'input' && n.attrs['data-path'] === 'stack.code_extensions.0').pop();
+  campo.on.input({ target: { value: '.cs' } });
+  const aviso = () => p.todos().find((n) => n.attrs['data-ya-reconoce'] !== undefined);
+  assert.match(aviso().textContent, /\.cs: ya la reconoce/);
+  campo.on.input({ target: { value: '.ex' } });
+  assert.strictEqual(aviso().textContent, '');
+  // sin la lista (un árbol que no la trae), lo dice en vez de un desplegable vacío
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('tecnologia', { repo: 'perfil', borrador: {}, extras: { ...TEC_EXTRAS, reconocidas: null, reconocidasMotivo: 'no pude leer la lista de terminaciones (x)' } })], idioma: 'en', hash: '#seccion-tecnologia' });
+  const todosR = []; (function walk(x) { todosR.push(x); (x.hijos || []).forEach(walk); })(r.creados.filter((n) => n.attrs.id === 'seccion-tecnologia').pop());
+  assert.ok(!todosR.some((n) => n.tag === 'details' && n.attrs['data-reconocidas'] !== undefined), 'sin lista, sin desplegable');
+  assert.ok(todosR.some((n) => n.attrs['data-reconocidas-motivo'] !== undefined && /no pude leer la lista de terminaciones/.test(n.textContent)), 'y dice por qué');
+  // sin la tabla de fábrica tampoco se rompe: el aviso de «no pude mostrar las herramientas» sigue saliendo
+  const sinFabrica = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('tecnologia', { repo: 'perfil', borrador: {}, extras: { ...TEC_EXTRAS, fabrica: null, motivo: 'sin tabla' } })], idioma: 'es', hash: '#seccion-tecnologia' });
+  const todosF = []; (function walk(x) { todosF.push(x); (x.hijos || []).forEach(walk); })(sinFabrica.creados.filter((n) => n.attrs.id === 'seccion-tecnologia').pop());
+  assert.ok(todosF.some((n) => /No pude mostrar las herramientas de fábrica/.test(n.textContent || '')), 'el aviso de la tabla de fábrica');
 });
 
 test('T30d SiteConfig_ReplaceBuiltIn_CopiesPhraseForThatTool — «Reemplazar» de una incluida deja la frase armada para esa herramienta y qué pasa después', async () => {
@@ -3024,11 +3071,11 @@ async function compacta(seccion) {
 test('T1 Modelos_TresTablasUnRenglonPorTrabajo @story-2.59 @ac-1', async () => {
   const p = await compacta(secModelos(MODELOS_2));
   const t = p.tablas();
-  assert.strictEqual(t.length, 3, 'una tabla por grupo');
+  assert.strictEqual(t.length, 4, 'una tabla por grupo, y la de los revisores en Codex');
   assert.ok(t.every((x) => p.clases(x).includes('modelos')));
-  const [rev, adv, ayu] = t.map((x) => p.renglones(x));
-  assert.deepStrictEqual([rev.length, adv.length, ayu.length], [4, 2, 4], 'revisores: 2 vueltas + 2 particulares · pase: normal y pesada · ayudantes + 3 sesiones');
-  for (const fila of [...rev, ...adv, ...ayu]) {
+  const [rev, adv, ayu, cdx] = t.map((x) => p.renglones(x));
+  assert.deepStrictEqual([rev.length, adv.length, ayu.length, cdx.length], [4, 2, 4, 1], 'revisores: 2 vueltas + 2 particulares · pase: normal y pesada · ayudantes + 3 sesiones · Codex: un renglón');
+  for (const fila of [...rev, ...adv, ...ayu, ...cdx]) {
     assert.strictEqual(p.de(fila, 'hoy').length, 1, `${p.texto(fila)}: su valor por defecto`);
     assert.strictEqual(p.todo(fila).filter((n) => n.tag === 'select').length, 1, `${p.texto(fila)}: un selector`);
   }
@@ -3466,8 +3513,8 @@ test('7.46 Config_PruebaAMano_SeccionYPedido @story-7.46 @ac-7 @ac-15 — la sec
   // la pantalla, en las dos lenguas: el título, el selector con sus dos opciones y la ayuda
   const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   const esperado = {
-    es: ['Prueba a mano de cada criterio', 'Una persona marca cada criterio como probado a mano', 'No (de fábrica): la guía dice qué probó el arnés', 'Sí: la historia no se cierra sin la marca de una persona'],
-    en: ['Hand-testing each criterion', 'A person marks each criterion as tested by hand', 'No (default): the guide says what the harness tested', "Yes: the story does not close without a person's mark"],
+    es: ['Prueba a mano de cada criterio', 'Una persona marca cada criterio como probado a mano', 'No: alcanza con lo que probó el arnés (de fábrica)', 'Sí: no se cierra sin la marca de una persona'],
+    en: ['Hand-testing each criterion', 'A person marks each criterion as tested by hand', 'No: what the harness tested is enough (default)', "Yes: it does not close without a person's mark"],
   };
   for (const idioma of ['es', 'en']) {
     for (const k of ['pantalla.pruebaAManoTitulo', 'pantalla.pruebaAMano', 'pantalla.pruebaAManoNo', 'pantalla.pruebaAManoSi']) assert.ok(esperado[idioma].includes(textos.t(idioma, k)), `${idioma} ${k}: ${textos.t(idioma, k)}`);
@@ -3992,7 +4039,7 @@ const opcionesDe = (p, n) => p.todo(n).filter((x) => x.tag === 'option');
 
 test('T8 Modelos_SelectoresConNiveles @story-2.70 @ac-6', async () => {
   const p = await compacta(secNiveles(enNiveles(MODELOS_2)));
-  const selectores = p.todo(p.sec('modelos')).filter((n) => n.tag === 'select' && !/fable_question/.test(String(n.attrs['data-path'] || '')) && n.attrs['aria-label'] !== 'Revisor');
+  const selectores = p.todo(p.sec('modelos')).filter((n) => n.tag === 'select' && !/fable_question|codex_reviewers/.test(String(n.attrs['data-path'] || '')) && n.attrs['aria-label'] !== 'Revisor');
   assert.ok(selectores.length >= 10, `${selectores.length} selectores de modelo`);
   for (const sel of selectores) {
     const ops = opcionesDe(p, sel).filter((o) => o.attrs.value !== '');
@@ -4078,6 +4125,40 @@ test('T11 Modelos_TopeSigueFrenando @story-2.70 @ac-9', () => {
   assert.deepStrictEqual(r.problems.map((x) => x.path), ['models.reviewers']);
   assert.match(r.problems[0].message, /balanced/);
   assert.doesNotMatch(r.problems[0].message, /sonnet|opus/);
+});
+
+test('T13b Modelos_CodexReviewersInherit_PideSuVersion · se revisa con el lector · no cambia nada sin la clave', () => {
+  const TEAM = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
+  assert.ok(ORG.versionAtLeast(ORG.CODEX_REVIEWERS_SINCE, ORG.MODEL_LEVELS_SINCE), 'posterior a los niveles');
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { codex_reviewers: 'inherit' } }).version, ORG.CODEX_REVIEWERS_SINCE);
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'balanced', codex_reviewers: 'inherit' } }).version, ORG.CODEX_REVIEWERS_SINCE, 'con niveles, la mayor');
+  assert.strictEqual(ORG.versionQuePide({ ...TR_BASE, models: { reviewers: 'balanced' } }).version, ORG.MODEL_LEVELS_SINCE, 'sin la clave, como hoy');
+  assert.match(String(ORG.profileGateProblem(JSON.stringify(capa(ORG.MODEL_LEVELS_SINCE)), { ...TR_BASE, models: { codex_reviewers: 'inherit' } })), new RegExp(ORG.CODEX_REVIEWERS_SINCE.replace(/\./g, '\\.')));
+  const ok = ORG.revisar({ seccion: 'modelos', texto: ORG.formatJson(TR_BASE), borrador: { models: { codex_reviewers: 'inherit' } }, lectores: { 'team-repos.js': TEAM } });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  assert.match(ok.texto, /"codex_reviewers": "inherit"/);
+  const mal = ORG.revisar({ seccion: 'modelos', texto: ORG.formatJson(TR_BASE), borrador: { models: { codex_reviewers: 'otro' } }, lectores: { 'team-repos.js': TEAM } });
+  assert.strictEqual(mal.ok, false);
+  assert.deepStrictEqual(mal.problems.map((x) => x.path), ['models.codex_reviewers']);
+});
+
+test('T13c Modelos_PantallaOfreceLosRevisoresDeCodex — la tabla de modelos trae el renglón de Codex, con «el modelo de cada máquina»', async () => {
+  const selCodex = (p) => p.todo(p.sec('modelos')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'models.codex_reviewers');
+  let p = await compacta(secModelos(MODELOS_2));
+  assert.deepStrictEqual(opcionesDe(p, selCodex(p)).map((o) => o.attrs.value), ['', 'inherit'], 'el por defecto y «inherit»');
+  selCodex(p).on.change({ target: { value: 'inherit' } });
+  assert.deepStrictEqual((await p.revisado()).models, { ...enNiveles(MODELOS_2), codex_reviewers: 'inherit' }, 'elegir «inherit» escribe la clave');
+  p = await compacta(secModelos({ ...MODELOS_2, codex_reviewers: 'inherit' }));
+  selCodex(p).on.change({ target: { value: '' } });
+  assert.deepStrictEqual((await p.revisado()).models, enNiveles(MODELOS_2), 'volver al por defecto la saca');
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'org-config.js'), 'utf8');
+  assert.match(src, /'codex_reviewers'/, 'el editor de modelos pone la clave');
+  const { TEXTOS } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const claves = ['pantalla.losRevisoresEnCodex', 'pantalla.elEquivalenteDeCadaNivel', 'pantalla.elModeloDeCadaMaquina'];
+  for (const k of claves) {
+    assert.ok(src.includes(`'${k}'`), `el editor usa ${k}`);
+    assert.ok(TEXTOS[k] && TEXTOS[k].es && TEXTOS[k].en, `falta el texto ${k} en los dos idiomas`);
+  }
 });
 
 test('T13 Modelos_NivelesPidenSuVersion @story-2.70 @ac-11', async () => {

@@ -224,6 +224,36 @@ OUT=$(lab7 node "$LAB/tree/scripts/lib/harness-parity.js" 2>&1)
 case "$OUT" in *"✅ advisors"*) ok "T26 con el archivo ilegible → ✅ advisors";; *) bad "T26 ilegible → ✅ advisors" "$(echo "$OUT" | grep advisors | head -1)";; esac
 rm -rf "$LAB"
 
+# ── T49 · el config.toml de Codex respeta las integraciones elegidas ─────────────────────────
+# Un servidor de una integración apagada no se declara en ~/.codex/config.toml: Codex intenta arrancar todo lo que está
+# declarado, también lo que el dev no eligió.
+# 🔴 Rojo si el desplegador escribe las tablas de engram o codegraph con sus integraciones apagadas.
+LAB=$(mktemp -d); mkdir -p "$LAB/.codex" "$LAB/.tycon/state" "$LAB/bin"
+printf '#!/bin/sh\nexit 0\n' > "$LAB/bin/codegraph"; chmod +x "$LAB/bin/codegraph"
+printf '{ "tools": ["codex"], "tree": "%s" }\n' "$TCG" > "$LAB/.tycon/state/harness-state.json"
+lab49() { HOME="$LAB" USERPROFILE="$LAB" CODEX_HOME="$LAB/.codex" TYCON_PROFILE=0 PATH="$LAB/bin:$PATH" "$@"; }
+CFG="$LAB/.codex/config.toml"
+# codebase-memory no entra: depende de que su ejecutable esté en la máquina que corre la suite
+tablas() { grep -oE '^\[mcp_servers\.(plugin_engram_engram|codegraph)\]' "$CFG" 2>/dev/null | sort | tr '\n' ' '; }
+lab49 env TYCON_ENGRAM=0 TYCON_CODEGRAPH=0 node "$TCG/build/deploy-codex-mcp.js" >/dev/null 2>&1
+[ -z "$(tablas)" ] && ok "T49 con engram y codegraph apagados, el config.toml de Codex no los declara" || bad "T49 integraciones apagadas" "declara: $(tablas)"
+OUT=$(lab49 env TYCON_ENGRAM=0 TYCON_CODEGRAPH=0 node "$PARITY" 2>&1)
+case "$OUT" in *"✅ mcp"*) ok "T49 …y la paridad lo da por bueno (✅ mcp)";; *) bad "T49 paridad con las integraciones apagadas" "$(echo "$OUT" | grep ' mcp' | head -1)";; esac
+lab49 env TYCON_ENGRAM=1 TYCON_CODEGRAPH=1 node "$TCG/build/deploy-codex-mcp.js" >/dev/null 2>&1
+case "$(tablas)" in *plugin_engram_engram*codegraph*|*codegraph*plugin_engram_engram*) ok "T49 prendidos, los declara";; *) bad "T49 integraciones prendidas" "declara: $(tablas)";; esac
+OUT=$(lab49 env TYCON_ENGRAM=1 TYCON_CODEGRAPH=1 node "$PARITY" 2>&1)
+case "$OUT" in *"✅ mcp"*) ok "T49 …y con ellos prendidos la paridad también da ✅ mcp";; *) bad "T49 paridad con las integraciones prendidas" "$(echo "$OUT" | grep ' mcp' | head -1)";; esac
+lab49 env TYCON_ENGRAM=0 TYCON_CODEGRAPH=0 node "$TCG/build/deploy-codex-mcp.js" >/dev/null 2>&1
+[ -z "$(tablas)" ] && ok "T49 al apagarlos después, el desplegador saca sus tablas" || bad "T49 apagar después" "quedó: $(tablas)"
+# clockify se define en cada máquina: con su integración prendida y sin cómo resolverlo, la tabla escrita a mano se queda;
+# apagada, se saca
+printf '\n[mcp_servers.clockify]\ncommand = "a-mano"\nargs = []\n' >> "$CFG"
+lab49 env TYCON_ENGRAM=0 TYCON_CODEGRAPH=0 TYCON_CLOCKIFY=1 node "$TCG/build/deploy-codex-mcp.js" >/dev/null 2>&1
+grep -q '^\[mcp_servers\.clockify\]' "$CFG" && ok "T49 clockify prendido y escrito a mano: la tabla se queda" || bad "T49 clockify prendido" "se borró"
+lab49 env TYCON_ENGRAM=0 TYCON_CODEGRAPH=0 TYCON_CLOCKIFY=0 node "$TCG/build/deploy-codex-mcp.js" >/dev/null 2>&1
+! grep -q '^\[mcp_servers\.clockify\]' "$CFG" && ok "T49 clockify apagado: el desplegador saca su tabla" || bad "T49 clockify apagado" "quedó la tabla"
+rm -rf "$LAB"
+
 # ── 5. Los selftests de las piezas que esta red integra ──────────────────────────────────────
 node "$PARITY" --selftest >/dev/null 2>&1 && ok "selftest de paridad verde" || bad "selftest de paridad" "rojo"
 node "$TCG/build/deploy-codex-mcp.js" --selftest >/dev/null 2>&1 && ok "selftest del deployer MCP verde" || bad "selftest deployer MCP" "rojo"

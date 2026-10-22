@@ -50,7 +50,50 @@ const trimNewlines = (s) => s.replace(/^\n+|\n+$/g, '');
 const startPrefix = (name) => `<!-- TYCON_BLOCK:${name} START`;
 const PACK_BLOCK_RE = /<!--\s*TYCON_BLOCK:(packs\/[^/\s>]+\/[^/\s>]+)\s+START/g;
 /** El archivo del que sale un bloque, como lo nombra su marca (`claude-md-blocks/<n>.md`, o el de su paquete). */
-const blockSource = (name) => { const m = /^packs\/([^/]+)\/([^/]+)$/.exec(name); return m ? `packs/${m[1]}/claude-md-blocks/${m[2]}.md` : `claude-md-blocks/${name}.md`; };
+const INDEX_BLOCK = 'harness-index';
+const blockSource = (name) => {
+  if (name === INDEX_BLOCK) return 'el bloque harnessIndexBlock de scripts/setup/agents-md-blocks.js';
+  const m = /^packs\/([^/]+)\/([^/]+)$/.exec(name);
+  return m ? `packs/${m[1]}/claude-md-blocks/${m[2]}.md` : `claude-md-blocks/${name}.md`;
+};
+
+/**
+ * El bloque que le dice a Codex dónde está el arnés. Claude Code carga el índice (`INDEX.md`) con un `@import` en su
+ * CLAUDE.md, en cualquier perfil; Codex no resuelve `@import`, y los bloques de reglas exigen el perfil full: sin este
+ * bloque, una máquina sólo con Codex en el perfil minimal arranca con un AGENTS.md sin nada del arnés. Va corto (el
+ * índice entero pasaría el tope de lo que Codex lee de AGENTS.md): dónde está el índice, que se lee antes de cada tarea,
+ * y dónde están las skills. Sin INDEX.md en el árbol el bloque queda apagado: no se escribe, se saca si estaba (no
+ * apunta a algo que no existe) y se avisa.
+ */
+function harnessIndexBlock(tree, home, env = process.env) {
+  const index = path.join(tree, 'INDEX.md');
+  const block = { name: INDEX_BLOCK, body: '', requires: null, profiles: null, bad: null, variants: null };
+  if (!fs.existsSync(index)) return Object.assign(block, { off: `el árbol ${tree} no trae INDEX.md` });
+  // con `~` si cuelga de HOME, y con `/` en cualquier sistema: es texto para el modelo, no una ruta que se abra acá
+  const corto = (p) => (home && (p === home || p.startsWith(home + path.sep)) ? `~${p.slice(home.length)}` : p).split(path.sep).join('/');
+  // las skills van a la carpeta de Codex (CODEX_HOME, o ~/.codex), como las despliega deploy-shared-skills.js
+  const skills = corto(path.join(env.CODEX_HOME || path.join(home, '.codex'), 'skills'));
+  const body = [
+    '# El arnés',
+    '',
+    `El arnés de desarrollo está instalado en \`${corto(tree)}\`. Antes de cada tarea leé su índice, \`${corto(index)}\`: dice`,
+    `qué guía leer según la tarea, y sus rutas son relativas a esa carpeta. Sus skills están en \`${skills}/\`; para`,
+    `implementar una story, la del pipeline: \`${skills}/tycon-pipeline/SKILL.md\`.`,
+  ].join('\n');
+  return Object.assign(block, { body });
+}
+
+/**
+ * El árbol que nombra el bloque del índice: el instalado (el que Codex usa de verdad), si trae INDEX.md; si no, el de
+ * este archivo. Corrido a mano desde un clon o una copia de trabajo, AGENTS.md no queda apuntando a esa carpeta.
+ */
+function installedTree(fallback) {
+  try {
+    const repo = require(path.join(__dirname, '..', 'lib', 'skills-dir.js')).resolveInstalledSkillsDirs('').repo;
+    if (fs.existsSync(path.join(repo, 'INDEX.md'))) return repo;
+  } catch (_) { /* sin el lector: el árbol de este archivo */ }
+  return fallback;
+}
 const markerStart = (name) => `<!-- TYCON_BLOCK:${name} START — generado por scripts/setup/agents-md-blocks.js del arnés · NO EDITAR A MANO (se pisa en la próxima actualización); editá ${blockSource(name)} y commiteá -->`;
 const markerEnd = (name) => `<!-- TYCON_BLOCK:${name} END -->`;
 
@@ -164,6 +207,7 @@ function filterRows(body, existing, { integrations }) {
 /** `{ state: 'on' | 'off' | 'unknown', why }` de un bloque: apagado por una de las dos razones alcanza. */
 function blockState(b, { integrations, integrationsWhy, profile, profileWhy }) {
   if (b.bad) return { state: 'unknown', why: null };
+  if (b.off) return { state: 'off', why: b.off };
   const states = [];
   if (b.requires) {
     if (!integrations) states.push(['unknown', ['integration', integrationsWhy || 'no pude leer la configuración']]);
@@ -333,6 +377,9 @@ function sync(p = {}) {
 
   const core = loadBlocks(blocksDir);
   if (!core.length) return out({ ok: false, reason: `sin bloques en ${blocksDir}` });
+  const indexBlock = harnessIndexBlock(p.tree || installedTree(tree), home, env);
+  if (indexBlock.off) say(`⚠ tycon: AGENTS.md queda sin el bloque del índice del arnés: ${indexBlock.off}`);
+  core.push(indexBlock);
   const packs = p.packs !== undefined ? p.packs : loadPackBlocks({ tree, env, home });
   const blocks = core.concat(packs ? packs.blocks : []).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   let original;

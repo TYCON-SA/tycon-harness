@@ -73,19 +73,30 @@ function serverToml(label, cfg) {
   return lines.join('\n') + '\n';
 }
 
-/** los servers a registrar en ESTA máquina + los secretos que el ambiente debe proveer */
-function resolveServers(claudeCfg, eq) {
+/**
+ * los servers a registrar en ESTA máquina + los secretos que el ambiente debe proveer.
+ * `integrations`: lo que eligió el dev (la configuración del arnés; por defecto se lee). Un servidor de una integración
+ * apagada no se declara: con `--integrations none`, Codex no tiene que intentar arrancar engram ni codegraph.
+ * codebase-memory no tiene integración propia: se declara sólo si su ejecutable está. Sin poder leer la configuración
+ * (`null`) no se afirma nada y se declara como siempre.
+ */
+function resolveServers(claudeCfg, eq, integrations = readIntegrations(), has = (b) => inPath(b)) {
   const out = {};
   const missingEnv = [];
+  // sólo `true` prende (codex usa además `detect`, que no es de estos servidores)
+  const prendida = (key) => !integrations || integrations[key] === true;
   // canónicos de equivalences (etiquetas = las de Claude; engram viene por plugin y no está
   // en mcpServers de ~/.claude.json — su forma suelta vive en la tabla)
   for (const label of ['plugin_engram_engram', 'codebase_memory']) {
     const e = eq.mcp_servers && eq.mcp_servers[label];
-    if (e && e.command) out[label] = { command: e.command, args: e.args || [], approval: e.approval_mode || 'approve' };
+    if (!e || !e.command) continue;
+    if (label === 'plugin_engram_engram' && !prendida('engram')) continue;
+    if (label === 'codebase_memory' && integrations && !has(e.command)) continue;
+    out[label] = { command: e.command, args: e.args || [], approval: e.approval_mode || 'approve' };
   }
   // traducidos del registro de Claude de la máquina
   const srv = (claudeCfg && claudeCfg.mcpServers) || {};
-  if (srv.clockify && srv.clockify.command) {
+  if (srv.clockify && srv.clockify.command && prendida('clockify')) {
     out.clockify = { command: srv.clockify.command, args: srv.clockify.args || [], approval: 'approve', env: srv.clockify.env || {} };
     for (const k of Object.keys(srv.clockify.env || {}))
       if (SECRET_RE.test(k) && !process.env[k]) missingEnv.push([k, 'clockify', '~/.claude.json → mcpServers.clockify.env']);
@@ -99,8 +110,10 @@ function resolveServers(claudeCfg, eq) {
   // lo inicializa igual, no hace falta un shim de protocolo.
   // 🔴 PIN: codegraph se queda en 0.7.9 — la versión 1.5.0 expone 1 sola tool contra 9 (rediseño
   // breaking que rompería el lado Claude entero).
-  const probe = process.platform === 'win32' ? 'where codegraph' : 'command -v codegraph';
-  try { require('child_process').execSync(probe, { stdio: 'ignore', shell: true }); out.codegraph = { command: 'codegraph', args: ['serve', '--mcp'], approval: 'approve' }; } catch (_) { /* sin codegraph en esta máquina */ }
+  if (prendida('codegraph')) {
+    const probe = process.platform === 'win32' ? 'where codegraph' : 'command -v codegraph';
+    try { require('child_process').execSync(probe, { stdio: 'ignore', shell: true }); out.codegraph = { command: 'codegraph', args: ['serve', '--mcp'], approval: 'approve' }; } catch (_) { /* sin codegraph en esta máquina */ }
+  }
   return { servers: out, missingEnv };
 }
 
@@ -130,6 +143,10 @@ function missingServers({ integrations, servers, claudeJson, has, target, regist
     `registralo a mano en ${target} ([mcp_servers.clockify], con su command y sus args), o apagá la integración`);
   }
   if (integrations.codegraph && !servers.codegraph) cant('codegraph', 'codegraph', 'el ejecutable `codegraph` no está en el PATH', 'instalalo (guides/integrations/codegraph-mcp.md) o apagá la integración');
+  // codebase-memory no tiene integración: se declara si su ejecutable está, y si no está se dice
+  if (!servers.codebase_memory && !has('codebase-memory-mcp')) {
+    out.push('ℹ tycon/codex: el servidor MCP «codebase_memory» no se declara: su ejecutable `codebase-memory-mcp` no está en el PATH (es opcional; si un revisor lo usa, instalalo)');
+  }
   const eng = servers.plugin_engram_engram;
   if (integrations.engram && !eng) cant('plugin_engram_engram', 'engram', 'build/equivalences.json no lo define', 'revisá esa tabla');
   else if (integrations.engram && eng && eng.command && !path.isAbsolute(eng.command) && !has(eng.command)) {
@@ -142,19 +159,30 @@ function missingServers({ integrations, servers, claudeJson, has, target, regist
 function readIntegrations() {
   try {
     const C = require(path.join(TCG, 'scripts', 'lib', 'tycon-config.js'));
-    const read = () => C.integraciones(C.leer());
+    const read = () => {
+      const cfg = C.leer();
+      const out = C.integraciones(cfg);
+      // el registro de horas se elige con `timeTracking` (la llave `clockify` es el nombre viejo): clockify va si es ése
+      if (typeof C.timeTracking === 'function') out.clockify = C.timeTracking(cfg).value === 'clockify';
+      return out;
+    };
     return typeof C.sinAnotar === 'function' ? C.sinAnotar(read) : read();
   } catch (_) { return null; }
 }
 
-/** splicing por secciones: reemplaza SOLO las tablas de etiquetas propias, preserva el resto */
-function spliceToml(existing, servers) {
+/**
+ * splicing por secciones: reemplaza SOLO las tablas de etiquetas propias, preserva el resto. `quitar`: servidores de la
+ * máquina cuya integración está apagada; su tabla se saca aunque la haya escrito la persona.
+ */
+function spliceToml(existing, servers, quitar = []) {
   const lines = String(existing || '').split('\n');
   const isHeader = (l) => /^\s*\[/.test(l);
   const ownHeader = (l) => {
     const m = l.match(/^\s*\[mcp_servers\.("?)([A-Za-z0-9_-]+)\1(\.env)?\]\s*$/);
-    // una tabla propia se reemplaza; la de un servidor de la máquina que este despliegue NO resolvió se deja como está
-    return Boolean(m && OWN_LABELS.includes(m[2]) && (Object.prototype.hasOwnProperty.call(servers, m[2]) || !MACHINE_LABELS.includes(m[2])));
+    // una tabla propia se reemplaza; la de un servidor de la máquina que este despliegue NO resolvió se deja como está,
+    // salvo que su integración esté apagada
+    return Boolean(m && OWN_LABELS.includes(m[2])
+      && (Object.prototype.hasOwnProperty.call(servers, m[2]) || !MACHINE_LABELS.includes(m[2]) || quitar.includes(m[2])));
   };
   const kept = [];
   let skipping = false;
@@ -418,12 +446,23 @@ function serverRegistered(toml, label) {
 function selftest() {
   const eq = { mcp_servers: { plugin_engram_engram: { command: 'engram', args: ['mcp', '--tools=agent'], approval_mode: 'approve' }, codebase_memory: { command: 'codebase-memory-mcp', args: [], approval_mode: 'approve' } } };
   const claude = { mcpServers: { clockify: { command: '/opt/x/node', args: ['/opt/x/srv.js'], env: { CLOCKIFY_API_KEY: 'sekreto123' } }, spokenly: { type: 'http', url: 'http://localhost:51089' } } };
-  const { servers, missingEnv } = resolveServers(claude, eq);
+  // con las integraciones prendidas y los ejecutables presentes: el resultado no depende de la configuración de la máquina
+  const todas = { engram: true, clockify: true, codegraph: true };
+  const { servers, missingEnv } = resolveServers(claude, eq, todas, () => true);
   const toml = Object.entries(servers).map(([l, c]) => serverToml(l, c)).join('\n');
   const existing = '# config del dev\nmodel = "gpt-5.6-terra"\n\n[mcp_servers]\n\n[mcp_servers.mi_server_propio]\ncommand = "propio"\nargs = []\n\n[mcp_servers.clockify]\ncommand = "viejo"\nargs = []\n\n[projects."/x"]\ntrust_level = "trusted"\n';
   const merged = spliceToml(existing, servers);
   const merged2 = spliceToml(merged, servers);
+  const apagadas = Object.keys(resolveServers(claude, eq, { engram: false, clockify: false, codegraph: false }, () => true).servers);
+  const sinBinario = Object.keys(resolveServers(claude, eq, todas, () => false).servers);
+  const sinConfig = Object.keys(resolveServers(claude, eq, null, () => false).servers);
   const checks = [
+    ['integraciones apagadas: ni engram, ni clockify, ni codegraph', !apagadas.some((l) => ['plugin_engram_engram', 'clockify', 'codegraph'].includes(l))],
+    ['codebase-memory sin su ejecutable no se declara', !sinBinario.includes('codebase_memory')],
+    ['sin poder leer la configuración, se declara como siempre', sinConfig.includes('plugin_engram_engram') && sinConfig.includes('codebase_memory')],
+    ['clockify apagado: su tabla escrita a mano se saca', !spliceToml(existing, {}, ['clockify']).includes('[mcp_servers.clockify]')
+      && spliceToml(existing, {}, []).includes('[mcp_servers.clockify]') && spliceToml(existing, {}, ['clockify']).includes('[mcp_servers.mi_server_propio]')],
+    ['codebase-memory sin su ejecutable: se dice', missingServers({ integrations: {}, servers: {}, claudeJson: 'present', has: () => false, target: 't' }).some((l) => /codebase_memory/.test(l))],
     ['el secreto NO viaja al TOML', !toml.includes('sekreto123') && !merged.includes('sekreto123')],
     ['la key faltante en ambiente se reporta', missingEnv.some(([k]) => k === 'CLOCKIFY_API_KEY') || !!process.env.CLOCKIFY_API_KEY],
     ['etiquetas canónicas presentes (nombre de tool byte-igual)', merged.includes('[mcp_servers.plugin_engram_engram]') && merged.includes('[mcp_servers.codebase_memory]')],
@@ -548,7 +587,8 @@ function selftest() {
       && missingServers({ integrations: null, servers: {}, claudeJson: 'missing', has: () => false, target: 't' }).length === 0],
     ['faltante: engram registrado sin su ejecutable en el PATH → se dice (y no dice «no lo puedo registrar»)', (() => {
       const m = missingServers({ integrations: { engram: true }, servers: { plugin_engram_engram: { command: 'engram' } }, claudeJson: 'missing', has: () => false, target: 't' });
-      return m.length === 1 && /engram/.test(m[0]) && /no está en el PATH/.test(m[0]);
+      const deEngram = m.filter((l) => /engram/.test(l));
+      return deEngram.length === 1 && /no está en el PATH/.test(deEngram[0]) && !/no lo puedo registrar/.test(deEngram[0]);
     })()],
   );
   for (const [name, ok] of checks) { console.log(`${ok ? '✅' : '❌'} selftest-mcp-deploy: ${name}`); if (!ok) bad++; }
@@ -565,15 +605,18 @@ function main() {
   let claudeJson = 'missing';
   try { claudeCfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude.json'), 'utf8')); claudeJson = 'present'; } catch (e) { if (e && e.code !== 'ENOENT') claudeJson = 'present'; }
   const eq = JSON.parse(fs.readFileSync(path.join(TCG, 'build', 'equivalences.json'), 'utf8'));
-  const { servers, missingEnv } = resolveServers(claudeCfg, eq);
+  const integrations = readIntegrations();
+  const { servers, missingEnv } = resolveServers(claudeCfg, eq, integrations);
+  // un servidor de la máquina con la integración apagada se saca del config.toml
+  const quitar = integrations && integrations.clockify !== true ? ['clockify'] : [];
   // un servidor que el arnés espera y no se puede registrar se dice
-  for (const line of missingServers({ integrations: readIntegrations(), servers, claudeJson, has: (b) => inPath(b), target, registered: (label) => serverRegistered(fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : '', label) })) console.log(line);
+  for (const line of missingServers({ integrations, servers, claudeJson, has: (b) => inPath(b), target, registered: (label) => serverRegistered(fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : '', label) })) console.log(line);
   for (const [k, srv, dónde] of missingEnv)
     console.log(`🛑 tycon: el server MCP "${srv}" necesita ${k} en el AMBIENTE y no está — agregá \`export ${k}=<valor>\` a ~/.zshrc (el valor actual vive en ${dónde}). Sin eso, ese server va a fallar bajo codex. El secreto NO se copia a ningún archivo.`);
   const current = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : '';
   // lo que se saca se dice DESPUÉS de escribir (en un ensayo, como lo que haría); el aviso de una raíz ajena, siempre
   const notes = [];
-  const next = ensureWritableRoots(spliceToml(current, servers), markerRoots(), { log: (l) => notes.push(l) });
+  const next = ensureWritableRoots(spliceToml(current, servers, quitar), markerRoots(), { log: (l) => notes.push(l) });
   const warn = notes.filter((l) => l.startsWith('⚠'));
   const done = notes.filter((l) => !l.startsWith('⚠'));
   for (const l of warn) console.log(l);
