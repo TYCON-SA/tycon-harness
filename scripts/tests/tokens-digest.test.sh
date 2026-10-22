@@ -1055,8 +1055,9 @@ const os = require("os");
 const { reducirErrorDeHook } = require(process.argv[1]);
 const red = (at) => reducirErrorDeHook({ type: "attachment", attachment: { type: "hook_non_blocking_error", stderr: "x", ...at } }).attachment;
 const a = red({ hookName: "h".repeat(81), hookEvent: "Stop\nZZ", exitCode: "1" });
-// una ruta fija y corta: con la carpeta personal del agente de la CI (más larga) el nombre pasa de 80 y no viaja
-const b = red({ hookName: "h".repeat(80), hookEvent: "/srv/acme/ZZCLIENTE/x.sh", exitCode: 2 });
+// la carpeta temporal, que sanear() tapa y es corta en todas las máquinas: con la carpeta personal del agente de la CI
+// (más larga) el nombre pasaba de 80 y no viajaba
+const b = red({ hookName: "h".repeat(80), hookEvent: os.tmpdir() + "/ZZCLIENTE/x.sh", exitCode: 2 });
 console.log(JSON.stringify([a.hookName, a.hookEvent, a.exitCode, b.hookName.length, b.hookEvent.includes("ZZCLIENTE"), b.exitCode]));
 ' "$DIGEST" 2>&1)"
 if [ "$r27c" = '[null,null,null,80,false,2]' ]; then
