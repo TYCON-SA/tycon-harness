@@ -1361,14 +1361,16 @@ JSON="$(harness doctor --json 2>/dev/null)"
 printf '%s' "$JSON" | jtxt "sorted(d['harness_node'].keys())" | grep "'expected', 'form', 'hooks', 'own', 'path', 'reason', 'switch', 'verified', 'version'" >/dev/null && ok "T27 --json trae las claves de harness_node" || mal "T27 claves: $(printf '%s' "$JSON" | jtxt "sorted(d['harness_node'].keys())")"
 # otra versión en la lista; la huella del binario distinta de la lista
 lista839 "v24.99.0" "$SHA839"; JSON="$(harness doctor --json 2>/dev/null)"
-[ "$(printf '%s' "$JSON" | jtxt "any(w.startswith('Node del arnés: no está') for w in d['warn']) and d['harness_node']['own'] is False")" = True ] && ok "T27 versión vieja: warn" || mal "T27 versión vieja: $(printf '%s' "$JSON" | jtxt "[w for w in d['warn'] if 'Node del' in w]")"
+# una lista más nueva que el Node ya bajado: el bajado se usa igual (es 20 o más) hasta la próxima bajada, y el dato
+# dice las dos versiones (antes dejaba todos los hooks con el Node del PATH)
+[ "$(printf '%s' "$JSON" | jtxt "d['harness_node']['own'] is True and d['harness_node']['version'] != d['harness_node']['expected']")" = True ] && ok "T27 lista más nueva que el Node bajado: se usa igual y lo dice" || mal "T27 lista más nueva: $(printf '%s' "$JSON" | jtxt "(d['harness_node'], [w for w in d['warn'] if 'Node del' in w])")"
 lista839 "$NV" "$(printf 'a%.0s' $(seq 1 64))"; JSON="$(harness doctor --json 2>/dev/null)"
 [ "$(printf '%s' "$JSON" | jtxt "any('NO es la de la lista' in w for w in d['warn']) and d['harness_node']['verified'] is False")" = True ] && ok "T27 huella distinta de node_sha256: warn" || mal "T27 huella: $(printf '%s' "$JSON" | jtxt "[w for w in d['warn'] if 'Node del' in w]")"
 # hooks a medias: el hook del arnés (uno de la lista) otra vez con node "
 lista839 "$NV" "$SHA839"
 node -e 'const f=process.argv[1],b=process.argv[2];const s=JSON.parse(require("fs").readFileSync(f,"utf8"));for(const g of Object.values(s.hooks||{}))for(const e of g)for(const h of e.hooks||[])if(h.command.startsWith(b+" "))h.command=h.command.replace(b+" ","node ");require("fs").writeFileSync(f,JSON.stringify(s,null,2))' "$LAB_HOME/.claude/settings.json" "$NDIR839/current/bin/node"
 JSON="$(harness doctor --json 2>/dev/null)"
-[ "$(printf '%s' "$JSON" | jtxt "any('el próximo arranque los pasa' in w for w in d['warn']) and d['harness_node']['hooks']['path_node'] >= 1")" = True ] && ok "T27 hooks a medias: «el próximo arranque los pasa», como warn" || mal "T27 hooks a medias: $(printf '%s' "$JSON" | jtxt "([w for w in d['warn'] if 'Node del' in w], d['harness_node'])")"
+[ "$(printf '%s' "$JSON" | jtxt "any('con el Node del arnés: corré' in w and 'install-tycon-hooks' in w for w in d['warn']) and d['harness_node']['hooks']['path_node'] >= 1")" = True ] && ok "T27 hooks a medias: dice el comando que los pasa, como warn" || mal "T27 hooks a medias: $(printf '%s' "$JSON" | jtxt "([w for w in d['warn'] if 'Node del' in w], d['harness_node'])")"
 # T28: ningún estado pone un fail; bajo la salud, verified en null
 for estado in apagado roto sinlista; do
   case "$estado" in

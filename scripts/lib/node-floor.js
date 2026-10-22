@@ -176,7 +176,9 @@ function onOldNode(d, mainFile, args, o, version) {
       env: Object.assign({}, env, { TYCON_NODE_FLOOR_FAKE_VERSION: '', TYCON_NODE_FLOOR_RELAUNCHED: '1' }),
       windowsHide: true,
     });
-    if (r.error) {
+    // EPIPE: el hijo arrancó y salió sin leer toda la entrada (en Linux, escribírsela falla así). No es una falla al
+    // lanzar: cuenta cómo salió el hijo
+    if (r.error && !(r.error.code === 'EPIPE' && (r.status !== null || r.signal))) {
       process.stderr.write('Node ' + shown + ': no pude lanzar el Node del arnés (' + (r.error.code || r.error.message) + '); corré `' + repairCommand(env) + '`\n');
       process.exit(o.gate ? 2 : 1);
     }

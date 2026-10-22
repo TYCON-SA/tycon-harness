@@ -60,6 +60,12 @@ test('T6 NodeFloor_NodeViejo_ReEjecutaConElDelArnes @story-8.93 @ac-4', (t) => {
   fs.writeFileSync(cuenta, "process.stdout.write(String(require('fs').readFileSync(0).length));\n");
   const rb = spawnSync(process.execPath, [FLOOR, '--gate', cuenta], { encoding: 'utf8', input: big, env: Object.assign({}, process.env, env, { TYCON_NODE_FLOOR_FAKE_VERSION: 'v12.11.1' }) });
   assert.strictEqual(rb.stdout, String(big.length), `llegó ${rb.stdout} de ${big.length}: ${rb.stderr}`);
+  // el relanzado sale sin leer la entrada (escribírsela da EPIPE): no es una falla al lanzar, vale su código de salida
+  const sinLeer = path.join(H.base, 'sin-leer.js');
+  fs.writeFileSync(sinLeer, 'process.exit(3);\n');
+  const re = spawnSync(process.execPath, [FLOOR, '--gate', sinLeer], { encoding: 'utf8', input: big, env: Object.assign({}, process.env, env, { TYCON_NODE_FLOOR_FAKE_VERSION: 'v12.11.1' }) });
+  assert.strictEqual(re.status, 3, `sale con el código del guion: ${re.stderr}`);
+  assert.doesNotMatch(re.stderr, /no pude lanzar/);
 });
 
 // ── T7 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
