@@ -419,3 +419,55 @@ process.exit(1);
   assert.strictEqual(c.code, 1, c.out);
   assert.match(c.out, /puntaje 1\/3 .*menor/);
 });
+
+// ── un cambio sólo en la descripción ─────────────────────────────────────────────────────────────────────────────────
+// La descripción no la lee el examen (arma el revisor con su cuerpo, su modelo y sus herramientas), así que un cambio que
+// toca SÓLO esa línea no pide examen. Cualquier otra diferencia, aunque sea de un byte, sí. Y si la descripción decía
+// cuándo invocar al revisor, la nueva lo tiene que seguir diciendo: fuera del pipeline, con eso se elige.
+const CON_DESC = (desc, cuerpo = 'Revisá TOY-C1.\n', extra = '') => `---\nname: tycon-juguete\ndescription: ${desc}\n${extra}tools: Read, Grep\n---\n${cuerpo}`;
+const LARGA = 'Revisa los juguetes contra TOY-C1..C9 y TOY-W1..W4 con mucho detalle de cada regla. Solo invocar si el diff toca `**/*.toy` o `juguetes/**`.';
+const CORTA = 'Revisa los juguetes (TOY-C1..C9). Solo invocar si el diff toca `**/*.toy` o `juguetes/**`.';
+function descLab(nueva) {
+  const dir = harness();
+  write(dir, { [`agents/${AGENT}.md`]: CON_DESC(LARGA) }); commit(dir, 'con descripción');
+  git(dir, ['checkout', '--quiet', '-b', 'cambio']);
+  write(dir, { [`agents/${AGENT}.md`]: nueva }); commit(dir);
+  return run(dir, ['check', '--base', 'main']);
+}
+
+test('T40 Porton_SoloDescripcion_NoPideExamen @story-7.53: cambiar sólo la línea description no pide examen, y se dice', () => {
+  const r = descLab(CON_DESC(CORTA));
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /sólo cambió la descripción/);
+});
+
+test('T41 Porton_SoloDescripcion_UnByteMas_PideExamen @story-7.53: con la descripción, cualquier otra diferencia sigue pidiendo examen', () => {
+  const casos = {
+    'un carácter del cuerpo': CON_DESC(CORTA, 'Revisá TOY-C2.\n'),
+    'otra línea de la cabecera': CON_DESC(CORTA, 'Revisá TOY-C1.\n', 'model: opus\n'),
+    'un renglón vacío de más': CON_DESC(CORTA, 'Revisá TOY-C1.\n\n'),
+    'sin el salto final': CON_DESC(CORTA, 'Revisá TOY-C1.'),
+    'un espacio al final de otra línea': CON_DESC(CORTA).replace('tools: Read, Grep\n', 'tools: Read, Grep \n'),
+    'una segunda línea description en el cuerpo': CON_DESC(CORTA, 'description: otra\nRevisá TOY-C1.\n'),
+  };
+  for (const [nombre, texto] of Object.entries(casos)) {
+    const r = descLab(texto);
+    assert.strictEqual(r.code, 1, `${nombre}: ${r.out}`);
+    assert.match(r.out, /sin el examen/, nombre);
+  }
+});
+
+test('T42 Porton_SoloDescripcion_PierdeElDisparador_PideExamen @story-7.53: si la vieja decía cuándo invocarlo y la nueva no, pide examen', () => {
+  const r = descLab(CON_DESC('Revisa los juguetes contra TOY-C1..C9.'));
+  assert.strictEqual(r.code, 1, r.out);
+  assert.match(r.out, /sin el examen/);
+});
+
+test('T43 Porton_SoloDescripcion_ConStaged @story-7.53: el control del pre-commit (--staged) aplica la misma regla', () => {
+  const dir = harness();
+  write(dir, { [`agents/${AGENT}.md`]: CON_DESC(LARGA) }); commit(dir, 'con descripción');
+  write(dir, { [`agents/${AGENT}.md`]: CON_DESC(CORTA) }); git(dir, ['add', '-A']);
+  assert.strictEqual(run(dir, ['check', '--staged']).code, 0);
+  write(dir, { [`agents/${AGENT}.md`]: CON_DESC(CORTA, 'Revisá TOY-C2.\n') }); git(dir, ['add', '-A']);
+  assert.strictEqual(run(dir, ['check', '--staged']).code, 1);
+});

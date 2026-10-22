@@ -154,6 +154,35 @@ function shapeProblem(res, agent) {
   return null;
 }
 
+// Un cambio que toca SÓLO la línea `description:` de la cabecera no pide examen: el examen arma el revisor con su cuerpo,
+// su modelo y sus herramientas, y la descripción no entra. Cualquier otra diferencia, aunque sea de un byte, sí lo pide.
+// Si la descripción vieja decía cuándo invocar al revisor, la nueva lo tiene que seguir diciendo: fuera del pipeline, el
+// agente principal elige con eso. Casos: T40-T43 de scripts/tests/reviewer-change-check.test.js.
+const TRIGGER_RE = /(s[oó]lo invocar|invocar (si|cuando|antes|despu[eé]s|post|en)|usar (cuando|en|post|antes|despu[eé]s)|\bpost-(implementaci[oó]n|merge|commit|build)|\bpre-(coding|commit|bmad))/i;
+function frontmatterEnd(lines) {
+  if (lines[0] !== '---') return -1;
+  for (let i = 1; i < lines.length; i++) if (lines[i] === '---') return i;
+  return -1;
+}
+function onlyDescriptionChanged(before, after) {
+  if (before === null || after === null) return false;
+  const a = before.split('\n');
+  const b = after.split('\n');
+  if (a.length !== b.length) return false;
+  const endA = frontmatterEnd(a);
+  if (endA < 0 || frontmatterEnd(b) !== endA) return false;
+  let changed = -1;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] === b[i]) continue;
+    if (changed !== -1 || i >= endA || !a[i].startsWith('description:') || !b[i].startsWith('description:')) return false;
+    changed = i;
+  }
+  if (changed === -1) return false;
+  const nueva = b[changed].slice('description:'.length).trim();
+  if (!nueva) return false;
+  return !TRIGGER_RE.test(a[changed]) || TRIGGER_RE.test(b[changed]);
+}
+
 function checkReviewerChange({ repo, base, staged }) {
   const hallazgos = [];
   const avisos = [];
@@ -179,6 +208,11 @@ function checkReviewerChange({ repo, base, staged }) {
     const archivo = `agents/${agent}.md`;
     const comando = commandFor(agent);
     const add = (regla, mensaje) => hallazgos.push({ archivo, regla, mensaje: `${agent}: ${mensaje}`, comando });
+
+    if (onlyDescriptionChanged(gitOrNull(repo, ['show', `${baseRef}:${archivo}`]), treeBlob(archivo))) {
+      avisos.push({ archivo, regla: 'reviewer-description-only', mensaje: `${agent}: sólo cambió la descripción (y conserva su disparador): el examen no la lee, no hace falta correrlo.` });
+      continue;
+    }
 
     const text = treeBlob(`${EXAMS_REL}/${agent}.json`);
     if (text === null) { add('reviewer-exam-missing', 'cambio sin el examen de ese revisor.'); continue; }
@@ -251,4 +285,4 @@ function main(argv) {
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
 
-module.exports = { runExam, checkReviewerChange, commandFor };
+module.exports = { runExam, checkReviewerChange, commandFor, onlyDescriptionChanged };
