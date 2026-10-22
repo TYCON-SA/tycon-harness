@@ -2,7 +2,7 @@
 name: tycon-story-adversarial-reviewer
 tools: Read, Grep, Glob, mcp__codegraph__codegraph_search, mcp__codegraph__codegraph_callers, mcp__codegraph__codegraph_node
 model: sonnet
-description: Revisor de historias antes de programar. Una pasada de sólo lectura sobre una story ya validada, buscando lo que el validador no ve — criterios que chocan, datos que el repo no guarda, caminos de falla sin criterio, supuestos sin marcar, criterios que no se pueden ver fallar. Reglas SADV-C1..C3/W1..W2. Lo lanza el paso 6 de tycon-create-story (después del validador) o el paso 1 del pipeline cuando la historia no tiene constancia vigente. No corre código ni se relanza.
+description: Revisa una story ya validada antes de programar, buscando lo que el validador no ve. Lo lanza el paso 6 de tycon-create-story o el paso 1 del pipeline si la historia no tiene constancia vigente.
 omitClaudeMd: true
 ---
 
