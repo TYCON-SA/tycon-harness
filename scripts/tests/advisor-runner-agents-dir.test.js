@@ -58,6 +58,60 @@ test('A5 Runner_AgentsDirMissing_StopsWithReason — sin la carpeta de revisores
   assert.ok(!/advisor-bench:/.test(r.stdout), 'no llegó a armar las corridas');
 }));
 
+/** Un árbol de juguete con el lector de la configuración y, si se pasa, un team-repos.json. */
+function arbol(dir, models) {
+  fs.mkdirSync(path.join(dir, 'scripts', 'lib'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'adapters'), { recursive: true });
+  fs.copyFileSync(path.join(RAIZ, 'scripts', 'lib', 'team-repos.js'), path.join(dir, 'scripts', 'lib', 'team-repos.js'));
+  fs.writeFileSync(path.join(dir, 'adapters', 'rev.toml'), 'model = "gpt-5.6-luna"\nsandbox_mode = "read-only"\n');
+  if (models) {
+    fs.writeFileSync(path.join(dir, 'team-repos.json'), JSON.stringify({
+      version: 1, public: { platform: 'github', org: 'acme', repo: 'h' }, profile: { platform: 'github', org: 'acme', repo: 'p' },
+      operations: { platform: 'github', org: 'acme', repo: 'o' }, models,
+    }));
+  }
+}
+
+test('A6 RunnerProfile_DeployedLikeTheDeployer — el examen prepara el perfil como el desplegador: «inherit» lo deja sin modelo; sin configuración, igual que hoy', () => enHome((home) => {
+  const R = require(RUNNER);
+  for (const [caso, models, esperado] of [['sin configuración', null, 'model = "gpt-5.6-luna"\nsandbox_mode = "read-only"\n'], ['inherit', { codex_reviewers: 'inherit' }, 'sandbox_mode = "read-only"\n']]) {
+    const root = path.join(home, caso.replace(/ /g, '-'));
+    const codex = path.join(home, `codex-${caso.replace(/ /g, '-')}`);
+    fs.mkdirSync(codex, { recursive: true });
+    arbol(root, models);
+    R.ensureCodexProfile('rev', { root, adaptersDir: path.join(root, 'adapters'), codexHome: codex });
+    assert.strictEqual(fs.readFileSync(path.join(codex, 'rev.config.toml'), 'utf8'), esperado, caso);
+  }
+}));
+
+/** Lo que el examinador escribe por stderr mientras corre fn. */
+function avisos(fn) {
+  const dichos = [];
+  const orig = console.error;
+  console.error = (...a) => dichos.push(a.join(' '));
+  try { fn(); } finally { console.error = orig; }
+  return dichos.join('\n');
+}
+
+test('A7 RunnerProfile_GeneratorFails_StopsOrSaysWhy — si el desplegador falla, el examen frena; si no puede leer la configuración, el perfil de hoy y el aviso', () => enHome((home) => {
+  const R = require(RUNNER);
+  const crudo = 'model = "gpt-5.6-luna"\nsandbox_mode = "read-only"\n';
+  const codex = path.join(home, 'codex');
+  fs.mkdirSync(codex, { recursive: true });
+  // sin el desplegador: frena con el motivo y no escribe el perfil
+  const root = path.join(home, 'arbol');
+  arbol(root, { codex_reviewers: 'inherit' });
+  assert.throws(() => R.ensureCodexProfile('rev', { root, adaptersDir: path.join(root, 'adapters'), codexHome: codex, generator: path.join(home, 'no-existe.js') }), /no pude aplicar el modelo de la organización a rev/);
+  assert.ok(!fs.existsSync(path.join(codex, 'rev.config.toml')), 'no dejó un perfil a medias');
+  // con un team-repos.json y sin su lector: el perfil de hoy y el aviso del desplegador
+  const sinLector = path.join(home, 'sin-lector');
+  arbol(sinLector, { codex_reviewers: 'inherit' });
+  fs.rmSync(path.join(sinLector, 'scripts', 'lib', 'team-repos.js'));
+  const dicho2 = avisos(() => R.ensureCodexProfile('rev', { root: sinLector, adaptersDir: path.join(sinLector, 'adapters'), codexHome: codex }));
+  assert.strictEqual(fs.readFileSync(path.join(codex, 'rev.config.toml'), 'utf8'), crudo);
+  assert.match(dicho2, /no pude leer la configuración de la organización/);
+}));
+
 test('A3 Runner_RequiredAsModule_DoesNotRun — cargarlo como módulo no corre el examen', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'runner-agents-'));
   try {

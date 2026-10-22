@@ -167,7 +167,8 @@ function withCodexModel(toml, slug) {
 /**
  * El slug de Codex del modelo resuelto de la organización para un revisor (primera vuelta, con techo):
  * `{ declared, slug, lines }`. `declared: false` = no hay `models` (o no se pudo leer): lo desplegado queda como hoy.
- * `slug: null` = el modelo no tiene equivalente: sin línea `model =`. `lines`: lo que hay que decir. Nunca tira.
+ * `slug: null` = el modelo no tiene equivalente, o la organización pidió `codex_reviewers: inherit`: sin línea
+ * `model =`. `lines`: lo que hay que decir. Nunca tira.
  */
 const orgCache = new Map();
 function orgCodexModel(root, name, { agentsDir = null } = {}) {
@@ -187,6 +188,9 @@ function orgCodexModel(root, name, { agentsDir = null } = {}) {
     const org = orgCache.get(root);
     if (org.problem) { out.lines.push(`⚠ tycon/codex: ${org.problem}`); return out; }
     if (!org.declared) return out;
+    // «codex_reviewers: inherit»: sin «model =», el revisor usa el modelo y el proveedor del config.toml de la máquina
+    // (Codex sobre Ollama u otro proveedor, donde el equivalente de OpenAI no existe)
+    if (org.data && org.data.codex_reviewers === 'inherit') return Object.assign(out, { declared: true, slug: null });
     const models = M.resolveReviewers({ org: org.data, set: [name], iter: 1, agentsDir: agentsDir || path.join(root, 'agents') });
     const model = models[name].model;
     const eq = loadEq(root);
