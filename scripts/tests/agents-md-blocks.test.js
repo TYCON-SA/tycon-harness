@@ -64,6 +64,45 @@ test('el bloque del índice nombra las skills de CODEX_HOME y abrevia con ~ lo q
   assert.ok(cuerpo.includes('`~/codex-propio/skills/tycon-pipeline/SKILL.md`'), 'las skills, en CODEX_HOME');
 });
 
+test('IndiceEntero_VaAdentroDelBloque: el bloque del índice trae el INDEX.md entero, no sólo su ruta', () => {
+  // Codex no expande las líneas `@` del AGENTS.md: si el bloque sólo nombra el índice, el modelo tiene que ir a leerlo,
+  // y en la medición de 319 sesiones de Codex el índice nunca llegó a su contexto
+  const l = lab();
+  fs.writeFileSync(path.join(l.dir, 'INDEX.md'), '# Índice de guías\n\n| Trabajando en... | Leer |\n|---|---|\n| Commit | `guides/git.md` |\n');
+  run(l, { tree: l.dir, home: path.join(l.dir, 'otra-casa'), env: {} });
+  const cuerpo = between(read(l.target), 'harness-index');
+  assert.ok(cuerpo.includes('| Commit | `guides/git.md` |'), 'la fila del índice está adentro del bloque');
+  assert.ok(cuerpo.includes('# Índice de guías'), 'con su título');
+  assert.ok(cuerpo.includes('`~/.codex/skills/tycon-pipeline/SKILL.md`'), 'y sigue diciendo dónde está el pipeline');
+  assert.ok(cuerpo.includes('relativas'), 'y que sus rutas son relativas a la carpeta del arnés');
+});
+
+test('IndiceConArroba_NoEscribeImport: una línea del índice que empieza con @ no se copia', () => {
+  const l = lab();
+  fs.writeFileSync(path.join(l.dir, 'INDEX.md'), '# Índice\n@guides/otra.md\nfila normal con correo a@b.c\n');
+  run(l, { tree: l.dir, env: {} });
+  const cuerpo = between(read(l.target), 'harness-index');
+  assert.ok(!/^@/m.test(cuerpo), 'ninguna línea empieza con @');
+  assert.ok(cuerpo.includes('fila normal con correo a@b.c'), 'lo demás del índice queda, aunque tenga una @ en el medio');
+});
+
+test('IndiceCambia_ElBloqueSeActualiza: al cambiar el INDEX.md, la próxima sincronización lo reescribe', () => {
+  const l = lab();
+  fs.writeFileSync(path.join(l.dir, 'INDEX.md'), '# Índice\nversión uno\n');
+  run(l, { tree: l.dir, env: {} });
+  assert.strictEqual(run(l, { tree: l.dir, env: {} }).changed, false, 'sin cambios, no reescribe');
+  fs.writeFileSync(path.join(l.dir, 'INDEX.md'), '# Índice\nversión dos\n');
+  assert.strictEqual(run(l, { tree: l.dir, env: {} }).changed, true, 'con el índice cambiado, reescribe');
+  const cuerpo = between(read(l.target), 'harness-index');
+  assert.ok(cuerpo.includes('versión dos') && !cuerpo.includes('versión uno'), 'queda el índice nuevo');
+});
+
+test('ImportacionesNoExpandidas_Declaradas: el inventario de diferencias dice que Codex no expande las líneas @', () => {
+  const inv = read(path.join(ROOT, 'guides', 'maintaining', 'codex-divergence-inventory.md'));
+  assert.ok(/no expande las líneas `@`/.test(inv), 'declara que Codex no expande las importaciones del AGENTS.md');
+  assert.ok(/índice.*entero/i.test(inv), 'y que el arnés escribe el índice entero adentro');
+});
+
 test('sin INDEX.md en el árbol: el bloque del índice no se escribe, se saca si estaba, y se avisa', () => {
   const l = lab();
   fs.writeFileSync(path.join(l.dir, 'INDEX.md'), '# Índice\n');
