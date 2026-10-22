@@ -241,11 +241,11 @@ function transcripcionesPrincipales({ home = HOME, dias = 7 } = {}) {
 function mcpsDiferidos({ home = HOME, dias = 7 } = {}) {
   const rutas = (transcripcionesPrincipales({ home, dias }) || []).slice(0, 20);
   if (!rutas.length) return null;
-  let con = 0;
+  let con = 0; let legibles = 0;
   for (const r of rutas) {
-    try { if (fs.readFileSync(r, 'utf8').includes('"deferred_tools_delta"')) con++; } catch { /* ilegible: no cuenta */ }
+    try { const t = fs.readFileSync(r, 'utf8'); legibles++; if (t.includes('"deferred_tools_delta"')) con++; } catch { /* ilegible: no cuenta */ }
   }
-  return con * 2 > rutas.length;
+  return legibles ? con * 2 > legibles : null;
 }
 
 /**
