@@ -46,6 +46,11 @@
  *   `omitidos`. Lo usa el nocturno del tablero: la página no usa las conversaciones —prompts, rutas, código de
  *   clientes— y el agente de Azure no tiene por qué tenerlas.
  *
+ *   --threads-since <AAAA-MM-DD>: baja los hilos y los cambios de git sólo de las corridas cuyo nombre
+ *   (`<story>-<AAAA-MM-DD>T<hhmm>`) es de esa fecha o posterior; los demás, en `omitidos`. Un nombre sin fecha baja
+ *   igual. Los volcados y los registros bajan siempre. Lo usa la revisión nocturna de las ejecuciones, que lee las
+ *   conversaciones de los últimos días. Con --no-threads, no baja ninguna.
+ *
  *   --instincts: baja también los días de instintos (`<maquina>/instincts/v<versión>/<día>.jsonl.gz`, la versión más
  *   nueva de cada día) a `<maquina>/instincts/<día>.jsonl.gz`. Traen comandos: sin la opción —el nocturno, el sitio—
  *   no se bajan y se cuentan en `omitidos`, uno por carpeta y día. Lo usa el que propone instintos.
@@ -650,6 +655,12 @@ async function bajar(opts = {}) {
     return { codigo, res };
   };
   const sinHilos = opts.sinHilos === true;
+  // la revisión nocturna de las ejecuciones (`--threads-since`): la conversación y el cambio sólo de las ejecuciones
+  // que arrancaron desde esa fecha —la del nombre—; bajar todas cada noche serían gigas
+  const hilosDesde = opts.hilosDesde === undefined || opts.hilosDesde === null ? null : String(opts.hilosDesde);
+  // con forma y que exista: un mes 13 tiene la forma, y comparado como texto omitiría todo en silencio
+  const diaReal = (f) => { const d = new Date(`${f}T00:00:00Z`); return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === f; };
+  if (hilosDesde !== null && !(/^\d{4}-\d{2}-\d{2}$/.test(hilosDesde) && diaReal(hilosDesde))) return fin(2, 'config_rota', `hilosDesde no es una fecha AAAA-MM-DD real: «${hilosDesde.slice(0, 20)}»`);
   // el sitio con las conversaciones prendidas sobre un disco chico (`resumenes`): una corrida ya resumida
   // (dashboard/runs.js → resumirEspejo) no vuelve a bajar su conversación ni su cambio, y una pasada no baja más de
   // `topeBytesHilos` de esas dos partes: el sitio resume la tanda, la borra del disco, y la pasada siguiente sigue
@@ -741,6 +752,12 @@ async function bajar(opts = {}) {
     // `--no-threads` es «bajá lo que la página necesita»: el hilo y el cambio de git traen código de todos los
     // repos y el nocturno del tablero no los usa. De TODAS sus versiones.
     if (sinHilos && /\.(hilo\.jsonl|cambio\.json)\.gz$/.test(forma.archivo)) { res.omitidos += 1; continue; }
+    // Con `hilosDesde`, una conversación o un cambio de una ejecución anterior a esa fecha no se baja. Un nombre sin
+    // fecha legible se baja: no se sabe de cuándo es.
+    if (hilosDesde) {
+      const f = /-(\d{4}-\d{2}-\d{2})T\d{4}\.(hilo\.jsonl|cambio\.json)\.gz$/.exec(forma.archivo);
+      if (f && f[1] < hilosDesde) { res.omitidos += 1; continue; }
+    }
     // los días de instintos traen comandos: se bajan sólo con `--instincts` (el que propone); sin la opción se
     // cuentan una vez por carpeta y día, no por versión
     if (forma.archivo.startsWith('instincts/') && opts.instintos !== true) { instintosOmitidos.add(`${forma.maquina}/${forma.archivo}`); continue; }
@@ -981,6 +998,9 @@ if (require.main === module) {
   accion({
     budgetMs: budget !== undefined ? Number(budget) : undefined,
     sinHilos: args.includes('--no-threads'),
+    // sin valor llega vacío, y con otra opción detrás llega esa opción: `bajar()` rechaza las dos (no son una fecha),
+    // así nunca se apaga el filtro en silencio
+    hilosDesde: args.includes('--threads-since') ? (valor('--threads-since') || '') : undefined,
     instintos: args.includes('--instincts'),
     log: (m) => (json ? console.error : console.log)(`[${stamp()}] ${m}`),
   }).then(({ codigo, res }) => {

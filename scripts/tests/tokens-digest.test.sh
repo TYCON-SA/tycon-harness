@@ -905,6 +905,194 @@ else
   bad "T23 · 2.24 la cabecera" "$(echo "$CAB23" | head -4 | tr '\n' ' ')"
 fi
 
+# ── T26 T_HookSeConservaReducido @story-4.10 @ac-3 ─────────────────────────────────────────────
+# 🔴 Falla con: `attachment` descartado entero (0 líneas de hook en el hilo: la revisión nocturna no ve ningún
+#    aviso que falló) o el adjunto copiado entero (viaja el `stderr`, texto libre de la máquina del dev).
+S=sesion-t4-10-26
+transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY'
+def hook(ts, evento, stderr, code):
+    return {"type": "attachment", "timestamp": ts, "uuid": "u-" + ts, "sessionId": "s", "cwd": "/x",
+            "attachment": {"type": "hook_non_blocking_error", "hookName": evento + ":algo", "toolUseID": "t1",
+                           "hookEvent": evento, "stderr": stderr, "stdout": "", "exitCode": code,
+                           "command": "node hook.js", "durationMs": 30}}
+lineas = [
+    {"type": "user", "timestamp": "2026-09-01T10:00:00.000Z", "message": {"role": "user", "content": "hola"}},
+    hook("2026-09-01T10:00:01.000Z", "SessionStart",
+         "Failed with non-blocking status code: hook.js:98\n  x?.y\n   ^\nSyntaxError: Unexpected token '.'", 1),
+    hook("2026-09-01T10:00:02.000Z", "UserPromptSubmit",
+         "Failed with non-blocking status code: node:internal/modules/cjs/loader:1568", 1),
+    hook("2026-09-01T10:00:03.000Z", "PreToolUse",
+         "Failed with non-blocking status code: /bin/sh: node: command not found", 127),
+    {"type": "assistant", "timestamp": "2026-09-01T10:00:05.000Z",
+     "message": {"id": "m1", "model": "modelo-a", "role": "assistant",
+                 "usage": {"input_tokens": 1, "output_tokens": 1,
+                           "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0},
+                 "content": [{"type": "text", "text": "chau"}]}},
+]
+PY
+volcado "$HIST/t4-10-26.json" "$S" '{}' '[]'
+correr --run "$HIST/t4-10-26.json" --projects-dir "$PROJ" --json
+r26="$(gzip -dc "$HIST/t4-10-26.hilo.jsonl.gz" 2>/dev/null | python3 -c "
+import json, sys
+ad = [json.loads(l) for l in sys.stdin if l.strip()]
+hk = [o for o in ad if o.get('type') == 'attachment']
+ok = len(ad) == 5 and len(hk) == 3
+ok = ok and all(sorted(o) == ['attachment', 'timestamp', 'type'] for o in hk)
+ok = ok and all(sorted(o['attachment']) == ['categoria', 'exitCode', 'hookEvent', 'hookName', 'texto', 'type'] for o in hk)
+print('ok' if ok else 'mal', ','.join(o['attachment'].get('categoria', '?') for o in hk))
+")"
+if [ "$r26" = "ok node-viejo,carga,node-ausente" ]; then
+  ok "T26 · 4.10 los errores de hook viajan en el hilo, reducidos a nombre, evento, salida y categoría"
+else
+  bad "T26 · 4.10 errores de hook en el hilo" "esperaba 5 líneas, 3 adjuntos reducidos node-viejo,carga,node-ausente; salió: $r26 · $OUT"
+fi
+
+# ── T26b T_HookCanceladoPorTiempo @story-4.10 @ac-3 ───────────────────────────────────────────────
+# Claude Code anota un hook que se pasó de tiempo como `hook_cancelled` con `timedOut: true`, no como error.
+# 🔴 Falla con: aceptar sólo `hook_non_blocking_error` (un freno que se cuelga nunca llega a la revisión nocturna), o
+#    conservar un `hook_cancelled` sin `timedOut` (la persona lo canceló: no es una falla del arnés).
+S=sesion-t4-10-26b
+transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY2'
+lineas = [
+    {"type": "user", "timestamp": "2026-09-01T10:00:00.000Z", "message": {"role": "user", "content": "hola"}},
+    {"type": "attachment", "timestamp": "2026-09-01T10:00:01.000Z",
+     "attachment": {"type": "hook_cancelled", "hookName": "PreToolUse:Bash", "hookEvent": "PreToolUse",
+                    "timedOut": True, "timeoutMs": 10000, "command": "node /ZZCOMANDO/guard.js"}},
+    {"type": "attachment", "timestamp": "2026-09-01T10:00:02.000Z",
+     "attachment": {"type": "hook_cancelled", "hookName": "Stop", "hookEvent": "Stop"}},
+]
+PY2
+volcado "$HIST/t4-10-26b.json" "$S" '{}' '[]'
+correr --run "$HIST/t4-10-26b.json" --projects-dir "$PROJ" --json
+r26b="$(gzip -dc "$HIST/t4-10-26b.hilo.jsonl.gz" 2>/dev/null | python3 -c "
+import json, sys
+hk = [json.loads(l)['attachment'] for l in sys.stdin if '\"attachment\"' in l]
+print(json.dumps(hk, sort_keys=True))
+")"
+esp26b='[{"categoria": "tiempo", "exitCode": null, "hookEvent": "PreToolUse", "hookName": "PreToolUse:Bash", "texto": null, "type": "hook_cancelled"}]'
+if [ "$r26b" = "$esp26b" ]; then
+  ok "T26b · 4.10 un hook que se pasó de tiempo viaja como «tiempo»; uno cancelado sin tiempo, no"
+else
+  bad "T26b · 4.10 hook cancelado por tiempo" "salió: $r26b"
+fi
+
+# ── T26c T_HookCategoriasYSuOrden @story-4.10 @ac-3 ───────────────────────────────────────────────
+# Las formas reales que dejan los hooks en las sesiones de Claude Code.
+# 🔴 Falla con: sin `ruta-ausente` (el guion de un hook borrado por una actualización cae en «otro», mezclado con ruido),
+#    con `node-ausente` sólo en su forma de sh, con el Node propio del arnés (ruta absoluta) tomado por un guion
+#    borrado, o con la lista en otro orden.
+r26c="$(node -e '
+const { reducirErrorDeHook } = require(process.argv[1]);
+const cat = (stderr) => reducirErrorDeHook({ type: "attachment", attachment: { type: "hook_non_blocking_error", stderr } }).attachment.categoria;
+console.log([
+  "Failed with non-blocking status code: /bin/sh: /x/.tycon/harness/scripts/hooks/a.sh: No such file or directory",
+  "Failed with non-blocking status code: env: node: No such file or directory",
+  "Failed with non-blocking status code: zsh: command not found: node",
+  "Failed with non-blocking status code: \x22node\x22 is not recognized as an internal or external command",
+  "Failed with non-blocking status code: x.js:9\nSyntaxError: Unexpected token \x27.\x27\n    at node:internal/modules/cjs/loader:1",
+  "Failed with non-blocking status code: /bin/sh: /Users/x/.tycon/node/current/bin/node: No such file or directory",
+].map(cat).join(","));
+' "$DIGEST" 2>&1)"
+if [ "$r26c" = "ruta-ausente,node-ausente,node-ausente,node-ausente,node-viejo,node-ausente" ]; then
+  ok "T26c · 4.10 guion borrado, cuatro formas de Node ausente (también el propio del arnés) y el orden de la lista"
+else
+  bad "T26c · 4.10 categorías y su orden" "salió: $r26c"
+fi
+
+# ── T27 T_HookCategoriaOtroSinTexto @story-4.10 @ac-21 ──────────────────────────────────────────
+# 🔴 Falla con: una categoría por defecto distinta de `otro` (un error desconocido pasaría por «Node viejo»), un
+#    `texto` inventado para un `stderr` vacío, o copiar `command`, `stdout` o `cwd` (sólo el error viaja).
+S=sesion-t4-10-27
+transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY'
+def hook(ts, stderr):
+    return {"type": "attachment", "timestamp": ts, "cwd": "/home/ZZCWD",
+            "attachment": {"type": "hook_non_blocking_error", "hookName": "Stop", "hookEvent": "Stop",
+                           "stderr": stderr, "stdout": "ZZSTDOUT", "exitCode": 2,
+                           "command": "node /ZZCOMANDO/hook.js"}}
+lineas = [
+    {"type": "user", "timestamp": "2026-09-01T10:00:00.000Z", "message": {"role": "user", "content": "hola"}},
+    hook("2026-09-01T10:00:01.000Z", ""),
+    hook("2026-09-01T10:00:02.000Z", "Failed with non-blocking status code: ZZSTDERR algo raro"),
+]
+PY
+volcado "$HIST/t4-10-27.json" "$S" '{}' '[]'
+correr --run "$HIST/t4-10-27.json" --projects-dir "$PROJ" --json
+gz27="$HIST/t4-10-27.hilo.jsonl.gz"
+c27="$(gzip -dc "$gz27" 2>/dev/null | python3 -c "
+import json, sys
+a = [json.loads(l)['attachment'] for l in sys.stdin if '\"attachment\"' in l]
+print(','.join(x['categoria'] for x in a), a[0].get('texto') is None and 'ZZSTDERR' in (a[1].get('texto') or ''))
+")"
+if [ "$c27" = "otro,otro True" ] && ! gzip -dc "$gz27" | grep -E 'ZZSTDOUT|ZZCOMANDO|ZZCWD' >/dev/null; then
+  ok "T27 · 4.10 un error de hook vacío o desconocido sale como «otro»; viaja el error, nunca stdout, comando ni carpeta"
+else
+  bad "T27 · 4.10 categoría otro sin texto" "salió: $c27 · centinelas: $(gzip -dc "$gz27" | grep -oE 'ZZ[A-Z]+' | sort -u | tr '\n' ' ')"
+fi
+
+# ── T27b T_HookTextoRecortadoYSaneado @story-4.10 @ac-3 @ac-21 ───────────────────────────────────
+# El texto del error viaja saneado, sin controles y con tope: lo leen quienes administran el buzón.
+# 🔴 Falla con: sin tope (un stack entero al buzón), con saltos o tabulaciones (rompen la ficha), o sin `sanear()`
+#    (viajan la ruta del home y una credencial).
+r27b="$(node -e '
+const os = require("os");
+const { reducirErrorDeHook } = require(process.argv[1]);
+const home = os.homedir();
+const stderr = "Failed with non-blocking status code: " + home + "/Proyectos/ZZCLIENTE/a.js\tPASSWORD=ZZSECRETO\n" + "x".repeat(2000);
+const t = reducirErrorDeHook({ type: "attachment", attachment: { type: "hook_non_blocking_error", stderr } }).attachment.texto;
+console.log([t.length <= 300, !/[\x00-\x1f\x7f]/.test(t), !t.includes("ZZCLIENTE"), !t.includes("ZZSECRETO"), t.startsWith("Failed with")].join(","));
+' "$DIGEST" 2>&1)"
+if [ "$r27b" = "true,true,true,true,true" ]; then
+  ok "T27b · 4.10 el texto del error viaja con tope de 300, sin controles, sin rutas ni credenciales"
+else
+  bad "T27b · 4.10 texto recortado y saneado" "tope,controles,ruta,credencial,comienzo: $r27b"
+fi
+
+# ── T27c T_HookNombresRarosNoViajan @story-4.10 @ac-3 ────────────────────────────────────────────
+# 🔴 Falla con: dejar pasar un nombre largo o con saltos (texto libre por el costado) o un código que no es entero.
+#    También con: un nombre de hasta 80 que no viaja, o uno con una ruta del home sin sanear.
+r27c="$(node -e '
+const os = require("os");
+const { reducirErrorDeHook } = require(process.argv[1]);
+const red = (at) => reducirErrorDeHook({ type: "attachment", attachment: { type: "hook_non_blocking_error", stderr: "x", ...at } }).attachment;
+const a = red({ hookName: "h".repeat(81), hookEvent: "Stop\nZZ", exitCode: "1" });
+const b = red({ hookName: "h".repeat(80), hookEvent: os.homedir() + "/ZZCLIENTE/x.sh", exitCode: 2 });
+console.log(JSON.stringify([a.hookName, a.hookEvent, a.exitCode, b.hookName.length, b.hookEvent.includes("ZZCLIENTE"), b.exitCode]));
+' "$DIGEST" 2>&1)"
+if [ "$r27c" = '[null,null,null,80,false,2]' ]; then
+  ok "T27c · 4.10 un nombre largo, con saltos o un código que no es entero viajan como null; uno de 80 viaja saneado"
+else
+  bad "T27c · 4.10 nombres raros" "salió: $r27c"
+fi
+
+# ── T28 T_OtrosAdjuntosSiguenAfuera @story-4.10 @ac-26 ──────────────────────────────────────────
+# 🔴 Falla con: conservar todo `attachment` que traiga `hookName` (un `hook_success` o un adjunto sin tipo pesan y
+#    traen texto), o dejar de descartar cualquiera de los tipos de TIPOS_DESCARTADOS (va una línea de cada uno).
+S=sesion-t4-10-28
+# la lista sale del programa, no de una copia: un tipo nuevo en TIPOS_DESCARTADOS entra solo al caso
+DISCARDED_TYPES_28="$(node -e 'console.log(JSON.stringify([...require(process.argv[1]).TIPOS_DESCARTADOS].filter((t) => t !== "attachment" && t !== "queue-operation")))' "$DIGEST")"
+export DISCARDED_TYPES_28
+transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY'
+import os, json
+relleno = "C" * 30000
+lineas = [
+    {"type": "user", "timestamp": "2026-09-01T10:00:00.000Z", "message": {"role": "user", "content": "hola"}},
+    {"type": "attachment", "timestamp": "2026-09-01T10:00:01.000Z",
+     "attachment": {"type": "hook_success", "hookName": "Stop", "hookEvent": "Stop", "stdout": relleno}},
+    {"type": "attachment", "timestamp": "2026-09-01T10:00:02.000Z", "attachment": {"hookName": "Stop", "x": relleno}},
+    {"type": "attachment", "timestamp": "2026-09-01T10:00:03.000Z", "contenido": relleno},
+    {"type": "queue-operation", "timestamp": "2026-09-01T10:00:05.000Z", "operation": "dequeue", "q": relleno},
+] + [{"type": t, "timestamp": "2026-09-01T10:00:06.000Z", "x": relleno}
+     for t in json.loads(os.environ["DISCARDED_TYPES_28"])]
+PY
+volcado "$HIST/t4-10-28.json" "$S" '{}' '[]'
+correr --run "$HIST/t4-10-28.json" --projects-dir "$PROJ" --json
+m28="$(leer "d['hilo']['mensajes']")"
+if [ "$m28" = "1" ] && ! gzip -dc "$HIST/t4-10-28.hilo.jsonl.gz" | grep 'CCCCCCCCCC' >/dev/null; then
+  ok "T28 · 4.10 los demás adjuntos y metadatos siguen afuera del hilo"
+else
+  bad "T28 · 4.10 otros adjuntos afuera" "esperaba 1 mensaje y ningún relleno; salió mensajes=$m28"
+fi
+
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 if [ "$fallos" -eq 0 ]; then echo "✅ tokens-digest: todo verde"; exit 0; fi
 echo "❌ tokens-digest: $fallos rojos"; exit 1
