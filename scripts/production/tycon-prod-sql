@@ -27,6 +27,7 @@
 #   tycon-prod-sql --open-firewall <host>     abre la regla de firewall de esta máquina en un Azure SQL de producción
 #   tycon-prod-sql --close-firewall <host>    la cierra (el hook de fin de sesión agrega --session <id>)
 #   tycon-prod-sql --locks                    dice qué servidores de producción tienen el candado de Azure (sólo lee)
+#   tycon-prod-sql --delete-group <grupo>     borra un grupo de recursos que puede probar que no es de producción
 #
 # EL FIREWALL Y SU LÍMITE, ESCRITO: abrir y cerrar llaman a `az`, que NO es un binario de root con huella (es del
 # usuario: Homebrew o el instalador de Microsoft). Rompe la regla de «sólo binarios de root» y se acepta con tres
@@ -145,7 +146,7 @@ anotar(){ # $1 = json parcial (sólo valores ya validados: host y llavero pasaro
 }
 
 # ── argumentos ────────────────────────────────────────────────────────────────────────────────
-[ $# -ge 1 ] || muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-filas N]  ·  --cargar-clave <host>  ·  --reclasificar <host>  ·  --verificar  ·  --open-firewall <host>  ·  --close-firewall <host>  ·  --locks"
+[ $# -ge 1 ] || muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-filas N]  ·  --cargar-clave <host>  ·  --reclasificar <host>  ·  --verificar  ·  --open-firewall <host>  ·  --close-firewall <host>  ·  --locks  ·  --delete-group <grupo>"
 
 MODO=consulta; HOST=""; SENTENCIA=""; SESION_CIERRE=""; ARCHIVO=""; ORIGEN=""
 SESION_VALIDA='^[A-Za-z0-9-]{8,64}$'
@@ -160,11 +161,15 @@ case "${1:-}" in
   --verificar)    MODO=verificar; [ $# -eq 1 ] || muere "uso: tycon-prod-sql --verificar" ;;
   # los candados: sola, sin host ni nada más (mira todos los servidores de producción declarados)
   --locks)        MODO=locks; [ $# -eq 1 ] || muere "uso: tycon-prod-sql --locks  (sola: dice qué servidores de producción tienen el candado de Azure)" ;;
+  # borrar un grupo: sólo el nombre; la suscripción, la confirmación y la espera las fija la puerta
+  --delete-group) MODO=delete-group; GRUPO_B="${2:-}"
+                  [ $# -eq 2 ] || muere "uso: tycon-prod-sql --delete-group <grupo>  (sólo el nombre del grupo: la puerta comprueba y pide el borrado)"
+                  [[ "$GRUPO_B" =~ ^[A-Za-z0-9._()][A-Za-z0-9._()-]{0,89}$ ]] || muere "«${GRUPO_B}» no es un nombre de grupo de recursos (letras, dígitos, . _ ( ) -, hasta 90, sin «-» adelante)." ;;
   # 🔴 Cargar la clave SIN tener que fallar una consulta primero (2026-09-15, pedido del dev: el
   # disparador era «corré algo que falle», que es un rodeo). La clave la sigue tipeando la persona en
   # el archivo que deja la puerta: nunca pasa por la conversación ni la escribe el asistente.
   --cargar-clave) MODO=cargar-clave; HOST="${2:-}"; [ $# -eq 2 ] || muere "uso: tycon-prod-sql --cargar-clave <host>" ;;
-  -*)             muere "primer argumento inválido: sólo <host>, --cargar-clave, --reclasificar, --verificar, --open-firewall, --close-firewall o --locks" ;;
+  -*)             muere "primer argumento inválido: sólo <host>, --cargar-clave, --reclasificar, --verificar, --open-firewall, --close-firewall, --locks o --delete-group" ;;
   *)              HOST="$1"; SENTENCIA="${2:-}"
                   [ $# -ge 2 ] || muere "falta la sentencia: tycon-prod-sql <host> 'select …'"
                   if [ "${2:-}" = "--file" ]; then
@@ -339,13 +344,15 @@ fi
 # sólo vale con la raíz de prueba. az se busca en rutas fijas, nunca en el PATH.
 AZ_TOPE=25; [ -n "$RAIZ" ] && [ -n "${TYCON_PROD_AZ_TIMEOUT:-}" ] && AZ_TOPE="$TYCON_PROD_AZ_TIMEOUT"
 AZ=""; for c in "$RAIZ/opt/homebrew/bin/az" "$RAIZ/usr/local/bin/az" "$RAIZ/usr/bin/az"; do [ -x "$c" ] && { AZ="$c"; break; }; done
+SUBS_ACTIVAS="[?state=='Enabled' || state=='Warned' || state=='PastDue'].id"
 # az con un entorno limpio (nada del Llavero ni de la base), con tope de tiempo; 142 = el tope lo cortó
 correr_az(){ env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=C /usr/bin/perl -e 'alarm shift @ARGV; exec @ARGV or exit 127' "$AZ_TOPE" "$AZ" "$@"; }
 # Deja SUB y RG del servidor CORTO. Ante una falla llama a $FALLA_AZ con el motivo y devuelve 1: el firewall sale ahí
 # (fallo_fw); los candados anotan «no sé» y siguen con el próximo servidor. $TOPE_DICE completa el motivo del tope.
 ubicar_servidor(){
   local subs salida rc s rg encontrados=0; SUB=""; RG=""
-  subs="$(correr_az account list --query "[?state=='Enabled'].id" -o tsv 2>"$_ESTADO/.az-err-$$")"; rc=$?
+  # las suscripciones activas: Enabled, y también Warned y PastDue, que siguen operando y tienen recursos
+  subs="$(correr_az account list --query "$SUBS_ACTIVAS" -o tsv 2>"$_ESTADO/.az-err-$$")"; rc=$?
   salida="$(cat "$_ESTADO/.az-err-$$" 2>/dev/null)"; rm -f "$_ESTADO/.az-err-$$"
   [ "$rc" = 142 ] && { "$FALLA_AZ" "az no contestó en ${AZ_TOPE} s (tope): ${TOPE_DICE}. Reintentá."; return 1; }
   [ "$rc" = 0 ] || { "$FALLA_AZ" "az no pudo listar las suscripciones (código $rc): $(printf '%s' "$salida" | head -1). Si no iniciaste sesión: az login"; return 1; }
@@ -369,6 +376,7 @@ if [ "$MODO" = locks ]; then
     try { i = m.leer({ home: process.env.HOME }); } catch (e) { process.stdout.write("ilegible|" + e.message); process.exit(0); }
     const prod = Object.keys(i.hosts || {}).filter((h) => i.hosts[h].ambiente === "produccion").sort();
     // un catálogo roto no deja ciegos a los demás: sus servidores se revisan y el roto se nombra como «no sé»
+    if (i.memoria_alterada) { process.stdout.write("ilegible|la memoria de producción fue tocada a mano (su huella no cierra)"); process.exit(0); }
     const rotos = (i.errores || []).map((e) => `${String(e.repo).replace(/[^\w./-]/g, "?")}: ${String(e.motivo).replace(/[\r\n|]/g, " ")}`);
     process.stdout.write("ok|" + prod.join(" ") + "|" + rotos.join("\t"));
   ' "$INDICE_JS" 2>/dev/null)" || LISTA="ilegible|el intérprete falló"
@@ -428,6 +436,104 @@ EOF
   RC=0; [ "$NO_SE" = 0 ] || RC=2
   anotar "\"accion\":\"candados\",\"con\":$CON,\"sin\":$SIN,\"no_se\":$NO_SE,\"exit\":$RC"
   exit "$RC"
+fi
+
+# ── borrar un grupo de recursos que no es de producción ─────────────────────────────────────────────────────────
+# El freno corta todo `az group delete` directo: no puede saber qué contiene un grupo. La puerta sí le pregunta a Azure, y
+# borra sólo si puede probar que el grupo es seguro: está en exactamente una suscripción, todos sus servidores SQL están
+# declarados no-producción, no tiene una base de un tipo que el catálogo no cubre, y el listado de recursos coincide con
+# el de servidores. Ante cualquier duda, sale 2 sin borrar. El borrado sale con `--no-wait`: la puerta dice que Azure
+# aceptó el pedido (no que el grupo ya no está) y cómo confirmarlo.
+if [ "$MODO" = delete-group ]; then
+  SESION="${CLAUDE_CODE_SESSION_ID:-}"; [[ "$SESION" =~ $SESION_VALIDA ]] || SESION=""
+  SERVIDORES_N=0
+  fallo_grupo(){ # $1 = motivo · anota el intento y sale 2
+    anotar "\"accion\":\"borrar-grupo\",\"grupo\":\"$GRUPO_B\",\"servidores\":$SERVIDORES_N,\"sesion\":\"$SESION\",\"exit\":2"
+    muere "$1"
+  }
+  # el índice primero: sin saber qué es producción no se le pregunta nada a Azure
+  INDICE_OK="$("$NODE" -e '
+    const m = require(process.argv[1]); let i;
+    try { i = m.leer({ home: process.env.HOME }); } catch (e) { process.stdout.write("ilegible: " + e.message); process.exit(0); }
+    if ((i.errores || []).length) { process.stdout.write("ilegible: " + i.errores.map((e) => `${e.repo}: ${e.motivo}`).join(" · ")); process.exit(0); }
+    // la memoria de producción tocada a mano: el freno no decide sobre ninguna base, y la puerta tampoco borra
+    if (i.memoria_alterada) { process.stdout.write("ilegible: la memoria de producción fue tocada a mano (su huella no cierra)"); process.exit(0); }
+    process.stdout.write("ok");
+  ' "$INDICE_JS" 2>/dev/null)" || INDICE_OK="ilegible: el intérprete falló"
+  [ "$INDICE_OK" = ok ] || fallo_grupo "no pude leer el índice de servidores (${INDICE_OK#ilegible: }): no borro un grupo sin saber qué es producción."
+  [ -n "$AZ" ] || fallo_grupo "no encuentro az en las rutas fijas (/opt/homebrew/bin, /usr/local/bin, /usr/bin). NO uso el del PATH."
+
+  # la suscripción: el grupo tiene que estar en exactamente una
+  subs="$(correr_az account list --query "$SUBS_ACTIVAS" -o tsv 2>"$_ESTADO/.az-err-$$")"; rc=$?
+  salida="$(cat "$_ESTADO/.az-err-$$" 2>/dev/null)"; rm -f "$_ESTADO/.az-err-$$"
+  [ "$rc" = 142 ] && fallo_grupo "az no contestó en ${AZ_TOPE} s (tope) al listar las suscripciones. Reintentá."
+  [ "$rc" = 0 ] || fallo_grupo "az no pudo listar las suscripciones (código $rc): $(printf '%s' "$salida" | head -1). Si no iniciaste sesión: az login"
+  SUB=""; hallados=0
+  for s in $subs; do
+    printf '%s' "$s" | grep -qE '^[A-Za-z0-9-]+$' || continue
+    nombre="$(correr_az group show -n "$GRUPO_B" --subscription "$s" --query name -o tsv 2>"$_ESTADO/.az-err-$$")"; rc=$?
+    salida="$(cat "$_ESTADO/.az-err-$$" 2>/dev/null)"; rm -f "$_ESTADO/.az-err-$$"
+    [ "$rc" = 142 ] && fallo_grupo "az no contestó en ${AZ_TOPE} s (tope) al buscar el grupo. Reintentá."
+    if [ "$rc" = 0 ] && [ -n "$nombre" ]; then hallados=$((hallados+1)); SUB="$s"; continue; fi
+    printf '%s' "$salida" | grep -q 'ResourceGroupNotFound' && continue
+    fallo_grupo "az no pudo mirar el grupo en la suscripción $s (código $rc): $(printf '%s' "$salida" | head -1)"
+  done
+  [ "$hallados" = 1 ] || fallo_grupo "el grupo «${GRUPO_B}» aparece en $hallados suscripción(es): necesito exactamente una, no elijo a ciegas."
+
+  # qué hay adentro: los servidores SQL y el tipo de cada recurso
+  SERVS="$(correr_az sql server list --subscription "$SUB" -g "$GRUPO_B" --query "[].fullyQualifiedDomainName" -o tsv 2>"$_ESTADO/.az-err-$$")"; rc=$?
+  salida="$(cat "$_ESTADO/.az-err-$$" 2>/dev/null)"; rm -f "$_ESTADO/.az-err-$$"
+  [ "$rc" = 142 ] && fallo_grupo "az no contestó en ${AZ_TOPE} s (tope) al listar los servidores del grupo. No borro."
+  [ "$rc" = 0 ] || fallo_grupo "az no pudo listar los servidores del grupo (código $rc): $(printf '%s' "$salida" | head -1). No borro sin saber qué hay."
+  TIPOS="$(correr_az resource list --subscription "$SUB" -g "$GRUPO_B" --query "[].type" -o tsv 2>"$_ESTADO/.az-err-$$")"; rc=$?
+  salida="$(cat "$_ESTADO/.az-err-$$" 2>/dev/null)"; rm -f "$_ESTADO/.az-err-$$"
+  [ "$rc" = 142 ] && fallo_grupo "az no contestó en ${AZ_TOPE} s (tope) al listar los recursos del grupo. No borro."
+  [ "$rc" = 0 ] || fallo_grupo "az no pudo listar los recursos del grupo (código $rc): $(printf '%s' "$salida" | head -1). No borro sin saber qué hay."
+
+  RECURSOS_N=0; SQL_EN_RECURSOS=0
+  while IFS= read -r t; do
+    [ -n "$t" ] || continue
+    [[ "$t" =~ ^[A-Za-z0-9.]+/[A-Za-z0-9/]+$ ]] || fallo_grupo "el listado de recursos trae un tipo que no se puede leer («${t}»): no borro."
+    RECURSOS_N=$((RECURSOS_N+1))
+    case "$(printf '%s' "$t" | tr '[:upper:]' '[:lower:]')" in
+      microsoft.sql/servers) SQL_EN_RECURSOS=$((SQL_EN_RECURSOS+1)) ;;
+      microsoft.dbforpostgresql/*|microsoft.dbformysql/*|microsoft.dbformariadb/*|microsoft.sql/managedinstances|microsoft.sql/managedinstances/*|microsoft.sql/instancepools|microsoft.sql/instancepools/*|microsoft.sqlvirtualmachine/*|microsoft.documentdb/*|microsoft.synapse/workspaces|microsoft.synapse/workspaces/*)
+        fallo_grupo "el grupo tiene una base de un tipo que el catálogo no cubre (${t}): no sé si es de producción. Lo borra una persona en su terminal, si corresponde." ;;
+    esac
+  done <<EOF
+$TIPOS
+EOF
+  LISTA_S=""
+  while IFS= read -r h; do
+    [ -n "$h" ] || continue
+    [[ "$h" =~ $HOST_VALIDO ]] || fallo_grupo "el listado de servidores trae un nombre que no se puede leer («${h}»): no borro."
+    SERVIDORES_N=$((SERVIDORES_N+1)); LISTA_S="$LISTA_S $h"
+  done <<EOF
+$SERVS
+EOF
+  # los dos listados tienen que contar los mismos servidores: si no, uno vino cortado
+  [ "$SERVIDORES_N" = "$SQL_EN_RECURSOS" ] || fallo_grupo "los listados no coinciden ($SERVIDORES_N servidor(es) SQL contra $SQL_EN_RECURSOS en el listado de recursos): uno vino cortado. No borro."
+  for h in $LISTA_S; do
+    est="$("$NODE" -e 'const m = require(process.argv[1]); const i = m.leer({ home: process.env.HOME }); process.stdout.write(m.clasificar(process.argv[2], i).estado);' "$INDICE_JS" "$h" 2>/dev/null)" || est="ilegible"
+    case "$est" in
+      no-produccion) : ;;
+      produccion) fallo_grupo "el grupo tiene «${h}», declarado como PRODUCCIÓN: no lo borro. Un grupo así lo borra una persona en su propia terminal, después de mirar qué contiene." ;;
+      *) fallo_grupo "el grupo tiene «${h}», que no está declarado en ningún proyecto de esta máquina: no sé si es producción, así que no lo borro. Declaralo, o que lo borre una persona en su terminal." ;;
+    esac
+  done
+
+  # el pedido de borrado
+  salida="$(correr_az group delete -n "$GRUPO_B" --subscription "$SUB" --yes --no-wait 2>&1)"; rc=$?
+  [ "$rc" = 142 ] && fallo_grupo "az no contestó en ${AZ_TOPE} s (tope) al pedir el borrado: no sé si el pedido salió. Mirá: az group exists -n $GRUPO_B --subscription $SUB"
+  if [ "$rc" != 0 ]; then
+    printf '%s' "$salida" | grep -q 'ScopeLocked' && fallo_grupo "Azure rechazó el borrado: el grupo (o algo adentro) tiene un candado. Sacarlo es de una persona con permiso de locks; si se acaba de sacar, esperá unos segundos y reintentá."
+    fallo_grupo "az no pudo pedir el borrado (código $rc): $(printf '%s' "$salida" | head -1)"
+  fi
+  echo "Azure aceptó el pedido de borrar el grupo ${GRUPO_B} (suscripción ${SUB}). Eso no quiere decir que ya se borró."
+  echo "Tenía ${SERVIDORES_N} servidor(es) SQL${LISTA_S:+:${LISTA_S}} y ${RECURSOS_N} recurso(s) en total."
+  echo "Para confirmar que terminó: az group exists -n ${GRUPO_B} --subscription ${SUB}  (dice false cuando ya no está; si a los minutos sigue en true, el borrado falló: az group show lo dice)"
+  anotar "\"accion\":\"borrar-grupo\",\"grupo\":\"$GRUPO_B\",\"servidores\":$SERVIDORES_N,\"sesion\":\"$SESION\",\"exit\":0"
+  exit 0
 fi
 
 # ── el host tiene que ser producción (para lo demás no hace falta la puerta) ──────────────────

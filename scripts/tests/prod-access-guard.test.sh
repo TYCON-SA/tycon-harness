@@ -154,6 +154,12 @@ pasa  "T6b · canónica con --max-filas" "$PUERTA $PROD 'select 1' --max-filas 5
 # 6.4 · T10: `--locks` sola es una forma canónica (pasa al cuadro); con cualquier argumento más, se corta
 pasa  "6.4 T10 · la puerta --locks sola pasa al cuadro" "$PUERTA --locks"
 frena "6.4 T10 · la puerta --locks con un argumento se corta" "$PUERTA --locks acme-sql"
+# 6.5 · T14: `--delete-group <grupo>` sola pasa al cuadro; con otro argumento se corta; `az group delete` directo, igual
+pasa  "6.5 T14 · la puerta --delete-group <grupo> sola pasa al cuadro" "$PUERTA --delete-group acme-prueba-rg"
+frena "6.5 T14 · la puerta --delete-group con otro argumento se corta" "$PUERTA --delete-group acme-prueba-rg --yes"
+frena "6.5 T14 · la puerta --delete-group con un nombre que empieza con guion se corta" "$PUERTA --delete-group -x"
+pasa  "6.5 T14 · un grupo con paréntesis, entre comillas simples, pasa al cuadro" "$PUERTA --delete-group 'acme(prueba)'"
+frena "6.5 T14 · entre comillas dobles no es la forma canónica" "$PUERTA --delete-group \"acme(prueba)\""
 # 6.3 · T12: la misma sentencia de borrado de base, por la puerta, pasa al cuadro como hoy (la ve una persona)
 pasa  "6.3 T12 · la puerta con la sentencia de borrado de base pasa al cuadro" "$PUERTA $PROD '$BORRA base'"
 frena "T6c · bash -c" "bash -c '$PUERTA $PROD \"select 1\"'"

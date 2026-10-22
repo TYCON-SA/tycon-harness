@@ -4838,6 +4838,115 @@
      "tools": [
       "codex"
      ]
+    },
+    {
+     "id": "borrar-grupo-forma-sola-pasa-al-cuadro",
+     "type": "must-not-block",
+     "__doc": "Story 6.5 · T14 · `--delete-group <grupo>`, sólo el nombre, es una forma canónica de la puerta: pasa al cuadro de la regla `ask`. ROJO PREVIO: sin la forma en la lista de canónicas, el freno la cortaba como «no canónica».",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "/opt/tycon/bin/tycon-prod-sql --delete-group acme-prueba-rg"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "stdout_empty": true
+     },
+     "tools": [
+      "claude"
+     ],
+     "sin_freno_instalado": true
+    },
+    {
+     "id": "borrar-grupo-con-argumento-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.5 · T14 · con cualquier argumento más no es canónica: se corta. Sin rojo previo propio: fija que la forma nueva no abra más que la forma sola.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "/opt/tycon/bin/tycon-prod-sql --delete-group acme-prueba-rg --yes"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "no es la can"
+      ]
+     },
+     "tools": [
+      "claude"
+     ],
+     "sin_freno_instalado": true
+    },
+    {
+     "id": "az-group-delete-directo-sigue-frenado",
+     "type": "must-block",
+     "__doc": "Story 6.5 · T14 · con la forma nueva de la puerta, el borrado directo del grupo sigue frenado como en la 6.3. Sin rojo previo propio: fija que la forma nueva no afloje el paso 3b.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "az group delete -n acme-prueba-rg --yes"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "puede llevarse un servidor de producci"
+      ]
+     }
+    },
+    {
+     "id": "borrar-grupo-codex-se-frena",
+     "type": "must-block",
+     "__doc": "Story 6.5 · T14 · en Codex no hay cuadro de aprobación: la forma `--delete-group` se corta como toda invocación de la puerta. Sin rojo previo propio: lo frena la regla de Codex.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "/opt/tycon/bin/tycon-prod-sql --delete-group acme-prueba-rg"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "dev|Codex"
+      ]
+     },
+     "tools": [
+      "codex"
+     ]
     }
    ]
   }
