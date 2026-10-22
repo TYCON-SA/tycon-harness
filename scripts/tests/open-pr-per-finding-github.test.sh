@@ -13,7 +13,7 @@
 #   T2 OpenPrGh_UsageAndOpen · T3 OpenPrGh_Adopt · T4 OpenPrGh_Decisions · T5 OpenPrGh_ForeignNumber
 #   T6 OpenPrGh_CloseArchived · T7 OpenPrGh_SecondNight · T8 OpenPrGh_FailuresAreNotEmpty · T13 OpenPrGh_IssueFollowsPr
 #   T2b OpenPrGh_NoSave · T8b OpenPrGh_FailuresInListsAndReviews · T13b OpenPrGh_IssueOnlyDeclaredRepos · T14 OpenPrGh_RecordOnlyDoesNotClose
-#   T15 OpenPrGh_RejectsMalformedCards · T16 OpenPrGh_MotiveFromDiffComments
+#   T15 OpenPrGh_RejectsMalformedCards · T16 OpenPrGh_MotiveFromDiffComments · T17 OpenPrGh_NightClosedIsNotARejection
 # Uso: bash open-pr-per-finding-github.test.sh [T2 T7 …]   (sin argumentos corre todos)
 
 set -uo pipefail
@@ -604,6 +604,28 @@ if quiero T13b; then
     si "…ningún issue se toca" [ "$(nllam '/\/issues\//.test(e.ruta)&&(e.method==="PATCH"||e.method==="POST")')" = 0 ]
     si "…y la ficha no anota alineado:" no_contiene "$(enmain pending ib01)" '^alineado:'
   done
+
+  # un issue que ya no existe (404) o que se borró (410) es una respuesta: aviso, y la decisión queda alineada.
+  # Pasa cuando un repo de producto se recrea: los issues no viajan con el código.
+  montar
+  ficha pending ib02 2026-10-01 "pr: 72" "pr_repo: $OPERATIONS_REPO" "pedidos:" "  - $SHOP: 8" "  - $SHOP: 9"
+  armar_todo '(() => ({ pulls: { [OPERATIONS_REPO]: [P(72, "dependencias/ib02", "closed")] },
+    comments: { [OPERATIONS_REPO + "#72"]: [C("lider", "no aplica", "2026-10-12T08:00:00Z")] },
+    issues: { [SHOP]: [I(9, "open")] }, gone: [SHOP + "#9"] }))()'
+  correr
+  si "issues que ya no existen (404 y 410): la noche sale 0" [ "$RC" = 0 ]
+  si "…lo dice, con el número del issue" contiene_i "$(SALIDA)" "$SHOP#8 ya no existe"
+  si "…y la ficha anota alineado:" contiene "$(enmain pending ib02)" '^alineado: 72:closed$'
+
+  # cualquier otro error sigue siendo «no pude preguntar»: fallo, y no se anota
+  montar
+  ficha pending ib03 2026-10-01 "pr: 73" "pr_repo: $OPERATIONS_REPO" "pedidos:" "  - $SHOP: 9"
+  armar_todo '(() => ({ pulls: { [OPERATIONS_REPO]: [P(73, "dependencias/ib03", "closed")] },
+    comments: { [OPERATIONS_REPO + "#73"]: [C("lider", "no aplica", "2026-10-12T08:00:00Z")] },
+    issues: { [SHOP]: [I(9, "open")] }, fail: { ["GET repos/" + SHOP + "/issues/9"]: { status: 500, message: "Server Error" } } }))()'
+  correr
+  si "un 500 al consultar el issue: la noche sale 1" [ "$RC" = 1 ]
+  si "…y la ficha no anota alineado:" no_contiene "$(enmain pending ib03)" '^alineado:'
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -680,6 +702,34 @@ if quiero T16; then
   si "queda rechazado:" contiene "$F" '^rechazado: 2026-10-12'
   si "…y el motivo es el comentario sobre la línea del diff" literal "$F" 'este paquete no viaja al navegador'
   si "…consultó GET pulls/91/comments" [ "$(nllam 'e.method==="GET"&&/\/pulls\/91\/comments/.test(e.ruta)')" -ge 1 ]
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+# T17 — el pull request que cerró LA NOCHE no es un rechazo, aunque la ficha vuelva el mismo día
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+if quiero T17; then
+  caso "T17 OpenPrGh_NightClosedIsNotARejection" "@story-8.32 @ac-4 @ac-11b"
+  montar
+  # la noche archivó la ficha, cerró su pull request con su marca, y la ficha volvió ese mismo día sin `pr:`
+  ficha pending nc01 2026-10-01 "reaparecido: $HOY" "pr_antes: 95" "pr_repo_antes: $OPERATIONS_REPO" "pedidos:" "  - $SHOP: 4"
+  armar_todo '{ pulls: { [OPERATIONS_REPO]: [P(95, "dependencias/nc01", "closed", { created_at: "'"$HOY"'T05:00:00Z", closed_at: "'"$HOY"'T06:00:00Z" })] },
+    comments: { [OPERATIONS_REPO + "#95"]: [C("github-actions[bot]", "La ficha nc01 ya salió de la cola (se archivó): este pull request no tiene nada que decidir, y la noche lo cerró.\n\n<!-- tycon-nocturno -->", "'"$HOY"'T06:00:00Z", "Bot")] },
+    issues: { [SHOP]: [I(4, "open")] } }'
+  correr
+  F=$(enmain pending nc01)
+  si "la noche sale 0" [ "$RC" = 0 ]
+  si "…no anota un rechazo" no_contiene "$F" '^rechazado:'
+  si "…abre un pull request nuevo y lo anota" contiene "$F" '^pr: [0-9]'
+  si "…y no toca el issue del producto" [ "$(nllam 'e.method==="PATCH"&&/\/issues\/4$/.test(e.ruta)')" = 0 ]
+
+  # el mismo pull request, cerrado por una persona (sin la marca): es un rechazo de esta vida
+  montar
+  ficha pending nc02 2026-10-01 "reaparecido: $HOY" "pedidos:" "  - $SHOP: 4"
+  armar_todo '{ pulls: { [OPERATIONS_REPO]: [P(96, "dependencias/nc02", "closed", { created_at: "'"$HOY"'T05:00:00Z", closed_at: "'"$HOY"'T06:00:00Z" })] },
+    comments: { [OPERATIONS_REPO + "#96"]: [C("lider", "no aplica", "'"$HOY"'T06:00:00Z")] },
+    issues: { [SHOP]: [I(4, "open")] } }'
+  correr
+  si "cerrado por una persona el mismo día: anota el rechazo con su motivo" literal "$(enmain pending nc02)" 'no aplica'
 fi
 
 echo

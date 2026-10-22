@@ -398,6 +398,17 @@ crear_pr(){ # <rama> <título> <archivo del cuerpo> <id>
 }
 
 pr_por_id(){ if [ "$PLATAFORMA" = github ]; then gh_pr_por_id "$@"; else az_pr_por_id "$@"; fi; }
+
+# ¿Lo cerró la noche? Su comentario de cierre (`cerrar_pr`) lleva la marca `<!-- tycon-nocturno -->`. Imprime si|no, y
+# sale != 0 si no pudo leer los comentarios: «no pude leer» no es «no».
+cerrado_por_la_noche(){ # <pr>
+  local D RC; D=$(mktemp -d) || return 1
+  gh_paginas "repos/$REPO/issues/$1/comments" "$D" \
+    && node -e 'const fs=require("fs");const d=process.argv[1];
+      const t=fs.readdirSync(d).flatMap((f)=>JSON.parse(fs.readFileSync(d+"/"+f,"utf8")));
+      console.log(t.some((c)=>String((c&&c.body)||"").includes("<!-- tycon-nocturno -->"))?"si":"no");' "$D" 2>"$ERR"
+  RC=$?; rm -rf "$D"; return "$RC"
+}
 pr_por_rama(){ if [ "$PLATAFORMA" = github ]; then gh_pr_por_rama "$@"; else az_pr_por_rama "$@"; fi; }
 hilos_de(){ if [ "$PLATAFORMA" = github ]; then gh_hilos_de "$@"; else az_hilos_de "$@"; fi; }
 
@@ -521,6 +532,13 @@ alinear_issues(){ # <ficha> <pr> merged|closed|reopened <motivo>
       fuera) aviso "$ID: el issue $IR#$M no es un repo declarado en repos.json: no se toca"; continue ;;
     esac
     if ! ACT=$(gh_issues api "repos/$IR/issues/$M" 2>"$ERR"); then
+      # 🔴 Un issue que GitHub dice que no está (404, o 410 si se borró) es una respuesta, no un «no pude preguntar»: no
+      # hay nada que alinear, y como fallo dejaría la noche en rojo todas las noches por un issue que nadie va a volver
+      # a crear. Se dice y la decisión se da por alineada. Cualquier otro error sí es un fallo y se reintenta mañana.
+      if grep -qE 'HTTP (404|410)' "$ERR"; then
+        aviso "$ID: el issue $IR#$M ya no existe (GitHub: $(grep -oE 'HTTP (404|410)' "$ERR" | head -1)): no hay nada que alinear con el #$N"
+        continue
+      fi
       fallo "$ID: no se pudo consultar el issue $IR#$M para alinearlo con el #$N — $(cat "$ERR")"; MAL=1; continue
     fi
     if ! read -r ESTADO RAZON < <(printf '%s' "$ACT" | node -e '
@@ -645,6 +663,17 @@ for F in "$COLA"/pending/*.yaml; do
       [ -n "$DESDE" ] || DESDE=$(escalar "$F" fecha)
       if [ "$ESTADO" != "abandoned" ] || [ -z "${CREADO:-}" ] || [ -z "$DESDE" ] || [[ "$CREADO" < "$DESDE" ]]; then
         por_abrir "$ID" "el ${NR}$PR ($ESTADO, $CREADO) es de una vida anterior" " uno nuevo"; continue
+      fi
+      # 🔴 Y un pull request que cerró LA NOCHE (la fase E, al archivar o resolver la ficha) no es la decisión de nadie:
+      # si la ficha vuelve ese mismo día, la fecha no lo separa de esta vida, y adoptarlo anotaría un rechazo «sin
+      # motivo escrito» que además cierra el issue del producto como «not planned». Se lo reconoce por su marca.
+      if [ "$PLATAFORMA" = github ]; then
+        if ! NOCHE=$(cerrado_por_la_noche "$PR"); then
+          fallo "$ID: no pude leer los comentarios del ${NR}$PR para saber quién lo cerró — $(cat "$ERR")"; continue
+        fi
+        if [ "$NOCHE" = si ]; then
+          por_abrir "$ID" "el ${NR}$PR lo cerró la noche al cerrar la ficha: no es una decisión" " uno nuevo"; continue
+        fi
       fi
     fi
   fi
