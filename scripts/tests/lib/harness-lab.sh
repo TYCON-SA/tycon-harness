@@ -1134,6 +1134,8 @@ harness_lab_codex_pieces() {
   mkdir -p "$a/build" "$a/adapters/codex/agents" "$a/adapters/codex/agents-native" "$a/claude-md-blocks/names" "$a/scripts/hooks" "$a/scripts/setup" || return 1
   cp "$HARNESS_LAB_RAIZ"/build/*.js "$HARNESS_LAB_RAIZ"/build/*.json "$a/build/" || return 1
   cp "$HARNESS_LAB_RAIZ/scripts/setup/agents-md-blocks.js" "$a/scripts/setup/" || return 1
+  # las integraciones REALES: el despliegue de Codex toma de sus manifiestos el servidor MCP de cada una
+  rm -rf "$a/integrations" && cp -R "$HARNESS_LAB_RAIZ/integrations" "$a/integrations" || return 1
   for f in harness-startup.js; do [ -f "$HARNESS_LAB_RAIZ/scripts/hooks/$f" ] && cp "$HARNESS_LAB_RAIZ/scripts/hooks/$f" "$a/scripts/hooks/"; done
   # un revisor de juguete, generado con el generador REAL (así el árbol trae su perfil y su subagente como los trae el
   # arnés: generados y versionados). El canónico va en agents/ del árbol: el laboratorio de la versión bajada es unido.
