@@ -3703,7 +3703,7 @@ function cmdDoctor(ctx) {
       const cdir = TOOLS.codexHome({ home: ctx.home, env });
       const cpieces = TOOLS.codexPieces({ tree, home: ctx.home, env });
       const has = (id) => cpieces.some((p) => p.id === id);
-      // AGENTS.md sólo se exige si algún bloque aplica a esta máquina (perfil `minimal`: ninguno, a propósito)
+      // AGENTS.md sólo se exige si algún bloque aplica a esta máquina (en cualquier perfil, el del índice del arnés)
       const blocksApply = (() => { try { const r = require(path.join(tree, 'scripts', 'setup', 'agents-md-blocks.js')).sync({ check: true, quiet: true, home: ctx.home, env: Object.assign({}, env, { TYCON_PLAN_PIECES: '' }) }); return !(r && r.ok && !r.pending && r.present.length === 0); } catch (_) { return true; } })();
       const lacks = ['hooks.json', 'config.toml', 'AGENTS.md'].filter((id) => !has(id) && (id !== 'AGENTS.md' || blocksApply));
       if (lacks.length) add('warn', `enchufe de Codex incompleto en ${cdir}: falta ${lacks.join(', ')} — harness.js apply lo repone`);
