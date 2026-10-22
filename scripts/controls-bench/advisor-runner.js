@@ -438,6 +438,13 @@ const { rubrosNoMedidos } = require('./unmeasured-categories.js');
 // 🔴 Ruta absoluta de claude/codex: bajo launchd el PATH no las alcanza y las invocaciones del banco
 // fallarían TODAS con ENOENT, una por una. Ver tools-path.js.
 const { rutaDeHerramienta } = require('./tools-path.js');
+// Cada sesión arranca sin la configuración del usuario, con sólo la carpeta de la caja (ver isolation.js).
+const { claudeIsolation, codexHome, engramPropio } = require('./isolation.js');
+// la memoria de engram del examen (ver engramPropio): se arma al empezar una corrida de verdad
+let memoriaDelExamen = null;
+// un aviso del aislamiento (un settings.json ilegible, la llave de Codex que falta) se dice una vez por corrida del examen
+const avisosDichos = new Set();
+function avisarUnaVez(texto) { if (texto && !avisosDichos.has(texto)) { avisosDichos.add(texto); console.log(`⚠️  ${texto}`); } }
 
 // Los nombres viejos de las opciones siguen andando: antes de la primera lectura de argv.
 require('../lib/legacy-names.js').aliasArgv('scripts/controls-bench/advisor-runner.js', { exitCode: 2 });
@@ -469,10 +476,13 @@ function benchSettingsPath() {
     // caso con los hooks puestos y `--save-output`. Nunca en una corrida que vaya a reportar.
     const conHooks = process.env.TYCON_BENCH_HOOKS === '1';
     if (conHooks) console.log('⚠️  TYCON_BENCH_HOOKS=1 — hooks PRENDIDOS: ejecución de diagnóstico, sus resultados NO son comparables');
+    // la sesión no carga el settings.json del usuario (`--setting-sources`, ver claudeIsolation): de él sólo viene engram
+    const iso = claudeIsolation();
+    avisarUnaVez(iso.warning);
     require('fs').writeFileSync(_benchSettings, JSON.stringify(Object.assign({
       effortLevel: 'high',
       permissions: { deny: reglasDeCorral() },
-    }, conHooks ? {} : { disableAllHooks: true })));
+    }, iso.settings, conHooks ? {} : { disableAllHooks: true })));
   }
   return _benchSettings;
 }
@@ -955,7 +965,10 @@ function asegurarMemoriaViva() {
   };
   if (vivo()) return true;
   try {
-    spawn('engram', ['serve'], { detached: true, stdio: 'ignore' }).unref();
+    // en el puerto del examen y con su base (ENGRAM_PORT y ENGRAM_DATA_DIR, ver engramPropio): nunca el de la máquina
+    const servidor = spawn('engram', ['serve', puerto], { detached: true, stdio: 'ignore', env: process.env });
+    servidor.unref();
+    if (memoriaDelExamen) memoriaDelExamen.anotarServidor(servidor.pid);
   } catch (e) {
     console.log(`⚠️  no pude levantar el servidor de memoria (${e.message}) — los casos que lo usan van a fallar y lo van a decir`);
     return false;
@@ -1112,16 +1125,27 @@ async function runOnce(tool, advisorName, adv, caseDef, suite) {
         '--append-system-prompt', extra ? adv.body + '\n\n' + extra : adv.body,
         '--model', adv.model,
         '--settings', benchSettingsPath(),
+        ...claudeIsolation({ corral }).args,
         '--allowedTools', adv.tools.join(','),
         '--disallowedTools', engramDeny.join(','),
       ];
       if (expectMcp) args.push('--output-format', 'stream-json', '--verbose');
       res = await spawnP(rutaDeHerramienta('claude'), args, { cwd: fixture, env: envDeCorrida(corral), timeout_s: caseDef.timeout_s });
     } else {
-      res = await spawnP(rutaDeHerramienta('codex'), [
-        'exec', '-p', advisorName, '--sandbox', codexSandbox(advisorName), '--skip-git-repo-check',
-        codexInvokePreamble(advisorName) + prompt,
-      ], { cwd: fixture, env: envDeCorrida(corral), timeout_s: caseDef.timeout_s });
+      // una CODEX_HOME propia por corrida: el perfil del revisor y la llave, sin el AGENTS.md, los servidores ni las
+      // carpetas de la máquina. Sin el perfil generado, la corrida no se lanza (correría con la configuración de la máquina)
+      let home;
+      try { home = codexHome({ codexHome: CODEX_HOME, advisor: advisorName }); }
+      catch (e) { home = null; res = { code: 1, stdout: '', stderr: `no pude aislar a codex: ${e.message}` }; }
+      if (home && home.warning) avisarUnaVez(home.warning);
+      if (home) {
+        try {
+          res = await spawnP(rutaDeHerramienta('codex'), [
+            'exec', '-p', advisorName, '--sandbox', codexSandbox(advisorName), '--skip-git-repo-check',
+            codexInvokePreamble(advisorName) + prompt,
+          ], { cwd: fixture, env: Object.assign(envDeCorrida(corral), home.env), timeout_s: caseDef.timeout_s });
+        } finally { home.cleanup(); }
+      }
     }
     // FINDING = bullet que abre con el rule ID entre corchetes (formato del catálogo:
     // "- [SEC-C2] `file:line` ..."). Una MENCIÓN del ID en la sección "✅ OK" o en prosa
@@ -1818,6 +1842,12 @@ async function main() {
   if (argv.includes('--selftest-mcp')) return selftestMcp();
   if (argv.includes('--selftest-retro')) return selftestRetro();
   if (argv.includes('--check-apps-off')) return checkAppsOff();
+  // la memoria del examen: base y puerto propios, en el entorno de todo lo que corre después (la línea de comandos de
+  // engram, su servidor, los MCP de Claude; a Codex se le pasa en el perfil). Se limpia al salir, también si la corrida falla
+  memoriaDelExamen = engramPropio();
+  Object.assign(process.env, memoriaDelExamen.env);
+  process.on('exit', () => memoriaDelExamen.cleanup());
+  for (const senal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(senal, () => { memoriaDelExamen.cleanup(); process.exit(130); });
   if (PACK && PACK.error) { console.error(PACK.error); return 2; }
   // de dónde salen los revisores, por stderr (la salida de --list la leen otros guiones); sin la carpeta, frena con su motivo
   if (!PACK && !argv.includes('--list')) {
