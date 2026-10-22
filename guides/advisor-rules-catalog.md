@@ -1048,6 +1048,8 @@ Hook `PreToolUse` matcher `Bash|PowerShell` (la herramienta PowerShell de Claude
 | **ESC-C1** *(safety-guard)* | `TYCON_PROD_LINT=0 git commit` / `export TYCON_NEW_NAMES=0; git commit` (apaga la revisión del catálogo de producción o el freno de nombres reales) | Arreglar lo que la revisión marca; si hay que saltearla, la persona escribe «autorizo TYCON_PROD_LINT» o «autorizo TYCON_NEW_NAMES» |
 | **ESC-C2** *(safety-guard)* | `echo … >> ~/.claude/projects/…`, `tee`/`sed -i`/`cp`/`mv` con destino en las conversaciones guardadas (en PowerShell `Add-Content`, `Set-Content`, `Out-File`) | Las conversaciones se leen, no se escriben: la autorización de un escape se lee de ahí. Para trabajar, copiala afuera |
 
+| **ESC-C3** *(safety-guard)* | `marker.js set-autonomous false` con el modo autónomo prendido; `marker.js clear`, `clear-session` de la propia sesión o `update-story-status <h> review\|done` con un control en rojo, pasos sin correr o el pase adversarial sin cerrar (apaga el lazo de las pruebas o archiva como terminada una ejecución que no terminó) | Terminar lo pendiente; una historia que no se pudo va como deuda (`marker.js close-as-debt --reason … --debt <DEF-id>`). Apagarlo o cerrar igual lo decide la persona: «autorizo set-autonomous» o «autorizo cerrar la ejecución»; la ejecución queda con `cierre: abortada` |
+
 ### Limitations v1
 
 - Cubre los matchers `Bash` y `PowerShell` (los comandos de shell). Una llamada `Read` a `~/.ssh/id_rsa` desde Claude Code **no se bloquea** en v1 (requiere matcher `Read|Edit|Write` — roadmap v2).
