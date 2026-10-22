@@ -2,7 +2,7 @@
 /**
  * pipeline.js — comandos mecánicos del pipeline.
  *
- * Saca del LLM la DECISIÓN de qué advisors correr en el Step 5. El LLM no infiere
+ * Saca del LLM la DECISIÓN de qué advisors correr en el paso de revisores. El LLM no infiere
  * ni cuenta a mano (reglas D.i/E.i/B/C); le pregunta a este script.
  *
  *   node pipeline.js advisors --repo <dir> --story <spec.md> --files a.cs b.tsx ...
@@ -13,7 +13,7 @@
  *     → exit 0 si `ran` ⊇ `all` esperado; exit 2 + lista de faltantes si no.
  *       Es el post-flight count-check, sin que el LLM lo haga a mano (Regla C).
  *
- * Fuente de verdad de la matriz: este archivo. step-07-reviewers.md la
+ * Fuente de verdad de la matriz: este archivo. La guía del paso de revisores la
  * describe en prosa pero la AUTORIDAD es computeAdvisorSet() acá (el step la referencia).
  *
  * Determinismo de SELECCIÓN (mismo diff → mismo set), NO de output (los advisors son LLMs).
@@ -34,7 +34,7 @@ const stackConfig = require('./lib/stack-config.js');     // lo que sume la orga
 
 // ── log de invocaciones reales de advisors ─────────────────
 // El hook on-advisor-run.js (PreToolUse Task) registra cada subagent spawneado acá.
-// `advisors` marca el inicio del Step 5; `check-count` lee lo corrido DESDE esa marca
+// `advisors` marca el inicio del paso de revisores; `check-count` lee lo corrido DESDE esa marca
 // como ground-truth, en vez de confiar en el `--ran` que el LLM redacta.
 const RUNS_DIR = path.join(stateDirOf(os.homedir()), 'advisor-runs');
 function sessionLogPath() {
@@ -78,7 +78,7 @@ function logRunStart(story) {
 // — sawStart=true + ran=[] → pipeline.js SÍ corrió pero el hook no registró NINGÚN
 //   spawn: o no se corrieron los advisors o la registración está rota. El caller
 //   (check-count) FALLA CERRADO en este caso: caer en silencio al --ran del LLM
-//   dejaría pasar un Step 5 sin ningún spawn registrado.
+//   dejaría pasar un paso de revisores sin ningún spawn registrado.
 function advisorsRunSinceStart() {
   let raw;
   try { raw = fs.readFileSync(sessionLogPath(), 'utf8'); } catch { return { sawStart: false, expected: null, ran: [] }; }
@@ -377,7 +377,7 @@ function hasPlaywrightSpecs(repo) {
 
 // ── gate E2E de PROYECTO (agnóstico) — .tycon/advisors.yaml → e2e.{gate,frontend_dir,critical_manifest} ──
 // El gate E2E es OWNED por cada proyecto (script + specs + stack viven en SU repo). Los skills
-// compartidos (step-07c, tycon-merge-to-main) lo resuelven acá y corren lo que el proyecto declare —
+// compartidos («Probar en vivo», tycon-merge-to-main) lo resuelven acá y corren lo que el proyecto declare —
 // sin conocer puertos/specs/stack de NINGÚN repo. Sin bloque `e2e:` (o sin `gate:`) → {} → no-op.
 // Mismo parser-YAML-mínimo-sin-deps que i18nRequired (los valores son paths, sin espacios → \S+).
 // Las llaves que el arnés LEE del bloque `e2e:`. Todo lo demás se avisa:
@@ -569,7 +569,7 @@ function selectE2eApps(cfg, changedFiles) {
   // truthy): el loop del gate iteraría CERO veces y saldría 0. O sea: el control diría verde
   // habiendo ejercido nada, la clase de bug que esta función existe para evitar.
   //
-  // Y no es un caso teórico: `step-07c` documenta `marker.filesTouched` como fuente válida de
+  // Y no es un caso teórico: el paso «Probar en vivo» documenta `marker.filesTouched` como fuente válida de
   // `--changed`, y esos paths son ABSOLUTOS por construcción (`on-edit.js` descarta los que no
   // lo son antes de guardarlos).
   //
@@ -868,7 +868,7 @@ function detectStack(repo, files) {
 // este archivo; una sola fuente.
 const BANDERAS_DETECCION = require('./lib/packs.js').BANDERAS;
 
-// ── set BASE (matriz top-down de step-05) ─────────────────────────────────────
+// ── set BASE (matriz top-down del paso de revisores) ─────────────────────────────────────
 // `extras`: los revisores del grupo `base` de los paquetes activos cuya condición se cumplió.
 // Van PRIMERO — el orden
 // no es contrato (check-count y el marker comparan conjuntos).
@@ -907,7 +907,7 @@ function computeCompletitud(storyPath, repo, files) {
   const sc = require('./lib/story-checks.js');
   const isGold = sc.storySection(story, 'criteria') !== null || sc.storySection(story, 'tests') !== null;
 
-  // story-validator post-impl + spec-first SIEMPRE en Mary+GOLD (ver step-05)
+  // story-validator post-impl + spec-first SIEMPRE en Mary+GOLD (ver el paso de revisores)
   if (story) {
     out.push('tycon-story-validator');
     out.push('tycon-spec-first-checker');
@@ -1088,7 +1088,7 @@ function coreReviewersDrift({ table = CORE_REVIEWERS } = {}) {
 
 // ── Smart re-loop advisors (refinement de regla D.i) ──
 //
-// Cuando iter N>1 del Step 5 corre (fix-loop post-HITL), regla D.i.1 obliga el set
+// Cuando iter N>1 del paso de revisores corre (fix-loop post-HITL), regla D.i.1 obliga el set
 // completo de iter 1 (no cherry-pick). Pero si los fixes son no-impl (specs, tests
 // añadidos, docs), muchos advisors no tienen surface nueva que evaluar y devuelven
 // reportes idénticos. El smart-reloop computa el delta de files iter N vs iter N-1 (snapshot
@@ -1152,7 +1152,7 @@ const ADVISOR_AUDITED_SURFACE = {
 //
 // Patrón Anthropic "executor + advisor on-demand": el executor barato corre la
 // inspección mecánica; el advisor caro entra solo en juicio sintético. Acá lo
-// aplicamos al nivel del set Step 5 — cada advisor declara su `tier`:
+// aplicamos al nivel del set del paso de revisores — cada advisor declara su `tier`:
 //   - 'lean': grep/parse/checks binarios. Haiku safe.
 //   - 'standard': razonamiento intermedio. Sonnet.
 //   - 'deep': juicio sintético, judgment calls, cross-file synthesis. Opus.
@@ -1206,7 +1206,7 @@ const TIER_TO_MODEL = MODELOS.TIERS;
 // importan este módulo por otras funciones no la disparan.
 const packsLib = require('./lib/packs.js');
 
-// Los que necesitan la story completa además del contexto compartido (step-05). Los de paquetes lo
+// Los que necesitan la story completa además del contexto compartido (paso de revisores). Los de paquetes lo
 // declaran con `needsStory: true` en su manifiesto.
 const NECESITAN_STORY_NUCLEO = ['tycon-spec-first-checker'];
 
@@ -1235,8 +1235,8 @@ function resumenPaquetes(activos) {
     })),
   }));
 }
-// La entrada del paso 5 de un revisor de paquete (la del grupo validacion no tiene superficie ni
-// profundidad: el paso 1 no tiene vueltas).
+// La entrada del paso de revisores de un revisor de paquete (la del grupo validacion no tiene superficie ni
+// profundidad: el paso «Validar la historia» no tiene vueltas).
 function revisorDePaquete(nombre) {
   for (const p of paquetesInstalados()) {
     for (const r of p.revisores) if (r.agente === nombre && r.grupo !== 'validacion') return r;
@@ -1275,13 +1275,13 @@ function necesitanStory(activos) {
   ]);
 }
 
-// ── pipeline.js validators — los revisores de validación del paso 1 ────────────────
-// El paso 1 lanza al validador de stories y, si la story es de backend, a los revisores del grupo
+// ── pipeline.js validators — los revisores de validación del paso «Validar la historia» ────────────────
+// El paso «Validar la historia» lanza al validador de stories y, si la story es de backend, a los revisores del grupo
 // `validacion` de los paquetes activos (hoy: el de plugins hermanos, del paquete clients). El step corre
 // este comando y lanza lo que
 // devuelve. «Story de backend» = la story nombra .cs/.csproj, o el repo tiene *.csproj / *Plugin.cs:
 // esos archivos son el contexto sobre el que se evalúa `when` (`added` lee el archivo entero:
-// en el paso 1 no hay diff).
+// en «Validar la historia» no hay diff).
 function archivosDotnetDelRepo(repo, tope = 200) {
   const out = [];
   const SALTAR = new Set(['node_modules', '.git', 'bin', 'obj', 'dist', 'packages', '.advisors']);
@@ -1317,7 +1317,7 @@ function hermanosDelRepo(activos) {
   return { raiz, motivo, lista, texto: packsLib.textoDeHermanos(lista, { reposRoot: raiz }) };
 }
 
-/** `todos`: la lista de lo que PUEDE correr en el paso 1 (la página del arnés), sin mirar la máquina ni la constancia. */
+/** `todos`: la lista de lo que PUEDE correr en «Validar la historia» (la página del arnés), sin mirar la máquina ni la constancia. */
 function computeValidadores({ story, repo, todos = false }) {
   if (!story) throw new Error('validators: falta --story <spec.md>');
   // Una ruta mal tipeada no puede dar un set «válido» a medias:
@@ -1438,9 +1438,9 @@ function computeMechDiscount(allList, args) {
 // Medido: en los re-loops, después de
 // DOS veredictos limpios seguidos del validador tras implementar, trajo algo nuevo en 2 de 24 lanzamientos
 // (ninguno bloqueante); con menos veredictos limpios seguidos, trajo algo nuevo en 62 de 125. Entonces, desde la vuelta 2: si sus dos últimos
-// veredictos sobre ESTA story desde el arranque del paso 5 dicen `limpio` y VAL-C5/VAL-C6 salen limpios sin
+// veredictos sobre ESTA story desde el arranque del paso de revisores dicen `limpio` y VAL-C5/VAL-C6 salen limpios sin
 // modelo, el validador sale del set (y del `expected`). Todo lo demás INVOCA: no poder leer la
-// conversación, faltar el arnés o el arranque del paso 5, un chequeo que no pudo mirar. La duda va hacia más
+// conversación, faltar el arnés o el arranque del paso de revisores, un chequeo que no pudo mirar. La duda va hacia más
 // control. Cualquier veredicto que no sea `limpio` —hallazgos, inconsistente, sin
 // veredicto, un lanzamiento que no volvió— corta la racha.
 //
@@ -1476,7 +1476,7 @@ function decidirValidadorEnReloop({ args, marker, sessionId, guidesDir, projects
     // los revisores: `reviewers` en un marcador nuevo, el 5 en uno viejo
     const tRev = marker && marker.stepTimings && (marker.stepTimings.reviewers || marker.stepTimings['5']);
     const desde = Date.parse((tRev && tRev.startedAt) || '');
-    if (!Number.isFinite(desde)) return invoca('no sé cuándo arrancó el paso 5 (el marcador no lo anotó): se invoca');
+    if (!Number.isFinite(desde)) return invoca('no sé cuándo arrancó el paso de revisores (el marcador no lo anotó): se invoca');
     const libs = libsDelArnes(guidesDir);
     if (libs.error) return invoca(`${libs.error}: se invoca`);
     const ubi = libs.digest.ubicarTranscripcion(sessionId, projectsDir || path.join(os.homedir(), '.claude', 'projects'));
@@ -1530,7 +1530,7 @@ function aplicarDecisionValidador(salida, clave, args, { anotar = true } = {}) {
 // el path mode='smart-reloop'. Sin ellos, los paths force-full-reloop y `advisors --iter N>1`
 // (exactamente los que se usan cuando smart-reloop no aplica, el caso más caro)
 // correrían los tier 'deep' a Opus precio pleno.
-// El orquestador DEBE pasarlos como `model:` al Agent() (step-05) salvo
+// El orquestador DEBE pasarlos como `model:` al Agent() (paso de revisores) salvo
 // que el delta toque specs (juicio de scope nuevo → Opus se justifica).
 function reloopHintsFor(list, iter, costTier) {
   if (!iter || iter <= 1) return null;
@@ -1911,7 +1911,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   // 3, y en todas, porque la foto se re-filtra y la lista cruda no. Efecto: delta fantasma
   // de 3 archivos sin que nadie haya editado nada, un advisor de más por iteración, y de yapa
   // apagaría el guard `suspect_empty_delta`. O sea que filtrar a medias reintroduciría la contaminación que viene a cerrar.
-  // 🔴 Lo que cae FUERA del repo tampoco es trabajo del repo: los cazadores del pase 5b escriben
+  // 🔴 Lo que cae FUERA del repo tampoco es trabajo del repo: los cazadores del pase adversarial escriben
   // `/tmp/probe.*`, el hook de ediciones los registra y la
   // iteración 2 los contaría en el delta. Esos nombres no siguen la convención de probes, así que el filtro
   // por nombre no los ve; el filtro por lugar sí. Se conserva la carpeta de la story: en los productos
@@ -2126,7 +2126,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   // Hint de modelo para re-loops:
   // los advisors tier 'deep' (Opus) corren en CADA iteración por ser always:true.
   // El juicio sintético grande ya pasó en iter 1; el re-check sobre un delta de fix
-  // es más angosto → Sonnet alcanza. El orquestador DEBE aplicarlo (step-05) salvo
+  // es más angosto → Sonnet alcanza. El orquestador DEBE aplicarlo (paso de revisores) salvo
   // que el delta incluya specs editadas.
   const reloopModelHints = reloopHintsFor(rerun.map((r) => r.name), iter, costTier) || {};
 
@@ -2501,7 +2501,7 @@ function buildAdvisorContext({ repo, story, files, iter }) {
     // «… is outside repository» y se perdería el diff de TODOS los archivos, también los del repo; el texto de reemplazo
     // diría «repo sin git» y un revisor lo repetiría como causa.
     // Por eso los archivos se agrupan por su repo git; el del `--repo` va como siempre y cada
-    // hermano en su propia sección, con sus archivos escritos `(<nombre>) <ruta>`, la forma del step-05b. Si git falla
+    // hermano en su propia sección, con sus archivos escritos `(<nombre>) <ruta>`, la forma del paso «Pase adversarial». Si git falla
     // en un repo, se dice cuál y por qué, y los demás conservan su diff.
     const grupos = companionLib.groupByRepo(files, repo);
     const propios = grupos.filter((g) => g.propio).flatMap((g) => g.files.map((x) => x.original));
@@ -2807,22 +2807,22 @@ function notaCierre3(marker) {
 const NOTA_CIERRE_5B = 'si el pase corrió, marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> '
   + '--tests <k> [--own <p> --in "<rutas>"] [--deferred <d> --reason "…"]; si no corre, marker.js mark-adversarial-skipped '
   + '--files <archivos de código del diff> (lo decide el portón). Los dos cierran el pase adversarial (la bandera ya no se escribe a mano)';
-// El 7c tampoco se cierra con `complete-step`, ni se saltea en silencio. El cierre del paso 8 exige
-// `dodRuntimeChecked` SIEMPRE —la story exenta la deja con «exenta: …»—, así que `next` no puede dar el 7c por
+// La prueba en vivo tampoco se cierra con `complete-step`, ni se saltea en silencio. El cierre de «Preparar el commit» exige
+// `dodRuntimeChecked` SIEMPRE —la story exenta la deja con «exenta: …»—, así que `next` no puede dar la prueba en vivo por
 // salteado y mandar al 8: chocaría contra ese freno después de obedecer a `next`. El motivo mecánico del salteo sigue a la vista en `skip_mechanical`.
 const NOTA_CIERRE_7C = 'marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"<ruta de la evidencia>"}\'';
 const NOTA_7C_EXENTA = 'La story está exenta de la verificación en vivo (dod_runtime_exempt: true): no hay nada que correr, pero el cierre '
   + 'de «Preparar el commit» pide su constancia. Dejala con: marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"exenta: <la razón del frontmatter>"}\'.';
 
 /**
- * Qué le falta al pase adversarial, para `next`. Sólo con el paso 4 cerrado.
+ * Qué le falta al pase adversarial, para `next`. Sólo con «Correr las pruebas» cerrado.
  *
- * El lanzamiento temprano es un párrafo del paso 4 que el agente no recuerda por sí solo (52 de 208 corridas con pase
+ * El lanzamiento temprano es un párrafo de la guía de «Correr las pruebas» que el agente no recuerda por sí solo (52 de 208 corridas con pase
  * lo lanzaron más de 2 minutos después del primer revisor): `next` lo pide, ANTES del primer revisor, con el
  * veredicto que el portón dejó anotado (`adversarialGate`): no lo recalcula, porque no tiene los archivos del cambio.
  * Sin veredicto, lo que pide es consultar el portón —la falta de veredicto no es «no corre»—.
  *
- * Nunca pide relanzar un pase atendido (relanzar uno cerrado bloquea el paso 8), y ante un lanzamiento de otra sesión
+ * Nunca pide relanzar un pase atendido (relanzar uno cerrado bloquea «Preparar el commit»), y ante un lanzamiento de otra sesión
  * sin resultado aplica la regla de `lib/adversarial-verdict.js` sin preguntarle a nadie.
  * → `{ pending_action?: { kind, message, command?, rule?, why? }, adversarial_note?: string }`
  */
@@ -2836,7 +2836,7 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
     return {
       pending_action: {
         kind: 'relanzar-pase-no-medido',
-        message: `el pase adversarial quedó NO MEDIDO (${p.motivo_no_medido || 'no revisó todo'}; resultado en ${p.resultado || '?'}): relanzalo en su paso (5b) y anotalo con mark-adversarial-launched <runId> 5b --relaunch. Si Codex no contesta y no hay herramienta Workflow: ${SALIDA_APROBADA}.`,
+        message: `el pase adversarial quedó NO MEDIDO (${p.motivo_no_medido || 'no revisó todo'}; resultado en ${p.resultado || '?'}): relanzalo en su paso («Pase adversarial») y anotalo con mark-adversarial-launched <runId> 5b --relaunch. Si Codex no contesta y no hay herramienta Workflow: ${SALIDA_APROBADA}.`,
       },
     };
   }
@@ -2850,7 +2850,7 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
   }
   const adv = marker.adversarial && typeof marker.adversarial === 'object' ? marker.adversarial : null;
   if (adv && adv.sessionId !== sidNow) return { pending_action: reglaPaseAjeno(adv) };
-  if (adv) return {};   // lanzado por esta sesión y en vuelo: el join es el paso del pase (5b)
+  if (adv) return {};   // lanzado por esta sesión y en vuelo: el join es el paso del pase adversarial
 
   if (!marker.storyPath) {
     return { adversarial_note: 'no pude leer la story: el marcador está sin ruta de story — no se pide lanzar el pase (el portón la necesita)' };
@@ -2861,7 +2861,7 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
 
   const gate = marker.adversarialGate && typeof marker.adversarialGate === 'object' ? marker.adversarialGate : null;
   if (gate && gate.early_launch === false) {
-    return { adversarial_note: `lanzamiento temprano APAGADO para esta corrida (${gate.early_origin || 'TYCON_5B_EARLY=0'}): el pase se lanza en su paso (5b)` };
+    return { adversarial_note: `lanzamiento temprano APAGADO para esta ejecución (${gate.early_origin || 'TYCON_5B_EARLY=0'}): el pase se lanza en su paso («Pase adversarial»)` };
   }
   const yo = path.join(__dirname, 'pipeline.js');
   if (!gate || typeof gate.run !== 'boolean') {
@@ -2887,8 +2887,8 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
 }
 
 /**
- * Lo que cambia en el paso por el tamaño de la corrida, o null. Paso 4 de una liviana: las tandas van
- * juntas. Paso 8 de una liviana: no se pide la validación pesada del repo, salvo que el dev la haya nombrado
+ * Lo que cambia en el paso por el tamaño de la corrida, o null. «Correr las pruebas» de una liviana: las tandas van
+ * juntas. «Preparar el commit» de una liviana: no se pide la validación pesada del repo, salvo que el dev la haya nombrado
  * (`marker.js set-flag heavyValidationRequested true`).
  */
 function notaDelTamano(marker, nextStep) {
@@ -2954,7 +2954,7 @@ function computeNext() {
     preconditions.push({ id: 'dodRuntimeChecked', satisfied: marker.dodRuntimeChecked === true, detail: '«Probar en vivo» debe haber pasado (marker.dodRuntimeChecked)' });
     const checks = marker.checks || {};
     for (const c of ['build', 'tests', 'advisors']) {
-      // «sin-acotar» (tests) se acepta anunciándolo: la cubre la CI del pedido (complete-step 4 lo dijo y lo anotó).
+      // «sin-acotar» (tests) se acepta anunciándolo: la cubre la CI del pedido (complete-step run-tests lo dijo y lo anotó).
       const sinAcotar = c === 'tests' && checks[c] === 'sin-acotar';
       // «sin-medir» (tests): el portón no sabe correr las pruebas del repo; se acepta diciéndolo, y el cierre
       // de la historia copia la línea (nunca un verde callado)
@@ -2964,8 +2964,8 @@ function computeNext() {
   }
 
   // El estado del pase adversarial viaja en el
-  // comando canónico "¿qué sigue?" — el cap de ventana del Step 5 y el JOIN de 3 ramas del
-  // step-05b dependen de él, y sin esto habría que acordarse de un `marker.js get` extra.
+  // comando canónico "¿qué sigue?" — el cap de ventana del paso de revisores y el JOIN de 3 ramas del
+  // el paso «Pase adversarial» dependen de él, y sin esto habría que acordarse de un `marker.js get` extra.
   const adv = marker.adversarial || null;
   const sidNow = resolveSessionId();
   const advIsOurs = adv ? adv.sessionId === sidNow : null;
@@ -3018,7 +3018,7 @@ function computeNext() {
 }
 
 // ── pipeline.js start — preflight mecánico en UN comando ─
-// Colapsa los 5 checks de step-00 (PIPE-C0 cross-session, C1 branch guard,
+// Colapsa los 5 checks del Arranque (PIPE-C0 cross-session, C1 branch guard,
 // C2 gitignore, C4 marker, C5 status in-progress) que el LLM ejecutaría
 // check-por-check en prosa (5 turnos → 1). PAUSA (ready:false, sin mutar nada)
 // solo ante conflicto cross-session, rama protegida o pipeline abandonado.
@@ -3265,7 +3265,7 @@ function computeStart(args) {
   const esquema = sigueVieja
     ? { stepsPending: [0, 1, 2, 3, 4, 5, 6, 7, 8], arranque: '0' }
     // los que se cierran con su bandera no van en la lista: ninguna bandera la vacía, y una ejecución terminada tiene que
-    // quedar con la lista vacía para todos los que la miran (como el 5b y el 7c en el marcador viejo)
+    // quedar con la lista vacía para todos los que la miran (como el pase adversarial y la prueba en vivo en el marcador viejo)
     : { stepScheme: STEPS_TABLE.SCHEME, stepsPending: STEPS_TABLE.STEPS.filter((s) => !s.flag).map((s) => s.id), arranque: 'start' };
   try {
     // marker.js con el mismo Node que corre este programa, no el del PATH
@@ -3277,7 +3277,7 @@ function computeStart(args) {
       // del roster resolvería un path inexistente y callaría con "mismo repo". Todo lector acepta absolutos.
       storyId, storyPath: path.resolve(storyPath), repoPath: repo, sprint: fm.sprint ? parseInt(fm.sprint, 10) || null : null,
       // Dónde nace la evidencia de cierre: el repo de la story, aunque el código
-      // esté en otro. Lo leen los steps 7c/8 para no tener que adivinarlo.
+      // esté en otro. Lo leen los pasos «Probar en vivo» y «Preparar el commit» para no tener que adivinarlo.
       evidenceDir: evid.dir || null,
       // Commit de partida: la base de las «líneas tocadas» que mide test-gate.sh.
       // Sin git queda null y test-gate cae a HEAD diciéndolo.
@@ -3421,12 +3421,12 @@ function recortarStart(result) {
 }
 
 // ── pipeline.js risk-class — Autonomía Nivel 2 ───
-// Clasifica la story para el auto-approve CONDICIONAL del plan (Step 3):
-// LOW-risk → step-03 se auto-aprueba y el plan se muestra igual; cualquier criterio
+// Clasifica la story para el auto-approve CONDICIONAL del plan (paso «Aprobar el plan»):
+// LOW-risk → ese paso se auto-aprueba y el plan se muestra igual; cualquier criterio
 // fallido → NORMAL → checkpoint HITL como siempre. Reglas de oro intactas:
 // git push y cambios de scope firmado SIEMPRE human-gate (regla #0).
 // Criterios del diseño pipeline-autonomy-design.md §9 (validator verde es
-// pre-requisito del flujo — Step 1 corre antes que Step 3, no se re-evalúa acá).
+// pre-requisito del flujo — «Validar la historia» corre antes que «Aprobar el plan», no se re-evalúa acá).
 // ── El tamaño de la corrida: liviana (sólo documentación) o completa. Lo clasifica lib/run-size.js por
 // lo que la story DECLARA; `args.runSize` (el forzado del marcador, que sólo leen las ramas de línea de comandos)
 // manda. Sin story legible, completa. El repo aporta sus superficies del pase adversarial.
@@ -3536,7 +3536,7 @@ function computeStoryReviewGate({ story, env = process.env, home = os.homedir() 
   };
 }
 
-/** El pedido al revisor de historias en el paso 1, donde corre en el mismo mensaje que el validador (el del paso 6 lo trae su guía). */
+/** El pedido al revisor de historias en «Validar la historia», donde corre en el mismo mensaje que el validador (el de `tycon-create-story` lo trae su guía). */
 function promptRevisorDeHistorias({ story, repo }) {
   return `Revisá la historia ${story} contra el repo ${repo}, antes de programarla. Una sola pasada, de sólo lectura. ` +
     'Corrés en paralelo con el validador de stories: no repitas lo que es de su catálogo (VAL-*). ' +
@@ -3546,7 +3546,7 @@ function promptRevisorDeHistorias({ story, repo }) {
 
 // ── pipeline.js tooling-expected — aviso de tooling no disponible ──
 // El pipeline ASUME herramientas del harness (CodeGraph para symbol lookup, engram
-// para memoria persistente, la tool Workflow para el 5b). Si están declaradas pero
+// para memoria persistente, la tool Workflow para el pase adversarial). Si están declaradas pero
 // NO disponibles en la sesión, el orquestador degrada a fallbacks (grep / sin
 // memoria / sin pase adversarial), y sin aviso el user no se entera
 // de que el run corre más lento o con menos cobertura. Contrato (PIPE-C9):
@@ -3555,8 +3555,8 @@ function promptRevisorDeHistorias({ story, repo }) {
 // no en el shell) → él la verifica y AVISA al user ANTES de degradar.
 // ── Las skills de terceros que el pipeline invoca por nombre ──
 // Lo ajeno sale de agent-skills y lo restituye el paso del instalador desde el manifiesto del arnés
-// (scripts/publishing/third-party-skills.json). Si una skill que el pipeline invoca (Steps 2 y 4, el portón de
-// stories, el Step 5 a pedido) no está, el pipeline no puede enterarse en silencio: se suma al tooling esperado con
+// (scripts/publishing/third-party-skills.json). Si una skill que el pipeline invoca (los pasos «Armar el plan» e «Implementar», el portón de
+// stories, el paso de revisores a pedido) no está, el pipeline no puede enterarse en silencio: se suma al tooling esperado con
 // `present` y la acción. Sin manifiesto legible, una entrada que lo dice. opts: { skillsDir, manifestPath } (pruebas).
 // El manifiesto vive en scripts/publishing; una copia atrasada del arnés lo tiene en scripts/publicacion (un `.json` no tiene reemplazo):
 // primero publishing, luego publicacion; sin ninguna, publishing (el aviso la nombra).
@@ -3679,8 +3679,8 @@ function completedWorkHours(current, stopResult) {
 }
 
 /**
- * `pipeline.js work-signal <start|stop> [--story <spec> --repo <dir>]`: el evento de trabajo de una historia (paso 0b y
- * paso 9), con la historia, el título, el repo y la sesión. Sin `--story`, los de la corrida (el marker); el paso 9 corre
+ * `pipeline.js work-signal <start|stop> [--story <spec> --repo <dir>]`: el evento de trabajo de una historia (el aviso de trabajo del Arranque y
+ * «Cerrar la historia»), con la historia, el título, el repo y la sesión. Sin `--story`, los de la corrida (el marker); «Cerrar la historia» corre
  * después del merge, cuando el marker ya se borró, y pasa la story. → `{ ran, seconds?, hours?, action?, warnings }`;
  * `hours` son los segundos de `stop` en horas, para sumar a `CompletedWork`. Una herramienta que falla nunca frena la
  * historia.
@@ -3690,7 +3690,7 @@ function workSignalForRun(event, opts = {}) {
   const field = (fm, key) => ((new RegExp(`^${key}:[ \\t]*(.*?)[ \\t]*$`, 'm').exec(fm) || [])[1] || '').replace(/^(["'])(.*)\1$/, '$2');
   // con los finales de renglón de Windows y la marca de orden de bytes, como los demás lectores de frontmatter
   const frontmatter = (p) => ((/^﻿?---\r?\n([\s\S]*?)\r?\n---/.exec(p ? readText(p) : '') || [])[1] || '').replace(/\r/g, '');
-  // la sesión, con la misma cadena que el marker (Claude Code, el banco y Codex): el 0b abrió con ésa
+  // la sesión, con la misma cadena que el marker (Claude Code, el banco y Codex): el Arranque abrió con ésa
   const sid = resolveSessionId();
   const session = sid === '_nosession' ? null : sid;
   let run;
@@ -3783,10 +3783,10 @@ function computeToolingExpected(repo, opts = {}) {
     expected.push({
       name: 'engram',
       mcp_prefix: 'mcp__plugin_engram_engram__',
-      why: 'protocolo de memoria persistente SIEMPRE activo (guides/integrations/engram-workflow.md) — el Step 2 inyecta gotchas previos del repo y el cierre guarda session_summary',
+      why: 'protocolo de memoria persistente SIEMPRE activo (guides/integrations/engram-workflow.md) — el paso «Armar el plan» inyecta gotchas previos del repo y el cierre guarda session_summary',
       binary_found: bin,
       cli_fallback: KNOWN_CLI.engram.cli,
-      fallback: 'run sin memoria persistente (Step 2 pierde las lecciones previas; el cierre no guarda summary)',
+      fallback: 'run sin memoria persistente (el paso «Armar el plan» pierde las lecciones previas; el cierre no guarda summary)',
       raise_it: raisePlaybook(bin, KNOWN_CLI.engram),
       if_unavailable: 'AVISAR al user en 1 línea ANTES de seguir: "engram MCP no disponible → este run pierde memoria persistente". Después seguir `raise_it` (el CLI engram cubre search/sync para este run).',
     });
@@ -3794,12 +3794,12 @@ function computeToolingExpected(repo, opts = {}) {
   expected.push({
     name: 'workflow-tool',
     mcp_prefix: 'Workflow',
-    why: 'el Step 5b (adversarial deep-verify) corre vía la tool Workflow — sin ella el pase adversarial NO corre y se pierde la capa que cazó los bugs de E1',
+    why: 'el paso «Pase adversarial» (adversarial deep-verify) corre vía la tool Workflow — sin ella el pase adversarial NO corre y se pierde la capa que cazó los bugs de E1',
     binary_found: null,
     cli_fallback: null,
-    fallback: 'skip del 5b (cobertura reducida: solo los advisors single-pass)',
+    fallback: 'saltear el pase adversarial (cobertura reducida: solo los advisors single-pass)',
     raise_it: 'sin CLI alternativo (es una tool del harness) — si no está, PREGUNTAR al user si sigue sin el pase adversarial.',
-    if_unavailable: 'AVISAR al user — esto NO es un skip silencioso legítimo: "la tool Workflow no está disponible → el pase adversarial 5b no puede correr; el run queda solo con los advisors single-pass. ¿Sigo igual?" El user decide.',
+    if_unavailable: 'AVISAR al user — esto NO es un skip silencioso legítimo: "la tool Workflow no está disponible → el pase adversarial no puede correr; la ejecución queda solo con los advisors single-pass. ¿Sigo igual?" El user decide.',
   });
   // Genérico: TODO MCP server que el
   // repo declare en su .mcp.json o en la config del proyecto (~/.claude.json →
@@ -3841,17 +3841,17 @@ function computeToolingExpected(repo, opts = {}) {
 }
 
 // ── pipeline.js model-hint — sugerencia de modelo de sesión por complejidad ──
-// Los steps 2-4 (plan BMAD + implementación) corren
+// Los pasos de armar el plan, aprobarlo e implementar (plan BMAD + implementación) corren
 // INLINE en el main loop (tool Skill, no subagentes) → su modelo es el DE LA
 // SESIÓN y solo el user puede cambiarlo con /model. Este comando computa la
-// recomendación MECÁNICA para que el Step 0 (preflight) la compare con el modelo
+// recomendación MECÁNICA para que el Arranque (preflight) la compare con el modelo
 // real de la sesión (el orquestador lo sabe por su system prompt) y sugiera el
 // switch ANTES de gastar contexto — con sesión fresca por pipeline el
 // preflight es el momento exacto para elegir modelo; /model conserva sesión y
 // marker, no se pierde nada.
 //
 // Tiers (razón: el plan es el punto de mayor apalancamiento — un plan malo
-// cascadea a re-loops del Step 5 — y la implementación es el mayor consumidor
+// cascadea a re-loops del paso de revisores — y la implementación es el mayor consumidor
 // de tokens; opus ~1.7x sonnet):
 //   LOW           → sonnet alcanza (opus también ok — no molestar si ya está ahí)
 //   NORMAL común  → opus
@@ -3921,7 +3921,7 @@ function computeModelHint(args) {
         ? `NORMAL + ${heavyCount} señales pesadas (${signals.filter((s) => s.hit).map((s) => s.name).join(', ')}) → ${recommended} con más esfuerzo`
         : 'NORMAL común → opus (sonnet se queda corto en el plan)',
     note: (deLaOrg ? `la sugerencia sale de la configuración de la organización (session.${band}${MODELOS.ceilingOf(org) ? `, techo ${MODELOS.ceilingOf(org)}` : ''}): ${recommended}. ` : '') +
-      'ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea.',
+      'ADVISORY para el MODELO DE SESIÓN (armar el plan, aprobarlo e implementar corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea.',
     ...extra,
   };
   if (avisos.length) Object.defineProperty(out, '_avisos', { value: avisos, enumerable: false });
@@ -3934,8 +3934,8 @@ function equivalenciasDeModelos() {
   catch (_) { return {}; }
 }
 
-// ── pipeline.js deep-review-gate — Step 5b adversarial ──
-// Decide si corre el pase adversarial reproduce-or-refute (step-08-adversarial-pass.md),
+// ── pipeline.js deep-review-gate — pase adversarial ──
+// Decide si corre el pase adversarial reproduce-or-refute (la guía del paso «Pase adversarial»),
 // que EJECUTA el código (bundlea/parsea/probe) en vez de LEER el diff como los 6 advisors
 // single-pass: así encuentra falsos negativos (p.ej. un traversal en lanes/participants) que ellos no ven.
 //
@@ -3951,7 +3951,7 @@ function equivalenciasDeModelos() {
 //      gana sobre el criterio por tamaño de diff, que puede dejar pasar un defecto en superficie compartida.
 //   5) default → risk-class (NORMAL run / LOW skip). Si el repo NO declaró superficie compartida,
 //      el skip por LOW se decide a ciegas y el veredicto lo dice (`shared_surface_declared:false`).
-// Corre UNA vez por corrida (default: se lanza al cierre del Step 4 y step-05b es el join; TYCON_5B_EARLY=0 → se lanza en 5b), NUNCA por re-loop D.i
+// Corre UNA vez por corrida (default: se lanza al cierre de «Correr las pruebas» y el paso del pase adversarial es el join; TYCON_5B_EARLY=0 → se lanza en su paso), NUNCA por re-loop D.i
 // (re-correr el workflow sería ~N× su costo; los fixes los verifican los advisors del re-loop).
 function deepReviewConfig(repo) {
   const txt = readText(path.join(repo, '.tycon', 'advisors.yaml')) ||
@@ -4110,12 +4110,12 @@ function computeDeepReviewGate(args) {
   else if (args.ultracode) modelReason = 'ultracode ON → hunters en Opus';
   else if (hint.heavy) modelReason = `story pesada (${hint.heavy_signal_count} señales model-hint) → hunters escalan a Opus (anunciar)`;
   else modelReason = 'default (recorta $ ~5x vs Opus)';
-  // Lanzamiento temprano del 5b al cierre del Step 4 — DEFAULT ON con
+  // Lanzamiento temprano del pase adversarial al cierre de «Correr las pruebas» — DEFAULT ON con
   // kill-switch (las mitigaciones
   // están cableadas — cap 2 de ventana, verificadores en ventana de 3, candado
   // anti-full-suite — y la primera corrida NORMAL ES la medición del cap). El switch queda
   // MECÁNICO acá (mismo patrón que TYCON_NO_DEEP_REVIEW), no en prosa que nadie lee:
-  // export TYCON_5B_EARLY=0 → lanzamiento clásico en 5b; sin la env → temprano en el Step 4.
+  // export TYCON_5B_EARLY=0 → lanzamiento clásico en su paso; sin la env → temprano al cerrar «Correr las pruebas».
   const extras = {
     model_reason: modelReason,
     early_launch: process.env.TYCON_5B_EARLY !== '0',
@@ -4125,7 +4125,7 @@ function computeDeepReviewGate(args) {
   // 2) Config por repo.
   const cfg = deepReviewConfig(args.repo);
   if (cfg === 'off') {
-    // Si el repo apagó el 5b Y declaró superficie compartida, las dos cosas no pueden convivir en
+    // Si el repo apagó el pase adversarial Y declaró superficie compartida, las dos cosas no pueden convivir en
     // silencio: la lista queda publicada y muerta, y el dueño del repo cree tener una protección
     // que no tiene. El `off` gana —es la decisión explícita del
     // dueño— pero se dice.
@@ -4211,7 +4211,7 @@ function computeDeepReviewGate(args) {
       reason: 'no pude medir la densidad del diff: me invocaste sin `--files`. Sin la lista de '
         + 'archivos de código no hay nada que contar, y un «0 líneas» acá sería un número que nadie '
         + 'calculó — se usaría para saltear el pase adversarial sin haber mirado. Pasá los archivos '
-        + 'del diff (ver step-04 §Lanzamiento temprano y step-05b), o decidí explícito con '
+        + 'del diff (ver la guía del pase adversarial §Lanzamiento temprano), o decidí explícito con '
         + '`--deep-review` / `--no-deep-review`.',
     };
   }
@@ -4340,7 +4340,7 @@ function densidadDelDiff(repo, files, { allowMissing = false } = {}) {
 
 // ── pipeline.js timing-report — instrumentación ─
 // Desglosa dónde se fue el wall-clock de la corrida: steps (marker.stepTimings),
-// iteraciones del Step 5 (marker.iterations) y gates ejecutados (gates.log).
+// iteraciones del paso de revisores (marker.iterations) y gates ejecutados (gates.log).
 // Sin esto, los "25 min" son anécdota y los speedups se priorizan a ciegas.
 function computeTimingReport() {
   const marker = readSessionMarker();
@@ -4421,7 +4421,7 @@ function detectarWordSplit(args) {
     `  partido por espacios: ${pedazos.length} paths, ${existen.length} existen en disco.\n` +
     'Causa: zsh NO word-splitea $VAR sin comillas — usá ${=VAR} o pasá los paths explícitos.\n' +
     'Por qué ABORTA y no sigue: con 1 archivo contado, risk-class da LOW y eso apaga DOS frenos\n' +
-    'a la vez — el checkpoint HITL del plan (auto_approve_plan) y el pase adversarial del 5b\n' +
+    'a la vez — el checkpoint HITL del plan (auto_approve_plan) y el pase adversarial\n' +
     '(deep-review-gate) — sin dejar rastro de que se apagaron por un error de parseo.\n'
     );
   }
@@ -4532,7 +4532,7 @@ function validateFilesExist(args, opts) {
 // bmad-dev-story HALTea si la implementación agrega dependencias fuera del spec
 // ("new dependencies beyond story specifications → HALT: need user approval"). TYCON no
 // tiene check equivalente: los advisors de seguridad atrapan un paquete VULNERABLE, no un
-// paquete legítimo que nadie aprobó. Corre en Step 4 (post-build): diffea las dependencias
+// paquete legítimo que nadie aprobó. Corre en «Correr las pruebas» (post-build): diffea las dependencias
 // AGREGADAS en package.json / *.csproj / Directory.Packages.props vs HEAD contra el texto de
 // la story. Un paquete nuevo cuyo nombre NO aparezca en la story → undeclared → PAUSA HITL.
 // Regla mecánica y verificable (no inferencia, estilo E.i): "declarado" = el nombre del
@@ -4748,14 +4748,14 @@ function computeNextStory(args) {
 // La mejor idea de bmad-dev-story: el ciclo dev↔review vive DENTRO del artefacto
 // (su sección "Review Follow-ups (AI)" con checkboxes por severidad) y sobrevive
 // sesiones. Sin esto los findings viven solo en .advisors/pipeline-runs/ — si el
-// pipeline muere post-Step 6 con un CRITICAL waived o WARNINGs abiertos, la próxima
+// pipeline muere después del paso de hallazgos con un CRITICAL waived o WARNINGs abiertos, la próxima
 // sesión no tiene lista accionable en la story (hay que arqueologizar el audit trail).
-// Step 6/7 escribe los no-resueltos acá (write-followups); Step 0/1 los detecta al
+// El paso de hallazgos escribe los no-resueltos acá (write-followups); el Arranque y «Validar la historia» los detectan al
 // retomar (followups-status). Solo toca el BODY de la story — NUNCA el frontmatter
 // contractual (esa transición sigue siendo exclusiva del orquestador vía marker.js).
 const FOLLOWUPS_HEADING = '## Review Follow-ups (Advisors)';
 // Normaliza un finding a la forma canónica del writer, tolerando tanto el shape del
-// findings.json del Step 6 ({rule_id, severity, advisor, file, disposition, reason})
+// findings.json del paso de hallazgos ({rule_id, severity, advisor, file, disposition, reason})
 // como el shape directo ({ruleId, severity, file, line, summary, resolved}).
 function normalizeFinding(f) {
   const disposition = String(f.disposition || '').toLowerCase();
@@ -4935,7 +4935,7 @@ function leerMarcadorDeLaCorrida() {
 }
 
 /**
- * ¿Quedan deudas abiertas de la story? En el step 9 evita relanzar dos revisores con modelo para
+ * ¿Quedan deudas abiertas de la story? En «Cerrar la historia» evita relanzar dos revisores con modelo para
  * contestar lo que es un grep: tags `[story-<id>-…]` vivos en `tasks/todo.md` (no tachados ni marcados
  * `[x]`) o tandas del bloque `pipelines:` con `status != done`. `open` en true = hay deuda.
  */
@@ -5016,7 +5016,7 @@ function writeFollowups(args) {
   if (!merged.length && !parsed) {
     return { wrote: false, note: 'Sin findings y sin sección previa — no se escribió nada.' };
   }
-  const banner = '<!-- tycon-pipeline: generado por Step 6/7. Cada item = finding advisor no resuelto (CRITICAL waived o WARNING). Al resolver el finding en el código, marcá [x]. Step 0/1 detecta los abiertos al retomar (pipeline.js followups-status). -->';
+  const banner = '<!-- tycon-pipeline: generado por el paso de hallazgos. Cada item = finding advisor no resuelto (CRITICAL waived o WARNING). Al resolver el finding en el código, marcá [x]. El Arranque y «Validar la historia» detectan los abiertos al retomar (pipeline.js followups-status). -->';
   const sectionLines = [FOLLOWUPS_HEADING, '', banner, '', ...merged, ''];
   const lines = content.split(/\r?\n/);
   let out;
@@ -5031,13 +5031,13 @@ function writeFollowups(args) {
   return { wrote: true, story_path: storyPath, total: merged.length, open, resolved: merged.length - open };
 }
 
-// ── findings.json del Step 6 — write determinista + gate de existencia ──────
+// ── findings.json del paso de hallazgos — write determinista + gate de existencia ──────
 // El findings.json ({rule_id, severity, advisor, file, disposition, reason}) es el insumo
 // machine-parseable del retrospective-capturer (advisor_warnings_per_story / actioned_ratio,
-// determinista sin LLM). Como WRITE MANUAL del orquestador en Step 6 se olvidaría y rompería el conteo.
+// determinista sin LLM). Como WRITE MANUAL del orquestador en el paso de hallazgos se olvidaría y rompería el conteo.
 // `write-findings` lo
 // vuelve una llamada de script validada + ubicada sola; `findings-status` lo enforcea como
-// pre-condición mecánica de Step 8 (exit 3 si falta → el orquestador lo escribe antes del commit).
+// pre-condición mecánica de «Preparar el commit» (exit 3 si falta → el orquestador lo escribe antes del commit).
 const VALID_SEVERITY = new Set(['CRITICAL', 'WARNING']);
 // 'refuted': hallazgo reportado,
 // investigado y RETIRADO por falso (típicamente por el propio advisor). No es 'fixed' (no hubo
@@ -5438,7 +5438,7 @@ function normalizeFindingRecord(raw, warnings, ctx) {
   };
 }
 
-// write-findings: escribe (validado) el findings.json del Step 6 en el run dir. Input via --findings
+// write-findings: escribe (validado) el findings.json del paso de hallazgos en el run dir. Input via --findings
 // (archivo JSON o '-' = stdin). Tolera el shape {ruleId|rule} y normaliza severity/disposition.
 // ── La constancia de los revisores viaja al repo de la STORY ────────────────
 // El run dir (`.advisors/pipeline-runs/<story>-<sello>/`) nace en el repo donde CORRE el pipeline
@@ -5738,7 +5738,7 @@ function recordRefutation(args) {
       : "El verificador reprodujo el hallazgo: queda 'fixed' (con su prueba) u 'open'; 'refuted' y 'waived' se rechazan." };
 }
 
-// findings-status: pre-condición mecánica de Step 8. ¿El run tiene findings.json válido?
+// findings-status: pre-condición mecánica de «Preparar el commit». ¿El run tiene findings.json válido?
 function computeFindingsStatus(args) {
   const storyId = deriveStoryId(args.story);
   if (!storyId) return { error: `--story inválido o sin frontmatter: ${args.story}` };
@@ -5751,12 +5751,12 @@ function computeFindingsStatus(args) {
   }
   if (!runDir) {
     return { exists: false, valid: false, story_id: storyId, run_dir: null,
-      note: `⚠️ No hay run dir bajo .advisors/pipeline-runs/ para ${storyId}. Escribí el findings.json del Step 6: pipeline.js write-findings --story ${args.story} --findings <array.json|->.` };
+      note: `⚠️ No hay run dir bajo .advisors/pipeline-runs/ para ${storyId}. Escribí el findings.json del paso de hallazgos: pipeline.js write-findings --story ${args.story} --findings <array.json|->.` };
   }
   const p = path.join(runDir, 'findings.json');
   if (!exists(p)) {
     return { exists: false, valid: false, story_id: storyId, run_dir: runDir, path: p,
-      note: `🛑 findings.json FALTA en ${runDir}. Escribilo antes del commit (Step 6): pipeline.js write-findings --story ${args.story} --findings <array.json|->. Es el insumo del retrospective-capturer (advisor_warnings_per_story) — sin él el conteo degrada a reconstrucción manual (BUG-PIPELINE-006).` };
+      note: `🛑 findings.json FALTA en ${runDir}. Escribilo antes del commit (paso de hallazgos): pipeline.js write-findings --story ${args.story} --findings <array.json|->. Es el insumo del retrospective-capturer (advisor_warnings_per_story) — sin él el conteo degrada a reconstrucción manual (BUG-PIPELINE-006).` };
   }
   let arr = null;
   try { arr = JSON.parse(readText(p)); } catch { arr = null; }
@@ -5830,8 +5830,8 @@ function parseArgs(argv) {
     else if (t === '--verifier') a.verificador = argv[++i];        // record-refutation: el id del lanzamiento del verificador (<agente>@<ts> del registro de spawns)
     else if (t === '--verifier-model') a.modeloVerificador = argv[++i];
     else if (t === '--model') a.modelo = argv[++i];                // verify-finding: modelo del verificador (default sonnet)
-    else if (t === '--deep-review') a.deepReview = true;           // fuerza ON el step-05b (aun en LOW)
-    else if (t === '--no-deep-review') a.noDeepReview = true;      // fuerza OFF el step-05b
+    else if (t === '--deep-review') a.deepReview = true;           // fuerza ON el pase adversarial (aun en LOW)
+    else if (t === '--no-deep-review') a.noDeepReview = true;      // fuerza OFF el pase adversarial
     else if (t === '--deep-review-opus') a.deepReviewOpus = true;  // hunters/verifiers en Opus (default sonnet)
     else if (t === '--deep-review-fable') a.deepReviewFable = true; // hunters en Fable — SOLO con autorización explícita del user
     else if (t === '--ultracode') a.ultracode = true;             // el orquestador lo pasa si ultracode está ON
@@ -5921,7 +5921,7 @@ function main() {
       set.mech_discounted = disc.discounted;
       set.mech_findings = disc.mech_findings;
       set.mech_note = `mech-check descontó ${disc.discounted.length} advisor(s) del set/expected (checks mecánicos, 0 tokens). ` +
-        (disc.mech_findings.length ? `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS — van DIRECTO al reporte consolidado del Step 6.` : 'Sin findings mecánicos.');
+        (disc.mech_findings.length ? `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS — van DIRECTO al reporte consolidado del paso de hallazgos.` : 'Sin findings mecánicos.');
     } else if (disc && disc.mech_findings.length) {
       set.mech_findings = disc.mech_findings;
       set.mech_note = `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS (mech-check) — van DIRECTO al reporte consolidado.`;
@@ -5950,7 +5950,7 @@ function main() {
     // primario en vez de re-leer story completa + re-correr git diff cada uno.
     const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
     // El estado de la sección «Reglas para revisores» del repo (el orquestador avisa al
-    // dev en una línea si no está `presente`; nunca frena — step-05 §Reglas del repo).
+    // dev en una línea si no está `presente`; nunca frena — guía del paso de revisores §Reglas del repo).
     set.reglas_revisores = resumenReglas(ctx && ctx.reglas ? ctx.reglas : reglasRevisores(args.repo));
     if (ctx) {
       set.context_file = ctx.context_file;
@@ -5959,7 +5959,7 @@ function main() {
       set.context_file_overrides = ctx.overrides;
     }
     // Regla de batcheo (máquina dev 8c/16GB): ventana deslizante de ≤4 vivos.
-    set.batch_rule = 'Ventana deslizante: MÁXIMO 4 subagentes VIVOS a la vez (máquina 8c/16GB). Al llegar la notificación de que uno terminó, lanzar el siguiente del set en ese turno — no esperar a que termine el grupo entero. NUNCA lanzar el set completo en un solo mensaje paralelo si supera 4. ⚠️ Si el pase adversarial 5b fue lanzado en el Step 4 y sigue en vuelo, el cap baja a 2 — este string no conoce ese estado: el step-05 §Cap reducido manda. Avisos al dev agrupados por hito (mitad del set y set completo), no por advisor.';
+    set.batch_rule = 'Ventana deslizante: MÁXIMO 4 subagentes VIVOS a la vez (máquina 8c/16GB). Al llegar la notificación de que uno terminó, lanzar el siguiente del set en ese turno — no esperar a que termine el grupo entero. NUNCA lanzar el set completo en un solo mensaje paralelo si supera 4. ⚠️ Si el pase adversarial fue lanzado al cerrar «Correr las pruebas» y sigue en vuelo, el cap baja a 2 — este string no conoce ese estado: manda la guía del paso de revisores §Cap reducido. Avisos al dev agrupados por hito (mitad del set y set completo), no por advisor.';
     // El validador de stories en los re-loops: se decide ANTES de persistir el expected.
     aplicarDecisionValidador(set, 'all', args);
     if (set.reviewer_models) {
@@ -5980,7 +5980,7 @@ function main() {
     return;
   }
 
-  // Los revisores de validación del paso 1 salen de acá, no de la prosa del step.
+  // Los revisores de validación del paso «Validar la historia» salen de acá, no de la prosa del step.
   //   node pipeline.js validators --story <spec.md> --repo <dir>
   //     → { validadores: ['tycon-story-validator', ...], lanzamientos: [{agente, paquete, modelo, prompt, nota}], packs }
   // siblings — los hermanos declarados de los paquetes activos en el repo, en su ruta esperada (para el revisor que no
@@ -6042,10 +6042,10 @@ function main() {
       result.mech_discounted = disc.discounted;
       result.mech_findings = disc.mech_findings;
       result.mech_note = `mech-check descontó ${disc.discounted.length} advisor(s) del rerun/expected. ` +
-        (disc.mech_findings.length ? `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS — al reporte del Step 6.` : 'Sin findings mecánicos.');
+        (disc.mech_findings.length ? `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS — al reporte del paso de hallazgos.` : 'Sin findings mecánicos.');
     } else if (disc && disc.mech_findings.length) {
       result.mech_findings = disc.mech_findings;
-      result.mech_note = `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS (mech-check) — al reporte del Step 6.`;
+      result.mech_note = `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS (mech-check) — al reporte del paso de hallazgos.`;
     }
     const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
     result.reglas_revisores = resumenReglas(ctx && ctx.reglas ? ctx.reglas : reglasRevisores(args.repo));
@@ -6053,7 +6053,7 @@ function main() {
       result.context_file = ctx.context_file;
       result.context_file_overrides = ctx.overrides;
     }
-    result.batch_rule = 'Ventana deslizante: MÁXIMO 4 subagentes VIVOS a la vez (máquina 8c/16GB); reponer el slot al llegar cada notificación de término. ⚠️ Cap 2 si el pase adversarial 5b sigue en vuelo (el step-05 §Cap reducido manda).';
+    result.batch_rule = 'Ventana deslizante: MÁXIMO 4 subagentes VIVOS a la vez (máquina 8c/16GB); reponer el slot al llegar cada notificación de término. ⚠️ Cap 2 si el pase adversarial sigue en vuelo (manda la guía del paso de revisores §Cap reducido).';
     // expected = el SUBSET legítimo de esta iteración (rerun) — check-count valida
     // contra esto, no contra el set completo.
     // El validador de stories en los re-loops: se decide ANTES de persistir el expected.
@@ -6197,7 +6197,7 @@ function main() {
         `Corridos (${ran.length}): ${ran.join(', ') || '(ninguno)'}\n` +
         (extra.length ? `Corridos de más (OK pero raro): ${extra.join(', ')}\n` : '') +
         discrepancy +
-        `\nNO avanzar a Step 6 hasta correr los faltantes.\n`,
+        `\nNO avanzar al paso de hallazgos hasta correr los faltantes.\n`,
       );
       process.exit(2);
     }
@@ -6323,7 +6323,7 @@ function main() {
     const result = computeNext();
     // Consultar `next` es el momento en que el orquestador ARRANCA ese paso — se anota la
     // hora. Lo escribe marker.js (un solo escritor del marker); él decide no mover un arranque ya
-    // anotado ni arrancar un paso completo. Los sub-pasos (0b/0c/5b/7c) también: su trabajo no puede
+    // anotado ni arrancar un paso completo. Las partes del arranque, el pase adversarial y la prueba en vivo también: su trabajo no puede
     // caer como «tiempo entre pasos». Best-effort: medir nunca puede romper la consulta.
     // el paso por su nombre de máquina (o el número de un marcador viejo): marker.js decide qué arranque anotar
     if (!result.error && (STEPS_TABLE.byId(result.next_step) || /^(\d|0b|0c|5b|7c)$/.test(String(result.next_step || '')))) {
@@ -6338,7 +6338,7 @@ function main() {
   if (cmd === 'work-signal') {
     const event = process.argv[3];
     if (!['start', 'stop'].includes(event)) {
-      process.stderr.write('uso: pipeline.js work-signal <start|stop> [--story <spec> --repo <dir>]   (paso 0b: start · paso 9: stop)\n');
+      process.stderr.write('uso: pipeline.js work-signal <start|stop> [--story <spec> --repo <dir>]   (Arranque: start · «Cerrar la historia»: stop)\n');
       process.exit(2);
     }
     let r;
@@ -6365,7 +6365,7 @@ function main() {
   if (cmd === 'risk-class') {
     // Guarda de aridad/existencia: sin esto un --files mal expandido cuenta 1
     // archivo → LOW → `auto_approve_plan: true` (se saltea el checkpoint del plan) Y skip del
-    // 5b, los dos en silencio. Sólo si vino --files: sin el flag, risk-class cae legítimamente
+    // pase adversarial, los dos en silencio. Sólo si vino --files: sin el flag, risk-class cae legítimamente
     // al frontmatter de la story (files_to_create/files_to_modify) y no hay nada que validar.
     // SÓLO la guarda de aridad, no la validación de existencia completa.
     // Estos dos comandos salen `exit 0` salvo por esta guarda, y un diff que BORRA
@@ -6434,10 +6434,10 @@ function main() {
     process.exit(0);
   }
   if (cmd === 'deep-review-gate') {
-    // Step 5b: ¿corre el pase adversarial reproduce-or-refute? {run, model, reason}. Gate = risk-class
+    // Pase adversarial: ¿corre el pase adversarial reproduce-or-refute? {run, model, reason}. Gate = risk-class
     // NORMAL + overrides. exit 0 siempre (informativo); el orquestador lee `run`.
     // Misma guarda que risk-class: el default de este gate ES risk-class, así que
-    // un --files mal expandido produce un LOW silencioso y sella el 5b como hecho
+    // un --files mal expandido produce un LOW silencioso y sella el pase adversarial como hecho
     // (`deepReviewDone`). Abortar es correcto AUNQUE el comando sea informativo: un veredicto
     // computado sobre entrada rota es peor que no tener veredicto.
     const wsErr = detectarWordSplit(args);   // ídem risk-class: la guarda de aridad…
@@ -6456,7 +6456,7 @@ function main() {
       process.stderr.write(`deep-review-gate: ${result.reason}\n`);
       process.exit(2);
     }
-    // Con una corrida activa de ESTA story y el paso 4 cerrado, el veredicto queda anotado
+    // Con una corrida activa de ESTA story y «Correr las pruebas» cerrado, el veredicto queda anotado
     // (`adversarialGate`) para que `next` pida el lanzamiento sin recalcular el portón. Lo escribe marker.js (un
     // solo escritor del marker); `computeDeepReviewGate` sigue sin tocarlo. Sin corrida no se anota ni se avisa. El
     // temprano que se imprime es el que vale para la corrida: visto apagado una vez, sigue apagado.
@@ -6657,7 +6657,7 @@ function main() {
   if (cmd === 'e2e-config') {
     // Resuelve el gate E2E del proyecto (.tycon/advisors.yaml → e2e.*). Salida JSON
     // {gate, frontend_dir, frontend_dirs, critical_manifest} con paths absolutos, o {} si el
-    // repo no declara gate. Lo consumen step-07c (scoped) y tycon-merge-to-main (critical+full).
+    // repo no declara gate. Lo consumen la prueba en vivo (scoped) y tycon-merge-to-main (critical+full).
     //
     // Con `--changed <archivos...>` agrega `frontend_dirs_selected`: las apps del
     // monorepo que ESA entrega tocó. Sin el flag, `selected` == todas (fail-safe: correr de más
@@ -6680,7 +6680,7 @@ function main() {
   }
 
   // ── dep-gate — gate mecánico de dependencias nuevas ─
-  // Corre en Step 4 (post-build). exit 2 si hay dependencias no declaradas en la story
+  // Corre en «Correr las pruebas» (post-build). exit 2 si hay dependencias no declaradas en la story
   // (PAUSA HITL), exit 0 si pass/skip. Ver computeDepGate.
   if (cmd === 'dep-gate') {
     const result = computeDepGate({ repo: args.repo, story: args.story });
@@ -6711,16 +6711,16 @@ function main() {
   }
 
   // ── Review Follow-ups persistidos en la story ────────
-  // write-followups: Step 6/7 escribe los findings no resueltos como sección checkbox.
-  // followups-status: Step 0/1 detecta los abiertos al retomar.
+  // write-followups: el paso de hallazgos escribe los findings no resueltos como sección checkbox.
+  // followups-status: el Arranque y «Validar la historia» detectan los abiertos al retomar.
   if (cmd === 'write-followups') {
     const result = writeFollowups(args);
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(result.error ? 1 : 0);
   }
-  // ── findings.json del Step 6 ─────────────────────────────────
-  // write-findings: escribe el artefacto machine-parseable (Step 6). findings-status:
-  // pre-condición de Step 8 — exit 3 si falta (para que el orquestador lo escriba).
+  // ── findings.json del paso de hallazgos ─────────────────────────────────
+  // write-findings: escribe el artefacto machine-parseable (paso de hallazgos). findings-status:
+  // pre-condición de «Preparar el commit» — exit 3 si falta (para que el orquestador lo escriba).
   if (cmd === 'write-findings') {
     const result = writeFindings(args);
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
@@ -6824,19 +6824,19 @@ function main() {
     '       (próximo step + step_file + skips MECÁNICOS evaluados + checks del marker.\n' +
     '       El LLM sigue siendo el loop (H17): lee SOLO el step file que esto indica.)\n' +
     '  node pipeline.js risk-class     --story <spec.md> [--files ...]\n' +
-    '       (Nivel 2 autonomía: LOW → step-03 plan auto-aprobado con anuncio; cualquier\n' +
+    '       (Nivel 2 autonomía: LOW → plan auto-aprobado con anuncio; cualquier\n' +
     '       criterio fallido → NORMAL → HITL. Push/scope firmado SIEMPRE human-gate.)\n' +
     '  node pipeline.js tooling-expected --repo <dir>\n' +
     '       (PIPE-C9: qué tooling ESPERA el pipeline acá — codegraph si hay .codegraph/, engram,\n' +
-    '       tool Workflow p/ 5b. El orquestador cruza contra su harness y AVISA al user si algo\n' +
+    '       tool Workflow p/ el pase adversarial. El orquestador cruza contra su harness y AVISA al user si algo\n' +
     '       esperado no está disponible ANTES de degradar al fallback. `start` ya lo incluye.)\n' +
     '  node pipeline.js model-hint     --story <spec.md> [--files ...]\n' +
     '       (sugerencia de modelo de SESIÓN por complejidad: LOW→sonnet · NORMAL→opus ·\n' +
     '       NORMAL+≥2 señales pesadas→opus. Advisory: el orquestador compara con su modelo\n' +
-    '       real y sugiere /model al user en Step 0. NUNCA bloquea. `start` ya lo incluye.)\n' +
+    '       real y sugiere /model al user en el Arranque. NUNCA bloquea. `start` ya lo incluye.)\n' +
     '  node pipeline.js deep-review-gate --repo <dir> --story <spec.md> [--files ...]\n' +
     '                                  [--deep-review|--no-deep-review|--ultracode|--deep-review-opus|--deep-review-fable]\n' +
-    '       (Step 5b: ¿corre el pase adversarial reproduce-or-refute? Gate = risk-class NORMAL.\n' +
+    '       (Pase adversarial: ¿corre el pase adversarial reproduce-or-refute? Gate = risk-class NORMAL.\n' +
     '       {run, model, model_reason, reason}. Modelo: sonnet default; story pesada → opus\n' +
     '       automático. Fable no se ofrece nunca: sólo corre con --deep-review-fable.\n' +
     '       Kill-switch: TYCON_NO_DEEP_REVIEW=1. Repo: .tycon/advisors.yaml deep_review:)\n' +
@@ -6863,13 +6863,13 @@ function main() {
     '  node pipeline.js timing-report\n' +
     '       (Fase 0 — desglose de wall-clock por step/iter/gate de la corrida en curso.)\n' +
     '  node pipeline.js dep-gate       --repo <dir> --story <spec.md>\n' +
-    '       (adopción BMAD — Step 4: dependencias NUEVAS (package.json/*.csproj) no declaradas\n' +
+    '       (adopción BMAD — «Correr las pruebas»: dependencias NUEVAS (package.json/*.csproj) no declaradas\n' +
     '       en la story → exit 2 PAUSA HITL. Match conservador por nombre en el texto de la story.)\n' +
     '  node pipeline.js next-story     [--specs-dir <dir>] [--repo <dir>]\n' +
     '       (adopción BMAD — próxima story ready-for-dev en specs/stories/ (orden numérico) +\n' +
     '       menú de recuperación si no hay. NO arranca el pipeline: devuelve el path para `start`.)\n' +
     '  node pipeline.js write-findings    --story <spec.md> --repo <dir> --findings <array.json|->\n' +
-    '       (Step 6 — escribe el findings.json machine-parseable en el run dir (auto-resuelto):\n' +
+    '       (paso de hallazgos — escribe el findings.json machine-parseable en el run dir (auto-resuelto):\n' +
     '       array de {rule_id,severity,advisor,file,disposition,reason}. Valida schema. Es el\n' +
     '       insumo del retrospective-capturer — reemplaza el WRITE MANUAL olvidable (BUG-PIPELINE-006).)\n' +
     '  node pipeline.js verify-finding    --finding <hallazgo.json> [--repo <dir>] [--model sonnet]\n' +
@@ -6880,16 +6880,16 @@ function main() {
     '       (valida lo que devolvió el verificador {refuted, command, output} y guarda <corrida>/refutations/<id>.json:\n' +
     '       sin esa constancia write-findings no deja un hallazgo como refuted.)\n' +
     '  node pipeline.js findings-status   --story <spec.md> --repo <dir>\n' +
-    '       (pre-condición de Step 8 — exit 3 si falta el findings.json del run. El orquestador lo\n' +
+    '       (pre-condición de «Preparar el commit» — exit 3 si falta el findings.json del run. El orquestador lo\n' +
     '       corre antes del commit-prep y, si falta, lo escribe con write-findings.)\n' +
     '  node pipeline.js write-followups   --story <spec.md> --findings <findings.json>\n' +
     '       (adopción BMAD — persiste findings advisor no resueltos como sección checkbox EN la\n' +
     '       story (idempotente por fkey ruleId|file, preserva [x] previos). Solo toca el body.)\n' +
     '  node pipeline.js followups-status  --story <spec.md>\n' +
-    '       (adopción BMAD — Step 0/1: cuenta review follow-ups abiertos/resueltos. exit 3 si\n' +
+    '       (adopción BMAD — Arranque y «Validar la historia»: cuenta review follow-ups abiertos/resueltos. exit 3 si\n' +
     '       hay abiertos (priorizarlos sobre tasks nuevas), 0 si limpio.)\n' +
     '  node pipeline.js validators        --story <spec.md> --repo <dir>\n' +
-    '       (story 8.2 — Step 1: el validador de stories + los revisores del grupo `validacion`\n' +
+    '       (story 8.2 — «Validar la historia»: el validador de stories + los revisores del grupo `validacion`\n' +
     '       de los paquetes activos (packs/), con su prompt rendido y su modelo. Un paquete roto\n' +
     '       o uno que el repo nombra y no está instalado → exit 2 con archivo, revisor y motivo.)\n',
   );
@@ -6965,7 +6965,7 @@ module.exports = {
   // Exportados para regresión.
   findRepoRootsForStory,
   computePreflightFrontmatter,
-  // Step 5b adversarial — exportado para unit test del gate.
+  // Pase adversarial — exportado para unit test del gate.
   computeDeepReviewGate,
   deepReviewConfig,
   // model-hint por complejidad — exportado para unit tests.

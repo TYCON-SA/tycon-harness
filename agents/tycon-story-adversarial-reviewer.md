@@ -2,7 +2,7 @@
 name: tycon-story-adversarial-reviewer
 tools: Read, Grep, Glob, mcp__codegraph__codegraph_search, mcp__codegraph__codegraph_callers, mcp__codegraph__codegraph_node
 model: sonnet
-description: Revisa una story ya validada antes de programar, buscando lo que el validador no ve. Lo lanza el paso 6 de tycon-create-story o el paso 1 del pipeline si la historia no tiene constancia vigente.
+description: Revisa una story ya validada antes de programar, buscando lo que el validador no ve. Lo lanza tycon-create-story al cerrar la historia o «Validar la historia» del pipeline si la historia no tiene constancia vigente.
 omitClaudeMd: true
 ---
 
@@ -83,7 +83,7 @@ renglón para registrar la constancia.
 
 ## Integración
 
-Lo lanza el paso 6 de `tycon-create-story` (después del validador y de VAL-W17) o el paso 1 del pipeline, cuando
+Lo lanza `tycon-create-story` al cerrar la historia (después del validador y de VAL-W17) o «Validar la historia» del pipeline, cuando
 `pipeline.js story-review-gate` dice que corre. El modelo sale de `models.adversarial.story` (valor de hoy: sonnet).
 Quien orquesta corrige lo corregible en la historia con una línea de Change Log por hallazgo, hace una sola pregunta si
 un CRITICAL no se puede corregir sin decidir, y registra el resultado con `pipeline.js story-review-record`.

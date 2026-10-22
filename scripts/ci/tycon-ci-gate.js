@@ -513,7 +513,7 @@ function validarRoster(roster, advisores) {
         // Se enciende solo a medida que las corridas viejas dejan de cerrarse — sin día de corte y
         // sin que nadie tenga que acordarse de cerrar una ventana de medición.
         const p = { regla: 'roster-incoherente', detalle: tramo === 'previo'
-          ? `"${a}" reportó hallazgos del tramo previo al paso 5 y no figura entre los agentes de ese tramo`
+          ? `"${a}" reportó hallazgos del tramo previo al paso de revisores y no figura entre los agentes de ese tramo`
           : `"${a}" reportó hallazgos pero no figura entre los revisores` };
         if (tramo) p.validado = true;
         problemas.push(p);

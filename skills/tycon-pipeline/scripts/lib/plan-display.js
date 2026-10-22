@@ -1,12 +1,12 @@
 'use strict';
 /**
- * plan-display — el plan del paso 3 se lo muestra el arnés a la persona, sin depender del agente.
+ * plan-display — el plan del paso «Aprobar el plan» se lo muestra el arnés a la persona, sin depender del agente.
  *
- * Medido en un laboratorio con una sesión atendida: el freno de `complete-step 3` le devolvió el plan entero al agente
+ * Medido en un laboratorio con una sesión atendida: el freno de `complete-step approve-plan` le devolvió el plan entero al agente
  * tres veces, el agente no lo escribió nunca y dijo que ya lo había mostrado. Lo que el agente lee no le llega a la
  * persona; lo que un control de Claude Code devuelve como `systemMessage` sí aparece en su pantalla.
  *
- *   · `planParaMostrar({ command, sessionId, stateDir, home })`: antes de un `marker.js complete-step 3`, con el paso 3
+ *   · `planParaMostrar({ command, sessionId, stateDir, home })`: antes de un `marker.js complete-step approve-plan`, con ese paso
  *     abierto, el plan escrito en la carpeta de la corrida y la conversación legible sin el plan, devuelve
  *     `{ systemMessage, constancia }` y deja la constancia en `gates.log` (`plan-shown`: sesión, historia y huella del
  *     plan). Si no, null. Sin conversación legible (otra herramienta) no muestra ni anota: no se sabe si el aviso se ve.
@@ -14,7 +14,7 @@
  *     corrida abierta de esta sesión). Corre en el despachador de ediciones, que la instalación mínima también trae:
  *     el plan aparece en pantalla en el momento en que se escribe. Devuelve `{ systemMessage }` o null.
  *   · `mostradoPorElArnes({ stateDir, sessionId, storyId, planTxt })`: ¿hay una constancia de esa sesión, esa historia y
- *     ese mismo plan? La lee `complete-step 3`. El agente no puede escribir en la carpeta del estado (la frena el
+ *     ese mismo plan? La lee `complete-step approve-plan`. El agente no puede escribir en la carpeta del estado (la frena el
  *     portón de carril), así que la constancia no se fabrica copiando una línea.
  */
 const crypto = require('crypto');

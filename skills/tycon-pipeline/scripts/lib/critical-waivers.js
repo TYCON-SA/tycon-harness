@@ -6,7 +6,7 @@
  * firmado como `orquestador`. Un CRITICAL `waived` vale sólo con su línea en
  * `<carpeta de la corrida>/critical-waivers.jsonl`, que deja `marker.js waive-critical` con el ok de una persona:
  *   { rule_id, file, reason, tipo: 'manual' | 'automatica', quien, delegacion?, cita?, cita_cuando?, via, ts }
- * La verifican tres lugares: `pipeline.js write-findings` (no escribe), y los cierres de los pasos 7 y 8 (frenan).
+ * La verifican tres lugares: `pipeline.js write-findings` (no escribe), y los cierres de «Hallazgos» y «Preparar el commit» (frenan).
  */
 const fs = require('fs');
 const path = require('path');

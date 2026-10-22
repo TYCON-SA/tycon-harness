@@ -1,10 +1,10 @@
 'use strict';
 /**
  * adversarial-verdict.js — ¿el pase adversarial está atendido? Y qué hacer con uno de otra sesión.
- * Lo usan `marker.js` (el freno del paso 8) y `pipeline.js` (`next`): una sola copia del criterio.
+ * Lo usan `marker.js` (el freno de «Preparar el commit») y `pipeline.js` (`next`): una sola copia del criterio.
  *
  * `veredictoPaseAdversarial` vive acá y no en `marker.js` (que no exporta nada) para que `next` lo use: sin
- * él, `next` pediría relanzar siempre un pase de otra sesión —también uno ya cerrado, y relanzar un pase cerrado bloquea el paso 8.
+ * él, `next` pediría relanzar siempre un pase de otra sesión —también uno ya cerrado, y relanzar un pase cerrado bloquea «Preparar el commit».
  */
 
 const fs = require('fs');
@@ -12,13 +12,13 @@ const os = require('os');
 const path = require('path');
 
 /**
- * ¿El 5b quedó atendido? Pura: lee el marker y devuelve
+ * ¿El pase adversarial quedó atendido? Pura: lee el marker y devuelve
  * `{ veredicto: 'paso'|'bloqueo', motivo, runId, launchedAt }`.
  *
  * Lanzado → pasa con un resultado `tipo: '5b'` anotado en o después del ÚLTIMO lanzamiento (`resultado`), o con
  * el abandono de ESE lanzamiento (`abandonado`); si los resultados que hay son de un lanzamiento anterior —el
  * pase se relanzó— bloquea (`resultado-de-otro-lanzamiento`); sin nada, `sin-resultado`.
- * No lanzado → pasa con el salteo que decidió el portón (`salteado` / `salteado-forzado`), o con un resultado 5b
+ * No lanzado → pasa con el salteo que decidió el portón (`salteado` / `salteado-forzado`), o con un resultado del pase
  * anotado aunque nadie haya registrado el lanzamiento (`resultado-sin-lanzamiento`), y si no, `no-atendido`:
  * la bandera `deepReviewDone` de una corrida vieja NO cuenta, porque es justo lo que cualquiera escribía a mano.
  * «No lo pude leer» no es «está»: un registro que no es lista o un lanzamiento sin fecha bloquean con su nombre.
@@ -51,7 +51,7 @@ function veredictoPaseAdversarial(marker) {
     return res('bloqueo', 'sin-resultado');
   }
   if (skip) return res('paso', skip.forzado === true || skip.abandonado === true ? 'salteado-forzado' : 'salteado');
-  // Resultado 5b anotado sin lanzamiento registrado:
+  // Resultado del pase anotado sin lanzamiento registrado:
   // el resultado ES la constancia que el paso pide; queda con su propio motivo, visible en el registro.
   const del5b = pases.filter((p) => p && p.tipo === '5b');
   if (del5b.length && del5b[del5b.length - 1].veredicto === 'no-medido') return res('bloqueo', 'pase-no-medido', { pase: del5b[del5b.length - 1] });
@@ -61,7 +61,7 @@ function veredictoPaseAdversarial(marker) {
 
 /**
  * Para `next`: «atendido» es `paso`, y también un `bloqueo` por `resultado-de-otro-lanzamiento`
- * —ése lo frena el paso 8, y pedir otro lanzamiento desde `next` lo empeora—.
+ * —ése lo frena «Preparar el commit», y pedir otro lanzamiento desde `next` lo empeora—.
  */
 function paseAtendido(v) {
   return !!v && (v.veredicto === 'paso' || v.motivo === 'resultado-de-otro-lanzamiento');
@@ -128,7 +128,7 @@ function reglaPaseAjeno(adv, opts = {}) {
   }
   return {
     kind: 'relanzar-pase-ajeno',
-    message: `${cuando}: se RELANZA en el paso del pase adversarial (5b, §JOIN de step-08-adversarial-pass.md).`,
+    message: `${cuando}: se RELANZA en el paso del pase adversarial (§JOIN de step-08-adversarial-pass.md).`,
     rule: REGLA_PASE_AJENO,
     why: !reciente ? `${edad} (tope ${ESPERA_MAX_MIN} min)` : `${edad}, pero ${hilo} (tope ${HILO_VIVO_MIN} min)`,
   };

@@ -25,7 +25,7 @@
  *             · hay pipeline activo (marker de esta sesión) → el carril es "story"; el resto lo
  *               juzgan el portón ATDD, los gates del complete-step y el DoD. La ÚNICA excepción es
  *               el sub-portón de PLAN (abajo). 🔴 El marker se mira ANTES que cualquier criterio de
- *               repo: un marker con step 3 pendiente frena aunque el descubrimiento de stories no
+ *               repo: un marker con el plan sin aprobar frena aunque el descubrimiento de stories no
  *               vea nada.
  *             · el repo NO trabaja con el arnés: sin `.tycon/` y sin stories Mary+GOLD (propias) —
  *               un script suelto, un repo legacy: acá no hay carril que decidir. 🔴 `.tycon/` es la
@@ -35,7 +35,7 @@
  *               no se pasó del cupo de archivos de implementación.
  *
  *   BLOQUEA si: · (no-lane) repo bajo el arnés, sin marker ni ad-hoc → hay que elegir carril.
- *               · (plan)    hay marker pero el Step 3 (plan aprobado) sigue PENDIENTE → no se toca
+ *               · (plan)    hay marker pero el paso «Aprobar el plan» sigue PENDIENTE → no se toca
  *                           código antes de que el user apruebe el plan. Esto es lo que convierte
  *                           "tomó confianza y se salteó el HITL" en algo que no puede pasar.
  *               · (adhoc-cap) el ad-hoc ya tocó su cupo de archivos de implementación distintos →
@@ -378,7 +378,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
 // para un lado o para el otro con cada frase nueva del equipo.
 //
 // El diseño no adivina:
-//   · Carril PIPELINE = hay marker (el pipeline CORRIÓ su Step 0 — estado real, no una frase).
+//   · Carril PIPELINE = hay marker (el pipeline CORRIÓ su Arranque — estado real, no una frase).
 //   · Carril AD-HOC   = `marker.js adhoc set` citando palabras del user (reasonInPrompts, mecánico)
 //                       o, si la cita no alcanza, el clasificador por modelo leyendo los prompts
 //                       REALES del user decide — castellano lo interpreta un modelo, no un regex

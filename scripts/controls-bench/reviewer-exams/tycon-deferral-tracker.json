@@ -1,0 +1,19 @@
+{
+  "agent": "tycon-deferral-tracker",
+  "file": "agents/tycon-deferral-tracker.md",
+  "hash": "44a86923c52497f4a05d08fdeac5dea7a58d084c",
+  "passed": 3,
+  "total": 3,
+  "score": 1,
+  "baseline": {
+    "passed": 3,
+    "total": 3,
+    "score": 1
+  },
+  "regressions": [],
+  "cases": {
+    "tycon-deferral-tracker::deftr-c1-deuda-fantasma": true,
+    "tycon-deferral-tracker::limpio-deuda-documentada-sin-c1": true,
+    "tycon-deferral-tracker::deftr-c2-skip-sin-todo": true
+  }
+}

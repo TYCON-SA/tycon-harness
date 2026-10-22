@@ -11,7 +11,7 @@
  * GOBIERNO DE SPAWNS AD-HOC — medición sobre 58 runs / 795 spawns:
  *   - El subagent más spawneado del pipeline NO es un advisor: es `general-purpose`,
  *     156 de 795 (20%). Sumando `Explore` (30) son 186 — el 23% del total.
- *   - 133 de esos 156 ocurren ANTES del `step5-start`, o sea en los Steps 0-4, donde
+ *   - 133 de esos 156 ocurren ANTES del `step5-start`, o sea en los pasos de «Arranque» a «Correr las pruebas», donde
  *     NO hay ninguna de las reglas de costo del pipeline (ni context curado, ni
  *     model hints, ni mech-check, ni batch_rule).
  *   - Un spawn cuesta ~60.000-100.000 tokens ANTES de leer nada (baseline medido):
@@ -254,7 +254,7 @@ function main() {
         'utf8',
       );
     } else if (r.completa && r.yaFotografiada && !ADHOC.has(advisor)) {
-      // 🔴 Un revisor llamado DESPUÉS del sello (el de la prueba en vivo del paso 7c, o una vuelta manual) también entra
+      // 🔴 Un revisor llamado DESPUÉS del sello (el de la prueba en vivo, o una vuelta manual) también entra
       // al registro de autoría: sin eso, `write-findings` lo rechaza como firmante y su hallazgo termina firmado como
       // «orquestador». La escritura mezcla con el registro anterior.
       escribirRoster({ logPath, repo, story, sessionId, transcriptPath: event.transcript_path });
@@ -324,7 +324,7 @@ function main() {
 
   // ── Aviso (b) — cuántos ad-hoc van en esta fase ───────────────────────────
   // "Fase" = desde el último step5-start (o desde el arranque de la sesión si no hubo).
-  // Es el corte de la medición de arriba: Steps 0-4 vs la revisión.
+  // Es el corte de la medición de arriba: los pasos previos a la revisión vs la revisión.
   let adhocEnFase = 0;
   try {
     const lines = fs.readFileSync(logPath, 'utf8').split('\n');

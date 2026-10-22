@@ -266,7 +266,7 @@ function stampOf(name) {
 
 /**
  * Las carpetas de corrida con su `findings.json` leído, de la más nueva a la más vieja, y cuántas NO se pudieron leer.
- * Una corrida sin `findings.json` todavía no es una corrida rota (el archivo se escribe al cerrar el Step 6); un
+ * Una corrida sin `findings.json` todavía no es una corrida rota (el archivo se escribe al cerrar el paso de hallazgos); un
  * `findings.json` que está y no se lee, o que no es un array, sí: cuenta en `noLeidas`, nunca como corrida vacía.
  * `null` si no se puede leer la carpeta de corridas.
  */

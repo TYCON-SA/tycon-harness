@@ -37,8 +37,8 @@ Se agrava cuando, **al mismo tiempo**, el agente tiene **8–11 subagentes (advi
    *Precisión (desde 2026-08-28)*: "salvo que el diff haya cambiado" ahora lo
    decide un chequeo mecánico, no el ojo — `suite-freshness.js check` compara la huella del código
    que la corrida verde midió (guardada en `tests-result.json → code_state`) contra el working tree
-   actual. Si el pipeline iteró fixes después del verde del Step 4 y `suite-freshness` da STALE, la
-   re-corrida del cierre (step-07b, al converger) reemplaza a la del Step 4 — una sola, nunca una por
+   actual. Si el pipeline iteró fixes después del verde de «Correr las pruebas» y `suite-freshness` da STALE, la
+   re-corrida del cierre (la última vuelta de Revisores, al converger) reemplaza a la de «Correr las pruebas» — una sola, nunca una por
    iteración: un verde que describe código que ya no existe no cuenta como "ya corrió y pasó". El
    portón de `/tycon-merge-to-main` corre build + tests sobre el código ya mergeado (en .NET, sin
    `Integration`/`EdgeCase`), o los corre la validación del PR en el servidor.

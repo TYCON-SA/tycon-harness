@@ -137,7 +137,7 @@ pero sin los controles que corren al commitear. `harness.js doctor` te dice si q
 **3. engram y la herramienta de horas son opcionales.** engram (memoria entre sesiones) se prende con `TYCON_ENGRAM=1` o
 `"integrations": { "engram": true }` en `~/.claude/tycon.json`; la herramienta de horas, con `TYCON_TIME_TRACKING=<nombre>` y
 `guides/integrations/clockify-mcp.md`. Apagados, las guías que los nombran siguen de largo y el pipeline saltea solo su paso de
-horas. Sin Azure DevOps, el pipeline también saltea su parte (el paso 0c y el cierre en Azure DevOps) y una story
+horas. Sin Azure DevOps, el pipeline también saltea su parte (el pedido en ADO del Arranque y el cierre en Azure DevOps) y una story
 nueva no te pide crear un work item.
 
 ### 4b. La configuración del arnés: rutas e integraciones
@@ -549,7 +549,7 @@ que viven solo en una guía y el modelo nunca ve (H20).
 1. **H20 — no escondas reglas operativas solo en guías.** Si una regla la necesita el modelo
    en TODA sesión → va en el índice, `INDEX.md` (que se carga). Las guías son para profundidad/detalle
    topical. Y si un step del pipeline o un advisor DEPENDE de una guía, ese step DEBE
-   referenciarla explícitamente (ej: `step-07c` → `definition-of-done.md`, `step-01` →
+   referenciarla explícitamente (ej: `step-10-live-check` → `definition-of-done.md`, `step-02-validate-story` →
    `story-format.md`) para que se lea on-demand al ejecutarse.
 2. **H3 — una sola fuente canónica por regla.** Cada regla vive textual en UN solo archivo;
    el resto la referencia con un puntero (`Ver guides/X.md`), NO la re-escribe. **Y la copia

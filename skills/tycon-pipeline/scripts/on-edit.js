@@ -114,7 +114,7 @@ function handle(event) {
 
   // La edición se registra SIEMPRE, haya o no corrida de pipeline. Es la evidencia que necesita el
   // gate de ATDD del commit para cubrir el trabajo hecho a mano: sin marker, el gate de
-  // `complete-step 4` no tiene nada que leer y el orden test↔código queda sin control.
+  // `complete-step implement` no tiene nada que leer y el orden test↔código queda sin control.
   atddGate.recordFileEvent(STATE_DIR, sessionId, filePath, Date.now());
 
   const marker = readMarker(sessionId);

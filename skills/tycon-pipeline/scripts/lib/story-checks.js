@@ -2,7 +2,7 @@
  * lib/story-checks.js — checks DETERMINISTAS de story Mary+GOLD.
  *
  * Extrae a código las reglas mecánicas que hoy ejecutan advisors LLM (Sonnet,
- * 2-3 min + tokens por iteración del Step 5). El patrón es "executor determinista
+ * 2-3 min + tokens por iteración del paso de revisores). El patrón es "executor determinista
  * + LLM solo para ambiguos": pipeline.js mech-check corre esto inline (~ms) y el
  * orquestador invoca el advisor LLM correspondiente SOLO si hay `ambiguous`.
  *
@@ -22,8 +22,8 @@
  *   - Playwright: idem en el título del test.
  * El matching por T-ID/nombre sigue funcionando como fallback para stories viejas.
  *
- * Consumidores: pipeline.js mech-check (Step 5), on-pre-commit.js (gate commit),
- * tycon-story-validator VAL-W11 (Step 1, vía validate ya en tabla).
+ * Consumidores: pipeline.js mech-check (paso de revisores),on-pre-commit.js (gate commit),
+ * tycon-story-validator VAL-W11 (paso «Validar la historia», vía validate ya en tabla).
  * 0 deps. Fail-safe: cualquier error de parse → finding 'ambiguous', nunca throw.
  */
 

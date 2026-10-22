@@ -507,7 +507,7 @@ if (require.main === module) {
   let r = null;
   try { r = handle(event || {}); } catch (e) { logHookError(e); r = null; }
   if (r && r.block) { process.stderr.write(r.block); process.exit(2); }
-  // Antes de cerrar el paso 3, el arnés le muestra a la persona el plan si el agente no lo hizo (lib/plan-display.js) y,
+  // Antes de cerrar «Aprobar el plan», el arnés le muestra a la persona el plan si el agente no lo hizo (lib/plan-display.js) y,
   // si la historia cambia una pantalla en un repo sin prueba con navegador, la oferta de prepararla (lib/browser-test.js).
   // Van en un solo aviso.
   const avisos = [];

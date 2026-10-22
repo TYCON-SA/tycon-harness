@@ -472,6 +472,46 @@ import json,sys; c=json.loads(sys.argv[1])['corridas'][0]; assert c['ultimo_paso
 generar "${T}/r" "${T}/o.html" "${T}/log"; grep -q 'quedó en Hallazgos' "${T}/o.html" && ok "T22 la fila dice «quedó en Hallazgos»" || mal "T22 la fila no dice «quedó en Hallazgos»"
 rm -rf "${T}"
 
+# ── T22b · «quedó en» el paso que arrancó y no terminó, no en el último terminado ─────────────
+# 🔴 Falla con: tomar sólo stepsCompleted → una ejecución archivada a mitad de implementar dice «quedó en Aprobar
+#    el plan», y la trama dice «sin marca» por pasos que nunca corrieron (caso real de la pestaña Ejecuciones).
+for CASO in '4|Implementar + pruebas' 'implement|Implementar'; do
+  PASO="${CASO%%|*}"; NOMBRE="${CASO#*|}"
+  T=$(mktemp -d)
+  volcado "${T}/r" "${S1}" "" '{"marker":{"startedAt":"2026-10-22T14:10:37.000Z","stepsCompleted":[0,1,2,3],"stepTimings":{"0":{"startedAt":"2026-10-22T14:10:37.000Z","completedAt":"2026-10-22T14:11:16.000Z"},"1":{"completedAt":"2026-10-22T14:13:46.000Z"},"2":{"startedAt":"2026-10-22T14:14:03.000Z","completedAt":"2026-10-22T14:49:12.000Z"},"3":{"completedAt":"2026-10-22T14:50:03.000Z"},"4":null,"5":null,"6":null,"7":null,"8":null,"'"${PASO}"'":{"startedAt":"2026-10-22T14:50:03.600Z","completedAt":null},"0b":{"startedAt":"2026-10-22T14:10:45.000Z"}}}}'
+  generar "${T}/r" "${T}/o.html" "${T}/log"
+  grep -q "quedó en ${NOMBRE}<" "${T}/o.html" && ok "T22b (${PASO}) la fila dice «quedó en ${NOMBRE}»" || mal "T22b (${PASO}) la fila no dice «quedó en ${NOMBRE}»: $(grep -o 'quedó en [^<]*' "${T}/o.html" | head -1)"
+  grep -q "${NOMBRE} quedó sin terminar; [1-9] paso(s) no se llegaron a correr\"" "${T}/o.html" && ok "T22b (${PASO}) la trama dice qué quedó sin terminar y cuántos no corrieron" || mal "T22b (${PASO}) la trama no lo dice: $(grep -o 'title="[^"]*sin terminar[^"]*"' "${T}/o.html" | head -1)"
+  D="$(cliente "${T}/o.html" detail 0)"
+  grep -q "quedó en ${NOMBRE}" <<< "${D}" && grep -q "${NOMBRE} quedó sin terminar; [1-9] paso(s) no se llegaron a correr" <<< "${D}" && ok "T22b (${PASO}) el detalle dice lo mismo" || mal "T22b (${PASO}) el detalle no lo dice"
+  rm -rf "${T}"
+done
+
+# ── T22c · los otros casos de «quedó en» y de la trama ─────────────────────────────────────────
+# 🔴 Falla con: contar como «no se llegaron a correr» las filas anteriores a donde quedó (corrieron sin marca); tomar
+#    un arranque viejo sin cierre, o una fecha inválida, como el paso en curso; no ver la otra vuelta de revisores.
+caso_22c() {  # $1 nombre · $2 parche del marcador · $3 «quedó en» esperado · $4 trama esperada (sin el title=)
+  local T; T=$(mktemp -d)
+  volcado "${T}/r" "${S1}" "" "$2"
+  generar "${T}/r" "${T}/o.html" "${T}/log"
+  grep -q "quedó en $3<" "${T}/o.html" && grep -q "title=\"$4\"" "${T}/o.html" && ok "T22c $1" || mal "T22c $1: $(grep -o 'quedó en [^<]*' "${T}/o.html" | head -1) · $(grep -o 'class="falta"[^>]*title="[^"]*"' "${T}/o.html" | head -1)"
+  rm -rf "${T}"
+}
+BASE22='"stepsCompleted":[0,1,2,3],"stepTimings":{"0":{"startedAt":"2026-10-22T14:10:37.000Z","completedAt":"2026-10-22T14:11:16.000Z"},"1":{"completedAt":"2026-10-22T14:13:46.000Z"},"2":{"startedAt":"2026-10-22T14:14:03.000Z","completedAt":"2026-10-22T14:49:12.000Z"},"3":{"completedAt":"2026-10-22T14:50:03.000Z"},"4":null,"5":null,"6":null,"7":null,"8":null'
+caso_22c 'sin paso a medias: «no se llegaron a correr», sin nombrar ninguno' \
+  '{"marker":{"startedAt":"2026-10-22T14:10:37.000Z",'"${BASE22}"'}}}' 'Aprobar el plan' '4 paso(s) no se llegaron a correr'
+caso_22c 'un arranque viejo sin cierre, anterior a lo terminado, no es el paso en curso' \
+  '{"marker":{"startedAt":"2026-10-22T14:10:37.000Z",'"${BASE22}"',"1":{"startedAt":"2026-10-22T14:12:00.000Z","completedAt":null}}}}' 'Aprobar el plan' '4 paso(s) no se llegaron a correr; 1 paso(s) sin marca'
+caso_22c 'una fecha de arranque inválida no cuenta como arrancado' \
+  '{"marker":{"startedAt":"2026-10-22T14:10:37.000Z",'"${BASE22}"',"4":{"startedAt":"ayer"}}}}' 'Aprobar el plan' '3 paso(s) no se llegaron a correr'
+caso_22c 'otra vuelta de revisores, arrancada después de cerrar Hallazgos' \
+  '{"marker":{"startedAt":"2026-10-22T14:10:37.000Z","stepsCompleted":[0,1,2,3,4,5,6],"stepTimings":{"5":{"startedAt":"2026-10-22T16:00:00.000Z","completedAt":"2026-10-22T15:00:00.000Z"},"6":{"completedAt":"2026-10-22T15:30:00.000Z"},"7":null,"8":null}}}' 'Revisores' 'Revisores quedó sin terminar; 1 paso(s) no se llegaron a correr'
+# la ejecución que llegó al final, con una fila sin marca: corrió, así que sigue diciendo «sin marca»
+T=$(mktemp -d); volcado "${T}/r" "${S1}" "" '{"marker":{"stepTimings":{"2":null}}}'
+generar "${T}/r" "${T}/o.html" "${T}/log"
+grep -q 'class="falta" style="width:6px" title="1 paso(s) sin marca"' "${T}/o.html" && ok "T22c la ejecución que llegó al final sigue diciendo «sin marca»" || mal "T22c la que llegó al final: $(grep -o 'class="falta"[^>]*title="[^"]*"' "${T}/o.html" | head -1)"
+rm -rf "${T}"
+
 # ── T23 · sin hora de inicio, las evaluaciones NO desaparecen ─────────────────────────────────
 # 🔴 Falla con: off() → null → todas van a «anteriores al inicio» y el detalle dice «ningún control encontró un error».
 T=$(mktemp -d); volcado "${T}/r" "${S1}" "" '{"marker":{"startedAt":null}}'

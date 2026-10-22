@@ -36,7 +36,7 @@
 const path = require('path');
 
 /**
- * Nombres reservados para los probes transitorios del pase adversarial (step-05b).
+ * Nombres reservados para los probes transitorios del pase adversarial.
  * Cubre los nombres que se ven en los repos + la convención que el step declara para lo que venga:
  *   .NET      ZZProbe*.cs · ZZVerify*.cs
  *   JS/TS     __probe*.test.ts · _probe_*.test.ts · __adv_probe*.test.ts · __adversarial_probe*
@@ -48,7 +48,7 @@ const path = require('path');
 // (partial de Sass), `__advisor.ts`, `_adapter.js` (módulo privado). Un falso positivo acá no es
 // cosmético: saca un archivo de trabajo real de la foto de la iteración, y el advisor que tiene que
 // re-auditarlo no se entera. Por eso se exige la palabra `probe` COMPLETA (con `adv`/`adversarial`
-// como prefijo opcional), que es lo que la convención del step-05b declara.
+// como prefijo opcional), que es lo que la convención del paso «Pase adversarial» declara.
 const PROBE_RE = /^(?:zz(?:probe|verify)|_{1,2}(?:adv|adversarial)?_?probe(?:[_.\d]|$))/i;
 // El prefijo `zz` va sin terminador a propósito: ningún archivo real empieza con `zzprobe`/
 // `zzverify` (por eso la convención eligió ese prefijo). El que necesita terminador es el de

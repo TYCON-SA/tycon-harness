@@ -121,10 +121,10 @@ const ADHOC = new Set(['general-purpose', 'Explore', 'Plan', 'claude']);
 const FUENTES_SINTETICAS = [
   /^mech-check$/, /^pipeline$/,
   /^adversarial-verify(\s|:|\(|-|$)/,   // `-fable`, `-opus`: nombres reales
-  /^pase adversarial(\s|:|\(|-|$)/,     // el mismo paso 5b nombrado en castellano
+  /^pase adversarial(\s|:|\(|-|$)/,     // el mismo paso del pase adversarial nombrado en castellano
   /^orquestador(\s|\(|$)/,
   /^runtime-matrix(\s|\(|$)/,
-  /^e2e-runtime(\s|:|\(|-|$)/,          // el gate de E2E del step 7c: tampoco es un spawn
+  /^e2e-runtime(\s|:|\(|-|$)/,          // el gate de E2E del paso «Probar en vivo»: tampoco es un spawn
   /^ensayo runtime(\s|\(|$)/,
 ];
 
@@ -145,11 +145,11 @@ function esFuenteSintetica(nombre) {
 /**
  * Los TRAMOS de una corrida. Existen porque el roster y `findings.json` NO cubren el mismo pedazo:
  * el roster arranca en el último `step5-start` (la ronda de revisión) y los hallazgos son de toda
- * la corrida. Un hallazgo del paso 1 —la validación de la story, antes de implementar— queda
+ * la corrida. Un hallazgo del paso «Validar la historia» —la validación de la story, antes de implementar— queda
  * siempre como "revisor ausente".
  *
  * 🔴 La salida NO es ensanchar la ventana del roster: ahí adentro está `general-purpose`, que tiene
- * Write y en los pasos 0-4 a veces IMPLEMENTA — certificarlo como revisor volvería falsa la
+ * Write y en los pasos previos a la revisión a veces IMPLEMENTA — certificarlo como revisor volvería falsa la
  * afirmación central de la pieza. La salida es que cada hallazgo diga
  * de qué tramo viene y que el cruce compare tramo contra tramo.
  */
@@ -293,7 +293,7 @@ function build(o) {
   // Write y en los pasos previos a veces IMPLEMENTA) y la afirmación central queda falsa:
   // un agente que escribió código figurando como quien lo revisó, firmado por el arnés.
   //   (a) sólo lo spawneado DESPUÉS del último `step5-start` — o sea la ronda de revisión, no la
-  //       exploración ni la implementación de los pasos 0-4;
+  //       exploración ni la implementación de los pasos previos a la revisión;
   //   (b) nunca los agentes de exploración libre (mismo set ADHOC que usa el hook).
   const todas = Array.isArray(o.lines) ? o.lines : [];
   let desde = 0;
@@ -304,7 +304,7 @@ function build(o) {
   // 🔴 «Previo» se mide contra la PRIMERA ronda, no contra la última.
   // `reviewers` arranca en la ÚLTIMA marca a propósito (no ensanchar), pero
   // para el otro tramo esa misma marca es el corte equivocado: entre la primera y la última hay
-  // rondas de revisión ANTERIORES, y sus revisores son revisores, no agentes de los pasos 0-4.
+  // rondas de revisión ANTERIORES, y sus revisores son revisores, no agentes de los pasos previos a la revisión.
   // Cortando por la última, un revisor real de la ronda 1 queda etiquetado «previo» en una
   // regeneración desde cero — y con eso, un `roster-incoherente` falso contra alguien que sí
   // revisó (el mismo falso positivo del revisor ausente, un nivel más abajo).
@@ -313,7 +313,7 @@ function build(o) {
     if (todas[i] && todas[i].event === 'step5-start') { desdePrimera = i; break; }
   }
   const relevantes = todas.slice(desde);
-  // Los pasos 0-4 (validación de la story, exploración, implementación). NO son revisores y no se
+  // Los pasos previos a la revisión (validación de la story, exploración, implementación). NO son revisores y no se
   // los llama así: van a su propia lista para que un hallazgo de ese tramo tenga contra qué
   // compararse. El filtro ADHOC es el mismo, y es la salvaguarda: `general-purpose` no entra acá
   // tampoco. Sale del MISMO ledger — sigue siendo vista derivada, no una segunda fuente de verdad.
@@ -321,7 +321,7 @@ function build(o) {
   // 🔴 SIN marca de ronda no hay tramos. Cuando el roster se REGENERA desde el freno local, las líneas llegan por
   // `advisor-ledger.query().vivos`, que ya descartó los eventos: sin ningún `step5-start`, `desde`
   // queda en 0 y TODO parece ronda de revisión. Si igual se publicara `agentes_previos`, saldría
-  // vacío y un hallazgo del paso 1 volvería a contarse como revisor ausente — el defecto original,
+  // vacío y un hallazgo de «Validar la historia» volvería a contarse como revisor ausente — el defecto original,
   // de vuelta y por una puerta lateral. Sin corte, el roster no afirma tramos: no publica la lista,
   // y el cruce cae solo a comparar contra las dos (que es lo que hace sin `tramo`).
   const previosVistos = new Map();
@@ -396,7 +396,7 @@ function build(o) {
     // avisa. Campo opcional: `VERSION` no se toca.
     registro_aprobaciones: 1,
   };
-  // Se publica sólo si hay algo que decir: un roster sin hallazgos de los pasos 0-4 no gana una
+  // Se publica sólo si hay algo que decir: un roster sin hallazgos de los pasos previos a la revisión no gana una
   // lista vacía, y los rosters ya commiteados se siguen leyendo igual (el campo es opcional, y por
   // eso `VERSION` NO se toca — bumpearla invalidaría todos los rosters que ya viajaron).
   const previosMerge = new Map();
@@ -500,7 +500,7 @@ function validate(roster, opts) {
         // validación contra el registro ocurrió de verdad. Con eso el canal puede distinguir una
         // incoherencia REAL de una del formato viejo, que nadie validó y sigue avisando.
         const p = { regla: 'roster-incoherente', detalle: tramo === TRAMO.PREVIO
-          ? `"${a}" reportó hallazgos del tramo previo al paso 5 y no figura entre los agentes de ese tramo`
+          ? `"${a}" reportó hallazgos del tramo previo al paso de revisores y no figura entre los agentes de ese tramo`
           : `"${a}" reportó hallazgos pero no figura entre los revisores` };
         if (tramo) p.validado = true;
         problemas.push(p);

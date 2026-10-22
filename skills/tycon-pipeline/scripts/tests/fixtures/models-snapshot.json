@@ -125,7 +125,7 @@
           }
         ],
         "reason": "risk LOW (superficie chica, sin firmas/SQL/paths sensibles) → sonnet alcanza; un modelo más caro acá es plata de más",
-        "note": "ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
+        "note": "ADVISORY para el MODELO DE SESIÓN (armar el plan, aprobarlo e implementar corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
       }
     },
     "start-normal": {
@@ -168,7 +168,7 @@
           }
         ],
         "reason": "NORMAL común → opus (sonnet se queda corto en el plan)",
-        "note": "ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
+        "note": "ADVISORY para el MODELO DE SESIÓN (armar el plan, aprobarlo e implementar corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
       }
     },
     "start-heavy": {
@@ -211,7 +211,7 @@
           }
         ],
         "reason": "NORMAL + 2 señales pesadas (superficie-grande, muchos-acs) → opus con más esfuerzo",
-        "note": "ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
+        "note": "ADVISORY para el MODELO DE SESIÓN (armar el plan, aprobarlo e implementar corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
       }
     },
     "hint-low": {
@@ -255,7 +255,7 @@
         }
       ],
       "reason": "risk LOW (superficie chica, sin firmas/SQL/paths sensibles) → sonnet alcanza; un modelo más caro acá es plata de más",
-      "note": "ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
+      "note": "ADVISORY para el MODELO DE SESIÓN (armar el plan, aprobarlo e implementar corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
     },
     "hint-normal": {
       "recommended_session_model": "opus",
@@ -296,7 +296,7 @@
         }
       ],
       "reason": "NORMAL común → opus (sonnet se queda corto en el plan)",
-      "note": "ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
+      "note": "ADVISORY para el MODELO DE SESIÓN (armar el plan, aprobarlo e implementar corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
     },
     "hint-heavy": {
       "recommended_session_model": "opus",
@@ -337,7 +337,7 @@
         }
       ],
       "reason": "NORMAL + 2 señales pesadas (superficie-grande, muchos-acs) → opus con más esfuerzo",
-      "note": "ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
+      "note": "ADVISORY para el MODELO DE SESIÓN (armar el plan, aprobarlo e implementar corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
     }
   }
 }

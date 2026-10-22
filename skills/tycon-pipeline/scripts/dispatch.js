@@ -165,7 +165,7 @@ const CHAINS = {
     { name: 'on-dod-evidence-guard', path: path.join(PIPELINE_SCRIPTS, 'on-dod-evidence-guard.js'), steps: ['live-check'], effect: 'blocks' },
     { name: 'on-frontmatter-write', path: path.join(PIPELINE_SCRIPTS, 'on-frontmatter-write.js'), steps: ['live-check', 'prepare-commit'], effect: 'blocks' },
     // Portón ATDD preventivo: deniega el PRIMER archivo de código de una corrida de
-    // pipeline si no se tocó ningún test antes. Las capas post-mortem (complete-step 4, commit)
+    // pipeline si no se tocó ningún test antes. Las capas post-mortem (complete-step run-tests, commit)
     // detectan; ésta impide. Ver on-atdd-preedit.js + lib/atdd-preedit.js.
     { name: 'on-atdd-preedit', path: path.join(PIPELINE_SCRIPTS, 'on-atdd-preedit.js'), steps: ['implement'], effect: 'blocks' },
     { name: 'on-write-collision', path: path.join(PIPELINE_SCRIPTS, 'on-write-collision.js'), steps: ['implement'], effect: 'warns' },

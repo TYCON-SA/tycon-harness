@@ -7,12 +7,12 @@
  *   1. INTENT-DETECT (sin marker activo) — el prompt del user matchea
  *      patrones típicos de "implementemos la story X.Y.Z" sin haber
  *      invocado el skill `tycon-pipeline`. Emite reminder sugiriendo
- *      el skill canonical para evitar saltearse Step 5 (advisors).
+ *      el skill canonical para evitar saltearse el paso de revisores (advisors).
  *
  *   2. STOP-DETECT (con marker activo + steps pending) — el prompt
  *      del user matchea keywords de cierre ("listo", "done", "completo",
  *      "cerrá", "terminamos") pero el marker indica que aún hay steps
- *      pendientes del pipeline (especialmente Step 5 advisors). Emite
+ *      pendientes del pipeline (especialmente los advisors del paso de revisores). Emite
  *      reminder bloqueante: NO declarar "done" sin correr advisors o
  *      documentar deferral explícito.
  *

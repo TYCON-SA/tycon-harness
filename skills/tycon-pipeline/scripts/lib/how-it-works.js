@@ -425,7 +425,7 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
   // piezas de horas; sin perfil no se sabe, y se ven «según tu organización»
   const toolLabel = org && org.integrationsKnown && typeof org.timeTracking === 'string' ? (timeLabels[org.timeTracking] || null) : null;
   const piezaApagada = (f) => (f.timeTool ? Boolean(org && org.integrationsKnown && !toolLabel) : apagada(f.integration));
-  // el validador de stories del paso 1 sale del mismo cálculo que el pipeline (sin paquetes: sólo el núcleo)
+  // el validador de stories del paso «Validar la historia» sale del mismo cálculo que el pipeline (sin paquetes: sólo el núcleo)
   const validadores = (() => {
     const prev = process.env.TYCON_PACKS_DIR;
     const vacio = fs.mkdtempSync(path.join(os.tmpdir(), 'how-it-works-packs-'));

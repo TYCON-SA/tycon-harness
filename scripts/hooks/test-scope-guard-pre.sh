@@ -175,7 +175,7 @@ Regla (test-execution-discipline.md):
       npm test -- <patrón>            (vitest posicional)
       dotnet test --filter "FullyQualifiedName~<Clase>"
       dotnet test tests/<Proyecto>/<Proyecto>.csproj
-  - Suite completa → en el portón de /tycon-merge-to-main o cuando el dev la pide (el Step 4 del
+  - Suite completa → en el portón de /tycon-merge-to-main o cuando el dev la pide (el paso «Correr las pruebas» del
     pipeline la corre por test-gate.sh); fuera de eso, preguntale antes. Nunca en paralelo con
     subagentes. En el portón o con su OK:
       TYCON_FULL_SUITE=1 $1

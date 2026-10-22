@@ -4,7 +4,7 @@
  *
  * DENIEGA la edición de un archivo de código en un repo bajo el arnés TYCON cuando en la sesión no hay
  * pipeline activo (marker) ni carril ad-hoc declarado; con pipeline activo, deniega código mientras el
- * Step 3 (plan aprobado por el user) siga pendiente; y deniega SIEMPRE las escrituras directas al
+ * paso «Aprobar el plan» (plan aprobado por el user) siga pendiente; y deniega SIEMPRE las escrituras directas al
  * estado del pipeline (~/.claude/.tycon-pipeline/). Lógica y porqué: `lib/story-gate.js`; I/O
  * compartido con el guard de Bash: `lib/story-gate-io.js`.
  *

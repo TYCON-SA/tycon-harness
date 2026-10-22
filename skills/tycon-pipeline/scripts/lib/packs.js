@@ -36,8 +36,8 @@
  *   `skills` y `agents`: carpetas DEL PAQUETE (rutas relativas a su carpeta, sin salir de ella) con sus skills
  *   y sus agentes. Un revisor se busca primero en `agents` del paquete y después en la carpeta de agentes de la raíz; el
  *   mismo nombre en los dos lugares es un paquete roto (no se sabe cuál corre).
- *   group: base | condicional | validacion. Los dos primeros entran al set del paso 5; `validacion`
- *   entra al paso 1 (`pipeline.js validators`) con su `prompt` ({story_path}, {repo_path}).
+ *   group: base | condicional | validacion. Los dos primeros entran al set del paso de revisores; `validacion`
+ *   entra al paso «Validar la historia» (`pipeline.js validators`) con su `prompt` ({story_path}, {repo_path}).
  *   when: { all: [..] } | { any: [..] } | { no: .. } | { detection: "<bandera>" } |
  *         { files: "<regex sobre rutas>" } | { added: { pattern, extensions } }
  *   `added` mira las líneas AGREGADAS del diff (readAddedContents del pipeline); en el grupo
@@ -272,7 +272,7 @@ function validarManifiesto(json, { archivo, agentsDir, nucleo = [], banderas = [
       if (r.prompt != null) e('«prompt» sólo va en el grupo validacion');
     } else {
       if (typeof r.prompt !== 'string' || !r.prompt) e('un revisor del grupo validacion lleva «prompt» (con {story_path} y {repo_path})');
-      if (r.surface != null) e('«surface» no aplica al grupo validacion (no hay vueltas en el paso 1)');
+      if (r.surface != null) e('«surface» no aplica al grupo validacion (no hay vueltas en el paso «Validar la historia»)');
       if (r.depth != null) e('«depth» no aplica al grupo validacion: va «model»');
     }
     if (r.model != null && typeof r.model !== 'string') e('«model» tiene que ser un string');
@@ -299,12 +299,12 @@ function validarManifiesto(json, { archivo, agentsDir, nucleo = [], banderas = [
     else if (!fs.existsSync(propio) && fs.existsSync(md)) e(`las instrucciones de ${agente} tienen que estar en ${enElPaquete} (hoy están en agents/${agente}.md)`);
     else if (!fs.existsSync(propio)) e(`no existe el agente ${propio}`);
   });
-  // Un revisor del paso 5 tiene UNA superficie y UNA profundidad: en `base` o en `condicional`, no en
+  // Un revisor del paso de revisores tiene UNA superficie y UNA profundidad: en `base` o en `condicional`, no en
   // los dos (con los dos, `superficieDe`/`tierDe` tomarían la primera entrada y la otra se ignoraría
   // en silencio). Con `validacion` sí puede convivir.
   for (const [agente, grupos] of gruposDe) {
     if (grupos.has('base') && grupos.has('condicional')) {
-      err(agente, 'está en «base» y en «condicional» del mismo paquete: va en uno solo (una sola superficie y profundidad por revisor del paso 5)');
+      err(agente, 'está en «base» y en «condicional» del mismo paquete: va en uno solo (una sola superficie y profundidad por revisor del paso de revisores)');
     }
   }
   return errores;

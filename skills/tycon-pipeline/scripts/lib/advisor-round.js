@@ -34,7 +34,7 @@
  * 🔴 Una ronda es de UNA corrida. `pipeline.js start` anota `run-start` en el mismo registro: si hay uno
  * después del último `step5-start`, esa ronda es de la corrida anterior de la sesión y ya no está abierta.
  * Sin este corte, la ronda vieja seguía viva en la corrida nueva: el primer agente que se lanzaba (el
- * validador del paso 1) la «completaba» y la foto se tomaba con el set esperado de la corrida anterior,
+ * validador de «Validar la historia») la «completaba» y la foto se tomaba con el set esperado de la corrida anterior,
  * sobre el marcador nuevo, dejando una vuelta que nadie corrió.
  */
 function inicioDeLaRonda(parsed) {
@@ -158,7 +158,7 @@ function vueltaManual(lineas, opts) {
   }
   if (selloIdx === -1) return nada;                       // la ronda formal sigue abierta
   // 🔴 Sólo un REVISOR abre una vuelta: un subagente que no es de exploración (ADHOC) ni un
-  // chequeador de otra etapa (NO_REVISORES: el capturador post-merge, el DoD checker del 7c, el
+  // chequeador de otra etapa (NO_REVISORES: el capturador post-merge, el DoD checker de «Probar en vivo», el
   // validador, el de cobertura de ACs…). La ronda formal NO lo limita: un revisor que no estuvo en
   // el `expected` y se re-invoca a mano (un especialista que entró después) también es una vuelta
   // — y un chequeador que corrió DENTRO de la ventana formal sigue sin serlo.

@@ -289,7 +289,7 @@ inmuniza contra re-cometerlo. Ojos frescos adversariales son la única capa que 
 atrapar esa clase.
 
 **Por qué el pipeline de stories NO necesita esto**: ya lo tiene — los advisors del Step 5 y el
-pase adversarial del Step 5b son exactamente esta capa. El agujero que esta regla cierra es tocar el
+pase adversarial del pipeline son exactamente esta capa. El agujero que esta regla cierra es tocar el
 ARNÉS por fuera del pipeline, que es como se trabaja en estos dos repos.
 
 Operativa: la ronda corre de fondo (6-8 min), los hallazgos confirmados se aplican antes del

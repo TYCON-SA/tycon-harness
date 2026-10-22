@@ -3,7 +3,7 @@
  * ui-signal.js — ¿la story toca pantalla? Fuente ÚNICA del detector.
  *
  * Lo consumen cuatro controles del cierre, que no copian la lógica: `marker.js` (`markerStoryIsUi`:
- * `mark-dod-runtime-checked`, `set-check dod`, `complete-step 8` y la guía del tester), `qa-guide.js`
+ * `mark-dod-runtime-checked`, `set-check dod`, `complete-step prepare-commit` y la guía del tester), `qa-guide.js`
  * (`isUiStory`), `on-pre-commit.js` (`storyIsUiStory`) y `lib/atdd-commit-gate.js` (`storyIsHandOperable`).
  * Copiado en cada control, con carpetas de un producto escritas en duro, se desincroniza; por eso vive acá.
  *

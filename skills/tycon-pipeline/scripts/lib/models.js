@@ -221,7 +221,7 @@ function resolveReviewers({ org, requests, costTier, tierOf, set, fullSet, iter,
   }
   // un pedido o una entrada de la organización para un revisor que no está en la corrida / no existe
   for (const r of Object.keys(req)) {
-    // el revisor de historias se pide por su nombre y corre en el paso 1, fuera del set de revisores: no es un pedido perdido
+    // el revisor de historias se pide por su nombre y corre en «Validar la historia», fuera del set de revisores: no es un pedido perdido
     if (!JOBS.includes(r) && r !== STORY_REVIEWER && REVIEWER_NAME.test(r) && !corrida.includes(r)) {
       warnings.push({ key: `request-unused:${r}`, message: `pediste un modelo para \`${r}\`, que no está en el set de esta corrida: no se aplica` });
     }

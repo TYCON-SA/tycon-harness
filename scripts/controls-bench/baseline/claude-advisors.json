@@ -47,6 +47,9 @@
     "tycon-story-adversarial-reviewer::sadv-c2-la-columna-no-existe": true,
     "tycon-story-adversarial-reviewer::sadv-c3-falla-sin-criterio": true,
     "tycon-story-adversarial-reviewer::sadv-w1-supuesto-sin-marcar": true,
-    "tycon-story-adversarial-reviewer::limpio-historia-completa": true
+    "tycon-story-adversarial-reviewer::limpio-historia-completa": true,
+    "tycon-spec-first-checker::spec-c1-endpoint-nuevo-sin-ac": true,
+    "tycon-spec-first-checker::spec-c2-componente-nuevo-sin-mencion": true,
+    "tycon-spec-first-checker::limpio-endpoint-documentado-sin-c1": true
   }
 }

@@ -32,7 +32,7 @@ const path = require('path');
  *
  * 🔴 Cada entrada se verifica contra su lector real — no contra la documentación.
  * Un catálogo escrito de memoria da falsos positivos: el bloque `i18n:` completo y `visual_plan`
- * sí los lee el advisor de i18n y el Step 3. Un lint que pone en rojo config legítima se apaga en una semana.
+ * sí los lee el advisor de i18n y el paso del plan. Un lint que pone en rojo config legítima se apaga en una semana.
  *
  * 🔴 Al agregar una llave nueva al arnés, agregarla ACÁ con su lector. Si no, el lint la va a
  * reportar como desconocida en todos los repos que la usen.
@@ -42,11 +42,11 @@ const path = require('path');
  */
 const ESQUEMA = {
   repo_group: null,       // ~/.claude/tycon-harness/scripts/hooks/unpushed-work-notice.js (grupo de
-                          // repos del aviso de trabajo sin subir) + tycon-merge-to-main step-00.
+                          // repos del aviso de trabajo sin subir) + el arranque de tycon-merge-to-main.
                           // Sin esta entrada, el lint reporta la llave como desconocida en todos
                           // los repos que la usan — el propio test 'los 13 configs reales del
                           // equipo no disparan NADA' queda en rojo.
-  visual_plan: null,      // tycon-pipeline SKILL.md G.ii / step-03 / scripts/visual-plan.js
+  visual_plan: null,      // tycon-pipeline SKILL.md G.ii / paso «Aprobar el plan» / scripts/visual-plan.js
   qa_guide: null,         // lib/atdd-commit-gate.js → qaGuideMode
   deep_review: null,      // pipeline.js → deepReviewConfig
   deep_review_always_paths: null,  // pipeline.js → deepReviewAlwaysPaths (superficie compartida

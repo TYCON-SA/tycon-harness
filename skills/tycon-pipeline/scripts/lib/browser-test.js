@@ -19,7 +19,7 @@
  *   · `offerText(clave)`: el texto aprobado, una sola fuente.
  *   · `repoReady(repo)`: ¿el repo resuelve un portón de navegador (`e2eConfig`) y tiene `@playwright/test` instalado
  *     donde apunta? `{ ready, missing }`.
- *   · `offerToShow({ command, sessionId, stateDir, home })`: antes de `marker.js complete-step 3`, el texto y `anotar()`;
+ *   · `offerToShow({ command, sessionId, stateDir, home })`: antes de `marker.js complete-step approve-plan`, el texto y `anotar()`;
  *     si no corresponde, null. `handle(event)`: lo mismo al escribir el plan con Edit o Write (despachador de ediciones).
  *   · `lastOffer(stateDir, storyId, repo)`: la última oferta mostrada para esa historia de ese repo, o null.
  *   · `debtDeclared({ stateDir, storyPath, content, home, env })`: `{ declared, story, fecha, cita, quien }` o

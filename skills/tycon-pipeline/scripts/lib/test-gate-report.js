@@ -473,7 +473,7 @@ function informe(argv) {
       meets_threshold: null,
     },
     provenance: 'test-gate.sh (run real, exit code capturado por marker.js run-check)',
-    // Huella del código medido — la lee `suite-freshness.js check` (step-07b) para saber si este verde sigue
+    // Huella del código medido — la lee `suite-freshness.js check` («Revisores, otra vuelta») para saber si este verde sigue
     // describiendo el working tree o quedó viejo tras iteraciones de fix.
     code_state: codeState,
   };

@@ -1,7 +1,7 @@
 {
   "agent": "tycon-story-adversarial-reviewer",
   "file": "agents/tycon-story-adversarial-reviewer.md",
-  "hash": "a88ede917ce4edaef280459106ed2c82f5854ad3",
+  "hash": "bcc660ef56d9bad6ac7ee705f9276bbf492bdf11",
   "passed": 5,
   "total": 5,
   "score": 1,

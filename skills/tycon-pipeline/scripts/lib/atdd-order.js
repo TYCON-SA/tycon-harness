@@ -1,5 +1,5 @@
 /**
- * atdd-order.js — el freno mecánico del sub-paso 4.0 (ATDD: los tests se escriben ANTES del código).
+ * atdd-order.js — el freno mecánico de las pruebas primero en «Implementar» (ATDD: los tests se escriben ANTES del código).
  *
  * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────────
  * Sin este gate, el ATDD sería la ÚNICA regla del pipeline sin gate mecánico. Todo lo demás que se cumple —build,
@@ -51,7 +51,7 @@ function esFuente(p, extra) {
  *
  * 🔴 La heurística de DIRECTORIO exige además EXTENSIÓN DE CÓDIGO. Sin eso,
  * `specs/stories/<story>.md` —que el pipeline edita SIEMPRE antes que el código (status →
- * in-progress)— contaría como "primer test tocado" y el gate del `complete-step 4` saldría verde en
+ * in-progress)— contaría como "primer test tocado" y el gate del `complete-step implement` saldría verde en
  * TODAS las corridas, con `firstTest` apuntando al `.md` de la propia story.
  * Un gate ciego así no se nota, porque verde no llama la atención.
  * Misma razón excluye fixtures (`tests/fixtures/*.json`): tocar un dato de

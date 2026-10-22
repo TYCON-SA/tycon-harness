@@ -94,7 +94,7 @@ Medido: **los cinco repos de specs** de la organización tenían el mismo muro.
 **La regla.** La evidencia de cierre **nace en el repo git que CONTIENE la story**, aunque el
 código esté en otro. No se copia: el ledger de smokes crece con cada corrida y dos copias
 divergen. El pipeline lo resuelve solo (`pipeline.js evidence-dir --story <spec> --repo <repo>
---plain`, y el marker lo guarda en `evidenceDir`); el step 7c usa ese directorio en todos los
+--plain`, y el marker lo guarda en `evidenceDir`); el paso «Probar en vivo» usa ese directorio en todos los
 runners (macro, gate E2E, smoke-run). Para el freno local no cambia nada: la evidencia del repo
 de la story es "propia" por definición. Para `done`, el arnés **proyecta** al repo de la story
 sólo `review-roster.json` y `findings.json` de la corrida (`write-findings` y el hook

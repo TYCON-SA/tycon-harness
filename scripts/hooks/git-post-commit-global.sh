@@ -40,7 +40,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 LOCAL_HOOK="$(dirname "$0")/post-commit.local"
 if [ -x "$LOCAL_HOOK" ]; then "$LOCAL_HOOK" "$@" || true; fi
 
-# ── 0b. el post-commit propio del repo en .git/hooks/ (como en git: su falla no cambia nada) ──────────────────
+# ── 0.1. el post-commit propio del repo en .git/hooks/ (como en git: su falla no cambia nada) ──────────────────
 # El gancho propio del repo en `.git/hooks/`: con `core.hooksPath` global git no lo llama, así que lo llama éste, como
 # haría git sin carpeta global. Se busca en la carpeta común de git (desde un worktree enlazado, la del repo). No corre
 # si es este mismo gancho, su `.local` o el `.githooks/` del repo (otro nombre del mismo archivo), si es una copia del

@@ -19,7 +19,7 @@ omitClaudeMd: true
 # tycon-deferral-tracker
 
 **Cost tier**: `sonnet` (sin cambio respecto al baseline pre-2026-05-27. El tier `lean` queda declarado en `pipeline.js ADVISOR_COST_TIER` como opt-in vía `--cost-tier lean` para devs que quieran experimentar con Haiku — el advisor es chequeo binario de presencia (bloque `pipelines:`, líneas `[DEF-X.Y-...]` en `tasks/todo.md`, observaciones engram, comentarios `TODO(Story-N-deferral)`). Ver `guides/harness-cost-tiering.md`).
-**Phase**: post (Step 5 del `tycon-pipeline`)
+**Phase**: post (Revisores del `tycon-pipeline`)
 **Severity**: CRITICAL inmediato (NO shadow). Bloquea commit prep si hay finding C1/C2.
 **Tier**: Core. Habilitado para todas las stories con bloque `pipelines:` o con `*.skip()` en el diff.
 
@@ -35,7 +35,7 @@ Y todo `*.skip()` en código del diff requiere comentario inmediato `TODO(Story-
 
 ## Inputs
 
-- **Path a la story** (`.md` con frontmatter, ya parseado por `tycon-story-validator` en Step 1).
+- **Path a la story** (`.md` con frontmatter, ya parseado por `tycon-story-validator` en «Validar la historia»).
 - **Path al repo** (donde está `tasks/todo.md`).
 - **`modified_files`**: lista de archivos modificados/creados por la corrida actual (del Dev Agent Record o del `git diff` que el caller provee).
 - **Engram project name** (para `mem_search` filtrado por proyecto — convención TYCON).
@@ -116,7 +116,7 @@ Reporte estructurado en Markdown, mismo formato que el resto de advisors:
 
 ## Integración con el pipeline
 
-Core advisor en **Step 5** del `tycon-pipeline`, en paralelo con `tycon-plugin-tests-coverage`, `tycon-plugin-security-basics`, y `tycon-story-validator` (post-implementación).
+Core advisor en **Revisores** del `tycon-pipeline`, en paralelo con `tycon-plugin-tests-coverage`, `tycon-plugin-security-basics`, y `tycon-story-validator` (post-implementación).
 
 **Caller debe pasar**:
 - `story_path` (idem otros advisors).
@@ -128,7 +128,7 @@ Core advisor en **Step 5** del `tycon-pipeline`, en paralelo con `tycon-plugin-t
 - Si la story NO tiene bloque `pipelines:` Y el diff no tiene `*.skip()` → advisor abort early con OK (no aplica).
 - Si cualquiera de las dos condiciones se cumple → advisor corre completo.
 
-**Bloqueo de commit prep**: si retorna ≥1 finding CRITICAL (`DEFTR-C1` o `DEFTR-C2`), el `tycon-pipeline` debe pausar antes de Step 8 (commit prep) y mostrar el reporte al usuario. El usuario decide: (a) completar la documentación faltante y re-correr, (b) override explícito con razón (registrado en engram).
+**Bloqueo de commit prep**: si retorna ≥1 finding CRITICAL (`DEFTR-C1` o `DEFTR-C2`), el `tycon-pipeline` debe pausar antes de «Preparar el commit» y mostrar el reporte al usuario. El usuario decide: (a) completar la documentación faltante y re-correr, (b) override explícito con razón (registrado en engram).
 
 ## Why this advisor exists
 

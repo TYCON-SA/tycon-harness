@@ -34,7 +34,7 @@ if [ -x "$LOCAL_HOOK" ]; then
   fi
 fi
 
-# ── 0b. El pre-commit propio del repo en .git/hooks/ ─────────────────────────────────────────────────────────
+# ── 0.1. El pre-commit propio del repo en .git/hooks/ ─────────────────────────────────────────────────────────
 # El gancho propio del repo en `.git/hooks/`: con `core.hooksPath` global git no lo llama, así que lo llama éste, como
 # haría git sin carpeta global. Se busca en la carpeta común de git (desde un worktree enlazado, la del repo). No corre
 # si es este mismo gancho, su `.local` o el `.githooks/` del repo (otro nombre del mismo archivo), si es una copia del

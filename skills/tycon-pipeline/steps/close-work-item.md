@@ -48,7 +48,7 @@ Antes de postear nada en ADO, validar que se cumple TODO esto:
    en verde (punto 1), y el control local de `review → done` (hoy avisa) y el portón de CI siguen mirando. Medido: cero
    hallazgos en todo el registro.
 4. **Merge a main hecho** (vía `/tycon-merge-to-main` o manual) — para tener el CI run definitivo y, si aplica, el PR link.
-5. **Frontmatter `status:`** debe estar en `review` (post Step 8) o `done` (si dev ya lo movió manualmente). NO ejecutar Step 9 sobre `ready-for-dev`/`in-progress` — es señal de que el flujo no completó Step 8.
+5. **Frontmatter `status:`** debe estar en `review` (después de «Preparar el commit») o `done` (si dev ya lo movió manualmente). NO ejecutar este cierre sobre `ready-for-dev`/`in-progress` — es señal de que el flujo no completó «Preparar el commit».
 6. **Si la story NO tiene `ado_work_item:` en frontmatter** → NO skipear ADO con "N/A". Resolver en este orden (ver sección "Creación retroactiva del WI" abajo):
    a. Si el repo tiene `.tycon/ado-config.yaml` (integración ADO activa) → **CREAR el WI retroactivamente** (PBI hijo del Epic mapeado en `epic_links`), escribir `ado_work_item:` en el frontmatter, y continuar con el cierre normal (comment + Done + CompletedWork). NO preguntar al dev por un ID que no existe.
    b. Si el dev SABE que ya existe un WI (creado a mano fuera del flujo) → preguntar el ID, NO grep por título (puede haber WIs con títulos similares).
@@ -105,7 +105,7 @@ gh run list --branch main --limit 5 --json databaseId,headSha,status,conclusion,
 
 Tomar el primer run verde (`result=succeeded` / `conclusion=success`) post-merge. Si no hay run verde → STOP, dev debe arreglar CI antes de cerrar la story.
 
-**Repo sin CI** (2026-10-05): si el repo no tiene NINGÚN archivo de CI (ni `azure-pipelines*.yml`, ni `.github/workflows/*.yml`, ni `.gitlab-ci.yml`), no hay corrida que buscar: **no es STOP**. `ci_run` queda «sin CI en el repo» y el cierre sigue con la evidencia local (build y pruebas del paso 4). El STOP de arriba vale para un repo que SÍ tiene CI y no muestra una corrida verde.
+**Repo sin CI** (2026-10-05): si el repo no tiene NINGÚN archivo de CI (ni `azure-pipelines*.yml`, ni `.github/workflows/*.yml`, ni `.gitlab-ci.yml`), no hay corrida que buscar: **no es STOP**. `ci_run` queda «sin CI en el repo» y el cierre sigue con la evidencia local (build y pruebas de «Implementar» y «Correr las pruebas»). El STOP de arriba vale para un repo que SÍ tiene CI y no muestra una corrida verde.
 
 ## Recolección de tiempo: el aviso de trabajo
 
@@ -182,7 +182,7 @@ Disparado por pre-condición 6.a. Cuando la story está `done`/`review`, NO tien
    ya seteado en el create). El comment debe anotar "**WI creado retroactivamente**
    <fecha> (gap del pipeline corregido — la story se cerró sin tycon-ado-story-wi)".
 8. **Preparar** el commit del frontmatter actualizado y **pedir autorización al dev** antes de
-   ejecutarlo — igual que el Step 8, y por la misma regla (`SKILL.md` §"Anti-patterns (lo que NO
+   ejecutarlo — igual que «Preparar el commit», y por la misma regla (`SKILL.md` §"Anti-patterns (lo que NO
    hace)" y `guides/git-commit-conventions.md`: el pipeline NO ejecuta `git commit` ni `git push`
    sin aprobación explícita). Mensaje sugerido: `chore(story-<id>): link ado_work_item`.
 
@@ -207,7 +207,7 @@ Armar el comment en este formato fijo:
 - **DoD gate**: ✅ smoke + E2E fail-loud + cross-check
 - **Cerrada por**: <dev-name> el <YYYY-MM-DD>
 
-🤖 Cierre automático vía tycon-pipeline step-09.
+🤖 Cierre automático vía tycon-pipeline close-work-item.
 ```
 
 Postear a ADO:
@@ -301,9 +301,9 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js update-story
   "$STORY_PATH" "done"
 ```
 
-**Idempotente** — si el dev ya lo seteó manual a `done` antes de invocar Step 9, el comando re-escribe el mismo valor sin error.
+**Idempotente** — si el dev ya lo seteó manual a `done` antes de invocar este cierre, el comando re-escribe el mismo valor sin error.
 
-**Garantiza** que el cierre ADO y el frontmatter quedan en lockstep. Una sesión futura que abra `tycon-pipeline` sobre esta story va a leer `done` y NO va a re-arrancar el pipeline (PIPE-C5 del Step 0 lo detecta y rechaza).
+**Garantiza** que el cierre ADO y el frontmatter quedan en lockstep. Una sesión futura que abra `tycon-pipeline` sobre esta story va a leer `done` y NO va a re-arrancar el pipeline (PIPE-C5 del Arranque lo detecta y rechaza).
 
 ## Acción — llevar el `done` a main
 
@@ -355,7 +355,7 @@ no se pregunta de nuevo. Sin ese ok, el pipeline no commitea ni empuja nada (reg
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js clear
 ```
 
-(Si Step 8 ya lo había cleaneado y Step 9 viene independiente, el clear acá es no-op silencioso.)
+(Si «Preparar el commit» ya lo había cleaneado y este cierre viene independiente, el clear acá es no-op silencioso.)
 
 ## Acción — borrar las carpetas de trabajo de la story (2026-10-16)
 
@@ -398,7 +398,7 @@ Listo.
 - ❌ NO transicionar state sin postear comment — el comment es la evidencia de auditoría.
 - ❌ NO postear comment sin confirmar la lista de commits con el dev — falsos positivos del grep llenan ADO de basura.
 - ❌ NO cerrar work items que NO sean User Story (Epic, Feature, Task siguen reglas distintas — este step es específico a stories).
-- ❌ NO ejecutar este step sobre una story en `ready-for-dev` o `in-progress` — es señal de que el flujo no completó el Step 8. `review` (lo normal, post Step 8) y `done` (si el dev ya lo movió a mano) son los DOS estados válidos de entrada, y están en la pre-condición 5.
+- ❌ NO ejecutar este step sobre una story en `ready-for-dev` o `in-progress` — es señal de que el flujo no completó «Preparar el commit». `review` (lo normal, después de «Preparar el commit») y `done` (si el dev ya lo movió a mano) son los DOS estados válidos de entrada, y están en la pre-condición 5.
 - ❌ NO inventar `time_tracked` cuando la herramienta de horas no informa tiempo. Mejor omitir el campo que postear un número fabricado — la trazabilidad de horas es billing-grade.
 - ❌ NO usar wall-clock (`merge_date - first_commit_date`) como sustituto del tiempo registrado. Eso es lead time, NO trabajo real.
 

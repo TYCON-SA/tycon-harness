@@ -184,7 +184,7 @@ function resolveStepArg(marker, raw, opts = {}) {
   }
   // marcador viejo
   if (s) return { ok: true, scheme: 1, ids: OLD_CLOSE[s.id] };
-  // sus sub-pasos tampoco: se daban por hechos con su bandera, y el 7b es otra vuelta de los revisores
+  // sus sub-pasos tampoco: se daban por hechos con su bandera, y la otra vuelta de los revisores no es un paso aparte
   if (OLD_FLAG[v]) return { ok: false, message: `«${v}» no se cierra con complete-step: lo da por hecho su bandera (${OLD_FLAG[v][0]}), que dejan sus propios comandos.` };
   if (v === '7b') return { ok: false, message: '«7b» no es un paso: es otra vuelta de los revisores, que se cierra con complete-step reviewers.' };
   if (OLD_IDS.includes(v)) {

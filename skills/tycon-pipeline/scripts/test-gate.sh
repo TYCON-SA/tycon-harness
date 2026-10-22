@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
-# tycon-pipeline — Test Gate (cierre del Step 4)
+# tycon-pipeline — Test Gate (cierre de «Correr las pruebas»)
 # =============================================================================
 # Corre la suite de tests + coverage UNA SOLA VEZ y persiste el resultado como
 # artefacto machine-parseable.
 #
 #   - El advisor tycon-plugin-tests-coverage LEE este artefacto (sin Bash): nunca corre la
-#     suite. Así la suite no se repite dentro del fan-out del Step 5 ni corre en paralelo con
+#     suite. Así la suite no se repite dentro del fan-out del paso de revisores ni corre en paralelo con
 #     subagentes, que es lo que congela la máquina.
 #   - El gate de coverage 75% sale del parseo del cobertura.xml / coverage-final.json real,
 #     no de una afirmación del LLM.
@@ -97,7 +97,7 @@ TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 mkdir -p "$OUT_DIR"
 
 # 🔴 Una salida que NO corrió la suite (4 freno, 5 falta el corredor) deja el check `tests` del marcador en ROJO con
-# su código, igual que la 6. Sin esto, un verde de una corrida anterior queda en pie y `complete-step 4` lo acepta:
+# su código, igual que la 6. Sin esto, un verde de una corrida anterior queda en pie y `complete-step run-tests` lo acepta:
 # «no pude correr» se dice en el artefacto y también en el marcador. Sin
 # corrida activa, run-check no escribe nada. Nunca corta el gate.
 # «Sin acotar» se lee de la CONSTANCIA, no del número: un corredor (jest, vitest, npm test, dotnet) o una suite también
@@ -654,7 +654,7 @@ SUITE_EXIT=0
 TEST_PROJECTS=()  # declarado arriba: la rama vitest también lo expande (set -u safe)
 
 # 🔴 Marca de procedencia del check `tests`. `marker.js run-check tests` la lee y anota
-# provenance='test-gate' en vez de 'run-check'; `complete-step 4` BLOQUEA un verde que no venga
+# provenance='test-gate' en vez de 'run-check'; `complete-step run-tests` BLOQUEA un verde que no venga
 # de acá. Un check verde con una fracción de las pruebas (sólo las que la story declara) no puede
 # pasar por control: la corrida completa es la que cuenta.
 export TYCON_TEST_GATE=1
@@ -877,9 +877,9 @@ else
 fi
 TEST_PROJECT_COUNT="${#TEST_PROJECTS[@]}"
 # Huella del código que esta corrida midió (fix 2026-08-28, TESTGATE-DEDUCTOR-LAYOUT-GAP-1
-# parte 2): step-07b la compara con `suite-freshness.js check` al salir del loop de
+# parte 2): «Revisores, otra vuelta» la compara con `suite-freshness.js check` al salir del loop de
 # iteraciones — si el código cambió desde este verde, el verde ya no describe nada y se
-# re-corre UNA vez sobre el código final (antes lo cazaba recién el DoD checker, Step 7c).
+# re-corre UNA vez sobre el código final (antes lo cazaba recién el DoD checker, paso «Probar en vivo»).
 # Best-effort: sin git o con git fallando queda {"git":false} y el check dice SIN DATOS.
 CODE_STATE_JSON="$(node "$SCRIPT_DIR/lib/suite-freshness.js" state "$REPO" 2>/dev/null || echo '{"git":false}')"
 # Base de las «líneas tocadas» (story 2.4, 2026-09-16): el commit en el que arrancó la corrida

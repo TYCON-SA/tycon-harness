@@ -66,7 +66,7 @@ function blockStop(reason) {                              // Claude NO para, con
 // 🔴 SEMÁNTICA: BLOQUEAR SOLO ANTE UN CHECK REGISTRADO EN ROJO.
 // Un check AUSENTE (todavía no medido) NO es rojo → NO bloquea. Razón crítica: el hook Stop
 // dispara en CADA fin de turno, incluido cuando Claude PAUSA para preguntarle al humano
-// (aprobar plan en Step 3, aprobar/waivear en Step 7). Si tratáramos "sin checks" como rojo, el portón TRABARÍA esos checkpoints HITL legítimos — el peor
+// (aprobar el plan, aprobar/waivear los hallazgos). Si tratáramos "sin checks" como rojo, el portón TRABARÍA esos checkpoints HITL legítimos — el peor
 // foot-gun (Claude nunca podría pedir aprobación en una corrida autónoma).
 //
 // El loop test→fix vive en "hay un check que MEDÍ y está rojo → no cierres, arreglá". La
@@ -81,7 +81,7 @@ function computeGate(marker) {
   for (const [name, status] of Object.entries(checks)) {
     // «sin-acotar» (tests): no se corrió nada a propósito y la cubre la CI del pedido; no es un rojo que el agente arregle.
     // «sin-medir» (tests): el portón no sabe correr las pruebas del repo; tampoco lo arregla el agente: lo dicen el
-    // paso 4 y el cierre de la historia.
+    // cierre de «Correr las pruebas» y el cierre de la historia.
     if (status !== 'green' && !(name === 'tests' && (status === 'sin-acotar' || status === 'sin-medir'))) failures.push(`${name} → ${status}`);
   }
   // Sin checks registrados o todos verdes → green → deja parar (preserva pausas HITL).

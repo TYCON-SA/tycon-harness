@@ -15,7 +15,7 @@
  * `deep_review: always` del repo vuelven completa la corrida aunque todo sea texto.
  *
  * El tiempo estimado sale de las corridas archivadas en esta máquina (`timing-history/*.json`, el marcador de cada una
- * al cerrarse): la mediana de las del mismo tamaño que llegaron a preparar el commit (paso 8). Las que no guardaron su tamaño se clasifican por lo que tocaron.
+ * al cerrarse): la mediana de las del mismo tamaño que llegaron a preparar el commit. Las que no guardaron su tamaño se clasifican por lo que tocaron.
  * Sin ninguna, un número fijo por tamaño, dicho como «estimado sin historia».
  *
  * Funciones puras salvo `estimate`, que lee la carpeta que se le pasa.
