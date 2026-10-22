@@ -61,8 +61,9 @@ const FRENOS = {
   'push-referencia-fantasma': { reglas: ['referencia-fantasma'], veredictos: ['aviso', 'paso'] },
   // `nombre-indecidible`: una escritura en alcance protegido con un nombre que el freno no sabe leer
   // como el shell. No es una falla del freno —ésa es `no-pude-mirar`— y por eso tiene su propia regla.
+  // `borrado-de-azure`: un borrado de grupo, candado o recurso de Azure que puede llevarse un servidor de producción.
   'prod-access-guard': {
-    reglas: ['host-no-declarado', 'produccion', 'no-pude-mirar', 'puerta-no-canonica', 'nombre-indecidible'],
+    reglas: ['host-no-declarado', 'produccion', 'no-pude-mirar', 'puerta-no-canonica', 'nombre-indecidible', 'borrado-de-azure'],
     veredictos: ['bloqueo', 'paso'],
   },
   // Los tres hooks del CIERRE (viven en agent-skills y llaman acá vía

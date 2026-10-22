@@ -89,6 +89,32 @@ const CRUDO = new RegExp('(' + [
   'security\\s+(?:-i\\b|find-|dump-keychain|export|[a-z-]*generic-password)',
 ].join('|') + ')', 'i');
 
+// El borrado en Azure tiene su propio criterio crudo: no se suma a CRUDO, que está fijado por la T27 de
+// prod-access-guard.test.sh porque decide la red de lo opaco y lo que measure-guard cuenta. Éste decide sólo la caída del
+// freno y el tope de 32 KB. Su copia en bash es `nombra_borrado()` de node-shim.sh; la T18 de
+// prod-guard-azure-delete.test.sh compara los dos. Es una función y no una expresión regular: con dos tramos libres la
+// expresión retrocedía sin fin en un texto largo, justo en el camino de más de 32 KB. Corre también sobre el JSON crudo del
+// evento, donde un salto de línea es el texto `\n`: por eso `\n` y `\r` escritos cortan el tramo y `\t` separa palabras.
+const REMOVE_AZ_RE = /Remove-Az(?:ResourceGroup|ResourceLock|Resource|SqlServer|SqlDatabase)(?![A-Za-z0-9_])/i;
+const INVOKE_REST_RE = /Invoke-AzRestMethod\b.*?\s-M[a-z]*[\s:=]*\\?["']?(?:delete\b|\$)|Invoke-AzRestMethod\b[^;|&]*\s@[A-Za-z_]/i;
+// `az` como palabra: sola, al final de una ruta (con barras de los dos lados) o pegada a una comilla o un paréntesis de un
+// programa que la ejecuta (`system("az …`)
+const esPalabraAz = (w) => /(?:^|[\\/:"'`({])az(?:\.cmd|\.exe)?$/i.test(w) || /az\.(?:cmd|exe)$/i.test(w);
+function nombraBorradoAzure(texto) {
+  for (const tramo of String(texto || '').split(/[;|&\n\r]|\\[nr]/)) {
+    if (REMOVE_AZ_RE.test(tramo) || INVOKE_REST_RE.test(tramo)) return true;
+    const pal = tramo.split(/(?:\s|\\t)+/).map((x) => x.replace(/^[\\"'`({$]+|[\\"'`)}]+$/g, '').toLowerCase()).filter(Boolean);
+    for (let k = 0; k < pal.length; k++) {
+      if (/(?:^|[\\/:])azd(?:\.exe)?$/.test(pal[k]) && pal[k + 1] === 'down') return true;
+      if (!esPalabraAz(pal[k])) continue;
+      const resto = pal.slice(k + 1);
+      for (const g of ['group', 'lock', 'resource']) { const x = resto.indexOf(g); if (x >= 0 && resto.indexOf('delete', x + 1) > x) return true; }
+      if (resto.includes('rest') && /(?:^|\s)(?:--m[a-z]*|-m)(?:[\s=]+)?\\?["']?delete(?![A-Za-z0-9_-])/i.test(tramo)) return true;
+    }
+  }
+  return false;
+}
+
 // 🔴 Tope de tamaño ANTES de parsear. Un comando con decenas de miles de `<<` hacía que el parseo de
 // heredocs tardara ~17 s (costo cuadrático): el reloj propio se consultaba DESPUÉS, el `timeout` del
 // registro mataba el proceso primero, y un `timeout` vencido DEJA PASAR (pase adversarial 2026-09-15,
@@ -104,8 +130,8 @@ function emergencia(texto, e) {
     fs.appendFileSync(path.join(dir, 'hook-errors.log'),
       `[${new Date().toISOString()}] prod-access-guard FALLÓ: ${(e && e.stack) || e}\n\n`, 'utf8');
   } catch { /* si ni eso se puede, queda el mensaje de abajo */ }
-  if (CRUDO.test(String(texto || ''))) {
-    process.stderr.write(mensaje('el freno de producción no pudo decidir (falla propia) y este comando nombra una base.',
+  if (CRUDO.test(String(texto || '')) || nombraBorradoAzure(texto)) {
+    process.stderr.write(mensaje('el freno de producción no pudo decidir (falla propia) y este comando nombra una base o un borrado en Azure.',
       ['El motivo quedó en ~/.claude/.tycon-pipeline/hook-errors.log.',
        'Un freno que no pudo mirar NO deja pasar: «no sé» no es «no hay producción acá».']));
     // 🔴 Éste es el OTRO camino de bloqueo, y era el único que no dejaba línea: el freno frenó,
@@ -173,6 +199,17 @@ function mensaje(motivo, detalle = []) {
   ].join('\n');
 }
 
+// El mensaje de un borrado en Azure: la puerta no borra nada, así que no se la nombra ni se sugiere un rodeo.
+function mensajeSinPuerta(motivo, detalle = []) {
+  return [
+    '🛑 FRENO DE PRODUCCIÓN — es a propósito, no es un error de configuración y no se rodea.',
+    '',
+    `Motivo: ${motivo}`,
+    ...(detalle.length ? [''].concat(detalle.map((d) => `   ${d}`)) : []),
+    '',
+  ].join('\n');
+}
+
 function reglaDelMotivo(motivo) {
   const m = String(motivo || '');
   // story 8.14, AC 14: un nombre que el freno no sabe leer dentro del alcance protegido NO es una falla del freno —
@@ -187,7 +224,7 @@ function reglaDelMotivo(motivo) {
 // `reglaFija`: la regla la dice quien frena cuando el motivo CITA texto del comando (una palabra, un servicio, un host sin
 // resolver). Leerla del motivo con `reglaDelMotivo` clasificaba como «no pude mirar» —y mandaba a hook-errors.log como falla
 // del freno— una escritura legítima cuyo comando decía «no pude abrir» (pase adversarial de la 8.14 A, #41).
-function frenar(motivo, detalle, ctx, reglaFija) {
+function frenar(motivo, detalle, ctx, reglaFija, { sinPuerta = false } = {}) {
   const regla = reglaFija || reglaDelMotivo(motivo);
   try { registrar(ctx, { bloqueo: true, motivo }); } catch { /* el registro es ayuda, no evidencia */ }
   // la línea canónica que lee la cuenta del tablero (story 2.6): sin host, sin sentencia
@@ -202,7 +239,7 @@ function frenar(motivo, detalle, ctx, reglaFija) {
       fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] prod-access-guard NO PUDO MIRAR (frenó): ${motivo}\n\n`, 'utf8');
     } catch { /* noop */ }
   }
-  process.stderr.write(mensaje(motivo, detalle));
+  process.stderr.write(sinPuerta ? mensajeSinPuerta(motivo, detalle) : mensaje(motivo, detalle));
   process.exit(2);
 }
 
@@ -270,6 +307,12 @@ const CANONICA_CARGA = new RegExp(`^${RUTA_PUERTA} --cargar-clave (${HOST_CANONI
 // el host: `--session <id>` lo pasa el hook de fin de sesión, que no pasa por acá, y cualquier otro argumento (un
 // rango, una IP, un nombre de regla) no es canónico.
 const CANONICA_FIREWALL = new RegExp(`^${RUTA_PUERTA} --(?:open|close)-firewall (${HOST_CANONICO})$`);
+// `--locks`, sola: dice qué servidores de producción tienen el candado de Azure (sólo lee)
+const CANONICA_CANDADOS = new RegExp(`^${RUTA_PUERTA} --locks$`);
+// `--delete-group <grupo>`, sólo el nombre: la puerta comprueba que el grupo no es de producción antes de pedir el borrado.
+// El corte de `az group delete` directo (paso 3b) no cambia.
+// Un nombre con paréntesis (Azure los permite) va entre comillas simples: sin ellas el shell los lee como sintaxis.
+const CANONICA_BORRAR_GRUPO = new RegExp(`^${RUTA_PUERTA} --delete-group (?:[A-Za-z0-9._][A-Za-z0-9._-]{0,89}|'[A-Za-z0-9._()][A-Za-z0-9._()-]{0,89}')$`);
 // `<host> --file <ruta> --sha256 <sha256>`: la consulta desde un archivo. Una consulta larga en una línea, con cada
 // comilla escapada, no se puede leer en el cuadro; desde un archivo, el freno la muestra entera antes del cuadro y la
 // huella ata lo que la persona vio a lo que corre la puerta. La ruta sin comillas, espacios ni nada que el shell expanda.
@@ -322,7 +365,7 @@ function decidir(entrada) {
   // `tool_name === "Bash"` es justo el agujero por el que la Task 0 vio pasar a Monitor.
   const cmd = String((payload.tool_input && (payload.tool_input.command || payload.tool_input.script)) || '');
   if (!cmd.trim()) {
-    if (CRUDO.test(String(entrada || ''))) return emergencia(entrada, new Error('payload sin comando reconocible y con nombres de bases'));
+    if (CRUDO.test(String(entrada || '')) || nombraBorradoAzure(entrada)) return emergencia(entrada, new Error('payload sin comando reconocible y con nombres de bases o un borrado en Azure'));
     process.exit(0);
   }
   const esCodex = !!payload.turn_id && !payload.session_id_claude;   // precedente: on-skill-invoke.js
@@ -330,7 +373,7 @@ function decidir(entrada) {
 
   const nombraBases = CRUDO.test(cmd);
   if (cmd.length > MAX_CMD) {
-    if (nombraBases) frenar(`ese comando mide ${Math.round(cmd.length / 1024)} KB (más de ${MAX_CMD / 1024} KB) y nombra algo de bases: es demasiado largo para analizarlo a tiempo.`, [
+    if (nombraBases || nombraBorradoAzure(cmd)) frenar(`ese comando mide ${Math.round(cmd.length / 1024)} KB (más de ${MAX_CMD / 1024} KB) y nombra algo de bases o un borrado en Azure: es demasiado largo para analizarlo a tiempo.`, [
       'Partilo en comandos más cortos, o pasá la consulta por la puerta.',
     ], { cmd: cmd.slice(0, 4096) });
     process.exit(0);
@@ -346,7 +389,7 @@ function decidir(entrada) {
   // contraseña de producción del Llavero sin que nada frenara (revisores del Step 5, 2026-09-15).
   const escondidos = textosEscondidos(cmd, partes, tokens, PREFIJOS, vars, expandir);
   const textos = [{ texto: cmd, partes, shell: true },
-    ...escondidos.map((t) => ({ texto: t.texto, partes: segmentos(t.texto), shell: t.shell, contenido: t.contenido }))];
+    ...escondidos.map((t) => ({ texto: t.texto, partes: segmentos(t.texto), shell: t.shell, contenido: t.contenido, ps: t.ps, codigo: t.codigo }))];
   // lo que se juzga como algo que corre: el contenido de un archivo que el comando no ejecuta queda afuera
   const ejecutados = textos.filter((x) => !x.contenido);
   let analizado = false;
@@ -428,7 +471,7 @@ function decidir(entrada) {
       ], { cmd });
       mensajeArchivo = `Consulta a ${fa[1]} desde ${fa[2]} (huella ${v.sha}):\n${v.texto}`;
     }
-    const canonica = unSoloSegmento && (CANONICA.test(limpio) || CANONICA_RECLAS.test(limpio) || CANONICA_VERIF.test(limpio) || CANONICA_CARGA.test(limpio) || CANONICA_FIREWALL.test(limpio) || CANONICA_ARCHIVO.test(limpio));
+    const canonica = unSoloSegmento && (CANONICA.test(limpio) || CANONICA_RECLAS.test(limpio) || CANONICA_VERIF.test(limpio) || CANONICA_CARGA.test(limpio) || CANONICA_FIREWALL.test(limpio) || CANONICA_CANDADOS.test(limpio) || CANONICA_BORRAR_GRUPO.test(limpio) || CANONICA_ARCHIVO.test(limpio));
     if (!canonica) {
       frenar('la puerta se invocó de una forma que no es la canónica.', [
         'Sólo se acepta la ruta absoluta, sin nada antes ni después, y la sentencia en UN argumento',
@@ -455,6 +498,42 @@ function decidir(entrada) {
     // recién cuando terminó de escribirse: por una tubería, salir enseguida cortaba el mensaje (y el cuadro aparecía igual)
     if (mensajeArchivo) { process.stdout.write(JSON.stringify({ systemMessage: mensajeArchivo }), () => process.exit(0)); return; }
     process.exit(0);                                    // forma canónica y limpia: que decida el cuadro
+  }
+
+  // ── 3b. el borrado en Azure ────────────────────────────────────────────────────────
+  // Borrar un grupo, un candado o un recurso se lleva un servidor con sus bases, y el catálogo declara servidores, no
+  // grupos: el freno no puede saber qué contiene un grupo, así que frena todo borrado de grupo, sin mirar el catálogo ni
+  // preguntarle a Azure (texto puro, dentro del reloj). `az resource delete` pasa si se lee el tipo de todo lo que borra
+  // y nada es de Microsoft.Sql; si nombra un servidor SQL legible, lo decide el paso 4 con el catálogo, como siempre.
+  // sólo lo que corre como comandos (de shell o de PowerShell): el cuerpo de un heredoc que va a `git commit -F -` o el
+  // código de un intérprete no son comandos, y juzgarlos frenaba un mensaje de commit que nombra un borrado
+  const comoComandos = ejecutados.filter((x) => x.shell || x.ps || (x !== textos[0] && !x.codigo && esGuionDeShell(x, escondidos)));
+  let borrado = borradoDeAzure(comoComandos.flatMap((x) => x.partes), tokens, PREFIJOS);
+  if (!borrado || !borrado.frena) {
+    const correGuion = partes.some(({ texto }) => {
+      const t = tokensDeSegmento(texto, tokens, PREFIJOS);
+      if (!t.length) return false;
+      const pr = basename(t[0]).toLowerCase().replace(/\.exe$/, '');
+      return (CORRE_ARCHIVO.has(pr) && t.slice(1).some((a) => !a.startsWith('-') && /[./]/.test(a))) || /^\.?\//.test(t[0]);
+    });
+    // el cuerpo del heredoc queda como contenido de un archivo, o sin marca cuando el mismo comando lo corre
+    const escritoYCorrido = correGuion && textos.find((x) => x !== textos[0] && !x.shell && !x.ps && !x.codigo && nombraBorradoAzure(x.texto));
+    if (escritoYCorrido) borrado = { frena: true, que: 'desde un guion que este comando escribe y corre algo que puede ser un grupo, un candado o un servidor' };
+  }
+  if (!borrado || !borrado.frena) {
+    const enCodigo = ejecutados.find((x) => x.codigo && nombraBorradoAzure(x.texto));
+    if (enCodigo) borrado = { frena: true, que: 'desde el programa de un intérprete (python, node…) algo que puede ser un grupo, un candado o un servidor' };
+  }
+  if (borrado) {
+    analizado = true;
+    if (borrado.frena) {
+      frenar(`ese comando borra ${borrado.que} en Azure, y eso puede llevarse un servidor de producción con sus bases: no puedo saber qué contiene.`, [
+        'El freno no le pregunta a Azure qué hay adentro: frena todo borrado de grupo, de candado y de recurso del que no',
+        'pueda probar que no es una base de datos.',
+        'Si de verdad hay que borrarlo, lo corre una persona en su propia terminal, fuera del asistente, después de mirar',
+        'qué contiene. Detalle: guides/produccion-con-permiso.md',
+      ], { cmd }, 'borrado-de-azure', { sinPuerta: true });
+    }
   }
 
   // ── 4. servidores nombrados por cualquiera de los gatillos (AC 6, 7, 8) ─────────────────────
@@ -579,7 +658,7 @@ function soloLeeTexto(partes, tokens, PREFIJOS) {
 
 // Intérpretes que reciben el programa en un argumento, y la bandera con la que lo reciben.
 const INTERPRETES = { bash: ['-c'], sh: ['-c'], zsh: ['-c'], ksh: ['-c'], dash: ['-c'], python: ['-c'], python3: ['-c'], node: ['-e', '--eval', '-p', '--print'], perl: ['-e', '-E'], ruby: ['-e'], php: ['-r'], pwsh: ['-Command', '-c'], powershell: ['-Command', '-c'], osascript: ['-e'], security: ['-i'] };
-const CORRE_ARCHIVO = new Set(['bash', 'sh', 'zsh', 'ksh', 'dash', 'python', 'python3', 'node', 'perl', 'ruby', 'php', 'osascript', 'source', '.']);
+const CORRE_ARCHIVO = new Set(['bash', 'sh', 'zsh', 'ksh', 'dash', 'python', 'python3', 'node', 'perl', 'ruby', 'php', 'osascript', 'source', '.', 'pwsh', 'powershell']);
 const MAX_ESCONDIDO = 64 * 1024;
 
 /**
@@ -600,7 +679,7 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
   let opaco = false;
   // `contenido`: el texto sólo se guarda en un archivo que este comando no ejecuta (`heredocSoloAArchivo`); no se lee
   // buscando servidores ni el Llavero
-  const agregar = (t, shell, contenido = false) => {
+  const agregar = (t, shell, contenido = false, ps = false, codigo = false) => {
     if (t === null || t === undefined) { opaco = true; return; }
     const v = String(t);
     if (!v.trim()) return;
@@ -609,15 +688,19 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
     // posterior dejaba al `bash -c` como «contenido» (pase adversarial de la 8.14 A, #42); por la misma razón, un texto
     // que llega también por otra vía deja de ser contenido
     const previo = out.find((x) => x.texto === v);
-    if (previo) { if (shell) previo.shell = true; if (!contenido) previo.contenido = false; }
-    else out.push({ texto: v, shell: !!shell, contenido });
+    if (previo) { if (shell) previo.shell = true; if (ps) previo.ps = true; if (codigo) previo.codigo = true; if (!contenido) previo.contenido = false; }
+    else out.push({ texto: v, shell: !!shell, contenido, ps: !!ps, codigo: !!codigo });
   };
 
   // (a) cuerpos de heredoc: `bash <<EOF … EOF` — `sinHeredocs` los borra del análisis normal
   const heredoc = /<<-?\s*(['"]?)([^\s'"<>|&;]+)\1[^\n]*\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g;
   let h; while ((h = heredoc.exec(cmd))) {
     const shell = heredocAlimentaShell(cmd, h.index, partes, tokens, PREFIJOS, vars, expandir);
-    agregar(h[3], shell, !shell && heredocSoloAArchivo(cmd, h.index, partes, tokens, PREFIJOS, vars, expandir));
+    const linea = cmd.slice(cmd.lastIndexOf('\n', h.index) + 1, h.index);
+    const tl = tokensDeSegmento(linea.split(/[;&|]/).pop() || '', tokens, PREFIJOS);
+    const progH = tl.length ? basename(tl[0]).toLowerCase().replace(/\.exe$/, '') : '';
+    agregar(h[3], shell, !shell && heredocSoloAArchivo(cmd, h.index, partes, tokens, PREFIJOS, vars, expandir), false,
+      !shell && (Boolean(INTERPRETES[progH]) || CORRE_ARCHIVO.has(progH)));
   }
 
   for (const { texto } of partes) {
@@ -627,19 +710,23 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
     // (b) `eval …`: todo lo que sigue es un comando
     if (prog === 'eval') { agregar(t.slice(1).join(' '), true); continue; }
     // (c) el argumento del intérprete (`bash -c '…'`, `python3 -c '…'`, `node -e '…'`)
-    const banderas = INTERPRETES[prog];
+    // en Windows el intérprete lleva `.exe` (`pwsh.exe`, `powershell.exe`), y PowerShell no distingue mayúsculas en sus
+    // banderas (`-command`)
+    const progN = prog.toLowerCase().replace(/\.exe$/, '');
+    const esPs = progN === 'pwsh' || progN === 'powershell';
+    const banderas = INTERPRETES[progN];
     if (banderas) {
       for (let i = 1; i < t.length; i++) {
-        if (!banderas.includes(t[i])) continue;
+        if (!(esPs ? banderas.some((b) => b.toLowerCase() === t[i].toLowerCase()) : banderas.includes(t[i]))) continue;
         // un intérprete SIN su texto (`bash -c "$CMD"`, con la variable definida afuera) es opaco:
         // no se puede ver qué corre, y eso NO es lo mismo que «lo vi y no había nada».
         if (t[i + 1] === undefined || NO_LITERAL.test(t[i + 1])) { opaco = true; continue; }
-        agregar(t[i + 1], ES_SHELL.has(prog));
+        agregar(t[i + 1], ES_SHELL.has(prog), false, esPs, !ES_SHELL.has(prog) && !esPs);
       }
     }
     // (d) el CONTENIDO del script que este comando ejecuta (el camino fácil: escribirlo y correrlo)
-    if (CORRE_ARCHIVO.has(prog) || /^\.?\//.test(t[0])) {
-      for (let i = CORRE_ARCHIVO.has(prog) ? 1 : 0; i < t.length; i++) {
+    if (CORRE_ARCHIVO.has(progN) || /^\.?\//.test(t[0])) {
+      for (let i = CORRE_ARCHIVO.has(progN) ? 1 : 0; i < t.length; i++) {
         const a = t[i];
         if (!a || a.startsWith('-')) continue;
         if (!/[./]/.test(a)) continue;
@@ -667,7 +754,15 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
           const st = fs.statSync(ruta);
           // `shell: false` a propósito: el CONTENIDO se mira por si nombra un servidor o el Llavero,
           // pero sus escrituras son suyas, no de este comando.
-          if (st.isFile() && st.size <= MAX_ESCONDIDO) agregar(fs.readFileSync(ruta, 'utf8'), false);
+          // el guion lo corre un shell (`bash x.sh`, `./x.sh`) o un intérprete: el paso del borrado en Azure lo lee como
+          // comandos en el primer caso y como código en el segundo
+          const porShell = ES_SHELL.has(prog) || prog === 'source' || prog === '.' || /^\.?\//.test(t[0]);
+          if (st.isFile() && st.size <= MAX_ESCONDIDO) {
+            const texto = fs.readFileSync(ruta, 'utf8');
+            agregar(texto, false, false, false, !porShell);
+            const e = out.find((y) => y.texto === texto);
+            if (e && porShell) e.guion = true;
+          }
           else if (st.isFile()) opaco = true;
         } catch { /* no existe o no se puede leer: no es un script que vayamos a ver */ }
         break;                                   // sólo el primer argumento no-bandera: el script
@@ -1889,6 +1984,176 @@ const PARECE_ARCHIVO = /[\\/]|\.(db|db3|sqlite|sqlite3|mdf|sdf|accdb|mdb|csv|jso
 // conocida — caía en una grieta y se descartaba en silencio.
 const NO_LITERAL = /\$\(|`|\$\{?[A-Za-z_]/;
 
+// Los cinco cmdlets de PowerShell que borran un grupo, un recurso, un servidor, una base o un candado. Se frenan siempre,
+// sin mirar el servidor: PowerShell no distingue mayúsculas.
+const REMOVE_AZ = new Set(['remove-azresourcegroup', 'remove-azresource', 'remove-azsqlserver', 'remove-azsqldatabase', 'remove-azresourcelock']);
+const esAz = (tok) => /^az(?:\.cmd|\.exe)?$/i.test(basename(tok)) || esPalabraAz(String(tok));
+// Los programas que sólo leen o muestran texto: un borrado nombrado ahí no corre. Sin `sed` ni `awk`, que ejecutan con
+// `system()`.
+const SOLO_MUESTRAN = new Set([...TEXTUALES].filter((p) => p !== 'sed' && p !== 'awk'));
+// Los espacios de nombres de Azure cuyo recurso puede llevarse un servidor o su protección: el grupo (y la suscripción) y
+// el candado. Borrarlos por `az resource delete` es lo mismo que `az group delete` y `az lock delete`.
+const CONTENEDORES = new Set(['microsoft.resources', 'microsoft.authorization']);
+
+/**
+ * Lo que borra un `az resource delete` (los tokens desde `az`): `{ ilegible, servidores, sinServidor }`. `ilegible`: un
+ * tipo o un id que no se puede leer (una variable, una sustitución, un comodín, un `-n` sin tipo). `servidores`: los
+ * servidores SQL que nombra, para que los clasifique el catálogo. `sinServidor`: un tipo de Microsoft.Sql del que no se
+ * sabe el servidor.
+ */
+// ¿`tok` es la bandera `completa`? az (argparse) acepta una bandera larga abreviada mientras no sea ambigua: `--meth`.
+function esBandera(tok, completa, conocidas = []) {
+  const x = String(tok || '');
+  if (x === completa) return true;
+  if (!completa.startsWith('--') || !x.startsWith('--') || x.length < 3 || !completa.startsWith(x)) return false;
+  // la abreviatura vale si ninguna otra bandera conocida empieza igual (argparse la rechaza por ambigua)
+  return !conocidas.some((c) => c !== completa && c.startsWith(x));
+}
+// Las banderas largas de `az resource delete` y de `az rest`, para decidir si una abreviatura es ambigua.
+const BANDERAS_RESOURCE = ['--ids', '--name', '--namespace', '--resource-type', '--parent', '--resource-group', '--api-version', '--subscription'];
+const BANDERAS_REST = ['--method', '--uri', '--url', '--body', '--headers', '--output-file', '--resource', '--skip-authorization-header', '--uri-parameters', '--url-parameters'];
+
+function recursosDeAzResource(t) {
+  const out = { ilegible: false, servidores: [], sinServidor: false, contenedor: false };
+  const raro = (v) => v === null || v === undefined || v === '' || NO_LITERAL.test(v) || /[*?[\]{}]/.test(v);
+  // como az (argparse): gana la última aparición de una bandera repetida
+  const valor = (banderas) => {
+    let v = null;
+    for (let i = 0; i < t.length; i++) {
+      if (banderas.some((b) => esBandera(t[i], b, BANDERAS_RESOURCE))) v = t[i + 1] === undefined ? '' : t[i + 1];
+      const m = /^(--?[A-Za-z-]+)=(.*)$/.exec(t[i]);
+      if (m && banderas.some((b) => esBandera(m[1], b, BANDERAS_RESOURCE))) v = m[2];
+    }
+    return v;
+  };
+  const ids = [];
+  for (let i = 0; i < t.length; i++) {
+    const m = /^(--[A-Za-z-]+)=(.*)$/.exec(t[i]);
+    if (m && esBandera(m[1], '--ids', BANDERAS_RESOURCE)) ids.push(m[2]);
+    if (!esBandera(t[i], '--ids', BANDERAS_RESOURCE)) continue;
+    for (let j = i + 1; j < t.length && !t[j].startsWith('-'); j++) ids.push(t[j]);
+  }
+  for (const id of ids) {
+    const p = /\/providers\/([^/]+)\/[^/]+/i.exec(id);
+    if (raro(id) || !p) { out.ilegible = true; continue; }
+    if (CONTENEDORES.has(p[1].toLowerCase())) { out.contenedor = true; continue; }
+    if (p[1].toLowerCase() !== 'microsoft.sql') continue;
+    const s = RECURSO_SQL.exec(id);
+    if (s) out.servidores.push(s[1]); else out.sinServidor = true;
+  }
+  if (ids.length) return out;
+  const tipo = valor(['--resource-type']);
+  const ns = valor(['--namespace']);
+  const nombre = valor(['-n', '--name']);
+  const padre = valor(['--parent']);
+  if (raro(tipo) || (ns !== null && raro(ns))) { out.ilegible = true; return out; }
+  const completo = (ns ? `${ns}/${tipo}` : tipo).toLowerCase();
+  if (!/^[a-z0-9.]+\/[a-z0-9/]+$/.test(completo)) { out.ilegible = true; return out; }
+  if (CONTENEDORES.has(completo.split('/')[0])) { out.contenedor = true; return out; }
+  if (!completo.startsWith('microsoft.sql/')) return out;
+  const sub = completo.slice('microsoft.sql/'.length);
+  if (sub === 'servers') {
+    if (raro(nombre)) out.sinServidor = true; else out.servidores.push(nombre);
+  } else {
+    const s = padre && /^servers\/([^/]+)/i.exec(padre);
+    if (!s || raro(s[1])) out.sinServidor = true; else out.servidores.push(s[1]);
+  }
+  return out;
+}
+
+// El contenido de un guion que corre un shell (regla d de textosEscondidos, sin la marca de código): sus palabras son
+// comandos. Un heredoc que no va a un shell ni a un intérprete (el mensaje de `git commit -F -`) no lo es.
+function esGuionDeShell(x, escondidos) {
+  const e = escondidos.find((y) => y.texto === x.texto);
+  return Boolean(e && e.guion);
+}
+
+/**
+ * El borrado en Azure que corre el comando, leído de cada segmento: `{ frena: true, que }` si se frena; `{ frena: false }`
+ * si borra recursos legibles (los de SQL los decide el paso 4); null si no borra nada en Azure. Texto puro: no lee disco
+ * ni ejecuta `az`.
+ */
+function borradoDeAzure(partes, tokens, PREFIJOS) {
+  let visto = null;
+  for (const { texto } of partes) {
+    const t = tokensDeSegmento(texto, tokens, PREFIJOS);
+    if (!t.length || SOLO_MUESTRAN.has(basename(t[0]).toLowerCase())) continue;
+    // sobre el texto del segmento, no por palabra: dentro de un bloque (`%{Remove-AzResourceGroup …}`) o con el módulo
+    // adelante (`Az.Resources\Remove-AzResourceGroup`) el cmdlet no queda como palabra suelta
+    const cmdlet = (x, re) => re.test(String(x).replace(/^[%{(@$]+/, '').replace(/^[\w.\\]*?(?=(?:Remove|Invoke)-Az)/i, ''));
+    if (t.some((x) => cmdlet(x, /^Remove-Az(?:ResourceGroup|ResourceLock|Resource|SqlServer|SqlDatabase)(?![A-Za-z0-9_])/i))) {
+      return { frena: true, que: 'con PowerShell (Remove-Az…) un grupo, un recurso, un servidor, una base o un candado' };
+    }
+    const iInvoke = t.findIndex((x) => cmdlet(x, /^Invoke-AzRestMethod(?![A-Za-z0-9_])/i));
+    if (iInvoke >= 0) {
+      let m = null;
+      for (let j = iInvoke + 1; j < t.length; j++) {
+        const pm = /^-m(?:e(?:t(?:h(?:o(?:d)?)?)?)?)?(?::(.*))?$/i.exec(t[j]);
+        if (pm) m = pm[1] !== undefined && pm[1] !== '' ? pm[1] : (t[j + 1] === undefined ? '' : t[j + 1]);
+      }
+      const splat = t.slice(iInvoke + 1).some((x) => /^@[A-Za-z_]/.test(x));
+      if ((m === null && splat) || (m !== null && (NO_LITERAL.test(m) || /^delete$/i.test(desescapar(m))))) {
+        return { frena: true, que: 'por la API de Azure (Invoke-AzRestMethod con delete) algo que puede ser un grupo o un servidor' };
+      }
+    }
+    // `ssh host '…'`: el comando corre en otra máquina, pero un `az` ahí borra igual en Azure
+    if (basename(t[0]).toLowerCase() === 'ssh' && nombraBorradoAzure(texto)) {
+      return { frena: true, que: 'por ssh, en otra máquina, algo que puede ser un grupo, un candado o un servidor' };
+    }
+    // `Invoke-Expression` (`iex`) es el `eval` de PowerShell: su texto se mira con el criterio crudo
+    if (/^(?:invoke-expression|iex)$/.test(basename(t[0]).toLowerCase()) && nombraBorradoAzure(texto)) {
+      return { frena: true, que: 'con Invoke-Expression algo que puede ser un grupo, un candado o un servidor' };
+    }
+    const iAzd = t.findIndex((x) => /^azd(?:\.cmd|\.exe)?$/i.test(basename(x)));
+    if (iAzd >= 0 && t.slice(iAzd + 1).some((x) => x.toLowerCase() === 'down')) return { frena: true, que: 'con `azd down` los recursos de un entorno, que pueden incluir un servidor' };
+    // `awk` y `sed` ejecutan comandos desde su programa (`system()`, `e`): el borrado viaja adentro de un argumento, y se
+    // mira el texto del segmento con el criterio crudo
+    if (/^(?:g|n|m)?awk$|^g?sed$/.test(basename(t[0]).toLowerCase()) && nombraBorradoAzure(texto)) {
+      return { frena: true, que: 'desde un programa de awk o sed algo que puede ser un grupo, un candado o un servidor' };
+    }
+    // el programa sale de una variable (`$A group delete`): si lo que sigue es un borrado, se juzga como `az`
+    let iAz = t.findIndex(esAz);
+    if (iAz < 0 && NO_LITERAL.test(t[0])) iAz = 0;
+    if (iAz < 0) continue;
+    const resto = t.slice(iAz + 1);
+    // desescapadas, como las corre el shell: `del\ete` es `delete`
+    const bajo = resto.map((x) => desescapar(x).toLowerCase());
+    // el subcomando que no se puede leer (sale de una variable o de una sustitución), o el que `xargs` agrega desde la
+    // entrada: no se puede probar que no sea un borrado
+    const subcomando = [];
+    for (const x of resto) { if (x.startsWith('-')) break; subcomando.push(x); }
+    if (subcomando.some((x) => NO_LITERAL.test(x))) return { frena: true, que: 'algo que no se puede leer (el subcomando de az sale de una variable)' };
+    const agrega = /^(?:xargs|parallel|find)$/.test(basename(t[0]).toLowerCase());
+    const conMarcador = subcomando.some((x) => /\{\}|^%$|\{[0-9.]*\}/.test(x));
+    // sólo el grupo sin verbo (`xargs az group`): el verbo lo agrega la entrada; `az group show -n {}` sí se lee
+    const sinVerbo = subcomando.length === 1 && ['group', 'lock', 'resource'].includes(subcomando[0].toLowerCase());
+    if (agrega && (!subcomando.length || conMarcador || sinVerbo)) return { frena: true, que: 'algo que no se puede leer (xargs, parallel o find le agregan a az palabras desde la entrada)' };
+    const despues = (palabra) => { const k = bajo.indexOf(palabra); return k >= 0 && bajo.indexOf('delete', k + 1) > k; };
+    if (despues('group')) return { frena: true, que: 'un grupo de recursos' };
+    if (despues('lock')) return { frena: true, que: 'un candado (la protección contra el borrado)' };
+    if (bajo.includes('rest')) {
+      // el método, en cualquier forma que acepta az: `--method X`, `-m X`, `--method=X`, `-m=X` o `-mX`; uno que sale de
+      // una variable no se puede leer y frena
+      let metodo = null;
+      for (let k = 0; k < resto.length; k++) {
+        if ((esBandera(bajo[k], '--method', BANDERAS_REST) || bajo[k] === '-m') && resto[k + 1] !== undefined) metodo = desescapar(resto[k + 1]);
+        const largo = /^(--[a-z-]+)=(.+)$/i.exec(resto[k]);
+        if (largo && esBandera(largo[1].toLowerCase(), '--method', BANDERAS_REST)) metodo = largo[2];
+        const corto = /^-m=?(.+)$/i.exec(resto[k]);
+        if (corto && bajo[k] !== '-m' && !/^-m[a-z]+-/.test(bajo[k])) metodo = corto[1];
+      }
+      if (metodo !== null && (NO_LITERAL.test(metodo) || metodo.toLowerCase() === 'delete')) return { frena: true, que: 'por la API de Azure (az rest con el método delete) algo que puede ser un grupo o un servidor' };
+    }
+    if (despues('resource')) {
+      const r = recursosDeAzResource(resto);
+      if (r.contenedor) return { frena: true, que: 'por az resource delete un grupo, una suscripción o un candado' };
+      if (r.ilegible || r.sinServidor) return { frena: true, que: 'un recurso del que no se puede leer el tipo o el servidor' };
+      visto = { frena: false };
+    }
+  }
+  return visto;
+}
+
 /** @returns {{host:string|null, crudo:string, via:string}[]} los servidores que el comando nombra */
 function servidoresNombrados(partes, tokens, PREFIJOS, vars, expandir) {
   const out = [];
@@ -1961,9 +2226,9 @@ function servidoresNombrados(partes, tokens, PREFIJOS, vars, expandir) {
       }
     }
 
-    if (prog === 'az' || t.includes('az')) {
+    if (prog === 'az' || t.some(esAz)) {
       // el subcomando de `az sql`, hasta la primera bandera: `az sql server firewall-rule create -s …` → server, firewall-rule, create
-      const iSql = t.findIndex((x, k) => x === 'sql' && t[k - 1] === 'az');
+      const iSql = t.findIndex((x, k) => x === 'sql' && k > 0 && esAz(t[k - 1]));
       const ruta = [];
       for (let k = iSql + 1; iSql >= 0 && k < t.length && !t[k].startsWith('-'); k++) ruta.push(t[k]);
       // `-s` es el servidor en `az sql db|dw|elastic-pool …` y en los grupos de `az sql server` (firewall-rule, ad-admin…),
@@ -1980,6 +2245,12 @@ function servidoresNombrados(partes, tokens, PREFIJOS, vars, expandir) {
         if (igual) agregar(crudoDe(texto, igual[1]), 'az');
         const rec = RECURSO_SQL.exec(t[i]);
         if (rec) agregar(rec[1], 'recurso');
+      }
+      // `az resource delete -n <s> --resource-type Microsoft.Sql/servers` y `--parent servers/<s>`: el servidor sale del
+      // nombre y del tipo (los `--ids` ya los lee la línea de arriba)
+      const iAz = t.findIndex(esAz);
+      if (iAz >= 0 && t.slice(iAz + 1).some((x) => x.toLowerCase() === 'resource') && !t.includes('--ids')) {
+        for (const srv of recursosDeAzResource(t.slice(iAz + 1)).servidores) agregar(crudoDe(texto, srv), 'recurso');
       }
     }
 
