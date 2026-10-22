@@ -48,6 +48,76 @@
      }
     },
     {
+     "id": "bloquea-story-nueva-con-numero-fuera-de-la-numeracion",
+     "type": "must-block",
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "Codex no expone la invocación de skills como tool call → sin constancia mecánica posible; el freno no bloquea bajo Codex y deja unknown en gates.log (ver caso codex-no-frena-pero-queda-medido).",
+     "__doc": "El caso real de un modelo abierto (2026-10-22): sin llamar a la skill escribió `story: G-1` en una carpeta nueva de un repo que numera por épica. El freno lo dejaba pasar como «material» por la forma del número; las 12 veces que esa excepción dejó pasar algo eran historias de trabajo. Ahora se frena igual, y el motivo dice que el número no sigue la numeración del repo.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon specs"
+     ],
+     "files": {
+      ".tycon/advisors.yaml": "stories:\n  id_pattern: '^\\d+\\.\\d+$'\n"
+     },
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Write",
+      "tool_input": {
+       "file_path": "${FIXTURE}/specs/features/gestores/G-1-abm-gestores-cbu-alias.md",
+       "content": "---\nepic: Gestores\nstory: G-1\ntitle: ABM Gestores - CBU/CVU y Alias\nstatus: draft\n---\n# ABM Gestores\n"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "STORY A MANO",
+       "numeración"
+      ],
+      "file_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "\"name\":\"story-skill-gate\".*\"status\":\"blocked\""
+       }
+      ]
+     }
+    },
+    {
+     "id": "rojo-el-mismo-numero-fuera-de-la-numeracion-pasa-con-solo-este-freno-apagado",
+     "type": "must-not-block",
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "Par del caso must-block (tools:['claude']); bajo Codex el freno ya no bloquea de por sí.",
+     "__doc": "🔴 EL ROJO del caso del número fuera de la numeración: mismo fixture y mismo evento, sólo TYCON_STORY_SKILL_GATE=off → pasa. El exit 2 de ese caso es de esta pieza.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon specs"
+     ],
+     "files": {
+      ".tycon/advisors.yaml": "stories:\n  id_pattern: '^\\d+\\.\\d+$'\n"
+     },
+     "env": {
+      "TYCON_STORY_SKILL_GATE": "off"
+     },
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Write",
+      "tool_input": {
+       "file_path": "${FIXTURE}/specs/features/gestores/G-1-abm-gestores-cbu-alias.md",
+       "content": "---\nepic: Gestores\nstory: G-1\ntitle: ABM Gestores - CBU/CVU y Alias\nstatus: draft\n---\n# ABM Gestores\n"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "file_absent": [
+       "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log"
+      ]
+     }
+    },
+    {
      "id": "rojo-el-mismo-write-pasa-con-solo-este-freno-apagado",
      "type": "must-not-block",
      "tools": [

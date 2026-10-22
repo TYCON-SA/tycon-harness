@@ -79,7 +79,11 @@ test('computeStorySkillGate: tabla de verdad', () => {
   assert.equal(v({ isHarness: true }).kind, 'harness');
   assert.equal(v({ gateEnabled: false }).kind, 'repo-off');
   assert.equal(v({ repoUnderHarness: false }).kind, 'unknown-no-harness');
-  assert.equal(v({ idIsWork: false }).kind, 'unknown-material');
+  // un id con otra forma que la del repo se frena igual (G-1 en un repo que numera por épica) y el motivo lo dice
+  assert.equal(v({ idIsWork: false }).action, 'block');
+  assert.equal(v({ idIsWork: false }).kind, 'no-skill');
+  assert.match(v({ idIsWork: false }).reason, /numeración/);
+  assert.equal(v({ idIsWork: false, mark: { skill: 'tycon-create-story', at: new Date(NOW).toISOString() } }).action, 'pass');
   assert.equal(v({ isCodex: true }).kind, 'unknown-codex');
   // bajo Codex una marca/bypass vigente igual se reconoce (queda auditado como bypass, no como unknown)
   assert.equal(v({ isCodex: true, mark: { skill: 'bypass', reason: 'r', at: new Date(NOW).toISOString() } }).kind, 'bypass');
@@ -170,16 +174,18 @@ test('evaluate: .md que NO declara story (PRD) pasa sin log; .txt ni se mira', (
   assert.equal(gatesLog(st), '');
 });
 
-test('evaluate: repo fuera del arnés y material tipo evals pasan y quedan MEDIDOS (unknown)', () => {
+test('evaluate: repo fuera del arnés pasa y queda MEDIDO (unknown); un número inventado en un repo del arnés se frena', () => {
   const st = mkState();
   const suelto = mkRepo({ tycon: false });
   const r1 = sio.evaluate({ absPath: path.join(suelto, 'specs', '9-9.md'), content: S99, sessionId: 's1', stateDir: st });
   assert.equal(r1.verdict.action, 'pass'); assert.equal(r1.verdict.kind, 'unknown-no-harness');
+  // una story nueva con `story: G-1`, en una carpeta nueva de un repo que numera por épica, se frena sin la skill
   const repo = mkRepo();
-  const r2 = sio.evaluate({ absPath: path.join(repo, 'specs', 'ev1.md'), content: S99.replace('"9.9"', '"EV-1"'), sessionId: 's1', stateDir: st });
-  assert.equal(r2.verdict.kind, 'unknown-material');
+  const r2 = sio.evaluate({ absPath: path.join(repo, 'specs', 'features', 'gestores', 'G-1-abm-gestores-cbu-alias.md'), content: S99.replace('"9.9"', '"G-1"'), sessionId: 's1', stateDir: st });
+  assert.equal(r2.verdict.action, 'block');
+  assert.equal(r2.verdict.kind, 'no-skill');
   const log = gatesLog(st);
-  assert.equal((log.match(/"status":"unknown"/g) || []).length, 2);
+  assert.equal((log.match(/"status":"unknown"/g) || []).length, 1);
 });
 
 test('evaluate: repo del harness y ~/.claude pasan; config commiteada del repo apaga (kill-switch por repo)', () => {

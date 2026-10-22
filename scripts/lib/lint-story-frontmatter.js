@@ -36,6 +36,11 @@
  *      leer, se avisa a los gritos y la regla no corre en esa corrida (fail-open RUIDOSO: es un
  *      hueco declarado, no un OK).
  *
+ *   5. Los ARCHIVOS A MODIFICAR existen: cada ruta de `files_to_modify:` está en el código del
+ *      producto (el repo de la story o un repo hermano). Frena a la story que NACE en este commit; a
+ *      una que ya existía se le avisa (sus archivos pudieron moverse). Si el repo de código no está
+ *      clonado, avisa y no frena. El detalle, en la cabecera de `checkStory`.
+ *
  * IMPORTANTE: el chequeo naive `awk '/^---$/'` NO alcanza — cualquier regla
  * horizontal del cuerpo lo satisface. Por eso acá se replica el parser real.
  *
@@ -342,6 +347,108 @@ function avisarNumerosRepetidos(soloEstos) {
   console.log('   usá un número que no exista en el repo (recomendado: el de la épica adelante, `2.3`).');
 }
 
+// ── Los archivos a modificar existen ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Las rutas de `files_to_modify:` de una story existen en el código del producto.
+ *
+ * Un modelo que escribe una story puede inventar los archivos a modificar (una carpeta de funcionalidad o un modal que
+ * nadie creó). El revisor de historias lo ve, pero sólo si el modelo lo corre; este control no depende de eso.
+ *
+ * Dónde se busca cada ruta: en el repo de la story, en la carpeta del producto (la que contiene al repo, para las rutas
+ * que empiezan con el nombre del repo) y en cada repo hermano con su `.git` (el código suele vivir al lado del repo de
+ * historias). Una ruta que no está en ninguno de esos lugares:
+ *   - frena si su primera carpeta existe en alguno de ellos: el repo está clonado y el archivo no;
+ *   - avisa si su primera carpeta no aparece en ninguno: el repo de código puede no estar clonado, y un control que no
+ *     puede decidir no frena.
+ * `files_to_create:` no se mira: esos archivos todavía no existen. Una story cerrada (done, review, cancelada) tampoco:
+ * sus archivos pudieron moverse después. Lo que no es una ruta clara (notas entre paréntesis, comodines, `{a,b}`,
+ * `<marcador>`, texto con espacios) se saltea.
+ */
+const CLOSED = /^(done|review|cancel|superseded|closed|obsolete|deprecated|abandon|postpon|deferred|eliminad|descartad)/i;
+
+/** Los valores de la lista `<key>:` del frontmatter, en bloque o entre corchetes. */
+function listOf(fm, key) {
+  const out = [];
+  let on = false;
+  for (const line of fm.split(/\r?\n/)) {
+    const head = line.match(new RegExp(`^${key}\\s*:\\s*(.*)$`));
+    if (head) {
+      const inline = head[1].match(/^\[(.*)\]\s*(#.*)?$/);
+      if (inline) return inline[1].split(',').map((s) => s.trim()).filter(Boolean);
+      on = true;
+      continue;
+    }
+    if (!on) continue;
+    if (/^[A-Za-z_]/.test(line)) break;
+    const m = line.match(/^\s*-\s*(.*)$/);
+    if (m) out.push(m[1]);
+  }
+  return out;
+}
+
+/** La ruta de un ítem, o null si no es una ruta clara. */
+function pathOf(item) {
+  let v = String(item).trim();
+  const q = v.match(/^(["'])(.*?)\1/);
+  if (q) v = q[2];
+  else v = v.replace(/\s+#.*$/, '');
+  v = v.trim();
+  if (!v || /^[({<]/.test(v)) return null;
+  const first = v.split(/\s+/)[0].replace(/[,;:]+$/, '');
+  if (/[*?{}<>[\]]/.test(first) || first.startsWith('/') || first.startsWith('~') || first.split('/').includes('..')) return null;
+  if (!first.includes('/') && !/\.[A-Za-z0-9]+$/.test(first)) return null;
+  return first.replace(/^\.\//, '');
+}
+
+/** 'yes' si existe, 'no' si no existe, 'unknown' si no se pudo mirar (permisos, por ejemplo). */
+function probe(p) {
+  try { fs.statSync(p); return 'yes'; } catch (e) { return e.code === 'ENOENT' || e.code === 'ENOTDIR' ? 'no' : 'unknown'; }
+}
+
+/** Los lugares donde puede estar el código del producto de una story. */
+function rootsOf(storyFile) {
+  let repo = path.dirname(path.resolve(storyFile));
+  while (!fs.existsSync(path.join(repo, '.git')) && path.dirname(repo) !== repo) repo = path.dirname(repo);
+  if (!fs.existsSync(path.join(repo, '.git'))) repo = path.dirname(path.resolve(storyFile));
+  const parent = path.dirname(repo);
+  const roots = [repo, parent];
+  try {
+    for (const e of fs.readdirSync(parent, { withFileTypes: true })) {
+      const d = path.join(parent, e.name);
+      if (e.isDirectory() && d !== repo && !e.name.startsWith('.') && fs.existsSync(path.join(d, '.git'))) roots.push(d);
+    }
+  } catch (_) {
+    // sin poder mirar la carpeta del producto no se sabe qué repos hay al lado: nada se da por inventado
+    roots.unreadable = true;
+  }
+  return roots;
+}
+
+/** `{ missing, unsure }` de una story: las rutas que no existen y las que no se pueden juzgar. */
+function checkStory(storyFile, content) {
+  const text = (content === undefined ? fs.readFileSync(storyFile, 'utf8') : content).replace(/^﻿/, '');
+  if (!text.startsWith('---')) return { missing: [], unsure: [] };
+  const end = text.indexOf('\n---', 3);
+  if (end < 0) return { missing: [], unsure: [] };
+  const fm = text.slice(3, end);
+  const status = (fm.match(/^status:\s*["']?([^"'\s#]+)/m) || [])[1] || '';
+  if (CLOSED.test(status)) return { missing: [], unsure: [] };
+  const paths = [...new Set(listOf(fm, 'files_to_modify').map(pathOf).filter(Boolean))];
+  if (!paths.length) return { missing: [], unsure: [] };
+  const roots = rootsOf(storyFile);
+  const missing = [];
+  const unsure = [];
+  for (const p of paths) {
+    const where = roots.map((r) => probe(path.join(r, p)));
+    if (where.includes('yes')) continue;
+    // una ruta que no se pudo mirar en algún lugar no se da por inventada
+    if (where.includes('unknown') || roots.unreadable) { unsure.push(p); continue; }
+    const top = p.split('/')[0];
+    (p.includes('/') && roots.some((r) => probe(path.join(r, top)) === 'yes') ? missing : unsure).push(p);
+  }
+  return { missing, unsure };
+}
+
 function main() {
   const args = process.argv.slice(2);
   if (!discovery) {
@@ -407,6 +514,8 @@ function main() {
     console.error('    La regla de `followup_reason:` NO se aplica en esta ejecución — es un hueco declarado, no un OK.');
   }
   let sinCausaExistentes = 0;
+  const rutasViejas = [];
+  const rutasSinJuzgar = [];
 
   for (const abs of files) {
     if (!fs.existsSync(abs)) continue; // borrado en el commit
@@ -482,6 +591,23 @@ function main() {
       }
     }
 
+    // 5. Los archivos a modificar existen. El por qué y dónde se buscan, en la cabecera de checkStory.
+    const rutas = checkStory(abs, content);
+    if (rutas.missing.length) {
+      if (naceAhora(abs, scalar(parsed.fm, 'story'))) {
+        errors.push({
+          rel,
+          problema: `\`files_to_modify:\` nombra archivos que no existen en el código del producto: ${rutas.missing.join(', ')}`,
+          efecto: 'quien implemente la story busca archivos inventados, o los crea donde no van',
+          arreglo: 'corregir la ruta contra el repo de código, o pasarla a `files_to_create:` si el archivo es nuevo',
+        });
+        continue;
+      }
+      // Ya existía: sus archivos pudieron moverse después. Se avisa y no se frena.
+      rutasViejas.push(`${rel}: ${rutas.missing.join(', ')}`);
+    }
+    if (rutas.unsure.length) rutasSinJuzgar.push(`${rel}: ${rutas.unsure.join(', ')}`);
+
     if (checkYaml) {
       const yamlErr = checkYaml(parsed.fm);
       if (yamlErr) {
@@ -504,6 +630,17 @@ function main() {
     console.log(`⚠️  ${sinCausaExistentes} story(s) con seguimiento (\`followup_of:\`) sin causa declarada ` +
       '(`followup_reason:`) — ya existían, no frenan. Al tocarlas, declarar una de: ' +
       `${(vocab.causas || []).join(' · ')} (scripts/metrics/rework-causes.json).`);
+  }
+
+  if (rutasViejas.length) {
+    console.log(`⚠️  ${rutasViejas.length} story(s) que ya existían nombran en \`files_to_modify:\` archivos que no están ` +
+      '(no frenan: pudieron moverse después):');
+    for (const r of rutasViejas) console.log(`   ${r}`);
+  }
+  if (rutasSinJuzgar.length) {
+    console.log(`⚠️  ${rutasSinJuzgar.length} story(s) con archivos que no encuentro en ningún repo al lado ` +
+      '(¿el repo de código está clonado?; no frenan):');
+    for (const r of rutasSinJuzgar) console.log(`   ${r}`);
   }
 
   if (aviso.length) {

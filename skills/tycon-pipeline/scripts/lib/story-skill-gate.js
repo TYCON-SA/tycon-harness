@@ -39,9 +39,10 @@
  *      en disco. Un `>>` a una story existente también pasa.
  *   2. Sólo lo que DECLARA identidad de story (`story:` en el frontmatter cerrado — el criterio
  *      canónico de `lib/story-discovery.js`, jamás la ruta). Un PRD, un épico, una guía: pasan.
- *   3. Sólo ids con FORMA DE TRABAJO del repo (`isWorkStoryId` + `stories.id_pattern` del repo, la
- *      versión para frenos que une lo commiteado y la carpeta). El material de evals que LUCE como
- *      story (`EV-1`) pasa — y queda medido como `unknown` en gates.log, no en silencio.
+ *   3. La forma del id NO abre el portón: un id que no sigue la numeración del repo (`isWorkStoryId` +
+ *      `stories.id_pattern`) se frena igual, y el mensaje lo dice. Un modelo que se saltea la skill
+ *      también inventa el número; las veces que eximir esos ids dejó pasar algo, eran historias de
+ *      trabajo. El material de evaluación vive en los repos del arnés (punto 4) o pasa con el escape.
  *   4. Sólo en repos bajo el arnés (`.tycon/` o stories Mary+GOLD descubiertas). Un repo suelto
  *      pasa (medido como `unknown`). Los repos del propio harness pasan siempre (plantillas, casos).
  *   5. La marca vence: TTL de 2 horas por default (`TYCON_STORY_SKILL_MARK_TTL_MIN`). Es largo a
@@ -142,7 +143,7 @@ function markState(mark, nowMs, ttlMs) {
  * @param {boolean} a.isStoryCandidate  el contenido (o, por Bash, el nombre) declara identidad de story
  * @param {boolean} a.isHarness         vive en un repo del propio harness
  * @param {boolean} a.repoUnderHarness  el repo trabaja con el arnés (.tycon/ o stories descubiertas)
- * @param {boolean} a.idIsWork          el id declarado tiene forma de trabajo del repo (null = no se pudo leer → se asume true)
+ * @param {boolean} a.idIsWork          el id declarado sigue la numeración del repo (null = no se pudo leer); sólo cambia el texto
  * @param {object|null} a.mark          marca de la sesión ({skill, at}) o null
  * @param {number}  a.nowMs
  * @param {number}  a.ttlMs
@@ -159,7 +160,9 @@ function computeStorySkillGate({
   if (isHarness) return { action: 'pass', kind: 'harness', reason: 'repo del propio harness (plantillas, casos del banco)' };
   if (!gateEnabled) return { action: 'pass', kind: 'repo-off', reason: 'apagado por .tycon/advisors.yaml (pipeline.story_skill_gate: false, commiteado)' };
   if (repoUnderHarness === false) return { action: 'pass', kind: 'unknown-no-harness', reason: 'el repo no trabaja con el arnés (sin .tycon/ ni stories) — no se frena, queda medido' };
-  if (idIsWork === false) return { action: 'pass', kind: 'unknown-material', reason: 'el id declarado no tiene forma de trabajo del repo (material tipo evals) — no se frena, queda medido' };
+  // Un id con otra forma que la del repo NO abre el portón: un modelo que se saltea la skill también inventa el número
+  // (G-1 en un repo que numera por épica). Medido en el registro de este freno: las 12 veces que esa excepción dejó pasar
+  // algo, eran historias de trabajo de verdad, y ninguna era material de evaluación.
 
   // La marca vigente se mira ANTES de la excepción de Codex: un bypass declarado con marker.js (que
   // en Codex también corre) tiene que quedar auditado como bypass, no diluido en `unknown-codex`.
@@ -173,7 +176,11 @@ function computeStorySkillGate({
   if (st === 'expired') {
     return { action: 'block', kind: 'mark-expired', reason: `la constancia de ${mark.skill} venció (TTL ${Math.round(ttlMs / 60000)} min)` };
   }
-  return { action: 'block', kind: 'no-skill', reason: `story nueva (${path.basename(String(filePath || ''))}) sin constancia de tycon-create-story en esta sesión` };
+  return {
+    action: 'block', kind: 'no-skill',
+    reason: `story nueva (${path.basename(String(filePath || ''))}) sin constancia de tycon-create-story en esta sesión` +
+      (idIsWork === false ? ' (y su número no sigue la numeración de las historias del repo)' : ''),
+  };
 }
 
 /** Texto del bloqueo: qué pasó, por qué frena, y las salidas concretas. */
@@ -188,6 +195,7 @@ function blockMessage(r, { filePath, via, ttlMs, byName = false } = {}) {
   return [
     `🔴 STORY A MANO — escritura DENEGADA: "${rel}" ${what} y ${cause}.`,
     via ? `   (vía ${via})` : '',
+    /numeración/.test(r.reason || '') ? '   Además, su número no sigue la numeración de las historias del repo: el que corresponde lo elige la skill.' : '',
     byName ? '   Si NO es una story (un índice, una nota): escribila con la tool Write, o renombrala con `git mv` — el nombre es lo único que este comando deja ver.' : '',
     '',
     '   Por qué frena: dos veces en dos días (AS-1 y PERF-1, Totora 2026-08-28/30) la story se escribió',

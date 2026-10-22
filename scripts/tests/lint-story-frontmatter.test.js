@@ -215,3 +215,86 @@ test('T23 R3_Lib_MovedRequires — en la ruta de siempre queda el reemplazo gene
     assert.ok(L.isGeneratedShim(R3_ENTRY.old, fs.readFileSync(viejo, 'utf8')), `${R3_ENTRY.old} es el reemplazo generado, tal cual`);
     assert.strictEqual(path.resolve(L.shimTarget(viejo)), LINT, `${R3_ENTRY.old} lanza el de scripts/lib/`);
   });
+
+// ── Los archivos a modificar existen ─────────────────────────────────────────────────────────────────────────────────
+// Una story que nombra una carpeta de funcionalidad del backend y un modal del frontend que nadie creó se frena al
+// nacer. El producto de juguete tiene el repo de historias y los dos de código al lado.
+// Los commits de las pruebas, con fecha fija y sin el mantenimiento automático de git.
+const GIT_ENV = { ...process.env, GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' };
+const commit = (cwd, ...args) => execFileSync('git', ['-c', 'maintenance.auto=false', '-c', 'user.email=t@example.invalid', '-c', 'user.name=t', 'commit', '-q', ...args], { cwd, env: GIT_ENV });
+
+function productoConCodigo({ conFront = true } = {}) {
+  const prod = fs.mkdtempSync(path.join(os.tmpdir(), 'lint-rutas-'));
+  const proj = path.join(prod, 'Project');
+  fs.mkdirSync(proj);
+  execFileSync('git', ['init', '-q'], { cwd: proj });
+  commit(proj, '--allow-empty', '-m', 'inicio');
+  write(prod, 'Backend/.git/HEAD', 'ref: refs/heads/main\n');
+  write(prod, 'Backend/src/AcmeBackend/Features/Acciones/AccionesService.cs', '// acciones\n');
+  if (conFront) {
+    write(prod, 'FrontEnd/.git/HEAD', 'ref: refs/heads/main\n');
+    write(prod, 'FrontEnd/acme-admin/src/screens/GestoresScreen.tsx', '// pantalla\n');
+  }
+  return { prod, proj };
+}
+const HISTORIA_65 = (modificar, crear = []) => [
+  'story: "6.5"', 'epic: 6', 'status: ready-for-dev',
+  'files_to_modify:', ...modificar.map((f) => `  - "${f}"`),
+  ...(crear.length ? ['files_to_create:', ...crear.map((f) => `  - "${f}"`)] : []),
+];
+
+test('T41 FilesToModify_Inventados_StoryNueva_Frena: nombra las rutas que no existen en el código del producto', () => {
+  const { proj } = productoConCodigo();
+  const f = story(proj, 'specs/story-6.5-cbu-del-gestor.md', HISTORIA_65([
+    'src/AcmeBackend/Features/AbmGestores/GestoresEndpoints.cs',
+    'acme-admin/src/components/modals/GestorFormModal.tsx',
+    'acme-admin/src/screens/GestoresScreen.tsx',
+    'src/AcmeBackend/Features/Acciones/AccionesService.cs',
+  ]));
+  const r = run([f], proj);
+  assert.strictEqual(r.code, 1, r.out);
+  assert.match(r.out, /AbmGestores\/GestoresEndpoints\.cs/);
+  assert.match(r.out, /GestorFormModal\.tsx/);
+  const problema = (r.out.match(/Problema: .*no existen.*/) || [''])[0];
+  assert.doesNotMatch(problema, /GestoresScreen\.tsx|AccionesService\.cs/, 'las que existen no se nombran');
+});
+
+test('T42 FilesToModify_Existen_Y_ACrearNuevos_Pasa: files_to_create está exento', () => {
+  const { proj } = productoConCodigo();
+  const f = story(proj, 'specs/story-6.5-cbu-del-gestor.md', HISTORIA_65(
+    ['acme-admin/src/screens/GestoresScreen.tsx', 'Backend/src/AcmeBackend/Features/Acciones/AccionesService.cs'],
+    ['acme-admin/src/components/modals/GestorFormModal.tsx']));
+  const r = run([f], proj);
+  assert.strictEqual(r.code, 0, r.out);
+});
+
+test('T43 FilesToModify_RepoDeCodigoSinClonar_Avisa: no frena, dice que no encuentra dónde está', () => {
+  const { proj } = productoConCodigo({ conFront: false });
+  const f = story(proj, 'specs/story-6.5-cbu-del-gestor.md', HISTORIA_65(['acme-admin/src/components/modals/GestorFormModal.tsx']));
+  const r = run([f], proj);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /no encuentro.*GestorFormModal\.tsx/s);
+});
+
+test('T44 FilesToModify_StoryQueYaExistia_Avisa: una story vieja con un archivo que se movió no frena', () => {
+  const { proj } = productoConCodigo();
+  const f = story(proj, 'specs/story-6.5-cbu-del-gestor.md', HISTORIA_65(['src/AcmeBackend/Features/AbmGestores/GestoresEndpoints.cs']));
+  execFileSync('git', ['add', '.'], { cwd: proj });
+  commit(proj, '-m', 'story');
+  const r = run([f], proj);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /ya existían.*AbmGestores/s);
+});
+
+test('T45 FilesToModify_NotasYComodines_NoSeJuzgan: lo que no es una ruta clara se saltea', () => {
+  const { proj } = productoConCodigo();
+  const f = story(proj, 'specs/story-6.5-cbu-del-gestor.md', [
+    'story: "6.5"', 'epic: 6', 'status: ready-for-dev', 'files_to_modify:',
+    '  - "(tanda B) src/AcmeBackend/Features/Otra/X.cs"',
+    '  - src/AcmeBackend/Features/*/Y.cs',
+    '  - acme-admin/src/{a,b}.tsx',
+    '  - agents/<los revisores>.md   # se borran',
+  ]);
+  const r = run([f], proj);
+  assert.strictEqual(r.code, 0, r.out);
+});

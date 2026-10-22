@@ -419,8 +419,11 @@ function main() {
   // ── 6. el pie: qué raíz de repos se usó y cuántos catálogos entraron ────────────────────────
   if (indice) {
     const prod = Object.values(indice.hosts || {}).filter((h) => h.ambiente === 'produccion').length;
-    lineas.push(`   raíz de repos: ${indice.raiz} (${indice.fuente}) · catálogos: ${indice.catalogos.length} · servidores de producción conocidos: ${prod}`);
-    for (const e of indice.errores || []) if (!/configuración del arnés ROTA/.test(e.motivo)) lineas.push(`   ⚠ ${e.repo}: ${e.motivo}`);   // la config rota ya está en `avisos`
+    lineas.push(pieDeRaiz(indice, prod, process.cwd(), REPORTE));
+    // los errores por repo nombran rutas de la raíz: con el mismo criterio que el pie, a una sesión de afuera sólo se le cuentan
+    const errores = (indice.errores || []).filter((e) => !/configuración del arnés ROTA/.test(e.motivo));   // la config rota ya está en `avisos`
+    if (REPORTE || sesionDentro(indice.raiz, process.cwd())) for (const e of errores) lineas.push(`   ⚠ ${e.repo}: ${e.motivo}`);
+    else if (errores.length) lineas.push(`   ⚠ ${errores.length} proyecto(s) con su catálogo de servidores ilegible (el detalle, con --report)`);
     // sin catálogos en una máquina autorizada, TODO host se frena: eso se dice aunque no haya otro aviso
     if (!indice.catalogos.length) avisos.push('🟠 ningún proyecto de esta máquina declara servidores: TODO host de base se va a tratar como producción (¿la raíz de repos está bien?).');
   }
@@ -434,9 +437,24 @@ function main() {
   process.exit(0);
 }
 
+/**
+ * El pie del aviso: qué raíz de repos se usó. La ruta se nombra sólo si la sesión corre dentro de ella (o la pidió una
+ * persona con --report): a una sesión que arrancó en otra carpeta, una copia de laboratorio por ejemplo, la ruta de la
+ * raíz le indica dónde están los repos de verdad, y un modelo la tomó como su lugar de trabajo.
+ */
+function sesionDentro(raiz, cwd) {
+  const rel = path.relative(raiz, cwd);
+  return !rel || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+function pieDeRaiz(indice, prod, cwd, reporte) {
+  const raiz = sesionDentro(indice.raiz, cwd) || reporte ? `${indice.raiz} (${indice.fuente})` : 'otra carpeta, fuera de la de esta sesión';
+  return `   raíz de repos: ${raiz} · catálogos: ${indice.catalogos.length} · servidores de producción conocidos: ${prod}`;
+}
+
 if (COMO_MODULO) {
   // para las pruebas: el juicio contra lo publicado, sin correr el aviso
-  module.exports = { estadoContraPublicado, estadoContraVersionBajada, blobsDe, rutasViejas, AVISO_VIEJO, BIBLIOTECAS_DEL_FRENO, COPIA_PROPIA, TEXTO_COPIA_PROPIA, instaladoConCopiaPropia };
+  module.exports = { pieDeRaiz, sesionDentro, estadoContraPublicado, estadoContraVersionBajada, blobsDe, rutasViejas, AVISO_VIEJO, BIBLIOTECAS_DEL_FRENO, COPIA_PROPIA, TEXTO_COPIA_PROPIA, instaladoConCopiaPropia };
 } else {
   try { main(); } catch (e) {
     // un aviso que se rompe no puede romper el arranque de la sesión
