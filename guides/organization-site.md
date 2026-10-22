@@ -446,8 +446,10 @@ en su repo.
 
 ### Avisos y la noche
 
-- **Dónde llega el resumen de cada mañana**: el canal del aviso (Telegram, Slack o Teams). Queda en `operations.json`,
-  en el repo de operaciones. Lo revisa quien mantiene.
+- **Dónde llega el resumen de cada mañana**: el canal del aviso, elegido de una lista (Telegram, Slack, Teams, correo o
+  ninguno); con correo, el remitente y los destinatarios. El chat, la dirección del canal o la contraseña del correo no
+  van acá: son secretos de los procesos de la noche. Queda en `operations.json`, en el repo de operaciones. Lo revisa
+  quien mantiene.
 - **Aviso de espera**: cuántos minutos espera una ejecución a una persona antes de avisar. Llega a todas las máquinas.
   Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Umbrales: cuándo algo se pinta verde o rojo**: los límites con que el tablero colorea cada número; entre los dos,
@@ -486,9 +488,12 @@ en su repo.
   configuración guardada con los nombres de Claude (sonnet, opus) sigue valiendo: se ve en niveles y el próximo cambio
   de la sección la guarda en niveles. Con niveles, el perfil tiene que pedir la versión del arnés que los lee; si no, el
   sitio no deja proponer y dice cuál pedir. Con el tope obligatorio, un trabajo elegido por encima del tope se marca en
-  rojo y el cambio no se puede proponer. Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene,
-  mirando el costo.
-- **Dónde corren las pruebas completas al mergear**: en la máquina o en el servidor, repo por repo, un renglón por repo
+  rojo y el cambio no se puede proponer. Debajo del nivel general de los revisores, cada revisor instalado, agrupado por
+  paquete, con el nivel que usa hoy, de dónde sale (de la primera vuelta, el suyo propio o cambiado por la organización)
+  y su desplegable; «como la primera vuelta» lo deja seguir el nivel general. La lista viene plegada y se abre sola si la
+  organización cambió alguno. Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene, mirando el
+  costo.
+- **Dónde corren las pruebas completas antes de sumar un cambio** (antes de mergear: de sumarlo a la rama principal): en la máquina o en el servidor, repo por repo, un renglón por repo
   (✎ abre sus datos). Un repo sin pipeline de pruebas completas dice qué pasa con su regla. Queda en
   `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Cobertura de las pruebas**: el porcentaje de líneas nuevas cubiertas por debajo del cual el control de pruebas
@@ -502,7 +507,7 @@ en su repo.
   nombres de prueba, qué pantallas piden una prueba en el navegador y el idioma de la aplicación. Sin decir nada, el
   arnés no impone el estilo de ningún equipo. Queda en `team-repos.json` → `stack`, en el repo del perfil. Lo revisa quien
   mantiene. Una herramienta que no está en la lista se pide con «Pedíselo a tu agente» (abajo, §Tu tecnología).
-- **Quién reenvía el ok de un dev**: si la organización trabaja con una sesión coordinadora que le pasa el ok de un dev
+- **Quién autoriza saltarse un control**: si la organización trabaja con una sesión coordinadora que le pasa el ok de un dev
   a la sesión que implementa, para eximir un crítico de los revisores o firmar un criterio que no se puede probar en
   vivo. «No» (de fábrica): el ok lo escribe el dev en el chat de su sesión. Acá se dice sólo sí o no, y vale sólo desde
   acá, nunca desde una máquina. Cuál sesión es la coordinadora se designa en cada máquina: el dev escribe en el chat de
@@ -510,7 +515,7 @@ en su repo.
   `marker.js designate-relay --approved-by "<el dev>" --quote "<su frase>"`. Se la reconoce por su conversación, no por
   su nombre: sigue valiendo si la sesión se reinicia, y hay que volver a designarla si se abre un chat nuevo o se hace
   `/clear`. Una sesión que se llama igual no puede reenviar.
-- **Prueba a mano de cada criterio**: si, además de lo que prueba el arnés, una persona tiene que marcar cada criterio de
+- **Prueba a mano de cada punto**: si, además de lo que prueba el arnés, una persona tiene que marcar cada criterio de
   la guía del tester antes de cerrar la historia. «No» (de fábrica): la guía dice qué probó el arnés. «Sí»: el cierre
   frena hasta que una persona marque cada criterio contestando en el chat de su sesión, nombrándolo; el arnés le muestra
   antes qué va a marcar, y el agente no puede marcarlo ni lo marca un reenvío. Vale sólo desde acá, nunca desde una
@@ -585,7 +590,7 @@ Lo que la persona ve en la sección y lo que hace el agente cuando le piden una 
 
 ### Instalación y actualización
 
-- **Cómo se actualizan las máquinas**: qué versión toma cada máquina y si se actualiza sola al arrancar. Queda en
+- **Cómo se actualizan las computadoras del equipo**: qué versión toma cada máquina y si se actualiza sola al arrancar. Queda en
   `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Perfil de instalación**: cuánto instala el arnés en cada máquina (mínimo o completo), con la lista de lo que trae
   cada uno. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.

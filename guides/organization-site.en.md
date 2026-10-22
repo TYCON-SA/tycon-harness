@@ -462,8 +462,10 @@ only: they are changed with a request in their repo.
 
 ### Notices and night runs (Avisos y la noche)
 
-- **Where the morning summary is sent** (*Dónde llega el resumen de cada mañana*): the notice channel (Telegram,
-  Slack or Teams). It lives in `operations.json`, in the operations repo. A maintainer reviews it.
+- **Where the morning summary is sent** (*Dónde llega el resumen de cada mañana*): the notice channel, chosen from a
+  list (Telegram, Slack, Teams, email or none); with email, the sender and the recipients. The chat, the channel address
+  or the email password do not go here: they are secrets of the nightly processes. It lives in `operations.json`, in the
+  operations repo. A maintainer reviews it.
 - **Waiting notice** (*Aviso de espera*): how many minutes a run waits for a person before giving notice. It reaches
   every machine. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.
 - **Thresholds: when something is painted green or red** (*Umbrales: cuándo algo se pinta verde o rojo*): the limits
@@ -505,9 +507,12 @@ only: they are changed with a request in their repo.
   Claude's names (sonnet, opus) still works: it shows as levels and the next change to the section saves it as levels.
   With levels, the profile has to require the harness version that reads them; otherwise the site does not let you
   propose and says which one to require. With the required ceiling, a job set above the ceiling is marked in red and
-  the change cannot be proposed. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it, looking
-  at the cost.
-- **Where the full tests run on merge** (*Dónde corren las pruebas completas al mergear*): on the machine or on the
+  the change cannot be proposed. Below the reviewers' general level, each installed reviewer, grouped by pack, with the
+  level it uses today, where it comes from (the first round, its own, or changed by the organization) and its dropdown;
+  «like the first round» lets it follow the general level. The list comes folded and opens by itself if the
+  organization changed any. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it, looking at the
+  cost.
+- **Where the full tests run on merge** (*Dónde corren las pruebas completas antes de sumar un cambio*): on the machine or on the
   server, repo by repo, one row per repo (✎ opens its details). A repo without a full tests pipeline says what happens
   with its rule. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.
 - **Test coverage** (*Cobertura de las pruebas*): the percentage of covered new lines below which the test control gives
@@ -521,7 +526,7 @@ only: they are changed with a request in their repo.
   style, which screens need a browser test and the application's language. Without saying anything, the harness does
   not impose any team's style. It lives in `team-repos.json` → `stack`, in the profile repo. A maintainer reviews it. A
   tool that is not on the list is requested with «Ask your agent» (below, §Your technology).
-- **Who relays a developer's OK** (*Quién reenvía el ok de un dev*): whether the organization works with a
+- **Who relays a developer's OK** (*Quién autoriza saltarse un control*): whether the organization works with a
   coordinating session that passes a developer's OK on to the session doing the work, to waive a reviewer's critical
   finding or sign off a criterion that cannot be tested live. «No» (the default): the developer writes the OK in their
   own session's chat. Here you only say yes or no, and it only counts from here, never from a machine. Which session is
@@ -530,7 +535,7 @@ only: they are changed with a request in their repo.
   `marker.js designate-relay --approved-by "<the developer>" --quote "<their sentence>"`. It is recognized by its
   conversation, not by its name: it keeps counting after the session restarts, and has to be designated again after a
   new chat or a `/clear`. A session with the same name cannot relay.
-- **Hand-testing each criterion** (*Prueba a mano de cada criterio*): whether, besides what the harness tests, a person
+- **Hand-testing each criterion** (*Prueba a mano de cada punto*): whether, besides what the harness tests, a person
   has to mark each criterion of the tester guide before the story is closed. «No» (the default): the guide says what the
   harness tested. «Yes»: closing stops until a person marks each criterion by answering in their own session's chat,
   naming it; the harness first shows them what they are about to mark, and neither the agent nor a relayed message can
@@ -606,7 +611,7 @@ What the person sees in the section, and what the agent does when asked for a to
 
 ### Installation and updates (Instalación y actualización)
 
-- **How the machines update** (*Cómo se actualizan las máquinas*): which version each machine takes and whether it
+- **How the machines update** (*Cómo se actualizan las computadoras del equipo*): which version each machine takes and whether it
   updates itself on start. It lives in `team-profile.json`, in the profile repo. A maintainer reviews it.
 - **Installation profile** (*Perfil de instalación*): how much the harness installs on each machine (minimal or full),
   with the list of what each one brings. It lives in `team-profile.json`, in the profile repo. A maintainer reviews it.

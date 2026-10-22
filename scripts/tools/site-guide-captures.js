@@ -58,7 +58,7 @@ const CAPTURAS = [
   { nombre: 'configuracion-confirmar-maquina', sitio: 'normal', quien: LEAD, ruta: '/configuracion#seccion-personas', pasos: 'config', espera: 'Por confirmar' },
   { nombre: 'configuracion-repos', sitio: 'normal', quien: LEAD, ruta: '/configuracion#pestana-repos', pasos: 'config', espera: 'Dónde vive cada repo' },
   { nombre: 'configuracion-avisos', sitio: 'normal', quien: LEAD, ruta: '/configuracion#pestana-avisos', pasos: 'config', espera: 'Aviso de espera' },
-  { nombre: 'configuracion-pedidos', sitio: 'normal', quien: LEAD, ruta: '/configuracion#seccion-pedidos', pasos: 'config', espera: 'Valores leídos de la plataforma' },
+  { nombre: 'configuracion-pedidos', sitio: 'normal', quien: LEAD, ruta: '/configuracion#seccion-pedidos', pasos: 'config', espera: 'Valores que acepta la plataforma' },
   { nombre: 'configuracion-claude', sitio: 'normal', quien: LEAD, ruta: '/configuracion#pestana-claude', pasos: 'config', espera: 'Cómo contesta el agente' },
   { nombre: 'configuracion-tecnologia', sitio: 'normal', quien: LEAD, ruta: '/configuracion#seccion-tecnologia', pasos: 'config', espera: 'Cómo se corren las pruebas' },
   { nombre: 'configuracion-instalacion', sitio: 'normal', quien: LEAD, ruta: '/configuracion#pestana-instalacion', pasos: 'config', espera: 'Perfil de instalación' },
