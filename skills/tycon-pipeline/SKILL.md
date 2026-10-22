@@ -20,7 +20,7 @@ engram, re-corrida de advisors, verificación cross-repo).
 | `ready-for-dev → in-progress` + codear | `/tycon-pipeline implement <spec>` |
 | `review → done` post-merge | `/tycon-pipeline close <N.M>` |
 | Cambio de sprint | `change-requests/cr-NNN-*.md` + commit firmado, no el pipeline |
-| Re-asignar `work_item` | `scripts/lib/platform/work-item-field.js set` + commit, no el pipeline |
+| Re-asignar `work_item` | `work-item-field.js set` + commit, no el pipeline |
 
 "Mi caso es excepción" → NO. Si el orchestrator no cubre el caso, se extiende; no se bypasea.
 

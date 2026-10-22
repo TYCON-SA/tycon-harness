@@ -215,11 +215,16 @@ plataforma (`scripts/lib/platform/platform.js`), y la plataforma la elige el per
 `node ~/.claude/tycon-harness/scripts/lib/platform/work-item-field.js get <story_path>` (sale 3 si no tiene).
 
 **Dónde vive**: `.tycon/work-items.yaml` del repo (o `.tycon/ado-config.yaml`, el nombre viejo, que se sigue leyendo;
-con los dos gana el nuevo); si no, `ado.org` de la configuración del arnés. Overrides en ese archivo: `state_active`,
-`state_closed` (lo usa `close-work-item.md`) y `auto_assign: true`.
+con los dos gana el nuevo); si no, `ado.org` de la configuración del arnés (lee `TYCON_ADO_ORG`, `~/.claude/tycon.json`
+y el perfil del equipo, en ese orden; exit 2 = configuración rota, que se dice con archivo, clave y motivo) y el
+proyecto de `TYCON_ADO_PROJECT`. Overrides en ese archivo: `state_active`, `state_closed` (lo usa `close-work-item.md`)
+y `auto_assign: true`.
 
 **Cuándo no corre** (no aparece en `start_parts` de `next`, o se saltea con una línea): la historia no tiene id y la
-búsqueda por título no da un match único, o no hay plataforma elegida. NO preguntar por un `work_item:` que falta: eso
+búsqueda por título no da un match único, o no hay plataforma elegida. **Azure DevOps apagado** (sin organización: ni
+`ado.org` en la configuración del arnés ni la del repo) es ese caso: la parte lo dice en UNA línea («Azure DevOps
+apagado en esta máquina — el pedido no se toca; prender: ado.org en ~/.claude/tycon.json o TYCON_ADO_ORG»), no llama a
+`az` y se saltea (exit 0). NO preguntar por un `work_item:` que falta: eso
 lo resuelve `close-work-item.md` al cerrar. Nunca en silencio: una línea que diga qué falta.
 
 **Qué hacer**:
@@ -262,7 +267,8 @@ lo resuelve `close-work-item.md` al cerrar. Nunca en silencio: una línea que di
 5. Una línea al dev, parte del encabezado general y no un mensaje aparte: el `summary` de la capa (`pedido de trabajo
    #{id} en <plataforma>: {previo} → {estado}`). Si se salteó: una línea contextual o nada.
 
-**Si falla** (`ok: false`: sin plataforma elegida, sin credencial, pedido no encontrado, la plataforma lo rechazó):
+**Si falla** (`ok: false`: sin plataforma elegida, sin credencial —con Azure DevOps, la sesión de `az` venció: `az
+login` o renovar `AZURE_DEVOPS_EXT_PAT`—, pedido no encontrado, la plataforma lo rechazó):
 mostrar el `summary` en UNA línea (dice qué falta y cómo ponerlo),
 `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js start-warning ado "<motivo>"` y seguir. No frena el
 pipeline: la implementación no depende de la plataforma (a diferencia del build gate de `step-05-implement.md`).
