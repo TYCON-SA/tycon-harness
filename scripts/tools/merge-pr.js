@@ -628,9 +628,11 @@ function suitesRuleFor(where, config, deps) {
     const p = (read.problems || [])[0] || {};
     return { unreadable: `${TEAM_REPOS_FILE}: ${p.path ? `${p.path}: ` : ''}${p.message || 'no se pudo leer'}` };
   }
+  // la identidad del repo (con su plataforma) la arma la capa de plataforma, el único lugar que la traduce
   let identity = null;
-  if (where.host === 'azure') identity = { platform: 'azure', org: where.org, project: where.project, repo: where.name };
-  else if (where.host === 'github' && where.ghRepo) { const [org, repo] = String(where.ghRepo).split('/'); identity = { platform: 'github', org, repo }; }
+  try { identity = require(path.join(TREE, 'scripts', 'lib', 'platform', 'platform.js')).identityFromRemote(where); } catch (e) {
+    return { unreadable: `no pude cargar la capa de plataforma (${(e && e.code) || firstLine(e && e.message)})` };
+  }
   let found = { declared: false };
   if (read) {
     // el lector del árbol que no carga tampoco frena el merge: es «no pude leer»

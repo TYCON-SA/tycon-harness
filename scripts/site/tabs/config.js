@@ -100,6 +100,13 @@ function herramientasDeHoras() {
   });
   return { horas, problemas: l.problems.map((b) => M('config.horasManifiestoRoto', { nombre: b.name, motivo: b.reasons.join('; ') })) };
 }
+/** Los conectores de plataforma que trae el árbol del sitio (`kind: platform`): `[{ name, label }]`; ninguno si no se leen. */
+function conectoresDePlataforma() {
+  try {
+    const INT = require(path.join(TREE, 'scripts', 'lib', 'integrations.js'));
+    return INT.listManifests({ dir: path.join(TREE, 'integrations') }).manifests.filter((m) => m.kind === 'platform').map((m) => ({ name: m.name, label: m.label }));
+  } catch (_) { return []; }
+}
 /** Los paquetes legibles de las carpetas `packs/` del árbol y del clon del perfil (la capa del equipo trae los suyos). */
 function paquetesLegibles(perfilDir) {
   const out = [];
@@ -434,7 +441,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     // sin pipeline dicen qué pasa, con la misma respuesta que da el lector al merge
     if (s.id === 'modelos' && doc) v.problems.push(...ORG.problemasDelTope(s, lec, doc));
     if (s.id === 'suites') v.extras = { sinPipeline: ORG.sinPipelinePorRegla(lec), queHace: ORG.queHacePorRegla(lec) };
-    if (s.id === 'integraciones') { const h = herramientasDeHoras(); v.extras = { horas: h.horas, horasProblemas: h.problemas }; }
+    if (s.id === 'integraciones') { const h = herramientasDeHoras(); v.extras = { horas: h.horas, horasProblemas: h.problemas, plataformas: conectoresDePlataforma() }; }
     // las herramientas de prueba de fábrica de esta versión, para que «Cambiar» arranque desde ellas; las que la puerta
     // corre por dentro se listan sin poder cambiarse
     if (s.id === 'tecnologia') { const rs = reposDeLaOrganizacion(cl.operaciones && cl.operaciones.dir, doc); const tr = terminacionesQueReconoce(); v.extras = { ...tecnologiaDeFabrica(), reconocidas: tr.lista, reconocidasMotivo: tr.motivo, repos: rs.lista, reposMotivo: rs.motivo }; }

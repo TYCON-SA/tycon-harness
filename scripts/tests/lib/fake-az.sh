@@ -143,6 +143,9 @@ else if (tiene('boards', 'work-item', 'create')) paso = 'crear';
 else if (tiene('boards', 'work-item', 'update')) paso = args.includes('--discussion') ? 'comentario' : 'actualizar';
 
 fs.appendFileSync(path.join(FIX, 'llamadas.log'), `${paso}\t${JSON.stringify({ args, archivos })}\n`);
+// con TYCON_AZ_SNAPSHOT, cada llamada también va a ese archivo: la foto de lo que el arnés le pide a Azure DevOps, que
+// scripts/tests/lib/record-platform-golden.js compara antes y después de un cambio
+if (process.env.TYCON_AZ_SNAPSHOT) fs.appendFileSync(process.env.TYCON_AZ_SNAPSHOT, `${paso}\t${JSON.stringify(args)}\n`);
 
 const falla = (msg, code = 1) => { process.stderr.write(`ERROR: ${msg}\n`); process.exit(code); };
 // Escritura SINCRÓNICA: `process.stdout.write` + `process.exit` corta la salida a un pipe pasados ~64 KB
