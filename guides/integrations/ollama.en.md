@@ -172,13 +172,13 @@ profiles.
 
 ## Warnings
 
-- **A model can write a control's escape.** The controls work: they stop the full test suite, a commit with
-  `--no-verify` and code outside the pipeline. But the escape of several controls is an environment variable, and a
-  model can write it by itself. `gpt-oss` did it with the security control (it wrote `TYCON_SAFETY_OFF=1` and committed
-  with `--no-verify`) although the order said not to look for another way; `beam` did it with the tests control. The
-  harness is closing this: the escape of the security control, and those of the production and names checks, will need
-  the phrase **"autorizo <variable>"** ("I authorize <variable>") written by the person in the chat. Meanwhile, a
-  control only stops a model that obeys: do not run it unwatched on repos you care about.
+- **A model may try to write a control's escape.** In the lab, `gpt-oss` put `TYCON_SAFETY_OFF=1` in front of a
+  commit with `--no-verify`, although the order said not to look for another way. That no longer works: the escape of
+  the security control, and those of the production check (`TYCON_PROD_LINT`) and the names check (`TYCON_NEW_NAMES`),
+  only count if the person wrote **"autorizo <variable>"** ("I authorize <variable>") in the chat in the last 30
+  minutes ([control guide](../safety-guard.md)). The tests control keeps its light escape: `beam` used it on its own,
+  and it only protects the machine's load. Codex does not let the harness read its conversation, so there the
+  per-command escape does not count.
 - **Check the state, not the story.** `gpt-oss` loaded the pipeline skill and, over five turns, reported steps 1 to 7
   as "completed" without running a script or writing a file. The controls did not stop it because there was nothing to
   stop. What gives it away is the state: the story stayed in `ready-for-dev` and no new files appeared. Check

@@ -1,0 +1,3 @@
+# tycon: el freno de producción se pone al día sin contraseña (story 8.88). Lo escribe y lo saca install-guard.sh
+# (--allow-auto-update / --remove-auto-update). Deja correr sólo /opt/tycon/setup/update-guard.sh, sin argumentos ("").
+__USER__ ALL=(root) NOPASSWD: /opt/tycon/setup/update-guard.sh ""

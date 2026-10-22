@@ -63,8 +63,11 @@ const SECCIONES = Object.freeze([
   // como estaba (Telegram, de cada máquina, no se edita desde la sección de integraciones).
   // si la organización usa una sesión que reenvía el ok de un dev (approvals.relay_session; vale sólo desde el perfil;
   // cuál sesión es, se designa en cada máquina)
-  Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session']), idCorto: 'profile', necesita: ['approvals'] }),
+  Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session', 'approvals.delegated_signing']), idCorto: 'profile', necesita: ['approvals'] }),
   Object.freeze({ id: 'pruebaAMano', titulo: 'Prueba a mano de cada criterio', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['qa'], rutas: Object.freeze(['qa.manual_check']), idCorto: 'profile', necesita: ['qa'] }),
+  // cómo se pone al día el freno de producción de cada máquina (guard.update): con la contraseña de su persona
+  // o solo, con la versión publicada; vale sólo desde el perfil, y cada máquina instala el permiso con su contraseña
+  Object.freeze({ id: 'frenoProduccion', titulo: 'Cómo se actualiza el freno de producción', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['guard'], rutas: Object.freeze(['guard.update']), idCorto: 'profile', necesita: ['guard'] }),
   Object.freeze({ id: 'respuesta', titulo: 'Cómo contesta el agente', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['response'], idCorto: 'profile', necesita: ['response'] }),
   Object.freeze({ id: 'integraciones', titulo: 'Integraciones', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['integrations'], rutas: Object.freeze(['integrations.timeTracking', 'integrations.notify', 'integrations.clockify', 'integrations.engram', 'integrations.mailbox', 'integrations.codex', 'integrations.nightly', 'integrations.codegraph']), idCorto: 'profile', necesita: ['integrations'] }),
   Object.freeze({ id: 'ado', titulo: 'Azure DevOps', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['ado'], rutas: Object.freeze(['ado.org']), idCorto: 'profile', necesita: ['ado'] }),
@@ -265,6 +268,11 @@ const APPROVALS_SINCE = '2026.10.20.3';
  */
 const QA_SINCE = '2026.10.20.39';
 /**
+ * 🔴 La primera versión del arnés cuyo lector conoce `guard` y `approvals.delegated_signing`. Se fija con la
+ * etiqueta real del merge que las trae, como QA_SINCE; hasta entonces, el primer número que seguro las trae.
+ */
+const GUARD_SINCE = '2026.10.23.1';
+/**
  * 🔴 La primera versión del arnés cuyo lector conoce `integrations.timeTracking` (la etiqueta del merge que trajo ese
  * lector). El selector de la herramienta de horas saca la llave vieja `integrations.clockify` del perfil: una máquina
  * anterior no entiende la clave nueva y se quedaría sin Clockify en silencio. Por eso el pedido que la cambia sube
@@ -333,8 +341,12 @@ function teamProfileGateProblem({ layerText, versionImagen, doc, actual }) {
   const paquetes = cambia('packs') ? packsListGateProblem({ layerText, versionImagen, valor: isObject(doc) && isObject(doc.packs) ? doc.packs.default : undefined }) : null;
   if (paquetes) return paquetes;
   // las claves del perfil que una versión anterior no sabe leer, con la versión que las lee y su mensaje
-  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa']]
+  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa'], ['guard', GUARD_SINCE, 'org.capaSinGuard']]
     .filter(([k]) => isObject(doc) && doc[k] !== undefined && cambia(k));
+  // una clave nueva dentro de una sección que ya se leía: la pide sólo si el pedido la trae
+  const firma = isObject(doc) && isObject(doc.approvals) ? doc.approvals.delegated_signing : undefined;
+  const firmaAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.delegated_signing : undefined;
+  if (firma !== undefined && (!isObject(actual) || canonico(firma) !== canonico(firmaAntes))) pedidas.push(['approvals.delegated_signing', GUARD_SINCE, 'org.capaSinGuard']);
   if (!pedidas.length) return null;
   let decl;
   try { decl = JSON.parse(String(layerText)); } catch (e) {
@@ -1094,6 +1106,7 @@ function pantalla(idioma = 'es') {
     respuesta: { t: T('pantalla.comoContestaClaude'), d: T('pantalla.elIdiomaElEstiloY'), corto: T('pantalla.comoContestaClaude') },
     aprobaciones: { t: T('pantalla.quienReenviaElOkTitulo'), d: T('pantalla.quienReenviaElOkDescripcion'), corto: T('pantalla.quienReenviaElOkTitulo') },
     pruebaAMano: { t: T('pantalla.pruebaAManoTitulo'), d: T('pantalla.pruebaAManoDescripcion'), corto: T('pantalla.pruebaAManoTitulo') },
+    frenoProduccion: { t: T('pantalla.frenoProduccionTitulo'), d: T('pantalla.frenoProduccionDescripcion'), corto: T('pantalla.frenoProduccionTitulo') },
     integraciones: { t: T('pantalla.integraciones'), d: T('pantalla.queServiciosUsaCadaMaquina'), corto: T('pantalla.integraciones') },
     ado: { t: 'Azure DevOps', d: T('pantalla.laOrganizacionDeLaPlataforma', { plataforma: 'Azure DevOps' }), corto: 'Azure DevOps' },
     actualizacion: { t: T('pantalla.comoSeActualizanLasMaquinas'), d: T('pantalla.queVersionTomaCadaMaquina'), corto: T('pantalla.actualizacion') },
@@ -1106,7 +1119,7 @@ function pantalla(idioma = 'es') {
     aldia: { t: T('pantalla.comoSeActualizaElSitio'), d: T('pantalla.siElSitioSePone'), corto: T('pantalla.actualizacionDelSitio') },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'integraciones', 'hilos'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'integraciones', 'hilos'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -1801,6 +1814,22 @@ function pantalla(idioma = 'es') {
       ayuda.textContent = T('pantalla.quienReenviaElOkAyuda', { nombre: nombre });
     }, 'approvals.relay_session.nombre', pr, { placeholder: T('pantalla.quienReenviaElOkEjemplo') }));
     box.appendChild(ayuda);
+    // la firma delegada (story 8.88): apagada de fábrica; el aviso de que aflojar un control no se delega va siempre
+    var firma = (d.approvals || {}).delegated_signing;
+    box.appendChild(selector(T('pantalla.firmaDelegada'), firma === 'refresh-after-main' ? 'refresh-after-main' : '', [['', T('pantalla.firmaDelegadaNo')], ['refresh-after-main', T('pantalla.firmaDelegadaSi')]], function (x) { hoja(d, 'approvals', 'delegated_signing', x); render(); }, 'approvals.delegated_signing', pr));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.firmaDelegadaAviso') }));
+    if (firma === 'refresh-after-main') {
+      box.appendChild(el('p', { class: 'muted', text: T('pantalla.firmaDelegadaCosto') }));
+      if (!rol) box.appendChild(el('p', { class: 'err', text: T('pantalla.firmaDelegadaSinSesion') }));
+    }
+    return box;
+  }
+  function editorFrenoProduccion(s, d, pr) {
+    // dos valores, cada uno con su costo debajo, en llano: quien elige tiene que entender qué acepta (decisión 17)
+    var v = (d.guard || {}).update;
+    var box = el('div', { class: 'pila' }, selector(T('pantalla.frenoProduccion'), v === 'auto' ? 'auto' : '', [['', T('pantalla.frenoProduccionPassword')], ['auto', T('pantalla.frenoProduccionAuto')]], function (x) { hoja(d, 'guard', 'update', x); }, 'guard.update', pr));
+    box.appendChild(el('p', { class: 'muted' }, el('strong', { text: T('pantalla.frenoProduccionPassword') + ': ' }), el('span', { text: T('pantalla.frenoProduccionPasswordCosto') })));
+    box.appendChild(el('p', { class: 'muted' }, el('strong', { text: T('pantalla.frenoProduccionAuto') + ': ' }), el('span', { text: T('pantalla.frenoProduccionAutoCosto') })));
     return box;
   }
   function editorPruebaAMano(s, d, pr) {
@@ -2649,7 +2678,7 @@ function pantalla(idioma = 'es') {
       el('p', { class: 'sub-d', text: T('pantalla.tecIdiomaVacio') })));
     return box;
   }
-  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, revision: editorRevision, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, pruebaAMano: editorPruebaAMano, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, revision: editorRevision, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, pruebaAMano: editorPruebaAMano, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada
@@ -3033,7 +3062,7 @@ function pantalla(idioma = 'es') {
 }
 
 module.exports = {
-  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, modelosEnNiveles, equivalenciasDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS,

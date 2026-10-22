@@ -12,6 +12,9 @@
  *
  *   {"ts":"…","freno":"test-scope-guard","regla":"suite-completa","veredicto":"bloqueo","sha256":"…"}
  *
+ * Un `escape` puede llevar además por qué camino se autorizó (`via`: persona, reenvio o ambiente) y, si vino por
+ * relevo, la sesión que lo reenvió (`relevo`). Los dos son de una forma cerrada, no texto libre.
+ *
  * 🔴 LA LÍNEA NO LLEVA EL CONTENIDO. El registro sube al buzón y lo que el reductor publica lo ve
  *    todo el equipo. Del comando va su HUELLA, nunca su texto — el patrón es el de `registrar()` del
  *    freno de producción que guarda el sha256 de la sentencia y no la sentencia. No van:
@@ -182,7 +185,12 @@ function anotarFallo(home, motivo) {
  * Anota una decisión. Devuelve `{ escrito, motivo? }` para los tests; NUNCA tira y nunca cambia el
  * comportamiento de quien la llama.
  */
-function anotar({ freno, regla, veredicto, cmd, home } = {}) {
+// Por qué camino se autorizó un escape (lista cerrada) y, si vino por relevo, qué sesión lo reenvió: el rol que declara
+// el perfil del equipo, un nombre corto. Un valor fuera de la forma no se anota (la línea se escribe igual).
+const VIAS = ['persona', 'reenvio', 'ambiente'];
+const RELEVO = /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,39}$/u;
+
+function anotar({ freno, regla, veredicto, cmd, home, via, relevo } = {}) {
   try {
     if (!FRENOS[freno]) {
       anotarFallo(home, `freno desconocido: ${String(freno).slice(0, 40)}`);
@@ -200,6 +208,12 @@ function anotar({ freno, regla, veredicto, cmd, home } = {}) {
       // la huella permite correlacionar dos decisiones sobre el MISMO comando sin guardar el comando
       sha256: typeof cmd === 'string' && cmd ? crypto.createHash('sha256').update(cmd).digest('hex') : null,
     };
+    if (veredicto === 'escape' && VIAS.includes(via)) linea.via = via;
+    if (linea.via === 'reenvio') {
+      if (typeof relevo === 'string' && RELEVO.test(relevo)) linea.relevo = relevo;
+      // la línea se escribe igual, sin quién lo reenvió: que quede dicho por qué
+      else anotarFallo(home, `relevo fuera de forma en un escape de ${freno}: no se anotó quién lo reenvió`);
+    }
     const dir = casaDelPipeline(home);
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, 'frenos.jsonl'), JSON.stringify(linea) + '\n', 'utf8');
@@ -224,7 +238,7 @@ function main(argv) {
     return i >= 0 && i + 1 < argv.length ? argv[i + 1] : undefined;
   };
   const cmd = argv.includes('--cmd-stdin') ? leerStdin() : undefined;
-  anotar({ freno: val('--guard'), regla: val('--rule'), veredicto: val('--verdict'), cmd });
+  anotar({ freno: val('--guard'), regla: val('--rule'), veredicto: val('--verdict'), cmd, via: val('--via'), relevo: val('--relay') });
   return 0; // SIEMPRE 0: el freno que nos llamó decide su propio código de salida
 }
 

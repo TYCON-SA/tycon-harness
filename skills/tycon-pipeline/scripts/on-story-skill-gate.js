@@ -17,7 +17,7 @@
  *   { block: msg } → dispatch escribe msg a stderr y sale con exit 2 (el tool call se deniega)
  *
  * Fail-open VISIBLE (contrato del dispatcher): si tira, queda en hook-errors.log y el Write sigue.
- * Escapes: `marker.js story-skill-bypass "<razón>"` (bypass.log) · env TYCON_STORY_SKILL_GATE=off ·
+ * Escapes: «autorizo story-skill-bypass» de la persona (bypass.log) · env TYCON_STORY_SKILL_GATE=off ·
  *          `.tycon/advisors.yaml → pipeline.story_skill_gate: false` COMMITEADO.
  */
 

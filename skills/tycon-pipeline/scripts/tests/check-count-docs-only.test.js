@@ -88,3 +88,17 @@ test('T2 · con el set anotado y cero revisores corridos, check-count FRENA (no 
   assert.notStrictEqual(r.status, 0, `check-count salió ${r.status} con cero corridos:\n${r.stdout}`);
   assert.match(r.stderr, /CERO spawns|FALL/);
 });
+
+test('T3 · sin step5-start (pipeline.js advisors no corrió), check-count FRENA aunque --ran declare revisores', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-docs-home-'));
+  const repo = mkRepo();
+  // un repo donde nunca corrió el pipeline daba «✅ OK — corrieron los 0 advisors esperados»: un verde sobre nada
+  const sinNada = correr(home, repo, ['check-count']);
+  assert.strictEqual(sinNada.status, 2, `check-count dio un verde sobre nada:\n${sinNada.stdout}`);
+  assert.match(sinNada.stderr, /no hay step5-start/);
+  const conLista = correr(home, repo, ['check-count', '--ran', 'tycon-plugin-security-basics,tycon-plugin-tests-coverage']);
+  assert.strictEqual(conLista.status, 2, `la lista del agente no es evidencia:\n${conLista.stdout}`);
+  // el override consciente sigue existiendo, y lo dice en la salida
+  const override = correr(home, repo, ['check-count', '--trust-ran', '--ran', 'x']);
+  assert.match(`${override.stdout}${override.stderr}`, /--trust-ran EXPL[IÍ]CITO/);
+});

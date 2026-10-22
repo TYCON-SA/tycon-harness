@@ -79,6 +79,10 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/produccion-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/guard-update-notice.js"
           }
         ]
       }

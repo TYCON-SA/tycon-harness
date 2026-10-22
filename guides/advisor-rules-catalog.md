@@ -990,7 +990,7 @@ Advisor condicional **PROJECT-gated** (no por diff). Audita texto visible al usu
 
 ## Safety Guard — `safety-guard-pre.sh`
 
-Hook `PreToolUse` matcher `Bash|PowerShell` (la herramienta PowerShell de Claude Code en Windows, 2026-10-04; cada regla con su forma de PowerShell, mismo id). Bloqueo de comandos destructivos irreversibles. **No es un advisor** (no analiza diffs ni produce findings de review) — es un **hook en tiempo real** que aborta la ejecución con `exit 2` y mensaje a stderr. Las reglas se citan en el mensaje del bloqueo. Prendido por default; opt-out vía `TYCON_SAFETY_GUARD=0`. Override de emergencia: `TYCON_SAFETY_OFF=1 <cmd>`. Ver `guides/safety-guard.md` para detalle.
+Hook `PreToolUse` matcher `Bash|PowerShell` (la herramienta PowerShell de Claude Code en Windows, 2026-10-04; cada regla con su forma de PowerShell, mismo id). Bloqueo de comandos destructivos irreversibles. **No es un advisor** (no analiza diffs ni produce findings de review) — es un **hook en tiempo real** que aborta la ejecución con `exit 2` y mensaje a stderr. Las reglas se citan en el mensaje del bloqueo. Prendido por default; opt-out vía `TYCON_SAFETY_GUARD=0`. Saltearlo lo decide la persona: el prefijo `TYCON_SAFETY_OFF=1 <cmd>` vale sólo con su frase «autorizo TYCON_SAFETY_OFF» en el chat (o reenviada por la sesión designada) en los últimos 30 minutos. Ver `guides/safety-guard.md` para detalle.
 
 ### CRITICAL — Filesystem
 
@@ -1021,7 +1021,7 @@ Hook `PreToolUse` matcher `Bash|PowerShell` (la herramienta PowerShell de Claude
 
 | ID | Nombre | Fix típico |
 |---|---|---|
-| **PUB-C1** | `npm publish` | Si era intencional: `TYCON_SAFETY_OFF=1 npm publish`. Verificar que el package no contenga secretos |
+| **PUB-C1** | `npm publish` | Si era intencional, la persona lo autoriza con «autorizo TYCON_SAFETY_OFF» y se repite con `TYCON_SAFETY_OFF=1` adelante. Verificar que el package no contenga secretos |
 | **PUB-C2** | `yarn publish` | Idem PUB-C1 |
 | **PUB-C3** | `dotnet nuget push` | Solo CI/release pipeline debería pushear NuGet. Si manual a propósito: override + verificar `.nupkg` |
 
@@ -1040,6 +1040,13 @@ Hook `PreToolUse` matcher `Bash|PowerShell` (la herramienta PowerShell de Claude
 | **SEC-C2** *(safety-guard)* | `cat .env` / `cat .env.*` / `less .env` / `head .env` / `tail .env` | Para listar keys sin valores: `grep -E '^[A-Z_]+=' .env \| cut -d= -f1` |
 
 > ⚠️ **Colisión de namespace**: `SEC-C1`/`SEC-C2` también existen en `tycon-plugin-security-basics` (advisor sobre código). Las del safety-guard están marcadas `*(safety-guard)*` y aplican al runtime del shell, no al diff. Mismo prefijo, distinto contexto.
+
+### CRITICAL — Escapes de frenos escritos en la línea del comando
+
+| ID | Nombre | Fix típico |
+|---|---|---|
+| **ESC-C1** *(safety-guard)* | `TYCON_PROD_LINT=0 git commit` / `export TYCON_NEW_NAMES=0; git commit` (apaga la revisión del catálogo de producción o el freno de nombres reales) | Arreglar lo que la revisión marca; si hay que saltearla, la persona escribe «autorizo TYCON_PROD_LINT» o «autorizo TYCON_NEW_NAMES» |
+| **ESC-C2** *(safety-guard)* | `echo … >> ~/.claude/projects/…`, `tee`/`sed -i`/`cp`/`mv` con destino en las conversaciones guardadas (en PowerShell `Add-Content`, `Set-Content`, `Out-File`) | Las conversaciones se leen, no se escriben: la autorización de un escape se lee de ahí. Para trabajar, copiala afuera |
 
 ### Limitations v1
 

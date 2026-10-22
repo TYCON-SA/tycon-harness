@@ -42,6 +42,42 @@ en la sesión SIGUIENTE** de Claude Code.
 El orden al sumar a alguien es **primero el freno, después la clave**: una máquina con la clave y
 sin el freno es el estado peligroso (y el aviso de arranque lo grita).
 
+### Actualizarlo sin contraseña (si la organización lo eligió)
+
+De fábrica, cada actualización del freno pide tu contraseña. Si la organización eligió en el sitio «solo, desde la
+versión publicada» (`guard.update: auto`), podés instalar UNA vez, con tu contraseña, un permiso de `sudo` acotado:
+
+```bash
+sudo bash ~/.tycon/harness/scripts/production/install-guard.sh --allow-auto-update
+```
+
+Qué habilita: correr como root, sin contraseña, un solo guion y sin argumentos, `sudo -n
+/opt/tycon/setup/update-guard.sh`. El guion instala la versión publicada del freno, verificada contra GitHub. Sólo
+avanza, nunca vuelve atrás. No fija un origen nuevo, y sin red no hace nada. Una versión que trae otro instalador, un
+origen que cambió (aunque sea una mudanza oficial) o una versión bajada con enlaces simbólicos no se instalan solos:
+piden tu contraseña. Cada actualización queda en
+`/opt/tycon/production/update-log.jsonl`, y el aviso de arranque muestra la última. Se niega si tu máquina no tiene el
+permiso, o si el perfil del equipo de tu máquina dice «con la contraseña»: tocar ese perfil sólo puede apagarlo, nunca
+prenderlo.
+
+Lo que cuesta, dicho antes:
+
+- **Cualquier programa que corra con tu usuario puede pedir esa actualización.** `sudo` no distingue una sesión de
+  otra, así que el agente, un script o un hook también la pueden disparar. No pueden elegir qué se instala: el guion sólo
+  pone al día con lo publicado.
+- **El freno publicado se adopta sin una persona en el teclado.** Hoy la contraseña es una decisión consciente de
+  adoptar. Con el permiso, un freno publicado más flojo llega solo. El ancla sigue siendo el repo del equipo en GitHub,
+  con sus pedidos y su revisión.
+- **Si la organización vuelve a «con la contraseña», tu máquina no cambia sola.** El aviso de arranque te da el comando
+  para sacar el permiso. Hasta que lo saques, un agente que reescriba el perfil de tu máquina a «solo» puede seguir
+  actualizándola.
+
+Para sacarlo, y volver a la contraseña cada vez:
+
+```bash
+sudo bash ~/.tycon/harness/scripts/production/install-guard.sh --remove-auto-update
+```
+
 ### Los nombres en inglés
 
 La carpeta es `scripts/production/`, el instalador es `install-guard.command` (el `.command` con su nombre de antes
@@ -296,8 +332,11 @@ poné el candado primero en un servidor de prueba y no en uno real.
   sigan siendo builtins: si no, frena.
 - **La caché de `sudo`** deja una ventana en la que borrar el freno no pide contraseña. El
   instalador corre `sudo -K` al terminar; si querés cerrarla más, bajá `timestamp_timeout`.
-- **Actualizar el freno pide `sudo`**: hasta que lo corras, la máquina tiene la versión vieja — y el
-  aviso de arranque te lo dice.
+- **Ponerse al día depende de lo que eligió la organización** (`guard.update`, en el sitio). Con «con la contraseña»
+  (de fábrica), actualizar el freno pide `sudo`: hasta que lo corras, la máquina tiene la versión vieja, y el aviso de
+  arranque te lo dice. Con «solo» y el permiso instalado en tu máquina, se pone al día sin contraseña, sólo con la versión
+  publicada y verificada (abajo, «Actualizarlo sin contraseña»). Eso adopta el freno publicado sin una persona en el
+  teclado.
 - **Codex** no lee la configuración administrada de Claude Code: de ese lado el freno también frena
   la puerta y te pide que la sentencia la corras vos. Lo que no cubre está declarado en
   `guides/maintaining/codex-divergence-inventory.md`, no prometido.

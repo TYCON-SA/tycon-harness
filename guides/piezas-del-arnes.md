@@ -926,7 +926,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Qué es:** La guía `guides/safety-guard.md` del freno de mano: un hook que bloquea comandos destructivos irreversibles en Bash y PowerShell.
 
-**Por qué existe:** Frena `rm -rf /`, el push forzado a main, `curl|bash`, el borrado de bases de datos, `npm publish` o leer `.ssh`. Está prendido por defecto; se apaga con `TYCON_SAFETY_GUARD=0` y hay una salida de emergencia por comando con `TYCON_SAFETY_OFF=1`.
+**Por qué existe:** Frena `rm -rf /`, el push forzado a main, `curl|bash`, el borrado de bases de datos, `npm publish` o leer `.ssh`. Está prendido por defecto; se apaga con `TYCON_SAFETY_GUARD=0` y hay una salida de emergencia por comando con `TYCON_SAFETY_OFF=1`, que vale sólo si la persona escribió «autorizo TYCON_SAFETY_OFF» en el chat.
 
 **Quién la usa:** El hook `PreToolUse` en cada sesión.
 

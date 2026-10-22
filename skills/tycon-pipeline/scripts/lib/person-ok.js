@@ -37,8 +37,11 @@ const BLOQUES_AJENOS = ['task-notification', 'cross-session-message', 'agent-mes
 const RE_AJENO = new RegExp(`</?(?:${BLOQUES_AJENOS.join('|')})\\b`, 'i');
 const ENCABEZADO_OTRA_SESION = /^\s*Another Claude session sent a message:\s*/;
 
-/** El registro de la conversación de esta sesión: `{ legible, motivo?, registros }`. */
-function leerConversacion({ env = process.env, home = os.homedir(), sesion } = {}) {
+/**
+ * El registro de la conversación de esta sesión: `{ legible, motivo?, registros }`. Con `soloCadena`, sólo los registros
+ * de la cadena de la conversación (`enLaCadena`), con la punta en `pedido` si viene: lo que se agregó por fuera no cuenta.
+ */
+function leerConversacion({ env = process.env, home = os.homedir(), sesion, soloCadena = false, pedido } = {}) {
   const sid = String(sesion || env.CLAUDE_CODE_SESSION_ID || '');
   if (!/^[\w-]+$/.test(sid)) return { legible: false, motivo: 'la sesión no dice su identificador' };
   const root = path.join(home, '.claude', 'projects');
@@ -50,14 +53,53 @@ function leerConversacion({ env = process.env, home = os.homedir(), sesion } = {
     }
   } catch (e) { return { legible: false, motivo: `no pude leer ${root} (${e.code || e.message})` }; }
   if (!file) return { legible: false, motivo: 'no encontré su registro' };
-  const registros = [];
+  let registros = [];
   try {
     for (const l of fs.readFileSync(file, 'utf8').split('\n')) {
       if (!l.trim()) continue;
       try { registros.push(JSON.parse(l)); } catch (_e) { /* un renglón a medio escribir no tapa a los demás */ }
     }
   } catch (e) { return { legible: false, motivo: `no pude leer su registro (${e.code || e.message})` }; }
+  if (soloCadena) registros = enLaCadena(registros, { pedido });
   return { legible: true, registros, archivo: file };
+}
+
+/**
+ * Los registros que son parte de la conversación: los que se alcanzan desde la punta siguiendo el padre de cada uno
+ * (`parentUuid`, o `logicalParentUuid` después de una compactación).
+ *
+ * La punta es el pedido del agente que se está juzgando: el registro que trae el `tool_use` con ese id (`pedido`, el
+ * `tool_use_id` que la herramienta le pasa al freno). Sin `pedido`, el último registro con uuid (la sesión designada,
+ * que no tiene un pedido en curso). Un renglón agregado por fuera queda afuera: ningún registro que escribe Claude
+ * Code lo tiene como padre, y uno escrito después del pedido no es su ancestro.
+ *
+ * De cada uuid vale el PRIMER registro que lo trae (el que escribió Claude Code; uno agregado después que copia el uuid
+ * no lo reemplaza), y lo que se devuelve son esos registros recorridos, no todos los que comparten un uuid.
+ */
+function enLaCadena(registros, { pedido } = {}) {
+  const porUuid = new Map();
+  for (const r of registros) if (r && typeof r.uuid === 'string' && !r.isSidechain && !porUuid.has(r.uuid)) porUuid.set(r.uuid, r);
+  let r = null;
+  if (pedido) {
+    // el primer registro del agente que trae ese pedido
+    for (const x of registros) {
+      if (!x || x.isSidechain || x.type !== 'assistant' || typeof x.uuid !== 'string' || porUuid.get(x.uuid) !== x) continue;
+      const c = x.message && Array.isArray(x.message.content) ? x.message.content : [];
+      if (c.some((b) => b && b.type === 'tool_use' && b.id === pedido)) { r = x; break; }
+    }
+  } else {
+    for (let i = registros.length - 1; i >= 0 && !r; i--) {
+      const x = registros[i];
+      if (x && typeof x.uuid === 'string' && !x.isSidechain && porUuid.get(x.uuid) === x) r = x;
+    }
+  }
+  const cadena = new Set();
+  while (r && !cadena.has(r)) {
+    cadena.add(r);
+    const padre = r.parentUuid || r.logicalParentUuid;
+    r = typeof padre === 'string' ? porUuid.get(padre) : null;
+  }
+  return registros.filter((x) => cadena.has(x));
 }
 
 /**
@@ -118,7 +160,7 @@ function mensajeDeOtraSesion(texto) {
   return de ? { de: de[1].trim(), cuerpo: m[2] } : null;
 }
 
-const norm = (s) => String(s).toLowerCase().replace(/[«»"“”'‘’]/g, ' ').replace(/\s+/g, ' ').trim();
+const norm = (s) => String(s).toLowerCase().replace(/[«»"“”'‘’`]/g, ' ').replace(/\s+/g, ' ').trim();
 const letras = (s) => (String(s).match(/[\p{L}\p{N}]/gu) || []).length;
 
 // `desde`: la hora a partir de la cual vale el ok (el arranque de la corrida, o la muestra del crítico). Una frase
@@ -187,7 +229,8 @@ function citaReenviada(cita, sesion, opts = {}) {
   }
   const juez = cw.juezDesignacion(rol);
   if (juez(d.cita)) return { legible: true, archivo: conv.archivo, encontrada: false, rechazo: `la designación de esta máquina no vale: ${juez(d.cita)}` };
-  const designada = leerConversacion({ ...opts, sesion: d.sesion });
+  // con `soloCadena`, también la conversación designada: un renglón forjado ahí (la designación, un envío) no cuenta
+  const designada = leerConversacion({ ...opts, sesion: d.sesion, pedido: undefined });
   if (!designada.legible) return { legible: true, archivo: conv.archivo, encontrada: false, rechazo: `no puedo leer la conversación designada como «${rol}» (${designada.motivo})` };
   const frase = buscar(d.cita, textosDeUsuario(designada.registros).filter((t) => (!t.origen || t.origen.kind === 'human') && !t.sistema)
     .map((t) => ({ texto: escritoPorLaPersona(sinTextoPegado(t.texto)), cuando: t.cuando })).filter((t) => t.texto !== null), null, juez);
@@ -198,8 +241,14 @@ function citaReenviada(cita, sesion, opts = {}) {
   }
   // los mensajes que mandó la conversación designada: el número que devuelve cada envío, fuera de sus subagentes
   const enviados = new Set();
+  // con `soloCadena`, un envío cuenta si la conversación siguió después (algún registro lo tiene como padre): en una
+  // sesión quieta, un renglón forjado al final del archivo es la punta de su propia cadena, pero no tiene hijos
+  const conHijos = new Set();
+  if (opts.soloCadena) for (const r of designada.registros) if (r && typeof r.parentUuid === 'string') conHijos.add(r.parentUuid);
   for (const r of designada.registros) {
-    if (r && !r.isSidechain && r.toolUseResult && typeof r.toolUseResult.msg_id === 'string') enviados.add(r.toolUseResult.msg_id);
+    if (!r || r.isSidechain || !r.toolUseResult || typeof r.toolUseResult.msg_id !== 'string') continue;
+    if (opts.soloCadena && !conHijos.has(r.uuid)) continue;
+    enviados.add(r.toolUseResult.msg_id);
   }
   const reenviados = [];
   // el mensaje de otra sesión lo marca Claude Code (`origin.kind: peer`, con su número y el cuerpo): se lee la marca, no
@@ -257,4 +306,4 @@ function planEnLaConversacion(planTxt, opts = {}) {
   return { legible: true, mostrado: vistos * 2 >= renglones.length };
 }
 
-module.exports = { CITA_MINIMA, leerConversacion, citaDeLaPersona, citaReenviada, planEnLaConversacion };
+module.exports = { CITA_MINIMA, leerConversacion, enLaCadena, citaDeLaPersona, citaReenviada, planEnLaConversacion };

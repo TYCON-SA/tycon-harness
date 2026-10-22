@@ -535,6 +535,12 @@ only: they are changed with a request in their repo.
   `marker.js designate-relay --approved-by "<the developer>" --quote "<their sentence>"`. It is recognized by its
   conversation, not by its name: it keeps counting after the session restarts, and has to be designated again after a
   new chat or a `/clear`. A session with the same name cannot relay.
+  Below it is **delegated signing of control changes** (*Firma delegada de cambios de control*,
+  `approvals.delegated_signing`). "Off" is the default. "On" lets that session sign again, on the owner's behalf, a pull
+  request the owner already signed, when the only new thing is that main was brought in; its sentence is recorded.
+  Anything new, a conflict resolved by hand and loosening a control still wait for the owner. The fixed notice says so:
+  "Loosening a control is always signed by a person, at their terminal; this does not change that." Without a
+  designated session, "on" does nothing, and the section warns about it. It counts only from here, never from a machine.
 - **Hand-testing each criterion** (*Prueba a mano de cada punto*): whether, besides what the harness tests, a person
   has to mark each criterion of the tester guide before the story is closed. «No» (the default): the guide says what the
   harness tested. «Yes»: closing stops until a person marks each criterion by answering in their own session's chat,
@@ -618,6 +624,21 @@ What the person sees in the section, and what the agent does when asked for a to
 - **The organization's packs** (*Paquetes de la organización*): which harness packs (the reviewers and guides of a
   product or a client) are turned on on every machine. It lives in `team-profile.json`, in the profile repo. A
   maintainer reviews it.
+- **How the production guard updates** (*Cómo se actualiza el freno de producción*, `guard.update`): how the guard that
+  protects the production databases gets up to date on the authorized machines. The two options, each with its cost:
+  - "With the person's password" (the default, the safest): each update is done by that machine's person, typing their
+    password. Until someone does it, the machine keeps the old guard.
+  - "On its own, from the published version": the machine updates itself, with no password, using the published
+    version, checked against the team's repository. The cost: a looser published guard arrives without anyone approving
+    it on that machine, and any program running as the person's user can ask for the update (it cannot choose what gets
+    installed). Each update is recorded and the startup notice shows it.
+  Choosing "on its own" changes no machine: each person installs the permission once, with their password
+  (`install-guard.sh --allow-auto-update`), and the startup notice gives them the command. If the organization goes
+  back to "with the password", the notice on each machine with the permission says how to remove it
+  (`--remove-auto-update`). It counts only from here, never from a machine. It lives in `team-profile.json` →
+  `guard.update`, in the profile repo.
+
+By default, both new options are at the safest setting: delegated signing off and the guard with the password.
 
 Below is **Which harness version each machine has** (*Qué versión del arnés tiene cada máquina*), the one each machine
 reported with its last run. It is view only: the machines update themselves on start.
