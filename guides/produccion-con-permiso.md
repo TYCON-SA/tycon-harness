@@ -185,6 +185,84 @@ el comando de Azure que crearía la regla, aunque lo autorices en el chat. El ca
   `production.log`.
 - Sólo para Azure SQL (`*.database.windows.net`): un SQL Server propio, con `port`, no pasa por acá.
 
+## Borrar en Azure: el grupo, el candado y el recurso
+
+Borrar un grupo de recursos se lleva todo lo que tiene adentro, también un servidor de producción con sus bases. El
+catálogo declara servidores, no grupos, así que **el freno no sabe qué grupo contiene qué**. Por eso frena todos estos
+comandos, sin mirar el nombre del grupo ni el catálogo, y sin preguntarle a Azure:
+
+- `az group delete`, en cualquier forma (con opciones globales delante, con `sudo`, `az.cmd`, `az.exe`, escondido en
+  `bash -c` o `xargs`).
+- `az lock delete`: quita el candado que protege contra el borrado. Crear, listar y mirar candados pasa.
+- `az rest` con el método delete, o con un método que sale de una variable: la dirección puede ser un grupo o un
+  servidor. Los otros métodos pasan. Lo mismo `Invoke-AzRestMethod -Method DELETE` en PowerShell.
+- `az resource delete`, salvo que se lea el tipo de todo lo que borra y nada sea de `Microsoft.Sql`, de
+  `Microsoft.Resources` (el grupo) ni de `Microsoft.Authorization` (el candado). Si nombra un servidor SQL, lo decide
+  el catálogo como cualquier otro comando: producción o desconocido frena, un no-producción declarado pasa. Sin tipo
+  legible (una variable, un `-n` sin `--resource-type`, un comodín), frena.
+- `azd down`, que borra los recursos de un entorno.
+- En PowerShell, `Remove-AzResourceGroup`, `Remove-AzResource`, `Remove-AzSqlServer`, `Remove-AzSqlDatabase` y
+  `Remove-AzResourceLock`, siempre.
+- El borrado escondido también: con el programa en una variable (`$A group delete`), en la segunda línea del comando,
+  dentro de un programa de `awk` o `sed`, en el código de `python -c` o `node -e`, en un guion que corre un shell, por
+  `ssh` y con `xargs` cuando el subcomando viene de la entrada. El mensaje de un commit que nombra estos comandos no se
+  frena: no es un comando.
+
+Un grupo que **no** es de producción (uno de prueba) lo puede borrar el asistente por la puerta, con el cuadro de
+aprobación:
+
+```bash
+/opt/tycon/bin/tycon-prod-sql --delete-group <grupo>     # sólo el nombre; abre el cuadro
+```
+
+La puerta le pregunta a Azure qué hay en el grupo y lo borra sólo si puede probar que es seguro: el grupo está en una
+sola suscripción, todos sus servidores SQL están declarados no-producción, no tiene una base de un tipo que el catálogo
+no cubre (Postgres, MySQL, MariaDB, una instancia administrada, Cosmos, Synapse) y los listados coinciden. Si no, sale 2
+sin borrar y dice por qué: un servidor de producción, uno sin declarar, un listado cortado o `az` que no contestó. El
+borrado sale con `--no-wait`: la puerta dice que Azure **aceptó el pedido**, no que el grupo ya no está, y da el comando
+para confirmarlo (`az group exists`). Un grupo con candado lo rechaza Azure, y la puerta lo dice.
+
+Un grupo con algo de producción, o que la puerta no puede probar seguro, lo borra
+**una persona, en su propia terminal**, fuera del asistente, después de mirar qué contiene. El mensaje del freno ante un `az group delete` directo
+no nombra la puerta, a propósito. El corte queda anotado con la regla `borrado-de-azure`.
+
+El límite: el freno cubre los comandos del asistente en esta máquina. **No** cubre el portal de Azure, Terraform, un
+despliegue con `az deployment group create --mode Complete` (borra lo que la plantilla no nombra), los SDK ni a otra
+persona. La protección de verdad en Azure es un candado `CanNotDelete` en el servidor de producción, que pone una persona
+con permiso de candados; el freno impide que el asistente lo quite.
+
+## El candado: que nadie borre el servidor por descuido
+
+El freno corta los borrados que corre el asistente, pero no ve el portal, Terraform ni a otra persona. La protección de
+verdad la da Azure: un candado `CanNotDelete` sobre el servidor de producción (o sobre su grupo) hace que Azure rechace
+el borrado, venga de donde venga. El candado **lo pone una persona** con permiso de locks
+(`Microsoft.Authorization/locks/write`): cambia el Azure del cliente, y el asistente no lo hace.
+
+La puerta dice cuáles lo tienen, sin cambiar nada:
+
+```bash
+/opt/tycon/bin/tycon-prod-sql --locks     # sin nada más; abre el cuadro de aprobación, como toda forma de la puerta, y sólo lee
+```
+
+Por cada servidor de producción declarado en Azure SQL dice `con candado` (con su nombre y si está en el servidor o en el
+grupo), `sin candado` o `no sé` (con el motivo: sin `az`, sin sesión, el servidor en dos suscripciones o en ninguna, o el
+catálogo de un repo que no se pudo leer: los demás se revisan igual).
+Cuenta un candado `CanNotDelete` o `ReadOnly` sobre el servidor o su grupo. A uno sin candado le imprime el comando, para
+que lo corra una persona con permiso de locks, fuera del asistente:
+
+```bash
+az lock create --name tycon-no-borrar --lock-type CanNotDelete --resource-group <grupo> --resource-name <servidor> \
+  --resource-type Microsoft.Sql/servers --subscription <suscripción>
+```
+
+Lo medido: `az lock list` devuelve cada candado con su `id`, `level` y `name`, y el `id` dice si es del grupo o del
+servidor. Un candado tarda unos segundos en irse: borrar el grupo justo después de sacarlo falló con `ScopeLocked`, así
+que hay que esperar o reintentar. Los límites: un candado lo puede quitar cualquiera con permiso de locks (el asistente
+no, porque el freno corta `az lock delete`); la puerta no ve los candados de suscripción, y un servidor con uno de esos
+puede salir `sin candado`. Sale 2 si algún servidor quedó en `no sé`.
+Todavía no está medido si un candado sobre el servidor impide cerrar la regla de firewall de la puerta: hasta medirlo,
+poné el candado primero en un servidor de prueba y no en uno real.
+
 ## Los límites, dichos antes
 
 - 🔴 **La regla que pregunta por `az sql server firewall-rule` es de CORTESÍA**, no un freno: se

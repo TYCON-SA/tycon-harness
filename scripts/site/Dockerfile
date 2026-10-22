@@ -40,6 +40,8 @@ COPY guide[s]/organization-site.en.md* guides/
 COPY guide[s]/sitio-de-la-organizacion/capturas/*.png guides/sitio-de-la-organizacion/capturas/
 COPY scripts/lib/ scripts/lib/
 COPY scripts/metrics/ scripts/metrics/
+# el armado de los días de instintos: lo pide la subida (scripts/metrics/upload-runs.js), que el sitio carga
+COPY scripts/instincts/instinct-upload.js scripts/instincts/
 COPY scripts/nightly/dashboard/ scripts/nightly/dashboard/
 COPY scripts/nightly/projects/state-age.js scripts/nightly/projects/
 COPY scripts/setup/harness/ scripts/setup/harness/
