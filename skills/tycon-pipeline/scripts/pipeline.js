@@ -23,6 +23,14 @@
  * (lib/packs.js) y se suman al set por manifiesto. La salida de `advisors` lleva `packs`.
  */
 
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
+// Sin `?.` ni `??`: este guion lo tiene que poder leer un Node viejo hasta llegar a la guarda. Misma semántica: sólo null
+// y undefined cuentan como «no hay» (0, '' y false se quedan).
+const isNil = (v) => v === undefined || v === null;
+const nn = (v, d) => (isNil(v) ? d : v);
+const at = (o, k) => (isNil(o) ? undefined : o[k]);
+
 const fs = require('fs');
 const path = require('path');
 const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
@@ -1883,7 +1891,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   }
 
   const marker = readSessionMarker();
-  const prevSnapshot = marker?.iterations?.[String(iter - 1)]?.filesSnapshot;
+  const prevSnapshot = at(at(at(marker, 'iterations'), String(iter - 1)), 'filesSnapshot');
   if (!prevSnapshot) {
     const out = {
       ...fullSet,
@@ -5863,13 +5871,13 @@ function parseArgs(argv) {
     else if (t === '--deep-review-fable') a.deepReviewFable = true; // hunters en Fable — SOLO con autorización explícita del user
     else if (t === '--ultracode') a.ultracode = true;             // el orquestador lo pasa si ultracode está ON
     else if (t === '--brief') a.breve = true;                      // start: salida recortada + ruta del JSON entero
-    else if (t === '--session-model') a.sessionModel = argv[++i] ?? '';   // start / model-hint: el modelo de la sesión
+    else if (t === '--session-model') a.sessionModel = nn(argv[++i], '');   // start / model-hint: el modelo de la sesión
     else if (t === '--run-dir') a.runDir = argv[++i];              // write-findings/findings-status: dir de la corrida (default: auto-resolve)
     else if (t === '--extra-round') a.extraRound = true;          // smart-reloop / advisors: la vuelta más allá del tope que autoriza una persona
     else if (t === '--approved-by') a.approvedBy = argv[++i];     // con --extra-round: quién la autorizó
     else if (t === '--quote') a.quote = argv[++i];                // con --extra-round: sus palabras, textuales
     else if (t === '--base') a.base = argv[++i];                  // dod-checker-needed: base explícita del diff
-    else if (t === '--scope') a.scope = argv[++i] ?? '';          // qa-readability: `ui` = la revisión de la pantalla; sin valor no es «sin --scope»
+    else if (t === '--scope') a.scope = nn(argv[++i], '');          // qa-readability: `ui` = la revisión de la pantalla; sin valor no es «sin --scope»
     else if (t === '--marks') a.marcas = argv[++i];               // qa-readability: marcas resueltas
     else if (t === '--reason') a.motivo = argv[++i];              // story-review-record: el motivo de un salteo
     else if (t === '--model-reason') a.modelReason = argv[++i];   // story-review-record: de dónde salió el modelo
@@ -6506,7 +6514,7 @@ function main() {
         && Array.isArray(args.files) && args.files.length && typeof result.run === 'boolean') {
       try {
         const out = require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'mark-adversarial-gate',
-          JSON.stringify({ run: result.run, files: args.files, early_env: process.env.TYCON_5B_EARLY ?? null })],
+          JSON.stringify({ run: result.run, files: args.files, early_env: nn(process.env.TYCON_5B_EARLY, null) })],
         { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
         const anotado = JSON.parse(out || '{}');
         if ('early_launch' in result && typeof anotado.early_launch === 'boolean' && anotado.early_launch !== result.early_launch) {

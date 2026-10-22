@@ -14,9 +14,8 @@ const { spawnSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..');
 
-// marker.js y pipeline.js todavía no arrancan por el piso: esta lista los nombra mientras tanto, y sale vacía cuando
-// lo hagan.
-const PENDING = new Set(['marker.js', 'pipeline.js']);
+// los scripts que todavía no arrancan por el piso (vacía: lo hacen todos)
+const PENDING = new Set([]);
 
 /** Nombre de script → la instrucción donde aparece primero. */
 function namedInInstructions() {
