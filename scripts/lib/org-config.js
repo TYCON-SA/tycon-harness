@@ -1502,8 +1502,10 @@ function pantalla(idioma = 'es') {
       var deLaPersona = function () { d.people.projects = d.people.projects || {}; var f = d.people.projects[clave] = d.people.projects[clave] || {}; f.add = Array.isArray(f.add) ? f.add : []; return f; };
       var agregar = el('input', { placeholder: T('pantalla.producto2'), 'aria-label': T('pantalla.producto') });
       var acciones = el('span', { class: 'acc' });
+      // cada producto, una etiqueta con su propia ×: con dos productos, dos «Quitar» iguales no decían cuál sacaban
+      var etiquetas = el('span', { class: 'chips-prod' });
       declarados.forEach(function (prod) {
-        acciones.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.quitar'), 'data-producto': prod, 'aria-label': T('pantalla.quitar') + ' ' + prod, onclick: function () { var f = deLaPersona(); f.add = f.add.filter(function (x) { return x !== prod; }); if (!f.add.length) delete d.people.projects[clave]; render(); } }));
+        etiquetas.appendChild(el('span', { class: 'chip-prod' }, el('span', { text: prod }), el('button', { class: 'x', type: 'button', text: '×', title: T('pantalla.quitar') + ' ' + prod, 'data-producto': prod, 'aria-label': T('pantalla.quitar') + ' ' + prod, onclick: function () { var f = deLaPersona(); f.add = f.add.filter(function (x) { return x !== prod; }); if (!f.add.length) delete d.people.projects[clave]; render(); } })));
       });
       (p.sugeridos || []).filter(function (s2) { return declarados.indexOf(s2) < 0; }).forEach(function (prod) {
         acciones.appendChild(el('span', { class: 'dato', text: T('pantalla.sugerido') + prod }));
@@ -1511,9 +1513,11 @@ function pantalla(idioma = 'es') {
       });
       acciones.appendChild(agregar);
       acciones.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.agregar'), onclick: function () { var v = agregar.value.trim(); if (!v) return; var f = deLaPersona(); if (f.add.indexOf(v) < 0) f.add.push(v); render(); } }));
-      donde.appendChild(el('li', {}, el('span', { class: 'quien', text: p.correo }), el('span', { class: 'dato', text: (declarados.length ? T('pantalla.ve') + declarados.join(', ') : T('pantalla.todaviaNoVeNingun')) + (p.caida ? T('pantalla.susMaquinasNoMandanNoticias') : '') }), acciones));
+      var queVe = declarados.length ? el('span', { class: 'dato' }, el('span', { text: T('pantalla.ve') }), etiquetas) : el('span', { class: 'dato', text: T('pantalla.todaviaNoVeNingun') });
+      if (p.caida) queVe.appendChild(el('span', { text: T('pantalla.susMaquinasNoMandanNoticias') }));
+      donde.appendChild(el('li', {}, el('span', { class: 'quien', text: p.correo }), queVe, acciones));
     });
-    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.enQueProyectosTrabajaCada') }), el('p', { class: 'sub-d', text: T('pantalla.elSitioLoDeduceDe') }));
+    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.enQueProyectosTrabajaCada') }), el('p', { class: 'sub-d', text: T('pantalla.mantenedoresVenTodo') }), el('p', { class: 'sub-d', text: T('pantalla.elSitioLoDeduceDe') }));
     if (ex.quitadosViejos) sub.appendChild(aviso('warn', T('pantalla.quitadosViejos'), T('pantalla.quitadosViejosDetalle')));
     sub.appendChild((ex.personas || []).length ? donde : el('p', { class: 'muted', text: T('pantalla.nadieTodavia') }));
     box.appendChild(sub);

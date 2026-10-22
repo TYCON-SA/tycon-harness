@@ -655,8 +655,11 @@ test('T6 Sugerencia_SeAcepta', async () => {
   assert.deepStrictEqual(rev.cuerpo.borrador.people.projects[DEV].add, ['Alfa', 'Beta'], 'Aceptar la sumó a lo declarado');
   // «Quitar» sobre un declarado lo saca de add (y no escribe un remove)
   const pq = await pantallaFalsa([{ ...seccion, borrador: { people: { projects: { [DEV]: { add: ['Alfa', 'Beta'] } } } }, extras: { personas: [{ correo: DEV, sugeridos: [], caida: false }] } }]);
-  const quitar = pq.todo(pq.sec('personas')).find((n) => n.tag === 'button' && n.textContent === 'Quitar' && n.attrs['data-producto'] === 'Beta');
-  assert.ok(quitar, 'cada declarado tiene su Quitar');
+  // cada producto es una etiqueta con su propia ×, que dice qué quita
+  const quitar = pq.todo(pq.sec('personas')).find((n) => n.tag === 'button' && n.textContent === '×' && n.attrs['data-producto'] === 'Beta' && n.attrs['aria-label'] === 'Quitar Beta');
+  assert.ok(quitar, 'cada declarado tiene su × con su nombre');
+  assert.ok(!pq.todo(pq.sec('personas')).some((n) => n.tag === 'button' && n.textContent === 'Quitar'), 'sin «Quitar» sueltos que no dicen qué quitan');
+  assert.ok(pq.textoDe('personas').includes('Quienes mantienen el arnés ven todo: no hace falta agregarlos acá.'), 'la línea de arriba');
   quitar.on.click({});
   for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
   await pq.click('Revisar cambios', 'personas');
@@ -682,7 +685,8 @@ test('T11 Personas_DeclaradoBajoOtroCorreo_SeVeYSeEdita', async () => {
   const seccion = { id: 'personas', titulo: 'personas', repo: 'operaciones', estado: 'cargado', soloLectura: false, motivo: null, problems: [], avisos: [],
     borrador: { people: { projects: { 'Segundo.Correo@acme.example': { add: ['Alfa'] } } } }, extras: { personas: [{ correo: DEV, clave: 'Segundo.Correo@acme.example', sugeridos: ['Beta'], caida: false }] } };
   const pa = await pantallaFalsa([seccion]);
-  assert.ok(pa.textoDe('personas').includes('ve los productos: Alfa'), pa.textoDe('personas'));
+  // lo declarado bajo el otro correo se ve: «ve los productos:» con la etiqueta de Alfa y su ×
+  assert.ok(pa.todo(pa.sec('personas')).some((n) => n.tag === 'button' && n.attrs['aria-label'] === 'Quitar Alfa'), pa.textoDe('personas'));
   await pa.click('Aceptar', 'personas');
   await pa.click('Revisar cambios', 'personas');
   const rev = pa.pedidos.filter((x) => x.ruta === '/api/config/revisar').pop();

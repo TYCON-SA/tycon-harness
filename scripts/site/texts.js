@@ -1039,6 +1039,7 @@ const TEXTOS = {
   'pantalla.quitadosViejos': { es: 'hay quitados viejos que ya no hacen nada', en: 'there are old removals that no longer do anything' },
   'pantalla.quitadosViejosDetalle': { es: 'Cada persona ve sólo lo que tiene agregado. El próximo Proponer los saca del archivo.', en: 'Each person sees only what is added for them. The next Propose removes them from the file.' },
   'pantalla.enQueProyectosTrabajaCada': { es: 'En qué proyectos trabaja cada uno', en: 'Which projects each person works on' },
+  'pantalla.mantenedoresVenTodo': { es: 'Quienes mantienen el arnés ven todo: no hace falta agregarlos acá.', en: 'Whoever maintains the harness sees everything: no need to add them here.' },
   'pantalla.elSitioLoDeduceDe': { es: 'Cada persona ve sólo los productos que le agregás acá. Lo sugerido sale de sus ejecuciones y sus pedidos: aceptalo si corresponde.', en: 'Each person sees only the products you add for them here. Suggestions come from their runs and work items: accept them if they fit.' },
   'pantalla.cierresQueDejaronPruebaDe': { es: 'Cierres que dejaron prueba de que anda', en: 'Closed stories that left proof that it works' },
   'pantalla.storiesQueVuelvenConUn': { es: 'Stories que vuelven con un seguimiento', en: 'Stories that come back with a follow-up' },
