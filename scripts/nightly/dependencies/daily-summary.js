@@ -864,6 +864,98 @@ function lineaRetros(archivo) {
 }
 
 /**
+ * La línea de las ejecuciones (casos: scripts/tests/daily-summary.test.sh, 4.10-T31 a T34), de lo que deja la revisión nocturna en el clon de operaciones
+ * (`--runs-review`): `inbox/runs-review/last-run.json` y las fichas de hoy en `pending/`. Agrupa por causa (regla y
+ * categoría): un renglón por causa conocida y lo nuevo aparte, con el enlace de una ficha. Devuelve la lista de renglones.
+ * Sólo números, códigos de regla y categorías con forma, y enlaces con forma: nada de texto de una conversación. Sin la
+ * pasada de hoy dice que no corrió, nunca «0 con fallas».
+ */
+const TOPE_EJECUCIONES = 900;
+const MOTIVO_EJ = '[\\p{L}\\p{N} ().,:_-]{1,160}';
+const CAUSA_EJ = 'RR-[A-Z]{2,12}( [A-Za-z0-9:/._-]{1,80})?: \\d+';
+const ENLACE_EJ = '(https?://[A-Za-z0-9.-]+(:\\d{1,5})?)?/corridas\\?abrir=[A-Za-z0-9_-]{1,64}';
+const EJ_NO_CORRIO = 'ejecuciones: la revisión NO CORRIÓ hoy';
+const EJ_ILEGIBLE = 'ejecuciones: ? (el estado de la revisión no se pudo leer)';
+const EJ_CONSTANCIA = 'ejecuciones: ? (la constancia de las 04:00 no se pudo leer)';
+// la forma de cada renglón que puede salir: con ella se vuelve a leer la constancia en la edición de las 08:00
+const RENGLONES_EJ = [
+  new RegExp(`^ejecuciones: (parcial — ${MOTIVO_EJ} · )?(\\d+ con fallas del arnés \\(de \\d+ miradas\\)|0 con fallas del arnés \\(\\d+ miradas\\))$`, 'u'),
+  new RegExp(`^· ${CAUSA_EJ}$`),
+  /^· y \d+ causas conocidas más \(\d+ ejecuciones\)$/,
+  new RegExp(`^🆕 ${CAUSA_EJ}( — ${ENLACE_EJ})?$`, 'u'),
+  /^🆕 y \d+ causas nuevas más$/u,
+];
+const EJ_SIN_MOTIVO = 'motivo sin la forma esperada';
+// el motivo de una pasada parcial sale sólo si es una de las frases fijas de runs-review.js
+const motivoFijo = (m) => typeof m === 'string' && (m === EJ_SIN_MOTIVO || require('../runs-review/runs-review.js').MOTIVOS.some((re) => re.test(m)));
+const renglonEjValido = (l) => {
+  if (typeof l !== 'string') return false;
+  if (l === EJ_NO_CORRIO || l === EJ_ILEGIBLE) return true;
+  if (!RENGLONES_EJ.some((re) => re.test(l))) return false;
+  const parcial = /^ejecuciones: parcial — (.*) · \d+ con fallas/u.exec(l);
+  return !parcial || motivoFijo(parcial[1]);
+};
+
+function lineaEjecuciones(dir, hoy) {
+  const raiz = path.join(dir, 'inbox', 'runs-review');
+  let l;
+  try { l = JSON.parse(fs.readFileSync(path.join(raiz, 'last-run.json'), 'utf8')); } catch (e) { return [e && e.code === 'ENOENT' ? EJ_NO_CORRIO : EJ_ILEGIBLE]; }
+  if (!l || typeof l !== 'object' || Array.isArray(l)) return [EJ_ILEGIBLE];
+  if (l.fecha !== hoy) return [EJ_NO_CORRIO];
+  const entero = (n) => Number.isInteger(n) && n >= 0;
+  const causaValida = (c) => c && typeof c === 'object' && /^RR-[A-Z]{2,12}$/.test(c.regla)
+    && (c.categoria === null || (typeof c.categoria === 'string' && /^[A-Za-z0-9:/._-]{1,80}$/.test(c.categoria)))
+    && Number.isInteger(c.ejecuciones) && c.ejecuciones >= 1 && typeof c.nueva === 'boolean';
+  if (!entero(l.miradas) || !entero(l.con_fallas) || !Array.isArray(l.causas) || !l.causas.every(causaValida)) return [EJ_ILEGIBLE];
+  const motivo = motivoFijo(l.motivo) ? l.motivo : EJ_SIN_MOTIVO;
+  const parcial = l.completo === true ? '' : `parcial — ${motivo} · `;
+  const cabecera = `ejecuciones: ${parcial}${l.con_fallas ? `${l.con_fallas} con fallas del arnés (de ${l.miradas} miradas)` : `0 con fallas del arnés (${l.miradas} miradas)`}`;
+  if (!l.con_fallas) return [cabecera];
+
+  // el enlace de cada causa nueva: la primera ficha de hoy en pending/ (por nombre) que la trae
+  const fichasDeHoy = [];
+  try {
+    const { leerFicha: leerFichaRR } = require('../runs-review/runs-review.js');
+    for (const n of fs.readdirSync(path.join(raiz, 'pending')).filter((x) => x.endsWith('.yaml')).sort()) {
+      try {
+        const f = leerFichaRR(path.join(raiz, 'pending', n));
+        if (f.vista_por_ultima_vez === hoy && Array.isArray(f.reglas) && typeof f.enlace === 'string' && new RegExp(`^${ENLACE_EJ}$`).test(f.enlace)) fichasDeHoy.push(f);
+      } catch { /* una ficha que no se lee no da enlace: el renglón va sin él */ }
+    }
+  } catch { /* sin pending/ no hay enlaces */ }
+  const nombre = (c) => (c.categoria === null ? c.regla : `${c.regla} ${c.categoria}`);
+  const enlaceDe = (c) => {
+    const f = fichasDeHoy.find((x) => x.reglas.some((r) => r && r.regla === c.regla && (r.categoria === undefined ? null : r.categoria) === c.categoria));
+    return f ? ` — ${f.enlace}` : '';
+  };
+  const conocidas = l.causas.filter((c) => !c.nueva);
+  const nuevas = l.causas.filter((c) => c.nueva);
+  const armarBloque = (k, n) => {
+    const out = [cabecera, ...conocidas.slice(0, k).map((c) => `· ${nombre(c)}: ${c.ejecuciones}`)];
+    if (conocidas.length > k) out.push(`· y ${conocidas.length - k} causas conocidas más (${conocidas.slice(k).reduce((s, c) => s + c.ejecuciones, 0)} ejecuciones)`);
+    out.push(...nuevas.slice(0, n).map((c) => `🆕 ${nombre(c)}: ${c.ejecuciones}${enlaceDe(c)}`));
+    if (nuevas.length > n) out.push(`🆕 y ${nuevas.length - n} causas nuevas más`);
+    return out;
+  };
+  // tope del bloque: se sacan renglones desde abajo, primero de lo nuevo, y se suman a su «y K más»
+  let k = Math.min(8, conocidas.length);
+  let n = Math.min(5, nuevas.length);
+  let bloque = armarBloque(k, n);
+  while (bloque.join('\n').length > TOPE_EJECUCIONES && (k || n)) {
+    if (n) n -= 1; else k -= 1;
+    bloque = armarBloque(k, n);
+  }
+  return bloque;
+}
+
+/** Los renglones guardados a las 04:00, para la edición de las 08:00: tal cual si todos pasan la forma; si no, «?». */
+function ejecucionesDeLaConstancia(r) {
+  if (!r || !hasOwn(r, 'ejecuciones')) return null;
+  const e = r.ejecuciones;
+  return Array.isArray(e) && e.length && e.length <= 20 && e.every(renglonEjValido) ? e : [EJ_CONSTANCIA];
+}
+
+/**
  * La línea de la revisión de la semana (casos: scripts/tests/weekly-review.test.js T8), del informe que deja scripts/nightly/weekly-review/weekly-review.js
  * en el clon de mantenimiento (`--weekly`). Sale las dos mañanas siguientes a la semana que revisó (corre el martes a las
  * 02:00 hora de la máquina; el resumen de las 04:00 UTC de ese día puede llegar antes) y después no. Lleva cantidades por
@@ -944,6 +1036,8 @@ function entregar(a) {
   let editarId = null;
   let notaArmado = null;
   let sitio = a.fuente === 'dependencias' ? lineaSitio(a) : null;
+  // la línea de las ejecuciones: la arma la mañana con --runs-review; la edición de las 08:00 la rearma de la constancia
+  let ejecuciones = a.runsReview !== null ? lineaEjecuciones(a.runsReview, a.hoy) : null;
   if (a.fuente === 'vigilante') {
     const d = dependenciasDeHoy(a);
     const r = d.resumen;
@@ -956,6 +1050,7 @@ function entregar(a) {
     if (yaLlego && mid && d.seccion && canal === 'telegram') {
       editarId = mid;
       final = `${d.seccion}\n\n${res.texto}`;
+      if (ejecuciones === null) ejecuciones = ejecucionesDeLaConstancia(r);
       // los otros canales no editan: ya recibieron la sección de dependencias a la mañana, así que les va sólo la del
       // vigilante, diciéndolo, como cuando Telegram no está
       const otros = canales.filter((c) => c !== 'telegram');
@@ -982,6 +1077,10 @@ function entregar(a) {
   let cola = '';
   if (a.extra !== null) cola = `${cola}\n\n${seccionExtra(a.extra)}`;
   if (a.retros !== null) cola = `${cola}\n${lineaRetros(a.retros)}`;
+  // la línea de las ejecuciones va en su lugar con una marca: el mensaje aparte de los canales que no editan no la lleva
+  // cuando sale de la constancia de la mañana (ya les llegó a las 04:00)
+  const MARCA_EJ = '\u0000ejecuciones\u0000';
+  if (ejecuciones !== null) cola = `${cola}${MARCA_EJ}`;
   const semanal = a.weekly !== null ? lineaSemanal(a.weekly, a.hoy) : null;
   if (semanal) cola = `${cola}\n${semanal}`;
   // la versión del sitio, en su lugar fijo: antes de la línea del sitio, que sigue siendo la última
@@ -998,8 +1097,12 @@ function entregar(a) {
   // la noche no pudo leer el perfil: salió por el canal viejo, y quien lo lee tiene que saberlo
   if (noche.aviso) cola = `${cola}\n⚠️ ${noche.aviso}`;
   cola = `${cola}\n${sitio.linea}`;
-  final = `${acotar(final, TOPE_MENSAJE)}${cola}`;
-  if (finalOtros !== null) finalOtros = `${acotar(finalOtros, TOPE_MENSAJE)}${cola}`;
+  // el cuerpo se achica en lo que ocupa la línea de las ejecuciones: el mensaje entero no crece por ella
+  const tope = ejecuciones === null ? TOPE_MENSAJE
+    : { lineas: TOPE_MENSAJE.lineas - ejecuciones.length, caracteres: TOPE_MENSAJE.caracteres - ejecuciones.join('\n').length - 1 };
+  const colaCon = cola.replace(MARCA_EJ, ejecuciones === null ? '' : `\n${ejecuciones.join('\n')}`);
+  final = `${acotar(final, tope)}${colaCon}`;
+  if (finalOtros !== null) finalOtros = editarId !== null ? `${acotar(finalOtros, TOPE_MENSAJE)}${cola.replace(MARCA_EJ, '')}` : `${acotar(finalOtros, tope)}${colaCon}`;
   const textoDe = (c) => (c !== 'telegram' && finalOtros !== null ? finalOtros : final);
 
   if (a.dryRun) {
@@ -1037,6 +1140,7 @@ function entregar(a) {
     dudas_revisores: res.dudas_revisores,
     ...(res.revision_semanal !== undefined ? { revision_semanal: res.revision_semanal } : {}),
     sitio: { linea: sitio.linea, resultado: sitio.resultado, motivo: sitio.motivo, hora: sitio.hora },
+    ...(ejecuciones !== null ? { ejecuciones } : {}),
   };
   const nota = [notaArmado, intento.nota].filter(Boolean).join(' · ');
   if (nota) resumen.nota = nota;
@@ -1114,7 +1218,7 @@ function perfilDeLaNoche(a) {
 // ── CLI ────────────────────────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
   const a = { cmd: argv[0], fuente: null, hoy: null, out: null, pending: null, config: null, resumenConfig: null,
-    vigOut: null, depsOut: null, extra: null, retros: null, weekly: null, runs: null, operations: null, profile: null, teamRepos: null, cloneDir: null,
+    vigOut: null, depsOut: null, extra: null, retros: null, runsReview: null, weekly: null, runs: null, operations: null, profile: null, teamRepos: null, cloneDir: null,
     siteCheck: null, siteUpdate: null, json: false, dryRun: false, ayuda: false, error: null };
   const valor = (i) => { if (i >= argv.length || String(argv[i]).startsWith('--')) { a.error = `falta el valor de ${argv[i - 1]}`; return null; } return argv[i]; };
   for (let i = 1; i < argv.length; i++) {
@@ -1129,6 +1233,7 @@ function parseArgs(argv) {
     else if (v === '--deps-out') a.depsOut = valor(++i);
     else if (v === '--extra') a.extra = valor(++i);
     else if (v === '--retros') a.retros = valor(++i);
+    else if (v === '--runs-review') a.runsReview = valor(++i);
     else if (v === '--weekly') a.weekly = valor(++i);
     else if (v === '--runs') a.runs = valor(++i);
     else if (v === '--operations') a.operations = valor(++i);
@@ -1147,7 +1252,7 @@ function parseArgs(argv) {
 
 function uso() {
   console.error('uso: daily-summary.js build|deliver --source dependencies|vigilante --today <YYYY-MM-DD> [--json] [--dry-run]\n' +
-    '       [--out <dir>] [--pending <dir>] [--config <repos.json>] [--summary-config <summary.json>] [--watcher-out <dir>] [--deps-out <dir>] [--extra <archivo>] [--retros <informe de retro-sweep.js>] [--weekly <informe de weekly-review.js>] [--runs <.advisors/pipeline-runs>]\n' +
+    '       [--out <dir>] [--pending <dir>] [--config <repos.json>] [--summary-config <summary.json>] [--watcher-out <dir>] [--deps-out <dir>] [--extra <archivo>] [--retros <informe de retro-sweep.js>] [--runs-review <clon de operaciones>] [--weekly <informe de weekly-review.js>] [--runs <.advisors/pipeline-runs>]\n' +
     '       [--operations <operations.json>] [--site-check <resultado de check-deploy.js>] [--site-update <resultado de update-site.js>]\n' +
     '       [--profile <team-profile.json> | --team-repos <team-repos.json> --clone-dir <dir>]');
 }
