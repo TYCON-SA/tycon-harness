@@ -532,9 +532,10 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const out = new Map();
     const sumar = (x) => {
       if (!isObject(x) || typeof x.platform !== 'string' || typeof x.org !== 'string' || typeof x.repo !== 'string' || !x.org || !x.repo) return false;
-      const e = x.platform === 'azure' ? (typeof x.project === 'string' && x.project ? { platform: 'azure', org: x.org, project: x.project, repo: x.repo } : null) : { platform: x.platform, org: x.org, repo: x.repo };
-      if (e) out.set([e.platform, e.org, e.project || '', e.repo].join('\0').toLowerCase(), e);
-      return Boolean(e);
+      // la forma de cada plataforma (con proyecto o sin él) la juzga el lector al revisar; acá sólo se arma la identidad
+      const e = typeof x.project === 'string' && x.project ? { platform: x.platform, org: x.org, project: x.project, repo: x.repo } : { platform: x.platform, org: x.org, repo: x.repo };
+      out.set([e.platform, e.org, e.project || '', e.repo].join('\0').toLowerCase(), e);
+      return true;
     };
     const motivos = [];
     const r = dirOps ? leerDe(dirOps, 'scripts/nightly/dependencies/repos.json') : { estado: 'sin_copia' };
@@ -544,10 +545,11 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const ops = remoteDe('operaciones') || {};
     let ignoradas = 0;
     for (const x of (d && Array.isArray(d.repos) ? d.repos : [])) {
-      // una entrada es un repo si su «ado» (con la organización del repo de operaciones, en Azure) o su «github» lo nombran
+      // una entrada es un repo si su «ado» («<proyecto>/<repo>», en la plataforma y la organización del repo de
+      // operaciones, que tiene proyectos) o su «github» lo nombran
       const ado = isObject(x) && typeof x.ado === 'string' ? x.ado.split('/') : [];
       const gh = isObject(x) && typeof x.github === 'string' ? x.github.split('/') : [];
-      const okAdo = ado.length === 2 && ops.platform === 'azure' && sumar({ platform: 'azure', org: ops.org, project: ado[0], repo: ado[1] });
+      const okAdo = ado.length === 2 && Boolean(ops.project) && sumar({ platform: ops.platform, org: ops.org, project: ado[0], repo: ado[1] });
       const okGh = gh.length === 2 && sumar({ platform: 'github', org: gh[0], repo: gh[1] });
       if (!okAdo && !okGh) ignoradas++;
     }
