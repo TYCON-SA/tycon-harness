@@ -63,6 +63,7 @@ la fila aplica.
 | Instalar el MCP de la herramienta de horas (opcional) | `guides/integrations/clockify-mcp.md` |
 | Registro automático de horas (timer con confirmación + cierre por inactividad) | `guides/integrations/clocki-tracking.md` |
 | Registrar horas en otra herramienta (opcional): la URL en el perfil, el token de cada dev, qué hace y qué avisa | `guides/integrations/solidtime.md` |
+| Usar el arnés con modelos de Ollama (Claude Code o Codex): variables, perfiles, qué anda y qué no | `guides/integrations/ollama.md` (en inglés, `guides/integrations/ollama.en.md`) |
 | Instalar/configurar CodeGraph (índice de código MCP, opcional) | `guides/integrations/codegraph-mcp.md` |
 | Crear stories que generen work items en Azure DevOps; configurar `.tycon/ado-config.yaml` | `guides/integrations/ado-projects.md` |
 | Consultar una base de PRODUCCIÓN · te frenó el freno de producción y querés saber por qué · declarar un servidor en `.tycon/production.json` · instalar o actualizar el freno (pide `sudo`) | `guides/produccion-con-permiso.md` |

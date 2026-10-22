@@ -534,3 +534,44 @@ test('ManagedCounts_BrokenManifest_IsSaid @story-7.40 @ac-4', () => {
   assert.deepStrictEqual(sinProblemas, []);
   for (const d of [tree, viejo]) fs.rmSync(d, { recursive: true, force: true });
 });
+
+// ── El recordatorio de horas viaja en el prompt: corto, con las reglas que no pueden faltar ──────────────────────────
+// Antes pesaba ~4.600 bytes en cada prompt en que hablaba (1.539 veces en una semana de una máquina). Los pasos
+// largos viven en la skill clocki; el recordatorio dispara y conserva lo que no se puede perder: preguntar antes de
+// abrir, la hora local, el fin igual al inicio y el archivo propio de la sesión.
+function recordatorio(prompt, activo) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'clocki-recordatorio-'));
+  const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clocki-cwd-')));
+  fs.mkdirSync(path.join(home, '.claude', 'clocki', 'active'), { recursive: true });
+  if (activo) {
+    // stable-data: el timer tiene que estar fresco para que el recordatorio no lo dé por inactivo; la fecha no se afirma
+    const ahora = new Date().toISOString().slice(0, 19);
+    fs.writeFileSync(path.join(home, '.claude', 'clocki', 'active', 's1.json'), JSON.stringify({ [cwd]: {
+      entryId: 'e1', workspaceId: 'w1', projectId: 'p1', description: 'story 7.53 medidor', startedAt: ahora, lastActivity: ahora } }));
+  }
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'integrations', 'clockify', 'scripts', 'on-prompt.js')],
+    { input: JSON.stringify({ cwd, session_id: 's1', prompt }), encoding: 'utf8', env: { ...process.env, HOME: home, TYCON_EVAL_SANDBOX: '' } });
+  for (const d of [home, cwd]) fs.rmSync(d, { recursive: true, force: true });
+  return r.stdout;
+}
+
+test('Recordatorio_Arranque_CortoConLasReglasClave @story-7.53', () => {
+  const out = recordatorio('implementemos la story 9.9 del tablero', false);
+  assert.match(out, /clocki/, out);
+  assert.ok(Buffer.byteLength(out) < 1600, `pesa ${Buffer.byteLength(out)} bytes:\n${out}`);
+  assert.match(out, /pregunt/i, 'tiene que pedir confirmación antes de abrir');
+  assert.match(out, /hora local/i, out);
+  assert.match(out, /date "\+%Y-%m-%dT%H:%M:%S"/, out);
+  assert.match(out, /igual al inicio/i, out);
+  assert.match(out, /active\/s1\.json/, 'el archivo propio de la sesión');
+  assert.match(out, /skill clocki/i, 'el detalle, en la skill');
+});
+
+test('Recordatorio_Cierre_CortoConLasReglasClave @story-7.53', () => {
+  const out = recordatorio('listo, cerremos', true);
+  assert.match(out, /e1/, out);
+  assert.ok(Buffer.byteLength(out) < 1600, `pesa ${Buffer.byteLength(out)} bytes:\n${out}`);
+  assert.match(out, /cerr/i, out);
+  assert.match(out, /otra tarea/i, 'la transición atómica');
+  assert.match(out, /skill clocki/i, out);
+});
