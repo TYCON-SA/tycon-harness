@@ -1087,6 +1087,22 @@ else
   mal "4.10-T29 rc=${RC} omitidos=$(campo "${T}" omitidos) completo=$(campo "${T}" completo) · $(ls "${E}" 2>&1 | tr '\n' ' ')"
 fi
 
+# ── T29d ThreadsSince_SinCerrarConSuFecha @story-4.10 @ac-4 ────────────────────────────────────────────────────────
+# Una ejecución sin cerrar se sube como `<story>-<AAAAMMDDhhmmss>-sin-cerrar`: la fecha va pegada, y también cuenta.
+# 🔴 Falla con: no leer esa forma (las sin cerrar viejas bajan todas las noches: medido en el buzón real, 13 de
+#    septiembre en una bajada «desde hoy») o leerla corrida un día.
+T="${BASE}/t4-10-29d"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+for base in 1.11-20260930105410-sin-cerrar 5.3-20261015000001-sin-cerrar; do
+  blob "${T}/b" "equipo-deva/${base}.json" 800
+  blob "${T}/b" "equipo-deva/${base}.hilo.jsonl.gz" 3000
+done
+bajar "${T}" "${T}/bin/az" --threads-since 2026-10-15
+E="${T}/estado/corridas-buzon/equipo-deva"
+[ "${RC}" -eq 0 ] && [ -f "${E}/1.11-20260930105410-sin-cerrar.json" ] && [ ! -e "${E}/1.11-20260930105410-sin-cerrar.hilo.jsonl.gz" ] \
+  && [ -f "${E}/5.3-20261015000001-sin-cerrar.hilo.jsonl.gz" ] && [ "$(campo "${T}" omitidos)" = "1" ] \
+  && ok "4.10-T29d una sin cerrar se filtra por su fecha pegada: la vieja no baja su conversación, la del mismo día sí" \
+  || mal "4.10-T29d rc=${RC} omitidos=$(campo "${T}" omitidos) · $(ls "${E}" 2>&1 | tr '\n' ' ')"
+
 # ── T29b ThreadsSince_FechaMalFormada @story-4.10 @ac-4 ─────────────────────────────────────────────────────────────
 # 🔴 Falla con: tomar «22/10/2026» como fecha, o una fecha con forma pero imposible (2026-13-01, 2026-02-31): la
 #    comparación de texto deja pasar o tira todo sin decirlo.

@@ -47,7 +47,8 @@
  *   clientes— y el agente de Azure no tiene por qué tenerlas.
  *
  *   --threads-since <AAAA-MM-DD>: baja los hilos y los cambios de git sólo de las corridas cuyo nombre
- *   (`<story>-<AAAA-MM-DD>T<hhmm>`) es de esa fecha o posterior; los demás, en `omitidos`. Un nombre sin fecha baja
+ *   (`<story>-<AAAA-MM-DD>T<hhmm>`, o `<story>-<AAAAMMDDhhmmss>-sin-cerrar`) es de esa fecha o posterior; los
+ *   demás, en `omitidos`. Un nombre sin fecha baja
  *   igual. Los volcados y los registros bajan siempre. Lo usa la revisión nocturna de las ejecuciones, que lee las
  *   conversaciones de los últimos días. Con --no-threads, no baja ninguna.
  *
@@ -754,9 +755,13 @@ async function bajar(opts = {}) {
     if (sinHilos && /\.(hilo\.jsonl|cambio\.json)\.gz$/.test(forma.archivo)) { res.omitidos += 1; continue; }
     // Con `hilosDesde`, una conversación o un cambio de una ejecución anterior a esa fecha no se baja. Un nombre sin
     // fecha legible se baja: no se sabe de cuándo es.
+    // Las dos formas de nombre que sube upload-runs.js: `<story>-<AAAA-MM-DD>T<hhmm>` y, la de una sin cerrar,
+    // `<story>-<AAAAMMDDhhmmss>-sin-cerrar`.
     if (hilosDesde) {
       const f = /-(\d{4}-\d{2}-\d{2})T\d{4}\.(hilo\.jsonl|cambio\.json)\.gz$/.exec(forma.archivo);
-      if (f && f[1] < hilosDesde) { res.omitidos += 1; continue; }
+      const s = f ? null : /-(\d{4})(\d{2})(\d{2})\d{6}-sin-cerrar\.(hilo\.jsonl|cambio\.json)\.gz$/.exec(forma.archivo);
+      const dia = f ? f[1] : s ? `${s[1]}-${s[2]}-${s[3]}` : null;
+      if (dia && dia < hilosDesde) { res.omitidos += 1; continue; }
     }
     // los días de instintos traen comandos: se bajan sólo con `--instincts` (el que propone); sin la opción se
     // cuentan una vez por carpeta y día, no por versión
