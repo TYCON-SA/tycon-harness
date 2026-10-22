@@ -1,0 +1,52 @@
+{
+  "hooks": [
+    {
+      "hook": "extension-notices.js (los avisos de arranque de los paquetes activos, sólo en los repos donde aplican, una vez por sesión)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/extension-notices.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "env": {
+        "TYCON_PACKS_DIR": "${FIXTURE}/packs",
+        "TYCON_PACKS_DEFAULT": "all",
+        "TYCON_HOME": "${FIXTURE}/casa"
+      },
+      "cases": [
+        {
+          "id": "dice-el-aviso-en-un-repo-del-producto",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/skills/tycon-pipeline/scripts/lib && cp $TCG/scripts/hooks/extension-notices.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/extension-notices.js tcg/scripts/lib/ && cp $TCG/skills/tycon-pipeline/scripts/lib/packs.js $TCG/skills/tycon-pipeline/scripts/lib/legacy-names.js $TCG/skills/tycon-pipeline/scripts/lib/harness-path.js tcg/skills/tycon-pipeline/scripts/lib/",
+            "mkdir -p packs/producto/notices && printf '{\"name\":\"producto\",\"description\":\"de prueba\"}' > packs/producto/pack.json && printf 'REGLA-DE-LA-URL del producto\\n' > packs/producto/notices/url.md",
+            "printf '{\"notices\":[{\"id\":\"url\",\"text\":\"notices/url.md\",\"when\":\"session-start\",\"repo_files\":\"(^|/)plugin\\\\\\\\.json$\"}]}' > packs/producto/notices.json",
+            "git init -q repo && cd repo && printf '{}' > plugin.json && git add plugin.json"
+          ],
+          "stdin": {
+            "source": "startup",
+            "session_id": "bench",
+            "cwd": "${FIXTURE}/repo"
+          },
+          "expect": {
+            "stdout_re": [
+              "REGLA-DE-LA-URL del producto"
+            ]
+          }
+        },
+        {
+          "id": "quiet-en-un-repo-sin-el-producto",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/skills/tycon-pipeline/scripts/lib && cp $TCG/scripts/hooks/extension-notices.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/extension-notices.js tcg/scripts/lib/ && cp $TCG/skills/tycon-pipeline/scripts/lib/packs.js $TCG/skills/tycon-pipeline/scripts/lib/legacy-names.js $TCG/skills/tycon-pipeline/scripts/lib/harness-path.js tcg/skills/tycon-pipeline/scripts/lib/",
+            "mkdir -p packs/producto/notices && printf '{\"name\":\"producto\",\"description\":\"de prueba\"}' > packs/producto/pack.json && printf 'REGLA-DE-LA-URL del producto\\n' > packs/producto/notices/url.md",
+            "printf '{\"notices\":[{\"id\":\"url\",\"text\":\"notices/url.md\",\"when\":\"session-start\",\"repo_files\":\"(^|/)plugin\\\\\\\\.json$\"}]}' > packs/producto/notices.json",
+            "git init -q repo && cd repo && printf 'hola' > README.md && git add README.md"
+          ],
+          "stdin": {
+            "source": "startup",
+            "session_id": "bench",
+            "cwd": "${FIXTURE}/repo"
+          }
+        }
+      ]
+    }
+  ]
+}
