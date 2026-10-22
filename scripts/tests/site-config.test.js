@@ -3231,7 +3231,8 @@ test('T6 Repos_EditarAgregarSacar @story-2.59 @ac-6', async () => {
   await p.click('+ Agregar repo', 'suites');
   assert.strictEqual(p.renglones(p.tablas()[0]).length, 6);
   assert.strictEqual(p.de(fila(5), 'edit').length, 1, 'el nuevo, abierto');
-  esperado = clon2(SUITES_5); esperado.repos.push({ repo: { platform: 'azure', org: '', project: '', repo: '' }, rule: 'automatico' });
+  // un repo nuevo nace sin plataforma: la pantalla no adivina; el lector frena hasta que se elija
+  esperado = clon2(SUITES_5); esperado.repos.push({ repo: { platform: '', org: '', project: '', repo: '' }, rule: 'automatico' });
   assert.deepStrictEqual((await p.revisado()).merge_suites, esperado);
   // un repo con problema se dibuja abierto y con su mensaje
   p = await compacta(secSuites(SUITES_5, [{ path: 'merge_suites.repos.3.repo.org', message: 'falta' }, { path: 'merge_suites.repos.0.extra', message: 'clave desconocida' }]));
@@ -3272,7 +3273,7 @@ test('T13 Repos_SinPipelineQuePasa @story-2.59 @ac-13', async () => {
 test('T7 Integraciones_UnRenglonPorIntegracion @story-2.59 @ac-7', async () => {
   let p = await compacta(secInteg(INTEG));
   const filas = p.renglones(p.tablas()[0]);
-  assert.strictEqual(filas.length, 7, 'la de horas, la de los avisos (story 7.40), las cuatro de antes y CodeGraph');
+  assert.strictEqual(filas.length, 10, 'la de horas, las tres de la plataforma del equipo (8.85), la de los avisos (story 7.40), las cuatro de antes y CodeGraph');
   assert.ok(p.clases(p.tablas()[0]).includes('integ'));
   filas.forEach((f) => { assert.strictEqual(p.de(f, 'que').length, 1); assert.strictEqual(p.todo(f).filter((n) => n.tag === 'select').length, 1); });
   assert.match(p.texto(filas[0]), /Registro de horas/, 'el primero es la herramienta de horas');

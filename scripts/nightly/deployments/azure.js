@@ -41,11 +41,11 @@ const noMedido = (motivo, detalle = '') => ({ noMedido: true, motivo, detalle: S
 const numero = (run) => (/^[\w.-]{1,40}$/.test(String(run.buildNumber || '')) ? String(run.buildNumber) : null);
 const fecha = (s) => { const t = Date.parse(s || ''); return Number.isNaN(t) ? 0 : t; };
 
-function crear({ cmd = process.env.TYCON_ADO_CMD || 'az', org, deadline, ventana = 30 }) {
+function crear({ env = process.env, cmd = env.TYCON_ADO_CMD || 'az', org, deadline, ventana = 30 }) {
   function az(args, { vacio } = {}) {
     if (Date.now() >= deadline) throw noMedido('presupuesto_agotado', 'se agotó el tiempo de la noche antes de consultar');
     const r = spawnSync(cmd, [...args, '--org', org, '-o', 'json'], {
-      encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: Math.max(1000, Math.min(120000, deadline - Date.now())), env: process.env,
+      encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: Math.max(1000, Math.min(120000, deadline - Date.now())), env,
     });
     if (r.error) throw noMedido('az_fallo', `${cmd} no se pudo ejecutar (${r.error.code || r.error.message})`);
     if (r.status !== 0) {

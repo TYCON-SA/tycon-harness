@@ -1367,21 +1367,32 @@ Habla con Azure sólo por TYCON_ADO_CMD (por defecto az) y necesita AZURE_DEVOPS
 Exit: 0 habló con Azure (los fallos por par van al snapshot) · 2 no pudo intentar nada.`;
 
 /**
- * La plataforma de los avisos: `operations.platform` de team-repos.json (`--team-repos <f>`, por defecto el
- * de la raíz del árbol, que trae el repo de operaciones). Sin el archivo, Azure. Con un archivo que no
- * valida, o pedido con `--team-repos` y ausente, no se adivina: `{ error }`.
- * Devuelve `{ plataforma, argv }` con `--team-repos` ya sacado de los argumentos.
+ * La plataforma de los avisos la elige la capa de plataforma (scripts/lib/platform/platform.js), como la de cualquier
+ * pedido de trabajo: el área `workItems` del perfil, su valor por defecto, o `operations.platform` de team-repos.json
+ * (`--team-repos <f>`, por defecto el de la raíz del árbol). Un archivo que no valida, o pedido con `--team-repos` y
+ * ausente, no se adivina: `{ error }`. Sin ninguna elección sigue con Azure DevOps y lo dice (`aviso`): así no se queda
+ * sin pedidos una organización que todavía no eligió.
+ * Devuelve `{ plataforma, argv, aviso? }` con `--team-repos` ya sacado de los argumentos; `plataforma` es `azure` o `github`.
  */
-function elegirPlataforma(argv) {
+function elegirPlataforma(argv, { env = process.env } = {}) {
   const out = [];
   let archivo = path.join(RAIZ_REPO, 'team-repos.json'), explicito = false;
   for (let i = 0; i < argv.length; i++) {
     if (i >= 2 && argv[i] === '--team-repos') { archivo = path.resolve(String(argv[++i] || '')); explicito = true; } else out.push(argv[i]);
   }
-  if (!explicito && !fs.existsSync(archivo)) return { plataforma: 'azure', argv: out };
-  const r = require('../../lib/team-repos.js').load(archivo);
-  if (!r.ok) return { error: `${archivo} no sirve para elegir la plataforma (${r.problems.map((p) => (p.path ? `${p.path}: ${p.message}` : p.message)).join('; ')}) — no se adivina` };
-  return { plataforma: r.data.operations.platform, argv: out };
+  if (explicito || fs.existsSync(archivo)) {
+    const r = require('../../lib/team-repos.js').load(archivo);
+    if (!r.ok) return { error: `${archivo} no sirve para elegir la plataforma (${r.problems.map((p) => (p.path ? `${p.path}: ${p.message}` : p.message)).join('; ')}) — no se adivina` };
+  }
+  const c = require('../../lib/platform/platform.js').choose('work-item.create', { env, tree: path.dirname(archivo), teamReposFile: explicito || fs.existsSync(archivo) ? archivo : undefined });
+  if (c.ok) {
+    const plataforma = { 'azure-devops': 'azure', github: 'github' }[c.value.connector];
+    if (!plataforma) return { error: `los pedidos de las vulnerabilidades no saben usar el conector ${c.value.connector} todavía` };
+    return { plataforma, argv: out };
+  }
+  // sin elección: lo de siempre, a la vista; una elección rota o un conector que falta no se tapa con Azure
+  if (c.sinEleccion) return { plataforma: 'azure', argv: out, aviso: `nadie eligió la plataforma de los pedidos: sigo con Azure DevOps como hasta hoy; elegila en integrations.platform del perfil del equipo (${c.detail.replace(/^.*?: /, '')})` };
+  return { error: c.detail };
 }
 
 /** Una entrada de GitHub en repos.json con la plataforma Azure es una mezcla: no se adivina. */
@@ -1395,6 +1406,7 @@ function mezclaEnAzure(configFile) {
 function main() {
   const p = elegirPlataforma(process.argv);
   if (p.error) { console.error(`error: ${p.error}`); return 2; }
+  if (p.aviso) console.error(`aviso: ${p.aviso}`);
   if (p.plataforma === 'github') return require('./github-issues.js').main(p.argv);
   const a = parseArgs(p.argv);
   if (!a.error && (a.cmd === 'run' || a.cmd === 'state')) {

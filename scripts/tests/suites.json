@@ -1799,6 +1799,18 @@
       "requiere": []
     },
     {
+      "__nota": "La capa de plataforma (scripts/lib/platform/platform.js): las diez operaciones del contrato, quién elige la plataforma de cada una (el repo o el perfil, sin adivinar), los motivos cerrados, el conector de mentira y los dos de verdad contra el az y el gh de mentira, las credenciales que faltan sin imprimirlas, y la elección en el perfil y en el sitio.",
+      "raiz": "arnes",
+      "ruta": "tests/platform-contract.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "La foto de cómo habla hoy el arnés con Azure DevOps (scripts/tests/lib/record-platform-golden.js): la normalización, qué cuenta como núcleo y que la foto grabada siga valiendo para el árbol, sin escribir nada.",
+      "raiz": "arnes",
+      "ruta": "tests/platform-golden.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.23 (tanda A1): la única raíz de las rutas del arnés (scripts/setup/harness/tycon-home.js) con los valores de hoy, las cinco piezas que se la piden con sus variables parciales ganando, y el techo de «.claude» que sólo baja (fixtures/dot-claude-ceiling.json, fixtures/legacy-home-names.json). Sin red: HOME de juguete en procesos hijos y un repo de juguete para el techo.",
       "raiz": "arnes",
       "ruta": "tests/tycon-home.test.js",
