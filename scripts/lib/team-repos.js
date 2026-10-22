@@ -62,6 +62,11 @@ const fs = require('fs');
 
 const VERSION = 1;
 const PLATFORMS = ['azure', 'github'];
+// el conector de plataforma de cada valor de `platform` (integrations/<conector>/): la única traducción entre los dos
+// nombres; la usa la capa de plataforma (scripts/lib/platform/platform.js)
+const CONNECTORS = Object.freeze({ azure: 'azure-devops', github: 'github' });
+/** El conector de un valor de `platform` de un repo, o null si no es uno de los que el archivo admite. */
+function connectorOf(platform) { return Object.prototype.hasOwnProperty.call(CONNECTORS, platform) ? CONNECTORS[platform] : null; }
 const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'] };
 const REQUIRED = ['public', 'profile', 'operations'];
 const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review'];
@@ -602,7 +607,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, reviewProblems, modelsAboveCeiling, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
+module.exports = { VERSION, PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, reviewProblems, modelsAboveCeiling, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

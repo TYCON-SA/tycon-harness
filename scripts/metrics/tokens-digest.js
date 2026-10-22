@@ -255,11 +255,25 @@ function mensajesDeSalida(gates, home) {
  * de 230 volcados medidos. Acá se DECLARA en vez de fingir un reparto que las marcas no sostienen —
  * asignar cada respuesta al primer corte que alcanza deja el 6 en cero y el 5 absorbiéndolo, callado.
  */
+// El orden de un paso: por la tabla si tiene nombre de máquina, por su número si es del marcador viejo
+// (`parseFloat` deja el 5b detrás del 5). Ordenar los nombres por `Number` daría NaN y un orden cualquiera.
+// Sin la tabla (una copia suelta de scripts/), los nombres van al final, en su orden de marca.
+let TABLA_PASOS;
+function ordenDePaso(paso) {
+  if (TABLA_PASOS === undefined) {
+    try { TABLA_PASOS = require('../../skills/tycon-pipeline/scripts/lib/steps.js').STEPS; } catch (_) { TABLA_PASOS = null; }
+  }
+  const i = TABLA_PASOS ? TABLA_PASOS.findIndex((s) => s.id === paso) : -1;
+  if (i >= 0) return i;
+  const n = parseFloat(paso);
+  return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
+}
+
 function cortesDePaso(stepTimings) {
   const marcas = Object.entries(stepTimings || {})
     .map(([paso, v]) => ({ paso, hasta: ms(v && v.completedAt) }))
     .filter((m) => m.hasta !== null)
-    .sort((a, b) => Number(a.paso) - Number(b.paso));
+    .sort((a, b) => ordenDePaso(a.paso) - ordenDePaso(b.paso));
 
   const cortes = [];
   let i = 0;

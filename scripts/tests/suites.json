@@ -1103,6 +1103,11 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/steps-scheme.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-discovery.test.js",
       "requiere": []
     },
@@ -1623,6 +1628,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 7.53: los avisos que trae una extensión en su notices.json; el lector rechaza rutas fuera de la carpeta y formas mal escritas, y el gancho de arranque los dice sólo donde aplican, una vez por sesión.",
+      "raiz": "arnes",
+      "ruta": "tests/extension-notices.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 7.53: la descripción de cada agente tiene 200 caracteres o menos y, si es condicional, sigue nombrando su disparador.",
+      "raiz": "arnes",
+      "ruta": "tests/agent-descriptions.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.5: cada skill de terceros sigue estando en su origen, en el commit y con el árbol del manifiesto. Con red (GitHub); sin red sale NO MEDIDO, nunca verde.",
       "raiz": "arnes",
       "ruta": "tests/third-party-origin.test.sh",
@@ -1814,6 +1831,18 @@
       "__nota": "Las integraciones de prender y apagar (kind toggle): el manifiesto y sus motivos de rotura, los instintos desde integrations/instincts/ con los mismos hooks prendidos y apagados (Mac y Windows), la actualización desde la instalación de hoy sin rutas muertas, Codex desde el manifiesto y los ids nuevos en la tabla de efectos, el sitio y «Cómo trabaja».",
       "raiz": "arnes",
       "ruta": "tests/integrations-toggle.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "La capa de plataforma (scripts/lib/platform/platform.js): las diez operaciones del contrato, quién elige la plataforma de cada una (el repo o el perfil, sin adivinar), los motivos cerrados, el conector de mentira y los dos de verdad contra el az y el gh de mentira, las credenciales que faltan sin imprimirlas, y la elección en el perfil y en el sitio.",
+      "raiz": "arnes",
+      "ruta": "tests/platform-contract.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "La foto de cómo habla hoy el arnés con Azure DevOps (scripts/tests/lib/record-platform-golden.js): la normalización, qué cuenta como núcleo y que la foto grabada siga valiendo para el árbol, sin escribir nada.",
+      "raiz": "arnes",
+      "ruta": "tests/platform-golden.test.js",
       "requiere": []
     },
     {

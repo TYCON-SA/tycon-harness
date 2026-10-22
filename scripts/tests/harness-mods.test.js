@@ -53,14 +53,14 @@ const writeSettings = (home, obj) => fs.writeFileSync(path.join(home, '.claude',
 
 // ── El cartel ────────────────────────────────────────────────────────────────────────────────────────────────────
 
-test('T1 Board_LineFromMarker_NoMoney — el renglón trae story, el nombre del paso, n de 9, minutos y contexto, sin dinero', async () => {
+test('T1 Board_LineFromMarker_NoMoney — el renglón trae story, el nombre del paso, n de 11, minutos y contexto, sin dinero', async () => {
   const { readRun, boardLine } = await mod('run.mjs');
   const run = readRun(markerEnPaso4(), NOW);
   assert.ok(run, 'la ejecución se lee');
   const line = boardLine(run, 37);
   assert.match(line, /Story 9\.9/);
-  assert.match(line, / · Implementar y correr las pruebas · /, 'el paso por su nombre llano (story 7.23)');
-  assert.match(line, /4 de 9 hechos/, 'cuenta los principales terminados: 0, 1, 2 y 3');
+  assert.match(line, / · Implementar · /, 'el paso por su nombre llano; el 4 viejo arrancado es «Implementar»');
+  assert.match(line, /4 de 11 hechos/, 'el marker viejo con la equivalencia: Arranque, Validar, Armar y Aprobar el plan');
   assert.match(line, /12 min en este paso/);
   assert.match(line, /40 min en total/);
   assert.match(line, /contexto usado 37 %/);
@@ -68,7 +68,7 @@ test('T1 Board_LineFromMarker_NoMoney — el renglón trae story, el nombre del 
   assert.doesNotMatch(line, /te espera/);
 });
 
-test('T2 Board_WaitingForHuman_Yellow — waitingForHuman, o el paso 3/7 sin modo autónomo, espera al dev', async () => {
+test('T2 Board_WaitingForHuman_Yellow — waitingForHuman, o Aprobar el plan / la decisión de Hallazgos sin modo autónomo, espera al dev', async () => {
   const { readRun, boardLine } = await mod('run.mjs');
   const porBandera = readRun(markerEnPaso4({ waitingForHuman: true }), NOW);
   assert.strictEqual(porBandera.waiting, true);
@@ -85,12 +85,12 @@ test('T3 Board_ToastOncePerStep — un aviso por story:paso que espera', async (
   const warned = [];
   const r1 = readRun(markerEnPaso4({ waitingForHuman: true }), NOW);
   const k1 = warnKey(r1, warned);
-  assert.strictEqual(k1, '9.9:4');
+  assert.strictEqual(k1, '9.9:implement');
   warned.push(k1);
   assert.strictEqual(warnKey(r1, warned), null, 'el segundo refresco del mismo paso no avisa');
   assert.strictEqual(warnKey(readRun(markerEnPaso4({ waitingForHuman: true }), NOW + 60000), warned), null, 'ni el tercero');
   const otro = readRun(JSON.stringify({ ...JSON.parse(markerEnPaso4({ waitingForHuman: true })), stepsCompleted: [0, 1, 2, 3, 4], stepTimings: { ...JSON.parse(markerEnPaso4()).stepTimings, 4: { startedAt: at(28), completedAt: at(35) }, 5: { startedAt: at(35) } } }), NOW);
-  assert.strictEqual(warnKey(otro, warned), '9.9:5', 'otro paso que espera, otro aviso');
+  assert.strictEqual(warnKey(otro, warned), '9.9:reviewers', 'otro paso que espera, otro aviso');
   assert.strictEqual(warnKey(readRun(markerEnPaso4(), NOW), []), null, 'sin espera, sin aviso');
 });
 
@@ -99,25 +99,31 @@ test('T4 Board_PipelineTable_NoCostColumn — /pipeline: Paso | Estado | Tiempo,
   const t = pipelineTable(readRun(markerEnPaso4(), NOW));
   assert.match(t, /\| Paso \| Estado \| Tiempo \|/);
   assert.doesNotMatch(t, /gasto|USD|\$/i);
-  const fila = (name) => t.split('\n').find((l) => l.startsWith(`| ${name} |`));
-  assert.match(fila('Validar la historia'), /\| hecho \| 8 min \|/);
-  assert.match(fila('Arranque: aviso de trabajo'), /\| hecho \|/, 'sub-paso por bandera (la vieja, de una ejecución en vuelo)');
-  assert.match(fila('Implementar y correr las pruebas'), /\| corriendo \| 12 min \|/);
+  const fila = (name) => t.split('\n').find((l) => new RegExp(`^\\| \\d+\\. ${name} \\|`).test(l));
+  assert.match(fila('Validar la historia'), /^\| 2\. Validar la historia \| hecho \| 8 min \|/);
+  assert.match(fila('Arranque'), /\| hecho \|/, 'el Arranque viejo, con sus partes por bandera');
+  assert.match(fila('Implementar'), /\| corriendo \| 12 min \|/);
+  assert.match(fila('Correr las pruebas'), /\| pendiente \| — \|/);
   assert.match(fila('Revisores'), /\| pendiente \| — \|/);
   assert.match(t.split('\n')[0], /Story 9\.9/);
 });
 
-test('T5 Board_NoMarkerOrBroken_Nothing — sin ejecución no dibuja y /pipeline lo dice', async () => {
-  const { readRun, NO_RUN_TEXT } = await mod('run.mjs');
+test('T5 Board_NoMarkerOrBroken_Nothing — sin ejecución no dibuja y /pipeline lo dice; un archivo roto es un error', async () => {
+  const { readRun, readRunError, NO_RUN_TEXT, BROKEN_RUN_TEXT } = await mod('run.mjs');
   for (const txt of [null, undefined, '', '{roto', '[]', '"texto"', '{}']) {
     assert.strictEqual(readRun(txt, NOW), null, `no es ejecución: ${JSON.stringify(txt)}`);
   }
+  for (const txt of [null, undefined, '', '{}']) assert.strictEqual(readRunError(txt), null, `sin ejecución, sin error: ${JSON.stringify(txt)}`);
+  for (const txt of ['{roto', '[]', '"texto"']) assert.strictEqual(readRunError(txt), BROKEN_RUN_TEXT, `ilegible, error: ${JSON.stringify(txt)}`);
   assert.match(NO_RUN_TEXT, /no hay una ejecución del pipeline en esta sesión/i);
 });
 
-test('T6 Board_UnknownStepsAndNoTimings — pasos que no conoce y sin horas: se arma igual', async () => {
-  const { readRun, boardLine, pipelineTable } = await mod('run.mjs');
-  const run = readRun(JSON.stringify({ storyId: '9.9', stepsCompleted: [0, 1, 9, 'zz'], stepsPending: [2, 3] }), NOW);
+test('T6 Board_UnknownStepsAndNoTimings — pasos que no conoce: error; sin horas: se arma igual', async () => {
+  const { readRun, readRunError, boardLine, pipelineTable } = await mod('run.mjs');
+  const raro = JSON.stringify({ storyId: '9.9', stepsCompleted: [0, 1, 9, 'zz'], stepsPending: [2, 3] });
+  assert.strictEqual(readRun(raro, NOW), null, 'un paso que ninguna tabla conoce: no se adivina');
+  assert.match(readRunError(raro), /dañado/);
+  const run = readRun(JSON.stringify({ storyId: '9.9', stepsCompleted: [0, 1, 9], stepsPending: [2, 3] }), NOW);
   assert.ok(run);
   const line = boardLine(run, undefined);
   assert.match(line, / · Armar el plan · /, 'el primero pendiente: 0b y 0c sin bandera cuentan hechos porque el 1 está cerrado');
@@ -134,12 +140,12 @@ test('T20 Board_SubstepWithoutFlag_ClosedByCompleteStep — un sub-paso sin band
   const m = JSON.stringify({ storyId: '7.18', startedAt: at(0), stepsCompleted: [0, 1, 2],
     stepTimings: { 0: { startedAt: at(0), completedAt: at(1) }, 1: { completedAt: at(5) }, 2: { completedAt: at(9) } } });
   const run = readRun(m, NOW);
-  assert.strictEqual(run.current.id, '3', 'está en el 3, no en 0b');
-  assert.strictEqual(run.waiting, true, 'el 3 sin modo autónomo espera al dev');
-  assert.strictEqual(warnKey(run, []), '7.18:3');
+  assert.strictEqual(run.current.id, 'approve-plan', 'está en Aprobar el plan, no en una parte del Arranque');
+  assert.strictEqual(run.waiting, true, 'Aprobar el plan sin modo autónomo espera al dev');
+  assert.strictEqual(warnKey(run, []), '7.18:approve-plan');
   const fin = readRun(JSON.stringify({ storyId: '8.22', stepsCompleted: [0, 1, 2, 3, 4, 5, 6, 7, 8] }), NOW);
-  assert.strictEqual(fin.done, 9);
-  assert.strictEqual(fin.current, null, 'con los nueve cerrados no queda un sub-paso clavado');
+  assert.strictEqual(fin.done, 11);
+  assert.strictEqual(fin.current, null, 'con los nueve viejos cerrados no queda un paso clavado');
 });
 
 test('T21 Board_StepZeroNeverClosed_NotPinned — el 0 que nunca se cerró no clava el cartel (clase 7)', async () => {
@@ -147,12 +153,12 @@ test('T21 Board_StepZeroNeverClosed_NotPinned — el 0 que nunca se cerró no cl
   const m = JSON.stringify({ storyId: '8.26', stepsCompleted: [1, 2, 3, 4, 5, 6], clockiStarted: true, adoMarkedActive: true,
     deepReviewDone: true, stepTimings: { 0: { startedAt: at(0) }, 2: { startedAt: at(5), completedAt: at(9) }, 6: { completedAt: at(30) } } });
   const run = readRun(m, NOW);
-  assert.strictEqual(run.current.id, '7');
+  assert.strictEqual(run.current.id, 'findings', 'el 7 viejo es la decisión de Hallazgos');
   assert.strictEqual(run.waiting, true);
   // y una vuelta atrás de verdad (el 5 arrancó otra vez después de cerrar el 6) sigue siendo el paso actual
   const back = readRun(JSON.stringify({ storyId: '9.9', stepsCompleted: [0, 1, 2, 3, 4, 6], clockiStarted: true, adoMarkedActive: true,
     stepTimings: { 5: { startedAt: at(35) }, 6: { startedAt: at(20), completedAt: at(30) } } }), NOW);
-  assert.strictEqual(back.current.id, '5');
+  assert.strictEqual(back.current.id, 'reviewers');
 });
 
 test('T22 Board_StickyWaiting_SurvivesFlagDeletion — «te espera» sigue aunque el pipeline borre la bandera (clase 6)', async () => {
@@ -160,7 +166,7 @@ test('T22 Board_StickyWaiting_SurvivesFlagDeletion — «te espera» sigue aunqu
   const conBandera = readRun(markerEnPaso4({ waitingForHuman: true }), NOW);
   const a = stickyWaiting(conBandera, null);
   assert.strictEqual(a.run.waiting, true);
-  assert.strictEqual(a.remember, '9.9:4');
+  assert.strictEqual(a.remember, '9.9:implement');
   const sinBandera = readRun(markerEnPaso4(), NOW + 60000);   // el Stop-hook la borró al cerrar el turno
   const b = stickyWaiting(sinBandera, a.remember);
   assert.strictEqual(b.run.waiting, true, 'sigue esperando en el mismo paso');
@@ -345,18 +351,58 @@ test('T15 InstallEffects_DeclaresPluginDirs — la pieza nueva declarada en los 
 
 // ── El pipeline y Codex ───────────────────────────────────────────────────────────────────────────────────────────
 
-test('T16 Steps_MatchPipelineSequence — los pasos del plugin son los del pipeline', async () => {
-  const P = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js'));
-  assert.ok(Array.isArray(P.STEP_SEQUENCE), 'pipeline.js exporta STEP_SEQUENCE');
-  assert.ok(P.SUBSTEP_FLAG && typeof P.SUBSTEP_FLAG === 'object', 'pipeline.js exporta SUBSTEP_FLAG');
-  const { STEPS, SUBSTEP_FLAG, SUBSTEP_OLD_FLAG, MAIN_TOTAL } = await mod('steps.mjs');
-  assert.deepStrictEqual(STEPS.map((s) => s.id), P.STEP_SEQUENCE.map((s) => String(s.id)));
-  assert.deepStrictEqual(SUBSTEP_FLAG, { ...P.SUBSTEP_FLAG, '7c': 'dodRuntimeChecked' });
-  assert.deepStrictEqual(SUBSTEP_OLD_FLAG, P.SUBSTEP_OLD_FLAG, 'el cartel lee los mismos nombres viejos que next');
-  assert.strictEqual(MAIN_TOTAL, P.STEP_SEQUENCE.filter((s) => /^\d$/.test(String(s.id))).length);
-  // T2 Mod_NamesMatchStepsTable: los MISMOS nombres que la tabla del pipeline — un nombre distinto la pone roja
+test('T16 Steps_MatchPipelineSequence — los pasos del plugin son los de la tabla del pipeline', async () => {
   const T = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));
-  for (const s of STEPS) assert.strictEqual(s.name, T.stepName(s.id), `paso ${s.id}: el cartel lo llama «${s.name}» y lib/steps.js, «${T.stepName(s.id)}»`);
+  const { STEPS, TOTAL, OLD_IDS, OLD_FLAG, START_PART_FAILED } = await mod('steps.mjs');
+  // T2 Mod_NamesMatchStepsTable: los MISMOS números, nombres de máquina, nombres llanos, equivalencia y banderas que la
+  // tabla del pipeline — uno distinto la pone roja
+  const forma = (s) => ({ number: s.number, id: s.id, name: s.name, old: s.old, flag: s.flag });
+  assert.deepStrictEqual(STEPS.map(forma), T.STEPS.map(forma));
+  assert.strictEqual(TOTAL, T.TOTAL);
+  assert.deepStrictEqual(OLD_IDS, T.OLD_IDS);
+  assert.deepStrictEqual(OLD_FLAG, { '0b': ['workSignalStarted', 'clockiStarted'], '0c': ['adoMarkedActive'], '5b': ['deepReviewDone'], '7c': ['dodRuntimeChecked'] });
+  assert.deepStrictEqual(START_PART_FAILED, Object.fromEntries(Object.entries(T.START_PARTS).map(([k, v]) => [k, v.failed])));
+});
+
+test('T16 (7.23) Board_ReadsBothSchemes @story-7.23 @ac-16 — el marker nuevo y el viejo, «N de 11», esperas por nombre, el aviso del Arranque, el roto como error', async () => {
+  const { readRun, readRunError, boardLine, pipelineTable, waitingToast, OLD_RUN_TEXT } = await mod('run.mjs');
+  const NOMBRES = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'adversarial-pass', 'findings', 'live-check', 'prepare-commit'];
+  const hasta = (id) => NOMBRES.slice(0, NOMBRES.indexOf(id) + 1);
+  const nuevo = (extra) => JSON.stringify({ storyId: '7.23', storyTitle: 'Los pasos del pipeline, claros: nombres', stepScheme: 2, startedAt: at(0), autonomous: true, ...extra });
+  // segunda vuelta de revisores, con un aviso del Arranque
+  const vuelta = nuevo({
+    stepsCompleted: hasta('findings'), stepsPending: NOMBRES.slice(9), deepReviewDone: true,
+    startWarnings: [{ part: 'time-tracking', message: 'no contestó' }],
+    stepTimings: { reviewers: { startedAt: at(20), completedAt: at(30), rounds: 1 }, findings: { completedAt: at(32) } },
+    fileEvents: [{ path: '/r/src/a.js', ts: at(34) }],
+  });
+  const run = readRun(vuelta, NOW);
+  const line = boardLine(run, 41);
+  assert.match(line, /^Story 7\.23 · Los pasos del pipeline, claros… · Revisores, vuelta 2 · 8 de 11 hechos · /, line);
+  assert.match(line, /Arranque: hecho, con aviso: no se pudo abrir el registro de horas/);
+  const t = pipelineTable(run);
+  assert.match(t.split('\n')[0], /^Story 7\.23 «Los pasos del pipeline, claros: nombres» — Revisores, vuelta 2 · 8 de 11 pasos hechos/);
+  assert.strictEqual(t.split('\n')[1], 'Arranque: hecho, con aviso: no se pudo abrir el registro de horas');
+  assert.ok(t.includes('| 1. Arranque | hecho, con aviso |'), t);
+  assert.ok(t.includes('| 7. Revisores (vuelta 2) | corriendo |'), t);
+  assert.ok(t.includes('| 11. Preparar el commit | pendiente | — |'), t);
+  assert.ok(!t.includes(OLD_RUN_TEXT), 'el marker nuevo no lleva la nota del viejo');
+  // Hallazgos: espera sólo cuando de verdad preguntó (waitStartedAt), aun sin modo autónomo
+  const hall = (extra) => readRun(nuevo({ autonomous: false, stepsCompleted: hasta('adversarial-pass'), stepsPending: NOMBRES.slice(8), ...extra }), NOW);
+  assert.strictEqual(hall({ stepTimings: { findings: { startedAt: at(35) } } }).waiting, false, 'sin pregunta, sin espera');
+  const espera = hall({ stepTimings: { findings: { startedAt: at(35), waitStartedAt: at(36) } } });
+  assert.strictEqual(espera.waiting, true);
+  assert.strictEqual(waitingToast(espera), 'Story 7.23 (Los pasos del pipeline, claros…): Hallazgos te espera — contestá en el chat');
+  // Aprobar el plan sin modo autónomo, como siempre
+  assert.strictEqual(readRun(nuevo({ autonomous: false, stepsCompleted: hasta('plan'), stepsPending: NOMBRES.slice(3) }), NOW).waiting, true);
+  // el marker viejo: con los nombres nuevos y la nota
+  const viejo = readRun(markerEnPaso4(), NOW);
+  assert.strictEqual(viejo.total, 11);
+  assert.ok(pipelineTable(viejo).split('\n').includes(OLD_RUN_TEXT), pipelineTable(viejo));
+  // ilegible o de ningún esquema: error, no «sin ejecución»
+  assert.match(readRunError('{"storyId":"7.23","stepScheme":2,"stepsCompleted":[5]}'), /dañado/, 'el esquema 2 con un número no es ninguno de los dos');
+  assert.match(readRunError('{"storyId":"7.23","stepScheme":3,"stepsCompleted":[]}'), /dañado/);
+  assert.strictEqual(readRunError(vuelta), null);
 });
 
 test('T4 (7.23) Board_ShowsPlainNamesWithoutStepId — el cartel, /pipeline y el aviso, por nombre y sin «paso N»', async () => {
@@ -367,12 +413,12 @@ test('T4 (7.23) Board_ShowsPlainNamesWithoutStepId — el cartel, /pipeline y el
   });
   const run = readRun(en5b, NOW);
   const line = boardLine(run, 20);
-  assert.match(line, /^Story 9\.9 · Pase adversarial · 6 de 9 hechos · /, line);
+  assert.match(line, /^Story 9\.9 · Pase adversarial · 7 de 11 hechos · /, line);
   assert.doesNotMatch(line, /\bpaso \d|\b5b\b|búsqueda de fallas/);
   const t = pipelineTable(run);
-  assert.match(t.split('\n')[0], /^Story 9\.9 — Pase adversarial · 6 de 9 pasos hechos/);
+  assert.match(t.split('\n')[0], /^Story 9\.9 — Pase adversarial · 7 de 11 pasos hechos/);
   assert.doesNotMatch(t, /\| (?:0|0b|0c|1|2|3|4|5|5b|6|7|7c|8) \|/, 'la tabla no muestra el id del paso');
-  assert.ok(t.includes('| Pase adversarial | corriendo |'), t);
+  assert.ok(t.includes('| 8. Pase adversarial | corriendo |'), t);
   // el aviso «te espera»: el paso por su nombre
   const en3 = JSON.stringify({ storyId: '9.9', startedAt: at(0), stepsCompleted: [0, 1, 2], autonomous: false, stepTimings: { 3: { startedAt: at(20) } } });
   assert.strictEqual(waitingToast(readRun(en3, NOW)), 'Story 9.9: Aprobar el plan te espera — contestá en el chat');
@@ -407,12 +453,12 @@ test('T19 Board_ShowsShortStoryTitle — el cartel trae el título corto de la s
   // el título que trae el marker gana; el renglón queda «Story · título corto · paso · …»
   const run = readRun(markerEnPaso4({ storyTitle: LARGO }), NOW);
   assert.strictEqual(run.title, LARGO);
-  assert.match(boardLine(run, 20), /^Story 9\.9 · El video de 0 a 100… · Implementar y correr las pruebas · 4 de 9 hechos · /);
+  assert.match(boardLine(run, 20), /^Story 9\.9 · El video de 0 a 100… · Implementar · 4 de 11 hechos · /);
   assert.ok(pipelineTable(run).split('\n')[0].startsWith(`Story 9.9 «${LARGO}» — `), pipelineTable(run));
   // sin título, el título es null
   const sin = readRun(markerEnPaso4(), NOW);
   assert.strictEqual(sin.title, null);
-  assert.match(boardLine(sin, 20), /^Story 9\.9 · Implementar y correr las pruebas · /);
+  assert.match(boardLine(sin, 20), /^Story 9\.9 · Implementar · /);
   const en3 = JSON.stringify({ storyId: '9.9', storyTitle: LARGO, startedAt: at(0), stepsCompleted: [0, 1, 2], autonomous: false, stepTimings: { 3: { startedAt: at(20) } } });
   assert.strictEqual(waitingToast(readRun(en3, NOW)), 'Story 9.9 (El video de 0 a 100…): Aprobar el plan te espera — contestá en el chat');
 });

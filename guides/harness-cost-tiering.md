@@ -124,7 +124,7 @@ el effort sugerido (`high`) se CALLA — es el default de facto de Claude Code, 
 (silencio en NORMAL) es la misma bajo Codex aunque su default de effort difiera (asimetría
 declarada); en LOW/heavy se
 emite siempre, incluso solo-effort si el modelo ya matchea (la fuente canónica de la mecánica
-del anuncio es `step-00-preflight.md` §PIPE-C8):
+del anuncio es `step-01-start.md` §PIPE-C8):
 
 | Banda (`model_hint`) | Modelo sugerido | Effort sugerido |
 |---|---|---|
@@ -142,7 +142,7 @@ un scorer paralelo.
 **Alcance**: sugiere el effort de la SESIÓN (Steps 2–4 corren inline). Los advisors del Step 5
 mantienen su tiering propio (Movimientos 1–2 + `reloop_model_hints`) — este movimiento no los toca.
 
-**Reversible**: borrar la sub-sección "Effort hint" de `step-00-preflight.md` §PIPE-C8 + la
+**Reversible**: borrar la sub-sección "Effort hint" de `step-01-start.md` §PIPE-C8 + la
 extensión en SKILL.md H.iii. Sin código que revertir.
 
 ---
@@ -247,7 +247,7 @@ liviana una story que declara código apaga el pase adversarial a sabiendas: que
 | 1 | Editar el frontmatter del advisor afectado: `model: haiku` → `model: sonnet` o `model: opus`. Commit + push. Propaga al equipo. |
 | 2 | Default ya es sin cambios. Solo afecta callers que pasan `--cost-tier lean` explícito. Para limpiar: borrar `ADVISOR_COST_TIER` + `modelHintsForSet` + branch del handler `advisors`. |
 | 3 | Ya retirado (ver Movimiento 3). |
-| 4 | Borrar la sub-sección "Effort hint" de `step-00-preflight.md` §PIPE-C8 + la extensión en SKILL.md H.iii. Docs-only, sin código. |
+| 4 | Borrar la sub-sección "Effort hint" de `step-01-start.md` §PIPE-C8 + la extensión en SKILL.md H.iii. Docs-only, sin código. |
 
 ---
 
@@ -267,4 +267,4 @@ liviana una story que declara código apaga el pase adversarial a sabiendas: que
 - Pipeline orchestrator: `~/.claude/agent-skills/skills/tycon-pipeline/SKILL.md`.
 - Catálogo de advisors: `~/.claude/agent-skills/agents/tycon-*.md`.
 - Script Movement 2: `~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js` (función `modelHintsForSet`, tabla `ADVISOR_COST_TIER`).
-- Movement 4 (fuente canónica de la mecánica del anuncio): `~/.claude/agent-skills/skills/tycon-pipeline/steps/step-00-preflight.md` §PIPE-C8 + SKILL.md H.iii (`computeModelHint` en `pipeline.js` es la señal mecánica).
+- Movement 4 (fuente canónica de la mecánica del anuncio): `~/.claude/agent-skills/skills/tycon-pipeline/steps/step-01-start.md` §PIPE-C8 + SKILL.md H.iii (`computeModelHint` en `pipeline.js` es la señal mecánica).

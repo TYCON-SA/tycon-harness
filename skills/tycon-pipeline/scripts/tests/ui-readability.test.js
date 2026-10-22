@@ -296,7 +296,7 @@ test('T6 StoryValidator_ACConIdsAlUsuario_Warning — los dos casos del banco', 
 });
 
 test('T7 Step08_CierreConPantalla_MuestraCapturas', () => {
-  const txt = fs.readFileSync(path.join(SK, '..', 'steps', 'step-08-commit-prep.md'), 'utf8');
+  const txt = fs.readFileSync(path.join(SK, '..', 'steps', 'step-11-prepare-commit.md'), 'utf8');
   assert.match(txt, /Así se ve: ¿se entiende\?/);
   assert.match(txt, /## Capturas/);
   assert.match(txt, /antes de pedir el commit/i);
@@ -346,7 +346,7 @@ test('T10 PipelineQaReadability_ScopeUi_AnotaLaMarca', () => {
 });
 
 test('T9 Step01_ValW16_NoAutoContinua', () => {
-  const paso1 = fs.readFileSync(path.join(SK, '..', 'steps', 'step-01-validate-story.md'), 'utf8');
+  const paso1 = fs.readFileSync(path.join(SK, '..', 'steps', 'step-02-validate-story.md'), 'utf8');
   const lista = paso1.split('\n').find((l) => /whitelist de formato cosmético/.test(l)) || '';
   assert.ok(lista, 'no encontré la línea de la lista que auto-continúa');
   assert.doesNotMatch(lista, /VAL-W16/);
@@ -490,14 +490,14 @@ test('7.30-T23 QaGuide_UiTexts_TraeLaComparacion @story-7.30 @ac-23', () => {
 
 test('7.30-T25 Pasos_Step03Step07cYStep08_DicenLaMaqueta @story-7.30 @ac-25', () => {
   const leer = (f) => fs.readFileSync(path.join(SK, '..', 'steps', f), 'utf8');
-  const p3 = leer('step-03-hitl-plan.md');
+  const p3 = leer('step-04-approve-plan.md');
   for (const x of ['mockup.js status', 'mockup.js render', 'mockup.js texts', '--mockup-approved', 'AskUserQuestion']) assert.ok(p3.includes(x), `paso 3 sin ${x}`);
   assert.match(p3, /LOW[^\n]*maqueta|maqueta[^\n]*LOW/);
   assert.match(p3, /opciones numeradas/);
   assert.match(p3, /delegación/);
-  const p7 = leer('step-07c-dod-runtime-gate.md');
+  const p7 = leer('step-10-live-check.md');
   for (const x of ['mockup:', 'differs:', 'mockup-compare: no', '(9)', '(10)']) assert.ok(p7.includes(x), `paso 7c sin ${x}`);
-  const p8 = leer('step-08-commit-prep.md');
+  const p8 = leer('step-11-prepare-commit.md');
   for (const x of ['-mockup.html', '-mockup-approval.json']) assert.ok(p8.includes(x), `paso 8 sin ${x}`);
 });
 

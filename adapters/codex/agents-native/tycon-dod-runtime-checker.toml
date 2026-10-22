@@ -1,12 +1,12 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-dod-runtime-checker.md
-# source_sha256: 85e970d70cb3d6ba8141df1a42dd3dbb51e87cee1f905296262c8bb454f4d4ea
+# source_sha256: a8f44f62577cda70d21664a1c8ec3699cb0d6a849ee12adbcc6757fcd899e509
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-dod-runtime-checker.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-dod-runtime-checker").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
 
 name = "tycon-dod-runtime-checker"
-description = "Advisor Core post-implementation (CRITICAL inmediato). Verifica gates de DoD que NO son code-level: smoke runtime con curl real contra DevHost, CI run verde post-push, patterns transaccionales con runtime verification, cross-check de E2E Playwright (`pipelines.X.tests_done`) contra realness, y smoke DRIVEN por-AC para UI con E2E diferido (DODRT-C5, con sub-check anti pre-claim), y URL shape por entorno en smokes contra staging/prod (DODRT-W3 BZURL). Reglas DODRT-C1..C10/W1..W4 (C6 matriz runtime por-AC, C7 guía del tester, C8 acción ejecutada de verdad, C9 procedencia del target del smoke — contra qué backend corrió y si ese commit está en origin, C10 resultado fabricado — la prueba encuentra lo que el propio flujo escribió; W4 expectativa del humo vacía o que la salida no muestra). Invocar antes de transicionar status `review → done`, ANTES del commit-prep de un run que cablea UI nueva (aunque quede in-progress), o cuando el user pide 'validá DoD' / 'lo probaste?'."
+description = "Verifica gates de DoD no code-level (smoke con curl real, CI verde, E2E real, URL por entorno). Invocar antes de pasar review a done, antes del commit-prep de UI nueva, o si piden validá DoD"
 model = "gpt-5.6-luna"
 sandbox_mode = "read-only"
 

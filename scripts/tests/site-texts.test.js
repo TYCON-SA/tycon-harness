@@ -412,3 +412,20 @@ test('2.57 · Textos_LasFuentesConSuNombreEnIngles @story-2.57 @ac-7 @ac-8', () 
   const nombreEs = (id) => (TEXTS().TEXTOS[`fuente.${id}`] || {}).es || id;
   assert.deepStrictEqual(titulos('es'), [...ids, 'propia-de-acme'].map((id) => `Fuente ${nombreEs(id)}`));
 });
+
+test('Textos_EncabezadosEnUnRenglon_ConfiguracionConSuComoFunciona', () => {
+  // el encabezado de cada pestaña entra en un renglón; lo de Configuración que explica cómo se revisa y se propone va en
+  // un desplegable cerrado de entrada
+  const tx = TEXTS();
+  const tabla = tx.TEXTOS || tx.textos || tx;
+  for (const [k, v] of Object.entries(tabla)) {
+    if (!/(^|\.)lede(Mantiene|Persona)?$/.test(k) || k === 'comoTrabaja.lede') continue;
+    for (const idioma of ['es', 'en']) assert.ok(v[idioma].length <= 130, `${k} (${idioma}): ${v[idioma].length} caracteres`);
+  }
+  for (const k of ['config.comoFunciona', 'config.comoFunciona.revisar', 'config.comoFunciona.sinCambios', 'config.comoFunciona.anteLaDuda', 'config.comoFunciona.palabras']) {
+    assert.ok(tabla[k] && tabla[k].es && tabla[k].en, `${k} en los dos idiomas`);
+  }
+  const codigo = fs.readFileSync(path.join(H.SITE, 'tabs', 'config.js'), 'utf8');
+  assert.match(codigo, /<details class="mas-info como-funciona">/);
+  assert.doesNotMatch(codigo, /<details class="mas-info como-funciona" open/);
+});

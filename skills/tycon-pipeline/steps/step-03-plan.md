@@ -68,7 +68,7 @@ El skill BMAD en plan mode debe producir:
 
 **El plan queda escrito** en la carpeta de la corrida (`pipeline.js run-dir --story <s> --repo <r> --create`), en
 `step-02-bmad-plan.md`, antes de pasar al paso 3. Es lo que se le muestra a la persona, también cuando el plan se
-aprueba solo: con riesgo bajo, `complete-step 3 --auto-approved` no cierra sin ese archivo ni sin el plan en un
+aprueba solo: con riesgo bajo, `complete-step approve-plan --auto-approved` no cierra sin ese archivo ni sin el plan en un
 mensaje tuyo a la persona (paso 3).
 
 ## Guardrail — patrón de referencia verificado (stories de backend)
@@ -98,7 +98,7 @@ Pasar al Step 3.
 ## Cierre del step
 
 ```bash
-node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step 2
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step plan
 ```
 
 🔴 **Sin esto, el Step 3 se bloquea.** El freno de orden (`marker.js` §ORDEN) no deja cerrar el 3 con

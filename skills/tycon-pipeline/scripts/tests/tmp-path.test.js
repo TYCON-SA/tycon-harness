@@ -151,7 +151,7 @@ test('TmpPath_OneWriterOneReader_NoFixedTmpInSteps_NoOpen', async (t) => {
     assert.deepStrictEqual(fixedRequire.map((x) => x.file), [], 'leen con require() una ruta fija bajo /tmp');
     // el nombre del archivo, en minúsculas (`e2eCfg`, la variable de pipeline.js, no es un usuario del archivo)
     const users = texts.filter((x) => /e2ecfg/.test(x.text));
-    assert.ok(users.some((x) => x.file === path.join('steps', 'step-07c-dod-runtime-gate.md')), 'el paso 7c usa la configuración de E2E');
+    assert.ok(users.some((x) => x.file === path.join('steps', 'step-10-live-check.md')), 'el paso 7c usa la configuración de E2E');
     assert.ok(users.some((x) => x.file === path.join('scripts', 'on-frontmatter-write.js')), 'on-frontmatter-write.js la sugiere');
     for (const x of users.filter((u) => u.file !== path.join('scripts', 'lib', 'tmp-path.js'))) {
       assert.match(x.text, /E2ECFG=\$\(node [^\n)]*\/scripts\/lib\/tmp-path\.js e2ecfg <repo>\)/, `${x.file}: la ruta sale de tmp-path.js`);

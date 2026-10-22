@@ -23,8 +23,8 @@
       "reason": "lee la bandera vieja del aviso de trabajo de los marcadores de sesiones en curso"
     },
     {
-      "path": "skills/tycon-pipeline/scripts/pipeline.js",
-      "reason": "la misma bandera vieja del marcador, para dar el paso 0b por hecho en una sesión en curso"
+      "path": "skills/tycon-pipeline/scripts/lib/steps.js",
+      "reason": "la misma bandera vieja del marcador, para dar por hecho el aviso de trabajo del arranque en una sesión en curso"
     },
     {
       "path": "mods/harness-mods/hooks/steps.mjs",
@@ -56,7 +56,7 @@
     "guides/sitio-de-la-organizacion/capturas/configuracion-avisos.html": 12,
     "guides/sitio-de-la-organizacion/capturas/configuracion-claude.html": 12,
     "guides/sitio-de-la-organizacion/capturas/configuracion-confirmar-maquina.html": 12,
-    "guides/sitio-de-la-organizacion/capturas/configuracion-diferencia.html": 14,
+    "guides/sitio-de-la-organizacion/capturas/configuracion-diferencia.html": 12,
     "guides/sitio-de-la-organizacion/capturas/configuracion-instalacion.html": 12,
     "guides/sitio-de-la-organizacion/capturas/configuracion-pedidos.html": 12,
     "guides/sitio-de-la-organizacion/capturas/configuracion-personas.html": 12,

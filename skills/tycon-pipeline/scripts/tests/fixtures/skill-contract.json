@@ -378,6 +378,22 @@
   {
    "id": "TESTGATE-DEDUCTOR-LAYOUT-GAP-1",
    "motivo": "no es un id de regla: era el identificador interno de una propuesta, citado en el paso 7b junto al caso que la motivó. El paso dice la regla (al salir del loop se chequea que el verde de la suite siga midiendo este código) sin el caso."
+  },
+  {
+   "id": "--abbrev-ref",
+   "motivo": "story 7.23 tanda B (2026-10-21): el Arranque (steps/step-01-start.md) dejó de describir a mano los chequeos que `pipeline.js start` hace en un comando; el comando sigue haciéndolos."
+  },
+  {
+   "id": "--porcelain",
+   "motivo": "story 7.23 tanda B (2026-10-21): el Arranque (steps/step-01-start.md) dejó de describir a mano los chequeos que `pipeline.js start` hace en un comando; el comando sigue haciéndolos."
+  },
+  {
+   "id": "GITIGNORE_ADVISORS",
+   "motivo": "story 7.23 tanda B (2026-10-21): el Arranque (steps/step-01-start.md) dejó de describir a mano los chequeos que `pipeline.js start` hace en un comando; el comando sigue haciéndolos."
+  },
+  {
+   "id": "STORY_ID",
+   "motivo": "story 7.23 tanda B (2026-10-21): el Arranque (steps/step-01-start.md) dejó de describir a mano los chequeos que `pipeline.js start` hace en un comando; el comando sigue haciéndolos."
   }
  ],
  "parrafos": [
@@ -759,7 +775,7 @@
   },
   {
    "h": "25d2886d5f944cc5",
-   "inicio": "0. **step-00-preflight.md** — Branch guard (NO implementar en `main`/`"
+   "inicio": "0. **step-01-start.md** — Branch guard (NO implementar en `main`/`"
   },
   {
    "h": "fda552c31ae8c459",
@@ -767,7 +783,7 @@
   },
   {
    "h": "ca1a39edbeea5afd",
-   "inicio": "9. **step-09-ado-story-closure.md** — **NO se ejecuta en el flujo prin"
+   "inicio": "9. **close-work-item.md** — **NO se ejecuta en el flujo prin"
   },
   {
    "h": "842a964e4c138893",

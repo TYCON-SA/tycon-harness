@@ -535,7 +535,7 @@ test('CriticalShown_RetractaSiNombraHablaDeEximirOEsCorto @story-8.77 @ac-6', ()
 });
 
 test('CriticalShown_Paso7YBloqueEnsenanLaForma @story-8.77 @ac-7', () => {
-  const paso = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-07-hitl-approve.md'), 'utf8');
+  const paso = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-09-findings.md'), 'utf8');
   assert.match(paso, /antes de pedirle el ok/);
   assert.match(paso, /apruebo eximir/i);
   assert.match(paso, /en otro mensaje/);

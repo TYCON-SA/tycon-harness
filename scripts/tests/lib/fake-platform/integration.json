@@ -1,0 +1,14 @@
+{
+  "__doc": "El conector de plataforma de mentira de las pruebas (scripts/tests/platform-contract.test.js): declara todas las operaciones del contrato menos votar, pide un token secreto y anota cada llamada en FAKE_PLATFORM_LOG. Qué contesta cada operación lo dice FAKE_PLATFORM_ANSWERS (un JSON operación → resultado).",
+  "name": "fake-platform",
+  "label": "Plataforma de mentira",
+  "kind": "platform",
+  "connector": "scripts/connector.js",
+  "operations": ["work-item.create", "work-item.update", "work-item.close", "change-request.open", "change-request.list",
+                 "assigned.list", "ci.read", "queue.read", "deployments.read"],
+  "capabilities": { "completedHours": "field", "workItemType": "native", "autoComplete": "auto" },
+  "rawCommands": ["fake pr create"],
+  "settings": [
+    { "key": "fake-platform.token", "type": "secreto", "env": "TYCON_FAKE_PLATFORM_TOKEN" }
+  ]
+}

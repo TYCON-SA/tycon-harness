@@ -1,12 +1,12 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/i18n-hardcoded-text-reviewer.md
-# source_sha256: 234933cb4a39352772733b05cf79033c320c9c8c9bffb3718fe65231a0079f6c
+# source_sha256: f35b1119ae22d8fc80c439d78150007e6408de66c0da43e54524ea2236e6a35f
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/i18n-hardcoded-text-reviewer.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "i18n-hardcoded-text-reviewer").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
 
 name = "i18n-hardcoded-text-reviewer"
-description = "Advisor Core condicional PROJECT-gated. Audita texto visible al usuario hardcodeado (sin pasar por i18n) en proyectos que declaran requerir i18n: labels/títulos/botones/placeholders en JSX, mapas de labels (etapa/estado/rol), toasts/errores, texto en librerías compartidas agnósticas, y mensajes user-facing de backend. Solo marca lo NUEVO del diff (no el backlog). Reglas I18N-C1..C2/W1..W4. Solo invocar si el repo tiene `.tycon/advisors.yaml` con `i18n.required: true` Y el diff toca `.tsx/.ts/.jsx/.js/.cs`."
+description = "Audita texto visible hardcodeado sin i18n, solo lo nuevo del diff. Solo invocar si el repo tiene .tycon/advisors.yaml con i18n.required=true y el diff toca .tsx, .ts, .jsx, .js o .cs"
 model = "gpt-5.6-luna"
 sandbox_mode = "read-only"
 

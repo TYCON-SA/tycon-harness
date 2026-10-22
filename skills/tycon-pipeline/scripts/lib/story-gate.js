@@ -177,8 +177,10 @@ function computeStoryGate({
 
   // ── Carril STORY (pipeline activo) — se mira ANTES que el repo ───────────────────────────────
   if (marker && marker.storyId) {
-    const pending = Array.isArray(marker.stepsPending) ? marker.stepsPending.map(Number) : [];
-    const planPending = pending.includes(3);
+    // `approve-plan` en un marcador nuevo, el 3 en uno viejo: lo decide la tabla de pasos. Un marcador que no es de
+    // ningún esquema no dice si el plan está aprobado: se trata como pendiente (frena, no abre)
+    const S = require('./steps.js');
+    const planPending = S.schemeOf(marker) === null || S.isPending(marker, 'approve-plan');
     // El sub-portón de plan aplica al repo de la story (si lo conocemos) — editar otra cosa
     // mid-pipeline no es "implementar antes del plan".
     const inStoryRepo = !marker.repoPath || isInside(marker.repoPath, filePath);
@@ -280,7 +282,8 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
       '   1. Si todavía no mostraste el plan → terminá «Validar la historia» y «Armar el plan» (`pipeline.js next` te dice cuál va) y',
       '      presentáselo al user. NO codees "mientras tanto".',
       '   2. Si el user YA aprobó el plan (palabras claras de proceder, sin condiciones) →',
-      `        node ${MARKER_JS} complete-step 3 --approved "<cita textual de la aprobación>"`,
+      // el paso como lo acepta el marcador de esta ejecución: por nombre en el nuevo, por número en el viejo
+      `        node ${MARKER_JS} complete-step ${require('./steps.js').schemeOf(marker) === 2 ? 'approve-plan' : '3'} --approved "<cita textual de la aprobación>"`,
       ...(storyNeedsMockup(marker) ? ['        --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>"   (story con pantalla: la maqueta la ve una persona, también con LOW)'] : []),
       '      (auto-aprobación Nivel 2, SOLO story LOW-risk — se verifica: `--auto-approved "<criterios>"`).',
       '   3. Si estás retomando un pipeline (sesión nueva / compactación) → `pipeline.js next` +',

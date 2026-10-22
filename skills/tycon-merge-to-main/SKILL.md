@@ -102,7 +102,7 @@ Si no detecta stack → preguntar al usuario qué corre o saltar Step 7 con conf
 
 Seguí EN ORDEN los 10 steps definidos en `steps/`:
 
-0. **step-00-preflight.md** — repo git, branches existen, working tree limpio, `git fetch`, y **0.6: scan de trabajo sin subir en el GRUPO de repos** (`~/.claude/tycon-harness/scripts/hooks/unpushed-work-notice.js --scan` — sin él se puede promover el front con el backend commiteado sólo en la máquina del dev; el hallazgo se muestra en el HITL #1, la decisión es del dev). ABORT si dirty.
+0. **step-01-start.md** — repo git, branches existen, working tree limpio, `git fetch`, y **0.6: scan de trabajo sin subir en el GRUPO de repos** (`~/.claude/tycon-harness/scripts/hooks/unpushed-work-notice.js --scan` — sin él se puede promover el front con el backend commiteado sólo en la máquina del dev; el hallazgo se muestra en el HITL #1, la decisión es del dev). ABORT si dirty.
 1. **step-01-preview.md** — listar commits + diff stat + categorizar por tipo/story.
 2. **step-02-generate-message.md** — armar mensaje rico (heurística de agrupación + extracción de body).
 3. **step-03-hitl-confirm-merge.md** — HITL #1: mostrar preview + mensaje, opción de editar mensaje. Aprobar.

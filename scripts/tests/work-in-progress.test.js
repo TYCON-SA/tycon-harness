@@ -80,10 +80,12 @@ test('T1 Tabla_UnaFilaPorTrabajo: dos marcadores y un ad-hoc dan tres filas de c
 
 test('T2 Estado_PasoEnPalabras: los nombres llanos del pipeline, y «paso N» si no hay nombre', () => {
   const m = toyMachine();
-  const cases = { 2: 'Armar el plan', 4: 'Implementar y correr las pruebas', 5: 'Revisores', 12: 'paso 12' };
+  // un marcador viejo, con los nombres nuevos de la equivalencia; el 4 viejo no se reparte
+  const cases = { 2: 'Armar el plan', 4: 'Implementar + pruebas', 5: 'Revisores', 12: 'paso 12', 'run-tests': 'Correr las pruebas' };
   for (const [step, name] of Object.entries(cases)) {
     const sid = `step${step}-0000`;
-    marker(m, sid, { storyId: `8.${step}`, storyPath: story(m.root, `8.${step}`, 't'), stepsCompleted: [], stepsPending: [Number(step)] });
+    const nuevo = !/^\d+$/.test(step);
+    marker(m, sid, { storyId: `8.${step}`, storyPath: story(m.root, `8.${step}`, 't'), stepsCompleted: [], stepsPending: [nuevo ? step : Number(step)], ...(nuevo ? { stepScheme: 2 } : {}) });
     session(m, process.pid, sid, null);
   }
   const r = run(m);
@@ -135,7 +137,7 @@ test('T5 Sesion_NombreIdCortoYMedioCamino: sólo lo vivo en la tabla; lo demás 
   assert.deepStrictEqual(r.rows.map((x) => x.session), ['coordinadora']);
   assert.strictEqual(r.halfway.length, 3);
   assert.match(r.text, /Quedaron a medio camino \(sesión cerrada o sin rastro\): 3/);
-  assert.match(r.text, /7\.2 · titulo 7\.2 · 22222222 · quedó en: Implementar y correr las pruebas · limpiar: node .*marker\.js clear-session 22222222-bbbb/);
+  assert.match(r.text, /7\.2 · titulo 7\.2 · 22222222 · quedó en: Implementar \+ pruebas · limpiar: node .*marker\.js clear-session 22222222-bbbb/);
   assert.match(r.text, /7\.3 · titulo 7\.3 · 33333333 · .*clear-session 33333333-cccc/);
   assert.match(r.text, /ad-hoc «ajuste viejo» · 44444444 · se podrá limpiar después de las \d\d:\d\d/);
   assert.ok(fs.existsSync(adhoc), 'no limpia nada solo');
@@ -311,6 +313,16 @@ const GH = 'https://github.com/acme/x.git';
 // The «@» of a user in a remote goes in parts: written whole, the publishing guard reads it as an email address.
 const at = (user, rest) => `${user}${'@'}${rest}`;
 const AZ = `https://${at('acme', 'dev.azure.com')}/acme/Proyecto%20Uno/_git/y`;
+
+test('T20b Entrando_EsquemaNuevo @story-7.23 @ac-13: con los pasos por nombre, «Preparar el commit» cerrado también entra a los repos', () => {
+  const m = toyMachine();
+  const repo = gitRepo(m.root, 'x', 'story/x', GH);
+  entering(m, 'ent00000-2', { repoPath: repo, stepScheme: 2,
+    stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'findings', 'prepare-commit'] });
+  const r = run(m, { prs: () => ({ prs: [{ number: 237, draft: false }] }) });
+  assert.strictEqual(r.rows.length, 1, r.text);
+  assert.strictEqual(r.rows[0].state, 'Entrando a los repos · x #237');
+});
 
 test('T20 Entrando_ConPedido_Ocupada: el 8 cerrado y un pedido abierto dan la fila y la sesión ocupada', () => {
   const m = toyMachine();

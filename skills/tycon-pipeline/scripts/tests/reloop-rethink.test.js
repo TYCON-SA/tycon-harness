@@ -216,7 +216,7 @@ test('T5 · Informe_TraeLasNotas', () => {
 // ── T6 ───────────────────────────────────────────────────────────────────────────────────────────
 // 🔴 sale rojo si el paso del re-loop o la regla D.i de la portada no dicen la regla y no nombran `marker.js rethink`.
 test('T6 · Guia_TerceraVueltaRepensar', () => {
-  const paso = fs.readFileSync(path.join(SKILL, 'steps', 'step-07b-rerun-advisors-if-fixes.md'), 'utf8');
+  const paso = fs.readFileSync(path.join(SKILL, 'steps', 'step-07-reviewers.md'), 'utf8');
   const portada = fs.readFileSync(path.join(SKILL, 'SKILL.md'), 'utf8');
   assert.match(paso, /marker\.js rethink/);
   assert.match(paso, /tercera vuelta/i);

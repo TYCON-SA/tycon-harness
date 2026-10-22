@@ -2,7 +2,7 @@
 name: tycon-e2e-realness-checker
 tools: Read, Grep, Glob
 model: sonnet
-description: Advisor Core condicional. Audita specs Playwright (`tests/e2e/*.spec.ts`) contra E2E 'verdes' que NO ejercen el flujo real: specs sin interacciones UI ni asserts visuales, backend de negocio mockeado (`route.fulfill`, `context.route`, `routeFromHAR`, MSW), interacciones sin nada observable asertado, y specs que se auto-saltean si el entorno no responde. Reglas REAL-C1..C8 / W1..W7 (catálogo completo en este archivo). Opt-out `// @realness-exempt(REAL-CN): <razón>` — deja constancia, no apaga en silencio. Solo invocar si el diff toca `**/tests/e2e/*.spec.ts`.
+description: Audita specs Playwright con E2E verdes que no ejercen el flujo real (backend mockeado, sin asserts, auto-salto). Solo invocar si el diff toca **/tests/e2e/*.spec.ts
 omitClaudeMd: true
 ---
 

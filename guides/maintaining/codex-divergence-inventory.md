@@ -140,13 +140,13 @@ sobre un fixture con secreto hardcodeado (~29K tokens la corrida).
 
 | Paso | Qué usa | Cat. | Cómo se resuelve |
 |---|---|---|---|
-| `step-00-preflight` | `Workflow` | ③ | Sale afuera: el orquestador Node ya existe |
-| `step-01-validate-story` | `subagent_type` | ② | Codex tiene subagentes propios; cambia cómo se los nombra |
-| `step-02-invoke-bmad` | plan mode | ③ | **Sin equivalente.** Nivelar hacia abajo: plan escrito + confirmación explícita |
-| `step-03-hitl-plan` | **`AskUserQuestion`** | ③ | Nivelar hacia abajo: pregunta numerada en texto con opción por defecto |
-| `step-04-execute` | `Workflow` + `subagent_type` | ③/② | Sale afuera |
-| `step-05-advisors-parallel` | `subagent_type` | ② | Codex paraleliza, pero **solo si se lo piden explícito** → el paso tiene que decirlo con todas las letras |
-| `step-05b-adversarial-verify` | `Workflow` | ③ | Sale afuera — el caso más caro |
+| `step-01-start` | `Workflow` | ③ | Sale afuera: el orquestador Node ya existe |
+| `step-02-validate-story` | `subagent_type` | ② | Codex tiene subagentes propios; cambia cómo se los nombra |
+| `step-03-plan` | plan mode | ③ | **Sin equivalente.** Nivelar hacia abajo: plan escrito + confirmación explícita |
+| `step-04-approve-plan` | **`AskUserQuestion`** | ③ | Nivelar hacia abajo: pregunta numerada en texto con opción por defecto |
+| `step-05-implement` | `Workflow` + `subagent_type` | ③/② | Sale afuera |
+| `step-07-reviewers` | `subagent_type` | ② | Codex paraleliza, pero **solo si se lo piden explícito** → el paso tiene que decirlo con todas las letras |
+| `step-08-adversarial-pass` | `Workflow` | ③ | Sale afuera — el caso más caro |
 | `step-00b`, `00c`, `06`, `07`, `07b`, `07c`, `08`, `09` | nada específico | ① | Portan directo |
 
 **9 de 16 pasos no usan nada específico de Claude.** El riesgo está concentrado en 4.
@@ -346,3 +346,16 @@ del plazo decide igual que del lado Claude, contando los registros de verdad del
 **Lo que Codex NO cubre, dicho y no prometido**: el aviso por un pedido de permiso, y el cierre inmediato de la espera
 cuando la persona contesta. Sin `UserPromptSubmit` registrado, la vuelta la detecta el proceso del plazo por el hilo:
 cierra con `answered` o `kept-working` y no avisa. Caso: T19 de `scripts/tests/wait-notice.test.js`.
+
+## El índice de guías en el AGENTS.md — ① resuelto (2026-10-22)
+
+**Claude Code**: el `CLAUDE.md` global carga el índice de guías (`INDEX.md`) con una línea `@`, que Claude Code expande
+al arrancar.
+
+**Codex**: no expande las líneas `@` del AGENTS.md: las lee como texto. Medido sobre 319 sesiones de Codex de una
+semana, el índice nunca llegó a su contexto. Por eso el arnés escribe el índice **entero** adentro del bloque
+`harness-index` de `~/.codex/AGENTS.md` (`scripts/setup/agents-md-blocks.js`), debajo de dónde está el arnés y dónde
+están las skills, y nunca copia una línea que empiece con `@`. El tope de 32 KiB de Codex vale para los AGENTS.md del
+proyecto, no para el de su carpeta: un AGENTS.md global de 41.717 bytes se leyó completo (Codex 0.162.1, con una
+palabra clave al final). Casos: `IndiceEntero_VaAdentroDelBloque` y `IndiceConArroba_NoEscribeImport` de
+`scripts/tests/agents-md-blocks.test.js`.

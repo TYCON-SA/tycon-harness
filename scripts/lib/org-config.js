@@ -284,15 +284,22 @@ const cambiaHoras = cambiaIntegracion('timeTracking');
  */
 const NOTIFY_SINCE = '2026.10.21.52';
 const cambiaAvisos = cambiaIntegracion('notify');
+/**
+ * 🔴 La primera versión del arnés cuyo lector conoce `integrations.platform` (la plataforma del equipo por área). Una
+ * máquina anterior rechazaría el perfil entero con la clave nueva. Se fija con la etiqueta real del merge que trae el
+ * lector; mientras tanto, una cota que ninguna versión anterior alcanza (una máquina al día espera hasta esa versión).
+ */
+const PLATFORM_SINCE = '2026.10.23.1';
+const cambiaPlataforma = cambiaIntegracion('platform');
 /** La versión que tiene que pedir la capa para el pedido: la mayor de las claves nuevas que cambia, o null. */
 function versionDeLaCapa({ actual, doc }) {
-  const piden = [[cambiaHoras, TIME_TRACKING_SINCE], [cambiaAvisos, NOTIFY_SINCE]].filter(([cambia]) => cambia({ actual, doc })).map(([, v]) => v);
+  const piden = [[cambiaHoras, TIME_TRACKING_SINCE], [cambiaAvisos, NOTIFY_SINCE], [cambiaPlataforma, PLATFORM_SINCE]].filter(([cambia]) => cambia({ actual, doc })).map(([, v]) => v);
   return piden.reduce((max, v) => (max === null || versionAtLeast(v, max) ? v : max), null);
 }
 /** Si el pedido cambia una clave del perfil que sólo leen las versiones nuevas (y por eso sube la capa). */
 const cambiaLaCapa = ({ actual, doc }) => versionDeLaCapa({ actual, doc }) !== null;
 /**
- * El team-layer.json que acompaña a un pedido que cambia `integrations.timeTracking` o `integrations.notify`:
+ * El team-layer.json que acompaña a un pedido que cambia `integrations.timeTracking`, `integrations.notify` o `integrations.platform`:
  * `{ archivo, contenido }` con `requires.harness` en la versión que lee lo que cambia (`versionDeLaCapa`); null si el
  * pedido no las cambia, si la capa ya pide eso o más, o si el perfil no tiene capa (`layerText` null: sin su declaración
  * ninguna máquina aplica el perfil, así que no hay versión que subir); `{ problema }` si la capa no se puede leer o su
@@ -1213,10 +1220,11 @@ function pantalla(idioma = 'es') {
     return box;
   }
   function repoFila(titulo, ayuda, repo, set, p, problemas) {
-    var r = repo || { platform: 'azure', org: '', project: '', repo: '' };
+    // sin plataforma declarada no se muestra ninguna: la pantalla no adivina Azure ni GitHub
+    var r = repo || { platform: '', org: '', project: '', repo: '' };
     var plat = el('select', { 'data-path': p + '.platform', 'aria-label': T('pantalla.donde'), onchange: function (e) { var v = e.target.value; var nr = { platform: v, org: r.org || '', repo: r.repo || '' }; if (v === 'azure') nr.project = r.project || ''; set(nr); render(); } },
-      el('option', { value: 'azure', text: 'Azure DevOps' }), el('option', { value: 'github', text: T('pantalla.github') }));
-    plat.value = r.platform === 'github' ? 'github' : 'azure';
+      el('option', { value: '', text: T('pantalla.elegiDondeVive') }), el('option', { value: 'azure', text: 'Azure DevOps' }), el('option', { value: 'github', text: T('pantalla.github') }));
+    plat.value = r.platform === 'github' || r.platform === 'azure' ? r.platform : '';
     var upd = function (k) { return function (v) { r[k] = v; set(r); }; };
     return el('div', { class: 'fila repo' }, el('div', { class: 'k', text: titulo }, el('small', { text: ayuda })), el('div', { class: 'campo' }, el('label', { text: T('pantalla.donde') }), plat),
       campo(T('pantalla.organizacion2'), r.org, upd('org'), p + '.org', problemas), r.platform === 'github' ? campo(T('pantalla.proyecto2'), '', function () {}, p + '.project', problemas, { disabled: 'disabled', placeholder: T('pantalla.noAplicaEnGithub') }) : campo(T('pantalla.proyecto2'), r.project, upd('project'), p + '.project', problemas), campo(T('pantalla.repo2'), r.repo, upd('repo'), p + '.repo', problemas));
@@ -1226,7 +1234,7 @@ function pantalla(idioma = 'es') {
   var REPO_SLOTS = [['public', T('pantalla.elArnes'), T('pantalla.elQueSeInstala')], ['profile', T('pantalla.elDelEquipo'), T('pantalla.llegaACadaMaquina')], ['operations', T('pantalla.operaciones'), T('pantalla.loDeLaNocheNo')], ['maintainers', T('pantalla.mantenimiento'), T('pantalla.opcional')]];
   function editorRepos(s, d, pr) {
     var box = el('div', {});
-    REPO_SLOTS.forEach(function (par) { var k = par[0]; if (k === 'maintainers' && !d[k]) { box.appendChild(el('button', { class: 'mas', type: 'button', text: T('pantalla.agregarElRepoDeMantenimiento'), onclick: function () { d[k] = { platform: 'azure', org: '', project: '', repo: '' }; render(); } })); return; } box.appendChild(repoFila(par[1], par[2], d[k], function (v) { d[k] = v; }, k, pr)); });
+    REPO_SLOTS.forEach(function (par) { var k = par[0]; if (k === 'maintainers' && !d[k]) { box.appendChild(el('button', { class: 'mas', type: 'button', text: T('pantalla.agregarElRepoDeMantenimiento'), onclick: function () { d[k] = { platform: '', org: '', project: '', repo: '' }; render(); } })); return; } box.appendChild(repoFila(par[1], par[2], d[k], function (v) { d[k] = v; }, k, pr)); });
     return box;
   }
   function editorResponsables(s, d, pr) {
@@ -1494,8 +1502,10 @@ function pantalla(idioma = 'es') {
       var deLaPersona = function () { d.people.projects = d.people.projects || {}; var f = d.people.projects[clave] = d.people.projects[clave] || {}; f.add = Array.isArray(f.add) ? f.add : []; return f; };
       var agregar = el('input', { placeholder: T('pantalla.producto2'), 'aria-label': T('pantalla.producto') });
       var acciones = el('span', { class: 'acc' });
+      // cada producto, una etiqueta con su propia ×: con dos productos, dos «Quitar» iguales no decían cuál sacaban
+      var etiquetas = el('span', { class: 'chips-prod' });
       declarados.forEach(function (prod) {
-        acciones.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.quitar'), 'data-producto': prod, 'aria-label': T('pantalla.quitar') + ' ' + prod, onclick: function () { var f = deLaPersona(); f.add = f.add.filter(function (x) { return x !== prod; }); if (!f.add.length) delete d.people.projects[clave]; render(); } }));
+        etiquetas.appendChild(el('span', { class: 'chip-prod' }, el('span', { text: prod }), el('button', { class: 'x', type: 'button', text: '×', title: T('pantalla.quitar') + ' ' + prod, 'data-producto': prod, 'aria-label': T('pantalla.quitar') + ' ' + prod, onclick: function () { var f = deLaPersona(); f.add = f.add.filter(function (x) { return x !== prod; }); if (!f.add.length) delete d.people.projects[clave]; render(); } })));
       });
       (p.sugeridos || []).filter(function (s2) { return declarados.indexOf(s2) < 0; }).forEach(function (prod) {
         acciones.appendChild(el('span', { class: 'dato', text: T('pantalla.sugerido') + prod }));
@@ -1503,9 +1513,11 @@ function pantalla(idioma = 'es') {
       });
       acciones.appendChild(agregar);
       acciones.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.agregar'), onclick: function () { var v = agregar.value.trim(); if (!v) return; var f = deLaPersona(); if (f.add.indexOf(v) < 0) f.add.push(v); render(); } }));
-      donde.appendChild(el('li', {}, el('span', { class: 'quien', text: p.correo }), el('span', { class: 'dato', text: (declarados.length ? T('pantalla.ve') + declarados.join(', ') : T('pantalla.todaviaNoVeNingun')) + (p.caida ? T('pantalla.susMaquinasNoMandanNoticias') : '') }), acciones));
+      var queVe = declarados.length ? el('span', { class: 'dato' }, el('span', { text: T('pantalla.ve') }), etiquetas) : el('span', { class: 'dato', text: T('pantalla.todaviaNoVeNingun') });
+      if (p.caida) queVe.appendChild(el('span', { text: T('pantalla.susMaquinasNoMandanNoticias') }));
+      donde.appendChild(el('li', {}, el('span', { class: 'quien', text: p.correo }), queVe, acciones));
     });
-    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.enQueProyectosTrabajaCada') }), el('p', { class: 'sub-d', text: T('pantalla.elSitioLoDeduceDe') }));
+    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.enQueProyectosTrabajaCada') }), el('p', { class: 'sub-d', text: T('pantalla.mantenedoresVenTodo') }), el('p', { class: 'sub-d', text: T('pantalla.elSitioLoDeduceDe') }));
     if (ex.quitadosViejos) sub.appendChild(aviso('warn', T('pantalla.quitadosViejos'), T('pantalla.quitadosViejosDetalle')));
     sub.appendChild((ex.personas || []).length ? donde : el('p', { class: 'muted', text: T('pantalla.nadieTodavia') }));
     box.appendChild(sub);
@@ -1696,6 +1708,23 @@ function pantalla(idioma = 'es') {
       var p = 'integrations.' + k;
       var c = corto(par[1], i[k] === undefined ? '' : String(i[k]), opciones, function (v) { hoja(d, 'integrations', k, v === 'true' ? true : v === 'false' ? false : v); }, p, pr);
       t.appendChild(renglon([queDe(par[1]), el('div', { class: 'sel', role: 'cell' }, c.sel)], c.mios));
+    });
+    // la plataforma del equipo (integrations.platform): la de todo lo que no es de un repo y, aparte si hace falta, la de
+    // los pedidos de trabajo y la de la cola. Sin elegir no se muestra ninguna: la pantalla no adivina
+    var plataformas = ((s.extras || {}).plataformas) || [];
+    var pl = esObjeto(i.platform) ? i.platform : {};
+    var ponerArea = function (area, v) {
+      if (!esObjeto(d.integrations)) d.integrations = {};
+      var actual = esObjeto(d.integrations.platform) ? d.integrations.platform : {};
+      if (v) actual[area] = v; else delete actual[area];
+      if (Object.keys(actual).length) d.integrations.platform = actual; else delete d.integrations.platform;
+      render();
+    };
+    [['default', T('pantalla.plataformaDelEquipo'), T('pantalla.plataformaSinElegir')], ['workItems', T('pantalla.plataformaPedidosDeTrabajo'), T('pantalla.plataformaIgualQueLaDelEquipo')], ['queue', T('pantalla.plataformaLaCola'), T('pantalla.plataformaIgualQueLaDelEquipo')]].forEach(function (a) {
+      var ops = [['', a[2]]].concat(plataformas.map(function (x) { return [x.name, x.label]; }));
+      if (pl[a[0]] && !ops.some(function (o) { return o[0] === pl[a[0]]; })) ops.push([pl[a[0]], T('pantalla.herramientaQueNoOfrece', { herramienta: pl[a[0]] })]);
+      var c = corto(a[1], pl[a[0]], ops, function (v) { ponerArea(a[0], v); }, 'integrations.platform.' + a[0], pr);
+      t.appendChild(renglon([queDe(a[1]), el('div', { class: 'sel', role: 'cell' }, c.sel)], c.mios));
     });
     box.appendChild(t);
     // la elegida, si pide la URL de su instancia (la de la organización) y un token (el de cada persona, en su máquina)
@@ -2053,7 +2082,7 @@ function pantalla(idioma = 'es') {
       t.appendChild(renglon(celdas, resto.map(function (x) { return { message: (x.donde && regla.mios.indexOf(x) < 0 ? x.donde + ': ' : '') + x.message }; }), abierto ? 'abierto' : ''));
     });
     sub.appendChild(t);
-    sub.appendChild(el('button', { class: 'mas', type: 'button', text: T('pantalla.agregarRepo'), onclick: function () { ms.repos.push({ repo: { platform: 'azure', org: '', project: '', repo: '' }, rule: 'automatico' }); ABIERTOS[ms.repos.length - 1] = true; render(); } }));
+    sub.appendChild(el('button', { class: 'mas', type: 'button', text: T('pantalla.agregarRepo'), onclick: function () { ms.repos.push({ repo: { platform: '', org: '', project: '', repo: '' }, rule: 'automatico' }); ABIERTOS[ms.repos.length - 1] = true; render(); } }));
     box.appendChild(sub);
     problemasEn(pr, 'merge_suites.repos').forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
     box.appendChild(restoYTexto(s, d, pr, 'merge_suites', T('pantalla.lasSuitesAlMergearComo')));
@@ -3004,7 +3033,7 @@ function pantalla(idioma = 'es') {
 }
 
 module.exports = {
-  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, modelosEnNiveles, equivalenciasDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS,

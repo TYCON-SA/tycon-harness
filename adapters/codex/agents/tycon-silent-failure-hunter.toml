@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-silent-failure-hunter.md
-# source_sha256: 6f6110d11adfc09649c3cac251cff850e713bea03140aadd7d2bc0eda6e7fc93
+# source_sha256: 8c1234de262a3567e58753a5ec56d9c7942841775b731e349648f5b8c7ff6181
 # Se despliega como $CODEX_HOME/tycon-silent-failure-hunter.config.toml y se invoca: codex exec -p tycon-silent-failure-hunter
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 

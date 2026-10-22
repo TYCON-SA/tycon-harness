@@ -376,8 +376,8 @@ test('T14 · runStoryChecks y mech-check no ganan VAL-*; parsePipelinesBlock só
 
 // ── T18 · Steps_TextosDelValidador (AC 14, 6) ──────────────────────────────────────────────────────
 test('T18 · los steps y el agente dicen cómo corre el validador ahora', () => {
-  const s5 = fs.readFileSync(path.join(STEPS, 'step-05-advisors-parallel.md'), 'utf8');
-  const s7b = fs.readFileSync(path.join(STEPS, 'step-07b-rerun-advisors-if-fixes.md'), 'utf8');
+  const s5 = fs.readFileSync(path.join(STEPS, 'step-07-reviewers.md'), 'utf8');
+  const s7b = fs.readFileSync(path.join(STEPS, 'step-07-reviewers.md'), 'utf8');
   const ag = fs.readFileSync(AGENTE, 'utf8');
   assert.doesNotMatch(s5, /corre \*\*dos veces\*\*/, 'step-05 todavía dice que corre dos veces');
   assert.match(s5, /validador-reloop/);

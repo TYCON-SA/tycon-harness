@@ -352,7 +352,7 @@ en el MISMO bloque de llamadas. Si se cierra y no se abre la sucesora, el tiempo
 el pipeline sigue, pero se avisa como CRITICAL. Después de persistir, verificar que el `entryId` del archivo de la
 sesión sea el de la respuesta de `create`.
 
-Lo que deja escrito en `.advisors/pipeline-runs/<clave>-<sello>/step-00b-work-start.md`: integración `clockify`, la
+Lo que deja escrito en `.advisors/pipeline-runs/<clave>-<sello>/step-01-start.md`: integración `clockify`, la
 acción (`entryId`, `projectId`, `description`, `startedAt`) y el status.
 
 ### Cierre desde el pipeline (paso 9, «Cerrar la historia»)

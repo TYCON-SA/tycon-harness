@@ -1,0 +1,134 @@
+{
+  "__doc": "Gemelos de 20-handlers-pre-edit.json con el marcador nuevo (story 7.23: pasos por nombre de máquina, stepScheme 2). Cada caso es el del archivo original con el marcador traducido por la equivalencia de lib/steps.js; tiene que decidir lo mismo.",
+  "hooks": [
+    {
+      "hook": "hook-pre-edit.js → on-atdd-preedit (la prueba antes que el código, preventivo)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "on-atdd-preedit-deniega-el-primer-codigo-sin-tests-esquema-2",
+          "type": "must-block",
+          "__doc": "Pipeline activo (marker), story que declara ### Tests, step 4 abierto, cero tests tocados → el PRIMER archivo de código se deniega. Las otras dos capas detectan la inversión cuando ya está escrita; ésta la hace imposible.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src specs/stories",
+            "printf -- '---\\nstory: \"3.1\"\\nepic: \"3\"\\nstatus: in-progress\\n---\\n# Story 3.1\\n\\n## Acceptance Criteria\\n1. AC uno\\n\\n### Tests\\n| T | AC | Tipo |\\n|---|---|---|\\n| T1 | 1 | unit |\\n' > specs/stories/3-1.md",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-at1.json',JSON.stringify({sessionId:'bench-at1',storyId:'3.1',repoPath:process.env.FIXTURE,storyPath:process.env.FIXTURE+'/specs/stories/3-1.md',stepScheme:2,stepsCompleted:['start','validate-story','plan','approve-plan'],fileEvents:[],lastTouch:new Date().toISOString()}))\""
+          ],
+          "stdin": {
+            "session_id": "bench-at1",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE}/src/Servicio.cs",
+              "content": "class Servicio {}"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "ATDD"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "atdd-preedit"
+              }
+            ]
+          }
+        },
+        {
+          "id": "on-atdd-preedit-quiet-si-ya-hay-un-test-tocado-esquema-2",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src specs/stories",
+            "printf -- '---\\nstory: \"3.1\"\\nepic: \"3\"\\nstatus: in-progress\\n---\\n# Story 3.1\\n\\n## Acceptance Criteria\\n1. AC uno\\n\\n### Tests\\n| T | AC | Tipo |\\n|---|---|---|\\n| T1 | 1 | unit |\\n' > specs/stories/3-1.md",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-at2.json',JSON.stringify({sessionId:'bench-at2',storyId:'3.1',repoPath:process.env.FIXTURE,storyPath:process.env.FIXTURE+'/specs/stories/3-1.md',stepScheme:2,stepsCompleted:['start','validate-story','plan','approve-plan'],fileEvents:[{path:process.env.FIXTURE+'/tests/Servicio.test.ts'}],lastTouch:new Date().toISOString()}))\""
+          ],
+          "stdin": {
+            "session_id": "bench-at2",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE}/src/Servicio.cs",
+              "content": "class Servicio {}"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        }
+      ]
+    },
+    {
+      "hook": "hook-pre-edit.js → on-write-collision (aviso cross-sesión)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "on-write-collision-avisa-archivo-tocado-por-otra-sesion-esquema-2",
+          "type": "must-emit",
+          "__doc": "OTRA sesión del pipeline ya tocó este archivo (está en su filesTouched): el aviso tiene que salir — advisory, nunca bloquea. El marker de la sesión propia trae el step 4 cerrado para que el portón ATDD no corte antes.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src && printf 'class Foo {}' > src/Foo.cs",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-wc1.json',JSON.stringify({sessionId:'bench-wc1',storyId:'3.1',repoPath:process.env.FIXTURE,stepScheme:2,stepsCompleted:['start','validate-story','plan','approve-plan','implement','run-tests'],fileEvents:[],filesTouched:[],lastTouch:new Date().toISOString()}));fs.writeFileSync(d+'/bench-wc-otra.json',JSON.stringify({sessionId:'bench-wc-otra',storyId:'3.1',repoPath:process.env.FIXTURE,stepsCompleted:['start','validate-story','plan','approve-plan','implement','run-tests'],filesTouched:[process.env.FIXTURE+'/src/Foo.cs'],fileEvents:[],lastTouch:new Date().toISOString()}))\""
+          ],
+          "stdin": {
+            "session_id": "bench-wc1",
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/src/Foo.cs",
+              "old_string": "class Foo {}",
+              "new_string": "class Foo { int x; }"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_re": [
+              "system-reminder",
+              "Foo\\.cs"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "hook-post-edit.js → on-edit (registro de archivos tocados)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-post-edit.js",
+      "event": "PostToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "on-edit-registra-el-archivo-en-el-marker-esquema-2",
+          "type": "must-run",
+          "__doc": "El registro que alimenta al gate ATDD y al re-loop: cada Edit/Write con pipeline activo queda anotado en el marker. Sin esto, 'qué archivos tocó esta story' es memoria del modelo.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src && printf 'class Foo {}' > src/Foo.cs",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-oe1.json',JSON.stringify({sessionId:'bench-oe1',storyId:'3.1',repoPath:process.env.FIXTURE,stepScheme:2,stepsCompleted:['start','validate-story','plan','approve-plan','implement','run-tests'],fileEvents:[],filesTouched:[],lastTouch:new Date().toISOString()}))\""
+          ],
+          "stdin": {
+            "session_id": "bench-oe1",
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/src/Foo.cs",
+              "old_string": "class Foo {}",
+              "new_string": "class Foo { int x; }"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/active/bench-oe1.json",
+                "re": "Foo\\.cs"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

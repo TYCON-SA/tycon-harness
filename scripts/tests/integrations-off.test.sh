@@ -200,7 +200,7 @@ else ok "T10 ningún comando apagado llamó a az/engram/curl"; fi
 
 # el paso de work item (prosa de agent-skills): resuelve la organización por la configuración y, apagada, lo dice y se saltea;
 # no hay un «default por proyecto conocido»
-for f in skills/tycon-pipeline/steps/step-00c-ado-mark-active.md skills/tycon-pipeline/steps/step-09-ado-story-closure.md skills/tycon-ado-story-wi/SKILL.md; do
+for f in skills/tycon-pipeline/steps/step-01-start.md skills/tycon-pipeline/steps/close-work-item.md skills/tycon-ado-story-wi/SKILL.md; do
   p="$SK_REPO/$f"
   if [ ! -f "$p" ]; then echo "  ℹ NO MEDIDO — $f no está en $SK_REPO"; continue; fi
   if grep -qiE 'default por proyecto conocido|defaults conocidos' "$p"; then no "T10 $f: sigue teniendo el «default por proyecto conocido»"; else ok "T10 $f: sin «default por proyecto conocido»"; fi

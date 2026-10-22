@@ -1,11 +1,15 @@
-# Hallazgos: el informe
+# Hallazgos
 
-**Objetivo**: juntar los outputs de los 3 (o N) advisors del Step 5 en un solo reporte estructurado para el usuario. Aquí NO corre nada nuevo — es lógica del orchestrator.
+**Objetivo**: un solo paso: (1) juntar los outputs de los revisores en un informe, (2) escribir `findings.json` con `pipeline.js write-findings`, y (3) frenar para la persona SÓLO si hay críticos. Aquí NO corre nada nuevo: es lógica del orquestador. Las dos partes de abajo («El informe» y «La decisión») eran antes dos pasos.
+
+> ⏱️ **Espera humana**: este paso mide cuánto se esperó a una persona, y sólo cuenta cuando de verdad pregunta (la anota sola el Stop-hook o la pregunta). Antes de presentar los hallazgos: cerrá «Pase adversarial» y consultá `pipeline.js next`. Si se presenta primero y se cierra el anterior después, la espera queda contada como trabajo del paso anterior.
+
+# El informe
 
 ## Inputs
 
-- `advisor_reports[]`: lista de reportes individuales de Step 5
-- `adversarial_confirmed[]` (si el Step 5b corrió): los findings CONFIRMED del pase reproduce-or-refute. Se
+- `advisor_reports[]`: lista de reportes individuales de «Revisores»
+- `adversarial_confirmed[]` (si «Pase adversarial» corrió): los findings CONFIRMED del pase reproduce-or-refute. Se
   foldean al reporte como una "fuente" más: cada uno se cita `[adversarial-verify:<lens>]` con `file:line` +
   `summary` + el `repro` observado. `severity: bug` → cuenta como **CRITICAL de correctitud**; `robustness` →
   WARNING. Disparan el re-loop D.i igual que un finding de advisor (pero el 5b NO se re-corre — ver step-05b).
@@ -192,7 +196,7 @@ stories sanas con hallazgos que eran del propio control.
   = follow-up documentado; `open` = accionable sin resolver.
 - Escribe `<run-dir>/findings.json` (mismo dir que `step-06-consolidated-report.md`). Devuelve counts
   (critical/warning + por disposition). Un run con 0 findings igual escribe `[]` (el artefacto SIEMPRE existe).
-- **Enforcement**: Step 8 corre `pipeline.js findings-status` como pre-condición (exit 3 si falta) — no
+- **Enforcement**: «Preparar el commit» corre `pipeline.js findings-status` como pre-condición (exit 3 si falta) — no
   se puede llegar al commit-prep sin el artefacto.
 
 ```json
@@ -207,7 +211,7 @@ stories sanas con hallazgos que eran del propio control.
 Después de escribir `findings.json`, persistir los findings **no resueltos** (disposition
 `waived` / `deferred` / `open`) como sección checkbox DENTRO de la story. Es la mejor idea de
 `bmad-dev-story`: el ciclo dev↔review vive en el artefacto y sobrevive sesiones — si el
-pipeline muere post-Step 6 con un CRITICAL waived o WARNINGs abiertos, la próxima sesión los
+pipeline muere post-Hallazgos con un CRITICAL waived o WARNINGs abiertos, la próxima sesión los
 ve en la story (Step 0/1 los detecta), no hay que arqueologizar `.advisors/pipeline-runs/`.
 
 ```bash
@@ -216,7 +220,7 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js write-foll
   --findings <repo>/.advisors/pipeline-runs/<clave>-<sello>/findings.json
 ```
 
-- **Idempotente por `fkey` (`ruleId|file`)**: en re-loops (Step 7b → Step 5 → Step 6) re-correr
+- **Idempotente por `fkey` (`ruleId|file`)**: en re-loops (Hallazgos → Revisores vuelta N+1 → Hallazgos) re-correr
   esto NO duplica ni pierde el estado — preserva los `[x]` que el dev marcó al resolver, agrega
   los findings nuevos abiertos, y conserva los ya resueltos como historial.
 - **`disposition: fixed` → `[x]`** automático (finding ya resuelto en esta corrida). `waived` /
@@ -233,18 +237,142 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js write-foll
 
 - **Si algún advisor falló**: incluir una sección "⚠️ Advisors que no pudieron correr" al final con la razón.
 
+---
+
+# La decisión (sólo si hay críticos)
+
+**Objetivo**: decidir si el paso se pausa para aprobación del usuario o fluye directo.
+
+**B.ii**: sólo pausa si hay CRITICAL. Si el reporte tiene SOLO WARNINGs (cero CRITICAL), el pipeline **AUTO-FLUYE** a «Probar en vivo» listándolos. Si todo OK, idem.
+
+### Inputs de la decisión
+
+- `consolidated_report` (el informe de arriba)
+- `has_critical: bool`
+- `has_warning: bool`
+- `.tycon/advisors.yaml` del repo (`auto_waive:` + `warnings_pause:`, si existe)
+
+### Lógica de decisión
+
+```
+if has_critical:
+    → MOSTRAR reporte completo
+    → PAUSAR SIEMPRE, con la forma de la decisión importante: "Recomiendo {corregir|eximir}: {por qué}.
+      Hay N CRITICAL: {el contexto: qué encontró el revisor, en llano, y qué pasa si se deja}.
+      Corregir — {lo que gana y lo que cuesta}. Eximir — {lo que gana y lo que cuesta}.
+      ¿Querés corregir antes del commit o hacer override?"
+    → Esperar decisión del usuario
+elif has_warning:
+    → Auto-waive (con anuncio explícito) los warnings que:
+        (a) tengan su rule ID en la lista `auto_waive:` de .tycon/advisors.yaml del repo, O
+        (b) referencien líneas FUERA del diff (código pre-existente no tocado por la story)
+    → si `warnings_pause: true` en .tycon/advisors.yaml (knob opt-out):
+        → MOSTRAR reporte + PAUSAR (comportamiento pre-2026-06-09)
+    → si no:
+        → AUTO-FLUIR al paso siguiente, listando TODOS los warnings (incl. auto-waived, marcados)
+          en el reporte consolidado Y en el cuerpo del commit message (sección
+          "Warnings auto-waived" — ver step-11-prepare-commit.md). Visibilidad sin fricción.
+else:
+    → Mostrar resumen "✅ Todo OK" (1-2 líneas)
+    → NO PAUSAR — seguir al paso siguiente
+```
+
+**Los warnings auto-waived NUNCA se silencian**: quedan SIEMPRE listados en el reporte y en
+el commit message, con la razón del waive (`auto_waive` list / fuera del diff). El auto-flow
+quita la fricción, no la trazabilidad.
+
+### Respuestas del usuario
+
+#### Si hay CRITICAL:
+
+- **"corrijo"** → **NO se termina el pipeline**: se aplican los fixes y, por la regla D.i
+  (no-negociable — los revisores auditaron la versión ANTERIOR al fix), se vuelve a «Revisores» (vuelta N+1) sobre el diff actualizado, siguiendo la sección «Otra vuelta» de `step-07-reviewers.md`.
+  `pipeline.js next` la pide solo («Revisores, vuelta N») cuando hay ediciones de código posteriores. Si el dev prefiere cortar acá y retomar después, el marcador queda activo.
+- **"override" (eximir el crítico)** → un crítico lo decide una persona: **el agente nunca se exime solo**, ni
+  firmando como `orquestador`, ni con «hacé lo que recomiendes». Tres caminos, en este orden:
+  1. **El ok del dev en el chat** (el principal). El crítico se lo muestra el arnés, no vos, y **antes de pedirle el ok**:
+     contarlo vos en el chat no cuenta como muestra, y un ok que llega antes de la muestra del arnés no vale (el comando
+     dice a qué hora la mostró y que se lo pidas de nuevo). Corré
+     `marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>"` y, antes de que corra, el arnés le
+     pone en pantalla un bloque «Te piden eximir un crítico» con la regla, su nombre en llano, el archivo, lo que dijo
+     el revisor y tu motivo. El comando frena hasta que el dev conteste a ESE bloque. Si el bloque no apareció (la
+     instalación mínima no trae la puerta de comandos), escribí con Write `exencion-pedida.json` en la carpeta de la
+     corrida con `{ "rule", "file", "reason" }` y el arnés lo muestra. Con su respuesta,
+     `marker.js waive-critical … --approved-by "<el dev>" --quote "<sus palabras, textuales>"`. La cita vale si está
+     en un mensaje escrito por el dev (no en lo que escribiste vos, una herramienta, un subagente u otra sesión),
+     **posterior a la muestra**, y si ese mensaje **dice que exime ese crítico**: una frase con «exim…» y su regla
+     («eximo TEST-C1», o «apruebo eximir TEST-C1») o el nombre en llano que le enseñó el bloque («eximo la suite
+     completa»); si la regla está en
+     más de un archivo, también el archivo. Un «apruebo, seguí» o un «dale» suelto no exime: es un ok a algo, no a este crítico. Tampoco un ok de
+     antes de la muestra, uno a otro crítico, una pregunta, ni uno con una negación, un freno o una condición («no»,
+     «esperá», «si lo arreglás…») en cualquier parte del mensaje, aunque sea una aclaración de otra cosa: el ok va solo
+     en su mensaje («eximo TEST-C1», con su motivo si quiere) y **cualquier otra cosa, en otro mensaje**. Una aclaración
+     en un mensaje aparte no tumba el ok; uno posterior que nombra el crítico, habla de eximir o es un «No.» / «Esperá.»
+     corto, sí. Ante la duda no exime, y el arnés dice qué escribir. Queda manual, con la cita y su hora.
+  2. **Reenviado por la sesión coordinadora**, si la organización la usa (`approvals.relay_session` del perfil del
+     equipo, con el nombre del rol; por defecto ninguna): lo mismo con `--relayed-by <rol>`. La cita tiene que llegar
+     textual en un mensaje que mandó la sesión designada en esta máquina (`marker.js designate-relay`, con la frase del
+     dev en su chat), posterior a la muestra y nombrando el crítico. El nombre de la sesión no cuenta. Queda
+     automático, por delegación del dev.
+  3. **Desde su terminal**, si el dev prefiere: `marker.js waive-critical … --terminal` (lo corre el dev).
+
+  Recién con la constancia, el hallazgo se anota `waived` en `pipeline.js write-findings`: sin ella, `write-findings`
+  no escribe, y `complete-step findings` y `complete-step prepare-commit` frenan. Proceder con flag `had_override: true`.
+  El límite: comprobar la cita prueba que el mensaje está en la conversación; no prueba quién está detrás de la
+  sesión que reenvía.
+- **"cancelar"** → terminar el pipeline.
+
+#### Si hay solo WARNING:
+
+- Default (sin `warnings_pause: true`): **no hay pregunta** — auto-flow con los
+  warnings anunciados y listados. Si el usuario interviene ("ajusto X") → volver a «Implementar».
+- Con `warnings_pause: true`: **"procedo" / "dale"** → seguir; **"ajusto X"** → «Implementar»;
+  **"cancelar"** → terminar el pipeline.
+
+#### Si todo OK (no hay checkpoint):
+
+- Automático al paso siguiente con mensaje breve: "Advisors OK. Preparando commit."
+
+### Razón de diseño B.ii
+
+Evitar HITL fatigue. Si cada story sin issues (o con warnings advisory) obliga al dev a
+aprobar un reporte, después de 5 stories el dev aprueba sin leer. Mejor **silencio positivo
+con trazabilidad**: si no hay CRITICAL, el pipeline fluye y los warnings viajan visibles en
+reporte + commit message. CRITICAL pausa SIEMPRE — ahí sí hay decisión humana real.
+
+### Persistir la disposición final en los Review Follow-ups (adopción BMAD 2026-07-02)
+
+Cuando este step resuelve con una **disposición final** que avanza —un CRITICAL
+**waived** por override, o WARNINGs que se dejan abiertos/diferidos— re-correr `write-followups`
+con el `findings.json` actualizado (el que refleja la disposición final del este paso), para que
+la story registre en su body qué quedó waived/abierto:
+
+```bash
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js write-followups \
+  --story <story_path> --findings <...>/findings.json
+```
+
+Así, si el pipeline avanza a commit con un CRITICAL waived, la próxima sesión ve ese waive en la
+story (no solo en el pipeline log) y «Arranque» lo levanta. Idempotente — si Step 6 ya lo escribió
+esta corrida, re-correrlo solo actualiza dispociones. (En un re-loop D.i el write del informe de la
+siguiente iteración ya cubre esto; este write explícito es para el caso "waive + avanzar" sin
+re-loop.)
+
 ## Cierre del step
 
 ```bash
-node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step 6
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step findings
 ```
+
+`complete-step findings` frena sin `findings.json` o con un crítico eximido sin el ok de una persona.
 
 ## Output de este step
 
 - `consolidated_report` (markdown completo)
-- `findings.json` (array estructurado en el dir de pipeline-runs — ver arriba)
-- `has_critical: true|false`
-- `has_warning: true|false`
-- `total_issues: N`
+- `findings.json` (array estructurado en el dir de pipeline-runs)
+- `has_critical`, `has_warning`, `total_issues: N`
+- `should_proceed: true|false`, `had_override: true|false`
+- `auto_flowed_with_warnings: true|false` + lista de warnings (incl. auto-waived con razón): «Preparar el commit» los incluye en el commit message
+- `user_feedback` si pidió cambios
 
-Pasar al Step 7.
+Siguiente: lo que indique `pipeline.js next`. Si hubo arreglos de código, primero «Revisores, vuelta N+1» (regla D.i); después «Probar en vivo» (`step-10-live-check.md`). «Preparar el commit» sólo se abre con «Probar en vivo» cerrado.

@@ -1,12 +1,12 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-signed-scope-audit.md
-# source_sha256: 5b2fd2ac150e60ad0d8aeaaa883dec2594b6ad6527a35a648e0baee3a18f9bc0
+# source_sha256: 930ff8f287176d8812e468b7e3ac878db79f6ed790965e035db560a4392e5983
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-signed-scope-audit.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-signed-scope-audit").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
 
 name = "tycon-signed-scope-audit"
-description = "Advisor de auditoría signed-scope on-demand. Cross-checkea el plan actual (`sprint-plan.md` + `sprint-status.yaml` + el plan de sprints publicado, en PDF o HTML) contra la propuesta firmada del cliente (PDF). Reglas SCOPE-C1..C6/W1..W4 (divergencias `added`/`moved`/`removed` contra lo firmado, CRs inválidos o sin evidencia, insumos ilegibles, fuentes del plan en desacuerdo) + co-enforcement de VAL-C7 a nivel global. Usar antes de demos comerciales, post-cambio sustancial en sprint-plan.md, o en sprint kick-off."
+description = "Cruza el plan de sprints actual con la propuesta firmada del cliente y detecta divergencias. Usar antes de demos comerciales, tras cambio sustancial en sprint-plan.md o en sprint kick-off"
 model = "gpt-5.6-luna"
 sandbox_mode = "read-only"
 

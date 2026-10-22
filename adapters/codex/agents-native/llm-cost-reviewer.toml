@@ -1,12 +1,12 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/llm-cost-reviewer.md
-# source_sha256: 62af9bca1d588300a3dacac62c791cc6dcca93734ea23ae1cea5ce8a5e3add0e
+# source_sha256: 672732fb1c610f8207963cecf1f21573d00bec81e096fba583f776d9562e04c0
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/llm-cost-reviewer.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "llm-cost-reviewer").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
 
 name = "llm-cost-reviewer"
-description = "Advisor Core condicional. Audita uso de Anthropic/Voyage/OpenAI SDK contra costo multi-tenant: llamadas sin max_tokens, loops sin cap, falta de prompt caching/batch/cache cross-tenant/timeout/fallback ante 529, API keys sin rotación, falta de rate-limit. Reglas LLMCOST-C1..C6/W1..W4. Solo invocar si el diff importa `@anthropic-ai/sdk`/`voyageai`/`openai` o toca `src/lib/llm/**`, `src/lib/embeddings/**`, `src/matcher/**`."
+description = "Audita uso de SDK LLM y su costo multi-tenant. Solo invocar si el diff importa @anthropic-ai/sdk, voyageai u openai, o toca src/lib/llm, src/lib/embeddings o src/matcher"
 model = "gpt-5.6-luna"
 sandbox_mode = "read-only"
 

@@ -152,16 +152,16 @@ test('PlanVisible_SinConversacion_PreguntaALaPersona @story-8.62 @ac-8', () => {
 });
 
 test('PlanVisible_InstruccionesLoDicen @story-8.62 @ac-9 @ac-10', () => {
-  const paso2 = fs.readFileSync(path.join(STEPS, 'step-02-invoke-bmad.md'), 'utf8');
+  const paso2 = fs.readFileSync(path.join(STEPS, 'step-03-plan.md'), 'utf8');
   assert.ok(paso2.includes(PLAN), 'el paso 2 dice dónde queda escrito el plan');
-  const paso3 = fs.readFileSync(path.join(STEPS, 'step-03-hitl-plan.md'), 'utf8');
+  const paso3 = fs.readFileSync(path.join(STEPS, 'step-04-approve-plan.md'), 'utf8');
   assert.match(paso3, /el plan se muestra siempre/i);
   const { computeRiskClass } = require(path.join(SCRIPTS, 'pipeline.js'));
   const { story } = repoConStory();
   const rc = computeRiskClass({ story });
   assert.equal(rc.risk, 'LOW');
   assert.match(rc.note, /se muestra siempre/);
-  const paso8 = fs.readFileSync(path.join(STEPS, 'step-08-commit-prep.md'), 'utf8');
+  const paso8 = fs.readFileSync(path.join(STEPS, 'step-11-prepare-commit.md'), 'utf8');
   const pendiente = paso8.split('\n').filter((l) => /^Pendiente tuyo:/.test(l));
   assert.equal(pendiente.length, 1, 'un solo renglón de pendientes en la plantilla del cierre');
   assert.doesNotMatch(pendiente[0], /\bsmoke\b|\bDoD\b|\bADO\b|clocki/);
@@ -169,11 +169,11 @@ test('PlanVisible_InstruccionesLoDicen @story-8.62 @ac-9 @ac-10', () => {
   // el reloj y el pedido de Azure DevOps van sólo si los hay: en la plantilla, entre llaves, y la regla lo dice
   assert.match(pendiente[0], /\{ · el reloj de horas[^}]*\}/);
   assert.match(pendiente[0], /\{ · el pedido de Azure DevOps[^}]*\}/);
-  assert.match(paso8, /Sólo los que aplican: el del reloj si el paso 0b avisó el trabajo[^]*si\s+la story tiene `ado_work_item`/);
+  assert.match(paso8, /Sólo los que aplican: el del reloj si el Arranque avisó el trabajo[^]*si\s+la story tiene `ado_work_item`/);
 });
 
 test('Paso8_CierreSinJerga @story-8.64 @ac-2: el cierre no nombra lo que no aplicó, no usa jerga y dice qué sigue en llano', () => {
-  const paso8 = fs.readFileSync(path.join(STEPS, 'step-08-commit-prep.md'), 'utf8');
+  const paso8 = fs.readFileSync(path.join(STEPS, 'step-11-prepare-commit.md'), 'utf8');
   const reglas = paso8.slice(paso8.indexOf('**Reglas del cierre:**'), paso8.indexOf('## 🟢 Limpieza del marker file'));
   assert.ok(reglas.length > 40, 'no encontré las «Reglas del cierre»');
   assert.match(reglas, /no corrió porque no aplicaba[^]*no se nombra/);
@@ -251,7 +251,7 @@ test('PlanVisible_OkSinPlan_NoAprueba @story-8.65 @ac-3', () => {
 });
 
 test('PlanVisible_InstruccionesLaPreguntaTraeElPlan @story-8.65 @ac-4', () => {
-  const paso3 = fs.readFileSync(path.join(STEPS, 'step-03-hitl-plan.md'), 'utf8');
+  const paso3 = fs.readFileSync(path.join(STEPS, 'step-04-approve-plan.md'), 'utf8');
   assert.match(paso3, /la pregunta a la persona trae el plan entero/i);
   assert.match(paso3, /con riesgo bajo, `--approved` también comprueba que el plan se vio/i);
 });

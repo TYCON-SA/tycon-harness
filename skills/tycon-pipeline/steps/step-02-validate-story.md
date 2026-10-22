@@ -195,5 +195,5 @@ Pasar al Step 2 solo si `should_continue: true`.
 ## Cierre del step
 
 ```bash
-node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step 1
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step validate-story
 ```

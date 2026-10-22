@@ -11,8 +11,8 @@ Cuando se crea una story Mary+GOLD (vía `tycon-create-story`, `bmad-create-epic
 `gds-create-story`, o a mano), este skill crea el **work item correspondiente en Azure
 DevOps** y escribe `ado_work_item: <id>` de vuelta en el frontmatter de la story.
 
-Cierra el gap que tenía el pipeline TYCON: hasta ahora `step-00c-ado-mark-active` y
-`step-09-ado-story-closure` (de `tycon-pipeline`) **consumían** `ado_work_item:` pero nadie
+Cierra el gap que tenía el pipeline TYCON: hasta ahora `step-01-start` y
+`close-work-item` (de `tycon-pipeline`) **consumían** `ado_work_item:` pero nadie
 lo **creaba** — el dev tenía que crear el WI a mano en la web de ADO y linkearlo. Este skill
 automatiza esa creación, manteniendo el dev en el loop con una confirmación.
 
@@ -56,7 +56,7 @@ Si falta el CLI o el token → **no crear el WI**. Avisar al dev una línea y te
 
 ## Paso 1 — Resolver la config ADO del repo
 
-Mismo orden de prioridad que `tycon-pipeline/steps/step-00c-ado-mark-active.md` y
+Mismo orden de prioridad que `tycon-pipeline/steps/step-01-start.md` y
 `step-09`. Walk-up desde la story `.md` hasta encontrar el root del repo
 (`.git/` o `.tycon/`):
 
@@ -300,9 +300,9 @@ Si hubo skip:
 
 ## Referencia cruzada
 
-- `tycon-pipeline/steps/step-00c-ado-mark-active.md` — transiciona el WI a `Active` al
+- `tycon-pipeline/steps/step-01-start.md` — transiciona el WI a `Active` al
   empezar a implementar. Consume el `ado_work_item:` que este skill escribe.
-- `tycon-pipeline/steps/step-09-ado-story-closure.md` — cierra el WI con trazabilidad
+- `tycon-pipeline/steps/close-work-item.md` — cierra el WI con trazabilidad
   post-merge. Otro consumidor de `ado_work_item:`.
 - `~/.claude/tycon-harness/guides/integrations/ado-projects.md` — schema de `.tycon/ado-config.yaml`,
   tabla de mapeo proyecto→ADO, y bloque de registro del hook.

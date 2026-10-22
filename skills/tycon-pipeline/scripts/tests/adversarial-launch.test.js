@@ -186,10 +186,10 @@ test('T2 Next_PendingLaunchBeforeFirstReviewer — veredicto «corre» + tempran
   assert.ok(out.pending_action, `sin acción pendiente: ${JSON.stringify(out)}`);
   assert.strictEqual(out.pending_action.kind, 'lanzar-pase');
   assert.match(out.pending_action.message, /mark-adversarial-launched/, 'dice cómo dejar la constancia');
-  assert.strictEqual(String(out.next_step), '5');
+  assert.strictEqual(String(out.next_step), 'reviewers');
   assert.strictEqual(out.step_name, 'Revisores');
   const m = leerMarker(home);
-  assert.ok(m.stepTimings && m.stepTimings['5'] && m.stepTimings['5'].startedAt, 'el arranque del paso 5 se anota como hoy');
+  assert.ok(m.stepTimings && m.stepTimings['5'] && m.stepTimings['5'].startedAt, 'el arranque de los revisores se anota (en el 5 del marcador viejo)');
 });
 
 // ------------------------------------------------------------------ T3
@@ -307,7 +307,7 @@ test('T7 EarlyOff_BelongsToTheRun — el temprano apagado una vez vale para la c
   assert.strictEqual(leerMarker(home).adversarialGate.early_launch, false, 'el apagado quedó en la corrida');
 
   let out = siguiente(home);
-  assert.strictEqual(String(out.next_step), '5');
+  assert.strictEqual(String(out.next_step), 'reviewers');
   assert.ok(!out.pending_action, `sin la variable, igual no pide lanzar (${JSON.stringify(out.pending_action)})`);
 
   // Una consulta posterior al portón sin la variable tampoco lo prende.
@@ -479,7 +479,7 @@ test('T13 Next_NoActionWhenGateSaysNo — «no corre» o temprano apagado: el pa
     const home = casa();
     enPaso5(home, mkRepo(), { adversarialGate: { ...gate, files: ['scripts/x1.js'], at: hace(1), sessionId: SID } });
     const out = siguiente(home);
-    assert.strictEqual(String(out.next_step), '5');
+    assert.strictEqual(String(out.next_step), 'reviewers');
     assert.ok(!out.pending_action, `${JSON.stringify(gate)}: sin acción (${JSON.stringify(out.pending_action)})`);
   }
 });

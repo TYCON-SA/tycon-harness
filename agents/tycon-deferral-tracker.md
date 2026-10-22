@@ -2,7 +2,7 @@
 name: tycon-deferral-tracker
 tools: Read, Grep, Glob, mcp__plugin_engram_engram__mem_search, mcp__plugin_engram_engram__mem_get_observation
 model: sonnet
-description: Advisor Core post-build (CRITICAL inmediato). Cierra el loop entre lo que la story declaró diferir (bloque `pipelines:` con acs/tasks/tests_pending) y la trazabilidad en código, `tasks/todo.md` y engram. Bloquea commit prep si la deuda es fantasma. Reglas DEFTR-C1..C2/W1..W2. Solo invocar si la story tiene bloque `pipelines:` o el diff tiene `*.skip()`/`[Fact(Skip=...)]`.
+description: Verifica que lo diferido por la story tenga trazabilidad en código, todo.md y engram. Solo invocar si la story tiene bloque pipelines o el diff tiene .skip() o tests con Skip
 omitClaudeMd: true
 ---
 

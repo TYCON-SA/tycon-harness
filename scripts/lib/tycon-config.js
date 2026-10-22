@@ -168,6 +168,11 @@ const VOCABULARIO = Object.freeze({
     // configuración; lo dice el evento de trabajo (scripts/lib/work-signal.js) y se trata como `none`. Los ajustes de una
     // integración van en `integrations.<nombre>` como objeto, con las claves que declara su manifiesto.
     timeTracking: 'texto',
+    // `platform`: la plataforma del equipo para lo que no es de un repo (scripts/lib/platform/platform.js), por área:
+    // `default`, y opcionales `workItems` (los pedidos de trabajo) y `queue` (la cola). Cada valor es el nombre de un
+    // conector de integrations/; uno que no existe no rompe la configuración: la capa lo dice y lo trata como sin elegir.
+    // Lo atado a un repo (pedidos de cambio, la CI) va por la plataforma del repo en team-repos.json, no por acá.
+    platform: 'plataforma',
   }),
   // La política de actualización del arnés (story 8.13, AC 12): valores CERRADOS (`opcion:a|b`). Un valor fuera de la
   // lista es un error (8.3 AC 2), nunca «apagado» ni el default. `TYCON_UPDATE=0` (apagar del todo) no es una clave:
@@ -439,6 +444,7 @@ function normalizarValor(tipo, valor, home, clave) {
   if (clave === 'ado.org') return normalizarOrg(valor);
   if (tipo === 'llave-o-detectar' && esDetect(valor)) return DETECT;   // el valor viejo se lee como el nuevo
   if (tipo === 'paquetes' && typeof valor === 'string') return valor.trim();
+  if (tipo === 'plataforma') return Object.fromEntries(Object.keys(valor).filter((k) => !esComentario(k)).map((k) => [k, String(valor[k]).trim().toLowerCase()]));
   if (Array.isArray(valor)) return valor.slice();
   return typeof valor === 'string' ? valor.trim() : valor;   // un booleano sigue siendo booleano
 }
@@ -508,7 +514,18 @@ function nombreArchivoMaquina(home) {
   return f.startsWith(h + path.sep) ? `~/${f.slice(h.length + 1).split(path.sep).join('/')}` : f;
 }
 /** La línea «cómo se prende» con el archivo que esta máquina lee de verdad. */
-function comoSePrende(llave, home) { return String(COMO_SE_PRENDE[llave] || '').split('~/.claude/tycon.json').join(nombreArchivoMaquina(home)); }
+/**
+ * La línea de cómo se prende una integración. Con la configuración cargada y Azure DevOps fuera de la plataforma que eligió
+ * la organización, no dice «apagado» (no hay nada que prender en la máquina): dice qué eligió.
+ */
+function comoSePrende(llave, home, config) {
+  if (llave === 'ado' && config && config.valores) {
+    const elegida = plataforma(config).value;
+    const todas = elegida ? Object.values(elegida) : [];
+    if (todas.length && !todas.includes('azure-devops')) return `Azure DevOps no es la plataforma de tu organización (eligió ${[...new Set(todas)].join(' y ')} en integrations.platform del perfil)`;
+  }
+  return String(COMO_SE_PRENDE[llave] || '').split('~/.claude/tycon.json').join(nombreArchivoMaquina(home));
+}
 
 /** El perfil: `TYCON_PROFILE=0` = sin perfil (`anulado`); `TYCON_PROFILE=<ruta>` = ése; si no, el del arnés. */
 function rutaPerfil(env, arnes, home) {
@@ -782,6 +799,17 @@ function validarTipo(tipo, valor) {
       if (malo !== undefined) return `${JSON.stringify(malo)} no es un canal de aviso (${CANALES_DE_AVISO.join(', ')})`;
       return new Set(valor.map((c) => c.trim())).size === valor.length ? null : `la lista repite un canal: ${JSON.stringify(valor)}`;
     }
+    case 'plataforma': {
+      // un objeto con las áreas del contrato, cada una con el nombre de un conector; nada más (una credencial acá es
+      // una clave desconocida: las credenciales son de cada máquina)
+      if (valor === null || typeof valor !== 'object' || Array.isArray(valor)) return `tiene que ser un objeto con las áreas (${AREAS_PLATAFORMA.join(', ')}), por ejemplo {"default": "github"}, no ${JSON.stringify(valor)}`;
+      const claves = Object.keys(valor).filter((k) => !esComentario(k));
+      if (!claves.length) return `no elige ninguna plataforma: al menos {"default": "<conector>"}`;
+      const otra = claves.find((k) => !AREAS_PLATAFORMA.includes(k));
+      if (otra !== undefined) return `«${otra}» no es un área de la plataforma (${AREAS_PLATAFORMA.join(', ')})`;
+      const mala = claves.find((k) => !(typeof valor[k] === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(valor[k].trim().toLowerCase())));
+      return mala === undefined ? null : `${mala}: tiene que ser el nombre de un conector (minúsculas, números y guiones), no ${JSON.stringify(valor[mala])}`;
+    }
     case 'puerto':
       return (Number.isInteger(valor) && valor >= 1 && valor <= 65535) ? null : `tiene que ser un puerto (un entero de 1 a 65535), no ${JSON.stringify(valor)}`;
     case 'ruta-absoluta':
@@ -1053,6 +1081,22 @@ function timeTracking(config) {
   }
   return { value: 'none', origin: 'sin-valor', legacy: false };
 }
+// las áreas de la plataforma del equipo: la copia de AREAS de scripts/lib/platform/contract.js (este lector no carga la
+// capa; una prueba compara las dos)
+const AREAS_PLATAFORMA = Object.freeze(['default', 'workItems', 'queue']);
+/**
+ * La plataforma elegida, según una configuración YA cargada: `{ value, origin, problem? }`; `value` null si no eligió
+ * ninguna. `TYCON_PLATFORM` (de la máquina) cambia sólo el valor por defecto: las áreas que eligió el perfil se quedan.
+ */
+function plataforma(config, env = process.env) {
+  const v = config.valores.integraciones.platform;
+  const base = v && typeof v === 'object' ? { ...v } : null;
+  const crudo = leerVariable(env, 'TYCON_PLATFORM');
+  const variable = crudo === undefined ? '' : String(crudo).trim().toLowerCase();
+  if (variable && !/^[a-z0-9][a-z0-9-]*$/.test(variable)) return { value: base, origin: config.origenes['integraciones.platform'] || 'sin-valor', problem: `TYCON_PLATFORM vale «${crudo}»; tiene que ser el nombre de un conector` };
+  if (variable) return { value: { ...(base || {}), default: variable }, origin: 'entorno TYCON_PLATFORM' };
+  return base ? { value: base, origin: config.origenes['integraciones.platform'] } : { value: null, origin: 'sin-valor' };
+}
 /**
  * Cómo contesta el asistente, según una configuración YA cargada: `{ language, style, max_chars, origen:
  * { language, style, max_chars } }`. `max_chars` sin valor es el tope del estilo (origen `estilo`).
@@ -1083,7 +1127,7 @@ function integracionParaComando(llave0, opts) {
   const llave = exigirIntegracion(llave0, opts && opts.home);
   const c = leer(opts);
   const { estado, origen } = estadoIntegracion(c, llave);
-  return { prendida: estado !== 'apagada', estado, origen, apagada: comoSePrende(llave, opts && opts.home), config: c };
+  return { prendida: estado !== 'apagada', estado, origen, apagada: comoSePrende(llave, opts && opts.home, c), config: c };
 }
 /** Modo HOOK: nunca tira. Rota → `ok:false`, `prendida:false` y el aviso (el hook lo imprime y no hace su parte).
  *  `opts.interruptor` = el interruptor por hook que ya existía (`TYCON_ENGRAM_HOOK`, …): puesto en `1` manda PRENDIDA y en
@@ -1101,7 +1145,7 @@ function integracionParaHook(llave0, opts) {
   const r = leerParaHook(opts);
   if (!r.ok) return { ok: false, prendida: false, estado: 'rota', origen: null, aviso: r.aviso, errores: r.errores, apagada: comoSePrende(llave, opts && opts.home) };
   const { estado, origen } = estadoIntegracion(r.config, llave);
-  return { ok: true, prendida: estado !== 'apagada', estado, origen, apagada: comoSePrende(llave, opts && opts.home), config: r.config };
+  return { ok: true, prendida: estado !== 'apagada', estado, origen, apagada: comoSePrende(llave, opts && opts.home, r.config), config: r.config };
 }
 
 /** Modo COMANDO: tira `ConfigError` si hay errores. */
@@ -1391,7 +1435,7 @@ module.exports = {
   VOCABULARIO, DEFAULTS, PROFILE_WINS, PROFILE_ONLY, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
   rutaMaquina, nombreArchivoMaquina, comoSePrende, rutaPerfil, leerPerfil, rutaLlaveBuzon, cargar, leer, leerParaHook, avisoParaHook, valor, explicar, estadoEnlace, formaPersonal,
   normalizarOrg, nombreDeOrganizacion, resolverRutaDeArchivo, personalEnComentario,
-  esIntegracion, estadoIntegracion, integraciones, timeTracking, respuesta, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, cli,
+  esIntegracion, estadoIntegracion, integraciones, timeTracking, plataforma, validarTipo, AREAS_PLATAFORMA, respuesta, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, cli,
 };
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────────────

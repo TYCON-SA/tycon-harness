@@ -2,7 +2,7 @@
 name: tycon-ac-coverage-checker
 tools: Read, Grep, Glob
 model: sonnet
-description: Advisor Core post-build (CRITICAL inmediato). Cross-checkea CADA AC + CADA Test de la tabla `### Tests` Mary+GOLD contra implementación grep-able (atrapa gaps invisibles al smoke: AC dice X pero el service no llama Y). Bloquea transición a `done` si hay ACs/Tests sin evidencia. Solo invocar post-implementación cuando la story pasa a `review`/`done`.
+description: Cruza cada AC y cada Test de la story contra la implementación y bloquea el paso a done sin evidencia. Solo invocar post-implementación cuando la story pasa a review o done
 omitClaudeMd: true
 ---
 

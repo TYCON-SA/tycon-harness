@@ -1,0 +1,10 @@
+{
+  "__doc": "El conector de GitHub de la capa de plataforma (scripts/lib/platform/platform.js). Usa el gh de la máquina (TYCON_GH_CMD) con su sesión o GH_TOKEN; el token de lectura del repo del equipo sigue siendo github.token. Las operaciones que todavía no declara contestan no_soportado. Guía: guides/integrations/platform-connectors.md.",
+  "name": "github",
+  "label": "GitHub",
+  "kind": "platform",
+  "connector": "scripts/connector.js",
+  "operations": ["deployments.read"],
+  "capabilities": { "completedHours": "comment", "workItemType": "label", "autoComplete": "auto-or-wait" },
+  "rawCommands": ["gh pr create", "gh pr merge", "gh issue create"]
+}

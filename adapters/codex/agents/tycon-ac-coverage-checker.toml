@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-ac-coverage-checker.md
-# source_sha256: 4e0442a0d1629c64bacf4bf5a5d22e86404218df98c4737888388c559ed443af
+# source_sha256: 8cb7410f91ca383a7dff12b98643bf93440c8b1beed166a7d2aea5b10f18c2a0
 # Se despliega como $CODEX_HOME/tycon-ac-coverage-checker.config.toml y se invoca: codex exec -p tycon-ac-coverage-checker
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 

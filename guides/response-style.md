@@ -161,7 +161,7 @@ en segundo plano, `blocking-meter.js`, copió este molde.)
 - Si esta regla y el template de un skill chocan, gana esta salvo que el skill diga explícitamente "va
   completo al chat".
 - Los steps del pipeline y un agente citan el bloque **por nombre de sección** ("regla madre",
-  §"Lo que devuelve un SUBAGENTE"): `steps/step-01-validate-story.md`, `steps/step-05-advisors-parallel.md`,
+  §"Lo que devuelve un SUBAGENTE"): `steps/step-02-validate-story.md`, `steps/step-07-reviewers.md`,
   `agents/tycon-retrospective-capturer.md`. Esos dos nombres se conservaron en la poda a propósito;
   renombrarlos deja punteros muertos del otro lado.
 

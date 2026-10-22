@@ -31,12 +31,12 @@ const fecha = (s) => { const t = Date.parse(s || ''); return Number.isNaN(t) ? 0
 const masNuevoPrimero = (a, b) => fecha(b.created_at) - fecha(a.created_at) || Number(b.id) - Number(a.id);
 const MAIN = { success: 'verde', failure: 'roto', timed_out: 'roto', startup_failure: 'roto', neutral: 'con_avisos' };
 
-function crear({ cmd = process.env.TYCON_GH_CMD || 'gh', deadline, ventana = 30 }) {
+function crear({ env = process.env, cmd = env.TYCON_GH_CMD || 'gh', deadline, ventana = 30 }) {
   function gh(ruta, { tolera404 = false } = {}) {
     if (Date.now() >= deadline) throw noMedido('presupuesto_agotado', 'se agotó el tiempo de la noche antes de consultar');
     const [bin, pre] = /\.js$/.test(cmd) ? [process.execPath, [cmd]] : [cmd, []];
     const r = spawnSync(bin, [...pre, 'api', '-H', 'Accept: application/vnd.github+json', ruta], {
-      encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: Math.max(1000, Math.min(120000, deadline - Date.now())), env: process.env,
+      encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: Math.max(1000, Math.min(120000, deadline - Date.now())), env,
     });
     if (r.error) throw noMedido('gh_fallo', `${cmd} no se pudo ejecutar (${r.error.code || r.error.message})`);
     if (r.status !== 0) {

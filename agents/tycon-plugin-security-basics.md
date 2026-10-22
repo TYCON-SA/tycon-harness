@@ -2,7 +2,7 @@
 name: tycon-plugin-security-basics
 tools: Read, Grep, Glob
 model: sonnet
-description: Advisor Core during/post. Scan de seguridad sobre el diff: secretos hardcoded, inputs sin validación, datos sensibles en respuestas, cripto incorrecto, path traversal/injection, webhooks sin firma/idempotency, config de seguridad con fallback hardcodeado (fail-fast), bind a todas las interfaces. Reglas SEC-C1..C9/W1..W7 (todo CRITICAL salvo lista WARNING). Usar en pipeline post-implementación antes del commit/merge.
+description: Scan de seguridad sobre el diff (secretos hardcoded, inputs sin validar, injection, webhooks sin firma, cripto). Usar post-implementación antes del commit o merge.
 omitClaudeMd: true
 ---
 

@@ -1,12 +1,12 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-spec-first-checker.md
-# source_sha256: 561983acc61263c69616377a337761f41c722a9c35ef254ab878cb9fb79cbd57
+# source_sha256: 51d64929bce1d67a966b2eb515171d2381a4483086d8b0b516fcb3c8aecaf410
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-spec-first-checker.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-spec-first-checker").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
 
 name = "tycon-spec-first-checker"
-description = "Advisor Core pre-coding (CRITICAL inmediato). Detecta scope creep no documentado entre el spec Mary+GOLD y lo que el dev va a implementar (o implementó) — cierra el loop 'código primero, spec después': endpoints/componentes/contratos/filtros nuevos sin AC, condiciones compuestas implementadas a medias, 'TODO update spec'. Reglas SPEC-C1..C9 / SPEC-W1..W7 (catálogo completo en este archivo). Solo invocar antes de cada coding phase o sobre un diff antes del Step 4. Stack-agnostic."
+description = "Detecta scope creep no documentado entre el spec y lo implementado (endpoints, contratos o filtros sin AC). Solo invocar antes de cada coding phase o sobre un diff antes del Step 4"
 model = "gpt-5.6-terra"
 sandbox_mode = "read-only"
 

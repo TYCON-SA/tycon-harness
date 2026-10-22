@@ -12,7 +12,7 @@
 set -uo pipefail
 RAIZ="$(cd "$(dirname "$0")/../.." && pwd)"
 SKILL="$RAIZ/integrations/clockify/skills/clocki/SKILL.md"
-STEP="$RAIZ/skills/tycon-pipeline/steps/step-00b-work-start.md"
+STEP="$RAIZ/skills/tycon-pipeline/steps/step-01-start.md"
 [[ -f "$SKILL" ]] || { echo "❌ clocki-codex-toolnames: falta $SKILL (la skill de la integración de Clockify)"; exit 1; }
 [[ -f "$STEP" ]] || { echo "❌ clocki-codex-toolnames: falta $STEP (el paso 0b del pipeline)"; exit 1; }
 

@@ -1,7 +1,7 @@
 ---
 name: tycon-signed-scope-audit
 tools: Read, Grep, Glob, Bash
-description: Advisor de auditoría signed-scope on-demand. Cross-checkea el plan actual (`sprint-plan.md` + `sprint-status.yaml` + el plan de sprints publicado, en PDF o HTML) contra la propuesta firmada del cliente (PDF). Reglas SCOPE-C1..C6/W1..W4 (divergencias `added`/`moved`/`removed` contra lo firmado, CRs inválidos o sin evidencia, insumos ilegibles, fuentes del plan en desacuerdo) + co-enforcement de VAL-C7 a nivel global. Usar antes de demos comerciales, post-cambio sustancial en sprint-plan.md, o en sprint kick-off.
+description: Cruza el plan de sprints actual con la propuesta firmada del cliente y detecta divergencias. Usar antes de demos comerciales, tras cambio sustancial en sprint-plan.md o en sprint kick-off
 model: sonnet
 omitClaudeMd: true
 ---

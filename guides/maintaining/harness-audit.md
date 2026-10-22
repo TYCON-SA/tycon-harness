@@ -77,7 +77,7 @@ Invoca `rules-distill.js` internamente. Score por:
 
 ¿El pipeline orchestrator está coherente entre sus 3 archivos?
 - `tycon-pipeline/SKILL.md` existe.
-- `tycon-pipeline/steps/step-05-advisors-parallel.md` existe.
+- `tycon-pipeline/steps/step-07-reviewers.md` existe.
 - `tycon-pipeline/scripts/pipeline.js` existe.
 - Para advisors típicos (`tycon-e2e-realness-checker`, `tycon-silent-failure-hunter`, `http-resilience-reviewer`): el advisor está mencionado en los **3 archivos** simultáneamente. Por qué: un advisor que está solo en SKILL.md y falta en pipeline.js es una regresión.
 

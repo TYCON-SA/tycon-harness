@@ -122,7 +122,7 @@ archivo propio ~/.claude/clocki/active/${sessionKey}.json (forma { "<cwd>": <ent
 
 Si efectivamente estás haciendo trabajo trackeable (edits a código/specs/tests, NO solo exploración Read-only):
 - Abrí un timer ANTES de la próxima Edit/Write: invocá la skill clocki con \`start "descripción corta del trabajo"\`.
-- Si la tarea pertenece a una story TYCON, el clocki:start del tycon-pipeline ya debería haber abierto el timer. Si no está activo, el pipeline lo cerró antes de tiempo (anti-patrón documentado en step-08-commit-prep.md). Reabrir manualmente con la descripción real del trabajo en curso.
+- Si la tarea pertenece a una story TYCON, el clocki:start del tycon-pipeline ya debería haber abierto el timer. Si no está activo, el pipeline lo cerró antes de tiempo (anti-patrón documentado en step-11-prepare-commit.md). Reabrir manualmente con la descripción real del trabajo en curso.
 
 Si es exploración casual (Read sin modificar, debugging que no genera commits) → ignorar este reminder; rate-limit de 10min impide spam.
 

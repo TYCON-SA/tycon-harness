@@ -655,8 +655,11 @@ test('T6 Sugerencia_SeAcepta', async () => {
   assert.deepStrictEqual(rev.cuerpo.borrador.people.projects[DEV].add, ['Alfa', 'Beta'], 'Aceptar la sumó a lo declarado');
   // «Quitar» sobre un declarado lo saca de add (y no escribe un remove)
   const pq = await pantallaFalsa([{ ...seccion, borrador: { people: { projects: { [DEV]: { add: ['Alfa', 'Beta'] } } } }, extras: { personas: [{ correo: DEV, sugeridos: [], caida: false }] } }]);
-  const quitar = pq.todo(pq.sec('personas')).find((n) => n.tag === 'button' && n.textContent === 'Quitar' && n.attrs['data-producto'] === 'Beta');
-  assert.ok(quitar, 'cada declarado tiene su Quitar');
+  // cada producto es una etiqueta con su propia ×, que dice qué quita
+  const quitar = pq.todo(pq.sec('personas')).find((n) => n.tag === 'button' && n.textContent === '×' && n.attrs['data-producto'] === 'Beta' && n.attrs['aria-label'] === 'Quitar Beta');
+  assert.ok(quitar, 'cada declarado tiene su × con su nombre');
+  assert.ok(!pq.todo(pq.sec('personas')).some((n) => n.tag === 'button' && n.textContent === 'Quitar'), 'sin «Quitar» sueltos que no dicen qué quitan');
+  assert.ok(pq.textoDe('personas').includes('Quienes mantienen el arnés ven todo: no hace falta agregarlos acá.'), 'la línea de arriba');
   quitar.on.click({});
   for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
   await pq.click('Revisar cambios', 'personas');
@@ -682,7 +685,8 @@ test('T11 Personas_DeclaradoBajoOtroCorreo_SeVeYSeEdita', async () => {
   const seccion = { id: 'personas', titulo: 'personas', repo: 'operaciones', estado: 'cargado', soloLectura: false, motivo: null, problems: [], avisos: [],
     borrador: { people: { projects: { 'Segundo.Correo@acme.example': { add: ['Alfa'] } } } }, extras: { personas: [{ correo: DEV, clave: 'Segundo.Correo@acme.example', sugeridos: ['Beta'], caida: false }] } };
   const pa = await pantallaFalsa([seccion]);
-  assert.ok(pa.textoDe('personas').includes('ve los productos: Alfa'), pa.textoDe('personas'));
+  // lo declarado bajo el otro correo se ve: «ve los productos:» con la etiqueta de Alfa y su ×
+  assert.ok(pa.todo(pa.sec('personas')).some((n) => n.tag === 'button' && n.attrs['aria-label'] === 'Quitar Alfa'), pa.textoDe('personas'));
   await pa.click('Aceptar', 'personas');
   await pa.click('Revisar cambios', 'personas');
   const rev = pa.pedidos.filter((x) => x.ruta === '/api/config/revisar').pop();
@@ -3231,7 +3235,8 @@ test('T6 Repos_EditarAgregarSacar @story-2.59 @ac-6', async () => {
   await p.click('+ Agregar repo', 'suites');
   assert.strictEqual(p.renglones(p.tablas()[0]).length, 6);
   assert.strictEqual(p.de(fila(5), 'edit').length, 1, 'el nuevo, abierto');
-  esperado = clon2(SUITES_5); esperado.repos.push({ repo: { platform: 'azure', org: '', project: '', repo: '' }, rule: 'automatico' });
+  // un repo nuevo nace sin plataforma: la pantalla no adivina; el lector frena hasta que se elija
+  esperado = clon2(SUITES_5); esperado.repos.push({ repo: { platform: '', org: '', project: '', repo: '' }, rule: 'automatico' });
   assert.deepStrictEqual((await p.revisado()).merge_suites, esperado);
   // un repo con problema se dibuja abierto y con su mensaje
   p = await compacta(secSuites(SUITES_5, [{ path: 'merge_suites.repos.3.repo.org', message: 'falta' }, { path: 'merge_suites.repos.0.extra', message: 'clave desconocida' }]));
@@ -3272,7 +3277,7 @@ test('T13 Repos_SinPipelineQuePasa @story-2.59 @ac-13', async () => {
 test('T7 Integraciones_UnRenglonPorIntegracion @story-2.59 @ac-7', async () => {
   let p = await compacta(secInteg(INTEG));
   const filas = p.renglones(p.tablas()[0]);
-  assert.strictEqual(filas.length, 7, 'la de horas, la de los avisos (story 7.40), las cuatro de antes y CodeGraph');
+  assert.strictEqual(filas.length, 10, 'la de horas, las tres de la plataforma del equipo (8.85), la de los avisos (story 7.40), las cuatro de antes y CodeGraph');
   assert.ok(p.clases(p.tablas()[0]).includes('integ'));
   filas.forEach((f) => { assert.strictEqual(p.de(f, 'que').length, 1); assert.strictEqual(p.todo(f).filter((n) => n.tag === 'select').length, 1); });
   assert.match(p.texto(filas[0]), /Registro de horas/, 'el primero es la herramienta de horas');

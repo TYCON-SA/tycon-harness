@@ -394,7 +394,7 @@ test('T13 8.56-Tablero_NoMedidoEsError @story-8.56 @ac-12', () => {
 });
 
 test('T14 8.56-Paso5b_LoDice @story-8.56 @ac-13', () => {
-  const t = fs.readFileSync(path.join(SKILL, 'steps', 'step-05b-adversarial-verify.md'), 'utf8');
+  const t = fs.readFileSync(path.join(SKILL, 'steps', 'step-08-adversarial-pass.md'), 'utf8');
   assert.match(t, /--result/);
   assert.match(t, /step-05b-adversarial\.json/);
   assert.match(t, /no medido/i);
