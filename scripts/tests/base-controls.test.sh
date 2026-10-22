@@ -644,6 +644,43 @@ run "${R}" "${T}/t17b.out"
 has "T17 reordenar las claves no suma nada" "${T}/t17b.out" "scripts/ci/toy-names.json (control toy): 0 suma(s)"
 lacks "T17 …ni saca nada" "${T}/t17b.out" '- names:'
 
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T18 · la firma se calcula contra la punta del pedido, también si la rama termina en un merge con main
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+R="${T}/t18"; make_base "${R}"; pr "${R}"
+printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido.txt", "docs/malo.txt"] }' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "afloja"
+lab_git -C "${R}" checkout -q main; printf 'otra cosa\n' > "${R}/docs/otra.txt"; commit "${R}" "main sigue"
+lab_git -C "${R}" checkout -q pedido; lab_git -C "${R}" merge -q --no-edit main > /dev/null 2>&1
+DEL_PEDIDO="$(lab_git -C "${R}" rev-parse pedido:scripts/ci/toy-rules.json)"
+DE_MAIN="$(lab_git -C "${R}" rev-parse main:scripts/ci/toy-rules.json)"
+# la rama termina en «merge de main»: su segundo padre es main, no el pedido
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t18a.out" 2>&1
+has "T18 con la rama terminada en un merge de main, la entrada es la de la punta del pedido" "${T}/t18a.out" "\"blob\":\"${DEL_PEDIDO}\""
+lacks "T18 …y no la de main" "${T}/t18a.out" "\"blob\":\"${DE_MAIN}\""
+# el merge que arma GitHub (primer padre la base, segundo el pedido): la entrada sigue siendo la del pedido
+GH="$(lab_git -C "${R}" commit-tree "$(lab_git -C "${R}" rev-parse 'pedido^{tree}')" -p main -p pedido -m 'merge de GitHub')"
+bash "${SCRIPT}" pending --root "${R}" --base main --range "main...${GH}" > "${T}/t18b.out" 2>&1
+has "T18 con el merge de GitHub, la entrada es la del pedido" "${T}/t18b.out" "\"blob\":\"${DEL_PEDIDO}\""
+# approve se niega, antes de escribir, con entradas que no son las de la punta
+BASE_CONTROLS_STDIN_INTERACTIVE=1 bash "${SCRIPT}" approve --root "${R}" --entries "[{\"path\":\"scripts/ci/toy-rules.json\",\"blob\":\"${DE_MAIN}\"}]" < /dev/null > "${T}/t18c.out" 2>&1; RC=$?
+[ "${RC}" -ne 0 ] && ok "T18 approve con entradas que no son las de la punta se niega" || no "T18 approve firmó entradas que no son las de la punta"
+has "T18 …y dice por qué" "${T}/t18c.out" "no coinciden con la punta"
+[ ! -e "${R}/.tycon/control-changes.jsonl" ] && ok "T18 …sin escribir la constancia" || no "T18 escribió la constancia con entradas de otra versión"
+# main avanzó después de que GitHub armó su merge: el primer padre es una versión anterior de la base, y el pedido sigue
+# siendo el segundo padre
+lab_git -C "${R}" checkout -q main; printf 'más\n' > "${R}/docs/mas.txt"; commit "${R}" "main avanza otra vez"; lab_git -C "${R}" checkout -q pedido
+bash "${SCRIPT}" pending --root "${R}" --base main --range "main...${GH}" > "${T}/t18d.out" 2>&1
+has "T18 con main adelantado respecto del merge de GitHub, la entrada sigue siendo la del pedido" "${T}/t18d.out" "\"blob\":\"${DEL_PEDIDO}\""
+# un --root que no es un repo: «no pude», nunca «no coinciden»
+mkdir -p "${T}/t18-vacio"
+BASE_CONTROLS_STDIN_INTERACTIVE=1 bash "${SCRIPT}" approve --root "${T}/t18-vacio" --entries '[{"path":"x","blob":"y"}]' < /dev/null > "${T}/t18e.out" 2>&1; RC=$?
+is "T18 approve sobre algo que no es un repo: no pude (exit 2)" "2" "${RC}"
+has "T18 …y lo dice" "${T}/t18e.out" "no pude leer la punta"
+# --file con --rev fuera de HEAD firma esa versión: el chequeo de la punta no aplica (llega a pedir la terminal)
+bash "${SCRIPT}" approve --root "${R}" --file scripts/ci/toy-rules.json --rev main < /dev/null > "${T}/t18f.out" 2>&1
+lacks "T18 approve --file --rev no choca con el chequeo de la punta" "${T}/t18f.out" "no coinciden con la punta"
+has "T18 …y pide la terminal como siempre" "${T}/t18f.out" "pide una terminal"
+
 echo
 if [ "${FAILS}" -eq 0 ]; then echo "✅ base-controls: ${TOTAL} verificaciones verdes"; exit 0; fi
 echo "❌ base-controls: ${FAILS} de ${TOTAL} en rojo"
