@@ -13,7 +13,7 @@ promise that everything will work the same on your repos.
 - With **Codex**, the harness blocks what it should and you can work, but the pipeline cannot launch reviewers (a
   problem between Codex and Ollama, reported there).
 - You need a model that **uses tools**. A local 7B model does not use them and is not enough.
-- The controls work, but a model can write the variable that turns them off by itself. Read
+- The controls work, and a model tries to get around them: their escapes are the person's decision. Read
   [the warnings](#warnings).
 
 ## What you need
@@ -179,6 +179,10 @@ profiles.
   minutes ([control guide](../safety-guard.md)). The tests control keeps its light escape: `beam` used it on its own,
   and it only protects the machine's load. Codex does not let the harness read its conversation, so there the
   per-command escape does not count.
+- **A model may skip the steps of the stories skill.** In the lab, `gemma4` called `tycon-create-story` without
+  following its steps, authorized the hand-written-story bypass by itself and wrote the story anyway. That no longer
+  works: writing a story without the skill only counts if the person wrote **"autorizo story-skill-bypass"** ("I
+  authorize story-skill-bypass") in the chat.
 - **Check the state, not the story.** `gpt-oss` loaded the pipeline skill and, over five turns, reported steps 1 to 7
   as "completed" without running a script or writing a file. The controls did not stop it because there was nothing to
   stop. What gives it away is the state: the story stayed in `ready-for-dev` and no new files appeared. Check
