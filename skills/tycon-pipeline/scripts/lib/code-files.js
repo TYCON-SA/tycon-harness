@@ -24,6 +24,23 @@ const SOURCE_EXTS = Object.freeze([
 const SOURCE_SET = new Set(SOURCE_EXTS);
 const CODE_ONLY_EXTS = Object.freeze(['.sh', '.csproj']);
 const CODE_SET = new Set([...SOURCE_EXTS, ...CODE_ONLY_EXTS]);
+/** El lenguaje de cada terminación de arriba, para decirle a una persona qué reconoce el arnés (el sitio la muestra). */
+const LANGUAGES = Object.freeze({
+  '.ts': 'TypeScript', '.tsx': 'TypeScript', '.mts': 'TypeScript', '.cts': 'TypeScript',
+  '.js': 'JavaScript', '.jsx': 'JavaScript', '.mjs': 'JavaScript', '.cjs': 'JavaScript',
+  '.cs': 'C# (.NET)', '.csproj': '.NET (proyecto)', '.py': 'Python', '.go': 'Go', '.rb': 'Ruby', '.java': 'Java',
+  '.kt': 'Kotlin', '.swift': 'Swift', '.vue': 'Vue', '.svelte': 'Svelte', '.sh': 'Shell',
+});
+/** Las terminaciones agrupadas por lenguaje, en el orden de las listas: `[{ language, exts }]`. */
+function byLanguage() {
+  const out = [];
+  for (const e of [...SOURCE_EXTS, ...CODE_ONLY_EXTS]) {
+    const language = LANGUAGES[e] || e;
+    const g = out.find((x) => x.language === language);
+    if (g) g.exts.push(e); else out.push({ language, exts: [e] });
+  }
+  return out;
+}
 
 /** La forma de una extensión que la organización puede sumar: punto, minúsculas, letras o números. */
 const EXT_RE = /^\.[a-z0-9]+(?:\.[a-z0-9]+)?$/;
@@ -97,4 +114,4 @@ function parseExtensions(value, base = 'stack.code_extensions') {
   return problems.length ? { extra: [], problems } : { extra: value.slice(), problems: [] };
 }
 
-module.exports = { SOURCE_EXTS, CODE_ONLY_EXTS, EXT_RE, isSource, isCode, isTestFile, SKIP_MARK_RE, GO_SKIP_MARK_RE, hasSkipMark, parseExtensions, extOf };
+module.exports = { SOURCE_EXTS, CODE_ONLY_EXTS, LANGUAGES, byLanguage, EXT_RE, isSource, isCode, isTestFile, SKIP_MARK_RE, GO_SKIP_MARK_RE, hasSkipMark, parseExtensions, extOf };

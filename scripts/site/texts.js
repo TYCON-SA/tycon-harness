@@ -280,19 +280,6 @@ const TEXTOS = {
   'corridas.textosIlegibles': { es: 'los textos de esta ejecución no se pudieron leer del disco del sitio', en: "this run's texts could not be read from the site's disk" },
   'corridas.vacioSinInforme': { es: 'no medido: todavía no se pudo saber de quién es cada máquina (lo que informan las máquinas se lee con la primera bajada entera del buzón); tus ejecuciones faltan, no son cero', en: 'not measured: it is not known yet who owns each machine (what the machines report is read with the first full download of the mailbox); your runs are missing, not zero' },
   'corridas.vacioTodavia': { es: 'todavía no hay ejecuciones de tus máquinas en el buzón ({maquinas}): la primera llega sola al terminar un pipeline', en: 'there are no runs from your machines in the mailbox yet ({maquinas}): the first one arrives automatically when a pipeline finishes' },
-  // el filtro de la vista (las etiquetas, los atajos y la cuenta; `{n}` y `{t}` los llena el cliente)
-  'corridas.filtro.filtro': { es: 'Filtro', en: 'Filter' },
-  'corridas.filtro.desde': { es: 'desde', en: 'from' },
-  'corridas.filtro.hasta': { es: 'hasta', en: 'to' },
-  'corridas.filtro.producto': { es: 'producto', en: 'product' },
-  'corridas.filtro.maquina': { es: 'máquina', en: 'machine' },
-  'corridas.filtro.sinConsumo': { es: 'sólo con consumo medido', en: 'only with measured usage' },
-  'corridas.filtro.llegaron': { es: 'sólo las que llegaron al paso 8', en: 'only those that reached step 8' },
-  'corridas.filtro.limpiar': { es: 'limpiar', en: 'clear' },
-  'corridas.filtro.hoy': { es: 'hoy', en: 'today' },
-  'corridas.filtro.semana': { es: 'esta semana', en: 'this week' },
-  'corridas.filtro.mes': { es: 'este mes', en: 'this month' },
-  'corridas.filtro.cuenta': { es: '{n} de {t} ejecuciones a la vista', en: '{n} of {t} runs shown' },
   'corridas.ningunaConfirmada': { es: 'ninguna confirmada', en: 'none confirmed' },
   // ── el inicio de sesión: lo que dicen los proveedores (auth-providers/, oidc.js); se arman en castellano y se traducen al mostrarse ──
   'proveedor.oidc': { es: 'un proveedor OpenID Connect propio de la organización', en: "the organization's own OpenID Connect provider" },
@@ -609,6 +596,8 @@ const TEXTOS = {
   'pantalla.tecTuTecnologia2': { es: 'tu tecnología', en: 'your technology' },
   'pantalla.tecLlegaATodasLasMaquinas': { es: 'Lo que guardás acá se aplica a todas las máquinas del equipo: qué lenguajes son código, cómo se corren las pruebas de cada proyecto y las reglas de tu equipo.', en: 'What you save here applies to every machine on the team: which languages are code, how each project\'s tests run, and your team\'s rules.' },
   'pantalla.tecYaReconoce': { es: 'El arnés ya reconoce el código de .NET, JavaScript, TypeScript, Python, Go, Java, Ruby, Kotlin, Swift, Svelte y Vue. Si tu equipo usa eso, no tenés que configurar nada.', en: 'The harness already recognizes .NET, JavaScript, TypeScript, Python, Go, Java, Ruby, Kotlin, Swift, Svelte and Vue code. If your team uses those, you don\'t have to configure anything.' },
+  'pantalla.tecVerTerminaciones': { es: 'Ver las terminaciones que ya reconoce', en: 'See the file extensions it already recognizes' },
+  'pantalla.tecYaLaReconoce': { es: '{ext}: ya la reconoce, no hace falta agregarla', en: '{ext}: already recognized, no need to add it' },
   'pantalla.tecLenguajesQueNoConoce': { es: '1. Lenguajes que el arnés no conoce', en: '1. Languages the harness doesn\'t know' },
   'pantalla.tecLenguajesAyuda': { es: 'Si programan en otro lenguaje, agregá la terminación de sus archivos. Así los cambios en esos archivos pasan por los revisores.', en: 'If you code in another language, add its file extension. That way changes to those files go through the reviewers.' },
   'pantalla.tecTerminacionEjemplo': { es: 'por ejemplo .ex para Elixir', en: 'for example .ex for Elixir' },
@@ -1656,6 +1645,10 @@ for (const f of require('fs').readdirSync(require('path').join(__dirname, 'auth-
 // lo que dice el armado del pedido de Configuración (scripts/lib/repo-proposal.js, `rp.*`) vive en ese archivo, que nombra
 // las plataformas: la tabla también lo suma
 for (const [k, v] of Object.entries(require('../lib/repo-proposal.js').TEXTOS || {})) { if (TEXTOS[k]) throw new Error(`texts.js: la clave «${k}» está dos veces`); TEXTOS[k] = v; }
+
+// los textos de la vista de ejecuciones (`corridas.v.*`, `.filtro.*`, `.c.*`, `.m.*`) viven al lado de la vista, que viaja
+// sin el sitio (scripts/nightly/dashboard/runs-texts.js): la tabla también los suma
+for (const [k, v] of Object.entries(require('../nightly/dashboard/runs-texts.js').TEXTOS || {})) { if (TEXTOS[k]) throw new Error(`texts.js: la clave «${k}» está dos veces`); TEXTOS[k] = v; }
 
 /** Los valores con nombre de un texto, ordenados: `{n}`, `{fecha}`. */
 function valoresDe(texto) {

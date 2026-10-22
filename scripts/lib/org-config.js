@@ -2444,9 +2444,30 @@ function pantalla(idioma = 'es') {
     var ex = s.extras || {};
     var st = esObjeto(d.stack) ? d.stack : {};
     var box = el('div', { class: 'pila' }, el('p', { class: 'sub-d', text: T('pantalla.tecYaReconoce') }));
-    // 1. las terminaciones que también son código
+    // las terminaciones que ya cuenta como código, por lenguaje: las da el servidor del lector del arnés (code-files.js)
+    var reconocidas = Array.isArray(ex.reconocidas) ? ex.reconocidas : null;
+    var yaEsta = {};
+    if (reconocidas) {
+      var det = el('details', { class: 'reconocidas', 'data-reconocidas': '' }, el('summary', { text: T('pantalla.tecVerTerminaciones') }));
+      var ul = el('ul', { class: 'muted' });
+      reconocidas.forEach(function (g) {
+        (g.exts || []).forEach(function (e) { yaEsta[e] = true; });
+        ul.appendChild(el('li', {}, el('b', { text: g.language + ': ' }), el('span', { text: (g.exts || []).join(', ') })));
+      });
+      det.appendChild(ul);
+      box.appendChild(det);
+    } else if (ex.reconocidasMotivo) box.appendChild(el('p', { class: 'muted', 'data-reconocidas-motivo': '', text: ex.reconocidasMotivo }));
+    // 1. las terminaciones que también son código; una que ya reconoce se avisa mientras se escribe
     var exts = Array.isArray(st.code_extensions) ? st.code_extensions.slice() : [];
-    box.appendChild(listaDeTextos(T('pantalla.tecLenguajesQueNoConoce'), T('pantalla.tecLenguajesAyuda'), exts, function (l) { stackDe(d).code_extensions = l; limpiarStack(d); }, 'stack.code_extensions', pr, T('pantalla.tecTerminacionEjemplo'), T('pantalla.tecAgregarTerminacion')));
+    var avisoYaReconoce = el('p', { class: 'muted', 'data-ya-reconoce': '' });
+    var pintarAviso = function (l) {
+      var repetidas = (l || []).filter(function (e) { return yaEsta[String(e || '').trim().toLowerCase()]; });
+      avisoYaReconoce.textContent = repetidas.length ? T('pantalla.tecYaLaReconoce', { ext: repetidas.join(', ') }) : '';
+    };
+    pintarAviso(exts);
+    var lista = listaDeTextos(T('pantalla.tecLenguajesQueNoConoce'), T('pantalla.tecLenguajesAyuda'), exts, function (l) { stackDe(d).code_extensions = l; limpiarStack(d); pintarAviso(l); }, 'stack.code_extensions', pr, T('pantalla.tecTerminacionEjemplo'), T('pantalla.tecAgregarTerminacion'));
+    lista.appendChild(avisoYaReconoce);
+    box.appendChild(lista);
     // 2. las herramientas de prueba
     var org = Array.isArray(st.test_runners) ? st.test_runners : [];
     var deOrg = {}; org.forEach(function (r) { if (r && r.name) deOrg[r.name] = r; });
