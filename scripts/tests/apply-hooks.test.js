@@ -766,9 +766,11 @@ test('T5 Update_ListaMasNuevaQueElNodeBajado_HooksConElDelArnes @story-8.93 @ac-
   // (camino del «0 de 43 hooks usan el Node del arnés»).
   const HN = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'harness-node.js'));
   const L = lab(t, { list: LIST_A(), files: FILES_A, settings: {} });
+  // el Node de juguete contesta una versión que no es la de la lista, sea cual sea el Node que corre la prueba
   const bin = withHarnessNode(L);
+  fs.writeFileSync(bin, `#!/bin/sh\nif [ "$1" = "--version" ]; then echo v99.0.0; exit 0; fi\nexec "${process.execPath}" "$@"\n`);
   const list = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'production', 'node-official.json'), 'utf8'));
-  assert.notStrictEqual(list.version, process.version, 'la prueba necesita una lista con otra versión que el Node que corre');
+  assert.notStrictEqual(list.version, 'v99.0.0', 'la prueba necesita una lista con otra versión que el Node de juguete');
   const interp = HN.interpreter({ env: { HOME: L.home, TYCON_HOME: path.join(L.home, '.tycon') }, platform: 'darwin' });
   assert.strictEqual(interp.present, true, interp.reason);
   assert.strictEqual(interp.own, true, interp.reason);
