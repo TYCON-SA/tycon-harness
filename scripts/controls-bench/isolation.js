@@ -55,12 +55,12 @@ function claudeIsolation({ home = os.homedir(), corral = null } = {}) {
  * Una casa propia para una corrida de Codex: `{ dir, env, warning, cleanup }`.
  *   · `dir` es la CODEX_HOME: el perfil `<revisor>.config.toml`, un `config.toml` vacío y `auth.json` (la llave);
  *   · `env` lleva esa CODEX_HOME, un HOME de laboratorio (así Codex no encuentra las skills de `~/.agents` ni nada de la
- *     casa de la persona) y ENGRAM_DATA_DIR apuntando a los datos de engram de la máquina, que es donde el examen mira lo
+ *     casa de la persona), y la base y el puerto de engram que usa el examen (ENGRAM_DATA_DIR, ENGRAM_PORT: los de
  *     que el revisor guardó;
  *   · `cleanup` devuelve a la máquina la llave si Codex la renovó durante la corrida, y borra todo.
  * Tira si el perfil generado no está: sin él, el revisor correría con la configuración de la máquina.
  */
-function codexHome({ codexHome: real = process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), advisor, engramDir } = {}) {
+function codexHome({ codexHome: real = process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), advisor, engramDir, engramPort } = {}) {
   const perfil = path.join(real, `${advisor}.config.toml`);
   if (!fs.existsSync(perfil)) throw new Error(`no está el perfil generado de ${advisor} (${perfil}): sin él, codex correría con la configuración de la máquina`);
   const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'advbench-codex-home-'));
@@ -92,10 +92,11 @@ function codexHome({ codexHome: real = process.env.CODEX_HOME || path.join(os.ho
     // Codex no les pasa todo el entorno a sus servidores MCP: engram arrancaría con el HOME de laboratorio y guardaría
     // ahí. Su carpeta de datos se le declara en el perfil de la corrida, al servidor de engram que el perfil ya trae
     const datosEngram = engramDir || process.env.ENGRAM_DATA_DIR || path.join(os.homedir(), '.engram');
+    const puertoEngram = engramPort || process.env.ENGRAM_PORT || null;
     let textoPerfil = fs.readFileSync(perfil, 'utf8');
     for (const m of textoPerfil.matchAll(/^\[mcp_servers\.([A-Za-z0-9_-]*engram[A-Za-z0-9_-]*)\]\s*$/gm)) {
       if (!new RegExp(`^\\[mcp_servers\\.${m[1]}\\.env\\]`, 'm').test(textoPerfil)) {
-        textoPerfil += `\n[mcp_servers.${m[1]}.env]\nENGRAM_DATA_DIR = ${JSON.stringify(datosEngram)}\n`;
+        textoPerfil += `\n[mcp_servers.${m[1]}.env]\nENGRAM_DATA_DIR = ${JSON.stringify(datosEngram)}\n${puertoEngram ? `ENGRAM_PORT = ${JSON.stringify(String(puertoEngram))}\n` : ''}`;
       }
     }
     fs.writeFileSync(path.join(dir, path.basename(perfil)), textoPerfil);
@@ -108,8 +109,39 @@ function codexHome({ codexHome: real = process.env.CODEX_HOME || path.join(os.ho
   const env = {
     CODEX_HOME: dir, HOME: casa, USERPROFILE: casa,
     ENGRAM_DATA_DIR: engramDir || process.env.ENGRAM_DATA_DIR || path.join(os.homedir(), '.engram'),
+    ...(engramPort || process.env.ENGRAM_PORT ? { ENGRAM_PORT: String(engramPort || process.env.ENGRAM_PORT) } : {}),
   };
   return { dir, env, warning, cleanup };
 }
 
-module.exports = { claudeIsolation, codexHome };
+/**
+ * La memoria de engram del examen: una base temporal y un puerto libre propios, para que ningún revisor lea ni escriba la
+ * memoria de la máquina (donde las sesiones anotan sus rutas: un revisor que la consulta nombraría carpetas de la máquina).
+ * `{ dir, port, env, anotarServidor(pid), cleanup }`: `env` va al entorno del corredor (lo heredan la línea de comandos de
+ * engram, su servidor y los MCP de Claude; a Codex se le pasa en el perfil); `cleanup` mata el servidor que el examen
+ * levantó y borra la base, y se puede llamar más de una vez.
+ */
+function engramPropio() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'advbench-engram-'));
+  const port = puertoLibre();
+  const pids = [];
+  let limpia = false;
+  const cleanup = () => {
+    for (const pid of pids.splice(0)) { try { process.kill(pid, 'SIGTERM'); } catch (_) { /* ya no está */ } }
+    if (!limpia) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) { /* best-effort */ } }
+    limpia = !fs.existsSync(dir);
+  };
+  return { dir, port, env: { ENGRAM_DATA_DIR: dir, ENGRAM_PORT: String(port) }, anotarServidor: (pid) => { if (pid) pids.push(pid); }, cleanup };
+}
+
+/** Un puerto TCP libre de esta máquina (lo pide al sistema en un proceso aparte: la consulta es asíncrona en Node). */
+function puertoLibre() {
+  const r = require('child_process').spawnSync(process.execPath, ['-e',
+    "const s=require('net').createServer();s.listen(0,'127.0.0.1',()=>{process.stdout.write(String(s.address().port));s.close();})"],
+  { encoding: 'utf8', timeout: 10000 });
+  const p = Number(r.stdout);
+  if (!Number.isInteger(p) || p <= 0) throw new Error(`no pude pedir un puerto libre para la memoria del examen (${(r.stderr || '').trim() || r.status})`);
+  return p;
+}
+
+module.exports = { claudeIsolation, codexHome, engramPropio };

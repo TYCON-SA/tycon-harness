@@ -439,7 +439,9 @@ const { rubrosNoMedidos } = require('./unmeasured-categories.js');
 // fallarían TODAS con ENOENT, una por una. Ver tools-path.js.
 const { rutaDeHerramienta } = require('./tools-path.js');
 // Cada sesión arranca sin la configuración del usuario, con sólo la carpeta de la caja (ver isolation.js).
-const { claudeIsolation, codexHome } = require('./isolation.js');
+const { claudeIsolation, codexHome, engramPropio } = require('./isolation.js');
+// la memoria de engram del examen (ver engramPropio): se arma al empezar una corrida de verdad
+let memoriaDelExamen = null;
 // un aviso del aislamiento (un settings.json ilegible, la llave de Codex que falta) se dice una vez por corrida del examen
 const avisosDichos = new Set();
 function avisarUnaVez(texto) { if (texto && !avisosDichos.has(texto)) { avisosDichos.add(texto); console.log(`⚠️  ${texto}`); } }
@@ -950,7 +952,10 @@ function asegurarMemoriaViva() {
   };
   if (vivo()) return true;
   try {
-    spawn('engram', ['serve'], { detached: true, stdio: 'ignore' }).unref();
+    // en el puerto del examen y con su base (ENGRAM_PORT y ENGRAM_DATA_DIR, ver engramPropio): nunca el de la máquina
+    const servidor = spawn('engram', ['serve', puerto], { detached: true, stdio: 'ignore', env: process.env });
+    servidor.unref();
+    if (memoriaDelExamen) memoriaDelExamen.anotarServidor(servidor.pid);
   } catch (e) {
     console.log(`⚠️  no pude levantar el servidor de memoria (${e.message}) — los casos que lo usan van a fallar y lo van a decir`);
     return false;
@@ -1824,6 +1829,12 @@ async function main() {
   if (argv.includes('--selftest-mcp')) return selftestMcp();
   if (argv.includes('--selftest-retro')) return selftestRetro();
   if (argv.includes('--check-apps-off')) return checkAppsOff();
+  // la memoria del examen: base y puerto propios, en el entorno de todo lo que corre después (la línea de comandos de
+  // engram, su servidor, los MCP de Claude; a Codex se le pasa en el perfil). Se limpia al salir, también si la corrida falla
+  memoriaDelExamen = engramPropio();
+  Object.assign(process.env, memoriaDelExamen.env);
+  process.on('exit', () => memoriaDelExamen.cleanup());
+  for (const senal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(senal, () => { memoriaDelExamen.cleanup(); process.exit(130); });
   if (PACK && PACK.error) { console.error(PACK.error); return 2; }
   // de dónde salen los revisores, por stderr (la salida de --list la leen otros guiones); sin la carpeta, frena con su motivo
   if (!PACK && !argv.includes('--list')) {

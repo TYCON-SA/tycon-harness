@@ -111,6 +111,35 @@ test('Codex_SinConfiguracionDelUsuario — la sesión corre con una CODEX_HOME p
   assert.throws(() => iso.codexHome({ codexHome: real, advisor: 'tycon-sin-perfil' }), /perfil/);
 });
 
+test('Engram_MemoriaPropia — el examen usa una base y un puerto propios, y los limpia; nunca el engram de la máquina', () => {
+  const iso = require(ISOLATION);
+  const m = iso.engramPropio();
+  try {
+    assert.ok(m.dir.startsWith(fs.realpathSync(os.tmpdir())) || m.dir.startsWith(os.tmpdir()), `base temporal: ${m.dir}`);
+    assert.notStrictEqual(path.resolve(m.dir), path.join(os.homedir(), '.engram'), 'nunca la de la máquina');
+    assert.ok(Number.isInteger(m.port) && m.port > 1024 && m.port !== 7437, `otro puerto: ${m.port}`);
+    assert.deepStrictEqual(m.env, { ENGRAM_DATA_DIR: m.dir, ENGRAM_PORT: String(m.port) });
+    // el servidor que levanta el examen queda anotado y se mata al limpiar
+    // un proceso nieto (no hijo de esta prueba: si no, quedaría zombi hasta que Node lo recoja y parecería vivo)
+    const { spawnSync } = require('child_process');
+    const pid = Number(spawnSync('sh', ['-c', 'sleep 60 >/dev/null 2>&1 & echo $!'], { encoding: 'utf8' }).stdout);
+    assert.ok(pid > 0, 'el servidor de mentira arrancó');
+    m.anotarServidor(pid);
+    m.cleanup();
+    const vivo = () => { try { process.kill(pid, 0); return true; } catch (_) { return false; } };
+    for (let i = 0; i < 30 && vivo(); i++) spawnSync('sleep', ['0.1']);
+    assert.equal(vivo(), false, 'el servidor del examen se mata al limpiar');
+  } finally { m.cleanup(); }
+  assert.ok(!fs.existsSync(m.dir), 'la base temporal se borra');
+  // Codex recibe la base y el puerto del examen en el perfil de la corrida
+  const real = codexDeMaquina();
+  const c = iso.codexHome({ codexHome: real, advisor: 'tycon-x', engramDir: '/datos/examen', engramPort: '41234' });
+  try {
+    const perfil = fs.readFileSync(path.join(c.dir, 'tycon-x.config.toml'), 'utf8');
+    assert.match(perfil, /ENGRAM_DATA_DIR = "\/datos\/examen"\nENGRAM_PORT = "41234"/, 'engram de Codex apunta a la memoria del examen');
+  } finally { c.cleanup(); }
+});
+
 test('Runner_UsaElAislamiento — el corredor lanza claude y codex con el aislamiento', () => {
   const src = fs.readFileSync(RUNNER, 'utf8');
   assert.match(src, /require\(['"]\.\/isolation\.js['"]\)/, 'el corredor carga isolation.js');
@@ -123,4 +152,8 @@ test('Runner_UsaElAislamiento — el corredor lanza claude y codex con el aislam
   assert.match(src, /home = codexHome\(\{ codexHome: CODEX_HOME, advisor: advisorName \}\)/, 'codex arma su CODEX_HOME propia');
   assert.match(src, /env: Object\.assign\(envDeCorrida\(corral\), home\.env\)/, 'y se la pasa a codex con su casa de laboratorio, no la de la máquina');
   assert.match(src, /finally \{ home\.cleanup\(\); \}/, 'y la borra en todos los caminos');
+  // la memoria propia: se arma antes de correr, el servidor se levanta en su puerto y se limpia al salir
+  assert.match(src, /engramPropio\(\)/, 'el examen arma su memoria propia');
+  assert.match(src, /spawn\('engram', \['serve', puerto\]/, 'el servidor del examen se levanta en su puerto');
+  assert.match(src, /process\.on\('exit', /, 'y se limpia al salir, también si la corrida falla');
 });
