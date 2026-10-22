@@ -13,7 +13,7 @@
  * `expect_engram` usan. De Codex, la llave para iniciar sesión (`auth.json`) y el perfil generado del revisor, que ya trae
  * su servidor de engram con las herramientas que el revisor declara.
  *
- * Vive fuera de advisor-runner.js porque requerir el corredor arranca el examen entero: así se prueba sin modelo.
+ * Vive fuera de advisor-runner.js para probarse sola, sin modelo y sin cargar el corredor.
  * Casos: scripts/tests/bench-isolation.test.js
  */
 
