@@ -78,7 +78,7 @@ function intSpec(spec) {
   return m && !m[2].split('/').some((s) => s === '..' || s === '.') ? { name: m[1], rel: m[2] } : null;
 }
 const NEEDS = new Set(['telegram-plugin']);
-const STEP_RE = /^(all|\d+[a-z]?)$/;
+const STEP_RE = /^(all|[a-z][a-z0-9-]*)$/;
 const EFFECTS = ['blocks', 'warns', 'records'];
 const ASYNC_ALLOWED = true;
 

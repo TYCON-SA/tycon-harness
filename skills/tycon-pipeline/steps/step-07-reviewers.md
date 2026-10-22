@@ -1,10 +1,10 @@
 # Revisores
 
-**Objetivo**: correr los advisors post-implementación sobre el diff resultante de Step 4. A.i: siempre se corren los aplicables al tipo de proyecto, sin flags para saltear.
+**Objetivo**: correr los advisors post-implementación sobre el diff resultante de «Implementar» (paso 5). A.i: siempre se corren los aplicables al tipo de proyecto, sin flags para saltear.
 
 ## Inputs
 
-- `modified_files`: lista de archivos modificados por BMAD (del Step 4)
+- `modified_files`: lista de archivos modificados por BMAD (del paso Implementar)
 - `repo_path`: path del repo
 
 ## Forma canónica (H17 §4) — `pipeline.js`, NO inferir a mano
@@ -463,9 +463,9 @@ Los 3 subagentes devuelven sus reportes. Cada uno tiene su formato definido en s
 
 - **A.i — no se saltean advisors a pedido**: si el usuario querría saltear un advisor específico, tiene que modificar el pipeline o pedir al dev que mantiene los advisors que ajuste la regla. No hay flag `--skip-advisor=X` en Camino B.
 
-## Registrar check advisors — SIEMPRE (era sólo autónomo; desde 2026-08-19 es pre-condición de `complete-step 5`)
+## Registrar check advisors — SIEMPRE (era sólo autónomo; desde 2026-08-19 es pre-condición de `complete-step reviewers`)
 
-En TODOS los modos (autónomo y HITL). `marker.js complete-step 5` **bloquea** si `checks.advisors` no está en verde con provenance `run-check` **de esta iteración** (tras un loop D.i hay que re-correrlo; `--trust-ran` queda como `trust-ran` y no alcanza). Escape consciente y logueado: `set-check advisors green --force-manual`.
+En TODOS los modos (autónomo y HITL). `marker.js complete-step reviewers` **bloquea** si `checks.advisors` no está en verde con provenance `run-check` **de esta iteración** (tras un loop D.i hay que re-correrlo; `--trust-ran` queda como `trust-ran` y no alcanza). Escape consciente y logueado: `set-check advisors green --force-manual`.
 
 El check `advisors` mide **completitud del set** (¿corrieron TODOS los advisors esperados?), NO los findings. El status sale del exit code REAL de `pipeline.js check-count` — que lee el log de invocaciones reales (CF-2), no el `--ran` del LLM:
 
@@ -477,12 +477,12 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js run-check ad
   --repo <repo_path> --story <story_path> --files <modified_files...>
 ```
 
-🔴 Si `advisors` queda `red:...`, el Stop-hook DoD gate bloquea el cierre → el agente corre los advisors faltantes y re-registra. **Los findings (CRITICAL/WARNING) NO ponen este check en rojo** — esos son decisión humana en Step 7 (waive/fix), no loop mecánico. El gate no traba la pausa HITL de Step 7 porque `advisors` ya está `green` (corrieron todos).
+🔴 Si `advisors` queda `red:...`, el Stop-hook DoD gate bloquea el cierre → el agente corre los advisors faltantes y re-registra. **Los findings (CRITICAL/WARNING) NO ponen este check en rojo** — esos son decisión humana en «Hallazgos» (waive/fix), no loop mecánico. El gate no traba la pausa HITL de «Hallazgos» porque `advisors` ya está `green` (corrieron todos).
 
 ## Cierre del step
 
 ```bash
-node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step 5   # bloquea sin run-check advisors verde de esta iteración
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step reviewers   # bloquea sin run-check advisors verde de esta iteración
 ```
 
 🔴 **La foto de la iteración NO va acá.** Se toma sola al lanzar el último revisor (aviso `📸`), que
@@ -496,4 +496,129 @@ deja en `gates.log`. Sólo si el aviso no apareció (foto automática apagada) c
 - Reportes individuales de cada advisor (formato markdown definido en cada agent `.md`)
 - Metadata: tiempo total, advisor que corrió, advisor que falló
 
-Pasar al Step 6 para consolidar.
+Pasar a «Hallazgos» (`step-09-findings.md`) para consolidar. Si después de «Hallazgos» se aplican arreglos de código, se vuelve acá: ver «Otra vuelta» abajo.
+
+---
+
+## Otra vuelta (vuelta 2 en adelante)
+
+Antes era el paso 7b; hoy es la vuelta N de este mismo paso. `pipeline.js next` la pide («Revisores, vuelta N») sólo cuando hay ediciones de código posteriores al último cierre de los revisores con «Hallazgos» ya cerrado. Cada vuelta cierra igual: `marker.js run-check advisors -- pipeline.js check-count …` y `marker.js complete-step reviewers` (el marcador cuenta las vueltas).
+
+**Objetivo**: cerrar el loop posterior a «Hallazgos» — si la decisión del usuario (o el auto-flow)
+resultó en **fixes de código aplicados**, el diff que los advisors auditaron ya no es el
+diff actual. NO se avanza a «Probar en vivo» / «Preparar el commit» con auditoría vieja.
+
+### Decisión (automática, sin preguntar)
+
+```
+si se aplicaron fixes de código tras «Hallazgos»:
+  → volver a este paso (Revisores) con iteration: N+1, usando:
+    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js smart-reloop \
+      --iter N+1 --repo <repo_path> --story <story_path> --files <modified_files...>
+  (el delta cubre re-ediciones vía fileEvents — escritos por on-edit.js desde
+   2026-06-11 — con fallback por mtime de filesystem para markers sin fileEvents;
+   los --files se VALIDAN: paths fantasma → abort exit 2, corregir el quoting.
+   --force-full-reloop si se sospecha regresión silenciosa.
+   🔴 APLICAR `reloop_model_hints` del output: pasar `model: <hint>` a cada
+   Agent() — única excepción: el delta toca specs. Ver SKILL.md "Model hints".
+   Con `reviewer_models` en el output (la organización), pasar su `model` a cada
+   Agent(); si el delta toca specs, su `first_round` (ya recortado al techo).)
+si NO hubo cambios de código:
+  → continuar a «Probar en vivo» (`step-10-live-check.md`).
+```
+
+**Condición de exit del loop**: cero fixes nuevos en la iteración, O CRITICAL residuales
+waiveados explícitamente por el user (con razón registrada — `had_override: true`), O el tope de vueltas.
+
+**El tope de vueltas** (`review.max_rounds`: 2 de fábrica; la organización lo cambia en el sitio, en Configuración; el
+repo, en `.tycon/advisors.yaml` commiteado; la máquina, con `review-max-rounds.json` en la carpeta de estado del arnés, que pone una persona y queda dicho en el
+cierre). Una vuelta es un número de
+iteración que llegó a lanzar revisores: pedir dos veces el set de la misma vuelta, sin lanzarla, no suma. Más allá del
+tope, `smart-reloop` no devuelve el set y dice qué quedó abierto:
+- **un crítico de seguridad o de datos** (reglas SEC, TENANT, AUTH, NEXTSEC, SIGNALR-C, MIGRATION, DRIZZLE, y las que
+  sume la organización; también si lo confirmó el pase adversarial): lo decide una persona. Mostrale el resumen y
+  preguntale: una vuelta más con su ok (`smart-reloop … --extra-round --approved-by "<la persona>" --quote "<sus
+  palabras>"`), o eximirlo (`marker.js waive-critical`). Sin eso, `complete-step prepare-commit` no cierra.
+- **lo demás** queda como deuda visible y el recorrido sigue sin otra vuelta: en `findings.json` con
+  `"disposition": "deferred"` y `"deuda": "tope"` (`write-findings`), después `write-followups`.
+
+**El validador de stories en el re-loop**: `smart-reloop` lo saca
+del set cuando ya devolvió **dos veredictos limpios seguidos** después de implementar; lo dice en
+`validador_reloop` y en `skipped`, y deja la línea `validador-reloop` en `gates.log` también cuando
+decide invocarlo. No lo agregues a mano: si los chequeos sin modelo de VAL-C5/VAL-C6 encuentran algo,
+o no se pueden leer sus veredictos, el script ya lo deja adentro. Con `--force-full-reloop` corre siempre.
+
+### La tercera vuelta: repensar el enfoque antes de seguir arreglando
+
+Desde la **tercera vuelta** de revisores (`--iter 3`, o sea después de dos re-loops) `smart-reloop` no devuelve el set
+mientras la ejecución no tenga la nota de esa vuelta; sale con código distinto de cero, dice qué hallazgos volvieron en las
+vueltas anteriores y cuál es el comando. Vale también con `--force-full-reloop`. Cada vuelta siguiente (4, 5…) pide su
+propia nota: la de la vuelta anterior no sirve. Las vueltas 1 y 2 siguen como siempre. Pedir otra vez una vuelta que ya se sirvió cuenta como una vuelta nueva (vale la mayor entre la declarada, el marcador y la última servida + 1), y el freno es de las corridas del pipeline: sin corrida (ni story en el marcador ni `--story` con carpeta de corrida) las vueltas 1 y 2 pasan como siempre y desde la 3 frena, porque no hay vueltas que contar. Corre después de las validaciones propias del comando (un `--story` inexistente da su error de siempre).
+
+**Repensar** no es arreglar el próximo hallazgo: es parar y mirar por qué vuelven. Si los mismos hallazgos reaparecen
+vuelta tras vuelta, el problema suele estar en el enfoque (o en la story), no en cada parche. La nota la escribe el agente,
+no hay interrupción a una persona:
+
+```
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js rethink --iter N \
+  --repeated "<qué hallazgos volvieron en las vueltas anteriores>" \
+  (--change "<qué cambia del enfoque>" | --keep "<por qué el enfoque sigue igual>") \
+  [--story-change "<qué cambia de la story>"]
+```
+
+- `--repeated` y uno de `--change` / `--keep` son obligatorios; cada campo pide al menos 40 caracteres. Una nota vacía o
+  corta se rechaza con el motivo.
+- Si hace falta cambiar la story, **la story va primero** (con su registro de cambios) y la nota lo dice en `--story-change`.
+- La nota queda en `<corrida>/rethink/iter-N.json`, con su hora. `write-findings` la suma al informe de «Hallazgos» junto
+  con la cantidad de vueltas, y el archivo de la retrospectiva la lleva como `rethink_notes`: una story con notas es una
+  story que no convergió.
+
+### Al salir del loop: ¿el verde de la suite completa sigue midiendo ESTE código?
+
+Antes de continuar a «Probar en vivo», correr (barato — ~50ms, no ejecuta ningún test):
+
+```
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/suite-freshness.js check <repo_path>
+```
+
+- **exit 0 (FRESCO)** → el verde del cierre de «Correr las pruebas» midió exactamente el código actual →
+  continuar a «Probar en vivo». Es el caso común (1 sola iteración, sin fixes): cero corridas extra.
+- **exit 5 (STALE)** → hubo cambios de código desde ese verde: re-correr
+  `test-gate.sh <repo_path> <story_path>` **UNA vez** (anunciando "suite completa, ~90s") y
+  seguir con su resultado. Esta re-corrida ES la ejecución del pipeline de
+  `test-execution-discipline.md` regla 2, desplazada al código final — no una segunda: se paga
+  una sola vez al converger, NUNCA una por iteración.
+- **exit 6 (SIN DATOS)** → artefacto viejo (sin `code_state`), un freno, o repo sin git:
+  avisar en una línea y continuar — el DoD checker («Probar en vivo») sigue de red, como hasta ahora.
+
+**Por qué acá y no en cada iteración**: en una story que itera varias veces, el verde de «Correr las pruebas»
+queda describiendo un código que ya no existe, y sin este chequeo lo detecta recién el DoD checker —
+la segunda corrida completa hace falta igual, pero tarde y de casualidad. Chequear al SALIR del loop adelanta la
+detección sin agregar corridas respecto de lo que ya pasaba, y el hash por contenido (index +
+working tree) hace que commitear la story NO dispare un stale falso.
+
+**La foto de cada iteración la toma el arnés solo**, al lanzar el último revisor de la vuelta (aviso
+`📸`) — es lo que habilita el smart-reloop de la iteración siguiente. **No la repitas después de
+arreglar**: si la llamás con código editado, se niega o conserva la anterior y lo deja en `gates.log`.
+Sólo si el aviso no apareció (foto automática apagada) corré `snapshot-iter N` — antes de tocar código.
+
+🔴 **Por qué el momento importa**: la foto es el estado AUDITADO, y el delta
+de iter N+1 es "qué cambió desde esa foto". Si se fecha DESPUÉS de los arreglos, los arreglos quedan
+adentro → el delta sale VACÍO → "todo skip por surface" → `--force-full-reloop` (el set completo, el
+caso más caro). Y una llamada manual con código editado en el medio pisa la foto automática: los
+revisores que miran ese código se saltean. Si `smart-reloop` devuelve
+`suspect_empty_delta: true`, no saltes a force-full a ciegas; si además trae `suspect_late_snapshot:
+true`, el delta ya se recalculó cortando por el último lanzamiento de revisores y esta vuelta incluye
+lo que la foto había tapado.
+
+🔴 **Cerrá la CLASE, no el síntoma (regla D.i.2)**: si un advisor reportó un finding de clase (mismo
+hazard en varios sitios), aplicá TODOS los fixes de la clase en ESTA iteración antes de re-loopear — no
+fixees el primer sitio y re-loopees, porque el advisor re-descubre el próximo sitio en la iteración
+siguiente (whack-a-mole). Ver SKILL.md §D.i.2.
+
+### Relación con la pre-condición de «Preparar el commit» (regla D.i)
+
+La misma lógica GOTO vive como **pre-condición de último recurso en `step-11-prepare-commit.md`**
+(`diff_at_last_step_06 != diff_now` → STOP + volver a Revisores con iteration N+1). Esta sección es la
+referencia del flujo; la pre-condición de «Preparar el commit» atrapa el caso en que esta vuelta se haya
+salteado por inferencia: sin ella, «Preparar el commit» arranca sin re-auditar los fixes hechos después de los revisores.

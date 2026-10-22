@@ -205,7 +205,7 @@ test('7.32-Lector_ListasEnLineaYComentarios: el lector de la story lee [a, b] y 
 });
 
 test('7.32-InstruccionesDelAgente_Completa: SKILL.md, los pasos, los revisores y CLAUDE.md no son documentación', () => {
-  for (const f of ['skills/x/SKILL.md', 'skills/tycon-pipeline/steps/step-04-execute.md', 'agents/tycon-x.md', 'commands/x.md', 'CLAUDE.md', 'AGENTS.md']) {
+  for (const f of ['skills/x/SKILL.md', 'skills/tycon-pipeline/steps/step-05-implement.md', 'agents/tycon-x.md', 'commands/x.md', 'CLAUDE.md', 'AGENTS.md']) {
     assert.equal(size.classifyStory({ files: ['guides/a.md', f] }).size, 'completa', f);
   }
 });

@@ -267,7 +267,7 @@ const marker = readMarker(sessionId);
 if (marker && Array.isArray(marker.stepsPending) && marker.stepsPending.length > 0) {
   if (matches(prompt, STOP_PATTERNS)) {
     const pendingList = stepNames(marker.stepsPending);
-    const hasAdvisorsStep = marker.stepsPending.includes(5);
+    const hasAdvisorsStep = require('./lib/steps.js').isPending(marker, 'reviewers');
     emit(
       `tycon-pipeline STOP-detect: marker activo para Story ${marker.storyId} (sprint ${marker.sprint ?? '?'}) ` +
         `con pasos pendientes: ${pendingList}.\n\n` +

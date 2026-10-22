@@ -104,6 +104,7 @@ function handle(event, opts = {}) {
     priorPaths,
     storyHasTests: storyDeclaresTests(storyText),
     stepsCompleted: marker.stepsCompleted,
+    stepScheme: marker.stepScheme,
   };
   const r = computeAtddPreEdit({ ...base, bypassed: marker.atddBypass === true });
 

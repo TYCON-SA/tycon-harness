@@ -1,0 +1,192 @@
+{
+  "__doc": "Gemelos de 44-resultado-adversarial.json con el marcador nuevo (story 7.23: pasos por nombre de máquina, stepScheme 2). Cada caso es el del archivo original con el marcador traducido por la equivalencia de lib/steps.js; tiene que decidir lo mismo.",
+  "hooks": [
+    {
+      "hook": "marker.js complete-step prepare-commit + mark-adversarial-* (el pase adversarial atendido)",
+      "script": "${FIXTURE}/correr.sh",
+      "controles": [
+        "${SKILLS}/skills/tycon-pipeline/scripts/marker.js",
+        "${SKILLS}/skills/tycon-pipeline/scripts/pipeline.js"
+      ],
+      "__controles": "Los casos corren marker.js (y el portón pipeline.js deep-review-gate, como proceso) desde el setup y assertan lo que escriben en el marker y en gates.log: el auditor de vacuidad los neutraliza.",
+      "event": "PostToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "pase-adversarial-lanzado-sin-resultado-frena-el-paso-8-esquema-2",
+          "type": "must-run",
+          "__nota": "El caso de la 1.6: el pase se lanzó, nadie anotó el resultado y se quiere cerrar el paso 8. Tiene que frenar con el motivo, aunque el resto del paso 8 esté en regla (dodRuntimeChecked).",
+          "files": {
+            "correr.sh": "#!/bin/sh\nexit 0\n",
+            "specs/a.md": "---\nstory: \"A\"\nepic: 1\nstatus: in-progress\nfiles_to_modify:\n  - scripts/x.js\n---\n# Story A\n",
+            "scripts/x.js": "module.exports = 1;\n",
+            "_marker.json": "{\n  \"storyId\": \"A\",\n  \"storyPath\": \"${FIXTURE}/specs/a.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"adv-b1\",\n  \"lastTouch\": \"2026-09-18T04:00:00.000Z\",\n  \"stepScheme\": 2,\"stepsCompleted\": [\"start\",\"validate-story\",\"plan\",\"approve-plan\",\"implement\",\"run-tests\",\"reviewers\",\"findings\"],\n  \"stepsPending\": [\"prepare-commit\"],\n  \"filesTouched\": [],\n  \"fileEvents\": [],\n  \"iterations\": {},\n  \"dodRuntimeChecked\": true,\n  \"deepReviewDone\": true,\n  \"adversarial\": { \"launchedAtStep\": 4, \"runId\": \"wf_B1\", \"sessionId\": \"adv-b1\", \"launchedAt\": \"2026-09-18T00:51:35.760Z\" }\n}\n"
+          },
+          "env": {
+            "CLAUDE_CODE_SESSION_ID": "adv-b1"
+          },
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active",
+            "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-b1.json",
+            "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js complete-step prepare-commit > c8.out 2> c8.err; echo \"rc=$?\" > rc.txt"
+          ],
+          "stdin": {
+            "session_id": "adv-b1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "\"name\":\"adversarial-result-gate\",\"status\":\"blocked\",\"motivo\":\"sin-resultado\""
+              },
+              {
+                "path": "${FIXTURE}/rc.txt",
+                "re": "rc=2"
+              },
+              {
+                "path": "${FIXTURE}/c8.err",
+                "re": "su resultado no está anotado"
+              }
+            ]
+          }
+        },
+        {
+          "id": "pase-adversarial-la-bandera-no-se-escribe-a-mano-esquema-2",
+          "type": "must-run",
+          "__nota": "`set-flag deepReviewDone true` sale 2 y el marker queda sin la bandera: el 5b se cierra con constancia, no con una bandera suelta.",
+          "files": {
+            "correr.sh": "#!/bin/sh\nexit 0\n",
+            "_marker.json": "{\n  \"storyId\": \"A\",\n  \"storyPath\": \"${FIXTURE}/a.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"adv-b2\",\n  \"lastTouch\": \"2026-09-18T04:00:00.000Z\",\n  \"stepScheme\": 2,\"stepsCompleted\": [\"start\",\"validate-story\",\"plan\",\"approve-plan\",\"implement\",\"run-tests\",\"reviewers\"],\n  \"stepsPending\": [\"findings\",\"prepare-commit\"],\n  \"filesTouched\": [],\n  \"fileEvents\": [],\n  \"iterations\": {}\n}\n"
+          },
+          "env": {
+            "CLAUDE_CODE_SESSION_ID": "adv-b2"
+          },
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active",
+            "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-b2.json",
+            "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js set-flag deepReviewDone true > sf.out 2> sf.err; echo \"rc=$?\" > rc.txt"
+          ],
+          "stdin": {
+            "session_id": "adv-b2",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/rc.txt",
+                "re": "rc=2"
+              },
+              {
+                "path": "${FIXTURE}/sf.err",
+                "re": "mark-adversarial-skipped"
+              }
+            ],
+            "file_not_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-b2.json",
+                "re": "deepReviewDone"
+              }
+            ]
+          }
+        },
+        {
+          "id": "pase-adversarial-salteo-low-lo-anota-el-porton-esquema-2",
+          "type": "must-run",
+          "__nota": "Un diff de 1 archivo chico: el portón (pipeline.js deep-review-gate, como proceso) dice LOW → run:false, y el comando anota el salteo y cierra el 5b en una sola escritura.",
+          "files": {
+            "correr.sh": "#!/bin/sh\nexit 0\n",
+            "specs/a.md": "---\nstory: \"A\"\nepic: 1\nstatus: in-progress\nfiles_to_modify:\n  - scripts/x.js\n---\n# Story A\n",
+            "scripts/x.js": "module.exports = 1;\n",
+            "_marker.json": "{\n  \"storyId\": \"A\",\n  \"storyPath\": \"${FIXTURE}/specs/a.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"adv-b3\",\n  \"lastTouch\": \"2026-09-18T04:00:00.000Z\",\n  \"stepScheme\": 2,\"stepsCompleted\": [\"start\",\"validate-story\",\"plan\",\"approve-plan\",\"implement\",\"run-tests\"],\n  \"stepsPending\": [\"reviewers\",\"findings\",\"prepare-commit\"],\n  \"filesTouched\": [],\n  \"fileEvents\": [],\n  \"iterations\": {}\n}\n"
+          },
+          "env": {
+            "CLAUDE_CODE_SESSION_ID": "adv-b3"
+          },
+          "setup": [
+            "git init -q .",
+            "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active",
+            "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-b3.json",
+            "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js mark-adversarial-skipped --files scripts/x.js > sk.out 2> sk.err; echo \"rc=$?\" > rc.txt"
+          ],
+          "stdin": {
+            "session_id": "adv-b3",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/rc.txt",
+                "re": "rc=0"
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-b3.json",
+                "re": "\"adversarialSkip\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-b3.json",
+                "re": "\"deepReviewDone\": true"
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "\"name\":\"adversarial-skip\",\"status\":\"ok\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "pase-adversarial-resultado-despues-del-lanzamiento-pasa-esquema-2",
+          "type": "must-run",
+          "__nota": "Con el resultado anotado después del lanzamiento, ESTE freno pasa (motivo: resultado). El resto del paso 8 decide lo suyo: acá se mira sólo la línea del freno.",
+          "files": {
+            "correr.sh": "#!/bin/sh\nexit 0\n",
+            "specs/a.md": "---\nstory: \"A\"\nepic: 1\nstatus: in-progress\nfiles_to_modify:\n  - scripts/x.js\n---\n# Story A\n",
+            "scripts/x.js": "module.exports = 1;\n",
+            "resultado.json": "{\"confirmed\": [], \"lentes\": [{\"lens\": \"a\", \"estado\": \"medida\", \"count\": 0}], \"lentes_sin_medir\": [], \"detalle\": [], \"medido\": true}\n",
+            "_marker.json": "{\n  \"storyId\": \"A\",\n  \"storyPath\": \"${FIXTURE}/specs/a.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"adv-b4\",\n  \"lastTouch\": \"2026-09-18T04:00:00.000Z\",\n  \"stepScheme\": 2,\"stepsCompleted\": [\"start\",\"validate-story\",\"plan\",\"approve-plan\",\"implement\",\"run-tests\",\"reviewers\",\"findings\"],\n  \"stepsPending\": [\"prepare-commit\"],\n  \"filesTouched\": [],\n  \"fileEvents\": [],\n  \"iterations\": {},\n  \"dodRuntimeChecked\": true,\n  \"adversarial\": { \"launchedAtStep\": 4, \"runId\": \"wf_B4\", \"sessionId\": \"adv-b4\", \"launchedAt\": \"2026-09-18T00:51:35.760Z\" }\n}\n"
+          },
+          "env": {
+            "CLAUDE_CODE_SESSION_ID": "adv-b4"
+          },
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active",
+            "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-b4.json",
+            "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result 0 --tipo 5b --result ${FIXTURE}/resultado.json --run wf_B4 > res.out 2> res.err",
+            "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js complete-step prepare-commit > c8.out 2> c8.err; echo \"rc=$?\" > rc.txt"
+          ],
+          "stdin": {
+            "session_id": "adv-b4",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "\"name\":\"adversarial-result-gate\",\"status\":\"ok\",\"motivo\":\"resultado\""
+              }
+            ],
+            "file_not_contains": [
+              {
+                "path": "${FIXTURE}/c8.err",
+                "re": "su resultado no está anotado"
+              }
+            ]
+          }
+        }
+      ],
+      "__only": "Los cuatro casos llevan el prefijo `pase-adversarial-` en el id: el filtro --only del runner compara contra `<script del hook>::<id>`, y el script es el shim de fixture `correr.sh` (declarado en adapters/codex/hooks.json). Correr sólo éstos: --only 'correr.sh::pase-adversarial-'."
+    }
+  ]
+}

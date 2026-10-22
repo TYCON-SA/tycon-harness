@@ -72,7 +72,7 @@ test('el motivo explica por qué, en castellano llano y accionable', () => {
 // 🔴 Por qué se fijan acá y no alcanza `notEqual(0)`: el orquestador del step 7c ACTÚA según el
 // número, y `SIN_EJERCER` no puede pisar el 3, que significa «el stack no levantó»: mandaría a
 // levantar servicios que están arriba y a re-correr para sacar 3 otra vez. El mapa vive en la
-// cabecera de `veredicto()` y en `steps/step-07c-dod-runtime-gate.md`; estas tres pruebas son las
+// cabecera de `veredicto()` y en `steps/step-10-live-check.md`; estas tres pruebas son las
 // que lo sostienen, así que un cambio de número tiene que pasar por acá.
 
 test('🔴 todos los tests salteados → exit 4 (faltan datos), NUNCA 3 (el stack no levantó)', () => {

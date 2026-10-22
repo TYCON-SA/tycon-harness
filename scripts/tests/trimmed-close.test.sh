@@ -255,8 +255,8 @@ fi
 # 🔴 Los textos tienen que decir lo decidido: sin eso, 7c.2 describiría la regla de «las cuatro», el step 9
 #    relanzaría los dos revisores y el merge lanzaría la suite completa en segundo plano. Si los archivos no
 #    están en la máquina, se saltea diciéndolo (no es un rojo: no hay texto que juzgar).
-S07C="$SKILLS/tycon-pipeline/steps/step-07c-dod-runtime-gate.md"
-S09="$SKILLS/tycon-pipeline/steps/step-09-ado-story-closure.md"
+S07C="$SKILLS/tycon-pipeline/steps/step-10-live-check.md"
+S09="$SKILLS/tycon-pipeline/steps/close-work-item.md"
 SMERGE="$SKILLS/tycon-merge-to-main/SKILL.md"
 if [ ! -f "$S07C" ] || [ ! -f "$S09" ] || [ ! -f "$SMERGE" ]; then
   echo "⏭  cierre-recortado: T9 salteado — no están los textos de agent-skills en $SKILLS"

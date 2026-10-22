@@ -58,7 +58,7 @@ test('T3 Pipeline_COMMi_NombraLaForma @story-1.28 @ac-3 — COMM.i remite a la f
 });
 
 test('T4 Pasos_PlantillasConContextoYProsContras @story-1.28 @ac-4 — validar la historia, aprobar el plan y los hallazgos piden contexto y pros y contras', () => {
-  for (const f of ['step-01-validate-story.md', 'step-03-hitl-plan.md', 'step-07-hitl-approve.md']) {
+  for (const f of ['step-02-validate-story.md', 'step-04-approve-plan.md', 'step-09-findings.md']) {
     const t = read(path.join(PIPELINE, 'steps', f));
     const i = t.indexOf('decisión importante');
     assert.ok(i >= 0, `${f}: nombra la decisión importante`);

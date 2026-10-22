@@ -109,7 +109,7 @@ test('complete-step: orden (3←1,2 · 4←3 · 5←4 · 8←5), --out-of-order 
   // re-cerrar el 5 (loop D.i) sin re-correr advisors → bloqueado por frescura (4 sigue pendiente en
   // este test, por eso --out-of-order: lo que se prueba es el gate de advisors)
   r = markerCli(home, sid, ['complete-step', '5', '--out-of-order']);
-  assert.notEqual(r.status, 0); assert.match(r.stderr, /de ESTA iteración/);
+  assert.notEqual(r.status, 0); assert.match(r.stderr, /de ESTA vuelta/);
   // trust-ran → provenance trust-ran → no alcanza
   markerCli(home, sid, ['run-check', 'advisors', '--', ...CC, '--trust-ran']);
   r = markerCli(home, sid, ['complete-step', '5', '--out-of-order']);
@@ -124,7 +124,7 @@ test('complete-step: orden (3←1,2 · 4←3 · 5←4 · 8←5), --out-of-order 
   const m = JSON.parse(fs.readFileSync(mpath, 'utf8'));
   m.checksAt.advisors = m.stepTimings['5'].completedAt; fs.writeFileSync(mpath, JSON.stringify(m));
   r = markerCli(home, sid, ['complete-step', '5', '--out-of-order']);
-  assert.notEqual(r.status, 0); assert.match(r.stderr, /de ESTA iteración/);
+  assert.notEqual(r.status, 0); assert.match(r.stderr, /de ESTA vuelta/);
   // manual-forced es escape válido del gate del 5
   markerCli(home, sid, ['set-check', 'advisors', 'green', '--force-manual']);
   r = markerCli(home, sid, ['complete-step', '5', '--out-of-order']);
@@ -861,7 +861,7 @@ test('7.30-T28 PipelineNextRiskClassYPortonDePlan_NombranLaMaqueta @story-7.30 @
     markerCli(home, sid, ['set-flag', 'clockiStarted', 'true']); markerCli(home, sid, ['set-flag', 'adoMarkedActive', 'true']);
     const n = pipe(sid, ['next']);
     assert.equal(n.status, 0, n.stderr);
-    assert.match(n.stdout, /complete-step 3/);
+    assert.match(n.stdout, /complete-step approve-plan/);
     if (conMaqueta) assert.match(n.stdout, /--mockup-approved/); else assert.doesNotMatch(n.stdout, /--mockup-approved/);
     const rc = JSON.parse(pipe(sid, ['risk-class', '--story', s]).stdout);
     assert.equal(rc.auto_approve_plan, true);

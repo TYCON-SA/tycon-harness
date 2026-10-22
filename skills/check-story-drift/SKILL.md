@@ -70,7 +70,7 @@ Para cada DRIFT CONFIRMADO, el skill propone los próximos pasos al user (cambia
 
 Seguí EN ORDEN los 5 steps definidos en `steps/`:
 
-0. **step-00-preflight.md** — Verificar specs_dir existe + tiene archivos `.md` con frontmatter `status:`. ABORT si no.
+0. **step-01-start.md** — Verificar specs_dir existe + tiene archivos `.md` con frontmatter `status:`. ABORT si no.
 1. **step-01-filter-candidates.md** — Listar stories cuyo `status:` matchea `ready-for-dev*`. Si `target_stories` vino explícito, intersectar.
 2. **step-02-two-pass-analysis.md** — Para cada candidata, lanzar **DOS agents en paralelo** (no secuencial) con prompts distintos:
    - **Pass A — file-existence + shared infra check** — Explore agent que verifica archivos declarados + `git log --diff-filter=A` para attribution

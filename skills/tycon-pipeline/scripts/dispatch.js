@@ -157,19 +157,19 @@ const CHAINS = {
     // y escrituras directas al estado del pipeline. Va PRIMERO: es el más amplio. Ver lib/story-gate.js.
     // `steps` (los pasos del pipeline donde actúa, o 'all') y `effect` (blocks · warns · records) no los usa el
     // despachador: los muestra «Cómo trabaja», en el sitio de la organización, en lugar del despachador mismo.
-    { name: 'on-story-gate', path: path.join(PIPELINE_SCRIPTS, 'on-story-gate.js'), steps: ['3', '4'], effect: 'blocks' },
+    { name: 'on-story-gate', path: path.join(PIPELINE_SCRIPTS, 'on-story-gate.js'), steps: ['approve-plan', 'implement'], effect: 'blocks' },
     // Freno de STORY A MANO: deniega CREAR un .md con identidad de story sin constancia
     // de tycon-create-story en la sesión (la deja on-skill-invoke.js, PostToolUse Skill). Editar una
     // story existente pasa siempre. Ver lib/story-skill-gate.js.
-    { name: 'on-story-skill-gate', path: path.join(PIPELINE_SCRIPTS, 'on-story-skill-gate.js'), steps: ['1'], effect: 'blocks' },
-    { name: 'on-dod-evidence-guard', path: path.join(PIPELINE_SCRIPTS, 'on-dod-evidence-guard.js'), steps: ['7c'], effect: 'blocks' },
-    { name: 'on-frontmatter-write', path: path.join(PIPELINE_SCRIPTS, 'on-frontmatter-write.js'), steps: ['7c', '8'], effect: 'blocks' },
+    { name: 'on-story-skill-gate', path: path.join(PIPELINE_SCRIPTS, 'on-story-skill-gate.js'), steps: ['validate-story'], effect: 'blocks' },
+    { name: 'on-dod-evidence-guard', path: path.join(PIPELINE_SCRIPTS, 'on-dod-evidence-guard.js'), steps: ['live-check'], effect: 'blocks' },
+    { name: 'on-frontmatter-write', path: path.join(PIPELINE_SCRIPTS, 'on-frontmatter-write.js'), steps: ['live-check', 'prepare-commit'], effect: 'blocks' },
     // Portón ATDD preventivo: deniega el PRIMER archivo de código de una corrida de
     // pipeline si no se tocó ningún test antes. Las capas post-mortem (complete-step 4, commit)
     // detectan; ésta impide. Ver on-atdd-preedit.js + lib/atdd-preedit.js.
-    { name: 'on-atdd-preedit', path: path.join(PIPELINE_SCRIPTS, 'on-atdd-preedit.js'), steps: ['4'], effect: 'blocks' },
-    { name: 'on-write-collision', path: path.join(PIPELINE_SCRIPTS, 'on-write-collision.js'), steps: ['4'], effect: 'warns' },
-    { name: 'on-planning-artifact', path: path.join(PIPELINE_SCRIPTS, 'on-planning-artifact.js'), steps: ['2'], effect: 'warns' },
+    { name: 'on-atdd-preedit', path: path.join(PIPELINE_SCRIPTS, 'on-atdd-preedit.js'), steps: ['implement'], effect: 'blocks' },
+    { name: 'on-write-collision', path: path.join(PIPELINE_SCRIPTS, 'on-write-collision.js'), steps: ['implement'], effect: 'warns' },
+    { name: 'on-planning-artifact', path: path.join(PIPELINE_SCRIPTS, 'on-planning-artifact.js'), steps: ['plan'], effect: 'warns' },
   ],
   'post-edit': [
     // antes de esta tabla van las entradas de la integración de horas elegida (integrationEntries)
@@ -179,7 +179,7 @@ const CHAINS = {
     // clasifica como docs). Determinístico, sin modelo, avisa y nunca bloquea.
     { name: 'on-config-lint', path: path.join(PIPELINE_SCRIPTS, 'on-config-lint.js'), steps: ['all'], effect: 'warns' },
     // El plan escrito se lo muestra el arnés a la persona en pantalla (el agente no siempre lo hace: medido)
-    { name: 'plan-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'plan-display.js'), steps: ['2', '3'], effect: 'warns' },
+    { name: 'plan-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'plan-display.js'), steps: ['plan', 'approve-plan'], effect: 'warns' },
     // El crítico que se quiere eximir se lo muestra el arnés a la persona al escribirse el pedido (instalación mínima)
     { name: 'critical-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'critical-display.js'), steps: ['all'], effect: 'warns' },
     // Los criterios que se van a marcar como probados a mano se los muestra el arnés a la persona (instalación mínima)
@@ -187,10 +187,10 @@ const CHAINS = {
     // El criterio que se quiere firmar como imposible de probar en vivo, al escribirse el pedido (instalación mínima)
     { name: 'waiver-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'waiver-display.js'), steps: ['all'], effect: 'warns' },
     // Una historia con pantalla en un repo sin prueba con navegador: el arnés le ofrece a la persona prepararla
-    { name: 'browser-test-offer', path: path.join(PIPELINE_SCRIPTS, 'lib', 'browser-test.js'), steps: ['2', '3'], effect: 'warns' },
+    { name: 'browser-test-offer', path: path.join(PIPELINE_SCRIPTS, 'lib', 'browser-test.js'), steps: ['plan', 'approve-plan'], effect: 'warns' },
     // crea el pedido de trabajo en ADO: `integration` lo dice para «Cómo trabaja» (lo apagado en la organización no se muestra)
-    { name: 'ado-story-create', path: path.join(SKILLS_DIR, 'tycon-ado-story-wi', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: (event) => isStoryWrite(event) && adoForStory(event), steps: ['1'], effect: 'records', integration: 'ado' },
-    { name: 'followup-story-create', path: path.join(SKILLS_DIR, 'tycon-story-followup-link', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: isStoryWrite, steps: ['1'], effect: 'records' },
+    { name: 'ado-story-create', path: path.join(SKILLS_DIR, 'tycon-ado-story-wi', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: (event) => isStoryWrite(event) && adoForStory(event), steps: ['validate-story'], effect: 'records', integration: 'ado' },
+    { name: 'followup-story-create', path: path.join(SKILLS_DIR, 'tycon-story-followup-link', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: isStoryWrite, steps: ['validate-story'], effect: 'records' },
   ],
 };
 

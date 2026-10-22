@@ -22,7 +22,7 @@
  *   1. `esProbe` / `sinProbes` — los archivos de prueba descartables del pase adversarial no son
  *      trabajo del repo. Ensucian dos cosas a la vez: hacen parecer sano un registro que está
  *      ciego, y se cuelan en el `filesSnapshot` del pipeline. Convención de nombres reservados en
- *      `steps/step-05b-adversarial-verify.md`.
+ *      `steps/step-08-adversarial-pass.md`.
  *
  *   2. `diagnosticar` — la pregunta honesta: ¿el registro vio algo del repo? Si git reporta N
  *      archivos cambiados y el registro aporta CERO, el delta no es "chico": es **ciego**, y el

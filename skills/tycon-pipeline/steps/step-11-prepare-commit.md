@@ -4,115 +4,52 @@
 
 ## Inputs
 
-- `story_id` y `story_title` del frontmatter del story
-- `modified_files` del Step 4
-- `consolidated_report` del Step 6 (para derivar el `what + why` del mensaje)
-- `had_override` del Step 7 (si hubo override de CRITICAL, se anota)
+- `story_id` y `story_title` del frontmatter de la story
+- `modified_files` de «Implementar»
+- `consolidated_report` de «Hallazgos» (para derivar el qué y el por qué del mensaje)
+- `had_override` de «Hallazgos» (si hubo override de CRITICAL, se anota)
 
-## 🔴 PRE-CONDICIÓN — protocolo de cierre ACCOV-C7..C10
-
-**Read obligatorio** (si no se leyó en Step 7c): `~/.claude/tycon-harness/guides/accov-governance-protocol.md`.
-En particular **ACCOV-C7**: el cierre NO entrega un "checklist manual a probar" al user —
-cada criterio de verificación que el agente definió debe estar automatizado (Playwright/xUnit/curl
-del macro). Si el mensaje de cierre incluye "podés probar X, Y, Z", el pipeline falló.
-
-## 🔴 PRE-CONDICIÓN OBLIGATORIA (regla D.i — re-loop advisors)
-
-**Antes de armar el mensaje de commit**, verificar que **NO hay fixes pendientes desde la última corrida de advisors**. Esto es el contrato del Step 7b — si el dev aplicó cambios al código después del último Step 5/6, el orquestador DEBE volver al Step 5 (re-correr advisors paralelos) hasta convergencia O waiver explícito.
-
-**Validación inmediata en este Step 8**:
-
-```
-diff_at_last_step_06 := snapshot del diff cuando se corrieron los advisors
-diff_now := snapshot del diff actual
-
-si diff_at_last_step_06 != diff_now:
-  STOP — no seguir preparando el commit.
-  Mensaje al usuario: "Detecté cambios al código desde la última corrida de revisores.
-  Antes de armar el commit, vuelvo a «Revisores» para re-auditar el diff actualizado."
-  GOTO «Revisores» con iteration: N+1.
-
-si diff_at_last_step_06 == diff_now:
-  Seguir preparando el commit.
-```
-
-**Por qué**: después de fixes mayores sobre lo que reportaron los advisors, arrancar el Step 8 SIN re-correrlos deja ese código nuevo sin auditar, y sólo lo nota una persona. El pipeline DEBE evitar este pattern automáticamente.
-
-**Excepción**: si el cambio post-Step 6 fue **solo a archivos fuera del diff** (ej: editar `tasks/lessons.md`, `tasks/todo.md`, o el Change Log de la spec) sin tocar `src/` o `tests/`, no es necesario re-correr advisors. Documentar la excepción en `step-08-precondition-check.md`.
-
-> El loop GOTO Step 5 post-fixes tiene su referencia de flujo en `step-07b-rerun-advisors-if-fixes.md` — esta pre-condición queda acá como validación de último recurso.
-
-## 🔴 PRE-CONDICIÓN — checks del marker con provenance `run-check` (2026-06-09)
-
-Los checks del marker (build/tests) deben estar **GREEN con `provenance: run-check`**
-(seteados vía `marker.js run-check <name> -- <cmd>`, exit code real capturado).
-Si algún check GREEN tiene `provenance: manual` (set-check directo), **anunciarlo
-explícitamente en el commit prep** como:
-`⚠ check '<name>' no verificado mecánicamente (provenance=manual — ver gates.log)`.
-No bloquea, pero el dev tiene que verlo antes de commitear.
-
-## 🔴 PRE-CONDICIÓN — matriz de verificación runtime VERDE (DODRT-C6, 2026-07-10)
-
-`checks.acmatrix` debe estar **GREEN con `provenance: run-check`** (lo valida
-`marker.js complete-step 8` — bloquea si falta). Se puebla en el sub-step 7c.6:
+## Qué frena `complete-step prepare-commit` y qué decide el agente
 
 ```bash
-marker.js run-check acmatrix -- node <skill>/scripts/runtime-matrix.js --story <abs spec.md>
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step prepare-commit
 ```
 
-Si la matriz dio ROJO, la salida NO es "avanzar igual": los ACs `SIN CORRER` los corre el
-agente (no se waivean) y los imposibles-declarados se le presentan al dev con la lista y el
-resumen llano.
-El waiver de los ACs imposibles-declarados lo firma **el dev desde su terminal**
-(`marker.js runtime-waiver <abs spec.md>`, TTY-only) y vive en `.tycon/runtime-waivers.jsonl`
-del repo de la story — **no en el frontmatter**. Se vence solo: está anclado al hash de la
-declaración (`reason` + `covered_by`), así que si alguien reescribe la justificación hay que
-volver a firmar.
-Además, el commit message DEBE listar los ACs diferidos a prueba manual (visibilidad:
-no desaparecen, viajan con el commit). Por qué: un `dod` verde con sólo una parte de los ACs
-ejercitados se narra como "listo" si la lista no se muestra.
+El comando frena en código lo siguiente (no hace falta repetir la verificación a mano; sí leer su mensaje y arreglar):
 
-## 🔴 PRE-CONDICIÓN — findings.json del Step 6 presente
+- **Matriz de verificación en ejecución** (`checks.acmatrix`, DODRT-C6): tiene que estar en verde con `provenance:
+  run-check` (`marker.js run-check acmatrix -- node <skill>/scripts/runtime-matrix.js --story <abs spec.md>`, que se
+  puebla en `step-10-live-check.md`).
+- **`findings.json` presente** (insumo del `tycon-retrospective-capturer`): si el run dir existe y el archivo falta o no
+  es un array, bloquea. Se escribe con `pipeline.js write-findings` y después `write-followups`
+  (`step-09-findings.md`); verlo antes: `pipeline.js findings-status --story <story_path> --repo <repo>` (exit 3 = falta).
+- **El pase adversarial atendido** (`adversarial-result-gate`, se evalúa SIEMPRE y no se abre con `DOD_BYPASS`):
+  pase lanzado → su resultado anotado en o después del ÚLTIMO lanzamiento
+  (`marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> --tests <k promovidas> [--own <p> --in "<rutas>"] [--deferred <d> --reason "<por qué>"]`);
+  pase no lanzado → el salteo que decidió el portón (`marker.js mark-adversarial-skipped --files <archivos de código del diff>`);
+  ninguno de los dos → bloquea con `no-atendido`.
+- **Eximiciones de críticos, vueltas de revisores y los demás controles de cierre** que el comando nombra al frenar
+  (waivers, tope de vueltas, maqueta, comprobaciones manuales): se resuelven como dice su mensaje.
 
-Antes de armar el mensaje, verificar que el `findings.json` del Step 6 existe (es el insumo
-machine-parseable del `tycon-retrospective-capturer`; un write manual se olvida, por eso es
-enforced acá):
+Lo que decide el agente, porque el comando no lo ve o no lo frena:
 
-```bash
-node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js findings-status \
-  --story <story_path> --repo <repo>
-```
-
-🔴 **Desde el 2026-09-18 esto NO depende de que el orquestador se acuerde**: `marker.js complete-step 8`
-lo computa él mismo (con el mismo `computeFindingsStatus`) y **BLOQUEA** si el run dir existe y el
-archivo falta o no es un array. Medido antes de cablearlo: 4 de las 35 corridas desde el 01-09 no lo
-dejaron, una de ellas ese mismo día. Sin run dir no bloquea —no hay dónde buscar— pero lo dice y lo
-anota en `gates.log` (`name: findings-json`). Correr este comando igual sirve para verlo antes del gate.
-
-- **exit 0** (`✅ findings.json presente`) → continuar.
-- **exit 3** (`🛑 findings.json FALTA`) → escribirlo AHORA con `pipeline.js write-findings` (ver
-  step-06 §findings.json — el array de findings sale del reporte consolidado del Step 6, con la
-  `disposition` final de cada uno) y **después** correr `write-followups` para persistir los no-resueltos
-  EN la story. Recién entonces seguir con el commit-prep. NO commitear sin el artefacto.
-
-## 🔴 PRE-CONDICIÓN — el pase adversarial atendido
-
-`marker.js complete-step 8` corre también el freno **`adversarial-result-gate`**, que se evalúa SIEMPRE
-(aunque otro freno ya haya bloqueado: los dos mensajes salen juntos) y deja su línea en `gates.log`:
-
-- **pase lanzado** → hace falta su resultado `--type 5b` anotado en o después del ÚLTIMO lanzamiento:
-  ```bash
-  node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> \
-    --tests <k promovidas> [--own <p> --in "<rutas>"] [--deferred <d> --reason "<por qué>"]
-  ```
-  (un resultado de un lanzamiento anterior —pase relanzado— no cuenta: `resultado-de-otro-lanzamiento`).
-- **pase no lanzado** → hace falta el salteo que decidió el portón:
-  `marker.js mark-adversarial-skipped --files <archivos de código del diff>`.
-- **ninguno de los dos** (incluida la bandera `deepReviewDone` de una corrida vieja, que se escribía a mano)
-  → bloquea con `no-atendido`.
-
-**No se abre con `DOD_BYPASS`**: el arreglo siempre está a mano y esa variable la puede poner el agente.
-Por qué: medido en cuatro días, 4 de las 9 corridas con el pase lanzado cerraron el paso 8 sin su resultado.
+- **Cambios después de la última vuelta de revisores**: si el diff actual difiere del que auditaron los revisores,
+  NO seguir: avisar «Detecté cambios al código desde la última corrida de revisores. Antes de armar el commit, vuelvo a
+  «Revisores» para re-auditar el diff actualizado.» y volver a `step-07-reviewers.md` (iteración N+1). Excepción:
+  cambios sólo fuera del diff (`tasks/lessons.md`, `tasks/todo.md`, el Change Log de la spec), documentada en
+  `step-08-precondition-check.md`.
+- **Checks con `provenance: manual`**: no bloquean, pero se anuncian en el commit prep como `⚠ check '<name>' no
+  verificado mecánicamente (provenance=manual — ver gates.log)`.
+- **Matriz en rojo**: los ACs `SIN CORRER` los corre el agente (no se eximen); los imposibles declarados se le presentan
+  al dev con la lista y el resumen llano. Esa eximición la firma **el dev desde su terminal** (`marker.js
+  runtime-waiver <abs spec.md>`, TTY-only), vive en `.tycon/runtime-waivers.jsonl` del repo de la story (no en el
+  frontmatter) y se vence sola si alguien reescribe la justificación. El mensaje de commit DEBE listar los ACs
+  diferidos a prueba manual: no desaparecen, viajan con el commit.
+- **Protocolo de cierre ACCOV-C7..C10**: leer `~/.claude/tycon-harness/guides/accov-governance-protocol.md` si no se
+  leyó en `step-10-live-check.md`. El cierre NO entrega un «checklist manual a probar»: cada criterio de verificación
+  que el agente definió queda automatizado. Si el mensaje de cierre dice «podés probar X, Y, Z», el pipeline falló.
+- **La salida del comando trae «Arranque: hecho, con aviso: …»** si una parte opcional del Arranque falló (el aviso de
+  trabajo o el pedido en ADO, `step-01-start.md`): pasárselo al dueño en el resumen.
 
 ## Formato del mensaje
 
@@ -149,7 +86,7 @@ Incluir:
 - Resumen de los cambios principales
 - ACs implementados (referenciados por número)
 - Si `had_override: true`: línea explícita "OVERRIDE: CRITICAL de {advisor} aprobado por usuario — razón: {razón}"
-- Si Step 7 auto-fluyó con warnings (`auto_flowed_with_warnings: true`): sección **"Warnings auto-waived"** listando cada warning (rule ID + archivo + razón del waive: `auto_waive` list / fuera del diff). Visibilidad sin fricción.
+- Si «Hallazgos» auto-fluyó con warnings (`auto_flowed_with_warnings: true`): sección **"Warnings auto-waived"** listando cada warning (rule ID + archivo + razón del waive: `auto_waive` list / fuera del diff). Visibilidad sin fricción.
 
 ### Trailers
 
@@ -234,21 +171,21 @@ con las tres el step está cerrado.
 
 ## 🚨 CRITICAL — NO cerrar el registro de horas
 
-**El pipeline NO cierra el registro de horas al finalizar Step 8.** Este es un error
+**El pipeline NO cierra el registro de horas al finalizar «Preparar el commit».** Este es un error
 recurrente que rompe el tracking de horas reales.
 
 **Reglas explícitas (NO violar):**
 
 1. **NO emitir** `work-signal stop` ni cerrar la entrada a mano con la herramienta de horas al final del pipeline. El
    registro queda **abierto**.
-2. **NO borrar** el estado local de la integración de horas al terminar Step 8: refleja que sigue abierto.
+2. **NO borrar** el estado local de la integración de horas al terminar «Preparar el commit»: refleja que sigue abierto.
 3. El registro **solo se cierra** en estas 4 condiciones, en este orden de precedencia:
    - **(a)** El usuario lo cierra explícitamente con lo que su integración le da (su skill o su comando).
    - **(b)** El usuario arranca otra tarea o invoca otra story con `tycon-pipeline` → el `start` del nuevo flujo
      **cierra el previo** (lo hace la integración).
    - **(c)** El cierre por inactividad de la integración (15 min sin actividad) lo cierra con el fin en la última
      actividad.
-   - **(d)** El **Step 9** cierra la story en ADO (`step-09-ado-story-closure.md` §"Acción — cerrar el registro de
+   - **(d)** «Cerrar la historia» cierra la story en ADO (`close-work-item.md` §"Acción — cerrar el registro de
      horas"). Ahí sí terminó el trabajo lógico, y por eso es la única vía del pipeline que lo cierra.
 
 **Por qué importa:** después del commit pipeline, el usuario suele pedir trabajo
@@ -256,7 +193,7 @@ adicional (smoke check DoD Gate 2, debugging, ajustes a la spec, integration tes
 fix-up). Si el registro ya se cerró, ese trabajo no se trackea y el dev pierde horas
 facturables.
 
-**Patrón observado (2026-05-12):** post-Step 8 commit prep, Claude cerró el registro
+**Patrón observado (2026-05-12):** tras preparar el commit, el agente cerró el registro
 "por prolijidad". Después el usuario pidió 27min adicionales de DoD smoke + commits +
 integration tests, todos sin tracking. Tuvo que recuperarse manualmente con un entry
 retroactivo. **No vuelva a pasar.**
@@ -302,7 +239,7 @@ queda la ruta para copiar—, y debajo la línea
 - **El mensaje de commit SÍ va completo al chat** — es lo que el dev tiene que leer para aprobar.
   Es la única excepción al "detalle a pedido".
 - **Los recordatorios van en UNA línea combinada y en llano**, no en 3 bloques con emoji y sangría.
-  Sólo los que aplican: el del reloj si el paso 0b avisó el trabajo a una herramienta de horas
+  Sólo los que aplican: el del reloj si el Arranque avisó el trabajo a una herramienta de horas
   (`workSignalStarted`); el de Azure DevOps si la story tiene `ado_work_item`. Sin «smoke», «DoD» ni «ADO» (caso
   2026-10-19: un dev solo, sin herramienta de horas ni Azure DevOps, leía «smoke de DoD» y «cierre en ADO» en su
   primera historia). El contenido normativo no cambia —
@@ -321,13 +258,13 @@ queda la ruta para copiar—, y debajo la línea
 
 ## 🟢 Limpieza del marker file (MANDATORY post-2026-05-15)
 
-Una vez que el commit message fue presentado al user y aprobado (`marker.js complete-step 8` ya quedó marcado), **limpiar el marker del pipeline** para que los hooks dejen de emitir reminders sobre esta story:
+Una vez que el commit message fue presentado al user y aprobado (`marker.js complete-step prepare-commit` ya quedó marcado), **limpiar el marker del pipeline** para que los hooks dejen de emitir reminders sobre esta story:
 
 ```bash
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js clear
 ```
 
-Si el flujo va straight a Step 9 (ADO closure) sin pausa, el clear ocurre allá. Si el flujo termina en Step 8 (commit prep + dev decide commitear/no commitear manualmente), clear acá.
+Si el flujo sigue sin pausa a «Cerrar la historia» (`close-work-item.md`), el clear ocurre allá. Si el flujo termina en «Preparar el commit» (el dev decide commitear o no manualmente), clear acá.
 
 ### Si el cierre ofreció la instalación completa
 
@@ -359,8 +296,8 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js update-story
   "$STORY_PATH" "review"
 ```
 
-**Por qué**: si el flujo termina en Step 8 (no llega a Step 9 ADO closure), la story queda lista para review pero el `status:` previo (`in-progress`) reflejaría mal el estado real. Otra sesión que abra `tycon-pipeline` sobre esta story va a leer `review` y NO va a re-arrancar Step 0 (PIPE-C5 lo detecta).
+**Por qué**: si el flujo termina en «Preparar el commit» (no llega a «Cerrar la historia»), la story queda lista para review pero el `status:` previo (`in-progress`) reflejaría mal el estado real. Otra sesión que abra `tycon-pipeline` sobre esta story va a leer `review` y NO va a re-arrancar el Arranque (PIPE-C5 lo detecta).
 
-**Si Step 9 (ADO closure) sigue inmediatamente** después de Step 8: el `status: review` se sobreescribe a `done` allá. NO es un step opcional saltearlo — siempre mutá `review` acá aunque vayas a Step 9 después; el costo del double-write es trivial y deja el log de mutación más auditable.
+**Si «Cerrar la historia» sigue inmediatamente** después de este paso: el `status: review` se sobreescribe a `done` allá. NO es opcional saltearlo — siempre mutá `review` acá aunque vayas a «Cerrar la historia» después; el costo del double-write es trivial y deja el log de mutación más auditable.
 
 **Si el update falla** (frontmatter sin línea `status:` por algún motivo raro): WARNING al usuario pero NO bloquear el commit prep — el dev puede setearlo manualmente.

@@ -184,7 +184,7 @@ function mostrar({ sessionId, stateDir, home = os.homedir() }) {
   if (!sessionId) return null;
   const marker = leerMarcador(stateDir, sessionId);
   if (!marker || !marker.storyId) return null;
-  if ((marker.stepsCompleted || []).map(String).includes('3')) return null;
+  if (require('./steps.js').isDone(marker, 'approve-plan')) return null;
   const story = rutaDeLaStory(marker);
   if (!story) return null;
   const repo = marker.repoPath || path.dirname(story);

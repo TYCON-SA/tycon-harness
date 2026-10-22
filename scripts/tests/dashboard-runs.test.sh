@@ -388,18 +388,18 @@ rm -rf "${T}"
 # TYCON_SKILLS_DIR apunta a propósito a un skill con un título viejo, para probar que ya no se lee de ahí.
 T=$(mktemp -d); volcado "${T}/r" "${S1}"
 mkdir -p "${T}/skills/tycon-pipeline/steps"
-printf '# Step 4 — TITULO_VIEJO\n' > "${T}/skills/tycon-pipeline/steps/step-04-execute.md"
+printf '# Step 4 — TITULO_VIEJO\n' > "${T}/skills/tycon-pipeline/steps/step-05-implement.md"
 J="$(TYCON_SKILLS_DIR="${T}/skills" modelo_json "${T}/r")"
 python3 -c "
 import json,sys; p=json.loads(sys.argv[1])['pasos']
 assert p['fuente']=='tabla', p
 n=p['nombres']
-assert len(n)==9, n
-assert n[0]=='Arranque' and n[4]=='Implementar y correr las pruebas' and n[5]=='Revisores' and n[8]=='Preparar el commit', n
+assert len(n)==10, n
+assert n[0]=='Arranque' and n[4]=='Implementar' and n[5]=='Correr las pruebas' and n[6]=='Implementar + pruebas' and n[7]=='Revisores' and n[9]=='Preparar el commit', n
 assert 'TITULO_VIEJO' not in json.dumps(n), n
 " "${J}" && ok "T13 (7.23-T5) los pasos se llaman como en lib/steps.js, no como el título de su archivo" || mal "T13 (7.23-T5) los nombres no salen de lib/steps.js: ${J:0:300}"
 R="$(node -e "const p=require('${RAIZ}/scripts/nightly/dashboard/runs.js').nombresDePasos('${T}/nada/steps.js');console.log(p.fuente+' · '+p.nombres.join(',')+' · '+p.motivo)")"
-grep -q '^numeros · 0,1,2,3,4,5,6,7,8 · .*no se pudo cargar' <<< "${R}" && ok "T13 sin la tabla, números con motivo" || mal "T13 sin la tabla dio: ${R}"
+grep -q '^numeros · 0,1,2,3,4,5,6,7,8,9 · .*no se pudo cargar' <<< "${R}" && ok "T13 sin la tabla, números con motivo" || mal "T13 sin la tabla dio: ${R}"
 rm -rf "${T}"
 
 # ── T13b · las notas (fuera de ventana, evaluaciones previas) van FUERA del SVG ────────────────
@@ -463,13 +463,13 @@ K="$(cliente "${T}/o.html" container ppk)"
 grep -q 'marcas invertidas o empatadas' <<< "${K}" && ok "T21 ppk declara la ejecución con tramo fusionado" || mal "T21 ppk calla el tramo fusionado (600 k tokens invisibles)"
 rm -rf "${T}"
 
-# ── T22 · «quedó en el paso N» con huecos en stepsCompleted ───────────────────────────────────
-# 🔴 Falla con: length-1 → [0,1,4,5,6,7] dice «quedó en el 5».
+# ── T22 · «quedó en <paso>» con huecos en stepsCompleted ─────────────────────────────────────
+# 🔴 Falla con: length-1 → [0,1,4,5,6,7] dice «quedó en Revisores». Las filas: el 6 y el 7 viejos son Hallazgos (fila 8).
 T=$(mktemp -d); volcado "${T}/r" "${S1}" "" '{"marker":{"stepsCompleted":[0,1,4,5,6,7]}}'
 J="$(modelo_json "${T}/r")"
 python3 -c "
-import json,sys; c=json.loads(sys.argv[1])['corridas'][0]; assert c['ultimo_paso']==7 and not c['llego_al_final'], c['ultimo_paso']" "${J}" && ok "T22 ultimo_paso=7 con huecos" || mal "T22 ultimo_paso mal calculado"
-generar "${T}/r" "${T}/o.html" "${T}/log"; grep -q 'quedó en el 7' "${T}/o.html" && ok "T22 la fila dice «quedó en el 7»" || mal "T22 la fila no dice «quedó en el 7»"
+import json,sys; c=json.loads(sys.argv[1])['corridas'][0]; assert c['ultimo_paso']==8 and not c['llego_al_final'], c['ultimo_paso']" "${J}" && ok "T22 ultimo_paso = la fila de Hallazgos con huecos" || mal "T22 ultimo_paso mal calculado"
+generar "${T}/r" "${T}/o.html" "${T}/log"; grep -q 'quedó en Hallazgos' "${T}/o.html" && ok "T22 la fila dice «quedó en Hallazgos»" || mal "T22 la fila no dice «quedó en Hallazgos»"
 rm -rf "${T}"
 
 # ── T23 · sin hora de inicio, las evaluaciones NO desaparecen ─────────────────────────────────
@@ -517,13 +517,13 @@ printf "module.exports = { stepName: () => { throw new Error('boom /ruta/de/la/m
 printf "module.exports = { stepName: () => { throw null; } };\n" > "${T}/lanza-nulo.js"
 for t in nula lanza lanza-nulo; do
   R="$(node -e "const p=require('${CORR}').nombresDePasos('${T}/${t}.js');console.log(p.fuente+' · '+p.nombres.join(',')+' · '+p.motivo)" 2>&1)"
-  grep -q '^numeros · 0,1,2,3,4,5,6,7,8 · la tabla de pasos' <<< "${R}" && ! grep -q 'ruta/de/la/maquina' <<< "${R}" \
+  grep -q '^numeros · 0,1,2,3,4,5,6,7,8,9 · la tabla de pasos' <<< "${R}" && ! grep -q 'ruta/de/la/maquina' <<< "${R}" \
     && ok "T26 tabla mal armada (${t}) → números con motivo, sin caerse y sin el mensaje del error" || mal "T26 tabla mal armada (${t}) dio: ${R}"
 done
 # una tabla que nombra sólo algunos pasos: los que tiene, por nombre; los demás por número, y el motivo dice cuáles
-printf "module.exports = { stepName: (i) => (i === 4 ? 'Cuatro' : null) };\n" > "${T}/parcial.js"
+printf "module.exports = { stepName: (i) => (i === 'implement' ? 'Cuatro' : null) };\n" > "${T}/parcial.js"
 R="$(node -e "const p=require('${CORR}').nombresDePasos('${T}/parcial.js');console.log(p.fuente+' · '+p.nombres.join(',')+' · '+p.motivo)" 2>&1)"
-grep -q '^tabla · 0,1,2,3,Cuatro,5,6,7,8 · la tabla de pasos no nombra el/los paso(s) 0, 1, 2, 3, 5, 6, 7, 8' <<< "${R}" && ok "T26 tabla parcial → los nombres que tiene y el motivo de los que faltan" || mal "T26 tabla parcial dio: ${R}"
+grep -q '^tabla · 0,1,2,3,Cuatro,5,6,7,8,9 · la tabla de pasos no nombra el/los paso(s) 0, 1, 2, 3, 5, 6, 7, 8, 9' <<< "${R}" && ok "T26 tabla parcial → los nombres que tiene y el motivo de los que faltan" || mal "T26 tabla parcial dio: ${R}"
 rm -rf "${T}"
 
 # ── T27 · el umbral de la ficha sale de sources.json, no del cliente ──────────────────────────
@@ -818,7 +818,7 @@ assert t['entre_pasos_ms']==14*M, t
 assert t['trabajo_ms']==100*M, t
 entre=[x for x in m[0]['tramos'] if x.get('tipo')=='entre']
 assert sum(x['ms'] for x in entre)==14*M, m[0]['tramos']
-p4=[x for x in m[0]['tramos'] if x.get('paso')=='4'][0]
+p4=[x for x in m[0]['tramos'] if x.get('paso')=='6'][0]  # el 4 viejo es la fila 6, «Implementar + pruebas» (story 7.23)
 assert p4['ms']==20*M, p4
 " "${J}" && ok "2.7-T7 la corrida medida separa trabajo (100 min), espera (4) y hueco (14); el paso 4 dura 20, no 26" || mal "2.7-T7 la cuenta de la corrida medida no es la esperada"
 generar "${T}/r" "${T}/o.html" "${T}/log"
@@ -1069,7 +1069,7 @@ m['corridas']=[x for x in m['corridas'] if x['story']!='AS-1']
 c={x['cambios']['estado']: x['cambios'] for x in m['corridas']}
 l=c['leido']; fs=[a['f'] for a in l['archivos']]
 assert fs==['src/Pago.ts','src/Nuevo.ts'], fs
-assert l['anteriores_al_inicio']==1 and len(l['lista'])==2 and l['lista'][0]['p']=='4', l
+assert l['anteriores_al_inicio']==1 and len(l['lista'])==2 and l['lista'][0]['p']=='6', l
 assert [x['h'] for x in l['commits']]==['abc1234'], l['commits']
 assert 'sin hilo' in c['sin_hilo']['motivo'] or 'no tiene hilo' in c['sin_hilo']['motivo'], c['sin_hilo']
 assert '_texto' not in json.dumps(m) and 'CODIGO_SEMBRADO' not in json.dumps(m)
@@ -1821,7 +1821,7 @@ assert por['2026-08-15']['sin_pasos_anotados'] is False, por['2026-08-15'].get('
 assert por['2026-08-16']['sin_pasos_anotados'] is False, 'sin ningún paso no es «sólo el paso 0»'" "${J}" && ok "2.45-T7 el 0 sin trabajo y la corrida sin pasos NO se marcan" || mal "2.45-T7 se marcó una corrida que no cumple"
 generar "${T}/r" "${T}/o.html" "${T}/log"
 CELDAS="$(grep -o '<td class="pasos-n">[^/]*</span></td>' "${T}/o.html")"
-grep -q 'quedó en el 0' <<< "${CELDAS}" && ok "2.45-T7 la ejecución en el 0 sin trabajo sigue diciendo «quedó en el 0»" || mal "2.45-T7 ya no dice «quedó en el 0»: ${CELDAS}"
+grep -q 'quedó en Arranque' <<< "${CELDAS}" && ok "2.45-T7 la ejecución en el Arranque sin trabajo sigue diciendo «quedó en Arranque»" || mal "2.45-T7 ya no dice «quedó en Arranque»: ${CELDAS}"
 grep -q 'no anotó sus pasos' <<< "${CELDAS}" && mal "2.45-T7 dice «no anotó sus pasos» sin que haya trabajado" || ok "2.45-T7 no dice «no anotó sus pasos»"
 rm -rf "${T}"
 
@@ -1842,6 +1842,65 @@ ENL="$(CL_SEARCH="?abrir=1&ver=3&git=2" cliente "${T}/o.html" link)"
 [ "${ENL}" = '{"abrir":1,"ver":3,"git":2,"solo":null,"maquina":null}' ] && ok "2.45-T8 abrir, ver y git se leen como antes" || mal "2.45-T8 el enlace salió: ${ENL}"
 ENL="$(CL_SEARCH="?solo=1&desde=2026-08-20" cliente "${T}/o.html" link)"
 [ "${ENL}" = '{"abrir":1,"ver":null,"git":null,"solo":1,"maquina":null}' ] && ok "2.45-T8 solo sigue andando junto a un filtro nuevo" || mal "2.45-T8 solo: ${ENL}"
+rm -rf "${T}"
+
+# ── 7.23-T15 Metrics_EquivalenceWithoutSplitting (vista de ejecuciones) @story-7.23 @ac-13 ─────────────────────────
+# Una ejecución vieja (pasos por número) y una nueva (por nombre) en la misma vista: cada una dice su esquema, la vieja
+# lleva el 4 en una sola fila «Implementar + pruebas» y la nueva, Implementar y Correr las pruebas partidos; la página dice
+# desde qué día están partidos.
+# 🔴 sale rojo si la vista reparte el 4 viejo, pierde los pasos por nombre o no dice el esquema.
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "2026-08-15T05:53:47Z" '{"consumo":{"por_paso":{"4":100,"6":30,"7":20}}}'
+volcado "${T}/r" "${S2}" "2026-08-20T05:53:47Z"
+python3 - "${T}/r" "${S2}" <<'PYN'
+import glob, json, sys
+from datetime import datetime, timedelta, timezone
+for f in glob.glob(sys.argv[1] + '/*.json'):
+    v = json.load(open(f))
+    if not f.endswith(sys.argv[2][:8] + '.json'): continue
+    t0 = datetime(2026, 8, 20, 5, 53, 47, tzinfo=timezone.utc)
+    iso = lambda m: (t0 + timedelta(minutes=m)).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+    pasos = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'findings', 'prepare-commit']
+    v['marker']['stepScheme'] = 2
+    v['marker']['stepsCompleted'] = pasos
+    v['marker']['stepsPending'] = []
+    v['marker']['stepTimings'] = {p: {'startedAt': iso(i * 10), 'completedAt': iso(i * 10 + 8)} for i, p in enumerate(pasos)}
+    v['consumo'] = {**(v.get('consumo') or {}), 'por_paso': {'implement': 10, 'run-tests': 20, 'findings': 5}}
+    json.dump(v, open(f, 'w'), indent=1)
+PYN
+J="$(modelo_json "${T}/r")"
+python3 -c "
+import json,sys; m=json.loads(sys.argv[1]); c={x['inicio'][:10]: x for x in m['corridas']}
+viejo, nuevo = c['2026-08-15'], c['2026-08-20']
+assert viejo['esquema']==1 and nuevo['esquema']==2, (viejo['esquema'], nuevo['esquema'])
+fv = [t['pasos'] for t in viejo['tramos'] if t.get('tipo')!='entre' and not t.get('subpaso')]
+fn = [t['pasos'] for t in nuevo['tramos'] if t.get('tipo')!='entre' and not t.get('subpaso')]
+assert [6] in fv and [4] not in fv and [5] not in fv, fv
+assert [4] in fn and [5] in fn and [6] not in fn, fn
+assert [t['nombre'] for t in viejo['tramos'] if t['pasos']==[6]]==['Implementar + pruebas'], viejo['tramos']
+assert nuevo['llego_al_final'] and viejo['llego_al_final']
+assert m['pasos_partidos_desde']=='2026-08-20', m['pasos_partidos_desde']
+# el consumo por paso, con los dos esquemas en las mismas filas: el 4 viejo en la junta (6), el 6 y el 7 viejos sumados en Hallazgos (8)
+kv, kn = viejo['consumo'].get('por_paso'), nuevo['consumo'].get('por_paso')
+assert kv is None or (kv.get('6')==100 and kv.get('8')==50 and '4' not in kv), kv
+assert kn is None or (kn.get('4')==10 and kn.get('5')==20 and kn.get('8')==5), kn
+assert kv is not None or kn is not None, 'ninguna ejecución trajo su consumo'
+" "${J}" && ok "7.23-T15 cada ejecución con su esquema; el 4 viejo en una fila, el nuevo partido" || mal "7.23-T15 vista con los dos esquemas: $(echo "${J}" | head -c 300)"
+generar "${T}/r" "${T}/o.html" "${T}/log"
+grep -q 'Desde el 2026-08-20, «Implementar» y «Correr las pruebas» son dos pasos' "${T}/o.html" && ok "7.23-T15 la página dice desde qué día están partidos" || mal "7.23-T15 la página no dice desde cuándo están partidos"
+rm -rf "${T}"
+# una ejecución nueva que sólo anotó el Arranque y trabajó se marca «no anotó sus pasos», como una vieja con el 0
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "" '{"marker":{"stepScheme":2,"stepsCompleted":["start"],"stepsPending":["validate-story"],"filesTouched":["a.js"],"fileEvents":[]}}'
+python3 -c "
+import json,sys; c=json.loads(sys.argv[1])['corridas'][0]; assert c['sin_pasos_anotados'] is True, c.get('sin_pasos_anotados')" "$(modelo_json "${T}/r")" && ok "7.23-T15 una ejecución nueva con sólo el Arranque y trabajo se marca" || mal "7.23-T15 la ejecución nueva con sólo el Arranque no se marcó"
+rm -rf "${T}"
+# una clave de paso que ninguna fila conoce no se publica cruda: sale «paso desconocido»
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "" '{"marker":{"stepTimings":{"CLAVE_SEMBRADA<b>":{"startedAt":"2026-08-15T05:54:00.000Z","completedAt":"2026-08-15T05:59:00.000Z"}}},"consumo":{"por_paso":{"CLAVE_SEMBRADA<b>":10}}}'
+J="$(modelo_json "${T}/r")"
+generar "${T}/r" "${T}/o.html" "${T}/log"
+! grep -q 'CLAVE_SEMBRADA' <<< "${J}" && ! grep -q 'CLAVE_SEMBRADA' "${T}/o.html" && ok "7.23-T15 una clave de paso desconocida no sale cruda (ni en el modelo ni en la página)" || mal "7.23-T15 la clave cruda del volcado se publicó"
 rm -rf "${T}"
 
 # ── T15 · esta suite NO toca los entregables commiteados (gemelo del C-27) ─────────────────────

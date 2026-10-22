@@ -22,7 +22,7 @@ const { spawnSync } = require('child_process');
 
 const SCRIPTS = path.resolve(__dirname, '..');
 const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
-const STEP_01 = path.resolve(SCRIPTS, '..', 'steps', 'step-01-validate-story.md');
+const STEP_01 = path.resolve(SCRIPTS, '..', 'steps', 'step-02-validate-story.md');
 const { dependenciasDePruebas } = require('../lib/test-deps.js');
 
 const tmp = (p) => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `test-deps-${p}-`)));

@@ -225,7 +225,7 @@ const sinTags = (h) => String(h).replace(/<svg[\s\S]*?<\/svg>/g, ' ').replace(/<
 test('T1 Cabecera_SelloYBandas_IgualQueLaVista @story-2.27 @ac-1 @ac-18', async () => {
   await conPestana({ fuentes: fuentesCon({ espejo: mundo() }) }, async ({ h, entrar }) => {
     const p = (await h.pedir('/corridas', { cookie: await entrar(LEAD) })).texto;
-    for (const rot of ['Ejecuciones:', 'Con consumo medido:', 'Con controles:', 'Llegaron al paso 8:', 'Generado:', 'Alcance:']) assert.ok(p.includes(`<b>${rot}</b>`), `el sello trae «${rot}»`);
+    for (const rot of ['Ejecuciones:', 'Con consumo medido:', 'Con controles:', 'Llegaron al final:', 'Generado:', 'Alcance:']) assert.ok(p.includes(`<b>${rot}</b>`), `el sello trae «${rot}»`);
     assert.match(p, /versión del sitio/, 'el sello dice la versión del sitio, no el commit');
     assert.doesNotMatch(p, /Sin registro de ejecuciones propio/, 'el sitio no tiene registro propio y no lo declara como faltante');
     assert.doesNotMatch(p, /~\/\.claude\/\.tycon-pipeline\/timing-history/, 'la nota «De dónde sale» es la del sitio');
@@ -474,7 +474,7 @@ test('T8 Dev_SoloSusCorridas_SinConteosGlobales @story-2.27 @ac-8', async () => 
     assert.deepStrictEqual(l.maquinas.lista.map((m) => m.nombre), ['maq-a'], 'las opciones de máquina, sólo las suyas');
     const p = (await h.pedir('/corridas', { cookie: dev })).texto;
     const sello = /<div class="stamp">([\s\S]*?)<\/div>/.exec(p)[1];
-    assert.match(sinTags(sello), /^Ejecuciones: 2 Con consumo medido: 1 de 2 Con controles: 2 de 2 Llegaron al paso 8: 2 de 2 Generado: \d{4}-\d\d-\d\d \d\d:\d\d UTC · versión del sitio Alcance: maq-a 2$/);
+    assert.match(sinTags(sello), /^Ejecuciones: 2 Con consumo medido: 1 de 2 Con controles: 2 de 2 Llegaron al final: 2 de 2 Generado: \d{4}-\d\d-\d\d \d\d:\d\d UTC · versión del sitio Alcance: maq-a 2$/);
     assert.doesNotMatch(sello, /archivos|esta máquina|undefined/);
     assert.doesNotMatch(p, /href="\/arnes\/tablero"/, 'el eyebrow no enlaza una página que el dev no puede abrir');
   });
@@ -564,7 +564,7 @@ test('T14 Fuga_NingunMarcadorDeOtroLlegaAlDev @story-2.27 @ac-14', async () => {
 
 // ── lo que viaja y cuándo ─────────────────────────────────────────────────────────────────────────────────────────
 
-const LISTA_BLANCA = ['id', 'story', 'producto', 'maquina', 'maquina_motivo', 'inicio', 'semana', 'dur_ms', 'llego_al_final', 'ultimo_paso', 'tramos', 'sin_marca', 'tiempos', 'controles', 'costo', 'validador', 'consumo', 'sin_pasos_anotados', 'sin_cerrar'];
+const LISTA_BLANCA = ['id', 'story', 'producto', 'maquina', 'maquina_motivo', 'inicio', 'semana', 'dur_ms', 'llego_al_final', 'ultimo_paso', 'tramos', 'sin_marca', 'tiempos', 'controles', 'costo', 'validador', 'consumo', 'sin_pasos_anotados', 'sin_cerrar', 'esquema'];
 
 test('T15 Lista_ListaBlancaExacta @story-2.27 @ac-15', () => {
   const espejo = mundo({ marcadores: false });
@@ -1211,14 +1211,13 @@ test('2.60-T11 FrasesDeLaCasa_CadaRama @story-2.60 @ac-1 @ac-3 — los tramos fu
   const ch = require(path.join(D, 'changes.js'));
   const enEspanol = (t) => enCastellano([t]).length > 0;
   const frases = [];
-  // tramos: dos pasos con la misma marca (se funden), un sub-paso y un hueco entre pasos
+  // tramos: dos pasos con la misma marca (se funden) y un hueco entre pasos (los sub-pasos viejos van en la fila de su paso)
   const c = runs.modeloDeCorrida({ marker: { startedAt: '2026-10-01T10:00:00Z', lastTouch: '2026-10-01T12:00:00Z', stepTimings: {
     1: { completedAt: '2026-10-01T10:05:00Z' }, 4: { completedAt: '2026-10-01T10:30:00Z' }, '5b': { startedAt: '2026-10-01T10:31:00Z' },
     5: { startedAt: '2026-10-01T10:40:00Z', completedAt: '2026-10-01T11:25:00Z' }, 6: { completedAt: '2026-10-01T11:25:00Z' },
     '7c': { startedAt: '2026-10-01T11:27:00Z' }, 8: { startedAt: '2026-10-01T11:35:00Z', completedAt: '2026-10-01T11:50:00Z' } } } }, runs.nombresDePasos().nombres);
   const nombres = c.tramos.map((t) => t.nombre);
   assert.ok(nombres.some((n) => n.includes(' + ')), `hay un tramo fundido: ${nombres.join(' · ')}`);
-  assert.ok(nombres.some((n) => /^sub-paso /.test(n)), 'hay un sub-paso');
   frases.push(...nombres);
   // la espera sin medir: sin el arranque del 7; sin el del 3 y el 7
   const base = Date.parse('2026-10-20T10:00:00Z');
@@ -1261,7 +1260,7 @@ test('2.60-T12 DatosDeAfuera_NoSeTraducen @story-2.60 @ac-1 — la API traduce s
   const det = { story: 'Revisores', producto: 'pruebas', maquina: 'pruebas', descripcion: { texto: 'Pago confirmado', fuente: 'el título de la story' },
     cambios: { titulo: 'antes, el login fallaba', commits: [{ h: 'a', s: 'pruebas' }, { h: 'b', s: 'fix: el pedido queda confirmado' }],
       archivos: [{ f: 'Arranque' }, { f: 'fuera del repo: x.txt' }], motivo: 'el hilo no se pudo leer (Z_DATA_ERROR)' },
-    tramos: [{ nombre: 'Revisores + Hallazgos: el informe' }] };
+    tramos: [{ nombre: 'Revisores + Hallazgos' }] };
   const en = runs.todoEnIdioma('en', det);
   assert.strictEqual(en.story, 'Revisores');
   assert.strictEqual(en.producto, 'pruebas');

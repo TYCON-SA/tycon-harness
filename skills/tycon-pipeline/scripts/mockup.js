@@ -331,7 +331,13 @@ function declaredDiffs(md) {
   for (const l of String(md || '').split('\n')) {
     const m = l.match(/\bdiffers:\s*(.*)$/);
     if (!m || !m[1].trim()) continue;
-    for (const q of l.slice(0, m.index).matchAll(/«([^»]+)»/g)) out.set(q[1].replace(/\s+/g, ' ').trim(), m[1].trim());
+    const antes = l.slice(0, m.index);
+    // un solo texto que lleva «» adentro (una cabecera con el título de la story): de la primera « a la última »
+    // (las comillas de adentro, balanceadas: «a» y «b» son dos textos)
+    const entero = antes.match(/^\s*-\s*«(.*)»\s*—\s*$/);
+    const balanceadas = (s) => { let d = 0; for (const c of s) { if (c === '«') d += 1; else if (c === '»') { d -= 1; if (d < 0) return false; } } return d === 0; };
+    if (entero && /«/.test(entero[1]) && balanceadas(entero[1])) { out.set(entero[1].replace(/\s+/g, ' ').trim(), m[1].trim()); continue; }
+    for (const q of antes.matchAll(/«([^»]+)»/g)) out.set(q[1].replace(/\s+/g, ' ').trim(), m[1].trim());
   }
   return out;
 }

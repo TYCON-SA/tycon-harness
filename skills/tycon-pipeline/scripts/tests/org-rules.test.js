@@ -92,7 +92,7 @@ test('@story-8.48 @ac-17 @ac-18 @ac-21 T22 Prompts_NoFixedPascalOrReact', () => 
     checklist: read('skills/tycon-create-story/checklist.md'),
     storyFormat: read('story-format.md'),
     coverage: read('agents/tycon-ac-coverage-checker.md'),
-    step01: read('skills/tycon-pipeline/steps/step-01-validate-story.md'),
+    step01: read('skills/tycon-pipeline/steps/step-02-validate-story.md'),
   };
   // PascalCase sólo aparece atado a la regla de la organización, nunca como exigencia fija para una prueba (el nombre
   // de un componente de React es otra cosa: lo revisan los revisores de ese stack)
@@ -160,7 +160,7 @@ test('@story-8.48 @ac-19 T23 Step07c_Readability_LanguageFromOrg', () => {
   // un --scope desconocido frena en vez de tomarse como la guía
   assert.equal(run(['readability-brief', '--scope', 'iu'], tree(undefined)).status, 2);
   // la instrucción del paso 7c manda a usar ese pedido
-  const step = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-07c-dod-runtime-gate.md'), 'utf8');
+  const step = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-10-live-check.md'), 'utf8');
   assert.match(step, /readability-brief/);
 });
 
@@ -172,7 +172,7 @@ test('@story-8.64 @ac-3 T20 OrgRules_RutaDeLaGuia', () => {
   const sin = orgRules(tree(undefined));
   assert.equal(sin.story_format, null);
   assert.deepEqual(sin.problems, [], 'sin guía no es un problema de las reglas: el validador la busca solo');
-  const paso1 = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'steps', 'step-01-validate-story.md'), 'utf8');
+  const paso1 = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'steps', 'step-02-validate-story.md'), 'utf8');
   assert.match(paso1, /\{story_format\}/);
   assert.match(paso1, /Si `story_format` es `null`, sacá del pedido la frase/);
   const validador = fs.readFileSync(path.join(ROOT, 'agents', 'tycon-story-validator.md'), 'utf8');

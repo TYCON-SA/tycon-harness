@@ -3,30 +3,95 @@
 //
 // Nunca muestra dinero, a propósito.
 
-import { STEPS, SUBSTEP_FLAG, SUBSTEP_OLD_FLAG, ASKS_DEV, MAIN_TOTAL } from './steps.mjs';
+import { STEPS, TOTAL, OLD_IDS, OLD_FLAG, START_PART_FAILED } from './steps.mjs';
 
 export const NO_RUN_TEXT = 'No hay una ejecución del pipeline en esta sesión.';
+export const BROKEN_RUN_TEXT = 'el contenido no es una ejecución del pipeline (el archivo está dañado)';
+export const OLD_RUN_TEXT = 'Esta ejecución empezó con la versión anterior del arnés: sus pasos se muestran con los nombres nuevos.';
 
-const isMain = (id) => /^\d$/.test(id);
 const ms = (iso) => {
   const t = typeof iso === 'string' ? Date.parse(iso) : NaN;
   return Number.isFinite(t) ? t : null;
 };
 const minutes = (from, to) => (from === null || to === null ? null : Math.max(0, Math.round((to - from) / 60000)));
 const show = (v) => (v === null || v === undefined ? '—' : String(v));
+const isObj = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
+
+/** 2 (pasos por nombre), 1 (el marker viejo, por número) o `null` (ninguno de los dos). */
+function schemeOf(m) {
+  const listas = [m.stepsCompleted, m.stepsPending].filter((l) => l !== undefined);
+  if (listas.some((l) => !Array.isArray(l))) return null;
+  const items = listas.flat().map(String);
+  if (m.stepScheme === 2) return items.every((x) => STEPS.some((s) => s.id === x) || x === 'close-work-item') ? 2 : null;
+  if (m.stepScheme !== undefined) return null;
+  return items.every((x) => OLD_IDS.includes(x)) ? 1 : null;
+}
 
 /**
- * Lee el texto del marker. Devuelve `null` si no hay corrida (vacío, ilegible, o sin story).
- * `now` en milisegundos.
+ * El marker como lo ve el cartel: los pasos hechos y sus horas por nombre de máquina, sea cual sea su esquema. El viejo
+ * se lee con la equivalencia: el Arranque con el 0; Implementar y Correr las pruebas con el 4 (no se reparte: Correr
+ * las pruebas lleva sólo el fin); Hallazgos con el 6 y el 7.
+ */
+function normalize(m, scheme) {
+  const raw = isObj(m.stepTimings) ? m.stepTimings : {};
+  if (scheme === 2) return { completed: new Set((m.stepsCompleted || []).map(String)), timings: raw };
+  const done = new Set((m.stepsCompleted || []).map(String));
+  const oldDone = (o) => done.has(o) || (OLD_FLAG[o] || []).some((f) => m[f] === true);
+  const t = (o) => (isObj(raw[o]) ? raw[o] : {});
+  const completed = new Set();
+  const timings = {};
+  for (const s of STEPS) {
+    const old = s.id === 'start' ? ['0'] : s.id === 'reviewers' ? ['5'] : s.old;
+    if (old.every(oldDone)) completed.add(s.id);
+  }
+  const put = (id, startedAt, completedAt) => {
+    const v = {};
+    if (startedAt) v.startedAt = startedAt;
+    if (completedAt) v.completedAt = completedAt;
+    if (Object.keys(v).length) timings[id] = v;
+  };
+  put('start', t('0').startedAt, t('0').completedAt);
+  put('validate-story', t('1').startedAt, t('1').completedAt);
+  put('plan', t('2').startedAt, t('2').completedAt);
+  put('approve-plan', t('3').startedAt, t('3').completedAt);
+  put('implement', t('4').startedAt, t('4').completedAt);
+  put('run-tests', null, t('4').completedAt);
+  put('reviewers', t('5').startedAt || t('7b').startedAt, t('5').completedAt);
+  put('adversarial-pass', t('5b').startedAt, t('5b').completedAt);
+  put('findings', t('6').startedAt || t('7').startedAt, completed.has('findings') ? (t('7').completedAt || t('6').completedAt) : null);
+  put('live-check', t('7c').startedAt, t('7c').completedAt);
+  put('prepare-commit', t('8').startedAt, t('8').completedAt);
+  return { completed, timings };
+}
+
+/**
+ * El motivo por el que el texto del marker NO es una ejecución legible: `null` si no hay ejecución (vacío, o un objeto
+ * sin story, que es un marker cerrado) o si se lee bien. Un JSON roto, algo que no es un objeto, o listas de pasos que no
+ * son de ninguno de los dos esquemas son un error, nunca «sin ejecución».
+ */
+export function readRunError(text) {
+  if (typeof text !== 'string' || text.trim() === '') return null;
+  let m;
+  try { m = JSON.parse(text); } catch (_) { return BROKEN_RUN_TEXT; }
+  if (!isObj(m)) return BROKEN_RUN_TEXT;
+  if (typeof m.storyId !== 'string' || m.storyId === '') return null;
+  return schemeOf(m) === null ? BROKEN_RUN_TEXT : null;
+}
+
+/**
+ * Lee el texto del marker. Devuelve `null` si no hay corrida (vacío, sin story) o si no se puede leer (eso lo dice
+ * `readRunError`). `now` en milisegundos.
  */
 export function readRun(text, now) {
   if (typeof text !== 'string' || text.trim() === '') return null;
   let m;
   try { m = JSON.parse(text); } catch (_) { return null; }
-  if (!m || typeof m !== 'object' || Array.isArray(m) || typeof m.storyId !== 'string' || m.storyId === '') return null;
+  if (!isObj(m) || typeof m.storyId !== 'string' || m.storyId === '') return null;
+  const scheme = schemeOf(m);
+  if (scheme === null) return null;
 
-  const completed = new Set((Array.isArray(m.stepsCompleted) ? m.stepsCompleted : []).map(String));
-  const timings = m.stepTimings && typeof m.stepTimings === 'object' ? m.stepTimings : {};
+  const { completed, timings } = normalize(m, scheme);
+  const flagOf = (id) => (STEPS.find((s) => s.id === id) || {}).flag;
   const startOf = (id) => ms(timings[id] && timings[id].startedAt);
   const endOf = (id) => ms(timings[id] && timings[id].completedAt);
   const index = (id) => STEPS.findIndex((s) => s.id === id);
@@ -45,19 +110,30 @@ export function readRun(text, now) {
     });
   };
 
+  // otra vuelta de revisores: con Hallazgos cerrado, una edición de código o prueba posterior al ÚLTIMO cierre de los
+  // revisores, como `pipeline.js next`. Decide la marca `code` que on-edit pone en cada edición; un evento sin la marca
+  // (de una versión anterior) cuenta si no es un .md
+  const tRev = timings.reviewers || {};
+  const revEnd = ms(tRev.lastCompletedAt) !== null ? ms(tRev.lastCompletedAt) : endOf('reviewers');
+  const esCodigo = (e) => (typeof e.code === 'boolean' ? e.code : !/\.md$/i.test(String(e.path || '')));
+  const reloop = scheme === 2 && completed.has('findings') && revEnd !== null
+    && (Array.isArray(m.fileEvents) ? m.fileEvents : []).some((e) => e && ms(e.ts) !== null && ms(e.ts) > revEnd && esCodigo(e));
+  const round = reloop ? (Number((timings.reviewers || {}).rounds) || 1) + 1 : null;
+
   const finished = (id) => {
+    if (id === 'reviewers' && reloop) return false;
     if (endOf(id) !== null || completed.has(id)) return true;
-    const flag = SUBSTEP_FLAG[id];
+    const flag = flagOf(id);
     if (flag && m[flag] === true) return true;
-    const old = SUBSTEP_OLD_FLAG[id];
-    if (old && m[old] === true) return true;
-    // un sub-paso que no anota su fin está hecho si ya se tocó uno posterior; un principal, si quedó viejo
-    return isMain(id) ? stale(id) : laterTouched(id);
+    // un paso que se cierra con bandera y no anota su fin está hecho si ya se tocó uno posterior; los demás, si
+    // quedaron viejos
+    return flag ? laterTouched(id) : stale(id);
   };
 
   const open = STEPS.filter((s) => startOf(s.id) !== null && !finished(s.id));
   open.sort((a, b) => startOf(b.id) - startOf(a.id));
-  const current = open[0] || STEPS.find((s) => !finished(s.id)) || null;
+  const current = reloop ? STEPS.find((s) => s.id === 'reviewers') : (open[0] || STEPS.find((s) => !finished(s.id)) || null);
+  const nameOf = (s) => (s.id === 'reviewers' && round ? `${s.name}, vuelta ${round}` : s.name);
 
   // fin de un paso sin `completedAt`: el arranque del siguiente que arrancó después
   const starts = STEPS.map((s) => startOf(s.id)).filter((t) => t !== null).sort((a, b) => a - b);
@@ -71,21 +147,29 @@ export function readRun(text, now) {
     return next === undefined ? null : next;
   };
 
+  const warnings = (Array.isArray(m.startWarnings) ? m.startWarnings : [])
+    .filter((w) => w && START_PART_FAILED[w.part]).map((w) => `Arranque: hecho, con aviso: ${START_PART_FAILED[w.part]}`);
   const rows = STEPS.map((s) => {
-    const state = finished(s.id) ? 'hecho' : current && current.id === s.id ? 'corriendo' : startOf(s.id) !== null ? 'empezado, sin terminar' : 'pendiente';
-    return { id: s.id, name: s.name, state, minutes: minutes(startOf(s.id), stopOf(s.id)) };
+    const done = finished(s.id);
+    const state = done ? (s.id === 'start' && warnings.length ? 'hecho, con aviso' : 'hecho') : current && current.id === s.id ? 'corriendo' : startOf(s.id) !== null ? 'empezado, sin terminar' : 'pendiente';
+    return { id: s.id, number: s.number, name: s.id === 'reviewers' && round ? `${s.name} (vuelta ${round})` : s.name, state, minutes: minutes(startOf(s.id), stopOf(s.id)) };
   });
 
-  const waiting = m.waitingForHuman === true || Boolean(current && ASKS_DEV.includes(current.id) && m.autonomous !== true);
+  // espera a la persona: la bandera, «Aprobar el plan» sin modo autónomo, o «Hallazgos» cuando de verdad preguntó
+  // (en el marker viejo, la decisión de los hallazgos —el 7— sin modo autónomo, como antes)
+  const asks = current && ((current.id === 'approve-plan' && m.autonomous !== true)
+    || (current.id === 'findings' && (ms((timings.findings || {}).waitStartedAt) !== null || (scheme === 1 && m.autonomous !== true))));
   return {
     storyId: m.storyId,
     title: typeof m.storyTitle === 'string' && m.storyTitle.trim() !== '' ? m.storyTitle.trim() : null,
-    current: current ? { id: current.id, name: current.name } : null,
-    done: STEPS.filter((s) => isMain(s.id) && finished(s.id)).length,
-    total: MAIN_TOTAL,
+    current: current ? { id: current.id, name: nameOf(current) } : null,
+    done: STEPS.filter((s) => finished(s.id)).length,
+    total: TOTAL,
     minutesStep: current ? minutes(startOf(current.id), now) : null,
     minutesTotal: minutes(ms(m.startedAt), now),
-    waiting,
+    waiting: m.waitingForHuman === true || Boolean(asks),
+    oldScheme: scheme === 1,
+    warnings,
     rows,
   };
 }
@@ -142,6 +226,7 @@ export function boardParts(run, contextPercent) {
     `contexto usado ${show(pct)} %`,
   ];
   if (run.waiting) rest.push('te espera');
+  for (const w of run.warnings || []) rest.push(w);
   return {
     story: `Story ${run.storyId}`,
     title: shortTitle(run.title),
@@ -214,7 +299,7 @@ export function pipelineTable(run) {
   const title = typeof run.title === 'string' && run.title !== '' ? ` «${run.title}»` : '';
   const head = `Story ${run.storyId}${title} — ${run.current ? run.current.name : 'sin paso abierto'}` +
     ` · ${run.done} de ${run.total} pasos hechos · ${show(run.minutesTotal)} min en total${run.waiting ? ' · te espera' : ''}`;
-  const lines = [head, '', '| Paso | Estado | Tiempo |', '|---|---|---|'];
-  for (const r of run.rows) lines.push(`| ${r.name} | ${r.state} | ${r.minutes === null ? '—' : `${r.minutes} min`} |`);
+  const lines = [head, ...(run.warnings || []), ...(run.oldScheme ? [OLD_RUN_TEXT] : []), '', '| Paso | Estado | Tiempo |', '|---|---|---|'];
+  for (const r of run.rows) lines.push(`| ${r.number ? `${r.number}. ` : ''}${r.name} | ${r.state} | ${r.minutes === null ? '—' : `${r.minutes} min`} |`);
   return lines.join('\n');
 }

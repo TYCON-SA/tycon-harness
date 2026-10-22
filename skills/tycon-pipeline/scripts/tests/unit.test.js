@@ -6227,7 +6227,7 @@ test('2.7 next anota el arranque del paso que devuelve y no lo mueve', () => {
   const { file, repo } = markerDe27(home, sid);
   const r = correr27(home, sid, 'pipeline.js', ['next']);
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(JSON.parse(r.stdout).next_step, '1');
+  assert.equal(JSON.parse(r.stdout).next_step, 'validate-story');   // el paso viejo 1, por su nombre de máquina
   const m1 = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.ok(m1.stepTimings && m1.stepTimings['1'] && m1.stepTimings['1'].startedAt, 'next deja el arranque del paso 1');
   const t1 = m1.stepTimings['1'].startedAt;
@@ -6341,11 +6341,11 @@ test('2.7 los sub-pasos (0b, 0c, 5b, 7c) también anotan su arranque', () => {
   const { file, repo } = markerDe27(home, sid, { stepsCompleted: [0, 1, 2, 3, 4, 5], stepsPending: [6, 7, 8] });
   const r = correr27(home, sid, 'pipeline.js', ['next']);
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(JSON.parse(r.stdout).next_step, '5b');
-  assert.ok(JSON.parse(fs.readFileSync(file, 'utf8')).stepTimings['5b'].startedAt, 'next anota el arranque del 5b');
-  assert.equal(correr27(home, sid, 'marker.js', ['start-step', '7c']).status, 0);
-  assert.ok(JSON.parse(fs.readFileSync(file, 'utf8')).stepTimings['7c'].startedAt, 'start-step acepta 7c');
-  assert.notEqual(correr27(home, sid, 'marker.js', ['start-step', '5z']).status, 0, 'un sub-paso inventado no');
+  assert.equal(JSON.parse(r.stdout).next_step, 'adversarial-pass');
+  assert.ok(JSON.parse(fs.readFileSync(file, 'utf8')).stepTimings['5b'].startedAt, 'next anota el arranque del 5b (en el número viejo del marcador viejo)');
+  assert.equal(correr27(home, sid, 'marker.js', ['start-step', 'live-check']).status, 0);
+  assert.ok(JSON.parse(fs.readFileSync(file, 'utf8')).stepTimings['7c'].startedAt, 'start-step live-check anota el 7c del marcador viejo');
+  assert.notEqual(correr27(home, sid, 'marker.js', ['start-step', '5z']).status, 0, 'un paso inventado no');
   fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(repo, { recursive: true, force: true });
 });
 
@@ -6856,19 +6856,19 @@ test('next: una story exenta sin su constancia manda al 7c, con el comando de la
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'h7c-a-'));
   // 🔴 next_step no puede ser '8' con una precondición sin cumplir que nadie lee.
   const { d, repo } = enElSiete(home, 'siete-c-exenta', EXENTA);
-  assert.equal(d.next_step, '7c');
+  assert.equal(d.next_step, 'live-check');
   assert.match(d.note, /mark-dod-runtime-checked/);
   assert.match(d.note, /exenta: /);
-  assert.ok(d.steps.find((s) => s.step === '7c').skip_mechanical, 'el motivo del salteo sigue a la vista');
+  assert.ok(d.steps.find((s) => s.step === 'live-check').skip_mechanical, 'el motivo del salteo sigue a la vista');
   fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(repo, { recursive: true, force: true });
 });
 
 test('next: una story sin pruebas de runtime declaradas manda al 7c (el cierre del paso 8 no acepta ese salteo)', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'h7c-b-'));
   const { d, repo } = enElSiete(home, 'siete-c-sin-runtime', null);
-  assert.equal(d.next_step, '7c');
+  assert.equal(d.next_step, 'live-check');
   assert.ok(!/exenta: /.test(d.note), 'sin exención declarada no se ofrece el atajo de la exenta');
-  assert.match(d.note, /step-07c-dod-runtime-gate\.md/);
+  assert.match(d.note, /step-10-live-check\.md/);
   fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(repo, { recursive: true, force: true });
 });
 
@@ -6876,7 +6876,7 @@ test('next: con la constancia del 7c sigue el paso 8, exenta o no (el espejo)', 
   for (const [sid, cuerpo] of [['siete-c-hecho-exenta', EXENTA], ['siete-c-hecho', null]]) {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'h7c-c-'));
     const { d, repo } = enElSiete(home, sid, cuerpo, { dodRuntimeChecked: true });
-    assert.equal(d.next_step, '8', sid);
+    assert.equal(d.next_step, 'prepare-commit', sid);
     assert.equal(d.preconditions.find((p) => p.id === 'dodRuntimeChecked').satisfied, true);
     fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(repo, { recursive: true, force: true });
   }
@@ -6902,10 +6902,11 @@ function nextWithoutClockify(sid, extra) {
 test('next: sin herramienta de horas el 0b es un salteo mecánico (no espera la bandera)', (t) => {
   if (!fs.existsSync(path.join(HARNESS_HERE_0B, 'scripts', 'lib', 'work-signal.js'))) { t.skip('sin el evento de trabajo en este árbol: no hay herramienta que medir'); return; }
   const d = nextWithoutClockify('cero-b-apagada');
-  assert.equal(d.next_step, '1', 'sin herramienta de horas el 0b no frena la secuencia');
-  assert.match(d.steps.find((s) => s.step === '0b').skip_mechanical || '', /ninguna herramienta de horas/);
+  assert.equal(d.next_step, 'validate-story', 'sin herramienta de horas el aviso de trabajo no frena la secuencia');
+  assert.ok(!(d.start_parts || []).some((p) => p.part === 'time-tracking'), 'y la parte no aparece en start_parts');
   const c = nextWithoutClockify('cero-b-prendida', { TYCON_CLOCKIFY: '1' });
-  assert.equal(c.next_step, '0b', 'control: con la llave vieja prendida (Clockify) el 0b sigue esperando su bandera');
+  assert.ok((c.start_parts || []).some((p) => p.part === 'time-tracking'), 'control: con la llave vieja prendida (Clockify) la parte sigue esperando su bandera');
+  assert.match(c.note, /^ANTES, lo que falta del Arranque/);
 });
 
 test('next: el salteo del 0c sin pedido de trabajo sigue siendo un salteo (no pide constancia)', () => {
@@ -6915,8 +6916,8 @@ test('next: el salteo del 0c sin pedido de trabajo sigue siendo un salteo (no pi
   const r = correr27(home, sid, 'pipeline.js', ['next']);
   assert.equal(r.status, 0, r.stderr);
   const d = JSON.parse(r.stdout);
-  assert.equal(d.next_step, '1', 'el 0c sin `ado_work_item:` no frena la secuencia');
-  assert.ok(d.steps.find((s) => s.step === '0c').skip_mechanical);
+  assert.equal(d.next_step, 'validate-story', 'el pedido en ADO sin `ado_work_item:` no frena la secuencia');
+  assert.ok(!(d.start_parts || []).some((p) => p.part === 'ado'), 'y la parte no aparece en start_parts');
   fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(repo, { recursive: true, force: true });
 });
 
@@ -7038,7 +7039,7 @@ test('7.32-Paso4_TandasJuntas: next en el paso 4 de una liviana dice que las tan
   const r = correr27(home, sid, 'pipeline.js', ['next']);
   assert.equal(r.status, 0, r.stderr);
   const out = JSON.parse(r.stdout);
-  assert.equal(out.next_step, '4');
+  assert.equal(out.next_step, 'implement');
   assert.match(out.note, /las tandas van juntas en esta corrida/);
   // en una completa, nada
   const home2 = fs.mkdtempSync(path.join(os.tmpdir(), 'h732-next2-'));
@@ -7048,7 +7049,7 @@ test('7.32-Paso4_TandasJuntas: next en el paso 4 de una liviana dice que las tan
 
 test('7.32-Cierre_SinLa170: el cierre de una liviana no pide la validación pesada salvo que el dev la nombre', () => {
   const { notaDelTamano } = require(path.join(SCRIPTS, 'pipeline.js'));
-  const paso8 = { step: '8' };
+  const paso8 = { step: 'prepare-commit' };
   assert.match(notaDelTamano({ size: 'liviana' }, paso8), /no pidas la validación pesada/);
   assert.match(notaDelTamano({ size: 'liviana', heavyValidationRequested: true }, paso8), /pedila antes del merge/);
   assert.equal(notaDelTamano({ size: 'completa' }, paso8), null);
@@ -7207,32 +7208,33 @@ test('Step0b_NoIntegration_SkippedWithReason @story-7.40 @ac-3', () => {
     const r = correr740(home, sid, 'pipeline.js', ['next'], { TYCON_INTEGRATIONS_DIR: ints, ...extra });
     assert.equal(r.status, 0, r.stderr);
     const out = JSON.parse(r.stdout);
-    return { next: out.next_step, step: out.steps.find((s) => s.step === '0b') };
+    return { next: out.next_step, parte: (out.start_parts || []).find((p) => p.part === 'time-tracking'), out };
   };
   try {
-    // sin herramienta elegida (sin clave, o `none`): salteado con su motivo, y no se pide ninguna bandera
+    // sin herramienta elegida (sin clave, o `none`): la parte no aparece en start_parts, y no se pide ninguna bandera
     for (const extra of [{}, { TYCON_TIME_TRACKING: 'none' }]) {
-      const { next, step } = paso0b(extra);
-      assert.notEqual(next, '0b', 'sin herramienta de horas el 0b no es el próximo');
-      assert.match(step.skip_mechanical || '', /ninguna herramienta de horas/, 'dice por qué se saltea');
+      const { next, parte, out } = paso0b(extra);
+      assert.equal(parte, undefined, 'sin herramienta de horas el aviso de trabajo no aparece en start_parts');
+      assert.doesNotMatch(out.note, /aviso de trabajo/, 'ni la nota lo pide');
+      assert.equal(next, 'validate-story', 'y no frena la secuencia');
     }
-    // una desconocida es ninguna, y también lo dice
-    assert.match(paso0b({ TYCON_TIME_TRACKING: 'harvest' }).step.skip_mechanical || '', /desconocida.*harvest|harvest.*desconocida/);
-    // con una elegida, el 0b va y pide la bandera nueva
+    // una desconocida es ninguna, y tampoco aparece
+    assert.equal(paso0b({ TYCON_TIME_TRACKING: 'harvest' }).parte, undefined);
+    // con una elegida, la parte va en start_parts, antes del paso que sigue
     const elegida = correr740(home, sid, 'pipeline.js', ['next'], { TYCON_INTEGRATIONS_DIR: ints, TYCON_TIME_TRACKING: 'fake' });
     const out = JSON.parse(elegida.stdout);
-    assert.equal(out.next_step, '0b');
-    assert.equal(out.steps.find((s) => s.step === '0b').name, 'Arranque: aviso de trabajo');
-    assert.match(out.note, /set-flag workSignalStarted true/);
+    assert.equal(out.next_step, 'validate-story');
+    assert.equal(out.start_parts.find((p) => p.part === 'time-tracking').name, 'el aviso de trabajo');
+    assert.match(out.note, /^ANTES, lo que falta del Arranque: el aviso de trabajo/);
     // la bandera nueva lo da por hecho
     assert.equal(correr740(home, sid, 'marker.js', ['set-flag', 'workSignalStarted', 'true']).status, 0);
     assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).workSignalStarted, true);
-    assert.equal(paso0b({ TYCON_TIME_TRACKING: 'fake' }).step.done, true);
+    assert.equal(paso0b({ TYCON_TIME_TRACKING: 'fake' }).parte, undefined, 'con la bandera la parte ya no se pide');
     // y la vieja de una corrida en vuelo también: no se reabre el reloj
     const m = JSON.parse(fs.readFileSync(file, 'utf8'));
     delete m.workSignalStarted; m.clockiStarted = true;
     fs.writeFileSync(file, JSON.stringify(m));
-    assert.equal(paso0b({ TYCON_TIME_TRACKING: 'fake' }).step.done, true, 'clockiStarted de antes sigue valiendo');
+    assert.equal(paso0b({ TYCON_TIME_TRACKING: 'fake' }).parte, undefined, 'clockiStarted de antes sigue valiendo');
     // set-flag con el nombre viejo escribe la nueva y avisa
     delete m.clockiStarted; fs.writeFileSync(file, JSON.stringify(m));
     const vieja = correr740(home, sid, 'marker.js', ['set-flag', 'clockiStarted', 'true']);
@@ -7339,6 +7341,17 @@ function cerrarSinPasos(extra) {
   return { home, sid, r, state, lineas };
 }
 const TRES = ['/tmp/proy/src/a.js', '/tmp/proy/src/b.js', '/tmp/proy/README.md'];
+
+test('CierreSinPasos_EsquemaNuevo @story-7.23 @ac-8 — con los pasos por nombre, el Arranque solo también avisa; un paso más, no', () => {
+  const solo = cerrarSinPasos({ filesTouched: TRES, stepScheme: 2, stepsCompleted: ['start'], stepsPending: ['validate-story', 'plan'] });
+  const mas = cerrarSinPasos({ filesTouched: TRES, stepScheme: 2, stepsCompleted: ['start', 'validate-story'], stepsPending: ['plan'] });
+  try {
+    assert.match(solo.r.stderr, /no anotó/);
+    assert.equal(solo.lineas.length, 1);
+    assert.doesNotMatch(mas.r.stderr, /no anotó/);
+    assert.equal(mas.lineas.length, 0);
+  } finally { for (const c of [solo, mas]) fs.rmSync(c.home, { recursive: true, force: true }); }
+});
 
 test('CierreSinPasos_Avisa @story-7.33 @ac-1', () => {
   const c = cerrarSinPasos({ filesTouched: TRES });

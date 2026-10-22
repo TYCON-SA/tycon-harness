@@ -513,13 +513,13 @@ test('W6-5b #10 …la salida 5 deja el check tests del marcador en rojo, no un v
 
 // La tabla «Salidas del gate» del paso 4 —la que sigue el orquestador— necesita el 5 y el 6: sin ellos, un 5
 // (no corrió nada) cae en «suite roja: corregir y re-correr». Cada salida propia de test-gate.sh tiene su fila.
-test('W6-5b #11 …la tabla «Salidas del gate» del paso 4 tiene una fila por cada salida de test-gate.sh', () => {
+test('W6-5b #11 …la tabla «Salidas del gate» del paso «Correr las pruebas» (step-06-run-tests.md) tiene una fila por cada salida de test-gate.sh', () => {
   const gate = fs.readFileSync(GATE, 'utf8').split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
   const codigos = new Set([...gate.matchAll(/\bexit (\d+)\b|SUITE_EXIT=(\d+)\b|"\$SUITE_EXIT" == "(\d+)"/g)].map((m) => m[1] || m[2] || m[3]).filter((c) => c !== '0'));
   for (const c of ['3', '4', '5', '6', '7']) assert.ok(codigos.has(c), `test-gate.sh ya no sale ${c}: revisar esta prueba`);
-  const paso = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-04-execute.md'), 'utf8');
+  const paso = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-06-run-tests.md'), 'utf8');
   const tabla = paso.split('### Salidas del gate')[1];
-  assert.ok(tabla, 'el paso 4 perdió la sección «Salidas del gate»');
+  assert.ok(tabla, 'el paso «Correr las pruebas» perdió la sección «Salidas del gate»');
   const filas = tabla.split('\n\n').find((b) => b.trim().startsWith('|')) || '';
   for (const c of [...codigos].filter((x) => x !== '2' && x !== '1')) {
     assert.match(filas, new RegExp(`^\\|\\s*\`${c}\`\\s*\\|`, 'm'), `la tabla del paso 4 no tiene la salida ${c}`);

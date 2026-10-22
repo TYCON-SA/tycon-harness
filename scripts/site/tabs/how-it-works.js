@@ -168,10 +168,10 @@ function renderPage(model, { idioma, publicRepo, version }) {
         return pieza({ origin: r.origin, nombre: r.agent, cuando, chips, acciones, extra: r.active === false ? ' apagada' : '' });
       }).join('');
       const esOrg = rs[0].origin === 'organization';
-      const agregar = esOrg && rs.some((r) => r.editable) && (s.id === '5') ? `<button type="button" class="btn mas" data-action="add" data-pack="${esc(pack)}">${esc(T('comoTrabaja.agregarRevisor'))}</button>` : '';
+      const agregar = esOrg && rs.some((r) => r.editable) && (s.id === 'reviewers') ? `<button type="button" class="btn mas" data-action="add" data-pack="${esc(pack)}">${esc(T('comoTrabaja.agregarRevisor'))}</button>` : '';
       rev += `<p class="ct-grupo">${esc(T('comoTrabaja.grupoPaquete', { paquete: pack }))}</p><ul class="ct-lista">${items2}</ul>${agregar}`;
     }
-    if (s.id === '5') {
+    if (s.id === 'reviewers') {
       for (const p of orgPacks.filter((x) => x.problems.length)) rev += `<p class="ct-error">${esc(T('comoTrabaja.paqueteRoto', { paquete: p.name, motivo: enLlano(p).join(' · ') }))}</p>`;
       if (model.org && !orgPacks.length) rev += `<p class="ct-vacio">${esc(T('comoTrabaja.sinRevisoresOrg'))}</p>`;
     }

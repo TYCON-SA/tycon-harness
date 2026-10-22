@@ -158,7 +158,7 @@ for (const [nombre, prompt, esperado] of [
   ['T2h otra story con «incident-log» en el nombre', 'Validá specs/story-3.3-incident-log-por-cliente.md', true],
   ['T2h sólo guías y planificación', 'Leé guides/advisor-rules-catalog.md, README.md, specs/epics.md y story-format.md.', null],
   ['T2h sólo contexto de la corrida', 'context_file: /h/.claude/.tycon-pipeline/advisor-context/abc-iter2-tycon-story-validator.md · ver .advisors/pipeline-runs/7.3-x/step-05-contexto.md y tasks/medicion-7.3.md', null],
-  ['T2h un step del pipeline', 'Seguí skills/tycon-pipeline/steps/step-05-advisors-parallel.md', null],
+  ['T2h un step del pipeline', 'Seguí skills/tycon-pipeline/steps/step-07-reviewers.md', null],
   ['T2h la propia story gana', `Validar ${propia} y de paso specs/story-9.10-armar-el-catalogo.md`, false],
 ]) eq(nombre, m.sobreOtraStory(prompt, propia), esperado);
 console.log(chk.join('\n'));

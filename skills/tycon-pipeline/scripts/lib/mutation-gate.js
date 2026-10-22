@@ -186,7 +186,7 @@ function runMutationGate({
   }
   if (code === 1) {
     appendLog('gates.log', { ...entryBase, status: 'blocked' });
-    log('marker.js complete-step 4 BLOQUEADO — chequeo de mutantes: NINGÚN mutante murió.');
+    log('marker.js complete-step run-tests BLOQUEADO — chequeo de mutantes: NINGÚN mutante murió.');
     log('');
     log('  Se rompió el código nuevo a propósito (mutantes chicos: === por !==, && por ||, etc.)');
     log('  y la suite siguió en verde: los tests NO ejercen el código que la story agregó.');
@@ -196,7 +196,7 @@ function runMutationGate({
     }
     log('');
     log('  Agregá tests que cubran esas líneas (o arreglá los que dicen cubrirlas).');
-    log('  Escape consciente: marker.js complete-step 4 --no-mutation   (queda en bypass.log)');
+    log('  Escape consciente: marker.js complete-step run-tests --no-mutation   (queda en bypass.log)');
     return { invoked: true, block: true, reason: 'cero-muertos' };
   }
 

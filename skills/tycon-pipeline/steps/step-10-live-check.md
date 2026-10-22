@@ -113,7 +113,7 @@ skill (ver `SKILL.md` sección "Configuración de diseño").
 
 Step 7c corre **siempre que Step 7 (HITL approve) avanza con `approved: true`**
 y antes de Step 8 (commit prep). No es opcional: el marker.js bloquea
-`complete-step 8` si `dodRuntimeChecked !== true`.
+`complete-step prepare-commit` si `dodRuntimeChecked !== true`.
 
 ## Skip-conditions (documentadas — usar SOLO si verificablemente aplica)
 
@@ -139,7 +139,7 @@ verificablemente (no por inferencia conversacional):
 
 Si ninguna condición se cumple → **el step DEBE correr**.
 
-🔴 **El salteo deja constancia** (2026-10-03): `complete-step 8` pide `dodRuntimeChecked` siempre, también cuando
+🔴 **El salteo deja constancia** (2026-10-03): `complete-step prepare-commit` pide `dodRuntimeChecked` siempre, también cuando
 el step no corre. Por eso `pipeline.js next` devuelve el 7c aunque la story esté exenta, con el comando en su nota:
 `marker.js mark-dod-runtime-checked '{"verdict":"PASS","evidencePath":"exenta: <la razón del frontmatter>"}'`. Antes
 `next` lo daba por salteado y mandaba al 8, y el freno aparecía recién ahí.
@@ -462,7 +462,7 @@ El gate del proyecto (el script que el repo declaró en `e2e.gate`) hace, por co
 
 Si el repo no tenía cómo probar en un navegador y la persona contestó que no a la oferta (paso 3), la historia lleva
 `browser_test: deferred` y `browser_test_reason: "<fecha> — la persona: «<su respuesta>»"`, y `gates.log` la constancia
-`browser-test-deferred` que escribió `e2e-setup.js defer`. `complete-step 8`, el commit y el paso a `review` vuelven a
+`browser-test-deferred` que escribió `e2e-setup.js defer`. `complete-step prepare-commit`, el commit y el paso a `review` vuelven a
 buscar esa respuesta en la conversación de la sesión que la anotó, posterior a la oferta: si la encuentran, el gate no
 corre (la historia se prueba con la guía para probarla a mano) y dicen en una línea «Prueba con navegador pendiente en
 la historia …», que queda anotada (`browser-test-debt`). Si falta la marca, la constancia, la oferta o la respuesta en
@@ -586,7 +586,7 @@ Esto setea `marker.dodRuntimeChecked = true` y registra la evidencia. Step 8
 chequea este flag antes de proceder.
 
 **Registrar el check `dod` — SIEMPRE, independientemente del modo autónomo**: es lo que
-`complete-step 8` exige para toda story de UI (el candado mira `checks.dod` verde con
+`complete-step prepare-commit` exige para toda story de UI (el candado mira `checks.dod` verde con
 provenance `run-check`, sin mirar si la corrida es `--autonomous`). 🔴 Saltearlo «porque
 estoy en HITL» frena el Step 8 más adelante, sin que se entienda por qué.
 **Forma canónica: `run-check`** — ejecuta el comando del gate, captura el exit code REAL
@@ -680,7 +680,7 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js run-check ac
   la imprime). Con el número a mano, en un repo que numera por tema la evidencia queda **huérfana**:
   la matriz la nombra y no la cuenta.
 
-`complete-step 8` exige `checks.acmatrix=green` (provenance run-check) — sin este
+`complete-step prepare-commit` exige `checks.acmatrix=green` (provenance run-check) — sin este
 sub-step el pipeline NO llega a commit prep. `on-pre-commit.js` además RE-COMPUTA
 la matriz en las transiciones a review/done (el .md escrito no se confía).
 
@@ -731,7 +731,7 @@ pasó/falló/notas + un botón **Limpiar** por AC. Cada criterio dice en llano q
 probó», «El arnés no lo probó: probalo a mano»).
 
 **La marca a mano, si la organización la pide** (`qa.manual_check: required` en el perfil del equipo, pestaña
-Configuración del sitio): `complete-step 8` frena hasta que una persona marque cada criterio de la guía como probado a
+Configuración del sitio): `complete-step prepare-commit` frena hasta que una persona marque cada criterio de la guía como probado a
 mano. Se pide así, nunca se pone por la persona:
 1. La persona prueba con la guía y te contesta en el chat nombrando los criterios («probé a mano los criterios 1 y 2»).
 2. Corré `node <skill>/scripts/marker.js mark-tested --acs 1,2 --approved-by "<quién>" --quote "<su respuesta, textual>"`.
@@ -782,7 +782,7 @@ muestran su razón + el test que los cubre. Preámbulo de setup: `<repo>/specs/q
 (ofrece que el dev/agente levante el entorno, no que el tester corra comandos).
 
 🔴 **CANDADO por capas (obligatorio para stories de UI)** — `qa-guide.js --check --story <spec>`
-verifica que la guía esté LISTA antes de cerrar, y `marker.js complete-step 8` lo corre (bloquea
+verifica que la guía esté LISTA antes de cerrar, y `marker.js complete-step prepare-commit` lo corre (bloquea
 si falla, sin bypass por env var — igual que la matriz):
 1. **Existe** el archivo de pasos-tester `specs/qa/<sid>-pasos.md`.
 2. **Cubre** cada AC verificado corriendo (`RUNTIME`) con su bloque de pasos.

@@ -5,7 +5,7 @@
   "kind": "timeTracking",
   "onWork": "scripts/on-work.js",
   "hooks": [
-    { "event": "UserPromptSubmit", "matcher": "", "script": "scripts/on-prompt.js", "platforms": { "windows": true }, "steps": ["0b"], "effect": "warns", "label": "reloj de horas: detecta el arranque y el fin de un trabajo", "tools": ["claude", "codex"] },
+    { "event": "UserPromptSubmit", "matcher": "", "script": "scripts/on-prompt.js", "platforms": { "windows": true }, "steps": ["start"], "effect": "warns", "label": "reloj de horas: detecta el arranque y el fin de un trabajo", "tools": ["claude", "codex"] },
     { "event": "PostToolUse", "matcher": "", "script": "scripts/touch-activity.js", "async": true, "platforms": { "windows": true }, "steps": ["all"], "effect": "records", "label": "reloj de horas: anota la última actividad (de fondo)", "tools": ["claude", "codex"] },
     { "event": "SessionStart", "matcher": "", "script": "scripts/sweep.js", "platforms": { "windows": true }, "steps": ["all"], "effect": "records", "label": "reloj de horas: cierra lo que quedó sin actividad", "tools": ["codex"] }
   ],

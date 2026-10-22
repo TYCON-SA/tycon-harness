@@ -903,7 +903,7 @@ function checkSecurityGuardrails() {
 function checkPipelineWiring() {
   const checks = [];
   const pipelineSkillPath = path.join(SKILLS_DIR, 'tycon-pipeline/SKILL.md');
-  const stepFile = path.join(SKILLS_DIR, 'tycon-pipeline/steps/step-05-advisors-parallel.md');
+  const stepFile = path.join(SKILLS_DIR, 'tycon-pipeline/steps/step-07-reviewers.md');
   const pipelineJs = path.join(SKILLS_DIR, 'tycon-pipeline/scripts/pipeline.js');
 
   checks.push({
@@ -913,7 +913,7 @@ function checkPipelineWiring() {
     severity: 'critical',
   });
   checks.push({
-    name: 'step-05-advisors-parallel.md existe',
+    name: 'step-07-reviewers.md existe',
     passed: exists(stepFile),
     file: stepFile,
     severity: 'critical',

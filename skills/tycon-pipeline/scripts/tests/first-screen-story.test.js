@@ -231,7 +231,7 @@ test('FirstScreen_Veredicto_SoloBackend_No @story-8.67.1 @ac-6 — sólo .cs no 
 });
 
 test('FirstScreen_Instrucciones_PasoUnoLlevaElVeredicto @story-8.67.1 @ac-6 — el paso 1 pasa el veredicto al revisor', () => {
-  const txt = fs.readFileSync(path.join(SKILL, 'steps', 'step-01-validate-story.md'), 'utf8');
+  const txt = fs.readFileSync(path.join(SKILL, 'steps', 'step-02-validate-story.md'), 'utf8');
   assert.match(txt, /org-rules --story/);
   assert.match(txt, /tiene pantalla según el arnés/);
 });

@@ -18,7 +18,7 @@ engram, re-corrida de advisors, verificación cross-repo).
 | Operación | Cómo |
 |---|---|
 | `ready-for-dev → in-progress` + codear | `/tycon-pipeline implement <spec>` |
-| `review → done` post-merge | `/tycon-pipeline close <N.M>` (step-09) |
+| `review → done` post-merge | `/tycon-pipeline close <N.M>` |
 | Cambio de sprint | `change-requests/cr-NNN-*.md` + commit firmado, no el pipeline |
 | Re-asignar `ado_work_item` | `az boards work-item update` + commit, no el pipeline |
 
@@ -35,7 +35,7 @@ engram, re-corrida de advisors, verificación cross-repo).
 3. `pipeline.js check-count` al final: valida contra el `expected` persistido leyendo los spawns REALES
    del hook `on-advisor-run.js`. Falla cerrado sin spawns (override consciente `--trust-ran`).
 
-Matriz de triggers: `computeAdvisorSet()` de `pipeline.js` (única fuente). Detalle: `steps/step-05-advisors-parallel.md`.
+Matriz de triggers: `computeAdvisorSet()` de `pipeline.js` (única fuente). Detalle: `steps/step-07-reviewers.md`.
 - **Regla B**: antes del primer `Agent(...)` de «Revisores», anunciar el set (base + completitud +
   condicionales, skips con su razón mecánica), **los paquetes cargados** (`packs` de la salida;
   `packs: []` se dice explícito) y el total N. Sin anuncio → bug. Ningún advisor se omite
@@ -74,7 +74,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   adversarial 20-40 min); ≥2 min va en segundo plano salvo gates cortos de `run-check`; al volver, contestar
   PRIMERO lo que el dev escribió. **Todo `Agent(...)` del pipeline corre en segundo plano**.
 - **A.i**: siempre corren los advisors aplicables; no hay flag para saltear advisors individuales.
-- **H.ii — pase adversarial** (`steps/step-05b-adversarial-verify.md`): reproduce-or-refute que
+- **H.ii — pase adversarial** (`steps/step-08-adversarial-pass.md`): reproduce-or-refute que
   EJECUTA el código. Gate `pipeline.js deep-review-gate`: NORMAL → corre; LOW o liviana → skip. Overrides:
   `--no-deep-review`/`TYCON_NO_DEEP_REVIEW=1`, `.tycon/advisors.yaml deep_review: always|off|auto`,
   `--deep-review`/`--ultracode`. Modelo `sonnet`; story pesada → `opus` (anunciado); **`fable` no se ofrece ni se
@@ -82,7 +82,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   y su paso es el JOIN. Los CONFIRMED se foldean a «Hallazgos» y disparan D.i. La prueba que confirmó cada hallazgo
   se promueve a la suite: `marker.js promote-probe`; `mark-adversarial-result` exige `--tests k`
   (+ `--own p --in <rutas>`, `--deferred d --reason`), k+p+d=N. El pase se cierra con constancia
-  (`mark-adversarial-result` / `mark-adversarial-skipped`), nunca a mano; `complete-step 8` frena si el
+  (`mark-adversarial-result` / `mark-adversarial-skipped`), nunca a mano; `prepare-commit` frena si el
   pase se lanzó y falta su resultado.
 - **B.ii**: «Hallazgos» SOLO pausa si hay CRITICAL; warnings-only auto-fluyen al commit listados en el
   reporte y en el commit. Waivers: `auto_waive` en `.tycon/advisors.yaml`; `warnings_pause: true` lo apaga.
@@ -104,20 +104,20 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
     sitios en un batch antes del re-loop; si el reporte trae un solo sitio, pedir el barrido.
   - **D.i.3 — gating**: re-loop por CRITICAL o WARNING dentro del diff de la story; un WARNING ínfimo FUERA
     del diff es follow-up documentado (engram `type: project` + nota en la spec), no re-loop.
-  - **D.i.4 — tercera vuelta**: sin su nota (`marker.js rethink --iter N`) no hay set (step 7b).
+  - **D.i.4 — tercera vuelta**: sin su nota (`marker.js rethink --iter N`) no hay set.
 - **E.i — no-skip-by-inference (HARD)**: ningún paso se saltea por inferencia conversacional ("no lo
   mencionó", "arrancá rápido"). Sólo por la skip-condition documentada en el paso y
   verificable; si la condición tiene un gap, se arregla el paso, no se saltea.
-- **F.i — DoD runtime gate (HARD)**: sin «Probar en vivo» (`steps/step-07c-dod-runtime-gate.md`) no hay commit ni
+- **F.i — DoD runtime gate (HARD)**: sin «Probar en vivo» (`steps/step-10-live-check.md`) no hay commit ni
   `pipelines.X.status: done`. Hooks de respaldo: `on-frontmatter-write.js` y `on-pre-commit.js`. Un run
   que cablea UI nueva exige probar en vivo aunque la story quede in-progress: smoke DRIVEN de la UI (Playwright contra
   la app real, cada AC de UI) — ver DODRT-C5. Nunca narrar "probado / DoD complete" antes
   del gate en verde; las guías marcan `✅ verificado-por-mí` vs `🔲 para-que-lo-pruebe-el-user` (ACCOV-C7).
-  Para UI, `complete-step 8` exige `checks.dod` verde con provenance `run-check`
+  Para UI, `prepare-commit` exige `checks.dod` verde con provenance `run-check`
   (`run-check dod -- npx playwright test <spec> --workers=1`); `set-check dod --manual` está rechazado;
   escape consciente `--force-manual` (queda en gates.log). No-UI: `mark-dod-runtime-checked` con evidencia.
 - **F.ii — matriz runtime por AC (DODRT-C6, HARD)**: `marker.js run-check acmatrix -- node
-  <skill>/scripts/runtime-matrix.js --story <abs spec>`; `complete-step 8` la exige verde (run-check). Cada
+  <skill>/scripts/runtime-matrix.js --story <abs spec>`; `prepare-commit` la exige verde (run-check). Cada
   AC queda RUNTIME / CODE-ONLY / SIN-EVIDENCIA. `NOT-RUN` → lo corre el agente (E2E, o smoke vía
   `scripts/smoke-run.sh`, que es lo único que cuenta como evidencia); `NOT-VERIFIABLE` (declarado en
   `runtime_not_verifiable:` con `reason:` + `covered_by:`) → decide una persona; el agente nunca firma por su cuenta: ok del dev con su cita (`--quote`),
@@ -147,12 +147,12 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   `session_check` avisa del techo. Advisory; nunca bloquea.
 - **I.i — ATDD con gate mecánico**: los tests se escriben ANTES del código. `on-atdd-preedit.js` deniega
   el primer Edit/Write de código si no se tocó ningún test (story con tabla `### Tests`, marker activo,
-  implementación abierta); `complete-step 4` bloquea si el primer test es posterior al primer código (evidencia:
+  implementación abierta); `implement` bloquea si el primer test es posterior al primer código (evidencia:
   `marker.fileEvents` + `file-events/<sid>.jsonl`). Sin código → pasa; código sin tests → avisa. Escape
   único: `marker.js set-flag atddBypass true` (auditado). Fuera del pipeline, `on-pre-commit.js` avisa
   (`.tycon/atdd-gate` con `block` para frenar). La guía de QA se pide sólo si hay superficie operable a
   mano (`qa_guide: auto|off|always`). Un smoke corrido a mano no cuenta: va por `smoke-run.sh`.
-- **I.ii — mutantes**: `complete-step 4` corre `scripts/mutation-check.js` sobre los archivos que la story
+- **I.ii — mutantes**: `run-tests` corre `scripts/mutation-check.js` sobre los archivos que la story
   declara; bloquea sólo si NINGÚN mutante murió; sobrevivientes → aviso. Escapes
   `TYCON_MUTATION_CHECK=off` / `--no-mutation`. Sólo sabe correr `node --test`.
 - **Modo autónomo Nivel 1 (default ON)**: el Stop-hook `on-stop-dod-gate.js` no deja cerrar el turno con
@@ -168,7 +168,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   declarado · PIPE-C8 model/effort hint · PIPE-C9 tooling esperado.
 - **DoD / QA**: DODRT-C1 smoke curl · DODRT-C5 UI con E2E diferido · DODRT-C5.1 `set-check dod --manual`
   rechazado en UI · DODRT-C6 matriz por AC · DODRT-C7 guía del tester: `node <skill>/scripts/qa-guide.js --story <abs spec> [--open]`
-  genera la guía; `complete-step 8` corre `qa-guide.js --check` y bloquea si falta
+  genera la guía; `prepare-commit` corre `qa-guide.js --check` y bloquea si falta
   `<carpeta-story>/../qa/<sid>-pasos.md` (`## AC N`, pasos en criollo sin jerga, `Usuario por defecto:` o
   `Usuario:` por AC) o `<sid>-legibilidad.md` con `veredicto: OK` (review de un sub-agente "tester no técnico";
   anotar `pipeline.js qa-readability --story <s> --repo <r> --marks <n>`), o `<sid>-legibilidad-ui.md` (la misma
@@ -178,8 +178,8 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 - **ATDD fuera del pipeline** (I.i.b · I.i.c + I.i.c.1 · I.i.d + I.i.d.1 · I.i.e): `on-pre-commit.js` avisa inversión test/código por eventos del repo
   (`TYCON_ATDD_COMMIT_GATE=block|off`); las stories se descubren por frontmatter (`lib/story-discovery.js`,
   `TYCON_STORY_SCAN_BUDGET_MS`; diagnóstico `node lib/story-discovery.js --doctor [--budget <ms>]`); aviso de guía de QA faltante o vieja; `lib/story-evidence-gate.js` avisa ACs
-  sin correr. Portón preventivo: `TYCON_ATDD_PREEDIT_GATE=off`. Escape del gate del cierre: `complete-step 4 --no-atdd`.
-- **marker.js**: `get` · `set` · `start-step N` · `complete-step N` · `run-check <n> -- <cmd>` ·
+  sin correr. Portón preventivo: `TYCON_ATDD_PREEDIT_GATE=off`. Escape del gate del cierre: `complete-step implement --no-atdd`.
+- **marker.js**: `get` · `set` · `start-step <paso>` · `complete-step <paso>` · `start-warning` · `run-check <n> -- <cmd>` ·
   `set-check <n> green --manual|--force-manual` · `set-flag <f> true` · `set-autonomous true` ·
   `snapshot-iter N` · `mark-adversarial-launched <runId> 4` · `mark-adversarial-result` ·
   `mark-adversarial-skipped --files …` · `promote-probe` · `mark-dod-runtime-checked '{evidencePath,verdict}'` ·
@@ -188,7 +188,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 - **pipeline.js**: `start` · `next` · `next-story` · `risk-class` · `model-hint` · `tooling-expected` ·
   `mech-check` · `advisors` · `validators` (validar la story) · `smart-reloop` · `check-count` (lee spawns reales, CF-2) · `deep-review-gate` ·
   `dep-gate` · `e2e-config` · `evidence-dir` · `run-dir` · `followups-status` · `write-findings` (findings.json de «Hallazgos»,
-  obligatorio: `complete-step 8` lo exige) · `write-followups` · `dod-checker-needed` · `qa-readability` ·
+  obligatorio: `prepare-commit` lo exige) · `write-followups` · `dod-checker-needed` · `qa-readability` ·
   `timing-report`.
 - **Flags**: `--no-autonomous`/`--autonomous` · `--deep-review`/`--no-deep-review`/`--ultracode`/
   `--deep-review-fable` · `--cost-tier lean|deep` · `--visual-plan` · `--force-full-reloop` · `--trust-ran` ·
@@ -243,11 +243,14 @@ Arranque: `pipeline.js start --story <spec> --repo <dir> --brief [--no-autonomou
 PAUSA sin mutar ante conflicto cross-sesión, rama protegida o pipeline abandonado). Entre pasos,
 `pipeline.js next` da el próximo (`step_name`: su nombre llano) y su archivo: leer SOLO ése. El orden:
 
-Arranque (`0`; reloj `0b`, pedido en ADO `0c`) · Validar la historia (`1`) · Armar el plan (`2`, BMAD) ·
-Aprobar el plan (`3`) · Implementar y correr las pruebas (`4`: pruebas primero, build-gate, `test-gate.sh <repo> <story_path>` —con la RUTA de la story— suite completa una vez: exit 0 verde · ≠0 rojo · 3 sin medir · 4 FRENO si no puede deducir el proyecto, sin correr nada: pasar el alcance `test-gate.sh <repo> <story> <subdir>` · 5 falta el corredor: nunca verde · 6 salió 0 sin correr pruebas: no es verde; `complete-step 4` bloquea un verde de `tests` que no haya puesto este gate; después `pipeline.js dep-gate`) ·
-Revisores (`5`) · Pase adversarial (`5b`, join) · Hallazgos: el informe (`6`, `write-findings` + `write-followups`) ·
-Hallazgos: la decisión (`7`, sólo con CRITICAL) · otra vuelta de revisores (`7b`) si hubo fixes · Probar en vivo
-(`7c`) · Preparar el commit (`8`, NO commitea) · Cerrar la historia (`9`, post-merge).
+1 Arranque (`start`; opcionales: aviso de trabajo, pedido en ADO) · 2 Validar la historia (`validate-story`) ·
+3 Armar el plan (`plan`, BMAD) · 4 Aprobar el plan (`approve-plan`) · 5 Implementar (`implement`: pruebas primero,
+build-gate) · 6 Correr las pruebas (`run-tests`: `test-gate.sh <repo> <story_path>` —con la RUTA— suite completa una
+vez: 0 verde · ≠0 rojo · 3 sin medir · 4 FRENO sin deducir el proyecto: `test-gate.sh <repo> <story> <subdir>` · 5 falta el
+corredor · 6 salió 0 sin correr pruebas; después `pipeline.js dep-gate`) · 7 Revisores (`reviewers`; vuelta N si hubo
+arreglos) · 8 Pase adversarial (`adversarial-pass`, join) · 9 Hallazgos (`findings`: `write-findings` + `write-followups`;
+frena con CRITICAL) · 10 Probar en vivo (`live-check`) · 11 Preparar el commit (`prepare-commit`, NO commitea) ·
+post-merge: `close-work-item`.
 
 ## Marker
 
@@ -255,10 +258,10 @@ Estado persistente por sesión en `~/.claude/.tycon-pipeline/active/<sessionId>.
 `sessionId` de `CLAUDE_CODE_SESSION_ID`; los hooks, del evento). Un marker nuevo sin «Aprobar el plan» queda en
 `bypass.log` como `MARKER_SKIPS_PLAN`.
 
-- Cerrar pasos EN ORDEN: `marker.js complete-step <N>`; el 3 con `--approved "<cita textual del user>"`
-  o `--auto-approved "<criterios>"` (sólo LOW, verificado). Freno de orden 3←1,2 · 4←3 · 5←4 · 8←5
-  (`--out-of-order` queda logueado). `complete-step 5` exige `checks.advisors` verde por run-check de
-  esta iteración.
+- Cerrar pasos EN ORDEN y POR NOMBRE: `marker.js complete-step <nombre>` (un número se niega: es ambiguo);
+  `approve-plan` con `--approved "<cita del user>"` o `--auto-approved "<criterios>"` (sólo LOW). Freno de orden
+  `lib/steps.js` ORDER_REQUIRES (`--out-of-order` queda logueado). `reviewers` exige `checks.advisors` verde por
+  run-check de esta vuelta. Parte del Arranque que falla: `marker.js start-warning <time-tracking|ado> "<motivo>"`.
 - `pipeline.js next` anota el arranque del paso: cerrar el anterior → `next` → trabajar.
 - Checks: `marker.js run-check <name> -- <cmd>` (exit code real). Flags: `marker.js set-flag workSignalStarted|adoMarkedActive true`.
 - Recovery: `marker.js adopt-session <sid-viejo>` · `list-all` · `find-by-story <id>` ·
@@ -285,7 +288,7 @@ Termina en: CRITICAL al validar la story sin override, BMAD no puede implementar
 plan o en «Hallazgos», build roto sin continuar, o el commit preparado. Siempre cerrar con `marker.js clear`.
 
 Run dir `.advisors/pipeline-runs/<clave>-<sello>/` — lo da `pipeline.js run-dir --story <s> --repo <r> --create`,
-nunca a mano (con número repetido la clave es `<tema>__<número>`): `step-00-preflight.md`, `step-01-validator.md`
+nunca a mano (con número repetido la clave es `<tema>__<número>`): `step-01-start.md`, `step-01-validator.md`
 (contrato: lo lee el validator), `step-02-bmad-plan.md`, `step-05-advisor-reports/` (contrato: evidencia de
 DoD para `on-pre-commit.js`), `step-05b-adversarial.md`, `step-06-consolidated-report.md` + `findings.json`,
 `step-07c-dod-gate.md`. Evidence dir `.advisors/dod-runtime/`: `<sid>-runtime-matrix.md`,

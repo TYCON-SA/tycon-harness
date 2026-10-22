@@ -10,7 +10,7 @@ import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import type { Snapshot } from '../types'
-import { readRun, boardParts, storyPathOf, specTitle, pipelineTable, warnKey, waitingToast, stickyWaiting, addWarned, stateDirs, NO_RUN_TEXT } from './run.mjs'
+import { readRun, readRunError, boardParts, storyPathOf, specTitle, pipelineTable, warnKey, waitingToast, stickyWaiting, addWarned, stateDirs, NO_RUN_TEXT } from './run.mjs'
 import { runModsCommand, isActive, isShown } from './mods.mjs'
 
 const BOARD = 'pipeline-board'
@@ -83,7 +83,8 @@ async function refresh($: any): Promise<void> {
   } catch (_) {
     context = null
   }
-  await update($, snapshot, () => ({ run, context, readError: marker.error, error: null }))
+  // un archivo que está y no es una ejecución legible (roto, o de ningún esquema) es un error, no «sin ejecución»
+  await update($, snapshot, () => ({ run, context, readError: marker.error || readRunError(marker.text), error: null }))
   const key = warnKey(run, await read($, warned))
   if (key && run) {
     // se anota de una vez: dos refrescos a la par no dan dos avisos
@@ -168,7 +169,12 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const snap = await read($, snapshot)
     const state = { off: await read($, off), hidden: await read($, hidden) }
-    if (e.props.hasSurvey || !snap || !snap.run || !isShown(BOARD, state)) return next(e)
+    if (e.props.hasSurvey || !snap || !isShown(BOARD, state)) return next(e)
+    if (!snap.run) {
+      if (!snap.readError) return next(e)
+      const { Text: T } = $.ui.resolve(e)
+      return <T size={SIZE} color="yellow">Hay una ejecución en esta sesión, pero no pude leer su archivo: {snap.readError}</T>
+    }
 
     const { Box, Button, Text } = $.ui.resolve(e)
     const run = snap.run

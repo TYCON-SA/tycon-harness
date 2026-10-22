@@ -96,12 +96,15 @@ function storyDeclaresTests(storyText) {
  * @param {boolean} [a.bypassed]       bypass explícito (env / .tycon/atdd-gate / flag del marker)
  * @returns {{action:'pass'|'block', reason:string}}
  */
-function computeAtddPreEdit({ filePath, repoPath, priorPaths, storyHasTests, stepsCompleted, bypassed = false }) {
+function computeAtddPreEdit({ filePath, repoPath, priorPaths, storyHasTests, stepsCompleted, stepScheme, bypassed = false }) {
   if (bypassed) return { action: 'pass', reason: 'bypass declarado' };
   if (!storyHasTests) return { action: 'pass', reason: 'la story no declara tabla ### Tests — sin contrato ATDD que gatear' };
 
+  // `implement` en un marcador nuevo, el 4 en uno viejo: lo decide la tabla de pasos
   const done = Array.isArray(stepsCompleted) ? stepsCompleted : [];
-  if (done.includes(4)) return { action: 'pass', reason: 'el step 4 ya cerró — esto son fixes post-implementación' };
+  if (require('./steps.js').isDone({ stepScheme, stepsCompleted: done }, 'implement')) {
+    return { action: 'pass', reason: '«Implementar» ya cerró — esto son arreglos posteriores' };
+  }
 
   if (!isImplPath(filePath)) return { action: 'pass', reason: 'no es código de implementación' };
   if (!isInside(repoPath, filePath)) return { action: 'pass', reason: 'el archivo está fuera del repo de la story' };

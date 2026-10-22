@@ -477,17 +477,32 @@ test('Mockup_Schema_ExplicaLaCapa @story-7.48 @ac-4', () => {
 
 test('Paso3_ArmarElModelo_DiceQueVaComoCapa @story-7.48 @ac-5', () => {
   // los renglones de la guía se juntan: una frase partida en dos sigue siendo la misma frase
-  const paso = fs.readFileSync(path.join(SK, '..', 'steps', 'step-03-hitl-plan.md'), 'utf8').replace(/\s+/g, ' ');
+  const paso = fs.readFileSync(path.join(SK, '..', 'steps', 'step-04-approve-plan.md'), 'utf8').replace(/\s+/g, ' ');
   assert.match(paso, /presentation: "layer"/);
   assert.match(paso, /ventana, un diálogo o un panel/);
   assert.match(paso, /la story manda sobre la convención/);
 });
 
 test('Pasos3y4_LaMaquetaFijaContenidoNoForma @story-7.48 @ac-6', () => {
-  for (const f of ['step-03-hitl-plan.md', 'step-04-execute.md']) {
+  for (const f of ['step-04-approve-plan.md', 'step-05-implement.md']) {
     const paso = fs.readFileSync(path.join(SK, '..', 'steps', f), 'utf8').replace(/\s+/g, ' ');
     assert.match(paso, /la maqueta fija el contenido y los estados, no la forma/i, f);
     assert.match(paso, /la forma sale de la story y de la guía del stack/i, f);
     assert.match(paso, /donde la maqueta marca una capa[^.]*, se construye una capa/i, f);
   }
+});
+
+test('7.23-DeclaredDiffs_ComillasAnidadas @story-7.23 @ac-16 — un texto que lleva «» adentro se declara entero', () => {
+  const { declaredDiffs } = require(MOCKUP);
+  const md = [
+    '- «Story 7.23 «Los pasos» — Revisores · 8 de 11 pasos hechos» — differs: lo arma pipelineTable',
+    '- «Paso» — differs: encabezado',
+    '- «a» y «b» — differs: dos textos en un renglón siguen valiendo los dos',
+    '- «sin motivo» — differs: ',
+  ].join('\n');
+  const d = declaredDiffs(md);
+  assert.strictEqual(d.get('Story 7.23 «Los pasos» — Revisores · 8 de 11 pasos hechos'), 'lo arma pipelineTable');
+  assert.strictEqual(d.get('Paso'), 'encabezado');
+  assert.ok(d.has('a') && d.has('b'));
+  assert.ok(!d.has('sin motivo'), 'sin motivo no cuenta');
 });

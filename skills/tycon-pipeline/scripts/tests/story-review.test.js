@@ -315,7 +315,7 @@ test('GuiasDePasos_PasoSeisYPasoUno @story-8.84 @ac-1 @ac-3 @ac-9 @ac-10 @ac-13 
   assert.match(paso6, /ONE question|una sola pregunta/i);
   assert.match(paso6, /Change Log/);
 
-  const s1 = fs.readFileSync(path.join(RAIZ, 'skills', 'tycon-pipeline', 'steps', 'step-01-validate-story.md'), 'utf8');
+  const s1 = fs.readFileSync(path.join(RAIZ, 'skills', 'tycon-pipeline', 'steps', 'step-02-validate-story.md'), 'utf8');
   assert.match(s1, /story-review-gate/);
   assert.match(s1, /story-review-record/);
   assert.match(s1, /no-medido/);

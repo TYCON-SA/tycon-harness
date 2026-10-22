@@ -497,7 +497,7 @@ test('ModelHint_OrgDeclaresFable_SuggestsFable @story-7.35 @ac-13 — fable sól
 
 test('Guides_HeavySessionIsOpus @story-7.35 @ac-14 — las guías dicen opus para la story pesada', () => {
   const leer = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
-  const guias = ['skills/tycon-pipeline/SKILL.md', 'skills/tycon-pipeline/steps/step-00-preflight.md', 'guides/harness-cost-tiering.md', 'guides/advisor-rules-catalog.md'];
+  const guias = ['skills/tycon-pipeline/SKILL.md', 'skills/tycon-pipeline/steps/step-01-start.md', 'guides/harness-cost-tiering.md', 'guides/advisor-rules-catalog.md'];
   for (const rel of guias) {
     const txt = leer(rel);
     assert.doesNotMatch(txt, /pesada\s*(?:→|->)\s*`?fable|heavy\s*(?:→|->)\s*`?fable|NORMAL \+ heavy \| `fable`|\/ `fable` \| `session\.low`/i, `${rel}: todavía sugiere fable de fábrica`);
