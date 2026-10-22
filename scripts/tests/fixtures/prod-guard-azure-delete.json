@@ -1131,6 +1131,126 @@
    "expect": "pass",
    "catalog": "prod",
    "tool": "Bash"
+  },
+  {
+   "test": "T21",
+   "cmd": "\"$B\" scripts/x.sh > \"$S/salida-$(basename \"$B\").txt\" 2>&1",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "el caso real: un guion de pruebas con el bash en una variable"
+  },
+  {
+   "test": "T21",
+   "cmd": "${NODE} script.js \"$ARG\"",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "programa con llaves y un argumento variable"
+  },
+  {
+   "test": "T21",
+   "cmd": "$(command -v node) x.js \"$Y\"",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "programa que sale de una sustitución"
+  },
+  {
+   "test": "T21",
+   "cmd": "\"$X\" run \"$Y\" > \"$OUT\"",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "ninguna palabra escrita es un borrado"
+  },
+  {
+   "test": "T21",
+   "cmd": "\"$GIT\" branch -D \"$RAMA\"",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "borra una rama de git, no algo de Azure"
+  },
+  {
+   "test": "T21",
+   "cmd": "\"$B\" x.sh delete",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "delete solo, sin grupo, candado ni recurso adelante"
+  },
+  {
+   "test": "T21",
+   "cmd": "az group list > \"$OUT\"",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "el destino de la redirección no es un subcomando"
+  },
+  {
+   "test": "T21",
+   "cmd": "az group list --output json >\"$OUT\" 2>&1",
+   "expect": "pass",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "redirección pegada a su destino"
+  },
+  {
+   "test": "T21",
+   "cmd": "$A group delete -n x --yes",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "el programa es una variable y lo escrito es un borrado de grupo"
+  },
+  {
+   "test": "T21",
+   "cmd": "\"$AZ\" lock delete --name l -g g",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "borrado de candado con el programa entre comillas"
+  },
+  {
+   "test": "T21",
+   "cmd": "$(command -v az) group delete -n x",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "el programa sale de una sustitución"
+  },
+  {
+   "test": "T21",
+   "cmd": "${AZ} rest --method delete --url u",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "az rest con delete"
+  },
+  {
+   "test": "T21",
+   "cmd": "$A $B delete -n x",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "el subcomando no se lee y lo escrito termina en delete"
+  },
+  {
+   "test": "T21",
+   "cmd": "az group delete -n x > \"$OUT\"",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "la redirección no esconde el borrado"
+  },
+  {
+   "test": "T21",
+   "cmd": "az $SUB delete -n x",
+   "expect": "block",
+   "catalog": "prod",
+   "tool": "Bash",
+   "note": "az escrito con un subcomando que no se lee sigue frenando"
   }
  ],
  "message": {

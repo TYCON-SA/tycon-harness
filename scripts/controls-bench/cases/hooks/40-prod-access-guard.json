@@ -4459,6 +4459,75 @@
      }
     },
     {
+     "id": "programa-variable-con-redireccion-pasa",
+     "type": "must-not-block",
+     "__doc": "Arreglo de la 6.3 · T21 · un programa que sale de una variable, con la salida a un archivo de nombre armado, no es un borrado en Azure. ROJO PREVIO: el freno lo cortaba como «el subcomando de az sale de una variable» (rc=2).",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "\"$B\" scripts/x.sh > \"$S/salida-$(basename \"$B\").txt\" 2>&1"
+      }
+     },
+     "expect": {
+      "exit": 0
+     }
+    },
+    {
+     "id": "az-lista-con-redireccion-variable-pasa",
+     "type": "must-not-block",
+     "__doc": "Arreglo de la 6.3 · T21 · el destino de una redirección no es un subcomando de az. ROJO PREVIO: el freno lo cortaba como «el subcomando de az sale de una variable» (rc=2).",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "az group list > \"$OUT\""
+      }
+     },
+     "expect": {
+      "exit": 0
+     }
+    },
+    {
+     "id": "az-por-sustitucion-borra-grupo-se-frena",
+     "type": "must-block",
+     "__doc": "Arreglo de la 6.3 · T21 · el programa sale de una sustitución y lo escrito es un borrado de grupo: frena. ROJO PREVIO: el cortador sacaba la sustitución de su lugar y el freno lo dejaba pasar (rc=0).",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"test.bizuit.example\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "$(command -v az) group delete -n x --yes"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "puede llevarse un servidor de producci"
+      ]
+     }
+    },
+    {
      "id": "az-group-delete-opciones-globales-se-frena",
      "type": "must-block",
      "__doc": "Story 6.3 · T3 · las opciones globales de az delante del subcomando no esconden el borrado. ROJO PREVIO: sin el paso del borrado en Azure, el freno lo dejaba pasar (rc=0).",
