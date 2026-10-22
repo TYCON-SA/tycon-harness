@@ -1791,6 +1791,129 @@ CU6=$(printf '%s' "$TG6" | sed -n '/^---CUERPO---$/,$p')
   && ok "T9 8.32 pr-github: un pedido cuyo proyecto no es dueño/repo no sale en la lista" \
   || no "T9 8.32 proyecto inválido en la lista: $(printf '%s' "$CU6" | grep -n '@x#\|@x' | head -3)"
 
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+# dependencias-por-formulario A..E — al mirar cada formulario: la deuda de la raíz cubre a sus formularios,
+# una ficha reactivada trae los repos de hoy, dos hallazgos del mismo paquete son una ficha, y lo que vuelve
+# pasa por el tope de altas.
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+RAIZ_DEBE=A
+deuda_en(){ # <carpeta relativa a mundo/A, "" = raíz> <vencimiento> <aviso>... — declara browserslist, COMMITEADA
+  local d="$1" vence="$2"; shift 2; local avs="" a
+  for a in "$@"; do avs="$avs\"$a\","; done
+  mkdir -p "$TMP/mundo/$RAIZ_DEBE/$d"
+  echo "{\"revision\":\"$vence\",\"paquetes\":[{\"paquete\":\"browserslist\",\"advisories\":[${avs%,}]}]}" \
+    > "$TMP/mundo/$RAIZ_DEBE/$d/vulnerabilidades-pendientes.json"
+  ( cd "$TMP/mundo/$RAIZ_DEBE" && git add -A && git commit -qm "declaro la deuda" \
+    && git update-ref refs/remotes/origin/main HEAD ) >/dev/null 2>&1
+}
+UNA_OTRO='{"vulnerabilities":{"browserslist":{"severity":"high","via":[{"url":"https://x/GHSA-otro"}]}},"metadata":{"vulnerabilities":{"critical":0,"high":1,"moderate":0,"low":0}}}'
+ALTA_X='{"vulnerabilities":{"px":{"severity":"high","via":[{"url":"https://x/GHSA-px"}]}},"metadata":{"vulnerabilities":{"critical":0,"high":1,"moderate":0,"low":0}}}'
+ALTA_Y='{"vulnerabilities":{"py":{"severity":"high","via":[{"url":"https://x/GHSA-py"}]}},"metadata":{"vulnerabilities":{"critical":0,"high":1,"moderate":0,"low":0}}}'
+
+# A. la deuda de la raíz cubre al formulario descubierto; si el formulario tiene la suya, manda la suya
+rm -rf "$TMP/out" "$TMP/pend"; mundoforms A FA
+echo "$LIMPIO" > "$TMP/fix/A.json"; echo "$LIMPIO" > "$TMP/fix/FA.json"; config "$TMP/cdf.json" 2 A
+noche "$TMP/cdf.json" 2026-09-01 >/dev/null
+echo "$UNA" > "$TMP/fix/FA.json"; deuda_en "" 2026-12-31 GHSA-73wf
+noche "$TMP/cdf.json" 2026-09-02 >/dev/null
+r=$(snap 2026-09-02 "const f=s.repos.find(r=>r.subruta==='FA');console.log(s.hallazgos.length+'|'+s.anunciados_hoy.length+'|'+f.graves.map(g=>g.paquete+':'+g.declarada).join(','))")
+nf=$(ls "$TMP/pend"/*/*.yaml 2>/dev/null | wc -l | tr -d ' ')
+{ [ "$r" = "0|0|browserslist:true" ] && [ "$nf" -eq 0 ]; } \
+  && ok "dependencias-por-formulario A: la deuda declarada en la raíz cubre al formulario descubierto (declarada, sin hallazgo ni ficha)" \
+  || no "dependencias-por-formulario A: hallazgos|anunciados|graves = $r · fichas=$nf (esperado 0|0|browserslist:true y 0 fichas)"
+deuda_en FA 2026-12-31 GHSA-otro   # el formulario declara la suya, de OTRO aviso: la de la raíz ya no vale ahí
+noche "$TMP/cdf.json" 2026-09-03 >/dev/null
+r=$(snap 2026-09-03 "const f=s.repos.find(r=>r.subruta==='FA');console.log(s.hallazgos.length+'|'+f.graves.map(g=>g.declarada).join(','))")
+[ "$r" = "1|false" ] \
+  && ok "dependencias-por-formulario A: si el formulario tiene su propio archivo de deuda, manda el suyo" \
+  || no "dependencias-por-formulario A: archivo propio: hallazgos|declarada = $r (esperado 1|false)"
+
+# B. una ficha archivada por deuda que vuelve sin declarar se reactiva CON los repos de hoy
+rm -rf "$TMP/out" "$TMP/pend"; mundoforms A FB
+echo "$LIMPIO" > "$TMP/fix/A.json"; echo "$LIMPIO" > "$TMP/fix/FB.json"; config "$TMP/cdf.json" 2 A
+noche "$TMP/cdf.json" 2026-09-01 >/dev/null
+echo "$UNA" > "$TMP/fix/FB.json"; noche "$TMP/cdf.json" 2026-09-02 >/dev/null
+IDB=$(basename "$(unaficha pending)" .yaml)
+deuda_en FB 2026-12-31 GHSA-73wf; noche "$TMP/cdf.json" 2026-09-03 >/dev/null
+[ -f "$TMP/pend/archived/$IDB.yaml" ] || no "dependencias-por-formulario B: la deuda del formulario no archivó la ficha (preparación)"
+deuda_en FB 2026-01-01 GHSA-73wf   # vence: vuelve sin declarar
+noche "$TMP/cdf.json" 2026-09-04 >/dev/null
+FB="$TMP/pend/pending/$IDB.yaml"
+{ [ -f "$FB" ] && grep -q "^reaparecido: 2026-09-04$" "$FB" && grep -qE '^repos:$' "$FB" && grep -q '^  - A/A/FB$' "$FB"; } \
+  && ok "dependencias-por-formulario B: la ficha reactivada trae los repos de hoy en repos:" \
+  || no "dependencias-por-formulario B: ficha reactivada sin repos: — $(grep -E '^(veredicto|reaparecido|repos|  - )' "$FB" 2>/dev/null | tr '\n' ' ') · $(ls "$TMP/pend"/*/*.yaml | tr '\n' ' ')"
+
+# C. dos hallazgos nuevos del mismo paquete y el mismo proyecto, la misma noche: UNA ficha
+rm -rf "$TMP/out" "$TMP/pend"; mundoforms A FC1 FC2
+for x in A FC1 FC2; do echo "$LIMPIO" > "$TMP/fix/$x.json"; done; config "$TMP/cdf.json" 4 A
+noche "$TMP/cdf.json" 2026-09-01 >/dev/null
+echo "$UNA" > "$TMP/fix/FC1.json"; echo "$UNA_OTRO" > "$TMP/fix/FC2.json"
+noche "$TMP/cdf.json" 2026-09-02 >/dev/null
+nf=$(ls "$TMP/pend/pending"/*.yaml 2>/dev/null | wc -l | tr -d ' ')
+FC=$(unaficha pending)
+r=$(snap 2026-09-02 "console.log(s.anunciados_hoy.length+'|'+new Set(s.anunciados_hoy).size)")
+{ [ "$nf" -eq 1 ] && [ -n "$FC" ] && [ "$(grep -c '^  - [0-9a-f]\{8\}$' "$FC")" -eq 2 ] \
+  && grep -q 'GHSA-73wf' "$FC" && grep -q 'GHSA-otro' "$FC" && [ "${r%%|*}" = "${r##*|}" ]; } \
+  && ok "dependencias-por-formulario C: dos hallazgos del mismo paquete y proyecto son una ficha con los dos ids y los avisos unidos" \
+  || no "dependencias-por-formulario C: fichas=$nf · anunciados|únicos=$r · $(grep -E '^  - ' "${FC:-/dev/null}" 2>/dev/null | tr '\n' ' ')"
+
+# D. lo que reactiva la vigilancia respeta el tope de altas por noche; la crítica no espera
+cenario_d(){ # <fixture de FD> <tope> — FD tiene una ficha archivada por deuda que vuelve la noche 3 junto con dos altas nuevas
+  rm -rf "$TMP/out" "$TMP/pend"; mundoforms A FD FX FY
+  for x in A FD FX FY; do echo "$LIMPIO" > "$TMP/fix/$x.json"; done; config "$TMP/cdf.json" "$2" A
+  noche "$TMP/cdf.json" 2026-09-01 >/dev/null
+  echo "$1" > "$TMP/fix/FD.json"; noche "$TMP/cdf.json" 2026-09-02 >/dev/null
+  IDD=$(basename "$(unaficha pending)" .yaml)
+  deuda_en FD 2026-12-31 GHSA-73wf; noche "$TMP/cdf.json" 2026-09-03 >/dev/null
+  deuda_en FD 2026-01-01 GHSA-73wf   # vence: vuelve; y en la misma noche hay dos altas nuevas
+  echo "$ALTA_X" > "$TMP/fix/FX.json"; echo "$ALTA_Y" > "$TMP/fix/FY.json"
+  noche "$TMP/cdf.json" 2026-09-04 >/dev/null
+}
+cenario_d "$UNA" 2
+# la que vuelve compite por el cupo con las dos nuevas (las tres son altas de una noche): entran dos, una espera
+{ snap 2026-09-04 "process.exit(new Set(s.anunciados_hoy).size===2&&s.postergados_por_presupuesto.length===1?0:1)" \
+  && [ "$(ls "$TMP/pend/pending"/*.yaml 2>/dev/null | wc -l | tr -d ' ')" -eq 2 ]; } \
+  && ok "dependencias-por-formulario D: con tope 2, entre la ficha ALTA que vuelve y dos altas nuevas se anuncian dos y una queda postergada" \
+  || no "dependencias-por-formulario D: la alta reactivada se saltó el tope — $(ls "$TMP/pend"/*/*.yaml | tr '\n' ' ')"
+CRIT_B='{"vulnerabilities":{"browserslist":{"severity":"critical","via":[{"url":"https://x/GHSA-73wf"}]}},"metadata":{"vulnerabilities":{"critical":1,"high":0,"moderate":0,"low":0}}}'
+cenario_d "$CRIT_B" 2
+{ [ -f "$TMP/pend/pending/$IDD.yaml" ] && snap 2026-09-04 "process.exit(s.reaparecidos_ids.includes('$IDD')?0:1)"; } \
+  && ok "dependencias-por-formulario D: una CRÍTICA que vuelve se reactiva aunque el tope esté lleno" \
+  || no "dependencias-por-formulario D: la crítica que vuelve no se reactivó — $(ls "$TMP/pend"/*/*.yaml | tr '\n' ' ')"
+# …y una alta que vuelve sólo en una carpeta que es su primera noche tampoco se reactiva
+rm -rf "$TMP/out" "$TMP/pend"; mundoforms A F0
+echo "$LIMPIO" > "$TMP/fix/A.json"; echo "$LIMPIO" > "$TMP/fix/F0.json"; config "$TMP/cdf.json" 2 A
+noche "$TMP/cdf.json" 2026-09-01 >/dev/null
+echo "$UNA" > "$TMP/fix/A.json"; noche "$TMP/cdf.json" 2026-09-02 >/dev/null
+IDN=$(basename "$(unaficha pending)" .yaml)
+deuda_en "" 2026-12-31 GHSA-73wf; noche "$TMP/cdf.json" 2026-09-03 >/dev/null
+[ -f "$TMP/pend/archived/$IDN.yaml" ] || no "dependencias-por-formulario D: la deuda de la raíz no archivó la ficha (preparación)"
+deuda_en "" 2026-01-01 GHSA-73wf; echo "$LIMPIO" > "$TMP/fix/A.json"
+publicar A FN; echo "$UNA" > "$TMP/fix/FN.json"        # vuelve SOLO en FN, que hoy es su primera noche
+noche "$TMP/cdf.json" 2026-09-04 >/dev/null
+{ [ -f "$TMP/pend/archived/$IDN.yaml" ] && [ ! -f "$TMP/pend/pending/$IDN.yaml" ]; } \
+  && ok "dependencias-por-formulario D: una alta que vuelve sólo en carpetas de su primera noche no se reactiva" \
+  || no "dependencias-por-formulario D: se reactivó por una carpeta de primera noche — $(ls "$TMP/pend"/*/*.yaml | tr '\n' ' ')"
+
+# E. pr-text no arma el texto de una ficha sin repos
+SINREPO="$TMP/sinrepo.yaml"
+cat > "$SINREPO" <<'FICHA'
+id: aa11bb22
+detectado: 2026-09-05
+veredicto: pendiente
+paquete: browserslist
+severidad: high
+noches: 1
+ids:
+  - aa11bb22
+avisos:
+  - https://x/GHSA-73wf
+FICHA
+TE=$(node "$NOC" pr-text --draft "$SINREPO" 2>&1); rce=$?
+{ [ "$rce" -ne 0 ] && printf '%s' "$TE" | grep -i "no nombra ning" >/dev/null ; } \
+  && ok "dependencias-por-formulario E: pr-text rechaza una ficha sin repos: y lo dice" \
+  || no "dependencias-por-formulario E: rc=$rce · $(printf '%s' "$TE" | head -2 | tr '\n' ' ')"
+
 echo
 total=$((pasaron + fallos))
 [ "$fallos" -eq 0 ] && { echo "✅ nocturno-dependencias: $pasaron/$total"; exit 0; } || { echo "❌ nocturno-dependencias: $fallos fallo(s) de $total"; exit 1; }

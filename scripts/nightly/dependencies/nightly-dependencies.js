@@ -69,6 +69,8 @@ const OUT_DEF = path.join(RAIZ_REPO, '.dashboard', 'dependencias');
 const PENDING_DEF = path.join(RAIZ_REPO, 'inbox', 'dependencies');
 const GUION = path.join(RAIZ_REPO, 'scripts', 'ci', 'audit-dependencies.js');
 const DIAS_PARA_IGNORADO = 7;
+// el archivo de la deuda declarada de un repo (el mismo nombre que lee audit-dependencies.js por defecto)
+const ARCHIVO_DEUDA = 'vulnerabilidades-pendientes.json';
 
 // ── utilidades ─────────────────────────────────────────────────────────────────────────────────
 
@@ -371,7 +373,16 @@ function auditarEn(base, pub, entrada, guion, hoy) {
     }
     dirAuditado = sub;
   }
-  return auditarArbol({ ...base, dirAuditado }, entrada, guion, hoy);
+  // 🔴 UN FORMULARIO DESCUBIERTO HEREDA LA DEUDA DEL REPO. La deuda se declara una vez, en la raíz, para todo el repo:
+  // sin heredarla, el primer día que la noche mira cada formulario, todo lo declarado vuelve a aparecer «sin declarar»
+  // en cada uno —y las fichas archivadas por esa deuda se reactivan solas. Si el formulario declara la suya, manda.
+  let declaradaEn = null;
+  if (entrada.heredaDeuda && dirAuditado !== pub.dir) {
+    const propia = path.join(dirAuditado, ARCHIVO_DEUDA);
+    const deLaRaiz = path.join(pub.dir, ARCHIVO_DEUDA);
+    if (!fs.existsSync(propia) && fs.existsSync(deLaRaiz)) declaradaEn = path.relative(dirAuditado, deLaRaiz);
+  }
+  return auditarArbol({ ...base, dirAuditado, declaradaEn }, entrada, guion, hoy);
 }
 
 // ── cada formulario ────────────────────────────────────────────────────────────────────────────
@@ -469,7 +480,7 @@ function auditarRepoConFormularios(entrada, declaradas, apagadas, raiz, guion, h
       // La carpeta nace de la entrada de la raíz: mismo producto y proyecto (ado/github). `proyecto` es la opción de
       // nuget y pip, y `exclude` es de la raíz: no se heredan.
       const { proyecto, exclude, ...resto } = entrada;
-      const r = en({ ...resto, subruta: c });
+      const r = en({ ...resto, subruta: c, heredaDeuda: true });
       r.descubierta = true;
       resultados.push(r);
       miradas.push(r);
@@ -541,6 +552,8 @@ function auditarArbol(base, entrada, guion, hoy) {
   const dir = base.dirAuditado;
   const args = [guion, '--repo', dir, '--type', entrada.tipo, '--json'];
   if (entrada.proyecto) args.push('--project', entrada.proyecto);
+  if (base.declaradaEn) args.push('--declared', base.declaradaEn);
+  delete base.declaradaEn;
   const r = spawnSync(process.execPath, args, {
     encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
     env: { ...process.env, TYCON_DEP_TODAY: hoy },
@@ -777,6 +790,25 @@ function correr(a) {
         anexados.push({ id: h.id, ficha: f.idFicha });
         continue;
       }
+      // 🔴 Tampoco dos fichas NUEVAS del mismo hecho en la misma noche: `fichaDe` sólo conoce las fichas de antes de
+      // esta corrida. Un segundo aviso del mismo paquete en el mismo proyecto se suma al primero, que es el que se
+      // escribe (con los dos ids y los avisos de los dos) y el que ocupa el cupo.
+      if (!f) {
+        const proyectos = new Set(h.repos.map((r) => proyectoDe(r, cfg)));
+        const mismo = candidatos.find((x) => !x.ficha
+          && String(x.h.paquete).toLowerCase() === String(h.paquete).toLowerCase()
+          && x.h.repos.some((r) => proyectos.has(proyectoDe(r, cfg))));
+        if (mismo) {
+          // la unión va aparte: el hallazgo de la foto queda como se midió (su id es la huella de sus avisos)
+          mismo.h.idsJuntos = [...new Set([...(mismo.h.idsJuntos || [mismo.h.id]), h.id])];
+          mismo.h.avisosJuntos = [...new Set([...(mismo.h.avisosJuntos || mismo.h.advisories || []), ...(h.advisories || [])])].sort();
+          mismo.h.reposJuntos = [...new Set([...(mismo.h.reposJuntos || mismo.h.repos), ...h.repos])].sort();
+          h.anunciado = true;
+          h.ficha = mismo.h.id;
+          anexados.push({ id: h.id, ficha: mismo.h.id });
+          continue;
+        }
+      }
       candidatos.push({ h, ficha: f || null });
     }
   } else {
@@ -801,7 +833,8 @@ function correr(a) {
     x.h.ficha = x.ficha.idFicha;
     if (!reaparecidos.includes(x.ficha.idFicha)) reaparecidos.push(x.ficha.idFicha);
   }
-  const idsAnunciados = elegidos.map((x) => (x.ficha ? x.ficha.idFicha : x.h.id));
+  // dos avisos que reactivan la misma ficha son UN anuncio: la lista no repite
+  const idsAnunciados = [...new Set(elegidos.map((x) => (x.ficha ? x.ficha.idFicha : x.h.id)))];
   const aCrear = elegidos.filter((x) => !x.ficha).map((x) => x.h);
 
   const snapshot = {
@@ -838,9 +871,12 @@ function correr(a) {
   // 🔴 La vigilancia de las fichas VIVAS —las pendientes y también las ya ACEPTADAS— corre acá,
   // después de crear las nuevas. Es lo único que escribe `resuelto:`, y sólo por medición: ni un
   // pull request mergeado, ni una deuda declarada, ni un id que se movió resuelven nada.
+  // lo que vuelve comparte el tope con lo nuevo: el cupo de altas que dejó el camino del tope
+  const cupo = { restante: previo ? Math.max(0, tope - elegidos.filter((x) => x.h.severidad !== 'critical').length) : 0, nuevas };
   const vig = a.dryRun
-    ? { resueltos: [], descartados: [], aceptadas_sin_resolver: [], reaparecidos: [], rechazadas_sin_deuda: [] }
-    : vigilarFichas(a.pending, hoy, snapshot, apagadosEtiq, cfg, new Set(reaparecidos));
+    ? { resueltos: [], descartados: [], aceptadas_sin_resolver: [], reaparecidos: [], rechazadas_sin_deuda: [], postergados: [] }
+    : vigilarFichas(a.pending, hoy, snapshot, apagadosEtiq, cfg, new Set(reaparecidos), cupo);
+  for (const id of vig.postergados) if (!snapshot.postergados_por_presupuesto.includes(id)) snapshot.postergados_por_presupuesto.push(id);
   snapshot.resueltos_ids = vig.resueltos;
   snapshot.descartados_ids = vig.descartados;
   snapshot.aceptadas_sin_resolver = vig.aceptadas_sin_resolver;
@@ -899,11 +935,11 @@ function escribirBorradores(pendingDir, aAnunciar, snapshot) {
       ...(h.gravedad_sin_dato ? ['# alta por falta de dato: el gestor de paquetes no informó la gravedad (se cuenta alta para no callarla)'] : []),
       `noches: ${h.noches}`,
       `ids:`,
-      `  - ${h.id}`,
+      ...(h.idsJuntos || [h.id]).map((i) => `  - ${i}`),
       `repos:`,
-      ...h.repos.map((r) => `  - ${r}`),
+      ...(h.reposJuntos || h.repos).map((r) => `  - ${r}`),
       `avisos:`,
-      ...(h.advisories.length ? h.advisories.map((u) => `  - ${u}`) : ['  - (el informe no trajo enlace)']),
+      ...((h.avisosJuntos || h.advisories).length ? (h.avisosJuntos || h.advisories).map((u) => `  - ${u}`) : ['  - (el informe no trajo enlace)']),
       `# Qué decidir: se arregla (subir el paquete) o se declara como deuda en el`,
       `# vulnerabilidades-pendientes.json del repo, con motivo y fecha de revisión.`,
       `# Lo que NO se decide vuelve a aparecer todas las noches, y a los ${DIAS_PARA_IGNORADO} días`,
@@ -1058,9 +1094,9 @@ function reactivarFicha(f, h, hoy, pendingDir) {
  *   (c) presente, y declarada en TODOS los repos    → `archived/` como descartado por deuda (declarar no es pagar)
  *   (d) presente sin declarar en alguno             → viva: se refrescan los hechos de esta noche
  */
-function vigilarFichas(pendingDir, hoy, snapshot, apagadosEtiq, cfg, yaReactivados) {
+function vigilarFichas(pendingDir, hoy, snapshot, apagadosEtiq, cfg, yaReactivados, cupo = { restante: Infinity, nuevas: new Set() }) {
   const res = { resueltos: [], descartados: [], aceptadas_sin_resolver: [], reaparecidos: [],
-    rechazadas_sin_deuda: [] };
+    rechazadas_sin_deuda: [], postergados: [] };
   // Una ficha que esta misma corrida ya movió (a `archived/` por deuda, a `promoted/` al resolverse)
   // NO se vuelve a juzgar cuando el recorrido llega a esa carpeta: se decidió hace un instante.
   const decididasHoy = new Set();
@@ -1151,6 +1187,19 @@ function vigilarFichas(pendingDir, hoy, snapshot, apagadosEtiq, cfg, yaReactivad
       if (cerrada) {
         if (![...porRepo.values()].some((x) => !x.declarada)) continue;
         if ((yaReactivados || new Set()).has(idFicha)) continue;   // el otro camino ya la reactivó
+        // 🔴 Lo que vuelve también pasa por el tope y por la primera noche de una carpeta: una alta que reaparece
+        // es un aviso más esa noche, igual que una nueva. Si no entra, queda cerrada: mañana se la vuelve a mirar
+        // y entra primero (lleva más noches). Una crítica no espera.
+        const critica = String(fi.escalares.severidad || '').toLowerCase() === 'critical';
+        if (!critica) {
+          const sinDeclararHoy = [...porRepo.values()].filter((x) => !x.declarada).map((x) => x.repo);
+          const soloEnNuevas = sinDeclararHoy.length > 0 && sinDeclararHoy.every((r) => (cupo.nuevas || new Set()).has(r));
+          if (soloEnNuevas || cupo.restante <= 0) { res.postergados.push(idFicha); continue; }
+          cupo.restante -= 1;
+        }
+        // 🔴 Los hechos de hoy se guardan ANTES de reactivar: `reactivarFicha` relee la ficha del disco, y con el
+        // texto viejo la ficha volvería a `pending/` con los repos de cuando se cerró (por deuda: ninguno).
+        fs.writeFileSync(p, txt);
         reactivarFicha({ archivo: p, nombre: f, estado, txt, fi, idFicha, ids }, null, hoy, pendingDir);
         res.reaparecidos.push(idFicha);
         continue;
@@ -1684,6 +1733,12 @@ function prTexto(a) {
   };
   const paquete = campo('paquete'), sev = campo('severidad'), noches = campo('noches');
   const repos = lista('repos'), avisos = lista('avisos');
+  // 🔴 Una ficha sin repos no es un pedido: no hay dónde arreglar nada. Sin texto, el guion de pull requests no abre
+  // uno vacío y lo cuenta como fallo — que una ficha llegue así es un error de la noche, no algo para decidir.
+  if (!repos.length) {
+    console.error(`error: la ficha ${a.borrador} no nombra ningún repo (repos: vacío): no se arma el texto del pull request`);
+    return 1;
+  }
 
   console.log(`Dependencia vulnerable: ${paquete} (${sev}) — ${repos.length} repo(s)`);
   console.log('---CUERPO---');
