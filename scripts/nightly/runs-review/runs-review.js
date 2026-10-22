@@ -148,16 +148,71 @@ function volcadosDelEspejo(mailbox) {
   return { lista: out, ilegibles };
 }
 
+/** La clave de una causa: la regla y su categoría (`null` es la regla sola), como la escribe causas-vistas.json. */
+const parDe = (x) => `${x.regla}|${x.categoria === null || x.categoria === undefined ? '' : x.categoria}`;
+const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+/** Si una pasada anterior de HOY fue entera (una que se corta antes de revisar no la pisa), y si el archivo no se lee. */
+function pasadaDeHoy(archivo, today) {
+  let l;
+  try { l = JSON.parse(fs.readFileSync(archivo, 'utf8')); } catch (e) { return { entera: false, ilegible: !(e && e.code === 'ENOENT') }; }
+  return { entera: Boolean(l && typeof l === 'object' && l.fecha === today && l.completo === true), ilegible: false };
+}
+
+/**
+ * `causas-vistas.json`: la fecha de la primera vez de cada causa. Lo nuevo de hoy se decide con él y no con la pasada
+ * anterior, así una pasada repetida, cortada o que no vuelve a ver una ejecución no cambia lo que es nuevo. `{ pares,
+ * ilegible }`; `pares: null` si el archivo no está (la primera noche: se usan las fichas previas).
+ */
+function leerVistas(archivo) {
+  let j;
+  try { j = JSON.parse(fs.readFileSync(archivo, 'utf8')); } catch (e) { return { pares: null, ilegible: !(e && e.code === 'ENOENT') }; }
+  if (!j || typeof j !== 'object' || !j.pares || typeof j.pares !== 'object' || Array.isArray(j.pares)) return { pares: null, ilegible: true };
+  const pares = {};
+  for (const [k, v] of Object.entries(j.pares)) if (typeof v === 'string' && DIA.test(v)) pares[k] = v;
+  return { pares, ilegible: false };
+}
+
+/** Las frases de `motivo` de last-run.json: las únicas que el resumen de la mañana imprime. */
+const MOTIVOS = [
+  /^la bajada del buzón no fue entera \([a-z_]{1,40}\)$/,
+  /^operations\.json no se pudo leer: los enlaces van sin el sitio$/,
+  /^la carpeta del buzón no se pudo leer$/,
+  /^\d{1,9} archivo\(s\) o línea\(s\) ilegible\(s\)$/,
+  /^la pasada se cortó por un error \([\p{L}\p{N}_ ]{1,40}\)$/u,
+];
+
 async function run(opts) {
   const { mailbox, ops: opsDir, today } = opts;
   const days = Number.isFinite(opts.days) ? opts.days : 7;
   if (!mailbox || !opsDir || !DIA.test(String(today || ''))) return { codigo: 2, motivo: 'faltan --mailbox, --operations o --today (AAAA-MM-DD)' };
   const raiz = path.join(opsDir, 'inbox', 'runs-review');
   const desde = menosDias(today, days);
-  const estado = { fecha: today, completo: true, motivo: null, miradas: 0, con_fallas: 0, nuevas: 0, sin_hilo: 0, hilos_sin_hooks: 0, ilegibles: 0 };
+  const estado = { fecha: today, completo: true, motivo: null, miradas: 0, con_fallas: 0, nuevas: 0, sin_hilo: 0, hilos_sin_hooks: 0, ilegibles: 0, causas: [] };
+  const previa = pasadaDeHoy(path.join(raiz, 'last-run.json'), today);
+  if (previa.ilegible) estado.ilegibles += 1;
+  const vistas = leerVistas(path.join(raiz, 'causas-vistas.json'));
+  if (vistas.ilegible) estado.ilegibles += 1;
   const cerrar = (codigo) => {
     escribirEntero(path.join(raiz, 'last-run.json'), `${JSON.stringify(estado, null, 2)}\n`);
     return { codigo, estado };
+  };
+  // cortada antes de revisar: una pasada entera de hoy queda como está (lo que dijo sigue valiendo para la mañana)
+  const cortadaAntes = () => (previa.entera ? { codigo: 1, estado } : cerrar(1));
+  // conocida: vista antes de hoy según causas-vistas.json; un par que el archivo no tiene (la primera noche, o una ficha
+  // anterior a él), si está en una ficha previa de antes de hoy (con la fecha más vieja de las que lo traen)
+  const enFichasViejas = new Map();
+  const causas = new Map();
+  const conocida = (k) => (vistas.pares && Object.prototype.hasOwnProperty.call(vistas.pares, k) ? vistas.pares[k] < today : enFichasViejas.has(k));
+  const armarCausas = () => [...causas.entries()]
+    .map(([k, c]) => ({ regla: c.regla, categoria: c.categoria, ejecuciones: c.ejecuciones, nueva: !conocida(k) }))
+    .sort((a, b) => b.ejecuciones - a.ejecuciones || cmp(a.regla, b.regla) || cmp(a.categoria || '', b.categoria || ''));
+  // suma lo visto: los pares de las fichas viejas con su fecha y los de esta pasada con la de hoy; una fecha escrita no cambia
+  const guardarVistas = () => {
+    const pares = { ...(vistas.pares || {}) };
+    for (const [k, f] of enFichasViejas) if (!(k in pares)) pares[k] = f;
+    for (const k of causas.keys()) if (!(k in pares)) pares[k] = today;
+    escribirEntero(path.join(raiz, 'causas-vistas.json'), `${JSON.stringify({ esquema: 1, pares }, null, 2)}\n`);
   };
 
   if (!opts.noDownload) {
@@ -173,7 +228,7 @@ async function run(opts) {
       // la bajada no fue entera: no se mueve ni se escribe ninguna ficha
       estado.completo = false;
       estado.motivo = `la bajada del buzón no fue entera (${estadoDeBajada(res.estado)})`;
-      return cerrar(1);
+      return cortadaAntes();
     }
   }
 
@@ -187,7 +242,7 @@ async function run(opts) {
     } catch { estado.motivo = 'operations.json no se pudo leer: los enlaces van sin el sitio'; }
 
     const espejo = volcadosDelEspejo(mailbox);
-    if (espejo === null) { estado.completo = false; estado.motivo = 'la carpeta del buzón no se pudo leer'; return cerrar(1); }
+    if (espejo === null) { estado.completo = false; estado.motivo = 'la carpeta del buzón no se pudo leer'; return cortadaAntes(); }
     const lista = espejo.lista;
     estado.ilegibles += espejo.ilegibles;
     // id y máquina de cada sesión, como los arma la pestaña Corridas
@@ -199,7 +254,18 @@ async function run(opts) {
     }
     const previas = fichasPrevias(raiz);
     estado.ilegibles += previas.ilegibles;
+    // las causas de las fichas de antes de hoy, en cualquier carpeta (lo decidido también cuenta), con su fecha más vieja
+    for (const p of previas.porClave.values()) {
+      if (!DIA.test(String(p.datos.fecha || '')) || p.datos.fecha >= today || !Array.isArray(p.datos.reglas)) continue;
+      for (const x of p.datos.reglas) {
+        if (!x || typeof x.regla !== 'string') continue;
+        const k = parDe(x);
+        if (!enFichasViejas.has(k) || p.datos.fecha < enFichasViejas.get(k)) enFichasViejas.set(k, p.datos.fecha);
+      }
+    }
     const cacheRegistros = new Map();
+    // una ejecución se mira una vez aunque esté en dos carpetas de la máquina (la vieja y la de código)
+    const miradas = new Set();
     for (const { ruta, carpeta } of lista) {
       let volcado;
       try { volcado = JSON.parse(fs.readFileSync(ruta, 'utf8')); } catch { volcado = null; }
@@ -208,6 +274,8 @@ async function run(opts) {
       const dia = diaDelNombre(base) || String(volcado.archivedAt || volcado.marker.startedAt || '').slice(0, 10);
       if (!DIA.test(dia) || dia < desde) continue;
       const sesion = porSesion.get(volcado.marker.sessionId) || { id: RUNS.idEstable(carpeta, volcado.marker.sessionId), maquina: carpeta };
+      if (miradas.has(clave(sesion.id, comoId(base)))) continue;
+      miradas.add(clave(sesion.id, comoId(base)));
       estado.miradas += 1;
       const h = leerJsonl(ruta.replace(/\.json$/, '.hilo.jsonl.gz'));
       if (h) estado.ilegibles += h.roto ? 1 : h.rotas;
@@ -223,6 +291,12 @@ async function run(opts) {
         continue;
       }
       estado.con_fallas += 1;
+      for (const x of reglasParaFicha(r.reglas)) {
+        const k = parDe(x);
+        if (!causas.has(k)) causas.set(k, { regla: x.regla, categoria: x.categoria, ejecuciones: 0, vista: null });
+        const c = causas.get(k);
+        if (c.vista !== sesion.id + base) { c.vista = sesion.id + base; c.ejecuciones += 1; }
+      }
       const m = volcado.marker;
       const cierre = m.cierre && typeof m.cierre === 'object' ? { estado: ESTADOS.includes(m.cierre.estado) ? m.cierre.estado : 'desconocido', via: VIAS.includes(m.cierre.via) ? m.cierre.via : null } : null;
       const enlace = urlSitio ? `${urlSitio}/corridas?abrir=${sesion.id}` : `/corridas?abrir=${sesion.id}`;
@@ -239,20 +313,28 @@ async function run(opts) {
       } else if (prev.carpeta === 'pending') {
         escribirFicha(prev.ruta, { ...nueva, ...(prev.datos.reaparecido ? { reaparecido: prev.datos.reaparecido } : {}) });
       } else {
-        const antes = new Set(prev.datos.reglas.map((x) => x.regla));
-        if (nueva.reglas.some((x) => !antes.has(x.regla))) {
+        // reaparece con una causa que no tenía: una regla nueva, o una categoría nueva de una regla que ya tenía
+        const antes = new Set(prev.datos.reglas.map(parDe));
+        if (nueva.reglas.some((x) => !antes.has(parDe(x)))) {
           // se mueve: primero la nueva en pending/, después se borra la de su carpeta (nunca dos con la misma clave)
           escribirFicha(path.join(raiz, 'pending', path.basename(prev.ruta)), { ...nueva, veredicto: 'pendiente', reaparecido: today });
           fs.unlinkSync(prev.ruta);
         }
       }
     }
+    estado.causas = armarCausas();
+    guardarVistas();
     if (estado.ilegibles) { estado.completo = false; if (!estado.motivo) estado.motivo = `${estado.ilegibles} archivo(s) o línea(s) ilegible(s)`; }
     return cerrar(estado.completo ? 0 : 1);
   } catch (e) {
     // una pasada cortada no deja el estado de ayer como si fuera de hoy
     estado.completo = false;
-    estado.motivo = `la pasada se cortó por un error (${e && e.code ? e.code : 'sin código'})`;
+    estado.motivo = `la pasada se cortó por un error (${e && /^[A-Za-z0-9_]{1,40}$/.test(String(e.code)) ? e.code : 'sin código'})`;
+    // cortada antes de revisar ninguna ejecución: como las demás salidas tempranas, no pisa una pasada entera de hoy
+    if (!estado.miradas) return cortadaAntes();
+    // las causas de lo que alcanzó a revisar: la mañana dice «parcial» con ellas, y lo nuevo no se pierde
+    estado.causas = armarCausas();
+    try { guardarVistas(); } catch { estado.ilegibles += 1; }
     return cerrar(1);
   }
 }
@@ -265,7 +347,7 @@ function main(argv) {
     .then((r) => { process.stdout.write(`${JSON.stringify(r.estado || { motivo: r.motivo }, null, 2)}\n`); return r.codigo; });
 }
 
-module.exports = { run, leerFicha, diaDelNombre };
+module.exports = { run, leerFicha, diaDelNombre, MOTIVOS };
 
 if (require.main === module) {
   main(process.argv.slice(2)).then((c) => { process.exitCode = c; }, (e) => { process.stderr.write(`runs-review: ${e && e.stack ? e.stack : e}\n`); process.exitCode = 1; });

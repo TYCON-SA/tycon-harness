@@ -195,10 +195,23 @@ function sumar(mapa, regla) {
   if (prev) prev.cuenta += regla.cuenta; else mapa.set(k, { ...regla });
 }
 
+// Las categorías que vienen de afuera se cierran acá, al nacer: la ficha y el resumen de la mañana no llevan texto de
+// una conversación ni de bypass.log, aunque tenga forma de nombre.
+const EVENTOS_DE_HOOK = ['SessionStart', 'SessionEnd', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure',
+  'PermissionRequest', 'Notification', 'Stop', 'SubagentStart', 'SubagentStop', 'PreCompact'];
+// las de tokens-digest.js: las de su lista, `tiempo` (el hook que se pasó de tiempo) y `otro`
+const NOMBRES_HOOK = new Set([...CATEGORIAS_HOOK.map(([n]) => n), 'tiempo', 'otro']);
+function categoriaDeHook(a) {
+  const evento = EVENTOS_DE_HOOK.includes(a.hookEvent) ? a.hookEvent : 'otro';
+  return `${evento}/${NOMBRES_HOOK.has(a.categoria) ? a.categoria : 'otro'}`;
+}
+/** El `type` de una línea de bypass.log, sólo con forma de constante; si no, `otro`. */
+const tipoDeEscape = (t) => (typeof t === 'string' && /^[A-Z][A-Z0-9_]{2,40}$/.test(t) ? t : 'otro');
+
 function reglasDelHilo(lineas, volcado, out) {
   // un hook que se pasó de tiempo (`hook_cancelled`, categoría `tiempo`) también es un aviso que no anduvo
   const hooks = (lineas || []).filter((o) => o && o.type === 'attachment' && o.attachment && (o.attachment.type === 'hook_non_blocking_error' || o.attachment.type === 'hook_cancelled'));
-  for (const h of hooks) sumar(out, { regla: 'RR-HOOK', categoria: `${h.attachment.hookEvent || '?'}/${h.attachment.categoria || 'otro'}`, cuenta: 1 });
+  for (const h of hooks) sumar(out, { regla: 'RR-HOOK', categoria: categoriaDeHook(h.attachment), cuenta: 1 });
   const cs = comandos(lineas);
   const cierre = volcado && volcado.marker && volcado.marker.cierre && typeof volcado.marker.cierre === 'object' ? volcado.marker.cierre : null;
   const partes = partesPorBandera();
@@ -265,10 +278,13 @@ function reglaDeCierre(volcado, out) {
 function delRegistro(lineas, volcado) {
   const m = (volcado && volcado.marker) || {};
   const desde = Date.parse(m.startedAt || '');
-  const hasta = Date.parse((volcado && volcado.archivedAt) || '') || Date.now();
+  // sin `archivedAt` (sin cerrar) no hay fin de ventana: sólo cuentan las líneas de su sesión, y el resultado no depende
+  // de la hora a la que corre la pasada
+  const hasta = Date.parse((volcado && volcado.archivedAt) || '');
   return lineas.filter((l) => {
     if (!l || typeof l !== 'object') return false;
     if (l.sessionId) return l.sessionId === m.sessionId;
+    if (!Number.isFinite(hasta)) return false;
     const t = Date.parse(l.ts || '');
     return Number.isFinite(desde) && Number.isFinite(t) && t >= desde && t <= hasta;
   });
@@ -289,7 +305,7 @@ function revisar({ volcado, lineasHilo, registros }) {
   const medido = Boolean(fuente && fuente.estado === 'medido' && Array.isArray(registros.bypass));
   const propias = medido ? delRegistro(registros.bypass, volcado) : [];
   const cubiertas = new Set(propias.map((l) => EQUIVALENTES[l.type || l.kind]).filter(Boolean));
-  for (const l of propias) sumar(out, { regla: 'RR-ESCAPE', categoria: String(l.type || l.kind || 'desconocido'), cuenta: 1, con_motivo: typeof l.reason === 'string' && l.reason.trim() !== '' });
+  for (const l of propias) sumar(out, { regla: 'RR-ESCAPE', categoria: tipoDeEscape(l.type || l.kind), cuenta: 1, con_motivo: typeof l.reason === 'string' && l.reason.trim() !== '' });
   for (const cat of escapesDeComandos(cs)) if (!cubiertas.has(cat)) sumar(out, { regla: 'RR-ESCAPE', categoria: cat, cuenta: 1 });
   const reglas = [...out.values()].map((r) => { const x = { ...r }; for (const k of Object.keys(x)) if (x[k] === undefined) delete x[k]; return x; });
   return { reglas, sin_hilo: sinHilo, escapes_registro: medido ? 'medido' : 'no_medido', hilo_sin_hooks: hiloSinHooks };

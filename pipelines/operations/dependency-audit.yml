@@ -390,7 +390,10 @@ jobs:
           elif [ -n "$MANT" ]; then
             echo "##vso[task.logissue type=warning]No está el clon del repo de mantenimiento: el resumen va sin la revisión de la semana."
           fi
-          node scripts/nightly/dependencies/daily-summary.js deliver --source dependencies --today "$HOY" ${SU[@]+"${SU[@]}"} ${SEM[@]+"${SEM[@]}"} \
+          # la línea de las ejecuciones, si la organización tiene la revisión nocturna (runs-review.yml, 03:00): con su
+          # carpeta en el repo de operaciones; sin ella, el resumen no la nombra
+          RR=(); [ -d "$(Build.SourcesDirectory)/inbox/runs-review" ] && RR=(--runs-review "$(Build.SourcesDirectory)")
+          node scripts/nightly/dependencies/daily-summary.js deliver --source dependencies --today "$HOY" ${SU[@]+"${SU[@]}"} ${SEM[@]+"${SEM[@]}"} ${RR[@]+"${RR[@]}"} \
             --out "$(Build.SourcesDirectory)/.dashboard/dependencias" \
             --pending "$(Build.SourcesDirectory)/inbox/dependencies" \
             --operations "$(Build.SourcesDirectory)/operations.json" \

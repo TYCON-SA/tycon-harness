@@ -11,11 +11,11 @@ const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const DIR = path.join(ROOT, 'pipelines', 'operations');
-const MODELS = ['dependency-audit.yml', 'stage-metrics.yml', 'team-dashboard.yml'];
+const MODELS = ['dependency-audit.yml', 'stage-metrics.yml', 'team-dashboard.yml', 'runs-review.yml'];
 const TEMPLATES = ['fetch-harness.yml', 'ops-data.yml', 'check-tree.yml'];
 const read = (rel) => fs.readFileSync(path.join(DIR, rel), 'utf8');
 
-test('T1 Models_FilesInPlace: los tres modelos, las tres plantillas, la página y los ejemplos; cada template: existe y va con @harness', () => {
+test('T1 Models_FilesInPlace: los cuatro modelos, las tres plantillas, la página y los ejemplos; cada template: existe y va con @harness', () => {
   for (const f of [...MODELS, ...TEMPLATES.map((t) => `templates/${t}`), 'README.md', 'examples/repos.json', 'examples/operations.json', 'examples/sources.json']) {
     assert.ok(fs.existsSync(path.join(DIR, f)), `falta pipelines/operations/${f}`);
   }
@@ -89,7 +89,7 @@ test('T3 Models_EffectsGateEveryWrite: todo paso con efectos depende de efectos;
       }
     }
   }
-  assert.ok(seen >= 6, `se miraron los pasos con efectos de los tres modelos (${seen})`);
+  assert.ok(seen >= 7, `se miraron los pasos con efectos de los cuatro modelos (${seen})`);
 });
 
 // ── la plantilla ops-data.yml, corrida de verdad ──────────────────────────────────────────────────────────────
