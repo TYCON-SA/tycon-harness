@@ -645,12 +645,25 @@ function codexInvokePreamble(name) {
 }
 
 /** El profile de Codex tiene que ser el GENERADO y estar desplegado — falla ruidosa si no. */
-function ensureCodexProfile(name) {
-  const src = path.join(ADAPTERS_DIR, `${name}.toml`);
+function ensureCodexProfile(name, { root = TCG, adaptersDir = ADAPTERS_DIR, codexHome = CODEX_HOME, generator = path.join(TCG, 'build', 'generate.js') } = {}) {
+  const src = path.join(adaptersDir, `${name}.toml`);
   if (!fs.existsSync(src))
-    throw new Error(`no existe ${path.relative(TCG, src)} — correr: node build/generate.js --add ${name}`);
-  const dst = path.join(CODEX_HOME, `${name}.config.toml`);
-  fs.copyFileSync(src, dst); // idempotente; es lo mismo que hace generate.js --deploy
+    throw new Error(`no existe ${path.relative(root, src)} — correr: node build/generate.js --add ${name}`);
+  const dst = path.join(codexHome, `${name}.config.toml`);
+  // lo mismo que despliega generate.js --deploy: con el modelo de la organización (o sin modelo, con
+  // `codex_reviewers: inherit`), así el examen corre el revisor con el modelo con que trabaja la máquina
+  let content = fs.readFileSync(src, 'utf8');
+  try {
+    const G = require(generator);
+    const org = G.orgCodexModel(root, name);
+    for (const l of org.lines) console.error(l);
+    content = G.deployedContent(content, org);
+  } catch (e) {
+    // frena: con el perfil crudo el revisor correría con un modelo que en esta máquina puede no existir, y su
+    // falla se leería como del revisor
+    throw new Error(`no pude aplicar el modelo de la organización a ${name} (${(e && e.message) || e})`, { cause: e });
+  }
+  fs.writeFileSync(dst, content); // idempotente
 }
 
 // ---------- una corrida ----------
@@ -2133,5 +2146,5 @@ async function main() {
   return failed + parityBreaks + baselineRegressions > 0 ? 1 : 0;
 }
 
-module.exports = { AGENTS_DIR, AGENTS_ORIGEN };
+module.exports = { AGENTS_DIR, AGENTS_ORIGEN, ensureCodexProfile };
 if (require.main === module) main().then((c) => process.exit(c)).catch((e) => { console.error(`advisor-runner: ${e.message}`); process.exit(1); });
