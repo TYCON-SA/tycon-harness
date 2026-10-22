@@ -176,7 +176,7 @@ const STACK_SINCE = '2026.10.19.11';
 const MODEL_LEVELS_SINCE = '2026.10.21.9';
 // `models.codex_reviewers` («inherit»): un lector anterior la ve como clave desconocida y descarta toda la configuración
 // de modelos. Se pide sólo si el archivo la trae. Provisoria hasta la etiqueta del merge que la trae al lector
-const CODEX_REVIEWERS_SINCE = '2026.10.22.21';
+const CODEX_REVIEWERS_SINCE = '2026.10.22.22';
 const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE], ['coverage', COVERAGE_SINCE], ['review', REVIEW_SINCE], ['stack', STACK_SINCE]]);
 /** La versión que tiene que pedir el perfil para este `team-repos.json` (sin archivo, la de siempre), y las claves por las que la pide. */
 function versionQuePide(doc) {
