@@ -143,6 +143,8 @@ los dos gana el nuevo). En Azure DevOps la organización es la del archivo y, si
 
 **Sin plataforma elegida o sin credencial** la capa contesta `ok: false` con un `summary` de una línea que dice qué falta
 y cómo ponerlo: se muestra esa línea, el pedido no se toca y el resto del cierre sigue (exit 0).
+**Azure DevOps apagado** (sin `ado.org` en la configuración del arnés ni organización en la del repo) es el mismo caso:
+una línea, sin llamar a `az`.
 
 El id, con el lector común (lee `work_item:` y su nombre viejo `ado_work_item:`; una historia vieja con sólo el viejo
 se cierra igual): `node ~/.claude/tycon-harness/scripts/lib/platform/work-item-field.js get <story_path>` (sale 3 si no
