@@ -253,10 +253,12 @@ test('T6 Harness_MissingRequirement_BringsItsInstallCommand', () => {
 // guarda de PowerShell 7 arriba, antes de escribir nada, en ASCII y con sintaxis que 5.1 entiende (T2 mide la sintaxis).
 // 🔴 sin guarda, bootstrap-fallback.ps1 con 5.1 crearía ~/.claude/.tycon-pipeline/harness y seguiría.
 const FALLBACK = path.join(RAIZ, 'scripts', 'setup', 'harness', 'bootstrap-fallback.ps1');
-// Los cuatro .ps1 de scripts/setup/ que el instalador llama o que se corren a mano también llevan la guarda. 🔴 Sin
+// Los tres .ps1 de scripts/setup/ y el instalador del MCP de la integración de horas, que el instalador llama o que se
+// corren a mano, también llevan la guarda. 🔴 Sin
 // ella, con 5.1 seguirían (y el de sqlite3 escribiría su sello en la carpeta de usuario).
-const SETUP_GUARDED = ['check-engram-version.ps1', 'ensure-sqlite3.ps1', 'install-codegraph.ps1', 'install-clockify-mcp.ps1']
-  .map((f) => path.join(RAIZ, 'scripts', 'setup', f));
+const SETUP_GUARDED = ['check-engram-version.ps1', 'ensure-sqlite3.ps1', 'install-codegraph.ps1']
+  .map((f) => path.join(RAIZ, 'scripts', 'setup', f))
+  .concat(path.join(RAIZ, 'integrations', 'clockify', 'scripts', 'install-mcp.ps1'));
 const GUARDED = [INSTALLER, SYNC, FALLBACK, ...SETUP_GUARDED];
 /** El código de la guarda: desde `$TyconPsMajor = $PSVersionTable…` hasta el cierre de `if ($TyconPsMajor -lt 7) { … }`. */
 function guardOf(src) {

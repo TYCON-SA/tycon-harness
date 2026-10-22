@@ -136,6 +136,17 @@ elif [ -f "$REPO_ROOT/team-profile.json" ] || [ -f "$REPO_ROOT/perfil-equipo.jso
   exit 1
 fi
 
+# ── Los nombres de las herramientas de horas fuera de su integración ──
+# El núcleo no nombra herramientas: un commit que sube los nombres de las integraciones de horas fuera de integrations/,
+# guides/integrations/ y las pruebas, sobre el techo de su archivo o con una excepción sin motivo, no se crea. Los nombres
+# salen de los manifiestos; las reglas, de scripts/ci/tool-names.json.
+# Casos: scripts/tests/tool-names.test.js
+TOOL_NAMES="$REPO_ROOT/scripts/ci/tool-names.js"
+if [ -f "$TOOL_NAMES" ] && ! node "$TOOL_NAMES" --repo "$REPO_ROOT"; then
+  echo "⛔ COMMIT RECHAZADO — el nombre de una herramienta de horas fuera de su integración, o no se pudo mirar (arriba dice dónde)." >&2
+  exit 1
+fi
+
 # ── La historia interna en la prosa que se publica ──
 # Una referencia interna (el número de una story, el código de un trabajo, un caso del registro interno, una rama, un
 # commit o una corrida) no lleva a nada desde afuera. Mira lo que el commit AGREGA a la prosa que se publica (el código y las pruebas no son

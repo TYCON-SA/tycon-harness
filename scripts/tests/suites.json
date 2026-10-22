@@ -1756,6 +1756,12 @@
       "requiere": []
     },
     {
+      "__nota": "El control de los nombres de las herramientas de horas fuera de su integración (scripts/ci/tool-names.js): cuenta sólo lo del núcleo (no las zonas permitidas ni las rutas a una integración), frena sobre el techo con archivo y línea, las excepciones con motivo y sin comodines, y el árbol real dentro de su techo.",
+      "raiz": "arnes",
+      "ruta": "tests/tool-names.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "Las integraciones de prender y apagar (kind toggle): el manifiesto y sus motivos de rotura, los instintos desde integrations/instincts/ con los mismos hooks prendidos y apagados (Mac y Windows), la actualización desde la instalación de hoy sin rutas muertas, Codex desde el manifiesto y los ids nuevos en la tabla de efectos, el sitio y «Cómo trabaja».",
       "raiz": "arnes",
       "ruta": "tests/integrations-toggle.test.js",
@@ -2812,7 +2818,7 @@
       "requiere": []
     },
     {
-      "__nota": "Ningún guion de pruebas con pipefail pasa una tubería a `grep -q` (2026-10-14): con pipefail, `… | grep -q` es una carrera (grep corta apenas encuentra, lo de la izquierda muere por SIGPIPE y la tubería da falso). Así salían rojas de a ratos release-notes y otras en public-ci; se cambiaron 491 líneas de 71 suites a `| grep … >/dev/null`. También 4 líneas de dos guiones del producto (install-clockify-mcp.sh y validate-engram-upgrade.sh). Mira todos los .sh de scripts/ y skills/; viaja.",
+      "__nota": "Ningún guion de pruebas con pipefail pasa una tubería a `grep -q` (2026-10-14): con pipefail, `… | grep -q` es una carrera (grep corta apenas encuentra, lo de la izquierda muere por SIGPIPE y la tubería da falso). Así salían rojas de a ratos release-notes y otras en public-ci; se cambiaron 491 líneas de 71 suites a `| grep … >/dev/null`. También 4 líneas de dos guiones del producto (el instalador del MCP de la integración de horas y validate-engram-upgrade.sh). Mira todos los .sh de scripts/ y skills/; viaja.",
       "raiz": "arnes",
       "ruta": "tests/grep-q-pipefail.test.js",
       "requiere": []

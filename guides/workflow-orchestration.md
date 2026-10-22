@@ -263,7 +263,7 @@ Esta regla aplica a **todos los skills orquestadores TYCON**: `tycon-pipeline`, 
 Cuando un skill orquestador declara una secuencia de steps (`step-00`, `step-00b`, `step-01`, ...), **ningún step se saltea por inferencia del agente**. Solo se saltea si la **skip-condition documentada DENTRO del step** se cumple.
 
 **Ejemplos de skip legítimo** (lo que SÍ se acepta):
-- Step `clocki-start` dice "saltear si `mcp__clockify__*` no está disponible" → verificás que el MCP no responde → skip OK.
+- Step de inicio del registro de horas dice "saltear si el MCP de la herramienta de horas no está disponible" → verificás que el MCP no responde → skip OK.
 - Step `ado-mark-active` dice "saltear si el frontmatter no tiene `ado_work_item:`" → leíste el frontmatter y no está → skip OK.
 - Step `build-gate` dice "saltear si no hay archivos `.cs`/`.ts` modificados" → verificás el diff y no hay → skip OK.
 
@@ -274,7 +274,7 @@ Cuando un skill orquestador declara una secuencia de steps (`step-00`, `step-00b
 
 ### Regla 7.2 — Si dudás, ejecutá el step; el usuario puede vetar
 
-Si la skip-condition documentada no es claramente aplicable, **default: ejecutar el step**. El usuario puede vetar en tiempo real con un mensaje explícito ("paráme acá", "skipeá clocki"). Inferir el veto desde silencio es asimétrico contra el contrato del orquestador.
+Si la skip-condition documentada no es claramente aplicable, **default: ejecutar el step**. El usuario puede vetar en tiempo real con un mensaje explícito ("paráme acá", "skipeá el registro de horas"). Inferir el veto desde silencio es asimétrico contra el contrato del orquestador.
 
 ### Regla 7.3 — Si la skip-condition documentada tiene un gap, el fix es al spec, no a la ejecución
 
@@ -291,10 +291,10 @@ Esto preserva la propiedad de que **el spec declarado ES la fuente de verdad** d
 
 El patrón que estas reglas cierran, con `tycon-pipeline`:
 
-1. El hook UserPromptSubmit de clocki dispara 3+ veces en la conversación.
-2. El user no menciona clocki explícitamente.
-3. El agente **infiere** que el user no lo quiere y **anuncia** "skip clocki" antes de invocar el skill.
-4. Pero el skill `tycon-pipeline` declara `Step 0b — Clocki time tracking start` con skip-condition "saltear si MCP no está disponible", y el MCP está disponible.
+1. El hook UserPromptSubmit del registro de horas dispara 3+ veces en la conversación.
+2. El user no menciona el registro de horas explícitamente.
+3. El agente **infiere** que el user no lo quiere y **anuncia** "skip registro de horas" antes de invocar el skill.
+4. Pero el skill `tycon-pipeline` declara `Step 0b — Arranque: aviso de trabajo` con skip-condition "saltear si MCP no está disponible", y el MCP está disponible.
 5. El agente salta Step 0b por inferencia conversacional, contradiciendo la spec.
 6. Mismo patrón con Step 0c (ADO mark-active): el frontmatter de la story no tiene `ado_work_item:`, el agente skipea silencioso — pero el WI **existe** en ADO con título matcheable. La skip-condition documentada (falta del campo) es correcta literal pero tiene un gap (no consulta ADO directamente).
 
@@ -308,15 +308,15 @@ Aplicación de las reglas:
 
 ## 8. Transiciones de campos contractuales de stories — SOLO via orchestrator
 
-Por qué: si el dev (Claude) edita manualmente `status: review → done` en el frontmatter de la story Mary+GOLD, salteando el orchestrator `tycon-pipeline close N.M`, la clocki entry queda en 0 segundos, el ADO WI nunca se cierra, y la transición no queda trazable.
+Por qué: si el dev (Claude) edita manualmente `status: review → done` en el frontmatter de la story Mary+GOLD, salteando el orchestrator `tycon-pipeline close N.M`, la entrada de horas queda en 0 segundos, el ADO WI nunca se cierra, y la transición no queda trazable.
 
 ### Regla 8.1 — Campos contractuales NO se editan manualmente
 
-Los siguientes campos del frontmatter de `specs/stories/N-M-*.md` son **contractuales** — su transición tiene side-effects en clocki + ADO + engram + advisors. NO se editan con `Edit` ni `Write`:
+Los siguientes campos del frontmatter de `specs/stories/N-M-*.md` son **contractuales** — su transición tiene side-effects en el registro de horas + ADO + engram + advisors. NO se editan con `Edit` ni `Write`:
 
 | Campo | Side-effects que coordina el orchestrator | Skill que lo maneja |
 |---|---|---|
-| `status:` (`ready-for-dev` → `in-progress` → `review` → `done`) | clocki start/stop + ADO WI state transition + engram session summary + advisors re-run | `/tycon-pipeline implement` / `/tycon-pipeline close N.M` |
+| `status:` (`ready-for-dev` → `in-progress` → `review` → `done`) | inicio/cierre del registro de horas + ADO WI state transition + engram session summary + advisors re-run | `/tycon-pipeline implement` / `/tycon-pipeline close N.M` |
 | `sprint:` y `signed_for_sprint:` | scope firmado del cliente, CR registry | `change-requests/cr-NNN-*.md` + commit firmado |
 | `pipelines.*.status:` (transiciones de pipelines declaradas en frontmatter) | Cross-check con tests/code presentes | `/tycon-pipeline close N.M` (coordina con advisors) |
 | `ado_work_item:` (vínculo a ADO WI) | Audit trail bidireccional ADO ↔ spec | step-00c de `tycon-pipeline` |
@@ -356,7 +356,7 @@ Ejemplos de extensiones futuras válidas:
 
 ### Anti-pattern documentado
 
-Edit manual de `status: review → done` → clocki 0s + ADO WI sin cerrar + transición no trazable. Fix mecánico aplicado: hook `PreToolUse` bloqueante (sección 8.2) + banner en `tycon-pipeline` SKILL.md anti-pattern + esta sección.
+Edit manual de `status: review → done` → registro de horas en 0s + ADO WI sin cerrar + transición no trazable. Fix mecánico aplicado: hook `PreToolUse` bloqueante (sección 8.2) + banner en `tycon-pipeline` SKILL.md anti-pattern + esta sección.
 
 ---
 
@@ -421,7 +421,7 @@ La sesión A implementa una task de backend de una story, con build verde y spec
 - Re-preguntar al user las decisiones ya tomadas.
 - Re-implementar archivos ya creados en la sesión A → colisión Write sobre archivos no commiteados.
 - Re-escribir código con el spec drift no detectado (columnas asumidas que no existen en el schema real).
-- Abrir 2do timer Clockify encima del 1ro → doble cobro.
+- Abrir 2do timer de horas encima del 1ro → doble cobro.
 
 **Solución implementada (Reglas 9.4 - 9.6)**:
 

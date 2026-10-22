@@ -94,7 +94,7 @@ Para skills/agents tuyos (no built-in), el target sano es **<200 chars** en `des
 Top ofensores típicos (ver `--verbose` para la lista completa):
 
 - `tycon-pipeline` (783 chars) — banner con 3 párrafos de cuándo invocar.
-- `clocki` (575 chars) — descripción con ejemplos inline.
+- la skill de horas (575 chars) — descripción con ejemplos inline.
 - Built-in Anthropic: `xlsx`/`docx`/`pptx`/`pdf` (>700 chars cada uno) — esos NO los toques, vienen así de Anthropic.
 
 **Cómo recortar**: mantené 1 frase de qué hace + 1 frase de cuándo invocarla. Movés el resto al cuerpo de la SKILL.md. Ahorro per skill: ~50-150 tokens. Total: ~1-2k tokens si recortás 10-15 skills.

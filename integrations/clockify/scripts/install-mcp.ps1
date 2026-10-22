@@ -1,15 +1,15 @@
-﻿# install-clockify-mcp.ps1 — Windows PowerShell
+﻿# install-mcp.ps1 (integración de Clockify) — Windows PowerShell
 #
 # Instala el MCP server de Clockify (aslamanver/mcp_clockify) en Claude Code
 # a nivel user-scope (todos los proyectos de la máquina lo usan).
 #
 # Uso (desde PowerShell, NO desde cmd):
-#   pwsh ~\.claude\tycon-harness\scripts\setup\install-clockify-mcp.ps1
+#   pwsh ~\.claude\tycon-harness\integrations\clockify\scripts\install-mcp.ps1
 #
 # Si tu execution policy lo bloquea, correlo así (solo afecta este proceso):
-#   pwsh -ExecutionPolicy Bypass -File ~\.claude\tycon-harness\scripts\setup\install-clockify-mcp.ps1
+#   pwsh -ExecutionPolicy Bypass -File ~\.claude\tycon-harness\integrations\clockify\scripts\install-mcp.ps1
 #
-# macOS / Linux users: usar install-clockify-mcp.sh.
+# macOS / Linux users: usar install-mcp.sh.
 #
 # Idempotente: si ya está instalado, lo remueve y reinstala con la key nueva.
 # La API key NO se commitea a ningún repo — vive solo en %USERPROFILE%\.claude.json local.

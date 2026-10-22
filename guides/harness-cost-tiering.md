@@ -103,7 +103,7 @@ El experimento se retiró del arnés porque nadie lo llamaba. Demostraba el patr
 
 Sin API key separada — usa la suscripción del dev (mismo patrón que `instinct-observer.js`).
 
-**No es MCP porque**: agregar un MCP server más a TYCON suma superficie de fallo (engram, codegraph, telegram, clockify ya están). Antes de wrappear como MCP, validamos el patrón con un script.
+**No es MCP porque**: agregar un MCP server más a TYCON suma superficie de fallo (engram, codegraph, telegram y la herramienta de horas ya están). Antes de wrappear como MCP, validamos el patrón con un script.
 
 ---
 

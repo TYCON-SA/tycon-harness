@@ -16,7 +16,7 @@ corrige antes de implementarla.
 
 Cómo se lee:
 
-- El núcleo no dice «mandá esto por Telegram» ni «abrí una entrada en Clockify». Dice «avisá» o «registrá el tiempo», y
+- El núcleo no dice «mandá esto por Telegram» ni «abrí una entrada en la herramienta X». Dice «avisá» o «registrá el tiempo», y
   el perfil dice con qué. Si el perfil no nombra ninguna herramienta, el núcleo sigue andando y la integración queda
   apagada.
 - El perfil no guarda una llave. Una llave en el perfil viaja a todas las máquinas del equipo y queda en la historia del
@@ -26,9 +26,9 @@ Cómo se lee:
 
 ## Lo que hoy no la cumple
 
-- **El registro de horas.** El núcleo nombra a Clockify: tiene una skill propia, hooks que la llaman y el paso de
-  arranque del pipeline. Un cambio en curso lo saca del núcleo: el perfil elige la herramienta (ninguna, Clockify
-  u otra) y el núcleo sólo pide «registrá el tiempo».
+- **El registro de horas (ya cumplido).** El núcleo no nombra ninguna herramienta de horas: el perfil elige cuál
+  (ninguna u otra integración) y el núcleo sólo pide «registrá el tiempo». La skill y los hooks de cada herramienta
+  viven en su integración.
 - **Los avisos.** El núcleo nombra a Telegram: el aviso cuando una corrida espera a una persona, el aviso de la noche
   sobre la evidencia y la instalación. El mismo cambio en curso los saca: la organización elige desde el sitio uno o
   más canales, todo aviso pasa por un solo camino, y las credenciales quedan en la máquina de cada dev (o, para los

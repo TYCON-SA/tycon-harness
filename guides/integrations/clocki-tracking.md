@@ -54,10 +54,10 @@ Cualquier tool call (Edit, Bash, Read, etc) actualiza `lastActivity`. Si pasan *
 
 ```bash
 # macOS / Linux
-bash ~/.claude/tycon-harness/scripts/setup/install-clockify-mcp.sh
+bash ~/.claude/tycon-harness/integrations/clockify/scripts/install-mcp.sh
 
 # Windows
-pwsh ~\.claude\tycon-harness\scripts\setup\install-clockify-mcp.ps1
+pwsh ~\.claude\tycon-harness\integrations\clockify\scripts\install-mcp.ps1
 ```
 
 **Instalar los hooks**:

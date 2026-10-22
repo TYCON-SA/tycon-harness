@@ -72,14 +72,14 @@ function harnessInterpreter(env = process.env) {
 
 // ── Qué hooks del fragmento registra ESTA máquina ────────────────────────────────────────────────────────────────────
 // El fragmento trae TODOS los hooks del lado Codex. Desplegado entero, con una integración apagada sus hooks (los de
-// engram, Clockify y los nocturnos) quedarían registrados en Codex igual. Del lado Claude Code no, porque el aplicador
+// engram, la herramienta de horas y los nocturnos) quedarían registrados en Codex igual. Del lado Claude Code no, porque el aplicador
 // (scripts/setup/apply-hooks.js) decide cada uno por el `when` de scripts/setup/hooks-list.json.
 // La decisión es la MISMA del aplicador (`decide`, con la configuración leída por `readConfig`) y la usan quien
 // despliega y quien audita (scripts/lib/harness-parity.js): no pueden mirar listas distintas.
 //   · sólo se filtran los hooks de una integración (`when: integration:*`); lo de siempre, los opt-in y el perfil siguen
 //     como están en Codex. La decisión es la misma de Mac y Linux en las dos
 //     plataformas: lo que Windows excluye por `platforms.windows` tampoco se filtra acá.
-//   · el barrido de Clockify no está en la lista (del lado Claude Code no lo registra el aplicador): su integración va en
+//   · el barrido de la herramienta de horas no está en la lista (del lado Claude Code no lo registra el aplicador): su integración va en
 //     NOT_IN_HOOKS_LIST. El hook de CodeGraph tampoco está, y NO se filtra: del lado Claude Code lo registra
 //     install-codegraph.sh sin mirar la llave `codegraph`, que es informativa y el perfil del equipo no trae (atarlo a
 //     la llave lo sacaría de Codex a quien tiene CodeGraph instalado).

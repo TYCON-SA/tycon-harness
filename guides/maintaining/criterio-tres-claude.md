@@ -19,7 +19,7 @@ equivocada enseña algo falso para la mitad de las herramientas. Tres clases:
 **Material viejo**: las guías del arnés (`guides/` + README + story-format) y el sitio (las
 TRES copias: `index.html`, `index-slides.html`, `guion.md` — el contenido vive por triplicado y
 se publica entero) ya recibieron la pasada retroactiva completa el 2026-08-23.
-La fase 2 (skills y steps TYCON de `agent-skills`: pipeline, clocki, skill-scout,
+La fase 2 (skills y steps TYCON de `agent-skills`: pipeline, horas, skill-scout,
 merge-to-main) aterrizó el mismo día — 26 correcciones, revisada adversarialmente. Quedan
 FUERA a propósito: los packs vendorizados (bmad-*, skill-creator, docx, doc-coauthoring,
 impeccable, canvas-design, algorithmic-art — editarlos crea drift con upstream) y las skills

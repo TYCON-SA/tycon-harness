@@ -51,10 +51,10 @@ cuando se corre una story a la vez, que es el caso del 95% del tiempo.
 ```
 
 - **Sibling del checkout principal**, nunca adentro del repo.
-- **El nombre del repo va adelante, siempre**. No es estética: `clocki` auto-matchea el
-  proyecto Clockify por **basename del cwd** (match exacto → parcial), así que
-  `<repo>--wt-story-3-2` sigue trackeando al proyecto correcto. Un worktree llamado
-  `story-3-2` a secas rompe el tracking en silencio.
+- **El nombre del repo va adelante, siempre**. No es estética: el registro de horas
+  asocia el proyecto por **basename del cwd** (match exacto → parcial), así que
+  `<repo>--wt-story-3-2` sigue registrando en el proyecto correcto. Un worktree llamado
+  `story-3-2` a secas rompe el registro en silencio.
 - **Branch**: la de la story (`feat/...`) o `wt/<slug>`. Git prohíbe la misma branch
   checkeada en dos worktrees — eso es un guardrail, no un problema.
 - **Helper** (mac/linux): `scripts/tools/tycon-worktree.sh` de este repo. En Windows, los
@@ -125,7 +125,7 @@ puede checkoutear esa branch → usar el modo normal.
 |---|---|---|
 | `node_modules/`, `bin/`, `obj/`, `dist/` | **No existen** (no son parte del checkout) | `npm install` / `dotnet restore` ANTES de cualquier gate o suite |
 | `.codegraph/` | No existe (gitignored; 61 MB en un repo del equipo) | **NO inicializar** en worktrees efímeros. Sin `.codegraph/` la regla CodeGraph no aplica → grep/Grep permitidos (la excepción ya está prevista en el README) |
-| clocki | Cache de proyecto keyed por **path absoluto** → primer uso en el worktree re-matchea por basename | Nada, si respetaste el naming §2. Puede pedir UNA confirmación la primera vez |
+| Registro de horas | Cache de proyecto keyed por **path absoluto** → primer uso en el worktree re-matchea por basename | Nada, si respetaste el naming §2. Puede pedir UNA confirmación la primera vez |
 | `.tycon/` (`advisors.yaml`, `runtime-waivers.jsonl`), `.engram-project`, `.engram/` | **Trackeados** → viajan solos con el checkout | Nada. Los waivers firmados en el worktree se commitean ahí y llegan por el merge de la branch |
 | `.advisors/`, `.dashboard/` | Nacen vacíos por worktree | Nada — ese aislamiento es exactamente el beneficio |
 | `tasks/todo.md` | Por worktree (efímero) | Nada |

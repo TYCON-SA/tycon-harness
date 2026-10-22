@@ -383,7 +383,7 @@
     },
     {
       "what": "Horas humanas por story",
-      "reason": "Clockify tiene la duración y las stories tienen identificador, pero nada los une"
+      "reason": "La herramienta de horas tiene la duración y las stories tienen identificador, pero nada los une"
     },
     {
       "what": "Despliegues a producción (DORA)",

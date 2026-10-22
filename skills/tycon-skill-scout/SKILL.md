@@ -74,7 +74,7 @@ Criterios en orden:
 
 1. **Match exacto del verbo + target** (ej: "bloquear migración SQL" → `dotnet-hooks.md` Hook 1).
 2. **Match parcial del verbo o target** (ej: "validar story" → `tycon-story-validator` advisor).
-3. **Match por keyword en description** (ej: "tracking horas" → `clocki` SKILL).
+3. **Match por keyword en description** (ej: "registro de horas" → la skill de la herramienta de horas elegida).
 4. **Mención en guide aunque no sea un artefacto invocable** (ej: la regla está documentada en `advisor-rules-catalog.md` pero no hay enforcement).
 
 Si después de filtrar quedan >5 candidatos: priorizá los del Set Base del pipeline + los citados en guides actuales. Descartá deprecated o legacy.

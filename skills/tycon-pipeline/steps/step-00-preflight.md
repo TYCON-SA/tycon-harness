@@ -42,7 +42,7 @@ NO arrancar la corrida desde cero («Arranque») — vas a:
   • Re-ejecutar pasos ya hechos («Validar la historia», «Armar el plan»).
   • Re-preguntar decisiones ya tomadas al user.
   • Re-implementar archivos ya creados → colisión Write.
-  • Abrir 2do timer Clockify encima del 1ro (doble cobro).
+  • Abrir un segundo reloj de horas encima del primero (doble cobro).
 
 Opciones:
 (a) RETOMAR pipeline de la otra sesión (recomendado si sesión sigue viva):
@@ -71,7 +71,7 @@ Opciones:
 - **Paralelo intencional** → seteo marker con `notes` y continúo normal.
 - **Cancelar** → terminar pipeline.
 
-**Por qué**: el marker es por sesión (diseño anti-race multi-sesión), así que una sesión B abierta sin contexto sobre una story que la sesión A dejó a medias recibe `{}` de `marker.js get`. Sin PIPE-C0, la sesión B re-ejecuta los Steps 0-3 y las primeras tasks → colisión con files no commiteados + pérdida del spec drift documentado + doble timer Clockify. PIPE-C0 atrapa este caso ANTES de tocar archivos.
+**Por qué**: el marker es por sesión (diseño anti-race multi-sesión), así que una sesión B abierta sin contexto sobre una story que la sesión A dejó a medias recibe `{}` de `marker.js get`. Sin PIPE-C0, la sesión B re-ejecuta los Steps 0-3 y las primeras tasks → colisión con files no commiteados + pérdida del spec drift documentado + doble reloj de horas. PIPE-C0 atrapa este caso ANTES de tocar archivos.
 
 **Stories DISTINTAS en paralelo, mismo repo (2026-08-03)**: PIPE-C0 NO las detecta (matchea
 por storyId) y el working tree compartido las contamina cruzado: un solo HEAD/branch, el

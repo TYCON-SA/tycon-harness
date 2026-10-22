@@ -21,18 +21,18 @@ Implementación elegida: **[aslamanver/mcp_clockify](https://github.com/aslamanv
 **macOS / Linux:**
 
 ```bash
-bash ~/.claude/tycon-harness/scripts/setup/install-clockify-mcp.sh
+bash ~/.claude/tycon-harness/integrations/clockify/scripts/install-mcp.sh
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-pwsh ~\.claude\tycon-harness\scripts\setup\install-clockify-mcp.ps1
+pwsh ~\.claude\tycon-harness\integrations\clockify\scripts\install-mcp.ps1
 ```
 
 > Si tu execution policy lo bloquea, correlo así:
 > ```powershell
-> powershell -ExecutionPolicy Bypass -File ~\.claude\tycon-harness\scripts\setup\install-clockify-mcp.ps1
+> powershell -ExecutionPolicy Bypass -File ~\.claude\tycon-harness\integrations\clockify\scripts\install-mcp.ps1
 > ```
 
 Los scripts:
@@ -135,7 +135,7 @@ Usaste `-e CLOCKIFY_API_KEY=... clockify` con espacio. Corregir a `--env=CLOCKIF
 Solo reinstalar — el script es idempotente, remueve la config vieja antes de agregar la nueva.
 
 ```bash
-bash ~/.claude/tycon-harness/scripts/setup/install-clockify-mcp.sh
+bash ~/.claude/tycon-harness/integrations/clockify/scripts/install-mcp.sh
 ```
 
 **Quiero desinstalarlo**

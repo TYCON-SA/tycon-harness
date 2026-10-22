@@ -474,7 +474,7 @@ const AC27_FILES = ['scripts/hooks/branch-guard-notice.js', 'scripts/hooks/engra
   'scripts/tools/rules-distill.js',
   'skills/tycon-pipeline/scripts/on-pre-commit.js', 'skills/tycon-pipeline/scripts/on-frontmatter-write.js', 'skills/tycon-pipeline/scripts/pipeline.js',
   'build/check.js', 'scripts/ci/nightly-dod-notice.sh', 'scripts/hooks/instinct-trigger.sh', 'scripts/lib/harness-audit.js',
-  'scripts/lib/hook-io.js', 'scripts/lib/lint-story-frontmatter.js', 'scripts/setup/install-clockify-mcp.sh', 'scripts/setup/install-clockify-mcp.ps1',
+  'scripts/lib/hook-io.js', 'scripts/lib/lint-story-frontmatter.js', 'integrations/clockify/scripts/install-mcp.sh', 'integrations/clockify/scripts/install-mcp.ps1',
   'scripts/tools/tycon-backfill-followups.js', 'skills/tycon-pipeline/scripts/dispatch.js', 'skills/tycon-pipeline/scripts/lib/story-gate-io.js'];
 test('T37 CodeMessagesAndUsageComments_PlacePath', () => {
   const bad = [];

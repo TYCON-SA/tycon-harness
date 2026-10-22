@@ -26,6 +26,9 @@
       "scripts/publishing/spanish-names-ceiling.json",
       { "path": "scripts/lib/renames.json", "optional": true }
     ] },
+    { "name": "tool-names", "script": "scripts/ci/tool-names.js", "rules": [
+      "scripts/ci/tool-names.json"
+    ] },
     { "name": "internal-history", "script": "scripts/publishing/internal-history.js", "rules": [
       "scripts/publishing/internal-history.json",
       "scripts/tests/fixtures/internal-history-allowed.json",

@@ -59,9 +59,9 @@ la fila aplica.
 | Por qué en `main` se construyen y empaquetan TODOS los formularios aunque sólo algunos suban de versión · antes de proponer «construir sólo lo que sube» | `guides/piezas-del-arnes.md` §`affected-forms.js` («construir en `main` también los que NO suben de versión… pone al día producción») |
 | Un merge de **sólo documentación** construyó, desplegó a staging, subió la versión y pidió aprobación de PROD · qué rutas pueden ir en el `trigger` de un pipeline y cuáles no (`.tycon/**` no) · un sitio sin filtro de rutas | `scripts/ci/check-trigger-without-docs.js` (cabecera; se corre a mano sin argumentos) |
 | **Correr CUALQUIER test** (vitest/jest/dotnet) — SIEMPRE antes de `npm test`/`dotnet test` | `guides/test-execution-discipline.md` |
-| Instalar/configurar tracking de Clockify en Claude Code (opcional) | `guides/integrations/clockify-mcp.md` |
-| Setup de tracking automático de tiempo (timer auto-start con confirmación + auto-close por idle) | `guides/integrations/clocki-tracking.md` |
-| Registrar horas en Solidtime (opcional): la URL de la instancia en el perfil, el token de cada dev con `harness.js config set solidtime.token`, qué hace y qué avisa | `guides/integrations/solidtime.md` |
+| Instalar el MCP de la herramienta de horas (opcional) | `guides/integrations/clockify-mcp.md` |
+| Registro automático de horas (timer con confirmación + cierre por inactividad) | `guides/integrations/clocki-tracking.md` |
+| Registrar horas en otra herramienta (opcional): la URL en el perfil, el token de cada dev, qué hace y qué avisa | `guides/integrations/solidtime.md` |
 | Instalar/configurar CodeGraph (índice de código MCP, opcional) | `guides/integrations/codegraph-mcp.md` |
 | Crear stories que generen work items en Azure DevOps; configurar `.tycon/ado-config.yaml` | `guides/integrations/ado-projects.md` |
 | Consultar una base de PRODUCCIÓN · te frenó el freno de producción y querés saber por qué · declarar un servidor en `.tycon/production.json` · instalar o actualizar el freno (pide `sudo`) | `guides/produccion-con-permiso.md` |
@@ -115,5 +115,5 @@ aplica. Setup (opcional, por dev): `guides/integrations/codegraph-mcp.md`.
 
 ## Instalación y mantenimiento
 
-El setup por máquina y el opcional (Clockify, CodeGraph), el mantenimiento y el troubleshooting
+El setup por máquina y el opcional (la herramienta de horas, CodeGraph), el mantenimiento y el troubleshooting
 viven en **[INSTALL.md](INSTALL.md)**: onboarding humano de una sola vez, no contexto de cada sesión.

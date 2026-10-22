@@ -137,7 +137,7 @@ function integrationPieces(treeDir) {
     const manifests = listing.manifests;
     const timeKinds = new Set(manifests.filter((m) => m.kind === 'timeTracking').map((m) => m.name));
     return {
-      // el nombre para mostrar de cada herramienta de horas («Clockify», «Solidtime»), del campo `label` de su manifiesto
+      // el nombre para mostrar de cada herramienta de horas, del campo `label` de su manifiesto
       timeLabels: Object.fromEntries(manifests.filter((m) => m.kind === 'timeTracking').map((m) => [m.name, m.label])),
       hooks: manifests.flatMap((m) => INT.hookEntries(m, { tool: 'claude' })),
       dispatch: (mode) => manifests.flatMap((m) => INT.dispatchEntries(m, mode).map((d) => Object.assign(d, { timeTool: timeKinds.has(m.name) }))),
@@ -421,8 +421,8 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
   // un control de una herramienta de horas: apagado si la organización eligió otra (o ninguna); sin perfil no se sabe, y
   // se muestra como los demás, «según tu organización»
   const horasDeOtra = (c) => Boolean(c && c.timeTool && org && org.integrationsKnown && typeof org.timeTracking === 'string' && org.timeTracking !== c.integration);
-  // la de horas se decide sólo por la herramienta elegida: la llave vieja (`integrations.clockify`) no la apaga, porque una
-  // organización que elige Clockify en `timeTracking` puede no tener esa llave
+  // la de horas se decide sólo por la herramienta elegida: la llave vieja de la primera herramienta no la apaga, porque una
+  // organización que la elige en `timeTracking` puede no tener esa llave
   const apagada = (x) => (x && typeof x === 'object' ? (x.timeTool ? horasDeOtra(x) : llaveApagada(x.integration)) : llaveApagada(x));
   // un mismo mapa para las dos carpetas: un revisor declarado en dos paquetes sale como problema, como en el pipeline
   const yaDeclarados = new Map();

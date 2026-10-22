@@ -23,7 +23,7 @@ scripts/tools/              a mano: auditorías y utilidades
 scripts/lib/                bibliotecas + lo que llaman dos etapas o más
 scripts/controls-bench/ · scripts/metrics/ · scripts/production/ · scripts/publishing/ · scripts/tests/
 guides/                     las guías para usar el arnés
-  guides/integrations/       las integraciones opcionales (Azure DevOps, Clockify, CodeGraph, engram, instintos)
+  guides/integrations/       las integraciones opcionales (Azure DevOps, el registro de horas, CodeGraph, engram, instintos)
   guides/maintaining/        las de quien mantiene el arnés
 claude-md-blocks/ · commands/ · adapters/ · build/
 mods/harness-mods/          los mods de Claude Code del arnés (el cartel de la corrida, /pipeline, /mods)
@@ -842,9 +842,9 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 ## guides/integrations/clockify-mcp.md
 
-**Qué es:** La guía `guides/integrations/clockify-mcp.md` para instalar el MCP de Clockify en Claude Code (opcional).
+**Qué es:** La guía `guides/integrations/clockify-mcp.md` para instalar el MCP de la herramienta de horas en Claude Code (opcional).
 
-**Por qué existe:** Permite el seguimiento de horas desde la sesión. Trae scripts `.sh` y `.ps1` en `scripts/`, instala a nivel de usuario y usa una clave personal por dev.
+**Por qué existe:** Permite el seguimiento de horas desde la sesión. Trae los scripts `.sh` y `.ps1` de su integración, instala a nivel de usuario y usa una clave personal por dev.
 
 **Quién la usa:** Cada dev que quiere seguimiento de horas.
 
@@ -854,11 +854,11 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 ## guides/integrations/clocki-tracking.md
 
-**Qué es:** La guía `guides/integrations/clocki-tracking.md` del seguimiento automático de horas en Clockify.
+**Qué es:** La guía `guides/integrations/clocki-tracking.md` del seguimiento automático de horas.
 
 **Por qué existe:** Abre la entrada de tiempo al arrancar trabajo y la cierra al detectar más de 15 minutos de inactividad, con la hora de fin retroactiva. Asocia carpeta y proyecto solo.
 
-**Quién la usa:** La skill `clocki` y sus hooks, en cada máquina que la instala.
+**Quién la usa:** La skill de horas y sus hooks, en cada máquina que la instala.
 
 **Dónde se prueba:** sin suite propia
 

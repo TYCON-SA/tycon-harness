@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
-# install-clockify-mcp.sh — macOS / Linux
+# install-mcp.sh (integración de Clockify) — macOS / Linux
 #
 # Instala el MCP server de Clockify (aslamanver/mcp_clockify) en Claude Code
 # a nivel user-scope (todos los proyectos de la máquina lo usan).
 #
 # Uso:
-#   bash ~/.claude/tycon-harness/scripts/setup/install-clockify-mcp.sh
+#   bash ~/.claude/tycon-harness/integrations/clockify/scripts/install-mcp.sh
 #
-# Windows users: usar install-clockify-mcp.ps1 (PowerShell).
+# Windows users: usar install-mcp.ps1 (PowerShell), en esta misma carpeta.
 #
 # Idempotente: si ya está instalado, lo remueve y reinstala con la key nueva.
 # La API key NO se commitea a ningún repo — vive solo en ~/.claude.json local.

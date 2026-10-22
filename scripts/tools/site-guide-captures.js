@@ -176,7 +176,7 @@ function operaciones(extra = {}) {
 
 const PERFIL = {
   ado: { org: 'https://dev.azure.com/acme' },
-  integrations: { clockify: false, engram: true, mailbox: true, codex: 'detect', nightly: true },
+  integrations: { timeTracking: 'none', engram: true, mailbox: true, codex: 'detect', nightly: true },
   update: { channel: 'latest', apply: 'auto' }, packs: { default: 'all' }, install: { profile: 'full' },
 };
 // una herramienta de prueba agregada por la organización: la tabla de «Cómo se corren las pruebas» la muestra junto a
