@@ -31,7 +31,13 @@ const KIND_RE = /^[a-z][A-Za-z0-9]*$/;
 // los tipos que el núcleo busca por nombre; `toggle` es el de prender y apagar: está o no está, según su llave;
 // `platform`, un conector de plataforma (scripts/lib/platform/platform.js)
 const KINDS = Object.freeze(['timeTracking', 'notify', 'toggle', 'platform']);
-const { OPERATIONS } = require('./platform/contract.js');
+// las operaciones del contrato de la capa, para validar un conector; se cargan recién ahí: este lector también guarda
+// y lee los secretos, y un árbol al que le falte scripts/lib/platform/ no puede quedarse sin ellos
+function contractOperations() {
+  try { return { operations: require('./platform/contract.js').OPERATIONS }; } catch (e) {
+    return { problem: `no pude cargar scripts/lib/platform/contract.js (${(e && e.code) || (e && e.message) || 'error'}): las operaciones del conector no se pueden validar` };
+  }
+}
 const TOOLS = Object.freeze(['claude', 'codex']);
 const DISPATCH_ON = Object.freeze(['post-edit']);
 // Un hook de una integración, en la lista del instalador: `@int:<integración>/<ruta dentro de su carpeta>`.
@@ -115,8 +121,10 @@ function problemsOf(m, folder) {
     // puede (`capabilities`) y los comandos crudos de su plataforma que miran los frenos (`rawCommands`)
     if (m.connector === undefined) out.push('falta «connector»');
     else if (!(inside(m.connector) && /\.js$/.test(m.connector))) out.push('«connector» es un .js dentro de la carpeta');
+    const contrato = contractOperations();
     if (!Array.isArray(m.operations) || !m.operations.length) out.push('«operations» es una lista no vacía de operaciones del contrato');
-    else for (const o of m.operations) if (!OPERATIONS.includes(o)) out.push(`operación desconocida: ${o} (las del contrato: ${OPERATIONS.join(', ')})`);
+    else if (contrato.problem) out.push(contrato.problem);
+    else for (const o of m.operations) if (!contrato.operations.includes(o)) out.push(`operación desconocida: ${o} (las del contrato: ${contrato.operations.join(', ')})`);
     if (m.capabilities !== undefined && !isObject(m.capabilities)) out.push('«capabilities» es un objeto');
     if (m.rawCommands !== undefined && !(Array.isArray(m.rawCommands) && m.rawCommands.every((c) => typeof c === 'string' && c.trim()))) out.push('«rawCommands» es una lista de textos');
   }

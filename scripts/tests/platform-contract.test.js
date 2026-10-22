@@ -47,7 +47,8 @@ function mundo({ platform, repos = [], operations = { platform: 'github', org: '
     fs.writeFileSync(path.join(tree, 'team-repos.json'), JSON.stringify(doc));
   }
   const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_INTEGRATIONS_DIR: integraciones(extraInt), TYCON_TREE: tree };
-  for (const k of Object.keys(env)) if (/^TYCON_(ADO_ORG|PLATFORM|FAKE_PLATFORM_TOKEN)$|^FAKE_PLATFORM_/.test(k)) delete env[k];
+  // lo que trae quien corre la prueba no entra: TYCON_PROFILE (las portables lo ponen en 0) apagaría el perfil del caso
+  for (const k of Object.keys(env)) if (/^TYCON_(ADO_ORG|PLATFORM|PROFILE|FAKE_PLATFORM_TOKEN)$|^FAKE_PLATFORM_/.test(k)) delete env[k];
   env.TYCON_HOME = path.join(home, '.tycon');
   return { tree, home, env };
 }
@@ -426,4 +427,23 @@ test('Adversarial_Golden_CommandMovedToConnector_StillCounted @story-8.85 @ac-27
   const l = G.literales({ root: repo });
   assert.deepStrictEqual(Object.keys(l), ['integrations/azure-devops/scripts/connector.js']);
   assert.deepStrictEqual(l['integrations/azure-devops/scripts/connector.js'], ["spawn('az repos pr list --org x');"]);
+});
+
+test('Adversarial_TreeWithoutPlatformFolder_SecretsStillRead @story-8.85 @ac-32', () => {
+  // un árbol sin scripts/lib/platform/ (una instalación a medias, o una copia que sólo trae los archivos sueltos de
+  // scripts/lib/): el lector de integraciones carga igual, sigue conociendo los secretos, y del conector dice qué falta
+  const arbol = tmp('arbol-sin-capa-');
+  fs.mkdirSync(path.join(arbol, 'scripts', 'lib'), { recursive: true });
+  for (const f of fs.readdirSync(path.join(ROOT, 'scripts', 'lib'))) if (/\.(js|json)$/.test(f)) fs.copyFileSync(path.join(ROOT, 'scripts', 'lib', f), path.join(arbol, 'scripts', 'lib', f));
+  const d = integraciones();
+  copiar(path.join(ROOT, 'integrations', 'notify'), path.join(d, 'notify'));
+  const r = spawnSync(process.execPath, ['-e', `
+    const I = require(${JSON.stringify(path.join(arbol, 'scripts', 'lib', 'integrations.js'))});
+    const l = I.listManifests({ dir: ${JSON.stringify(d)} });
+    console.log(JSON.stringify({ secreto: I.isSecretKey('notify.slack_webhook', { dir: ${JSON.stringify(d)} }), azure: (l.problems.find((p) => p.name === 'azure-devops') || {}).reasons }));
+  `], { encoding: 'utf8' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const o = JSON.parse(r.stdout);
+  assert.strictEqual(o.secreto, true, 'los secretos se siguen conociendo');
+  assert.match(o.azure.join(' '), /no pude cargar scripts\/lib\/platform\/contract\.js/, 'el conector dice qué le falta');
 });
