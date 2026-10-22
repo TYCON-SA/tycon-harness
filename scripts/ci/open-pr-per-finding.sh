@@ -77,8 +77,12 @@
 # contestó a la mañana, es la que deja la noche en rojo.
 #
 # Uso:
-#   open-pr-per-finding.sh [--record-only] --queue <carpeta> --branch <prefijo> --script <js> \
+#   open-pr-per-finding.sh [--record-only] [--no-save] --queue <carpeta> --branch <prefijo> --script <js> \
 #                          --org <url> --project <proy> --repo <repo> [--reviewers <lista>] [--today <fecha>]
+#   open-pr-per-finding.sh --platform github [--record-only] [--no-save] --queue <carpeta>/dependencies --branch <prefijo> \
+#                          --script <js> --repo <dueño>/<repo> [--reviewers "<login> <login>"] [--today <fecha>]
+#   --platform es azure (por defecto) o github; en GitHub, sólo la cola de dependencias, con `gh api` (TYCON_GH_CMD) y
+#   los issues de los productos con TYCON_GH_ISSUES_TOKEN si está. --no-save anota en el disco y no guarda ni abre.
 #   --queue es la carpeta de la cola, relativa a donde se corre y de los niveles que haga falta
 #   (`inbox/watcher`); --branch, el prefijo de las ramas (`<prefijo>/<id>`). Son dos datos: no se derivan.
 # Exit: 0 hizo lo suyo · 1 algo falló (se dice cuál y por qué) · 2 error de uso (incluye: la cola no existe, o le falta `pending/`)
@@ -95,9 +99,12 @@ if [ -f "${_AQUI_LO}/legacy-options.sh" ]; then
 fi
 
 COLA=""; PREFIJO=""; GUION=""; ORG=""; PROYECTO=""; REPO=""; REVISORES=""; HOY=""; SOLO_REGISTRAR=""
+PLATAFORMA="azure"; SIN_GUARDAR=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --record-only) SOLO_REGISTRAR=1; shift ;;
+    --no-save)     SIN_GUARDAR=1; shift ;;
+    --platform)  PLATAFORMA="$2"; shift 2 ;;
     --queue)     COLA="$2"; shift 2 ;;
     --branch)    PREFIJO="$2"; shift 2 ;;
     --script)    GUION="$2"; shift 2 ;;
@@ -109,17 +116,34 @@ while [ $# -gt 0 ]; do
     *) echo "opción desconocida: $1" >&2; exit 2 ;;
   esac
 done
+case "$PLATAFORMA" in
+  azure|github) ;;
+  *) echo "error: --platform tiene que ser azure o github (es «${PLATAFORMA}»)" >&2; exit 2 ;;
+esac
 falta=""
 [ -n "$COLA" ]     || falta="$falta --queue"
 [ -n "$PREFIJO" ]  || falta="$falta --branch"
 [ -n "$GUION" ]    || falta="$falta --script"
-[ -n "$ORG" ]      || falta="$falta --org"
-[ -n "$PROYECTO" ] || falta="$falta --project"
+if [ "$PLATAFORMA" = azure ]; then
+  [ -n "$ORG" ]      || falta="$falta --org"
+  [ -n "$PROYECTO" ] || falta="$falta --project"
+fi
 [ -n "$REPO" ]     || falta="$falta --repo"
 if [ -n "$falta" ]; then
   echo "error: faltan parámetros:$falta" >&2
   sed -n '/^# Uso:/,/^# Exit:/p' "$0" | sed 's/^# \{0,1\}//' >&2
   exit 2
+fi
+# En GitHub el pull request se pregunta siempre dentro de un repo (`<dueño>/<repo>`), y sólo la cola de dependencias
+# sabe anotar de qué repo es (`note --pr-repo`): el vigilante comparte el guion y no lo tiene.
+if [ "$PLATAFORMA" = github ]; then
+  if ! [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+    echo "error: en GitHub --repo es <dueño>/<repo> (es «${REPO}»)" >&2; exit 2
+  fi
+  case "$COLA" in
+    */dependencies|dependencies) ;;
+    *) echo "error: --platform github sólo con la cola de dependencias (la cola es «${COLA}»): sólo ella anota de qué repo es su pull request" >&2; exit 2 ;;
+  esac
 fi
 [ -n "$HOY" ] || HOY=$(date -u +%Y-%m-%d)
 
@@ -158,7 +182,8 @@ FALLOS=0
 ACCIONES=$(mktemp)                 # una línea por acción: <archivo> TAB <op> TAB <arg1> TAB <arg2>
 ABIERTOS=$(mktemp)                 # "<id> <pr>" de los abiertos ESTA noche (para rehacer su rama)
 ERR=$(mktemp)
-trap 'rm -f "$ACCIONES" "$ABIERTOS" "$ERR"' EXIT
+TEXTOS=$(mktemp -d)                # el texto de cada pedido: una carpeta propia, no nombres fijos en /tmp
+trap 'rm -f "$ACCIONES" "$ABIERTOS" "$ERR"; rm -rf "$TEXTOS"' EXIT
 
 # 🔴 El texto de un fallo o de un aviso suele traer lo que dijo OTRO programa (`$(cat "$ERR")`: el stderr
 # de `az` o de `git`, de varias líneas). Se sanea acá, en la salida, y no en cada llamador: una línea de
@@ -227,19 +252,164 @@ commit_de_rama(){ # <base> <id>
 }
 # La identidad de los commits de esas ramas. El paso anterior del pipeline guarda por
 # push-nightly-data.js y no la deja puesta; tocar la configuración del repo no mueve el checkout.
-git config user.name "Azure Pipelines"
-git config user.email "azure-pipelines@dev.azure.com"
+# En GitHub no se toca: el árbol ya trae la de `prepare-tree.sh`, que firma también los guardados.
+if [ "$PLATAFORMA" = azure ]; then
+  git config user.name "Azure Pipelines"
+  git config user.email "azure-pipelines@dev.azure.com"
+fi
+
+# Cómo se nombra un pull request en los mensajes, y de qué repo se habla.
+if [ "$PLATAFORMA" = github ]; then NR="#"; DONDE="$REPO"; else NR="PR !"; DONDE="$PROYECTO/$REPO"; fi
 
 # ── Azure, sin silenciadores ───────────────────────────────────────────────────────────────────
 # Cada una devuelve JSON por stdout y sale != 0 si `az` falló, con el error en $ERR. Nada de
 # `--query`: JSON crudo + `node -e`, así el doble de las pruebas es un impresor de JSON y no hay
 # que reimplementar JMESPath para probar esto sin red.
-pr_por_id(){ az repos pr show --org "$ORG" --id "$1" -o json 2>"$ERR"; }
-pr_por_rama(){ az repos pr list --org "$ORG" --project "$PROYECTO" --repository "$REPO" \
-                 --source-branch "$1" --status all -o json 2>"$ERR"; }
-hilos_de(){ az devops invoke --org "$ORG" --area git --resource pullRequestThreads \
-              --route-parameters "project=$PROYECTO" "repositoryId=$REPO" "pullRequestId=$1" \
-              --api-version 7.1 -o json 2>"$ERR"; }
+az_pr_por_id(){ az repos pr show --org "$ORG" --id "$1" -o json 2>"$ERR"; }
+az_pr_por_rama(){ az repos pr list --org "$ORG" --project "$PROYECTO" --repository "$REPO" \
+                    --source-branch "$1" --status all -o json 2>"$ERR"; }
+az_hilos_de(){ az devops invoke --org "$ORG" --area git --resource pullRequestThreads \
+                 --route-parameters "project=$PROYECTO" "repositoryId=$REPO" "pullRequestId=$1" \
+                 --api-version 7.1 -o json 2>"$ERR"; }
+
+# ── GitHub, con el mismo criterio ──────────────────────────────────────────────────────────────
+# Todo por `gh api` (TYCON_GH_CMD lo reemplaza: un ejecutable, o un `.js` que corre con node). Las respuestas se
+# traducen a la forma de Azure (`gh_a_azure`), así los lectores de abajo son uno solo para las dos plataformas.
+# Los issues de los productos se tocan con TYCON_GH_ISSUES_TOKEN si está: el token del workflow sólo alcanza al repo
+# de operaciones, donde viven los pull requests.
+gh_cmd(){ local C="${TYCON_GH_CMD:-gh}"; case "$C" in *.js) node "$C" "$@" ;; *) "$C" "$@" ;; esac; }
+gh_issues(){ if [ -n "${TYCON_GH_ISSUES_TOKEN:-}" ]; then GH_TOKEN="$TYCON_GH_ISSUES_TOKEN" gh_cmd "$@"; else gh_cmd "$@"; fi; }
+
+# 🔴 Una lista de GitHub viene en páginas de 100: leer sólo la primera es decir «no hay» de lo que está en la segunda.
+# Escribe cada página en <dir>/<n>.json (la ruta puede traer ya su `?…`); sale != 0 si una página no se pudo pedir o no es una lista.
+gh_paginas(){ # <ruta con ?…> <dir> [issues]
+  local K=1 N S="?"
+  case "$1" in *\?*) S="&" ;; esac
+  while [ "$K" -le 50 ]; do
+    if [ "${3:-}" = issues ]; then gh_issues api "$1${S}per_page=100&page=$K" > "$2/$K.json" 2>"$ERR" || return 1
+    else gh_cmd api "$1${S}per_page=100&page=$K" > "$2/$K.json" 2>"$ERR" || return 1; fi
+    N=$(node -e 'let l; try { l=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); } catch { process.exit(1); }
+                 if (!Array.isArray(l)) process.exit(1); console.log(l.length);' "$2/$K.json") \
+      || { echo "la página $K de $1 no es una lista legible" > "$ERR"; return 1; }
+    [ "$N" -ge 100 ] || return 0
+    K=$((K+1))
+  done
+  echo "más de 50 páginas en $1: no se sigue" > "$ERR"; return 1
+}
+
+# Un pull request de GitHub (o una lista, o las páginas de una carpeta) → la forma de Azure: `pullRequestId`, `status`
+# (open → active; cerrado con `merged_at` → completed; cerrado sin él → abandoned), las fechas y el repo
+# (`repository.name` y `repository.project.name` = el dueño). Con `lista <rama> <dir>`, las páginas de <dir> y sólo
+# los de esa rama: GitHub filtra
+# `head=` por dueño y rama, pero lo que no es de esa rama no se adopta aunque venga.
+gh_a_azure(){ node -e '
+  const fs=require("fs"); const a=process.argv.slice(1);
+  const rama=a[0]==="lista"?a[1]:null; const dir=a[0]==="lista"?a[2]:null;
+  const uno=(p)=>{
+    if (!p||typeof p!=="object"||p.number===undefined||!p.state) { process.stderr.write("la respuesta no trae el pull request\n"); process.exit(1); }
+    const full=((p.base||{}).repo||{}).full_name||""; const i=full.indexOf("/");
+    const o={ pullRequestId:p.number, status:p.state==="open"?"active":(p.merged_at?"completed":"abandoned"),
+              creationDate:p.created_at||"", closedDate:p.closed_at||"" };
+    if (i>0) o.repository={ name:full.slice(i+1), project:{ name:full.slice(0,i) } };
+    return o;
+  };
+  if (dir) {
+    const l=[];
+    for (const f of fs.readdirSync(dir).filter((x)=>/^\d+\.json$/.test(x)).sort((x,y)=>parseInt(x)-parseInt(y)))
+      l.push(...JSON.parse(fs.readFileSync(dir+"/"+f,"utf8")));
+    console.log(JSON.stringify(l.filter((p)=>!rama||(p&&p.head&&p.head.ref===rama)).map(uno)));
+  } else {
+    let d=""; process.stdin.on("data",c=>d+=c).on("end",()=>{
+      let p; try { p=JSON.parse(d); } catch { process.stderr.write("respuesta ilegible de gh\n"); process.exit(1); }
+      console.log(JSON.stringify(uno(p)));
+    });
+  }' "$@"; }
+
+gh_pr_por_id(){ local OUT; OUT=$(gh_cmd api "repos/$REPO/pulls/$1" 2>"$ERR") || return 1
+                printf '%s' "$OUT" | gh_a_azure 2>"$ERR"; }
+gh_pr_por_rama(){ local D RC; D=$(mktemp -d) || return 1
+  gh_paginas "repos/$REPO/pulls?head=${REPO%%/*}:$1&state=all" "$D" && gh_a_azure lista "$1" "$D" 2>"$ERR"
+  RC=$?; rm -rf "$D"; return "$RC"; }
+# Los comentarios y las revisiones → los hilos de Azure, en orden de fecha y sólo de personas: una cuenta `[bot]` o de
+# tipo Bot no da motivos, ni una revisión vacía o pendiente. `motivo_de` toma el último.
+gh_hilos_de(){ local D RC; D=$(mktemp -d) || return 1; mkdir "$D/c" "$D/r" "$D/l"
+  # tres fuentes: la conversación, las revisiones y los comentarios sobre líneas del diff
+  gh_paginas "repos/$REPO/issues/$1/comments" "$D/c" && gh_paginas "repos/$REPO/pulls/$1/reviews" "$D/r" \
+    && gh_paginas "repos/$REPO/pulls/$1/comments" "$D/l" \
+    && node -e '
+      const fs=require("fs"); const leer=(d)=>fs.readdirSync(d).flatMap((f)=>JSON.parse(fs.readFileSync(d+"/"+f,"utf8")));
+      const persona=(u)=>u&&u.login&&!/\[bot\]$/.test(u.login)&&u.type!=="Bot";
+      const c=[...leer(process.argv[1]),...leer(process.argv[3])].filter((x)=>persona(x.user)&&x.body).map((x)=>({fecha:x.created_at,texto:x.body,login:x.user.login}));
+      const r=leer(process.argv[2]).filter((x)=>persona(x.user)&&x.body&&String(x.body).trim()&&x.state!=="PENDING")
+        .map((x)=>({fecha:x.submitted_at,texto:x.body,login:x.user.login}));
+      const todos=[...c,...r].sort((a,b)=>Date.parse(a.fecha||0)-Date.parse(b.fecha||0));
+      console.log(JSON.stringify({ value:[{ comments:todos.map((x)=>({ commentType:"text", author:{ displayName:x.login }, content:x.texto })) }] }));
+    ' "$D/c" "$D/r" "$D/l" 2>"$ERR"
+  RC=$?; rm -rf "$D"; return "$RC"; }
+
+# Cierra el pull request de una ficha que ya se cerró. En GitHub, además, dice por qué: un pull request cerrado sin
+# explicación se lee como un rechazo de alguien. Primero se cierra y después se comenta: si el cierre falla, mañana se
+# reintenta sin haber dejado un comentario por noche; si falla el comentario, el pull request ya está cerrado (aviso).
+cerrar_pr(){ # <pr> <id> <ficha>
+  if [ "$PLATAFORMA" = azure ]; then az repos pr update --org "$ORG" --id "$1" --status abandoned -o none 2>"$ERR"; return; fi
+  local J; J=$(mktemp) || return 1
+  printf '{"state":"closed"}' > "$J"
+  if ! gh_cmd api --method PATCH "repos/$REPO/pulls/$1" --input "$J" >/dev/null 2>"$ERR"; then rm -f "$J"; return 1; fi
+  if ! node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ body: "La ficha "+process.argv[2]+" ya salió de la cola ("+process.argv[3]+"): este pull request no tiene nada que decidir, y la noche lo cerró.\n\n<!-- tycon-nocturno -->" }))' \
+         "$J" "$2" "$(case "$3" in */promoted/*) echo "se resolvió" ;; *) echo "se archivó" ;; esac)" 2>"$ERR" \
+     || ! gh_cmd api --method POST "repos/$REPO/issues/$1/comments" --input "$J" >/dev/null 2>"$ERR"; then
+    aviso "$2: el #$1 quedó cerrado, pero no se pudo dejar el comentario que dice por qué — $(cat "$ERR")"
+  fi
+  rm -f "$J"
+}
+
+# Abre el pull request y deja su respuesta en la forma de Azure. En GitHub los revisores se piden aparte (si eso falla,
+# el pull request ya existe y su número no se pierde: es un aviso).
+crear_pr(){ # <rama> <título> <archivo del cuerpo> <id>
+  if [ "$PLATAFORMA" = azure ]; then
+    # --squash: el historial de main cuenta decisiones, no el andamio de cada rama.
+    az repos pr create --org "$ORG" --project "$PROYECTO" --repository "$REPO" \
+       --source-branch "$1" --target-branch main --title "$2" \
+       --description "@$3" --squash true \
+       ${REVISORES:+--reviewers $REVISORES} -o json 2>"$ERR"
+    return
+  fi
+  local J OUT RC N
+  J=$(mktemp) || return 1
+  node -e 'const fs=require("fs"); fs.writeFileSync(process.argv[1], JSON.stringify({ title:process.argv[2], head:process.argv[3], base:"main", body:fs.readFileSync(process.argv[4],"utf8") }))' \
+    "$J" "$2" "$1" "$3" || { rm -f "$J"; return 1; }
+  OUT=$(gh_cmd api --method POST "repos/$REPO/pulls" --input "$J" 2>"$ERR"); RC=$?
+  if [ "$RC" != 0 ]; then
+    # 🔴 El 403 de este ajuste no dice qué hay que tocar: se nombra, o la mañana se pierde buscando un permiso del token.
+    if grep -q 'GitHub Actions is not permitted to create or approve pull requests' "$ERR"; then
+      printf '%s\n' "falta prender «Allow GitHub Actions to create and approve pull requests» en Settings → Actions → General del repo $REPO (y que la organización no lo bloquee) — $(cat "$ERR")" > "$ERR"
+    fi
+    rm -f "$J"; return 1
+  fi
+  if ! OUT=$(printf '%s' "$OUT" | gh_a_azure 2>"$ERR"); then rm -f "$J"; return 1; fi
+  if [ -n "$REVISORES" ] && N=$(printf '%s' "$OUT" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>console.log(JSON.parse(d).pullRequestId))'); then
+    node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ reviewers: process.argv.slice(2) }))' "$J" $REVISORES
+    gh_cmd api --method POST "repos/$REPO/pulls/$N/requested_reviewers" --input "$J" >/dev/null 2>"$ERR.rev" \
+      || aviso "$4: el #$N se abrió, pero no se pudo pedir revisión a «${REVISORES}» — $(cat "$ERR.rev")" >&2   # la salida de esta función es la respuesta del pull request
+    rm -f "$ERR.rev"
+  fi
+  rm -f "$J"
+  printf '%s\n' "$OUT"
+}
+
+pr_por_id(){ if [ "$PLATAFORMA" = github ]; then gh_pr_por_id "$@"; else az_pr_por_id "$@"; fi; }
+pr_por_rama(){ if [ "$PLATAFORMA" = github ]; then gh_pr_por_rama "$@"; else az_pr_por_rama "$@"; fi; }
+hilos_de(){ if [ "$PLATAFORMA" = github ]; then gh_hilos_de "$@"; else az_hilos_de "$@"; fi; }
+
+# 🔴 EL EMPUJE PREGUNTA LA PUNTA REAL. `--force-with-lease` sin valor compara contra la rama de seguimiento local, y un
+# árbol que trae sólo `main` no la tiene: git rechaza el empuje de una rama que ya existe y el pull request de esa
+# ficha no se puede rehacer nunca. Se pregunta al remoto y se compara contra eso (vacío: la rama no tiene que existir).
+empujar_rama(){ # <commit> <rama>
+  local PUNTA
+  if ! PUNTA=$(git ls-remote origin "refs/heads/$2" 2>"$ERR"); then return 1; fi
+  PUNTA=${PUNTA%%[[:space:]]*}
+  git push -q origin "$1:refs/heads/$2" --force-with-lease="refs/heads/$2:$PUNTA" 2>"$ERR"
+}
 
 # 🔴 LOS TRES LECTORES DE JSON SALEN != 0 CUANDO NO PUEDEN LEER, y nunca vacíos.
 #
@@ -281,7 +451,10 @@ campo_pr(){ node -e '
 # sola a ignorada. Las tres, en verde. Este lector dice de quién es: `own`, o `foreign <proyecto>/<repo>`.
 # Como los otros: si la respuesta no dice de qué repo es, sale != 0 —«no pude leer» no es «es de acá»—.
 # `--project` y `--repo` pueden venir por nombre o por id: se compara contra los dos, sin distinguir mayúsculas.
-pr_owner(){ PR_PROJECT="$PROYECTO" PR_REPO="$REPO" node -e '
+pr_owner(){
+  local PJ="$PROYECTO" RP="$REPO"
+  [ "$PLATAFORMA" = github ] && { PJ="${REPO%%/*}"; RP="${REPO#*/}"; }
+  PR_PROJECT="$PJ" PR_REPO="$RP" node -e '
   let d=""; process.stdin.on("data",c=>d+=c).on("end",()=>{
     let p; try { p=JSON.parse(d); } catch { process.stderr.write("respuesta ilegible de az\n"); process.exit(1); }
     const r=p&&p.repository, pj=r&&r.project;
@@ -313,11 +486,93 @@ motivo_de(){ node -e '
     console.log(ultimo && ultimo.content ? String(ultimo.content) : "sin motivo escrito");
   });'; }
 
+# ── El issue sigue al pull request (GitHub) ───────────────────────────────────────────────────
+# 🔴 Con dos lugares de decisión que dicen cosas distintas, el resumen no sabe qué está aceptado. Manda el pull
+# request: mergeado («hay que arreglarlo») reabre el issue cerrado como «not planned»; cerrado sin merge («no aplica»)
+# cierra como «not planned» el issue abierto, con el motivo; reabierto reabre el que la noche cerró por ese rechazo.
+# Un issue cerrado como `completed` no se toca: eso lo decide la medición. Cada decisión se aplica UNA vez
+# (`alineado: <pr>:<decisión>`): si después una persona vuelve a mover el issue, la noche no se pelea con ella.
+# Sólo en la pasada completa: la de antes de la noche corre con permiso de leer.
+# Toca los issues aunque C no pueda guardar: mañana se repite, y como mira el estado de cada issue antes, no lo duplica
+# (el estado se cambia antes del comentario: si el comentario falla, mañana el issue ya está bien y no se comenta dos veces).
+alinear_issues(){ # <ficha> <pr> merged|closed|reopened <motivo>
+  local FICHA="$1" N="$2" DEC="$3" MOT="$4" ID LISTA IR M ACT ESTADO RAZON CUERPO MAL=0
+  [ "$PLATAFORMA" = github ] && [ -z "$SOLO_REGISTRAR" ] || return 0
+  [ "$(escalar "$FICHA" alineado)" != "$N:$DEC" ] || return 0
+  ID=$(basename "$FICHA" .yaml)
+  # 🔴 Sólo los repos que la organización declara (`github:` activo en repos.json, el mismo criterio que
+  # github-issues.js): la ficha viene del trabajo que corrió código de los productos, y un `pedidos:` adulterado no
+  # puede cerrar issues de cualquier repo que alcance el token. Sin repos.json legible no se toca ninguno.
+  if ! LISTA=$(node -e 'const fs=require("fs"); const n=require(require("path").resolve(process.argv[1]));
+                        let c; try { c=JSON.parse(fs.readFileSync("scripts/nightly/dependencies/repos.json","utf8")); }
+                        catch (e) { process.stderr.write("no se pudo leer scripts/nightly/dependencies/repos.json: "+e.message+"\n"); process.exit(1); }
+                        const ok=new Set((c.repos||[]).filter((r)=>r&&r.activo!==false&&typeof r.github==="string").map((r)=>r.github.toLowerCase()));
+                        for (const p of n.leerPedidos(fs.readFileSync(process.argv[2],"utf8"))) {
+                          if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(p.proyecto)) console.log("malo - "+p.id);
+                          else console.log((ok.has(p.proyecto.toLowerCase())?"ok ":"fuera ")+p.proyecto+" "+p.id);
+                        }' "$GUION" "$FICHA" 2>"$ERR"); then
+    fallo "$ID: no pude leer los issues de la ficha para alinearlos con el #$N — $(cat "$ERR")"; return 0
+  fi
+  [ -n "$LISTA" ] || return 0
+  while read -r QUE IR M; do
+    [ -n "${QUE:-}" ] || continue
+    case "$QUE" in
+      malo)  aviso "$ID: un pedido de la ficha no nombra un repo <dueño>/<repo>: no se toca"; continue ;;
+      fuera) aviso "$ID: el issue $IR#$M no es un repo declarado en repos.json: no se toca"; continue ;;
+    esac
+    if ! ACT=$(gh_issues api "repos/$IR/issues/$M" 2>"$ERR"); then
+      fallo "$ID: no se pudo consultar el issue $IR#$M para alinearlo con el #$N — $(cat "$ERR")"; MAL=1; continue
+    fi
+    if ! read -r ESTADO RAZON < <(printf '%s' "$ACT" | node -e '
+        let d=""; process.stdin.on("data",c=>d+=c).on("end",()=>{
+          let i; try { i=JSON.parse(d); } catch { process.exit(1); }
+          if (!i||!i.state) process.exit(1); console.log(i.state+" "+(i.state_reason||"-")); });'); then
+      fallo "$ID: no pude leer el estado del issue $IR#$M"; MAL=1; continue
+    fi
+    case "$DEC" in
+      merged|reopened) [ "$ESTADO" = closed ] && [ "$RAZON" = not_planned ] || continue ;;
+      closed)          [ "$ESTADO" = open ] || continue ;;
+    esac
+    case "$DEC" in
+      merged)   CUERPO="El pull request $REPO#$N se mergeó: el hallazgo de la ficha $ID hay que arreglarlo, así que este issue se reabre." ;;
+      reopened) CUERPO="El pull request $REPO#$N se reabrió: el rechazo por el que la noche cerró este issue ya no vale, así que se reabre." ;;
+      closed)   CUERPO="El pull request $REPO#$N se cerró sin merge: el hallazgo de la ficha $ID no aplica. Motivo: ${MOT:-sin motivo escrito}" ;;
+    esac
+    # el motivo lo escribió cualquiera: un `@` no menciona a nadie desde la cuenta de la noche
+    if ! node -e 'require("fs").writeFileSync(process.argv[1]+".c", JSON.stringify({ body: process.argv[2].replace(/@/g,"@​")+"\n\n<!-- tycon-nocturno -->" }));
+                  require("fs").writeFileSync(process.argv[1]+".e", JSON.stringify(process.argv[3]==="closed" ? { state:"closed", state_reason:"not_planned" } : { state:"open" }));' \
+           "$ERR" "$CUERPO" "$DEC" 2>"$ERR" \
+       || ! gh_issues api --method PATCH "repos/$IR/issues/$M" --input "$ERR.e" >/dev/null 2>"$ERR" \
+       || ! gh_issues api --method POST "repos/$IR/issues/$M/comments" --input "$ERR.c" >/dev/null 2>"$ERR"; then
+      fallo "$ID: no se pudo alinear el issue $IR#$M con el #$N — $(cat "$ERR")"; MAL=1; rm -f "$ERR.c" "$ERR.e"; continue
+    fi
+    rm -f "$ERR.c" "$ERR.e"
+    echo "$ID: el issue $IR#$M sigue al #$N ($DEC)"
+  done <<< "$LISTA"
+  # se anota aunque no haya hecho falta tocar ninguno: la decisión ya está alineada y no se vuelve a mirar
+  [ "$MAL" = 1 ] || encolar "$FICHA" alineado "$N:$DEC"
+}
+
+# 🔴 EN GITHUB LA FICHA LLEGA DEL TRABAJO QUE CORRIÓ CÓDIGO DE LOS PRODUCTOS: el nombre y el `pr:` se validan antes de
+# imprimirlos o de armar con ellos una ruta de la API. Un nombre con un salto de línea imprimiría una línea que
+# empieza con `::` (una orden del workflow), y un `pr:` con `/..` cambiaría la ruta que se escribe con el token.
+ficha_valida(){ # <ficha>
+  [ "$PLATAFORMA" = github ] || return 0
+  local B; B=$(basename "$1" .yaml)
+  if ! [[ "$B" =~ ^[A-Za-z0-9_-]+$ ]]; then
+    fallo "una ficha con un nombre fuera de [A-Za-z0-9_-] («$(printf '%s' "$B" | tr -c 'A-Za-z0-9_.-' '?')»): no se toca"; return 1
+  fi
+  local N; N=$(escalar "$1" pr)
+  if [ -n "$N" ] && ! [[ "$N" =~ ^[0-9]+$ ]]; then
+    fallo "$B: su pr: no es un número («$(printf '%s' "$N" | tr -c 'A-Za-z0-9_.-' '?')»): no se toca"; return 1
+  fi
+}
+
 # ── Fase A — decidir por ficha ─────────────────────────────────────────────────────────────────
 ABRIR=""
 # Con --record-only esta pasada no abre nada (ver «DOS PASADAS POR NOCHE»): dice quién lo abre.
 por_abrir(){ # <id> <qué encontró> [<qué se abre>]
-  if [ -n "$SOLO_REGISTRAR" ]; then echo "$1: $2 — no se abre en esta pasada: lo abre el último paso de la noche"
+  if [ -n "$SOLO_REGISTRAR$SIN_GUARDAR" ]; then echo "$1: $2 — no se abre en esta pasada: lo abre el último paso de la noche"
   else echo "$1: $2 — se abre${3:-}"; ABRIR="$ABRIR $1"; fi
 }
 for F in "$COLA"/pending/*.yaml; do
@@ -330,29 +585,42 @@ for F in "$COLA"/pending/*.yaml; do
   # archivada como «ignorado». Dos criterios distintos de «viva» en el mismo sistema se separan solos.
   grep -qE '^veredicto:[ \t]*"?pendiente"?[ \t]*(#.*)?$' "$F" || continue
   ID=$(basename "$F" .yaml)
+  ficha_valida "$F" || continue
   PR=$(escalar "$F" pr)
+
+  # 🔴 EN GITHUB EL NÚMERO ES DE CADA REPO: `pr: 12` sin decir de qué repo no es un pull request, y preguntar por el 12
+  # de este repo contestaría OTRO (o un issue). Se decide por `pr_repo:` antes de consultar nada. En Azure, una ficha
+  # con `pr_repo:` trae un pull request de GitHub: tampoco es de acá.
+  PR_REPO_F=$(escalar "$F" pr_repo)
+  if [ -n "$PR" ] && { { [ "$PLATAFORMA" = github ] && [ "$PR_REPO_F" != "$REPO" ]; } || { [ "$PLATAFORMA" = azure ] && [ -n "$PR_REPO_F" ]; }; }; then
+    if grep -q '^rechazado:' "$F"; then
+      echo "$ID: ya estaba anotado el rechazo (su pr: $PR es de ${PR_REPO_F:-un repo sin nombrar}, no de $DONDE: no se mira su estado)"; continue
+    fi
+    aviso "$ID: su pr: $PR es de ${PR_REPO_F:-un repo sin nombrar (falta pr_repo:)}, no de $DONDE: acá no cuenta. Se busca su pull request en este repo"
+    PR=""
+  fi
 
   if [ -n "$PR" ]; then
     if ! OUT=$(pr_por_id "$PR"); then
-      fallo "$ID: no se pudo consultar el PR !$PR — $(cat "$ERR")"; continue
+      fallo "$ID: no se pudo consultar el ${NR}$PR — $(cat "$ERR")"; continue
     fi
     if ! LEIDO=$(printf '%s' "$OUT" | campo_pr 2>"$ERR"); then
-      fallo "$ID: no pude leer la respuesta de Azure sobre el PR !$PR — $(cat "$ERR")"; continue
+      fallo "$ID: no pude leer la respuesta de Azure sobre el ${NR}$PR — $(cat "$ERR")"; continue
     fi
     read -r _ ESTADO _ CERRADO <<< "$LEIDO"
     if ! OWNER=$(printf '%s' "$OUT" | pr_owner 2>"$ERR"); then
-      fallo "$ID: no pude leer de qué repo es el PR !$PR — $(cat "$ERR")"; continue
+      fallo "$ID: no pude leer de qué repo es el ${NR}$PR — $(cat "$ERR")"; continue
     fi
     if [ "$OWNER" != own ]; then
       # 🔴 Un rechazo YA anotado es un dato de la ficha, no del pull request: se respeta venga de donde venga
       # (en dependencias la ficha rechazada sigue viva, con su `pr:` y su `rechazado:`), y no se vuelve a preguntar.
       if grep -q '^rechazado:' "$F"; then
-        echo "$ID: ya estaba anotado el rechazo (su PR !$PR es de otro repo, ${OWNER#foreign }: no se mira su estado)"; continue
+        echo "$ID: ya estaba anotado el rechazo (su ${NR}$PR es de otro repo, ${OWNER#foreign }: no se mira su estado)"; continue
       fi
       # Lo que el otro repo diga de ese pull request NO decide esta ficha: ni «activo» es un lugar donde decidirla,
       # ni «abandonado» es un rechazo (es lo que queda al ordenar una mudanza). Se sigue como si no tuviera `pr:`:
       # se busca por la rama EN ESTE repo y, si no hay, se abre uno acá, que reemplaza el número en la ficha.
-      aviso "$ID: su pr: !$PR es de otro repo (${OWNER#foreign }, $ESTADO), no de $PROYECTO/$REPO: acá no cuenta. Se busca su pull request en este repo; el de allá queda como está (si sigue abierto, hay que cerrarlo a mano)"
+      aviso "$ID: su pr: ${NR#PR }$PR es de otro repo (${OWNER#foreign }, $ESTADO), no de $DONDE: acá no cuenta. Se busca su pull request en este repo; el de allá queda como está (si sigue abierto, hay que cerrarlo a mano)"
       PR=""
     fi
   fi
@@ -376,43 +644,48 @@ for F in "$COLA"/pending/*.yaml; do
       DESDE=$(escalar "$F" reaparecido); [ -n "$DESDE" ] || DESDE=$(escalar "$F" detectado)
       [ -n "$DESDE" ] || DESDE=$(escalar "$F" fecha)
       if [ "$ESTADO" != "abandoned" ] || [ -z "${CREADO:-}" ] || [ -z "$DESDE" ] || [[ "$CREADO" < "$DESDE" ]]; then
-        por_abrir "$ID" "el PR !$PR ($ESTADO, $CREADO) es de una vida anterior" " uno nuevo"; continue
+        por_abrir "$ID" "el ${NR}$PR ($ESTADO, $CREADO) es de una vida anterior" " uno nuevo"; continue
       fi
     fi
   fi
 
   case "$ESTADO" in
     active)
-      if [ "$(escalar "$F" pr)" != "$PR" ]; then   # sin `pr:`, o con el de otro repo, que no cuenta
-        echo "$ID: adoptado el PR !$PR que ya existía"
+      # sin `pr:`, con el de otro repo, o (en GitHub) sin decir de qué repo es: no cuenta, se adopta
+      if [ "$(escalar "$F" pr)" != "$PR" ] || { [ "$PLATAFORMA" = github ] && [ "$PR_REPO_F" != "$REPO" ]; }; then
+        echo "$ID: adoptado el ${NR}$PR que ya existía"
         encolar "$F" pr "$PR"
         # Alguien pudo REACTIVAR en Azure un pull request que se había rechazado: la ficha lo tiene
         # anotado y hay que borrarlo, o quedaría "rechazada" con su PR abierto pidiendo decisión.
       else
-        echo "$ID: ya tiene el PR !$PR"
+        echo "$ID: ya tiene el ${NR}$PR"
       fi
-      grep -q '^rechazado:' "$F" && { echo "$ID: el PR !$PR volvió a estar activo — se borra el rechazo"; encolar "$F" quitar-rechazo; }
+      grep -q '^rechazado:' "$F" && { echo "$ID: el ${NR}$PR volvió a estar activo — se borra el rechazo"; encolar "$F" quitar-rechazo; }
+      # el issue que la noche cerró por ese rechazo se reabre (decisión 12)
+      [ "$(escalar "$F" alineado)" = "$PR:closed" ] && alinear_issues "$F" "$PR" reopened ""
       ;;
     abandoned)
       if grep -q '^rechazado:' "$F"; then
-        echo "$ID: ya estaba anotado el rechazo del PR !$PR"
+        echo "$ID: ya estaba anotado el rechazo del ${NR}$PR"
+        alinear_issues "$F" "$PR" closed "$(sed -n 's/^motivo_rechazo:[ \t]*//p' "$F" | head -1 | sed -e 's/^"//' -e 's/"$//')"
       elif ! HILOS=$(hilos_de "$PR"); then
         # "No pude leer el motivo" NO es "sin motivo escrito": no se anota nada y mañana se reintenta.
-        fallo "$ID: no se pudo leer los comentarios del PR !$PR — $(cat "$ERR")"
+        fallo "$ID: no se pudo leer los comentarios del ${NR}$PR — $(cat "$ERR")"
       elif ! CRUDO=$(printf '%s' "$HILOS" | motivo_de 2>"$ERR"); then
-        fallo "$ID: no pude leer el motivo del rechazo del PR !$PR — $(cat "$ERR")"
+        fallo "$ID: no pude leer el motivo del rechazo del ${NR}$PR — $(cat "$ERR")"
       else
         # 🔴 Se sanea ACÁ, en el punto de entrada: antes de imprimirlo y antes de encolarlo.
         MOTIVO=$(sanear "$CRUDO")
         echo "$ID: rechazado el ${CERRADO:-$HOY} — «${MOTIVO}»"
         encolar "$F" rechazado "${CERRADO:-$HOY}|$PR" "$MOTIVO"
+        alinear_issues "$F" "$PR" closed "$MOTIVO"
       fi
       ;;
     completed)
-      aviso "$ID: su PR !$PR está completado pero la ficha sigue en pending/ — revisar a mano"
+      aviso "$ID: su ${NR}$PR está completado pero la ficha sigue en pending/ — revisar a mano"
       ;;
     *)
-      fallo "$ID: el PR !$PR devolvió un estado que no sé interpretar («${ESTADO}»)"
+      fallo "$ID: el ${NR}$PR devolvió un estado que no sé interpretar («${ESTADO}»)"
       ;;
   esac
 done
@@ -430,6 +703,7 @@ for F in "$COLA"/archived/*.yaml "$COLA"/promoted/*.yaml; do
   [ -f "$F" ] || continue
   ID=$(basename "$F" .yaml)
   grep -q '^pr_cerrado:' "$F" && continue
+  ficha_valida "$F" || continue
   # En `promoted/` sólo se cierra la que YA se resolvió: una aceptada que sigue viva necesita su
   # pull request abierto, que es donde se decidió arreglarla.
   case "$F" in
@@ -437,47 +711,83 @@ for F in "$COLA"/archived/*.yaml "$COLA"/promoted/*.yaml; do
   esac
   PR=$(escalar "$F" pr)
   if [ -z "$PR" ]; then echo "$ID: cerrada sin pr: — no sé qué PR cerrar"; continue; fi
+  PR_REPO_F=$(escalar "$F" pr_repo)
+  # Un `pr:` de la OTRA plataforma (en GitHub, sin `pr_repo:`; en Azure, con él) no se puede ni consultar desde acá:
+  # se avisa una vez y se anota `pr_cerrado:`, o la ficha avisaría cada noche para siempre. El de otro repo de GitHub
+  # sí puede cerrarlo alguien allá: se dice y se vuelve a mirar mañana.
+  if { [ "$PLATAFORMA" = github ] && [ -z "$PR_REPO_F" ]; } || { [ "$PLATAFORMA" = azure ] && [ -n "$PR_REPO_F" ]; }; then
+    aviso "$ID: cerrada con un pr: $PR de la otra plataforma: este guion no lo puede cerrar (si sigue abierto, hay que cerrarlo a mano); se anota y no se vuelve a mirar"
+    encolar "$F" pr-cerrado "$HOY"; continue
+  fi
+  if [ "$PLATAFORMA" = github ] && [ "$PR_REPO_F" != "$REPO" ]; then
+    echo "$ID: cerrada con su pr: $PR de $PR_REPO_F, no de $DONDE — este guion no lo cierra"; continue
+  fi
   if ! OUT=$(pr_por_id "$PR"); then
-    fallo "$ID: no se pudo consultar el PR !$PR de una ficha cerrada — $(cat "$ERR")"; continue
+    fallo "$ID: no se pudo consultar el ${NR}$PR de una ficha cerrada — $(cat "$ERR")"; continue
   fi
   if ! LEIDO=$(printf '%s' "$OUT" | campo_pr 2>"$ERR"); then
     # 🔴 Con un JSON ilegible, ESTADO quedaría vacío, caería en el `else` de abajo y escribiría
     # `pr_cerrado:` sobre un pull request que podría seguir ABIERTO — y como arriba hay un
     # `grep -q '^pr_cerrado:' && continue`, esa ficha NO se volvería a mirar nunca. Enterrado, en
     # verde, sin pasar por `fallo()`. Es el peor de los tres casos.
-    fallo "$ID: no pude leer la respuesta de Azure sobre el PR !$PR — $(cat "$ERR")"; continue
+    fallo "$ID: no pude leer la respuesta de Azure sobre el ${NR}$PR — $(cat "$ERR")"; continue
   fi
   read -r _ ESTADO _ CERRADO <<< "$LEIDO"
   if ! OWNER=$(printf '%s' "$OUT" | pr_owner 2>"$ERR"); then
-    fallo "$ID: no pude leer de qué repo es el PR !$PR de una ficha cerrada — $(cat "$ERR")"; continue
+    fallo "$ID: no pude leer de qué repo es el ${NR}$PR de una ficha cerrada — $(cat "$ERR")"; continue
   fi
   if [ "$ESTADO" = "active" ] && [ "$OWNER" != own ]; then
     # 🔴 Este guion no escribe en otro repo: no abandona el pull request ni lo da por cerrado (sigue abierto). Avisa
     # cada noche hasta que alguien lo cierre allá; desde entonces cae en el `else` de abajo y se anota su cierre.
-    aviso "$ID: su PR !$PR sigue abierto en otro repo (${OWNER#foreign }): este guion no cierra pull requests de otro repo — hay que cerrarlo a mano; se vuelve a mirar mañana"
+    aviso "$ID: su ${NR}$PR sigue abierto en otro repo (${OWNER#foreign }): este guion no cierra pull requests de otro repo — hay que cerrarlo a mano; se vuelve a mirar mañana"
     continue
   fi
+  # La pasada de antes de la noche corre en GitHub con permiso de leer: el cierre lo hace la completa. Intentarlo acá
+  # daría un 403 que se lee como fallo justo las noches en que hay algo que cerrar.
+  if [ "$ESTADO" = "active" ] && [ "$PLATAFORMA" = github ] && [ -n "$SOLO_REGISTRAR$SIN_GUARDAR" ]; then
+    echo "$ID: su ${NR}$PR se cierra en la pasada completa de la noche"; continue
+  fi
   if [ "$ESTADO" = "active" ]; then
-    if az repos pr update --org "$ORG" --id "$PR" --status abandoned -o none 2>"$ERR"; then
-      echo "PR !$PR abandonado con su ficha ($ID)"
+    if cerrar_pr "$PR" "$ID" "$F"; then
+      echo "${NR}$PR abandonado con su ficha ($ID)"
       encolar "$F" pr-cerrado "$HOY"
       # Borrar la rama no decide nada: si falla, no cambia el resultado de la noche.
       git push -q origin --delete "$PREFIJO/$ID" || true
     else
-      fallo "$ID: no se pudo abandonar el PR !$PR — $(cat "$ERR")"
+      fallo "$ID: no se pudo abandonar el ${NR}$PR — $(cat "$ERR")"
     fi
   else
-    echo "PR !$PR de $ID ya estaba $ESTADO"
+    echo "${NR}$PR de $ID ya estaba $ESTADO"
     encolar "$F" pr-cerrado "${CERRADO:-$HOY}"
   fi
 done
+
+# Una ficha que llegó a `promoted/` por el merge de su pull request: su issue se reabre si estaba cerrado como
+# «not planned» (decisión 12). Se confirma con GitHub que el pull request está mergeado: la carpeta sola no lo prueba.
+if [ "$PLATAFORMA" = github ] && [ -z "$SOLO_REGISTRAR" ]; then
+  for F in "$COLA"/promoted/*.yaml; do
+    [ -f "$F" ] || continue
+    grep -q '^resuelto:' "$F" && continue
+    ficha_valida "$F" || continue
+    PR=$(escalar "$F" pr)
+    [ -n "$PR" ] && [ "$(escalar "$F" pr_repo)" = "$REPO" ] || continue
+    [ "$(escalar "$F" alineado)" != "$PR:merged" ] || continue
+    grep -q '^pedidos:' "$F" || continue
+    ID=$(basename "$F" .yaml)
+    if ! OUT=$(pr_por_id "$PR") || ! LEIDO=$(printf '%s' "$OUT" | campo_pr 2>"$ERR"); then
+      fallo "$ID: no se pudo consultar el #$PR para alinear sus issues — $(cat "$ERR")"; continue
+    fi
+    read -r _ ESTADO _ _ <<< "$LEIDO"
+    [ "$ESTADO" = completed ] && alinear_issues "$F" "$PR" merged ""
+  done
+fi
 
 # ── Fase B — abrir los que nunca tuvieron pull request ─────────────────────────────────────────
 # El pull request NO transporta el borrador: transporta LA DECISIÓN. El borrador ya está en `main`
 # desde el paso anterior del pipeline, y tiene que estarlo: si viviera sólo en la rama, la corrida
 # de mañana no lo vería, lo tomaría como nuevo y abriría otro cada noche — con la cuenta de noches
 # seguidas clavada en 1, que es justo la señal de que algo se está agravando.
-if [ -n "$SOLO_REGISTRAR" ]; then
+if [ -n "$SOLO_REGISTRAR$SIN_GUARDAR" ]; then
   echo "Sólo registrar: esta pasada no abre pull requests (los abre el último paso de la noche)."
 elif [ -z "${ABRIR// }" ]; then
   echo "Nada que abrir: ninguna ficha pendiente quedó sin pull request."
@@ -501,32 +811,30 @@ for ID in ${ABRIR:-}; do   # con --record-only viene vacío: `por_abrir` no agre
   [ -n "$EN_MAIN" ] || { aviso "$ID: no está el borrador, salteado"; continue; }
 
   # el texto del pedido se arma con la ficha de `main`, sacada a un archivo aparte: el checkout no se toca
-  if ! git show "$MAIN_AL_ABRIR:$COLA/pending/$ID.yaml" > "/tmp/pr-card-$ID.yaml" 2>"$ERR"; then
+  if ! git show "$MAIN_AL_ABRIR:$COLA/pending/$ID.yaml" > "$TEXTOS/pr-card-$ID.yaml" 2>"$ERR"; then
     fallo "$ID: no se pudo sacar el borrador de main — no se abre el PR — $(cat "$ERR")"; continue
   fi
-  if ! node "$GUION" pr-text --draft "/tmp/pr-card-$ID.yaml" > "/tmp/pr-$ID.txt" 2>"$ERR"; then
+  DESTINO=(); [ "$PLATAFORMA" = github ] && DESTINO=(--destination pr-github --pr-repo "$REPO")
+  if ! node "$GUION" pr-text --draft "$TEXTOS/pr-card-$ID.yaml" ${DESTINO[@]+"${DESTINO[@]}"} > "$TEXTOS/pr-$ID.txt" 2>"$ERR"; then
     fallo "$ID: no se pudo armar el texto del PR — no se abre — $(cat "$ERR")"; continue
   fi
-  TITULO=$(head -1 "/tmp/pr-$ID.txt")
+  TITULO=$(head -1 "$TEXTOS/pr-$ID.txt")
   # un pedido sin título no lo decide nadie: no se abre vacío
   [ -n "$TITULO" ] || { fallo "$ID: el texto del PR salió sin título — no se abre"; continue; }
-  sed -n '/^---CUERPO---$/,$p' "/tmp/pr-$ID.txt" | tail -n +2 > "/tmp/pr-body-$ID.md"
+  sed -n '/^---CUERPO---$/,$p' "$TEXTOS/pr-$ID.txt" | tail -n +2 > "$TEXTOS/pr-body-$ID.md"
 
   if ! COMMIT_RAMA=$(commit_de_rama "$MAIN_AL_ABRIR" "$ID" 2>"$ERR"); then
     fallo "$ID: no se pudo armar la rama $RAMA — el borrador sigue en main — $(cat "$ERR")"; continue
   fi
   # 🔴 Un push rechazado no puede dejar la corrida trabada: sin permiso de crear ramas el push
   # falla, se intentaría igual el pull request (falla), y el paso moriría sin decir QUÉ faltaba.
-  if ! git push -q origin "$COMMIT_RAMA:refs/heads/$RAMA" --force-with-lease; then
-    fallo "$ID: no se pudo publicar la rama $RAMA (¿la identidad del pipeline tiene 'Create branch'?) — el borrador sigue en main"
+  if ! empujar_rama "$COMMIT_RAMA" "$RAMA"; then
+    if [ "$PLATAFORMA" = azure ]; then QUE="tiene 'Create branch'"; else QUE="tiene contents: write"; fi
+    fallo "$ID: no se pudo publicar la rama $RAMA (¿la identidad del pipeline $QUE?) — el borrador sigue en main — $(cat "$ERR")"
     continue
   fi
 
-  # --squash: el historial de main cuenta decisiones, no el andamio de cada rama.
-  if ! NUEVO=$(az repos pr create --org "$ORG" --project "$PROYECTO" --repository "$REPO" \
-       --source-branch "$RAMA" --target-branch main --title "$TITULO" \
-       --description "@/tmp/pr-body-$ID.md" --squash true \
-       ${REVISORES:+--reviewers $REVISORES} -o json 2>"$ERR"); then
+  if ! NUEVO=$(crear_pr "$RAMA" "$TITULO" "$TEXTOS/pr-body-$ID.md" "$ID"); then
     fallo "$ID: no se pudo abrir el PR — el borrador está en main, revisar en $COLA/pending/ — $(cat "$ERR")"
     continue
   fi
@@ -544,7 +852,7 @@ for ID in ${ABRIR:-}; do   # con --record-only viene vacío: `por_abrir` no agre
     fallo "$ID: el PR se abrió pero no pude leer su número — no se puede anotar (mañana se adopta) — $(cat "$ERR")"
     continue
   fi
-  echo "$ID: abierto el PR !$PRID"
+  echo "$ID: abierto el ${NR}$PRID"
   echo "$ID $PRID" >> "$ABIERTOS"
   # 🔴 La ruta que se encola es la de `main`, donde la ficha SIGUE en `pending/`: moverla a
   # `promoted/` es lo que hace el pull request cuando alguien lo mergea, no algo que pase en `main`
@@ -560,21 +868,30 @@ done
 # `CONFLICT (modify/delete)` al fusionar (reproducido en local).
 # Las anotaciones se escriben sobre el DISCO del checkout: en la pasada de sólo registrar es lo que
 # la noche va a contar, y en la del final el disco ya es lo que el paso anterior guardó en `main`.
+PR_REPO_ARG=(); [ "$PLATAFORMA" = github ] && PR_REPO_ARG=(--pr-repo "$REPO")
 if [ -s "$ACCIONES" ]; then
   while IFS=$'\t' read -r ARCHIVO OP A1 A2; do
     [ -n "$ARCHIVO" ] || continue
     [ -f "$ARCHIVO" ] || { aviso "$(basename "$ARCHIVO"): ya no está en main, no se anota"; continue; }
     case "$OP" in
-      pr)             node "$GUION" note --card "$ARCHIVO" --pr "$A1" || fallo "$(basename "$ARCHIVO"): note --pr falló" ;;
+      pr)             node "$GUION" note --card "$ARCHIVO" --pr "$A1" ${PR_REPO_ARG[@]+"${PR_REPO_ARG[@]}"} || fallo "$(basename "$ARCHIVO"): note --pr falló" ;;
+      alineado)       node "$GUION" note --card "$ARCHIVO" --aligned "$A1" || fallo "$(basename "$ARCHIVO"): note --aligned falló" ;;
       pr-cerrado)     node "$GUION" note --card "$ARCHIVO" --pr-closed "$A1" || fallo "$(basename "$ARCHIVO"): note --pr-closed falló" ;;
       quitar-rechazo) node "$GUION" note --card "$ARCHIVO" --clear-rejection || fallo "$(basename "$ARCHIVO"): note --clear-rejection falló" ;;
-      rechazado)      node "$GUION" note --card "$ARCHIVO" --rejected "${A1%%|*}" --pr "${A1##*|}" --reason "$A2" \
+      rechazado)      node "$GUION" note --card "$ARCHIVO" --rejected "${A1%%|*}" --pr "${A1##*|}" ${PR_REPO_ARG[@]+"${PR_REPO_ARG[@]}"} --reason "$A2" \
                         || fallo "$(basename "$ARCHIVO"): note --rejected falló" ;;
     esac
   done < "$ACCIONES"
 
   # El único camino por el que los nocturnos guardan: lleva a `main` SÓLO la carpeta de la cola, sobre
   # la punta recién traída y con reintento, sin mover el checkout. Sale 0 también si no había nada nuevo.
+  # Con --no-save lo anotado queda en el disco: lo lleva a `main` el guardado de un paso posterior (en GitHub, el
+  # trabajo que escribe; el que lee no puede empujar). Sin guardar no hay ramas que rehacer: esta pasada no abre.
+  if [ -n "$SIN_GUARDAR" ]; then
+    echo "Anotaciones en el disco, sin guardar (--no-save): las lleva a main el guardado de la noche."
+    [ "$FALLOS" = "0" ] || exit 1
+    exit 0
+  fi
   if ! node "$_AQUI_LO/push-nightly-data.js" save \
          --message "$COLA: pull requests anotados${SOLO_REGISTRAR:+ antes de la noche} $HOY [nocturno]" \
          -- "$COLA"; then
@@ -601,12 +918,12 @@ if [ -s "$ACCIONES" ]; then
         RAMA="$PREFIJO/$ID"
         # la ficha puede haber salido de pending/ en el camino (no hay rama que rehacer); un git que falla, no
         if ! EN_MAIN=$(git ls-tree "$MAIN_ANOTADO" -- "$COLA/pending/$ID.yaml" 2>"$ERR"); then
-          fallo "$ID: no se pudo leer el main anotado para rehacer la rama del PR !$PRID — $(cat "$ERR")"; continue
+          fallo "$ID: no se pudo leer el main anotado para rehacer la rama del ${NR}$PRID — $(cat "$ERR")"; continue
         fi
         [ -n "$EN_MAIN" ] || continue
         if COMMIT_RAMA=$(commit_de_rama "$MAIN_ANOTADO" "$ID" 2>"$ERR") \
-           && git push -q origin "$COMMIT_RAMA:refs/heads/$RAMA" --force-with-lease; then :; else
-          fallo "$ID: no se pudo rehacer la rama del PR !$PRID sobre el main anotado"
+           && empujar_rama "$COMMIT_RAMA" "$RAMA"; then :; else
+          fallo "$ID: no se pudo rehacer la rama del ${NR}$PRID sobre el main anotado — $(cat "$ERR")"
         fi
       done < "$ABIERTOS"
     else

@@ -338,6 +338,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.32: el pull request por hallazgo en GitHub (open-pr-per-finding.sh --platform github) contra un repo bare local y el gh de mentira; la del guion en Azure vive en el privado.",
+      "raiz": "arnes",
+      "ruta": "tests/open-pr-per-finding-github.test.sh",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/pipeline-debt.test.js",
       "requiere": []

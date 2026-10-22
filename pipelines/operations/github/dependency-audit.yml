@@ -8,19 +8,39 @@
 # el repo de operaciones, arma el árbol, clona los repos de `scripts/nightly/dependencies/repos.json` (entradas
 # `github: <dueño>/<repo>`), lee el estado de los avisos, mira las dependencias, crea los avisos, manda el resumen y
 # guarda la foto y las fichas en el repo de operaciones. Lo que cambia a propósito:
-#   · los avisos son ISSUES en el repo de cada producto (scripts/nightly/dependencies/github-issues.js, elegido por
-#     `work-items.js` porque `team-repos.json` dice `operations.platform: github`), no Bugs de Azure Boards;
-#   · NO hay pull request por hallazgo en el repo de operaciones: el issue es el lugar de decidir;
-#   · la credencial de la organización llega sólo a los pasos que clonan y hablan con los issues; el paso que mira las
-#     dependencias (corre `dotnet restore` sobre código de los productos) no tiene ninguna. Recomendada: una GitHub App
-#     (variable HARNESS_APP_CLIENT_ID y secreto HARNESS_APP_PRIVATE_KEY): da tokens de una hora, con los permisos que
-#     pide cada paso y sólo de los repos donde está instalada; el de clonar se revoca ANTES de correr código de los
-#     productos, y el de los issues se pide después. Alternativa: un usuario de máquina, con su token en el secreto
-#     HARNESS_ORG_TOKEN. Con la App configurada, gana la App;
+#   · los avisos al equipo de cada producto son ISSUES en el repo del producto (scripts/nightly/dependencies/github-issues.js,
+#     elegido por `work-items.js` porque `team-repos.json` dice `operations.platform: github`), no Bugs de Azure Boards;
+#   · la decisión es un PULL REQUEST por hallazgo en el repo de operaciones (scripts/ci/open-pr-per-finding.sh
+#     --platform github), igual que en Azure: mergearlo es «hay que arreglarlo», cerrarlo sin mergear es «no aplica»
+#     y el comentario es el motivo. Si el pull request y el issue dicen cosas distintas, manda el pull request;
 #   · lo «naranja» de Azure es un aviso (::warning::) con la corrida en verde.
 #
+# TRES TRABAJOS, para que el código de los productos no comparta trabajo con ninguna credencial. Mirar las dependencias
+# corre `dotnet restore` y `pip` sobre código ajeno: un `Directory.Build.targets` puede escribir en GITHUB_ENV
+# (NODE_OPTIONS, BASH_ENV, PATH) o en el disco del árbol, y el paso siguiente que tuviera un token se lo entregaría.
+# el token propio del workflow no se puede revocar a mitad de un trabajo; por eso cada credencial vive y muere en su trabajo:
+#   · `fetch`  — BAJAR, con permiso de lectura (contents y pull-requests: read, más el token de leer de la App, que la
+#                acción revoca al terminar el trabajo). Arma el árbol, clona los repos, vuelca el estado de los issues
+#                y registra en el disco lo que se decidió en los pull requests (pasada --record-only --no-save: no
+#                empuja nada). No corre código de los productos. Deja el árbol y los clones como artefacto;
+#   · `review` — REVISAR, sin ninguna credencial (`permissions: {}`; ni un secreto ni un token en ningún paso). Baja el
+#                artefacto, verifica la huella del árbol, compara los pipelines de los productos y mira las
+#                dependencias: es el único trabajo que corre código de los productos. Deja sólo las fichas y los
+#                resultados como artefacto;
+#   · `decide` — ESCRIBIR LOS AVISOS, con contents y pull-requests: write. En un runner limpio trae el arnés (en el
+#                commit exacto de `fetch`) y el repo de operaciones, verifica la huella, pone encima los resultados de
+#                `review` y crea los issues, entrega el resumen, guarda en el repo de operaciones y, DESPUÉS de guardar,
+#                abre los pull requests (la pasada completa). Nunca aprueba un pull request. Requiere que el repo de
+#                operaciones permita a GitHub Actions crear pull requests (la página lo explica).
+#
+# Credencial de la organización: recomendada, una GitHub App (variable HARNESS_APP_CLIENT_ID y secreto
+# HARNESS_APP_PRIVATE_KEY): da tokens de una hora, con los permisos que pide cada paso y sólo de los repos donde está
+# instalada; el de leer lo usa `fetch` y el de escribir los issues lo usa `decide`. Alternativa: un usuario de máquina,
+# con su token en el secreto HARNESS_ORG_TOKEN. Con la App configurada, gana la App.
+#
 # Efectos: una corrida programada SIEMPRE tiene efectos (en ella `inputs` está vacío); una a mano, según `effects`. Con
-# `effects: false` mira y escribe en el disco del runner, pero no crea ni comenta issues, no manda el resumen y no guarda.
+# `effects: false` mira y escribe en el disco del runner, pero no crea ni comenta issues, no abre pull requests, no manda el
+# resumen y no guarda.
 # Opcional: el resumen diario por Telegram, con la variable TYCON_TELEGRAM_CHAT_ID y el secreto TELEGRAM_BOT_TOKEN.
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 name: dependency-audit
@@ -31,7 +51,7 @@ on:
   workflow_dispatch:
     inputs:
       effects:
-        description: 'Con efectos fuera de la ejecución (issues, resumen y guardar)'
+        description: 'Con efectos fuera de la ejecución (issues, pull requests, resumen y guardar)'
         type: boolean
         default: true
       harness_ref:
@@ -39,23 +59,34 @@ on:
         type: string
         default: ''
 
-permissions:
-  contents: write
+permissions: {}
 
 concurrency:
   group: harness-dependency-audit
   cancel-in-progress: false
 
 jobs:
-  review:
-    name: Revisión de dependencias
+  fetch:
+    name: Bajar (permiso de lectura)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
     env:
       EFFECTS: ${{ github.event_name == 'schedule' || inputs.effects }}
       # la clave de la corrida que usan el guardado y el sello del tablero (en Azure, Build.BuildId)
       BUILD_BUILDID: ${{ github.run_id }}
       SYSTEM_JOBATTEMPT: ${{ github.run_attempt }}
+    # GITHUB_ENV no cruza de un trabajo a otro: lo que necesitan los demás sale por acá
+    outputs:
+      harness_repository: ${{ steps.harness.outputs.repository }}
+      harness_commit: ${{ steps.salida.outputs.harness_commit }}
+      harness_tree: ${{ steps.salida.outputs.harness_tree }}
+      day: ${{ steps.dia.outputs.day }}
+      issues_on: ${{ steps.salida.outputs.issues_on }}
+      has_nuget: ${{ steps.salida.outputs.has_nuget }}
+      has_pip: ${{ steps.salida.outputs.has_pip }}
     steps:
       - name: El repo de operaciones
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -104,6 +135,15 @@ jobs:
           OPS_TOKEN: ${{ github.token }}
         run: bash harness/pipelines/operations/github/prepare-tree.sh
 
+      # El día de la noche se fija UNA vez, acá: los tres trabajos usan el mismo aunque la corrida cruce la medianoche.
+      - name: El día de la noche
+        id: dia
+        run: |
+          set -euo pipefail
+          HOY=$(date -u +%Y-%m-%d)
+          echo "HOY_NOCTURNO=${HOY}" >> "${GITHUB_ENV}"
+          echo "day=${HOY}" >> "${GITHUB_OUTPUT}"
+
       - name: Leer la configuración de la organización (repos.json)
         working-directory: harness
         run: |
@@ -125,27 +165,25 @@ jobs:
             echo "primera noche: se crea la cola inbox/dependencies (pending, promoted, archived)"
           fi
 
+      # Lo que `review` y `decide` necesitan saber de lo que `prepare-tree.sh` y la configuración dejaron en GITHUB_ENV.
+      - name: Dejar a los otros trabajos lo que necesitan
+        id: salida
+        run: |
+          set -euo pipefail
+          for V in HARNESS_COMMIT HARNESS_TREE ISSUES_ON HAS_NUGET HAS_PIP; do
+            [ -n "${!V:-}" ] || { echo "::error::falta ${V}: los otros trabajos no pueden seguir"; exit 1; }
+          done
+          {
+            echo "harness_commit=${HARNESS_COMMIT}"
+            echo "harness_tree=${HARNESS_TREE}"
+            echo "issues_on=${ISSUES_ON}"
+            echo "has_nuget=${HAS_NUGET}"
+            echo "has_pip=${HAS_PIP}"
+          } >> "${GITHUB_OUTPUT}"
+
       # La credencial de la GitHub App, si está configurada, para clonar y leer los issues: un token de instalación
-      # sólo de lectura y sólo de los repos donde la App está instalada. Se revoca antes de correr código de los
-      # productos (por eso no lo revoca la acción al final). Sin la App, el paso no corre y vale HARNESS_ORG_TOKEN.
-      # Cada repo nuget declara su SDK en su global.json: se instalan los de esta lista (cambiala si tus repos piden otro),
-      # y sólo si algún repo es nuget.
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        if: env.HAS_NUGET == '1'
-        with:
-          dotnet-version: |
-            9.0.x
-            10.0.x
-
-      # pip-audit, fijado, sólo si algún repo es pip.
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        if: env.HAS_PIP == '1'
-        with:
-          python-version: '3.12'
-      - name: pip-audit 2.10.1
-        if: env.HAS_PIP == '1'
-        run: python -m pip install --disable-pip-version-check pip-audit==2.10.1
-
+      # sólo de lectura y sólo de los repos donde la App está instalada. La acción lo revoca al terminar este trabajo.
+      # Sin la App, el paso no corre y vale HARNESS_ORG_TOKEN.
       - name: La credencial de la organización para leer (GitHub App, si está configurada)
         id: org-token
         if: vars.HARNESS_APP_CLIENT_ID != ''
@@ -156,7 +194,6 @@ jobs:
           owner: ${{ github.repository_owner }}
           permission-contents: read
           permission-issues: read
-          skip-token-revoke: true
 
       - name: Clonar los repos declarados
         working-directory: harness
@@ -182,29 +219,98 @@ jobs:
         run: |
           set -uo pipefail
           set +e   # GitHub corre el paso con bash -e: el código de salida se lee abajo, no corta acá
-          HOY=$(date -u +%Y-%m-%d)
-          echo "HOY_NOCTURNO=${HOY}" >> "${GITHUB_ENV}"
-          node scripts/nightly/dependencies/work-items.js state --out .dashboard/dependencias --pending inbox/dependencies --today "${HOY}" 2>&1 \
+          node scripts/nightly/dependencies/work-items.js state --out .dashboard/dependencias --pending inbox/dependencies --today "${HOY_NOCTURNO}" 2>&1 \
             | bash pipelines/operations/github/annotate.sh
           CODIGO=${PIPESTATUS[0]}
           [ "${CODIGO}" = 0 ] || echo "::warning::No se pudo leer el estado de los issues (código ${CODIGO}): la noche mide igual pero NO cruza — no es «coinciden»."
           exit 0
 
-      # Ningún token de la App vivo mientras corre código de los productos: el de leer se revoca acá, también si un paso
-      # anterior falló. Si no se puede revocar, no se sigue (el token de un usuario de máquina no se revoca: no hay App).
-      - name: Revocar la credencial de la App (antes de correr código de los productos)
-        if: always() && steps.org-token.outputs.token != ''
+      # Lo que las personas decidieron en los pull requests desde la última noche, ANTES de mirar las dependencias
+      # (sin esto el resumen de la mañana cuenta como pendiente lo que alguien rechazó la tarde anterior). Sólo anota en
+      # el disco: no empuja ni abre nada (--no-save); lo que anota viaja en el artefacto y lo guarda `decide`.
+      # Si GitHub no contesta, la noche sigue y queda un aviso: las fichas se leen igual y se reintenta mañana.
+      - name: Registrar lo que se decidió en los pull requests (sólo en el disco)
+        if: env.EFFECTS == 'true' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        working-directory: harness
         env:
-          APP_TOKEN: ${{ steps.org-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
-          CODIGO=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE -H "Authorization: Bearer ${APP_TOKEN}" \
-            -H 'Accept: application/vnd.github+json' "${GITHUB_API_URL}/installation/token")
-          if [ "${CODIGO}" != 204 ]; then echo "::error::No se pudo revocar la credencial de la App (HTTP ${CODIGO}): no se corre código de los productos con ella viva"; exit 1; fi
-          echo "la credencial de la App para leer quedó revocada"
+          set +e   # GitHub corre el paso con bash -e: el código de salida se lee abajo, no corta acá
+          HOY="${HOY_NOCTURNO}"
+          bash scripts/ci/open-pr-per-finding.sh --platform github --record-only --no-save --queue inbox/dependencies --branch dependencias --script scripts/nightly/dependencies/nightly-dependencies.js --repo "${GITHUB_REPOSITORY}" --today "${HOY}" 2>&1 \
+            | bash pipelines/operations/github/annotate.sh
+          CODIGO=${PIPESTATUS[0]}
+          if [ "${CODIGO}" != 0 ]; then
+            echo "::warning::No se pudo registrar lo que se decidió en los pull requests (código ${CODIGO}): la noche sigue, el resumen puede contar como pendiente lo decidido ayer."
+            exit 1
+          fi
+
+      # El árbol y los clones viajan como un solo paquete: tar conserva el .git, que un artefacto suelto no (ni los
+      # archivos ocultos).
+      - name: Empaquetar el árbol y los clones para la revisión
+        run: |
+          set -euo pipefail
+          tar -czf "${RUNNER_TEMP}/fetch.tgz" -C "${GITHUB_WORKSPACE}" harness -C "${RUNNER_TEMP}" repos
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fetch-state
+          path: ${{ runner.temp }}/fetch.tgz
+          retention-days: 1
+          if-no-files-found: error
+
+  review:
+    name: Revisar (sin ninguna credencial)
+    needs: fetch
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions: {}
+    env:
+      EFFECTS: ${{ github.event_name == 'schedule' || inputs.effects }}
+      HOY_NOCTURNO: ${{ needs.fetch.outputs.day }}
+      HAS_NUGET: ${{ needs.fetch.outputs.has_nuget }}
+      HAS_PIP: ${{ needs.fetch.outputs.has_pip }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: fetch-state
+          path: ${{ runner.temp }}/entrada
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Desempaquetar el árbol y los clones
+        run: |
+          set -euo pipefail
+          tar -xzf "${RUNNER_TEMP}/entrada/fetch.tgz" -C "${GITHUB_WORKSPACE}" harness
+          tar -xzf "${RUNNER_TEMP}/entrada/fetch.tgz" -C "${RUNNER_TEMP}" repos
+          rm -f "${RUNNER_TEMP}/entrada/fetch.tgz"
+
+      # Cada repo nuget declara su SDK en su global.json: se instalan los de esta lista (cambiala si tus repos piden otro),
+      # y sólo si algún repo es nuget.
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        if: env.HAS_NUGET == '1'
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.x
+
+      # pip-audit, fijado, sólo si algún repo es pip.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: env.HAS_PIP == '1'
+        with:
+          python-version: '3.12'
+      - name: pip-audit 2.10.1
+        if: env.HAS_PIP == '1'
+        run: python -m pip install --disable-pip-version-check pip-audit==2.10.1
 
       - name: El árbol sigue siendo el que se armó (antes de medir)
         working-directory: harness
+        env:
+          HARNESS_TREE: ${{ needs.fetch.outputs.harness_tree }}
         run: |
           set -uo pipefail
           if ! OUT=$(node scripts/ci/harness-tree.js --check-tree --worktree --repo . 2>&1); then
@@ -260,9 +366,139 @@ jobs:
           [ -f ".dashboard/dependencias/dependencias-${HOY}.json" ] || { echo "::error::No quedó el snapshot de ${HOY}: la noche no se miró"; exit 1; }
           if grep -q 'NO MEDIDO' "${RUNNER_TEMP}/deps-salida.txt"; then echo "::warning::Hubo repos que no se pudieron mirar (ver la salida). No medido NO es limpio."; fi
 
-      # La credencial de la App para escribir los issues, pedida DESPUÉS de mirar las dependencias: un token de una hora
-      # que sólo puede escribir issues, que no existe mientras corre código de los productos y que la acción revoca al
-      # terminar el trabajo. Sin la App, el paso no corre y vale HARNESS_ORG_TOKEN.
+      # Sólo salen las fichas y los resultados de la noche: ni el código del árbol ni los clones vuelven a `decide`.
+      - name: Empaquetar lo que sale de la revisión
+        working-directory: harness
+        run: |
+          set -euo pipefail
+          LISTA=()
+          for D in inbox/dependencies .dashboard/dependencias .dashboard/paridad; do
+            if [ -d "${D}" ]; then LISTA+=("${D}"); fi
+          done
+          [ "${#LISTA[@]}" -gt 0 ] || { echo "::error::la revisión no dejó nada que entregar"; exit 1; }
+          tar -czf "${RUNNER_TEMP}/review.tgz" "${LISTA[@]}"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: review-result
+          path: ${{ runner.temp }}/review.tgz
+          retention-days: 1
+          if-no-files-found: error
+
+  decide:
+    name: Decidir y escribir los avisos
+    needs: [fetch, review]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      EFFECTS: ${{ github.event_name == 'schedule' || inputs.effects }}
+      BUILD_BUILDID: ${{ github.run_id }}
+      SYSTEM_JOBATTEMPT: ${{ github.run_attempt }}
+      HOY_NOCTURNO: ${{ needs.fetch.outputs.day }}
+      ISSUES_ON: ${{ needs.fetch.outputs.issues_on }}
+    steps:
+      - name: El repo de operaciones
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: ops
+          persist-credentials: false
+
+      - name: El arnés, en el commit exacto que bajó fetch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.fetch.outputs.harness_repository }}
+          ref: ${{ needs.fetch.outputs.harness_commit }}
+          path: harness
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Armar el árbol (los datos y la configuración de operaciones, encima del arnés)
+        env:
+          OPS_TOKEN: ${{ github.token }}
+        run: bash harness/pipelines/operations/github/prepare-tree.sh
+
+      - name: El árbol es el que bajó fetch (antes de usar los resultados)
+        working-directory: harness
+        env:
+          HARNESS_TREE: ${{ needs.fetch.outputs.harness_tree }}
+        run: |
+          set -uo pipefail
+          if ! OUT=$(node scripts/ci/harness-tree.js --check-tree --worktree --repo . 2>&1); then
+            echo "::error::$(printf '%s' "${OUT}" | tail -n 1) — no se escribe nada"
+            exit 1
+          fi
+          echo "${OUT}"
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: review-result
+          path: ${{ runner.temp }}/resultado
+
+      # El paquete lo armó el trabajo que corrió código de los productos: es DATO no confiable. Antes de ponerlo encima,
+      # nada que no sea de las tres carpetas de resultados, ni rutas con «..», ni enlaces. Las carpetas se vacían antes
+      # para que no queden fichas de la copia fresca que la revisión ya movió.
+      - name: Poner encima los resultados de la revisión
+        working-directory: harness
+        run: |
+          set -euo pipefail
+          TGZ="${RUNNER_TEMP}/resultado/review.tgz"
+          NOMBRES="$(tar -tzf "${TGZ}")"
+          DETALLE="$(tar -tvzf "${TGZ}")"
+          if grep -qvE '^(inbox/dependencies|\.dashboard/dependencias|\.dashboard/paridad)(/|$)' <<< "${NOMBRES}"; then
+            echo "::error::El paquete de la revisión trae rutas que no son de sus tres carpetas — no se escribe nada"; exit 1
+          fi
+          # tar lista un salto de línea del nombre como «\n» literal: un nombre fuera de este juego de caracteres no
+          # entra (las fichas se llaman [A-Za-z0-9_-]; un nombre con salto imprimiría órdenes «::» al workflow)
+          if grep -qvE '^[A-Za-z0-9._/-]+$' <<< "${NOMBRES}"; then
+            echo "::error::El paquete de la revisión trae nombres con caracteres fuera de [A-Za-z0-9._/-] — no se escribe nada"; exit 1
+          fi
+          if grep -qE '(^|/)\.\.(/|$)' <<< "${NOMBRES}"; then
+            echo "::error::El paquete de la revisión trae rutas con «..» — no se escribe nada"; exit 1
+          fi
+          if grep -qE '^[lh]' <<< "${DETALLE}"; then
+            echo "::error::El paquete de la revisión trae enlaces — no se escribe nada"; exit 1
+          fi
+          rm -rf inbox/dependencies .dashboard/dependencias .dashboard/paridad
+          tar -xzf "${TGZ}" -C .
+
+      - name: El código del árbol sigue siendo el de fetch (después de poner los resultados)
+        working-directory: harness
+        env:
+          HARNESS_TREE: ${{ needs.fetch.outputs.harness_tree }}
+        run: |
+          set -uo pipefail
+          if ! OUT=$(node scripts/ci/harness-tree.js --check-tree --worktree --repo . 2>&1); then
+            echo "::error::$(printf '%s' "${OUT}" | tail -n 1) — no se escribe nada"
+            exit 1
+          fi
+          echo "${OUT}"
+
+      # Los revisores de los pull requests, de operations.json (reviewers.dependencies), como en el modelo de Azure. Sin
+      # el archivo o sin la clave: el pull request se abre igual, sin revisores. Con un operations.json que no valida: rojo.
+      - name: Los revisores de los pull requests (operations.json)
+        working-directory: harness
+        run: |
+          set -euo pipefail
+          if [ -f operations.json ]; then
+            REV=$(node -e 'const c = require("./scripts/lib/operations-config.js").load("operations.json"); if (!c.ok) { for (const p of c.problems) console.error(`operations.json: ${p.path || "(el archivo)"}: ${p.message}`); process.exit(1); } process.stdout.write(((c.data.reviewers || {}).dependencies || []).join(" "));') \
+              || { echo "::error::operations.json del repo de operaciones no es válido (motivo arriba)"; exit 1; }
+          else
+            REV=""
+          fi
+          # son logins de GitHub separados por espacios: nada más puede entrar a GITHUB_ENV
+          if printf '%s' "${REV}" | grep -qvE '^[A-Za-z0-9_. -]*$'; then echo "::error::reviewers.dependencies trae algo que no es un login de GitHub"; exit 1; fi
+          echo "revisores de los pull requests: ${REV:-(ninguno)}"
+          echo "OPS_REVIEWERS_DEPENDENCIES=${REV}" >> "${GITHUB_ENV}"
+
+      # La credencial de la App para escribir los issues: un token de una hora que sólo puede escribir issues y que la
+      # acción revoca al terminar el trabajo. Sin la App, el paso no corre y vale HARNESS_ORG_TOKEN.
       - name: La credencial de la organización para los issues (GitHub App, si está configurada)
         id: org-token-issues
         if: vars.HARNESS_APP_CLIENT_ID != '' && env.EFFECTS == 'true' && env.ISSUES_ON == '1'
@@ -338,6 +574,7 @@ jobs:
           if [ "${CODIGO}" != 0 ]; then echo "::warning::El resumen NO se entregó (código ${CODIGO})"; exit 1; fi
 
       - name: Guardar la foto y las fichas en el repo de operaciones
+        id: guardar
         if: env.EFFECTS == 'true' && github.ref == 'refs/heads/main'
         working-directory: harness
         env:
@@ -349,6 +586,29 @@ jobs:
             --message "chore(dependencias): revisión nocturna $(date -u +%Y-%m-%d) [nocturno]" \
             --require-daily '.dashboard/dependencias/dependencias-{day}.json' \
             -- .dashboard/dependencias inbox/dependencies .dashboard/paridad 2>&1 | bash pipelines/operations/github/annotate.sh
+
+      # La pasada completa, DESPUÉS de guardar y sólo si guardó: la rama de cada pedido se arma desde el main ya
+      # publicado, y antes del guardado la ficha nueva no está. Abre un pull request sólo por una ficha que nunca tuvo
+      # uno; el que una persona cerró es la decisión «no aplica». Empuja las ramas dependencias/* y guarda las anotaciones
+      # en main con la credencial de operaciones. NUNCA aprueba un pull request. Si no se pudo preguntar a GitHub, no abre
+      # nada y la noche termina en rojo.
+      - name: Abrir un pull request por hallazgo (ahí se decide)
+        if: env.EFFECTS == 'true' && github.ref == 'refs/heads/main' && steps.guardar.outcome == 'success'
+        working-directory: harness
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TYCON_GH_ISSUES_TOKEN: ${{ steps.org-token-issues.outputs.token || secrets.HARNESS_ORG_TOKEN }}
+          OPS_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          . pipelines/operations/github/operations-auth.sh
+          bash scripts/ci/open-pr-per-finding.sh --platform github \
+            --queue inbox/dependencies \
+            --branch dependencias \
+            --script scripts/nightly/dependencies/nightly-dependencies.js \
+            --repo "${GITHUB_REPOSITORY}" \
+            --reviewers "${OPS_REVIEWERS_DEPENDENCIES:-}" \
+            --today "${HOY_NOCTURNO}" 2>&1 | bash pipelines/operations/github/annotate.sh
 
       # El rojo de «los issues no se intentaron» va acá, después de guardar: la noche no se pierde por eso.
       - name: Denunciar que los issues no se intentaron

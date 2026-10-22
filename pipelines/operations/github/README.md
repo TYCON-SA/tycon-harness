@@ -7,7 +7,7 @@ para una organización que vive en GitHub:
 | Workflow | Qué hace | Qué deja |
 |---|---|---|
 | `stage-metrics.yml` | Mide el ciclo de las stories de los repos que usan el arnés | `.dashboard/sdlc-stage-<fecha>.json` y `.dashboard/proyectos/` en el repo de operaciones |
-| `dependency-audit.yml` | Busca dependencias con vulnerabilidades conocidas en los repos que declares, y abre un **issue** en el repo del producto por cada hallazgo. Antes de mirarlas, compara los workflows de tus productos (la paridad) | `.dashboard/dependencias/`, `inbox/dependencies/` y `.dashboard/paridad/paridad-<día>.json` en el repo de operaciones; los issues, en cada producto |
+| `dependency-audit.yml` | Busca dependencias con vulnerabilidades conocidas en los repos que declares, y abre, por cada hallazgo, un **issue** en el repo del producto y un **pull request de decisión** en el repo de operaciones. Antes de mirarlas, compara los workflows de tus productos (la paridad) | `.dashboard/dependencias/`, `inbox/dependencies/` y `.dashboard/paridad/paridad-<día>.json` en el repo de operaciones; los issues, en cada producto; los pull requests, en el repo de operaciones |
 | `team-dashboard.yml` | Arma una página con todo lo anterior | `artifacts/tablero-del-arnes.html` en el repo de operaciones |
 
 Esta página es para quien administra la organización de GitHub. Lleva entre tres y cuatro horas la primera vez. No
@@ -26,6 +26,8 @@ hace falta instalar nada en una máquina: todo pasa en GitHub.
   - **No uses tu token personal.** Con él, lo que hace la noche y lo que hacés vos salen de la misma cuenta, y la noche
     deja de poder distinguir un issue que cerraste vos de uno que cerró ella (lo marca en el texto, pero cerrar o
     etiquetar sin comentar se lee como suyo).
+- **Que el repo de operaciones deje a los workflows crear pull requests** (punto 3.1): la revisión de dependencias abre
+  uno por hallazgo y, sin ese ajuste, GitHub lo rechaza.
 - **Que los repos a medir usen el arnés.** Las métricas sólo cuentan los repos que tienen la carpeta `.tycon/` o
   `.advisors/`. Un repo sin ninguna de las dos no se mide (no es un error).
 
@@ -195,6 +197,86 @@ protección, el token del workflow tiene que poder empujar ahí (o los guardados
 restringe qué acciones se pueden usar, permití `actions/checkout`, `actions/setup-node`, `actions/setup-dotnet`, `actions/setup-python` (sólo la usa
 si algún repo es pip) y `actions/create-github-app-token` (van fijadas por el commit).
 
+### 3.1 El pull request por hallazgo
+
+La revisión de dependencias abre **un pull request por cada hallazgo** en el repo de operaciones, además del issue en el
+repo del producto. El pull request mueve la ficha del hallazgo de `inbox/dependencies/pending/` a `promoted/`. Es el
+lugar donde decide quien administra la noche, con revisores elegidos y con el motivo escrito. Es lo mismo que hace la
+revisión en Azure DevOps.
+
+**Qué significa cada cosa en el pull request:**
+
+- **Mergearlo** quiere decir «hay que subir el paquete». La ficha pasa a `promoted/` y la noche la sigue vigilando
+  hasta que la vulnerabilidad desaparezca de verdad. Mergear no arregla nada por sí solo. Conviene el merge por
+  **squash**: deja un solo commit con la ficha movida.
+- **Cerrarlo sin mergear** quiere decir «no aplica», y **el último comentario o la última revisión de una persona es el
+  motivo**. La noche siguiente lo anota en la ficha (`rechazado:` y `motivo_rechazo:`); sin texto de una persona, anota
+  «sin motivo escrito». La ficha sigue viva: rechazar el aviso no saca la vulnerabilidad de `main`. La salida sin
+  arreglo es declarar la deuda en el `vulnerabilidades-pendientes.json` del repo.
+- **Reabrirlo** borra el rechazo, igual que reactivarlo en Azure.
+
+**Un solo pull request por hallazgo.** La ficha recuerda su número (`pr:`) y el repo donde vive (`pr_repo:`). Si el
+número se pierde, la noche siguiente adopta el pull request que ya existe sobre la rama `dependencias/<id>` en vez de
+abrir otro. Si una noche no pudo crear el pull request pero la rama quedó empujada, la siguiente lo abre sobre esa rama.
+
+**El issue sigue al pull request.** Si el pull request y el issue del producto dicen cosas distintas, manda el pull
+request y la noche actualiza el issue, siempre con un comentario que nombra el pull request:
+
+| Pull request | Issue del producto | Qué hace la noche |
+|---|---|---|
+| Mergeado | Cerrado como «not planned» | Lo reabre |
+| Cerrado sin merge | Abierto | Lo cierra como «not planned», con el motivo del rechazo |
+| Reabierto | Cerrado por la noche por ese rechazo | Lo reabre |
+
+Cada cambio se hace una vez por decisión (la ficha anota `alineado:`). Un issue cerrado como `completed` (arreglado) no
+se toca: lo decide la medición. Una persona que no está de acuerdo con lo que hizo la noche decide en el pull request.
+
+**Los ajustes que hacen falta:**
+
+1. En el **repo de operaciones**: *Settings → Actions → General → Workflow permissions* → tildar **Allow GitHub Actions
+   to create and approve pull requests**.
+2. En la **organización**: *Settings → Actions → General → Workflow permissions* tiene el mismo ajuste, y si la
+   organización lo bloquea, el del repo aparece apagado y no se puede prender. Se prende primero en la organización.
+   Ese ajuste habilita también **aprobar** pull requests a todo workflow del repo de operaciones.
+
+Sin ellos, la ejecución sale **en rojo** con el motivo («GitHub Actions is not permitted to create or approve pull
+requests»), no en verde sin pull requests.
+
+**Lo que traba el pull request:**
+
+- Un pull request abierto con el token de un workflow **no dispara otros workflows**. Si `main` del repo de operaciones
+  exige controles obligatorios (*required status checks*), el pull request no se puede mergear nunca.
+- Una regla que restrinja crear ramas impide empujar `dependencias/*`. Dejá esa rama fuera de la regla, igual que ya
+  hacés con lo que guarda la noche en `main`.
+
+**Los revisores.** Salen de `operations.json` → `reviewers.dependencies`, una lista de **usuarios de GitHub** (los
+logins, sin `@`); el ejemplo trae la forma. Se piden en una llamada aparte, después de crear el pull request: si GitHub
+no acepta a alguno (no tiene acceso al repo), la noche lo avisa y el pull request queda abierto igual. Sin la clave, el
+pull request se abre sin revisores.
+
+**Por qué la revisión son tres trabajos.** Para mirar las dependencias hay que correr código de los productos
+(restaurar paquetes ejecuta scripts de terceros). Si ese código compartiera trabajo con un token de escritura, podría
+llevárselo. Por eso el workflow se parte y cada trabajo tiene su `permissions`:
+
+1. **`fetch`, bajar con permiso de lectura.** Sólo lee: clona los repos declarados y vuelca el estado de los issues. No
+   corre código de los productos. Entrega los clones y el estado como artefacto.
+2. **`review`, revisar sin ninguna credencial.** No tiene permisos, ni secretos ni tokens en ningún paso. Baja el
+   artefacto, verifica su huella y mira las dependencias. Acá corre el código de los productos, y no hay nada que
+   robar. Entrega el resultado como artefacto.
+3. **`decide`, escribir los avisos.** Es el único con permiso de escritura (`contents: write` y
+   `pull-requests: write`, más el token de los issues). Corre en una máquina limpia, trae de nuevo el arnés y el repo de
+   operaciones, verifica la huella, baja el resultado de `review` y recién ahí abre los issues y los pull requests,
+   manda el resumen y guarda.
+
+El token de cada trabajo muere con su trabajo: ninguno convive con el código de los productos. La ejecución tarda un
+poco más (dos máquinas más) y pasa dos artefactos de un trabajo al siguiente. **Copiá el `dependency-audit.yml` nuevo
+sin cambiarlo**: las pruebas del arnés comprueban esta forma.
+
+**Si ya usabas el workflow anterior.** El cambio te alcanza aunque no toques nada más: al copiar el
+`dependency-audit.yml` nuevo, la próxima noche abre pull requests de todos los hallazgos pendientes que no tengan uno
+(con el tope de avisos de siempre) y reconcilia los issues existentes con lo que se decida. Antes de copiarlo,
+prendé los dos ajustes de arriba; si no, la primera noche sale en rojo. Los issues ya abiertos siguen donde están.
+
 ## 4. La primera ejecución: sin efectos
 
 En *Actions*, cada workflow → *Run workflow*, con **effects** destildado. Mide y escribe en el disco del runner, pero no
@@ -224,8 +306,10 @@ que esperaba.
 
 ## 6. Qué mirar después
 
-- **Los issues** de la revisión de dependencias, en cada repo de producto, con la etiqueta `arnes-hallazgo`. Ahí se
-  decide: **arreglarlo** (subir el paquete: cuando la noche deja de verlo en `main`, cierra el issue sola), **declararlo
+- **Los pull requests** de la revisión de dependencias, en el repo de operaciones (punto 3.1): ahí decide quien
+  administra la noche, y el issue del producto sigue lo que se decida.
+- **Los issues** de la revisión de dependencias, en cada repo de producto, con la etiqueta `arnes-hallazgo`. Ahí el
+  equipo del producto ve el aviso y decide: **arreglarlo** (subir el paquete: cuando la noche deja de verlo en `main`, cierra el issue sola), **declararlo
   como deuda** (en el `vulnerabilidades-pendientes.json` del repo; el issue queda abierto), o **cerrarlo como «not
   planned»** si no aplica (la noche lo va a decir una vez mientras la vulnerabilidad siga en `main`: la salida sin
   arreglo es declarar la deuda). La noche reabre un issue que cerró ella si la vulnerabilidad vuelve; uno que cerró una
@@ -268,8 +352,9 @@ mantiene al día»).
 
 ## Diferencias con los pipelines de Azure DevOps
 
-- Los avisos de dependencias son **issues en el repo del producto**, no Bugs de Azure Boards, y **no hay pull request por
-  hallazgo** en el repo de operaciones: el issue es el lugar de decidir. Ninguna ficha pasa a `promoted/`.
+- Los avisos de dependencias son **issues en el repo del producto**, no Bugs de Azure Boards. Como en Azure, cada
+  hallazgo abre además un **pull request de decisión** en el repo de operaciones (punto 3.1), y la ficha pasa a
+  `promoted/` al mergearlo. Si el pull request y el issue no coinciden, manda el pull request.
 - No hay buzón de ejecuciones en el tablero: las fichas del equipo salen «no leído».
 - Lo que deja la noche para el sitio de la organización (story 2.23): `team-dashboard` escribe igual
   `.dashboard/open-prs/open-prs-<día>.json` y `.dashboard/assigned/assigned-<día>.json`, los dos con `estado: no_medido`
