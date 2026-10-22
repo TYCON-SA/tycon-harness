@@ -167,6 +167,21 @@ test('T9 Reescritura_SinSintaxisNueva_MismaSemantica @story-8.93 @ac-4', () => {
     for (const keep of [0, '', false, NaN]) assert.ok(Object.is(nn(keep, 'def'), keep), `${rel}: nn(${String(keep)}) se queda`);
     for (const nil of [null, undefined]) assert.strictEqual(nn(nil, 'def'), 'def', `${rel}: nn(${String(nil)}) toma el defecto`);
   }
+  // marker.js y pipeline.js: isNil, nn y at (el reemplazo de `?.`) con la misma semántica
+  for (const rel of ['skills/tycon-pipeline/scripts/marker.js', 'skills/tycon-pipeline/scripts/pipeline.js']) {
+    const text = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    const m = text.match(/const isNil = [^\n]*\nconst nn = [^\n]*\nconst at = [^\n]*/);
+    assert.ok(m, `${rel}: trae isNil, nn y at`);
+    const { nn, at } = new Function(`${m[0]}; return { nn, at };`)();
+    for (const keep of [0, '', false]) {
+      assert.ok(Object.is(nn(keep, 'def'), keep), `${rel}: nn(${JSON.stringify(keep)}) se queda`);
+      assert.ok(Object.is(at({ k: keep }, 'k'), keep), `${rel}: at() devuelve ${JSON.stringify(keep)} tal cual`);
+      assert.strictEqual(at(keep === false ? null : undefined, 'k'), undefined);
+    }
+    assert.strictEqual(nn(null, 'def'), 'def');
+    assert.strictEqual(nn(undefined, 'def'), 'def');
+    assert.strictEqual(at('', 'length'), 0, 'un string vacío no es «no hay»: `?.` lo lee igual');
+  }
   // y los reemplazos sin ayudante usan el chequeo explícito, nunca `||` sobre el valor que reemplaza a un `??`
   for (const rel of ['scripts/instincts/instinct-promote.js', 'scripts/instincts/instinct-observer.js', 'skills/tycon-pipeline/scripts/mockup.js', 'scripts/nightly/dashboard/dashboard.js', 'skills/tycon-pipeline/scripts/step-7c-macro.js']) {
     const text = fs.readFileSync(path.join(ROOT, rel), 'utf8');

@@ -127,6 +127,14 @@
  * advisor-runs/*.jsonl viejos (>7d) y *.tmp huérfanos (>1d).
  */
 
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./lib/node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
+// Sin `?.` ni `??`: este guion lo tiene que poder leer un Node viejo hasta llegar a la guarda. Misma semántica: sólo null
+// y undefined cuentan como «no hay» (0, '' y false se quedan).
+const isNil = (v) => v === undefined || v === null;
+const nn = (v, d) => (isNil(v) ? d : v);
+const at = (o, k) => (isNil(o) ? undefined : o[k]);
+
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -464,48 +472,48 @@ function cmdSet(payloadJson) {
     // re-correr build + suite completa.
     ...(existing || {}),
     storyId: payload.storyId,
-    storyPath: payload.storyPath || existing?.storyPath || null,
-    repoPath: path.resolve(payload.repoPath || existing?.repoPath || process.cwd()),
+    storyPath: payload.storyPath || at(existing, 'storyPath') || null,
+    repoPath: path.resolve(payload.repoPath || at(existing, 'repoPath') || process.cwd()),
     // Dónde nace la evidencia de cierre: el repo de la STORY, aunque el código viva en
     // otro. Lo escribe `pipeline.js start`; lo leen el paso «Probar en vivo», el macro y `mark-dod-runtime-checked`.
     // 🔴 El spread de arriba preserva lo EXISTENTE, no lo que trae el payload: sin esta línea el
     // campo se pierde en silencio, aunque la prosa prometa un `marker.js get → evidenceDir`. Es estado
     // de corrida: se resetea por story.
-    evidenceDir: payload.evidenceDir || existing?.evidenceDir || null,
+    evidenceDir: payload.evidenceDir || at(existing, 'evidenceDir') || null,
     // Commit en el que arrancó la corrida: la base contra la que
     // test-gate.sh mide las «líneas tocadas» (lib/coverage-base.js). Lo anota `pipeline.js start`.
     // Es estado de corrida: el bloque de arriba lo descarta al cambiar de story. Y gana el EXISTENTE:
     // re-correr `start` sobre la misma story (retomar) no puede mover la base al HEAD de ahora, o lo
     // commiteado durante la corrida dejaría de contar como tocado.
-    baseSha: existing?.baseSha || payload.baseSha || null,
-    sprint: payload.sprint ?? existing?.sprint ?? null,
+    baseSha: at(existing, 'baseSha') || payload.baseSha || null,
+    sprint: nn(payload.sprint, nn(at(existing, 'sprint'), null)),
     sessionId: SID,
-    startedAt: existing?.startedAt || nowIso(),
+    startedAt: at(existing, 'startedAt') || nowIso(),
     lastTouch: nowIso(),
     // el esquema lo trae `pipeline.js start` (2: pasos por nombre); un marcador viejo sigue sin él hasta terminar
     ...(payload.stepScheme !== undefined ? { stepScheme: payload.stepScheme } : {}),
-    stepsCompleted: payload.stepsCompleted || existing?.stepsCompleted || [],
-    stepsPending: payload.stepsPending || existing?.stepsPending || [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-    filesTouched: payload.filesTouched || existing?.filesTouched || [],
+    stepsCompleted: payload.stepsCompleted || at(existing, 'stepsCompleted') || [],
+    stepsPending: payload.stepsPending || at(existing, 'stepsPending') || [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    filesTouched: payload.filesTouched || at(existing, 'filesTouched') || [],
     // Los sellos de contenido (hash + hora por toque, piso de frescura por contenido)
     // viven y mueren con la story: si cambia la story, los de la anterior no valen para ésta.
-    filesTouchedAt: (payload.storyId && existing?.storyId && payload.storyId !== existing.storyId)
+    filesTouchedAt: (payload.storyId && at(existing, 'storyId') && payload.storyId !== existing.storyId)
       ? (payload.filesTouchedAt || {})
-      : (payload.filesTouchedAt || existing?.filesTouchedAt || {}),
+      : (payload.filesTouchedAt || at(existing, 'filesTouchedAt') || {}),
     // Foto de archivos por iteración para los revisores del smart re-loop.
     // Map { "<N>": { ts, filesSnapshot: [abs-paths] } }. Permite computar delta
     // entre iters N y N-1 → pipeline.js smart-reloop decide qué advisors re-correr.
-    iterations: payload.iterations || existing?.iterations || {},
+    iterations: payload.iterations || at(existing, 'iterations') || {},
     // fileEvents: un `set`
     // mid-pipeline NO debe borrar los eventos de edición de la iteración — si se
     // pierden, computeSmartReloop elige el path fileEvents con datos truncados y
     // SUPRIME el fallback por mtime (re-ediciones caen del delta en silencio).
-    fileEvents: payload.fileEvents || existing?.fileEvents || [],
+    fileEvents: payload.fileEvents || at(existing, 'fileEvents') || [],
     // el tamaño de la corrida y su estimado los anota `pipeline.js start`. Un forzado a mano
     // (`set-size`) gana sobre un `start` re-corrido de la misma story: re-clasificar no deshace una decisión con motivo.
     ...(() => {
       const keep = existing && existing.sizeForced;
-      const pick = (k) => (keep && k !== 'estimate_min' && k !== 'estimate_source' ? existing[k] : (payload[k] ?? existing?.[k]));
+      const pick = (k) => (keep && k !== 'estimate_min' && k !== 'estimate_source' ? existing[k] : nn(payload[k], at(existing, k)));
       const out = {};
       for (const k of ['size', 'size_reason', 'estimate_min', 'estimate_source']) if (pick(k) !== undefined) out[k] = pick(k);
       return out;
@@ -716,7 +724,7 @@ function cmdSnapshotIter(nRaw, flags) {
 
 function cmdGet() {
   const marker = readMarker();
-  process.stdout.write(JSON.stringify(marker ?? {}, null, 2));
+  process.stdout.write(JSON.stringify(nn(marker, {}), null, 2));
 }
 
 function cmdTouch() {
@@ -891,7 +899,7 @@ function cmdCompleteStep(nRaw, flags) {
   const paso = ids[ids.length - 1];
   const controles = new Set(ids.flatMap((id) => CONTROLES_DEL_PASO[id] || []));
   const opts = Array.isArray(flags) ? flags : [];
-  const optVal = (name) => { const i = opts.indexOf(name); return i >= 0 ? (opts[i + 1] ?? '') : null; };
+  const optVal = (name) => { const i = opts.indexOf(name); return i >= 0 ? nn(opts[i + 1], '') : null; };
 
   // El aviso de una parte del Arranque que falló sale en el resumen del cierre: queda a la vista hasta el final.
   if (controles.has('commit')) for (const l of STEPS_LIB.startWarningLines(marker)) console.error(`⚠️  ${l}`);
@@ -1443,7 +1451,7 @@ function cmdCompleteStep(nRaw, flags) {
       const storyPath = resolveStoryPath(marker.storyPath, marker);
       if (!storyPath) {
         blocked = 'acmatrix-nostory';
-        console.error(`marker.js complete-step ${n} BLOQUEADO — no puedo computar la matriz runtime: marker.storyPath ausente o inexistente (crudo: ${marker.storyPath ?? '(vacío)'}; base: ${marker.repoPath ?? process.cwd()}).`);
+        console.error(`marker.js complete-step ${n} BLOQUEADO — no puedo computar la matriz runtime: marker.storyPath ausente o inexistente (crudo: ${nn(marker.storyPath, '(vacío)')}; base: ${nn(marker.repoPath, process.cwd())}).`);
         console.error('  Seteá el path de la story en el marker (pipeline.js start lo hace) y reintentá.');
       } else {
         let matrix;
@@ -1850,7 +1858,7 @@ function cmdApproveMockup(flags) {
   if (!marker.mockupDecision || marker.mockupDecision.screen !== true) marker.mockupDecision = { screen: true, signal: sc.signal || null, at };
   appendLog('gates.log', { name: 'mockup-approval', status: 'ok', story: marker.storyId, sha256: sha.slice(0, 12), reapproval: !!prev, ...(prev ? { previous: prev.slice(0, 12) } : {}) });
   {
-    const optVal = (name) => { const k = opts.indexOf(name); return k >= 0 ? (opts[k + 1] ?? '') : null; };
+    const optVal = (name) => { const k = opts.indexOf(name); return k >= 0 ? nn(opts[k + 1], '') : null; };
     anotarAprobacion(marker, { que: 'maqueta', cuando: at, via: 'approve-mockup', ...quienDeLasOpciones(optVal) });
   }
   writeMarker(marker);
@@ -2348,7 +2356,7 @@ function cmdMarkAdversarialLaunched(runId, stepRaw) {
   }
   // Whitelist explícita del step: el campo es evidencia de auditoría ("¿se lanzó temprano o en el
   // lugar clásico?") — basura o typos ('banana', '5B') NO caen a 4 en silencio.
-  const stepArg = String(stepRaw ?? '4').toLowerCase();
+  const stepArg = String(nn(stepRaw, '4')).toLowerCase();
   if (!['4', '5b'].includes(stepArg)) {
     console.error(`marker.js mark-adversarial-launched: step inválido '${stepRaw}' — debe ser 4 o 5b`);
     process.exit(2);
@@ -2544,7 +2552,7 @@ function cmdMarkAdversarialGate(raw) {
 function cmdMarkAdversarialResult(countRaw) {
   const argv = process.argv;
   const flag = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
-  if (!/^\d+$/.test(String(countRaw ?? ''))) {
+  if (!/^\d+$/.test(String(nn(countRaw, '')))) {
     console.error('marker.js mark-adversarial-result: <confirmados> tiene que ser un entero ≥ 0 (los hallazgos que el pase confirmó)');
     process.exit(2);
   }
@@ -2624,7 +2632,7 @@ function cmdMarkAdversarialResult(countRaw) {
     process.exit(2);
   }
   const propias = propiasRaw !== undefined ? parseInt(propiasRaw, 10) : 0;
-  const enPedidas = hayEn ? String(argv[iEn + 1] ?? '').split(',').map((s) => s.trim()).filter(Boolean) : [];
+  const enPedidas = hayEn ? String(nn(argv[iEn + 1], '')).split(',').map((s) => s.trim()).filter(Boolean) : [];
   if (propias > 0 && !hayEn) {
     console.error(`marker.js mark-adversarial-result: --own ${propias} sin --in — decí en qué archivo(s) de prueba quedaron: --in "<ruta>[,<ruta>…]" (relativas al repo)`);
     process.exit(2);
@@ -2644,12 +2652,12 @@ function cmdMarkAdversarialResult(countRaw) {
   let pruebas = 0, diferidos = 0, motivo = null;
   if (confirmados > 0) {
     const k = flag('--tests'), d = flag('--deferred');
-    if (!/^\d+$/.test(String(k ?? ''))) {
+    if (!/^\d+$/.test(String(nn(k, '')))) {
       console.error(`marker.js mark-adversarial-result: con ${confirmados} confirmado(s) hace falta --tests <k> (cuántos ya tienen su prueba de regresión en la suite, promovida con promote-probe), --own <p> --in "<rutas>" para los arreglados con una prueba escrita a mano y, si falta alguno, --deferred <d> --reason "<por qué>"`);
       process.exit(2);
     }
     pruebas = parseInt(k, 10);
-    diferidos = /^\d+$/.test(String(d ?? '')) ? parseInt(d, 10) : 0;
+    diferidos = /^\d+$/.test(String(nn(d, ''))) ? parseInt(d, 10) : 0;
     motivo = flag('--reason') || null;
     if (pruebas + propias + diferidos !== confirmados) {
       console.error(`marker.js mark-adversarial-result: --tests ${pruebas} + --own ${propias} + --deferred ${diferidos} ≠ ${confirmados} confirmados — cada hallazgo confirmado termina en la suite (promovida o escrita a mano) o se difiere con motivo, no hay otra opción`);
@@ -3928,7 +3936,7 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
     // 🔴 El mensaje no manda a `--story <abs path .md>`: ese flag NO EXISTE, el argumento es
     // POSICIONAL. Y no le echa la culpa al marker: el problema suele ser que el path guardado es relativo.
     console.error('marker.js runtime-waiver: no encuentro la story.');
-    console.error(`  Recibido: ${crudo ?? '(nada — ni argumento ni marker)'}`);
+    console.error(`  Recibido: ${nn(crudo, '(nada — ni argumento ni marker)')}`);
     console.error('  El path va POSICIONAL (no hay flag `--story`) y conviene ABSOLUTO:');
     console.error(`    node ${__filename} runtime-waiver /abs/path/a/la-story.md`);
     process.exit(2);

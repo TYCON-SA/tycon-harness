@@ -124,6 +124,11 @@ rc=0; printf '%s' "$EVENTO" | PATH="$T/bin12:$PATH" sh -c "$CMD_PISO" >/dev/null
 # y el comando del modelo con Node 12 en el PATH
 rc=0; out="$(PATH="$T/bin12:$PATH" node "$RAIZ/skills/tycon-pipeline/scripts/lib/story-discovery.js" --help 2>&1 < /dev/null)" || rc=$?
 case "$out" in *SyntaxError*|*"Unexpected token"*) mal "T12 el comando del modelo con Node 12: SyntaxError";; *) ok "T12 el comando del modelo con Node 12 en el PATH corre";; esac
+# los dos que más corre el modelo: marker.js get y pipeline.js con su ayuda
+for c in "skills/tycon-pipeline/scripts/marker.js get" "skills/tycon-pipeline/scripts/pipeline.js --help"; do
+  rc=0; out="$(PATH="$T/bin12:$PATH" CLAUDE_CODE_SESSION_ID=node-old-real node $RAIZ/$c 2>&1 < /dev/null)" || rc=$?
+  case "$out" in *SyntaxError*|*"Unexpected token"*) mal "T12 node $c con Node 12: SyntaxError";; *) ok "T12 node $c con Node 12 en el PATH corre (sale $rc)";; esac
+done
 
 [ "$fallas" = 0 ] && { echo "node-old-real: todo en verde"; exit 0; }
 echo "node-old-real: FALLARON $fallas"; exit 1
