@@ -186,6 +186,8 @@ function declaredStoriesRepo(repo) {
   return out.repo ? out : null;
 }
 
+const MAX_PRODUCT_SIBLINGS = 6;
+
 /** Los repos hermanos (la misma carpeta, cada uno con su .git) que tienen historias o proyecto BMAD. */
 function siblingStoryRepos(repo) {
   if (!fs.existsSync(path.join(repo, '.git'))) return [];
@@ -194,10 +196,14 @@ function siblingStoryRepos(repo) {
   try { entries = fs.readdirSync(parent, { withFileTypes: true }); } catch (e) {
     throw new Refusal(`no pude mirar ${parent} para saber si el producto ya tiene historias en otro repo (${e.code || e.message})`);
   }
+  const siblings = entries.filter((e) => e.isDirectory() && !e.name.startsWith('.') && path.join(parent, e.name) !== repo &&
+    fs.existsSync(path.join(parent, e.name, '.git')));
+  // Una carpeta con muchos repos no es la de un producto (la raíz de todos los repos, la de los worktrees, la temporal):
+  // sus hermanos son de otros productos. Las de producto miden de 2 a 5 repos.
+  if (siblings.length > MAX_PRODUCT_SIBLINGS) return [];
   const out = [];
-  for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const e of siblings.sort((a, b) => a.name.localeCompare(b.name))) {
     const d = path.join(parent, e.name);
-    if (!e.isDirectory() || d === repo || e.name.startsWith('.') || !fs.existsSync(path.join(d, '.git'))) continue;
     const p = placeOf(d);
     if (p.bmad || p.count === null || p.count > 0) out.push(p);
   }

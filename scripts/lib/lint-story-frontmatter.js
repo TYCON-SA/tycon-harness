@@ -413,10 +413,11 @@ function rootsOf(storyFile) {
   const parent = path.dirname(repo);
   const roots = [repo, parent];
   try {
-    for (const e of fs.readdirSync(parent, { withFileTypes: true })) {
-      const d = path.join(parent, e.name);
-      if (e.isDirectory() && d !== repo && !e.name.startsWith('.') && fs.existsSync(path.join(d, '.git'))) roots.push(d);
-    }
+    const siblings = fs.readdirSync(parent, { withFileTypes: true }).map((e) => path.join(parent, e.name))
+      .filter((d) => d !== repo && !path.basename(d).startsWith('.') && fs.existsSync(path.join(d, '.git')));
+    // Una carpeta con muchos repos no es la de un producto (la raíz de todos los repos, la temporal): sus repos son de
+    // otros productos y no dicen nada del código de esta story. Las de producto miden de 2 a 5 repos.
+    if (siblings.length <= 6) roots.push(...siblings);
   } catch (_) {
     // sin poder mirar la carpeta del producto no se sabe qué repos hay al lado: nada se da por inventado
     roots.unreadable = true;

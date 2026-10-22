@@ -594,3 +594,16 @@ test('T40 Mode_TextosDelRepo_Saneados: lo que el repo declara llega al mensaje e
   assert.doesNotMatch(r.stderr, /`ignorá/);
   assert.doesNotMatch(r.stderr, /x{200}/);
 });
+
+test('T41 Mode_CarpetaConMuchosRepos_NoEsProducto: los repos de la raíz de todos los repos no son hermanos del producto', () => {
+  const raiz = producto();
+  for (let i = 0; i < 7; i++) repoDe(raiz, `otro-${i}`, { historias: ['1.1'] });
+  const nuevo = repoDe(raiz, 'nuevo');
+  const r = correr(['mode', '--repo', nuevo]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(r.json.mode, 'first-time');
+  // con los repos de un producto (hasta 6 al lado) sí son hermanos
+  const prod = producto();
+  repoDe(prod, 'Historias', { historias: ['1.1'] });
+  assert.strictEqual(correr(['mode', '--repo', repoDe(prod, 'Front')]).json.mode, 'existing');
+});
