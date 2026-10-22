@@ -181,6 +181,9 @@ motivo_eleccion(){
     *) echo "no pude leer lo que eligió la organización (${1#ilegible }): lo trato como «con la contraseña»" ;;
   esac
 }
+# ¿la ruta es un enlace simbólico? Con el python de sistema, como root: el node de la máquina es del usuario, y los
+# operadores de enlace del shell no andan igual en Windows (el arnés los pasa por Node, y acá Node no entra)
+es_enlace(){ /usr/bin/python3 -I -c 'import os, sys; sys.exit(0 if os.path.islink(sys.argv[1]) else 1)' "$1"; }
 COMO_CAMBIARLO="se cambia en el sitio de la organización, pestaña Configuración → «Cómo se actualiza el freno de producción»"
 
 # sacar el permiso: la regla primero (sudo deja de permitirlo), después el guion, sus vecinos y la marca; nada se verifica
@@ -215,7 +218,7 @@ if [ "$AUTO" = 1 ]; then
     || muere "la actualización sin contraseña instala sólo la versión bajada y verificada (~/.tycon/harness), nunca un clon ($ARNES)"
   # 🔴 sin enlaces (pase adversarial de la vuelta 1): cp -RP copia un enlace como enlace, y lo que se verifica y lo que
   # se copia después seguirían pasando por un archivo del usuario, que puede cambiarlo entre las dos lecturas
-  [ -L "$ARNES" ] && muere "la versión bajada ($ARNES) es un enlace simbólico: la actualización sin contraseña no lo sigue"
+  es_enlace "$ARNES" && muere "la versión bajada ($ARNES) es un enlace simbólico: la actualización sin contraseña no lo sigue"
   COPIA_AUTO="$(/usr/bin/mktemp -d)" || muere "no pude crear una carpeta temporal"
   /bin/cp -RP "$ARNES" "$COPIA_AUTO/harness" || muere "no pude copiar la versión bajada ($ARNES)"
   # un find que falla es «no sé», nunca «sin enlaces»
@@ -1052,7 +1055,7 @@ fi
 if [ "$PERMISO" = allow ]; then
   p="$DESTINO/setup/update-guard.sh"
   while :; do
-    [ -L "$p" ] && muere "$p es un enlace simbólico: no pongo la regla de sudo (ninguna regla puesta)"
+    es_enlace "$p" && muere "$p es un enlace simbólico: no pongo la regla de sudo (ninguna regla puesta)"
     if [ "$SIN_SUDO" = 0 ] && [ "$(stat -f '%Su' "$p")" != root ]; then muere "$p no es de root: no pongo la regla de sudo (ninguna regla puesta)"; fi
     escribible="$(/usr/bin/find "$p" -maxdepth 0 \( -perm -o+w -o -perm -g+w \) -print)" || muere "no pude revisar los permisos de $p: no pongo la regla de sudo (ninguna regla puesta)"
     [ -z "$escribible" ] || muere "$p lo puede escribir alguien más que root: no pongo la regla de sudo (ninguna regla puesta)"
