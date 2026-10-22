@@ -17,8 +17,10 @@
 #   - Solo BLOCK (exit 2) — no hay WARN para evitar ruido.
 #   - Denylist explícita y corta. v1 cubre los desastres irreversibles.
 #   - Opt-in vía hook registrado (la guía explica cómo activarlo).
-#   - Override de emergencia por comando: `TYCON_SAFETY_OFF=1 <cmd>`.
-#   - Override de sesión: `export TYCON_SAFETY_OFF=1` en .zshrc (no recomendado).
+#   - Escape por comando: `TYCON_SAFETY_OFF=1 <cmd>`, que vale sólo si la persona escribió «autorizo
+#     TYCON_SAFETY_OFF» en esta conversación (o lo reenvió la sesión designada) en los últimos 30 minutos: el
+#     agente lo puede escribir, la frase no (escape-ok.js).
+#   - Escape de sesión: `TYCON_SAFETY_OFF=1` en el ambiente, puesto por el dev antes de abrir la sesión.
 #   - Off completo: remové el hook de settings.json.
 #   - Log de bloqueos en ~/.claude/safety-guard.log para retro/audit.
 #   - Fail-open: si el script crashea por cualquier motivo, NO bloquea
@@ -152,11 +154,12 @@ CMD_SHOWN="$CMD"
 CWD="$(read_field cwd)" || cannot_read
 if [[ -z "$CMD" ]]; then exit 0; fi
 
-# Soportar inline TYCON_SAFETY_OFF=1 prefijo en el propio comando.
-# Patrón: el dev/usuario inyecta `TYCON_SAFETY_OFF=1 <cmd>` para un override
-# puntual (más explícito que setear la env var en .zshrc).
+# `TYCON_SAFETY_OFF=1 <cmd>` pegado al principio del comando es un PEDIDO de escape, no un escape: el agente lo
+# puede escribir solo. Vale si la persona escribió «autorizo TYCON_SAFETY_OFF» en esta conversación (lo mira
+# `block()` con escape-ok.js, y sólo cuando una regla frena).
+SAFETY_OFF_PEDIDO=0
 if [[ "$CMD" =~ ^[[:space:]]*TYCON_SAFETY_OFF=1[[:space:]] ]]; then
-  SAFETY_OFF=1
+  SAFETY_OFF_PEDIDO=1
 fi
 
 # ps_match <regex> — ¿el comando matchea, SIN distinguir mayúsculas? Para las formas de PowerShell, que
@@ -183,8 +186,66 @@ tool_is_ps() {
 # sintaxis válida). Igual que el de bash, sólo pegado al PRINCIPIO del comando. Y sólo por la herramienta
 # PowerShell: por Bash ese prefijo no asigna nada y no puede apagar el freno.
 if ps_match '^[[:space:]]*\$env:TYCON_SAFETY_OFF[[:space:]]*=[[:space:]]*["'"'"']?1["'"'"']?[[:space:]]*;' && tool_is_ps; then
-  SAFETY_OFF=1
+  SAFETY_OFF_PEDIDO=1
 fi
+
+# escape_ok <VARIABLE> — ¿la persona autorizó ese escape en esta conversación? Deja en ESC_VIA el camino
+# (`persona` o `reenvio`), en ESC_RELEVO la sesión que lo reenvió y, si no, en ESC_MOTIVO el porqué y en
+# ESC_SIN_CONV=1 si la conversación no se puede leer (Codex). Cuesta un proceso de node: se llama sólo cuando
+# el comando trae un escape y una regla lo frenaría.
+ESC_VIA=""; ESC_RELEVO=""; ESC_MOTIVO=""; ESC_SIN_CONV=0
+escape_ok() {
+  ESC_VIA=""; ESC_RELEVO=""; ESC_MOTIVO=""; ESC_SIN_CONV=0
+  local lib sid tuid out rc
+  # en una lista con `||`: si el `cd` fallara, una asignación suelta dispararía el `trap 'exit 0' ERR`
+  lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/tycon-pipeline/scripts/lib/escape-ok.js" || lib=""
+  if [[ -z "$lib" || ! -f "$lib" ]] || ! command -v "$HNODE" >/dev/null 2>&1; then
+    ESC_MOTIVO="este arnés no trae con qué buscar la autorización"; return 1
+  fi
+  sid="$(read_field session_id 2>/dev/null)" || sid=""
+  # el pedido que se juzga: la punta de la cadena de la conversación
+  tuid="$(read_field tool_use_id 2>/dev/null)" || tuid=""
+  # en una lista con `||`: un `out=$(…)` suelto que sale ≠ 0 dispararía el `trap 'exit 0' ERR` y dejaría pasar el comando
+  out="$("$HNODE" "$lib" --shell --variable "$1" --session "$sid" --tool-use-id "$tuid" 2>/dev/null)" && rc=0 || rc=$?
+  local k v
+  while IFS='=' read -r k v; do
+    case "$k" in
+      via) ESC_VIA="$v" ;;
+      relevo) ESC_RELEVO="$v" ;;
+      motivo) ESC_MOTIVO="$v" ;;
+      sinConversacion) [[ "$v" == "1" ]] && ESC_SIN_CONV=1 ;;
+    esac
+  done <<< "$out"
+  [[ "$rc" == "0" && -n "$ESC_VIA" ]]
+}
+
+# safety_off_autorizado — ¿el prefijo `TYCON_SAFETY_OFF=1` de este comando lo autorizó la persona? Se pregunta una
+# sola vez por comando (block() y el aviso de GIT-C4 la usan) y sólo si el comando trae el prefijo. Deja ESC_VIA y
+# ESC_RELEVO de esa consulta.
+SAFETY_OFF_OK=""
+SAFETY_VIA=""; SAFETY_RELEVO=""; SAFETY_MOTIVO=""; ESC_MOTIVO_VAR=""
+safety_off_autorizado() {
+  [[ "$SAFETY_OFF_PEDIDO" == "1" ]] || return 1
+  if [[ -z "$SAFETY_OFF_OK" ]]; then
+    if escape_ok TYCON_SAFETY_OFF; then SAFETY_OFF_OK=1; else SAFETY_OFF_OK=0; fi
+    SAFETY_VIA="$ESC_VIA"; SAFETY_RELEVO="$ESC_RELEVO"; SAFETY_MOTIVO="$ESC_MOTIVO"
+  fi
+  [[ "$SAFETY_OFF_OK" == "1" ]]
+}
+
+# cartel_escape <VARIABLE> <valor> — lo que dice el cartel de cómo se saltea el freno: lo decide la persona.
+cartel_escape() {
+  echo "Saltear este freno lo decide la persona, no el agente: que escriba en el chat «autorizo $1» y después se"
+  if tool_is_ps; then
+    echo "repite el comando con \$env:$1=$2; adelante (vale 30 minutos)."
+  else
+    echo "repite el comando con $1=$2 adelante (vale 30 minutos)."
+  fi
+  echo "También vale la frase reenviada por la sesión que la organización designó para eso."
+  if [[ "$ESC_SIN_CONV" == "1" ]]; then
+    echo "Esta herramienta no deja leer la conversación: la persona pone $1=$2 en su terminal antes de abrir la sesión."
+  fi
+}
 
 # El `cwd` como lo escribe Windows (`C:\Users\…`), con barras hacia adelante: así lo leen las reglas que lo
 # miran (GIT-C4 compara su texto con `/.claude/agent-skills` y lo recorre por sus `/`), y Git Bash lo entiende
@@ -216,11 +277,14 @@ mkdir -p "$(dirname "$LOGFILE")" 2>/dev/null || true
 # Constancia de la decisión. Es AYUDA, NO EVIDENCIA: nunca cambia el código de
 # salida ni lo que este freno decide. El comando va por STDIN — por argv lo vería cualquier
 # `ps` — y de él sólo se guarda la huella.
-constancia() { # $1 = regla (id del catálogo)  $2 = veredicto
+constancia() { # $1 = regla (id del catálogo)  $2 = veredicto  [$3 = camino del escape  $4 = sesión que lo reenvió]
   local lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/guard-record.js"
   [[ -f "$lib" ]] || return 0
   command -v "$HNODE" >/dev/null 2>&1 || return 0
-  printf '%s' "$CMD_SHOWN" | "$HNODE" "$lib" --guard safety-guard --rule "$1" --verdict "$2" --cmd-stdin >/dev/null 2>&1 || true
+  local extra=()
+  [[ -n "${3:-}" ]] && extra+=(--via "$3")
+  [[ -n "${4:-}" ]] && extra+=(--relay "$4")
+  printf '%s' "$CMD_SHOWN" | "$HNODE" "$lib" --guard safety-guard --rule "$1" --verdict "$2" ${extra[@]+"${extra[@]}"} --cmd-stdin >/dev/null 2>&1 || true
   return 0
 }
 
@@ -229,10 +293,15 @@ block() {
   local reason="$2"
   local alt="${3:-}"
 
-  # Override puesto: se sale 0 SIN mensaje y SIN escribir el registro propio,
-  # pero dejando constancia de QUÉ regla se esquivó.
+  # Freno apagado: se sale 0 SIN mensaje y SIN escribir el registro propio, pero dejando constancia de QUÉ regla se
+  # esquivó y por qué camino. La variable del ambiente la puso el dev antes de abrir la sesión; el prefijo, sólo con
+  # la frase de la persona.
   if [[ "${SAFETY_OFF:-0}" == "1" ]]; then
-    constancia "$rule" escape
+    constancia "$rule" escape ambiente
+    exit 0
+  fi
+  if safety_off_autorizado; then
+    constancia "$rule" escape "$SAFETY_VIA" "$SAFETY_RELEVO"
     exit 0
   fi
   local ts
@@ -254,13 +323,13 @@ block() {
       echo "Alternativa: $alt"
     fi
     echo ""
-    echo "Override por comando, sólo si el dev lo autorizó en esta conversación:"
-    # por la herramienta PowerShell el prefijo de bash no corre: se dice la forma que sí
-    if tool_is_ps; then
-      echo "  \$env:TYCON_SAFETY_OFF=1; <comando>      (PowerShell)"
-    else
-      echo "  TYCON_SAFETY_OFF=1 <comando>"
+    if [[ -n "$ESC_VARIABLE" ]]; then
+      echo "El comando trae $ESC_VARIABLE=$ESC_VALOR y no vale: ${ESC_MOTIVO_VAR:-la persona no lo autorizó}."
+    elif [[ "$SAFETY_OFF_PEDIDO" == "1" ]]; then
+      echo "El comando pidió el escape (TYCON_SAFETY_OFF=1) y no vale: ${SAFETY_MOTIVO:-la persona no lo autorizó}."
     fi
+    # la regla ESC-C1 nombra su propia variable en el motivo; las demás, la del freno
+    cartel_escape "${ESC_VARIABLE:-TYCON_SAFETY_OFF}" "${ESC_VALOR:-1}"
     echo ""
     echo "Apagar este hook del todo lo decide el dev (guides/safety-guard.md)."
   } >&2
@@ -272,6 +341,109 @@ block() {
 # ============================================================
 # Reglas (orden = prioridad de match)
 # ============================================================
+
+# --- Escapes de los hooks de git escritos en la línea del comando ------------
+
+# ESC-C1: `TYCON_PROD_LINT` (la revisión del catálogo de servidores de producción) y `TYCON_NEW_NAMES` (el freno de
+# nombres reales en lo que se publica) los lee el hook de git del `git commit`, que hereda el ambiente del comando, y se
+# apagan con el valor 0. Bash da 0 de muchas formas (`=0`, `=''0`, `+=0`, `=$'0'`, `=${X:-0}`, `printf -v`, el nombre
+# partido con comillas), así que se frena CUALQUIER asignación a esas variables salvo `=1` literal, en cualquier parte
+# del comando y con las comillas y barras invertidas sacadas; también `export`, `declare`, `typeset`, `local`,
+# `readonly`, `read` y `printf -v` sobre ellas, y `$env:` en PowerShell (sin distinguir mayúsculas). Nombrarlas sin
+# asignar no frena. Con la frase de la persona («autorizo <variable>») queda la constancia y siguen las demás reglas.
+# Como GIT-C2, mira el comando crudo: un texto (un heredoc, un -m) que trae la asignación también frena. Es de más y
+# nunca de menos; ignorar el cuerpo de un heredoc o las comillas se puede falsificar (ver GIT-C2). Lo que no ve: la
+# asignación armada con el nombre en una variable (`declare "$n=0"`) o escrita en un guion que después se corre.
+ESC_VARIABLE=""; ESC_VALOR=""
+# el comando sin comillas ni barras invertidas, una sola vez (ESC-C1 y ESC-C2 lo usan). Con `tr`: en el bash de la Mac
+# (3.2), `${CMD//[…]/}` crece con el cuadrado del largo y un heredoc de unos KB tardaba segundos en cada comando
+if command -v tr >/dev/null 2>&1; then
+  _esc_cmd="$(printf '%s' "$CMD" | tr -d "\"'\\\\\`")" || _esc_cmd="${CMD//[\"\'\\\`]/}"
+else
+  _esc_cmd="${CMD//[\"\'\\\`]/}"
+fi
+for _esc in TYCON_PROD_LINT TYCON_NEW_NAMES; do
+  # el filtro barato primero: sin el nombre de la variable (sin distinguir mayúsculas, por PowerShell) no hay nada que
+  # mirar, y las expresiones de abajo no corren sobre un comando largo que no la nombra
+  shopt -s nocasematch
+  if [[ "$_esc_cmd" != *"$_esc"* ]]; then shopt -u nocasematch; continue; fi
+  shopt -u nocasematch
+  _esc_hit=0
+  # las asignaciones `=1` literales no apagan nada: se sacan antes de buscar las demás
+  _esc_sin1="$_esc_cmd"
+  for _esc_fin in ' ' ';' ')' '&' '|' $'\n' $'\t'; do _esc_sin1="${_esc_sin1//${_esc}=1${_esc_fin}/ ${_esc_fin}}"; done
+  [[ "$_esc_sin1" == *"${_esc}=1" ]] && _esc_sin1="${_esc_sin1%${_esc}=1}"
+  _esc_asig="(^|[^A-Za-z0-9_])${_esc}\+?="
+  _esc_decl="(^|[^A-Za-z0-9_-])(export|declare|typeset|local|readonly|read|printf)[[:space:]][^;&|]*${_esc}([^A-Za-z0-9_]|\$)"
+  _esc_ps="(^|[^a-z0-9_])\\\$env:${_esc}[[:space:]]*\+?="
+  if [[ "$_esc_sin1" =~ $_esc_asig || "$_esc_cmd" =~ $_esc_decl ]]; then _esc_hit=1; fi
+  if [[ "$_esc_hit" == "0" ]] && tool_is_ps; then
+    _esc_save="$CMD"; CMD="$_esc_cmd"
+    if ps_match "$_esc_ps"; then _esc_hit=1; fi
+    CMD="$_esc_save"
+  fi
+  if [[ "$_esc_hit" == "1" ]]; then
+    if [[ "${SAFETY_OFF:-0}" != "1" ]] && escape_ok "$_esc"; then
+      constancia ESC-C1 escape "$ESC_VIA" "$ESC_RELEVO"
+      continue
+    fi
+    # el motivo de esta consulta, antes de que la del prefijo (si el comando lo trae) lo pise en block()
+    ESC_VARIABLE="$_esc"; ESC_VALOR=0; ESC_MOTIVO_VAR="$ESC_MOTIVO"
+    if [[ "$_esc" == "TYCON_PROD_LINT" ]]; then
+      block "ESC-C1" \
+        "TYCON_PROD_LINT=0 apaga, al commitear, la revisión del catálogo de servidores de producción (.tycon/production.json). Un catálogo roto deja al freno de producción decidiendo con datos malos." \
+        "Arreglá el catálogo para que la revisión pase. ¿Sólo la nombrabas en un texto (un heredoc, un -m)? Este freno mira el comando entero: escribí ese texto en un archivo."
+    else
+      block "ESC-C1" \
+        "TYCON_NEW_NAMES=0 apaga, al commitear, el freno de nombres reales (clientes, personas, servidores) en lo que se publica." \
+        "Reemplazá el nombre por uno inventado, o pedí su excepción en la lista. ¿Sólo la nombrabas en un texto (un heredoc, un -m)? Este freno mira el comando entero: escribí ese texto en un archivo."
+    fi
+  fi
+done
+ESC_VARIABLE=""; ESC_VALOR=""; ESC_MOTIVO=""; ESC_SIN_CONV=0
+
+# ESC-C2: escribir en las conversaciones guardadas (`~/.claude/projects/`). La autorización de un escape se lee de ahí;
+# un renglón agregado a mano no está en la cadena de la conversación (escape-ok.js lo descarta), y además se frena el
+# camino directo. Sólo mira un comando que nombra la ruta `.claude/projects/` (sin contar la memoria del agente,
+# `projects/<proyecto>/memory/`, que vive ahí y se escribe legítimamente), y frena si una forma de escribir apunta a
+# ella dentro del mismo tramo del comando (entre `;`, `&` o `|`):
+#   · una redirección con destino en la ruta, o a un `.jsonl` por su nombre relativo después de entrar a ella con `cd`;
+#   · `tee`, `sponge`, `truncate`, `dd`, `cp`, `mv`, `install`, `ln`, `rsync` o `patch` con la ruta;
+#   · `sed`, `perl`, `awk` o `ruby` con su opción `-i` (`-i`, `-pi`, `-i.bak`, `-i inplace`) sobre la ruta;
+#   · código en la línea que abre para escribir con la ruta adentro del llamado (`open(…, 'w'|'a'|'x')`,
+#     `writeFile…(…)`, `appendFile…(…)`, `createWriteStream(…)`); abrir para leer no frena;
+#   · en PowerShell, `>`, `Out-File`, `Set-Content`, `Add-Content`, `Copy-Item` o `Move-Item` con la ruta.
+# Leer (`tail`, `grep`, `ls`, `wc`, un guion que sólo lee) no frena. Como GIT-C2, un texto que trae una de esas
+# escrituras también frena. Lo que no ve: la ruta armada por partes o con variables, o un guion escrito en un archivo
+# que después se corre (el límite de la cadena de la conversación lo cubre aparte).
+_esc_c2="$_esc_cmd"
+if [[ "$_esc_c2" == *".claude/projects/"* ]]; then
+  while [[ "$_esc_c2" =~ (.*)\.claude/projects/[^/[:space:]\;\&\|]+/memory(.*) ]]; do _esc_c2="${BASH_REMATCH[1]}MEMORIA${BASH_REMATCH[2]}"; done
+fi
+_esc_hit=0
+if [[ "$_esc_c2" == *".claude/projects/"* ]]; then
+  _esc_dir='\.claude/projects/'
+  _esc_redir=">>?[[:space:]]*[^[:space:];&|]*${_esc_dir}"
+  _esc_tool="(^|[^A-Za-z0-9_-])(tee|sponge|truncate|dd|cp|mv|install|ln|rsync|patch)[[:space:]][^;&|]*${_esc_dir}"
+  _esc_inpl="(^|[^A-Za-z0-9_-])(sed|perl|awk|gawk|ruby)([[:space:]]+-[A-Za-z]+)*[[:space:]]+-[A-Za-z]*i([[:space:].][^;&|]*)?${_esc_dir}"
+  # entrar a la carpeta y redirigir a una conversación por su nombre relativo (`>> <sesión>.jsonl`)
+  _esc_cd="(^|[;&|(]|${_PS_NL})[[:space:]]*cd[[:space:]]+[^;&|[:space:]]*${_esc_dir}[^;&|]*[;&|]+.*>>?[[:space:]]*[^[:space:];&|/~\$&0-9][^[:space:];&|]*\.jsonl"
+  # abrir para escribir: `open(<ruta>, w|a|x…)` (las comillas ya no están), o las funciones que sólo escriben
+  _esc_open="open\([^)]*${_esc_dir}[^)]*,[[:space:]]*(mode=)?[wax]|(writeFile[A-Za-z]*|appendFile[A-Za-z]*|createWriteStream|write_text|write_bytes)\([^)]*${_esc_dir}"
+  if [[ "$_esc_c2" =~ $_esc_redir || "$_esc_c2" =~ $_esc_tool || "$_esc_c2" =~ $_esc_inpl || "$_esc_c2" =~ $_esc_cd || "$_esc_c2" =~ $_esc_open ]]; then
+    _esc_hit=1
+  fi
+fi
+# PowerShell, sobre el comando como llegó: la ruta de Windows lleva barras invertidas, que la copia de arriba saca
+if [[ "$_esc_hit" == "0" ]] && tool_is_ps && ps_match "(>|out-file|set-content|add-content|copy-item|move-item)[^;|]*\.claude[\\\\/]projects[\\\\/]" \
+   && ! ps_match "\.claude[\\\\/]projects[\\\\/][^\\\\/[:space:]]+[\\\\/]memory"; then
+  _esc_hit=1
+fi
+if [[ "$_esc_hit" == "1" ]]; then
+  block "ESC-C2" \
+    "Escribe en las conversaciones guardadas (~/.claude/projects/). La autorización de un escape («autorizo …») se lee de ahí: escribirlas es fabricar lo que dijo la persona." \
+    "Las conversaciones se leen, no se escriben. Para leer, tail, grep o un guion que sólo lee; para guardar lo leído, la salida a otra carpeta desde un guion en un archivo. ¿Sólo nombrabas la ruta en un texto? Este freno mira el comando entero: escribí ese texto en un archivo."
+fi
 
 # --- Filesystem destructivo --------------------------------------------------
 
@@ -1170,7 +1342,8 @@ if [[ "$CMD" =~ $GIT_C4_MASS_ADD ]]; then
     block "GIT-C4"     "Este comando trae un git add -A / git add . y nombra más de ${GIT_C4_MAX} carpetas distintas con cd, pushd o -C (o tantas, encadenadas, que dan más de ${GIT_C4_MAX_TRIES} combinaciones): el freno no las puede seguir a todas, y no pudo saber si el git add cae en el árbol del que salen las skills instaladas. Lo que no se pudo mirar no pasa callado."     "Partí el comando en dos, o stageá por nombre (git add <archivo>)."
   fi
   # No frenó, y no pudo mirar el árbol: se dice al terminar el guion (ver el punto 2 de arriba).
-  if [[ -n "$GIT_C4_BLIND" && "${SAFETY_OFF:-0}" != "1" ]]; then
+  # Con el freno apagado (por el dev, o por el prefijo que la persona autorizó) no hay nada que avisar.
+  if [[ -n "$GIT_C4_BLIND" && "${SAFETY_OFF:-0}" != "1" ]] && ! safety_off_autorizado; then
     trap 'git_c4_blind_notice "$?"' EXIT
   fi
 fi
@@ -1219,7 +1392,7 @@ fi
 if [[ "$CMD" =~ (^|[[:space:]])npm[[:space:]]+publish([[:space:]]|$) ]]; then
   block "PUB-C1" \
     "npm publish — publicación a registry público. Suele ser accidente cuando se intentaba 'npm pack' o 'npm version'." \
-    "Si el dev confirma que hay que publicar: TYCON_SAFETY_OFF=1 npm publish. Y revisá que el package no contenga secretos."
+    "Revisá que el paquete no contenga secretos. Si hay que publicar a mano, lo autoriza la persona (abajo)."
 fi
 
 if [[ "$CMD" =~ (^|[[:space:]])yarn[[:space:]]+publish([[:space:]]|$) ]]; then
@@ -1231,7 +1404,7 @@ fi
 if [[ "$CMD" =~ dotnet[[:space:]]+nuget[[:space:]]+push ]]; then
   block "PUB-C3" \
     "dotnet nuget push — publicación a NuGet feed. Solo CI/release pipeline debería hacer esto." \
-    "Si el dev confirma que es manual a propósito (raro): TYCON_SAFETY_OFF=1 <cmd>. Confirmá que el .nupkg sea el correcto."
+    "Confirmá que el .nupkg sea el correcto. Si tiene que ser a mano (raro), lo autoriza la persona (abajo)."
 fi
 
 # --- SQL destructivo (sqlcmd / dotnet ef / inline) ---------------------------
@@ -1241,7 +1414,7 @@ fi
 if [[ "$CMD" =~ DROP[[:space:]]+DATABASE ]]; then
   block "SQL-C1" \
     "DROP DATABASE. Te llevás esquema + datos + historial." \
-    "Si el dev confirma que hay que recrear la DB (típicamente *_DEV): TYCON_SAFETY_OFF=1 <cmd>, después restaurás backup."
+    "Si hay que recrear la base (típicamente *_DEV), lo autoriza la persona (abajo); después se restaura el backup."
 fi
 
 # DROP TABLE — block solo si NO está en un .sql migration file (esos son legítimos).
@@ -1249,7 +1422,7 @@ fi
 if [[ "$CMD" =~ DROP[[:space:]]+TABLE ]] && [[ ! "$CMD" =~ \.sql ]]; then
   block "SQL-C2" \
     "DROP TABLE inline (no en una migration file). Las modificaciones de schema en TYCON van por migration numerada." \
-    "Creá una migration nueva con tycon-new-migration y dropéa la tabla ahí. Si es exploratorio en *_DEV y el dev lo confirma: TYCON_SAFETY_OFF=1 <cmd>."
+    "Creá una migration nueva con tycon-new-migration y dropéa la tabla ahí. Si es exploratorio en *_DEV, lo autoriza la persona (abajo)."
 fi
 
 # --- El arnés no se apaga a sí mismo -----------------------------------------
