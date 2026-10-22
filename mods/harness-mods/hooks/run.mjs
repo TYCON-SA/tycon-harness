@@ -147,6 +147,13 @@ export function readRun(text, now) {
     return next === undefined ? null : next;
   };
 
+  // un paso abierto sin `startedAt` (la sesión trabajó sin llamar `pipeline.js next`) cuenta desde el último cierre de
+  // los pasos anteriores; sin cierre, no hay desde cuándo
+  const previousClose = (id) => {
+    const ends = STEPS.slice(0, index(id)).map((s) => endOf(s.id)).filter((t) => t !== null);
+    return ends.length ? Math.max(...ends) : null;
+  };
+
   const warnings = (Array.isArray(m.startWarnings) ? m.startWarnings : [])
     .filter((w) => w && START_PART_FAILED[w.part]).map((w) => `Arranque: hecho, con aviso: ${START_PART_FAILED[w.part]}`);
   const rows = STEPS.map((s) => {
@@ -165,7 +172,7 @@ export function readRun(text, now) {
     current: current ? { id: current.id, name: nameOf(current) } : null,
     done: STEPS.filter((s) => finished(s.id)).length,
     total: TOTAL,
-    minutesStep: current ? minutes(startOf(current.id), now) : null,
+    minutesStep: current ? minutes(startOf(current.id) !== null ? startOf(current.id) : previousClose(current.id), now) : null,
     minutesTotal: minutes(ms(m.startedAt), now),
     waiting: m.waitingForHuman === true || Boolean(asks),
     oldScheme: scheme === 1,
