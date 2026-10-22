@@ -22,6 +22,7 @@
 //
 // Casos: scripts/tests/platform-contract.test.js.
 
+if (require.main === module) { try { require('../node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 const fs = require('fs');
 const os = require('os');
 const path = require('path');

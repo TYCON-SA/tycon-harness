@@ -10,6 +10,7 @@
 //
 // Casos: scripts/tests/platform-work-item.test.js.
 
+if (require.main === module) { try { require('../node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 const fs = require('fs');
 
 const NAME = 'work_item';
