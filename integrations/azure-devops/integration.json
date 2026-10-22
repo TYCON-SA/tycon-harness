@@ -1,0 +1,10 @@
+{
+  "__doc": "El conector de Azure DevOps de la capa de plataforma (scripts/lib/platform/platform.js). Usa el az de la máquina (TYCON_ADO_CMD) y su organización (ado.org en config.json); el PAT de lectura del repo del equipo sigue siendo azure.token. Las operaciones que todavía no declara contestan no_soportado. Guía: guides/integrations/platform-connectors.md.",
+  "name": "azure-devops",
+  "label": "Azure DevOps",
+  "kind": "platform",
+  "connector": "scripts/connector.js",
+  "operations": ["deployments.read"],
+  "capabilities": { "completedHours": "field", "workItemType": "native", "autoComplete": "native" },
+  "rawCommands": ["az repos pr create", "az repos pr update", "az boards work-item create", "az boards work-item update", "az pipelines run"]
+}

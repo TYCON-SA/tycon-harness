@@ -28,8 +28,10 @@ const ENV_RE = /^TYCON_[A-Z0-9_]+$/;
 // `canales`: una lista de canales de aviso (los del canal único de los avisos); `puerto`: un entero de 1 a 65535
 const PROFILE_TYPES = Object.freeze(['texto', 'url', 'canales', 'puerto']);
 const KIND_RE = /^[a-z][A-Za-z0-9]*$/;
-// los tipos que el núcleo busca por nombre; `toggle` es el de prender y apagar: está o no está, según su llave
-const KINDS = Object.freeze(['timeTracking', 'notify', 'toggle']);
+// los tipos que el núcleo busca por nombre; `toggle` es el de prender y apagar: está o no está, según su llave;
+// `platform`, un conector de plataforma (scripts/lib/platform/platform.js)
+const KINDS = Object.freeze(['timeTracking', 'notify', 'toggle', 'platform']);
+const { OPERATIONS } = require('./platform/contract.js');
 const TOOLS = Object.freeze(['claude', 'codex']);
 const DISPATCH_ON = Object.freeze(['post-edit']);
 // Un hook de una integración, en la lista del instalador: `@int:<integración>/<ruta dentro de su carpeta>`.
@@ -71,9 +73,10 @@ function problemsOf(m, folder) {
   if (m.name !== folder) out.push(`«name» tiene que ser el nombre de la carpeta (${folder})`);
   if (!NAME_RE.test(String(m.name || ''))) out.push('«name» lleva sólo minúsculas, números y guiones');
   if (typeof m.label !== 'string' || !m.label.trim()) out.push('falta «label»');
-  if (typeof m.kind !== 'string' || !KIND_RE.test(m.kind)) out.push('falta «kind»');
   // el tipo se compara tal cual: uno conocido con otras mayúsculas no se encontraría nunca
-  else for (const k of KINDS) if (m.kind !== k && m.kind.toLowerCase() === k.toLowerCase()) out.push(`«kind» se escribe ${k}`);
+  const parecido = typeof m.kind === 'string' ? KINDS.find((k) => m.kind !== k && m.kind.toLowerCase() === k.toLowerCase()) : undefined;
+  if (parecido) out.push(`«kind» se escribe ${parecido}`);
+  else if (typeof m.kind !== 'string' || !KIND_RE.test(m.kind)) out.push('falta «kind»');
   if (m.onWork !== undefined && !(inside(m.onWork) && /\.js$/.test(m.onWork))) out.push('«onWork» es un .js dentro de la carpeta');
   for (const k of ['hooks', 'dispatch', 'skills', 'settings']) if (m[k] !== undefined && !Array.isArray(m[k])) out.push(`«${k}» es una lista`);
   // el aplicador rechaza dos registros con el mismo evento, matcher (sin importar el orden de sus partes) y guion
@@ -106,6 +109,16 @@ function problemsOf(m, folder) {
     const key = toggleKeyProblem(m.name);
     if (key) out.push(key);
     if ((Array.isArray(m.settings) ? m.settings : []).some((s) => isObject(s) && s.from === 'profile')) out.push(`una integración de prender y apagar no lleva ajustes del perfil: integrations.${m.name} es su llave`);
+  }
+  if (m.kind === 'platform') {
+    // un conector: el guion que atiende las operaciones, cuáles declara (sólo las del contrato), lo que puede y no
+    // puede (`capabilities`) y los comandos crudos de su plataforma que miran los frenos (`rawCommands`)
+    if (m.connector === undefined) out.push('falta «connector»');
+    else if (!(inside(m.connector) && /\.js$/.test(m.connector))) out.push('«connector» es un .js dentro de la carpeta');
+    if (!Array.isArray(m.operations) || !m.operations.length) out.push('«operations» es una lista no vacía de operaciones del contrato');
+    else for (const o of m.operations) if (!OPERATIONS.includes(o)) out.push(`operación desconocida: ${o} (las del contrato: ${OPERATIONS.join(', ')})`);
+    if (m.capabilities !== undefined && !isObject(m.capabilities)) out.push('«capabilities» es un objeto');
+    if (m.rawCommands !== undefined && !(Array.isArray(m.rawCommands) && m.rawCommands.every((c) => typeof c === 'string' && c.trim()))) out.push('«rawCommands» es una lista de textos');
   }
   for (const d of Array.isArray(m.dispatch) ? m.dispatch : []) {
     if (!d || typeof d !== 'object' || !inside(d.script) || !/\.js$/.test(d.script)) { out.push('una entrada del despachador: «script» es un .js dentro de la carpeta'); continue; }
@@ -169,6 +182,7 @@ function listManifests({ env = process.env, dir = integrationsDir(env) } = {}) {
       hooks: Array.isArray(m.hooks) ? m.hooks : [], dispatch: Array.isArray(m.dispatch) ? m.dispatch : [],
       skills: Array.isArray(m.skills) ? m.skills : [], settings: Array.isArray(m.settings) ? m.settings : [],
       mcp: m.mcp ? { server: m.mcp.server, machine: m.mcp.machine === true } : null,
+      ...(m.kind === 'platform' ? { connector: m.connector, operations: m.operations, capabilities: isObject(m.capabilities) ? m.capabilities : {}, rawCommands: Array.isArray(m.rawCommands) ? m.rawCommands : [] } : {}),
     });
   }
   const result = { manifests, problems };
