@@ -1,13 +1,13 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-story-adversarial-reviewer.md
-# source_sha256: 966ba59493856dba4bbafb74df2e2535854159eb6e3c1724378290fc9b5a3c43
+# source_sha256: 677bb1e85947be399ba166d1cc681c02ec26e61f16393cb34e1e86ade7ee0e76
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-story-adversarial-reviewer.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-story-adversarial-reviewer").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
 # ⚠️ ASIMETRÍA DECLARADA — servidor MCP "codegraph" NO se declara acá: La ruta del índice cambia por repo (`codegraph serve --mcp --path <repo>`), y el perfil de advisor es un archivo fijo: no hay dónde poner la ruta. Del lado Claude codegraph ya es opt-in por repo (la mayoría corre sin él) y los fixtures del banco son repos efímeros SIN índice, así que ningún caso lo mide. El advisor cae al escalón siguiente de su cascada de lookup. Revisar en la Etapa F junto con el instalador.
 
 name = "tycon-story-adversarial-reviewer"
-description = "Revisor de historias antes de programar. Una pasada de sólo lectura sobre una story ya validada, buscando lo que el validador no ve — criterios que chocan, datos que el repo no guarda, caminos de falla sin criterio, supuestos sin marcar, criterios que no se pueden ver fallar. Reglas SADV-C1..C3/W1..W2. Lo lanza el paso 6 de tycon-create-story (después del validador) o el paso 1 del pipeline cuando la historia no tiene constancia vigente. No corre código ni se relanza."
+description = "Revisa una story ya validada antes de programar, buscando lo que el validador no ve. Lo lanza el paso 6 de tycon-create-story o el paso 1 del pipeline si la historia no tiene constancia vigente."
 model = "gpt-5.6-luna"
 sandbox_mode = "read-only"
 
