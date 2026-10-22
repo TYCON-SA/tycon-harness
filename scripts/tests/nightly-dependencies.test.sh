@@ -1687,6 +1687,110 @@ noche "$TMP/c48.json" 2026-09-03 >/dev/null; segunda=$(anunciados)
   && ok "T8 4.8 con un formulario que no se puede auditar, la alta de otro formulario nuevo sale igual la noche siguiente" \
   || no "T8 4.8 espera eterna: anunció $primera y después $segunda"
 
+# T9 Note_PrRepo_And_GithubText @story-8.32 @ac-3 @ac-7 — el pull request de GitHub vive en el repo de operaciones:
+# la ficha recuerda de qué repo es, y el texto no menciona a nadie ni cierra el issue del producto
+G1="$TMP/g1.yaml"; fichafalsa "$G1"
+rcg=$(note --card "$G1" --pr 12 --pr-repo acme-org/harness-ops)
+{ [ "$rcg" = 0 ] && grep -q '^pr: 12$' "$G1" && grep -q '^pr_repo: acme-org/harness-ops$' "$G1" \
+  && grep -q '^# la nota de una persona' "$G1"; } \
+  && ok "T9 8.32 note --pr --pr-repo escribe pr: y pr_repo: sin tocar lo demás" \
+  || no "T9 8.32 pr_repo: rc=$rcg · $(grep -E '^pr' "$G1" | tr '\n' ' ')"
+G2="$TMP/g2.yaml"; fichafalsa "$G2"; antesg=$(cat "$G2")
+rcm1=$(note --card "$G2" --pr 12 --pr-repo "sin-barra"); rcm2=$(note --card "$G2" --pr 12 --pr-repo "a/b/c"); rcm3=$(note --card "$G2" --pr 12 --pr-repo 'a/b c')
+{ [ "$rcm1" = 2 ] && [ "$rcm2" = 2 ] && [ "$rcm3" = 2 ] && [ "$(cat "$G2")" = "$antesg" ]; } \
+  && ok "T9 8.32 un --pr-repo mal formado sale 2 y no toca la ficha" || no "T9 8.32 pr-repo malo: $rcm1 $rcm2 $rcm3"
+G3="$TMP/g3.yaml"; fichafalsa "$G3"
+rcr=$(note --card "$G3" --rejected 2026-10-20 --reason "no aplica" --pr 5 --pr-repo acme-org/harness-ops)
+{ [ "$rcr" = 0 ] && grep -q '^pr_repo: acme-org/harness-ops$' "$G3" && grep -q '^rechazado: 2026-10-20$' "$G3"; } \
+  && ok "T9 8.32 note --rejected --pr-repo escribe también pr_repo:" || no "T9 8.32 rejected+pr_repo: rc=$rcr"
+# alineado: el estado de la última alineación del issue con el pull request
+G4="$TMP/g4.yaml"; fichafalsa "$G4"
+rca=$(note --card "$G4" --aligned "12:merged"); rcb=$(note --card "$G4" --aligned "12:closed")
+rce=$(note --card "$G4" --aligned "12:raro"); rcf=$(note --card "$G4" --aligned "xx:merged")
+{ [ "$rca" = 0 ] && [ "$rcb" = 0 ] && [ "$rce" = 2 ] && [ "$rcf" = 2 ] && grep -q '^alineado: 12:closed$' "$G4" \
+  && [ "$(grep -c '^alineado:' "$G4")" = 1 ]; } \
+  && ok "T9 8.32 note --aligned escribe alineado: (un solo renglón); un estado o número inválido sale 2" \
+  || no "T9 8.32 alineado: $rca $rcb $rce $rcf · $(grep '^alineado' "$G4" | tr '\n' ' ')"
+# una ficha con pr_repo: que reaparece conserva la historia en pr_repo_antes
+rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; configx "$TMP/c-t98.json" 2 A
+noche "$TMP/c-t98.json" 2026-09-01 >/dev/null
+echo "$UNA" > "$TMP/fix/A.json"; noche "$TMP/c-t98.json" 2026-09-02 >/dev/null
+ID98=$(basename "$(unaficha pending)" .yaml); aceptar "$ID98"; F98="$TMP/pend/promoted/$ID98.yaml"
+node "$NOC" note --card "$F98" --pr 41 --pr-repo acme-org/harness-ops >/dev/null 2>&1
+node "$NOC" note --card "$F98" --aligned "41:merged" >/dev/null 2>&1
+echo "$LIMPIO" > "$TMP/fix/A.json"; noche "$TMP/c-t98.json" 2026-09-03 >/dev/null
+echo "$UNA" > "$TMP/fix/A.json";    noche "$TMP/c-t98.json" 2026-09-04 >/dev/null
+R98="$TMP/pend/pending/$ID98.yaml"
+{ [ -f "$R98" ] && grep -q '^pr_antes: 41$' "$R98" && grep -q '^pr_repo_antes: acme-org/harness-ops$' "$R98" \
+  && ! grep -q '^pr:' "$R98" && ! grep -q '^pr_repo:' "$R98" && ! grep -q '^alineado:' "$R98"; } \
+  && ok "T9 8.32 una ficha que reaparece deja pr_antes: y pr_repo_antes:, y empieza sin pr_repo: ni alineado:" \
+  || no "T9 8.32 reaparece: $(grep -E '^(pr|alineado)' "$R98" 2>/dev/null | tr '\n' ' ')"
+# el texto del pull request de GitHub
+G5="$TMP/g5.yaml"; cat > "$G5" <<'FICHA'
+id: cc33dd44
+detectado: 2026-10-20
+veredicto: pendiente
+paquete: @scope/paquete
+severidad: high
+noches: 2
+pr_antes: 9
+rechazado_antes: 2026-10-10
+motivo_rechazo_antes: "no aplica"
+pedidos:
+  - acme-org/web: 101
+  - acme-org/api: 202
+ids:
+  - cc33dd44
+repos:
+  - A/A
+avisos:
+  - https://github.com/advisories/GHSA-aaaa-bbbb-cccc
+FICHA
+TG=$(node "$NOC" pr-text --draft "$G5" --destination pr-github 2>&1)
+TA=$(node "$NOC" pr-text --draft "$G5" 2>&1); TA2=$(node "$NOC" pr-text --draft "$G5" --destination pr 2>&1)
+{ case "$TG" in *'**`@scope/paquete`**'*) true ;; *) false ;; esac \
+  && ! printf '%s' "$TG" | sed -n '/^---CUERPO---$/,$p' | grep '[^`]@scope' >/dev/null \
+  && case "$TG" in *'PR #9'*) true ;; *) false ;; esac && ! printf '%s' "$TG" | grep '!9' >/dev/null \
+  && printf '%s' "$TG" | grep '^- acme-org/web#101$' >/dev/null && printf '%s' "$TG" | grep '^- acme-org/api#202$' >/dev/null \
+  && ! printf '%s' "$TG" | grep -iE '\b(closes|fixes|resolves)\b' >/dev/null; } \
+  && ok "T9 8.32 pr-text --destination pr-github: sin mención, #N, issues sin palabras de cierre" \
+  || no "T9 8.32 pr-github: $(printf '%s' "$TG" | head -12 | tr '\n' '~')"
+{ [ "$TA" = "$TA2" ] && printf '%s' "$TA" | grep 'PR !9' >/dev/null && ! printf '%s' "$TA" | grep 'acme-org/web#101' >/dev/null; } \
+  && ok "T9 8.32 el texto de Azure (--destination pr) no cambia" || no "T9 8.32 Azure cambió"
+rcd=$(node "$NOC" pr-text --draft "$G5" --destination raro >/dev/null 2>&1; echo $?)
+[ "$rcd" = 2 ] && ok "T9 8.32 un --destination desconocido sale 2" || no "T9 8.32 destination raro: rc=$rcd"
+
+# T9 (más) — el motivo de un rechazo anterior y los pedidos de afuera no se vuelven mención ni enlace
+G6="$TMP/g6.yaml"; cat > "$G6" <<'FICHA'
+id: ee55ff66
+detectado: 2026-10-20
+veredicto: pendiente
+paquete: pkg
+severidad: high
+noches: 2
+pr_antes: 9
+rechazado_antes: 2026-10-10
+motivo_rechazo_antes: "@victima mirá #5"
+pedidos:
+  - acme-org/web: 101
+  - @x: 3
+ids:
+  - ee55ff66
+repos:
+  - A/A
+avisos:
+  - https://github.com/advisories/GHSA-aaaa-bbbb-cccc
+FICHA
+TG6=$(node "$NOC" pr-text --draft "$G6" --destination pr-github 2>&1)
+CU6=$(printf '%s' "$TG6" | sed -n '/^---CUERPO---$/,$p')
+{ printf '%s' "$CU6" | grep 'victima' >/dev/null \
+  && ! printf '%s' "$CU6" | grep '[^`]@victima' >/dev/null && ! printf '%s' "$CU6" | grep -E '(^|[^`])#5([^`]|$)' >/dev/null ; } \
+  && ok "T9 8.32 pr-github: el motivo del rechazo anterior no menciona a nadie ni enlaza #5" \
+  || no "T9 8.32 motivo sin escapar: $(printf '%s' "$CU6" | grep -n 'victima' | head -3)"
+{ printf '%s' "$CU6" | grep '^- acme-org/web#101$' >/dev/null && ! printf '%s' "$CU6" | grep '@x' >/dev/null; } \
+  && ok "T9 8.32 pr-github: un pedido cuyo proyecto no es dueño/repo no sale en la lista" \
+  || no "T9 8.32 proyecto inválido en la lista: $(printf '%s' "$CU6" | grep -n '@x#\|@x' | head -3)"
+
 echo
 total=$((pasaron + fallos))
 [ "$fallos" -eq 0 ] && { echo "✅ nocturno-dependencias: $pasaron/$total"; exit 0; } || { echo "❌ nocturno-dependencias: $fallos fallo(s) de $total"; exit 1; }

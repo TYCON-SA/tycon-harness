@@ -56,7 +56,7 @@ const DEFAULTS = {
   reviewers: SONNET,
   reviewer: { 'tycon-spec-first-checker': OPUS },
   reviewers_reloop: SONNET,
-  adversarial: { model: SONNET, heavy: OPUS, fable_question: 'ask' },
+  adversarial: { model: SONNET, heavy: OPUS },
   helpers: HAIKU,
   // una story pesada sugiere opus: el arnés no sugiere fable solo; una organización lo elige con models.session.heavy
   session: { low: SONNET, normal: OPUS, heavy: OPUS },
@@ -220,11 +220,11 @@ function resolveReviewers({ org, requests, costTier, tierOf, set, fullSet, iter,
 }
 
 /**
- * El modelo del pase adversarial y la pregunta de Fable. opts: org · requests · flags { fable, opus, ultracode } ·
- * heavy · modelQuestion (la clave de la pregunta de modelo: `{ value, origin }`) · warnings.
- * → `{ model, origin, reason, question: { value, origin }, upsell, otherQuestion? }`
+ * El modelo del pase adversarial. Fable no se ofrece nunca: sólo corre con el flag.
+ * opts: org · requests · flags { fable, opus, ultracode } · heavy · warnings.
+ * → `{ model, origin, reason, capped, fromFlag }`
  */
-function resolveAdversarial({ org, requests, flags = {}, heavy, modelQuestion, warnings = [] }) {
+function resolveAdversarial({ org, requests, flags = {}, heavy, warnings = [] }) {
   const o = isObject(org) ? org : {};
   const req = isObject(requests) ? requests : {};
   const adv = isObject(o.adversarial) ? o.adversarial : {};
@@ -243,16 +243,11 @@ function resolveAdversarial({ org, requests, flags = {}, heavy, modelQuestion, w
   else { model = DEFAULTS.adversarial.model; origin = 'default'; reason = `${DEFAULTS.adversarial.model} (valor de hoy)`; }
   const final = aplicarTecho(model, ceiling, { key: pedido ? 'request:adversarial' : (heavy ? 'adversarial.heavy' : 'adversarial.model'), que: heavy ? 'el pase en una story pesada' : 'el pase adversarial', pedido }, warnings);
   if (final !== model) reason = pedido ? `pediste ${model}; el techo de la organización es ${ceiling} → ${final}` : `${reason}; el techo de la organización es ${ceiling} → ${final}`;
-  // la pregunta: la de la organización gana; si no, la de la sugerencia de sesión; con un techo debajo de fable, nunca
-  let question;
-  let otherQuestion = null;
-  if (adv.fable_question === 'ask' || adv.fable_question === 'never') {
-    question = { value: adv.fable_question, origin: 'organization' };
-    if (modelQuestion && modelQuestion.origin && modelQuestion.origin !== 'default') otherQuestion = modelQuestion;
-  } else question = modelQuestion && modelQuestion.value ? { value: modelQuestion.value, origin: modelQuestion.origin } : { value: DEFAULTS.adversarial.fable_question, origin: 'default' };
-  if (ceiling && rank(ceiling) < rank(FABLE)) question = { value: 'never', origin: 'ceiling' };
-  const upsell = !!heavy && final !== FABLE && question.value !== 'never';
-  return { model: final, origin, reason, question, upsell, otherQuestion, capped: final !== model, fromFlag: !!(flags.fable || flags.opus || flags.ultracode) };
+  // la pregunta de Fable ya no existe: la clave vieja de la organización se acepta y se avisa (una vez por sesión)
+  if (Object.prototype.hasOwnProperty.call(adv, 'fable_question')) {
+    warnings.push({ key: 'retired:adversarial.fable_question', message: '`models.adversarial.fable_question` ya no hace nada: el pase adversarial no ofrece Fable. Se puede sacar del perfil del equipo' });
+  }
+  return { model: final, origin, reason, capped: final !== model, fromFlag: !!(flags.fable || flags.opus || flags.ultracode) };
 }
 
 /** El modelo de los ayudantes sueltos (búsqueda/exploración): `{ model, origin }`. */
@@ -287,7 +282,7 @@ function resolveSession({ org, band, today, warnings = [] }) {
 }
 
 /** Todo junto (lo que usan las pruebas y quien quiera una sola llamada). */
-function resolveModels({ org, requests, costTier, tierOf, set, iter, agentsDir, flags, heavy, modelQuestion, band, today } = {}) {
+function resolveModels({ org, requests, costTier, tierOf, set, iter, agentsDir, flags, heavy, band, today } = {}) {
   const warnings = [];
   const out = {
     reviewers: (() => {
@@ -296,7 +291,7 @@ function resolveModels({ org, requests, costTier, tierOf, set, iter, agentsDir, 
       for (const m of LOOKUP_PROBLEMS) warnings.push({ key: 'agents-lookup', message: m });
       return r;
     })(),
-    adversarial: resolveAdversarial({ org, requests, flags, heavy, modelQuestion, warnings }),
+    adversarial: resolveAdversarial({ org, requests, flags, heavy, warnings }),
     helpers: resolveHelpers({ org, requests, warnings }),
     ceiling: ceilingOf(org),
     warnings,

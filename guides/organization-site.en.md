@@ -501,7 +501,7 @@ only: they are changed with a request in their repo.
   adversarial pass, the helpers and the session, as a level, in one table per group with each job's default next to it;
   «the default» keeps the one the installed version comes with. There are four levels, written in the file as
   `economy`, `balanced`, `strong` and `max` (the Spanish page shows económico, equilibrado, potente, máximo). Each tool translates them to its own models,
-  and a small line under each selector says which: «Claude: sonnet · Codex: gpt-5.6-luna». A configuration saved with
+  and a small line next to each selector says which: «Claude: sonnet · Codex: gpt-5.6-luna». A configuration saved with
   Claude's names (sonnet, opus) still works: it shows as levels and the next change to the section saves it as levels.
   With levels, the profile has to require the harness version that reads them; otherwise the site does not let you
   propose and says which one to require. With the required ceiling, a job set above the ceiling is marked in red and
@@ -538,8 +538,13 @@ only: they are changed with a request in their repo.
   profile repo.
 - **Integrations** (*Integraciones*): which services each machine uses (the time clock, the memory, the mailbox, the
   night, the CodeGraph code index); a machine can turn one off for itself. With CodeGraph on, the installer sets it up
-  for each dev and the harness warns when a machine lacks it. Telegram is not here: it belongs to each machine. It lives
-  in `team-profile.json`, in the profile repo. A maintainer reviews it.
+  for each dev and the harness warns when a machine lacks it. It lives in `team-profile.json`, in the profile repo. A
+  maintainer reviews it. The **«Avisos»** (notices) row chooses where the harness notifies (a run waiting for a person,
+  the morning summary, the watcher): one or more of Telegram, Slack, Teams and email, or none; not declared, Telegram,
+  as until now. With email, the server and its port. It never asks for a credential: each dev's session notices use
+  their own (`harness.js config set notify.<key>`, on their machine; Telegram, the machine's bot) and the night ones,
+  the server's secret variables (`pipelines/operations/README.md`). Saving the channels also raises the profile's
+  `requires.harness` to the first version that reads them.
 - **Run conversations** (*Conversaciones de las corridas*): whether the site also downloads what was said in each run;
   with that, the Runs detail shows the files it touched. It lives in `operations.json`, in the operations repo. A
   maintainer reviews it.
@@ -553,7 +558,9 @@ What the person sees in the section, and what the agent does when asked for a to
 - **On the site**: the languages the harness already recognizes, the endings your team adds, the test tools table and
   the three rules. Each tool shows its name, the file that detects it, its origin and what can be done:
   - **included in the harness · not editable**: .NET, Vitest, Jest and Node, which the test gate runs internally.
-    «Replace» explains how: an organization recipe detected by the same file wins.
+    «Replace» copies (if the browser allows it) and shows the phrase for the agent, built for that tool: the agent
+    builds an organization recipe detected by the same file, which wins; an admin approves it, and from the next
+    execution on yours is used.
   - **built in · can be changed**: pytest, Go, Maven, Gradle, Karma and Playwright. «Change» brings the form filled
     with the built-in one, and saving leaves an organization copy with the same name that replaces it.
   - **changed by your organization**: that copy. «Back to the built-in one» deletes it.
@@ -589,6 +596,8 @@ What the person sees in the section, and what the agent does when asked for a to
     `{args}`; a repo with no entry uses `args_default`, or nothing. `args` cannot hold quotes, `$`, backticks,
     backslashes or line breaks, because it goes inside quotes in the command. The repo is recognized by its `origin`
     remote.
+    On the site, «Change» shows «Each repo's filter»: «Add a repo» picks from the organization's repos (those in the
+    dependency review and those this file already names), and each row has its filter and its «Remove».
   - **The command runs with bash** and its first word has to be on the PATH (otherwise the gate says it is missing).
     Nothing is read from the repo under test.
 - **Where the profile clone is**: `harness.js team-config --no-open` says which folder this machine uses (the

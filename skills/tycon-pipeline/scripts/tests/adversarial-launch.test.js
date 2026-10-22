@@ -416,78 +416,45 @@ function portonPesado(home, extra) {
   return pipe(home, ['deep-review-gate', '--repo', repo.dir, '--story', repo.story, '--files', ...repo.rutas], extra);
 }
 
+/** Escribe la clave vieja a mano en el archivo de la máquina, como la dejó una versión anterior (`set` ya no la escribe). */
 function escribirClave(home, valor) {
-  const r = spawnSync(process.execPath, [CONFIG, 'set', 'adversarial.model_question', valor],
-    { encoding: 'utf8', env: entorno(home, SID) });
-  assert.strictEqual(r.status, 0, `el lector real no aceptó la clave: ${r.stderr}${r.stdout}`);
+  const archivo = spawnSync(process.execPath, ['-e', `process.stdout.write(require(${JSON.stringify(path.join(RAIZ, 'scripts', 'setup', 'harness', 'tycon-home.js'))}).configFile(${JSON.stringify(home)}))`], { encoding: 'utf8' }).stdout;
+  fs.mkdirSync(path.dirname(archivo), { recursive: true });
+  fs.writeFileSync(archivo, JSON.stringify({ adversarial: { model_question: valor } }));
+  return archivo;
 }
 
-test('T10 ModelQuestion_AskNeverAbsent — sin clave y ask preguntan; never no ofrece y lo deja dicho', () => {
-  const sinClave = casa();
-  let r = portonPesado(sinClave);
-  assert.strictEqual(r.status, 0, r.stderr);
-  let o = JSON.parse(r.stdout);
-  assert.ok(o.fable_upsell, 'sin clave: se ofrece');
-  assert.strictEqual(o.model_question, undefined, 'sin clave: la salida de siempre');
-
-  const ask = casa();
-  escribirClave(ask, 'ask');
-  o = JSON.parse(portonPesado(ask).stdout);
-  assert.ok(o.fable_upsell, 'ask: se ofrece');
-  assert.strictEqual(o.model_question, undefined, 'ask es el valor por defecto: no se agrega nada');
-
-  const never = casa();
-  escribirClave(never, 'never');
-  r = portonPesado(never);
-  o = JSON.parse(r.stdout);
-  assert.strictEqual(o.fable_upsell, undefined, 'never: no se ofrece el modelo mayor');
-  assert.deepStrictEqual(o.model_question, { value: 'never', origin: 'maquina' });
-  assert.strictEqual(o.model, 'opus', 'usa el que elige solo');
-  const l = lineas(never, 'gates.log').filter((x) => x.check === 'model-question');
-  assert.strictEqual(l.length, 1, 'queda una línea en gates.log');
-  assert.strictEqual(l[0].value, 'never');
+test('T10 ModelQuestion_Retirada_ElPortonNoLaLee — con o sin la clave vieja, la salida es la misma y no habla de preguntar', () => {
+  const esperado = JSON.parse(portonPesado(casa()).stdout);
+  for (const v of ['ask', 'never', 'siempre']) {
+    const home = casa();
+    escribirClave(home, v);
+    const r = portonPesado(home);
+    assert.strictEqual(r.status, 0, `${v}: ${r.stderr}`);
+    const o = JSON.parse(r.stdout);
+    assert.deepStrictEqual(o, esperado, `${v}: la salida no cambia`);
+    for (const k of ['fable_upsell', 'model_question', 'model_question_note']) assert.strictEqual(o[k], undefined, `${v}: sin ${k}`);
+    assert.strictEqual(o.model, 'opus', `${v}: la story pesada va con opus`);
+    assert.doesNotMatch(r.stderr, /model_question/, `${v}: el portón no la lee`);
+    assert.strictEqual(lineas(home, 'gates.log').filter((x) => x.check === 'model-question').length, 0, `${v}: sin línea en gates.log`);
+  }
 });
 
-test('T11 ModelQuestion_BrokenConfig_SaysSo — configuración rota pregunta y lo dice; el perfil gana a la máquina', () => {
+test('T11 ModelQuestion_Retirada_ConfiguracionRota_NoLaNombra — un archivo roto o un perfil con la clave no cambian el portón', () => {
+  const esperado = JSON.parse(portonPesado(casa()).stdout);
   const rota = casa();
-  escribirClave(rota, 'never');
-  const archivo = spawnSync(process.execPath, ['-e', `process.stdout.write(require(${JSON.stringify(path.join(RAIZ, 'scripts', 'setup', 'harness', 'tycon-home.js'))}).configFile(${JSON.stringify(rota)}))`], { encoding: 'utf8' }).stdout;
-  fs.writeFileSync(archivo, '{ esto no es json');
-  let r = portonPesado(rota);
-  let o = JSON.parse(r.stdout);
-  assert.ok(o.fable_upsell, 'ilegible: como sin la clave');
-  assert.strictEqual(o.model_question, undefined, 'el JSON es el de sin clave');
-  assert.match(r.stderr, /model_question/, 'y lo dice por la salida de error');
-
-  fs.writeFileSync(archivo, JSON.stringify({ adversarial: { model_question: 'siempre' } }));
-  r = portonPesado(rota);
-  o = JSON.parse(r.stdout);
-  assert.ok(o.fable_upsell, 'fuera del vocabulario: como sin la clave');
-  assert.match(r.stderr, /model_question.*siempre|siempre.*model_question/, 'con el motivo');
+  fs.writeFileSync(escribirClave(rota, 'never'), '{ esto no es json');
+  const r = portonPesado(rota);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /model_question/, 'la clave ya no se busca: no se la nombra');
+  assert.strictEqual(JSON.parse(r.stdout).model, esperado.model);
 
   const perfil = casa();
-  escribirClave(perfil, 'never');
   const rutaPerfil = path.join(perfil, 'perfil-equipo.json');
-  fs.writeFileSync(rutaPerfil, JSON.stringify({ adversarial: { model_question: 'ask' } }));
-  r = portonPesado(perfil, { TYCON_PROFILE: rutaPerfil });
-  o = JSON.parse(r.stdout);
-  assert.ok(o.fable_upsell, 'el perfil del equipo (ask) le gana al archivo de la máquina (never)');
-  assert.strictEqual(o.model_question, undefined);
-
-  // Un lector presente que no sabe cargar (uno de antes), o que tira: pregunta como sin la clave, y lo dice.
-  for (const [nombre, cuerpo, motivo] of [
-    ['sin cargar', 'module.exports = {};', /no sabe cargar/],
-    ['que tira', "module.exports = { cargar() { throw new Error('lector roto de prueba'); } };", /falló \(lector roto de prueba\)/],
-  ]) {
-    const arnes = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'lanz-adv-arnes-')));
-    fs.mkdirSync(path.join(arnes, 'scripts', 'lib'), { recursive: true });
-    fs.writeFileSync(path.join(arnes, 'scripts', 'install-tycon-hooks.sh'), '#!/bin/sh\n');
-    fs.writeFileSync(path.join(arnes, 'scripts', 'lib', 'tycon-config.js'), `${cuerpo}\n`);
-    r = portonPesado(casa(), { TYCON_GUIDES_DIR: arnes });
-    o = JSON.parse(r.stdout);
-    assert.ok(o.fable_upsell, `lector ${nombre}: como sin la clave`);
-    assert.match(r.stderr, motivo, `lector ${nombre}: lo dice por la salida de error`);
-  }
+  fs.writeFileSync(rutaPerfil, JSON.stringify({ adversarial: { model_question: 'never' } }));
+  const p = portonPesado(perfil, { TYCON_PROFILE: rutaPerfil });
+  assert.strictEqual(p.status, 0, p.stderr);
+  assert.deepStrictEqual(JSON.parse(p.stdout), esperado, 'el perfil con la clave vieja tampoco cambia nada');
 });
 
 // ------------------------------------------------------------------ T12 · T13
@@ -549,7 +516,7 @@ if (process.env.TYCON_GATE_SNAPSHOT === 'escribir') {
   process.exit(0);
 }
 
-test('T14 Gate_SnapshotUnchangedWithoutKey — sin clave igual a la foto; con never difiere sólo en los dos campos', () => {
+test('T14 Gate_SnapshotUnchangedWithoutKey — sin clave igual a la foto; con la clave vieja, también', () => {
   const foto = JSON.parse(fs.readFileSync(FOTO, 'utf8'));
   assert.strictEqual(foto.casos.length, CASOS_FOTO.length, 'la foto tiene todos los casos');
   for (const c of CASOS_FOTO) {
@@ -558,15 +525,11 @@ test('T14 Gate_SnapshotUnchangedWithoutKey — sin clave igual a la foto; con ne
     assert.strictEqual(sin.status, esperado.status, `${c.nombre}: código de salida`);
     assert.deepStrictEqual(sin.salida, esperado.salida, `${c.nombre}: sin clave, la salida es la de la foto`);
 
-    const conAsk = casa(); escribirClave(conAsk, 'ask');
-    assert.deepStrictEqual(correrFoto(conAsk, c).salida, esperado.salida, `${c.nombre}: con ask, idéntica`);
-
-    const conNever = casa(); escribirClave(conNever, 'never');
-    const nv = correrFoto(conNever, c);
-    if (!esperado.salida) { assert.strictEqual(nv.salida, null, `${c.nombre}: con never sale igual`); continue; }
-    const quitar = (o) => { const x = { ...o }; delete x.fable_upsell; delete x.model_question; return x; };
-    assert.deepStrictEqual(quitar(nv.salida), quitar(esperado.salida), `${c.nombre}: con never difiere sólo en fable_upsell y model_question`);
-    assert.strictEqual(nv.salida.fable_upsell, undefined, `${c.nombre}: con never no hay oferta`);
+    // la clave vieja de la pregunta ya no cambia nada: con ask o never escrita, idéntica
+    for (const v of ['ask', 'never']) {
+      const con = casa(); escribirClave(con, v);
+      assert.deepStrictEqual(correrFoto(con, c).salida, esperado.salida, `${c.nombre}: con ${v}, idéntica`);
+    }
   }
 });
 

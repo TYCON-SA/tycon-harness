@@ -746,7 +746,7 @@ test('T23 2.34-Fuente_MismoModeloQueElRepo @story-2.34 @ac-6 @ac-16 — el mismo
       assert.deepStrictEqual(f.estado(), m.fuentes.estado());
       const op = f.clones().operaciones;
       assert.ok(op && !fs.existsSync(path.join(op.dir, '.git')), 'una carpeta para leer, sin git');
-      assert.ok((fs.realpathSync(op.dir) + path.sep).startsWith(fs.realpathSync(dataDir) + path.sep), 'la foto se abre dentro de SITE_DATA_DIR');
+      assert.ok(!(fs.realpathSync(op.dir) + path.sep).startsWith(fs.realpathSync(dataDir) + path.sep), 'la foto se abre en el disco del contenedor, fuera de SITE_DATA_DIR');
       assert.strictEqual(op.indice.commit, sub.commit);
     } finally { f.detener(); }
   } finally { await m.cerrar(); }

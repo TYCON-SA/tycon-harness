@@ -3643,6 +3643,201 @@
               }
             ]
           }
+        },
+        {
+          "id": "752-prefijo-time-frena",
+          "type": "must-block",
+          "__doc": "Story 7.52 · T3 · un prefijo (`time`) delante de la suite. ROJO PREVIO: el freno de antes miraba si cada pedazo del comando EMPEZABA con la herramienta, y éste pasaba.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "time dotnet test"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "test-scope-guard|TEST-DISCIPLINE"
+            ]
+          }
+        },
+        {
+          "id": "752-variable-adelante-frena",
+          "type": "must-block",
+          "__doc": "Story 7.52 · T3 · una variable con comillas delante. ROJO PREVIO: el freno de antes miraba si cada pedazo del comando EMPEZABA con la herramienta, y éste pasaba.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "FOO=\"a b\" npm test"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "test-scope-guard|TEST-DISCIPLINE"
+            ]
+          }
+        },
+        {
+          "id": "752-subshell-frena",
+          "type": "must-block",
+          "__doc": "Story 7.52 · T3 · una subshell. ROJO PREVIO: el freno de antes miraba si cada pedazo del comando EMPEZABA con la herramienta, y éste pasaba.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "(cd web && npx vitest run)"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "test-scope-guard|TEST-DISCIPLINE"
+            ]
+          }
+        },
+        {
+          "id": "752-docker-exec-frena",
+          "type": "must-block",
+          "__doc": "Story 7.52 · T3 · un envoltorio que lanza el programa. ROJO PREVIO: el freno de antes miraba si cada pedazo del comando EMPEZABA con la herramienta, y éste pasaba.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "docker exec app dotnet test"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "test-scope-guard|TEST-DISCIPLINE"
+            ]
+          }
+        },
+        {
+          "id": "752-pnpm-test-frena",
+          "type": "must-block",
+          "__doc": "Story 7.52 · T3 · otro gestor. ROJO PREVIO: el freno de antes miraba si cada pedazo del comando EMPEZABA con la herramienta, y éste pasaba.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "pnpm test"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "test-scope-guard|TEST-DISCIPLINE"
+            ]
+          }
+        },
+        {
+          "id": "752-opcion-con-valor-frena",
+          "type": "must-block",
+          "__doc": "Story 7.52 · T3 · el valor de una opción no es alcance. ROJO PREVIO: el freno de antes miraba si cada pedazo del comando EMPEZABA con la herramienta, y éste pasaba.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "dotnet test -o bin/out"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "test-scope-guard|TEST-DISCIPLINE"
+            ]
+          }
+        },
+        {
+          "id": "752-echo-a-bash-frena",
+          "type": "must-block",
+          "__doc": "Story 7.52 · T3 · el texto que le llega a un shell. ROJO PREVIO: el freno de antes miraba si cada pedazo del comando EMPEZABA con la herramienta, y éste pasaba.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo \"npm test\" | bash"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "test-scope-guard|TEST-DISCIPLINE"
+            ]
+          }
+        },
+        {
+          "id": "752-escape-nombrado-frena",
+          "type": "must-block",
+          "__doc": "Story 7.52 · T3 · nombrar el escape en un texto no lo usa. ROJO PREVIO: el freno de antes miraba si cada pedazo del comando EMPEZABA con la herramienta, y éste pasaba.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"TYCON_FULL_SUITE=1\"; dotnet test"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "test-scope-guard|TEST-DISCIPLINE"
+            ]
+          }
+        },
+        {
+          "id": "752-powershell-iex-frena",
+          "type": "must-block",
+          "__doc": "Story 7.52 · T3 · PowerShell: el texto de iex se lee como un comando. ROJO PREVIO: el freno de antes miraba si cada pedazo del comando EMPEZABA con la herramienta, y éste pasaba.",
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "iex \"dotnet test\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "test-scope-guard|TEST-DISCIPLINE"
+            ]
+          }
+        },
+        {
+          "id": "752-heredoc-a-cat-pasa",
+          "type": "must-not-block",
+          "__doc": "Story 7.52 · T3 · el cuerpo de un heredoc que va a cat es texto. ROJO PREVIO: el freno de antes lo frenaba.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat <<'EOF'\ndotnet test\nEOF"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "752-filtro-en-envoltorio-pasa",
+          "type": "must-not-block",
+          "__doc": "Story 7.52 · T3 · con alcance adentro de un envoltorio, pasa. Sin rojo previo propio: fija que leer adentro no frene de más.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "ssh build \"cd app && dotnet test tests/Foo.Tests\""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "752-escape-de-verdad-pasa",
+          "type": "must-not-block",
+          "__doc": "Story 7.52 · T3 · el escape junto al comando de pruebas sigue valiendo. Sin rojo previo propio: fija que el escape siga andando.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cd web && TYCON_FULL_SUITE=1 npm test"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
         }
       ]
     },

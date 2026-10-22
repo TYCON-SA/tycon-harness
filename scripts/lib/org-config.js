@@ -66,7 +66,7 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session']), idCorto: 'profile', necesita: ['approvals'] }),
   Object.freeze({ id: 'pruebaAMano', titulo: 'Prueba a mano de cada criterio', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['qa'], rutas: Object.freeze(['qa.manual_check']), idCorto: 'profile', necesita: ['qa'] }),
   Object.freeze({ id: 'respuesta', titulo: 'Cómo contesta el agente', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['response'], idCorto: 'profile', necesita: ['response'] }),
-  Object.freeze({ id: 'integraciones', titulo: 'Integraciones', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['integrations'], rutas: Object.freeze(['integrations.timeTracking', 'integrations.clockify', 'integrations.engram', 'integrations.mailbox', 'integrations.codex', 'integrations.nightly', 'integrations.codegraph']), idCorto: 'profile', necesita: ['integrations'] }),
+  Object.freeze({ id: 'integraciones', titulo: 'Integraciones', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['integrations'], rutas: Object.freeze(['integrations.timeTracking', 'integrations.notify', 'integrations.clockify', 'integrations.engram', 'integrations.mailbox', 'integrations.codex', 'integrations.nightly', 'integrations.codegraph']), idCorto: 'profile', necesita: ['integrations'] }),
   Object.freeze({ id: 'ado', titulo: 'Azure DevOps', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['ado'], rutas: Object.freeze(['ado.org']), idCorto: 'profile', necesita: ['ado'] }),
   Object.freeze({ id: 'actualizacion', titulo: 'Cómo se actualizan las máquinas', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['update'], rutas: Object.freeze(['update.channel', 'update.apply']), idCorto: 'profile', necesita: ['update'] }),
   Object.freeze({ id: 'instalacion', titulo: 'Perfil de instalación', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['install'], rutas: Object.freeze(['install.profile']), idCorto: 'profile', necesita: ['install'] }),
@@ -268,18 +268,35 @@ const QA_SINCE = '2026.10.20.39';
  * antes hasta actualizarse.
  */
 const TIME_TRACKING_SINCE = '2026.10.21.15';
-/**
- * El team-layer.json que acompaña a un pedido que cambia `integrations.timeTracking`: `{ archivo, contenido }` con
- * `requires.harness` en `>= TIME_TRACKING_SINCE`; null si el pedido no la cambia, si la capa ya pide eso o más, o si el
- * perfil no tiene capa (`layerText` null: sin su declaración ninguna máquina aplica el perfil, así que no hay versión que
- * subir); `{ problema }` si la capa no se puede leer o su `requires.harness` no tiene la forma `>= x` (no se pisa a ciegas).
- */
-const cambiaHoras = ({ actual, doc }) => {
-  const de = (x) => (isObject(x) && isObject(x.integrations) ? x.integrations.timeTracking : undefined);
+/** Si el pedido cambia `integrations.<clave>` del perfil. */
+const cambiaIntegracion = (clave) => ({ actual, doc }) => {
+  const de = (x) => (isObject(x) && isObject(x.integrations) ? x.integrations[clave] : undefined);
   return de(doc) !== undefined && canonico(de(doc)) !== canonico(de(actual));
 };
+const cambiaHoras = cambiaIntegracion('timeTracking');
+/**
+ * 🔴 La primera versión del arnés cuyo lector conoce `integrations.notify` (los canales de aviso): la etiqueta del merge
+ * que trajo ese lector. Una máquina anterior rechazaría el perfil entero con la clave nueva.
+ */
+const NOTIFY_SINCE = '2026.10.21.52';
+const cambiaAvisos = cambiaIntegracion('notify');
+/** La versión que tiene que pedir la capa para el pedido: la mayor de las claves nuevas que cambia, o null. */
+function versionDeLaCapa({ actual, doc }) {
+  const piden = [[cambiaHoras, TIME_TRACKING_SINCE], [cambiaAvisos, NOTIFY_SINCE]].filter(([cambia]) => cambia({ actual, doc })).map(([, v]) => v);
+  return piden.reduce((max, v) => (max === null || versionAtLeast(v, max) ? v : max), null);
+}
+/** Si el pedido cambia una clave del perfil que sólo leen las versiones nuevas (y por eso sube la capa). */
+const cambiaLaCapa = ({ actual, doc }) => versionDeLaCapa({ actual, doc }) !== null;
+/**
+ * El team-layer.json que acompaña a un pedido que cambia `integrations.timeTracking` o `integrations.notify`:
+ * `{ archivo, contenido }` con `requires.harness` en la versión que lee lo que cambia (`versionDeLaCapa`); null si el
+ * pedido no las cambia, si la capa ya pide eso o más, o si el perfil no tiene capa (`layerText` null: sin su declaración
+ * ninguna máquina aplica el perfil, así que no hay versión que subir); `{ problema }` si la capa no se puede leer o su
+ * `requires.harness` no tiene la forma `>= x` (no se pisa a ciegas).
+ */
 function timeTrackingLayer({ layerText, actual, doc }) {
-  if (!cambiaHoras({ actual, doc }) || layerText === null || layerText === undefined) return null;
+  const minima = versionDeLaCapa({ actual, doc });
+  if (minima === null || layerText === null || layerText === undefined) return null;
   let decl;
   // con la marca de orden de bytes, como la lee la máquina (team.js validateDeclaration)
   try { decl = JSON.parse(String(layerText).replace(/^﻿/, '')); } catch (e) {
@@ -288,9 +305,9 @@ function timeTrackingLayer({ layerText, actual, doc }) {
   if (!isObject(decl)) return { problema: M('org.capaIlegible', { error: 'team-layer.json no es un objeto' }) };
   const pide = String((decl.requires || {}).harness || '').trim();
   const m = /^>=\s*(\S+)$/.exec(pide);
-  if (m && versionAtLeast(m[1], TIME_TRACKING_SINCE)) return null;
+  if (m && versionAtLeast(m[1], minima)) return null;
   if (pide && !m) return { problema: M('org.capaIlegible', { error: `requires.harness dice «${pide}», no «>= versión»` }) };
-  const nueva = { ...decl, requires: { ...(isObject(decl.requires) ? decl.requires : {}), harness: `>= ${TIME_TRACKING_SINCE}` } };
+  const nueva = { ...decl, requires: { ...(isObject(decl.requires) ? decl.requires : {}), harness: `>= ${minima}` } };
   return { archivo: 'team-layer.json', contenido: formatJson(nueva) };
 }
 /**
@@ -640,27 +657,51 @@ const CARPETA_CON_FECHA = /^v(\d{4})(\d{2})(\d{2})T\d{6}\d{3}Z$/;
  * Del espejo del buzón (`<espejo>/<máquina>/registros[/v<AAAAMMDDTHHMMSSmmmZ>]/place.json`), una fila por máquina:
  * `{ maquina, version, dia, diaTexto, estado: 'al_dia' | 'atrasada' | 'sin_noticias' | 'no_medido', texto }`. La
  * referencia es la versión de la imagen del sitio; sin ella, todas «no medido». Sin red.
+ * El día: el de la carpeta con fecha; con el place.json suelto (la forma que deja el buzón), su `day` si es una fecha
+ * real y no posterior a mañana; si no, la fecha del archivo. Una carpeta vieja que `.carpetas-de-maquina.json` (la
+ * unión que deja el bajador) declara `unida` a su carpeta nueva no es otra fila; sin ese archivo, cada carpeta cuenta.
  */
 function versionesDeMaquinas({ espejo, versionImagen, ahora = Date.now(), personas = null }) {
   let maquinas = [];
   try { maquinas = fs.readdirSync(espejo, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith('.')).map((d) => d.name).sort(); } catch { return []; }
+  // vieja → nueva; la vieja sale de la tabla sólo si su nueva tiene fila (abajo)
+  let unidas = new Map();
+  try {
+    const u = JSON.parse(fs.readFileSync(path.join(espejo, '.carpetas-de-maquina.json'), 'utf8'));
+    const c = u && isObject(u.carpetas) ? u.carpetas : {};
+    unidas = new Map(Object.keys(c).filter((k) => isObject(c[k]) && c[k].estado === 'unida' && typeof c[k].nueva === 'string' && maquinas.includes(c[k].nueva)).map((k) => [k, c[k].nueva]));
+  } catch { /* sin el archivo, o ilegible: sin uniones, cada carpeta es una fila (se ve, repetida; no desaparece ninguna) */ }
+  const manana = new Date(ahora + 86400000).toISOString().slice(0, 10);
+  // `{ dia, delArchivo }`: el `day` que declara la máquina, o la fecha del archivo (la de la bajada, no la de la máquina:
+  // se muestra como tal)
+  const diaDe = (doc, ruta) => {
+    const d = doc && typeof doc.day === 'string' ? doc.day : '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d && d <= manana) return { dia: d, delArchivo: false };
+    try { return { dia: new Date(fs.lstatSync(ruta).mtimeMs).toISOString().slice(0, 10), delArchivo: true }; } catch { return { dia: null, delArchivo: false }; }
+  };
+  // un enlace del espejo no se sigue: lo que se lee queda adentro
+  const esArchivo = (p) => { try { return fs.lstatSync(p).isFile(); } catch { return false; } };
   const out = [];
   for (const m of maquinas) {
     const reg = path.join(espejo, m, 'registros');
+    try { if (fs.lstatSync(reg).isSymbolicLink()) continue; } catch { /* sin registros: lo dice el listado de abajo */ }
     let carpetas = [];
-    try { carpetas = fs.readdirSync(reg).filter((n) => CARPETA_CON_FECHA.test(n) && fs.existsSync(path.join(reg, n, 'place.json'))).sort(); } catch (e) {
+    try { carpetas = fs.readdirSync(reg).filter((n) => CARPETA_CON_FECHA.test(n) && esArchivo(path.join(reg, n, 'place.json'))).sort(); } catch (e) {
       // sin registros no es una máquina; con registros que no se pueden leer, sí: sale «no medido», no desaparece
       if (e && e.code !== 'ENOENT') { out.push({ maquina: m, persona: personas && personas[m] ? personas[m] : null, version: null, dia: null, diaTexto: M('org.sinFecha'), estado: 'no_medido', texto: M('org.registrosIlegibles', { codigo: e.code || 'error' }) }); continue; }
     }
     let ruta = null; let dia = null;
     if (carpetas.length) { const c = carpetas[carpetas.length - 1]; ruta = path.join(reg, c, 'place.json'); const d = CARPETA_CON_FECHA.exec(c); dia = `${d[1]}-${d[2]}-${d[3]}`; }
-    else if (fs.existsSync(path.join(reg, 'place.json'))) ruta = path.join(reg, 'place.json');
+    else if (esArchivo(path.join(reg, 'place.json'))) ruta = path.join(reg, 'place.json');
     if (!ruta) continue;
     let doc = null;
     try { doc = JSON.parse(fs.readFileSync(ruta, 'utf8')); } catch { doc = null; }
-    const version = doc && isObject(doc.install) && typeof doc.install.version === 'string' ? doc.install.version : null;
+    let delArchivo = false;
+    if (!dia) ({ dia, delArchivo } = diaDe(doc, ruta));
+    // la versión viene de otra máquina: acotada (la pantalla la dibuja como texto)
+    const version = doc && isObject(doc.install) && typeof doc.install.version === 'string' ? doc.install.version.slice(0, 40) : null;
     const persona = personas && typeof personas === 'object' && personas[m] ? personas[m] : null;
-    const fila = { maquina: m, persona, version, dia, diaTexto: dia || M('org.sinFecha'), estado: 'no_medido', texto: '' };
+    const fila = { maquina: m, persona, version, dia, diaTexto: dia ? (delArchivo ? M('org.diaSegunElArchivo', { dia }) : dia) : M('org.sinFecha'), estado: 'no_medido', texto: '' };
     if (!versionImagen) { fila.estado = 'no_medido'; fila.texto = M('org.imagenSinVersion'); }
     else if (!doc) { fila.texto = M('org.placeIlegible'); }
     else if (!version) { fila.texto = M('org.placeSinVersion'); }
@@ -670,7 +711,8 @@ function versionesDeMaquinas({ espejo, versionImagen, ahora = Date.now(), person
     else { fila.texto = M('org.sinFormaDeVersion', { version }); }
     out.push(fila);
   }
-  return out;
+  const conFila = new Set(out.map((f) => f.maquina));
+  return out.filter((f) => !(unidas.has(f.maquina) && conFila.has(unidas.get(f.maquina))));
 }
 
 // ── la paridad por producto ──────────────────────────────────────────────────────────────────────────────
@@ -1600,6 +1642,20 @@ function pantalla(idioma = 'es') {
     // elegir una saca la llave vieja: el perfil queda con una sola fuente de verdad (el pedido sube la versión que lo lee)
     var ch = corto(T('pantalla.registroDeHoras'), elegida, opcionesHoras, function (v) { hoja(d, 'integrations', 'clockify', undefined); hoja(d, 'integrations', 'timeTracking', v); render(); }, 'integrations.timeTracking', pr);
     t.appendChild(renglon([queDe(T('pantalla.registroDeHoras')), el('div', { class: 'sel', role: 'cell' }, ch.sel)], ch.mios));
+    // los canales de aviso: sin declarar es lo de antes (Telegram); «ninguno» es la lista vacía; si no, los tildados
+    var av = esObjeto(i.notify) ? i.notify : null;
+    var canalesAv = av && Array.isArray(av.channels) ? av.channels : null;
+    var modoAv = canalesAv === null ? '' : canalesAv.length ? 'elegir' : 'none';
+    var deAvisos = function () { if (!esObjeto(d.integrations)) d.integrations = {}; if (!esObjeto(d.integrations.notify)) d.integrations.notify = {}; return d.integrations.notify; };
+    var sinCorreo = function (o) { if (!Array.isArray(o.channels) || o.channels.indexOf('mail') < 0) { delete o.mail_host; delete o.mail_port; } };
+    var ca = corto(T('pantalla.avisos'), modoAv, [['', T('pantalla.avisosSinDeclarar')], ['none', T('pantalla.avisosNinguno')], ['elegir', T('pantalla.avisosElegir')]], function (v) {
+      var o = deAvisos();
+      if (v === '') delete o.channels; else if (v === 'none') o.channels = []; else if (!Array.isArray(o.channels) || !o.channels.length) o.channels = ['telegram'];
+      sinCorreo(o);
+      if (!Object.keys(o).length) hoja(d, 'integrations', 'notify', undefined);
+      render();
+    }, 'integrations.notify.channels', pr);
+    t.appendChild(renglon([queDe(T('pantalla.avisos')), el('div', { class: 'sel', role: 'cell' }, ca.sel)], ca.mios));
     INTEGRACIONES.forEach(function (par) {
       var k = par[0];
       var opciones = [['', T('pantalla.sinDeclararApagada')], ['true', T('pantalla.prendida2')], ['false', T('pantalla.apagada2')]].concat(k === 'codex' ? [['detect', T('pantalla.siEstaInstalado')]] : []);
@@ -1620,8 +1676,32 @@ function pantalla(idioma = 'es') {
     }
     if (h && h.token) box.appendChild(el('p', { class: 'muted', text: T('pantalla.tokenEnCadaMaquina', { herramienta: h.label, comando: h.token }) }));
     if (elegida) box.appendChild(el('p', { class: 'muted', text: T('pantalla.registroDeHorasSubeLaCapa') }));
+    // los canales elegidos, para tildar; con el correo, su servidor. Ninguna credencial: cada una va en su máquina o en
+    // las variables secretas de la noche, y la pantalla dice cuál
+    if (canalesAv && canalesAv.length) {
+      var lista = el('div', { class: 'pila' });
+      CANALES_AVISO.concat(canalesAv.filter(function (c) { return !CANALES_AVISO.some(function (p) { return p[0] === c; }); }).map(function (c) { return [c, c]; })).forEach(function (par) {
+        var c = el('input', { type: 'checkbox', 'aria-label': par[1], 'data-path': 'integrations.notify.channels.' + par[0], onchange: function (e) {
+          var o = deAvisos();
+          var l = (Array.isArray(o.channels) ? o.channels : []).filter(function (x) { return x !== par[0]; });
+          o.channels = e.target.checked ? l.concat([par[0]]) : l;
+          sinCorreo(o);
+          render();
+        } });
+        c.checked = canalesAv.indexOf(par[0]) >= 0;
+        lista.appendChild(el('label', {}, c, el('span', { text: ' ' + par[1] })));
+      });
+      box.appendChild(lista);
+      if (canalesAv.indexOf('mail') >= 0) {
+        box.appendChild(campo(T('pantalla.servidorDeCorreo'), av.mail_host, function (v) { var o = deAvisos(); if (v === '') delete o.mail_host; else o.mail_host = v; }, 'integrations.notify.mail_host', pr));
+        box.appendChild(campo(T('pantalla.puertoDelCorreo'), av.mail_port, function (v) { var o = deAvisos(); if (v === '') delete o.mail_port; else o.mail_port = numOTexto(v); }, 'integrations.notify.mail_port', pr, { inputmode: 'numeric' }));
+      }
+      box.appendChild(el('p', { class: 'muted', text: T('pantalla.avisosCredenciales') }));
+    }
+    if (modoAv !== '') box.appendChild(el('p', { class: 'muted', text: T('pantalla.avisosSubeLaCapa') }));
     return box;
   }
+  var CANALES_AVISO = [['telegram', 'Telegram'], ['slack', 'Slack'], ['teams', 'Teams'], ['mail', T('pantalla.canalCorreo')]];
   // ── story 2.59: las tablas de renglones de Modelos, Repos e Integraciones ──
   // cada renglón es «contents» en la hoja: sus celdas caen en la grilla de la tabla y en teléfono bajan a dos líneas
   function tabla(clase, titulo, columnas) {
@@ -1645,10 +1725,18 @@ function pantalla(idioma = 'es') {
     return fila;
   }
   function editorAprobaciones(s, d, pr) {
-    // sólo sí o no: el valor es el nombre del rol (el que ya tenga, o «coordinadora»); la sesión se designa en la máquina
+    // sí o no, y con «sí» el nombre del rol (el que ya tenga, o «coordinadora»): es el valor que se guarda, y la frase que
+    // designa la sesión en cada máquina lo nombra
     var rol = (d.approvals || {}).relay_session;
-    var box = el('div', { class: 'pila' }, selector(T('pantalla.quienReenviaElOk'), rol ? 'si' : '', [['', T('pantalla.quienReenviaElOkNo')], ['si', T('pantalla.quienReenviaElOkSi')]], function (x) { hoja(d, 'approvals', 'relay_session', x === 'si' ? (rol || 'coordinadora') : ''); }, 'approvals.relay_session', pr));
-    box.appendChild(el('p', { class: 'muted', text: T('pantalla.quienReenviaElOkAyuda') }));
+    var box = el('div', { class: 'pila' }, selector(T('pantalla.quienReenviaElOk'), rol ? 'si' : '', [['', T('pantalla.quienReenviaElOkNo')], ['si', T('pantalla.quienReenviaElOkSi')]], function (x) { hoja(d, 'approvals', 'relay_session', x === 'si' ? (rol || 'coordinadora') : ''); render(); }, 'approvals.relay_session', pr));
+    var ayuda = el('p', { class: 'muted', text: T('pantalla.quienReenviaElOkAyuda', { nombre: rol || 'coordinadora' }) });
+    // sin volver a dibujar mientras se escribe (se perdería el foco): la ayuda se actualiza en el lugar
+    if (rol) box.appendChild(campo(T('pantalla.quienReenviaElOkComoLaLlaman'), rol, function (v) {
+      var nombre = String(v).trim() || 'coordinadora';
+      hoja(d, 'approvals', 'relay_session', nombre);
+      ayuda.textContent = T('pantalla.quienReenviaElOkAyuda', { nombre: nombre });
+    }, 'approvals.relay_session.nombre', pr, { placeholder: T('pantalla.quienReenviaElOkEjemplo') }));
+    box.appendChild(ayuda);
     return box;
   }
   function editorPruebaAMano(s, d, pr) {
@@ -1989,11 +2077,13 @@ function pantalla(idioma = 'es') {
       if (v) m[k][sub] = v; else { delete m[k][sub]; if (!Object.keys(m[k]).length) delete m[k]; }
     }
     // un renglón de modelo: «que» es el contenido de la primera celda; «quitarlo», la ✕ de un revisor en particular
-    // «h» es el valor por defecto como viene (un modelo); con «conEquiv», el renglón lleva la línea de equivalencias
+    // «h» es el valor por defecto como viene (un modelo); con «conEquiv», el renglón lleva la línea de equivalencias:
+    // «true» la calcula del valor elegido, y un nivel la deja fija en ese nivel (un renglón que no elige modelo)
     function fila(t, que, label, k, sub, opciones, h, quitarlo, conEquiv) {
       var p = 'models.' + k + (sub ? '.' + sub : '');
+      var fijo = typeof conEquiv === 'string' ? conEquiv : null;
       var linea = conEquiv ? el('small', { class: 'equiv muted' }) : null;
-      var pintar = function (v) { if (linea) linea.textContent = lineaEquiv(v || h); };
+      var pintar = function (v) { if (linea) linea.textContent = lineaEquiv(fijo || v || h); };
       var c = corto(label, sub ? de(m[k], sub) : m[k], opciones, function (v) { poner(k, sub, v); pintar(v); }, p, pr);
       pintar(sub ? de(m[k], sub) : m[k]);
       var acc = el('div', { class: 'acc', role: 'cell' }, c.sel);
@@ -2001,7 +2091,7 @@ function pantalla(idioma = 'es') {
       if (quitarlo) acc.appendChild(el('button', { class: 'quitar-fila', type: 'button', text: '✕', title: T('pantalla.quitarEsteRevisor'), 'aria-label': T('pantalla.quitarEsteRevisor') + ': ' + label, onclick: quitarlo }));
       var celda = el('div', { class: 'que', role: 'cell' });
       [].concat(que).forEach(function (n) { celda.appendChild(n); });
-      t.appendChild(renglon([celda, el('div', { class: 'hoy', role: 'cell', text: h == null ? '—' : (conEquiv ? nombreNivel(h) : h) }), acc], c.mios));
+      t.appendChild(renglon([celda, el('div', { class: 'hoy', role: 'cell', text: h == null ? '—' : (conEquiv === true ? nombreNivel(h) : h) }), acc], c.mios));
     }
     function trabajo(t, label, k, sub) { fila(t, el('span', { text: label }), label, k, sub, DE_MODELOS, sub ? de(de(hoy, k), sub) : de(hoy, k), null, true); }
 
@@ -2033,9 +2123,6 @@ function pantalla(idioma = 'es') {
     var adv = cabeza(T('pantalla.elPaseAdversarial'));
     trabajo(adv, T('pantalla.unaStoryNormal'), 'adversarial', 'model');
     trabajo(adv, T('pantalla.unaStoryPesada'), 'adversarial', 'heavy');
-    var fq = de(de(hoy, 'adversarial'), 'fable_question');
-    fila(adv, el('span', { text: T('pantalla.preguntarAntesDeUsarFable') }), T('pantalla.preguntarAntesDeUsarFable'), 'adversarial', 'fable_question',
-      [['', T('pantalla.elPorDefecto')], ['ask', T('pantalla.preguntar')], ['never', T('pantalla.nunca')]], fq ? (fq === 'ask' ? T('pantalla.preguntar') : T('pantalla.nunca')) : null);
     box.appendChild(adv);
 
     var ayu = cabeza(T('pantalla.losAyudantesYLaSesion'));
@@ -2276,7 +2363,8 @@ function pantalla(idioma = 'es') {
   // fábrica, cambiadas o agregadas) y las tres reglas. Una clave que queda vacía se saca: no se propone un «{}»
   var TEC_FORM = null;     // la herramienta que se está cambiando: { name, r, fabrica }
   var TEC_AGENTE = false;  // se tocó «Pedíselo a tu agente»
-  var TEC_REEMPLAZAR = null;  // la interna cuya explicación de «Reemplazar» está abierta
+  var TEC_REEMPLAZAR = null;  // la interna cuya frase de «Reemplazar» está a la vista
+  var TEC_AGREGAR_REPO = null;  // la herramienta del formulario abierto donde se tocó «Agregar un repo»: se ve el selector
   var TEC_NOMBRES = { dotnet: '.NET', vitest: 'Vitest', jest: 'Jest', node: 'Node (node --test)', pytest: 'pytest (Python)', go: 'Go', maven: 'Maven (Java)', gradle: 'Gradle (Java, Kotlin)', karma: 'Karma (Angular)', playwright: 'Playwright (punta a punta)' };
   var TEC_ARCHIVOS = { dotnet: '.sln, .csproj', vitest: 'package.json (vitest)', jest: 'package.json (jest)', node: 'package.json (node --test)' };
   // el nombre para personas: el de fábrica, o el «label» que le puso la organización a su receta; si no, el id
@@ -2303,20 +2391,38 @@ function pantalla(idioma = 'es') {
     limpiarStack(d);
   }
   function boton(texto, onclick) { return el('button', { class: 'sec', type: 'button', text: texto, onclick: onclick }); }
-  function formRunner(d) {
+  function formRunner(d, ex) {
     var f = TEC_FORM; var r = f.r;
     var upd = function (k) { return function (v) { r[k] = v; }; };
     var dentro = function (o, k) { return function (v) { if (!esObjeto(r[o])) r[o] = {}; r[o][k] = v; }; };
     var res = esObjeto(r.results) ? r.results : {}; var cov = esObjeto(r.coverage) ? r.coverage : null;
-    // el filtro de cada repo y el de por defecto: se ven y se editan; lo demás de la receta viaja intacto en la copia
+    // el filtro de cada repo y el de por defecto: se ven y se editan, cada renglón con su «Quitar», y «Agregar un repo»
+    // elige de los repos de la organización (los da el servidor); lo demás de la receta viaja intacto en la copia
     var repos = Array.isArray(r.repos) ? r.repos : [];
-    var porRepo = null;
-    if (repos.length || r.args_default !== undefined) {
-      porRepo = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecFiltroPorRepo') }), el('p', { class: 'sub-d', text: T('pantalla.tecFiltroPorRepoAyuda') }),
-        campo(T('pantalla.tecFiltroPorDefecto'), r.args_default, function (v) { if (v === '') delete r.args_default; else r.args_default = v; }, 'runner.args_default', []));
-      repos.forEach(function (x, i) {
-        porRepo.appendChild(campo(repoEnTexto(x && x.repo), x && x.args, function (v) { if (esObjeto(r.repos[i])) r.repos[i].args = v; }, 'runner.repos.' + i + '.args', []));
-      });
+    // como la identidad del lector: sin mayúsculas y con los %20 de una ruta copiada de la web leídos como espacio
+    var sinEscapes = function (v) { try { return decodeURIComponent(String(v || '')); } catch (e) { return String(v || ''); } };
+    var clave = function (x) { return esObjeto(x) ? [x.platform, x.org, x.project || '', x.repo].map(sinEscapes).join('/').toLowerCase() : ''; };
+    var porRepo = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecFiltroPorRepo') }), el('p', { class: 'sub-d', text: T('pantalla.tecFiltroPorRepoAyuda') }),
+      campo(T('pantalla.tecFiltroPorDefecto'), r.args_default, function (v) { if (v === '') delete r.args_default; else r.args_default = v; }, 'runner.args_default', []));
+    repos.forEach(function (x, i) {
+      var nombre = repoEnTexto(x && x.repo);
+      porRepo.appendChild(el('div', { class: 'fila filtro-repo' }, campo(nombre, x && x.args, function (v) { if (esObjeto(r.repos[i])) r.repos[i].args = v; }, 'runner.repos.' + i + '.args', []),
+        el('button', { class: 'sec', type: 'button', text: T('pantalla.tecQuitarRepo'), 'aria-label': T('pantalla.tecQuitarRepo') + ' ' + nombre, onclick: function () { r.repos.splice(i, 1); if (!r.repos.length) delete r.repos; render(); } })));
+    });
+    var usados = repos.map(function (x) { return clave(x && x.repo); });
+    var libres = (Array.isArray(ex.repos) ? ex.repos : []).filter(function (x) { return usados.indexOf(clave(x)) < 0; });
+    var agregando = TEC_AGREGAR_REPO === f.name;
+    if (agregando && libres.length) {
+      porRepo.appendChild(selector(T('pantalla.tecElegiUnRepo'), '', [['', T('pantalla.tecElegiUnRepo')]].concat(libres.map(function (x) { return [clave(x), repoEnTexto(x)]; })), function (v) {
+        var e = libres.filter(function (x) { return clave(x) === v; })[0];
+        if (!e) return;
+        r.repos = (Array.isArray(r.repos) ? r.repos : []).concat([{ repo: copia(e), args: '' }]);
+        TEC_AGREGAR_REPO = null; render();
+      }, 'runner.repos.nuevo', []));
+    } else if (agregando) {
+      porRepo.appendChild(el('p', { class: 'muted', text: T('pantalla.tecNoHayMasRepos') + (ex.reposMotivo ? ' (' + ex.reposMotivo + ')' : '') }));
+    } else {
+      porRepo.appendChild(el('div', { class: 'fila' }, boton(T('pantalla.tecAgregarUnRepo'), function () { TEC_AGREGAR_REPO = f.name; render(); })));
     }
     return el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecCambiarLaHerramienta', { nombre: nombreDe(r) }) }),
       el('div', { class: 'msg warn' }, el('b', { text: T('pantalla.tecElComandoCorreEnCadaComputadora') })),
@@ -2346,12 +2452,18 @@ function pantalla(idioma = 'es') {
     var fabrica = ex.fabrica || [];
     var tabla = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecComoSeCorrenLasPruebas') }), el('p', { class: 'sub-d', text: T('pantalla.tecComoSeCorrenAyuda') }));
     // cada fila con las mismas cuatro columnas: nombre, archivo que la detecta, origen y acción. Las internas no se
-    // editan: «Reemplazar» despliega, en la fila, cómo ganarle con una receta de la organización
+    // editan: «Reemplazar» hace lo de «Pedíselo a tu agente» con la frase armada para esa herramienta (la copia si el
+    // navegador deja) y la muestra en la fila, con lo que pasa después
     (ex.internos || []).forEach(function (n) {
       var abierta = TEC_REEMPLAZAR === n;
+      var frase = T('pantalla.tecFraseReemplazar', { nombre: TEC_NOMBRES[n] || n, archivo: String(TEC_ARCHIVOS[n] || '').replace(/ \(.*\)$/, '') });
       tabla.appendChild(el('div', { class: 'fila', 'data-runner': n }, el('span', { text: TEC_NOMBRES[n] || n }), el('span', { class: 'muted', text: TEC_ARCHIVOS[n] || '' }), el('span', { text: T('pantalla.tecIncluidaEnElArnes') }),
-        el('span', {}, boton(T('pantalla.tecReemplazar'), function () { TEC_REEMPLAZAR = abierta ? null : n; render(); }))));
-      if (abierta) tabla.appendChild(el('p', { class: 'sub-d', 'data-reemplazar': n, text: T('pantalla.tecComoReemplazarUnaDeLaPuerta') }));
+        el('span', {}, boton(T('pantalla.tecReemplazar'), function () {
+          TEC_REEMPLAZAR = n;
+          try { if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(frase).catch(function () {}); } catch (e) { /* sin portapapeles, la frase queda a la vista */ }
+          render();
+        }))));
+      if (abierta) tabla.appendChild(el('div', { class: 'msg ok', 'data-reemplazar': n }, el('b', { text: T('pantalla.tecPegaEstaFrase') }), el('p', { text: '«' + frase + '»' }), el('p', { text: T('pantalla.tecAlReemplazarPasa') })));
     });
     // el motivo exacto, plegado: lo arma el servidor y no está traducido
     if (!ex.fabrica) tabla.appendChild(aviso('nm', T('pantalla.tecSinListaDeFabrica'), ex.motivo || null));
@@ -2368,7 +2480,8 @@ function pantalla(idioma = 'es') {
     });
     (pr || []).filter(function (x) { return String(x.path).indexOf('stack.test_runners') === 0; }).forEach(function (x) { MOSTRADOS.push(x); tabla.appendChild(el('div', { class: 'err', text: x.donde + ': ' + x.message })); });
     box.appendChild(tabla);
-    if (TEC_FORM) box.appendChild(formRunner(d));
+    if (TEC_FORM) box.appendChild(formRunner(d, ex));
+    else TEC_AGREGAR_REPO = null;
     // pedirle al agente una herramienta que no está: la frase, y qué pasa después
     var frase = T('pantalla.tecFraseParaElAgente');
     var agente = el('div', { class: 'sub' }, el('p', { class: 'sub-d', text: T('pantalla.tecUsanOtraHerramienta') }), boton(T('pantalla.tecPediseloATuAgente'), function () {
@@ -2770,7 +2883,7 @@ function pantalla(idioma = 'es') {
 }
 
 module.exports = {
-  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, TIME_TRACKING_SINCE, timeTrackingLayer, cambiaHoras, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, modelosEnNiveles, equivalenciasDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS,

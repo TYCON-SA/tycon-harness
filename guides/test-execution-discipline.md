@@ -62,6 +62,30 @@ Se agrava cuando, **al mismo tiempo**, el agente tiene **8–11 subagentes (advi
    corrida. Misma regla que «suite completa y subagentes no se superponen», extendida
    a los artefactos generados: primero se regenera, después se corre la suite, nunca a la vez.
 
+## El freno de pruebas sin alcance: qué reconoce
+
+El freno (`scripts/hooks/test-scope-guard-pre.sh`) lee el comando como lo lee el shell (con `scripts/lib/test-scope.js`)
+y frena la suite completa sin acotar aunque no esté al principio:
+
+- **detrás de un prefijo**: `time`, `nice`, `nohup`, `timeout 60`, `env A=b`, `A=b`, `command`, `exec`, `sudo`, `!`,
+  `xargs`, `watch`;
+- **adentro de una agrupación o del control de flujo**: `( … )`, `{ …; }`, `if`, `for`, `while`, `case`, una función,
+  un alias, `$( … )`;
+- **lanzada por otro programa**: `bash -c`, `sh -c`, `eval`, `bash <<<`, `echo … | bash`, `ssh`, `docker exec`/`run`,
+  `su -c`, `script -c`, `tmux`, `screen`, `find -exec` y, en PowerShell, `&`, `iex`, `pwsh -Command`, `cmd /c` y
+  `Start-Process`;
+- **por otro gestor o con su ruta**: `pnpm`, `yarn`, `bun test`, `npx -y`, `npm t`, `npm run test:*`,
+  `uv`/`poetry`/`pipenv run`, `python -m pytest`, `py.test`, `node_modules/.bin/vitest`, `dotnet.exe`.
+
+Qué cuenta como alcance, por herramienta: un archivo o una carpeta de pruebas concreta (no `.` ni `./`), `--filter` de
+`dotnet test` con valor, `-k` de `pytest` con valor, el patrón después de `--` en `npm test`. **No** cuentan el valor de
+una opción (`-o bin/out`, `--reporter verbose`, `--project web`), un filtro vacío, algo que sólo se sabe al correr
+(`pytest $X`) ni un filtro por nombre de vitest o jest (`-t`, `--grep`): esos igual cargan todos los archivos, en
+paralelo. Lo que no puede leer (comillas sin cerrar, el texto de un shell armado con variables) frena y lo dice.
+
+El escape `TYCON_FULL_SUITE=1` vale cuando acompaña al comando de pruebas: como prefijo, con `env`, exportado o con
+`$env:` antes en el mismo comando. Nombrarlo en un texto (un `echo`, un mensaje de commit) no lo usa.
+
 ## El fix técnico durable (por proyecto)
 
 La disciplina de comportamiento no alcanza (un dev humano, o un agente futuro, puede correr la suite

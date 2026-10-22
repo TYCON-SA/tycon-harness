@@ -1495,6 +1495,10 @@
       "reason": "inglés que el diccionario del sistema no trae y que nombra el árbol destino de la story 8.9 (onboarding/ ya existe; mini-class es el destino de la carpeta de la charla, decisión del dueño 2026-09-30): lo marcó --check-map al cargar las entradas de la tanda C0"
     },
     {
+      "words": ["namespace"],
+      "reason": "opción de la CLI de Azure (`az resource --namespace`), que el freno de producción lee tal cual: story 6.3; aprobado por la coordinadora por delegación del dueño (2026-10-21)"
+    },
+    {
       "words": ["postgres"],
       "reason": "nombre de producto (PostgreSQL) que el diccionario del sistema no trae: nombra el paquete nextjs-postgres (story 8.41); lo marcó --check-map al cargar sus renombres"
     },

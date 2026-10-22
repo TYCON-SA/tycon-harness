@@ -1453,9 +1453,8 @@ test('8.29 · T1 Config_Packs_ProfileBeatsMachine @story-8.29 @ac-1 — con perf
     assert.deepEqual(c.errores, []);
     assert.deepEqual([c.valores.packs.default, c.origenes['packs.default']], [delPerfil, 'perfil'], `perfil ${delPerfil}, máquina ${deLaMaquina}`);
   }
-  // la lista de claves en las que gana el perfil se declara una vez; son dos (la segunda, la pregunta del modelo
-  // mayor en el pase adversarial)
-  assert.deepEqual(lib().PROFILE_WINS, ['packs.default', 'adversarial.model_question']);
+  // la lista de claves en las que gana el perfil se declara una vez; hoy es una sola
+  assert.deepEqual(lib().PROFILE_WINS, ['packs.default']);
 });
 
 test('8.29 · T2 Config_Packs_EnvBeatsProfile @story-8.29 @ac-2 — la variable le sigue ganando a todo', () => {
@@ -1739,44 +1738,41 @@ test('TPN Config_PerfilConSusDosNombres_NuevoViejoYLosDos — se busca primero t
 
 // ── la pregunta del modelo mayor en el pase adversarial ─────────────────────────────────────────────────
 
-test('7.19 · Config_ModelQuestion_ReaderValidatesAndExplains — default ask, never y ask válidos, un valor inventado es un error, explain la nombra', () => {
-  // sin nadie que diga nada: ask, con origen default
+test('Config_ModelQuestion_Retirada_ValidaConAviso — la pregunta de Fable ya no hace nada: una configuración vieja valida y lo avisa', () => {
+  // sin nadie que diga nada: no hay valor ni aviso
   let c = cargar({ home: casa(), arnes: arnesCon(null) });
   assert.deepEqual(c.errores, []);
-  assert.deepEqual([c.valores.adversarial.model_question, c.origenes['adversarial.model_question']], ['ask', 'default']);
+  assert.equal(c.valores.adversarial.model_question, undefined, 'la clave ya no tiene valor por defecto');
+  assert.deepEqual(c.retiradas, []);
 
-  // los dos valores del vocabulario, escritos en la máquina, con el validador real
-  for (const v of ['never', 'ask']) {
+  // escrita en la máquina, con cualquier valor (también uno fuera de ask y never): valida, y validate lo avisa
+  for (const v of ['never', 'ask', 'siempre']) {
     const home = casa();
     maquina(home, { adversarial: { model_question: v } });
     const r = cli(['validate'], { home, env: { TYCON_PROFILE: '0' } });
     assert.equal(r.status, 0, `${v}: validate tenía que salir 0 — ${r.stdout}${r.stderr}`);
+    assert.match(r.stdout + r.stderr, /adversarial\.model_question[^\n]*ya no hace nada/, `${v}: validate avisa`);
     c = cargar({ home, arnes: arnesCon(null) });
-    assert.deepEqual([c.valores.adversarial.model_question, c.origenes['adversarial.model_question']], [v, 'maquina']);
+    assert.deepEqual(c.errores, [], `${v}: nunca un error`);
+    assert.equal(c.valores.adversarial.model_question, undefined, `${v}: no se lee`);
+    assert.ok(c.retiradas.some((x) => x.clave === 'adversarial.model_question' && /ya no hace nada/.test(x.motivo)), `${v}: queda el aviso`);
   }
 
-  // un valor fuera del vocabulario es configuración ROTA (nunca «ask» en silencio)
-  const rota = casa();
-  maquina(rota, { adversarial: { model_question: 'siempre' } });
-  const r = cli(['validate'], { home: rota, env: { TYCON_PROFILE: '0' } });
-  assert.notEqual(r.status, 0, 'validate rechaza un valor inventado');
-  assert.ok(cargar({ home: rota, arnes: arnesCon(null) }).errores.some((e) => /model_question/.test(`${e.clave} ${e.motivo}`)), 'el error nombra la clave');
+  // en el perfil del equipo: igual
+  c = cargar({ home: casa(), arnes: arnesCon({ adversarial: { model_question: 'never' } }) });
+  assert.deepEqual(c.errores, []);
+  assert.ok(c.retiradas.some((x) => x.clave === 'adversarial.model_question'), 'el perfil también avisa');
 
-  // explain la nombra con su origen, en texto y en --json
+  // explain la nombra como retirada, en texto y en --json
   const home = casa();
   maquina(home, { adversarial: { model_question: 'never' } });
-  assert.match(lib().explicar({ env: {}, home, arnes: arnesCon(null) }), /\n  adversarial\.model_question = never \(maquina\)/);
-  const j = lib().explicar({ env: {}, home, arnes: arnesCon(null), json: true });
-  assert.equal(j.valores.adversarial.model_question, 'never');
-  assert.equal(j.origenes['adversarial.model_question'], 'maquina');
+  assert.match(lib().explicar({ env: {}, home, arnes: arnesCon(null) }), /adversarial\.model_question[^\n]*ya no hace nada/);
+  assert.ok(lib().explicar({ env: {}, home, arnes: arnesCon(null), json: true }).retiradas.length, 'explain --json trae la lista');
 
-  // gana el perfil del equipo, y explain dice que lo escrito en la máquina no se usa
-  const h2 = casa();
-  maquina(h2, { adversarial: { model_question: 'never' } });
-  const conPerfil = arnesCon({ adversarial: { model_question: 'ask' } });
-  c = cargar({ home: h2, arnes: conPerfil });
-  assert.deepEqual([c.valores.adversarial.model_question, c.origenes['adversarial.model_question']], ['ask', 'perfil']);
-  assert.match(lib().explicar({ env: {}, home: h2, arnes: conPerfil }), /adversarial\.model_question = ask \(perfil; [^\n]*no se usa/);
+  // y no se escribe más
+  const s = cli(['set', 'adversarial.model_question', 'never'], { home: casa(), env: { TYCON_PROFILE: '0' } });
+  assert.notEqual(s.status, 0, 'set no escribe una clave que ya no hace nada');
+  assert.match(s.stdout + s.stderr, /ya no hace nada/);
 });
 
 test('Response_ClosedVocabulary_IntegerRange_DefaultsByStyle @story-2.31 @ac-1 @ac-4 @ac-6 — cómo contesta el asistente: vocabulario cerrado, largo acotado y el tope del estilo', () => {

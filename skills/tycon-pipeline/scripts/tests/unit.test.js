@@ -785,28 +785,52 @@ test('ModelHint_HeavyStory_SuggestsOpus @story-7.35 @ac-13 — computeModelHint:
   } finally { fs.unlinkSync(low); fs.unlinkSync(normal); fs.unlinkSync(heavy); }
 });
 
-test('computeDeepReviewGate: escalación por complejidad — fable SOLO con flag explícito', () => {
+test('computeDeepReviewGate: escalación por complejidad — la story pesada va con opus; fable sólo con el flag explícito', () => {
   const heavy = path.join(os.tmpdir(), `dr-heavy-${process.pid}.md`);
   fs.writeFileSync(heavy, HEAVY_STORY);
   const base = { repo: os.tmpdir() };
   try {
-    // Story pesada sin flags → opus automático + fable_upsell (pregunta al user, NO auto)
+    // Story pesada sin flags → opus automático, sin ofrecer otro modelo
     let g = computeDeepReviewGate({ ...base, story: heavy, files: [] });
     assert.equal(g.run, true);
     assert.equal(g.model, 'opus', 'story pesada escala a opus automático');
-    assert.ok(g.fable_upsell, 'emite fable_upsell para que el orquestador pregunte');
-    assert.equal(g.fable_upsell.requires_user_approval, true, 'fable requiere aprobación del user');
 
-    // --deep-review-fable = autorización explícita → fable, sin upsell
+    // --deep-review-fable = pedido explícito de quien corre el pipeline → fable
     g = computeDeepReviewGate({ ...base, story: heavy, files: [], deepReviewFable: true });
     assert.equal(g.model, 'fable', '--deep-review-fable → fable');
-    assert.equal(g.fable_upsell, undefined, 'con autorización ya no hay upsell');
 
-    // ultracode + pesada → opus (fable NUNCA automático, ni con ultracode) + upsell
+    // ultracode + pesada → opus (fable NUNCA automático, ni con ultracode)
     g = computeDeepReviewGate({ ...base, story: heavy, files: [], ultracode: true });
     assert.equal(g.model, 'opus', 'ultracode NO sube a fable solo');
-    assert.ok(g.fable_upsell, 'ultracode + pesada sigue preguntando por fable');
   } finally { fs.unlinkSync(heavy); }
+});
+
+test('DeepReviewGate_NuncaOfreceFable — ninguna combinación del portón ofrece Fable ni manda a preguntar por él', () => {
+  const heavy = path.join(os.tmpdir(), `dr-heavy-nf-${process.pid}.md`);
+  const normal = path.join(os.tmpdir(), `dr-normal-nf-${process.pid}.md`);
+  fs.writeFileSync(heavy, HEAVY_STORY);
+  fs.writeFileSync(normal, '---\nstory: "1.1"\n---\n# x\n');
+  const base = { repo: os.tmpdir(), files: [] };
+  const combinaciones = [
+    { story: heavy }, { story: normal }, { story: heavy, ultracode: true }, { story: heavy, deepReviewOpus: true },
+    { story: heavy, deepReview: true }, { story: heavy, modelQuestion: { value: 'ask', origin: 'maquina' } },
+    { story: heavy, orgModels: { declared: true, data: { mandatory_ceiling: true, ceiling: 'fable', adversarial: { fable_question: 'ask' } } } },
+  ];
+  try {
+    // ninguna parte de la salida nombra a Fable, con cualquier nombre de campo: ni una oferta, ni un aviso, ni una pregunta
+    const sinFable = (g, donde) => {
+      assert.notEqual(g.model, 'fable', `${donde}: sin el flag explícito nunca elige fable`);
+      assert.doesNotMatch(JSON.stringify(g), /fable/i, `${donde}: la salida no nombra a Fable`);
+      assert.doesNotMatch(JSON.stringify(g), /requires_user_approval|preguntar al user/, `${donde}: no manda a preguntar por un modelo`);
+    };
+    for (const c of combinaciones) sinFable(computeDeepReviewGate({ ...base, ...c }), JSON.stringify(c).slice(0, 120));
+    // y por el comando real, con la story pesada
+    const { spawnSync } = require('node:child_process');
+    const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'pipeline.js'), 'deep-review-gate', '--repo', os.tmpdir(), '--story', heavy], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    sinFable(JSON.parse(r.stdout), 'el comando deep-review-gate');
+    assert.doesNotMatch(r.stderr, /fable/i, 'el comando tampoco lo dice por la salida de error');
+  } finally { fs.unlinkSync(heavy); fs.unlinkSync(normal); }
 });
 
 // ── computeToolingExpected — PIPE-C9 tooling esperado ────────────────────────
@@ -7296,5 +7320,103 @@ test('Step9_SumsSecondsFromStop @story-7.40 @ac-2', () => {
     assert.doesNotMatch(r.stderr, /no trae el evento/);
   } finally {
     for (const d of [home, repo, ints]) fs.rmSync(d, { recursive: true, force: true });
+  }
+});
+
+// ── El cierre de una ejecución que trabajó sin anotar pasos ─────────────────────────────────────────────────────
+// `marker.js clear` avisa y deja RUN_CLOSED_WITHOUT_STEPS en bypass.log cuando la ejecución tocó archivos y no completó
+// ningún paso después del arranque. Nunca frena el cierre.
+function cerrarSinPasos(extra) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cierre-sin-pasos-'));
+  const sid = 'sid-cierre-sin-pasos';
+  writeFakeMarker(home, sid, { storyId: 'S9', repoPath: path.join(home, 'no-existe'), stepsCompleted: [0], stepsPending: [1, 2, 3], ...extra });
+  const r = require('child_process').spawnSync(process.execPath, [MARKER, 'clear'],
+    { env: { ...process.env, HOME: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_NO_RUN_CHANGE: '1' }, encoding: 'utf8' });
+  const state = path.join(home, '.claude', '.tycon-pipeline');
+  let bypass = '';
+  try { bypass = fs.readFileSync(path.join(state, 'bypass.log'), 'utf8'); } catch { /* sin constancia */ }
+  const lineas = bypass.split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((l) => l.kind === 'RUN_CLOSED_WITHOUT_STEPS');
+  return { home, sid, r, state, lineas };
+}
+const TRES = ['/tmp/proy/src/a.js', '/tmp/proy/src/b.js', '/tmp/proy/README.md'];
+
+test('CierreSinPasos_Avisa @story-7.33 @ac-1', () => {
+  const c = cerrarSinPasos({ filesTouched: TRES });
+  try {
+    assert.match(c.r.stderr, /tocó 3 archivo/);
+    assert.match(c.r.stderr, /no anotó/);
+    assert.match(c.r.stderr, /\d+ min/);
+  } finally { fs.rmSync(c.home, { recursive: true, force: true }); }
+});
+
+test('CierreSinPasos_Constancia @story-7.33 @ac-2', () => {
+  const c = cerrarSinPasos({ filesTouched: TRES });
+  try {
+    assert.equal(c.lineas.length, 1, 'una sola constancia');
+    const l = c.lineas[0];
+    assert.equal(l.storyId, 'S9');
+    assert.equal(l.files, 3);
+    assert.deepEqual(l.sample, TRES);
+    assert.ok(Number.isInteger(l.minutes) && l.minutes > 0, `minutos: ${l.minutes}`);
+  } finally { fs.rmSync(c.home, { recursive: true, force: true }); }
+});
+
+test('CierreConPasos_NoAvisa @story-7.33 @ac-3', () => {
+  const c = cerrarSinPasos({ filesTouched: TRES, stepsCompleted: [0, 1, 2] });
+  try {
+    assert.doesNotMatch(c.r.stderr, /no anotó/);
+    assert.equal(c.lineas.length, 0);
+  } finally { fs.rmSync(c.home, { recursive: true, force: true }); }
+});
+
+test('CierreSinArchivos_NoAvisa @story-7.33 @ac-3', () => {
+  const c = cerrarSinPasos({ filesTouched: ['/tmp/proy/.advisors/pipeline-runs/x/step-01-validator.md'], stepsCompleted: [0, '0b'] });
+  try {
+    assert.doesNotMatch(c.r.stderr, /no anotó/);
+    assert.equal(c.lineas.length, 0);
+  } finally { fs.rmSync(c.home, { recursive: true, force: true }); }
+});
+
+test('CierreSinPasos_NoFrena @story-7.33 @ac-4', () => {
+  const c = cerrarSinPasos({ filesTouched: TRES });
+  try {
+    assert.equal(c.r.status, 0, c.r.stderr);
+    assert.ok(!fs.existsSync(path.join(c.state, 'active', `${c.sid}.json`)), 'el marcador se borró');
+    const hist = fs.readdirSync(path.join(c.state, 'timing-history'));
+    assert.ok(hist.some((f) => f.startsWith('S9-')), `archivado: ${hist}`);
+  } finally { fs.rmSync(c.home, { recursive: true, force: true }); }
+});
+
+test('CierreSinPasos_SinHoraYGitRoto_AvisaIgualYNoFrena @story-7.33 @ac-1 @ac-4', () => {
+  const repo = mkTmpRepo();
+  const c = cerrarSinPasos({ filesTouched: TRES, repoPath: repo, baseSha: 'no-es-un-commit', startedAt: undefined });
+  try {
+    assert.equal(c.r.status, 0, c.r.stderr);
+    assert.match(c.r.stderr, /tocó 3 archivo\(s\) en \? min/);
+    assert.equal(c.lineas.length, 1);
+    assert.equal(c.lineas[0].minutes, null);
+    assert.ok(!fs.existsSync(path.join(c.state, 'active', `${c.sid}.json`)), 'el marcador se borró');
+  } finally {
+    for (const d of [c.home, repo]) fs.rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('CierreSinPasos_CuentaLoCambiadoEnGit @story-7.33 @ac-1 @ac-2', () => {
+  const repo = mkTmpRepo();
+  fs.writeFileSync(path.join(repo, 'a.js'), 'uno\n');
+  execFileSync('git', ['-C', repo, 'add', '.']);
+  execFileSync('git', ['-C', repo, 'commit', '-qm', 'base']);
+  const base = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  fs.writeFileSync(path.join(repo, 'a.js'), 'dos\n');
+  fs.writeFileSync(path.join(repo, 'nuevo.js'), 'tres\n');
+  fs.mkdirSync(path.join(repo, '.advisors'));
+  fs.writeFileSync(path.join(repo, '.advisors', 'x.md'), 'no cuenta\n');
+  const c = cerrarSinPasos({ filesTouched: [], repoPath: repo, baseSha: base });
+  try {
+    assert.match(c.r.stderr, /tocó 2 archivo/);
+    assert.equal(c.lineas.length, 1);
+    assert.deepEqual([...c.lineas[0].sample].sort(), ['a.js', 'nuevo.js']);
+  } finally {
+    for (const d of [c.home, repo]) fs.rmSync(d, { recursive: true, force: true });
   }
 });

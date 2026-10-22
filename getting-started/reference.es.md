@@ -278,9 +278,8 @@ siempre en archivos de repos, y hay dos caminos para cambiarla:
 
 **Qué puede pisar tu máquina.** Para casi todo, el orden es variable `TYCON_…` › `~/.claude/tycon.json` › repo del
 equipo (`team-profile.json`). Así, tu máquina puede apagar para ella sola una conexión que el equipo prende, o quedarse
-en `ask` aunque el equipo diga `auto`. Dos claves son del equipo cuando su `team-profile.json` las declara: en
-`packs.default` el equipo le gana a tu archivo y sólo `TYCON_PACKS_DEFAULT` lo pisa; `adversarial.model_question` no
-la pisa ninguna máquina. Lo personal no puede ir en el repo del equipo: el lector lo rechaza. Lo de `team-repos.json` y `operations.json` no se pisa desde una máquina,
+en `ask` aunque el equipo diga `auto`. Una clave es del equipo cuando su `team-profile.json` la declara: en
+`packs.default` el equipo le gana a tu archivo y sólo `TYCON_PACKS_DEFAULT` lo pisa. Lo personal no puede ir en el repo del equipo: el lector lo rechaza. Lo de `team-repos.json` y `operations.json` no se pisa desde una máquina,
 salvo el umbral de cobertura de las pruebas. `tycon-config.js explain` dice de dónde salió
 cada valor, y qué quedó escrito en tu archivo sin usarse.
 
