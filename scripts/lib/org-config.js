@@ -2865,7 +2865,7 @@ function pantalla(idioma = 'es') {
     }
     if (!s.soloLectura && !bloqueada(s) && s.id !== 'paridad') {
       var bar = el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.revisarCambios'), onclick: function () { revisarSeccion(s); } }));
-      bar.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.descargar'), disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { descargar(s); } }));
+      bar.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.descargar'), disabled: S.textos[s.id] ? undefined : 'disabled', title: S.textos[s.id] ? undefined : T('pantalla.descargarSePrende'), onclick: function () { descargar(s); } }));
       if (habilitado) bar.appendChild(el('button', { type: 'button', text: T('pantalla.proponerElCambio'), disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { empezarAProponer(s); } }));
       bar.appendChild(el('span', { class: 'por-que', text: !habilitado ? motivoProponer(prop && prop.motivo) : (S.textos[s.id] ? textoProponer(s, prop) : T('pantalla.primeroRevisaAsiSabesSi')) }));
       if (!confirmando) sec.appendChild(bar);

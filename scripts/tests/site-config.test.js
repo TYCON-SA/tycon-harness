@@ -2019,7 +2019,7 @@ test('T6 2.40-Personas_EditaLaLista @story-2.40 @ac-6 @ac-5', async () => {
   await pant.click('+', 'sitio');
   assert.ok(campos().includes('site.access.0.emails.1'), campos().join(' '));
   const rol = pant.todo(pant.sec('sitio')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'site.access.0.role');
-  assert.deepStrictEqual(rol.hijos.map((o) => o.textContent), ['Mantiene el sitio', 'Dev']);
+  assert.deepStrictEqual(rol.hijos.map((o) => o.textContent), ['Mantiene el sitio', 'Programador']);
   assert.ok(!pant.todo(pant.sec('sitio')).some((n) => n.attrs['data-path'] === 'site.maintainers'), 'con la lista, la forma de antes no se edita');
 });
 
@@ -3035,7 +3035,7 @@ test('T11 Personas_TextosDelDuenoEnIngles @story-2.56 @ac-10', () => {
     "Sign-in: Microsoft accounts from the organization's directory (one tenant, including guests). You change this in the installation, not here.");
   assert.strictEqual(t('en', 'pantalla.nadieEntraSiNoEsta'), 'Only people on this list can sign in. Each person can use any of their emails and sees the same thing.');
   // el castellano no cambia
-  assert.strictEqual(t('es', 'pantalla.laListaDeQuienEntra'), 'La lista de quién entra y qué ve: quienes mantienen ven esta pestaña y proponen cambios; los devs ven lo suyo. Si te sacás de la lista, perdés el acceso cuando se apruebe.');
+  assert.strictEqual(t('es', 'pantalla.laListaDeQuienEntra'), 'La lista de quién entra y qué ve: quienes mantienen ven esta pestaña y proponen cambios; los programadores ven lo suyo. Si te sacás de la lista, perdés el acceso cuando se apruebe.');
   assert.strictEqual(t('es', 'pantalla.conQueSeEntra') + MS.TEXTOS['proveedor.microsoftInquilino'].es + t('es', 'pantalla.estoSeCambiaEnLa'),
     'Con qué se entra: Microsoft, con las cuentas del directorio de la organización (un solo inquilino, con sus invitados). Esto se cambia en la instalación, no acá.');
   assert.strictEqual(t('es', 'pantalla.nadieEntraSiNoEsta'), 'Nadie entra si no está acá. Cada persona entra con cualquiera de sus correos y ve lo mismo.');
@@ -3243,8 +3243,8 @@ test('T6 Repos_EditarAgregarSacar @story-2.59 @ac-6', async () => {
 
 test('T13 Repos_SinPipelineQuePasa @story-2.59 @ac-13', async () => {
   const pc = (p, i) => p.de(p.renglones(p.tablas()[0])[i], 'pc')[0].textContent;
-  const MAQ = 'corren en la máquina del dev';
-  const SRV = 'el servidor, si la rama exige un control; si no, la máquina del dev';
+  const MAQ = 'corren en la computadora del programador';
+  const SRV = 'el servidor, si la rama exige un control; si no, la computadora del programador';
   // regla propia: automático y confiar, sin pipeline (los repos 3 y 4); con pipeline se ve el pipeline
   let p = await compacta(secSuites(SUITES_5));
   assert.deepStrictEqual([pc(p, 3), pc(p, 4), pc(p, 0)], [MAQ, SRV, 'Cobranzas/pruebas-completas']);
@@ -3363,8 +3363,8 @@ test('T3 Repos_PipelineNoUsado_HojaConTema @story-2.59.1 @ac-4', () => {
 // ── qué hace cada regla, debajo de su selector ──────────────────────────────────────────────────────────────────────
 const QUE_HACE = { automatico: 'server-if-required', 'siempre-en-la-maquina': 'machine-always', 'confiar-en-el-servidor': 'server-only' };
 const LINEA = {
-  automatico: 'el servidor, si la rama le exige las pruebas; si no, la máquina del dev',
-  siempre: 'en la máquina del dev, aunque el servidor también las corra',
+  automatico: 'el servidor, si la rama le exige las pruebas; si no, la computadora del programador',
+  siempre: 'en la computadora del programador, aunque el servidor también las corra',
   confiar: 'sólo el servidor; sirve si de verdad las corre',
 };
 // un repo sin regla propia: qué hace la regla de la organización
@@ -3401,7 +3401,7 @@ test('T1 Repos_QueHaceCadaRegla_DebajoDelSelector @story-2.59.2 @ac-1 @ac-3', as
   const q = await compacta(secSuites(ms, [], extras));
   assert.strictEqual(JSON.stringify((await q.revisado()).merge_suites), JSON.stringify(ms));
   const pc = (i) => p.texto(q.de(q.renglones(q.tablas()[0])[i], 'pc')[0]);
-  assert.strictEqual(pc(0), 'corren en la máquina del dev');
+  assert.strictEqual(pc(0), 'corren en la computadora del programador');
   assert.match(pc(2), /ci-s.*no se usa con esta regla/);
 });
 
