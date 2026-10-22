@@ -19,22 +19,22 @@ Una fila por pieza del arnés, con su categoría de divergencia y qué caso de p
    > etiqueta usa sólo `[a-z0-9_]` (Codex sanea `-` → `_`) y el server lleva
    > `default_tools_approval_mode = "approve"` (el default `auto` decide por anotaciones y sin
    > ellas DENIEGA en headless). Sigue vigente para lo que NO pasa por perfil de advisor
-   > (CLAUDE.md, clocki, skills).
+   > (CLAUDE.md, el registro de horas, skills).
    >
    > 🔴 **Gap de SKILLS cerrado (2026-08-24)**: para los advisors el nombre lo fija la etiqueta y
    > la prosa no se traduce — pero las **skills** se deployan a Codex por *symlink* (copia exacta,
    > sin traducción), así que una tool MCP con **guiones en el NOMBRE** (no en la etiqueta) rompía
-   > igual. Ejemplo: las tools de Clockify (`create-clockify-time-entry`, …) son de un paquete de
+   > igual. Ejemplo: las tools del MCP de horas (con guiones en el nombre) son de un paquete de
    > terceros con guiones; bajo Codex salen con `_` y el guard "si la tool no está → saltear" apagaba
    > el tracking EN SILENCIO. No se arregla con la tabla de equivalencias (sólo toca advisors): se
-   > arregló con una **nota agnóstica en la prosa del skill** (`clocki/SKILL.md` + steps del pipeline)
+   > arregló con una **nota agnóstica en la prosa del skill** (el skill de horas + steps del pipeline)
    > que dice "usá la variante que exponga tu sesión, nunca concluyas 'no existe' por el separador".
    Hoy engram y codegraph
    llegan como *plugin* de Claude Code, y por eso sus tools se llaman
    `mcp__plugin_engram_engram__mem_search` y similares. En Codex corren sueltas → el nombre cambia.
    **Todo texto que nombre la tool exacta deja de funcionar**: 5 advisors la declaran en `tools:`,
    `~/.claude/CLAUDE.md` la nombra en el protocolo de memoria y en el bloque de CodeGraph, y el skill
-   `clocki` nombra 10 veces las tools de Clockify. El agente no la encuentra y sigue de largo.
+   de horas nombra 10 veces las tools del MCP de horas. El agente no la encuentra y sigue de largo.
 2. **14 de los 20 hooks funcionan escribiendo a stdout** para que la herramienta lo inyecte como
    contexto (avisos de estilo, de bloqueo, de tracking, recordatorio de rebuild). **Hay que verificar
    que Codex inyecte stdout igual** — la sonda de la Etapa A lo prueba el día 1 (go/no-go). Si no
@@ -160,7 +160,7 @@ Scripts afectados: `pipeline.js`, `marker.js`, `adversarial-verify.workflow.js`,
 |---|---|---|---|
 | **engram** | Doble: plugin `engram@engram` **y** servidor suelto (`/usr/local/bin/engram mcp`) | El suelto se configura igual. **El nombre de las tools cambia** al dejar de venir por plugin | ② |
 | **codegraph** | Servidor suelto (`/opt/homebrew/bin/codegraph`), por proyecto | Se configura igual; nombres a verificar | ② |
-| **Clockify** | Servidor suelto (node) | Se configura igual. *La API key viaja en claro en `~/.claude.json` — al portarla, moverla a variable de entorno en vez de duplicar el secreto* | ① |
+| **Integración de horas** | Servidor suelto (node) | Se configura igual. *La API key viaja en claro en `~/.claude.json` — al portarla, moverla a variable de entorno en vez de duplicar el secreto* | ① |
 | **spokenly** | HTTP local | Se configura igual | ① |
 | **CLAUDE.md de PROYECTO** | `<repo>/CLAUDE.md`, auto-cargado por Claude Code | **✅ RESUELTA 2026-08-23 sin segunda copia**: el instalador deposita en cada repo con `CLAUDE.md` un `AGENTS.md` PUNTERO de una línea ("las reglas viven en CLAUDE.md — leelo y aplicalo"); Codex lo carga al arrancar y lee el canónico real. Nunca pisa un `AGENTS.md` existente; el dev lo commitea una vez. Antes: sin traducción (las reglas de proyecto no llegaban a Codex) | ③ resuelta |
 | **Hooks de PROYECTO (dotnet-hooks)** | `<repo>/.claude/settings.json` | **Sin traducción**: el deployer de Codex sólo cubre los hooks team-wide de `~/.codex/hooks.json`. Bajo Codex el freno de migraciones y el format automático NO existen, sin error. Atenuante: ningún repo lo adoptó aún (2026-08-23) | ③ declarada |
@@ -190,7 +190,7 @@ Scripts afectados: `pipeline.js`, `marker.js`, `adversarial-verify.workflow.js`,
 |---|---|---|
 | `workflow-orchestration.md` | 6 tools + 1 mcp + 11 rutas — la más acoplada | ②/③ |
 | `advisor-rules-catalog.md` | 18 rutas | ② |
-| `clocki-tracking.md` | 16 rutas | ② |
+| `integrations/…-tracking.md` (horas) | 16 rutas | ② |
 | `dotnet-hooks.md` | 12 rutas (bloque copy-pasteable de `settings.json`) | ① necesita variante Codex |
 | `codegraph-mcp.md`, `engram-workflow.md`, `README.md` | 2 tools MCP cada una | ② |
 | `bmad-contract.md`, `agent-architecture.md`, `git-worktrees.md` | 2-3 tools | ② |
@@ -200,7 +200,7 @@ Scripts afectados: `pipeline.js`, `marker.js`, `adversarial-verify.workflow.js`,
 | Skill | Menciones | Cat. |
 |---|---|---|
 | `tycon-pipeline` | 124 rutas `~/.claude` · 28 `Workflow` · 12 `subagent_type` · 12 `CLAUDE.md` · 5 tools de codebase-memory | ③ — es la pieza más acoplada del arnés |
-| `clocki` | 21 rutas · 10 tools de Clockify por nombre | ② |
+| skill de horas | 21 rutas · 10 tools de su MCP por nombre | ② |
 | `tycon-merge-to-main` | 6 `CLAUDE.md` · 3 rutas | ② |
 | `tycon-skill-scout`, `tycon-story-followup-link`, `tycon-new-migration`, `check-story-drift` | 1-6 rutas cada una | ② |
 | `tycon-ado-story-wi` | ninguna | ① |

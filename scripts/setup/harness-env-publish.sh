@@ -4,7 +4,7 @@
 #
 # Por qué existe: los secretos de los MCP bajo Codex se leen del AMBIENTE (el
 # deployer jamás los copia a archivos), y el ambiente de las apps gráficas (el panel de Codex
-# en VSCode) NO pasa por ~/.zshrc — el tracking de Clockify falla ahí con la key ya
+# en VSCode) NO pasa por ~/.zshrc — el registro de horas falla ahí con la key ya
 # exportada en el rc. `launchctl setenv` publica en memoria y muere con el reinicio, así que
 # este script lo invoca un LaunchAgent en cada login (lo instala install-tycon-hooks.sh).
 #

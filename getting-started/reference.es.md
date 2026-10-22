@@ -149,7 +149,7 @@ vale `s` o `y`.
    - `minimal`: las guías, los revisores y el recorrido de las historias, sin cambiar cómo te contesta el agente.
    - `full`: suma los frenos (en un repo con historias, editar código va por el recorrido) y hace que el agente
      conteste corto y en castellano en todos tus proyectos, no sólo donde uses el arnés.
-2. **«¿Qué integraciones prendo?»** Son las conexiones opcionales con servicios externos, como Azure DevOps o Clockify.
+2. **«¿Qué integraciones prendo?»** Son las conexiones opcionales con servicios externos, como Azure DevOps o una herramienta de horas.
    Enter no prende ninguna; se prenden después (ver «Qué es opcional»).
 3. **«¿Usás el paquete del stack en todos tus repos?»** Son los revisores para tu tecnología que trae el repo de tu
    equipo (TYCON trae los suyos para plugins de BIZUIT). Sin equipo, o si no todos tus repos son de esa tecnología,
@@ -402,7 +402,7 @@ explain` muestra cada valor y de dónde salió.
 | Conexión | Qué hace | Cómo se prende |
 |---|---|---|
 | `ado` | Azure DevOps: work items de las historias, controles de pedidos de cambio y de procesos (pipelines) | `ado.org` en `~/.claude/tycon.json`, o `TYCON_ADO_ORG` |
-| `clockify` | los hooks de registro de horas en Clockify | `integrations.clockify: true`, o `TYCON_CLOCKIFY=1` |
+| `clockify` | la llave vieja de la herramienta de horas: la herramienta se elige con `integrations.timeTracking` (ver [guides/integrations/](../guides/integrations/)) | `integrations.timeTracking`: `none` o el nombre de una integración de horas, o `TYCON_TIME_TRACKING` |
 | `engram` | la memoria persistente de engram: sincroniza en cada commit y la revisa una vez por día | `integrations.engram: true`, o `TYCON_ENGRAM=1` |
 | `codegraph` | el índice de código de CodeGraph para los agentes (informativa: CodeGraph lo instalás vos) | `integrations.codegraph: true`, o `TYCON_CODEGRAPH=1` |
 | `mailbox` | sube los registros de cada corrida al historial compartido de corridas de tu organización; hace falta que la organización lo tenga armado (hoy, un almacenamiento de Azure) | `integrations.mailbox: true`, o `TYCON_MAILBOX=1` (su llave en `TYCON_MAILBOX_JSON`) |

@@ -393,7 +393,7 @@ se pregunta, en `installQuestions` de `harness.js`. El mismo código en cualquie
   defecto** (Enter vuelve a preguntar; acepta `1`, `2`, `minimal` o `full`). A la tercera respuesta vacía o inválida, o con
   fin de entrada, sale 2 «sin perfil elegido no escribo nada». **Sin terminal** sale 2 pidiendo `--profile minimal` o
   `--profile full`, también con `--yes`: `--yes` acepta el plan, no elige. `--dry-run` sigue la misma regla.
-- **Las integraciones**: sólo las que la lista de efectos ofrece (`integrations[].offered`: hoy `clockify`, `engram`,
+- **Las integraciones**: sólo las que la lista de efectos ofrece (`integrations[].offered`: hoy una herramienta de horas, `engram`,
   `codegraph` y `codex`), cada una con qué hace y qué pide; ninguna marcada, Enter es «ninguna», nombres separados por
   coma; un nombre que no se ofrece vuelve a preguntar. `ado` y `telegram` no se preguntan porque piden un dato: el cierre
   dice cómo se prenden (`tycon-config.js set ado.org <url>`). `mailbox` y `nightly` no se ofrecen: son del equipo.

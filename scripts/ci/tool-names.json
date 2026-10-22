@@ -1,0 +1,77 @@
+{
+  "__doc": "Las reglas del control de los nombres de las herramientas de horas (scripts/ci/tool-names.js). `exceptions`: archivos que nombran la herramienta por compatibilidad con lo que ya está escrito en las máquinas; cada una con su archivo exacto y su motivo (una sin motivo, con comodines o que ya no encuentra el nombre, frena). `terms_at_least`: cuántos nombres de herramientas de horas tienen que salir de los manifiestos como mínimo (un manifiesto que desaparece o cambia de tipo no apaga el control). `ceiling`: cuántas menciones puede tener todavía cada archivo del núcleo; lo que lee el núcleo pasa a los manifiestos en la tanda E2 de la story 7.40 y el techo baja a 0. Bajar un techo es siempre libre; subirlo es aflojar el control.",
+  "terms_at_least": 3,
+  "exceptions": [
+    {
+      "path": "scripts/lib/tycon-config.js",
+      "reason": "lee la llave vieja de la herramienta de horas y su variable, que siguen escritas en perfiles y máquinas de hoy (decisión 1)"
+    },
+    {
+      "path": "scripts/production/guard-libs/lib/tycon-config.js",
+      "reason": "copia congelada del lector que usa el freno de producción instalado con sudo; se actualiza a conciencia, no con cada cambio"
+    },
+    {
+      "path": "scripts/setup/hooks-list.json",
+      "reason": "las rutas de antes de la mudanza a integrations/ (superseded y moved_to) están registradas en settings.json de las máquinas de hoy"
+    },
+    {
+      "path": "scripts/publishing/profile-equivalence.js",
+      "reason": "compara el perfil de antes de la mudanza con el nuevo: nombra las rutas viejas a propósito"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/marker.js",
+      "reason": "lee la bandera vieja del aviso de trabajo de los marcadores de sesiones en curso"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/pipeline.js",
+      "reason": "la misma bandera vieja del marcador, para dar el paso 0b por hecho en una sesión en curso"
+    },
+    {
+      "path": "mods/harness-mods/hooks/steps.mjs",
+      "reason": "copia de la bandera vieja del marcador que usa el panel de pasos"
+    },
+    {
+      "path": "scripts/setup/harness/uninstall.js",
+      "reason": "la desinstalación conoce la carpeta de estado del reloj de horas que dejan las máquinas de hoy, y no la borra"
+    },
+    {
+      "path": "scripts/lib/org-config.js",
+      "reason": "el sitio lee la llave vieja para mostrar la herramienta elegida y la saca del perfil al guardar"
+    },
+    {
+      "path": "scripts/lib/spanish-words.json",
+      "reason": "el diccionario del freno de nombres en castellano lista los nombres de las integraciones como palabras que no son castellano"
+    },
+    {
+      "path": ".github/control-changes.jsonl",
+      "reason": "libro histórico de las constancias del dueño: cada línea lleva su huella y no se reescribe"
+    }
+  ],
+  "ceiling": {
+    "build/deploy-codex-mcp.js": 59,
+    "claude-md-blocks/names/tool-names.codex.md": 21,
+    "claude-md-blocks/tool-names.md": 14,
+    "getting-started/reference.es.md": 1,
+    "getting-started/reference.md": 1,
+    "guides/sitio-de-la-organizacion/capturas/como-trabaja.html": 1,
+    "guides/sitio-de-la-organizacion/capturas/configuracion-avisos.html": 12,
+    "guides/sitio-de-la-organizacion/capturas/configuracion-claude.html": 12,
+    "guides/sitio-de-la-organizacion/capturas/configuracion-confirmar-maquina.html": 12,
+    "guides/sitio-de-la-organizacion/capturas/configuracion-diferencia.html": 14,
+    "guides/sitio-de-la-organizacion/capturas/configuracion-instalacion.html": 12,
+    "guides/sitio-de-la-organizacion/capturas/configuracion-pedidos.html": 12,
+    "guides/sitio-de-la-organizacion/capturas/configuracion-personas.html": 12,
+    "guides/sitio-de-la-organizacion/capturas/configuracion-propuesto.html": 12,
+    "guides/sitio-de-la-organizacion/capturas/configuracion-repos.html": 12,
+    "guides/sitio-de-la-organizacion/capturas/configuracion-revisado.html": 12,
+    "guides/sitio-de-la-organizacion/capturas/configuracion-tecnologia.html": 12,
+    "guides/sitio-de-la-organizacion/capturas/proponer-apagado.html": 12,
+    "scripts/install-tycon-hooks.ps1": 1,
+    "scripts/install-tycon-hooks.sh": 3,
+    "scripts/lib/harness-audit.js": 1,
+    "scripts/setup/harness/managed.js": 1,
+    "scripts/setup/install-effects.json": 28,
+    "scripts/site/texts.js": 1,
+    "scripts/tools/context-budget.js": 2
+  }
+}

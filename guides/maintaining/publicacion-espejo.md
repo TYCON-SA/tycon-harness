@@ -303,7 +303,7 @@ en la prueba. Cada una que se podría hacer portable queda para una story aparte
 | Espera a otra story (`pendientes` del `--json`) | de bizuit, sus traducciones a Codex, sus casos del banco y sus secciones del catálogo |
 
 Dos pruebas declaran la llave de su integración en vez de contar con que el perfil del equipo la prende:
-`engram-rescue.test.js` (memoria) y dos casos de `hooks/07-clocki-postedit.json` (Clockify). Se arreglaron
+`engram-rescue.test.js` (memoria) y dos casos de hooks del banco de controles (herramienta de horas). Se arreglaron
 en vez de quedar afuera: el archivo de casos no se podía sacar sin llevarse los únicos casos
 de dos hooks, y la copia dejaba de pasar su control de paridad.
 

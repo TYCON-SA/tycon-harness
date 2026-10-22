@@ -18,8 +18,7 @@
  *
  * Output: system-reminder en stdout (Claude Code lo inyecta al contexto).
  *
- * Modelado sobre el patrón del clocki hook `on-prompt.js` que ya
- * funciona bien en producción.
+ * Sigue el patrón del `on-prompt.js` de la integración de horas, que ya funciona bien en producción.
  */
 
 const fs = require('fs');
@@ -151,7 +150,7 @@ function readMarker(sessionId) {
 
 // 🔇 Sandbox de EVALS: las corridas del banco de pruebas spawnean `claude -p` y CADA
 // hook UserPromptSubmit del harness le inyecta su reminder AL PROMPT del agente simulado — que lo
-// lee como parte de la conversación y lo contesta ahí adentro ("No corresponde timer de Clockify"
+// lee como parte de la conversación y lo contesta ahí adentro ("No corresponde abrir el reloj de horas"
 // en medio de una entrevista simulada). Eso no es cosmético: le come turnos al presupuesto
 // de la entrevista y SESGA la medición, con distinta intensidad por brazo (0-1 menciones en un brazo
 // contra 6-10 en el otro, sobre la misma cantidad de turnos).
@@ -325,7 +324,7 @@ if (!marker && matches(prompt, INTENT_PATTERNS)) {
           `   • Re-preguntar decisiones ya tomadas al user.\n` +
           `   • Re-implementar archivos ya creados en la otra sesión (colisión Write).\n` +
           `   • Re-correr advisors innecesariamente.\n` +
-          `   • Abrir un segundo timer Clockify encima del primero (doble cobro).\n\n` +
+          `   • Abrir un segundo reloj de horas encima del primero (doble cobro).\n\n` +
           `Opciones válidas (en orden de preferencia):\n` +
           `   (a) RETOMAR el pipeline de la otra sesión: \n` +
           `       1. mem_search project="<proyecto>" query="Story ${intentStoryId} session_summary" ` +

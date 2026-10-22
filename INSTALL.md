@@ -104,7 +104,7 @@ corren con él.
 
 ### 5. Si trabajás con BIZUIT Extensions desde otra organización
 
-El arnés anda sin Azure DevOps, sin Clockify y sin engram: todo eso nace apagado y nada lo pide. Tres pasos te dejan
+El arnés anda sin Azure DevOps, sin herramienta de horas y sin engram: todo eso nace apagado y nada lo pide. Tres pasos te dejan
 como a un dev del equipo:
 
 **1. Los paquetes vienen con el perfil de tu equipo.** El núcleo no trae paquetes: los revisores, skills, guías y
@@ -134,10 +134,10 @@ git config --global core.hooksPath ~/.git-hooks
 Si devuelve otra carpeta (husky, hooks tuyos), no la pises: decidí vos. Sin la carpeta global, el arnés funciona igual,
 pero sin los controles que corren al commitear. `harness.js doctor` te dice si quedó.
 
-**3. engram y Clockify son opcionales.** engram (memoria entre sesiones) se prende con `TYCON_ENGRAM=1` o
-`"integrations": { "engram": true }` en `~/.claude/tycon.json`; Clockify (horas), con `TYCON_CLOCKIFY=1` y
+**3. engram y la herramienta de horas son opcionales.** engram (memoria entre sesiones) se prende con `TYCON_ENGRAM=1` o
+`"integrations": { "engram": true }` en `~/.claude/tycon.json`; la herramienta de horas, con `TYCON_TIME_TRACKING=<nombre>` y
 `guides/integrations/clockify-mcp.md`. Apagados, las guías que los nombran siguen de largo y el pipeline saltea solo su paso de
-Clockify. Sin Azure DevOps, el pipeline también saltea su parte (el paso 0c y el cierre en Azure DevOps) y una story
+horas. Sin Azure DevOps, el pipeline también saltea su parte (el paso 0c y el cierre en Azure DevOps) y una story
 nueva no te pide crear un work item.
 
 ### 4b. La configuración del arnés: rutas e integraciones
@@ -145,7 +145,7 @@ nueva no te pide crear un work item.
 Nada de la máquina ni de la organización está escrito en el código. Cada valor se resuelve en este orden y
 `node ~/.claude/tycon-harness/scripts/lib/tycon-config.js explain` te muestra cada uno con su origen:
 
-1. **variable de entorno** (`TYCON_REPOS_ROOT`, `TYCON_ADO_ORG`, `TYCON_TELEGRAM_CHAT_ID`, `TYCON_CLOCKIFY`, `TYCON_ENGRAM`,
+1. **variable de entorno** (`TYCON_REPOS_ROOT`, `TYCON_ADO_ORG`, `TYCON_TELEGRAM_CHAT_ID`, `TYCON_TIME_TRACKING`, `TYCON_ENGRAM`,
    `TYCON_CODEGRAPH`, `TYCON_MAILBOX`, `TYCON_CODEX`, `TYCON_NIGHTLY` — `0`/`1`, y `detect` para Codex);
 2. **el archivo de tu máquina**, `~/.claude/tycon.json` (nunca versionado; lo ven todas las sesiones, también las de la
    extensión de VS Code, que no cargan el rc del shell);
@@ -171,7 +171,7 @@ perfil). Qué puede pisar cada máquina sobre lo del equipo, en
 | Integración | Qué prende | Apagada, qué pasa |
 |---|---|---|
 | Azure DevOps | `ado.org` (perfil, o `TYCON_ADO_ORG`) | work items y PR abiertos no se consultan; el instalador no refresca la lista de proyectos con `az`. Los frenos que sólo leen los comandos `az` del agente siguen |
-| Registro de horas | `integrations.timeTracking` (`none`, `clockify` o `solidtime`; sin ella, la llave vieja `integrations.clockify`) | no se registra ningún hook de horas; el despachador de ediciones sigue, sin el control de la integración. Cada integración trae los suyos en `integrations/<nombre>/` |
+| Registro de horas | `integrations.timeTracking` (`none` o el nombre de una integración de horas; sin ella, la llave vieja de cada herramienta, en `guides/integrations/`) | no se registra ningún hook de horas; el despachador de ediciones sigue, sin el control de la integración. Cada integración trae los suyos en `integrations/<nombre>/` |
 | engram | `integrations.engram` | no se registran el sync de commit ni el aviso diario; los chequeos de versión/proyecto no corren; cada comando de engram lo dice y sale 0 |
 | CodeGraph | `integrations.codegraph` (informativa) | la instala cada dev con `install-codegraph.sh`; el arnés no registra nada de CodeGraph por sí mismo |
 | Buzón de corridas | la llave scripts/metrics/corridas-buzon.json del arnés interno (o `integrations.mailbox`) | no se sube ni se baja nada; la vista de corridas es sólo de esta máquina |
@@ -199,11 +199,11 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 
 | Hook | Evento | Qué hace | ¿Bloquea? | Perfil | Interruptor |
 |---|---|---|---|---|---|
-| `integrations/clockify/scripts/on-prompt.js` | UserPromptSubmit | Detecta en el pedido que empieza o termina un trabajo y propone abrir o cerrar el timer de Clockify | No | minimal y full | con Clockify como herramienta de horas (`TYCON_TIME_TRACKING=none` lo saca) |
+| `integrations/clockify/scripts/on-prompt.js` | UserPromptSubmit | Detecta en el pedido que empieza o termina un trabajo y propone abrir o cerrar el timer de la herramienta de horas | No | minimal y full | con esa herramienta como herramienta de horas (`TYCON_TIME_TRACKING=none` lo saca) |
 | `tycon-pipeline/scripts/on-prompt.js` | UserPromptSubmit | Reconoce el pedido de implementar una story y avisa si otra sesión trabaja en lo mismo | No | minimal y full | ninguno propio |
-| `integrations/clockify/scripts/touch-activity.js` | PostToolUse | Anota la última actividad, para cerrar el timer de Clockify por inactividad | No | minimal y full | con Clockify como herramienta de horas (`TYCON_TIME_TRACKING=none` lo saca) |
-| `integrations/solidtime/scripts/on-prompt.js` | UserPromptSubmit | Cierra en Solidtime el registro que quedó quince minutos sin actividad, con el fin en la última actividad | No | minimal y full | con Solidtime como herramienta de horas (`TYCON_TIME_TRACKING=none` lo saca) |
-| `integrations/solidtime/scripts/on-activity.js` | PostToolUse | Anota la última actividad, para cerrar el registro de Solidtime por inactividad | No | minimal y full | con Solidtime como herramienta de horas (`TYCON_TIME_TRACKING=none` lo saca) |
+| `integrations/clockify/scripts/touch-activity.js` | PostToolUse | Anota la última actividad, para cerrar el timer de horas por inactividad | No | minimal y full | con esa herramienta como herramienta de horas (`TYCON_TIME_TRACKING=none` lo saca) |
+| `integrations/solidtime/scripts/on-prompt.js` | UserPromptSubmit | Cierra en la herramienta de horas el registro que quedó quince minutos sin actividad, con el fin en la última actividad | No | minimal y full | con esa herramienta como herramienta de horas (`TYCON_TIME_TRACKING=none` lo saca) |
+| `integrations/solidtime/scripts/on-activity.js` | PostToolUse | Anota la última actividad, para cerrar el registro de horas por inactividad | No | minimal y full | con esa herramienta como herramienta de horas (`TYCON_TIME_TRACKING=none` lo saca) |
 | `integrations/instincts/scripts/instinct-observe.js` | PostToolUse | Graba de fondo una línea saneada por herramienta, con el repo y la organización del remoto, para encontrar lo que el equipo repite | No | minimal y full | integración de instintos (`TYCON_INSTINCTS=0`) |
 | `tycon-pipeline/scripts/hook-post-edit.js` | PostToolUse (Edit\|Write) | Después de editar: registra la edición para el pipeline y el timer; al escribir una story, sus pasos de alta | No | minimal y full | ninguno propio |
 | `tycon-pipeline/scripts/hook-pre-edit.js` | PreToolUse (Edit\|Write) | Antes de editar: el portón de carril (código sin pipeline ni ad-hoc declarado), el frontmatter de la definición de hecho, el orden de las pruebas (ATDD), la story escrita a mano y el choque entre sesiones | Sí: deniega la edición | minimal y full | `TYCON_STORY_GATE=off` (carril) · `TYCON_STORY_SKILL_GATE=off` (story a mano) |
@@ -309,25 +309,9 @@ En el modo desarrollador (el enlace apunta a tu clon) actualizar es tuyo: el arn
 
 Estos pasos no son obligatorios para usar el flujo TYCON estándar, pero son útiles si los necesitás.
 
-### Clockify MCP — tracking de horas conversacional
+### MCP de la herramienta de horas — registro conversacional
 
-Si trackeas horas en Clockify, podés instalar el MCP server para que Claude (en cualquier proyecto) pueda listar workspaces/projects/tasks, consultar time entries, generar summary reports, etc.
-
-**macOS / Linux:**
-
-```bash
-bash ~/.claude/tycon-harness/scripts/setup/install-clockify-mcp.sh
-```
-
-**Windows (PowerShell):**
-
-```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.claude\tycon-harness\scripts\setup\install-clockify-mcp.ps1"
-```
-
-El script te pide tu API key personal (input enmascarado), corre `claude mcp add` con scope `user`, y verifica conexión. La key vive solo en tu `~/.claude.json` local — **no se commitea a ningún repo**.
-
-Detalles, troubleshooting y casos de uso: `guides/integrations/clockify-mcp.md`.
+Si registrás horas con una herramienta que trae su propio MCP, podés instalarlo para que Claude (en cualquier proyecto) consulte y cargue horas. El instalador (`integrations/clockify/scripts/install-mcp.sh` o `.ps1`), el paso a paso y el troubleshooting viven en `guides/integrations/clockify-mcp.md`.
 
 ### CodeGraph MCP — índice de código para los agentes
 
@@ -383,7 +367,7 @@ aprobación los hooks NO corren y no dan error. Se repite cuando el instalador a
 (significa que los hooks cambiaron).
 
 **Secretos**: los servidores MCP bajo Codex leen sus secretos del AMBIENTE (el deployer jamás
-los copia a archivos). Si falta un export (p. ej. `CLOCKIFY_API_KEY`), el despliegue grita la
+los copia a archivos). Si falta un export (p. ej. el de la llave de una integración), el despliegue grita la
 instrucción exacta en cada arranque hasta que esté. **En Mac, las apps gráficas** (el panel
 de Codex en VSCode) no pasan por `~/.zshrc`: el instalador deja un LaunchAgent
 (`ar.com.tycon.harness-env`) que en cada login publica la llave y los secretos MCP para ellas,

@@ -60,9 +60,9 @@ la fila aplica.
 | Un merge de **sólo documentación** construyó, desplegó a staging, subió la versión y pidió aprobación de PROD · qué rutas pueden ir en el `trigger` de un pipeline y cuáles no (`.tycon/**` no) · un sitio sin filtro de rutas | `scripts/ci/check-trigger-without-docs.js` (cabecera; se corre a mano sin argumentos) |
 | Escribí pruebas de navegador y quiero saber si el pipeline las corre · el control dice que un repo tiene pruebas sin correr | `scripts/ci/check-tests-without-ci.js` (cabecera; se corre a mano sin argumentos, avisa y no frena) |
 | **Correr CUALQUIER test** (vitest/jest/dotnet) — SIEMPRE antes de `npm test`/`dotnet test` | `guides/test-execution-discipline.md` |
-| Instalar/configurar tracking de Clockify en Claude Code (opcional) | `guides/integrations/clockify-mcp.md` |
-| Setup de tracking automático de tiempo (timer auto-start con confirmación + auto-close por idle) | `guides/integrations/clocki-tracking.md` |
-| Registrar horas en Solidtime (opcional): la URL de la instancia en el perfil, el token de cada dev con `harness.js config set solidtime.token`, qué hace y qué avisa | `guides/integrations/solidtime.md` |
+| Instalar el MCP de la herramienta de horas (opcional) | `guides/integrations/clockify-mcp.md` |
+| Registro automático de horas (timer con confirmación + cierre por inactividad) | `guides/integrations/clocki-tracking.md` |
+| Registrar horas en otra herramienta (opcional): la URL en el perfil, el token de cada dev, qué hace y qué avisa | `guides/integrations/solidtime.md` |
 | Usar el arnés con modelos de Ollama (Claude Code o Codex): variables, perfiles, qué anda y qué no | `guides/integrations/ollama.md` (en inglés, `guides/integrations/ollama.en.md`) |
 | Instalar/configurar CodeGraph (índice de código MCP, opcional) | `guides/integrations/codegraph-mcp.md` |
 | Crear stories que generen work items en Azure DevOps; configurar `.tycon/ado-config.yaml` | `guides/integrations/ado-projects.md` |
@@ -118,5 +118,5 @@ aplica. Setup (opcional, por dev): `guides/integrations/codegraph-mcp.md`.
 
 ## Instalación y mantenimiento
 
-El setup por máquina y el opcional (Clockify, CodeGraph), el mantenimiento y el troubleshooting
+El setup por máquina y el opcional (la herramienta de horas, CodeGraph), el mantenimiento y el troubleshooting
 viven en **[INSTALL.md](INSTALL.md)**: onboarding humano de una sola vez, no contexto de cada sesión.

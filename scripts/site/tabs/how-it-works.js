@@ -88,7 +88,7 @@ function renderPage(model, { idioma, publicRepo, version }) {
   const deLaOrg = chip('org', T('comoTrabaja.deTuOrganizacion'));
   // lo de una integración de la organización: sólo llega al modelo si no la tiene apagada
   const segunOrg = chip('segun', T('comoTrabaja.segunTuOrganizacionMarca'));
-  // lo de la herramienta de horas que eligió la organización lleva su nombre («Clockify», «Solidtime»); sin perfil no se
+  // lo de la herramienta de horas que eligió la organización lleva su nombre (el `label` de su manifiesto); sin perfil no se
   // sabe cuál, y queda «según tu organización»
   const horas = model.org && model.org.timeToolLabel ? chip('horas', model.org.timeToolLabel) : null;
   const marcaDe = (x) => (x.timeTool && horas ? horas : x.integration || x.timeTool ? segunOrg : delArnes);

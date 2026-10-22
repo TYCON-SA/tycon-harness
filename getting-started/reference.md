@@ -152,7 +152,7 @@ your stack. For "yes", type `y` or `s`.
    - `full`: adds the guards (in a repository with stories, editing code goes through the workflow) and makes the
      assistant answer briefly and in Spanish in all your projects, not only where you use the harness.
 2. **"¿Qué integraciones prendo?"** (which integrations?) They are the optional connections to external services, such
-   as Azure DevOps or Clockify. Enter turns none on; you can turn them on later (see "What is optional").
+   as Azure DevOps or a time-tracking tool. Enter turns none on; you can turn them on later (see "What is optional").
 3. **"¿Usás el paquete del stack en todos tus repos?"** (the stack pack in all your repositories?) It is the reviewers
    for your stack that your team repo brings (TYCON brings its own for BIZUIT plugins). With no team, or if not all
    your repositories use that stack, `n`, and each repository asks for it later.
@@ -409,7 +409,7 @@ from.
 | Connection | What it does | How to turn it on |
 |---|---|---|
 | `ado` | Azure DevOps: work items for stories, pull request and pipeline (job) checks | `ado.org` in `~/.claude/tycon.json`, or `TYCON_ADO_ORG` |
-| `clockify` | Clockify time tracking hooks | `integrations.clockify: true`, or `TYCON_CLOCKIFY=1` |
+| `clockify` | the old key of the time-tracking tool: the tool is picked with `integrations.timeTracking` (see [guides/integrations/](../guides/integrations/)) | `integrations.timeTracking`: `none` or the name of a time-tracking integration, or `TYCON_TIME_TRACKING` |
 | `engram` | engram persistent memory: sync on commit and a daily check | `integrations.engram: true`, or `TYCON_ENGRAM=1` |
 | `codegraph` | CodeGraph code index for the agents (informative: you install CodeGraph yourself) | `integrations.codegraph: true`, or `TYCON_CODEGRAPH=1` |
 | `mailbox` | uploads the record of each run to your organization's shared run history; the organization has to have it set up (today, an Azure storage account) | `integrations.mailbox: true`, or `TYCON_MAILBOX=1` (its key in `TYCON_MAILBOX_JSON`) |
