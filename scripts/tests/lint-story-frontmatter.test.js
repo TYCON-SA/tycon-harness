@@ -228,11 +228,14 @@ function productoConCodigo({ conFront = true } = {}) {
   const proj = path.join(prod, 'Project');
   fs.mkdirSync(proj);
   execFileSync('git', ['init', '-q'], { cwd: proj });
+  execFileSync('git', ['remote', 'add', 'origin', 'https://dev.azure.com/acme/Acme/_git/Project'], { cwd: proj });
   commit(proj, '--allow-empty', '-m', 'inicio');
   write(prod, 'Backend/.git/HEAD', 'ref: refs/heads/main\n');
+  write(prod, 'Backend/.git/config', '[remote "origin"]\n\turl = https://dev.azure.com/acme/Acme/_git/Backend\n');
   write(prod, 'Backend/src/AcmeBackend/Features/Acciones/AccionesService.cs', '// acciones\n');
   if (conFront) {
     write(prod, 'FrontEnd/.git/HEAD', 'ref: refs/heads/main\n');
+    write(prod, 'FrontEnd/.git/config', '[remote "origin"]\n\turl = https://dev.azure.com/acme/Acme/_git/FrontEnd\n');
     write(prod, 'FrontEnd/acme-admin/src/screens/GestoresScreen.tsx', '// pantalla\n');
   }
   return { prod, proj };

@@ -398,9 +398,12 @@ test('T26 Write_TraeElCierre @story-8.64 @ac-1: el mensaje de cierre viaja en el
 // ── «primera vez» sólo cuando el producto de verdad no tiene historias ──────────────────────────────────────────────
 // Un producto de juguete: una carpeta con sus repos (cada uno con su .git), como la raíz de repos de una máquina.
 function producto() { return tmp('producto'); }
-function repoDe(prod, nombre, { bmad = false, historias = [], carpeta = 'specs', yaml = null } = {}) {
+// Los repos de un producto de juguete comparten el proyecto de Azure DevOps de su remoto, como los de verdad.
+const REMOTO = (prod, nombre) => `https://dev.azure.com/acme/${path.basename(prod)}/_git/${nombre}`;
+function repoDe(prod, nombre, { bmad = false, historias = [], carpeta = 'specs', yaml = null, remoto = REMOTO(prod, nombre) } = {}) {
   const d = path.join(prod, nombre);
   fs.mkdirSync(path.join(d, '.git'), { recursive: true });
+  if (remoto) fs.writeFileSync(path.join(d, '.git', 'config'), `[remote "origin"]\n\turl = ${remoto}\n`);
   if (bmad) {
     fs.mkdirSync(path.join(d, '_bmad', 'bmm'), { recursive: true });
     fs.writeFileSync(path.join(d, '_bmad', 'bmm', 'config.yaml'), 'project_name: acme\n');
@@ -483,7 +486,7 @@ test('T30 Mode_DosLugares_Pregunta: nombra los dos, con su forma de numerar, y n
   assert.match(r.json.message, /¿[^?]*dónde[^?]*\?/i);
 });
 
-test('T31 Mode_HermanoConHistorias_Frena: sin declaración, un repo hermano con historias no deja decir primera vez', () => {
+test('T31 Mode_HermanoConHistorias_Frena: sin declaración, otro repo del producto con historias no deja decir primera vez', () => {
   const prod = producto();
   const proj = repoDe(prod, 'Project', { historias: ['1.1', '1.2'] });
   const back = repoDe(prod, 'Backend');
@@ -491,7 +494,7 @@ test('T31 Mode_HermanoConHistorias_Frena: sin declaración, un repo hermano con 
   assert.strictEqual(r.status, 0, r.stderr);
   assert.strictEqual(r.json.mode, 'existing');
   assert.deepStrictEqual(r.json.places.map((p) => p.repo), [proj]);
-  assert.match(r.json.message, /declar/);
+  assert.match(r.json.message, /otro de sus repos.*¿Dónde va la nueva\?/s);
   // si la persona dice que este repo arranca solo, es primera vez
   const solo = correr(['mode', '--repo', back, '--this-repo']);
   assert.deepStrictEqual([solo.json.mode, solo.json.number], ['first-time', '1.1']);
@@ -595,15 +598,24 @@ test('T40 Mode_TextosDelRepo_Saneados: lo que el repo declara llega al mensaje e
   assert.doesNotMatch(r.stderr, /x{200}/);
 });
 
-test('T41 Mode_CarpetaConMuchosRepos_NoEsProducto: los repos de la raíz de todos los repos no son hermanos del producto', () => {
+test('T41 Mode_VecinoDeOtroProducto_NoCuenta: en la misma carpeta, sólo cuentan los repos del mismo producto', () => {
+  // la carpeta de todos los repos (o la temporal): vecinos de otro proyecto, sin remoto o con uno de GitHub
   const raiz = producto();
-  for (let i = 0; i < 7; i++) repoDe(raiz, `otro-${i}`, { historias: ['1.1'] });
+  repoDe(raiz, 'otro', { historias: ['1.1'], remoto: 'https://dev.azure.com/acme/OtroProducto/_git/otro' });
+  repoDe(raiz, 'suelto', { historias: ['1.1'], remoto: null });
+  repoDe(raiz, 'publico', { historias: ['1.1'], remoto: 'https://github.com/acme/publico.git' });
+  // una copia del mismo repo (un worktree) tampoco es otro repo del producto
+  repoDe(raiz, 'nuevo-wt', { historias: ['1.1'], remoto: REMOTO(raiz, 'nuevo') });
   const nuevo = repoDe(raiz, 'nuevo');
   const r = correr(['mode', '--repo', nuevo]);
   assert.strictEqual(r.status, 0, r.stderr);
   assert.strictEqual(r.json.mode, 'first-time');
-  // con los repos de un producto (hasta 6 al lado) sí son hermanos
+  // el mismo proyecto, o un compañero declarado aunque sea de otro proyecto, sí
   const prod = producto();
   repoDe(prod, 'Historias', { historias: ['1.1'] });
   assert.strictEqual(correr(['mode', '--repo', repoDe(prod, 'Front')]).json.mode, 'existing');
+  const raiz2 = producto();
+  repoDe(raiz2, 'docs', { historias: ['1.1'], remoto: null });
+  const conCompanero = repoDe(raiz2, 'app', { yaml: 'evidence:\n  companion_repos:\n    - ../docs\n' });
+  assert.strictEqual(correr(['mode', '--repo', conCompanero]).json.mode, 'existing');
 });

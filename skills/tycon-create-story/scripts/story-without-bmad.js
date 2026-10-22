@@ -9,11 +9,12 @@
  * `mode` decide el modo por lo que hay en el repo, no por lo que infiera el modelo: con `_bmad/bmm/config.yaml` es el
  * flujo de BMAD (`{"mode":"bmad"}`). Sin él, primero mira si el producto ya tiene historias: las del propio repo con
  * otra numeración (A-1, AP-2), el repo de historias que declara `.tycon/advisors.yaml → stories.repo` (relativo al
- * repo; `stories.remote` dice qué clonar) y, si no declara ninguno, los repos hermanos de la misma carpeta. Con alguno,
+ * repo; `stories.remote` dice qué clonar; es opcional) y, si no declara ninguno, los otros repos del mismo producto
+ * (lib/product-siblings.js: compañeros declarados, o al lado y en el mismo proyecto de su remoto). Con alguno,
  * `{"mode":"existing", places, ask, message}`: dónde están, cuántas y cómo numeran, y la pregunta cuando hay más de un
  * lugar. Con el repo declarado sin clonar, sale 2 diciendo qué clonar. Sólo sin nada de eso es el modo primera vez, con
  * la carpeta (`specs/` si existe, si no `stories/`), el número siguiente de la primera épica y la carpeta absoluta.
- * `--this-repo` (cuando la persona dice que este repo arranca solo) no mira los repos hermanos.
+ * `--this-repo` (cuando la persona dice que este repo arranca solo) no mira los otros repos del producto.
  *
  * `write` escribe la historia desde las respuestas ya convertidas en criterios y pruebas. El formato sale de acá y no
  * de la memoria del modelo: así la historia pasa el lint y el recorrido la encuentra. Valida todo antes de escribir
@@ -39,6 +40,7 @@ const path = require('path');
 
 const PIPELINE_LIB = path.join(__dirname, '..', '..', 'tycon-pipeline', 'scripts', 'lib');
 const { probeStoryFile } = require(path.join(PIPELINE_LIB, 'story-discovery.js'));
+const { productSiblings } = require(path.join(PIPELINE_LIB, 'product-siblings.js'));
 const { writeRecord, RECORD_DIR } = require(path.join(PIPELINE_LIB, 'first-time-record.js'));
 
 const BMAD_CONFIG = path.join('_bmad', 'bmm', 'config.yaml');
@@ -122,7 +124,8 @@ function storiesOf(repo) {
 /** Un texto del repo (ruta, remoto, número) como va en el mensaje: una línea, sin comillas invertidas ni controles, corto. */
 function shown(v) {
   const s = String(v).replace(/[\u0000-\u001f\u007f`]/g, ' ').replace(/\s+/g, ' ').trim();
-  return s.length > 120 ? `${s.slice(0, 117)}…` : s;
+  // se recorta el principio: en una ruta, lo que dice cuál es el repo está al final
+  return s.length > 120 ? `…${s.slice(-117)}` : s;
 }
 
 /** Cómo numera un lugar, en llano y con ejemplos. */
@@ -186,24 +189,15 @@ function declaredStoriesRepo(repo) {
   return out.repo ? out : null;
 }
 
-const MAX_PRODUCT_SIBLINGS = 6;
-
-/** Los repos hermanos (la misma carpeta, cada uno con su .git) que tienen historias o proyecto BMAD. */
+/**
+ * Los otros repos del mismo producto (declarados como compañeros, o al lado y en el mismo proyecto de su remoto) que
+ * tienen historias o proyecto BMAD. Un repo de la misma carpeta que no es del producto no cuenta: la carpeta puede ser
+ * la raíz de todos los repos o la temporal.
+ */
 function siblingStoryRepos(repo) {
   if (!fs.existsSync(path.join(repo, '.git'))) return [];
-  const parent = path.dirname(repo);
-  let entries;
-  try { entries = fs.readdirSync(parent, { withFileTypes: true }); } catch (e) {
-    throw new Refusal(`no pude mirar ${parent} para saber si el producto ya tiene historias en otro repo (${e.code || e.message})`);
-  }
-  const siblings = entries.filter((e) => e.isDirectory() && !e.name.startsWith('.') && path.join(parent, e.name) !== repo &&
-    fs.existsSync(path.join(parent, e.name, '.git')));
-  // Una carpeta con muchos repos no es la de un producto (la raíz de todos los repos, la de los worktrees, la temporal):
-  // sus hermanos son de otros productos. Las de producto miden de 2 a 5 repos.
-  if (siblings.length > MAX_PRODUCT_SIBLINGS) return [];
   const out = [];
-  for (const e of siblings.sort((a, b) => a.name.localeCompare(b.name))) {
-    const d = path.join(parent, e.name);
+  for (const d of productSiblings(repo)) {
     const p = placeOf(d);
     if (p.bmad || p.count === null || p.count > 0) out.push(p);
   }
@@ -240,9 +234,8 @@ function storyPlaces(repo, { thisRepo = false } = {}) {
 function placesMessage(places, siblingsOnly) {
   const line = (p) => `${shown(p.dir || p.repo)} (${p.count === null ? `no pude contarlas: ${shown(p.unreadable)}` : `${p.count} historia${p.count === 1 ? '' : 's'}`}${p.numbering ? `, ${p.numbering}` : ''}${p.bmad ? ', con su proyecto BMAD' : ''})`;
   if (siblingsOnly) {
-    return `Hay historias en un repo hermano: ${places.map(line).join('; ')}. Si son de este producto, la historia nueva va ahí ` +
-      '(y conviene declararlo en `.tycon/advisors.yaml` de este repo, `stories: { repo: <ruta> }`). Si este repo arranca solo, ' +
-      'decímelo y la creo acá. ¿Dónde va la nueva?';
+    return `Este producto tiene historias en otro de sus repos: ${places.map(line).join('; ')}. La historia nueva va ahí, salvo que ` +
+      'este repo lleve las suyas aparte: en ese caso decímelo y la creo acá. ¿Dónde va la nueva?';
   }
   if (places.length === 1) return `Este producto ya tiene sus historias en ${line(places[0])}. La nueva va ahí, siguiendo su numeración.`;
   return `Este producto tiene historias en ${places.length} lugares: ${places.map(line).join('; ')}. ¿En dónde va la nueva?`;

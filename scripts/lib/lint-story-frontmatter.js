@@ -154,6 +154,8 @@ const CAUSAS_PATH = readEnv('TYCON_CAUSES_PATH', { where: 'scripts/lib/lint-stor
 // las dos semánticas conviven documentadas; ver scripts/lib/skills-dir.js).
 const SKILLS_DIR = require('./skills-dir.js').resolveSkillsDirs().skills;
 const DISCOVERY_PATH = path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'story-discovery.js');
+let siblingsOf = null;   // los repos del mismo producto (de la skill del pipeline); sin ella, las rutas no se juzgan
+try { siblingsOf = require(path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'product-siblings.js')).productSiblings; } catch { siblingsOf = null; }
 let discovery = null;
 try {
   discovery = require(DISCOVERY_PATH);
@@ -412,14 +414,11 @@ function rootsOf(storyFile) {
   if (!fs.existsSync(path.join(repo, '.git'))) repo = path.dirname(path.resolve(storyFile));
   const parent = path.dirname(repo);
   const roots = [repo, parent];
-  try {
-    const siblings = fs.readdirSync(parent, { withFileTypes: true }).map((e) => path.join(parent, e.name))
-      .filter((d) => d !== repo && !path.basename(d).startsWith('.') && fs.existsSync(path.join(d, '.git')));
-    // Una carpeta con muchos repos no es la de un producto (la raíz de todos los repos, la temporal): sus repos son de
-    // otros productos y no dicen nada del código de esta story. Las de producto miden de 2 a 5 repos.
-    if (siblings.length <= 6) roots.push(...siblings);
-  } catch (_) {
-    // sin poder mirar la carpeta del producto no se sabe qué repos hay al lado: nada se da por inventado
+  // los otros repos del MISMO producto (compañeros declarados, o al lado y en el mismo proyecto de su remoto); un repo
+  // vecino de otro producto no dice nada del código de esta story
+  if (!siblingsOf) { roots.unreadable = true; return roots; }
+  try { roots.push(...siblingsOf(repo)); } catch (_) {
+    // sin poder mirar los repos del producto nada se da por inventado
     roots.unreadable = true;
   }
   return roots;
