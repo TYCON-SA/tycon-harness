@@ -2456,7 +2456,7 @@ function pantalla(idioma = 'es') {
   var TEC_AGENTE = false;  // se tocó «Pedíselo a tu agente»
   var TEC_REEMPLAZAR = null;  // la interna cuya frase de «Reemplazar» está a la vista
   var TEC_AGREGAR_REPO = null;  // la herramienta del formulario abierto donde se tocó «Agregar un repo»: se ve el selector
-  var TEC_NOMBRES = { dotnet: '.NET', vitest: 'Vitest', jest: 'Jest', node: 'Node (node --test)', pytest: 'pytest (Python)', go: 'Go', maven: 'Maven (Java)', gradle: 'Gradle (Java, Kotlin)', karma: 'Karma (Angular)', playwright: 'Playwright (pruebas de pantallas completas)' };
+  var TEC_NOMBRES = { dotnet: '.NET', vitest: 'Vitest', jest: 'Jest', node: 'Node (node --test)', pytest: 'pytest (Python)', go: 'Go', maven: 'Maven (Java)', gradle: 'Gradle (Java, Kotlin)', karma: 'Karma (Angular)', playwright: 'Playwright (punta a punta)' };
   var TEC_ARCHIVOS = { dotnet: '.sln, .csproj', vitest: 'package.json (vitest)', jest: 'package.json (jest)', node: 'package.json (node --test)' };
   // el nombre para personas: el de fábrica, o el «label» que le puso la organización a su receta; si no, el id
   function nombreDe(r) { return TEC_NOMBRES[r.name] || (typeof r.label === 'string' && r.label) || r.name; }
