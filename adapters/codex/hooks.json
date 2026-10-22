@@ -46,6 +46,10 @@
           },
           {
             "type": "command",
+            "command": "node ${TCG}/scripts/hooks/deprecated-session-notice.js"
+          },
+          {
+            "type": "command",
             "command": "node ${TCG}/scripts/hooks/retro-staleness-notice.js"
           },
           {
@@ -198,6 +202,10 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/missing-path-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/deprecated-read-notice.js"
           },
           {
             "type": "command",
@@ -358,6 +366,13 @@
       "scripts": [
         "sweep.js",
         "touch-activity.js"
+      ]
+    },
+    {
+      "log": "PostToolUse · Read — SOLO Claude Code (aviso de código deprecado al leer)",
+      "verdict": "ASIMETRÍA DECLARADA (2026-10-22, story 8.95): deprecated-read-notice.js avisa al leer un archivo deprecado. Del lado Claude se registra con matcher Read|Bash|PowerShell; Codex no emite evento para su herramienta propia de lectura, así que de su lado el aviso corre sólo por la terminal (su evento Bash: cat, sed -n, head…). Lo que Codex lea sin la terminal queda cubierto por la instrucción del arranque (deprecated-session-notice.js) y por los revisores, que reciben marcados los archivos deprecados del diff.",
+      "scripts": [
+        "deprecated-read-notice.js"
       ]
     }
   ]

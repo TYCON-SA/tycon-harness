@@ -86,6 +86,7 @@ const discovery = require(path.join(LIB, 'story-discovery.js'));
 const WORK_ITEM = require(path.join(RAIZ, 'scripts', 'lib', 'platform', 'work-item-field.js'));
 const evidenceKey = require(path.join(LIB, 'evidence-key.js'));
 const evidenceConfig = require(path.join(LIB, 'evidence-config.js'));
+const deprecated = require(path.join(LIB, 'deprecated.js'));
 
 const GRUPOS = ['backlog', 'en_curso', 'bloqueado', 'cerrado', 'sin_entrega'];
 const CAMPOS_METRICAS = ['lead_time_days', 'rework_ratio', 'rework_por_causa', 'dod_evidence_ratio',
@@ -509,6 +510,22 @@ function fotoDeRepo(repo, opts) {
   }
   for (const il of ilegibles) {
     alertas.push({ tipo: 'frontmatter_ilegible', story: sanear(il.id), detalle: `frontmatter sin cerrar o ilegible: ${il.ruta}` });
+  }
+  // La lista de código deprecado que se pudre: rutas que ya no alcanzan ningún archivo y entradas que pasaron su
+  // fecha de revisión. Son del repo, no de una story.
+  const deprecadas = deprecated.podridas(repo, { hoy: hoyUTC() });
+  if (String(deprecadas.estado).startsWith('unknown-')) {
+    // «no pude mirar» no se ve igual que «está sana»
+    alertas.push({ tipo: 'deprecado_no_medido', story: null, detalle: sanear(`código deprecado: no medido (${deprecadas.motivo || deprecadas.estado})`) });
+  }
+  for (const p of deprecadas.podridas) {
+    alertas.push({
+      tipo: 'deprecado_podrido',
+      story: null,
+      detalle: sanear(p.motivo === 'no-existe'
+        ? `código deprecado: ${p.entry.path} ya no alcanza ningún archivo`
+        : `código deprecado: ${p.entry.path} pasó su fecha de revisión (${p.entry.review_by})`),
+    });
   }
 
   // 8 · métricas (copiadas, lista blanca)

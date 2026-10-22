@@ -313,6 +313,7 @@ Además de los campos base del ejemplo de §1, las stories reales usan estos cam
 | `driver` | string multilínea (`\|`) | opcional | Por qué existe la story: **máximo 2-3 líneas** + link a la sección del body o al issue que cuenta el incidente completo. Ver regla anti-redundancia abajo. |
 | `topics` | string[] | opcional | Temas de la wiki (`specs/wiki/topics/`) que la story toca — alimenta el lint bidireccional story↔wiki. |
 | `internal_scope` | bool | opcional | `true` = story interna (harness/infra/tooling), no entregable al cliente — queda fuera de los reportes de scope firmado. |
+| `deprecated_reason` | string | opcional | Por qué la story toca código que el repo declara **deprecado congelado** (lista `deprecated` de `.tycon/advisors.yaml` o la marca `harness-deprecated:` del archivo): el arreglo que hace falta. Sin él, el validador frena (`VAL-C9`) y editar ese archivo avisa o frena; con él, un congelado declarado en `files_to_modify`/`files_to_create` pasa. Un archivo **muerto** no se toca aunque la story traiga el motivo. |
 | `owner` | string | opcional | Dev humano responsable de la story (no el agente que la implementa). |
 | `blocks` | string[] | opcional | Inverso de `depends_on:` — stories que no pueden arrancar hasta que esta esté done. |
 | `estimated_days` | number | opcional | Queda por compatibilidad y nadie lo lee: la estimación de la épica, del plan y de la historia vive en `.tycon/estimates.jsonl` del repo de historias, con cada versión (`guides/estimates.md`). |

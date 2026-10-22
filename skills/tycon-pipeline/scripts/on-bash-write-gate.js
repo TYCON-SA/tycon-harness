@@ -349,7 +349,33 @@ function anotarEscriturasConsola(stateDir, sessionId, rutas) {
   } catch (e) { logHookError(e); /* el registro no puede trabar un comando, pero no se pierde callado */ }
 }
 
+/**
+ * La puerta entera: primero el código deprecado del repo (on-deprecated-edit.js), que frena por su cuenta y no depende
+ * de los demás frenos de esta puerta; después el carril y la historia a mano. Un aviso de lo deprecado viaja como
+ * `aviso` si nada frena.
+ */
 function handle(event, opts = {}) {
+  let deprecado = null;
+  try {
+    const cmd = event?.tool_input?.command;
+    if (cmd && (!event?.tool_name || event.tool_name === 'Bash' || event.tool_name === 'PowerShell')) {
+      const baseCwd = nativePath(event?.cwd || process.cwd());
+      const cdDir = leadingCd(cmd);
+      deprecado = require('./on-deprecated-edit.js').porLaTerminal({
+        cmd, cwd: cdDir ? resolveTarget(cdDir, baseCwd) : baseCwd,
+        // todo destino, sea o no código: lo deprecado puede ser una guía, un esquema o una configuración
+        destinos: (c, cwd) => destinosResueltos(c, cwd, process.platform, { keep: () => true }).map((d) => d.abs),
+        sessionId: resolveSessionId(event?.session_id),
+        stateDir: opts.stateDir || require('./lib/story-gate-io.js').DEFAULT_STATE_DIR,
+        via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`,
+      });
+    }
+  } catch (e) { logHookError(e); deprecado = null; }
+  if (deprecado && deprecado.block) return deprecado;
+  return handleCarrilEHistoria(event, opts) || deprecado;
+}
+
+function handleCarrilEHistoria(event, opts = {}) {
   const laneOff = String(process.env.TYCON_STORY_GATE || '').toLowerCase() === 'off';
   const skillOff = String(process.env.TYCON_STORY_SKILL_GATE || '').toLowerCase() === 'off';
   // Bash, o la herramienta PowerShell de Claude Code en Windows (misma entrada)
@@ -532,6 +558,8 @@ if (require.main === module) {
   // si la historia cambia una pantalla en un repo sin prueba con navegador, la oferta de prepararla (lib/browser-test.js).
   // Van en un solo aviso.
   const avisos = [];
+  // el código deprecado que se escribe por la terminal con `deprecated.edit: warn`
+  if (r && r.aviso) avisos.push({ systemMessage: r.aviso, anotar() {} });
   const pedido = {
     command: event && event.tool_input && event.tool_input.command,
     sessionId: resolveSessionId(event && event.session_id), stateDir: require('./lib/story-gate-io.js').DEFAULT_STATE_DIR,

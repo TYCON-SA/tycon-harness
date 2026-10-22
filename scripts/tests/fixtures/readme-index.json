@@ -92,6 +92,8 @@
   "scripts/hooks/harness-bootstrap-heal.sh",
   "scripts/hooks/lane-llm-notice.js",
   "scripts/hooks/missing-path-notice.js",
+  "scripts/hooks/deprecated-read-notice.js",
+  "scripts/hooks/deprecated-session-notice.js",
   "scripts/hooks/prod-access-guard.js",
   "scripts/hooks/session-collision-guard.js",
   "scripts/hooks/dashboard-notice.js",

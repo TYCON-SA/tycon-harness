@@ -93,6 +93,11 @@ fan-out no ocurrió (partes del Arranque salteadas, orden secuencial), lanzar lo
      `no_medido` («no medido: <archivo>, <motivo>») se muestra igual: es «no pude mirar», nunca «está todo». Lista
      vacía = no falta nada.
 
+   - **`archivos_deprecados`**: los archivos de `files_to_modify`/`files_to_create` que el repo declara deprecados
+     (`archivo`, `lista`, `nivel`, `motivo`, `frena`). Lo calcula un programa: se le pasa al validador en el pedido, tal
+     cual («Archivos deprecados de la historia: {lista JSON}»), y él reporta **`VAL-C9`** (CRITICAL) por cada uno con
+     `frena: true`. Lista vacía = la historia no toca nada deprecado; se dice igual en el pedido.
+
    - **La revisión adversarial previa** (el revisor de historias): la decide
      `pipeline.js story-review-gate --story {story_path}`, y `validators` ya la suma como un lanzamiento más cuando el
      portón dice que corre (riesgo NORMAL y sin constancia vigente: la historia se escribió sin `tycon-create-story`,

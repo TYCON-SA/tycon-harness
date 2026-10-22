@@ -170,6 +170,9 @@ const CHAINS = {
     { name: 'on-atdd-preedit', path: path.join(PIPELINE_SCRIPTS, 'on-atdd-preedit.js'), steps: ['implement'], effect: 'blocks' },
     { name: 'on-write-collision', path: path.join(PIPELINE_SCRIPTS, 'on-write-collision.js'), steps: ['implement'], effect: 'warns' },
     { name: 'on-planning-artifact', path: path.join(PIPELINE_SCRIPTS, 'on-planning-artifact.js'), steps: ['plan'], effect: 'warns' },
+    // Código deprecado del repo (lib/deprecated.js): con `deprecated.edit: block`, editarlo sin una historia que lo pida
+    // frena acá; con `warn`, el aviso sale después de editar (en post-edit), que es el que le llega al modelo.
+    { name: 'on-deprecated-edit', path: path.join(PIPELINE_SCRIPTS, 'on-deprecated-edit.js'), steps: ['all'], effect: 'blocks' },
   ],
   'post-edit': [
     // antes de esta tabla van las entradas de la integración de horas elegida (integrationEntries)
@@ -178,6 +181,8 @@ const CHAINS = {
     // superficie que puede apagar frenos y NO dispara revisores (un commit que sólo la toca se
     // clasifica como docs). Determinístico, sin modelo, avisa y nunca bloquea.
     { name: 'on-config-lint', path: path.join(PIPELINE_SCRIPTS, 'on-config-lint.js'), steps: ['all'], effect: 'warns' },
+    // Código deprecado editado sin una historia que lo pida, con `deprecated.edit: warn`: se le dice a la persona y al modelo
+    { name: 'on-deprecated-edit', path: path.join(PIPELINE_SCRIPTS, 'on-deprecated-edit.js'), steps: ['all'], effect: 'warns' },
     // El plan escrito se lo muestra el arnés a la persona en pantalla (el agente no siempre lo hace: medido)
     { name: 'plan-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'plan-display.js'), steps: ['plan', 'approve-plan'], effect: 'warns' },
     // El crítico que se quiere eximir se lo muestra el arnés a la persona al escribirse el pedido (instalación mínima)

@@ -1,0 +1,249 @@
+{
+  "hooks": [
+    {
+      "hook": "deprecated-session-notice.js (código deprecado, al abrir la sesión — story 8.95, AC 3)",
+      "script": "${TCG}/scripts/hooks/deprecated-session-notice.js",
+      "event": "SessionStart",
+      "matcher": "",
+      "cases": [
+        {
+          "id": "deprecado-dice-la-lista-y-la-regla-al-arrancar",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main repo && cd repo && mkdir -p .tycon src/legacy docs/viejo && printf \"x\\n\" > src/legacy/x.js && printf \"x\\n\" > src/vivo.js && printf \"a\\n\" > docs/viejo/notas.txt && printf \"a\\n\" > docs/vivo.txt && printf \"deprecated:\\n  edit: %s\\n  paths:\\n    - path: \\\"src/legacy/**\\\"\\n      level: frozen\\n      reason: \\\"reemplazado por src/billing\\\"\\n    - path: docs/viejo\\n      level: dead\\n      reason: \\\"no se usa desde 2025\\\"\\n\" warn > .tycon/advisors.yaml && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "source": "startup",
+            "cwd": "${FIXTURE}/repo"
+          },
+          "expect": {
+            "stdout_re": [
+              "src/legacy/\\*\\* — congelado: reemplazado por src/billing",
+              "docs/viejo — muerto",
+              "no lo tomes de ejemplo"
+            ]
+          }
+        },
+        {
+          "id": "deprecado-sin-lista-calla",
+          "type": "must-stay-quiet",
+          "setup": [
+            "git init -q -b main repo && cd repo && printf \"x\\n\" > a.js && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "source": "startup",
+            "cwd": "${FIXTURE}/repo"
+          }
+        }
+      ]
+    },
+    {
+      "hook": "deprecated-read-notice.js (código deprecado, al leer con Read — story 8.95, AC 4)",
+      "script": "${TCG}/scripts/hooks/deprecated-read-notice.js",
+      "event": "PostToolUse",
+      "matcher": "Read",
+      "tools": [
+        "claude"
+      ],
+      "cases": [
+        {
+          "id": "deprecado-leer-un-deprecado-trae-el-aviso",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main repo && cd repo && mkdir -p .tycon src/legacy docs/viejo && printf \"x\\n\" > src/legacy/x.js && printf \"x\\n\" > src/vivo.js && printf \"a\\n\" > docs/viejo/notas.txt && printf \"a\\n\" > docs/vivo.txt && printf \"deprecated:\\n  edit: %s\\n  paths:\\n    - path: \\\"src/legacy/**\\\"\\n      level: frozen\\n      reason: \\\"reemplazado por src/billing\\\"\\n    - path: docs/viejo\\n      level: dead\\n      reason: \\\"no se usa desde 2025\\\"\\n\" warn > .tycon/advisors.yaml && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "tool_name": "Read",
+            "cwd": "${FIXTURE}/repo",
+            "tool_input": {
+              "file_path": "${FIXTURE}/repo/src/legacy/x.js"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "additionalContext",
+              "deprecado \\(congelado\\): reemplazado por src/billing"
+            ]
+          }
+        },
+        {
+          "id": "deprecado-leer-un-vivo-calla",
+          "type": "must-stay-quiet",
+          "setup": [
+            "git init -q -b main repo && cd repo && mkdir -p .tycon src/legacy docs/viejo && printf \"x\\n\" > src/legacy/x.js && printf \"x\\n\" > src/vivo.js && printf \"a\\n\" > docs/viejo/notas.txt && printf \"a\\n\" > docs/vivo.txt && printf \"deprecated:\\n  edit: %s\\n  paths:\\n    - path: \\\"src/legacy/**\\\"\\n      level: frozen\\n      reason: \\\"reemplazado por src/billing\\\"\\n    - path: docs/viejo\\n      level: dead\\n      reason: \\\"no se usa desde 2025\\\"\\n\" warn > .tycon/advisors.yaml && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "tool_name": "Read",
+            "cwd": "${FIXTURE}/repo",
+            "tool_input": {
+              "file_path": "${FIXTURE}/repo/src/vivo.js"
+            }
+          }
+        }
+      ],
+      "asymmetry": "Codex no emite evento para su herramienta propia de lectura: de su lado el aviso corre sólo por la terminal (casos con matcher Bash de este archivo). Declarado en adapters/codex/hooks.json → divergences."
+    },
+    {
+      "hook": "deprecated-read-notice.js (código deprecado, al leer por la terminal, Claude y Codex — story 8.95, AC 4 y 10)",
+      "script": "${TCG}/scripts/hooks/deprecated-read-notice.js",
+      "event": "PostToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "deprecado-cat-de-un-deprecado-trae-el-aviso",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main repo && cd repo && mkdir -p .tycon src/legacy docs/viejo && printf \"x\\n\" > src/legacy/x.js && printf \"x\\n\" > src/vivo.js && printf \"a\\n\" > docs/viejo/notas.txt && printf \"a\\n\" > docs/vivo.txt && printf \"deprecated:\\n  edit: %s\\n  paths:\\n    - path: \\\"src/legacy/**\\\"\\n      level: frozen\\n      reason: \\\"reemplazado por src/billing\\\"\\n    - path: docs/viejo\\n      level: dead\\n      reason: \\\"no se usa desde 2025\\\"\\n\" warn > .tycon/advisors.yaml && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "cwd": "${FIXTURE}/repo",
+            "tool_input": {
+              "command": "cat src/legacy/x.js"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "deprecado \\(congelado\\)"
+            ]
+          }
+        },
+        {
+          "id": "deprecado-cat-de-un-vivo-calla",
+          "type": "must-stay-quiet",
+          "setup": [
+            "git init -q -b main repo && cd repo && mkdir -p .tycon src/legacy docs/viejo && printf \"x\\n\" > src/legacy/x.js && printf \"x\\n\" > src/vivo.js && printf \"a\\n\" > docs/viejo/notas.txt && printf \"a\\n\" > docs/vivo.txt && printf \"deprecated:\\n  edit: %s\\n  paths:\\n    - path: \\\"src/legacy/**\\\"\\n      level: frozen\\n      reason: \\\"reemplazado por src/billing\\\"\\n    - path: docs/viejo\\n      level: dead\\n      reason: \\\"no se usa desde 2025\\\"\\n\" warn > .tycon/advisors.yaml && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "cwd": "${FIXTURE}/repo",
+            "tool_input": {
+              "command": "cat src/vivo.js"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "hook": "hook-pre-edit.js → on-deprecated-edit (editar código deprecado sin historia — story 8.95, AC 8)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "deprecado-editar-un-muerto-con-block-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main repo && cd repo && mkdir -p .tycon src/legacy docs/viejo && printf \"x\\n\" > src/legacy/x.js && printf \"x\\n\" > src/vivo.js && printf \"a\\n\" > docs/viejo/notas.txt && printf \"a\\n\" > docs/vivo.txt && printf \"deprecated:\\n  edit: %s\\n  paths:\\n    - path: \\\"src/legacy/**\\\"\\n      level: frozen\\n      reason: \\\"reemplazado por src/billing\\\"\\n    - path: docs/viejo\\n      level: dead\\n      reason: \\\"no se usa desde 2025\\\"\\n\" block > .tycon/advisors.yaml && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "tool_name": "Edit",
+            "cwd": "${FIXTURE}/repo",
+            "tool_input": {
+              "file_path": "${FIXTURE}/repo/docs/viejo/notas.txt",
+              "old_string": "a",
+              "new_string": "b"
+            }
+          },
+          "expect": {
+            "stderr_re": [
+              "deprecado \\(muerto\\): no se usa desde 2025"
+            ]
+          }
+        },
+        {
+          "id": "deprecado-editar-un-vivo-con-block-pasa",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main repo && cd repo && mkdir -p .tycon src/legacy docs/viejo && printf \"x\\n\" > src/legacy/x.js && printf \"x\\n\" > src/vivo.js && printf \"a\\n\" > docs/viejo/notas.txt && printf \"a\\n\" > docs/vivo.txt && printf \"deprecated:\\n  edit: %s\\n  paths:\\n    - path: \\\"src/legacy/**\\\"\\n      level: frozen\\n      reason: \\\"reemplazado por src/billing\\\"\\n    - path: docs/viejo\\n      level: dead\\n      reason: \\\"no se usa desde 2025\\\"\\n\" block > .tycon/advisors.yaml && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "tool_name": "Edit",
+            "cwd": "${FIXTURE}/repo",
+            "tool_input": {
+              "file_path": "${FIXTURE}/repo/docs/vivo.txt",
+              "old_string": "a",
+              "new_string": "b"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        }
+      ]
+    },
+    {
+      "hook": "on-bash-write-gate.js → on-deprecated-edit (escribir código deprecado por la terminal — story 8.95, AC 8)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "deprecado-sed-i-sobre-un-muerto-con-block-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main repo && cd repo && mkdir -p .tycon src/legacy docs/viejo && printf \"x\\n\" > src/legacy/x.js && printf \"x\\n\" > src/vivo.js && printf \"a\\n\" > docs/viejo/notas.txt && printf \"a\\n\" > docs/vivo.txt && printf \"deprecated:\\n  edit: %s\\n  paths:\\n    - path: \\\"src/legacy/**\\\"\\n      level: frozen\\n      reason: \\\"reemplazado por src/billing\\\"\\n    - path: docs/viejo\\n      level: dead\\n      reason: \\\"no se usa desde 2025\\\"\\n\" block > .tycon/advisors.yaml && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "cwd": "${FIXTURE}/repo",
+            "tool_input": {
+              "command": "sed -i s/a/b/ docs/viejo/notas.txt"
+            }
+          },
+          "expect": {
+            "stderr_re": [
+              "deprecado \\(muerto\\)"
+            ]
+          }
+        },
+        {
+          "id": "deprecado-borrar-un-muerto-pasa-siempre",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main repo && cd repo && mkdir -p .tycon src/legacy docs/viejo && printf \"x\\n\" > src/legacy/x.js && printf \"x\\n\" > src/vivo.js && printf \"a\\n\" > docs/viejo/notas.txt && printf \"a\\n\" > docs/vivo.txt && printf \"deprecated:\\n  edit: %s\\n  paths:\\n    - path: \\\"src/legacy/**\\\"\\n      level: frozen\\n      reason: \\\"reemplazado por src/billing\\\"\\n    - path: docs/viejo\\n      level: dead\\n      reason: \\\"no se usa desde 2025\\\"\\n\" block > .tycon/advisors.yaml && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "cwd": "${FIXTURE}/repo",
+            "tool_input": {
+              "command": "git rm -q docs/viejo/notas.txt"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        }
+      ]
+    },
+    {
+      "hook": "pipeline.js validators → archivos_deprecados (la historia que toca lo deprecado — story 8.95, AC 7)",
+      "script": "${FIXTURE}/correr.sh",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "deprecado-historia-que-modifica-un-muerto-frena",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main repo && cd repo && mkdir -p .tycon src/legacy docs/viejo && printf \"x\\n\" > src/legacy/x.js && printf \"x\\n\" > src/vivo.js && printf \"a\\n\" > docs/viejo/notas.txt && printf \"a\\n\" > docs/vivo.txt && printf \"deprecated:\\n  edit: %s\\n  paths:\\n    - path: \\\"src/legacy/**\\\"\\n      level: frozen\\n      reason: \\\"reemplazado por src/billing\\\"\\n    - path: docs/viejo\\n      level: dead\\n      reason: \\\"no se usa desde 2025\\\"\\n\" warn > .tycon/advisors.yaml && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "cd repo && mkdir -p specs && printf -- \"---\\nepic: 1\\nstory: \\\"1.1\\\"\\ntitle: \\\"x\\\"\\nstatus: ready-for-dev\\nfiles_to_modify:\\n  - docs/viejo/notas.txt\\n---\\n\" > specs/story-1.1.md",
+            "printf \"#!/usr/bin/env bash\\nTYCON_STORY_REVIEW=0 node \\\"$SKILLS/skills/tycon-pipeline/scripts/pipeline.js\\\" validators --repo \\\"$FIXTURE/repo\\\" --story \\\"$FIXTURE/repo/specs/story-1.1.md\\\"\\n\" > $FIXTURE/correr.sh && chmod +x $FIXTURE/correr.sh"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "true"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "\"archivo\": \"docs/viejo/notas.txt\"",
+              "\"frena\": true"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
