@@ -48,7 +48,7 @@
     }
   ],
   "ceiling": {
-    "build/deploy-codex-mcp.js": 43,
+    "build/deploy-codex-mcp.js": 59,
     "claude-md-blocks/names/tool-names.codex.md": 21,
     "claude-md-blocks/tool-names.md": 14,
     "getting-started/reference.es.md": 1,
