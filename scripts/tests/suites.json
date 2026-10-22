@@ -590,6 +590,12 @@
       "requiere": []
     },
     {
+      "__nota": "el marcador no cambia de story en silencio: start frena si la story no trae story: en su frontmatter y pausa si la sesión tiene otra ejecución a medias; marker.js set con otro storyId frena sobre una ejecución que avanzó, y con --replace reemplaza dejando copia.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/marker-identity.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "una corrida nueva no hereda la ronda de revisores de la anterior: start anota run-start y vacía las vueltas, el validador del paso 1 no completa la ronda vieja, y una foto rechazada sella la ronda en vez de reintentarse.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/phantom-round.test.js",

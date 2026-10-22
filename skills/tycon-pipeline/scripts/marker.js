@@ -346,6 +346,19 @@ function cmdSet(payloadJson) {
   // Por eso, al cambiar de storyId, los campos de CICLO DE VIDA DE
   // CORRIDA se resetean (la identidad de sesión y el startedAt se conservan).
   if (existing && payload.storyId !== existing.storyId) {
+    // Una ejecución que ya avanzó no se reemplaza sin pedirlo: el reinicio borraría sus pasos, sus controles y su
+    // pase adversarial sin que nadie lo vea. Con `--replace` se reemplaza; siempre queda la copia del anterior.
+    const hechos = Array.isArray(existing.stepsCompleted) ? existing.stepsCompleted.length : 0;
+    if (hechos > 0 && !process.argv.includes('--replace')) {
+      console.error(`marker.js set: esta sesión tiene la ejecución de la story ${existing.storyId} con ${hechos} paso(s) hecho(s), y el pedido es de la ${payload.storyId}: no la reemplazo.`);
+      console.error('  Si la de antes terminó o se abandona: marker.js clear y volvé a pedirlo, o el mismo set con --replace (deja una copia del marcador anterior).');
+      process.exit(3);
+    }
+    const copia = path.join(STATE_DIR, 'replaced', `${SID}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+    fs.mkdirSync(path.dirname(copia), { recursive: true });
+    fs.writeFileSync(copia, JSON.stringify(existing, null, 2) + '\n', 'utf8');
+    appendLog('gates.log', { name: 'marker-replace', from: existing.storyId, to: payload.storyId, stepsCompleted: hechos, copy: copia });
+    console.error(`marker.js set: la copia del marcador de la ${existing.storyId} quedó en ${copia}`);
     // Otra historia sobre una ejecución que no terminó: la anterior queda dicha como abortada. Sin esto, el reset de
     // abajo la lavaría y un `clear` después la archivaría como completa.
     try {

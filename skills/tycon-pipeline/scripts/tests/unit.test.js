@@ -1841,7 +1841,7 @@ test('marker.adversarial: sobrevive a set (misma story) + complete-step, y se RE
   // set de OTRA story sin clear (pipeline cancelado y se encadena la siguiente) → RESET del ciclo
   // de vida (sin esto, la story B hereda deepReviewDone=true → su 5b se saltea ENTERO en silencio,
   // checks.build=green heredado → gates mintiendo).
-  const other = JSON.parse(execFileSync(process.execPath, [MARKER, 'set', JSON.stringify({ storyId: 'B', storyPath: 'specs/b.md' })], markerEnv(SID, fakeHome)));
+  const other = JSON.parse(execFileSync(process.execPath, [MARKER, 'set', JSON.stringify({ storyId: 'B', storyPath: 'specs/b.md' }), '--replace'], markerEnv(SID, fakeHome)));
   assert.equal(other.adversarial, undefined, 'story nueva NO hereda adversarial');
   assert.equal(other.deepReviewDone, undefined, 'story nueva NO hereda deepReviewDone (su 5b debe correr)');
   assert.equal(other.checks, undefined, 'story nueva NO hereda checks verdes');
@@ -6306,7 +6306,7 @@ test('2.7 cambiar de story en la misma sesión NO hereda los arranques de la ant
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'h27e-'));
   const sid = 'cambio-story-27';
   const { file, repo } = markerDe27(home, sid, { stepTimings: { 1: { startedAt: '2026-09-16T08:00:00.000Z', completedAt: '2026-09-16T08:10:00.000Z' } } });
-  const r = correr27(home, sid, 'marker.js', ['set', JSON.stringify({ storyId: '9.10', storyPath: path.join(repo, 'story.md'), stepsPending: [0, 1, 2, 3, 4, 5, 6, 7, 8] })]);
+  const r = correr27(home, sid, 'marker.js', ['set', JSON.stringify({ storyId: '9.10', storyPath: path.join(repo, 'story.md'), stepsPending: [0, 1, 2, 3, 4, 5, 6, 7, 8] }), '--replace']);
   assert.equal(r.status, 0, r.stderr);
   const st = JSON.parse(fs.readFileSync(file, 'utf8')).stepTimings || {};
   assert.ok(!st['1'], `no queda el paso 1 de la story anterior: ${JSON.stringify(st)}`);

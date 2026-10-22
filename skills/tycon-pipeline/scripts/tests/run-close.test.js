@@ -119,7 +119,7 @@ test('T11c RunClose_SetNoLavaLaEjecucion @story-8.92 — un `set` con otra histo
   const entorno = (c) => ({ ...process.env, HOME: path.join(c.raiz, 'home'), USERPROFILE: path.join(c.raiz, 'home'), CLAUDE_CODE_SESSION_ID: SID, TYCON_LANE_LLM: '0' });
   // otra historia sobre la ejecución abierta: la anterior queda anotada como abortada
   const a = corral(rojo);
-  spawnSync(process.execPath, [MARKER, 'set', JSON.stringify({ storyId: '9.9b', stepsPending: [], stepsCompleted: [] })], { env: entorno(a), encoding: 'utf8' });
+  spawnSync(process.execPath, [MARKER, 'set', JSON.stringify({ storyId: '9.9b', stepsPending: [], stepsCompleted: [] }), '--replace'], { env: entorno(a), encoding: 'utf8' });
   const gates = fs.readFileSync(path.join(a.estado, 'gates.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((l) => l.name === 'run-close');
   assert.deepStrictEqual([gates[0] && gates[0].estado, gates[0] && gates[0].story], ['abortada', '9.9'], JSON.stringify(gates));
   // la misma historia: set no vacía los pasos pendientes ni pisa los controles ni el modo autónomo

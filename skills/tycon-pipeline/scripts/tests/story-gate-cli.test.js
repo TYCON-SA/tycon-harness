@@ -171,7 +171,7 @@ test('marker set: mismo storyId no reabre steps completados (R7); marker nuevo s
   assert.ok(JSON.parse(r.stdout).stepsPending.includes(3), r.stdout);
   assert.doesNotMatch(bl(), /MARKER_DROPS_PLAN/);
   // OTRA story sobre un marker viejo, sin 3 → MARKER_SKIPS_PLAN
-  r = markerCli(home, sid, ['set', JSON.stringify({ storyId: '9.9', stepsPending: [5, 6, 7, 8] })]);
+  r = markerCli(home, sid, ['set', JSON.stringify({ storyId: '9.9', stepsPending: [5, 6, 7, 8] }), '--replace']);
   assert.equal(r.status, 0);
   assert.equal((bl().match(/MARKER_SKIPS_PLAN/g) || []).length, 2);
   // retomando con stepsCompleted que incluye 3 → sin aviso
@@ -800,7 +800,7 @@ test('7.30-T17 MarkerSet_NoHeredaNiAceptaLaMaqueta @story-7.30 @ac-15', () => {
   assert.equal(m.mockupApproval.sha256, mq.sha256);
   assert.equal(m.mockupDecision.screen, true);
   // otra story: no se heredan
-  r = markerCli(home, 's17', ['set', JSON.stringify({ storyId: '2.2', storyPath: s, repoPath: repo, stepsPending: [0, 1, 2, 3, 4, 5, 6, 7, 8] })]);
+  r = markerCli(home, 's17', ['set', JSON.stringify({ storyId: '2.2', storyPath: s, repoPath: repo, stepsPending: [0, 1, 2, 3, 4, 5, 6, 7, 8] }), '--replace']);
   assert.equal(r.status, 0, r.stderr);
   m = leerMarker730(home, 's17');
   assert.equal(m.mockupApproval, undefined);
