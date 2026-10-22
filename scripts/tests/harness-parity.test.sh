@@ -67,6 +67,18 @@ OUT=$(HOME="$LAB" CODEX_HOME="$LAB/codex" node "$PARITY" 2>&1); RC=$?
 case "$OUT" in *"ilegible"*) ok "hooks.json corrupto → la causa se reporta";; *) bad "causa reportada" "$(echo "$OUT" | head -3)";; esac
 rm -rf "$LAB"
 
+# ── 3c. T69: la tabla de Codex se compara con las filas de la herramienta de horas ELEGIDA ─────────────────────────────
+# Las filas de cada herramienta viven en su integración; con otra elegida (o ninguna), su servidor no se registra y la
+# tabla tampoco lo nombra: no es un «fantasma». Con la suya elegida y registrada, no queda «oculto».
+TT_ONE="$(node -e 'const I=require(process.argv[1]);const fs=require("fs");const ms=I.listManifests({dir:process.argv[2]}).manifests.filter((m)=>m.kind==="timeTracking"&&fs.existsSync(process.argv[2]+"/"+m.name+"/tool-names.codex.md"));console.log(ms.length?ms[0].name:"")' "$TCG/scripts/lib/integrations.js" "$TCG/integrations")"
+LAB=$(mktemp -d); mkdir -p "$LAB/codex"; echo '{"hooks":{}}' > "$LAB/codex/hooks.json"
+OUT=$(HOME="$LAB" CODEX_HOME="$LAB/codex" TYCON_TIME_TRACKING=none node "$PARITY" 2>&1)
+case "$OUT" in *"NO registrados"*"$TT_ONE"*) bad "T69 con ninguna elegida, la tabla no promete ${TT_ONE}" "$(echo "$OUT" | grep -m1 'tabla-vs-realidad')" ;; *) [ -n "$TT_ONE" ] && ok "T69 con ninguna herramienta elegida, la tabla de Codex no promete el servidor de ${TT_ONE}" || bad "T69" "ninguna integración trae tool-names.codex.md" ;; esac
+printf '[mcp_servers]\n\n[mcp_servers.%s]\ncommand = "x"\nargs = []\n' "$TT_ONE" > "$LAB/codex/config.toml"
+OUT=$(HOME="$LAB" CODEX_HOME="$LAB/codex" TYCON_TIME_TRACKING="$TT_ONE" node "$PARITY" 2>&1)
+case "$OUT" in *"que la tabla no nombra"*"$TT_ONE"*) bad "T69 con ${TT_ONE} elegida y registrada, la tabla la nombra" "$(echo "$OUT" | grep -m1 'tabla-vs-realidad')" ;; *) ok "T69 con ${TT_ONE} elegida y registrada, la tabla de Codex la nombra" ;; esac
+rm -rf "$LAB"
+
 # ── 3b. T25: la paridad mide POR HERRAMIENTA ENCHUFADA ─────────
 # Una máquina que sólo enchufa a Codex no puede dar rojo por piezas de Claude Code que no tiene (ni su CLAUDE.md, ni su
 # ~/.claude.json, ni la llave en el rc): la paridad mide cada herramienta por separado.

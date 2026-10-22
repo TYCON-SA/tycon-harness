@@ -45,27 +45,59 @@
     {
       "path": ".github/control-changes.jsonl",
       "reason": "libro histórico de las constancias del dueño: cada línea lleva su huella y no se reescribe"
+    },
+    {
+      "path": "guides/sitio-de-la-organizacion/capturas/como-trabaja.html",
+      "reason": "captura del sitio de verdad: muestra el nombre de cada herramienta de horas porque lo lee de su manifiesto (el selector de la herramienta y los textos de sus hooks) (decisión 16)"
+    },
+    {
+      "path": "guides/sitio-de-la-organizacion/capturas/configuracion-avisos.html",
+      "reason": "captura del sitio de verdad: muestra el nombre de cada herramienta de horas porque lo lee de su manifiesto (el selector de la herramienta y los textos de sus hooks) (decisión 16)"
+    },
+    {
+      "path": "guides/sitio-de-la-organizacion/capturas/configuracion-claude.html",
+      "reason": "captura del sitio de verdad: muestra el nombre de cada herramienta de horas porque lo lee de su manifiesto (el selector de la herramienta y los textos de sus hooks) (decisión 16)"
+    },
+    {
+      "path": "guides/sitio-de-la-organizacion/capturas/configuracion-confirmar-maquina.html",
+      "reason": "captura del sitio de verdad: muestra el nombre de cada herramienta de horas porque lo lee de su manifiesto (el selector de la herramienta y los textos de sus hooks) (decisión 16)"
+    },
+    {
+      "path": "guides/sitio-de-la-organizacion/capturas/configuracion-diferencia.html",
+      "reason": "captura del sitio de verdad: muestra el nombre de cada herramienta de horas porque lo lee de su manifiesto (el selector de la herramienta y los textos de sus hooks) (decisión 16)"
+    },
+    {
+      "path": "guides/sitio-de-la-organizacion/capturas/configuracion-instalacion.html",
+      "reason": "captura del sitio de verdad: muestra el nombre de cada herramienta de horas porque lo lee de su manifiesto (el selector de la herramienta y los textos de sus hooks) (decisión 16)"
+    },
+    {
+      "path": "guides/sitio-de-la-organizacion/capturas/configuracion-pedidos.html",
+      "reason": "captura del sitio de verdad: muestra el nombre de cada herramienta de horas porque lo lee de su manifiesto (el selector de la herramienta y los textos de sus hooks) (decisión 16)"
+    },
+    {
+      "path": "guides/sitio-de-la-organizacion/capturas/configuracion-personas.html",
+      "reason": "captura del sitio de verdad: muestra el nombre de cada herramienta de horas porque lo lee de su manifiesto (el selector de la herramienta y los textos de sus hooks) (decisión 16)"
+    },
+    {
+      "path": "guides/sitio-de-la-organizacion/capturas/configuracion-propuesto.html",
+      "reason": "captura del sitio de verdad: muestra el nombre de cada herramienta de horas porque lo lee de su manifiesto (el selector de la herramienta y los textos de sus hooks) (decisión 16)"
+    },
+    {
+      "path": "guides/sitio-de-la-organizacion/capturas/configuracion-repos.html",
+      "reason": "captura del sitio de verdad: muestra el nombre de cada herramienta de horas porque lo lee de su manifiesto (el selector de la herramienta y los textos de sus hooks) (decisión 16)"
+    },
+    {
+      "path": "guides/sitio-de-la-organizacion/capturas/configuracion-revisado.html",
+      "reason": "captura del sitio de verdad: muestra el nombre de cada herramienta de horas porque lo lee de su manifiesto (el selector de la herramienta y los textos de sus hooks) (decisión 16)"
+    },
+    {
+      "path": "guides/sitio-de-la-organizacion/capturas/configuracion-tecnologia.html",
+      "reason": "captura del sitio de verdad: muestra el nombre de cada herramienta de horas porque lo lee de su manifiesto (el selector de la herramienta y los textos de sus hooks) (decisión 16)"
+    },
+    {
+      "path": "guides/sitio-de-la-organizacion/capturas/proponer-apagado.html",
+      "reason": "captura del sitio de verdad: muestra el nombre de cada herramienta de horas porque lo lee de su manifiesto (el selector de la herramienta y los textos de sus hooks) (decisión 16)"
     }
   ],
-  "ceiling": {
-    "claude-md-blocks/names/tool-names.codex.md": 21,
-    "claude-md-blocks/tool-names.md": 14,
-    "getting-started/reference.es.md": 1,
-    "getting-started/reference.md": 1,
-    "guides/sitio-de-la-organizacion/capturas/como-trabaja.html": 1,
-    "guides/sitio-de-la-organizacion/capturas/configuracion-avisos.html": 12,
-    "guides/sitio-de-la-organizacion/capturas/configuracion-claude.html": 12,
-    "guides/sitio-de-la-organizacion/capturas/configuracion-confirmar-maquina.html": 12,
-    "guides/sitio-de-la-organizacion/capturas/configuracion-diferencia.html": 12,
-    "guides/sitio-de-la-organizacion/capturas/configuracion-instalacion.html": 12,
-    "guides/sitio-de-la-organizacion/capturas/configuracion-pedidos.html": 12,
-    "guides/sitio-de-la-organizacion/capturas/configuracion-personas.html": 12,
-    "guides/sitio-de-la-organizacion/capturas/configuracion-propuesto.html": 12,
-    "guides/sitio-de-la-organizacion/capturas/configuracion-repos.html": 12,
-    "guides/sitio-de-la-organizacion/capturas/configuracion-revisado.html": 12,
-    "guides/sitio-de-la-organizacion/capturas/configuracion-tecnologia.html": 12,
-    "guides/sitio-de-la-organizacion/capturas/proponer-apagado.html": 12,
-    "scripts/install-tycon-hooks.ps1": 1,
-    "scripts/install-tycon-hooks.sh": 3
-  }
+  "ceiling": {}
 }

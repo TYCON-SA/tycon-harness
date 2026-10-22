@@ -525,11 +525,20 @@ test('T9 Config_IntegracionesParaShell — `integrations --shell` imprime una as
     'TYCON_INTEG_CODEGRAPH=0', 'TYCON_INTEG_MAILBOX=0', 'TYCON_INTEG_NIGHTLY=0', 'TYCON_INTEG_INSTINCTS=0', 'TYCON_INTEG_TELEGRAM=0']) {
     assert.ok(lineas.includes(esperada), `falta ${esperada} en:\n${r.stdout}`);
   }
-  assert.ok(lineas.every((l) => /^TYCON_INTEG_[A-Z]+=(0|1|detect)$/.test(l)), `sólo asignaciones (el instalador las evalúa):\n${r.stdout}`);
+  // las integraciones y, en su propia variable, la herramienta de horas elegida (la llave vieja leída)
+  assert.ok(lineas.every((l) => /^TYCON_INTEG_[A-Z]+=(0|1|detect)$/.test(l) || /^TYCON_TIME_TOOL=[a-z0-9-]+$/.test(l)), `sólo asignaciones (el instalador las evalúa):\n${r.stdout}`);
+  assert.ok(lineas.includes('TYCON_TIME_TOOL=clockify'), `la herramienta de horas en su variable:\n${r.stdout}`);
   const j = cli(['integrations', '--json'], { home, env });
   assert.equal(j.status, 0, j.stderr);
   const obj = JSON.parse(j.stdout);
-  assert.deepEqual(Object.keys(obj).sort(), ['ado', 'clockify', 'codegraph', 'codex', 'engram', 'instincts', 'mailbox', 'nightly', 'telegram']);
+  assert.deepEqual(Object.keys(obj).sort(), ['ado', 'clockify', 'codegraph', 'codex', 'engram', 'instincts', 'mailbox', 'nightly', 'telegram', 'timeTracking']);
+  assert.equal(obj.timeTracking, 'clockify');
+  // un valor que no es un nombre de integración (texto libre, con un salto de línea) no se imprime: el instalador lee la
+  // forma shell línea por línea y no puede recibir una asignación de más
+  const raro = cli(['integrations', '--shell'], { home, env: Object.assign({}, env, { TYCON_TIME_TRACKING: 'none\nTYCON_INTEG_X[$(touch x)]=1' }) });
+  assert.equal(raro.status, 0, raro.stderr);
+  assert.ok(raro.stdout.trim().split('\n').every((l) => /^TYCON_INTEG_[A-Z]+=(0|1|detect)$/.test(l)), `sólo las integraciones, sin la herramienta:\n${raro.stdout}`);
+  assert.equal(JSON.parse(cli(['integrations', '--json'], { home, env: Object.assign({}, env, { TYCON_TIME_TRACKING: 'a b' }) }).stdout).timeTracking, null);
   assert.equal(obj.codex, 'detect'); assert.equal(obj.ado, true); assert.equal(obj.engram, false);
   maquina(home, '{ "integrations": { "clokify": true } }');
   const rota = cli(['integrations', '--shell'], { home, env: { TYCON_PROFILE: '0' } });

@@ -476,11 +476,33 @@ function Record-BlocksPlan {
             $i0 = $content.IndexOf("<!-- TYCON_BLOCK:$name START"); $j0 = if ($i0 -ge 0) { $content.IndexOf($end0, $i0) } else { -1 }
             $prev = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
             if ($j0 -ge 0) { foreach ($l in $content.Substring($i0, $j0 - $i0).Split([char]10)) { [void]$prev.Add($l) } }
+            # el lugar de las filas de las herramientas de horas, como lo arma el sync: las filas de tabla de cada una, marcadas
+            # con su integracion; la elegida queda; la que no se pudo leer, si ya estaba
+            $timeTools = @(); $timeUnknown = @()
+            foreach ($d in @(Get-ChildItem -Path (Join-Path $PSScriptRoot '..\integrations') -Directory -ErrorAction SilentlyContinue | Sort-Object Name)) {
+                if ($d.Name -cnotmatch '^[a-z0-9-]+\z' -or -not (Test-Path (Join-Path $d.FullName 'integration.json'))) { continue }
+                try { $mj = [IO.File]::ReadAllText((Join-Path $d.FullName 'integration.json')) | ConvertFrom-Json; if ($mj -isnot [array] -and $mj.kind -ceq 'timeTracking' -and $mj.name -ceq $d.Name) { $timeTools += $d.Name } }
+                catch { $timeTools += $d.Name; $timeUnknown += $d.Name }
+            }
             $body = (@(foreach ($line in $body.Split([char]10)) {
-                $m = [regex]::Match($line, '^(.*\|)[ \t]*<!--\s*integration:\s*([a-z]+)\s*-->\s*$')
+                if ($line.TrimEnd([char]13) -notmatch '^<!--\s*time-tool-rows\s*-->\s*$') { $line; continue }
+                foreach ($n in $timeTools) {
+                    $f = Join-Path (Join-Path (Join-Path $PSScriptRoot '..\integrations') $n) 'tool-names.md'
+                    if (-not (Test-Path $f)) { continue }
+                    try { foreach ($r in [IO.File]::ReadAllText($f).Split([char]10)) { $r = $r.TrimEnd(); if ($r -match '^\|.*\|\s*$' -and -not $r.Contains('<!--')) { "$r <!-- integration: $n -->" } } } catch { }
+                }
+            }) -join "`n")
+            $body = (@(foreach ($line in $body.Split([char]10)) {
+                $m = [regex]::Match($line, '^(.*\|)[ \t]*<!--\s*integration:\s*([a-z0-9-]+)\s*-->\s*$')
                 if (-not $m.Success) { $line; continue }
                 $row = $m.Groups[1].Value.TrimEnd()
-                if ($IntegEstado -eq 'ok') { if (Integ-Prendida $m.Groups[2].Value) { $row } } elseif ($prev.Contains($row)) { $row }
+                $who = $m.Groups[2].Value
+                if ($timeTools -contains $who) {
+                    $planTool = [string]$Integ['timeTracking']
+                    if ($IntegEstado -eq 'ok' -and $planTool -cmatch '^[a-z0-9-]+\z' -and $timeUnknown -notcontains $who) { if ($planTool -ceq $who) { $row } } elseif ($prev.Contains($row)) { $row }
+                    continue
+                }
+                if ($IntegEstado -eq 'ok') { if (Integ-Prendida $who) { $row } } elseif ($prev.Contains($row)) { $row }
             }) -join "`n")
             $src = if ($name -match '^packs/([^/]+)/([^/]+)$') { "packs/$($Matches[1])/claude-md-blocks/$($Matches[2]).md" } else { "claude-md-blocks/$name.md" }
             $start = "<!-- TYCON_BLOCK:$name START — generado por scripts/setup/sync-claude-md-blocks.sh del arnés · NO EDITAR A MANO (se pisa en el próximo SessionStart); editá $src y commiteá -->"
@@ -1356,7 +1378,8 @@ if ((Integ-Prendida 'mailbox') -and (Get-LegacyEnv 'TYCON_NO_UPLOAD_RUNS' -Where
 # una linea con el estado de las ocho integraciones
 if ($IntegEstado -eq 'ok') {
     $prend = @(); $apag = @()
-    foreach ($k in @('ado', 'clockify', 'engram', 'codegraph', 'mailbox', 'codex', 'nightly', 'telegram')) {
+    # la herramienta de horas no es una de estas: se elige aparte (integrations.timeTracking) y va en su propia linea
+    foreach ($k in @('ado', 'engram', 'codegraph', 'mailbox', 'codex', 'nightly', 'telegram')) {
         # la cadena a la IZQUIERDA: PowerShell convierte el operando derecho al tipo del izquierdo, y `$true -eq 'detect'`
         # es True (toda prendida saldría como «(detect)»)
         if ('detect' -eq $Integ[$k]) { $prend += "$k(detect)" } elseif ($true -eq $Integ[$k]) { $prend += $k } else { $apag += $k }
@@ -1364,6 +1387,10 @@ if ($IntegEstado -eq 'ok') {
     $sp = if ($prend.Count) { $prend -join ' ' } else { '(ninguna)' }
     $sa = if ($apag.Count) { $apag -join ' ' } else { '(ninguna)' }
     Write-Host "tycon: integraciones - prendidas: $sp - apagadas: $sa - detalle: node $cfgJs explain"
+    # la herramienta de horas elegida, de la misma respuesta del lector; un lector que no la dice, se dice
+    $tt = [string]$Integ['timeTracking']
+    if ($tt -cmatch '^[a-z0-9-]+\z') { Write-Host "tycon: herramienta de horas: $(if ($tt -eq 'none') { 'ninguna' } else { $tt })" }
+    else { Write-Host "! tycon: herramienta de horas: el lector de configuracion no la dijo" }
 }
 
 # ============================================================

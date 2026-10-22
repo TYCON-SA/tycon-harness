@@ -1357,6 +1357,16 @@ installer "$HI" "${TEAM[@]}" -- -Check -PlanJson "$T/plan-v2.json" > "$T/v2.out"
 R="$(plan_check "$T/plan-v2.json" keep)"
 if [ "$RC" -eq 0 ] && [ "$R" = ok ] && [ "$(hhash "$HI")" = "$V1" ]; then ok "(v) T26 instalado: cada hook del plan es «keep», y la HOME queda igual"
 else no "(v) T26 instalado (rc $RC): ${R} · $(brief "$T/v2.out" 200)"; fi
+# T69 · con una herramienta de horas elegida y sus filas en la tabla de nombres de tools, el plan predice el bloque igual
+# que lo escribe el sync: instalado, «keep» (no «update» por el lugar de las filas sin expandir)
+CINT="$T/clone-int"; mkdir -p "$CINT"; ( cd "$CLONE" && tar cf - . ) | ( cd "$CINT" && tar xf - ); cp -R "$ROOT/integrations" "$CINT/integrations"
+TT_ONE="$(node -e 'const I=require(process.argv[1]);const ms=I.listManifests({dir:process.argv[2]}).manifests.filter((m)=>m.kind==="timeTracking"&&require("fs").existsSync(process.argv[2]+"/"+m.name+"/tool-names.md"));console.log(ms.length?ms[0].name:"")' "$ROOT/scripts/lib/integrations.js" "$ROOT/integrations")"
+HT="$(new_home plan-time)"
+LAB_INSTALLER="$CINT/scripts/install-tycon-hooks.ps1" installer "$HT" "${HELD[@]}" "${TEAM[@]}" TYCON_NO_CLAUDEMD_SYNC=0 "TYCON_TIME_TRACKING=$TT_ONE" > "$T/vt1.out" 2>&1
+LAB_INSTALLER="$CINT/scripts/install-tycon-hooks.ps1" installer "$HT" "${TEAM[@]}" TYCON_NO_CLAUDEMD_SYNC=0 "TYCON_TIME_TRACKING=$TT_ONE" -- -Check -PlanJson "$T/plan-vt.json" > "$T/vt2.out" 2>&1; RC=$?
+ACT="$(python3 -c "import json,sys; print(','.join(x['action'] for x in json.load(open(sys.argv[1])) if x.get('kind')=='block' and x.get('id')=='TYCON_BLOCK:tool-names'))" "$T/plan-vt.json" 2>/dev/null)"
+if [ -n "$TT_ONE" ] && [ "$RC" -eq 0 ] && [ "$ACT" = keep ] && grep -q "mcp__${TT_ONE}__" "$HT/.claude/CLAUDE.md" 2>/dev/null; then ok "T69 con ${TT_ONE} elegida: el CLAUDE.md trae sus filas y el plan dice «keep» del bloque de nombres de tools"
+else no "T69 plan con herramienta de horas (rc $RC, «${TT_ONE}»): acción «${ACT}» · filas $(grep -c "mcp__${TT_ONE}__" "$HT/.claude/CLAUDE.md" 2>/dev/null) · $(brief "$T/vt2.out" 200)"; fi
 # las skills de terceros (con el paso prendido): cada una con la ruta de ~/.claude/agent-skills, como el reporte
 installer "$HV" TYCON_THIRD_PARTY=1 -- -Check -PlanJson "$T/plan-v4.json" > "$T/v4.out" 2>&1; RC=$?
 TP="$(python3 -c "

@@ -183,8 +183,119 @@ def ask_integrations():
     _asked.append((data, why))
     return _asked[0]
 
+_time = []  # la herramienta de horas elegida, una sola vez: (nombre o 'none', None) o (None, por qué no se pudo saber)
+
+def ask_time_tool():
+    """La herramienta de horas elegida, como la da el lector (`time-tracking`, que ya lee la llave vieja)."""
+    if _time:
+        return _time[0]
+    value, why = None, None
+    # viene en la misma respuesta de las integraciones; un lector anterior no la trae y se le pregunta aparte
+    data, _ = ask_integrations()
+    if isinstance(data, dict) and isinstance(data.get("timeTracking"), str) and re.fullmatch(r"[a-z0-9-]+", data["timeTracking"]):
+        _time.append((data["timeTracking"], None))
+        return _time[0]
+    if not os.path.isfile(config_reader):
+        why = "no encontré el lector de configuración (scripts/lib/tycon-config.js)"
+    else:
+        try:
+            r = subprocess.run(["node", config_reader, "time-tracking"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10)
+            out = r.stdout.decode("utf-8").strip()
+            if r.returncode == 0 and re.fullmatch(r"[a-z0-9-]+", out):
+                value = out
+            elif r.returncode == 2:
+                why = "configuración rota: `node scripts/lib/tycon-config.js validate` dice qué"
+            else:
+                why = "el lector de configuración no dijo la herramienta de horas (exit %d)" % r.returncode
+        except FileNotFoundError:
+            why = "falta node en el PATH"
+        except subprocess.TimeoutExpired:
+            why = "el lector de configuración no contestó a tiempo"
+        except (OSError, ValueError):
+            why = "el lector de configuración contestó algo que no se entiende"
+    _time.append((value, why))
+    return _time[0]
+
+# Las herramientas de horas: las integraciones de horas de `integrations/` (su manifiesto lo dice). Sus filas de la tabla
+# de nombres de tools viven en su carpeta (`tool-names.md`) y van donde la plantilla dice `<!-- time-tool-rows -->`.
+integrations_dir = os.path.join(blocks_dir, "..", "integrations")
+TIME_ROWS_RE = re.compile(r"^<!--\s*time-tool-rows\s*-->\s*$")
+_tools = []
+
+_said = set()
+def say_once(line):
+    if line not in _said:
+        _said.add(line)
+        print(line)
+
+# las herramientas cuyas filas no se pudieron leer: sus filas quedan como estaban en el destino («no se sabe»)
+_unreadable_rows = set()
+
+NAME_RE = re.compile(r"^[a-z0-9-]+$")
+# una fila de la tabla: abre y cierra con `|` y no trae comentarios (el marcador lo pone el sync)
+TABLE_ROW_RE = re.compile(r"^\|.*\|\s*$")
+
+def time_tools():
+    """Las herramientas de horas: las carpetas de integrations/ con nombre válido cuyo manifiesto dice `timeTracking` y su
+    nombre. Una carpeta cuyo manifiesto no se lee entra también, pero su estado es «no se sabe» (sus filas quedan como
+    estaban en el destino)."""
+    if _tools:
+        return _tools[0]
+    names = []
+    for f in sorted(glob.glob(os.path.join(integrations_dir, "*", "integration.json"))):
+        folder = os.path.basename(os.path.dirname(f))
+        if not NAME_RE.fullmatch(folder):
+            continue   # una carpeta con otro nombre no es una integración (no sería un marcador reconocible)
+        try:
+            with open(f, "r", encoding="utf-8") as fh:
+                m = json.load(fh)
+        except (OSError, ValueError, RecursionError) as e:
+            say_once("⚠ tycon: no pude leer integrations/%s/integration.json (%s): si es una herramienta de horas, sus filas de la tabla de nombres de tools quedan como estaban" % (folder, e))
+            _unreadable_rows.add(folder)
+            names.append(folder)
+            continue
+        if isinstance(m, dict) and m.get("kind") == "timeTracking" and m.get("name") == folder:
+            names.append(folder)
+    _tools.append(names)
+    chosen, _ = ask_time_tool()
+    if chosen and chosen != "none" and chosen not in names:
+        say_once("⚠ tycon: la herramienta de horas elegida («%s») no es una integración de horas de este arnés: la tabla de nombres de tools no trae filas suyas" % chosen)
+    return names
+
+def expand_time_rows(body, rows_file="tool-names.md"):
+    """El lugar de las filas, con las de cada herramienta de horas marcadas con su integración (la elegida las escribe).
+    Sólo las filas de tabla: otra línea del archivo no se copia, y se dice."""
+    out = []
+    for line in body.split("\n"):
+        if not TIME_ROWS_RE.match(line):
+            out.append(line)
+            continue
+        for name in time_tools():
+            try:
+                with open(os.path.join(integrations_dir, name, rows_file), "r", encoding="utf-8") as fh:
+                    lines = [r.rstrip("\r") for r in fh.read().split("\n") if r.strip()]
+            except FileNotFoundError:
+                continue   # una herramienta sin nombres de tools no suma filas
+            except (OSError, ValueError) as e:
+                say_once("⚠ tycon: no pude leer integrations/%s/%s (%s): la tabla de nombres de tools no trae sus filas" % (name, rows_file, e))
+                continue
+            for r in lines:
+                if TABLE_ROW_RE.match(r) and "<!--" not in r:
+                    out.append("%s <!-- integration: %s -->" % (r.rstrip(), name))
+                else:
+                    say_once("⚠ tycon: integrations/%s/%s trae una línea que no es una fila de tabla («%s»): no se copia" % (name, rows_file, r.strip()[:60]))
+    return "\n".join(out)
+
 def integration_state(name):
-    """('on' | 'off' | 'unknown', motivo). `detect` cuenta como prendida, igual que en el lector."""
+    """('on' | 'off' | 'unknown', motivo). `detect` cuenta como prendida, igual que en el lector. Una herramienta de horas
+    está prendida si es la elegida; una cuyo manifiesto o filas no se pudieron leer, «no se sabe»."""
+    if name in time_tools():
+        if name in _unreadable_rows:
+            return "unknown", "no pude leer sus archivos"
+        chosen, why = ask_time_tool()
+        if chosen is None:
+            return "unknown", why
+        return ("on" if chosen == name else "off"), None
     data, why = ask_integrations()
     if data is None:
         return "unknown", why
@@ -263,7 +374,7 @@ def fill_variant(body):
 
 # Una fila de tabla que termina en `<!-- integration: <x> -->` se escribe sólo con esa integración prendida (story 2.31,
 # AC 7-8); el marcador nunca se copia. No se pudo saber: la fila queda como estaba en el destino (si estaba, sigue).
-ROW_RE = re.compile(r"^(.*\|)[ \t]*<!--\s*integration:\s*([a-z]+)\s*-->\s*$")
+ROW_RE = re.compile(r"^(.*\|)[ \t]*<!--\s*integration:\s*([a-z0-9-]+)\s*-->\s*$")
 
 def filter_rows(body, existing):
     kept_lines = set(l.rstrip("\r") for l in existing.split("\n")) if existing else set()
@@ -489,7 +600,7 @@ try:
         body, requires, profiles, bad_marker = read_block(path)
         if is_variant and path.endswith(".md") and os.path.dirname(path) != blocks_dir:
             body = fill_variant(body)
-        body = filter_rows(body, existing_body)
+        body = filter_rows(expand_time_rows(body), existing_body)
         state, why = block_state(requires, profiles, bad_marker)
         desired = "%s\n%s\n%s" % (start, body, end)
         final[name] = desired

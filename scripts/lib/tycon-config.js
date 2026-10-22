@@ -1549,9 +1549,17 @@ function cli(argv) {
     let c;
     try { c = leer(); } catch (e) { process.stderr.write(e.message + '\n'); process.exit(2); }   // rota: NADA por stdout (no se lee como «todo apagado»)
     const ocho = integraciones(c);
-    if (argv.includes('--json')) { process.stdout.write(JSON.stringify(ocho) + '\n'); process.exit(0); }
-    // forma shell: una asignación por integración, sólo `0` · `1` · `detect` (el instalador las evalúa tal cual)
+    // la herramienta de horas elegida va en la misma respuesta (`timeTracking`, con la llave vieja leída y sin anotarla):
+    // así quien ya pregunta por las integraciones no lanza otro proceso para saberla
+    // sólo un nombre de integración (minúsculas, números y guiones): el valor es texto libre del perfil o de una variable, y
+    // la forma shell la lee el instalador línea por línea; otro valor no se imprime (el instalador dice que no la supo)
+    const raw = sinAnotar(() => timeTracking(c)).value;
+    const tool = typeof raw === 'string' && /^[a-z0-9-]+$/.test(raw) ? raw : null;
+    if (argv.includes('--json')) { process.stdout.write(JSON.stringify(Object.assign({}, ocho, { timeTracking: tool })) + '\n'); process.exit(0); }
+    // forma shell: una asignación por integración, sólo `0` · `1` · `detect` (el instalador las evalúa tal cual), y la
+    // herramienta de horas en su propia variable
     for (const k of LAS_OCHO) process.stdout.write(`TYCON_INTEG_${k.toUpperCase()}=${ocho[k] === DETECT ? DETECT : (ocho[k] ? '1' : '0')}\n`);
+    if (tool) process.stdout.write(`TYCON_TIME_TOOL=${tool}\n`);
     process.exit(0);
   }
   // `time-tracking`: la integración de horas elegida (`none` o su nombre, con la llave vieja leída), para el instalador.

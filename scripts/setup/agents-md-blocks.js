@@ -196,14 +196,60 @@ const fillVariant = (body, n) => body.split('{{max_chars}}').join(String(n)).spl
 
 // Una fila de tabla que termina en `<!-- integration: <x> -->` se escribe sólo con esa integración prendida;
 // el marcador nunca se copia. No se pudo saber: la fila queda como estaba en el destino (si estaba, sigue).
-const ROW_RE = /^(.*\|)[ \t]*<!--\s*integration:\s*([a-z]+)\s*-->\s*$/;
-function filterRows(body, existing, { integrations }) {
+const ROW_RE = /^(.*\|)[ \t]*<!--\s*integration:\s*([a-z0-9-]+)\s*-->\s*$/;
+// El lugar de las filas de las herramientas de horas: cada una trae las suyas en su carpeta (`tool-names.codex.md`, con
+// los nombres que ve Codex) y se escriben las de la elegida
+const TIME_ROWS_RE = /^<!--\s*time-tool-rows\s*-->\s*$/;
+/** Las herramientas de horas del árbol (las integraciones de horas de `integrations/`), por su manifiesto. */
+// lo que no se pudo leer se dice (`notes`): un manifiesto o un archivo de filas que no se lee no es «sin filas».
+// Las herramientas: las integraciones de horas que da la biblioteca de integraciones; un manifiesto de una carpeta con
+// nombre válido que la biblioteca no pudo leer entra como «no se sabe» (`unknown`: sus filas quedan como estaban)
+const NAME_RE = /^[a-z0-9-]+$/;
+const TABLE_ROW_RE = /^\|.*\|\s*$/;
+function timeTools(integrationsDir, notes = []) {
+  const unknown = new Set();
+  let listing;
+  try { listing = require(path.join(integrationsDir, '..', 'scripts', 'lib', 'integrations.js')).listManifests({ dir: integrationsDir }); } catch (e) {
+    notes.push(`⚠ tycon: no pude leer las integraciones (${e.code || e.message}): las filas de la herramienta de horas quedan como estaban`);
+    return { names: [], unknown, failed: true };
+  }
+  for (const b of listing.problems) {
+    if (!NAME_RE.test(b.name)) continue;
+    notes.push(`⚠ tycon: la integración ${b.name} tiene el manifiesto roto (${b.reasons.join('; ')}): si es una herramienta de horas, sus filas de la tabla de nombres de tools quedan como estaban`);
+    unknown.add(b.name);
+  }
+  const names = listing.manifests.filter((m) => m.kind === 'timeTracking' && NAME_RE.test(m.name)).map((m) => m.name).concat([...unknown]);
+  return { names, unknown, failed: false };
+}
+function expandTimeRows(body, integrationsDir, tools, notes = []) {
+  return body.split('\n').flatMap((line) => {
+    if (!TIME_ROWS_RE.test(line)) return [line];
+    return tools.flatMap((n) => {
+      let text;
+      try { text = fs.readFileSync(path.join(integrationsDir, n, 'tool-names.codex.md'), 'utf8'); } catch (e) {
+        if (e.code !== 'ENOENT') notes.push(`⚠ tycon: no pude leer integrations/${n}/tool-names.codex.md (${e.code || e.message}): la tabla de nombres de tools no trae sus filas`);
+        return [];   // sin nombres de tools, sin filas
+      }
+      // sólo las filas de tabla: otra línea del archivo no se copia, y se dice
+      return text.split(/\r?\n/).filter((r) => r.trim()).flatMap((r) => {
+        if (TABLE_ROW_RE.test(r) && !r.includes('<!--')) return [`${r.replace(/\s+$/, '')} <!-- integration: ${n} -->`];
+        notes.push(`⚠ tycon: integrations/${n}/tool-names.codex.md trae una línea que no es una fila de tabla («${r.trim().slice(0, 60)}»): no se copia`);
+        return [];
+      });
+    });
+  }).join('\n');
+}
+function filterRows(body, existing, { integrations, timeTool = null, integrationsDir = path.join(TREE, 'integrations'), timeNotes = [] }) {
   // un AGENTS.md con fines de línea de Windows: la fila que estaba se reconoce igual
   const kept = new Set(existing ? existing.split(/\r?\n/) : []);
-  return body.split('\n').flatMap((line) => {
+  const { names: tools, unknown, failed } = timeTools(integrationsDir, timeNotes);
+  if (timeTool && timeTool !== 'none' && !failed && !tools.includes(timeTool)) timeNotes.push(`⚠ tycon: la herramienta de horas elegida («${timeTool}») no es una integración de horas de este arnés: la tabla de nombres de tools no trae filas suyas`);
+  return expandTimeRows(body, integrationsDir, tools, timeNotes).split('\n').flatMap((line) => {
     const m = ROW_RE.exec(line);
     if (!m) return [line];
     const row = m[1].replace(/\s+$/, '');
+    // una herramienta de horas va si es la elegida; sin saber cuál (o sin poder leer sus archivos), la fila queda como estaba
+    if (tools.includes(m[2])) return timeTool && !unknown.has(m[2]) ? (timeTool === m[2] ? [row] : []) : (kept.has(row) ? [row] : []);
     const known = integrations && Object.prototype.hasOwnProperty.call(integrations, m[2]);
     if (known) return integrations[m[2]] === false ? [] : [row];
     return kept.has(row) ? [row] : [];
@@ -344,6 +390,14 @@ function machineFacts({ tree = TREE, home = os.homedir(), env = process.env } = 
     const read = () => C.leer({ home, env });
     const config = typeof C.sinAnotar === 'function' ? C.sinAnotar(read) : read();
     facts.integrations = C.integraciones(config);
+    // la herramienta de horas elegida (con la llave vieja leída) y dónde están las suyas; un lector anterior no la sabe
+    // un valor que no es un nombre de integración es «no se sabe», como en el lector y en el .sh y el .ps1
+    if (typeof C.timeTracking === 'function') {
+      const v = (C.sinAnotar || ((f) => f()))(() => C.timeTracking(config)).value;
+      if (typeof v === 'string' && /^[a-z0-9-]+$/.test(v)) facts.timeTool = v;
+      else facts.timeToolWhy = `la herramienta de horas elegida no es un nombre de integración («${String(v).slice(0, 40)}»)`;
+    } else facts.timeToolWhy = 'este lector de configuración no dice la herramienta de horas';
+    facts.integrationsDir = path.join(tree, 'integrations');
     // cómo contesta el asistente; un árbol anterior no lo sabe: el bloque con variantes queda como estaba
     if (typeof C.respuesta === 'function') facts.response = C.respuesta(config);
     else facts.responseWhy = 'este lector de configuración no conoce `response`';
@@ -394,10 +448,12 @@ function sync(p = {}) {
     original = '';
   }
   const facts = (p.integrations !== undefined || p.profile !== undefined)
-    ? { integrations: p.integrations === undefined ? null : p.integrations, integrationsWhy: p.integrationsWhy || null, profile: p.profile === undefined ? null : p.profile, profileWhy: p.profileWhy || null, response: p.response || null, responseWhy: p.responseWhy || (p.response ? null : 'no me pasaron cómo contesta el asistente') }
+    ? { integrations: p.integrations === undefined ? null : p.integrations, integrationsWhy: p.integrationsWhy || null, profile: p.profile === undefined ? null : p.profile, profileWhy: p.profileWhy || null, response: p.response || null, responseWhy: p.responseWhy || (p.response ? null : 'no me pasaron cómo contesta el asistente'), timeTool: p.timeTool || null, integrationsDir: path.join(tree, 'integrations') }
     : machineFacts({ tree, home, env });
-  const r = applyBlocks(original, blocks, Object.assign({}, facts, { packs }));
+  const timeNotes = facts.timeToolWhy ? [`⚠ tycon: ${facts.timeToolWhy}: las filas de la herramienta de horas quedan como estaban`] : [];
+  const r = applyBlocks(original, blocks, Object.assign({}, facts, { packs, timeNotes }));
   for (const n of r.notes) say(n);
+  for (const n of [...new Set(timeNotes)]) say(n);
   const differs = r.text !== original;
   const action = !differs ? 'keep' : (original === '' ? 'add' : 'update');
   if (check) {
