@@ -29,6 +29,24 @@
 'use strict';
 
 /**
+ * El índice del `step5-start` de la ronda abierta en las líneas ya parseadas, o -1.
+ *
+ * 🔴 Una ronda es de UNA corrida. `pipeline.js start` anota `run-start` en el mismo registro: si hay uno
+ * después del último `step5-start`, esa ronda es de la corrida anterior de la sesión y ya no está abierta.
+ * Sin este corte, la ronda vieja seguía viva en la corrida nueva: el primer agente que se lanzaba (el
+ * validador del paso 1) la «completaba» y la foto se tomaba con el set esperado de la corrida anterior,
+ * sobre el marcador nuevo, dejando una vuelta que nadie corrió.
+ */
+function inicioDeLaRonda(parsed) {
+  for (let i = parsed.length - 1; i >= 0; i--) {
+    const d = parsed[i];
+    if (d && d.event === 'run-start') return -1;
+    if (d && d.event === 'step5-start') return i;
+  }
+  return -1;
+}
+
+/**
  * ¿La ronda de advisors de esta iteración ya está completa?
  *
  * @param {string[]} lineas líneas crudas del `advisor-runs/<sessionId>.jsonl`, en orden.
@@ -47,10 +65,7 @@ function rondaCompleta(lineas) {
     try { parsed.push(JSON.parse(l)); } catch { /* línea corrupta: se ignora, no rompe */ }
   }
 
-  let startIdx = -1;
-  for (let i = parsed.length - 1; i >= 0; i--) {
-    if (parsed[i] && parsed[i].event === 'step5-start') { startIdx = i; break; }
-  }
+  const startIdx = inicioDeLaRonda(parsed);
   if (startIdx === -1) return vacio;
 
   const start = parsed[startIdx];
@@ -133,10 +148,7 @@ function vueltaManual(lineas, opts) {
     if (typeof l !== 'string' || !l.trim()) continue;
     try { parsed.push(JSON.parse(l)); } catch { /* línea corrupta: se ignora */ }
   }
-  let startIdx = -1;
-  for (let i = parsed.length - 1; i >= 0; i--) {
-    if (parsed[i] && parsed[i].event === 'step5-start') { startIdx = i; break; }
-  }
+  const startIdx = inicioDeLaRonda(parsed);
   if (startIdx === -1) return nada;
   const iterBase = Number.isInteger(parsed[startIdx].iter) ? parsed[startIdx].iter : null;
   if (iterBase === null) return nada;
@@ -194,4 +206,4 @@ function vueltaManual(lineas, opts) {
 // ADHOC y NO_REVISORES se EXPORTAN: `lib/late-snapshot.js` decide con los mismos dos
 // sets quién es un revisor. Copiarlos allá sería la divergencia de mañana — el día que alguien
 // agregue un chequeador nuevo a una lista y no a la otra, el corte de la foto se mueve solo.
-module.exports = { rondaCompleta, vueltaManual, NO_REVISORES, ADHOC };
+module.exports = { rondaCompleta, vueltaManual, inicioDeLaRonda, NO_REVISORES, ADHOC };
