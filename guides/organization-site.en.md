@@ -398,7 +398,8 @@ The sections, in the order of the screen:
   are not here, with any sign-in. Maintainers see the Configuration tab and propose changes; devs see their own things.
   A person gets in with any of their emails and sees the same. To add someone: Configuration, in People, "Who gets into
   the site" → **+ Add person** (*+ Agregar persona*), their email and their role; it is done here, without the Microsoft
-  portal. The first time, the section brings the list built from what there was before (the maintainers and each person
+  portal. For someone from outside the organization's directory, **Invite** (below, "Inviting someone") adds them and
+  sends them the Microsoft invitation. The first time, the section brings the list built from what there was before (the maintainers and each person
   with a confirmed machine) and warns that it is not saved yet: it is saved when you propose it. If someone leaves the
   list, as soon as the request is approved and the site refreshes (at most 15 minutes), their next page is "Your
   account is not in the list", with no data. Above the list you see how people sign in to the site; that is changed at
@@ -1074,6 +1075,57 @@ with "A maintainer's changes" on (below): off, the author would approve it witho
 it. Without the permission, each section says
 "To propose from here, the site needs permission to write to the repo. Meanwhile: review, download and upload it by
 hand" (*Para proponer desde acá, el sitio necesita permiso para escribir en el repo…*).
+
+### Inviting someone
+
+With Microsoft in "organization only", someone from outside the directory (a personal account, someone from another
+company) gets in only once they are in the directory and on the site's list. In Configuration → People, "Who gets into
+the site" → **Invite someone** (*Invitar a alguien*): their email and their products. "Invite" opens a request that adds
+them to the list as a dev, with their products and a mark (`site.invitations`: who invited and when). Once the request
+is approved and the site reads the new list, the site sends them the Microsoft invitation, which brings them to the
+site. Next to their email you see the status: "invitation sent, has not signed in yet", "accepted" (signed in),
+"waiting for tomorrow's limit" or "could not be sent" with the reason; a failure is retried on the next refresh (if
+Microsoft never answered, the person may get a second email). Up to 10
+invitations a day (`SITE_INVITATIONS_PER_DAY`); the rest wait for the next day.
+
+- An email from one of the organization's own domains is not invited: that person needs an account in the organization's
+  Microsoft 365, and the screen says so.
+- An email that is not a Microsoft account accepts with a **one-time passcode** Microsoft emails to them, if the
+  directory has it on. The installer reads it and leaves it in `SITE_INVITE_EMAIL_CODE`; if it is off or unknown, the
+  screen warns when inviting and says where to turn it on.
+- **Revoke** (*Revocar*) opens a request that removes them from the list and deletes their mark; if the invitation has
+  not gone out yet, it no longer does. It does not delete them from the directory: for that, the Entra portal, with the
+  link the screen gives.
+- With another sign-in there is no button: with "any account" from Microsoft no invitation is needed (add them to the
+  list); with Google or GitHub, add them to the list and they sign in with their Google or GitHub account for that email;
+  without a managed identity, invite by hand in the portal and add them to the list.
+
+### The invite permission
+
+To send the invitation, the site's managed identity needs **one** Microsoft Graph permission: `User.Invite.All`, an
+application permission. No other: the site does not read, change or delete users.
+
+**Its risk, plainly**: whoever controls the site's identity can invite **any email** as a guest to the whole directory,
+not just to this site. An accepted guest gets into any of the organization's applications that do not require
+assignment, and sees what the organization shares with "everyone, including guests". How it is kept small: only
+maintainers see the button; the invitation goes out only once the request is approved; the code calls Graph in one
+place, with a fixed body (guest, back to the site, no groups or roles); the token lives only in memory; there is a daily
+limit. Recommended: the directory's tightest guest restrictions, and requiring assignment in the other applications.
+
+**How it is granted**: a directory administrator (Privileged Role Administrator or Global Administrator) grants it once,
+with the installer and their `az` session:
+
+```bash
+node scripts/site/deploy/azure-container-apps.js --config <your file> --phase permiso-de-invitar --dry-run   # what it does
+node scripts/site/deploy/azure-container-apps.js --config <your file> --phase permiso-de-invitar --apply
+```
+
+It assigns the role to the site's identity and leaves `SITE_INVITE_EMAIL_CODE`. Without the administrator role it says
+so and changes nothing. While it is missing, the button says "The invite permission is missing", who grants it and this
+command.
+
+**To remove it**: in Entra → Enterprise applications → the site's identity → Permissions, revoke `User.Invite.All`. The
+button says it is missing again, and nothing else changes.
 
 ### Changes that apply by themselves
 

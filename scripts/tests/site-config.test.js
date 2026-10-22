@@ -4720,3 +4720,27 @@ test('Pantalla_LoNormalSeDice — umbrales vacíos, paquetes sin instalar, ficha
   assert.match(ORG.pantalla(), /pantalla\.pedidosDeslizar/, 'el aviso de deslizar, en la tabla de pedidos');
   assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8'), /@media \(max-width:640px\)\{\.solo-celular\{display:block/, 'y sólo se ve en el celular');
 });
+
+test('T7 2.74-Lector_SiteInvitations @story-2.74 @ac-5 — cada marca de un correo de la lista, con quién y cuándo', async () => {
+  const base = () => ({ version: 1, owners: { default: LEAD }, site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: ['Eva@Otra.Example'] }] } });
+  const con = (inv) => { const d = base(); d.site.invitations = inv; return OPS.parse(JSON.stringify(d)); };
+  const bien = con({ 'eva@otra.example': { por: LEAD, el: '2026-10-22' } });
+  assert.strictEqual(bien.ok, true, `la mayúscula no es un problema: ${JSON.stringify(bien.problems)}`);
+  const mal = con({ 'nadie@otra.example': { por: LEAD, el: '2026-10-22' }, 'eva@otra.example': { el: '2026-13-40' } });
+  assert.strictEqual(mal.ok, false);
+  const rutas = mal.problems.map((p) => p.path).sort();
+  // la ruta de un campo es «site.invitations.<correo>.<campo>»: se arma por partes (escrita entera parece un correo)
+  const EVA = 'site.invitations.eva@otra.example';
+  assert.deepStrictEqual(rutas, [`${EVA}.el`, `${EVA}.por`, 'site.invitations.nadie@otra.example'].sort(), JSON.stringify(mal.problems));
+  assert.strictEqual(con([]).ok, false, 'tiene que ser un objeto');
+  // una baja normal en Personas (la persona sale de la lista) saca su marca en el mismo pedido
+  const seccion = ORG.SECCIONES.find((s) => s.id === 'sitio');
+  const ops = clon({ 'operations.json': (() => { const d = base(); d.site.invitations = { 'eva@otra.example': { por: LEAD, el: '2026-10-22' } }; return d; })() });
+  await conPestana({ fuentes: fuentesCon({ ops }) }, async ({ entrar, token, escribir }) => {
+    const lead = await entrar(LEAD);
+    const tok = await token(lead);
+    const r = (await escribir('/api/config/revisar', lead, tok, { seccion: seccion.id, borrador: { site: { access: [{ role: 'maintainer', emails: [LEAD] }], invitations: { 'eva@otra.example': { por: LEAD, el: '2026-10-22' } } } } })).json;
+    assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+    assert.ok(!JSON.parse(r.texto).site.invitations, `la marca sale con la baja: ${r.texto}`);
+  });
+});

@@ -2144,6 +2144,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.74: invitar a alguien al sitio desde Personas — el permiso User.Invite.All leído de los roles del token de la identidad (sin llamar a Graph), qué se dice con cada inicio de sesión, el correo validado (forma, ya en la lista, dominio del propio inquilino por el descubrimiento público, código por correo), la invitación por Graph sólo cuando el alta está en vigor, una sola vez aunque haya reinicios o pedidos repetidos, el reintento de una falla, el tope por día, el estado de cada invitado, el registro sin el correo, «Invitar» y «Revocar» como pedidos sólo para quien mantiene, y la pantalla. Microsoft es un servidor de juguete en el proceso (identidad, Graph y descubrimiento); el repo de operaciones, un repo git local por HTTP, y GitHub, uno falso; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-invitations.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la pestaña «Cómo trabaja» del sitio de la organización: el recorrido de una historia armado con las mismas fuentes con que corre el arnés (la tabla de pasos, el cálculo de revisores, la lista de controles y los despachadores, los paquetes, los lectores de configuración y las funciones que deciden cada pieza «según la historia»), que frena si una fuente y la pantalla se separan; los revisores de la organización revisados con el lector de paquetes y propuestos en un solo pedido con versiones firmadas; sólo para quien mantiene; textos en los dos idiomas. Levanta el servidor del sitio con sesiones reales del emisor local, repos git locales por HTTP y un GitHub falso en el proceso; sin red.",
       "raiz": "arnes",
       "ruta": "tests/how-it-works.test.js",

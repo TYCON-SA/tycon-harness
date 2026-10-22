@@ -391,7 +391,8 @@ Las secciones, en el orden de la pantalla:
   mantenían y cada persona con una máquina confirmada) y avisa que todavía no está guardada: se guarda al proponerla.
   Si alguien sale de la lista, en cuanto se aprueba el pedido y el sitio se actualiza (a lo sumo 15 minutos), su
   próxima página es la de «Tu cuenta no está en la lista», sin datos. Arriba de la lista se ve con qué se entra al
-  sitio; eso se cambia en la instalación. También van acá el buzón de ejecuciones, el refresco y la dirección del sitio.
+  sitio; eso se cambia en la instalación. Para alguien de afuera del directorio de la organización, **Invitar** (abajo,
+  «Invitar a alguien») lo suma y le manda la invitación de Microsoft. También van acá el buzón de ejecuciones, el refresco y la dirección del sitio.
   Queda en `operations.json`, en el repo de operaciones. Lo revisa otra persona que mantiene. **«Cada cuánto se
   actualiza el sitio»** acepta de 5 a 120 minutos; sin declarar, 15. Más corto, un cambio se ve antes, pero el sitio
   vuelve a leer el repo de operaciones, el del perfil y el buzón más seguido mientras está despierto: más lecturas a
@@ -1044,6 +1045,56 @@ cambios de un mantenedor» prendida (abajo): apagada, lo aprobaría el mismo aut
 pedido. Sin el permiso, cada sección dice «Para
 proponer desde acá, el sitio necesita permiso para escribir en el repo. Mientras tanto: revisá, descargá y subilo a
 mano».
+
+### Invitar a alguien
+
+Con Microsoft en «sólo la organización», alguien de afuera del directorio (una cuenta personal, alguien de otra
+empresa) entra recién cuando está en el directorio y en la lista del sitio. En Configuración → Personas, «Quién entra al
+sitio» → **Invitar a alguien**: su correo y sus productos. «Invitar» abre un pedido que lo suma a la lista como dev, con
+sus productos y una marca (`site.invitations`: quién invitó y cuándo). Cuando el pedido se aprueba y el sitio lee la
+lista nueva, el sitio le manda la invitación de Microsoft, que lo lleva al sitio. Al lado de su correo se ve el estado:
+«invitación enviada, todavía no entró», «aceptada» (ya entró), «esperando el tope de mañana» o «no se pudo enviar» con
+el motivo; una falla se reintenta sola en el próximo refresco (si Microsoft no llegó a contestar, la persona puede
+recibir un segundo correo). Hasta 10 invitaciones por día
+(`SITE_INVITATIONS_PER_DAY`); las que pasan esperan al día siguiente.
+
+- Un correo de un dominio de la propia organización no se invita: esa persona necesita una cuenta en el Microsoft 365
+  de la organización, y la pantalla lo dice.
+- Un correo que no es cuenta de Microsoft acepta con un **código de un solo uso** que Microsoft le manda al correo, si
+  el directorio lo tiene prendido. El instalador lo lee y lo deja en `SITE_INVITE_EMAIL_CODE`; si está apagado o no se
+  sabe, la pantalla avisa al invitar y dice dónde se prende.
+- **Revocar** abre un pedido que lo saca de la lista y borra su marca; si la invitación todavía no salió, ya no sale.
+  No lo borra del directorio: para eso, el portal de Entra, con el enlace que da la pantalla.
+- Con otro inicio de sesión no hay botón: con «cualquier cuenta» de Microsoft no hace falta invitar (se suma a la
+  lista); con Google o GitHub, se suma a la lista y entra con su cuenta de Google o GitHub de ese correo; sin identidad
+  administrada, se invita a mano en el portal y se suma a la lista.
+
+### El permiso de invitar
+
+Para mandar la invitación, la identidad administrada del sitio necesita **un** permiso de Microsoft Graph:
+`User.Invite.All`, de aplicación. Ninguno más: el sitio no lee, cambia ni borra usuarios.
+
+**Su riesgo, en llano**: quien controle la identidad del sitio puede invitar **cualquier correo** como invitado al
+directorio entero, no sólo a este sitio. Un invitado aceptado entra a cualquier aplicación de la organización que no
+pida asignación, y ve lo que la organización comparte con «todos, incluidos los invitados». Cómo se acota: sólo quien
+mantiene ve el botón; la invitación sale recién cuando el pedido se aprueba; el código llama a Graph en un solo lugar,
+con el cuerpo fijo (invitado, de vuelta al sitio, sin grupos ni roles); el token vive sólo en memoria; hay un tope por
+día. Recomendado: las restricciones de invitados más cerradas del directorio y pedir asignación en las otras
+aplicaciones.
+
+**Cómo se da**: lo da, una vez, un administrador del directorio (Administrador de roles con privilegios o Administrador
+global), con el instalador y su sesión de `az`:
+
+```bash
+node scripts/site/deploy/azure-container-apps.js --config <tu archivo> --phase permiso-de-invitar --dry-run   # qué hace
+node scripts/site/deploy/azure-container-apps.js --config <tu archivo> --phase permiso-de-invitar --apply
+```
+
+Asigna el rol a la identidad del sitio y deja `SITE_INVITE_EMAIL_CODE`. Sin el rol de administrador, lo dice y no cambia
+nada. Mientras falta, el botón dice «Falta el permiso de invitar», quién lo da y este comando.
+
+**Para sacarlo**: en Entra → Aplicaciones empresariales → la identidad del sitio → Permisos, revocá `User.Invite.All`.
+El botón vuelve a decir que falta, y nada más cambia.
 
 ### Los cambios que se aplican solos
 

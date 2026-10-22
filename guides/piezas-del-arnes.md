@@ -868,7 +868,7 @@ cada rol, los problemas comunes, cómo se instala y cómo está hecho por dentro
 `scripts/tools/site-guide-captures.js` del sitio corriendo con una organización de laboratorio. Las piezas que lo acompañan: la imagen
 (`.github/workflows/site-image.yml`), las instalaciones (`scripts/site/deploy/`: Azure Container Apps en dos fases,
 Render y una máquina propia), la prueba sin sesión (`scripts/site/check-deploy.js`) y el canal del aviso
-(`scripts/lib/notify.js`). Red: las suites `site-*` y `notify` de `scripts/tests/`.
+(`scripts/lib/notify.js`); invitar desde Personas, `scripts/site/invitations.js`. Red: las suites `site-*` y `notify`.
 
 **La copia de operaciones**: con `SITE_OPERATIONS_SOURCE=copy`, `pipelines/operations/site-copy.yml` sube a
 un contenedor sólo lo que el sitio lee (`RUTAS` de `scripts/site/operations-copy.js`, más el logo de `site.brand.logo`)

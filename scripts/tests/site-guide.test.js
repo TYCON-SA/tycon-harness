@@ -37,7 +37,9 @@ const PARTES = [
 const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 
 // La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final). Si la instalación cambia a
-// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma la regla «todo automático» de la rama de operaciones (la política de Azure DevOps con el voto del autor, lo que se resigna y cómo volver a pedir aprobación); antes sumaba que «Salir» no pasa por el candado ni por Microsoft y deja la marca de «salió», y que la página «Saliste» libre del candado se ve aunque el candado haya vencido; antes sumaba que sin disco «Salir» avisa que no pudo invalidar la sesión, y de dónde lee operaciones (la copia en un
+// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma «Invitar a alguien» y «El permiso de
+// invitar» (el botón, sus estados, revocar, el permiso User.Invite.All con su riesgo, cómo se da y se saca);
+// antes sumaba la regla «todo automático» de la rama de operaciones (la política de Azure DevOps con el voto del autor, lo que se resigna y cómo volver a pedir aprobación); antes sumaba que «Salir» no pasa por el candado ni por Microsoft y deja la marca de «salió», y que la página «Saliste» libre del candado se ve aunque el candado haya vencido; antes sumaba que sin disco «Salir» avisa que no pudo invalidar la sesión, y de dónde lee operaciones (la copia en un
 // contenedor, con su SAS fuera de Azure) y los cambios que se aplican solos: su permiso (Contribute to pull requests,
 // nunca Bypass policies), la política que deja votar al autor y el orden para encenderla; y el inicio de sesión de la
 // organización (los dos modos de Microsoft y la lista), el candado de la receta de Azure (`microsoftAccounts`),
@@ -48,8 +50,8 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // SITE_OPERATIONS_REPO sigue siendo obligatoria; y la imagen ya publicada como alternativa a armarla, el emisor de un
 // inquilino como única puerta, la página «Saliste» y las rutas que el candado deja libres para que «Salir» no reabra la sesión; y, en «Por dentro», la tabla de textos en dos idiomas; y «ejecución» donde decía «corrida».
 const HUELLA_INSTALACION = {
-  es: '5c396e88e27c6c97845da5566d8db66fa18af090800f48e46f3f757ed0b93c99',
-  en: '5b501b465e4122206bd5bef9c9fd2d779a5b862a752e09a90083aaac6ad66489',
+  es: 'dd6fb1cf3f00135118b415a0843cd462293534653c8cbf029f9e42950513940b',
+  en: '8a3048f43e26a255f15da79bcde89d12ae0fac58462c373363ba718453a57d88',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
@@ -360,6 +362,19 @@ test('Guia_SalirCierraLaCopia @story-2.48 @ac-6', () => {
   const dicen = {
     es: [/copia de la cookie/i, /cerrada/i, /varias réplicas[^.]*disco[^.]*compartido/i, /«Saliste»[^.]*avisa/i, /la página de salida queda detrás del candado/],
     en: [/cop(y|ies) of the cookie/i, /closed/i, /several replicas[^.]*shared/i, /"You signed out"[^.]*(warn|tell)/i, /sign-out page[\s\S]{0,200}lock/i],
+  };
+  for (const [lado, f] of [['es', GUIA], ['en', GUIA_EN]]) {
+    const t = leer(f);
+    for (const re of dicen[lado]) assert.match(t, re, `${lado}: la guía no dice ${re}`);
+  }
+});
+
+test('T14 2.74-Guia_InvitarYPermiso @story-2.74 @ac-12', () => {
+  const dicen = {
+    es: [/### Invitar a alguien/, /### El permiso de invitar/, /User\.Invite\.All/, /--phase permiso-de-invitar/, /cualquier correo/, /invitado aceptado/i,
+      /administrador del directorio/, /Para sacarlo/, /«cualquier cuenta»/, /Google/, /GitHub/, /código de un solo uso/, /SITE_INVITATIONS_PER_DAY/],
+    en: [/### Inviting someone/, /### The invite permission/, /User\.Invite\.All/, /--phase permiso-de-invitar/, /any email/, /accepted guest/i,
+      /directory administrator/, /To remove it/, /"any account"/, /Google/, /GitHub/, /one-time (pass)?code/, /SITE_INVITATIONS_PER_DAY/],
   };
   for (const [lado, f] of [['es', GUIA], ['en', GUIA_EN]]) {
     const t = leer(f);

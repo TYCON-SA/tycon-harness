@@ -70,6 +70,8 @@ const VARIABLES = ['SITE_PUBLIC_URL', 'SITE_SESSION_KEY', 'SITE_AUTH_PROVIDER', 
   'SITE_MAILBOX_SAS', 'SITE_MAILBOX_IDENTITY', 'SITE_FIRST_MAINTAINER', 'SITE_DATA_DIR', 'PORT',
   'SITE_OPERATIONS_WRITE_TOKEN', 'SITE_PROFILE_REPO', 'SITE_PROFILE_TOKEN', 'SITE_PROFILE_WRITE_TOKEN', 'SITE_PIPELINES_TOKEN',
   'SITE_OPERATIONS_SOURCE', 'SITE_OPERATIONS_COPY', 'SITE_OPERATIONS_COPY_SAS',
+  // invitar desde Personas (invitations.js): el tope por día
+  'SITE_INVITATIONS_PER_DAY',
   // las propias de cada proveedor, que las declara su archivo (`variables`)
   ...new Set(Object.values(PROVEEDORES).flatMap((p) => (Array.isArray(p.variables) ? p.variables : [])))];
 const CORREO = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
@@ -305,7 +307,7 @@ function textoDeLaRaiz(nombre, anexos = []) {
  * El sitio, sin escuchar todavía. `fuentes` cumple el contrato de sources.js (estado, config, modelo, refrescar,
  * detener); `ahora` (ms) y `log` se inyectan en las pruebas; `rutasExtra` es como las pestañas Corridas y Configuración suman las suyas.
  */
-function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) => process.stdout.write(`${l}\n`), rutasExtra = [], version = VERSION, vigia = null } = {}) {
+function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) => process.stdout.write(`${l}\n`), rutasExtra = [], version = VERSION, vigia = null, alEntrar = null } = {}) {
   const v = validarConfiguracion(env);
   if (!v.ok) throw Object.assign(new Error(v.problemas.map((p) => `${p.variable}: ${p.motivo}`).join('\n')), { problemas: v.problemas });
   const cfg = v.cfg;
@@ -516,6 +518,8 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     const config = fuentes.estado().navegable || fuentes.estado().cargado ? fuentes.config() : null;
     const sinLista = config && access.quienPide(ident, { config, firstMaintainer: cfg.firstMaintainer }).rol === 'none';
     registrar(`inicio de sesión: entró una cuenta (${proveedor.nombre})${sinLista ? ' que no está en la lista del sitio: ve la página sin datos' : ''}`);
+    // quien entra y estaba invitado queda «aceptada» (invitations.js); un ingreso nunca falla por esto
+    if (alEntrar && !sinLista) { try { alEntrar(ident.email); } catch (e) { registrar(`inicio de sesión: no pude anotar el ingreso para las invitaciones (${(e && e.message) || e})`); } }
     return enviar(res, { status: 302, cuerpo: '', extra: { Location: '/', 'Set-Cookie': [ses, borrarIntento, session.borrar(session.MARCA)] } });
   }
 
@@ -677,8 +681,12 @@ async function main() {
   let sitio;
   try {
     const fuentes = crearFuentes({ cfg: v.cfg, dataDir, log });
+    // invitar desde Personas (con un proveedor que sabe invitar y el disco del sitio): lo que falta enviar se recalcula
+    // al terminar cada ciclo de fuentes
+    const invitaciones = require('./invitations.js').crearInvitaciones({ cfg: v.cfg, env, dataDir: v.cfg.dataDir, llave: v.cfg.sessionKey, log });
+    fuentes.alRefrescar(() => { invitaciones.enviarPendientes(fuentes.config()); });
     const rutasExtra = [
-      ...require('./tabs/config.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log }),
+      ...require('./tabs/config.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log, invitaciones }),
       // la pestaña Cómo trabaja: el recorrido de una historia, con los revisores propios editables
       ...require('./tabs/how-it-works.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log }),
       // la pestaña Corridas: arma su vista en un hilo aparte con el espejo del buzón
@@ -686,7 +694,7 @@ async function main() {
       // la pestaña Ayuda: la guía del sitio que viaja en la imagen, con lo que le toca a cada rol
       ...require('./help.js').crearRutas({ log }),
     ];
-    sitio = crearSitio({ env, fuentes, log, rutasExtra });
+    sitio = crearSitio({ env, fuentes, log, rutasExtra, alEntrar: (correo) => invitaciones.entro(correo) });
     await sitio.iniciar();
     fuentes.arrancar();
   } catch (e) {

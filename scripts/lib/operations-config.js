@@ -97,7 +97,10 @@ const GITHUB_REPO = /^(?!\.+\/)[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.-]+$/;
 const OWNER_KEYS = ['default', 'by_project'];
 const REVIEWER_KEYS = ['dependencies', 'watcher'];
 // el sitio de la organización. Todas opcionales; la pestaña Configuración del sitio la edita.
-const SITE_KEYS = ['access', 'maintainers', 'mailbox', 'refresh_minutes', 'url', 'brand', 'auto_apply', 'update', 'hidden_cards'];
+const SITE_KEYS = ['access', 'maintainers', 'mailbox', 'refresh_minutes', 'url', 'brand', 'auto_apply', 'update', 'hidden_cards', 'invitations'];
+// la marca de cada persona invitada desde el sitio: quién la invitó y cuándo (la invitación la manda el sitio)
+const INVITATION_KEYS = ['por', 'el'];
+const FECHA = /^\d{4}-\d{2}-\d{2}$/;
 // la lista de quién entra al sitio (el rol de cada uno sale sólo de ahí, con cualquier proveedor)
 const ACCESS_KEYS = ['role', 'emails'];
 const ACCESS_ROLES = ['maintainer', 'dev'];
@@ -189,6 +192,29 @@ function accessProblems(list) {
   return problems;
 }
 
+/**
+ * Las invitaciones: `{ "<correo>": { por, el } }`. Cada correo es de alguna entrada de site.access (comparado en
+ * minúsculas y sin espacios); `por`, un correo; `el`, una fecha AAAA-MM-DD.
+ */
+function invitationsProblems(inv, access) {
+  if (!isObject(inv)) return [{ path: 'site.invitations', message: 'tiene que ser un objeto { "<correo>": { por, el } }' }];
+  const norm = (m) => String(m).trim().toLowerCase();
+  const enLista = new Set((Array.isArray(access) ? access : []).flatMap((e) => (isObject(e) && Array.isArray(e.emails) ? e.emails : [])).filter((m) => typeof m === 'string').map(norm));
+  const problems = [];
+  for (const [correo, marca] of Object.entries(inv)) {
+    // las claves son datos (correos): sólo «__» es un comentario
+    if (comment(correo)) continue;
+    const at = `site.invitations.${correo}`;
+    if (!EMAIL.test(correo.trim())) { problems.push({ path: at, message: `«${correo}» no es un correo` }); continue; }
+    if (!enLista.has(norm(correo))) { problems.push({ path: at, message: `«${correo}» no está en site.access: una invitación es de una persona de la lista` }); continue; }
+    if (!isObject(marca)) { problems.push({ path: at, message: 'tiene que ser un objeto { por, el }' }); continue; }
+    problems.push(...siteKeyProblems(marca, INVITATION_KEYS, at));
+    if (typeof marca.por !== 'string' || !EMAIL.test(marca.por.trim())) problems.push({ path: `${at}.por`, message: 'falta quién invitó (un correo)' });
+    if (typeof marca.el !== 'string' || !FECHA.test(marca.el) || Number.isNaN(Date.parse(`${marca.el}T00:00:00Z`)) || new Date(`${marca.el}T00:00:00Z`).toISOString().slice(0, 10) !== marca.el) problems.push({ path: `${at}.el`, message: 'tiene que ser la fecha de la invitación (AAAA-MM-DD)' });
+  }
+  return problems;
+}
+
 function siteProblems(site) {
   if (!isObject(site)) return [{ path: 'site', message: 'tiene que ser un objeto' }];
   const problems = siteKeyProblems(site, SITE_KEYS, 'site');
@@ -225,6 +251,7 @@ function siteProblems(site) {
   if (site.auto_apply !== undefined && typeof site.auto_apply !== 'boolean') problems.push({ path: 'site.auto_apply', message: 'tiene que ser true o false' });
   // las fichas del tablero que el sitio no muestra: una lista de identificadores de scripts/site/tabs/cards.js
   if (site.hidden_cards !== undefined) problems.push(...hiddenCardsProblems(site.hidden_cards));
+  if (site.invitations !== undefined) problems.push(...invitationsProblems(site.invitations, site.access));
   if (site.update !== undefined && site.update !== 'auto' && site.update !== 'notice') problems.push({ path: 'site.update', message: 'tiene que ser "auto" o "notice"' });
   const b = site.brand;
   if (b !== undefined) {
@@ -534,7 +561,7 @@ function ownerFor(data, project) {
   return Object.prototype.hasOwnProperty.call(bp, project) ? bp[project] : data.owners.default;
 }
 
-module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, CARD_IDS,ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, SEVERITIES, WORK_ITEM_KEYS, WORK_ITEM_RESERVED, parse, load, ownerFor, workItemFieldOk };
+module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, INVITATION_KEYS, CARD_IDS,ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, SEVERITIES, WORK_ITEM_KEYS, WORK_ITEM_RESERVED, parse, load, ownerFor, workItemFieldOk };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

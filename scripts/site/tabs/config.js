@@ -357,7 +357,7 @@ const ESPERA_REFRESCO_MS = 8 * 1000;
  * Inyectables (pruebas): `lectores`, `versionImagen`, `ahora`, `hoy`, `fetch`, `urlBase` (la dirección de la API de cada plataforma) y
  * `remotos` ({ operaciones, perfil }: la plataforma de cada repo cuando la dirección no la dice) y `esperaRefrescoMs`.
  */
-function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy = null, lectores = {}, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {}, esperaRefrescoMs = ESPERA_REFRESCO_MS }) {
+function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy = null, lectores = {}, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {}, esperaRefrescoMs = ESPERA_REFRESCO_MS, invitaciones = null }) {
   const dia = () => (hoy ? hoy() : new Date(ahora()).toISOString().slice(0, 10));
   const lector = (nombre) => ORG.loadReader(TREE, nombre, lectores);
   // los umbrales del arnés (los de la imagen): `{ thresholds, motivo }`; sin ellos, Umbrales no edita y lo dice
@@ -706,6 +706,12 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     }
     if (s.id === 'sitio') {
       const site = isObject(borrador) && isObject(borrador.site) ? borrador.site : {};
+      // toda baja de la lista saca también la marca de su invitación: la lista editada como siempre no deja marcas sueltas
+      if (isObject(site.invitations) && Array.isArray(site.access)) {
+        const enLista = new Set(site.access.flatMap((e) => (isObject(e) && Array.isArray(e.emails) ? e.emails : [])).map(norm));
+        for (const k of Object.keys(site.invitations)) if (!k.startsWith('__') && !enLista.has(norm(k))) delete site.invitations[k];
+        if (!Object.keys(site.invitations).length) delete site.invitations;
+      }
       // quien propone, con todos sus correos de la lista vigente
       const suyos = people.correosDe(ctx.sesion.email, people.contexto({ operations: fuentes.config() || {} }));
       if (Array.isArray(site.access)) {
@@ -897,6 +903,96 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
    * Después de aplicar solo, el sitio relee sus fuentes enseguida —fuera del candado de la propuesta, que el refresco
    * también toma— y dice si ya usa el cambio.
    */
+  // ── invitar y revocar (invitations.js): el alta o la baja, como un pedido sobre operations.json ──
+  /** Lo que la sección del sitio muestra de las invitaciones: el botón, el permiso y el estado de cada invitado. */
+  async function estadoDeInvitaciones() {
+    if (!invitaciones) return null;
+    const d = invitaciones.disponibilidad();
+    const permiso = d.boton ? await invitaciones.permiso() : null;
+    return { boton: d.boton, motivo: d.motivo, texto: d.texto, permiso: permiso && { ok: permiso.ok, texto: permiso.texto || null, comando: permiso.comando || null }, estados: invitaciones.estados(fuentes.config()), codigoPorCorreo: invitaciones.codigoPorCorreo };
+  }
+  /** operations.json de hoy, con la lista armada si todavía era `site.maintainers`: `{ s, v, doc }` o `{ error }`. */
+  function operacionesParaCambiar() {
+    const s = ORG.seccionPorId('sitio');
+    const v = vista(s);
+    if (['no_reader', 'no_configurado', 'bajando', 'ilegible'].includes(v.estado) || v.soloLectura) return { error: v.motivo };
+    const doc = docDe(v.texto || '') || { version: 1 };
+    doc.site = isObject(doc.site) ? doc.site : {};
+    if (!Array.isArray(doc.site.access)) { doc.site.access = people.listaDeAcceso(doc).entradas; delete doc.site.maintainers; }
+    return { s, v, doc };
+  }
+  /** Propone `doc` entero como un pedido (las secciones del sitio y de personas): la respuesta de RP.proponer. */
+  async function proponerOperaciones({ s, v, doc }, ctx, marca) {
+    const texto = ORG.formatJson(doc);
+    const lec = lector(s.lector);
+    const p = lec && lec.parse(texto);
+    if (!p || !p.ok) return { ok: false, message: M('config.lectorRechaza', { detalle: ((p && p.problems) || []).map((x) => `${x.path || '(el archivo)'}: ${x.message}`).join(' · ') }) };
+    if (!mantenedoresDe(doc.site).length) return { ok: false, message: SIN_MANTENEDORES };
+    const cred = cfg.escritura && cfg.escritura.operaciones;
+    if (!cred) return { ok: false, message: M('config.sinIdentidad2') };
+    const remote = remoteDe('operaciones');
+    if (!remote.platform) return { ok: false, message: M('config.sinPlataforma') };
+    let dir = clones().operaciones.dir;
+    if (clones().operaciones.indice) {
+      if (typeof fuentes.clonDeEscritura !== 'function') return { ok: false, message: M('config.sinClonEscritura') };
+      const e = await fuentes.clonDeEscritura();
+      if (!e || !e.dir) return { ok: false, message: M('config.clonFallo', { motivo: (e && e.motivo) || M('config.noSeArmoClon') }) };
+      dir = e.dir;
+    }
+    const r = await RP.proponer({
+      clon: dir, archivo: v.archivo, contenido: texto, oidEsperado: v.oid, idCorto: s.idCorto, secciones: [s.titulo, ORG.seccionPorId('personas').titulo],
+      quien: norm(ctx.sesion.email), credencial: cred, remote, urlBase, exclusivo: fuentes.exclusivo || ((fn) => fn()),
+      now: new Date(ahora()), fetch, log, aplicarSolo: aplicarSolo(), marca: marca || null,
+    });
+    guardado = null;
+    if (r && r.codigo === 'cambio') { const { textoActual: _t, oidActual: _o, ...cambio } = r; return cambio; }
+    return r;
+  }
+  async function invitar(body, ctx) {
+    if (!invitaciones) return { ok: false, message: M('invitaciones.noDisponible', { motivo: '-' }) };
+    const d = invitaciones.disponibilidad();
+    if (!d.boton) return { ok: false, message: d.texto };
+    const p = await invitaciones.permiso();
+    if (!p.ok) return { ok: false, message: p.texto, comando: p.comando };
+    const base = operacionesParaCambiar();
+    if (base.error) return { ok: false, message: base.error };
+    const rc = await invitaciones.revisarCorreo(body.correo, base.doc);
+    if (!rc.ok) return { ok: false, message: rc.motivo };
+    // nombres de producto: hasta 50, de hasta 100 caracteres cada uno (el lector valida el resto)
+    const productos = [...new Set((Array.isArray(body.productos) ? body.productos : []).filter((x) => typeof x === 'string').map((x) => x.trim()).filter((x) => x && x.length <= 100))].slice(0, 50);
+    const doc = base.doc;
+    doc.site.access.push({ role: 'dev', emails: [rc.correo] });
+    if (productos.length) {
+      doc.people = isObject(doc.people) ? doc.people : {};
+      doc.people.projects = isObject(doc.people.projects) ? doc.people.projects : {};
+      // la ficha que ya tenga la persona, con la grafía que tenga (el lector rechaza dos claves del mismo correo); lo que
+      // se le suma sale de lo que se le había sacado (el lector rechaza un producto en add y en remove)
+      const clave = Object.keys(doc.people.projects).find((k) => !k.startsWith('_') && norm(k) === rc.correo) || rc.correo;
+      const f = isObject(doc.people.projects[clave]) ? doc.people.projects[clave] : {};
+      f.add = [...new Set([...(Array.isArray(f.add) ? f.add : []), ...productos])];
+      if (Array.isArray(f.remove)) { f.remove = f.remove.filter((x) => !productos.includes(x)); if (!f.remove.length) delete f.remove; }
+      doc.people.projects[clave] = f;
+    }
+    doc.site.invitations = { ...(isObject(doc.site.invitations) ? doc.site.invitations : {}), [rc.correo]: { por: norm(ctx.sesion.email), el: dia() } };
+    const r = await proponerOperaciones({ ...base, doc }, ctx, body.marca);
+    return r && r.ok ? { ...r, message: M('invitaciones.propuesta'), aviso: rc.aviso || null } : r;
+  }
+  async function revocar(body, ctx) {
+    const correo = norm(body.correo);
+    const base = operacionesParaCambiar();
+    if (base.error) return { ok: false, message: base.error };
+    const doc = base.doc;
+    const estaba = doc.site.access.some((e) => isObject(e) && Array.isArray(e.emails) && e.emails.map(norm).includes(correo));
+    if (!estaba) return { ok: false, message: M('invitaciones.noEstaEnLista', { correo: String(body.correo || '').trim().slice(0, 120) }) };
+    doc.site.access = doc.site.access.map((e) => (isObject(e) && Array.isArray(e.emails) ? { ...e, emails: e.emails.filter((m) => norm(m) !== correo) } : e)).filter((e) => !(isObject(e) && Array.isArray(e.emails) && !e.emails.length));
+    if (isObject(doc.site.invitations)) {
+      for (const k of Object.keys(doc.site.invitations)) if (norm(k) === correo) delete doc.site.invitations[k];
+      if (!Object.keys(doc.site.invitations).length) delete doc.site.invitations;
+    }
+    const r = await proponerOperaciones({ ...base, doc }, ctx, body.marca);
+    return r && r.ok ? { ...r, message: M('invitaciones.revocada'), portal: invitaciones ? invitaciones.portalDe(correo) : null } : r;
+  }
+
   async function despuesDeAplicar(s, r, texto) {
     if (!r || r.codigo !== 'aplicado') return r;
     // el refresco es el entero (con la bajada del buzón) y puede tardar minutos: la respuesta lo espera como mucho
@@ -1035,7 +1131,29 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     {
       method: 'GET', path: '/api/config', needs: solo, handler: enIdioma(async (ctx) => {
         if (ctx.url && ctx.url.searchParams.get('releer') === '1') await releer();
-        return json(200, await leerTodoGuardado());
+        const todo = await leerTodoGuardado();
+        // el estado de las invitaciones cambia con cada ciclo de fuentes: se arma fresco, fuera de lo guardado
+        const inv = await estadoDeInvitaciones();
+        if (!inv) return json(200, todo);
+        return json(200, { ...todo, secciones: todo.secciones.map((x) => (x.id === 'sitio' ? { ...x, extras: { ...(x.extras || {}), invitaciones: inv } } : x)) });
+      }),
+    },
+    {
+      method: 'POST', path: '/api/config/invitar', needs: solo, handler: enIdioma(async (ctx) => {
+        const e = await escritura(ctx); if (e.error) return e.error;
+        const marca = e.body && e.body.marca;
+        if (marca !== undefined && !(typeof marca === 'string' && FORMA_DE_MARCA.test(marca))) return rechazo(400, M('config.marcaInvalida'));
+        const trabajo = () => invitar(e.body || {}, ctx);
+        return json(200, marca === undefined ? await trabajo() : await unaVezPorMarca('invitar', marca, trabajo));
+      }),
+    },
+    {
+      method: 'POST', path: '/api/config/revocar', needs: solo, handler: enIdioma(async (ctx) => {
+        const e = await escritura(ctx); if (e.error) return e.error;
+        const marca = e.body && e.body.marca;
+        if (marca !== undefined && !(typeof marca === 'string' && FORMA_DE_MARCA.test(marca))) return rechazo(400, M('config.marcaInvalida'));
+        const trabajo = () => revocar(e.body || {}, ctx);
+        return json(200, marca === undefined ? await trabajo() : await unaVezPorMarca('revocar', marca, trabajo));
       }),
     },
     {

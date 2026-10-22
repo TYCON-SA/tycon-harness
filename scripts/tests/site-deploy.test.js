@@ -734,3 +734,57 @@ test('A10 2.34-Adv_CuentaExistenteQuedaSinLlave @story-2.34 @ac-11 — una cuent
   assert.strictEqual(upd.length, 1, dos.out);
   assert.ok(upd[0].args.join(' ').includes('--allow-shared-key-access false'));
 });
+
+// el permiso de invitar, una fase aparte que corre un administrador del directorio. La aplicación ya existe
+// (se siembra en el estado del doble, como la deja la fase sitio)
+function conSitioCreado(fixEnv = {}) {
+  n += 1;
+  const dir = path.join(tmp, `caso-${n}`);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'azure.json'), JSON.stringify({ 'containerapp|sitio-acme': true }));
+  return { dir, correr: (args) => alta(args, { fix: dir, fixEnv }) };
+}
+const asignacion = (ll) => ll.find((l) => l.paso === 'rest' && /appRoleAssignments/.test(l.args.join(' ')) && /post/i.test(l.args.join(' ')));
+
+test('T13 2.74-Instalador_PermisoDeInvitar_DryRunYApply @story-2.74 @ac-11', () => {
+  const ensayo = conSitioCreado().correr(['--dry-run', '--phase', 'permiso-de-invitar']);
+  assert.strictEqual(ensayo.status, 0, ensayo.out);
+  assert.match(ensayo.out, /User\.Invite\.All/);
+  assert.match(ensayo.out, /appRoleAssignments/);
+  assert.match(ensayo.out, /administrador del directorio/);
+  assert.strictEqual(asignacion(ensayo.llamadas), undefined, 'el ensayo no asigna nada');
+  const bien = conSitioCreado().correr(['--apply', '--phase', 'permiso-de-invitar']);
+  assert.strictEqual(bien.status, 0, bien.out);
+  const a = asignacion(bien.llamadas);
+  assert.ok(a, bien.out);
+  const cuerpo = JSON.parse(Object.values(a.archivos)[0]);
+  assert.deepStrictEqual(cuerpo, { principalId: 'principal-del-sitio', resourceId: 'principal-de-graph', appRoleId: 'rol-de-invitar' });
+  // sin el rol de administrador: lo dice y no deja nada a medias
+  const sinRol = conSitioCreado({ TYCON_AZ_NOT_ADMIN: '1' }).correr(['--apply', '--phase', 'permiso-de-invitar']);
+  assert.strictEqual(sinRol.status, 1, sinRol.out);
+  assert.match(sinRol.out, /administrador del directorio/);
+  assert.ok(!sinRol.llamadas.some((l) => l.paso === 'aplicacion' && l.args.includes('update')), 'no cambia la aplicación');
+});
+
+test('2.74-Adv_ActualizarElSitio_ConservaElCodigoPorCorreo @story-2.74 @ac-11 — volver a correr la fase sitio no lo borra', () => {
+  const caso = conSitioCreado({ TYCON_AZ_EMAIL_CODE_POLICY: 'disabled' });
+  assert.strictEqual(caso.correr(['--apply', '--phase', 'ambiente']).status, 0);
+  assert.strictEqual(caso.correr(['--apply', '--phase', 'permiso-de-invitar']).status, 0);
+  const otra = caso.correr(['--apply', '--phase', 'sitio']);
+  assert.strictEqual(otra.status, 0, otra.out);
+  const yaml = otra.llamadas.filter((l) => l.paso === 'aplicacion' && l.args.includes('--yaml')).pop();
+  assert.ok(yaml, otra.out);
+  const env = JSON.parse(Object.values(yaml.archivos)[0]).properties.template.containers[0].env;
+  assert.deepStrictEqual(env.filter((e) => e.name === 'SITE_INVITE_EMAIL_CODE'), [{ name: 'SITE_INVITE_EMAIL_CODE', value: 'off' }]);
+});
+
+test('T21 2.74-Instalador_CodigoPorCorreo @story-2.74 @ac-11 @ac-12', () => {
+  for (const [politica, valor] of [['enabled', 'on'], ['default', 'on'], ['disabled', 'off'], ['denied', 'unknown']]) {
+    const r = conSitioCreado({ TYCON_AZ_EMAIL_CODE_POLICY: politica }).correr(['--apply', '--phase', 'permiso-de-invitar']);
+    assert.strictEqual(r.status, 0, `${politica}: ${r.out}`);
+    const upd = r.llamadas.find((l) => l.paso === 'aplicacion' && l.args.includes('update') && l.args.includes('--set-env-vars'));
+    assert.ok(upd, `${politica}: ${r.out}`);
+    assert.ok(upd.args.includes(`SITE_INVITE_EMAIL_CODE=${valor}`), `${politica} → ${valor}: ${upd.args.join(' ')}`);
+    if (valor === 'unknown') assert.match(r.out, /portal/, 'dice dónde mirarlo');
+  }
+});

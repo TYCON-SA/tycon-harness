@@ -1336,11 +1336,77 @@ function pantalla(idioma = 'es') {
   // correos como etiquetas con su ✕ y un + para sumar otro, y el ✕ que quita a la persona. Sólo cambia cómo se ve: cada
   // entrada sigue siendo { role, emails[] }
   var CORREO_A_ENFOCAR = null;
+  // «Invitar a alguien»: lo escrito, si está mandando y la respuesta del sitio; y la de cada «Revocar»
+  var INVITAR = { correo: '', productos: '', enviando: false, nota: null };
+  var REVOCADOS = {};
+  // lo escrito en un campo; el documento de las pruebas sólo tiene el atributo
+  function textoDelCampo(c) { return c.value !== undefined && c.value !== null ? c.value : (c.attrs ? c.attrs.value : ''); }
+  /** El alta de alguien de afuera del directorio, como pedido: la invitación sale cuando el pedido se aprueba. */
+  function bloqueInvitar(inv) {
+    var caja = el('div', { class: 'sub invitar' }, el('p', { class: 'sub-t', text: T('pantalla.invitarAlguien') }));
+    if (!inv.boton) { caja.appendChild(el('p', { class: 'sub-d', text: inv.texto || '' })); return caja; }
+    if (inv.permiso && !inv.permiso.ok) {
+      var falta = aviso('warn', T('pantalla.faltaPermisoInvitar'), inv.permiso.texto || '');
+      if (inv.permiso.comando) falta.appendChild(el('pre', { text: inv.permiso.comando }));
+      caja.appendChild(falta);
+      return caja;
+    }
+    caja.appendChild(el('p', { class: 'sub-d', text: T('pantalla.invitarAyuda') }));
+    var correo = el('input', { type: 'email', value: INVITAR.correo, placeholder: T('pantalla.correo'), 'aria-label': T('pantalla.correoAInvitar'), oninput: function (ev) { INVITAR.correo = ev.target.value; } });
+    var productos = el('input', { value: INVITAR.productos, placeholder: T('pantalla.productosSeparados'), 'aria-label': T('pantalla.productosDeLaPersona'), oninput: function (ev) { INVITAR.productos = ev.target.value; } });
+    var boton = el('button', { type: 'button', text: INVITAR.enviando ? T('pantalla.invitando') : T('pantalla.invitar'), disabled: INVITAR.enviando ? 'disabled' : undefined, onclick: function () { invitar(textoDelCampo(correo), textoDelCampo(productos)); } });
+    caja.appendChild(el('div', { class: 'bar' }, correo, productos, boton));
+    var n = INVITAR.nota;
+    if (n) {
+      var nota = el('div', { class: 'msg ' + (n.ok ? 'ok' : 'bad'), role: 'status' }, el('b', { text: n.text || '' }));
+      if (n.enlace) nota.appendChild(el('a', { href: n.enlace, text: T('pantalla.verElPedidoDeCambio') }));
+      if (n.aviso) nota.appendChild(el('p', { text: n.aviso }));
+      if (n.comando) nota.appendChild(el('pre', { text: n.comando }));
+      caja.appendChild(nota);
+    }
+    return caja;
+  }
+  function invitar(correo, productos) {
+    if (INVITAR.enviando) return;
+    INVITAR.correo = correo; INVITAR.productos = productos; INVITAR.enviando = true; INVITAR.nota = null; render();
+    var lista = String(productos || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+    return api('/invitar', { correo: correo, productos: lista, marca: nuevaMarca() }).then(function (r) {
+      INVITAR.enviando = false;
+      INVITAR.nota = { ok: !!r.ok, text: r.ok ? r.message : (mensajeLlano(r.message) || T('pantalla.hayQueCorregirLoMarcado')), enlace: r.enlace || null, aviso: r.aviso || null, comando: r.comando || null };
+      if (r.ok) { INVITAR.correo = ''; INVITAR.productos = ''; }
+      render();
+    });
+  }
+  function revocar(correo) {
+    if (REVOCADOS[correo] && REVOCADOS[correo].enviando) return;
+    REVOCADOS[correo] = { enviando: true }; render();
+    return api('/revocar', { correo: correo, marca: nuevaMarca() }).then(function (r) {
+      REVOCADOS[correo] = { ok: !!r.ok, text: r.ok ? r.message : (mensajeLlano(r.message) || T('pantalla.hayQueCorregirLoMarcado')), enlace: r.enlace || null, portal: r.portal || null };
+      render();
+    });
+  }
+  /** Al lado de un correo invitado: su estado, «Revocar» y lo que contestó el sitio. */
+  function estadoDeInvitado(correo, inv) {
+    var e = inv && inv.estados ? inv.estados[String(correo).trim().toLowerCase()] : null;
+    if (!e) return null;
+    var caja = el('span', { class: 'invitado', 'data-estado': e.estado }, el('span', { class: 'dato', text: e.texto }));
+    var rv = REVOCADOS[String(correo).trim().toLowerCase()];
+    if (!rv) caja.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.revocar'), title: T('pantalla.revocar') + ' ' + correo, onclick: function () { revocar(String(correo).trim().toLowerCase()); } }));
+    else if (rv.enviando) caja.appendChild(el('span', { class: 'dato', text: T('pantalla.proponiendo') }));
+    else {
+      var nota = el('span', { class: 'msg ' + (rv.ok ? 'ok' : 'bad'), role: 'status' }, el('b', { text: rv.text }));
+      if (rv.enlace) nota.appendChild(el('a', { href: rv.enlace, text: T('pantalla.verElPedidoDeCambio') }));
+      if (rv.portal) nota.appendChild(el('a', { href: rv.portal, text: T('pantalla.verEnElPortal') }));
+      caja.appendChild(nota);
+    }
+    return caja;
+  }
   function editorAcceso(site, pr, ex) {
     var box = el('div', { class: 'pila' });
     if (ex.inicioDeSesion) box.appendChild(el('p', { class: 'sub-d', text: T('pantalla.conQueSeEntra') + ex.inicioDeSesion.texto + T('pantalla.estoSeCambiaEnLa') }));
     if (ex.migracion) box.appendChild(aviso('warn', T('pantalla.laListaTodaviaNoEsta'), ex.migracion));
     box.appendChild(el('p', { class: 'sub-d', text: T('pantalla.nadieEntraSiNoEsta') }));
+    if (ex.invitaciones) box.appendChild(bloqueInvitar(ex.invitaciones));
     var acc = site.access = site.access || [];
     var tabla = el('div', { class: 'personas', role: 'table', 'aria-label': T('pantalla.lasPersonas') },
       el('div', { class: 'h', role: 'row' }, el('span', { role: 'columnheader', text: T('pantalla.rol') }), el('span', { role: 'columnheader', text: T('pantalla.correos') }), el('span', { role: 'columnheader' })));
@@ -1385,6 +1451,8 @@ function pantalla(idioma = 'es') {
         }
         correos.appendChild(el('span', { class: 'correo' + (con(ruta) ? ' bad' : ''), title: m, 'data-path': ruta }, el('span', { text: m }),
           el('button', { class: 'chip-x', type: 'button', text: '✕', title: T('pantalla.quitarCorreo') + ' ' + m, 'aria-label': T('pantalla.quitarCorreo') + ' ' + m, onclick: function () { e.emails.splice(j, 1); render(); } })));
+        var invitado = estadoDeInvitado(m, ex.invitaciones);
+        if (invitado) correos.appendChild(invitado);
       });
       correos.appendChild(el('button', { class: 'sumar', type: 'button', text: '+', title: T('pantalla.agregarCorreoUno'), 'aria-label': T('pantalla.agregarCorreoUno'), onclick: function () { if (!Array.isArray(e.emails)) e.emails = []; e.emails.push(''); CORREO_A_ENFOCAR = p + '.emails.' + (e.emails.length - 1); render(); } }));
       fila.appendChild(correos);
