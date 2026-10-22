@@ -240,7 +240,7 @@ queda la ruta para copiar—, y debajo la línea
   Es la única excepción al "detalle a pedido".
 - **Los recordatorios van en UNA línea combinada y en llano**, no en 3 bloques con emoji y sangría.
   Sólo los que aplican: el del reloj si el Arranque avisó el trabajo a una herramienta de horas
-  (`workSignalStarted`); el de Azure DevOps si la story tiene `ado_work_item`. Sin «smoke», «DoD» ni «ADO» (caso
+  (`workSignalStarted`); el del pedido de trabajo si la story tiene `work_item` (o su nombre viejo). Sin «smoke», «DoD» ni «ADO» (caso
   2026-10-19: un dev solo, sin herramienta de horas ni Azure DevOps, leía «smoke de DoD» y «cierre en ADO» en su
   primera historia). El contenido normativo no cambia —
   sigue vigente todo lo de arriba (el registro de horas NO se cierra, probarla andando es obligatorio, el pedido se cierra

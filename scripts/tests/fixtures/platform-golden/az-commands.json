@@ -135,14 +135,9 @@
     "**Best-effort de validación**: si la auto-derivación produce un path, una vez por sesión chequear que el iteration exista (`az boards iteration project list --project <p>`). Si NO existe, fallback a backlog + warning al dev. NO bloquear creación del WI.",
     "**Por qué**: con `ado_iteration_path: \"\"` en la config, un WI cae en el backlog (`IterationPath=<proyecto>`) aunque la story tenga `sprint: <N>` en el frontmatter, y hay que moverlo a mano con `az boards work-item update --iteration \"<proyecto>\\Sprint <N>\"`. Resolver el IterationPath desde el sprint de la story cierra ese gap.",
     "- ❌ NO duplicar: antes de crear, si la config resuelve, considerar una `az boards query` por",
-    "Antes de ejecutar `az boards work-item create`, mostrar al dev un resumen y **esperar",
     "Ej: con `ado_iteration_root=\"Ceibo\"` (o `ado_project=\"Ceibo\"`) y `sprint: 5` → `Ceibo\\Sprint 5`. Asume convención TYCON `Sprint <N>` como nombre del iteration (verificable con `az boards iteration project list --project <p>`).",
-    "az boards work-item create \\",
-    "az boards work-item relation add \\",
-    "config (ver el comando `az devops invoke ... workitemtypes` del Paso 2 para enumerarlos).",
     "falta enumerarlos: `az devops invoke --area wit --resource workitemtypes --route-parameters",
-    "process=$(az devops project show \\",
-    "tycon-ado-story-wi  ──►  az boards work-item create"
+    "process=$(az devops project show \\"
   ],
   "skills/tycon-merge-to-main/steps/step-09b-create-pr.md": [
     "`$BORRAR_SOURCE` en `true`, `az repos pr show` devolvió `autoCompleteSetBy` con el usuario,",
@@ -156,23 +151,19 @@
     "az repos pr update --id \"$PR_ID\" \\",
     "az repos pr update --id <id> \\"
   ],
-  "skills/tycon-pipeline/SKILL.md": [
-    "| Re-asignar `ado_work_item` | `az boards work-item update` + commit, no el pipeline |"
-  ],
   "skills/tycon-pipeline/steps/close-work-item.md": [
-    "- Método canónico: `az boards work-item update --fields` (mismo `az` que el resto del",
-    "- Si `az boards` falla con 401/403 → token vencido / sin permisos. Pedir al dev que renueve `AZURE_DEVOPS_EXT_PAT`.",
-    "- Si el state name no matchea (ej. el process usa `Resolved` en vez de `Closed`) → listar states válidos con `az boards work-item update --help` o pedir al dev qué state usar.",
-    "El skill necesita saber `org` + `project` para invocar `az boards`. Resolver en este orden:",
-    "WI=$(az boards work-item create \\",
-    "az boards work-item relation add --org \"$ado_org\" --id \"$WI\" \\",
-    "az boards work-item update --id <id> --organization <org> \\",
-    "az boards work-item update \\",
     "az pipelines runs list --organization https://dev.azure.com/<org> --project <project> \\"
   ],
   "skills/tycon-pipeline/steps/step-01-start.md": [
-    "`az boards work-item show --organization <ado_org> --id <id> --query \"fields.\\\"System.State\\\"\" --output tsv`.",
-    "`az boards work-item update --organization <ado_org> --id <id> --state \"Active\"`.",
     "az boards query --organization <ado_org> --project <ado_project> --output json \\"
+  ],
+  "integrations/azure-devops/scripts/work-items.js": [
+    "//            az boards work-item relation add --organization <org> --id <id> --relation-type parent --target-id <Epic> --output json",
+    "//            az boards work-item update --organization <org> --id <id> --assigned-to <correo> --output json   (con auto_assign)",
+    "//            az boards work-item update --organization <org> --id <id> --state <activo> --output json",
+    "//            az boards work-item update --organization <org> --id <id> --state <cerrado> --fields Microsoft.VSTS.Scheduling.CompletedWork=<horas> --output json",
+    "//   activo:  az boards work-item show --organization <org> --id <id> --query fields.\"System.State\" --output tsv",
+    "//   cerrar:  az boards work-item update --organization <org> --id <id> --discussion <comentario> --output json",
+    "//   crear:   az boards work-item create --organization <org> --project <proyecto> --type <tipo> --title <título> --fields <campos> [--assigned-to <correo>] --output json"
   ]
 }

@@ -397,7 +397,7 @@ if (!marker && matches(prompt, NEW_FEATURE_PATTERNS)) {
       `🔴 Anti-pattern conocido — discovery-as-Claude:\n` +
       `   • Hacés preguntas sueltas en el chat en vez de aplicar el método de brainstorm de Mary.\n` +
       `   • La "spec" queda en el thread, no en \`.specs/\` con frontmatter + ACs numerados + tests con nombre.\n` +
-      `   • Te saltás el formato Mary+GOLD (epic, story id, sprint, status, ado_work_item, dev notes).\n` +
+      `   • Te saltás el formato Mary+GOLD (epic, story id, sprint, status, work_item, dev notes).\n` +
       `   • No se crea work item ADO ni back-link bidireccional con stories padre.\n` +
       `   • Caso disparador real (2026-06-09): "vamos a hacer la funcionalidad para conciliar pagos a proveedores" — ` +
       `Claude entró en modo preguntas-clarificadoras a mano en vez de invocar Mary/Bob.\n\n` +

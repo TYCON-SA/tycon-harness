@@ -2929,7 +2929,7 @@ function computeNext() {
   const timeTool = harnessTimeTool();
   const startParts = STEPS_TABLE.startPartsPending(marker, {
     'time-tracking': timeTool === null || timeTool.chosen === true,
-    ado: !!(story && fm.ado_work_item),
+    ado: !!(story && require(path.join(packsLib.raizAgentSkills(), 'scripts', 'lib', 'platform', 'work-item-field.js')).idOf(fm)),
   });
   const warnings = STEPS_TABLE.startWarningLines(marker);
 
