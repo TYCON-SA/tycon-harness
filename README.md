@@ -36,7 +36,7 @@ For whoever uses the harness on their machine: from installing it to adding your
 
 **0. What it is and what you get**
 
-https://github.com/user-attachments/assets/1340479f-1da3-4716-8bd5-7c5b1ae05b4a
+https://github.com/user-attachments/assets/916e33d9-5e58-44de-9367-8a8c7c16c4ea
 
 **1. Installing it**
 

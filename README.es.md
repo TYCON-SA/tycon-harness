@@ -36,7 +36,7 @@ Para quien usa el arnés en su máquina: de instalarlo a sumar las reglas de tu 
 
 **0. Qué es y qué ganás**
 
-https://github.com/user-attachments/assets/1340479f-1da3-4716-8bd5-7c5b1ae05b4a
+https://github.com/user-attachments/assets/916e33d9-5e58-44de-9367-8a8c7c16c4ea
 
 **1. Instalarlo**
 
