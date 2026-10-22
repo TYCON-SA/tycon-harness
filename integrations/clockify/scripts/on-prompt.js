@@ -142,28 +142,11 @@ timers de otras sesiones (fix race 2026-05-17). NO toques active/*.json de otras
   if (activeForCwd && activeForCwd.entryId) {
     const matchedStop = detectIntent(prompt, stopKeywords);
     if (matchedStop) {
-      emitReminder(`clocki STOP-detect: el prompt parece fin/transición de tarea (keyword detectado: "${matchedStop}").
-
-Timer activo de ESTA sesión (session_id "${sessionKey}") en cwd "${found.matchedKey}":
-  - entryId: ${activeForCwd.entryId}
-  - description: "${activeForCwd.description}"
-  - startedAt: ${activeForCwd.startedAt}
-  - lastActivity: ${activeForCwd.lastActivity}
-
-ACCIÓN MANDATORY antes de seguir con el prompt:
-1. Si la tarea TERMINÓ (no hay continuación inmediata) → cerrá el timer:
-   - mcp__clockify__update-clockify-time-entry con timeEntryId="${activeForCwd.entryId}", end=now (o lastActivity si hubo idle), workspaceId="${activeForCwd.workspaceId}", projectId="${activeForCwd.projectId}", description=la actual
-   - Borrá la entry del archivo de esta sesión: en ${sessionFile} eliminá la key ["${found.matchedKey}"]. Si el archivo queda {}, borralo. Es tu archivo — no afecta a otras sesiones. NUNCA \`printf '{}'\`.
-
-2. Si el user transiciona a OTRA tarea (ej. "ahora hagamos X") → cerrar previa Y abrir nueva ATÓMICAMENTE (regla anti-billing-gap):
-   - update-clockify-time-entry (cerrar previa con end=now)
-   - create-clockify-time-entry (nueva con start=now + desc nueva)
-   - Write ${sessionFile}: reemplazá la entry bajo la key ["${found.matchedKey}"] con el nuevo entryId
-
-3. Si el prompt fue ambiguo (no sabés si terminó o sigue), PREGUNTÁ al user antes de cerrar:
-   "Veo que dijiste '${matchedStop}'. ¿Cerro el timer de '${activeForCwd.description}' o seguimos?"
-
-NUNCA dejes el timer corriendo si la tarea ya terminó. El user MARCÓ ESTO COMO PROBLEMA PRINCIPAL.`);
+      emitReminder(`clocki: el prompt parece fin de tarea ("${matchedStop}") y esta sesión tiene el timer "${activeForCwd.description}" abierto (entryId ${activeForCwd.entryId}, workspaceId ${activeForCwd.workspaceId}, projectId ${activeForCwd.projectId}, lastActivity ${activeForCwd.lastActivity}).
+- Terminó: cerralo con update-clockify-time-entry (end = ahora, o lastActivity si hubo pausa) y sacá la key ["${found.matchedKey}"] de ${sessionFile}.
+- Pasa a otra tarea: cerrá este y abrí el nuevo en el mismo paso, sin hueco.
+- Si no está claro, preguntá antes de cerrar. Nunca dejes el timer corriendo con la tarea terminada.
+Los pasos, en la skill clocki («Flujo de stop» y «Regla atómica close+open»).`);
       process.exit(0);
     }
 
@@ -180,17 +163,9 @@ NUNCA dejes el timer corriendo si la tarea ya terminó. El user MARCÓ ESTO COMO
       const referencesCurrentDesc = descWords.some((w) => promptLower.includes(w));
 
       if (!referencesCurrentDesc) {
-        emitReminder(`clocki TASK-CHANGE detect: timer activo "${activeForCwd.description}" (session_id "${sessionKey}") pero el prompt contiene NUEVO intent (keyword "${matchedIntentMidTask}") sin referenciar la descripción actual.
-
-Posible cambio de tarea. ACCIÓN antes de seguir:
-1. Confirmá con el user: "Veo nuevo intent ('${matchedIntentMidTask}') que parece distinto al timer actual ('${activeForCwd.description}'). ¿Es continuación de la misma tarea, o transición a otra? Si transición → cerrar previo + abrir nuevo."
-2. Si el user confirma transition → cerrar previo + crear nuevo timer ATÓMICAMENTE (regla anti-billing-gap):
-   - update-clockify-time-entry (cerrar previa con end=now, timeEntryId="${activeForCwd.entryId}")
-   - create-clockify-time-entry (nueva con desc nueva)
-   - Write ${sessionFile}: reemplazá la entry bajo la key ["${found.matchedKey}"]
-3. Si el user dice "es la misma tarea, solo otro angle" → IGNORAR este reminder, seguir.
-
-Si el prompt fue una pregunta exploratoria que NO arranca trabajo nuevo, IGNORAR este reminder.`);
+        emitReminder(`clocki: el prompt parece una tarea nueva ("${matchedIntentMidTask}") y esta sesión tiene abierto "${activeForCwd.description}" (entryId ${activeForCwd.entryId}).
+Preguntá si es la misma tarea u otra tarea. Si es otra: cerrá este y abrí el nuevo en el mismo paso, sin hueco, y actualizá la key ["${found.matchedKey}"] de ${sessionFile}. Si es la misma, o era sólo una pregunta, seguí.
+Los pasos, en la skill clocki («Regla atómica close+open»).`);
         process.exit(0);
       }
     }
@@ -207,18 +182,11 @@ Si el prompt fue una pregunta exploratoria que NO arranca trabajo nuevo, IGNORAR
     process.exit(0);
   }
 
-  emitReminder(`clocki: el prompt del user parece intent de trabajo (keyword detectado: "${matchedKeyword}") y NO hay timer activo para esta sesión (session_id "${sessionKey}") en cwd "${cwd}".
-
-Si efectivamente vas a empezar a trabajar (no es pregunta exploratoria, charla, ni meta-discusión sobre el proceso), antes de hacer cualquier otra cosa:
-
-1. Inferí una descripción corta del trabajo (5-10 palabras, ej: "fix bug login redirect", "refactor service X", "story 2.3 webhook handler").
-2. Resolvé el project: leé ~/.claude/clocki/project-cache.json. Si hay entry para cwd, usala. Si no, llamá mcp__clockify__list-clockify-projects y matcheá basename del cwd contra los project names (case-insensitive, exact > parcial). Si no hay match único, ofrecé top 5 al user.
-3. PREGUNTÁ al user antes de abrir: "Detecté trabajo: <desc>. ¿Abro timer en Clockify project <project-name>? (sí / cambiar desc / cambiar project / no)".
-4. Si el user confirma: llamá mcp__clockify__create-clockify-time-entry con (workspaceId, projectId, description, start=<now-local-bare>, end=<MISMO-valor-que-start>, billable=true). 🔴 TIMEZONE: start DEBE estar en hora LOCAL, formato bare yyyy-MM-ddTHH:mm:ss (sin Z, sin offset) — obtenelo con \`date "+%Y-%m-%dT%H:%M:%S"\` (SIN -u). El MCP convierte local→UTC al guardar. NUNCA pases UTC (date -u / toISOString): el MCP lo trata como local y la entry queda corrida por tu offset (caso 2026-05-17). 🔴 end NO es null, NO es futuro — usá el MISMO timestamp que start (la duración real se extiende vía touch-activity hook). Schema MCP requiere end como string obligatorio.
-   Persistí en ${sessionFile} (archivo propio de esta sesión, forma { "<cwd>": <entry> }) la entry bajo la key ["${cwd}"] con: entryId, workspaceId, projectId, description, startedAt=now, lastActivity=now, source="hook-intent". Es tu archivo exclusivo — Read, set la key, Write. NO toca timers de otras sesiones. Cacheá el project resolution en project-cache.json.
-5. Si el user dice "no" o ignora, NO abrir.
-
-Si el prompt era una pregunta o discusión y NO trabajo concreto, ignorá este reminder.`);
+  emitReminder(`clocki: el prompt parece trabajo ("${matchedKeyword}") y esta sesión no tiene timer en ${cwd}. Si de verdad arranca trabajo:
+- Preguntá antes de abrir: «Detecté trabajo: <descripción corta>. ¿Abro timer en el proyecto <proyecto>?» (el proyecto, de ~/.claude/clocki/project-cache.json o de la lista de Clockify). Sin un sí, no se abre.
+- Con el sí: create-clockify-time-entry con start en hora local, sin Z ni offset (\`date "+%Y-%m-%dT%H:%M:%S"\`, nunca UTC), y end igual al inicio.
+- Guardá la entry en ${sessionFile}, bajo la key ["${cwd}"] (entryId, workspaceId, projectId, description, startedAt, lastActivity, source="hook-intent"); es el archivo de esta sesión, no toques los de otras.
+Si era una pregunta o una charla, ignoralo. Los pasos, en la skill clocki («Flujo de start»).`);
 
   process.exit(0);
 }

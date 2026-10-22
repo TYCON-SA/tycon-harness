@@ -123,6 +123,14 @@
       "requiere": []
     },
     {
+      "__nota": "story 7.53: sondas de comportamiento — el agente de verdad (claude -p) en un laboratorio con HOME vacío y sólo el gancho medido, para ver si sigue cumpliendo una regla que dejó de estar siempre a la vista. Sin claude o sin sesión: NO MEDIDO.",
+      "raiz": "arnes",
+      "ruta": "tests/behavior-probes.test.sh",
+      "requiere": [
+        "modelo"
+      ]
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/bench-git-deterministic.test.sh",
       "requiere": []
