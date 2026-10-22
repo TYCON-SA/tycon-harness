@@ -95,4 +95,7 @@ test('W3 Reader_HostileInput_DecidesFast @story-7.52 @ac-3 — un comando enorme
     assert.strictEqual(r.veredicto, 'frena', `${que}: dio ${r.veredicto}`);
     assert.ok(ms < 3000, `${que}: tardó ${ms} ms`);
   }
+  // el tope no frena un archivo grande escrito con un heredoc que nombra una herramienta: su cuerpo es texto
+  const archivo = "cat > notas.md <<'EOF'\n" + 'correr npm test antes de mergear\n'.repeat(8000) + 'EOF\n';
+  assert.notStrictEqual(analizar(archivo).veredicto, 'frena', 'un heredoc grande a un archivo frenó');
 });

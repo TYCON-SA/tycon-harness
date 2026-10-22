@@ -38,7 +38,10 @@ const PROGRAMAS = new Set(['dotnet', 'npm', 'pnpm', 'yarn', 'bun', 'npx', 'pnpx'
   'python', 'python3', 'py', 'uv', 'poetry', 'pipenv', 'pdm', 'hatch', 'node', ...SHELLS]);
 const PROFUNDIDAD = 8;      // textos anidados (`bash -c` adentro de `ssh` adentro de …)
 const CADENA = 32;          // programas encadenados en un mismo comando (`sudo env A=1 nice timeout 60 …`)
-const TOPE = 256 * 1024;
+// Dos topes: el comando entero (un heredoc que escribe un archivo grande es normal) y lo que se corta como comandos, sin
+// los cuerpos de heredoc que no van a un shell (cortar 250 KB de palabras tarda segundos en una máquina lenta).
+const TOPE = 1024 * 1024;
+const TOPE_CORTE = 64 * 1024;
 
 // el nombre del programa, sin ruta, sin `.exe`/`.cmd` y sin la versión de un paquete (`vitest@latest`, `jest@29`)
 const nombre = (w) => path.posix.basename(String(w).replace(/\\/g, '/')).toLowerCase().replace(/\.(?:exe|cmd|bat|ps1)$/, '').replace(/(.)@[^@/]*$/, '$1');
@@ -80,9 +83,9 @@ function revisar(texto, ctx, out) {
   texto = String(texto);
   if (!NOMBRA.test(texto)) return out;
   if (ctx.prof > PROFUNDIDAD) { out.push({ tipo: 'opaco', comando: texto, motivo: 'demasiados envoltorios anidados', escape: ctx.escape }); return out; }
-  // cada texto anidado se vuelve a cortar: lo recorrido en toda la lectura no pasa del tope
-  ctx.trabajo.leido += texto.length;
-  if (ctx.trabajo.leido > TOPE) { out.push({ tipo: 'opaco', comando: texto.slice(0, 200), motivo: 'demasiado texto anidado para leerlo', escape: ctx.escape }); return out; }
+  // cada texto anidado se vuelve a cortar: lo cortado en toda la lectura no pasa del tope
+  ctx.trabajo.leido += sp.sinHeredocs(texto, { salvoShell: true }).length;
+  if (ctx.trabajo.leido > TOPE_CORTE) { out.push({ tipo: 'opaco', comando: texto.slice(0, 200), motivo: 'demasiado texto anidado para leerlo', escape: ctx.escape }); return out; }
   // `<<\EOF` es un heredoc con el delimitador entre comillas, como `<<'EOF'`: su cuerpo es texto
   texto = texto.replace(/<<(-?)[ \t]*\\([A-Za-z_][A-Za-z0-9_]*)/g, "<<$1'$2'");
   if (!ctx.ps && comillasAbiertas(sp.sinHeredocs(texto))) {
