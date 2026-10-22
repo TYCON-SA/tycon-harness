@@ -73,6 +73,7 @@
     { "kind": "hook", "id": "SessionStart:@tcg:engram-drift-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "integration:engram", "windows": true },
     { "kind": "hook", "id": "SessionStart:@tcg:unpushed-work-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "SessionStart:@tcg:dev-behind-main-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
+    { "kind": "hook", "id": "SessionStart:@tcg:extension-notices.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "PostToolUse:@tcg:unpushed-work-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "Stop:@tcg:unpushed-work-notice.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },
     { "kind": "hook", "id": "SessionStart:@tcg:worktree-sweep.js", "where_pattern": "/\\.claude/settings\\.json$", "when": "always", "windows": true },

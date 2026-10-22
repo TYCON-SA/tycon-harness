@@ -1438,6 +1438,18 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksdev-behind-main-noticejs)
 
+## scripts/hooks/extension-notices.js
+
+**Qué es:** Al abrir la sesión, dice los avisos que traen los paquetes activos en su `notices.json`, sólo en los repos donde aplican y una vez por sesión. El lector es `scripts/lib/extension-notices.js`.
+
+**Por qué existe:** Una regla que sólo sirve en los repos de un producto viajaba en las instrucciones de todas las sesiones, también en las de repos donde no aplica. Ahora la trae el paquete y el núcleo la dice donde corresponde. El aviso va en un archivo aparte del manifiesto, así un arnés anterior no se rompe al recibirlo.
+
+**Quién la usa:** El arranque de sesión. Se apaga con `TYCON_EXTENSION_NOTICES=0`.
+
+**Dónde se prueba:** `scripts/tests/extension-notices.test.js` y el caso 63 del banco
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksextension-noticesjs)
+
 ## scripts/hooks/missing-path-notice.js
 
 **Qué es:** Avisa cuando un comando de lectura nombró una ruta que no existe.
