@@ -33,7 +33,8 @@ const LIB = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'first
 const MARKER = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
 const FS = require(LIB);
 const Q = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'questions.js'));
-const EFFECTS = require(path.join(RAIZ, 'scripts', 'setup', 'install-effects.json')).effects;
+// la lista que lee la instalación: el archivo y los hooks de las integraciones, de sus manifiestos
+const EFFECTS = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'managed.js')).readEffects(RAIZ).effects;
 
 const BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-first-story-'));
 require('./lib/lab-guard.js').labGuard(BASE, 'first-story');

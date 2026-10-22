@@ -72,6 +72,27 @@ function toggleKeyProblem(name) {
     : `«${name}» no es una llave del lector de configuración (integrations.<llave>): una integración de prender y apagar se prende con la suya`;
 }
 
+// `control`: qué hace el control, en una línea que no nombra la herramienta, como lo muestra «Cómo trabaja» en castellano y
+// en inglés
+const CONTROL_SHAPE = '«control» es { "es": "<qué hace>", "en": "<what it does>" }';
+const controlText = (c) => isObject(c) && ['es', 'en'].every((k) => typeof c[k] === 'string' && c[k].trim()) && Object.keys(c).length === 2;
+
+/**
+ * Los motivos por los que el `install` de un hook no pasaría la validación de la lista de efectos
+ * (scripts/setup/harness/managed.js), con la entrada que arma `effectEntries`. Sin el validador (un árbol sin él), ninguno.
+ */
+function installProblems(m, h) {
+  const validator = path.join(__dirname, '..', 'setup', 'harness', 'managed.js');
+  if (!fs.existsSync(validator)) return [];
+  let effectProblems;
+  // el validador que está y no carga se dice: sin él, un texto malo pasaría como bueno
+  try { ({ effectProblems } = require(validator)); } catch (e) { return [`no pude cargar el validador de la lista de efectos (${e.code || e.message})`]; }
+  if (typeof effectProblems !== 'function') return ['el validador de la lista de efectos no sabe validar una entrada'];
+  const when = m.kind === 'toggle' ? (h.always ? 'always' : `integration:${m.name}`) : `time:${m.name}`;
+  const entry = Object.assign({ id: `${h.event}:${INT_PREFIX}${m.name}/${h.script}`, kind: 'hook' }, h.install, { when, windows: Boolean(h.platforms && h.platforms.windows === true) });
+  return effectProblems({ effects: [entry] }).map((p) => p.replace(/^[^:]+:@int:[^:]+: /, ''));
+}
+
 /** Los motivos por los que un manifiesto no vale (vacío si vale). */
 function problemsOf(m, folder) {
   const out = [];
@@ -103,6 +124,19 @@ function problemsOf(m, folder) {
     if (h.steps !== undefined && !(Array.isArray(h.steps) && h.steps.length && h.steps.every((s) => typeof s === 'string' && STEP_RE.test(s)))) out.push(`${who}: «steps» es una lista de pasos del pipeline o ["all"]`);
     if (h.effect !== undefined && !EFFECTS.includes(h.effect)) out.push(`${who}: «effect» es ${EFFECTS.join(', ')}`);
     if (h.tools !== undefined && !(Array.isArray(h.tools) && h.tools.length && h.tools.every((t) => TOOLS.includes(t)))) out.push(`${who}: «tools» es una lista de ${TOOLS.join(', ')}`);
+    // `install`: los textos del hook en la lista de efectos (título, qué hace, en inglés…); su detalle lo valida la lista
+    // (scripts/setup/harness/managed.js). Va en un hook que corre en Claude Code: el que corre sólo en Codex no tiene entrada
+    if (h.install !== undefined) {
+      if (!isObject(h.install) || typeof h.install.title !== 'string' || !h.install.title.trim()) out.push(`${who}: «install» es un objeto con su «title» y los demás textos de la lista de efectos`);
+      else if (h.tools && !h.tools.includes('claude')) out.push(`${who}: «install» va sólo en un hook que corre en Claude Code`);
+      else if (m.kind !== 'timeTracking' && m.kind !== 'toggle') out.push(`${who}: «install» va sólo en una integración de horas o de prender y apagar: las de otro tipo no registran hooks`);
+      else {
+        for (const k of ['id', 'kind', 'when', 'windows']) if (k in h.install) out.push(`${who}: «install.${k}» sale del hook, no se escribe`);
+        // los textos con las mismas reglas que la lista de efectos: uno malo deja roto este manifiesto, no la lista entera
+        for (const p of installProblems(m, h)) out.push(`${who}: «install»: ${p}`);
+      }
+    }
+    if (h.control !== undefined && !controlText(h.control)) out.push(`${who}: ${CONTROL_SHAPE}`);
     // `always`: el hook corre también con la integración apagada (para decir algo de ese estado)
     if (h.always !== undefined) {
       if (h.always !== true) out.push(`${who}: «always» sólo puede ser true`);
@@ -134,11 +168,17 @@ function problemsOf(m, folder) {
     if (typeof d.name !== 'string' || !NAME_RE.test(d.name)) out.push(`${d.script}: falta «name»`);
     if (d.steps !== undefined && !(Array.isArray(d.steps) && d.steps.length && d.steps.every((s) => typeof s === 'string' && STEP_RE.test(s)))) out.push(`${d.script}: «steps» es una lista de pasos del pipeline o ["all"]`);
     if (d.effect !== undefined && !EFFECTS.includes(d.effect)) out.push(`${d.script}: «effect» es ${EFFECTS.join(', ')}`);
+    if (d.control !== undefined && !controlText(d.control)) out.push(`${d.script}: ${CONTROL_SHAPE}`);
   }
   for (const s of Array.isArray(m.skills) ? m.skills : []) if (!inside(s)) out.push(`la skill «${s}» es una carpeta dentro de la integración`);
   // `mcp`: el servidor MCP de la integración (su tabla en Codex y su clave en `~/.claude.json`), definido en cada máquina.
   // Hoy sólo se sabe resolver el que sale de cada máquina: `machine` va en true (uno sin definición nadie lo registraría,
   // y el despliegue sacaría su tabla en cada vuelta)
+  // `offer`: lo que dice la pregunta de la instalación de una herramienta de horas (qué hace y qué pide tener)
+  if (m.offer !== undefined) {
+    if (!isObject(m.offer) || typeof m.offer.does !== 'string' || !m.offer.does.trim() || typeof m.offer.needs !== 'string' || !m.offer.needs.trim()) out.push('«offer» es { "does": "<qué hace>", "needs": "<qué pide tener>" }');
+    else if (m.kind !== 'timeTracking') out.push('«offer» va sólo en una integración de horas: la ofrece la pregunta de la instalación');
+  }
   // Sólo lo declaran las de horas y las de prender y apagar: son las que el despliegue sabe si están prendidas. `null` es
   // «sin servidor»
   if (m.mcp !== undefined && m.mcp !== null) {
@@ -191,6 +231,7 @@ function listManifests({ env = process.env, dir = integrationsDir(env) } = {}) {
       skills: Array.isArray(m.skills) ? m.skills : [], settings: Array.isArray(m.settings) ? m.settings : [],
       mcp: m.mcp ? { server: m.mcp.server, machine: m.mcp.machine === true } : null,
       ...(m.kind === 'platform' ? { connector: m.connector, operations: m.operations, capabilities: isObject(m.capabilities) ? m.capabilities : {}, rawCommands: Array.isArray(m.rawCommands) ? m.rawCommands : [] } : {}),
+      offer: m.offer ? { does: m.offer.does, needs: m.offer.needs } : null,
     });
   }
   const result = { manifests, problems };
@@ -338,13 +379,25 @@ function hookEntries(m, { tool = null } = {}) {
   });
 }
 
-/** Las entradas del despachador de una integración para el modo dado: `[{ name, path, steps, effect, integration }]`. */
+/**
+ * Las entradas de la lista de efectos de los hooks de una integración que corren en Claude Code, con los textos de su
+ * manifiesto (`install`): el id, el tipo, cuándo existe y si corre en Windows salen del hook.
+ */
+function effectEntries(m) {
+  const when = new Map(hookEntries(m, { tool: 'claude' }).map((e) => [`${e.event}:${e.spec}`, e.when]));
+  return m.hooks.filter((h) => (!h.tools || h.tools.includes('claude')) && isObject(h.install)).map((h) => {
+    const id = `${h.event}:${INT_PREFIX}${m.name}/${h.script}`;
+    return Object.assign({ id, kind: 'hook' }, h.install, { when: when.get(id), windows: h.platforms.windows === true });
+  });
+}
+
+/** Las entradas del despachador de una integración para el modo dado: `[{ name, path, steps, effect, integration, control }]`. */
 function dispatchEntries(m, mode) {
-  return m.dispatch.filter((d) => d.on === mode).map((d) => ({ name: d.name, path: path.join(m.dir, d.script), steps: d.steps || ['all'], effect: d.effect || 'warns', integration: m.name }));
+  return m.dispatch.filter((d) => d.on === mode).map((d) => ({ name: d.name, path: path.join(m.dir, d.script), steps: d.steps || ['all'], effect: d.effect || 'warns', integration: m.name, control: d.control || null }));
 }
 
 module.exports = {
-  INT_PREFIX, TOOLS, parseIntSpec, intSpecRepoPath, intSpecPath, hookEntries, dispatchEntries,
+  INT_PREFIX, TOOLS, parseIntSpec, intSpecRepoPath, intSpecPath, hookEntries, dispatchEntries, effectEntries,
   integrationsDir, listManifests, find, profileSettings, secretKeys, isSecretKey,
   tyconHome, secretsDir, secretsFile, readSecret, secretState, writeSecret, PROFILE_TYPES,
 };

@@ -176,12 +176,23 @@ function loadList(file, { integrationsDir = INTEGRATIONS_DIR } = {}) {
   return { hooks, superseded: list.superseded || [], movedTo: list.moved_to || {}, legacy: list.legacy_fragments || [], warnings, unreadIntegrationScripts: unread };
 }
 
-/** Los ids `<EVENTO>:<spec>` que la lista de efectos marca `minimal`. null si no se pudo leer. */
-function loadMinimalIds(file) {
+/**
+ * Los ids `<EVENTO>:<spec>` que la lista de efectos marca `minimal`: los del archivo y los de los hooks de las
+ * integraciones, que traen sus textos en su manifiesto. null si el archivo no se pudo leer; un manifiesto roto no suma.
+ */
+function loadMinimalIds(file, { integrationsDir = INTEGRATIONS_DIR } = {}) {
+  let ids;
   try {
     const j = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return new Set(j.effects.filter((e) => e.kind === 'hook' && (e.profiles || []).includes('minimal')).map((e) => e.id));
+    ids = new Set(j.effects.filter((e) => e.kind === 'hook' && (e.profiles || []).includes('minimal')).map((e) => e.id));
   } catch (_) { return null; }
+  const INT = INTmod();
+  if (INT && !INT.error && typeof INT.effectEntries === 'function' && integrationsDir && fs.existsSync(integrationsDir)) {
+    for (const m of INT.listManifests({ dir: integrationsDir }).manifests) {
+      for (const e of INT.effectEntries(m)) if ((e.profiles || []).includes('minimal')) ids.add(e.id);
+    }
+  }
+  return ids;
 }
 
 // ── La configuración del arnés ───────────────────────────────────────────────────────────────────────────────────
@@ -779,7 +790,7 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
 
   const { integ, profile } = readConfig({ env, runConfig });
   if (integ.timeTrackingProblem) process.stderr.write(`apply-hooks: ${integ.timeTrackingProblem}: los hooks de las integraciones de horas quedan como están\n`);
-  const minimalIds = loadMinimalIds(a.effects || path.join(SETUP_DIR, 'install-effects.json'));
+  const minimalIds = loadMinimalIds(a.effects || path.join(SETUP_DIR, 'install-effects.json'), { integrationsDir });
   const has = (need) => need === 'telegram-plugin' && fs.existsSync(path.join(home, '.claude', 'plugins', 'cache', 'claude-plugins-official', 'telegram'));
   const decision = decide(list, { env, integ, profile, minimalIds, platform, has });
   // el intérprete de los hooks `.js`: mirando el disco, también si este instalador corre suelto

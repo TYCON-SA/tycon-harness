@@ -116,16 +116,18 @@ function parseIntegrations(text, keys) {
  * Enter es «ninguna». Un nombre que no se ofrece vuelve a preguntar; a la tercera, `{ names: null }`. Fin de entrada es
  * «ninguna», como cualquier respuesta que no es un sí, y se avisa con `eof` para no seguir leyendo.
  */
-function askIntegrations({ offered, read, write }) {
-  const keys = offered.map((x) => x.key);
-  write(`¿Qué integraciones prendo? Ninguna viene marcada; Enter es «ninguna».\n${offered.map((x) => `  - ${x.key}: ${x.does}. Pide: ${x.needs}`).join('\n')}\n`);
+function askIntegrations({ offered, read, write, exclusive = [] }) {
+  const keys = offered.map((x) => x.key || x.name);
+  const one = exclusive.filter((n) => keys.includes(n));
+  write(`¿Qué integraciones prendo? Ninguna viene marcada; Enter es «ninguna».\n${offered.map((x) => `  - ${x.key || x.name}: ${x.does}. Pide: ${x.needs}`).join('\n')}\n${one.length > 1 ? `De ${one.join(', ')} (la herramienta de horas), una sola.\n` : ''}`);
   for (let i = 0; i < MAX_TRIES; i++) {
     write(ASK_INTEGRATIONS);
     const r = read();
     if (r.eof) { write('\n'); return { names: [], eof: true }; }
     const p = parseIntegrations(r.text, keys);
-    if (p.ok) return { names: p.names };
-    write(`«${p.bad}» no es una de las que se ofrecen (${keys.join(', ')})\n`);
+    const two = p.ok ? p.names.filter((n) => one.includes(n)) : [];
+    if (p.ok && two.length < 2) return { names: p.names };
+    write(p.ok ? `${two.join(' y ')} son dos herramientas de horas: se elige una\n` : `«${p.bad}» no es una de las que se ofrecen (${keys.join(', ')})\n`);
   }
   return { names: null };
 }
@@ -133,14 +135,49 @@ function askIntegrations({ offered, read, write }) {
 /** La pregunta de los paquetes (un sí o no): qué activa la organización. Un repo sólo puede achicar esa lista, no sumar. */
 const PACKS_QUESTION = '¿Usás el paquete del stack en todos tus repos (sus skills y sus revisores)? Lo que actives acá vale para todos; un repo puede achicar la lista con `packs: [bizuit]` en su .tycon/advisors.yaml, no sumar. Para elegir algunos paquetes: --packs <a,b>. [s/N] ';
 
-/** `--integrations <lista|none>`: `{ names }` o `{ error }` nombrando las válidas. */
-function checkIntegrationsOption(value, keys) {
+/**
+ * `--integrations <lista|none>`: `{ names, time }` o `{ error }` nombrando las válidas. Con `timeNames` (las herramientas
+ * de horas de los manifiestos), la lista puede nombrar una: es la elegida (`time`); `none` la deja en ninguna, y sin
+ * nombrar ninguna, `time` es null (no se toca).
+ */
+function checkIntegrationsOption(value, keys, timeNames = null) {
   if (value === undefined || value === null) return null;
-  const p = parseIntegrations(value, keys);
-  if (String(value).trim() === '') return { error: `--integrations necesita una lista: válidas ${keys.join(', ')}, o none` };
-  if (!p.ok) return { error: `--integrations: «${p.bad}» no es una de las que se ofrecen; válidas: ${keys.join(', ')}, o none` };
-  return { names: p.names };
+  const times = Array.isArray(timeNames) ? timeNames : [];
+  const valid = () => `${keys.join(', ')}${times.length ? `; herramienta de horas: ${times.join(', ')} (una)` : ''}, o none`;
+  if (String(value).trim() === '') return { error: `--integrations necesita una lista: válidas ${valid()}` };
+  const p = parseIntegrations(value, keys.concat(times));
+  if (!p.ok) return { error: `--integrations: «${p.bad}» no es una de las que se ofrecen; válidas: ${valid()}` };
+  const chosen = p.names.filter((n) => times.includes(n));
+  if (chosen.length > 1) return { error: `--integrations: ${chosen.join(' y ')} son dos herramientas de horas; se elige una` };
+  const names = p.names.filter((n) => !times.includes(n));
+  if (!timeNames) return { names };
+  return { names, time: chosen[0] || (p.names.length ? null : 'none') };
 }
+
+/**
+ * Las herramientas de horas que se pueden elegir: las integraciones de horas de los manifiestos, con lo que la pregunta
+ * dice de cada una (`offer` de su manifiesto): `[{ name, label, does, needs }]`.
+ */
+function timeToolChoices(manifests) {
+  return (Array.isArray(manifests) ? manifests : []).filter((m) => m && m.kind === 'timeTracking' && typeof m.name === 'string')
+    .map((m) => ({ name: m.name, label: m.label || m.name, does: (m.offer && m.offer.does) || `registra tus horas en ${m.label || m.name}`, needs: (m.offer && m.offer.needs) || 'lo que dice su guía' }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Qué hace la instalación con la herramienta de horas: `{ ask, write, keep }`. `current` es lo que lee la configuración
+ * (`timeTracking()` del lector: la llave nueva o la vieja); `option`, lo pedido por `--integrations` (un nombre, `none` o
+ * null); `canAsk`, si es la primera instalación guiada con terminal. Lo pedido por opción se escribe si cambia algo. A
+ * quien ya tiene una elegida no se le pregunta: `keep` lo dice. Sin herramientas para elegir, o sin poder preguntar, nada.
+ */
+function timeToolPlan({ current, choices, option, canAsk }) {
+  const cur = current && typeof current.value === 'string' ? current.value : 'none';
+  if (option) return { ask: false, write: option === cur && !(current && current.legacy) ? null : { value: option, via: '--integrations' }, keep: null };
+  if (current && current.origin && current.origin !== 'sin-valor') return { ask: false, write: null, keep: `herramienta de horas: ${cur === 'none' ? 'ninguna' : cur} (ya elegida: no se pregunta)` };
+  if (!Array.isArray(choices) || !choices.length || !canAsk) return { ask: false, write: null, keep: null };
+  return { ask: true, write: null, keep: null };
+}
+
 
 /** `--packs <all|none|a,b>`: `{ value }` (`all`, `none` o la lista) o `{ error }`. La regla es la del lector. */
 function checkPacksOption(value, installed = null) {
@@ -298,6 +335,6 @@ function upgradeOffer({ effects, tree, home = null, shownHarness = null }) {
 module.exports = {
   PROFILES, ASK_PROFILE, ASK_INTEGRATIONS, PACKS_QUESTION, MAX_TRIES, CHANGE_HINT,
   profileCounts, profileLines, parseProfile, askProfile, offeredIntegrations, parseIntegrations, askIntegrations,
-  checkIntegrationsOption, checkPacksOption, packsText, samePacks, originLabel, configLines, configState, shortPlan,
+  checkIntegrationsOption, timeToolChoices, timeToolPlan, checkPacksOption, packsText, samePacks, originLabel, configLines, configState, shortPlan,
   upgradeOffer,
 };

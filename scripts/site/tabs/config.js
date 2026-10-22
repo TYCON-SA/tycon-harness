@@ -230,10 +230,19 @@ function revisoresPorPaquete(perfilDir) {
   return grupos;
 }
 
-/** Qué trae cada perfil de instalación, leído de install-effects.json del árbol (`profiles` de cada entrada). */
+/**
+ * Qué trae cada perfil de instalación, leído de install-effects.json del árbol y de los hooks de sus integraciones (los
+ * textos de cada uno están en su manifiesto): `profiles` de cada entrada.
+ */
 function perfilesDeInstalacion() {
   try {
-    const lista = JSON.parse(fs.readFileSync(path.join(TREE, 'scripts', 'setup', 'install-effects.json'), 'utf8')).effects || [];
+    const archivo = JSON.parse(fs.readFileSync(path.join(TREE, 'scripts', 'setup', 'install-effects.json'), 'utf8')).effects || [];
+    // un árbol anterior, sin el lector de los manifiestos: sólo el archivo
+    let ints = [];
+    let faltan = [];
+    const lector = path.join(TREE, 'scripts', 'setup', 'harness', 'managed.js');
+    if (fs.existsSync(lector)) { const MG = require(lector); if (typeof MG.manifestEffects === 'function') ({ entries: ints, problems: faltan } = MG.manifestEffects(TREE)); }
+    const lista = archivo.concat(ints);
     // cada pieza con lo que la pantalla muestra: el título y su grupo, el detalle, si viene prendida y dónde se cambia;
     // las piezas con el mismo título y el mismo detalle (un hook en dos eventos) van una vez; `en` lleva su inglés, y la
     // pantalla elige el idioma (así la respuesta guardada es una sola)
@@ -243,7 +252,8 @@ function perfilesDeInstalacion() {
       return lista.filter((e) => isObject(e) && Array.isArray(e.profiles) && e.profiles.includes(p) && typeof e.does === 'string' && typeof e.title === 'string')
         .map(ficha).filter((f) => { const k = `${f.title}\0${f.does}`; if (vistas.has(k)) return false; vistas.add(k); return true; });
     };
-    return { minimal: de('minimal'), full: de('full'), motivo: null };
+    // una integración que no se pudo leer no está en las listas: se dice
+    return { minimal: de('minimal'), full: de('full'), motivo: faltan.length ? faltan.join(' · ') : null };
   } catch (e) { return { minimal: [], full: [], motivo: M('config.sinEfectos', { codigo: (e && e.code) || 'error' }) }; }
 }
 /** Lo que trae la organización en el repo del perfil: skills, revisores, guías de alta y paquetes. */

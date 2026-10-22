@@ -7,7 +7,7 @@
 #   T43 · el perfil se pregunta SIN valor por defecto: Enter vuelve a preguntar, acepta 1, 2, minimal o full, a la tercera
 #         respuesta vacía (o con fin de entrada) sale 2 «sin perfil elegido»; sin terminal sale 2 con las dos opciones,
 #         también con `--yes` (`--yes` acepta el plan, no elige); `--dry-run` sigue la misma regla. La HOME, igual.
-#   T44 · las integraciones: se listan sólo las que la lista de efectos ofrece (clockify, engram, codegraph, codex), ninguna
+#   T44 · las integraciones: se listan sólo las que la lista de efectos ofrece (engram, codegraph, codex), ninguna
 #         marcada, Enter es «ninguna», un nombre desconocido (o uno que no se ofrece, como mailbox) vuelve a preguntar; el
 #         paquete del stack es un sí o no. Nada se escribe de más, y el cierre dice cómo se prenden ado y telegram.
 #   T45 · con `--profile`, `--integrations`, `--packs` y `--yes` no hay ninguna pregunta ni hace falta terminal; sin
@@ -55,7 +55,7 @@ qlab() {
   harness_lab_create "$T/lab-$1" >/dev/null || { mal "no se pudo armar el laboratorio $1"; return 1; }
   rm -rf "$LAB_HOME/.claude/.tycon-pipeline"
   export TYCON_PROFILE=0
-  unset TYCON_CODEX TYCON_INSTALL_PROFILE TYCON_CLOCKIFY TYCON_ENGRAM TYCON_CODEGRAPH TYCON_PACKS_DEFAULT
+  unset TYCON_CODEX TYCON_INSTALL_PROFILE TYCON_CLOCKIFY TYCON_TIME_TRACKING TYCON_ENGRAM TYCON_CODEGRAPH TYCON_PACKS_DEFAULT
 }
 home_now() { harness_lab_home_hash; }
 cfg() { python3 -c "
@@ -129,7 +129,8 @@ if corre T44; then
   else mal "T44 Enter en las dos: rc ${RC}; tycon.json $(cfg "d"); $(tail -n 3 "$T/t44-none.out" | tr '\n' ' ')"; fi
   grep -q 'Ninguna viene marcada; Enter es «ninguna»' "$T/t44-none.out" && ok "T44 la pregunta dice que ninguna viene marcada y que Enter es «ninguna»" || mal "T44 la pregunta de integraciones: $(grep -m1 -i 'integraciones' "$T/t44-none.out")"
   OFFERED="$(sed -n '/¿Qué integraciones prendo?/,/Nombres separados por coma/p' "$T/t44-none.out" | sed -n 's/^  - \([a-z]*\):.*/\1/p' | tr '\n' ' ')"
-  [ "$OFFERED" = "clockify engram codegraph codex " ] && ok "T44 se ofrecen clockify, engram, codegraph y codex, en ese orden" || mal "T44 lo ofrecido: «${OFFERED}»"
+  # el árbol de juguete no trae integraciones de horas: no se ofrece ninguna herramienta de horas (la llave vieja tampoco)
+  [ "$OFFERED" = "engram codegraph codex " ] && ok "T44 se ofrecen engram, codegraph y codex, en ese orden" || mal "T44 lo ofrecido: «${OFFERED}»"
   BLOCK="$(sed -n '/¿Qué integraciones prendo?/,/Nombres separados por coma/p' "$T/t44-none.out")"
   case "$BLOCK" in *mailbox*|*nightly*|*"  - ado"*|*"  - telegram"*) mal "T44 la lista ofrece algo que no se puede usar afuera o que pide un dato: $BLOCK" ;; *) ok "T44 mailbox, nightly, ado y telegram no se ofrecen" ;; esac
   ENG="$(printf '%s\n' "$BLOCK" | grep '^  - engram:')"
@@ -159,6 +160,54 @@ if corre T44; then
     ok "T44 un nombre desconocido (y mailbox, que no se ofrece) vuelve a preguntar nombrándolo"
   else mal "T44 nombre desconocido: ${N} preguntas; $(grep -m2 'no es una de' "$T/t44-unknown.out" | tr '\n' ' ')"; fi
   [ "$RC" = 0 ] && [ ! -e "$LAB_HOME/.claude/tycon.json" ] && ok "T44 …y con «n» a la conformidad no queda nada" || mal "T44 con «n»: rc ${RC}, tycon.json $(cfg "d")"
+
+  # T68 · con las integraciones reales: la herramienta de horas se elige en la misma pregunta, una sola, y
+  # guarda integrations.timeTracking; a quien ya tiene la llave vieja no se le ofrece y queda con la suya
+  TIME_NAMES="$(node -e 'const I=require(process.argv[1]);console.log(I.listManifests({dir:process.argv[2]}).manifests.filter((m)=>m.kind==="timeTracking").map((m)=>m.name).sort().join(" "))' "$RAIZ/scripts/lib/integrations.js" "$RAIZ/integrations")"
+  ONE="${TIME_NAMES##* }"; OLD="${TIME_NAMES%% *}"
+  qlab t68a || true
+  cp -R "$RAIZ/integrations" "$LAB_TREE/integrations"
+  RC=0; harness_lab_pty "2${NL}${OLD},${ONE}${NL}${ONE}${NL}${NL}s" harness install > "$T/t68-new.out" 2>&1 || RC=$?
+  OFF68="$(sed -n '/¿Qué integraciones prendo?/,/Nombres separados por coma/p' "$T/t68-new.out" | sed -n 's/^  - \([a-z]*\):.*/\1/p' | tr '\n' ' ')"
+  if [ "$RC" = 0 ] && [ "$OFF68" = "engram codegraph codex ${TIME_NAMES} " ] && grep -q 'se elige una' "$T/t68-new.out" \
+     && [ "$(cfg "[(d.get('integrations') or {}).get(k) for k in ('timeTracking', '${OLD}')]")" = "['${ONE}', None]" ]; then
+    ok "T68 casa nueva: ofrece las herramientas de horas de los manifiestos, una sola, y guarda timeTracking: ${ONE}"
+  else mal "T68 casa nueva: rc ${RC}; ofrecidas «${OFF68}»; tycon.json $(cfg "d")"; fi
+  qlab t68b || true
+  cp -R "$RAIZ/integrations" "$LAB_TREE/integrations"
+  printf '{ "integrations": { "%s": true } }\n' "$OLD" > "$LAB_HOME/.claude/tycon.json"
+  RC=0; harness_lab_pty "2${NL}${NL}${NL}s" harness install > "$T/t68-old.out" 2>&1 || RC=$?
+  OFF68="$(sed -n '/¿Qué integraciones prendo?/,/Nombres separados por coma/p' "$T/t68-old.out" | sed -n 's/^  - \([a-z]*\):.*/\1/p' | tr '\n' ' ')"
+  if [ "$RC" = 0 ] && [ "$OFF68" = "engram codegraph codex " ] && grep -q "herramienta de horas: ${OLD} (ya elegida" "$T/t68-old.out" \
+     && [ "$(cfg "[(d.get('integrations') or {}).get(k) for k in ('timeTracking', '${OLD}')]")" = "[None, True]" ]; then
+    ok "T68 con la llave vieja: no se le ofrece ninguna herramienta de horas, lo dice y queda con ${OLD}"
+  else mal "T68 con la llave vieja: rc ${RC}; ofrecidas «${OFF68}»; $(grep -m1 'herramienta de horas' "$T/t68-old.out"); tycon.json $(cfg "d")"; fi
+  # por opción: --integrations elige la herramienta sin preguntar; contra la variable que dice otra, 2 sin escribir nada
+  qlab t68c || true
+  cp -R "$RAIZ/integrations" "$LAB_TREE/integrations"
+  RC=0; harness install --profile full --integrations "engram,${ONE}" --yes > "$T/t68-opt.out" 2>&1 < /dev/null || RC=$?
+  { [ "$RC" = 0 ] && [ "$(cfg "(d.get('integrations') or {}).get('timeTracking')")" = "$ONE" ] && grep -q "herramienta de horas: ${ONE} (--integrations)" "$T/t68-opt.out"; } \
+    && ok "T68 --integrations engram,${ONE}: guarda timeTracking y lo dice con su origen" || mal "T68 --integrations con la herramienta: rc ${RC}; tycon.json $(cfg "d"); $(grep -m1 'herramienta de horas' "$T/t68-opt.out")"
+  qlab t68d || true
+  cp -R "$RAIZ/integrations" "$LAB_TREE/integrations"; ANTES="$(home_now)"
+  RC=0; TYCON_TIME_TRACKING="$OLD" harness install --profile full --integrations "$ONE" --yes > "$T/t68-env.out" 2>&1 < /dev/null || RC=$?
+  { [ "$RC" = 2 ] && grep -q 'TYCON_TIME_TRACKING' "$T/t68-env.out" && [ "$(home_now)" = "$ANTES" ]; } \
+    && ok "T68 --integrations ${ONE} con TYCON_TIME_TRACKING=${OLD}: 2 nombrando la variable, nada escrito" || mal "T68 opción contra variable: rc ${RC}; $(head -c 300 "$T/t68-env.out")"
+  # con la variable VIEJA de la herramienta (no la nueva), --integrations elige otra: la llave nueva le gana a la variable
+  # vieja, así que se escribe, sin decir que «la variable le ganaría»
+  qlab t68f || true
+  cp -R "$RAIZ/integrations" "$LAB_TREE/integrations"
+  OLDVAR="TYCON_$(printf '%s' "$OLD" | tr '[:lower:]' '[:upper:]')"
+  RC=0; ( export "$OLDVAR=1"; harness install --profile full --integrations "$ONE" --yes ) > "$T/t68-oldvar.out" 2>&1 < /dev/null || RC=$?
+  { [ "$RC" = 0 ] && ! grep -q 'le ganaría' "$T/t68-oldvar.out" && [ "$(cfg "(d.get('integrations') or {}).get('timeTracking')")" = "$ONE" ]; } \
+    && ok "T68 con la variable vieja ${OLDVAR}=1 y --integrations ${ONE}: escribe timeTracking, sin el choque falso" || mal "T68 variable vieja: rc ${RC}; $(head -c 300 "$T/t68-oldvar.out"); tycon.json $(cfg "d")"
+  # un manifiesto de horas roto no se ofrece, y el plan lo dice
+  qlab t68e || true
+  cp -R "$RAIZ/integrations" "$LAB_TREE/integrations"
+  mkdir -p "$LAB_TREE/integrations/rota" && printf '{ "name": "rota", "label": "Rota", "kind": "timeTracking", "hooks": "x" }\n' > "$LAB_TREE/integrations/rota/integration.json"
+  RC=0; harness_lab_pty "2${NL}rota${NL}${NL}${NL}${NL}n" harness install > "$T/t68-rota.out" 2>&1 || RC=$?
+  { grep -q 'la integración rota tiene el manifiesto roto' "$T/t68-rota.out" && grep -q '«rota» no es una de las que se ofrecen' "$T/t68-rota.out"; } \
+    && ok "T68 un manifiesto de horas roto: no se ofrece y el plan lo dice" || mal "T68 manifiesto roto: rc ${RC}; $(grep -m2 -e 'rota' "$T/t68-rota.out" | tr '\n' ' ')"
 fi
 
 # ══ T45 · las cuatro opciones: ninguna pregunta; un valor inválido sale 2 ════════════════════════════════════════════════
@@ -183,7 +232,7 @@ if corre T45; then
 
   qlab t45d || true; ANTES="$(home_now)"
   RC=0; harness install --profile full --integrations foo --yes > "$T/t45-foo.out" 2>&1 < /dev/null || RC=$?
-  { [ "$RC" = 2 ] && grep -q 'clockify, engram, codegraph, codex' "$T/t45-foo.out" && grep -q 'none' "$T/t45-foo.out" && [ "$(home_now)" = "$ANTES" ]; } \
+  { [ "$RC" = 2 ] && grep -q 'engram, codegraph, codex' "$T/t45-foo.out" && grep -q 'none' "$T/t45-foo.out" && [ "$(home_now)" = "$ANTES" ]; } \
     && ok "T45 --integrations foo: 2 nombrando las válidas, nada escrito" || mal "T45 --integrations foo: rc ${RC}; $(head -c 300 "$T/t45-foo.out")"
   RC=0; harness install --profile full --integrations mailbox --yes > "$T/t45-mb.out" 2>&1 < /dev/null || RC=$?
   { [ "$RC" = 2 ] && [ "$(home_now)" = "$ANTES" ]; } && ok "T45 --integrations mailbox (no se ofrece): 2, nada escrito" || mal "T45 --integrations mailbox: rc ${RC}"

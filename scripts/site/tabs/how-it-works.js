@@ -96,7 +96,9 @@ function renderPage(model, { idioma, publicRepo, version }) {
   // fábrica, o con su efecto (frena, avisa, anota)
   const control = (c, paso) => {
     const marca = c.optional ? chip('off', T('comoTrabaja.opcional', { variable: c.optional })) : chip(TAG_EFECTO[c.effect][0], T(TAG_EFECTO[c.effect][1]));
-    return pieza({ origin: 'harness', nombre: T(`control.${c.spec}`), mono: false, cuando: T(`comoTrabaja.evento.${c.event}`), chips: [marcaDe(c), marca], ruta: c.script, archivo: c.script, acciones: ver(c.script) + mejorar(c.script, paso), extra: c.optional ? ' apagada' : '' });
+    // el de una integración dice qué hace desde su manifiesto; el del arnés, desde los textos del sitio
+    const nombre = c.control ? (c.control[idioma] || c.control.es) : T(`control.${c.spec}`);
+    return pieza({ origin: 'harness', nombre, mono: false, cuando: T(`comoTrabaja.evento.${c.event}`), chips: [marcaDe(c), marca], ruta: c.script, archivo: c.script, acciones: ver(c.script) + mejorar(c.script, paso), extra: c.optional ? ' apagada' : '' });
   };
 
   // la franja de la organización

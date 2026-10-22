@@ -66,9 +66,6 @@
     "guides/sitio-de-la-organizacion/capturas/configuracion-tecnologia.html": 12,
     "guides/sitio-de-la-organizacion/capturas/proponer-apagado.html": 12,
     "scripts/install-tycon-hooks.ps1": 1,
-    "scripts/install-tycon-hooks.sh": 3,
-    "scripts/setup/harness/managed.js": 1,
-    "scripts/setup/install-effects.json": 28,
-    "scripts/site/texts.js": 1
+    "scripts/install-tycon-hooks.sh": 3
   }
 }
