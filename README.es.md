@@ -4,7 +4,7 @@
 
 **El arnés en cuatro minutos.**
 
-https://github.com/user-attachments/assets/04dba346-c992-4b24-9667-63aa58dd4d5e
+https://github.com/user-attachments/assets/3fbe4538-6b96-4b56-b2ed-92d36be1c6f8
 
 **Un ciclo de desarrollo para agentes de código: completo, consistente, controlado y adaptable.**
 
