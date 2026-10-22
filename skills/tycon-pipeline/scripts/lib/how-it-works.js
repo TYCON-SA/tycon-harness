@@ -445,7 +445,7 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
     process.env.TYCON_PACKS_DIR = vacio;
     const story = path.join(vacio, 'story.md');
     fs.writeFileSync(story, '---\nstory: "9.9"\n---\n\n# Story 9.9\n');
-    try { return PIPE.computeValidadores({ story, repo: vacio }).validadores; } finally {
+    try { return PIPE.computeValidadores({ story, repo: vacio, todos: true }).validadores; } finally {
       if (prev === undefined) delete process.env.TYCON_PACKS_DIR; else process.env.TYCON_PACKS_DIR = prev;
       fs.rmSync(vacio, { recursive: true, force: true });
     }

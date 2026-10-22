@@ -3084,7 +3084,7 @@ test('T1 Modelos_TresTablasUnRenglonPorTrabajo @story-2.59 @ac-1', async () => {
   assert.strictEqual(t.length, 5, 'el nivel general, los revisores (un solo grupo), el pase, los ayudantes y los revisores en Codex');
   assert.ok(t.every((x) => p.clases(x).includes('modelos')));
   const [rev, cada, adv, ayu, cdx] = t.map((x) => p.renglones(x));
-  assert.deepStrictEqual([rev.length, cada.length, adv.length, ayu.length, cdx.length], [2, 3, 2, 4, 1], 'las 2 vueltas · los 3 revisores instalados · pase: normal y pesada · ayudantes + 3 sesiones · Codex: un renglón');
+  assert.deepStrictEqual([rev.length, cada.length, adv.length, ayu.length, cdx.length], [2, 3, 3, 4, 1], 'las 2 vueltas · los 3 revisores instalados · pase: normal, pesada y la historia antes de programar · ayudantes + 3 sesiones · Codex: un renglón');
   for (const fila of [...rev, ...cada, ...adv, ...ayu, ...cdx]) {
     assert.strictEqual(p.de(fila, 'hoy').length, 1, `${p.texto(fila)}: su valor por defecto`);
     assert.strictEqual(p.todo(fila).filter((n) => n.tag === 'select').length, 1, `${p.texto(fila)}: un selector`);

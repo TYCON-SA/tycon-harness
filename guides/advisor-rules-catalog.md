@@ -88,6 +88,31 @@ Guía canónica de formato: `story-format.md` (Mary+GOLD).
 
 ---
 
+## Story Adversarial Reviewer — `tycon-story-adversarial-reviewer`
+
+Archivo del advisor: `~/.claude/agent-skills/agents/tycon-story-adversarial-reviewer.md`
+
+Una pasada de sólo lectura sobre una historia ya validada, antes de programar: lo que el validador no ve en el
+contenido. Corre una vez por historia de riesgo NORMAL (`pipeline.js story-review-gate`); quien orquesta corrige la
+historia y lo registra con `pipeline.js story-review-record`. Sin evidencia no hay hallazgo.
+
+### CRITICAL
+
+| ID | Nombre | Fix típico |
+|---|---|---|
+| **SADV-C1** | (2026-10-21) **Dos criterios que no pueden ser ciertos a la vez** — dos criterios, un criterio y las Dev Notes, o la historia y otra de la que depende, piden cosas opuestas. Evidencia: la cita de los dos textos. Por qué: se descubre programando, cuando alguno de los dos ya está hecho. | Corregir la historia si el repo dice cuál gana; si no, una pregunta a quien aprueba |
+| **SADV-C2** | (2026-10-21) **Un dato que el repo no guarda** — la historia da por guardado o existente un campo, columna, evento, valor de estado o endpoint que ni la arquitectura ni el código tienen. Se comprueba buscando por el nombre del dato. Por qué: regla del dueño, el esquema no se inventa. | Corregir la historia con el dato real, o preguntar si se crea |
+| **SADV-C3** | (2026-10-21) **Un camino de falla sin criterio** — vacío, sin permiso, tiempo agotado, dependencia caída o dato repetido que la historia implica y no cubre. CRITICAL sólo si el comportamiento no es obvio y quien programa tendría que inventarlo; si no, va como WARNING. | Sumar el criterio y su prueba |
+
+### WARNING
+
+| ID | Nombre | Fix típico |
+|---|---|---|
+| **SADV-W1** | (2026-10-21) **Un supuesto sin marcar** — la historia da algo por cierto sin decirlo ni verificarlo («el usuario ya tiene sesión», «la lista nunca pasa de 50»). | Escribir el supuesto en las Dev Notes, o verificarlo |
+| **SADV-W2** | (2026-10-21) **Un criterio que no se puede ver fallar** — se cumple sin que cambie nada observable. | Reescribir el criterio con un resultado que una prueba pueda contradecir |
+
+---
+
 ## Signed Scope Audit — `tycon-signed-scope-audit`
 
 Archivo del advisor: `~/.claude/agent-skills/agents/tycon-signed-scope-audit.md`

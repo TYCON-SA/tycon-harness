@@ -26,7 +26,7 @@
 //     "models": {                       opcional — el modelo de cada trabajo del pipeline
 //       "mandatory_ceiling"?: <bool>, "ceiling"?: <modelo>,   techo obligatorio (paga la organización): van juntos
 //       "reviewers"?: <modelo>, "reviewer"?: { "<revisor>": <modelo> }, "reviewers_reloop"?: <modelo>,
-//       "adversarial"?: { "model"?, "heavy"?: <modelo> }, "helpers"?: <modelo>,   ("fable_question": retirada, se acepta)
+//       "adversarial"?: { "model"?, "heavy"?, "story"?: <modelo> }, "helpers"?: <modelo>,   ("fable_question": retirada, se acepta)
 //       "session"?: { "low"?, "normal"?, "heavy"?: <modelo> },
 //       "codex_reviewers"?: «inherit» }   los revisores de Codex con el modelo de cada máquina (lo lee build/generate.js)
 //   <modelo> = un nivel, «economy» | «balanced» | «strong» | «max» (MODEL_LEVELS), o el nombre del
@@ -174,7 +174,7 @@ const MODELS_KEYS = ['mandatory_ceiling', 'ceiling', 'reviewers', 'reviewer', 'r
 // `codex_reviewers: "inherit"`: los revisores de Codex usan el modelo de cada máquina (su config.toml), no el equivalente
 // del nivel. Sirve con Codex sobre otro proveedor, como Ollama, donde el modelo de OpenAI no existe. Es el único valor
 const CODEX_REVIEWERS = ['inherit'];
-const MODELS_SUBKEYS = { adversarial: ['model', 'heavy', 'fable_question'], session: ['low', 'normal', 'heavy'] };
+const MODELS_SUBKEYS = { adversarial: ['model', 'heavy', 'fable_question', 'story'], session: ['low', 'normal', 'heavy'] };
 const REVIEWER_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MERGE_RULES = ['automatico', 'siempre-en-la-maquina', 'confiar-en-el-servidor'];
 const MERGE_ENTRY_KEYS = ['repo', 'rule', 'full_tests_pipeline'];

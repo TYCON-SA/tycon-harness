@@ -1317,7 +1317,8 @@ function hermanosDelRepo(activos) {
   return { raiz, motivo, lista, texto: packsLib.textoDeHermanos(lista, { reposRoot: raiz }) };
 }
 
-function computeValidadores({ story, repo }) {
+/** `todos`: la lista de lo que PUEDE correr en el paso 1 (la página del arnés), sin mirar la máquina ni la constancia. */
+function computeValidadores({ story, repo, todos = false }) {
   if (!story) throw new Error('validators: falta --story <spec.md>');
   // Una ruta mal tipeada no puede dar un set «válido» a medias:
   // sin story legible o sin repo no hay contexto sobre el que decidir nada.
@@ -1344,6 +1345,18 @@ function computeValidadores({ story, repo }) {
         nota: r.nota,
       });
     }
+  }
+  // el revisor de historias entra cuando su portón dice que corre (NORMAL, sin constancia vigente, no apagado)
+  const previa = todos
+    ? { run: true, record: 'none', ...((m) => ({ model: m.model, model_reason: m.reason }))(MODELOS.resolveStoryReview({})) }
+    : computeStoryReviewGate({ story });
+  if (previa.run) {
+    lanzamientos.push({
+      agente: MODELOS.STORY_REVIEWER, paquete: null, modelo: previa.model,
+      prompt: promptRevisorDeHistorias({ story, repo }),
+      nota: `la revisión previa no tiene constancia vigente (${previa.record}): corre una vez, en el mismo mensaje que el validador; ` +
+        `modelo: ${previa.model_reason}. Al terminar, story-review-record con --tokens y --duration-ms del resultado del lanzamiento.`,
+    });
   }
   return {
     story, repo,
@@ -3418,6 +3431,46 @@ function computeRiskClass(args) {
       ? 'LOW-risk: step-03 puede auto-aprobarse (Nivel 2), pero el plan se muestra siempre: primero un mensaje con el plan tal cual, después complete-step 3 --auto-approved (lee la conversación; sin poder leerla, se le pregunta a la persona). Push y scope firmado siguen human-gate SIEMPRE.'
       : 'NORMAL: checkpoint HITL del plan (step-03) como siempre.',
   };
+}
+
+// ── pipeline.js story-review-gate — la revisión adversarial de la historia, antes de programar ──
+// ¿Corre el revisor de historias? No tiene clasificador ni resolución de modelo propios: reusa `computeRiskClass` (LOW
+// se saltea) y `models.js` (`adversarial.story`). Una constancia vigente (lib/story-review-record.js) no se relanza;
+// `no-medido` y una historia cambiada sí. `TYCON_STORY_REVIEW=0` la apaga, y el salteo igual se registra con su motivo.
+const storyReviewRecord = require('./lib/story-review-record.js');
+function computeStoryReviewGate({ story, env = process.env, home = os.homedir() }) {
+  const { estado, record } = storyReviewRecord.readRecord(home, story);
+  // un salteo no es una revisión: se vuelve a decidir cada vez (la revisión prendida otra vez, o la historia ya no LOW)
+  // `pendiente` no se relanza (una sola pasada) pero tampoco es una revisión hecha: falta la respuesta a su pregunta
+  if (estado === 'current' && record.resultado === 'pendiente') {
+    return {
+      run: false, record: estado, riesgo: record.riesgo, pendiente: true,
+      linea: `revisión previa pendiente: falta la respuesta a su pregunta (${record.hallazgos.length} hallazgos, ${record.modelo || 'sin modelo'}); la historia no está lista para programar`,
+    };
+  }
+  if (estado === 'current' && record.resultado !== 'saltado') {
+    return {
+      run: false, record: estado, riesgo: record.riesgo,
+      linea: `revisión previa vigente: ${record.resultado}, ${record.hallazgos.length} hallazgos, ${record.modelo || 'sin modelo'}`,
+    };
+  }
+  const rc = computeRiskClass({ story });
+  if (env.TYCON_STORY_REVIEW === '0') return { run: false, record: estado, riesgo: rc.risk, motivo: 'apagado', nota: 'TYCON_STORY_REVIEW=0' };
+  if (rc.risk === 'LOW') return { run: false, record: estado, riesgo: 'LOW', motivo: 'riesgo-bajo', criterios: rc.criteria };
+  const warnings = [];
+  const m = MODELOS.resolveStoryReview({ org: orgModels().data, requests: pedidosDeModelos(readSessionMarker()), warnings });
+  return {
+    run: true, record: estado, riesgo: rc.risk, model: m.model, model_origin: m.origin, model_reason: m.reason,
+    ...(warnings.length ? { avisos: warnings.map((w) => w.message) } : {}),
+  };
+}
+
+/** El pedido al revisor de historias en el paso 1, donde corre en el mismo mensaje que el validador (el del paso 6 lo trae su guía). */
+function promptRevisorDeHistorias({ story, repo }) {
+  return `Revisá la historia ${story} contra el repo ${repo}, antes de programarla. Una sola pasada, de sólo lectura. ` +
+    'Corrés en paralelo con el validador de stories: no repitas lo que es de su catálogo (VAL-*). ' +
+    'Cada hallazgo con su regla SADV, el criterio o la sección, y su evidencia; sin evidencia no es hallazgo. ' +
+    'Cerrá con el renglón «Veredicto:».';
 }
 
 // ── pipeline.js tooling-expected — aviso de tooling no disponible ──
@@ -5720,6 +5773,11 @@ function parseArgs(argv) {
     else if (t === '--base') a.base = argv[++i];                  // dod-checker-needed: base explícita del diff
     else if (t === '--scope') a.scope = argv[++i] ?? '';          // qa-readability: `ui` = la revisión de la pantalla; sin valor no es «sin --scope»
     else if (t === '--marks') a.marcas = argv[++i];               // qa-readability: marcas resueltas
+    else if (t === '--reason') a.motivo = argv[++i];              // story-review-record: el motivo de un salteo
+    else if (t === '--model-reason') a.modelReason = argv[++i];   // story-review-record: de dónde salió el modelo
+    else if (t === '--tokens') a.tokens = argv[++i];              // story-review-record: lo que gastó el revisor
+    else if (t === '--duration-ms') a.duracionMs = argv[++i];     // story-review-record: lo que tardó
+    else if (t === '--risk') a.riesgo = argv[++i];                // story-review-record: el riesgo que dio el portón
     // e2e-config: archivos que la entrega tocó (repo-relativos) para elegir qué apps del
     // monorepo ejerce el gate. Admite `--changed a b c` y `--changed a,b,c`.
     else if (t === '--changed') {
@@ -6244,6 +6302,34 @@ function main() {
     }
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(0);
+  }
+  if (cmd === 'story-review-gate') {
+    // ¿Corre el revisor de historias? {run, record, riesgo, model, model_reason | motivo, criterios | linea}. exit 0
+    // siempre (informativo); sin story legible, exit 2.
+    if (!args.story || !fs.existsSync(args.story)) { process.stderr.write(`story-review-gate: --story inválido: ${args.story}\n`); process.exit(2); }
+    process.stdout.write(JSON.stringify(computeStoryReviewGate({ story: args.story }), null, 2) + '\n');
+    process.exit(0);
+  }
+  if (cmd === 'story-review-record') {
+    // La constancia de la revisión previa: el único que la escribe. Vocabulario cerrado; exit 2 sin escribir si no vale.
+    if (!args.story || !fs.existsSync(args.story)) { process.stderr.write(`story-review-record: --story inválido: ${args.story}\n`); process.exit(2); }
+    let hallazgos = [];
+    if (args.findings != null) {
+      try { hallazgos = JSON.parse(args.findings); } catch (e) { process.stderr.write(`story-review-record: --findings no es JSON (${e.message})\n`); process.exit(2); }
+    }
+    // vacío es «no medido» (null), nunca 0; un texto que no es número lo rechaza la validación de la constancia
+    const entero = (v) => (v == null || String(v).trim() === '' ? null : Number(v));
+    try {
+      const f = storyReviewRecord.writeRecord(os.homedir(), args.story, {
+        resultado: args.resultado, motivo: args.motivo, hallazgos, modelo: args.modelo, model_reason: args.modelReason,
+        tokens: entero(args.tokens), duracion_ms: entero(args.duracionMs), riesgo: args.riesgo,
+      });
+      process.stdout.write(JSON.stringify({ escrita: f, ...storyReviewRecord.readRecord(os.homedir(), args.story).record }, null, 2) + '\n');
+      process.exit(0);
+    } catch (e) {
+      process.stderr.write(`story-review-record: no escribí la constancia:\n${e.message}\n`);
+      process.exit(2);
+    }
   }
   if (cmd === 'tooling-expected') {
     // PIPE-C9: qué tooling ESPERA el pipeline en este repo. El orquestador

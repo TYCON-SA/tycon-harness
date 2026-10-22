@@ -93,7 +93,28 @@ fan-out no ocurrió (0b/0c skippeados, orden secuencial), lanzar los subagentes 
      `no_medido` («no medido: <archivo>, <motivo>») se muestra igual: es «no pude mirar», nunca «está todo». Lista
      vacía = no falta nada.
 
+   - **La revisión adversarial previa** (el revisor de historias): la decide
+     `pipeline.js story-review-gate --story {story_path}`, y `validators` ya la suma como un lanzamiento más cuando el
+     portón dice que corre (riesgo NORMAL y sin constancia vigente: la historia se escribió sin `tycon-create-story`,
+     cambió después de la revisión, o la constancia es `no-medido`). Sale en el mismo mensaje paralelo que el
+     validador, con el `modelo` que trae. Con constancia vigente no se lanza nada: anotar en el log del paso la `linea`
+     del portón («revisión previa vigente: <resultado>, <N> hallazgos, <modelo>»). Con riesgo bajo o apagada
+     (`TYCON_STORY_REVIEW=0`), registrar el salteo con su motivo (`story-review-record --result saltado --reason …`).
+
 3. Recibir los reportes de los subagentes.
+
+   **El revisor de historias**, si corrió: sus hallazgos se procesan después de los del validador (un duplicado exacto
+   de un `VAL-*` se descarta). Lo que la historia o el repo ya resuelven se corrige en la historia, sin preguntar, con
+   una línea de `## Change Log` por hallazgo (`Revisión adversarial previa (SADV-xx): <qué se cambió>`); si toca un
+   criterio o una prueba, la tabla de pruebas y los conteos van juntos. Un CRITICAL que no se puede corregir sin decidir
+   lleva **una sola pregunta**: la que desbloquea, en llano, con qué choca y qué pasa con cada opción, y la recomendada;
+   el resto se resuelve con la respuesta. Con modo autónomo y coordinadora, la pregunta va a quien aprueba. Después,
+   `pipeline.js story-review-record --story {story_path} --result <limpio|corregido|preguntado|pendiente> --findings
+   '<lista>' --model <modelo> --model-reason "<…>" --risk <…> --tokens <…> --duration-ms <…>` (tokens y duración del
+   resultado del lanzamiento; sin ellos, se omiten y la constancia dice `medido: false`). Un revisor que murió o no
+   contestó lo pedido es `--result no-medido`: se dice en una línea y la próxima corrida lo relanza. El revisor no se
+   relanza en esta corrida. **Si las correcciones cambiaron criterios o pruebas, se vuelve a correr el validador sobre
+   la historia corregida** (el mismo bucle de «arreglar» de abajo); la revisión no se repite.
 
    **Cost tiering**: el `modelo` de cada lanzamiento viene del manifiesto del paquete (para el
    revisor de hermanos, `sonnet` de base: medido, con Opus era el spawn

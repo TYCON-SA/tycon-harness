@@ -2206,6 +2206,7 @@ function pantalla(idioma = 'es') {
     var adv = cabeza(T('pantalla.elPaseAdversarial'));
     trabajo(adv, T('pantalla.unaStoryNormal'), 'adversarial', 'model', T('pantalla.glosa.adversarial'));
     trabajo(adv, T('pantalla.unaStoryPesada'), 'adversarial', 'heavy', T('pantalla.glosa.historiaPesada'));
+    trabajo(adv, T('pantalla.unaHistoriaAntesDeProgramar'), 'adversarial', 'story', T('pantalla.glosa.historiaAntesDeProgramar'));
     box.appendChild(adv);
 
     var ayu = cabeza(T('pantalla.losAyudantesYLaSesion'));

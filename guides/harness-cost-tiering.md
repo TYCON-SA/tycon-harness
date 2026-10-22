@@ -158,6 +158,7 @@ El `model:` de cada `agents/*.md`, el `MODEL` de `adversarial-verify.workflow.js
 | Revisores (todos / uno por uno) | `sonnet` (y `tycon-spec-first-checker` en `opus`; un revisor de la capa, el `model:` de su `.md`) | `reviewers` / `reviewer: { "<revisor>": … }` |
 | Vueltas siguientes de revisores (un tope) | `sonnet` | `reviewers_reloop` |
 | Pase adversarial (común / story pesada) | `sonnet` / `opus` | `adversarial.model` / `adversarial.heavy` |
+| El revisor de historias, antes de programar (una pasada, sólo en historias de riesgo normal) | `sonnet` | `adversarial.story` — antes de declararla, subir `requires.harness` del perfil a la versión que la trae: el lector anterior rechaza el archivo entero |
 | Ayudantes sueltos de búsqueda (SPAWN-1) | `haiku` | `helpers` |
 | Sugerencia de la sesión (liviana / común / pesada) | `sonnet` / `opus` / `opus` (el arnés no sugiere `fable` solo: la organización lo elige en `session.heavy`) | `session.low` / `session.normal` / `session.heavy` |
 

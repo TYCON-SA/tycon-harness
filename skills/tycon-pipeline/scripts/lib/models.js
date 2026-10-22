@@ -56,7 +56,8 @@ const DEFAULTS = {
   reviewers: SONNET,
   reviewer: { 'tycon-spec-first-checker': OPUS },
   reviewers_reloop: SONNET,
-  adversarial: { model: SONNET, heavy: OPUS },
+  // `story`: el revisor de historias, que lee la historia antes de programar (una pasada, sin correr código)
+  adversarial: { model: SONNET, heavy: OPUS, story: SONNET },
   helpers: HAIKU,
   // una story pesada sugiere opus: el arnés no sugiere fable solo; una organización lo elige con models.session.heavy
   session: { low: SONNET, normal: OPUS, heavy: OPUS },
@@ -207,7 +208,8 @@ function resolveReviewers({ org, requests, costTier, tierOf, set, fullSet, iter,
   }
   // un pedido o una entrada de la organización para un revisor que no está en la corrida / no existe
   for (const r of Object.keys(req)) {
-    if (!JOBS.includes(r) && REVIEWER_NAME.test(r) && !corrida.includes(r)) {
+    // el revisor de historias se pide por su nombre y corre en el paso 1, fuera del set de revisores: no es un pedido perdido
+    if (!JOBS.includes(r) && r !== STORY_REVIEWER && REVIEWER_NAME.test(r) && !corrida.includes(r)) {
       warnings.push({ key: `request-unused:${r}`, message: `pediste un modelo para \`${r}\`, que no está en el set de esta corrida: no se aplica` });
     }
   }
@@ -248,6 +250,30 @@ function resolveAdversarial({ org, requests, flags = {}, heavy, warnings = [] })
     warnings.push({ key: 'retired:adversarial.fable_question', message: '`models.adversarial.fable_question` ya no hace nada: el pase adversarial no ofrece Fable. Se puede sacar del perfil del equipo' });
   }
   return { model: final, origin, reason, capped: final !== model, fromFlag: !!(flags.fable || flags.opus || flags.ultracode) };
+}
+
+/** El nombre del revisor de historias: un pedido de la corrida para él se escribe con su nombre, como el de cualquier revisor. */
+const STORY_REVIEWER = 'tycon-story-adversarial-reviewer';
+
+/**
+ * El modelo del revisor de historias: pedido por su nombre → `adversarial.story` de la organización → valor de hoy,
+ * recortado al techo. → `{ model, origin, reason }`. No mira `adversarial.model` ni `heavy`: es otro trabajo.
+ */
+function resolveStoryReview({ org, requests, warnings = [] } = {}) {
+  const o = isObject(org) ? org : {};
+  const req = isObject(requests) ? requests : {};
+  const adv = isObject(o.adversarial) ? o.adversarial : {};
+  let model;
+  let origin;
+  let reason;
+  let pedido = false;
+  if (isModel(req[STORY_REVIEWER])) { model = req[STORY_REVIEWER]; origin = 'run'; reason = `pedido de esta corrida → ${model}`; pedido = true; }
+  else if (isModel(adv.story)) { model = adv.story; origin = 'organization'; reason = `${model} (models.adversarial.story de la organización)`; }
+  else { model = DEFAULTS.adversarial.story; origin = 'default'; reason = `${model} (valor de hoy)`; }
+  const ceiling = ceilingOf(o);
+  const final = aplicarTecho(model, ceiling, { key: pedido ? 'request:adversarial.story' : 'adversarial.story', que: 'el revisor de historias', pedido }, warnings);
+  if (final !== model) reason = `${reason}; el techo de la organización es ${ceiling} → ${final}`;
+  return { model: final, origin, reason };
 }
 
 /** El modelo de los ayudantes sueltos (búsqueda/exploración): `{ model, origin }`. */
@@ -365,6 +391,6 @@ function readOrgModels({ dir, teamRepos } = {}) {
 
 module.exports = {
   MODELS, LEVELS, isLevel, modelOf, levelOf, toClaudeModels, DEFAULTS, TIERS, JOBS, rank, isModel, capAt, ceilingOf, frontmatterModel, defaultFor, reviewerExists,
-  resolveReviewers, resolveAdversarial, resolveHelpers, resolveSession, resolveModels, normalizeSessionModel, isJobName,
+  resolveReviewers, resolveAdversarial, resolveStoryReview, STORY_REVIEWER, resolveHelpers, resolveSession, resolveModels, normalizeSessionModel, isJobName,
   readOrgModels, agentsDirDefault,
 };

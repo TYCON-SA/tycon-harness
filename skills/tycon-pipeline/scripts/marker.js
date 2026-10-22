@@ -3021,7 +3021,21 @@ function cmdClear() {
       // las vueltas: las que lanzaron revisores (las fotos de iteración), la misma cuenta que pipeline.js review-rounds; un
       // arranque del paso 5 sin revisores no es una vuelta
       costo.iteraciones = require('./lib/review-rounds.js').vueltas(marker);
-      const dump = { archivedAt: nowIso(), marker, gates, costo };
+      // La revisión adversarial de la historia antes de programar: su constancia, o null dicho. Lo no medido es null.
+      let revisionPrevia = null;
+      let notaPrevia = 'sin revisión previa';
+      try {
+        const sp = marker.storyPath && marker.repoPath && !path.isAbsolute(marker.storyPath) ? path.join(marker.repoPath, marker.storyPath) : marker.storyPath;
+        revisionPrevia = require('./lib/story-review-record.js').resumenVolcado(os.homedir(), sp);
+      } catch (e) {
+        // no poder leerla no es «no hubo»: se dice
+        notaPrevia = `no se pudo leer la constancia de la revisión previa (${e.message})`;
+        process.stderr.write(`[marker] ${notaPrevia}\n`);
+      }
+      const dump = {
+        archivedAt: nowIso(), marker, gates, costo,
+        revision_previa: revisionPrevia, ...(revisionPrevia ? {} : { revision_previa_nota: notaPrevia }),
+      };
       const safeStory = String(marker.storyId).replace(/[^\w.-]/g, '_');
       const ts = nowIso().replace(/[:.]/g, '').slice(0, 15);
       // 1) Historia global (sobrevive aunque el repo no exista).
