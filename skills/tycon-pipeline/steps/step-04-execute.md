@@ -387,8 +387,7 @@ acá, `next` sigue coherente). **Solo con los CUATRO resueltos, lanzar.**
    `<RUN_DIR>/step-05b-adversarial.md` (el step-05b no se alcanza — `next` lo da por atendido; es el
    no-op esperado). 🔴 La bandera del 5b no se escribe a mano, y `complete-step 8`
    frena sin esta constancia. **`run: true` + `early_launch: true`** → seguir.
-2. Si el gate devuelve `fable_upsell` → hacer la pregunta de 1 línea AHORA (ver step-05b) antes
-   de lanzar.
+2. Lanzar con el `model` que devuelve el gate: no se pregunta por otro modelo.
 3. 🔴 **Validar `files` NO vacío y de CÓDIGO antes de invocar**: si la lista quedó vacía o mal
    armada, el workflow retorna un no-op instantáneo y el lanzamiento se quema (el guard bloquea
    relanzar sin `--relaunch`). La lista debe ser **EXACTAMENTE la misma que después se pasa a

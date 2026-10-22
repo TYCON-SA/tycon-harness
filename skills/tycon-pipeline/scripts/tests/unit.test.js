@@ -785,28 +785,52 @@ test('ModelHint_HeavyStory_SuggestsOpus @story-7.35 @ac-13 — computeModelHint:
   } finally { fs.unlinkSync(low); fs.unlinkSync(normal); fs.unlinkSync(heavy); }
 });
 
-test('computeDeepReviewGate: escalación por complejidad — fable SOLO con flag explícito', () => {
+test('computeDeepReviewGate: escalación por complejidad — la story pesada va con opus; fable sólo con el flag explícito', () => {
   const heavy = path.join(os.tmpdir(), `dr-heavy-${process.pid}.md`);
   fs.writeFileSync(heavy, HEAVY_STORY);
   const base = { repo: os.tmpdir() };
   try {
-    // Story pesada sin flags → opus automático + fable_upsell (pregunta al user, NO auto)
+    // Story pesada sin flags → opus automático, sin ofrecer otro modelo
     let g = computeDeepReviewGate({ ...base, story: heavy, files: [] });
     assert.equal(g.run, true);
     assert.equal(g.model, 'opus', 'story pesada escala a opus automático');
-    assert.ok(g.fable_upsell, 'emite fable_upsell para que el orquestador pregunte');
-    assert.equal(g.fable_upsell.requires_user_approval, true, 'fable requiere aprobación del user');
 
-    // --deep-review-fable = autorización explícita → fable, sin upsell
+    // --deep-review-fable = pedido explícito de quien corre el pipeline → fable
     g = computeDeepReviewGate({ ...base, story: heavy, files: [], deepReviewFable: true });
     assert.equal(g.model, 'fable', '--deep-review-fable → fable');
-    assert.equal(g.fable_upsell, undefined, 'con autorización ya no hay upsell');
 
-    // ultracode + pesada → opus (fable NUNCA automático, ni con ultracode) + upsell
+    // ultracode + pesada → opus (fable NUNCA automático, ni con ultracode)
     g = computeDeepReviewGate({ ...base, story: heavy, files: [], ultracode: true });
     assert.equal(g.model, 'opus', 'ultracode NO sube a fable solo');
-    assert.ok(g.fable_upsell, 'ultracode + pesada sigue preguntando por fable');
   } finally { fs.unlinkSync(heavy); }
+});
+
+test('DeepReviewGate_NuncaOfreceFable — ninguna combinación del portón ofrece Fable ni manda a preguntar por él', () => {
+  const heavy = path.join(os.tmpdir(), `dr-heavy-nf-${process.pid}.md`);
+  const normal = path.join(os.tmpdir(), `dr-normal-nf-${process.pid}.md`);
+  fs.writeFileSync(heavy, HEAVY_STORY);
+  fs.writeFileSync(normal, '---\nstory: "1.1"\n---\n# x\n');
+  const base = { repo: os.tmpdir(), files: [] };
+  const combinaciones = [
+    { story: heavy }, { story: normal }, { story: heavy, ultracode: true }, { story: heavy, deepReviewOpus: true },
+    { story: heavy, deepReview: true }, { story: heavy, modelQuestion: { value: 'ask', origin: 'maquina' } },
+    { story: heavy, orgModels: { declared: true, data: { mandatory_ceiling: true, ceiling: 'fable', adversarial: { fable_question: 'ask' } } } },
+  ];
+  try {
+    // ninguna parte de la salida nombra a Fable, con cualquier nombre de campo: ni una oferta, ni un aviso, ni una pregunta
+    const sinFable = (g, donde) => {
+      assert.notEqual(g.model, 'fable', `${donde}: sin el flag explícito nunca elige fable`);
+      assert.doesNotMatch(JSON.stringify(g), /fable/i, `${donde}: la salida no nombra a Fable`);
+      assert.doesNotMatch(JSON.stringify(g), /requires_user_approval|preguntar al user/, `${donde}: no manda a preguntar por un modelo`);
+    };
+    for (const c of combinaciones) sinFable(computeDeepReviewGate({ ...base, ...c }), JSON.stringify(c).slice(0, 120));
+    // y por el comando real, con la story pesada
+    const { spawnSync } = require('node:child_process');
+    const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'pipeline.js'), 'deep-review-gate', '--repo', os.tmpdir(), '--story', heavy], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    sinFable(JSON.parse(r.stdout), 'el comando deep-review-gate');
+    assert.doesNotMatch(r.stderr, /fable/i, 'el comando tampoco lo dice por la salida de error');
+  } finally { fs.unlinkSync(heavy); fs.unlinkSync(normal); }
 });
 
 // ── computeToolingExpected — PIPE-C9 tooling esperado ────────────────────────

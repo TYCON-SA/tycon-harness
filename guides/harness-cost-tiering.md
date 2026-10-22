@@ -158,7 +158,7 @@ El `model:` de cada `agents/*.md`, el `MODEL` de `adversarial-verify.workflow.js
 | Revisores (todos / uno por uno) | `sonnet` (y `tycon-spec-first-checker` en `opus`; un revisor de la capa, el `model:` de su `.md`) | `reviewers` / `reviewer: { "<revisor>": … }` |
 | Vueltas siguientes de revisores (un tope) | `sonnet` | `reviewers_reloop` |
 | Pase adversarial (común / story pesada) | `sonnet` / `opus` | `adversarial.model` / `adversarial.heavy` |
-| Preguntar por Fable en el pase | `ask` | `adversarial.fable_question` (`ask` \| `never`) |
+| Preguntar por Fable en el pase | no se pregunta: Fable sólo corre con `--deep-review-fable` | `adversarial.fable_question` (`ask` \| `never`): se acepta y se informa, pero ya no cambia nada |
 | Ayudantes sueltos de búsqueda (SPAWN-1) | `haiku` | `helpers` |
 | Sugerencia de la sesión (liviana / común / pesada) | `sonnet` / `opus` / `opus` (el arnés no sugiere `fable` solo: la organización lo elige en `session.heavy`) | `session.low` / `session.normal` / `session.heavy` |
 
