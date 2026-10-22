@@ -285,8 +285,12 @@ function estadoDeLasSuitesNocturnas() {
     return [`🟡 suites de prueba nocturnas (foto del ${fecha}${cuando}): ${sinMedir} — la noche quedó incompleta: no son rojas ni verdes`
       + ' · detalle: scripts/controls-bench/ultimo-suites.json' + cola + foto.nota];
   }
-  return [`🔴 suites de prueba nocturnas (foto del ${fecha}${cuando}): ${rojas.length} en rojo — ${conMotivo.join(' · ')}`
-    + (sinMedir ? ` · 🟡 ${sinMedir} (detalle: scripts/controls-bench/ultimo-suites.json)` : '') + cola + foto.nota];
+  // El aviso viaja en cada arranque: nombra las tres primeras con su motivo y cuenta el resto; la lista entera está en
+  // el reporte. Con 22 rojas, la línea entera pesaba ~8.600 bytes en cada sesión de cada máquina.
+  const MAX_ROJAS = 3;
+  const nombradas = conMotivo.slice(0, MAX_ROJAS).join(' · ') + (rojas.length > MAX_ROJAS ? ` · y ${rojas.length - MAX_ROJAS} más` : '');
+  return [`🔴 suites de prueba nocturnas (foto del ${fecha}${cuando}): ${rojas.length} en rojo — ${nombradas}`
+    + (sinMedir ? ` · 🟡 ${sinMedir}` : '') + ' · detalle: scripts/controls-bench/ultimo-suites.json' + cola + foto.nota];
 }
 
 function estadoDelBancoNocturno() {
