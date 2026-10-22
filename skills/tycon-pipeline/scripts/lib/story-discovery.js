@@ -6,7 +6,7 @@
  * el archivo editado está declarado en el `files_to_create`/`files_to_modify` de alguna story, avisa
  * "estás editando archivos de una story sin invocar tycon-pipeline". Ese aviso es la única capa que
  * cubre el trabajo hecho a mano — justo el que se saltea el gate de ATDD, que vive dentro del
- * pipeline (`complete-step 4`).
+ * pipeline (`complete-step implement`).
  *
  * ── CÓMO DECIDE QUÉ ES UNA STORY ──────────────────────────────────────────────────────────────────
  * La pertenencia la decide la ESTRUCTURA, nunca el nombre ni la ubicación: **una story es un `.md`

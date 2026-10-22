@@ -147,9 +147,9 @@ sobre un fixture con secreto hardcodeado (~29K tokens la corrida).
 | `step-05-implement` | `Workflow` + `subagent_type` | ③/② | Sale afuera |
 | `step-07-reviewers` | `subagent_type` | ② | Codex paraleliza, pero **solo si se lo piden explícito** → el paso tiene que decirlo con todas las letras |
 | `step-08-adversarial-pass` | `Workflow` | ③ | Sale afuera — el caso más caro |
-| `step-00b`, `00c`, `06`, `07`, `07b`, `07c`, `08`, `09` | nada específico | ① | Portan directo |
+| `step-06-run-tests`, `step-09-findings`, `step-10-live-check`, `step-11-prepare-commit`, `close-work-item` | nada específico | ① | Portan directo |
 
-**9 de 16 pasos no usan nada específico de Claude.** El riesgo está concentrado en 4.
+**5 de 12 pasos no usan nada específico de Claude.** El riesgo está concentrado en 4.
 Scripts afectados: `pipeline.js`, `marker.js`, `adversarial-verify.workflow.js`, `on-advisor-run.js`.
 
 ---

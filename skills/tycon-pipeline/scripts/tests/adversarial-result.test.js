@@ -508,7 +508,7 @@ test('T27 Paso8_NiLanzadoNiSalteado_Bloquea @story-1.8 @ac-20', () => {
   enPaso8(home, SID, repo, { deepReviewDone: true });
   const r = correr(home, SID, ['complete-step', '8']);
   assert.equal(r.status, 2);
-  assert.match(r.stderr, /el 5b no está atendido: ni lanzado ni salteado por el portón/);
+  assert.match(r.stderr, /el pase adversarial no está atendido: ni lanzado ni salteado por el portón/);
   assert.match(r.stderr, /mark-adversarial-result/);
   assert.match(r.stderr, /mark-adversarial-skipped/);
   const l = lineaDelFreno(home);
@@ -743,7 +743,7 @@ test('T48 Paso8_ResultadoSinLanzamiento_Pasa @story-1.8 @ac-37', () => {
   assert.equal(l.length, 1, r.stderr);
   assert.equal(l[0].status, 'ok');
   assert.equal(l[0].motivo, 'resultado-sin-lanzamiento');
-  assert.doesNotMatch(r.stderr, /el 5b no está atendido/);
+  assert.doesNotMatch(r.stderr, /el pase adversarial no está atendido/);
 });
 
 test('T49 Result_Pruebas_CuentaSoloDelLanzamientoVigente @story-1.8 @ac-38', () => {

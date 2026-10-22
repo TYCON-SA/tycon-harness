@@ -830,3 +830,198 @@ test('Models_AdversarialStory_TechoYOrganizacion @story-8.84 @ac-14 — el techo
   // fable sólo si alguien lo escribió: ni el valor de hoy ni el de una story pesada lo eligen
   assert.notEqual(M.resolveStoryReview({ org: { adversarial: { heavy: 'fable', model: 'fable' } } }).model, 'fable');
 });
+
+// ── los modelos por proveedor ────────────────────────────────────────────────────────────────────────
+const TR_273 = () => require(path.join(RAIZ, 'scripts', 'lib', 'team-repos.js'));
+const orgDir = (models) => {
+  const d = tmp('prov');
+  fs.writeFileSync(path.join(d, 'team-repos.json'), JSON.stringify(equipo(models)));
+  return d;
+};
+
+test('T7 ReadOrgModels_NoTocaProvidersAllowedNightly @story-2.73 @ac-6', () => {
+  const M = models();
+  const providers = { ollama: { economy: 'gemma4:31b-cloud', balanced: 'inherit' } };
+  const allowed = { ollama: ['gemma4:31b-cloud'] };
+  const r = M.readOrgModels({ dir: orgDir({ reviewers: 'balanced', providers, allowed, nightly: { provider: 'ollama', level: 'economy' } }), teamRepos: TR_273() });
+  assert.equal(r.problem, null);
+  assert.equal(r.data.reviewers, 'sonnet', 'lo demás se traduce como hoy');
+  assert.deepStrictEqual(r.data.nightly, { provider: 'ollama', level: 'economy' }, 'el nivel de la noche no pasa a haiku');
+  assert.deepStrictEqual(r.data.providers, providers);
+  assert.deepStrictEqual(r.data.allowed, allowed);
+});
+
+const EQ_273 = () => JSON.parse(fs.readFileSync(path.join(RAIZ, 'build', 'equivalences.json'), 'utf8')).models;
+
+test('T11 Providers_ListaYOrden @story-2.73 @ac-9', () => {
+  const M = models();
+  assert.deepStrictEqual(M.PROVIDERS, ['anthropic', 'openai', 'ollama', 'cursor']);
+  assert.equal(M.INHERIT, 'inherit');
+  for (const p of M.PROVIDERS) assert.equal(M.isProvider(p), true, p);
+  for (const p of ['gemma', 'Anthropic', '', null, undefined]) assert.equal(M.isProvider(p), false, String(p));
+});
+
+test('T12 ProviderModel_DefaultsPorProveedor @story-2.73 @ac-9', () => {
+  const M = models();
+  const eq = EQ_273();
+  M.LEVELS.forEach((level, i) => {
+    const alias = M.MODELS[i];
+    const r = (provider) => M.resolveProviderModel({ org: null, provider, level, equivalences: eq });
+    assert.deepStrictEqual([r('anthropic').model, r('anthropic').origin], [alias, 'default'], `anthropic ${level}`);
+    assert.deepStrictEqual([r('openai').model, r('openai').origin], [eq[alias], 'default'], `openai ${level}`);
+    assert.deepStrictEqual([r('ollama').model, r('ollama').origin], ['inherit', 'default'], `ollama ${level}`);
+    assert.deepStrictEqual([r('cursor').model, r('cursor').origin], ['inherit', 'default'], `cursor ${level}`);
+    assert.equal(r('ollama').level, level);
+  });
+});
+
+test('T13 ProviderModel_TablaDeclaradaGana @story-2.73 @ac-10', () => {
+  const M = models();
+  const org = { providers: { ollama: { balanced: 'gpt-oss:120b-cloud' } } };
+  const porNivel = M.resolveProviderModel({ org, provider: 'ollama', level: 'balanced', equivalences: EQ_273() });
+  const porAlias = M.resolveProviderModel({ org, provider: 'ollama', model: 'sonnet', equivalences: EQ_273() });
+  for (const r of [porNivel, porAlias]) assert.deepStrictEqual([r.model, r.origin, r.level], ['gpt-oss:120b-cloud', 'organization', 'balanced']);
+  assert.equal(M.resolveProviderModel({ org, provider: 'ollama', level: 'strong', equivalences: EQ_273() }).model, 'inherit', 'el nivel sin cargar');
+});
+
+test('T14 ProviderModel_FueraDeLaLista_InheritYAvisoUnaVez @story-2.73 @ac-11', () => {
+  const M = models();
+  const org = { providers: { ollama: { economy: 'gemma4:31b-cloud', balanced: 'gpt-oss:120b-cloud' } }, allowed: { ollama: ['gpt-oss:120b-cloud'] } };
+  const warnings = [];
+  for (let i = 0; i < 2; i += 1) {
+    const r = M.resolveProviderModel({ org, provider: 'ollama', level: 'economy', warnings });
+    assert.equal(r.model, 'inherit');
+    assert.equal(r.outside, 'gemma4:31b-cloud');
+  }
+  assert.equal(warnings.length, 1, JSON.stringify(warnings));
+  assert.equal(warnings[0].message, 'gemma4:31b-cloud no está entre los permitidos de ollama: uso el del dev');
+  assert.equal(M.resolveProviderModel({ org, provider: 'ollama', level: 'balanced', warnings }).model, 'gpt-oss:120b-cloud', 'el permitido pasa');
+  assert.equal(M.resolveProviderModel({ org: { providers: org.providers }, provider: 'ollama', level: 'economy', warnings }).model, 'gemma4:31b-cloud', 'sin lista pasa');
+  assert.equal(warnings.length, 1);
+});
+
+test('T15 ProviderModel_TechoAntesDeTraducir @story-2.73 @ac-12', () => {
+  const M = models();
+  const r = M.readOrgModels({ dir: orgDir({ mandatory_ceiling: true, ceiling: 'balanced', reviewers: 'strong', providers: { ollama: { balanced: 'gpt-oss:120b-cloud', strong: 'qwen3:480b-cloud' } } }), teamRepos: TR_273() });
+  const warnings = [];
+  const rev = M.resolveReviewers({ org: r.data, set: ['tycon-silent-failure-hunter'], iter: 1, warnings });
+  const model = rev['tycon-silent-failure-hunter'].model;
+  assert.equal(model, 'sonnet', 'el techo recorta primero');
+  assert.ok(warnings.some((w) => /techo de la organización \(sonnet\)/.test(w.message)), JSON.stringify(warnings));
+  assert.equal(M.resolveProviderModel({ org: r.data, provider: 'ollama', model, warnings }).model, 'gpt-oss:120b-cloud');
+});
+
+test('T16 ProviderModel_CursorGuardadoNoAplicado @story-2.73 @ac-13', () => {
+  const M = models();
+  const org = { providers: { cursor: { balanced: 'acme-cursor-1' }, ollama: { balanced: 'x' }, openai: { balanced: 'y' } } };
+  const c = M.resolveProviderModel({ org, provider: 'cursor', level: 'balanced' });
+  assert.deepStrictEqual([c.model, c.applied], ['acme-cursor-1', false]);
+  assert.match(c.reason, /no se midió cómo se pide un modelo por orden/);
+  for (const p of ['anthropic', 'openai', 'ollama']) assert.equal(M.resolveProviderModel({ org, provider: p, level: 'balanced', equivalences: EQ_273() }).applied, true, p);
+});
+
+// el arranque del pipeline con un proveedor declarado: HOME aislado, sin el enlace del arnés ni TYCON_GUIDES_DIR de la máquina
+const OLLAMA_3 = { economy: 'gemma4:31b-cloud', balanced: 'gpt-oss:120b-cloud', strong: 'qwen3:480b-cloud' };
+const VARS_IGUALES = { ANTHROPIC_DEFAULT_HAIKU_MODEL: OLLAMA_3.economy, ANTHROPIC_DEFAULT_SONNET_MODEL: OLLAMA_3.balanced, ANTHROPIC_DEFAULT_OPUS_MODEL: OLLAMA_3.strong };
+function arrancar(models, extra) {
+  const repo = labRepo();
+  const tree = labTree(equipo(models));
+  // las variables de la sesión del que corre la prueba no entran: el ambiente es el que arma cada caso
+  const limpio = Object.fromEntries(['TYCON_MODEL_PROVIDER', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_OPUS_MODEL', 'CODEX_SESSION_ID'].map((k) => [k, '']));
+  return correr(PIPELINE, ['start', '--repo', repo, '--story', path.join(repo, 'specs', 'normal.md')], { tree, extra: { ...limpio, ...extra } });
+}
+const avisosDeProveedor = (r) => (r.json.models_warnings || []).filter((w) => /ANTHROPIC_/.test(w));
+
+test('T24 Start_Ollama_EntornoDistinto_Avisa @story-2.73 @ac-19', () => {
+  const r = arrancar({ providers: { ollama: OLLAMA_3 } }, { ...VARS_IGUALES, TYCON_MODEL_PROVIDER: 'ollama', ANTHROPIC_DEFAULT_SONNET_MODEL: 'otro:7b' });
+  const hoy = arrancar({ providers: { ollama: OLLAMA_3 } }, {});
+  assert.equal(r.status, hoy.status, `el código de salida de hoy: ${r.stderr.slice(0, 300)}`);
+  assert.deepStrictEqual(r.json.models_provider, { provider: 'ollama', origin: 'env' });
+  const avisos = avisosDeProveedor(r);
+  assert.equal(avisos.length, 1, JSON.stringify(r.json.models_warnings));
+  assert.match(avisos[0], /ANTHROPIC_DEFAULT_SONNET_MODEL es otro:7b y la tabla de Ollama dice gpt-oss:120b-cloud para balanced/);
+});
+
+test('T25 Start_Ollama_EntornoIgual_SinAviso @story-2.73 @ac-19', () => {
+  const igual = arrancar({ providers: { ollama: OLLAMA_3 } }, { ...VARS_IGUALES, TYCON_MODEL_PROVIDER: 'ollama' });
+  assert.deepStrictEqual(avisosDeProveedor(igual), [], JSON.stringify(igual.json.models_warnings));
+  const anthropic = arrancar({ providers: { ollama: OLLAMA_3 } }, { TYCON_MODEL_PROVIDER: 'anthropic', ANTHROPIC_DEFAULT_SONNET_MODEL: 'otro:7b' });
+  assert.deepStrictEqual(anthropic.json.models_provider, { provider: 'anthropic', origin: 'env' });
+  assert.deepStrictEqual(avisosDeProveedor(anthropic), [], 'con Anthropic nunca avisa');
+});
+
+test('T26 Start_SinProveedor_ConBaseUrlAjena_Avisa @story-2.73 @ac-20', () => {
+  const ajena = arrancar({ reviewers: 'balanced' }, { ANTHROPIC_BASE_URL: 'http://localhost:11434' });
+  assert.deepStrictEqual(ajena.json.models_provider, { provider: 'anthropic', origin: 'derivado' }, 'no cambia el proveedor');
+  const aviso = (ajena.json.models_warnings || []).find((w) => /ANTHROPIC_BASE_URL apunta a localhost/.test(w));
+  assert.ok(aviso, JSON.stringify(ajena.json.models_warnings));
+  assert.match(aviso, /declaralo con `node scripts\/lib\/tycon-config\.js set models\.provider ollama`/);
+  const propia = arrancar({ reviewers: 'balanced' }, { ANTHROPIC_BASE_URL: 'https://api.anthropic.com' });
+  assert.ok(!(propia.json.models_warnings || []).some((w) => /ANTHROPIC_BASE_URL/.test(w)), 'Anthropic: sin aviso');
+});
+
+test('T24b Start_ProveedorIlegible_AvisaYSigueAnthropic @story-2.73 @ac-19', () => {
+  // la clave de la máquina mal escrita: un aviso con el motivo, y el arranque sigue como Anthropic
+  const home = tmp('home');
+  const archivo = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'tycon-home.js')).configFile(home);
+  fs.mkdirSync(path.dirname(archivo), { recursive: true });
+  fs.writeFileSync(archivo, JSON.stringify({ models: { provider: 'gemma' } }));
+  const repo = labRepo();
+  const r = correr(PIPELINE, ['start', '--repo', repo, '--story', path.join(repo, 'specs', 'normal.md')], { tree: labTree(equipo({ providers: { ollama: OLLAMA_3 } })), home, extra: { TYCON_MODEL_PROVIDER: '', ANTHROPIC_BASE_URL: '' } });
+  assert.equal(r.json.models_provider.provider, 'anthropic');
+  assert.equal(r.json.models_provider.origin, 'rota');
+  const aviso = (r.json.models_warnings || []).find((w) => /el proveedor de modelos de la máquina no se pudo leer/.test(w));
+  assert.ok(aviso, JSON.stringify(r.json.models_warnings));
+  assert.match(aviso, /models\.provider/);
+  assert.match(aviso, /sigo como Anthropic/);
+});
+
+test('T44 Advisors_SinProveedores_SalidaIgualALaFoto @story-2.73 @ac-35', () => {
+  const foto = JSON.parse(fs.readFileSync(FOTO, 'utf8')).casos;
+  for (const c of CASOS.filter((x) => ['advisors', 'start', 'model-hint'].includes(x[1]))) {
+    const { r, campos: got } = medirCaso(c, { tree: labTree(equipo()) });
+    assert.deepStrictEqual(got, foto[c[0]], `${c[0]}: ${r.stderr.slice(0, 300)}`);
+    if (c[1] === 'start') {
+      assert.deepStrictEqual(r.json.models_provider, { provider: 'anthropic', origin: 'derivado' }, `${c[0]}: lo único nuevo`);
+      assert.equal(r.json.models_warnings, undefined, c[0]);
+    } else assert.equal(r.json.models_provider, undefined, `${c[0]}: sólo start lo trae`);
+  }
+});
+
+test('T45 NombresInventados_Y_SinShell @story-2.73 @ac-36', () => {
+  const nuevos = ['scripts/lib/models-env.js', 'scripts/lib/nightly-model.js', 'scripts/tests/models-env.test.js', 'scripts/tests/nightly-model.test.js'];
+  for (const f of nuevos) {
+    const src = fs.readFileSync(path.join(RAIZ, f), 'utf8');
+    // el patrón se arma por partes: escrito entero, la prueba de higiene de este archivo (T27) lo encontraría acá
+    assert.doesNotMatch(src, new RegExp(['\\bexec', 'Sync\\b|shell', ':\\s*true'].join('')), `${f}: sin ejecución por la consola`);
+    assert.match(src, /path\.join\(/, `${f}: rutas con path.join`);
+    if (f.includes('/tests/')) assert.match(src, /acme/, `${f}: ejemplos con acme`);
+    // ningún modelo elegido por una organización como valor del código (los de las pruebas son ejemplos)
+    if (!f.includes('/tests/')) assert.doesNotMatch(src, /gemma|gpt-oss|qwen/, `${f}: sin modelos de Ollama en el código`);
+  }
+  assert.doesNotMatch(fs.readFileSync(MODELS_JS, 'utf8'), /gemma|gpt-oss|qwen/, 'models.js: sin modelos de Ollama ni de Cursor por defecto');
+  const suites = fs.readFileSync(path.join(RAIZ, 'scripts', 'tests', 'suites.json'), 'utf8');
+  const piezas = fs.readFileSync(path.join(RAIZ, 'guides', 'piezas-del-arnes.md'), 'utf8');
+  for (const n of ['models-env', 'nightly-model']) {
+    assert.ok(suites.includes(`"tests/${n}.test.js"`), `${n}: en suites.json`);
+    assert.ok(piezas.includes(`## scripts/lib/${n}.js`), `${n}: en piezas-del-arnes.md`);
+  }
+});
+
+test('T20 WorkflowLite_SlugPorProveedor @story-2.73 @ac-16', () => {
+  const { slugFor } = require(path.join(SCRIPTS, 'workflow-lite.js'));
+  const eq = EQ_273();
+  const org = { providers: { ollama: { balanced: 'gpt-oss:120b-cloud' } } };
+  const dichos = [];
+  const decir = (t) => dichos.push(t);
+  assert.equal(slugFor('sonnet', eq, decir, { org, provider: 'ollama' }), 'gpt-oss:120b-cloud', 'la tabla de Ollama');
+  assert.equal(slugFor('opus', eq, decir, { org, provider: 'ollama' }), null, 'inherit: sin -m');
+  assert.match(dichos.join('\n'), /sin -m/);
+  assert.equal(slugFor('sonnet', eq, () => {}, { org, provider: 'openai' }), eq.sonnet, 'openai: lo de hoy');
+  assert.equal(slugFor('sonnet', eq, () => {}), eq.sonnet, 'sin contexto: lo de hoy');
+  assert.equal(slugFor('sonnet', eq, () => {}, { org: { providers: { openai: { balanced: 'gpt-5.6-sol' } } }, provider: 'anthropic' }), 'gpt-5.6-sol', 'otro proveedor: la tabla de OpenAI');
+  // la lista de permitidos de OpenAI vale también sin su tabla: el equivalente de hoy fuera de la lista va sin -m
+  const fuera = [];
+  assert.equal(slugFor('sonnet', eq, (t) => fuera.push(t), { org: { allowed: { openai: ['gpt-5.6-sol'] } }, provider: 'openai' }), null);
+  assert.match(fuera.join('\n'), /no está entre los permitidos de openai/);
+});

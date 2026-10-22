@@ -180,6 +180,11 @@ const MODEL_LEVELS_SINCE = '2026.10.21.9';
 // `models.codex_reviewers` («inherit»): un lector anterior la ve como clave desconocida y descarta toda la configuración
 // de modelos. Se pide sólo si el archivo la trae. Provisoria hasta la etiqueta del merge que la trae al lector
 const CODEX_REVIEWERS_SINCE = '2026.10.22.22';
+// los modelos por proveedor (`models.providers`, `allowed`, `nightly`): un lector anterior los ve como claves
+// desconocidas y descarta toda la configuración de modelos (techo incluido). Se pide sólo si el archivo trae alguna.
+// Provisoria hasta la etiqueta del merge que los trae al lector: está puesta para frenar de más, no de menos
+const MODEL_PROVIDERS_SINCE = '2026.10.23.1';
+const CLAVES_DE_PROVEEDORES = Object.freeze(['providers', 'allowed', 'nightly']);
 const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE], ['coverage', COVERAGE_SINCE], ['review', REVIEW_SINCE], ['stack', STACK_SINCE]]);
 /** La versión que tiene que pedir el perfil para este `team-repos.json` (sin archivo, la de siempre), y las claves por las que la pide. */
 function versionQuePide(doc) {
@@ -191,6 +196,7 @@ function versionQuePide(doc) {
   }
   if (isObject(doc) && conNivelDeModelo(doc.models) && !versionAtLeast(version, MODEL_LEVELS_SINCE)) version = MODEL_LEVELS_SINCE;
   if (isObject(doc) && isObject(doc.models) && doc.models.codex_reviewers !== undefined && !versionAtLeast(version, CODEX_REVIEWERS_SINCE)) version = CODEX_REVIEWERS_SINCE;
+  if (isObject(doc) && isObject(doc.models) && CLAVES_DE_PROVEEDORES.some((k) => doc.models[k] !== undefined) && !versionAtLeast(version, MODEL_PROVIDERS_SINCE)) version = MODEL_PROVIDERS_SINCE;
   return { version, claves };
 }
 /** ¿`models` trae algún nivel (en cualquier clave, también adentro de un objeto)? Un comentario («_…») no cuenta. */
@@ -202,11 +208,43 @@ function conNivelDeModelo(v) {
  * `models` con cada nombre de Claude pasado a su nivel, con el lector del árbol (`MODEL_NAMES` y `MODEL_LEVELS`, en el
  * mismo orden): lo que la pantalla muestra y propone. Un lector sin niveles lo deja como está.
  */
-function modelosEnNiveles(v, lector) {
+function modelosEnNiveles(v, lector, top = true) {
   if (!lector || !Array.isArray(lector.MODEL_LEVELS) || !Array.isArray(lector.MODEL_NAMES)) return v;
   if (typeof v === 'string') return lector.MODEL_NAMES.includes(v) ? lector.MODEL_LEVELS[lector.MODEL_NAMES.indexOf(v)] : v;
   if (!isObject(v)) return v;
-  return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === 'fable_question' || k.startsWith('_') ? x : modelosEnNiveles(x, lector)]));
+  // las tablas por proveedor, la lista de permitidos y la noche traen nombres de modelos de cada proveedor: no se tocan
+  return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === 'fable_question' || k.startsWith('_') || (top && CLAVES_DE_PROVEEDORES.includes(k)) ? x : modelosEnNiveles(x, lector, false)]));
+}
+/**
+ * Lo que la pantalla necesita de cada proveedor, del árbol que sirve el sitio: `{ porDefecto, secretos,
+ * noche, motivo }`. `porDefecto.<proveedor>.<nivel>` = el modelo sin tabla cargada (con el traductor de models.js del
+ * árbol: Anthropic fija, OpenAI de build/equivalences.json, Ollama y Cursor «inherit»); `secretos` = el nombre de la
+ * llave de cada proveedor de la noche (scripts/lib/nightly-model.js). Un árbol sin esas piezas trae `motivo`.
+ */
+function proveedoresDe(tree) {
+  const out = { porDefecto: null, secretos: null, noche: null, motivo: null };
+  const archivo = buscarModelsJs(tree);
+  if (!archivo) { out.motivo = M('org.sinModelosDeHoy'); return out; }
+  try {
+    const Mod = require(archivo);
+    if (typeof Mod.resolveProviderModel !== 'function' || !Array.isArray(Mod.PROVIDERS)) { out.motivo = M('org.sinModelosDeHoy'); return out; }
+    // las equivalencias que no se pudieron leer dejan la tabla de OpenAI sin valores de hoy: el motivo se dice
+    const e = equivalenciasDe(tree);
+    if (e.motivo) out.motivo = e.motivo;
+    out.porDefecto = Object.fromEntries(Mod.PROVIDERS.map((p) => [p, Object.fromEntries(Mod.LEVELS.map((n) => [n, Mod.resolveProviderModel({ org: null, provider: p, level: n, equivalences: e.equivalencias || {} }).model]))]));
+  } catch (e) { out.motivo = M('org.skillsIlegibles', { codigo: (e && e.code) || 'error' }); return out; }
+  const nm = path.join(String(tree), 'scripts', 'lib', 'nightly-model.js');
+  try {
+    const NM = require(nm);
+    out.secretos = { ...NM.NIGHTLY_SECRETS };
+    out.noche = Object.keys(NM.NIGHTLY_SECRETS);
+  } catch (e) {
+    // un árbol anterior sin la pieza no trae la llave de la noche; una pieza que está y no carga, se dice
+    out.secretos = null;
+    // (la primera línea nombra el archivo que falta; las siguientes, la cadena de quién lo pidió)
+    if (!(e && e.code === 'MODULE_NOT_FOUND' && String(e.message).split('\n')[0].includes(nm))) out.motivo = M('org.modelsNoCarga', { archivo: 'scripts/lib/nightly-model.js', error: String((e && e.message) || e).split('\n')[0] });
+  }
+  return out;
 }
 /**
  * Las equivalencias de Codex del árbol que sirve el sitio (`build/equivalences.json → models`, por modelo de Claude):
@@ -619,7 +657,25 @@ function problemasDeSeccion(seccion, r, actual, doc) {
  */
 function problemasDelTope(seccion, lector, doc) {
   if (!seccion || seccion.id !== 'modelos' || !lector || typeof lector.modelsAboveCeiling !== 'function' || !isObject(doc)) return [];
-  return lector.modelsAboveCeiling(doc.models);
+  return [...lector.modelsAboveCeiling(doc.models), ...problemasDeProveedores(lector, doc.models)];
+}
+/**
+ * Lo que el sitio no deja proponer de los modelos por proveedor, como el tope: un modelo fuera de la lista
+ * de permitidos (`modelsOutsideAllowed` del lector) y una noche de Ollama sin modelo cargado para su nivel (en la noche
+ * «inherit» no vale). Ninguno de los dos anula la configuración en las máquinas: lo frena sólo el sitio.
+ */
+function problemasDeProveedores(lector, models) {
+  if (!isObject(models)) return [];
+  const out = typeof lector.modelsOutsideAllowed === 'function' ? [...lector.modelsOutsideAllowed(models)] : [];
+  const noche = models.nightly;
+  if (isObject(noche) && noche.provider === 'ollama' && !out.some((p) => p.path === 'models.nightly')) {
+    // el nivel con que va a correr: recortado al tope, como lo recorta la noche
+    const nivel = typeof lector.nightlyLevel === 'function' ? lector.nightlyLevel(models) : (noche.level === undefined ? 'economy' : noche.level);
+    const tabla = isObject(models.providers) && isObject(models.providers.ollama) ? models.providers.ollama : {};
+    const m = tabla[nivel];
+    if (typeof m !== 'string' || !m || m === 'inherit') out.push({ path: 'models.nightly', message: M('org.nocheSinModelo', { proveedor: 'Ollama', nivel }) });
+  }
+  return out;
 }
 
 /**
@@ -652,6 +708,17 @@ function canonico(v) {
  * único skill que lo trae; se busca por el archivo para no nombrar el skill acá). `null` si el árbol no lo trae.
  * `motivoDeHoy(tree)` dice por qué no están: «no pude leer» nunca se muestra igual que «no hay».
  */
+/** La ruta del `models.js` del skill del pipeline en el árbol (el primero que lo trae), o null. */
+function buscarModelsJs(tree) {
+  if (!tree) return null;
+  let skills = [];
+  try { skills = fs.readdirSync(path.join(String(tree), 'skills')).sort(); } catch (_) { return null; }
+  for (const n of skills) {
+    const f = path.join(String(tree), 'skills', n, 'scripts', 'lib', 'models.js');
+    if (fs.existsSync(f)) return f;
+  }
+  return null;
+}
 function modelosDeHoy(tree) { return buscarModelosDeHoy(tree).hoy; }
 function motivoDeHoy(tree) { return buscarModelosDeHoy(tree).motivo; }
 function buscarModelosDeHoy(tree) {
@@ -1027,7 +1094,9 @@ function pantalla(idioma = 'es') {
   // un cambio de afuera; recuperar: lo que quedó guardado de antes de recargar, hasta que la persona elige
   // abiertos: el texto con que se abrió cada bloque de texto de una sección (por sección y clave): «Ver qué cambió»
   // compara contra él aunque la pantalla se vuelva a dibujar con el borrador
-  var S = { pestana: null, secciones: [], borradores: {}, originales: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null, diferencias: {}, resumenes: {}, marcas: {}, proponiendo: {}, terminadas: {}, bases: {}, conflictos: {}, recuperar: {}, abiertos: {} };
+  // «fila»: la máquina de «Por confirmar» cuyo «Confirmar» está en curso ({ maquina, persona }); mientras tanto, la nota
+  // y la propuesta de la sección Personas se dibujan en su renglón y no al pie
+  var S = { pestana: null, secciones: [], borradores: {}, originales: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null, diferencias: {}, resumenes: {}, marcas: {}, proponiendo: {}, terminadas: {}, bases: {}, conflictos: {}, recuperar: {}, abiertos: {}, fila: null };
   function olvidarAbiertos(id) { Object.keys(S.abiertos).forEach(function (k) { if (k.indexOf(id + '\u0000') === 0) delete S.abiertos[k]; }); }
   // cuánto espera la página antes de cada consulta por el pedido de una propuesta cortada; la prueba pasa los suyos
   var ESPERAS = typeof esperasConsulta !== 'undefined' && esperasConsulta ? esperasConsulta : [2000, 5000, 10000];
@@ -1267,11 +1336,77 @@ function pantalla(idioma = 'es') {
   // correos como etiquetas con su ✕ y un + para sumar otro, y el ✕ que quita a la persona. Sólo cambia cómo se ve: cada
   // entrada sigue siendo { role, emails[] }
   var CORREO_A_ENFOCAR = null;
+  // «Invitar a alguien»: lo escrito, si está mandando y la respuesta del sitio; y la de cada «Revocar»
+  var INVITAR = { correo: '', productos: '', enviando: false, nota: null };
+  var REVOCADOS = {};
+  // lo escrito en un campo; el documento de las pruebas sólo tiene el atributo
+  function textoDelCampo(c) { return c.value !== undefined && c.value !== null ? c.value : (c.attrs ? c.attrs.value : ''); }
+  /** El alta de alguien de afuera del directorio, como pedido: la invitación sale cuando el pedido se aprueba. */
+  function bloqueInvitar(inv) {
+    var caja = el('div', { class: 'sub invitar' }, el('p', { class: 'sub-t', text: T('pantalla.invitarAlguien') }));
+    if (!inv.boton) { caja.appendChild(el('p', { class: 'sub-d', text: inv.texto || '' })); return caja; }
+    if (inv.permiso && !inv.permiso.ok) {
+      var falta = aviso('warn', T('pantalla.faltaPermisoInvitar'), inv.permiso.texto || '');
+      if (inv.permiso.comando) falta.appendChild(el('pre', { text: inv.permiso.comando }));
+      caja.appendChild(falta);
+      return caja;
+    }
+    caja.appendChild(el('p', { class: 'sub-d', text: T('pantalla.invitarAyuda') }));
+    var correo = el('input', { type: 'email', value: INVITAR.correo, placeholder: T('pantalla.correo'), 'aria-label': T('pantalla.correoAInvitar'), oninput: function (ev) { INVITAR.correo = ev.target.value; } });
+    var productos = el('input', { value: INVITAR.productos, placeholder: T('pantalla.productosSeparados'), 'aria-label': T('pantalla.productosDeLaPersona'), oninput: function (ev) { INVITAR.productos = ev.target.value; } });
+    var boton = el('button', { type: 'button', text: INVITAR.enviando ? T('pantalla.invitando') : T('pantalla.invitar'), disabled: INVITAR.enviando ? 'disabled' : undefined, onclick: function () { invitar(textoDelCampo(correo), textoDelCampo(productos)); } });
+    caja.appendChild(el('div', { class: 'bar' }, correo, productos, boton));
+    var n = INVITAR.nota;
+    if (n) {
+      var nota = el('div', { class: 'msg ' + (n.ok ? 'ok' : 'bad'), role: 'status' }, el('b', { text: n.text || '' }));
+      if (n.enlace) nota.appendChild(el('a', { href: n.enlace, text: T('pantalla.verElPedidoDeCambio') }));
+      if (n.aviso) nota.appendChild(el('p', { text: n.aviso }));
+      if (n.comando) nota.appendChild(el('pre', { text: n.comando }));
+      caja.appendChild(nota);
+    }
+    return caja;
+  }
+  function invitar(correo, productos) {
+    if (INVITAR.enviando) return;
+    INVITAR.correo = correo; INVITAR.productos = productos; INVITAR.enviando = true; INVITAR.nota = null; render();
+    var lista = String(productos || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+    return api('/invitar', { correo: correo, productos: lista, marca: nuevaMarca() }).then(function (r) {
+      INVITAR.enviando = false;
+      INVITAR.nota = { ok: !!r.ok, text: r.ok ? r.message : (mensajeLlano(r.message) || T('pantalla.hayQueCorregirLoMarcado')), enlace: r.enlace || null, aviso: r.aviso || null, comando: r.comando || null };
+      if (r.ok) { INVITAR.correo = ''; INVITAR.productos = ''; }
+      render();
+    });
+  }
+  function revocar(correo) {
+    if (REVOCADOS[correo] && REVOCADOS[correo].enviando) return;
+    REVOCADOS[correo] = { enviando: true }; render();
+    return api('/revocar', { correo: correo, marca: nuevaMarca() }).then(function (r) {
+      REVOCADOS[correo] = { ok: !!r.ok, text: r.ok ? r.message : (mensajeLlano(r.message) || T('pantalla.hayQueCorregirLoMarcado')), enlace: r.enlace || null, portal: r.portal || null };
+      render();
+    });
+  }
+  /** Al lado de un correo invitado: su estado, «Revocar» y lo que contestó el sitio. */
+  function estadoDeInvitado(correo, inv) {
+    var e = inv && inv.estados ? inv.estados[String(correo).trim().toLowerCase()] : null;
+    if (!e) return null;
+    var caja = el('span', { class: 'invitado', 'data-estado': e.estado }, el('span', { class: 'dato', text: e.texto }));
+    var rv = REVOCADOS[String(correo).trim().toLowerCase()];
+    if (!rv) caja.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.revocar'), title: T('pantalla.revocar') + ' ' + correo, onclick: function () { revocar(String(correo).trim().toLowerCase()); } }));
+    else if (rv.enviando) caja.appendChild(el('span', { class: 'dato', text: T('pantalla.proponiendo') }));
+    else {
+      var nota = el('span', { class: 'msg ' + (rv.ok ? 'ok' : 'bad'), role: 'status' }, el('b', { text: rv.text }));
+      if (rv.enlace) nota.appendChild(el('a', { href: rv.enlace, text: T('pantalla.verElPedidoDeCambio') }));
+      if (rv.portal) nota.appendChild(el('a', { href: rv.portal, text: T('pantalla.verEnElPortal') }));
+      caja.appendChild(nota);
+    }
+    return caja;
+  }
   function editorAcceso(site, pr, ex) {
     var box = el('div', { class: 'pila' });
     if (ex.inicioDeSesion) box.appendChild(el('p', { class: 'sub-d', text: T('pantalla.conQueSeEntra') + ex.inicioDeSesion.texto + T('pantalla.estoSeCambiaEnLa') }));
     if (ex.migracion) box.appendChild(aviso('warn', T('pantalla.laListaTodaviaNoEsta'), ex.migracion));
     box.appendChild(el('p', { class: 'sub-d', text: T('pantalla.nadieEntraSiNoEsta') }));
+    if (ex.invitaciones) box.appendChild(bloqueInvitar(ex.invitaciones));
     var acc = site.access = site.access || [];
     var tabla = el('div', { class: 'personas', role: 'table', 'aria-label': T('pantalla.lasPersonas') },
       el('div', { class: 'h', role: 'row' }, el('span', { role: 'columnheader', text: T('pantalla.rol') }), el('span', { role: 'columnheader', text: T('pantalla.correos') }), el('span', { role: 'columnheader' })));
@@ -1316,6 +1451,8 @@ function pantalla(idioma = 'es') {
         }
         correos.appendChild(el('span', { class: 'correo' + (con(ruta) ? ' bad' : ''), title: m, 'data-path': ruta }, el('span', { text: m }),
           el('button', { class: 'chip-x', type: 'button', text: '✕', title: T('pantalla.quitarCorreo') + ' ' + m, 'aria-label': T('pantalla.quitarCorreo') + ' ' + m, onclick: function () { e.emails.splice(j, 1); render(); } })));
+        var invitado = estadoDeInvitado(m, ex.invitaciones);
+        if (invitado) correos.appendChild(invitado);
       });
       correos.appendChild(el('button', { class: 'sumar', type: 'button', text: '+', title: T('pantalla.agregarCorreoUno'), 'aria-label': T('pantalla.agregarCorreoUno'), onclick: function () { if (!Array.isArray(e.emails)) e.emails = []; e.emails.push(''); CORREO_A_ENFOCAR = p + '.emails.' + (e.emails.length - 1); render(); } }));
       fila.appendChild(correos);
@@ -1466,6 +1603,36 @@ function pantalla(idioma = 'es') {
     else { var ent = lista.filter(function (e) { return e.pipeline === nombre; })[0]; if (ent) { if (ent.stages.indexOf(id) < 0) ent.stages.push(id); } else lista.push({ pipeline: nombre, stages: [id] }); }
     render();
   }
+  // lo escrito en un campo; el documento de las pruebas sólo tiene el atributo
+  function valorDe(campo) { return campo.value !== undefined && campo.value !== null ? campo.value : (campo.attrs ? campo.attrs.value : ''); }
+  /** «Confirmar» de una máquina: revisa y, si está bien, deja en su renglón la confirmación del pedido. */
+  function confirmarMaquina(s, d, maquina, persona) {
+    if (S.proponiendo[s.id]) return;
+    S.fila = { maquina: maquina, persona: String(persona || '') };
+    S.notas[s.id] = null;
+    return revisarSeccion(s, { accion: 'confirm', maquina: maquina, person: persona, people: d.people }).then(function (r) {
+      if (!r || !r.ok || !S.fila || S.fila.maquina !== maquina) return;
+      S.marcas[s.id] = nuevaMarca();
+      S.notas[s.id] = { confirmar: true, ok: true, text: T('pantalla.estoAbreUnPedidoMaquina', { maquina: maquina, persona: String(persona || '').trim().toLowerCase() }) };
+      render();
+    });
+  }
+  /** Lo de la confirmación en curso, para su renglón: la propuesta con su botón, «proponiendo…», o el resultado. */
+  function resultadoDeLaFila(s) {
+    var caja = el('div', { class: 'fila-resultado', role: 'status' });
+    var n = S.notas[s.id];
+    if (!n) return caja;
+    var proponiendo = !!S.proponiendo[s.id];
+    if (n.text && !proponiendo) {
+      var nota = el('div', { class: 'msg ' + (n.ok ? 'ok' : 'bad') }, el('b', { text: n.text }));
+      if (n.enlace) nota.appendChild(el('a', { href: n.enlace, text: T('pantalla.verElPedidoDeCambio') }));
+      caja.appendChild(nota);
+    }
+    if (!n.ok) (S.problemas[s.id] || []).forEach(function (x) { caja.appendChild(el('div', { class: 'err', text: (x.donde ? x.donde + ': ' : '') + x.message })); });
+    if (proponiendo) caja.appendChild(el('div', { class: 'msg ok' }, el('b', { text: T('pantalla.proponiendo') })));
+    if (n.confirmar) caja.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: T('pantalla.confirmarYProponer'), disabled: proponiendo ? 'disabled' : undefined, onclick: function () { confirmarPropuesta(s); } }), el('button', { class: 'sec', type: 'button', text: T('pantalla.cancelar'), disabled: proponiendo ? 'disabled' : undefined, onclick: function () { S.notas[s.id] = null; S.fila = null; render(); } })));
+    return caja;
+  }
   function editorPersonas(s, d, pr) {
     d.people = d.people || {};
     var box = el('div', { class: 'pila' });
@@ -1473,11 +1640,18 @@ function pantalla(idioma = 'es') {
     if (ex.vencido) box.appendChild(aviso('bad', T('pantalla.laListaDePersonasEsta'), ex.vencido));
     if (ex.ultimoBueno) box.appendChild(aviso('warn', T('pantalla.seMuestraLaUltimaVersion'), ex.ultimoBueno));
     var pc = el('ul', { class: 'renglones' });
+    var enCurso = S.fila;
+    var sigue = enCurso && (ex.porConfirmar || []).some(function (m) { return m.maquina === enCurso.maquina; });
     (ex.porConfirmar || []).forEach(function (m) {
-      var persona = el('input', { value: m.correo || '', placeholder: T('pantalla.correoDeLaPersona'), 'aria-label': T('pantalla.correoDeLaPersona2') });
-      pc.appendChild(el('li', {}, el('span', { class: 'quien', text: m.maquina }), el('span', { class: 'dato', text: (m.correo ? T('pantalla.diceSerDe') + m.correo : T('pantalla.noDiceDeQuienEs')) + T('pantalla.ultimaNoticia') + (m.dia || T('pantalla.sinFecha')) + ' · ' + (m.corridas == null ? T('pantalla.corridasSinContar') : m.corridas + (m.corridas === 1 ? T('pantalla.unaCorrida') : T('pantalla.corridas'))) }),
-        el('span', { class: 'acc' }, persona, el('button', { type: 'button', text: T('pantalla.confirmar'), onclick: function () { revisarSeccion(s, { accion: 'confirm', maquina: m.maquina, person: persona.value, people: d.people }); } }))));
+      var mia = enCurso && enCurso.maquina === m.maquina;
+      var persona = el('input', { value: mia ? enCurso.persona : (m.correo || ''), placeholder: T('pantalla.correoDeLaPersona'), 'aria-label': T('pantalla.correoDeLaPersona2') });
+      var li = el('li', {}, el('span', { class: 'quien', text: m.maquina }), el('span', { class: 'dato', text: (m.correo ? T('pantalla.diceSerDe') + m.correo : T('pantalla.noDiceDeQuienEs')) + T('pantalla.ultimaNoticia') + (m.dia || T('pantalla.sinFecha')) + ' · ' + (m.corridas == null ? T('pantalla.corridasSinContar') : m.corridas + (m.corridas === 1 ? T('pantalla.unaCorrida') : T('pantalla.corridas'))) }),
+        el('span', { class: 'acc' }, persona, el('button', { type: 'button', text: T('pantalla.confirmar'), onclick: function () { confirmarMaquina(s, d, m.maquina, valorDe(persona)); } })));
+      if (mia) li.appendChild(resultadoDeLaFila(s));
+      pc.appendChild(li);
     });
+    // la máquina ya no está por confirmar (el pedido entró y se releyó): su resultado queda arriba de la lista
+    if (enCurso && !sigue) box.appendChild(resultadoDeLaFila(s));
     box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: T('pantalla.porConfirmar2') }), (ex.porConfirmar || []).length ? pc : el('p', { class: 'muted', text: T('pantalla.ninguna') })));
     // las que nunca dieron señales (sin place.json, sin fecha, sin corridas): suelen ser laboratorios o pruebas que
     // escribieron en el buzón; se nombran, sin ofrecer confirmarlas
@@ -2157,16 +2331,29 @@ function pantalla(idioma = 'es') {
       box.appendChild(restoYTexto(s, d, pr, 'models', T('pantalla.losModelosComoTexto')));
       return box;
     }
-    d.models = enNiveles(d.models || {});
+    // las tablas por proveedor, los permitidos y la noche traen nombres de modelos de cada proveedor: no pasan a niveles
+    // (se convierte en su lugar, clave por clave: el archivo propuesto conserva el orden de las claves)
+    if (!esObjeto(d.models)) d.models = {};
+    Object.keys(d.models).forEach(function (k) { if (['providers', 'allowed', 'nightly'].indexOf(k) < 0 && k !== 'fable_question' && k.charAt(0) !== '_') d.models[k] = enNiveles(d.models[k]); });
     var m = d.models;
     var equiv = (s.extras && s.extras.equivalencias) || null;
-    // la línea chica debajo de un selector: a qué modelo equivale el nivel en cada herramienta (sin nivel, ninguna)
+    // story 2.73: lo que el servidor sabe de cada proveedor (el modelo de cada nivel sin tabla, la llave de la noche)
+    var prov = (s.extras && s.extras.proveedores) || {};
+    var porDefecto = prov.porDefecto || null;
+    var PROVEEDORES = ['anthropic', 'openai', 'ollama', 'cursor'];
+    function tablaDelProveedor(p) { return esObjeto(m.providers) && esObjeto(m.providers[p]) ? m.providers[p] : {}; }
+    function permitidosDe(p) { return esObjeto(m.allowed) && Array.isArray(m.allowed[p]) ? m.allowed[p] : []; }
+    function mostrarModelo(v) { return !v || v === 'inherit' ? T('pantalla.elDelDev') : v; }
+    // la línea chica debajo de un selector: a qué modelo equivale el nivel en cada proveedor (sin nivel, ninguna)
     var motivoEquiv = (s.extras && s.extras.motivoEquivalencias) || null;
     function lineaEquiv(v) {
       var mod = modeloDe(v);
       if (!mod) return '';
-      var codex = equiv && Object.prototype.hasOwnProperty.call(equiv, mod) && equiv[mod] ? equiv[mod] : (motivoEquiv || T('pantalla.sinEquivalenciaCodex'));
-      return T('pantalla.equivalenciaDelNivel', { claude: mod, codex: codex });
+      var nivel = nivelDe(mod);
+      var deOpenai = tablaDelProveedor('openai')[nivel];
+      var openai = typeof deOpenai === 'string' && deOpenai ? mostrarModelo(deOpenai)
+        : equiv && Object.prototype.hasOwnProperty.call(equiv, mod) && equiv[mod] ? equiv[mod] : (motivoEquiv || T('pantalla.sinEquivalenciaCodex'));
+      return T('pantalla.equivalenciaDelNivel', { anthropic: mod, openai: openai, ollama: mostrarModelo(tablaDelProveedor('ollama')[nivel]), cursor: mostrarModelo(tablaDelProveedor('cursor')[nivel]) });
     }
     if (!hoy) box.appendChild(el('p', { class: 'muted', text: T('pantalla.noSeLosModelosDe') + ((s.extras && s.extras.motivoHoy) || T('pantalla.sinMotivo')) + T('pantalla.sinDeclararUsaLosDe') }));
     var DE_MODELOS = [['', T('pantalla.elPorDefecto')]].concat(NIVELES.map(function (x) { return [x, T('pantalla.nivel.' + x)]; }));
@@ -2280,6 +2467,88 @@ function pantalla(idioma = 'es') {
     fila(cdx, el('span', { text: T('pantalla.losRevisoresEnCodex') }), T('pantalla.losRevisoresEnCodex'), 'codex_reviewers', null,
       [['', T('pantalla.elEquivalenteDeCadaNivel')], ['inherit', T('pantalla.elModeloDeCadaMaquina')]], T('pantalla.elEquivalenteDeCadaNivel'), null, false);
     box.appendChild(cdx);
+
+    // story 2.73: qué modelo es cada nivel en cada proveedor. Anthropic es fija (sus alias); OpenAI trae los de hoy;
+    // Ollama y Cursor, «el del dev». Una celda es texto libre: vacía, el de por defecto. Debajo, la lista de permitidos
+    // del proveedor (también las sugerencias de sus celdas)
+    function ponerCelda(p, n, v) {
+      v = String(v == null ? '' : v).trim();
+      m.providers = esObjeto(m.providers) ? m.providers : {};
+      var t = esObjeto(m.providers[p]) ? m.providers[p] : (m.providers[p] = {});
+      if (v) t[n] = v; else delete t[n];
+      if (!Object.keys(t).length) delete m.providers[p];
+      if (!Object.keys(m.providers).length) delete m.providers;
+    }
+    function ponerPermitidos(p, v) {
+      var lista = String(v == null ? '' : v).split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+      m.allowed = esObjeto(m.allowed) ? m.allowed : {};
+      if (lista.length) m.allowed[p] = lista; else delete m.allowed[p];
+      if (!Object.keys(m.allowed).length) delete m.allowed;
+    }
+    box.appendChild(el('p', { class: 'sub-t', text: T('pantalla.porProveedor') }));
+    box.appendChild(el('p', { class: 'sub-d', text: T('pantalla.porProveedorAyuda') }));
+    PROVEEDORES.forEach(function (p) {
+      var nombreP = T('pantalla.proveedor.' + p);
+      var t = tabla('modelos proveedores', nombreP, [T('pantalla.nivel2'), T('pantalla.porDefecto2'), T('pantalla.tuOrganizacionUsa')]);
+      t.setAttribute('data-proveedor', p);
+      var permitidos = permitidosDe(p);
+      var listaId = 'permitidos-' + p;
+      NIVELES.forEach(function (n) {
+        var ruta = 'models.providers.' + p + '.' + n;
+        var mios = problemasEn(pr, ruta);
+        var hoyTxt = porDefecto && porDefecto[p] ? mostrarModelo(porDefecto[p][n]) : '—';
+        var acc = el('div', { class: 'acc', role: 'cell' });
+        if (p === 'anthropic') acc.appendChild(el('span', { class: 'muted', text: hoyTxt }));
+        else {
+          var attrs = { value: tablaDelProveedor(p)[n] || '', 'aria-label': nombreP + ' · ' + T('pantalla.nivel.' + n), 'data-path': ruta, placeholder: hoyTxt, oninput: function (e) { ponerCelda(p, n, e.target.value); } };
+          if (permitidos.length) attrs.list = listaId;
+          var inp = el('input', attrs);
+          if (mios.length) inp.setAttribute('class', 'bad');
+          acc.appendChild(inp);
+        }
+        t.appendChild(renglon([el('div', { class: 'que', role: 'cell', text: nombreNivel(n) }), el('div', { class: 'hoy', role: 'cell', text: hoyTxt }), acc], mios));
+      });
+      box.appendChild(t);
+      if (p === 'anthropic') box.appendChild(el('p', { class: 'muted', text: T('pantalla.anthropicFija') }));
+      // «no pude leer» no se ve igual que «no hay»: sin las equivalencias, la tabla de OpenAI dice por qué está vacía
+      if (p === 'openai' && prov.motivo) box.appendChild(el('p', { class: 'err', text: prov.motivo }));
+      if (p === 'cursor') box.appendChild(el('p', { class: 'muted', text: T('pantalla.cursorNoSeAplica') }));
+      if (permitidos.length) {
+        var dl = el('datalist', { id: listaId });
+        permitidos.forEach(function (x) { dl.appendChild(el('option', { value: x })); });
+        box.appendChild(dl);
+      }
+      box.appendChild(campo(T('pantalla.permitidos') + ' · ' + nombreP, permitidos.join(', '), function (v) { ponerPermitidos(p, v); }, 'models.allowed.' + p, pr, { placeholder: T('pantalla.permitidosAyuda') }));
+    });
+
+    // el proceso de la noche: su proveedor y su nivel; el modelo sale de la misma tabla. Sin modelo para ese nivel, el
+    // servidor no deja proponer (en la noche «inherit» no vale)
+    var secretos = prov.secretos || {};
+    var tn = tabla('modelos noche', T('pantalla.elProcesoDeLaNoche'), [T('pantalla.trabajo'), T('pantalla.nocheProveedor'), T('pantalla.nivel2')]);
+    var lineaNoche = el('small', { class: 'glosa noche-hoy' });
+    function pintarNoche() {
+      var n0 = esObjeto(m.nightly) ? m.nightly : null;
+      if (!n0 || !n0.provider) { lineaNoche.textContent = T('pantalla.nocheSinConfigurar'); return; }
+      var nivel = n0.level || 'economy';
+      // con el tope obligatorio, el nivel con que va a correr (como lo recorta la noche)
+      var tope = m.mandatory_ceiling === true ? NIVELES.indexOf(nivelDe(m.ceiling)) : -1;
+      if (tope >= 0 && NIVELES.indexOf(nivel) > tope) nivel = NIVELES[tope];
+      var mod = n0.provider === 'anthropic' ? modeloDe(nivel) : tablaDelProveedor(n0.provider)[nivel];
+      var hoyN = mod && mod !== 'inherit' ? T('pantalla.nocheHoy', { modelo: mod }) : T('pantalla.nocheSinModelo');
+      lineaNoche.textContent = hoyN + (secretos[n0.provider] ? ' · ' + T('pantalla.nocheLlave', { variable: secretos[n0.provider] }) : '');
+    }
+    var noche = esObjeto(m.nightly) ? m.nightly : null;
+    var deNoche = [['', T('pantalla.nocheSinConfigurar')]].concat((prov.noche || ['anthropic', 'ollama']).map(function (x) { return [x, T('pantalla.proveedor.' + x)]; }));
+    var selP = corto(T('pantalla.nocheProveedor'), noche ? noche.provider : '', deNoche, function (v) {
+      if (!v) delete m.nightly;
+      else { m.nightly = esObjeto(m.nightly) ? m.nightly : {}; m.nightly.provider = v; if (!m.nightly.level) m.nightly.level = 'economy'; }
+      pintarNoche();
+    }, 'models.nightly.provider', pr);
+    var selN = corto(T('pantalla.nivel2'), noche && noche.level ? noche.level : 'economy', NIVELES.map(function (x) { return [x, T('pantalla.nivel.' + x)]; }), function (v) { if (esObjeto(m.nightly)) m.nightly.level = v; pintarNoche(); }, 'models.nightly.level', pr);
+    pintarNoche();
+    tn.appendChild(renglon([el('div', { class: 'que', role: 'cell' }, el('span', { text: T('pantalla.elProcesoDeLaNoche') }), lineaNoche),
+      el('div', { class: 'acc', role: 'cell' }, selP.sel), el('div', { class: 'acc', role: 'cell' }, selN.sel)], problemasEn(pr, 'models.nightly').concat(selP.mios, selN.mios)));
+    box.appendChild(tn);
 
     // el tope obligatorio, un renglón al pie: la casilla, «ningún trabajo pasa de» y el modelo
     var techo = el('input', { type: 'checkbox', 'aria-label': T('pantalla.topeObligatorio'), 'data-path': 'models.mandatory_ceiling', onchange: function (e) { if (e.target.checked) m.mandatory_ceiling = true; else { delete m.mandatory_ceiling; delete m.ceiling; } render(); } });
@@ -2916,6 +3185,9 @@ function pantalla(idioma = 'es') {
     // story 2.30: con una política con filtro de ruta, el estado del archivo de la sección manda sobre el del repo
     if (prop && prop.porArchivo && prop.porArchivo[s.archivo]) prop = prop.porArchivo[s.archivo];
     var habilitado = prop && prop.habilitado;
+    // la confirmación de una máquina se dibuja en su renglón (editorPersonas): acá no va nada de ella.
+    var enLaFila = s.id === 'personas' && !!S.fila;
+    if (enLaFila) n = null;
     var confirmando = n && n.confirmar;
     if (!confirmando && n && n.text) {
       var nota = el('div', { class: 'msg ' + (n.ok ? 'ok' : 'bad') }, el('b', { text: n.text }));
@@ -2923,7 +3195,7 @@ function pantalla(idioma = 'es') {
       sec.appendChild(nota);
     }
     if (!s.soloLectura && !bloqueada(s) && s.id !== 'paridad') {
-      var bar = el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.revisarCambios'), onclick: function () { revisarSeccion(s); } }));
+      var bar = el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.revisarCambios'), onclick: function () { if (s.id === 'personas') S.fila = null; revisarSeccion(s); } }));
       bar.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.descargar'), disabled: S.textos[s.id] ? undefined : 'disabled', title: S.textos[s.id] ? undefined : T('pantalla.descargarSePrende'), onclick: function () { descargar(s); } }));
       if (habilitado) bar.appendChild(el('button', { type: 'button', text: T('pantalla.proponerElCambio'), disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { empezarAProponer(s); } }));
       bar.appendChild(el('span', { class: 'por-que', text: !habilitado ? motivoProponer(prop && prop.motivo) : (S.textos[s.id] ? textoProponer(s, prop) : T('pantalla.primeroRevisaAsiSabesSi')) }));
@@ -3062,8 +3334,8 @@ function pantalla(idioma = 'es') {
 }
 
 module.exports = {
-  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
-  problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, modelosEnNiveles, equivalenciasDe,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS,
 };

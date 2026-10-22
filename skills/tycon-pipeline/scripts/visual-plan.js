@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * visual-plan.js — Renderiza un "plan visual" HTML offline (single-file, 0-deps, sin red)
- * para el HITL Checkpoint #1 (Step 3) del tycon-pipeline.
+ * para el HITL Checkpoint #1 (paso «Aprobar el plan») del tycon-pipeline.
  *
  * Filosofía TYCON: el determinismo vive en el script (template HTML fijo), el juicio
  * vive en el LLM (extrae el contenido del plan BMAD y lo pasa como JSON estructurado).

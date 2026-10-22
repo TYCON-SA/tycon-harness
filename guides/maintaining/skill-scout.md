@@ -64,7 +64,7 @@ Con skill-scout: detecta `tycon-plugin-dotnet-conventions`, recomienda **(B) EXT
 
 Sin skill-scout: el agente crea skill nueva. Termina conviviendo con `tycon-ado-story-wi` que ya hace lifecycle ADO completo.
 
-Con skill-scout: detecta `tycon-ado-story-wi`, recomienda **(A) USAR** + revisar si el cierre automático ya está cubierto en el step-09 del pipeline.
+Con skill-scout: detecta `tycon-ado-story-wi`, recomienda **(A) USAR** + revisar si el cierre automático ya está cubierto en «Cerrar la historia» del pipeline.
 
 ## Anti-patterns como dev
 

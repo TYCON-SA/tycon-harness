@@ -162,7 +162,7 @@ test('marker set: mismo storyId no reabre steps completados (R7); marker nuevo s
   assert.deepEqual(JSON.parse(r.stdout).stepsPending, [2, 3, 4, 5, 6, 7, 8]);
   // marker nuevo (otra sesión) que arranca sin 3 → aviso + bypass.log
   r = markerCli(home, 'sess-v', ['set', JSON.stringify({ storyId: '2.3', stepsPending: [5, 6, 7, 8] })]);
-  assert.equal(r.status, 0); assert.match(r.stderr, /SIN el Step 3/);
+  assert.equal(r.status, 0); assert.match(r.stderr, /SIN el paso «Aprobar el plan»/);
   const bl = () => fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'bypass.log'), 'utf8');
   assert.match(bl(), /MARKER_SKIPS_PLAN/);
   // MISMA story que OMITE el 3 que estaba pendiente → MARKER_DROPS_PLAN

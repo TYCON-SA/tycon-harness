@@ -4,13 +4,13 @@
  * ── POR QUÉ ES UNA TERCERA CAPA ──────────────────────────────────────────────────────────────────
  * Hay otros dos frenos de ATDD y los dos son POST-MORTEM:
  *
- *   1. `lib/atdd-order.js` + `marker.js complete-step 4` → corre al CERRAR el step 4, o sea cuando la
+ *   1. `lib/atdd-order.js` + `marker.js complete-step implement` → corre al CERRAR el paso «Implementar», o sea cuando la
  *      implementación entera ya está escrita.
  *   2. `lib/atdd-commit-gate.js` → corre al commitear, todavía más tarde.
  *
  * Los dos DETECTAN la inversión; ninguno la IMPIDE. Caso que cubre: el orquestador implementa varias
  * tareas completas —modelos, validador, repositorio, servicio, endpoint— y recién piensa escribir los
- * tests al final. Ninguno de los dos frenos llega a correr a tiempo: para cuando el `complete-step 4`
+ * tests al final. Ninguno de los dos frenos llega a correr a tiempo: para cuando el `complete-step implement`
  * hable, el trabajo mal hecho ya está hecho y hay que tirarlo.
  *
  * La respuesta no es "más texto normativo" ni "otro detector": es mover el
@@ -32,9 +32,9 @@
  *
  *   1. Hay un pipeline activo (marker) — afuera del pipeline no frena nada (el freno del commit
  *      sigue avisando ahí).
- *   2. El step 4 (implementación) todavía NO está cerrado. Después del step 4 vienen los fixes de
- *      advisors: frenarlos ahí sería absurdo y el `complete-step 4` ya juzgó el orden.
- *   3. La story declara una tabla `### Tests` — mismo skip-condition que el sub-paso 4.0. Una story
+ *   2. El paso «Implementar» todavía NO está cerrado. Después de él vienen los fixes de
+ *      advisors: frenarlos ahí sería absurdo y el `complete-step implement` ya juzgó el orden.
+ *   3. La story declara una tabla `### Tests` — mismo skip-condition que las pruebas primero de «Implementar». Una story
  *      sin tests declarados no tiene contrato de ATDD que romper.
  *   4. El archivo es CÓDIGO de implementación y vive DENTRO del repo de la story. Editar el propio
  *      harness, un script suelto o un `.md` mid-pipeline no es la implementación de la story.
@@ -68,7 +68,7 @@ function isInside(root, file) {
 }
 
 /**
- * ¿El texto de la story declara una tabla `### Tests`? Mismo criterio que el sub-paso 4.0.
+ * ¿El texto de la story declara una tabla `### Tests`? Mismo criterio que las pruebas primero de «Implementar».
  * Ante la duda (no se pudo leer la story) devuelve `false` → NO bloquea: un portón nuevo que se
  * equivoca callándose es preferible a uno que frena por no haber podido leer un archivo.
  */

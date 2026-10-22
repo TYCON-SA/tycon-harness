@@ -2,7 +2,7 @@
  * atdd-commit-gate.js — extiende el freno de ATDD al trabajo hecho FUERA del pipeline.
  *
  * ── EL AGUJERO QUE TAPA ──────────────────────────────────────────────────────────────────────────
- * El gate de ATDD (`marker.js complete-step 4` + `lib/atdd-order.js`) lee
+ * El gate de ATDD (`marker.js complete-step implement` + `lib/atdd-order.js`) lee
  * `marker.fileEvents`, que sólo existe durante una corrida del pipeline. Si el trabajo se hace a
  * mano —sin `tycon-pipeline`— no hay marker, no hay eventos, y el gate no tiene nada que leer.
  * No falla: nunca se lo consulta.

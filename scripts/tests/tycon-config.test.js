@@ -525,11 +525,20 @@ test('T9 Config_IntegracionesParaShell — `integrations --shell` imprime una as
     'TYCON_INTEG_CODEGRAPH=0', 'TYCON_INTEG_MAILBOX=0', 'TYCON_INTEG_NIGHTLY=0', 'TYCON_INTEG_INSTINCTS=0', 'TYCON_INTEG_TELEGRAM=0']) {
     assert.ok(lineas.includes(esperada), `falta ${esperada} en:\n${r.stdout}`);
   }
-  assert.ok(lineas.every((l) => /^TYCON_INTEG_[A-Z]+=(0|1|detect)$/.test(l)), `sólo asignaciones (el instalador las evalúa):\n${r.stdout}`);
+  // las integraciones y, en su propia variable, la herramienta de horas elegida (la llave vieja leída)
+  assert.ok(lineas.every((l) => /^TYCON_INTEG_[A-Z]+=(0|1|detect)$/.test(l) || /^TYCON_TIME_TOOL=[a-z0-9-]+$/.test(l)), `sólo asignaciones (el instalador las evalúa):\n${r.stdout}`);
+  assert.ok(lineas.includes('TYCON_TIME_TOOL=clockify'), `la herramienta de horas en su variable:\n${r.stdout}`);
   const j = cli(['integrations', '--json'], { home, env });
   assert.equal(j.status, 0, j.stderr);
   const obj = JSON.parse(j.stdout);
-  assert.deepEqual(Object.keys(obj).sort(), ['ado', 'clockify', 'codegraph', 'codex', 'engram', 'instincts', 'mailbox', 'nightly', 'telegram']);
+  assert.deepEqual(Object.keys(obj).sort(), ['ado', 'clockify', 'codegraph', 'codex', 'engram', 'instincts', 'mailbox', 'nightly', 'telegram', 'timeTracking']);
+  assert.equal(obj.timeTracking, 'clockify');
+  // un valor que no es un nombre de integración (texto libre, con un salto de línea) no se imprime: el instalador lee la
+  // forma shell línea por línea y no puede recibir una asignación de más
+  const raro = cli(['integrations', '--shell'], { home, env: Object.assign({}, env, { TYCON_TIME_TRACKING: 'none\nTYCON_INTEG_X[$(touch x)]=1' }) });
+  assert.equal(raro.status, 0, raro.stderr);
+  assert.ok(raro.stdout.trim().split('\n').every((l) => /^TYCON_INTEG_[A-Z]+=(0|1|detect)$/.test(l)), `sólo las integraciones, sin la herramienta:\n${raro.stdout}`);
+  assert.equal(JSON.parse(cli(['integrations', '--json'], { home, env: Object.assign({}, env, { TYCON_TIME_TRACKING: 'a b' }) }).stdout).timeTracking, null);
   assert.equal(obj.codex, 'detect'); assert.equal(obj.ado, true); assert.equal(obj.engram, false);
   maquina(home, '{ "integrations": { "clokify": true } }');
   const rota = cli(['integrations', '--shell'], { home, env: { TYCON_PROFILE: '0' } });
@@ -1958,4 +1967,58 @@ test('T31 TyconConfig_InstinctsIntegration_EnvProfileOrder @story-4.7 @ac-1 @ac-
   const hook = C.integracionParaHook('instincts', { home: h, arnes: arnesCon(perfil), env: {} });
   assert.equal(hook.ok, true);
   assert.equal(hook.prendida, true, 'el gancho la ve prendida por el perfil');
+});
+
+// ── el proveedor de modelos de la máquina ──────────────────────────────────────────────
+
+test('T8 ModelProvider_CadenaEnvMaquinaDerivado @story-2.73 @ac-7', () => {
+  const C = lib();
+  const home = casa();
+  maquina(home, { models: { provider: 'cursor' } });
+  const arnes = arnesCon(null);
+  assert.deepEqual(C.modelProvider({ home, arnes, env: { TYCON_MODEL_PROVIDER: 'ollama' } }), { provider: 'ollama', origin: 'env', problem: null }, 'la variable gana');
+  assert.deepEqual(C.modelProvider({ home, arnes, env: {} }), { provider: 'cursor', origin: 'maquina', problem: null }, 'después el archivo de la máquina');
+  const sin = casa();
+  assert.deepEqual(C.modelProvider({ home: sin, arnes, env: { CODEX_SESSION_ID: 'x' } }), { provider: 'openai', origin: 'derivado', problem: null }, 'sesión de Codex');
+  assert.deepEqual(C.modelProvider({ home: sin, arnes, env: { CODEX_SESSION_ID: 'x', CLAUDE_CODE_SESSION_ID: 'y' } }), { provider: 'anthropic', origin: 'derivado', problem: null }, 'Claude Code dentro de Codex sigue siendo Claude Code');
+  assert.deepEqual(C.modelProvider({ home: sin, arnes, env: {} }), { provider: 'anthropic', origin: 'derivado', problem: null });
+  // la función recibe también una configuración ya cargada
+  const c = cargar({ home, arnes });
+  assert.deepEqual(C.modelProvider({ config: c, env: {} }), { provider: 'cursor', origin: 'maquina', problem: null });
+});
+
+test('T9 ModelProvider_ValorInvalidoYPerfil @story-2.73 @ac-8', () => {
+  const C = lib();
+  const home = casa();
+  maquina(home, { models: { provider: 'gemma' } });
+  const c = cargar({ home, arnes: arnesCon(null) });
+  const err = c.errores.find((e) => e.clave === 'models.provider');
+  assert.ok(err, JSON.stringify(c.errores));
+  for (const p of ['anthropic', 'openai', 'ollama', 'cursor']) assert.match(err.motivo, new RegExp(p));
+  const r = C.modelProvider({ home, arnes: arnesCon(null), env: {} });
+  assert.equal(r.provider, null, 'no cae en el derivado');
+  assert.equal(r.origin, 'rota');
+  assert.match(r.problem, /models\.provider/);
+  // la variable con un valor fuera de la lista, tampoco
+  const v = C.modelProvider({ home: casa(), arnes: arnesCon(null), env: { TYCON_MODEL_PROVIDER: 'gemma' } });
+  assert.deepEqual([v.provider, v.origin], [null, 'rota']);
+  assert.match(v.problem, /TYCON_MODEL_PROVIDER/);
+  // en el perfil del equipo es un error: es de la máquina
+  const p = cargar({ home: casa(), arnes: arnesCon({ models: { provider: 'ollama' } }) });
+  const enPerfil = p.errores.find((e) => e.clave === 'models.provider');
+  assert.ok(enPerfil, JSON.stringify(p.errores));
+  assert.match(enPerfil.motivo, /es de la máquina/);
+});
+
+test('T10 ModelProvider_SetEscribe @story-2.73 @ac-8', () => {
+  const sinFreno = path.join(tmp('tcfg-set-prov-'), 'no-esta.js');
+  const home = casa();
+  const env = { TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: sinFreno };
+  const out = cli(['set', 'models.provider', 'ollama'], { home, env });
+  assert.equal(out.status, 0, out.stderr);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(home, '.claude', 'tycon.json'), 'utf8')).models.provider, 'ollama');
+  const ex = cli(['explain'], { home, env });
+  assert.equal(ex.status, 0, ex.stderr);
+  assert.match(ex.stdout, /^ {2}models\.provider = ollama \(maquina\)$/m);
+  assert.equal(cli(['set', 'models.provider', 'gemma'], { home, env }).status, 2, 'un valor fuera de la lista no se escribe');
 });

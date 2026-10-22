@@ -1,6 +1,6 @@
 # Probar en vivo
 
-**Objetivo**: bloquear el avance a Step 8 (commit prep) hasta que exista evidencia
+**Objetivo**: bloquear el avance a «Preparar el commit» hasta que exista evidencia
 de Definition of Done runtime — smoke check ejecutado, E2E specs corridos,
 artefacto persistido en `.advisors/dod-runtime/<story-id>-<timestamp>.md`.
 
@@ -11,7 +11,7 @@ artefacto persistido en `.advisors/dod-runtime/<story-id>-<timestamp>.md`.
 protocolo de cierre ACCOV-C7..C10 (cero checklist-manual al user, self-audit
 C8 —opcional desde 2026-09-16—, meta-audit C9 —retirada el 2026-09-16—,
 convergencia C10) vive fuera del advisor
-y SOLO aplica acá y en Step 8: si no se lee en este momento, es invisible.
+y SOLO aplica acá y en «Preparar el commit»: si no se lee en este momento, es invisible.
 
 
 ## 📍 Dónde va la evidencia — se RESUELVE, no se adivina (2026-09-05)
@@ -35,7 +35,7 @@ divergen. Un solo original, en el repo de la story. El registro de revisores (`r
 y `findings.json` de la corrida sí se PROYECTAN solos al repo de la story (los escribe el arnés:
 `write-findings` y el hook `on-advisor-run.js`), porque el portón los exige ahí para `done`.
 
-🔴 Y cuando la story vive en OTRO repo, esa evidencia hay que COMMITEARLA AHÍ: el Step 8 stagea en
+🔴 Y cuando la story vive en OTRO repo, esa evidencia hay que COMMITEARLA AHÍ: «Preparar el commit» stagea en
 `repoPath` (el código); en el repo de la story quedan untracked `.advisors/dod-runtime/<id>-*` y
 `.advisors/pipeline-runs/<corrida>/{review-roster,findings}.json`, y el portón de CI sólo ve lo que
 viaja en el PR de ese repo. Van en el mismo commit que cambia el `status:` de la story
@@ -105,14 +105,14 @@ Sin un step explícito para verificar el gate DoD declarado en
 `tests_done_playwright_spec` en el frontmatter con tests jamás corridos. Eso sólo se detecta
 después, cuando alguien pregunta si se corrieron.
 
-Step 7c es la inserción canónica que cierra ese loop dentro del pipeline
+«Probar en vivo» es la inserción canónica que cierra ese loop dentro del pipeline
 declarado. Es no-skipable per regla **E.i (no-skip-by-inference)** del propio
 skill (ver `SKILL.md` sección "Configuración de diseño").
 
 ## Trigger del step
 
-Step 7c corre **siempre que Step 7 (HITL approve) avanza con `approved: true`**
-y antes de Step 8 (commit prep). No es opcional: el marker.js bloquea
+«Probar en vivo» corre **siempre que «Hallazgos» (HITL approve) avanza con `approved: true`**
+y antes de «Preparar el commit». No es opcional: el marker.js bloquea
 `complete-step prepare-commit` si `dodRuntimeChecked !== true`.
 
 ## Skip-conditions (documentadas — usar SOLO si verificablemente aplica)
@@ -140,9 +140,9 @@ verificablemente (no por inferencia conversacional):
 Si ninguna condición se cumple → **el step DEBE correr**.
 
 🔴 **El salteo deja constancia** (2026-10-03): `complete-step prepare-commit` pide `dodRuntimeChecked` siempre, también cuando
-el step no corre. Por eso `pipeline.js next` devuelve el 7c aunque la story esté exenta, con el comando en su nota:
+el step no corre. Por eso `pipeline.js next` devuelve «Probar en vivo» aunque la story esté exenta, con el comando en su nota:
 `marker.js mark-dod-runtime-checked '{"verdict":"PASS","evidencePath":"exenta: <la razón del frontmatter>"}'`. Antes
-`next` lo daba por salteado y mandaba al 8, y el freno aparecía recién ahí.
+`next` lo daba por salteado y mandaba a preparar el commit, y el freno aparecía recién ahí.
 
 ## 🟢 Pre-flight hook check (SPEED-2, recomendado ANTES del Edit del frontmatter)
 
@@ -169,7 +169,7 @@ Pre-condiciones evaluadas (MVP):
 
 Skip-cases: target ya == current / target NO es review-done / `dod_runtime_exempt: true` / story sin runtime tests → `ready_to_edit: true` con razón.
 
-Por qué: sin preflight, cada precondition que falta cuesta un ciclo de hook-block entre el Step 7c y el 8. Con preflight: una llamada upfront identifica TODAS las preconditions + cómo satisfacerlas.
+Por qué: sin preflight, cada precondition que falta cuesta un ciclo de hook-block entre «Probar en vivo» y «Preparar el commit». Con preflight: una llamada upfront identifica TODAS las preconditions + cómo satisfacerlas.
 
 ## 🟢 Macro determinístico (SPEED-3, recomendado para stories backend)
 
@@ -218,18 +218,18 @@ Variables capturadas (`$.path.to.field`) se substituyen en steps subsiguientes c
 sintaxis `{varName}` en `path` y `body`. Soporta `$.arr[0].field` para arrays.
 
 **Cuándo NO usar el macro**:
-- Story toca frontend UI con E2E reales → usar el gate E2E del proyecto (`.tycon/advisors.yaml` → `e2e.gate`, scoped por default en este step — ver 7c.3 two-tier).
+- Story toca frontend UI con E2E reales → usar el gate E2E del proyecto (`.tycon/advisors.yaml` → `e2e.gate`, scoped por default en este step — ver la parte 3, two-tier).
 - Story toca BackgroundService/Worker → trigger manual del cycle + assert event log.
 - Pattern transaccional complejo → runtime verification manual (rollback en exception).
 
-Por qué SPEED-3, medido: el Step 7c manual toma ~2 min
+Por qué SPEED-3, medido: «Probar en vivo» manual toma ~2 min
 (devhost restart + curl orden + curl scan + curl verify + curl confirmar +
 escribir evidence file desde cero + recordar substrings hook-compliant). Con
 macro: ~10s + scenario JSON una sola vez.
 
 ## Acciones del step (en orden)
 
-### 7c.1 — Detección automática del scope
+### Parte 1 — Detección automática del scope
 
 El orquestador determina qué tipo de runtime check aplica:
 
@@ -243,7 +243,7 @@ El orquestador determina qué tipo de runtime check aplica:
 
 Si la story toca múltiples → todas las verificaciones aplican.
 
-### 7c.2 — Invocar `tycon-dod-runtime-checker` advisor (opt-in por superficie desde 2026-09-16)
+### Parte 2 — Invocar `tycon-dod-runtime-checker` advisor (opt-in por superficie desde 2026-09-16)
 
 **Lo decide un helper, no el orquestador** (regla E.i — skip documentado y verificable, nunca inferido):
 
@@ -268,7 +268,7 @@ los motivos):
 Por qué, medido:
 en 286 hallazgos registrados dejó **uno** (DODRT-C6, la regla que la matriz ya corre sola) y cuesta
 ~2,8 min y ~120 mil tokens por corrida. Lo que frena de verdad en el cierre es mecánico: la matriz por
-AC (7c.6) y el gate E2E (7c.3). La regla anterior lo salteaba cuando la evidencia ya estaba verde —o
+AC (parte 6) y el gate E2E (parte 3). La regla anterior lo salteaba cuando la evidencia ya estaba verde —o
 sea, decidía por lo que los scripts y los hooks ya prueban— y dejaba la superficie, que era lo único
 que importaba, como una condición más. No se borró: «sin rastro» no es «no cazó nada» (sus veredictos
 no viajan a `findings.json`).
@@ -284,7 +284,7 @@ ejecuta los gates per `definition-of-done.md`:
 Output del advisor: report markdown con FAIL/PASS por gate + evidencia
 capturada (curl outputs, E2E run logs, screenshots si aplica).
 
-### 🚨 7c.2.1 — Anti-pattern HARD STOP: "mocks NO cuentan como DODRT-C1"
+### 🚨 Parte 2.1 — Anti-pattern HARD STOP: "mocks NO cuentan como DODRT-C1"
 
 **Por qué**: capturar evidencia DoD declarando "4/4 Playwright PASS" cuando los 4 specs usan
 `page.route()` mocks 100% no prueba nada del backend. Los mocks
@@ -362,7 +362,7 @@ considera ejecutado**. El hook `on-pre-commit.js` se puede extender en futura
 iteración para parsear la evidencia y verificar este checklist programáticamente
 (TODO en este step file).
 
-### 🔴 7c.3 — EJECUTAR EL GATE PLAYWRIGHT SCOPED (gate duro vía script, two-tier)
+### 🔴 Parte 3 — EJECUTAR EL GATE PLAYWRIGHT SCOPED (gate duro vía script, two-tier)
 
 **MANDATORY si la story toca frontend (`.tsx`/`.vue`/`.razor`) o tiene specs en
 `tests/e2e/`.** No es "ejecutar si declarados" — es **ejecutar el gate** y fallar
@@ -410,7 +410,7 @@ una app que la story no toca y daría verde sin haber probado nada de lo entrega
 **Y quedarse con `frontend_dirs_selected[0]` tiene el MISMO defecto** cuando la entrega toca dos
 apps: se verifica una y la otra pasa sin control. Es la misma clase de bug que este mecanismo vino a
 arreglar, un nivel más arriba — cazado por el hunter de fallos silenciosos en la propia corrida de
-QA-1, sobre el primer intento de este fix. Por eso acá se ITERA, igual que en el paso 7b de
+QA-1, sobre el primer intento de este fix. Por eso acá se ITERA, igual que en la otra vuelta de Revisores de
 `/tycon-merge-to-main`, y un rojo en cualquier app frena el gate.
 
 - **Con `[spec-filter]`** (default en este step) → scoped a los specs de la story
@@ -447,9 +447,9 @@ El gate del proyecto (el script que el repo declaró en `e2e.gate`) hace, por co
 
 **El orquestador DEBE chequear el exit code del script**:
 - exit 0 → continuar (gate verde).
-- exit != 0 → **STOP. NO avanzar a Step 8. NO escribir `status: done`.** El remedio
+- exit != 0 → **STOP. NO avanzar a «Preparar el commit». NO escribir `status: done`.** El remedio
   lo dice el código, y confundirlos hace perder el run arreglando lo que no está roto:
-  **1** → loop a Step 4 (fix los tests rojos) · **3** → levantar el stack y re-correr ·
+  **1** → loop a «Implementar» (fix los tests rojos) · **3** → levantar el stack y re-correr ·
   **2** → el filtro no matcheó: corregir el nombre del spec · **4** → los specs se
   saltearon solos porque el entorno no tiene los datos que necesitan: **sembrar los
   datos y re-correr** (el stack ESTÁ arriba — levantarlo otra vez devuelve 4 de nuevo).
@@ -458,9 +458,9 @@ El gate del proyecto (el script que el repo declaró en `e2e.gate`) hace, por co
 `on-frontmatter-write.js` verifica** antes de permitir `status: done` /
 `pipelines.X.status: done`. Sin un run fresco + verde, el hook bloquea.
 
-### 7c.3-pendiente — La prueba con navegador que la persona dejó pendiente
+### Parte 3, pendiente — La prueba con navegador que la persona dejó pendiente
 
-Si el repo no tenía cómo probar en un navegador y la persona contestó que no a la oferta (paso 3), la historia lleva
+Si el repo no tenía cómo probar en un navegador y la persona contestó que no a la oferta (en «Aprobar el plan»), la historia lleva
 `browser_test: deferred` y `browser_test_reason: "<fecha> — la persona: «<su respuesta>»"`, y `gates.log` la constancia
 `browser-test-deferred` que escribió `e2e-setup.js defer`. `complete-step prepare-commit`, el commit y el paso a `review` vuelven a
 buscar esa respuesta en la conversación de la sesión que la anotó, posterior a la oferta: si la encuentran, el gate no
@@ -470,7 +470,7 @@ la conversación, o si el repo ya tiene prueba con navegador (ahí se corre), fr
 preparando el repo: `e2e-setup.js prepare --repo <repo> --story <spec> --approved-by "<el dev>" --ok "<su respuesta>"` y
 corriendo el gate. Se deshace con `e2e-setup.js undo --repo <repo>`.
 
-### 7c.3-escape — Cuándo se permite NO correr el gate (estrictísimo)
+### Parte 3, escape — Cuándo se permite NO correr el gate (estrictísimo)
 
 El ÚNICO escape es `dod_runtime_exempt: true` en frontmatter (story sin UI/E2E
 reales — ver Skip-conditions arriba). **El viejo escape `review-pending-smoke`
@@ -479,7 +479,7 @@ nunca se corrían. Si el stack no levanta, el fix es **levantar el stack**, no
 diferir el gate. Una story que toca UI NO pasa a `done` sin gate Playwright verde
 (scoped como mínimo; el full corre en `/tycon-merge-to-main`).
 
-### 🔴 7c.3-deferred — UI story con E2E `tests_pending`/diferidos a un sub-pipeline
+### 🔴 Parte 3, diferido — UI story con E2E `tests_pending`/diferidos a un sub-pipeline
 
 **Caso**: una story que toca frontend UI declara sus specs E2E como diferidos
 (`pipelines.X.tests_pending: [E2E-...]` o `tests_pending_runtime:`) — los specs
@@ -487,21 +487,21 @@ Playwright **todavía NO están escritos** — y el run se commitea con `status:
 (no transiciona a review/done en este run).
 
 **Regla (no-negociable)**: diferir la **escritura** de los specs E2E **NO** waivea la
-verificación runtime. En este caso 7c.3 EXIGE un **smoke DRIVEN de la UI** (en vez del
+verificación runtime. En este caso la parte 3 EXIGE un **smoke DRIVEN de la UI** (en vez del
 gate de specs, que no existen todavía):
 
 - Un script Playwright (o driver equivalente) que **maneje la app REAL** (`dev.html`
   contra el stack vivo — dev-proxy + DevHost + **datos seedeados reales**, NO
-  `page.route()` mocks — mismo principio que 7c.2.1) y **asserte CADA AC de UI de la
+  `page.route()` mocks — mismo principio que la parte 2.1) y **asserte CADA AC de UI de la
   story**, no un subconjunto: cada modal/pantalla/estado que la story declara, cada
   acción, cada gate RBAC, cada validación visible.
 - Evidencia obligatoria en `<evidence-dir>/<storyId>-ui-smoke-<ts>.md`:
   **mapeo AC → assertion ejecutada → PASS/FAIL** + screenshots por caso, generada desde
-  el run del script (no fabricada a mano — misma provenance que 7c.4).
+  el run del script (no fabricada a mano — misma provenance que la parte 4).
 - **Curl NO cuenta** para ACs de UI (ejerce el endpoint, no el render). El smoke driven
   es *adicional* al DODRT-C1 curl de los endpoints nuevos (si los hay).
 
-**Sin ese smoke driven → 7c = INCOMPLETE → bloquea Step 8**, AUNQUE el `status` quede
+**Sin ese smoke driven → «Probar en vivo» = INCOMPLETE → bloquea «Preparar el commit»**, AUNQUE el `status` quede
 `in-progress`. El "commit WIP de una UI cableada" NO es un escape: si la feature está
 montada en la app (feature-wiring positivo), su render se verifica driven en este run.
 
@@ -512,13 +512,13 @@ verde con evidencia. Toda afirmación de verificación va DESPUÉS de la ejecuci
 la evidencia. Una guía de prueba entregada al user etiqueta CADA caso explícito:
 `✅ verificado por el agente (evidencia: <path>)` vs `🔲 pendiente de que lo pruebe el
 user`. Mezclar los dos = mentira al user (mismo peso que la mentira al spec del
-anti-pattern de 7c.2.1 / abajo).
+anti-pattern de la parte 2.1 / abajo).
 
 **Por qué**: correr un smoke parcial, declarar "DoD complete ✅", entregar una guía de prueba
 de TODOS los casos como si se hubieran verificado, y racionalizar el gate Playwright con
 "E2E diferido al merge gate" deja la verificación driven sin correr hasta que alguien la exige.
 
-### 7c.4 — Persistir evidencia
+### Parte 4 — Persistir evidencia
 
 **🔒 NOTA de provenance (hook `on-dod-evidence-guard.js`)**: la evidencia de **run real**
 (`<storyId>-<ts>.md` del macro + `<storyId>-e2e-gate-*.md` del gate, con el bloque
@@ -542,7 +542,7 @@ por los scripts) contiene:
 # DoD Runtime Evidence — Story <id>
 
 **Timestamp**: <ISO 8601>
-**Pipeline iteration**: Step 7c
+**Pipeline iteration**: «Probar en vivo»
 **Story spec**: <abs path>
 **Repo root**: <abs path>
 
@@ -575,20 +575,20 @@ PASS / FAIL / PARTIAL
 El archivo es git-tracked (no .gitignore) para que viaje con el commit como
 auditable trail.
 
-### 7c.5 — Actualizar marker.js
+### Parte 5 — Actualizar marker.js
 
 ```bash
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js \
   mark-dod-runtime-checked '{"evidencePath": "<abs path>", "verdict": "PASS"}'
 ```
 
-Esto setea `marker.dodRuntimeChecked = true` y registra la evidencia. Step 8
+Esto setea `marker.dodRuntimeChecked = true` y registra la evidencia. «Preparar el commit»
 chequea este flag antes de proceder.
 
 **Registrar el check `dod` — SIEMPRE, independientemente del modo autónomo**: es lo que
 `complete-step prepare-commit` exige para toda story de UI (el candado mira `checks.dod` verde con
 provenance `run-check`, sin mirar si la corrida es `--autonomous`). 🔴 Saltearlo «porque
-estoy en HITL» frena el Step 8 más adelante, sin que se entienda por qué.
+estoy en HITL» frena «Preparar el commit» más adelante, sin que se entienda por qué.
 **Forma canónica: `run-check`** — ejecuta el comando del gate, captura el exit code REAL
 él mismo y setea el check con `provenance=run-check` (queda en `gates.log`). NO es self-report:
 
@@ -622,16 +622,16 @@ apps dieron 0 — la garantía anti-self-report no se afloja.
 `set-check dod green --manual` queda SOLO para excepciones: veredicto COMPUESTO
 que no es un único comando (ej: DODRT-C1 curl real + gate e2e combinados) o story
 con `dod_runtime_exempt: true` (la exención cuenta como satisfecha, no como rojo).
-Queda marcado `provenance=manual` y logueado — Step 8 lo anuncia como "check no
+Queda marcado `provenance=manual` y logueado — «Preparar el commit» lo anuncia como "check no
 verificado mecánicamente".
 
 🔴 Si `dod` queda `red:...`, el Stop-hook DoD gate bloquea el cierre del turno →
-el agente vuelve al Step 4 a arreglar el path roto y re-corre el gate runtime. Cuando
-el verdict es PASS, el check pasa a `green` y el portón deja avanzar a Step 8.
+el agente vuelve a «Implementar» a arreglar el path roto y re-corre el gate runtime. Cuando
+el verdict es PASS, el check pasa a `green` y el portón deja avanzar a «Preparar el commit».
 
-### 🔴 7c.6 — Matriz de verificación runtime por AC (DODRT-C6, MANDATORY — 2026-07-10)
+### 🔴 Parte 6 — Matriz de verificación runtime por AC (DODRT-C6, MANDATORY — 2026-07-10)
 
-El gate `dod` verde de 7c.3 prueba que **el spec declarado pasó** — NO qué ACs quedaron
+El gate `dod` verde de la parte 3 prueba que **el spec declarado pasó** — NO qué ACs quedaron
 ejercitados: un `dod` verde puede tener evidencia runtime de una parte de los ACs, sin
 que exista la lista de lo no-probado. Después del gate, SIEMPRE:
 
@@ -673,7 +673,7 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js run-check ac
 - Los smokes por curl SOLO cuentan si corrieron vía
   `scripts/smoke-run.sh <evidence-dir> <ruta-de-la-story.md> --acs N,M --pass-if '<qué tiene que pasar>' -- <cmd>`
   (ledger + salida guardada + espejo gates.log). Un curl narrado en el Debug Log es prosa, no evidencia. Sin
-  `--pass-if` no corre, y un humo cuya salida guardada falta o se editó no cuenta (ver 7c.6.1).
+  `--pass-if` no corre, y un humo cuya salida guardada falta o se editó no cuenta (ver la parte 6.1).
 - 🔴 **A `smoke-run.sh`, a `e2e-gate.sh` y a `step-7c-macro.js --story` se les pasa la RUTA de la
   story, no el número**. Con la ruta calculan solos la clave de la evidencia: el número
   si es único en su repo, `<tema>__<número>` si se repite (`pipeline.js evidence-key --story <ruta>`
@@ -698,7 +698,7 @@ en el chat, `marker.js waive-critical --rule <regla> --file <archivo> --reason "
 hallazgo se anota `waived`. El límite es el mismo: la cita prueba que el mensaje está en la conversación, no prueba
 quién está detrás de la sesión que reenvía.
 
-#### 7c.6.1 — Sembrar el «Given», no escribir el «Then» (DODRT-C10, 2026-10-15)
+#### Parte 6.1 — Sembrar el «Given», no escribir el «Then» (DODRT-C10, 2026-10-15)
 
 Sembrar las precondiciones de un AC (el «Given»: el paciente, el pedido de origen) es correcto, y se hace por
 `smoke-run.sh` sin `--acs` para que quede rastro de qué se insertó. Escribir en la base el dato que el «Then» dice
@@ -709,7 +709,7 @@ firma el dev desde su terminal. Cada humo con `--acs` escribe antes de correr qu
 hable del «Then» del AC, no «ok» ni «funciona»); su salida queda guardada y sellada, y el revisor la lee contra esa
 frase (DODRT-W4).
 
-### 🟢 7c.7 — Guía QA para tester (HTML, DODRT-C7, 2026-07-10)
+### 🟢 Parte 7 — Guía QA para tester (HTML, DODRT-C7, 2026-07-10)
 
 Además de la verificación automática, el pipeline deja armada una **guía de prueba manual en
 HTML pensada para un tester humano** (segundo control de calidad), almacenada en los documentos
@@ -845,7 +845,7 @@ si falla, sin bypass por env var — igual que la matriz):
    salvo que su línea traiga `keep: <por qué>` (no frena y el candado la imprime siempre). Las líneas `differs:` no
    son marcas: declaran una diferencia con la maqueta (capa 10).
 9. **La maqueta aprobada, intacta**: con `<clave>-mockup-approval.json` (o con la huella que le pasa el
-   paso 8 desde el marcador, `--mockup-sha`), la maqueta está en el disco, su huella es la aprobada y pasa
+   «Preparar el commit» desde el marcador, `--mockup-sha`), la maqueta está en el disco, su huella es la aprobada y pasa
    `mockup.js check`. Si cambió, se le muestra de nuevo a quien la aprueba y `approve-mockup`. Sin aprobación ni
    `--mockup-sha` (story aprobada antes de que existiera la maqueta, o el chequeo corrido fuera del pipeline) no se compara y se dice.
 10. **Lo construido tiene los textos de la maqueta**: el archivo de la pantalla nombra la maqueta (`mockup:`) y cada
@@ -858,7 +858,7 @@ si falla, sin bypass por env var — igual que la matriz):
 
 ```json
 {
-  "step": "7c",
+  "step": "live-check",
   "verdict": "PASS",
   "evidence_path": ".advisors/dod-runtime/4.2-2026-05-20T16-00-00Z.md",
   "gates_run": ["DODRT-C1", "DODRT-C2"],
@@ -867,7 +867,7 @@ si falla, sin bypass por env var — igual que la matriz):
 }
 ```
 
-Si verdict === "FAIL" → loop a Step 4 (re-implementar el path roto) o cancelar
+Si verdict === "FAIL" → loop a «Implementar» (re-implementar el path roto) o cancelar
 pipeline. Si el FAIL del gate del proyecto fue por servers down (exit 3) →
 levantar el stack y re-correr el script (NO diferir).
 
@@ -879,7 +879,7 @@ stack está ARRIBA — diagnosticarlo como "servers down" y re-levantarlo devuel
 vez (por eso el 4 no comparte código con el 3).
 
 Si verdict === "PASS" (gate del proyecto exit 0 + DODRT-C1 curl real verde) → marker
-actualizado → avanzar a Step 8.
+actualizado → avanzar a «Preparar el commit».
 
 **`PARTIAL` / `review-pending-smoke` ELIMINADO** (2026-05-20): ya no existe el
 estado intermedio "E2E pendientes". O el gate Playwright corre verde (scoped en
@@ -899,7 +899,7 @@ Aunque el orquestador respete el step, hay 2 hooks de defense-in-depth:
    `git commit` si el diff incluye transición frontmatter sin evidencia.
 
 3. **`on-dod-evidence-guard.js`** (PreToolUse Write|Edit) — bloquea la escritura
-   manual de la evidencia misma (ver NOTA de provenance en 7c.4).
+   manual de la evidencia misma (ver NOTA de provenance en la parte 4).
 
 Los tres son fail-safe: si el agente skipea este step por inferencia, los hooks
 lo atrapan al primer Edit/commit.
@@ -915,10 +915,10 @@ con el resultado.
   anotando `(Run manual pending DevHost.)`. Eso es **una mentira al spec**.
   Si los tests no se corrieron → `tests_pending_runtime: [...]`.
 
-- ❌ Skipear el step alegando "los advisors Step 5 corrieron verde, eso es DoD".
+- ❌ Skipear el step alegando "los advisors de Revisores corrieron verde, eso es DoD".
   No — los advisors LEEN el código. DoD runtime requiere EJECUCIÓN.
 
-- ❌ Skipear alegando "Step 4 build-gate verde, eso es smoke runtime". No —
+- ❌ Skipear alegando "el build-gate de «Implementar» verde, eso es smoke runtime". No —
   build verde compila, no ejerce el flujo end-to-end.
 
 - ❌ Saltar este step "porque la sesión es larga y querés cerrar". El skip
@@ -926,13 +926,13 @@ con el resultado.
 
 - ❌ Narrarle al user "DoD complete / probado / verificado / smoke passed" —o
   entregar una guía "cómo probar X" como si se hubiera ejecutado— ANTES de correr
-  el gate 7c en verde. Afirmar cobertura no ejecutada = mentira al user (ver
-  7c.3-deferred, regla anti pre-claim).
+  el gate de este paso en verde. Afirmar cobertura no ejecutada = mentira al user (ver
+  la parte 3, diferido, regla anti pre-claim).
 
 - ❌ Racionalizar el skip del smoke driven con "es un commit WIP / in-progress, no
-  transiciono a done". El status `in-progress` NO waivea 7c: una UI cableada se
-  verifica driven en el run que la cablea (ver 7c.3-deferred).
+  transiciono a done". El status `in-progress` NO waivea este paso: una UI cableada se
+  verifica driven en la ejecución que la cablea (ver la parte 3, diferido).
 
 - ❌ Correr un smoke DRIVEN parcial (algunos de los casos/ACs de UI) y presentarlo
-  como verificación completa. 7c.3-deferred exige **cada** AC de UI aserteado, no
+  como verificación completa. La parte 3, diferido, exige **cada** AC de UI aserteado, no
   un subconjunto representativo.

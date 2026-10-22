@@ -446,6 +446,80 @@ test('T25 Codex_SinEquivalente_SinLineaDeModelo @story-7.29 @ac-17', () => {
   assert.equal(modelLine(fs.readFileSync(path.join(home, '.codex', 'agents', 'rev-capa-uno.toml'), 'utf8')), null);
 });
 
+// ── los modelos por proveedor: la tabla del proveedor de Codex de la máquina ─────────────────────────────
+function withProvider(value, fn) {
+  const before = process.env.TYCON_MODEL_PROVIDER;
+  if (value === undefined) delete process.env.TYCON_MODEL_PROVIDER; else process.env.TYCON_MODEL_PROVIDER = value;
+  try { return fn(); } finally { if (before === undefined) delete process.env.TYCON_MODEL_PROVIDER; else process.env.TYCON_MODEL_PROVIDER = before; }
+}
+
+test('T17 Codex_TablaDeOpenAIGana @story-2.73 @ac-14', () => {
+  const root = treeConModelos('prov-openai', equipoModels({ reviewers: 'balanced', reviewer: { 'tycon-spec-first-checker': 'strong' }, providers: { openai: { balanced: 'gpt-5.6-sol' } } }));
+  for (const prov of [undefined, 'openai', 'anthropic', 'cursor']) {
+    withProvider(prov, () => {
+      const g = GEN.generateOne(root, 'rev-version');
+      const org = GEN.orgCodexModel(root, 'rev-version');
+      assert.equal(modelLine(GEN.deployedContent(g.toml, org)), '"gpt-5.6-sol"', `${prov}: la tabla de OpenAI`);
+      // el revisor en opus (strong) no está en la tabla: el equivalente de siempre
+      const o2 = GEN.orgCodexModel(root, 'tycon-spec-first-checker');
+      assert.equal(modelLine(GEN.deployedContent(GEN.generateOne(root, 'tycon-spec-first-checker').toml, o2)), '"gpt-5.6-terra"', `${prov}: los demás`);
+    });
+  }
+});
+
+test('T18 Codex_ProveedorOllama_InheritSinLineaModel @story-2.73 @ac-14', () => {
+  const root = treeConModelos('prov-ollama', equipoModels({ reviewers: 'balanced', reviewer: { 'tycon-spec-first-checker': 'strong' }, providers: { ollama: { balanced: 'gpt-oss:120b-cloud' } } }));
+  withProvider('ollama', () => {
+    const cargado = GEN.orgCodexModel(root, 'rev-version');
+    assert.equal(cargado.slug, 'gpt-oss:120b-cloud');
+    assert.equal(modelLine(GEN.deployedContent(GEN.generateOne(root, 'rev-version').toml, cargado)), '"gpt-oss:120b-cloud"');
+    const sinCargar = GEN.orgCodexModel(root, 'tycon-spec-first-checker');
+    assert.equal(sinCargar.declared, true);
+    assert.equal(sinCargar.slug, null);
+    assert.ok(sinCargar.lines.some((l) => /la tabla de Ollama no trae modelo para strong.*sin «model =»/.test(l)), sinCargar.lines.join('\n'));
+    const toml = GEN.deployedContent(GEN.generateOne(root, 'tycon-spec-first-checker').toml, sinCargar);
+    assert.equal(modelLine(toml), null, 'sin línea model =');
+    const lines = toml.split('\n');
+    const primeraTabla = lines.findIndex((l) => /^\s*\[/.test(l));
+    assert.ok(primeraTabla < 0 || lines.slice(0, primeraTabla).some((l) => /^[A-Za-z_][\w.-]*\s*=/.test(l)), 'las claves sueltas siguen antes de las tablas');
+  });
+  // con Ollama y sin `models` en la organización: la tabla vacía, todo sin «model =»
+  const vacio = treeConModelos('prov-ollama-vacio', equipoModels(null));
+  withProvider('ollama', () => assert.equal(GEN.orgCodexModel(vacio, 'rev-version').slug, null));
+});
+
+test('T18b Codex_ProveedorIlegible_TablaDeOpenAIYAviso @story-2.73 @ac-14', () => {
+  // un proveedor de la máquina fuera de la lista: el despliegue usa la tabla de OpenAI y lo dice
+  const root = treeConModelos('prov-ilegible', equipoModels({ reviewers: 'balanced', providers: { openai: { balanced: 'gpt-5.6-sol' } } }));
+  withProvider('gemma', () => {
+    const org = GEN.orgCodexModel(root, 'rev-version');
+    assert.equal(org.slug, 'gpt-5.6-sol');
+    assert.ok(org.lines.some((l) => /el proveedor de modelos de la máquina no se pudo leer.*uso la tabla de OpenAI/.test(l)), org.lines.join('\n'));
+  });
+});
+
+test('T19 Codex_ReviewersInheritGana_SinProvidersIgualQueHoy @story-2.73 @ac-15', () => {
+  const root = treeConModelos('prov-inherit', equipoModels({ reviewers: 'balanced', codex_reviewers: 'inherit', providers: { openai: { balanced: 'gpt-5.6-sol' } } }));
+  for (const prov of [undefined, 'ollama']) {
+    withProvider(prov, () => {
+      const org = GEN.orgCodexModel(root, 'rev-version');
+      assert.equal(org.slug, null, `${prov}: inherit gana`);
+      assert.equal(modelLine(GEN.deployedContent(GEN.generateOne(root, 'rev-version').toml, org)), null);
+    });
+  }
+  // sin providers: byte a byte lo de hoy (el mismo árbol, con y sin la clave nueva en el código)
+  const hoy = treeConModelos('prov-hoy', equipoModels({ reviewers: 'balanced', reviewer: { 'tycon-spec-first-checker': 'strong' } }));
+  withProvider(undefined, () => {
+    for (const n of ['rev-version', 'tycon-spec-first-checker']) {
+      const g = GEN.generateOne(hoy, n);
+      const org = GEN.orgCodexModel(hoy, n);
+      const eq = JSON.parse(fs.readFileSync(path.join(ROOT, 'build', 'equivalences.json'), 'utf8')).models;
+      assert.equal(GEN.deployedContent(g.toml, org), GEN.withCodexModel(g.toml, n === 'rev-version' ? eq.sonnet : eq.opus), n);
+      assert.deepEqual(org.lines, [], n);
+    }
+  });
+});
+
 // ── T43: un revisor de un PAQUETE que llega por la capa (`packs/<p>/agents/<r>.md`) también va a Codex
 //    si el paquete está activo para la organización; con el paquete apagado, no, igual que del lado de Claude. Con los
 //    paquetes reales lo mide el privado ───────────────────────────────────────────────────────────────────────────────────

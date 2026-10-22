@@ -4,8 +4,8 @@
 
 ## Inputs
 
-- `story_path`: path al story validado en Step 1
-- `story_frontmatter`: metadata del story (parseada en Step 1, incluye `approach`)
+- `story_path`: path al story validado en «Validar la historia»
+- `story_frontmatter`: metadata del story (parseada en «Validar la historia», incluye `approach`)
 
 ## Acción — elegir skill BMAD según `approach`
 
@@ -29,7 +29,7 @@ mem_search(project: "<nombre canónico del repo — ver guides/integrations/engr
            query: "<keywords del título de la story + dominio + archivos del scope>")
 ```
 
-Armar un bloque **"Lecciones previas del repo (engram)"** con los top 3-5 gotchas/convenciones relevantes y pasarlo DENTRO del prompt/args al skill BMAD junto al `story_path`. Razón: los mismos errores conocidos del repo se atrapaban post-hoc en Step 5 generando re-loops de iter 2 — inyectarlos acá los previene.
+Armar un bloque **"Lecciones previas del repo (engram)"** con los top 3-5 gotchas/convenciones relevantes y pasarlo DENTRO del prompt/args al skill BMAD junto al `story_path`. Razón: los mismos errores conocidos del repo se atrapaban post-hoc en los revisores generando re-loops de iter 2 — inyectarlos acá los previene.
 
 Si `mem_search` no devuelve nada relevante → seguir sin bloque, anunciándolo en 1 línea ("engram sin gotchas relevantes para esta story").
 
@@ -67,33 +67,33 @@ El skill BMAD en plan mode debe producir:
 - Identificación de riesgos o ambigüedades
 
 **El plan queda escrito** en la carpeta de la corrida (`pipeline.js run-dir --story <s> --repo <r> --create`), en
-`step-02-bmad-plan.md`, antes de pasar al paso 3. Es lo que se le muestra a la persona, también cuando el plan se
+`step-02-bmad-plan.md`, antes de pasar a «Aprobar el plan». Es lo que se le muestra a la persona, también cuando el plan se
 aprueba solo: con riesgo bajo, `complete-step approve-plan --auto-approved` no cierra sin ese archivo ni sin el plan en un
-mensaje tuyo a la persona (paso 3).
+mensaje tuyo a la persona («Aprobar el plan»).
 
 ## Guardrail — patrón de referencia verificado (stories de backend)
 
-🔴 **Para stories de backend**, antes de pasar el plan a Step 3, el orquestador DEBE chequear:
+🔴 **Para stories de backend**, antes de pasar el plan a «Aprobar el plan», el orquestador DEBE chequear:
 
 - El plan **no puede apoyar una decisión estructural** (registración DI, acceso a `BizuitUserContext`, lifecycle de hub / hosted service, transacciones, contrato del plugin loader) en una afirmación sobre el framework que esté marcada como **no verificada** — "asumo", "probablemente", "creo que", "no pude confirmar", "(asumo)". Si un research agent o el propio plan trae el patrón con esa marca → **NO se aprueba el plan**. El orquestador fuerza la verificación directa: grep / abrir el archivo del proyecto hermano (NimboBackend / TotoraBackend / FRESNOBZExtBackend / el repo del framework) y reemplazar la asunción por la cita concreta con `archivo:línea`.
 - El plan debe ser **consistente con la sección "Patrón de referencia verificado" de la story** (§9.2). Si el plan propone una decisión estructural que diverge del patrón hermano que la story citó, hay un conflicto que se resuelve ANTES de implementar — no después.
 
-Esto es backstop: `VAL-C8` + los revisores de validación de los paquetes (`pipeline.js validators`) ya validaron la story en Step 1. Acá el orquestador solo se asegura de que el **plan de BMAD** no reintroduzca una asunción que la story ya había anclado.
+Esto es backstop: `VAL-C8` + los revisores de validación de los paquetes (`pipeline.js validators`) ya validaron la story en «Validar la historia». Acá el orquestador solo se asegura de que el **plan de BMAD** no reintroduzca una asunción que la story ya había anclado.
 
 ## Decisiones
 
-- **Si el skill BMAD pide clarificaciones al usuario** (típico en Amelia si el story tiene ambigüedades): dejar que el usuario responda. El plan mode puede iterar antes de pasar a Step 3.
+- **Si el skill BMAD pide clarificaciones al usuario** (típico en Amelia si el story tiene ambigüedades): dejar que el usuario responda. El plan mode puede iterar antes de pasar a «Aprobar el plan».
 
-- **Si el skill BMAD detecta que no puede implementar** (story pide algo fuera de scope, dependencias no cumplidas): no pasar a Step 3. Reportar al usuario y terminar el pipeline.
+- **Si el skill BMAD detecta que no puede implementar** (story pide algo fuera de scope, dependencias no cumplidas): no pasar a «Aprobar el plan». Reportar al usuario y terminar el pipeline.
 
-- **Si el plan se apoya en una asunción no verificada del framework** (ver Guardrail arriba): no pasar a Step 3. Forzar la verificación directa, actualizar el plan (y la story si hace falta), y re-iterar.
+- **Si el plan se apoya en una asunción no verificada del framework** (ver Guardrail arriba): no pasar a «Aprobar el plan». Forzar la verificación directa, actualizar el plan (y la story si hace falta), y re-iterar.
 
 ## Output de este step
 
 - Plan de implementación generado por BMAD
 - Lista de archivos que BMAD va a modificar
 
-Pasar al Step 3.
+Pasar a «Aprobar el plan».
 
 ## Cierre del step
 
@@ -101,6 +101,6 @@ Pasar al Step 3.
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step plan
 ```
 
-🔴 **Sin esto, el Step 3 se bloquea.** El freno de orden (`marker.js` §ORDEN) no deja cerrar el 3 con
+🔴 **Sin esto, «Aprobar el plan» se bloquea.** El freno de orden (`marker.js` §ORDEN) no deja cerrar `approve-plan` con
 el 2 todavía pendiente, y el mensaje que ves ahí no dice que lo que falta es este comando. Medido:
 es el bloqueo más frecuente del pipeline.

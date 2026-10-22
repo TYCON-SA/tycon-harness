@@ -690,6 +690,30 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibmodelsjs--el-modelo-de-cada-trabajo-del-pipeline)
 
+## scripts/lib/models-env.js — las variables de Claude Code sobre otro proveedor
+
+**Qué es:** Imprime las variables `ANTHROPIC_DEFAULT_<ALIAS>_MODEL` que Claude Code necesita para que cada nivel use el modelo de la tabla del proveedor de la máquina (`team-repos.json → models.providers`). Con `--format json` o `vscode`, las mismas en JSON.
+
+**Por qué existe:** Los revisores piden `haiku`, `sonnet` u `opus`. Con Claude Code sobre Ollama, cada alias recibe un modelo que existe sólo si su variable está puesta, y el arnés no puede ponerla: el entorno de la sesión vive antes de que arranque.
+
+**Quién la usa:** La función `claude-ollama` de la guía de Ollama, y quien quiera ver qué modelo es cada nivel en su máquina.
+
+**Dónde se prueba:** `scripts/tests/models-env.test.js`
+
+**Guía:** [ollama](integrations/ollama.md)
+
+## scripts/lib/nightly-model.js — el modelo del proceso de la noche
+
+**Qué es:** Dice con qué proveedor y qué modelo corre un proceso de la noche (`team-repos.json → models.nightly`, traducido con la tabla de su proveedor, con el tope y la lista de permitidos) y qué llave necesita. Sin configuración, sin modelo, fuera de la lista o sin llave devuelve un estado y no corre.
+
+**Por qué existe:** Un proceso de la noche no es la máquina de un dev: no tiene proveedor ni sesión, así que «el modelo del dev» no vale. El modelo se cambia desde el sitio, no con un pedido de código.
+
+**Quién la usa:** El proceso de la noche que redacta los aprendizajes del equipo.
+
+**Dónde se prueba:** `scripts/tests/nightly-model.test.js`
+
+**Guía:** [organization-site](organization-site.md)
+
 ## skills/tycon-pipeline/scripts/lib/run-size.js — el tamaño de la corrida
 
 **Qué es:** Decide si una corrida del pipeline es liviana (la story sólo declara documentación o textos) o completa (lo demás), y estima cuánto va a tardar con las corridas anteriores de la máquina.
@@ -844,7 +868,7 @@ cada rol, los problemas comunes, cómo se instala y cómo está hecho por dentro
 `scripts/tools/site-guide-captures.js` del sitio corriendo con una organización de laboratorio. Las piezas que lo acompañan: la imagen
 (`.github/workflows/site-image.yml`), las instalaciones (`scripts/site/deploy/`: Azure Container Apps en dos fases,
 Render y una máquina propia), la prueba sin sesión (`scripts/site/check-deploy.js`) y el canal del aviso
-(`scripts/lib/notify.js`). Red: las suites `site-*` y `notify` de `scripts/tests/`.
+(`scripts/lib/notify.js`); invitar desde Personas, `scripts/site/invitations.js`. Red: las suites `site-*` y `notify`.
 
 **La copia de operaciones**: con `SITE_OPERATIONS_SOURCE=copy`, `pipelines/operations/site-copy.yml` sube a
 un contenedor sólo lo que el sitio lee (`RUTAS` de `scripts/site/operations-copy.js`, más el logo de `site.brand.logo`)

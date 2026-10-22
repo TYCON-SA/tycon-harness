@@ -5,7 +5,7 @@
  * Sin maqueta, la pantalla se ve recién construida: un error de diseño (qué se muestra, dónde, con qué palabras) se descubre
  * cuando ya está programado y probado, y arreglarlo cuesta otra vuelta de revisores, del pase adversarial y de las
  * pruebas de navegador. La maqueta es un HTML local, de un archivo, sin red y sin código, con los textos reales de la
- * pantalla. En las stories con pantalla la persona que pide la story la aprueba junto con el plan (paso 3, `marker.js complete-step 3
+ * pantalla. En las stories con pantalla la persona que pide la story la aprueba junto con el plan (paso «Aprobar el plan», `marker.js complete-step approve-plan
  * --mockup-approved`), su huella queda anotada, y la revisión de la pantalla (`qa-guide.js --check`, capas 9 y 10)
  * compara lo construido contra ella.
  *
@@ -380,15 +380,15 @@ function compareWithScreens({ texts, screens, md }) {
   return { missing, extras, declared, unreadable };
 }
 
-/** Los argumentos de `qa-guide.js --check` en el paso 8: con la maqueta aprobada en el marcador, su huella. */
+/** Los argumentos de `qa-guide.js --check` en «Preparar el commit»: con la maqueta aprobada en el marcador, su huella. */
 function qaGuideCheckArgs(storyPath, marker) {
   const sha = marker && marker.mockupApproval && marker.mockupApproval.sha256;
   return [path.join(__dirname, 'qa-guide.js'), '--check', '--story', storyPath, ...(sha ? ['--mockup-sha', sha] : [])];
 }
 
 /**
- * Qué hace el paso 8 con la maqueta. `{ block, skip, compare, screenNow }`:
- *   block   — la story ganó una pantalla después de aprobar el plan sin maqueta (el paso 3 anotó `screen: false`).
+ * Qué hace «Preparar el commit» con la maqueta. `{ block, skip, compare, screenNow }`:
+ *   block   — la story ganó una pantalla después de aprobar el plan sin maqueta (el paso «Aprobar el plan» anotó `screen: false`).
  *   skip    — tenía maqueta aprobada y no se detecta pantalla: no se compara, se dice y se anota.
  *   compare — hay maqueta aprobada y la story sigue con pantalla (o no se pudo leer: «no pude mirar» no saltea).
  */

@@ -573,13 +573,13 @@ Todo dev nuevo al equipo debe:
 
 ---
 
-## El pase adversarial (Step 5b) — evidencia observada de qué capa encuentra qué (2026-08-27)
+## El pase adversarial — evidencia observada de qué capa encuentra qué (2026-08-27)
 
-Cuatro corridas en tres repos donde el pase adversarial reproduce-or-refute (Step 5b del
+Cuatro corridas en tres repos donde el pase adversarial reproduce-or-refute (el paso «Pase adversarial» del
 `tycon-pipeline`: hunters que EJECUTAN el código + skeptics que refutan) encontró bugs de
 comportamiento que el set completo de advisors single-pass, en una o más iteraciones, no vio:
 
-| Dónde | Qué encontró el 5b | Qué encontraron los advisors single-pass |
+| Dónde | Qué encontró el pase adversarial | Qué encontraron los advisors single-pass |
 |---|---|---|
 | un backend .NET | 4 bugs de correctitud | 0 CRITICAL |
 | un repo del equipo | bug real | forma/trazabilidad |
@@ -587,15 +587,15 @@ comportamiento que el set completo de advisors single-pass, en una o más iterac
 | el mismo backend, otra corrida | corrimiento de 3h por `ToUniversalTime()` sobre `Kind=Unspecified`, reproducido contra la DB real | 21 invocaciones en 3 iteraciones: sólo forma/trazabilidad |
 
 **Cómo leer esto (y cómo NO leerlo).** Es evidencia observada con sesgo de selección conocido —
-las corridas se anotan cuando el 5b encuentra algo; las corridas donde no encuentra nada no dejan
+las ejecuciones se anotan cuando el pase adversarial encuentra algo; las que no encuentran nada no dejan
 rastro equivalente. NO dice "los advisors single-pass sobran": encuentran la deuda de forma,
-trazabilidad y spec que el 5b no busca. Tampoco convierte al 5b en obligatorio universal: cuándo
+trazabilidad y spec que el pase adversarial no busca. Tampoco lo convierte en obligatorio universal: cuándo
 corre lo decide el gate `deep-review-gate` (risk-class + `deep_review_always_paths`), que ya se
 recalibró con estos mismos casos.
-Lo que SÍ dice: si una corrida va a recortar capas por costo, el 5b es la última que conviene
+Lo que SÍ dice: si una ejecución va a recortar capas por costo, el pase adversarial es la última que conviene
 recortar — la diferencia práctica entre ambas capas es que una LEE el diff y la otra EJECUTA el
 código, y los cuatro bugs de la tabla sólo eran visibles ejecutando.
 
-No se declara al 5b "capa primaria" con "ratio 100% vs 0%": esa formulación
+No se declara al pase adversarial "capa primaria" con "ratio 100% vs 0%": esa formulación
 no vale por el sesgo de selección, y porque esa métrica exige juicio
 humano (clasificar "bug de comportamiento") en un dashboard determinista.

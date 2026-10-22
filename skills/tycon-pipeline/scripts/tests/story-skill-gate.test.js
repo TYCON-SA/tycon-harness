@@ -71,30 +71,41 @@ const TTL = gate.ttlMsFrom(undefined);
 
 // ── lógica pura ──────────────────────────────────────────────────────────────────────────────────
 test('computeStorySkillGate: tabla de verdad', () => {
-  const base = { filePath: '/r/specs/story-x.md', existsOnDisk: false, isStoryCandidate: true, isHarness: false, repoUnderHarness: true, idIsWork: true, mark: null, nowMs: NOW, ttlMs: TTL };
+  const base = { filePath: '/r/specs/story-x.md', existsOnDisk: false, prevStatus: null, status: 'ready-for-dev', isStoryCandidate: true, isHarness: false, repoUnderHarness: true, idIsWork: true };
   const v = (o) => gate.computeStorySkillGate({ ...base, ...o });
-  assert.equal(v({}).action, 'block'); assert.equal(v({}).kind, 'no-skill');
+  assert.equal(v({}).action, 'block'); assert.equal(v({}).kind, 'new-not-draft');
   assert.equal(v({ isStoryCandidate: false }).kind, 'not-story');
-  assert.equal(v({ existsOnDisk: true }).kind, 'exists');
+  assert.equal(v({ existsOnDisk: true, prevStatus: 'in-progress' }).kind, 'exists');
   assert.equal(v({ isHarness: true }).kind, 'harness');
   assert.equal(v({ gateEnabled: false }).kind, 'repo-off');
   assert.equal(v({ repoUnderHarness: false }).kind, 'unknown-no-harness');
   // un id con otra forma que la del repo se frena igual (G-1 en un repo que numera por épica) y el motivo lo dice
   assert.equal(v({ idIsWork: false }).action, 'block');
-  assert.equal(v({ idIsWork: false }).kind, 'no-skill');
   assert.match(v({ idIsWork: false }).reason, /numeración/);
-  assert.equal(v({ idIsWork: false, mark: { skill: 'tycon-create-story', at: new Date(NOW).toISOString() } }).action, 'pass');
   assert.equal(v({ isCodex: true }).kind, 'unknown-codex');
-  // bajo Codex una marca/bypass vigente igual se reconoce (queda auditado como bypass, no como unknown)
-  assert.equal(v({ isCodex: true, mark: { skill: 'bypass', reason: 'r', at: new Date(NOW).toISOString() } }).kind, 'bypass');
-  assert.equal(v({ mark: { skill: 'tycon-create-story', at: new Date(NOW - 60e3).toISOString() } }).kind, 'mark');
-  assert.equal(v({ mark: { skill: 'bypass', reason: 'el dev lo pidió', at: new Date(NOW).toISOString() } }).kind, 'bypass');
-  const exp = v({ mark: { skill: 'tycon-create-story', at: new Date(NOW - TTL - 1).toISOString() } });
-  assert.equal(exp.action, 'block'); assert.equal(exp.kind, 'mark-expired');
+  assert.equal(v({ status: 'draft' }).kind, 'new-draft');
+  assert.equal(v({ record: true }).kind, 'validated');
+  // un borrador que existe: editarlo sin cambiar el estado pasa; pasarlo a otro estado pide la constancia
+  assert.equal(v({ existsOnDisk: true, prevStatus: 'draft', status: 'draft' }).kind, 'draft-edit');
+  assert.equal(v({ existsOnDisk: true, prevStatus: 'draft' }).kind, 'draft-promote');
+  assert.equal(v({ existsOnDisk: true, prevStatus: 'draft', record: true }).kind, 'validated');
+  assert.match(v({ existsOnDisk: true, prevStatus: 'draft', status: null }).reason, /terminal/);
   // idIsWork null (no se pudo leer el id) NO abre el portón: se asume trabajo.
   assert.equal(v({ idIsWork: null }).action, 'block');
-  // una marca corrupta no es salvoconducto
-  assert.equal(v({ mark: { skill: 'tycon-create-story' } }).action, 'block');
+});
+
+test('statusOf: el estado del frontmatter, no el del cuerpo', () => {
+  assert.equal(gate.statusOf('---\nstory: "1"\nstatus: draft\n---\nStatus: ready-for-dev\n'), 'draft');
+  assert.equal(gate.statusOf('---\nstatus: "Ready-For-Dev"\n---\n'), 'ready-for-dev');
+  assert.equal(gate.statusOf('# sin frontmatter\nstatus: draft\n'), null);
+  // la misma lectura para el freno, el cierre y el arranque: BOM, `--- ` con espacios, comentario, espacio antes de `:`
+  assert.equal(gate.statusOf('﻿---\nstory: "1"\nstatus: draft\n---\n'), 'draft');
+  assert.equal(gate.statusOf('--- \nstory: "1"\nstatus : draft  # sin validar\n---  \n'), 'draft');
+  // dos estados distintos: no es un borrador limpio (no nace así) y en disco cuenta como borrador (pasarlo pide constancia)
+  assert.equal(gate.statusOf('---\nstatus: draft\nstatus: ready-for-dev\n---\n'), 'mixed');
+  const v = (o) => gate.computeStorySkillGate({ filePath: '/r/x.md', existsOnDisk: false, prevStatus: null, isStoryCandidate: true, isHarness: false, repoUnderHarness: true, idIsWork: true, ...o });
+  assert.equal(v({ status: 'mixed' }).action, 'block');
+  assert.equal(v({ existsOnDisk: true, prevStatus: 'mixed', status: 'ready-for-dev' }).kind, 'draft-promote');
 });
 
 test('isCreatorSkill / ttlMsFrom / markState', () => {
@@ -125,20 +136,20 @@ test('isCreatorSkill / ttlMsFrom / markState', () => {
   assert.equal(gate.markState({ at: new Date(NOW - TTL - 1000).toISOString() }, NOW, TTL), 'expired');
 });
 
-test('blockMessage: nombra el archivo y el skill; escribirla sin el skill lo decide la persona, sin darle al agente cómo saltearlo', () => {
-  const m = gate.blockMessage({ kind: 'no-skill' }, { filePath: '/r/specs/story-as1.md', via: 'Write', ttlMs: TTL });
-  assert.match(m, /story-as1\.md/); assert.match(m, /tycon-create-story/);
+test('blockMessage: nombra el archivo, pide draft y el validador; saltearlo lo decide la persona, sin darle al agente cómo apagarlo', () => {
+  const m = gate.blockMessage({ kind: 'new-not-draft', reason: 'x' }, { filePath: '/r/specs/story-as1.md', via: 'Write' });
+  assert.match(m, /story-as1\.md/); assert.match(m, /status: draft/); assert.match(m, /tycon-story-validator/);
   assert.match(m, /lo decide la persona/); assert.match(m, /«autorizo story-skill-bypass»/);
-  // ni el comando que deja la constancia ni la variable que apaga el freno: los dos los usó un modelo para saltearlo solo
+  // ni el comando que dejaba la constancia ni la variable que apaga el freno: los dos los usó un modelo para saltearlo solo
   assert.doesNotMatch(m, /marker\.js/); assert.doesNotMatch(m, /TYCON_STORY_SKILL_GATE/);
-  assert.match(gate.blockMessage({ kind: 'mark-expired' }, { filePath: '/r/x.md', ttlMs: TTL }), /VENCIÓ/);
+  assert.match(gate.blockMessage({ kind: 'draft-promote', reason: 'desde la terminal' }, { filePath: '/r/x.md' }), /tool Edit/);
 });
 
 // ── capa I/O (evaluate) ──────────────────────────────────────────────────────────────────────────
 test('evaluate: story NUEVA con id del repo (caso real AS-1) sin marca → block + gates.log', () => {
   const repo = mkRepo({ yaml: TOTORA_PATTERN }); const st = mkState();
   const r = sio.evaluate({ absPath: path.join(repo, 'specs', 'story-as1-pedidos.md'), content: AS1, sessionId: 's1', via: 'Write', stateDir: st });
-  assert.equal(r.verdict.action, 'block'); assert.equal(r.verdict.kind, 'no-skill'); assert.match(r.message, /DENEGADA/);
+  assert.equal(r.verdict.action, 'block'); assert.equal(r.verdict.kind, 'new-not-draft'); assert.match(r.message, /DENEGADA/);
   assert.match(gatesLog(st), /"name":"story-skill-gate".*"status":"blocked"/);
   assert.match(gatesLog(st), /"storyId":"AS-1"/);
 });
@@ -154,20 +165,6 @@ test('evaluate: EDITAR una story existente pasa siempre (el falso positivo que m
   const r = sio.evaluate({ absPath: p, content: S99.replace('backlog', 'done'), sessionId: 's1', stateDir: st });
   assert.equal(r.verdict.action, 'pass'); assert.equal(r.verdict.kind, 'exists');
   assert.equal(gatesLog(st), '');
-});
-
-test('evaluate: con constancia del skill pasa; vencida bloquea; bypass pasa y queda en bypass.log', () => {
-  const repo = mkRepo(); const st = mkState();
-  const abs = path.join(repo, 'specs', '9-9.md');
-  mark(st, 's1', {});
-  assert.equal(sio.evaluate({ absPath: abs, content: S99, sessionId: 's1', stateDir: st }).verdict.kind, 'mark');
-  // otra sesión NO hereda la marca
-  assert.equal(sio.evaluate({ absPath: abs, content: S99, sessionId: 's2', stateDir: st }).verdict.action, 'block');
-  mark(st, 's1', { at: new Date(Date.now() - TTL - 5000).toISOString() });
-  assert.equal(sio.evaluate({ absPath: abs, content: S99, sessionId: 's1', stateDir: st }).verdict.kind, 'mark-expired');
-  mark(st, 's1', { skill: 'bypass', reason: 'el dev pidió a mano' });
-  assert.equal(sio.evaluate({ absPath: abs, content: S99, sessionId: 's1', stateDir: st }).verdict.kind, 'bypass');
-  assert.match(fs.readFileSync(path.join(st, 'bypass.log'), 'utf8'), /STORY_SKILL_BYPASS_USED/);
 });
 
 test('evaluate: .md que NO declara story (PRD) pasa sin log; .txt ni se mira', () => {
@@ -186,7 +183,7 @@ test('evaluate: repo fuera del arnés pasa y queda MEDIDO (unknown); un número 
   const repo = mkRepo();
   const r2 = sio.evaluate({ absPath: path.join(repo, 'specs', 'features', 'gestores', 'G-1-abm-gestores-cbu-alias.md'), content: S99.replace('"9.9"', '"G-1"'), sessionId: 's1', stateDir: st });
   assert.equal(r2.verdict.action, 'block');
-  assert.equal(r2.verdict.kind, 'no-skill');
+  assert.equal(r2.verdict.kind, 'new-not-draft');
   const log = gatesLog(st);
   assert.equal((log.match(/"status":"unknown"/g) || []).length, 1);
 });
@@ -259,17 +256,16 @@ test('on-story-skill-gate.handle: kill-switch por env apaga', () => {
 });
 
 // ── la puerta Bash ───────────────────────────────────────────────────────────────────────────────
-test('on-bash-write-gate: el heredoc REAL de AS-1 bloquea; >> a la existente pasa; con marca pasa', () => {
+test('on-bash-write-gate: el heredoc REAL de AS-1 bloquea; >> a la existente pasa; en borrador pasa', () => {
   const repo = mkRepo({ yaml: TOTORA_PATTERN }); const st = mkState();
   const cmd = `cat > specs/story-as1-pedidos-del-dia.md <<'STORYEOF'\n${AS1}STORYEOF`;
   const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
   const r = bash.handle(ev(cmd), { stateDir: st });
-  assert.ok(r && r.block, 'el caso real tiene que frenar'); assert.match(r.block, /STORY A MANO/);
+  assert.ok(r && r.block, 'el caso real tiene que frenar'); assert.match(r.block, /HISTORIA SIN VALIDAR/);
   fs.writeFileSync(path.join(repo, 'specs', 'story-as1-pedidos-del-dia.md'), AS1);
   assert.equal(bash.handle(ev(cmd.replace('cat >', 'cat >>')), { stateDir: st }), null, 'append a la existente no es crear');
   fs.unlinkSync(path.join(repo, 'specs', 'story-as1-pedidos-del-dia.md'));
-  mark(st, 's1', {});
-  assert.equal(bash.handle(ev(cmd), { stateDir: st }), null, 'con constancia pasa');
+  assert.equal(bash.handle(ev(cmd.replace('ready-for-dev', 'draft')), { stateDir: st }), null, 'en borrador pasa');
 });
 
 test('on-bash-write-gate: printf inline con \\n bloquea; cp a story-*.md (sin contenido) bloquea por nombre; README no', () => {
@@ -316,7 +312,7 @@ test('on-bash-write-gate (F3): mv/cp desde una story existente pasa (unknown-ren
   assert.match(gatesLog(st), /unknown-rename/);
   fs.mkdirSync(path.join(repo, 'specs', 'stories'));
   const r = bash.handle(ev('echo "# índice" > specs/stories/INDEX.md'), { stateDir: st });
-  assert.ok(r && r.block); assert.match(r.block, /por el NOMBRE parece/); assert.match(gatesLog(st), /no-skill-by-name/);
+  assert.ok(r && r.block); assert.match(r.block, /por el NOMBRE parece/); assert.match(gatesLog(st), /new-not-draft-by-name/);
 });
 
 test('on-bash-write-gate (F4): node -e con template literal se ve', () => {
@@ -352,7 +348,7 @@ test('hook-pre-edit.js e2e: bloquea (exit 2) y con SÓLO este freno apagado el m
   });
   const r1 = run({});
   assert.equal(r1.status, 2, `esperaba exit 2 · stderr: ${r1.stderr.slice(0, 200)}`);
-  assert.match(r1.stderr, /STORY A MANO/);
+  assert.match(r1.stderr, /HISTORIA SIN VALIDAR/);
   const r2 = run({ TYCON_STORY_SKILL_GATE: 'off' });
   assert.equal(r2.status, 0, `ROJO atribuible: sin este freno el despachador deja pasar · stderr: ${r2.stderr.slice(0, 200)}`);
 });
@@ -419,4 +415,91 @@ test('T27 Bypass_Comando_NoDejaConstancia: marker.js story-skill-bypass ya no ab
     assert.match(r.stderr, /lo decide la persona/);
     assert.equal(sio.readMark(sio.DEFAULT_STATE_DIR, 's-cmd'), null);
   }
+});
+
+// ── El freno se abre con la constancia del validador ───────────────────────────────────────────────────────────
+// El caso: un modelo abierto llamó a la skill tycon-create-story, no siguió ninguno de sus pasos, escribió la historia y
+// dijo «creada y verificada». La llamada a la skill no prueba nada; la constancia es el validador corrido sobre el archivo.
+const DRAFT = AS1.replace('ready-for-dev', 'draft');
+const usoAgente = (id, input, min = 1) => ({ type: 'assistant', timestamp: hace(min), message: { role: 'assistant', content: [{ type: 'tool_use', id, name: 'Agent', input }] } });
+const respuesta = (id, text, min = 1) => ({ type: 'user', timestamp: hace(min), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: [{ type: 'text', text }] }] } });
+const validado = (ruta) => [usoAgente('toolu_val', { subagent_type: 'tycon-story-validator', prompt: `Validar la story en ${ruta}` }), respuesta('toolu_val', 'Veredicto: limpio')];
+const editar = (abs, sid, old_string, new_string, st) => handler.handle({
+  tool_name: 'Edit', session_id: sid, tool_use_id: 'toolu_edit', cwd: path.dirname(abs),
+  tool_input: { file_path: abs, old_string, new_string },
+}, { stateDir: st });
+function borrador(repo) { const p = path.join(repo, 'specs', 'story-as1-pedidos.md'); fs.writeFileSync(p, DRAFT); return p; }
+
+test('T6 Gate_NuevaEnBorrador_Pasa: una historia nueva en draft pasa sin la skill ni la constancia', () => {
+  const st = mkState();
+  const r = sio.evaluate({ absPath: path.join(mkRepo({ yaml: TOTORA_PATTERN }), 'specs', 'story-as1-pedidos.md'), content: DRAFT, sessionId: 's6', via: 'Write', event: { session_id: 's6', tool_use_id: 'toolu_write' }, stateDir: st });
+  assert.equal(r.verdict.action, 'pass');
+  assert.equal(r.verdict.kind, 'new-draft');
+});
+
+test('T7 Gate_NuevaListaSinConstancia_Frena: con la marca de la llamada a la skill y sin el validador, una historia ready-for-dev frena', () => {
+  const st = mkState();
+  mark(st, 's7', {});
+  conversacion('s7', [persona('creá una historia para esto')]);
+  const r = escribir(mkRepo({ yaml: TOTORA_PATTERN }), 's7', { stateDir: st });
+  assert.equal(r.verdict.action, 'block');
+  assert.equal(r.verdict.kind, 'new-not-draft');
+  assert.match(r.message, /status: draft/);
+  // el rojo: con el criterio de antes (la marca vigente abría el freno) esta escritura pasaba
+  assert.equal(gate.markState(sio.readMark(st, 's7'), Date.now(), TTL), 'valid');
+});
+
+test('T8 Gate_PasoAReadySinConstancia_Frena: de draft a ready-for-dev sin constancia frena; con el validador o la frase de la persona pasa; sed -i frena', () => {
+  const repo = mkRepo({ yaml: TOTORA_PATTERN });
+  const p = borrador(repo);
+  conversacion('s8a', [persona('creá una historia para esto')], 'toolu_edit');
+  const sin = editar(p, 's8a', 'status: draft', 'status: ready-for-dev', mkState());
+  assert.ok(sin && sin.block, 'sin constancia tiene que frenar'); assert.match(sin.block, /tycon-story-validator/);
+  conversacion('s8b', [persona('creá una historia para esto'), ...validado(p)], 'toolu_edit');
+  const st = mkState();
+  assert.equal(editar(p, 's8b', 'status: draft', 'status: ready-for-dev', st), null);
+  assert.match(gatesLog(st), /"status":"validated"/);
+  conversacion('s8c', [persona('pasala vos, autorizo story-skill-bypass')], 'toolu_edit');
+  assert.equal(editar(p, 's8c', 'status: draft', 'status: ready-for-dev', mkState()), null);
+  // la constancia es de ESTA historia: el validador sobre otra no abre ésta
+  conversacion('s8d', [...validado(path.join(repo, 'specs', 'otra.md'))], 'toolu_edit');
+  assert.ok(editar(p, 's8d', 'status: draft', 'status: ready-for-dev', mkState()).block);
+  // un borrador con BOM al principio sigue siendo un borrador
+  const conBom = path.join(repo, 'specs', 'story-as1-bom.md');
+  fs.writeFileSync(conBom, '﻿' + DRAFT);
+  conversacion('s8e', [persona('creá una historia para esto')], 'toolu_edit');
+  assert.ok(editar(conBom, 's8e', 'status: draft', 'status: ready-for-dev', mkState()).block, 'BOM');
+  // el destino en una variable del mismo comando también se ve
+  const evVar = { tool_name: 'Bash', session_id: 's8a', tool_use_id: 'toolu_edit', cwd: repo, tool_input: { command: "F=specs/story-as1-pedidos.md; sed -i '' 's/status: draft/status: ready-for-dev/' \"$F\"" } };
+  assert.ok((bash.handle(evVar, { stateDir: mkState() }) || {}).block, 'sed -i sobre "$F"');
+  // por la terminal no se ve qué cambia: escribir sobre el borrador frena sin constancia
+  const ev = { tool_name: 'Bash', session_id: 's8a', tool_use_id: 'toolu_edit', cwd: repo, tool_input: { command: "sed -i '' 's/status: draft/status: ready-for-dev/' specs/story-as1-pedidos.md" } };
+  const t = bash.handle(ev, { stateDir: mkState() });
+  assert.ok(t && t.block, 'sed -i sobre un borrador tiene que frenar'); assert.match(t.block, /tool Edit/);
+});
+
+test('T9 Gate_EditarBorradorSinCambiarEstado_Pasa: corregir el cuerpo de un borrador pasa siempre', () => {
+  const p = borrador(mkRepo({ yaml: TOTORA_PATTERN }));
+  conversacion('s9', [persona('creá una historia para esto')], 'toolu_edit');
+  assert.equal(editar(p, 's9', '# Story AS-1', '# Story AS-1: pedidos del día', mkState()), null);
+});
+
+test('T10 Gate_HistoriaExistenteNoBorrador_Pasa: ready-for-dev e in-progress se editan siempre, por Edit y por la terminal', () => {
+  const repo = mkRepo({ yaml: TOTORA_PATTERN });
+  const p = path.join(repo, 'specs', 'story-as1-pedidos.md');
+  for (const estado of ['ready-for-dev', 'in-progress']) {
+    fs.writeFileSync(p, AS1.replace('ready-for-dev', estado) + '\n## Change Log\n');
+    assert.equal(editar(p, 's10', `status: ${estado}`, 'status: review', mkState()), null, estado);
+    assert.equal(editar(p, 's10', '## Change Log\n', '## Change Log\n- hoy: cerrada\n', mkState()), null, estado);
+    const ev = { tool_name: 'Bash', session_id: 's10', cwd: repo, tool_input: { command: `sed -i '' 's/status: ${estado}/status: done/' specs/story-as1-pedidos.md` } };
+    assert.equal(bash.handle(ev, { stateDir: mkState() }), null, `terminal ${estado}`);
+  }
+});
+
+test('T11 Gate_Codex_NoFrenaYQuedaMedido: bajo Codex una historia nueva lista sin constancia pasa con unknown-codex', () => {
+  const st = mkState();
+  const r = sio.evaluate({ absPath: path.join(mkRepo({ yaml: TOTORA_PATTERN }), 'specs', 'story-as1-pedidos.md'), content: AS1, sessionId: 's11', stateDir: st, event: { turn_id: 'turn-1' } });
+  assert.equal(r.verdict.action, 'pass');
+  assert.equal(r.verdict.kind, 'unknown-codex');
+  assert.match(gatesLog(st), /unknown-codex/);
 });

@@ -370,8 +370,11 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
   <template-output file="{default_output_file}">
   story_completion_status</template-output>
 
-  <!-- CRITICAL: ready-for-dev is set in step 6, after the adversarial review of the story is recorded -->
-  <action>Leave story Status as "backlog": step 6 sets "ready-for-dev" once the review record is written</action>
+  <!-- CRITICAL: ready-for-dev is set in step 6, after the validator and the adversarial review of the story -->
+  <action>Write the story with Status as "draft" (frontmatter `status: draft` and the `Status:` line under the title):
+  the harness only lets a new story without the validator's record be written as a draft, and only lets a draft move
+  to "ready-for-dev" after `tycon-story-validator` ran on that file. Step 6 sets "ready-for-dev". The entry in
+  {{sprint_status}} stays "backlog" while the file is a draft</action>
   <action>Add completion note: "Ultimate
   context engine analysis completed - comprehensive developer guide created"</action>
 </step>
@@ -418,8 +421,13 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
     the record says `medido: false`). A reviewer that died or did not answer what was asked is `--result no-medido`:
     say it in one line and go on (step 1 of the pipeline launches it again).</action>
   </check>
-  <action>Only after the record is written (and nothing is `pendiente`), set the story Status and the sprint status
-  to "ready-for-dev"</action>
+  <check if="the story file changed after the validator's last run (fixes from the adversarial review, or any other edit)">
+    <action>Run the `tycon-story-validator` subagent again on {default_output_file}, naming that path in the prompt, right
+    before setting "ready-for-dev": every edit makes the validator's record stale, and the harness does not let a draft
+    move to "ready-for-dev" without a current one. If it reports a CRITICAL, fix it and run it again.</action>
+  </check>
+  <action>Only after the record is written (and nothing is `pendiente`), set the story Status (frontmatter and the
+  `Status:` line, from "draft") and the sprint status to "ready-for-dev"</action>
 
   <!-- Update sprint status -->
   <check if="sprint status file exists">

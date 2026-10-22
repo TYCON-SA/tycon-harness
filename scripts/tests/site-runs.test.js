@@ -564,7 +564,7 @@ test('T14 Fuga_NingunMarcadorDeOtroLlegaAlDev @story-2.27 @ac-14', async () => {
 
 // ── lo que viaja y cuándo ─────────────────────────────────────────────────────────────────────────────────────────
 
-const LISTA_BLANCA = ['id', 'story', 'producto', 'maquina', 'maquina_motivo', 'inicio', 'semana', 'dur_ms', 'llego_al_final', 'ultimo_paso', 'tramos', 'sin_marca', 'tiempos', 'controles', 'costo', 'validador', 'consumo', 'sin_pasos_anotados', 'sin_cerrar', 'esquema'];
+const LISTA_BLANCA = ['id', 'story', 'producto', 'maquina', 'maquina_motivo', 'inicio', 'semana', 'dur_ms', 'llego_al_final', 'ultimo_paso', 'paso_en_curso', 'tramos', 'sin_marca', 'tiempos', 'controles', 'costo', 'validador', 'consumo', 'sin_pasos_anotados', 'sin_cerrar', 'esquema'];
 
 test('T15 Lista_ListaBlancaExacta @story-2.27 @ac-15', () => {
   const espejo = mundo({ marcadores: false });

@@ -304,7 +304,7 @@ test('T12 · no poder mirar es invocar, con el motivo', (t) => {
   const casos = [
     ['sin conversación', () => { const repo = mkRepo(); return [repo, mkHome(repo, dos, { conversacion: false }), {}]; }, /no pude|conversaci/i],
     ['conversación ilegible', () => { const repo = mkRepo(); return [repo, mkHome(repo, dos, { lineasCrudas: '{no es json\n{tampoco' }), {}]; }, /no pude|ilegible/i],
-    ['sin arranque del paso 5', () => { const repo = mkRepo(); return [repo, mkHome(repo, dos, { marker: { stepTimings: {} } }), {}]; }, /paso 5/i],
+    ['sin arranque del paso de revisores', () => { const repo = mkRepo(); return [repo, mkHome(repo, dos, { marker: { stepTimings: {} } }), {}]; }, /paso de revisores/i],
     // sin paquetes instalados: sin arnés, el cargador no tiene a quién preguntar el default de `packs:`
     ['sin las libs del arnés', () => { const repo = mkRepo(); return [repo, mkHome(repo, dos), { TYCON_GUIDES_DIR: vacio, TYCON_PACKS_DIR: vacio }]; }, /arn[eé]s|lib/i],
   ];

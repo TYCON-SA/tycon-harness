@@ -1,7 +1,7 @@
 'use strict';
 /**
  * lib/mutation-gate.js — cableado del CHEQUEO DE MUTANTES en `marker.js
- * complete-step 4` (AVISA, NO FRENA).
+ * complete-step run-tests` (AVISA, NO FRENA).
  *
  * Por qué existe: `scripts/mutation-check.js` rompe el código nuevo a propósito
  * y verifica que algún test se ponga rojo — pero como script suelto depende de
@@ -12,7 +12,7 @@
  * Semántica (deliberadamente MÁS BLANDA que el script standalone, como el gate
  * de ATDD fuera del pipeline):
  *   - exit 1 del chequeo (CERO mutantes muertos habiendo generado alguno)
- *     → BLOQUEA `complete-step 4`. Es el único caso que frena: los tests no
+ *     → BLOQUEA `complete-step run-tests`. Es el único caso que frena: los tests no
  *     ejercen el código nuevo.
  *   - exit 0 con sobrevivientes → AVISA (archivo:línea [operador]) y deja pasar.
  *   - exit 0 limpio / SIN_MUTANTES → sigue en silencio.
@@ -24,13 +24,13 @@
  * El veredicto queda SIEMPRE en gates.log (total/killed/survived/verdict/
  * maxMutants) — «cuántas corridas tuvieron sobrevivientes» es medible, no una
  * impresión. Escapes: TYCON_MUTATION_CHECK=off (apaga todo) ·
- * `complete-step 4 --no-mutation` (saltea esa corrida, queda en bypass.log).
+ * `complete-step run-tests --no-mutation` (saltea esa corrida, queda en bypass.log).
  *
  * Presupuesto (números medidos, no deseados): el
  * costo es (duración de la suite declarada) × (1 base + mutantes ejecutados) —
  * NO un fijo. Frenos: --max-mutants 12 · deadline 180s ENTRE mutantes (los
  * restantes quedan skipped) · cap 120s por corrida de suite · timeout duro del
- * spawn 300s. Peor caso: el cierre del Step 4 puede irse hasta ~5 minutos
+ * spawn 300s. Peor caso: el cierre de «Correr las pruebas» puede irse hasta ~5 minutos
  * con una suite lenta (medido); con la suite del harness (~10s) queda en ~1 min.
  *
  * Testeable por inyección: `invokeCheck` (reemplaza el spawn), `appendLog` y

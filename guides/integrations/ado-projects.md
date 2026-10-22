@@ -10,8 +10,8 @@ transicionan a lo largo del ciclo de vida del pipeline.
 
 ```
 crear story  ──►  tycon-ado-story-wi   ──►  WI creado en ADO  +  ado_work_item: <id> en frontmatter
-implementar  ──►  tycon-pipeline step-00c  ──►  WI → Active
-cerrar       ──►  tycon-pipeline step-09   ──►  WI → Closed  +  comment de trazabilidad
+implementar  ──►  tycon-pipeline Arranque            ──►  WI → Active
+cerrar       ──►  tycon-pipeline Cerrar la historia  ──►  WI → Closed  +  comment de trazabilidad
 ```
 
 | Momento | Componente | Acción ADO |
@@ -48,7 +48,7 @@ Si el repo no trackea en ADO (sin config), el skill hace **silent-skip** — no 
 ## `.tycon/ado-config.yaml` — config por repo
 
 Es la **fuente de verdad** del mapeo repo→ADO. Va en el root del repo (junto a `.git/`).
-Lo leen los tres componentes (`tycon-ado-story-wi`, `step-00c`, `step-09`).
+Lo leen los tres componentes (`tycon-ado-story-wi`, el Arranque y «Cerrar la historia»).
 
 ```yaml
 # .tycon/ado-config.yaml
@@ -66,7 +66,7 @@ epic_links:                        # mapeo epic (frontmatter) → WI id del Epic
   2: 12002
   3: 12003
 
-# --- transiciones de estado (step-00c / step-09) ---
+# --- transiciones de estado (Arranque / Cerrar la historia) ---
 ado_state_active: "Active"         # estado "en progreso" del process template.
 ado_state_closed: "Closed"         # estado "cerrado".
 ```
@@ -118,7 +118,7 @@ medida que se cablea cada proyecto. **El pipeline no la lee** (desde 2026-09-26)
 `.tycon/ado-config.yaml`, la organización sale de `ado.org` de la configuración del arnés
 (`TYCON_ADO_ORG`, `~/.claude/tycon.json` o el perfil del equipo), y sin eso Azure DevOps está
 apagada en esa máquina — el paso lo dice en una línea y se saltea. El «default por proyecto
-conocido» que antes citaban los pasos 00c y 09 ya no existe.
+conocido» que antes citaban el Arranque y el cierre en ADO ya no existe.
 
 La tabla de los proyectos del equipo (organización, `ado_project`, process y repos con `.tycon/ado-config.yaml`) vive
 en los datos internos del equipo («Proyectos de Azure DevOps»). El `.tycon/ado-config.yaml` va en el root de **cada
@@ -159,7 +159,7 @@ solo emite cuando detecta una story Mary+GOLD nueva sin `ado_work_item:`.
 
 - `az` CLI con la extensión `azure-devops`: `az extension add --name azure-devops`.
 - `AZURE_DEVOPS_EXT_PAT` exportada — token con scope **Work Items: Read & Write**. Es la
-  misma variable que usan `step-00c` y `step-09`.
+  misma variable que usan el Arranque y «Cerrar la historia».
 
 Sin CLI o sin token, el skill avisa una línea y termina — no bloquea la creación de stories
 ni el pipeline.
@@ -178,4 +178,4 @@ ni el pipeline.
 
 Para que el pipe de creación de historias, para todos los devs en
 todos los proyectos, cree el work item en ADO cada vez que se crea una story. El pipeline ya
-tenía el **consumo** del `ado_work_item:` (`step-00c`, `step-09`); faltaba la **creación**.
+tenía el **consumo** del `ado_work_item:` (el Arranque y «Cerrar la historia»); faltaba la **creación**.

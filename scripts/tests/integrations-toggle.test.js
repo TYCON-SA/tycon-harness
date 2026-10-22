@@ -207,8 +207,10 @@ test('T59 Codex_InstinctsFromManifest @story-7.40 @ac-26', () => {
 });
 
 test('T60 Instincts_PiecesWithNewIds @story-7.40 @ac-27', () => {
-  const effects = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'install-effects.json'), 'utf8'));
-  const rows = (effects.effects || effects.items || []).filter((e) => /instinct/.test(e.id || ''));
+  // la lista de efectos que lee la instalación: el archivo y, de su manifiesto, los textos de los hooks de cada integración
+  const effects = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'managed.js')).readEffects(ROOT);
+  assert.ok(effects.ok, effects.reason);
+  const rows = effects.effects.filter((e) => /instinct/.test(e.id || ''));
   const ids = rows.map((e) => e.id).sort();
   assert.deepStrictEqual(ids, [`PostToolUse:${OBSERVE}`, `SessionStart:${NOTICE}`]);
   const rec = rows.find((e) => e.id === `PostToolUse:${OBSERVE}`);
@@ -216,11 +218,12 @@ test('T60 Instincts_PiecesWithNewIds @story-7.40 @ac-27', () => {
   const not = rows.find((e) => e.id === `SessionStart:${NOTICE}`);
   assert.strictEqual(not.when, 'always');
   const texts = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'texts.js'), 'utf8');
-  for (const s of [OBSERVE, NOTICE]) assert.ok(texts.includes(`control.${s}`), `texto del sitio para ${s}`);
   assert.ok(!/control\.@tcg:instinct/.test(texts), 'sin claves con el id viejo');
   const HIW = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'how-it-works.js'));
   const controls = HIW.readControls(ROOT);
   const mine = (controls.controls || controls).filter((c) => /instinct/.test(c.spec || ''));
+  // el texto de cada control lo trae su manifiesto (`control`), no los textos del sitio
+  for (const c of mine) assert.ok(c.control && c.control.es && c.control.en, `texto de ${c.spec}, de su manifiesto`);
   assert.deepStrictEqual(mine.map((c) => [c.spec, c.script, c.integration || null]).sort(), [
     [OBSERVE, 'integrations/instincts/scripts/instinct-observe.js', 'instincts'],
     [NOTICE, 'integrations/instincts/scripts/instincts-notice.js', null],

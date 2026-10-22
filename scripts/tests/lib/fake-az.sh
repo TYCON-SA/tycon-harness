@@ -197,6 +197,25 @@ if (familia) {
     tsv('LLAVE-DE-LA-CUENTA-QUE-NO-DEBE-APARECER');
   }
   if (paso === 'registro' && args[1] === 'app' && args[2] === 'show') tsv((process.env.TYCON_AZ_CLAIMS || 'email,xms_edov').split(',').filter(Boolean).join('\t'));
+  // invitar desde el sitio: el principal de Graph y el id de su rol User.Invite.All; las asignaciones y la política del código por
+  // correo, por Graph. TYCON_AZ_NOT_ADMIN=1: la asignación sale con el 403 de Graph (la sesión no es de un administrador
+  // del directorio); TYCON_AZ_EMAIL_CODE_POLICY=enabled|default|disabled|denied (denied: la lectura de la política sale 403)
+  if (paso === 'registro' && args[1] === 'sp' && args[2] === 'show') tsv(/appRoles/.test(String(arg('--query'))) ? 'rol-de-invitar' : 'principal-de-graph');
+  if (paso === 'rest' && /graph\.microsoft\.com/.test(String(arg('--url')))) {
+    const u = String(arg('--url'));
+    const metodo = String(arg('--method') || 'get').toLowerCase();
+    if (/appRoleAssignments$/.test(u) && metodo === 'post') {
+      if (process.env.TYCON_AZ_NOT_ADMIN === '1') falla('Forbidden({"error":{"code":"Authorization_RequestDenied","message":"Insufficient privileges to complete the operation."}})');
+      out({ id: 'asignacion-1' });
+    }
+    if (/appRoleAssignments$/.test(u)) out({ value: [] });
+    if (/authenticationMethodConfigurations\/email$/i.test(u)) {
+      const p = process.env.TYCON_AZ_EMAIL_CODE_POLICY || 'default';
+      if (p === 'denied') falla('Forbidden({"error":{"code":"Authorization_RequestDenied","message":"Insufficient privileges to complete the operation."}})');
+      out({ id: 'Email', allowExternalIdToUseEmailOtp: p });
+    }
+    out({});
+  }
   if (paso === 'rest') {
     const u = String(arg('--url') || '');
     estado[`rest|${u.replace(/\?.*$/, '')}`] = true; guardar(); out({ properties: { provisioningState: 'Succeeded' } });
@@ -205,6 +224,8 @@ if (familia) {
     // lo que tiene la aplicación: sale del último --yaml que la creó o la actualizó (nombres, nunca valores)
     const apl = estado.apl || {};
     if (q === 'properties.template.containers[0].image') return apl.imagen || '';
+    // el valor que dejó la fase permiso-de-invitar (`--set-env-vars SITE_INVITE_EMAIL_CODE=…`)
+    if (/SITE_INVITE_EMAIL_CODE/.test(q)) return estado.codigoPorCorreo || 'None';
     if (q === 'properties.configuration.secrets[].name') return (apl.secretos || []).join('\n');
     if (q === 'properties.template.containers[0].env[].name') return (apl.variables || []).join('\n');
     if (q === 'properties.configuration.ingress.external') return apl.externa ? 'true' : 'false';
@@ -241,6 +262,10 @@ if (familia) {
     estado.apl = { imagen: cont.image, secretos: (cfg.secrets || []).map((s) => s.name), variables: (cont.env || []).map((e) => e.name), externa: Boolean((cfg.ingress || {}).external) };
   }
   if (paso === 'entrada' && args.includes('external')) estado.apl = { ...(estado.apl || {}), externa: true };
+  if (paso === 'aplicacion' && verbo === 'update' && args.includes('--set-env-vars')) {
+    const v = valores('--set-env-vars').find((x) => x.startsWith('SITE_INVITE_EMAIL_CODE='));
+    if (v) estado.codigoPorCorreo = v.split('=')[1];
+  }
   // az 2.71 (extensión containerapp 1.2.0b4) no acepta el emisor y el inquilino juntos
   if (paso === 'inicio' && args.includes('--issuer') && args.includes('--tenant-id')) falla('--issuer and --tenant-id cannot be configured to non empty strings at the same time.');
   // create / update / set: queda creado (la clave no lleva el verbo: `show` la encuentra)

@@ -781,3 +781,90 @@ test('T7 Models_UnknownValueListsLevels @story-2.70 @ac-4', () => {
     assert.ok(ps[0].message.includes(JSON.stringify(malo)), ps[0].message);
   }
 });
+
+// ── los modelos por proveedor ──────────────────────────────────────────────────────────────
+const TABLAS = { ollama: { economy: 'gemma4:31b-cloud', balanced: 'inherit' }, openai: { strong: 'gpt-5.6-terra' } };
+const conModelsEn = (perfil, models) => TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { profile: perfil, models })));
+
+test('T1 Providers_Valido @story-2.73 @ac-1', () => {
+  for (const perfil of [azure('team-profile', 'Ventas'), github('harness-profile')]) {
+    const models = { providers: TABLAS, reviewers: 'balanced' };
+    const r = conModelsEn(perfil, models);
+    assert.deepStrictEqual(((r.sectionProblems || {}).models || []), [], perfil.platform);
+    assert.deepStrictEqual(r.data.models.providers, TABLAS, `${perfil.platform}: la tabla tal cual`);
+  }
+  // nombres con «.», «:», «/», «@», «+» y «_»
+  const raros = { ollama: { economy: 'hf.co/acme/model_x:Q4+k@v1', max: 'inherit' }, cursor: { balanced: 'acme-1.0' } };
+  assert.deepStrictEqual(problemasDeModels({ providers: raros }), []);
+});
+
+test('T2 Providers_Problemas @story-2.73 @ac-1 @ac-2', () => {
+  const casos = [
+    [{ gemma: { economy: 'x' } }, 'models.providers.gemma'],
+    [{ ollama: { mid: 'x' } }, 'models.providers.ollama.mid'],
+    [{ ollama: { economy: 'a b' } }, 'models.providers.ollama.economy'],
+    [{ ollama: { economy: 'x'.repeat(101) } }, 'models.providers.ollama.economy'],
+    [{ ollama: { economy: '' } }, 'models.providers.ollama.economy'],
+  ];
+  for (const [providers, ruta] of casos) {
+    const ps = problemasDeModels({ providers });
+    assert.deepStrictEqual(ps.map((p) => p.path), [ruta], JSON.stringify(providers));
+  }
+  const fija = problemasDeModels({ providers: { anthropic: { economy: 'haiku' } } });
+  assert.deepStrictEqual(fija.map((p) => p.path), ['models.providers.anthropic']);
+  assert.match(fija[0].message, /la tabla de Anthropic es fija \(haiku, sonnet, opus, fable\); no se declara/);
+  assert.deepStrictEqual(problemasDeModels({ providers: 'ollama' }).map((p) => p.path), ['models.providers']);
+});
+
+test('T3 Allowed_ValidoYVacia @story-2.73 @ac-3', () => {
+  assert.deepStrictEqual(problemasDeModels({ allowed: { ollama: ['gemma4:31b-cloud', 'gpt-oss:120b-cloud'] } }), []);
+  const vacia = problemasDeModels({ allowed: { ollama: [] } });
+  assert.deepStrictEqual(vacia.map((p) => p.path), ['models.allowed.ollama']);
+  assert.match(vacia[0].message, /una lista vacía no permite nada: sacá la clave/);
+  assert.deepStrictEqual(problemasDeModels({ allowed: { gemma: ['x'] } }).map((p) => p.path), ['models.allowed.gemma']);
+  assert.deepStrictEqual(problemasDeModels({ allowed: { ollama: ['ok', 'a b'] } }).map((p) => p.path), ['models.allowed.ollama.1']);
+});
+
+test('T4 Nightly_ValidoYProblemas @story-2.73 @ac-4', () => {
+  assert.deepStrictEqual(problemasDeModels({ nightly: { provider: 'ollama' } }), [], 'el nivel por defecto');
+  assert.deepStrictEqual(problemasDeModels({ nightly: { provider: 'anthropic', level: 'strong' } }), []);
+  for (const [nightly, ruta] of [
+    [{ provider: 'cursor' }, 'models.nightly.provider'],
+    [{ provider: 'openai' }, 'models.nightly.provider'],
+    [{ provider: 'ollama', level: 'mid' }, 'models.nightly.level'],
+    [{ provider: 'ollama', model: 'x' }, 'models.nightly.model'],
+  ]) assert.deepStrictEqual(problemasDeModels({ nightly }).map((p) => p.path), [ruta], JSON.stringify(nightly));
+});
+
+test('T5 ModelsFueraDeLaLista_SoloElSitio @story-2.73 @ac-5', () => {
+  const models = { providers: { ollama: { economy: 'gemma4:31b-cloud', balanced: 'gpt-oss:120b-cloud' } }, allowed: { ollama: ['gpt-oss:120b-cloud'] }, nightly: { provider: 'ollama', level: 'economy' } };
+  const r = conModels(models);
+  assert.strictEqual(r.ok, true);
+  assert.deepStrictEqual(((r.sectionProblems || {}).models || []), [], 'no es un problema del lector');
+  assert.deepStrictEqual(r.data.models, models, 'la máquina sigue leyendo todo');
+  const fuera = TEAM.modelsOutsideAllowed(models);
+  assert.deepStrictEqual(fuera.map((p) => p.path), ['models.providers.ollama.economy', 'models.nightly']);
+  for (const p of fuera) assert.match(p.message, /gemma4:31b-cloud no está entre los permitidos de ollama/);
+  assert.deepStrictEqual(TEAM.modelsOutsideAllowed({ providers: models.providers }), [], 'sin lista, nada');
+  assert.deepStrictEqual(TEAM.modelsOutsideAllowed({ providers: { ollama: { economy: 'inherit' } }, allowed: { ollama: ['x'] } }), [], '«inherit» siempre vale');
+});
+
+test('T5b ModelsFueraDeLaLista_NocheConTope @story-2.73 @ac-5 @ac-25 — la lista mira el modelo del nivel ya recortado al tope, como la noche', () => {
+  // Anthropic: con tope economy, una noche en balanced corre con haiku, que la lista permite
+  const anthropic = { mandatory_ceiling: true, ceiling: 'economy', allowed: { anthropic: ['haiku'] }, nightly: { provider: 'anthropic', level: 'balanced' } };
+  assert.deepStrictEqual(TEAM.modelsOutsideAllowed(anthropic), [], 'no es un falso positivo');
+  // al revés: tope balanced, noche en strong → sonnet, que la lista no trae
+  const fuera = TEAM.modelsOutsideAllowed({ mandatory_ceiling: true, ceiling: 'balanced', allowed: { anthropic: ['opus'] }, nightly: { provider: 'anthropic', level: 'strong' } });
+  assert.deepStrictEqual(fuera.map((p) => p.path), ['models.nightly']);
+  assert.match(fuera[0].message, /^sonnet no está entre los permitidos de anthropic/);
+  // Ollama: el modelo del nivel recortado
+  const ollama = { mandatory_ceiling: true, ceiling: 'economy', providers: { ollama: { economy: 'ok-model', strong: 'otro' } }, allowed: { ollama: ['ok-model'] }, nightly: { provider: 'ollama', level: 'strong' } };
+  assert.deepStrictEqual(TEAM.modelsOutsideAllowed(ollama).map((p) => p.path), ['models.providers.ollama.strong'], 'la tabla se mira entera; la noche, recortada');
+});
+
+test('T6 Providers_NombresIgualesAModelsJs @story-2.73 @ac-1', () => {
+  const { resolveSkillsDirs } = require(path.join(ROOT, 'scripts', 'lib', 'skills-dir.js'));
+  const M = require(path.join(resolveSkillsDirs().skills, 'tycon-pipeline', 'scripts', 'lib', 'models.js'));
+  assert.deepStrictEqual(TEAM.PROVIDERS, M.PROVIDERS);
+  assert.deepStrictEqual(TEAM.PROVIDERS, ['anthropic', 'openai', 'ollama', 'cursor']);
+});

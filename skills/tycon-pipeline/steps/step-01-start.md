@@ -268,4 +268,4 @@ pipeline: la implementación no depende de ADO (a diferencia del build gate de `
 Escribir a `.advisors/pipeline-runs/<clave>-<sello>/step-01-start.md` el resultado de cada check corrido (PIPE-C0 a
 PIPE-C9, los que apliquen; incluye `model_hint_*`/`effort_hint_*` y `tooling_checked`) y, por cada parte opcional,
 `integración | pedido` · acción · avisos · `status: ok | skipped (<razón>) | failed (<razón>)`. El detalle de la parte
-del pedido en ADO va a `step-00c-ado.md` de la misma carpeta (WI ID, estado previo y nuevo, asignado a, resultado).
+del pedido en ADO va a `step-01-start-ado.md` de la misma carpeta (WI ID, estado previo y nuevo, asignado a, resultado).

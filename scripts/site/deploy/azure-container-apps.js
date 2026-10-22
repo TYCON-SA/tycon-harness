@@ -44,7 +44,9 @@
  * 🔴 Nada de esto se corrió todavía contra Azure: lo prueba la primera instalación real.
  *
  * ── USO ─────────────────────────────────────────────────────────────────────────────────────────
- *   node scripts/site/deploy/azure-container-apps.js --config <archivo.json> --phase ambiente|sitio --dry-run|--apply
+ *   node scripts/site/deploy/azure-container-apps.js --config <archivo.json> --phase ambiente|sitio|permiso-de-invitar --dry-run|--apply
+ *   `permiso-de-invitar` (aparte, la corre un administrador del directorio): le da a la identidad del sitio el rol
+ *   `User.Invite.All` de Graph para «Invitar» en Personas, y deja SITE_INVITE_EMAIL_CODE (ver fasePermisoDeInvitar).
  *   --dry-run imprime, en orden, las órdenes de esa fase y los archivos que mandaría (los secretos tapados), sin llamar
  *   a az. --apply las corre con la sesión de `az` de quien la lanza; sin sesión, sale 1 y lo dice (no abre un login).
  *   SALIDA: 0 hecho · 1 configuración o variable que falta, o un paso que falló (dice qué quedó creado) · 2 uso.
@@ -337,6 +339,9 @@ function faseSitio(c, run, salida, env, sec) {
   // la aplicación: se crea con la entrada interna; si ya existe, se actualiza con la misma configuración (imagen, secretos
   // y variables), así volver a correr la fase aplica los cambios en vez de saltearlos
   const yaExiste = run.existe(['containerapp', 'show', ...g, '-n', c.app, ...SUB(c)]);
+  // lo que dejó la fase permiso-de-invitar (si el directorio acepta el código por correo) se conserva al actualizar:
+  // el --yaml reemplaza todas las variables
+  const codigoPorCorreo = yaExiste ? run.leer(['containerapp', 'show', ...g, '-n', c.app, '--query', "properties.template.containers[0].env[?name=='SITE_INVITE_EMAIL_CODE'].value | [0]", '-o', 'tsv', ...SUB(c)], '') : '';
   {
     const comunes = [['SITE_PUBLIC_URL', publica], ['SITE_AUTH_PROVIDER', 'microsoft'], ['SITE_OIDC_ISSUER', cualquiera ? COMUN : `https://login.microsoftonline.com/${tenant}/v2.0`],
       ...(cualquiera ? [['SITE_AUTH_MICROSOFT_ACCOUNTS', 'any'], ['SITE_AUTH_MICROSOFT_TENANT', tenant]] : []),
@@ -344,7 +349,8 @@ function faseSitio(c, run, salida, env, sec) {
       ...(c.operationsIdentity === 'managed' ? [['SITE_OPERATIONS_IDENTITY', 'managed']] : []),
       ...(c.operationsIdentity === 'copy' ? [['SITE_OPERATIONS_SOURCE', 'copy'], ['SITE_OPERATIONS_COPY', `${c.operationsCopy.account}/${c.operationsCopy.container}`]] : []),
       ...(c.firstMaintainer ? [['SITE_FIRST_MAINTAINER', c.firstMaintainer]] : []),
-      ...(c.profileRepo ? [['SITE_PROFILE_REPO', c.profileRepo]] : [])];
+      ...(c.profileRepo ? [['SITE_PROFILE_REPO', c.profileRepo]] : []),
+      ...(['on', 'off', 'unknown'].includes(codigoPorCorreo) ? [['SITE_INVITE_EMAIL_CODE', codigoPorCorreo]] : [])];
     const yaml = {
       location: c.location,
       identity: { type: 'SystemAssigned' },
@@ -454,7 +460,54 @@ function faseSitio(c, run, salida, env, sec) {
   salida('Esperá unos diez minutos (lo que tarda en valer el rol) y probalo sin sesión: node scripts/site/check-deploy.js --url ' + publica);
 }
 
+// ── el permiso de invitar ─────────────────────────────────────────────────────────────────────────
+// el id público de la aplicación de Microsoft Graph (el mismo en todos los inquilinos): lo define el proveedor
+const { GRAPH_APP } = require('../auth-providers/microsoft.js');
+const GRAPH = 'https://graph.microsoft.com/v1.0';
+// la política del código de un solo uso por correo (allowExternalIdToUseEmailOtp): «default» es prendida
+const CODIGO_POR_CORREO = { enabled: 'on', default: 'on', disabled: 'off' };
+const json = (t) => { try { return JSON.parse(t); } catch { return null; } };
+
+/**
+ * Le da a la identidad del sitio el rol de aplicación `User.Invite.All` de Graph (y nada más), con la sesión de `az` de
+ * quien la corre, que tiene que ser un administrador del directorio; y deja en la aplicación `SITE_INVITE_EMAIL_CODE`
+ * (on, off o unknown) leyendo la política del código por correo. Si la asignación falla, no cambia nada más.
+ */
+function fasePermisoDeInvitar(c, run, salida, ensayo) {
+  const g = ['-g', c.resourceGroup];
+  salida('Esto le da a la identidad del sitio UN permiso de Microsoft Graph: User.Invite.All (invitar invitados al directorio).');
+  salida('Lo puede dar sólo un administrador del directorio (Administrador de roles con privilegios o Administrador global), con su sesión de az.\n');
+  const identidad = run.leer(['containerapp', 'show', '-n', c.app, ...g, '--query', 'identity.principalId', '-o', 'tsv', ...SUB(c)], `<la identidad del sitio ${c.app}>`);
+  if (!identidad || identidad === 'None') throw new Falla(`la aplicación ${c.app} no tiene identidad del sistema: corré antes la fase sitio`);
+  const graph = run.leer(['ad', 'sp', 'show', '--id', GRAPH_APP, '--query', 'id', '-o', 'tsv'], '<el principal de Microsoft Graph en tu directorio>');
+  const rol = run.leer(['ad', 'sp', 'show', '--id', GRAPH_APP, '--query', "appRoles[?value=='User.Invite.All'].id | [0]", '-o', 'tsv'], '<el id del rol User.Invite.All>');
+  const asignaciones = `${GRAPH}/servicePrincipals/${identidad}/appRoleAssignments`;
+  const hoy = ensayo ? null : json(run.leer(['rest', '--method', 'get', '--url', asignaciones], '{}'));
+  const ya = hoy && Array.isArray(hoy.value) && hoy.value.some((a) => a && a.appRoleId === rol && a.resourceId === graph);
+  if (ya) salida('• la identidad del sitio ya tiene el permiso de invitar: no se asigna de nuevo');
+  else {
+    run.paso({
+      que: 'asignar el rol User.Invite.All de Graph a la identidad del sitio (appRoleAssignments)',
+      args: ['rest', '--method', 'post', '--url', asignaciones, '--body', '@ARCHIVO', '--headers', 'Content-Type=application/json', '-o', 'none'],
+      archivo: { principalId: identidad, resourceId: graph, appRoleId: rol }, nombreArchivo: 'permiso-de-invitar.json',
+    });
+  }
+  // la política se lee con la misma sesión; si no la deja leer, queda «unknown» y el sitio avisa en cada invitación así
+  let codigo = 'unknown';
+  if (!ensayo) {
+    try {
+      const p = json(run.leer(['rest', '--method', 'get', '--url', `${GRAPH}/policies/authenticationMethodsPolicy/authenticationMethodConfigurations/email`], '{}'));
+      codigo = (p && CODIGO_POR_CORREO[String(p.allowExternalIdToUseEmailOtp)]) || 'unknown';
+    } catch (e) { if (!(e instanceof Falla)) throw e; }
+  }
+  run.paso({ que: `dejar en la aplicación SITE_INVITE_EMAIL_CODE=${ensayo ? '<on|off|unknown>' : codigo} (si el directorio acepta el código de un solo uso por correo)`,
+    args: ['containerapp', 'update', '-n', c.app, ...g, '--set-env-vars', `SITE_INVITE_EMAIL_CODE=${ensayo ? 'unknown' : codigo}`, '-o', 'none', ...SUB(c)] });
+  if (codigo === 'unknown' && !ensayo) salida('No pude leer si el directorio acepta el código de un solo uso por correo: miralo en el portal de Entra → External Identities → Todos los proveedores de identidad → Código de acceso de un solo uso por correo.');
+  salida('\nListo. Para sacarlo: borrá esa asignación (Entra → Aplicaciones empresariales → la identidad del sitio → Permisos), o az rest --method delete sobre la asignación.');
+}
+
 // ── CLI ────────────────────────────────────────────────────────────────────────────────────────
+const FASES = ['ambiente', 'sitio', 'permiso-de-invitar'];
 function main(argv) {
   let config = null; let fase = null; let modo = null; let error = null;
   for (let i = 0; i < argv.length; i++) {
@@ -465,9 +518,9 @@ function main(argv) {
     else error = `opción desconocida: ${v}`;
   }
   const salida = (t) => process.stdout.write(`${t}\n`);
-  if (error || !config || !['ambiente', 'sitio'].includes(fase) || !['dry-run', 'apply'].includes(modo)) {
+  if (error || !config || !FASES.includes(fase) || !['dry-run', 'apply'].includes(modo)) {
     if (error) process.stderr.write(`${error}\n`);
-    process.stderr.write('uso: azure-container-apps.js --config <archivo.json> --phase ambiente|sitio --dry-run|--apply\n');
+    process.stderr.write('uso: azure-container-apps.js --config <archivo.json> --phase ambiente|sitio|permiso-de-invitar --dry-run|--apply\n');
     return 2;
   }
   let c;
@@ -504,11 +557,17 @@ function main(argv) {
   const run = corredor({ ensayo, salida, dirTmp });
   try {
     if (fase === 'ambiente') faseAmbiente(c, run, salida, ensayo);
+    else if (fase === 'permiso-de-invitar') fasePermisoDeInvitar(c, run, salida, ensayo);
     else faseSitio(c, run, salida, process.env, sec);
     return 0;
   } catch (e) {
     if (!(e instanceof Falla)) throw e;
     process.stderr.write(`\n🔴 falló: ${e.message}\n`);
+    if (fase === 'permiso-de-invitar') {
+      if (/Authorization_RequestDenied|Insufficient privileges|\b403\b/i.test(e.message)) process.stderr.write('   Dar el permiso pide un administrador del directorio (Administrador de roles con privilegios o Administrador global): la sesión de az no lo es. No se cambió nada.\n');
+      process.stderr.write(`   Lo que quedó hecho: ${run.creados.length ? run.creados.join(' · ') : 'nada'}.\n`);
+      return 1;
+    }
     if (/roleAssignments|AuthorizationFailed|\b403\b/.test(e.message)) {
       process.stderr.write('   Para asignar el rol hace falta Owner o User Access Administrator sobre la cuenta del buzón (no alcanza Contributor).\n');
     }

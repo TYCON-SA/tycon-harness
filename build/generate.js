@@ -187,19 +187,48 @@ function orgCodexModel(root, name, { agentsDir = null } = {}) {
     }
     const org = orgCache.get(root);
     if (org.problem) { out.lines.push(`⚠ tycon/codex: ${org.problem}`); return out; }
-    if (!org.declared) return out;
+    // la tabla del proveedor de Codex:Ollama si la máquina lo declara; si no, OpenAI. Con Ollama se
+    // resuelve aunque la organización no declare `models`: su tabla vacía es «inherit» en todos los niveles
+    const prov = codexProvider(out.lines);
+    if (!org.declared && prov !== 'ollama') return out;
     // «codex_reviewers: inherit»: sin «model =», el revisor usa el modelo y el proveedor del config.toml de la máquina
-    // (Codex sobre Ollama u otro proveedor, donde el equivalente de OpenAI no existe)
+    // (Codex sobre Ollama u otro proveedor, donde el equivalente de OpenAI no existe). Gana sobre cualquier tabla
     if (org.data && org.data.codex_reviewers === 'inherit') return Object.assign(out, { declared: true, slug: null });
     const models = M.resolveReviewers({ org: org.data, set: [name], iter: 1, agentsDir: agentsDir || path.join(root, 'agents') });
     const model = models[name].model;
     const eq = loadEq(root);
-    const slug = eq.models && Object.prototype.hasOwnProperty.call(eq.models, model) ? eq.models[model] : null;
-    if (slug === null) out.lines.push(`⚠ tycon/codex: el modelo ${model} de ${name} no tiene equivalente en Codex: se despliega sin «model =» (el modelo por defecto de Codex)`);
+    const warnings = [];
+    const r = M.resolveProviderModel ? M.resolveProviderModel({ org: org.data, provider: prov, model, equivalences: eq.models, warnings }) : null;
+    let slug;
+    if (!r) slug = eq.models && Object.prototype.hasOwnProperty.call(eq.models, model) ? eq.models[model] : null;
+    else slug = r.model && r.model !== M.INHERIT ? r.model : null;
+    for (const w of warnings) out.lines.push(`⚠ tycon/codex: ${w.message} (${name}): se despliega sin «model =»`);
+    if (slug === null && !(r && r.outside)) {
+      out.lines.push(prov === 'ollama'
+        ? `⚠ tycon/codex: la tabla de Ollama no trae modelo para ${r ? r.level : model} (${name}): se despliega sin «model =» (el modelo del config.toml de la máquina)`
+        : `⚠ tycon/codex: el modelo ${model} de ${name} no tiene equivalente en Codex: se despliega sin «model =» (el modelo por defecto de Codex)`);
+    }
     return Object.assign(out, { declared: true, slug });
   } catch (e) {
     out.lines.push(`⚠ tycon/codex: no pude resolver el modelo de la organización para ${name} (${e.message}): queda el de hoy`);
     return out;
+  }
+}
+/**
+ * El proveedor de Codex de esta máquina: `ollama` si la máquina lo declara (`models.provider` o TYCON_MODEL_PROVIDER);
+ * cualquier otro, o sin declarar, `openai` (Codex habla con OpenAI). Un proveedor ilegible se dice en `lines`.
+ */
+function codexProvider(lines) {
+  const lector = path.join(ROOT, 'scripts', 'lib', 'tycon-config.js');
+  try {
+    const r = require(lector).modelProvider({ env: process.env });
+    if (r.problem) lines.push(`⚠ tycon/codex: el proveedor de modelos de la máquina no se pudo leer (${r.problem}): uso la tabla de OpenAI`);
+    return r.provider === 'ollama' ? 'ollama' : 'openai';
+  } catch (e) {
+    // un árbol parcial sin el lector (las pruebas del exportador copian sólo build/) es lo de siempre; cualquier otro
+    // error, también el de un módulo que el lector pide y falta, se dice
+    if (!(e && e.code === 'MODULE_NOT_FOUND' && String(e.message).split('\n')[0].includes(lector))) lines.push(`⚠ tycon/codex: no pude leer el proveedor de modelos de la máquina (${(e && e.message) || e}): uso la tabla de OpenAI`);
+    return 'openai';
   }
 }
 /** Lo que se despliega de una traducción: con el modelo de la organización si está declarado; si no, tal cual. */

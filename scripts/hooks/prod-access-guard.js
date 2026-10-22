@@ -31,7 +31,7 @@ const RELOJ_MS = 5000;                    // el registro lo envuelve en timeout:
 // 🔴 Las costuras de prueba (TYCON_PROD_ROOT, TYCON_PROD_SESSION_SINCE) existen SÓLO
 // donde el freno NO está instalado. En una máquina con /opt/tycon, ninguna variable cambia nada: una
 // sesión hija lanzada por el asistente con TYCON_PROD_ROOT=<raíz falsa> apagaba el freno entero, y
-// una costura de falla salteaba el análisis (revisores del Step 5, 2026-09-15). Es la misma regla que ya
+// una costura de falla salteaba el análisis (revisores, 2026-09-15). Es la misma regla que ya
 // tenían la puerta y el aviso; acá faltaba.
 const INSTALADO = (() => { try { return require('fs').statSync('/opt/tycon').isDirectory(); } catch { return false; } })();
 const costura = (nombre) => (INSTALADO ? undefined : process.env[nombre]);
@@ -230,7 +230,7 @@ function frenar(motivo, detalle, ctx, reglaFija, { sinPuerta = false } = {}) {
   // la línea canónica que lee la cuenta del tablero (story 2.6): sin host, sin sentencia
   recordDecision({ freno: 'prod-access-guard', regla, veredicto: 'bloqueo', cmd: ctx && ctx.cmd });
   // lo que se frena por NO PODER MIRAR (snapshot, índice, reloj) va también a hook-errors.log, que es lo
-  // que el aviso de arranque cuenta — si no, esas fallas no las veía nadie (revisores del Step 5)
+  // que el aviso de arranque cuenta — si no, esas fallas no las veía nadie (revisores)
   if (regla === 'no-pude-mirar' && /no pude|no encontré|sin tiempo|no parece/.test(motivo)) {
     try {
       const os = require('os'); const fs = require('fs'); const path = require('path');
@@ -386,7 +386,7 @@ function decidir(entrada) {
   // 🔴 Lo que va ESCONDIDO adentro de otro comando también se analiza: `bash -c '…'`, `eval`,
   // `python3 -c`, un heredoc, o un script que este comando ejecuta. Antes el texto crudo nombraba
   // bases, el parser no encontraba el servidor y el comando PASABA — con `bash -c` se leyó la
-  // contraseña de producción del Llavero sin que nada frenara (revisores del Step 5, 2026-09-15).
+  // contraseña de producción del Llavero sin que nada frenara (revisores, 2026-09-15).
   const escondidos = textosEscondidos(cmd, partes, tokens, PREFIJOS, vars, expandir);
   const textos = [{ texto: cmd, partes, shell: true },
     ...escondidos.map((t) => ({ texto: t.texto, partes: segmentos(t.texto), shell: t.shell, contenido: t.contenido, ps: t.ps, codigo: t.codigo }))];
@@ -545,13 +545,13 @@ function decidir(entrada) {
   if (!nombrados.length) {
     // 🔴 El texto nombra bases y NO se pudo ubicar ni un servidor, ni el Llavero, ni una escritura:
     // eso es «no pude analizarlo», no «no hay nada». Salvo que sea una herramienta de TEXTO (un
-    // `grep sqlcmd`, un `cat` de estas notas), se frena (revisores del Step 5, 2026-09-15).
+    // `grep sqlcmd`, un `cat` de estas notas), se frena (revisores, 2026-09-15).
     // 🔴 Sólo si quedó un pedazo OPACO: un `bash -c "$CMD"` cuyo texto no se puede ver, o un script
     // demasiado grande para leer. «Lo vi entero y no había ningún servidor» —un `az sql server list`,
     // un `command -v sqlcmd`— NO se frena: medido sobre 4.000 comandos reales, esa versión frenaba 4
     // que no tocaban ninguna base, y un freno así se apaga (2026-09-15).
     // 🔴 Sin `analizado`: un tramo inofensivo del MISMO comando (un `sqlcmd -S localhost`) le compraba
-    // permiso al tramo opaco de al lado, y la red no disparaba (revisión final del Step 5, 2026-09-15).
+    // permiso al tramo opaco de al lado, y la red no disparaba (revisión final, 2026-09-15).
     if (nombraBases && escondidos.opaco && !soloLeeTexto(partes, tokens, PREFIJOS)) {
       frenar('ese comando nombra bases de datos y esconde lo que ejecuta, así que NO pude analizarlo.', [
         'Pasá la consulta por la puerta, o escribí el comando de forma directa (sin bash -c, sin eval,',
@@ -958,7 +958,7 @@ function heredocSoloAArchivo(cmd, indice, partes, tokens, PREFIJOS, vars, expand
 // 🔴 Sin mayúsculas/minúsculas: PowerShell no las distingue, y `Invoke-Sqlcmd` (la forma real, que
 // es como la escribe todo el mundo) no coincidía con la lista, que está en minúscula. El freno
 // escucha el matcher PowerShell desde el primer día, así que el agujero era de parseo, no de alcance
-// (revisores del Step 5, 2026-09-15).
+// (revisores, 2026-09-15).
 function dondeEsta(t, nombres) {
   const out = [];
   for (let i = 0; i < t.length; i++) if (nombres.has(basename(t[i]).toLowerCase())) out.push(i);
@@ -968,7 +968,7 @@ function dondeEsta(t, nombres) {
 /** @returns {string|null} el motivo del freno, o null si ese `security` es legítimo */
 function juzgarSecurity(t0) {
   // `security -q find-generic-password …`: las opciones globales van ANTES del subcomando, y el
-  // freno tomaba `-q` como subcomando y dejaba pasar (revisores del Step 5, 2026-09-15). Se saltean
+  // freno tomaba `-q` como subcomando y dejaba pasar (revisores, 2026-09-15). Se saltean
   // las opciones globales (menos -i, que es la peligrosa y se juzga abajo).
   let k = 1;
   while (k < t0.length && /^-[a-zA-Z]+$/.test(t0[k]) && t0[k] !== '-i') k++;
@@ -988,7 +988,7 @@ function juzgarSecurity(t0) {
   let servicio = null; let servicioLiteral = false;
   for (let i = 2; i < t.length; i++) {
     // «literal» = sin variables Y sin comodines ni llaves: `-s {tycon-prod-acme,}` o `-s tycon-pro?-acme`
-    // los resuelve el shell después del freno (revisores del Step 5, 2026-09-15)
+    // los resuelve el shell después del freno (revisores, 2026-09-15)
     if (t[i] === '-s' && t[i + 1] !== undefined) { servicio = t[i + 1]; servicioLiteral = !/[$*?[\]{}`]/.test(servicio); }
     const pegado = /^-s(.+)$/.exec(t[i]);
     if (pegado) { servicio = pegado[1]; servicioLiteral = !/[$*?[\]{}`]/.test(servicio); }
@@ -1010,7 +1010,7 @@ function juzgarSecurity(t0) {
 // Lo que el freno protege de escrituras: el catálogo de cada repo, el índice y la memoria de producción,
 // y las carpetas que los contienen. Se reconoce POR COMPONENTE, no por el texto literal: con
 // `cd repo/.tycon && printf … > production.json`, un comodín `production-*` o `rm -rf
-// ~/.claude/.tycon-pipeline` el texto literal no aparecía y la escritura pasaba (revisores del Step 5,
+// ~/.claude/.tycon-pipeline` el texto literal no aparecía y la escritura pasaba (revisores,
 // 2026-09-15). OJO: NO se protege toda `.tycon-pipeline/` contra escrituras puntuales —el botón de
 // pánico del arnés es `touch ~/.claude/.tycon-pipeline/STOP_AUTONOMY`—, sólo estos archivos y el
 // borrado o movido de la carpeta entera.
@@ -1033,7 +1033,7 @@ const MENCION_PROTEGIDA = /(?<![\w-])(?:\.tycon\/(?:production|produccion)\.json
 
 // 🔴 Lista blanca de LECTORES, no lista negra de escritores (pase adversarial 2026-09-15). Y sin
 // `sort` (`-o` escribe), `uniq` (`uniq a b` escribe en b) ni `find` (`-delete`, `-exec`): esos tres
-// estaban en la lista y escribían (revisores del Step 5).
+// estaban en la lista y escribían (revisores).
 // `echo`, `printf` y `print` (story 8.14, AC 16): nombrar un archivo no lo escribe (FP1). Entraron DESPUÉS de que
 // `echo … | xargs rm` (X3) frenara por `xargs` y `rm "$(echo …)"` (X8) por la sustitución: antes frenaban por casualidad,
 // porque el `echo` se juzgaba como escritura. Lo que el `echo` redirige a un archivo protegido sigue frenando (AC 11).
@@ -1393,7 +1393,7 @@ function escrituraProtegida(cmd, payload) {
     if (prog === 'awk' || prog === 'gawk') return !t.some((x) => /^-i/.test(x));
     if (prog === 'sort') return !t.some((x) => /^-o|^--output/.test(x));
     if (prog === 'git') {
-      // `git -C <dir> restore …`: el argumento de -C/-c NO es el subcomando (revisores del Step 5)
+      // `git -C <dir> restore …`: el argumento de -C/-c NO es el subcomando (revisores)
       let j = 0;
       while (j < t.length) {
         if (t[j] === '-C' || t[j] === '-c') { j += 2; continue; }
@@ -2204,7 +2204,7 @@ function servidoresNombrados(partes, tokens, PREFIJOS, vars, expandir) {
     }
     // 🔴 «Lo miré y no es un servidor» se anota igual (benigno): si no, el comando quedaba como
     // «no pude analizar nada» y la red de seguridad de abajo frenaba un `dotnet ef --connection
-    // "Data Source=app.db"` o un `sqlcmd -S localhost` (revisores del Step 5, 2026-09-15).
+    // "Data Source=app.db"` o un `sqlcmd -S localhost` (revisores, 2026-09-15).
     if (PARECE_ARCHIVO.test(texto)) { out.push({ host: null, crudo: texto, via, benigno: true }); return; }
     // Comodines y llaves del shell (`{acme-sql,}`, `acme-s*`) y prefijos de protocolo del
     // cliente (`admin:host`, `np:\\host`, `tcp:host`) se resuelven DESPUÉS del freno: no es un literal.
@@ -2212,8 +2212,8 @@ function servidoresNombrados(partes, tokens, PREFIJOS, vars, expandir) {
     const sinProto = texto.replace(/^(?:tcp|np|lpc|admin):/i, '');
     const h = normalizar(sinProto);
     // 🔴 Antes: `if (!h) return` — un servidor que no se podía leer como nombre de host se DESCARTABA
-    // en silencio y el comando pasaba (`-S admin:<prod>`, `usql azuresql://<prod>`, revisores del
-    // Step 5). Ahora es desconocido, y lo desconocido se trata como producción.
+    // en silencio y el comando pasaba (`-S admin:<prod>`, `usql azuresql://<prod>`, revisores).
+    // Ahora es desconocido, y lo desconocido se trata como producción.
     if (!h) { out.push({ host: null, crudo: texto, via }); return; }
     if (esLocal(h)) { out.push({ host: h, crudo: texto, via, benigno: true }); return; }   // localhost y compañía no se juzgan (AC 8)
     out.push({ host: h, crudo: texto, via });
@@ -2250,7 +2250,7 @@ function servidoresNombrados(partes, tokens, PREFIJOS, vars, expandir) {
       // 2b. 🔴 Un cliente que CONSULTA y no nombró servidor por ningún lado (ni bandera, ni cadena de
       // conexión, ni variable de este comando) lo toma del entorno de la sesión o del servidor local:
       // no se puede saber cuál, así que es desconocido y se frena. Se evalúa DESPUÉS del entorno para
-      // no pisar el caso en que sí se nombra (revisores del Step 5, 2026-09-15).
+      // no pisar el caso en que sí se nombra (revisores, 2026-09-15).
       // 🔴 En POSICIÓN DE PROGRAMA (el cliente es lo que se ejecuta, no una palabra suelta): así
       // `command -v sqlcmd mssql-cli bcp` —preguntar si están instalados— no se frena, y medido
       // sobre 4.000 comandos reales ése aparece de verdad (2026-09-15).

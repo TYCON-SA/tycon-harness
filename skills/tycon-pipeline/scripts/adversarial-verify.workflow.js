@@ -1,11 +1,11 @@
-// adversarial-verify.workflow.js — Step 5b del tycon-pipeline.
+// adversarial-verify.workflow.js — el paso «Pase adversarial» del tycon-pipeline.
 //
-// Pase adversarial reproduce-or-refute que corre DESPUÉS de los 6 advisors single-pass del Step 5.
+// Pase adversarial reproduce-or-refute que corre DESPUÉS de los 6 advisors single-pass del paso de revisores.
 // La diferencia clave: los advisors LEEN el diff; este workflow EJECUTA el código (bundlea, parsea,
 // corre probes contra datos/corpus reales) para CONFIRMAR o REFUTAR cada finding. Atrapa lo que la
 // lectura no ve, por ejemplo un falso negativo de recorrido (un tipo de nodo que no se escanea).
 //
-// Invocación (desde step-05b, vía la tool Workflow):
+// Invocación (desde el paso «Pase adversarial», vía la tool Workflow):
 //   Workflow({ scriptPath: '<este archivo>', args: {
 //     repo:      '<abs repo path>',
 //     files:     ['path/a.ts', 'path/b.ts', ...],   // archivos del diff (código, no docs)
@@ -16,7 +16,7 @@
 //   }})
 //
 // Devuelve { confirmed: [...], all_lenses: [{lens, count}], probes_dir }. Los CONFIRMED se foldean al
-// reporte consolidado del Step 6 con tag `adversarial-verify` y disparan el re-loop D.i si se aplican
+// reporte consolidado del paso de hallazgos con tag `adversarial-verify` y disparan el re-loop D.i si se aplican
 // fixes. Cada CONFIRMED trae `probe_dir`: la carpeta donde quedó la prueba que lo reprodujo.
 //
 // 🔴 LAS PRUEBAS QUE CONFIRMAN SE GUARDAN. El verificador borra su prueba al terminar —bien: no
@@ -29,7 +29,7 @@
 
 export const meta = {
   name: 'adversarial-verify',
-  description: 'Pase adversarial reproduce-or-refute sobre el diff (6 lentes de correctitud, cada finding reproducido por un skeptic) — Step 5b del tycon-pipeline',
+  description: 'Pase adversarial reproduce-or-refute sobre el diff (6 lentes de correctitud, cada finding reproducido por un skeptic) — paso «Pase adversarial» del tycon-pipeline',
   phases: [
     { title: 'Hunt', detail: 'una lente por dimensión de correctitud; cada hunter lee el código real + corre probes' },
     { title: 'Verify', detail: 'un skeptic independiente debe REPRODUCIR cada finding con un probe (default REFUTED)' },
@@ -484,7 +484,7 @@ const lentes = LENSES.map((lens, i) => {
 const lentesSinMedir = lentes.filter((l) => l.estado === 'sin-medir').map((l) => l.lens)
 
 // Los hallazgos de todas las lentes, en una sola lista. `idxEnLente` conserva la numeración por
-// lente: es la que nombra la carpeta de la prueba (`<lente>-<n>`), contrato del step-05b.
+// lente: es la que nombra la carpeta de la prueba (`<lente>-<n>`), contrato del paso «Pase adversarial».
 const todos = []
 for (const r of hunts.filter(Boolean)) {
   const fs = (r.hunt && Array.isArray(r.hunt.findings)) ? r.hunt.findings : []

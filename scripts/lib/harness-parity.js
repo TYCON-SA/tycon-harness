@@ -282,7 +282,16 @@ function sAgentsMd() {
 
 function sTablaVsRealidad(ctx) {
   if (!ctx.pol.mcp) return { name: 'tabla-vs-realidad', ok: false, detail: 'política de deploy-codex-mcp no cargada' };
-  const tabla = rds(path.join(TCG, 'claude-md-blocks', 'names', 'tool-names.codex.md')) || '';
+  // la plantilla y las filas de la herramienta de horas elegida, que trae su integración en su carpeta: las mismas que
+  // escribe el bloque (las de otra herramienta no van, y su servidor tampoco se registra)
+  let elegida = null;
+  try {
+    const C = require(path.join(TCG, 'scripts', 'lib', 'tycon-config.js'));
+    const v = (C.sinAnotar || ((f) => f()))(() => C.timeTracking(C.leer())).value;
+    if (typeof v === 'string' && /^[a-z0-9-]+$/.test(v) && v !== 'none') elegida = v;
+  } catch (e) { ctx.errores.push(`configuración ilegible (${(e && e.message ? e.message : String(e)).split('\n')[0]}): la tabla de nombres de tools se compara sólo con la plantilla`); }
+  const deLaElegida = elegida ? rds(path.join(TCG, 'integrations', elegida, 'tool-names.codex.md')) || '' : '';
+  const tabla = `${rds(path.join(TCG, 'claude-md-blocks', 'names', 'tool-names.codex.md')) || ''}\n${deLaElegida}`;
   // Conjuntos por los nombres mcp__<server>__ (estructura), no prosa.
   const registrados = ctx.pol.mcp.OWN_LABELS.filter((l) => ctx.pol.mcp.serverRegistered(ctx.toml, l));
   const mencionados = new Set([...tabla.matchAll(/mcp__([a-z0-9_]+)__/gi)].map((m) => m[1]));

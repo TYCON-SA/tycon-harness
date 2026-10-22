@@ -10,6 +10,10 @@
  * que no falló y cuyo archivo existe, o si el mensaje nombra un `.md` que existe y declara `story:`. Si no, frena el
  * cierre UNA vez (Claude Code avisa `stop_hook_active` en el cierre siguiente) con lo que falta.
  *
+ * Además (`insistir`): si la sesión dejó una historia en borrador sin la constancia del validador, el cierre le da al
+ * agente la orden concreta, hasta un tope, y después se lo dice a la persona. Un «creada y verificada» con ese borrador
+ * suma la aclaración de que no está verificada.
+ *
  * Fuera de alcance, declarado: Codex (sin evento de skill ni de cierre equivalente) y una historia escrita por Bash
  * que existe pero no se nombra en el mensaje (pasa sólo si el mensaje la nombra).
  */
@@ -106,4 +110,144 @@ function claimWithoutStory(event, { hasMark }) {
   ].join('\n');
 }
 
-module.exports = { claimWithoutStory, CLAIM, lastTurn };
+// ── El borrador sin validar ──────────────────────────────────────────────────────────────────────────────────────────
+// Una historia nueva sin la constancia del validador sólo se escribe en borrador (story-skill-gate.js). Si el agente
+// cierra el turno con un borrador de la sesión sin validar, el cierre le da la orden concreta, una por historia. Tope:
+// INSIST_MAX vueltas por historia, o dos cierres seguidos sin ninguna constancia nueva del validador; ahí deja cerrar y
+// se lo dice a la persona en llano. El conteo vive en la carpeta de estado del arnés, donde el agente no escribe.
+const INSIST_MAX = 3;
+const INSIST_DIR = 'story-insist';
+
+/** Los registros que cuentan de la conversación del cierre (la cadena y las respuestas que cuelgan de ella), o null. */
+function chainRecords(event, home) {
+  const vr = require('./validator-record.js');
+  const records = event && event.transcript_path ? readTranscript(event.transcript_path) : null;
+  if (records) return vr.conRespuestas(records);
+  const conv = require('./person-ok.js').leerConversacion({ home, sesion: event && event.session_id });
+  return conv.legible ? vr.conRespuestas(conv.registros) : null;
+}
+
+/** Los `.md` que la sesión escribió: con Write/Edit, o por la terminal (un heredoc, el guion sin BMAD). */
+function writtenMarkdown(records, cwd) {
+  const vr = require('./validator-record.js');
+  const results = new Map();
+  for (const r of records) for (const b of contentOf(r)) if (b.type === 'tool_result') results.set(b.tool_use_id, b);
+  const out = [];
+  for (const r of records) {
+    for (const b of contentOf(r)) {
+      if (b.type !== 'tool_use') continue;
+      const res = results.get(b.id);
+      if (!res || res.is_error) continue;
+      const files = ['Write', 'Edit', 'MultiEdit'].includes(b.name) ? [b.input && b.input.file_path]
+        : b.name === 'Bash' ? vr.escritosPorTerminal(b.input && b.input.command, r.cwd || cwd, typeof res.content === 'string' ? res.content
+          : (Array.isArray(res.content) ? res.content.map((x) => (x && x.text) || '').join('\n') : ''))
+          : [];
+      for (const f of files) if (f && /\.md$/i.test(f)) out.push(path.resolve(r.cwd || cwd, f));
+    }
+  }
+  return [...new Set(out)];
+}
+
+/**
+ * Las historias que la sesión escribió, que en disco siguen en borrador y no tienen la constancia, en repos que trabajan
+ * con el arnés y no apagaron el freno. `note(kind, reason, file)` anota lo que no se pudo mirar.
+ */
+function pendingDrafts(records, { cwd, home, note = () => {} }) {
+  const vr = require('./validator-record.js');
+  const { statusOf, isDraftStatus } = require('./story-skill-gate.js');
+  const sgio = require('./story-gate-io.js');
+  let declares = (t) => /^---[ \t]*\r?\n[\s\S]*?^story[ \t]*:[\s\S]*?\r?\n---/m.test(t);
+  try { ({ declaresStoryIdentity: declares } = require('./story-discovery.js')); } catch (e) {
+    note('unknown-reader', `no cargó el lector de historias; uso el criterio de respaldo (${e.message})`);
+  }
+  const out = [];
+  for (const abs of writtenMarkdown(records, cwd)) {
+    try {
+      let text = null;
+      try { text = fs.readFileSync(abs, 'utf8'); } catch (e) {
+        if (e.code !== 'ENOENT') note('unknown-unreadable', `no pude leer el borrador (${e.code || e.message})`, abs);
+        continue;
+      }
+      if (!declares(text.replace(/^﻿/, '')) || !isDraftStatus(statusOf(text))) continue;
+      if (sgio.isHarnessRepo(abs)) continue;
+      const repo = sgio.repoContext(abs);
+      if (!repo.repoRoot || !(repo.repoHasTycon || repo.repoHasStories)) continue;
+      if (!sgio.gateEnabledForRepo(repo.repoRoot, 'story_skill_gate')) continue;
+      if (!vr.enRegistros(records, { ruta: abs, repoRoot: repo.repoRoot, home }).hay) out.push(abs);
+    } catch (e) {
+      // un archivo que falla no esconde a los demás
+      note('unknown-error', `no pude decidir sobre el borrador (${e.message})`, abs);
+    }
+  }
+  return out;
+}
+
+function insistFile(stateDir, sessionId) {
+  return path.join(stateDir, INSIST_DIR, `${String(sessionId || '_nosession').replace(/[/\\]/g, '_')}.json`);
+}
+
+/**
+ * El cierre con borradores sin validar: `{ block }` (la orden, el turno no cierra), `{ aviso }` (deja cerrar y se lo
+ * dice a la persona) o null. Corre aunque Claude Code marque `stop_hook_active`: el tope es el freno del lazo. Lo que no
+ * se pudo mirar deja cerrar y queda anotado en gates.log (`unknown-*`).
+ *
+ * Límite asumido: al cierre no hay un pedido que haga de punta de la cadena, así que es el último registro. Un renglón
+ * agregado al final, encadenado al último real, entra; con él se puede callar esta insistencia, no el freno de escritura
+ * ni el arranque del pipeline, que siguen negando el borrador.
+ */
+function insistir(event, { stateDir, home = require('os').homedir(), env = process.env } = {}) {
+  if (!event || !stateDir) return null;
+  // el mismo apagado del dev que el freno de historia: sin el freno, no hay borradores que insistir
+  if (String(env.TYCON_STORY_SKILL_GATE || '').toLowerCase() === 'off') return null;
+  const sgio = require('./story-gate-io.js');
+  const note = (kind, reason, file) => {
+    try { sgio.appendLog(stateDir, 'gates.log', event.session_id, { repoPath: null, name: 'story-claim-check', status: 'unknown', kind, reason, ...(file ? { file } : {}) }); } catch { /* el registro no traba el cierre */ }
+  };
+  const records = chainRecords(event, home);
+  if (!records) { note('unknown-no-conversation', 'no pude leer la conversación del cierre'); return null; }
+  const cwd = event.cwd || process.cwd();
+  const file = insistFile(stateDir, event.session_id);
+  let state = {};
+  try { state = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {
+    if (e.code !== 'ENOENT') note('unknown-counter', `el conteo de vueltas no se pudo leer y arranca de cero (${e.code || e.message})`);
+    state = {};
+  }
+  const stories = state.stories || {};
+  const pending = pendingDrafts(records, { cwd, home, note }).filter((f) => !(stories[f] && stories[f].avisada));
+  if (!pending.length) return null;
+  // el avance se cuenta por historia: cuántas respuestas del validador había en su cierre anterior
+  const n = require('./validator-record.js').respuestasDelValidador(records);
+  const agotadas = [];
+  const siguen = [];
+  for (const f of pending) {
+    const s = stories[f] || {};
+    const sinAvance = typeof s.ultimas === 'number' && n <= s.ultimas ? (s.sinAvance || 0) + 1 : 0;
+    if (sinAvance >= 2 || (s.intentos || 0) >= INSIST_MAX) { agotadas.push(f); stories[f] = { ...s, avisada: true }; }
+    else { siguen.push(f); stories[f] = { intentos: (s.intentos || 0) + 1, ultimas: n, sinAvance }; }
+  }
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ stories }, null, 2));
+  } catch (e) {
+    // sin dónde contar no se insiste (sería un lazo sin tope): deja cerrar y queda anotado
+    note('unknown-counter', `no pude guardar el conteo de vueltas (${e.code || e.message})`);
+    return null;
+  }
+  const aviso = agotadas.length
+    ? agotadas.map((f) => `La historia ${f} quedó en borrador porque no se validó: el agente no corrió el validador.`).join('\n')
+    : null;
+  if (!siguen.length) return { aviso };
+  const text = typeof event.last_assistant_message === 'string' && event.last_assistant_message.trim()
+    ? event.last_assistant_message : lastAssistantText(lastTurn(records));
+  const verified = claims(text) || /\bverificad[ao]\b/i.test(text);
+  return {
+    block: [
+      ...siguen.map((f) => `⛔ falta validar ${f}: corré el validador de historias (tycon-story-validator) sobre ese archivo y, si pasa, pasala a ready-for-dev.`),
+      verified ? '   No digas que la historia quedó creada y verificada: está en borrador y no está verificada hasta que corra el validador.' : '',
+      `   (vuelta ${Math.max(...siguen.map((f) => stories[f].intentos))} de ${INSIST_MAX})`,
+    ].filter(Boolean).join('\n'),
+    aviso,
+  };
+}
+
+module.exports = { claimWithoutStory, insistir, pendingDrafts, CLAIM, INSIST_MAX, lastTurn };

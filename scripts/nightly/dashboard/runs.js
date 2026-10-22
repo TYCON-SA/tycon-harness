@@ -325,6 +325,28 @@ const PASO_DESCONOCIDO = 'paso desconocido';
 const clavePublica = (pasos) => (pasos.length ? pasos.join('+') : PASO_DESCONOCIDO);
 /** La fila de un paso (nombre de máquina o número viejo); `null` si no es un paso. */
 const filaDePaso = (id) => (Object.prototype.hasOwnProperty.call(FILA_DE_PASO, String(id)) ? FILA_DE_PASO[String(id)] : null);
+/**
+ * La fila del paso que arrancó y no terminó (el más avanzado, si hay varios); `null` si ninguno quedó a medias. Es
+ * donde se quedó una ejecución archivada a mitad de camino: el último paso TERMINADO es el anterior.
+ */
+function filaEnCurso(timings, completados) {
+  const hechos = new Set((completados || []).map(String));
+  const ms = (v) => (typeof v === 'string' ? Date.parse(v) : NaN);
+  const entradas = Object.entries(timings || {}).filter(([, t]) => t && typeof t === 'object');
+  // un arranque cuenta sólo si es posterior a todo cierre: uno viejo sin cierre no gana sobre lo que se terminó después,
+  // y un paso que se volvió a arrancar después de cerrarse (otra vuelta de revisores) sí está en curso
+  const ultimoCierre = Math.max(-Infinity, ...entradas.map(([, t]) => ms(t.completedAt)).filter(Number.isFinite));
+  let mejor = null;
+  for (const [k, t] of entradas) {
+    const ini = ms(t.startedAt);
+    if (!Number.isFinite(ini) || SIN_FILA.has(k) || ini <= ultimoCierre) continue;
+    const fin = ms(t.completedAt);
+    if (Number.isFinite(fin) ? ini <= fin : hechos.has(k)) continue;
+    const fila = filaDePaso(k);
+    if (fila !== null && (!mejor || ini > mejor.ini)) mejor = { fila, ini };
+  }
+  return mejor ? mejor.fila : null;
+}
 /** 2 si la ejecución anota sus pasos por nombre de máquina, 1 si por número (el marcador viejo). */
 const esquemaDe = (m) => (m && (m.stepScheme === 2 || Object.keys(m.stepTimings || {}).some((k) => !/^\d+[a-z]?$/.test(k))) ? 2 : 1);
 
@@ -672,6 +694,7 @@ function modeloDeCorrida(d, nombresPasos) {
     // La fila del ÚLTIMO paso completado, no `length - 1`: stepsCompleted tiene huecos
     // ([0,1,4,5,6,7] diría «quedó en el 5» y quedó en el 7).
     ultimo_paso: (() => { const fs_ = completados.map(filaDePaso).filter((x) => x !== null); return fs_.length ? Math.max(...fs_) : null; })(),
+    paso_en_curso: filaEnCurso(m.stepTimings, completados),
     llego_al_final: completados.some((p) => filaDePaso(p) === FILA_FINAL),
     dod: m.dodRuntime && m.dodRuntime.verdict ? String(m.dodRuntime.verdict) : null,
     controles,
@@ -1174,7 +1197,7 @@ const elegir = (o, claves) => (o && typeof o === 'object' ? Object.fromEntries(c
 function paraLista(c) {
   return {
     id: c.id, story: c.story, producto: c.producto, maquina: c.maquina === undefined ? null : c.maquina, maquina_motivo: c.maquina_motivo === undefined ? null : c.maquina_motivo,
-    inicio: c.inicio, semana: c.semana, dur_ms: c.dur_ms, esquema: c.esquema === 2 ? 2 : 1, llego_al_final: c.llego_al_final, ultimo_paso: c.ultimo_paso, sin_pasos_anotados: c.sin_pasos_anotados === true, sin_cerrar: c.sin_cerrar === true,
+    inicio: c.inicio, semana: c.semana, dur_ms: c.dur_ms, esquema: c.esquema === 2 ? 2 : 1, llego_al_final: c.llego_al_final, ultimo_paso: c.ultimo_paso, paso_en_curso: Number.isInteger(c.paso_en_curso) ? c.paso_en_curso : null, sin_pasos_anotados: c.sin_pasos_anotados === true, sin_cerrar: c.sin_cerrar === true,
     tramos: copiar(c.tramos), sin_marca: copiar(c.sin_marca),
     tiempos: elegir(c.tiempos, ['trabajo_ms', 'trabajo_medido', 'espera_humana_ms', 'espera_del_hilo_ms']),
     controles: elegir(c.controles, ['total', 'error', 'freno', 'por_control']),
@@ -1204,7 +1227,27 @@ const decimal = (x, idioma) => (idioma && idioma !== ES ? String(Math.round(x * 
 const miles = (n, idioma) => n == null ? '—' : n >= 1e6 ? `${decimal(n / 1e6, idioma)} M` : n >= 1e3 ? `${Math.round(n / 1e3)} k` : String(n);
 const dur = (ms, idioma) => ms == null ? '—' : ms < 90 * 60000 ? `${Math.round(ms / 60000)} min` : `${decimal(ms / 3600000, idioma)} h`;
 
-function barraTramos(c, escala, idioma) {
+/**
+ * El texto de la trama de los pasos sin marca. En una ejecución que no llegó al final, esos pasos no se llegaron a
+ * correr, salvo el que quedó a medias, que se nombra aparte; en una que llegó, son pasos que corrieron sin su marca.
+ */
+function textoSinMarca(c, nombres, idioma, prefijo) {
+  const curso = Number.isInteger(c.paso_en_curso) ? c.paso_en_curso : null;
+  if (c.llego_al_final) return L(idioma, prefijo + 'pasosSinMarca', { n: c.sin_marca.length });
+  // después de donde quedó, no se llegaron a correr; antes, corrieron sin su marca
+  const donde = filaDondeQuedo(c);
+  const despues = c.sin_marca.filter((f) => f !== curso && donde !== null && f > donde).length;
+  const antes = c.sin_marca.filter((f) => f !== curso).length - despues;
+  const partes = [];
+  if (curso !== null) partes.push(L(idioma, prefijo + 'pasoSinTerminar', { p: enIdioma(idioma, nombres[curso] || String(curso)) }));
+  if (despues) partes.push(L(idioma, prefijo + 'pasosSinCorrer', { n: despues }));
+  if (antes) partes.push(L(idioma, prefijo + 'pasosSinMarca', { n: antes }));
+  return partes.join('; ');
+}
+/** El paso donde quedó una ejecución que no llegó al final: el que quedó a medias o, si ninguno, el último terminado. */
+const filaDondeQuedo = (c) => (Number.isInteger(c.paso_en_curso) ? c.paso_en_curso : c.ultimo_paso);
+
+function barraTramos(c, escala, idioma, nombres) {
   const total = c.tramos.reduce((a, t) => a + t.ms, 0);
   if (!total) return `<span class="nobar">${esc(enIdioma(idioma, c.motivo_tramos || 'sin tiempos por paso'))}</span>`;
   const ancho = Math.max(2, Math.min(100, (total / escala) * 100));
@@ -1212,7 +1255,7 @@ function barraTramos(c, escala, idioma) {
     ? `<i class="entre" style="width:${((t.ms / total) * 100).toFixed(2)}%" title="${esc(L(idioma, 'v.entrePasos', { dur: dur(t.ms, idioma) }))}"></i>`
     : `<i style="width:${((t.ms / total) * 100).toFixed(2)}%;background:${RAMPA[t.pasos[0]] || RAMPA[RAMPA.length - 1]}" title="${esc(t.paso)} · ${esc(enIdioma(idioma, t.nombre))} — ${dur(t.ms, idioma)}${t.pasos.length > 1 ? ` (${esc(L(idioma, 'v.fusionados'))})` : ''}${t.medida === false ? ` (${esc(L(idioma, 'v.estimadaPorDiferencia'))})` : ''}"></i>`)).join('');
   const faltan = c.sin_marca.length;
-  return `<span class="bar" style="width:${ancho.toFixed(1)}%">${segs}${faltan ? `<i class="falta" style="width:6px" title="${esc(L(idioma, 'v.pasosSinMarca', { n: faltan }))}"></i>` : ''}</span>`;
+  return `<span class="bar" style="width:${ancho.toFixed(1)}%">${segs}${faltan ? `<i class="falta" style="width:6px" title="${esc(textoSinMarca(c, nombres || [], idioma, 'v.'))}"></i>` : ''}</span>`;
 }
 
 // Las dos columnas. Lo estimado lleva «~» y lo dice en el título; lo que no se midió es
@@ -1376,11 +1419,11 @@ function tabla(M, opts = {}) {
       <td class="fecha">${esc((c.inicio || '').slice(0, 10) || L(I, 'v.sinFecha'))}<small>${esc(c.semana || '')}</small></td>
       <td class="story"><b>${esc(c.story || '—')}</b>${c.descripcion ? `<span class="desc" title="${esc(c.descripcion.texto)}">${esc(c.descripcion.texto)}</span>` : ''}<small>${esc(c.producto || L(I, 'v.productoSinRegistrar'))}</small></td>${M.varias_maquinas ? `
       <td class="maq-td">${c.maquina ? `<span class="maq">${esc(c.maquina)}</span>${c.maquina_nota ? `<small>${esc(enIdioma(I, c.maquina_nota))}</small>` : ''}` : `<span class="nd" title="${esc(enIdioma(I, c.maquina_motivo || ''))}">${x('v.sinDeclarar')}</span>`}</td>` : ''}
-      <td class="barra">${barraTramos(c, escala, I)}</td>
+      <td class="barra">${barraTramos(c, escala, I, M.pasos.nombres)}</td>
       <td class="dur">${dur(c.dur_ms, I)}</td>
       <td class="dur tr">${colTrabajo(c, I)}</td>
       <td class="dur es">${colEspera(c, I)}</td>
-      <td class="pasos-n">${c.sin_cerrar ? `<span class="parcial" title="${x('v.tituloSinCerrar')}">${x('v.sinCerrar')}</span>` : c.llego_al_final ? `<span class="ok9">${x('v.llegoAlFinal')}</span>` : c.sin_pasos_anotados ? `<span class="parcial" title="${x('v.tituloSinPasos')}">${x('v.sinPasosAnotados')}</span>` : `<span class="parcial">${x('v.quedoEn', { p: c.ultimo_paso === null ? '—' : enIdioma(I, M.pasos.nombres[c.ultimo_paso] || String(c.ultimo_paso)) })}</span>`}</td>
+      <td class="pasos-n">${c.sin_cerrar ? `<span class="parcial" title="${x('v.tituloSinCerrar')}">${x('v.sinCerrar')}</span>` : c.llego_al_final ? `<span class="ok9">${x('v.llegoAlFinal')}</span>` : c.sin_pasos_anotados ? `<span class="parcial" title="${x('v.tituloSinPasos')}">${x('v.sinPasosAnotados')}</span>` : `<span class="parcial">${x('v.quedoEn', { p: filaDondeQuedo(c) === null ? '—' : enIdioma(I, M.pasos.nombres[filaDondeQuedo(c)] || String(filaDondeQuedo(c))) })}</span>`}</td>
       <td class="ag">${c.costo ? c.costo.agentes : `<span class="nd" title="${x('v.sinAgentes')}">—</span>`}</td>
       <td class="vu">${c.costo && c.costo.vueltas !== null ? c.costo.vueltas : '<span class="nd">—</span>'}</td>
       <td class="tk">${tk}</td>
@@ -1631,6 +1674,20 @@ const CLIENTE_FUENTE = String.raw`(function () {
   var POR_ID = {};
   C.forEach(function (c, k) { if (c.id) POR_ID[c.id] = k; });
   var enC = function (tr) { var id = tr.dataset && tr.dataset.id; if (id) return Object.prototype.hasOwnProperty.call(POR_ID, id) ? POR_ID[id] : null; return +tr.dataset.i; };
+  // el paso donde quedó y el texto de los pasos sin marca: como textoSinMarca y filaDondeQuedo del servidor
+  var dondeQuedo = function (c) { return typeof c.paso_en_curso === 'number' ? c.paso_en_curso : c.ultimo_paso; };
+  var sinMarcaTxt = function (c) {
+    var curso = typeof c.paso_en_curso === 'number' ? c.paso_en_curso : null;
+    if (c.llego_al_final) return T('pasosSinMarca', { n: c.sin_marca.length });
+    var donde = dondeQuedo(c);
+    var despues = c.sin_marca.filter(function (f) { return f !== curso && donde !== null && f > donde; }).length;
+    var antes = c.sin_marca.filter(function (f) { return f !== curso; }).length - despues;
+    var partes = [];
+    if (curso !== null) partes.push(T('pasoSinTerminar', { p: PASOS[curso] || curso }));
+    if (despues) partes.push(T('pasosSinCorrer', { n: despues }));
+    if (antes) partes.push(T('pasosSinMarca', { n: antes }));
+    return partes.join('; ');
+  };
   var RAMPA = ['#BEE0DE','#9CD0CE','#79BFBE','#57ADAE','#3D9799','#348C8E','#2C8084','#1E6A70','#14555C','#0D4148'];
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
   var n1 = function (x) { return (Math.round(x * 10) / 10).toString().replace('.', T('sepDecimal')); };
@@ -1717,7 +1774,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
       s += '<rect x="' + ea.toFixed(1) + '" y="' + (ys.pasos - 4) + '" width="' + (eb - ea).toFixed(1) + '" height="34" fill="url(#espera)" stroke="var(--warn)" stroke-width=".8"><title>' + T('esperaTitulo', { d: dt(w[1] - w[0]), a: Math.round(w[0]), b: Math.round(w[1]) }) + '</title></rect>';
       if (eb - ea > 60) s += '<text x="' + ((ea + eb) / 2).toFixed(1) + '" y="' + (ys.pasos + 17) + '" text-anchor="middle" font-family="IBM Plex Sans,sans-serif" font-size="10" font-weight="600" fill="var(--warn)">' + T('esperando', { d: dt(w[1] - w[0]) }) + '</text>';
     });
-    if (c.sin_marca.length) s += '<rect x="' + X(acc).toFixed(1) + '" y="' + ys.pasos + '" width="' + Math.max(4, x1 - X(acc)).toFixed(1) + '" height="26" fill="url(#hatch)"><title>' + T('pasosSinMarca', { n: c.sin_marca.length }) + '</title></rect>';
+    if (c.sin_marca.length) s += '<rect x="' + X(acc).toFixed(1) + '" y="' + ys.pasos + '" width="' + Math.max(4, x1 - X(acc)).toFixed(1) + '" height="26" fill="url(#hatch)"><title>' + esc(sinMarcaTxt(c)) + '</title></rect>';
     // archivos tocados: cuántos cambios por momento; clic filtra la lista de abajo (2026-09-17, como el prototipo)
     if (c.cambios && eds.length) {
       var B = 60, bal = {};
@@ -2105,7 +2162,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
   // C[idx]): buscarlo con indexOf daba -1 y ningún cambio ni parche se podía abrir (pase adversarial)
   function detalle(c, idx) {
     if (idx === undefined) idx = C.indexOf(c);
-    var chips = (c.sin_cerrar ? '<span class="chip warn" title="' + T('tituloSinCerrar') + '"><span class="g">◆</span>' + T('sinCerrar') + '</span>' : '') + '<span class="chip ' + (c.llego_al_final ? 'ok' : 'warn') + '"' + (!c.llego_al_final && c.sin_pasos_anotados ? ' title="' + T('tituloSinPasos') + '"' : '') + '><span class="g">' + (c.llego_al_final ? '●' : '◆') + '</span>' + (c.llego_al_final ? T('llegoAlFinal') : c.sin_pasos_anotados ? T('noAnotoSusPasos') : T('quedoEn', { p: c.ultimo_paso === null ? '?' : (PASOS[c.ultimo_paso] || c.ultimo_paso) })) + '</span>'
+    var chips = (c.sin_cerrar ? '<span class="chip warn" title="' + T('tituloSinCerrar') + '"><span class="g">◆</span>' + T('sinCerrar') + '</span>' : '') + '<span class="chip ' + (c.llego_al_final ? 'ok' : 'warn') + '"' + (!c.llego_al_final && c.sin_pasos_anotados ? ' title="' + T('tituloSinPasos') + '"' : '') + '><span class="g">' + (c.llego_al_final ? '●' : '◆') + '</span>' + (c.llego_al_final ? T('llegoAlFinal') : c.sin_pasos_anotados ? T('noAnotoSusPasos') : T('quedoEn', { p: dondeQuedo(c) === null ? '?' : (PASOS[dondeQuedo(c)] || dondeQuedo(c)) })) + '</span>'
       + (c.controles && c.controles.error ? '<span class="chip bad"><span class="g">▲</span>' + T('conErrorN', { n: c.controles.error }) + '</span>' : '')
       + (c.controles && c.controles.freno ? '<span class="chip warn"><span class="g">◆</span>' + T('frenoN', { n: c.controles.freno }) + '</span>' : '')
       + (c.costo && c.costo.vueltas !== null ? '<span class="chip neutro"><span class="g">○</span>' + T('vueltasN', { n: c.costo.vueltas }) + '</span>' : '')

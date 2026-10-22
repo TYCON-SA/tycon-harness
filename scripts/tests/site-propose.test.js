@@ -84,8 +84,8 @@ const PERFIL_ENV = { SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', S
 const capa = (v) => ({ requires: { harness: `>= ${v}` } });
 const PERFIL = { __doc: 'perfil de juguete', ado: { org: 'https://dev.azure.com/acme' }, integrations: { clockify: true, engram: true, mailbox: true, codex: 'detect', nightly: true }, update: { channel: 'latest', apply: 'auto', skills_source: 'separate' }, packs: { default: 'all' }, install: { profile: 'full' }, response: { language: 'es', style: 'executive', max_chars: 1300 } };
 
-function fuentesCon({ ops, perfil = null, config }) {
-  const f = H.fuentesFijas({ config: config || opsBase(), personas: { informados: null, repos: null } });
+function fuentesCon({ ops, perfil = null, config, informados = null }) {
+  const f = H.fuentesFijas({ config: config || opsBase(), personas: { informados, repos: null } });
   f.clones = () => ({ operaciones: ops ? { dir: ops } : null, perfil: perfil ? { dir: perfil } : null });
   f.dirBuzon = tmp('site-propose-buzon-');
   f.exclusivo = (fn) => fn();
@@ -668,7 +668,7 @@ test('T14 Textos_RefreshMinutes_YGuia @story-2.46 @ac-11 @ac-12', () => {
  * prueba la mueve: la rama de cada propuesta lleva la hora). `afuera(texto)` cambia main sin pasar por el sitio y
  * `entra(pedido)` lo da por mergeado en la plataforma.
  */
-async function sitioConPlataforma({ plataforma, repo = 'operaciones', archivos }, fn) {
+async function sitioConPlataforma({ plataforma, repo = 'operaciones', archivos, informados = null }, fn) {
   const nombre = repo === 'perfil' ? 'perfil' : 'ops';
   const archivo = repo === 'perfil' ? 'team-profile.json' : 'operations.json';
   const remoto = plataforma === 'azure'
@@ -687,7 +687,7 @@ async function sitioConPlataforma({ plataforma, repo = 'operaciones', archivos }
     await gitHttp(raiz, 'clone', '-q', '--depth', '1', '--branch', 'main', r.url, dir);
     const fuentes = repo === 'perfil'
       ? fuentesCon({ ops: clon({ 'operations.json': opsBase() }), perfil: dir })
-      : fuentesCon({ ops: dir });
+      : fuentesCon({ ops: dir, config: typeof archivos['operations.json'] === 'object' ? archivos['operations.json'] : undefined, informados });
     fuentes.st.refrescos = 0;
     fuentes.refrescar = async () => {
       fuentes.st.refrescos += 1;
@@ -1171,4 +1171,101 @@ test('T20 Proponer_VariosArchivos_VersionYCambio @story-2.61 @ac-10 — los cami
     assert.strictEqual(r.archivoEn(rama, 'carpeta/nuevo.md'), '# nuevo\n');
     assert.strictEqual(gh.st.pedidos.length, 1);
   } finally { await cerrarTodos(r, gh); }
+});
+
+// ── «Confirmar» de una máquina: todo al lado de su renglón ─────────────────────────────────────────────────────────
+
+const SECCION_PERSONAS = { id: 'personas', titulo: 'Personas y máquinas', repo: 'operaciones', archivo: 'operations.json', estado: 'cargado', soloLectura: false, borrador: { people: {} }, texto: '{\n  "version": 1\n}\n', oid: 'oid-p', problems: [], avisos: [],
+  extras: { porConfirmar: [{ maquina: 'maq-c', correo: 'c@acme.example', dia: '2026-10-20', corridas: 3 }, { maquina: 'maq-d', correo: null, dia: '2026-10-21', corridas: 1 }], personas: [] } };
+const CONFIG_PERSONAS = () => json({ ok: true, secciones: [SECCION_PERSONAS], proponer: { operaciones: { habilitado: true } }, versiones: [], productos: [] });
+const TEXTO_CONFIRMADO = '{\n  "version": 1,\n  "people": {}\n}\n';
+
+/** El renglón de la máquina en «Por confirmar» y lo que hay debajo de la sección, fuera de los renglones. */
+function renglonDe(p, maquina) {
+  const sec = p.todos().find((n) => n.attrs.id === 'seccion-personas');
+  return p.todos(sec).find((n) => n.tag === 'li' && n.hijos.some((h) => h.attrs.class === 'quien' && h.textContent === maquina));
+}
+const fueraDeLosRenglones = (p) => {
+  const sec = p.todos().find((n) => n.attrs.id === 'seccion-personas');
+  const enRenglon = new Set(p.todos(sec).filter((n) => n.tag === 'li').flatMap((li) => p.todos(li)));
+  return p.todos(sec).filter((n) => !enRenglon.has(n));
+};
+
+test('Confirmar_UnPaso_AlLadoDelRenglon_ConElPedido — revisa, ofrece «Confirmar y proponer» en el renglón y deja ahí el enlace', async () => {
+  const enlace = 'https://git.acme.example/acme/ops/pullrequest/9';
+  const p = await pantallaViva({
+    'GET /api/config': CONFIG_PERSONAS(),
+    'POST /api/config/revisar': json({ ok: true, texto: TEXTO_CONFIRMADO, borrador: { people: { machines: { 'maq-c': { person: 'c@acme.example' } } } }, diferencia: DIFERENCIA, resumen: [] }),
+    'POST /api/config/proponer': json({ ok: true, message: `Pedido abierto: ${enlace}`, enlace }),
+    'GET /api/config/propuesta': json({ ok: true, estado: 'abierto', enlace }),
+  });
+  const confirmar = p.todos(renglonDe(p, 'maq-c')).find((n) => n.tag === 'button' && n.textContent === 'Confirmar');
+  confirmar.on.click(); await p.soltar();
+  const revisar = p.llamadas.find((c) => c.ruta === '/api/config/revisar');
+  assert.deepStrictEqual({ accion: revisar.cuerpo.borrador.accion, maquina: revisar.cuerpo.borrador.maquina, person: revisar.cuerpo.borrador.person }, { accion: 'confirm', maquina: 'maq-c', person: 'c@acme.example' });
+  const fila = renglonDe(p, 'maq-c');
+  assert.ok(p.textoDe(fila).includes('Esto abre un pedido para confirmar que la máquina maq-c es de c@acme.example'), p.textoDe(fila));
+  const proponer = p.todos(fila).find((n) => n.tag === 'button' && n.textContent === 'Confirmar y proponer');
+  assert.ok(proponer, 'el botón va en el renglón');
+  assert.ok(!fueraDeLosRenglones(p).some((n) => n.textContent === 'Confirmar y proponer' || /\bmsg\b/.test(n.attrs.class || '')), 'nada al pie de la sección');
+  assert.ok(!p.textoDe(renglonDe(p, 'maq-d')).includes('Esto abre un pedido'), 'el otro renglón queda como estaba');
+  proponer.on.click(); await p.soltar();
+  const envio = p.llamadas.find((c) => c.ruta === '/api/config/proponer');
+  assert.strictEqual(envio.cuerpo.texto, TEXTO_CONFIRMADO, 'propone lo revisado');
+  const despues = renglonDe(p, 'maq-c');
+  assert.ok(p.textoDe(despues).includes('Pedido abierto'), p.textoDe(despues));
+  assert.ok(p.todos(despues).some((n) => n.tag === 'a' && n.attrs.href === enlace), 'el enlace al pedido, en el renglón');
+  assert.ok(!fueraDeLosRenglones(p).some((n) => n.tag === 'a' && n.attrs.href === enlace), 'el enlace no se repite al pie');
+});
+
+test('Confirmar_RevisionFalla_ElMotivoEnElRenglon — un rechazo de la revisión se lee al lado de la máquina', async () => {
+  const p = await pantallaViva({
+    'GET /api/config': CONFIG_PERSONAS(),
+    'POST /api/config/revisar': json({ ok: false, message: 'la lista de personas está vencida', problems: [{ path: 'people.machines.maq-d.person', message: '«x» no es un correo' }] }),
+  });
+  const fila = renglonDe(p, 'maq-d');
+  const campo = p.todos(fila).find((n) => n.tag === 'input');
+  campo.value = 'x';
+  p.todos(fila).find((n) => n.tag === 'button' && n.textContent === 'Confirmar').on.click(); await p.soltar();
+  assert.strictEqual(p.llamadas.find((c) => c.ruta === '/api/config/revisar').cuerpo.borrador.person, 'x', 'manda lo escrito');
+  const despues = renglonDe(p, 'maq-d');
+  assert.ok(p.textoDe(despues).includes('«x» no es un correo'), p.textoDe(despues));
+  assert.strictEqual(p.todos(despues).find((n) => n.tag === 'input').attrs.value, 'x', 'lo escrito no se pierde');
+  assert.ok(!p.todos(despues).some((n) => n.tag === 'button' && n.textContent === 'Confirmar y proponer'), 'sin revisión buena no se ofrece proponer');
+  assert.ok(!fueraDeLosRenglones(p).some((n) => /\bmsg\b/.test(n.attrs.class || '') && /no es un correo|vencida/.test(p.textoDe(n))), 'el motivo no va al pie');
+});
+
+// En un navegador de verdad, contra el sitio entero y el GitHub de juguete. Playwright no es una dependencia del arnés:
+// se busca en TYCON_PLAYWRIGHT (la carpeta del módulo) o entre los módulos de node; sin él, se saltea con constancia.
+const PLAYWRIGHT = (() => { try { return require(process.env.TYCON_PLAYWRIGHT || 'playwright'); } catch { return null; } })();
+const SIN_NAVEGADOR = (!PLAYWRIGHT && 'Playwright no está en esta máquina (TYCON_PLAYWRIGHT=<carpeta del módulo playwright>)') || SIN_BACKEND;
+
+test('Confirmar_EnElNavegador_RecorridoCompleto — Confirmar, la confirmación en el renglón, el pedido abierto y su enlace ahí mismo', { skip: SIN_NAVEGADOR, timeout: 120000 }, async () => {
+  const informados = H.informados({ 'maq-c': 'c@acme.example' });
+  const ops = opsBase({ site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: ['c@acme.example'] }] } });
+  delete ops.site.maintainers;
+  await sitioConPlataforma({ plataforma: 'github', archivos: { 'operations.json': ops }, informados }, async ({ h, lead, pedidos }) => {
+    const navegador = await PLAYWRIGHT.chromium.launch();
+    try {
+      const ctx = await navegador.newContext();
+      // la sesión viaja en la cabecera de cada pedido: el navegador no acepta guardar una cookie __Host- sobre http
+      await ctx.setExtraHTTPHeaders({ cookie: lead });
+      const page = await ctx.newPage();
+      // el sitio de prueba se presenta como http://127.0.0.1 (SITE_PUBLIC_URL) y escucha en un puerto al azar: cada
+      // escritura sale con el origen que el sitio espera
+      await page.route('**/api/config/**', async (r) => r.fulfill({ response: await r.fetch({ headers: { ...r.request().headers(), cookie: lead, origin: 'http://127.0.0.1' } }) }));
+      await page.goto(`${h.base}/configuracion`);
+      const fila = page.locator('#seccion-personas li', { has: page.locator('.quien', { hasText: 'maq-c' }) });
+      await fila.getByRole('button', { name: 'Confirmar', exact: true }).click();      // si no aparece, el renglón dice por qué: la falla lo lleva
+      await fila.getByText('Esto abre un pedido para confirmar que la máquina maq-c es de c@acme.example').waitFor({ timeout: 10000 })
+        .catch(async (e) => { throw new Error(`${e.message}\nel renglón dice: ${await fila.innerText()}`); });
+      assert.strictEqual(await page.locator('#seccion-personas > .msg').count(), 0, 'nada al pie de la sección');
+      await fila.getByRole('button', { name: 'Confirmar y proponer' }).click();
+      const enlace = fila.getByRole('link', { name: /pedido/i });
+      await enlace.waitFor({ timeout: 20000 });
+      assert.strictEqual(pedidos().length, 1, 'se abrió un pedido');
+      assert.ok(await enlace.getAttribute('href'), 'con su dirección');
+      assert.strictEqual(await page.locator('#seccion-personas > .msg').count(), 0, 'el resultado tampoco va al pie');
+    } finally { await navegador.close(); }
+  });
 });

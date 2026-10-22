@@ -328,7 +328,7 @@ function storyIsExempt(specContent) {
 // Una story implementada a mano puede llegar a `done` con evidencia de DoD real pero sin que
 // NINGÚN advisor la audite — los controles del cierre piden DoD y self-audit,
 // no "advisors corridos". Constancia aceptada: (1) una corrida del pipeline EN EL REPO
-// (`.advisors/pipeline-runs/<storyId>-*/` con reportes del Step 5 o `findings.json`), o (2) una
+// (`.advisors/pipeline-runs/<storyId>-*/` con reportes del paso de revisores o `findings.json`), o (2) una
 // línea `check=advisors status=green` en gates.log cuyo `repoPath` sea este repo (las líneas
 // sin `repoPath` son ambiguas entre repos y NO cuentan).
 /**
@@ -1029,7 +1029,7 @@ function main() {
   avisosDeConfigFreno(cwd);
 
   // ── Gate de ATDD fuera del pipeline ────────────────────────────────────────────
-  // El gate de `marker.js complete-step 4` sólo ve corridas del pipeline: lee
+  // El gate de `marker.js complete-step implement` sólo ve corridas del pipeline: lee
   // `marker.fileEvents`. Trabajando a mano no hay marker, así que nada mira el orden
   // test↔código: es el agujero por el que se cuela una sesión sin pipeline.
   // Acá se computa el MISMO veredicto (lib/atdd-order.js reusado) sobre los eventos que on-edit

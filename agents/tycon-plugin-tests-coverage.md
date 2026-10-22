@@ -23,7 +23,7 @@ omitClaudeMd: true
 
 | ID | Regla | Patrón detectado |
 |---|---|---|
-| **TEST-C1** | Test suite en rojo o sin evidencia | `tests-result.json` reporta `suite_green: false` (exit ≠ 0 del run real de test-gate.sh), O el artefacto no existe (test-gate.sh no corrió en Step 4). Con `unscoped: true` (salida 7, «sin acotar»: una corrida cruzada no se pudo acotar y no corrió nada), con `all_green: false` o con un elemento de `companions` en rojo o con `unscoped`, **nunca es verde** aunque `suite_green` sea true (ese es sólo el repo de la story): reportarlo como «no medido acá, la cubre la CI del pedido» (con `unscoped_reason`), no como «suite roja». Con `no_stack: true` (salida 3: el portón no reconoce ninguna herramienta de pruebas en el repo) **no es TEST-C1**: es TEST-W11. Fix: arreglar los tests rojos / correr `test-gate.sh <repo> <story_path>` antes de commit. |
+| **TEST-C1** | Test suite en rojo o sin evidencia | `tests-result.json` reporta `suite_green: false` (exit ≠ 0 del run real de test-gate.sh), O el artefacto no existe (test-gate.sh no corrió en «Correr las pruebas»). Con `unscoped: true` (salida 7, «sin acotar»: una corrida cruzada no se pudo acotar y no corrió nada), con `all_green: false` o con un elemento de `companions` en rojo o con `unscoped`, **nunca es verde** aunque `suite_green` sea true (ese es sólo el repo de la story): reportarlo como «no medido acá, la cubre la CI del pedido» (con `unscoped_reason`), no como «suite roja». Con `no_stack: true` (salida 3: el portón no reconoce ninguna herramienta de pruebas en el repo) **no es TEST-C1**: es TEST-W11. Fix: arreglar los tests rojos / correr `test-gate.sh <repo> <story_path>` antes de commit. |
 | **TEST-C1b** | El gate FRENÓ: no se midió nada | `tests-result.json` con `halted: true` (2026-08-13). El repo tiene más de un proyecto testeable y el gate no pudo deducir cuál mirar, así que **no corrió ninguna suite**. NO es "los tests fallaron": es que no hay medición. Reportarlo como tal — decir "suite roja" acá sería inventar un resultado. Fix: re-correr con el alcance explícito (`test-gate.sh <repo> <story> <subdir>`) o pasando la ruta de la story para que lo deduzca. El motivo exacto está en `halt_reason`. |
 | **TEST-C2** | Método público nuevo con 0% coverage | Método agregado en el diff nunca se ejecuta en ningún test (ej: tests mockean el service entero). Los ACs que dependen de ese método no tienen red de seguridad real. Fix: mockear dependencies externas (`Mock<HttpMessageHandler>`, DB fake), no el service bajo test. Patrón de referencia: `VoipApiServiceTests`. |
 | **TEST-C3** | `Map()` / endpoint registration sin test | Endpoint registrado con `.RequireAuthorization(roles)` sin un test que falle si se remueve la autorización. Regresión silenciosa posible: alguien borra `.RequireAuthorization` en refactor y ningún test salta. Fix: test de reflection sobre `Map()` que asserta metadata de autorización en cada ruta. |
@@ -45,12 +45,12 @@ omitClaudeMd: true
 - Path al repo
 - Path al story `.md` (para extraer ACs esperados + tabla de tests)
 - **`<repo>/.advisors/tests-result.json`** — el artefacto del run REAL (escrito por
-  `test-gate.sh` al cierre del Step 4: totals, exit code, coverage por archivo
+  `test-gate.sh` al cierre de «Correr las pruebas»: totals, exit code, coverage por archivo
   nuevo, meets_threshold). **Este advisor NO ejecuta tests** (desde 2026-06-09:
-  correr la full suite DENTRO del fan-out del Step 5 en cada iteración
+  correr la full suite DENTRO del fan-out de Revisores en cada iteración
   congela la máquina del dev y viola
   test-execution-discipline). Si el artefacto NO existe → finding CRITICAL
-  "[TEST-C1] tests-result.json ausente — test-gate.sh no corrió en Step 4"
+  "[TEST-C1] tests-result.json ausente — test-gate.sh no corrió en «Correr las pruebas»"
   (no intentar correr la suite como fallback).
 
 ## Output
@@ -116,7 +116,7 @@ omitClaudeMd: true
 
 ## Anti-patterns (lo que NO hace)
 
-- NO ejecuta tests ni coverage (Bash removido del frontmatter 2026-06-09) — LEE el artefacto de test-gate.sh. Correr la suite acá duplicaba la corrida del Step 4 dentro del fan-out paralelo.
+- NO ejecuta tests ni coverage (Bash removido del frontmatter 2026-06-09) — LEE el artefacto de test-gate.sh. Correr la suite acá duplicaba la corrida de «Correr las pruebas» dentro del fan-out paralelo.
 - NO promueve a CRITICAL aunque coverage sea 0% en **archivo existente** (solo cuando es método nuevo sin cobertura — TEST-C2 es específico).
 - NO reescribe tests faltantes.
 - NO sugiere qué test escribir — eso es trabajo del `bmad-dev-story`.
@@ -161,7 +161,7 @@ Si un AC pide algo que requiere una dependency blacklistada, el advisor debe asu
 
 Corre post-implementación, paralelo con `tycon-plugin-dotnet-conventions` y `tycon-plugin-security-basics`.
 
-**Dependencia**: BUILD-GATE previo + `test-gate.sh` corrido al cierre del Step 4 (escribe el artefacto que este advisor lee). Si `dotnet build` falla, este advisor no corre (no tiene sentido medir coverage de código que no compila).
+**Dependencia**: BUILD-GATE previo + `test-gate.sh` corrido al cierre de «Correr las pruebas» (escribe el artefacto que este advisor lee). Si `dotnet build` falla, este advisor no corre (no tiene sentido medir coverage de código que no compila).
 
 ## 🔴 Cómo se devuelve un reporte (regla dura del harness — 2026-07-27)
 

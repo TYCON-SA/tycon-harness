@@ -70,7 +70,7 @@ aprobado.
 **Condición de salteo mecánica (verificable, NO inferencia)**: el chequeo previo al código se SALTEA si se cumplen LAS
 DOS:
 1. «Validar la historia» de ESTA MISMA ejecución cerró con **0 CRITICAL** (verificar en el log:
-   `grep -il critical <repo>/.advisors/pipeline-runs/<run>/step-01*.md` → sin coincidencias de hallazgos abiertos, o el
+   `grep -il critical <repo>/.advisors/pipeline-runs/<run>/step-01-validator*.md` → sin coincidencias de hallazgos abiertos, o el
    log registra el cierre limpio de la re-validación).
 2. El plan aprobado NO toca archivos fuera de `files_to_create` + `files_to_modify` del frontmatter (comparar la lista
    de archivos del plan contra el frontmatter, diff de listas, comando concreto; si el plan agrega UN archivo no
@@ -200,7 +200,7 @@ Invocar el skill BMAD nuevamente, esta vez en modo ejecución (no plan):
 ```
 Skill(
   skill: "<bmad_skill_name>",
-  args: "Ejecutar el plan aprobado sobre story {story_path}. PROCEDER con la implementación. Modificar archivos según el plan. Iterar con los tests SCOPED (los scaffolds del sub-paso 4.0) hasta verde y reportar resultado — la suite completa la corre el orquestador UNA vez, en «Correr las pruebas» (test-gate.sh). Criterio de diseño: el cambio más chico que cumple la story, sin fusionar bloques parecidos que cambian por razones distintas. Nada que la story no declare — ni excepciones, campos de respuesta, filtros ni servicios nuevos; si hace falta uno, frená y proponelo al usuario para sumarlo a la story (gate de «Implementar»): no lo agregues vos. Excepción: un filtro de seguridad que falte entra igual, con entrada en el Change Log. Ningún refactor más allá del que el cambio necesita; lo demás va a tasks/todo.md con formato DEF."
+  args: "Ejecutar el plan aprobado sobre story {story_path}. PROCEDER con la implementación. Modificar archivos según el plan. Iterar con los tests SCOPED (los scaffolds de las pruebas primero) hasta verde y reportar resultado — la suite completa la corre el orquestador UNA vez, en «Correr las pruebas» (test-gate.sh). Criterio de diseño: el cambio más chico que cumple la story, sin fusionar bloques parecidos que cambian por razones distintas. Nada que la story no declare — ni excepciones, campos de respuesta, filtros ni servicios nuevos; si hace falta uno, frená y proponelo al usuario para sumarlo a la story (gate de «Implementar»): no lo agregues vos. Excepción: un filtro de seguridad que falte entra igual, con entrada en el Change Log. Ningún refactor más allá del que el cambio necesita; lo demás va a tasks/todo.md con formato DEF."
 )
 ```
 

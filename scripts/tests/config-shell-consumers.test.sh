@@ -109,11 +109,47 @@ Invoke-Expression $src.Substring($ini, $fin - $ini)
 "prendidas: $sp | apagadas: $sa"
 PS
   salida="$(pwsh -NoProfile -File "$BASE/resumen.ps1" "$PS1" '{"ado":true,"clockify":true,"engram":false,"codegraph":false,"mailbox":true,"codex":"detect","nightly":true,"telegram":false}' 2>&1)"; rc=$?
-  if [ "$rc" -eq 0 ] && [ "$salida" = "prendidas: ado clockify mailbox codex(detect) nightly | apagadas: engram codegraph telegram" ]; then
+  # la llave vieja de la herramienta de horas no va en la lista: la herramienta tiene su propia línea
+  if [ "$rc" -eq 0 ] && [ "$salida" = "prendidas: ado mailbox codex(detect) nightly | apagadas: engram codegraph telegram" ]; then
     ok "T5 el resumen del instalador PowerShell distingue prendida (true) de «detect» y de apagada"
   else bad "T5 resumen del .ps1 (rc=$rc): $salida"; fi
 else
   echo "⏭ config-consumidores: T5 NO MEDIDO — sin pwsh en esta máquina no se ejecuta el bloque del instalador PowerShell"
+fi
+
+# ── T70 · la línea de la herramienta de horas de los dos instaladores, con el bloque REAL de cada uno ─────────────────
+#         Con una herramienta, la nombra; con `none`, «ninguna»; un lector que no la dice, lo dice.
+SH="$TCG/scripts/install-tycon-hooks.sh"
+# la lectura de la salida del lector: un nombre con subíndice o con `$(…)` no se asigna (se evaluaría al asignar)
+LECTURA_SH="$(awk '/^    while IFS=.=. read -r _k _v; do$/{p=1} p{print} p&&/^    done <<< "\$_INTEG_OUT"$/{exit}' "$SH")"
+MARCA="$BASE/inyectado"; rm -f "$MARCA"
+_INTEG_OUT="$(printf 'TYCON_INTEG_ADO=1\nTYCON_INTEG_X[$(touch %s)]=1\nTYCON_TIME_TOOL=solidtime\nTYCON_TIME_TOOL=$(touch %s)\n' "$MARCA" "$MARCA")"
+salida="$(_INTEG_OUT="$_INTEG_OUT" bash -c "TYCON_INTEG_ADO=0; TYCON_TIME_TOOL=''; $LECTURA_SH"'
+echo "ado=$TYCON_INTEG_ADO tool=$TYCON_TIME_TOOL"' 2>&1)"
+if [ -n "$LECTURA_SH" ] && [ ! -e "$MARCA" ] && [ "$salida" = "ado=1 tool=solidtime" ]; then ok "T70 la lectura del .sh no evalúa un nombre con subíndice ni un valor con \$(…)"
+else bad "T70 lectura del .sh: «${salida}» · marca $( [ -e "$MARCA" ] && echo CREADA || echo no) · bloque ${#LECTURA_SH} caracteres"; fi
+BLOQUE_SH="$(awk '/^  if \[\[ -n "\$TYCON_TIME_TOOL" \]\]; then/{p=1} p{print} p&&/^  fi$/{exit}' "$SH")"
+for caso in "solidtime|tycon: herramienta de horas: solidtime" "none|tycon: herramienta de horas: ninguna" "|el lector de configuración no la dijo"; do
+  val="${caso%%|*}"; quiere="${caso#*|}"
+  salida="$(TYCON_TIME_TOOL="$val" bash -c "$BLOQUE_SH" 2>&1)"
+  case "$salida" in *"$quiere"*) ok "T70 .sh con «${val:-sin valor}»: «${salida}»" ;; *) bad "T70 .sh con «${val:-sin valor}»: «${salida}» (bloque: ${#BLOQUE_SH} caracteres)" ;; esac
+done
+if command -v pwsh >/dev/null 2>&1; then
+  cat > "$BASE/tt.ps1" <<'PS'
+$src = Get-Content -Raw $args[0]
+$ini = $src.IndexOf('$tt = [string]$Integ'); $fin = $src.IndexOf("`n", $src.IndexOf('else { Write-Host "! tycon: herramienta de horas', $ini))
+if ($ini -lt 0 -or $fin -lt 0) { 'sin-bloque'; exit 3 }
+$Integ = @{}
+if ($args[1]) { $Integ['timeTracking'] = $args[1] }
+Invoke-Expression $src.Substring($ini, $fin - $ini)
+PS
+  for caso in "solidtime|tycon: herramienta de horas: solidtime" "none|tycon: herramienta de horas: ninguna" "|no la dijo"; do
+    val="${caso%%|*}"; quiere="${caso#*|}"
+    salida="$(pwsh -NoProfile -File "$BASE/tt.ps1" "$PS1" "$val" 2>&1)"
+    case "$salida" in *"$quiere"*) ok "T70 .ps1 con «${val:-sin valor}»: «${salida}»" ;; *) bad "T70 .ps1 con «${val:-sin valor}»: «${salida}»" ;; esac
+  done
+else
+  echo "⏭ config-consumidores: T70 .ps1 NO MEDIDO — sin pwsh en esta máquina"
 fi
 
 # ── T3 (re-entrada) · el lugar donde re-entra un hook del arnés: el .ps1 y el .sh dan el mismo ──────────────────────

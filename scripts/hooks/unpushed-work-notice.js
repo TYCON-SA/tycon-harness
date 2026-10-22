@@ -28,7 +28,7 @@
 //       lista expandido; lo ya-gritado se comprime a UNA línea de conteo — la memoria de lo
 //       avisado es por (repo,rama,sha): un commit NUEVO en una rama vieja re-grita SIEMPRE
 //       (un throttle por rama taparía justo el aviso que importa). Silencio total en verde.
-//   --scan <repo> [--json] (CLI): mismo análisis, para el step-00 de /tycon-merge-to-main y para
+//   --scan <repo> [--json] (CLI): mismo análisis, para el primer paso de /tycon-merge-to-main y para
 //       humanos. IGNORA el kill-switch a propósito (apagar el reminder ambiental no puede
 //       apagar el control del merge en silencio); el JSON lleva `scanned:true` para que "verde"
 //       sea distinguible de "no corrió".
@@ -62,7 +62,7 @@
 // de verdad se creó (sha conocido): «el comando dijo commit» no alcanza — por eso un commit cuyo
 // asunto no aparece en el comando (`-F archivo`, `-m "$VAR"`) tampoco se ve, y también es no medido.
 // Un atajo vencido (6 h, como el portón) no es carril; un commit hasta 3 h después de CERRAR la
-// corrida de la sesión sigue siendo de esa corrida (el paso 8 cierra antes del commit).
+// corrida de la sesión sigue siendo de esa corrida («Preparar el commit» cierra antes del commit).
 // Off: TYCON_UNPUSHED_NOTICE=0 (solo modos hook; --scan lo ignora). Fail-open total.
 const fs = require('fs');
 const os = require('os');
@@ -108,7 +108,7 @@ const FORMA_STORY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,24}$/;
 // marker.js. Si el portón da por vencido un atajo, para el carril tampoco existe.
 const ADHOC_VENCE_H = 6;
 const MARKER_VENCE_H = 24;
-// Un commit que llega poco después de CERRAR una corrida es de esa corrida: el paso 8 cierra el marker
+// Un commit que llega poco después de CERRAR una corrida es de esa corrida: «Preparar el commit» cierra el marker
 // antes de que el dev apruebe el commit.
 const CIERRE_RECIENTE_H = 3;
 const vencido = (o, horas) => {

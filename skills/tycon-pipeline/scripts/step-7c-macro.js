@@ -2,7 +2,7 @@
 /**
  * step-7c-macro.js — DoD Runtime Gate ceremony as a deterministic macro.
  *
- * Reemplaza la secuencia manual del Step 7c: health check,
+ * Reemplaza la secuencia manual del paso «Probar en vivo»: health check,
  * ejecutar secuencia de curls (setup + act + verify), capturar response fields,
  * assertear status + body, escribir evidence file en formato hook-compliant
  * (incluye bloque "## Playwright Run" con substrings literales `verdict=PASS`

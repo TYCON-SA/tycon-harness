@@ -326,7 +326,7 @@ El skill `tycon-pipeline` termina en `step-11-prepare-commit` con el commit hech
 
 ### El cierre recortado (2026-09-16)
 
-En el paso 7c del pipeline, lo que **frena** es mecánico y se quedó: la matriz por AC (cada criterio
+En el paso «Probar en vivo» del pipeline, lo que **frena** es mecánico y se quedó: la matriz por AC (cada criterio
 con una ejecución real, o declarado imposible y firmado por el dev), el gate E2E del proyecto, los
 hooks de evidencia (`on-frontmatter-write`, `on-pre-commit`, `on-dod-evidence-guard`, `on-stop-dod-gate`)
 y el portón de CI. Lo que **salió** es lo que releía esa misma evidencia con un modelo:

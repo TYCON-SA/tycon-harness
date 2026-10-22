@@ -144,8 +144,119 @@ function crear(cfg, { ahora }) {
   };
 }
 
+// ── invitar a alguien al directorio (el núcleo es scripts/site/invitations.js) ───────────────────────────────────
+// Sólo en «organization», con la identidad administrada del sitio (`tokenDeIdentidad` de cloud/azure.js) y un solo
+// permiso de Graph: `User.Invite.All` de aplicación. Lo leído en Microsoft Learn («Create invitation»): `POST
+// /v1.0/invitations` con `invitedUserEmailAddress` e `inviteRedirectUrl`, 201 con `invitedUser.id`; las invitaciones de
+// aplicación no andan si el directorio las cerró. El dominio de un correo, sin permiso: el descubrimiento público
+// (`<login>/<dominio>/v2.0/.well-known/openid-configuration`) da el inquilino donde está verificado, o `invalid_tenant`.
+// El id público de la aplicación de Microsoft Graph: el mismo en todos los inquilinos, no es de ninguna organización
+const GRAPH_APP = '00000003-0000-0000-c000-000000000000';
+const RECURSO_GRAPH = 'https://graph.microsoft.com/';
+const ROL_INVITAR = 'User.Invite.All';
+const COMANDO_PERMISO = 'node scripts/site/deploy/azure-container-apps.js --config <el archivo de tu instalación> --phase permiso-de-invitar --apply';
+const PORTAL_USUARIOS = 'https://entra.microsoft.com/#view/Microsoft_AAD_UsersAndTenants/UserManagementMenuBlade/~/AllUsers';
+const portalDeUsuario = (id) => `https://entra.microsoft.com/#view/Microsoft_AAD_UsersAndTenants/UserProfileMenuBlade/~/overview/userId/${encodeURIComponent(id)}`;
+// un dominio con su terminación: letras, o internacionalizada en punycode (`xn--…`)
+const DOMINIO = /^[a-z0-9.-]+\.(?:[a-z]{2,}|xn--[a-z0-9-]+)$/i;
+
+/** El cuerpo de un token (sin verificar): `{ roles, oid, tid }`, o null si no tiene la forma de un JWT. */
+function rolesDelToken(token) {
+  const partes = String(token || '').split('.');
+  if (partes.length < 2) return null;
+  try {
+    const c = JSON.parse(Buffer.from(partes[1], 'base64url').toString('utf8'));
+    return { roles: Array.isArray(c.roles) ? c.roles.map(String) : [], oid: typeof c.oid === 'string' ? c.oid : null, tid: typeof c.tid === 'string' ? c.tid : null };
+  } catch { return null; }
+}
+
+/** Lo que Graph recibe, siempre igual: invitado, de vuelta al sitio, con el mensaje de Microsoft. */
+function cuerpoDeLaInvitacion(correo, cfg) {
+  return { invitedUserEmailAddress: String(correo || '').trim().toLowerCase(), inviteRedirectUrl: cfg.publicUrl, sendInvitationMessage: true, invitedUserType: 'Guest' };
+}
+
+/** El motivo de un rechazo de Graph, en llano y con el texto de Microsoft. */
+function motivoDeGraph(status, cuerpo) {
+  let detalle = '';
+  try { const j = JSON.parse(cuerpo); detalle = String((j && j.error && (j.error.message || j.error.code)) || ''); } catch { detalle = String(cuerpo || ''); }
+  // el texto de Microsoft puede repetir el correo invitado: se tapa, porque el motivo va al registro y al disco
+  detalle = detalle.replace(/[^\s@<>"'()]+@[^\s@<>"'()]+/g, '<correo>').replace(/\s+/g, ' ').trim().slice(0, 200);
+  if (status === 403 && /invitation|guest|B2B/i.test(detalle)) return TX('proveedor.invitarCerradas', { detalle });
+  if (status === 401 || status === 403) return TX('proveedor.invitarSinPermisoGraph', { detalle: detalle || String(status) });
+  return TX('proveedor.invitarGraph', { status, detalle: detalle || '-' });
+}
+
+/**
+ * El invitador de este proveedor, para invitations.js: `{ disponible, permiso, dominio, invitar, portal, aviso }`.
+ * `urlGraph` y `urlLogin` cambian los servidores (las pruebas).
+ */
+function invitador({ cfg, env = process.env, urlGraph = 'https://graph.microsoft.com', urlLogin = 'https://login.microsoftonline.com' }) {
+  const { pedir } = require('../oidc.js');
+  const { tokenDeIdentidad } = require('../cloud/azure.js');
+  const propio = String(inquilinoDe(cfg.issuer) || '').toLowerCase() || null;
+  const codigoPorCorreo = ['on', 'off'].includes(env.SITE_INVITE_EMAIL_CODE) ? env.SITE_INVITE_EMAIL_CODE : 'unknown';
+  const token = async () => { const t = await tokenDeIdentidad(RECURSO_GRAPH, env); return t.token ? { token: t.token } : { error: t.motivo || t.estado }; };
+  return {
+    /** ¿Se puede invitar con esta instalación? `{ ok, motivo, texto }` (sin el disco: lo mira el núcleo). */
+    disponible() {
+      const modo = cfg.inicioDeSesion && cfg.inicioDeSesion.modo;
+      if (modo === 'any') return { ok: false, motivo: 'cualquier_cuenta', texto: TX('proveedor.invitarCualquierCuenta') };
+      if (!env.IDENTITY_ENDPOINT || !env.IDENTITY_HEADER) return { ok: false, motivo: 'sin_identidad', texto: TX('proveedor.invitarSinIdentidad') };
+      return { ok: true, motivo: 'microsoft_organizacion', texto: null };
+    },
+    /** ¿La identidad tiene el permiso? Lo dicen los roles de su token, sin llamar a Graph. */
+    async permiso() {
+      const t = await token();
+      if (t.error) return { ok: false, texto: TX('proveedor.invitarSinToken', { detalle: String(t.error).slice(0, 200) }), comando: COMANDO_PERMISO };
+      const c = rolesDelToken(t.token) || { roles: [], oid: null, tid: null };
+      // el inquilino, el de la configuración del sitio (el del emisor); el del token, sólo si aquélla no lo trae
+      const tid = propio || c.tid || '-';
+      if (c.roles.includes(ROL_INVITAR)) return { ok: true };
+      return { ok: false, texto: TX('proveedor.invitarSinPermiso', { tenant: tid, oid: c.oid || '-' }), comando: COMANDO_PERMISO };
+    },
+    /** propio · ajeno · ninguno · no_contesto: dónde está verificado el dominio del correo. */
+    async dominio(correo) {
+      const d = String(correo || '').trim().toLowerCase().split('@')[1] || '';
+      if (!DOMINIO.test(d)) return 'ninguno';
+      const r = await pedir(`${urlLogin}/${encodeURIComponent(d)}/v2.0/.well-known/openid-configuration`, { headers: { accept: 'application/json' }, timeoutMs: 8000 });
+      if (r.error || !r.status || r.status >= 500) return 'no_contesto';
+      let j = null;
+      try { j = JSON.parse(r.cuerpo); } catch { return 'no_contesto'; }
+      if (r.status === 400 && j && /invalid_tenant/i.test(String(j.error || ''))) return 'ninguno';
+      if (r.status !== 200 || !j || typeof j.issuer !== 'string') return 'no_contesto';
+      const tid = String(inquilinoDe(j.issuer) || '').toLowerCase();
+      return tid && tid === propio ? 'propio' : 'ajeno';
+    },
+    /** Lo que se le dice a quien invita según el dominio: el motivo para no invitar, o un aviso; null si nada. */
+    aviso(dominio) {
+      if (dominio === 'propio') return { rechazo: TX('proveedor.invitarDominioPropio') };
+      if (dominio === 'ninguno' && codigoPorCorreo !== 'on') return { aviso: TX('proveedor.invitarCodigoPorCorreo', { estado: TX(codigoPorCorreo === 'off' ? 'proveedor.invitarCodigoApagado' : 'proveedor.invitarCodigoSinDato') }) };
+      return null;
+    },
+    /** La invitación: `{ ok, usuario }`, `{ yaEstaba }` o `{ falla }`. */
+    async invitar(correo) {
+      const t = await token();
+      if (t.error) return { falla: TX('proveedor.invitarSinToken', { detalle: String(t.error).slice(0, 200) }) };
+      const r = await pedir(`${urlGraph}/v1.0/invitations`, { method: 'POST', headers: { authorization: `Bearer ${t.token}`, 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(cuerpoDeLaInvitacion(correo, cfg)), timeoutMs: 20000 });
+      // sin respuesta (también un corte por tiempo después de que Microsoft la creó): se reintenta en el próximo ciclo, y
+      // en ese caso la persona puede recibir un segundo correo; la guía lo dice
+      if (r.error) return { falla: TX('proveedor.invitarSinRed', { detalle: r.error.code || 'sin respuesta' }) };
+      if (r.status === 201 || r.status === 200) {
+        let id = null;
+        try { const j = JSON.parse(r.cuerpo); id = j && j.invitedUser && typeof j.invitedUser.id === 'string' ? j.invitedUser.id : null; } catch { /* sin id: el enlace va a la lista de usuarios */ }
+        return { ok: true, usuario: id };
+      }
+      if (r.status === 400 && /already exist|ya existe/i.test(String(r.cuerpo || ''))) return { yaEstaba: true };
+      return { falla: motivoDeGraph(r.status, r.cuerpo) };
+    },
+    /** El enlace del portal para sacar a alguien del directorio: el de su usuario si se sabe, si no la lista. */
+    portal: (usuario) => (usuario ? portalDeUsuario(usuario) : PORTAL_USUARIOS),
+    codigoPorCorreo,
+  };
+}
+
 // las variables propias de este proveedor (el registro de arranque dice si están, nunca su valor)
-const variables = ['SITE_AUTH_MICROSOFT_ACCOUNTS', 'SITE_AUTH_MICROSOFT_TENANT'];
+const variables = ['SITE_AUTH_MICROSOFT_ACCOUNTS', 'SITE_AUTH_MICROSOFT_TENANT', 'SITE_INVITE_EMAIL_CODE'];
 
 // lo que este proveedor le dice a una persona, en los dos idiomas: la tabla del sitio (texts.js) lo suma a la suya
 const TEXTOS = {
@@ -154,6 +265,19 @@ const TEXTOS = {
   'proveedor.personalNo': { es: 'las cuentas personales de Microsoft no se aceptan en este sitio', en: 'personal Microsoft accounts are not accepted on this site' },
   'proveedor.personalNoInvitado': { es: 'las cuentas personales de Microsoft no se aceptan en este sitio. Si sos invitado del directorio de la organización, entrá por la puerta de los invitados', en: "personal Microsoft accounts are not accepted on this site. If you are a guest of the organization's directory, use the guest sign-in option" },
   'proveedor.entrarMicrosoft': { es: 'Entrar con tu cuenta de Microsoft', en: 'Sign in with your Microsoft account' },
+  // invitar a alguien (el invitador de arriba)
+  'proveedor.invitarCualquierCuenta': { es: 'El sitio deja entrar con «cualquier cuenta» de Microsoft: no hace falta invitar. Sumá a la persona a la lista y que entre con su cuenta.', en: 'The site lets in "any account" from Microsoft: no invitation needed. Add the person to the list and have them sign in with their account.' },
+  'proveedor.invitarSinIdentidad': { es: 'Este sitio no tiene identidad administrada: invitá a la persona a mano en el portal de Entra y después sumala a la lista.', en: 'This site has no managed identity: invite the person by hand in the Entra portal, then add them to the list.' },
+  'proveedor.invitarSinPermiso': { es: 'Falta el permiso de invitar. Lo da, una vez, un administrador del directorio de la organización (inquilino {tenant}) con el instalador, para la identidad del sitio ({oid}). Si lo acabás de dar, reiniciá el sitio.', en: 'The invite permission is missing. A directory administrator of the organization (tenant {tenant}) grants it once with the installer, for the site\'s identity ({oid}). If you just granted it, restart the site.' },
+  'proveedor.invitarSinToken': { es: 'no se pudo pedir el token de la identidad del sitio ({detalle})', en: 'could not get the site identity\'s token ({detalle})' },
+  'proveedor.invitarDominioPropio': { es: 'Esa persona necesita una cuenta en el Microsoft 365 de tu organización; pedísela a quien lo administra.', en: 'That person needs an account in your organization\'s Microsoft 365; ask whoever manages it.' },
+  'proveedor.invitarCodigoPorCorreo': { es: 'Ese correo no es una cuenta de Microsoft: la persona acepta con un código de un solo uso que Microsoft le manda al correo. Esa opción {estado} en tu directorio; hasta que se prenda, no va a poder aceptar. Se prende en el centro de administración de Entra → External Identities → Todos los proveedores de identidad → Código de acceso de un solo uso por correo.', en: 'That email is not a Microsoft account: the person accepts with a one-time passcode Microsoft emails to them. That option {estado} in your directory; until it is on, they will not be able to accept. Turn it on in the Entra admin center → External Identities → All identity providers → Email one-time passcode.' },
+  'proveedor.invitarCodigoApagado': { es: 'está apagada', en: 'is off' },
+  'proveedor.invitarCodigoSinDato': { es: 'no se sabe si está prendida', en: 'may not be on' },
+  'proveedor.invitarCerradas': { es: 'las invitaciones están cerradas en el directorio (Microsoft: {detalle})', en: 'invitations are closed in the directory (Microsoft: {detalle})' },
+  'proveedor.invitarSinPermisoGraph': { es: 'Microsoft no dejó invitar: falta el permiso o está restringido ({detalle})', en: 'Microsoft did not allow the invitation: the permission is missing or restricted ({detalle})' },
+  'proveedor.invitarGraph': { es: 'Microsoft contestó {status} ({detalle})', en: 'Microsoft answered {status} ({detalle})' },
+  'proveedor.invitarSinRed': { es: 'Microsoft no respondió ({detalle})', en: 'Microsoft did not respond ({detalle})' },
 };
 
-module.exports = { problemasDeConfig, opcionesDe, describir, crear, inquilinoDe, variables, PERSONALES, TEXTOS };
+module.exports = { problemasDeConfig, opcionesDe, describir, crear, inquilinoDe, invitador, rolesDelToken, cuerpoDeLaInvitacion, motivoDeGraph, variables, PERSONALES, GRAPH_APP, TEXTOS };

@@ -77,7 +77,7 @@ no la **máquina compartida**. Las reglas de `test-execution-discipline.md` apli
 
 1. **Full suite en UN worktree a la vez** — el cap `maxWorkers: '50%'` es por proceso;
    dos procesos vitest concurrentes = 100% de cores = el swap thrash documentado.
-2. **El 2do pipeline arranca con `TYCON_5B_EARLY=0`** (regla ya existente del step-04
+2. **El 2do pipeline arranca con `TYCON_5B_EARLY=0`** (regla ya existente de `step-06-run-tests.md`
    §Riesgo multi-sesión — el cap de subagentes es por máquina, no por pipeline).
 3. **Gates runtime NO simultáneos**: DevHost/E2E usan puertos fijos (`:5001`); dos
    worktrees no pueden levantar la app a la vez sin override de puerto.
@@ -99,8 +99,8 @@ scripts/tools/tycon-worktree.sh merge-tree            # crea/reusa <parent>/<Rep
 
 Persistente **a propósito**: conserva `node_modules/`, `bin/`, `obj/` entre merges, así el
 gate de build+tests del `/tycon-merge-to-main` no paga un install completo cada vez. El
-skill lo ofrece como opción cuando el working tree del dev está sucio (opción (c) del
-Step 0) y en ese modo **rebindea `repo_path` al worktree**: tu checkout se queda en `dev`,
+skill lo ofrece como opción cuando el working tree del dev está sucio (opción (c) de su
+primer paso) y en ese modo **rebindea `repo_path` al worktree**: tu checkout se queda en `dev`,
 intacto, mientras el merge y su gate corren al lado.
 
 Restricción de git: si tu working tree principal **ya está** en `<target>`, el worktree no
@@ -114,7 +114,7 @@ puede checkoutear esa branch → usar el modo normal.
   auto-removido si no cambió nada.
 - Tool `Workflow`: `agent(prompt, { isolation: 'worktree' })` — **caro** (~200-500ms de
   setup + disco por agente): usarlo SOLO cuando ≥2 agentes **mutan archivos** en paralelo
-  (migraciones masivas, codemods por lote). No aplica al Step 5/5b del pipeline: los
+  (migraciones masivas, codemods por lote). No aplica a los revisores ni al pase adversarial del pipeline: los
   hunters compilan y corren probes pero no editan el repo.
 
 ---

@@ -3,15 +3,16 @@
   "name": "clockify",
   "label": "Clockify",
   "kind": "timeTracking",
+  "offer": {"does": "registra tus horas en Clockify: propone abrir y cerrar el timer según lo que pedís en cada sesión", "needs": "una cuenta de Clockify y su servidor MCP registrado en Claude Code"},
   "onWork": "scripts/on-work.js",
   "mcp": { "server": "clockify", "machine": true },
   "hooks": [
-    { "event": "UserPromptSubmit", "matcher": "", "script": "scripts/on-prompt.js", "platforms": { "windows": true }, "steps": ["start"], "effect": "warns", "label": "reloj de horas: detecta el arranque y el fin de un trabajo", "tools": ["claude", "codex"] },
-    { "event": "PostToolUse", "matcher": "", "script": "scripts/touch-activity.js", "async": true, "platforms": { "windows": true }, "steps": ["all"], "effect": "records", "label": "reloj de horas: anota la última actividad (de fondo)", "tools": ["claude", "codex"] },
+    { "event": "UserPromptSubmit", "matcher": "", "script": "scripts/on-prompt.js", "platforms": { "windows": true }, "steps": ["start"], "effect": "warns", "label": "reloj de horas: detecta el arranque y el fin de un trabajo", "tools": ["claude", "codex"], "control": {"es": "Avisa de un registro de horas olvidado, o de que falta abrir uno al empezar.", "en": "Warns about a forgotten open time entry, or when one should be opened as work starts."}, "install": {"does": "Detecta en tu pedido que empieza o termina un trabajo y propone abrir o cerrar el timer de Clockify.", "blocks": "no", "switch": "TYCON_TIME_TRACKING=none", "network": null, "stores": "~/.claude/clocki/", "front_page": false, "profiles": ["minimal", "full"], "title": "Propone abrir o cerrar el timer de Clockify", "group": "time", "default": "on", "site_section": "integraciones", "en": {"title": "Offers to start or stop the Clockify timer", "does": "Detects from your prompt that work is starting or ending and offers to start or stop the Clockify timer."}} },
+    { "event": "PostToolUse", "matcher": "", "script": "scripts/touch-activity.js", "async": true, "platforms": { "windows": true }, "steps": ["all"], "effect": "records", "label": "reloj de horas: anota la última actividad (de fondo)", "tools": ["claude", "codex"], "control": {"es": "Anota que sigue habiendo actividad, para que el registro de horas no se cierre por inactividad.", "en": "Records ongoing activity so the time entry is not closed for inactivity."}, "install": {"does": "Anota la última actividad de la sesión, para cerrar el timer de Clockify cuando queda inactivo.", "blocks": "no", "switch": "TYCON_TIME_TRACKING=none", "network": null, "stores": "~/.claude/clocki/", "front_page": false, "profiles": ["minimal", "full"], "title": "Cierra el timer de Clockify cuando queda inactivo", "group": "time", "default": "on", "site_section": "integraciones", "en": {"title": "Stops the Clockify timer when it goes idle", "does": "Logs the session's last activity, so the Clockify timer can be stopped when it goes idle."}} },
     { "event": "SessionStart", "matcher": "", "script": "scripts/sweep.js", "platforms": { "windows": true }, "steps": ["all"], "effect": "records", "label": "reloj de horas: cierra lo que quedó sin actividad", "tools": ["codex"] }
   ],
   "dispatch": [
-    { "on": "post-edit", "name": "clocki-enforce", "script": "scripts/clocki-enforce.js", "steps": ["all"], "effect": "warns" }
+    { "on": "post-edit", "name": "clocki-enforce", "script": "scripts/clocki-enforce.js", "steps": ["all"], "effect": "warns", "control": {"es": "Avisa si estás editando archivos sin un registro de horas abierto.", "en": "Warns when you edit files with no time entry running."} }
   ],
   "skills": ["skills/clocki"],
   "settings": []

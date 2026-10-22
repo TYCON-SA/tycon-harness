@@ -78,7 +78,7 @@ O via env var: `TYCON_PIPELINE_COST_TIER=lean`.
 cableado" desde 2026-05-27 costó ~7 spawns Opus + 7 spawns lean evitables en un solo run:
 
 1. **`reloop_model_hints` mandatorios**: TODA invocación de `pipeline.js advisors`/`smart-reloop`
-   con `--iter N>1` emite hints `deep → sonnet`, y el step-05/07b instruyen al orquestador a
+   con `--iter N>1` emite hints `deep → sonnet`, y el paso «Revisores» (en todas sus vueltas) instruye al orquestador a
    **pasarlos como `model:` al `Agent()`** (única excepción: el delta toca specs).
 2. **MECH-2 — descuento automático**: `advisors`/`smart-reloop` corren mech-check inline y
    descuentan del set/`expected[]` a `deferral-tracker` y `ac-coverage` — **solo en re-loops
@@ -119,7 +119,7 @@ corre una story pesada en `medium` y paga el re-loop completo del Step 5.
 mecánicamente `risk` (LOW/NORMAL vía risk-class) + `heavy` (risk NORMAL + ≥2 de 6 señales pesadas:
 superficie >12 archivos, ≥10 ACs, código nuevo amplio, multi-tanda, migración+código, scope
 firmado). El orquestador mapea ese MISMO output a un effort sugerido y lo anuncia en la misma
-línea advisory del model hint (Step 0 preflight) — con regla anti-ruido: en banda NORMAL común
+línea advisory del model hint (paso «Arranque», preflight) — con regla anti-ruido: en banda NORMAL común
 el effort sugerido (`high`) se CALLA — es el default de facto de Claude Code, y la mecánica
 (silencio en NORMAL) es la misma bajo Codex aunque su default de effort difiera (asimetría
 declarada); en LOW/heavy se

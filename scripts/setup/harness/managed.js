@@ -331,8 +331,9 @@ const PROFILES = ['minimal', 'full'];
 const EFFECT_BLOCKS = ['no', 'any-repo', 'harness-repos', 'autonomous-only'];
 // cuándo existe la pieza: el vocabulario de scripts/tests/fixtures/harness-managed-pieces.json
 const EFFECT_WHEN = /^(always|shared|single-repo|legacy-place|harness\.js|integration:[a-z]+|time:[a-z0-9-]+|optin:[A-Za-z][A-Za-z_-]*|platform:(windows|darwin)( & (optin:[A-Z_]+|designated-machine))?)$/;
-// las llaves de integración que existen (las de scripts/lib/tycon-config.js): una mal escrita o vieja da rojo, no pasa
-const EFFECT_INTEGRATIONS = ['ado', 'telegram', 'clockify', 'engram', 'codegraph', 'mailbox', 'codex', 'nightly', 'instincts'];
+// las llaves de integración que existen (las de scripts/lib/tycon-config.js): una mal escrita o vieja da rojo, no pasa.
+// La de la herramienta de horas no está: se elige con `integrations.timeTracking` y sus hooks dicen `time:<herramienta>`
+const EFFECT_INTEGRATIONS = ['ado', 'telegram', 'engram', 'codegraph', 'mailbox', 'codex', 'nightly', 'instincts'];
 const textOrNull = (v) => v === null || (typeof v === 'string' && v.trim().length > 0);
 
 /** Las reglas que la lista rompe, cada una nombrando la entrada. Vacío = cumple. Nunca tira. */
@@ -435,16 +436,96 @@ function readIntegrations(tree) {
   try { const doc = JSON.parse(text.replace(/^﻿/, '')); return Array.isArray(doc.integrations) ? doc.integrations : []; } catch (_) { return []; }
 }
 
-/** La lista de efectos del árbol: `{ ok, effects, file, reason }`. Nunca tira. */
+/**
+ * La lista del archivo más las entradas de los hooks de las integraciones (`manifestEntries`, de sus manifiestos):
+ * `{ ok, effects, reason, problems }`. El archivo se valida solo: si no pasa, la lista no sirve. Una entrada de un
+ * manifiesto que no pasa, o cuyo id ya está, se deja afuera y se dice en `problems`: un manifiesto roto nunca frena la
+ * instalación.
+ */
+function mergeEffects(doc, manifestEntries, file = EFFECTS_FILE) {
+  const own = effectProblems(doc);
+  if (own.length) return { ok: false, effects: [], reason: `${file} no pasa su validación: ${own.slice(0, 3).join(' · ')}${own.length > 3 ? ` (y ${own.length - 3} más)` : ''}`, problems: [] };
+  const effects = doc.effects.slice();
+  const problems = [];
+  const seen = new Set(effects.map((e) => `${e.kind}\u0000${e.id || e.id_pattern}`));
+  for (const e of manifestEntries) {
+    const k = `${e.kind}\u0000${e.id}`;
+    const bad = seen.has(k) ? [`${e.id}: está también en ${EFFECTS_FILE.split(path.sep).join('/')}`] : effectProblems({ effects: [e] });
+    if (bad.length) { problems.push(`la entrada de un hook de integración no vale y se deja afuera (${bad.join(' · ')})`); continue; }
+    seen.add(k);
+    effects.push(e);
+  }
+  return { ok: true, effects, reason: null, problems };
+}
+
+/**
+ * Las entradas de los hooks de las integraciones de un árbol, de sus manifiestos: `{ entries, problems }`. Un árbol sin la
+ * biblioteca (una versión anterior) no tiene ninguna; una que está y no carga, o un manifiesto roto, se dice.
+ */
+function manifestEffects(tree) {
+  tree = path.resolve(tree);
+  const lib = path.join(tree, 'scripts', 'lib', 'integrations.js');
+  if (!fs.existsSync(lib)) return { entries: [], problems: [] };
+  try {
+    const INT = require(lib);
+    const listing = INT.listManifests({ dir: path.join(tree, 'integrations') });
+    const entries = typeof INT.effectEntries === 'function' ? listing.manifests.flatMap((m) => INT.effectEntries(m)) : [];
+    return { entries, problems: listing.problems.map((b) => `el manifiesto de la integración ${b.name} está roto (${b.reasons.join('; ')})`) };
+  } catch (e) { return { entries: [], problems: [`no pude cargar scripts/lib/integrations.js (${e.code || e.message})`] }; }
+}
+
+/**
+ * La lista de efectos del árbol: la del archivo y la de los hooks de las integraciones, de sus manifiestos.
+ * `{ ok, effects, file, reason, problems }`; `problems`, lo que no se pudo leer de las integraciones. Nunca tira.
+ */
 function readEffects(tree) {
   const file = path.join(tree || '', EFFECTS_FILE);
   const text = tree ? readText(file) : null;
-  if (text === null) return { ok: false, effects: [], file, reason: `no pude leer ${file}` };
+  if (text === null) return { ok: false, effects: [], file, reason: `no pude leer ${file}`, problems: [] };
   let doc;
-  try { doc = JSON.parse(text.replace(/^﻿/, '')); } catch (e) { return { ok: false, effects: [], file, reason: `${file} es ilegible (${e.message})` }; }
-  const problems = effectProblems(doc);
-  if (problems.length) return { ok: false, effects: [], file, reason: `${file} no pasa su validación: ${problems.slice(0, 3).join(' · ')}${problems.length > 3 ? ` (y ${problems.length - 3} más)` : ''}` };
-  return { ok: true, effects: doc.effects, file, reason: null };
+  try { doc = JSON.parse(text.replace(/^﻿/, '')); } catch (e) { return { ok: false, effects: [], file, reason: `${file} es ilegible (${e.message})`, problems: [] }; }
+  const ints = manifestEffects(tree);
+  const r = mergeEffects(doc, ints.entries, file);
+  return Object.assign(r, { file, problems: ints.problems.concat(r.problems) });
+}
+
+/**
+ * La lista de efectos de una versión del arnés guardada en git (`<commit>`), con los manifiestos de esa versión: la
+ * diferencia con la versión nueva no da por sacados los hooks de las integraciones. Los manifiestos se leen con la
+ * biblioteca de `tree` (la instalada). `{ ok, effects, reason }`. Nunca tira.
+ */
+function effectsAtCommit(dir, commit, { tree, env = process.env } = {}) {
+  const { spawnSync } = require('child_process');
+  const git = (...a) => spawnSync('git', ['-C', dir, ...a], { windowsHide: true, encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const rel = EFFECTS_FILE.split(path.sep).join('/');
+  const r = git('show', `${commit}:${rel}`);
+  if (r.status !== 0) return { ok: false, effects: [], reason: `no pude leer la lista de efectos de la versión nueva (${(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}`})` };
+  let doc;
+  try { doc = JSON.parse(String(r.stdout).replace(/^﻿/, '')); } catch (e) { return { ok: false, effects: [], reason: `la lista de efectos de la versión nueva es ilegible (${e.message})` }; }
+  // los manifiestos de esa versión: `integrations/<nombre>/integration.json` (una carpeta sin manifiesto no es una integración)
+  const ls = git('ls-tree', '-r', '--name-only', `${commit}`, 'integrations/');
+  if (ls.status !== 0) return { ok: false, effects: [], reason: `no pude listar las integraciones de la versión nueva (${(ls.stderr || '').trim().split('\n')[0]})` };
+  const names = String(ls.stdout).split('\n').map((s) => (/^integrations\/([^/]+)\/integration\.json$/.exec(s.trim()) || [])[1]).filter(Boolean);
+  if (!names.length) return mergeEffects(doc, [], 'la lista de efectos de la versión nueva');
+  // sin la biblioteca que arma sus entradas, los hooks de las integraciones no se pueden leer: no se compara a medias
+  let INT;
+  try { INT = require(path.join(path.resolve(tree || dir), 'scripts', 'lib', 'integrations.js')); } catch (e) {
+    return { ok: false, effects: [], reason: `no pude cargar scripts/lib/integrations.js para leer las integraciones de la versión nueva (${e.code || e.message})` };
+  }
+  if (typeof INT.effectEntries !== 'function') return { ok: false, effects: [], reason: 'la biblioteca instalada no sabe leer los textos de los hooks de las integraciones de la versión nueva' };
+  const entries = [];
+  for (const n of names) {
+    const m = git('show', `${commit}:integrations/${n}/integration.json`);
+    if (m.status !== 0) return { ok: false, effects: [], reason: `no pude leer el manifiesto de ${n} de la versión nueva (${(m.stderr || '').trim().split('\n')[0] || `git salió ${m.status}`})` };
+    let man;
+    try { man = JSON.parse(m.stdout); } catch (e) { return { ok: false, effects: [], reason: `el manifiesto de ${n} de la versión nueva es ilegible (${e.message})` }; }
+    if (!isObject(man) || (man.hooks !== undefined && !Array.isArray(man.hooks))) return { ok: false, effects: [], reason: `el manifiesto de ${n} de la versión nueva no es un objeto con su lista de hooks` };
+    // `hooks` es opcional, como en la lectura del disco: sin la clave, ningún hook
+    try { entries.push(...INT.effectEntries(Object.assign({}, man, { dir: n, hooks: man.hooks || [], dispatch: man.dispatch || [] }))); } catch (e) {
+      return { ok: false, effects: [], reason: `el manifiesto de ${n} de la versión nueva no se entiende (${e.message})` };
+    }
+  }
+  return mergeEffects(doc, entries, 'la lista de efectos de la versión nueva');
 }
 
 /** Los hooks de la lista que pueden frenar: denegar una herramienta o no dejar cerrar un turno. */
@@ -687,6 +768,6 @@ function controlState(control, settings, siblings = []) {
 
 module.exports = {
   KINDS, EVENTS, parseReport, hookId, hookNeedle, applierHooks, ps1Hooks, present, merge, missing, unregistered, describe, expectedControls,
-  EFFECTS_FILE, EFFECT_KINDS, EFFECT_BLOCKS, EFFECT_INTEGRATIONS, PROFILES, effectProblems, readEffects, brakes,
+  EFFECTS_FILE, EFFECT_KINDS, EFFECT_BLOCKS, EFFECT_INTEGRATIONS, PROFILES, effectProblems, readEffects, mergeEffects, manifestEffects, effectsAtCommit, brakes,
   integrationProblems, manifestProblems, readIntegrations,
 };

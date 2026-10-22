@@ -10,10 +10,10 @@
 ## Pre-check — Review Follow-ups abiertos de una corrida previa (adopción BMAD 2026-07-02)
 
 Antes de PROCESAR el reporte del validator (o antes de lanzarlo, si no hubo fan-out — con
-fan-out el validator ya está en vuelo desde 0b), chequear si la story tiene review follow-ups de advisors sin resolver de una
-corrida anterior (típico si un pipeline previo murió post-Step 6 con un CRITICAL waived o
+fan-out el validator ya está en vuelo desde el Arranque), chequear si la story tiene review follow-ups de advisors sin resolver de una
+ejecución anterior (típico si un pipeline previo murió después de Hallazgos con un CRITICAL waived o
 WARNINGs abiertos). Es el gancho de detección del ciclo dev↔review-en-el-artefacto que adopta
-`bmad-dev-story` (su Step 3 detecta la sección "Review Follow-ups (AI)" y **prioriza resolverla
+`bmad-dev-story` (su tercer paso detecta la sección "Review Follow-ups (AI)" y **prioriza resolverla
 antes que tasks nuevas**).
 
 ```bash
@@ -29,13 +29,13 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js followups-
 ## Acción
 
 **🔀 Fan-out del arranque (2026-07-30)**: los subagentes de este step se lanzan en background
-**al principio de 0b** (después de emitir el aviso de trabajo y resolver lo que su acción pregunte — ver step-00b
-§Fan-out), y 0b/0c completan inline mientras corren. Este step es entonces el **JOIN**: al llegar la
+**al principio del Arranque** (después de emitir el aviso de trabajo y resolver lo que su acción pregunte — ver `step-01-start.md`
+§Fan-out), y el Arranque completa inline mientras corren. Este step es entonces el **JOIN**: al llegar la
 notificación del validator (y de los revisores de validación de los paquetes, si aplican), se procesan los reportes y las
 decisiones de abajo. La reversión si acá se decide cancelar: cerrar el registro de horas (`work-signal stop`; si la
-integración devuelve una acción, con descripción `[cancelado]`) y devolver el WI de ADO a su estado previo (los side-effects de 0b/0c
-ya corrieron — mismo tratamiento que una cancelación en Step 3). Si por cualquier razón el
-fan-out no ocurrió (0b/0c skippeados, orden secuencial), lanzar los subagentes acá como siempre.
+integración devuelve una acción, con descripción `[cancelado]`) y devolver el WI de ADO a su estado previo (los side-effects del Arranque
+ya corrieron — mismo tratamiento que una cancelación en «Armar el plan»). Si por cualquier razón el
+fan-out no ocurrió (partes del Arranque salteadas, orden secuencial), lanzar los subagentes acá como siempre.
 
 1. Leer las reglas de la organización (el validador no corre comandos: se las pasa el pedido):
    ```bash
@@ -132,7 +132,7 @@ fan-out no ocurrió (0b/0c skippeados, orden secuencial), lanzar los subagentes 
 - **Si hay CRITICAL** (del validador de stories **o** de cualquier revisor de validación de un paquete): pausar. Decir al usuario: "la story tiene {N} issues CRITICAL — típicamente archivos/paths referenciados que no existen (`VAL-C1`), o la sección 'Patrón de referencia verificado' ausente / con anclas que no resuelven / basada en una asunción (`VAL-C8`), o un patrón hermano citado que no está realmente ahí (`XPAT-C1`/`XPAT-C3`). ¿Querés corregir la story antes de seguir o hacer override y proceder?"
   - Si el usuario pide corregir → bloquear el pipeline hasta que actualice la story y re-ejecute.
   - 🔴 **`VAL-C8` / `XPAT-C1` / `XPAT-C3` no se deberían waiver a la ligera**: significan que la story de backend no nace anclada a un patrón hermano verificado — la condición de la que sale un fix inventado. El camino correcto es corregir la story (abrir los archivos hermanos, citar el patrón real). Un override acá debe quedar registrado con justificación explícita del usuario en el pipeline log.
-  - Si el usuario hace override → continuar a Step 2 con nota explícita en el pipeline log.
+  - Si el usuario hace override → continuar a «Armar el plan» con nota explícita en el pipeline log.
 
 - **Si hay `VAL-W17`** (un criterio pide algo que el código ya hace): se trata antes que los demás warnings, porque
   puede volverlos irrelevantes. PAUSAR y mostrarle a la persona, en llano, cada criterio con el `archivo:línea` y lo
@@ -149,10 +149,10 @@ fan-out no ocurrió (0b/0c skippeados, orden secuencial), lanzar los subagentes 
   - **(a) Seguir igual** → anotar `val_w17_acknowledged: <criterios>` en el log del paso y seguir con los demás warnings.
   - **(b) Ajustar** → reescribir los criterios con la persona, guardar la story y re-correr el validador.
   - **(c) Descartar** → `marker.js update-story-status <spec> abandoned`, el motivo en el Change Log de la story
-    («el código ya lo hace: {archivo}:{línea}»), y terminar el pipeline (con la reversión de 0b/0c de arriba).
+    («el código ya lo hace: {archivo}:{línea}»), y terminar el pipeline (con la reversión de las partes del arranque de arriba).
   Con modo autónomo y coordinadora, la pregunta va a quien aprueba (la coordinadora), no se decide sola.
 
-- **Si hay WARNING (sin CRITICAL)**: chequear primero la **whitelist de formato cosmético**: si TODOS los warnings son `VAL-W1` (frontmatter incompleto no-contractual), `VAL-W2` o `VAL-W9` (reglas de formato puro) → el pipeline **AUTO-CONTINÚA** a Step 2 sin pausa, registrando `warnings_acknowledged: <lista de rule IDs>` en el log del step y listándolos en el anuncio al usuario. Si hay CUALQUIER warning fuera de la whitelist → PAUSAR y preguntar al usuario:
+- **Si hay WARNING (sin CRITICAL)**: chequear primero la **whitelist de formato cosmético**: si TODOS los warnings son `VAL-W1` (frontmatter incompleto no-contractual), `VAL-W2` o `VAL-W9` (reglas de formato puro) → el pipeline **AUTO-CONTINÚA** a «Armar el plan» sin pausa, registrando `warnings_acknowledged: <lista de rule IDs>` en el log del step y listándolos en el anuncio al usuario. Si hay CUALQUIER warning fuera de la whitelist → PAUSAR y preguntar al usuario:
   Si lo que se pregunta es una decisión importante (cambia el alcance o el diseño de la story, o adopta o descarta una
   idea: la lista del bloque de estilo), la plantilla lleva su forma: la recomendación primero, el contexto y, por
   opción, lo que gana y lo que cuesta. Si no lo es, van sólo la recomendación y las opciones.
@@ -167,13 +167,13 @@ fan-out no ocurrió (0b/0c skippeados, orden secuencial), lanzar los subagentes 
 
   ¿Cómo procedemos?
   (a) Arreglar los warnings antes de implementar (re-escribir la story al formato canónico) — {gana: … · cuesta: …}
-  (b) Continuar al Step 2 sin arreglar (los warnings quedan registrados en el log del pipeline) — {gana: … · cuesta: …}
+  (b) Continuar a «Armar el plan» sin arreglar (los warnings quedan registrados en el log del pipeline) — {gana: … · cuesta: …}
   (c) Cancelar el pipeline
   ```
 
   Respuestas:
-  - **(a) Arreglar** → arreglar la story (con base en la guía `story-format.md` y los rule IDs `VAL-W*` reportados), guardar el archivo, y re-correr el validator. Si después del fix queda OK → continuar Step 2. Si quedan warnings residuales → volver a preguntar.
-  - **(b) Continuar** → registrar `warnings_acknowledged: true` y la lista de rule IDs en el pipeline log, continuar a Step 2.
+  - **(a) Arreglar** → arreglar la story (con base en la guía `story-format.md` y los rule IDs `VAL-W*` reportados), guardar el archivo, y re-correr el validator. Si después del fix queda OK → continuar a «Armar el plan». Si quedan warnings residuales → volver a preguntar.
+  - **(b) Continuar** → registrar `warnings_acknowledged: true` y la lista de rule IDs en el pipeline log, continuar a «Armar el plan».
   - **(c) Cancelar** → terminar pipeline.
 
 - **Si todo OK**: proceder sin interrupciones.
@@ -190,7 +190,7 @@ fan-out no ocurrió (0b/0c skippeados, orden secuencial), lanzar los subagentes 
 - Flag `warnings_acknowledged: true|false` (opción b en el branch WARNING, o auto-continue por whitelist cosmética — en ese caso con la lista de rule IDs).
 - Flag `story_was_fixed: true|false` (solo si se eligió opción a y el fix se completó in-line).
 
-Pasar al Step 2 solo si `should_continue: true`.
+Pasar a «Armar el plan» solo si `should_continue: true`.
 
 ## Cierre del step
 

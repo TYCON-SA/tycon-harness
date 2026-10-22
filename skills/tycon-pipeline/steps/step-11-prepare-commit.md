@@ -37,7 +37,7 @@ Lo que decide el agente, porque el comando no lo ve o no lo frena:
   NO seguir: avisar «Detecté cambios al código desde la última corrida de revisores. Antes de armar el commit, vuelvo a
   «Revisores» para re-auditar el diff actualizado.» y volver a `step-07-reviewers.md` (iteración N+1). Excepción:
   cambios sólo fuera del diff (`tasks/lessons.md`, `tasks/todo.md`, el Change Log de la spec), documentada en
-  `step-08-precondition-check.md`.
+  la pre-condición de este paso.
 - **Checks con `provenance: manual`**: no bloquean, pero se anuncian en el commit prep como `⚠ check '<name>' no
   verificado mecánicamente (provenance=manual — ver gates.log)`.
 - **Matriz en rojo**: los ACs `SIN CORRER` los corre el agente (no se eximen); los imposibles declarados se le presentan

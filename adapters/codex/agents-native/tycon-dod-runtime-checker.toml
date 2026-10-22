@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-dod-runtime-checker.md
-# source_sha256: a8f44f62577cda70d21664a1c8ec3699cb0d6a849ee12adbcc6757fcd899e509
+# source_sha256: 8b080985b211253c56ed3f4109120f71379112f845a27ad1968f8035e6f9c4de
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-dod-runtime-checker.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-dod-runtime-checker").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
@@ -62,7 +62,7 @@ Ningún otro advisor tiene en su scope verificar estos gates. Resultado: una sto
 **Heurística**:
 
 1. Identificar endpoints/features nuevos:
-   - Backend .NET: grep `endpoints\\.Map(Get|Post|Put|Delete|Patch)\\s*\\(\\s*\"([^\"]+)\"` en files modificados de Step 4 → lista de routes.
+   - Backend .NET: grep `endpoints\\.Map(Get|Post|Put|Delete|Patch)\\s*\\(\\s*\"([^\"]+)\"` en files modificados de «Implementar» → lista de routes.
    - Frontend (React): grep componentes nuevos exportados desde `*.tsx` modificados.
 2. Para cada endpoint/feature, buscar evidencia de smoke check:
    - `.advisors/pipeline-runs/story-{N}-*/smoke-check.md` con output de curl real, response code, body parseable.
@@ -85,7 +85,7 @@ Ningún otro advisor tiene en su scope verificar estos gates. Resultado: una sto
 
 **Branch-aware logic (2026-05-13)**: muchos proyectos TYCON usan flow `dev → /tycon-merge-to-main → main` con triggers configurados SOLO en `main`. En esos casos, el push a `dev` NO dispara CI by-design — flag-ear `CRITICAL` sería false positive. El advisor DEBE:
 
-0. **Repo sin CI** (2026-10-05): si el repo no tiene NINGÚN archivo de CI —ni `azure-pipelines*.yml` (en la raíz o en `pipelines/`), ni `.github/workflows/*.yml`, ni `.gitlab-ci.yml`— no hay corrida que verificar: **WAIVE con nota informativa** (\"DODRT-C2 waived: el repo no tiene CI configurado; la evidencia es la del pipeline local —build y pruebas del paso 4—\"). No es «config no parseable» y NO es CRITICAL: un repo sin CI (típico de quien trabaja sin Azure DevOps ni GitHub Actions) no puede producir esa evidencia.
+0. **Repo sin CI** (2026-10-05): si el repo no tiene NINGÚN archivo de CI —ni `azure-pipelines*.yml` (en la raíz o en `pipelines/`), ni `.github/workflows/*.yml`, ni `.gitlab-ci.yml`— no hay corrida que verificar: **WAIVE con nota informativa** (\"DODRT-C2 waived: el repo no tiene CI configurado; la evidencia es la del pipeline local —build y pruebas de «Implementar» y «Correr las pruebas»—\"). No es «config no parseable» y NO es CRITICAL: un repo sin CI (típico de quien trabaja sin Azure DevOps ni GitHub Actions) no puede producir esa evidencia.
 1. Leer `azure-pipelines.yml` (o `.github/workflows/*.yml`) y extraer `trigger.branches.include`.
 2. Si el branch actual del commit está en la lista → aplicar regla CRITICAL (CI MUST run verde).
 3. Si el branch NO está en la lista → **WAIVE con nota informativa**: \"CI run pendiente hasta merge a main (trigger config: solo branches X). Re-correr advisor post-merge.\"
@@ -175,14 +175,14 @@ Ningún otro advisor tiene en su scope verificar estos gates. Resultado: una sto
 
 #### [DODRT-C5] UI story con E2E diferido — smoke DRIVEN por-AC ausente, parcial o mockeado (2026-07-03)
 
-**Qué detecta**: la story toca frontend UI (componentes `.tsx` nuevos **montados** en la app — feature-wiring positivo) y sus specs E2E están **DIFERIDOS** (`pipelines.X.tests_pending: [E2E-...]` / `tests_pending_runtime:` — todavía sin escribir). No hay gate de specs que correr, pero `step-07c` §7c.3-deferred EXIGE un **smoke DRIVEN de la UI** que asserte **CADA** AC de UI. Esta regla verifica que ese smoke (a) exista, (b) sea real (app viva + datos seedeados, no mocks), y (c) cubra **TODOS** los ACs de UI — no un subconjunto \"representativo\".
+**Qué detecta**: la story toca frontend UI (componentes `.tsx` nuevos **montados** en la app — feature-wiring positivo) y sus specs E2E están **DIFERIDOS** (`pipelines.X.tests_pending: [E2E-...]` / `tests_pending_runtime:` — todavía sin escribir). No hay gate de specs que correr, pero el paso «Probar en vivo», parte 3 (diferido), EXIGE un **smoke DRIVEN de la UI** que asserte **CADA** AC de UI. Esta regla verifica que ese smoke (a) exista, (b) sea real (app viva + datos seedeados, no mocks), y (c) cubra **TODOS** los ACs de UI — no un subconjunto \"representativo\".
 
 **Aplica aunque el `status` siga `in-progress`**: si la UI está cableada en la app, su render se verifica driven en el run que la cablea. El \"commit WIP\" NO exenta.
 
 **Heurística**:
 1. ¿Toca UI? grep componentes `.tsx` nuevos exportados + con callsite de montaje (import + JSX) en el diff. Si no toca UI → no aplica.
 2. ¿E2E diferidos? leer `pipelines.X.tests_pending` → si lista `E2E-*`/`FullUI-*` que NO existen aún como spec en `tests/e2e/` → caso diferido.
-3. Buscar evidencia de smoke driven: `<evidence-dir>/<storyId>-ui-smoke-*.md` con (a) **mapeo AC→assertion→PASS/FAIL**, (b) screenshots, (c) señal de app REAL (URL `dev.html` + datos seedeados; **NO** `page.route()`/`mockResolvedValue` — mismo principio que 7c.2.1).
+3. Buscar evidencia de smoke driven: `<evidence-dir>/<storyId>-ui-smoke-*.md` con (a) **mapeo AC→assertion→PASS/FAIL**, (b) screenshots, (c) señal de app REAL (URL `dev.html` + datos seedeados; **NO** `page.route()`/`mockResolvedValue` — mismo principio que «Probar en vivo», parte 2.1).
 4. Enumerar los ACs de UI de la story (los que describen render/interacción/estado visible). Cross-check: ¿cada uno tiene una assertion **ejecutada** en la evidencia?
 5. Emit CRITICAL si: evidencia ausente (smoke nunca corrido) **O** parcial (algún AC de UI sin assertion) **O** mockeada (no ejerce la app real).
 
@@ -194,19 +194,19 @@ Ningún otro advisor tiene en su scope verificar estos gates. Resultado: una sto
 [DODRT-C5] Story <N.M> pipeline B toca UI (OrderSyncReviewModal + 4 variant bodies + ReviewQueue + ReviewNavButton, montados en index.tsx) con E2E-<N.M>.<k> diferidos (tests_pending, sin escribir). Smoke DRIVEN por-AC parcial:
   Esperado: `.advisors/dod-runtime/<N.M>-ui-smoke-*.md` con Playwright manejando dev.html real + discrepancias seedeadas, aserteando CADA AC de UI (4 modales, permisos por rol, resolver/descartar, validación de la justificación, un caso de borde, badge sube/baja).
   Encontrado: solo 3 de 4 modales aserteados; resolver/descartar/RBAC/validación NO ejercidos driven (solo unit tests + curl).
-  Fix: correr un script Playwright que maneje la app real y asserte los N ACs de UI; capturar evidencia (mapeo AC→assertion + screenshots). \"E2E diferido\" y \"status in-progress\" NO waivean esto (step-07c §7c.3-deferred).
+  Fix: correr un script Playwright que maneje la app real y asserte los N ACs de UI; capturar evidencia (mapeo AC→assertion + screenshots). \"E2E diferido\" y \"status in-progress\" NO waivean esto («Probar en vivo», parte 3, diferido).
   Por qué: declarar \"DoD complete\" con smoke parcial + guía de prueba de todos los casos como si estuvieran verificados es afirmar cobertura que no se ejecutó.
 ```
 
 **Cuándo NO disparar**:
 - La story NO toca UI (sin `.tsx`/`.vue`/`.razor` nuevos montados).
 - `dod_runtime_exempt: true`.
-- Los E2E ya están escritos y corren (ahí aplica DODRT-C4 + el gate real de 7c.3, no C5).
+- Los E2E ya están escritos y corren (ahí aplica DODRT-C4 + el gate real de «Probar en vivo», parte 3, no C5).
 
-#### [DODRT-C6..C8] Gates script-enforced del step-07c — el advisor cross-checkea la evidencia
+#### [DODRT-C6..C8] Gates script-enforced de «Probar en vivo» — el advisor cross-checkea la evidencia
 
 La mecánica de estas 3 reglas vive en scripts del pipeline (`runtime-matrix.js`, `qa-guide.js`,
-invocados por step-07c); este advisor NO las re-ejecuta, pero cuando lo invocan (manual o pre-`done`)
+invocados por «Probar en vivo»); este advisor NO las re-ejecuta, pero cuando lo invocan (manual o pre-`done`)
 **verifica que la evidencia exista y no esté trucha**, y emite el finding con el rule ID si falta:
 
 - **[DODRT-C6] Matriz de verificación runtime por AC** (2026-07-10): `dod` verde prueba que el spec E2E
@@ -296,7 +296,7 @@ mismo flujo, no porque la app la generó. Caso que la motivó (2026-10-15, otro 
 no logró que la pantalla generara unos registros, los insertó él y marcó el caso «aprobado, prueba con navegador».
 
 **Qué NO es**: sembrar las **precondiciones** del AC (el «Given»: el paciente, el pedido de origen, el usuario) y
-después ejercer la acción de la app — eso es lo correcto (§7c.3-deferred pide datos sembrados reales). Tampoco un
+después ejercer la acción de la app — eso es lo correcto («Probar en vivo», parte 3, diferido, pide datos sembrados reales). Tampoco un
 `INSERT` cuando el AC mismo es sobre la base («la tabla acepta un INSERT con Motivo nulo»): ahí escribir es la acción.
 
 **Qué lee**: el registro de humos (`<clave>-smoke-ledger.jsonl`: `cmd`, `pass_if`, `acs`), las salidas guardadas
@@ -422,7 +422,7 @@ block-transition-to-done | proceed-to-done
 ## Cuándo invocar
 
 - **Antes de transicionar `status: review → done`** en el frontmatter (typically post-push, post-CI-run).
-- **Antes del commit-prep (Step 8) de un run que cablea UI nueva** — aunque la story quede `in-progress` y los E2E estén diferidos (DODRT-C5).
+- **Antes de «Preparar el commit» de una ejecución que cablea UI nueva** — aunque la story quede `in-progress` y los E2E estén diferidos (DODRT-C5).
 - Cuando el user pide explícito *\"validá DoD\"* / *\"está realmente done?\"* / *\"podemos marcar done?\"* / *\"lo probaste?\"*.
 
 ## Cuándo NO invocar

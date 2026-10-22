@@ -2,12 +2,11 @@
 /**
  * tycon-pipeline PreToolUse hook (matcher: Edit|Write) — freno de STORY A MANO.
  *
- * DENIEGA la creación de un `.md` que declara identidad de story Mary+GOLD (`story:` en el
- * frontmatter) cuando el archivo NO existe todavía y en la sesión no consta que se haya invocado
- * un skill que crea stories (`tycon-create-story` y familia — la constancia la deja
- * `on-skill-invoke.js`, PostToolUse sobre la tool Skill). Editar una story que ya existe pasa
- * siempre: el pipeline lo hace todo el tiempo. Lógica y porqué: `lib/story-skill-gate.js`; I/O
- * compartido con la puerta de Bash: `lib/story-skill-gate-io.js`.
+ * DENIEGA crear un `.md` que declara identidad de story Mary+GOLD (`story:` en el frontmatter) en un
+ * estado que no sea `draft`, y pasar un borrador a otro estado, cuando en la conversación no consta que el
+ * validador de historias corrió sobre ese archivo después de su última escritura (`lib/validator-record.js`).
+ * Editar una story que ya existe y no está en borrador pasa siempre: el pipeline lo hace todo el tiempo. Lógica
+ * y porqué: `lib/story-skill-gate.js`; I/O compartido con la puerta de Bash: `lib/story-skill-gate-io.js`.
  *
  * Caso que cubre: una story escrita con un heredoc siguiendo story-format.md de memoria; sin este freno
  * sólo la caza quien lee el chat, no el arnés.
@@ -37,11 +36,11 @@ function handle(event, opts = {}) {
   const r = io.evaluate({
     absPath: abs,
     content: typeof content === 'string' ? content : null,
+    edit: event?.tool_name === 'Edit' ? event.tool_input : null,
     sessionId: resolveSessionId(event?.session_id),
     via: event?.tool_name || 'Write',
     event,
     stateDir: opts.stateDir || io.DEFAULT_STATE_DIR,
-    nowMs: opts.nowMs,
   });
   if (r.verdict.action !== 'block') return null;
   return { block: r.message + '\n' };

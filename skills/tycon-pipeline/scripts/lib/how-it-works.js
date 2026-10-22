@@ -140,8 +140,13 @@ function integrationPieces(treeDir) {
     return {
       // el nombre para mostrar de cada herramienta de horas, del campo `label` de su manifiesto
       timeLabels: Object.fromEntries(manifests.filter((m) => m.kind === 'timeTracking').map((m) => [m.name, m.label])),
-      hooks: manifests.flatMap((m) => INT.hookEntries(m, { tool: 'claude' })),
-      dispatch: (mode) => manifests.flatMap((m) => INT.dispatchEntries(m, mode).map((d) => Object.assign(d, { timeTool: timeKinds.has(m.name) }))),
+      // cada hook con qué hace, de su manifiesto (`control`): lo que muestra «Cómo trabaja», sin nombrar la herramienta.
+      // Uno sin `control` muestra su `label` y queda dicho en `problems`: los textos del sitio no traen los de las integraciones
+      hooks: manifests.flatMap((m) => INT.hookEntries(m, { tool: 'claude' }).map((e) => {
+        const h = m.hooks.find((x) => `${INT.INT_PREFIX}${m.name}/${x.script}` === e.spec && x.event === e.event);
+        return Object.assign(e, { control: (h && h.control) || { es: e.label, en: e.label }, controlMissing: !(h && h.control) });
+      })),
+      dispatch: (mode) => manifests.flatMap((m) => INT.dispatchEntries(m, mode).map((d) => Object.assign(d, { timeTool: timeKinds.has(m.name), control: d.control || { es: d.name, en: d.name }, controlMissing: !d.control }))),
       problems: listing.problems.map((b) => ({ spec: `integrations/${b.name}`, message: `el manifiesto está roto (${b.reasons.join('; ')}): sus controles no se muestran` })),
     };
   } catch (e) {
@@ -181,11 +186,13 @@ function readControls(treeDir) {
     if (cadena && !chains[cadena[1]]) problems.push({ spec: h.spec, message: `despacha la cadena «${cadena[1]}», que dispatch.js no tiene` });
     if (cadena && chains[cadena[1]]) {
       for (const c of chains[cadena[1]]) {
-        controls.push({ spec: c.name, script: rel(path.relative(treeDir, c.path)), event: h.event, steps: c.steps, effect: c.effect, integration: c.integration || null, optional: null, viaDispatcher: h.spec, timeTool: Boolean(c.timeTool) });
+        controls.push({ spec: c.name, script: rel(path.relative(treeDir, c.path)), event: h.event, steps: c.steps, effect: c.effect, integration: c.integration || null, optional: null, viaDispatcher: h.spec, timeTool: Boolean(c.timeTool), control: c.control || null });
+        if (c.controlMissing) problems.push({ spec: c.name, message: 'su manifiesto no dice qué hace el control («control», en castellano y en inglés): se muestra su nombre' });
       }
       continue;
     }
-    controls.push({ spec: h.spec, script, event: h.event, steps: h.steps, effect: h.effect, integration: integrationOf(h.when), optional: optionalOf(h), viaDispatcher: null, timeTool: String(h.when || '').startsWith('time:') });
+    controls.push({ spec: h.spec, script, event: h.event, steps: h.steps, effect: h.effect, integration: integrationOf(h.when), optional: optionalOf(h), viaDispatcher: null, timeTool: String(h.when || '').startsWith('time:'), control: h.control || null });
+    if (h.controlMissing) problems.push({ spec: h.spec, message: 'su manifiesto no dice qué hace el control («control», en castellano y en inglés): se muestra su «label»' });
   }
   return { controls, problems, timeLabels: ints.timeLabels };
 }
@@ -425,7 +432,7 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
   // piezas de horas; sin perfil no se sabe, y se ven «según tu organización»
   const toolLabel = org && org.integrationsKnown && typeof org.timeTracking === 'string' ? (timeLabels[org.timeTracking] || null) : null;
   const piezaApagada = (f) => (f.timeTool ? Boolean(org && org.integrationsKnown && !toolLabel) : apagada(f.integration));
-  // el validador de stories del paso 1 sale del mismo cálculo que el pipeline (sin paquetes: sólo el núcleo)
+  // el validador de stories del paso «Validar la historia» sale del mismo cálculo que el pipeline (sin paquetes: sólo el núcleo)
   const validadores = (() => {
     const prev = process.env.TYCON_PACKS_DIR;
     const vacio = fs.mkdtempSync(path.join(os.tmpdir(), 'how-it-works-packs-'));

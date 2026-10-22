@@ -409,7 +409,7 @@ from.
 | Connection | What it does | How to turn it on |
 |---|---|---|
 | `ado` | Azure DevOps: work items for stories, pull request and pipeline (job) checks | `ado.org` in `~/.claude/tycon.json`, or `TYCON_ADO_ORG` |
-| `clockify` | the old key of the time-tracking tool: the tool is picked with `integrations.timeTracking` (see [guides/integrations/](../guides/integrations/)) | `integrations.timeTracking`: `none` or the name of a time-tracking integration, or `TYCON_TIME_TRACKING` |
+| `integrations.<tool>` (the old one) | the old key of the time-tracking tool: the tool is picked with `integrations.timeTracking` (see [guides/integrations/](../guides/integrations/)) | `integrations.timeTracking`: `none` or the name of a time-tracking integration, or `TYCON_TIME_TRACKING` |
 | `engram` | engram persistent memory: sync on commit and a daily check | `integrations.engram: true`, or `TYCON_ENGRAM=1` |
 | `codegraph` | CodeGraph code index for the agents (informative: you install CodeGraph yourself) | `integrations.codegraph: true`, or `TYCON_CODEGRAPH=1` |
 | `mailbox` | uploads the record of each run to your organization's shared run history; the organization has to have it set up (today, an Azure storage account) | `integrations.mailbox: true`, or `TYCON_MAILBOX=1` (its key in `TYCON_MAILBOX_JSON`) |

@@ -296,34 +296,33 @@ retoque, y me trata distinto según cuál sea."*
 La story ya existe: salió de la cadena de SDD de más arriba, con sus criterios de aceptación y su
 tabla de tests. **Eso es lo que hace verificable todo lo que sigue.**
 
-Quince pasos, con vos decidiendo en tres puntos:
+Once pasos y un cierre aparte, con vos decidiendo en tres puntos:
 
 ```
-00  preflight            → ¿sesión fresca? ¿repo limpio? ¿qué esfuerzo pide esta story?
-00b timer                → arranca el reloj
-00c work item            → la tarea pasa a Activa en Azure DevOps
-01  valida la story      → ¿está bien escrita? ¿los ACs son verificables?
-02  el plan              → BMAD planifica la implementación
-03  ⏸ VOS APROBÁS EL PLAN
-04  ejecuta              → con portón de build
-05  revisores en paralelo → el set se computa mecánicamente según qué tocó el diff
-05b pasada adversarial   → un segundo grupo intenta romper lo que el primero aprobó;
-                           la prueba con la que lo rompió entra a la suite como regresión
-06  reporte consolidado
-07  ⏸ VOS APROBÁS LOS HALLAZGOS
-07b re-corre revisores si hubo arreglos
-07c portón de "listo" de verdad → ¿esto ANDA, o sólo compila?
-08  prepara el commit    → no lo ejecuta
-09  cierra el work item
+Arranque               → ¿sesión fresca? ¿repo limpio? ¿qué esfuerzo pide esta story?
+                         arranca el reloj y la tarea pasa a Activa en Azure DevOps
+Validar la historia    → ¿está bien escrita? ¿los ACs son verificables?
+Armar el plan          → BMAD planifica la implementación
+⏸ Aprobar el plan      → VOS APROBÁS EL PLAN
+Implementar            → con portón de build
+Correr las pruebas
+Revisores              → en paralelo; el set se computa mecánicamente según qué tocó el diff
+                         (si hubo arreglos, vuelven a correr: «Revisores, otra vuelta»)
+Pase adversarial       → un segundo grupo intenta romper lo que el primero aprobó;
+                         la prueba con la que lo rompió entra a la suite como regresión
+⏸ Hallazgos            → reporte consolidado; VOS APROBÁS LOS HALLAZGOS
+Probar en vivo         → portón de "listo" de verdad: ¿esto ANDA, o sólo compila?
+Preparar el commit     → no lo ejecuta
+Cierre en ADO          → cierra el work item (aparte, después del merge)
 ```
 
-**Lo que hace distinto al paso 05**: el set de revisores **no lo elige el modelo** — lo computa un
+**Lo que hace distinto al paso «Revisores»**: el set de revisores **no lo elige el modelo** — lo computa un
 script mirando el diff. Si tocaste una migración de base de datos entra el revisor de migraciones;
 si tocaste un canal de tiempo real entra el de tiempo real. Y un hook aparte deja constancia de
 **qué revisor corrió sobre qué story y en qué repo** *(`on-advisor-run.js`)* — que es el rastro que
 después permite contestar *"¿y cómo sabés que corrieron de verdad?"*.
 
-**Lo que hace distinto al paso 07c**: build verde **no alcanza**. Ese portón pide evidencia de que
+**Lo que hace distinto al paso «Probar en vivo»**: build verde **no alcanza**. Ese portón pide evidencia de que
 la cosa anda —un llamado real contra el backend, una matriz por cada criterio de aceptación— y
 verifica **contra qué backend corrió** y si ese commit está en el servidor.
 
@@ -393,7 +392,7 @@ Momento 7.
 
 ---
 
-### Momento 5b · Y las pruebas mismas tienen controles
+### Momento 5 bis · Y las pruebas mismas tienen controles
 
 Es la capa que más cuesta explicar y la que más distingue: **hay controles cuyo objeto de
 verificación es el test.**
@@ -452,7 +451,7 @@ en un listado no es evidencia de que algo no existe.** Un listado vacío o viejo
 
 ### Momento 8 · Cerrás la story — *el que se acuerda de pedir la prueba*
 
-Es el mismo portón que viste en el paso 07c del pipeline, ahora mirado desde el final. No acepta
+Es el mismo portón que viste en el paso «Probar en vivo» del pipeline, ahora mirado desde el final. No acepta
 "build verde". Pide:
 
 - **que ande**: un llamado real contra el backend, con constancia de contra cuál corrió

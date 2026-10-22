@@ -8,8 +8,8 @@ Skill + hooks que abren y cierran entries de tiempo en Clockify cuando trabajás
 
 Cuando invocás `tycon-pipeline` (ej: "implementemos la story-2-3.md"):
 
-1. Step 0 — preflight (branch guard).
-2. **Step 0b — clocki-start automático**:
+1. Arranque — preflight (branch guard).
+2. **Arranque — clocki-start automático**:
    - Lee `title` + `id` del frontmatter de la story.
    - Resuelve project en Clockify auto-matcheando el basename del cwd (ej: cwd `~/SourceCode/Ceibo` → project `Ceibo`). Cachea el resultado.
    - Abre time entry con descripción `Story <N.M> — <título>` (cap a 100 chars).

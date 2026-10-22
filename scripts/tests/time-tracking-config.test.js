@@ -575,3 +575,64 @@ test('Recordatorio_Cierre_CortoConLasReglasClave @story-7.53', () => {
   assert.match(out, /otra tarea/i, 'la transición atómica');
   assert.match(out, /skill clocki/i, out);
 });
+
+test('T68 Install_AsksTimeTool_KeepsExistingChoice @story-7.40 @ac-34', () => {
+  const Q = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'questions.js'));
+  const INT = require(path.join(ROOT, 'scripts', 'lib', 'integrations.js'));
+  const listing = INT.listManifests({ dir: path.join(ROOT, 'integrations') });
+  const choices = Q.timeToolChoices(listing.manifests);
+  const names = choices.map((c) => c.name);
+  assert.ok(names.length >= 2, 'las de horas de los manifiestos');
+  assert.deepStrictEqual(names, listing.manifests.filter((m) => m.kind === 'timeTracking').map((m) => m.name).sort());
+  const [A, B] = names;
+  const none = { value: 'none', origin: 'sin-valor', legacy: false };
+  // casa nueva, guiada y con terminal: se pregunta
+  assert.deepStrictEqual(Q.timeToolPlan({ current: none, choices, option: null, canAsk: true }), { ask: true, write: null, keep: null });
+  // con la elegida por la llave nueva o por la vieja: no se pregunta, se dice y queda
+  for (const cur of [{ value: B, origin: 'maquina', legacy: false }, { value: A, origin: 'maquina', legacy: true }]) {
+    const p = Q.timeToolPlan({ current: cur, choices, option: null, canAsk: true });
+    assert.strictEqual(p.ask, false);
+    assert.strictEqual(p.write, null);
+    assert.ok(p.keep.includes(cur.value), p.keep);
+  }
+  // sin integraciones de horas, con `--defaults`/`--yes` o sin terminal: no se pregunta y queda como está
+  assert.deepStrictEqual(Q.timeToolPlan({ current: none, choices: [], option: null, canAsk: true }), { ask: false, write: null, keep: null });
+  assert.deepStrictEqual(Q.timeToolPlan({ current: none, choices, option: null, canAsk: false }), { ask: false, write: null, keep: null });
+  // por opción: se escribe la elegida (también `none`), salvo que ya sea ésa
+  assert.deepStrictEqual(Q.timeToolPlan({ current: none, choices, option: A, canAsk: false }).write, { value: A, via: '--integrations' });
+  assert.deepStrictEqual(Q.timeToolPlan({ current: { value: A, origin: 'maquina', legacy: true }, choices, option: 'none', canAsk: false }).write, { value: 'none', via: '--integrations' });
+  assert.strictEqual(Q.timeToolPlan({ current: { value: A, origin: 'maquina', legacy: false }, choices, option: A, canAsk: false }).write, null);
+  // la pregunta de las integraciones las ofrece, con lo que dice su manifiesto, y deja elegir una sola
+  for (const c of choices) assert.ok(c.does && c.needs, `${c.name}: qué hace y qué pide`);
+  const answersOf = (list) => { const q = [...list]; return () => (q.length ? { text: q.shift(), eof: false } : { text: '', eof: true }); };
+  const offered = [{ key: 'engram', does: 'x', needs: 'y' }].concat(choices);
+  const said = [];
+  assert.deepStrictEqual(Q.askIntegrations({ offered, read: answersOf(['']), write: (s) => said.push(s), exclusive: names }).names, []);
+  for (const c of choices) assert.ok(said.join('').includes(`  - ${c.name}: ${c.does}`), `la pregunta ofrece ${c.name}`);
+  assert.deepStrictEqual(Q.askIntegrations({ offered, read: answersOf([`engram, ${B.toUpperCase()}`]), write: () => {}, exclusive: names }).names, ['engram', B]);
+  const twice = [];
+  assert.deepStrictEqual(Q.askIntegrations({ offered, read: answersOf([`${A},${B}`, A]), write: (s) => twice.push(s), exclusive: names }).names, [A]);
+  assert.ok(/se elige una/.test(twice.join('')), twice.join(''));
+  assert.strictEqual(Q.askIntegrations({ offered, read: answersOf([`${A},${B}`, 'x', 'y']), write: () => {}, exclusive: names }).names, null);
+  // `--integrations` acepta el nombre de una herramienta de horas, y dos a la vez no
+  const keys = ['engram', 'codegraph'];
+  assert.deepStrictEqual(Q.checkIntegrationsOption(`engram,${A}`, keys, names), { names: ['engram'], time: A });
+  assert.deepStrictEqual(Q.checkIntegrationsOption('none', keys, names), { names: [], time: 'none' });
+  assert.deepStrictEqual(Q.checkIntegrationsOption('engram', keys, names), { names: ['engram'], time: null });
+  assert.ok(Q.checkIntegrationsOption(`${A},${B}`, keys, names).error);
+  assert.ok(/herramienta de horas/.test(Q.checkIntegrationsOption('foo', keys, names).error));
+  // una instalación de hoy que se actualiza (sólo la llave vieja prendida): la elección no cambia
+  const home = casa();
+  machineFile(home, { integrations: { [A]: true } });
+  const cur = TC.timeTracking(TC.cargar({ home, env: env(home) }));
+  assert.strictEqual(cur.value, A);
+  const up = Q.timeToolPlan({ current: cur, choices, option: null, canAsk: true });
+  assert.strictEqual(up.ask, false);
+  assert.strictEqual(up.write, null);
+  // un manifiesto de horas roto no se ofrece
+  const dir = tmp('ttc-ints-');
+  fs.mkdirSync(path.join(dir, 'rota'));
+  fs.writeFileSync(path.join(dir, 'rota', 'integration.json'), JSON.stringify({ name: 'rota', label: 'Rota', kind: 'timeTracking', hooks: 'x' }));
+  const broken = INT.listManifests({ dir });
+  assert.ok(broken.problems.length && !Q.timeToolChoices(broken.manifests).some((c) => c.name === 'rota'));
+});

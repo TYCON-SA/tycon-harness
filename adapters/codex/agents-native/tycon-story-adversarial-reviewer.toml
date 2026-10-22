@@ -1,13 +1,13 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-story-adversarial-reviewer.md
-# source_sha256: 677bb1e85947be399ba166d1cc681c02ec26e61f16393cb34e1e86ade7ee0e76
+# source_sha256: c16fdc733a27da0c96bd9e9e6da17ded607d0cbd49de99874b77bd9ae855f30e
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-story-adversarial-reviewer.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-story-adversarial-reviewer").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
 # ⚠️ ASIMETRÍA DECLARADA — servidor MCP "codegraph" NO se declara acá: La ruta del índice cambia por repo (`codegraph serve --mcp --path <repo>`), y el perfil de advisor es un archivo fijo: no hay dónde poner la ruta. Del lado Claude codegraph ya es opt-in por repo (la mayoría corre sin él) y los fixtures del banco son repos efímeros SIN índice, así que ningún caso lo mide. El advisor cae al escalón siguiente de su cascada de lookup. Revisar en la Etapa F junto con el instalador.
 
 name = "tycon-story-adversarial-reviewer"
-description = "Revisa una story ya validada antes de programar, buscando lo que el validador no ve. Lo lanza el paso 6 de tycon-create-story o el paso 1 del pipeline si la historia no tiene constancia vigente."
+description = "Revisa una story ya validada antes de programar, buscando lo que el validador no ve. Lo lanza tycon-create-story al cerrarla, o «Validar la historia» del pipeline si no tiene constancia vigente."
 model = "gpt-5.6-luna"
 sandbox_mode = "read-only"
 
@@ -96,7 +96,7 @@ renglón para registrar la constancia.
 
 ## Integración
 
-Lo lanza el paso 6 de `tycon-create-story` (después del validador y de VAL-W17) o el paso 1 del pipeline, cuando
+Lo lanza `tycon-create-story` al cerrar la historia (después del validador y de VAL-W17) o «Validar la historia» del pipeline, cuando
 `pipeline.js story-review-gate` dice que corre. El modelo sale de `models.adversarial.story` (valor de hoy: sonnet).
 Quien orquesta corrige lo corregible en la historia con una línea de Change Log por hallazgo, hace una sola pregunta si
 un CRITICAL no se puede corregir sin decidir, y registra el resultado con `pipeline.js story-review-record`.
