@@ -2061,6 +2061,29 @@ function recursosDeAzResource(t) {
   return out;
 }
 
+/** Las palabras de un segmento sin sus redirecciones: el operador suelto se lleva su destino; pegado (`>f`, `2>&1`), sólo él. */
+function sinRedirecciones(t) {
+  const out = [];
+  for (let i = 0; i < t.length; i++) {
+    if (/^\d*(?:>>?|<|&>>?|>&|<&|>\|)$/.test(t[i])) { i++; continue; }
+    if (/^\d*(?:>>?|<|&>>?|>&|<&|>\|)\S/.test(t[i])) continue;
+    out.push(t[i]);
+  }
+  return out;
+}
+
+/**
+ * ¿Las palabras escritas de lo que sigue a un programa variable forman un borrado en Azure? `group`, `lock` o `resource`
+ * seguidos de `delete`; un subcomando que no se lee seguido de `delete` (`$A $B delete`); o `rest` con el método delete.
+ */
+function formaBorrado(resto) {
+  const b = resto.map((x) => (NO_LITERAL.test(x) ? null : desescapar(x).toLowerCase()));
+  if (b.includes('rest') && b.some((x) => x === 'delete' || (x && /^(?:--m[a-z]*|-m)=?delete$/.test(x)))) return true;
+  const k = b.indexOf('delete');
+  if (k < 0) return false;
+  return b.slice(0, k).some((x) => x === null || x === 'group' || x === 'lock' || x === 'resource');
+}
+
 // El contenido de un guion que corre un shell (regla d de textosEscondidos, sin la marca de código): sus palabras son
 // comandos. Un heredoc que no va a un shell ni a un intérprete (el mensaje de `git commit -F -`) no lo es.
 function esGuionDeShell(x, escondidos) {
@@ -2075,7 +2098,11 @@ function esGuionDeShell(x, escondidos) {
  */
 function borradoDeAzure(partes, tokens, PREFIJOS) {
   let visto = null;
-  for (const { texto } of partes) {
+  for (let p = 0; p < partes.length; p++) {
+    const { texto } = partes[p];
+    // el cortador saca `$( … )` de su lugar: lo que sigue a su cierre (`$(command -v az) group delete`) puede llevar
+    // adelante un programa que sale de esa sustitución
+    const trasSustitucion = p > 0 && /^[)`]$/.test(partes[p - 1].sep);
     const t = tokensDeSegmento(texto, tokens, PREFIJOS);
     if (!t.length || SOLO_MUESTRAN.has(basename(t[0]).toLowerCase())) continue;
     // sobre el texto del segmento, no por palabra: dentro de un bloque (`%{Remove-AzResourceGroup …}`) o con el módulo
@@ -2111,11 +2138,17 @@ function borradoDeAzure(partes, tokens, PREFIJOS) {
     if (/^(?:g|n|m)?awk$|^g?sed$/.test(basename(t[0]).toLowerCase()) && nombraBorradoAzure(texto)) {
       return { frena: true, que: 'desde un programa de awk o sed algo que puede ser un grupo, un candado o un servidor' };
     }
-    // el programa sale de una variable (`$A group delete`): si lo que sigue es un borrado, se juzga como `az`
-    let iAz = t.findIndex(esAz);
-    if (iAz < 0 && NO_LITERAL.test(t[0])) iAz = 0;
-    if (iAz < 0) continue;
-    const resto = t.slice(iAz + 1);
+    // lo que va a una redirección (`> "$OUT"`, `2>&1`) no es un argumento del programa
+    const args = sinRedirecciones(t);
+    let iAz = args.findIndex(esAz);
+    // el programa sale de una variable o de una sustitución (`$A`, `"$X"`, `${X}`, `$(…)`): puede ser cualquier programa, y
+    // se juzga como `az` sólo si las palabras escritas forman un borrado (`$A group delete`). Con `az` escrito, lo que no
+    // se lee frena.
+    const programaVariable = iAz < 0 && args.length > 0 && (NO_LITERAL.test(args[0]) || trasSustitucion);
+    if (programaVariable) iAz = NO_LITERAL.test(args[0]) ? 0 : -1;
+    else if (iAz < 0) continue;
+    const resto = args.slice(iAz + 1);
+    if (programaVariable && !formaBorrado(resto)) continue;
     // desescapadas, como las corre el shell: `del\ete` es `delete`
     const bajo = resto.map((x) => desescapar(x).toLowerCase());
     // el subcomando que no se puede leer (sale de una variable o de una sustitución), o el que `xargs` agrega desde la

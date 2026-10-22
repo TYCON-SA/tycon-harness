@@ -17,6 +17,8 @@
 #   T17 — un comando de más de 32 KB con la familia frena; sin ella, pasa
 #   T18 — el lanzador sin intérprete y la caída del freno dan el mismo veredicto en cada miembro de la familia
 #   T19 — la decisión no ejecuta `az` (un `az` impostor primero en el PATH no deja su marca) y cae dentro del reloj
+#   T21 — un programa que sale de una variable o de una sustitución se juzga como `az` sólo si las palabras escritas forman
+#         un borrado; las redirecciones no son argumentos (también un guion temporal que un shell corre)
 #   T26 — la guía dice qué se frena, que el freno no sabe qué contiene un grupo, quién borra y los límites
 #
 # HOME de laboratorio siempre. Con /opt/tycon presente las costuras de prueba no existen y la suite se saltea; en una
@@ -81,7 +83,7 @@ const NOMBRES = {
   T4: 'GroupDelete_NonLiteralOrHidden_Exit2', T5: 'ResourceDelete_NamesSqlServer_CatalogDecides', T6: 'ResourceDelete_AllTypesReadableNotSql_Passes',
   T7: 'ResourceDelete_UnreadableType_Exit2', T8: 'LockDelete_Exit2_OtherLockVerbsPass', T9: 'RestDelete_Exit2_OtherMethodsPass',
   T10: 'PowerShell_AzRemoveCmdlets_Exit2', T11: 'SqlServerAndDbDelete_Production_StillExit2', T12: 'SqlDropStatement_Production_AnyCase_Exit2',
-  T20: 'ReadOnlyAzCommands_Pass',
+  T20: 'ReadOnlyAzCommands_Pass', T21: 'VariableProgram_OnlyWrittenDeleteBlocks_RedirectionsAreNotArgs',
 };
 for (const [t, nombre] of Object.entries(NOMBRES)) {
   const l = porTest.get(t);
@@ -104,6 +106,21 @@ for (const [t, nombre] of Object.entries(NOMBRES)) {
   const r2 = corre(payload(`pwsh -File ${ps1}`));
   if (r2.rc === 2) ok('T10 PowerShell_AzRemoveCmdlets_Exit2 (el guion que corre pwsh)');
   else no(`T10 PowerShell_AzRemoveCmdlets_Exit2: el guion que corre pwsh salió ${r2.rc}, esperaba 2`);
+}
+
+// T21 también: el guion temporal de pruebas que lo destapó (el bash en una variable, la salida a un archivo con nombre
+// armado) pasa; con un borrado de grupo escrito al lado del mismo programa variable, frena
+{
+  mundo('prod');
+  const comun = FIX.rows.find((f) => f.test === 'T21' && f.expect === 'pass').cmd;
+  const conBorrado = FIX.rows.find((f) => f.test === 'T21' && f.expect === 'block').cmd;
+  const guion = path.join(TMP, 'pruebas.sh');
+  fs.writeFileSync(guion, `B=/bin/bash\nS=/tmp\n${comun}\n`);
+  const a = corre(payload(`bash ${guion}`)).rc;
+  fs.writeFileSync(guion, `${comun}\n${conBorrado}\n`);
+  const b = corre(payload(`bash ${guion}`)).rc;
+  if (a === 0 && b === 2) ok('T21 VariableProgram_OnlyWrittenDeleteBlocks_RedirectionsAreNotArgs (el guion temporal que corre bash)');
+  else no(`T21 VariableProgram_OnlyWrittenDeleteBlocks_RedirectionsAreNotArgs: el guion común salió ${a} (esperaba 0) y con el borrado ${b} (esperaba 2)`);
 }
 
 // ── T13: el mensaje ──────────────────────────────────────────────────────────────────────────────────────────────
