@@ -85,8 +85,10 @@ function harnessInterpreter(env = process.env) {
 //     la llave lo sacaría de Codex a quien tiene CodeGraph instalado).
 //   · sin el aplicador o la lista al lado (este archivo copiado suelto a un laboratorio): todo el fragmento.
 //     Con la configuración rota o ilegible, también todo, y se dice: el aplicador tampoco toca nada en ese caso.
-//   · los hooks de una integración de horas no están en el fragmento: los declara su manifiesto (integrations/<nombre>/,
-//     los de `tools` con codex) y activeFragment los suma con `${TCG}/integrations/…`; van sólo los de la elegida.
+//   · los hooks de una integración no están en el fragmento: los declara su manifiesto (integrations/<nombre>/, los de
+//     `tools` con codex) y activeFragment los suma con `${TCG}/integrations/…`. De una de horas van sólo los de la
+//     elegida; de una de prender y apagar, los suyos si está prendida y los `always` siempre. Sin poder decidir, los
+//     de prender y apagar van todos y los de horas ninguno.
 const NOT_IN_HOOKS_LIST = Object.freeze({});
 
 /** El `spec` de la lista que nombra el comando de un hook del fragmento (`@tcg:<guion>`, `@int:…` o `<skill>/…`), o null. */
@@ -101,11 +103,12 @@ function specOf(command) {
 }
 
 /**
- * El fragmento con los hooks de Codex de las integraciones de horas (de sus manifiestos) agregados: cada uno en el
- * primer grupo sin matcher de su evento (o uno nuevo), con `node ${TCG}/integrations/<nombre>/<guion>`. Devuelve también
- * sus registros, para decidir cuáles van. Sin la biblioteca de integraciones, el fragmento tal cual.
+ * El fragmento con los hooks de Codex de las integraciones (de sus manifiestos) agregados: cada uno en el primer grupo
+ * sin matcher de su evento (o uno nuevo), con `node ${TCG}/integrations/<nombre>/<guion>`. `only` elige cuáles de sus
+ * registros se suman. Devuelve también esos registros, para decidir cuáles van. Sin la biblioteca de integraciones, el
+ * fragmento tal cual.
  */
-function withIntegrationHooks(raw, tcg) {
+function withIntegrationHooks(raw, tcg, only = () => true) {
   let INT;
   const lib = path.join(tcg, 'scripts', 'lib', 'integrations.js');
   // sin la biblioteca en el árbol, no hay integraciones; con ella y sin poder cargarla, se dice
@@ -115,7 +118,7 @@ function withIntegrationHooks(raw, tcg) {
   const all = INT.listManifests({ dir });
   // un manifiesto roto no suma hooks, y se dice: la integración elegida quedaría sin los suyos
   const broken = all.problems.map((b) => `la integración «${b.name}» tiene el manifiesto roto (${b.reasons.join('; ')}): sus hooks de Codex no se registran`);
-  for (const m of all.manifests) entries.push(...INT.hookEntries(m, { tool: 'codex' }));
+  for (const m of all.manifests) entries.push(...INT.hookEntries(m, { tool: 'codex' }).filter(only));
   if (!entries.length) return { raw, entries, broken };
   const hooks = JSON.parse(JSON.stringify(raw.hooks || {}));
   for (const e of entries) {
@@ -145,8 +148,9 @@ function activeFragment(raw0, { env = process.env, tcg = TCG } = {}) {
   const rotos = broken.length ? broken.join(' · ') : null;
   const juntar = (...a) => a.filter(Boolean).join(' · ') || null;
   // sin poder decidir, los de una integración de horas NO van (registrarlos con la herramienta sin elegir haría
-  // correr sus avisos en cada sesión); lo demás del fragmento, como siempre
-  const asIs = (aviso) => ({ fragment: raw0, dropped: [], filtered: false, aviso: juntar(aviso, rotos) });
+  // correr sus avisos en cada sesión); los de una de prender y apagar van sin filtrar, como el resto del fragmento
+  const sinHoras = withIntegrationHooks(raw0, tcg, (e) => !String(e.when).startsWith('time:')).raw;
+  const asIs = (aviso) => ({ fragment: sinHoras, dropped: [], filtered: false, aviso: juntar(aviso, rotos) });
   const listFile = path.join(tcg, 'scripts', 'setup', 'hooks-list.json');
   let ah;
   try { ah = require(path.join(tcg, 'scripts', 'setup', 'apply-hooks.js')); } catch (e) {

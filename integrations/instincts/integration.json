@@ -1,0 +1,13 @@
+{
+  "__doc": "Los instintos: la grabadora saneada de lo que hace cada sesión, para encontrar lo que el equipo repite (guides/integrations/instinct-mining.md). Es de prender y apagar: la prende la llave integrations.instincts del perfil del equipo, o TYCON_INSTINCTS en una máquina. El instalador registra la grabadora sólo prendida; el aviso de arranque corre siempre, para decir también lo que pasa apagada. Lo que se procesa de noche (scripts/instincts/) y el comando /tycon-instincts no son hooks y viven en su lugar de siempre.",
+  "name": "instincts",
+  "label": "Instintos",
+  "kind": "toggle",
+  "hooks": [
+    { "event": "PostToolUse", "matcher": "", "script": "scripts/instinct-observe.js", "async": true, "platforms": { "windows": true }, "steps": ["all"], "effect": "records", "label": "Grabadora de instintos (de fondo): una línea saneada por herramienta en ~/.claude/tycon-observations/, con el repo y la organización del remoto, para encontrar lo que el equipo repite. La prende el perfil del equipo (integrations.instincts); off: TYCON_INSTINCTS=0." },
+    { "event": "SessionStart", "matcher": "", "script": "scripts/instincts-notice.js", "always": true, "platforms": { "windows": true }, "steps": ["0"], "effect": "warns", "label": "Aviso de instintos, una vez por máquina: con la grabadora prendida dice qué se graba, adónde sube, quién lo lee y cómo bajarse, y deja su sello; con la grabadora apagada dice una vez que TYCON_INSTINCT_MINING y TYCON_INSTINCT_OBSERVER ya no prenden nada. Corre siempre para poder decir lo segundo." }
+  ],
+  "dispatch": [],
+  "skills": [],
+  "settings": []
+}

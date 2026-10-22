@@ -99,6 +99,15 @@ function validateList(list) {
   for (const k of ['superseded', 'legacy_fragments']) {
     if (list[k] !== undefined && !(Array.isArray(list[k]) && list[k].every((x) => typeof x === 'string' && x))) out.push(`\`${k}\` tiene que ser un arreglo de textos`);
   }
+  // `moved_to`: a qué hook pasó cada ruta reemplazada que se mudó (para volver a registrarlo si su ruta vieja ya no existe)
+  if (list.moved_to !== undefined) {
+    const mt = list.moved_to;
+    if (!mt || typeof mt !== 'object' || Array.isArray(mt)) out.push('`moved_to` tiene que ser un objeto');
+    else for (const [from, to] of Object.entries(mt)) {
+      if (!(list.superseded || []).includes(from)) out.push(`moved_to: «${from}» no está en superseded`);
+      if (typeof to !== 'string' || !(to.startsWith('@tcg:') || intSpec(to))) out.push(`moved_to: «${from}» lleva a un spec @tcg: o @int:`);
+    }
+  }
   const seen = new Set();
   (Array.isArray(list.hooks) ? list.hooks : []).forEach((h, i) => {
     const who = h && typeof h.spec === 'string' ? h.spec : `registro ${i}`;
@@ -149,15 +158,22 @@ function loadList(file, { integrationsDir = INTEGRATIONS_DIR } = {}) {
   const INT = INTmod();
   const hooks = list.hooks.slice();
   const warnings = [];
-  if (INT && INT.error && integrationsDir && fs.existsSync(integrationsDir)) warnings.push(`no pude cargar integrations.js (${INT.error}): los hooks de las integraciones no se registran`);
-  else if (INT && integrationsDir && fs.existsSync(integrationsDir)) {
+  // los guiones de una integración cuyos hooks no se pudieron leer: su ruta de antes de tener manifiesto (en
+  // `superseded`) no se saca, porque no hay ruta nueva que la reemplace
+  const unread = new Set();
+  const scriptsOf = (dir) => { try { return fs.readdirSync(dir, { recursive: true }).map((f) => path.basename(String(f))); } catch (_) { return []; } };
+  if (INT && INT.error && integrationsDir && fs.existsSync(integrationsDir)) {
+    warnings.push(`no pude cargar integrations.js (${INT.error}): los hooks de las integraciones no se registran`);
+    for (const n of scriptsOf(integrationsDir)) unread.add(n);
+  } else if (INT && integrationsDir && fs.existsSync(integrationsDir)) {
     const { manifests, problems: broken } = INT.listManifests({ dir: integrationsDir });
     for (const b of broken) warnings.push(`la integración «${b.name}» tiene el manifiesto roto (${b.reasons.join('; ')}): sus hooks no se registran`);
+    for (const b of broken) for (const n of scriptsOf(path.join(integrationsDir, b.name))) unread.add(n);
     for (const m of manifests) hooks.push(...INT.hookEntries(m, { tool: 'claude' }));
     const extra = validateList({ hooks });
     if (extra.length) throw new ApplyError(`${integrationsDir}: los hooks de las integraciones no pasan la validación de la lista — no escribo nada:\n  · ${extra.join('\n  · ')}`);
   }
-  return { hooks, superseded: list.superseded || [], legacy: list.legacy_fragments || [], warnings };
+  return { hooks, superseded: list.superseded || [], movedTo: list.moved_to || {}, legacy: list.legacy_fragments || [], warnings, unreadIntegrationScripts: unread };
 }
 
 /** Los ids `<EVENTO>:<spec>` que la lista de efectos marca `minimal`. null si no se pudo leer. */
@@ -259,6 +275,9 @@ function decide(list, ctx) {
         if (on) active.push(h);
       } else {
         if (integOk) addKnown(h.spec);
+        // el de una integración de prender y apagar, sin saber si está prendida, queda como está: su ruta de antes de
+        // tener manifiesto tampoco se saca (la reemplazada, por su nombre de guion)
+        else if (intSpec(h.spec)) leave.add(h.spec);
         if (integOn(arg)) active.push(h);
       }
       continue;
@@ -347,6 +366,16 @@ function fileId(p) {
   return k;
 }
 function quotedPaths(cmd) { return [...String(cmd).matchAll(QUOTED)].map((m) => m[1]); }
+/**
+ * El archivo que el comando nombra con la ruta reemplazada `rel`: `'gone'` si es una ruta absoluta que falta en el
+ * disco, `'there'` si está, `'unknown'` si el comando no lo nombra con una ruta absoluta (`~`, `$HOME`, una variable).
+ */
+function oldFileState(cmd, rel) {
+  const words = quotedPaths(cmd).concat(String(cmd).split(/\s+/).map((w) => w.replace(/^["']|["']$/g, '')));
+  const hit = words.find((w) => fwd(w).endsWith(`/${rel}`) && (path.isAbsolute(w) || /^[A-Za-z]:[\\/]/.test(w)));
+  if (!hit) return 'unknown';
+  return fs.existsSync(hit) ? 'there' : 'gone';
+}
 /** posix: ¿el comando nombra ese archivo? Tal cual, o por otra ruta absoluta (entre comillas) al mismo archivo. */
 function namesFile(cmd, abs) {
   if (String(cmd).includes(abs)) return true;
@@ -462,11 +491,13 @@ function applyToSettings(settings, o) {
   // con qué se escribe un hook `.js`: lo decide harness-node.js#interpreter mirando el disco; quien no
   // lo pasa (una prueba, un llamador viejo) queda con `node`
   const jsPrefix = (o.interp && o.interp.prefix) || 'node';
-  const active = o.decision.active;
+  // se copia: un hook que queda como está pero cuyo archivo de antes ya no existe vuelve en su ruta nueva (abajo)
+  const active = o.decision.active.slice();
   const activeSpecs = new Set(active.map((h) => h.spec));
   const inactive = o.decision.known.filter((s) => !activeSpecs.has(s));
   const cmdOf = (hk) => (hk && typeof hk === 'object' && typeof hk.command === 'string' ? hk.command : '');
   const keptByLeave = new Set([...(o.decision.leave || [])].map(intSpec).filter(Boolean).map((i) => path.posix.basename(i.rel)));
+  const revive = new Set();   // `${evento}\0${guion}` de una ruta vieja que salió por estar muerta
 
   // 1 · sacar lo reemplazado, lo apagado y lo viejo
   for (const ev of Object.keys(hooks)) {
@@ -482,7 +513,18 @@ function applyToSettings(settings, o) {
         const sup = o.list.superseded.find((s) => (windows ? invokesRepoPath(cmd, s) : cmd.includes(s) && JS_RUNNER.test(cmd)));
         // la ruta vieja de un hook de integración que queda como está (no se sabe qué herramienta eligió) no se saca:
         // sacarla dejaría a la herramienta sin su hook hasta que la configuración se lea
-        if (sup && !keptByLeave.has(path.posix.basename(sup))) { what = sup; why = 'superseded by H10 dispatcher'; }
+        // …salvo que su archivo ya no exista: un hook que apunta a un archivo movido sólo da error; sale, y si se sabe su
+        // ruta nueva vuelve ahí (estaba registrado, así que quedar como estaba es seguir corriendo)
+        const supName = sup && path.posix.basename(sup);
+        const guarded = sup && (keptByLeave.has(supName) || (o.list.unreadIntegrationScripts && o.list.unreadIntegrationScripts.has(supName)));
+        const state = guarded ? oldFileState(cmd, sup) : null;
+        if (sup && (!guarded || state === 'gone')) {
+          what = sup; why = guarded ? 'superseded: su archivo ya no está' : 'superseded by H10 dispatcher';
+          if (guarded) revive.add(`${ev}\0${sup}`);
+        } else if (state === 'unknown') {
+          // se conserva, y se dice: sin una ruta absoluta no se puede mirar si el archivo todavía existe
+          r.missing.push({ event: ev, matcher: entry.matcher || '', relpath: `${sup} (ruta vieja que no se puede comprobar; si su archivo se movió, corregila a mano)`, label: '' });
+        }
         if (!what) {
           const off = inactive.find((s) => (windows ? invokesRepoPath(cmd, repoPathOf(s)) : namesFile(cmd, resolve(s))));
           if (off) { what = off; why = o.decision.profileOff.has(off) ? 'fuera del perfil minimal' : 'disabled by env var'; }
@@ -496,6 +538,16 @@ function applyToSettings(settings, o) {
       if (kept.length) { entry.hooks = kept; next.push(entry); }
     }
     if (next.length) hooks[ev] = next; else delete hooks[ev];
+  }
+
+  // 1b · lo que quedaba como está y salió por apuntar a un archivo que ya no existe vuelve en su ruta nueva: la que
+  // declara `moved_to` de la lista (sin ella no se adivina por el nombre: dos integraciones pueden tener el mismo guion)
+  for (const key of revive) {
+    const [ev, sup] = key.split('\0');
+    const spec = (o.list.movedTo || {})[sup];
+    if (!spec || activeSpecs.has(spec) || !(o.decision.leave || new Set()).has(spec)) continue;
+    const h = o.list.hooks.find((x) => x.spec === spec && x.event === ev);
+    if (h) { active.push(h); activeSpecs.add(spec); }
   }
 
   // 2 · el orden canónico y los matchers con que la lista registra cada guion

@@ -17,7 +17,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { editEventsFrom } = require('../lib/hook-io.js');
+const { editEventsFrom } = require('../../../scripts/lib/hook-io.js');
 
 const MAX_SUMMARY = 500;
 const MAX_ERRORS_LOG = 100 * 1024;
@@ -204,7 +204,7 @@ function run(input, ctx) {
 function contextFromConfig(env, home) {
   const ctx = { home, reposRoot: null, obsDir: env.TYCON_INSTINCT_OBS_DIR || path.join(home, '.claude', 'tycon-observations'), enabled: false };
   try {
-    const cfg = require('../lib/tycon-config.js');
+    const cfg = require('../../../scripts/lib/tycon-config.js');
     const r = cfg.integracionParaHook('instincts', { env, home });
     ctx.enabled = !!(r && r.ok && r.prendida);
     if (r && r.ok === false) errorLogger(ctx.obsDir, new Date())(`la configuración está rota: no graba (${r.aviso || 'sin detalle'})`);

@@ -974,7 +974,7 @@ y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo 
 
 **Qué es:** La guía `guides/integrations/instinct-mining.md` del grabador silencioso que propone reglas atómicas (instintos).
 
-**Por qué existe:** Un hook (`scripts/hooks/instinct-observe.js`, de fondo, prendido por el perfil del equipo) graba llamadas de herramientas saneadas con el repo y la organización del remoto, y `scripts/hooks/instincts-notice.js` avisa una vez por máquina qué se graba; un observador propone instintos con el modelo y una segunda pasada descarta lo que repite algo ya decidido. El dev aprueba con `/tycon-instincts`. `scripts/instincts/instinct-dirs.js` dice dónde viven las propuestas.
+**Por qué existe:** La integración `integrations/instincts/` (la prende el perfil del equipo) graba de fondo llamadas de herramientas saneadas con el repo y la organización del remoto, y avisa una vez por máquina qué se graba; un observador propone instintos con el modelo y una segunda pasada descarta lo que repite algo ya decidido. El dev aprueba con `/tycon-instincts`. `scripts/instincts/instinct-dirs.js` dice dónde viven las propuestas.
 
 **Quién la usa:** Los hooks de grabación y arranque, y el dev que revisa.
 

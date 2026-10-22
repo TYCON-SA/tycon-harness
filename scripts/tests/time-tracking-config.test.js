@@ -187,7 +187,8 @@ test('MoveHome_ProfileFold_KeepsTimeTrackingInProfile @story-7.40 @ac-5', () => 
 const AH = require(path.join(ROOT, 'scripts', 'setup', 'apply-hooks.js'));
 const LIST = path.join(ROOT, 'scripts', 'setup', 'hooks-list.json');
 const INTS = path.join(ROOT, 'integrations');
-const intSpecs = (hooks) => hooks.map((h) => h.spec).filter((s) => s.startsWith('@int:')).sort();
+// los hooks de las integraciones de horas (las de prender y apagar, como los instintos, se miden en integrations-toggle)
+const intSpecs = (hooks) => hooks.map((h) => h.spec).filter((s) => /^@int:(clockify|solidtime)\//.test(s)).sort();
 const decideFor = (list, timeTracking) => AH.decide(list, { env: {}, integ: { state: 'ok', values: {}, timeTracking }, profile: { state: 'ok', value: 'full' }, minimalIds: null, platform: 'posix' });
 const CLOCKIFY_CLAUDE = ['@int:clockify/scripts/on-prompt.js', '@int:clockify/scripts/touch-activity.js'];
 const SOLIDTIME_CLAUDE = ['@int:solidtime/scripts/on-activity.js', '@int:solidtime/scripts/on-prompt.js'];
@@ -375,14 +376,27 @@ test('IntSpec_UnsafePaths_Rejected @story-7.40 @ac-4', () => {
 
 test('Installer_ConfigUnreadable_KeepsClockifyHooks @story-7.40 @ac-5', () => {
   const list = AH.loadList(LIST, { integrationsDir: INTS });
-  const old = (s) => ({ type: 'command', command: `node "${OLD_SKILLS}/clocki/scripts/${s}"` });
-  const settings = { hooks: { UserPromptSubmit: [{ matcher: '', hooks: [old('on-prompt.js')] }], PostToolUse: [{ matcher: '', hooks: [old('touch-activity.js')] }] } };
+  // una carpeta de skills de antes que todavía tiene clocki (otro clon sin actualizar), y una que ya no lo tiene
+  const alive = path.join(tmp('ttc-old-'), 'skills');
+  for (const s of ['on-prompt.js', 'touch-activity.js']) { fs.mkdirSync(path.join(alive, 'clocki', 'scripts'), { recursive: true }); fs.writeFileSync(path.join(alive, 'clocki', 'scripts', s), '// viejo\n'); }
+  const settingsFrom = (dir) => {
+    const old = (s) => ({ type: 'command', command: `node "${dir}/clocki/scripts/${s}"` });
+    return { hooks: { UserPromptSubmit: [{ matcher: '', hooks: [old('on-prompt.js')] }], PostToolUse: [{ matcher: '', hooks: [old('touch-activity.js')] }] } };
+  };
   // sin saber qué herramienta eligió (configuración ilegible): los hooks de horas quedan como están, también los viejos
   const decision = AH.decide(list, { env: {}, integ: { state: 'ok', values: {}, timeTracking: null }, profile: { state: 'ok', value: 'full' }, minimalIds: null, platform: 'posix' });
   for (const s of CLOCKIFY_CLAUDE) assert.ok(decision.leave.has(s), `${s}: queda como está`);
-  AH.applyToSettings(settings, { list, decision, platform: 'posix', hooksDir: path.join(ROOT, 'scripts', 'hooks'), skills: path.join(ROOT, 'skills'), integrationsDir: INTS, env: {} });
-  const cmds = hookCommands(settings);
+  const opts = { list, decision, platform: 'posix', hooksDir: path.join(ROOT, 'scripts', 'hooks'), skills: path.join(ROOT, 'skills'), integrationsDir: INTS, env: {} };
+  const settings = settingsFrom(alive);
+  AH.applyToSettings(settings, opts);
+  let cmds = hookCommands(settings);
   for (const s of ['on-prompt.js', 'touch-activity.js']) assert.ok(cmds.some((c) => c.includes(`skills/clocki/scripts/${s}`)), `${s}: Clockify no se queda sin su hook`);
+  // con el archivo viejo ya movido, la ruta vieja sólo daría error: sale, y el hook vuelve en su ruta nueva, una vez
+  const gone = settingsFrom(OLD_SKILLS);
+  AH.applyToSettings(gone, Object.assign({}, opts, { decision: AH.decide(list, { env: {}, integ: { state: 'ok', values: {}, timeTracking: null }, profile: { state: 'ok', value: 'full' }, minimalIds: null, platform: 'posix' }) }));
+  cmds = hookCommands(gone);
+  assert.ok(!cmds.some((c) => c.includes('/clocki/scripts/')), `ninguna ruta muerta: ${cmds.filter((c) => /clock/.test(c)).join(' | ')}`);
+  for (const s of ['on-prompt.js', 'touch-activity.js']) assert.strictEqual(cmds.filter((c) => c.includes(`integrations/clockify/scripts/${s}`)).length, 1, `${s}: vuelve en su ruta nueva`);
   // el lector: una respuesta con otra forma, o que falla, no es «ninguna»
   const fake = (tt) => (args) => (args[0] === 'integrations' ? { status: 0, stdout: 'TYCON_INTEG_CLOCKIFY=0\n' } : (args[0] === 'time-tracking' ? tt : { status: 3, stdout: '' }));
   const libDir = path.join(ROOT, 'scripts', 'lib');
