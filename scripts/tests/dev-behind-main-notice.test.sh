@@ -224,7 +224,8 @@ n="$(grep -oE "'\^chore: [a-z ]+'" "$TCG/scripts/ci/label-prs.sh" | wc -l | tr -
 [ "$n" = 3 ] && [ -z "$falta" ] && ok "T21 PatronesDelBot_IgualesALaCorrida" || bad "T21 PatronesDelBot_IgualesALaCorrida (en label-prs.sh: $n; faltan en el hook:$falta)"
 
 # ═══ T22 · el banco ══════════════════════════════════════════════════════════════════════════════════════════════
-B="$(node "$TCG/scripts/controls-bench/runner.js" --tool claude --only dev-behind-main-notice.js 2>&1)"; rcb=$?
+# el reporte va a la carpeta de la prueba: el árbol no se toca (otras suites corren a la vez)
+B="$(node "$TCG/scripts/controls-bench/runner.js" --tool claude --only dev-behind-main-notice.js --json "$BASE/banco.json" 2>&1)"; rcb=$?
 [ "$rcb" = 0 ] && grep -q "4 corridos · 0 rojos" <<<"$B" && ok "T22 Banco_CasosDelAviso" || bad "T22 Banco_CasosDelAviso (rc=$rcb: $(tail -5 <<<"$B"))"
 
 # ═══ T23 · registrado en los dos lados, en las suites, la guía y sin el paso en las plantillas ════════════════════

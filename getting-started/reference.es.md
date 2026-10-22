@@ -436,7 +436,7 @@ tres bloques de reglas en `~/.claude/CLAUDE.md`, entre sus propios marcadores, y
 - `background-execution`: los pasos de más de dos minutos corren en segundo plano y se anuncian antes. Otro hook mide
   lo que dejó bloqueada la conversación (`TYCON_BLOCKING_METER=0`).
 - `tool-names`: la tabla con el nombre exacto de cada herramienta que nombran esas reglas.
-- La línea de import carga en cada sesión el `INDEX.md` del arnés: unos 13 KB, en castellano, con el índice de las
+- La línea de import carga en cada sesión el `INDEX.md` del arnés: unos 15 KB, en castellano, con el índice de las
   guías y las reglas siempre activas.
 - Los enlaces de `~/.claude/skills` y `~/.claude/agents` dejan disponibles en todas tus sesiones las skills y los
   revisores del arnés: el nombre y la descripción de cada uno se cargan en cada sesión.

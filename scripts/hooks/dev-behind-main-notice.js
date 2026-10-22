@@ -32,10 +32,7 @@ const GIT_TIMEOUT_MS = 3000;
 const BOT_SUBJECTS = ['chore: bump version', 'chore: update form versions', 'chore: update versions'];
 const DAY_MS = 86400000;
 // La carpeta del estado la sabe scripts/setup/harness/tycon-home.js, si está al lado (el banco copia este hook suelto).
-const stateDirOf = (() => {
-  const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
-  return fs.existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || os.homedir(), '.claude', '.tycon-pipeline');
-})();
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const readVar = (() => {
   try {
     const { readEnv } = require(path.join(__dirname, '..', 'lib', 'legacy-names.js'));
