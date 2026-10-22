@@ -7,6 +7,8 @@
  * escribir el agente solo. Vale únicamente si la persona escribió «autorizo <VARIABLE>» en un turno suyo de esta
  * conversación, o si llegó textual en un mensaje de la sesión que la organización designó para reenviar el ok de un dev
  * (`approvals.relay_session` del perfil + `designate-relay`). La frase vale `VENTANA_MIN` minutos.
+ * Los escapes que no son una variable van por su nombre en la misma frase: «autorizo story-skill-bypass» deja escribir
+ * una historia sin la skill (`NAMED`).
  *
  * Quién escribió qué lo decide `person-ok.js`: no cuenta lo que escribió el agente, la salida de una herramienta (un
  * archivo leído incluido), un subagente, lo que la persona pegó ni el mensaje de otra sesión que no es la designada.
@@ -24,6 +26,9 @@ const path = require('path');
 const VENTANA_MIN = 30;
 // los escapes que piden la frase: la variable y el valor que apaga el freno
 const ESCAPES = { TYCON_SAFETY_OFF: '1', TYCON_PROD_LINT: '0', TYCON_NEW_NAMES: '0' };
+// los que no son una variable: el nombre del escape va en la frase igual («autorizo story-skill-bypass»)
+const NAMED = ['story-skill-bypass'];
+const esEscape = (v) => Object.prototype.hasOwnProperty.call(ESCAPES, v) || NAMED.includes(v);
 
 const frase = (variable) => `autorizo ${variable}`;
 
@@ -62,7 +67,7 @@ function juez(variable) {
 
 /** ¿La persona, o la sesión designada, autorizó `variable` en los últimos `ventanaMin` minutos? */
 function escapeAutorizado({ variable, sesion, pedido, home, env = process.env, arnes, ahora = Date.now(), ventanaMin = VENTANA_MIN } = {}) {
-  if (!Object.prototype.hasOwnProperty.call(ESCAPES, variable)) return { ok: false, motivo: `${variable} no es un escape que se autorice con una frase` };
+  if (!esEscape(variable)) return { ok: false, motivo: `${variable} no es un escape que se autorice con una frase` };
   if (!sesion || !/^[\w-]+$/.test(String(sesion))) return { ok: false, sinConversacion: true, motivo: 'la herramienta no dijo de qué sesión es el comando' };
   // la punta de la cadena: el pedido que se está juzgando. Sin él, un renglón agregado después del pedido sería la punta
   if (!pedido || !/^[\w-]+$/.test(String(pedido))) return { ok: false, sinConversacion: true, motivo: 'la herramienta no dijo qué pedido se está juzgando (tool_use_id)' };
@@ -86,7 +91,7 @@ function escapeAutorizado({ variable, sesion, pedido, home, env = process.env, a
   return { ok: false, motivo };
 }
 
-module.exports = { ESCAPES, VENTANA_MIN, frase, juez, escapeAutorizado };
+module.exports = { ESCAPES, NAMED, VENTANA_MIN, frase, juez, escapeAutorizado };
 
 if (require.main === module) {
   const arg = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : undefined; };

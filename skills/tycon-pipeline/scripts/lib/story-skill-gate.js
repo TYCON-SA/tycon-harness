@@ -29,7 +29,7 @@
  * El agente no puede fabricar la marca con Write/heredoc: vive bajo `~/.claude/.tycon-pipeline/`,
  * que el portón de carril bloquea en las dos puertas (state-dir). Las formas legítimas de obtenerla
  * son la tool Skill, el slash del user (`/tycon-create-story` — lo ve `on-prompt.js`, porque el slash
- * NO pasa por la tool) y el escape explícito (`marker.js story-skill-bypass "<razón>"`, `bypass.log`).
+ * NO pasa por la tool) y la frase de la persona «autorizo story-skill-bypass» (`escape-ok.js`, `bypass.log`).
  * Sí se puede fabricar alimentando a mano el hook por stdin —esto es anti-olvido, no anti-evasión—;
  * por eso TODA marca deja una línea `mark-written` en gates.log con su `via`: se puede auditar.
  *
@@ -49,8 +49,8 @@
  *      propósito — un `tycon-create-story` con elicitación puede durar más de media hora, y una
  *      marca que vence a mitad del flujo frena la story legítima. El costo de una marca vieja es
  *      chico: habilita una story a mano dentro de la MISMA sesión que ya invocó el skill hace <2h.
- *   6. Escapes: `marker.js story-skill-bypass "<razón en palabras del user>"` (auditado en
- *      bypass.log) · env `TYCON_STORY_SKILL_GATE=off` (el dev; el agente no setea env de hooks) ·
+ *   6. Escapes: «autorizo story-skill-bypass» escrita por la persona en un turno suyo (`escape-ok.js`;
+ *      auditado en bypass.log; `marker.js story-skill-bypass` ya no deja constancia) · env `TYCON_STORY_SKILL_GATE=off` (el dev; el agente no setea env de hooks) ·
  *      `.tycon/advisors.yaml → pipeline.story_skill_gate: false` COMMITEADO (misma regla que el
  *      portón de carril: leído con `git show HEAD:`, nunca del working tree).
  *
@@ -210,13 +210,8 @@ function blockMessage(r, { filePath, via, ttlMs, byName = false } = {}) {
     '       Pasale todo lo que ya relevaste — anclas, mediciones, decisiones del dev — como contexto.',
     '       La constancia la deja el harness solo (hook PostToolUse sobre la tool Skill): el portón se abre.',
     '',
-    '   (b) Si el USER decidió explícitamente que esta story se escriba a mano (y con esas palabras),',
-    '       declaralo — queda en bypass.log con la razón, no es un skip silencioso:',
-    '',
-    `         node ${MARKER_JS} story-skill-bypass "<la razón, en palabras del user>"`,
-    '',
-    '   Kill-switch del dev: TYCON_STORY_SKILL_GATE=off · por repo (commiteado): .tycon/advisors.yaml →',
-    '   pipeline.story_skill_gate: false.',
+    '   (b) Escribirla sin el skill lo decide la persona, no vos. Si te lo pide, tiene que escribir en su',
+    '       mensaje «autorizo story-skill-bypass»; con esa frase suya, este freno la deja pasar solo y lo anota.',
   ].filter((l) => l !== '').join('\n');
 }
 

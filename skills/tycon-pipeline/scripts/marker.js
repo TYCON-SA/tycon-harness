@@ -4195,18 +4195,13 @@ function cmdAdhoc(sub, payloadJson) {
 // marca que dejaría la invocación de tycon-create-story, pero con skill:'bypass' + la razón, y queda
 // en bypass.log (STORY_SKILL_BYPASS). La razón tiene que venir del USER (mismo contrato que
 // `adhoc set`): es el user quien decide que ESTA story se escribe a mano, no el agente.
-function cmdStorySkillBypass(reasonRaw) {
-  const reason = String(reasonRaw || '').trim();
-  if (reason.length < 8) {
-    console.error('marker.js story-skill-bypass: "razón" requerida (≥8 caracteres) — en palabras del USER, no tuyas.');
-    console.error('  Uso: marker.js story-skill-bypass "<por qué esta story se escribe sin el skill>"');
-    process.exit(2);
-  }
-  const sio = require('./lib/story-skill-gate-io.js');
-  const mark = sio.writeMark(STATE_DIR, SID, { skill: 'bypass', reason, at: nowIso(), sessionId: SID, cwd: process.cwd(), via: 'bypass' });
-  appendLog('bypass.log', { kind: 'STORY_SKILL_BYPASS', reason, cwd: process.cwd() });
-  console.error(`⚠️  story-skill-gate: bypass declarado para esta sesión (queda en bypass.log): ${reason}`);
-  process.stdout.write(JSON.stringify(mark, null, 2) + '\n');
+function cmdStorySkillBypass() {
+  // Escribir una historia sin la skill lo decide la persona, y este comando ya no deja constancia: un modelo frenado lo
+  // corrió solo con una razón inventada («el usuario lo pidió»). Con «autorizo story-skill-bypass» escrita por la persona
+  // en un turno suyo, el freno mismo deja pasar la historia: él sabe qué pedido juzga y lo ancla en la conversación.
+  console.error('🚫 marker.js story-skill-bypass: no deja constancia — escribir la historia sin la skill lo decide la persona.');
+  console.error('   Usá la skill tycon-create-story. Si la persona quiere la historia sin la skill, lo dice ella en su mensaje y el freno la deja pasar.');
+  process.exit(1);
 }
 
 // La nota de «repensar el enfoque» de una vuelta de revisores (desde la tercera la exige `pipeline.js smart-reloop`).
@@ -4391,7 +4386,7 @@ switch (cmd) {
     cmdDoing(arg1, arg2);
     break;
   case 'story-skill-bypass':
-    cmdStorySkillBypass(arg1);
+    cmdStorySkillBypass();
     break;
   case 'approve-mockup':
     cmdApproveMockup(process.argv.slice(3));

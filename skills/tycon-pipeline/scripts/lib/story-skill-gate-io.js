@@ -6,7 +6,7 @@
  *
  * Estado (bajo ~/.claude/.tycon-pipeline/):
  *   skill-marks/<sid>.json   { skill, at, sessionId, cwd, reason? } — la escribe on-skill-invoke.js
- *                            (PostToolUse Skill) o `marker.js story-skill-bypass` (skill:'bypass').
+ *                            (PostToolUse Skill) (las marcas `skill:'bypass'` de antes siguen leyéndose).
  *   gates.log                cada bloqueo (status: blocked) y cada "no se frena pero se mide" (unknown).
  *   bypass.log               cada bypass declarado (kind: STORY_SKILL_BYPASS) — lo escribe marker.js.
  */
@@ -140,11 +140,25 @@ function evaluate({ absPath, content, nameHint = false, sessionId, via, event, s
   // Veredicto por NOMBRE (sin contenido legible): se distingue en el log —para poder medir cuánto
   // ruido mete— y en el mensaje, que no puede afirmar "ES una story" cuando sólo lo parece (F3).
   const byName = !(typeof content === 'string' && content.length) && nameHint;
+  // Escribirla sin la skill lo decide la persona: «autorizo story-skill-bypass» en un turno suyo (o reenviada por la
+  // sesión designada) abre el freno para este pedido. El agente no la puede escribir por ella (escape-ok.js).
+  let escapeRoto = null;   // la búsqueda de la frase falló: se frena igual, y se dice por qué en el registro y el mensaje
+  if (verdict.action === 'block' && !isCodexEvent(event)) {
+    let ok = null;
+    try {
+      ok = require('./escape-ok.js').escapeAutorizado({ variable: 'story-skill-bypass', sesion: event && event.session_id, pedido: event && event.tool_use_id });
+    } catch (e) { escapeRoto = `no pude buscar la frase de la persona (${e.message})`; ok = { ok: false }; }
+    if (ok && ok.ok) {
+      io.appendLog(stateDir, 'bypass.log', sessionId, { repoPath: repo.repoRoot || null, kind: 'STORY_SKILL_BYPASS_USED', file: abs, via: ok.via, ...(ok.relevo ? { relevo: ok.relevo } : {}) });
+      return { verdict: { action: 'pass', kind: 'persona', reason: `la persona autorizó escribirla sin la skill (${ok.via})` }, message: null };
+    }
+  }
   if (verdict.action === 'block' && byName) verdict = { ...verdict, kind: `${verdict.kind}-by-name` };
   const line = { repoPath: repo.repoRoot || null, name: 'story-skill-gate', file: abs, via: via || null, kind: verdict.kind, reason: verdict.reason, storyId: declaredId };
   if (verdict.action === 'block') {
-    io.appendLog(stateDir, 'gates.log', sessionId, { ...line, status: 'blocked' });
-    return { verdict, message: gate.blockMessage(verdict, { filePath: abs, via, ttlMs, byName }) };
+    io.appendLog(stateDir, 'gates.log', sessionId, { ...line, status: 'blocked', ...(escapeRoto ? { escape: escapeRoto } : {}) });
+    const message = gate.blockMessage(verdict, { filePath: abs, via, ttlMs, byName });
+    return { verdict, message: escapeRoto ? `${message}\n   ⚠ ${escapeRoto}: la frase de la persona no se pudo verificar.` : message };
   }
   // "No se frena pero se mide" (trampa 5 del handoff: ante la duda no bloquear, y dejar el caso
   // registrado para poder decidir después si valía la pena).
