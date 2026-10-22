@@ -573,7 +573,7 @@ test('T31 Set_StoryNueva_ReseteaLoAdversarial @story-1.8 @ac-24', () => {
     adversarialRegressions: [{ dest: 'tests/p.test.js' }],
     adversarialSkip: { motivo: 'LOW', forzado: false, abandonado: false },
   });
-  const r = correr(home, SID, ['set', JSON.stringify({ storyId: 'B', stepsPending: [1, 2, 3, 4, 5, 6, 7, 8] })]);
+  const r = correr(home, SID, ['set', JSON.stringify({ storyId: 'B', stepsPending: [1, 2, 3, 4, 5, 6, 7, 8] }), '--replace']);
   assert.equal(r.status, 0, r.stderr);
   const m = leerMarker(home, SID);
   assert.equal(m.storyId, 'B');

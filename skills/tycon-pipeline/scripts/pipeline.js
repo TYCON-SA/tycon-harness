@@ -3072,16 +3072,17 @@ function computeStart(args) {
   }
   const content = readText(storyPath);
   const fm = parseFrontmatterPipeline(content);
-  const storyId = fm.story || path.basename(storyPath, '.md');
+  // La identidad de una story es `story:` en su frontmatter, en todo el arnés. Sin ella no se arranca: el nombre del
+  // archivo como número dejaría una ejecución que ningún otro control reconoce como de esta story.
+  if (!fm.story) {
+    const motivo = fm.storyId
+      ? `declara \`storyId:\` y no \`story:\` (la clave que lee el arnés). Renombrala a \`story:\``
+      : 'no trae `story:` en su frontmatter (o no tiene frontmatter). Agregalo, con el número de la story';
+    return { ready: false, error: `${path.basename(storyPath)} ${motivo}, y volvé a correr start. No arranqué nada.` };
+  }
+  const storyId = fm.story;
   const pauses = [];
   const actions = [];
-  // La identidad de una story es `story:` en todo el arnés: `storyId:` no se lee. Si el
-  // archivo sólo trae ésa, se dice — si no, la corrida arranca con el nombre del archivo como número sin que nadie lo note.
-  if (!fm.story && fm.storyId) {
-    const aviso = `⚠️ ${path.basename(storyPath)} declara \`storyId:\` y no \`story:\`: para el arnés no es una story (el portón de Azure no la revisa). Renombrá la clave a \`story:\`; mientras tanto el número es el nombre del archivo (${storyId}).`;
-    actions.push(aviso);
-    process.stderr.write(`${aviso}\n`);
-  }
 
   // PIPE-C0: cross-session conflict.
   // «La misma story» es el mismo número Y la misma ruta dentro de su repo: en los repos que numeran por
@@ -3257,6 +3258,19 @@ function computeStart(args) {
       + 'portón de CI la va a buscar. Resolvela con `pipeline.js evidence-dir --story <spec> --repo <repo> --plain`.');
   } else if (evid.warning) {
     actions.push(`⚠️ EVIDENCIA: ${evid.warning}`);
+  }
+
+  // PIPE-C4 (lectura): esta sesión tiene a medias la ejecución de otra story. Reemplazarla borraría sus pasos y sus
+  // controles: se decide a propósito (`marker.js set` lo frena igual, sin `--replace`).
+  {
+    const actual = readSessionMarker();
+    const hechos = actual && Array.isArray(actual.stepsCompleted) ? actual.stepsCompleted.length : 0;
+    if (actual && String(actual.storyId) !== String(storyId) && hechos > 0) {
+      pauses.push({
+        id: 'PIPE-C4-otra-ejecucion',
+        detail: `Esta sesión tiene a medias la ejecución de la story ${actual.storyId} (${hechos} paso(s) hecho(s)). Para arrancar la ${storyId}, primero cerrala o abandonala a propósito: marker.js clear y re-corré start.`,
+      });
+    }
   }
 
   if (pauses.length) {
