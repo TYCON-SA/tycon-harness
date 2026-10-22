@@ -1843,7 +1843,7 @@ test('8.63 · RelaySession_SoloDesdeElPerfil @story-8.63 @ac-11', () => {
   const r = cli(['set', 'approvals.relay_session', 'yo-mismo'], { home: casa() });
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
-  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check']);
+  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update']);
 });
 
 // ── Una persona marca cada criterio como probado a mano (qa.manual_check) ──────────────────────────────
@@ -1877,6 +1877,65 @@ test('7.46 · Config_QaManualCheck_SoloPerfil @story-7.46 @ac-6', () => {
   const r = cli(['set', 'qa.manual_check', 'off'], { home: casa() });
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
+});
+
+// ── Cómo se actualiza el freno de producción (guard.update) y la firma delegada (approvals.delegated_signing) ──────
+// Las dos, cerradas y sólo desde el perfil del equipo: si la máquina o una variable pudieran prenderlas, el agente se
+// abriría solo la actualización sin contraseña o la firma en nombre del dueño.
+test('8.88 T44 · Config_GuardUpdate_ClosedVocabulary @story-8.88 @ac-26', () => {
+  for (const v of ['auto', 'password']) {
+    const c = cargar({ home: casa(), arnes: arnesCon({ guard: { update: v } }) });
+    assert.deepEqual(c.errores, [], v);
+    assert.deepEqual([c.valores.guard.update, c.origenes['guard.update']], [v, 'perfil']);
+  }
+  for (const v of ['si', '', 1]) {
+    const c = cargar({ home: casa(), arnes: arnesCon({ guard: { update: v } }) });
+    const e = c.errores.find((x) => x.clave === 'guard.update');
+    assert.ok(e && e.motivo, `«${v}» es configuración rota con su motivo: ${JSON.stringify(c.errores)}`);
+  }
+});
+
+test('8.88 T45 · Config_GuardUpdate_DefaultPassword @story-8.88 @ac-26', () => {
+  const c = cargar({ home: casa(), arnes: arnesCon(null) });
+  assert.deepEqual(c.errores, []);
+  assert.equal(c.valores.guard.update, 'password', 'sin valor: con la contraseña');
+});
+
+test('8.88 T46 · Config_GuardUpdate_MachineFileAndEnvIgnored @story-8.88 @ac-27', () => {
+  const home = casa();
+  maquina(home, { guard: { update: 'auto' } });
+  let c = cargar({ home, arnes: arnesCon(null) });
+  assert.deepEqual(c.errores, []);
+  assert.equal(c.valores.guard.update, 'password', 'el archivo de la máquina no la prende');
+  assert.deepEqual(c.shadowed['guard.update'], { value: 'auto', origin: 'maquina', by: 'solo-perfil' });
+  assert.equal(lib().VARIABLES['guard.update'], undefined, 'ninguna variable la cambia');
+  const otro = path.join(tmp('tcfg-perfil-'), 'perfil.json');
+  fs.writeFileSync(otro, JSON.stringify({ guard: { update: 'auto' } }));
+  c = cargar({ env: { TYCON_PROFILE: otro }, home: casa(), arnes: arnesCon(null) });
+  assert.equal(c.valores.guard.update, 'password', 'TYCON_PROFILE tampoco: sale del perfil del árbol');
+  const r = cli(['set', 'guard.update', 'auto'], { home: casa() });
+  assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /sólo desde el perfil del equipo/);
+  assert.match(lib().explicar({ env: {}, home, arnes: arnesCon(null) }), /guard\.update = password.*vale sólo desde el perfil del equipo/);
+});
+
+test('8.88 T47 · Config_DelegatedSigning_MachineFileSetAndExplain @story-8.88 @ac-27', () => {
+  let c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_signing: 'refresh-after-main' } }) });
+  assert.deepEqual(c.errores, []);
+  assert.deepEqual([c.valores.approvals.delegated_signing, c.origenes['approvals.delegated_signing']], ['refresh-after-main', 'perfil']);
+  c = cargar({ home: casa(), arnes: arnesCon({ approvals: { delegated_signing: 'control-changes' } }) });
+  assert.ok(c.errores.some((e) => e.clave === 'approvals.delegated_signing'), 'el valor viejo de la propuesta no vale');
+  const home = casa();
+  maquina(home, { approvals: { delegated_signing: 'refresh-after-main' } });
+  c = cargar({ home, arnes: arnesCon(null) });
+  assert.deepEqual(c.errores, []);
+  assert.equal(c.valores.approvals.delegated_signing, null, 'sin valor: apagada');
+  assert.deepEqual(c.shadowed['approvals.delegated_signing'], { value: 'refresh-after-main', origin: 'maquina', by: 'solo-perfil' });
+  const r = cli(['set', 'approvals.delegated_signing', 'refresh-after-main'], { home: casa() });
+  assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /sólo desde el perfil del equipo/);
+  assert.match(lib().explicar({ env: {}, home, arnes: arnesCon(null) }), /approvals\.delegated_signing = (off|sin valor).*vale sólo desde el perfil del equipo/);
+  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update']);
 });
 
 test('T31 TyconConfig_InstinctsIntegration_EnvProfileOrder @story-4.7 @ac-1 @ac-2 — el perfil la prende, la variable la apaga, sin nada queda apagada', () => {

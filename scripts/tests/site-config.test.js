@@ -3471,7 +3471,7 @@ test('T4 Repos_QueHace_HojaConTema @story-2.59.2 @ac-4', () => {
 test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el lector de la máquina y va en «Cómo trabaja el agente»', () => {
   const s = ORG.seccionPorId('aprobaciones');
   assert.ok(s, 'la sección existe');
-  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas], ['team-profile.json', 'perfil', 'harness-config', ['approvals'], ['approvals.relay_session']]);
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas], ['team-profile.json', 'perfil', 'harness-config', ['approvals'], ['approvals.relay_session', 'approvals.delegated_signing']]);
   const rev = (borrador) => ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
   const ok = rev({ approvals: { relay_session: 'coordinadora' } });
   assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
@@ -3564,6 +3564,90 @@ test('7.46 Config_PruebaAMano_SeccionYPedido @story-7.46 @ac-7 @ac-15 — la sec
   const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.APPROVALS_SINCE)), versionImagen: '2026.10.15.48', doc: CON });
   assert.match(bajo, /todavía no se puede proponer/); assert.match(bajo, /qa/); assert.ok(bajo.includes(`>= ${ORG.QA_SINCE}`), bajo);
   assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.QA_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
+});
+
+// ── Cómo se actualiza el freno de producción (guard.update) y la firma delegada (approvals.delegated_signing) ──────
+// Cada organización elige cuánto riesgo toma; lo de fábrica es lo más seguro, y cada valor se explica con su costo donde
+// la persona elige.
+test('8.88 T48 · Site_GuardUpdate_ShowsBothOptionsWithCosts @story-8.88 @ac-28', async () => {
+  const s = ORG.seccionPorId('frenoProduccion');
+  assert.ok(s, 'la sección existe');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas, s.necesita], ['team-profile.json', 'perfil', 'harness-config', ['guard'], ['guard.update'], ['guard']]);
+  for (const idioma of ['es', 'en']) assert.match(ORG.pantalla(idioma), /frenoProduccion: editorFrenoProduccion/);
+  const p = await pantallaFalsa([seccionPerfil('frenoProduccion', {})]);
+  assert.strictEqual(p.error, null);
+  const sel = p.todo(p.sec('frenoProduccion')).find((n) => n.tag === 'select');
+  assert.ok(sel, 'hay un selector');
+  assert.deepStrictEqual(p.todo(sel).filter((n) => n.tag === 'option').map((n) => n.attrs.value), ['', 'auto']);
+  assert.match(p.textoDe('frenoProduccion'), /con la contraseña de la persona \(de fábrica\)/i);
+  assert.match(p.textoDe('frenoProduccion'), /solo, desde la versión publicada/i);
+  assert.match(p.textoDe('frenoProduccion'), /la persona de esa máquina escribe su contraseña/);
+  assert.match(p.textoDe('frenoProduccion'), /un freno publicado más flojo llega sin que nadie lo apruebe en esa máquina/);
+  assert.match(p.textoDe('frenoProduccion'), /cualquier programa que corra con tu usuario puede pedir esa actualización/);
+});
+
+test('8.88 T49 · Site_GuardUpdate_ProposesProfileKeyValidated @story-8.88 @ac-28', () => {
+  const rev = (borrador) => ORG.revisar({ seccion: 'frenoProduccion', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
+  const ok = rev({ guard: { update: 'auto' } });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  assert.strictEqual(ok.texto, ORG.formatJson({ ...PERFIL_TYCON, guard: { update: 'auto' } }));
+  // la capa tiene que pedir la versión que lee la clave
+  const CON = { ...PERFIL_TYCON, guard: { update: 'auto' } };
+  const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.QA_SINCE)), versionImagen: '2026.10.15.48', doc: CON });
+  assert.match(bajo, /todavía no se puede proponer/); assert.ok(bajo.includes(`>= ${ORG.GUARD_SINCE}`), bajo);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.GUARD_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
+});
+
+test('8.88 T50 · Site_GuardUpdate_InvalidValueCannotBeProposed @story-8.88 @ac-28', () => {
+  const malo = ORG.revisar({ seccion: 'frenoProduccion', texto: ORG.formatJson(PERFIL_TYCON), borrador: { guard: { update: 'si' } }, lectores: { 'harness-config': TC } });
+  assert.strictEqual(malo.ok, false);
+  assert.ok(malo.problems.some((p) => p.path === 'guard.update' && p.message), JSON.stringify(malo.problems));
+});
+
+test('8.88 T51 · Site_Approvals_DelegatedSigningSelector_DefaultOff @story-8.88 @ac-29', async () => {
+  assert.ok(ORG.seccionPorId('aprobaciones').rutas.includes('approvals.delegated_signing'));
+  const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora' } })]);
+  assert.strictEqual(p.error, null);
+  const sel = p.todo(p.sec('aprobaciones')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'approvals.delegated_signing');
+  assert.ok(sel, 'hay un selector de firma delegada');
+  assert.deepStrictEqual(p.todo(sel).filter((n) => n.tag === 'option').map((n) => n.attrs.value), ['', 'refresh-after-main']);
+  assert.strictEqual(sel.attrs.value || '', '', 'de fábrica, apagada');
+  assert.match(p.textoDe('aprobaciones'), /Aflojar un control siempre lo firma una persona, en su terminal; esto no lo cambia\./);
+  const rev = ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador: { approvals: { relay_session: 'coordinadora', delegated_signing: 'refresh-after-main' } }, lectores: { 'harness-config': TC } });
+  assert.strictEqual(rev.ok, true, JSON.stringify(rev.problems));
+  const prendida = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: 'refresh-after-main' } })]);
+  assert.match(prendida.textoDe('aprobaciones'), /vuelve a firmar en nombre del dueño un pedido que él ya firmó, cuando lo único nuevo es que se trajo main/);
+  assert.match(prendida.textoDe('aprobaciones'), /Aflojar un control siempre lo firma una persona/);
+});
+
+test('8.88 T52 · Site_Approvals_WarnsWhenNoRelaySession @story-8.88 @ac-29', async () => {
+  const p = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { delegated_signing: 'refresh-after-main' } })]);
+  assert.strictEqual(p.error, null);
+  assert.match(p.textoDe('aprobaciones'), /no sirve hasta designar la sesión que reenvía/);
+});
+
+test('8.88 T53 · Site_Texts_EsAndEn @story-8.88 @ac-30', () => {
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const claves = ['pantalla.frenoProduccionTitulo', 'pantalla.frenoProduccion', 'pantalla.frenoProduccionPassword', 'pantalla.frenoProduccionAuto',
+    'pantalla.frenoProduccionPasswordCosto', 'pantalla.frenoProduccionAutoCosto', 'pantalla.firmaDelegada', 'pantalla.firmaDelegadaNo',
+    'pantalla.firmaDelegadaSi', 'pantalla.firmaDelegadaAviso', 'pantalla.firmaDelegadaCosto', 'pantalla.firmaDelegadaSinSesion'];
+  for (const k of claves) {
+    const es = textos.t('es', k); const en = textos.t('en', k);
+    assert.ok(es && en && es !== k && en !== k, `${k} existe en las dos lenguas`);
+    assert.notStrictEqual(es, en, `${k} está traducida`);
+  }
+  assert.match(textos.t('en', 'pantalla.firmaDelegadaAviso'), /signed by a person, at their terminal/);
+});
+
+test('8.88 T54 · Guide_OrganizationSite_DescribesBothOptions @story-8.88 @ac-30', () => {
+  const es = fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.md'), 'utf8');
+  const en = fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.en.md'), 'utf8');
+  for (const [guia, frases] of [[es, ['Cómo se actualiza el freno de producción', 'guard.update', 'approvals.delegated_signing', 'Aflojar un control siempre lo firma una persona', 'de fábrica']],
+    [en, ['How the production guard updates', 'guard.update', 'approvals.delegated_signing', 'Loosening a control is always signed by a person', 'default']]]) {
+    for (const f of frases) assert.ok(guia.includes(f), `la guía dice «${f}»`);
+  }
+  assert.match(es, /un freno publicado más flojo llega/);
+  assert.match(en, /a looser published guard arrives/);
 });
 
 test('8.63 Perfil_ApprovalsPideSuVersion @story-8.63 @ac-12 — con approvals en el perfil, la capa tiene que pedir la versión que la lee', () => {

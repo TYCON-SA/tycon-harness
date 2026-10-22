@@ -212,7 +212,13 @@ const VOCABULARIO = Object.freeze({
   // Quién puede reenviar el ok de un dev: el nombre de la sesión (la coordinadora de una organización) cuyos
   // mensajes valen como reenvío textual del ok del dev para eximir un crítico o firmar un criterio que no se puede probar
   // en vivo. Sin valor, nadie. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY).
-  approvals: Object.freeze({ relay_session: 'texto' }),
+  // `delegated_signing`: si esa misma sesión puede volver a firmar en nombre del dueño un pedido que él ya firmó, cuando
+  // lo único nuevo es que se trajo main. Cerrada; sin valor, apagada. Sólo del perfil.
+  approvals: Object.freeze({ relay_session: 'texto', delegated_signing: 'opcion:off|refresh-after-main' }),
+  // Cómo se pone al día el freno de producción de cada máquina: `password` (o sin valor), con la contraseña
+  // de su persona cada vez; `auto`, solo, con la versión publicada, en las máquinas que instalaron el permiso. Sólo del
+  // perfil: si la máquina pudiera decir `auto`, el agente se abriría solo la actualización sin contraseña.
+  guard: Object.freeze({ update: 'opcion:password|auto' }),
   // Si, además del arnés, una persona tiene que marcar cada criterio de la guía del tester como probado a mano antes de
   // cerrar la historia: `off` (o sin valor) = no; `required` = el cierre frena sin esa marca. Cerrada, para sumar un
   // valor sin romper archivos. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY): el agente podría apagarse el freno.
@@ -229,7 +235,7 @@ const TOPE_POR_ESTILO = Object.freeze({ executive: 1300, detailed: 3000, neutral
 const DEFAULTS = Object.freeze({
   'update.channel': 'stable', 'update.apply': 'ask', 'update.skills_source': 'separate', 'packs.default': 'none',
   'update.source': 'public', 'rutas.tree': '~/.claude/.tycon-pipeline/harness/tree',
-  'response.language': 'es', 'response.style': 'neutral',
+  'response.language': 'es', 'response.style': 'neutral', 'guard.update': 'password',
 });
 // Las claves en las que el PERFIL DEL EQUIPO le gana al archivo de la máquina (story 8.29, decisión del dueño del
 // 2026-10-11). Para todo lo demás el orden es el de siempre: variable › máquina › perfil. Para éstas: variable › perfil ›
@@ -249,7 +255,7 @@ const RETIRADAS = Object.freeze({
 // perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
 // implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
 // archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
-const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check']);
+const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update']);
 /** Los paquetes que activa la organización (tipo `paquetes`): `all`, `none` o una lista de nombres de paquete. */
 const NOMBRE_DE_PAQUETE = /^[a-z0-9][a-z0-9-]*$/;
 // Los canales por los que sale un aviso; la misma lista que `CANALES` del módulo de avisos (lo fija T27).
@@ -980,6 +986,7 @@ function cargar(opts = {}) {
           shadowed[ruta] = { value: planoPerfil[ruta], origin: 'TYCON_PROFILE', by: 'solo-perfil' };
         }
         if (Object.prototype.hasOwnProperty.call(planoArbol, ruta)) { valores[seccion][clave] = planoArbol[ruta]; origenes[ruta] = 'perfil'; }
+        else if (Object.prototype.hasOwnProperty.call(DEFAULTS, ruta)) { valores[seccion][clave] = DEFAULTS[ruta]; origenes[ruta] = 'default'; }
         else { valores[seccion][clave] = null; origenes[ruta] = 'sin-valor'; }
         continue;
       }
@@ -1258,6 +1265,14 @@ function explicar(opts = {}) {
     const donde = s && s.origin === 'TYCON_PROFILE' ? `el perfil de TYCON_PROFILE (${c.archivos.perfil.ruta})` : c.archivos.maquina.ruta;
     const ignorado = s ? `; ${donde} dice ${fmt(s.value)} y no se usa: vale sólo desde el perfil del equipo del árbol del arnés` : '';
     L.push(`  approvals.relay_session = ${v.approvals.relay_session ? `${v.approvals.relay_session} (${o['approvals.relay_session']}${ignorado})` : `sin valor (nadie reenvía${ignorado})`}`);
+  }
+  // la firma delegada y cómo se actualiza el freno: sólo del perfil, como relay_session
+  for (const [ruta, sinValor] of [['approvals.delegated_signing', 'off'], ['guard.update', 'password']]) {
+    const s = c.shadowed[ruta];
+    const donde = s && s.origin === 'TYCON_PROFILE' ? `el perfil de TYCON_PROFILE (${c.archivos.perfil.ruta})` : c.archivos.maquina.ruta;
+    const ignorado = s ? `; ${donde} dice ${fmt(s.value)} y no se usa: vale sólo desde el perfil del equipo del árbol del arnés` : '; vale sólo desde el perfil del equipo';
+    const [sec, k] = ruta.split('.');
+    L.push(`  ${ruta} = ${v[sec][k] || sinValor} (${o[ruta]}${ignorado})`);
   }
   const extras = [];
   if (c.entorno.TYCON_SKILLS_DIR) extras.push(`TYCON_SKILLS_DIR=${c.entorno.TYCON_SKILLS_DIR} (lib/skills-dir.js, no es de este lector)`);

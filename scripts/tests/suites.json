@@ -1217,6 +1217,16 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/update-guard.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/guard-update-notice.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/tycon-prod-sql.test.sh",
       "requiere": []
     },

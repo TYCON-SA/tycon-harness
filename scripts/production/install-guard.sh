@@ -44,7 +44,17 @@
 # una versión de un repo ajeno traería su propia mudanza). Si lo fijado es un `from` y lo de ahora su `to`, se acepta
 # solo y se dice; cualquier otro cambio sigue pidiendo --change-origin y el teclado.
 #
+# LA ACTUALIZACIÓN SIN CONTRASEÑA: `--allow-auto-update` instala, además del freno, un permiso de sudo
+# acotado a UN guion sin argumentos (/opt/tycon/setup/update-guard.sh, desde sudoers.tycon-guard.template, validado con
+# `visudo -cf` antes de moverlo a /etc/sudoers.d) y la marca de root production/auto-update.json. Se instala sólo si el
+# perfil del equipo dice `guard.update: auto` en ese momento: la persona está delante, con su contraseña, y esa marca es lo
+# único que habilita la actualización sin contraseña (decisión 19). `--remove-auto-update` saca la regla, el guion y la
+# marca. Sin ninguna de las dos, el instalador hace lo de siempre (decisión 11). El guion corre ESTE instalador, desde su
+# copia de root en /opt/tycon/setup, en el modo `--auto-update`: sólo la versión bajada verificada contra GitHub, sólo
+# hacia adelante, sin preguntar nada por teclado, con candado y un renglón de root en production/update-log.jsonl.
+#
 # Uso:  sudo bash install-guard.sh [--from <clon del arnés>] [--change-origin]
+#       sudo bash install-guard.sh --allow-auto-update | --remove-auto-update
 #       bash install-guard.sh --no-sudo         (sólo pruebas, sin root: raíz falsa y copia del disco;
 #                                                 TYCON_PROD_ACCEPT_ORIGIN=1 hace de persona que confirma)
 set -uo pipefail
@@ -73,18 +83,32 @@ for par in $TRADUCIR; do
 done
 set -- ${ARGS[@]+"${ARGS[@]}"}
 
-SIN_SUDO=0; ARNES=""; CAMBIAR_ORIGEN=0
+SIN_SUDO=0; ARNES=""; CAMBIAR_ORIGEN=0; PERMISO=""; AUTO=0; CON_FROM=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-sudo) SIN_SUDO=1; shift ;;
-    --from)    ARNES="${2:-}"; shift 2 ;;
+    --from)    ARNES="${2:-}"; CON_FROM=1; shift 2 ;;
     --change-origin) CAMBIAR_ORIGEN=1; shift ;;
+    --allow-auto-update)  [ -z "$PERMISO" ] || { echo "--allow-auto-update y --remove-auto-update se excluyen" >&2; exit 2; }; PERMISO=allow; shift ;;
+    --remove-auto-update) [ -z "$PERMISO" ] || { echo "--allow-auto-update y --remove-auto-update se excluyen" >&2; exit 2; }; PERMISO=remove; shift ;;
+    --auto-update) AUTO=1; shift ;;
     *) echo "argumento desconocido: $1" >&2; exit 2 ;;
   esac
 done
+# el modo que corre update-guard.sh no elige de dónde instalar ni acepta otro origen, y no instala ni saca el permiso
+if [ "$AUTO" = 1 ] && { [ -n "$PERMISO" ] || [ "$CON_FROM" = 1 ] || [ "$CAMBIAR_ORIGEN" = 1 ]; }; then
+  echo "--auto-update no va con --from, --change-origin ni las opciones del permiso" >&2; exit 2
+fi
 
 muere(){ printf '⛔ %s\n' "$1" >&2; [ "$SIN_SUDO" = 0 ] && sudo -K 2>/dev/null; exit "${2:-1}"; }
 ok(){ printf '   %s\n' "$1"; }
+# 🔴 desde /, y python con -I: sudo conserva la carpeta desde donde se lo llama, y
+# python pone esa carpeta en sys.path, así que un json.py plantado ahí corría como root. Con la actualización sin
+# contraseña eso ya no pide una persona. Las rutas que llegan como argumento o variable se hacen absolutas antes.
+case "$ARNES" in ""|/*) ;; *) ARNES="$PWD/$ARNES" ;; esac
+case "${TYCON_PROD_HARNESS:-}" in ""|/*) ;; *) TYCON_PROD_HARNESS="$PWD/$TYCON_PROD_HARNESS" ;; esac
+case "${TYCON_PROD_ROOT:-}" in ""|/*) ;; *) TYCON_PROD_ROOT="$PWD/$TYCON_PROD_ROOT" ;; esac
+cd / || muere "no pude pararme en /"
 
 if [ "$SIN_SUDO" = 1 ]; then
   # el modo de pruebas NUNCA corre como root: con sudo instalaría en /opt/tycon sin chequear dueños ni
@@ -118,6 +142,101 @@ fi
 # la HOME que se lee (con sudo, la del usuario que lanzó; sin sudo —las pruebas— la de quien corre) y, escrita UNA sola
 # vez, su carpeta de Claude Code: la configuración de la máquina y el estado viejo se buscan ahí (tycon-home T3)
 HOME_LEIDA="${HOME_USUARIO:-${HOME:-}}"; CLAUDE_LEIDA="$HOME_LEIDA/.claude"
+
+# ── la actualización sin contraseña: lo que se decide ANTES de verificar o tocar nada ───────────────────────
+DESTINO="$RAIZ/opt/tycon"
+SUDOERS_D="$RAIZ/etc/sudoers.d"; REGLA="$SUDOERS_D/tycon-guard"; MARCA="$DESTINO/production/auto-update.json"
+REGISTRO_AUTO="$DESTINO/production/update-log.jsonl"; INSTALADA="$DESTINO/production/installed-release.json"
+CANDADO="$DESTINO/production/update.lock"; CANDADO_MIO=0; COPIA_AUTO=""; ORIGEN=""
+limpiar(){ [ -n "$ORIGEN" ] && rm -rf "$ORIGEN"; [ -n "$COPIA_AUTO" ] && rm -rf "$COPIA_AUTO"; [ "$CANDADO_MIO" = 1 ] && rm -rf "$CANDADO"; return 0; }
+trap limpiar EXIT
+# lo que eligió la organización (guard.update del perfil del equipo), leído con python y sin cargar código del árbol, como
+# ado.org → «auto», «password», «missing-key», «roto <motivo>», «ilegible <motivo>» o «ausente»
+leer_guard_update(){ # $1 = carpeta del arnés
+  local perfil="$1/team-profile.json"; [ -f "$perfil" ] || perfil="$1/perfil-equipo.json"
+  /usr/bin/python3 -I -c 'import json, sys
+ruta = sys.argv[1]
+try:
+    f = open(ruta, encoding="utf-8-sig")   # con o sin BOM, como el lector del arnés
+except FileNotFoundError:
+    print("ausente"); sys.exit(0)
+except Exception as e:
+    print("ilegible %s: %s" % (ruta, e)); sys.exit(0)
+with f:
+    try: d = json.load(f)
+    except Exception as e: print("ilegible %s: JSON ilegible (%s)" % (ruta, e)); sys.exit(0)
+g = d.get("guard") if isinstance(d, dict) else None
+if g is None or (isinstance(g, dict) and "update" not in g): print("missing-key"); sys.exit(0)
+v = g.get("update") if isinstance(g, dict) else None
+if isinstance(v, str): v = v.strip()   # el lector del arnés recorta el valor: los dos leen igual
+if v in ("auto", "password"): print(v)
+else: print("roto en %s: guard.update vale %s y sólo puede ser password o auto" % (ruta, json.dumps(v, ensure_ascii=False)))' "$perfil"
+}
+# el motivo, en llano, cuando lo que eligió la organización no es «auto» ($1 = lo que dijo leer_guard_update)
+motivo_eleccion(){
+  case "$1" in
+    password) echo "la organización eligió «con la contraseña» (guard.update: password en el perfil del equipo)" ;;
+    missing-key) echo "la organización no eligió nada (sin guard.update en el perfil del equipo): de fábrica es «con la contraseña»" ;;
+    roto*) echo "guard.update está roto (${1#roto }): lo trato como «con la contraseña»" ;;
+    *) echo "no pude leer lo que eligió la organización (${1#ilegible }): lo trato como «con la contraseña»" ;;
+  esac
+}
+COMO_CAMBIARLO="se cambia en el sitio de la organización, pestaña Configuración → «Cómo se actualiza el freno de producción»"
+
+# sacar el permiso: la regla primero (sudo deja de permitirlo), después el guion, sus vecinos y la marca; nada se verifica
+if [ "$PERMISO" = remove ]; then
+  rm -f "$REGLA" || muere "no pude sacar la regla de sudo $REGLA"
+  rm -f "$DESTINO/setup/update-guard.sh" "$DESTINO/setup/install-guard.sh" "$DESTINO/setup/origin-moves.json" || muere "no pude sacar el guion de $DESTINO/setup"
+  rm -f "$MARCA" || muere "no pude sacar la marca $MARCA"
+  echo "✅ actualización sin contraseña sacada: la regla de sudo, el guion y la marca. El freno vuelve a pedir la contraseña para ponerse al día."
+  [ "$SIN_SUDO" = 0 ] && sudo -K 2>/dev/null
+  exit 0
+fi
+
+# el modo de update-guard.sh: sólo con la marca de root, sólo la versión bajada, sólo con un origen ya fijado, sólo si el
+# perfil dice «auto», y una corrida a la vez. Lo verificado es una COPIA de root de la versión bajada: lo que hay en el HOME
+# puede cambiar entre la verificación y la copia, la copia no
+if [ "$AUTO" = 1 ]; then
+  [ -d "$DESTINO/production" ] || muere "esta máquina no tiene el freno instalado: la primera instalación pide contraseña (sudo bash install-guard.sh)"
+  if ! mkdir "$CANDADO" 2>/dev/null; then
+    OTRO="$(cat "$CANDADO/pid" 2>/dev/null || true)"
+    if [[ "$OTRO" =~ ^[0-9]+$ ]] && kill -0 "$OTRO" 2>/dev/null; then muere "ya hay una actualización corriendo (proceso $OTRO): no hago nada"; fi
+    # sin pid puede ser otra corrida que acaba de tomarlo y todavía no lo escribió: vale como viva hasta que pase un minuto
+    if [ -z "$OTRO" ] && [ -z "$(/usr/bin/find "$CANDADO" -maxdepth 0 -mmin +1 -print 2>/dev/null)" ]; then muere "ya hay una actualización corriendo (el candado se acaba de tomar): no hago nada"; fi
+    rm -rf "$CANDADO" && mkdir "$CANDADO" 2>/dev/null || muere "no pude tomar el candado $CANDADO"
+    ok "candado de una actualización que ya no corre (proceso ${OTRO:-?}): liberado"
+  fi
+  CANDADO_MIO=1; printf '%s\n' "$$" > "$CANDADO/pid" || muere "no pude escribir el candado $CANDADO"
+  [ -f "$MARCA" ] || muere "esta máquina no tiene el permiso de actualizarse sin contraseña: lo instala su persona con sudo bash install-guard.sh --allow-auto-update (pide su contraseña)"
+  { [ -f "$DESTINO/production/trusted-origin.json" ] || [ -f "$DESTINO/produccion/origen-de-confianza.json" ]; } \
+    || muere "no hay origen de confianza fijado: la primera instalación pide contraseña (sudo bash install-guard.sh)"
+  [ "$SIN_SUDO" = 0 ] && ARNES="$HOME_USUARIO/.tycon/harness"
+  { [ -f "$ARNES/.tycon-release.json" ] && [ ! -d "$ARNES/.git" ]; } \
+    || muere "la actualización sin contraseña instala sólo la versión bajada y verificada (~/.tycon/harness), nunca un clon ($ARNES)"
+  # 🔴 sin enlaces (pase adversarial de la vuelta 1): cp -RP copia un enlace como enlace, y lo que se verifica y lo que
+  # se copia después seguirían pasando por un archivo del usuario, que puede cambiarlo entre las dos lecturas
+  [ -L "$ARNES" ] && muere "la versión bajada ($ARNES) es un enlace simbólico: la actualización sin contraseña no lo sigue"
+  COPIA_AUTO="$(/usr/bin/mktemp -d)" || muere "no pude crear una carpeta temporal"
+  /bin/cp -RP "$ARNES" "$COPIA_AUTO/harness" || muere "no pude copiar la versión bajada ($ARNES)"
+  # un find que falla es «no sé», nunca «sin enlaces»
+  ENLACES="$(/usr/bin/find "$COPIA_AUTO/harness" -type l -print)" || muere "no pude revisar si la versión bajada trae enlaces simbólicos"
+  ENLACES="$(printf '%s\n' "$ENLACES" | /usr/bin/head -3)"
+  [ -z "$ENLACES" ] || muere "la versión bajada trae enlaces simbólicos (${ENLACES//$COPIA_AUTO\/harness\//}): la actualización sin contraseña no los sigue"
+  ESTADO_AUTO="${TYCON_PROD_STATE:-}"
+  if [ "$SIN_SUDO" = 0 ] || [ -z "$ESTADO_AUTO" ]; then
+    if [ -f "$HOME_LEIDA/.tycon/state/harness-state.json" ]; then ESTADO_AUTO="$HOME_LEIDA/.tycon/state/harness-state.json"; else ESTADO_AUTO="$CLAUDE_LEIDA/.tycon-pipeline/harness-state.json"; fi
+  fi
+  /bin/cp "$ESTADO_AUTO" "$COPIA_AUTO/harness-state.json" 2>/dev/null || muere "no pude copiar el estado del arnés ($ESTADO_AUTO): sin él no sé de qué repo se bajó la versión"
+  ARNES="$COPIA_AUTO/harness"; ESTADO_AUTO="$COPIA_AUTO/harness-state.json"
+  ELECCION="$(leer_guard_update "$ARNES")"
+  [ "$ELECCION" = auto ] || muere "$(motivo_eleccion "$ELECCION"): no actualizo sin contraseña — $COMO_CAMBIARLO"
+fi
+
+# instalar el permiso: sólo si la organización eligió «solo» (la persona está delante, con su contraseña)
+if [ "$PERMISO" = allow ]; then
+  ELECCION="$(leer_guard_update "$ARNES")"
+  [ "$ELECCION" = auto ] || muere "$(motivo_eleccion "$ELECCION"): no instalo el permiso de actualizar sin contraseña — $COMO_CAMBIARLO, y después se vuelve a correr esto"
+fi
 
 # ── 0a. de dónde se instala (story 8.23, tanda D · AC 30): el clon, con git (lo de siempre, abajo), o la VERSIÓN BAJADA ──
 # en ~/.tycon/harness, VERIFICADA antes de copiar. 🔴 Todo lo que hay en el HOME lo puede escribir el asistente —los
@@ -165,12 +284,33 @@ ARCHIVOS=(
 # legacy-names.js sin mapa es paso directo), así que ahí no se pide. Lo decide lo publicado (o el disco en --no-sudo),
 # nunca un archivo de la máquina. Tanda C0, [DEF-8.9-COPIA]: era el T25 de la copia. Lo cuida T19p de instalar-freno.test.sh.
 MAPA_NOMBRES=scripts/lib/renames.json
+# Lo que va a /opt/tycon/setup para la actualización sin contraseña: el guion, este instalador y la lista de
+# mudanzas que lee. Se copian (y se exigen iguales a los de la punta, como el freno) sólo con el permiso: al instalarlo, en
+# el modo que corre el guion, y en cada reinstalación de una máquina que ya tiene la marca. La plantilla de la regla se usa
+# desde la copia verificada y no queda en /opt.
+SETUP_ARCHIVOS=(scripts/production/update-guard.sh scripts/production/install-guard.sh scripts/production/origin-moves.json scripts/production/sudoers.tycon-guard.template)
+CON_SETUP=0; { [ "$PERMISO" = allow ] || [ "$AUTO" = 1 ] || [ -f "$MARCA" ]; } && CON_SETUP=1
+extras_de_setup() { [ "$CON_SETUP" = 1 ] && printf '%s\n' "${SETUP_ARCHIVOS[@]}"; return 0; }
+# en el modo del guion, el commit instalado (production/installed-release.json, de root): la versión bajada tiene que ser
+# posterior; igual, no hay nada que hacer
+PREVIO_COMMIT=""; PREVIO_VERSION=""
+# Sin la constancia (un freno instalado desde un clon, o antes de que existiera) no hay contra qué comparar: rige la regla
+# de siempre del paso 5 (la punta, o un commit anterior de main con el freno igual al de la punta), se dice, y desde esta
+# actualización queda la constancia.
+if [ "$AUTO" = 1 ] && [ ! -f "$INSTALADA" ]; then ok "sin constancia de la versión instalada: sólo puedo exigir que lo bajado sea la punta publicada (o tenga su mismo freno); desde ahora queda anotada"; fi
+if [ "$AUTO" = 1 ] && [ -f "$INSTALADA" ]; then
+  PREVIO_COMMIT="$(/usr/bin/python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); c=str(d.get("commit") or ""); print(c if len(c)==40 and all(x in "0123456789abcdef" for x in c) else "")' "$INSTALADA" 2>/dev/null)" \
+    || muere "la constancia de la versión instalada ($INSTALADA) está ilegible (la escribe sólo root): sin ella no sé si la nueva avanza — reinstalá con sudo bash install-guard.sh"
+  # un commit que no tiene forma de commit es una constancia rota, no «sin constancia»: apagaría «sólo avanza» callado
+  [ -n "$PREVIO_COMMIT" ] || muere "la constancia de la versión instalada ($INSTALADA) está ilegible: no trae un commit — reinstalá con sudo bash install-guard.sh"
+  PREVIO_VERSION="$(/usr/bin/python3 -I -c 'import json,sys; print(str(json.load(open(sys.argv[1])).get("version") or ""))' "$INSTALADA" 2>/dev/null || true)"
+fi
 DESDE_RELEASE=0; REPO_GITHUB=""
 if [ -f "$ARNES/.tycon-release.json" ] && [ ! -d "$ARNES/.git" ]; then
   DESDE_RELEASE=1
   # el estado vive en ~/.tycon/state en una máquina mudada o sin Claude Code, y donde siempre en una instalada con
   # `install --version` CON Claude Code (pase adversarial de la D, clase 13): se mira donde esté
-  ESTADO_RELEASE="${TYCON_PROD_STATE:-}"
+  ESTADO_RELEASE="${ESTADO_AUTO:-${TYCON_PROD_STATE:-}}"
   if [ -z "$ESTADO_RELEASE" ]; then
     if [ -f "$HOME_LEIDA/.tycon/state/harness-state.json" ]; then ESTADO_RELEASE="$HOME_LEIDA/.tycon/state/harness-state.json"; else ESTADO_RELEASE="$CLAUDE_LEIDA/.tycon-pipeline/harness-state.json"; fi
   fi
@@ -186,10 +326,11 @@ if [ -f "$ARNES/.tycon-release.json" ] && [ ! -d "$ARNES/.git" ]; then
   elif [ -n "${TYCON_RELEASE_API:-}" ] && [ -z "${TYCON_RELEASE_GIT:-}" ]; then GIT_GITHUB=""
   else GIT_GITHUB="${TYCON_RELEASE_GIT:-https://github.com}"; fi
   # (2>&1: el motivo de python viaja en la variable, así `muere` lo imprime; cazador de fallos silenciosos de la D)
-  REPO_GITHUB="$(/usr/bin/python3 - "$ARNES" "$ESTADO_RELEASE" "$API_GITHUB" "$HOME_LEIDA/.tycon/config.json" "$LISTA_VERIFICADA" "$GIT_GITHUB" "${ARCHIVOS[@]}" "$MAPA_NOMBRES" 2>&1 <<'PY'
+  # shellcheck disable=SC2046
+  REPO_GITHUB="$(/usr/bin/python3 -I - "$ARNES" "$ESTADO_RELEASE" "$API_GITHUB" "$HOME_LEIDA/.tycon/config.json" "$LISTA_VERIFICADA" "$GIT_GITHUB" "$PREVIO_COMMIT" "${ARCHIVOS[@]}" "$MAPA_NOMBRES" $(extras_de_setup) 2>&1 <<'PY'
 import hashlib, json, os, re, sys, time, urllib.request, urllib.error
-arnes, estado, api, token_file, lista, gitbase = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6]
-freno = sys.argv[7:]   # lo que se copia a /opt (ARCHIVOS y el mapa de nombres): tiene que ser igual al de la punta (paso 5)
+arnes, estado, api, token_file, lista, gitbase, previo = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7]
+freno = sys.argv[8:]   # lo que se copia a /opt (ARCHIVOS, el mapa de nombres y lo de setup): tiene que ser igual al de la punta (paso 5)
 def muere(m): sys.stderr.write(m + "\n"); sys.exit(2)
 try:
     with open(os.path.join(arnes, ".tycon-release.json"), encoding="utf-8") as f: m = json.load(f)
@@ -202,6 +343,10 @@ for f in files:
     rel, blob, mode = (f.get("path"), f.get("blob"), str(f.get("mode") or "100644")) if isinstance(f, dict) else (None, None, None)
     if not isinstance(rel, str) or not isinstance(blob, str) or rel.startswith("/") or ".." in rel.split("/"): muere("el manifiesto trae una entrada inválida: %r" % (f,))
     p = os.path.join(arnes, *rel.split("/"))
+    # un archivo que no es enlace en la versión tiene que leerse sin pasar por ninguno: si no, lo verificado y lo copiado
+    # después pueden ser cosas distintas (story 8.88)
+    if mode != "120000" and os.path.realpath(p) != os.path.join(os.path.realpath(arnes), *rel.split("/")):
+        malos.append(rel + " (es un enlace o pasa por uno)"); continue
     try:
         if mode == "120000": data = os.readlink(p).encode("utf-8")
         else:
@@ -324,18 +469,35 @@ if commit not in puntas.values():
     atras = cmp_.get("behind_by")
     aviso = "hay una versión más nueva de %s (main %s%s); el freno que se instala es igual al de esa versión. Actualizá cuando puedas (harness.js update)" % (repo, punta[:7], (", %d commit%s adelante" % (atras, "" if atras == 1 else "s")) if isinstance(atras, int) else "")
 # la lista de lo verificado: sólo eso se copia (un archivo que está en el disco y no en el manifiesto no es de la versión)
+# 6. sólo hacia adelante (story 8.88, el modo de update-guard.sh): con un commit ya instalado, el bajado tiene que ser
+# posterior según GitHub; el mismo commit es «nada que hacer». Cualquier otra respuesta frena
+avance = "nuevo"
+if previo:
+    if previo == commit: avance = "igual"
+    else:
+        st5, c5 = get("/repos/%s/compare/%s...%s?per_page=1" % (repo, previo, commit))
+        if st5 != 200 or not isinstance(c5, dict): muere("GitHub contestó %s al comparar la versión instalada (%s) con la bajada (%s) de %s: sin saber si avanza no instalo" % (st5, previo[:7], commit[:7], repo))
+        if str(c5.get("status") or "") != "ahead": muere("la versión bajada (%s) no es posterior a la instalada (%s) — GitHub: «%s»: el freno sólo avanza, nunca retrocede" % (commit[:7], previo[:7], c5.get("status") or "sin estado"))
+        avance = "adelante"
 with open(lista, "w", encoding="utf-8") as f: f.write("".join(rel + "\n" for _, rel, _ in entradas))
 print(repo)
 print(aviso or "")
-if vencido[0]: print("el permiso de GitHub guardado venció o se revocó (401), pero no hace falta: el repo del arnés es público y sigo sin él. Para sacarlo: harness.js config unset github.token")
+print("el permiso de GitHub guardado venció o se revocó (401), pero no hace falta: el repo del arnés es público y sigo sin él. Para sacarlo: harness.js config unset github.token" if vencido[0] else "")
+# la versión del manifiesto sólo se muestra (va al registro): lo verificado es el commit y su árbol
+print("%s %s %s" % (avance, commit, re.sub(r"\s", "", str(m.get("version") or "?")) or "?"))
 PY
 )" || muere "$REPO_GITHUB"
   # la primera línea es el repo; la segunda, si la hay, el aviso de una versión atrasada con el mismo freno que la punta; la
   # tercera, si la hay, que el permiso guardado venció y el repo público se leyó sin él (2026-10-14)
   AVISO_ATRASADA="$(printf '%s\n' "$REPO_GITHUB" | sed -n 2p)"
   AVISO_VENCIDO="$(printf '%s\n' "$REPO_GITHUB" | sed -n 3p)"
+  read -r AVANCE COMMIT_BAJADO VERSION_BAJADA <<< "$(printf '%s\n' "$REPO_GITHUB" | sed -n 4p)"
   REPO_GITHUB="$(printf '%s\n' "$REPO_GITHUB" | sed -n 1p)"
   [ -n "$REPO_GITHUB" ] || muere "no pude saber de qué repo de GitHub se bajó la versión"
+  if [ "$AUTO" = 1 ] && [ "${AVANCE:-}" = igual ]; then
+    ok "sin versión nueva: el freno ya está en ${COMMIT_BAJADO:0:7} (${VERSION_BAJADA:-?}); no cambio nada"
+    exit 0
+  fi
   URL="https://github.com/$REPO_GITHUB"
   ORG="github:$REPO_GITHUB"
   if [ -n "$AVISO_ATRASADA" ]; then
@@ -347,7 +509,6 @@ PY
   [ -n "$AVISO_VENCIDO" ] && echo "   ⚠ $AVISO_VENCIDO"
 fi
 
-DESTINO="$RAIZ/opt/tycon"
 MANAGED_PADRE="$RAIZ/Library/Application Support/ClaudeCode"
 MANAGED_D="$MANAGED_PADRE/managed-settings.d"
 CON_MAPA=0
@@ -359,8 +520,7 @@ NOMBRE_VIEJO_CONSTANCIA=lib/constancia-freno.js
 extras_del_equipo() { [ "$CON_MAPA" = 1 ] && echo "$MAPA_NOMBRES"; }
 
 # ── 0. el arnés PUBLICADO, a una carpeta propia ───────────────────────────────────────────────
-ORIGEN="$(mktemp -d)" || muere "no pude crear una carpeta temporal"
-trap 'rm -rf "$ORIGEN"' EXIT
+ORIGEN="$(mktemp -d)" || muere "no pude crear una carpeta temporal"   # la borra `limpiar`, al salir
 # 🔴 El remoto del clon lo puede cambiar el asistente (`git remote set-url`), y la referencia `origin/main`
 # también (`git update-ref`). Así que la URL se verifica contra la organización del equipo y, al instalar de
 # verdad, se usa FETCH_HEAD, que es lo que ACABA de traer ese fetch (revisores del Step 5, 2026-09-15).
@@ -384,7 +544,7 @@ if [ "$DESDE_RELEASE" = 0 ]; then
   RC_ORG=0
   # el perfil del equipo con su nombre de hoy; si no está, el de antes, que sigue valiendo (con los dos, gana el nuevo)
   PERFIL_ARNES="$ARNES/team-profile.json"; [ -f "$PERFIL_ARNES" ] || PERFIL_ARNES="$ARNES/perfil-equipo.json"
-  ORG="$(/usr/bin/python3 - "${TYCON_ADO_ORG:-}" "${ADO_ORG:-}" "${HOME_USUARIO:+$CLAUDE_LEIDA/tycon.json}" "$PERFIL_ARNES" 2>"$CFG_ERR" <<'PY'
+  ORG="$(/usr/bin/python3 -I - "${TYCON_ADO_ORG:-}" "${ADO_ORG:-}" "${HOME_USUARIO:+$CLAUDE_LEIDA/tycon.json}" "$PERFIL_ARNES" 2>"$CFG_ERR" <<'PY'
 import json, re, sys
 # la misma forma canónica que tycon-config.js (normalizarOrg): https://dev.azure.com/<org>; acepta <org>.visualstudio.com,
 # usuario, barra final y espacios — sin esto, `${ORG##*/}` daba vacío y el clon del equipo se rechazaba
@@ -450,6 +610,7 @@ ORIGEN_FIJADO_VIEJO="$DESTINO/produccion/origen-de-confianza.json"
 FIJADO_LEIDO="$ORIGEN_FIJADO"
 if [ ! -e "$ORIGEN_FIJADO" ] && [ -f "$ORIGEN_FIJADO_VIEJO" ]; then FIJADO_LEIDO="$ORIGEN_FIJADO_VIEJO"; fi
 confirmar_por_teclado(){ # $1 = pregunta → 0 sólo si una PERSONA escribió «si» por teclado (un asistente no tiene /dev/tty)
+  [ "$AUTO" = 1 ] && return 1   # el modo de update-guard.sh no pregunta: lo que pediría una persona, frena
   if [ "$SIN_SUDO" = 1 ]; then [ "${TYCON_PROD_ACCEPT_ORIGIN:-}" = "1" ]; return; fi   # en pruebas no hay teclado: la variable hace de persona
   { [ -r /dev/tty ] && [ -w /dev/tty ]; } || return 1
   printf '%s [si/NO] ' "$1" > /dev/tty
@@ -457,7 +618,7 @@ confirmar_por_teclado(){ # $1 = pregunta → 0 sólo si una PERSONA escribió «
   [ "$r" = "si" ]
 }
 leer_fijado(){ # $1 = clave, $2 = archivo (el leído, por defecto) → lo fijado (vacío si la clave no está); un archivo fijado ILEGIBLE sale 2 con el motivo, nunca «vacío»
-  /usr/bin/python3 -c 'import json,sys
+  /usr/bin/python3 -I -c 'import json,sys
 try:
     d = json.load(open(sys.argv[1], encoding="utf-8"))
 except Exception as e:
@@ -471,7 +632,7 @@ if [ "$SIN_SUDO" = 1 ] && [ -n "${TYCON_PROD_ORIGIN_MOVES:-}" ]; then MUDANZAS="
 RC_MUDANZA=1; MUDANZA=""
 mudanza_oficial(){ # → imprime el mensaje y sale 0 si lo fijado → lo de ahora es una mudanza declarada; 1 si no; 2 (con el motivo) si la lista está rota
   [ -f "$MUDANZAS" ] || return 1
-  /usr/bin/python3 - "$MUDANZAS" "$FIJADO_URL" "$FIJADO_ORG" "$FIJADO_REPO" "$URL" "$ORG" "$REPO_GITHUB" 2>&1 <<'PY'
+  /usr/bin/python3 -I - "$MUDANZAS" "$FIJADO_URL" "$FIJADO_ORG" "$FIJADO_REPO" "$URL" "$ORG" "$REPO_GITHUB" 2>&1 <<'PY'
 import json, re, sys
 ruta, f_url, f_org, f_repo, url, org, repo = sys.argv[1:8]
 def rota(m): print(m); sys.exit(2)
@@ -512,7 +673,9 @@ if [ -f "$FIJADO_LEIDO" ]; then
     RC_MUDANZA=0; MUDANZA="$(mudanza_oficial)" || RC_MUDANZA=$?
     [ "$RC_MUDANZA" -eq 2 ] && muere "la lista de mudanzas oficiales del origen está ROTA ($MUDANZAS): $MUDANZA"
   fi
-  if [ "$RC_MUDANZA" -eq 0 ] && [ -n "$MUDANZA" ]; then
+  if [ "$RC_MUDANZA" -eq 0 ] && [ -n "$MUDANZA" ] && [ "$AUTO" = 1 ]; then
+    muere "el origen fijado cambió por una mudanza oficial ($MUDANZA — fijado: $FIJADO_URL · ahora: $URL): sin contraseña no se acepta; corré el instalador con sudo"
+  elif [ "$RC_MUDANZA" -eq 0 ] && [ -n "$MUDANZA" ]; then
     ok "$MUDANZA (fijado: $FIJADO_URL · ahora: $URL)"
   elif [ "$FIJADO_URL" != "$URL" ] || [ "$FIJADO_ORG" != "$ORG" ]; then
     [ "$CAMBIAR_ORIGEN" = 1 ] || muere "el origen del clon NO es el que se instaló la última vez (fijado: $FIJADO_URL · $FIJADO_ORG — ahora: $URL · $ORG). Si el cambio es tuyo, volvé a correr con --change-origin; si no lo es, alguien tocó el remoto del clon o la configuración."
@@ -532,12 +695,12 @@ if [ "$SIN_SUDO" = 1 ] || [ "$DESDE_RELEASE" = 1 ]; then
     # 🔴 sólo se copia lo que el manifiesto trae: un archivo puesto a mano en ~/.tycon/harness (renames.json en una versión
     # pública, por ejemplo) no existe en la versión y no entra a /opt (pase adversarial de la D, clases 4 y 17)
     grep -qx "$MAPA_NOMBRES" "$LISTA_VERIFICADA" && CON_MAPA=1
-    for f in "${ARCHIVOS[@]}" $(extras_del_equipo); do
+    for f in "${ARCHIVOS[@]}" $(extras_del_equipo) $(extras_de_setup); do
       grep -qx "$f" "$LISTA_VERIFICADA" || muere "$f está en $ARNES pero NO en el manifiesto de la versión bajada: no es de la versión publicada y no se instala como freno"
     done
     rm -f "$LISTA_VERIFICADA"
   fi
-  for f in "${ARCHIVOS[@]}" $(extras_del_equipo); do
+  for f in "${ARCHIVOS[@]}" $(extras_del_equipo) $(extras_de_setup); do
     mkdir -p "$ORIGEN/$(dirname "$f")" && cp -f "$ARNES/$f" "$ORIGEN/$f" || muere "falta un archivo del arnés: $f"
   done
   if [ "$DESDE_RELEASE" = 1 ]; then ok "arnés: copia de la versión bajada verificada ($ARNES)"; else ok "pruebas: copia del disco ($ARNES)"; fi
@@ -549,10 +712,18 @@ else
   HAY="$(como_usuario /usr/bin/git -C "$ARNES" ls-tree --name-only "$REF" -- team-profile.json perfil-equipo.json "$MAPA_NOMBRES")" \
     || muere "no pude listar lo publicado (origin/main $REF) para saber si lleva el mapa de nombres viejos"
   [ -n "$HAY" ] && CON_MAPA=1
-  como_usuario /usr/bin/git -C "$ARNES" archive "$REF" "${ARCHIVOS[@]}" $(extras_del_equipo) | /usr/bin/tar -x -C "$ORIGEN" \
+  como_usuario /usr/bin/git -C "$ARNES" archive "$REF" "${ARCHIVOS[@]}" $(extras_del_equipo) $(extras_de_setup) | /usr/bin/tar -x -C "$ORIGEN" \
     || muere "no pude extraer lo publicado de origin/main ($REF)"
-  for f in "${ARCHIVOS[@]}" $(extras_del_equipo); do [ -f "$ORIGEN/$f" ] || muere "lo publicado (origin/main $REF) no tiene $f: ¿el freno ya está mergeado a main?"; done
+  for f in "${ARCHIVOS[@]}" $(extras_del_equipo) $(extras_de_setup); do [ -f "$ORIGEN/$f" ] || muere "lo publicado (origin/main $REF) no tiene $f: ¿el freno ya está mergeado a main?"; done
   ok "arnés: origin/main ${REF:0:10} (traído recién, exportado con git archive)"
+fi
+# el modo del guion corre la copia de root del instalador, que trae su propia lista de lo que se instala: una versión con
+# otro instalador (o con otro guion) no se instala sola — con la lista vieja quedaría a medias diciendo «se actualizó»
+if [ "$AUTO" = 1 ]; then
+  for par in update-guard.sh:scripts/production/update-guard.sh install-guard.sh:scripts/production/install-guard.sh; do
+    cmp -s "$AQUI_GUION/${par%%:*}" "$ORIGEN/${par#*:}" \
+      || muere "la versión nueva trae otro ${par%%:*}: esta actualización pide contraseña (sudo bash ~/.tycon/harness/scripts/production/install-guard.sh)"
+  done
 fi
 
 # ── 1. las carpetas de root: se crean o se exigen de root ────────────────────────────────────
@@ -576,9 +747,11 @@ for d in "$DESTINO" "$DESTINO/bin" "$DESTINO/hooks" "$DESTINO/lib" "$DESTINO/pro
 done
 
 instalar(){ # $1 = relativo en ORIGEN, $2 = destino, $3 = modo
-  cp -f "$ORIGEN/$1" "$2" || muere "no pude copiar $1 → $2"
-  chmod "$3" "$2" || muere "no pude poner permisos $3 a $2"
-  if [ "$SIN_SUDO" = 0 ]; then chown root:wheel "$2" || muere "no pude dejar $2 como root:wheel"; fi
+  # escrito aparte y movido: una instalación cortada a mitad deja el archivo viejo entero, nunca uno truncado
+  cp -f "$ORIGEN/$1" "$2.nuevo" || muere "no pude copiar $1 → $2"
+  chmod "$3" "$2.nuevo" || muere "no pude poner permisos $3 a $2"
+  if [ "$SIN_SUDO" = 0 ]; then chown root:wheel "$2.nuevo" || muere "no pude dejar $2 como root:wheel"; fi
+  mv -f "$2.nuevo" "$2" || muere "no pude dejar $2"
 }
 
 # Las reglas de firewall que abrió la puerta se cierran ANTES de reemplazarla: una regla abierta por una
@@ -590,7 +763,7 @@ cerrar_reglas_abiertas(){
   for d in "$casa/.tycon/state" "$casa/.claude/.tycon-pipeline"; do
     [ -f "$d/production-firewall.json" ] || [ -f "$d/production.log" ] || continue
     # la unión del estado y de las aperturas del registro sin un cierre posterior, como el barrido del hook
-    if ! hosts="$(/usr/bin/python3 -c 'import json,sys,os
+    if ! hosts="$(/usr/bin/python3 -I -c 'import json,sys,os
 estado, registro = sys.argv[1], sys.argv[2]
 hosts = []
 if os.path.exists(estado):
@@ -667,7 +840,7 @@ elif [ "$FIJADO_LEIDO" = "$ORIGEN_FIJADO_VIEJO" ] && [ "$FIJADO_URL" = "$URL" ] 
   ok "origen de confianza: el fijado antes del renombre pasó a $ORIGEN_FIJADO"
 fi
 if [ ! -f "$ORIGEN_FIJADO" ] || [ "$FIJADO_URL_AHORA" != "$URL" ] || [ "$FIJADO_ORG_AHORA" != "$ORG" ]; then
-  /usr/bin/python3 -c 'import json,sys,datetime; d={"url": sys.argv[1], "org": sys.argv[2], "fijado": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}; sys.argv[4] and d.update({"repo": sys.argv[4]}); json.dump(d, open(sys.argv[3], "w"), indent=1)' "$URL" "$ORG" "$ORIGEN_FIJADO" "$REPO_GITHUB" \
+  /usr/bin/python3 -I -c 'import json,sys,datetime; d={"url": sys.argv[1], "org": sys.argv[2], "fijado": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}; sys.argv[4] and d.update({"repo": sys.argv[4]}); json.dump(d, open(sys.argv[3], "w"), indent=1)' "$URL" "$ORG" "$ORIGEN_FIJADO" "$REPO_GITHUB" \
     || muere "no pude fijar el origen de confianza en $ORIGEN_FIJADO"
   chmod 644 "$ORIGEN_FIJADO" || muere "no pude poner permisos a $ORIGEN_FIJADO"
   if [ "$SIN_SUDO" = 0 ]; then chown root:wheel "$ORIGEN_FIJADO" || muere "no pude dejar $ORIGEN_FIJADO como root:wheel"; fi
@@ -726,8 +899,9 @@ instalar_node_oficial(){
   tar -xzf "$tmp/$tar" -C "$tmp" || { rm -rf "$tmp"; muere "no pude descomprimir el intérprete"; }
   local origen="$tmp/${tar%.tar.gz}/bin/node"
   [ -x "$origen" ] || { rm -rf "$tmp"; muere "el paquete del intérprete no trae bin/node"; }
-  cp -f "$origen" "$DESTINO/bin/node" && chmod 755 "$DESTINO/bin/node" || { rm -rf "$tmp"; muere "no pude copiar el intérprete"; }
-  if [ "$SIN_SUDO" = 0 ]; then chown root:wheel "$DESTINO/bin/node" || { rm -rf "$tmp"; muere "no pude dejar el intérprete como root:wheel"; }; fi
+  cp -f "$origen" "$DESTINO/bin/node.nuevo" && chmod 755 "$DESTINO/bin/node.nuevo" || { rm -rf "$tmp"; muere "no pude copiar el intérprete"; }
+  if [ "$SIN_SUDO" = 0 ]; then chown root:wheel "$DESTINO/bin/node.nuevo" || { rm -rf "$tmp"; muere "no pude dejar el intérprete como root:wheel"; }; fi
+  mv -f "$DESTINO/bin/node.nuevo" "$DESTINO/bin/node" || { rm -rf "$tmp"; muere "no pude dejar el intérprete en $DESTINO/bin/node"; }
   rm -rf "$tmp"
   ok "intérprete oficial $ver instalado (huella verificada contra la del repo)"
 }
@@ -745,7 +919,12 @@ if [ "${TYCON_PROD_NODE_LOCAL:-}" = "1" ] && [ "$SIN_SUDO" = 1 ]; then
 else
   instalar_node_oficial
 fi
-copiar_binario sqlcmd
+# la actualización sin contraseña no toma un binario de las carpetas que escribe el usuario: deja el de root que ya está
+# (el cliente de base no viene en lo publicado y no hay huella contra la que verificarlo)
+if [ "$AUTO" = 1 ]; then
+  [ -x "$DESTINO/bin/sqlcmd" ] || muere "falta el sqlcmd de root ($DESTINO/bin/sqlcmd): sin contraseña no lo copio de las carpetas del usuario — reinstalá con sudo bash install-guard.sh"
+  ok "sqlcmd: queda el de root que ya estaba (sin contraseña no se recopia)"
+else copiar_binario sqlcmd; fi
 sin_dependencias_del_usuario "$DESTINO/bin/sqlcmd"
 [ "${TYCON_PROD_NODE_LOCAL:-}" = "1" ] || sin_dependencias_del_usuario "$DESTINO/bin/node"
 
@@ -762,9 +941,10 @@ NUEVAS="$(printf '{\n  "__doc": "Huellas de lo instalado por install-guard.sh. E
 if [ -f "$DESTINO/huellas.json" ] && [ "$(cat "$DESTINO/huellas.json")" = "$NUEVAS" ]; then
   ok "huellas sin cambios"
 else
-  printf '%s\n' "$NUEVAS" > "$DESTINO/huellas.json" || muere "no pude escribir las huellas"
-  chmod 644 "$DESTINO/huellas.json" || muere "no pude poner permisos a las huellas"
-  if [ "$SIN_SUDO" = 0 ]; then chown root:wheel "$DESTINO/huellas.json" || muere "no pude dejar las huellas como root"; fi
+  printf '%s\n' "$NUEVAS" > "$DESTINO/huellas.json.nuevo" || muere "no pude escribir las huellas"
+  chmod 644 "$DESTINO/huellas.json.nuevo" || muere "no pude poner permisos a las huellas"
+  if [ "$SIN_SUDO" = 0 ]; then chown root:wheel "$DESTINO/huellas.json.nuevo" || muere "no pude dejar las huellas como root"; fi
+  mv -f "$DESTINO/huellas.json.nuevo" "$DESTINO/huellas.json" || muere "no pude dejar las huellas en $DESTINO/huellas.json"
   ok "huellas escritas"
 fi
 
@@ -776,7 +956,8 @@ if [ -f "$NUEVO" ] && ! cmp -s "$PLANTILLA" "$NUEVO"; then
   ok "respaldo del archivo administrado anterior"
 fi
 if ! cmp -s "$PLANTILLA" "$NUEVO" 2>/dev/null; then
-  cp -f "$PLANTILLA" "$NUEVO" || muere "no pude escribir $NUEVO"
+  # aparte y movido; el nombre intermedio no termina en .json, así que Claude Code no lo lee a medio escribir
+  cp -f "$PLANTILLA" "$NUEVO.nuevo" && mv -f "$NUEVO.nuevo" "$NUEVO" || muere "no pude escribir $NUEVO"
 fi
 if [ "$SIN_SUDO" = 0 ]; then
   # el modo que se midió funcionando en la Task 0b
@@ -813,7 +994,7 @@ fi
 CONSTANCIA_INSTALADO="$DESTINO/production/installed-files.json"
 INCOMPLETA="la instalación quedó INCOMPLETA: el freno y la puerta ya están copiados, falta su constancia — volvé a correr el instalador"
 # shellcheck disable=SC2046
-/usr/bin/python3 - "$ORIGEN" "$CONSTANCIA_INSTALADO.new" "${ARCHIVOS[@]}" $(extras_del_equipo) <<'PY' || muere "no pude escribir la constancia de lo instalado ($CONSTANCIA_INSTALADO) — $INCOMPLETA"
+/usr/bin/python3 -I - "$ORIGEN" "$CONSTANCIA_INSTALADO.new" "${ARCHIVOS[@]}" $(extras_del_equipo) <<'PY' || muere "no pude escribir la constancia de lo instalado ($CONSTANCIA_INSTALADO) — $INCOMPLETA"
 import hashlib, json, os, sys
 origen, salida, rutas = sys.argv[1], sys.argv[2], sys.argv[3:]
 files = []
@@ -834,15 +1015,82 @@ else
   ok "constancia de lo instalado: $CONSTANCIA_INSTALADO"
 fi
 
+# ── 4c. la actualización sin contraseña (story 8.88) ──────────────────────────────────────────────────────────────────
+# lo que va a /opt/tycon/setup: escrito aparte y movido (el modo del guion corre DESDE esa copia del instalador, y bash
+# lee un guion mientras corre: un reemplazo en el lugar lo cortaría a mitad)
+poner_en_setup(){ # $1 = relativo en ORIGEN, $2 = nombre, $3 = modo
+  local d="$DESTINO/setup/$2"
+  cp -f "$ORIGEN/$1" "$d.nuevo" && chmod "$3" "$d.nuevo" || muere "no pude copiar $1 → $d"
+  if [ "$SIN_SUDO" = 0 ]; then chown root:wheel "$d.nuevo" || muere "no pude dejar $d como root:wheel"; fi
+  mv -f "$d.nuevo" "$d" || muere "no pude dejar $d"
+}
+# sólo con contraseña: lo que corre el guion no se renueva a sí mismo (tabla de los dos caminos de la story)
+if [ "$CON_SETUP" = 1 ] && [ "$AUTO" = 0 ] && [ "$PERMISO" = allow -o -f "$MARCA" ]; then
+  poner_en_setup scripts/production/update-guard.sh update-guard.sh 755
+  poner_en_setup scripts/production/install-guard.sh install-guard.sh 755
+  poner_en_setup scripts/production/origin-moves.json origin-moves.json 644
+  ok "actualización sin contraseña: el guion y la copia del instalador al día en $DESTINO/setup"
+fi
+# la versión bajada que quedó instalada (de root): contra ella el guion decide si la próxima avanza
+if [ "$DESDE_RELEASE" = 1 ] && [ -n "${COMMIT_BAJADO:-}" ]; then
+  /usr/bin/python3 -I -c 'import json,sys; json.dump({"repo": sys.argv[2], "commit": sys.argv[3], "version": sys.argv[4]}, open(sys.argv[1], "w"), indent=1)' \
+    "$INSTALADA.nuevo" "$REPO_GITHUB" "$COMMIT_BAJADO" "${VERSION_BAJADA:-?}" && chmod 644 "$INSTALADA.nuevo" || muere "no pude escribir $INSTALADA"
+  if [ "$SIN_SUDO" = 0 ]; then chown root:wheel "$INSTALADA.nuevo" || muere "no pude dejar $INSTALADA como root:wheel"; fi
+  mv -f "$INSTALADA.nuevo" "$INSTALADA" || muere "no pude dejar $INSTALADA"
+fi
+QUIEN="${USUARIO:-$(id -un)}"
+# el modo del guion deja su renglón (se agrega, no se reescribe): de y a qué versión, quién la pidió y cuándo
+if [ "$AUTO" = 1 ]; then
+  /usr/bin/python3 -I -c 'import json,sys,datetime
+r = {"at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "from": sys.argv[2] or None, "to": sys.argv[3], "from_version": sys.argv[4] or None, "to_version": sys.argv[5], "user": sys.argv[6]}
+open(sys.argv[1], "a", encoding="utf-8").write(json.dumps(r, ensure_ascii=False) + "\n")' "$REGISTRO_AUTO" "$PREVIO_COMMIT" "$COMMIT_BAJADO" "$PREVIO_VERSION" "${VERSION_BAJADA:-?}" "$QUIEN" \
+    && chmod 644 "$REGISTRO_AUTO" || muere "el freno quedó al día pero no pude anotarlo en $REGISTRO_AUTO"
+  if [ "$SIN_SUDO" = 0 ]; then chown root:wheel "$REGISTRO_AUTO" || muere "no pude dejar $REGISTRO_AUTO como root:wheel"; fi
+fi
+# el permiso: el guion y cada carpeta hasta / de root, nadie más la escribe y ninguna es un enlace; la regla, validada con
+# visudo ANTES de moverla. Si algo falla, no queda ninguna regla puesta (sudo sigue andando como antes)
+if [ "$PERMISO" = allow ]; then
+  p="$DESTINO/setup/update-guard.sh"
+  while :; do
+    [ -L "$p" ] && muere "$p es un enlace simbólico: no pongo la regla de sudo (ninguna regla puesta)"
+    if [ "$SIN_SUDO" = 0 ] && [ "$(stat -f '%Su' "$p")" != root ]; then muere "$p no es de root: no pongo la regla de sudo (ninguna regla puesta)"; fi
+    escribible="$(/usr/bin/find "$p" -maxdepth 0 \( -perm -o+w -o -perm -g+w \) -print)" || muere "no pude revisar los permisos de $p: no pongo la regla de sudo (ninguna regla puesta)"
+    [ -z "$escribible" ] || muere "$p lo puede escribir alguien más que root: no pongo la regla de sudo (ninguna regla puesta)"
+    [ "$p" = / ] && break
+    p="$(dirname "$p")"
+    # en pruebas, el camino termina en la raíz falsa (lo de arriba es la carpeta temporal del usuario)
+    [ "$SIN_SUDO" = 1 ] && [ "$p" = "$RAIZ" ] && break
+  done
+  [[ "$QUIEN" =~ ^[A-Za-z_][A-Za-z0-9_.-]*$ ]] || muere "el nombre de usuario «${QUIEN}» no sirve para la regla de sudo"
+  VISUDO=/usr/sbin/visudo; [ -x "$VISUDO" ] || muere "no encuentro $VISUDO: sin validar la regla no la pongo"
+  mkdir -p "$SUDOERS_D" || muere "no pude crear $SUDOERS_D"
+  # el nombre con un punto: sudo no lee de sudoers.d un archivo así, y no queda a medio escribir como regla
+  NUEVA="$SUDOERS_D/tycon-guard.nueva"
+  sed "s/__USER__/$QUIEN/" "$ORIGEN/scripts/production/sudoers.tycon-guard.template" > "$NUEVA" || { rm -f "$NUEVA"; muere "no pude escribir la regla de sudo"; }
+  if ! "$VISUDO" -cf "$NUEVA" >/dev/null 2>&1; then rm -f "$NUEVA"; muere "la regla de sudo no valida (visudo -cf): no muevo nada a $SUDOERS_D"; fi
+  chmod 440 "$NUEVA" || { rm -f "$NUEVA"; muere "no pude poner permisos 440 a la regla"; }
+  if [ "$SIN_SUDO" = 0 ]; then chown root:wheel "$NUEVA" || { rm -f "$NUEVA"; muere "no pude dejar la regla como root:wheel"; }; fi
+  mv -f "$NUEVA" "$REGLA" || { rm -f "$NUEVA"; muere "no pude dejar la regla en $REGLA"; }
+  /usr/bin/python3 -I -c 'import json,sys,datetime; json.dump({"at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "user": sys.argv[2], "by": "install-guard.sh --allow-auto-update"}, open(sys.argv[1], "w"), indent=1)' "$MARCA" "$QUIEN" \
+    && chmod 644 "$MARCA" || { rm -f "$REGLA" "$MARCA"; muere "no pude escribir la marca $MARCA (saqué la regla)"; }
+  if [ "$SIN_SUDO" = 0 ]; then chown root:wheel "$MARCA" || { rm -f "$REGLA" "$MARCA"; muere "no pude dejar la marca como root:wheel (saqué la regla)"; }; fi
+  ok "actualización sin contraseña instalada: sudo -n /opt/tycon/setup/update-guard.sh (sin argumentos)"
+fi
+
 # ── 5. verificación final: dueño y permisos, todo junto ───────────────────────────────────────
 if [ "$SIN_SUDO" = 0 ]; then
-  ajenos="$(find "$DESTINO" \( ! -user root -o -perm -o+w -o -perm -g+w \) -print 2>/dev/null)"
+  ajenos="$(find "$DESTINO" \( ! -user root -o -perm -o+w -o -perm -g+w \) -print)" || muere "no pude revisar los dueños y permisos de $DESTINO: no doy la instalación por buena"
   [ -z "$ajenos" ] || muere "quedaron archivos que no son de root o que otro puede escribir:
 $ajenos"
   ok "$DESTINO es de root y nadie más puede escribirlo"
 fi
 
 echo
+if [ "$AUTO" = 1 ]; then
+  echo "✅ el freno se actualizó solo a ${VERSION_BAJADA:-?} (${COMMIT_BAJADO:0:7}); queda anotado en $REGISTRO_AUTO."
+  echo "   Los hooks nuevos quedan activos en la SIGUIENTE sesión de Claude Code."
+  exit 0
+fi
 echo "✅ freno de producción instalado."
 echo "   Los hooks nuevos quedan activos en la SIGUIENTE sesión de Claude Code."
 echo "   Probalo ahí: sqlcmd -S <un host de producción> -Q 'select 1'   → tiene que quedar frenado"

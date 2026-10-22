@@ -515,6 +515,11 @@ en su repo.
   `marker.js designate-relay --approved-by "<el dev>" --quote "<su frase>"`. Se la reconoce por su conversación, no por
   su nombre: sigue valiendo si la sesión se reinicia, y hay que volver a designarla si se abre un chat nuevo o se hace
   `/clear`. Una sesión que se llama igual no puede reenviar.
+  Debajo está la **firma delegada de cambios de control** (`approvals.delegated_signing`). «Apagada» es lo de fábrica.
+  «Prendida» deja que esa sesión vuelva a firmar, en nombre del dueño, un pedido que el dueño ya firmó, cuando lo único
+  nuevo es que se trajo main; su frase queda registrada. Lo nuevo, un choque resuelto a mano y aflojar un control siguen
+  esperando al dueño. El aviso fijo lo dice: «Aflojar un control siempre lo firma una persona, en su terminal; esto no lo
+  cambia.» Sin sesión designada, «prendida» no sirve, y la sección lo avisa. Vale sólo desde acá, nunca desde una máquina.
 - **Prueba a mano de cada punto**: si, además de lo que prueba el arnés, una persona tiene que marcar cada criterio de
   la guía del tester antes de cerrar la historia. «No» (de fábrica): la guía dice qué probó el arnés. «Sí»: el cierre
   frena hasta que una persona marque cada criterio contestando en el chat de su sesión, nombrándolo; el arnés le muestra
@@ -596,6 +601,20 @@ Lo que la persona ve en la sección y lo que hace el agente cuando le piden una 
   cada uno. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Paquetes de la organización**: qué paquetes del arnés (los revisores y las guías de un producto o de un cliente)
   se activan en todas las máquinas. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
+- **Cómo se actualiza el freno de producción** (`guard.update`): cómo se pone al día el freno que protege las bases de
+  producción en las máquinas autorizadas. Las dos opciones, cada una con su costo:
+  - «Con la contraseña de la persona» (de fábrica, lo más seguro): cada actualización la hace la persona de esa máquina
+    escribiendo su contraseña. Mientras nadie lo haga, la máquina sigue con el freno viejo.
+  - «Solo, desde la versión publicada»: la máquina se pone al día sola, sin contraseña, con la versión publicada y
+    verificada contra el repositorio del equipo. El costo: un freno publicado más flojo llega sin que nadie lo apruebe en
+    esa máquina, y cualquier programa que corra con el usuario de la persona puede pedir la actualización (no puede elegir
+    qué se instala). Cada actualización queda registrada y el aviso de arranque la muestra.
+  Elegir «solo» no cambia ninguna máquina: cada persona instala el permiso una vez, con su contraseña
+  (`install-guard.sh --allow-auto-update`), y el aviso de arranque le dice el comando. Si la organización vuelve a «con
+  la contraseña», el aviso de cada máquina con el permiso dice cómo sacarlo (`--remove-auto-update`). Vale sólo desde
+  acá, nunca desde una máquina. Queda en `team-profile.json` → `guard.update`, en el repo del perfil.
+
+De fábrica, las dos opciones nuevas están en lo más seguro: la firma delegada apagada y el freno con la contraseña.
 
 Debajo está **Qué versión del arnés tiene cada máquina**, la que informó cada una con su última ejecución. Es para mirar:
 las máquinas se actualizan solas al arrancar.
