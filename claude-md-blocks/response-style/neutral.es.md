@@ -12,3 +12,8 @@
   muchas filas, se escriben a un archivo y la respuesta da la ruta.
 - **Tope orientativo**: unos {{max_chars}} caracteres de prosa por respuesta (≈{{max_lines}} renglones;
   código y tablas no cuentan). Si hace falta más, se ofrece el detalle en vez de volcarlo.
+
+**Decisión importante** (difícil de deshacer; cambia alcance o diseño; adopta o descarta una idea o un plan; cuesta
+plata o semanas; toca a otras personas o a un cliente): recomendación en una línea, el contexto, cada opción con lo que
+gana y lo que cuesta, y la pregunta; en el cuadro de opciones, eso va en cada descripción. Nombres, orden, un arreglo
+chico o lo obvio: como siempre.

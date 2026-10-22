@@ -15,6 +15,11 @@ they can follow the reasoning without opening the code.
    the decision.
 3. **The action that falls to the person**, if any — in one line, recommendation first.
 
+**Important decision** (hard to undo; changes scope or design; adopts or drops an idea or a plan; costs money or
+weeks; affects other people or a client): recommendation in one line, the context, each option with what it gains and
+what it costs, and the question; in an options box, that goes in each description. Names, order, a small fix or the
+obvious: as usual.
+
 ## Limit and form
 
 - Up to about **{{max_chars}} characters of prose** (≈{{max_lines}} lines; code and tables do not

@@ -25,6 +25,11 @@ exactly the moment it applies.
 3. **DEFERRED detail** — one line offering it ("want the detail, or shall I go on?"). If it already
    lives in a file, send the path, not the content. If the dev said yes once, it holds all session.
 
+**Important decision** (hard to undo; changes scope or design; adopts or drops an idea or a plan; costs money or
+weeks; affects other people or a client): recommendation in one line, the context, each option with what it gains and
+what it costs, and the question; in an options box, that goes in each description. Names, order, a small fix or the
+obvious: as usual.
+
 **Limits** — `response-style-meter.js` measures them when the turn closes and charges them on the
 next one: **{{max_chars}} characters of prose** (≈{{max_lines}} lines; code and tables do not count)
 and 1 section heading. It is measured in characters: a paragraph with no breaks is "one line" and

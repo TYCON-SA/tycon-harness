@@ -2283,6 +2283,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 1.28: el pedido de una decisión importante — en cada variante del bloque de estilo la forma arranca por la recomendación; la portada del pipeline (COMM.i) y los pasos que piden decisión (validar la historia, aprobar el plan, los hallazgos) piden el contexto y lo que gana y lo que cuesta cada opción; los sincronizadores de Claude y de Codex dejan el mismo párrafo. Sobre una HOME de juguete; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/decision-shape.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/harness-bootstrap.test.sh",
       "requiere": []

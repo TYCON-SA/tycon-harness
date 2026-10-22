@@ -25,6 +25,11 @@ momento en que aplica.
 3. **Detalle DIFERIDO** — una línea ofreciéndolo ("¿querés el detalle o sigo?"). Si ya vive en un
    archivo, va la ruta, no el contenido. Si el dev dijo que sí una vez, vale toda la sesión.
 
+**Decisión importante** (difícil de deshacer; cambia alcance o diseño; adopta o descarta una idea o un plan; cuesta
+plata o semanas; toca a otras personas o a un cliente): recomendación en una línea, el contexto, cada opción con lo que
+gana y lo que cuesta, y la pregunta; en el cuadro de opciones, eso va en cada descripción. Nombres, orden, un arreglo
+chico o lo obvio: como siempre.
+
 **Topes** — los mide `response-style-meter.js` al cerrar el turno y los cobra el siguiente:
 **1300 caracteres de prosa** (≈13 renglones; código y tablas no cuentan) y 1 título de sección.
 Se mide por caracteres: un párrafo sin cortes es "una línea" y seis renglones para el lector.

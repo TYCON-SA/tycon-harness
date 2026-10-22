@@ -24,7 +24,10 @@ Step 8 listándolos. Si todo OK, idem.
 ```
 if has_critical:
     → MOSTRAR reporte completo
-    → PAUSAR SIEMPRE: "Hay N CRITICAL. ¿Querés corregir antes del commit o hacer override?"
+    → PAUSAR SIEMPRE, con la forma de la decisión importante: "Recomiendo {corregir|eximir}: {por qué}.
+      Hay N CRITICAL: {el contexto: qué encontró el revisor, en llano, y qué pasa si se deja}.
+      Corregir — {lo que gana y lo que cuesta}. Eximir — {lo que gana y lo que cuesta}.
+      ¿Querés corregir antes del commit o hacer override?"
     → Esperar decisión del usuario
 elif has_warning:
     → Auto-waive (con anuncio explícito) los warnings que:
