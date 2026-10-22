@@ -2,6 +2,10 @@
 
 English · [Castellano](README.es.md)
 
+**The harness in four minutes** (in Spanish, with subtitles).
+
+https://github.com/user-attachments/assets/04dba346-c992-4b24-9667-63aa58dd4d5e
+
 **A development cycle for coding agents: complete, consistent, controlled and adaptable.**
 
 - **Complete:** it goes from the request to production and to measurement; it does not stop at writing code.

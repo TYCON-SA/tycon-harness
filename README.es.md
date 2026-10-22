@@ -2,6 +2,10 @@
 
 [English](README.md) · Castellano
 
+**El arnés en cuatro minutos.**
+
+https://github.com/user-attachments/assets/04dba346-c992-4b24-9667-63aa58dd4d5e
+
 **Un ciclo de desarrollo para agentes de código: completo, consistente, controlado y adaptable.**
 
 - **Completo:** va del pedido a producción y a la medición; no se queda en escribir código.
