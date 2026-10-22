@@ -165,10 +165,11 @@ test('marker set: mismo storyId no reabre steps completados (R7); marker nuevo s
   assert.equal(r.status, 0); assert.match(r.stderr, /SIN el paso «Aprobar el plan»/);
   const bl = () => fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'bypass.log'), 'utf8');
   assert.match(bl(), /MARKER_SKIPS_PLAN/);
-  // MISMA story que OMITE el 3 que estaba pendiente → MARKER_DROPS_PLAN
+  // MISMA story que OMITE el 3 que estaba pendiente: un set no cierra pasos pendientes (@story-8.92), el 3 sigue
   r = markerCli(home, sid, ['set', JSON.stringify({ storyId: '2.2', stepsPending: [5, 6, 7, 8] })]);
-  assert.equal(r.status, 0); assert.match(r.stderr, /que estaba pendiente/);
-  assert.match(bl(), /MARKER_DROPS_PLAN/);
+  assert.equal(r.status, 0);
+  assert.ok(JSON.parse(r.stdout).stepsPending.includes(3), r.stdout);
+  assert.doesNotMatch(bl(), /MARKER_DROPS_PLAN/);
   // OTRA story sobre un marker viejo, sin 3 → MARKER_SKIPS_PLAN
   r = markerCli(home, sid, ['set', JSON.stringify({ storyId: '9.9', stepsPending: [5, 6, 7, 8] })]);
   assert.equal(r.status, 0);

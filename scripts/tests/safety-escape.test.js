@@ -484,3 +484,232 @@ test('T15 SafetyEscape_SinEscape_NoLlamaANode — la autorización sólo se busc
   freno(PREFIJO, { path: dir, conversacion: [deLaPersona(FRASE)] });
   assert.match(llamadas(), /escape-ok/, 'con el escape sí la busca (el node de mentira se usa)');
 });
+
+// ── ESC-C3: apagar el lazo de las pruebas o cerrar una ejecución en rojo lo decide la persona (@story-8.92) ─────────────
+// En una ejecución con las pruebas en rojo, apagar el lazo del modo autónomo y cerrar la ejecución piden la frase de la
+// persona. Los comandos van en una tabla: el freno lee el texto del comando.
+const MARKER = 'node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
+const CMD = {
+  apagar: `${MARKER} set-autonomous false`,
+  apagarCero: `${MARKER} set-autonomous 0`,
+  apagarOff: 'cd /tmp && node marker.js set-autonomous off',
+  prender: `${MARKER} set-autonomous true`,
+  cerrar: `${MARKER} clear`,
+  revisar: `${MARKER} update-story-status specs/story-9.9.md review`,
+  descartar: `${MARKER} clear-session ${SID}`,
+  adhoc: `${MARKER} adhoc clear`,
+  doing: `${MARKER} doing clear`,
+  relativo: 'node skills/tycon-pipeline/scripts/marker.js clear',
+  sinNode: './marker.js clear',
+};
+const FRASE_LAZO = 'autorizo set-autonomous';
+const FRASE_CERRAR = 'autorizo cerrar la ejecución';
+
+/** Una HOME con el marcador de la sesión. */
+function homeConMarcador(marcador, conversacion = []) {
+  const home = nuevaHome(conversacion);
+  const dir = path.join(home, '.claude', '.tycon-pipeline', 'active');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${SID}.json`), JSON.stringify({ storyId: '9.9', startedAt: hace(60), ...marcador }));
+  return home;
+}
+const VERDE = {
+  autonomous: true,
+  checks: { tests: 'green', advisors: 'green' },
+  stepsPending: ['prepare-commit'],
+  stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers'],
+};
+const ROJO = { ...VERDE, checks: { tests: 'red:exit=1' } };
+
+test('T1 EscapeOk_NombresNuevos_PidenLaFrase @story-8.92 — «autorizo set-autonomous» y «autorizo cerrar la ejecución» valen sólo de la persona', () => {
+  const { escapeAutorizado } = require(path.join(LIB, 'escape-ok.js'));
+  for (const [variable, frase] of [['set-autonomous', FRASE_LAZO], ['cerrar la ejecución', FRASE_CERRAR]]) {
+    const ok = (conversacion) => escapeAutorizado({ variable, sesion: SID, pedido: TUID, home: nuevaHome(conversacion) }).ok;
+    assert.strictEqual(ok([deLaPersona(frase)]), true, variable);
+    assert.strictEqual(ok([deLaPersona('seguí'), delAgente(frase, 1)]), false, variable);
+    assert.strictEqual(ok([deLaPersona(`no ${frase}`)]), false, variable);
+  }
+});
+
+test('T2 EscapeOk_OtraFrase_NoAutoriza @story-8.92 — la frase de un escape no autoriza el otro', () => {
+  const { escapeAutorizado } = require(path.join(LIB, 'escape-ok.js'));
+  assert.strictEqual(escapeAutorizado({ variable: 'cerrar la ejecución', sesion: SID, pedido: TUID, home: nuevaHome([deLaPersona(FRASE_LAZO)]) }).ok, false);
+  assert.strictEqual(escapeAutorizado({ variable: 'set-autonomous', sesion: SID, pedido: TUID, home: nuevaHome([deLaPersona(FRASE_CERRAR)]) }).ok, false);
+});
+
+test('T3 EscC3_SetAutonomousFalse_SinFrase_Frena @story-8.92 — apagar el lazo con las pruebas en rojo, sin la frase', () => {
+  // `TRUE` en mayúsculas también apaga: marker.js compara exacto
+  for (const c of [CMD.apagar, CMD.apagarCero, CMD.apagarOff, `${MARKER} set-autonomous TRUE`]) {
+    const r = freno(c, { home: homeConMarcador(ROJO, [deLaPersona('arreglá las pruebas')]) });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C3/);
+    assert.match(r.stderr, /lo decide la persona/);
+    assert.match(r.stderr, /close-as-debt/);
+    assert.doesNotMatch(r.stderr, /TYCON_SAFETY_OFF=1/, 'el cartel no da la receta');
+  }
+});
+
+test('T4 EscC3_SetAutonomousFalse_ConFrase_Pasa @story-8.92 — con la frase pasa; prenderlo nunca frena', () => {
+  const r = freno(CMD.apagar, { home: homeConMarcador(ROJO, [deLaPersona(`dale, ${FRASE_LAZO}`)]) });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const c = constancias(r.home).find((l) => l.regla === 'ESC-C3');
+  assert.ok(c, JSON.stringify(constancias(r.home)));
+  assert.deepStrictEqual([c.veredicto, c.via, c.escape, c.sesion], ['escape', 'persona', 'set-autonomous', SID]);
+  assert.strictEqual(freno(CMD.prender, { home: homeConMarcador(ROJO) }).status, 0);
+  for (const v of ['1', 'on']) assert.strictEqual(freno(`${MARKER} set-autonomous ${v}`, { home: homeConMarcador(ROJO) }).status, 0, v);
+  // con el modo autónomo ya apagado, apagarlo no saca nada
+  assert.strictEqual(freno(CMD.apagar, { home: homeConMarcador({ ...ROJO, autonomous: false }) }).status, 0);
+});
+
+test('T5 EscC3_ClearConRojo_SinFrase_Frena @story-8.92 — cerrar o pasar a review con un control en rojo', () => {
+  for (const c of [CMD.cerrar, CMD.revisar, `${MARKER} update-story-status specs/story-9.9.md done`]) {
+    const r = freno(c, { home: homeConMarcador(ROJO, [deLaPersona('cerralo')]) });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C3/);
+  }
+});
+
+test('T6 EscC3_ClearConRojo_ConFrase_PasaYAnota @story-8.92 — con «autorizo cerrar la ejecución» pasa y queda anotado', () => {
+  const r = freno(CMD.cerrar, { home: homeConMarcador(ROJO, [deLaPersona(`listo, ${FRASE_CERRAR}`)]) });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const c = constancias(r.home).find((l) => l.regla === 'ESC-C3');
+  assert.ok(c, JSON.stringify(constancias(r.home)));
+  assert.deepStrictEqual([c.via, c.escape, c.sesion], ['persona', 'cerrar-la-ejecucion', SID]);
+});
+
+test('T7 EscC3_ClearEnVerdeOSinMarcador_Pasa @story-8.92 — el cierre normal del paso 11 y una sesión sin pipeline pasan', () => {
+  assert.strictEqual(freno(CMD.cerrar, { home: homeConMarcador(VERDE) }).status, 0);
+  assert.strictEqual(freno(CMD.revisar, { home: homeConMarcador(VERDE) }).status, 0);
+  assert.strictEqual(freno(CMD.cerrar, { conversacion: [deLaPersona('x')] }).status, 0);
+  // lo que el pipeline acepta diciéndolo (sin medir) no frena
+  for (const aceptado of ['sin-medir', 'sin-acotar']) {
+    assert.strictEqual(freno(CMD.cerrar, { home: homeConMarcador({ ...VERDE, checks: { tests: aceptado } }) }).status, 0, aceptado);
+  }
+});
+
+test('T8 EscC3_FormasDelComando @story-8.92 — rutas, sin node, PowerShell, clear-session; adhoc y doing no frenan', () => {
+  const partido = `${MARKER} update-story-status specs/story-9.9.md \\\n  review`;
+  for (const [c, herramienta] of [[CMD.relativo, 'Bash'], [CMD.sinNode, 'Bash'], [CMD.descartar, 'Bash'], [CMD.cerrar, 'PowerShell'], [partido, 'Bash']]) {
+    const r = freno(c, { herramienta, home: homeConMarcador(ROJO) });
+    assert.strictEqual(r.status, 2, `${herramienta} ${c}: ${r.stderr}`);
+  }
+  for (const c of [CMD.adhoc, CMD.doing]) assert.strictEqual(freno(c, { home: homeConMarcador(ROJO) }).status, 0, c);
+});
+
+test('T12 EscC3_PasosSinCorrerYPaseColgado_Frena @story-8.92 — pruebas sin correr o el pase adversarial sin resultado', () => {
+  const sinCorrer = { ...VERDE, stepsPending: ['run-tests', 'reviewers', 'prepare-commit'], stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan', 'implement'] };
+  const colgado = { ...VERDE, adversarial: { launchedAtStep: 'implement', runId: 'r1', sessionId: SID, launchedAt: hace(30) } };
+  for (const m of [sinCorrer, colgado]) assert.strictEqual(freno(CMD.cerrar, { home: homeConMarcador(m) }).status, 2, JSON.stringify(m));
+  // un marcador que existe y no se puede leer se trata como abierto: no poder mirar no es estar terminada
+  const roto = homeConMarcador(VERDE);
+  fs.writeFileSync(path.join(roto, '.claude', '.tycon-pipeline', 'active', `${SID}.json`), '{roto');
+  const r = freno(CMD.cerrar, { home: roto });
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /no pude leer el marcador/);
+});
+
+test('T13 GuardRecord_SesionYEscape @story-8.92 — la constancia anota la sesión y el escape; uno fuera de la lista no', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'guard-rec-'));
+  const gr = path.join(RAIZ, 'scripts', 'lib', 'guard-record.js');
+  const correr = (extra) => spawnSync(process.execPath, [gr, '--guard', 'safety-guard', '--rule', 'ESC-C3', '--verdict', 'escape', '--via', 'persona', ...extra],
+    { env: { ...process.env, HOME: home, USERPROFILE: home }, encoding: 'utf8' });
+  correr(['--session', SID, '--escape', 'cerrar-la-ejecucion']);
+  correr(['--session', SID, '--escape', 'otra-cosa']);
+  const c = constancias(home);
+  assert.deepStrictEqual([c[0].sesion, c[0].escape], [SID, 'cerrar-la-ejecucion']);
+  assert.strictEqual(c[1].escape, undefined);
+});
+
+// Las formas que encontró el pase adversarial (@story-8.92): el comando se lee como lo lee el shell, no como texto.
+const WIN = 'node C:\\Users\\dev\\.claude\\agent-skills\\skills\\tycon-pipeline\\scripts\\marker.js';
+const ESC_C3_FRENA = [
+  ['Bash', `${MARKER} complete-step reviewers\n${MARKER} clear`],
+  ['Bash', `${MARKER} get\n${MARKER} set-autonomous false`],
+  ['Bash', `echo $(${MARKER} get) $(${MARKER} clear)`],
+  ['Bash', `{ ${MARKER} get\n${MARKER} clear; }`],
+  ['Bash', `echo "listo: $(${MARKER} clear)"`],
+  ['Bash', `bash -c "${MARKER} clear"`],
+  ['PowerShell', `${WIN} clear`],
+  ['PowerShell', `node "$HOME\\.claude\\agent-skills\\skills\\tycon-pipeline\\scripts\\marker.js" set-autonomous false`],
+  ['Bash', `${MARKER} clear-session $CLAUDE_CODE_SESSION_ID`],
+  ['Bash', `${MARKER} clear-session "\${CLAUDE_CODE_SESSION_ID}"`],
+  ['PowerShell', `${MARKER} clear-session $env:CLAUDE_CODE_SESSION_ID`],
+  ['Bash', `${MARKER} clear-session ${SID.toUpperCase()}`],
+  ['Bash', 'node skills/tycon-pipeline/scripts/Marker.js clear'],
+  ['Bash', 'node skills/tycon-pipeline/scripts/MARKER.JS clear'],
+  ['Bash', `${MARKER} update-story-status "specs/my story.md" review`],
+  ['Bash', `${MARKER} set-autonomous " true"`],
+  ['Bash', `${MARKER} $'clear'`],
+  ['Bash', `${MARKER} $"clear"`],
+  ['Bash', `echo clear | xargs ${MARKER}`],
+  ['Bash', 'node marker.js{,} clear'],
+  ['Bash', `sudo -E ${MARKER} clear`],
+  ['Bash', `FOO=1 ${MARKER} clear`],
+  // la vuelta 2 de revisores: envoltorios y opciones con valor
+  ['Bash', `cat <<EOF\ndon't\nEOF\n${MARKER} clear`],
+  ['Bash', `# don't\n${MARKER} clear`],
+  ['Bash', `nice -n 5 ${MARKER} clear`],
+  ['Bash', `env -u X ${MARKER} clear`],
+  ['Bash', `timeout -s KILL 5 ${MARKER} clear`],
+  ['Bash', `2>&1 ${MARKER} clear`],
+  ['Bash', `echo '${MARKER} clear' | sh`],
+  ['Bash', `find . -exec ${MARKER} clear \\;`],
+  ['Bash', 'node --env-file .env marker.js clear'],
+  ['Bash', 'node -r ./x.js marker.js clear'],
+  ['Bash', 'bun run marker.js clear'],
+  ['Bash', 'deno run marker.js clear'],
+  ['Bash', `eval "${MARKER} clear"`],
+  ['Bash', `nohup ${MARKER} clear`],
+  ['Bash', `echo \`${MARKER} clear\``],
+  ['Bash', `diff <(${MARKER} clear) x`],
+  ['Bash', `cat <<'EOF' | bash\n${MARKER} clear\nEOF`],
+  ['Bash', `echo "x" 'sin cerrar\n${MARKER} clear`],
+  ['PowerShell', `cmd /c node marker.js clear`],
+  ['PowerShell', `iex "node marker.js clear"`],
+  ['PowerShell', `Start-Process node -ArgumentList 'marker.js clear'`],
+  ['PowerShell', `pwsh -Command "node marker.js clear"`],
+  ['Bash', `${MARKER} update-story-status $S $ESTADO`],
+  ['Bash', `cat <<EOF\n$(${MARKER} clear)\nEOF`],
+];
+const ESC_C3_PASA = [
+  'grep -rn "marker.js clear" skills/tycon-pipeline/steps/',
+  'git commit -m "fix(8.92): marker clear escribe el cierre"',
+  'echo "despues corré marker.js clear"',
+  'rg "marker.js update-story-status x review" docs',
+  `${MARKER} get; echo clear`,
+  `${MARKER} clear-session otra-sesion`,
+  'echo marker.js clear',
+  'cat skills/tycon-pipeline/scripts/marker.js',
+  'sed -n 1,40p skills/tycon-pipeline/scripts/marker.js',
+  `# después: ${MARKER} clear\ngit status`,
+  `cat > notas.md <<'EOF'\nal final se corre ${MARKER} clear\nEOF`,
+  // el uso normal del pipeline, con la ejecución en rojo, no frena: sólo apagar el lazo o cerrar
+  `${MARKER} get`,
+  `${MARKER} start-step reviewers`,
+  `${MARKER} complete-step reviewers`,
+  `${MARKER} run-check tests -- node --test x.test.js`,
+  `${MARKER} set-check tests green --manual`,
+  `${MARKER} mark-adversarial-result 0 --type 5b`,
+  `${MARKER} set-autonomous true`,
+  `${MARKER} adhoc clear`,
+  `${MARKER} update-story-status specs/story-9.9.md in-progress`,
+  `S=specs/story-9.9.md; ${MARKER} update-story-status $S ready-for-dev`,
+  `python3 - <<'EOF'\nt = "corré \`marker.js clear\` y $(marker.js set-autonomous false)"\nEOF`,
+  `sed -n "$(grep -n '^function cmdSet(' marker.js | cut -d: -f1),+5p" marker.js`,
+  'node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js next',
+];
+
+test('T22 EscC3_FormasDelShell_Frena @story-8.92 — líneas, $(…), barras de Windows, mayúsculas, variables, comillas y xargs', () => {
+  for (const [herramienta, c] of ESC_C3_FRENA) {
+    const r = freno(c, { herramienta, home: homeConMarcador(ROJO) });
+    assert.strictEqual(r.status, 2, `${herramienta} ${JSON.stringify(c)}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C3/, c);
+  }
+});
+
+test('T23 EscC3_SoloNombrarlo_NoFrena @story-8.92 — un grep, un echo o un mensaje que nombran marker.js clear no lo corren', () => {
+  for (const c of ESC_C3_PASA) {
+    const r = freno(c, { home: homeConMarcador(ROJO) });
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+  }
+});

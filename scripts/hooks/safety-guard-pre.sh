@@ -277,13 +277,16 @@ mkdir -p "$(dirname "$LOGFILE")" 2>/dev/null || true
 # Constancia de la decisión. Es AYUDA, NO EVIDENCIA: nunca cambia el código de
 # salida ni lo que este freno decide. El comando va por STDIN — por argv lo vería cualquier
 # `ps` — y de él sólo se guarda la huella.
-constancia() { # $1 = regla (id del catálogo)  $2 = veredicto  [$3 = camino del escape  $4 = sesión que lo reenvió]
+constancia() { # $1 = regla (id del catálogo)  $2 = veredicto  [$3 = camino del escape  $4 = sesión que lo reenvió
+               #  $5 = sesión del comando  $6 = nombre del escape (set-autonomous, cerrar-la-ejecucion)]
   local lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/guard-record.js"
   [[ -f "$lib" ]] || return 0
   command -v "$HNODE" >/dev/null 2>&1 || return 0
   local extra=()
   [[ -n "${3:-}" ]] && extra+=(--via "$3")
   [[ -n "${4:-}" ]] && extra+=(--relay "$4")
+  [[ -n "${5:-}" ]] && extra+=(--session "$5")
+  [[ -n "${6:-}" ]] && extra+=(--escape "$6")
   printf '%s' "$CMD_SHOWN" | "$HNODE" "$lib" --guard safety-guard --rule "$1" --verdict "$2" ${extra[@]+"${extra[@]}"} --cmd-stdin >/dev/null 2>&1 || true
   return 0
 }
@@ -323,13 +326,18 @@ block() {
       echo "Alternativa: $alt"
     fi
     echo ""
-    if [[ -n "$ESC_VARIABLE" ]]; then
-      echo "El comando trae $ESC_VARIABLE=$ESC_VALOR y no vale: ${ESC_MOTIVO_VAR:-la persona no lo autorizó}."
-    elif [[ "$SAFETY_OFF_PEDIDO" == "1" ]]; then
-      echo "El comando pidió el escape (TYCON_SAFETY_OFF=1) y no vale: ${SAFETY_MOTIVO:-la persona no lo autorizó}."
+    if [[ -n "$ESC_CARTEL" ]]; then
+      # ESC-C3: el cartel lo trae la regla, sin receta (el escape es una frase de la persona, no una variable)
+      echo "$ESC_CARTEL"
+    else
+      if [[ -n "$ESC_VARIABLE" ]]; then
+        echo "El comando trae $ESC_VARIABLE=$ESC_VALOR y no vale: ${ESC_MOTIVO_VAR:-la persona no lo autorizó}."
+      elif [[ "$SAFETY_OFF_PEDIDO" == "1" ]]; then
+        echo "El comando pidió el escape (TYCON_SAFETY_OFF=1) y no vale: ${SAFETY_MOTIVO:-la persona no lo autorizó}."
+      fi
+      # la regla ESC-C1 nombra su propia variable en el motivo; las demás, la del freno
+      cartel_escape "${ESC_VARIABLE:-TYCON_SAFETY_OFF}" "${ESC_VALOR:-1}"
     fi
-    # la regla ESC-C1 nombra su propia variable en el motivo; las demás, la del freno
-    cartel_escape "${ESC_VARIABLE:-TYCON_SAFETY_OFF}" "${ESC_VALOR:-1}"
     echo ""
     echo "Apagar este hook del todo lo decide el dev (guides/safety-guard.md)."
   } >&2
@@ -354,7 +362,7 @@ block() {
 # Como GIT-C2, mira el comando crudo: un texto (un heredoc, un -m) que trae la asignación también frena. Es de más y
 # nunca de menos; ignorar el cuerpo de un heredoc o las comillas se puede falsificar (ver GIT-C2). Lo que no ve: la
 # asignación armada con el nombre en una variable (`declare "$n=0"`) o escrita en un guion que después se corre.
-ESC_VARIABLE=""; ESC_VALOR=""
+ESC_VARIABLE=""; ESC_VALOR=""; ESC_CARTEL=""
 # el comando sin comillas ni barras invertidas, una sola vez (ESC-C1 y ESC-C2 lo usan). Con `tr`: en el bash de la Mac
 # (3.2), `${CMD//[…]/}` crece con el cuadrado del largo y un heredoc de unos KB tardaba segundos en cada comando
 if command -v tr >/dev/null 2>&1; then
@@ -401,6 +409,53 @@ for _esc in TYCON_PROD_LINT TYCON_NEW_NAMES; do
   fi
 done
 ESC_VARIABLE=""; ESC_VALOR=""; ESC_MOTIVO=""; ESC_SIN_CONV=0
+
+# ESC-C3: apagar el lazo de las pruebas o cerrar una ejecución que no terminó lo decide la persona. Con un control en
+# rojo, el modo autónomo no deja cerrar el turno; `marker.js set-autonomous <valor que lo apaga>` lo apaga, y `clear`,
+# `clear-session` de la propia sesión o `update-story-status <h> review|done` la cierran como si hubiera terminado.
+# Frena sólo si el marcador de la sesión lo justifica (lib/run-close.js: modo autónomo prendido para apagarlo; un
+# control en rojo, pasos sin correr o el pase sin cerrar para cerrar) y la persona no escribió «autorizo set-autonomous»
+# o «autorizo cerrar la ejecución». Con la frase queda la constancia con la sesión y el escape (`marker.js clear` la lee
+# para anotar quién autorizó) y siguen las demás reglas. `adhoc clear` y `doing clear` no tocan la ejecución: no frena.
+ESC_CARTEL=""
+# El comando lo lee lib/marker-command.js como lo lee el shell (comillas, renglones, `$(…)`, barras de Windows,
+# mayúsculas); acá sólo se mira si nombra `marker`, sin distinguir mayúsculas, para no correr node en cada comando.
+if [[ "$CMD" == *[Mm][Aa][Rr][Kk][Ee][Rr]* ]]; then
+  _c3_sid="$(read_field session_id 2>/dev/null)" || _c3_sid=""
+  _c3_shell="bash"; tool_is_ps && _c3_shell="powershell"
+  _c3_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/tycon-pipeline/scripts/lib/run-close.js" || _c3_lib=""
+  _c3_out=""
+  if [[ -n "$_c3_lib" && -f "$_c3_lib" ]] && command -v "$HNODE" >/dev/null 2>&1; then
+    _c3_out="$(printf '%s' "$CMD" | "$HNODE" "$_c3_lib" --gate --session "$_c3_sid" --command-stdin --shell "$_c3_shell" 2>/dev/null)" || _c3_out=""
+  fi
+  _c3_motivo=""; _c3_frenos=()
+  while IFS= read -r _c3_l; do
+    case "$_c3_l" in
+      motivo=*) _c3_motivo="${_c3_l#motivo=}" ;;
+      frena=*) _c3_frenos+=("${_c3_l#frena=}") ;;
+    esac
+  done <<< "$_c3_out"
+  for _c3_f in ${_c3_frenos[@]+"${_c3_frenos[@]}"}; do
+    IFS=$'\t' read -r _c3_esc _c3_sub _c3_a1 <<< "$_c3_f" || true
+    _c3_clave="set-autonomous"; [[ "$_c3_esc" == "cerrar la ejecución" ]] && _c3_clave="cerrar-la-ejecucion"
+    if [[ "${SAFETY_OFF:-0}" != "1" ]] && escape_ok "$_c3_esc"; then
+      constancia ESC-C3 escape "$ESC_VIA" "$ESC_RELEVO" "$_c3_sid" "$_c3_clave"
+      continue
+    fi
+    ESC_CARTEL="Esto lo decide la persona, no el agente: si quiere hacerlo igual, lo dice ella en su mensaje («autorizo ${_c3_esc}»).
+Si la historia no se pudo terminar, la salida normal es dejarla como deuda: marker.js close-as-debt --reason \"<qué quedó pendiente>\" --debt <DEF-id>."
+    if [[ "$_c3_esc" == "set-autonomous" ]]; then
+      block "ESC-C3" \
+        "Apagar el modo autónomo (marker.js set-autonomous ${_c3_a1}) saca el lazo que no deja cerrar el turno con un control en rojo.${_c3_motivo:+ Hoy: ${_c3_motivo}.}" \
+        "Arreglá lo que está en rojo y volvé a correr el control. Si no se puede, decíselo a la persona."
+    else
+      block "ESC-C3" \
+        "Cerrar la ejecución ahora (marker.js ${_c3_sub}) la archiva como si hubiera terminado, y no terminó: ${_c3_motivo:-tiene algo pendiente}." \
+        "Terminá lo pendiente. Si no se puede, decíselo a la persona."
+    fi
+  done
+fi
+ESC_CARTEL=""; ESC_MOTIVO=""; ESC_SIN_CONV=0
 
 # ESC-C2: escribir en las conversaciones guardadas (`~/.claude/projects/`). La autorización de un escape se lee de ahí;
 # un renglón agregado a mano no está en la cadena de la conversación (escape-ok.js lo descarta), y además se frena el

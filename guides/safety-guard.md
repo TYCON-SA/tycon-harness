@@ -85,6 +85,7 @@ Cada regla tiene un rule ID estable (citado en el mensaje de bloqueo).
 | **SEC-C1** | `cat ~/.ssh/...` / `cat .../aws/credentials` | Secretos al contexto del LLM |
 | **SEC-C2** | `cat .env` / `cat .env.*` | Secretos al contexto del LLM |
 | **ESC-C1** | `TYCON_PROD_LINT` o `TYCON_NEW_NAMES` asignadas en cualquier parte del comando, con cualquier valor salvo `=1` (también `export`, `declare`, `printf -v`, el nombre partido con comillas, o `$env:` en PowerShell) | Apagan, al commitear, la revisión del catálogo de producción y el freno de nombres reales. Vale con la frase de la persona (abajo). Nombrarlas sin asignar no frena; un texto que trae la asignación sí (como GIT-C2) |
+| **ESC-C3** | `marker.js set-autonomous <valor que lo apaga>` con el modo autónomo prendido; `marker.js clear`, `clear-session` de la propia sesión o `update-story-status <h> review\|done` con un control en rojo, pasos sin correr o el pase adversarial sin cerrar | Apagan el lazo que no deja cerrar con las pruebas en rojo, o archivan como terminada una ejecución que no terminó. La salida normal de una historia que no se pudo es `marker.js close-as-debt`; hacerlo igual lo decide la persona (abajo). El cierre normal del paso 11, `adhoc clear`, `doing clear` y un texto que sólo nombra el comando no frenan |
 | **ESC-C2** | Un comando que nombra `~/.claude/projects` (también tras un `cd`) y trae una forma de escribir: redirección (salvo a `/dev/null`), `tee`, `sponge`, `sed -i`, `awk -i`, `dd`, `truncate`, `cp`, `mv`, un intérprete con código en la línea; en PowerShell `Add-Content`, `Set-Content`, `Out-File`, `Copy-Item`, `Move-Item` | Las conversaciones guardadas son de donde se lee la frase que autoriza un escape. Leer con `tail`, `grep`, `ls` o `wc` no frena |
 
 **Lo que NO bloquea (a propósito):**
@@ -119,7 +120,22 @@ y después se repite el comando con el prefijo (`TYCON_SAFETY_OFF=1 <comando>`; 
   cuenta; y escribir en las conversaciones lo frena `ESC-C2`. Reescribir con un guion un mensaje que ya está en la
   cadena es el límite conocido: Claude Code no firma sus registros.
 
-Lo mismo para `ESC-C1`: «autorizo TYCON_PROD_LINT» o «autorizo TYCON_NEW_NAMES».
+Lo mismo para `ESC-C1`: «autorizo TYCON_PROD_LINT» o «autorizo TYCON_NEW_NAMES». Y para `ESC-C3`, que no es una
+variable sino el comando: «autorizo set-autonomous» o «autorizo cerrar la ejecución». Una ejecución cerrada así queda
+con `cierre: abortada`, su motivo y quién lo autorizó (`marker.js clear` lo lee del registro de escapes); sin esa
+línea, `via: sin-registro`. `ESC-C3` lee el comando como lo lee la terminal: cuenta toda llamada a `marker.js` (o
+`marker`, sin distinguir mayúsculas) que no sea argumento de un programa que sólo lee o muestra texto (`grep`, `rg`,
+`echo`, `cat`, `sed`, `git`…). Así cuentan dos llamadas en renglones distintos, `$(…)`, la ruta de Windows con barras
+invertidas, el id de la sesión en una variable, los prefijos con sus opciones (`nice -n 5`, `timeout -s KILL 5`) y los
+envoltorios (`bash -c`, `eval`, `cmd /c`, `find -exec`, `iex`, `Start-Process`, un texto que va a `| sh`, un heredoc
+que va a un shell); un comentario, un heredoc que va a un archivo o un mensaje de commit que nombran `marker.js clear`
+no frenan. Lo dudoso frena como cerrar: un subcomando o un id que no se ve (`$VAR`, `xargs`), `clear-session` sin id, una
+comilla sin cerrar o un comando que no se pudo leer. Si falta `node` o `run-close.js`, `ESC-C3` no mira y el comando
+pasa, como antes de esta regla. Lo que no ve: el nombre del archivo `marker.js` armado en una variable, un `node -e`
+que lo carga, una copia con otro nombre, o un programa de texto que además ejecuta (`awk` con `system`). Para eso sigue el lazo del
+modo autónomo, que no deja cerrar el turno con un control en rojo, y el `cierre` del volcado: `marker.js set` no lo
+escribe, no pisa los controles (`checks`, `checksProvenance`), el pase ni el modo autónomo de la misma historia, no vacía sus pasos pendientes, y al
+pasar a otra historia deja la anterior anotada como abortada si no había terminado.
 
 Por qué: el prefijo lo puede escribir el agente. Un modelo frenado por `--no-verify` reescribió el comando con
 `TYCON_SAFETY_OFF=1` por su cuenta y commiteó, aunque la orden decía que no buscara otra forma. Con la frase, saltear

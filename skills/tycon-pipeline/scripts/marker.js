@@ -320,6 +320,13 @@ function cmdSet(payloadJson) {
     console.error('marker.js set: payload.storyId requerido');
     process.exit(2);
   }
+  // Cómo terminó la ejecución lo escriben `clear` y el camino de la deuda, nunca un `set` a mano: con él, una ejecución
+  // abierta quedaría archivada como completa.
+  if (Object.prototype.hasOwnProperty.call(payload, 'cierre')) {
+    delete payload.cierre;
+    console.error('marker.js set: `cierre` no se escribe con set (lo deja `clear`): se descartó.');
+    appendLog('bypass.log', { kind: 'MARKER_SET_CIERRE_DISCARDED', storyId: payload.storyId });
+  }
   // Pasos por nombre sin `stepScheme` (un `set` a mano para retomar): es el esquema 2.
   if (payload.stepScheme === undefined) {
     const items = [payload.stepsCompleted, payload.stepsPending].filter(Array.isArray).flat().map(String);
@@ -339,6 +346,19 @@ function cmdSet(payloadJson) {
   // Por eso, al cambiar de storyId, los campos de CICLO DE VIDA DE
   // CORRIDA se resetean (la identidad de sesión y el startedAt se conservan).
   if (existing && payload.storyId !== existing.storyId) {
+    // Otra historia sobre una ejecución que no terminó: la anterior queda dicha como abortada. Sin esto, el reset de
+    // abajo la lavaría y un `clear` después la archivaría como completa.
+    try {
+      const rc = require('./lib/run-close.js');
+      // una con `cierre` escrito (la deuda) ya dijo cómo terminó
+      if (!existing.cierre && rc.abierta(rc.estado(existing))) {
+        const c = rc.cierreDe(existing, { sid: SID });
+        appendLog('gates.log', { name: 'run-close', estado: c.estado, story: existing.storyId, motivo: `reemplazada por la historia ${payload.storyId} sin cerrarla: ${c.motivo || ''}`, via: c.via });
+        console.error(`marker.js set: la ejecución de ${existing.storyId} no había terminado (${c.motivo}): queda anotada como ${c.estado}.`);
+      }
+    } catch (e) {
+      appendLog('gates.log', { name: 'run-close', estado: 'abortada', story: existing.storyId, motivo: `reemplazada por la historia ${payload.storyId}; no pude calcular su estado (${e.message})` });
+    }
     const {
       adversarial, deepReviewDone, workSignalStarted, clockiStarted, adoMarkedActive, atddBypass,
       checks, checksProvenance, dodRuntimeChecked, iterations, fileEvents, filesTouched, filesTouchedAt,
@@ -374,6 +394,19 @@ function cmdSet(payloadJson) {
   if (existing && payload.storyId === existing.storyId && Array.isArray(payload.stepsPending)) {
     const done = new Set((existing.stepsCompleted || []).map(String));
     payload.stepsPending = payload.stepsPending.filter((n) => !done.has(String(n)));
+    // ni cerrar los que seguían pendientes: un paso se cierra con `complete-step`, no borrándolo de la lista
+    const nuevos = new Set(payload.stepsPending.map(String));
+    for (const p of existing.stepsPending || []) if (!nuevos.has(String(p))) payload.stepsPending.push(p);
+  }
+  // Los controles, el pase y el modo autónomo de la misma historia tienen sus comandos (`run-check`,
+  // `mark-adversarial-*`, `set-autonomous`, que el freno de seguridad mira): un `set` no los pisa.
+  if (existing && payload.storyId === existing.storyId) {
+    for (const k of ['checks', 'checksProvenance', 'autonomous', 'adversarial']) {
+      if (payload[k] === undefined) continue;
+      delete payload[k];
+      console.error(`marker.js set: «${k}» no se cambia con set en la misma historia (tiene su comando): se descartó.`);
+      appendLog('bypass.log', { kind: 'MARKER_SET_FIELD_DISCARDED', field: k, storyId: payload.storyId });
+    }
   }
   // Marker NUEVO que arranca sin el paso «Aprobar el plan» pendiente ni completado = un pipeline
   // "manual" que se saltea el HITL del plan. No se bloquea (adopt/resume legítimos pasan por acá),
@@ -3132,6 +3165,17 @@ function cmdClear() {
         // no poder leerla no es «no hubo»: se dice
         notaPrevia = `no se pudo leer la constancia de la revisión previa (${e.message})`;
         process.stderr.write(`[marker] ${notaPrevia}\n`);
+      }
+      // Cómo terminó la ejecución (lib/run-close.js): completa, o abortada con su motivo y quién autorizó cerrar. Un
+      // cierre ya escrito (la deuda de close-as-debt) no se pisa. Que falle no frena el archivo: queda dicho.
+      try {
+        marker.cierre = require('./lib/run-close.js').cierreDe(marker, { sid: SID });
+        const c = marker.cierre;
+        appendLog('gates.log', { name: 'run-close', estado: c.estado, story: String(marker.storyId), motivo: c.motivo || null, via: c.via || null, ...(c.deuda ? { deuda: c.deuda } : {}) });
+      } catch (e) {
+        // sin poder calcularlo, la ejecución no cuenta como terminada: queda abortada y el motivo lo dice
+        marker.cierre = { estado: 'abortada', motivo: `no pude determinar cómo terminó (${e.message})`, via: 'sin-registro', at: nowIso() };
+        process.stderr.write(`[marker] no pude armar el cierre de la ejecución (${e.message}): queda como abortada\n`);
       }
       const dump = {
         archivedAt: nowIso(), marker, gates, costo,

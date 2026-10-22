@@ -189,8 +189,12 @@ function anotarFallo(home, motivo) {
 // el perfil del equipo, un nombre corto. Un valor fuera de la forma no se anota (la línea se escribe igual).
 const VIAS = ['persona', 'reenvio', 'ambiente'];
 const RELEVO = /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,39}$/u;
+// Qué escape con nombre se usó y en qué sesión: `marker.js clear` busca acá quién autorizó cerrar una ejecución abierta.
+// Lista cerrada; un valor fuera de la lista no se anota y queda el aviso.
+const ESCAPES_CON_NOMBRE = ['set-autonomous', 'cerrar-la-ejecucion', 'story-skill-bypass'];
+const SESION = /^[\w-]{1,80}$/;
 
-function anotar({ freno, regla, veredicto, cmd, home, via, relevo } = {}) {
+function anotar({ freno, regla, veredicto, cmd, home, via, relevo, sesion, escape } = {}) {
   try {
     if (!FRENOS[freno]) {
       anotarFallo(home, `freno desconocido: ${String(freno).slice(0, 40)}`);
@@ -213,6 +217,11 @@ function anotar({ freno, regla, veredicto, cmd, home, via, relevo } = {}) {
       if (typeof relevo === 'string' && RELEVO.test(relevo)) linea.relevo = relevo;
       // la línea se escribe igual, sin quién lo reenvió: que quede dicho por qué
       else anotarFallo(home, `relevo fuera de forma en un escape de ${freno}: no se anotó quién lo reenvió`);
+    }
+    if (typeof sesion === 'string' && SESION.test(sesion)) linea.sesion = sesion;
+    if (escape !== undefined) {
+      if (ESCAPES_CON_NOMBRE.includes(escape)) linea.escape = escape;
+      else anotarFallo(home, `escape fuera de la lista en ${freno}: ${String(escape).slice(0, 40)}`);
     }
     const dir = casaDelPipeline(home);
     fs.mkdirSync(dir, { recursive: true });
@@ -238,7 +247,7 @@ function main(argv) {
     return i >= 0 && i + 1 < argv.length ? argv[i + 1] : undefined;
   };
   const cmd = argv.includes('--cmd-stdin') ? leerStdin() : undefined;
-  anotar({ freno: val('--guard'), regla: val('--rule'), veredicto: val('--verdict'), cmd, via: val('--via'), relevo: val('--relay') });
+  anotar({ freno: val('--guard'), regla: val('--rule'), veredicto: val('--verdict'), cmd, via: val('--via'), relevo: val('--relay'), sesion: val('--session'), escape: val('--escape') });
   return 0; // SIEMPRE 0: el freno que nos llamó decide su propio código de salida
 }
 

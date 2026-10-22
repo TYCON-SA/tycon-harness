@@ -195,6 +195,8 @@
           "MARKER_SKIPS_PLAN",
           "STEP_OUT_OF_ORDER",
           "MARKER_DROPS_PLAN",
+          "MARKER_SET_CIERRE_DISCARDED",
+          "MARKER_SET_FIELD_DISCARDED",
           "STORY_SKILL_BYPASS",
           "STORY_SKILL_BYPASS_USED",
           "DOD_BYPASS_UI",
