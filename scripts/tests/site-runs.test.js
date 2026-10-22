@@ -1120,7 +1120,17 @@ function foto260(nombre, texto) {
   const n = normalizar260(texto);
   if (process.env.TYCON_RUNS_SNAPSHOT_WRITE === '1') { fs.mkdirSync(FOTOS_260, { recursive: true }); fs.writeFileSync(f, n); return; }
   assert.ok(fs.existsSync(f), `falta la foto ${nombre}`);
-  assert.strictEqual(n, fs.readFileSync(f, 'utf8'), `${nombre}: cambió lo que se ve en castellano`);
+  // los textos comprimidos de la página llevan en su cabecera el sistema que los comprimió (macOS o Linux): el contenido
+  // es el mismo y ese dato no se compara
+  const sinSistema = (s) => s.replace(/H4sIAAAAAAAA[A-Za-z0-9+/]/g, 'H4sIAAAAAAAA_');
+  const foto = sinSistema(fs.readFileSync(f, 'utf8'));
+  if (sinSistema(n) === foto) return;
+  // el primer renglón distinto, con los dos lados: la página entera no entra en el mensaje
+  const a = foto.split('\n'); const b = sinSistema(n).split('\n');
+  let i = 0; while (i < a.length && a[i] === b[i]) i++;
+  let c = 0; while (c < Math.min((a[i] || '').length, (b[i] || '').length) && a[i][c] === b[i][c]) c++;
+  const tramo = (s) => JSON.stringify((s || '').slice(Math.max(0, c - 120), c + 200));
+  assert.fail(`${nombre}: cambió lo que se ve en castellano — renglón ${i + 1} (de ${a.length} y ${b.length}), columna ${c + 1}:\n  antes: ${tramo(a[i])}\n  ahora: ${tramo(b[i])}`);
 }
 
 /** Lo que dibuja el cliente: fichas, gráficos, la cuenta y el detalle de la primera ejecución de dev-a. */

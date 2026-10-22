@@ -1521,7 +1521,7 @@ const CLIENTE_FUENTE = String.raw`(function () {
   var ES_TXT = /*TEXTOS_ES*/{};
   var TXT = (function () {
     try { var el = typeof document !== 'undefined' && document.getElementById('corridas-textos'); var d = el && el.dataset && el.dataset.textos; var j = d ? JSON.parse(d) : null; return j && typeof j === 'object' ? j : null; }
-    catch (e) { if (typeof console !== 'undefined') console.warn('corridas: los textos de la página no se pudieron leer; quedan en castellano', e); return null; }
+    catch (e) { if (typeof console !== 'undefined') console.warn('ejecuciones: los textos de la página no se pudieron leer; quedan en castellano', e); return null; }
   })() || ES_TXT;
   // una clave que falta en el bloque de la página (una página de otra versión) sale en castellano, nunca como la clave
   function T(k, v) {
