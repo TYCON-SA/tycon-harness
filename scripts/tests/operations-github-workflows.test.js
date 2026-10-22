@@ -1,6 +1,6 @@
 'use strict';
 // operations-github-workflows.test.js — los workflows modelo de GitHub Actions para los procesos de la noche
-// (T1 a T8; T9: la credencial por GitHub App; T10: los privados que ve la credencial). Lee los YAML como texto (no hay biblioteca de YAML en el arnés, a propósito), corre de verdad el bloque que
+// (T1 a T8; T9: la credencial por GitHub App; T10: los tres trabajos de la revisión de dependencias; T11: los privados que ve la credencial). Lee los YAML como texto (no hay biblioteca de YAML en el arnés, a propósito), corre de verdad el bloque que
 // elige el arnés, prepare-tree.sh, operations-auth.sh y clone-repos.sh sobre repos de juguete, y nunca toca la red.
 const test = require('node:test');
 const assert = require('node:assert');
@@ -45,6 +45,59 @@ function runLines(text) {
   return out;
 }
 
+/** Los trabajos de un workflow: { nombre: texto }, en el orden en que están (`  nombre:` a dos espacios bajo `jobs:`). */
+function jobsOf(text) {
+  const out = {};
+  const i = text.search(/^jobs:\n/m);
+  if (i < 0) return out;
+  let cur = null;
+  for (const l of text.slice(i).split('\n').slice(1)) {
+    const m = l.match(/^ {2}([a-z][a-z0-9-]*):$/);
+    if (m) { cur = m[1]; out[cur] = []; } else if (cur) out[cur].push(l);
+  }
+  return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, v.join('\n')]));
+}
+/** Los permisos de un trabajo: {} para `permissions: {}`, el mapa de un bloque, o null si no hay exactamente un `permissions:`. */
+function permsOf(job) {
+  const lines = job.split('\n');
+  const idx = lines.map((l, i) => (/^ {4}permissions:/.test(l) ? i : -1)).filter((i) => i >= 0);
+  if (idx.length !== 1 || /^ {6,}permissions:/m.test(job)) return null;
+  const rest = lines[idx[0]].replace(/^ {4}permissions:/, '').trim();
+  if (rest === '{}') return {};
+  if (rest !== '') return null;
+  const out = {};
+  for (let j = idx[0] + 1; j < lines.length && /^ {6}\S/.test(lines[j]); j++) {
+    const m = lines[j].match(/^ {6}([a-z-]+): (read|write|none)$/);
+    if (!m) return null;
+    out[m[1]] = m[2];
+  }
+  return out;
+}
+/** ¿El paso abre pull requests de verdad? Llama al guion y no es la pasada que sólo registra. */
+const opensPrs = (stepText) => /open-pr-per-finding\.sh/.test(runLines(stepText).join('\n')) && !/--record-only/.test(runLines(stepText).join('\n'));
+/** Los permisos de un workflow. Un trabajo: `contents: write` arriba, como siempre. Varios: `permissions: {}` arriba, los
+ *  de cada trabajo en el trabajo, `pull-requests: write` sólo donde se abren pull requests, y el trabajo que corre el
+ *  código de los productos (`nightly-dependencies.js run`) sin permisos y sin tokens. */
+function permissionsOk(text) {
+  const jobs = jobsOf(text);
+  const names = Object.keys(jobs);
+  const tops = [...text.matchAll(/^permissions:/gm)].length;
+  if (names.length <= 1) {
+    const perms = [...text.matchAll(/^( *)permissions:/gm)];
+    return perms.length === 1 && perms[0][1] === '' && /^permissions:\n {2}contents: write\n(?! {2}\S)/m.test(text);
+  }
+  if (tops !== 1 || !/^permissions: \{\}$/m.test(text)) return false;
+  for (const n of names) {
+    const p = permsOf(jobs[n]);
+    if (p === null || Object.entries(p).some(([k, v]) => !['contents', 'pull-requests'].includes(k) || v === 'none')) return false;
+    const abre = steps(jobs[n]).some(opensPrs);
+    if ((p['pull-requests'] === 'write') !== abre) return false;
+    if (/nightly-dependencies\.js run\b/.test(runLines(jobs[n]).join('\n'))
+      && (Object.keys(p).length > 0 || /secrets\.|github\.token|outputs\.token/.test(jobs[n]))) return false;
+  }
+  return true;
+}
+
 /** Las reglas de los workflows modelo, con su id; [] = cumple. */
 function brokenRules(text) {
   const broken = [];
@@ -53,8 +106,7 @@ function brokenRules(text) {
   const on = text.match(/^on:\n((?: {2}.*\n|\n)*)/m);
   const triggers = on ? [...on[1].matchAll(/^ {2}([a-z_]+):/gm)].map((x) => x[1]).sort().join(',') : '';
   if (triggers !== 'schedule,workflow_dispatch') broken.push('triggers');
-  const perms = [...text.matchAll(/^( *)permissions:/gm)];
-  if (perms.length !== 1 || perms[0][1] !== '' || !/^permissions:\n {2}contents: write\n(?! {2}\S)/m.test(text)) broken.push('permissions');
+  if (!permissionsOk(text)) broken.push('permissions');
   const secrets = [...text.matchAll(/secrets\.([A-Za-z_]+)/g)].map((x) => x[1]);
   // los del aviso: la dirección del webhook (la de antes, una sola, y la de cada canal), la credencial del correo y el
   // permiso de lectura del repo del perfil, de donde salen los canales elegidos
@@ -115,22 +167,26 @@ test('T2 GhModels_SecurityRules: los tres cumplen, y una copia alterada por regl
     'pull-request-target': t.replace('  workflow_dispatch:', '  pull_request_target:\n  workflow_dispatch:'),
     triggers: t.replace('  workflow_dispatch:', '  push:\n  workflow_dispatch:'),
     'uses-by-sha': t.replace(/actions\/setup-node@[0-9a-f]{40} # v7\.0\.0/, 'actions/setup-node@v7'),
-    permissions: t.replace('permissions:\n  contents: write', 'permissions:\n  contents: write\n  issues: write'),
+    permissions: t.replace('    permissions: {}\n    env:', '    permissions:\n      contents: read\n    env:'),
     secrets: t.replace('secrets.TELEGRAM_BOT_TOKEN', 'secrets.OTRO_TOKEN'),
-    'secret-scope': t.replace('    timeout-minutes: 90\n    env:\n', '    timeout-minutes: 90\n    env:\n      TODO_EL_TRABAJO: ${{ secrets.HARNESS_ORG_TOKEN }}\n'),
+    'secret-scope': t.replace('    permissions: {}\n    env:\n', '    permissions: {}\n    env:\n      TODO_EL_TRABAJO: ${{ secrets.HARNESS_ORG_TOKEN }}\n'),
     'persist-credentials': t.replace('          path: ops\n          persist-credentials: false', '          path: ops'),
     'expression-in-run': t.replace('echo "issues: $(', 'echo "${{ inputs.harness_ref }}"\n          echo "issues: $('),
     'app-token': t.replace('          permission-issues: write\n', '          permission-issues: write\n          permission-contents: write\n'),
   };
   // más maneras de romper las reglas de la App, cada una por separado
   const masAlteraciones = [
-    ['secret-scope', t.replace('          APP_TOKEN: ${{ steps.org-token.outputs.token }}\n', '          APP_TOKEN: ${{ steps.org-token.outputs.token }}\n          LLAVE: ${{ secrets.HARNESS_APP_PRIVATE_KEY }}\n')],
+    ['secret-scope', t.replace('          ORG_TOKEN: ${{ steps.org-token.outputs.token || secrets.HARNESS_ORG_TOKEN }}\n', '          ORG_TOKEN: ${{ steps.org-token.outputs.token || secrets.HARNESS_ORG_TOKEN }}\n          LLAVE: ${{ secrets.HARNESS_APP_PRIVATE_KEY }}\n')],
+    ['permissions', t.replace('      HAS_PIP: ${{ needs.fetch.outputs.has_pip }}\n    steps:', '      HAS_PIP: ${{ needs.fetch.outputs.has_pip }}\n      GH_TOKEN: ${{ github.token }}\n    steps:')],
     ['secret-scope', t.replace('GH_TOKEN: ${{ steps.org-token.outputs.token || secrets.HARNESS_ORG_TOKEN }}', 'GH_TOKEN: ${{ steps.org-token.outputs.token || secrets.TELEGRAM_BOT_TOKEN }}')],
     ['app-token', t.replace("        id: org-token\n        if: vars.HARNESS_APP_CLIENT_ID != ''\n", '        id: org-token\n')],
     ['app-token', t.replace('          permission-contents: read\n          permission-issues: read\n', '')],
     ['app-token', t.replace('          owner: ${{ github.repository_owner }}\n          permission-issues: write\n', '          owner: otra-org\n          permission-issues: write\n')],
     ['app-token', t.replace('          permission-issues: write\n', '          permission-issues: write\n          github-api-url: https://example.com\n')],
   ];
+  // los de un solo trabajo siguen con sólo `contents: write`
+  const sm = read('stage-metrics.yml');
+  assert.ok(brokenRules(sm.replace('permissions:\n  contents: write', 'permissions:\n  contents: write\n  issues: write')).includes('permissions'));
   for (const [rule, alterado] of masAlteraciones) {
     assert.notStrictEqual(alterado, t, `una alteración de ${rule} no cambió nada`);
     assert.ok(brokenRules(alterado).includes(rule), `una copia alterada para ${rule} no salió roja: ${brokenRules(alterado)}`);
@@ -141,12 +197,15 @@ test('T2 GhModels_SecurityRules: los tres cumplen, y una copia alterada por regl
   }
 });
 
-test('T3 GhModels_EffectsGateEveryWrite: EFFECTS con la forma que vale en una ejecución programada; todo paso con efectos lo pide', () => {
-  const writers = [{ re: /push-nightly-data\.js save/, main: true }, { re: /work-items\.js run/, main: false }, { re: /daily-summary\.js deliver/, main: false }];
+test('T3 GhModels_EffectsGateEveryWrite: EFFECTS con la forma que vale en una ejecución programada, en cada trabajo; todo paso con efectos lo pide', () => {
+  const writers = [{ re: /push-nightly-data\.js save/, main: true }, { re: /work-items\.js run/, main: false }, { re: /daily-summary\.js deliver/, main: false },
+    { re: /open-pr-per-finding\.sh/, main: true }];
   let seen = 0;
   for (const f of WORKFLOWS) {
     const t = read(f);
-    assert.match(t, /^ {6}EFFECTS: \$\{\{ github\.event_name == 'schedule' \|\| inputs\.effects \}\}$/m, `${f}: EFFECTS no tiene la forma literal`);
+    const efectos = t.match(/^ {6}EFFECTS: \$\{\{ github\.event_name == 'schedule' \|\| inputs\.effects \}\}$/gm) || [];
+    assert.strictEqual(efectos.length, Math.max(1, Object.keys(jobsOf(t)).length), `${f}: EFFECTS no tiene la forma literal en cada trabajo`);
+    for (const [n, job] of Object.entries(jobsOf(t))) assert.match(job, /^ {6}EFFECTS: \$\{\{ github\.event_name == 'schedule' \|\| inputs\.effects \}\}$/m, `${f}: el trabajo ${n} no declara EFFECTS`);
     assert.doesNotMatch(t, /if: .*inputs\.effects/, `${f}: un if: con inputs.effects directo (en una ejecución programada está vacío)`);
     for (const s of steps(t)) {
       for (const w of writers) {
@@ -158,7 +217,7 @@ test('T3 GhModels_EffectsGateEveryWrite: EFFECTS con la forma que vale en una ej
       }
     }
   }
-  assert.ok(seen >= 5, `se miraron los pasos con efectos (${seen})`);
+  assert.ok(seen >= 7, `se miraron los pasos con efectos (${seen})`);
 });
 
 test('T4 GhModels_NoOrgLiterals: ningún <dueño>/<repo> escrito fuera de uses:, ninguna dirección de Azure ni la superposición del equipo', () => {
@@ -407,48 +466,106 @@ test('T9 GhModels_AppToken: la App es el camino recomendado y el usuario de máq
   assert.strictEqual(tApp.length, 1, 'el tablero pide un solo token de la App');
   assert.match(tApp[0], SHA);
   assert.deepStrictEqual([...tApp[0].matchAll(/^ {10}(permission-[a-z-]+): (.*)$/gm)].map((x) => `${x[1]}=${x[2]}`), ['permission-deployments=read', 'permission-actions=read']);
-  // la revisión de dependencias: el orden es la regla
-  const d = steps(read('dependency-audit.yml'));
+  // la revisión de dependencias: la regla es el trabajo en que vive cada credencial
+  const jobs = jobsOf(read('dependency-audit.yml'));
+  const d = steps(jobs.fetch);
   const at = (re) => { const i = d.findIndex((x) => re.test(x)); assert.ok(i >= 0, `falta el paso ${re}`); return i; };
   const leer = at(/id: org-token$/m);
   const clonar = at(/clone-repos\.sh --declared/);
   const estado = at(/work-items\.js state/);
-  const revocar = at(/installation\/token/);
-  const revisar = at(/nightly-dependencies\.js run/);
-  const escribir = at(/id: org-token-issues$/m);
-  const issues = at(/work-items\.js run/);
-  assert.ok(leer < clonar && clonar < revocar && estado < revocar && revocar < revisar && revisar < escribir && escribir < issues,
-    `el orden: ${[leer, clonar, estado, revocar, revisar, escribir, issues].map((i) => nombre(d[i])).join(' → ')}`);
-  for (const i of [leer, escribir]) assert.match(d[i], SHA);
-  assert.match(d[leer], /^ {10}skip-token-revoke: true$/m, 'el de leer lo revoca el paso de revocar, no la acción al final');
-  assert.doesNotMatch(d[escribir], /skip-token-revoke/, 'el de los issues lo revoca la acción al terminar');
-  assert.match(d[escribir], /^ {10}permission-issues: write$/m); assert.doesNotMatch(d[escribir], /permission-contents/, 'el de los issues no lee código');
-  assert.match(d[revocar], /^ {8}if: always\(\) && steps\.org-token\.outputs\.token != ''$/m, 'se revoca también si un paso anterior falló');
-  // nadie usa el token de leer después de revocarlo; nadie usa el de los issues antes de pedirlo
-  d.forEach((st, i) => {
-    if (i > revocar) assert.doesNotMatch(st, /steps\.org-token\.outputs/, `${nombre(st)} usa el token de leer ya revocado`);
-    if (i < escribir) assert.doesNotMatch(st, /steps\.org-token-issues\.outputs/, `${nombre(st)} usa el token de los issues antes de pedirlo`);
-  });
-  // el paso que corre código de los productos no tiene ninguna credencial
-  assert.doesNotMatch(d[revisar], /TOKEN|secrets\.|outputs\.token/, 'la revisión no tiene credencial');
-  // el paso de revocar, corrido de verdad con un curl falso: 204 sigue; otra cosa es rojo y no sigue
-  const run = d[revocar].split('\n');
-  const body = run.slice(run.findIndex((l) => /^ {8}run: \|$/.test(l)) + 1).map((l) => l.replace(/^ {10}/, '')).join('\n');
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'revoke-')); dirs.push(base);
-  fs.writeFileSync(path.join(base, 'curl'), '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$CURL_ARGS"\nprintf "%s" "$CURL_CODE"\n', { mode: 0o755 });
-  const correr = (code) => spawnSync('bash', ['-c', body], { encoding: 'utf8',
-    env: cleanEnv({ PATH: `${base}${path.delimiter}${process.env.PATH}`, APP_TOKEN: 'ghs_de_prueba', GITHUB_API_URL: 'https://api.example', CURL_CODE: code, CURL_ARGS: path.join(base, 'args') }) });
-  let r = correr('204');
-  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
-  const args = fs.readFileSync(path.join(base, 'args'), 'utf8');
-  assert.match(args, /^DELETE$/m); assert.match(args, /^https:\/\/api\.example\/installation\/token$/m); assert.match(args, /^Authorization: Bearer ghs_de_prueba$/m);
-  r = correr('401');
-  assert.strictEqual(r.status, 1, 'no revocado: rojo');
-  assert.match(r.stdout, /::error::No se pudo revocar la credencial de la App \(HTTP 401\)/);
-  assert.doesNotMatch(`${r.stdout}${r.stderr}`, /ghs_de_prueba/, 'el token no se imprime');
+  assert.ok(leer < clonar && leer < estado, `el orden: ${[leer, clonar, estado].map((i) => nombre(d[i])).join(' → ')}`);
+  assert.match(d[leer], SHA);
+  assert.match(d[leer], /^ {10}permission-contents: read$/m); assert.match(d[leer], /^ {10}permission-issues: read$/m);
+  assert.doesNotMatch(d[leer], /skip-token-revoke/, 'el de leer lo revoca la acción al terminar el trabajo fetch: no hay paso que lo revoque');
+  assert.doesNotMatch(read('dependency-audit.yml'), /installation\/token|Revocar la credencial/, 'ya no hay paso que revoque a mano');
+  // el de los issues se pide en decide, antes de usarse
+  const w = steps(jobs.decide);
+  const escribir = w.findIndex((x) => /id: org-token-issues$/m.test(x));
+  const issues = w.findIndex((x) => /work-items\.js run/.test(x));
+  assert.ok(escribir >= 0 && escribir < issues, 'el token de los issues se pide antes de usarlo');
+  assert.match(w[escribir], SHA);
+  assert.doesNotMatch(w[escribir], /skip-token-revoke/, 'el de los issues lo revoca la acción al terminar');
+  assert.match(w[escribir], /^ {10}permission-issues: write$/m); assert.doesNotMatch(w[escribir], /permission-contents/, 'el de los issues no lee código');
+  // nadie usa un token de la App fuera de su trabajo
+  assert.doesNotMatch(jobs.decide, /steps\.org-token\.outputs/); assert.doesNotMatch(jobs.fetch, /steps\.org-token-issues\.outputs/);
+  assert.doesNotMatch(jobs.review, /org-token/);
+  // el paso que corre código de los productos no tiene ninguna credencial (ni su trabajo)
+  const revisar = steps(jobs.review).find((x) => /nightly-dependencies\.js run/.test(x));
+  assert.doesNotMatch(revisar, /TOKEN|secrets\.|outputs\.token|github\.token/, 'la revisión no tiene credencial');
 });
 
-test('T10 CloneRepos_SeesPrivates: con la App, los repos donde está instalada (privados incluidos); el usuario de máquina suma los privados de una cuenta de usuario; cero repos vistos es un aviso', () => {
+test('T10 GhAudit_ThreeJobsLeastPrivilege @story-8.32 @ac-11: tres trabajos con su mínimo permiso; la revisión sin ninguna credencial; el pull request sólo en decide, después de guardar; nunca aprueba', () => {
+  /** Lo que la decisión 11 exige de la revisión de dependencias, además de las reglas de todos los workflows. [] = cumple. */
+  const forma = (text) => {
+    const mal = [...brokenRules(text)];
+    const jobs = jobsOf(text);
+    if (Object.keys(jobs).join(',') !== 'fetch,review,decide') return [...mal, 'trabajos'];
+    const { fetch, review, decide } = jobs;
+    const igual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    if (!/^permissions: \{\}$/m.test(text)) mal.push('permisos-arriba');
+    if (!igual(permsOf(fetch), { contents: 'read', 'pull-requests': 'read' })) mal.push('permisos-fetch');
+    if (!igual(permsOf(review), {})) mal.push('permisos-review');
+    if (!igual(permsOf(decide), { contents: 'write', 'pull-requests': 'write' })) mal.push('permisos-decide');
+    if (!/^ {4}needs: fetch$/m.test(review) || !/^ {4}needs: \[fetch, review\]$/m.test(decide)) mal.push('needs');
+    if (text.split('\n').filter((l) => !/^\s*#/.test(l) && /pull-requests: write/.test(l)).length !== 1 || !/pull-requests: write/.test(decide)) mal.push('pr-write-fuera-de-decide');
+    // review: ni un secreto, ni un token, ni una App, ni un checkout
+    if (/secrets\.|github\.token|outputs\.token|create-github-app-token|actions\/checkout@|_TOKEN/.test(review)) mal.push('credencial-en-review');
+    // la huella antes de usar lo que viene de otro trabajo
+    for (const [n, j] of [['review', review], ['decide', decide]]) {
+      const hay = steps(j).some((s) => /harness-tree\.js --check-tree --worktree --repo \./.test(s) && /^ {10}HARNESS_TREE: \$\{\{ needs\.fetch\.outputs\.harness_tree \}\}$/m.test(s));
+      if (!hay) mal.push(`huella-${n}`);
+    }
+    // fetch: la pasada que sólo registra, tolerante y con su aviso; ninguna que abra
+    const reg = steps(fetch).filter((s) => /open-pr-per-finding\.sh/.test(s));
+    if (reg.length !== 1 || !/--platform github --record-only --no-save /.test(reg[0]) || !/^ {8}continue-on-error: true$/m.test(reg[0]) || !/::warning::/.test(reg[0])
+      || !/^ {10}GH_TOKEN: \$\{\{ github\.token \}\}$/m.test(reg[0])) mal.push('registro-en-fetch');
+    // decide: guardar, y SÓLO después la pasada completa, condicionada a que guardó
+    const sd = steps(decide);
+    const guardar = sd.findIndex((s) => /push-nightly-data\.js save/.test(s));
+    const abrir = sd.findIndex(opensPrs);
+    if (guardar < 0 || !/^ {8}id: guardar$/m.test(sd[guardar]) || abrir < guardar || sd.filter(opensPrs).length !== 1) mal.push('completa-despues-de-guardar');
+    else {
+      const cond = (sd[abrir].match(/^ {8}if: (.*)$/m) || [])[1] || '';
+      if (!/steps\.guardar\.outcome == 'success'/.test(cond) || !/env\.EFFECTS == 'true'/.test(cond) || !/github\.ref == 'refs\/heads\/main'/.test(cond)) mal.push('completa-condicionada');
+      if (!/--reviewers "\$\{OPS_REVIEWERS_DEPENDENCIES:-\}"/.test(sd[abrir]) || !/operations-auth\.sh/.test(sd[abrir])) mal.push('completa-revisores-o-auth');
+    }
+    // la pasada completa nunca corre fuera de decide
+    if ([fetch, review].some((j) => steps(j).some(opensPrs))) mal.push('completa-fuera-de-decide');
+    // nunca aprueba (sin contar los comentarios)
+    if (/gh pr review|\/reviews|APPROVE|--approve/.test(text.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n'))) mal.push('aprueba');
+    return [...new Set(mal)];
+  };
+  const t = read('dependency-audit.yml');
+  assert.deepStrictEqual(forma(t), []);
+  const lineaCompleta = (t.match(/^ {8}if: (env\.EFFECTS == 'true' && github\.ref == 'refs\/heads\/main' && steps\.guardar\.outcome == 'success')$/m) || [])[1];
+  assert.ok(lineaCompleta, 'la pasada completa está condicionada al guardado');
+  const alteradas = {
+    'permisos-review': t.replace('    needs: fetch\n    runs-on: ubuntu-latest\n    timeout-minutes: 90\n    permissions: {}', '    needs: fetch\n    runs-on: ubuntu-latest\n    timeout-minutes: 90\n    permissions:\n      contents: read'),
+    'pr-write-fuera-de-decide': t.replace('      contents: read\n      pull-requests: read\n', '      contents: read\n      pull-requests: write\n'),
+    'permisos-fetch': t.replace('      contents: read\n      pull-requests: read\n', '      contents: write\n      pull-requests: read\n'),
+    'permisos-arriba': t.replace('\npermissions: {}\n', '\npermissions:\n  contents: write\n'),
+    'credencial-en-review': t.replace('        run: python -m pip install', '        env:\n          GH_TOKEN: ${{ github.token }}\n        run: python -m pip install'),
+    'huella-review': t.replace('        env:\n          HARNESS_TREE: ${{ needs.fetch.outputs.harness_tree }}\n        run: |\n          set -uo pipefail\n          if ! OUT=$(node scripts/ci/harness-tree.js --check-tree --worktree --repo . 2>&1); then\n            echo "::error::$(printf \'%s\' "${OUT}" | tail -n 1) — no se mide nada"', '        run: |\n          set -uo pipefail\n          if ! OUT=$(node scripts/ci/harness-tree.js --check-tree --worktree --repo . 2>&1); then\n            echo "::error::$(printf \'%s\' "${OUT}" | tail -n 1) — no se mide nada"'),
+    'registro-en-fetch': t.replace('        continue-on-error: true\n        working-directory: harness\n        env:\n          GH_TOKEN: ${{ github.token }}', '        working-directory: harness\n        env:\n          GH_TOKEN: ${{ github.token }}'),
+    'registro-sin-aviso': t.replace('echo "::warning::No se pudo registrar lo que se decidió', 'echo "No se pudo registrar lo que se decidió'),
+    'completa-condicionada': t.replace(` && steps.guardar.outcome == 'success'`, ''),
+    'completa-despues-de-guardar': t.replace('        id: guardar\n', ''),
+    'aprueba': t.replace('      - name: Denunciar que los issues no se intentaron', '      - name: Aprobar\n        run: gh pr review 1 --approve\n\n      - name: Denunciar que los issues no se intentaron'),
+  };
+  for (const [regla, copia] of Object.entries(alteradas)) {
+    assert.notStrictEqual(copia, t, `la alteración ${regla} no cambió nada`);
+    assert.notDeepStrictEqual(forma(copia), [], `la copia alterada «${regla}» no salió roja`);
+  }
+  // la pasada completa movida ANTES del guardado sale roja
+  const sT = steps(t);
+  const iG = sT.findIndex((s) => /id: guardar$/m.test(s)), iA = sT.findIndex(opensPrs);
+  assert.ok(iG >= 0 && iA > iG, 'en el original la completa va después de guardar');
+  const movida = t.replace(sT[iG], '\u0000G').replace(sT[iA], '\u0000A').replace('\u0000G', sT[iA]).replace('\u0000A', sT[iG]);
+  assert.notStrictEqual(movida, t);
+  assert.ok(forma(movida).includes('completa-despues-de-guardar'), `la completa antes de guardar no salió roja: ${forma(movida)}`);
+});
+
+test('T11 CloneRepos_SeesPrivates: con la App, los repos donde está instalada (privados incluidos); el usuario de máquina suma los privados de una cuenta de usuario; cero repos vistos es un aviso', () => {
   // en una cuenta de usuario, users/<dueño>/repos trae sólo los públicos y
   // la corrida saldría verde con «repos vistos: 0»
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'clone-privados-')); dirs.push(base);
@@ -547,11 +664,13 @@ test('T13 GitHub_ClonaAntesDeRevocarYComparaAntesDeCorrer @story-2.25 @ac-8: lo 
   const all = steps(read('dependency-audit.yml'));
   const at = (name) => all.findIndex((s) => s.startsWith(`      - name: ${name}`));
   const clone = at('Clonar los repos declarados');
-  const revoke = at('Revocar la credencial de la App (antes de correr código de los productos)');
   const tree = at('El árbol sigue siendo el que se armó (antes de medir)');
   const parity = at('Comparar los pipelines de los productos (paridad)');
   const run = at('Correr la revisión de dependencias');
-  assert.ok(clone >= 0 && revoke > clone && tree > revoke && parity > tree && run > parity, `orden: clonar ${clone} < revocar ${revoke} < árbol ${tree} < paridad ${parity} < revisión ${run}`);
+  assert.ok(clone >= 0 && tree > clone && parity > tree && run > parity, `orden: clonar ${clone} < árbol ${tree} < paridad ${parity} < revisión ${run}`);
+  // clonar vive en fetch (con la credencial de leer); comparar y revisar, en review (sin ninguna)
+  const jb = jobsOf(read('dependency-audit.yml'));
+  assert.ok(steps(jb.fetch).some((s) => /name: Clonar los repos declarados/.test(s)) && steps(jb.review).some((s) => /name: Comparar los pipelines de los productos/.test(s)));
   const lines = runLines(all[clone]).map((l) => l.trim()).filter(Boolean);
   const deps = lines.findIndex((l) => /^node scripts\/nightly\/dependencies\/nightly-dependencies\.js clone-list \|/.test(l));
   const par = lines.findIndex((l) => /^LISTA="\$\(node scripts\/ci\/check-product-parity\.js clone-list --root "\$\{RUNNER_TEMP\}\/repos" --platform github\)" \\$/.test(l));
