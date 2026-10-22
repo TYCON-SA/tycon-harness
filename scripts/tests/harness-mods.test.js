@@ -462,3 +462,29 @@ test('T19 Board_ShowsShortStoryTitle — el cartel trae el título corto de la s
   const en3 = JSON.stringify({ storyId: '9.9', storyTitle: LARGO, startedAt: at(0), stepsCompleted: [0, 1, 2], autonomous: false, stepTimings: { 3: { startedAt: at(20) } } });
   assert.strictEqual(waitingToast(readRun(en3, NOW)), 'Story 9.9 (El video de 0 a 100…): Aprobar el plan te espera — contestá en el chat');
 });
+
+test('T40 Board_OpenStepWithoutStart_CountsFromPreviousClose — un paso abierto sin arranque cuenta desde el cierre del anterior', async () => {
+  const { readRun, boardLine } = await mod('run.mjs');
+  // esquema nuevo: la sesión trabajó sin llamar `pipeline.js next`, así que «Correr las pruebas» no tiene startedAt;
+  // los minutos salen del cierre de Implementar (el último completedAt de los pasos anteriores): 40 - 25 = 15
+  const nuevo = JSON.stringify({
+    storyId: '8.85', stepScheme: 2, startedAt: at(0), autonomous: true,
+    stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan', 'implement'],
+    stepsPending: ['run-tests', 'reviewers', 'adversarial-pass', 'findings', 'live-check', 'prepare-commit'],
+    stepTimings: { implement: { startedAt: at(10), completedAt: at(25) } },
+  });
+  const run = readRun(nuevo, NOW);
+  assert.strictEqual(run.current.name, 'Correr las pruebas');
+  assert.strictEqual(run.minutesStep, 15);
+  assert.match(boardLine(run, undefined), /15 min en este paso/);
+  // esquema viejo equivalente: Implementar (el 4) sin arranque y el 3 cerrado hace 15 minutos
+  const viejo = JSON.stringify({
+    storyId: '9.9', startedAt: at(0), stepsCompleted: [0, 1, 2, 3], stepsPending: [4, 5],
+    stepTimings: { 3: { startedAt: at(20), completedAt: at(25) } },
+  });
+  const runViejo = readRun(viejo, NOW);
+  assert.strictEqual(runViejo.current.name, 'Implementar');
+  assert.strictEqual(runViejo.minutesStep, 15);
+  // sin arranque propio y sin cierre de ningún anterior, sigue la raya (lo que prueba T6)
+  assert.strictEqual(readRun(JSON.stringify({ storyId: '9.9', stepScheme: 2, startedAt: at(0), stepsCompleted: ['start'], stepTimings: {} }), NOW).minutesStep, null);
+});
