@@ -513,10 +513,12 @@ secretos MCP para las aplicaciones gráficas (`TYCON_NO_GUI_ENV=1` lo saltea). U
 dentro de Codex, que gasta sesiones de modelo (`TYCON_BENCH_DAILY=0`). Con Azure DevOps configurado, deja además un
 `AGENTS.md` de una línea en los repos de tu equipo que tienen `CLAUDE.md` y no tienen `AGENTS.md`; se commitea con el
 repo (`TYCON_NO_AGENTSMD_POINTER=1` lo saltea). Queda un paso a mano: abrir una sesión de `codex`, correr `/hooks` y aprobarlos; sin eso los hooks no corren y no
-dan error. La aprobación es de Codex, no del arnés, y pide una sesión interactiva: en una máquina sin nadie delante
-(un contenedor, `codex exec` en una tarea programada) no hay dónde aprobarlos (visto en un laboratorio con Codex 0.162
-el 2026-10-22). Con un modelo abierto (`codex --oss`) hace falta además uno que sepa usar herramientas: uno de
-código de 7B contestó sin correr ningún comando, y sin comandos ningún control se dispara.
+dan error. La aprobación es de Codex, no del arnés, y se guarda desde una sesión interactiva. Sin nadie delante
+(un contenedor, `codex exec` en una tarea programada) los controles sin aprobar no corren; `codex exec
+--dangerously-bypass-hook-trust` los corre sin la aprobación guardada, pensado para controles ya revisados (medido con
+Codex 0.162: sin la opción, una suite completa pasó; con ella, el freno la cortó). Con un modelo abierto
+(`codex --oss`) hace falta además uno que sepa usar herramientas: uno de código de 7B contestó sin correr ningún
+comando, y sin comandos ningún control se dispara.
 
 **La red**: el arnés no manda datos de uso. De fábrica habla con GitHub —el repo, para mirar si hay versión nueva, y
 los orígenes de las skills de terceros que lista `scripts/publishing/third-party-skills.json`— y, si alguno de tus

@@ -520,9 +520,10 @@ spends model sessions (`TYCON_BENCH_DAILY=0`). With Azure DevOps configured, it 
 your team's repos that have a `CLAUDE.md` and no `AGENTS.md`; you commit it with the repo
 (`TYCON_NO_AGENTSMD_POINTER=1` skips it). One step stays manual: open
 a `codex` session, run `/hooks` and approve them; without that the hooks do not run and give no error. The approval
-belongs to Codex, not to the harness, and needs an interactive session: on a machine with no one at the keyboard (a
-container, `codex exec` in a scheduled task) there is nowhere to approve them (seen in a lab with Codex 0.162 on
-2026-10-22).
+belongs to Codex, not to the harness, and is saved from an interactive session. With no one at the keyboard (a
+container, `codex exec` in a scheduled task) unapproved checks do not run; `codex exec --dangerously-bypass-hook-trust`
+runs them without the saved approval, meant for checks you already vetted (measured with Codex 0.162: without the
+option a full test suite ran; with it, the brake stopped it).
 With an open model (`codex --oss`) you also need one that can use tools: a 7B coding model answered without running
 any command, and without commands no check fires.
 
