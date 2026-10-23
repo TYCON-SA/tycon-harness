@@ -867,7 +867,10 @@ copiar_binario(){ # $1 = nombre
   [ -n "$origen" ] || muere "no encuentro «${1}» para copiarlo a $DESTINO/bin: instalalo y volvé a correr esto (el freno no queda a medias)."
   local real; real="$(real_de "$origen")"
   [ -f "$real" ] || muere "«${1}» apunta a algo que no es un archivo ($real)"
-  cp -f "$real" "$DESTINO/bin/$1" && chmod 755 "$DESTINO/bin/$1" || muere "no pude copiar $real → $DESTINO/bin/$1"
+  # sólo si cambió: copiar igual le cambia la fecha y el inode, y los datos del intérprete en huellas.json se
+  # reescribirían en cada instalación
+  if ! cmp -s "$real" "$DESTINO/bin/$1"; then cp -f "$real" "$DESTINO/bin/$1" || muere "no pude copiar $real → $DESTINO/bin/$1"; fi
+  chmod 755 "$DESTINO/bin/$1" || muere "no pude dejar $DESTINO/bin/$1 con permisos 755"
   if [ "$SIN_SUDO" = 0 ]; then chown root:wheel "$DESTINO/bin/$1" || muere "no pude dejar $DESTINO/bin/$1 como root:wheel"; fi
   ok "$1 copiado de $real"
 }
@@ -939,8 +942,15 @@ H_SQLCMD="$(huella "$DESTINO/bin/sqlcmd")" || exit 1
 H_HOOK="$(huella "$DESTINO/hooks/prod-access-guard.js")" || exit 1
 H_PLANTILLA="$(huella "$DESTINO/production/load-key.command.template")" || exit 1
 H_CIERRE="$(huella "$DESTINO/hooks/prod-firewall-close.js")" || exit 1
-NUEVAS="$(printf '{\n  "__doc": "Huellas de lo instalado por install-guard.sh. El freno, el lanzador y la puerta las reverifican antes de ejecutar: si no coinciden, no corren.",\n  "/opt/tycon/bin/tycon-prod-sql": "%s",\n  "/opt/tycon/bin/node": "%s",\n  "/opt/tycon/bin/sqlcmd": "%s",\n  "/opt/tycon/hooks/prod-access-guard.js": "%s",\n  "/opt/tycon/hooks/prod-firewall-close.js": "%s",\n  "/opt/tycon/production/load-key.command.template": "%s"\n}' \
-  "$H_PUERTA" "$H_NODE" "$H_SQLCMD" "$H_HOOK" "$H_CIERRE" "$H_PLANTILLA")"
+# Los datos del intérprete (dueño, permisos, tamaño, fecha e inode): con ellos el lanzador lo verifica sin leer sus
+# 122 MB en cada comando. Van en una clave aparte y en una línea: las huellas siguen siendo `ruta → string`, que es
+# como las leen el freno, la puerta y el lanzador. GNU primero: su `stat -f` imprime antes de fallar.
+datos_json(){ local d; d="$(stat -c '%u %a %s %Y %i' "$1" 2>/dev/null || stat -f '%u %Lp %z %m %i' "$1" 2>/dev/null)"
+  [[ "$d" =~ ^[0-9]+\ [0-7]+\ [0-9]+\ [0-9]+\ [0-9]+$ ]] || muere "no pude leer los datos de $1"
+  set -- $d; printf '{"uid": %s, "mode": "%s", "size": %s, "mtime": %s, "inode": %s}' "$1" "$2" "$3" "$4" "$5"; }
+D_NODE="$(datos_json "$DESTINO/bin/node")" || exit 1
+NUEVAS="$(printf '{\n  "__doc": "Huellas de lo instalado por install-guard.sh. El freno, el lanzador y la puerta las reverifican antes de ejecutar: si no coinciden, no corren.",\n  "/opt/tycon/bin/tycon-prod-sql": "%s",\n  "/opt/tycon/bin/node": "%s",\n  "/opt/tycon/bin/sqlcmd": "%s",\n  "/opt/tycon/hooks/prod-access-guard.js": "%s",\n  "/opt/tycon/hooks/prod-firewall-close.js": "%s",\n  "/opt/tycon/production/load-key.command.template": "%s",\n  "__stat": {\n    "/opt/tycon/bin/node": %s\n  }\n}' \
+  "$H_PUERTA" "$H_NODE" "$H_SQLCMD" "$H_HOOK" "$H_CIERRE" "$H_PLANTILLA" "$D_NODE")"
 if [ -f "$DESTINO/huellas.json" ] && [ "$(cat "$DESTINO/huellas.json")" = "$NUEVAS" ]; then
   ok "huellas sin cambios"
 else
