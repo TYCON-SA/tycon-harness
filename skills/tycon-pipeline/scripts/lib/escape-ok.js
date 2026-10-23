@@ -8,8 +8,9 @@
  * conversación, o si llegó textual en un mensaje de la sesión que la organización designó para reenviar el ok de un dev
  * (`approvals.relay_session` del perfil + `designate-relay`). La frase vale `VENTANA_MIN` minutos.
  * Los escapes que no son una variable van por su nombre en la misma frase (`NAMED`): «autorizo story-skill-bypass» deja
- * escribir una historia sin la skill, «autorizo set-autonomous» apagar el lazo de las pruebas y «autorizo cerrar la
- * ejecución» cerrarla con un control en rojo o con pasos sin correr.
+ * escribir una historia sin la skill, «autorizo set-autonomous» apagar el lazo de las pruebas, «autorizo cerrar la
+ * ejecución» cerrarla con un control en rojo o con pasos sin correr, y «autorizo cerrar como deuda» cerrar la historia
+ * por su salida prevista o registrar un control en rojo como esperado.
  *
  * Quién escribió qué lo decide `person-ok.js`: no cuenta lo que escribió el agente, la salida de una herramienta (un
  * archivo leído incluido), un subagente, lo que la persona pegó ni el mensaje de otra sesión que no es la designada.
@@ -28,7 +29,7 @@ const VENTANA_MIN = 30;
 // los escapes que piden la frase: la variable y el valor que apaga el freno
 const ESCAPES = { TYCON_SAFETY_OFF: '1', TYCON_PROD_LINT: '0', TYCON_NEW_NAMES: '0' };
 // los que no son una variable: el nombre del escape va en la frase igual («autorizo story-skill-bypass»)
-const NAMED = ['story-skill-bypass', 'set-autonomous', 'cerrar la ejecución'];
+const NAMED = ['story-skill-bypass', 'set-autonomous', 'cerrar la ejecución', 'cerrar como deuda'];
 const esEscape = (v) => Object.prototype.hasOwnProperty.call(ESCAPES, v) || NAMED.includes(v);
 
 const frase = (variable) => `autorizo ${variable}`;

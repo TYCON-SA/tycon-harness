@@ -16,7 +16,7 @@
  * código adentro, una copia con otro nombre, y un programa de texto que además ejecuta (`awk` con `system`).
  *
  * Uso: llamadas(comando, { shell: 'bash' | 'powershell' }) → [{ sub, args: [{ texto, literal }], dudosa }]
- *      escapeDe(llamada, sid) → 'set-autonomous' | 'cerrar la ejecución' | null
+ *      escapeDe(llamada, sid) → 'set-autonomous' | 'cerrar la ejecución' | 'cerrar como deuda' | null
  */
 
 const PREFIJOS = new Set(['sudo', 'env', 'exec', 'command', 'nohup', 'time', 'nice', 'timeout', 'xargs', 'builtin',
@@ -273,6 +273,8 @@ function escapeDe(llamada, sid) {
     return lit(v) && ['true', '1', 'on'].includes(v.texto) ? null : 'set-autonomous';
   }
   if (sub === 'clear') return 'cerrar la ejecución';
+  // cerrar la historia como deuda, o registrar un control en rojo como esperado: siempre lo decide la persona
+  if (sub === 'close-as-debt' || sub === 'expect-red') return 'cerrar como deuda';
   if (sub === 'clear-session') {
     const v = args[0];
     if (!v || !lit(v)) return 'cerrar la ejecución';

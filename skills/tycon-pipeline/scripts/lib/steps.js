@@ -202,10 +202,27 @@ function startPartsPending(marker, applies) {
     .map(([part, p]) => ({ part, name: p.name }));
 }
 
+/** La parte del Arranque a la que pertenece una bandera, o `null`. */
+const partOfFlag = (flag) => (Object.entries(START_PARTS).find(([, p]) => p.flags.includes(flag)) || [null])[0];
+
+/**
+ * La bandera de un hecho externo la pone el arnés cuando hizo el trabajo. Si la parte tenía un aviso (falló antes y el
+ * reintento salió bien), el aviso sale: la parte quedó hecha. Muta el marcador; quien llama lo escribe.
+ */
+function setExternalFlag(marker, flag) {
+  marker[flag] = true;
+  const part = partOfFlag(flag);
+  if (part && Array.isArray(marker.startWarnings)) marker.startWarnings = marker.startWarnings.filter((w) => !w || w.part !== part);
+  return marker;
+}
+
 /** «Arranque: hecho, con aviso: …» por cada parte que falló. */
 function startWarningLines(marker) {
   const ws = Array.isArray(marker && marker.startWarnings) ? marker.startWarnings : [];
-  return ws.filter((w) => w && START_PARTS[w.part]).map((w) => `Arranque: hecho, con aviso: ${START_PARTS[w.part].failed}`);
+  const out = ws.filter((w) => w && START_PARTS[w.part]).map((w) => `Arranque: hecho, con aviso: ${START_PARTS[w.part].failed}`);
+  // la acción de horas marcada sin conversación que leer (Codex): se dice hasta el cierre, como un aviso más
+  if (marker && marker.workSignalVerified === false) out.push('Arranque: hecho, con aviso: el aviso de trabajo quedó sin verificar (sin conversación que leer)');
+  return out;
 }
 
 /**
@@ -308,7 +325,7 @@ function retireCheck({ mirror, since, today, stateFile }) {
 module.exports = {
   SCHEME, STEPS, CLOSE_STEP, TOTAL, OLD_IDS, ORDER_REQUIRES, START_PARTS, OLD_NUMBERS_UNTIL, SCHEME_TWO_SINCE,
   byId, byNumber, fromOld, newFromOld, schemeOf, stepName, stepNames, isDone, isPending, pendingSteps,
-  resolveStepArg, startPartsPending, startWarningLines, reviewersRound, findingsOpen, noteFindingsWait, retireCheck,
+  resolveStepArg, startPartsPending, startWarningLines, partOfFlag, setExternalFlag, reviewersRound, findingsOpen, noteFindingsWait, retireCheck,
 };
 
 if (require.main === module) {

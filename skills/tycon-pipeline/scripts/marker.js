@@ -97,12 +97,12 @@
  *                                                  mark-adversarial-result con confirmados exige
  *                                                  --tests k --deferred d --reason "…" (k+d=N,
  *                                                  k = lo promovido acá, no lo declarado).
- *   marker.js set-flag <flag> <true|false>       → flags de sub-steps no-enteros
- *   marker.js start-warning <time-tracking|ado> "<mensaje>" → una parte del Arranque que falló (queda a la vista)
- *                                                  (workSignalStarted | adoMarkedActive) para que
- *                                                  resume/`pipeline.js next` no re-ejecute las partes del arranque.
+ *   marker.js set-flag <flag> <true|false>       → las banderas de estado de la ejecución (lib/external-flags.js).
+ *                                                  Las de hechos externos (workSignalStarted | adoMarkedActive) NO:
+ *                                                  las ponen `pipeline.js work-signal start` y `ado-mark-active`.
  *                                                  `deepReviewDone` NO: el pase adversarial lo cierran
  *                                                  los dos comandos de abajo, con constancia.
+ *   marker.js start-warning <time-tracking|ado> "<motivo>" → una parte del Arranque que falló (queda a la vista)
  *   marker.js mark-adversarial-result <N> --type 5b --tests k [--own p --in "<rutas>"]
  *                                   [--deferred d --reason "…"] [--classes k] [--separate n]
  *                                                → anota el resultado del pase y lo CIERRA
@@ -346,6 +346,19 @@ function cmdSet(payloadJson) {
   }
   let existing = readMarker();
   const existingBefore = existing;
+  // Las banderas de hechos externos tampoco se escriben con set: las pone el arnés cuando hizo el trabajo. Un
+  // `get | … | set` que las trae como estaban no cambia nada y pasa.
+  {
+    const ext = require('./lib/external-flags.js');
+    for (const k of [...ext.EXTERNAL_FLAGS, ...Object.keys(OLD_FLAGS)]) {
+      if (!Object.prototype.hasOwnProperty.call(payload, k)) continue;
+      const tenia = existing && existing.storyId === payload.storyId ? existing[k] : undefined;
+      if (payload[k] === tenia) continue;
+      delete payload[k];
+      console.error(`marker.js set: «${k}» no se escribe con set (la pone el arnés: ${ext.HARNESS_COMMAND[nn(OLD_FLAGS[k], k)]}): se descartó.`);
+      appendLog('bypass.log', { kind: 'MARKER_SET_EXTERNAL_FLAG_DISCARDED', flag: k, storyId: payload.storyId });
+    }
+  }
   // 🔴 Anti-leak cross-story: el spread de abajo preserva
   // campos ante un `set` de la MISMA story — pero si esta sesión arranca una story NUEVA sobre un
   // marker viejo sin clear (pipeline cancelado, crash, "listo" antes de «Preparar el commit»), la story B
@@ -903,6 +916,24 @@ function cmdCompleteStep(nRaw, flags) {
 
   // El aviso de una parte del Arranque que falló sale en el resumen del cierre: queda a la vista hasta el final.
   if (controles.has('commit')) for (const l of STEPS_LIB.startWarningLines(marker)) console.error(`⚠️  ${l}`);
+
+  // Un rojo esperado (`expect-red`) vale sólo en una ejecución en deuda: sin la deuda escrita es un rojo como cualquiera.
+  if (controles.has('commit')) {
+    const esperados = Object.entries(marker.checks || {}).filter(([, v]) => /^rojo-esperado/.test(String(v)));
+    const enDeuda = !!marker.cierre && marker.cierre.estado === 'deuda';
+    if (esperados.length && !enDeuda) {
+      appendLog('gates.log', { name: 'expected-red', status: 'blocked', story: marker.storyId, checks: esperados.map(([k]) => k) });
+      console.error(`marker.js complete-step ${n} BLOQUEADO — ${esperados.map(([k, v]) => `${k}=${v}`).join(', ')} sin una ejecución en deuda.`);
+      console.error('  Un rojo esperado vale sólo con la historia cerrada como deuda (marker.js close-as-debt, con la frase de la persona).');
+      process.exit(1);
+    }
+    for (const [k, v] of esperados) {
+      appendLog('gates.log', { name: 'expected-red', status: 'accepted', story: marker.storyId, check: k, deuda: marker.cierre.deuda });
+      console.error(`⚠️  ${k}: ${v} — aceptado por la deuda ${marker.cierre.deuda} (${((marker.expectedRed || {})[k] || {}).tests || []})`);
+    }
+    // la deuda llega al commit: la línea exacta que lleva el mensaje
+    if (enDeuda) console.error(`📌 El mensaje de commit lleva esta línea: Deuda: ${marker.cierre.deuda} — ${marker.cierre.motivo}`);
+  }
 
   // ── ORDEN — no se cierra un paso con su predecesor GATEADO todavía pendiente ────────
   // Frena el patrón "empieza el pipeline, toma confianza y se saltea etapas".
@@ -2192,9 +2223,11 @@ function registrarRunCheck(name, cmdArgv, marker, exitCode, durationMs, salida) 
 // la cierra sin anotar qué encontró el pase, y «Preparar el commit» la da por buena. La escriben sólo los dos
 // comandos que cierran el pase con constancia: `mark-adversarial-result` (el pase corrió y se anota su
 // resultado) y `mark-adversarial-skipped` (el portón decidió que no corre).
-const VALID_FLAGS = ['workSignalStarted', 'adoMarkedActive', 'atddBypass', 'waitingForHuman', 'heavyValidationRequested'];
-// El nombre viejo de la bandera del reloj, de cuando el paso era el reloj de una herramienta: se sigue aceptando y escribe la
-// nueva. `next` y el cartel también leen la vieja en un marker de una corrida en vuelo (no se reabre el aviso de trabajo).
+// Las banderas, en dos listas (lib/external-flags.js): las de hechos externos las pone sólo el arnés cuando hizo el
+// trabajo; las de estado de la ejecución, el modelo, cada una con su motivo. `next` y el cartel también leen el nombre
+// viejo de la bandera del reloj en un marker de una corrida en vuelo (no se reabre el aviso de trabajo).
+const { VALID_FLAGS, EXTERNAL_FLAGS, HARNESS_COMMAND } = require('./lib/external-flags.js');
+// El nombre viejo de la bandera del reloj, de cuando el paso era el reloj de una herramienta.
 const OLD_FLAGS = { clockiStarted: 'workSignalStarted' };
 
 function cmdSetFlag(flag, valRaw) {
@@ -2206,9 +2239,12 @@ function cmdSetFlag(flag, valRaw) {
     console.error('  (story 1.8: con la bandera suelta, 4 de 9 ejecuciones cerraron el pase sin anotar qué encontró el pase)');
     process.exit(2);
   }
-  if (OLD_FLAGS[flag]) {
-    console.error(`marker.js set-flag: «${flag}» es el nombre viejo; escribo ${OLD_FLAGS[flag]}`);
-    flag = OLD_FLAGS[flag];
+  const real = OLD_FLAGS[flag] || flag;
+  if (EXTERNAL_FLAGS.includes(real)) {
+    // Antes de leer el marker: el comando no escribe NADA. La bandera dice que algo de afuera se hizo; la pone el arnés.
+    console.error(`marker.js set-flag: \`${flag}\` no se escribe a mano — la pone el arnés cuando hizo el trabajo: ${HARNESS_COMMAND[real]}.`);
+    console.error(`  Si la herramienta está caída o falta: marker.js start-warning ${real === 'adoMarkedActive' ? 'ado' : 'time-tracking'} "<motivo>" y seguí.`);
+    process.exit(2);
   }
   if (!flag || !VALID_FLAGS.includes(flag)) {
     console.error(`marker.js set-flag: flag inválido '${flag}' — válidos: ${VALID_FLAGS.join(' | ')}`);
@@ -2225,9 +2261,10 @@ function cmdSetFlag(flag, valRaw) {
   process.stdout.write(`${flag}: ${marker[flag]}\n`);
 }
 
-// Una parte opcional del Arranque que corrió y falló: `start-warning <time-tracking|ado> "<mensaje>"`. El Arranque
+// Una parte opcional del Arranque que corrió y falló: `start-warning <time-tracking|ado> "<motivo>"`. El Arranque
 // cierra igual (la falla de una parte nunca frenó la ejecución), pero el aviso queda a la vista hasta el cierre: en
-// `next`, en el cartel, en /pipeline y en la salida de `complete-step prepare-commit`.
+// `next`, en el cartel, en /pipeline y en la salida de `complete-step prepare-commit`. Sin motivo, o sobre una parte que
+// ya corrió, no se escribe nada; el mismo motivo dos veces no suma otra línea a gates.log.
 function cmdStartWarning(part, mensaje) {
   if (!STEPS_LIB.START_PARTS[part]) {
     console.error(`marker.js start-warning: parte inválida '${part}' — válidas: ${Object.keys(STEPS_LIB.START_PARTS).join(' | ')}`);
@@ -2238,11 +2275,123 @@ function cmdStartWarning(part, mensaje) {
     console.error('marker.js start-warning: no hay marker activo para esta sesión');
     process.exit(1);
   }
-  const previos = Array.isArray(marker.startWarnings) ? marker.startWarnings.filter((w) => w && w.part !== part) : [];
-  marker.startWarnings = [...previos, { part, message: String(mensaje || '').slice(0, 300) }];
+  const motivo = String(nn(mensaje, '')).trim().slice(0, 300);
+  if (!motivo) {
+    console.error(`marker.js start-warning: falta el motivo — uso: start-warning ${part} "<qué no anduvo: el MCP no contesta, az no está, 401…>"`);
+    process.exit(2);
+  }
+  if (STEPS_LIB.START_PARTS[part].flags.some((f) => marker[f] === true)) {
+    console.error(`marker.js start-warning: ${STEPS_LIB.START_PARTS[part].name} ya corrió (su bandera está puesta): no hay nada que declarar`);
+    process.exit(2);
+  }
+  const lista = Array.isArray(marker.startWarnings) ? marker.startWarnings : [];
+  if (lista.some((w) => w && w.part === part && w.message === motivo)) {
+    process.stdout.write(`${STEPS_LIB.startWarningLines({ startWarnings: [{ part }] })[0]}\n`);
+    return;
+  }
+  marker.startWarnings = [...lista.filter((w) => w && w.part !== part), { part, message: motivo }];
   marker.lastTouch = nowIso();
   writeMarker(marker);
+  appendLog('gates.log', { name: 'start-warning', part, motivo, at: nowIso(), story: nn(marker.storyId, null) });
   process.stdout.write(`${STEPS_LIB.startWarningLines({ startWarnings: [{ part }] })[0]}\n`);
+}
+
+// El valor de una opción `--<nombre> <valor>` de la línea, recortado; '' si falta.
+function opcion(args, nombre) {
+  const i = args.indexOf(`--${nombre}`);
+  return i >= 0 ? String(nn(args[i + 1], '')).trim() : '';
+}
+
+// Cerrar una historia por su salida prevista: `close-as-debt --reason "<texto>" --debt <DEF-id>`. La frase de la persona
+// la pide el freno de seguridad (ESC-C4) antes de que esto corra. El marcador recibe `cierre = deuda` y la ejecución
+// SIGUE: la deuda tiene que llegar al commit (revisores sobre lo que sí cambió, el pase y la línea `Deuda:`); el
+// `clear` del final conserva el cierre escrito. La deuda tiene que estar anotada antes: en la historia o en el
+// `tasks/todo.md` de su repo.
+function cmdCloseAsDebt(args) {
+  // el motivo y la deuda viajan en el volcado que sube al buzón: sin rutas, credenciales ni correos (el saneador de la
+  // subida); sin él en este árbol, el texto como vino
+  let sanear = (t) => t;
+  try { sanear = require(path.join(__dirname, '..', '..', '..', 'scripts', 'metrics', 'tokens-digest.js')).sanear; } catch (_) { /* sin el saneador */ }
+  const motivo = String(sanear(opcion(args, 'reason'))).slice(0, 300);
+  const deuda = String(sanear(opcion(args, 'debt'))).slice(0, 80);
+  if (!motivo || !deuda) {
+    console.error('marker.js close-as-debt: uso: close-as-debt --reason "<qué quedó pendiente y por qué>" --debt <DEF-id>');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js close-as-debt: no hay marker activo para esta sesión');
+    process.exit(1);
+  }
+  const story = resolveStoryPath(marker.storyPath, marker);
+  let raiz = story ? path.dirname(path.dirname(story)) : null;
+  if (story) {
+    try { raiz = require('child_process').execFileSync('git', ['-C', path.dirname(story), 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || raiz; } catch (_) { /* sin git: la carpeta de arriba */ }
+  }
+  const todo = raiz ? path.join(raiz, 'tasks', 'todo.md') : null;
+  // el id entero, como palabra: el comienzo de un id anotado no es ese id, y una letra suelta no es una deuda
+  if (!/^[A-Za-z][\w.-]{3,}$/.test(deuda)) {
+    console.error(`marker.js close-as-debt: «${deuda}» no parece el id de una deuda (por ejemplo DEF-9.9-angular): pasá el id entero que anotaste`);
+    process.exit(2);
+  }
+  const palabra = new RegExp(`(^|[^\\w.-])${deuda.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\w-]|\\.(?![\\w-]))`);
+  const tiene = (f) => { try { return palabra.test(fs.readFileSync(f, 'utf8')); } catch (_) { return false; } };
+  if (!((story && tiene(story)) || (todo && tiene(todo)))) {
+    console.error(`marker.js close-as-debt: la deuda ${deuda} no está anotada. Anotala antes en el Dev Agent Record de la historia`);
+    console.error(`  (${story || marker.storyPath || 'la historia'})${todo ? ` o en ${todo}` : ''}, con lo que quedó pendiente, y volvé a correr esto.`);
+    console.error('  El repo puede no tener tasks/todo.md: alcanza con la historia.');
+    process.exit(2);
+  }
+  const frenos = require('./lib/run-close.js').leerFrenos();
+  const l = frenos ? require('./lib/run-close.js').escapeDeCierre(frenos, SID, marker.startedAt, 'cerrar-como-deuda') : null;
+  const via = l && ['persona', 'reenvio'].includes(l.via) ? l.via : null;
+  // la frase la juzga el freno; acá se exige su constancia: si el freno no vio la llamada (un nombre armado, otra copia
+  // del guion), la deuda no se cierra sin que una persona la haya autorizado
+  if (!via) {
+    console.error(frenos
+      ? 'marker.js close-as-debt: no encuentro la constancia de que una persona autorizó esta deuda («autorizo cerrar como deuda», regla ESC-C4 del freno de seguridad). Pedile la frase y volvé a correr el comando tal cual.'
+      : 'marker.js close-as-debt: no pude leer el registro de escapes del freno de seguridad: sin él no sé si una persona autorizó la deuda.');
+    process.exit(2);
+  }
+  marker.cierre = { estado: 'deuda', motivo, deuda, via, ...(l.relevo ? { relevo: l.relevo } : {}), at: nowIso() };
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  appendLog('gates.log', { name: 'close-as-debt', story: nn(marker.storyId, null), deuda, motivo, via });
+  process.stdout.write(`cierre: deuda (${deuda}) — la ejecución sigue hasta el commit: revisores sobre lo que sí cambió, el pase y la línea «Deuda:» del mensaje.\n`);
+}
+
+// Un control en rojo que la historia en deuda deja así a propósito: `expect-red <control> --tests <T2,T5>`. Sólo en una
+// ejecución en deuda y sobre un control en rojo; queda `rojo-esperado:exit=N` con la lista, que el cierre del turno y
+// `prepare-commit` aceptan sólo con la deuda escrita. Antes, el paso pide ajustar las pruebas para que verifiquen la
+// deuda: esto es para cuando no se puede.
+function cmdExpectRed(args) {
+  const check = String(nn(args[0], '')).trim();
+  const tests = opcion(args, 'tests').split(',').map((s) => s.trim()).filter(Boolean);
+  if (!check || check.startsWith('--') || !tests.length) {
+    console.error('marker.js expect-red: uso: expect-red <control> --tests <T2,T5>   (las pruebas que quedan en rojo a propósito)');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js expect-red: no hay marker activo para esta sesión');
+    process.exit(1);
+  }
+  if (!marker.cierre || marker.cierre.estado !== 'deuda') {
+    console.error('marker.js expect-red: sólo en una ejecución en deuda — primero marker.js close-as-debt --reason "<texto>" --debt <DEF-id> (con la frase de la persona)');
+    process.exit(2);
+  }
+  const actual = String(nn(at(marker.checks, check), ''));
+  const m = /^red:exit=(\d+)/.exec(actual);
+  if (!m) {
+    console.error(`marker.js expect-red: el control ${check} no está en rojo (${actual || 'sin registrar'}): no hay rojo que esperar`);
+    process.exit(2);
+  }
+  marker.checks[check] = `rojo-esperado:exit=${m[1]}`;
+  marker.expectedRed = Object.assign({}, marker.expectedRed, { [check]: { tests, deuda: marker.cierre.deuda, at: nowIso() } });
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  appendLog('gates.log', { name: 'expect-red', story: nn(marker.storyId, null), check, tests, deuda: marker.cierre.deuda });
+  process.stdout.write(`${check}: rojo-esperado:exit=${m[1]} (${tests.join(', ')}) — deuda ${marker.cierre.deuda}\n`);
 }
 
 // Forzar el tamaño de la corrida a mano: `set-size liviana|completa --reason "<texto>"`. Sin motivo no se
@@ -4405,6 +4554,12 @@ switch (cmd) {
     break;
   case 'start-warning':
     cmdStartWarning(arg1, arg2);
+    break;
+  case 'close-as-debt':
+    cmdCloseAsDebt(process.argv.slice(3));
+    break;
+  case 'expect-red':
+    cmdExpectRed(process.argv.slice(3));
     break;
   case 'set-size':
     cmdSetSize(process.argv.slice(3));

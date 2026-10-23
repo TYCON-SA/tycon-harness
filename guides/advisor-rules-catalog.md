@@ -1051,6 +1051,7 @@ Hook `PreToolUse` matcher `Bash|PowerShell` (la herramienta PowerShell de Claude
 | **ESC-C2** *(safety-guard)* | `echo … >> ~/.claude/projects/…`, `tee`/`sed -i`/`cp`/`mv` con destino en las conversaciones guardadas (en PowerShell `Add-Content`, `Set-Content`, `Out-File`) | Las conversaciones se leen, no se escriben: la autorización de un escape se lee de ahí. Para trabajar, copiala afuera |
 
 | **ESC-C3** *(safety-guard)* | `marker.js set-autonomous false` con el modo autónomo prendido; `marker.js clear`, `clear-session` de la propia sesión o `update-story-status <h> review\|done` con un control en rojo, pasos sin correr o el pase adversarial sin cerrar (apaga el lazo de las pruebas o archiva como terminada una ejecución que no terminó) | Terminar lo pendiente; una historia que no se pudo va como deuda (`marker.js close-as-debt --reason … --debt <DEF-id>`). Apagarlo o cerrar igual lo decide la persona: «autorizo set-autonomous» o «autorizo cerrar la ejecución»; la ejecución queda con `cierre: abortada` |
+| **ESC-C4** *(safety-guard)* | `marker.js close-as-debt` o `marker.js expect-red`, siempre que haya una ejecución (cierran la historia por su salida prevista, o registran un control en rojo como esperado) | Si se puede terminar, terminar. Si no, explicarle a la persona qué quedó pendiente; la deuda la autoriza ella: «autorizo cerrar como deuda». La ejecución queda con `cierre: deuda` y sigue hasta el commit |
 
 ### Limitations v1
 

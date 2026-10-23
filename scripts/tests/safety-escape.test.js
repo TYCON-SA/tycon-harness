@@ -713,3 +713,45 @@ test('T23 EscC3_SoloNombrarlo_NoFrena @story-8.92 — un grep, un echo o un mens
     assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
   }
 });
+
+// ── ESC-C4: cerrar una historia como deuda, o registrar un rojo esperado, lo autoriza la persona (@story-8.93) ──────────
+const FRASE_DEUDA = 'autorizo cerrar como deuda';
+const DEUDA = {
+  cerrar: `${MARKER} close-as-debt --reason "la librería no tiene versión compatible" --debt DEF-9.9-angular`,
+  rojo: `${MARKER} expect-red tests --tests T2,T5`,
+};
+
+test('T19 EscC4_CloseAsDebtYExpectRed_PidenLaFrase @story-8.93 @ac-10 @ac-11 — sin la frase de la persona, frena; con ella, pasa y queda anotado', () => {
+  for (const c of [DEUDA.cerrar, DEUDA.rojo]) {
+    for (const marcador of [VERDE, ROJO]) {
+      // sin frase, o dicha por el agente: frena, en verde y en rojo
+      for (const conversacion of [[deLaPersona('seguí')], [deLaPersona('seguí'), delAgente(FRASE_DEUDA, 1)]]) {
+        const r = freno(c, { home: homeConMarcador(marcador, conversacion) });
+        assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+        assert.match(r.stderr, /ESC-C4/);
+        assert.match(r.stderr, /autorizo cerrar como deuda/);
+        assert.doesNotMatch(r.stderr, /TYCON_SAFETY_OFF=1/, 'el cartel no da la receta');
+      }
+    }
+    // con la frase de la persona: pasa y queda la constancia
+    const r = freno(c, { home: homeConMarcador(ROJO, [deLaPersona(`dale, ${FRASE_DEUDA}`)]) });
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+    const k = constancias(r.home).find((l) => l.regla === 'ESC-C4');
+    assert.ok(k, JSON.stringify(constancias(r.home)));
+    assert.deepStrictEqual([k.veredicto, k.via, k.escape, k.sesion], ['escape', 'persona', 'cerrar-como-deuda', SID]);
+  }
+  // la frase de otro escape no autoriza éste
+  assert.strictEqual(freno(DEUDA.cerrar, { home: homeConMarcador(ROJO, [deLaPersona(FRASE_CERRAR)]) }).status, 2);
+  // nombrarlo no lo corre
+  assert.strictEqual(freno('grep -n "close-as-debt" skills/tycon-pipeline/steps/*.md', { home: homeConMarcador(ROJO) }).status, 0);
+});
+
+test('T23 EscC3_ClearEnDeuda_RojoEsperadoPasaRojoFrena @story-8.93 @ac-11 — en deuda, clear con un rojo esperado pasa; con un rojo real, ESC-C3 frena', () => {
+  const deuda = { estado: 'deuda', motivo: 'sin versión compatible', deuda: 'DEF-9.9-x', via: 'persona', at: hace(5) };
+  const esperado = { ...VERDE, cierre: deuda, checks: { tests: 'rojo-esperado:exit=1', advisors: 'green' } };
+  assert.strictEqual(freno(CMD.cerrar, { home: homeConMarcador(esperado, [deLaPersona('cerralo')]) }).status, 0, 'el rojo esperado no abre la ejecución');
+  const rojo = { ...VERDE, cierre: deuda, checks: { tests: 'red:exit=1', advisors: 'green' } };
+  const r = freno(CMD.cerrar, { home: homeConMarcador(rojo, [deLaPersona('cerralo')]) });
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /ESC-C3/);
+});

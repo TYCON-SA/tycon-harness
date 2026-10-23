@@ -87,7 +87,9 @@ function computeGate(marker) {
     // «sin-acotar» (tests): no se corrió nada a propósito y la cubre la CI del pedido; no es un rojo que el agente arregle.
     // «sin-medir» (tests): el portón no sabe correr las pruebas del repo; tampoco lo arregla el agente: lo dicen el
     // cierre de «Correr las pruebas» y el cierre de la historia.
-    if (status !== 'green' && !(name === 'tests' && (status === 'sin-acotar' || status === 'sin-medir'))) failures.push(`${name} → ${status}`);
+    // «rojo-esperado» (expect-red): un rojo que la historia en deuda deja a propósito; sin la deuda escrita es un rojo.
+    const esperado = /^rojo-esperado/.test(String(status)) && !!marker.cierre && marker.cierre.estado === 'deuda';
+    if (status !== 'green' && !esperado && !(name === 'tests' && (status === 'sin-acotar' || status === 'sin-medir'))) failures.push(`${name} → ${status}`);
   }
   // Sin checks registrados o todos verdes → green → deja parar (preserva pausas HITL).
   return { green: failures.length === 0, failures };

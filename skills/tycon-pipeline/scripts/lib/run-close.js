@@ -9,8 +9,8 @@
  * (`sin-medir`, `sin-acotar`) no la abren: se nombran en el motivo.
  *
  * `cierre` es la marca única de cómo terminó: `completa` (no estaba abierta), `abortada` (se cerró abierta), `deuda` (la
- * escribe `marker.js close-as-debt`, que después llama a `clear`) y `abandonada` (la sesión terminó sin `clear`; la
- * marca quien sube la ejecución). `clear` no pisa un `cierre` ya escrito. La vía de una abortada sale del registro de
+ * escribe `marker.js close-as-debt`; la ejecución sigue hasta el commit, y el `clear` del final la conserva) y
+ * `abandonada` (la sesión terminó sin `clear`; la marca quien sube la ejecución). `clear` no pisa un `cierre` ya escrito. La vía de una abortada sale del registro de
  * escapes del freno de seguridad: la última línea de esta sesión con `escape: cerrar-la-ejecucion`, posterior al
  * arranque de la ejecución; sin ella, `sin-registro`.
  *
@@ -72,12 +72,12 @@ function leerFrenos(home) {
   } catch (e) { return e && e.code === 'ENOENT' ? [] : null; }
 }
 
-/** El escape «cerrar la ejecución» de esta sesión, posterior al arranque, o null. */
-function escapeDeCierre(frenos, sid, desde) {
+/** El escape «cerrar la ejecución» (u otro con nombre) de esta sesión, posterior al arranque, o null. */
+function escapeDeCierre(frenos, sid, desde, escape = 'cerrar-la-ejecucion') {
   const inicio = Date.parse(desde || '');
   for (let i = frenos.length - 1; i >= 0; i--) {
     const l = frenos[i];
-    if (l.freno !== 'safety-guard' || l.veredicto !== 'escape' || l.escape !== 'cerrar-la-ejecucion' || l.sesion !== sid) continue;
+    if (l.freno !== 'safety-guard' || l.veredicto !== 'escape' || l.escape !== escape || l.sesion !== sid) continue;
     if (Number.isFinite(inicio) && !(Date.parse(l.ts) >= inicio)) continue;
     return l;
   }
@@ -120,7 +120,7 @@ function consulta(sid, home) {
   }
 }
 
-module.exports = { ESTADOS, requeridos, estado, abierta, motivoDe, escapeDeCierre, cierreDe, consulta };
+module.exports = { ESTADOS, requeridos, estado, abierta, motivoDe, leerFrenos, escapeDeCierre, cierreDe, consulta };
 
 if (require.main === module) {
   const arg = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -152,7 +152,8 @@ if (require.main === module) {
   // un marcador que existe y no se puede leer se trata como abierto y con el modo autónomo prendido
   for (const { l, esc } of pedidas || []) {
     if (hay === 0) break;
-    const aplica = esc === 'set-autonomous' ? hay === '?' || r.autonomo : hay === '?' || r.abierta;
+    // cerrar como deuda pide la frase siempre que haya una ejecución: no depende de cómo esté
+    const aplica = esc === 'cerrar como deuda' ? true : esc === 'set-autonomous' ? hay === '?' || r.autonomo : hay === '?' || r.abierta;
     if (aplica) process.stdout.write(`frena=${esc}\t${una(l.sub || '?')}\t${una(l.args[0] ? l.args[0].texto : '')}\n`);
   }
 }

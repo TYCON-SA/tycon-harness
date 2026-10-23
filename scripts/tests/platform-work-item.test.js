@@ -479,6 +479,25 @@ test('Adversarial_Update_AlreadyActiveInBasicAndScrum_NoChange @story-8.85 @ac-9
   assert.strictEqual(t.value.estado, 'Doing');
 });
 
+test('WorkItem_Update_Closed_PideReabrir @story-8.93 @ac-8', async () => {
+  // cerrado sin reopen: pideReabrir, para que el núcleo pida la confirmación, y ningún comando que escriba; activo, no
+  const m = mundo({ platform: { default: 'azure-devops' } });
+  const repo = repoCon('work-items.yaml', 'org: acme\n');
+  fs.writeFileSync(path.join(m.fixaz, 'estado-21'), 'Closed');
+  const c = await P().run('work-item.update', { repoDir: repo, id: 21 }, { env: m.env });
+  assert.strictEqual(c.value.pideReabrir, true, JSON.stringify(c));
+  assert.strictEqual(c.value.changed, false);
+  assert.ok(!llamadasAz(m).some(([p]) => p === 'actualizar'), 'no escribió');
+  fs.writeFileSync(path.join(m.fixaz, 'estado-22'), 'Active');
+  const a = await P().run('work-item.update', { repoDir: repo, id: 22 }, { env: m.env });
+  assert.strictEqual(a.value.pideReabrir, undefined, JSON.stringify(a));
+  // GitHub: un issue cerrado, lo mismo
+  const g = mundo({ platform: { default: 'github' }, ghState: { user: 'arnes-bot', now: '2026-10-22T05:00:00Z', issues: { 'acme/portal': [{ number: 8, state: 'closed', title: 'Story 9.2', labels: ['tipo:Historia', 'estado:hecho'] }] } } });
+  const r = cli(g, ['work-item', 'update', '--args', JSON.stringify({ repoDir: repoCon('work-items.yaml', GH_CONFIG), id: 8 })]);
+  assert.strictEqual(r.json.value.pideReabrir, true, r.out);
+  assert.strictEqual(estadoGh(g).issues['acme/portal'][0].state, 'closed', 'no lo reabrió');
+});
+
 test('Adversarial_Hours_NotANumber_Rejected @story-8.85 @ac-9', async () => {
   // «horas» que no son un número no se escriben como 0 o 1 en CompletedWork
   const m = mundo({ platform: { default: 'azure-devops' } });

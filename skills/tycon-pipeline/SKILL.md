@@ -263,7 +263,7 @@ Estado persistente por sesión en `~/.claude/.tycon-pipeline/active/<sessionId>.
   `lib/steps.js` ORDER_REQUIRES (`--out-of-order` queda logueado). `reviewers` exige `checks.advisors` verde por
   run-check de esta vuelta. Parte del Arranque que falla: `marker.js start-warning <time-tracking|ado> "<motivo>"`.
 - `pipeline.js next` anota el arranque del paso: cerrar el anterior → `next` → trabajar.
-- Checks: `marker.js run-check <name> -- <cmd>` (exit code real). Flags: `marker.js set-flag workSignalStarted|adoMarkedActive true`.
+- Checks: `marker.js run-check <name> -- <cmd>` (exit code real).
 - Recovery: `marker.js adopt-session <sid-viejo>` · `list-all` · `find-by-story <id>` ·
   `clear-session <sid>` · `update-story-status <spec> <estado>`.
 - Preparar el commit: arma el mensaje (NO commitea) y termina con `marker.js clear` + `marker.js update-story-status <spec> review` (las horas NO se cierran ahí).
@@ -285,7 +285,7 @@ cita en ambas direcciones y falla hacia lo mecánico. Kill-switches del dev: `TY
 ## Terminación y logging
 
 Termina en: CRITICAL al validar la story sin override, BMAD no puede implementar, user cancela al aprobar el
-plan o en «Hallazgos», build roto sin continuar, o el commit preparado. Siempre cerrar con `marker.js clear`.
+plan o en «Hallazgos», build roto sin continuar, o el commit preparado. Lo que no se pudo, antes `close-as-debt` («Implementar»); después, `marker.js clear`.
 
 Run dir `.advisors/pipeline-runs/<clave>-<sello>/` — lo da `pipeline.js run-dir --story <s> --repo <r> --create`,
 nunca a mano (con número repetido la clave es `<tema>__<número>`): `step-01-start.md`, `step-01-validator.md`

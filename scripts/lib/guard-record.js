@@ -189,9 +189,9 @@ function anotarFallo(home, motivo) {
 // el perfil del equipo, un nombre corto. Un valor fuera de la forma no se anota (la línea se escribe igual).
 const VIAS = ['persona', 'reenvio', 'ambiente'];
 const RELEVO = /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,39}$/u;
-// Qué escape con nombre se usó y en qué sesión: `marker.js clear` busca acá quién autorizó cerrar una ejecución abierta.
-// Lista cerrada; un valor fuera de la lista no se anota y queda el aviso.
-const ESCAPES_CON_NOMBRE = ['set-autonomous', 'cerrar-la-ejecucion', 'story-skill-bypass'];
+// Qué escape con nombre se usó y en qué sesión: `marker.js clear` busca acá quién autorizó cerrar una ejecución abierta,
+// y `close-as-debt` quién autorizó la deuda. Lista cerrada; un valor fuera de la lista no se anota y queda el aviso.
+const ESCAPES_CON_NOMBRE = ['set-autonomous', 'cerrar-la-ejecucion', 'story-skill-bypass', 'cerrar-como-deuda'];
 const SESION = /^[\w-]{1,80}$/;
 
 function anotar({ freno, regla, veredicto, cmd, home, via, relevo, sesion, escape } = {}) {

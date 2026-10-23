@@ -7226,21 +7226,20 @@ test('Step0b_NoIntegration_SkippedWithReason @story-7.40 @ac-3', () => {
     assert.equal(out.next_step, 'validate-story');
     assert.equal(out.start_parts.find((p) => p.part === 'time-tracking').name, 'el aviso de trabajo');
     assert.match(out.note, /^ANTES, lo que falta del Arranque: el aviso de trabajo/);
-    // la bandera nueva lo da por hecho
-    assert.equal(correr740(home, sid, 'marker.js', ['set-flag', 'workSignalStarted', 'true']).status, 0);
-    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).workSignalStarted, true);
+    // la bandera nueva lo da por hecho (la pone el arnés; acá se escribe en el marcador, como lo deja el comando)
+    fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, 'utf8')), workSignalStarted: true }));
     assert.equal(paso0b({ TYCON_TIME_TRACKING: 'fake' }).parte, undefined, 'con la bandera la parte ya no se pide');
     // y la vieja de una corrida en vuelo también: no se reabre el reloj
     const m = JSON.parse(fs.readFileSync(file, 'utf8'));
     delete m.workSignalStarted; m.clockiStarted = true;
     fs.writeFileSync(file, JSON.stringify(m));
     assert.equal(paso0b({ TYCON_TIME_TRACKING: 'fake' }).parte, undefined, 'clockiStarted de antes sigue valiendo');
-    // set-flag con el nombre viejo escribe la nueva y avisa
+    // set-flag con el nombre viejo tampoco la escribe: la pone el arnés
     delete m.clockiStarted; fs.writeFileSync(file, JSON.stringify(m));
     const vieja = correr740(home, sid, 'marker.js', ['set-flag', 'clockiStarted', 'true']);
-    assert.equal(vieja.status, 0, vieja.stderr);
-    assert.match(vieja.stderr, /workSignalStarted/);
-    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).workSignalStarted, true);
+    assert.equal(vieja.status, 2, vieja.stderr);
+    assert.match(vieja.stderr, /work-signal start/);
+    assert.notEqual(JSON.parse(fs.readFileSync(file, 'utf8')).workSignalStarted, true);
   } finally {
     for (const d of [home, repo, ints]) fs.rmSync(d, { recursive: true, force: true });
   }

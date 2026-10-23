@@ -493,6 +493,21 @@ function agruparEventos(eventos) {
  * LA LISTA BLANCA. Cada campo que sale se nombra acá; lo que no está nombrado no se dibuja.
  * Nunca `...d`, nunca `...m`: el volcado entero trae rutas, prompts e identificadores.
  */
+/**
+ * Cómo terminó una ejecución: la marca `cierre` del marcador; sin ella (un volcado de antes de la marca), lo que dicen
+ * sus pasos. Terminada es sólo `completa`: una en deuda, abortada o abandonada no terminó lo que la historia pedía.
+ * → `{ estado: completa|deuda|abortada|abandonada|incompleta, inferido }`.
+ */
+function cierreDeCorrida(d) {
+  const m = d.marker || {};
+  const e = m.cierre && typeof m.cierre === 'object' ? String(m.cierre.estado || '') : '';
+  if (['completa', 'deuda', 'abortada', 'abandonada'].includes(e)) return { estado: e, inferido: false };
+  if (d.sinCerrar === true) return { estado: 'abandonada', inferido: true };
+  // el cierre de la historia (después del merge) no cuenta como pendiente
+  const pendientes = (Array.isArray(m.stepsPending) ? m.stepsPending : []).map(String).filter((p) => p !== 'close-work-item' && p !== '9');
+  return { estado: d.archivedAt && pendientes.length ? 'incompleta' : 'completa', inferido: true };
+}
+
 function modeloDeCorrida(d, nombresPasos) {
   const m = d.marker || {};
   const ini = Date.parse(m.startedAt || '');
@@ -680,6 +695,7 @@ function modeloDeCorrida(d, nombresPasos) {
   validador.re_loops_decididos = decisiones.length;
 
   const completados = Array.isArray(m.stepsCompleted) ? m.stepsCompleted : [];
+  const cierre = cierreDeCorrida(d);
   return {
     story: m.storyId ? String(m.storyId) : null,
     producto: producto(m.repoPath),
@@ -695,7 +711,8 @@ function modeloDeCorrida(d, nombresPasos) {
     // ([0,1,4,5,6,7] diría «quedó en el 5» y quedó en el 7).
     ultimo_paso: (() => { const fs_ = completados.map(filaDePaso).filter((x) => x !== null); return fs_.length ? Math.max(...fs_) : null; })(),
     paso_en_curso: filaEnCurso(m.stepTimings, completados),
-    llego_al_final: completados.some((p) => filaDePaso(p) === FILA_FINAL),
+    // llegó al final = terminó completa: una en deuda, abortada o abandonada no cuenta aunque haya pasado el último paso
+    llego_al_final: completados.some((p) => filaDePaso(p) === FILA_FINAL) && cierre.estado === 'completa',
     dod: m.dodRuntime && m.dodRuntime.verdict ? String(m.dodRuntime.verdict) : null,
     controles,
     eventos,
@@ -1054,6 +1071,10 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
   }
   for (const [sid, { d, maquina, origen, motivo, rutas, nota }] of porSesion) {
     const c = modeloDeCorrida(d, nombresPasos);
+    // cómo terminó: del lado del servidor (lo que se sirve sigue siendo la lista cerrada de campos)
+    const cierre = cierreDeCorrida(d);
+    Object.defineProperty(c, 'cierre', { value: cierre.estado, enumerable: false });
+    Object.defineProperty(c, 'terminada', { value: cierre.estado === 'completa', enumerable: false });
     c.id = idEstable(multi ? maquina : null, sid);
     if (multi) { c.maquina = maquina; c.maquina_origen = maquina ? (origen || maquina) : null; c.maquina_motivo = maquina ? null : motivo; c.maquina_nota = maquina ? nota : null; }
     c.cambios = opts.sinHilos ? { estado: 'no_medido', motivo: SIN_HILOS } : cambiosDeLaCorrida(rutas, d.marker, nombresPasos, d.cambio);

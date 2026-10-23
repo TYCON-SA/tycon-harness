@@ -1709,6 +1709,38 @@ function anotarModelosAvisados(keys) {
   } catch (_) { /* sin marcador o ilegible: se vuelve a avisar, que es lo de menos */ }
 }
 
+/**
+ * Pone una bandera de hecho externo en el marcador de esta sesión (y saca el aviso de su parte, si lo había), con una
+ * línea en gates.log. La llaman sólo los comandos del arnés que hicieron el trabajo. → true si escribió.
+ */
+function marcarHechoExterno(flag, detalle, campos = {}) {
+  const r = anotarEnMarker(campos, (x) => STEPS_TABLE.setExternalFlag(x, flag));
+  if (!r.ok) return r;
+  logGate({ name: 'external-flag', flag, storyId: nn(r.marker.storyId, null), ...detalle });
+  return r;
+}
+
+/**
+ * Escribe campos en el marcador de esta sesión (y, si viene, aplica `cambio`). → `{ ok, marker }` o `{ ok: false,
+ * motivo }`: un marcador que no está no es lo mismo que uno que no se pudo leer o escribir, y el motivo lo dice.
+ */
+function anotarEnMarker(campos, cambio) {
+  const markerPath = path.join(stateDirOf(os.homedir()), 'active', `${sessionIdFileKey()}.json`);
+  let m;
+  try { m = JSON.parse(fs.readFileSync(markerPath, 'utf8')); } catch (e) {
+    return { ok: false, motivo: e && e.code === 'ENOENT' ? 'no hay marker activo para esta sesión' : `no pude leer el marcador de esta sesión (${(e && (e.code || e.message)) || 'error'})` };
+  }
+  Object.assign(m, campos);
+  if (cambio) cambio(m);
+  m.lastTouch = new Date().toISOString();
+  try {
+    const tmp = `${markerPath}.tmp-${process.pid}`;
+    fs.writeFileSync(tmp, JSON.stringify(m, null, 2));
+    fs.renameSync(tmp, markerPath);
+  } catch (e) { return { ok: false, motivo: `no pude escribir el marcador de esta sesión (${(e && (e.code || e.message)) || 'error'})` }; }
+  return { ok: true, marker: m };
+}
+
 /** Lo que la línea de comandos le pasa a las funciones que deciden: la configuración y el pedido de la corrida. */
 function conModelosDeLaCorrida(args) {
   return { ...args, orgModels: orgModels(), modelRequests: pedidosDeModelos(readSessionMarker()) };
@@ -2919,7 +2951,9 @@ function computeNext() {
       // «sin-medir» (tests): el portón no sabe correr las pruebas del repo; se acepta diciéndolo, y el cierre
       // de la historia copia la línea (nunca un verde callado)
       const sinMedir = c === 'tests' && checks[c] === 'sin-medir';
-      if (checks[c]) preconditions.push({ id: `check-${c}`, satisfied: checks[c] === 'green' || sinAcotar || sinMedir, detail: `marker.checks.${c}=${checks[c]} (provenance: ${(marker.checksProvenance || {})[c] || 'desconocida'})${sinAcotar ? ' — sin acotar: la cubre la CI del pedido, y el merge exige la CI completa en verde' : ''}${sinMedir ? ' — pruebas no medidas: el portón no sabe correr las pruebas de este repo; el cierre de la historia lo dice en una línea, y para medirlas se declara el comando en el sitio de la organización (Configuración → Tu tecnología → Cómo se corren las pruebas)' : ''}` });
+      // «rojo-esperado» (expect-red): lo aceptan el cierre del turno y prepare-commit sólo con la deuda escrita; acá, igual
+      const esperado = /^rojo-esperado/.test(String(checks[c])) && !!marker.cierre && marker.cierre.estado === 'deuda';
+      if (checks[c]) preconditions.push({ id: `check-${c}`, satisfied: checks[c] === 'green' || sinAcotar || sinMedir || esperado, detail: `marker.checks.${c}=${checks[c]} (provenance: ${(marker.checksProvenance || {})[c] || 'desconocida'})${sinAcotar ? ' — sin acotar: la cubre la CI del pedido, y el merge exige la CI completa en verde' : ''}${sinMedir ? ' — pruebas no medidas: el portón no sabe correr las pruebas de este repo; el cierre de la historia lo dice en una línea, y para medirlas se declara el comando en el sitio de la organización (Configuración → Tu tecnología → Cómo se corren las pruebas)' : ''}${esperado ? ` — rojo esperado por la deuda ${marker.cierre.deuda}` : ''}` });
     }
   }
 
@@ -2940,10 +2974,28 @@ function computeNext() {
     if (st.step === 'reviewers') return 'marker.js run-check advisors -- pipeline.js check-count … y recién después marker.js complete-step reviewers (bloquea sin el verde real)';
     return `marker.js complete-step ${st.step}`;
   };
+  // El arnés viejo (lib/harness-freshness.js): pasos leídos de otra carpeta que la del arnés que corre frenan; el aviso
+  // de una versión nueva o de una actualización que falló sale una vez por ejecución, antes de las partes del Arranque.
+  let avisoArnes = null;
+  // con ~/.claude/agent-skills presente se mira siempre (un enlace roto o una carpeta sin los pasos son el arnés viejo);
+  // sin él (una casa de prueba, una CI) no hay de dónde leer pasos que comparar
+  let hayAgentSkills = false;
+  try { fs.lstatSync(path.join(os.homedir(), '.claude', 'agent-skills')); hayAgentSkills = true; } catch (_) { hayAgentSkills = false; }
+  if (hayAgentSkills) {
+    const f = require('./lib/harness-freshness.js').revisar({ stepsDir: STEPS_DIR, nextFile: nextStep ? nextStep.file : null, scriptDir: __dirname });
+    if (f.error) return { error: f.error, harness_stale: true };
+    const linea = f.aviso || f.sinEstado;
+    if (linea && marker.harnessFreshnessNoted !== true) {
+      avisoArnes = linea;
+      // sin la marca el aviso se repite en cada `next`: que diga por qué
+      const a = anotarEnMarker({ harnessFreshnessNoted: true });
+      if (!a.ok) avisoArnes = `${linea} (se va a repetir: ${a.motivo})`;
+    }
+  }
   // Las partes del Arranque que corren y faltan se hacen antes de seguir (o mientras valida la story, como dice su paso).
-  const partes = startParts.length
+  const partes = (avisoArnes ? `${avisoArnes} ` : '') + (startParts.length
     ? `ANTES, lo que falta del Arranque: ${startParts.map((p) => p.name).join(' y ')} (${STEPS_TABLE.byId('start').file}); si una parte falla, marker.js start-warning <time-tracking|ado> "<motivo>" y seguí. `
-    : '';
+    : '');
 
   return {
     story_id: marker.storyId,
@@ -2964,6 +3016,7 @@ function computeNext() {
     step_scheme: scheme,
     preconditions,
     steps: stepState,
+    ...(avisoArnes ? { harness_notice: avisoArnes } : {}),
     ...(startParts.length ? { start_parts: startParts } : {}),
     ...(warnings.length ? { warnings } : {}),
     ...(pending ? { pending_action: pending } : {}),
@@ -5802,6 +5855,9 @@ function parseArgs(argv) {
     else if (t === '--target-pipeline-done') a.targetPipelineDone = argv[++i];
     else if (t === '--cost-tier') a.costTier = argv[++i];
     else if (t === '--trust-ran') a.trustRan = true;
+    else if (t === '--reopen') a.reopen = true;                      // ado-mark-active: reabrir un pedido cerrado
+    else if (t === '--assign-to') a.assignTo = argv[++i];            // ado-mark-active: con auto_assign, a quién
+    else if (t === '--action-done') a.actionDone = nn(argv[++i], ''); // work-signal start: el id que devolvió la herramienta
     else if (t === '--autonomous') a.autonomous = true;
     else if (t === '--no-autonomous') a.autonomous = false;   // opt-out por corrida (default es ON)
     else if (t === '--allow-missing-files') a.allowMissingFiles = true;
@@ -6320,7 +6376,8 @@ function main() {
       } catch { /* sin arranque: la cuenta lo rotula «estimada», no lo inventa */ }
     }
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
-    process.exit(result.error ? 1 : 0);
+    if (result.harness_stale) process.stderr.write(`next: ${result.error}\n`);
+    process.exit(result.harness_stale ? 2 : result.error ? 1 : 0);
   }
   if (cmd === 'work-signal') {
     const event = process.argv[3];
@@ -6328,12 +6385,61 @@ function main() {
       process.stderr.write('uso: pipeline.js work-signal <start|stop> [--story <spec> --repo <dir>]   (Arranque: start · «Cerrar la historia»: stop)\n');
       process.exit(2);
     }
+    // la acción que hizo el agente con la herramienta de horas: marca sólo con el id en un resultado de la conversación
+    if (event === 'start' && !isNil(args.actionDone)) {
+      const EF = require('./lib/external-flags.js');
+      const v = EF.actionDone({ id: args.actionDone });
+      if (!v.ok) { process.stderr.write(`work-signal start --action-done: no marco — ${v.motivo}\n`); process.exit(1); }
+      if (!v.verificado) process.stderr.write(`work-signal start --action-done: marco sin verificar — ${v.motivo}\n`);
+      // sin verificar (Codex) queda dicho también en el marcador, no sólo en gates.log
+      const m = marcarHechoExterno('workSignalStarted', { via: 'action-done', id: String(args.actionDone).trim().slice(0, 120), herramienta: nn(v.herramienta, null), verificado: v.verificado },
+        { workSignalVerified: v.verificado });
+      if (!m.ok) { process.stderr.write(`work-signal start --action-done: no marco — ${m.motivo}\n`); process.exit(1); }
+      process.stdout.write(JSON.stringify({ marked: true, verificado: v.verificado, herramienta: nn(v.herramienta, null) }) + '\n');
+      process.exit(0);
+    }
     let r;
     try { r = workSignalForRun(event, args.story ? { storyPath: path.resolve(args.story), repo: args.repo ? path.resolve(args.repo) : null } : {}); } catch (e) { r = { ran: false, warnings: [`aviso de trabajo: falló (${e.code || e.message}); sigo sin registrar`] }; }
     if (r.error) { process.stderr.write(`work-signal: ${r.error}\n`); process.exit(1); }
     for (const w of r.warnings) process.stderr.write(`${w}\n`);
+    // la bandera del aviso de trabajo la pone el arnés: con el evento atendido sin avisos y sin acción pendiente
+    if (event === 'start' && !args.story && r.ran && !r.warnings.length) {
+      if (r.action) process.stderr.write('work-signal start: hacé la acción y cerrá con pipeline.js work-signal start --action-done "<id que devolvió la herramienta>" (si no se puede, marker.js start-warning time-tracking "<motivo>")\n');
+      else {
+        const m = marcarHechoExterno('workSignalStarted', { via: 'work-signal' });
+        r.marked = m.ok;
+        if (!m.ok) process.stderr.write(`work-signal start: el aviso salió pero no marqué la parte — ${m.motivo}\n`);
+      }
+    }
     process.stdout.write(JSON.stringify(r) + '\n');
     process.exit(0);
+  }
+
+  // El pedido de Azure DevOps de la historia, a su estado activo: el arnés lo transiciona y recién ahí marca.
+  if (cmd === 'ado-mark-active') {
+    const marker = readSessionMarker();
+    const storyPath = args.story ? path.resolve(args.story) : (marker && marker.storyPath) || null;
+    if (!storyPath) { process.stderr.write('ado-mark-active: sin marker activo en esta sesión — pasá --story <spec>\n'); process.exit(1); }
+    // el id con el lector común (`work_item:` y su nombre viejo), y la capa de plataforma del árbol que corre
+    const raiz = path.join(__dirname, '..', '..', '..');
+    let wi = null;
+    // directo del archivo: `readText` devuelve '' cuando no puede leer, y eso se vería como «no tiene pedido»
+    try { wi = require(path.join(raiz, 'scripts', 'lib', 'platform', 'work-item-field.js')).idOf(fs.readFileSync(storyPath, 'utf8')); } catch (e) {
+      // no poder leerlo no es «no tiene pedido»: se dice
+      process.stderr.write(`ado-mark-active: no pude leer el pedido de trabajo de la historia (${(e && (e.code || e.message)) || 'error'}); si no se puede, marker.js start-warning ado "<motivo>"\n`);
+      process.exit(1);
+    }
+    let repoDir = path.dirname(path.dirname(storyPath));
+    try { repoDir = require('child_process').execFileSync('git', ['-C', path.dirname(storyPath), 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || repoDir; } catch (_) { /* sin git: la carpeta de arriba */ }
+    const r = require('./lib/external-flags.js').adoMarkActive({ workItem: wi, repoDir, reopen: !!args.reopen, assignTo: args.assignTo || null,
+      platformJs: path.join(raiz, 'scripts', 'lib', 'platform', 'platform.js') });
+    if (r.marked) {
+      const m = marcarHechoExterno('adoMarkedActive', { via: 'ado-mark-active', workItem: wi });
+      if (!m.ok) { process.stderr.write(`ado-mark-active: el pedido quedó activo pero no marqué la parte — ${m.motivo}\n`); process.exit(1); }
+    }
+    (r.code === 0 ? process.stdout : process.stderr).write(`${r.line}\n`);
+    if (r.code === 3) process.stdout.write(`${r.line}\n`);
+    process.exit(r.code);
   }
   if (cmd === 'start') {
     const conModelos = conModelosDeLaCorrida(args);

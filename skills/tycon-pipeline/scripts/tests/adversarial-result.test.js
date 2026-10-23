@@ -159,11 +159,17 @@ test('T1 SetFlag_DeepReviewDone_SeNiega @story-1.8 @ac-1', () => {
 test('T2 SetFlag_OtrasBanderas_SiguenAndando @story-1.8 @ac-2', () => {
   const home = casa(); const SID = 't2';
   writeFakeMarker(home, SID);
-  for (const f of ['workSignalStarted', 'adoMarkedActive', 'atddBypass', 'waitingForHuman']) {
+  for (const f of ['atddBypass', 'waitingForHuman']) {
     const r = correr(home, SID, ['set-flag', f, 'true']);
     assert.equal(r.status, 0, `${f}: ${r.stderr}`);
     assert.equal(r.stdout.trim(), `${f}: true`);
     assert.equal(leerMarker(home, SID)[f], true);
+  }
+  // las de hechos externos las pone el arnés: set-flag sale 2 y no escribe (Casos: external-flags.test.js)
+  for (const f of ['workSignalStarted', 'adoMarkedActive']) {
+    const r = correr(home, SID, ['set-flag', f, 'true']);
+    assert.equal(r.status, 2, `${f}: ${r.stderr}`);
+    assert.notEqual(leerMarker(home, SID)[f], true);
   }
 });
 
