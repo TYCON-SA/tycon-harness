@@ -101,6 +101,10 @@ const ESQUEMA = {
                           // de revisores activos en el repo. Sin la llave, están activos todos los
                           // instalados. Un nombre que no está instalado FRENA `pipeline.js advisors`;
                           // acá se avisa antes (lintPaquetes).
+  deprecated: {           // lib/deprecated.js → leerLista: el código deprecado del repo (edit: warn|block; paths:
+    hijas: ['edit', 'paths'],  // lista de entradas path/level/reason/review_by, que valida el lector, no este lint)
+    libres: ['paths'],
+  },
   frontend: {             // ~/.claude/tycon-harness/scripts/hooks/rebuild-before-verify.js
     hijas: ['dev_build_cmd', 'dir'],
     libres: [],

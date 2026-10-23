@@ -1062,6 +1062,24 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.95 (T1-T5): el lector del código deprecado del repo: la lista commiteada, la marca en la cabecera, los globs y lo que no se puede mirar.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/deprecated.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.95 (T11-T17b): lo deprecado en el contexto de los revisores, DEPR-W1, VAL-C9 y el freno de edición (también por la terminal). Con HOME y estado de prueba por caso.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/deprecated-gates.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.95 (T6-T10, T18): los avisos del código deprecado (arranque, lectura, también desde Codex) y la entrada podrida en la foto de la noche. Con HOME de prueba por caso.",
+      "raiz": "arnes",
+      "ruta": "tests/deprecated-notices.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/deep-review-dense.test.js",
       "requiere": []

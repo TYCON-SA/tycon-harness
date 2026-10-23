@@ -1374,6 +1374,8 @@ function computeValidadores({ story, repo, todos = false }) {
     packs_nota: packsLib.notaDePaquetes({ repo, instalados: paquetesInstalados(), activos }),
     contexto: { files, detection: det },
     dependencias_de_pruebas: require('./lib/test-deps.js').dependenciasDePruebas({ repo, storyText: content }),
+    // los archivos declarados que están deprecados en el repo: el validador los reporta como VAL-C9
+    archivos_deprecados: require('./lib/deprecated.js').archivosDeHistoria({ repo, storyText: content }),
   };
 }
 
@@ -1730,59 +1732,7 @@ function modelHintsForSet({ all, tier }) {
   return Object.keys(hints).length ? hints : null;
 }
 
-// Glob-to-regex simple matcher (no deps). Soporta:
-//   **/  → cualquier dir prefix (0+ dirs)
-//   **   → cualquier path (con o sin /)
-//   *    → cualquier filename char excepto /
-//   {a,b} → alternancia
-// Match anchored al final + opcional dir prefix al inicio (para que `**/*.cs` matchee `Services/X.cs`).
-function matchGlob(filePath, pattern) {
-  // Normalizar barras (Windows defensive).
-  const f = String(filePath).replace(/\\/g, '/');
-  const p = String(pattern).replace(/\\/g, '/');
-  // Escapar metachars regex excepto los nuestros.
-  let re = '';
-  for (let i = 0; i < p.length; i++) {
-    const c = p[i];
-    if (c === '*') {
-      if (p[i + 1] === '*') {
-        // ** o **/
-        if (p[i + 2] === '/') {
-          re += '(?:.*/)?'; // **/  → optional dir prefix
-          i += 2;
-        } else {
-          re += '.*'; // ** → cualquier path
-          i += 1;
-        }
-      } else {
-        re += '[^/]*'; // * → no slash
-      }
-    } else if (c === '{') {
-      const end = p.indexOf('}', i);
-      if (end > i) {
-        const alts = p.slice(i + 1, end).split(',').map((a) => a.replace(/([.+?^${}()|[\]\\])/g, '\\$1'));
-        re += `(?:${alts.join('|')})`;
-        i = end;
-      } else {
-        re += '\\{';
-      }
-    } else if ('.+?^$()|[]\\'.includes(c)) {
-      re += '\\' + c;
-    } else {
-      re += c;
-    }
-  }
-  // Anchor: full path match (no permitir prefijo random), pero permitir que el archivo
-  // viva en cualquier subdir si el pattern empieza con **/.
-  const fullRe = new RegExp(`^${re}$`);
-  if (fullRe.test(f)) return true;
-  // Fallback: match contra basename si el pattern no tiene `/` (ej `*.cs` matchea `foo/bar.cs`)
-  if (!p.includes('/')) {
-    const base = f.split('/').pop();
-    return fullRe.test(base);
-  }
-  return false;
-}
+const { matchGlob } = require('./lib/match-glob.js');   // la comparación de rutas contra globs (también la usa la lista de deprecados)
 
 function advisorAffectedByDelta(advisorName, deltaFiles) {
   const surface = superficieDe(advisorName);
@@ -2689,6 +2639,8 @@ function buildAdvisorContext({ repo, story, files, iter }) {
       '',
       ...shownFiles.map((f) => `- ${f}`),
       '',
+      // los del repo que están deprecados, marcados (los de un hermano se leen con la lista de su propio repo)
+      require('./lib/deprecated.js').seccionParaRevisores({ repo, files: shownFiles.filter((f) => !f.startsWith('(')) }),
       '## Story digest (frontmatter + ACs + Tests + Tasks + verificación)',
       '',
       digest || '(sin story)',
@@ -6823,6 +6775,11 @@ function main() {
   if (cmd === 'mech-check') {
     const { runStoryChecks } = require('./lib/story-checks.js');
     const result = runStoryChecks({ repo: args.repo, storyPath: args.story, files: args.files });
+    // DEPR-W1: lo vivo que nombra lo deprecado. Aviso: no frena ni escala a un revisor.
+    try { result.findings.push(...require('./lib/deprecated.js').vivoQueNombraDeprecado({ repo: args.repo, files: args.files || [] })); } catch (e) {
+      // sin la lista no hay aviso, pero queda dicho: «no pude mirar» no es «no hay nada»
+      result.ambiguous.push({ rule: 'DEPR-W1', detail: `no se pudo mirar lo deprecado: ${(e && e.message) || e}` });
+    }
     const escalate = [...new Set(result.ambiguous.map((a) => a.rule.split('-')[0]))];
     const ESCALATION_ADVISOR = { ACCOV: 'tycon-ac-coverage-checker', DEFTR: 'tycon-deferral-tracker', MECH: 'tycon-ac-coverage-checker' };
     // una familia que no es del núcleo (WIRING: el revisor de cableado) la escala el revisor de un paquete ACTIVO que declara

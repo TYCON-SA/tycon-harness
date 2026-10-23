@@ -1486,6 +1486,54 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksmissing-path-noticejs)
 
+## scripts/hooks/deprecated-session-notice.js
+
+**Qué es:** Al abrir la sesión, le dice al modelo qué código del repo está deprecado, con su nivel y su motivo, y la regla.
+
+**Por qué existe:** Un agente que busca «cómo se hace X acá» encuentra el código viejo y lo copia. Si el repo lo declara (clave `deprecated` de `.tycon/advisors.yaml`, commiteada), el arranque lo dice antes de que busque. Una vez por día y repo avisa las entradas que ya no apuntan a nada o pasaron su fecha de revisión.
+
+**Quién la usa:** El arranque de sesión, en Claude Code y en Codex.
+
+**Dónde se prueba:** `scripts/tests/deprecated-notices.test.js` y el caso 64 del banco
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksdeprecated-session-noticejs)
+
+## scripts/hooks/deprecated-read-notice.js
+
+**Qué es:** Cuando el agente lee un archivo deprecado, le agrega el motivo y que no lo use de ejemplo.
+
+**Por qué existe:** La lista del arranque se pierde entre muchas cosas; el aviso llega justo cuando el archivo entra en la conversación. Una vez por archivo y sesión.
+
+**Quién la usa:** El hook que corre tras cada lectura (Read) y cada comando de terminal; en Codex, sólo la terminal.
+
+**Dónde se prueba:** `scripts/tests/deprecated-notices.test.js` y el caso 64 del banco
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksdeprecated-read-noticejs)
+
+## skills/tycon-pipeline/scripts/lib/deprecated.js
+
+**Qué es:** Contesta «¿esta ruta está deprecada?»: la lista commiteada del repo y la marca `harness-deprecated:` en la cabecera de un archivo.
+
+**Por qué existe:** Una sola respuesta para todos los que la necesitan: el arranque, el aviso al leer, los revisores, el validador (VAL-C9), mech-check (DEPR-W1), el freno de edición y la noche. Lo que no puede mirar no clasifica nada.
+
+**Quién la usa:** Los avisos del código deprecado, `pipeline.js` y `on-deprecated-edit.js`.
+
+**Dónde se prueba:** `skills/tycon-pipeline/scripts/tests/deprecated.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibdeprecatedjs)
+
+## skills/tycon-pipeline/scripts/on-deprecated-edit.js
+
+**Qué es:** Editar código deprecado sin una historia que lo pida avisa o frena, según el repo.
+
+**Por qué existe:** Congelado se toca sólo para arreglarlo, con una historia que lo declare y traiga `deprecated_reason:`; muerto no se toca. Borrarlo o moverlo pasa siempre: es el desenlace que se busca.
+
+**Quién la usa:** El despachador de ediciones y la puerta de la terminal (`on-bash-write-gate.js`).
+
+**Dónde se prueba:** `skills/tycon-pipeline/scripts/tests/deprecated-gates.test.js` y el caso 64 del banco
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptson-deprecated-editjs)
+
 ## scripts/hooks/failed-query-notice.js
 
 **Qué es:** Avisa cuando una consulta a un servicio devolvió vacío con el código de salida enmascarado, y cuando el `--project` de un comando `az` no existe.
