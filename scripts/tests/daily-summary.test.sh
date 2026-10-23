@@ -1312,21 +1312,21 @@ for (const f of JSON.parse(fj || "[]")) fs.writeFileSync(path.join(raiz, "pendin
    `enlace: ${JSON.stringify("https://sitio.acme.example/corridas?abrir=" + f.id)}`, "veredicto: \"pendiente\"",
    `vista_por_ultima_vez: ${JSON.stringify(f.vista)}`].join("\n") + "\n");' "$@"
 }
-# causas <conocidas> <nuevas> [largo de la categoría]  — conocidas con 10..1 ejecuciones, nuevas con 7..1
+# causas <conocidas> <nuevas>  — conocidas con 10..1 ejecuciones, nuevas con 7..1; cada una con un nombre distinto de la tabla
+CONOCIDAS_RR='[["RR-ESCAPE","TYCON_PR_BY_HAND"],["RR-ESCAPE","TYCON_NO_DEEP_REVIEW"],["RR-ESCAPE","ADVERSARIAL_RELAUNCH"],["RR-ESCAPE","TYCON_FULL_SUITE"],["RR-ESCAPE","GIT_NO_VERIFY"],["RR-ESCAPE","ATDD_BYPASS"],["RR-ESCAPE","MUTATION_BYPASS"],["RR-ESCAPE","TYCON_SAFETY_OFF"],["RR-ESCAPE","TYCON_SESSION_GUARD_OK"],["RR-ESCAPE","TYCON_ENGRAM_MANIFEST_OK"]]'
+NUEVAS_RR='[["RR-NODE","node-viejo"],["RR-NODE","carga"],["RR-CIERRE","abortada"],["RR-CIERRE","abandonada"],["RR-CIERRE","sin-cerrar"],["RR-APAGO",null],["RR-BANDERA","--story"]]'
 causas() {
-  node -e 'const [k, n, l] = process.argv.slice(1).map(Number); const out = [];
-const cat = (p, i) => (p + i).padEnd(l || 0, "x");
-for (let i = 0; i < k; i++) out.push({ regla: "RR-ESCAPE", categoria: cat("K", i), ejecuciones: 10 - i, nueva: false });
-for (let i = 0; i < n; i++) out.push({ regla: "RR-NODE", categoria: cat("N", i), ejecuciones: 7 - i, nueva: true });
-out.sort((a, b) => b.ejecuciones - a.ejecuciones || (a.regla < b.regla ? -1 : 1) || (a.categoria < b.categoria ? -1 : 1));
-console.log(JSON.stringify(out));' "$@"
+  node -e 'const [k, n] = process.argv.slice(1, 3).map(Number); const K = JSON.parse(process.argv[3]); const N = JSON.parse(process.argv[4]); const out = [];
+for (let i = 0; i < k; i++) out.push({ regla: K[i][0], categoria: K[i][1], ejecuciones: 10 - i, nueva: false });
+for (let i = 0; i < n; i++) out.push({ regla: N[i][0], categoria: N[i][1], ejecuciones: 7 - i, nueva: true });
+console.log(JSON.stringify(out));' "$1" "$2" "$CONOCIDAS_RR" "$NUEVAS_RR"
 }
 lastrun() { # <fecha> <completo> <motivo|null> <causas json>
   echo "{\"fecha\":\"$1\",\"completo\":$2,\"motivo\":$3,\"miradas\":30,\"con_fallas\":20,\"nuevas\":5,\"sin_hilo\":0,\"hilos_sin_hooks\":0,\"ilegibles\":0,\"causas\":$4}"
 }
-fichas_nuevas() { # las fichas de hoy que traen las nuevas N0..N6, salvo N3 (su renglón va sin enlace)
-  node -e 'const out = []; for (let i = 0; i < 7; i++) if (i !== 3) out.push({ id: "aaaa00000000000" + i, vista: process.argv[1], reglas: [{ regla: "RR-NODE", categoria: "N" + i, cuenta: 1 }] });
-console.log(JSON.stringify(out));' "$HOY"
+fichas_nuevas() { # las fichas de hoy que traen las nuevas 0..6, salvo la 3 (su renglón va sin enlace)
+  node -e 'const N = JSON.parse(process.argv[2]); const out = []; for (let i = 0; i < 7; i++) if (i !== 3) out.push({ id: "aaaa00000000000" + i, vista: process.argv[1], reglas: [{ regla: N[i][0], categoria: N[i][1], cuenta: 1 }] });
+console.log(JSON.stringify(out));' "$HOY" "$NUEVAS_RR"
 }
 bloque() { ultimo 'j.text.split("\n").filter((l) => /^(ejecuciones:|· |🆕 )/.test(l)).join("\n")'; }
 
@@ -1338,20 +1338,20 @@ rr_ops "$D/ops" "$(lastrun "$HOY" true null "$(causas 10 7)")" "$(fichas_nuevas)
 reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --runs-review "$D/ops")
 E31=$(cat <<EOF
 ejecuciones: 20 con fallas del arnés (de 30 miradas)
-· RR-ESCAPE K0: 10
-· RR-ESCAPE K1: 9
-· RR-ESCAPE K2: 8
-· RR-ESCAPE K3: 7
-· RR-ESCAPE K4: 6
-· RR-ESCAPE K5: 5
-· RR-ESCAPE K6: 4
-· RR-ESCAPE K7: 3
+· pedido armado a mano: 10
+· pase adversarial salteado: 9
+· pase adversarial relanzado: 8
+· suite completa forzada: 7
+· commit sin controles: 6
+· pruebas primero salteadas: 5
+· prueba de mutación salteada: 4
+· freno de seguridad apagado: 3
 · y 2 causas conocidas más (3 ejecuciones)
-🆕 RR-NODE N0: 7 — https://sitio.acme.example/corridas?abrir=aaaa000000000000
-🆕 RR-NODE N1: 6 — https://sitio.acme.example/corridas?abrir=aaaa000000000001
-🆕 RR-NODE N2: 5 — https://sitio.acme.example/corridas?abrir=aaaa000000000002
-🆕 RR-NODE N3: 4
-🆕 RR-NODE N4: 3 — https://sitio.acme.example/corridas?abrir=aaaa000000000004
+🆕 Node viejo: 7 — https://sitio.acme.example/corridas?abrir=aaaa000000000000
+🆕 guion del arnés que no cargó: 6 — https://sitio.acme.example/corridas?abrir=aaaa000000000001
+🆕 ejecución abortada: 5 — https://sitio.acme.example/corridas?abrir=aaaa000000000002
+🆕 ejecución abandonada: 4
+🆕 ejecución sin cerrar: 3 — https://sitio.acme.example/corridas?abrir=aaaa000000000004
 🆕 y 2 causas nuevas más
 EOF
 )
@@ -1361,11 +1361,13 @@ rr_ops "$D/ops0" "$(lastrun "$HOY" true null '[]' | sed 's/"con_fallas":20/"con_
 reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --runs-review "$D/ops0")
 [ "$RC" = 0 ] && [ "$(bloque)" = "ejecuciones: 0 con fallas del arnés (30 miradas)" ] \
   && ok "4.10-T31 con 0, la forma de 0 y sin renglones" || no "4.10-T31 con 0: $(bloque)"
-rr_ops "$D/opsl" "$(lastrun "$HOY" true null "$(causas 10 7 80)")"
-reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --runs-review "$D/opsl")
-LB=$(bloque); LT=$(ultimo 'j.text.length')
-[ "$RC" = 0 ] && [ "${#LB}" -le 900 ] && [ "$LT" -le 4096 ] && grep -q '^· y [0-9]* causas conocidas más' <<<"$LB" \
-  && ok "4.10-T31 categorías de 80 caracteres: el bloque no pasa de 900 (${#LB}) y el mensaje entra en Telegram ($LT)" || no "4.10-T31 tope: bloque ${#LB}, mensaje $LT · $LB"
+# las causas con el mismo nombre se suman; una categoría que la tabla no conoce toma el nombre general de su regla; ningún código
+JUNTAS='[{"regla":"RR-ESCAPE","categoria":"TYCON_PR_BY_HAND","ejecuciones":5,"nueva":false},{"regla":"RR-ESCAPE","categoria":"PR_A_MANO","ejecuciones":4,"nueva":false},{"regla":"RR-ESCAPE","categoria":"ZZCONSTANTE_NUEVA","ejecuciones":3,"nueva":true},{"regla":"RR-HOOK","categoria":"Stop/tiempo","ejecuciones":2,"nueva":true},{"regla":"RR-HOOK","categoria":"Stop/carga","ejecuciones":1,"nueva":true}]'
+rr_ops "$D/opsj" "$(lastrun "$HOY" true null "$JUNTAS")"
+reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --runs-review "$D/opsj")
+EJ=$(printf 'ejecuciones: 20 con fallas del arnés (de 30 miradas)\n· pedido armado a mano: 9\n🆕 otro freno salteado: 3\n🆕 aviso automático que se pasó de tiempo: 2\n🆕 aviso automático con error: 1')
+[ "$RC" = 0 ] && [ "$(bloque)" = "$EJ" ] && ! grep -qE 'RR-|ZZCONSTANTE|TYCON_' <<<"$(ultimo 'j.text')" \
+  && ok "4.10-T31 nombres en llano: las del mismo nombre se suman, lo desconocido toma el nombre de su regla, sin códigos" || no "4.10-T31 nombres: rc=$RC · $(bloque)"
 
 # T31b ResumenCausasFueraDeForma @story-4.10 @ac-14
 # 🔴 Falla con: imprimir una categoría que no pasa la forma (puede traer texto de una conversación) o un número negativo.
@@ -1390,7 +1392,7 @@ reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY")
 [ "$RC" = 0 ] && [ "$(ultimo 'j.ruta')" = "/bot<token>/editMessageText" ] && [ -n "$B04" ] && [ "$GUARDADO" = "$B04" ] && [ "$(bloque)" = "$B04" ] \
   && ok "4.10-T32 la edición de las 08:00 vuelve a escribir la línea desde la constancia, sin la opción" || no "4.10-T32 rc=$RC · 04:00 «${B04}» · guardado «${GUARDADO}» · 08:00 «$(bloque)»"
 node -e 'const fs = require("fs"); const f = process.argv[1]; const s = JSON.parse(fs.readFileSync(f, "utf8"));
-s.resumen.ejecuciones[1] = "· ZZTEXTO de una conversación"; fs.writeFileSync(f, JSON.stringify(s));' "$D/out/dependencias-$HOY.json"
+s.resumen.ejecuciones[1] = "· ZZTEXTO de una conversación: 3"; fs.writeFileSync(f, JSON.stringify(s));' "$D/out/dependencias-$HOY.json"
 reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY")
 [ "$RC" = 0 ] && [ "$(bloque)" = "ejecuciones: ? (la constancia de las 04:00 no se pudo leer)" ] && ! grep -q ZZTEXTO "$TMP/pedidos.jsonl" \
   && ok "4.10-T32 un renglón cambiado en la constancia no se vuelve a escribir" || no "4.10-T32 renglón cambiado: $(bloque)"
@@ -1412,7 +1414,7 @@ for O in ops-sin ops-ayer; do
 done
 rr_ops "$D/ops-parcial" "$(lastrun "$HOY" false '"la bajada del buzón no fue entera (sin_permiso)"' "$(causas 1 0)")"
 reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --runs-review "$D/ops-parcial")
-[ "$RC" = 0 ] && [ "$(bloque)" = "$(printf 'ejecuciones: parcial — la bajada del buzón no fue entera (sin_permiso) · 20 con fallas del arnés (de 30 miradas)\n· RR-ESCAPE K0: 10')" ] \
+[ "$RC" = 0 ] && [ "$(bloque)" = "$(printf 'ejecuciones: parcial — la bajada del buzón no fue entera (sin_permiso) · 20 con fallas del arnés (de 30 miradas)\n· pedido armado a mano: 10')" ] \
   && ok "4.10-T33 parcial: el motivo junto a lo que sí encontró" || no "4.10-T33 parcial: $(bloque)"
 # un motivo que no es una de las frases fijas de runs-review.js no sale, aunque tenga letras y números nada más
 rr_ops "$D/ops-motivo" "$(lastrun "$HOY" false '"ZZTEXTO de una conversación"' '[]' | sed 's/"con_fallas":20/"con_fallas":0/')"
