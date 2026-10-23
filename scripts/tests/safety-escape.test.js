@@ -755,3 +755,290 @@ test('T23 EscC3_ClearEnDeuda_RojoEsperadoPasaRojoFrena @story-8.93 @ac-11 — en
   assert.strictEqual(r.status, 2, r.stderr);
   assert.match(r.stderr, /ESC-C3/);
 });
+
+// ── Los verdes, la evidencia, el cierre sin evidencia y las aprobaciones ─────────────────────────────────────────────
+// `TYCON_TEST_GATE` y `DOD_BYPASS` activan el escape con cualquier valor que no sea 0 ni vacío (al revés que las otras
+// variables de ESC-C1); `--force-manual` y `--trust-ran` son llamadas leídas como las lee el shell; el permiso de escribir
+// evidencia y la exención de la prueba en vivo escritos por la terminal los frena ESC-C5; la cita de la aprobación del
+// plan la mira ESC-C6.
+const PIPELINE = 'node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js';
+const PERMISO = '~/.claude/.tycon-pipeline/ALLOW_DOD_EVIDENCE_WRITE';
+const B2_TEST_GATE_FRENA = [
+  ['Bash', `TYCON_TEST_GATE=1 ${MARKER} run-check tests -- true`],
+  ['Bash', `export TYCON_TEST_GATE=1; ${MARKER} run-check tests -- true`],
+  ['Bash', `env TYCON_TEST_GATE=yes ${MARKER} run-check tests -- true`],
+  ['Bash', `TYCON_TEST_GATE=$X ${MARKER} mark-tests-not-measured "no anda"`],
+  ['Bash', `TYCON_TEST_GATE=1 ${MARKER} mark-tests-not-measured "no anda"`],
+  ['PowerShell', `$env:TYCON_TEST_GATE=1; ${MARKER} run-check tests -- true`],
+  ['PowerShell', `$Env:Tycon_Test_Gate = '1'; ${MARKER} run-check tests -- true`],
+];
+const B2_DOD_BYPASS_FRENA = [
+  ['Bash', `DOD_BYPASS=1 ${MARKER} complete-step live-check`],
+  ['Bash', `export DOD_BYPASS=true && ${MARKER} complete-step 8`],
+  ['PowerShell', `$env:DOD_BYPASS='1'; ${MARKER} complete-step live-check`],
+];
+
+test('T1 EscC1_TestGateDelAgente_Frena @story-8.96 — TYCON_TEST_GATE escrita por el agente, con cualquier valor que activa', () => {
+  for (const [herramienta, c] of B2_TEST_GATE_FRENA) {
+    const r = freno(c, { herramienta, conversacion: [deLaPersona('corré las pruebas')] });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C1/, c);
+    assert.match(r.stderr, /test-gate\.sh/, 'el cartel nombra el camino normal');
+    assert.match(r.stderr, /lo decide la persona/);
+    assert.doesNotMatch(r.stderr, /adelante \(vale 30 minutos\)/, 'el cartel no da la receta');
+  }
+});
+
+test('T2 EscC1_DodBypass_Frena @story-8.96 — DOD_BYPASS escrita por el agente', () => {
+  for (const [herramienta, c] of B2_DOD_BYPASS_FRENA) {
+    const r = freno(c, { herramienta, conversacion: [deLaPersona('cerrá la historia')] });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C1/, c);
+    assert.match(r.stderr, /close-as-debt/);
+    assert.doesNotMatch(r.stderr, /adelante \(vale 30 minutos\)/);
+  }
+});
+
+test('T3 EscC1_TestGateYDodBypass_ConFrase_Pasa @story-8.96 — con la frase de la persona pasa y queda la sesión y el escape', () => {
+  for (const [variable, c] of [['TYCON_TEST_GATE', B2_TEST_GATE_FRENA[0][1]], ['DOD_BYPASS', B2_DOD_BYPASS_FRENA[0][1]]]) {
+    const r = freno(c, { conversacion: [deLaPersona(`dale, autorizo ${variable}`)] });
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+    const k = constancias(r.home).find((l) => l.regla === 'ESC-C1');
+    assert.ok(k, JSON.stringify(constancias(r.home)));
+    assert.deepStrictEqual([k.veredicto, k.via, k.sesion, k.escape], ['escape', 'persona', SID, variable]);
+    // la frase de una no autoriza la otra
+    const otra = variable === 'DOD_BYPASS' ? 'TYCON_TEST_GATE' : 'DOD_BYPASS';
+    assert.strictEqual(freno(c, { conversacion: [deLaPersona(`autorizo ${otra}`)] }).status, 2, c);
+  }
+});
+
+const B2_PERMISO_FRENA = [
+  ['Bash', `touch ${PERMISO}`],
+  ['Bash', `: > ${PERMISO}`],
+  ['Bash', `echo x > ${PERMISO}`],
+  ['Bash', `cp /tmp/x ${PERMISO}`],
+  ['Bash', `cd ~/.claude/.tycon-pipeline && touch ALLOW_DOD_EVIDENCE_WRITE`],
+  ['Bash', `node -e "require('fs').writeFileSync(process.env.HOME + '/.claude/.tycon-pipeline/ALLOW_DOD_EVIDENCE_WRITE', '')"`],
+  ['PowerShell', `New-Item -ItemType File $HOME/.claude/.tycon-pipeline/ALLOW_DOD_EVIDENCE_WRITE`],
+  ['PowerShell', `Set-Content -Path $HOME/.claude/.tycon-pipeline/allow_dod_evidence_write -Value ''`],
+];
+
+test('T4 EscC5_CrearElPermisoDeEvidencia_Frena @story-8.96 — crear, tocar o copiar el permiso sin la frase', () => {
+  for (const [herramienta, c] of B2_PERMISO_FRENA) {
+    const r = freno(c, { herramienta, conversacion: [deLaPersona('escribí la evidencia')] });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C5/, c);
+    assert.match(r.stderr, /lo decide la persona/);
+  }
+  const ok = freno(B2_PERMISO_FRENA[0][1], { conversacion: [deLaPersona('autorizo ALLOW_DOD_EVIDENCE_WRITE')] });
+  assert.strictEqual(ok.status, 0, ok.stderr);
+  const k = constancias(ok.home).find((l) => l.regla === 'ESC-C5');
+  assert.deepStrictEqual([k.veredicto, k.via, k.sesion, k.escape], ['escape', 'persona', SID, 'ALLOW_DOD_EVIDENCE_WRITE']);
+  // mirarlo o borrarlo no lo crea
+  for (const c of [`ls -la ${PERMISO}`, `rm -f ${PERMISO}`, `grep -rn ALLOW_DOD_EVIDENCE_WRITE skills`, `test -f ${PERMISO} && echo hay`]) {
+    assert.strictEqual(freno(c).status, 0, c);
+  }
+});
+
+test('T7 EscC3_ForceManual_Frena @story-8.96 — declarar un verde a mano, con la ejecución en verde o en rojo', () => {
+  const formas = [
+    ['Bash', `${MARKER} set-check tests green --force-manual`],
+    ['Bash', `${MARKER} set-check dod green --force-manual`],
+    ['Bash', `${MARKER} get\n${MARKER} set-check tests green --force-manual`],
+    ['Bash', `${MARKER} set-check tests green "--force-manual"`],
+    ['Bash', `F=--force-manual; ${MARKER} set-check tests green $F`],
+    ['PowerShell', `node C:\\x\\marker.js set-check tests green --force-manual`],
+  ];
+  for (const marcador of [VERDE, ROJO]) {
+    for (const [herramienta, c] of formas) {
+      const r = freno(c, { herramienta, home: homeConMarcador(marcador, [deLaPersona('seguí')]) });
+      assert.strictEqual(r.status, 2, `${JSON.stringify(c)}: ${r.stderr}`);
+      assert.match(r.stderr, /ESC-C3/);
+      assert.match(r.stderr, /lo decide la persona/);
+    }
+  }
+  const r = freno(formas[0][1], { home: homeConMarcador(VERDE, [deLaPersona('autorizo force-manual')]) });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const k = constancias(r.home).find((l) => l.regla === 'ESC-C3');
+  assert.deepStrictEqual([k.via, k.sesion, k.escape], ['persona', SID, 'force-manual']);
+});
+
+test('T8 EscC3_TrustRan_Frena @story-8.96 — la constancia de revisores que el arnés no vio correr', () => {
+  for (const c of [`${PIPELINE} check-count --trust-ran --ran a,b`, `cd x && node pipeline.js check-count --ran a --trust-ran`]) {
+    const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C3/);
+  }
+  const r = freno(`${PIPELINE} check-count --trust-ran --ran a,b`, { home: homeConMarcador(VERDE, [deLaPersona('autorizo trust-ran')]) });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(constancias(r.home).find((l) => l.regla === 'ESC-C3').escape, 'trust-ran');
+});
+
+test('T10 EscC5_ExencionPorLaTerminal_Frena @story-8.96 — agregar la exención de la prueba en vivo con sed, perl o una redirección', () => {
+  for (const c of [
+    `sed -i '' 's/^qa_guide: off/qa_guide: off\\ndod_runtime_exempt: true/' specs/story-9.9.md`,
+    `perl -pi -e 's/^status:/dod_runtime_exempt: true\\nstatus:/' specs/story-9.9.md`,
+    `printf 'dod_runtime_exempt: "true"\\n' >> specs/story-9.9.md`,
+    `echo "dod_runtime_exempt: true" | tee -a specs/story-9.9.md`,
+  ]) {
+    const r = freno(c, { conversacion: [deLaPersona('seguí')] });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C5/, c);
+  }
+  const ok = freno(`sed -i '' 's/^qa_guide: off/qa_guide: off\\ndod_runtime_exempt: true/' specs/story-9.9.md`,
+    { conversacion: [deLaPersona('Es puro texto. Autorizo dod_runtime_exempt')] });
+  assert.strictEqual(ok.status, 0, ok.stderr);
+  assert.strictEqual(constancias(ok.home).find((l) => l.regla === 'ESC-C5').escape, 'dod_runtime_exempt');
+  // leerla, buscarla o sacarla no frena
+  for (const c of ['grep -n dod_runtime_exempt specs/*.md', `grep -c 'dod_runtime_exempt: true' specs/story-9.9.md > /tmp/n.txt`,
+    `sed -i '' '/^dod_runtime_exempt: true/d' specs/story-9.9.md`]) {
+    assert.strictEqual(freno(c).status, 0, c);
+  }
+});
+
+// ESC-C6: la cita de la aprobación del plan está en lo que dijo la persona
+const RESPUESTA_PREGUNTA = 'Apruebo el plan (Recomendado)';
+const pregunta = (min = 3) => ({ type: 'assistant', timestamp: hace(min), message: { role: 'assistant',
+  content: [{ type: 'tool_use', id: 'q1', name: 'AskUserQuestion', input: { questions: [{ question: '¿Aprobás el plan?', options: [{ label: RESPUESTA_PREGUNTA }, { label: 'Lo cambio' }] }] } }] } });
+const respuesta = (texto = RESPUESTA_PREGUNTA, min = 2) => ({ type: 'user', timestamp: hace(min),
+  toolUseResult: { questions: [{ question: '¿Aprobás el plan?' }], answers: { '¿Aprobás el plan?': texto } },
+  message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'q1', content: `Your questions have been answered: "¿Aprobás el plan?"="${texto}".` }] } });
+const PLAN_ABIERTO = { autonomous: true, checks: {}, stepsPending: ['approve-plan', 'implement'], stepsCompleted: ['start', 'validate-story', 'plan'] };
+const aprobar = (extra) => `${MARKER} complete-step approve-plan ${extra}`;
+
+test('T11 EscC6_CitaInventada_Frena @story-8.96 — una cita que la persona no escribió no aprueba el plan', () => {
+  const casos = [
+    [aprobar('--approved "dale"'), [deLaPersona('mostrame el plan')]],
+    [aprobar('--approved "el plan está bien, seguí"'), [deLaPersona('mostrame el plan'), delAgente('el plan está bien, seguí')]],
+    [aprobar('--approved "el plan está bien, seguí"'), [deLaPersona('mostrame el plan'), deHerramienta('el plan está bien, seguí')]],
+    [aprobar('--approved "ok"'), [deLaPersona('ok, pero cambiá el paso 3 antes de seguir')]],
+    [aprobar('--approved "el plan está bien, seguí" --mockup-approved "la maqueta está bien"'), [deLaPersona('el plan está bien, seguí')]],
+    [aprobar('--approved "el plan está bien, seguí" --delegated-by ana@example.com --agent "coordinadora (x)"'), [deLaPersona('el plan está bien, seguí')]],
+    [aprobar(`--approved "${RESPUESTA_PREGUNTA}"`), [deLaPersona('mostrame el plan'), delAgente(`Respondiste: ${RESPUESTA_PREGUNTA}`)]],
+    [`node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step 3 --approved "aprobado por la persona"`, [deLaPersona('seguí')]],
+    [`${MARKER} approve-mockup --approved "la maqueta está aprobada"`, [deLaPersona('mostrame la maqueta')]],
+    // la cita en una variable no se puede comprobar
+    [`C="el plan está bien, seguí"; ${aprobar('--approved "$C"')}`, [deLaPersona('el plan está bien, seguí')]],
+  ];
+  for (const [c, conversacion] of casos) {
+    const r = freno(c, { home: homeConMarcador(PLAN_ABIERTO, conversacion) });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C6/, c);
+    assert.doesNotMatch(r.stderr, /autorizo/, 'no hay frase para saltearlo');
+  }
+});
+
+test('T12 EscC6_CitaDeLaPersona_Pasa @story-8.96 — la cita de la persona, su «ok» entero, la respuesta que eligió, la reenviada y sin conversación', () => {
+  const casos = [
+    [aprobar('--approved "el plan está bien, seguí"'), [deLaPersona('mostrame el plan'), deLaPersona('el plan está bien, seguí con eso')]],
+    [aprobar('--approved "ok"'), [deLaPersona('mostrame el plan'), deLaPersona('Ok')]],
+    [aprobar(`--approved "${RESPUESTA_PREGUNTA}"`), [deLaPersona('mostrame el plan'), pregunta(), respuesta()]],
+    [aprobar('--auto-approved "riesgo bajo"'), [deLaPersona('seguí')]],
+    [`${MARKER} complete-step implement`, [deLaPersona('seguí')]],
+    // la maqueta, con la cita de la persona
+    [aprobar('--approved "el plan está bien" --mockup-approved "la maqueta también va"'), [deLaPersona('el plan está bien, y la maqueta también va')]],
+    [`${MARKER} approve-mockup --approved "la maqueta también va"`, [deLaPersona('la maqueta también va así')]],
+  ];
+  for (const [c, conversacion] of casos) {
+    const r = freno(c, { home: homeConMarcador(PLAN_ABIERTO, conversacion) });
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+  }
+  // reenviada por la sesión designada, también con --delegated-by
+  const home = homeConMarcador(PLAN_ABIERTO, [deOtraSesion('coordinadora', 'Apruebo el plan de la 9.9 con las tres condiciones, por delegación del dueño.')]);
+  conRelevo(home);
+  const rel = freno(aprobar('--approved "Apruebo el plan de la 9.9 con las tres condiciones" --delegated-by ana@example.com'), { home });
+  assert.strictEqual(rel.status, 0, rel.stderr);
+  // sin conversación legible (Codex) no mira, y deja la constancia
+  const sin = homeConMarcador(PLAN_ABIERTO, null);
+  const r = freno(aprobar('--approved "lo que sea"'), { home: sin });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.deepStrictEqual(constancias(sin).filter((l) => l.regla === 'ESC-C6').map((l) => l.via), ['sin-conversacion']);
+});
+
+test('T13 GuardRecord_NombresNuevos @story-8.96 — los escapes nuevos se anotan; uno fuera de la lista no', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'guard-rec-b2-'));
+  const gr = require(path.join(RAIZ, 'scripts', 'lib', 'guard-record.js'));
+  const nuevos = ['TYCON_TEST_GATE', 'DOD_BYPASS', 'force-manual', 'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt'];
+  for (const e of [...nuevos, 'otra-cosa']) gr.anotar({ freno: 'safety-guard', regla: 'ESC-C5', veredicto: 'escape', cmd: 'x', home, via: 'persona', sesion: SID, escape: e });
+  assert.deepStrictEqual(constancias(home).map((l) => l.escape), [...nuevos, undefined]);
+  gr.anotar({ freno: 'safety-guard', regla: 'ESC-C6', veredicto: 'escape', cmd: 'x', home, via: 'sin-conversacion', sesion: SID });
+  assert.strictEqual(constancias(home).pop().via, 'sin-conversacion');
+  const { NAMED } = require(path.join(LIB, 'escape-ok.js'));
+  for (const e of ['force-manual', 'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt']) assert.ok(NAMED.includes(e), e);
+});
+
+test('T14 EscB2_UsoNormal_NoFrena @story-8.96 — el uso legítimo pasa con la ejecución en verde y en rojo', () => {
+  const normales = [
+    'bash ~/.claude/agent-skills/skills/tycon-pipeline/scripts/test-gate.sh . specs/story-9.9.md',
+    `TYCON_TEST_GATE_PART=1 ${MARKER} run-check tests -- true`,
+    `TYCON_TEST_GATE_COMPANION=x ${MARKER} get`,
+    `TYCON_TEST_GATE=0 ${MARKER} run-check tests -- node --test x.test.js`,
+    `DOD_BYPASS= ${MARKER} get`,
+    `MY_DOD_BYPASS=1 ${MARKER} get`,
+    `${MARKER} run-check tests -- node --test x.test.js`,
+    `${MARKER} set-check advisors green --manual`,
+    `${PIPELINE} check-count`,
+    `${PIPELINE} check-count --ran a,b`,
+    'grep -rn "DOD_BYPASS" skills/tycon-pipeline/scripts/marker.js',
+    'az pipelines runs list --top 5',
+  ];
+  for (const marcador of [VERDE, ROJO]) {
+    for (const c of normales) {
+      const r = freno(c, { home: homeConMarcador(marcador, [deLaPersona('seguí')]) });
+      assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+    }
+  }
+});
+
+// Lo que encontró el pase adversarial (@story-8.96): formas que el freno no veía y frenos de más.
+test('T17 EscB2_FormasQueNoSeVeian_Frenan @story-8.96 — sed y perl con banderas juntas, PowerShell, una llamada dentro de run-check, el paso con espacios y la bandera en una variable', () => {
+  const casos = [
+    ['Bash', "sed -Ei 's/^qa_guide: off/dod_runtime_exempt: true/' specs/story-9.9.md", 'ESC-C5', VERDE],
+    ['Bash', "perl -pi.bak -e 's/^status:/dod_runtime_exempt: true\\nstatus:/' specs/story-9.9.md", 'ESC-C5', VERDE],
+    ['Bash', "sed -i '' 's/^qa_guide: off/dod_runtime_exempt: true/;s/a/b/' specs/story-9.9.md", 'ESC-C5', VERDE],
+    ['PowerShell', `\${env:DOD_BYPASS}=1; ${MARKER} complete-step live-check`, 'ESC-C1', VERDE],
+    ['PowerShell', `[Environment]::SetEnvironmentVariable('TYCON_TEST_GATE','1'); ${MARKER} run-check tests -- true`, 'ESC-C1', VERDE],
+    ['Bash', `${MARKER} run-check tests -- ${MARKER} set-check tests green --force-manual`, 'ESC-C3', VERDE],
+    ['Bash', `${MARKER} complete-step " approve-plan " --approved "el plan está bien, seguí"`, 'ESC-C6', PLAN_ABIERTO],
+    ['Bash', `F=--approved; ${MARKER} complete-step approve-plan $F "el plan está bien, seguí"`, 'ESC-C6', PLAN_ABIERTO],
+  ];
+  for (const [herramienta, c, regla, marcador] of casos) {
+    const r = freno(c, { herramienta, home: homeConMarcador(marcador, [deLaPersona('mostrame el plan')]) });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, new RegExp(regla), c);
+  }
+});
+
+test('T18 EscB2_FrenosDeMas_NoFrenan @story-8.96 — una comparación, un -i dentro de un nombre de archivo y variables que son valores', () => {
+  const casos = [
+    `[ "$DOD_BYPASS" = 1 ] && echo hay`,
+    "sed -n '/dod_runtime_exempt: true/p' specs/story-1.12-las-pruebas-de-integracion.md",
+    `N=tests; ${MARKER} set-check "$N" green --manual`,
+    `${PIPELINE} check-count -r $R --story "$S"`,
+  ];
+  for (const c of casos) {
+    const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+  }
+});
+
+test('T20 EscapeOk_RetractacionEnElMismoMensajeYPregunta @story-8.96 — una oración posterior que la retira la tumba; una pregunta antes en el renglón no', () => {
+  const { escapeAutorizado } = require(path.join(LIB, 'escape-ok.js'));
+  const ok = (texto) => escapeAutorizado({ variable: 'force-manual', sesion: SID, pedido: TUID, home: nuevaHome([deLaPersona(texto)]) }).ok;
+  assert.strictEqual(ok('autorizo force-manual. Mejor no, retiro el force-manual'), false);
+  assert.strictEqual(ok('¿ya corrió la suite? autorizo force-manual'), true);
+  assert.strictEqual(ok('autorizo force-manual. Avisame cuando termine'), true);
+});
+
+test('T19 EscC6_CitaDeUnRechazoYSeleccionMultiple @story-8.96 — una cita sacada de un rechazo no aprueba; la opción elegida en una pregunta de selección múltiple sí', () => {
+  const rechazo = freno(aprobar('--approved "el plan está bien en general"'),
+    { home: homeConMarcador(PLAN_ABIERTO, [deLaPersona('No lo apruebo: el plan está bien en general pero falta el paso 3')]) });
+  assert.strictEqual(rechazo.status, 2, rechazo.stderr);
+  assert.match(rechazo.stderr, /ESC-C6/);
+  const multiple = { ...respuesta(), toolUseResult: { questions: [{ question: '¿Aprobás el plan?' }], answers: { '¿Aprobás el plan?': [RESPUESTA_PREGUNTA, 'Lo cambio'] } } };
+  const ok = freno(aprobar(`--approved "${RESPUESTA_PREGUNTA}"`), { home: homeConMarcador(PLAN_ABIERTO, [deLaPersona('mostrame el plan'), pregunta(), multiple]) });
+  assert.strictEqual(ok.status, 0, ok.stderr);
+  // «sin» no niega: «apruebo el plan sin cambios» aprueba
+  const sin = freno(aprobar('--approved "apruebo el plan sin cambios"'), { home: homeConMarcador(PLAN_ABIERTO, [deLaPersona('apruebo el plan sin cambios')]) });
+  assert.strictEqual(sin.status, 0, sin.stderr);
+});

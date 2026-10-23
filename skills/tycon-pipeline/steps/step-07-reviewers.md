@@ -142,8 +142,8 @@ Task loguea cada uno desde el `step5-start` que marca `advisors`), NO un `--ran`
 así el LLM **no puede falsear el conteo** (CF-2 2026-05-21). Valida contra el **`expected[]`
 persistido del último `step5-start`** — NO contra "el set completo": un subset legítimo tras
 `smart-reloop` pasa, porque el expected de esa iteración ya es el reducido. **FALLA CERRADO
-(exit 2) si hay `step5-start` con 0 spawns registrados** — sin log no hay verde. Override
-consciente (queda auditable): `--trust-ran --ran a,b,c`. Exit 2 + lista de faltantes → NO avanzar
+(exit 2) si hay `step5-start` con 0 spawns registrados** — sin log no hay verde. Confiar en la
+lista del agente lo decide la persona («autorizo trust-ran»). Exit 2 + lista de faltantes → NO avanzar
 a «Hallazgos» hasta exit 0. **Verifica la completitud del set de forma mecánica, no por disciplina**.
 Residual: nada *fuerza* a invocar `pipeline.js`/correr los advisors — eso lo
 cierra la máquina de estados del pipeline.
@@ -465,7 +465,7 @@ Los 3 subagentes devuelven sus reportes. Cada uno tiene su formato definido en s
 
 ## Registrar check advisors — SIEMPRE (era sólo autónomo; desde 2026-08-19 es pre-condición de `complete-step reviewers`)
 
-En TODOS los modos (autónomo y HITL). `marker.js complete-step reviewers` **bloquea** si `checks.advisors` no está en verde con provenance `run-check` **de esta iteración** (tras un loop D.i hay que re-correrlo; `--trust-ran` queda como `trust-ran` y no alcanza). Escape consciente y logueado: `set-check advisors green --force-manual`.
+En TODOS los modos (autónomo y HITL). `marker.js complete-step reviewers` **bloquea** si `checks.advisors` no está en verde con provenance `run-check` **de esta iteración** (tras un loop D.i hay que re-correrlo; `--trust-ran` queda como `trust-ran` y no alcanza). Declararlo a mano lo decide la persona («autorizo force-manual»); queda en gates.log.
 
 El check `advisors` mide **completitud del set** (¿corrieron TODOS los advisors esperados?), NO los findings. El status sale del exit code REAL de `pipeline.js check-count` — que lee el log de invocaciones reales (CF-2), no el `--ran` del LLM:
 

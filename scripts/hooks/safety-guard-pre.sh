@@ -362,6 +362,10 @@ block() {
 # Como GIT-C2, mira el comando crudo: un texto (un heredoc, un -m) que trae la asignación también frena. Es de más y
 # nunca de menos; ignorar el cuerpo de un heredoc o las comillas se puede falsificar (ver GIT-C2). Lo que no ve: la
 # asignación armada con el nombre en una variable (`declare "$n=0"`) o escrita en un guion que después se corre.
+# `TYCON_TEST_GATE` (la pone test-gate.sh adentro de su proceso: escrita por el agente da un verde de pruebas que no
+# corrió) y `DOD_BYPASS` (cierra un paso sin la evidencia de la prueba en vivo) van al revés: activan el escape con
+# cualquier valor que no sea 0 ni vacío, así que se frena cualquier asignación salvo a 0 o a nada. El nombre se compara
+# exacto (`TYCON_TEST_GATE_PART` no es ella). Su cartel no trae la receta y su constancia anota la sesión y el escape.
 ESC_VARIABLE=""; ESC_VALOR=""; ESC_CARTEL=""
 # el comando sin comillas ni barras invertidas, una sola vez (ESC-C1 y ESC-C2 lo usan). Con `tr`: en el bash de la Mac
 # (3.2), `${CMD//[…]/}` crece con el cuadrado del largo y un heredoc de unos KB tardaba segundos en cada comando
@@ -370,13 +374,40 @@ if command -v tr >/dev/null 2>&1; then
 else
   _esc_cmd="${CMD//[\"\'\\\`]/}"
 fi
-for _esc in TYCON_PROD_LINT TYCON_NEW_NAMES; do
+for _esc in TYCON_PROD_LINT TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS; do
   # el filtro barato primero: sin el nombre de la variable (sin distinguir mayúsculas, por PowerShell) no hay nada que
   # mirar, y las expresiones de abajo no corren sobre un comando largo que no la nombra
   shopt -s nocasematch
   if [[ "$_esc_cmd" != *"$_esc"* ]]; then shopt -u nocasematch; continue; fi
   shopt -u nocasematch
   _esc_hit=0
+  if [[ "$_esc" == "TYCON_TEST_GATE" || "$_esc" == "DOD_BYPASS" ]]; then
+    # éstas activan el escape con cualquier valor que no sea 0 ni vacío: se sacan las asignaciones a 0 o a nada (con
+    # espacios alrededor del `=`, por PowerShell) y cualquier otra que quede frena, también un valor que no se ve (`$X`).
+    # Todo en minúsculas: PowerShell no distingue mayúsculas en el nombre
+    # los nombres son fijos: en minúsculas sin `tr` (una asignación suelta que falla dispararía el `trap 'exit 0' ERR`)
+    if [[ "$_esc" == "TYCON_TEST_GATE" ]]; then _esc_min="tycon_test_gate"; else _esc_min="dod_bypass"; fi
+    # en bash el valor va pegado al `=` (`X= cmd` es vacío); en PowerShell puede llevar espacios, y vacío es `= ;`
+    _esc_cero="${_esc_min}=0?([[:space:];)&|]|\$)"
+    tool_is_ps && _esc_cero="${_esc_min}[[:space:]]*=[[:space:]]*0?[[:space:]]*([;)&|]|\$)"
+    # si no se pudo pasar a minúsculas o sacar los ceros, no se puede mirar: se lee del lado que frena. Dos pasos con su
+    # propio control: en un tubo sólo cuenta la salida del último, y un `tr` que falla dejaría la entrada vacía
+    _esc_low="$(printf '%s' "$_esc_cmd" | tr '[:upper:]' '[:lower:]')" || _esc_low=""
+    if [[ -z "$_esc_low" ]]; then
+      _esc_sin0=""; _esc_hit=1
+    else
+      _esc_sin0="$(printf '%s' "$_esc_low" | sed -E "s/(^|[^a-z0-9_])${_esc_cero}/\1 \2/g")" || { _esc_sin0=""; _esc_hit=1; }
+      if [[ -z "$_esc_sin0" ]]; then _esc_hit=1; fi
+    fi
+    # una comparación (`process.env.DOD_BYPASS === '1'`, `[ "$DOD_BYPASS" = 1 ]` en bash) no es una asignación: en bash
+    # el `=` va pegado al nombre; en PowerShell puede llevar espacios
+    _esc_asig="(^|[^a-z0-9_])${_esc_min}\+?=([^=]|\$)"
+    tool_is_ps && _esc_asig="(^|[^a-z0-9_])${_esc_min}[[:space:]]*\+?=([^=]|\$)"
+    _esc_decl="(^|[^a-z0-9_-])(export|declare|typeset|local|readonly|read|printf|set-item|new-item|set-variable|set-content)[[:space:]][^;&|]*${_esc_min}([^a-z0-9_]|\$)"
+    # PowerShell: `${env:NOMBRE}=…` y `[Environment]::SetEnvironmentVariable('NOMBRE', …)` (sin comillas ya)
+    _esc_ps2="\\\$\\{env:${_esc_min}\\}[[:space:]]*=([^=]|\$)|setenvironmentvariable\\([[:space:]]*${_esc_min}[[:space:]]*,"
+    if [[ "$_esc_sin0" =~ $_esc_asig || "$_esc_sin0" =~ $_esc_decl || "$_esc_sin0" =~ $_esc_ps2 ]]; then _esc_hit=1; fi
+  else
   # las asignaciones `=1` literales no apagan nada: se sacan antes de buscar las demás
   _esc_sin1="$_esc_cmd"
   for _esc_fin in ' ' ';' ')' '&' '|' $'\n' $'\t'; do _esc_sin1="${_esc_sin1//${_esc}=1${_esc_fin}/ ${_esc_fin}}"; done
@@ -390,14 +421,34 @@ for _esc in TYCON_PROD_LINT TYCON_NEW_NAMES; do
     if ps_match "$_esc_ps"; then _esc_hit=1; fi
     CMD="$_esc_save"
   fi
+  fi
   if [[ "$_esc_hit" == "1" ]]; then
+    _esc_nuevo=0; [[ "$_esc" == "TYCON_TEST_GATE" || "$_esc" == "DOD_BYPASS" ]] && _esc_nuevo=1
     if [[ "${SAFETY_OFF:-0}" != "1" ]] && escape_ok "$_esc"; then
-      constancia ESC-C1 escape "$ESC_VIA" "$ESC_RELEVO"
+      if [[ "$_esc_nuevo" == "1" ]]; then
+        constancia ESC-C1 escape "$ESC_VIA" "$ESC_RELEVO" "$(read_field session_id 2>/dev/null || true)" "$_esc"
+      else
+        constancia ESC-C1 escape "$ESC_VIA" "$ESC_RELEVO"
+      fi
       continue
     fi
     # el motivo de esta consulta, antes de que la del prefijo (si el comando lo trae) lo pise en block()
     ESC_VARIABLE="$_esc"; ESC_VALOR=0; ESC_MOTIVO_VAR="$ESC_MOTIVO"
-    if [[ "$_esc" == "TYCON_PROD_LINT" ]]; then
+    if [[ "$_esc_nuevo" == "1" ]]; then
+      # las dos del pipeline: el cartel lo trae la regla, sin receta (como ESC-C3)
+      ESC_VALOR=1
+      ESC_CARTEL="Esto lo decide la persona, no el agente: si quiere hacerlo igual, lo dice ella en su mensaje («autorizo ${_esc}»).${ESC_MOTIVO:+ (No valió: ${ESC_MOTIVO}.)}
+Si la historia no se pudo terminar, la salida normal es dejarla como deuda: marker.js close-as-debt --reason \"<qué quedó pendiente>\" --debt <DEF-id>."
+    fi
+    if [[ "$_esc" == "TYCON_TEST_GATE" ]]; then
+      block "ESC-C1" \
+        "TYCON_TEST_GATE la pone test-gate.sh dentro de su propio proceso. Escrita por el agente, da un verde de pruebas (o un «sin medir») que no corrió." \
+        "Corré la suite con test-gate.sh <repo> <ruta de la story>: el verde sale de las pruebas de verdad. Si no se puede medir, decíselo a la persona."
+    elif [[ "$_esc" == "DOD_BYPASS" ]]; then
+      block "ESC-C1" \
+        "DOD_BYPASS cierra un paso sin la evidencia de la prueba en vivo." \
+        "Corré la prueba en vivo de verdad (la evidencia la escriben los guiones que corren las pruebas). Si no se puede, decíselo a la persona."
+    elif [[ "$_esc" == "TYCON_PROD_LINT" ]]; then
       block "ESC-C1" \
         "TYCON_PROD_LINT=0 apaga, al commitear, la revisión del catálogo de servidores de producción (.tycon/production.json). Un catálogo roto deja al freno de producción decidiendo con datos malos." \
         "Arreglá el catálogo para que la revisión pase. ¿Sólo la nombrabas en un texto (un heredoc, un -m)? Este freno mira el comando entero: escribí ese texto en un archivo."
@@ -418,28 +469,44 @@ ESC_VARIABLE=""; ESC_VALOR=""; ESC_MOTIVO=""; ESC_SIN_CONV=0
 # o «autorizo cerrar la ejecución». Con la frase queda la constancia con la sesión y el escape (`marker.js clear` la lee
 # para anotar quién autorizó) y siguen las demás reglas. `adhoc clear` y `doing clear` no tocan la ejecución: no frena.
 ESC_CARTEL=""
+# Declarar un control en verde a mano (`marker.js set-check … --force-manual`) o dar por corridos revisores que el arnés
+# no vio (`pipeline.js check-count --trust-ran`) también lo decide la persona («autorizo force-manual», «autorizo
+# trust-ran»), y frena con la ejecución en verde: el escape es el verde, no cerrar en rojo.
 # El comando lo lee lib/marker-command.js como lo lee el shell (comillas, renglones, `$(…)`, barras de Windows,
-# mayúsculas); acá sólo se mira si nombra `marker`, sin distinguir mayúsculas, para no correr node en cada comando.
-if [[ "$CMD" == *[Mm][Aa][Rr][Kk][Ee][Rr]* ]]; then
+# mayúsculas); acá sólo se mira si nombra `marker` o `pipeline`, sin distinguir mayúsculas, para no correr node en cada
+# comando.
+#
+# ESC-C6: aprobar el plan (`marker.js complete-step approve-plan|3 --approved "<cita>"`, `--mockup-approved`,
+# `approve-mockup --approved`) con una cita que no está en un mensaje de la persona, ni es la respuesta que eligió en
+# una pregunta con opciones (leída del resultado de esa herramienta), ni la reenvió la sesión designada (con
+# `--delegated-by`, sólo ésta) frena. No tiene frase para saltearlo: la salida es pedirle a la persona que apruebe.
+# Sin conversación legible (Codex) no mira y queda la constancia `sin-conversacion`. Lo decide lib/run-close.js.
+if [[ "$CMD" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$CMD" == *[Pp][Ii][Pp][Ee][Ll][Ii][Nn][Ee]* ]]; then
   _c3_sid="$(read_field session_id 2>/dev/null)" || _c3_sid=""
+  _c3_tuid="$(read_field tool_use_id 2>/dev/null)" || _c3_tuid=""
   _c3_shell="bash"; tool_is_ps && _c3_shell="powershell"
   _c3_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/tycon-pipeline/scripts/lib/run-close.js" || _c3_lib=""
   _c3_out=""
   if [[ -n "$_c3_lib" && -f "$_c3_lib" ]] && command -v "$HNODE" >/dev/null 2>&1; then
-    _c3_out="$(printf '%s' "$CMD" | "$HNODE" "$_c3_lib" --gate --session "$_c3_sid" --command-stdin --shell "$_c3_shell" 2>/dev/null)" || _c3_out=""
+    _c3_out="$(printf '%s' "$CMD" | "$HNODE" "$_c3_lib" --gate --session "$_c3_sid" --tool-use-id "$_c3_tuid" --command-stdin --shell "$_c3_shell" 2>/dev/null)" || _c3_out=""
   fi
-  _c3_motivo=""; _c3_frenos=()
+  _c3_motivo=""; _c3_frenos=(); _c3_aprob=(); _c3_sinconv=0
   while IFS= read -r _c3_l; do
     case "$_c3_l" in
       motivo=*) _c3_motivo="${_c3_l#motivo=}" ;;
       frena=*) _c3_frenos+=("${_c3_l#frena=}") ;;
+      aprobacion=*) _c3_aprob+=("${_c3_l#aprobacion=}") ;;
+      sinconversacion=1) _c3_sinconv=1 ;;
     esac
   done <<< "$_c3_out"
   for _c3_f in ${_c3_frenos[@]+"${_c3_frenos[@]}"}; do
     IFS=$'\t' read -r _c3_esc _c3_sub _c3_a1 <<< "$_c3_f" || true
-    _c3_clave="set-autonomous"; _c3_regla="ESC-C3"
-    [[ "$_c3_esc" == "cerrar la ejecución" ]] && _c3_clave="cerrar-la-ejecucion"
-    [[ "$_c3_esc" == "cerrar como deuda" ]] && { _c3_clave="cerrar-como-deuda"; _c3_regla="ESC-C4"; }
+    _c3_regla="ESC-C3"
+    case "$_c3_esc" in
+      "cerrar la ejecución") _c3_clave="cerrar-la-ejecucion" ;;
+      "cerrar como deuda") _c3_clave="cerrar-como-deuda"; _c3_regla="ESC-C4" ;;
+      *) _c3_clave="$_c3_esc" ;;
+    esac
     if [[ "${SAFETY_OFF:-0}" != "1" ]] && escape_ok "$_c3_esc"; then
       constancia "$_c3_regla" escape "$ESC_VIA" "$ESC_RELEVO" "$_c3_sid" "$_c3_clave"
       continue
@@ -454,7 +521,15 @@ if [[ "$CMD" == *[Mm][Aa][Rr][Kk][Ee][Rr]* ]]; then
     fi
     ESC_CARTEL="Esto lo decide la persona, no el agente: si quiere hacerlo igual, lo dice ella en su mensaje («autorizo ${_c3_esc}»).
 Si la historia no se pudo terminar, la salida normal es dejarla como deuda: marker.js close-as-debt --reason \"<qué quedó pendiente>\" --debt <DEF-id>."
-    if [[ "$_c3_esc" == "set-autonomous" ]]; then
+    if [[ "$_c3_esc" == "force-manual" ]]; then
+      block "ESC-C3" \
+        "Declarar un control en verde a mano (marker.js set-check … --force-manual) lo da por pasado sin correrlo." \
+        "Corré el control de verdad: marker.js run-check <nombre> -- <comando>. Si no se puede, decíselo a la persona."
+    elif [[ "$_c3_esc" == "trust-ran" ]]; then
+      block "ESC-C3" \
+        "Confiar en la lista de revisores que da el agente (pipeline.js check-count --trust-ran) deja la constancia de revisores que el arnés no vio correr." \
+        "Lanzá los revisores que faltan y volvé a correr check-count. Si no se puede, decíselo a la persona."
+    elif [[ "$_c3_esc" == "set-autonomous" ]]; then
       block "ESC-C3" \
         "Apagar el modo autónomo (marker.js set-autonomous ${_c3_a1}) saca el lazo que no deja cerrar el turno con un control en rojo.${_c3_motivo:+ Hoy: ${_c3_motivo}.}" \
         "Arreglá lo que está en rojo y volvé a correr el control. Si no se puede, decíselo a la persona."
@@ -464,6 +539,68 @@ Si la historia no se pudo terminar, la salida normal es dejarla como deuda: mark
         "Terminá lo pendiente. Si no se puede, decíselo a la persona."
     fi
   done
+  if [[ "$_c3_sinconv" == "1" ]]; then
+    constancia ESC-C6 escape sin-conversacion "" "$_c3_sid"
+  fi
+  for _c3_f in ${_c3_aprob[@]+"${_c3_aprob[@]}"}; do
+    IFS=$'\t' read -r _c3_sub _c3_por <<< "$_c3_f" || true
+    ESC_CARTEL="La aprobación del plan es de la persona: no hay frase para saltear esta regla. Mostrale el plan y pedile que lo apruebe con sus palabras (o eligiendo una opción); la cita es lo que ella dijo."
+    block "ESC-C6" \
+      "La cita de la aprobación (marker.js ${_c3_sub} --approved) no es de la persona: ${_c3_por:-no la encontré en la conversación}." \
+      "Citá textual lo que escribió la persona, o la opción que eligió, sin agregarle ni resumirle nada. Si aprobó otra sesión por delegación, la cita es su frase tal cual, y quién aprobó va en --delegated-by."
+  done
+fi
+ESC_CARTEL=""; ESC_MOTIVO=""; ESC_SIN_CONV=0
+
+# ESC-C5: el permiso de escribir a mano la evidencia de la prueba en vivo (`ALLOW_DOD_EVIDENCE_WRITE`) y la exención de
+# esa prueba (`dod_runtime_exempt: true`) escritos por la terminal los decide la persona («autorizo
+# ALLOW_DOD_EVIDENCE_WRITE», «autorizo dod_runtime_exempt»). Frena un comando que crea, toca o copia un archivo con ese
+# nombre (`touch`, `cp`, una redirección, `tee`, un intérprete, `New-Item`, `Set-Content`, …) y uno que escribe la
+# exención en un `.md` (`sed -i`, `perl -i`, `>`, `>>`, `tee`); mirarlo, buscarlo, borrarlo o sacar la exención no frena.
+# Mira el comando sin comillas y en minúsculas; lo que no ve: el nombre armado en una variable o un guion que lo escribe.
+# Por la herramienta de escribir archivos, la exención la mira on-frontmatter-write.js y el permiso, on-dod-evidence-guard.js.
+_c5_esc=""
+shopt -s nocasematch
+if [[ "$_esc_cmd" == *allow_dod_evidence_write* || "$_esc_cmd" == *dod_runtime_exempt* ]]; then _c5_esc="?"; fi
+shopt -u nocasematch
+if [[ -n "$_c5_esc" ]]; then
+  _c5_esc=""
+  # en minúsculas con `tr` o, si falla, con `awk`; si no se puede, se lee del lado que frena (el permiso, que pide la frase)
+  _c5_min="$(printf '%s' "$_esc_cmd" | tr '[:upper:]' '[:lower:]')" || _c5_min=""
+  if [[ -z "$_c5_min" ]]; then _c5_min="$(printf '%s' "$_esc_cmd" | awk '{ print tolower($0) }')" || _c5_min=""; fi
+  if [[ -z "$_c5_min" ]]; then _c5_min="touch allow_dod_evidence_write"; fi
+  _c5_crea="(^|[^a-z0-9_-])(touch|cp|mv|install|ln|tee|node|python3?|perl|ruby|deno|bun|new-item|ni|set-content|sc|add-content|ac|out-file|copy-item|move-item)([[:space:]][^;&|]*)?allow_dod_evidence_write|>[[:space:]]*[^;&|[:space:]]*allow_dod_evidence_write"
+  # sacar una línea con sed (`/…dod_runtime_exempt…/d`) no la agrega
+  _c5_sin_borrar="$(printf '%s' "$_c5_min" | sed -E 's#/[^/]*dod_runtime_exempt[^/]*/d##g')" || _c5_sin_borrar="$_c5_min"
+  _c5_exenta="dod_runtime_exempt:[[:space:]]*true"
+  # la redirección es `>` o `>>` sueltos: `=>` o `->` dentro de un código no escriben un archivo
+  _c5_md="(^|[^=<>-])>>?[[:space:]]*[^;&|[:space:]>]*\.md|(^|[^a-z0-9_-])tee[[:space:]][^;&|]*\.md"
+  # sed o perl que editan en el lugar: la bandera como palabra suelta (`-i`, `-Ei`, `-pi`, `-i.bak`, `--in-place`; no el
+  # `-i` de un nombre como `story-1.12-…-integracion`), y un `.md` en el comando (la expresión de sed puede traer `;`)
+  _c5_inplace="(^|[^a-z0-9_-])(sed|gsed|perl)[[:space:]]([^;&|]*[[:space:]])?(-[a-z]*i[a-z]*(\.[a-z0-9]*)?|--in-place)([[:space:]=]|\$)"
+  _c5_un_md="\.md([^a-z0-9]|\$)"
+  if [[ "$_c5_min" =~ $_c5_crea ]]; then
+    _c5_esc="ALLOW_DOD_EVIDENCE_WRITE"
+  elif [[ "$_c5_sin_borrar" =~ $_c5_exenta ]] && { [[ "$_c5_sin_borrar" =~ $_c5_md ]] || { [[ "$_c5_sin_borrar" =~ $_c5_inplace ]] && [[ "$_c5_sin_borrar" =~ $_c5_un_md ]]; }; }; then
+    _c5_esc="dod_runtime_exempt"
+  fi
+  if [[ -n "$_c5_esc" ]]; then
+    _c5_sid="$(read_field session_id 2>/dev/null)" || _c5_sid=""
+    if [[ "${SAFETY_OFF:-0}" != "1" ]] && escape_ok "$_c5_esc"; then
+      constancia ESC-C5 escape "$ESC_VIA" "$ESC_RELEVO" "$_c5_sid" "$_c5_esc"
+    else
+      ESC_CARTEL="Esto lo decide la persona, no el agente: si quiere hacerlo igual, lo dice ella en su mensaje («autorizo ${_c5_esc}»).${ESC_MOTIVO:+ (No valió: ${ESC_MOTIVO}.)}"
+      if [[ "$_c5_esc" == "ALLOW_DOD_EVIDENCE_WRITE" ]]; then
+        block "ESC-C5" \
+          "El permiso ALLOW_DOD_EVIDENCE_WRITE deja escribir a mano la evidencia de la prueba en vivo, que tiene que salir de una prueba que corrió." \
+          "Corré la prueba en vivo con su guion (el gate E2E del proyecto o el macro del humo): la evidencia la escribe él."
+      else
+        block "ESC-C5" \
+          "Agregar dod_runtime_exempt: true a una historia la exime de la prueba en vivo." \
+          "Corré la prueba en vivo. Si la historia de verdad no tiene nada que correr, decíselo a la persona. ¿Sólo la nombrabas en un texto (un heredoc)? Este freno mira el comando entero: escribí ese texto en un archivo."
+      fi
+    fi
+  fi
 fi
 ESC_CARTEL=""; ESC_MOTIVO=""; ESC_SIN_CONV=0
 

@@ -60,8 +60,9 @@ diferencia entre «los tests que la story declara» y «todos» es exactamente d
 story causó en otro lado. Cuesta ~2 min; aparecer todas juntas recién en el merge cuesta mucho más.
 
 - El gate exporta `TYCON_TEST_GATE=1` → `run-check` anota `provenance=test-gate`.
-- Escape consciente (el repo no tiene suite completa, o hay que cerrar igual):
-  `marker.js set-check tests green --force-manual` — queda en `gates.log`.
+- Si el repo no tiene suite completa, o hay que cerrar igual: declarar el control a mano lo decide la persona, no el
+  agente («autorizo force-manual» en su mensaje); queda en `gates.log`. `TYCON_TEST_GATE` escrita por el agente la frena
+  el freno de seguridad: la pone sólo el gate.
 
 ### Salidas del gate
 

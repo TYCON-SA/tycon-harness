@@ -1124,7 +1124,7 @@ function cmdCompleteStep(nRaw, flags) {
   // de spawns, CF-2). Sin esto, cerrar el 5 no exigía nada y el Stop-gate sólo mira checks REGISTRADOS
   // en rojo (ausente = pasa). Se rechaza `trust-ran` (self-report) y el green de una iteración
   // anterior: al re-cerrar el 5 tras fixes (loop D.i) el check tiene que ser posterior
-  // al cierre previo del 5. Escape consciente: `set-check advisors green --force-manual`.
+  // al cierre previo del 5. Declararlo a mano (`--force-manual`) lo decide la persona: lo frena ESC-C3 sin su frase.
   if (controles.has('advisors')) {
     const st = marker.checks && marker.checks.advisors;
     const prov = (marker.checksProvenance && marker.checksProvenance.advisors) || null;
@@ -1142,8 +1142,8 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('    marker.js run-check advisors -- node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js check-count \\');
       console.error('      --repo <repo> --story <story_path> --files <archivos modificados…>');
       console.error('  Set esperado vacío (mech-check sin advisors aplicables): check-count sale 0 con el expected:[] persistido.');
-      console.error('  `--trust-ran` / `--ran` NO alcanzan (provenance trust-ran = self-report). Escape consciente y logueado:');
-      console.error('    marker.js set-check advisors green --force-manual');
+      console.error('  Una lista de revisores dada por vos (provenance trust-ran = self-report) NO alcanza. Declarar el control');
+      console.error('  a mano lo decide la persona, no el agente: si quiere, lo dice en su mensaje («autorizo force-manual»).');
       process.exit(1);
     }
   }
@@ -1212,7 +1212,7 @@ function cmdCompleteStep(nRaw, flags) {
     // es exactamente donde se esconden las fallas.
     //
     // Se acepta `test-gate` (el gate corrió la suite entera y capturó el exit code real) y
-    // `manual-forced` (escape consciente y logueado: `set-check tests green --force-manual`).
+    // `manual-forced` (declarado a mano y logueado; lo decide la persona: ESC-C3 frena `--force-manual` sin su frase).
     // Se RECHAZA `run-check` a secas y `manual`: son verdes parciales o auto-declarados.
     const testsCheck = marker.checks && marker.checks.tests;
     const testsProv = (marker.checksProvenance && marker.checksProvenance.tests) || null;
@@ -1231,8 +1231,8 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('  El control es el gate, que corre TODO y captura el exit code real:');
       console.error('    bash <skills>/tycon-pipeline/scripts/test-gate.sh <repo> <story-path>');
       console.error('');
-      console.error('  Escape consciente (el repo no tiene suite completa, o hay que cerrar igual):');
-      console.error('    marker.js set-check tests green --force-manual   (queda en gates.log)');
+      console.error('  Si el repo no tiene suite completa, o hay que cerrar igual: lo decide la persona, no el agente.');
+      console.error('  Si quiere, lo dice en su mensaje («autorizo force-manual»); queda en gates.log.');
       process.exit(1);
     }
 
@@ -1453,8 +1453,8 @@ function cmdCompleteStep(nRaw, flags) {
         console.error(`  Estado actual: checks.dod=${dodCheck || '(ausente)'} provenance=${dodProv || '(ausente)'}`);
         console.error('  Una story de UI exige el EXIT CODE REAL del Playwright — no un flag ni un archivo de texto:');
         console.error('    marker.js run-check dod -- npx playwright test <spec> --workers=1');
-        console.error('  Escape consciente (marcada UI pero sin superficie de UI real):');
-        console.error('    marker.js set-check dod green --force-manual   (queda manual-forced en gates.log)');
+        console.error('  Marcada UI pero sin superficie de UI real: declararla a mano lo decide la persona, no el agente');
+        console.error('    («autorizo force-manual» en su mensaje; queda manual-forced en gates.log).');
         console.error('  Si el repo no tiene cómo probar en un navegador: la persona decide en la oferta (e2e-setup.js prepare|defer).');
       }
     } else if (marker.dodRuntimeChecked !== true) {
@@ -1467,8 +1467,8 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('      marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"<path>"}\'');
       // Setear `marker.dodRuntimeChecked` a mano con `set` no es una exención válida: esta es la forma.
       // Queda escrito como exención (evidencePath «exenta: …») y sólo vale para una story sin UI.
-      console.error('  (b) Story exenta (sin UI ni endpoints — «Probar en vivo»): en el frontmatter');
-      console.error('      dod_runtime_exempt: true  y  dod_runtime_exempt_reason: "<razón concreta>". Después:');
+      console.error('  (b) Story exenta (sin UI ni endpoints — «Probar en vivo»): eximirla ya en implementación lo decide la');
+      console.error('      persona («autorizo dod_runtime_exempt» en su mensaje), con dod_runtime_exempt_reason en el frontmatter. Después:');
       console.error('      marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"exenta: <razón>"}\'');
     }
     // DODRT-C6 — la matriz
@@ -1579,13 +1579,14 @@ function cmdCompleteStep(nRaw, flags) {
         console.error('     limpiamente): la verificación runtime es obligatoria. La única salida es el waiver TTY del usuario.');
         process.exit(2);
       }
-      console.error('  Bypass excepcional: setear DOD_BYPASS=1 (queda had_dod_bypass=true en bypass.log).');
+      console.error('  Saltear este bloqueo lo decide la persona, no el agente: si quiere, lo dice en su mensaje');
+      console.error('  («autorizo DOD_BYPASS»); queda had_dod_bypass=true en bypass.log.');
       console.error('');
       console.error(`Ver: ~/.claude/agent-skills/skills/tycon-pipeline/steps/${STEPS_LIB.byId('live-check').file}`);
       if (process.env.DOD_BYPASS !== '1') {
         process.exit(2);
       }
-      console.error(`⚠ DOD_BYPASS=1 detectado — permitiendo complete-step ${n} con flag had_dod_bypass=true`);
+      console.error(`⚠ DOD_BYPASS=1 detectado (lo autorizó la persona o lo puso el dev en su ambiente) — permitiendo complete-step ${n} con flag had_dod_bypass=true`);
       marker.hadDodBypass = true;
       // Rastro DURABLE del bypass: el marker se borra al cerrar el pipeline;
       // bypass.log sobrevive y on-prompt puede reportarlo.
@@ -1731,7 +1732,7 @@ function cmdMarkDodRuntimeChecked(payloadJson) {
       console.error('  Corré el E2E y apuntá evidencePath a un archivo .advisors/dod-runtime/<story>-*.md');
       console.error('  que documente el resultado (debe mencionar playwright / tests/e2e / @story- / E2E-N).');
       console.error('  Una story de UI no se exime («Probar en vivo»). Si está marcada UI y no tiene superficie de UI real,');
-      console.error('  el escape consciente es: marker.js set-check dod green --force-manual  (queda en gates.log).');
+      console.error('  declararla a mano lo decide la persona («autorizo force-manual» en su mensaje; queda en gates.log).');
       process.exit(2);
     }
   }
@@ -2038,7 +2039,7 @@ function cmdSetCheck(name, status, flag) {
     console.error("  CADA AC de UI (regla DODRT-C5.1). Usá:");
     console.error("    marker.js run-check dod -- npx playwright test <spec> --workers=1");
     console.error("  (captura el exit code real → provenance=run-check, no falseable).");
-    console.error("  Excepción consciente (raro, p.ej. story sin superficie de UI real): --force-manual");
+    console.error("  Una excepción (raro, p.ej. story sin superficie de UI real) la decide la persona («autorizo force-manual»).");
     console.error("  (queda logueado como provenance=manual-forced en gates.log).");
     process.exit(2);
   }

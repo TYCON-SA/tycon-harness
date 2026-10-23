@@ -1795,9 +1795,8 @@ function main() {
   lines.push('  (b) Smoke manual: levantar stack + ejecutar E2E + curl outputs');
   lines.push('      → escribir .advisors/dod-runtime/<storyId>-<timestamp>.md con');
   lines.push('      el log + screenshots/curl outputs');
-  lines.push('  (c) Story sin UI/E2E (puro docs/config) → agregar al frontmatter:');
-  lines.push('        dod_runtime_exempt: true');
-  lines.push('        dod_runtime_exempt_reason: "puro docs, sin UI ni endpoint"');
+  lines.push('  (c) Story sin UI/E2E (puro docs/config): eximirla de la prueba en vivo lo decide la persona,');
+  lines.push('      no el agente (en una historia ya en implementación, con «autorizo dod_runtime_exempt» en su mensaje).');
   lines.push('  (d) Bypass excepcional (NO recomendado, queda flag en stderr):');
   lines.push('        git commit --no-verify');
   lines.push('');

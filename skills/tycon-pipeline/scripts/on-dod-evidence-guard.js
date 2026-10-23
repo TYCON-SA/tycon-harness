@@ -12,13 +12,15 @@
  * `.advisors/dod-runtime/*.md`. Los únicos escritores legítimos son los scripts
  * (el gate E2E del proyecto, step-7c-macro.js) vía Bash — que no pasan por este hook.
  *
- * Override consciente (one-shot, auditable): crear el flag file
- *   touch ~/.claude/.tycon-pipeline/ALLOW_DOD_EVIDENCE_WRITE
- * El hook lo CONSUME (borra) al permitir UNA escritura y la registra en bypass.log.
- * Esto eleva el costo de fakeo de "accidental/por inercia" a "deliberado y trazado".
- * (No es provenance criptográfica: el agente tiene Bash y puede escribir el archivo
- * por fuera del hook — pero ese camino también es auditable en el transcript y el
- * costo de hacerlo "sin querer" desaparece.)
+ * Override de la persona (one-shot, auditable): el archivo `ALLOW_DOD_EVIDENCE_WRITE` en la carpeta del estado del
+ * pipeline, autorizado por la persona. Vale sólo con una de dos: la constancia que escribe el freno de seguridad al
+ * dejar crearlo con «autorizo ALLOW_DOD_EVIDENCE_WRITE» (ESC-C5, de esta sesión, dentro de los 30 minutos antes del
+ * archivo), o esa frase de la persona en la conversación (lo creó ella en su terminal). El archivo solo no alcanza: el
+ * agente lo puede crear con la herramienta de escribir archivos, que el freno no ve. Una línea imitada en
+ * `frenos.jsonl` no vale: tiene que ser de ese freno, esa regla, esa sesión y esa ventana, y la carpeta del estado no
+ * se escribe a mano. El hook CONSUME (borra) el archivo al permitir UNA escritura y la registra en bypass.log con quién
+ * lo autorizó. (No es provenance criptográfica: el agente tiene Bash y puede escribir la evidencia por fuera del hook —
+ * pero ese camino también es auditable en el transcript.)
  */
 
 const fs = require('fs');
@@ -73,10 +75,12 @@ function handle(event) {
   // esa la escribe SOLO el script (a mano sería el fakeo exacto que este guard impide).
   if (/-manual-test-plan\.md$/.test(normPath)) { anotar('archivo-exento', 'paso', filePath); return null; }
 
-  // Override one-shot: flag file presente → permitir UNA vez, consumir, loguear.
-  if (fs.existsSync(FLAG)) {
+  // Override one-shot: el permiso presente Y autorizado por la persona → permitir UNA vez, consumir, loguear. Crear el
+  // archivo solo no alcanza (lo puede crear el agente con la herramienta de escribir archivos, que el freno no ve).
+  const via = fs.existsSync(FLAG) ? permisoAutorizado(event) : null;
+  if (via) {
     try { fs.unlinkSync(FLAG); } catch { /* ignore */ }
-    appendBypassLog({ type: 'DOD_EVIDENCE_MANUAL_WRITE', file: filePath, sessionId: event.session_id || null });
+    appendBypassLog({ type: 'DOD_EVIDENCE_MANUAL_WRITE', file: filePath, sessionId: event.session_id || null, via });
     anotar('escritura-manual', 'aviso', filePath);
     return {
       reminder:
@@ -98,14 +102,42 @@ function handle(event) {
       '  - Suite Playwright:  gate E2E del proyecto (.tycon/advisors.yaml → e2e.gate); resolver: pipeline.js e2e-config --repo <repo> --changed <archivos-de-la-story...> → correr `bash <gate> <app> <storyId> <evidence-dir>` UNA VEZ POR APP (<evidence-dir> = `pipeline.js evidence-dir --story <spec> --repo <repo> --plain`: el repo de la STORY) de frontend_dirs_selected (en un monorepo puede ser más de una)',
       '  - Smoke backend:     node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/step-7c-macro.js --story <id> --scenario <s.json> --evidence-dir <dir>',
       '',
-      'Si REALMENTE necesitás escribirla a mano (caso excepcional, p.ej. evidencia vacua',
-      'de E2E diferidos a un pipeline pending), pedile al USER que corra:',
-      '',
-      '  touch ~/.claude/.tycon-pipeline/ALLOW_DOD_EVIDENCE_WRITE',
-      '',
-      'y reintentá: el flag permite UNA escritura, se consume y queda en bypass.log.',
+      'Escribirla a mano (caso excepcional, p.ej. evidencia vacua de E2E diferidos a un pipeline pending)',
+      'lo decide la persona, no el agente: crea el permiso de una escritura en su terminal y lo dice en su',
+      'mensaje («autorizo ALLOW_DOD_EVIDENCE_WRITE»). El permiso se consume y queda en bypass.log.',
+      ...(fs.existsSync(FLAG) ? ['', 'El permiso existe, pero la persona no lo autorizó en esta sesión: no se consume.'] : []),
     ].join('\n') + '\n',
   };
+}
+
+const VENTANA_MS = 30 * 60 * 1000;
+/**
+ * ¿Quién autorizó el permiso? 'freno' si `frenos.jsonl` tiene la constancia que escribe el freno de seguridad al dejar
+ * crearlo con la frase (ESC-C5, escape ALLOW_DOD_EVIDENCE_WRITE) de esta misma sesión, dentro de los 30 minutos antes
+ * del archivo (se anota antes de que el comando corra); 'persona' si la persona escribió «autorizo
+ * ALLOW_DOD_EVIDENCE_WRITE» en esta conversación (lo creó en su terminal); null si ninguna.
+ */
+function permisoAutorizado(event) {
+  const sid = event.session_id;
+  if (sid) {
+    try {
+      const creado = fs.statSync(FLAG).mtimeMs;
+      for (const l of fs.readFileSync(path.join(STATE_DIR, 'frenos.jsonl'), 'utf8').split('\n')) {
+        let x;
+        try { x = JSON.parse(l); } catch { continue; }
+        if (!x || x.freno !== 'safety-guard' || x.regla !== 'ESC-C5' || x.veredicto !== 'escape') continue;
+        if (x.sesion !== sid || x.escape !== 'ALLOW_DOD_EVIDENCE_WRITE') continue;
+        const t = Date.parse(x.ts);
+        // un minuto de margen: la constancia y el archivo se escriben casi juntos
+        if (t <= creado + 60000 && t >= creado - VENTANA_MS) return 'freno';
+      }
+    } catch { /* sin registro, se mira la frase */ }
+  }
+  try {
+    const { escapeAutorizado } = require('./lib/escape-ok.js');
+    if (escapeAutorizado({ variable: 'ALLOW_DOD_EVIDENCE_WRITE', sesion: sid, pedido: event.tool_use_id }).ok) return 'persona';
+  } catch { /* sin la biblioteca no hay frase que buscar */ }
+  return null;
 }
 
 module.exports = { handle };

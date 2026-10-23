@@ -9,8 +9,11 @@
  * (`approvals.relay_session` del perfil + `designate-relay`). La frase vale `VENTANA_MIN` minutos.
  * Los escapes que no son una variable van por su nombre en la misma frase (`NAMED`): «autorizo story-skill-bypass» deja
  * escribir una historia sin la skill, «autorizo set-autonomous» apagar el lazo de las pruebas, «autorizo cerrar la
- * ejecución» cerrarla con un control en rojo o con pasos sin correr, y «autorizo cerrar como deuda» cerrar la historia
- * por su salida prevista o registrar un control en rojo como esperado.
+ * ejecución» cerrarla con un control en rojo o con pasos sin correr, «autorizo cerrar como deuda» cerrar la historia
+ * por su salida prevista o registrar un control en rojo como esperado, «autorizo force-manual» declarar un control en
+ * verde a mano, «autorizo trust-ran» la constancia de revisores que el arnés no vio correr, «autorizo
+ * ALLOW_DOD_EVIDENCE_WRITE» una escritura a mano de la evidencia de la prueba en vivo y «autorizo dod_runtime_exempt»
+ * la exención de esa prueba en una historia que ya está en implementación.
  *
  * Quién escribió qué lo decide `person-ok.js`: no cuenta lo que escribió el agente, la salida de una herramienta (un
  * archivo leído incluido), un subagente, lo que la persona pegó ni el mensaje de otra sesión que no es la designada.
@@ -26,10 +29,12 @@
 const path = require('path');
 
 const VENTANA_MIN = 30;
-// los escapes que piden la frase: la variable y el valor que apaga el freno
-const ESCAPES = { TYCON_SAFETY_OFF: '1', TYCON_PROD_LINT: '0', TYCON_NEW_NAMES: '0' };
+// los escapes que piden la frase: la variable y el valor que apaga el freno (`TYCON_TEST_GATE` y `DOD_BYPASS` lo activan
+// con cualquier valor que no sea 0 ni vacío; el 1 es el de siempre)
+const ESCAPES = { TYCON_SAFETY_OFF: '1', TYCON_PROD_LINT: '0', TYCON_NEW_NAMES: '0', TYCON_TEST_GATE: '1', DOD_BYPASS: '1' };
 // los que no son una variable: el nombre del escape va en la frase igual («autorizo story-skill-bypass»)
-const NAMED = ['story-skill-bypass', 'set-autonomous', 'cerrar la ejecución', 'cerrar como deuda'];
+const NAMED = ['story-skill-bypass', 'set-autonomous', 'cerrar la ejecución', 'cerrar como deuda', 'force-manual',
+  'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt'];
 const esEscape = (v) => Object.prototype.hasOwnProperty.call(ESCAPES, v) || NAMED.includes(v);
 
 const frase = (variable) => `autorizo ${variable}`;
@@ -49,20 +54,25 @@ const plano = (texto) => String(texto || '').toLowerCase().replace(/[«»"“”
 function juez(variable) {
   const v = variable.toLowerCase();
   const frase = new RegExp(`(?:^|[^\\p{L}\\p{N}_])autorizo\\s+${v}(?![\\p{L}\\p{N}_])`, 'u');
+  const nombra = new RegExp(`(?:^|[^\\p{L}\\p{N}_])${v}(?![\\p{L}\\p{N}_])`, 'u');
   const juzgar = (texto) => {
-    const oraciones = plano(texto).split(/[.!;\n]+/);
-    const conLaFrase = oraciones.filter((o) => frase.test(o));
+    // las oraciones con su signo de cierre: el «?» también corta (una pregunta antes en el renglón no tumba lo que sigue)
+    const oraciones = plano(texto).match(/[^.!?;\n]+[.!?;\n]?/g) || [];
+    const esPregunta = (o) => /¿/.test(o) || /\?$/.test(o.trim());
+    const conLaFrase = oraciones.map((o, i) => ({ o, i })).filter((x) => frase.test(x.o));
     if (!conLaFrase.length) return `la frase no nombra ${variable} sola (una variable más larga no la autoriza)`;
-    for (const o of conLaFrase) {
-      if (/[?¿]/.test(o)) continue;
+    for (const { o, i } of conLaFrase) {
+      if (esPregunta(o)) continue;
       if (NIEGA.test(o.replace(frase, ' '))) continue;
+      // una oración posterior del mismo mensaje que la nombra y la niega o la retira la tumba
+      if (oraciones.slice(i + 1).some((d) => nombra.test(d) && !frase.test(d) && NIEGA.test(d))) return 'la frase lo niega o lo retira';
       return null;
     }
-    return /[?¿]/.test(conLaFrase.join(' ')) && !conLaFrase.some((o) => !/[?¿]/.test(o)) ? 'la frase es una pregunta' : 'la frase lo niega o lo retira';
+    return conLaFrase.every((x) => esPregunta(x.o)) ? 'la frase es una pregunta' : 'la frase lo niega o lo retira';
   };
   juzgar.retracta = (texto) => {
     const t = plano(texto);
-    return new RegExp(`(?:^|[^\\p{L}\\p{N}_])${v}(?![\\p{L}\\p{N}_])`, 'u').test(t) && NIEGA.test(t);
+    return nombra.test(t) && NIEGA.test(t);
   };
   return juzgar;
 }

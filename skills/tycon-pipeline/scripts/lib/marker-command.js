@@ -1,8 +1,10 @@
 'use strict';
 /**
- * marker-command — qué llamadas a `marker.js` corre un comando de la terminal, leído como lo lee el shell.
+ * marker-command — qué llamadas a `marker.js` y `pipeline.js` corre un comando de la terminal, leído como lo lee el shell.
  *
- * El freno de seguridad (ESC-C3) pregunta acá si un comando apaga el modo autónomo o cierra la ejecución. Leerlo como
+ * El freno de seguridad (ESC-C3) pregunta acá si un comando apaga el modo autónomo, cierra la ejecución, declara un
+ * control en verde a mano (`set-check … --force-manual`) o da por corridos revisores que el arnés no vio
+ * (`pipeline.js check-count --trust-ran`); ESC-C6, qué cita trae la aprobación del plan. Leerlo como
  * texto deja pasar formas que el shell sí corre (dos llamadas en renglones distintos, `$(…)`, la ruta de Windows con
  * barras invertidas, `$'clear'`, `Marker.js` en un disco que no distingue mayúsculas) y frena un `grep` o un mensaje
  * de commit que sólo la nombran. Por eso se parte en palabras respetando comillas, comentarios, heredocs y
@@ -15,8 +17,9 @@
  * `xargs` o una comilla que no se cierra. Lo que no ve: el nombre del archivo armado en una variable, `node -e` con el
  * código adentro, una copia con otro nombre, y un programa de texto que además ejecuta (`awk` con `system`).
  *
- * Uso: llamadas(comando, { shell: 'bash' | 'powershell' }) → [{ sub, args: [{ texto, literal }], dudosa }]
- *      escapeDe(llamada, sid) → 'set-autonomous' | 'cerrar la ejecución' | 'cerrar como deuda' | null
+ * Uso: llamadas(comando, { shell: 'bash' | 'powershell' }) → [{ guion, sub, args: [{ texto, literal }], dudosa }]
+ *      escapeDe(llamada, sid) → 'set-autonomous' | 'cerrar la ejecución' | 'cerrar como deuda' | 'force-manual' |
+ *      'trust-ran' | null
  */
 
 const PREFIJOS = new Set(['sudo', 'env', 'exec', 'command', 'nohup', 'time', 'nice', 'timeout', 'xargs', 'builtin',
@@ -197,7 +200,9 @@ function tramos(cmd, shell) {
 }
 
 const base = (t) => t.replace(/\{[^}]*\}/g, '').split(/[\\/]/).pop().toLowerCase().replace(/\.exe$/, '');
-const esMarker = (t) => /^marker(\.js)?$/.test(base(t));
+// el guion que nombra la palabra: `marker` o `pipeline` (con o sin `.js`, con cualquier ruta), o null
+const guionDe = (t) => { const m = /^(marker|pipeline)(\.js)?$/.exec(base(t)); return m ? m[1] : null; };
+const NOMBRA_GUION = /marker|pipeline/i;
 
 /** El programa del tramo: saltea asignaciones, redirecciones y prefijos (`sudo`, `xargs`) con sus opciones. */
 function programa(palabras) {
@@ -221,11 +226,12 @@ function programa(palabras) {
 /** Las llamadas a `marker.js` que ejecuta el comando. */
 function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
   const fuera = [];
-  if (hondo > 4 || !/marker/i.test(cmd)) return fuera;
+  if (hondo > 4 || !NOMBRA_GUION.test(cmd)) return fuera;
   const { tramos: lista, subs, abierta } = tramos(cmd, shell);
   for (const interno of subs) fuera.push(...llamadas(interno, { shell }, hondo + 1));
-  // una comilla sin cerrar: el resto del comando no se puede leer
-  if (abierta) fuera.push({ sub: null, args: [], dudosa: true });
+  // una comilla sin cerrar: el resto del comando no se puede leer (puede ser un `marker.js clear`; un comando que sólo
+  // nombra `pipeline` no cierra nada)
+  if (abierta && /marker/i.test(cmd)) fuera.push({ guion: 'marker', sub: null, args: [], dudosa: true });
   // un shell que lee de la entrada (`echo '…' | sh`) corre cualquier texto del comando
   const leeEntrada = lista.some((t) => {
     const p = programa(t.palabras);
@@ -237,17 +243,23 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
     const pal = t.palabras;
     for (let m = 0; m < pal.length; m++) {
       const w = pal[m];
-      if (esMarker(w.texto)) {
+      const guion = guionDe(w.texto);
+      if (guion) {
         if (deTexto && m !== p.i) continue;
         let args = pal.slice(m + 1);
         // `marker.js{,} clear` se expande a dos `marker.js`: la segunda no es el subcomando
-        while (args.length && esMarker(args[0].texto)) { args = args.slice(1); m++; }
+        while (args.length && guionDe(args[0].texto) === guion) { args = args.slice(1); m++; }
         const sub = args.length && args[0].literal ? args[0].texto : null;
-        fuera.push({ sub, args: args.slice(1), dudosa: sub === null && (p.porXargs || args.length > 0) });
+        fuera.push({ guion, sub, args: args.slice(1), dudosa: sub === null && (p.porXargs || args.length > 0) });
+        // lo que va después de `--` es otro comando que el guion corre (`marker.js run-check <x> -- marker.js …`)
+        const corte = args.findIndex((a) => a.literal && a.texto === '--');
+        if (corte >= 0 && corte + 1 < args.length) {
+          fuera.push(...llamadas(args.slice(corte + 1).map((a) => (/\s/.test(a.texto) ? `'${a.texto.replace(/'/g, '')}'` : a.texto)).join(' '), { shell }, hondo + 1));
+        }
         break;
       }
-      // un texto con `marker` adentro, pasado a un programa que no es de texto: puede ser un comando
-      if (/\s/.test(w.texto) && /marker/i.test(w.texto) && (!deTexto || leeEntrada)) {
+      // un texto con `marker` o `pipeline` adentro, pasado a un programa que no es de texto: puede ser un comando
+      if (/\s/.test(w.texto) && NOMBRA_GUION.test(w.texto) && (!deTexto || leeEntrada)) {
         fuera.push(...llamadas(w.texto, { shell: /^(pwsh|powershell|iex|invoke-expression)$/.test(p.nombre) ? 'powershell' : shell }, hondo + 1));
       }
     }
@@ -260,12 +272,29 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
 }
 
 /**
- * Lo que la llamada pide decidir a la persona: 'set-autonomous', 'cerrar la ejecución' o null. `sid` es la sesión del
- * pedido (para `clear-session` de otra sesión, que no cierra esta ejecución).
+ * Lo que la llamada pide decidir a la persona: 'set-autonomous', 'cerrar la ejecución', 'force-manual', 'trust-ran' o
+ * null. `sid` es la sesión del pedido (para `clear-session` de otra sesión, que no cierra esta ejecución).
  */
 function escapeDe(llamada, sid) {
   const { sub, args } = llamada;
   const lit = (a) => a && a.literal;
+  // `--force-manual` o `--trust-ran` en un argumento que no se ve (`$F`) se lee del lado que frena, salvo que sea el
+  // valor de la opción de antes (`--repo $PWD`, `-x "$V"`) o un argumento de posición (`set-check "$N" green`: el nombre
+  // y el estado). Lo que va después de `--` es otro comando, no una bandera de éste.
+  const posicionales = sub === 'set-check' ? 2 : 0;
+  const pide = (bandera) => {
+    const fin = args.findIndex((a) => a.literal && a.texto === '--');
+    const propios = fin >= 0 ? args.slice(0, fin) : args;
+    return propios.some((a, i) => a.texto === bandera
+      || (!lit(a) && i >= posicionales && !(i > 0 && lit(propios[i - 1]) && /^-/.test(propios[i - 1].texto) && propios[i - 1].texto !== bandera)));
+  };
+  if (llamada.guion === 'pipeline') {
+    // `check-count --trust-ran`: la lista de revisores la da el agente y el arnés no la vio correr
+    if (sub === 'check-count' || (sub === null && llamada.dudosa)) return pide('--trust-ran') ? 'trust-ran' : null;
+    return null;
+  }
+  // `set-check <nombre> <estado> --force-manual`: un control declarado a mano, en cualquier estado
+  if (sub === 'set-check') return pide('--force-manual') ? 'force-manual' : null;
   // sin subcomando a la vista (por `xargs`, en una variable, tras una comilla sin cerrar): puede ser `clear`
   if (sub === null) return llamada.dudosa ? 'cerrar la ejecución' : null;
   if (sub === 'set-autonomous') {

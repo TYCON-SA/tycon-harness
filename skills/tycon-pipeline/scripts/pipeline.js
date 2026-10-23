@@ -6210,7 +6210,7 @@ function main() {
           '🛑 check-count FALLÓ CERRADO — no hay step5-start en el registro: `pipeline.js advisors` no corrió en esta corrida.\n' +
           'Sin ese registro no hay set esperado ni spawns contra qué contar, y un OK sería un verde sobre nada.\n' +
           'Corré `pipeline.js advisors --repo <r> --story <s> --files <…>`, lanzá los revisores y volvé a contar.\n' +
-          'Override consciente (queda auditable): re-corré con --trust-ran --ran a,b,c\n',
+          'Confiar en una lista de revisores dada por vos lo decide la persona, no el agente: si quiere, lo dice en su mensaje («autorizo trust-ran»).\n',
         );
         process.exit(2);
       }
@@ -6221,7 +6221,7 @@ function main() {
       // FAIL-CLOSED: pipeline.js corrió (hay step5-start) pero
       // el hook on-advisor-run.js no registró NINGÚN spawn. El fallback silencioso al
       // --ran dejaría pasar un set sin spawns (ej.: 6 step5-start, 0 spawns, todo
-      // "pasó"). Override consciente: --trust-ran (queda en el output, auditable).
+      // "pasó"). --trust-ran lo decide la persona: ESC-C3 lo frena sin su frase (queda en el output, auditable).
       if (args.trustRan && args.ran.length) {
         ran = args.ran;
         source = '⚠️⚠️ --trust-ran EXPLÍCITO: el log no registró spawns pero el caller pidió confiar en --ran (sin verificación real)';
@@ -6232,7 +6232,7 @@ function main() {
           'Verificá:\n' +
           '  1. ¿Invocaste los Agent(...) después de correr pipeline.js advisors?\n' +
           '  2. ¿on-advisor-run.js está en settings.json (PreToolUse Task|Agent)? → install-tycon-hooks.sh --check\n' +
-          'Override consciente (queda auditable): re-corré con --trust-ran --ran a,b,c\n',
+          'Confiar en una lista de revisores dada por vos lo decide la persona, no el agente: si quiere, lo dice en su mensaje («autorizo trust-ran»).\n',
         );
         process.exit(2);
       }
@@ -6978,9 +6978,9 @@ function main() {
     '       mech-check inline y DESCUENTA advisors cubiertos (MECH-2) del set/expected;\n' +
     '       --iter N>1 emite reloop_model_hints (deep→sonnet). Genera context_file compartido\n' +
     '       + persiste expected[] en el log para check-count. Triggers sobre líneas AGREGADAS.)\n' +
-    '  node pipeline.js check-count    [--trust-ran --ran a,b,c]\n' +
+    '  node pipeline.js check-count    [--ran a,b,c]\n' +
     '       (valida contra el expected persistido del último step5-start; FALLA CERRADO\n' +
-    '       si hay step5-start sin spawns registrados — override consciente: --trust-ran)\n' +
+    '       si hay step5-start sin spawns registrados — confiar en la lista lo decide la persona: «autorizo trust-ran»)\n' +
     '  node pipeline.js smart-reloop   --iter N --repo <r> --story <s> --files ... [--force-full-reloop]\n' +
     '                                  [--allow-missing-files]\n' +
     '       (SPEED-1 — delta = unión(nombres nuevos ∪ fileEvents ∪ mtime post-snapshot);\n' +
