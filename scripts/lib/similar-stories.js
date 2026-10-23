@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 /**
  * similar-stories.js — las historias cerradas más parecidas a una nueva, con sus horas reales. Es la base con que el
  * agente propone la estimación de una historia al escribirla; el valor lo decide la persona.

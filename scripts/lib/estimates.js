@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 'use strict';
+// el piso de Node: con uno viejo, este guion se vuelve a lanzar con el Node del arnés o lo dice en una línea
+if (require.main === module) { try { require('./node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 /**
  * estimates.js — el registro de estimaciones de un repo de historias: la épica con un rango, el plan con un valor por
  * historia y la historia que lo ajusta al escribirla; el informe compara la suma con el rango de la épica.
@@ -330,11 +332,11 @@ function run(argv) {
 
 function texto(r) {
   if (!r.ok) return `estimates: ${r.reason}`;
-  if (r.linea) return `estimates: anotada ${r.linea.nivel} ${r.linea.historia || r.linea.epica} (${r.linea.valor ?? `${r.linea.min}–${r.linea.max}`} ${r.linea.unidad})`;
+  if (r.linea) return `estimates: anotada ${r.linea.nivel} ${r.linea.historia || r.linea.epica} (${r.linea.valor !== null && r.linea.valor !== undefined ? r.linea.valor : `${r.linea.min}–${r.linea.max}`} ${r.linea.unidad})`;
   if (r.sin_estimaciones) return `estimates: la épica ${r.epica} no tiene estimaciones`;
   const marca = r.dentro === null ? r.motivo : r.dentro ? 'dentro del rango' : `${r.fuera} del rango por ${r.por}`;
   const rango = r.rango ? `${r.rango.min}–${r.rango.max}` : 'sin rango';
-  return `estimates: épica ${r.epica} · rango ${rango} · plan ${r.suma_plan ?? '—'} · vigente ${r.suma_vigente ?? '—'} ${r.unidad || ''} · ${marca}${r.unreadable.length ? ` · líneas ilegibles: ${r.unreadable.join(', ')}` : ''}`;
+  return `estimates: épica ${r.epica} · rango ${rango} · plan ${r.suma_plan === null ? '—' : r.suma_plan} · vigente ${r.suma_vigente === null ? '—' : r.suma_vigente} ${r.unidad || ''} · ${marca}${r.unreadable.length ? ` · líneas ilegibles: ${r.unreadable.join(', ')}` : ''}`;
 }
 
 if (require.main === module) {
