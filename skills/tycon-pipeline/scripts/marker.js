@@ -3382,8 +3382,11 @@ function cmdClear() {
         marker.cierre = { estado: 'abortada', motivo: `no pude determinar cómo terminó (${e.message})`, via: 'sin-registro', at: nowIso() };
         process.stderr.write(`[marker] no pude armar el cierre de la ejecución (${e.message}): queda como abortada\n`);
       }
+      // El repo real de la carpeta (un worktree o un clon cuentan como su repo) para agrupar las ejecuciones en la vista.
+      let repo = null;
+      try { repo = require('./lib/repo-attrib.js').realRepo(marker.repoPath); } catch (_e) { /* sin él, la vista deduce de la carpeta */ }
       const dump = {
-        archivedAt: nowIso(), marker, gates, costo,
+        archivedAt: nowIso(), marker, gates, costo, ...(repo ? { repo } : {}),
         revision_previa: revisionPrevia, ...(revisionPrevia ? {} : { revision_previa_nota: notaPrevia }),
       };
       const safeStory = String(marker.storyId).replace(/[^\w.-]/g, '_');

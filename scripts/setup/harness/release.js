@@ -90,6 +90,36 @@ const ROUTE_REPO = /^\/repos\/([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)\//;
 function tokenExpired(env) { const t = GA.readToken({ env }).token; return Boolean(t && EXPIRED_TOKEN === t); }
 
 const nowIso = () => new Date().toISOString();
+
+/**
+ * La salud pasó, con el código de ESTA versión: la hora y la versión que la corrió. Un programa viejo que juzgó la
+ * actualización pone sólo la hora; la versión que falta (o es otra) le dice al arranque siguiente que la salud de la
+ * versión instalada todavía no corrió (`healthDueAtStartup`).
+ */
+function markHealth(state) {
+  state.last_health = nowIso();
+  state.last_health_version = (state.version && state.version.number) || null;
+}
+
+/** ¿El arranque tiene que correr la salud? Con `--force`, o si la última salud sana no la corrió esta versión. */
+function healthDueAtStartup(state, { force = false } = {}) {
+  if (force) return true;
+  const v = state && state.version && state.version.number;
+  // sin número de versión no se sabe si la última salud fue de ésta: se corre (nunca un verde sin mirar)
+  return !v || state.last_health_version !== v;
+}
+
+/**
+ * La salud del arranque: corre si `healthDueAtStartup` lo pide, sobre el informe del aplicador de este arranque. Si no
+ * pasa, lo dice con cómo seguir y NO vuelve sola: la versión ya estaba aceptada. `{ ran, ok, line }`.
+ */
+function startupHealth(ctx, state, H, applied, { log = () => {}, force = false } = {}) {
+  if (!healthDueAtStartup(state, { force })) return { ran: false, ok: true, line: null };
+  const h = H.runHealth(ctx, state, { report: applied.report, applierOut: applied.out, log });
+  if (h.ok) { markHealth(state); return { ran: true, ok: true, line: null }; }
+  log(`startup: ${h.failures.join(' · ')}`);
+  return { ran: true, ok: false, line: `la comprobación de salud no pasó (${h.failures[0]}): harness.js doctor lo detalla; para volver a la versión anterior, harness.js rollback` };
+}
 const sha7 = (s) => (s ? String(s).slice(0, 7) : '—');
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const exists = (p) => { try { fs.lstatSync(p); return true; } catch (_) { return false; } };
@@ -1619,7 +1649,7 @@ function cmdInstall(ctx, H) {
       return { code: 1, lines: [`harness.js install: la comprobación de salud no pasó: ${h.failures.join(' · ')} — detalle en ${S.paths(ctx.home).log}`, ...notes] };
     }
     state.failed = null;
-    state.last_health = nowIso();
+    markHealth(state);
     // la conexión vieja de una skill de la lista fija: después del cambio sano, una vez por skill; lo que
     // no se pudo copiar se dice y no frena la instalación
     const moved = TEAM.moveSkillData({ home: ctx.home, env: ctx.env, team: state.team, harnessDir: tree, migrateHome: existing && existing.migrate_home, previousDir: TH.ownPaths({ env: ctx.env }).previous });
@@ -1974,7 +2004,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   if (!h.ok) return fail(h.failures.length ? h.failures : ['la salud no pasó'], 'health');
   state.failed = null;
   state.version.installed_at = nowIso();
-  state.last_health = nowIso();
+  markHealth(state);
   H.copyBootstrap(ctx, own.harness, state, { version: t.version });
   H.finishSnapshot(ctx, snap, log);
   // la conexión vieja de una skill de la lista: después del cambio sano (previous/ sigue ahí), una vez por skill
@@ -2017,7 +2047,7 @@ function rollback(ctx, state, H, { log = null } = {}) {
   else {
     H.recordPieces(ctx, state, a.report, a.shared);
     const h = H.runHealth(ctx, state, { report: a.report, applierOut: a.out, log });
-    if (h.ok) state.last_health = nowIso(); else lines.push(`la comprobación de salud no pasó (${h.failures[0]}): harness.js doctor lo detalla`);
+    if (h.ok) markHealth(state); else lines.push(`la comprobación de salud no pasó (${h.failures[0]}): harness.js doctor lo detalla`);
   }
   H.finishSnapshot(ctx, snap, log);
   return { ok: true, lines, undone, snap };
@@ -2129,7 +2159,7 @@ function startup(ctx, state, H, { log, snapshot = null }) {
     const f = state.failed;
     log(`startup: la comprobación de salud de ${f.commit} quedó pendiente: la corro ahora`);
     const h = H.runHealth(ctx, state, { report: Array.isArray(state.managed) ? state.managed : [], applierOut: '', log });
-    if (h.ok) { state.failed = null; state.last_health = nowIso(); H.copyBootstrap(ctx, own.harness, state, { version: state.version.number }); }
+    if (h.ok) { state.failed = null; markHealth(state); H.copyBootstrap(ctx, own.harness, state, { version: state.version.number }); }
     else {
       const back = swapBack(ctx, { log, reason: 'failed' });
       const src = S.releaseSource(state);
@@ -2216,12 +2246,11 @@ function startup(ctx, state, H, { log, snapshot = null }) {
     H.recordPieces(ctx, state, a.report, a.shared);
     { const pl = typeof H.packRetiredLine === 'function' ? H.packRetiredLine(a) : null; if (pl) { log(`startup: ${pl}`); notice = notice ? `${notice} · ${pl}` : pl; } }
     if (sw.profile && sw.profile.ok && dropped !== null) state.profile = { value: sw.profile.value, origin: sw.profile.origin };
-    // `--force` repite la salud entera aunque nada cambió
-    if (ctx.opts && ctx.opts.force) {
-      const h = H.runHealth(ctx, state, { report: a.report, applierOut: a.out, log });
-      if (h.ok) state.last_health = nowIso();
-      else { const text = `la comprobación de salud no pasó (${h.failures[0]}): harness.js doctor lo detalla; para volver a la versión anterior, harness.js rollback`; notice = notice || text; line = line || text; log(`startup: ${h.failures.join(' · ')}`); }
-    }
+    // la salud entera con `--force`, o si la última sana no la corrió esta versión (la juzgó el programa viejo que
+    // lanzó la actualización, con su salud, que no entiende todo lo que trae ésta)
+    const sh = startupHealth(ctx, state, H, a, { log, force: Boolean(ctx.opts && ctx.opts.force) });
+    // un fallo de salud no se pierde detrás de otro aviso del arranque: se suma
+    if (sh.line) { notice = notice ? `${notice} · ${sh.line}` : sh.line; line = line ? `${line} · ${sh.line}` : sh.line; }
   }
   H.finishSnapshot(ctx, sw.snap, log);
   // la limpieza diferida: sólo con la salud en verde después del último cambio
@@ -2493,7 +2522,7 @@ function versionJson(state, { channel = null } = {}) {
 }
 
 module.exports = {
-  startup, cmdUpdate, doctorItems, versionLine, versionJson, FETCH_WINDOW_MS,
+  startup, cmdUpdate, doctorItems, markHealth, healthDueAtStartup, startupHealth, versionLine, versionJson, FETCH_WINDOW_MS,
   MANIFEST_NAME, MAIN_REF, SYNC_REF, API_DEFAULT,
   githubRepoOf, repoOf, apiBase, client, explainFailure, tokenExpired, EXPIRED_TOKEN_TEXT, refCommit, versionAt, resolveChannel, check, locateVersion,
   resolvePublic, numberAt, tagNumberOf, tagsByApi, tagsFor, tagCommit, pendingTag, PENDING_TAG_SAY_MS, trustedCache, fromCache, adoptTag, treeNumberOk,

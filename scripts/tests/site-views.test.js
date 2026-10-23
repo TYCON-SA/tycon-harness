@@ -401,3 +401,26 @@ test('T10 Producto_SinFotoDeAnoche_SigueNoMedido', () => {
   assert.ok(!nada.sin_stories);
   assert.notStrictEqual(nada.motivo, 'sus repos no usan stories del arnés');
 });
+
+test('8.101-Retrospectivas_SinFotoComoHoy_ConFotoSeVe', () => {
+  const RETROS = (dia) => `.dashboard/retros/retros-${dia}.json`;
+  const pendientes = [{ repo: 'Producto-X/FrontEnd', merge: 'abc1234', dias: 2 }, { repo: 'Producto-Y/Backend', merge: 'def5678', dias: 1 }];
+  const retro = (extra) => fila(filasDe(modeloDesde(extra)), 'retrospectivas');
+  const deHoy = filasDe(modeloCompleto()).find((f) => f.clave === 'retrospectivas');
+  // sin la foto, con una de ayer o con una que no vale: la tarjeta de siempre, no medida y con su motivo
+  for (const [caso, extra] of [
+    ['sin la foto', {}],
+    ['con la de ayer', { [RETROS('2026-10-14')]: { v: 1, fecha: '2026-10-14', estado: 'medido', pendientes } }],
+    ['con una que no vale', { [RETROS(HOY)]: { v: 1, fecha: HOY, estado: 'medido', pendientes: 'muchas' } }],
+    ['con una no medida', { [RETROS(HOY)]: { v: 1, fecha: HOY, estado: 'no_medido', pendientes: [] } }],
+  ]) {
+    const r = retro(extra);
+    assert.strictEqual(r.estado, 'no_medido', caso);
+    assert.strictEqual(r.valor, null, `${caso}: nunca 0`);
+    assert.strictEqual(r.motivo, deHoy.motivo, `${caso}: el motivo de siempre`);
+  }
+  // con la de hoy, la cuenta
+  const r = retro({ [RETROS(HOY)]: { v: 1, fecha: HOY, estado: 'medido', pendientes } });
+  assert.strictEqual(r.estado, 'medido');
+  assert.strictEqual(r.valor, 2);
+});

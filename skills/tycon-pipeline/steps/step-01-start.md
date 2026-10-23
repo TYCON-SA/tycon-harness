@@ -121,6 +121,14 @@ bien y con effort medium alcanza; si estás en high/xhigh, bajalo con `/model`»
 de razonamiento (un renombre de 20 archivos es grande pero mecánico): si el hint pifia seguido, se recalibra
 `computeModelHint` en `pipeline.js`, no se agrega otro puntaje. Registrar `effort_hint_suggested` y `effort_hint_accepted`.
 
+## Lo que falta antes de arrancar: AVISAR
+
+Si la salida de `start` trae `missing_before_start`, se le dice a la persona antes de seguir, una línea por cosa: qué
+falta (`falta`), qué hace el pipeline sin eso (`sin_eso`) y cómo se instala (`como`). Son tres: el programa de la
+plataforma del pedido de trabajo, la configuración de BMAD del repo y el servidor MCP de la herramienta de horas. No
+frena: la parte que no puede correr se declara con `start-warning` cuando le toca, y el plan sin BMAD lo arma el
+orquestador. Sin la clave, no se dice nada.
+
 ## PIPE-C9 — tooling esperado no disponible: AVISAR
 
 El pipeline degrada a alternativas cuando falta una herramienta, y eso NUNCA pasa en silencio. `start` trae

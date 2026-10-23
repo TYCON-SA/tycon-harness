@@ -69,6 +69,11 @@ function launchError(r) {
  * árbol; lo demás en agent-skills/skills. Un `@int:` con una ruta que no cumple la regla del manifiesto (`..`, `\`,
  * espacios, comillas) da null: no se revisa un archivo fuera de su carpeta.
  */
+// Los prefijos de id de hook que esta salud sabe resolver. `harness.js` se los pasa al aplicador para que el informe de
+// piezas los traiga: un juez que no declara un prefijo no lo recibe (apply-hooks.js · reportableHookId). Un prefijo
+// nuevo en `hookFile` se suma acá.
+const HOOK_PREFIXES = Object.freeze(['@tcg:', '@int:']);
+
 function hookFile(relpath, { tree, skillsDir }) {
   if (relpath.startsWith('@tcg:')) return path.join(tree, 'scripts', 'hooks', relpath.slice(5));
   if (relpath.startsWith('@int:')) {
@@ -391,4 +396,4 @@ function check(ctx = {}, opts = {}) {
   return { ok: failures.length === 0, failures, warnings };
 }
 
-module.exports = { HEALTH_EVENTS, HOOK_TIMEOUT_MS, SESSION_ID, hookFile, payloadFor, launchError, check };
+module.exports = { HEALTH_EVENTS, HOOK_TIMEOUT_MS, SESSION_ID, HOOK_PREFIXES, hookFile, payloadFor, launchError, check };

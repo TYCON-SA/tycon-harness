@@ -356,9 +356,11 @@ rm -rf "$T"
 # El aviso tiene que salir en un commit REAL y no puede frenarlo. Sin llave de TypeSafe (se quita del
 # ambiente): avisa toda línea nueva fuera de la sección. Rojo sin el bloque 1b' del pre-commit
 # global: el commit entra en silencio.
+# El repo declara el pipeline (.tycon/advisors.yaml): en uno sin pipeline el aviso calla (reviewer-rules.test.sh T17).
 T=$(mktemp -d); montar "$T"; rm -rf "$T/repo/.githooks"
 printf '# r\n\n## Reglas para revisores\n\n- Nunca SQL concatenado.\n' > "$T/repo/CLAUDE.md"
-( cd "$T/repo" && git add CLAUDE.md && git -c core.hooksPath=/dev/null -c user.email=b@b -c user.name=b commit -q -m "claude.md base" )
+mkdir -p "$T/repo/.tycon" && printf 'deep_review: auto\n' > "$T/repo/.tycon/advisors.yaml"
+( cd "$T/repo" && git add CLAUDE.md .tycon/advisors.yaml && git -c core.hooksPath=/dev/null -c user.email=b@b -c user.name=b commit -q -m "claude.md base" )
 ANTES=$(cuantos "$T")
 printf '\n## Otra\n\n- Las tablas nuevas no llevan prefijo XX_.\n' >> "$T/repo/CLAUDE.md"; ( cd "$T/repo" && git add CLAUDE.md )
 RC=$( ( export TYCON_GUIDES_DIR="$RAIZ" TYCON_SQL_COMPILE=0; unset TYPESAFE_API_KEY; commitear "$T" "regla fuera de la sección" ) )

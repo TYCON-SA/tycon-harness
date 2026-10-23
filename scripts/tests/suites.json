@@ -1070,6 +1070,11 @@
       "requiere": []
     },
     {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/repo-attrib.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.35 (2026-10-19): ésta y las 22 que siguen no estaban en la lista, así que ni la CI ni el nocturno las corrían (dos estaban rojas sin que nadie lo supiera). Medidas una por una y con una HOME vacía: la más larga tarda 41 s. scripts/tests/suites-listed.test.js frena la próxima que nazca afuera.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adversarial-unmeasured.test.js",
@@ -1207,6 +1212,11 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/start-stale.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/preflight-missing.test.js",
       "requiere": []
     },
     {
@@ -2506,6 +2516,12 @@
       "__nota": "story 8.23 (tanda C, AC 22): scripts/setup/agents-md-blocks.js — las reglas del arnés en ~/.codex/AGENTS.md desde los bloques, entre sus marcas: la variante de Codex, lo de la persona fuera de las marcas byte a byte, sin leer el CLAUDE.md, sin @import, las integraciones y el perfil, «no se pudo saber» no es «apagada», idempotente y --check sin escribir. Todo en el temporal.",
       "raiz": "arnes",
       "ruta": "tests/agents-md-blocks.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el informe del aplicador no le manda a un juez viejo hooks con prefijos que no entiende (TYCON_REPORT_HOOK_PREFIXES); el lector y la salud de la 2026.10.20.52 (de git) aceptan el informe nuevo; el arranque corre la salud si la última no la corrió esta versión.",
+      "raiz": "arnes",
+      "ruta": "tests/old-judge-report.test.js",
       "requiere": []
     },
     {

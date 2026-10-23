@@ -69,4 +69,59 @@ function attribution(sessionIdKey, cwd) {
   return { repo, story };
 }
 
-module.exports = { stateDir, gitRoot, readMarkerFile, attribution };
+/**
+ * El repo real de una carpeta, LEYENDO .git (sin invocar git): `{ path, remote }`, o null sin `.git`. `path` es la
+ * carpeta del clon principal (la que tiene el `.git` común: un worktree `…-wt-127` da la de su repo); `remote` es
+ * `<dueño o proyecto>/<repo>` de `origin`, sin host, usuario ni token (va al buzón), o null sin `origin`.
+ * Nunca tira.
+ */
+function realRepo(dir) {
+  try {
+    let gitDir = path.join(dir, '.git');
+    if (fs.statSync(gitDir).isFile()) gitDir = path.resolve(dir, fs.readFileSync(gitDir, 'utf8').replace(/^gitdir:\s*/, '').trim());
+    let common = gitDir;
+    try { common = path.resolve(gitDir, fs.readFileSync(path.join(gitDir, 'commondir'), 'utf8').trim()); } catch (_e) { /* no es un worktree */ }
+    const main = path.basename(common) === '.git' ? path.dirname(common) : common;
+    let remote = null;
+    try { remote = originRemote(fs.readFileSync(path.join(common, 'config'), 'utf8')); } catch (_e) { /* sin config */ }
+    return { path: main, remote };
+  } catch (_e) { return null; }
+}
+
+/** `<dueño o proyecto>/<repo>` del `url` de `[remote "origin"]` de un config de git; null si no hay. */
+function originRemote(config) {
+  let enOrigin = false;
+  for (const line of String(config).split(/\r?\n/)) {
+    const sec = /^\s*\[(.+)\]\s*$/.exec(line);
+    if (sec) { enOrigin = /^remote\s+"origin"$/.test(sec[1].trim()); continue; }
+    const kv = enOrigin && /^\s*url\s*=\s*(.+?)\s*$/.exec(line);
+    if (kv) return remoteName(kv[1]);
+  }
+  return null;
+}
+
+/**
+ * Los dos últimos tramos de la ruta de un remoto, sin `.git` ni `_git`: `https://u:t@dev.azure.example/org/Proj/_git/Repo` →
+ * `Proj/Repo`, `git@github.com:acme/tienda.git` → `acme/tienda`. Lo de antes de la ruta (host, usuario, token) no sale.
+ */
+function remoteName(url) {
+  let p = String(url || '').trim().replace(/[?#].*$/, '');
+  const esquema = /^[a-z][a-z0-9+.-]*:\/\//i.exec(p);
+  if (esquema) {
+    // las credenciales llegan hasta la ÚLTIMA arroba: una contraseña con `/` sin codificar no corta antes
+    let resto = p.slice(esquema[0].length);
+    const arroba = resto.lastIndexOf('@');
+    if (arroba >= 0) resto = resto.slice(arroba + 1);
+    const barra = resto.indexOf('/');
+    p = barra >= 0 ? resto.slice(barra) : '';
+  } else if (!/^[a-z]:[\\/]/i.test(p) && /^[^/\\]*:/.test(p)) {
+    // la forma scp (`[usuario@]host:ruta`), con usuario o sin él; `C:\…` es una ruta de Windows
+    p = p.slice(p.indexOf(':') + 1);
+  }
+  const segs = p.split(/[\\/]/).filter((s) => s && s !== '_git').map((s) => s.replace(/\.git$/, ''));
+  const nombre = segs.slice(-2).join('/');
+  // lo que todavía parezca un host, un usuario o una query no sale de la máquina
+  return nombre && !/[@:?#\s]/.test(nombre) ? nombre : null;
+}
+
+module.exports = { stateDir, gitRoot, readMarkerFile, attribution, realRepo, remoteName };

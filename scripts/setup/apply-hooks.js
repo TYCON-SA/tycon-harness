@@ -77,6 +77,19 @@ function intSpec(spec) {
   const m = /^@int:([a-z0-9][a-z0-9-]*)\/([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*)$/.exec(String(spec || ''));
   return m && !m[2].split('/').some((s) => s === '..' || s === '.') ? { name: m[1], rel: m[2] } : null;
 }
+// El informe de piezas (`TYCON_REPORT_PIECES`) lo lee quien lanzó este aplicador, y en una actualización desde una
+// versión vieja ése es el programa viejo: su comprobación de salud resuelve la ruta de cada hook del informe y falla con
+// un prefijo que no conoce (la versión vuelve sola, y en Windows nunca más actualiza). Un hook viaja en el informe sólo
+// con un prefijo que entiende cualquier juez (sin prefijo, o los de esta lista, CONGELADA: es lo que entendía el juez
+// más viejo en uso; agrandarla rompe a las versiones viejas) o uno que quien lo lanza declara en
+// `TYCON_REPORT_HOOK_PREFIXES`. El hook igual queda registrado en settings.json: sólo no viaja.
+const OLD_JUDGE_PREFIXES = Object.freeze(['@tcg:']);
+function reportableHookId(id, env = process.env) {
+  const spec = String(id).replace(/^[A-Za-z]+:(?=.)/, '');
+  const m = /^(@[a-z0-9-]+:)/.exec(spec);
+  if (!m || OLD_JUDGE_PREFIXES.includes(m[1])) return true;
+  return String((env && env.TYCON_REPORT_HOOK_PREFIXES) || '').split(',').map((s) => s.trim()).includes(m[1]);
+}
 const NEEDS = new Set(['telegram-plugin']);
 const STEP_RE = /^(all|[a-z][a-z0-9-]*)$/;
 const EFFECTS = ['blocks', 'warns', 'records'];
@@ -875,8 +888,13 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   const modsPiece = Boolean(PD) && PD.hasDir(envObj[PD.PLUGIN_DIRS_KEY], PD.ourDir(home), { sep: PD.separator(platform), home });
 
   const where = settingsPath;
+  const outOfReport = env.TYCON_REPORT_PIECES ? r.present.filter((id) => !reportableHookId(id, env)) : [];
+  if (outOfReport.length) {
+    process.stdout.write(`tycon: ${outOfReport.length} hook(s) con un prefijo que quien me lanzó no declara entender no van al informe ` +
+      `(siguen registrados): ${outOfReport.join(', ')}\n`);
+  }
   appendLines(env.TYCON_REPORT_PIECES, [
-    ...r.present.map((id) => `hook\t${where}\t${id}`),
+    ...r.present.filter((id) => !outOfReport.includes(id)).map((id) => `hook\t${where}\t${id}`),
     ...(sharedDone ? [] : [
       ...Object.entries(TOP_CANONICAL).filter(([k, v]) => settings[k] === v).map(([k, v]) => `setting\t${where}\t${k}\t${JSON.stringify(v)}`),
       ...Object.entries(ENV_CANONICAL).filter(([k, v]) => envObj[k] === v).map(([k, v]) => `setting\t${where}\tenv.${k}\t${JSON.stringify(v)}`),
@@ -950,6 +968,6 @@ function cli(argv, opts = {}) {
   }
 }
 
-module.exports = { scriptOf, NODE_FLOOR, TOP_CANONICAL, ENV_CANONICAL, lugarCanonico, harnessIndexOf, validateList, loadList, loadMinimalIds, readConfig, decide, applyToSettings, normMatcher, invokesRepoPath, namesFile, runnerFor, normalizePullLine, main, cli, ApplyError };
+module.exports = { OLD_JUDGE_PREFIXES, reportableHookId, scriptOf, NODE_FLOOR, TOP_CANONICAL, ENV_CANONICAL, lugarCanonico, harnessIndexOf, validateList, loadList, loadMinimalIds, readConfig, decide, applyToSettings, normMatcher, invokesRepoPath, namesFile, runnerFor, normalizePullLine, main, cli, ApplyError };
 
 if (require.main === module) process.exitCode = cli(process.argv.slice(2));
