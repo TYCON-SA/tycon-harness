@@ -2234,6 +2234,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.76: el sitio demo (`SITE_DEMO=1`) — los datos de ejemplo de «acme» movidos sin cambiar un valor (el resumen de lo que arman las capturas de la guía), las fuentes que los leen sin git ni buzón y que se rehacen al cambiar el día, la lista cerrada de variables (cada credencial frena el arranque y se nombra, `SITE_DEMO` sólo con 1), la sesión de ejemplo y el selector «Ver como», el freno central (red, procesos y escrituras fuera de la carpeta temporal propia, también en el hilo aparte), el recorrido de TODA la tabla de rutas en un sitio de verdad con su freno puesto (ninguna conexión, proceso ni escritura, ni 500), cada pestaña con datos, la franja «Datos de ejemplo» en los dos idiomas, Proponer, Invitar y Revocar mostrando lo que pasaría, `noindex` y el tope por dirección (la última de X-Forwarded-For), y el sitio real que dice `demo: false`. Procesos del sitio en el propio equipo; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-demo.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la pestaña «Cómo trabaja» del sitio de la organización: el recorrido de una historia armado con las mismas fuentes con que corre el arnés (la tabla de pasos, el cálculo de revisores, la lista de controles y los despachadores, los paquetes, los lectores de configuración y las funciones que deciden cada pieza «según la historia»), que frena si una fuente y la pantalla se separan; los revisores de la organización revisados con el lector de paquetes y propuestos en un solo pedido con versiones firmadas; sólo para quien mantiene; textos en los dos idiomas. Levanta el servidor del sitio con sesiones reales del emisor local, repos git locales por HTTP y un GitHub falso en el proceso; sin red.",
       "raiz": "arnes",
       "ruta": "tests/how-it-works.test.js",

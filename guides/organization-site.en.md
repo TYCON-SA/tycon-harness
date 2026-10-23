@@ -5,6 +5,7 @@ first time. First it tells what it is and how to use it; then, how to install it
 
 - **[Using the site](#what-it-is-and-what-it-is-for):** what it is, signing in for the first time, each tab, the
   configuration, what each person sees and the common problems.
+- **[The demo site](#the-demo-site):** the same site with example data, open and without an account, to show it.
 - **[Installing it](#what-you-need-first):** what you need, how to try it on your machine and how to get it running.
 
 Every step in this guide comes from the code or from a real run. What has not been tested for real yet says so on the
@@ -802,6 +803,56 @@ tell a maintainer (the installation guide, in the Azure recipe, says how to fix 
 wakes it up.
 
 **What to do:** wait; the next pages open quickly.
+
+## The demo site
+
+It is the same site, with example data from a made-up organization (**Acme**), open to anyone with a link and with **no
+account**, to show what it does without giving access to anything real. It runs as a separate instance: it is not the
+organization's site and does not replace it, and nothing you see in it exists.
+
+**What you see.** Every tab with the example data: Home, Runs (with their detail and their texts), Projects, Harness, How
+it works, Configuration and Help. At the top of every page a fixed strip says **Example data**, and so does the title of the
+browser tab. The **View as** selector lets you look at the site as its maintainer (everything, with Configuration) or as a
+team member ("Yours", without Configuration). The buttons that change something (**Propose** in Configuration and in How it
+works, **Invite** and **Revoke**) check as usual and show what would happen, and say that the demo site writes nothing.
+
+**What it does not do.**
+
+- **It writes nothing.** Not to a repo and not to disk, except in its own temporary folder, which is deleted when it shuts
+  down. The language you pick lives only in the browser cookie.
+- **It does not reach out.** It opens no outside connections and launches no `git` or any other process: what the real site
+  asks the platform (pipelines, stages, request types, the review policy) is answered from inside, with example data. If
+  something tried, it is logged and fails.
+- **It has no accounts and no credentials.** It starts only with `SITE_DEMO=1` (with any other value it does not start, and
+  the real site says `demo: false` in its startup line and in `/livez`). It accepts only `SITE_DEMO`, `PORT` and
+  `SITE_PUBLIC_URL`: with any other site variable, or a platform identity, it does not start and says which.
+- **The bare minimum of a public site.** It asks search engines not to index it (`noindex`) and limits each address to 60
+  requests per minute (the last one in `X-Forwarded-For`, the one the platform's entry point adds).
+
+**Try it on your machine.** From the harness clone: `SITE_DEMO=1 PORT=8080 node scripts/site/server.js` and open
+`http://localhost:8080`. Under another machine name, add `SITE_PUBLIC_URL=http://<name>:8080`: the buttons compare the
+origin of the request with that address.
+
+**Install it on Azure Container Apps.** It is a separate instance; give it its own resource group. With the installer of the
+Azure recipe, in two phases and with a configuration file without secrets (`subscription`, `resourceGroup`, `location`,
+`environment`, `app`, `logAnalyticsWorkspace`, `logAnalyticsQuotaGb` and `image`, the published image by its digest
+`@sha256:…`, from a version that carries the demo mode):
+
+1. `node scripts/site/deploy/azure-container-apps.js --config demo.json --phase ambiente --dry-run` and then `--apply`:
+   creates the environment. Ignore the two Entra ID redirect URIs it prints: the demo has no sign-in.
+2. `node scripts/site/deploy/azure-container-apps.js --config demo.json --phase demo --dry-run` and then `--apply`:
+   creates the app and prints the link.
+
+The app comes up with **no lock** from the platform, **no disk**, **no identity** and no secrets; open from the start
+(HTTPS only) and scaling to zero: it switches itself off when unused (zero replicas), and the first visit after a while takes
+a few seconds to wake it. The configuration file does not accept a mailbox, a repo, a tenant or a disk: if it has them, it
+does not run and says which. Running the `demo` phase again on an instance that already exists updates it (it does not create
+another); if a step fails, it stops, says which one and what was created, and running it again finishes the job. It never
+touches an app that is not a demo instance.
+
+**Deleting it.** Everything of the demo is in its resource group: `az group delete --name <group> --subscription
+<subscription>` deletes it all (it asks for confirmation). Do it only if that group is the demo's own. Without deleting it,
+it is already off: with zero replicas no container runs.
 
 ## What you need first
 

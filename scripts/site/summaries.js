@@ -60,7 +60,9 @@ function huellaEnWorker({ dir, extra = [], memoriaMb = 256, tiempoMs = 300000 })
 function enWorker(datos, { memoriaMb, tiempoMs, frase, log = () => {} }) {
   return new Promise((resolve, reject) => {
     let listo = false;
-    const w = new Worker(__filename, { workerData: datos, resourceLimits: { maxOldGenerationSizeMb: memoriaMb } });
+    // el hilo no hereda el freno del modo demo: lo pone él mismo con la carpeta del proceso (demo-guard.js)
+    const freno = require('./demo-guard.js').frenoActual();
+    const w = new Worker(__filename, { workerData: freno ? { ...datos, __frenoDemo: { dir: freno.dir } } : datos, resourceLimits: { maxOldGenerationSizeMb: memoriaMb } });
     const fin = (fn, x) => { if (listo) return; listo = true; clearTimeout(corte); fn(x); };
     const corte = setTimeout(() => { fin(reject, Object.assign(new Error(frase), { code: 'TIEMPO_AGOTADO' })); w.terminate(); }, tiempoMs);
     if (corte.unref) corte.unref();
@@ -79,6 +81,7 @@ function trabajo(fn) {
   Promise.resolve().then(fn).then((r) => parentPort.postMessage({ __resultado: r }), (e) => parentPort.postMessage({ error: mensajeDe(e) }));
 }
 
+if (!isMainThread && workerData && workerData.__frenoDemo) require('./demo-guard.js').ponerFreno(workerData.__frenoDemo);
 if (!isMainThread && workerData && workerData.__bajar) {
   trabajo(() => require(workerData.modulo).bajarBuzon({ ...workerData.opts, log: (l) => parentPort.postMessage({ __linea: String(l) }) }));
 }

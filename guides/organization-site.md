@@ -5,6 +5,7 @@ Primero cuenta qué es y cómo se usa; después, cómo se instala.
 
 - **[Usar el sitio](#qué-es-y-para-qué-sirve):** qué es, el primer ingreso, cada pestaña, la configuración, qué ve
   cada persona y los problemas comunes.
+- **[El sitio demo](#el-sitio-demo):** el mismo sitio con datos de ejemplo, abierto y sin cuenta, para mostrarlo.
 - **[Instalarlo](#qué-hace-falta-antes):** qué hace falta, cómo probarlo en tu máquina y cómo dejarlo andando.
 
 Cada paso de esta guía sale del código o de una ejecución real. Lo que todavía no se probó en real lo dice en la misma
@@ -771,6 +772,57 @@ organización. Si dice que lo rechazó lo que está delante del sitio y sigue de
 visita la despierta.
 
 **Qué hacer:** esperar; las páginas siguientes abren rápido.
+
+## El sitio demo
+
+Es el mismo sitio, con datos de ejemplo de una organización inventada (**Acme**), abierto con un link y **sin cuenta**,
+para mostrar qué hace sin dar acceso a nada real. Corre como una instancia aparte: no es el sitio de la organización ni
+lo reemplaza, y nada de lo que se ve en él existe.
+
+**Qué se ve.** Todas las pestañas con los datos de ejemplo: Inicio, Ejecuciones (con su detalle y sus textos), Proyectos,
+Arnés, Cómo trabaja, Configuración y Ayuda. Arriba de cada página, una franja fija dice **Datos de ejemplo**, y el título
+de la pestaña del navegador también. El selector **Ver como** deja mirar el sitio como quien lo mantiene (todo, con
+Configuración) o como una persona del equipo («Lo tuyo», sin Configuración). Los botones que cambian algo (**Proponer** en
+Configuración y en Cómo trabaja, **Invitar** y **Revocar**) revisan como siempre y muestran lo que pasaría, y dicen que en
+el sitio demo no se escribe.
+
+**Qué no hace.**
+
+- **No escribe.** Ni en un repo ni en el disco, salvo en una carpeta temporal propia que se borra al apagarse. El idioma
+  que se elige vale sólo en la cookie del navegador.
+- **No sale.** No abre conexiones hacia afuera y no lanza `git` ni ningún otro proceso: lo que el sitio real le pregunta a
+  la plataforma (pipelines, stages, tipos de pedido, la política de revisión) se contesta de adentro, con datos de ejemplo.
+  Si algo lo intentara, queda en el registro y falla.
+- **No tiene cuentas ni credenciales.** Arranca sólo con `SITE_DEMO=1` (con otro valor no arranca, y el sitio real dice
+  `demo: false` en su línea de arranque y en `/livez`). Acepta únicamente `SITE_DEMO`, `PORT` y `SITE_PUBLIC_URL`: con
+  cualquier otra variable del sitio, o una identidad de la plataforma, no arranca y dice cuál.
+- **Lo mínimo de un sitio público.** Pide a los buscadores que no lo indexen (`noindex`) y limita a 60 pedidos por minuto
+  por dirección (la última de `X-Forwarded-For`, que es la que agrega la entrada de la plataforma).
+
+**Probarlo en tu máquina.** Desde el clon del arnés: `SITE_DEMO=1 PORT=8080 node scripts/site/server.js` y abrir
+`http://localhost:8080`. Con otro nombre de máquina, agregá `SITE_PUBLIC_URL=http://<nombre>:8080`: los botones comparan el
+origen del pedido con esa dirección.
+
+**Instalarlo en Azure Container Apps.** Es una instancia aparte; conviene darle su propio grupo de recursos. Con el
+instalador de la receta de Azure, en dos fases y con un archivo de configuración sin secretos (`subscription`,
+`resourceGroup`, `location`, `environment`, `app`, `logAnalyticsWorkspace`, `logAnalyticsQuotaGb` e `image`, la imagen
+publicada por su huella `@sha256:…`, de una versión que traiga el modo demo):
+
+1. `node scripts/site/deploy/azure-container-apps.js --config demo.json --phase ambiente --dry-run` y después `--apply`:
+   crea el ambiente. Ignorá las dos vueltas de Entra ID que imprime: el demo no tiene inicio de sesión.
+2. `node scripts/site/deploy/azure-container-apps.js --config demo.json --phase demo --dry-run` y después `--apply`:
+   crea la aplicación e imprime el link.
+
+La aplicación sale **sin candado** de la plataforma, **sin disco**, **sin identidad** administrada y sin secretos; abierta
+desde el principio (sólo HTTPS) y con escala a cero: se apaga sola sin uso (cero réplicas) y la primera visita después de
+un rato tarda unos segundos en despertarla. No acepta buzón, repo, inquilino ni disco en el archivo de configuración: si
+los trae, no corre y dice cuáles. Repetir la fase `demo` sobre una instancia que ya existe la actualiza (no crea otra);
+si un paso falla, se detiene, dice cuál y qué quedó creado, y correrla de nuevo la completa. Nunca toca una aplicación que
+no sea una instancia demo.
+
+**Borrarlo.** Todo lo del demo está en su grupo de recursos: `az group delete --name <grupo> --subscription <suscripción>`
+lo borra entero (pide confirmación). Hacelo sólo si ese grupo es propio del demo. Sin borrarlo, apagado ya está: con cero
+réplicas no corre ningún contenedor.
 
 ## Qué hace falta antes
 

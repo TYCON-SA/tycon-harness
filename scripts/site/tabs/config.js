@@ -356,8 +356,9 @@ const ESPERA_REFRESCO_MS = 8 * 1000;
  * Las rutas de la pestaña, para `rutasExtra` de crearSitio. `cfg` es la del servidor; `fuentes`, las del sitio.
  * Inyectables (pruebas): `lectores`, `versionImagen`, `ahora`, `hoy`, `fetch`, `urlBase` (la dirección de la API de cada plataforma) y
  * `remotos` ({ operaciones, perfil }: la plataforma de cada repo cuando la dirección no la dice) y `esperaRefrescoMs`.
+ * `demo` (el sitio demo, demo.js): Proponer, Invitar y Revocar revisan como siempre y muestran lo que pasaría, sin abrir nada.
  */
-function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy = null, lectores = {}, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {}, esperaRefrescoMs = ESPERA_REFRESCO_MS, invitaciones = null }) {
+function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy = null, lectores = {}, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {}, esperaRefrescoMs = ESPERA_REFRESCO_MS, invitaciones = null, demo = false }) {
   const dia = () => (hoy ? hoy() : new Date(ahora()).toISOString().slice(0, 10));
   const lector = (nombre) => ORG.loadReader(TREE, nombre, lectores);
   // los umbrales del arnés (los de la imagen): `{ thresholds, motivo }`; sin ellos, Umbrales no edita y lo dice
@@ -369,7 +370,8 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   };
   const clones = () => (typeof fuentes.clones === 'function' ? fuentes.clones() : { operaciones: null, perfil: null });
   /** `leer` con la versión del índice cuando `dir` es la carpeta de la copia de operaciones. */
-  const leerDe = (dir, rel) => { const o = clones().operaciones; return leer(dir, rel, o && o.dir === dir && o.indice ? o.indice : null); };
+  // el clon (o la carpeta de la copia, o la del sitio demo) con su índice de versiones lee sin git
+  const leerDe = (dir, rel) => { const cl = clones(); const o = [cl.operaciones, cl.perfil].find((x) => x && x.dir === dir && x.indice); return leer(dir, rel, o ? o.indice : null); };
   const urlDe = (repo) => (repo === 'perfil' ? cfg.profileRepo : cfg.operationsRepo);
   const remoteDe = (repo) => remotos[repo] || ORG.remoteOf(urlDe(repo));
 
@@ -793,6 +795,11 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (!cred) return { ok: false, message: M('config.sinIdentidad2') };
     const remote = remoteDe(s.repo);
     if (!remote.platform) return { ok: false, message: M('config.sinPlataforma') };
+    // el sitio demo muestra lo que pasaría con lo ya revisado, sin abrir ningún pedido
+    if (demo) {
+      return { ok: true, codigo: 'demo', demo: true, message: M('config.demoPropuesta', { seccion: s.titulo, archivo: v.archivo, repo: s.repo }),
+        loQuePasaria: { repo: s.repo, archivo: v.archivo, diferencia: ORG.diferencia(base ? base.texto || '' : v.texto || '', texto), resumen: resumenDe(s, docDe(v.texto || '') || {}, docDe(texto) || {}, views.idiomaDe(ctx)) } };
+    }
     let dir = s.repo === 'perfil' ? clones().perfil.dir : clones().operaciones.dir;
     // con la copia de operaciones la carpeta de la foto no tiene git y nunca se escribe: la propuesta trae main en
     // un clon de escritura aparte, compara contra esa punta y arma el commit ahí
@@ -932,6 +939,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (!cred) return { ok: false, message: M('config.sinIdentidad2') };
     const remote = remoteDe('operaciones');
     if (!remote.platform) return { ok: false, message: M('config.sinPlataforma') };
+    if (demo) return { ok: true, codigo: 'demo', demo: true, loQuePasaria: { repo: 'operaciones', archivo: v.archivo, diferencia: ORG.diferencia(v.texto || '', texto) } };
     let dir = clones().operaciones.dir;
     if (clones().operaciones.indice) {
       if (typeof fuentes.clonDeEscritura !== 'function') return { ok: false, message: M('config.sinClonEscritura') };
@@ -975,6 +983,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     }
     doc.site.invitations = { ...(isObject(doc.site.invitations) ? doc.site.invitations : {}), [rc.correo]: { por: norm(ctx.sesion.email), el: dia() } };
     const r = await proponerOperaciones({ ...base, doc }, ctx, body.marca);
+    if (r && r.demo) return { ...r, message: M('config.demoInvitar', { correo: rc.correo }), aviso: rc.aviso || null };
     return r && r.ok ? { ...r, message: M('invitaciones.propuesta'), aviso: rc.aviso || null } : r;
   }
   async function revocar(body, ctx) {
@@ -990,6 +999,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       if (!Object.keys(doc.site.invitations).length) delete doc.site.invitations;
     }
     const r = await proponerOperaciones({ ...base, doc }, ctx, body.marca);
+    if (r && r.demo) return { ...r, message: M('config.demoRevocar', { correo }), portal: null };
     return r && r.ok ? { ...r, message: M('invitaciones.revocada'), portal: invitaciones ? invitaciones.portalDe(correo) : null } : r;
   }
 
