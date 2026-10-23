@@ -144,9 +144,10 @@ test('WorkSignal_UnknownTool_TreatedAsNone @story-7.40 @ac-14', () => {
 // carpeta de la skill y las pruebas. Sólo baja: llega a 0 cuando la última integración sale del núcleo.
 // Tampoco cuentan las capturas de la guía del sitio: son la página tal cual la guarda site-guide-captures.js, y la
 // página de Configuración trae la sección de integraciones con sus nombres; no es núcleo escrito. Ni el registro de las
-// firmas del dueño (.github/control-changes.jsonl): anota las rutas de los controles que firma, también las borradas
+// firmas del dueño (.github/control-changes.jsonl y los .json del primer nivel de .github/control-changes/): anotan las
+// rutas de los controles que firman, también las borradas
 const TOOL_NAMES_OUTSIDE_CORE = [':!integrations', ':!skills/clocki', ':!guides/integrations', ':!guides/sitio-de-la-organizacion/capturas',
-  ':!.github/control-changes.jsonl', ':!**/tests/**', ':!**/*.test.*'];
+  ':!.github/control-changes.jsonl', ':(exclude,glob).github/control-changes/*.json', ':!**/tests/**', ':!**/*.test.*'];
 /** Los archivos del núcleo que nombran una herramienta de horas en el clon `root`. `--untracked`: un archivo nuevo cuenta desde que existe. */
 function coreFilesNamingTimeTool(root) {
   const r = spawnSync('git', ['-C', root, 'grep', '--untracked', '-il', '-E', 'clocki|clockify|solidtime', '--', '.', ...TOOL_NAMES_OUTSIDE_CORE], { encoding: 'utf8' });
