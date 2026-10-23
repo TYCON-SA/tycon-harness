@@ -118,7 +118,7 @@ second. With no table loaded, everything uses the model you picked, as before. T
 `node ~/.claude/tycon-harness/scripts/lib/models-env.js --provider ollama`. The function does not set
 `CLAUDE_CODE_SUBAGENT_MODEL`: it would override the table. `TYCON_MODEL_PROVIDER` tells the harness this session is on
 Ollama (it can also be declared for the machine with `node scripts/lib/tycon-config.js set models.provider ollama`), and
-`pipeline.js start` warns if the session's variables do not match the table.
+the pipeline's start step warns if the session's variables do not match the table.
 
 Then you run `claude-ollama gemma4:31b-cloud` instead of `claude`. To go back to normal, exit and open `claude`.
 
@@ -203,10 +203,23 @@ other supported way out. You run the probe yourself: the installer does not call
 
 ### The pipeline launches the reviewers
 
-With Codex, the "Revisores" step runs `pipeline.js reviewers-run`: each reviewer is a separate `codex exec` process,
-with your session's model if you started the pipeline with
-`pipeline.js start … --codex-session '{"oss":true,"provider":"ollama","model":"<model>"}'` (`"config"` passes the
-reduced-mode options). Without that option, each reviewer uses its profile's model (next section). Before, the step
+With Codex, the "Revisores" step runs the reviewer launcher
+(`node ~/.codex/skills/tycon-pipeline/scripts/pipeline.js reviewers-run`): each reviewer is a separate `codex exec`
+process, with your session's model if you started the pipeline with `--codex-session` (`"config"` passes the
+reduced-mode options). The start, with the full command:
+
+```bash
+# macOS and Linux
+node ~/.codex/skills/tycon-pipeline/scripts/pipeline.js start --story <story> --repo . --codex-session '{"oss":true,"provider":"ollama","model":"<model>"}'
+```
+
+```powershell
+# Windows (PowerShell)
+node "$env:USERPROFILE\.codex\skills\tycon-pipeline\scripts\pipeline.js" start --story <story> --repo . --codex-session '{"oss":true,"provider":"ollama","model":"<model>"}'
+```
+
+The Codex skill folders are links to the harness: `find` without `-L` does not walk into them and misses the script.
+That is why the command is given in full. Without `--codex-session`, each reviewer uses its profile's model (next section). Before, the step
 asked the model to launch each reviewer as an agent; a model that did not use that tool launched none.
 
 **The reviewers need network access.** They inherit the sandbox of the command that launches them, and the

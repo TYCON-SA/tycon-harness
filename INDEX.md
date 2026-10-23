@@ -48,7 +48,7 @@ la fila aplica.
 | Crear/reescribir un artefacto de planning (UX spec, navigation map, architecture, PRD) sobre dominio ya cubierto por un artefacto aprobado | `guides/workflow-orchestration.md` §12 — frontmatter `reconciles:`/`supersedes_in:` OBLIGATORIO; sin eso no pasa de `draft` (caso UX spec V7 que ignoró el catálogo firmado) |
 | Story que crea/modifica layout o navegación de pantalla | `guides/workflow-orchestration.md` §11 — validar contra el artefacto de IA antes de `done` (enforced por `WIRING-C5` desde 2026-06-10) |
 | Pipeline de agentes, invocar advisors, integración BMAD | `guides/agent-architecture.md` |
-| Entender qué hace el pase adversarial del pipeline (el paso «Pase adversarial»), leer las pruebas con las que confirmó un hallazgo, o promoverlas a la suite (`marker.js promote-probe`) | `skills/tycon-pipeline/steps/step-08-adversarial-pass.md` |
+| Entender qué hace el pase adversarial del pipeline (el paso «Pase adversarial»), leer las pruebas con las que confirmó un hallazgo, o promoverlas a la suite (`skills/tycon-pipeline/scripts/marker.js promote-probe`) | `skills/tycon-pipeline/steps/step-08-adversarial-pass.md` |
 | Entender por qué un advisor reportó X, agregar/retirar reglas | `guides/advisor-rules-catalog.md` |
 | Armar un paquete de revisores propio para el stack de tu organización: qué archivos lleva, cuándo corre un revisor, cómo se activa y cómo se examina (con un ejemplo para Svelte y FastAPI) | `guides/reviewer-packs.md` (en inglés, `guides/reviewer-packs.en.md`) + `examples/packs/svelte-fastapi/` |
 | Cerrar una story (transición a `review`/`done`) — protocolo ACCOV-C7..C10 | `guides/accov-governance-protocol.md` |
@@ -80,7 +80,7 @@ la fila aplica.
 | Escribir una story que **corrige, recalibra o extiende** otra (`followup_of:`) — qué causa declarar en `followup_reason:` · por qué el lint frena a una story nueva y a una vieja no · agregar una causa al vocabulario | `scripts/metrics/rework-causes.json` (las cuatro causas, con el motivo de cada una) + `story-format.md` §1.2 |
 | Apareció "ya hay otra(s) sesión(es) viva(s) sobre este mismo checkout" al arrancar, o el freno de git te paró por otra sesión · dos chats sobre el mismo repo | `scripts/hooks/session-collision-guard.js` + `guides/git-worktrees.md` |
 | Apareció «el arnés corre desde X, no desde la ruta canónica» al arrancar · un dev tiene el arnés o los proyectos en otra carpeta y pregunta si eso rompe algo | `scripts/lib/canonical-path.js` + `INSTALL.md` (el arnés y los proyectos pueden vivir en cualquier carpeta) |
-| La matriz da un criterio por corrido con evidencia de otra story · evidencia huérfana | `pipeline.js evidence-key --story <ruta>` |
+| La matriz da un criterio por corrido con evidencia de otra story · evidencia huérfana | `skills/tycon-pipeline/scripts/pipeline.js evidence-key --story <ruta>` |
 | Una auditoría del arnés dice «0 repos» · un revisor dice «no encontré hermanos» · querés saber dónde cree el arnés que están tus repos, o decírselo | `node scripts/lib/repos-root.js` (imprime la raíz y de dónde salió) · `TYCON_REPOS_ROOT` es la única variable, para auditorías y revisores |
 | Apareció "ARNÉS ATRASADO" al arrancar, o "tu copia del arnés estaba N commits atrás" al primer prompt · un dev choca contra un freno cuyo habilitador "no está registrado" · un control nuevo no llega a una máquina aunque el clon "se actualiza solo" | `skills/tycon-pipeline/scripts/lib/guides-heal.js` |
 | Backend .NET de plugins Bizuit (paquete bizuit) | packs/bizuit/guides/bizuit-plugin-dotnet.md |

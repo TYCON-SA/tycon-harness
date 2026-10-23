@@ -879,6 +879,12 @@
       "requiere": []
     },
     {
+      "__nota": "las instrucciones dan el comando del pipeline con su ruta entera: el bloque del índice de Codex (macOS, Linux y Windows), la ruta a través del enlace de las skills, y ninguna orden del pipeline sin ruta en el índice, la guía de Ollama ni el bloque. Todo en un HOME temporal.",
+      "raiz": "arnes",
+      "ruta": "tests/pipeline-command-paths.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "los cierres del turno deciden con la evidencia del arnés (mensaje del evento, marcador, registro de ediciones, disco) y no con la conversación: la historia afirmada, el modelo del implementador y la línea de pasos pendientes.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/closing-evidence-codex.test.js",
